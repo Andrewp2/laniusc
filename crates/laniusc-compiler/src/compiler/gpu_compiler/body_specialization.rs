@@ -18,10 +18,13 @@ use super::{
         instance_closure_enabled,
         native_program_error,
     },
+    program_evidence::CheckedReplayCalls,
     typecheck::{CompiledSourcePackObject, CompiledSourcePackUnit, OriginalUnitFacts, PendingOriginalUnit},
+    unit_cache::{CachedInstanceRun, CompiledUnitCacheKey, library_instance_cache_checked},
     *,
 };
-use crate::type_checker::{CheckedBodySpecialization, CheckedGenericCall, CheckedGenericTarget};
+use std::sync::Arc;
+use crate::type_checker::{BodyImplBinding, CheckedBodySpecialization, CheckedGenericCall, CheckedGenericTarget};
 
 /// A concrete body instantiated from another concrete body is one level
 /// deeper. Finite programs stay far below this; reaching it means an
@@ -120,6 +123,7 @@ impl GpuCompiler<'_> {
             call_hirs: unit.x86_call_hirs.clone(),
             call_owners: unit.x86_call_function_hirs.clone(),
             entries: BTreeMap::new(),
+            from_cache: false,
         }).collect::<Vec<_>>();
         let mut trace = SpecializationTrace::new();
         let batch_limit = replay_batch_limit();
@@ -236,6 +240,7 @@ impl GpuCompiler<'_> {
                             admitted: admitted.clone(),
                             target,
                             recursive: instantiates_ancestor(&contexts, context_index, caller, target),
+                            cached_origin: context.from_cache,
                             origin: EntryOrigin {
                                 depth: depth + 1,
                                 parent: Some((context_index, caller)),
@@ -264,6 +269,13 @@ impl GpuCompiler<'_> {
             }
             for keys in by_unit.into_values() {
                 let plan_started = std::time::Instant::now();
+                // Warm library instance cache (D7b): whole stored runs whose
+                // every body is pending here with a fresh origin and equal
+                // layout witnesses publish without a frontend run.
+                let library = self.library_instance_lookup(
+                    &mut program, &templates, &pending, keys, instance_copies)?;
+                let keys = library.misses;
+                let instance_of = library.instance_of;
                 // A body with a retained declaration span replays as a
                 // renamed copy, which shares a run with any other copy.
                 // Polymorphic recursion replays alone, so a failure is its own.
@@ -337,48 +349,75 @@ impl GpuCompiler<'_> {
                     }
                 }
                 host_span("plan", plan_started);
-                for run in runs {
+                let work = library.hits.into_iter().map(RunWork::Cached)
+                    .chain(runs.into_iter().map(RunWork::Replay));
+                for work in work {
                     let started = std::time::Instant::now();
-                    let origins = run.keys.iter().map(|key| &pending[key].admitted).collect::<Vec<_>>();
+                    let (keys, copies, solo, bindings, split) = match &work {
+                        RunWork::Replay(run) => (run.keys.clone(), run.copies, run.solo, run.bindings, run.split),
+                        RunWork::Cached(hit) => (hit.keys.clone(), true, false, 0, None),
+                    };
+                    let origins = keys.iter().map(|key| &pending[key].admitted).collect::<Vec<_>>();
                     // A recursively growing environment fails wherever it first
                     // outgrows a limit; report it as the recursion it is.
                     let recursion = |error: CompileError| {
-                        let body = &pending[&run.keys[0]];
-                        if !run.solo || !is_capacity_failure(&error) { return error; }
+                        let body = &pending[&keys[0]];
+                        if !solo || !is_capacity_failure(&error) { return error; }
                         let owner = body.origin.parent.map(|(context, _)|
                             (contexts[context].library_id, contexts[context].unit_id));
                         instantiation_depth_error(body.admitted.checked_call(),
                             owner.and_then(|owner| templates.get(&owner).copied()), Some(error))
                     };
-                    let request = if run.copies {
-                        program.prepare_instance_batch(&origins)
-                    } else {
-                        program.prepare_replay_batch(&origins)
-                    }
-                    .map_err(|error| recursion(native_program_error(error)))?;
-                    let prepared = std::time::Instant::now();
-                    let pending_unit = self
-                        .compile_authorized_body_specialization(&request)
-                        .await
-                        .inspect_err(|_| trace.failed(&run.keys, &pending))
-                        .map_err(&recursion)?;
-                    let compiled = std::time::Instant::now();
-                    let (replay, checked) = request.finish(pending_unit)
-                        .inspect_err(|_| trace.failed(&run.keys, &pending))
-                        .map_err(|error| recursion(native_program_error(error)))?;
-                    let replay_calls = checked.calls;
-                    let finished = std::time::Instant::now();
-                    crate::gpu::trace::record_host_span("specialization", "prepare", started, prepared);
-                    crate::gpu::trace::record_host_span("specialization", "compile", prepared, compiled);
-                    crate::gpu::trace::record_host_span("specialization", "finish", compiled, finished);
-                    let entry_layouts = replay.body_native_layouts.as_ref()
-                        .filter(|layouts| layouts.len() == run.keys.len())
-                        .ok_or_else(|| CompileError::GpuCodegen("concrete replay omitted admitted native layouts".into()))?
-                        .clone();
-                    let CompiledSourcePackObject::X86_64(mut concrete) = replay.object else {
-                        unreachable!("body replay target is x86_64")
+                    let (output, times, from_cache) = match work {
+                        RunWork::Replay(run) => {
+                            let request = if run.copies {
+                                program.prepare_instance_batch(&origins)
+                            } else {
+                                program.prepare_replay_batch(&origins)
+                            }
+                            .map_err(|error| recursion(native_program_error(error)))?;
+                            let prepared = std::time::Instant::now();
+                            let pending_unit = self
+                                .compile_authorized_body_specialization(&request)
+                                .await
+                                .inspect_err(|_| trace.failed(&run.keys, &pending))
+                                .map_err(&recursion)?;
+                            let compiled = std::time::Instant::now();
+                            let (replay, checked) = request.finish(pending_unit)
+                                .inspect_err(|_| trace.failed(&run.keys, &pending))
+                                .map_err(|error| recursion(native_program_error(error)))?;
+                            let output = RunOutput::from_replay(replay, checked, run.keys.len())?;
+                            let finished = std::time::Instant::now();
+                            if run.copies && !run.solo {
+                                self.store_library_instance_run(&templates, &run.keys, &pending, &instance_of, &output);
+                            }
+                            (output, [started, prepared, compiled, finished], false)
+                        }
+                        RunWork::Cached(hit) => {
+                            let calls = program.admit_cached_instances(
+                                &origins, [hit.run_unit.0, hit.run_unit.1], &hit.run.entry_facts, &hit.run.object)
+                                .map_err(native_program_error)?;
+                            let admitted = std::time::Instant::now();
+                            let output = RunOutput::from_cache(&hit.run, calls);
+                            if library_instance_cache_checked() {
+                                self.check_library_instance_hit(&mut program, &origins, &hit, &output).await?;
+                            }
+                            self.library_instance_cache.lock()
+                                .expect("library instance cache mutex poisoned").record_hit(&hit.cache_key);
+                            let finished = std::time::Instant::now();
+                            crate::gpu::trace::record_host_span("specialization", "cache_hit", started, admitted);
+                            (output, [started, admitted, admitted, finished], true)
+                        }
                     };
-                    let (library_id, unit_id, _) = pending[&run.keys[0]].target;
+                    let [_, prepared, compiled, finished] = times;
+                    if !from_cache {
+                        crate::gpu::trace::record_host_span("specialization", "prepare", started, prepared);
+                        crate::gpu::trace::record_host_span("specialization", "compile", prepared, compiled);
+                        crate::gpu::trace::record_host_span("specialization", "finish", compiled, finished);
+                    }
+                    let RunOutput { mut object, call_hirs, call_owners, layouts: entry_layouts, copy_symbols,
+                        entry_hirs, calls: replay_calls, entry_facts: _ } = output;
+                    let (library_id, unit_id, _) = pending[&keys[0]].target;
                     let candidate = next_unit_by_library.entry(library_id).or_default();
                     while used_units.contains(&(library_id, *candidate)) {
                         *candidate = candidate.checked_add(1).ok_or_else(|| {
@@ -391,29 +430,29 @@ impl GpuCompiler<'_> {
                     // original replay defines the declaration itself. The
                     // published identity keeps that symbol, so two copies of
                     // one declaration in a run stay distinct.
-                    let definition_symbols = match &checked.copy_symbols {
+                    let definition_symbols = match &copy_symbols {
                         Some(symbols) => symbols.clone(),
-                        None => run.keys.iter().map(|key| pending[key].target.2).collect(),
+                        None => keys.iter().map(|key| pending[key].target.2).collect(),
                     };
                     let identities = definition_symbols.iter()
                         .map(|&symbol| declaration_identity(library_id, unit_id, symbol))
                         .collect::<Vec<_>>();
                     specialized_text_bytes = specialized_text_bytes
-                        .checked_add(concrete.text.len())
+                        .checked_add(object.text.len())
                         .ok_or_else(|| specialization_limit_error("native text length overflow"))?;
                     // Undefined symbols precede definitions, so dropping other
                     // definitions preserves every relocation target index.
                     let published = identities.iter().map(Vec::as_slice).collect::<HashSet<_>>();
-                    let keep: Vec<bool> = concrete
+                    let keep: Vec<bool> = object
                         .symbols
                         .iter()
                         .map(|symbol| {
                             symbol.section == x86::GpuX86ObjectSection::Undefined
-                                || published.contains(symbol_identity(&concrete, symbol))
+                                || published.contains(symbol_identity(&object, symbol))
                         })
                         .collect();
                     let mut index = 0;
-                    concrete.symbols.retain(|_| {
+                    object.symbols.retain(|_| {
                         let retain = keep[index];
                         index += 1;
                         retain
@@ -421,13 +460,13 @@ impl GpuCompiler<'_> {
                     // Each key takes the first text definition still carrying
                     // its identity; a renamed definition no longer matches.
                     let mut definitions = HashMap::<Vec<u8>, Vec<usize>>::new();
-                    for (index, symbol) in concrete.symbols.iter().enumerate().rev() {
+                    for (index, symbol) in object.symbols.iter().enumerate().rev() {
                         if symbol.section == x86::GpuX86ObjectSection::Text {
-                            definitions.entry(symbol_identity(&concrete, symbol).to_vec()).or_default().push(index);
+                            definitions.entry(symbol_identity(&object, symbol).to_vec()).or_default().push(index);
                         }
                     }
                     let mut entries = BTreeMap::new();
-                    for (position, key) in run.keys.iter().enumerate() {
+                    for (position, key) in keys.iter().enumerate() {
                         let body = &pending[key];
                         let definition = definitions
                             .get_mut(&identities[position])
@@ -441,37 +480,38 @@ impl GpuCompiler<'_> {
                             })?;
                         let native_identity =
                             declaration_identity(library_id, specialized_unit, definition_symbols[position]);
-                        replace_symbol_identity(&mut concrete, definition, &native_identity)?;
+                        replace_symbol_identity(&mut object, definition, &native_identity)?;
                         let mut admitted_layouts = entry_layouts[position].clone();
                         for witness in &body.witnesses {
                             CheckedBodySpecialization::merge_layout_witnesses(&mut admitted_layouts, witness)
                                 .map_err(|error| CompileError::GpuCodegen(error.to_string()))?;
                         }
                         specializations.insert(key.clone(), (native_identity, admitted_layouts));
-                        if checked.entry_hirs[position] != u32::MAX {
-                            entries.insert(checked.entry_hirs[position], body.origin);
+                        if entry_hirs[position] != u32::MAX {
+                            entries.insert(entry_hirs[position], body.origin);
                         }
                     }
-                    concrete.unit_id = specialized_unit;
-                    concrete.entry_offset = None;
-                    concrete
+                    object.unit_id = specialized_unit;
+                    object.entry_offset = None;
+                    object
                         .validate()
                         .map_err(|error| CompileError::GpuCodegen(error))?;
                     host_span("publish", finished);
                     trace.replay(
-                        &run.keys.iter().map(|key| (key.as_slice(), &pending[key])).collect::<Vec<_>>(),
-                        specializations.len(), [started, prepared, compiled, finished],
-                        concrete.text.len(), replay_calls.len(), run_kind(run.copies, run.solo),
-                        run.bindings, run.split);
+                        &keys.iter().map(|key| (key.as_slice(), &pending[key])).collect::<Vec<_>>(),
+                        specializations.len(), times,
+                        object.text.len(), replay_calls.len(), run_kind(copies, solo),
+                        bindings, split, from_cache);
                     contexts.push(ReplayContext {
                         library_id,
                         unit_id,
                         calls: replay_calls,
-                        call_hirs: replay.x86_call_hirs,
-                        call_owners: replay.x86_call_function_hirs,
+                        call_hirs,
+                        call_owners,
                         entries,
+                        from_cache,
                     });
-                    objects.push(Cow::Owned(concrete));
+                    objects.push(Cow::Owned(object));
                 }
             }
             let patch_started = std::time::Instant::now();
@@ -550,6 +590,7 @@ impl ClosureIntake {
                     admitted: admitted.clone(),
                     target,
                     recursive: false,
+                    cached_origin: false,
                     origin: EntryOrigin { depth: *depth, parent: None, target },
                     witnesses: vec![layouts],
                 });
@@ -620,6 +661,10 @@ struct ReplayContext {
     call_hirs: std::sync::Arc<[u32]>,
     call_owners: std::sync::Arc<[u32]>,
     entries: BTreeMap<u32, EntryOrigin>,
+    /// A library instance-cache hit published this context: its calls are
+    /// cached facts (admitted again in this job), so no body they instantiate
+    /// may itself be a cache hit (no transitive hits).
+    from_cache: bool,
 }
 
 impl ReplayContext {
@@ -645,6 +690,9 @@ struct PendingBody {
     /// The body instantiates a declaration it was itself instantiated from
     /// (with another environment: equal environments reuse one body).
     recursive: bool,
+    /// The origin is a call of a cache-published body (see
+    /// `ReplayContext::from_cache`), so this body always replays.
+    cached_origin: bool,
     origin: EntryOrigin,
     /// Retained layout witnesses of every call site that needs this body.
     witnesses: Vec<Vec<u32>>,
@@ -717,6 +765,265 @@ impl ReplayRun {
     }
 }
 
+/// A run of one round: a frontend replay, or a library instance-cache hit.
+enum RunWork {
+    Replay(ReplayRun),
+    Cached(CachedHit),
+}
+
+/// A stored library run all of whose bodies are pending in this round with
+/// fresh origins and equal layout witnesses (`library_instance_lookup`).
+struct CachedHit {
+    /// The pending keys, in the stored run's entry order.
+    keys: Vec<Vec<u8>>,
+    run: Arc<CachedInstanceRun>,
+    cache_key: CompiledUnitCacheKey,
+    run_unit: (u32, u32),
+}
+
+/// Which of one template unit's new bodies a stored library run covers.
+struct LibraryLookup {
+    hits: Vec<CachedHit>,
+    /// The bodies left to replay, in their original order.
+    misses: Vec<Vec<u8>>,
+    /// The instance hash of every body of a cacheable template.
+    instance_of: HashMap<Vec<u8>, blake3::Hash>,
+}
+
+/// One run's finished outputs, from its replay or from the cache.
+struct RunOutput {
+    object: x86::GpuX86RelocatableObject,
+    call_hirs: Arc<[u32]>,
+    call_owners: Arc<[u32]>,
+    /// Per entry, the GPU's native seed layouts.
+    layouts: Arc<[Vec<u32>]>,
+    copy_symbols: Option<Vec<u32>>,
+    entry_hirs: Vec<u32>,
+    calls: Vec<AdmittedCall>,
+    /// Per entry of an instance-copy run, its copy's checked calls.
+    entry_facts: Option<Vec<Arc<[CheckedGenericCall]>>>,
+}
+
+impl RunOutput {
+    fn from_replay(
+        replay: CompiledSourcePackUnit,
+        checked: CheckedReplayCalls,
+        entries: usize,
+    ) -> Result<Self, CompileError> {
+        let layouts = replay.body_native_layouts
+            .filter(|layouts| layouts.len() == entries)
+            .ok_or_else(|| CompileError::GpuCodegen("concrete replay omitted admitted native layouts".into()))?;
+        let CompiledSourcePackObject::X86_64(object) = replay.object else {
+            unreachable!("body replay target is x86_64")
+        };
+        Ok(Self {
+            object,
+            call_hirs: replay.x86_call_hirs,
+            call_owners: replay.x86_call_function_hirs,
+            layouts,
+            copy_symbols: checked.copy_symbols,
+            entry_hirs: checked.entry_hirs,
+            calls: checked.calls,
+            entry_facts: checked.entry_facts,
+        })
+    }
+
+    fn from_cache(run: &CachedInstanceRun, calls: Vec<AdmittedCall>) -> Self {
+        Self {
+            object: run.object.clone(),
+            call_hirs: run.call_hirs.clone(),
+            call_owners: run.call_owners.clone(),
+            layouts: run.layouts.clone(),
+            copy_symbols: Some(run.copy_symbols.clone()),
+            entry_hirs: run.entry_hirs.clone(),
+            calls,
+            entry_facts: Some(run.entry_facts.clone()),
+        }
+    }
+}
+
+/// The identity of one library instance across jobs: the template unit's
+/// content, the body's LGS4 scheduling key (declaration and complete
+/// environment graph) and the impl bindings this job's evidence selected
+/// for it. Layout witnesses are compared separately, at lookup.
+fn library_instance_hash(template: blake3::Hash, key: &[u8], bindings: &[BodyImplBinding]) -> blake3::Hash {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"laniusc-library-instance-v1");
+    hasher.update(template.as_bytes());
+    hasher.update(&(key.len() as u64).to_le_bytes());
+    hasher.update(key);
+    hasher.update(&(bindings.len() as u64).to_le_bytes());
+    for binding in bindings {
+        for word in [binding.instance, binding.slot, binding.required_symbol]
+            .into_iter().chain(binding.trait_unit).chain(binding.target)
+        {
+            hasher.update(&word.to_le_bytes());
+        }
+    }
+    hasher.finalize()
+}
+
+/// Whether the union of this job's layout witnesses for a body equals the
+/// native layouts its cached run was compiled with. A witness this job
+/// cannot supply (u32::MAX) is a miss, not a match: an app nominal can
+/// change layout without changing identity.
+fn witnesses_match(witnesses: &[Vec<u32>], stored: &[u32]) -> bool {
+    let Some((first, rest)) = witnesses.split_first() else { return false };
+    let mut union = first.clone();
+    for witness in rest {
+        if CheckedBodySpecialization::merge_layout_witnesses(&mut union, witness).is_err() {
+            return false;
+        }
+    }
+    union == stored
+}
+
+impl GpuCompiler<'_> {
+    /// Split one template unit's new bodies into stored library runs that
+    /// cover them (hits) and bodies to replay. A stored run is used whole,
+    /// and only when each of its bodies is pending here, is not recursive,
+    /// has an origin that no cached body supplied, and has layout witnesses
+    /// equal to the stored layouts. Only standard-library templates qualify.
+    fn library_instance_lookup(
+        &self,
+        program: &mut NativeProgramSession,
+        templates: &BTreeMap<(u32, u32), &CompiledSourcePackUnit>,
+        pending: &BTreeMap<Vec<u8>, PendingBody>,
+        keys: Vec<Vec<u8>>,
+        instance_copies: bool,
+    ) -> Result<LibraryLookup, CompileError> {
+        let mut lookup = LibraryLookup { hits: Vec::new(), misses: Vec::new(), instance_of: HashMap::new() };
+        let template = keys.first().and_then(|key| {
+            let (library_id, unit_id, _) = pending[key].target;
+            templates.get(&(library_id, unit_id)).map(|template| (library_id, unit_id, *template))
+        });
+        let mut cache = self.library_instance_cache.lock().expect("library instance cache mutex poisoned");
+        let Some((library_id, unit_id, template)) = template
+            .filter(|&(.., template)| instance_copies && cache.cacheable_template(template))
+        else {
+            lookup.misses = keys;
+            return Ok(lookup);
+        };
+        let template_hash = cache.template_hash(template).map_err(CompileError::GpuCodegen)?;
+        let mut eligible = HashMap::<blake3::Hash, &Vec<u8>>::new();
+        for key in &keys {
+            let body = &pending[key];
+            let bindings = program.instance_impl_bindings(&body.admitted).map_err(native_program_error)?;
+            let instance = library_instance_hash(template_hash, key, &bindings);
+            lookup.instance_of.insert(key.clone(), instance);
+            if !body.recursive && !body.cached_origin {
+                eligible.insert(instance, key);
+            }
+        }
+        let mut taken = HashSet::<Vec<u8>>::new();
+        let mut tried = HashSet::<CompiledUnitCacheKey>::new();
+        for key in &keys {
+            let instance = lookup.instance_of[key];
+            if taken.contains(key) || !eligible.contains_key(&instance) { continue; }
+            let Some((cache_key, run)) = cache.run_of(library_id, unit_id, instance) else { continue };
+            if !tried.insert(cache_key.clone()) { continue; }
+            let mut run_keys = Vec::with_capacity(run.instances.len());
+            let covered = run.instances.len() == run.layouts.len()
+                && run.instances.iter().zip(run.layouts.iter()).all(|(instance, layouts)| {
+                    let Some(&key) = eligible.get(instance) else { return false };
+                    if taken.contains(key) || run_keys.contains(key)
+                        || !witnesses_match(&pending[key].witnesses, layouts)
+                    {
+                        return false;
+                    }
+                    run_keys.push(key.clone());
+                    true
+                });
+            if !covered { continue; }
+            taken.extend(run_keys.iter().cloned());
+            lookup.hits.push(CachedHit { keys: run_keys, run, cache_key, run_unit: (library_id, unit_id) });
+        }
+        lookup.misses = keys.into_iter().filter(|key| !taken.contains(key)).collect();
+        Ok(lookup)
+    }
+
+    /// Keep a finished instance-copy run of a standard-library template for
+    /// later jobs. Runs of other templates are never stored.
+    fn store_library_instance_run(
+        &self,
+        templates: &BTreeMap<(u32, u32), &CompiledSourcePackUnit>,
+        keys: &[Vec<u8>],
+        pending: &BTreeMap<Vec<u8>, PendingBody>,
+        instance_of: &HashMap<Vec<u8>, blake3::Hash>,
+        output: &RunOutput,
+    ) {
+        let Some(first) = keys.first() else { return };
+        let (library_id, unit_id, _) = pending[first].target;
+        let mut cache = self.library_instance_cache.lock().expect("library instance cache mutex poisoned");
+        if !templates.get(&(library_id, unit_id)).is_some_and(|template| cache.cacheable_template(template)) {
+            return;
+        }
+        let Some(instances) = keys.iter().map(|key| instance_of.get(key).copied()).collect::<Option<Vec<_>>>()
+        else { return };
+        let (Some(copy_symbols), Some(entry_facts)) = (&output.copy_symbols, &output.entry_facts) else { return };
+        cache.record_miss();
+        cache.insert(library_id, unit_id, CachedInstanceRun {
+            instances,
+            layouts: output.layouts.clone(),
+            object: output.object.clone(),
+            call_hirs: output.call_hirs.clone(),
+            call_owners: output.call_owners.clone(),
+            copy_symbols: copy_symbols.clone(),
+            entry_hirs: output.entry_hirs.clone(),
+            entry_facts: entry_facts.clone(),
+        });
+    }
+
+    /// `LANIUS_CHECK_LIBRARY_INSTANCE_CACHE=1`: replay a hit run with the
+    /// same origins in the stored order and fail unless every output,
+    /// including the admitted calls, equals the cached publication.
+    async fn check_library_instance_hit(
+        &self,
+        program: &mut NativeProgramSession,
+        origins: &[&AdmittedCall],
+        hit: &CachedHit,
+        cached: &RunOutput,
+    ) -> Result<(), CompileError> {
+        let request = program.prepare_instance_batch(origins).map_err(native_program_error)?;
+        let pending_unit = self.compile_authorized_body_specialization(&request).await?;
+        let (replay, checked) = request.finish(pending_unit).map_err(native_program_error)?;
+        let fresh = RunOutput::from_replay(replay, checked, origins.len())?;
+        let mut differences = Vec::new();
+        let (a, b) = (&fresh.object, &cached.object);
+        for (name, same) in [
+            ("object header", a.version == b.version && a.library_id == b.library_id
+                && a.unit_id == b.unit_id && a.entry_offset == b.entry_offset),
+            ("text", a.text == b.text),
+            ("rodata", a.rodata == b.rodata),
+            ("relocations", a.relocations == b.relocations),
+            ("symbols", a.symbols == b.symbols),
+            ("identity bytes", a.identity_bytes == b.identity_bytes),
+            ("call HIRs", fresh.call_hirs == cached.call_hirs),
+            ("call owners", fresh.call_owners == cached.call_owners),
+            ("native layouts", fresh.layouts == cached.layouts),
+            ("copy symbols", fresh.copy_symbols == cached.copy_symbols),
+            ("entry HIRs", fresh.entry_hirs == cached.entry_hirs),
+            ("entry facts", fresh.entry_facts == cached.entry_facts),
+            ("admitted calls", fresh.calls.len() == cached.calls.len()
+                && fresh.calls.iter().zip(&cached.calls).all(|(a, b)|
+                    a.checked_call() == b.checked_call() && a.source() == b.source()
+                        && a.is_concrete() == b.is_concrete() && a.is_refuted() == b.is_refuted())),
+        ] {
+            if !same { differences.push(name); }
+        }
+        let (library, unit) = hit.run_unit;
+        if differences.is_empty() {
+            eprintln!("[library-instance-cache] check ok unit={library}:{unit} bodies={}", origins.len());
+            return Ok(());
+        }
+        eprintln!("[library-instance-cache] MISMATCH unit={library}:{unit} bodies={}: {}",
+            origins.len(), differences.join(", "));
+        Err(CompileError::GpuCodegen(format!(
+            "library instance cache check failed for unit {library}:{unit} ({} bodies): {} differ from a fresh replay",
+            origins.len(), differences.join(", "))))
+    }
+}
+
 /// The single-entry packet a body's replay would use (see prepare_replay_batch).
 fn replay_entry(call: &CheckedGenericCall, target: (u32, u32, u32)) -> CheckedBodySpecialization {
     CheckedBodySpecialization {
@@ -764,6 +1071,10 @@ struct SpecializationTrace {
     /// Runs by kind: instance copies, original scope, polymorphic recursion.
     kinds: [usize; 3],
     phases_ms: [f64; 3],
+    /// Library instance-cache hits (D7b): runs and bodies published from
+    /// the cache, which `runs` does not count.
+    cached_runs: usize,
+    cached_bodies: usize,
 }
 
 /// Trace index of a run's kind: 0 copies, 1 original scope, 2 solo
@@ -783,6 +1094,8 @@ impl SpecializationTrace {
             runs: 0,
             kinds: [0; 3],
             phases_ms: [0.0; 3],
+            cached_runs: 0,
+            cached_bodies: 0,
         }
     }
 
@@ -796,14 +1109,26 @@ impl SpecializationTrace {
         kind: usize,
         bindings: usize,
         split: Option<&str>,
+        cached: bool,
     ) {
+        let ms = |a: std::time::Instant, b: std::time::Instant| b.duration_since(a).as_secs_f64() * 1000.0;
+        let (library, unit, _) = bodies[0].1.target;
+        if cached {
+            self.cached_runs += 1;
+            self.cached_bodies += bodies.len();
+            if self.enabled {
+                eprintln!(
+                    "[specialization] cached run unit={library}:{unit} bodies={} total={total} admit={:.1}ms check={:.1}ms text={text_bytes} calls={replay_calls}",
+                    bodies.len(), ms(times[0], times[1]), ms(times[2], times[3]),
+                );
+            }
+            return;
+        }
         self.runs += 1;
         self.kinds[kind] += 1;
         if !self.enabled { return; }
-        let ms = |a: std::time::Instant, b: std::time::Instant| b.duration_since(a).as_secs_f64() * 1000.0;
         let phases = [ms(times[0], times[1]), ms(times[1], times[2]), ms(times[2], times[3])];
         for (total, phase) in self.phases_ms.iter_mut().zip(phases) { *total += phase; }
-        let (library, unit, _) = bodies[0].1.target;
         eprintln!(
             "[specialization] run={} kind={} unit={library}:{unit} bodies={} total={total} prepare={:.1}ms compile={:.1}ms finish={:.1}ms text={text_bytes} calls={replay_calls} impl_bindings={bindings}{}",
             self.runs, RUN_KINDS[kind], bodies.len(), phases[0], phases[1], phases[2],
@@ -849,8 +1174,8 @@ impl SpecializationTrace {
     fn finish(&self, bodies: usize, text_bytes: usize) {
         if !self.enabled { return; }
         eprintln!(
-            "[specialization] summary bodies={bodies} runs={} copy_runs={} original_runs={} solo_runs={} reused_sites={} text={text_bytes} prepare={:.1}ms compile={:.1}ms finish={:.1}ms total={:.1}ms",
-            self.runs, self.kinds[0], self.kinds[1], self.kinds[2], self.reused,
+            "[specialization] summary bodies={bodies} runs={} copy_runs={} original_runs={} solo_runs={} cached_runs={} cached_bodies={} reused_sites={} text={text_bytes} prepare={:.1}ms compile={:.1}ms finish={:.1}ms total={:.1}ms",
+            self.runs, self.kinds[0], self.kinds[1], self.kinds[2], self.cached_runs, self.cached_bodies, self.reused,
             self.phases_ms[0], self.phases_ms[1], self.phases_ms[2],
             self.start.elapsed().as_secs_f64() * 1000.0,
         );

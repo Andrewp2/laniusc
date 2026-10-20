@@ -1407,6 +1407,7 @@ async fn compile_request(
         false,
     ));
     let unit_cache_before = compiler.compiled_unit_cache_stats();
+    let instance_cache_before = compiler.library_instance_cache_stats();
     let compile_started = Instant::now();
     enum EmittedArtifact {
         Bytes(Vec<u8>),
@@ -1442,6 +1443,7 @@ async fn compile_request(
         crate::gpu::passes_core::debug_write_capture(&gpu.device, &gpu.queue);
     }
     let unit_cache_after = compiler.compiled_unit_cache_stats();
+    let instance_cache_after = compiler.library_instance_cache_stats();
     let emitted = match emitted {
         Ok(emitted) => emitted,
         Err(err) => return compile_error_response(id, started, err),
@@ -1475,6 +1477,14 @@ async fn compile_request(
             "evictions_during_job": unit_cache_after.evictions.saturating_sub(unit_cache_before.evictions),
             "entries_after_job": unit_cache_after.entries,
             "resident_bytes_after_job": unit_cache_after.resident_bytes,
+        },
+        // D7b: library instance-copy runs reused (hits) or compiled (misses).
+        "library_instance_cache": {
+            "hits_during_job": instance_cache_after.hits.saturating_sub(instance_cache_before.hits),
+            "misses_during_job": instance_cache_after.misses.saturating_sub(instance_cache_before.misses),
+            "evictions_during_job": instance_cache_after.evictions.saturating_sub(instance_cache_before.evictions),
+            "entries_after_job": instance_cache_after.entries,
+            "resident_bytes_after_job": instance_cache_after.resident_bytes,
         },
         "write_ms": write_ms,
         "elapsed_ms": started.elapsed().as_secs_f64() * 1000.0,
