@@ -549,6 +549,11 @@ struct WasmPlanRow
     bool type_literal;
     bool call_base;
     bool discarded;
+    // A compound field store (`x.f += v`, `x.a.f += v`) whose receiver the
+    // compound read already consumed: the store reloads the receiver as this
+    // local plus receiver_offset bytes, else receiver is INVALID.
+    uint receiver;
+    uint receiver_offset;
 };
 
 void wasm_emit(uint opcode, uint immediate)
@@ -822,6 +827,13 @@ void wasm_plan_place_store(WasmPlanRow row)
     wasm_emit(wasm_store_opcode(core.type_id), 0u);
 }
 
+void wasm_emit_receiver(WasmPlanRow row)
+{
+    if (row.receiver == WASM_LIR_INVALID) return;
+    wasm_emit(WASM_LIR_OP_LOCAL_GET, row.receiver);
+    wasm_emit_offset(row.receiver_offset);
+}
+
 // A field projection: the base address is on the stack (and the value
 // above it for a store). The field's word offset is the shared layout's.
 void wasm_plan_field(WasmPlanRow row)
@@ -842,6 +854,7 @@ void wasm_plan_field(WasmPlanRow row)
             uint words = core.value_word_count;
             if (words == WASM_LIR_INVALID) { wasm_plan_unsupported = true; return; }
             wasm_emit(WASM_LIR_OP_LOCAL_SET, WASM_SYNTHETIC_I32_TEMP);
+            wasm_emit_receiver(row);
             wasm_emit_offset(delta);
             wasm_emit_copy_to_address(words, WASM_SYNTHETIC_I32_TEMP);
             return;
@@ -850,6 +863,7 @@ void wasm_plan_field(WasmPlanRow row)
         {
             wasm_emit(WASM_LIR_OP_LOCAL_SET, WASM_SYNTHETIC_I32_INDEX_TEMP);
             wasm_emit(WASM_LIR_OP_LOCAL_SET, WASM_SYNTHETIC_I32_TEMP);
+            wasm_emit_receiver(row);
             wasm_emit_offset(delta);
             wasm_emit(WASM_LIR_OP_LOCAL_SET, WASM_SYNTHETIC_I32_ADDRESS_TEMP);
             wasm_emit(WASM_LIR_OP_LOCAL_GET, WASM_SYNTHETIC_I32_ADDRESS_TEMP);
@@ -863,6 +877,7 @@ void wasm_plan_field(WasmPlanRow row)
         }
         uint temp = wasm_value_temp(core.type_id);
         wasm_emit(WASM_LIR_OP_LOCAL_SET, temp);
+        wasm_emit_receiver(row);
         wasm_emit_offset(delta);
         wasm_emit(WASM_LIR_OP_LOCAL_GET, temp);
         wasm_emit(wasm_store_opcode(core.type_id), 0u);
@@ -1371,6 +1386,33 @@ WasmPlanRow wasm_plan_row_at(uint scheduled_row, uint count,
     uint discarded_values = wasm_discarded_result_values(core,
         wasm_statement_call(hir_core, source_hir[semantic_row]));
     row.discarded = discarded_values != 0u;
+    row.receiver = WASM_LIR_INVALID;
+    row.receiver_offset = 0u;
+    uint compound_read = operands.c < count ? row_operands[operands.c].a : WASM_LIR_INVALID;
+    if (op == SEMANTIC_LIR_OP_STORE && (core.flags & SEMANTIC_LIR_FLAG_FIELD) != 0u &&
+        compound_read < count && opt_ir_op(cores[compound_read]) == SEMANTIC_LIR_OP_LOAD &&
+        row_operands[compound_read].a == operands.a)
+    {
+        // Walk the receiver's aggregate field projections to its local.
+        uint receiver = operands.a;
+        uint offset = 0u;
+        for (uint step = 0u; step < 64u && receiver < count; step += 1u)
+        {
+            OptIrNodeCore link = cores[receiver];
+            if (opt_ir_op(link) == SEMANTIC_LIR_OP_VALUE_GET)
+            {
+                row.receiver = row_operands[receiver].a;
+                row.receiver_offset = offset;
+                break;
+            }
+            if (opt_ir_op(link) != SEMANTIC_LIR_OP_LOAD ||
+                (link.flags & SEMANTIC_LIR_FLAG_FIELD) == 0u ||
+                !wasm_type_is_aggregate(link) || layout[receiver] > 0x0fffffffu)
+                break;
+            offset += wasm_word_delta(layout[receiver]);
+            receiver = row_operands[receiver].a;
+        }
+    }
     uint hir_count;
     hir_core.GetDimensions(hir_count, stride);
     uint node = source_hir[semantic_row];
