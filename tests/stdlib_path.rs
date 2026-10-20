@@ -67,6 +67,11 @@ fn main() {
             .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/path.lani")),
         "path manifest should include std::path from the stdlib root"
     );
+    assert_eq!(
+        manifest.standard_library_id,
+        Some(0),
+        "the stdlib-root loader names the library of stdlib-root files as the standard library"
+    );
     assert_eq!(manifest.files.len(), 2);
     assert!(
         runtime_bound_api_diagnostic_info("std::path::path_byte_is_ascii_letter").is_none(),

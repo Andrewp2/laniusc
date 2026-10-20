@@ -127,6 +127,7 @@ mod tests {
         let original = ExplicitSourcePackPathManifest {
             files: vec![file(0, 60), file(1, 40), file(2, 60), file(3, 40)],
             library_dependencies: Vec::new(),
+            standard_library_id: None,
         };
         let units = original.frontend_unit_plan(limits);
         assert_eq!(
@@ -144,6 +145,7 @@ mod tests {
         let edited = ExplicitSourcePackPathManifest {
             files: vec![file(0, 55), file(1, 40), file(2, 65), file(3, 35)],
             library_dependencies: Vec::new(),
+            standard_library_id: None,
         };
         let refreshed = stable
             .refresh(&edited, limits)
@@ -175,6 +177,7 @@ mod tests {
         let original = ExplicitSourcePackPathManifest {
             files: vec![file(0, 60), file(1, 40), file(2, 60)],
             library_dependencies: Vec::new(),
+            standard_library_id: None,
         };
         let stable = StableUnitPlan {
             sources: StableUnitPlan::source_identities(&original),
@@ -183,6 +186,7 @@ mod tests {
         let edited = ExplicitSourcePackPathManifest {
             files: vec![file(0, 61), file(1, 40), file(2, 59)],
             library_dependencies: Vec::new(),
+            standard_library_id: None,
         };
         assert!(stable.refresh(&edited, limits).is_none());
     }

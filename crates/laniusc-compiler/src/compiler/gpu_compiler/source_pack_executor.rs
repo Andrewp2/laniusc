@@ -9,6 +9,9 @@ pub struct GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
     pub(super) compiler: &'compiler GpuCompiler<'gpu>,
     pub(super) artifact_root: PathBuf,
     pub(super) target: SourcePackArtifactTarget,
+    /// The manifest's standard library (`standard_library_id`), whose units a
+    /// project cache clear keeps.
+    pub(super) standard_library_id: Option<u32>,
 }
 
 /// In-flight library-interface descriptor build state.
@@ -191,7 +194,14 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
             compiler,
             artifact_root: artifact_root.into(),
             target,
+            standard_library_id: None,
         }
+    }
+
+    /// Names the manifest's standard library (its `standard_library_id`).
+    pub(super) fn with_standard_library(mut self, standard_library_id: Option<u32>) -> Self {
+        self.standard_library_id = standard_library_id;
+        self
     }
 
     /// Returns the GPU compiler used to validate frontend interface jobs.
@@ -266,6 +276,7 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                     .compile_cached_path_source_pack_unit(
                         self.target,
                         &handle.job,
+                        self.standard_library_id == Some(handle.job.library_id),
                         &handle.source_files,
                         dependency_pages.into(),
                     )

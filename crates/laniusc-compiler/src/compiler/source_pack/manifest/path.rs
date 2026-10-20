@@ -40,6 +40,7 @@ impl SourcePackPathBuildManifest {
         Ok(ExplicitSourcePackPathManifest {
             files: self.source_files.clone(),
             library_dependencies: self.library_dependencies.clone(),
+            standard_library_id: None,
         })
     }
 
