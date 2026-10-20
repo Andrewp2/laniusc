@@ -38,7 +38,8 @@ public RWStructuredBuffer<uint4> instance_closure_instances;
 public RWStructuredBuffer<uint2> instance_closure_refs;
 // The routed target of each instance a bound-member edge found (03c):
 // (function start token, native symbol, specialization symbol, type
-// parameters), as host retention reads a routed call (generic_calls.rs);
+// parameters | constant parameters << 16), as host retention reads a
+// routed call (generic_calls.rs);
 // all INVALID for an instance of a direct call.
 public RWStructuredBuffer<uint4> instance_closure_targets;
 // Edges: the first call (+1) of each generic function row, and the next

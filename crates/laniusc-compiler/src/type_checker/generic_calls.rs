@@ -3201,7 +3201,8 @@ enum ClosureTemplate<'a> {
 /// call site with the routed local target, as host retention reads the call
 /// once a replay routes it (`CheckedGenericTarget::Local` of a method).
 fn routed_closure_template(call_hir: u32, source_span: [u32; 2], target: [u32; 4]) -> CheckedGenericCall {
-    let [function_start_token, native_symbol, specialization_symbol, types] = target;
+    let [function_start_token, native_symbol, specialization_symbol, counts] = target;
+    let (types, constants) = (counts & 0xffff, counts >> 16);
     CheckedGenericCall {
         call_hir,
         source_span,
@@ -3213,7 +3214,7 @@ fn routed_closure_template(call_hir: u32, source_span: [u32; 2], target: [u32; 4
         },
         arguments: Vec::new(),
         constants: Vec::new(),
-        required_constant_parameters: Some(0),
+        required_constant_parameters: Some(constants),
         required_generic_parameters: Some(types),
     }
 }
