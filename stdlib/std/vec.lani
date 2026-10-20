@@ -1,33 +1,514 @@
-// Associated empty-vector operations execute through normal imports on x86.
-// Free new runs with an annotated result, and free len and is_empty infer
-// scalar arguments from imported Vec values. No mutation API is offered: the
-// former push silently discarded elements. Concrete vectors use the allocator
-// service.
+// Owned, allocation-backed vector of any element type.
+// Values are copied: every operation that changes a vector returns the new
+// vector. Ownership is linear by convention: keep only the newest returned
+// Vec, and do not use it after destroy. The language cannot enforce moves yet.
+// A try_ operation that fails (allocation failure, or an index out of range)
+// returns the vector unchanged; compare len or capacity to detect it. push and
+// reserve panic instead.
+// Element positions inside the storage depend on its capacity
+// (core::mem::typed_slice_from_storage), so growth copies each element into a
+// fresh allocation rather than reallocating the bytes.
 module std::vec;
+import alloc::allocator;
+import core::cmp;
+import core::mem;
+import core::option;
+import core::panic;
+
 pub struct Vec<T> {
-    len: i32,
+    storage: ptr,
+    length: i32,
+    reserved: i32,
 }
+
+// i32 indexing limits the element count; byte sizes must also fit an i32.
+pub const MAX_CAPACITY: i32 = 2147483647;
+const MAX_BYTES: usize = 2147483647;
+const ALIGN: usize = 8;
+
 pub fn new<T>() -> Vec<T> {
-    return Vec {
-        len: 0
-    };
+    let empty: ptr = 0;
+    return Vec { storage: empty, length: 0, reserved: 0 };
 }
+
 pub fn len<T>(value: Vec<T>) -> i32 {
-    return value.len;
+    return value.length;
 }
+
+pub fn capacity<T>(value: Vec<T>) -> i32 {
+    return value.reserved;
+}
+
 pub fn is_empty<T>(value: Vec<T>) -> bool {
-    return value.len == 0;
+    return value.length == 0;
 }
+
+// The largest capacity whose storage fits MAX_BYTES.
+fn capacity_limit<T>() -> i32 {
+    let size: usize = core::mem::size_of<T>();
+    if (size == 0) {
+        return MAX_CAPACITY;
+    }
+    return (MAX_BYTES / size) as i32;
+}
+
+// Grow storage to hold at least minimum_capacity elements. A negative or
+// oversized request, or allocation failure, returns the vector unchanged.
+pub fn try_reserve<T>(value: Vec<T>, minimum_capacity: i32) -> Vec<T> {
+    if (minimum_capacity <= value.reserved) {
+        return value;
+    }
+    if (minimum_capacity > capacity_limit<T>()) {
+        return value;
+    }
+    let size: usize = core::mem::size_of<T>();
+    if (size == 0) {
+        return Vec { storage: value.storage, length: value.length, reserved: MAX_CAPACITY };
+    }
+    let next: ptr = alloc::allocator::alloc(size * (minimum_capacity as usize), ALIGN);
+    if (next == 0) {
+        return value;
+    }
+    if (value.reserved > 0) {
+        let from: [T] = core::mem::typed_slice_from_storage(value.storage, value.reserved);
+        let to: [T] = core::mem::typed_slice_from_storage(next, minimum_capacity);
+        let index: i32 = 0;
+        while (index < value.length) {
+            to[index] = from[index];
+            index += 1;
+        }
+        alloc::allocator::dealloc(value.storage, size * (value.reserved as usize), ALIGN);
+    }
+    return Vec { storage: next, length: value.length, reserved: minimum_capacity };
+}
+
+pub fn reserve<T>(value: Vec<T>, minimum_capacity: i32) -> Vec<T> {
+    let next: Vec<T> = try_reserve(value, minimum_capacity);
+    if (next.reserved < minimum_capacity) {
+        core::panic::panic();
+    }
+    return next;
+}
+
+// An empty vector; capacity(result) is below the request when allocation
+// failed.
+pub fn try_with_capacity<T>(initial_capacity: i32) -> Vec<T> {
+    let empty: Vec<T> = new();
+    return try_reserve(empty, initial_capacity);
+}
+
+// The capacity to grow to when one more element than reserved is needed:
+// double, starting at 4.
+fn grown_capacity<T>(value: Vec<T>, needed: i32) -> i32 {
+    let limit: i32 = capacity_limit<T>();
+    let target: i32 = 4;
+    if (value.reserved > 0) {
+        if (value.reserved > limit / 2) {
+            target = limit;
+        } else {
+            target = value.reserved * 2;
+        }
+    }
+    if (target < needed) {
+        target = needed;
+    }
+    return target;
+}
+
+// Every slot of the storage, initialized or not.
+fn slots<T>(value: Vec<T>) -> [T] {
+    return core::mem::typed_slice_from_storage(value.storage, value.reserved);
+}
+
+pub fn try_push<T>(value: Vec<T>, item: T) -> Vec<T> {
+    if (value.length == MAX_CAPACITY) {
+        return value;
+    }
+    let grown: Vec<T> = value;
+    if (grown.length == grown.reserved) {
+        let target: i32 = grown_capacity(grown, grown.length + 1);
+        grown = try_reserve(grown, target);
+        if (grown.length == grown.reserved) {
+            return value;
+        }
+    }
+    let items: [T] = slots(grown);
+    items[grown.length] = item;
+    return Vec { storage: grown.storage, length: grown.length + 1, reserved: grown.reserved };
+}
+
+pub fn push<T>(value: Vec<T>, item: T) -> Vec<T> {
+    let next: Vec<T> = try_push(value, item);
+    if (next.length == value.length) {
+        core::panic::panic();
+    }
+    return next;
+}
+
+// Append the first count items of a slice. Growth happens before any write,
+// so failure leaves the vector unchanged. items must not view this vector's
+// storage, which growth may free.
+pub fn try_extend_from_slice<T>(value: Vec<T>, items: [T], count: i32) -> Vec<T> {
+    if (count <= 0 || count > MAX_CAPACITY - value.length) {
+        return value;
+    }
+    let needed: i32 = value.length + count;
+    let grown: Vec<T> = value;
+    if (grown.reserved < needed) {
+        let target: i32 = grown_capacity(grown, needed);
+        grown = try_reserve(grown, target);
+        if (grown.reserved < needed) {
+            return value;
+        }
+    }
+    let to: [T] = slots(grown);
+    let index: i32 = 0;
+    while (index < count) {
+        to[grown.length + index] = items[index];
+        index += 1;
+    }
+    return Vec { storage: grown.storage, length: needed, reserved: grown.reserved };
+}
+
+// The initialized elements as a slice over the vector's storage. The view is
+// valid until the next operation that can grow, shrink or destroy the vector.
+pub fn as_slice<T>(value: Vec<T>) -> [T] {
+    return core::mem::typed_prefix_from_storage(value.storage, value.reserved, value.length);
+}
+
+pub fn get<T>(value: Vec<T>, index: i32) -> core::option::Option<T> {
+    if (index < 0 || index >= value.length) {
+        return core::option::None();
+    }
+    let items: [T] = slots(value);
+    return core::option::Some(items[index]);
+}
+
+pub fn get_or<T>(value: Vec<T>, index: i32, fallback: T) -> T {
+    if (index < 0 || index >= value.length) {
+        return fallback;
+    }
+    let items: [T] = slots(value);
+    return items[index];
+}
+
+// An index outside 0..len traps, as slice indexing does.
+pub fn at<T>(value: Vec<T>, index: i32) -> T {
+    let items: [T] = as_slice(value);
+    return items[index];
+}
+
+// first and last repeat get's body: returning get's Option<T> from another
+// generic function fails (tests/fixtures/generics_backlog b13).
+pub fn first<T>(value: Vec<T>) -> core::option::Option<T> {
+    if (value.length == 0) {
+        return core::option::None();
+    }
+    let items: [T] = slots(value);
+    return core::option::Some(items[0]);
+}
+
+pub fn last<T>(value: Vec<T>) -> core::option::Option<T> {
+    if (value.length == 0) {
+        return core::option::None();
+    }
+    let items: [T] = slots(value);
+    return core::option::Some(items[value.length - 1]);
+}
+
+pub fn try_set<T>(value: Vec<T>, index: i32, item: T) -> Vec<T> {
+    if (index < 0 || index >= value.length) {
+        return value;
+    }
+    let items: [T] = slots(value);
+    items[index] = item;
+    return value;
+}
+
+// Remove the last element; an empty vector is returned unchanged. Read last
+// first when the removed element is needed.
+pub fn try_pop<T>(value: Vec<T>) -> Vec<T> {
+    if (value.length == 0) {
+        return value;
+    }
+    return Vec { storage: value.storage, length: value.length - 1, reserved: value.reserved };
+}
+
+// Insert before index (0..=len), shifting later elements up by one.
+pub fn try_insert<T>(value: Vec<T>, index: i32, item: T) -> Vec<T> {
+    if (index < 0 || index > value.length || value.length == MAX_CAPACITY) {
+        return value;
+    }
+    let grown: Vec<T> = value;
+    if (grown.length == grown.reserved) {
+        let target: i32 = grown_capacity(grown, grown.length + 1);
+        grown = try_reserve(grown, target);
+        if (grown.length == grown.reserved) {
+            return value;
+        }
+    }
+    let items: [T] = slots(grown);
+    let cursor: i32 = grown.length;
+    while (cursor > index) {
+        items[cursor] = items[cursor - 1];
+        cursor -= 1;
+    }
+    items[index] = item;
+    return Vec { storage: grown.storage, length: grown.length + 1, reserved: grown.reserved };
+}
+
+// Remove the element at index, shifting later elements down by one.
+pub fn try_remove<T>(value: Vec<T>, index: i32) -> Vec<T> {
+    if (index < 0 || index >= value.length) {
+        return value;
+    }
+    let items: [T] = slots(value);
+    let cursor: i32 = index;
+    while (cursor + 1 < value.length) {
+        items[cursor] = items[cursor + 1];
+        cursor += 1;
+    }
+    return Vec { storage: value.storage, length: value.length - 1, reserved: value.reserved };
+}
+
+// Remove the element at index by moving the last element into its place.
+pub fn try_swap_remove<T>(value: Vec<T>, index: i32) -> Vec<T> {
+    if (index < 0 || index >= value.length) {
+        return value;
+    }
+    let items: [T] = slots(value);
+    items[index] = items[value.length - 1];
+    return Vec { storage: value.storage, length: value.length - 1, reserved: value.reserved };
+}
+
+// Keep the first length elements; a longer or negative length changes nothing.
+pub fn truncate<T>(value: Vec<T>, length: i32) -> Vec<T> {
+    if (length < 0 || length >= value.length) {
+        return value;
+    }
+    return Vec { storage: value.storage, length: length, reserved: value.reserved };
+}
+
+pub fn clear<T>(value: Vec<T>) -> Vec<T> {
+    return Vec { storage: value.storage, length: 0, reserved: value.reserved };
+}
+
+// Set the length to new_len. Growing fills the new elements with fill;
+// shrinking keeps the prefix and the allocation. A negative length or
+// allocation failure returns the vector unchanged.
+pub fn try_resize<T>(value: Vec<T>, new_len: i32, fill: T) -> Vec<T> {
+    if (new_len < 0) {
+        return value;
+    }
+    if (new_len <= value.length) {
+        return Vec { storage: value.storage, length: new_len, reserved: value.reserved };
+    }
+    let grown: Vec<T> = value;
+    if (grown.reserved < new_len) {
+        grown = try_reserve(grown, new_len);
+        if (grown.reserved < new_len) {
+            return value;
+        }
+    }
+    let items: [T] = slots(grown);
+    let index: i32 = grown.length;
+    while (index < new_len) {
+        items[index] = fill;
+        index += 1;
+    }
+    return Vec { storage: grown.storage, length: new_len, reserved: grown.reserved };
+}
+
+// Reduce capacity to len; an empty vector releases its allocation. Allocation
+// failure returns the vector unchanged.
+pub fn try_shrink_to_fit<T>(value: Vec<T>) -> Vec<T> {
+    let size: usize = core::mem::size_of<T>();
+    if (value.reserved == value.length || size == 0) {
+        return value;
+    }
+    if (value.length == 0) {
+        destroy(value);
+        let empty: Vec<T> = new();
+        return empty;
+    }
+    let next: ptr = alloc::allocator::alloc(size * (value.length as usize), ALIGN);
+    if (next == 0) {
+        return value;
+    }
+    let from: [T] = slots(value);
+    let to: [T] = core::mem::typed_slice_from_storage(next, value.length);
+    let index: i32 = 0;
+    while (index < value.length) {
+        to[index] = from[index];
+        index += 1;
+    }
+    alloc::allocator::dealloc(value.storage, size * (value.reserved as usize), ALIGN);
+    return Vec { storage: next, length: value.length, reserved: value.length };
+}
+
+pub fn reverse<T>(value: Vec<T>) -> Vec<T> {
+    let items: [T] = slots(value);
+    let low: i32 = 0;
+    let high: i32 = value.length - 1;
+    while (low < high) {
+        let held: T = items[low];
+        items[low] = items[high];
+        items[high] = held;
+        low += 1;
+        high -= 1;
+    }
+    return value;
+}
+
+// An independent copy with capacity equal to len. An empty source clones
+// without allocating; otherwise len(result) < len(value) means allocation
+// failed.
+pub fn try_clone<T>(value: Vec<T>) -> Vec<T> {
+    let copy: Vec<T> = try_with_capacity(value.length);
+    if (copy.reserved < value.length) {
+        let empty: Vec<T> = new();
+        return empty;
+    }
+    let from: [T] = slots(value);
+    let to: [T] = slots(copy);
+    let index: i32 = 0;
+    while (index < value.length) {
+        to[index] = from[index];
+        index += 1;
+    }
+    return Vec { storage: copy.storage, length: value.length, reserved: copy.reserved };
+}
+
+// Release the storage. The vector must not be used afterwards.
+pub fn destroy<T>(value: Vec<T>) {
+    let size: usize = core::mem::size_of<T>();
+    if (value.reserved > 0 && size > 0) {
+        alloc::allocator::dealloc(value.storage, size * (value.reserved as usize), ALIGN);
+    }
+}
+
+// The index of the first element equal to item, or -1.
+pub fn index_of<T>(value: Vec<T>, item: T) -> i32 where T: core::cmp::Eq<T> {
+    let items: [T] = slots(value);
+    let index: i32 = 0;
+    while (index < value.length) {
+        if (T::eq(items[index], item)) {
+            return index;
+        }
+        index += 1;
+    }
+    return -1;
+}
+
+pub fn contains<T>(value: Vec<T>, item: T) -> bool where T: core::cmp::Eq<T> {
+    return index_of(value, item) >= 0;
+}
+
+// Move items[root] down the max-heap that holds items[0..count).
+fn sift_down<T>(items: [T], root: i32, count: i32) where T: core::cmp::Ord<T> {
+    let parent: i32 = root;
+    while (parent * 2 + 1 < count) {
+        let child: i32 = parent * 2 + 1;
+        if (child + 1 < count && T::lt(items[child], items[child + 1])) {
+            child += 1;
+        }
+        if (!T::lt(items[parent], items[child])) {
+            return;
+        }
+        let held: T = items[parent];
+        items[parent] = items[child];
+        items[child] = held;
+        parent = child;
+    }
+}
+
+// Sort ascending in place with heapsort: O(n log n), no allocation, and not
+// stable (equal elements may change order).
+pub fn sort<T>(value: Vec<T>) -> Vec<T> where T: core::cmp::Ord<T> {
+    let items: [T] = slots(value);
+    let start: i32 = value.length / 2;
+    while (start > 0) {
+        start -= 1;
+        sift_down(items, start, value.length);
+    }
+    let end: i32 = value.length;
+    while (end > 1) {
+        end -= 1;
+        let held: T = items[0];
+        items[0] = items[end];
+        items[end] = held;
+        sift_down(items, 0, end);
+    }
+    return value;
+}
+
+pub fn is_sorted<T>(value: Vec<T>) -> bool where T: core::cmp::Ord<T> {
+    let items: [T] = slots(value);
+    let index: i32 = 1;
+    while (index < value.length) {
+        if (T::lt(items[index], items[index - 1])) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+// The search functions need the elements in nondecreasing order.
+// lower_bound is the first index whose element is not less than needle, or
+// len; upper_bound is the first index whose element is greater, or len.
+pub fn lower_bound<T>(value: Vec<T>, needle: T) -> i32 where T: core::cmp::Ord<T> {
+    let items: [T] = slots(value);
+    let low: i32 = 0;
+    let high: i32 = value.length;
+    while (low < high) {
+        let middle: i32 = low + (high - low) / 2;
+        if (T::lt(items[middle], needle)) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
+
+pub fn upper_bound<T>(value: Vec<T>, needle: T) -> i32 where T: core::cmp::Ord<T> {
+    let items: [T] = slots(value);
+    let low: i32 = 0;
+    let high: i32 = value.length;
+    while (low < high) {
+        let middle: i32 = low + (high - low) / 2;
+        if (T::lt(needle, items[middle])) {
+            high = middle;
+        } else {
+            low = middle + 1;
+        }
+    }
+    return low;
+}
+
+// The first index holding needle in a sorted vector, or -1.
+pub fn binary_search<T>(value: Vec<T>, needle: T) -> i32 where T: core::cmp::Ord<T> {
+    let index: i32 = lower_bound(value, needle);
+    if (index == value.length) {
+        return -1;
+    }
+    let items: [T] = slots(value);
+    if (T::lt(needle, items[index])) {
+        return -1;
+    }
+    return index;
+}
+
 impl<T>Vec<T> {
     pub fn new() -> Vec<T> {
-        return Vec {
-            len: 0
-        };
+        let empty: ptr = 0;
+        return Vec { storage: empty, length: 0, reserved: 0 };
     }
     pub fn len(&self) -> i32 {
-        return self.len;
+        return self.length;
     }
     pub fn is_empty(&self) -> bool {
-        return self.len == 0;
+        return self.length == 0;
     }
 }

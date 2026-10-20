@@ -6,57 +6,54 @@ import core::wide_u64;
 import std::io_byte;
 import std::io_decimal;
 import std::io_line;
-import std::vec_u32;
+import std::vec;
 
 fn main() -> i32 {
     let line: [i32; 20] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     let upper: core::wide_u64::WideU64 = core::wide_u64::from_u32(4294967295);
     let zero: core::wide_u64::WideU64 = core::wide_u64::zero();
-    let readings: std::vec_u32::VecU32 = std::vec_u32::new();
+    let readings: std::vec::Vec<u32> = std::vec::new();
     while (true) {
         let length: i32 = std::io_line::read_stdin_lf_line_into_i32(line, 20);
         if (length == -1) { break; }
         if (length <= 0) {
-            std::vec_u32::destroy(readings);
+            std::vec::destroy(readings);
             return 2;
         }
         if (!core::wide_u64::can_parse_ascii_decimal(line, length)) {
-            std::vec_u32::destroy(readings);
+            std::vec::destroy(readings);
             return 3;
         }
         let parsed: core::wide_u64::WideU64 = core::wide_u64::parse_ascii_decimal_or(line, length, zero);
         if (core::wide_u64::compare(parsed, upper) > 0) {
-            std::vec_u32::destroy(readings);
+            std::vec::destroy(readings);
             return 3;
         }
         let number: u32 = core::wide_u64::low_word(parsed);
-        let before: i32 = std::vec_u32::len(readings);
-        readings = std::vec_u32::try_push(readings, number);
-        if (std::vec_u32::len(readings) != before + 1) {
-            std::vec_u32::destroy(readings);
+        let before: i32 = std::vec::len(readings);
+        readings = std::vec::try_push(readings, number);
+        if (std::vec::len(readings) != before + 1) {
+            std::vec::destroy(readings);
             return 4;
         }
     }
-    if (std::vec_u32::len(readings) == 0) {
-        std::vec_u32::destroy(readings);
+    if (std::vec::len(readings) == 0) {
+        std::vec::destroy(readings);
         return 2;
     }
-    let count: i32 = std::vec_u32::len(readings);
-    if (std::vec_u32::sort_in_place(readings) != count) {
-        std::vec_u32::destroy(readings);
-        return 4;
-    }
+    let count: i32 = std::vec::len(readings);
+    readings = std::vec::sort(readings);
     let middle: i32 = count / 2;
-    let median: u32 = std::vec_u32::get_or(readings, middle, 0);
-    let first: i32 = std::vec_u32::lower_bound(readings, median);
-    let after: i32 = std::vec_u32::upper_bound(readings, median);
+    let median: u32 = std::vec::get_or(readings, middle, 0);
+    let first: i32 = std::vec::lower_bound(readings, median);
+    let after: i32 = std::vec::upper_bound(readings, median);
     if (std::io_decimal::write_u32(1, median) <= 0 ||
         !std::io_byte::write_stdout_byte(32) ||
         std::io_decimal::write_i32(1, after - first) <= 0 ||
         !std::io_byte::write_stdout_byte(10)) {
-        std::vec_u32::destroy(readings);
+        std::vec::destroy(readings);
         return 5;
     }
-    std::vec_u32::destroy(readings);
+    std::vec::destroy(readings);
     return 0;
 }

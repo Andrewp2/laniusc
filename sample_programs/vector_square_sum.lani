@@ -1,17 +1,17 @@
 // Build a growable sequence of the first ten squares and print their sum.
 module app::main;
-import std::vec_i32;
+import std::vec;
 import core::number_i32;
 import std::io;
 
 fn main() -> i32 {
-    let squares: std::vec_i32::VecI32 = std::vec_i32::new();
+    let squares: std::vec::Vec<i32> = std::vec::new();
     let number: i32 = 0;
     while (number < 10) {
-        let before: i32 = std::vec_i32::len(squares);
-        squares = std::vec_i32::try_push(squares, number * number);
-        if (std::vec_i32::len(squares) != before + 1) {
-            std::vec_i32::destroy(squares);
+        let before: i32 = std::vec::len(squares);
+        squares = std::vec::try_push(squares, number * number);
+        if (std::vec::len(squares) != before + 1) {
+            std::vec::destroy(squares);
             return 1;
         }
         number = number + 1;
@@ -19,12 +19,12 @@ fn main() -> i32 {
 
     let sum: i32 = 0;
     let index: i32 = 0;
-    while (index < std::vec_i32::len(squares)) {
+    while (index < std::vec::len(squares)) {
         sum = core::number_i32::saturating_add(
-            sum, std::vec_i32::get_or(squares, index, 0));
+            sum, std::vec::get_or(squares, index, 0));
         index = index + 1;
     }
-    std::vec_i32::destroy(squares);
+    std::vec::destroy(squares);
     std::io::print_i32(sum);
     return 0;
 }

@@ -1,0 +1,12 @@
+import std::vec;
+import core::wide_i64;
+// A generic stdlib body (std::vec::is_sorted, bound T: core::cmp::Ord<T>)
+// instantiated with a stdlib type whose impl lives in its own module
+// (core::wide_i64), not in the trait's module and not in the root.
+fn main() -> i32 {
+    let v: std::vec::Vec<core::wide_i64::WideI64> = std::vec::new();
+    v = std::vec::push(v, core::wide_i64::from_i32(1));
+    v = std::vec::push(v, core::wide_i64::from_i32(2));
+    if (!std::vec::is_sorted(v)) { return 1; }
+    return 42;
+}

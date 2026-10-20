@@ -1,12 +1,12 @@
 // expect: 0
-// Imported nominal (std::vec_char::VecChar) at an imported call: a match.
+// Imported nominal (std::vec::Vec<char>) at an imported call: a match.
 module app::main;
-import std::vec_char;
+import std::vec;
 enum Pick { Left, Right }
 fn main() -> i32 {
-    let a: std::vec_char::VecChar = std::vec_char::new();
-    let b: std::vec_char::VecChar = std::vec_char::new();
+    let a: std::vec::Vec<char> = std::vec::new();
+    let b: std::vec::Vec<char> = std::vec::new();
     let p: Pick = Right;
-    if (std::vec_char::len(match (p) { Left -> a, Right -> b }) != 0) { return 1; }
+    if (std::vec::len(match (p) { Left -> a, Right -> b }) != 0) { return 1; }
     return 0;
 }

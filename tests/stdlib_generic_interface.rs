@@ -220,8 +220,16 @@ fn non_generic_public_methods_are_exported_under_inherent_implementations() {
 #[test]
 fn generic_vec_public_methods_remain_exported_under_inherent_implementations() {
     let artifact =
-        common::semantic_interface_with_timeout(0, &[include_str!("../stdlib/std/vec.lani")])
-            .expect("export Vec interface");
+        common::semantic_interface_with_timeout(0, &[
+            include_str!("../stdlib/alloc/allocator.lani"),
+            include_str!("../stdlib/core/cmp.lani"),
+            include_str!("../stdlib/core/mem.lani"),
+            include_str!("../stdlib/core/result_bool.lani"),
+            include_str!("../stdlib/core/option.lani"),
+            include_str!("../stdlib/core/panic.lani"),
+            include_str!("../stdlib/std/vec.lani"),
+        ])
+        .expect("export Vec interface");
     let implementations = inherent_implementations(&artifact, "Vec");
     assert_eq!(implementations.len(), 1, "one lexical Vec implementation");
     let members = implementation_members(&artifact, implementations[0]);

@@ -1,0 +1,85 @@
+// Sort and search std::vec::Vec<T> through T's core::cmp impls: every
+// integer width at its extremes, char, and a user record. Exits 0; any
+// other code names the type (tens) and the check (units).
+module app::main;
+import std::vec;
+import core::cmp;
+
+struct Score { points: i32, id: i32 }
+
+pub impl core::cmp::Eq<Score> for Score {
+    pub fn eq(left: Score, right: Score) -> bool { return left.points == right.points; }
+    pub fn ne(left: Score, right: Score) -> bool { return left.points != right.points; }
+}
+
+pub impl core::cmp::Ord<Score> for Score {
+    pub fn lt(left: Score, right: Score) -> bool { return left.points < right.points; }
+    pub fn le(left: Score, right: Score) -> bool { return left.points <= right.points; }
+    pub fn gt(left: Score, right: Score) -> bool { return left.points > right.points; }
+    pub fn ge(left: Score, right: Score) -> bool { return left.points >= right.points; }
+}
+
+// items holds one duplicate pair; sorted_first and sorted_last are the
+// extremes, needle is present and absent is not.
+fn check<T>(items: [T; 6], sorted_first: T, sorted_last: T, needle: T, absent: T) -> i32
+    where T: core::cmp::Ord<T>, T: core::cmp::Eq<T> {
+    let v: std::vec::Vec<T> = std::vec::new();
+    v = std::vec::try_extend_from_slice(v, items, 6);
+    if (std::vec::is_sorted(v)) { return 1; }
+    v = std::vec::sort(v);
+    if (!std::vec::is_sorted(v)) { return 2; }
+    if (!T::eq(std::vec::at(v, 0), sorted_first) || !T::eq(std::vec::at(v, 5), sorted_last)) { return 3; }
+    let found: i32 = std::vec::binary_search(v, needle);
+    if (found < 0 || !T::eq(std::vec::at(v, found), needle)) { return 4; }
+    if (std::vec::binary_search(v, absent) != -1) { return 5; }
+    if (!std::vec::contains(v, needle) || std::vec::contains(v, absent)) { return 6; }
+    if (std::vec::index_of(v, sorted_last) != 5 || std::vec::index_of(v, absent) != -1) { return 7; }
+    if (std::vec::lower_bound(v, sorted_first) != 0 || std::vec::upper_bound(v, sorted_last) != 6) { return 8; }
+    if (std::vec::upper_bound(v, needle) - std::vec::lower_bound(v, needle) != 2) { return 9; }
+    std::vec::destroy(v);
+    return 0;
+}
+
+fn main() -> i32 {
+    let a: [i8; 6] = [3, -128, 127, 0, -1, 3];
+    let r: i32 = check(a, -128, 127, 3, 4);
+    if (r != 0) { return 10 + r; }
+    let b: [i16; 6] = [500, -32768, 32767, 500, -1, 3];
+    r = check(b, -32768, 32767, 500, 4);
+    if (r != 0) { return 20 + r; }
+    let c: [u8; 6] = [9, 0, 255, 9, 1, 3];
+    r = check(c, 0, 255, 9, 4);
+    if (r != 0) { return 30 + r; }
+    let d: [u16; 6] = [9, 0, 65535, 9, 1, 3];
+    r = check(d, 0, 65535, 9, 4);
+    if (r != 0) { return 40 + r; }
+    let e: [u32; 6] = [9, 0, 4294967295, 9, 1, 3];
+    r = check(e, 0, 4294967295, 9, 4);
+    if (r != 0) { return 50 + r; }
+    let f: [i64; 6] = [3, -9223372036854775808, 9223372036854775807, 0, -1, 3];
+    r = check(f, -9223372036854775808, 9223372036854775807, 3, 4);
+    if (r != 0) { return 60 + r; }
+    let g: [u64; 6] = [9, 0, 18446744073709551615, 9, 1, 3];
+    r = check(g, 0, 18446744073709551615, 9, 4);
+    if (r != 0) { return 70 + r; }
+    let h: [char; 6] = ['z', 'a', 'q', 'q', '😀', 'c'];
+    r = check(h, 'a', '😀', 'q', 'd');
+    if (r != 0) { return 80 + r; }
+    let k: [i32; 6] = [4, -2147483648, 2147483647, 0, 4, 2];
+    r = check(k, -2147483648, 2147483647, 4, 5);
+    if (r != 0) { return 90 + r; }
+    let s: [Score; 6] = [Score { points: 30, id: 1 }, Score { points: 10, id: 2 }, Score { points: 20, id: 3 },
+        Score { points: 20, id: 4 }, Score { points: 50, id: 5 }, Score { points: 0, id: 6 }];
+    r = check(s, Score { points: 0, id: 0 }, Score { points: 50, id: 0 }, Score { points: 20, id: 0 },
+        Score { points: 15, id: 0 });
+    if (r != 0) { return 100 + r; }
+
+    // bool has two values, so it gets its own case.
+    let flags: std::vec::Vec<bool> = std::vec::new();
+    flags = std::vec::push(flags, true);
+    flags = std::vec::push(flags, false);
+    flags = std::vec::push(flags, true);
+    flags = std::vec::sort(flags);
+    if (std::vec::at(flags, 0) || !std::vec::at(flags, 2) || std::vec::lower_bound(flags, true) != 1) { return 120; }
+    return 0;
+}

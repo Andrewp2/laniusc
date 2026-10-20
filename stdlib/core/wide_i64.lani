@@ -1,6 +1,7 @@
 // Signed 64-bit two's-complement arithmetic represented as two u32 words.
 // This avoids the current native i64 literal and high-bit arithmetic path.
 module core::wide_i64;
+import core::cmp;
 import core::wide_u64;
 
 pub struct WideI64 {
@@ -276,4 +277,16 @@ pub fn parse_ascii_decimal_or(values: [i32], len: i32, fallback: WideI64) -> Wid
         core::wide_u64::low_word(magnitude));
     if (negative) { return wrapping_neg(result); }
     return result;
+}
+
+pub impl core::cmp::Eq<WideI64> for WideI64 {
+    pub fn eq(left: WideI64, right: WideI64) -> bool { return compare(left, right) == 0; }
+    pub fn ne(left: WideI64, right: WideI64) -> bool { return compare(left, right) != 0; }
+}
+
+pub impl core::cmp::Ord<WideI64> for WideI64 {
+    pub fn lt(left: WideI64, right: WideI64) -> bool { return compare(left, right) < 0; }
+    pub fn le(left: WideI64, right: WideI64) -> bool { return compare(left, right) <= 0; }
+    pub fn gt(left: WideI64, right: WideI64) -> bool { return compare(left, right) > 0; }
+    pub fn ge(left: WideI64, right: WideI64) -> bool { return compare(left, right) >= 0; }
 }

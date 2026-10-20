@@ -809,24 +809,6 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"2\n",
         ),
         (
-            "vec_i32",
-            "tests/fixtures/stdlib_foundation/vec_i32.lani",
-            0,
-            b"",
-        ),
-        (
-            "vec_i32_extend_bounds",
-            "tests/fixtures/stdlib_foundation/vec_i32_extend_bounds.lani",
-            101,
-            b"",
-        ),
-        (
-            "vec_u32",
-            "tests/fixtures/stdlib_foundation/vec_u32.lani",
-            0,
-            b"",
-        ),
-        (
             "vec_u8",
             "tests/fixtures/stdlib_foundation/vec_u8.lani",
             0,
@@ -899,30 +881,6 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
-            "vec_i8",
-            "tests/fixtures/stdlib_foundation/vec_i8.lani",
-            0,
-            b"",
-        ),
-        (
-            "vec_u16",
-            "tests/fixtures/stdlib_foundation/vec_u16.lani",
-            0,
-            b"",
-        ),
-        (
-            "vec_i16",
-            "tests/fixtures/stdlib_foundation/vec_i16.lani",
-            0,
-            b"",
-        ),
-        (
-            "vec_bool",
-            "tests/fixtures/stdlib_foundation/vec_bool.lani",
-            0,
-            b"",
-        ),
-        (
             "vector_unsigned_checksum",
             "sample_programs/vector_unsigned_checksum.lani",
             0,
@@ -957,6 +915,24 @@ fn portable_stdlib_helpers_execute_on_x86() {
             "sample_programs/vector_true_count.lani",
             0,
             b"2\n",
+        ),
+        (
+            "std_vec",
+            "tests/fixtures/stdlib_foundation/std_vec.lani",
+            0,
+            b"eps\nalpha\ntwo\n",
+        ),
+        (
+            "std_vec_order",
+            "tests/fixtures/stdlib_foundation/std_vec_order.lani",
+            0,
+            b"",
+        ),
+        (
+            "std_vec_at_out_of_range",
+            "tests/fixtures/stdlib_foundation/std_vec_at_out_of_range.lani",
+            101,
+            b"",
         ),
         (
             "vector_square_sum",
@@ -1696,107 +1672,24 @@ fn executable_core_function_surface_has_runtime_cases() {
         );
     }
 
-    let vector_additional_fixtures = [
-        include_str!("fixtures/stdlib_foundation/vec_truncate_all.lani"),
-        include_str!("fixtures/stdlib_foundation/vec_resize_all.lani"),
-        include_str!("fixtures/stdlib_foundation/vec_shrink_all.lani"),
+    let vector_fixtures = [
+        include_str!("fixtures/stdlib_foundation/std_vec.lani"),
+        include_str!("fixtures/stdlib_foundation/std_vec_order.lani"),
+        include_str!("fixtures/stdlib_foundation/std_vec_growth_failure.lani"),
     ];
-    for (module, vector_source, vector_fixture) in [
-        (
-            "vec_i32",
-            include_str!("../stdlib/std/vec_i32.lani"),
-            include_str!("fixtures/stdlib_foundation/vec_i32.lani"),
-        ),
-        (
-            "vec_u32",
-            include_str!("../stdlib/std/vec_u32.lani"),
-            include_str!("fixtures/stdlib_foundation/vec_u32.lani"),
-        ),
-        (
-            "vec_u8",
-            include_str!("../stdlib/std/vec_u8.lani"),
-            include_str!("fixtures/stdlib_foundation/vec_u8.lani"),
-        ),
-        (
-            "vec_i8",
-            include_str!("../stdlib/std/vec_i8.lani"),
-            include_str!("fixtures/stdlib_foundation/vec_i8.lani"),
-        ),
-        (
-            "vec_u16",
-            include_str!("../stdlib/std/vec_u16.lani"),
-            include_str!("fixtures/stdlib_foundation/vec_u16.lani"),
-        ),
-        (
-            "vec_i16",
-            include_str!("../stdlib/std/vec_i16.lani"),
-            include_str!("fixtures/stdlib_foundation/vec_i16.lani"),
-        ),
-        (
-            "vec_bool",
-            include_str!("../stdlib/std/vec_bool.lani"),
-            include_str!("fixtures/stdlib_foundation/vec_bool.lani"),
-        ),
-    ] {
-        let mut vector_function_count = 0;
-        for line in vector_source.lines() {
-            let Some(tail) = line.strip_prefix("pub fn ") else {
-                continue;
-            };
-            let name = tail
-                .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-                .next()
-                .expect("public vector function has a name");
-            let call = format!("std::{module}::{name}(");
-            assert!(
-                vector_fixture.contains(&call)
-                    || (module == "vec_i32"
-                        && include_str!("fixtures/stdlib_foundation/vec_i32_sort_search.lani")
-                            .contains(&call))
-                    || (module == "vec_u32"
-                        && include_str!("fixtures/stdlib_foundation/vec_u32_sort_search.lani")
-                            .contains(&call))
-                    || (module == "vec_i8"
-                        && include_str!("fixtures/stdlib_foundation/vec_i8_sort_search.lani")
-                            .contains(&call))
-                    || (module == "vec_i16"
-                        && include_str!("fixtures/stdlib_foundation/vec_i16_sort_search.lani")
-                            .contains(&call))
-                    || (module == "vec_u16"
-                        && include_str!("fixtures/stdlib_foundation/vec_u16_sort_search.lani")
-                            .contains(&call))
-                    || (module == "vec_u8"
-                        && include_str!("fixtures/stdlib_foundation/vec_u8_sort_search.lani")
-                            .contains(&call))
-                    || (module == "vec_bool"
-                        && include_str!("fixtures/stdlib_foundation/vec_bool_sort_search.lani")
-                            .contains(&call))
-                    || vector_additional_fixtures
-                        .iter()
-                        .any(|fixture| fixture.contains(&call)),
-                "{call} lacks a runtime case"
-            );
-            vector_function_count += 1;
-        }
-        let expected_functions = if module == "vec_i32" {
-            25
-        } else if module == "vec_u32" {
-            25
-        } else if module == "vec_i8" {
-            25
-        } else if module == "vec_bool" {
-            25
-        } else if module == "vec_i16" {
-            25
-        } else if module == "vec_u16" {
-            25
-        } else if module == "vec_u8" {
-            26
-        } else {
-            19
+    for line in include_str!("../stdlib/std/vec.lani").lines() {
+        let Some(tail) = line.strip_prefix("pub fn ") else {
+            continue;
         };
-        assert_eq!(vector_function_count, expected_functions);
-        assert!(vector_fixture.contains(&format!("std::{module}::MAX_CAPACITY")));
+        let name = tail
+            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .next()
+            .expect("public vector function has a name");
+        let call = format!("std::vec::{name}(");
+        assert!(
+            vector_fixtures.iter().any(|fixture| fixture.contains(&call)),
+            "{call} lacks a runtime case"
+        );
     }
 
     let text_source = include_str!("../stdlib/std/utf8_vec.lani");

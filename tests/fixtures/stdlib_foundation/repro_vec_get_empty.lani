@@ -1,7 +1,7 @@
 module app::main;
-import std::vec_i32;
+import std::vec;
 
 fn main() -> i32 {
-    let value: std::vec_i32::VecI32 = std::vec_i32::new();
-    return std::vec_i32::get_or(value, 0, 77);
+    let value: std::vec::Vec<i32> = std::vec::new();
+    return std::vec::get_or(value, 0, 77);
 }

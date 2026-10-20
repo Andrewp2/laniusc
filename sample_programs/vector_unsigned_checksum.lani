@@ -1,26 +1,26 @@
 module app::main;
-import std::vec_u32;
+import std::vec;
 import core::number_u32;
 import core::option_u32;
 
 fn main() -> i32 {
-    let values: std::vec_u32::VecU32 = std::vec_u32::new();
-    values = std::vec_u32::try_push(values, 4294967295);
-    values = std::vec_u32::try_push(values, 2);
-    values = std::vec_u32::try_push(values, 3);
-    if (std::vec_u32::len(values) != 3) {
-        std::vec_u32::destroy(values);
+    let values: std::vec::Vec<u32> = std::vec::new();
+    values = std::vec::try_push(values, 4294967295);
+    values = std::vec::try_push(values, 2);
+    values = std::vec::try_push(values, 3);
+    if (std::vec::len(values) != 3) {
+        std::vec::destroy(values);
         return 1;
     }
 
     let checksum: u32 = 0;
     let index: i32 = 0;
-    while (index < std::vec_u32::len(values)) {
-        let item: u32 = std::vec_u32::get_or(values, index, 0);
+    while (index < std::vec::len(values)) {
+        let item: u32 = std::vec::get_or(values, index, 0);
         checksum = core::number_u32::wrapping_add(checksum, item);
         index += 1;
     }
-    std::vec_u32::destroy(values);
+    std::vec::destroy(values);
     let result: core::option_u32::OptionU32 = core::option_u32::some(checksum);
     let unsigned_result: u32 = core::option_u32::unwrap_or(result, 0);
     let printable: i32 = unsigned_result as i32;

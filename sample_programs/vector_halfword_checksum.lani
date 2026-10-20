@@ -1,26 +1,26 @@
 module app::main;
 import core::number_u16;
 import core::option_u16;
-import std::vec_u16;
+import std::vec;
 
 fn main() -> i32 {
-    let values: std::vec_u16::VecU16 = std::vec_u16::new();
-    values = std::vec_u16::try_push(values, 65535);
-    values = std::vec_u16::try_push(values, 2);
-    values = std::vec_u16::try_push(values, 3);
-    if (std::vec_u16::len(values) != 3) {
-        std::vec_u16::destroy(values);
+    let values: std::vec::Vec<u16> = std::vec::new();
+    values = std::vec::try_push(values, 65535);
+    values = std::vec::try_push(values, 2);
+    values = std::vec::try_push(values, 3);
+    if (std::vec::len(values) != 3) {
+        std::vec::destroy(values);
         return 1;
     }
 
     let checksum: u16 = 0;
     let index: i32 = 0;
-    while (index < std::vec_u16::len(values)) {
+    while (index < std::vec::len(values)) {
         checksum = core::number_u16::wrapping_add(
-            checksum, std::vec_u16::get_or(values, index, 0));
+            checksum, std::vec::get_or(values, index, 0));
         index += 1;
     }
-    std::vec_u16::destroy(values);
+    std::vec::destroy(values);
     let result: core::option_u16::OptionU16 = core::option_u16::some(checksum);
     let byte_result: u16 = core::option_u16::unwrap_or(result, 0);
     let printable: i32 = byte_result as i32;

@@ -1,8 +1,8 @@
 // expect: LNC0006
-// A local struct where std::vec_char expects VecChar: an array element.
+// A local struct where std::vec expects Vec<char>: an array element.
 module app::main;
-import std::vec_char;
+import std::vec;
 struct Q { n: i32 }
 struct H { q: Q }
 enum Pick { Left, Right }
-fn main() -> i32 { let arr: [Q; 1] = [Q { n: 1 }]; return std::vec_char::len(arr[0]); }
+fn main() -> i32 { let arr: [Q; 1] = [Q { n: 1 }]; return std::vec::len(arr[0]); }

@@ -12,7 +12,8 @@ panic exit).
 A probe is a `.lani` file, or a directory holding a multi-module project: the
 entry `main.lani` plus a source root `src/` (`gen::lib` is `src/gen/lib.lani`).
 Its expected exit code is 42 unless the first line of the file (of `main.lani`
-for a directory) is `// expect: N`; `// expect: error LNC0021` expects the
+for a directory) is `// expect: N` (a negative N is the signal that kills
+the x86 process, e.g. -4 for an assertion's SIGILL); `// expect: error LNC0021` expects the
 compile to fail with that diagnostic code instead. LNC0017 is the x86
 backend-boundary code (a rejection in shared lowering, like a type with no
 zero value); the Wasm backend reports the same rejection as LNC0036, so with
@@ -229,7 +230,7 @@ for probe in probes:
                 if code is None:
                     status = "RUN-FAIL"
                 else:
-                    status = "PASS" if code == expect & 0xff else f"WRONG(exit {code}, want {expect})"
+                    status = "PASS" if code == (expect if expect < 0 else expect & 0xff) else f"WRONG(exit {code}, want {expect})"
             except subprocess.TimeoutExpired:
                 status = "RUN-TIMEOUT"
             results.append((probe.stem, status, elapsed, detail))

@@ -1,9 +1,9 @@
 // expect: 0
-// Imported nominal (std::vec_char::VecChar) at an imported call: the result bound by an unannotated let.
+// Imported nominal (std::vec::Vec<char>) at an imported call: the result bound by an unannotated let.
 module app::main;
-import std::vec_char;
+import std::vec;
 fn main() -> i32 {
-    let v = std::vec_char::new();
-    if (std::vec_char::len(v) != 0) { return 1; }
+    let v = std::vec::new<char>();
+    if (std::vec::len(v) != 0) { return 1; }
     return 0;
 }

@@ -1,8 +1,8 @@
 // expect: LNC0006
-// A local struct where std::vec_char expects VecChar: the imported result bound to a local struct.
+// A local struct where std::vec expects Vec<char>: the imported result bound to a local struct.
 module app::main;
-import std::vec_char;
+import std::vec;
 struct Q { n: i32 }
 struct H { q: Q }
 enum Pick { Left, Right }
-fn main() -> i32 { let q: Q = std::vec_char::new(); return 0; }
+fn main() -> i32 { let q: Q = std::vec::new(); return 0; }

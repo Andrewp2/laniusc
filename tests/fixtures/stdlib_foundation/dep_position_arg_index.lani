@@ -1,9 +1,9 @@
 // expect: 0
-// Imported nominal (std::vec_char::VecChar) at an imported call: an array element.
+// Imported nominal (std::vec::Vec<char>) at an imported call: an array element.
 module app::main;
-import std::vec_char;
+import std::vec;
 fn main() -> i32 {
-    let arr: [std::vec_char::VecChar; 2] = [std::vec_char::new(), std::vec_char::new()];
-    if (std::vec_char::len(arr[1]) != 0) { return 1; }
+    let arr: [std::vec::Vec<char>; 2] = [std::vec::new(), std::vec::new()];
+    if (std::vec::len(arr[1]) != 0) { return 1; }
     return 0;
 }

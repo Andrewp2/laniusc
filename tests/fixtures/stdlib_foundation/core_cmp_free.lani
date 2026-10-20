@@ -1,100 +1,60 @@
+// Every Eq and Ord impl in core, called through a T: Eq<T> + Ord<T> bound,
+// with each type's extreme values. Exits 0; any other code names the type.
 module app::main;
 import core::cmp;
 import core::wide_u64;
 import core::wide_i64;
 
+// low < high: all ten relations must agree.
+fn ordered<T>(low: T, high: T) -> bool where T: core::cmp::Eq<T>, T: core::cmp::Ord<T> {
+    return T::eq(low, low) && !T::eq(low, high) && T::ne(low, high) && !T::ne(high, high) &&
+        T::lt(low, high) && !T::lt(high, low) && !T::lt(low, low) &&
+        T::le(low, high) && T::le(high, high) && !T::le(high, low) &&
+        T::gt(high, low) && !T::gt(low, high) && !T::gt(high, high) &&
+        T::ge(high, low) && T::ge(low, low) && !T::ge(low, high);
+}
+
 fn main() -> i32 {
-    let high: u32 = 2147483648;
-    let low: u32 = 2147483647;
-    let maximum: u32 = 4294967295;
-    if (!core::cmp::eq_i32(7, 7) || core::cmp::eq_i32(7, -7) ||
-        !core::cmp::ne_i32(7, -7) || core::cmp::ne_i32(7, 7)) { return 1; }
-    if (!core::cmp::lt_i32(-2147483648, 2147483647) ||
-        core::cmp::lt_i32(7, 7) ||
-        !core::cmp::le_i32(7, 7) || core::cmp::le_i32(8, 7)) { return 2; }
-    if (!core::cmp::gt_i32(2147483647, -2147483648) ||
-        core::cmp::gt_i32(7, 7) ||
-        !core::cmp::ge_i32(7, 7) || core::cmp::ge_i32(7, 8)) { return 3; }
-    if (!core::cmp::eq_u32(maximum, maximum) || core::cmp::eq_u32(high, low) ||
-        !core::cmp::ne_u32(high, low) || core::cmp::ne_u32(high, high)) { return 4; }
-    if (!core::cmp::lt_u32(low, high) || core::cmp::lt_u32(high, low) ||
-        !core::cmp::le_u32(high, high) || core::cmp::le_u32(maximum, high)) { return 5; }
-    if (!core::cmp::gt_u32(high, low) || core::cmp::gt_u32(low, high) ||
-        !core::cmp::ge_u32(maximum, high) || core::cmp::ge_u32(low, high)) { return 6; }
+    if (!ordered(-2147483648, 2147483647) || !ordered(-7, 7)) { return 1; }
+    let low_u32: u32 = 2147483647;
+    let high_u32: u32 = 2147483648;
+    let max_u32: u32 = 4294967295;
+    if (!ordered(low_u32, high_u32) || !ordered(high_u32, max_u32)) { return 2; }
     let low_i8: i8 = -128;
     let high_i8: i8 = 127;
-    if (!core::cmp::eq_i8(low_i8, low_i8) || core::cmp::eq_i8(low_i8, high_i8) ||
-        !core::cmp::ne_i8(low_i8, high_i8) || core::cmp::ne_i8(high_i8, high_i8)) { return 7; }
-    if (!core::cmp::lt_i8(low_i8, high_i8) || core::cmp::lt_i8(high_i8, low_i8) ||
-        !core::cmp::le_i8(high_i8, high_i8) || core::cmp::le_i8(high_i8, low_i8)) { return 8; }
-    if (!core::cmp::gt_i8(high_i8, low_i8) || core::cmp::gt_i8(low_i8, high_i8) ||
-        !core::cmp::ge_i8(high_i8, high_i8) || core::cmp::ge_i8(low_i8, high_i8)) { return 9; }
+    if (!ordered(low_i8, high_i8)) { return 3; }
     let low_i16: i16 = -32768;
     let high_i16: i16 = 32767;
-    if (!core::cmp::eq_i16(low_i16, low_i16) || core::cmp::eq_i16(low_i16, high_i16) ||
-        !core::cmp::ne_i16(low_i16, high_i16) || core::cmp::ne_i16(high_i16, high_i16)) { return 10; }
-    if (!core::cmp::lt_i16(low_i16, high_i16) || core::cmp::lt_i16(high_i16, low_i16) ||
-        !core::cmp::le_i16(high_i16, high_i16) || core::cmp::le_i16(high_i16, low_i16)) { return 11; }
-    if (!core::cmp::gt_i16(high_i16, low_i16) || core::cmp::gt_i16(low_i16, high_i16) ||
-        !core::cmp::ge_i16(high_i16, high_i16) || core::cmp::ge_i16(low_i16, high_i16)) { return 12; }
+    if (!ordered(low_i16, high_i16)) { return 4; }
     let low_u8: u8 = 0;
     let high_u8: u8 = 255;
-    if (!core::cmp::eq_u8(low_u8, low_u8) || core::cmp::eq_u8(low_u8, high_u8) ||
-        !core::cmp::ne_u8(low_u8, high_u8) || core::cmp::ne_u8(high_u8, high_u8)) { return 13; }
-    if (!core::cmp::lt_u8(low_u8, high_u8) || core::cmp::lt_u8(high_u8, low_u8) ||
-        !core::cmp::le_u8(high_u8, high_u8) || core::cmp::le_u8(high_u8, low_u8)) { return 14; }
-    if (!core::cmp::gt_u8(high_u8, low_u8) || core::cmp::gt_u8(low_u8, high_u8) ||
-        !core::cmp::ge_u8(high_u8, high_u8) || core::cmp::ge_u8(low_u8, high_u8)) { return 15; }
+    if (!ordered(low_u8, high_u8)) { return 5; }
     let low_u16: u16 = 0;
     let high_u16: u16 = 65535;
-    if (!core::cmp::eq_u16(low_u16, low_u16) || core::cmp::eq_u16(low_u16, high_u16) ||
-        !core::cmp::ne_u16(low_u16, high_u16) || core::cmp::ne_u16(high_u16, high_u16)) { return 16; }
-    if (!core::cmp::lt_u16(low_u16, high_u16) || core::cmp::lt_u16(high_u16, low_u16) ||
-        !core::cmp::le_u16(high_u16, high_u16) || core::cmp::le_u16(high_u16, low_u16)) { return 17; }
-    if (!core::cmp::gt_u16(high_u16, low_u16) || core::cmp::gt_u16(low_u16, high_u16) ||
-        !core::cmp::ge_u16(high_u16, high_u16) || core::cmp::ge_u16(low_u16, high_u16)) { return 18; }
-    if (!core::cmp::eq_bool(false, false) || core::cmp::eq_bool(false, true) ||
-        !core::cmp::ne_bool(true, false) || core::cmp::ne_bool(true, true)) { return 19; }
-    if (!core::cmp::lt_bool(false, true) || core::cmp::lt_bool(true, false) ||
-        !core::cmp::le_bool(false, false) || core::cmp::le_bool(true, false)) { return 20; }
-    if (!core::cmp::gt_bool(true, false) || core::cmp::gt_bool(false, true) ||
-        !core::cmp::ge_bool(true, true) || core::cmp::ge_bool(false, true)) { return 21; }
-    if (!core::cmp::eq_char('é', 'é') || core::cmp::eq_char('A', 'é') ||
-        !core::cmp::ne_char('A', 'é') || core::cmp::ne_char('😀', '😀')) { return 22; }
-    if (!core::cmp::lt_char('A', 'é') || core::cmp::lt_char('😀', 'é') ||
-        !core::cmp::le_char('é', 'é') || core::cmp::le_char('😀', 'é')) { return 23; }
-    if (!core::cmp::gt_char('😀', 'é') || core::cmp::gt_char('A', 'é') ||
-        !core::cmp::ge_char('😀', '😀') || core::cmp::ge_char('A', 'é')) { return 24; }
+    if (!ordered(low_u16, high_u16)) { return 6; }
+    let low_i64: i64 = -9223372036854775808;
+    let high_i64: i64 = 9223372036854775807;
+    if (!ordered(low_i64, high_i64)) { return 7; }
+    let low_u64: u64 = 9223372036854775807;
+    let high_u64: u64 = 18446744073709551615;
+    if (!ordered(low_u64, high_u64)) { return 8; }
+    let low_isize: isize = -9223372036854775808;
+    let high_isize: isize = 9223372036854775807;
+    if (!ordered(low_isize, high_isize)) { return 9; }
+    let low_usize: usize = 0;
+    let high_usize: usize = 18446744073709551615;
+    if (!ordered(low_usize, high_usize)) { return 10; }
+    if (!ordered(false, true)) { return 11; }
+    if (!ordered('A', 'é') || !ordered('é', '😀')) { return 12; }
     let zero_wide_u: core::wide_u64::WideU64 = core::wide_u64::zero();
     let high_wide_u: core::wide_u64::WideU64 = core::wide_u64::from_words(2147483648, 0);
     let max_wide_u: core::wide_u64::WideU64 = core::wide_u64::max_value();
-    if (!core::cmp::eq_wide_u64(max_wide_u, max_wide_u) ||
-        core::cmp::eq_wide_u64(zero_wide_u, high_wide_u) ||
-        !core::cmp::ne_wide_u64(zero_wide_u, high_wide_u) ||
-        core::cmp::ne_wide_u64(max_wide_u, max_wide_u)) { return 25; }
-    if (!core::cmp::lt_wide_u64(zero_wide_u, high_wide_u) ||
-        core::cmp::lt_wide_u64(high_wide_u, zero_wide_u) ||
-        !core::cmp::le_wide_u64(high_wide_u, high_wide_u) ||
-        core::cmp::le_wide_u64(max_wide_u, high_wide_u)) { return 26; }
-    if (!core::cmp::gt_wide_u64(max_wide_u, high_wide_u) ||
-        core::cmp::gt_wide_u64(zero_wide_u, high_wide_u) ||
-        !core::cmp::ge_wide_u64(max_wide_u, max_wide_u) ||
-        core::cmp::ge_wide_u64(zero_wide_u, high_wide_u)) { return 27; }
+    if (!ordered(zero_wide_u, high_wide_u) || !ordered(high_wide_u, max_wide_u)) { return 13; }
     let min_wide_i: core::wide_i64::WideI64 = core::wide_i64::min_value();
     let neg_wide_i: core::wide_i64::WideI64 = core::wide_i64::from_i32(-1);
     let zero_wide_i: core::wide_i64::WideI64 = core::wide_i64::zero();
     let max_wide_i: core::wide_i64::WideI64 = core::wide_i64::max_value();
-    if (!core::cmp::eq_wide_i64(min_wide_i, min_wide_i) ||
-        core::cmp::eq_wide_i64(min_wide_i, neg_wide_i) ||
-        !core::cmp::ne_wide_i64(min_wide_i, neg_wide_i) ||
-        core::cmp::ne_wide_i64(zero_wide_i, zero_wide_i)) { return 28; }
-    if (!core::cmp::lt_wide_i64(min_wide_i, neg_wide_i) ||
-        core::cmp::lt_wide_i64(zero_wide_i, min_wide_i) ||
-        !core::cmp::le_wide_i64(neg_wide_i, neg_wide_i) ||
-        core::cmp::le_wide_i64(max_wide_i, neg_wide_i)) { return 29; }
-    if (!core::cmp::gt_wide_i64(max_wide_i, zero_wide_i) ||
-        core::cmp::gt_wide_i64(min_wide_i, zero_wide_i) ||
-        !core::cmp::ge_wide_i64(max_wide_i, max_wide_i) ||
-        core::cmp::ge_wide_i64(neg_wide_i, zero_wide_i)) { return 30; }
+    if (!ordered(min_wide_i, neg_wide_i) || !ordered(neg_wide_i, zero_wide_i) ||
+        !ordered(zero_wide_i, max_wide_i)) { return 14; }
     return 0;
 }

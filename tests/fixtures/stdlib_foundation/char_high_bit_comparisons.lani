@@ -25,8 +25,8 @@ fn main() -> i32 {
     if (!character_result || literal_before_char('a')) { return 10; }
     if (!core::ordering::is_greater(core::ordering::compare_char(high, '😀')) ||
         !core::ordering::is_greater(core::ordering::compare_char(last, high))) { return 2; }
-    if (!core::cmp::lt_char('😀', high) || !core::cmp::gt_char(last, high) ||
-        !core::cmp::le_char(high, last) || !core::cmp::ge_char(last, high)) { return 3; }
+    if (!char::lt('😀', high) || !char::gt(last, high) ||
+        !char::le(high, last) || !char::ge(last, high)) { return 3; }
     if (!core::range_char::half_open_contains('😀', last, high) ||
         core::range_char::half_open_contains(high, last, '😀') ||
         core::range_char::half_open_is_empty('😀', high) ||
@@ -45,7 +45,7 @@ fn main() -> i32 {
         !(1 < max_bits) || max_bits <= 1) { return 8; }
     let integer_result: bool = literal_before_u32(sign_bits);
     if (!integer_result || literal_before_u32(0)) { return 11; }
-    if (!core::cmp::lt_u32(1, sign_bits) ||
-        !core::cmp::gt_u32(max_bits, sign_bits)) { return 9; }
+    if (!u32::lt(1, sign_bits) ||
+        !u32::gt(max_bits, sign_bits)) { return 9; }
     return 0;
 }

@@ -1,9 +1,9 @@
 // expect: 0
-// Imported nominal (std::vec_char::VecChar) at an imported call: a field of a struct literal.
+// Imported nominal (std::vec::Vec<char>) at an imported call: a field of a struct literal.
 module app::main;
-import std::vec_char;
-struct H { v: std::vec_char::VecChar }
+import std::vec;
+struct H { v: std::vec::Vec<char> }
 fn main() -> i32 {
-    if (std::vec_char::len((H { v: std::vec_char::new() }).v) != 0) { return 1; }
+    if (std::vec::len((H { v: std::vec::new() }).v) != 0) { return 1; }
     return 0;
 }

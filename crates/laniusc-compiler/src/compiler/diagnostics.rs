@@ -521,6 +521,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeInfo] = &[
         DiagnosticPrimaryLabelPolicy::Required,
     ),
     DiagnosticCodeInfo::error(
+        "LNC0069",
+        "invalid integer literal",
+        "type checking",
+        DiagnosticPrimaryLabelPolicy::Required,
+    ),
+    DiagnosticCodeInfo::error(
         "LNC0070", "invalid floating literal", "type checking",
         DiagnosticPrimaryLabelPolicy::Required,
     ),
@@ -4681,6 +4687,7 @@ mod tests {
             ("LNC0066", "parser execution failed", "parsing"),
             ("LNC0067", "CLI operation failed", "tooling"),
             ("LNC0068", "invalid assignment target", "type checking"),
+            ("LNC0069", "invalid integer literal", "type checking"),
             ("LNC0070", "invalid floating literal", "type checking"),
             ("LNC0071", "computed floating constant is not supported", "type checking"),
             ("LNC0072", "invalid cast", "type checking"),
@@ -4936,7 +4943,7 @@ mod tests {
             value["unsupported_feature"]["next_step"]
                 .as_str()
                 .expect("unsupported-feature next step should be a string")
-                .contains("--emit=wasm")
+                .contains("laniusc check")
         );
         assert_eq!(value["codegen_boundary"]["diagnostic_code"], "LNC0017");
         assert_eq!(value["codegen_boundary"]["boundary"], "x86 backend");

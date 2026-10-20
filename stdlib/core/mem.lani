@@ -146,6 +146,21 @@ pub fn typed_slice_from_storage<T>(storage: ptr, length: i32) -> [T] {
     return slice_from_raw_parts(storage + top, length);
 }
 
+// View the first `length` of the `capacity` elements that
+// typed_slice_from_storage(storage, capacity) sees, at the same addresses.
+// Lengths outside 0..=capacity trap.
+pub fn typed_prefix_from_storage<T>(storage: ptr, capacity: i32, length: i32) -> [T] {
+    assert(length >= 0 && length <= capacity);
+    let nowhere: ptr = 0;
+    let probe: [T] = slice_from_raw_parts(nowhere, 0);
+    let stride: isize = slice_stride(probe);
+    if (stride >= 0 || length == 0) {
+        return slice_from_raw_parts(storage, length);
+    }
+    let skip: usize = ((0 - stride) as usize) * ((capacity - length) as usize);
+    return typed_slice_from_storage(storage + skip, length);
+}
+
 // Compiler-provided intrinsics available through this module:
 // i32_array_data_ptr, i32_slice_data_ptr, string_data_ptr,
 // i32_slice_from_raw_parts, and slice_stride. They are not defined in Lanius

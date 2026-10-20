@@ -1,6 +1,7 @@
 // Unsigned 64-bit arithmetic represented as two u32 words. This module does
 // not use the native u64 arithmetic path, which currently loses high bits.
 module core::wide_u64;
+import core::cmp;
 import core::number_u32;
 
 pub struct WideU64 {
@@ -237,4 +238,16 @@ pub fn parse_ascii_decimal_or(values: [i32], len: i32, fallback: WideU64) -> Wid
         index += 1;
     }
     return result;
+}
+
+pub impl core::cmp::Eq<WideU64> for WideU64 {
+    pub fn eq(left: WideU64, right: WideU64) -> bool { return compare(left, right) == 0; }
+    pub fn ne(left: WideU64, right: WideU64) -> bool { return compare(left, right) != 0; }
+}
+
+pub impl core::cmp::Ord<WideU64> for WideU64 {
+    pub fn lt(left: WideU64, right: WideU64) -> bool { return compare(left, right) < 0; }
+    pub fn le(left: WideU64, right: WideU64) -> bool { return compare(left, right) <= 0; }
+    pub fn gt(left: WideU64, right: WideU64) -> bool { return compare(left, right) > 0; }
+    pub fn ge(left: WideU64, right: WideU64) -> bool { return compare(left, right) >= 0; }
 }

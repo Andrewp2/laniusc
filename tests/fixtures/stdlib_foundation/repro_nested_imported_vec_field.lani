@@ -1,15 +1,15 @@
 module app::main;
-import std::vec_i32;
+import std::vec;
 
-struct Wrap { cells: std::vec_i32::VecI32 }
+struct Wrap { cells: std::vec::Vec<i32> }
 
 fn make() -> Wrap {
-    return Wrap { cells: std::vec_i32::new() };
+    return Wrap { cells: std::vec::new() };
 }
 
 fn main() -> i32 {
     let wrapped: Wrap = make();
-    let cells: std::vec_i32::VecI32 = wrapped.cells;
-    if (std::vec_i32::len(cells) != 0) { return 1; }
+    let cells: std::vec::Vec<i32> = wrapped.cells;
+    if (std::vec::len(cells) != 0) { return 1; }
     return 0;
 }

@@ -1,10 +1,10 @@
 // expect: 0
-// Imported nominal (std::vec_char::VecChar) at an imported call: the result as a local generic argument.
+// Imported nominal (std::vec::Vec<char>) at an imported call: the result as a local generic argument.
 module app::main;
-import std::vec_char;
+import std::vec;
 fn keep<T>(value: T) -> T { return value; }
 fn main() -> i32 {
-    let v: std::vec_char::VecChar = keep(std::vec_char::new());
-    if (std::vec_char::len(v) != 0) { return 1; }
+    let v: std::vec::Vec<char> = keep(std::vec::new());
+    if (std::vec::len(v) != 0) { return 1; }
     return 0;
 }

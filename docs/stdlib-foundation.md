@@ -343,8 +343,8 @@ require further compiler work.
 | `core::result` all twenty source-defined public functions and methods | Executable on x86_64 for the documented instances | The actual module imports with unsupported payload templates deferred. Generic free and receiver unwrap_or/unwrap_err_or/or/and execute for nine tested scalar T/E pairs, including f32, char, and strings in either or both positions. Every pair of two success and two error values is exercised for both receiver combinators, preserving both inputs. Predicates, membership, and concrete matches also execute for independently sized caller-local records, strings, and borrowed i32 slices. Runtime fixtures check concrete returns, descriptor aliasing, and bounds traps. Wrong success and error argument types are rejected independently. See [the Result guide](stdlib-result.md). |
 | Generic payload bodies with compound, local, recursive, or durable-only specialization environments | Contract-only for native execution | Imported scalar free bodies and receiver bodies execute as documented above. Unsupported environments still require compiler support. Uninstantiated bodies retain their checked declarations and publish no native definition; a used unresolved template fails explicitly with `LNC0017`. The former by-value Option::replace ignored its input and was removed. Dependencies 1, 92, and 93 distinguish supported specialization from the remaining gaps. |
 | Native `core::i64` as a complete module | Contract-only for native execution | Native full-width comparison and arithmetic remain incomplete. The explicitly two-word signed and unsigned modules above provide executable full-width operations. |
-| `core::cmp` all 60 public free functions for six integer widths, `bool`, `char`, `WideU64`, and `WideI64` | Executable on x86_64 | The imported runtime fixture calls every equality and ordering function with equal and unequal values, both directions, signed and two-word extrema, unsigned high-bit values, both Boolean values, and Unicode characters. The `i32`, `u32`, `bool`, and `char` functions execute local trait implementation bodies. Narrow integer functions use scalar operators because their trait keys collide with the corresponding 32-bit type (dependency 57); two-word functions use the executable wide modules because imported nominal trait arguments fail in native emission (dependency 58). Direct imported trait calls remain outside this claim. |
-| `core::cmp` trait methods and `core::hash::Hash<T>` trait methods | Complete API coverage not refreshed | The public free comparison and hashing functions execute. The later [compiler checkpoint](compiler-generic-types.md#direct-generic-trait-implementation-methods-2026-10-11) establishes focused direct imported generic trait impl methods, but does not rerun these complete stdlib trait APIs. Dependencies 31, 57, and 58 retain the original audit evidence. |
+| `core::cmp` `Eq<T>` and `Ord<T>` impls for every integer width (`i8` through `u64`, `isize`, `usize`), `bool` and `char`; `core::wide_i64` and `core::wide_u64` implement both for their records | Executable on x86_64 | `tests/fixtures/stdlib_foundation/core_cmp_free.lani` checks all ten relations of each impl through one generic function bounded by `Eq<T>` and `Ord<T>`, with each type's extremes. The former per-type free functions (`core::cmp::lt_i32` and the rest) were removed; call `T::lt(a, b)` through a bound, or `i32::lt(a, b)` directly. |
+| `core::hash::Hash<T>` trait methods | Complete API coverage not refreshed | The public hashing functions execute. The later [compiler checkpoint](compiler-generic-types.md#direct-generic-trait-implementation-methods-2026-10-11) establishes focused direct imported generic trait impl methods, but does not rerun the complete trait API. Dependency 31 retains the original audit evidence. |
 | `core::target` all 18 public functions and 16 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant. It checks the available allocator, filesystem, stdio, clock, secure RNG, process, and environment bindings against `core::runtime`; unbound network, threads, GPU, host services, panic hooks, and test harness remain false. This is a target snapshot, not a live host probe. |
 | `core::runtime` all 62 public functions and 40 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant, checking service IDs, ABI fields, available and unavailable services, unknown IDs, status classifiers, and fail-closed requirement rows. These helpers report bindings; they do not implement an unbound service operation. |
 | `core::panic` both trap functions, all 19 metadata functions, and 4 constants | Executable on x86_64 Linux for the trap functions and metadata | `tests/stdlib_panic_execution.rs` checks that `panic()` and `unreachable()` terminate with SIGILL, and a runtime fixture checks every metadata result. Panic hooks remain unbound; their availability flags stay false. |
@@ -391,17 +391,11 @@ require further compiler work.
 | `std::deque_u8` all 20 public functions and its capacity constant | Executable on x86_64 Linux | The owned byte ring-buffer fixture calls every public function and checks both-end operations, wraparound, growth, reservation, shrinking, clone independence, invalid bounds, and all 256 byte values. The stateful fixture checks 48 mixed operations against a reference deque. Six injected allocation failures preserve the original owner and order, or return an empty clone. A binary-input checksum program combines the deque with byte arithmetic, `OptionU8`, and stdin. Each byte occupies one 32-bit backing cell; ownership is linear by convention. GPU compiler execution emits the tested x86 program; user-program GPU device execution is not claimed. |
 | `std::deque_u32` all 20 public functions and its capacity constant | Executable on x86_64 Linux | The owned ring-buffer fixture calls every public function and checks both-end operations, wrapped order, growth, reservation, shrinking, clone independence, invalid bounds, `2^31`, and `u32::MAX` through mutation and copying. Six injected `mmap` failures preserve existing data and ownership. The line-oriented recent-values program checks unsigned decimal input, output, full-width values, malformed input, and overflow. Each value occupies one 32-bit cell; ownership is linear by convention. The GPU compiler emits the tested x86 program, with no user-program GPU device claim. |
 | `std::deque_i32` all 20 public functions and its capacity constant | Executable on x86_64 Linux | The owned ring-buffer fixture calls every public function and checks both-end pushes and pops, wrapped storage, growth, reservation, shrinking, clone independence, signed extrema, empty and invalid-index behavior, and destruction. Six injected `mmap` failures cover initial allocation, both-end growth, wrapped reservation, cloning, and shrinking; existing contents and ownership remain intact. The line-oriented recent-values program combines the deque with decimal parsing and output and checks normal, extreme, malformed, and overlong input. Ownership is linear by convention. The GPU compiler emits the tested x86 program; no user-program GPU device behavior is claimed. |
-| `std::vec_i32` all 25 public functions and its capacity constant | Executable on x86_64 Linux | `tests/fixtures/stdlib_foundation/vec_i32.lani` checks construction, growth, element access and mutation, bounds, reserve, pop, clear, cloning, and destruction. `tests/stdlib_vec_i32_sort_search_execution.rs` executes in-place signed sort and reverse, lower and upper bounds, and first and last binary matches against owned storage, including empty vectors, duplicates, and signed extrema. Searches require nondecreasing input; empty searches return zero or the caller's fallback. Sort returns len, reverse returns swap count, and both preserve capacity. The median program combines these operations with checked decimal input and output. `tests/stdlib_vec_i32_execution.rs` injects allocation and reallocation failures and checks the vector and prior data stay unchanged. This is a linear-ownership API by convention; source-level moves are not enforced. |
-| `std::vec_u32` all 25 public functions and its capacity constant | Executable on x86_64 Linux | The unsigned vector fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, `2^31`, and `u32::MAX`. The sort/search fixture checks owned in-place unsigned sort and reverse, lower and upper bounds, first and last matches, empty storage, duplicates, capacity preservation, and high-bit order; search requires sorted input. The signed-bit-pattern backing is ordered through `core::u32_cells`. The input-driven median program checks normal output, signed-bit extremes interpreted as unsigned, and invalid decimal input. The allocation-failure suite injects failed initial allocation and reallocation. Storage uses 32-bit cells and preserves every unsigned bit pattern. Ownership is linear by convention. |
+| Generic `std::vec::Vec<T>`, all public functions and `MAX_CAPACITY` | Executable on x86_64 Linux | Allocation-backed, with value semantics: each change returns the vector, and a failed `try_` operation (allocation failure or an index out of range) returns it unchanged; `push` and `reserve` panic instead. Element storage comes from `core::mem::typed_slice_from_storage`, so growth copies each element into a fresh allocation. `tests/fixtures/stdlib_foundation/std_vec.lani` covers i32, u8, a record through growth, a zero-sized record (no allocation), `str` in a record and alone, `Option<T>` and `Vec<Vec<i32>>`. `std_vec_order.lani` sorts (heapsort, not stable) and searches every integer width at its extremes, `char`, `bool` and a user record through `T: core::cmp::Ord<T>` and `Eq<T>`. `at` past the length exits 101. `tests/stdlib_vec_alloc_failure_execution.rs` fails the first or the second and later `mmap` under strace and checks every vector stays unchanged. A source scan requires a call for every public function. Ownership is linear by convention. Sorting a `Vec` of a stdlib type whose impl lives in its own module (`Vec<core::wide_i64::WideI64>`) fails to route (generics backlog b15). Wasm does not compile it yet. |
 | `std::vec_wide_i64` all 25 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks pair-preserving growth, access, mutation, insertion, removal, caller-backed batch append, reserve, clone independence, resize, truncation, shrink, clearing, destruction, both signed extrema, the 32-bit boundary, invalid indices and capacities, and a physical input-view overclaim that traps. Injected initial, growth, batch-append, insert, resize, clone, and shrink allocation failures preserve prior values or return an empty clone. The owned ordering fixture checks in-place signed sort and reverse, lower and upper bounds, first and last matches, duplicates, empty storage, both signed extrema, and retained capacity. Search requires sorted input. Signed decimal sum and median-frequency programs use the vector with real input, including full-width values and malformed cases. Each element uses two 32-bit cells; ownership is linear by convention. |
 | `std::vec_wide_u64` all 25 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks pair-preserving growth, access, mutation, insertion, removal, caller-backed batch append, reserve, clone independence, resize, truncation, shrink, clearing, destruction, zero, `2^32`, `2^63`, and `u64::MAX`, invalid indices and capacities, and a physical input-view overclaim that traps. Injected initial, growth, batch-append, insert, resize, clone, and shrink allocation failures preserve prior values or return an empty clone. The owned ordering fixture checks in-place unsigned sort and reverse, lower and upper bounds, first and last matches, duplicates, empty storage, the unsigned high bit, and retained capacity. Search requires sorted input. Unsigned decimal sum and median-frequency programs use the vector with real input, including full-width values and malformed cases. Each element uses two 32-bit cells; ownership is linear by convention. |
 | `std::vec_u8` all 26 public functions and its capacity constant | Executable on x86_64 Linux | The byte vector fixture checks construction, growth, independent cloning, access, mutation, bounds, reserve, pop, clear, destruction, 128, and 255. The sort/search fixture checks in-place ascending byte order, reversal, lower and upper bounds, first and last matches, empty and single-element behavior, duplicates, boundary values, and unchanged allocation pointer. Search requires sorted input. Raw writes through `data_ptr` must preserve the 0..255 initialized-cell invariant; the fixture also checks empty and initialized borrowed views. The allocation-failure suite injects failed initial allocation, reallocation, and a clone allocation through the text wrapper; the byte checksum sample combines it with `core::byte` and `OptionU8`. Each byte occupies one 32-bit cell because the raw-slice intrinsic currently accepts i32 cells. Ownership is linear by convention. |
 | `std::utf8_vec` all 30 public text helpers | Executable on x86_64 Linux | The runtime fixtures construct and edit text from Unicode scalars, complete caller-backed UTF-8 byte-code views, and ordinary `[u8]` byte views; check independent cloning, multibyte bytes, scalar count and lookup, first and last search, equality, prefixes, suffixes, ordering, byte-offset sequence search, insertion, removal, replacement, splicing, pop, clear, and destruction. Byte-view splicing covers growth, shrinkage, equal-width replacement, and insertion at the end; malformed input and invalid indices leave data unchanged. Injected allocation failures check that failed scalar, byte-code, and `[u8]` edits preserve prior bytes. Storage is a `VecU8` with one 32-bit cell per encoded byte and linear ownership by convention. |
-| `std::vec_i8` all 25 public functions and its capacity constant | Executable on x86_64 Linux | The signed byte vector fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, `-128`, and 127. The sort/search fixture executes in-place signed ordering, reversal, lower and upper bounds, first and last matches, empty and single-element behavior, duplicates, signed limits, and capacity preservation. Search requires nondecreasing input; sort returns len and reverse returns swap count. The allocation-failure suite injects failed initial allocation and reallocation; the signed byte sum sample combines it with `core::number_i8` and `OptionI8`. Each signed byte occupies one 32-bit cell, preserving its sign. Ownership is linear by convention. |
-| `std::vec_u16` all 25 public functions and its capacity constant | Executable on x86_64 Linux | The unsigned halfword fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, 32768, and 65535. The sort/search fixture executes in-place ordering, reversal, lower and upper bounds, first and last matches, empty and single-element behavior, duplicates, the unsigned high bit, maximum value, and capacity preservation. Search requires nondecreasing input; sort returns len and reverse returns swap count. The allocation-failure suite injects failed initial allocation and reallocation; the halfword checksum sample combines it with `core::number_u16` and `OptionU16`. Each halfword occupies one 32-bit cell. Ownership is linear by convention. |
-| `std::vec_char` all 25 public functions and its capacity constant | Executable on x86_64 Linux | Imported runtime fixtures call every function, checking construction, growth, independent cloning, indexed access and mutation, insertion, removal, bulk append, resize, truncation, shrinking, destruction, invalid indices and capacities, Unicode scalars, NUL, and the largest scalar U+10FFFF. Ordering and search use unsigned code-point order; the sort/search fixture checks empty, single-element, duplicate, and maximum-value cases. Seven injected allocation failures cover initial allocation, growth, batch append, insertion, cloning, resize, and shrinking; each retains the prior owner or returns an empty clone. The input-driven `unicode_sort_unique` program reads valid UTF-8 scalars, sorts and deduplicates them, and reports malformed input, size limit, allocation failure, and output failure. Each character occupies one eight-byte slot read and written as `char`, so no integer conversion is involved. Ownership is linear by convention. |
-| `std::vec_i16` all 25 public functions and its capacity constant | Executable on x86_64 Linux | The signed halfword fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, `-32768`, and 32767. The sort/search fixture executes in-place signed ordering, reversal, lower and upper bounds, first and last matches, empty and single-element behavior, duplicates, signed limits, and capacity preservation. Search requires nondecreasing input; sort returns len and reverse returns swap count. The allocation-failure suite injects failed initial allocation and reallocation; the signed halfword sum sample combines it with `core::number_i16` and `OptionI16`. Each halfword occupies one 32-bit cell. Ownership is linear by convention. |
-| `std::vec_bool` all 25 public functions and its capacity constant | Executable on x86_64 Linux | The boolean fixture checks construction, growth, access, mutation, bounds, reserve, pop, clear, cloning, destruction, and stored `false` distinct from a `true` fallback. The sort/search fixture executes false-before-true ordering, reversal, lower and upper bounds, first and last matches, absent-value fallbacks, empty and single-element vectors, duplicate values, and retained capacity. Searches require sorted input; sort returns len and reverse returns swap count. The allocation-failure suite injects failed initial allocation and reallocation; the true-count sample combines it with `core::bool` and `Option<bool>`. Each boolean occupies one 32-bit cell containing 0 or 1. Ownership is linear by convention. |
 | `std::map_i32_i32` all 16 public functions and its entry-limit constant | Executable on x86_64 Linux | A single allocator-backed pair array provides linear lookup, insertion without partial pairs, in-place update, ordered removal, reservation, independent cloning, clearing, capacity release, and destruction. The native fixture calls every function and checks zero and negative keys and values, the signed maximum key, duplicates, missing keys, ordinal bounds, retained and reduced capacity, and clone independence. Injected initial, growth, shrink, and clone allocation failures preserve the original map or return an empty clone. The byte-histogram program combines it with numeric and byte I/O helpers on empty, text, and binary input. Ownership is linear by convention. A deterministic 40-operation execution test checks insertion order, lookup, update, removal, reserve, shrink, clear, clone independence, and invalid bounds against a reference map after every step. |
 | `std::map_u32_u32` all 16 public functions and its entry-limit constant | Executable on x86_64 Linux | A single allocator-backed pair array preserves full unsigned key and value bit patterns, including `2^31` and `u32::MAX`. The native fixture calls every function and checks insertion, lookup, in-place update, duplicates, missing keys, insertion order, stable removal, invalid ordinals and capacities, cloning, clearing, growth, and shrinking. Injected initial, growth, shrink, and clone allocation failures preserve prior entries or return an empty clone. A frequency-report program combines the map with numeric and I/O helpers. Ownership is linear by convention. A deterministic 40-operation execution test checks insertion order, lookup, update, removal, reserve, shrink, clear, clone independence, and invalid bounds against a reference map after every step. |
 | `std::map_bool_u32` all 10 public functions | Executable on x86_64 Linux | An allocation-free three-word value stores zero, one, or two Boolean keys in insertion order, with full-width `u32` values. The imported fixture calls every function and checks empty and populated lookup, zero distinct from absence, both key orders, replacement without reordering, removal, clearing, invalid ordinals, high-bit and maximum values, and independent value copies. The stdin-driven digit-byte counter combines the map with byte classification and decimal I/O; tests cover empty, text, and binary input and output failure. No capacity, allocator, or destruction service is needed. GPU frontend compilation emits the tested x86 program; user-program GPU execution is not claimed. |
@@ -424,9 +418,6 @@ require further compiler work.
 | `std::host` all 15 metadata functions and 4 constants | Executable metadata on x86_64 Linux | The native fixture calls every public function and constant and checks its unavailable service report against `core::runtime`. No host operation ABI is declared here. |
 | `test::harness` all 31 metadata and status functions and 7 constants | Executable metadata on x86_64 Linux; test execution unbound | The native fixture calls every public function and constant, checks passed, failed, skipped, and unknown statuses, and confirms registration, discovery, and execution remain unavailable. |
 | `test::assert` all 8 public helpers | Executable on x86_64 Linux | `tests/stdlib_assert_execution.rs` runs all passing conditions and separately checks that every false condition terminates with SIGILL. The helpers use no allocation or host calls. See dependency 35 for a separate compiler issue with explicit void returns. |
-| Generic `std::vec::Vec<T>` associated `new`, `len`, and `is_empty` | Executable on x86_64 for imported `i32` and `bool` empty values | `tests/stdlib_generic_vec_flat_execution.rs` compiles the real `std::vec` through `--stdlib-root` and executes both instantiations, including their methods. There is no generic storage or mutation. The former `push` silently discarded its argument and was removed. See dependencies 4 and 54. |
-| Generic `std::vec::new` | Executable on x86_64 for imported `i32` and `bool` empty values | An annotated `Vec<T>` supplies the result type, and the imported constructor runs through `--stdlib-root`. See `tests/stdlib_generic_vec_flat_execution.rs`. |
-| Generic `std::vec::{len,is_empty}` | Executable on x86_64 for imported `i32` and `bool` empty values | `repro_vec_generic_free_new.lani` executes both through `--stdlib-root` with both instantiations. `repro_vec_generic_free_direct_argument.lani` also executes direct nested constructor arguments. Generic `Vec<T>` has no storage or mutation; concrete vectors use the allocator service. See dependencies 4 and 54. |
 
 The original seven single-cell concrete vector modules also implement `truncate(value, new_len)`.
 `tests/stdlib_vec_truncate_execution.rs` executes each imported implementation:
@@ -1024,44 +1015,14 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   an empty zero-capacity deque while preserving its source. Shrinking an empty
   deque releases storage. Keep only the newest returned owner and destroy each
   independent deque once; the language does not enforce this ownership rule.
-- `std::vec_i32`, `std::vec_u32`, `std::vec_u8`, `std::vec_i8`,
-  `std::vec_u16`, `std::vec_i16`, and `std::vec_bool` own allocated 32-bit
-  cells. The non-i32 modules access those cells through the currently available
-  i32 raw-slice intrinsic and encode or decode values on read and write.
-  `vec_u32` preserves every bit pattern;
-  the narrow numeric modules preserve their full 8-bit or 16-bit range. The
-  boolean module stores `false` as zero and `true` as one. All these values
-  use four bytes of storage per element. `try_push` doubles capacity when full,
-  starting at four elements. On allocation failure it returns the prior vector
-  unchanged. Compare the returned length with the prior length to
-  detect failure. `try_reserve` grows to the requested absolute capacity;
-  compare the returned capacity with the request to detect failure. Invalid
-  indices return the caller fallback or `false`, and invalid capacities leave
-  the vector unchanged. `try_extend_from_slice` accepts a typed caller-backed
-  view and count, grows capacity by the push doubling rule (or to the required
-  size when larger), reserves before appending, and increases length by that
-  count on success. Zero count changes nothing; negative count,
-  capacity overflow, or failed allocation leaves the vector unchanged. For a
-  positive count, compare lengths to detect success. The caller must back the
-  full count, and the input must not alias the vector's storage because growth
-  can move it. An i32 fixture confirms a physical input-length overclaim traps
-  on x86. `try_insert` accepts an index from zero through the
-  current length; invalid indices or allocation failure return the original
-  vector unchanged. `try_remove` accepts an index below the current length;
-  invalid indices return the original vector unchanged. Compare lengths to
-  detect success. Insertion preserves order and may move the allocation;
-  removal preserves order and keeps capacity. `try_pop` on an empty vector
-  returns it unchanged; `clear` keeps its allocation. `destroy` releases
-  storage. The caller must retain only the newest returned value, must call
-  `destroy` once, and must not use aliases or copies after growth or
-  destruction. These ownership rules are not yet checked by the language.
-  Every concrete vector's `try_clone`
-  leaves the source live and returns an independent allocation with capacity
-  equal to the initialized length. Both vectors must be destroyed separately.
-  An empty source clones without allocation; a nonempty source with an invalid
-  raw cell or failed allocation yields an empty zero-capacity vector. Compare
-  lengths to detect that failure. The 8-bit, 16-bit, and boolean vectors reject
-  malformed raw cells before allocating; i32, u32, and char accept every 32-bit cell.
+- `std::vec::Vec<T>` replaces the per-type `std::vec_i32`, `vec_u32`, `vec_i8`,
+  `vec_u16`, `vec_i16`, `vec_bool` and `vec_char` modules. `std::vec_u8` remains
+  only as the byte storage of `std::utf8_vec`, which reads its i32 cells
+  directly; it goes away with a generic string type. `try_push` doubles
+  capacity when full, starting at four elements, and failure leaves the
+  vector unchanged. Keep only the newest returned value, destroy it once,
+  and do not use a copy after growth: growth frees the old storage. The
+  language does not check these rules yet.
 - `std::vec_wide_i64` owns one allocation of paired low/high 32-bit
   cells per signed two-word integer. Maximum capacity is `268435455` values
   so every byte count fits signed i32. Operations return the newest vector;
@@ -2126,34 +2087,13 @@ the native ELFs, checks their exit status, checks the example's stdout, and
 checks the slice bounds trap. Each source is also suitable for direct CLI
 compilation with `laniusc --stdlib-root stdlib --emit x86_64 -o OUTPUT SOURCE`.
 Run `cargo test --test stdlib_allocator_failure_execution` and
-`cargo test --test stdlib_vec_i32_execution` for native allocation failures;
-fault injection runs when Linux `strace` is available.
-Run `cargo test --test stdlib_vec_i32_sort_search_execution` for owned
-sorting, search boundaries, and the signed median input program.
-Run `cargo test --test stdlib_vec_u32_sort_search_execution` for unsigned
-high-bit ordering, owned search boundaries, and the unsigned median program.
-Run `cargo test --test stdlib_vec_i8_sort_search_execution` for owned
-signed-byte sorting, reversal, and search boundaries.
-Run `cargo test --test stdlib_vec_i16_sort_search_execution` for owned
-signed-halfword sorting, reversal, and search boundaries.
-Run `cargo test --test stdlib_vec_char_execution` for imported character-vector
-operations, Unicode and full-width ordering, seven allocation-failure branches,
-and the input-driven Unicode sort/deduplicate program. The test compiles through
-the GPU-resident frontend and executes native x86_64 output. `strace` is required
-for injected allocation failures; the test checks normal paths without it.
-
-Run `cargo test --test stdlib_vec_u16_sort_search_execution` for owned
-unsigned-halfword sorting, reversal, and search boundaries.
+`cargo test --test stdlib_vec_alloc_failure_execution` for native allocation
+failures of `std::vec`, `std::vec_u8` and `std::utf8_vec`; fault injection
+runs when Linux `strace` is available. `std::vec` itself runs in
+`cargo test --test stdlib_foundation_execution` (`std_vec`, `std_vec_order`,
+`std_vec_at_out_of_range` and the ported sample programs).
 Run `cargo test --test stdlib_vec_u8_sort_search_execution` for owned
 byte sorting, reversal, search boundaries, and unchanged backing pointer.
-Run `cargo test --test stdlib_vec_bool_sort_search_execution` for owned
-false-before-true sorting, reversal, and search fallbacks.
-Run `cargo test --test stdlib_vec_truncate_execution` for all seven concrete
-vectors' prefix preservation, invalid lengths, retained capacity, and reuse.
-Run `cargo test --test stdlib_vec_resize_execution` for growth, fill,
-shrinkage, invalid lengths, and an injected reallocation failure.
-Run `cargo test --test stdlib_vec_shrink_execution` for all seven concrete
-vectors' capacity release and an injected shrink reallocation failure.
 Run `cargo test --test stdlib_vec_wide_i64_execution` for the owned
 signed two-word vector, every public operation, backing bounds, and injected
 allocation failures. Run `cargo test --test stdlib_wide_signed_sum_program`
@@ -2393,29 +2333,11 @@ also fixes the imported struct-return relocation path described below.
    case now. A way to read slice length is still needed before slice APIs can
    be independent of caller-supplied lengths. User-program GPU behavior and
    general Wasm behavior remain unverified.
-4. **Generic allocation-backed vectors remain blocked.** The old `std::vec`
-   silently dropped values in `push`, so that stub was removed. The empty
-   generic `Vec<T>` has executable imported associated `new`, `len`, and
-   `is_empty` methods with `i32` and `bool` instantiations. Its three free
-   constructor also executes through an imported, annotated result. The free
-   `len` and `is_empty` functions now infer scalar type arguments from imported
-   `Vec<T>` values. `std::vec_i32`,
-   `std::vec_u32`, `std::vec_u8`, `std::vec_i8`, `std::vec_u16`, and
-   `std::vec_i16`, `std::vec_bool`, and `std::vec_char` have tested storage, growth, mutation, failure, and
-   destruction on x86 Linux.
-   `tests/fixtures/stdlib_foundation/repro_vec_generic_associated_new.lani`
-   compiles and executes through `--stdlib-root`. The free constructor also
-   executes when its result has an explicit `Vec<T>` annotation. Imported free
-   `len` and `is_empty` infer `T` from `Vec<i32>` or `Vec<bool>` arguments;
-   `repro_vec_generic_free_new.lani` executes all three free functions through
-   normal imports. All six forms also compile and run in one flat source pack.
-   The former vector service metadata also incorrectly reused runtime service
-   ID 13, which is the test harness. It was removed: the concrete vectors
-   depend on the allocator service, while generic layout is a compiler
-   dependency rather than a missing host service.
-   A generic collection still needs executable generic value layout and a
-   language-level move/borrow rule to enforce ownership rather than relying
-   on caller discipline.
+4. **Resolved: generic allocation-backed vectors.** `std::vec::Vec<T>` stores
+   any element type in allocator storage through `core::mem::size_of<T>()`
+   and `typed_slice_from_storage`, and executes on x86 Linux (see the status
+   table). Ownership still relies on caller discipline: the language has no
+   move or borrow rule yet.
 5. **Resolved: imported f32 constant lowering.** The GPU compiler now records
    compact HIR float literal bits in its exported constant metadata. The
    original `repro_f32_const.lani` exits 0 instead of 3. The executable

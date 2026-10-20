@@ -4526,6 +4526,12 @@ fn module_identity_after_more_than_one_path_workgroup_is_preserved() {
 #[test]
 fn type_checker_accepts_qualified_generic_type_associated_call() {
     assert_gpu_type_check_pack_accepts(&[
+        include_str!("../stdlib/alloc/allocator.lani"),
+        include_str!("../stdlib/core/cmp.lani"),
+        include_str!("../stdlib/core/mem.lani"),
+        include_str!("../stdlib/core/result_bool.lani"),
+        include_str!("../stdlib/core/option.lani"),
+        include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/std/vec.lani"),
         r#"
 module app::main;
@@ -4677,8 +4683,10 @@ fn main() {
 
 #[test]
 fn type_checker_accepts_core_ordering_module_calls() {
-    // core::ordering's two-word adapters import the wide integer modules.
+    // core::ordering's two-word adapters import the wide integer modules,
+    // which implement core::cmp's traits.
     assert_gpu_type_check_pack_accepts(&[
+        include_str!("../stdlib/core/cmp.lani"),
         include_str!("../stdlib/core/number_u32.lani"),
         include_str!("../stdlib/core/wide_u64.lani"),
         include_str!("../stdlib/core/wide_i64.lani"),

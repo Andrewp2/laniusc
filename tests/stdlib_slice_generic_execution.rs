@@ -202,50 +202,6 @@ fn main() -> i32 {
 }
 
 #[test]
-fn owned_vector_reversal_remains_executable_after_slice_api_migration() {
-    for (module, ty, first, middle, last) in [
-        ("vec_i32", "i32", "-2147483648", "0", "2147483647"),
-        ("vec_i8", "i8", "-128", "0", "127"),
-        ("vec_i16", "i16", "-32768", "0", "32767"),
-        ("vec_u8", "u8", "0", "128", "255"),
-        ("vec_u16", "u16", "0", "32768", "65535"),
-        ("vec_bool", "bool", "false", "true", "true"),
-    ] {
-        let source = format!(
-            r#"
-module app::main;
-import std::{module};
-fn main() -> i32 {{
-    let first: {ty} = {first};
-    let middle: {ty} = {middle};
-    let last: {ty} = {last};
-    let value = std::{module}::new();
-    if (std::{module}::reverse_in_place(value) != 0) {{ return 1; }}
-    value = std::{module}::try_push(value, first);
-    value = std::{module}::try_push(value, middle);
-    value = std::{module}::try_push(value, last);
-    if (std::{module}::len(value) != 3) {{ return 2; }}
-    let capacity: i32 = std::{module}::capacity(value);
-    if (std::{module}::reverse_in_place(value) != 1 || std::{module}::len(value) != 3 ||
-        std::{module}::capacity(value) != capacity) {{ return 3; }}
-    if (std::{module}::get_or(value, 0, first) != last ||
-        std::{module}::get_or(value, 1, first) != middle ||
-        std::{module}::get_or(value, 2, last) != first) {{ return 4; }}
-    if (std::{module}::reverse_in_place(value) != 1 ||
-        std::{module}::get_or(value, 0, last) != first ||
-        std::{module}::get_or(value, 2, first) != last) {{ return 5; }}
-    std::{module}::destroy(value);
-    return 0;
-}}
-"#
-        );
-        let bytes = compile_source(module, &source)
-            .expect("compile owned vector reversal after generic slice migration");
-        assert_native_exit(module, &bytes, 0);
-    }
-}
-
-#[test]
 fn generic_slice_access_preserves_native_physical_bounds() {
     for statement in [
         "return core::slice::first(empty);",

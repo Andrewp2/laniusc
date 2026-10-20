@@ -29,6 +29,20 @@ stdlib modules that a generic replacement cannot cover until the gap closes.
   `gen::count::Counter::get(next)`, while a static `Counter::make(40)` works
   locally and imported. Calling a self method through its type's path is
   not an implemented call form (no doc or test claims it). Owner: P13.
+- b15: a bound member call in a generic stdlib body whose type argument is a
+  stdlib type with its impl in that type's own module:
+  `std::vec::is_sorted(Vec<core::wide_i64::WideI64>)` fails with LNC0027
+  "call resolution failed" ("this trait member call has no concrete
+  implementation member to route to", methods/09). Primitive impls in
+  core::cmp and impls in the root module route. All stdlib modules are one
+  unit ([0, 0]), so native_session's impl_bindings skips the impl as local,
+  and the replay has to find it itself. It fails to: with
+  `LANIUS_DECL_ONLY_TEMPLATES=0` and the generic module importing the impl's
+  module, the call routes, and with either missing it does not (measured
+  2026-10-20 against a three-module fake stdlib). The same three modules
+  under a source root (all root unit) route. It blocks sort and search
+  over Vec<WideI64>/Vec<WideU64>, and any generic stdlib container of a
+  stdlib type with a bound, such as a future Vec<String> sort.
 
 Not probes here:
 - An imported call's record result passed straight to another call, e.g.

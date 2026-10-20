@@ -1,9 +1,9 @@
 // expect: 0
-// Imported nominal (std::vec_char::VecChar) at an imported call: the result as a local call argument.
+// Imported nominal (std::vec::Vec<char>) at an imported call: the result as a local call argument.
 module app::main;
-import std::vec_char;
-fn local_len(value: std::vec_char::VecChar) -> i32 { return std::vec_char::len(value); }
+import std::vec;
+fn local_len(value: std::vec::Vec<char>) -> i32 { return std::vec::len(value); }
 fn main() -> i32 {
-    if (local_len(std::vec_char::new()) != 0) { return 1; }
+    if (local_len(std::vec::new()) != 0) { return 1; }
     return 0;
 }

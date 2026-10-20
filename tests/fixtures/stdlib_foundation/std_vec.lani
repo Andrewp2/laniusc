@@ -1,0 +1,198 @@
+// std::vec::Vec<T> over a packed scalar (i32), a byte (u8), a record, a
+// zero-sized record, str, Option<T> and a nested Vec. Exits 0; any other
+// code names the failing check. Prints three strings read back from vectors.
+module app::main;
+import std::vec;
+import std::io;
+import core::option;
+
+struct P { x: i32, y: i32 }
+struct Empty {}
+struct Named { name: str, id: i32 }
+
+fn fill(count: i32) -> std::vec::Vec<i32> {
+    let v: std::vec::Vec<i32> = std::vec::new();
+    let i: i32 = 0;
+    while (i < count) {
+        v = std::vec::push(v, i * 3);
+        i += 1;
+    }
+    return v;
+}
+
+fn total(rows: std::vec::Vec<std::vec::Vec<i32>>) -> i32 {
+    let sum: i32 = 0;
+    let i: i32 = 0;
+    while (i < std::vec::len(rows)) {
+        let row: std::vec::Vec<i32> = std::vec::at(rows, i);
+        let j: i32 = 0;
+        while (j < std::vec::len(row)) {
+            sum += std::vec::at(row, j);
+            j += 1;
+        }
+        i += 1;
+    }
+    return sum;
+}
+
+fn count_some<T>(v: std::vec::Vec<core::option::Option<T>>) -> i32 {
+    let hits: i32 = 0;
+    let i: i32 = 0;
+    while (i < std::vec::len(v)) {
+        let item: core::option::Option<T> = std::vec::at(v, i);
+        if (core::option::is_some(item)) { hits += 1; }
+        i += 1;
+    }
+    return hits;
+}
+
+fn main() -> i32 {
+    // Growth doubles from 4 and keeps every element.
+    let v: std::vec::Vec<i32> = fill(100);
+    if (std::vec::len(v) != 100 || std::vec::capacity(v) != 128 || std::vec::is_empty(v)) { return 1; }
+    if (std::vec::at(v, 0) != 0 || std::vec::at(v, 50) != 150 || std::vec::at(v, 99) != 297) { return 2; }
+    let first: core::option::Option<i32> = std::vec::first(v);
+    let last: core::option::Option<i32> = std::vec::last(v);
+    let outside: core::option::Option<i32> = std::vec::get(v, 100);
+    let inside: core::option::Option<i32> = std::vec::get(v, 1);
+    if (core::option::unwrap_or(first, -1) != 0 || core::option::unwrap_or(last, -1) != 297) { return 3; }
+    if (core::option::is_some(outside) || core::option::unwrap_or(inside, -1) != 3) { return 4; }
+    if (std::vec::get_or(v, -1, 7) != 7 || std::vec::get_or(v, 2, 7) != 6) { return 5; }
+
+    // Edits shift the elements after the index.
+    v = std::vec::try_remove(v, 0);
+    if (std::vec::at(v, 0) != 3 || std::vec::len(v) != 99) { return 6; }
+    v = std::vec::try_insert(v, 0, 1000);
+    if (std::vec::at(v, 0) != 1000 || std::vec::at(v, 1) != 3 || std::vec::len(v) != 100) { return 7; }
+    v = std::vec::try_insert(v, 101, 5);
+    v = std::vec::try_remove(v, 100);
+    v = std::vec::try_set(v, 100, 5);
+    if (std::vec::len(v) != 100) { return 8; }
+    v = std::vec::try_swap_remove(v, 0);
+    if (std::vec::at(v, 0) != 297 || std::vec::len(v) != 99) { return 9; }
+    v = std::vec::try_set(v, 0, 1000);
+    v = std::vec::reverse(v);
+    if (std::vec::at(v, 98) != 1000 || std::vec::at(v, 0) != 294) { return 10; }
+    v = std::vec::try_pop(v);
+    if (std::vec::len(v) != 98 || std::vec::at(v, 97) != 3) { return 11; }
+
+    // A slice views the initialized prefix in place.
+    let view: [i32] = std::vec::as_slice(v);
+    view[0] = 41;
+    if (std::vec::at(v, 0) != 41 || view[97] != 3) { return 12; }
+
+    // Clones are independent; resize fills, truncate and clear keep storage.
+    let c: std::vec::Vec<i32> = std::vec::try_clone(v);
+    c = std::vec::try_set(c, 0, 7);
+    if (std::vec::at(v, 0) != 41 || std::vec::at(c, 0) != 7 || std::vec::capacity(c) != 98) { return 13; }
+    c = std::vec::try_resize(c, 100, -1);
+    if (std::vec::len(c) != 100 || std::vec::at(c, 99) != -1 || std::vec::at(c, 97) != 3) { return 14; }
+    c = std::vec::truncate(c, 10);
+    if (std::vec::len(c) != 10 || std::vec::at(c, 9) != std::vec::at(v, 9)) { return 15; }
+    c = std::vec::try_shrink_to_fit(c);
+    if (std::vec::capacity(c) != 10 || std::vec::at(c, 0) != 7 || std::vec::at(c, 9) != std::vec::at(v, 9)) { return 16; }
+    let extra: [i32; 3] = [1, 2, 3];
+    c = std::vec::try_extend_from_slice(c, extra, 3);
+    if (std::vec::len(c) != 13 || std::vec::at(c, 12) != 3 || std::vec::at(c, 10) != 1) { return 17; }
+    c = std::vec::clear(c);
+    if (!std::vec::is_empty(c) || std::vec::capacity(c) < 13) { return 18; }
+    c = std::vec::try_shrink_to_fit(c);
+    if (std::vec::capacity(c) != 0) { return 19; }
+    std::vec::destroy(c);
+    std::vec::destroy(v);
+
+    // Reservation.
+    let r: std::vec::Vec<i32> = std::vec::try_with_capacity(5);
+    if (std::vec::capacity(r) != 5) { return 20; }
+    r = std::vec::reserve(r, 3);
+    r = std::vec::try_reserve(r, -1);
+    r = std::vec::try_reserve(r, std::vec::MAX_CAPACITY);
+    if (std::vec::capacity(r) != 5) { return 21; }
+    r = std::vec::reserve(r, 9);
+    if (std::vec::capacity(r) != 9) { return 22; }
+    std::vec::destroy(r);
+
+    // Records, whose words run downward in storage, through growth.
+    let points: std::vec::Vec<P> = std::vec::new();
+    let i: i32 = 0;
+    while (i < 37) {
+        points = std::vec::push(points, P { x: i, y: 0 - i });
+        i += 1;
+    }
+    let p: P = std::vec::at(points, 36);
+    let q: P = std::vec::at(points, 5);
+    if (p.x != 36 || p.y != -36 || q.x != 5 || q.y != -5) { return 23; }
+    let pv: [P] = std::vec::as_slice(points);
+    if (pv[0].x != 0 || pv[36].y != -36) { return 24; }
+    points = std::vec::try_insert(points, 1, P { x: 100, y: 200 });
+    let inserted: P = std::vec::at(points, 1);
+    let moved: P = std::vec::at(points, 2);
+    if (inserted.y != 200 || moved.x != 1) { return 25; }
+    points = std::vec::try_shrink_to_fit(points);
+    let kept: P = std::vec::at(points, 37);
+    if (std::vec::capacity(points) != 38 || kept.x != 36) { return 26; }
+    std::vec::destroy(points);
+
+    // Bytes are packed.
+    let bytes: std::vec::Vec<u8> = std::vec::new();
+    let b: u8 = 200;
+    bytes = std::vec::push(bytes, b);
+    bytes = std::vec::push(bytes, b + 1);
+    if ((std::vec::at(bytes, 0) as i32) != 200 || (std::vec::at(bytes, 1) as i32) != 201) { return 27; }
+    std::vec::destroy(bytes);
+
+    // Zero-sized elements never allocate.
+    let e: std::vec::Vec<Empty> = std::vec::new();
+    i = 0;
+    while (i < 10) {
+        e = std::vec::push(e, Empty {});
+        i += 1;
+    }
+    if (std::vec::len(e) != 10) { return 28; }
+    std::vec::destroy(e);
+
+    // Strings in a record and alone.
+    let names: std::vec::Vec<Named> = std::vec::new();
+    names = std::vec::push(names, Named { name: "alpha", id: 1 });
+    names = std::vec::push(names, Named { name: "beta", id: 2 });
+    names = std::vec::push(names, Named { name: "gamma", id: 3 });
+    names = std::vec::push(names, Named { name: "delta", id: 4 });
+    names = std::vec::push(names, Named { name: "eps", id: 5 });
+    let n: Named = std::vec::at(names, 4);
+    let m: Named = std::vec::at(names, 0);
+    if (n.id != 5 || m.id != 1) { return 29; }
+    std::io::println(n.name);
+    std::io::println(m.name);
+    std::vec::destroy(names);
+    let words: std::vec::Vec<str> = std::vec::new();
+    words = std::vec::push(words, "one");
+    words = std::vec::push(words, "two");
+    let w: str = std::vec::at(words, 1);
+    std::io::println(w);
+    std::vec::destroy(words);
+
+    // Vectors of vectors and of options.
+    let rows: std::vec::Vec<std::vec::Vec<i32>> = std::vec::new();
+    let row_count: i32 = 0;
+    while (row_count < 6) {
+        let row: std::vec::Vec<i32> = std::vec::new();
+        let col: i32 = 0;
+        while (col < row_count) {
+            row = std::vec::push(row, col);
+            col += 1;
+        }
+        rows = std::vec::push(rows, row);
+        row_count += 1;
+    }
+    if (total(rows) != 20) { return 30; }
+    let opts: std::vec::Vec<core::option::Option<i32>> = std::vec::new();
+    opts = std::vec::push(opts, core::option::Some(4));
+    opts = std::vec::push(opts, core::option::None());
+    opts = std::vec::push(opts, core::option::Some(5));
+    if (count_some(opts) != 2) { return 31; }
+
+    // The inherent methods.
+    let fresh: std::vec::Vec<i32> = std::vec::Vec<i32>::new();
+    if (fresh.len() != 0 || !fresh.is_empty()) { return 32; }
+    return 0;
+}

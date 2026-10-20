@@ -1,0 +1,40 @@
+// Growth past four elements needs a second mmap. Run normally this exits 1
+// (growth succeeded). With the second mmap failing, push, insert, extend,
+// resize and clone keep the four elements in place and the program exits 0.
+module app::main;
+import std::vec;
+
+struct P { x: i32, y: i32 }
+
+fn intact(v: std::vec::Vec<P>) -> bool {
+    let i: i32 = 0;
+    while (i < 4) {
+        let p: P = std::vec::at(v, i);
+        if (p.x != i || p.y != i * 10) { return false; }
+        i += 1;
+    }
+    return std::vec::len(v) == 4 && std::vec::capacity(v) == 4;
+}
+
+fn main() -> i32 {
+    let v: std::vec::Vec<P> = std::vec::new();
+    let i: i32 = 0;
+    while (i < 4) {
+        v = std::vec::push(v, P { x: i, y: i * 10 });
+        i += 1;
+    }
+    let grown: std::vec::Vec<P> = std::vec::try_push(v, P { x: 4, y: 40 });
+    if (std::vec::len(grown) == 5) { return 1; }
+    if (!intact(grown)) { return 2; }
+    v = std::vec::try_insert(v, 0, P { x: 9, y: 9 });
+    if (!intact(v)) { return 3; }
+    let extra: [P; 2] = [P { x: 7, y: 7 }, P { x: 8, y: 8 }];
+    v = std::vec::try_extend_from_slice(v, extra, 2);
+    if (!intact(v)) { return 4; }
+    v = std::vec::try_resize(v, 9, P { x: 0, y: 0 });
+    if (!intact(v)) { return 5; }
+    let copy: std::vec::Vec<P> = std::vec::try_clone(v);
+    if (std::vec::len(copy) != 0 || !intact(v)) { return 6; }
+    std::vec::destroy(v);
+    return 0;
+}

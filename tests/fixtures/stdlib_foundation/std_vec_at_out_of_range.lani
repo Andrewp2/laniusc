@@ -1,0 +1,9 @@
+// at() traps on an index at the length, as slice indexing does (exit 101).
+module app::main;
+import std::vec;
+
+fn main() -> i32 {
+    let v: std::vec::Vec<i32> = std::vec::new();
+    v = std::vec::push(v, 1);
+    return std::vec::at(v, 1);
+}

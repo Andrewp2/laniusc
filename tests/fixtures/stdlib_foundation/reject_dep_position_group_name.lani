@@ -1,8 +1,8 @@
 // expect: LNC0006
-// A local struct where std::vec_char expects VecChar: a parenthesized name.
+// A local struct where std::vec expects Vec<char>: a parenthesized name.
 module app::main;
-import std::vec_char;
+import std::vec;
 struct Q { n: i32 }
 struct H { q: Q }
 enum Pick { Left, Right }
-fn main() -> i32 { let q: Q = Q { n: 1 }; return std::vec_char::len((q)); }
+fn main() -> i32 { let q: Q = Q { n: 1 }; return std::vec::len((q)); }

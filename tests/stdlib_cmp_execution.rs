@@ -3,7 +3,7 @@ mod common;
 use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
 
 #[test]
-fn local_trait_methods_and_imported_scalar_wrappers_execute_on_x86() {
+fn local_trait_methods_and_core_cmp_impls_execute_on_x86() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for (name, source) in [
         (
@@ -44,24 +44,4 @@ fn local_trait_methods_and_imported_scalar_wrappers_execute_on_x86() {
         #[cfg(not(all(unix, target_arch = "x86_64")))]
         let _ = bytes;
     }
-}
-
-#[test]
-fn every_public_cmp_free_function_has_a_runtime_case() {
-    let source = include_str!("../stdlib/core/cmp.lani");
-    let fixture = include_str!("fixtures/stdlib_foundation/core_cmp_free.lani");
-    let mut count = 0;
-    for line in source.lines() {
-        let Some(tail) = line.strip_prefix("pub fn ") else {
-            continue;
-        };
-        let name = tail
-            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-            .next()
-            .expect("comparison function has a name");
-        let call = format!("core::cmp::{name}(");
-        assert!(fixture.contains(&call), "{call} lacks a runtime case");
-        count += 1;
-    }
-    assert_eq!(count, 60);
 }

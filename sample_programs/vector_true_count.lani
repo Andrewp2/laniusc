@@ -1,26 +1,26 @@
 module app::main;
 import core::bool;
 import core::option;
-import std::vec_bool;
+import std::vec;
 
 fn main() -> i32 {
-    let values: std::vec_bool::VecBool = std::vec_bool::new();
-    values = std::vec_bool::try_push(values, true);
-    values = std::vec_bool::try_push(values, false);
-    values = std::vec_bool::try_push(values, true);
-    if (std::vec_bool::len(values) != 3) {
-        std::vec_bool::destroy(values);
+    let values: std::vec::Vec<bool> = std::vec::new();
+    values = std::vec::try_push(values, true);
+    values = std::vec::try_push(values, false);
+    values = std::vec::try_push(values, true);
+    if (std::vec::len(values) != 3) {
+        std::vec::destroy(values);
         return 1;
     }
 
     let count: i32 = 0;
     let index: i32 = 0;
-    while (index < std::vec_bool::len(values)) {
-        let value: bool = std::vec_bool::get_or(values, index, false);
+    while (index < std::vec::len(values)) {
+        let value: bool = std::vec::get_or(values, index, false);
         count += core::bool::to_i32(value);
         index += 1;
     }
-    std::vec_bool::destroy(values);
+    std::vec::destroy(values);
     let result: core::option::Option<bool> = core::option::Some(count == 2);
     if (!result.unwrap_or(false)) { return 2; }
     print(count);

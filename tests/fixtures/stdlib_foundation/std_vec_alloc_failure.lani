@@ -1,0 +1,13 @@
+// Each std::vec allocation is one mmap. Run normally this exits 1 (the first
+// reservation succeeded). With the first mmap failing every operation must
+// leave its vector unchanged and the program exits 0.
+module app::main;
+import std::vec;
+
+fn main() -> i32 {
+    let reserved: std::vec::Vec<i32> = std::vec::try_with_capacity(2);
+    if (std::vec::capacity(reserved) != 0) { return 1; }
+    let pushed: std::vec::Vec<i32> = std::vec::try_push(reserved, 5);
+    if (std::vec::len(pushed) != 0 || std::vec::capacity(pushed) != 0) { return 2; }
+    return 0;
+}

@@ -4,44 +4,44 @@
 module app::main;
 import core::char;
 import std::io_utf8;
-import std::vec_char;
+import std::vec;
 
 fn main() -> i32 {
-    let values: std::vec_char::VecChar = std::vec_char::new();
+    let values: std::vec::Vec<char> = std::vec::new();
     while (true) {
         let code: u32 = std::io_utf8::read_stdin_scalar_or(1114112, 1114113, 1114114);
         if (code == 1114112) { break; }
         if (code == 1114113) {
-            std::vec_char::destroy(values);
+            std::vec::destroy(values);
             return 2;
         }
         if (code == 1114114) {
-            std::vec_char::destroy(values);
+            std::vec::destroy(values);
             return 3;
         }
-        if (std::vec_char::len(values) == 4096) {
-            std::vec_char::destroy(values);
+        if (std::vec::len(values) == 4096) {
+            std::vec::destroy(values);
             return 4;
         }
         // The reader returns only scalar values below its sentinels.
         let scalar: char = core::char::from_u32_or(code, '\0');
-        let before: i32 = std::vec_char::len(values);
-        values = std::vec_char::try_push(values, scalar);
-        if (std::vec_char::len(values) != before + 1) {
-            std::vec_char::destroy(values);
+        let before: i32 = std::vec::len(values);
+        values = std::vec::try_push(values, scalar);
+        if (std::vec::len(values) != before + 1) {
+            std::vec::destroy(values);
             return 5;
         }
     }
-    std::vec_char::sort_in_place(values);
+    values = std::vec::sort(values);
     let previous: char = '\0';
     let has_previous: bool = false;
     let index: i32 = 0;
-    while (index < std::vec_char::len(values)) {
-        let item: char = std::vec_char::get_or(values, index, '\0');
+    while (index < std::vec::len(values)) {
+        let item: char = std::vec::get_or(values, index, '\0');
         if (!has_previous || item != previous) {
             let code: u32 = item as u32;
             if (!std::io_utf8::write_stdout_scalar(code)) {
-                std::vec_char::destroy(values);
+                std::vec::destroy(values);
                 return 5;
             }
             previous = item;
@@ -49,7 +49,7 @@ fn main() -> i32 {
         }
         index += 1;
     }
-    std::vec_char::destroy(values);
+    std::vec::destroy(values);
     if (!std::io_utf8::write_stdout_scalar(10)) { return 5; }
     return 0;
 }
