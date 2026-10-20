@@ -33,3 +33,4 @@ benchmark_artifacts/profiles/cpu_profiles/**/benchmark-warm-only
 # Keep the derived reports, folded stacks, summaries, and flamegraphs instead.
 benchmark_artifacts/profiles/cpu_profiles/**/perf.data
 *.olean
+/lanius-capture/
