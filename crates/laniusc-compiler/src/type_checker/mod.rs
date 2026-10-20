@@ -20,6 +20,7 @@ pub(crate) use compiler_graph::OUTPUTS_LOWERING_BINDS_WRITABLE;
 mod generic_body;
 mod generic_calls;
 mod instance_closure_passes;
+pub(crate) use instance_closure_passes::instance_table_checked;
 mod closure_summary;
 pub(crate) use closure_summary::{ClosureSummary, JobClosureSummaries};
 mod owner_spans;
@@ -47,6 +48,7 @@ pub(crate) use generic_calls::{
     CheckedGenericArgument,
     CheckedGenericCall,
     CheckedInstanceClosure,
+    CheckedRowFact,
     CheckedGenericConstant,
     CheckedGenericTarget,
     CheckedGenericType,

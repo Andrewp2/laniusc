@@ -113,6 +113,7 @@ pub(in crate::type_checker) struct SemanticProjectionOperations {
     pub(in crate::type_checker) generic_call_results: ComputeOperation,
     /// The instance closure of an original job, after the call results.
     pub(in crate::type_checker) instance_closure: instance_closure_passes::InstanceClosureOperations,
+    pub(in crate::type_checker) instance_table: instance_closure_passes::InstanceTableOperations,
     pub(in crate::type_checker) canonical_types: CanonicalTypeOperations,
     /// The rows of the IDs the late canonical stage added.
     pub(in crate::type_checker) late_row_seed: ComputeOperation,
@@ -435,6 +436,12 @@ impl SemanticProjectionOperations {
                 resources,
                 passes,
                 hir_capacity,
+            )?,
+            instance_table: instance_closure_passes::InstanceTableOperations::new(
+                device,
+                graph,
+                resources,
+                passes,
             )?,
             canonical_types: CanonicalTypeOperations::new(device, graph, resources, passes)?,
             late_row_seed: {

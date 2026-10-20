@@ -665,6 +665,10 @@ impl<'session> ValidatedReplayRequest<'session> {
                 && Arc::ptr_eq(&frozen.dependency_pages, &unit.template_dependency_pages),
             "instance replay does not retain frozen definition provenance"
         );
+        if crate::type_checker::instance_table_checked() {
+            report_instance_table(frozen.unit, self.template.instance_closure(),
+                unit.instance_closure.as_deref(), &self.specialization, &instance.owners);
+        }
         let callable_symbols = frozen.contracts.binders.iter()
             .filter_map(|owner| owner.callable.map(|callable| callable.native_symbol))
             .collect::<BTreeSet<_>>();
@@ -783,6 +787,94 @@ impl<'session> ValidatedReplayRequest<'session> {
     }
 }
 
+
+/// The instance table's validation (D2, `LANIUS_CHECK_INSTANCE_TABLE=1`):
+/// each copy of this run against the original job's table entry for the
+/// same template function and arguments, row by row, as decoded types.
+/// It only reports, on stderr; nothing depends on the table yet.
+///
+/// Parameter rows (HIR kind 4) are counted apart: their expression slot
+/// holds the row's scalar cache, which differs between jobs for the same
+/// copy. Lowering takes a parameter's type from its type row; whether any
+/// reader uses the parameter row's slot is for D5's accessor audit.
+fn report_instance_table(
+    unit: [u32; 2],
+    template: Option<&crate::type_checker::CheckedInstanceClosure>,
+    copies: Option<&crate::type_checker::CheckedInstanceClosure>,
+    specialization: &CheckedBodySpecializationBatch,
+    owners: &[(u32, Option<u32>)],
+) {
+    use crate::type_checker::CheckedRowFact;
+    const HIR_PARAM: u32 = 4;
+    let label = format!("[instance-table] unit {}:{}", unit[0], unit[1]);
+    let Some(table) = template.and_then(|closure| closure.table.as_ref()) else {
+        eprintln!("{label} no table: template closure {}, found {}, flags {:#x}, error {:?}, {} copies",
+            if template.is_some() { "present" } else { "absent" },
+            template.map_or(0, |closure| closure.found), template.map_or(0, |closure| closure.flags),
+            template.and_then(|closure| closure.error.as_ref()), specialization.entries().len());
+        return;
+    };
+    if let Some(error) = copies.and_then(|closure| closure.error.as_ref()) {
+        eprintln!("{label} copy rows failed: {error}");
+    }
+    let mut entries = table.entries.clone();
+    for entry in &mut entries {
+        entry.scope(unit);
+    }
+    let copy_rows = copies.map_or(&[][..], |closure| closure.copy_rows.as_slice());
+    let [mut matched, mut unmatched, mut missing, mut lengths] = [0usize; 4];
+    let [mut rows, mut equal, mut differ, mut undecoded, mut params] = [0usize; 5];
+    for (index, (entry, &(function, _))) in specialization.entries().iter().zip(owners).enumerate() {
+        let Some(found) = entries.iter()
+            .find(|candidate| candidate.is_instance(function, &entry.arguments, &entry.constants, unit))
+        else {
+            unmatched += 1;
+            if unmatched <= 3 {
+                let same = entries.iter().filter(|candidate| candidate.function_row == function)
+                    .map(|candidate| format!("{:?}", candidate.arguments)).collect::<Vec<_>>();
+                eprintln!("{label} copy {index} (function {function}) has no table entry: {:?}; \
+                    entries of that function: {same:?}", entry.arguments);
+            }
+            continue;
+        };
+        matched += 1;
+        let Some(copy) = copy_rows.get(index) else {
+            missing += 1;
+            continue;
+        };
+        if copy.len() != found.rows.len() {
+            lengths += 1;
+            eprintln!("{label} copy {index} (function {function}) has {} rows, its entry {}",
+                copy.len(), found.rows.len());
+            continue;
+        }
+        let kinds = copies.and_then(|closure| closure.copy_row_kinds.get(index));
+        for (row, (expected, actual)) in found.rows.iter().zip(copy).enumerate() {
+            let mut actual = actual.clone();
+            actual.scope(unit);
+            let kind = kinds.and_then(|kinds| kinds.get(row)).copied();
+            rows += 1;
+            match (expected, &actual) {
+                _ if *expected == actual => equal += 1,
+                _ if kind == Some(HIR_PARAM) => params += 1,
+                (CheckedRowFact::Undecoded(_), CheckedRowFact::Undecoded(_)) => undecoded += 1,
+                _ => {
+                    differ += 1;
+                    if differ <= 8 {
+                        eprintln!("{label} copy {index} function {function} row +{row} kind {kind:?}: \
+                            table {expected:?}; copy {actual:?}");
+                    }
+                }
+            }
+        }
+    }
+    eprintln!(
+        "{label} entries={} flags={} failed={} copies={} matched={matched} unmatched={unmatched} \
+         missing_rows={missing} length_mismatch={lengths} rows={rows} equal={equal} differ={differ} \
+         param_rows_differ={params} both_undecoded={undecoded}",
+        table.entries.len(), table.flags, table.failed, specialization.entries().len(),
+    );
+}
 
 /// See `NativeProgramSession::instance_impl_bindings`; `instance` numbers the
 /// rows. Copies GPU-selected implementations and their accepted method

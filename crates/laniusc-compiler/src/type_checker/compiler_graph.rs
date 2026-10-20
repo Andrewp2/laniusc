@@ -6630,6 +6630,19 @@ fn build_graph(
             "type_instance_decl_token" => _type_instance_decl_token: Read,
         ],
     )?;
+    // The instance table (D2, behind LANIUS_INSTANCE_TABLE) realizes the
+    // closure's instances' rows from the final expression references.
+    super::instance_closure_passes::register_instance_table_passes(
+        &mut graph,
+        kernels,
+        hir_rows,
+        reflected_bindings![
+            "semantic_expr_ref_tag_by_hir" => semantic_expr_ref_tag_by_hir: Read,
+            "semantic_expr_ref_payload_by_hir" => semantic_expr_ref_payload_by_hir: Read,
+            "type_native_word_count" => _type_native_word_count: Write,
+            "type_native_scalar_identity" => _type_native_scalar_identity: Write,
+        ],
+    )?;
     graph.add_kernel_pass_by_name(
         SEMANTIC_LOCAL_CONST_LITERALS_PROJECT_PASS,
         CompilerPhase::TypeCheck,
