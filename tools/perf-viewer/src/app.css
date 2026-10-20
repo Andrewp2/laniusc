@@ -184,6 +184,10 @@ svg { display: block; width: 100%; height: auto; }
 .tick { fill: var(--muted); font-size: 10px; }
 .axis-title { fill: var(--muted); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
 .bar-label { fill: var(--text); font-size: 11px; font-variant-numeric: tabular-nums; }
+.bar-break { stroke: var(--bg); stroke-width: 4; fill: none; }
+.axis-break { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+rect.off-scale { stroke: var(--yellow); stroke-width: 2; }
+.bar-label.off-scale-label { fill: var(--yellow); font-weight: 700; }
 .bar-label.context-only { fill: var(--context-series); text-decoration: line-through; }
 .node-label { fill: var(--text); font-size: 10px; }
 .median-line { stroke: var(--text); stroke-width: 1; stroke-dasharray: 3 3; opacity: .8; }
