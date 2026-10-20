@@ -22,6 +22,9 @@ pub(super) struct ResidentSourcePackExecutor<'compiler, 'gpu> {
     // (through a sibling temporary renamed into place) instead of returning
     // the image as bytes.
     output_file: Option<std::path::PathBuf>,
+    // The manifest's standard library (`standard_library_id`): only its units
+    // enter the warm caches that survive a project clear.
+    standard_library_id: Option<u32>,
 }
 
 /// The linked program: its bytes, or the byte length already written to the
@@ -73,7 +76,7 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         target: SourcePackArtifactTarget,
     ) -> Self {
         debug_assert_ne!(target, SourcePackArtifactTarget::Generic);
-        Self { compiler, target, pending_originals: Vec::new(), output_file: None }
+        Self { compiler, target, pending_originals: Vec::new(), output_file: None, standard_library_id: None }
     }
 
     pub(super) fn with_output_file(
@@ -82,6 +85,12 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         output: &std::path::Path,
     ) -> Self {
         Self { output_file: Some(output.to_path_buf()), ..Self::new(compiler, target) }
+    }
+
+    /// Names the manifest's standard library (its `standard_library_id`).
+    pub(super) fn with_standard_library(mut self, standard_library_id: Option<u32>) -> Self {
+        self.standard_library_id = standard_library_id;
+        self
     }
 
     async fn compile_unit(
@@ -102,11 +111,12 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
+        let standard_library = self.standard_library_id == Some(handle.job.library_id);
         if self.target == SourcePackArtifactTarget::X86_64 {
             // A standard-library unit may reuse an earlier job's pending
             // original; it is admitted with the rest of this program at link.
             let pending = self.compiler.compile_cached_pending_original_unit(
-                &handle.job, &handle.source_files, dependency_pages.into(),
+                &handle.job, standard_library, &handle.source_files, dependency_pages.into(),
             ).await?;
             let artifact = PendingNativeArtifact {
                 slot: self.pending_originals.len(), facts: pending.facts().clone(),
@@ -116,7 +126,7 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         } else {
             self.compiler
                 .compile_cached_path_source_pack_unit(
-                    self.target, &handle.job, &handle.source_files, dependency_pages.into(),
+                    self.target, &handle.job, standard_library, &handle.source_files, dependency_pages.into(),
                 ).await.map(|compiled| ResidentSourcePackArtifact::StrictPublished(compiled.value))
         }
     }

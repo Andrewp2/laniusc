@@ -111,6 +111,7 @@ fn source_pack_prepare_modes_report_missing_artifact_root_as_diagnostic() {
     let path_manifest = crate::compiler::ExplicitSourcePackPathManifest {
         files: Vec::new(),
         library_dependencies: Vec::new(),
+        standard_library_id: None,
     };
     let path_manifest_err = prepare_path_manifest_metadata_only(
         "wasm",

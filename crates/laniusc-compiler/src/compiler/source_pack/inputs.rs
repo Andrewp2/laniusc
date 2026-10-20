@@ -73,6 +73,15 @@ pub struct ExplicitSourcePathFile {
 pub struct ExplicitSourcePackPathManifest {
     pub files: Vec<ExplicitSourcePathFile>,
     pub library_dependencies: Vec<SourcePackLibraryDependency>,
+    /// The library whose files all came from a standard-library root, set
+    /// only by the stdlib-root loader
+    /// (`load_explicit_source_pack_path_manifest_from_paths`). Warm caches
+    /// that must never hold a user's code (the pending-original and library
+    /// instance caches) key their admission on this, not on a library id.
+    /// Runtime identity only: a deserialized manifest has none, so nothing
+    /// built from it is retained as standard library.
+    #[serde(skip)]
+    pub standard_library_id: Option<u32>,
 }
 
 /// In-memory source-pack input for planning and executing multi-library builds.
@@ -445,6 +454,7 @@ impl ExplicitSourcePackPathManifest {
         Ok(Self {
             files,
             library_dependencies,
+            standard_library_id: None,
         })
     }
 

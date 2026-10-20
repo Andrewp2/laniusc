@@ -717,6 +717,7 @@ fn source_pack_contract_test_manifest() -> SourcePackPathBuildManifest {
     let path_manifest = ExplicitSourcePackPathManifest {
         files: source_files.clone(),
         library_dependencies: library_dependencies.clone(),
+        standard_library_id: None,
     };
     let file_inputs = source_files
         .iter()
@@ -3917,6 +3918,7 @@ fn source_pack_partition_validation_version_errors_are_structured() {
     let empty_manifest = ExplicitSourcePackPathManifest {
         files: Vec::new(),
         library_dependencies: Vec::new(),
+        standard_library_id: None,
     };
     let err = library_partition_plan(&empty_manifest, target)
         .expect_err("empty partition plans should be structured");
@@ -6221,6 +6223,7 @@ fn daemon_local_path_executes_many_bounded_units_without_a_durable_work_queue() 
             })
             .collect(),
         library_dependencies: Vec::new(),
+        standard_library_id: None,
     };
     let limits = CompilationUnitLimits {
         max_source_bytes: UNIT_BYTES,

@@ -18,9 +18,6 @@ const DEFAULT_COMPILED_UNIT_CACHE_BYTES: usize = 256 * 1024 * 1024;
 const DEFAULT_PENDING_ORIGINAL_CACHE_BYTES: usize = 128 * 1024 * 1024;
 /// Library instance runs (see `LibraryInstanceCache`).
 const DEFAULT_LIBRARY_INSTANCE_CACHE_BYTES: usize = 32 * 1024 * 1024;
-/// The daemon entry loader assigns library 0 to the standard library and
-/// library 1 to user sources (`clear_project_compiled_unit_cache`).
-const STANDARD_LIBRARY_ID: u32 = 0;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(super) struct CompiledUnitCacheKey {
@@ -193,6 +190,10 @@ struct CachedCompiledUnit<V> {
     value: V,
     resident_bytes: usize,
     last_used: u64,
+    /// Compiled from the manifest's standard library
+    /// (`ExplicitSourcePackPathManifest::standard_library_id`); a project
+    /// clear keeps it.
+    standard_library: bool,
 }
 
 /// Released compiled units (strict compilation, any target).
@@ -259,8 +260,8 @@ impl CachedInstanceRun {
 pub(super) struct LibraryInstanceCache {
     runs: UnitCache<Arc<CachedInstanceRun>>,
     /// The template sources of this compiler's standard-library pending
-    /// originals (`compile_cached_pending_original_unit`, library 0 under the
-    /// daemon entry loader), registered by every job before specialization.
+    /// originals (`compile_cached_pending_original_unit` with the manifest's
+    /// `standard_library_id`), registered by every job before specialization.
     /// A template whose sources are not one of these, such as a resident
     /// single-unit program whose app unit is numbered 0:0, is never cached.
     standard_templates: Vec<Arc<[String]>>,
@@ -284,8 +285,7 @@ impl LibraryInstanceCache {
     /// pending-original cache): a user's edit never changes them. The
     /// template must be a registered standard-library original of this job.
     pub(super) fn cacheable_template(&self, unit: &CompiledSourcePackUnit) -> bool {
-        unit.interface.library_id == STANDARD_LIBRARY_ID
-            && library_instance_cache_enabled()
+        library_instance_cache_enabled()
             && self.standard_templates.iter().any(|sources| Arc::ptr_eq(sources, &unit.template_sources))
     }
 
@@ -461,9 +461,9 @@ impl<V: CachedUnitValue> UnitCache<V> {
         self.resident_bytes = 0;
     }
 
-    fn clear_except_library(&mut self, retained_library_id: u32) {
-        self.entries
-            .retain(|key, _| key.library_id == retained_library_id);
+    /// Drops every entry but the standard library's.
+    fn clear_project(&mut self) {
+        self.entries.retain(|_, entry| entry.standard_library);
         self.hints.retain(|_, key| self.entries.contains_key(key));
         self.resident_bytes = self
             .entries
@@ -490,7 +490,15 @@ impl<V: CachedUnitValue> UnitCache<V> {
     }
 
     fn insert(&mut self, key: CompiledUnitCacheKey, value: impl Into<V>) {
-        let value = value.into();
+        self.insert_entry(key, value.into(), false);
+    }
+
+    /// An entry compiled from the manifest's standard library.
+    fn insert_standard_library(&mut self, key: CompiledUnitCacheKey, value: impl Into<V>) {
+        self.insert_entry(key, value.into(), true);
+    }
+
+    fn insert_entry(&mut self, key: CompiledUnitCacheKey, value: V, standard_library: bool) {
         self.clock = self.clock.wrapping_add(1);
         let resident_bytes =
             std::mem::size_of::<CompiledUnitCacheKey>().saturating_add(value.resident_byte_len());
@@ -500,6 +508,7 @@ impl<V: CachedUnitValue> UnitCache<V> {
                 value,
                 resident_bytes,
                 last_used: self.clock,
+                standard_library,
             };
         } else {
             self.entries.insert(
@@ -508,6 +517,7 @@ impl<V: CachedUnitValue> UnitCache<V> {
                     value,
                     resident_bytes,
                     last_used: self.clock,
+                    standard_library,
                 },
             );
         }
@@ -674,11 +684,13 @@ impl GpuCompiler<'_> {
     ///
     /// Both resident and file-backed project executors use this boundary so
     /// filesystem identity, dependency hashing, and cache ownership cannot
-    /// diverge between the two storage policies.
+    /// diverge between the two storage policies. `standard_library` marks a
+    /// unit of the manifest's standard library, which a project clear keeps.
     pub(super) async fn compile_cached_path_source_pack_unit(
         &self,
         target: SourcePackArtifactTarget,
         job: &SourcePackJob,
+        standard_library: bool,
         source_files: &[ExplicitSourcePathFile],
         dependency_pages: Arc<[Vec<GpuSemanticInterfaceArtifact>]>,
     ) -> Result<CachedCompiledSourcePackUnit, super::CompileError> {
@@ -742,7 +754,7 @@ impl GpuCompiler<'_> {
             )
             .await?,
         );
-        self.cache_compiled_unit(cache_hint, cache_key, Arc::clone(&value));
+        self.cache_compiled_unit(cache_hint, cache_key, Arc::clone(&value), standard_library);
         Ok(CachedCompiledSourcePackUnit {
             value,
             cache_hit: false,
@@ -782,19 +794,18 @@ impl GpuCompiler<'_> {
             .stats()
     }
 
-    /// Drops project results while retaining the daemon entry loader's
-    /// standard-library artifacts. That loader assigns library 0 to stdlib and
-    /// library 1 to user sources; this operation is therefore daemon-specific
-    /// and deliberately separate from the unconditional cache clear above.
+    /// Drops project results while retaining standard-library artifacts:
+    /// the entries compiled from a manifest's `standard_library_id`. This is
+    /// deliberately separate from the unconditional cache clear above.
     pub(crate) fn clear_project_compiled_unit_cache(&self) {
         self.compiled_unit_cache
             .lock()
             .expect("compiled-unit cache mutex poisoned")
-            .clear_except_library(STANDARD_LIBRARY_ID);
+            .clear_project();
         self.pending_original_cache
             .lock()
             .expect("pending-original cache mutex poisoned")
-            .clear_except_library(STANDARD_LIBRARY_ID);
+            .clear_project();
         // Instance keys name project types, and runs a warm-up job built must
         // not seed the first project job.
         self.clear_library_instance_cache();
@@ -825,12 +836,13 @@ impl GpuCompiler<'_> {
         hint: Option<CompiledUnitCacheHintKey>,
         key: CompiledUnitCacheKey,
         value: Arc<CompiledSourcePackUnit>,
+        standard_library: bool,
     ) {
         let mut cache = self
             .compiled_unit_cache
             .lock()
             .expect("compiled-unit cache mutex poisoned");
-        cache.insert(key.clone(), value);
+        cache.insert_entry(key.clone(), value, standard_library);
         if let Some(hint) = hint {
             cache.insert_hint(hint, key);
         }
@@ -854,19 +866,22 @@ impl GpuCompiler<'_> {
     /// modification times (or contents), and dependency interfaces.
     ///
     /// A reused original is not released: program admission checks its facts
-    /// and original calls on every job, as for a fresh compilation. Project
-    /// units (library != 0) are compiled on every job and count as misses.
-    /// `LANIUS_PENDING_ORIGINAL_CACHE=0` disables reuse.
+    /// and original calls on every job, as for a fresh compilation. Only a
+    /// unit of the manifest's standard library (`standard_library`, from
+    /// `ExplicitSourcePackPathManifest::standard_library_id`, never a bare
+    /// library id) is retained; every other unit is compiled on every job and
+    /// counts as a miss. `LANIUS_PENDING_ORIGINAL_CACHE=0` disables reuse.
     pub(super) async fn compile_cached_pending_original_unit(
         &self,
         job: &SourcePackJob,
+        standard_library: bool,
         source_files: &[ExplicitSourcePathFile],
         dependency_pages: Arc<[Vec<GpuSemanticInterfaceArtifact>]>,
     ) -> Result<PendingOriginalUnit, super::CompileError> {
         let unit_id = u32::try_from(job.phase_unit_index).map_err(|_| {
             source_pack_artifact_store_error("pending native source-unit index exceeds u32")
         })?;
-        let cacheable = job.library_id == STANDARD_LIBRARY_ID && pending_original_cache_enabled();
+        let cacheable = standard_library && pending_original_cache_enabled();
         let cache_hint = if cacheable {
             CompiledUnitCacheHintKey::new(
                 SourcePackArtifactTarget::X86_64, job.library_id, unit_id, source_files,
@@ -878,7 +893,7 @@ impl GpuCompiler<'_> {
         if let Some(hit) = cache_hint.as_ref().and_then(|hint| self.pending_original_cache
             .lock().expect("pending-original cache mutex poisoned").get_by_hint(hint))
         {
-            return Ok(self.register_standard_original(job, hit.pending()));
+            return Ok(self.register_standard_original(standard_library, hit.pending()));
         }
         let sources = read_explicit_source_path_files(
             "pending native library-interface job", source_files)?;
@@ -896,7 +911,7 @@ impl GpuCompiler<'_> {
             match &cache_key {
                 Some(key) => if let Some(hit) = cache.get(key) {
                     drop(cache);
-                    return Ok(self.register_standard_original(job, hit.pending()));
+                    return Ok(self.register_standard_original(standard_library, hit.pending()));
                 },
                 None => cache.record_miss(),
             }
@@ -909,18 +924,18 @@ impl GpuCompiler<'_> {
         if let Some(key) = cache_key {
             let mut cache = self.pending_original_cache
                 .lock().expect("pending-original cache mutex poisoned");
-            cache.insert(key.clone(), pending.retain());
+            cache.insert_standard_library(key.clone(), pending.retain());
             if let Some(hint) = cache_hint {
                 cache.insert_hint(hint, key);
             }
         }
-        Ok(self.register_standard_original(job, pending))
+        Ok(self.register_standard_original(standard_library, pending))
     }
 
     /// A standard-library original's templates may enter the warm library
     /// instance cache (D7b) in this job; no other unit's may.
-    fn register_standard_original(&self, job: &SourcePackJob, pending: PendingOriginalUnit) -> PendingOriginalUnit {
-        if job.library_id == STANDARD_LIBRARY_ID {
+    fn register_standard_original(&self, standard_library: bool, pending: PendingOriginalUnit) -> PendingOriginalUnit {
+        if standard_library {
             self.library_instance_cache.lock()
                 .expect("library instance cache mutex poisoned")
                 .register_standard_template(pending.facts().template_sources());
@@ -1156,7 +1171,7 @@ mod tests {
         let key = CompiledUnitCacheKey::new(
             SourcePackArtifactTarget::X86_64, 0, 0, &["module core;".into()], &[],
         ).unwrap();
-        cache.insert(key.clone(), pending.retain());
+        cache.insert_standard_library(key.clone(), pending.retain());
         // Every hit is a new pending wrapper over the same facts snapshot, so
         // each build's admission sees the original compilation's facts.
         for _ in 0..2 {
@@ -1169,7 +1184,7 @@ mod tests {
         // The facts snapshot's interface copy is charged with the unit.
         assert_eq!(stats.resident_bytes, std::mem::size_of::<CompiledUnitCacheKey>()
             + unit(0).resident_byte_len() + interface_resident_bytes(&unit(0).interface));
-        cache.clear_except_library(STANDARD_LIBRARY_ID);
+        cache.clear_project();
         assert_eq!(cache.stats().entries, 1);
         cache.clear();
         assert!(cache.get(&key).is_none());
@@ -1212,8 +1227,19 @@ mod tests {
             &[],
         )
         .unwrap();
-        cache.insert(stdlib.clone(), unit(0));
+        // A resident single-unit program numbers its app unit 0:0; library
+        // id 0 alone must not retain it.
+        let app_numbered_zero = CompiledUnitCacheKey::new(
+            SourcePackArtifactTarget::X86_64,
+            0,
+            0,
+            &["module main;".into()],
+            &[],
+        )
+        .unwrap();
+        cache.insert_standard_library(stdlib.clone(), unit(0));
         cache.insert(project.clone(), unit(1));
+        cache.insert(app_numbered_zero.clone(), unit(0));
         cache.insert_hint(
             CompiledUnitCacheHintKey {
                 target: stdlib.target,
@@ -1233,10 +1259,11 @@ mod tests {
             project.clone(),
         );
 
-        cache.clear_except_library(0);
+        cache.clear_project();
 
         assert!(cache.entries.contains_key(&stdlib));
         assert!(!cache.entries.contains_key(&project));
+        assert!(!cache.entries.contains_key(&app_numbered_zero));
         assert_eq!(cache.hints.len(), 1);
         assert!(cache.resident_bytes > 0);
     }

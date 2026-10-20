@@ -268,7 +268,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         let mut executor = match output {
             Some(output) => ResidentSourcePackExecutor::with_output_file(self, target, output),
             None => ResidentSourcePackExecutor::new(self, target),
-        };
+        }
+        .with_standard_library(source_pack.standard_library_id);
         execute_path_batched_link_build_async(source_pack, &build_plan, batch_limits, &mut executor)
             .await
             .map(|result| result.linked_output)
@@ -313,7 +314,8 @@ impl<'gpu> GpuCompiler<'gpu> {
         let unit_plan = self.stable_frontend_unit_plan(source_pack, limits);
         let build_plan = source_pack.bounded_frontend_build_plan_with_units(unit_plan);
         let planned = started.elapsed();
-        let mut executor = GpuSourcePackArtifactExecutor::new(self, artifact_root.path(), target);
+        let mut executor = GpuSourcePackArtifactExecutor::new(self, artifact_root.path(), target)
+            .with_standard_library(source_pack.standard_library_id);
         let linked_output_path = execute_path_batched_link_build_async(
             source_pack,
             &build_plan,
@@ -529,6 +531,7 @@ mod tests {
         let small = ExplicitSourcePackPathManifest {
             files: vec![file(0, 0, limits.max_source_bytes)],
             library_dependencies: Vec::new(),
+            standard_library_id: None,
         };
         assert!(!small.requires_bounded_compilation_with_limits(limits));
 
@@ -538,6 +541,7 @@ mod tests {
                 library_id: 1,
                 depends_on_library_id: 0,
             }],
+            standard_library_id: None,
         };
         assert!(!small_multi_library.requires_bounded_compilation_with_limits(limits));
         assert!(path_manifest_has_multiple_libraries(&small_multi_library));
@@ -549,6 +553,7 @@ mod tests {
         let oversized = ExplicitSourcePackPathManifest {
             files: vec![file(0, 0, limits.max_source_bytes + 1)],
             library_dependencies: Vec::new(),
+            standard_library_id: None,
         };
         assert!(oversized.requires_bounded_compilation_with_limits(limits));
 
@@ -561,6 +566,7 @@ mod tests {
                 library_id: 1,
                 depends_on_library_id: 0,
             }],
+            standard_library_id: None,
         };
         assert!(oversized_aggregate.requires_bounded_compilation_with_limits(limits));
         assert!(path_manifest_requires_file_backed_build(
@@ -573,6 +579,7 @@ mod tests {
                 .map(|index| file(0, index, 1))
                 .collect(),
             library_dependencies: Vec::new(),
+            standard_library_id: None,
         };
         assert!(many_files.requires_bounded_compilation_with_limits(limits));
     }
@@ -585,6 +592,7 @@ mod tests {
         let source_pack = ExplicitSourcePackPathManifest {
             files: (0..1024).map(|index| file(0, index, 1024 * 1024)).collect(),
             library_dependencies: Vec::new(),
+            standard_library_id: None,
         };
         assert_eq!(
             source_pack
@@ -628,6 +636,7 @@ mod tests {
                     .map(|index| file(0, index, bytes_per_file))
                     .collect(),
                 library_dependencies: Vec::new(),
+                standard_library_id: None,
             };
             let units = source_pack.frontend_unit_plan(limits);
 

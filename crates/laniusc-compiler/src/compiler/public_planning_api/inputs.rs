@@ -213,7 +213,7 @@ where
     EP: AsRef<Path>,
 {
     let (stdlib_paths, user_paths) = collect_entry_source_root_paths(entry_path.as_ref(), roots)?;
-    load_explicit_source_pack_path_manifest_from_paths(&stdlib_paths, &user_paths)
+    stdlib_root_path_manifest(&stdlib_paths, &user_paths)
 }
 
 /// Discover paths for an entry file, one user source root, and a
@@ -252,7 +252,20 @@ where
         user_roots: vec![source_root.as_ref().to_path_buf()],
     };
     let (stdlib_paths, user_paths) = collect_entry_source_root_paths(entry_path.as_ref(), &roots)?;
-    load_explicit_source_pack_path_manifest_from_paths(&stdlib_paths, &user_paths)
+    stdlib_root_path_manifest(&stdlib_paths, &user_paths)
+}
+
+/// The two-library manifest of an entry's discovered paths. Library 0 holds
+/// exactly the files resolved under the standard-library root
+/// (`SourceRootLibrary::Stdlib`), so the manifest names it as the standard
+/// library; every other loader leaves `standard_library_id` unset.
+fn stdlib_root_path_manifest(
+    stdlib_paths: &[PathBuf],
+    user_paths: &[PathBuf],
+) -> Result<ExplicitSourcePackPathManifest, CompileError> {
+    let mut manifest = load_explicit_source_pack_path_manifest_from_paths(stdlib_paths, user_paths)?;
+    manifest.standard_library_id = (!stdlib_paths.is_empty()).then_some(0);
+    Ok(manifest)
 }
 
 /// Load a validated path-backed manifest into an in-memory source pack.

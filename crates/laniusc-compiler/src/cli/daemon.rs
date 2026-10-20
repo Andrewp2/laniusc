@@ -2051,6 +2051,7 @@ mod tests {
                 })
                 .collect(),
             library_dependencies: Vec::new(),
+            standard_library_id: None,
         };
 
         assert!(matches!(
@@ -2083,6 +2084,7 @@ mod tests {
                 },
             ],
             library_dependencies: Vec::new(),
+            standard_library_id: None,
         };
 
         assert!(matches!(
