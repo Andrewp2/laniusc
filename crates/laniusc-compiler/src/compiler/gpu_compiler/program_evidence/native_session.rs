@@ -54,6 +54,18 @@ pub(in crate::compiler::gpu_compiler) struct NativeProgramSession {
     closure_stats: [usize; 4],
 }
 
+/// A host span named for one source unit (or none), recorded only while
+/// tracing.
+pub(in crate::compiler::gpu_compiler) fn unit_span(name: &str, unit: Option<[u32; 2]>, start: std::time::Instant) {
+    if !crate::gpu::trace::enabled() { return; }
+    let end = std::time::Instant::now();
+    match unit {
+        Some([library, unit]) => crate::gpu::trace::record_host_span(
+            "host.compiler", &format!("{name} {library}:{unit}"), start, end),
+        None => crate::gpu::trace::record_host_span("host.compiler", name, start, end),
+    }
+}
+
 impl NativeProgramSession {
     pub fn admit(
         workspace: &EvidenceWorkspacePool,
@@ -68,10 +80,15 @@ impl NativeProgramSession {
         crate::gpu::trace::record_host_span("host.compiler", "program_evidence.catalog_freeze", start, frozen);
         let gpu = GpuProgramEvidence::admit(workspace.checkout(), catalog.clone())?;
         crate::gpu::trace::record_host_span("host.compiler", "program_evidence.admit", frozen, std::time::Instant::now());
+        let started = std::time::Instant::now();
         let mut packet = gpu.new_packet()?;
+        unit_span("program_evidence.new_packet", None, started);
         for snapshot in &catalog.snapshots {
+            let started = std::time::Instant::now();
             packet.packet_mut()?.append_original_unit_calls(&snapshot.original_facts)?;
+            unit_span("program_evidence.append_original_calls", Some(snapshot.unit), started);
         }
+        let closure_started = std::time::Instant::now();
         // The instance closure's origins join the same check: each closed
         // instance is one call of its own; a bounded callee's predicates
         // are soft obligations, so a refuted bound demotes only that call.
@@ -117,6 +134,7 @@ impl NativeProgramSession {
                 closure_calls.push((snapshot_index, snapshot.unit, calls, depths, appended));
             }
         }
+        unit_span("program_evidence.append_closure_calls", None, closure_started);
         let mut result = Self {
             catalog,
             gpu,
@@ -128,6 +146,7 @@ impl NativeProgramSession {
         };
         // An empty call inventory still requires catalog and batch admission.
         result.check()?;
+        let _origins_span = crate::gpu::trace::HostSpan::new("host.compiler", "program_evidence.closure_origins");
         for (snapshot, unit, calls, depths, appended) in closure_calls {
             let packet = result.packet.packet_mut()?;
             let origins = appended.into_iter()
@@ -164,6 +183,7 @@ impl NativeProgramSession {
         self.ready()?;
         let obligation_count = self.packet.packet_mut()?.tables.count(16)? as usize;
         self.poisoned = true;
+        let _span = crate::gpu::trace::HostSpan::new("host.compiler", "program_evidence.check");
         let suffix = match self.gpu.check(&mut self.packet) {
             Ok(suffix) => suffix,
             Err(error) => {

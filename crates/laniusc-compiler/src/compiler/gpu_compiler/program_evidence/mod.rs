@@ -26,6 +26,7 @@ pub(super) use native_session::{
     declarations_only_templates_enabled,
     instance_closure_enabled,
     native_program_error,
+    unit_span,
 };
 pub(super) use packet::{
     AdmittedCall,

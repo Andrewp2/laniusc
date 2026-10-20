@@ -17,6 +17,7 @@ use super::{
         ReplayScope,
         instance_closure_enabled,
         native_program_error,
+        unit_span,
     },
     program_evidence::CheckedReplayCalls,
     typecheck::{CompiledSourcePackObject, CompiledSourcePackUnit, OriginalUnitFacts, PendingOriginalUnit},
@@ -64,9 +65,13 @@ impl GpuCompiler<'_> {
         let facts = pending.iter().map(|unit| unit.facts().clone()).collect::<Vec<_>>();
         let mut program = NativeProgramSession::admit(
             &self.program_evidence_workspace, &facts).map_err(native_program_error)?;
-        let released = pending.into_iter().zip(&facts).map(|(unit, facts)|
-            unit.finish(program.validated_original(facts)?))
-            .collect::<anyhow::Result<Vec<_>>>().map_err(native_program_error)?;
+        let released = pending.into_iter().zip(&facts).map(|(unit, facts)| {
+            let started = std::time::Instant::now();
+            let released = unit.finish(program.validated_original(facts)?);
+            let interface = facts.interface();
+            unit_span("program_evidence.release_original", Some([interface.library_id, interface.unit_id]), started);
+            released
+        }).collect::<anyhow::Result<Vec<_>>>().map_err(native_program_error)?;
         let (units, calls): (Vec<_>, Vec<_>) = released.into_iter().unzip();
         let references = units.iter().collect::<Vec<_>>();
         let objects = self.specialize_admitted_x86_source_pack_objects(&references, program, calls).await?;
@@ -82,6 +87,7 @@ impl GpuCompiler<'_> {
         if units.len() != initial_calls.len() {
             return Err(CompileError::GpuCodegen("admitted source inventory is incomplete".into()));
         }
+        let setup_started = std::time::Instant::now();
         let mut templates = BTreeMap::new();
         // The defined symbol identities of each template object, so the scan
         // finds a call's tag-only definition without walking every symbol.
@@ -125,6 +131,7 @@ impl GpuCompiler<'_> {
             entries: BTreeMap::new(),
             from_cache: false,
         }).collect::<Vec<_>>();
+        host_span("setup", setup_started);
         let mut trace = SpecializationTrace::new();
         let batch_limit = replay_batch_limit();
         let instance_copies = instance_copies_enabled();
@@ -142,6 +149,14 @@ impl GpuCompiler<'_> {
             let mut pending = BTreeMap::<Vec<u8>, PendingBody>::new();
             let mut patches = Vec::<(usize, usize, Vec<u8>)>::new();
             for context_index in round_start..round_end {
+                // An original unit's scan is spanned on its own; replay
+                // contexts share the round's remaining span.
+                let context_started = std::time::Instant::now();
+                let _context_span = ContextSpan {
+                    unit: (context_index < units.len())
+                        .then(|| [contexts[context_index].library_id, contexts[context_index].unit_id]),
+                    started: context_started,
+                };
                 let context = &contexts[context_index];
                 let (owner_library, owner_unit) = (context.library_id, context.unit_id);
                 let calls_by_hir: BTreeMap<_, _> = context.calls
@@ -1037,6 +1052,20 @@ fn replay_entry(call: &CheckedGenericCall, target: (u32, u32, u32)) -> CheckedBo
         source_unit: [target.0, target.1],
         arguments: call.arguments.clone(),
         constants: call.constants.clone(),
+    }
+}
+
+/// The scan of one original unit's calls, as a host span on drop.
+struct ContextSpan {
+    unit: Option<[u32; 2]>,
+    started: std::time::Instant,
+}
+
+impl Drop for ContextSpan {
+    fn drop(&mut self) {
+        if let Some(unit) = self.unit {
+            unit_span("specialization.scan_original", Some(unit), self.started);
+        }
     }
 }
 
