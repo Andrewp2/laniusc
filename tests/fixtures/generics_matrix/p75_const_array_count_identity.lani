@@ -1,0 +1,19 @@
+// expect: 42
+// A const-generic array passed in and returned beside literal arrays. Array
+// identity is the length's count: an instance's realized `[T; N]` (N: usize)
+// carries a u32 count, as a written `[i32; 3]` does, so both are one type in
+// assignments, calls and the instances' bodies.
+fn keep<T, const N: usize>(values: [T; N]) -> [T; N] { return values; }
+fn count<T, const N: usize>(values: [T; N]) -> usize { return N; }
+fn sum3(values: [i32; 3]) -> i32 { return values[0] + values[1] + values[2]; }
+
+fn main() -> i32 {
+    let literal: [i32; 3] = [10, 20, 5];
+    let kept: [i32; 3] = keep(literal);
+    let again: [i32; 3] = keep(kept);
+    if (count(kept) != 3 || count(literal) != 3 || count(again) != 3) { return 1; }
+    let short: [i32; 2] = [3, 4];
+    let pair: [i32; 2] = keep(short);
+    if (count(pair) != 2) { return 2; }
+    return sum3(kept) + sum3(again) - sum3(literal) + pair[0] + pair[1];
+}
