@@ -1,0 +1,30 @@
+// expect: 42
+// Generic bodies holding string literals, copied per instance after template
+// strings of odd lengths: each copy replay's rodata is rebased to its first
+// copy string at an unaligned pool offset.
+module app::main;
+import core::mem;
+
+fn check(text: str, length: i32, first: u8, last: u8) -> bool {
+    let data: ptr = core::mem::string_data_ptr(text);
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(data, length);
+    return bytes[0] == first && bytes[length - 1] == last;
+}
+
+fn name_of<T>(value: T) -> str { return "omega"; }
+
+fn pick<T>(flag: bool, value: T) -> str {
+    if (flag) { return "yes"; }
+    return "no!";
+}
+
+fn main() -> i32 {
+    let before: str = "template-string-a";
+    if (!check(name_of(1), 5, 111, 97)) { return 1; }
+    if (!check(name_of(true), 5, 111, 97)) { return 2; }
+    if (!check(pick(true, 3), 3, 121, 115)) { return 3; }
+    if (!check(pick(false, false), 3, 110, 33)) { return 4; }
+    if (!check(before, 17, 116, 97)) { return 5; }
+    if (!check("xyz", 3, 120, 122)) { return 6; }
+    return 42;
+}

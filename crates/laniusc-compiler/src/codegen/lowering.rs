@@ -245,7 +245,9 @@ struct SemanticStringParams {
     string_capacity: u32,
     word_capacity: u32,
     n_hir_nodes: u32,
-    reserved: u32,
+    /// Instance-copy replay: first copy HIR row plus one (0 otherwise). Its
+    /// rodata then starts at the first copy string.
+    copy_start: u32,
 }
 
 #[repr(C)]
@@ -1102,7 +1104,7 @@ pub(crate) struct GpuSemanticLoweringStage {
     _scatter_params: LaniusBuffer<SemanticScatterParams>,
     _call_arg_params: LaniusBuffer<SemanticCallArgParams>,
     _aggregate_params: LaniusBuffer<SemanticAggregateParams>,
-    _string_params: LaniusBuffer<SemanticStringParams>,
+    string_params: LaniusBuffer<SemanticStringParams>,
     _function_params: LaniusBuffer<SemanticFunctionParams>,
     template_params: LaniusBuffer<SemanticTemplateParams>,
     execution_rank_pairs: u32,
@@ -1555,7 +1557,7 @@ impl GpuSemanticLoweringStage {
                 string_capacity: hir_nodes,
                 word_capacity: capacities.source_bytes.max(4).div_ceil(4),
                 n_hir_nodes: hir_nodes,
-                reserved: 0,
+                copy_start: 0,
             },
         );
         let template_params = uniform_from_val(
@@ -1963,7 +1965,7 @@ impl GpuSemanticLoweringStage {
             _scatter_params: scatter_params,
             _call_arg_params: call_arg_params,
             _aggregate_params: aggregate_params,
-            _string_params: string_params,
+            string_params,
             _function_params: function_params,
             template_params,
             execution_rank_pairs: capacities.jump_pairs().execution_rank,
@@ -2041,6 +2043,7 @@ impl GpuSemanticLoweringStage {
             bytes.extend(extra.iter().flat_map(|value| value.to_le_bytes()));
         }
         self.template_params.write(queue, 12, &bytes);
+        self.string_params.write(queue, 12, &copy_start.to_le_bytes());
         Ok(())
     }
 
