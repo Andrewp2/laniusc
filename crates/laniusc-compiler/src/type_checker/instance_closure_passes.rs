@@ -48,12 +48,14 @@ pub(super) const INSTANCE_TABLE_KEYS_PASS: &str = "type_check.instance_table.key
 pub(super) const INSTANCE_TABLE_RANK_PASS: &str = "type_check.instance_table.rank";
 pub(super) const INSTANCE_TABLE_ARGS_PASS: &str = "type_check.instance_table.args";
 pub(super) const INSTANCE_TABLE_ROWS_PASS: &str = "type_check.instance_table.rows";
+pub(super) const INSTANCE_TABLE_CALLS_PASS: &str = "type_check.instance_table.calls";
 pub(super) const INSTANCE_TABLE_ROWS_FINAL_PASS: &str = "type_check.instance_table.rows_final";
 const TABLE_KEYS_KERNEL: &str = "type_checker/closure/05_table_keys";
 const TABLE_RANK_KERNEL: &str = "type_checker/closure/05b_table_rank";
 const TABLE_ARGS_KERNEL: &str = "type_checker/closure/05c_table_args";
 const TABLE_ROWS_KERNEL: &str = "type_checker/closure/06_table_rows";
 const TABLE_ROWS_FINAL_KERNEL: &str = "type_checker/closure/06a_table_rows_final";
+const TABLE_CALLS_KERNEL: &str = "type_checker/closure/07_table_calls";
 /// Words of `instance_table_counts` (`IT_COUNT_WORDS`).
 pub(super) const INSTANCE_TABLE_COUNT_WORDS: u64 = 4;
 /// Row dispatches ahead of the final one (as the export's retries).
@@ -275,6 +277,7 @@ pub(super) fn register_instance_table_passes(
     storage(graph, "instance_table_keys", instances * 16)?;
     storage(graph, "instance_table", instances * 32)?;
     let rows = storage(graph, "instance_row_refs", row_capacity * 8)?;
+    let calls = storage(graph, "instance_row_calls", row_capacity * 8)?;
     graph.add_resource(ResourceDesc {
         name: "instance_table_args",
         domain: ResourceDomain::DispatchArguments,
@@ -289,6 +292,7 @@ pub(super) fn register_instance_table_passes(
         accesses: vec![
             PassAccess::write("instance_table_counts", counts),
             PassAccess::write("instance_row_refs", rows),
+            PassAccess::write("instance_row_calls", calls),
         ],
     })?;
     for (name, kernel) in [
@@ -327,6 +331,16 @@ pub(super) fn register_instance_table_passes(
         )?;
         graph.add_indirect_dispatch(name, "instance_table_args")?;
     }
+    // The callee of each virtual call row (D3), once the table is ranked.
+    graph.add_kernel_pass_by_name(
+        INSTANCE_TABLE_CALLS_PASS,
+        CompilerPhase::TypeCheck,
+        ResourceDomain::Types,
+        kernels,
+        TABLE_CALLS_KERNEL,
+        &[],
+    )?;
+    graph.add_indirect_dispatch(INSTANCE_TABLE_CALLS_PASS, "instance_table_args")?;
     Ok(())
 }
 
@@ -354,6 +368,7 @@ pub(in crate::type_checker) struct InstanceTableOperations {
     args: ComputeOperation,
     rows: ComputeOperation,
     rows_final: ComputeOperation,
+    calls: ComputeOperation,
 }
 
 impl InstanceTableOperations {
@@ -366,12 +381,14 @@ impl InstanceTableOperations {
         let buffer = |name| typed_buffer_from_resources::<u32>(resources, name);
         let counts = buffer("instance_table_counts")?;
         let rows = buffer("instance_row_refs")?;
+        let calls = buffer("instance_row_calls")?;
         let clear = crate::gpu::operations::ClearBuffersOperation::new(
             graph,
             INSTANCE_TABLE_CLEAR_PASS,
             &[
                 ("instance_table_counts", (&counts).into()),
                 ("instance_row_refs", (&rows).into()),
+                ("instance_row_calls", (&calls).into()),
             ],
         )?;
         let closure_args = buffer("instance_closure_args")?;
@@ -393,6 +410,7 @@ impl InstanceTableOperations {
             )?,
             rows: indirect(INSTANCE_TABLE_ROWS_PASS, TABLE_ROWS_KERNEL, &table_args)?,
             rows_final: indirect(INSTANCE_TABLE_ROWS_FINAL_PASS, TABLE_ROWS_FINAL_KERNEL, &table_args)?,
+            calls: indirect(INSTANCE_TABLE_CALLS_PASS, TABLE_CALLS_KERNEL, &table_args)?,
         })
     }
 
@@ -404,7 +422,8 @@ impl InstanceTableOperations {
         for _ in 0..TABLE_ROW_RETRIES {
             self.rows.record(encoder)?;
         }
-        self.rows_final.record(encoder)
+        self.rows_final.record(encoder)?;
+        self.calls.record(encoder)
     }
 }
 

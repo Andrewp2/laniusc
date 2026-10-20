@@ -3066,6 +3066,9 @@ impl CheckedSourcePackArtifacts {
                 map.ty(ty)?;
             }
         }
+        for (_, call) in self.instance_closure.copy_calls.iter_mut().flatten() {
+            map.call(call)?;
+        }
         for owner in self.checked_call_owners.iter_mut().chain(self.native_call_owners.iter_mut()) {
             map.call_owner(owner)?;
         }
