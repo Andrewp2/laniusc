@@ -62,8 +62,8 @@ fn empty_unit(key: [u32; 2]) -> CompiledSourcePackUnit {
             ..Default::default()
         }),
         checked_call_owners: Vec::new().into(),
-        x86_call_hirs: Vec::new().into(),
-        x86_call_function_hirs: Vec::new().into(),
+        native_call_hirs: Vec::new().into(),
+        native_call_function_hirs: Vec::new().into(),
         // Opaque immutable provenance. These tests build checked records
         // directly; the text is never parsed to manufacture semantic facts.
         template_sources: vec!["module packet_fixture;".to_owned()].into(),
@@ -886,12 +886,12 @@ fn replay_emission_object(
     }
     object.validate().unwrap();
     unit.object = CompiledSourcePackObject::X86_64(object);
-    unit.x86_call_hirs = native_calls
+    unit.native_call_hirs = native_calls
         .iter()
         .map(|&(hir, _)| hir)
         .collect::<Vec<_>>()
         .into();
-    unit.x86_call_function_hirs = native_calls
+    unit.native_call_function_hirs = native_calls
         .iter()
         .map(|&(_, owner)| owner)
         .collect::<Vec<_>>()
@@ -1069,7 +1069,7 @@ fn replay_emission_rejects_missing_or_conflicting_native_ownership() {
     let catalog = freeze(&[&original]);
     let mut unit = original.clone();
     replay_emission_object(&mut unit, &[CALLEE], &[(501, CALLEE)]);
-    unit.x86_call_function_hirs = Vec::new().into();
+    unit.native_call_function_hirs = Vec::new().into();
     rejected(
         normalize_emission(&catalog, &mut unit),
         "native owner inventory does not match",

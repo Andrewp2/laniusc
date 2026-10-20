@@ -3,7 +3,9 @@ import codegen.optimization_ir;
 import gpu_index;
 
 struct Params { uint target_capacity; uint function_capacity; uint artifact_capacity; uint reserved; };
+struct ObjectIdentity { uint library_id; uint unit_id; uint reserved0; uint reserved1; };
 ConstantBuffer<Params> gParams;
+ConstantBuffer<ObjectIdentity> gIdentity;
 StructuredBuffer<uint> target_lir_total;
 StructuredBuffer<OptIrNodeCore> opt_ir_core;
 StructuredBuffer<OptIrNodeOperands> opt_ir_operands;
@@ -24,6 +26,7 @@ RWStructuredBuffer<WasmObjectRelocationRow> wasm_object_relocations;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint RELOCATION_LOCAL_FUNCTION = 1u;
 static const uint RELOCATION_SYMBOL = 2u;
+static const uint INVALID = 0xffffffffu;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -58,9 +61,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     relocation.target_index = data ? semantic_lir_strings[operands.a].data_offset
         : symbolic ? wasm_object_symbol_prefix[row] : operands.a;
     relocation.addend = 0u;
-    relocation.library_id = symbolic ? operands.a : 0u;
-    relocation.unit_id = symbolic ? operands.b : 0u;
+    // A generic local call names no library: it calls this unit's own
+    // declaration, which body specialization replaces with an instance.
+    bool local = operands.a == INVALID && operands.b == INVALID;
+    relocation.library_id = symbolic ? (local ? gIdentity.library_id : operands.a) : 0u;
+    relocation.unit_id = symbolic ? (local ? gIdentity.unit_id : operands.b) : 0u;
     relocation.local_index = symbolic ? operands.c : 0u;
-    relocation.reserved = 0u;
+    // Private resident metadata: the call's HIR, for program admission.
+    relocation.reserved = symbolic ? opt_ir_source_hir[semantic_row] : 0u;
     wasm_object_relocations[wasm_object_relocation_prefix[row]] = relocation;
 }

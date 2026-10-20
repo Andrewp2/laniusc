@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-"""Compile generics probes through one resident laniusc daemon and run the ELFs.
+"""Compile generics probes through one resident laniusc daemon and run them.
 
 usage: tools/generics_matrix.py [--laniusc PATH] [--stdlib DIR] [--probes DIR]
-                                [--memory-max SIZE] [PATTERN]
+                                [--memory-max SIZE] [--target x86_64|wasm] [PATTERN]
+
+With `--target wasm` each probe compiles to a Wasm module whose exported
+`main` runs under node (host imports are stubs returning 0). The low byte of
+its result stands for the exit code, and a trap counts as exit 101 (the x86
+panic exit).
 
 A probe is a `.lani` file, or a directory holding a multi-module project: the
 entry `main.lani` plus a source root `src/` (`gen::lib` is `src/gen/lib.lani`).
@@ -40,6 +45,7 @@ parser.add_argument("--hang-seconds", type=float, default=15.0,
 parser.add_argument("--readback-timeout-ms", default="20000",
                     help="GPU readback timeout for the daemon; warm probes finish in seconds, so a hang fails fast")
 parser.add_argument("--skip", action="append", default=[], help="skip probes whose name contains this (repeatable)")
+parser.add_argument("--target", choices=["x86_64", "wasm"], default="x86_64")
 parser.add_argument("pattern", nargs="?", default="")
 args = parser.parse_args()
 
@@ -49,7 +55,42 @@ probes = sorted(p for p in pathlib.Path(args.probes).iterdir()
 out_dir = pathlib.Path(args.out)
 out_dir.mkdir(parents=True, exist_ok=True)
 
-command = [args.laniusc, "daemon", "--stdio", "--backend", "x86_64", "--stdlib-root", args.stdlib]
+command = [args.laniusc, "daemon", "--stdio", "--backend", args.target, "--stdlib-root", args.stdlib]
+wasm = args.target == "wasm"
+node = shutil.which("node") if wasm else None
+if wasm and node is None:
+    sys.exit("--target wasm needs node on PATH")
+# Instantiate with stub imports and print main's result, or `trap` if it traps.
+RUN_WASM = r"""
+const fs = require('fs');
+const mod = new WebAssembly.Module(fs.readFileSync(process.argv[1]));
+const imports = {};
+for (const imp of WebAssembly.Module.imports(mod)) {
+  imports[imp.module] = imports[imp.module] || {};
+  if (imp.kind === 'function') imports[imp.module][imp.name] = () => 0;
+  else if (imp.kind === 'memory') imports[imp.module][imp.name] = new WebAssembly.Memory({ initial: 16 });
+}
+const instance = new WebAssembly.Instance(mod, imports);
+let result;
+try { result = instance.exports.main(); } catch (error) {
+  if (error instanceof WebAssembly.RuntimeError) { console.log('trap ' + error.message); process.exit(0); }
+  throw error;
+}
+console.log('main ' + (result === undefined ? 0 : Number(result)));
+"""
+
+
+def run_artifact(path):
+    """The probe's exit code: the ELF's, or the Wasm main's low byte (101 on a trap)."""
+    if not wasm:
+        return subprocess.run([str(path)], capture_output=True, timeout=10).returncode, ""
+    run = subprocess.run([node, "-e", RUN_WASM, str(path)], capture_output=True, text=True, timeout=10)
+    words = run.stdout.split()
+    if run.returncode != 0 or len(words) < 2:
+        return None, (run.stderr.strip().splitlines() or ["node failed"])[-1][:300]
+    if words[0] == "trap":
+        return 101, ""
+    return int(words[1]) & 0xff, ""
 use_scope = shutil.which("systemd-run") is not None
 stderr_path = out_dir / "daemon.stderr"
 
@@ -146,9 +187,9 @@ for probe in probes:
     expect_match = re.match(r"//\s*expect:\s*(?:(-?\d+)|error\s+(LNC\d+))", entry.read_text())
     expect = int(expect_match.group(1)) if expect_match and expect_match.group(1) else 42
     expect_error = expect_match.group(2) if expect_match else None
-    elf = out_dir / (probe.stem + ".elf")
+    elf = out_dir / (probe.stem + (".wasm" if wasm else ".elf"))
     elf.unlink(missing_ok=True)
-    request = {"id": probe.stem, "command": "compile", "emit": "x86_64",
+    request = {"id": probe.stem, "command": "compile", "emit": args.target,
                "input": str(entry.resolve()), "output": str(elf.resolve()),
                "stdlib_root": str(pathlib.Path(args.stdlib).resolve())}
     if probe.is_dir():
@@ -176,12 +217,16 @@ for probe in probes:
                 daemon = Daemon()
         else:
             elf.chmod(0o755)
+            detail = ""
             try:
-                code = subprocess.run([str(elf)], capture_output=True, timeout=10).returncode
-                status = "PASS" if code == expect else f"WRONG(exit {code}, want {expect})"
+                code, detail = run_artifact(elf)
+                if code is None:
+                    status = "RUN-FAIL"
+                else:
+                    status = "PASS" if code == expect & 0xff else f"WRONG(exit {code}, want {expect})"
             except subprocess.TimeoutExpired:
                 status = "RUN-TIMEOUT"
-            results.append((probe.stem, status, elapsed, ""))
+            results.append((probe.stem, status, elapsed, detail))
     name, status, elapsed, detail = results[-1]
     print(f"{status:28} {elapsed:7.1f}s  {name}", flush=True)
     if detail:

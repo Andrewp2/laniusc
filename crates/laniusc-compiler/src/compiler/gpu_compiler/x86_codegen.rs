@@ -1168,12 +1168,12 @@ fn main()->i32 {
             owner.source_hir, call_owner.function_hir,
             "the retained call references its actual nongeneric main owner"
         );
-        assert_eq!(caller.x86_call_hirs.len(), 2,
+        assert_eq!(caller.native_call_hirs.len(), 2,
             "both imported ordinary and generic calls emit native symbols");
-        assert_eq!(caller.x86_call_function_hirs.as_ref(),
+        assert_eq!(caller.native_call_function_hirs.as_ref(),
             &[call_owner.function_hir, call_owner.function_hir],
             "ordinary imported call retains its exact checked caller owner");
-        assert_eq!(caller.x86_call_hirs.iter().filter(|&&hir| hir == call.call_hir).count(), 1,
+        assert_eq!(caller.native_call_hirs.iter().filter(|&&hir| hir == call.call_hir).count(), 1,
             "only the generic call belongs to the generic evidence inventory");
         assert!(owner.parameters.is_empty());
         assert!(owner.enclosing_owner.is_none());

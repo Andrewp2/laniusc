@@ -20,7 +20,7 @@ use super::{
         unit_span,
     },
     program_evidence::CheckedReplayCalls,
-    typecheck::{CompiledSourcePackObject, CompiledSourcePackUnit, OriginalUnitFacts, PendingOriginalUnit},
+    typecheck::{CompiledSourcePackObject, CompiledSourcePackUnit, NativeSymbolKind, OriginalUnitFacts, PendingOriginalUnit},
     unit_cache::{CachedInstanceRun, CompiledUnitCacheKey, library_instance_cache_checked},
     *,
 };
@@ -38,6 +38,18 @@ impl GpuCompiler<'_> {
         &self,
         units: &[&'a CompiledSourcePackUnit],
     ) -> Result<Vec<Cow<'a, x86::GpuX86RelocatableObject>>, CompileError> {
+        self.specialize_source_pack_objects(units).await?.into_iter().map(|object| match object {
+            Cow::Borrowed(CompiledSourcePackObject::X86_64(object)) => Ok(Cow::Borrowed(object)),
+            Cow::Owned(CompiledSourcePackObject::X86_64(object)) => Ok(Cow::Owned(object)),
+            _ => Err(CompileError::GpuCodegen("x86 specialization received a different target".into())),
+        }).collect()
+    }
+
+    /// Specialize already released units of one target (x86 or Wasm).
+    pub(super) async fn specialize_source_pack_objects<'a>(
+        &self,
+        units: &[&'a CompiledSourcePackUnit],
+    ) -> Result<Vec<Cow<'a, CompiledSourcePackObject>>, CompileError> {
         // Repeated references to one compiled object retain one exact fact
         // identity. Independent objects with equal numeric IDs stay distinct.
         let mut by_object = BTreeMap::<*const CompiledSourcePackUnit, OriginalUnitFacts>::new();
@@ -53,7 +65,7 @@ impl GpuCompiler<'_> {
         let calls = facts.iter().map(|facts|
             program.validated_original(facts)?.check_original_unit(facts))
             .collect::<anyhow::Result<Vec<_>>>().map_err(native_program_error)?;
-        self.specialize_admitted_x86_source_pack_objects(units, program, calls).await
+        self.specialize_admitted_source_pack_objects(units, program, calls).await
     }
 
     /// Pending originals expose only facts until this complete catalog and
@@ -62,6 +74,19 @@ impl GpuCompiler<'_> {
         &self,
         pending: Vec<PendingOriginalUnit>,
     ) -> Result<Vec<x86::GpuX86RelocatableObject>, CompileError> {
+        self.specialize_pending_source_pack_objects(pending).await?.into_iter().map(|object| match object {
+            CompiledSourcePackObject::X86_64(object) => Ok(object),
+            CompiledSourcePackObject::Wasm(_) => Err(CompileError::GpuCodegen(
+                "x86 specialization received a different target".into())),
+        }).collect()
+    }
+
+    /// Admit pending originals of one target (x86 or Wasm) as one program and
+    /// specialize every generic body it reaches.
+    pub(super) async fn specialize_pending_source_pack_objects(
+        &self,
+        pending: Vec<PendingOriginalUnit>,
+    ) -> Result<Vec<CompiledSourcePackObject>, CompileError> {
         let facts = pending.iter().map(|unit| unit.facts().clone()).collect::<Vec<_>>();
         let mut program = NativeProgramSession::admit(
             &self.program_evidence_workspace, &facts).map_err(native_program_error)?;
@@ -74,16 +99,16 @@ impl GpuCompiler<'_> {
         }).collect::<anyhow::Result<Vec<_>>>().map_err(native_program_error)?;
         let (units, calls): (Vec<_>, Vec<_>) = released.into_iter().unzip();
         let references = units.iter().collect::<Vec<_>>();
-        let objects = self.specialize_admitted_x86_source_pack_objects(&references, program, calls).await?;
+        let objects = self.specialize_admitted_source_pack_objects(&references, program, calls).await?;
         Ok(objects.into_iter().map(Cow::into_owned).collect())
     }
 
-    async fn specialize_admitted_x86_source_pack_objects<'a>(
+    async fn specialize_admitted_source_pack_objects<'a>(
         &self,
         units: &[&'a CompiledSourcePackUnit],
         mut program: NativeProgramSession,
         initial_calls: Vec<Vec<AdmittedCall>>,
-    ) -> Result<Vec<Cow<'a, x86::GpuX86RelocatableObject>>, CompileError> {
+    ) -> Result<Vec<Cow<'a, CompiledSourcePackObject>>, CompileError> {
         if units.len() != initial_calls.len() {
             return Err(CompileError::GpuCodegen("admitted source inventory is incomplete".into()));
         }
@@ -95,18 +120,20 @@ impl GpuCompiler<'_> {
         let mut objects = Vec::with_capacity(units.len());
         let mut used_units = BTreeSet::new();
         for &unit in units {
-            let CompiledSourcePackObject::X86_64(object) = &unit.object else {
+            let object = &unit.object;
+            if object.target() != units[0].object.target() {
                 return Err(CompileError::GpuCodegen(
-                    "resident x86 specialization received a different target".into(),
+                    "resident specialization received objects of several targets".into(),
                 ));
-            };
+            }
             templates.insert((unit.interface.library_id, unit.interface.unit_id), unit);
-            used_units.insert((object.library_id, object.unit_id));
+            let [object_library, object_unit] = object.unit();
+            used_units.insert((object_library, object_unit));
             // Like `templates`, the last unit with a given identity wins.
             let mut defined = HashSet::new();
-            for symbol in &object.symbols {
-                let identity = symbol_identity(object, symbol);
-                if symbol.section != x86::GpuX86ObjectSection::Undefined {
+            for symbol in 0..object.symbol_count() {
+                let identity = object.symbol_identity(symbol);
+                if object.symbol_kind(symbol) != NativeSymbolKind::Undefined {
                     defined.insert(identity);
                 }
                 if identity.len() == 12 {
@@ -126,8 +153,8 @@ impl GpuCompiler<'_> {
             library_id: unit.interface.library_id,
             unit_id: unit.interface.unit_id,
             calls,
-            call_hirs: unit.x86_call_hirs.clone(),
-            call_owners: unit.x86_call_function_hirs.clone(),
+            call_hirs: unit.native_call_hirs.clone(),
+            call_owners: unit.native_call_function_hirs.clone(),
             entries: BTreeMap::new(),
             from_cache: false,
         }).collect::<Vec<_>>();
@@ -235,14 +262,12 @@ impl GpuCompiler<'_> {
                         }
                         continue;
                     };
-                    let symbol = objects[context_index]
-                        .symbols
-                        .get(symbol_index)
-                        .ok_or_else(|| {
-                            CompileError::GpuCodegen("native call symbol is absent".into())
-                        })?;
-                    if symbol.section != x86::GpuX86ObjectSection::Undefined
-                        || symbol_identity(&objects[context_index], symbol) != identity
+                    let caller_object = &objects[context_index];
+                    if symbol_index >= caller_object.symbol_count() {
+                        return Err(CompileError::GpuCodegen("native call symbol is absent".into()));
+                    }
+                    if caller_object.symbol_kind(symbol_index) != NativeSymbolKind::Undefined
+                        || caller_object.symbol_identity(symbol_index) != identity
                     {
                         return Err(CompileError::GpuCodegen(
                             "native call identity disagrees with its checked generic environment"
@@ -425,7 +450,7 @@ impl GpuCompiler<'_> {
                         }
                         RunWork::Cached(hit) => {
                             let calls = program.admit_cached_instances(
-                                &origins, [hit.run_unit.0, hit.run_unit.1], &hit.run.entry_facts, &hit.run.object)
+                                &origins, [hit.run_unit.0, hit.run_unit.1], &hit.run.entry_facts, &CompiledSourcePackObject::X86_64(hit.run.object.clone()))
                                 .map_err(native_program_error)?;
                             let admitted = std::time::Instant::now();
                             let output = RunOutput::from_cache(&hit.run, calls);
@@ -468,31 +493,24 @@ impl GpuCompiler<'_> {
                         .map(|&symbol| declaration_identity(library_id, unit_id, symbol))
                         .collect::<Vec<_>>();
                     specialized_text_bytes = specialized_text_bytes
-                        .checked_add(object.text.len())
+                        .checked_add(object.code_len())
                         .ok_or_else(|| specialization_limit_error("native text length overflow"))?;
                     // Undefined symbols precede definitions, so dropping other
                     // definitions preserves every relocation target index.
                     let published = identities.iter().map(Vec::as_slice).collect::<HashSet<_>>();
-                    let keep: Vec<bool> = object
-                        .symbols
-                        .iter()
+                    let keep: Vec<bool> = (0..object.symbol_count())
                         .map(|symbol| {
-                            symbol.section == x86::GpuX86ObjectSection::Undefined
-                                || published.contains(symbol_identity(&object, symbol))
+                            object.symbol_kind(symbol) == NativeSymbolKind::Undefined
+                                || published.contains(object.symbol_identity(symbol))
                         })
                         .collect();
-                    let mut index = 0;
-                    object.symbols.retain(|_| {
-                        let retain = keep[index];
-                        index += 1;
-                        retain
-                    });
+                    object.retain_symbols(&keep);
                     // Each key takes the first text definition still carrying
                     // its identity; a renamed definition no longer matches.
                     let mut definitions = HashMap::<Vec<u8>, Vec<usize>>::new();
-                    for (index, symbol) in object.symbols.iter().enumerate().rev() {
-                        if symbol.section == x86::GpuX86ObjectSection::Text {
-                            definitions.entry(symbol_identity(&object, symbol).to_vec()).or_default().push(index);
+                    for index in (0..object.symbol_count()).rev() {
+                        if object.symbol_kind(index) == NativeSymbolKind::Function {
+                            definitions.entry(object.symbol_identity(index).to_vec()).or_default().push(index);
                         }
                     }
                     let mut entries = BTreeMap::new();
@@ -521,8 +539,7 @@ impl GpuCompiler<'_> {
                             entries.insert(entry_hirs[position], body.origin);
                         }
                     }
-                    object.unit_id = specialized_unit;
-                    object.entry_offset = None;
+                    object.publish_as_unit(specialized_unit);
                     object
                         .validate()
                         .map_err(|error| CompileError::GpuCodegen(error))?;
@@ -530,7 +547,7 @@ impl GpuCompiler<'_> {
                     trace.replay(
                         &keys.iter().map(|key| (key.as_slice(), &pending[key])).collect::<Vec<_>>(),
                         specializations.len(), times,
-                        object.text.len(), replay_calls.len(), run_kind(copies, solo),
+                        object.code_len(), replay_calls.len(), run_kind(copies, solo),
                         bindings, split, from_cache);
                     contexts.push(ReplayContext {
                         library_id,
@@ -822,7 +839,7 @@ struct LibraryLookup {
 
 /// One run's finished outputs, from its replay or from the cache.
 struct RunOutput {
-    object: x86::GpuX86RelocatableObject,
+    object: CompiledSourcePackObject,
     call_hirs: Arc<[u32]>,
     call_owners: Arc<[u32]>,
     /// Per entry, the GPU's native seed layouts.
@@ -843,13 +860,10 @@ impl RunOutput {
         let layouts = replay.body_native_layouts
             .filter(|layouts| layouts.len() == entries)
             .ok_or_else(|| CompileError::GpuCodegen("concrete replay omitted admitted native layouts".into()))?;
-        let CompiledSourcePackObject::X86_64(object) = replay.object else {
-            unreachable!("body replay target is x86_64")
-        };
         Ok(Self {
-            object,
-            call_hirs: replay.x86_call_hirs,
-            call_owners: replay.x86_call_function_hirs,
+            object: replay.object,
+            call_hirs: replay.native_call_hirs,
+            call_owners: replay.native_call_function_hirs,
             layouts,
             copy_symbols: checked.copy_symbols,
             entry_hirs: checked.entry_hirs,
@@ -860,7 +874,7 @@ impl RunOutput {
 
     fn from_cache(run: &CachedInstanceRun, calls: Vec<AdmittedCall>) -> Self {
         Self {
-            object: run.object.clone(),
+            object: CompiledSourcePackObject::X86_64(run.object.clone()),
             call_hirs: run.call_hirs.clone(),
             call_owners: run.call_owners.clone(),
             layouts: run.layouts.clone(),
@@ -876,6 +890,12 @@ impl RunOutput {
 /// content, the body's LGS4 scheduling key (declaration and complete
 /// environment graph) and the impl bindings this job's evidence selected
 /// for it. Layout witnesses are compared separately, at lookup.
+/// The library instance cache keys runs by template sources only, so it
+/// holds x86 runs alone; a Wasm template always replays.
+fn is_x86(template: &CompiledSourcePackUnit) -> bool {
+    matches!(template.object, CompiledSourcePackObject::X86_64(_))
+}
+
 fn library_instance_hash(template: blake3::Hash, key: &[u8], bindings: &[BodyImplBinding]) -> blake3::Hash {
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"laniusc-library-instance-v1");
@@ -929,7 +949,7 @@ impl GpuCompiler<'_> {
         });
         let mut cache = self.library_instance_cache.lock().expect("library instance cache mutex poisoned");
         let Some((library_id, unit_id, template)) = template
-            .filter(|&(.., template)| instance_copies && cache.cacheable_template(template))
+            .filter(|&(.., template)| instance_copies && is_x86(template) && cache.cacheable_template(template))
         else {
             lookup.misses = keys;
             return Ok(lookup);
@@ -985,17 +1005,18 @@ impl GpuCompiler<'_> {
         let Some(first) = keys.first() else { return };
         let (library_id, unit_id, _) = pending[first].target;
         let mut cache = self.library_instance_cache.lock().expect("library instance cache mutex poisoned");
-        if !templates.get(&(library_id, unit_id)).is_some_and(|template| cache.cacheable_template(template)) {
+        if !templates.get(&(library_id, unit_id)).is_some_and(|template| is_x86(template) && cache.cacheable_template(template)) {
             return;
         }
         let Some(instances) = keys.iter().map(|key| instance_of.get(key).copied()).collect::<Option<Vec<_>>>()
         else { return };
-        let (Some(copy_symbols), Some(entry_facts)) = (&output.copy_symbols, &output.entry_facts) else { return };
+        let (Some(copy_symbols), Some(entry_facts), CompiledSourcePackObject::X86_64(object)) =
+            (&output.copy_symbols, &output.entry_facts, &output.object) else { return };
         cache.record_miss();
         cache.insert(library_id, unit_id, CachedInstanceRun {
             instances,
             layouts: output.layouts.clone(),
-            object: output.object.clone(),
+            object: object.clone(),
             call_hirs: output.call_hirs.clone(),
             call_owners: output.call_owners.clone(),
             copy_symbols: copy_symbols.clone(),
@@ -1019,7 +1040,12 @@ impl GpuCompiler<'_> {
         let (replay, checked) = request.finish(pending_unit).map_err(native_program_error)?;
         let fresh = RunOutput::from_replay(replay, checked, origins.len())?;
         let mut differences = Vec::new();
-        let (a, b) = (&fresh.object, &cached.object);
+        // Only x86 runs enter the library instance cache.
+        let (CompiledSourcePackObject::X86_64(a), CompiledSourcePackObject::X86_64(b)) =
+            (&fresh.object, &cached.object)
+        else {
+            return Err(CompileError::GpuCodegen("library instance cache holds a non-x86 run".into()));
+        };
         for (name, same) in [
             ("object header", a.version == b.version && a.library_id == b.library_id
                 && a.unit_id == b.unit_id && a.entry_offset == b.entry_offset),
@@ -1383,37 +1409,15 @@ fn native_target(
     }
 }
 
-fn symbol_identity<'a>(
-    object: &'a x86::GpuX86RelocatableObject,
-    symbol: &x86::GpuX86ObjectSymbolRecord,
-) -> &'a [u8] {
-    let start = symbol.identity_byte_start as usize;
-    &object.identity_bytes[start..start + symbol.identity_byte_len as usize]
-}
-
 fn replace_symbol_identity(
-    object: &mut x86::GpuX86RelocatableObject,
+    object: &mut CompiledSourcePackObject,
     index: usize,
     identity: &[u8],
 ) -> Result<(), CompileError> {
-    let start = u32::try_from(object.identity_bytes.len())
-        .map_err(|_| specialization_limit_error("symbol identity storage exceeds u32"))?;
-    let len = u32::try_from(identity.len())
-        .map_err(|_| specialization_limit_error("symbol identity length exceeds u32"))?;
-    start
-        .checked_add(len)
-        .ok_or_else(|| specialization_limit_error("symbol identity range exceeds u32"))?;
-    let symbol = object
-        .symbols
-        .get_mut(index)
-        .ok_or_else(|| CompileError::GpuCodegen("specialization symbol is absent".into()))?;
-    let (lo, hi) = crate::compiler::stable_name_hash(identity);
-    symbol.identity_hash_lo = lo;
-    symbol.identity_hash_hi = hi;
-    symbol.identity_byte_start = start;
-    symbol.identity_byte_len = len;
-    object.identity_bytes.extend_from_slice(identity);
-    Ok(())
+    let present = index < object.symbol_count();
+    object.replace_symbol_identity(index, identity).map_err(|error| {
+        if present { specialization_limit_error(&error) } else { CompileError::GpuCodegen(error) }
+    })
 }
 
 /// Whether the body owning a call (`caller` in `context`), or a body it was

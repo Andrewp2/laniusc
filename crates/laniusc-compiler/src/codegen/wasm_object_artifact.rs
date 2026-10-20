@@ -292,18 +292,17 @@ impl GpuWasmObjectStage {
             &definition_prefix,
             &definition_total,
         )?;
-        let relocations_op = ComputeOperation::direct_with_uniform(
-            device,
-            &context,
-            &resources,
-            "artifact.wasm.object.relocations",
-            &relocations_pass,
-            &params,
-            relocation_capacity,
-        )?;
         let mut identity_resources = resources.clone();
         identity_resources.buffer("gParams", &params);
         identity_resources.buffer("gIdentity", &identity);
+        let relocations_op = ComputeOperation::direct(
+            device,
+            &context,
+            &identity_resources,
+            "artifact.wasm.object.relocations",
+            &relocations_pass,
+            relocation_capacity,
+        )?;
         let functions_op = ComputeOperation::direct(
             device,
             &context,
@@ -472,7 +471,7 @@ impl GpuWasmObjectStage {
         queue: &wgpu::Queue,
         library_id: u32,
         unit_id: u32,
-    ) -> Result<GpuWasmRelocatableObject> {
+    ) -> Result<(GpuWasmRelocatableObject, Vec<u32>)> {
         let metadata_slice = self.metadata_readback.slice(..);
         map_readback_blocking(device, &metadata_slice, "Wasm object metadata readback")?;
         let metadata = metadata_slice.get_mapped_range();
@@ -581,6 +580,9 @@ impl GpuWasmObjectStage {
             .collect::<Vec<_>>();
         let mut relocations = Vec::with_capacity(relocation_count);
         let mut undefined_identities = vec![None; symbol_count];
+        // The call HIR of each undefined symbol, in symbol order (the
+        // relocation row's last word holds it for a symbol relocation).
+        let mut call_hirs = vec![u32::MAX; symbol_count];
         for (index, row) in relocation_words.chunks_exact(8).enumerate() {
             let target_kind = match row[1] {
                 1 => GpuWasmRelocationTargetKind::LocalFunction,
@@ -598,6 +600,7 @@ impl GpuWasmObjectStage {
                     );
                 }
                 undefined_identities[slot] = Some([row[4], row[5], row[6]]);
+                call_hirs[slot] = row[7];
             }
             relocations.push(GpuWasmRelocationRecord {
                 body_byte_offset: row[0],
@@ -653,7 +656,7 @@ impl GpuWasmObjectStage {
             identity_bytes,
         };
         object.validate().map_err(anyhow::Error::msg)?;
-        Ok(object)
+        Ok((object, call_hirs))
     }
 }
 

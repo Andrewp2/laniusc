@@ -17,6 +17,7 @@ use crate::{
         diagnostic_label_from_source_span,
         gpu_compiler::typecheck::{
             CompiledSourcePackObject,
+            NativeSymbolKind,
             CompiledSourcePackUnit,
             PendingReplayUnit,
             OriginalUnitFacts,
@@ -36,7 +37,7 @@ use crate::{
         BlankingDirection,
         TemplateBlanking,
     },
-    codegen::{lowering::ReplaySelection, x86::{GpuX86ObjectSection, GpuX86RelocatableObject}},
+    codegen::lowering::ReplaySelection,
 };
 
 pub(in crate::compiler::gpu_compiler) struct NativeProgramSession {
@@ -343,7 +344,7 @@ impl NativeProgramSession {
         origins: &[&AdmittedCall],
         template_unit: [u32; 2],
         entry_facts: &[Arc<[CheckedGenericCall]>],
-        object: &GpuX86RelocatableObject,
+        object: &CompiledSourcePackObject,
     ) -> Result<Vec<AdmittedCall>> {
         self.ready()?;
         ensure!(!origins.is_empty() && origins.len() == entry_facts.len(),
@@ -730,7 +731,7 @@ impl<'session> ValidatedReplayRequest<'session> {
             &selected.keys().copied().collect(), unit,
         )?;
         check_external_callees(&self.session.catalog.snapshots[self.target_snapshot as usize],
-            unit_object(unit)?, self.specialization.impl_bindings())?;
+            &unit.object, self.specialization.impl_bindings())?;
         self.session
             .packet
             .packet_mut()?
@@ -767,28 +768,17 @@ impl<'session> ValidatedReplayRequest<'session> {
         let callable_symbols = frozen.contracts.binders.iter()
             .filter_map(|owner| owner.callable.map(|callable| callable.native_symbol))
             .collect::<BTreeSet<_>>();
-        check_external_callees(frozen, unit_object(unit)?, self.specialization.impl_bindings())?;
-        let CompiledSourcePackObject::X86_64(object) = &unit.object else {
-            return Err(anyhow!("replay emission has the wrong target"));
-        };
+        check_external_callees(frozen, &unit.object, self.specialization.impl_bindings())?;
+        let object = &unit.object;
         object.validate().map_err(anyhow::Error::msg)?;
-        ensure!([object.library_id, object.unit_id] == frozen.unit,
+        ensure!(object.unit() == frozen.unit,
             "replay emission has the wrong source unit");
-        let identity_of = |symbol: &crate::codegen::x86::GpuX86ObjectSymbolRecord| -> Option<[u32; 3]> {
-            let start = symbol.identity_byte_start as usize;
-            let bytes = object.identity_bytes.get(start..start + symbol.identity_byte_len as usize)?;
-            (bytes.len() == 12).then(|| [
-                u32::from_le_bytes(bytes[0..4].try_into().unwrap()),
-                u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
-                u32::from_le_bytes(bytes[8..12].try_into().unwrap()),
-            ])
-        };
         let mut undefined_count = 0usize;
         let mut definitions_started = false;
         let mut copy_symbols = Vec::with_capacity(self.entries.len());
-        for symbol in &object.symbols {
-            let identity = identity_of(symbol);
-            if symbol.section == GpuX86ObjectSection::Undefined {
+        for symbol in 0..object.symbol_count() {
+            let identity = object.symbol_identity_words(symbol);
+            if object.symbol_kind(symbol) == NativeSymbolKind::Undefined {
                 ensure!(!definitions_started, "native undefined symbols are not a prefix");
                 undefined_count += 1;
                 // A call into this unit links against the original object, so
@@ -800,7 +790,7 @@ impl<'session> ValidatedReplayRequest<'session> {
                 continue;
             }
             definitions_started = true;
-            if symbol.section != GpuX86ObjectSection::Text { continue; }
+            if object.symbol_kind(symbol) != NativeSymbolKind::Function { continue; }
             let identity = identity.ok_or_else(|| anyhow!("native definition has no checked callable identity"))?;
             ensure!(identity[..2] == frozen.unit, "native definition belongs to another source unit");
             ensure!(identity[2] & 0xc000_0000 == 0x4000_0000 && !callable_symbols.contains(&identity[2]),
@@ -813,8 +803,8 @@ impl<'session> ValidatedReplayRequest<'session> {
         ensure!(copy_symbols.len() == self.entries.len()
             && copy_symbols.windows(2).all(|pair| pair[0] < pair[1]),
             "instance replay must define exactly one body per copy");
-        ensure!(unit.x86_call_hirs.len() == undefined_count
-            && unit.x86_call_function_hirs.len() == undefined_count,
+        ensure!(unit.native_call_hirs.len() == undefined_count
+            && unit.native_call_function_hirs.len() == undefined_count,
             "replay native call inventory does not match undefined symbols");
 
         let owners = unit.checked_call_owners.iter()
@@ -847,7 +837,7 @@ impl<'session> ValidatedReplayRequest<'session> {
             "two copies share one lexical owner");
         let generic_owner = unit.generic_calls.iter()
             .map(|call| (call.call_hir, owners[&call.call_hir])).collect::<BTreeMap<_, _>>();
-        for (&hir, &owner) in unit.x86_call_hirs.iter().zip(unit.x86_call_function_hirs.iter()) {
+        for (&hir, &owner) in unit.native_call_hirs.iter().zip(unit.native_call_function_hirs.iter()) {
             ensure!(owner != u32::MAX && owner >= first_row,
                 "instance replay emitted a call outside the copies");
             if let Some(&generic) = generic_owner.get(&hir) {
@@ -1113,34 +1103,22 @@ fn impl_bindings(
 /// replay's impl bindings names (methods/09 routes bound members there).
 fn check_external_callees(
     frozen: &FrozenSnapshot,
-    object: &GpuX86RelocatableObject,
+    object: &CompiledSourcePackObject,
     bindings: &[BodyImplBinding],
 ) -> Result<()> {
     let imports = frozen.dependency_pages.iter().flatten()
         .map(|artifact| [artifact.library_id, artifact.unit_id])
         .collect::<BTreeSet<_>>();
     let targets = bindings.iter().map(|binding| binding.target).collect::<BTreeSet<_>>();
-    for symbol in object.symbols.iter().filter(|symbol| symbol.section == GpuX86ObjectSection::Undefined) {
-        let start = symbol.identity_byte_start as usize;
-        let Some(bytes) = object.identity_bytes.get(start..start + symbol.identity_byte_len as usize)
-            .filter(|bytes| bytes.len() == 12) else { continue };
-        let identity = [
-            u32::from_le_bytes(bytes[0..4].try_into().unwrap()),
-            u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
-            u32::from_le_bytes(bytes[8..12].try_into().unwrap()),
-        ];
+    for symbol in (0..object.symbol_count())
+        .filter(|&symbol| object.symbol_kind(symbol) == NativeSymbolKind::Undefined)
+    {
+        let Some(identity) = object.symbol_identity_words(symbol) else { continue };
         let unit = [identity[0], identity[1]];
         ensure!(unit == frozen.unit || imports.contains(&unit) || targets.contains(&identity),
             "replay calls {identity:?} outside its template's imports, and no implementation binding names it");
     }
     Ok(())
-}
-
-fn unit_object(unit: &CompiledSourcePackUnit) -> Result<&GpuX86RelocatableObject> {
-    match &unit.object {
-        CompiledSourcePackObject::X86_64(object) => Ok(object),
-        _ => Err(anyhow!("replay emission has the wrong target")),
-    }
 }
 
 /// Scratch replay substitutes the selected enclosing impl environment in
@@ -1196,29 +1174,21 @@ pub(super) fn normalize_omitted_batch_template_calls(
             omitted_symbols.insert(callable.native_symbol);
         }
     }
-    let CompiledSourcePackObject::X86_64(object) = &unit.object else {
-        return Err(anyhow!("replay emission has the wrong target"));
-    };
+    let object = &unit.object;
     object.validate().map_err(anyhow::Error::msg)?;
-    ensure!([object.library_id, object.unit_id] == frozen.unit,
+    ensure!(object.unit() == frozen.unit,
         "replay emission has the wrong source unit");
     let mut undefined_count = 0usize;
     let mut definitions_started = false;
-    for symbol in &object.symbols {
-        if symbol.section == GpuX86ObjectSection::Undefined {
+    for symbol in 0..object.symbol_count() {
+        if object.symbol_kind(symbol) == NativeSymbolKind::Undefined {
             ensure!(!definitions_started, "native undefined symbols are not a prefix");
             undefined_count += 1;
             continue;
         }
         definitions_started = true;
-        let start = symbol.identity_byte_start as usize;
-        let bytes = &object.identity_bytes[start..start + symbol.identity_byte_len as usize];
-        ensure!(bytes.len() == 12, "native definition has no checked callable identity");
-        let identity = [
-            u32::from_le_bytes(bytes[0..4].try_into().unwrap()),
-            u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
-            u32::from_le_bytes(bytes[8..12].try_into().unwrap()),
-        ];
+        let identity = object.symbol_identity_words(symbol)
+            .ok_or_else(|| anyhow!("native definition has no checked callable identity"))?;
         ensure!(identity[..2] == frozen.unit,
             "native definition belongs to another source unit");
         ensure!(callable_symbols.contains(&identity[2]),
@@ -1226,11 +1196,11 @@ pub(super) fn normalize_omitted_batch_template_calls(
         ensure!(!omitted_symbols.contains(&identity[2]),
             "replay producer emitted a non-selected generic body");
     }
-    ensure!(unit.x86_call_hirs.len() == undefined_count,
+    ensure!(unit.native_call_hirs.len() == undefined_count,
         "replay native call inventory does not match undefined symbols");
-    ensure!(unit.x86_call_function_hirs.len() == undefined_count,
+    ensure!(unit.native_call_function_hirs.len() == undefined_count,
         "replay native owner inventory does not match undefined symbols");
-    for (&hir, &owner) in unit.x86_call_hirs.iter().zip(unit.x86_call_function_hirs.iter()) {
+    for (&hir, &owner) in unit.native_call_hirs.iter().zip(unit.native_call_function_hirs.iter()) {
         if owner != u32::MAX {
             let accepted_owner = catalog.owner(target_snapshot, owner)?;
             ensure!(catalog.callable_by_owner.contains_key(&accepted_owner),

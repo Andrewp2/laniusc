@@ -978,75 +978,38 @@ impl<'gpu> GpuCompiler<'gpu> {
             })
             .transpose()?;
         finish_timer.stamp("target_artifact");
-        let x86_object = object_request
-            .and_then(|request| match request {
-                LoweringObjectRequest::X86_64 {
-                    library_id,
-                    unit_id,
+        let native_object = object_request
+            .map(|request| {
+                let target = request.target();
+                let (library_id, unit_id) = request.ids();
+                let pipeline = self.lowering_pipeline(target)
+                    .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
+                match target {
+                    LoweringTarget::X86_64 => pipeline
+                        .finish_x86_object(device, queue, library_id, unit_id)
+                        .map(|(object, hirs)| (CompiledSourcePackObject::X86_64(object), hirs)),
+                    LoweringTarget::Wasm => pipeline
+                        .finish_wasm_object(device, queue, library_id, unit_id)
+                        .map(|(object, hirs)| (CompiledSourcePackObject::Wasm(object), hirs)),
                 }
-                | LoweringObjectRequest::X86_64PendingOriginal {
-                    library_id,
-                    unit_id,
-                }
-                | LoweringObjectRequest::X86_64Specialized {
-                    library_id,
-                    unit_id,
-                    ..
-                } => Some((library_id, unit_id)),
-                LoweringObjectRequest::Wasm { .. } => None,
-                LoweringObjectRequest::AutoX86_64 => unreachable!("request was resolved"),
-            })
-            .map(|(library_id, unit_id)| {
-                self.lowering_pipeline(LoweringTarget::X86_64)
-                    .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
-                    .finish_x86_object(device, queue, library_id, unit_id)
-                    .map_err(|err| {
-                        lowering_error_to_compile_error_for_source_pack(
-                            device,
-                            queue,
-                            &recorded.diagnostic_tokens,
-                            &recorded.hir,
-                            diagnostic_files,
-                            LoweringTarget::X86_64,
-                            err,
-                        )
-                    })
+                .map_err(|err| {
+                    lowering_error_to_compile_error_for_source_pack(
+                        device,
+                        queue,
+                        &recorded.diagnostic_tokens,
+                        &recorded.hir,
+                        diagnostic_files,
+                        target,
+                        err,
+                    )
+                })
             })
             .transpose()?;
-        finish_timer.stamp("x86_object");
-        let (x86_object, x86_call_hirs) = match x86_object {
+        finish_timer.stamp("native_object");
+        let (native_object, native_call_hirs) = match native_object {
             Some((object, call_hirs)) => (Some(object), call_hirs),
             None => (None, Vec::new()),
         };
-        let wasm_object = object_request
-            .and_then(|request| match request {
-                LoweringObjectRequest::Wasm {
-                    library_id,
-                    unit_id,
-                } => Some((library_id, unit_id)),
-                LoweringObjectRequest::X86_64 { .. }
-                | LoweringObjectRequest::X86_64PendingOriginal { .. }
-                | LoweringObjectRequest::X86_64Specialized { .. } => None,
-                LoweringObjectRequest::AutoX86_64 => unreachable!("request was resolved"),
-            })
-            .map(|(library_id, unit_id)| {
-                self.lowering_pipeline(LoweringTarget::Wasm)
-                    .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
-                    .finish_wasm_object(device, queue, library_id, unit_id)
-                    .map_err(|err| {
-                        lowering_error_to_compile_error_for_source_pack(
-                            device,
-                            queue,
-                            &recorded.diagnostic_tokens,
-                            &recorded.hir,
-                            diagnostic_files,
-                            LoweringTarget::Wasm,
-                            err,
-                        )
-                    })
-            })
-            .transpose()?;
-        finish_timer.stamp("wasm_object");
         // Concrete replay keeps its template definition contracts and does not
         // export a fresh interface, but still owns new nested-call facts.
         let unit_facts = if object_request.is_some() || semantic_interface.is_some() {
@@ -1091,14 +1054,13 @@ impl<'gpu> GpuCompiler<'gpu> {
             owner_spans,
             semantic_interface,
             target_artifact,
-            x86_object,
-            wasm_object,
+            native_object,
             generic_calls: unit_facts.generic_calls,
             checked_contracts: unit_facts.contracts,
             checked_call_owners: unit_facts.call_owners,
             native_call_owners: unit_facts.native_call_owners,
             instance_closure: unit_facts.instance_closure,
-            x86_call_hirs,
+            native_call_hirs,
         }))
     }
 
@@ -1624,6 +1586,11 @@ impl<'gpu> GpuCompiler<'gpu> {
                 .compile_x86_source_pack_with_specialization(sources, source_paths)
                 .await;
         }
+        if target == LoweringTarget::Wasm {
+            return self
+                .compile_wasm_source_pack_with_specialization(sources, source_paths)
+                .await;
+        }
         self.type_check_explicit_source_pack_with_paths_and_interface(
             sources,
             source_paths,
@@ -1685,6 +1652,23 @@ impl<'gpu> GpuCompiler<'gpu> {
         template_dependency_pages: std::sync::Arc<[Vec<crate::compiler::GpuSemanticInterfaceArtifact>]>,
         source_paths: Option<&[Option<PathBuf>]>,
     ) -> Result<PendingOriginalUnit, CompileError> {
+        self.compile_pending_original_source_pack_unit_for_target(
+            SourcePackArtifactTarget::X86_64, template_sources, library_id, unit_id,
+            template_dependency_pages, source_paths,
+        ).await
+    }
+
+    /// `compile_pending_original_source_pack_unit` for either object target.
+    pub(super) async fn compile_pending_original_source_pack_unit_for_target(
+        &self,
+        target: SourcePackArtifactTarget,
+        template_sources: std::sync::Arc<[String]>,
+        library_id: u32,
+        unit_id: u32,
+        template_dependency_pages: std::sync::Arc<[Vec<crate::compiler::GpuSemanticInterfaceArtifact>]>,
+        source_paths: Option<&[Option<PathBuf>]>,
+    ) -> Result<PendingOriginalUnit, CompileError> {
+        let lowering_target = object_lowering_target(target)?;
         if template_sources.is_empty() {
             return Err(super::x86_codegen::x86_empty_source_pack_compile_error());
         }
@@ -1702,7 +1686,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                 DependencyInterfacePages::Paged(template_dependency_pages.as_ref()),
                 true,
                 None,
-                Some(LoweringObjectRequest::X86_64PendingOriginal {
+                Some(LoweringObjectRequest::PendingOriginal {
+                    target: lowering_target,
                     library_id,
                     unit_id,
                 }),
@@ -1715,7 +1700,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             source_paths,
             template_dependency_pages,
             &[],
-            SourcePackArtifactTarget::X86_64,
+            target,
             library_id,
             unit_id,
             true,
@@ -1768,7 +1753,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             template.interface().library_id,
             template.interface().unit_id,
             template.template_dependency_pages().clone(),
-            SourcePackArtifactTarget::X86_64,
+            template.target(),
             Some(input),
             Some(template.template_source_paths().as_ref()),
         )
@@ -1816,7 +1801,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                     template.interface.library_id,
                     template.interface.unit_id,
                     template.template_dependency_pages.clone(),
-                    SourcePackArtifactTarget::X86_64,
+                    template.object.target(),
                     Some(BodySpecializationInput::strict(
                         &specialization,
                         &template.interface,
@@ -1909,7 +1894,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                 library_id,
                 unit_id,
                 template.template_dependency_pages.clone(),
-                SourcePackArtifactTarget::X86_64,
+                template.object.target(),
                 Some(BodySpecializationInput::strict(
                     &specialization,
                     &template.interface,
@@ -1972,30 +1957,22 @@ impl<'gpu> GpuCompiler<'gpu> {
             sources,
             self.resident_source_unit_limits(),
         )?;
-        let object_request = match target {
-            SourcePackArtifactTarget::X86_64 if body_specialization.is_some() => {
-                LoweringObjectRequest::X86_64Specialized {
-                    library_id,
-                    unit_id,
-                    specialization: body_specialization.unwrap().frontend_specialization,
-                    replay_selection: body_specialization.unwrap().replay_selection,
-                    template_contracts: body_specialization.unwrap().frontend_contracts,
-                    frontend_trait_check: body_specialization.unwrap().frontend_trait_check,
-                }
-            }
-            SourcePackArtifactTarget::X86_64 => LoweringObjectRequest::X86_64 {
+        let lowering_target = object_lowering_target(target)?;
+        let object_request = match body_specialization {
+            Some(input) => LoweringObjectRequest::Specialized {
+                target: lowering_target,
+                library_id,
+                unit_id,
+                specialization: input.frontend_specialization,
+                replay_selection: input.replay_selection,
+                template_contracts: input.frontend_contracts,
+                frontend_trait_check: input.frontend_trait_check,
+            },
+            None => LoweringObjectRequest::Strict {
+                target: lowering_target,
                 library_id,
                 unit_id,
             },
-            SourcePackArtifactTarget::Wasm => LoweringObjectRequest::Wasm {
-                library_id,
-                unit_id,
-            },
-            SourcePackArtifactTarget::Generic => {
-                return Err(CompileError::GpuCodegen(
-                    "a compiled source-pack unit requires a concrete target".into(),
-                ));
-            }
         };
         // Generic bodies are absent from the public semantic interface. Keep
         // exactly the ordered source text checked by this unit so a later
@@ -2418,6 +2395,8 @@ pub(super) struct OriginalUnitFacts {
 }
 
 struct OriginalUnitSnapshot {
+    /// The object target the unit was lowered for; its replays lower for it too.
+    target: SourcePackArtifactTarget,
     interface: crate::compiler::GpuSemanticInterfaceArtifact,
     checked_contracts: std::sync::Arc<gpu_type_checker::CheckedUnitContracts>,
     generic_calls: std::sync::Arc<[gpu_type_checker::CheckedGenericCall]>,
@@ -2433,6 +2412,7 @@ impl OriginalUnitFacts {
     fn from_unit(unit: &CompiledSourcePackUnit) -> Self {
         Self {
             snapshot: std::sync::Arc::new(OriginalUnitSnapshot {
+                target: unit.object.target(),
                 interface: unit.interface.clone(),
                 checked_contracts: unit.checked_contracts.clone(),
                 generic_calls: unit.generic_calls.clone(),
@@ -2503,6 +2483,10 @@ impl OriginalUnitFacts {
         &self.snapshot.template_source_paths
     }
 
+    pub(super) fn target(&self) -> SourcePackArtifactTarget {
+        self.snapshot.target
+    }
+
     pub(super) fn template_dependency_pages(&self) -> &std::sync::Arc<[Vec<crate::compiler::GpuSemanticInterfaceArtifact>]> {
         &self.snapshot.template_dependency_pages
     }
@@ -2521,8 +2505,6 @@ impl CompiledSourcePackUnit {
     /// Strict standalone compilation has already released this object. Project
     /// only immutable native facts for the same mandatory program admission gate.
     pub(super) fn original_facts(&self) -> anyhow::Result<OriginalUnitFacts> {
-        anyhow::ensure!(matches!(self.object, CompiledSourcePackObject::X86_64(_)),
-            "native program checking received a different target");
         Ok(OriginalUnitFacts::from_unit(self))
     }
 }
@@ -2690,16 +2672,20 @@ impl<'a> BodySpecializationInput<'a> {
 enum LoweringObjectRequest<'a> {
     /// Select executable or object emission from GPU-classified parser facts.
     AutoX86_64,
-    X86_64 {
+    /// A strict standalone object.
+    Strict {
+        target: LoweringTarget,
         library_id: u32,
         unit_id: u32,
     },
     /// Constructed only by the private pending-original compilation route.
-    X86_64PendingOriginal {
+    PendingOriginal {
+        target: LoweringTarget,
         library_id: u32,
         unit_id: u32,
     },
-    X86_64Specialized {
+    Specialized {
+        target: LoweringTarget,
         library_id: u32,
         unit_id: u32,
         specialization: &'a gpu_type_checker::CheckedBodySpecializationBatch,
@@ -2707,24 +2693,20 @@ enum LoweringObjectRequest<'a> {
         template_contracts: &'a gpu_type_checker::CheckedUnitContracts,
         frontend_trait_check: gpu_type_checker::FrontendTraitCheck,
     },
-    Wasm {
-        library_id: u32,
-        unit_id: u32,
-    },
 }
 
 impl<'a> LoweringObjectRequest<'a> {
     fn frontend_trait_check(self) -> gpu_type_checker::FrontendTraitCheck {
         match self {
-            Self::X86_64PendingOriginal { .. } => gpu_type_checker::FrontendTraitCheck::PendingOriginal,
-            Self::X86_64Specialized { frontend_trait_check, .. } => frontend_trait_check,
+            Self::PendingOriginal { .. } => gpu_type_checker::FrontendTraitCheck::PendingOriginal,
+            Self::Specialized { frontend_trait_check, .. } => frontend_trait_check,
             _ => gpu_type_checker::FrontendTraitCheck::Strict,
         }
     }
 
     fn template_contracts(self) -> Option<&'a gpu_type_checker::CheckedUnitContracts> {
         match self {
-            Self::X86_64Specialized {
+            Self::Specialized {
                 template_contracts, ..
             } => Some(template_contracts),
             _ => None,
@@ -2733,50 +2715,44 @@ impl<'a> LoweringObjectRequest<'a> {
 
     fn body_specialization(self) -> Option<&'a gpu_type_checker::CheckedBodySpecializationBatch> {
         match self {
-            Self::X86_64Specialized { specialization, .. } => Some(specialization),
+            Self::Specialized { specialization, .. } => Some(specialization),
             _ => None,
         }
     }
 
     fn replay_selection(self) -> crate::codegen::lowering::ReplaySelection<'a> {
         match self {
-            Self::X86_64Specialized { replay_selection, .. } => replay_selection,
+            Self::Specialized { replay_selection, .. } => replay_selection,
             _ => crate::codegen::lowering::ReplaySelection::Functions(&[]),
         }
     }
     fn target(self) -> LoweringTarget {
         match self {
-            Self::AutoX86_64
-            | Self::X86_64 { .. }
-            | Self::X86_64PendingOriginal { .. }
-            | Self::X86_64Specialized { .. } => {
-                LoweringTarget::X86_64
-            }
-            Self::Wasm { .. } => LoweringTarget::Wasm,
+            Self::AutoX86_64 => LoweringTarget::X86_64,
+            Self::Strict { target, .. }
+            | Self::PendingOriginal { target, .. }
+            | Self::Specialized { target, .. } => target,
         }
     }
 
     fn ids(self) -> (u32, u32) {
         match self {
             Self::AutoX86_64 => (0, 0),
-            Self::X86_64 {
-                library_id,
-                unit_id,
-            }
-            | Self::X86_64PendingOriginal {
-                library_id,
-                unit_id,
-            }
-            | Self::X86_64Specialized {
-                library_id,
-                unit_id,
-                ..
-            }
-            | Self::Wasm {
-                library_id,
-                unit_id,
-            } => (library_id, unit_id),
+            Self::Strict { library_id, unit_id, .. }
+            | Self::PendingOriginal { library_id, unit_id, .. }
+            | Self::Specialized { library_id, unit_id, .. } => (library_id, unit_id),
         }
+    }
+}
+
+/// The lowering target of a concrete object target.
+fn object_lowering_target(target: SourcePackArtifactTarget) -> Result<LoweringTarget, CompileError> {
+    match target {
+        SourcePackArtifactTarget::X86_64 => Ok(LoweringTarget::X86_64),
+        SourcePackArtifactTarget::Wasm => Ok(LoweringTarget::Wasm),
+        SourcePackArtifactTarget::Generic => Err(CompileError::GpuCodegen(
+            "a compiled source-pack unit requires a concrete target".into(),
+        )),
     }
 }
 
@@ -2800,7 +2776,8 @@ fn resolve_source_pack_lowering_request<'a>(
         (
             true,
             None,
-            Some(LoweringObjectRequest::X86_64 {
+            Some(LoweringObjectRequest::Strict {
+                target: LoweringTarget::X86_64,
                 library_id: 0,
                 unit_id: 0,
             }),
@@ -2849,19 +2826,9 @@ fn finish_source_pack_unit(
     let mut interface = artifacts.semantic_interface.ok_or_else(|| {
         CompileError::GpuFrontend("compiled source-pack unit produced no semantic interface".into())
     })?;
-    let object = match target {
-        SourcePackArtifactTarget::X86_64 => {
-            CompiledSourcePackObject::X86_64(artifacts.x86_object.ok_or_else(|| {
-                CompileError::GpuCodegen("lowering produced no x86 object".into())
-            })?)
-        }
-        SourcePackArtifactTarget::Wasm => {
-            CompiledSourcePackObject::Wasm(artifacts.wasm_object.ok_or_else(|| {
-                CompileError::GpuCodegen("lowering produced no Wasm object".into())
-            })?)
-        }
-        SourcePackArtifactTarget::Generic => unreachable!(),
-    };
+    let object = artifacts.native_object.take()
+        .filter(|object| object.target() == target)
+        .ok_or_else(|| CompileError::GpuCodegen(format!("lowering produced no {target:?} object")))?;
     gpu_type_checker::scope_generic_type_identities(
         &mut artifacts.generic_calls,
         library_id,
@@ -2882,8 +2849,8 @@ fn finish_source_pack_unit(
         template_dependency_pages.as_ref(),
         impl_bindings,
     );
-    let x86_call_function_hirs = retain_native_call_owners(
-        &artifacts.x86_call_hirs, &artifacts.native_call_owners,
+    let native_call_function_hirs = retain_native_call_owners(
+        &artifacts.native_call_hirs, &artifacts.native_call_owners,
     ).map_err(|error| CompileError::GpuFrontend(format!(
         "native call ownership retention failed: {error:#}"
     )))?;
@@ -2969,8 +2936,8 @@ fn finish_source_pack_unit(
         body_native_layouts: artifacts.body_native_layouts.map(Into::into),
         checked_contracts: std::sync::Arc::new(artifacts.checked_contracts),
         checked_call_owners: artifacts.checked_call_owners.into(),
-        x86_call_hirs: artifacts.x86_call_hirs.into(),
-        x86_call_function_hirs: x86_call_function_hirs.into(),
+        native_call_hirs: artifacts.native_call_hirs.into(),
+        native_call_function_hirs: native_call_function_hirs.into(),
     })
 }
 
@@ -2979,14 +2946,13 @@ struct CheckedSourcePackArtifacts {
     owner_spans: Option<gpu_type_checker::CheckedOwnerSpans>,
     semantic_interface: Option<crate::compiler::GpuSemanticInterfaceArtifact>,
     target_artifact: Option<Vec<u8>>,
-    x86_object: Option<crate::codegen::x86::GpuX86RelocatableObject>,
-    wasm_object: Option<crate::codegen::wasm::GpuWasmRelocatableObject>,
+    native_object: Option<CompiledSourcePackObject>,
     generic_calls: Vec<gpu_type_checker::CheckedGenericCall>,
     checked_contracts: gpu_type_checker::CheckedUnitContracts,
     checked_call_owners: Vec<gpu_type_checker::CheckedCallOwner>,
     native_call_owners: Vec<gpu_type_checker::CheckedCallOwner>,
     instance_closure: gpu_type_checker::CheckedInstanceClosure,
-    x86_call_hirs: Vec<u32>,
+    native_call_hirs: Vec<u32>,
 }
 
 /// `LANIUS_CHECK_DECL_ONLY_TEMPLATES=1`: a replay against the
@@ -3013,8 +2979,8 @@ fn compare_declarations_only_replay(
             check("native symbols", symbols);
             check("generic calls", full.generic_calls == short.generic_calls);
             check("checked call owners", full.checked_call_owners == short.checked_call_owners);
-            check("native call rows", full.x86_call_hirs == short.x86_call_hirs);
-            check("native call functions", full.x86_call_function_hirs == short.x86_call_function_hirs);
+            check("native call rows", full.native_call_hirs == short.native_call_hirs);
+            check("native call functions", full.native_call_function_hirs == short.native_call_function_hirs);
             check("native layouts", full.body_native_layouts == short.body_native_layouts);
             check("contracts", full.checked_contracts == short.checked_contracts);
             check("native object", objects);
@@ -3036,7 +3002,7 @@ fn compare_declarations_only_replay(
                 eprintln!("[decl-only] full calls {:?}\n[decl-only] short calls {:?}", full.generic_calls, short.generic_calls);
                 eprintln!("[decl-only] full owners {:?}\n[decl-only] short owners {:?}", full.checked_call_owners, short.checked_call_owners);
                 eprintln!("[decl-only] full native {:?} {:?}\n[decl-only] short native {:?} {:?}",
-                    full.x86_call_hirs, full.x86_call_function_hirs, short.x86_call_hirs, short.x86_call_function_hirs);
+                    full.native_call_hirs, full.native_call_function_hirs, short.native_call_hirs, short.native_call_function_hirs);
             }
         }
         (Err(full), Err(short)) => {
@@ -3085,38 +3051,13 @@ impl CheckedSourcePackArtifacts {
         for owner in self.checked_call_owners.iter_mut().chain(self.native_call_owners.iter_mut()) {
             map.call_owner(owner)?;
         }
-        for hir in &mut self.x86_call_hirs {
+        for hir in &mut self.native_call_hirs {
             *hir = map.row(*hir)?;
         }
         // A replay retains no copyable spans of its own.
         self.owner_spans = None;
-        anyhow::ensure!(self.wasm_object.is_none(), "a declarations-only replay emits x86 only");
-        if let Some(object) = &mut self.x86_object {
-            let mut ranges = object.symbols.iter()
-                .filter(|symbol| symbol.identity_byte_len == 12)
-                .map(|symbol| symbol.identity_byte_start as usize)
-                .collect::<Vec<_>>();
-            ranges.sort_unstable();
-            ranges.dedup();
-            for start in ranges {
-                let bytes = object.identity_bytes.get_mut(start..start + 12)
-                    .ok_or_else(|| anyhow::anyhow!("native symbol identity is outside the object"))?;
-                let mut identity = [0u32; 3];
-                for (word, chunk) in identity.iter_mut().zip(bytes.chunks_exact(4)) {
-                    *word = u32::from_le_bytes(chunk.try_into().unwrap());
-                }
-                map.qualified_symbol(&mut identity)?;
-                for (chunk, word) in bytes.chunks_exact_mut(4).zip(identity) {
-                    chunk.copy_from_slice(&word.to_le_bytes());
-                }
-            }
-            for symbol in &mut object.symbols {
-                let start = symbol.identity_byte_start as usize;
-                let bytes = object.identity_bytes.get(start..start + symbol.identity_byte_len as usize)
-                    .ok_or_else(|| anyhow::anyhow!("native symbol identity is outside the object"))?;
-                (symbol.identity_hash_lo, symbol.identity_hash_hi) = crate::compiler::stable_name_hash(bytes);
-            }
-            object.validate().map_err(anyhow::Error::msg)?;
+        if let Some(object) = &mut self.native_object {
+            object.map_symbol_identity_words(|identity| map.qualified_symbol(identity))?;
         }
         Ok(())
     }
@@ -3147,10 +3088,10 @@ pub(in crate::compiler) struct CompiledSourcePackUnit {
         std::sync::Arc<[gpu_type_checker::CheckedCallOwner]>,
     /// Dense HIR for each native undefined symbol, in object symbol order.
     /// The target GPU projection produces this private resident column.
-    pub(in crate::compiler) x86_call_hirs: std::sync::Arc<[u32]>,
+    pub(in crate::compiler) native_call_hirs: std::sync::Arc<[u32]>,
     /// Exact checked lexical owner for each native call above, including
     /// ordinary imported calls removed from the generic evidence inventory.
-    pub(in crate::compiler) x86_call_function_hirs: std::sync::Arc<[u32]>,
+    pub(in crate::compiler) native_call_function_hirs: std::sync::Arc<[u32]>,
     /// Source-file ordinal matches the parser's file identity for this unit.
     /// Shared ownership keeps deferred bodies available on compiled-unit cache
     /// hits and while a resident build handle outlives cache eviction.
@@ -3165,10 +3106,225 @@ pub(in crate::compiler) struct CompiledSourcePackUnit {
         std::sync::Arc<[Vec<crate::compiler::GpuSemanticInterfaceArtifact>]>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::compiler) enum CompiledSourcePackObject {
     X86_64(crate::codegen::x86::GpuX86RelocatableObject),
     Wasm(crate::codegen::wasm::GpuWasmRelocatableObject),
+}
+
+/// What one object symbol is, in either target's object format.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::compiler) enum NativeSymbolKind {
+    /// A reference this object needs another definition for.
+    Undefined,
+    /// A callable definition (x86 text, a Wasm function).
+    Function,
+    /// Any other definition (x86 rodata).
+    Data,
+}
+
+/// The target-neutral symbol view body specialization and program admission
+/// use. Both object formats keep undefined symbols before definitions, name
+/// every symbol by identity bytes, and hash them the same way.
+impl CompiledSourcePackObject {
+    pub(in crate::compiler) fn target(&self) -> SourcePackArtifactTarget {
+        match self {
+            Self::X86_64(_) => SourcePackArtifactTarget::X86_64,
+            Self::Wasm(_) => SourcePackArtifactTarget::Wasm,
+        }
+    }
+
+    /// The (library, unit) identity the object was emitted for.
+    pub(in crate::compiler) fn unit(&self) -> [u32; 2] {
+        match self {
+            Self::X86_64(object) => [object.library_id, object.unit_id],
+            Self::Wasm(object) => [object.library_id, object.unit_id],
+        }
+    }
+
+    pub(in crate::compiler) fn validate(&self) -> Result<(), String> {
+        match self {
+            Self::X86_64(object) => object.validate(),
+            Self::Wasm(object) => object.validate(),
+        }
+    }
+
+    pub(in crate::compiler) fn symbol_count(&self) -> usize {
+        match self {
+            Self::X86_64(object) => object.symbols.len(),
+            Self::Wasm(object) => object.symbols.len(),
+        }
+    }
+
+    pub(in crate::compiler) fn symbol_kind(&self, index: usize) -> NativeSymbolKind {
+        use crate::codegen::{wasm::GpuWasmSymbolKind, x86::GpuX86ObjectSection};
+        match self {
+            Self::X86_64(object) => match object.symbols[index].section {
+                GpuX86ObjectSection::Undefined => NativeSymbolKind::Undefined,
+                GpuX86ObjectSection::Text => NativeSymbolKind::Function,
+                GpuX86ObjectSection::Rodata => NativeSymbolKind::Data,
+            },
+            Self::Wasm(object) => match object.symbols[index].kind {
+                GpuWasmSymbolKind::Undefined => NativeSymbolKind::Undefined,
+                GpuWasmSymbolKind::Function => NativeSymbolKind::Function,
+            },
+        }
+    }
+
+    /// The identity bytes of one symbol (an empty slice when out of range).
+    pub(in crate::compiler) fn symbol_identity(&self, index: usize) -> &[u8] {
+        let (bytes, start, len) = match self {
+            Self::X86_64(object) => {
+                let symbol = &object.symbols[index];
+                (&object.identity_bytes, symbol.identity_byte_start, symbol.identity_byte_len)
+            }
+            Self::Wasm(object) => {
+                let symbol = &object.symbols[index];
+                (&object.identity_bytes, symbol.identity_byte_start, symbol.identity_byte_len)
+            }
+        };
+        let start = start as usize;
+        bytes.get(start..start.saturating_add(len as usize)).unwrap_or(&[])
+    }
+
+    /// A three-word (library, unit, declaration) symbol identity.
+    pub(in crate::compiler) fn symbol_identity_words(&self, index: usize) -> Option<[u32; 3]> {
+        let bytes = self.symbol_identity(index);
+        (bytes.len() == 12).then(|| [
+            u32::from_le_bytes(bytes[0..4].try_into().unwrap()),
+            u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
+            u32::from_le_bytes(bytes[8..12].try_into().unwrap()),
+        ])
+    }
+
+    /// Point one symbol at new identity bytes (appended) and rehash it.
+    pub(in crate::compiler) fn replace_symbol_identity(&mut self, index: usize, identity: &[u8]) -> Result<(), String> {
+        let (bytes, start_field, len_field, lo, hi) = match self {
+            Self::X86_64(object) => {
+                let symbol = object.symbols.get_mut(index).ok_or("specialization symbol is absent")?;
+                (&mut object.identity_bytes, &mut symbol.identity_byte_start, &mut symbol.identity_byte_len,
+                 &mut symbol.identity_hash_lo, &mut symbol.identity_hash_hi)
+            }
+            Self::Wasm(object) => {
+                let symbol = object.symbols.get_mut(index).ok_or("specialization symbol is absent")?;
+                (&mut object.identity_bytes, &mut symbol.identity_byte_start, &mut symbol.identity_byte_len,
+                 &mut symbol.identity_hash_lo, &mut symbol.identity_hash_hi)
+            }
+        };
+        let start = u32::try_from(bytes.len()).map_err(|_| "symbol identity storage exceeds u32")?;
+        let len = u32::try_from(identity.len()).map_err(|_| "symbol identity length exceeds u32")?;
+        start.checked_add(len).ok_or("symbol identity range exceeds u32")?;
+        (*lo, *hi) = crate::compiler::stable_name_hash(identity);
+        *start_field = start;
+        *len_field = len;
+        bytes.extend_from_slice(identity);
+        Ok(())
+    }
+
+    /// Rewrite every three-word identity in place (each distinct identity
+    /// range once), then rehash every symbol.
+    pub(in crate::compiler) fn map_symbol_identity_words(
+        &mut self,
+        mut map: impl FnMut(&mut [u32; 3]) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
+        macro_rules! remap {
+            ($object:expr) => {{
+                let object = $object;
+                let mut ranges = object.symbols.iter()
+                    .filter(|symbol| symbol.identity_byte_len == 12)
+                    .map(|symbol| symbol.identity_byte_start as usize)
+                    .collect::<Vec<_>>();
+                ranges.sort_unstable();
+                ranges.dedup();
+                for start in ranges {
+                    let bytes = object.identity_bytes.get_mut(start..start + 12)
+                        .ok_or_else(|| anyhow::anyhow!("native symbol identity is outside the object"))?;
+                    let mut identity = [0u32; 3];
+                    for (word, chunk) in identity.iter_mut().zip(bytes.chunks_exact(4)) {
+                        *word = u32::from_le_bytes(chunk.try_into().unwrap());
+                    }
+                    map(&mut identity)?;
+                    for (chunk, word) in bytes.chunks_exact_mut(4).zip(identity) {
+                        chunk.copy_from_slice(&word.to_le_bytes());
+                    }
+                }
+                for symbol in &mut object.symbols {
+                    let start = symbol.identity_byte_start as usize;
+                    let bytes = object.identity_bytes.get(start..start + symbol.identity_byte_len as usize)
+                        .ok_or_else(|| anyhow::anyhow!("native symbol identity is outside the object"))?;
+                    (symbol.identity_hash_lo, symbol.identity_hash_hi) = crate::compiler::stable_name_hash(bytes);
+                }
+            }};
+        }
+        match self {
+            Self::X86_64(object) => remap!(object),
+            Self::Wasm(object) => remap!(object),
+        }
+        self.validate().map_err(anyhow::Error::msg)
+    }
+
+    /// Keep the symbols whose `keep` entry is set. Callers keep every
+    /// undefined symbol, which precede the definitions, so relocation
+    /// targets keep their indices; a Wasm function whose definition symbol
+    /// is dropped stays as an unnamed local function.
+    pub(in crate::compiler) fn retain_symbols(&mut self, keep: &[bool]) {
+        match self {
+            Self::X86_64(object) => {
+                let mut index = 0;
+                object.symbols.retain(|_| {
+                    let retain = keep[index];
+                    index += 1;
+                    retain
+                });
+            }
+            Self::Wasm(object) => {
+                let mut renumbered = Vec::with_capacity(keep.len());
+                let mut next = 0u32;
+                for &kept in keep {
+                    renumbered.push(if kept { next } else { u32::MAX });
+                    next += kept as u32;
+                }
+                let mut index = 0;
+                object.symbols.retain(|_| {
+                    let retain = keep[index];
+                    index += 1;
+                    retain
+                });
+                for function in &mut object.functions {
+                    if let Some(&symbol) = renumbered.get(function.symbol_index as usize) {
+                        function.symbol_index = symbol;
+                    }
+                }
+                for relocation in &mut object.relocations {
+                    if relocation.target_kind == crate::codegen::wasm::GpuWasmRelocationTargetKind::Symbol {
+                        relocation.target_index = renumbered[relocation.target_index as usize];
+                    }
+                }
+            }
+        }
+    }
+
+    /// Code bytes (x86 text, Wasm function bodies).
+    pub(in crate::compiler) fn code_len(&self) -> usize {
+        match self {
+            Self::X86_64(object) => object.text.len(),
+            Self::Wasm(object) => object.body_bytes.len(),
+        }
+    }
+
+    /// Publish a replay's object under a fresh unit identity, without an entry.
+    pub(in crate::compiler) fn publish_as_unit(&mut self, unit_id: u32) {
+        match self {
+            Self::X86_64(object) => {
+                object.unit_id = unit_id;
+                object.entry_offset = None;
+            }
+            Self::Wasm(object) => {
+                object.unit_id = unit_id;
+                object.entry_function = None;
+            }
+        }
+    }
 }
 
 #[cfg(test)]

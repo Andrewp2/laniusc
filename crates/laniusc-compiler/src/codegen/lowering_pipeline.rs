@@ -1136,7 +1136,7 @@ impl GpuLoweringPipeline {
         queue: &wgpu::Queue,
         library_id: u32,
         unit_id: u32,
-    ) -> Result<super::wasm::GpuWasmRelocatableObject> {
+    ) -> Result<(super::wasm::GpuWasmRelocatableObject, Vec<u32>)> {
         self.ensure_success(device)?;
         match &self.target {
             TargetStage::Wasm(stage) => stage.finish_object(device, queue, library_id, unit_id),

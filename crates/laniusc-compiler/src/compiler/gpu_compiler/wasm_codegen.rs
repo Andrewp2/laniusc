@@ -32,8 +32,7 @@ impl<'gpu> GpuCompiler<'gpu> {
             sources,
             self.resident_source_unit_limits(),
         )?;
-        self.compile_checked_source_pack_with_lowering(sources, None, LoweringTarget::Wasm)
-            .await
+        self.compile_wasm_source_pack_with_specialization(sources, None).await
     }
 
     /// Compile an explicit in-memory source-pack manifest through the WASM
@@ -58,9 +57,35 @@ impl<'gpu> GpuCompiler<'gpu> {
         src: &str,
         diagnostic_path: PathBuf,
     ) -> Result<Vec<u8>, CompileError> {
-        self.compile_checked_source_with_lowering(src, diagnostic_path, Some(LoweringTarget::Wasm))
-            .await?
-            .ok_or_else(|| CompileError::GpuCodegen("Wasm lowering produced no artifact".into()))
+        self.compile_wasm_source_pack_with_specialization(&[src], Some(&[Some(diagnostic_path)]))
+            .await
+    }
+
+    /// Compile a source pack as x86 does: one pending original Wasm object,
+    /// admitted as a whole program, whose generic calls body specialization
+    /// replays into concrete Wasm objects, all linked into one module.
+    pub(super) async fn compile_wasm_source_pack_with_specialization<S: AsRef<str>>(
+        &self,
+        sources: &[S],
+        source_paths: Option<&[Option<PathBuf>]>,
+    ) -> Result<Vec<u8>, CompileError> {
+        let template_sources = sources.iter().map(|source| source.as_ref().to_owned())
+            .collect::<Vec<_>>().into();
+        let pending = self.compile_pending_original_source_pack_unit_for_target(
+            SourcePackArtifactTarget::Wasm, template_sources, 0, 0, Vec::new().into(), source_paths,
+        ).await?;
+        let objects = self.specialize_pending_source_pack_objects(vec![pending]).await?;
+        let objects = objects.iter().map(|object| match object {
+            super::typecheck::CompiledSourcePackObject::Wasm(object) => Ok(object),
+            super::typecheck::CompiledSourcePackObject::X86_64(_) => Err(CompileError::GpuCodegen(
+                "Wasm specialization produced an x86_64 object".into())),
+        }).collect::<Result<Vec<_>, _>>()?;
+        let input = wasm::GpuWasmLinkInput::for_executable_refs(objects).map_err(wasm_link_input_error)?;
+        let linker = self.wasm_linker().map_err(|reason| CompileError::GpuCodegen(reason.to_owned()))?;
+        let _resident_guard = self.resident_pipeline_lock.lock().await;
+        linker
+            .link_executable(&self.gpu.device, &self.gpu.queue, &input)
+            .map_err(|error| source_pack_artifact_store_error(format!("link Wasm source pack: {error}")))
     }
 
     /// Returns the initialized Wasm linker or its deferred initialization error.
@@ -68,6 +93,22 @@ impl<'gpu> GpuCompiler<'gpu> {
         trace_wasm_compile("wasm.linker");
         self.wasm_linker.as_deref().map_err(String::as_str)
     }
+}
+
+/// A Wasm link-input error. With no object defining `main` this is the
+/// missing-main diagnostic, as on x86.
+pub(super) fn wasm_link_input_error(error: String) -> CompileError {
+    if error != "Wasm link has no entry function" {
+        return source_pack_artifact_store_error(error);
+    }
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0017", "missing main entrypoint")
+            .with_primary_label(DiagnosticLabel::primary(
+                PathBuf::from("<source pack>"), 1, 1, 1, None,
+                "no function named `main` is defined; the Wasm backend has no entrypoint",
+            ))
+            .with_help("define `fn main()` or `fn main() -> i32` as the program entry"),
+    )
 }
 
 #[cfg(test)]

@@ -740,7 +740,7 @@ impl GpuWasmLirStage {
         queue: &wgpu::Queue,
         library_id: u32,
         unit_id: u32,
-    ) -> Result<super::wasm::GpuWasmRelocatableObject> {
+    ) -> Result<(super::wasm::GpuWasmRelocatableObject, Vec<u32>)> {
         self.object
             .as_ref()
             .context("Wasm object projection was not allocated for this lowering job")?

@@ -619,9 +619,9 @@ impl CompiledSourcePackUnit {
             bytes = bytes.saturating_add(closure.resident_bytes());
         }
         bytes = bytes.saturating_add(
-            self.x86_call_hirs
+            self.native_call_hirs
                 .len()
-                .saturating_add(self.x86_call_function_hirs.len())
+                .saturating_add(self.native_call_function_hirs.len())
                 .saturating_mul(std::mem::size_of::<u32>()),
         );
         bytes = bytes.saturating_add(
@@ -873,6 +873,7 @@ impl GpuCompiler<'_> {
     /// counts as a miss. `LANIUS_PENDING_ORIGINAL_CACHE=0` disables reuse.
     pub(super) async fn compile_cached_pending_original_unit(
         &self,
+        target: SourcePackArtifactTarget,
         job: &SourcePackJob,
         standard_library: bool,
         source_files: &[ExplicitSourcePathFile],
@@ -884,7 +885,7 @@ impl GpuCompiler<'_> {
         let cacheable = standard_library && pending_original_cache_enabled();
         let cache_hint = if cacheable {
             CompiledUnitCacheHintKey::new(
-                SourcePackArtifactTarget::X86_64, job.library_id, unit_id, source_files,
+                target, job.library_id, unit_id, source_files,
                 dependency_pages.as_ref(),
             ).map_err(source_pack_artifact_store_error)?
         } else {
@@ -900,7 +901,7 @@ impl GpuCompiler<'_> {
         let cache_key = match (&cache_hint, cacheable) {
             (Some(hint), _) => Some(CompiledUnitCacheKey::from_hint(hint)),
             (None, true) => Some(CompiledUnitCacheKey::new(
-                SourcePackArtifactTarget::X86_64, job.library_id, unit_id, &sources,
+                target, job.library_id, unit_id, &sources,
                 dependency_pages.as_ref(),
             ).map_err(source_pack_artifact_store_error)?.with_source_paths(source_files)),
             (None, false) => None,
@@ -918,8 +919,8 @@ impl GpuCompiler<'_> {
         }
         let source_paths = source_files.iter()
             .map(|file| Some(file.path.clone())).collect::<Vec<_>>();
-        let pending = self.compile_pending_original_source_pack_unit(
-            sources.into(), job.library_id, unit_id, dependency_pages, Some(&source_paths),
+        let pending = self.compile_pending_original_source_pack_unit_for_target(
+            target, sources.into(), job.library_id, unit_id, dependency_pages, Some(&source_paths),
         ).await?;
         if let Some(key) = cache_key {
             let mut cache = self.pending_original_cache
@@ -1159,8 +1160,8 @@ mod tests {
             generic_calls: Vec::new().into(),
             checked_contracts: std::sync::Arc::new(Default::default()),
             checked_call_owners: Vec::new().into(),
-            x86_call_hirs: Vec::new().into(),
-            x86_call_function_hirs: Vec::new().into(),
+            native_call_hirs: Vec::new().into(),
+            native_call_function_hirs: Vec::new().into(),
         }
     }
 
@@ -1437,7 +1438,7 @@ mod tests {
                 + 2048,
             ..CompiledUnitCache::default()
         };
-        value.x86_call_hirs = (0..1024).collect::<Vec<_>>().into();
+        value.native_call_hirs = (0..1024).collect::<Vec<_>>().into();
         let key =
             CompiledUnitCacheKey::new(SourcePackArtifactTarget::X86_64, 0, 0, &[], &[]).unwrap();
         let active_build = Arc::new(value);
@@ -1445,8 +1446,8 @@ mod tests {
         assert_eq!(cache.stats().entries, 0);
         assert_eq!(cache.stats().resident_bytes, 0);
         assert_eq!(cache.stats().evictions, 1);
-        assert_eq!(active_build.x86_call_hirs.len(), 1024);
-        assert_eq!(active_build.x86_call_hirs[1023], 1023);
+        assert_eq!(active_build.native_call_hirs.len(), 1024);
+        assert_eq!(active_build.native_call_hirs[1023], 1023);
     }
 
     #[test]
