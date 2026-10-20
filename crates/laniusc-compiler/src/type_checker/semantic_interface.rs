@@ -235,6 +235,14 @@ enum TopologyStep {
 }
 
 impl TopologyStep {
+    fn bind_groups(&self) -> Vec<&wgpu::BindGroup> {
+        match self {
+            Self::Compute(operation) => vec![operation.bind_group()],
+            Self::Scan(scan) => scan.bind_groups().to_vec(),
+            Self::Clear(_) | Self::Stamp(_) => Vec::new(),
+        }
+    }
+
     fn record(&self, encoder: &mut wgpu::CommandEncoder, timer: &mut Option<&mut GpuTimer>) -> Result<()> {
         match self {
             Self::Clear(clear) => clear.record(encoder),
@@ -1935,6 +1943,13 @@ impl GpuTypeChecker {
             .expect("the topology operations were stored above");
         for step in steps {
             step.record(encoder, timer)?;
+        }
+        if reuse {
+            // Retained operations skip the bind-group cache; keep their
+            // entries alive for the next rebuild with the same bindings.
+            crate::gpu::passes_core::mark_reflected_bind_groups_used(
+                steps.iter().flat_map(TopologyStep::bind_groups),
+            );
         }
         drop(topology_cache);
         host_phase.end("semantic_interface.host.topology_record");

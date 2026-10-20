@@ -328,6 +328,11 @@ impl ComputeOperation {
         self.name
     }
 
+    /// The bind group this operation records with.
+    pub(crate) fn bind_group(&self) -> &wgpu::BindGroup {
+        &self.group
+    }
+
     /// Records a direct operation for a smaller active domain than the
     /// capacity used to build its stable pipeline and bind group.
     pub(crate) fn record_elements(
