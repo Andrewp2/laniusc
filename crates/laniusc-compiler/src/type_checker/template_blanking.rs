@@ -85,15 +85,13 @@ impl TemplateBlanking {
     /// Blank `bodies` (source order, disjoint; from the template's own
     /// check) of template `unit`, except bodies that hold a row the
     /// template's checked contracts name: a declaration nested in a body
-    /// keeps its body. A body whose interior holds a `"` is kept too: its
-    /// string constants are in the full template's rodata, which the copies'
-    /// string relocations are laid out after. None when nothing is left to
-    /// blank.
+    /// keeps its body. Bodies holding string literals are blanked too: a copy
+    /// replay's rodata starts at the first copy string, so the template's own
+    /// strings never reach it. None when nothing is left to blank.
     pub(crate) fn new(
         unit: [u32; 2],
         bodies: &[CheckedBodySpan],
         contracts: &CheckedUnitContracts,
-        template: &[String],
     ) -> Result<Option<Self>> {
         ensure!(bodies.windows(2).all(|pair| pair[0].subtree_end <= pair[1].block_hir
             && pair[0].close_token < pair[1].open_token && pair[0].close_byte < pair[1].open_byte),
@@ -112,9 +110,6 @@ impl TemplateBlanking {
             }
             let (interior_tokens, interior_rows) = (body.interior_tokens(), body.interior_rows());
             if interior_tokens == 0 && interior_rows == 0 {
-                continue;
-            }
-            if interior_bytes(template, body.open_byte, body.close_byte)?.contains(&b'"') {
                 continue;
             }
             blanked.push(BlankedBody {
@@ -209,21 +204,6 @@ impl TemplateBlanking {
         let index = self.bodies.partition_point(|body| body.copy_block_hir() < row);
         row + index.checked_sub(1).map_or(0, |before| self.bodies[before].rows_through())
     }
-}
-
-/// The bytes strictly between a body's braces, which must lie in one file
-/// of the template.
-fn interior_bytes(template: &[String], open: u32, close: u32) -> Result<&[u8]> {
-    let (mut open, mut close) = (open as usize, close as usize);
-    for source in template {
-        if open < source.len() {
-            ensure!(close < source.len(), "a template body's braces are not in one file");
-            return Ok(&source.as_bytes()[open + 1..close]);
-        }
-        open -= source.len();
-        close = close.checked_sub(source.len()).ok_or_else(|| anyhow!("malformed template body span"))?;
-    }
-    Err(anyhow!("a template body lies past the template source"))
 }
 
 /// Rows of the template that its checked contracts name, which a blanked
@@ -463,7 +443,7 @@ mod tests {
         // Two bodies: tokens 10..20 (9 inside), rows 5..12 (6 inside);
         // tokens 30..33 (2 inside), rows 20..24 (3 inside).
         TemplateBlanking::new([0, 1], &[body(5, 12, 10, 20, 100, 200), body(20, 24, 30, 33, 300, 340)],
-            &CheckedUnitContracts::default(), &[" ".repeat(400)]).unwrap().unwrap()
+            &CheckedUnitContracts::default()).unwrap().unwrap()
     }
 
     #[test]
@@ -494,11 +474,12 @@ mod tests {
 
     #[test]
     fn blanking_keeps_bytes_lines_and_braces() {
-        let source = "fn a() -> u32 {\n    return é;\n}\nfn b() {}\n".to_string();
+        // A body holding a string literal is blanked like any other.
+        let source = "fn a() -> u32 {\n    let s: str = \"é\";\n    return 1;\n}\nfn b() {}\n".to_string();
         let open = source.find('{').unwrap() as u32;
         let close = source.find("}\n").unwrap() as u32;
         let blanking = TemplateBlanking::new([0, 0], &[body(3, 9, 6, 11, open, close)],
-            &CheckedUnitContracts::default(), std::slice::from_ref(&source)).unwrap().unwrap();
+            &CheckedUnitContracts::default()).unwrap().unwrap();
         let blanked = blanking.blank_sources(&[source.clone()]).unwrap();
         assert_eq!(blanked[0].len(), source.len());
         assert_eq!(blanked[0].matches('\n').count(), source.matches('\n').count());
@@ -518,17 +499,7 @@ mod tests {
             parameters: Vec::new(),
         });
         let blanking = TemplateBlanking::new([0, 1], &[body(5, 12, 10, 20, 100, 200), body(20, 24, 30, 33, 300, 340)],
-            &contracts, &[" ".repeat(400)]).unwrap().unwrap();
-        assert_eq!(blanking.body_count(), 1);
-        assert_eq!(blanking.removed(), (2, 3));
-    }
-
-    #[test]
-    fn a_body_holding_a_string_is_kept() {
-        let mut source = " ".repeat(400);
-        source.replace_range(150..151, "\"");
-        let blanking = TemplateBlanking::new([0, 1], &[body(5, 12, 10, 20, 100, 200), body(20, 24, 30, 33, 300, 340)],
-            &CheckedUnitContracts::default(), &[source]).unwrap().unwrap();
+            &contracts).unwrap().unwrap();
         assert_eq!(blanking.body_count(), 1);
         assert_eq!(blanking.removed(), (2, 3));
     }

@@ -1,0 +1,18 @@
+// expect: 42
+// A body holding string literals beside generic bodies that replay as
+// instance copies. A declarations-only template blanks it, and the copy
+// replay's rodata starts at the copies' own strings, so its bytes do not
+// depend on the blanking.
+module app::main;
+import core::mem;
+
+fn label() -> str { return "label-text"; }
+fn keep<T>(value: T) -> T { return value; }
+
+fn main() -> i32 {
+    let text: str = label();
+    let data: ptr = core::mem::string_data_ptr(text);
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(data, 10);
+    if (bytes[0] != 108 || bytes[6] != 116 || bytes[9] != 116) { return 1; }
+    return keep(40) + keep(2);
+}

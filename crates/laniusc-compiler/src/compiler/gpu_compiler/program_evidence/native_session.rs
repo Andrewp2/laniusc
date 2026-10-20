@@ -528,7 +528,7 @@ impl DeclarationsOnlyTemplate {
             return Ok(None);
         };
         let full_contracts = template.checked_contracts();
-        let Some(blanking) = TemplateBlanking::new(unit, bodies, full_contracts, &instance.sources.sources)? else {
+        let Some(blanking) = TemplateBlanking::new(unit, bodies, full_contracts)? else {
             return Ok(None);
         };
         let map = blanking.map(BlankingDirection::ToCopy);
