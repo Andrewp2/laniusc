@@ -8678,6 +8678,10 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("opt_ir_core", opt_core),
             PassAccess::read("opt_ir_operands", opt_operands),
             PassAccess::read("semantic_schedule_order", schedule_order),
+            // Call statements (a call whose HIR parent is its block) drop
+            // their unused results.
+            PassAccess::read("opt_ir_source_hir", opt_source_hir),
+            PassAccess::read("compact_hir_core", hir_core),
             PassAccess::write("target_lir_count", target_counts),
         ],
         LoweringTarget::X86_64 => vec![
@@ -8745,6 +8749,7 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("opt_ir_source_hir", opt_source_hir),
             PassAccess::read("semantic_function_id_by_hir", semantic_function_ids),
             PassAccess::read("semantic_schedule_order", schedule_order),
+            PassAccess::read("compact_hir_core", hir_core),
             PassAccess::read(
                 "semantic_lir_aggregate_elements",
                 semantic_aggregate_elements,

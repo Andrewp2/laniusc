@@ -3,6 +3,7 @@ import codegen.lir.wasm.host_abi;
 import codegen.lowering_ir;
 import codegen.optimization_ir;
 import gpu_index;
+import hir_records;
 import primitive_types;
 
 struct Params { uint semantic_capacity; uint target_capacity; uint target_start; uint page_capacity; };
@@ -14,6 +15,7 @@ StructuredBuffer<uint> semantic_lir_layout_word_offset;
 StructuredBuffer<uint> opt_ir_source_hir;
 StructuredBuffer<uint> semantic_function_id_by_hir;
 StructuredBuffer<uint> semantic_schedule_order;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<SemanticLirAggregateElement> semantic_lir_aggregate_elements;
 StructuredBuffer<uint> semantic_lir_string_total;
 StructuredBuffer<SemanticLirString> semantic_lir_strings;
@@ -69,18 +71,27 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint value_op = operands.b < semantic_count
         ? opt_ir_op(opt_ir_core[operands.b]) : SEMANTIC_LIR_OP_INVALID;
     bool copy_set_value = wasm_set_copies_aggregate(core, value_op);
+    uint previous_row = scheduled_row > 0u
+        ? semantic_schedule_order[scheduled_row - 1u] : WASM_LIR_INVALID;
+    OptIrNodeOperands previous_operands = opt_ir_operands[min(previous_row, semantic_row)];
+    bool reload_short_circuit = previous_row < semantic_count &&
+        wasm_reloads_short_circuit(core, operands, opt_ir_core[previous_row], previous_operands);
     bool host_operation = opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_HOST;
     bool inline_host_operation = host_operation && operands.a == HOST_SERVICE_I32_TO_F32;
     uint host_import = host_operation && !inline_host_operation
         ? wasm_host_import_for_service(operands.a) : WASM_HOST_INVALID;
     bool imported_host_operation = host_import != WASM_HOST_INVALID;
     bool supported_intrinsic = opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
-        (operands.a == 1u || operands.a == INTRINSIC_I32_ARRAY_DATA_PTR);
+        (operands.a == WASM_INTRINSIC_PRINT || operands.a == WASM_INTRINSIC_ASSERT ||
+         operands.a == INTRINSIC_I32_ARRAY_DATA_PTR);
     uint flags = wasm_lir_supported(core) || inline_host_operation ||
         imported_host_operation || supported_intrinsic
         ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
     // Host/intrinsic support cannot override an unsupported checked width.
     if (core.type_id == SCALAR_F64) flags |= TARGET_LIR_FLAG_UNSUPPORTED;
+    // An `||` negation whose operand is not the just-stored left side.
+    if (wasm_short_circuit_not(core) && !reload_short_circuit)
+        flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     // Rows the semantic pass could not lower (an unknown layout, a
     // declaration type with no zero value, an unsupported iterable) are
     // rejected as on x86, never lowered from their placeholder operands.
@@ -95,8 +106,25 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (inline_host_operation) opcode = WASM_LIR_OP_F32_CONVERT_I32_S;
     else if (imported_host_operation) opcode = WASM_LIR_OP_CALL;
     uint immediate = 0u;
+    bool discarded = local_row >= 1u && wasm_discarded_result_values(core,
+        wasm_statement_call(compact_hir_core, opt_ir_source_hir[semantic_row])) != 0u;
     if (wasm_never_call(core) && local_row == 1u)
         opcode = WASM_LIR_OP_UNREACHABLE;
+    else if (discarded)
+        opcode = WASM_LIR_OP_DROP;
+    else if (reload_short_circuit)
+    {
+        opcode = local_row == 0u ? WASM_LIR_OP_LOCAL_GET : WASM_LIR_OP_I32_EQZ;
+        immediate = local_row == 0u ? previous_operands.a : 0u;
+    }
+    else if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_INTRINSIC &&
+             operands.a == WASM_INTRINSIC_ASSERT)
+    {
+        // Trap when the checked condition is false.
+        opcode = local_row == 0u ? WASM_LIR_OP_I32_EQZ
+            : local_row == 1u ? WASM_LIR_OP_IF
+            : local_row == 2u ? WASM_LIR_OP_UNREACHABLE : WASM_LIR_OP_END;
+    }
     else if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_STRING)
     {
         uint string_count = semantic_lir_string_total[0u];

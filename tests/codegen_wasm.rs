@@ -346,6 +346,54 @@ fn main() -> i32 {
 }
 
 #[test]
+fn wasm_drops_call_statement_results_and_checks_asserts_with_node() {
+    // A call used as a statement drops its result (Wasm validation rejects a
+    // value left on the stack), `assert` only traps on false, and `||` reads
+    // its stored left side.
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn f() -> i32 { return 3; }
+
+fn main() -> i32 {
+    let n: i32 = 0;
+    if (false) { f(); }
+    while (n < 3) { f(); n = n + 1; }
+    f();
+    assert(n == 3);
+    if (n == 1 || n == 3) {
+        if (n == 0 || n == 2 || n == 3) { return 42; }
+    }
+    return 1;
+}
+"#,
+    )
+    .expect("call statements and asserts should compile to WASM");
+    let status = common::run_wasm_main_return_with_node(
+        "WASM call statements and asserts",
+        "call_statements_and_asserts",
+        &wasm,
+    );
+    assert_eq!(status, 42);
+
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        "fn main() -> i32 {\n    let n: i32 = 2;\n    assert(n == 3);\n    return 0;\n}\n",
+    )
+    .expect("a failing assert should compile to WASM");
+    let output = common::run_wasm_main_with_node_output(
+        "WASM failing assert",
+        "failing_assert",
+        &wasm,
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success() && stderr.contains("unreachable"),
+        "a false assert should trap: {:?} {stderr}",
+        output.status
+    );
+}
+
+#[test]
 fn wasm_executes_multi_payload_enum_constructor_and_pattern_with_node() {
     common::require_node();
     let wasm = common::compile_source_to_wasm_with_timeout(

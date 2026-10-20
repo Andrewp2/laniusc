@@ -1,6 +1,7 @@
 import codegen.lowering_ir;
 import codegen.optimization_ir;
 import primitive_types;
+import hir_records;
 
 static const uint WASM_LIR_INVALID = 0xffffffffu;
 static const uint TY_FLOAT = 5u;
@@ -65,11 +66,66 @@ bool wasm_store_copies_aggregate(OptIrNodeCore core)
 // Rows of the heap snapshot shared by AGGREGATE_COPY and aggregate sets.
 static const uint WASM_HEAP_COPY_ROWS = 10u;
 
+static const uint WASM_INTRINSIC_PRINT = 1u;
+static const uint WASM_INTRINSIC_ASSERT = 2u;
+
+// `a || b` lowers to: set T = a; `!a`; if { set T = b }; get T. The `!a` row
+// names `a` itself, which a stack machine already consumed into T, so Wasm
+// reloads T (the preceding row's local) before negating it.
+bool wasm_short_circuit_not(OptIrNodeCore core)
+{
+    return opt_ir_op(core) == SEMANTIC_LIR_OP_LOGICAL_NOT &&
+        (core.flags & SEMANTIC_LIR_FLAG_SYNTHETIC_CONTROL) != 0u;
+}
+
+bool wasm_reloads_short_circuit(OptIrNodeCore core, OptIrNodeOperands operands,
+                                OptIrNodeCore previous, OptIrNodeOperands previous_operands)
+{
+    return wasm_short_circuit_not(core) &&
+        opt_ir_op(previous) == SEMANTIC_LIR_OP_VALUE_SET &&
+        (previous.flags & SEMANTIC_LIR_FLAG_SYNTHETIC_CONTROL) != 0u &&
+        previous_operands.b == operands.a;
+}
+
+static const uint WASM_HIR_BLOCK = 6u;
+static const uint WASM_HIR_CALL_EXPR = 19u;
+
+// A call that is a whole expression statement (`f();`; compaction makes it a
+// direct child of its block) leaves a result nobody consumes. Wasm needs one
+// `drop` per result value after the call.
+bool wasm_statement_call(StructuredBuffer<HirCore> hir_core, uint node)
+{
+    uint hir_count;
+    uint stride;
+    hir_core.GetDimensions(hir_count, stride);
+    if (node >= hir_count || hir_core[node].kind != WASM_HIR_CALL_EXPR) return false;
+    uint parent = hir_core[node].parent;
+    return parent < hir_count && hir_core[parent].kind == WASM_HIR_BLOCK;
+}
+
+uint wasm_discarded_result_values(OptIrNodeCore core, bool statement_call)
+{
+    uint op = opt_ir_op(core);
+    if (!statement_call ||
+        (op != SEMANTIC_LIR_OP_CALL && op != SEMANTIC_LIR_OP_CALL_SYMBOL &&
+         op != SEMANTIC_LIR_OP_CALL_HOST))
+        return 0u;
+    if (core.type_id == 0u || core.type_id == 1u || core.type_id == SCALAR_NEVER) return 0u;
+    return core.type_id == TY_STRING ? 2u : 1u;
+}
+
 uint wasm_lir_count(OptIrNodeCore core, OptIrNodeOperands operands,
                     bool call_index_base, bool direct_field_store_receiver,
-                    bool copy_set_value)
+                    bool copy_set_value, uint discarded_values,
+                    bool reload_short_circuit)
 {
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_NOP) return 0u;
+    // A discarded call: the call row, then its drops.
+    if (discarded_values != 0u) return 1u + discarded_values;
+    if (reload_short_circuit) return 2u;
+    // assert(c): `i32.eqz; if; unreachable; end`.
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL_INTRINSIC && operands.a == WASM_INTRINSIC_ASSERT)
+        return 4u;
     // Expression operands are already on the Wasm stack when their semantic
     // owner is lowered. Signed integer negation therefore appends
     // `i32.const -1; i32.mul` and owns two target records.
@@ -222,7 +278,7 @@ bool wasm_lir_supported(OptIrNodeCore core)
         op == SEMANTIC_LIR_OP_STORE ||
         (op >= SEMANTIC_LIR_OP_ADD && op <= SEMANTIC_LIR_OP_LOGICAL_NOT) ||
         op == SEMANTIC_LIR_OP_LOGICAL_AND || op == SEMANTIC_LIR_OP_LOGICAL_OR ||
-        op == SEMANTIC_LIR_OP_CALL || op == SEMANTIC_LIR_OP_CALL_INTRINSIC ||
+        op == SEMANTIC_LIR_OP_CALL ||
         op == SEMANTIC_LIR_OP_CALL_SYMBOL ||
         op == SEMANTIC_LIR_OP_BLOCK_BEGIN || op == SEMANTIC_LIR_OP_LOOP_BEGIN ||
         op == SEMANTIC_LIR_OP_IF_BEGIN ||

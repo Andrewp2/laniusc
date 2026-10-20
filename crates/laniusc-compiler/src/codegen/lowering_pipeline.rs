@@ -587,6 +587,7 @@ impl GpuLoweringPipeline {
             upstream,
         )
         .map_err(anyhow::Error::msg)?;
+        let hir_core = hir.core;
         let semantic = GpuSemanticLoweringStage::from_workspace(
             device,
             capacities,
@@ -625,6 +626,7 @@ impl GpuLoweringPipeline {
                     &workspace,
                     capacities,
                     optimizer.output(semantic.output()),
+                    hir_core,
                     artifact_kind == LoweringArtifactKind::Object,
                     kernels,
                 )

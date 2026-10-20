@@ -3291,6 +3291,13 @@ mod tests {
             "test.wasm_lir.opt_source_hir",
             &[0, 1, 2, 3, 4],
         );
+        // No row is a call statement: kind 0 HIR rows with no parent.
+        let compact_hir_core = storage_ro_from_bytes::<HirCore>(
+            &gpu.device,
+            "test.wasm_lir.hir_core",
+            &words(&[[0, u32::MAX, 0, 0]; 5]),
+            5,
+        );
         let semantic_function =
             storage_ro_from_u32s(&gpu.device, "test.wasm_lir.function_by_hir", &[u32::MAX; 5]);
         let semantic_layout =
@@ -3348,6 +3355,8 @@ mod tests {
                     "semantic_schedule_order",
                     semantic_order.as_entire_binding(),
                 ),
+                ("opt_ir_source_hir", opt_source_hir.as_entire_binding()),
+                ("compact_hir_core", compact_hir_core.as_entire_binding()),
                 ("target_lir_count", target_counts.as_entire_binding()),
             ],
         )
@@ -3374,6 +3383,7 @@ mod tests {
                     "semantic_schedule_order",
                     semantic_order.as_entire_binding(),
                 ),
+                ("compact_hir_core", compact_hir_core.as_entire_binding()),
                 (
                     "semantic_lir_aggregate_elements",
                     semantic_aggregate_elements.as_entire_binding(),

@@ -1,5 +1,5 @@
 # codegen_wasm tests that fail today (P18, on main edbd5d8c plus the Wasm
-# AGGREGATE_COPY lowering): 23 of 118. Gates should check for "no failure
+# AGGREGATE_COPY lowering): 21 of 120. Gates should check for "no failure
 # outside this list" instead of rereading the whole suite.
 #
 # One test per line: name, failure today, detail.
@@ -20,7 +20,6 @@ wasm_executes_exact_clock_buffer_api_with_node  LNC0036  unsupported Wasm row
 wasm_executes_generic_struct_parameter_member_reads_with_node  runtime  invalid module: call[0] expected type i64, found i32
 wasm_executes_host_runtime_smoke_source_pack_with_node  LNC0036  unsupported Wasm row
 wasm_executes_imported_core_f32_sqrt_with_node  runtime  WASM imported core f32 sqrt: node executing WASM main failed with status 1
-wasm_executes_nested_boolean_conditions_with_node  runtime  WASM nested boolean conditions: node executing WASM main failed with status 1
 wasm_executes_nested_f32_return_call_with_aggregate_receiver_arg  LNC0036  unsupported Wasm row
 wasm_executes_normalized_vector_dot_product  LNC0036  unsupported Wasm row
 wasm_executes_std_env_imports_with_node  LNC0006  diagnostic
@@ -31,6 +30,5 @@ wasm_executes_std_io_write_stdout_import_with_node  LNC0036  unsupported Wasm ro
 wasm_executes_std_process_argument_read_imports_with_node  LNC0006  diagnostic
 wasm_executes_std_random_and_time_imports_with_node  LNC0036  unsupported Wasm row
 wasm_executes_std_random_fill_secure_bytes_with_node  LNC0036  unsupported Wasm row
-wasm_preserves_valid_f32_root_through_or_guard  runtime  WASM valid f32 root OR guard: node executing WASM main failed with status 1
 wasm_realloc_preserves_existing_bytes_with_node  LNC0036  unsupported Wasm row
 wasm_returns_scalar_host_call_with_negative_expression_argument  LNC0036  unsupported Wasm row

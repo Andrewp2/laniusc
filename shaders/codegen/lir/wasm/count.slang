@@ -2,6 +2,7 @@ import codegen.lir.wasm.common;
 import codegen.lowering_ir;
 import codegen.optimization_ir;
 import gpu_index;
+import hir_records;
 
 struct Params { uint semantic_capacity; uint semantic_start; uint page_capacity; uint reserved; };
 ConstantBuffer<Params> gParams;
@@ -9,6 +10,8 @@ StructuredBuffer<uint> opt_ir_total;
 StructuredBuffer<OptIrNodeCore> opt_ir_core;
 StructuredBuffer<OptIrNodeOperands> opt_ir_operands;
 StructuredBuffer<uint> semantic_schedule_order;
+StructuredBuffer<uint> opt_ir_source_hir;
+StructuredBuffer<HirCore> compact_hir_core;
 RWStructuredBuffer<uint> target_lir_count;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -42,7 +45,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
         opt_ir_op(opt_ir_core[operands.a]) == SEMANTIC_LIR_OP_VALUE_GET;
     uint value_op = operands.b < count
         ? opt_ir_op(opt_ir_core[operands.b]) : SEMANTIC_LIR_OP_INVALID;
+    uint previous_row = row > 0u ? semantic_schedule_order[row - 1u] : 0xffffffffu;
+    bool reload_short_circuit = previous_row < count &&
+        wasm_reloads_short_circuit(core, operands,
+            opt_ir_core[previous_row], opt_ir_operands[previous_row]);
     target_lir_count[row] = wasm_lir_count(
         core, operands, call_index_base, direct_field_store_receiver,
-        wasm_set_copies_aggregate(core, value_op));
+        wasm_set_copies_aggregate(core, value_op),
+        wasm_discarded_result_values(core,
+            wasm_statement_call(compact_hir_core, opt_ir_source_hir[semantic_row])),
+        reload_short_circuit);
 }
