@@ -318,6 +318,11 @@ impl PrefixScanOperation {
         self.record_with_graph_passes(encoder, self.graph_passes)
     }
 
+    /// The bind groups of the scan's three passes.
+    pub(crate) fn bind_groups(&self) -> [&wgpu::BindGroup; 3] {
+        [&self.local, &self.block_prefix, &self.apply]
+    }
+
     /// Records this materialized scan under another graph declaration with
     /// the same physical kernels and resources. This is used when one stable
     /// workspace is revisited at distinct semantic positions in the compiler

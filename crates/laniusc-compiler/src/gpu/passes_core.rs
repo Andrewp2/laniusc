@@ -256,6 +256,46 @@ pub(crate) fn finish_reflected_bind_group_job(epoch: u64, workspace_changed: boo
     });
 }
 
+/// Marks the cached entries of `groups` as used by the active job.
+///
+/// An owner that keeps its operations across jobs records their bind groups
+/// without a cache lookup, so their entries keep the epoch of the job that
+/// built them. A cold/growth job (`finish_reflected_bind_group_job`) then
+/// drops those entries although the owner still holds the bind groups, and
+/// the owner's next rebuild with the same bindings creates every bind group
+/// again. Such an owner calls this whenever it records retained operations.
+pub(crate) fn mark_reflected_bind_groups_used<'a>(
+    groups: impl IntoIterator<Item = &'a wgpu::BindGroup>,
+) {
+    let epoch = ACTIVE_BIND_GROUP_JOB.load(Ordering::Relaxed);
+    if epoch == 0 {
+        return;
+    }
+    let wanted: std::collections::HashSet<&wgpu::BindGroup> = groups.into_iter().collect();
+    if wanted.is_empty() {
+        return;
+    }
+    let mut caches: Vec<SharedReflectedBindGroupCache> = reflected_bind_group_caches()
+        .lock()
+        .expect("reflected bind-group cache registry poisoned")
+        .values()
+        .filter_map(Weak::upgrade)
+        .collect();
+    // One cache serves every layout of its pipeline.
+    caches.sort_unstable_by_key(|cache| Arc::as_ptr(cache) as usize);
+    caches.dedup_by_key(|cache| Arc::as_ptr(cache) as usize);
+    for cache in caches {
+        let mut cache = cache.lock().expect("reflected bind-group cache poisoned");
+        for invocation in cache.invocations.values_mut() {
+            for cached in invocation.variants.values_mut() {
+                if wanted.contains(&cached.bind_group) {
+                    cached.last_used_job = epoch;
+                }
+            }
+        }
+    }
+}
+
 type SharedReflectedBindGroupCache = Arc<std::sync::Mutex<ReflectedBindGroupCache>>;
 
 fn reflected_bind_group_caches() -> &'static std::sync::Mutex<
