@@ -1,63 +1,36 @@
-# codegen_wasm tests that fail at a90285c2 (generics-gpu d6414d14 merged into
-# p9b-parser-perf), measured 2026-10-18 on the laptop RTX 3070: 44 of 115.
-# They fail identically before and after the zero-initialized `let x: T;`
-# change. 40 of them build their source inline, and their CLI builds give
-# the same exit and the same bytes on both builds. Gates should check for
-# "no failure outside this list" instead of rereading the whole suite.
+# codegen_wasm tests that fail today (P18, on main edbd5d8c plus the Wasm
+# AGGREGATE_COPY lowering): 23 of 118. Gates should check for "no failure
+# outside this list" instead of rereading the whole suite.
 #
 # One test per line: name, failure today, detail.
-# - LNC0057: the GPU lowering status rejects the module (flags=0x10 is an
-#   unsupported Wasm target row, 0x400 an optimization-structure failure).
-#   Wasm reports these as "compiler execution failed" instead of an
-#   LNC0017-style source-spanned diagnostic.
+# - LNC0036: the Wasm backend rejects the program with a source-spanned
+#   diagnostic (an unsupported semantic LIR row; the note names its op).
+#   LNC0057 is the generic lowering failure (flags=0x400 is an
+#   optimization-structure failure).
 # - LNC0006: the type checker rejects the source (std host-import wrappers).
-# - runtime: the module compiles, but node exits nonzero or the returned
-#   value is wrong.
-# Wasm is secondary to x86. These stay as known gaps unless a generics bug
-# also shows up on x86. Payload enums and the Wasm diagnostics are tracked
-# as matrix probe p54.
+# - runtime: the module compiles, but node rejects or traps on it, or the
+#   returned value is wrong.
 
-wasm_alloc_failed_is_non_returning_with_node  LNC0057  GPU lowering flags=0x10
+wasm_alloc_failed_is_non_returning_with_node  LNC0036  unsupported Wasm row
 wasm_branches_through_ifs_beyond_legacy_control_depth  LNC0057  GPU lowering flags=0x400
-wasm_copies_aggregate_local_and_updates_scalar_members  LNC0057  GPU lowering flags=0x10
-wasm_copies_aggregate_member_beyond_legacy_address_depth  LNC0057  GPU lowering flags=0x10
-wasm_copies_nested_aggregate_member_from_returned_aggregate  LNC0057  GPU lowering flags=0x10
-wasm_executes_aggregate_receiver_f32_member_call_with_node  LNC0057  GPU lowering flags=0x10
-wasm_executes_aggregate_return_direct_call_with_member_expr_args  LNC0057  GPU lowering flags=0x10
-wasm_executes_aggregate_return_method_with_f32_expr_arg  LNC0057  GPU lowering flags=0x10
-wasm_executes_aggregate_return_method_with_f32_receiver_call_local  LNC0057  GPU lowering flags=0x10
 wasm_executes_aggregate_return_temporary_index  runtime  assertion `left == right` failed
 wasm_executes_all_numeric_range_forms_with_node  runtime  WASM numeric range forms: node executing WASM main failed with status 1
-wasm_executes_alloc_allocator_alloc_dealloc_with_node  LNC0057  GPU lowering flags=0x10
-wasm_executes_binary_member_expression_return_without_control_flow  LNC0057  GPU lowering flags=0x10
-wasm_executes_camera_ray_with_nonzero_coordinates  LNC0057  GPU lowering flags=0x10
-wasm_executes_enum_pattern_before_wildcard_default_with_node  LNC0057  GPU lowering flags=0x10
-wasm_executes_exact_clock_buffer_api_with_node  LNC0057  GPU lowering flags=0x10
-wasm_executes_f32_aggregate_member_binary_return_with_node  LNC0057  GPU lowering flags=0x10
-wasm_executes_generic_struct_parameter_member_reads_with_node  LNC0057  GPU lowering flags=0x10
-wasm_executes_host_runtime_smoke_source_pack_with_node  LNC0057  GPU lowering flags=0x10
+wasm_executes_alloc_allocator_alloc_dealloc_with_node  LNC0036  unsupported Wasm row
+wasm_executes_exact_clock_buffer_api_with_node  LNC0036  unsupported Wasm row
+wasm_executes_generic_struct_parameter_member_reads_with_node  runtime  invalid module: call[0] expected type i64, found i32
+wasm_executes_host_runtime_smoke_source_pack_with_node  LNC0036  unsupported Wasm row
 wasm_executes_imported_core_f32_sqrt_with_node  runtime  WASM imported core f32 sqrt: node executing WASM main failed with status 1
-wasm_executes_let_binary_expr_with_direct_call_operand  LNC0057  GPU lowering flags=0x10
-wasm_executes_multi_payload_enum_constructor_and_pattern_with_node  LNC0057  GPU lowering flags=0x10
 wasm_executes_nested_boolean_conditions_with_node  runtime  WASM nested boolean conditions: node executing WASM main failed with status 1
-wasm_executes_nested_f32_direct_call_argument_with_node  LNC0057  GPU lowering flags=0x10
-wasm_executes_nested_f32_return_call_with_aggregate_receiver_arg  LNC0057  GPU lowering flags=0x10
-wasm_executes_normalized_vector_dot_product  LNC0057  GPU lowering flags=0x10
-wasm_executes_ray_coordinate_conversion_formula  LNC0057  GPU lowering flags=0x10
+wasm_executes_nested_f32_return_call_with_aggregate_receiver_arg  LNC0036  unsupported Wasm row
+wasm_executes_normalized_vector_dot_product  LNC0036  unsupported Wasm row
 wasm_executes_std_env_imports_with_node  LNC0006  diagnostic
-wasm_executes_std_fs_file_io_imports_with_node  LNC0057  GPU lowering flags=0x10
-wasm_executes_std_fs_path_mutations_with_node  LNC0057  GPU lowering flags=0x10
-wasm_executes_std_io_write_stdout_bytes_with_node  LNC0057  GPU lowering flags=0x10
-wasm_executes_std_io_write_stdout_import_with_node  LNC0057  GPU lowering flags=0x10
+wasm_executes_std_fs_file_io_imports_with_node  LNC0036  unsupported Wasm row
+wasm_executes_std_fs_path_mutations_with_node  LNC0036  unsupported Wasm row
+wasm_executes_std_io_write_stdout_bytes_with_node  LNC0036  unsupported Wasm row
+wasm_executes_std_io_write_stdout_import_with_node  LNC0036  unsupported Wasm row
 wasm_executes_std_process_argument_read_imports_with_node  LNC0006  diagnostic
-wasm_executes_std_random_and_time_imports_with_node  LNC0057  GPU lowering flags=0x10
-wasm_executes_std_random_fill_secure_bytes_with_node  LNC0057  GPU lowering flags=0x10
-wasm_handles_member_address_chain_deeper_than_legacy_limit  LNC0057  GPU lowering flags=0x10
-wasm_passes_aggregate_member_as_aggregate_call_argument  LNC0057  GPU lowering flags=0x10
-wasm_passes_f32_bounds_after_aggregate_call_args  LNC0057  GPU lowering flags=0x10
-wasm_passes_loop_coordinates_after_aggregate_call_args  LNC0057  GPU lowering flags=0x10
+wasm_executes_std_random_and_time_imports_with_node  LNC0036  unsupported Wasm row
+wasm_executes_std_random_fill_secure_bytes_with_node  LNC0036  unsupported Wasm row
 wasm_preserves_valid_f32_root_through_or_guard  runtime  WASM valid f32 root OR guard: node executing WASM main failed with status 1
-wasm_realloc_preserves_existing_bytes_with_node  LNC0057  GPU lowering flags=0x10
-wasm_resolves_member_chain_through_conflicting_field_layouts  LNC0057  GPU lowering flags=0x10
-wasm_returns_scalar_host_call_with_negative_expression_argument  LNC0057  GPU lowering flags=0x10
-wasm_reused_workspace_preserves_f32_types  LNC0057  GPU lowering flags=0x10
+wasm_realloc_preserves_existing_bytes_with_node  LNC0036  unsupported Wasm row
+wasm_returns_scalar_host_call_with_negative_expression_argument  LNC0036  unsupported Wasm row
