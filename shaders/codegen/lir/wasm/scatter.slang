@@ -173,10 +173,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // Each element is 7 rows: save the value, form the element address,
         // then store a scalar (and pad), or copy a nested aggregate's words.
         uint element_rows = operands.b * 7u;
-        // `[value; count]` with a nonzero value would store its one element
-        // only once; Wasm has no repeat lowering yet, so it fails visibly.
-        if (operands.c == SEMANTIC_LIR_AGGREGATE_REPEAT)
+        // `[value; count]` stores its one element, then doubles it in place.
+        uint repeat_words = wasm_repeat_element_words(
+            core, operands, semantic_lir_aggregate_elements);
+        if (operands.c == SEMANTIC_LIR_AGGREGATE_REPEAT && repeat_words == WASM_LIR_INVALID)
             flags |= TARGET_LIR_FLAG_UNSUPPORTED;
+        uint repeat_rows = WASM_REPEAT_STEP_ROWS *
+            wasm_repeat_steps(repeat_words, core.value_word_count);
         bool tagged_enum = (operands.c & SEMANTIC_LIR_AGGREGATE_ENUM) != 0u;
         uint tag_rows = tagged_enum ? 5u : 0u;
         if (local_row < element_rows)
@@ -217,9 +220,23 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 : phase == 5u && element_is_aggregate
                     ? aggregate_element.word_count * WASM_WORD_BYTES : 0u;
         }
-        else if (local_row < element_rows + tag_rows)
+        else if (local_row < element_rows + repeat_rows)
         {
-            uint phase = local_row - element_rows;
+            // memory.copy(heap + filled, heap, length).
+            uint step_row = local_row - element_rows;
+            uint phase = step_row % WASM_REPEAT_STEP_ROWS;
+            uint filled_bytes;
+            uint length_bytes;
+            wasm_repeat_step(repeat_words, core.value_word_count,
+                step_row / WASM_REPEAT_STEP_ROWS, filled_bytes, length_bytes);
+            opcode = phase == 0u || phase == 3u ? WASM_LIR_OP_GLOBAL_GET
+                : phase == 1u || phase == 4u ? WASM_LIR_OP_I32_CONST
+                : phase == 2u ? WASM_LIR_OP_I32_ADD : WASM_LIR_OP_MEMORY_COPY;
+            immediate = phase == 1u ? filled_bytes : phase == 4u ? length_bytes : 0u;
+        }
+        else if (local_row < element_rows + repeat_rows + tag_rows)
+        {
+            uint phase = local_row - element_rows - repeat_rows;
             opcode = phase == 0u ? WASM_LIR_OP_GLOBAL_GET
                 : phase == 1u ? WASM_LIR_OP_I32_CONST
                 : phase == 2u ? WASM_LIR_OP_I32_ADD
@@ -230,7 +247,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         }
         else
         {
-            uint phase = local_row - element_rows - tag_rows;
+            uint phase = local_row - element_rows - repeat_rows - tag_rows;
             opcode = phase == 0u || phase == 1u ? WASM_LIR_OP_GLOBAL_GET
                 : phase == 2u ? WASM_LIR_OP_I32_CONST
                 : phase == 3u ? WASM_LIR_OP_I32_ADD

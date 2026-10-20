@@ -12,6 +12,7 @@ StructuredBuffer<OptIrNodeOperands> opt_ir_operands;
 StructuredBuffer<uint> semantic_schedule_order;
 StructuredBuffer<uint> opt_ir_source_hir;
 StructuredBuffer<HirCore> compact_hir_core;
+StructuredBuffer<SemanticLirAggregateElement> semantic_lir_aggregate_elements;
 RWStructuredBuffer<uint> target_lir_count;
 
 static const uint DISPATCH_X_STRIDE = 16776960u;
@@ -59,5 +60,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
             wasm_statement_call(compact_hir_core, opt_ir_source_hir[semantic_row])),
         reload_short_circuit, value_type,
         wasm_exhaustion_reload(core, operands, opt_ir_core, opt_ir_operands, count) !=
-            WASM_LIR_INVALID);
+            WASM_LIR_INVALID,
+        wasm_repeat_element_words(core, operands, semantic_lir_aggregate_elements));
 }

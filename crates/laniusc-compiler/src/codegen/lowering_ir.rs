@@ -8682,6 +8682,11 @@ fn lowering_compiler_graph_builder(
             // their unused results.
             PassAccess::read("opt_ir_source_hir", opt_source_hir),
             PassAccess::read("compact_hir_core", hir_core),
+            // `[value; count]` sizes its fill from the element's words.
+            PassAccess::read(
+                "semantic_lir_aggregate_elements",
+                semantic_aggregate_elements,
+            ),
             PassAccess::write("target_lir_count", target_counts),
         ],
         LoweringTarget::X86_64 => vec![

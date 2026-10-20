@@ -63,6 +63,59 @@ bool wasm_store_copies_aggregate(OptIrNodeCore core)
         wasm_inline_aggregate(core);
 }
 
+// `[value; count]` stores its one element, then fills the rest by doubling:
+// each step copies the filled prefix (at most the remainder) after itself.
+static const uint WASM_REPEAT_STEP_ROWS = 6u;
+
+// The element's word count of a supported repeat, else WASM_LIR_INVALID.
+uint wasm_repeat_element_words(OptIrNodeCore core, OptIrNodeOperands operands,
+                               StructuredBuffer<SemanticLirAggregateElement> elements)
+{
+    if (opt_ir_op(core) != SEMANTIC_LIR_OP_AGGREGATE_NEW ||
+        operands.c != SEMANTIC_LIR_AGGREGATE_REPEAT || operands.b != 1u)
+        return WASM_LIR_INVALID;
+    uint count;
+    uint stride;
+    elements.GetDimensions(count, stride);
+    if (operands.a >= count) return WASM_LIR_INVALID;
+    SemanticLirAggregateElement element = elements[operands.a];
+    return element.word_offset == 0u && element.word_count != 0u &&
+        element.word_count != WASM_LIR_INVALID &&
+        core.value_word_count != WASM_LIR_INVALID &&
+        core.value_word_count % element.word_count == 0u
+        ? element.word_count : WASM_LIR_INVALID;
+}
+
+uint wasm_repeat_steps(uint element_words, uint total_words)
+{
+    if (element_words == 0u || element_words == WASM_LIR_INVALID) return 0u;
+    uint filled = element_words;
+    uint steps = 0u;
+    for (uint index = 0u; index < 32u && filled < total_words; index++)
+    {
+        filled += min(filled, total_words - filled);
+        steps += 1u;
+    }
+    return steps;
+}
+
+// The byte offset already filled before doubling step `step`, and the bytes
+// that step copies.
+void wasm_repeat_step(uint element_words, uint total_words, uint step,
+                      out uint filled_bytes, out uint length_bytes)
+{
+    uint filled = element_words;
+    uint length = 0u;
+    for (uint index = 0u; index < 32u && filled < total_words; index++)
+    {
+        length = min(filled, total_words - filled);
+        if (index == step) break;
+        filled += length;
+    }
+    filled_bytes = filled * WASM_WORD_BYTES;
+    length_bytes = length * WASM_WORD_BYTES;
+}
+
 // Rows of the heap snapshot shared by AGGREGATE_COPY and aggregate sets.
 static const uint WASM_HEAP_COPY_ROWS = 10u;
 
@@ -142,7 +195,7 @@ uint wasm_lir_count(OptIrNodeCore core, OptIrNodeOperands operands,
                     bool call_index_base, bool direct_field_store_receiver,
                     bool copy_set_value, uint discarded_values,
                     bool reload_short_circuit, uint shift_amount_type,
-                    bool exhaustion_reload)
+                    bool exhaustion_reload, uint repeat_element_words)
 {
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_NOP) return 0u;
     // A discarded call: the call row, then its drops.
@@ -160,7 +213,9 @@ uint wasm_lir_count(OptIrNodeCore core, OptIrNodeOperands operands,
     if (false_branch && exhaustion_reload) return 3u;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_NEW)
         return operands.b * 7u +
-            ((operands.c & SEMANTIC_LIR_AGGREGATE_ENUM) != 0u ? 5u : 0u) + 5u;
+            ((operands.c & SEMANTIC_LIR_AGGREGATE_ENUM) != 0u ? 5u : 0u) +
+            WASM_REPEAT_STEP_ROWS *
+                wasm_repeat_steps(repeat_element_words, core.value_word_count) + 5u;
     // Snapshot into a fresh heap block, as AGGREGATE_NEW allocates one:
     // save the source address, memory.copy its words, then push the new
     // address and bump the heap. An aggregate local set snapshots, then sets.
