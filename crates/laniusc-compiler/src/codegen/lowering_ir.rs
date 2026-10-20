@@ -617,6 +617,7 @@ pub(crate) const LOWERING_DIAGNOSTIC_X86_CALLEE_RESULT_LAYOUT: u32 = 39;
 pub(crate) const LOWERING_DIAGNOSTIC_X86_INSTANCE_RESULT_LAYOUT: u32 = 40;
 pub(crate) const LOWERING_DIAGNOSTIC_X86_NOMINAL_RESULT_LAYOUT: u32 = 41;
 pub(crate) const LOWERING_DIAGNOSTIC_X86_LEGACY_RESULT_LAYOUT: u32 = 42;
+pub(crate) const LOWERING_DIAGNOSTIC_WASM_UNSUPPORTED_OPERATION: u32 = 43;
 pub(crate) const LOWERING_DIAGNOSTIC_DETAIL_TOKEN: u32 = 1;
 pub(crate) const LOWERING_DIAGNOSTIC_DETAIL_HIR: u32 = 2;
 pub(crate) const LOWERING_DIAGNOSTIC_DETAIL_SSA_SOURCE: u32 = 3;
@@ -9299,6 +9300,7 @@ fn lowering_compiler_graph_builder(
             LoweringTarget::Wasm => vec![
                 PassAccess::read("target_lir_total", target_total),
                 PassAccess::read("target_lir_core", target_core),
+                PassAccess::read("opt_ir_core", opt_core),
                 PassAccess::read("opt_ir_source_hir", opt_source_hir),
                 PassAccess::read("opt_ir_semantic_row", opt_semantic_row),
                 PassAccess::read_write("lowering_status", lowering_status),

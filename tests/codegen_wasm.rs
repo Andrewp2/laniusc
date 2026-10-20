@@ -87,14 +87,29 @@ fn main() -> i32 {
 #[test]
 fn wasm_rejects_nonzero_array_repeat_until_lowered() {
     // The Wasm emitter has no repeat-fill lowering yet; it must reject a
-    // nonzero `[value; count]` instead of emitting one element.
+    // nonzero `[value; count]` instead of emitting one element, and name the
+    // rejected source with the Wasm backend boundary (LNC0036), as x86 does
+    // with LNC0017, instead of reporting a compiler failure.
+    let err = common::compile_source_to_wasm_with_timeout(
+        "fn main() -> i32 {\n    let a = [7; 4];\n    return a[3];\n}\n",
+    )
+    .expect_err("a nonzero array repeat must not compile to WASM yet");
+    let laniusc_compiler::compiler::CompileError::Diagnostic(diagnostic) = err else {
+        panic!("an unsupported Wasm row should be a source diagnostic: {err:?}");
+    };
+    let rendered = diagnostic.render();
+    assert_eq!(diagnostic.code, "LNC0036", "{rendered}");
+    assert_eq!(diagnostic.category, "target codegen", "{rendered}");
     assert!(
-        common::compile_source_to_wasm_with_timeout(
-            "fn main() -> i32 {\n    let a = [7; 4];\n    return a[3];\n}\n"
-        )
-        .is_err(),
-        "a nonzero array repeat must not compile to WASM yet"
+        diagnostic.message.contains("Wasm backend") && !rendered.contains("x86"),
+        "the diagnostic should name the Wasm backend: {rendered}"
     );
+    let source_line = diagnostic
+        .primary_label
+        .as_ref()
+        .and_then(|label| label.source_line.as_deref())
+        .unwrap_or_else(|| panic!("the diagnostic should carry a source line: {rendered}"));
+    assert_eq!(source_line, "    let a = [7; 4];", "{rendered}");
 }
 
 #[test]

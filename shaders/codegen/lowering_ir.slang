@@ -698,6 +698,9 @@ static const uint LOWERING_DIAGNOSTIC_X86_CALLEE_RESULT_LAYOUT = 39u;
 static const uint LOWERING_DIAGNOSTIC_X86_INSTANCE_RESULT_LAYOUT = 40u;
 static const uint LOWERING_DIAGNOSTIC_X86_NOMINAL_RESULT_LAYOUT = 41u;
 static const uint LOWERING_DIAGNOSTIC_X86_LEGACY_RESULT_LAYOUT = 42u;
+// A Wasm target row has no lowering yet (an unsupported semantic operation,
+// width or local). The detail is the row's source HIR.
+static const uint LOWERING_DIAGNOSTIC_WASM_UNSUPPORTED_OPERATION = 43u;
 
 // Diagnostic details either name a source token directly or a compact HIR
 // row whose token anchor must be read from compact HIR.
@@ -972,6 +975,10 @@ static const uint WASM_LIR_OP_CALL_HOST = 0x100u;
 // placeholder; WasmLirOperands retain the canonical symbol identity.
 // IR_OPCODE
 static const uint WASM_LIR_OP_CALL_SYMBOL = 0x101u;
+// Bulk-memory `memory.copy 0 0` (0xfc 10 0x00 0x00): consumes
+// `(dst, src, byte_len)`. A pseudo-op because its opcode has a prefix byte.
+// IR_OPCODE
+static const uint WASM_LIR_OP_MEMORY_COPY = 0x102u;
 // IR_OPCODE
 static const uint WASM_LIR_OP_I32_ADD = 0x6au;
 // IR_OPCODE

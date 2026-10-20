@@ -48,6 +48,7 @@ uint wasm_lir_byte_len(WasmLirInstruction inst)
     if (inst.opcode == WASM_LIR_OP_I32_CONST)
         return 1u + wasm_i32_leb_len(inst.immediate);
     if (inst.opcode == WASM_LIR_OP_F32_CONST) return 5u;
+    if (inst.opcode == WASM_LIR_OP_MEMORY_COPY) return 4u;
     if (inst.opcode == WASM_LIR_OP_I32_LOAD || inst.opcode == WASM_LIR_OP_F32_LOAD ||
         inst.opcode == WASM_LIR_OP_I32_STORE || inst.opcode == WASM_LIR_OP_F32_STORE)
         return 3u;
@@ -86,6 +87,9 @@ uint wasm_lir_byte(WasmLirInstruction inst, uint byte_i)
         uint byte_value = (value >> (immediate_i * 7u)) & 0x7fu;
         return immediate_i < 4u ? byte_value | 0x80u : byte_value;
     }
+    // Prefix 0xfc, sub-opcode 10, destination and source memory 0.
+    if (inst.opcode == WASM_LIR_OP_MEMORY_COPY)
+        return byte_i == 0u ? 0xfcu : byte_i == 1u ? 0x0au : 0u;
     if (byte_i == 0u) return inst.opcode;
     uint immediate_i = byte_i - 1u;
     if (inst.opcode == WASM_LIR_OP_I32_CONST)

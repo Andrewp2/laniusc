@@ -490,6 +490,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             &typecheck_hir,
                             src,
                             diagnostic_path,
+                            target,
                             err,
                         )
                     })
@@ -970,6 +971,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             &recorded.diagnostic_tokens,
                             &recorded.hir,
                             diagnostic_files,
+                            target,
                             err,
                         )
                     })
@@ -1005,6 +1007,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             &recorded.diagnostic_tokens,
                             &recorded.hir,
                             diagnostic_files,
+                            LoweringTarget::X86_64,
                             err,
                         )
                     })
@@ -1030,7 +1033,17 @@ impl<'gpu> GpuCompiler<'gpu> {
                 self.lowering_pipeline(LoweringTarget::Wasm)
                     .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
                     .finish_wasm_object(device, queue, library_id, unit_id)
-                    .map_err(lowering_error_to_compile_error_without_source)
+                    .map_err(|err| {
+                        lowering_error_to_compile_error_for_source_pack(
+                            device,
+                            queue,
+                            &recorded.diagnostic_tokens,
+                            &recorded.hir,
+                            diagnostic_files,
+                            LoweringTarget::Wasm,
+                            err,
+                        )
+                    })
             })
             .transpose()?;
         finish_timer.stamp("wasm_object");
@@ -3204,6 +3217,7 @@ fn lowering_error_to_compile_error_for_source(
     hir: &crate::parser::buffers::GpuHirView,
     source: &str,
     path: &Path,
+    target: LoweringTarget,
     error: anyhow::Error,
 ) -> CompileError {
     let Some(failure) = error.downcast_ref::<crate::codegen::lowering_pipeline::LoweringFailure>()
@@ -3223,20 +3237,17 @@ fn lowering_error_to_compile_error_for_source(
         .and_then(|token| read_single_token_for_diagnostic(device, queue, tokens, token).ok())
         .map(|token| (token.start, token.len))
         .unwrap_or_else(|| first_nonempty_source_span(source));
-    let mut diagnostic = Diagnostic::error("LNC0017", message)
+    let mut diagnostic = Diagnostic::error(lowering_backend_code(target), message)
         .with_primary_label(diagnostic_label_from_source_span(
             path,
             source,
             span.0,
             span.1,
-            "not supported by the native x86 backend yet",
+            lowering_backend_label(target),
         ))
-        .with_note("the native x86 backend rejected this program before emitting an artifact");
-    if failure.status.first_unsupported_target_op != u32::MAX {
-        diagnostic = diagnostic.with_note(format!(
-            "first unsupported target LIR opcode: {}",
-            failure.status.first_unsupported_target_op
-        ));
+        .with_note(lowering_backend_note(target));
+    if let Some(note) = lowering_unsupported_op_note(target, failure.status) {
+        diagnostic = diagnostic.with_note(note);
     }
     CompileError::Diagnostic(diagnostic)
 }
@@ -3247,6 +3258,7 @@ fn lowering_error_to_compile_error_for_source_pack(
     tokens: &DiagnosticTokenBuffer,
     hir: &crate::parser::buffers::GpuHirView,
     files: &[DiagnosticSourceFile],
+    target: LoweringTarget,
     error: anyhow::Error,
 ) -> CompileError {
     let Some(failure) = error.downcast_ref::<crate::codegen::lowering_pipeline::LoweringFailure>()
@@ -3276,21 +3288,63 @@ fn lowering_error_to_compile_error_for_source_pack(
                     &file.source,
                     file.local_start_for_global(token.start),
                     token.len,
-                    "not supported by the native x86 backend yet",
+                    lowering_backend_label(target),
                 )
             })
         })
-        .unwrap_or_else(|| lowering_fallback_label_for_source_pack(files));
-    let mut diagnostic = Diagnostic::error("LNC0017", message)
+        .unwrap_or_else(|| lowering_fallback_label_for_source_pack(files, target));
+    let mut diagnostic = Diagnostic::error(lowering_backend_code(target), message)
         .with_primary_label(label)
-        .with_note("the native x86 backend rejected this program before emitting an artifact");
-    if failure.status.first_unsupported_target_op != u32::MAX {
-        diagnostic = diagnostic.with_note(format!(
-            "first unsupported target LIR opcode: {}",
-            failure.status.first_unsupported_target_op
-        ));
+        .with_note(lowering_backend_note(target));
+    if let Some(note) = lowering_unsupported_op_note(target, failure.status) {
+        diagnostic = diagnostic.with_note(note);
     }
     CompileError::Diagnostic(diagnostic)
+}
+
+/// The registry's backend-boundary code: LNC0017 for x86, LNC0036 for Wasm.
+fn lowering_backend_code(target: LoweringTarget) -> &'static str {
+    match target {
+        LoweringTarget::X86_64 => "LNC0017",
+        LoweringTarget::Wasm => "LNC0036",
+    }
+}
+
+fn lowering_backend_label(target: LoweringTarget) -> &'static str {
+    match target {
+        LoweringTarget::X86_64 => "not supported by the native x86 backend yet",
+        LoweringTarget::Wasm => "not supported by the Wasm backend yet",
+    }
+}
+
+fn lowering_backend_note(target: LoweringTarget) -> &'static str {
+    match target {
+        LoweringTarget::X86_64 => {
+            "the native x86 backend rejected this program before emitting an artifact"
+        }
+        LoweringTarget::Wasm => "the Wasm backend rejected this program before emitting a module",
+    }
+}
+
+/// x86 reports its target LIR opcode; Wasm reports the semantic LIR operation,
+/// because the Wasm opcode of an unsupported row is a placeholder.
+fn lowering_unsupported_op_note(
+    target: LoweringTarget,
+    status: crate::codegen::lowering_ir::LoweringStatus,
+) -> Option<String> {
+    if status.first_unsupported_target_op == u32::MAX {
+        return None;
+    }
+    Some(match target {
+        LoweringTarget::X86_64 => format!(
+            "first unsupported target LIR opcode: {}",
+            status.first_unsupported_target_op
+        ),
+        LoweringTarget::Wasm => format!(
+            "first unsupported semantic LIR operation: {}",
+            status.first_unsupported_target_op
+        ),
+    })
 }
 
 /// Export failure detail of a private type in a public signature.
@@ -3385,6 +3439,9 @@ fn semantic_interface_error_to_compile_error_for_source_pack(
     )
 }
 
+/// Source-free conversion, kept for the status-only unit tests; every
+/// compile path now has source text and reports LNC0017 with a span.
+#[cfg(test)]
 fn lowering_error_to_compile_error_without_source(error: anyhow::Error) -> CompileError {
     let diagnostic = error
         .downcast_ref::<crate::codegen::lowering_pipeline::LoweringFailure>()
@@ -3468,6 +3525,9 @@ fn lowering_diagnostic_message(reason: u32) -> Option<&'static str> {
         crate::codegen::lowering_ir::LOWERING_DIAGNOSTIC_X86_UNSUPPORTED_OPERATION => {
             Some("operation is not implemented by the x86 backend")
         }
+        LOWERING_DIAGNOSTIC_WASM_UNSUPPORTED_OPERATION => {
+            Some("operation is not implemented by the Wasm backend")
+        }
         LOWERING_DIAGNOSTIC_X86_CALL_TARGET => Some("x86 call has no resolved target"),
         LOWERING_DIAGNOSTIC_X86_AGGREGATE_RESULT_LAYOUT => {
             Some("x86 aggregate call result has no canonical ABI layout")
@@ -3497,9 +3557,11 @@ fn lowering_diagnostic_token(
     // Generic target failures can be reported by many lanes at once. The
     // diagnostic-detail lane is nondeterministic, but first_unsupported_hir
     // is an atomic minimum and gives a stable source location.
-    if status.diagnostic_reason
-        == crate::codegen::lowering_ir::LOWERING_DIAGNOSTIC_X86_UNSUPPORTED_OPERATION
-        && status.first_unsupported_hir != u32::MAX
+    if matches!(
+        status.diagnostic_reason,
+        crate::codegen::lowering_ir::LOWERING_DIAGNOSTIC_X86_UNSUPPORTED_OPERATION
+            | crate::codegen::lowering_ir::LOWERING_DIAGNOSTIC_WASM_UNSUPPORTED_OPERATION
+    ) && status.first_unsupported_hir != u32::MAX
     {
         return read_hir_token_start_for_diagnostic(
             device,
@@ -3567,7 +3629,10 @@ fn read_hir_token_start_for_diagnostic(
     Ok(token_start)
 }
 
-fn lowering_fallback_label_for_source_pack(files: &[DiagnosticSourceFile]) -> DiagnosticLabel {
+fn lowering_fallback_label_for_source_pack(
+    files: &[DiagnosticSourceFile],
+    target: LoweringTarget,
+) -> DiagnosticLabel {
     if let Some(file) = files.first() {
         let (start, len) = first_nonempty_source_span(&file.source);
         return diagnostic_label_from_source_span(
@@ -3575,7 +3640,7 @@ fn lowering_fallback_label_for_source_pack(files: &[DiagnosticSourceFile]) -> Di
             &file.source,
             start,
             len,
-            "not supported by the native x86 backend yet",
+            lowering_backend_label(target),
         );
     }
     diagnostic_label_from_source_span(
@@ -3583,7 +3648,7 @@ fn lowering_fallback_label_for_source_pack(files: &[DiagnosticSourceFile]) -> Di
         "",
         0,
         1,
-        "not supported by the native x86 backend yet",
+        lowering_backend_label(target),
     )
 }
 
@@ -4728,7 +4793,7 @@ mod tests {
         assert!(!rendered.contains("semantic lowering capacity exceeded"));
         assert!(!rendered.contains("instruction rows"));
 
-        // The source-free Wasm conversion keeps its original raw phase error.
+        // The source-free conversion keeps its original raw phase error.
         let failure = crate::codegen::lowering_pipeline::LoweringFailure { status };
         let original = failure.to_string();
         let error = lowering_error_to_compile_error_without_source(failure.into());

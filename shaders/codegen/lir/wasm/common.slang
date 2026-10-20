@@ -28,6 +28,10 @@ uint wasm_lir_count(OptIrNodeCore core, OptIrNodeOperands operands,
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_NEW)
         return operands.b * 6u +
             ((operands.c & SEMANTIC_LIR_AGGREGATE_ENUM) != 0u ? 5u : 0u) + 5u;
+    // Snapshot into a fresh heap block, as AGGREGATE_NEW allocates one:
+    // save the source address, memory.copy its words, then push the new
+    // address and bump the heap.
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_COPY) return 10u;
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_STRING) return 2u;
     // A call of a `-> !` function is followed by `unreachable`: the callee
     // has no result, and the stack after the call is polymorphic, so the
@@ -141,6 +145,18 @@ uint wasm_scalar_opcode(OptIrNodeCore core, OptIrNodeOperands operands)
     return WASM_LIR_OP_UNREACHABLE;
 }
 
+// A by-value aggregate snapshot copies the value's words. Slice descriptors
+// and array views (array-pair rows) and packed byte arrays (type 131) have no
+// Wasm representation yet. Nested aggregates are pointers in the Wasm layout,
+// so the copy is one level deep, as Wasm constructors already are.
+bool wasm_aggregate_copy_supported(OptIrNodeCore core)
+{
+    return opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_COPY &&
+        core.value_word_count != 0u && core.type_id != 131u &&
+        (core.flags & (SEMANTIC_LIR_FLAG_ARRAY_PAIR | SEMANTIC_LIR_FLAG_PLACE_VIEW |
+                       SEMANTIC_LIR_FLAG_NATIVE_PLACE)) == 0u;
+}
+
 bool wasm_lir_supported(OptIrNodeCore core)
 {
     // Native f64 support does not imply a Wasm value or ABI representation.
@@ -158,6 +174,7 @@ bool wasm_lir_supported(OptIrNodeCore core)
         op == SEMANTIC_LIR_OP_IF_BEGIN ||
         op == SEMANTIC_LIR_OP_ELSE || op == SEMANTIC_LIR_OP_CONTROL_END ||
         op == SEMANTIC_LIR_OP_AGGREGATE_NEW ||
+        wasm_aggregate_copy_supported(core) ||
         (op == SEMANTIC_LIR_OP_LOAD &&
          (core.flags & (SEMANTIC_LIR_FLAG_INDEXED | SEMANTIC_LIR_FLAG_FIELD)) != 0u) ||
         ((op == SEMANTIC_LIR_OP_BRANCH || op == SEMANTIC_LIR_OP_BRANCH_IF) &&

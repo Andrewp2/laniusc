@@ -155,6 +155,23 @@ void main(uint3 dtid: SV_DispatchThreadID)
             immediate = phase == 2u ? core.value_word_count * 4u : 0u;
         }
     }
+    else if (opt_ir_op(core) == SEMANTIC_LIR_OP_AGGREGATE_COPY)
+    {
+        // The stack holds the source address. Copy its words to the heap
+        // top, push that address, then bump the heap past the copy.
+        uint byte_count = core.value_word_count * 4u;
+        opcode = local_row == 0u ? WASM_LIR_OP_LOCAL_SET
+            : local_row == 1u ? WASM_LIR_OP_GLOBAL_GET
+            : local_row == 2u ? WASM_LIR_OP_LOCAL_GET
+            : local_row == 3u ? WASM_LIR_OP_I32_CONST
+            : local_row == 4u ? WASM_LIR_OP_MEMORY_COPY
+            : local_row == 5u || local_row == 6u ? WASM_LIR_OP_GLOBAL_GET
+            : local_row == 7u ? WASM_LIR_OP_I32_CONST
+            : local_row == 8u ? WASM_LIR_OP_I32_ADD
+            : WASM_LIR_OP_GLOBAL_SET;
+        immediate = local_row == 0u || local_row == 2u ? WASM_SYNTHETIC_I32_TEMP
+            : local_row == 3u || local_row == 7u ? byte_count : 0u;
+    }
     else if (opt_ir_op(core) == SEMANTIC_LIR_OP_LOAD &&
              (core.flags & SEMANTIC_LIR_FLAG_INDEXED) != 0u)
     {
