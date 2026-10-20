@@ -1,0 +1,346 @@
+// DRAFT, not in the stdlib yet: a generic owned set.
+// It replaces std::set_{char,i32,u32,wide_i64,wide_u64} (SetI32 and friends
+// become Set<T>). The dense set_bool, set_i8 and set_u8 tables are a
+// different, allocation-free representation and stay.
+// Blockers are listed by backlog id in tests/fixtures/generics_backlog/README.md.
+//
+// Owned insertion-ordered set with linear lookup through core::cmp::Eq.
+// The allocation holds capacity * size_of<T>() bytes; item i is the
+// size_of<T>() bytes at storage + i * size_of<T>(), read and written at type T
+// through core::mem::typed_slice_from_storage.
+// Ownership is linear by convention: use only the newest returned set, and
+// destroy it exactly once.
+module std::set;
+import alloc::allocator;
+import core::cmp;
+import core::mem;
+
+pub struct Set<T> {
+    storage: ptr,
+    length: i32,
+    reserved: i32,
+}
+
+// Doubled capacities fit signed i32. Byte counts are computed as usize.
+// Allocations use eight-byte alignment, the largest native scalar alignment.
+pub const MAX_CAPACITY: i32 = 536870911;
+
+fn byte_size<T>(value: Set<T>, count: i32) -> usize {
+    return core::mem::size_of<T>() * (count as usize);
+}
+
+// One-element views keep the address of element i independent of any view
+// length, whichever direction the native layout runs.
+fn load<T>(value: Set<T>, index: i32) -> T {
+    let offset: usize = core::mem::size_of<T>() * (index as usize);
+    let element: [T] = core::mem::typed_slice_from_storage(value.storage + offset, 1);
+    return element[0];
+}
+
+fn store<T>(storage: ptr, index: i32, item: T) {
+    let offset: usize = core::mem::size_of<T>() * (index as usize);
+    let element: [T] = core::mem::typed_slice_from_storage(storage + offset, 1);
+    element[0] = item;
+}
+
+pub fn new<T>() -> Set<T> {
+    let empty: ptr = 0;
+    return Set { storage: empty, length: 0, reserved: 0 };
+}
+
+pub fn len<T>(value: Set<T>) -> i32 {
+    return value.length;
+}
+
+pub fn capacity<T>(value: Set<T>) -> i32 {
+    return value.reserved;
+}
+
+pub fn is_empty<T>(value: Set<T>) -> bool {
+    return value.length == 0;
+}
+
+pub fn contains<T>(value: Set<T>, item: T) -> bool where T: core::cmp::Eq<T> {
+    let index: i32 = 0;
+    while (index < value.length) {
+        let stored: T = load(value, index);
+        if (T::eq(stored, item)) {
+            return true;
+        }
+        index += 1;
+    }
+    return false;
+}
+
+// Elements retain insertion order. Invalid ordinals return fallback; use len
+// to distinguish an absent ordinal when a stored item equals the fallback.
+pub fn at_or<T>(value: Set<T>, ordinal: i32, fallback: T) -> T {
+    if (ordinal < 0 || ordinal >= value.length) {
+        return fallback;
+    }
+    return load(value, ordinal);
+}
+
+// A negative or oversized request, or allocation failure, leaves the set
+// unchanged. Compare capacity(result) against the request to detect failure.
+pub fn try_reserve<T>(value: Set<T>, minimum_capacity: i32) -> Set<T> {
+    if (minimum_capacity < 0 || minimum_capacity > MAX_CAPACITY ||
+        minimum_capacity <= value.reserved) {
+        return value;
+    }
+    let new_bytes: usize = byte_size(value, minimum_capacity);
+    let next: ptr = 0;
+    if (value.storage == 0) {
+        next = alloc::allocator::alloc(new_bytes, 8);
+    } else {
+        next = alloc::allocator::realloc(value.storage, byte_size(value, value.reserved), new_bytes, 8);
+    }
+    if (next == 0) {
+        return value;
+    }
+    return Set { storage: next, length: value.length, reserved: minimum_capacity };
+}
+
+// Insert a new item. A duplicate, capacity limit, or allocation failure
+// leaves len unchanged. Compare len(result) to the old length for success.
+pub fn try_insert<T>(value: Set<T>, item: T) -> Set<T> where T: core::cmp::Eq<T> {
+    if (contains(value, item) || value.length >= MAX_CAPACITY) {
+        return value;
+    }
+    let grown: Set<T> = value;
+    if (grown.length == grown.reserved) {
+        let target: i32 = 4;
+        if (grown.reserved > 0) {
+            if (grown.reserved > MAX_CAPACITY / 2) {
+                target = MAX_CAPACITY;
+            } else {
+                target = grown.reserved * 2;
+            }
+        }
+        grown = try_reserve(grown, target);
+        if (grown.length == grown.reserved) {
+            return value;
+        }
+    }
+    store(grown.storage, grown.length, item);
+    return Set { storage: grown.storage, length: grown.length + 1, reserved: grown.reserved };
+}
+
+// Remove an item while preserving the order of remaining items. Missing
+// items leave the set unchanged; successful removal decrements len.
+pub fn try_remove<T>(value: Set<T>, item: T) -> Set<T> where T: core::cmp::Eq<T> {
+    let index: i32 = 0;
+    while (index < value.length) {
+        let stored: T = load(value, index);
+        if (T::eq(stored, item)) {
+            let cursor: i32 = index;
+            while (cursor + 1 < value.length) {
+                store(value.storage, cursor, load(value, cursor + 1));
+                cursor += 1;
+            }
+            return Set { storage: value.storage, length: value.length - 1, reserved: value.reserved };
+        }
+        index += 1;
+    }
+    return value;
+}
+
+pub fn clear<T>(value: Set<T>) -> Set<T> {
+    return Set { storage: value.storage, length: 0, reserved: value.reserved };
+}
+
+// Release unused storage. Empty sets release their allocation. Reallocation
+// failure returns the original set with its old capacity and elements.
+pub fn try_shrink_to_fit<T>(value: Set<T>) -> Set<T> {
+    if (value.length == value.reserved) {
+        return value;
+    }
+    if (value.length == 0) {
+        destroy(value);
+        let empty: Set<T> = new();
+        return empty;
+    }
+    let next: ptr = alloc::allocator::realloc(
+        value.storage, byte_size(value, value.reserved), byte_size(value, value.length), 8);
+    if (next == 0) {
+        return value;
+    }
+    return Set { storage: next, length: value.length, reserved: value.length };
+}
+
+// An independent copy of initialized items. Allocation failure returns an
+// empty zero-capacity set and leaves the source unchanged. A nonempty source
+// cloned successfully when len(result) == len(value).
+pub fn try_clone<T>(value: Set<T>) -> Set<T> {
+    let empty: Set<T> = new();
+    if (value.length == 0) {
+        return empty;
+    }
+    let copy: Set<T> = try_reserve(empty, value.length);
+    if (copy.reserved < value.length) {
+        return empty;
+    }
+    let index: i32 = 0;
+    while (index < value.length) {
+        store(copy.storage, index, load(value, index));
+        index += 1;
+    }
+    return Set { storage: copy.storage, length: value.length, reserved: copy.reserved };
+}
+
+pub fn is_subset<T>(left: Set<T>, right: Set<T>) -> bool where T: core::cmp::Eq<T> {
+    let index: i32 = 0;
+    while (index < left.length) {
+        if (!contains(right, load(left, index))) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+pub fn is_disjoint<T>(left: Set<T>, right: Set<T>) -> bool where T: core::cmp::Eq<T> {
+    let index: i32 = 0;
+    while (index < left.length) {
+        if (contains(right, load(left, index))) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+// Each set algebra operation returns a new independent owner. It reserves the
+// complete result before writing, so no allocation failure can leave a
+// partial set. An empty result means either the mathematical result is empty
+// or allocation/capacity failed; when a nonempty result is expected, compare
+// len(result) to zero. Source sets remain live and unchanged.
+pub fn try_union<T>(left: Set<T>, right: Set<T>) -> Set<T> where T: core::cmp::Eq<T> {
+    let empty: Set<T> = new();
+    let count: i32 = left.length;
+    let index: i32 = 0;
+    while (index < right.length) {
+        if (!contains(left, load(right, index))) {
+            if (count >= MAX_CAPACITY) { return empty; }
+            count += 1;
+        }
+        index += 1;
+    }
+    if (count == 0) { return empty; }
+    let output: Set<T> = try_reserve(empty, count);
+    if (output.reserved < count) { return empty; }
+    index = 0;
+    while (index < left.length) {
+        store(output.storage, index, load(left, index));
+        index += 1;
+    }
+    let written: i32 = left.length;
+    index = 0;
+    while (index < right.length) {
+        let item: T = load(right, index);
+        if (!contains(left, item)) {
+            store(output.storage, written, item);
+            written += 1;
+        }
+        index += 1;
+    }
+    return Set { storage: output.storage, length: count, reserved: output.reserved };
+}
+
+pub fn try_intersection<T>(left: Set<T>, right: Set<T>) -> Set<T> where T: core::cmp::Eq<T> {
+    let empty: Set<T> = new();
+    let count: i32 = 0;
+    let index: i32 = 0;
+    while (index < left.length) {
+        if (contains(right, load(left, index))) { count += 1; }
+        index += 1;
+    }
+    if (count == 0) { return empty; }
+    let output: Set<T> = try_reserve(empty, count);
+    if (output.reserved < count) { return empty; }
+    let written: i32 = 0;
+    index = 0;
+    while (index < left.length) {
+        let item: T = load(left, index);
+        if (contains(right, item)) {
+            store(output.storage, written, item);
+            written += 1;
+        }
+        index += 1;
+    }
+    return Set { storage: output.storage, length: count, reserved: output.reserved };
+}
+
+pub fn try_difference<T>(left: Set<T>, right: Set<T>) -> Set<T> where T: core::cmp::Eq<T> {
+    let empty: Set<T> = new();
+    let count: i32 = 0;
+    let index: i32 = 0;
+    while (index < left.length) {
+        if (!contains(right, load(left, index))) { count += 1; }
+        index += 1;
+    }
+    if (count == 0) { return empty; }
+    let output: Set<T> = try_reserve(empty, count);
+    if (output.reserved < count) { return empty; }
+    let written: i32 = 0;
+    index = 0;
+    while (index < left.length) {
+        let item: T = load(left, index);
+        if (!contains(right, item)) {
+            store(output.storage, written, item);
+            written += 1;
+        }
+        index += 1;
+    }
+    return Set { storage: output.storage, length: count, reserved: output.reserved };
+}
+
+pub fn try_symmetric_difference<T>(left: Set<T>, right: Set<T>) -> Set<T> where T: core::cmp::Eq<T> {
+    let empty: Set<T> = new();
+    let count: i32 = 0;
+    let index: i32 = 0;
+    while (index < left.length) {
+        if (!contains(right, load(left, index))) {
+            if (count >= MAX_CAPACITY) { return empty; }
+            count += 1;
+        }
+        index += 1;
+    }
+    index = 0;
+    while (index < right.length) {
+        if (!contains(left, load(right, index))) {
+            if (count >= MAX_CAPACITY) { return empty; }
+            count += 1;
+        }
+        index += 1;
+    }
+    if (count == 0) { return empty; }
+    let output: Set<T> = try_reserve(empty, count);
+    if (output.reserved < count) { return empty; }
+    let written: i32 = 0;
+    index = 0;
+    while (index < left.length) {
+        let item: T = load(left, index);
+        if (!contains(right, item)) {
+            store(output.storage, written, item);
+            written += 1;
+        }
+        index += 1;
+    }
+    index = 0;
+    while (index < right.length) {
+        let item: T = load(right, index);
+        if (!contains(left, item)) {
+            store(output.storage, written, item);
+            written += 1;
+        }
+        index += 1;
+    }
+    return Set { storage: output.storage, length: count, reserved: output.reserved };
+}
+
+pub fn destroy<T>(value: Set<T>) {
+    if (value.storage != 0) {
+        alloc::allocator::dealloc(value.storage, byte_size(value, value.reserved), 8);
+    }
+}

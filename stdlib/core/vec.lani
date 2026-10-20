@@ -26,8 +26,7 @@ pub fn from_storage<T, const N: usize>(storage: [T; N]) -> Vec<T, N> {
 
 // A full vector holding items in order.
 pub fn from_array<T, const N: usize>(items: [T; N]) -> Vec<T, N> {
-    let count: usize = N;
-    return Vec { items: items, length: count as i32 };
+    return Vec { items: items, length: N as i32 };
 }
 
 pub fn len<T, const N: usize>(value: Vec<T, N>) -> i32 {
@@ -35,8 +34,7 @@ pub fn len<T, const N: usize>(value: Vec<T, N>) -> i32 {
 }
 
 pub fn capacity<T, const N: usize>(value: Vec<T, N>) -> i32 {
-    let count: usize = N;
-    return count as i32;
+    return N as i32;
 }
 
 pub fn is_empty<T, const N: usize>(value: Vec<T, N>) -> bool {

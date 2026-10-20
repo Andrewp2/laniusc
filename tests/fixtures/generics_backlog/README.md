@@ -56,9 +56,13 @@ stdlib modules that a generic replacement cannot cover until the gap closes.
   function returning T. LNC0006 "type mismatch" at 4:58 (no never type).
   Blocks a generic unwrap or expect; no existing module panics.
 - b12: a user type implementing a stdlib trait (`pub impl core::set::Key for
-  Point` in app::main), used through the bound in core::set. The compiler
-  stops with LNC0057 "compiler execution failed" instead of a diagnostic.
-  Blocks user item types in core::set.
+  Point` in app::main), used through the bound in core::set. Up to P13's
+  4d2277f8 the compiler stopped with LNC0057 "compiler execution failed".
+  With it, it gives LNC0027 at core/set.lani:76 `item.key()`, "no concrete
+  implementation member to route to", with or without `pub struct Point`.
+  core::set's body is replayed in core::set's unit, and routing there sees
+  only that unit's impls, so a caller-unit impl is not routed (P14).
+  Blocks user item types in core::set and in every generic module below.
 - b13: a generic function returning another generic function's imported
   `core::option::Option<T>` result, `return get(value);`. LNC0006 "type
   mismatch" at 5:65, from both `check` and a compile, even with the function

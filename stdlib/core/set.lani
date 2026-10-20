@@ -59,8 +59,7 @@ pub fn len<T, const N: usize>(value: Set<T, N>) -> i32 {
 }
 
 pub fn capacity<T, const N: usize>(value: Set<T, N>) -> i32 {
-    let count: usize = N;
-    return count as i32;
+    return N as i32;
 }
 
 pub fn is_empty<T, const N: usize>(value: Set<T, N>) -> bool {

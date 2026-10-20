@@ -1,0 +1,303 @@
+// DRAFT, not in the stdlib yet: the generic form of stdlib/core/cmp.lani.
+// It replaces nothing; it adds the impls the generic modules need for the other element types.
+// Blockers are listed by backlog id in tests/fixtures/generics_backlog/README.md.
+// Core comparison traits and portable value entry points.
+
+module core::cmp;
+
+import core::wide_u64;
+import core::wide_i64;
+
+pub trait Eq<T> {
+    pub fn eq(left: T, right: T) -> bool;
+    pub fn ne(left: T, right: T) -> bool;
+}
+
+pub trait Ord<T> {
+    pub fn lt(left: T, right: T) -> bool;
+    pub fn le(left: T, right: T) -> bool;
+    pub fn gt(left: T, right: T) -> bool;
+    pub fn ge(left: T, right: T) -> bool;
+}
+
+pub impl Eq<i32> for i32 {
+    pub fn eq(left: i32, right: i32) -> bool {
+        return left == right;
+    }
+
+    pub fn ne(left: i32, right: i32) -> bool {
+        return left != right;
+    }
+}
+
+pub impl Ord<i32> for i32 {
+    pub fn lt(left: i32, right: i32) -> bool {
+        return left < right;
+    }
+
+    pub fn le(left: i32, right: i32) -> bool {
+        return left <= right;
+    }
+
+    pub fn gt(left: i32, right: i32) -> bool {
+        return left > right;
+    }
+
+    pub fn ge(left: i32, right: i32) -> bool {
+        return left >= right;
+    }
+}
+
+pub impl Eq<u32> for u32 {
+    pub fn eq(left: u32, right: u32) -> bool { return left == right; }
+    pub fn ne(left: u32, right: u32) -> bool { return left != right; }
+}
+
+pub impl Ord<u32> for u32 {
+    pub fn lt(left: u32, right: u32) -> bool { return left < right; }
+    pub fn le(left: u32, right: u32) -> bool { return left <= right; }
+    pub fn gt(left: u32, right: u32) -> bool { return left > right; }
+    pub fn ge(left: u32, right: u32) -> bool { return left >= right; }
+}
+
+pub impl Eq<bool> for bool {
+    pub fn eq(left: bool, right: bool) -> bool { return left == right; }
+    pub fn ne(left: bool, right: bool) -> bool { return left != right; }
+}
+
+pub impl Ord<bool> for bool {
+    pub fn lt(left: bool, right: bool) -> bool { return !left && right; }
+    pub fn le(left: bool, right: bool) -> bool { return !left || right; }
+    pub fn gt(left: bool, right: bool) -> bool { return left && !right; }
+    pub fn ge(left: bool, right: bool) -> bool { return left || !right; }
+}
+
+pub impl Eq<char> for char {
+    pub fn eq(left: char, right: char) -> bool { return left == right; }
+    pub fn ne(left: char, right: char) -> bool { return left != right; }
+}
+
+pub impl Ord<char> for char {
+    pub fn lt(left: char, right: char) -> bool { return left < right; }
+    pub fn le(left: char, right: char) -> bool { return left <= right; }
+    pub fn gt(left: char, right: char) -> bool { return left > right; }
+    pub fn ge(left: char, right: char) -> bool { return left >= right; }
+}
+
+// Callable scalar entry points while imported trait-qualified dispatch remains
+// unavailable. i32, u32, bool, and char call their local trait implementations. Narrow
+// integer trait impl keys currently collapse to the same signed or unsigned
+// type code as 32-bit integers, so their entry points use scalar operators.
+// Imported nominal trait arguments remain unavailable during native emission;
+// the two-word entry points below call their concrete modules directly.
+pub fn eq_i32(left: i32, right: i32) -> bool { return i32::eq(left, right); }
+pub fn ne_i32(left: i32, right: i32) -> bool { return i32::ne(left, right); }
+pub fn lt_i32(left: i32, right: i32) -> bool { return i32::lt(left, right); }
+pub fn le_i32(left: i32, right: i32) -> bool { return i32::le(left, right); }
+pub fn gt_i32(left: i32, right: i32) -> bool { return i32::gt(left, right); }
+pub fn ge_i32(left: i32, right: i32) -> bool { return i32::ge(left, right); }
+
+pub fn eq_u32(left: u32, right: u32) -> bool { return u32::eq(left, right); }
+pub fn ne_u32(left: u32, right: u32) -> bool { return u32::ne(left, right); }
+pub fn lt_u32(left: u32, right: u32) -> bool { return u32::lt(left, right); }
+pub fn le_u32(left: u32, right: u32) -> bool { return u32::le(left, right); }
+pub fn gt_u32(left: u32, right: u32) -> bool { return u32::gt(left, right); }
+pub fn ge_u32(left: u32, right: u32) -> bool { return u32::ge(left, right); }
+
+pub fn eq_bool(left: bool, right: bool) -> bool { return bool::eq(left, right); }
+pub fn ne_bool(left: bool, right: bool) -> bool { return bool::ne(left, right); }
+pub fn lt_bool(left: bool, right: bool) -> bool { return bool::lt(left, right); }
+pub fn le_bool(left: bool, right: bool) -> bool { return bool::le(left, right); }
+pub fn gt_bool(left: bool, right: bool) -> bool { return bool::gt(left, right); }
+pub fn ge_bool(left: bool, right: bool) -> bool { return bool::ge(left, right); }
+
+pub fn eq_char(left: char, right: char) -> bool { return char::eq(left, right); }
+pub fn ne_char(left: char, right: char) -> bool { return char::ne(left, right); }
+pub fn lt_char(left: char, right: char) -> bool { return char::lt(left, right); }
+pub fn le_char(left: char, right: char) -> bool { return char::le(left, right); }
+pub fn gt_char(left: char, right: char) -> bool { return char::gt(left, right); }
+pub fn ge_char(left: char, right: char) -> bool { return char::ge(left, right); }
+
+pub fn eq_i8(left: i8, right: i8) -> bool { return left == right; }
+pub fn ne_i8(left: i8, right: i8) -> bool { return left != right; }
+pub fn lt_i8(left: i8, right: i8) -> bool { return left < right; }
+pub fn le_i8(left: i8, right: i8) -> bool { return left <= right; }
+pub fn gt_i8(left: i8, right: i8) -> bool { return left > right; }
+pub fn ge_i8(left: i8, right: i8) -> bool { return left >= right; }
+
+pub fn eq_i16(left: i16, right: i16) -> bool { return left == right; }
+pub fn ne_i16(left: i16, right: i16) -> bool { return left != right; }
+pub fn lt_i16(left: i16, right: i16) -> bool { return left < right; }
+pub fn le_i16(left: i16, right: i16) -> bool { return left <= right; }
+pub fn gt_i16(left: i16, right: i16) -> bool { return left > right; }
+pub fn ge_i16(left: i16, right: i16) -> bool { return left >= right; }
+
+pub fn eq_u8(left: u8, right: u8) -> bool { return left == right; }
+pub fn ne_u8(left: u8, right: u8) -> bool { return left != right; }
+pub fn lt_u8(left: u8, right: u8) -> bool { return left < right; }
+pub fn le_u8(left: u8, right: u8) -> bool { return left <= right; }
+pub fn gt_u8(left: u8, right: u8) -> bool { return left > right; }
+pub fn ge_u8(left: u8, right: u8) -> bool { return left >= right; }
+
+pub fn eq_u16(left: u16, right: u16) -> bool { return left == right; }
+pub fn ne_u16(left: u16, right: u16) -> bool { return left != right; }
+pub fn lt_u16(left: u16, right: u16) -> bool { return left < right; }
+pub fn le_u16(left: u16, right: u16) -> bool { return left <= right; }
+pub fn gt_u16(left: u16, right: u16) -> bool { return left > right; }
+pub fn ge_u16(left: u16, right: u16) -> bool { return left >= right; }
+
+pub fn eq_wide_u64(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+    return core::wide_u64::eq(left, right);
+}
+pub fn ne_wide_u64(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+    return !core::wide_u64::eq(left, right);
+}
+pub fn lt_wide_u64(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+    return core::wide_u64::compare(left, right) < 0;
+}
+pub fn le_wide_u64(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+    return core::wide_u64::compare(left, right) <= 0;
+}
+pub fn gt_wide_u64(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+    return core::wide_u64::compare(left, right) > 0;
+}
+pub fn ge_wide_u64(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+    return core::wide_u64::compare(left, right) >= 0;
+}
+
+pub fn eq_wide_i64(left: core::wide_i64::WideI64, right: core::wide_i64::WideI64) -> bool {
+    return core::wide_i64::eq(left, right);
+}
+pub fn ne_wide_i64(left: core::wide_i64::WideI64, right: core::wide_i64::WideI64) -> bool {
+    return !core::wide_i64::eq(left, right);
+}
+pub fn lt_wide_i64(left: core::wide_i64::WideI64, right: core::wide_i64::WideI64) -> bool {
+    return core::wide_i64::compare(left, right) < 0;
+}
+pub fn le_wide_i64(left: core::wide_i64::WideI64, right: core::wide_i64::WideI64) -> bool {
+    return core::wide_i64::compare(left, right) <= 0;
+}
+pub fn gt_wide_i64(left: core::wide_i64::WideI64, right: core::wide_i64::WideI64) -> bool {
+    return core::wide_i64::compare(left, right) > 0;
+}
+pub fn ge_wide_i64(left: core::wide_i64::WideI64, right: core::wide_i64::WideI64) -> bool {
+    return core::wide_i64::compare(left, right) >= 0;
+}
+
+// Narrow integer impls. Their eq/lt entry points above still use operators.
+pub impl Eq<i8> for i8 {
+    pub fn eq(left: i8, right: i8) -> bool { return left == right; }
+    pub fn ne(left: i8, right: i8) -> bool { return left != right; }
+}
+
+pub impl Ord<i8> for i8 {
+    pub fn lt(left: i8, right: i8) -> bool { return left < right; }
+    pub fn le(left: i8, right: i8) -> bool { return left <= right; }
+    pub fn gt(left: i8, right: i8) -> bool { return left > right; }
+    pub fn ge(left: i8, right: i8) -> bool { return left >= right; }
+}
+
+pub impl Eq<i16> for i16 {
+    pub fn eq(left: i16, right: i16) -> bool { return left == right; }
+    pub fn ne(left: i16, right: i16) -> bool { return left != right; }
+}
+
+pub impl Ord<i16> for i16 {
+    pub fn lt(left: i16, right: i16) -> bool { return left < right; }
+    pub fn le(left: i16, right: i16) -> bool { return left <= right; }
+    pub fn gt(left: i16, right: i16) -> bool { return left > right; }
+    pub fn ge(left: i16, right: i16) -> bool { return left >= right; }
+}
+
+pub impl Eq<u8> for u8 {
+    pub fn eq(left: u8, right: u8) -> bool { return left == right; }
+    pub fn ne(left: u8, right: u8) -> bool { return left != right; }
+}
+
+pub impl Ord<u8> for u8 {
+    pub fn lt(left: u8, right: u8) -> bool { return left < right; }
+    pub fn le(left: u8, right: u8) -> bool { return left <= right; }
+    pub fn gt(left: u8, right: u8) -> bool { return left > right; }
+    pub fn ge(left: u8, right: u8) -> bool { return left >= right; }
+}
+
+pub impl Eq<u16> for u16 {
+    pub fn eq(left: u16, right: u16) -> bool { return left == right; }
+    pub fn ne(left: u16, right: u16) -> bool { return left != right; }
+}
+
+pub impl Ord<u16> for u16 {
+    pub fn lt(left: u16, right: u16) -> bool { return left < right; }
+    pub fn le(left: u16, right: u16) -> bool { return left <= right; }
+    pub fn gt(left: u16, right: u16) -> bool { return left > right; }
+    pub fn ge(left: u16, right: u16) -> bool { return left >= right; }
+}
+
+// IEEE comparisons, as the f32 modules use today: NaN equals nothing and is
+// unordered, so generic sort and search need NaN-free input. core::slice_f32
+// keeps the *_finite_or forms that check for NaN.
+pub impl Eq<f32> for f32 {
+    pub fn eq(left: f32, right: f32) -> bool { return left == right; }
+    pub fn ne(left: f32, right: f32) -> bool { return left != right; }
+}
+
+pub impl Ord<f32> for f32 {
+    pub fn lt(left: f32, right: f32) -> bool { return left < right; }
+    pub fn le(left: f32, right: f32) -> bool { return left <= right; }
+    pub fn gt(left: f32, right: f32) -> bool { return left > right; }
+    pub fn ge(left: f32, right: f32) -> bool { return left >= right; }
+}
+
+// Address identity only; pointers have no order here.
+pub impl Eq<ptr> for ptr {
+    pub fn eq(left: ptr, right: ptr) -> bool { return left == right; }
+    pub fn ne(left: ptr, right: ptr) -> bool { return left != right; }
+}
+
+pub impl Eq<core::wide_u64::WideU64> for core::wide_u64::WideU64 {
+    pub fn eq(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+        return core::wide_u64::eq(left, right);
+    }
+    pub fn ne(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+        return !core::wide_u64::eq(left, right);
+    }
+}
+
+pub impl Ord<core::wide_u64::WideU64> for core::wide_u64::WideU64 {
+    pub fn lt(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+        return core::wide_u64::compare(left, right) < 0;
+    }
+    pub fn le(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+        return core::wide_u64::compare(left, right) <= 0;
+    }
+    pub fn gt(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+        return core::wide_u64::compare(left, right) > 0;
+    }
+    pub fn ge(left: core::wide_u64::WideU64, right: core::wide_u64::WideU64) -> bool {
+        return core::wide_u64::compare(left, right) >= 0;
+    }
+}
+
+pub impl Eq<core::wide_i64::WideI64> for core::wide_i64::WideI64 {
+    pub fn eq(left: core::wide_i64::WideI64, right: core::wide_i64::WideI64) -> bool {
+        return core::wide_i64::eq(left, right);
+    }
+    pub fn ne(left: core::wide_i64::WideI64, right: core::wide_i64::WideI64) -> bool {
+        return !core::wide_i64::eq(left, right);
+    }
+}
+
+pub impl Ord<core::wide_i64::WideI64> for core::wide_i64::WideI64 {
+    pub fn lt(left: core::wide_i64::WideI64, right: core::wide_i64::WideI64) -> bool {
+        return core::wide_i64::compare(left, right) < 0;
+    }
+    pub fn le(left: core::wide_i64::WideI64, right: core::wide_i64::WideI64) -> bool {
+        return core::wide_i64::compare(left, right) <= 0;
+    }
+    pub fn gt(left: core::wide_i64::WideI64, right: core::wide_i64::WideI64) -> bool {
+        return core::wide_i64::compare(left, right) > 0;
+    }
+    pub fn ge(left: core::wide_i64::WideI64, right: core::wide_i64::WideI64) -> bool {
+        return core::wide_i64::compare(left, right) >= 0;
+    }
+}

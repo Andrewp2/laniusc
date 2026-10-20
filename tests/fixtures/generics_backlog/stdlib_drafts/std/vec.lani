@@ -1,0 +1,437 @@
+// DRAFT, not in the stdlib yet: a generic owned vector.
+// It replaces std::vec_{bool,char,i16,i32,i8,u16,u32,u8,wide_i64,wide_u64}
+// (VecI32 and friends become Vec<T>). try_extend_from_word_pairs stays in the
+// wide modules.
+// Blockers are listed by backlog id in tests/fixtures/generics_backlog/README.md.
+//
+// Owned, allocation-backed vector for the current native target. The
+// allocation holds capacity * size_of<T>() bytes; element i is the
+// size_of<T>() bytes at storage + i * size_of<T>(), read and written at type T
+// through core::mem::typed_slice_from_storage, so no integer conversion is
+// involved. Sorting and searching use core::cmp::Ord.
+// Ownership is linear by convention: keep only the newest returned Vec, do not
+// copy it or use it after destroy. The language cannot enforce moves yet.
+// Growth failure returns the original vector unchanged. Compare len after
+// try_push, or capacity after try_reserve/try_with_capacity, to detect failure.
+module std::vec;
+import alloc::allocator;
+import core::cmp;
+import core::mem;
+
+pub struct Vec<T> {
+    storage: ptr,
+    length: i32,
+    reserved: i32,
+}
+
+// Doubled capacities fit signed i32. Byte counts are computed as usize.
+// Allocations use eight-byte alignment, the largest native scalar alignment.
+pub const MAX_CAPACITY: i32 = 536870911;
+
+fn byte_size<T>(value: Vec<T>, count: i32) -> usize {
+    return core::mem::size_of<T>() * (count as usize);
+}
+
+// One-element views keep the address of element i independent of any view
+// length, whichever direction the native layout runs.
+fn load<T>(value: Vec<T>, index: i32) -> T {
+    let offset: usize = core::mem::size_of<T>() * (index as usize);
+    let element: [T] = core::mem::typed_slice_from_storage(value.storage + offset, 1);
+    return element[0];
+}
+
+fn store<T>(storage: ptr, index: i32, item: T) {
+    let offset: usize = core::mem::size_of<T>() * (index as usize);
+    let element: [T] = core::mem::typed_slice_from_storage(storage + offset, 1);
+    element[0] = item;
+}
+
+pub fn new<T>() -> Vec<T> {
+    let empty: ptr = 0;
+    return Vec { storage: empty, length: 0, reserved: 0 };
+}
+
+pub fn len<T>(value: Vec<T>) -> i32 {
+    return value.length;
+}
+
+pub fn capacity<T>(value: Vec<T>) -> i32 {
+    return value.reserved;
+}
+
+pub fn is_empty<T>(value: Vec<T>) -> bool {
+    return value.length == 0;
+}
+
+// The allocation's address, for callers that hand the bytes to the runtime.
+// Zero when nothing is reserved.
+pub fn data_ptr<T>(value: Vec<T>) -> ptr {
+    return value.storage;
+}
+
+// A negative or oversized request leaves the vector unchanged. Allocation
+// failure does the same and preserves every existing element.
+pub fn try_reserve<T>(value: Vec<T>, minimum_capacity: i32) -> Vec<T> {
+    if (minimum_capacity < 0 || minimum_capacity > MAX_CAPACITY) {
+        return value;
+    }
+    if (minimum_capacity <= value.reserved) {
+        return value;
+    }
+    let new_bytes: usize = byte_size(value, minimum_capacity);
+    let next: ptr = 0;
+    if (value.storage == 0) {
+        next = alloc::allocator::alloc(new_bytes, 8);
+    } else {
+        next = alloc::allocator::realloc(value.storage, byte_size(value, value.reserved), new_bytes, 8);
+    }
+    if (next == 0) {
+        return value;
+    }
+    return Vec { storage: next, length: value.length, reserved: minimum_capacity };
+}
+
+// On invalid capacity or allocation failure, returns an empty zero-capacity
+// vector. A nonnegative request succeeded exactly when capacity(result) is
+// at least the request.
+pub fn try_with_capacity<T>(initial_capacity: i32) -> Vec<T> {
+    let empty: Vec<T> = new();
+    return try_reserve(empty, initial_capacity);
+}
+
+// Create an independent allocation containing the initialized values.
+// The source remains live; destroy it and the successful clone separately.
+// An empty source clones without allocation. Allocation failure returns an
+// empty zero-capacity vector without changing the source. For a
+// nonempty source, len(result) == len(value) indicates success.
+pub fn try_clone<T>(value: Vec<T>) -> Vec<T> {
+    let length: i32 = value.length;
+    let empty: Vec<T> = new();
+    if (length == 0) {
+        return empty;
+    }
+    let copy: Vec<T> = try_with_capacity(length);
+    if (copy.reserved < length) {
+        return empty;
+    }
+    let index: i32 = 0;
+    while (index < length) {
+        store(copy.storage, index, load(value, index));
+        index += 1;
+    }
+    return Vec { storage: copy.storage, length: length, reserved: copy.reserved };
+}
+
+// On failure, returns the original value unchanged. A successful push always
+// increments len by one, so callers can check len without a separate status.
+pub fn try_push<T>(value: Vec<T>, item: T) -> Vec<T> {
+    let grown: Vec<T> = value;
+    if (grown.length == grown.reserved) {
+        let target: i32 = 4;
+        if (grown.reserved > 0) {
+            if (grown.reserved > MAX_CAPACITY / 2) {
+                target = MAX_CAPACITY;
+            } else {
+                target = grown.reserved * 2;
+            }
+        }
+        grown = try_reserve(grown, target);
+        if (grown.length == grown.reserved) {
+            return value;
+        }
+    }
+    store(grown.storage, grown.length, item);
+    return Vec { storage: grown.storage, length: grown.length + 1, reserved: grown.reserved };
+}
+
+// Append count caller-backed values. Reserve all needed storage before writing
+// any item, so negative counts, capacity overflow, and allocation failure leave
+// the vector unchanged. A successful call increases len by count. The caller
+// must supply at least count readable elements; overclaiming can trap. Input
+// storage must not alias this vector because growth may move the allocation.
+pub fn try_extend_from_slice<T>(value: Vec<T>, items: [T], count: i32) -> Vec<T> {
+    if (count < 0 || count > MAX_CAPACITY - value.length) {
+        return value;
+    }
+    if (count == 0) {
+        return value;
+    }
+    let needed: i32 = value.length + count;
+    let grown: Vec<T> = value;
+    if (grown.reserved < needed) {
+        let target: i32 = 4;
+        if (grown.reserved > 0) {
+            if (grown.reserved > MAX_CAPACITY / 2) {
+                target = MAX_CAPACITY;
+            } else {
+                target = grown.reserved * 2;
+            }
+        }
+        if (target < needed) {
+            target = needed;
+        }
+        grown = try_reserve(grown, target);
+        if (grown.reserved < needed) {
+            return value;
+        }
+    }
+    let index: i32 = 0;
+    while (index < count) {
+        grown = try_push(grown, items[index]);
+        index += 1;
+    }
+    return grown;
+}
+
+// Insert at [0, len]. Invalid indices or allocation failure leave the value
+// unchanged. A successful insert increases len by one. This operation may
+// move the allocation, so only the returned vector remains owned.
+pub fn try_insert<T>(value: Vec<T>, index: i32, item: T) -> Vec<T> {
+    let old_len: i32 = value.length;
+    if (index < 0 || index > old_len) {
+        return value;
+    }
+    let grown: Vec<T> = try_push(value, item);
+    if (grown.length == old_len) {
+        return grown;
+    }
+    let cursor: i32 = old_len;
+    while (cursor > index) {
+        store(grown.storage, cursor, load(grown, cursor - 1));
+        cursor -= 1;
+    }
+    store(grown.storage, index, item);
+    return grown;
+}
+
+// Remove one element at [0, len). Invalid indices leave the vector unchanged.
+// A successful removal decreases len by one and keeps the allocation for reuse.
+// Read the removed element with get_or before calling when it is needed.
+pub fn try_remove<T>(value: Vec<T>, index: i32) -> Vec<T> {
+    if (index < 0 || index >= value.length) {
+        return value;
+    }
+    let cursor: i32 = index;
+    while (cursor + 1 < value.length) {
+        store(value.storage, cursor, load(value, cursor + 1));
+        cursor += 1;
+    }
+    return try_pop(value);
+}
+
+// Invalid indices return fallback without accessing storage.
+pub fn get_or<T>(value: Vec<T>, index: i32, fallback: T) -> T {
+    if (index < 0 || index >= value.length) {
+        return fallback;
+    }
+    return load(value, index);
+}
+
+// Mutates the owned allocation only for an in-bounds index.
+pub fn try_set<T>(value: Vec<T>, index: i32, item: T) -> bool {
+    if (index < 0 || index >= value.length) {
+        return false;
+    }
+    store(value.storage, index, item);
+    return true;
+}
+
+fn sift_down<T>(value: Vec<T>, heap_len: i32, start: i32) where T: core::cmp::Ord<T> {
+    let root: i32 = start;
+    while (root * 2 + 1 < heap_len) {
+        let child: i32 = root * 2 + 1;
+        let largest: i32 = root;
+        let largest_item: T = load(value, root);
+        let child_item: T = load(value, child);
+        if (T::lt(largest_item, child_item)) {
+            largest = child;
+            largest_item = child_item;
+        }
+        if (child + 1 < heap_len) {
+            let right_item: T = load(value, child + 1);
+            if (T::lt(largest_item, right_item)) {
+                largest = child + 1;
+            }
+        }
+        if (largest == root) {
+            break;
+        }
+        let saved: T = load(value, root);
+        store(value.storage, root, load(value, largest));
+        store(value.storage, largest, saved);
+        root = largest;
+    }
+}
+
+// Sort the initialized elements ascending (heapsort) and return len.
+// Empty and one-element vectors need no storage access. Capacity is unchanged.
+pub fn sort_in_place<T>(value: Vec<T>) -> i32 where T: core::cmp::Ord<T> {
+    if (value.length <= 1) {
+        return value.length;
+    }
+    let start: i32 = (value.length - 2) / 2;
+    while (start >= 0) {
+        sift_down(value, value.length, start);
+        start -= 1;
+    }
+    let remaining: i32 = value.length;
+    while (remaining > 1) {
+        remaining -= 1;
+        let saved: T = load(value, 0);
+        store(value.storage, 0, load(value, remaining));
+        store(value.storage, remaining, saved);
+        sift_down(value, remaining, 0);
+    }
+    return value.length;
+}
+
+// Reverse the initialized elements and return the number of swaps performed.
+// Capacity is unchanged.
+pub fn reverse_in_place<T>(value: Vec<T>) -> i32 {
+    if (value.length <= 1) {
+        return 0;
+    }
+    let left: i32 = 0;
+    let right: i32 = value.length - 1;
+    let swaps: i32 = 0;
+    while (left < right) {
+        let saved: T = load(value, left);
+        store(value.storage, left, load(value, right));
+        store(value.storage, right, saved);
+        left += 1;
+        right -= 1;
+        swaps += 1;
+    }
+    return swaps;
+}
+
+// Search functions require the initialized elements in nondecreasing order.
+// lower_bound returns the first index >= needle, or len when all are smaller.
+// upper_bound returns the first index > needle, or len when none is greater.
+// Empty vectors return zero without accessing storage.
+pub fn lower_bound<T>(value: Vec<T>, needle: T) -> i32 where T: core::cmp::Ord<T> {
+    let low: i32 = 0;
+    let high: i32 = value.length;
+    while (low < high) {
+        let middle: i32 = low + (high - low) / 2;
+        let item: T = load(value, middle);
+        if (T::lt(item, needle)) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
+
+pub fn upper_bound<T>(value: Vec<T>, needle: T) -> i32 where T: core::cmp::Ord<T> {
+    let low: i32 = 0;
+    let high: i32 = value.length;
+    while (low < high) {
+        let middle: i32 = low + (high - low) / 2;
+        let item: T = load(value, middle);
+        if (T::le(item, needle)) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
+
+// Return the first or last matching index, or the caller's fallback when
+// absent. An empty vector always returns fallback.
+pub fn binary_search_first_or<T>(value: Vec<T>, needle: T, fallback: i32) -> i32 where T: core::cmp::Ord<T> {
+    let index: i32 = lower_bound(value, needle);
+    if (index < value.length) {
+        let found: T = load(value, index);
+        if (T::le(found, needle)) {
+            return index;
+        }
+    }
+    return fallback;
+}
+
+pub fn binary_search_last_or<T>(value: Vec<T>, needle: T, fallback: i32) -> i32 where T: core::cmp::Ord<T> {
+    let after: i32 = upper_bound(value, needle);
+    if (after > 0) {
+        let found: T = load(value, after - 1);
+        if (T::ge(found, needle)) {
+            return after - 1;
+        }
+    }
+    return fallback;
+}
+
+// On an empty vector, returns it unchanged. Read the last element with get_or
+// before popping if its value is needed.
+pub fn try_pop<T>(value: Vec<T>) -> Vec<T> {
+    if (value.length == 0) {
+        return value;
+    }
+    return Vec { storage: value.storage, length: value.length - 1, reserved: value.reserved };
+}
+
+// Keep the first new_len elements and retain the allocation for reuse.
+// A negative length or one greater than the current length leaves the vector
+// unchanged. Truncated elements are no longer in the vector.
+pub fn truncate<T>(value: Vec<T>, new_len: i32) -> Vec<T> {
+    if (new_len < 0 || new_len > value.length) {
+        return value;
+    }
+    return Vec { storage: value.storage, length: new_len, reserved: value.reserved };
+}
+
+// Set the length to new_len. Growing initializes every new element to fill;
+// shrinking keeps the prefix and allocation. A negative or oversized length,
+// or allocation failure during growth, leaves the original vector unchanged.
+// A successful growth has len(result) == new_len.
+pub fn try_resize<T>(value: Vec<T>, new_len: i32, fill: T) -> Vec<T> {
+    if (new_len < 0 || new_len > MAX_CAPACITY) {
+        return value;
+    }
+    if (new_len <= value.length) {
+        return truncate(value, new_len);
+    }
+    let grown: Vec<T> = try_reserve(value, new_len);
+    if (grown.reserved < new_len) {
+        return value;
+    }
+    while (grown.length < new_len) {
+        grown = try_push(grown, fill);
+    }
+    return grown;
+}
+
+// Keeps the allocation for reuse; old elements are no longer in the vector.
+pub fn clear<T>(value: Vec<T>) -> Vec<T> {
+    return Vec { storage: value.storage, length: 0, reserved: value.reserved };
+}
+
+// Reduce capacity to len. An empty vector releases its allocation. Failed
+// reallocation returns the original vector with its elements and capacity
+// unchanged; compare capacity(result) with len(result) to detect failure.
+pub fn try_shrink_to_fit<T>(value: Vec<T>) -> Vec<T> {
+    if (value.length == value.reserved) {
+        return value;
+    }
+    if (value.length == 0) {
+        alloc::allocator::dealloc(value.storage, byte_size(value, value.reserved), 8);
+        let empty: Vec<T> = new();
+        return empty;
+    }
+    let next: ptr = alloc::allocator::realloc(
+        value.storage, byte_size(value, value.reserved), byte_size(value, value.length), 8);
+    if (next == 0) {
+        return value;
+    }
+    return Vec { storage: next, length: value.length, reserved: value.length };
+}
+
+// Releases the one owned allocation. The caller must never use any copy of
+// the vector after this call.
+pub fn destroy<T>(value: Vec<T>) {
+    if (value.storage != 0) {
+        alloc::allocator::dealloc(value.storage, byte_size(value, value.reserved), 8);
+    }
+}

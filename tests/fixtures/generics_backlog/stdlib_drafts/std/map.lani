@@ -1,0 +1,258 @@
+// DRAFT, not in the stdlib yet: a generic owned map.
+// It replaces std::map_{char_u32,i32_i32,u32_u32,wide_i64_wide_i64,
+// wide_u64_wide_u64} (MapI32I32 and friends become Map<K, V>). The dense
+// map_bool_u32, map_i8_u32 and map_u8_u32 tables are a different,
+// allocation-free representation and stay.
+// Blockers are listed by backlog id in tests/fixtures/generics_backlog/README.md.
+//
+// Owned map with linear key lookup through core::cmp::Eq. Entry i is
+// entry_size bytes at storage + i * entry_size: the key first, then the value,
+// each rounded up to eight bytes so both stay aligned. Each is read and
+// written at its own type through core::mem::typed_slice_from_storage.
+// Ownership is linear by convention: use only the newest returned map, and
+// destroy it exactly once.
+module std::map;
+import alloc::allocator;
+import core::cmp;
+import core::mem;
+
+pub struct Map<K, V> {
+    storage: ptr,
+    length: i32,
+    reserved: i32,
+}
+
+// Doubled capacities fit signed i32. Byte counts are computed as usize.
+// Allocations use eight-byte alignment, the largest native scalar alignment.
+pub const MAX_ENTRIES: i32 = 268435455;
+
+fn padded(bytes: usize) -> usize {
+    return (bytes + 7) / 8 * 8;
+}
+
+fn key_size<K, V>(value: Map<K, V>) -> usize {
+    return padded(core::mem::size_of<K>());
+}
+
+fn entry_size<K, V>(value: Map<K, V>) -> usize {
+    return padded(core::mem::size_of<K>()) + padded(core::mem::size_of<V>());
+}
+
+fn byte_size<K, V>(value: Map<K, V>, count: i32) -> usize {
+    return entry_size(value) * (count as usize);
+}
+
+// One-element views keep each field's address independent of any view
+// length, whichever direction the native layout runs.
+fn load_key<K, V>(value: Map<K, V>, index: i32) -> K {
+    let offset: usize = entry_size(value) * (index as usize);
+    let key: [K] = core::mem::typed_slice_from_storage(value.storage + offset, 1);
+    return key[0];
+}
+
+fn load_value<K, V>(value: Map<K, V>, index: i32) -> V {
+    let offset: usize = entry_size(value) * (index as usize) + key_size(value);
+    let item: [V] = core::mem::typed_slice_from_storage(value.storage + offset, 1);
+    return item[0];
+}
+
+// Writes entry index of target, which may be another map's storage of the
+// same entry type.
+fn store_entry<K, V>(target: Map<K, V>, index: i32, key: K, item: V) {
+    let offset: usize = entry_size(target) * (index as usize);
+    let keys: [K] = core::mem::typed_slice_from_storage(target.storage + offset, 1);
+    keys[0] = key;
+    let values: [V] = core::mem::typed_slice_from_storage(target.storage + offset + key_size(target), 1);
+    values[0] = item;
+}
+
+fn store_value<K, V>(target: Map<K, V>, index: i32, item: V) {
+    let offset: usize = entry_size(target) * (index as usize) + key_size(target);
+    let values: [V] = core::mem::typed_slice_from_storage(target.storage + offset, 1);
+    values[0] = item;
+}
+
+pub fn new<K, V>() -> Map<K, V> {
+    let empty: ptr = 0;
+    return Map { storage: empty, length: 0, reserved: 0 };
+}
+
+pub fn len<K, V>(value: Map<K, V>) -> i32 {
+    return value.length;
+}
+
+pub fn capacity<K, V>(value: Map<K, V>) -> i32 {
+    return value.reserved;
+}
+
+pub fn is_empty<K, V>(value: Map<K, V>) -> bool {
+    return value.length == 0;
+}
+
+// The ordinal of key, or -1 when it is absent.
+fn position<K, V>(value: Map<K, V>, key: K) -> i32 where K: core::cmp::Eq<K> {
+    let index: i32 = 0;
+    while (index < value.length) {
+        let stored: K = load_key(value, index);
+        if (K::eq(stored, key)) {
+            return index;
+        }
+        index += 1;
+    }
+    return -1;
+}
+
+pub fn contains_key<K, V>(value: Map<K, V>, key: K) -> bool where K: core::cmp::Eq<K> {
+    return position(value, key) >= 0;
+}
+
+// Return fallback when key is absent. Check contains_key separately when a
+// stored value can equal fallback.
+pub fn get_or<K, V>(value: Map<K, V>, key: K, fallback: V) -> V where K: core::cmp::Eq<K> {
+    let index: i32 = position(value, key);
+    if (index < 0) {
+        return fallback;
+    }
+    return load_value(value, index);
+}
+
+// Entry order is insertion order until removal; removal preserves the order
+// of all remaining entries. Invalid ordinals return fallback.
+pub fn key_at_or<K, V>(value: Map<K, V>, ordinal: i32, fallback: K) -> K {
+    if (ordinal < 0 || ordinal >= value.length) {
+        return fallback;
+    }
+    return load_key(value, ordinal);
+}
+
+pub fn value_at_or<K, V>(value: Map<K, V>, ordinal: i32, fallback: V) -> V {
+    if (ordinal < 0 || ordinal >= value.length) {
+        return fallback;
+    }
+    return load_value(value, ordinal);
+}
+
+// Negative or oversized requests and allocation failure return the original
+// map unchanged. Compare capacity(result) to the request to detect failure.
+pub fn try_reserve<K, V>(value: Map<K, V>, minimum_entries: i32) -> Map<K, V> {
+    if (minimum_entries < 0 || minimum_entries > MAX_ENTRIES ||
+        minimum_entries <= value.reserved) {
+        return value;
+    }
+    let new_bytes: usize = byte_size(value, minimum_entries);
+    let next: ptr = 0;
+    if (value.storage == 0) {
+        next = alloc::allocator::alloc(new_bytes, 8);
+    } else {
+        next = alloc::allocator::realloc(value.storage, byte_size(value, value.reserved), new_bytes, 8);
+    }
+    if (next == 0) {
+        return value;
+    }
+    return Map { storage: next, length: value.length, reserved: minimum_entries };
+}
+
+// Insert a new key. An existing key, capacity limit, or allocation failure
+// leaves the map unchanged; successful insertion increments len. Use try_set
+// to replace an existing value.
+pub fn try_insert<K, V>(value: Map<K, V>, key: K, item: V) -> Map<K, V> where K: core::cmp::Eq<K> {
+    if (position(value, key) >= 0 || value.length >= MAX_ENTRIES) {
+        return value;
+    }
+    let needed: i32 = value.length + 1;
+    let grown: Map<K, V> = value;
+    if (grown.reserved < needed) {
+        let target: i32 = 4;
+        if (grown.reserved > 0) {
+            if (grown.reserved > MAX_ENTRIES / 2) {
+                target = MAX_ENTRIES;
+            } else {
+                target = grown.reserved * 2;
+            }
+        }
+        if (target < needed) {
+            target = needed;
+        }
+        grown = try_reserve(grown, target);
+        if (grown.reserved < needed) {
+            return value;
+        }
+    }
+    store_entry(grown, grown.length, key, item);
+    return Map { storage: grown.storage, length: needed, reserved: grown.reserved };
+}
+
+// Replace an existing value in place. Missing keys return false without
+// mutating the allocation.
+pub fn try_set<K, V>(value: Map<K, V>, key: K, item: V) -> bool where K: core::cmp::Eq<K> {
+    let index: i32 = position(value, key);
+    if (index < 0) {
+        return false;
+    }
+    store_value(value, index, item);
+    return true;
+}
+
+// Remove a key and value, preserving order and capacity. Missing keys leave
+// the map unchanged; successful removal decrements len.
+pub fn try_remove<K, V>(value: Map<K, V>, key: K) -> Map<K, V> where K: core::cmp::Eq<K> {
+    let index: i32 = position(value, key);
+    if (index < 0) {
+        return value;
+    }
+    let cursor: i32 = index;
+    while (cursor + 1 < value.length) {
+        store_entry(value, cursor, load_key(value, cursor + 1), load_value(value, cursor + 1));
+        cursor += 1;
+    }
+    return Map { storage: value.storage, length: value.length - 1, reserved: value.reserved };
+}
+
+pub fn clear<K, V>(value: Map<K, V>) -> Map<K, V> {
+    return Map { storage: value.storage, length: 0, reserved: value.reserved };
+}
+
+// Release unused storage. Empty maps release their allocation. Reallocation
+// failure returns the original map with its capacity and entries intact.
+pub fn try_shrink_to_fit<K, V>(value: Map<K, V>) -> Map<K, V> {
+    if (value.length == value.reserved) {
+        return value;
+    }
+    if (value.length == 0) {
+        destroy(value);
+        let empty: Map<K, V> = new();
+        return empty;
+    }
+    let next: ptr = alloc::allocator::realloc(
+        value.storage, byte_size(value, value.reserved), byte_size(value, value.length), 8);
+    if (next == 0) {
+        return value;
+    }
+    return Map { storage: next, length: value.length, reserved: value.length };
+}
+
+// Return an independently owned copy. Allocation failure returns an empty
+// zero-capacity map and leaves the source unchanged. For nonempty input,
+// len(result) == len(value) indicates success.
+pub fn try_clone<K, V>(value: Map<K, V>) -> Map<K, V> {
+    let empty: Map<K, V> = new();
+    if (value.length == 0) {
+        return empty;
+    }
+    let copy: Map<K, V> = try_reserve(empty, value.length);
+    if (copy.reserved < value.length) {
+        return empty;
+    }
+    let index: i32 = 0;
+    while (index < value.length) {
+        store_entry(copy, index, load_key(value, index), load_value(value, index));
+        index += 1;
+    }
+    return Map { storage: copy.storage, length: value.length, reserved: copy.reserved };
+}
+
+pub fn destroy<K, V>(value: Map<K, V>) {
+    if (value.storage != 0) {
+        alloc::allocator::dealloc(value.storage, byte_size(value, value.reserved), 8);
+    }
+}
