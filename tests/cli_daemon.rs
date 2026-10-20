@@ -856,3 +856,64 @@ fn main() -> i32 {
         let _ = fs::remove_dir_all(project);
     }
 }
+
+impl DaemonSession {
+    fn compile_file(
+        &mut self,
+        input: &std::path::Path,
+        output: &std::path::Path,
+    ) -> serde_json::Value {
+        let request = serde_json::json!({
+            "id": "compile",
+            "command": "compile",
+            "emit": "x86_64",
+            "input": input,
+            "output": output,
+        });
+        writeln!(self.stdin, "{request}").expect("send daemon request");
+        self.stdin.flush().expect("flush daemon request");
+        self.response()
+    }
+}
+
+// The first job of a fresh daemon once typed `original.value` as i32 or as
+// unknown depending on warp order: type_checker/scope/hir read a struct
+// declaration's visible type while that declaration's own lane was writing
+// it (2026-10-19; about one fresh daemon in three emitted an extra spill
+// pair). Every fresh daemon must emit the same bytes for the same source.
+#[test]
+fn cli_daemon_first_jobs_of_fresh_daemons_emit_identical_artifacts() {
+    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+        "tests/fixtures/stdlib_foundation/repro_nominal_parameter_after_field_assignment.lani",
+    );
+    let mut first: Option<Vec<u8>> = None;
+    for round in 0..8 {
+        let output = common::temp_artifact_path(
+            "laniusc_daemon_fresh_first_job",
+            &round.to_string(),
+            None,
+        );
+        let mut session = DaemonSession::start();
+        let response = session.compile_file(&input, &output);
+        assert_eq!(response["ok"], true, "fresh daemon {round}: {response}");
+        session.shutdown();
+        let bytes = fs::read(&output).expect("read fresh-daemon artifact");
+        if round == 0 {
+            let run = common::short_process_output_with_timeout(
+                "run the fresh-daemon artifact",
+                &mut Command::new(&output),
+            );
+            assert_eq!(run.status.code(), Some(0), "fresh-daemon artifact exit status");
+        }
+        let _ = fs::remove_file(&output);
+        match &first {
+            Some(expected) => assert!(
+                *expected == bytes,
+                "fresh daemon {round} emitted {} bytes; the first emitted {}",
+                bytes.len(),
+                expected.len()
+            ),
+            None => first = Some(bytes),
+        }
+    }
+}

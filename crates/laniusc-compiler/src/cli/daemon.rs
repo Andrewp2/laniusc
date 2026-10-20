@@ -934,6 +934,13 @@ async fn run_session(
             crate::gpu::timer::GpuJobTimingSession::begin(&compiler.gpu().device, &compiler.gpu().queue);
         let mut response =
             compile_request(&compiler, options, &mut source_pack_cache, request).await;
+        // No-op unless LANIUS_DEBUG_DUMP_BUFFERS is set, as in the CLI.
+        crate::gpu::passes_core::debug_dump_buffers(
+            &compiler.gpu().device,
+            &compiler.gpu().queue,
+            "daemon",
+        );
+        crate::gpu::passes_core::debug_write_capture(&compiler.gpu().device, &compiler.gpu().queue);
         if let Some(job_timing) = job_timing {
             let completed = response.get("ok").and_then(Value::as_bool).unwrap_or(false);
             job_timing.finish(&compiler.gpu().device, &compiler.gpu().queue, completed);
