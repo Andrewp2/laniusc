@@ -329,62 +329,14 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
-            "option_result_i32",
-            "tests/fixtures/stdlib_foundation/option_result_i32.lani",
-            0,
-            b"",
-        ),
-        (
-            "option_result_u32",
-            "tests/fixtures/stdlib_foundation/option_result_u32.lani",
-            0,
-            b"",
-        ),
-        (
-            "option_result_u8",
-            "tests/fixtures/stdlib_foundation/option_result_u8.lani",
-            0,
-            b"",
-        ),
-        (
-            "option_result_bool",
-            "tests/fixtures/stdlib_foundation/option_result_bool.lani",
+            "core_option_result",
+            "tests/fixtures/stdlib_foundation/core_option_result.lani",
             0,
             b"",
         ),
         (
             "option_generic_scalar_predicates",
             "tests/fixtures/stdlib_foundation/option_generic_scalar_predicates.lani",
-            0,
-            b"",
-        ),
-        (
-            "option_result_char",
-            "tests/fixtures/stdlib_foundation/option_result_char.lani",
-            0,
-            b"",
-        ),
-        (
-            "option_result_f32",
-            "tests/fixtures/stdlib_foundation/option_result_f32.lani",
-            0,
-            b"",
-        ),
-        (
-            "option_result_i8",
-            "tests/fixtures/stdlib_foundation/option_result_i8.lani",
-            0,
-            b"",
-        ),
-        (
-            "option_result_i16",
-            "tests/fixtures/stdlib_foundation/option_result_i16.lani",
-            0,
-            b"",
-        ),
-        (
-            "option_result_u16",
-            "tests/fixtures/stdlib_foundation/option_result_u16.lani",
             0,
             b"",
         ),
@@ -1407,145 +1359,47 @@ fn executable_core_function_surface_has_runtime_cases() {
     }
     assert_eq!(hash_count, 12);
 
-    let i32_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_i32.lani");
-    let u8_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_u8.lani");
-    let bool_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_bool.lani");
-    let generic_option_fixture = format!(
-        "{}\n{}\n{}",
+    // Every function in core::option and core::result runs in
+    // core_option_result, free and as a method; the generic option fixtures
+    // run them again on bool payloads.
+    let option_result_fixture = format!(
+        "{}\n{}\n{}\n{}",
+        include_str!("fixtures/stdlib_foundation/core_option_result.lani"),
         include_str!("fixtures/stdlib_foundation/option_bool.lani"),
         include_str!("fixtures/stdlib_foundation/option_generic_scalar_predicates.lani"),
         include_str!("fixtures/stdlib_foundation/option_generic_scalar_payload_functions.lani"),
     );
-    let char_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_char.lani");
-    let f32_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_f32.lani");
-    let i8_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_i8.lani");
-    let i16_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_i16.lani");
-    let u16_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_u16.lani");
-    let u32_result_fixture = include_str!("fixtures/stdlib_foundation/option_result_u32.lani");
-    for (module, source, fixture, expected_count) in [
-        (
-            "option_i32",
-            include_str!("../stdlib/core/option_i32.lani"),
-            i32_result_fixture,
-            12,
-        ),
-        (
-            "result_i32",
-            include_str!("../stdlib/core/result_i32.lani"),
-            i32_result_fixture,
-            10,
-        ),
-        (
-            "option_u8",
-            include_str!("../stdlib/core/option_u8.lani"),
-            u8_result_fixture,
-            12,
-        ),
-        (
-            "result_u8",
-            include_str!("../stdlib/core/result_u8.lani"),
-            u8_result_fixture,
-            10,
-        ),
-        (
-            "option",
-            include_str!("../stdlib/core/option.lani"),
-            generic_option_fixture.as_str(),
-            12,
-        ),
-        (
-            "result_bool",
-            include_str!("../stdlib/core/result_bool.lani"),
-            bool_result_fixture,
-            10,
-        ),
-        (
-            "option_char",
-            include_str!("../stdlib/core/option_char.lani"),
-            char_result_fixture,
-            12,
-        ),
-        (
-            "result_char",
-            include_str!("../stdlib/core/result_char.lani"),
-            char_result_fixture,
-            10,
-        ),
-        (
-            "option_f32",
-            include_str!("../stdlib/core/option_f32.lani"),
-            f32_result_fixture,
-            12,
-        ),
-        (
-            "result_f32",
-            include_str!("../stdlib/core/result_f32.lani"),
-            f32_result_fixture,
-            10,
-        ),
-        (
-            "option_i8",
-            include_str!("../stdlib/core/option_i8.lani"),
-            i8_result_fixture,
-            12,
-        ),
-        (
-            "result_i8",
-            include_str!("../stdlib/core/result_i8.lani"),
-            i8_result_fixture,
-            10,
-        ),
-        (
-            "option_i16",
-            include_str!("../stdlib/core/option_i16.lani"),
-            i16_result_fixture,
-            12,
-        ),
-        (
-            "result_i16",
-            include_str!("../stdlib/core/result_i16.lani"),
-            i16_result_fixture,
-            10,
-        ),
-        (
-            "option_u16",
-            include_str!("../stdlib/core/option_u16.lani"),
-            u16_result_fixture,
-            12,
-        ),
-        (
-            "result_u16",
-            include_str!("../stdlib/core/result_u16.lani"),
-            u16_result_fixture,
-            10,
-        ),
-        (
-            "option_u32",
-            include_str!("../stdlib/core/option_u32.lani"),
-            u32_result_fixture,
-            12,
-        ),
-        (
-            "result_u32",
-            include_str!("../stdlib/core/result_u32.lani"),
-            u32_result_fixture,
-            10,
-        ),
+    for (module, source, expected_functions, expected_methods) in [
+        ("option", include_str!("../stdlib/core/option.lani"), 12, 9),
+        ("result", include_str!("../stdlib/core/result.lani"), 10, 10),
     ] {
-        let mut count = 0;
+        let mut functions = 0;
+        let mut methods = 0;
         for line in source.lines() {
-            let Some(tail) = line.strip_prefix("pub fn ") else {
+            let (tail, call) = if let Some(tail) = line.strip_prefix("pub fn ") {
+                functions += 1;
+                (tail, format!("core::{module}::"))
+            } else if let Some(tail) = line.strip_prefix("    pub fn ") {
+                methods += 1;
+                (tail, ".".to_string())
+            } else {
                 continue;
             };
             let name = tail
                 .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
                 .next()
                 .expect("public function has a name");
-            let call = format!("core::{module}::{name}(");
-            assert!(fixture.contains(&call), "{call} lacks a runtime case");
-            count += 1;
+            let call = format!("{call}{name}(");
+            assert!(
+                option_result_fixture.contains(&call),
+                "core::{module} {call} lacks a runtime case"
+            );
         }
-        assert_eq!(count, expected_count);
+        assert_eq!(
+            (functions, methods),
+            (expected_functions, expected_methods),
+            "core::{module}"
+        );
     }
 
     let io_fixtures = format!(

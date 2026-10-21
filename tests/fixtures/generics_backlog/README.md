@@ -17,6 +17,19 @@ stdlib modules that a generic replacement cannot cover until the gap closes.
   `gen::count::Counter::get(next)`, while a static `Counter::make(40)` works
   locally and imported. Calling a self method through its type's path is
   not an implemented call form (no doc or test claims it). Owner: P13.
+- b16 (Wasm only): a function whose result type is an imported generic
+  enum, `fn half(x: i32) -> core::option::Option<i32>`, compiles to a module
+  node rejects ("not enough arguments on the stack for local.set"). The same
+  shape with a local `enum R<T>` runs, and x86 runs both. It blocks the
+  generic Option/Result stdlib on Wasm (found 2026-10-20). Owner: TBD.
+- b17: `some.unwrap()` on the stdlib's Option<T> inside a generic body with
+  a record T (`fn run<T>(value: T)` called with a struct) segfaults (-11)
+  at run time on x86. The free `core::option::unwrap(some)` runs in the same
+  place, and so do scalar payloads, a direct call outside a generic body and
+  a local enum's diverging method. Result's unwrap and unwrap_err methods
+  crash the same way. core_option_result.lani calls the free forms from
+  its generic checker and the methods on concrete records (found
+  2026-10-20). Owner: TBD.
 
 Not probes here:
 - An imported call's record result passed straight to another call, e.g.

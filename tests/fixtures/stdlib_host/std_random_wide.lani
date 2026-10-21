@@ -1,6 +1,5 @@
 module app::main;
-import core::option_wide_i64;
-import core::option_wide_u64;
+import core::option;
 import core::wide_i64;
 import core::wide_u64;
 import std::random_wide;
@@ -8,14 +7,14 @@ fn main() -> i32 {
     let zero: core::wide_u64::WideU64 = core::wide_u64::zero();
     let one: core::wide_u64::WideU64 = core::wide_u64::from_u32(1);
     let maximum: core::wide_u64::WideU64 = core::wide_u64::max_value();
-    let raw_unsigned: core::option_wide_u64::OptionWideU64 = std::random_wide::try_secure_u64();
-    let raw_signed: core::option_wide_i64::OptionWideI64 = std::random_wide::try_secure_i64();
-    if (core::option_wide_u64::is_none(raw_unsigned) || core::option_wide_i64::is_none(raw_signed)) {
+    let raw_unsigned: core::option::Option<core::wide_u64::WideU64> = std::random_wide::try_secure_u64();
+    let raw_signed: core::option::Option<core::wide_i64::WideI64> = std::random_wide::try_secure_i64();
+    if (core::option::is_none(raw_unsigned) || core::option::is_none(raw_signed)) {
         return 1;
     }
-    let zero_bound: core::option_wide_u64::OptionWideU64 = std::random_wide::try_secure_u64_below(zero);
-    let one_bound: core::option_wide_u64::OptionWideU64 = std::random_wide::try_secure_u64_below(one);
-    if (!core::option_wide_u64::is_none(zero_bound) || !core::option_wide_u64::contains(one_bound, zero)) {
+    let zero_bound: core::option::Option<core::wide_u64::WideU64> = std::random_wide::try_secure_u64_below(zero);
+    let one_bound: core::option::Option<core::wide_u64::WideU64> = std::random_wide::try_secure_u64_below(one);
+    if (!core::option::is_none(zero_bound) || !core::option::contains(one_bound, zero)) {
         return 2;
     }
     let index: i32 = 0;
@@ -26,30 +25,30 @@ fn main() -> i32 {
     let signed_min: core::wide_i64::WideI64 = core::wide_i64::min_value();
     let signed_max: core::wide_i64::WideI64 = core::wide_i64::max_value();
     while (index<12) {
-        let under_ten: core::option_wide_u64::OptionWideU64 = std::random_wide::try_secure_u64_below(ten);
-        let high_range: core::option_wide_u64::OptionWideU64 = std::random_wide::try_secure_u64_inclusive(high_start, maximum);
-        let signed_range: core::option_wide_i64::OptionWideI64 = std::random_wide::try_secure_i64_inclusive(signed_low, signed_high);
-        if (core::option_wide_u64::is_none(under_ten) || core::option_wide_u64::is_none(high_range) || core::option_wide_i64::is_none(signed_range)) {
+        let under_ten: core::option::Option<core::wide_u64::WideU64> = std::random_wide::try_secure_u64_below(ten);
+        let high_range: core::option::Option<core::wide_u64::WideU64> = std::random_wide::try_secure_u64_inclusive(high_start, maximum);
+        let signed_range: core::option::Option<core::wide_i64::WideI64> = std::random_wide::try_secure_i64_inclusive(signed_low, signed_high);
+        if (core::option::is_none(under_ten) || core::option::is_none(high_range) || core::option::is_none(signed_range)) {
             return 3;
         }
-        let first: core::wide_u64::WideU64 = core::option_wide_u64::unwrap_or(under_ten, maximum);
-        let second: core::wide_u64::WideU64 = core::option_wide_u64::unwrap_or(high_range, zero);
-        let third: core::wide_i64::WideI64 = core::option_wide_i64::unwrap_or(signed_range, signed_min);
+        let first: core::wide_u64::WideU64 = core::option::unwrap_or(under_ten, maximum);
+        let second: core::wide_u64::WideU64 = core::option::unwrap_or(high_range, zero);
+        let third: core::wide_i64::WideI64 = core::option::unwrap_or(signed_range, signed_min);
         if (core::wide_u64::compare(first, ten) >= 0 || core::wide_u64::compare(second, high_start)<0 || core::wide_u64::compare(second, maximum)>0 || core::wide_i64::compare(third, signed_low)<0 || core::wide_i64::compare(third, signed_high)>0) {
             return 4;
         }
         index += 1;
     }
-    let singleton_unsigned: core::option_wide_u64::OptionWideU64 = std::random_wide::try_secure_u64_inclusive(maximum, maximum);
-    let reversed_unsigned: core::option_wide_u64::OptionWideU64 = std::random_wide::try_secure_u64_inclusive(maximum, zero);
-    let full_unsigned: core::option_wide_u64::OptionWideU64 = std::random_wide::try_secure_u64_inclusive(zero, maximum);
-    if (!core::option_wide_u64::contains(singleton_unsigned, maximum) || !core::option_wide_u64::is_none(reversed_unsigned) || core::option_wide_u64::is_none(full_unsigned)) {
+    let singleton_unsigned: core::option::Option<core::wide_u64::WideU64> = std::random_wide::try_secure_u64_inclusive(maximum, maximum);
+    let reversed_unsigned: core::option::Option<core::wide_u64::WideU64> = std::random_wide::try_secure_u64_inclusive(maximum, zero);
+    let full_unsigned: core::option::Option<core::wide_u64::WideU64> = std::random_wide::try_secure_u64_inclusive(zero, maximum);
+    if (!core::option::contains(singleton_unsigned, maximum) || !core::option::is_none(reversed_unsigned) || core::option::is_none(full_unsigned)) {
         return 5;
     }
-    let singleton_signed: core::option_wide_i64::OptionWideI64 = std::random_wide::try_secure_i64_inclusive(signed_min, signed_min);
-    let reversed_signed: core::option_wide_i64::OptionWideI64 = std::random_wide::try_secure_i64_inclusive(signed_max, signed_min);
-    let full_signed: core::option_wide_i64::OptionWideI64 = std::random_wide::try_secure_i64_inclusive(signed_min, signed_max);
-    if (!core::option_wide_i64::contains(singleton_signed, signed_min) || !core::option_wide_i64::is_none(reversed_signed) || core::option_wide_i64::is_none(full_signed)) {
+    let singleton_signed: core::option::Option<core::wide_i64::WideI64> = std::random_wide::try_secure_i64_inclusive(signed_min, signed_min);
+    let reversed_signed: core::option::Option<core::wide_i64::WideI64> = std::random_wide::try_secure_i64_inclusive(signed_max, signed_min);
+    let full_signed: core::option::Option<core::wide_i64::WideI64> = std::random_wide::try_secure_i64_inclusive(signed_min, signed_max);
+    if (!core::option::contains(singleton_signed, signed_min) || !core::option::is_none(reversed_signed) || core::option::is_none(full_signed)) {
         return 6;
     }
     return 0;

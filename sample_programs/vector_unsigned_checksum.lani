@@ -1,7 +1,7 @@
 module app::main;
 import std::vec;
 import core::number_u32;
-import core::option_u32;
+import core::option;
 
 fn main() -> i32 {
     let values: std::vec::Vec<u32> = std::vec::new();
@@ -21,8 +21,8 @@ fn main() -> i32 {
         index += 1;
     }
     std::vec::destroy(values);
-    let result: core::option_u32::OptionU32 = core::option_u32::some(checksum);
-    let unsigned_result: u32 = core::option_u32::unwrap_or(result, 0);
+    let result: core::option::Option<u32> = core::option::Some(checksum);
+    let unsigned_result: u32 = core::option::unwrap_or(result, 0);
     let printable: i32 = unsigned_result as i32;
     print(printable);
     return 0;

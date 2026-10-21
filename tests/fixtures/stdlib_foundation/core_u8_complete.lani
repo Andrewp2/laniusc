@@ -1,6 +1,6 @@
 module app::main;
 import core::u8;
-import core::option_u8;
+import core::option;
 
 fn main() -> i32 {
     let maximum: u8 = 255;
@@ -21,10 +21,10 @@ fn main() -> i32 {
         core::u8::abs_diff(3, 9) != 6) {
         return 2;
     }
-    if (!core::option_u8::contains(core::u8::checked_add(250, 5), maximum) ||
-        !core::option_u8::is_none(core::u8::checked_add(250, 6)) ||
-        !core::option_u8::contains(core::u8::checked_sub(5, 3), 2) ||
-        !core::option_u8::is_none(core::u8::checked_sub(3, 5))) {
+    if (!core::option::contains(core::u8::checked_add(250, 5), maximum) ||
+        !core::option::is_none(core::u8::checked_add(250, 6)) ||
+        !core::option::contains(core::u8::checked_sub(5, 3), 2) ||
+        !core::option::is_none(core::u8::checked_sub(3, 5))) {
         return 3;
     }
     if (!core::u8::is_zero(zero) || core::u8::is_zero(1) ||

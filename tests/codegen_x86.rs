@@ -11382,8 +11382,10 @@ fn main() {
 #[test]
 fn x86_executes_stdlib_helper_from_source_pack() {
     let sources = [
-        include_str!("../stdlib/core/result_u8.lani"),
-        include_str!("../stdlib/core/option_u8.lani"),
+        include_str!("../stdlib/core/cmp.lani"),
+        include_str!("../stdlib/core/panic.lani"),
+        include_str!("../stdlib/core/result.lani"),
+        include_str!("../stdlib/core/option.lani"),
         include_str!("../stdlib/core/byte.lani"),
         include_str!("../stdlib/core/u8.lani"),
         "module app::main;\nimport core::u8;\nfn main() -> bool {\n    return core::u8::is_ascii_digit(53);\n}\n",
@@ -12005,14 +12007,16 @@ fn main() -> i32 {
 #[test]
 fn x86_borrowed_receiver_temporary_holds_imported_option_result() {
     let sources = [
-        include_str!("../stdlib/core/result_i32.lani"),
-        include_str!("../stdlib/core/option_i32.lani"),
+        include_str!("../stdlib/core/cmp.lani"),
+        include_str!("../stdlib/core/panic.lani"),
+        include_str!("../stdlib/core/result.lani"),
+        include_str!("../stdlib/core/option.lani"),
         r#"
 module app::main;
-import core::option_i32;
+import core::option;
 fn main() -> i32 {
-    let absent: core::option_i32::OptionI32 = core::option_i32::none();
-    let present: core::option_i32::OptionI32 = core::option_i32::some(7);
+    let absent: core::option::Option<i32> = core::option::None();
+    let present: core::option::Option<i32> = core::option::Some(7);
     if (!absent.or(present).contains(7)) { return 1; }
     if (absent.or(absent).contains(7)) { return 2; }
     return 42;

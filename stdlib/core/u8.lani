@@ -2,7 +2,7 @@
 
 module core::u8;
 
-import core::option_u8;
+import core::option;
 import core::byte;
 
 pub const MIN: u8 = 0;
@@ -64,19 +64,19 @@ pub fn wrapping_mul(left: u8, right: u8) -> u8 {
     return core::byte::wrapping_mul(left, right);
 }
 
-pub fn checked_add(left: u8, right: u8) -> core::option_u8::OptionU8 {
+pub fn checked_add(left: u8, right: u8) -> core::option::Option<u8> {
     if (left > MAX - right) {
-        return core::option_u8::none();
+        return core::option::None();
     } else {
-        return core::option_u8::some(left + right);
+        return core::option::Some(left + right);
     }
 }
 
-pub fn checked_sub(left: u8, right: u8) -> core::option_u8::OptionU8 {
+pub fn checked_sub(left: u8, right: u8) -> core::option::Option<u8> {
     if (left < right) {
-        return core::option_u8::none();
+        return core::option::None();
     } else {
-        return core::option_u8::some(left - right);
+        return core::option::Some(left - right);
     }
 }
 

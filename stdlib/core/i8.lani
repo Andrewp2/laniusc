@@ -3,7 +3,7 @@
 module core::i8;
 
 import core::number_i8;
-import core::option_i8;
+import core::option;
 
 pub const MIN: i8 = -128;
 pub const MAX: i8 = 127;
@@ -19,11 +19,11 @@ pub fn saturating_abs(value: i8) -> i8 {
     return core::number_i8::saturating_abs(value);
 }
 
-pub fn checked_abs(value: i8) -> core::option_i8::OptionI8 {
+pub fn checked_abs(value: i8) -> core::option::Option<i8> {
     if (value == MIN) {
-        return core::option_i8::none();
+        return core::option::None();
     }
-    return core::option_i8::some(abs(value));
+    return core::option::Some(abs(value));
 }
 
 pub fn min(left: i8, right: i8) -> i8 {
@@ -105,30 +105,30 @@ pub fn wrapping_mul(left: i8, right: i8) -> i8 {
     return core::number_i8::wrapping_mul(left, right);
 }
 
-pub fn checked_add(left: i8, right: i8) -> core::option_i8::OptionI8 {
+pub fn checked_add(left: i8, right: i8) -> core::option::Option<i8> {
     let wide_left: i32 = left as i32;
     let wide_right: i32 = right as i32;
     let sum: i32 = wide_left + wide_right;
     if (sum < -128 || sum > 127) {
-        return core::option_i8::none();
+        return core::option::None();
     }
     let narrowed: i8 = sum as i8;
-    return core::option_i8::some(narrowed);
+    return core::option::Some(narrowed);
 }
 
 pub fn saturating_add(left: i8, right: i8) -> i8 {
     return core::number_i8::saturating_add(left, right);
 }
 
-pub fn checked_sub(left: i8, right: i8) -> core::option_i8::OptionI8 {
+pub fn checked_sub(left: i8, right: i8) -> core::option::Option<i8> {
     let wide_left: i32 = left as i32;
     let wide_right: i32 = right as i32;
     let difference: i32 = wide_left - wide_right;
     if (difference < -128 || difference > 127) {
-        return core::option_i8::none();
+        return core::option::None();
     }
     let narrowed: i8 = difference as i8;
-    return core::option_i8::some(narrowed);
+    return core::option::Some(narrowed);
 }
 
 pub fn saturating_sub(left: i8, right: i8) -> i8 {

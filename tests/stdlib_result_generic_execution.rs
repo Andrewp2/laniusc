@@ -109,7 +109,7 @@ fn result_slice_arguments_preserve_generic_and_concrete_type_relations() {
             "[i32], str",
             "view",
             "view",
-            "core::result::contains_i32(left, 7)",
+            "core::result::contains(left, 7)",
         ),
     ] {
         let source = format!(
@@ -158,27 +158,27 @@ fn main() -> i32 {
     let preferred: core::result::Result<i32, bool> = core::result::or(success, failure);
     let fallback: core::result::Result<i32, bool> = core::result::or(failure, success);
     let both_errors: core::result::Result<i32, bool> = core::result::or(failure, failure);
-    if (!core::result::contains_i32(preferred, -7)) { return 6; }
-    if (!core::result::contains_i32(fallback, -7)) { return 7; }
-    if (!core::result::contains_err_bool(both_errors, false)) { return 8; }
+    if (!core::result::contains(preferred, -7)) { return 6; }
+    if (!core::result::contains(fallback, -7)) { return 7; }
+    if (!core::result::contains_err(both_errors, false)) { return 8; }
     let next: core::result::Result<i32, bool> = core::result::and(success, zero);
     let next_error: core::result::Result<i32, bool> = core::result::and(success, failure);
     let first_error: core::result::Result<i32, bool> = core::result::and(failure, success);
-    if (!core::result::contains_i32(next, 0)) { return 9; }
-    if (!core::result::contains_err_bool(next_error, false)) { return 10; }
-    if (!core::result::contains_err_bool(first_error, false)) { return 11; }
+    if (!core::result::contains(next, 0)) { return 9; }
+    if (!core::result::contains_err(next_error, false)) { return 10; }
+    if (!core::result::contains_err(first_error, false)) { return 11; }
     let boolean: core::result::Result<bool, i32> = core::result::Ok(false);
     let error_zero: core::result::Result<bool, i32> = core::result::Err(0);
     if (core::result::unwrap_or(boolean, true)) { return 12; }
     if (!core::result::unwrap_or(error_zero, true)) { return 13; }
     let reverse_or: core::result::Result<bool, i32> = core::result::or(error_zero, boolean);
     let reverse_and: core::result::Result<bool, i32> = core::result::and(boolean, error_zero);
-    if (!core::result::contains_bool(reverse_or, false)) { return 14; }
-    if (!core::result::contains_err_i32(reverse_and, 0)) { return 15; }
-    if (!core::result::contains_i32(success, -7)) { return 16; }
-    if (!core::result::contains_err_bool(failure, false)) { return 17; }
-    if (!core::result::contains_bool(boolean, false)) { return 18; }
-    if (!core::result::contains_err_i32(error_zero, 0)) { return 19; }
+    if (!core::result::contains(reverse_or, false)) { return 14; }
+    if (!core::result::contains_err(reverse_and, 0)) { return 15; }
+    if (!core::result::contains(success, -7)) { return 16; }
+    if (!core::result::contains_err(failure, false)) { return 17; }
+    if (!core::result::contains(boolean, false)) { return 18; }
+    if (!core::result::contains_err(error_zero, 0)) { return 19; }
     return 0;
 }
 "#;
@@ -317,8 +317,8 @@ fn main() -> i32 {
 #[test]
 fn result_membership_rejects_wrong_scalar_argument_types() {
     for expression in [
-        "core::result::contains_i32(success, false)",
-        "core::result::contains_err_bool(failure, 7)",
+        "core::result::contains(success, false)",
+        "core::result::contains_err(failure, 7)",
     ] {
         let source = format!(
             "module app::main; import core::result; fn main() -> i32 {{\n\

@@ -1,6 +1,6 @@
 // Read a bounded unsigned count and print its factorial when it fits in u64.
 module app::main;
-import core::option_wide_u64;
+import core::option;
 import core::wide_u64;
 import core::wide_u64_checked;
 import std::io_byte;
@@ -12,11 +12,11 @@ fn main() -> i32 {
     let product: core::wide_u64::WideU64 = core::wide_u64::from_u32(1);
     let factor: u32 = 2;
     while (factor <= count) {
-        let candidate: core::option_wide_u64::OptionWideU64 =
+        let candidate: core::option::Option<core::wide_u64::WideU64> =
             core::wide_u64_checked::checked_mul(
                 product, core::wide_u64::from_u32(factor));
-        if (core::option_wide_u64::is_none(candidate)) { return 3; }
-        product = core::option_wide_u64::unwrap_or(candidate, core::wide_u64::zero());
+        if (core::option::is_none(candidate)) { return 3; }
+        product = core::option::unwrap_or(candidate, core::wide_u64::zero());
         factor += 1;
     }
     let digits: i32 = core::wide_u64::decimal_len(product) as i32;

@@ -1,12 +1,12 @@
 module app::main;
 import core::option;
-import core::result_bool;
+import core::result;
 
 fn main() -> i32 {
-    let ok_false: core::result_bool::ResultBool = core::result_bool::ok(false);
-    let ok_true: core::result_bool::ResultBool = core::result_bool::ok(true);
-    let err_false: core::result_bool::ResultBool = core::result_bool::err(false);
-    let err_true: core::result_bool::ResultBool = core::result_bool::err(true);
+    let ok_false: core::result::Result<bool, bool> = core::result::Ok(false);
+    let ok_true: core::result::Result<bool, bool> = core::result::Ok(true);
+    let err_false: core::result::Result<bool, bool> = core::result::Err(false);
+    let err_true: core::result::Result<bool, bool> = core::result::Err(true);
     if (!core::option::ok(ok_false).contains(false)) { return 1; }
     if (core::option::ok(ok_false).contains(true)) { return 2; }
     if (!core::option::ok(ok_true).contains(true)) { return 3; }
@@ -33,9 +33,7 @@ fn main() -> i32 {
     if (!core::option::ok(err_false).and(core::option::ok(ok_true)).is_none()) { return 24; }
     if (!core::option::ok(ok_false).xor(core::option::ok(ok_true)).is_none()) { return 25; }
     if (!core::option::ok(err_false).xor(core::option::ok(ok_false)).contains(false)) { return 26; }
-    if (!core::result_bool::contains(core::option::ok(ok_false).ok_or(true), false)) { return 27; }
-    if (!core::result_bool::contains_err(core::option::ok(err_false).ok_or(false), false)) { return 28; }
-    if (!core::option::ok(core::result_bool::ok(false)).contains(false)) { return 29; }
-    if (!core::option::err(core::result_bool::err(true)).contains(true)) { return 30; }
+    if (!core::result::contains(core::option::ok(ok_false).ok_or(true), false)) { return 27; }
+    if (!core::result::contains_err(core::option::ok(err_false).ok_or(false), false)) { return 28; }
     return 0;
 }

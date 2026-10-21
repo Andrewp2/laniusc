@@ -11,15 +11,15 @@ fn core_i32_checked_abs_type_checks_through_stdlib_root() {
 module app::main;
 
 import core::i32;
-import core::option_i32;
+import core::option;
 
 fn main() {
-    let positive: core::option_i32::OptionI32 = core::i32::checked_abs(7);
-    let negative: core::option_i32::OptionI32 = checked_abs(-7);
-    let min_value: core::option_i32::OptionI32 = core::i32::checked_abs(core::i32::MIN);
-    let positive_is_7: bool = core::option_i32::contains(positive, 7);
-    let negative_is_7: bool = core::option_i32::contains(negative, 7);
-    let min_is_none: bool = core::option_i32::is_none(min_value);
+    let positive: core::option::Option<i32> = core::i32::checked_abs(7);
+    let negative: core::option::Option<i32> = checked_abs(-7);
+    let min_value: core::option::Option<i32> = core::i32::checked_abs(core::i32::MIN);
+    let positive_is_7: bool = core::option::contains(positive, 7);
+    let negative_is_7: bool = core::option::contains(negative, 7);
+    let min_is_none: bool = core::option::is_none(min_value);
     if (!positive_is_7 || !negative_is_7 || !min_is_none) {
         return 1;
     }

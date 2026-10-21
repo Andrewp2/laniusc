@@ -2,7 +2,7 @@
 // convenience power and alignment helpers return zero on failure.
 module core::u16;
 import core::number_u16;
-import core::option_u16;
+import core::option;
 pub const MIN: u16 = 0;
 pub const MAX: u16 = 65535;
 pub const BITS: u32 = 16;
@@ -26,21 +26,21 @@ pub fn wrapping_sub(left: u16, right: u16) -> u16 {
 pub fn wrapping_mul(left: u16, right: u16) -> u16 {
     return core::number_u16::wrapping_mul(left, right);
 }
-pub fn checked_add(left: u16, right: u16) -> core::option_u16::OptionU16 {
+pub fn checked_add(left: u16, right: u16) -> core::option::Option<u16> {
     let wide_left: u32 = left as u32;
     let wide_right: u32 = right as u32;
     let sum: u32 = wide_left + wide_right;
     if (sum > 65535) {
-        return core::option_u16::none();
+        return core::option::None();
     }
     let narrowed: u16 = sum as u16;
-    return core::option_u16::some(narrowed);
+    return core::option::Some(narrowed);
 }
-pub fn checked_sub(left: u16, right: u16) -> core::option_u16::OptionU16 {
+pub fn checked_sub(left: u16, right: u16) -> core::option::Option<u16> {
     if (left < right) {
-        return core::option_u16::none();
+        return core::option::None();
     }
-    return core::option_u16::some(left - right);
+    return core::option::Some(left - right);
 }
 pub fn saturating_add(left: u16, right: u16) -> u16 {
     return core::number_u16::saturating_add(left, right);
@@ -82,12 +82,12 @@ pub fn is_power_of_two(value: u16) -> bool {
 pub fn next_power_of_two(value: u16) -> u16 {
     return core::number_u16::next_power_of_two(value);
 }
-pub fn checked_next_power_of_two(value: u16) -> core::option_u16::OptionU16 {
+pub fn checked_next_power_of_two(value: u16) -> core::option::Option<u16> {
     let next: u16 = core::number_u16::next_power_of_two(value);
     if (next == 0) {
-        return core::option_u16::none();
+        return core::option::None();
     }
-    return core::option_u16::some(next);
+    return core::option::Some(next);
 }
 pub fn is_aligned(value: u16, alignment: u16) -> bool {
     return core::number_u16::is_aligned(value, alignment);

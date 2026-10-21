@@ -91,12 +91,12 @@ fn option_bool_rejects_wrong_payload_and_receiver() {
         ),
         (
             "method_result",
-            "let value: core::option::Option<bool> = core::option::Some(false); let found: bool = core::result_bool::contains(value.or(value), false);",
+            "let value: core::option::Option<bool> = core::option::Some(false); let found: bool = core::result::contains(value.or(value), false);",
         ),
     ] {
         let entry = common::TempArtifact::new("laniusc_option_bool", name, Some("lani"));
         entry.write_str(&format!(
-            "module app::main;\nimport core::option;\nimport core::result_bool;\nfn main() -> i32 {{ {body} return 0; }}\n"
+            "module app::main;\nimport core::option;\nimport core::result;\nfn main() -> i32 {{ {body} return 0; }}\n"
         ));
         let path = entry.path().to_path_buf();
         let stdlib = root.join("stdlib");

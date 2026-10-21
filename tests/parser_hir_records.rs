@@ -4855,9 +4855,10 @@ fn parser_compact_hir_keeps_unqualified_callee_nested_in_qualified_call() {
 #[test]
 fn parser_source_pack_keeps_nested_stdlib_call_callees() {
     let parsed = parse_resident_source_pack(&[
+        include_str!("../stdlib/core/cmp.lani"),
+        include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/core/i32.lani"),
         include_str!("../stdlib/core/option.lani"),
-        include_str!("../stdlib/core/result_bool.lani"),
         include_str!("../stdlib/core/result.lani"),
     ]);
     let mut calls = 0usize;

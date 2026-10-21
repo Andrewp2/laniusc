@@ -34,7 +34,7 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load core i64 and option imports");
-    for relative_path in ["core/i64.lani", "core/option.lani", "core/result_bool.lani"] {
+    for relative_path in ["core/i64.lani", "core/option.lani", "core/result.lani"] {
         assert!(
             manifest
                 .files
@@ -98,7 +98,7 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load core i64 and option imports");
-    for relative_path in ["core/i64.lani", "core/option.lani", "core/result_bool.lani"] {
+    for relative_path in ["core/i64.lani", "core/option.lani", "core/result.lani"] {
         assert!(
             manifest
                 .files

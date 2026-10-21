@@ -4345,8 +4345,10 @@ fn main() {
         (
             "core::i32",
             &[
-                include_str!("../stdlib/core/result_i32.lani"),
-                include_str!("../stdlib/core/option_i32.lani"),
+                include_str!("../stdlib/core/cmp.lani"),
+                include_str!("../stdlib/core/panic.lani"),
+                include_str!("../stdlib/core/result.lani"),
+                include_str!("../stdlib/core/option.lani"),
                 include_str!("../stdlib/core/i32.lani"),
             ][..],
             r#"
@@ -4369,12 +4371,12 @@ fn main() {
         (
             "core::char+u32",
             &[
+                include_str!("../stdlib/core/cmp.lani"),
+                include_str!("../stdlib/core/panic.lani"),
                 include_str!("../stdlib/core/number_u32.lani"),
-                include_str!("../stdlib/core/result_u32.lani"),
-                include_str!("../stdlib/core/option_u32.lani"),
-                include_str!("../stdlib/core/mem.lani"),
-                include_str!("../stdlib/core/result_bool.lani"),
+                include_str!("../stdlib/core/result.lani"),
                 include_str!("../stdlib/core/option.lani"),
+                include_str!("../stdlib/core/mem.lani"),
                 include_str!("../stdlib/core/char.lani"),
                 include_str!("../stdlib/core/u32.lani"),
             ][..],
@@ -4399,11 +4401,10 @@ fn main() {
         (
             "core::u8+i64",
             &[
+                include_str!("../stdlib/core/cmp.lani"),
+                include_str!("../stdlib/core/panic.lani"),
                 include_str!("../stdlib/core/result.lani"),
-                include_str!("../stdlib/core/result_bool.lani"),
                 include_str!("../stdlib/core/option.lani"),
-                include_str!("../stdlib/core/result_u8.lani"),
-                include_str!("../stdlib/core/option_u8.lani"),
                 include_str!("../stdlib/core/byte.lani"),
                 include_str!("../stdlib/core/u8.lani"),
                 include_str!("../stdlib/core/i64.lani"),
@@ -4529,7 +4530,7 @@ fn type_checker_accepts_qualified_generic_type_associated_call() {
         include_str!("../stdlib/alloc/allocator.lani"),
         include_str!("../stdlib/core/cmp.lani"),
         include_str!("../stdlib/core/mem.lani"),
-        include_str!("../stdlib/core/result_bool.lani"),
+        include_str!("../stdlib/core/result.lani"),
         include_str!("../stdlib/core/option.lani"),
         include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/std/vec.lani"),
@@ -4709,6 +4710,8 @@ fn main() {
 fn type_checker_accepts_qualified_generic_option_and_result_calls() {
     assert_gpu_type_check_pack_accepts(&[
         include_str!("fixtures/stdlib_foundation/generic_option_type_check_contract.lani"),
+        include_str!("../stdlib/core/cmp.lani"),
+        include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/core/result.lani"),
         r#"
 module app::main;
@@ -4747,6 +4750,8 @@ fn main() {
 #[test]
 fn type_checker_accepts_qualified_generic_enum_instance_returns() {
     assert_gpu_type_check_pack_accepts(&[
+        include_str!("../stdlib/core/cmp.lani"),
+        include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/core/result.lani"),
         include_str!("fixtures/stdlib_foundation/generic_option_type_check_contract.lani"),
         r#"
@@ -4766,6 +4771,8 @@ fn main() {
 #[test]
 fn type_checker_rejects_qualified_generic_option_and_result_call_mismatches() {
     assert_gpu_type_check_pack_rejects(&[
+        include_str!("../stdlib/core/cmp.lani"),
+        include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/core/result.lani"),
         include_str!("fixtures/stdlib_foundation/generic_option_type_check_contract.lani"),
         r#"
@@ -4780,6 +4787,8 @@ fn main() {
 "#,
     ]);
     assert_gpu_type_check_pack_rejects(&[
+        include_str!("../stdlib/core/cmp.lani"),
+        include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/core/result.lani"),
         r#"
 module app::main;
@@ -4793,6 +4802,8 @@ fn main() {
 "#,
     ]);
     assert_gpu_type_check_pack_rejects(&[
+        include_str!("../stdlib/core/cmp.lani"),
+        include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/core/result.lani"),
         include_str!("fixtures/stdlib_foundation/generic_option_type_check_contract.lani"),
         r#"
@@ -4925,8 +4936,9 @@ fn main() {
 #[test]
 fn rejects_non_constructor_symbolic_enum_returns() {
     assert_gpu_type_check_pack_rejects(&[
+        include_str!("../stdlib/core/cmp.lani"),
+        include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/core/result.lani"),
-        include_str!("../stdlib/core/result_bool.lani"),
         include_str!("../stdlib/core/option.lani"),
         r#"
 module app::main;

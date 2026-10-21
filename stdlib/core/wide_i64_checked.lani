@@ -1,42 +1,42 @@
 // Checked arithmetic for portable two-word signed values. Overflow returns
 // None; it never relies on native i64 arithmetic.
 module core::wide_i64_checked;
-import core::option_wide_i64;
+import core::option;
 import core::wide_i64;
 import core::wide_u64;
 
 pub fn checked_add(
     left: core::wide_i64::WideI64, right: core::wide_i64::WideI64
-) -> core::option_wide_i64::OptionWideI64 {
+) -> core::option::Option<core::wide_i64::WideI64> {
     let sum: core::wide_i64::WideI64 = core::wide_i64::wrapping_add(left, right);
     if (core::wide_i64::is_negative(left) == core::wide_i64::is_negative(right) &&
         core::wide_i64::is_negative(sum) != core::wide_i64::is_negative(left)) {
-        return core::option_wide_i64::none();
+        return core::option::None();
     }
-    return core::option_wide_i64::some(sum);
+    return core::option::Some(sum);
 }
 
 pub fn checked_sub(
     left: core::wide_i64::WideI64, right: core::wide_i64::WideI64
-) -> core::option_wide_i64::OptionWideI64 {
+) -> core::option::Option<core::wide_i64::WideI64> {
     let difference: core::wide_i64::WideI64 = core::wide_i64::wrapping_sub(left, right);
     if (core::wide_i64::is_negative(left) != core::wide_i64::is_negative(right) &&
         core::wide_i64::is_negative(difference) != core::wide_i64::is_negative(left)) {
-        return core::option_wide_i64::none();
+        return core::option::None();
     }
-    return core::option_wide_i64::some(difference);
+    return core::option::Some(difference);
 }
 
-pub fn checked_neg(value: core::wide_i64::WideI64) -> core::option_wide_i64::OptionWideI64 {
+pub fn checked_neg(value: core::wide_i64::WideI64) -> core::option::Option<core::wide_i64::WideI64> {
     if (core::wide_i64::eq(value, core::wide_i64::min_value())) {
-        return core::option_wide_i64::none();
+        return core::option::None();
     }
-    return core::option_wide_i64::some(core::wide_i64::wrapping_neg(value));
+    return core::option::Some(core::wide_i64::wrapping_neg(value));
 }
 
-pub fn checked_abs(value: core::wide_i64::WideI64) -> core::option_wide_i64::OptionWideI64 {
+pub fn checked_abs(value: core::wide_i64::WideI64) -> core::option::Option<core::wide_i64::WideI64> {
     if (core::wide_i64::is_negative(value)) { return checked_neg(value); }
-    return core::option_wide_i64::some(value);
+    return core::option::Some(value);
 }
 
 fn unsigned_magnitude(value: core::wide_i64::WideI64) -> core::wide_u64::WideU64 {
@@ -50,9 +50,9 @@ fn unsigned_magnitude(value: core::wide_i64::WideI64) -> core::wide_u64::WideU64
 
 pub fn checked_mul(
     left: core::wide_i64::WideI64, right: core::wide_i64::WideI64
-) -> core::option_wide_i64::OptionWideI64 {
+) -> core::option::Option<core::wide_i64::WideI64> {
     if (core::wide_i64::is_zero(left) || core::wide_i64::is_zero(right)) {
-        return core::option_wide_i64::some(core::wide_i64::zero());
+        return core::option::Some(core::wide_i64::zero());
     }
     let negative: bool =
         core::wide_i64::is_negative(left) != core::wide_i64::is_negative(right);
@@ -64,64 +64,64 @@ pub fn checked_mul(
     let bound: core::wide_u64::WideU64 = core::wide_u64::divide_or(
         limit, left_magnitude, core::wide_u64::zero());
     if (core::wide_u64::compare(right_magnitude, bound) > 0) {
-        return core::option_wide_i64::none();
+        return core::option::None();
     }
-    return core::option_wide_i64::some(core::wide_i64::wrapping_mul(left, right));
+    return core::option::Some(core::wide_i64::wrapping_mul(left, right));
 }
 
 pub fn checked_div(
     left: core::wide_i64::WideI64, right: core::wide_i64::WideI64
-) -> core::option_wide_i64::OptionWideI64 {
+) -> core::option::Option<core::wide_i64::WideI64> {
     if (core::wide_i64::is_zero(right) ||
         (core::wide_i64::eq(left, core::wide_i64::min_value()) &&
          core::wide_i64::eq(right, core::wide_i64::from_i32(-1)))) {
-        return core::option_wide_i64::none();
+        return core::option::None();
     }
-    return core::option_wide_i64::some(
+    return core::option::Some(
         core::wide_i64::divide_or(left, right, core::wide_i64::zero()));
 }
 
 pub fn checked_rem(
     left: core::wide_i64::WideI64, right: core::wide_i64::WideI64
-) -> core::option_wide_i64::OptionWideI64 {
+) -> core::option::Option<core::wide_i64::WideI64> {
     if (core::wide_i64::is_zero(right) ||
         (core::wide_i64::eq(left, core::wide_i64::min_value()) &&
          core::wide_i64::eq(right, core::wide_i64::from_i32(-1)))) {
-        return core::option_wide_i64::none();
+        return core::option::None();
     }
-    return core::option_wide_i64::some(
+    return core::option::Some(
         core::wide_i64::remainder_or(left, right, core::wide_i64::zero()));
 }
 
 // Exponentiation by squaring. 0^0 is one; unrepresentable products are None.
 pub fn checked_pow(
     base: core::wide_i64::WideI64, exponent: u32
-) -> core::option_wide_i64::OptionWideI64 {
+) -> core::option::Option<core::wide_i64::WideI64> {
     let result: core::wide_i64::WideI64 = core::wide_i64::from_i32(1);
     let factor: core::wide_i64::WideI64 = base;
     let remaining: u32 = exponent;
     while (remaining > 0) {
         if ((remaining & 1) != 0) {
-            let product: core::option_wide_i64::OptionWideI64 = checked_mul(result, factor);
-            if (core::option_wide_i64::is_none(product)) { return product; }
-            result = core::option_wide_i64::unwrap_or(product, core::wide_i64::zero());
+            let product: core::option::Option<core::wide_i64::WideI64> = checked_mul(result, factor);
+            if (core::option::is_none(product)) { return product; }
+            result = core::option::unwrap_or(product, core::wide_i64::zero());
         }
         remaining = remaining >> 1;
         if (remaining > 0) {
-            let squared: core::option_wide_i64::OptionWideI64 = checked_mul(factor, factor);
-            if (core::option_wide_i64::is_none(squared)) { return squared; }
-            factor = core::option_wide_i64::unwrap_or(squared, core::wide_i64::zero());
+            let squared: core::option::Option<core::wide_i64::WideI64> = checked_mul(factor, factor);
+            if (core::option::is_none(squared)) { return squared; }
+            factor = core::option::unwrap_or(squared, core::wide_i64::zero());
         }
     }
-    return core::option_wide_i64::some(result);
+    return core::option::Some(result);
 }
 
 pub fn saturating_mul(
     left: core::wide_i64::WideI64, right: core::wide_i64::WideI64
 ) -> core::wide_i64::WideI64 {
-    let product: core::option_wide_i64::OptionWideI64 = checked_mul(left, right);
-    if (core::option_wide_i64::is_some(product)) {
-        return core::option_wide_i64::unwrap_or(product, core::wide_i64::zero());
+    let product: core::option::Option<core::wide_i64::WideI64> = checked_mul(left, right);
+    if (core::option::is_some(product)) {
+        return core::option::unwrap_or(product, core::wide_i64::zero());
     }
     if (core::wide_i64::is_negative(left) != core::wide_i64::is_negative(right)) {
         return core::wide_i64::min_value();
@@ -130,11 +130,11 @@ pub fn saturating_mul(
 }
 
 pub fn saturating_neg(value: core::wide_i64::WideI64) -> core::wide_i64::WideI64 {
-    return core::option_wide_i64::unwrap_or(
+    return core::option::unwrap_or(
         checked_neg(value), core::wide_i64::max_value());
 }
 
 pub fn saturating_abs(value: core::wide_i64::WideI64) -> core::wide_i64::WideI64 {
-    return core::option_wide_i64::unwrap_or(
+    return core::option::unwrap_or(
         checked_abs(value), core::wide_i64::max_value());
 }

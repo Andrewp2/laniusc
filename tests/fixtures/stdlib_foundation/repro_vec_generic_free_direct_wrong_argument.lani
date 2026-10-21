@@ -1,7 +1,7 @@
 module app::main;
 import std::vec;
-import core::option_i32;
+import core::option;
 
 fn main() -> i32 {
-    return std::vec::len(core::option_i32::some(7));
+    return std::vec::len(core::option::Some(7));
 }

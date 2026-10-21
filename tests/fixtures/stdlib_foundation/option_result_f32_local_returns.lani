@@ -1,26 +1,26 @@
 module app::main;
-import core::option_f32;
-import core::result_f32;
+import core::option;
+import core::result;
 
-fn optional(keep: bool, value: f32) -> core::option_f32::OptionF32 {
-    if (keep) { return core::option_f32::some(value); }
-    return core::option_f32::none();
+fn optional(keep: bool, value: f32) -> core::option::Option<f32> {
+    if (keep) { return core::option::Some(value); }
+    return core::option::None();
 }
 
-fn result(succeed: bool, value: f32) -> core::result_f32::ResultF32 {
-    if (succeed) { return core::result_f32::ok(value); }
-    return core::result_f32::err(value);
+fn result(succeed: bool, value: f32) -> core::result::Result<f32, f32> {
+    if (succeed) { return core::result::Ok(value); }
+    return core::result::Err(value);
 }
 
 fn main() -> i32 {
-    let some: core::option_f32::OptionF32 = optional(true, -2.5);
-    let none: core::option_f32::OptionF32 = optional(false, 7.5);
-    if (!core::option_f32::contains(some, -2.5)) { return 1; }
-    if (!core::option_f32::is_none(none)) { return 2; }
+    let some: core::option::Option<f32> = optional(true, -2.5);
+    let none: core::option::Option<f32> = optional(false, 7.5);
+    if (!core::option::contains(some, -2.5)) { return 1; }
+    if (!core::option::is_none(none)) { return 2; }
 
-    let success_value: core::result_f32::ResultF32 = result(true, 0.0);
-    let error_value: core::result_f32::ResultF32 = result(false, 3.5);
-    if (!core::result_f32::contains(success_value, 0.0)) { return 3; }
-    if (!core::result_f32::contains_err(error_value, 3.5)) { return 4; }
+    let success_value: core::result::Result<f32, f32> = result(true, 0.0);
+    let error_value: core::result::Result<f32, f32> = result(false, 3.5);
+    if (!core::result::contains(success_value, 0.0)) { return 3; }
+    if (!core::result::contains_err(error_value, 3.5)) { return 4; }
     return 0;
 }

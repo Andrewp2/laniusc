@@ -42,12 +42,19 @@ fn imported_option_predicates_execute_across_scalar_payloads() {
 #[test]
 fn option_predicate_bodies_execute_with_multiword_payloads() {
     // Use the actual stdlib free and method predicates in one compilation unit.
-    let definitions = include_str!("../stdlib/core/option.lani")
-        .split("pub fn contains_i32")
+    // The enum, its free predicates and its predicate methods: everything
+    // before contains, without the imports the later functions need.
+    let option = include_str!("../stdlib/core/option.lani");
+    let free = option.split("pub fn contains<T>").next().unwrap();
+    let methods = option[option.find("pub impl<T> Option<T> {").unwrap()..]
+        .split("    pub fn contains(")
         .next()
-        .unwrap()
+        .unwrap();
+    let definitions = format!("{free}{methods}}}\n")
         .replace("module core::option;", "module app::main;")
-        .replace("import core::result_bool;", "");
+        .replace("import core::cmp;", "")
+        .replace("import core::panic;", "")
+        .replace("import core::result;", "");
     let entry = include_str!("fixtures/stdlib_foundation/option_generic_predicates.lani")
         .replace("module app::main;", "")
         .replace("import core::option;", "")
@@ -72,13 +79,14 @@ fn option_predicate_bodies_execute_with_multiword_payloads() {
 
 #[test]
 fn result_predicate_bodies_execute_with_two_generic_payloads() {
-    // The complete result module still has unresolved generic payload bodies;
-    // this isolates its actual two tag predicates without changing that claim.
+    // The result module's enum and its two tag predicates, in one unit.
     let definitions = include_str!("../stdlib/core/result.lani")
-        .split("pub fn contains_i32")
+        .split("pub fn contains<T, E>")
         .next()
         .unwrap()
-        .replace("module core::result;", "module app::main;");
+        .replace("module core::result;", "module app::main;")
+        .replace("import core::cmp;", "")
+        .replace("import core::panic;", "");
     let source = format!(
         r#"{definitions}
 struct Pair {{ first: i32, second: i32 }}

@@ -8777,10 +8777,9 @@ fn record_context_stdlib() -> ReceiverTestStdlib {
             include_str!("fixtures/stdlib_foundation/repro_record_context_imported_module.lani"),
         ),
         ("option", include_str!("../stdlib/core/option.lani")),
-        (
-            "result_bool",
-            include_str!("../stdlib/core/result_bool.lani"),
-        ),
+        ("cmp", include_str!("../stdlib/core/cmp.lani")),
+        ("panic", include_str!("../stdlib/core/panic.lani")),
+        ("result", include_str!("../stdlib/core/result.lani")),
     ] {
         std::fs::write(root.0.path().join(format!("core/{name}.lani")), source)
             .expect("record context module");

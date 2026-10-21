@@ -1,6 +1,6 @@
 module app::main;
 import core::option;
-import core::result_bool;
+import core::result;
 
 fn state(value: core::option::Option<bool>) -> i32 {
     let present: bool = match (value) {
@@ -21,8 +21,8 @@ fn check_value(value: core::option::Option<bool>, expected: i32) -> bool {
     if (value.contains(false) != (expected == 1) || value.contains(true) != (expected == 2)) { return false; }
     if (value.unwrap_or(false) != (expected == 2) ||
         value.unwrap_or(true) != (expected != 1)) { return false; }
-    let no_error: core::result_bool::ResultBool = value.ok_or(false);
-    let yes_error: core::result_bool::ResultBool = value.ok_or(true);
+    let no_error: core::result::Result<bool, bool> = value.ok_or(false);
+    let yes_error: core::result::Result<bool, bool> = value.ok_or(true);
     if (no_error.is_ok() != (expected != 0) || yes_error.is_err() != (expected == 0)) { return false; }
     if (expected == 0) {
         if (!no_error.contains_err(false) || !yes_error.contains_err(true)) { return false; }
@@ -62,10 +62,10 @@ fn main() -> i32 {
     if (!absent.or(no_value).contains(false) || !yes.and(absent).is_none() ||
         !yes.xor(absent).or(no_value).contains(true) || !no_value.ok_or(true).contains(false)) { return 3; }
 
-    let true_ok: core::result_bool::ResultBool = core::result_bool::ok(true);
-    let false_ok: core::result_bool::ResultBool = core::result_bool::ok(false);
-    let true_error: core::result_bool::ResultBool = core::result_bool::err(true);
-    let false_error: core::result_bool::ResultBool = core::result_bool::err(false);
+    let true_ok: core::result::Result<bool, bool> = core::result::Ok(true);
+    let false_ok: core::result::Result<bool, bool> = core::result::Ok(false);
+    let true_error: core::result::Result<bool, bool> = core::result::Err(true);
+    let false_error: core::result::Result<bool, bool> = core::result::Err(false);
     let from_true_ok: core::option::Option<bool> = core::option::ok(true_ok);
     let from_false_ok: core::option::Option<bool> = core::option::ok(false_ok);
     let from_true_error: core::option::Option<bool> = core::option::ok(true_error);
@@ -88,11 +88,11 @@ fn main() -> i32 {
     let no_signed: core::option::Option<i32> = core::option::None();
     let no_unsigned: core::option::Option<u32> = core::option::None();
     let no_byte: core::option::Option<u8> = core::option::None();
-    if (!core::option::contains_i32(signed, -2147483648) || core::option::contains_i32(signed, 0) ||
-        core::option::contains_i32(no_signed, 0) ||
-        !core::option::contains_u32(unsigned, 4294967295) || core::option::contains_u32(unsigned, 0) ||
-        core::option::contains_u32(no_unsigned, 0) ||
-        !core::option::contains_u8(byte, byte_max) || core::option::contains_u8(byte, byte_zero) ||
-        core::option::contains_u8(no_byte, byte_zero)) { return 5; }
+    if (!core::option::contains(signed, -2147483648) || core::option::contains(signed, 0) ||
+        core::option::contains(no_signed, 0) ||
+        !core::option::contains(unsigned, 4294967295) || core::option::contains(unsigned, 0) ||
+        core::option::contains(no_unsigned, 0) ||
+        !core::option::contains(byte, byte_max) || core::option::contains(byte, byte_zero) ||
+        core::option::contains(no_byte, byte_zero)) { return 5; }
     return 0;
 }

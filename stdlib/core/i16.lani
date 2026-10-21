@@ -3,7 +3,7 @@
 module core::i16;
 
 import core::number_i16;
-import core::option_i16;
+import core::option;
 
 pub const MIN: i16 = -32768;
 pub const MAX: i16 = 32767;
@@ -19,11 +19,11 @@ pub fn saturating_abs(value: i16) -> i16 {
     return core::number_i16::saturating_abs(value);
 }
 
-pub fn checked_abs(value: i16) -> core::option_i16::OptionI16 {
+pub fn checked_abs(value: i16) -> core::option::Option<i16> {
     if (value == MIN) {
-        return core::option_i16::none();
+        return core::option::None();
     }
-    return core::option_i16::some(abs(value));
+    return core::option::Some(abs(value));
 }
 
 pub fn min(left: i16, right: i16) -> i16 {
@@ -105,30 +105,30 @@ pub fn wrapping_mul(left: i16, right: i16) -> i16 {
     return core::number_i16::wrapping_mul(left, right);
 }
 
-pub fn checked_add(left: i16, right: i16) -> core::option_i16::OptionI16 {
+pub fn checked_add(left: i16, right: i16) -> core::option::Option<i16> {
     let wide_left: i32 = left as i32;
     let wide_right: i32 = right as i32;
     let sum: i32 = wide_left + wide_right;
     if (sum < -32768 || sum > 32767) {
-        return core::option_i16::none();
+        return core::option::None();
     }
     let narrowed: i16 = sum as i16;
-    return core::option_i16::some(narrowed);
+    return core::option::Some(narrowed);
 }
 
 pub fn saturating_add(left: i16, right: i16) -> i16 {
     return core::number_i16::saturating_add(left, right);
 }
 
-pub fn checked_sub(left: i16, right: i16) -> core::option_i16::OptionI16 {
+pub fn checked_sub(left: i16, right: i16) -> core::option::Option<i16> {
     let wide_left: i32 = left as i32;
     let wide_right: i32 = right as i32;
     let difference: i32 = wide_left - wide_right;
     if (difference < -32768 || difference > 32767) {
-        return core::option_i16::none();
+        return core::option::None();
     }
     let narrowed: i16 = difference as i16;
-    return core::option_i16::some(narrowed);
+    return core::option::Some(narrowed);
 }
 
 pub fn saturating_sub(left: i16, right: i16) -> i16 {

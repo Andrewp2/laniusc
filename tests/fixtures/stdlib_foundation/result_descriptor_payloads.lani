@@ -34,10 +34,10 @@ fn main() -> i32 {
     if (backing[1] != 55 || view[1] != 55) { return 5; }
     let scalar_success: core::result::Result<i32, [i32]> = core::result::Ok(-7);
     let borrowed_error: core::result::Result<i32, [i32]> = core::result::Err(view);
-    if (!core::result::contains_i32(scalar_success, -7) || core::result::contains_i32(borrowed_error, -7)) { return 10; }
+    if (!core::result::contains(scalar_success, -7) || core::result::contains(borrowed_error, -7)) { return 10; }
     let borrowed_success: core::result::Result<[i32], i32> = core::result::Ok(view);
     let scalar_error: core::result::Result<[i32], i32> = core::result::Err(-2147483648);
-    if (!core::result::contains_err_i32(scalar_error, -2147483648) || core::result::contains_err_i32(borrowed_success, -2147483648)) { return 11; }
+    if (!core::result::contains_err(scalar_error, -2147483648) || core::result::contains_err(borrowed_success, -2147483648)) { return 11; }
     let message: str = match (failure) { core::result::Ok(cells) -> "wrong", core::result::Err(text) -> text };
     if (std::io::println(message) != 9) { return 6; }
 

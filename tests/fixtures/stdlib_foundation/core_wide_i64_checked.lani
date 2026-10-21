@@ -1,13 +1,13 @@
 module app::main;
-import core::option_wide_i64;
+import core::option;
 import core::wide_i64;
 import core::wide_i64_checked;
 
 fn has_value(
-    value: core::option_wide_i64::OptionWideI64,
+    value: core::option::Option<core::wide_i64::WideI64>,
     expected: core::wide_i64::WideI64
 ) -> bool {
-    return core::option_wide_i64::contains(value, expected);
+    return core::option::contains(value, expected);
 }
 
 fn main() -> i32 {
@@ -24,44 +24,44 @@ fn main() -> i32 {
     if (!has_value(core::wide_i64_checked::checked_add(ten, minus_two),
             core::wide_i64::from_i32(8)) ||
         !has_value(core::wide_i64_checked::checked_add(maximum, minimum), minus_one) ||
-        !core::option_wide_i64::is_none(
+        !core::option::is_none(
             core::wide_i64_checked::checked_add(maximum, one)) ||
-        !core::option_wide_i64::is_none(
+        !core::option::is_none(
             core::wide_i64_checked::checked_add(minimum, minus_one))) { return 1; }
     if (!has_value(core::wide_i64_checked::checked_sub(ten, three),
             core::wide_i64::from_i32(7)) ||
         !has_value(core::wide_i64_checked::checked_sub(minimum, minimum), zero) ||
-        !core::option_wide_i64::is_none(
+        !core::option::is_none(
             core::wide_i64_checked::checked_sub(maximum, minus_one)) ||
-        !core::option_wide_i64::is_none(
+        !core::option::is_none(
             core::wide_i64_checked::checked_sub(minimum, one))) { return 2; }
     if (!has_value(core::wide_i64_checked::checked_neg(minus_two), two) ||
         !has_value(core::wide_i64_checked::checked_neg(zero), zero) ||
-        !core::option_wide_i64::is_none(
+        !core::option::is_none(
             core::wide_i64_checked::checked_neg(minimum)) ||
         !has_value(core::wide_i64_checked::checked_abs(minus_two), two) ||
         !has_value(core::wide_i64_checked::checked_abs(maximum), maximum) ||
-        !core::option_wide_i64::is_none(
+        !core::option::is_none(
             core::wide_i64_checked::checked_abs(minimum))) { return 3; }
     if (!has_value(core::wide_i64_checked::checked_mul(high, minus_two),
             core::wide_i64::from_words(4294967294, 0)) ||
         !has_value(core::wide_i64_checked::checked_mul(minimum, one), minimum) ||
         !has_value(core::wide_i64_checked::checked_mul(minimum, zero), zero) ||
-        !core::option_wide_i64::is_none(
+        !core::option::is_none(
             core::wide_i64_checked::checked_mul(maximum, two)) ||
-        !core::option_wide_i64::is_none(
+        !core::option::is_none(
             core::wide_i64_checked::checked_mul(minimum, minus_one))) { return 4; }
     let minus_ten: core::wide_i64::WideI64 = core::wide_i64::from_i32(-10);
     if (!has_value(core::wide_i64_checked::checked_div(minus_ten, three),
             core::wide_i64::from_i32(-3)) ||
         !has_value(core::wide_i64_checked::checked_rem(minus_ten, three), minus_one) ||
-        !core::option_wide_i64::is_none(
+        !core::option::is_none(
             core::wide_i64_checked::checked_div(ten, zero)) ||
-        !core::option_wide_i64::is_none(
+        !core::option::is_none(
             core::wide_i64_checked::checked_rem(ten, zero)) ||
-        !core::option_wide_i64::is_none(
+        !core::option::is_none(
             core::wide_i64_checked::checked_div(minimum, minus_one)) ||
-        !core::option_wide_i64::is_none(
+        !core::option::is_none(
             core::wide_i64_checked::checked_rem(minimum, minus_one))) { return 5; }
     if (!has_value(core::wide_i64_checked::checked_pow(minus_two, 3),
             core::wide_i64::from_i32(-8)) ||
@@ -69,7 +69,7 @@ fn main() -> i32 {
             core::wide_i64::from_i32(4)) ||
         !has_value(core::wide_i64_checked::checked_pow(minus_two, 63), minimum) ||
         !has_value(core::wide_i64_checked::checked_pow(zero, 0), one) ||
-        !core::option_wide_i64::is_none(
+        !core::option::is_none(
             core::wide_i64_checked::checked_pow(minus_two, 64))) { return 6; }
     if (!core::wide_i64::eq(
             core::wide_i64_checked::saturating_mul(maximum, two), maximum) ||

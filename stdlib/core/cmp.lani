@@ -174,3 +174,16 @@ pub impl Ord<usize> for usize {
     pub fn gt(left: usize, right: usize) -> bool { return left > right; }
     pub fn ge(left: usize, right: usize) -> bool { return left >= right; }
 }
+
+// IEEE equality: NaN equals nothing, itself included, and 0.0 equals -0.0.
+// f32 has no Ord impl because NaN leaves it without a total order.
+pub impl Eq<f32> for f32 {
+    pub fn eq(left: f32, right: f32) -> bool { return left == right; }
+    pub fn ne(left: f32, right: f32) -> bool { return left != right; }
+}
+
+// Address equality.
+pub impl Eq<ptr> for ptr {
+    pub fn eq(left: ptr, right: ptr) -> bool { return left == right; }
+    pub fn ne(left: ptr, right: ptr) -> bool { return left != right; }
+}

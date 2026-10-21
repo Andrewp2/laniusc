@@ -1,13 +1,13 @@
 module app::main;
 
-import core::option_i32;
-import core::result_i32;
+import core::option;
+import core::result;
 
 fn main() {
-    let some: core::option_i32::OptionI32 = core::option_i32::some(7);
-    let none: core::option_i32::OptionI32 = core::option_i32::none();
-    let successful: core::result_i32::ResultI32 = core::result_i32::ok(9);
-    let failed: core::result_i32::ResultI32 = core::result_i32::err(4);
+    let some: core::option::Option<i32> = core::option::Some(7);
+    let none: core::option::Option<i32> = core::option::None();
+    let successful: core::result::Result<i32, i32> = core::result::Ok(9);
+    let failed: core::result::Result<i32, i32> = core::result::Err(4);
 
     let total: i32 = 0;
     if (some.is_some()) {
@@ -22,7 +22,7 @@ fn main() {
     if (failed.is_err()) {
         total += failed.unwrap_or(6);
     }
-    total += none.or(core::option_i32::some(11)).unwrap_or(0);
+    total += none.or(core::option::Some(11)).unwrap_or(0);
 
     print(total);
     return 0;

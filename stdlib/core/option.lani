@@ -1,11 +1,13 @@
-// Optional values use one generic enum. A stored false is Some(false), not None.
-// Tag predicates inspect the discriminant without reading the payload.
-// Concrete borrowed slice payloads preserve their descriptor and aliasing.
-// Generic payload operations specialize on the resident native path. Tested
-// extraction also preserves records and views; see docs/stdlib-option.md.
+// Optional values. A stored false is Some(false), not None. Every operation
+// takes the option by value and leaves the caller's copy unchanged. Each one
+// exists as a free function and as a method. contains needs Eq on the
+// payload. unwrap panics on None; unwrap_or takes an explicit fallback and
+// never panics. See docs/stdlib-option.md.
 module core::option;
 
-import core::result_bool;
+import core::cmp;
+import core::panic;
+import core::result;
 
 pub enum Option<T> {
     Some(T),
@@ -20,7 +22,14 @@ pub fn is_none<T>(value: Option<T>) -> bool {
     return match (value) { Some(_) -> false, None -> true };
 }
 
-// None returns the explicit fallback; this operation never panics.
+pub fn contains<T>(value: Option<T>, expected: T) -> bool where T: core::cmp::Eq<T> {
+    return match (value) { Some(inner) -> T::eq(inner, expected), None -> false };
+}
+
+pub fn unwrap<T>(value: Option<T>) -> T {
+    return match (value) { Some(inner) -> inner, None -> core::panic::panic() };
+}
+
 pub fn unwrap_or<T>(value: Option<T>, fallback: T) -> T {
     return match (value) { Some(inner) -> inner, None -> fallback };
 }
@@ -35,6 +44,7 @@ pub fn and<T>(value: Option<T>, next: Option<T>) -> Option<T> {
     return value;
 }
 
+// Exactly one present value survives; two or none give None.
 pub fn xor<T>(value: Option<T>, right: Option<T>) -> Option<T> {
     if (is_some(value)) {
         if (is_some(right)) {
@@ -52,6 +62,25 @@ pub fn flatten<T>(value: Option<Option<T>>) -> Option<T> {
     return match (value) { Some(inner) -> inner, None -> absent };
 }
 
+pub fn ok_or<T, E>(value: Option<T>, error: E) -> core::result::Result<T, E> {
+    return match (value) {
+        Some(inner) -> core::result::Ok(inner),
+        None -> core::result::Err(error),
+    };
+}
+
+// The success value of a result, or None for an error.
+pub fn ok<T, E>(value: core::result::Result<T, E>) -> Option<T> {
+    let absent: Option<T> = None();
+    return match (value) { Ok(inner) -> Some(inner), Err(_) -> absent };
+}
+
+// The error of a result, or None for a success.
+pub fn err<T, E>(value: core::result::Result<T, E>) -> Option<E> {
+    let absent: Option<E> = None();
+    return match (value) { Ok(_) -> absent, Err(error) -> Some(error) };
+}
+
 pub impl<T> Option<T> {
     pub fn is_some(self) -> bool {
         return match (self) { Some(_) -> true, None -> false };
@@ -61,7 +90,14 @@ pub impl<T> Option<T> {
         return match (self) { Some(_) -> false, None -> true };
     }
 
-    // Value receivers copy the enum, preserving inputs and requiring explicit fallbacks.
+    pub fn contains(self, expected: T) -> bool where T: core::cmp::Eq<T> {
+        return match (self) { Some(inner) -> T::eq(inner, expected), None -> false };
+    }
+
+    pub fn unwrap(self) -> T {
+        return match (self) { Some(inner) -> inner, None -> core::panic::panic() };
+    }
+
     pub fn unwrap_or(self, fallback: T) -> T {
         return match (self) { Some(inner) -> inner, None -> fallback };
     }
@@ -87,84 +123,11 @@ pub impl<T> Option<T> {
         }
         return self;
     }
-}
 
-pub fn contains_i32(value: Option<i32>, expected: i32) -> bool {
-    return match (value) {
-        Some(inner) -> inner == expected,
-        None -> false,
-    };
-}
-
-pub fn contains_u32(value: Option<u32>, expected: u32) -> bool {
-    return match (value) {
-        Some(inner) -> inner == expected,
-        None -> false,
-    };
-}
-
-pub fn contains_u8(value: Option<u8>, expected: u8) -> bool {
-    return match (value) {
-        Some(inner) -> inner == expected,
-        None -> false,
-    };
-}
-
-// These conversions accept the executable concrete ResultBool representation.
-// Generic Result<T, E> conversion remains a compiler dependency.
-pub fn ok(value: core::result_bool::ResultBool) -> Option<bool> {
-    if (core::result_bool::is_ok(value)) {
-        let present: Option<bool> = Some(core::result_bool::unwrap_or(value, false));
-        return present;
-    }
-    let absent: Option<bool> = None();
-    return absent;
-}
-
-pub fn err(value: core::result_bool::ResultBool) -> Option<bool> {
-    if (core::result_bool::is_err(value)) {
-        let present: Option<bool> = Some(core::result_bool::unwrap_err_or(value, false));
-        return present;
-    }
-    let absent: Option<bool> = None();
-    return absent;
-}
-
-// Equality uses concrete scalar bodies until generic trait calls execute.
-pub impl Option<bool> {
-    pub fn contains(self, expected: bool) -> bool {
-        return match (self) { Some(inner) -> inner == expected, None -> false };
-    }
-
-    pub fn ok_or(self, error: bool) -> core::result_bool::ResultBool {
+    pub fn ok_or<E>(self, error: E) -> core::result::Result<T, E> {
         return match (self) {
-            Some(inner) -> core::result_bool::ok(inner),
-            None -> core::result_bool::err(error),
+            Some(inner) -> core::result::Ok(inner),
+            None -> core::result::Err(error),
         };
-    }
-}
-
-pub impl Option<i32> {
-    pub fn contains(self, expected: i32) -> bool {
-        return match (self) { Some(inner) -> inner == expected, None -> false };
-    }
-}
-
-// Unsigned widths currently share an identity; this comparison does not narrow.
-pub impl Option<u32> {
-    pub fn contains(self, expected: u32) -> bool {
-        return match (self) { Some(inner) -> inner == expected, None -> false };
-    }
-}
-
-pub impl Option<f32> {
-    pub fn contains(self, expected: f32) -> bool {
-        return match (self) { Some(inner) -> inner == expected, None -> false };
-    }
-}
-
-pub impl Option<char> {
-    pub fn contains(self, expected: char) -> bool {
-        return match (self) { Some(inner) -> inner == expected, None -> false };
     }
 }

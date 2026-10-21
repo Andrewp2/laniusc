@@ -2,7 +2,7 @@
 
 module core::i32;
 
-import core::option_i32;
+import core::option;
 
 pub const MIN: i32 = -2147483648;
 pub const MAX: i32 = 2147483647;
@@ -29,12 +29,12 @@ pub fn saturating_abs(value: i32) -> i32 {
     }
 }
 
-pub fn checked_abs(value: i32) -> core::option_i32::OptionI32 {
+pub fn checked_abs(value: i32) -> core::option::Option<i32> {
     if (value == MIN) {
-        let overflow: core::option_i32::OptionI32 = core::option_i32::none();
+        let overflow: core::option::Option<i32> = core::option::None();
         return overflow;
     } else {
-        let absolute: core::option_i32::OptionI32 = core::option_i32::some(abs(value));
+        let absolute: core::option::Option<i32> = core::option::Some(abs(value));
         return absolute;
     }
 }
@@ -147,16 +147,16 @@ pub fn wrapping_mul(left: i32, right: i32) -> i32 {
     return left * right;
 }
 
-pub fn checked_add(left: i32, right: i32) -> core::option_i32::OptionI32 {
+pub fn checked_add(left: i32, right: i32) -> core::option::Option<i32> {
     if (right > 0 && left > MAX - right) {
-        let overflow: core::option_i32::OptionI32 = core::option_i32::none();
+        let overflow: core::option::Option<i32> = core::option::None();
         return overflow;
     } else {
         if (right < 0 && left < MIN - right) {
-            let overflow: core::option_i32::OptionI32 = core::option_i32::none();
+            let overflow: core::option::Option<i32> = core::option::None();
             return overflow;
         } else {
-            let sum: core::option_i32::OptionI32 = core::option_i32::some(left + right);
+            let sum: core::option::Option<i32> = core::option::Some(left + right);
             return sum;
         }
     }
@@ -174,16 +174,16 @@ pub fn saturating_add(left: i32, right: i32) -> i32 {
     }
 }
 
-pub fn checked_sub(left: i32, right: i32) -> core::option_i32::OptionI32 {
+pub fn checked_sub(left: i32, right: i32) -> core::option::Option<i32> {
     if (right < 0 && left > MAX + right) {
-        let overflow: core::option_i32::OptionI32 = core::option_i32::none();
+        let overflow: core::option::Option<i32> = core::option::None();
         return overflow;
     } else {
         if (right > 0 && left < MIN + right) {
-            let underflow: core::option_i32::OptionI32 = core::option_i32::none();
+            let underflow: core::option::Option<i32> = core::option::None();
             return underflow;
         } else {
-            let diff: core::option_i32::OptionI32 = core::option_i32::some(left - right);
+            let diff: core::option::Option<i32> = core::option::Some(left - right);
             return diff;
         }
     }

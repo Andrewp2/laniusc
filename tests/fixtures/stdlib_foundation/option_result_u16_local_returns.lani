@@ -1,26 +1,26 @@
 module app::main;
-import core::option_u16;
-import core::result_u16;
+import core::option;
+import core::result;
 
-fn optional(keep: bool, value: u16) -> core::option_u16::OptionU16 {
-    if (keep) { return core::option_u16::some(value); }
-    return core::option_u16::none();
+fn optional(keep: bool, value: u16) -> core::option::Option<u16> {
+    if (keep) { return core::option::Some(value); }
+    return core::option::None();
 }
 
-fn result(succeed: bool, value: u16) -> core::result_u16::ResultU16 {
-    if (succeed) { return core::result_u16::ok(value); }
-    return core::result_u16::err(value);
+fn result(succeed: bool, value: u16) -> core::result::Result<u16, u16> {
+    if (succeed) { return core::result::Ok(value); }
+    return core::result::Err(value);
 }
 
 fn main() -> i32 {
-    let some: core::option_u16::OptionU16 = optional(true, 65535);
-    let none: core::option_u16::OptionU16 = optional(false, 65535);
-    if (!core::option_u16::contains(some, 65535)) { return 1; }
-    if (!core::option_u16::is_none(none)) { return 2; }
+    let some: core::option::Option<u16> = optional(true, 65535);
+    let none: core::option::Option<u16> = optional(false, 65535);
+    if (!core::option::contains(some, 65535)) { return 1; }
+    if (!core::option::is_none(none)) { return 2; }
 
-    let success_value: core::result_u16::ResultU16 = result(true, 32768);
-    let error_value: core::result_u16::ResultU16 = result(false, 0);
-    if (!core::result_u16::contains(success_value, 32768)) { return 3; }
-    if (!core::result_u16::contains_err(error_value, 0)) { return 4; }
+    let success_value: core::result::Result<u16, u16> = result(true, 32768);
+    let error_value: core::result::Result<u16, u16> = result(false, 0);
+    if (!core::result::contains(success_value, 32768)) { return 3; }
+    if (!core::result::contains_err(error_value, 0)) { return 4; }
     return 0;
 }

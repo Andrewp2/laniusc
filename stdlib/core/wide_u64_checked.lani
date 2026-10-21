@@ -1,106 +1,106 @@
 // Checked and saturating arithmetic for portable two-word unsigned values.
 // These operations avoid the incomplete native u64 path.
 module core::wide_u64_checked;
-import core::option_wide_u64;
+import core::option;
 import core::wide_u64;
 
 pub fn checked_add(
     left: core::wide_u64::WideU64, right: core::wide_u64::WideU64
-) -> core::option_wide_u64::OptionWideU64 {
+) -> core::option::Option<core::wide_u64::WideU64> {
     let sum: core::wide_u64::WideU64 = core::wide_u64::wrapping_add(left, right);
     if (core::wide_u64::compare(sum, left) < 0) {
-        return core::option_wide_u64::none();
+        return core::option::None();
     }
-    return core::option_wide_u64::some(sum);
+    return core::option::Some(sum);
 }
 
 pub fn checked_sub(
     left: core::wide_u64::WideU64, right: core::wide_u64::WideU64
-) -> core::option_wide_u64::OptionWideU64 {
+) -> core::option::Option<core::wide_u64::WideU64> {
     if (core::wide_u64::compare(left, right) < 0) {
-        return core::option_wide_u64::none();
+        return core::option::None();
     }
-    return core::option_wide_u64::some(core::wide_u64::wrapping_sub(left, right));
+    return core::option::Some(core::wide_u64::wrapping_sub(left, right));
 }
 
 pub fn checked_mul(
     left: core::wide_u64::WideU64, right: core::wide_u64::WideU64
-) -> core::option_wide_u64::OptionWideU64 {
+) -> core::option::Option<core::wide_u64::WideU64> {
     if (core::wide_u64::is_zero(left) || core::wide_u64::is_zero(right)) {
-        return core::option_wide_u64::some(core::wide_u64::zero());
+        return core::option::Some(core::wide_u64::zero());
     }
     let limit: core::wide_u64::WideU64 = core::wide_u64::divide_or(
         core::wide_u64::max_value(), left, core::wide_u64::zero());
     if (core::wide_u64::compare(right, limit) > 0) {
-        return core::option_wide_u64::none();
+        return core::option::None();
     }
-    return core::option_wide_u64::some(core::wide_u64::wrapping_mul(left, right));
+    return core::option::Some(core::wide_u64::wrapping_mul(left, right));
 }
 
 pub fn checked_div(
     left: core::wide_u64::WideU64, right: core::wide_u64::WideU64
-) -> core::option_wide_u64::OptionWideU64 {
+) -> core::option::Option<core::wide_u64::WideU64> {
     if (core::wide_u64::is_zero(right)) {
-        return core::option_wide_u64::none();
+        return core::option::None();
     }
-    return core::option_wide_u64::some(
+    return core::option::Some(
         core::wide_u64::divide_or(left, right, core::wide_u64::zero()));
 }
 
 pub fn checked_rem(
     left: core::wide_u64::WideU64, right: core::wide_u64::WideU64
-) -> core::option_wide_u64::OptionWideU64 {
+) -> core::option::Option<core::wide_u64::WideU64> {
     if (core::wide_u64::is_zero(right)) {
-        return core::option_wide_u64::none();
+        return core::option::None();
     }
-    return core::option_wide_u64::some(
+    return core::option::Some(
         core::wide_u64::remainder_or(left, right, core::wide_u64::zero()));
 }
 
 // Exponentiation by squaring. 0^0 is one; any unrepresentable product is None.
 pub fn checked_pow(
     base: core::wide_u64::WideU64, exponent: u32
-) -> core::option_wide_u64::OptionWideU64 {
+) -> core::option::Option<core::wide_u64::WideU64> {
     let result: core::wide_u64::WideU64 = core::wide_u64::from_u32(1);
     let factor: core::wide_u64::WideU64 = base;
     let remaining: u32 = exponent;
     while (remaining > 0) {
         if ((remaining & 1) != 0) {
-            let product: core::option_wide_u64::OptionWideU64 = checked_mul(result, factor);
-            if (core::option_wide_u64::is_none(product)) {
+            let product: core::option::Option<core::wide_u64::WideU64> = checked_mul(result, factor);
+            if (core::option::is_none(product)) {
                 return product;
             }
-            result = core::option_wide_u64::unwrap_or(product, core::wide_u64::zero());
+            result = core::option::unwrap_or(product, core::wide_u64::zero());
         }
         remaining = remaining >> 1;
         if (remaining > 0) {
-            let squared: core::option_wide_u64::OptionWideU64 = checked_mul(factor, factor);
-            if (core::option_wide_u64::is_none(squared)) {
+            let squared: core::option::Option<core::wide_u64::WideU64> = checked_mul(factor, factor);
+            if (core::option::is_none(squared)) {
                 return squared;
             }
-            factor = core::option_wide_u64::unwrap_or(squared, core::wide_u64::zero());
+            factor = core::option::unwrap_or(squared, core::wide_u64::zero());
         }
     }
-    return core::option_wide_u64::some(result);
+    return core::option::Some(result);
 }
 
 pub fn saturating_add(
     left: core::wide_u64::WideU64, right: core::wide_u64::WideU64
 ) -> core::wide_u64::WideU64 {
-    return core::option_wide_u64::unwrap_or(
+    return core::option::unwrap_or(
         checked_add(left, right), core::wide_u64::max_value());
 }
 
 pub fn saturating_sub(
     left: core::wide_u64::WideU64, right: core::wide_u64::WideU64
 ) -> core::wide_u64::WideU64 {
-    return core::option_wide_u64::unwrap_or(
+    return core::option::unwrap_or(
         checked_sub(left, right), core::wide_u64::zero());
 }
 
 pub fn saturating_mul(
     left: core::wide_u64::WideU64, right: core::wide_u64::WideU64
 ) -> core::wide_u64::WideU64 {
-    return core::option_wide_u64::unwrap_or(
+    return core::option::unwrap_or(
         checked_mul(left, right), core::wide_u64::max_value());
 }

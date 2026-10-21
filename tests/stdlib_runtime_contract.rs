@@ -3327,7 +3327,7 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load core::i64");
-    for relative_path in ["core/i64.lani", "core/option.lani", "core/result_bool.lani"] {
+    for relative_path in ["core/i64.lani", "core/option.lani", "core/result.lani"] {
         assert!(
             manifest
                 .files
@@ -3373,7 +3373,7 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load core::i64");
-    for relative_path in ["core/i64.lani", "core/option.lani", "core/result_bool.lani"] {
+    for relative_path in ["core/i64.lani", "core/option.lani", "core/result.lani"] {
         assert!(
             manifest
                 .files
@@ -7390,7 +7390,8 @@ fn main() {
         }),
         "path manifest should include core::result from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    // The entry, core::result, core::cmp and core::panic.
+    assert_eq!(manifest.files.len(), 4);
     assert!(
         runtime_bound_api_diagnostic_info("core::result::or").is_none(),
         "core::result::or is a source-level helper and must not claim a runtime binding"
@@ -7423,45 +7424,45 @@ fn main() {
     let none: core::option::Option<i32> = core::option::None;
     let ok: core::result::Result<i32, bool> = core::result::Ok(7);
     let err: core::result::Result<i32, bool> = core::result::Err(false);
-    let option_hit: bool = core::option::contains_i32(some, 7);
-    let option_miss: bool = core::option::contains_i32(some, 8);
-    let none_hit: bool = core::option::contains_i32(none, 7);
-    let result_hit: bool = core::result::contains_i32(ok, 7);
-    let result_miss: bool = core::result::contains_i32(ok, 8);
-    let err_hit: bool = core::result::contains_i32(err, 7);
+    let option_hit: bool = core::option::contains(some, 7);
+    let option_miss: bool = core::option::contains(some, 8);
+    let none_hit: bool = core::option::contains(none, 7);
+    let result_hit: bool = core::result::contains(ok, 7);
+    let result_miss: bool = core::result::contains(ok, 8);
+    let err_hit: bool = core::result::contains(err, 7);
     let ok_bool: core::result::Result<bool, i32> = core::result::Ok(true);
     let err_for_bool: core::result::Result<bool, i32> = core::result::Err(4);
-    let result_bool_hit: bool = core::result::contains_bool(ok_bool, true);
-    let result_bool_miss: bool = core::result::contains_bool(ok_bool, false);
-    let result_bool_err_hit: bool = core::result::contains_bool(err_for_bool, true);
+    let result_bool_hit: bool = core::result::contains(ok_bool, true);
+    let result_bool_miss: bool = core::result::contains(ok_bool, false);
+    let result_bool_err_hit: bool = core::result::contains(err_for_bool, true);
     let ok_u32: core::result::Result<u32, bool> = core::result::Ok(42);
     let err_for_u32: core::result::Result<u32, bool> = core::result::Err(false);
-    let result_u32_hit: bool = core::result::contains_u32(ok_u32, 42);
-    let result_u32_miss: bool = core::result::contains_u32(ok_u32, 43);
-    let result_u32_err_hit: bool = core::result::contains_u32(err_for_u32, 42);
+    let result_u32_hit: bool = core::result::contains(ok_u32, 42);
+    let result_u32_miss: bool = core::result::contains(ok_u32, 43);
+    let result_u32_err_hit: bool = core::result::contains(err_for_u32, 42);
     let ok_u8: core::result::Result<u8, bool> = core::result::Ok(8);
     let err_for_u8: core::result::Result<u8, bool> = core::result::Err(false);
-    let result_u8_hit: bool = core::result::contains_u8(ok_u8, 8);
-    let result_u8_miss: bool = core::result::contains_u8(ok_u8, 9);
-    let result_u8_err_hit: bool = core::result::contains_u8(err_for_u8, 8);
+    let result_u8_hit: bool = core::result::contains(ok_u8, 8);
+    let result_u8_miss: bool = core::result::contains(ok_u8, 9);
+    let result_u8_err_hit: bool = core::result::contains(err_for_u8, 8);
     let err_code: core::result::Result<i32, i32> = core::result::Err(9);
     let ok_code: core::result::Result<i32, i32> = core::result::Ok(1);
-    let result_err_hit: bool = core::result::contains_err_i32(err_code, 9);
-    let result_err_miss: bool = core::result::contains_err_i32(err_code, 10);
-    let result_ok_err_hit: bool = core::result::contains_err_i32(ok_code, 9);
-    let result_err_bool_hit: bool = core::result::contains_err_bool(err, false);
-    let result_err_bool_miss: bool = core::result::contains_err_bool(err, true);
-    let result_ok_err_bool_hit: bool = core::result::contains_err_bool(ok, false);
+    let result_err_hit: bool = core::result::contains_err(err_code, 9);
+    let result_err_miss: bool = core::result::contains_err(err_code, 10);
+    let result_ok_err_hit: bool = core::result::contains_err(ok_code, 9);
+    let result_err_bool_hit: bool = core::result::contains_err(err, false);
+    let result_err_bool_miss: bool = core::result::contains_err(err, true);
+    let result_ok_err_bool_hit: bool = core::result::contains_err(ok, false);
     let err_code_u32: core::result::Result<bool, u32> = core::result::Err(42);
     let ok_code_u32: core::result::Result<bool, u32> = core::result::Ok(true);
-    let result_err_u32_hit: bool = core::result::contains_err_u32(err_code_u32, 42);
-    let result_err_u32_miss: bool = core::result::contains_err_u32(err_code_u32, 43);
-    let result_ok_err_u32_hit: bool = core::result::contains_err_u32(ok_code_u32, 42);
+    let result_err_u32_hit: bool = core::result::contains_err(err_code_u32, 42);
+    let result_err_u32_miss: bool = core::result::contains_err(err_code_u32, 43);
+    let result_ok_err_u32_hit: bool = core::result::contains_err(ok_code_u32, 42);
     let err_code_u8: core::result::Result<bool, u8> = core::result::Err(8);
     let ok_code_u8: core::result::Result<bool, u8> = core::result::Ok(true);
-    let result_err_u8_hit: bool = core::result::contains_err_u8(err_code_u8, 8);
-    let result_err_u8_miss: bool = core::result::contains_err_u8(err_code_u8, 9);
-    let result_ok_err_u8_hit: bool = core::result::contains_err_u8(ok_code_u8, 8);
+    let result_err_u8_hit: bool = core::result::contains_err(err_code_u8, 8);
+    let result_err_u8_miss: bool = core::result::contains_err(err_code_u8, 9);
+    let result_ok_err_u8_hit: bool = core::result::contains_err(ok_code_u8, 8);
     if (!option_hit || option_miss || none_hit) {
         return 1;
     }
@@ -7508,17 +7509,12 @@ fn main() {
         }),
         "path manifest should include core::result from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 4);
+    // The entry, core::option, core::result, core::cmp and core::panic.
+    assert_eq!(manifest.files.len(), 5);
     for helper_name in [
-        "core::option::contains_i32",
-        "core::result::contains_i32",
-        "core::result::contains_bool",
-        "core::result::contains_u32",
-        "core::result::contains_u8",
-        "core::result::contains_err_i32",
-        "core::result::contains_err_bool",
-        "core::result::contains_err_u32",
-        "core::result::contains_err_u8",
+        "core::option::contains",
+        "core::result::contains",
+        "core::result::contains_err",
     ] {
         assert!(
             runtime_bound_api_diagnostic_info(helper_name).is_none(),
@@ -7574,7 +7570,8 @@ fn main() {
         }),
         "path manifest should include core::result from the stdlib root"
     );
-    assert_eq!(manifest.files.len(), 2);
+    // The entry, core::result, core::cmp and core::panic.
+    assert_eq!(manifest.files.len(), 4);
     for helper_name in ["core::result::and"] {
         assert!(
             runtime_bound_api_diagnostic_info(helper_name).is_none(),

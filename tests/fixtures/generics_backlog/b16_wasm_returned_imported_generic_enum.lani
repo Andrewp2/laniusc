@@ -1,0 +1,16 @@
+// expect: 42
+// Run with --target wasm. A function returning the stdlib's generic
+// Option<i32> emits an invalid module: node reports "not enough arguments on
+// the stack for local.set" while compiling it. x86 runs it, and a local
+// generic enum returned the same way runs on Wasm too.
+module app::main;
+import core::option;
+
+fn half(x: i32) -> core::option::Option<i32> {
+    return core::option::Some(x / 2);
+}
+
+fn main() -> i32 {
+    let r: core::option::Option<i32> = half(84);
+    return match (r) { Some(v) -> v, None -> 0 };
+}

@@ -1,6 +1,6 @@
 module app::main;
 import core::byte;
-import core::option_u8;
+import core::option;
 import std::vec_u8;
 
 fn main() -> i32 {
@@ -21,8 +21,8 @@ fn main() -> i32 {
         index += 1;
     }
     std::vec_u8::destroy(values);
-    let result: core::option_u8::OptionU8 = core::option_u8::some(checksum);
-    let byte_result: u8 = core::option_u8::unwrap_or(result, 0);
+    let result: core::option::Option<u8> = core::option::Some(checksum);
+    let byte_result: u8 = core::option::unwrap_or(result, 0);
     let printable: i32 = byte_result as i32;
     print(printable);
     return 0;

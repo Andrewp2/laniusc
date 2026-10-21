@@ -1,13 +1,13 @@
 module app::main;
-import core::option_u16;
+import core::option;
 
-fn wrap(value: u16) -> core::option_u16::OptionU16 {
-    return core::option_u16::some(value);
+fn wrap(value: u16) -> core::option::Option<u16> {
+    return core::option::Some(value);
 }
 
 fn main() -> i32 {
     let four: u16 = 4;
-    let wrapped: core::option_u16::OptionU16 = wrap(four);
-    if (!core::option_u16::contains(wrapped, four)) { return 1; }
+    let wrapped: core::option::Option<u16> = wrap(four);
+    if (!core::option::contains(wrapped, four)) { return 1; }
     return 0;
 }

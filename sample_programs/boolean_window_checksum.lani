@@ -1,8 +1,7 @@
 module app::main;
 import core::number_i32;
 import core::option;
-import core::option_i32;
-import core::result_bool;
+import core::result;
 import core::slice_bool;
 
 fn main() -> i32 {
@@ -15,8 +14,8 @@ fn main() -> i32 {
     let first: core::option::Option<bool> =
         core::option::Some(core::slice_bool::get_or(window, 5, 0, true));
     if (!core::option::is_some(first) || core::option::is_none(first)) { return 5; }
-    let checked: core::result_bool::ResultBool = first.ok_or(true);
-    if (!core::result_bool::contains(checked, false)) { return 4; }
+    let checked: core::result::Result<bool, bool> = first.ok_or(true);
+    if (!core::result::contains(checked, false)) { return 4; }
 
     let total: i32 = 0;
     let index: i32 = 0;
@@ -26,7 +25,7 @@ fn main() -> i32 {
         }
         index += 1;
     }
-    let checksum: core::option_i32::OptionI32 = core::option_i32::some(total);
-    print(core::option_i32::unwrap_or(checksum, -1));
+    let checksum: core::option::Option<i32> = core::option::Some(total);
+    print(core::option::unwrap_or(checksum, -1));
     return 0;
 }

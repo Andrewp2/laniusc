@@ -1,11 +1,11 @@
 module app::main;
-import core::option_wide_u64;
+import core::option;
 import core::wide_u64;
 import std::random_wide;
 fn main() -> i32 {
     let low: core::wide_u64::WideU64 = core::wide_u64::from_u32(10);
     let high: core::wide_u64::WideU64 = core::wide_u64::from_u32(20);
-    if (core::option_wide_u64::is_none(std::random_wide::try_secure_u64_inclusive(low, high))) {
+    if (core::option::is_none(std::random_wide::try_secure_u64_inclusive(low, high))) {
         return 0;
     }
     return 1;

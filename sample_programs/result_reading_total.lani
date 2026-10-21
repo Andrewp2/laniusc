@@ -23,8 +23,8 @@ fn main() -> i32 {
     let invalid: [i32; 3] = [7, -2, 13];
     let success: core::result::Result<i32, i32> = checked_total(valid);
     let failure: core::result::Result<i32, i32> = checked_total(invalid);
-    if (!success.is_ok() || !core::result::contains_i32(success, 20)) { return 1; }
-    if (!failure.is_err() || !core::result::contains_err_i32(failure, -2)) { return 2; }
+    if (!success.is_ok() || !core::result::contains(success, 20)) { return 1; }
+    if (!failure.is_err() || !core::result::contains_err(failure, -2)) { return 2; }
     let total: i32 = success.unwrap_or(-1);
     let rejected: i32 = failure.unwrap_err_or(0);
     std::io::print_i32(total);

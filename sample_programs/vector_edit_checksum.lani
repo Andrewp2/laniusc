@@ -1,7 +1,7 @@
 // Maintain a small ordered sequence and report its checksum after two edits.
 module app::main;
 import core::number_i32;
-import core::option_i32;
+import core::option;
 import std::io;
 import std::vec;
 
@@ -31,7 +31,7 @@ fn main() -> i32 {
         index += 1;
     }
     std::vec::destroy(readings);
-    let result: core::option_i32::OptionI32 = core::option_i32::some(total);
-    std::io::print_i32(core::option_i32::unwrap_or(result, -1));
+    let result: core::option::Option<i32> = core::option::Some(total);
+    std::io::print_i32(core::option::unwrap_or(result, -1));
     return 0;
 }

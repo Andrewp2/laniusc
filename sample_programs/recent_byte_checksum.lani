@@ -1,7 +1,7 @@
 // Read arbitrary bytes and print the wrapping sum of the last three.
 module app::main;
 import core::byte;
-import core::option_u8;
+import core::option;
 import std::deque_u8;
 import std::io_byte;
 
@@ -33,8 +33,8 @@ fn main() -> i32 {
         index += 1;
     }
     std::deque_u8::destroy(recent);
-    let wrapped: core::option_u8::OptionU8 = core::option_u8::some(checksum);
-    let result: u8 = core::option_u8::unwrap_or(wrapped, 0);
+    let wrapped: core::option::Option<u8> = core::option::Some(checksum);
+    let result: u8 = core::option::unwrap_or(wrapped, 0);
     let printable: i32 = result as i32;
     print(printable);
     return 0;

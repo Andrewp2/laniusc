@@ -2,7 +2,7 @@
 
 module core::u32;
 
-import core::option_u32;
+import core::option;
 import core::number_u32;
 
 pub const MIN: u32 = 0;
@@ -54,19 +54,19 @@ pub fn wrapping_mul(left: u32, right: u32) -> u32 {
     return left * right;
 }
 
-pub fn checked_add(left: u32, right: u32) -> core::option_u32::OptionU32 {
+pub fn checked_add(left: u32, right: u32) -> core::option::Option<u32> {
     if (left > MAX - right) {
-        return core::option_u32::none();
+        return core::option::None();
     } else {
-        return core::option_u32::some(left + right);
+        return core::option::Some(left + right);
     }
 }
 
-pub fn checked_sub(left: u32, right: u32) -> core::option_u32::OptionU32 {
+pub fn checked_sub(left: u32, right: u32) -> core::option::Option<u32> {
     if (left < right) {
-        return core::option_u32::none();
+        return core::option::None();
     } else {
-        return core::option_u32::some(left - right);
+        return core::option::Some(left - right);
     }
 }
 
@@ -167,19 +167,19 @@ pub fn next_power_of_two(value: u32) -> u32 {
     }
 }
 
-pub fn checked_next_power_of_two(value: u32) -> core::option_u32::OptionU32 {
+pub fn checked_next_power_of_two(value: u32) -> core::option::Option<u32> {
     let highest_power_of_two: u32 = 2147483648;
     if (value <= 1) {
-        return core::option_u32::some(1);
+        return core::option::Some(1);
     } else {
         if (value > highest_power_of_two) {
-            return core::option_u32::none();
+            return core::option::None();
         } else {
             let power: u32 = 1;
             while (power < value) {
                 power *= 2;
             }
-            return core::option_u32::some(power);
+            return core::option::Some(power);
         }
     }
 }

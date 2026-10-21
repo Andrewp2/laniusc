@@ -13,11 +13,11 @@ fn add_checked_case(
     assert!(code < 255);
     let predicate = match expected {
         Some(value) => format!(
-            "core::option_wide_u64::contains({expression}, core::wide_u64::from_words({}, {}))",
+            "core::option::contains({expression}, core::wide_u64::from_words({}, {}))",
             value >> 32,
             value as u32,
         ),
-        None => format!("core::option_wide_u64::is_none({expression})"),
+        None => format!("core::option::is_none({expression})"),
     };
     source.push_str(&format!("if (!{predicate}) {{ return {code}; }}\n"));
     labels.push(label);
@@ -139,7 +139,7 @@ fn wide_u64_checked_matches_native_u64_across_word_patterns() {
         (0xdead_beef_cafe_babe, 0x0123_4567_89ab_cdef),
     ];
     let mut source = String::from(
-        "module app::main;\nimport core::option_wide_u64;\nimport core::wide_u64;\n\
+        "module app::main;\nimport core::option;\nimport core::wide_u64;\n\
          import core::wide_u64_checked;\nfn main() -> i32 {\n",
     );
     let mut labels = vec![String::from("success")];

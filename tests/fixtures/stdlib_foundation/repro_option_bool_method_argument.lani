@@ -1,12 +1,12 @@
 module app::main;
 import core::option;
-import core::result_bool;
+import core::result;
 
 fn main() -> i32 {
     let present: core::option::Option<bool> = core::option::Some(false);
-    if (!core::result_bool::contains(present.ok_or(true), false)) { return 1; }
+    if (!core::result::contains(present.ok_or(true), false)) { return 1; }
     let absent: core::option::Option<bool> = core::option::None();
-    if (!core::result_bool::contains_err(absent.ok_or(true), true)) { return 2; }
-    if (!core::result_bool::is_err(absent.ok_or(false))) { return 3; }
+    if (!core::result::contains_err(absent.ok_or(true), true)) { return 2; }
+    if (!core::result::is_err(absent.ok_or(false))) { return 3; }
     return 0;
 }

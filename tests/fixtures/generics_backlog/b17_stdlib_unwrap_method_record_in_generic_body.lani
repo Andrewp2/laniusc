@@ -1,0 +1,17 @@
+// expect: 42
+// The stdlib Option<T>::unwrap method, called from a generic body with a
+// record T, segfaults at run time (x86). The free core::option::unwrap from
+// the same body runs, so does unwrap_or, and so does a local generic enum's
+// method with the same diverging `None -> core::panic::panic()` arm. A
+// method body that delegates to the free unwrap crashes the same way.
+module app::main;
+import core::option;
+struct Score { points: i32, bonus: bool }
+fn pick<T>(value: T) -> i32 { return 42; }
+fn run<T>(value: T) -> i32 {
+    let some: core::option::Option<T> = core::option::Some(value);
+    let got: T = some.unwrap(); return 42;
+}
+fn main() -> i32 {
+    return run(Score { points: 42, bonus: true });
+}

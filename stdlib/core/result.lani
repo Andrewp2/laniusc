@@ -1,10 +1,13 @@
-// Recoverable results preserve successful and failed payloads independently.
-// Tag predicates and concrete membership helpers execute without allocation.
-// Generic free and receiver payload functions specialize on the resident native path for
-// tested scalar arguments and selected record/slice fallback extractions.
-// See docs/stdlib-result.md for executable operations and target limits.
+// Recoverable results: Ok carries the value, Err the error. Every operation
+// takes the result by value and leaves the caller's copy unchanged. Each one
+// exists as a free function and as a method. Membership needs Eq on the
+// payload it compares. unwrap and unwrap_err panic on the other variant;
+// the *_or forms take an explicit fallback and never panic.
 
 module core::result;
+
+import core::cmp;
+import core::panic;
 
 pub enum Result<T, E> {
     Ok(T),
@@ -12,17 +15,47 @@ pub enum Result<T, E> {
 }
 
 pub fn is_ok<T, E>(value: Result<T, E>) -> bool {
-    return match (value) {
-        Ok(inner) -> true,
-        Err(error) -> false,
-    };
+    return match (value) { Ok(_) -> true, Err(_) -> false };
 }
 
 pub fn is_err<T, E>(value: Result<T, E>) -> bool {
-    return match (value) {
-        Ok(inner) -> false,
-        Err(error) -> true,
-    };
+    return match (value) { Ok(_) -> false, Err(_) -> true };
+}
+
+pub fn contains<T, E>(value: Result<T, E>, expected: T) -> bool where T: core::cmp::Eq<T> {
+    return match (value) { Ok(inner) -> T::eq(inner, expected), Err(_) -> false };
+}
+
+pub fn contains_err<T, E>(value: Result<T, E>, expected: E) -> bool where E: core::cmp::Eq<E> {
+    return match (value) { Ok(_) -> false, Err(error) -> E::eq(error, expected) };
+}
+
+pub fn unwrap<T, E>(value: Result<T, E>) -> T {
+    return match (value) { Ok(inner) -> inner, Err(_) -> core::panic::panic() };
+}
+
+pub fn unwrap_err<T, E>(value: Result<T, E>) -> E {
+    return match (value) { Ok(_) -> core::panic::panic(), Err(error) -> error };
+}
+
+pub fn unwrap_or<T, E>(value: Result<T, E>, fallback: T) -> T {
+    return match (value) { Ok(inner) -> inner, Err(_) -> fallback };
+}
+
+pub fn unwrap_err_or<T, E>(value: Result<T, E>, fallback: E) -> E {
+    return match (value) { Ok(_) -> fallback, Err(error) -> error };
+}
+
+// A successful left value wins; two failures give the fallback's error.
+pub fn or<T, E>(value: Result<T, E>, fallback: Result<T, E>) -> Result<T, E> {
+    if (is_ok(value)) { return value; }
+    return fallback;
+}
+
+// Success gives `next`; a failed left value keeps its error.
+pub fn and<T, E>(value: Result<T, E>, next: Result<T, E>) -> Result<T, E> {
+    if (is_ok(value)) { return next; }
+    return value;
 }
 
 pub impl<T, E> Result<T, E> {
@@ -34,7 +67,22 @@ pub impl<T, E> Result<T, E> {
         return match (self) { Ok(_) -> false, Err(_) -> true };
     }
 
-    // Both fallbacks are explicit. Reading either branch preserves the receiver.
+    pub fn contains(self, expected: T) -> bool where T: core::cmp::Eq<T> {
+        return match (self) { Ok(inner) -> T::eq(inner, expected), Err(_) -> false };
+    }
+
+    pub fn contains_err(self, expected: E) -> bool where E: core::cmp::Eq<E> {
+        return match (self) { Ok(_) -> false, Err(error) -> E::eq(error, expected) };
+    }
+
+    pub fn unwrap(self) -> T {
+        return match (self) { Ok(inner) -> inner, Err(_) -> core::panic::panic() };
+    }
+
+    pub fn unwrap_err(self) -> E {
+        return match (self) { Ok(_) -> core::panic::panic(), Err(error) -> error };
+    }
+
     pub fn unwrap_or(self, fallback: T) -> T {
         return match (self) { Ok(inner) -> inner, Err(_) -> fallback };
     }
@@ -43,100 +91,15 @@ pub impl<T, E> Result<T, E> {
         return match (self) { Ok(_) -> fallback, Err(error) -> error };
     }
 
-    // A successful left value wins; two failures select the fallback error.
     pub fn or(self, fallback: Result<T, E>) -> Result<T, E> {
         let successful: bool = match (self) { Ok(_) -> true, Err(_) -> false };
         if (successful) { return self; }
         return fallback;
     }
 
-    // The next value follows success; a failed left value retains its error.
     pub fn and(self, next: Result<T, E>) -> Result<T, E> {
         let successful: bool = match (self) { Ok(_) -> true, Err(_) -> false };
         if (successful) { return next; }
         return self;
-    }
-}
-
-pub fn contains_i32<E>(value: Result<i32, E>, expected: i32) -> bool {
-    return match (value) {
-        Ok(inner) -> inner == expected,
-        Err(error) -> false,
-    };
-}
-
-pub fn contains_bool<E>(value: Result<bool, E>, expected: bool) -> bool {
-    return match (value) {
-        Ok(inner) -> inner == expected,
-        Err(error) -> false,
-    };
-}
-
-pub fn contains_u32<E>(value: Result<u32, E>, expected: u32) -> bool {
-    return match (value) {
-        Ok(inner) -> inner == expected,
-        Err(error) -> false,
-    };
-}
-
-pub fn contains_u8<E>(value: Result<u8, E>, expected: u8) -> bool {
-    return match (value) {
-        Ok(inner) -> inner == expected,
-        Err(error) -> false,
-    };
-}
-
-pub fn contains_err_i32<T>(value: Result<T, i32>, expected: i32) -> bool {
-    return match (value) {
-        Ok(inner) -> false,
-        Err(error) -> error == expected,
-    };
-}
-
-pub fn contains_err_bool<T>(value: Result<T, bool>, expected: bool) -> bool {
-    return match (value) {
-        Ok(inner) -> false,
-        Err(error) -> error == expected,
-    };
-}
-
-pub fn contains_err_u32<T>(value: Result<T, u32>, expected: u32) -> bool {
-    return match (value) {
-        Ok(inner) -> false,
-        Err(error) -> error == expected,
-    };
-}
-
-pub fn contains_err_u8<T>(value: Result<T, u8>, expected: u8) -> bool {
-    return match (value) {
-        Ok(inner) -> false,
-        Err(error) -> error == expected,
-    };
-}
-
-pub fn unwrap_or<T, E>(value: Result<T, E>, fallback: T) -> T {
-    return match (value) {
-        Ok(inner) -> inner,
-        Err(error) -> fallback,
-    };
-}
-
-pub fn unwrap_err_or<T, E>(value: Result<T, E>, fallback: E) -> E {
-    return match (value) { Ok(_) -> fallback, Err(error) -> error };
-}
-
-pub fn or<T, E>(value: Result<T, E>, fallback: Result<T, E>) -> Result<T, E> {
-    if (is_ok(value)) {
-        return value;
-    } else {
-        return fallback;
-    }
-}
-
-pub fn and<T, E>(value: Result<T, E>, next: Result<T, E>) -> Result<T, E> {
-    if (is_ok(value)) {
-        return next;
-    } else {
-        return value;
     }
 }

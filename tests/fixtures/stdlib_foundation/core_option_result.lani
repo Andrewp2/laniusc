@@ -1,0 +1,202 @@
+// expect: 0
+// Every core::option and core::result function, as a free function and as a
+// method, through one generic checker per enum. Each payload type runs the
+// same checks: every integer width, bool, char, f32, ptr, the wide integers,
+// a user record with its own Eq, and a Result whose two payload types
+// differ. Exits 0. On a failure it prints 100 * row + the failing check and
+// exits with the row.
+module app::main;
+
+import core::cmp;
+import core::option;
+import core::result;
+import core::wide_i64;
+import core::wide_u64;
+
+struct Score { points: i32, bonus: bool }
+
+pub impl core::cmp::Eq<Score> for Score {
+    pub fn eq(left: Score, right: Score) -> bool {
+        return left.points == right.points && left.bonus == right.bonus;
+    }
+    pub fn ne(left: Score, right: Score) -> bool {
+        return !Score::eq(left, right);
+    }
+}
+
+// `value` and `other` must differ.
+fn option_checks<T>(value: T, other: T) -> i32 where T: core::cmp::Eq<T> {
+    let some: core::option::Option<T> = core::option::Some(value);
+    let different: core::option::Option<T> = core::option::Some(other);
+    let none: core::option::Option<T> = core::option::None();
+
+    if (!core::option::is_some(some) || core::option::is_some(none)) { return 1; }
+    if (core::option::is_none(some) || !core::option::is_none(none)) { return 2; }
+    if (!some.is_some() || none.is_some() || some.is_none() || !none.is_none()) { return 3; }
+    if (!core::option::contains(some, value) || core::option::contains(some, other)) { return 4; }
+    if (core::option::contains(none, value)) { return 5; }
+    if (!some.contains(value) || some.contains(other) || none.contains(value)) { return 6; }
+    // The unwrap methods run from main: from a generic body with a record
+    // payload they crash (tests/fixtures/generics_backlog/b17).
+    if (!T::eq(core::option::unwrap(some), value)) { return 7; }
+    if (!T::eq(core::option::unwrap_or(none, other), other)) { return 8; }
+    if (!T::eq(some.unwrap_or(other), value) || !T::eq(none.unwrap_or(other), other)) { return 9; }
+
+    // or keeps a present left value; and gives the right one after it.
+    if (!core::option::or(some, different).contains(value)) { return 10; }
+    if (!core::option::or(none, different).contains(other)) { return 11; }
+    if (!some.or(different).contains(value) || !none.or(different).contains(other)) { return 12; }
+    if (!core::option::and(some, different).contains(other)) { return 13; }
+    if (core::option::and(none, different).is_some()) { return 14; }
+    if (!some.and(different).contains(other) || none.and(some).is_some()) { return 15; }
+    if (!core::option::xor(some, none).contains(value)) { return 16; }
+    if (!core::option::xor(none, different).contains(other)) { return 17; }
+    if (core::option::xor(some, different).is_some() || core::option::xor(none, none).is_some()) {
+        return 18;
+    }
+    if (!some.xor(none).contains(value) || !none.xor(different).contains(other)) { return 19; }
+    if (some.xor(different).is_some() || none.xor(none).is_some()) { return 20; }
+
+    let nested: core::option::Option<core::option::Option<T>> = core::option::Some(some);
+    let nested_none: core::option::Option<core::option::Option<T>> = core::option::Some(none);
+    let absent: core::option::Option<core::option::Option<T>> = core::option::None();
+    if (!core::option::flatten(nested).contains(value)) { return 21; }
+    if (core::option::flatten(nested_none).is_some() || core::option::flatten(absent).is_some()) {
+        return 22;
+    }
+
+    // Conversions to and from Result, with the error type taken from T too.
+    let found: core::result::Result<T, T> = core::option::ok_or(some, other);
+    let missing: core::result::Result<T, T> = core::option::ok_or(none, other);
+    if (!found.contains(value) || !missing.contains_err(other)) { return 23; }
+    let method_found: core::result::Result<T, i32> = some.ok_or(7);
+    let method_missing: core::result::Result<T, i32> = none.ok_or(7);
+    if (!method_found.contains(value) || !method_missing.contains_err(7)) { return 24; }
+    if (!core::option::ok(found).contains(value) || core::option::ok(missing).is_some()) {
+        return 25;
+    }
+    if (core::option::err(found).is_some() || !core::option::err(missing).contains(other)) {
+        return 26;
+    }
+
+    // The checks above leave every input unchanged.
+    if (!some.contains(value) || !different.contains(other) || !none.is_none()) { return 27; }
+    return 0;
+}
+
+// `value` and `other` must differ, and so must `error` and `other_error`.
+fn result_checks<T, E>(value: T, other: T, error: E, other_error: E) -> i32
+    where T: core::cmp::Eq<T>, E: core::cmp::Eq<E> {
+    let ok: core::result::Result<T, E> = core::result::Ok(value);
+    let ok_other: core::result::Result<T, E> = core::result::Ok(other);
+    let err: core::result::Result<T, E> = core::result::Err(error);
+    let err_other: core::result::Result<T, E> = core::result::Err(other_error);
+
+    if (!core::result::is_ok(ok) || core::result::is_ok(err)) { return 1; }
+    if (core::result::is_err(ok) || !core::result::is_err(err)) { return 2; }
+    if (!ok.is_ok() || err.is_ok() || ok.is_err() || !err.is_err()) { return 3; }
+    if (!core::result::contains(ok, value) || core::result::contains(ok, other)) { return 4; }
+    if (core::result::contains(err, value)) { return 5; }
+    if (!ok.contains(value) || ok.contains(other) || err.contains(value)) { return 6; }
+    if (!core::result::contains_err(err, error) || core::result::contains_err(err, other_error)) {
+        return 7;
+    }
+    if (core::result::contains_err(ok, error)) { return 8; }
+    if (!err.contains_err(error) || err.contains_err(other_error) || ok.contains_err(error)) {
+        return 9;
+    }
+    if (!T::eq(core::result::unwrap(ok), value)) { return 10; }
+    if (!E::eq(core::result::unwrap_err(err), error)) { return 11; }
+    if (!T::eq(core::result::unwrap_or(err, other), other)) { return 12; }
+    if (!T::eq(ok.unwrap_or(other), value) || !T::eq(err.unwrap_or(other), other)) { return 13; }
+    if (!E::eq(core::result::unwrap_err_or(ok, other_error), other_error)) { return 14; }
+    if (!E::eq(err.unwrap_err_or(other_error), error)) { return 15; }
+    if (!E::eq(ok.unwrap_err_or(other_error), other_error)) { return 16; }
+
+    // or keeps a success and otherwise takes the fallback, error included.
+    if (!core::result::or(ok, ok_other).contains(value)) { return 17; }
+    if (!core::result::or(err, ok_other).contains(other)) { return 18; }
+    if (!core::result::or(err, err_other).contains_err(other_error)) { return 19; }
+    if (!ok.or(err).contains(value) || !err.or(err_other).contains_err(other_error)) { return 20; }
+    // and follows a success with `next` and keeps the first error.
+    if (!core::result::and(ok, ok_other).contains(other)) { return 21; }
+    if (!core::result::and(ok, err_other).contains_err(other_error)) { return 22; }
+    if (!core::result::and(err, err_other).contains_err(error)) { return 23; }
+    if (!ok.and(ok_other).contains(other) || !err.and(ok_other).contains_err(error)) { return 24; }
+
+    if (!ok.contains(value) || !err.contains_err(error) || !err_other.contains_err(other_error)) {
+        return 25;
+    }
+    return 0;
+}
+
+fn row(index: i32, code: i32) -> i32 {
+    if (code == 0) { return 0; }
+    print(index * 100 + code);
+    return index;
+}
+
+fn both<T>(index: i32, value: T, other: T) -> i32 where T: core::cmp::Eq<T> {
+    let code: i32 = row(index, option_checks(value, other));
+    if (code != 0) { return code; }
+    return row(index + 1, result_checks(value, other, other, value));
+}
+
+fn main() -> i32 {
+    let i8_low: i8 = -128;
+    let i8_high: i8 = 127;
+    let i16_low: i16 = -32768;
+    let i16_high: i16 = 32767;
+    let i64_low: i64 = -9223372036854775808;
+    let i64_high: i64 = 9223372036854775807;
+    let u8_low: u8 = 0;
+    let u8_high: u8 = 255;
+    let u16_low: u16 = 0;
+    let u16_high: u16 = 65535;
+    let u32_high: u32 = 4294967295;
+    let u32_low: u32 = 0;
+    let u64_high: u64 = 18446744073709551615;
+    let u64_low: u64 = 1;
+    let isize_low: isize = -1;
+    let isize_high: isize = 1;
+    let usize_low: usize = 0;
+    let usize_high: usize = 4096;
+    let null: ptr = 0;
+    let address: ptr = null + (64 as usize);
+    let checks: [i32; 18] = [
+        both(2, -2147483648, 2147483647),
+        both(4, i8_low, i8_high),
+        both(6, i16_low, i16_high),
+        both(8, i64_low, i64_high),
+        both(10, isize_low, isize_high),
+        both(12, u8_high, u8_low),
+        both(14, u16_high, u16_low),
+        both(16, u32_high, u32_low),
+        both(18, u64_high, u64_low),
+        both(20, usize_high, usize_low),
+        both(22, false, true),
+        both(24, 'é', '\0'),
+        both(26, -2.5, 3.5),
+        both(28, address, null),
+        both(30, core::wide_i64::from_words(4294967295, 1), core::wide_i64::from_i32(-1)),
+        both(32, core::wide_u64::from_words(1, 0), core::wide_u64::from_u32(4294967295)),
+        both(34, Score { points: 3, bonus: true }, Score { points: 3, bonus: false }),
+        row(36, result_checks(5, 6, 'x', 'y')),
+    ];
+    let score: Score = Score { points: 7, bonus: true };
+    let present: core::option::Option<Score> = core::option::Some(score);
+    let success: core::result::Result<Score, Score> = core::result::Ok(score);
+    let failure: core::result::Result<Score, Score> = core::result::Err(score);
+    let digit: core::option::Option<i32> = core::option::Some(4);
+    let parsed: core::result::Result<i32, u8> = core::result::Ok(5);
+    let refused: core::result::Result<i32, u8> = core::result::Err(6);
+    if (present.unwrap().points != 7 || success.unwrap().points != 7) { return 38; }
+    if (!failure.unwrap_err().bonus || digit.unwrap() != 4) { return 38; }
+    if (parsed.unwrap() != 5 || refused.unwrap_err() != 6) { return 38; }
+    let index: i32 = 0;
+    while (index < 18) {
+        if (checks[index] != 0) { return checks[index]; }
+        index += 1;
+    }
+    return 0;
+}

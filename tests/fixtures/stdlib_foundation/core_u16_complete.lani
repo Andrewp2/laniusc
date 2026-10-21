@@ -1,6 +1,6 @@
 module app::main;
 import core::u16;
-import core::option_u16;
+import core::option;
 fn main() -> i32 {
     let zero: u16 = 0;
     let maximum: u16 = 65535;
@@ -22,10 +22,10 @@ fn main() -> i32 {
         core::u16::abs_diff(3, 9) != 6) {
         return 2;
     }
-    if (!core::option_u16::contains(core::u16::checked_add(7, 5), 12) ||
-        !core::option_u16::is_none(core::u16::checked_add(maximum, 1)) ||
-        !core::option_u16::contains(core::u16::checked_sub(7, 5), 2) ||
-        !core::option_u16::is_none(core::u16::checked_sub(zero, 1))) {
+    if (!core::option::contains(core::u16::checked_add(7, 5), 12) ||
+        !core::option::is_none(core::u16::checked_add(maximum, 1)) ||
+        !core::option::contains(core::u16::checked_sub(7, 5), 2) ||
+        !core::option::is_none(core::u16::checked_sub(zero, 1))) {
         return 3;
     }
     if (!core::u16::is_zero(zero) || core::u16::is_zero(1) ||
@@ -49,10 +49,10 @@ fn main() -> i32 {
         core::u16::next_power_of_two(maximum) != zero) {
         return 5;
     }
-    if (!core::option_u16::contains(core::u16::checked_next_power_of_two(7), 8) ||
-        !core::option_u16::contains(core::u16::checked_next_power_of_two(zero), 1) ||
-        !core::option_u16::contains(core::u16::checked_next_power_of_two(high), high) ||
-        !core::option_u16::is_none(core::u16::checked_next_power_of_two(maximum))) {
+    if (!core::option::contains(core::u16::checked_next_power_of_two(7), 8) ||
+        !core::option::contains(core::u16::checked_next_power_of_two(zero), 1) ||
+        !core::option::contains(core::u16::checked_next_power_of_two(high), high) ||
+        !core::option::is_none(core::u16::checked_next_power_of_two(maximum))) {
         return 6;
     }
     if (!core::u16::is_aligned(16, 8) ||

@@ -1,6 +1,6 @@
 module app::main;
 import core::u32;
-import core::option_u32;
+import core::option;
 
 fn main() -> i32 {
     let zero: u32 = 0;
@@ -22,10 +22,10 @@ fn main() -> i32 {
         core::u32::abs_diff(maximum, zero) != maximum) {
         return 2;
     }
-    if (!core::option_u32::contains(core::u32::checked_add(7, 5), 12) ||
-        !core::option_u32::is_none(core::u32::checked_add(maximum, 1)) ||
-        !core::option_u32::contains(core::u32::checked_sub(7, 5), 2) ||
-        !core::option_u32::is_none(core::u32::checked_sub(zero, 1))) {
+    if (!core::option::contains(core::u32::checked_add(7, 5), 12) ||
+        !core::option::is_none(core::u32::checked_add(maximum, 1)) ||
+        !core::option::contains(core::u32::checked_sub(7, 5), 2) ||
+        !core::option::is_none(core::u32::checked_sub(zero, 1))) {
         return 3;
     }
     if (!core::u32::is_zero(zero) || core::u32::is_zero(1) ||
@@ -46,9 +46,9 @@ fn main() -> i32 {
         core::u32::next_power_of_two(maximum) != zero) {
         return 5;
     }
-    if (!core::option_u32::contains(core::u32::checked_next_power_of_two(7), 8) ||
-        !core::option_u32::contains(core::u32::checked_next_power_of_two(zero), 1) ||
-        !core::option_u32::is_none(core::u32::checked_next_power_of_two(maximum))) {
+    if (!core::option::contains(core::u32::checked_next_power_of_two(7), 8) ||
+        !core::option::contains(core::u32::checked_next_power_of_two(zero), 1) ||
+        !core::option::is_none(core::u32::checked_next_power_of_two(maximum))) {
         return 6;
     }
     if (!core::u32::is_aligned(16, 8) ||

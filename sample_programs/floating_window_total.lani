@@ -1,6 +1,6 @@
 module app::main;
 import core::f32;
-import core::option_f32;
+import core::option;
 import core::range_f32;
 import core::slice_f32;
 
@@ -16,8 +16,8 @@ fn main() -> i32 {
     if (!core::f32::is_finite(raw_total) ||
         !acceptable.contains(raw_total)) { return 3; }
     let bounded: f32 = core::f32::clamp_or(raw_total, 0.0, 100.0, -1.0);
-    let result: core::option_f32::OptionF32 = core::option_f32::some(bounded);
-    let total: f32 = core::option_f32::unwrap_or(result, -1.0);
+    let result: core::option::Option<f32> = core::option::Some(bounded);
+    let total: f32 = core::option::unwrap_or(result, -1.0);
     if (total != 7.0) { return 2; }
     let matched_index: i32 = core::slice_f32::binary_search_last_finite_or(readings, 3, 3.0, -1);
     print(matched_index);

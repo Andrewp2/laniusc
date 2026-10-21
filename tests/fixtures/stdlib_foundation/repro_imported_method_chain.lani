@@ -1,13 +1,13 @@
 module app::main;
-import core::result_u32;
-import core::option_u32;
+import core::result;
+import core::option;
 
 fn main() -> i32 {
-    let success: core::result_u32::ResultU32 = core::result_u32::ok(7);
-    let failure: core::result_u32::ResultU32 = core::result_u32::err(3);
+    let success: core::result::Result<u32, u32> = core::result::Ok(7);
+    let failure: core::result::Result<u32, u32> = core::result::Err(3);
     if (!success.or(failure).contains(7)) { return 1; }
     if (!success.or(failure).or(failure).contains(7)) { return 2; }
-    let present: core::option_u32::OptionU32 = core::option_u32::some(7);
+    let present: core::option::Option<u32> = core::option::Some(7);
     if (!present.ok_or(3).contains(7)) { return 3; }
     return 0;
 }

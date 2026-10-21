@@ -109,8 +109,9 @@ fn generic_option_and_result_variant_payloads_refer_to_their_enum_parameters() {
     let artifact = common::semantic_interface_with_timeout(
         0,
         &[
+            include_str!("../stdlib/core/cmp.lani"),
+            include_str!("../stdlib/core/panic.lani"),
             include_str!("../stdlib/core/result.lani"),
-            include_str!("../stdlib/core/result_bool.lani"),
             include_str!("../stdlib/core/option.lani"),
         ],
     )
@@ -224,7 +225,7 @@ fn generic_vec_public_methods_remain_exported_under_inherent_implementations() {
             include_str!("../stdlib/alloc/allocator.lani"),
             include_str!("../stdlib/core/cmp.lani"),
             include_str!("../stdlib/core/mem.lani"),
-            include_str!("../stdlib/core/result_bool.lani"),
+            include_str!("../stdlib/core/result.lani"),
             include_str!("../stdlib/core/option.lani"),
             include_str!("../stdlib/core/panic.lani"),
             include_str!("../stdlib/std/vec.lani"),
@@ -253,13 +254,16 @@ fn public_option_methods_export_their_explicit_parameter_types() {
     let artifact = common::semantic_interface_with_timeout(
         0,
         &[
-            include_str!("../stdlib/core/result_bool.lani"),
+            include_str!("../stdlib/core/cmp.lani"),
+            include_str!("../stdlib/core/panic.lani"),
+            include_str!("../stdlib/core/result.lani"),
             include_str!("../stdlib/core/option.lani"),
         ],
     )
     .expect("export public Option method parameters");
     let implementations = inherent_implementations(&artifact, "Option");
-    for name in ["contains", "unwrap_or", "or", "and", "xor", "ok_or"] {
+    // ok_or has its own E besides the impl's T, so it is not in this list.
+    for name in ["contains", "unwrap_or", "or", "and", "xor"] {
         let (implementation_index, method) = implementations
             .iter()
             .flat_map(|&index| implementation_members(&artifact, index)
@@ -272,8 +276,8 @@ fn public_option_methods_export_their_explicit_parameter_types() {
                 {
                     return false;
                 }
-                // contains/ok_or are concrete bool methods. The value methods
-                // belong to impl<T>; their portable signature must preserve T.
+                // The methods belong to impl<T>; their portable signature must
+                // preserve T.
                 let implementation = artifact.implementations[*index];
                 let receiver = artifact.types[implementation.subject_type as usize];
                 if receiver.edge_count != 1 {
@@ -281,12 +285,7 @@ fn public_option_methods_export_their_explicit_parameter_types() {
                 }
                 let argument = artifact.types
                     [artifact.type_edges[receiver.first_edge as usize].type_index as usize];
-                if matches!(name, "contains" | "ok_or") {
-                    argument.kind == GpuSemanticInterfaceTypeKind::Scalar as u32
-                        && argument.payload_lo == 2
-                } else {
-                    argument.kind == GpuSemanticInterfaceTypeKind::GenericParameter as u32
-                }
+                argument.kind == GpuSemanticInterfaceTypeKind::GenericParameter as u32
             })
             .unwrap_or_else(|| panic!("missing Option::{name}"));
         let members = implementation_members(&artifact, implementation_index);
@@ -306,14 +305,7 @@ fn public_option_methods_export_their_explicit_parameter_types() {
         let parameter = parameters[0];
         assert_eq!(parameter.value_lo, 1, "{name}: source argument after self");
         let ty = &artifact.types[parameter.type_index as usize];
-        if matches!(name, "contains" | "ok_or") {
-            assert_eq!(
-                ty.kind,
-                GpuSemanticInterfaceTypeKind::Scalar as u32,
-                "{name}"
-            );
-            assert_eq!(ty.payload_lo, 2, "{name}: bool parameter");
-        } else {
+        {
             let receiver = artifact.types[method.receiver_type_index as usize];
             let receiver_argument = artifact.types
                 [artifact.type_edges[receiver.first_edge as usize].type_index as usize];
@@ -339,14 +331,14 @@ fn public_option_methods_export_their_explicit_parameter_types() {
                 member.kind == GpuSemanticInterfaceMemberKind::GenericTypeParameter as u32
                     && member.value_hi == method.value_hi).count(), 0,
                 "{name}: T belongs to the implementation, not a method header");
-            if name == "unwrap_or" {
+            if matches!(name, "unwrap_or" | "contains") {
                 assert_eq!(
                     ty.kind,
                     GpuSemanticInterfaceTypeKind::GenericParameter as u32
                 );
                 assert_eq!(
                     ty.payload_lo, receiver_argument.payload_lo,
-                    "fallback has the receiver's T"
+                    "{name}: the argument has the receiver's T"
                 );
                 continue;
             }
