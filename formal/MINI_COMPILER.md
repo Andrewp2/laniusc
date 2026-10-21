@@ -229,6 +229,7 @@ semantics:
 | `HeapCorr` | 342 | 1.0 | Core heap to mini heap correspondence; allocate, load, store, free |
 | `LowerStmt` | 2339 | 8.2 | Core cells, frames, flat values, calls, enums and `match`, statements |
 | `SourceCorrect` | 111 | 0.8 | top-level theorem |
+| `TypeSound` | 1206 | 2.2 | type checker soundness: an accepted program is well typed in Core (step 7) |
 
 The pass is about 1,200 lines of Lanius (the end of `compiler.lani`), and the
 proofs are about 4,800 lines. The per-function difftest covers it (146
@@ -240,6 +241,34 @@ no differences, 9 native stack overflows); at 30 cases per function the harness 
 laniusc on the laptop (a GPU buffer fails to allocate). Assumptions the theorem does not cover yet: Core
 programs outside the subset, traps and divergence (the theorem covers runs that
 return), and the source's type checker against Core's typing rules (step 7).
+
+Type checker soundness (step 7, `Lanius/Mini/TypeSound.lean`): when the front
+pass accepts a program, its Core meaning is well typed by Core's own rules,
+`Lanius.Typing.ProgramWellTyped` (the judgment Core's checker
+`checkProgramWellTyped` decides and the compiler boundaries use).
+`compileSource_wellTyped` says `compileSource sp = some binary`, with two
+premises the front pass does not check, gives
+`ProgramWellTyped (sp.toCoreWith structs enums)`, which is `sp.toCore` with
+those struct and enum declarations. Those are the two places the front pass
+accepts programs Core rejects. Each comes with a program the front pass
+lowers and a proof that Core rejects it. (1) Nominal types: Core looks struct
+and enum types up by id in the program's declarations, but `SrcType.struct id
+fields` carries its fields inline and `SrcProgram.toCore` emits no
+declarations. The premise `sp.Declared P` says every parameter and binding
+type agrees with `P`'s declarations. `idClash` uses struct id 0 with fields
+`[i32]` and with `[bool]`, and no declarations make it well typed. A program
+whose types are all scalar needs none (`compileSource_wellTyped_scalar`
+concludes `ProgramWellTyped sp.toCore`). (2) Returns: Core requires a
+function with a non-unit result to end in `return` on every path
+(`DefinitelyReturns`, where a `while` never counts), and the front pass does
+not check this. The premise is `func.body.returns = true` for every function;
+`SrcStmt.returns` is that check (`returns_sound`). `noReturn` is
+`fn f() -> i32 {}`. Everything else matches: operators, casts, literals
+(unsigned ones in range, alignments `2^shift` with `shift < 32`), shadowing
+(the scope's innermost binding is Core's last `Context.bind`, for parameters
+and match binders too), calls (function `i` is the `i`th signature), field
+reads and writes, and exhaustive non-empty `match`. The proof is one lemma per
+lowering function, by induction on the syntax.
 
 ### Milestone 4: the compiler in Lanius, and extraction
 
