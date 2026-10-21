@@ -1088,13 +1088,45 @@ fn copy_same(b: Binding, ty: SrcType) -> core::option::Option<List<Expr>> {
     return None;
 }
 
-// A struct value: a struct local of that type, slot by slot.
+// extract: inline
+fn copy_slots(slot: usize, field: SrcType, ty: SrcType) -> core::option::Option<List<Expr>> {
+    if (field.same(ty) && (field.size() > 0)) {
+        return Some(slot_vars(slot, field.size()));
+    }
+    return None;
+}
+
+pub fn copy_field_at(slot: usize, found: core::option::Option<SrcType>, ty: SrcType) -> core::option::Option<List<Expr>> {
+    return match (found) {
+        None -> None,
+        Some(field) -> copy_slots(slot, field, ty),
+    };
+}
+
+pub fn copy_field_of(b: Binding, index: usize, ty: SrcType) -> core::option::Option<List<Expr>> {
+    return match (b.ty) {
+        I32 -> None,
+        Bool -> None,
+        Struct(id, fields) -> copy_field_at(plus(b.slot, field_offset(unbox(fields), index)), get(unbox(fields), index), ty),
+        Enum(id, variants) -> None,
+    };
+}
+
+// A field of type ty of a struct local, slot by slot. It takes slots.
+pub fn copy_field(binding: core::option::Option<Binding>, index: usize, ty: SrcType) -> core::option::Option<List<Expr>> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> copy_field_of(b, index, ty),
+    };
+}
+
+// An aggregate value: a local or a field of that type, slot by slot.
 pub fn lower_copy(scope: List<Binding>, e: SrcExpr, ty: SrcType) -> core::option::Option<List<Expr>> {
     return match (e) {
         Int(value) -> None,
         Boolean(value) -> None,
         Local(id) -> copy_binding(lookup(scope, id), ty),
-        Field(id, index) -> None,
+        Field(id, index) -> copy_field(lookup(scope, id), index, ty),
         Negate(operand) -> None,
         Not(operand) -> None,
         Apply(op, left, right) -> None,
@@ -1205,22 +1237,30 @@ fn arm_bind(binder: usize, ty: SrcType, rest: List<usize>, more: List<SrcType>, 
     return None;
 }
 
-pub fn lower_arm_value(scope: core::option::Option<List<Binding>>, value: SrcExpr, ty: SrcType) -> core::option::Option<Expr> {
-    return match (scope) {
-        None -> None,
-        Some(s) -> lower_as(s, value, ty),
+// Assign values to slot, slot + 1, ..., then run rest.
+pub fn assign_from(slot: usize, values: List<Expr>, rest: Stmt) -> Stmt {
+    return match (values) {
+        Nil -> rest,
+        Cons(value, more) -> Seq(boxed(Assign(slot, value)), boxed(assign_from(plus(slot, 1), unbox(more), rest))),
     };
 }
 
-// Arm k stores value into target; the last arm needs no tag test.
-pub fn lower_arm(slot: usize, target: usize, k: usize, value: core::option::Option<Expr>, rest: List<SrcArm>, others: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
-    return match (value) {
+pub fn lower_arm_value(scope: core::option::Option<List<Binding>>, value: SrcExpr, ty: SrcType) -> core::option::Option<List<Expr>> {
+    return match (scope) {
         None -> None,
-        Some(v) -> match (rest) {
-            Nil -> Some(Assign(target, v)),
+        Some(s) -> lower_value(s, value, ty),
+    };
+}
+
+// Arm k stores its value's slots from target; the last arm needs no tag test.
+pub fn lower_arm(slot: usize, target: usize, k: usize, values: core::option::Option<List<Expr>>, rest: List<SrcArm>, others: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (values) {
+        None -> None,
+        Some(vs) -> match (rest) {
+            Nil -> Some(assign_from(target, vs, Skip)),
             Cons(arm, more) -> match (others) {
                 None -> None,
-                Some(o) -> Some(Ite(Compare(Eq, boxed(Var(slot)), boxed(Lit(k as i32))), boxed(Assign(target, v)), boxed(o))),
+                Some(o) -> Some(Ite(Compare(Eq, boxed(Var(slot)), boxed(Lit(k as i32))), boxed(assign_from(target, vs, Skip)), boxed(o))),
             },
         },
     };
@@ -1237,9 +1277,9 @@ pub fn lower_arms(scope: List<Binding>, slot: usize, target: usize, ty: SrcType,
     };
 }
 
-// The match is exhaustive, its value scalar, and its tags fit in 32 bits.
+// The match is exhaustive, its value takes slots, and its tags fit in 32 bits.
 pub fn lower_match_arms(scope: List<Binding>, slot: usize, same: bool, variants: List<List<SrcType>>, arms: List<SrcArm>, ty: SrcType, target: usize) -> core::option::Option<Stmt> {
-    if (same && ty.is_scalar() && (length(arms) == length(variants)) && (length(variants) < 4294967296)) {
+    if (same && (ty.size() > 0) && (length(arms) == length(variants)) && (length(variants) < 4294967296)) {
         return lower_arms(scope, slot, target, ty, 0, variants, arms);
     }
     return None;
@@ -1280,14 +1320,6 @@ pub fn lower_call(sigs: List<Sig>, scope: List<Binding>, callee: usize, args: Li
     return match (get(sigs, callee)) {
         None -> None,
         Some(sig) -> lower_call_sig(scope, sig, args, ty),
-    };
-}
-
-// Assign values to slot, slot + 1, ..., then run rest.
-pub fn assign_from(slot: usize, values: List<Expr>, rest: Stmt) -> Stmt {
-    return match (values) {
-        Nil -> rest,
-        Cons(value, more) -> Seq(boxed(Assign(slot, value)), boxed(assign_from(plus(slot, 1), unbox(more), rest))),
     };
 }
 

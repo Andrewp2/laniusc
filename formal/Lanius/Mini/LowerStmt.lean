@@ -496,6 +496,9 @@ inductive ValueShape (scope : List Binding) : List Expr → Prop where
       ValueShape scope [x]
   /-- a copy of binding `b` -/
   | copy {b : Binding} : b ∈ scope → ValueShape scope (slotVars b.slot b.ty.size)
+  /-- the slots `off ..< off + n` of binding `b` -/
+  | part {b : Binding} {off n : Nat} : b ∈ scope → 0 < n → off + n ≤ b.ty.size →
+      ValueShape scope (slotVars (b.slot + off) n)
 
 theorem lowerValue_sound {scope frame st env} {prog : Core.Program} (corr : Corr scope frame st env)
     (target : prog.target = .x86_64) {e : SrcExpr} {ty : SrcType} {xs : List Expr}
@@ -538,6 +541,53 @@ theorem lowerValue_sound {scope frame st env} {prog : Core.Program} (corr : Corr
           rw [Nat.zero_add, entry_evalAll env _ i _ (slotVars_get _ _ i below)]
           rfl
       · simp at ok
+    | field id index =>
+      simp only [lowerCopy, copyField] at ok
+      split at ok
+      · simp at ok
+      rename_i b found
+      simp only [copyFieldOf] at ok
+      split at ok
+      · simp at ok
+      · simp at ok
+      rename_i sid fields hty
+      simp only [copyFieldAt] at ok
+      split at ok
+      · simp at ok
+      rename_i f fieldFound
+      split at ok
+      · rename_i cond
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at cond
+        obtain ⟨same, sized⟩ := cond
+        simp only [Option.some.injEq] at ok
+        subst ok
+        have tyEq := SrcType.same_eq same
+        subst tyEq
+        cases fuel with
+        | zero => simp [evalExpr] at run
+        | succ fuel =>
+          cases fuel with
+          | zero => simp [SrcExpr.toCore, evalExpr] at run
+          | succ fuel =>
+            obtain ⟨w, eval, holds⟩ := corr.local found fuel prog
+            rw [hty] at holds
+            cases holds with
+            | struct fieldsHold =>
+              obtain ⟨fv, got, holdsField⟩ := fieldsHold.get fieldFound
+              simp only [SrcExpr.toCore, evalExpr] at run
+              simp only [evalExpr] at eval
+              rw [eval] at run
+              simp only [got, Semantics.Outcome.done.injEq] at run
+              obtain ⟨rfl, rfl⟩ := run
+              refine ⟨rfl, ⟨slotVars_length _ _, holdsField.congr fun i below => ?_⟩,
+                .part (lookup_mem found).1 sized ?_⟩
+              · rw [Nat.zero_add, entry_evalAll env _ i _ (slotVars_get _ _ i below)]
+                rfl
+              · rw [hty]
+                simp only [SrcType.size]
+                exact fieldOffset_lt fieldFound
+      · simp at ok
+      simp at ok
     | _ => simp [lowerCopy] at ok
 
 theorem lowerArgs_sound {scope frame st env} {prog : Core.Program} (corr : Corr scope frame st env)
@@ -1062,12 +1112,14 @@ theorem ValueShape.sized {scope frame base next} {xs : List Expr} (shape : Value
   cases shape with
   | single => simp
   | copy mem => rw [slotVars_length]; exact fr.sized _ mem
+  | part _ pos _ => rw [slotVars_length]; exact pos
 
 theorem ValueShape.insens_next {scope frame base next} {xs : List Expr} (shape : ValueShape scope xs)
     (fr : Layout scope frame base next) : Insens xs next := by
   cases shape with
   | single => exact Insens.single _ _
   | copy mem => exact Insens.copy (.inr (.inl (fr.slots _ mem)))
+  | part mem _ within => exact Insens.copy (.inr (.inl (by have := fr.slots _ mem; omega)))
 
 theorem ValueShape.insens_self {scope frame base next} {xs : List Expr} (shape : ValueShape scope xs)
     (fr : Layout scope frame base next) {b : Binding} (bmem : b ∈ scope) (len : xs.length = b.ty.size) :
@@ -1082,6 +1134,16 @@ theorem ValueShape.insens_self {scope frame base next} {xs : List Expr} (shape :
     · rcases fr.apart a mem b bmem same with left | right
       · exact Insens.copy (.inr (.inl left))
       · exact Insens.copy (.inr (.inr (by rw [len]; exact right)))
+  | part mem pos within =>
+    rename_i a off n
+    rw [slotVars_length] at len
+    by_cases same : a = b
+    · subst same
+      obtain rfl : off = 0 := by omega
+      exact Insens.copy (.inl rfl)
+    · rcases fr.apart a mem b bmem same with left | right
+      · exact Insens.copy (.inr (.inl (by omega)))
+      · exact Insens.copy (.inr (.inr (by omega)))
 
 theorem slotVars_mem {slot count : Nat} {x : Expr} (mem : x ∈ slotVars slot count) :
     ∃ j, x = .var j ∧ slot ≤ j ∧ j < slot + count := by
@@ -1092,19 +1154,25 @@ theorem slotVars_mem {slot count : Nat} {x : Expr} (mem : x ∈ slotVars slot co
   rw [slotVars_get _ _ _ below, Option.some.injEq] at found
   exact ⟨slot + i, found.symm, by omega, by omega⟩
 
-theorem ValueShape.below {scope frame base next} {xs : List Expr} (shape : ValueShape scope xs)
-    (fr : Layout scope frame base next) : ∀ x ∈ xs, x.Below next := by
+theorem ValueShape.below {scope next} {xs : List Expr} (shape : ValueShape scope xs)
+    (slots : ∀ b ∈ scope, b.slot + b.ty.size ≤ next) : ∀ x ∈ xs, x.Below next := by
   cases shape with
   | single lowered same =>
     intro x mem
     simp only [List.mem_singleton] at mem
     subst mem
     rw [← same]
-    exact SrcExpr.lower_below fr.slots _ lowered
+    exact SrcExpr.lower_below slots _ lowered
   | copy bmem =>
     intro x mem
     obtain ⟨j, rfl, _, below⟩ := slotVars_mem mem
-    have := fr.slots _ bmem
+    have := slots _ bmem
+    simp only [Expr.Below]
+    omega
+  | part bmem _ within =>
+    intro x mem
+    obtain ⟨j, rfl, _, below⟩ := slotVars_mem mem
+    have := slots _ bmem
     simp only [Expr.Below]
     omega
 
@@ -1216,6 +1284,32 @@ theorem armScope_corr :
           (keeps'.lower (Nat.le_succ _)), by simp [len]⟩
       · simp at ok
 
+/-- The arm's scope stays below `n` when its payload does. -/
+theorem armScope_slots : ∀ (binders : List Nat) {types : List SrcType} {slot : Nat}
+    {scope s' : List Binding} {n : Nat}, armScope binders types slot scope = some s' →
+    (∀ b ∈ scope, b.slot + b.ty.size ≤ n) → slot + sizes types ≤ n → ∀ b ∈ s', b.slot + b.ty.size ≤ n
+  | [], types, slot, scope, s', n, ok, slots, _ => by
+    cases types with
+    | cons => simp [armScope] at ok
+    | nil =>
+      simp only [armScope, Option.some.injEq] at ok
+      subst ok
+      exact slots
+  | binder :: rest, types, slot, scope, s', n, ok, slots, within => by
+    cases types with
+    | nil => simp [armScope] at ok
+    | cons f more =>
+      simp only [armScope] at ok
+      split at ok
+      · simp only [sizes] at within
+        refine armScope_slots rest ok (fun b mem => ?_) (by omega)
+        simp only [List.mem_cons] at mem
+        rcases mem with rfl | mem
+        · show slot + f.size ≤ n
+          omega
+        · exact slots b mem
+      · simp at ok
+
 theorem matchBinds : ∀ (binders : List Nat) (vs : List Value), binders.length = vs.length →
     Semantics.matchPatterns (binders.map Core.Pattern.bind) vs = some (binders.zip vs)
   | [], [], _ => by simp [Semantics.matchPatterns]
@@ -1246,23 +1340,24 @@ theorem sizes_le_maxSize_of_mem : ∀ {variants : List (List SrcType)} {fs : Lis
 /-- The tag tests pick the arm Core picks, and it stores that arm's value. -/
 theorem lowerArms_sound {P : Core.Program} {mp : Program} (target : P.target = .x86_64)
     {scope frame st env} (corr : Corr scope frame st env) (fresh : st.Fresh)
-    {slot dst eid : Nat} {ty : SrcType} :
+    {slot dst eid : Nat} {ty : SrcType} (slots : ∀ b ∈ scope, b.slot + b.ty.size ≤ dst) :
     ∀ (arms : List SrcArm) {variants : List (List SrcType)} {k kv : Nat} {stmt : Stmt} {fuel : Nat}
       {fs : List SrcType} {vs : List Value} {v : Value} {st' : State},
       lowerArms scope slot dst ty k variants arms = some stmt → arms.length = variants.length →
       (∀ fs ∈ variants, ∀ b ∈ scope, b.slot < slot + 1 ∨ slot + 1 + sizes fs ≤ b.slot) →
-      k ≤ kv → variants[kv - k]? = some fs → kv < 2 ^ 32 →
+      (∀ fs ∈ variants, slot + 1 + sizes fs ≤ dst) → k ≤ kv → variants[kv - k]? = some fs → kv < 2 ^ 32 →
       env slot = BitVec.ofNat 32 kv → FieldsHold fs vs env (slot + 1) →
       Semantics.evalMatchArms fuel P st (.enumeration eid kv vs) (coreArms eid k arms) = .done v st' →
       st'.Fresh ∧ Keeps st.nextCell st st' ∧ st'.locals = st.locals ∧
-        ∃ x, ty.Holds v x ∧ ∀ d, Exec mp d env stmt (.normal (env.set dst x)) := by
+        ∃ xs, FlatValue ty v env xs ∧ Insens xs dst ∧
+          ∀ d, Exec mp d env stmt (.normal (env.setFrom dst xs)) := by
   intro arms
   induction arms with
   | nil =>
     intro variants k kv stmt fuel fs vs v st' ok
     simp [lowerArms] at ok
   | cons arm rest ih =>
-    intro variants k kv stmt fuel fs vs v st' ok len clear le found bound tag payload run
+    intro variants k kv stmt fuel fs vs v st' ok len clear room le found bound tag payload run
     cases variants with
     | nil => simp [lowerArms] at ok
     | cons types more =>
@@ -1272,7 +1367,7 @@ theorem lowerArms_sound {P : Core.Program} {mp : Program} (target : P.target = .
         simp only [lowerArms, lowerArm] at ok
         split at ok
         · simp at ok
-        rename_i x valueOk
+        rename_i xs valueOk
         simp only [coreArms, Semantics.evalMatchArms, Semantics.matchPattern] at run
         by_cases hk : k = kv
         · subst hk
@@ -1289,17 +1384,19 @@ theorem lowerArms_sound {P : Core.Program} {mp : Program} (target : P.target = .
           | done w st2 =>
             simp only [armRun, Semantics.restoreOutcomeLocals, Semantics.Outcome.done.injEq] at run
             obtain ⟨rfl, rfl⟩ := run
-            obtain ⟨rfl, holds⟩ := lowerAs_sound corr' target valueOk armRun
-            refine ⟨restore_fresh fresh', keeps'.trans (restore_keeps _ _ _), rfl, _, holds, fun d => ?_⟩
+            obtain ⟨rfl, flat, shape⟩ := lowerValue_sound corr' target valueOk armRun
+            have slots' := armScope_slots arm.binders scopeOk slots (room _ (List.mem_cons_self ..))
+            refine ⟨restore_fresh fresh', keeps'.trans (restore_keeps _ _ _), rfl, xs, flat,
+              Insens.below fun x mem => shape.below slots' x mem, fun d => ?_⟩
             split at ok
             · simp only [Option.some.injEq] at ok
               subst ok
-              exact .assign
+              exact assignFrom_exec xs dst .skip
             · split at ok
               · simp at ok
               · simp only [Option.some.injEq] at ok
                 subst ok
-                exact .ifTrue (by simp [Expr.eval, CmpOp.holds, tag]) .assign
+                exact .ifTrue (by simp [Expr.eval, CmpOp.holds, tag]) (assignFrom_exec xs dst .skip)
           | trapped => simp [armRun, Semantics.restoreOutcomeLocals] at run
           | exited => simp [armRun, Semantics.restoreOutcomeLocals] at run
           | outOfFuel => simp [armRun, Semantics.restoreOutcomeLocals] at run
@@ -1317,11 +1414,12 @@ theorem lowerArms_sound {P : Core.Program} {mp : Program} (target : P.target = .
             rename_i o othersOk
             simp only [Option.some.injEq] at ok
             subst ok
-            obtain ⟨fresh', keeps', locals', x', holds', exec'⟩ := ih othersOk (by simpa using len)
-              (fun fs mem => clear fs (List.mem_cons_of_mem _ mem)) (by omega) found' bound tag
+            obtain ⟨fresh', keeps', locals', xs', flat', insens', exec'⟩ := ih othersOk (by simpa using len)
+              (fun fs mem => clear fs (List.mem_cons_of_mem _ mem))
+              (fun fs mem => room fs (List.mem_cons_of_mem _ mem)) (by omega) found' bound tag
               payload run
             have differ : BitVec.ofNat 32 kv ≠ BitVec.ofNat 32 k := ofNat_ne bound (by omega) (Ne.symm hk)
-            exact ⟨fresh', keeps', locals', x', holds', fun d =>
+            exact ⟨fresh', keeps', locals', xs', flat', insens', fun d =>
               .ifFalse (by simp [Expr.eval, CmpOp.holds, tag, differ]) (exec' d)⟩
 
 /-! ## Statements -/
@@ -1410,7 +1508,7 @@ theorem stmt_letStruct (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {fi
             ⟨by simp [SrcType.size, len], .struct fieldsHold⟩
           have insens : Insens xs next := Insens.below fun x mem => by
             obtain ⟨ys, shape, inYs⟩ := shapes x mem
-            exact shape.below fr x inYs
+            exact shape.below fr.slots x inYs
           obtain ⟨fresh', keeps, d, out, exec, matched⟩ := let_tail ih bodyOk corr fr fresh le
             (by simp only [SrcType.size]; omega)
             (fr.agree fun j below => setFrom_outside xs next env j (.inl below))
@@ -1508,7 +1606,7 @@ theorem stmt_letEnum (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {vari
             rcases mem with rfl | mem
             · trivial
             · obtain ⟨ys, shape, inYs⟩ := shapes x mem
-              exact shape.below fr x inYs
+              exact shape.below fr.slots x inYs
           have holds : (SrcType.enum eid variants).HoldsAt (.enumeration eid variant vs)
               (env.setFrom next (.lit (BitVec.ofNat 32 variant) :: fxs)) next := by
             refine .enum found ?_ (fieldsHold.congr fun i below => ?_)
@@ -1558,8 +1656,15 @@ theorem stmt_letMatch (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {scr
   case isFalse => simp at matchOk
   rename_i cond
   simp only [Bool.and_eq_true, decide_eq_true_eq] at cond
-  obtain ⟨⟨⟨rfl, scalar⟩, len⟩, few⟩ := cond
+  obtain ⟨⟨⟨rfl, sized⟩, len⟩, few⟩ := cond
   have bmem := (lookup_mem found).1
+  have room : ∀ fs ∈ variants, b.slot + 1 + sizes fs ≤ next := by
+    intro fs mem
+    have bound := sizes_le_maxSize_of_mem mem
+    have := fr.slots b bmem
+    rw [hty] at this
+    simp only [SrcType.size] at this
+    omega
   have clear : ∀ fs ∈ variants, ∀ b' ∈ scope, b'.slot < b.slot + 1 ∨ b.slot + 1 + sizes fs ≤ b'.slot := by
     intro fs mem b' mem'
     have bound := sizes_le_maxSize_of_mem mem
@@ -1590,15 +1695,15 @@ theorem stmt_letMatch (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {scr
         | @enum _ _ kv fs vs _ _ fsFound tag payload =>
         have kvLt : kv < variants.length := (List.getElem?_eq_some_iff.mp fsFound).1
         have kvBound : kv < 2 ^ 32 := Nat.lt_trans kvLt (by omega)
-        obtain ⟨fresh1, keeps1, locals1, x, holds, mexec⟩ :=
-          lowerArms_sound (mp := mp) (SrcProgram.target_toCore sp) corr fresh arms matchOk len clear
-            (Nat.zero_le _) (by simpa using fsFound) kvBound tag payload matchRun
+        obtain ⟨fresh1, keeps1, locals1, xs, flat, insens, mexec⟩ :=
+          lowerArms_sound (mp := mp) (SrcProgram.target_toCore sp) corr fresh fr.slots arms matchOk len
+            clear room (Nat.zero_le _) (by simpa using fsFound) kvBound tag payload matchRun
         have corr1 := corr.keeps fresh keeps1 locals1
         obtain ⟨fresh', keeps', d, out, exec, matched⟩ :=
           let_tail ih bodyOk corr1 fr fresh1 (Nat.le_trans le keeps1.next)
-            (by rw [SrcType.size_scalar scalar]; omega) (env' := env.set next x)
-            (fr.agree fun j below => by simp only [Env.set]; rw [if_neg (by omega)])
-            ((SrcType.holdsAt_scalar scalar).mpr (by simpa [Env.set] using holds)) run
+            sized (env' := env.setFrom next xs)
+            (fr.agree fun j below => setFrom_outside xs next env j (.inl below))
+            (flat.store insens) run
         exact ⟨fresh', (keeps1.lower le).trans keeps', d, out, .seq (mexec d) exec, matched⟩
   all_goals simp at run
 

@@ -103,7 +103,7 @@ The proof has two layers.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Compiler` | 1183 | 2.7 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass |
+| `Compiler` | 1205 | 2.7 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass |
 | `Semantics` | 97 | 0.7 | big-step source semantics with call depth |
 | `Asm` | 163 | 0.8 | abstract machine, byte-offset placement, `Star` runs |
 | `CompileCorrect` | 466 | 1.2 | compiler against the abstract machine |
@@ -126,11 +126,12 @@ Core, to the mini IR, then runs `compile_program`. The subset: `i32` and
 `bool` locals and parameters, `+ - * & | ^`, unary `-` and `!`, the six
 comparisons, `&&` and `||`, `let`, assignment, `let x = f(...)` and
 `x = f(...)`, sequencing, `if`, `while`, and `return`; and structs whose
-fields have any type, structs and enums included: literals in `let`, reads and
-writes of scalar fields, whole-struct copies, and struct parameters; and enums
-whose payloads have any type: `let x = E::V(...)`, copies, enum parameters,
-and `let y = match x { ... }` with one arm per variant in order, each binding
-its variant's payload and giving a scalar value. Each binding gets its own
+fields have any type, structs and enums included: literals in `let`, field
+reads (a struct or enum field copies its slots), writes of scalar fields,
+whole-struct copies, and struct parameters; and enums whose payloads have any
+type: `let x = E::V(...)`, copies, enum parameters, and
+`let y = match x { ... }` with one arm per variant in order, each binding its
+variant's payload and giving a value of any type. Each binding gets its own
 slots (lets after the parameters): a scalar one, a struct its fields' slots
 one after another, an enum a tag slot (the variant number) and then room for
 its longest payload; booleans are 1 and 0.
@@ -178,12 +179,12 @@ semantics:
 |---|---:|---:|---|
 | `Source` | 293 | 0.8 | Core meaning of source programs, value representation, `i32` wrap lemmas |
 | `LowerExpr` | 470 | 4.1 | expressions |
-| `LowerStmt` | 1921 | 8.1 | Core cells, frames, flat values, calls, enums and `match`, statements |
+| `LowerStmt` | 2026 | 8.1 | Core cells, frames, flat values, calls, enums and `match`, statements |
 | `SourceCorrect` | 89 | 0.7 | top-level theorem |
 
 The pass is about 900 lines of Lanius (the end of `compiler.lani`), and the
-proofs are about 2,800 lines. The per-function difftest covers it (122
-functions, 2,440 calls, no differences; 11 native stack overflows on huge
+proofs are about 2,800 lines. The per-function difftest covers it (125
+functions, 2,500 calls, no differences; 4 native stack overflows on huge
 random counts; types nested through `List` render through a `mutual` block of
 `partial def`s); at 30 cases per function the harness is now too large for
 laniusc on the laptop (a GPU buffer fails to allocate). Assumptions the theorem does not cover yet: Core

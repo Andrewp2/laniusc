@@ -835,13 +835,35 @@ def copyBinding (binding : Option Binding) (ty : SrcType) : Option (List Expr) :
     else
       none
 
-/-- A struct value: a struct local of that type, slot by slot. -/
+def copyFieldAt (slot : Nat) (found : Option SrcType) (ty : SrcType) : Option (List Expr) :=
+  match found with
+  | none => none
+  | some field =>
+    if SrcType.same field ty && decide (0 < SrcType.size field) then
+      some (slotVars slot (SrcType.size field))
+    else
+      none
+
+def copyFieldOf (b : Binding) (index : Nat) (ty : SrcType) : Option (List Expr) :=
+  match b.ty with
+  | .i32 => none
+  | .bool => none
+  | .struct id fields => copyFieldAt (b.slot + fieldOffset fields index) fields[index]? ty
+  | .enum id variants => none
+
+/-- A field of type ty of a struct local, slot by slot. It takes slots. -/
+def copyField (binding : Option Binding) (index : Nat) (ty : SrcType) : Option (List Expr) :=
+  match binding with
+  | none => none
+  | some b => copyFieldOf b index ty
+
+/-- An aggregate value: a local or a field of that type, slot by slot. -/
 def lowerCopy (scope : List Binding) (e : SrcExpr) (ty : SrcType) : Option (List Expr) :=
   match e with
   | .int value => none
   | .boolean value => none
   | .local id => copyBinding (lookup scope id) ty
-  | .field id index => none
+  | .field id index => copyField (lookup scope id) index ty
   | .negate operand => none
   | .not operand => none
   | .apply op left right => none
@@ -925,22 +947,28 @@ def armScope (binders : List Nat) (types : List SrcType) (slot : Nat) (scope : L
       else
         none
 
-def lowerArmValue (scope : Option (List Binding)) (value : SrcExpr) (ty : SrcType) : Option Expr :=
+/-- Assign values to slot, slot + 1, ..., then run rest. -/
+def assignFrom (slot : Nat) (values : List Expr) (rest : Stmt) : Stmt :=
+  match values with
+  | [] => rest
+  | value :: more => Stmt.seq (Stmt.assign slot value) (assignFrom (slot + 1) more rest)
+
+def lowerArmValue (scope : Option (List Binding)) (value : SrcExpr) (ty : SrcType) : Option (List Expr) :=
   match scope with
   | none => none
-  | some s => lowerAs s value ty
+  | some s => lowerValue s value ty
 
-/-- Arm k stores value into target; the last arm needs no tag test. -/
-def lowerArm (slot : Nat) (target : Nat) (k : Nat) (value : Option Expr) (rest : List SrcArm) (others : Option Stmt) : Option Stmt :=
-  match value with
+/-- Arm k stores its value's slots from target; the last arm needs no tag test. -/
+def lowerArm (slot : Nat) (target : Nat) (k : Nat) (values : Option (List Expr)) (rest : List SrcArm) (others : Option Stmt) : Option Stmt :=
+  match values with
   | none => none
-  | some v =>
+  | some vs =>
     match rest with
-    | [] => some (Stmt.assign target v)
+    | [] => some (assignFrom target vs Stmt.skip)
     | arm :: more =>
       match others with
       | none => none
-      | some o => some (Stmt.ite (Expr.compare CmpOp.eq (Expr.var slot) (Expr.lit (BitVec.ofNat 32 k))) (Stmt.assign target v) o)
+      | some o => some (Stmt.ite (Expr.compare CmpOp.eq (Expr.var slot) (Expr.lit (BitVec.ofNat 32 k))) (assignFrom target vs Stmt.skip) o)
 
 /-- Arms k, k + 1, ... of a match on the enum at slot, one per variant from k. -/
 def lowerArms (scope : List Binding) (slot : Nat) (target : Nat) (ty : SrcType) (k : Nat) (variants : List (List SrcType)) (arms : List SrcArm) : Option Stmt :=
@@ -951,9 +979,9 @@ def lowerArms (scope : List Binding) (slot : Nat) (target : Nat) (ty : SrcType) 
     | [] => none
     | types :: more => lowerArm slot target k (lowerArmValue (armScope arm.binders types (slot + 1) scope) arm.value ty) rest (lowerArms scope slot target ty (k + 1) more rest)
 
-/-- The match is exhaustive, its value scalar, and its tags fit in 32 bits. -/
+/-- The match is exhaustive, its value takes slots, and its tags fit in 32 bits. -/
 def lowerMatchArms (scope : List Binding) (slot : Nat) (same : Bool) (variants : List (List SrcType)) (arms : List SrcArm) (ty : SrcType) (target : Nat) : Option Stmt :=
-  if same && SrcType.isScalar ty && decide (arms.length = variants.length) && decide (variants.length < 4294967296) then
+  if same && decide (0 < SrcType.size ty) && decide (arms.length = variants.length) && decide (variants.length < 4294967296) then
     lowerArms scope slot target ty 0 variants arms
   else
     none
@@ -987,12 +1015,6 @@ def lowerCall (sigs : List Sig) (scope : List Binding) (callee : Nat) (args : Li
   match sigs[callee]? with
   | none => none
   | some sig => lowerCallSig scope sig args ty
-
-/-- Assign values to slot, slot + 1, ..., then run rest. -/
-def assignFrom (slot : Nat) (values : List Expr) (rest : Stmt) : Stmt :=
-  match values with
-  | [] => rest
-  | value :: more => Stmt.seq (Stmt.assign slot value) (assignFrom (slot + 1) more rest)
 
 def lowerLet (slot : Nat) (values : Option (List Expr)) (body : Option Stmt) : Option Stmt :=
   match values with
