@@ -3,38 +3,38 @@ module app::main;
 import core::number_u32;
 import std::io;
 import std::io_decimal;
-import std::map_u32_u32;
+import std::map;
 
 fn main() -> i32 {
     let high: u32 = 2147483648;
     let one: u32 = 1;
     let maximum: u32 = 4294967295;
     let readings: [u32; 6] = [high, one, high, maximum, one, high];
-    let counts: std::map_u32_u32::MapU32U32 = std::map_u32_u32::new();
+    let counts: std::map::Map<u32, u32> = std::map::new();
     let index: i32 = 0;
     while (index < 6) {
         let key: u32 = readings[index];
-        if (std::map_u32_u32::contains_key(counts, key)) {
-            let prior: u32 = std::map_u32_u32::get_or(counts, key, 0);
+        if (std::map::contains_key(counts, key)) {
+            let prior: u32 = std::map::get_or(counts, key, 0);
             let next: u32 = core::number_u32::wrapping_add(prior, 1);
-            if (!std::map_u32_u32::try_set(counts, key, next)) {
-                std::map_u32_u32::destroy(counts);
+            if (!std::map::try_set(counts, key, next)) {
+                std::map::destroy(counts);
                 return 1;
             }
         } else {
-            let before: i32 = std::map_u32_u32::len(counts);
-            counts = std::map_u32_u32::try_insert(counts, key, 1);
-            if (std::map_u32_u32::len(counts) != before + 1) {
-                std::map_u32_u32::destroy(counts);
+            let before: i32 = std::map::len(counts);
+            counts = std::map::try_insert(counts, key, 1);
+            if (std::map::len(counts) != before + 1) {
+                std::map::destroy(counts);
                 return 2;
             }
         }
         index += 1;
     }
-    let high_count: u32 = std::map_u32_u32::get_or(counts, high, 0);
-    let one_count: u32 = std::map_u32_u32::get_or(counts, one, 0);
-    let max_count: u32 = std::map_u32_u32::get_or(counts, maximum, 0);
-    std::map_u32_u32::destroy(counts);
+    let high_count: u32 = std::map::get_or(counts, high, 0);
+    let one_count: u32 = std::map::get_or(counts, one, 0);
+    let max_count: u32 = std::map::get_or(counts, maximum, 0);
+    std::map::destroy(counts);
     if (std::io_decimal::write_u32(1, high_count) < 0 || std::io::write_byte(1, 32) != 1 ||
         std::io_decimal::write_u32(1, one_count) < 0 || std::io::write_byte(1, 32) != 1 ||
         std::io_decimal::write_u32(1, max_count) < 0 || std::io::write_byte(1, 10) != 1) {

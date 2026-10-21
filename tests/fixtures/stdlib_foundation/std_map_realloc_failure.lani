@@ -1,0 +1,27 @@
+module app::main;
+import std::map;
+
+fn main() -> i32 {
+    let value: std::map::Map<i32, i32> = std::map::new();
+    value = std::map::try_reserve(value, 1);
+    if (std::map::capacity(value) != 1) { return 2; }
+    value = std::map::try_insert(value, 0, 41);
+    if (std::map::len(value) != 1) { return 3; }
+    value = std::map::try_insert(value, -7, 42);
+    if (std::map::len(value) == 1 &&
+        std::map::capacity(value) == 1 &&
+        std::map::get_or(value, 0, -1) == 41 &&
+        !std::map::contains_key(value, -7)) {
+        std::map::destroy(value);
+        return 0;
+    }
+    if (std::map::len(value) == 2 &&
+        std::map::capacity(value) == 2 &&
+        std::map::get_or(value, 0, -1) == 41 &&
+        std::map::get_or(value, -7, -1) == 42) {
+        std::map::destroy(value);
+        return 4;
+    }
+    std::map::destroy(value);
+    return 5;
+}

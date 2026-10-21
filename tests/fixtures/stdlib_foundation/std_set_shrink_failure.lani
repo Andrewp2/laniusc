@@ -1,0 +1,24 @@
+module app::main;
+import std::set;
+
+fn main() -> i32 {
+    let value: std::set::Set<i32> = std::set::try_reserve(std::set::new(), 3);
+    if (std::set::capacity(value) != 3) { return 2; }
+    value = std::set::try_insert(value, 41);
+    if (std::set::len(value) != 1) { return 3; }
+    value = std::set::try_shrink_to_fit(value);
+    if (std::set::len(value) == 1 &&
+        std::set::capacity(value) == 3 &&
+        std::set::at_or(value, 0, 0) == 41) {
+        std::set::destroy(value);
+        return 0;
+    }
+    if (std::set::len(value) == 1 &&
+        std::set::capacity(value) == 1 &&
+        std::set::at_or(value, 0, 0) == 41) {
+        std::set::destroy(value);
+        return 4;
+    }
+    std::set::destroy(value);
+    return 5;
+}

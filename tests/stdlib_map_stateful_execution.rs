@@ -13,7 +13,7 @@ enum Kind {
 }
 
 impl Kind {
-    fn module(self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
             Self::I32 => "map_i32_i32",
             Self::U32 => "map_u32_u32",
@@ -22,13 +22,8 @@ impl Kind {
         }
     }
 
-    fn map_type(self) -> &'static str {
-        match self {
-            Self::I32 => "MapI32I32",
-            Self::U32 => "MapU32U32",
-            Self::WideI64 => "MapWideI64WideI64",
-            Self::WideU64 => "MapWideU64WideU64",
-        }
+    fn map_type(self) -> String {
+        format!("Map<{}, {}>", self.value_type(), self.value_type())
     }
 
     fn value_type(self) -> &'static str {
@@ -133,7 +128,7 @@ fn check_state(source: &mut String, module: &str, expected: &[(usize, usize)], s
 }
 
 fn generate(kind: Kind) -> String {
-    let module = kind.module();
+    let module = "map";
     let map_type = kind.map_type();
     let value_type = kind.value_type();
     let mut source = format!("module app::main;\nimport std::{module};\n");
@@ -319,7 +314,7 @@ fn generate(kind: Kind) -> String {
 }
 
 fn run(kind: Kind) {
-    let name = kind.module();
+    let name = kind.label();
     let source = generate(kind);
     let entry = common::TempArtifact::new("laniusc_map", name, Some("lani"));
     entry.write_str(&source);

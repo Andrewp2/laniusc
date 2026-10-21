@@ -14,7 +14,7 @@ enum Kind {
 }
 
 impl Kind {
-    fn module(self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
             Self::I32 => "set_i32",
             Self::U32 => "set_u32",
@@ -24,14 +24,8 @@ impl Kind {
         }
     }
 
-    fn set_type(self) -> &'static str {
-        match self {
-            Self::I32 => "SetI32",
-            Self::U32 => "SetU32",
-            Self::Char => "SetChar",
-            Self::WideI64 => "SetWideI64",
-            Self::WideU64 => "SetWideU64",
-        }
+    fn set_type(self) -> String {
+        format!("Set<{}>", self.value_type())
     }
 
     fn value_type(self) -> &'static str {
@@ -160,7 +154,7 @@ fn check_algebra(
 }
 
 fn generate(kind: Kind) -> String {
-    let module = kind.module();
+    let module = "set";
     let set_type = kind.set_type();
     let value_type = kind.value_type();
     let mut source = format!("module app::main;\nimport std::{module};\n");
@@ -364,7 +358,7 @@ fn generate(kind: Kind) -> String {
         check_set(&mut source, module, "left", &left, step + 1);
         check_set(&mut source, module, "right", &right, step + 1);
         if step % 4 == 3 {
-            check_algebra(&mut source, module, set_type, &left, &right, step);
+            check_algebra(&mut source, module, &set_type, &left, &right, step);
             check_set(&mut source, module, "left", &left, step + 1);
             check_set(&mut source, module, "right", &right, step + 1);
         }
@@ -376,7 +370,7 @@ fn generate(kind: Kind) -> String {
 }
 
 fn run(kind: Kind) {
-    let name = kind.module();
+    let name = kind.label();
     let source = generate(kind);
     let entry = common::TempArtifact::new("laniusc_set", name, Some("lani"));
     entry.write_str(&source);

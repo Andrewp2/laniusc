@@ -1,0 +1,147 @@
+// Owned insertion-ordered map from any K with core::cmp::Eq to any V, stored
+// as a std::vec::Vec of entries with linear lookup. Values are copied: every
+// operation that changes a map's length returns the new map. Ownership is
+// linear by convention: keep only the newest returned Map and destroy each
+// independent map once. A try_ operation that fails (an existing or missing
+// key, or allocation failure) returns the map unchanged; compare len or
+// capacity to detect it. Removal keeps the order of the remaining entries.
+module std::map;
+import core::cmp;
+import std::vec;
+
+pub struct Entry<K, V> {
+    key: K,
+    value: V,
+}
+
+pub struct Map<K, V> {
+    entries: std::vec::Vec<Entry<K, V>>,
+}
+
+pub const MAX_ENTRIES: i32 = 2147483647;
+
+pub fn new<K, V>() -> Map<K, V> {
+    let entries: std::vec::Vec<Entry<K, V>> = std::vec::new();
+    return Map { entries: entries };
+}
+
+pub fn len<K, V>(value: Map<K, V>) -> i32 {
+    return std::vec::len(value.entries);
+}
+
+pub fn capacity<K, V>(value: Map<K, V>) -> i32 {
+    return std::vec::capacity(value.entries);
+}
+
+pub fn is_empty<K, V>(value: Map<K, V>) -> bool {
+    return std::vec::is_empty(value.entries);
+}
+
+// The ordinal of key, or -1.
+fn find<K, V>(value: Map<K, V>, key: K) -> i32 where K: core::cmp::Eq<K> {
+    let entries: [Entry<K, V>] = std::vec::as_slice(value.entries);
+    let index: i32 = 0;
+    while (index < len(value)) {
+        let entry: Entry<K, V> = entries[index];
+        if (K::eq(entry.key, key)) {
+            return index;
+        }
+        index += 1;
+    }
+    return -1;
+}
+
+pub fn contains_key<K, V>(value: Map<K, V>, key: K) -> bool where K: core::cmp::Eq<K> {
+    return find(value, key) >= 0;
+}
+
+// The value for key, or fallback when it is absent. Check contains_key when
+// a stored value can equal fallback.
+pub fn get_or<K, V>(value: Map<K, V>, key: K, fallback: V) -> V where K: core::cmp::Eq<K> {
+    let index: i32 = find(value, key);
+    if (index < 0) {
+        return fallback;
+    }
+    let entries: [Entry<K, V>] = std::vec::as_slice(value.entries);
+    let entry: Entry<K, V> = entries[index];
+    return entry.value;
+}
+
+// Entries keep insertion order. An ordinal outside the map returns fallback.
+pub fn key_at_or<K, V>(value: Map<K, V>, ordinal: i32, fallback: K) -> K {
+    if (ordinal < 0 || ordinal >= len(value)) {
+        return fallback;
+    }
+    let entries: [Entry<K, V>] = std::vec::as_slice(value.entries);
+    let entry: Entry<K, V> = entries[ordinal];
+    return entry.key;
+}
+
+pub fn value_at_or<K, V>(value: Map<K, V>, ordinal: i32, fallback: V) -> V {
+    if (ordinal < 0 || ordinal >= len(value)) {
+        return fallback;
+    }
+    let entries: [Entry<K, V>] = std::vec::as_slice(value.entries);
+    let entry: Entry<K, V> = entries[ordinal];
+    return entry.value;
+}
+
+// A negative or oversized request, or allocation failure, returns the map
+// unchanged. Compare capacity(result) with the request to detect failure.
+pub fn try_reserve<K, V>(value: Map<K, V>, minimum_entries: i32) -> Map<K, V> {
+    return Map { entries: std::vec::try_reserve(value.entries, minimum_entries) };
+}
+
+// Insert a new key at the end. An existing key, the capacity limit or
+// allocation failure leaves the map unchanged; use try_set to replace a value.
+pub fn try_insert<K, V>(value: Map<K, V>, key: K, item: V) -> Map<K, V>
+    where K: core::cmp::Eq<K> {
+    if (find(value, key) >= 0) {
+        return value;
+    }
+    let entry: Entry<K, V> = Entry { key: key, value: item };
+    return Map { entries: std::vec::try_push(value.entries, entry) };
+}
+
+// Replace the value of an existing key in place. A missing key returns false
+// without writing.
+pub fn try_set<K, V>(value: Map<K, V>, key: K, item: V) -> bool where K: core::cmp::Eq<K> {
+    let index: i32 = find(value, key);
+    if (index < 0) {
+        return false;
+    }
+    let entries: [Entry<K, V>] = std::vec::as_slice(value.entries);
+    entries[index] = Entry { key: key, value: item };
+    return true;
+}
+
+// Remove a key and its value, keeping order and capacity. A missing key
+// leaves the map unchanged; success decrements len.
+pub fn try_remove<K, V>(value: Map<K, V>, key: K) -> Map<K, V> where K: core::cmp::Eq<K> {
+    let index: i32 = find(value, key);
+    if (index < 0) {
+        return value;
+    }
+    return Map { entries: std::vec::try_remove(value.entries, index) };
+}
+
+pub fn clear<K, V>(value: Map<K, V>) -> Map<K, V> {
+    return Map { entries: std::vec::clear(value.entries) };
+}
+
+// Release unused storage; an empty map releases its allocation. Allocation
+// failure returns the map unchanged.
+pub fn try_shrink_to_fit<K, V>(value: Map<K, V>) -> Map<K, V> {
+    return Map { entries: std::vec::try_shrink_to_fit(value.entries) };
+}
+
+// An independent copy. An empty source clones without allocating; otherwise
+// len(result) < len(value) means allocation failed.
+pub fn try_clone<K, V>(value: Map<K, V>) -> Map<K, V> {
+    return Map { entries: std::vec::try_clone(value.entries) };
+}
+
+// Release the storage. The map must not be used afterwards.
+pub fn destroy<K, V>(value: Map<K, V>) {
+    std::vec::destroy(value.entries);
+}

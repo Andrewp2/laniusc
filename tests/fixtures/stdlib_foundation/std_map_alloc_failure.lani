@@ -1,0 +1,20 @@
+module app::main;
+import std::map;
+
+fn main() -> i32 {
+    let value: std::map::Map<i32, i32> = std::map::new();
+    value = std::map::try_insert(value, 3, 5);
+    if (std::map::len(value) == 0 &&
+        std::map::capacity(value) == 0 &&
+        !std::map::contains_key(value, 3)) {
+        std::map::destroy(value);
+        return 0;
+    }
+    if (std::map::len(value) == 1 &&
+        std::map::get_or(value, 3, -1) == 5) {
+        std::map::destroy(value);
+        return 4;
+    }
+    std::map::destroy(value);
+    return 5;
+}

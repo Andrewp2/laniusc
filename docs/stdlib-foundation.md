@@ -357,22 +357,14 @@ require further compiler work.
 | Generic `std::vec::Vec<T>`, all public functions and `MAX_CAPACITY` | Executable on x86_64 Linux | Allocation-backed, with value semantics: each change returns the vector, and a failed `try_` operation (allocation failure or an index out of range) returns it unchanged; `push` and `reserve` panic instead. Element storage comes from `core::mem::typed_slice_from_storage`, so growth copies each element into a fresh allocation. `tests/fixtures/stdlib_foundation/std_vec.lani` covers i32, u8, a record through growth, a zero-sized record (no allocation), `str` in a record and alone, `Option<T>` and `Vec<Vec<i32>>`. `std_vec_order.lani` sorts (heapsort, not stable) and searches every integer width at its extremes, `char`, `bool` and a user record through `T: core::cmp::Ord<T>` and `Eq<T>`. `at` past the length exits 101. `tests/stdlib_vec_alloc_failure_execution.rs` fails the first or the second and later `mmap` under strace and checks every vector stays unchanged. A source scan requires a call for every public function. Ownership is linear by convention. Sorting a `Vec` of a stdlib type whose impl lives in its own module (`Vec<core::wide_i64::WideI64>`) routes too (matrix p81). Wasm does not compile it yet. |
 | `std::vec_u8` all 26 public functions and its capacity constant | Executable on x86_64 Linux | The byte vector fixture checks construction, growth, independent cloning, access, mutation, bounds, reserve, pop, clear, destruction, 128, and 255. The sort/search fixture checks in-place ascending byte order, reversal, lower and upper bounds, first and last matches, empty and single-element behavior, duplicates, boundary values, and unchanged allocation pointer. Search requires sorted input. Raw writes through `data_ptr` must preserve the 0..255 initialized-cell invariant; the fixture also checks empty and initialized borrowed views. The allocation-failure suite injects failed initial allocation, reallocation, and a clone allocation through the text wrapper; the byte checksum sample combines it with `core::byte` and `Option<u8>`. Each byte occupies one 32-bit cell because the raw-slice intrinsic currently accepts i32 cells. Ownership is linear by convention. |
 | `std::utf8_vec` all 30 public text helpers | Executable on x86_64 Linux | The runtime fixtures construct and edit text from Unicode scalars, complete caller-backed UTF-8 byte-code views, and ordinary `[u8]` byte views; check independent cloning, multibyte bytes, scalar count and lookup, first and last search, equality, prefixes, suffixes, ordering, byte-offset sequence search, insertion, removal, replacement, splicing, pop, clear, and destruction. Byte-view splicing covers growth, shrinkage, equal-width replacement, and insertion at the end; malformed input and invalid indices leave data unchanged. Injected allocation failures check that failed scalar, byte-code, and `[u8]` edits preserve prior bytes. Storage is a `VecU8` with one 32-bit cell per encoded byte and linear ownership by convention. |
-| `std::map_i32_i32` all 16 public functions and its entry-limit constant | Executable on x86_64 Linux | A single allocator-backed pair array provides linear lookup, insertion without partial pairs, in-place update, ordered removal, reservation, independent cloning, clearing, capacity release, and destruction. The native fixture calls every function and checks zero and negative keys and values, the signed maximum key, duplicates, missing keys, ordinal bounds, retained and reduced capacity, and clone independence. Injected initial, growth, shrink, and clone allocation failures preserve the original map or return an empty clone. The byte-histogram program combines it with numeric and byte I/O helpers on empty, text, and binary input. Ownership is linear by convention. A deterministic 40-operation execution test checks insertion order, lookup, update, removal, reserve, shrink, clear, clone independence, and invalid bounds against a reference map after every step. |
-| `std::map_u32_u32` all 16 public functions and its entry-limit constant | Executable on x86_64 Linux | A single allocator-backed pair array preserves full unsigned key and value bit patterns, including `2^31` and `u32::MAX`. The native fixture calls every function and checks insertion, lookup, in-place update, duplicates, missing keys, insertion order, stable removal, invalid ordinals and capacities, cloning, clearing, growth, and shrinking. Injected initial, growth, shrink, and clone allocation failures preserve prior entries or return an empty clone. A frequency-report program combines the map with numeric and I/O helpers. Ownership is linear by convention. A deterministic 40-operation execution test checks insertion order, lookup, update, removal, reserve, shrink, clear, clone independence, and invalid bounds against a reference map after every step. |
+| Generic `std::map::Map<K, V>`, all 16 public functions and `MAX_ENTRIES` | Executable on x86_64 Linux | Insertion-ordered map over a `std::vec::Vec` of `Entry<K, V>` records with linear lookup through `K: core::cmp::Eq<K>`. `tests/fixtures/stdlib_foundation/std_map.lani` runs every function through one generic checker for nine key/value type pairs (every integer width, char, f32, both wide integers and records as keys and as values): existing-key insert, in-place set, order-preserving removal, reserve, shrink, clear and clone independence. `tests/stdlib_map_execution.rs` checks that it calls each one, fails initial, growth, shrink and clone allocation under strace, and runs the byte histogram and four frequency-report programs. `tests/stdlib_map_stateful_execution.rs` checks 40 mixed operations per key type against a reference map. Ownership is linear by convention. Wasm does not compile it yet. |
 | `std::map_bool_u32` all 10 public functions | Executable on x86_64 Linux | An allocation-free three-word value stores zero, one, or two Boolean keys in insertion order, with full-width `u32` values. The imported fixture calls every function and checks empty and populated lookup, zero distinct from absence, both key orders, replacement without reordering, removal, clearing, invalid ordinals, high-bit and maximum values, and independent value copies. The stdin-driven digit-byte counter combines the map with byte classification and decimal I/O; tests cover empty, text, and binary input and output failure. No capacity, allocator, or destruction service is needed. GPU frontend compilation emits the tested x86 program; user-program GPU execution is not claimed. |
 | `std::map_u8_u32` all 12 public caller-backed functions | Executable on x86_64 Linux for eight key words and 256 value words | The dense map uses `std::set_u8` for membership and a caller-owned `u32` value cell for every byte. The imported fixture calls every function and checks all 256 possible keys, zero and `u32::MAX` values, ascending ordinals, missing and duplicate insertions, replacement, present-only updates, removal, clearing, full capacity, and invalid ordinals. Clearing a short physical value view traps with exit 101. The stdin frequency report handles empty, repeated, binary, and every-byte input, including ties and output failure. GPU frontend compilation emits the tested x86 program; user-program GPU execution is not claimed. |
 | `std::map_i8_u32` all 12 public caller-backed functions | Executable on x86_64 Linux for eight key words and 256 value words | Signed keys use the -128 through 127 ordering of `std::set_i8` over a shifted byte-keyed dense map. The imported fixture calls every function; checks negative, zero, and positive keys, `u32::MAX` and zero values, duplicate insertions, replacement, present-only updates, removal, invalid ordinals, and clearing; then exercises all 256 keys and values through lookup and signed ordinals. Caller-owned value storage is constructed with `core::mem::typed_slice_from_raw_parts<u32>` and freed after the program. Short physical key and value views both exit 101. The signed-byte frequency program reads real binary input, handles empty input, ties, signed extremes, and all 256 bytes, prints the most frequent signed value and distinct count, and reports output failure. User-program GPU execution is unverified. |
-| `std::map_char_u32` all 16 public functions and its entry-limit constant | Executable on x86_64 Linux | The imported fixture calls every function and checks ordered insertion, duplicate keys, lookup, in-place update, stable removal, reservation, clone independence, shrinking, invalid bounds and capacities, high character keys up to U+10FFFF, and `u32::MAX` values. A second fixture checks NUL, Unicode keys, the largest scalar, and zero values. Four injected allocation failures preserve existing entries and ownership, or return an empty clone. The input-driven Unicode frequency report checks empty input, multibyte duplicates, NUL, malformed and truncated UTF-8, and output failure. An entry occupies 16 bytes: a `char` key slot followed by a `u32` value slot. Ownership is linear by convention. GPU frontend compilation emits the tested x86 program; user-program GPU execution is not claimed. |
-| `std::map_wide_u64_wide_u64` all 16 public functions and its entry-limit constant | Executable on x86_64 Linux | A single allocator-backed array stores each key and value as two 32-bit words, preserving zero, `2^32`, the unsigned high bit, and `u64::MAX`. The native fixture calls every function and checks insertion, full-width lookup, in-place replacement, duplicates, missing keys, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, and shrinking. Injected initial, growth, shrink, and clone allocation failures preserve prior entries or return an empty clone. The line-oriented frequency program covers duplicate full-width inputs and malformed input. Ownership is linear by convention; no native `u64` behavior is claimed. A deterministic 40-operation execution test checks insertion order, lookup, update, removal, reserve, shrink, clear, clone independence, and invalid bounds against a reference map after every step. |
-| `std::map_wide_i64_wide_i64` all 16 public functions and its entry-limit constant | Executable on x86_64 Linux | A single allocator-backed array stores signed two-word keys and values as unchanged two's-complement bit patterns. The native fixture calls every function and checks zero, `2^32`, signed minimum and maximum, full-width lookup, in-place replacement, duplicates, missing keys, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, and shrinking. Injected initial, growth, shrink, and clone allocation failures preserve prior entries or return an empty clone. The line-oriented frequency program covers negative inputs, signed extremes, duplicates, and malformed input. Ownership is linear by convention; no native `i64` behavior is claimed. A deterministic 40-operation execution test checks insertion order, lookup, update, removal, reserve, shrink, clear, clone independence, and invalid bounds against a reference map after every step. |
-| `std::set_i32` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks empty and populated sets, both signed extremes, duplicates, absent items, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, shrinking, subset and disjoint predicates, and ordered union, intersection, difference, and symmetric difference. Injected initial allocation, growth, shrink, clone, and each set-algebra allocation failure preserve ownership and existing items. The set owns one allocation of 32-bit cells; ownership is linear by convention. A deterministic 32-operation execution test checks two evolving sets against insertion-order references after every mutation, including cloning and invalid capacities, and compares ordered set algebra every fourth step. |
-| `std::set_u32` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks zero, the unsigned high bit, `u32::MAX`, duplicates, absent items, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, shrinking, subset and disjoint predicates, and all four ordered set-algebra operations. Injected initial allocation, growth, shrink, clone, and set-algebra allocation failures preserve ownership and existing items. A small program deduplicates unsigned readings and prints their wrapping sum. Values use 32-bit cells and preserve every bit pattern; ownership is linear by convention. A deterministic 32-operation execution test checks two evolving sets against insertion-order references after every mutation, including cloning and invalid capacities, and compares ordered set algebra every fourth step. |
+| Generic `std::set::Set<T>`, all 19 public functions and `MAX_CAPACITY` | Executable on x86_64 Linux | Insertion-ordered set over a `std::vec::Vec<T>` with linear lookup through `T: core::cmp::Eq<T>`. `tests/fixtures/stdlib_foundation/std_set.lani` runs every function through one generic checker for every integer width, char, f32, both wide integers and a record: duplicates, order-preserving removal, reserve, shrink, clone, subset and disjoint predicates, and ordered union, intersection, difference and symmetric difference. `tests/stdlib_set_execution.rs` checks that it calls each one, fails initial, growth, shrink, clone and each set-algebra allocation under strace, and runs four distinct-value programs. `tests/stdlib_set_stateful_execution.rs` checks 32 mixed operations and ordered algebra per element type against a reference. Ownership is linear by convention. Wasm does not compile it yet. |
 | `std::set_bool` all 14 public functions | Executable on x86_64 Linux | An allocation-free three-Boolean value stores at most two distinct elements in insertion order. The imported fixture calls every function and checks construction, membership, length, invalid ordinals with both fallbacks, duplicate insertion, removal, clearing, subset and disjoint predicates, and all four ordered set-algebra operations. It compares membership results for all 25 pairs of the five possible ordered states and checks representative output orders. Values can be copied freely; there is no capacity, allocation failure, or destruction API. |
 | `std::set_u8` all 15 public caller-backed functions | Executable on x86_64 Linux for eight-word `[u32]` views | Eight caller-owned words represent all 256 byte values without allocation. The imported runtime fixture calls every function, checks all 256 byte memberships against two independent predicates, cardinalities, ascending ordinals, invalid ordinals, duplicate insertion, missing removal, clearing, filling, subset and disjoint predicates, all four set-algebra writes, and an exact destination alias. A physically short backing traps with exit 101. The stdin distinct-byte program combines this set with byte classification and decimal output, checking empty, repeated, binary, and digit input and output failure. GPU frontend compilation emits the tested x86 program; user-program GPU execution is not claimed. |
 | `std::set_i8` all 15 public caller-backed functions | Executable on x86_64 Linux for eight-word `[u32]` views | Signed values map from -128 through 127 onto the same 256-bit storage as `std::set_u8`; ordinals use signed order. The imported fixture calls every public function and checks both signed extremes, zero, duplicates, missing removal, invalid ordinals, all 256 full-set memberships and ordinals, a sparse predicate across all 256 values, filling and clearing, subset and disjoint predicates, all four set-algebra writes, and an exact destination alias. A seven-word physical backing exits 101. The signed-byte frequency program uses its cardinality operation for a real distinct-key count. The set borrows its storage and makes no allocation; user-program GPU execution is unverified. |
-| `std::set_char` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The imported fixture calls every public function and checks insertion order, duplicates, stable removal, bounds, reserve, clone independence, shrinking, all four set-algebra operations, plane-15 code points, and the largest scalar. A second fixture checks NUL and two-, three-, and four-byte Unicode scalars through the set-algebra results. Eight injected allocation failures preserve source sets and ownership, or return an empty independent clone/result. A deterministic 32-operation test compares two evolving character sets and ordered algebra with a reference after every step. The input-driven distinct-Unicode program checks empty input, multibyte duplicates, NUL, malformed and truncated UTF-8, and output failure. Each character occupies one eight-byte `char` slot. Ownership is linear by convention. GPU frontend compilation emits the tested x86 program; user-program GPU execution is not claimed. |
-| `std::set_wide_u64` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks zero, `2^32`, the unsigned high bit, and `u64::MAX`, duplicate and absent values, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, shrinking, subset and disjoint predicates, and all four ordered set-algebra operations. Eight injected allocation failures preserve owned input sets or return empty independent results. The line-oriented distinct-sum program covers duplicates, full-width decimal input, wraparound, and invalid input. Each value occupies two 32-bit cells; ownership is linear by convention. A deterministic 32-operation execution test checks two evolving sets against insertion-order references after every mutation, including cloning and invalid capacities, and compares ordered set algebra every fourth step. |
-| `std::set_wide_i64` all 19 public functions and its capacity constant | Executable on x86_64 Linux | The native fixture calls every function and checks zero, `2^32`, the signed minimum and maximum, duplicate and absent values, insertion order, stable removal, invalid ordinals and capacities, independent cloning, clearing, growth, shrinking, subset and disjoint predicates, and all four ordered set-algebra operations. Eight injected allocation failures preserve owned input sets or return empty independent results. The signed distinct-sum program covers ordinary negative values, both signed extrema, duplicates, full-width decimal input, wraparound, and rejected input. Each value occupies two 32-bit cells holding its two's-complement bit pattern; ownership is linear by convention. A deterministic 32-operation execution test checks two evolving sets against insertion-order references after every mutation, including cloning and invalid capacities, and compares ordered set algebra every fourth step. |
 | `std::net` all 64 metadata functions and 6 constants | Executable metadata on x86_64 Linux; 10 host calls unbound | The native fixture calls every metadata function and constant, checks available and unavailable result classification, and confirms network capability flags against `core::runtime`. TCP and UDP calls have no runtime binding. |
 | `std::thread` all 32 metadata functions and 6 constants | Executable metadata on x86_64 Linux; 4 host calls unbound | The native fixture calls every metadata function and constant, checks result classification, and confirms that spawn, join, yield, and current-id calls remain unavailable. |
 | `std::gpu` all 44 metadata functions and 6 constants | Executable metadata on x86_64 Linux; 5 host calls unbound | The native fixture calls every metadata function and constant, checks result classification, and confirms unavailable buffer and dispatch services. Compiler execution on a GPU does not bind a user-program GPU API. |
@@ -846,32 +838,20 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   replace `std::vec_wide_i64`, `std::vec_wide_u64` and `core::wide_word_cells`;
   the wide records implement `core::cmp::Eq` and `Ord`, so `std::vec::sort`
   and the searches order them.
-- `std::set_i32` owns 32-bit cells and keeps each distinct item once, in
-  insertion order. `try_insert` leaves duplicate items unchanged and grows
-  capacity by doubling from four cells. A new item increases length by one on
-  success; capacity overflow or allocation failure leaves the set unchanged.
-  `try_remove` preserves the order of remaining items and decreases length
-  only when the item existed. `at_or` returns the caller fallback for an
-  invalid ordinal; use `len` to distinguish a stored equal value. Invalid
-  `try_reserve` requests and failed reallocation leave the original set live.
-  `try_shrink_to_fit` releases storage when empty, reduces capacity to length
-  otherwise, and retains original storage and elements if reallocation fails.
-  `try_clone` makes an independent copy or returns an empty zero-capacity set
-  on allocation failure. The caller keeps only the newest returned owner and
-  destroys each independent set once. These rules are not enforced by the
-  language. `is_subset` and `is_disjoint` read their inputs without allocation.
-  The four `try_` set-algebra operations return independent allocations,
-  retaining left input order and then right input order for new items. They
-  compute the full result size and reserve before writing, so failed
-  allocation or capacity overflow returns an empty zero-capacity set rather
-  than a partial result. An empty result can also be mathematically correct;
-  callers expecting a nonempty result can detect failure with `len(result)`.
-  The API requires x86_64 Linux allocator bindings.
-- `std::set_char` keeps each distinct character once, in
-  insertion order. It has the same bounds, ownership, clone, allocation-failure,
-  and ordered set-algebra contract as `std::set_i32`. Each character occupies one
-  eight-byte `char` slot. The supported target is x86_64 Linux with
-  allocator bindings.
+- `std::set::Set<T>` keeps each distinct item once, in insertion order, for
+  any `T: core::cmp::Eq<T>`. It wraps a `std::vec::Vec<T>`, so capacity grows
+  by the vector's doubling rule and is limited by its byte budget. `try_insert`
+  leaves a duplicate unchanged; `try_remove` keeps the order of the rest and
+  leaves a missing item unchanged. `at_or` returns the caller fallback for an
+  invalid ordinal; use `len` to tell it from a stored equal item. Failed
+  reservation, growth or shrinking leaves the set live and unchanged;
+  `try_clone` returns an independent copy, or an empty set on allocation
+  failure. `is_subset` and `is_disjoint` read without allocating. The four
+  `try_` set-algebra operations return new independent sets in left-then-right
+  order; they reserve the whole result before writing, so failure returns an
+  empty set rather than a partial one. The caller keeps only the newest
+  returned owner and destroys each independent set once; the language does not
+  enforce this.
 - `std::set_u8` uses exactly eight caller-owned `u32` words. Call `clear` or
   `fill` before the first read. `insert` and `remove` return true only when
   membership changes. `at_or` visits bytes in ascending numeric order and
@@ -880,42 +860,17 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   while partial overlap is unsupported. `len` and `fill` visit every word, so
   a backing shorter than eight physical words traps; other operations trap if
   they reach a missing word. No allocator or destructor is involved.
-- `std::set_u32` has the same ownership, insertion-order, bounds, failure,
-  and set-algebra contract for unsigned values. It stores each `u32` as raw
-  32-bit bits and preserves values above `i32::MAX`, including `u32::MAX`.
-  The supported target is x86_64 Linux with allocator bindings.
-- `std::set_wide_u64` has the same ordered-set, ownership, and failure
-  contract for two-word unsigned values. Each entry stores low and high
-  words in adjacent 32-bit cells. Its maximum capacity is 268,435,455
-  entries, so byte-count arithmetic fits signed 32 bits. Invalid ordinals
-  return the supplied `WideU64` fallback; failed growth leaves the original
-  set live, and failed set algebra returns an empty independent set. The
-  supported target is x86_64 Linux with allocator bindings.
-- `std::set_wide_i64` follows the same ordered-set, ownership, and failure
-  rules for two-word signed values. It stores low and high two's-complement
-  words unchanged, including the sign bit. The capacity limit is 268,435,455
-  entries; invalid ordinals use the caller fallback. Allocation failure during
-  insertion, reservation, or shrinking preserves the original set, while a
-  failed clone or set-algebra operation returns an empty independent set.
-  Callers distinguish an expected nonempty algebra result from failure with
-  `len`. The supported target is x86_64 Linux with allocator bindings.
-- `std::map_i32_i32` stores distinct signed keys and signed values as adjacent
-  32-bit cells. Insertion and removal preserve the order of remaining keys.
-  `try_insert` adds a missing key and leaves an existing one unchanged;
-  `try_set` updates only an existing key. A new key increases length by one on
-  success, while capacity overflow or allocation failure leaves the map
-  unchanged. `get_or` and ordinal access use caller fallbacks for missing
-  keys and indices; use `contains_key` or `len` when a stored value could
-  equal its fallback. `try_shrink_to_fit` releases empty storage or reduces
-  capacity to length. Failed reallocation preserves all entries and the old
-  capacity. `try_clone` returns an independent copy or an empty zero-capacity
-  map on allocation failure. The caller keeps only the newest returned owner
-  and destroys each independent map once. The API requires x86_64 Linux
-  allocator bindings.
-- `std::map_char_u32` has the same ownership, bounds, insertion-order,
-  update, and failure contract as `std::map_u32_u32`. Each entry occupies
-  16 bytes: a `char` key slot followed by a `u32` value slot.
-  The supported target is x86_64 Linux with allocator bindings.
+- `std::map::Map<K, V>` stores distinct keys of any `K: core::cmp::Eq<K>`
+  with values of any `V`, as `Entry { key, value }` records in a
+  `std::vec::Vec`, in insertion order. `try_insert` adds a missing key and
+  leaves an existing one unchanged; `try_set` replaces the value of an existing
+  key in place and returns false for a missing one. `try_remove` keeps the
+  order of the remaining entries. `get_or`, `key_at_or` and `value_at_or` use
+  caller fallbacks; use `contains_key` or `len` when a stored value could equal
+  the fallback. Failed reservation, growth or shrinking leaves the map
+  unchanged; `try_clone` returns an independent copy or an empty map on
+  allocation failure. Ownership follows the same linear convention as
+  `std::set::Set`.
 - `std::map_u8_u32` needs eight caller-owned `u32` words for membership and
   256 caller-owned `u32` values. The views must not overlap. Call `clear`
   before the first read; it zeros
@@ -924,25 +879,6 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   returns whether its key was new; `set` and `remove` return false without
   writing for a missing key. A missing key or invalid ordinal uses the caller
   fallback. Indexing a missing physical word traps. The map does not allocate.
-- `std::map_u32_u32` has the same ownership, bounds, ordering, update, and
-  failure contract for unsigned keys and values. Raw 32-bit storage preserves
-  all unsigned bit patterns; reads convert the stored cells back to `u32`.
-  The supported target is x86_64 Linux with allocator bindings.
-- `std::map_wide_u64_wide_u64` stores unsigned two-word keys and values in
-  adjacent low/high 32-bit cells. A key match compares both words; updates
-  never change key order. Each entry occupies 16 bytes and the maximum is
-  134,217,727 entries, keeping byte counts within signed 32-bit arithmetic.
-  Invalid ordinals return a caller fallback, and `contains_key` distinguishes
-  a missing key when a stored value equals that fallback. Allocation failure
-  during insertion, reservation, or shrinking retains the existing map; a
-  failed nonempty clone returns an empty independent map. The caller keeps
-  only the latest returned owner and destroys each independent map once.
-  The supported target is x86_64 Linux with allocator bindings.
-- `std::map_wide_i64_wide_i64` follows the same four-cell layout, insertion
-  order, ownership, capacity bound, and allocation-failure rules for signed
-  two-word keys and values. Equality compares the complete two's-complement
-  bit pattern; ordinal and missing-key fallbacks are supplied by the caller.
-  Its supported target is x86_64 Linux with allocator bindings.
 - `std::utf8_vec` stores canonical UTF-8 in `VecU8`. `try_append_scalar`
   validates the existing complete byte sequence, checks the scalar and
   capacity bound, and reserves storage for every encoded byte before writing.
@@ -1720,51 +1656,28 @@ programs with real stdin.
 Run `cargo test --test stdlib_deque_stateful_execution` for 48
 deterministic mixed operations per element type, checked against a reference
 deque after every step.
-Run `cargo test --test stdlib_map_i32_i32_execution` for the owned map,
-initial, growth, shrink, and clone allocation failures, and the stdin byte
-histogram.
+Run `cargo test --test stdlib_map_execution` for every generic map function
+across nine key/value type pairs, initial, growth, shrink and clone allocation
+failures (`strace` is required for the injected branches), the stdin byte
+histogram and the four frequency-report programs.
 Run `cargo test --test stdlib_map_bool_u32_execution` for all Boolean-keyed
 map functions and the input-driven digit-byte counter.
 Run `cargo test --test stdlib_map_u8_u32_execution` for all dense byte-map
 functions, 256-key behavior, short-backing traps, and the byte-frequency
 program with real stdin and output failure.
-Run `cargo test --test stdlib_map_char_u32_execution` for all imported
-character-keyed map functions, Unicode and full-width storage, four injected
-allocation failures, and the stdin-driven Unicode frequency report. The
-GPU-resident frontend compiles these fixtures to executable x86_64 programs;
-`strace` is required for the injected failure branches.
-
-Run `cargo test --test stdlib_map_u32_u32_execution` for full-width unsigned
-keys and values, allocation failures, and the frequency-report program.
-Run `cargo test --test stdlib_map_wide_u64_wide_u64_execution` for two-word
-keys and values, allocation failures, and the line-oriented frequency report.
-Run `cargo test --test stdlib_map_wide_i64_wide_i64_execution` for signed
-two-word keys and values, allocation failures, and the frequency report.
 Run `cargo test --test stdlib_map_stateful_execution` for a 40-operation
-reference comparison on all four owned maps.
-Run `cargo test --test stdlib_set_i32_execution` for the owned integer set,
-set algebra, and its initial, growth, shrink, clone, and four set-algebra
-allocation failures.
+reference comparison for i32, u32 and both wide key types.
+Run `cargo test --test stdlib_set_execution` for every generic set function
+across every element type, its initial, growth, shrink, clone and four
+set-algebra allocation failures, and the four distinct-value programs.
 Run `cargo test --test stdlib_set_bool_execution` for all Boolean-set
 functions and the 25 ordered-state pairs.
 Run `cargo test --test stdlib_set_u8_execution` for all caller-backed byte-set
 functions, all 256 memberships, short-backing traps, and the distinct-byte
 program with real stdin and output failure.
-Run `cargo test --test stdlib_set_char_execution` for every character-set
-function, Unicode set algebra, eight injected allocation-failure paths, and
-the input-driven distinct-Unicode program. The GPU-resident frontend compiles
-these fixtures to executable x86_64 programs; `strace` is required for the
-injected failure branches.
-
-Run `cargo test --test stdlib_set_u32_execution` for the unsigned set,
-its allocation failures, and the unique-unsigned-total program.
-Run `cargo test --test stdlib_set_wide_u64_execution` for the two-word
-unsigned set, eight allocation failures, and the line-oriented distinct sum.
 Run `cargo test --test stdlib_set_stateful_execution` for 32 mixed
-operations and ordered algebra comparisons against a reference for all five
-owned set types, including `std::set_char`.
-Run `cargo test --test stdlib_set_wide_i64_execution` for the signed two-word
-set, eight allocation failures, and the signed line-oriented distinct sum.
+operations and ordered algebra comparisons against a reference for i32, u32,
+char and both wide element types.
 Run `cargo test --test stdlib_fs_read_i32_execution` for the raw signed
 integer reader's normal values, signed limits, overflow, line boundaries,
 empty lines, EOF, and an injected host read error when `strace` is available.

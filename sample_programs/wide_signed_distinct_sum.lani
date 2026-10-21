@@ -5,41 +5,41 @@ import core::wide_i64;
 import std::io_byte;
 import std::io_decimal;
 import std::io_line;
-import std::set_wide_i64;
+import std::set;
 fn main() -> i32 {
     let data:[i32; 20] =[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    let values: std::set_wide_i64::SetWideI64 = std::set_wide_i64::new();
+    let values: std::set::Set<core::wide_i64::WideI64> = std::set::new();
     while (true) {
         let length: i32 = std::io_line::read_stdin_lf_line_into_i32(data, 20);
         if (length == -1) {
             break;
         }
         if (length <= 0) {
-            std::set_wide_i64::destroy(values);
+            std::set::destroy(values);
             return 2;
         }
         if (!core::wide_i64::can_parse_ascii_decimal(data, length)) {
-            std::set_wide_i64::destroy(values);
+            std::set::destroy(values);
             return 3;
         }
         let value: core::wide_i64::WideI64 = core::wide_i64::parse_ascii_decimal_or(data, length, core::wide_i64::zero());
-        if (!std::set_wide_i64::contains(values, value)) {
-            let old_length: i32 = std::set_wide_i64::len(values);
-            values = std::set_wide_i64::try_insert(values, value);
-            if (std::set_wide_i64::len(values) != old_length + 1) {
-                std::set_wide_i64::destroy(values);
+        if (!std::set::contains(values, value)) {
+            let old_length: i32 = std::set::len(values);
+            values = std::set::try_insert(values, value);
+            if (std::set::len(values) != old_length + 1) {
+                std::set::destroy(values);
                 return 4;
             }
         }
     }
     let total: core::wide_i64::WideI64 = core::wide_i64::zero();
     let index: i32 = 0;
-    while (index<std::set_wide_i64::len(values)) {
-        let value: core::wide_i64::WideI64 = std::set_wide_i64::at_or(values, index, core::wide_i64::zero());
+    while (index<std::set::len(values)) {
+        let value: core::wide_i64::WideI64 = std::set::at_or(values, index, core::wide_i64::zero());
         total = core::wide_i64::wrapping_add(total, value);
         index += 1;
     }
-    std::set_wide_i64::destroy(values);
+    std::set::destroy(values);
     if (std::io_decimal::write_wide_i64(1, total) <= 0 || !std::io_byte::write_stdout_byte(10)) {
         return 5;
     }

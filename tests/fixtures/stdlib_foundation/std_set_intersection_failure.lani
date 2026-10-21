@@ -1,0 +1,20 @@
+module app::main;
+import std::set;
+
+fn main() -> i32 {
+    let left: std::set::Set<i32> = std::set::try_insert(std::set::new(), -7);
+    let right: std::set::Set<i32> = std::set::try_insert(std::set::new(), -7);
+    if (std::set::len(left) != 1 || std::set::len(right) != 1) { return 2; }
+    let result: std::set::Set<i32> = std::set::try_intersection(left, right);
+    let failed: bool = std::set::len(result) == 0 &&
+        std::set::capacity(result) == 0 &&
+        std::set::contains(left, -7) && std::set::contains(right, -7);
+    let succeeded: bool = std::set::len(result) == 1 &&
+        std::set::at_or(result, 0, 0) == -7;
+    std::set::destroy(result);
+    std::set::destroy(right);
+    std::set::destroy(left);
+    if (failed) { return 0; }
+    if (succeeded) { return 4; }
+    return 5;
+}
