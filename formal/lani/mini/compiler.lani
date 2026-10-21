@@ -144,6 +144,8 @@ pub fn get_or<T>(items: List<T>, index: usize, fallback: T) -> T {
 // function's parameters are its first locals. Comparisons produce 1 or 0, and
 // conditions test for nonzero. Calls are statements: a function returns a
 // fixed number of values, and a call stores them in consecutive locals.
+// There is a heap of bytes below a fixed limit, and a bump allocator whose
+// cursor only moves up: addresses are heap offsets.
 
 pub enum BinOp { Add, Sub, Mul, And, Or, Xor, }
 
@@ -174,6 +176,13 @@ pub enum Stmt {
     // target, ..., target + count - 1 = callee(args)
     Call(usize, usize, usize, List<Expr>),
     Ret(List<Expr>),
+    // target = the cursor rounded up to a multiple of 2^shift; the cursor
+    // moves past size bytes from there
+    Alloc(usize, usize, Expr),
+    // target = the byte at address
+    LoadByte(usize, Expr),
+    // the byte at address = the low byte of value
+    StoreByte(Expr, Expr),
 }
 
 pub struct Func {
@@ -215,6 +224,13 @@ pub enum Instr {
     // Copy the source slots to the first slots, then the frame epilogue and
     // ret. The results replace the arguments, and rax holds the last one.
     Ret(List<usize>),
+    // Allocate rax bytes at the cursor (r13) rounded up to 2^shift, below
+    // the limit (r14), and leave the address in rax
+    Bump(usize),
+    // movzx eax, byte [r12 + rax]: the heap starts at r12
+    LoadAt,
+    // mov [r12 + slot], al
+    StoreAt(usize),
 }
 
 impl BinOp {
@@ -254,6 +270,9 @@ impl Instr {
             Jz(target) -> 9,
             Instr::Call(callee, args, target, count) -> plus(plus(times(14, length(args)), 5), times(14, count)),
             Instr::Ret(sources) -> plus(times(14, length(sources)), 5),
+            Bump(shift) -> 52,
+            LoadAt -> 10,
+            StoreAt(slot) -> 16,
         };
     }
 }
@@ -304,6 +323,9 @@ pub fn compile_stmt(base: usize, pos: usize, s: Stmt) -> List<Instr> {
         Loop(condition, body) -> loop_code(base, pos, compile_expr(base, condition, 0), unbox(body)),
         Stmt::Call(target, count, callee, args) -> concat(compile_args(base, args, 0), single(Instr::Call(callee, arg_slots(base, args, 0), target, count))),
         Stmt::Ret(values) -> concat(compile_args(base, values, 0), single(Instr::Ret(arg_slots(base, values, 0)))),
+        Alloc(target, shift, size) -> concat(compile_expr(base, size, 0), cons(Bump(shift), single(Store(target)))),
+        LoadByte(target, address) -> concat(compile_expr(base, address, 0), cons(LoadAt, single(Store(target)))),
+        StoreByte(address, value) -> concat(concat(compile_expr(base, address, 0), single(Store(base))), concat(compile_expr(base, value, 1), single(StoreAt(base)))),
     };
 }
 
@@ -393,6 +415,9 @@ impl Stmt {
             Loop(condition, body) -> condition.within(locals) && unbox(body).within(locals, arities, results),
             Stmt::Call(target, count, callee, args) -> locals >= plus(target, count) && count > 0 && arity_is(arities, callee, length(args), count) && all_within(locals, args),
             Stmt::Ret(values) -> (length(values) == results) && all_within(locals, values),
+            Alloc(target, shift, size) -> locals > target && 32 > shift && size.within(locals),
+            LoadByte(target, address) -> locals > target && address.within(locals),
+            StoreByte(address, value) -> address.within(locals) && value.within(locals),
         };
     }
 
@@ -405,6 +430,9 @@ impl Stmt {
             Loop(condition, body) -> max_of(condition.temps(), unbox(body).temps()),
             Stmt::Call(target, count, callee, args) -> args_temps(args, 0),
             Stmt::Ret(values) -> args_temps(values, 0),
+            Alloc(target, shift, size) -> size.temps(),
+            LoadByte(target, address) -> address.temps(),
+            StoreByte(address, value) -> max_of(address.temps(), plus(value.temps(), 1)),
         };
     }
 }
@@ -561,6 +589,35 @@ pub fn slot_compare(word: Word, operation: CmpOp, slot: usize) -> List<u8> {
     return concat(concat(slot_operands(slot), concat(word.rex(), cons(57, single(200)))), cons(15, cons(operation.setcc(word), cons(192, cons(15, cons(182, single(192)))))));
 }
 
+// 2^shift as a 64-bit word.
+pub fn pow2(shift: usize) -> u64 {
+    if (shift == 0) {
+        return 1;
+    }
+    let half: u64 = pow2(minus(shift, 1));
+    return half + half;
+}
+
+// mov rcx, r13; mov r11, 2^shift - 1; add rcx, r11; mov r11, -2^shift;
+// and rcx, r11 (rcx is the cursor rounded up); mov r11, rcx; add r11, rax;
+// cmp r11, r14; jbe +2; ud2 (past the limit); mov r13, r11; mov rax, rcx
+pub fn bump_bytes(shift: usize) -> List<u8> {
+    let round: List<u8> = concat(concat(cons(76, cons(137, cons(233, cons(73, single(187))))), le64(pow2(shift) - 1)), cons(76, cons(1, cons(217, cons(73, single(187))))));
+    let mask: List<u8> = concat(le64(0 - pow2(shift)), cons(76, cons(33, single(217))));
+    let check: List<u8> = cons(73, cons(137, cons(203, cons(73, cons(1, cons(195, cons(77, cons(57, cons(243, cons(15, cons(134, cons(2, cons(0, cons(0, cons(0, cons(15, single(11)))))))))))))))));
+    return concat(concat(concat(round, mask), check), cons(77, cons(137, cons(221, cons(72, cons(137, single(200)))))));
+}
+
+// add rax, r12; movzx eax, byte [rax + 0]
+pub fn load_at_bytes() -> List<u8> {
+    return cons(76, cons(1, cons(224, cons(15, cons(182, cons(128, cons(0, cons(0, cons(0, single(0))))))))));
+}
+
+// mov rcx, [rbp + disp32]; add rcx, r12; mov [rcx + 0], al
+pub fn store_at_bytes(slot: usize) -> List<u8> {
+    return concat(concat(cons(72, cons(139, single(141))), le32(slot_offset(slot))), cons(76, cons(1, cons(225, cons(136, cons(129, cons(0, cons(0, cons(0, single(0))))))))));
+}
+
 // mov rsp, rbp; pop rbp; ret
 pub fn epilogue() -> List<u8> {
     return cons(72, cons(137, cons(236, cons(93, single(195)))));
@@ -627,6 +684,9 @@ impl Instr {
             Jz(target) -> concat(cons(72, cons(133, cons(192, cons(15, single(132))))), le32(relative(plus(pc, 9), target))),
             Instr::Call(callee, args, target, count) -> concat(concat(copy_bytes(arg_base(place.slots), args, 0), cons(232, le32(relative(plus(plus(plus(place.body, pc), times(14, length(args))), 5), get_or(place.entries, callee, 0))))), copy_bytes(target, slot_range(arg_base(place.slots), count), 0)),
             Instr::Ret(sources) -> concat(copy_bytes(0, sources, 0), epilogue()),
+            Bump(shift) -> bump_bytes(shift),
+            LoadAt -> load_at_bytes(),
+            StoreAt(slot) -> store_at_bytes(slot),
         };
     }
 }

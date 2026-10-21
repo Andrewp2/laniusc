@@ -12,7 +12,7 @@ def Agree (base : Nat) (env : Env) (m : Machine) : Prop := ∀ index, index < ba
 
 /-- What a call may return in a derivation of depth `depth`. -/
 def SourceCalls (prog : Program) (depth : Nat) : Calls :=
-  fun callee args values => ∃ inner, inner < depth ∧ prog.Returns inner callee args values
+  fun callee args heap values after => ∃ inner, inner < depth ∧ prog.Returns inner callee args heap values after
 
 theorem Instr.exec_singleton (i : Instr) (m : Machine) : Instr.exec [i] m = i.step m := rfl
 
@@ -131,66 +131,54 @@ theorem evalAll_length (env : Env) (args : List Expr) : (Expr.evalAll env args).
 /-- What running a placed statement's code achieves, given the source outcome. -/
 def StmtResult (calls : Calls) (code : List Instr) (base pos : Nat) (block : List Instr) (m : Machine) :
     Outcome → Prop
-  | .normal env => ∃ m', Star calls code m m' ∧ m'.pc = pos + codeSize block ∧ Agree base env m'
-  | .returned values => ∃ m' sources, Star calls code m m' ∧ fetch code m'.pc = some (.ret sources) ∧
-      readSlots m'.slots sources = values
-
-/-- A placed straight-line block, then the rest of a statement's run. -/
-theorem StmtResult.prefix {calls : Calls} {code block : List Instr} {m : Machine}
-    (placed : Block code m.pc block) (allStraight : block.all Instr.straight = true)
-    (rest : StmtResult calls code base pos whole (Instr.exec block m) outcome) :
-    StmtResult calls code base pos whole m outcome := by
-  have run := Star.straight (calls := calls) block placed allStraight
-  cases outcome with
-  | normal env =>
-    obtain ⟨m', steps, pc, agree⟩ := rest
-    exact ⟨m', run.trans steps, pc, agree⟩
-  | returned value =>
-    obtain ⟨m', sources, steps, fetched, acc⟩ := rest
-    exact ⟨m', sources, run.trans steps, fetched, acc⟩
-
-theorem StmtResult.step {calls : Calls} {code : List Instr} {m next : Machine}
-    (step : Step calls code m next) (rest : StmtResult calls code base pos whole next outcome) :
-    StmtResult calls code base pos whole m outcome := by
-  cases outcome with
-  | normal env =>
-    obtain ⟨m', steps, pc, agree⟩ := rest
-    exact ⟨m', .step step steps, pc, agree⟩
-  | returned value =>
-    obtain ⟨m', sources, steps, fetched, acc⟩ := rest
-    exact ⟨m', sources, .step step steps, fetched, acc⟩
-
-/-- A statement's result through a sub-block, with the end of the block moved. -/
-theorem StmtResult.retarget {calls : Calls} {code : List Instr} {m : Machine}
-    (inner : StmtResult calls code base innerPos innerBlock m outcome)
-    (normalEnd : ∀ env m', Star calls code m m' → m'.pc = innerPos + codeSize innerBlock →
-      Agree base env m' → StmtResult calls code base pos whole m (.normal env)) :
-    StmtResult calls code base pos whole m outcome := by
-  cases outcome with
-  | normal env =>
-    obtain ⟨m', steps, pc, agree⟩ := inner
-    exact normalEnd env m' steps pc agree
-  | returned value => exact inner
+  | .normal env heap => ∃ m', Star calls code m m' ∧ m'.pc = pos + codeSize block ∧ Agree base env m' ∧
+      m'.heap = heap
+  | .returned values heap => ∃ m' sources, Star calls code m m' ∧ fetch code m'.pc = some (.ret sources) ∧
+      readSlots m'.slots sources = values ∧ m'.heap = heap
 
 theorem StmtResult.star {calls : Calls} {code : List Instr} {m next : Machine}
     (run : Star calls code m next) (rest : StmtResult calls code base pos whole next outcome) :
     StmtResult calls code base pos whole m outcome := by
   cases outcome with
-  | normal env =>
-    obtain ⟨m', steps, pc, agree⟩ := rest
-    exact ⟨m', run.trans steps, pc, agree⟩
-  | returned value =>
-    obtain ⟨m', sources, steps, fetched, acc⟩ := rest
-    exact ⟨m', sources, run.trans steps, fetched, acc⟩
+  | normal env heap =>
+    obtain ⟨m', steps, pc, agree, onHeap⟩ := rest
+    exact ⟨m', run.trans steps, pc, agree, onHeap⟩
+  | returned value heap =>
+    obtain ⟨m', sources, steps, fetched, acc, onHeap⟩ := rest
+    exact ⟨m', sources, run.trans steps, fetched, acc, onHeap⟩
+
+/-- A placed straight-line block, then the rest of a statement's run. -/
+theorem StmtResult.prefix {calls : Calls} {code block : List Instr} {m : Machine}
+    (placed : Block code m.pc block) (allStraight : block.all Instr.straight = true)
+    (rest : StmtResult calls code base pos whole (Instr.exec block m) outcome) :
+    StmtResult calls code base pos whole m outcome :=
+  StmtResult.star (Star.straight (calls := calls) block placed allStraight) rest
+
+theorem StmtResult.step {calls : Calls} {code : List Instr} {m next : Machine}
+    (step : Step calls code m next) (rest : StmtResult calls code base pos whole next outcome) :
+    StmtResult calls code base pos whole m outcome :=
+  StmtResult.star (.single step) rest
+
+/-- A statement's result through a sub-block, with the end of the block moved. -/
+theorem StmtResult.retarget {calls : Calls} {code : List Instr} {m : Machine}
+    (inner : StmtResult calls code base innerPos innerBlock m outcome)
+    (normalEnd : ∀ env heap m', Star calls code m m' → m'.pc = innerPos + codeSize innerBlock →
+      Agree base env m' → m'.heap = heap → StmtResult calls code base pos whole m (.normal env heap)) :
+    StmtResult calls code base pos whole m outcome := by
+  cases outcome with
+  | normal env heap =>
+    obtain ⟨m', steps, pc, agree, onHeap⟩ := inner
+    exact normalEnd env heap m' steps pc agree onHeap
+  | returned value => exact inner
 
 /-- A sub-block that ends normally, then the rest of the statement. -/
 theorem StmtResult.andThen {calls : Calls} {code : List Instr} {m : Machine}
-    (first : StmtResult calls code base innerPos innerBlock m (.normal middle))
+    (first : StmtResult calls code base innerPos innerBlock m (.normal middle between))
     (rest : ∀ m', Star calls code m m' → m'.pc = innerPos + codeSize innerBlock → Agree base middle m' →
-      StmtResult calls code base pos whole m outcome) :
+      m'.heap = between → StmtResult calls code base pos whole m outcome) :
     StmtResult calls code base pos whole m outcome := by
-  obtain ⟨m', steps, pc, agree⟩ := first
-  exact rest m' steps pc agree
+  obtain ⟨m', steps, pc, agree, onHeap⟩ := first
+  exact rest m' steps pc agree onHeap
 
 theorem Block.at (placed : Block code pos block) (same : pos = pos') : Block code pos' block :=
   same ▸ placed
@@ -222,24 +210,38 @@ theorem setMany_eq : ∀ (values : List (BitVec 64)) (env : Env) (target slot : 
         simp
       · rw [if_neg inside, if_neg here, if_neg (by omega)]
 
+/-- The end of a statement that computes a value and stores it in `target`. -/
+theorem stored_result {calls : Calls} {code : List Instr} {m : Machine} {base pos target : Nat} {env : Env}
+    {block : List Instr} (placed : Block code m.pc [.store target]) (pcEnd : m.pc + 7 = pos + codeSize block)
+    (agree : ∀ slot, slot < base → slot ≠ target → m.slots slot = env slot)
+    (heap : Heap) (onHeap : m.heap = heap) :
+    StmtResult calls code base pos block m (.normal (env.set target m.acc) heap) := by
+  refine ⟨_, .single (.straight placed.fetch rfl), by simp only [Instr.step, Instr.size]; omega, ?_, onHeap⟩
+  intro other inside
+  simp only [Instr.step, Instr.update, Machine.store, Env.set]
+  split
+  · rfl
+  · exact agree other inside (by assumption)
+
 theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Arity} {results : Nat}
     {code : List Instr}
-    {depth : Nat} {env : Env} {stmt : Stmt} {outcome : Outcome}
-    (exec : Exec prog depth env stmt outcome) :
-    ∀ pos m, Block code pos (compileStmt base pos stmt) → m.pc = pos → Agree base env m →
+    {depth : Nat} {env : Env} {heap : Heap} {stmt : Stmt} {outcome : Outcome}
+    (exec : Exec prog depth env heap stmt outcome) :
+    ∀ pos m, Block code pos (compileStmt base pos stmt) → m.pc = pos → Agree base env m → m.heap = heap →
       stmt.within base arities results = true →
       StmtResult (SourceCalls prog depth) code base pos (compileStmt base pos stmt) m outcome := by
   induction exec with
   | skip =>
-    intro pos m _ pc agree _
-    exact ⟨m, .refl _, by simp [compileStmt, codeSize, pc], agree⟩
-  | @assign depth env index value =>
-    intro pos m placed pc agree within
+    intro pos m _ pc agree onHeap _
+    exact ⟨m, .refl _, by simp [compileStmt, codeSize, pc], agree, onHeap⟩
+  | @assign depth env heap index value =>
+    intro pos m placed pc agree onHeap within
     simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
     have allStraight : (compileStmt base pos (.assign index value)).all Instr.straight = true := by
       simp only [compileStmt, List.all_append, compileExpr_straight]; rfl
     obtain ⟨acc, kept⟩ := compileExpr_correct base value 0 env m agree within.2
-    refine ⟨_, Star.straight _ (pc ▸ placed) allStraight, by rw [Instr.exec_pc, pc], ?_⟩
+    refine ⟨_, Star.straight _ (pc ▸ placed) allStraight, by rw [Instr.exec_pc, pc], ?_,
+      (Instr.exec_heap _ _).trans onHeap⟩
     intro other below
     simp only [compileStmt, Instr.exec_append, Instr.exec_singleton, Instr.step, Instr.update,
       Machine.store, Env.set, acc]
@@ -247,30 +249,24 @@ theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Arity}
     · rfl
     · rw [kept other (by omega)]
       exact agree other below
-  | @seq depth env middle first second outcome _ _ ihFirst ihSecond =>
-    intro pos m placed pc agree within
+  | @seq depth env middle heap between first second outcome _ _ ihFirst ihSecond =>
+    intro pos m placed pc agree onHeap within
     simp only [Stmt.within, Bool.and_eq_true] at within
     simp only [compileStmt] at placed ⊢
-    obtain ⟨m', steps, pc', agree'⟩ := ihFirst pos m placed.left pc agree within.1
-    have secondRun := ihSecond _ m' placed.right pc' agree' within.2
+    obtain ⟨m', steps, pc', agree', onHeap'⟩ := ihFirst pos m placed.left pc agree onHeap within.1
+    have secondRun := ihSecond _ m' placed.right pc' agree' onHeap' within.2
     have run : StmtResult _ code base pos (compileStmt base pos first ++
         compileStmt base (pos + codeSize (compileStmt base pos first)) second) m' outcome :=
-      secondRun.retarget fun env m'' steps' pc'' agree'' =>
-      ⟨m'', steps', by rw [pc'', codeSize_append]; omega, agree''⟩
-    cases outcome with
-    | normal env =>
-      obtain ⟨m'', steps', pc'', agree''⟩ := run
-      exact ⟨m'', steps.trans steps', pc'', agree''⟩
-    | returned value =>
-      obtain ⟨m'', sources, steps', fetched, acc⟩ := run
-      exact ⟨m'', sources, steps.trans steps', fetched, acc⟩
-  | @seqReturned depth env first second value _ ihFirst =>
-    intro pos m placed pc agree within
+      secondRun.retarget fun env heap m'' steps' pc'' agree'' onHeap'' =>
+      ⟨m'', steps', by rw [pc'', codeSize_append]; omega, agree'', onHeap''⟩
+    exact StmtResult.star steps run
+  | @seqReturned depth env heap after first second value _ ihFirst =>
+    intro pos m placed pc agree onHeap within
     simp only [Stmt.within, Bool.and_eq_true] at within
     simp only [compileStmt] at placed ⊢
-    exact ihFirst pos m placed.left pc agree within.1
-  | @ifTrue depth env condition thenBranch elseBranch outcome nonzero _ ihThen =>
-    intro pos m placed pc agree within
+    exact ihFirst pos m placed.left pc agree onHeap within.1
+  | @ifTrue depth env heap condition thenBranch elseBranch outcome nonzero _ ihThen =>
+    intro pos m placed pc agree onHeap within
     simp only [Stmt.within, Bool.and_eq_true] at within
     simp only [compileStmt] at placed ⊢
     obtain ⟨acc, kept⟩ := compileExpr_correct base condition 0 env m agree within.1.1
@@ -278,16 +274,16 @@ theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Arity}
     have jz := placed.left.left.left.right.fetch
     apply StmtResult.step (.jzNot (by rw [Instr.exec_pc, pc]; exact jz) (by rw [acc]; exact nonzero))
     refine StmtResult.retarget (ihThen (pos + codeSize (compileExpr base condition 0) + 9) _ ?_ ?_ ?_
-      within.1.2) ?_
+      ((Instr.exec_heap _ _).trans onHeap) within.1.2) ?_
     · exact placed.left.left.right.at (by simp only [codeSize_append, codeSize, Instr.size]; omega)
     · simp only [Instr.exec_pc, pc, Instr.size]
     · exact agree.of_slots fun slot below => kept slot (by omega)
-    intro env' m' steps pc' agree'
+    intro env' heap' m' steps pc' agree' onHeap'
     refine ⟨_, steps.trans (.single (.jmp (placed.left.right.at (by
       rw [pc']; simp only [codeSize_append, codeSize, Instr.size]; omega)).fetch)),
-      by simp only [codeSize_append, codeSize, Instr.size]; omega, agree'⟩
-  | @ifFalse depth env condition thenBranch elseBranch outcome zero _ ihElse =>
-    intro pos m placed pc agree within
+      by simp only [codeSize_append, codeSize, Instr.size]; omega, agree', onHeap'⟩
+  | @ifFalse depth env heap condition thenBranch elseBranch outcome zero _ ihElse =>
+    intro pos m placed pc agree onHeap within
     simp only [Stmt.within, Bool.and_eq_true] at within
     simp only [compileStmt] at placed ⊢
     obtain ⟨acc, kept⟩ := compileExpr_correct base condition 0 env m agree within.1.1
@@ -296,13 +292,13 @@ theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Arity}
     apply StmtResult.step (.jzTaken (by rw [Instr.exec_pc, pc]; exact jz) (by rw [acc]; exact zero))
     refine StmtResult.retarget (ihElse (pos + codeSize (compileExpr base condition 0) + 9 +
       codeSize (compileStmt base (pos + codeSize (compileExpr base condition 0) + 9) thenBranch) + 5)
-      _ ?_ rfl ?_ within.2) ?_
+      _ ?_ rfl ?_ ((Instr.exec_heap _ _).trans onHeap) within.2) ?_
     · exact placed.right.at (by simp only [codeSize_append, codeSize, Instr.size]; omega)
     · exact agree.of_slots fun slot below => kept slot (by omega)
-    intro env' m' steps pc' agree'
-    exact ⟨m', steps, by rw [pc']; simp only [codeSize_append, codeSize, Instr.size]; omega, agree'⟩
-  | @loopDone depth env condition body zero =>
-    intro pos m placed pc agree within
+    intro env' heap' m' steps pc' agree' onHeap'
+    exact ⟨m', steps, by rw [pc']; simp only [codeSize_append, codeSize, Instr.size]; omega, agree', onHeap'⟩
+  | @loopDone depth env heap condition body zero =>
+    intro pos m placed pc agree onHeap within
     simp only [Stmt.within, Bool.and_eq_true] at within
     simp only [compileStmt] at placed ⊢
     obtain ⟨acc, kept⟩ := compileExpr_correct base condition 0 env m agree within.1
@@ -310,9 +306,9 @@ theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Arity}
     have jz := placed.left.left.right.fetch
     apply StmtResult.step (.jzTaken (by rw [Instr.exec_pc, pc]; exact jz) (by rw [acc]; exact zero))
     exact ⟨_, .refl _, by simp only [codeSize_append, codeSize, Instr.size]; omega,
-      agree.of_slots fun slot below => kept slot (by omega)⟩
-  | @loopNext depth env middle condition body outcome nonzero _ _ ihBody ihLoop =>
-    intro pos m placed pc agree within
+      agree.of_slots fun slot below => kept slot (by omega), (Instr.exec_heap _ _).trans onHeap⟩
+  | @loopNext depth env middle heap between condition body outcome nonzero _ _ ihBody ihLoop =>
+    intro pos m placed pc agree onHeap within
     have loopWithin := within
     simp only [Stmt.within, Bool.and_eq_true] at within
     have placedLoop := placed
@@ -322,41 +318,44 @@ theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Arity}
     have jz := placed.left.left.right.fetch
     apply StmtResult.step (.jzNot (by rw [Instr.exec_pc, pc]; exact jz) (by rw [acc]; exact nonzero))
     refine StmtResult.andThen (ihBody (pos + codeSize (compileExpr base condition 0) + 9) _ ?_ ?_ ?_
-      within.2) ?_
+      ((Instr.exec_heap _ _).trans onHeap) within.2) ?_
     · exact placed.left.right.at (by simp only [codeSize_append, codeSize, Instr.size]; omega)
     · simp only [Instr.exec_pc, pc, Instr.size]
     · exact agree.of_slots fun slot below => kept slot (by omega)
-    intro m' steps pc' agree'
+    intro m' steps pc' agree' onHeap'
     have jumped : Star (SourceCalls prog depth) code m' { m' with pc := pos } :=
       .single (.jmp (placed.right.at (by
         rw [pc']; simp only [codeSize_append, codeSize, Instr.size]; omega)).fetch)
-    have again := ihLoop pos { m' with pc := pos } placedLoop rfl agree' loopWithin
+    have again := ihLoop pos { m' with pc := pos } placedLoop rfl agree' onHeap' loopWithin
     simp only [compileStmt] at again
     exact StmtResult.star (steps.trans jumped) again
-  | @loopReturned depth env condition body value nonzero _ ihBody =>
-    intro pos m placed pc agree within
+  | @loopReturned depth env heap after condition body value nonzero _ ihBody =>
+    intro pos m placed pc agree onHeap within
     simp only [Stmt.within, Bool.and_eq_true] at within
     simp only [compileStmt] at placed ⊢
     obtain ⟨acc, kept⟩ := compileExpr_correct base condition 0 env m agree within.1
     apply StmtResult.prefix (pc ▸ placed.left.left.left) (compileExpr_straight _ _ _)
     have jz := placed.left.left.right.fetch
     apply StmtResult.step (.jzNot (by rw [Instr.exec_pc, pc]; exact jz) (by rw [acc]; exact nonzero))
-    refine ihBody (pos + codeSize (compileExpr base condition 0) + 9) _ ?_ ?_ ?_ within.2
+    refine ihBody (pos + codeSize (compileExpr base condition 0) + 9) _ ?_ ?_ ?_
+      ((Instr.exec_heap _ _).trans onHeap) within.2
     · exact placed.left.right.at (by simp only [codeSize_append, codeSize, Instr.size]; omega)
     · simp only [Instr.exec_pc, pc, Instr.size]
     · exact agree.of_slots fun slot below => kept slot (by omega)
-  | @call depth inner target count callee env args func value lookup length counted lower calleeExec _ =>
-    intro pos m placed pc agree within
+  | @call depth inner target count callee env heap after args func value lookup length counted lower
+      calleeExec _ =>
+    intro pos m placed pc agree onHeap within
     simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
     simp only [compileStmt] at placed ⊢
     obtain ⟨values, kept⟩ := compileArgs_correct base args 0 env m agree within.2
     apply StmtResult.prefix (pc ▸ placed.left) (compileArgs_straight _ _ _)
     have returns : SourceCalls prog depth callee
-        (readSlots (Instr.exec (compileArgs base args 0) m).slots (argSlots base args 0)) value := by
-      rw [values]
+        (readSlots (Instr.exec (compileArgs base args 0) m).slots (argSlots base args 0))
+        (Instr.exec (compileArgs base args 0) m).heap value after := by
+      rw [values, Instr.exec_heap, onHeap]
       exact ⟨inner, lower, func, lookup, by rw [evalAll_length, length], calleeExec⟩
     apply StmtResult.step (.call (by rw [Instr.exec_pc, pc]; exact placed.right.fetch) returns counted)
-    refine ⟨_, .refl _, by simp only [Instr.exec_pc, pc, codeSize_append, codeSize]; omega, ?_⟩
+    refine ⟨_, .refl _, by simp only [Instr.exec_pc, pc, codeSize_append, codeSize]; omega, ?_, rfl⟩
     intro other below
     simp only [writeSlots]
     rw [setMany_eq]
@@ -364,13 +363,64 @@ theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Arity}
     · rw [if_pos inside, if_pos inside]
     · rw [if_neg inside, if_neg inside, kept other (by omega)]
       exact agree other below
-  | @ret depth env values =>
-    intro pos m placed pc agree within
+  | @ret depth env heap values =>
+    intro pos m placed pc agree onHeap within
     simp only [Stmt.within, Bool.and_eq_true] at within
     simp only [compileStmt] at placed ⊢
     obtain ⟨vals, _⟩ := compileArgs_correct base values 0 env m agree within.2
     exact ⟨_, _, Star.straight _ (pc ▸ placed.left) (compileArgs_straight _ _ _),
-      by rw [Instr.exec_pc, pc]; exact placed.right.fetch, vals⟩
+      by rw [Instr.exec_pc, pc]; exact placed.right.fetch, vals, (Instr.exec_heap _ _).trans onHeap⟩
+  | @alloc depth env heap target shift size room =>
+    intro pos m placed pc agree onHeap within
+    simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
+    simp only [compileStmt] at placed ⊢
+    obtain ⟨acc, kept⟩ := compileExpr_correct base size 0 env m agree within.2
+    apply StmtResult.prefix (pc ▸ placed.left) (compileExpr_straight _ _ _)
+    obtain ⟨bumpAt, storeAt⟩ := placed.right.pair
+    have heapAt := (Instr.exec_heap (compileExpr base size 0) m).trans onHeap
+    apply StmtResult.step (.bump (by rw [Instr.exec_pc, pc]; exact bumpAt.fetch)
+      (by rw [heapAt, acc]; exact room))
+    rw [heapAt, acc]
+    refine stored_result ?_ ?_ ?_ _ ?_
+    · exact storeAt.at (by simp only [Instr.exec_pc, pc])
+    · simp only [Instr.exec_pc, pc, codeSize_append, codeSize, Instr.size]; omega
+    · exact fun slot below _ => (kept slot (by omega)).trans (agree slot below)
+    · first | rfl | exact heapAt
+  | @loadByte depth env heap target address inside =>
+    intro pos m placed pc agree onHeap within
+    simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
+    simp only [compileStmt] at placed ⊢
+    obtain ⟨acc, kept⟩ := compileExpr_correct base address 0 env m agree within.2
+    apply StmtResult.prefix (pc ▸ placed.left) (compileExpr_straight _ _ _)
+    obtain ⟨loadAt, storeAt⟩ := placed.right.pair
+    have heapAt := (Instr.exec_heap (compileExpr base address 0) m).trans onHeap
+    apply StmtResult.step (.loadAt (by rw [Instr.exec_pc, pc]; exact loadAt.fetch)
+      (by rw [heapAt, acc]; exact inside))
+    rw [heapAt, acc]
+    refine stored_result ?_ ?_ ?_ _ ?_
+    · exact storeAt.at (by simp only [Instr.exec_pc, pc])
+    · simp only [Instr.exec_pc, pc, codeSize_append, codeSize, Instr.size]; omega
+    · exact fun slot below _ => (kept slot (by omega)).trans (agree slot below)
+    · first | rfl | exact heapAt
+  | @storeByte depth env heap address value inside =>
+    intro pos m placed pc agree onHeap within
+    simp only [Stmt.within, Bool.and_eq_true] at within
+    simp only [compileStmt] at placed ⊢
+    have placed' : Block code pos ((compileExpr base address 0 ++ [Instr.store base] ++
+        compileExpr base value 1) ++ [Instr.storeAt base]) := by simpa only [List.append_assoc] using placed
+    obtain ⟨kept, acc, slots⟩ := operands_correct base 0 env m agree _ _ _ _
+      (fun m agree => compileExpr_correct base address 0 env m agree within.1)
+      (fun m agree => compileExpr_correct base value 1 env m agree within.2)
+    simp only [Nat.add_zero] at kept acc slots
+    apply StmtResult.prefix (pc ▸ placed'.left)
+      (by simp only [List.all_append, compileExpr_straight]; rfl)
+    have heapAt := (Instr.exec_heap (compileExpr base address 0 ++ [Instr.store base] ++
+      compileExpr base value 1) m).trans onHeap
+    apply StmtResult.step (.storeAt (by rw [Instr.exec_pc, pc]; exact placed'.right.fetch)
+      (by rw [heapAt, kept]; exact inside))
+    refine ⟨_, .refl _, by simp only [Instr.exec_pc, pc, codeSize_append, codeSize]; omega,
+      agree.of_slots slots, ?_⟩
+    simp only [heapAt, kept, acc]
 
 theorem arityIs_eq (arities : List Arity) (callee count results : Nat) :
     arityIs arities callee count results = true ↔
@@ -433,10 +483,11 @@ to a `ret` holding the source function's return value. -/
 theorem compileFunc_correct {arities : List Arity} {func : Func} {code : Code}
     (compiled : compileFunc arities func = some code) {prog : Program} {depth : Nat}
     {args : List (BitVec 64)} {value : List (BitVec 64)} (length : args.length = func.params)
-    (exec : Exec prog depth (Func.entry args) func.body (.returned value)) (m : Machine) (start : m.pc = 0)
+    {heap after : Heap} (exec : Exec prog depth (Func.entry args) heap func.body (.returned value after)) (m : Machine)
+    (start : m.pc = 0) (onHeap : m.heap = heap)
     (params : ∀ index, index < func.params → m.slots index = args.getD index 0) :
     ∃ m' sources, Star (SourceCalls prog depth) code.instrs m m' ∧
-      fetch code.instrs m'.pc = some (.ret sources) ∧ readSlots m'.slots sources = value := by
+      fetch code.instrs m'.pc = some (.ret sources) ∧ readSlots m'.slots sources = value ∧ m'.heap = after := by
   obtain ⟨paramsFit, within, -, -, instrs, -⟩ := compileFunc_spec compiled
   rw [instrs]
   generalize initEq : (Instr.imm 0 :: zeroLocals func.params (func.locals - func.params)) = init
@@ -459,8 +510,9 @@ theorem compileFunc_correct {arities : List Arity} {func : Func} {code : Code}
     · rw [if_pos (by omega)]
       simp [List.getD, List.getElem?_eq_none (show args.length ≤ index by omega)]
   have result := compileStmt_correct exec (code := init ++ compileStmt func.locals (codeSize init) func.body)
-    (codeSize init) (Instr.exec init m) bodyPlaced (by rw [Instr.exec_pc, start]; omega) agree within
-  obtain ⟨m', sources, steps, fetched, acc⟩ := result
-  exact ⟨m', sources, initRun.trans steps, fetched, acc⟩
+    (codeSize init) (Instr.exec init m) bodyPlaced (by rw [Instr.exec_pc, start]; omega) agree
+    ((Instr.exec_heap _ _).trans onHeap) within
+  obtain ⟨m', sources, steps, fetched, acc, onHeap'⟩ := result
+  exact ⟨m', sources, initRun.trans steps, fetched, acc, onHeap'⟩
 
 end Lanius.Mini

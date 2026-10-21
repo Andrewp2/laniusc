@@ -122,6 +122,12 @@ inductive Stmt where
   /-- target, ..., target + count - 1 = callee(args) -/
   | call : Nat → Nat → Nat → (List Expr) → Stmt
   | ret : (List Expr) → Stmt
+  /-- target = the cursor rounded up to a multiple of 2^shift; the cursor moves past size bytes from there -/
+  | alloc : Nat → Nat → Expr → Stmt
+  /-- target = the byte at address -/
+  | loadByte : Nat → Expr → Stmt
+  /-- the byte at address = the low byte of value -/
+  | storeByte : Expr → Expr → Stmt
   deriving DecidableEq, Repr
 
 structure Func where
@@ -159,6 +165,12 @@ inductive Instr where
   | call : Nat → (List Nat) → Nat → Nat → Instr
   /-- Copy the source slots to the first slots, then the frame epilogue and ret. The results replace the arguments, and rax holds the last one. -/
   | ret : (List Nat) → Instr
+  /-- Allocate rax bytes at the cursor (r13) rounded up to 2^shift, below the limit (r14), and leave the address in rax -/
+  | bump : Nat → Instr
+  /-- movzx eax, byte [r12 + rax]: the heap starts at r12 -/
+  | loadAt : Instr
+  /-- mov [r12 + slot], al -/
+  | storeAt : Nat → Instr
   deriving DecidableEq, Repr
 
 /-- imul is one byte longer than the other operators. -/
@@ -189,6 +201,9 @@ def Instr.size (self : Instr) : Nat :=
   | .jz target => 9
   | .call callee args target count => 14 * args.length + 5 + 14 * count
   | .ret sources => 14 * sources.length + 5
+  | .bump shift => 52
+  | .loadAt => 10
+  | .storeAt slot => 16
 
 def codeSize (code : List Instr) : Nat :=
   match code with
@@ -237,6 +252,9 @@ def compileStmt (base : Nat) (pos : Nat) (s : Stmt) : List Instr :=
      conditionCode ++ [Instr.jz (bodyStart + codeSize bodyCode + 5)] ++ bodyCode ++ [Instr.jmp pos])
   | .call target count callee args => compileArgs base args 0 ++ [Instr.call callee (argSlots base args 0) target count]
   | .ret values => compileArgs base values 0 ++ [Instr.ret (argSlots base values 0)]
+  | .alloc target shift size => compileExpr base size 0 ++ Instr.bump shift :: [Instr.store target]
+  | .loadByte target address => compileExpr base address 0 ++ Instr.loadAt :: [Instr.store target]
+  | .storeByte address value => compileExpr base address 0 ++ [Instr.store base] ++ (compileExpr base value 1 ++ [Instr.storeAt base])
 
 def Expr.within (self : Expr) (locals : Nat) : Bool :=
   match self with
@@ -287,6 +305,9 @@ def Stmt.within (self : Stmt) (locals : Nat) (arities : List Arity) (results : N
   | .loop condition body => Expr.within condition locals && Stmt.within body locals arities results
   | .call target count callee args => decide (target + count ≤ locals) && decide (0 < count) && arityIs arities callee args.length count && allWithin locals args
   | .ret values => decide (values.length = results) && allWithin locals values
+  | .alloc target shift size => decide (target < locals) && decide (shift < 32) && Expr.within size locals
+  | .loadByte target address => decide (target < locals) && Expr.within address locals
+  | .storeByte address value => Expr.within address locals && Expr.within value locals
 
 def Stmt.temps (self : Stmt) : Nat :=
   match self with
@@ -297,6 +318,9 @@ def Stmt.temps (self : Stmt) : Nat :=
   | .loop condition body => max (Expr.temps condition) (Stmt.temps body)
   | .call target count callee args => argsTemps args 0
   | .ret values => argsTemps values 0
+  | .alloc target shift size => Expr.temps size
+  | .loadByte target address => Expr.temps address
+  | .storeByte address value => max (Expr.temps address) (Expr.temps value + 1)
 
 /-- Zero the non-parameter locals first, ..., first + count - 1. -/
 def zeroLocals (first : Nat) (count : Nat) : List Instr :=
@@ -413,6 +437,29 @@ def CmpOp.setcc (self : CmpOp) (word : Word) : UInt8 :=
 def slotCompare (word : Word) (operation : CmpOp) (slot : Nat) : List UInt8 :=
   slotOperands slot ++ (Word.rex word ++ 57 :: [200]) ++ 15 :: CmpOp.setcc operation word :: 192 :: 15 :: 182 :: [192]
 
+/-- 2^shift as a 64-bit word. -/
+def pow2 (shift : Nat) : BitVec 64 :=
+  if shift = 0 then
+    1
+  else
+    let half : BitVec 64 := pow2 (shift - 1)
+    half + half
+
+/-- mov rcx, r13; mov r11, 2^shift - 1; add rcx, r11; mov r11, -2^shift; and rcx, r11 (rcx is the cursor rounded up); mov r11, rcx; add r11, rax; cmp r11, r14; jbe +2; ud2 (past the limit); mov r13, r11; mov rax, rcx -/
+def bumpBytes (shift : Nat) : List UInt8 :=
+  let round : List UInt8 := 76 :: 137 :: 233 :: 73 :: [187] ++ le64 (pow2 shift - 1) ++ 76 :: 1 :: 217 :: 73 :: [187]
+  let mask : List UInt8 := le64 (0 - pow2 shift) ++ 76 :: 33 :: [217]
+  let check : List UInt8 := 73 :: 137 :: 203 :: 73 :: 1 :: 195 :: 77 :: 57 :: 243 :: 15 :: 134 :: 2 :: 0 :: 0 :: 0 :: 15 :: [11]
+  round ++ mask ++ check ++ 77 :: 137 :: 221 :: 72 :: 137 :: [200]
+
+/-- add rax, r12; movzx eax, byte [rax + 0] -/
+def loadAtBytes : List UInt8 :=
+  76 :: 1 :: 224 :: 15 :: 182 :: 128 :: 0 :: 0 :: 0 :: [0]
+
+/-- mov rcx, [rbp + disp32]; add rcx, r12; mov [rcx + 0], al -/
+def storeAtBytes (slot : Nat) : List UInt8 :=
+  72 :: 139 :: [141] ++ le32 (slotOffset slot) ++ 76 :: 1 :: 225 :: 136 :: 129 :: 0 :: 0 :: 0 :: [0]
+
 /-- mov rsp, rbp; pop rbp; ret -/
 def epilogue : List UInt8 :=
   72 :: 137 :: 236 :: 93 :: [195]
@@ -469,6 +516,9 @@ def Instr.encode (self : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   | .jz target => 72 :: 133 :: 192 :: 15 :: [132] ++ le32 (relative (pc + 9) target)
   | .call callee args target count => copyBytes (argBase place.slots) args 0 ++ 232 :: le32 (relative (place.body + pc + 14 * args.length + 5) (place.entries.getD callee 0)) ++ copyBytes target (slotRange (argBase place.slots) count) 0
   | .ret sources => copyBytes 0 sources 0 ++ epilogue
+  | .bump shift => bumpBytes shift
+  | .loadAt => loadAtBytes
+  | .storeAt slot => storeAtBytes slot
 
 def encodeFrom (place : Place) (pc : Nat) (code : List Instr) : List UInt8 :=
   match code with

@@ -5,7 +5,8 @@ acts on the low 32 bits and zero-extends its result, and its comparisons are
 signed; a `u64` operation uses all 64 bits, unsigned. Statements have a
 big-step semantics; the index bounds the call depth of the derivation, which is
 what bounds the stack the compiled code uses. A function's non-parameter locals
-start at zero. -/
+start at zero. The heap is bytes at offsets below a limit, with a bump
+allocator's cursor; a run that would pass the limit has no derivation. -/
 
 namespace Lanius.Mini
 
@@ -74,50 +75,83 @@ def Env.setMany (env : Env) : Nat → List (BitVec 64) → Env
 /-- Parameters hold the arguments; every other local starts at zero. -/
 def Func.entry (args : List (BitVec 64)) : Env := fun index => args.getD index 0
 
+/-- The heap: a byte at each offset, the bump allocator's cursor, and the
+limit no allocation passes and every access stays below. -/
+structure Heap where
+  bytes : Nat → UInt8
+  cursor : Nat
+  limit : Nat
+
+/-- `n` rounded up to a multiple of `2 ^ shift`. -/
+def alignUp (n shift : Nat) : Nat := (n + 2 ^ shift - 1) / 2 ^ shift * 2 ^ shift
+
+/-- The low byte of a word, as x86's byte store takes it. -/
+def lowByte (value : BitVec 64) : UInt8 := UInt8.ofNat (value.setWidth 8).toNat
+
+def Heap.write (heap : Heap) (address : Nat) (byte : UInt8) : Heap :=
+  { heap with bytes := fun other => if other = address then byte else heap.bytes other }
+
 inductive Outcome where
-  | normal (env : Env)
-  | returned (values : List (BitVec 64))
+  | normal (env : Env) (heap : Heap)
+  | returned (values : List (BitVec 64)) (heap : Heap)
 
-/-- `Exec prog depth env stmt outcome`: running `stmt` from `env` ends in
-`outcome`, with calls nested fewer than `depth` deep. -/
-inductive Exec (prog : Program) : Nat → Env → Stmt → Outcome → Prop where
-  | skip {depth : Nat} {env : Env} : Exec prog depth env .skip (.normal env)
-  | assign {depth : Nat} {env : Env} {index : Nat} {value : Expr} :
-      Exec prog depth env (.assign index value) (.normal (env.set index (value.eval env)))
-  | seq {depth : Nat} {env middle : Env} {first second : Stmt} {outcome : Outcome} :
-      Exec prog depth env first (.normal middle) → Exec prog depth middle second outcome →
-      Exec prog depth env (.seq first second) outcome
-  | seqReturned {depth : Nat} {env : Env} {first second : Stmt} {value : List (BitVec 64)} :
-      Exec prog depth env first (.returned value) →
-      Exec prog depth env (.seq first second) (.returned value)
-  | ifTrue {depth : Nat} {env : Env} {condition : Expr} {thenBranch elseBranch : Stmt} {outcome : Outcome} :
-      condition.eval env ≠ 0 → Exec prog depth env thenBranch outcome →
-      Exec prog depth env (.ite condition thenBranch elseBranch) outcome
-  | ifFalse {depth : Nat} {env : Env} {condition : Expr} {thenBranch elseBranch : Stmt} {outcome : Outcome} :
-      condition.eval env = 0 → Exec prog depth env elseBranch outcome →
-      Exec prog depth env (.ite condition thenBranch elseBranch) outcome
-  | loopDone {depth : Nat} {env : Env} {condition : Expr} {body : Stmt} :
-      condition.eval env = 0 → Exec prog depth env (.loop condition body) (.normal env)
-  | loopNext {depth : Nat} {env middle : Env} {condition : Expr} {body : Stmt} {outcome : Outcome} :
-      condition.eval env ≠ 0 → Exec prog depth env body (.normal middle) →
-      Exec prog depth middle (.loop condition body) outcome →
-      Exec prog depth env (.loop condition body) outcome
-  | loopReturned {depth : Nat} {env : Env} {condition : Expr} {body : Stmt} {value : List (BitVec 64)} :
-      condition.eval env ≠ 0 → Exec prog depth env body (.returned value) →
-      Exec prog depth env (.loop condition body) (.returned value)
-  | call {depth inner target count callee : Nat} {env : Env} {args : List Expr} {func : Func}
+/-- `Exec prog depth env heap stmt outcome`: running `stmt` from `env` and
+`heap` ends in `outcome`, with calls nested fewer than `depth` deep. -/
+inductive Exec (prog : Program) : Nat → Env → Heap → Stmt → Outcome → Prop where
+  | skip {depth : Nat} {env : Env} {heap : Heap} : Exec prog depth env heap .skip (.normal env heap)
+  | assign {depth : Nat} {env : Env} {heap : Heap} {index : Nat} {value : Expr} :
+      Exec prog depth env heap (.assign index value) (.normal (env.set index (value.eval env)) heap)
+  | seq {depth : Nat} {env middle : Env} {heap between : Heap} {first second : Stmt} {outcome : Outcome} :
+      Exec prog depth env heap first (.normal middle between) → Exec prog depth middle between second outcome →
+      Exec prog depth env heap (.seq first second) outcome
+  | seqReturned {depth : Nat} {env : Env} {heap after : Heap} {first second : Stmt} {value : List (BitVec 64)} :
+      Exec prog depth env heap first (.returned value after) →
+      Exec prog depth env heap (.seq first second) (.returned value after)
+  | ifTrue {depth : Nat} {env : Env} {heap : Heap} {condition : Expr} {thenBranch elseBranch : Stmt}
+      {outcome : Outcome} :
+      condition.eval env ≠ 0 → Exec prog depth env heap thenBranch outcome →
+      Exec prog depth env heap (.ite condition thenBranch elseBranch) outcome
+  | ifFalse {depth : Nat} {env : Env} {heap : Heap} {condition : Expr} {thenBranch elseBranch : Stmt}
+      {outcome : Outcome} :
+      condition.eval env = 0 → Exec prog depth env heap elseBranch outcome →
+      Exec prog depth env heap (.ite condition thenBranch elseBranch) outcome
+  | loopDone {depth : Nat} {env : Env} {heap : Heap} {condition : Expr} {body : Stmt} :
+      condition.eval env = 0 → Exec prog depth env heap (.loop condition body) (.normal env heap)
+  | loopNext {depth : Nat} {env middle : Env} {heap between : Heap} {condition : Expr} {body : Stmt}
+      {outcome : Outcome} :
+      condition.eval env ≠ 0 → Exec prog depth env heap body (.normal middle between) →
+      Exec prog depth middle between (.loop condition body) outcome →
+      Exec prog depth env heap (.loop condition body) outcome
+  | loopReturned {depth : Nat} {env : Env} {heap after : Heap} {condition : Expr} {body : Stmt}
       {value : List (BitVec 64)} :
+      condition.eval env ≠ 0 → Exec prog depth env heap body (.returned value after) →
+      Exec prog depth env heap (.loop condition body) (.returned value after)
+  | call {depth inner target count callee : Nat} {env : Env} {heap after : Heap} {args : List Expr}
+      {func : Func} {value : List (BitVec 64)} :
       prog.funcs[callee]? = some func → args.length = func.params → value.length = count → inner < depth →
-      Exec prog inner (Func.entry (Expr.evalAll env args)) func.body (.returned value) →
-      Exec prog depth env (.call target count callee args) (.normal (env.setMany target value))
-  | ret {depth : Nat} {env : Env} {values : List Expr} :
-      Exec prog depth env (.ret values) (.returned (Expr.evalAll env values))
+      Exec prog inner (Func.entry (Expr.evalAll env args)) heap func.body (.returned value after) →
+      Exec prog depth env heap (.call target count callee args) (.normal (env.setMany target value) after)
+  | ret {depth : Nat} {env : Env} {heap : Heap} {values : List Expr} :
+      Exec prog depth env heap (.ret values) (.returned (Expr.evalAll env values) heap)
+  | alloc {depth : Nat} {env : Env} {heap : Heap} {target shift : Nat} {size : Expr} :
+      alignUp heap.cursor shift + (size.eval env).toNat ≤ heap.limit →
+      Exec prog depth env heap (.alloc target shift size)
+        (.normal (env.set target (BitVec.ofNat 64 (alignUp heap.cursor shift)))
+          { heap with cursor := alignUp heap.cursor shift + (size.eval env).toNat })
+  | loadByte {depth : Nat} {env : Env} {heap : Heap} {target : Nat} {address : Expr} :
+      (address.eval env).toNat < heap.limit →
+      Exec prog depth env heap (.loadByte target address)
+        (.normal (env.set target (BitVec.ofNat 64 (heap.bytes (address.eval env).toNat).toNat)) heap)
+  | storeByte {depth : Nat} {env : Env} {heap : Heap} {address value : Expr} :
+      (address.eval env).toNat < heap.limit →
+      Exec prog depth env heap (.storeByte address value)
+        (.normal env (heap.write (address.eval env).toNat (lowByte (value.eval env))))
 
-/-- Calling function `callee` with `args` returns `value`, nesting calls fewer
-than `depth` deep. -/
-def Program.Returns (prog : Program) (depth callee : Nat) (args : List (BitVec 64))
-    (value : List (BitVec 64)) : Prop :=
+/-- Calling function `callee` with `args` from `heap` returns `value` and
+leaves `after`, nesting calls fewer than `depth` deep. -/
+def Program.Returns (prog : Program) (depth callee : Nat) (args : List (BitVec 64)) (heap : Heap)
+    (value : List (BitVec 64)) (after : Heap) : Prop :=
   ∃ func, prog.funcs[callee]? = some func ∧ args.length = func.params ∧
-    Exec prog depth (Func.entry args) func.body (.returned value)
+    Exec prog depth (Func.entry args) heap func.body (.returned value after)
 
 end Lanius.Mini

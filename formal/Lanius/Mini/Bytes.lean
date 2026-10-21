@@ -81,6 +81,37 @@ def highHalf (value : BitVec 64) : BitVec 32 := (value >>> 32).setWidth 32
 def epilogueBytes : List UInt8 :=
   moveBytes .w64 rspRegister rbpRegister ++ popBytes rbpRegister ++ returnBytes
 
+/-- The heap base, the allocation cursor and the heap limit (an offset). -/
+def heapBaseRegister : Register := 12
+def cursorRegister : Register := 13
+def limitRegister : Register := 14
+
+/-- `mov r11, imm64` -/
+def r11Bytes (value : BitVec 64) : List UInt8 := immediateBytes .w64 r11Register (lowHalf value) (highHalf value)
+
+/-- `cmp r11, r14` -/
+def limitCompareBytes : List UInt8 := [77, 57, 243]
+
+/-- `ud2` -/
+def trapBytes : List UInt8 := [15, 11]
+
+/-- Round the cursor up into rcx, check rcx + rax against the limit, advance
+the cursor and return the old rounded cursor in rax. -/
+def bumpSpec (shift : Nat) : List UInt8 :=
+  moveBytes .w64 rcxRegister cursorRegister ++ (r11Bytes (pow2 shift - 1) ++
+  (aluBytes .w64 .add rcxRegister r11Register ++ (r11Bytes (0 - pow2 shift) ++
+  (aluBytes .w64 .and rcxRegister r11Register ++ (moveBytes .w64 r11Register rcxRegister ++
+  (aluBytes .w64 .add r11Register 0 ++ (limitCompareBytes ++ (branchBytes 6 2 ++ (trapBytes ++
+  (moveBytes .w64 cursorRegister r11Register ++ moveBytes .w64 0 rcxRegister))))))))))
+
+/-- `add rax, r12; movzx eax, byte [rax]` -/
+def loadAtSpec : List UInt8 := aluBytes .w64 .add 0 heapBaseRegister ++ loadByteBytes 0 0 0
+
+/-- `mov rcx, [slot]; add rcx, r12; mov [rcx], al` -/
+def storeAtSpec (slot : Nat) : List UInt8 :=
+  memoryBytes .w64 true rcxRegister rbpRegister (frameDisplacement slot) ++
+    (aluBytes .w64 .add rcxRegister heapBaseRegister ++ storeByteBytes 0 rcxRegister 0)
+
 /-- The bytes of the instruction at body offset `pc`, as the x86 encoders write them. -/
 def Instr.bytes (i : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   match i with
@@ -96,6 +127,9 @@ def Instr.bytes (i : Instr) (place : Place) (pc : Nat) : List UInt8 :=
       callBytes (relative (place.body + pc + 14 * args.length + 5) (place.entries.getD callee 0)) ++
       copyBytes target (slotRange (argBase place.slots) count) 0
   | .ret sources => copyBytes 0 sources 0 ++ epilogueBytes
+  | .bump shift => bumpSpec shift
+  | .loadAt => loadAtSpec
+  | .storeAt slot => storeAtSpec slot
 
 /-! The extracted encoders are the x86 ones. -/
 
@@ -173,6 +207,9 @@ theorem Instr.encode_eq (i : Instr) (place : Place) (pc : Nat) : i.encode place 
   | jz target => rw [Instr.encode, Instr.bytes, le32_eq]; rfl
   | call callee args target count => rw [Instr.encode, Instr.bytes, le32_eq]; rfl
   | ret sources => rfl
+  | bump shift => simp only [Instr.encode, Instr.bytes, bumpBytes, le64_eq]; rfl
+  | loadAt => rfl
+  | storeAt slot => rw [Instr.encode, Instr.bytes, storeAtBytes, le32_i32Bytes _ _ (slotOffset_toNat slot)]; rfl
 
 /-- A transfer by `relative source target` from `base + source` lands on `base + target`. -/
 theorem relative_eq (base : BitVec 64) (source target : Nat) (sourceSmall : source < 2 ^ 31)
@@ -248,6 +285,9 @@ theorem Instr.bytes_length (place : Place) (pc : Nat) (i : Instr) : (i.bytes pla
   | ret sources =>
     have : epilogueBytes.length = 5 := by decide
     simp only [Instr.bytes, List.length_append, copyBytes_length, Instr.size, this]
+  | bump shift => rw [← Instr.encode_eq]; simp [Instr.encode, bumpBytes, le64, Instr.size]
+  | loadAt => rfl
+  | storeAt slot => rw [← Instr.encode_eq]; simp [Instr.encode, storeAtBytes, le32, Instr.size]
 
 theorem Instr.encode_length (place : Place) (pc : Nat) (i : Instr) : (i.encode place pc).length = i.size := by
   rw [Instr.encode_eq, Instr.bytes_length]

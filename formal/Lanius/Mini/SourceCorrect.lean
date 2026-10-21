@@ -52,14 +52,15 @@ theorem compileSource_some {sp : SrcProgram} {binary : Binary} (compiled : compi
 
 /-- Core runs `f(args)` from the empty state to `v`, and `bits` lay the
 arguments out by parameter type (a struct one slot per field). Then the
-compiled `f`, entered by a near call with `bits` in its parameter slots,
-returns `results` representing `v` in the same slots, laid out the same way. -/
+compiled `f`, entered by a near call with `bits` in its parameter slots and
+any `heap` in place, returns `results` representing `v` in the same slots,
+laid out the same way, and leaves the heap as it was. -/
 theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
     (compiled : compileSource sp = some binary) {f : Nat} {func : SrcFunc}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 64)}
     (typed : FieldsHold (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {fuel : Nat} {v : Value}
-    {final : Semantics.State}
+    {final : Semantics.State} (heap : Heap)
     (runs : Semantics.evalExpr fuel sp.toCore {} (.call f (args.map Core.Expr.value)) = .done v final) :
     ∃ depth results, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
       ∀ (s : State) (imageBase : BitVec 64) (window : Nat),
@@ -67,10 +68,12 @@ theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
         CodeAt s.memory imageBase binary.image →
         (∀ index, index < binary.image.length →
           ¬Below (s.registers rspRegister) window (imageBase + BitVec.ofNat 64 index)) →
+        (∀ index, index < binary.image.length → ¬s.InHeap (imageBase + BitVec.ofNat 64 index)) →
         s.rip = imageBase + BitVec.ofNat 64 (binary.entries.getD f 0) →
         (∀ k (bound : k < bits.length),
           read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = bits[k]) →
-        ∃ n s', Steps n s s' ∧ Returned window s s' results := by
+        HeapAt window s heap →
+        ∃ n s', Steps n s s' ∧ Returned window s s' results heap := by
   obtain ⟨funcs, lowered, compiledProgram⟩ := compileSource_some compiled
   cases fuel with
   | zero => simp [Semantics.evalExpr] at runs
@@ -80,10 +83,11 @@ theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
     cases found'
     obtain ⟨rfl, rfl⟩ := evalExprs_values argsRun
     obtain ⟨_, _, depth, results, returns, holds, len⟩ :=
-      body_sound (mp := { funcs := funcs }) lowered (stmt_sound lowered k) found
+      body_sound (mp := { funcs := funcs }) (hp := heap) lowered (stmt_sound lowered k) found
         ⟨fun _ mem => by simp at mem, rfl⟩ typed bitsLen bodyRun
-    exact ⟨depth, results, holds, len, fun s imageBase window enough bounded loaded apart entry params =>
-      compileProgram_correct compiledProgram returns s imageBase window enough bounded loaded apart
-        entry params⟩
+    exact ⟨depth, results, holds, len,
+      fun s imageBase window enough bounded loaded apart imageHeap entry params heapAt =>
+        compileProgram_correct compiledProgram returns s imageBase window enough bounded loaded apart
+          imageHeap entry params heapAt⟩
 
 end Lanius.Mini

@@ -84,14 +84,15 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
     {imageBase : BitVec 64} {f : Nat} {func : Func} {code : Code} (_found : prog.funcs[f]? = some func)
     (codeFound : binary.codes[f]? = some code)
     (compiledFunc : compileFunc (arities prog.funcs) func = some code)
-    {depth : Nat} {args value : List (BitVec 64)} (length : args.length = func.params)
-    (exec : Exec prog depth (Func.entry args) func.body (.returned value))
+    {depth : Nat} {args value : List (BitVec 64)} {heap after : Heap} (length : args.length = func.params)
+    (exec : Exec prog depth (Func.entry args) heap func.body (.returned value after))
     {window : Nat} (room : frameBytes code.slots + 16 ≤ window)
-    (callContract : ∀ callee vals result, SourceCalls prog depth callee vals result → ∃ inner,
-      frameBytes code.slots + 16 + inner ≤ window ∧ 8 * vals.length + 16 ≤ inner ∧
-        Contract binary imageBase inner callee vals result) :
-    Contract binary imageBase window f args value := by
-  intro s bounded loaded apart entry params
+    (callContract : ∀ callee vals calleeHeap result calleeAfter,
+      SourceCalls prog depth callee vals calleeHeap result calleeAfter → ∃ inner,
+        frameBytes code.slots + 16 + inner ≤ window ∧ 8 * vals.length + 16 ≤ inner ∧
+          Contract binary imageBase inner callee vals calleeHeap result calleeAfter) :
+    Contract binary imageBase window f args heap value after := by
+  intro s bounded loaded apart imageHeap entry params heapAt
   obtain ⟨codesCompiled, entries, imageEq, imageSmall⟩ := compileProgram_spec compiled
   obtain ⟨paramsFit, -, slotsEq, slotLimit', -⟩ := compileFunc_spec compiledFunc
   have limit : code.slots ≤ 2 ^ 20 := slotLimit'
@@ -116,6 +117,10 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
     intro index bound
     rw [entry, entryOffset, BitVec.add_assoc, ← BitVec.ofNat_add]
     exact apart _ (by omega)
+  have heapApartAt : ∀ index, index < code.size → ¬s.InHeap (s.rip + BitVec.ofNat 64 index) := by
+    intro index bound
+    rw [entry, entryOffset, BitVec.add_assoc, ← BitVec.ofNat_add]
+    exact imageHeap _ (by omega)
   have prologueLength := framePrologueBytes_length code.slots
   have pushBelow : ∀ lane : Fin 8,
       Below (s.registers rspRegister) window (s.registers rspRegister - 8 + BitVec.ofNat 64 lane.val) := by
@@ -149,7 +154,9 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
       saved := s.registers rbpRegister
       preserved := s.registers
       entry := s.memory }
-  have fits : frame.Fits := ⟨limit, room, bounded⟩
+  have fits : frame.Fits :=
+    ⟨limit, room, bounded, by show (s.registers limitRegister).toNat < 2 ^ 62; rw [← heapAt.limit]; exact heapAt.small,
+      heapAt.apart⟩
   have body : Body frame binary imageBase ⟨offset + 13, code.slots, binary.entries⟩ code.instrs :=
     { loaded := by
         have := codeImage.suffix
@@ -181,11 +188,17 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
       fits := by
         have := compileFunc_fits compiledFunc
         rw [arities_length, ← compileFuncs_length codesCompiled] at this
-        exact this }
+        exact this
+      codeHeap := by
+        intro index bound
+        have := heapApartAt (13 + index) (by omega)
+        rwa [BitVec.ofNat_add, ← BitVec.add_assoc] at this
+      imageHeap := imageHeap }
   let start : Machine :=
     { pc := 0
       acc := entered.registers 0
-      slots := fun slot => read64 entered.memory (frameSlotAddress (s.registers rspRegister - 8) slot) }
+      slots := fun slot => read64 entered.memory (frameSlotAddress (s.registers rspRegister - 8) slot)
+      heap := heap }
   have rel : Rel frame entered start :=
     { rip := by rw [ripEntered]; simp [frame, start]
       rbp := by
@@ -201,12 +214,24 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
       saved := by simp only [frame, memoryEntered, read64_write64]
       preserved := by
         intro register other
-        obtain ⟨-, -, four, five, eleven⟩ := not_scratch other
+        obtain ⟨-, -, four, five, eleven, -⟩ := not_scratch other
         simp [entered, frame, prologueState, State.alu64, State.alu, State.immediate32, State.move64,
           State.push64, rspRegister, rbpRegister, r11Register, four, five, eleven]
       unchanged := by
-        intro address outside
-        rw [memoryEntered, write64_frame _ _ _ _ (fun lane => ne_of_below outside (pushBelow lane))] }
+        intro address outside _
+        rw [memoryEntered, write64_frame _ _ _ _ (fun lane => ne_of_below outside (pushBelow lane))]
+      cursor := by
+        have := heapAt.cursor
+        simp only [cursorRegister] at this
+        simp [entered, prologueState, State.alu64, State.alu, State.immediate32, State.move64,
+          State.push64, rspRegister, rbpRegister, r11Register, cursorRegister, this]
+        rfl
+      limit := heapAt.limit
+      heap := by
+        intro a inside
+        have inside' : a < frame.heapLimit := by rw [show frame.heapLimit = heap.limit from heapAt.limit.symm]; exact inside
+        rw [memoryEntered, write64_frame _ _ _ _ (fun lane => heap_ne_below fits inside' (pushBelow lane))]
+        exact heapAt.bytes a inside }
   have startParams : ∀ index, index < func.params → start.slots index = args.getD index 0 := by
     intro index below
     have bound : index < slotLimit := by unfold slotLimit; omega
@@ -218,9 +243,10 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
         depth_lane _ _ _ (by omega)]
       exact depth_ne _ (by omega) (by omega) (by omega)), slot_eq _ bound, params index (by omega)]
     simp [List.getD, List.getElem?_eq_getElem (show index < args.length by omega)]
-  obtain ⟨m', sources, run, atRet, vals⟩ := compileFunc_correct compiledFunc length exec start rfl startParams
+  obtain ⟨m', sources, run, atRet, vals, onHeap⟩ :=
+    compileFunc_correct compiledFunc length exec start rfl rfl startParams
   obtain ⟨n, s', steps2, exit⟩ := body_simulates body fits callContract run atRet entered rel
-  rw [vals] at exit
+  rw [vals, onHeap] at exit
   refine ⟨_, s', steps1.trans steps2, ?_⟩
   exact
     { rip := exit.rip
@@ -229,17 +255,20 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
       value := exit.value
       results := exit.results
       preserved := exit.preserved
-      unchanged := exit.unchanged }
+      unchanged := exit.unchanged
+      cursor := exit.cursor
+      limit := exit.limit
+      heap := exit.heap }
 
 /-- Every compiled function meets its contract with the stack its call depth needs. -/
 theorem compiled_contract {prog : Program} {binary : Binary} (compiled : compileProgram prog = some binary)
     (imageBase : BitVec 64) :
-    ∀ depth f args value, prog.Returns depth f args value →
-      Contract binary imageBase (binary.stackNeed depth) f args value := by
+    ∀ depth f args heap value after, prog.Returns depth f args heap value after →
+      Contract binary imageBase (binary.stackNeed depth) f args heap value after := by
   intro depth
   induction depth using Nat.strongRecOn with
   | _ depth ih =>
-  intro f args value ⟨func, found, length, exec⟩
+  intro f args heap value after ⟨func, found, length, exec⟩
   obtain ⟨codesCompiled, -, -, -⟩ := compileProgram_spec compiled
   obtain ⟨code, codeFound, compiledFunc⟩ := compileFuncs_get codesCompiled found
   have need := frameNeed_le codeFound
@@ -248,7 +277,7 @@ theorem compiled_contract {prog : Program} {binary : Binary} (compiled : compile
     simp only [Binary.stackNeed, Nat.succ_mul]
     omega
   apply function_contract compiled found codeFound compiledFunc length exec (by have := grow depth; omega)
-  intro callee vals result ⟨inner, less, innerFunc, innerFound, innerLength, innerExec⟩
+  intro callee vals calleeHeap result calleeAfter ⟨inner, less, innerFunc, innerFound, innerLength, innerExec⟩
   obtain ⟨previous, rfl⟩ : ∃ previous, depth = previous + 1 := ⟨depth - 1, by omega⟩
   obtain ⟨innerCode, innerCodeFound, innerCompiled⟩ := compileFuncs_get codesCompiled innerFound
   obtain ⟨innerParams, -, innerSlots, -, -⟩ := compileFunc_spec innerCompiled
@@ -259,29 +288,36 @@ theorem compiled_contract {prog : Program} {binary : Binary} (compiled : compile
     omega
   · have := grow previous
     omega
-  · apply (ih inner less callee vals result ⟨innerFunc, innerFound, innerLength, innerExec⟩).mono
+  · apply (ih inner less callee vals calleeHeap result calleeAfter
+      ⟨innerFunc, innerFound, innerLength, innerExec⟩).mono
     simp only [Binary.stackNeed]
     exact Nat.mul_le_mul_right _ (by omega)
 
 /-- **The mini compiler is correct.** If the source program's function `f`
-returns `values` on `args`, nesting calls fewer than `depth` deep, then its
-machine code, loaded anywhere and entered by a near call with the arguments
-just below the return address and at least `binary.stackNeed depth` bytes of
-stack apart from the image, returns to the return address with `values` in
-the argument slots and the last of them in eax. It restores rsp and rbp,
-preserves every register other than rax, rcx, r11, and changes no memory
-outside the stack it was given. -/
+returns `values` on `args` from `heap`, leaving `after`, nesting calls fewer
+than `depth` deep, then its machine code, loaded anywhere and entered by a
+near call with the arguments just below the return address, at least
+`binary.stackNeed depth` bytes of stack apart from the image, and `heap` at
+r12 (cursor in r13, limit in r14) apart from the image and the stack, returns
+to the return address with `values` in the argument slots and the last of
+them in eax, `after` in the heap and its cursor in r13. It restores rsp and
+rbp, preserves every register other than rax, rcx, r11 and r13, and changes no
+memory outside the stack it was given and the heap. -/
 theorem compileProgram_correct {prog : Program} {binary : Binary} (compiled : compileProgram prog = some binary)
-    {depth f : Nat} {args value : List (BitVec 64)} (returns : prog.Returns depth f args value)
+    {depth f : Nat} {args value : List (BitVec 64)} {heap after : Heap}
+    (returns : prog.Returns depth f args heap value after)
     (s : State) (imageBase : BitVec 64) (window : Nat)
     (enough : binary.stackNeed depth ≤ window) (bounded : window ≤ 2 ^ 62)
     (loaded : CodeAt s.memory imageBase binary.image)
     (apart : ∀ index, index < binary.image.length →
       ¬Below (s.registers rspRegister) window (imageBase + BitVec.ofNat 64 index))
+    (imageHeap : ∀ index, index < binary.image.length → ¬s.InHeap (imageBase + BitVec.ofNat 64 index))
     (entry : s.rip = imageBase + BitVec.ofNat 64 (binary.entries.getD f 0))
     (params : ∀ k (bound : k < args.length),
-      read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = args[k]) :
-    ∃ n s', Steps n s s' ∧ Returned window s s' value :=
-  (compiled_contract compiled imageBase depth f args value returns).mono enough s bounded loaded apart entry params
+      read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = args[k])
+    (heapAt : HeapAt window s heap) :
+    ∃ n s', Steps n s s' ∧ Returned window s s' value after :=
+  (compiled_contract compiled imageBase depth f args heap value after returns).mono enough s bounded loaded apart
+    imageHeap entry params heapAt
 
 end Lanius.Mini

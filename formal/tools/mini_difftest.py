@@ -46,9 +46,16 @@ def gen_expr(rng, depth, locals_):
 def gen_stmt(rng, depth, locals_, arities, results):
     if depth == 0:
         return ('assign', rng.randrange(locals_), gen_expr(rng, 2, locals_)) if locals_ else ('skip',)
-    kind = rng.choice(['skip', 'assign', 'seq', 'seq', 'ite', 'loop', 'call', 'ret'])
-    if kind == 'skip' or (kind in ('assign', 'call') and not locals_):
+    kind = rng.choice(['skip', 'assign', 'seq', 'seq', 'ite', 'loop', 'call', 'ret', 'alloc', 'loadByte',
+                       'storeByte'])
+    if kind == 'skip' or (kind in ('assign', 'call', 'alloc', 'loadByte') and not locals_):
         return ('skip',)
+    if kind == 'alloc':
+        return ('alloc', rng.randrange(locals_), rng.choice([0, 0, 1, 3, 4, 12, 31, 32]), gen_expr(rng, 2, locals_))
+    if kind == 'loadByte':
+        return ('loadByte', rng.randrange(locals_), gen_expr(rng, 2, locals_))
+    if kind == 'storeByte':
+        return ('storeByte', gen_expr(rng, 2, locals_), gen_expr(rng, 2, locals_))
     if kind == 'assign':
         return ('assign', rng.randrange(locals_), gen_expr(rng, 3, locals_))
     if kind == 'seq':
@@ -172,6 +179,12 @@ def lean_stmt(s):
         return f'(.loop {lean_expr(s[1])} {lean_stmt(s[2])})'
     if k == 'call':
         return f'(.call {s[1]} {s[2]} {s[3]} [{", ".join(lean_expr(a) for a in s[4])}])'
+    if k == 'alloc':
+        return f'(.alloc {s[1]} {s[2]} {lean_expr(s[3])})'
+    if k == 'loadByte':
+        return f'(.loadByte {s[1]} {lean_expr(s[2])})'
+    if k == 'storeByte':
+        return f'(.storeByte {lean_expr(s[1])} {lean_expr(s[2])})'
     return f'(.ret [{", ".join(lean_expr(a) for a in s[1])}])'
 
 
@@ -224,6 +237,12 @@ def lani_stmt(s):
         return f'loop_while({lani_expr(s[1])}, {lani_stmt(s[2])})'
     if k == 'call':
         return f'{M}Stmt::Call({s[1]}, {s[2]}, {s[3]}, {lani_exprs(s[4])})'
+    if k == 'alloc':
+        return f'{M}Stmt::Alloc({s[1]}, {s[2]}, {lani_expr(s[3])})'
+    if k == 'loadByte':
+        return f'{M}Stmt::LoadByte({s[1]}, {lani_expr(s[2])})'
+    if k == 'storeByte':
+        return f'{M}Stmt::StoreByte({lani_expr(s[1])}, {lani_expr(s[2])})'
     return f'{M}Stmt::Ret({lani_exprs(s[1])})'
 
 

@@ -96,6 +96,17 @@ and compares unsigned (setb/setbe/seta/setae). Literals are `mov rax, imm64`.
 The front pass uses `S32` for `i32` and `bool` and `U64` for enum tag tests;
 an `i32` is held zero-extended (`SrcType.Holds`).
 
+The mini IR has a byte heap (roadmap step 6c, back end, 2026-10-21). `alloc t
+shift size` aligns the cursor up to `2^shift`, stores that offset in `t` and
+moves the cursor past `size` bytes, or traps (`ud2`) when that would pass the
+limit; `loadByte` and `storeByte` read and write one byte at an offset. On x86
+the heap base sits in r12, the cursor (an offset) in r13 and the limit in r14;
+r12 and r14 are never written, r13 only by the bump. The top-level theorem
+gains two premises: the heap's bytes are at r12 + offset below the limit, and
+that range is apart from the stack window. Its conclusion adds the final heap:
+cursor in r13, bytes at r12 + offset. Memory outside the stack and the heap is
+unchanged.
+
 The proof has two layers.
 
 - Compiler logic: `compileStmt_correct` / `compileFunc_correct` prove the compiler
@@ -112,20 +123,21 @@ The proof has two layers.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Compiler` | 1393 | 2.7 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass |
-| `Semantics` | 123 | 0.7 | big-step source semantics with call depth |
-| `Asm` | 163 | 0.8 | abstract machine, byte-offset placement, `Star` runs |
-| `CompileCorrect` | 466 | 1.2 | compiler against the abstract machine |
-| `Fits` | 194 | 1.0 | static facts: slots in frame, targets in body, callees exist |
-| `Bytes` | 356 | 1.6 | extracted encoders equal the x86 encoders; image layout |
+| `Compiler` | 1443 | 2.8 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass |
+| `Semantics` | 157 | 0.8 | big-step source semantics with call depth |
+| `Asm` | 189 | 0.9 | abstract machine, byte-offset placement, `Star` runs |
+| `CompileCorrect` | 518 | 1.3 | compiler against the abstract machine |
+| `Fits` | 218 | 1.1 | static facts: slots in frame, targets in body, callees exist |
+| `Bytes` | 396 | 1.7 | extracted encoders equal the x86 encoders; image layout |
 | `Flags` | 135 | 1.4 | each comparison's condition code after `cmp` |
 | `Frame` | 128 | 1.2 | stack windows and address depths (`bv_omega`) |
-| `Simulation` | 1145 | 5.1 | x86 lemma per instruction, slot copies, the call macro, body simulation |
-| `Correct` | 287 | 1.6 | layout, prologue, function contract, top-level theorem |
+| `HeapSteps` | 250 | 1.6 | x86 runs of the bump allocator and the byte load and store |
+| `Simulation` | 1414 | 5.8 | x86 lemma per instruction, slot copies, the call macro, body simulation |
+| `Correct` | 323 | 1.7 | layout, prologue, function contract, top-level theorem |
 
 Check times are `lake env lean` per file on the laptop, about 0.4 s of each is
 import loading. The compiler is about 400 lines of Lanius (plus a 63-line prelude
-and 64 lines of list operations); the proofs are about 3,000 lines.
+and 64 lines of list operations); the proofs are about 3,700 lines.
 
 ### The front pass: a Core subset to the mini IR
 
@@ -192,8 +204,8 @@ semantics:
 | `Source` | 334 | 1.1 | Core meaning of source programs, value representation, `i32` wrap lemmas |
 | `Unsigned` | 156 | 2.0 | unsigned arithmetic, comparisons and casts as slot arithmetic |
 | `LowerExpr` | 656 | 4.5 | expressions |
-| `LowerStmt` | 2091 | 8.4 | Core cells, frames, flat values, calls, enums and `match`, statements |
-| `SourceCorrect` | 89 | 0.7 | top-level theorem |
+| `LowerStmt` | 2094 | 8.5 | Core cells, frames, flat values, calls, enums and `match`, statements |
+| `SourceCorrect` | 93 | 0.7 | top-level theorem |
 
 The pass is about 1,100 lines of Lanius (the end of `compiler.lani`), and the
 proofs are about 3,200 lines. The per-function difftest covers it (146
@@ -264,7 +276,12 @@ two-result function and its caller, passes 3,368 calls. After the move to
 64-bit words: 201 programs (random `S32` and `U64` operations, literals over
 the full 64 bits), 78,000 image bytes, no differences, and the native run,
 with three functions on 64-bit arguments (unsigned comparisons, `S32` sums
-of 64-bit inputs), passes 12,368 calls.
+of 64-bit inputs), passes 12,368 calls. After the heap: 201 programs (random `alloc`,
+`loadByte`, `storeByte`), 66,000 image bytes, no differences; the native run,
+with a stub that maps a heap and sets r12-r14, adds a byte-sum over a fresh
+allocation and an alignment probe and passes 12,427 calls. The per-function
+difftest after the heap: 150 functions, 3,000 calls, no differences (9 native
+stack overflows on huge random counts).
 
 Two more checks of the extraction, 2026-10-21. The same difftest over six more
 seeds: 3,006 programs, 757,000 image bytes, no differences. And a per-function

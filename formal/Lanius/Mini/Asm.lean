@@ -60,6 +60,7 @@ structure Machine where
   pc : Nat
   acc : BitVec 64
   slots : Nat → BitVec 64
+  heap : Heap
 
 def Machine.store (m : Machine) (slot : Nat) : Machine :=
   { m with slots := fun other => if other = slot then m.acc else m.slots other }
@@ -71,7 +72,7 @@ def readSlots (slots : Nat → BitVec 64) : List Nat → List (BitVec 64)
 /-- Instructions that fall through to the next one. -/
 def Instr.straight : Instr → Bool
   | .imm _ | .load _ | .store _ | .neg | .op _ _ _ | .cmp _ _ _ => true
-  | .jmp _ | .jz _ | .call _ _ _ _ | .ret _ => false
+  | .jmp _ | .jz _ | .call _ _ _ _ | .ret _ | .bump _ | .loadAt | .storeAt _ => false
 
 /-- Effect on the accumulator and slots of a straight-line instruction. -/
 def Instr.update : Instr → Machine → Machine
@@ -81,7 +82,7 @@ def Instr.update : Instr → Machine → Machine
   | .neg, m => { m with acc := widen (-low m.acc) }
   | .op word operation slot, m => { m with acc := word.apply operation (m.slots slot) m.acc }
   | .cmp word operation slot, m => { m with acc := if word.holds operation (m.slots slot) m.acc then 1 else 0 }
-  | .jmp _, m | .jz _, m | .call _ _ _ _, m | .ret _, m => m
+  | .jmp _, m | .jz _, m | .call _ _ _ _, m | .ret _, m | .bump _, m | .loadAt, m | .storeAt _, m => m
 
 def Instr.step (i : Instr) (m : Machine) : Machine := { i.update m with pc := m.pc + i.size }
 
@@ -90,8 +91,9 @@ def Instr.exec : List Instr → Machine → Machine
   | [], m => m
   | i :: rest, m => Instr.exec rest (i.step m)
 
-/-- What a call may return: `calls callee args values`. -/
-abbrev Calls := Nat → List (BitVec 64) → List (BitVec 64) → Prop
+/-- What a call may do: `calls callee args heap values after` returns
+`values` and leaves `after`. -/
+abbrev Calls := Nat → List (BitVec 64) → Heap → List (BitVec 64) → Heap → Prop
 
 /-- `values` stored at `target`, `target + 1`, ... -/
 def writeSlots (slots : Nat → BitVec 64) (target : Nat) (values : List (BitVec 64)) : Nat → BitVec 64 :=
@@ -105,8 +107,22 @@ inductive Step (calls : Calls) (code : List Instr) : Machine → Machine → Pro
   | jzNot : fetch code m.pc = some (.jz target) → m.acc ≠ 0 →
       Step calls code m { m with pc := m.pc + (Instr.jz target).size }
   | call : fetch code m.pc = some (.call callee args target count) →
-      calls callee (readSlots m.slots args) values → values.length = count →
-      Step calls code m { m with pc := m.pc + (Instr.call callee args target count).size, acc := values.getLastD m.acc, slots := writeSlots m.slots target values }
+      calls callee (readSlots m.slots args) m.heap values after → values.length = count →
+      Step calls code m { m with pc := m.pc + (Instr.call callee args target count).size, acc := values.getLastD m.acc, slots := writeSlots m.slots target values, heap := after }
+  | bump : fetch code m.pc = some (.bump shift) →
+      alignUp m.heap.cursor shift + m.acc.toNat ≤ m.heap.limit →
+      Step calls code m { m with
+        pc := m.pc + (Instr.bump shift).size
+        acc := BitVec.ofNat 64 (alignUp m.heap.cursor shift)
+        heap := { m.heap with cursor := alignUp m.heap.cursor shift + m.acc.toNat } }
+  | loadAt : fetch code m.pc = some .loadAt → m.acc.toNat < m.heap.limit →
+      Step calls code m { m with
+        pc := m.pc + Instr.loadAt.size
+        acc := BitVec.ofNat 64 (m.heap.bytes m.acc.toNat).toNat }
+  | storeAt : fetch code m.pc = some (.storeAt slot) → (m.slots slot).toNat < m.heap.limit →
+      Step calls code m { m with
+        pc := m.pc + (Instr.storeAt slot).size
+        heap := m.heap.write (m.slots slot).toNat (lowByte m.acc) }
 
 inductive Star (calls : Calls) (code : List Instr) : Machine → Machine → Prop where
   | refl (m : Machine) : Star calls code m m
@@ -120,16 +136,21 @@ theorem Star.trans (first : Star calls code m middle) (second : Star calls code 
 
 theorem Star.single (step : Step calls code m next) : Star calls code m next := .step step (.refl _)
 
-theorem Step.mono (sub : ∀ callee args value, calls callee args value → calls' callee args value)
+theorem Step.mono (sub : ∀ callee args heap value after, calls callee args heap value after →
+      calls' callee args heap value after)
     (step : Step calls code m next) : Step calls' code m next := by
   cases step with
   | straight fetched isStraight => exact .straight fetched isStraight
   | jmp fetched => exact .jmp fetched
   | jzTaken fetched zero => exact .jzTaken fetched zero
   | jzNot fetched nonzero => exact .jzNot fetched nonzero
-  | call fetched returns count => exact .call fetched (sub _ _ _ returns) count
+  | call fetched returns count => exact .call fetched (sub _ _ _ _ _ returns) count
+  | bump fetched room => exact .bump fetched room
+  | loadAt fetched below => exact .loadAt fetched below
+  | storeAt fetched below => exact .storeAt fetched below
 
-theorem Star.mono (sub : ∀ callee args value, calls callee args value → calls' callee args value)
+theorem Star.mono (sub : ∀ callee args heap value after, calls callee args heap value after →
+      calls' callee args heap value after)
     (run : Star calls code m last) : Star calls' code m last := by
   induction run with
   | refl => exact .refl _
@@ -140,6 +161,11 @@ theorem Instr.exec_pc (block : List Instr) (m : Machine) :
   induction block generalizing m with
   | nil => simp [Instr.exec, codeSize]
   | cons i rest ih => simp only [Instr.exec, ih, Instr.step, codeSize]; omega
+
+theorem Instr.exec_heap (block : List Instr) (m : Machine) : (Instr.exec block m).heap = m.heap := by
+  induction block generalizing m with
+  | nil => rfl
+  | cons i rest ih => rw [Instr.exec, ih]; cases i <;> rfl
 
 theorem Instr.exec_append (first second : List Instr) (m : Machine) :
     Instr.exec (first ++ second) m = Instr.exec second (Instr.exec first m) := by
