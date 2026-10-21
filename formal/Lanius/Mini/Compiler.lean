@@ -458,9 +458,15 @@ def compileProgram (prog : Program) : Option Binary :=
     else
       none
 
+inductive FieldTy where
+  | fieldI32 : FieldTy
+  | fieldBool : FieldTy
+  deriving DecidableEq, Repr
+
 inductive SrcType where
   | i32 : SrcType
   | bool : SrcType
+  | struct : Nat → (List FieldTy) → SrcType
   deriving DecidableEq, Repr
 
 inductive SrcOp where
@@ -484,6 +490,8 @@ inductive SrcExpr where
   | int : (BitVec 32) → SrcExpr
   | boolean : Bool → SrcExpr
   | local : Nat → SrcExpr
+  /-- field of a struct local -/
+  | field : Nat → Nat → SrcExpr
   | negate : SrcExpr → SrcExpr
   | not : SrcExpr → SrcExpr
   | apply : SrcOp → SrcExpr → SrcExpr → SrcExpr
@@ -491,11 +499,15 @@ inductive SrcExpr where
 
 inductive SrcStmt where
   | nop : SrcStmt
-  /-- let id: ty = value; then body, with id in scope -/
+  /-- let id: ty = value; then body, with id in scope. A struct value is a struct local. -/
   | let : Nat → SrcType → SrcExpr → SrcStmt → SrcStmt
+  /-- let id: ty = ty { fields }; then body -/
+  | letStruct : Nat → SrcType → (List SrcExpr) → SrcStmt → SrcStmt
   /-- let id: ty = callee(args); then body -/
   | letCall : Nat → SrcType → Nat → (List SrcExpr) → SrcStmt → SrcStmt
   | set : Nat → SrcExpr → SrcStmt
+  /-- id.field = value -/
+  | setField : Nat → Nat → SrcExpr → SrcStmt
   /-- id = callee(args) -/
   | setCall : Nat → Nat → (List SrcExpr) → SrcStmt
   | then : SrcStmt → SrcStmt → SrcStmt
@@ -541,20 +553,69 @@ def boolBits (value : Bool) : BitVec 32 :=
   else
     0
 
+def FieldTy.ty (self : FieldTy) : SrcType :=
+  match self with
+  | .fieldI32 => SrcType.i32
+  | .fieldBool => SrcType.bool
+
+def FieldTy.same (self : FieldTy) (other : FieldTy) : Bool :=
+  match self with
+  | .fieldI32 =>
+    (match other with
+     | .fieldI32 => true
+     | .fieldBool => false)
+  | .fieldBool =>
+    match other with
+    | .fieldI32 => false
+    | .fieldBool => true
+
+def fieldsSame (fields : List FieldTy) (others : List FieldTy) : Bool :=
+  match fields with
+  | [] =>
+    (match others with
+     | [] => true
+     | other :: more => false)
+  | field :: rest =>
+    match others with
+    | [] => false
+    | other :: more => FieldTy.same field other && fieldsSame rest more
+
 def SrcType.isI32 (self : SrcType) : Bool :=
   match self with
   | .i32 => true
   | .bool => false
+  | .struct id fields => false
 
 def SrcType.isBool (self : SrcType) : Bool :=
   match self with
   | .i32 => false
   | .bool => true
+  | .struct id fields => false
+
+def SrcType.isScalar (self : SrcType) : Bool :=
+  match self with
+  | .i32 => true
+  | .bool => true
+  | .struct id fields => false
+
+def SrcType.isStruct (self : SrcType) (id : Nat) (fields : List FieldTy) : Bool :=
+  match self with
+  | .i32 => false
+  | .bool => false
+  | .struct otherId otherFields => decide (otherId = id) && fieldsSame otherFields fields
 
 def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
   match self with
   | .i32 => SrcType.isI32 other
   | .bool => SrcType.isBool other
+  | .struct id fields => SrcType.isStruct other id fields
+
+/-- Slots a value of this type takes. -/
+def SrcType.size (self : SrcType) : Nat :=
+  match self with
+  | .i32 => 1
+  | .bool => 1
+  | .struct id fields => fields.length
 
 /-- A lowered expression and its source type. -/
 structure Typed where
@@ -610,10 +671,32 @@ def SrcOp.lower (self : SrcOp) (left : Typed) (right : Typed) : Option Typed :=
   | .logicalAnd => conjunction left right
   | .logicalOr => disjunction left right
 
+def lowerScalarLocal (b : Binding) : Option Typed :=
+  if SrcType.isScalar b.ty then
+    some ({ expr := Expr.var b.slot, ty := b.ty } : Typed)
+  else
+    none
+
 def lowerLocal (binding : Option Binding) : Option Typed :=
   match binding with
   | none => none
-  | some b => some ({ expr := Expr.var b.slot, ty := b.ty } : Typed)
+  | some b => lowerScalarLocal b
+
+def lowerFieldAt (slot : Nat) (field : Nat) (found : Option FieldTy) : Option Typed :=
+  match found with
+  | none => none
+  | some f => some ({ expr := Expr.var (slot + field), ty := FieldTy.ty f } : Typed)
+
+def lowerFieldOf (b : Binding) (field : Nat) : Option Typed :=
+  match b.ty with
+  | .i32 => none
+  | .bool => none
+  | .struct id fields => lowerFieldAt b.slot field fields[field]?
+
+def lowerField (binding : Option Binding) (field : Nat) : Option Typed :=
+  match binding with
+  | none => none
+  | some b => lowerFieldOf b field
 
 def lowerNegateTyped (operand : Typed) : Option Typed :=
   if SrcType.isI32 operand.ty then
@@ -650,6 +733,7 @@ def SrcExpr.lower (self : SrcExpr) (scope : List Binding) : Option Typed :=
   | .int value => some ({ expr := Expr.lit value, ty := SrcType.i32 } : Typed)
   | .boolean value => some ({ expr := Expr.lit (boolBits value), ty := SrcType.bool } : Typed)
   | .local id => lowerLocal (lookup scope id)
+  | .field id index => lowerField (lookup scope id) index
   | .negate operand => lowerNegate (SrcExpr.lower operand scope)
   | .not operand => lowerNot (SrcExpr.lower operand scope)
   | .apply op left right => lowerApply op (SrcExpr.lower left scope) (SrcExpr.lower right scope)
@@ -674,7 +758,54 @@ def lowerCons (first : Option Expr) (rest : Option (List Expr)) : Option (List E
     | none => none
     | some es => some (e :: es)
 
-/-- The arguments, if there is one of each parameter type. -/
+def lowerAppend (first : Option (List Expr)) (rest : Option (List Expr)) : Option (List Expr) :=
+  match first with
+  | none => none
+  | some es =>
+    match rest with
+    | none => none
+    | some more => some (es ++ more)
+
+/-- Var(slot), Var(slot + 1), ..., count of them. -/
+def slotVars (slot : Nat) (count : Nat) : List Expr :=
+  if count = 0 then
+    []
+  else
+    Expr.var slot :: slotVars (slot + 1) (count - 1)
+
+def copyBinding (binding : Option Binding) (ty : SrcType) : Option (List Expr) :=
+  match binding with
+  | none => none
+  | some b =>
+    if SrcType.same b.ty ty then
+      some (slotVars b.slot (SrcType.size b.ty))
+    else
+      none
+
+/-- A struct value: a struct local of that type, slot by slot. -/
+def lowerCopy (scope : List Binding) (e : SrcExpr) (ty : SrcType) : Option (List Expr) :=
+  match e with
+  | .int value => none
+  | .boolean value => none
+  | .local id => copyBinding (lookup scope id) ty
+  | .field id index => none
+  | .negate operand => none
+  | .not operand => none
+  | .apply op left right => none
+
+def lowerSingle (value : Option Expr) : Option (List Expr) :=
+  match value with
+  | none => none
+  | some x => some [x]
+
+/-- A value of type ty, one expression per slot. -/
+def lowerValue (scope : List Binding) (e : SrcExpr) (ty : SrcType) : Option (List Expr) :=
+  if SrcType.isScalar ty then
+    lowerSingle (lowerAs scope e ty)
+  else
+    lowerCopy scope e ty
+
+/-- The arguments, if there is one of each parameter type, slot by slot. -/
 def lowerArgs (scope : List Binding) (args : List SrcExpr) (types : List SrcType) : Option (List Expr) :=
   match args with
   | [] =>
@@ -684,7 +815,32 @@ def lowerArgs (scope : List Binding) (args : List SrcExpr) (types : List SrcType
   | arg :: rest =>
     match types with
     | [] => none
-    | ty :: more => lowerCons (lowerAs scope arg ty) (lowerArgs scope rest more)
+    | ty :: more => lowerAppend (lowerValue scope arg ty) (lowerArgs scope rest more)
+
+/-- A struct literal's fields, one of each field type. -/
+def lowerFields (scope : List Binding) (fields : List SrcExpr) (types : List FieldTy) : Option (List Expr) :=
+  match fields with
+  | [] =>
+    (match types with
+     | [] => some []
+     | ty :: more => none)
+  | field :: rest =>
+    match types with
+    | [] => none
+    | ty :: more => lowerCons (lowerAs scope field (FieldTy.ty ty)) (lowerFields scope rest more)
+
+/-- Structs have fields, so every binding has its own slots. -/
+def lowerStructFields (scope : List Binding) (fields : List SrcExpr) (types : List FieldTy) : Option (List Expr) :=
+  if types.length = 0 then
+    none
+  else
+    lowerFields scope fields types
+
+def lowerLiteral (scope : List Binding) (ty : SrcType) (fields : List SrcExpr) : Option (List Expr) :=
+  match ty with
+  | .i32 => none
+  | .bool => none
+  | .struct id types => lowerStructFields scope fields types
 
 /-- A function's parameter types and result type. -/
 structure Sig where
@@ -693,7 +849,7 @@ structure Sig where
   deriving DecidableEq, Repr
 
 def lowerCallSig (scope : List Binding) (sig : Sig) (args : List SrcExpr) (ty : SrcType) : Option (List Expr) :=
-  if SrcType.same sig.ret ty then
+  if SrcType.same sig.ret ty && SrcType.isScalar ty then
     lowerArgs scope args sig.params
   else
     none
@@ -704,13 +860,19 @@ def lowerCall (sigs : List Sig) (scope : List Binding) (callee : Nat) (args : Li
   | none => none
   | some sig => lowerCallSig scope sig args ty
 
-def lowerLet (slot : Nat) (value : Option Expr) (body : Option Stmt) : Option Stmt :=
-  match value with
+/-- Assign values to slot, slot + 1, ..., then run rest. -/
+def assignFrom (slot : Nat) (values : List Expr) (rest : Stmt) : Stmt :=
+  match values with
+  | [] => rest
+  | value :: more => Stmt.seq (Stmt.assign slot value) (assignFrom (slot + 1) more rest)
+
+def lowerLet (slot : Nat) (values : Option (List Expr)) (body : Option Stmt) : Option Stmt :=
+  match values with
   | none => none
-  | some v =>
+  | some vs =>
     match body with
     | none => none
-    | some b => some (Stmt.seq (Stmt.assign slot v) b)
+    | some b => some (assignFrom slot vs b)
 
 def lowerLetCall (slot : Nat) (callee : Nat) (args : Option (List Expr)) (body : Option Stmt) : Option Stmt :=
   match args with
@@ -720,15 +882,36 @@ def lowerLetCall (slot : Nat) (callee : Nat) (args : Option (List Expr)) (body :
     | none => none
     | some b => some (Stmt.seq (Stmt.call slot callee a) b)
 
+def lowerSetValues (slot : Nat) (values : Option (List Expr)) : Option Stmt :=
+  match values with
+  | none => none
+  | some vs => some (assignFrom slot vs Stmt.skip)
+
+def lowerSet (binding : Option Binding) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
+  match binding with
+  | none => none
+  | some b => lowerSetValues b.slot (lowerValue scope value b.ty)
+
 def lowerSetValue (slot : Nat) (value : Option Expr) : Option Stmt :=
   match value with
   | none => none
   | some v => some (Stmt.assign slot v)
 
-def lowerSet (binding : Option Binding) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
+def lowerSetFieldAt (slot : Nat) (field : Nat) (found : Option FieldTy) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
+  match found with
+  | none => none
+  | some f => lowerSetValue (slot + field) (lowerAs scope value (FieldTy.ty f))
+
+def lowerSetFieldOf (b : Binding) (field : Nat) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
+  match b.ty with
+  | .i32 => none
+  | .bool => none
+  | .struct id fields => lowerSetFieldAt b.slot field fields[field]? scope value
+
+def lowerSetField (binding : Option Binding) (field : Nat) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
   match binding with
   | none => none
-  | some b => lowerSetValue b.slot (lowerAs scope value b.ty)
+  | some b => lowerSetFieldOf b field scope value
 
 def lowerSetCallArgs (slot : Nat) (callee : Nat) (args : Option (List Expr)) : Option Stmt :=
   match args with
@@ -775,9 +958,11 @@ def lowerReturn (value : Option Expr) : Option Stmt :=
 def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (ret : SrcType) (scope : List Binding) (next : Nat) : Option Stmt :=
   match self with
   | .nop => some Stmt.skip
-  | .let id ty value body => lowerLet next (lowerAs scope value ty) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + 1))
-  | .letCall id ty callee args body => lowerLetCall next callee (lowerCall sigs scope callee args ty) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + 1))
+  | .let id ty value body => lowerLet next (lowerValue scope value ty) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
+  | .letStruct id ty fields body => lowerLet next (lowerLiteral scope ty fields) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
+  | .letCall id ty callee args body => lowerLetCall next callee (lowerCall sigs scope callee args ty) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
   | .set id value => lowerSet (lookup scope id) scope value
+  | .setField id index value => lowerSetField (lookup scope id) index scope value
   | .setCall id callee args => lowerSetCall sigs scope (lookup scope id) callee args
   | .then first second => lowerThen (SrcStmt.lower first sigs ret scope next) (SrcStmt.lower second sigs ret scope next)
   | .if condition thenBranch elseBranch => lowerIf (lowerAs scope condition SrcType.bool) (SrcStmt.lower thenBranch sigs ret scope next) (SrcStmt.lower elseBranch sigs ret scope next)
@@ -788,20 +973,32 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (ret : SrcType) (scope : Li
 def SrcStmt.depth (self : SrcStmt) : Nat :=
   match self with
   | .nop => 0
-  | .let id ty value body => SrcStmt.depth body + 1
-  | .letCall id ty callee args body => SrcStmt.depth body + 1
+  | .let id ty value body => SrcStmt.depth body + SrcType.size ty
+  | .letStruct id ty fields body => SrcStmt.depth body + SrcType.size ty
+  | .letCall id ty callee args body => SrcStmt.depth body + SrcType.size ty
   | .set id value => 0
+  | .setField id index value => 0
   | .setCall id callee args => 0
   | .then first second => max (SrcStmt.depth first) (SrcStmt.depth second)
   | .if condition thenBranch elseBranch => max (SrcStmt.depth thenBranch) (SrcStmt.depth elseBranch)
   | .while condition body => SrcStmt.depth body
   | .return value => 0
 
-/-- Parameters take slots 0, 1, ... in order; a later parameter with the same id shadows an earlier one, as Core's bindLocals does. -/
+/-- Parameters take slots from 0 in order, a struct one per field; a later parameter with the same id shadows an earlier one, as Core's bindLocals does. -/
 def paramScope (params : List SrcParam) (slot : Nat) (scope : List Binding) : List Binding :=
   match params with
   | [] => scope
-  | param :: rest => paramScope rest (slot + 1) (({ id := param.id, slot := slot, ty := param.ty } : Binding) :: scope)
+  | param :: rest => paramScope rest (slot + SrcType.size param.ty) (({ id := param.id, slot := slot, ty := param.ty } : Binding) :: scope)
+
+def paramsValid (params : List SrcParam) : Bool :=
+  match params with
+  | [] => true
+  | param :: rest => decide (0 < SrcType.size param.ty) && paramsValid rest
+
+def paramsSize (params : List SrcParam) : Nat :=
+  match params with
+  | [] => 0
+  | param :: rest => SrcType.size param.ty + paramsSize rest
 
 def paramTypes (params : List SrcParam) : List SrcType :=
   match params with
@@ -813,11 +1010,18 @@ def sigs (funcs : List SrcFunc) : List Sig :=
   | [] => []
   | func :: rest => ({ params := paramTypes func.params, ret := func.ret } : Sig) :: sigs rest
 
-def lowerFunc (sigs : List Sig) (func : SrcFunc) : Option Func :=
-  let count : Nat := func.params.length
-  match SrcStmt.lower func.body sigs func.ret (paramScope func.params 0 []) count with
+def lowerBody (count : Nat) (depth : Nat) (body : Option Stmt) : Option Func :=
+  match body with
   | none => none
-  | some body => some ({ params := count, locals := count + SrcStmt.depth func.body, body := body } : Func)
+  | some b => some ({ params := count, locals := count + depth, body := b } : Func)
+
+/-- Functions return scalars, and struct parameters have fields. -/
+def lowerFunc (sigs : List Sig) (func : SrcFunc) : Option Func :=
+  let count : Nat := paramsSize func.params
+  if SrcType.isScalar func.ret && paramsValid func.params then
+    lowerBody count (SrcStmt.depth func.body) (SrcStmt.lower func.body sigs func.ret (paramScope func.params 0 []) count)
+  else
+    none
 
 def lowerFuncCons (first : Option Func) (rest : Option (List Func)) : Option (List Func) :=
   match first with

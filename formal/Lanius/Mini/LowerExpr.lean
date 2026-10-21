@@ -14,7 +14,7 @@ given by `frame`, and every binding's cell holds a value its slot represents. -/
 structure Corr (scope : List Binding) (frame : Nat → Nat) (st : State) (env : Env) : Prop where
   locals : st.locals = scope.map fun b => (b.id, frame b.slot)
   values : ∀ b ∈ scope, ∃ v, st.cellEntry? (frame b.slot) = some ⟨frame b.slot, some v⟩ ∧
-    b.ty.Holds v (env b.slot)
+    b.ty.HoldsAt v env b.slot
 
 theorem lookup_mem {scope : List Binding} {id : Nat} {b : Binding}
     (found : lookup scope id = some b) : b ∈ scope ∧ b.id = id := by
@@ -45,7 +45,7 @@ theorem Corr.cellId {scope frame st env} (corr : Corr scope frame st env) (id : 
 
 theorem Corr.local {scope frame st env} (corr : Corr scope frame st env) {id : Nat} {b : Binding}
     (found : lookup scope id = some b) (fuel : Nat) (prog : Core.Program) :
-    ∃ v, evalExpr (fuel + 1) prog st (.local id) = .done v st ∧ b.ty.Holds v (env b.slot) := by
+    ∃ v, evalExpr (fuel + 1) prog st (.local id) = .done v st ∧ b.ty.HoldsAt v env b.slot := by
   obtain ⟨v, entry, holds⟩ := corr.values b (lookup_mem found).1
   refine ⟨v, ?_, holds⟩
   simp only [evalExpr, corr.cellId, found, Option.map_some, entry]
@@ -197,12 +197,49 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
       split at lowered
       · simp at lowered
       · rename_i b found
+        simp only [lowerScalarLocal] at lowered
+        split at lowered
+        · rename_i scalar
+          simp only [Option.some.injEq] at lowered
+          subst lowered
+          obtain ⟨w, eval, holds⟩ := corr.local found fuel prog
+          simp only [SrcExpr.toCore, eval, Semantics.Outcome.done.injEq] at run
+          obtain ⟨rfl, rfl⟩ := run
+          exact ⟨rfl, (SrcType.holdsAt_scalar scalar).mp holds⟩
+        · simp at lowered
+  | field id index =>
+    intro t fuel v st' lowered run
+    cases fuel with
+    | zero => simp [evalExpr] at run
+    | succ fuel =>
+      cases fuel with
+      | zero => simp [SrcExpr.toCore, evalExpr] at run
+      | succ fuel =>
+        simp only [SrcExpr.lower, lowerField] at lowered
+        split at lowered
+        · simp at lowered
+        rename_i b found
+        simp only [lowerFieldOf] at lowered
+        split at lowered
+        · simp at lowered
+        · simp at lowered
+        rename_i sid fields hty
+        simp only [lowerFieldAt] at lowered
+        split at lowered
+        · simp at lowered
+        rename_i f fieldFound
         simp only [Option.some.injEq] at lowered
         subst lowered
         obtain ⟨w, eval, holds⟩ := corr.local found fuel prog
-        simp only [SrcExpr.toCore, eval, Semantics.Outcome.done.injEq] at run
+        rw [hty] at holds
+        obtain ⟨vs, rfl, fieldsHold⟩ := holds
+        obtain ⟨fv, got, holdsField⟩ := fieldsHold.get fieldFound
+        simp only [SrcExpr.toCore, evalExpr] at run
+        simp only [evalExpr] at eval
+        rw [eval] at run
+        simp only [got, Semantics.Outcome.done.injEq] at run
         obtain ⟨rfl, rfl⟩ := run
-        exact ⟨rfl, holds⟩
+        exact ⟨rfl, by simpa [Expr.eval] using holdsField⟩
   | negate operand ih =>
     intro t fuel v st' lowered run
     cases fuel with
@@ -332,7 +369,7 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
           rw [target] at evaluated
           simp only [SrcOp.toCore] at evaluated
           cases htl : tl.ty <;> cases htr : tr.ty <;>
-            simp [htl, htr, SrcType.same, SrcType.isI32, SrcType.isBool] at types <;>
+            simp [htl, htr, SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isStruct] at types <;>
             rw [htl] at holdsl <;> rw [htr] at holdsr
           · simp only [SrcType.Holds] at holdsl holdsr
             subst holdsl holdsr
@@ -346,6 +383,7 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
             subst evaluated
             simp only [Expr.eval, bitsl, bitsr]
             exact holds_compare _
+          · simp [SrcType.Holds] at holdsl
         · simp at lowered
       case logicalAnd =>
         simp only [SrcOp.lower, conjunction] at lowered

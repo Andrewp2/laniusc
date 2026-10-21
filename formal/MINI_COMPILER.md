@@ -123,8 +123,12 @@ The first piece of the verified compiler (roadmap step 4). `compile_source` in
 Core, to the mini IR, then runs `compile_program`. The subset: `i32` and
 `bool` locals and parameters, `+ - * & | ^`, unary `-` and `!`, the six
 comparisons, `&&` and `||`, `let`, assignment, `let x = f(...)` and
-`x = f(...)`, sequencing, `if`, `while`, and `return`. Each binding gets its
-own slot (lets after the parameters); booleans are 1 and 0.
+`x = f(...)`, sequencing, `if`, `while`, and `return`; and structs with
+`i32`/`bool` fields: literals in `let`, field reads and writes, whole-struct
+copies, and struct parameters. Each binding gets its own slots (lets after the
+parameters), a struct one per field; booleans are 1 and 0. Functions return
+scalars, and a struct type must have a field, so no two bindings share a
+slot.
 
 `Lanius/Mini/Source.lean` maps each source construct to the Core construct of
 the same name (`SrcProgram.toCore`). The theorem is about Core's own
@@ -149,19 +153,24 @@ semantics:
   `&`/`|` on 1/0 bits in the mini IR.
 - Statements and calls (`LowerStmt`): Core's locals mirror the scope through a
   slot-to-cell map, every cell id is below `nextCell`, and a callee only
-  touches cells allocated after its call, so the caller's cells survive.
-  `stmt_sound` is strong induction on fuel, one lemma per statement form; the
-  mini derivation's call depth is existential, and `Exec.mono` lifts it.
+  touches cells allocated after its call, so the caller's cells survive. A
+  struct is one Core cell holding a `.structure` value and several mini slots
+  (`HoldsAt`); bindings' slot ranges are disjoint (`Layout.apart`), which is
+  what makes a copy `a = b` safe slot by slot. `stmt_sound` is strong
+  induction on fuel, one lemma per statement form; the mini derivation's call
+  depth is existential, and `Exec.mono` lifts it.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Source` | 118 | 0.7 | Core meaning of source programs, value representation, `i32` wrap lemmas |
-| `LowerExpr` | 426 | 3.8 | expressions |
-| `LowerStmt` | 1026 | 2.1 | Core cells, frames, calls, statements |
-| `SourceCorrect` | 87 | 0.7 | top-level theorem |
+| `Source` | 225 | 0.7 | Core meaning of source programs, value representation, `i32` wrap lemmas |
+| `LowerExpr` | 464 | 4.0 | expressions |
+| `LowerStmt` | 1599 | 7.7 | Core cells, frames, flat values, calls, statements |
+| `SourceCorrect` | 89 | 0.7 | top-level theorem |
 
-The pass is about 470 lines of Lanius (the end of `compiler.lani`), and the
-proofs are about 1,650 lines. Assumptions the theorem does not cover yet: Core
+The pass is about 730 lines of Lanius (the end of `compiler.lani`), and the
+proofs are about 2,400 lines. The per-function difftest covers it (111
+functions, 3,330 calls, no differences); at 40 cases per function the harness
+is too large for laniusc on the laptop (a GPU buffer fails to allocate). Assumptions the theorem does not cover yet: Core
 programs outside the subset, traps and divergence (the theorem covers runs that
 return), and the source's type checker against Core's typing rules (step 7).
 

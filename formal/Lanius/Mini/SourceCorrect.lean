@@ -50,13 +50,15 @@ theorem compileSource_some {sp : SrcProgram} {binary : Binary} (compiled : compi
   · rename_i funcs lowered
     exact ⟨funcs, lowered, compiled⟩
 
-/-- Core runs `f(args)` from the empty state to `v`, and the arguments have
-the parameter types. Then the compiled `f`, entered by a near call with the
-arguments' bits in its parameter slots, returns bits representing `v`. -/
+/-- Core runs `f(args)` from the empty state to `v`, and `bits` lay the
+arguments out by parameter type (a struct one slot per field). Then the
+compiled `f`, entered by a near call with `bits` in its parameter slots,
+returns bits representing `v`. -/
 theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
     (compiled : compileSource sp = some binary) {f : Nat} {func : SrcFunc}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 32)}
-    (typed : ArgsHold (paramTypes func.params) args bits) {fuel : Nat} {v : Value}
+    (typed : ArgsAt (paramTypes func.params) args (Func.entry bits) 0)
+    (bitsLen : bits.length = paramsSize func.params) {fuel : Nat} {v : Value}
     {final : Semantics.State}
     (runs : Semantics.evalExpr fuel sp.toCore {} (.call f (args.map Core.Expr.value)) = .done v final) :
     ∃ depth b, func.ret.Holds v b ∧
@@ -79,7 +81,7 @@ theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
     obtain ⟨rfl, rfl⟩ := evalExprs_values argsRun
     obtain ⟨_, _, depth, b, returns, holds⟩ :=
       body_sound (mp := { funcs := funcs }) lowered (stmt_sound lowered k) found
-        (fun _ mem => by simp at mem) typed bodyRun
+        ⟨fun _ mem => by simp at mem, rfl⟩ typed bitsLen bodyRun
     exact ⟨depth, b, holds, fun s imageBase window enough bounded loaded apart entry params =>
       compileProgram_correct compiledProgram returns s imageBase window enough bounded loaded apart
         entry params⟩

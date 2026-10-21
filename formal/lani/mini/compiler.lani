@@ -621,9 +621,16 @@ fn link(codes: List<Code>) -> core::option::Option<Binary> {
 // Source programs: the subset of Lanius Core (formal/Lanius/Core.lean) that
 // this compiler accepts. Lanius/Mini/Source.lean gives each its Core program,
 // and the top-level theorem is about Core's evaluator on that program.
-// Locals are Core variable ids; functions are numbered by position.
+// Locals are Core variable ids; functions are numbered by position. A struct
+// type carries its Core type id and its field types; fields are scalars.
 
-pub enum SrcType { I32, Bool, }
+pub enum FieldTy { FieldI32, FieldBool, }
+
+pub enum SrcType {
+    I32,
+    Bool,
+    Struct(usize, List<FieldTy>),
+}
 
 pub enum SrcOp {
     Plus, Minus, Times, BitAnd, BitOr, BitXor,
@@ -635,6 +642,8 @@ pub enum SrcExpr {
     Int(i32),
     Boolean(bool),
     Local(usize),
+    // field of a struct local
+    Field(usize, usize),
     Negate(Box<SrcExpr>),
     Not(Box<SrcExpr>),
     Apply(SrcOp, Box<SrcExpr>, Box<SrcExpr>),
@@ -642,11 +651,16 @@ pub enum SrcExpr {
 
 pub enum SrcStmt {
     Nop,
-    // let id: ty = value; then body, with id in scope
+    // let id: ty = value; then body, with id in scope. A struct value is a
+    // struct local.
     Let(usize, SrcType, SrcExpr, Box<SrcStmt>),
+    // let id: ty = ty { fields }; then body
+    LetStruct(usize, SrcType, List<SrcExpr>, Box<SrcStmt>),
     // let id: ty = callee(args); then body
     LetCall(usize, SrcType, usize, List<SrcExpr>, Box<SrcStmt>),
     Set(usize, SrcExpr),
+    // id.field = value
+    SetField(usize, usize, SrcExpr),
     // id = callee(args)
     SetCall(usize, usize, List<SrcExpr>),
     Then(Box<SrcStmt>, Box<SrcStmt>),
@@ -674,7 +688,8 @@ pub struct SrcProgram {
 // is rejected, so the theorem needs no typing premise (Core would, for
 // example, evaluate true && 5 to 5). A Core local becomes a frame slot: a
 // function's parameters are slots 0, 1, ..., and each let takes the next slot
-// for its body. Booleans are 1 and 0. Subset expressions neither trap nor have
+// for its body; a struct takes one slot per field. Booleans are 1 and 0.
+// Subset expressions neither trap nor have
 // effects, so && and || need no short circuit: a && b is a & b on 0 and 1, and
 // a || b is (a | b) != 0.
 
@@ -707,11 +722,47 @@ pub fn bool_bits(value: bool) -> i32 {
     return 0;
 }
 
+impl FieldTy {
+    pub fn ty(self) -> SrcType {
+        return match (self) {
+            FieldI32 -> I32,
+            FieldBool -> Bool,
+        };
+    }
+
+    pub fn same(self, other: FieldTy) -> bool {
+        return match (self) {
+            FieldI32 -> match (other) {
+                FieldI32 -> true,
+                FieldBool -> false,
+            },
+            FieldBool -> match (other) {
+                FieldI32 -> false,
+                FieldBool -> true,
+            },
+        };
+    }
+}
+
+pub fn fields_same(fields: List<FieldTy>, others: List<FieldTy>) -> bool {
+    return match (fields) {
+        Nil -> match (others) {
+            Nil -> true,
+            Cons(other, more) -> false,
+        },
+        Cons(field, rest) -> match (others) {
+            Nil -> false,
+            Cons(other, more) -> field.same(other) && fields_same(unbox(rest), unbox(more)),
+        },
+    };
+}
+
 impl SrcType {
     pub fn is_i32(self) -> bool {
         return match (self) {
             I32 -> true,
             Bool -> false,
+            Struct(id, fields) -> false,
         };
     }
 
@@ -719,6 +770,23 @@ impl SrcType {
         return match (self) {
             I32 -> false,
             Bool -> true,
+            Struct(id, fields) -> false,
+        };
+    }
+
+    pub fn is_scalar(self) -> bool {
+        return match (self) {
+            I32 -> true,
+            Bool -> true,
+            Struct(id, fields) -> false,
+        };
+    }
+
+    pub fn is_struct(self, id: usize, fields: List<FieldTy>) -> bool {
+        return match (self) {
+            I32 -> false,
+            Bool -> false,
+            Struct(other_id, other_fields) -> (other_id == id) && fields_same(other_fields, fields),
         };
     }
 
@@ -726,6 +794,16 @@ impl SrcType {
         return match (self) {
             I32 -> other.is_i32(),
             Bool -> other.is_bool(),
+            Struct(id, fields) -> other.is_struct(id, fields),
+        };
+    }
+
+    // Slots a value of this type takes.
+    pub fn size(self) -> usize {
+        return match (self) {
+            I32 -> 1,
+            Bool -> 1,
+            Struct(id, fields) -> length(fields),
         };
     }
 }
@@ -793,10 +871,39 @@ impl SrcOp {
     }
 }
 
+pub fn lower_scalar_local(b: Binding) -> core::option::Option<Typed> {
+    if (b.ty.is_scalar()) {
+        return Some(Typed { expr: Var(b.slot), ty: b.ty });
+    }
+    return None;
+}
+
 pub fn lower_local(binding: core::option::Option<Binding>) -> core::option::Option<Typed> {
     return match (binding) {
         None -> None,
-        Some(b) -> Some(Typed { expr: Var(b.slot), ty: b.ty }),
+        Some(b) -> lower_scalar_local(b),
+    };
+}
+
+pub fn lower_field_at(slot: usize, field: usize, found: core::option::Option<FieldTy>) -> core::option::Option<Typed> {
+    return match (found) {
+        None -> None,
+        Some(f) -> Some(Typed { expr: Var(plus(slot, field)), ty: f.ty() }),
+    };
+}
+
+pub fn lower_field_of(b: Binding, field: usize) -> core::option::Option<Typed> {
+    return match (b.ty) {
+        I32 -> None,
+        Bool -> None,
+        Struct(id, fields) -> lower_field_at(b.slot, field, get(fields, field)),
+    };
+}
+
+pub fn lower_field(binding: core::option::Option<Binding>, field: usize) -> core::option::Option<Typed> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> lower_field_of(b, field),
     };
 }
 
@@ -844,6 +951,7 @@ impl SrcExpr {
             Int(value) -> Some(Typed { expr: Lit(value), ty: I32 }),
             Boolean(value) -> Some(Typed { expr: Lit(bool_bits(value)), ty: Bool }),
             Local(id) -> lower_local(lookup(scope, id)),
+            Field(id, index) -> lower_field(lookup(scope, id), index),
             Negate(operand) -> lower_negate(unbox(operand).lower(scope)),
             Not(operand) -> lower_not(unbox(operand).lower(scope)),
             Apply(op, left, right) -> lower_apply(op, unbox(left).lower(scope), unbox(right).lower(scope)),
@@ -876,7 +984,68 @@ pub fn lower_cons(first: core::option::Option<Expr>, rest: core::option::Option<
     };
 }
 
-// The arguments, if there is one of each parameter type.
+pub fn lower_append(first: core::option::Option<List<Expr>>, rest: core::option::Option<List<Expr>>) -> core::option::Option<List<Expr>> {
+    return match (first) {
+        None -> None,
+        Some(es) -> match (rest) {
+            None -> None,
+            Some(more) -> Some(concat(es, more)),
+        },
+    };
+}
+
+// Var(slot), Var(slot + 1), ..., count of them.
+pub fn slot_vars(slot: usize, count: usize) -> List<Expr> {
+    if (count == 0) {
+        return empty();
+    }
+    return cons(Var(slot), slot_vars(plus(slot, 1), minus(count, 1)));
+}
+
+pub fn copy_binding(binding: core::option::Option<Binding>, ty: SrcType) -> core::option::Option<List<Expr>> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> copy_same(b, ty),
+    };
+}
+
+// extract: inline
+fn copy_same(b: Binding, ty: SrcType) -> core::option::Option<List<Expr>> {
+    if (b.ty.same(ty)) {
+        return Some(slot_vars(b.slot, b.ty.size()));
+    }
+    return None;
+}
+
+// A struct value: a struct local of that type, slot by slot.
+pub fn lower_copy(scope: List<Binding>, e: SrcExpr, ty: SrcType) -> core::option::Option<List<Expr>> {
+    return match (e) {
+        Int(value) -> None,
+        Boolean(value) -> None,
+        Local(id) -> copy_binding(lookup(scope, id), ty),
+        Field(id, index) -> None,
+        Negate(operand) -> None,
+        Not(operand) -> None,
+        Apply(op, left, right) -> None,
+    };
+}
+
+pub fn lower_single(value: core::option::Option<Expr>) -> core::option::Option<List<Expr>> {
+    return match (value) {
+        None -> None,
+        Some(x) -> Some(single(x)),
+    };
+}
+
+// A value of type ty, one expression per slot.
+pub fn lower_value(scope: List<Binding>, e: SrcExpr, ty: SrcType) -> core::option::Option<List<Expr>> {
+    if (ty.is_scalar()) {
+        return lower_single(lower_as(scope, e, ty));
+    }
+    return lower_copy(scope, e, ty);
+}
+
+// The arguments, if there is one of each parameter type, slot by slot.
 pub fn lower_args(scope: List<Binding>, args: List<SrcExpr>, types: List<SrcType>) -> core::option::Option<List<Expr>> {
     return match (args) {
         Nil -> match (types) {
@@ -885,10 +1054,41 @@ pub fn lower_args(scope: List<Binding>, args: List<SrcExpr>, types: List<SrcType
         },
         Cons(arg, rest) -> match (types) {
             Nil -> None,
-            Cons(ty, more) -> lower_cons(lower_as(scope, arg, ty), lower_args(scope, unbox(rest), unbox(more))),
+            Cons(ty, more) -> lower_append(lower_value(scope, arg, ty), lower_args(scope, unbox(rest), unbox(more))),
         },
     };
 }
+
+// A struct literal's fields, one of each field type.
+pub fn lower_fields(scope: List<Binding>, fields: List<SrcExpr>, types: List<FieldTy>) -> core::option::Option<List<Expr>> {
+    return match (fields) {
+        Nil -> match (types) {
+            Nil -> Some(empty()),
+            Cons(ty, more) -> None,
+        },
+        Cons(field, rest) -> match (types) {
+            Nil -> None,
+            Cons(ty, more) -> lower_cons(lower_as(scope, field, ty.ty()), lower_fields(scope, unbox(rest), unbox(more))),
+        },
+    };
+}
+
+// Structs have fields, so every binding has its own slots.
+pub fn lower_struct_fields(scope: List<Binding>, fields: List<SrcExpr>, types: List<FieldTy>) -> core::option::Option<List<Expr>> {
+    if (length(types) == 0) {
+        return None;
+    }
+    return lower_fields(scope, fields, types);
+}
+
+pub fn lower_literal(scope: List<Binding>, ty: SrcType, fields: List<SrcExpr>) -> core::option::Option<List<Expr>> {
+    return match (ty) {
+        I32 -> None,
+        Bool -> None,
+        Struct(id, types) -> lower_struct_fields(scope, fields, types),
+    };
+}
+
 
 // A function's parameter types and result type.
 pub struct Sig {
@@ -897,7 +1097,7 @@ pub struct Sig {
 }
 
 pub fn lower_call_sig(scope: List<Binding>, sig: Sig, args: List<SrcExpr>, ty: SrcType) -> core::option::Option<List<Expr>> {
-    if (sig.ret.same(ty)) {
+    if (sig.ret.same(ty) && ty.is_scalar()) {
         return lower_args(scope, args, sig.params);
     }
     return None;
@@ -911,12 +1111,20 @@ pub fn lower_call(sigs: List<Sig>, scope: List<Binding>, callee: usize, args: Li
     };
 }
 
-pub fn lower_let(slot: usize, value: core::option::Option<Expr>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
-    return match (value) {
+// Assign values to slot, slot + 1, ..., then run rest.
+pub fn assign_from(slot: usize, values: List<Expr>, rest: Stmt) -> Stmt {
+    return match (values) {
+        Nil -> rest,
+        Cons(value, more) -> Seq(boxed(Assign(slot, value)), boxed(assign_from(plus(slot, 1), unbox(more), rest))),
+    };
+}
+
+pub fn lower_let(slot: usize, values: core::option::Option<List<Expr>>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (values) {
         None -> None,
-        Some(v) -> match (body) {
+        Some(vs) -> match (body) {
             None -> None,
-            Some(b) -> Some(Seq(boxed(Assign(slot, v)), boxed(b))),
+            Some(b) -> Some(assign_from(slot, vs, b)),
         },
     };
 }
@@ -931,6 +1139,20 @@ pub fn lower_let_call(slot: usize, callee: usize, args: core::option::Option<Lis
     };
 }
 
+pub fn lower_set_values(slot: usize, values: core::option::Option<List<Expr>>) -> core::option::Option<Stmt> {
+    return match (values) {
+        None -> None,
+        Some(vs) -> Some(assign_from(slot, vs, Skip)),
+    };
+}
+
+pub fn lower_set(binding: core::option::Option<Binding>, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> lower_set_values(b.slot, lower_value(scope, value, b.ty)),
+    };
+}
+
 pub fn lower_set_value(slot: usize, value: core::option::Option<Expr>) -> core::option::Option<Stmt> {
     return match (value) {
         None -> None,
@@ -938,10 +1160,25 @@ pub fn lower_set_value(slot: usize, value: core::option::Option<Expr>) -> core::
     };
 }
 
-pub fn lower_set(binding: core::option::Option<Binding>, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
+pub fn lower_set_field_at(slot: usize, field: usize, found: core::option::Option<FieldTy>, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
+    return match (found) {
+        None -> None,
+        Some(f) -> lower_set_value(plus(slot, field), lower_as(scope, value, f.ty())),
+    };
+}
+
+pub fn lower_set_field_of(b: Binding, field: usize, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
+    return match (b.ty) {
+        I32 -> None,
+        Bool -> None,
+        Struct(id, fields) -> lower_set_field_at(b.slot, field, get(fields, field), scope, value),
+    };
+}
+
+pub fn lower_set_field(binding: core::option::Option<Binding>, field: usize, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
     return match (binding) {
         None -> None,
-        Some(b) -> lower_set_value(b.slot, lower_as(scope, value, b.ty)),
+        Some(b) -> lower_set_field_of(b, field, scope, value),
     };
 }
 
@@ -1005,9 +1242,11 @@ impl SrcStmt {
     pub fn lower(self, sigs: List<Sig>, ret: SrcType, scope: List<Binding>, next: usize) -> core::option::Option<Stmt> {
         return match (self) {
             Nop -> Some(Skip),
-            Let(id, ty, value, body) -> lower_let(next, lower_as(scope, value, ty), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, 1))),
-            LetCall(id, ty, callee, args, body) -> lower_let_call(next, callee, lower_call(sigs, scope, callee, args, ty), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, 1))),
+            Let(id, ty, value, body) -> lower_let(next, lower_value(scope, value, ty), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
+            LetStruct(id, ty, fields, body) -> lower_let(next, lower_literal(scope, ty, fields), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
+            LetCall(id, ty, callee, args, body) -> lower_let_call(next, callee, lower_call(sigs, scope, callee, args, ty), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
             Set(id, value) -> lower_set(lookup(scope, id), scope, value),
+            SetField(id, index, value) -> lower_set_field(lookup(scope, id), index, scope, value),
             SetCall(id, callee, args) -> lower_set_call(sigs, scope, lookup(scope, id), callee, args),
             Then(first, second) -> lower_then(unbox(first).lower(sigs, ret, scope, next), unbox(second).lower(sigs, ret, scope, next)),
             If(condition, then_branch, else_branch) -> lower_if(lower_as(scope, condition, Bool), unbox(then_branch).lower(sigs, ret, scope, next), unbox(else_branch).lower(sigs, ret, scope, next)),
@@ -1020,9 +1259,11 @@ impl SrcStmt {
     pub fn depth(self) -> usize {
         return match (self) {
             Nop -> 0,
-            Let(id, ty, value, body) -> plus(unbox(body).depth(), 1),
-            LetCall(id, ty, callee, args, body) -> plus(unbox(body).depth(), 1),
+            Let(id, ty, value, body) -> plus(unbox(body).depth(), ty.size()),
+            LetStruct(id, ty, fields, body) -> plus(unbox(body).depth(), ty.size()),
+            LetCall(id, ty, callee, args, body) -> plus(unbox(body).depth(), ty.size()),
             Set(id, value) -> 0,
+            SetField(id, index, value) -> 0,
             SetCall(id, callee, args) -> 0,
             Then(first, second) -> max_of(unbox(first).depth(), unbox(second).depth()),
             If(condition, then_branch, else_branch) -> max_of(unbox(then_branch).depth(), unbox(else_branch).depth()),
@@ -1032,12 +1273,27 @@ impl SrcStmt {
     }
 }
 
-// Parameters take slots 0, 1, ... in order; a later parameter with the same
-// id shadows an earlier one, as Core's bindLocals does.
+// Parameters take slots from 0 in order, a struct one per field; a later
+// parameter with the same id shadows an earlier one, as Core's bindLocals
+// does.
 pub fn param_scope(params: List<SrcParam>, slot: usize, scope: List<Binding>) -> List<Binding> {
     return match (params) {
         Nil -> scope,
-        Cons(param, rest) -> param_scope(unbox(rest), plus(slot, 1), cons(Binding { id: param.id, slot: slot, ty: param.ty }, scope)),
+        Cons(param, rest) -> param_scope(unbox(rest), plus(slot, param.ty.size()), cons(Binding { id: param.id, slot: slot, ty: param.ty }, scope)),
+    };
+}
+
+pub fn params_valid(params: List<SrcParam>) -> bool {
+    return match (params) {
+        Nil -> true,
+        Cons(param, rest) -> (param.ty.size() > 0) && params_valid(unbox(rest)),
+    };
+}
+
+pub fn params_size(params: List<SrcParam>) -> usize {
+    return match (params) {
+        Nil -> 0,
+        Cons(param, rest) -> plus(param.ty.size(), params_size(unbox(rest))),
     };
 }
 
@@ -1055,12 +1311,20 @@ pub fn sigs(funcs: List<SrcFunc>) -> List<Sig> {
     };
 }
 
-pub fn lower_func(sigs: List<Sig>, func: SrcFunc) -> core::option::Option<Func> {
-    let count: usize = length(func.params);
-    return match (func.body.lower(sigs, func.ret, param_scope(func.params, 0, empty()), count)) {
+pub fn lower_body(count: usize, depth: usize, body: core::option::Option<Stmt>) -> core::option::Option<Func> {
+    return match (body) {
         None -> None,
-        Some(body) -> Some(Func { params: count, locals: plus(count, func.body.depth()), body: body }),
+        Some(b) -> Some(Func { params: count, locals: plus(count, depth), body: b }),
     };
+}
+
+// Functions return scalars, and struct parameters have fields.
+pub fn lower_func(sigs: List<Sig>, func: SrcFunc) -> core::option::Option<Func> {
+    let count: usize = params_size(func.params);
+    if (func.ret.is_scalar() && params_valid(func.params)) {
+        return lower_body(count, func.body.depth(), func.body.lower(sigs, func.ret, param_scope(func.params, 0, empty()), count));
+    }
+    return None;
 }
 
 pub fn lower_func_cons(first: core::option::Option<Func>, rest: core::option::Option<List<Func>>) -> core::option::Option<List<Func>> {
