@@ -17,19 +17,30 @@ import sys
 
 BINOPS = ['add', 'sub', 'mul', 'and', 'or', 'xor']
 CMPOPS = ['eq', 'ne', 'lt', 'le', 'gt', 'ge']
-EDGES = [0, 1, -1, 2, 7, -7, 100, 65536, 2 ** 31 - 1, -2 ** 31]
+WORDS = ['s32', 'u64']
+EDGES = [0, 1, 2, 7, 100, 65536, 2 ** 31 - 1, 2 ** 31, 2 ** 32 - 1, 2 ** 32, 2 ** 32 + 5, 2 ** 63, 2 ** 64 - 1,
+         2 ** 64 - 7, 2 ** 32 - 7]
+
+
+def gen_lit(rng):
+    pick = rng.random()
+    if pick < 0.5:
+        return rng.choice(EDGES)
+    if pick < 0.75:
+        return rng.randint(-2 ** 31, 2 ** 31 - 1) & (2 ** 32 - 1)
+    return rng.randrange(2 ** 64)
 
 
 def gen_expr(rng, depth, locals_):
     if depth == 0 or rng.random() < 0.3:
         if locals_ and rng.random() < 0.6:
             return ('var', rng.randrange(locals_))
-        return ('lit', rng.choice(EDGES + [rng.randint(-2 ** 31, 2 ** 31 - 1)]))
+        return ('lit', gen_lit(rng))
     kind = rng.choice(['neg', 'binary', 'binary', 'compare'])
     if kind == 'neg':
         return ('neg', gen_expr(rng, depth - 1, locals_))
     op = rng.choice(BINOPS if kind == 'binary' else CMPOPS)
-    return (kind, op, gen_expr(rng, depth - 1, locals_), gen_expr(rng, depth - 1, locals_))
+    return (kind, rng.choice(WORDS), op, gen_expr(rng, depth - 1, locals_), gen_expr(rng, depth - 1, locals_))
 
 
 def gen_stmt(rng, depth, locals_, arities, results):
@@ -100,28 +111,36 @@ def v(i):
 
 
 def n(k):
-    return ('lit', k)
+    return ('lit', k & (2 ** 32 - 1))
+
+
+def b(op, l, r):
+    return ('binary', 's32', op, l, r)
+
+
+def c(op, l, r):
+    return ('compare', 's32', op, l, r)
 
 
 NATIVE = [
     (1, 1, 2, seqs([('assign', 1, n(1)),
-                 ('loop', ('compare', 'gt', v(0), n(0)),
-                  seqs([('assign', 1, ('binary', 'mul', v(1), v(0))), ('assign', 0, ('binary', 'sub', v(0), n(1)))])),
+                 ('loop', c('gt', v(0), n(0)),
+                  seqs([('assign', 1, b('mul', v(1), v(0))), ('assign', 0, b('sub', v(0), n(1)))])),
                  ('ret', [v(1)])])),
-    (1, 1, 3, ('ite', ('compare', 'lt', v(0), n(2)), ('ret', [v(0)]),
-            seqs([('call', 1, 1, 1, [('binary', 'sub', v(0), n(1))]), ('call', 2, 1, 1, [('binary', 'sub', v(0), n(2))]),
-                  ('ret', [('binary', 'add', v(1), v(2))])]))),
+    (1, 1, 3, ('ite', c('lt', v(0), n(2)), ('ret', [v(0)]),
+            seqs([('call', 1, 1, 1, [b('sub', v(0), n(1))]), ('call', 2, 1, 1, [b('sub', v(0), n(2))]),
+                  ('ret', [b('add', v(1), v(2))])]))),
     (3, 1, 5, seqs([
-        ('assign', 3, ('binary', 'add', ('compare', 'le', v(0), v(1)), ('binary', 'mul', ('compare', 'ge', v(1), v(2)), n(2)))),
-        ('assign', 3, ('binary', 'add', v(3), ('binary', 'mul', ('compare', 'eq', v(0), v(2)), n(4)))),
-        ('assign', 3, ('binary', 'add', v(3), ('binary', 'mul', ('compare', 'ne', v(0), v(1)), n(8)))),
-        ('call', 4, 1, 0, [('binary', 'and', v(2), n(7))]),
-        ('ite', ('compare', 'lt', v(3), n(100)),
-         ('ret', [('binary', 'xor', ('binary', 'or', v(4), ('binary', 'mul', v(3), n(65536))), ('neg', v(0)))]),
+        ('assign', 3, b('add', c('le', v(0), v(1)), b('mul', c('ge', v(1), v(2)), n(2)))),
+        ('assign', 3, b('add', v(3), b('mul', c('eq', v(0), v(2)), n(4)))),
+        ('assign', 3, b('add', v(3), b('mul', c('ne', v(0), v(1)), n(8)))),
+        ('call', 4, 1, 0, [b('and', v(2), n(7))]),
+        ('ite', c('lt', v(3), n(100)),
+         ('ret', [b('xor', b('or', v(4), b('mul', v(3), n(65536))), ('neg', v(0)))]),
          ('ret', [n(-1)]))])),
-    (2, 1, 2, seqs([('loop', ('compare', 'ne', v(0), v(1)),
-                  ('ite', ('compare', 'gt', v(0), v(1)), ('assign', 0, ('binary', 'sub', v(0), v(1))),
-                   ('assign', 1, ('binary', 'sub', v(1), v(0))))),
+    (2, 1, 2, seqs([('loop', c('ne', v(0), v(1)),
+                  ('ite', c('gt', v(0), v(1)), ('assign', 0, b('sub', v(0), v(1))),
+                   ('assign', 1, b('sub', v(1), v(0))))),
                  ('ret', [v(0)])])),
 ]
 
@@ -131,12 +150,12 @@ NATIVE = [
 def lean_expr(e):
     k = e[0]
     if k == 'lit':
-        return f'(.lit (BitVec.ofInt 32 ({e[1]})))'
+        return f'(.lit (BitVec.ofNat 64 {e[1]}))'
     if k == 'var':
         return f'(.var {e[1]})'
     if k == 'neg':
         return f'(.neg {lean_expr(e[1])})'
-    return f'(.{k} .{e[1]} {lean_expr(e[2])} {lean_expr(e[3])})'
+    return f'(.{k} .{e[1]} .{e[2]} {lean_expr(e[3])} {lean_expr(e[4])})'
 
 
 def lean_stmt(s):
@@ -179,13 +198,16 @@ M = 'mini::compiler::'
 def lani_expr(e):
     k = e[0]
     if k == 'lit':
-        return f'n({e[1]})' if e[1] >= 0 else f'n(0 - {-e[1] - 1} - 1)'
+        # laniusc literals are i32, so build the word from 16-bit pieces.
+        parts = [f'(({(e[1] >> shift) & 65535} as u64) << {shift})' for shift in (48, 32, 16)]
+        return 'n(' + ' | '.join(parts + [f'({e[1] & 65535} as u64)']) + ')'
     if k == 'var':
         return f'v({e[1]})'
     if k == 'neg':
         return f'neg({lani_expr(e[1])})'
-    op = e[1][:1].upper() + e[1][1:]
-    return f'{"bin" if k == "binary" else "cmp"}({M}{op}, {lani_expr(e[2])}, {lani_expr(e[3])})'
+    word = e[1].upper()
+    op = e[2][:1].upper() + e[2][1:]
+    return f'{"bin" if k == "binary" else "cmp"}({M}{word}, {M}{op}, {lani_expr(e[3])}, {lani_expr(e[4])})'
 
 
 def lani_stmt(s):
@@ -218,10 +240,10 @@ import mini::compiler;
 import std::io_byte;
 
 fn v(index: usize) -> {M}Expr {{ return {M}Var(index); }}
-fn n(value: i32) -> {M}Expr {{ return {M}Lit(value); }}
+fn n(value: u64) -> {M}Expr {{ return {M}Lit(value); }}
 fn neg(e: {M}Expr) -> {M}Expr {{ return {M}Expr::Neg({M}boxed(e)); }}
-fn bin(op: {M}BinOp, l: {M}Expr, r: {M}Expr) -> {M}Expr {{ return {M}Binary(op, {M}boxed(l), {M}boxed(r)); }}
-fn cmp(op: {M}CmpOp, l: {M}Expr, r: {M}Expr) -> {M}Expr {{ return {M}Compare(op, {M}boxed(l), {M}boxed(r)); }}
+fn bin(word: {M}Word, op: {M}BinOp, l: {M}Expr, r: {M}Expr) -> {M}Expr {{ return {M}Binary(word, op, {M}boxed(l), {M}boxed(r)); }}
+fn cmp(word: {M}Word, op: {M}CmpOp, l: {M}Expr, r: {M}Expr) -> {M}Expr {{ return {M}Compare(word, op, {M}boxed(l), {M}boxed(r)); }}
 fn seq(a: {M}Stmt, b: {M}Stmt) -> {M}Stmt {{ return {M}Seq({M}boxed(a), {M}boxed(b)); }}
 fn ite(c: {M}Expr, a: {M}Stmt, b: {M}Stmt) -> {M}Stmt {{ return {M}Ite(c, {M}boxed(a), {M}boxed(b)); }}
 fn loop_while(c: {M}Expr, b: {M}Stmt) -> {M}Stmt {{ return {M}Loop(c, {M}boxed(b)); }}

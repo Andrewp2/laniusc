@@ -435,11 +435,11 @@ theorem entry_evalAll (env : Env) (xs : List Expr) (i : Nat) (x : Expr) (found :
     Func.entry (Expr.evalAll env xs) i = x.eval env := by
   simp [Func.entry, List.getD_eq_getElem?_getD, evalAll_getElem?, found]
 
-theorem entry_append_left (bs cs : List (BitVec 32)) {i : Nat} (below : i < bs.length) :
+theorem entry_append_left (bs cs : List (BitVec 64)) {i : Nat} (below : i < bs.length) :
     Func.entry (bs ++ cs) i = Func.entry bs i := by
   simp [Func.entry, List.getD_eq_getElem?_getD, List.getElem?_append_left below]
 
-theorem entry_append_right (bs cs : List (BitVec 32)) (i : Nat) :
+theorem entry_append_right (bs cs : List (BitVec 64)) (i : Nat) :
     Func.entry (bs ++ cs) (bs.length + i) = Func.entry cs i := by
   simp [Func.entry, List.getD_eq_getElem?_getD, List.getElem?_append_right]
 
@@ -745,7 +745,7 @@ the scope still in correspondence, or both return represented values. -/
 inductive Matches (ret : SrcType) (scope : List Binding) (frame : Nat → Nat) (st : State) :
     Completion → Outcome → Prop where
   | next {env : Env} : Corr scope frame st env → Matches ret scope frame st .next (.normal env)
-  | returned {v : Value} {bits : List (BitVec 32)} :
+  | returned {v : Value} {bits : List (BitVec 64)} :
       ret.HoldsAt v (Func.entry bits) 0 → bits.length = ret.size →
       Matches ret scope frame st (.returned (some v)) (.returned bits)
 
@@ -771,7 +771,7 @@ theorem SrcProgram.target_toCore (sp : SrcProgram) : sp.toCore.target = .x86_64 
 theorem body_sound {sp : SrcProgram} {mp : Program}
     (lowered : lowerFuncs (sigs sp.funcs) sp.funcs = some mp.funcs) {fuel : Nat}
     (ih : StmtSound sp mp fuel) {callee : Nat} {f : SrcFunc} (found : sp.funcs[callee]? = some f)
-    {st : State} (fresh : st.Fresh) {values : List Value} {bits : List (BitVec 32)}
+    {st : State} (fresh : st.Fresh) {values : List Value} {bits : List (BitVec 64)}
     (holds : FieldsHold (paramTypes f.params) values (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize f.params) {v : Value} {completed : State}
     (run : execStmt fuel sp.toCore (({ st with locals := [] } : State).bindLocals
@@ -820,7 +820,7 @@ theorem call_sound {sp : SrcProgram} {mp : Program}
   · simp at ok
 
 /-- The slots a call stores hold the value its callee returned. -/
-theorem setMany_holds {ty : SrcType} {v : Value} {rs : List (BitVec 32)} (holds : ty.HoldsAt v (Func.entry rs) 0)
+theorem setMany_holds {ty : SrcType} {v : Value} {rs : List (BitVec 64)} (holds : ty.HoldsAt v (Func.entry rs) 0)
     (len : rs.length = ty.size) (env : Env) (slot : Nat) : ty.HoldsAt v (env.setMany slot rs) slot :=
   holds.congr fun i below => by
     rw [setMany_eq, if_pos (by omega), Nat.zero_add, Nat.add_sub_cancel_left]
@@ -942,7 +942,7 @@ theorem setFrom_outside : ∀ (xs : List Expr) (slot : Nat) (env : Env) (j : Nat
 
 /-- Expression `i` of `xs` does not read the slots stored before it. -/
 def Insens (xs : List Expr) (slot : Nat) : Prop :=
-  ∀ i (x : Expr), xs[i]? = some x → ∀ j < i, ∀ (E : Env) (w : BitVec 32),
+  ∀ i (x : Expr), xs[i]? = some x → ∀ j < i, ∀ (E : Env) (w : BitVec 64),
     x.eval (E.set (slot + j) w) = x.eval E
 
 theorem setFrom_value : ∀ (xs : List Expr) (slot : Nat) (env : Env), Insens xs slot →
@@ -984,11 +984,11 @@ def Expr.Below (n : Nat) : Expr → Prop
   | .lit _ => True
   | .var i => i < n
   | .neg e => e.Below n
-  | .binary _ l r => l.Below n ∧ r.Below n
-  | .compare _ l r => l.Below n ∧ r.Below n
+  | .binary _ _ l r => l.Below n ∧ r.Below n
+  | .compare _ _ l r => l.Below n ∧ r.Below n
 
 theorem Expr.Below.eval_set {n : Nat} : ∀ {x : Expr}, x.Below n → ∀ {j : Nat}, n ≤ j →
-    ∀ (E : Env) (w : BitVec 32), x.eval (E.set j w) = x.eval E
+    ∀ (E : Env) (w : BitVec 64), x.eval (E.set j w) = x.eval E
   | .lit _, _, _, _, _, _ => rfl
   | .var i, below, j, le, E, w => by
     simp only [Expr.Below] at below
@@ -996,9 +996,9 @@ theorem Expr.Below.eval_set {n : Nat} : ∀ {x : Expr}, x.Below n → ∀ {j : N
     rw [if_neg (by omega)]
   | .neg e, below, j, le, E, w => by
     simp only [Expr.eval, Expr.Below.eval_set (x := e) below le]
-  | .binary _ l r, below, j, le, E, w => by
+  | .binary _ _ l r, below, j, le, E, w => by
     simp only [Expr.eval, Expr.Below.eval_set below.1 le, Expr.Below.eval_set below.2 le]
-  | .compare _ l r, below, j, le, E, w => by
+  | .compare _ _ l r, below, j, le, E, w => by
     simp only [Expr.eval, Expr.Below.eval_set below.1 le, Expr.Below.eval_set below.2 le]
 
 theorem Insens.below {xs : List Expr} {slot : Nat} (all : ∀ x ∈ xs, x.Below slot) : Insens xs slot :=
@@ -1319,8 +1319,8 @@ theorem matchBinds : ∀ (binders : List Nat) (vs : List Value), binders.length 
     simp only [List.length_cons, Nat.add_right_cancel_iff] at len
     simp [Semantics.matchPatterns, Semantics.matchPattern, matchBinds bs vs len]
 
-theorem ofNat_ne {a b : Nat} (ha : a < 2 ^ 32) (hb : b < 2 ^ 32) (ne : a ≠ b) :
-    BitVec.ofNat 32 a ≠ BitVec.ofNat 32 b := by
+theorem ofNat_ne {a b : Nat} (ha : a < 2 ^ 64) (hb : b < 2 ^ 64) (ne : a ≠ b) :
+    BitVec.ofNat 64 a ≠ BitVec.ofNat 64 b := by
   intro h
   have := congrArg BitVec.toNat h
   simp only [BitVec.toNat_ofNat, Nat.mod_eq_of_lt ha, Nat.mod_eq_of_lt hb] at this
@@ -1345,8 +1345,8 @@ theorem lowerArms_sound {P : Core.Program} {mp : Program} (target : P.target = .
       {fs : List SrcType} {vs : List Value} {v : Value} {st' : State},
       lowerArms scope slot dst ty k variants arms = some stmt → arms.length = variants.length →
       (∀ fs ∈ variants, ∀ b ∈ scope, b.slot < slot + 1 ∨ slot + 1 + sizes fs ≤ b.slot) →
-      (∀ fs ∈ variants, slot + 1 + sizes fs ≤ dst) → k ≤ kv → variants[kv - k]? = some fs → kv < 2 ^ 32 →
-      env slot = BitVec.ofNat 32 kv → FieldsHold fs vs env (slot + 1) →
+      (∀ fs ∈ variants, slot + 1 + sizes fs ≤ dst) → k ≤ kv → variants[kv - k]? = some fs → kv < 2 ^ 64 →
+      env slot = BitVec.ofNat 64 kv → FieldsHold fs vs env (slot + 1) →
       Semantics.evalMatchArms fuel P st (.enumeration eid kv vs) (coreArms eid k arms) = .done v st' →
       st'.Fresh ∧ Keeps st.nextCell st st' ∧ st'.locals = st.locals ∧
         ∃ xs, FlatValue ty v env xs ∧ Insens xs dst ∧
@@ -1396,7 +1396,7 @@ theorem lowerArms_sound {P : Core.Program} {mp : Program} (target : P.target = .
               · simp at ok
               · simp only [Option.some.injEq] at ok
                 subst ok
-                exact .ifTrue (by simp [Expr.eval, CmpOp.holds, tag]) (assignFrom_exec xs dst .skip)
+                exact .ifTrue (by simp [Expr.eval, Word.holds, CmpOp.holdsU, tag]) (assignFrom_exec xs dst .skip)
           | trapped => simp [armRun, Semantics.restoreOutcomeLocals] at run
           | exited => simp [armRun, Semantics.restoreOutcomeLocals] at run
           | outOfFuel => simp [armRun, Semantics.restoreOutcomeLocals] at run
@@ -1418,9 +1418,9 @@ theorem lowerArms_sound {P : Core.Program} {mp : Program} (target : P.target = .
               (fun fs mem => clear fs (List.mem_cons_of_mem _ mem))
               (fun fs mem => room fs (List.mem_cons_of_mem _ mem)) (by omega) found' bound tag
               payload run
-            have differ : BitVec.ofNat 32 kv ≠ BitVec.ofNat 32 k := ofNat_ne bound (by omega) (Ne.symm hk)
+            have differ : BitVec.ofNat 64 kv ≠ BitVec.ofNat 64 k := ofNat_ne bound (by omega) (Ne.symm hk)
             exact ⟨fresh', keeps', locals', xs', flat', insens', fun d =>
-              .ifFalse (by simp [Expr.eval, CmpOp.holds, tag, differ]) (exec' d)⟩
+              .ifFalse (by simp [Expr.eval, Word.holds, CmpOp.holdsU, tag, differ]) (exec' d)⟩
 
 /-! ## Statements -/
 
@@ -1601,14 +1601,14 @@ theorem stmt_letEnum (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {vari
           obtain ⟨rfl, rfl⟩ := valueRun
           obtain ⟨rfl, fieldsHold, len, shapes⟩ :=
             lowerArgs_sound corr (SrcProgram.target_toCore sp) fieldsOk fieldsRun
-          have insens : Insens (.lit (BitVec.ofNat 32 variant) :: fxs) next := Insens.below fun x mem => by
+          have insens : Insens (.lit (BitVec.ofNat 64 variant) :: fxs) next := Insens.below fun x mem => by
             simp only [List.mem_cons] at mem
             rcases mem with rfl | mem
             · trivial
             · obtain ⟨ys, shape, inYs⟩ := shapes x mem
               exact shape.below fr.slots x inYs
           have holds : (SrcType.enum eid variants).HoldsAt (.enumeration eid variant vs)
-              (env.setFrom next (.lit (BitVec.ofNat 32 variant) :: fxs)) next := by
+              (env.setFrom next (.lit (BitVec.ofNat 64 variant) :: fxs)) next := by
             refine .enum found ?_ (fieldsHold.congr fun i below => ?_)
             · simpa [Expr.eval] using setFrom_value _ next env insens 0 _ rfl
             · have : i < fxs.length := by rw [len]; exact below
@@ -1694,7 +1694,7 @@ theorem stmt_letMatch (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {scr
         cases holdsW with
         | @enum _ _ kv fs vs _ _ fsFound tag payload =>
         have kvLt : kv < variants.length := (List.getElem?_eq_some_iff.mp fsFound).1
-        have kvBound : kv < 2 ^ 32 := Nat.lt_trans kvLt (by omega)
+        have kvBound : kv < 2 ^ 64 := Nat.lt_trans kvLt (by omega)
         obtain ⟨fresh1, keeps1, locals1, xs, flat, insens, mexec⟩ :=
           lowerArms_sound (mp := mp) (SrcProgram.target_toCore sp) corr fresh fr.slots arms matchOk len
             clear room (Nat.zero_le _) (by simpa using fsFound) kvBound tag payload matchRun

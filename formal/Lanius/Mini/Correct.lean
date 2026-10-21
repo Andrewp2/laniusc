@@ -84,7 +84,7 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
     {imageBase : BitVec 64} {f : Nat} {func : Func} {code : Code} (_found : prog.funcs[f]? = some func)
     (codeFound : binary.codes[f]? = some code)
     (compiledFunc : compileFunc (arities prog.funcs) func = some code)
-    {depth : Nat} {args value : List (BitVec 32)} (length : args.length = func.params)
+    {depth : Nat} {args value : List (BitVec 64)} (length : args.length = func.params)
     (exec : Exec prog depth (Func.entry args) func.body (.returned value))
     {window : Nat} (room : frameBytes code.slots + 16 ≤ window)
     (callContract : ∀ callee vals result, SourceCalls prog depth callee vals result → ∃ inner,
@@ -184,8 +184,8 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
         exact this }
   let start : Machine :=
     { pc := 0
-      acc := (entered.registers 0).setWidth 32
-      slots := fun slot => read32 entered.memory (frameSlotAddress (s.registers rspRegister - 8) slot) }
+      acc := entered.registers 0
+      slots := fun slot => read64 entered.memory (frameSlotAddress (s.registers rspRegister - 8) slot) }
   have rel : Rel frame entered start :=
     { rip := by rw [ripEntered]; simp [frame, start]
       rbp := by
@@ -210,8 +210,8 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
   have startParams : ∀ index, index < func.params → start.slots index = args.getD index 0 := by
     intro index below
     have bound : index < slotLimit := by unfold slotLimit; omega
-    show read32 entered.memory (frameSlotAddress (s.registers rspRegister - 8) index) = args.getD index 0
-    rw [memoryEntered, read32_write64_frame _ _ _ _ (by
+    show read64 entered.memory (frameSlotAddress (s.registers rspRegister - 8) index) = args.getD index 0
+    rw [memoryEntered, read64_frame _ _ _ _ (by
       intro i lane
       rw [slot_lane _ bound _ (by omega),
         show s.registers rspRegister - 8 = s.registers rspRegister - BitVec.ofNat 64 8 from rfl,
@@ -272,7 +272,7 @@ the argument slots and the last of them in eax. It restores rsp and rbp,
 preserves every register other than rax, rcx, r11, and changes no memory
 outside the stack it was given. -/
 theorem compileProgram_correct {prog : Program} {binary : Binary} (compiled : compileProgram prog = some binary)
-    {depth f : Nat} {args value : List (BitVec 32)} (returns : prog.Returns depth f args value)
+    {depth f : Nat} {args value : List (BitVec 64)} (returns : prog.Returns depth f args value)
     (s : State) (imageBase : BitVec 64) (window : Nat)
     (enough : binary.stackNeed depth ≤ window) (bounded : window ≤ 2 ^ 62)
     (loaded : CodeAt s.memory imageBase binary.image)
@@ -280,7 +280,7 @@ theorem compileProgram_correct {prog : Program} {binary : Binary} (compiled : co
       ¬Below (s.registers rspRegister) window (imageBase + BitVec.ofNat 64 index))
     (entry : s.rip = imageBase + BitVec.ofNat 64 (binary.entries.getD f 0))
     (params : ∀ k (bound : k < args.length),
-      read32 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = args[k]) :
+      read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = args[k]) :
     ∃ n s', Steps n s s' ∧ Returned window s s' value :=
   (compiled_contract compiled imageBase depth f args value returns).mono enough s bounded loaded apart entry params
 

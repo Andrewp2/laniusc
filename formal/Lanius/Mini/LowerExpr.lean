@@ -151,12 +151,12 @@ theorem eval_ne_int : evalBinaryValue .x86_64 .notEqual (.signed .i32 a.toInt) (
   simp [evalBinaryValue, scalarEqual, CmpOp.holds, toInt_beq, bne]
 
 theorem eval_eq_bool (x y : Bool) : evalBinaryValue .x86_64 .equal (.boolean x) (.boolean y) =
-    .ok (.boolean (CmpOp.eq.holds (boolBits x) (boolBits y))) := by
-  cases x <;> cases y <;> simp [evalBinaryValue, scalarEqual, CmpOp.holds, boolBits]
+    .ok (.boolean (CmpOp.eq.holds (low (boolBits x)) (low (boolBits y)))) := by
+  cases x <;> cases y <;> simp [evalBinaryValue, scalarEqual, CmpOp.holds, boolBits] <;> decide
 
 theorem eval_ne_bool (x y : Bool) : evalBinaryValue .x86_64 .notEqual (.boolean x) (.boolean y) =
-    .ok (.boolean (CmpOp.ne.holds (boolBits x) (boolBits y))) := by
-  cases x <;> cases y <;> simp [evalBinaryValue, scalarEqual, CmpOp.holds, boolBits]
+    .ok (.boolean (CmpOp.ne.holds (low (boolBits x)) (low (boolBits y)))) := by
+  cases x <;> cases y <;> simp [evalBinaryValue, scalarEqual, CmpOp.holds, boolBits] <;> decide
 
 end Values
 
@@ -177,7 +177,7 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
       subst lowered
       simp only [SrcExpr.toCore, evalExpr, Semantics.Outcome.done.injEq] at run
       obtain ⟨rfl, rfl⟩ := run
-      exact ⟨rfl, rfl⟩
+      exact ⟨rfl, holds_i32 x⟩
   | boolean x =>
     intro t fuel v st' lowered run
     cases fuel with
@@ -265,11 +265,10 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
             obtain ⟨rfl, holds⟩ := ih innerLowered innerRun
             cases hty : inner.ty <;> simp [hty, SrcType.isI32] at isInt
             rw [hty] at holds
-            simp only [SrcType.Holds] at holds
-            subst holds
+            obtain ⟨rfl, _⟩ := holds
             simp only [Semantics.evalUnaryValue, target, Semantics.Outcome.done.injEq] at run
             obtain ⟨rfl, rfl⟩ := run
-            exact ⟨rfl, by simp [SrcType.Holds, Expr.eval, wrap_neg]⟩
+            exact ⟨rfl, by simp only [Expr.eval]; rw [wrap_neg]; exact holds_i32 _⟩
           all_goals simp at run
         · simp at lowered
   | not operand ih =>
@@ -296,7 +295,7 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
             simp only [Semantics.evalUnaryValue, Semantics.Outcome.done.injEq] at run
             obtain ⟨rfl, rfl⟩ := run
             refine ⟨rfl, !x, rfl, ?_⟩
-            cases x <;> simp [Expr.eval, CmpOp.holds, bits, boolBits]
+            cases x <;> simp [Expr.eval, Word.holds, CmpOp.holds, bits, boolBits] <;> decide
           all_goals simp at run
         · simp at lowered
   | apply op left right ihl ihr =>
@@ -328,13 +327,13 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
           cases htl : tl.ty <;> cases htr : tr.ty <;> simp [htl, htr, SrcType.isI32] at types
           rw [htl] at holdsl
           rw [htr] at holdsr
-          simp only [SrcType.Holds] at holdsl holdsr
-          subst holdsl holdsr
+          obtain ⟨rfl, _⟩ := holdsl
+          obtain ⟨rfl, _⟩ := holdsr
           rw [target] at evaluated
           simp only [SrcOp.toCore, eval_add, eval_sub, eval_mul, eval_bitAnd, eval_bitOr,
             eval_bitXor, Except.ok.injEq] at evaluated
           subst evaluated
-          exact ⟨rfl, by simp [SrcType.Holds, Expr.eval, BinOp.apply]⟩
+          exact ⟨rfl, by simp only [Expr.eval, Word.apply, BinOp.apply]; exact holds_i32 _⟩
         · simp at lowered
       case less | lessEq | greater | greaterEq =>
         obtain ⟨rfl, vl, vr, holdsl, holdsr, evaluated⟩ :=
@@ -347,8 +346,8 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
           cases htl : tl.ty <;> cases htr : tr.ty <;> simp [htl, htr, SrcType.isI32] at types
           rw [htl] at holdsl
           rw [htr] at holdsr
-          simp only [SrcType.Holds] at holdsl holdsr
-          subst holdsl holdsr
+          obtain ⟨rfl, _⟩ := holdsl
+          obtain ⟨rfl, _⟩ := holdsr
           rw [target] at evaluated
           simp only [SrcOp.toCore] at evaluated
           first
@@ -359,7 +358,7 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
           simp only [Except.ok.injEq] at evaluated
           subst evaluated
           refine ⟨rfl, ?_⟩
-          simp only [Expr.eval]
+          simp only [Expr.eval, Word.holds]
           exact holds_compare _
         · simp at lowered
       case equal | notEqual =>
@@ -376,17 +375,17 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
           cases htl : tl.ty <;> cases htr : tr.ty <;>
             simp [htl, htr, SrcType.same, SrcType.isI32, SrcType.isBool] at types <;>
             rw [htl] at holdsl <;> rw [htr] at holdsr
-          · simp only [SrcType.Holds] at holdsl holdsr
-            subst holdsl holdsr
+          · obtain ⟨rfl, _⟩ := holdsl
+            obtain ⟨rfl, _⟩ := holdsr
             simp only [eval_eq_int, eval_ne_int, Except.ok.injEq] at evaluated
             subst evaluated
-            simp only [Expr.eval]
+            simp only [Expr.eval, Word.holds]
             exact holds_compare _
           · obtain ⟨x, rfl, bitsl⟩ := holdsl
             obtain ⟨y, rfl, bitsr⟩ := holdsr
             simp only [eval_eq_bool, eval_ne_bool, Except.ok.injEq] at evaluated
             subst evaluated
-            simp only [Expr.eval, bitsl, bitsr]
+            simp only [Expr.eval, Word.holds, bitsl, bitsr]
             exact holds_compare _
           · simp [SrcType.Holds] at holdsl
           · simp [SrcType.Holds] at holdsl
@@ -408,7 +407,7 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
             simp only [Semantics.Outcome.done.injEq] at run
             obtain ⟨rfl, rfl⟩ := run
             refine ⟨rfl, false, rfl, ?_⟩
-            simp [Expr.eval, BinOp.apply, bitsl, boolBits]
+            simp [Expr.eval, Word.apply, BinOp.apply, bitsl, boolBits]
           · rename_i mid leftRun
             obtain ⟨rfl, holdsl⟩ := hl leftRun
             rw [htl] at holdsl
@@ -418,7 +417,7 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
             rw [htr] at holdsr
             obtain ⟨y, rfl, bitsr⟩ := holdsr
             refine ⟨rfl, y, rfl, ?_⟩
-            cases y <;> simp [Expr.eval, BinOp.apply, bitsl, bitsr, boolBits]
+            cases y <;> simp [Expr.eval, Word.apply, BinOp.apply, bitsl, bitsr, boolBits] <;> decide
           · rename_i w mid notFalse notTrue leftRun
             obtain ⟨rfl, holdsl⟩ := hl leftRun
             rw [htl] at holdsl
@@ -443,8 +442,9 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
             simp only [Semantics.Outcome.done.injEq] at run
             obtain ⟨rfl, rfl⟩ := run
             refine ⟨rfl, true, rfl, ?_⟩
-            simp only [Expr.eval, BinOp.apply, CmpOp.holds, bitsl, boolBits]
-            have : (1 : BitVec 32) ||| tr.expr.eval env ≠ 0 := by
+            simp only [Expr.eval, Word.apply, Word.holds, BinOp.apply, CmpOp.holds, bitsl, boolBits,
+              low_widen]
+            have : low 1 ||| low (tr.expr.eval env) ≠ 0 := by
               intro h
               have := congrArg (fun x : BitVec 32 => x.getLsbD 0) h
               simp at this
@@ -458,7 +458,8 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
             rw [htr] at holdsr
             obtain ⟨y, rfl, bitsr⟩ := holdsr
             refine ⟨rfl, y, rfl, ?_⟩
-            cases y <;> simp [Expr.eval, BinOp.apply, CmpOp.holds, bitsl, bitsr, boolBits]
+            cases y <;> simp [Expr.eval, Word.apply, Word.holds, BinOp.apply, CmpOp.holds, bitsl, bitsr,
+              boolBits] <;> decide
           · rename_i w mid notTrue notFalse leftRun
             obtain ⟨rfl, holdsl⟩ := hl leftRun
             rw [htl] at holdsl

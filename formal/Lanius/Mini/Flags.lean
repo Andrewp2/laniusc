@@ -32,10 +32,12 @@ theorem signedLess (a b : BitVec 32) :
       Bool.and_true, Bool.and_false, Bool.true_and, Bool.false_and] <;>
     (symm; simp only [decide_eq_true_eq, decide_eq_false_iff_not]) <;> split <;> split <;> omega
 
-theorem sub_beq_zero (a b : BitVec 32) : (a - b == 0) = (a == b) := by
+theorem sub_beq_zero {n : Nat} (a b : BitVec n) : (a - b == 0) = (a == b) := by
   by_cases h : a = b
   · subst h; simp
-  · have : a - b ≠ 0 := by bv_omega
+  · have : a - b ≠ 0 := fun e => h (by
+      have := congrArg (· + b) e
+      simpa [BitVec.sub_add_cancel] using this)
     rw [beq_false_of_ne h, beq_false_of_ne this]
 
 theorem sle_eq (a b : BitVec 32) : a.sle b = (a == b || a.slt b) := by
@@ -63,7 +65,7 @@ theorem sle_not (a b : BitVec 32) : b.sle a = !a.slt b := by
   · simp [less]; omega
 
 theorem CmpOp.condition (flags : BitVec 64) (operation : CmpOp) (a b : BitVec 32) :
-    condition (subtractFlags flags a b) operation.code = operation.holds a b := by
+    condition (subtractFlags flags a b) (operation.code .s32) = operation.holds a b := by
   cases operation with
   | eq =>
     simp only [Lanius.X86.Machine.condition, subtractFlags, (arithmeticFlags_bits ..).1, sub_beq_zero]
@@ -96,5 +98,38 @@ theorem CmpOp.condition (flags : BitVec 64) (operation : CmpOp) (a b : BitVec 32
     generalize ((a.msb != b.msb) && ((a - b).msb != a.msb)) = overflow
     generalize (a - b).msb = sign
     cases sign <;> cases overflow <;> rfl
+
+theorem beq_toNat {n : Nat} (a b : BitVec n) : (a == b) = decide (a.toNat = b.toNat) := by
+  by_cases h : a = b
+  · subst h; simp
+  · have : a.toNat ≠ b.toNat := fun e => h (BitVec.eq_of_toNat_eq e)
+    rw [beq_false_of_ne h, decide_eq_false this]
+
+/-- After `cmp left, right` on 64 bits, each unsigned condition code holds
+exactly when the comparison does. -/
+theorem CmpOp.conditionU (flags : BitVec 64) (operation : CmpOp) (a b : BitVec 64) :
+    Lanius.X86.Machine.condition (subtractFlags flags a b) (operation.code .u64) = operation.holdsU a b := by
+  generalize result : subtractFlags flags a b = f
+  have carry : f.getLsbD 0 = decide (a.toNat < b.toNat) := by
+    rw [← result]; exact arithmeticFlags_carry ..
+  have zero : f.getLsbD 6 = decide (a.toNat = b.toNat) := by
+    rw [← result, subtractFlags, (arithmeticFlags_bits ..).1, sub_beq_zero, beq_toNat]
+  have lt : a.ult b = decide (a.toNat < b.toNat) := rfl
+  have le : a.ule b = decide (a.toNat ≤ b.toNat) := rfl
+  have gt : b.ult a = decide (b.toNat < a.toNat) := rfl
+  have ge : b.ule a = decide (b.toNat ≤ a.toNat) := rfl
+  cases operation
+  · show f.getLsbD 6 = (a == b); rw [zero, beq_toNat]
+  · show (!f.getLsbD 6) = (a != b); rw [zero, bne, beq_toNat]
+  · show f.getLsbD 0 = a.ult b; rw [carry, lt]
+  · show (f.getLsbD 0 || f.getLsbD 6) = a.ule b
+    rw [carry, zero, le]
+    by_cases h : a.toNat < b.toNat <;> by_cases h' : a.toNat = b.toNat <;> simp [h, h'] <;> omega
+  · show (!(f.getLsbD 0 || f.getLsbD 6)) = b.ult a
+    rw [carry, zero, gt]
+    by_cases h : a.toNat < b.toNat <;> by_cases h' : a.toNat = b.toNat <;> simp [h, h'] <;> omega
+  · show (!f.getLsbD 0) = b.ule a
+    rw [carry, ge]
+    by_cases h : a.toNat < b.toNat <;> simp [h] <;> omega
 
 end Lanius.Mini

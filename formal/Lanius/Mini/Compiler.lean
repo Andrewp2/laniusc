@@ -88,7 +88,6 @@ inductive BinOp where
   | xor : BinOp
   deriving DecidableEq, Repr
 
-/-- Signed comparisons. -/
 inductive CmpOp where
   | eq : CmpOp
   | ne : CmpOp
@@ -98,12 +97,19 @@ inductive CmpOp where
   | ge : CmpOp
   deriving DecidableEq, Repr
 
+/-- How an operation reads its words. An S32 operation acts on the low 32 bits and zero-extends its result, as x86's 32-bit instructions do, and its comparisons are signed. A U64 operation uses all 64 bits, and its comparisons are unsigned. -/
+inductive Word where
+  | s32 : Word
+  | u64 : Word
+  deriving DecidableEq, Repr
+
 inductive Expr where
-  | lit : (BitVec 32) → Expr
+  | lit : (BitVec 64) → Expr
   | var : Nat → Expr
+  /-- S32 negation -/
   | neg : Expr → Expr
-  | binary : BinOp → Expr → Expr → Expr
-  | compare : CmpOp → Expr → Expr → Expr
+  | binary : Word → BinOp → Expr → Expr → Expr
+  | compare : Word → CmpOp → Expr → Expr → Expr
   deriving DecidableEq, Repr
 
 inductive Stmt where
@@ -131,52 +137,58 @@ structure Program where
   funcs : List Func
   deriving DecidableEq, Repr
 
-/-- The abstract target: an accumulator (eax), frame slots, and a program counter that is a byte offset into the function's code. Each instruction is one fixed byte sequence, Instr::size bytes long. -/
+/-- The abstract target: an accumulator (rax), frame slots, and a program counter that is a byte offset into the function's code. Each instruction is one fixed byte sequence, Instr::size bytes long. -/
 inductive Instr where
-  /-- mov eax, imm32 -/
-  | imm : (BitVec 32) → Instr
-  /-- mov eax, [rbp - 8 * (slot + 1)] -/
+  /-- mov rax, imm64 -/
+  | imm : (BitVec 64) → Instr
+  /-- mov rax, [rbp - 8 * (slot + 1)] -/
   | load : Nat → Instr
-  /-- mov [rbp - 8 * (slot + 1)], eax -/
+  /-- mov [rbp - 8 * (slot + 1)], rax -/
   | store : Nat → Instr
   /-- neg eax -/
   | neg : Instr
-  /-- eax := slot op eax -/
-  | op : BinOp → Nat → Instr
-  /-- eax := (slot cmp eax) ? 1 : 0 -/
-  | cmp : CmpOp → Nat → Instr
+  /-- rax := slot op rax -/
+  | op : Word → BinOp → Nat → Instr
+  /-- rax := (slot cmp rax) ? 1 : 0 -/
+  | cmp : Word → CmpOp → Nat → Instr
   /-- jmp rel32 -/
   | jmp : Nat → Instr
-  /-- test eax, eax; jz rel32 -/
+  /-- test rax, rax; jz rel32 -/
   | jz : Nat → Instr
   /-- Copy the argument slots into the callee's parameter slots, call rel32, then copy count results from the callee's first slots to target, ... -/
   | call : Nat → (List Nat) → Nat → Nat → Instr
-  /-- Copy the source slots to the first slots, then the frame epilogue and ret. The results replace the arguments, and eax holds the last one. -/
+  /-- Copy the source slots to the first slots, then the frame epilogue and ret. The results replace the arguments, and rax holds the last one. -/
   | ret : (List Nat) → Instr
   deriving DecidableEq, Repr
 
 /-- imul is one byte longer than the other operators. -/
 def BinOp.size (self : BinOp) : Nat :=
   match self with
-  | .add => 10
-  | .sub => 10
-  | .mul => 11
-  | .and => 10
-  | .or => 10
-  | .xor => 10
+  | .add => 12
+  | .sub => 12
+  | .mul => 13
+  | .and => 12
+  | .or => 12
+  | .xor => 12
+
+/-- U64 operations take a REX.W prefix byte. -/
+def Word.prefix (self : Word) : Nat :=
+  match self with
+  | .s32 => 0
+  | .u64 => 1
 
 def Instr.size (self : Instr) : Nat :=
   match self with
-  | .imm value => 5
-  | .load slot => 6
-  | .store slot => 6
+  | .imm value => 10
+  | .load slot => 7
+  | .store slot => 7
   | .neg => 2
-  | .op operation slot => BinOp.size operation
-  | .cmp operation slot => 16
+  | .op word operation slot => BinOp.size operation + Word.prefix word
+  | .cmp word operation slot => 18 + Word.prefix word
   | .jmp target => 5
-  | .jz target => 8
-  | .call callee args target count => 12 * args.length + 5 + 12 * count
-  | .ret sources => 12 * sources.length + 5
+  | .jz target => 9
+  | .call callee args target count => 14 * args.length + 5 + 14 * count
+  | .ret sources => 14 * sources.length + 5
 
 def codeSize (code : List Instr) : Nat :=
   match code with
@@ -189,8 +201,8 @@ def compileExpr (base : Nat) (e : Expr) (depth : Nat) : List Instr :=
   | .lit value => [Instr.imm value]
   | .var index => [Instr.load index]
   | .neg operand => compileExpr base operand depth ++ [Instr.neg]
-  | .binary operation left right => compileExpr base left depth ++ [Instr.store (base + depth)] ++ compileExpr base right (depth + 1) ++ [Instr.op operation (base + depth)]
-  | .compare operation left right => compileExpr base left depth ++ [Instr.store (base + depth)] ++ compileExpr base right (depth + 1) ++ [Instr.cmp operation (base + depth)]
+  | .binary word operation left right => compileExpr base left depth ++ [Instr.store (base + depth)] ++ compileExpr base right (depth + 1) ++ [Instr.op word operation (base + depth)]
+  | .compare word operation left right => compileExpr base left depth ++ [Instr.store (base + depth)] ++ compileExpr base right (depth + 1) ++ [Instr.cmp word operation (base + depth)]
 
 /-- Argument k is evaluated into temporary base + k. -/
 def compileArgs (base : Nat) (args : List Expr) (k : Nat) : List Instr :=
@@ -213,14 +225,14 @@ def compileStmt (base : Nat) (pos : Nat) (s : Stmt) : List Instr :=
      firstCode ++ compileStmt base (pos + codeSize firstCode) second)
   | .ite condition thenBranch elseBranch =>
     (let conditionCode : List Instr := compileExpr base condition 0
-     let thenStart : Nat := pos + codeSize conditionCode + 8
+     let thenStart : Nat := pos + codeSize conditionCode + 9
      let thenCode : List Instr := compileStmt base thenStart thenBranch
      let elseStart : Nat := thenStart + codeSize thenCode + 5
      let elseCode : List Instr := compileStmt base elseStart elseBranch
      conditionCode ++ [Instr.jz elseStart] ++ thenCode ++ [Instr.jmp (elseStart + codeSize elseCode)] ++ elseCode)
   | .loop condition body =>
     (let conditionCode : List Instr := compileExpr base condition 0
-     let bodyStart : Nat := pos + codeSize conditionCode + 8
+     let bodyStart : Nat := pos + codeSize conditionCode + 9
      let bodyCode : List Instr := compileStmt base bodyStart body
      conditionCode ++ [Instr.jz (bodyStart + codeSize bodyCode + 5)] ++ bodyCode ++ [Instr.jmp pos])
   | .call target count callee args => compileArgs base args 0 ++ [Instr.call callee (argSlots base args 0) target count]
@@ -231,8 +243,8 @@ def Expr.within (self : Expr) (locals : Nat) : Bool :=
   | .lit value => true
   | .var index => decide (index < locals)
   | .neg operand => Expr.within operand locals
-  | .binary operation left right => Expr.within left locals && Expr.within right locals
-  | .compare operation left right => Expr.within left locals && Expr.within right locals
+  | .binary word operation left right => Expr.within left locals && Expr.within right locals
+  | .compare word operation left right => Expr.within left locals && Expr.within right locals
 
 /-- Temporary slots an expression's code uses. -/
 def Expr.temps (self : Expr) : Nat :=
@@ -240,8 +252,8 @@ def Expr.temps (self : Expr) : Nat :=
   | .lit value => 0
   | .var index => 0
   | .neg operand => Expr.temps operand
-  | .binary operation left right => max (Expr.temps left) (Expr.temps right + 1)
-  | .compare operation left right => max (Expr.temps left) (Expr.temps right + 1)
+  | .binary word operation left right => max (Expr.temps left) (Expr.temps right + 1)
+  | .compare word operation left right => max (Expr.temps left) (Expr.temps right + 1)
 
 def allWithin (locals : Nat) (args : List Expr) : Bool :=
   match args with
@@ -333,34 +345,47 @@ def le32 (value : BitVec 32) : List UInt8 :=
   let bits : BitVec 32 := value
   UInt8.ofNat bits.toNat :: UInt8.ofNat (bits >>> 8).toNat :: UInt8.ofNat (bits >>> 16).toNat :: [UInt8.ofNat (bits >>> 24).toNat]
 
+/-- Little-endian bytes of a 64-bit field. -/
+def le64 (value : BitVec 64) : List UInt8 :=
+  UInt8.ofNat value.toNat :: UInt8.ofNat (value >>> 8).toNat :: UInt8.ofNat (value >>> 16).toNat :: UInt8.ofNat (value >>> 24).toNat :: UInt8.ofNat (value >>> 32).toNat :: UInt8.ofNat (value >>> 40).toNat :: UInt8.ofNat (value >>> 48).toNat :: [UInt8.ofNat (value >>> 56).toNat]
+
 /-- rbp-relative displacement of a frame slot. -/
 def slotOffset (slot : Nat) : BitVec 32 :=
   0 - BitVec.ofNat 32 ((slot + 1) * 8)
 
-/-- mov eax, [rbp + disp32] -/
+/-- mov rax, [rbp + disp32] -/
 def slotLoad (slot : Nat) : List UInt8 :=
-  139 :: [133] ++ le32 (slotOffset slot)
+  72 :: 139 :: [133] ++ le32 (slotOffset slot)
 
-/-- mov [rbp + disp32], eax -/
+/-- mov [rbp + disp32], rax -/
 def slotStore (slot : Nat) : List UInt8 :=
-  137 :: [133] ++ le32 (slotOffset slot)
+  72 :: 137 :: [133] ++ le32 (slotOffset slot)
 
-/-- mov ecx, eax; mov eax, [slot] -/
+/-- mov rcx, rax; mov rax, [slot] -/
 def slotOperands (slot : Nat) : List UInt8 :=
-  137 :: [193] ++ slotLoad slot
+  72 :: 137 :: [193] ++ slotLoad slot
 
-/-- slot_operands, then op eax, ecx -/
-def BinOp.bytes (self : BinOp) (slot : Nat) : List UInt8 :=
+/-- The REX.W prefix of a U64 operation. -/
+def Word.rex (self : Word) : List UInt8 :=
   match self with
-  | .add => slotOperands slot ++ 1 :: [200]
-  | .sub => slotOperands slot ++ 41 :: [200]
-  | .mul => slotOperands slot ++ 15 :: 175 :: [193]
-  | .and => slotOperands slot ++ 33 :: [200]
-  | .or => slotOperands slot ++ 9 :: [200]
-  | .xor => slotOperands slot ++ 49 :: [200]
+  | .s32 => []
+  | .u64 => [72]
 
-/-- The setcc opcode byte whose condition holds after cmp left, right exactly when the comparison does. -/
-def CmpOp.setcc (self : CmpOp) : UInt8 :=
+/-- op eax, ecx without its prefix -/
+def BinOp.opcode (self : BinOp) : List UInt8 :=
+  match self with
+  | .add => 1 :: [200]
+  | .sub => 41 :: [200]
+  | .mul => 15 :: 175 :: [193]
+  | .and => 33 :: [200]
+  | .or => 9 :: [200]
+  | .xor => 49 :: [200]
+
+/-- slot_operands, then op eax, ecx or op rax, rcx -/
+def BinOp.bytes (self : BinOp) (word : Word) (slot : Nat) : List UInt8 :=
+  slotOperands slot ++ (Word.rex word ++ BinOp.opcode self)
+
+def CmpOp.setccSigned (self : CmpOp) : UInt8 :=
   match self with
   | .eq => 148
   | .ne => 149
@@ -369,9 +394,24 @@ def CmpOp.setcc (self : CmpOp) : UInt8 :=
   | .gt => 159
   | .ge => 157
 
-/-- slot_operands; cmp eax, ecx; setcc al; movzx eax, al -/
-def slotCompare (operation : CmpOp) (slot : Nat) : List UInt8 :=
-  slotOperands slot ++ 57 :: [200] ++ 15 :: CmpOp.setcc operation :: 192 :: 15 :: 182 :: [192]
+def CmpOp.setccUnsigned (self : CmpOp) : UInt8 :=
+  match self with
+  | .eq => 148
+  | .ne => 149
+  | .lt => 146
+  | .le => 150
+  | .gt => 151
+  | .ge => 147
+
+/-- The setcc opcode byte whose condition holds after cmp left, right exactly when the comparison does: signed for S32, unsigned for U64. (Two helpers: laniusc does not carry the u8 result type into a nested match.) -/
+def CmpOp.setcc (self : CmpOp) (word : Word) : UInt8 :=
+  match word with
+  | .s32 => CmpOp.setccSigned self
+  | .u64 => CmpOp.setccUnsigned self
+
+/-- slot_operands; cmp eax, ecx or cmp rax, rcx; setcc al; movzx eax, al -/
+def slotCompare (word : Word) (operation : CmpOp) (slot : Nat) : List UInt8 :=
+  slotOperands slot ++ (Word.rex word ++ 57 :: [200]) ++ 15 :: CmpOp.setcc operation word :: 192 :: 15 :: 182 :: [192]
 
 /-- mov rsp, rbp; pop rbp; ret -/
 def epilogue : List UInt8 :=
@@ -419,15 +459,15 @@ def copyBytes (first : Nat) (args : List Nat) (k : Nat) : List UInt8 :=
 /-- The bytes of the instruction at body offset pc. -/
 def Instr.encode (self : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   match self with
-  | .imm value => 184 :: le32 value
+  | .imm value => 72 :: 184 :: le64 value
   | .load slot => slotLoad slot
   | .store slot => slotStore slot
   | .neg => 247 :: [216]
-  | .op operation slot => BinOp.bytes operation slot
-  | .cmp operation slot => slotCompare operation slot
+  | .op word operation slot => BinOp.bytes operation word slot
+  | .cmp word operation slot => slotCompare word operation slot
   | .jmp target => 233 :: le32 (relative (pc + 5) target)
-  | .jz target => 133 :: 192 :: 15 :: [132] ++ le32 (relative (pc + 8) target)
-  | .call callee args target count => copyBytes (argBase place.slots) args 0 ++ 232 :: le32 (relative (place.body + pc + 12 * args.length + 5) (place.entries.getD callee 0)) ++ copyBytes target (slotRange (argBase place.slots) count) 0
+  | .jz target => 72 :: 133 :: 192 :: 15 :: [132] ++ le32 (relative (pc + 9) target)
+  | .call callee args target count => copyBytes (argBase place.slots) args 0 ++ 232 :: le32 (relative (place.body + pc + 14 * args.length + 5) (place.entries.getD callee 0)) ++ copyBytes target (slotRange (argBase place.slots) count) 0
   | .ret sources => copyBytes 0 sources 0 ++ epilogue
 
 def encodeFrom (place : Place) (pc : Nat) (code : List Instr) : List UInt8 :=
@@ -569,7 +609,7 @@ def lookup (scope : List Binding) (id : Nat) : Option Binding :=
     else
       lookup rest id
 
-def boolBits (value : Bool) : BitVec 32 :=
+def boolBits (value : Bool) : BitVec 64 :=
   if value then
     1
   else
@@ -680,32 +720,32 @@ structure Typed where
 
 def arith (operation : BinOp) (left : Typed) (right : Typed) : Option Typed :=
   if SrcType.isI32 left.ty && SrcType.isI32 right.ty then
-    some ({ expr := Expr.binary operation left.expr right.expr, ty := SrcType.i32 } : Typed)
+    some ({ expr := Expr.binary Word.s32 operation left.expr right.expr, ty := SrcType.i32 } : Typed)
   else
     none
 
 def order (operation : CmpOp) (left : Typed) (right : Typed) : Option Typed :=
   if SrcType.isI32 left.ty && SrcType.isI32 right.ty then
-    some ({ expr := Expr.compare operation left.expr right.expr, ty := SrcType.bool } : Typed)
+    some ({ expr := Expr.compare Word.s32 operation left.expr right.expr, ty := SrcType.bool } : Typed)
   else
     none
 
 def equality (operation : CmpOp) (left : Typed) (right : Typed) : Option Typed :=
   if SrcType.same left.ty right.ty then
-    some ({ expr := Expr.compare operation left.expr right.expr, ty := SrcType.bool } : Typed)
+    some ({ expr := Expr.compare Word.s32 operation left.expr right.expr, ty := SrcType.bool } : Typed)
   else
     none
 
 def conjunction (left : Typed) (right : Typed) : Option Typed :=
   if SrcType.isBool left.ty && SrcType.isBool right.ty then
-    some ({ expr := Expr.binary BinOp.and left.expr right.expr, ty := SrcType.bool } : Typed)
+    some ({ expr := Expr.binary Word.s32 BinOp.and left.expr right.expr, ty := SrcType.bool } : Typed)
   else
     none
 
 def disjunction (left : Typed) (right : Typed) : Option Typed :=
   if SrcType.isBool left.ty && SrcType.isBool right.ty then
-    let either : Expr := Expr.binary BinOp.or left.expr right.expr
-    some ({ expr := Expr.compare CmpOp.ne either (Expr.lit 0), ty := SrcType.bool } : Typed)
+    let either : Expr := Expr.binary Word.s32 BinOp.or left.expr right.expr
+    some ({ expr := Expr.compare Word.s32 CmpOp.ne either (Expr.lit 0), ty := SrcType.bool } : Typed)
   else
     none
 
@@ -772,7 +812,7 @@ def lowerNegate (operand : Option Typed) : Option Typed :=
 
 def lowerNotTyped (operand : Typed) : Option Typed :=
   if SrcType.isBool operand.ty then
-    some ({ expr := Expr.compare CmpOp.eq operand.expr (Expr.lit 0), ty := SrcType.bool } : Typed)
+    some ({ expr := Expr.compare Word.s32 CmpOp.eq operand.expr (Expr.lit 0), ty := SrcType.bool } : Typed)
   else
     none
 
@@ -791,7 +831,7 @@ def lowerApply (op : SrcOp) (left : Option Typed) (right : Option Typed) : Optio
 
 def SrcExpr.lower (self : SrcExpr) (scope : List Binding) : Option Typed :=
   match self with
-  | .int value => some ({ expr := Expr.lit value, ty := SrcType.i32 } : Typed)
+  | .int value => some ({ expr := Expr.lit (BitVec.setWidth 64 value), ty := SrcType.i32 } : Typed)
   | .boolean value => some ({ expr := Expr.lit (boolBits value), ty := SrcType.bool } : Typed)
   | .local id => lowerLocal (lookup scope id)
   | .field id index => lowerField (lookup scope id) index
@@ -909,7 +949,7 @@ def lowerLiteral (scope : List Binding) (ty : SrcType) (fields : List SrcExpr) :
 def lowerTag (variant : Nat) (payload : Option (List Expr)) : Option (List Expr) :=
   match payload with
   | none => none
-  | some es => some (Expr.lit (BitVec.ofNat 32 variant) :: es)
+  | some es => some (Expr.lit (BitVec.ofNat 64 variant) :: es)
 
 def lowerVariant (scope : List Binding) (variant : Nat) (found : Option (List SrcType)) (payload : List SrcExpr) : Option (List Expr) :=
   match found with
@@ -968,7 +1008,7 @@ def lowerArm (slot : Nat) (target : Nat) (k : Nat) (values : Option (List Expr))
     | arm :: more =>
       match others with
       | none => none
-      | some o => some (Stmt.ite (Expr.compare CmpOp.eq (Expr.var slot) (Expr.lit (BitVec.ofNat 32 k))) (assignFrom target vs Stmt.skip) o)
+      | some o => some (Stmt.ite (Expr.compare Word.u64 CmpOp.eq (Expr.var slot) (Expr.lit (BitVec.ofNat 64 k))) (assignFrom target vs Stmt.skip) o)
 
 /-- Arms k, k + 1, ... of a match on the enum at slot, one per variant from k. -/
 def lowerArms (scope : List Binding) (slot : Nat) (target : Nat) (ty : SrcType) (k : Nat) (variants : List (List SrcType)) (arms : List SrcArm) : Option Stmt :=

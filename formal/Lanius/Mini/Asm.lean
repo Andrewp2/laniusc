@@ -1,6 +1,6 @@
 import Lanius.Mini.Semantics
 
-/-! The abstract target: an accumulator (eax), frame slots, and a program
+/-! The abstract target: an accumulator (rax), frame slots, and a program
 counter that is a byte offset into the function's code. Each `Instr` is one
 fixed byte sequence of the real backend (`Lanius.Mini.Bytes`) whose length is
 `Instr.size`, so the x86 proof is one lemma per constructor and this level
@@ -13,7 +13,7 @@ namespace Lanius.Mini
 
 theorem Instr.size_pos (i : Instr) : 0 < i.size := by
   cases i with
-  | op operation _ => cases operation <;> simp [Instr.size, BinOp.size]
+  | op word operation _ => cases operation <;> simp [Instr.size, BinOp.size] <;> omega
   | _ => simp [Instr.size] <;> omega
 
 theorem codeSize_append (first second : List Instr) :
@@ -58,19 +58,19 @@ theorem Block.fetch (placed : Block code pos [i]) : Lanius.Mini.fetch code pos =
 
 structure Machine where
   pc : Nat
-  acc : BitVec 32
-  slots : Nat → BitVec 32
+  acc : BitVec 64
+  slots : Nat → BitVec 64
 
 def Machine.store (m : Machine) (slot : Nat) : Machine :=
   { m with slots := fun other => if other = slot then m.acc else m.slots other }
 
-def readSlots (slots : Nat → BitVec 32) : List Nat → List (BitVec 32)
+def readSlots (slots : Nat → BitVec 64) : List Nat → List (BitVec 64)
   | [] => []
   | slot :: rest => slots slot :: readSlots slots rest
 
 /-- Instructions that fall through to the next one. -/
 def Instr.straight : Instr → Bool
-  | .imm _ | .load _ | .store _ | .neg | .op _ _ | .cmp _ _ => true
+  | .imm _ | .load _ | .store _ | .neg | .op _ _ _ | .cmp _ _ _ => true
   | .jmp _ | .jz _ | .call _ _ _ _ | .ret _ => false
 
 /-- Effect on the accumulator and slots of a straight-line instruction. -/
@@ -78,9 +78,9 @@ def Instr.update : Instr → Machine → Machine
   | .imm value, m => { m with acc := value }
   | .load slot, m => { m with acc := m.slots slot }
   | .store slot, m => m.store slot
-  | .neg, m => { m with acc := -m.acc }
-  | .op operation slot, m => { m with acc := operation.apply (m.slots slot) m.acc }
-  | .cmp operation slot, m => { m with acc := if operation.holds (m.slots slot) m.acc then 1 else 0 }
+  | .neg, m => { m with acc := widen (-low m.acc) }
+  | .op word operation slot, m => { m with acc := word.apply operation (m.slots slot) m.acc }
+  | .cmp word operation slot, m => { m with acc := if word.holds operation (m.slots slot) m.acc then 1 else 0 }
   | .jmp _, m | .jz _, m | .call _ _ _ _, m | .ret _, m => m
 
 def Instr.step (i : Instr) (m : Machine) : Machine := { i.update m with pc := m.pc + i.size }
@@ -91,10 +91,10 @@ def Instr.exec : List Instr → Machine → Machine
   | i :: rest, m => Instr.exec rest (i.step m)
 
 /-- What a call may return: `calls callee args values`. -/
-abbrev Calls := Nat → List (BitVec 32) → List (BitVec 32) → Prop
+abbrev Calls := Nat → List (BitVec 64) → List (BitVec 64) → Prop
 
 /-- `values` stored at `target`, `target + 1`, ... -/
-def writeSlots (slots : Nat → BitVec 32) (target : Nat) (values : List (BitVec 32)) : Nat → BitVec 32 :=
+def writeSlots (slots : Nat → BitVec 64) (target : Nat) (values : List (BitVec 64)) : Nat → BitVec 64 :=
   fun slot => if target ≤ slot ∧ slot < target + values.length then values.getD (slot - target) 0 else slots slot
 
 inductive Step (calls : Calls) (code : List Instr) : Machine → Machine → Prop where

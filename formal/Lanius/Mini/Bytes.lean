@@ -23,26 +23,60 @@ def BinOp.alu : BinOp → Alu
   | .or => .or
   | .xor => .xor
 
-/-- The x86 encoding of `slot op eax` into eax. -/
-def BinOp.spec (operation : BinOp) (slot : Nat) : List UInt8 :=
+/-- `mov rax, [rbp + disp32]` -/
+def slotLoadBytes (slot : Nat) : List UInt8 :=
+  memoryBytes .w64 true 0 rbpRegister (frameDisplacement slot)
+
+/-- `mov [rbp + disp32], rax` -/
+def slotStoreBytes (slot : Nat) : List UInt8 :=
+  memoryBytes .w64 false 0 rbpRegister (frameDisplacement slot)
+
+/-- `mov rcx, rax` -/
+def accToRcxBytes : List UInt8 := moveBytes .w64 rcxRegister 0
+
+def Word.width : Word → X86.Register.Width
+  | .s32 => .w32
+  | .u64 => .w64
+
+/-- `op eax, ecx` or `op rax, rcx` -/
+def BinOp.opBytes (word : Word) (operation : BinOp) : List UInt8 :=
   match operation with
-  | .mul => frameMultiplyBytes slot
-  | .add | .sub | .and | .or | .xor => frameAluBytes slot operation.alu
+  | .mul => multiplyBytes word.width 0 rcxRegister
+  | .add | .sub | .and | .or | .xor => aluBytes word.width operation.alu 0 rcxRegister
+
+/-- The x86 encoding of `slot op rax` into rax. -/
+def BinOp.spec (word : Word) (operation : BinOp) (slot : Nat) : List UInt8 :=
+  accToRcxBytes ++ slotLoadBytes slot ++ operation.opBytes word
+
+/-- `cmp eax, ecx` or `cmp rax, rcx` -/
+def Word.compareBytes : Word → List UInt8
+  | .s32 => Lanius.X86.Machine.compareBytes 0 rcxRegister
+  | .u64 => [72, 57, 200]
 
 /-- The condition code that holds after `cmp left, right` exactly when the
-comparison does. -/
-def CmpOp.code : CmpOp → Fin 16
-  | .eq => 4
-  | .ne => 5
-  | .lt => 12
-  | .le => 14
-  | .gt => 15
-  | .ge => 13
+comparison does: signed for `s32`, unsigned for `u64`. -/
+def CmpOp.code : Word → CmpOp → Fin 16
+  | .s32, .eq => 4
+  | .s32, .ne => 5
+  | .s32, .lt => 12
+  | .s32, .le => 14
+  | .s32, .gt => 15
+  | .s32, .ge => 13
+  | .u64, .eq => 4
+  | .u64, .ne => 5
+  | .u64, .lt => 2
+  | .u64, .le => 6
+  | .u64, .gt => 7
+  | .u64, .ge => 3
 
-/-- `mov ecx, eax; mov eax, [slot]; cmp eax, ecx; setcc al; movzx eax, al` -/
-def cmpBytes (operation : CmpOp) (slot : Nat) : List UInt8 :=
-  rightToRcxBytes ++ frameLoadBytes slot ++ compareBytes 0 rcxRegister ++
-    setConditionBytes operation.code 0 ++ zeroExtendByteBytes 0 0
+/-- `mov rcx, rax; mov rax, [slot]; cmp; setcc al; movzx eax, al` -/
+def cmpBytes (word : Word) (operation : CmpOp) (slot : Nat) : List UInt8 :=
+  accToRcxBytes ++ slotLoadBytes slot ++ word.compareBytes ++
+    setConditionBytes (operation.code word) 0 ++ zeroExtendByteBytes 0 0
+
+/-- The two 32-bit halves of a 64-bit immediate. -/
+def lowHalf (value : BitVec 64) : BitVec 32 := value.setWidth 32
+def highHalf (value : BitVec 64) : BitVec 32 := (value >>> 32).setWidth 32
 
 def epilogueBytes : List UInt8 :=
   moveBytes .w64 rspRegister rbpRegister ++ popBytes rbpRegister ++ returnBytes
@@ -50,16 +84,16 @@ def epilogueBytes : List UInt8 :=
 /-- The bytes of the instruction at body offset `pc`, as the x86 encoders write them. -/
 def Instr.bytes (i : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   match i with
-  | .imm value => immediateBytes .w32 0 value 0
-  | .load slot => frameLoadBytes slot
-  | .store slot => frameStoreBytes slot
+  | .imm value => immediateBytes .w64 0 (lowHalf value) (highHalf value)
+  | .load slot => slotLoadBytes slot
+  | .store slot => slotStoreBytes slot
   | .neg => negateBytes .w32 0
-  | .op operation slot => operation.spec slot
-  | .cmp operation slot => cmpBytes operation slot
+  | .op word operation slot => operation.spec word slot
+  | .cmp word operation slot => cmpBytes word operation slot
   | .jmp target => jumpBytes (relative (pc + 5) target)
-  | .jz target => testBytes .w32 0 0 ++ branchBytes 4 (relative (pc + 8) target)
+  | .jz target => testBytes .w64 0 0 ++ branchBytes 4 (relative (pc + 9) target)
   | .call callee args target count => copyBytes (argBase place.slots) args 0 ++
-      callBytes (relative (place.body + pc + 12 * args.length + 5) (place.entries.getD callee 0)) ++
+      callBytes (relative (place.body + pc + 14 * args.length + 5) (place.entries.getD callee 0)) ++
       copyBytes target (slotRange (argBase place.slots) count) 0
   | .ret sources => copyBytes 0 sources 0 ++ epilogueBytes
 
@@ -90,13 +124,23 @@ theorem slotOffset_toNat (slot : Nat) :
   simp only [slotOffset, frameDisplacement, BitVec.toNat_sub, BitVec.toNat_ofNat, zero, Int.ofNat_eq_natCast]
   omega
 
-theorem slotLoad_eq (slot : Nat) : slotLoad slot = frameLoadBytes slot := by
+theorem slotLoad_eq (slot : Nat) : slotLoad slot = slotLoadBytes slot := by
   rw [slotLoad, le32_i32Bytes _ _ (slotOffset_toNat slot)]
   rfl
 
-theorem slotStore_eq (slot : Nat) : slotStore slot = frameStoreBytes slot := by
+theorem slotStore_eq (slot : Nat) : slotStore slot = slotStoreBytes slot := by
   rw [slotStore, le32_i32Bytes _ _ (slotOffset_toNat slot)]
   rfl
+
+theorem uint8_ofNat_congr {a b : Nat} (same : a % 256 = b % 256) : UInt8.ofNat a = UInt8.ofNat b := by
+  rw [← uint8_ofNat_mod a, same, uint8_ofNat_mod]
+
+theorem le64_eq (value : BitVec 64) :
+    le64 value = displacementBytes (lowHalf value) ++ displacementBytes (highHalf value) := by
+  simp only [le64, lowHalf, highHalf, displacementBytes, Lanius.X86.wordBytes, BitVec.toNat_ushiftRight,
+    BitVec.toNat_setWidth, Nat.shiftRight_eq_div_pow, List.cons_append, List.nil_append, List.cons.injEq,
+    Nat.reducePow]
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, trivial⟩ <;> apply uint8_ofNat_congr <;> omega
 
 theorem frameSize_eq (slots : Nat) : frameSize slots = frameBytes slots := rfl
 
@@ -109,20 +153,22 @@ theorem relative_ofInt (source target : Nat) : relative source target = BitVec.o
     BitVec.sub_eq_add_neg]
 
 
-theorem BinOp.bytes_eq (operation : BinOp) (slot : Nat) : operation.bytes slot = operation.spec slot := by
-  cases operation <;> rw [BinOp.bytes, slotOperands, slotLoad_eq] <;> rfl
+theorem BinOp.bytes_eq (operation : BinOp) (word : Word) (slot : Nat) :
+    operation.bytes word slot = operation.spec word slot := by
+  cases word <;> cases operation <;> rw [BinOp.bytes, slotOperands, slotLoad_eq] <;> rfl
 
-theorem slotCompare_eq (operation : CmpOp) (slot : Nat) : slotCompare operation slot = cmpBytes operation slot := by
-  cases operation <;> rw [slotCompare, slotOperands, slotLoad_eq] <;> rfl
+theorem slotCompare_eq (word : Word) (operation : CmpOp) (slot : Nat) :
+    slotCompare word operation slot = cmpBytes word operation slot := by
+  cases word <;> cases operation <;> rw [slotCompare, slotOperands, slotLoad_eq] <;> rfl
 
 theorem Instr.encode_eq (i : Instr) (place : Place) (pc : Nat) : i.encode place pc = i.bytes place pc := by
   cases i with
-  | imm value => rw [Instr.encode, Instr.bytes, le32_eq]; rfl
+  | imm value => rw [Instr.encode, Instr.bytes, le64_eq]; rfl
   | load slot => exact slotLoad_eq slot
   | store slot => exact slotStore_eq slot
   | neg => rfl
-  | op operation slot => exact BinOp.bytes_eq operation slot
-  | cmp operation slot => exact slotCompare_eq operation slot
+  | op word operation slot => exact BinOp.bytes_eq operation word slot
+  | cmp word operation slot => exact slotCompare_eq word operation slot
   | jmp target => rw [Instr.encode, Instr.bytes, le32_eq]; rfl
   | jz target => rw [Instr.encode, Instr.bytes, le32_eq]; rfl
   | call callee args target count => rw [Instr.encode, Instr.bytes, le32_eq]; rfl
@@ -142,13 +188,13 @@ theorem relative_eq (base : BitVec 64) (source target : Nat) (sourceSmall : sour
     BitVec.ofInt_natCast]
   bv_omega
 
-theorem frameLoadBytes_length (slot : Nat) : (frameLoadBytes slot).length = 6 := by
-  simp only [frameLoadBytes, memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes, List.length_append,
+theorem slotLoadBytes_length (slot : Nat) : (slotLoadBytes slot).length = 7 := by
+  simp only [slotLoadBytes, memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes, List.length_append,
     List.length_map, List.length_range]
   decide
 
-theorem frameStoreBytes_length (slot : Nat) : (frameStoreBytes slot).length = 6 := by
-  simp only [frameStoreBytes, memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes, List.length_append,
+theorem slotStoreBytes_length (slot : Nat) : (slotStoreBytes slot).length = 7 := by
+  simp only [slotStoreBytes, memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes, List.length_append,
     List.length_map, List.length_range]
   decide
 
@@ -158,12 +204,12 @@ theorem framePrologueBytes_length (slots : Nat) : (framePrologueBytes slots).len
   decide
 
 theorem copyBytes_length (first : Nat) (args : List Nat) (k : Nat) :
-    (copyBytes first args k).length = 12 * args.length := by
+    (copyBytes first args k).length = 14 * args.length := by
   induction args generalizing k with
   | nil => rfl
   | cons slot rest ih =>
-    simp only [copyBytes, slotLoad_eq, slotStore_eq, List.length_append, frameLoadBytes_length,
-      frameStoreBytes_length, ih, List.length_cons]
+    simp only [copyBytes, slotLoad_eq, slotStore_eq, List.length_append, slotLoadBytes_length,
+      slotStoreBytes_length, ih, List.length_cons]
     omega
 
 theorem slotRange_length (slot count : Nat) : (slotRange slot count).length = count := by
@@ -178,20 +224,18 @@ theorem slotRange_eq (slot count : Nat) : slotRange slot count = List.range' slo
 
 theorem Instr.bytes_length (place : Place) (pc : Nat) (i : Instr) : (i.bytes place pc).length = i.size := by
   cases i with
-  | imm value =>
-    simp only [Instr.bytes, immediateBytes, displacementBytes, List.length_append, List.length_cons,
-      List.length_nil, Instr.size]
-    decide
-  | load slot => exact frameLoadBytes_length slot
-  | store slot => exact frameStoreBytes_length slot
+  | imm value => simp [Instr.bytes, immediateBytes, displacementBytes, Instr.size]; decide
+  | load slot => exact slotLoadBytes_length slot
+  | store slot => exact slotStoreBytes_length slot
   | neg => simp only [Instr.bytes, Instr.size]; decide
-  | op operation slot =>
-    cases operation <;>
-      simp only [Instr.bytes, BinOp.spec, BinOp.alu, frameAluBytes, frameMultiplyBytes, List.length_append,
-        frameLoadBytes_length, Instr.size, BinOp.size] <;> decide
-  | cmp operation slot =>
-    simp only [Instr.bytes, cmpBytes, setConditionBytes, List.length_append, frameLoadBytes_length,
-      List.length_cons, List.length_nil, Instr.size]
+  | op word operation slot =>
+    cases word <;> cases operation <;>
+      simp only [Instr.bytes, BinOp.spec, BinOp.opBytes, BinOp.alu, Word.width, List.length_append,
+        slotLoadBytes_length, Instr.size, BinOp.size, Word.prefix] <;> decide
+  | cmp word operation slot =>
+    cases word <;>
+    simp only [Instr.bytes, cmpBytes, setConditionBytes, Word.compareBytes, List.length_append,
+      slotLoadBytes_length, List.length_cons, List.length_nil, Instr.size, Word.prefix] <;>
     decide
   | jmp target => simp [Instr.bytes, jumpBytes, displacementBytes, Instr.size]
   | jz target =>

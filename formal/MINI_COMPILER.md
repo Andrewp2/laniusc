@@ -15,7 +15,7 @@ size relative to the compiler, and Lean check time.
   silently drops data.
 - The Lean side is ordinary definitions extracted from the Lanius code, with
   the same shape (`Box<T>` is `T`, `List<T>` is `List T`, `i32` is `BitVec 32`,
-  `usize` is `Nat`). Proofs are about those definitions; nothing is executed
+  `u64` is `BitVec 64`, `usize` is `Nat`). Proofs are about those definitions; nothing is executed
   inside the kernel.
 - The top-level theorem comes first. Every lemma is a premise of a pass theorem,
   and every pass theorem is a premise of the top-level theorem.
@@ -38,7 +38,7 @@ compileProgram prog = some binary
 → ∃ n s', Steps n s s'
     ∧ s'.rip = the return address at [s.rsp]
     ∧ vs[k] is at s.rsp - (8k + 16)  -- the results replace the arguments
-    ∧ low 32 bits of s'.rax = the last of vs
+    ∧ s'.rax = the last of vs
     ∧ s'.rsp = s.rsp + 8, rbp is restored
     ∧ every register but rax, rcx, r11 is unchanged
     ∧ no memory outside the window changed
@@ -54,7 +54,7 @@ Divergence, traps and the ELF startup/exit wrapper come later; the existing
 The compiler is `formal/lani/mini/compiler.lani`; `Lanius/Mini/Compiler.lean` is
 extracted from it.
 
-1. `compileExpr` (expressions into eax, temporaries in frame slots) and
+1. `compileExpr` (expressions into rax, temporaries in frame slots) and
    `compileStmt` (statements; jump targets are byte offsets in the body, since
    every abstract instruction has a fixed size).
 2. `Instr.encode` (offsets to rel32 displacements, then literal bytes, proved
@@ -65,7 +65,7 @@ extracted from it.
 
 Simulation invariant (one relation for every activation): `rip` is the body
 base plus the abstract pc, `rbp`/`rsp` are the frame's, each slot `x` is
-`read32` of frame slot `x`, and memory outside the activation's stack window is
+`read64` of frame slot `x`, and memory outside the activation's stack window is
 what it was at entry, so the code bytes are untouched.
 
 ## Milestones
@@ -87,6 +87,15 @@ arithmetic, signed comparisons producing 1/0, `if`, `while`, `return`, and
 functions with parameters and direct (also recursive) calls. The top-level
 theorem is about the definitions extracted from the Lanius source.
 
+Slots and the accumulator are 64-bit words (roadmap step 6a, 2026-10-21). Each
+arithmetic operation and comparison carries a `Word`. An `S32` one is the
+32-bit x86 instruction: it acts on the low halves, zero-extends its result
+(`Word.apply .s32 op a b = widen (op (low a) (low b))`) and compares signed. A
+`U64` one is the same instruction with a REX.W prefix: it acts on all 64 bits
+and compares unsigned (setb/setbe/seta/setae). Literals are `mov rax, imm64`.
+The front pass uses `S32` for `i32` and `bool` and `U64` for enum tag tests;
+an `i32` is held zero-extended (`SrcType.Holds`).
+
 The proof has two layers.
 
 - Compiler logic: `compileStmt_correct` / `compileFunc_correct` prove the compiler
@@ -103,20 +112,20 @@ The proof has two layers.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Compiler` | 1205 | 2.7 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass |
-| `Semantics` | 97 | 0.7 | big-step source semantics with call depth |
+| `Compiler` | 1245 | 2.6 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass |
+| `Semantics` | 123 | 0.7 | big-step source semantics with call depth |
 | `Asm` | 163 | 0.8 | abstract machine, byte-offset placement, `Star` runs |
 | `CompileCorrect` | 466 | 1.2 | compiler against the abstract machine |
 | `Fits` | 194 | 1.0 | static facts: slots in frame, targets in body, callees exist |
-| `Bytes` | 312 | 1.2 | extracted encoders equal the x86 encoders; image layout |
-| `Flags` | 100 | 1.3 | each comparison's condition code after `cmp` |
+| `Bytes` | 356 | 1.6 | extracted encoders equal the x86 encoders; image layout |
+| `Flags` | 135 | 1.4 | each comparison's condition code after `cmp` |
 | `Frame` | 128 | 1.2 | stack windows and address depths (`bv_omega`) |
-| `Simulation` | 1070 | 4.9 | x86 lemma per instruction, slot copies, the call macro, body simulation |
+| `Simulation` | 1145 | 5.1 | x86 lemma per instruction, slot copies, the call macro, body simulation |
 | `Correct` | 287 | 1.6 | layout, prologue, function contract, top-level theorem |
 
 Check times are `lake env lean` per file on the laptop, about 0.4 s of each is
-import loading. The compiler is 359 lines of Lanius (plus a 63-line prelude
-and 64 lines of list operations); the proofs are about 2,800 lines.
+import loading. The compiler is about 400 lines of Lanius (plus a 63-line prelude
+and 64 lines of list operations); the proofs are about 3,000 lines.
 
 ### The front pass: a Core subset to the mini IR
 
@@ -177,15 +186,15 @@ semantics:
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Source` | 293 | 0.8 | Core meaning of source programs, value representation, `i32` wrap lemmas |
-| `LowerExpr` | 470 | 4.1 | expressions |
-| `LowerStmt` | 2026 | 8.1 | Core cells, frames, flat values, calls, enums and `match`, statements |
+| `Source` | 300 | 1.1 | Core meaning of source programs, value representation, `i32` wrap lemmas |
+| `LowerExpr` | 471 | 4.3 | expressions |
+| `LowerStmt` | 2026 | 8.3 | Core cells, frames, flat values, calls, enums and `match`, statements |
 | `SourceCorrect` | 89 | 0.7 | top-level theorem |
 
 The pass is about 900 lines of Lanius (the end of `compiler.lani`), and the
-proofs are about 2,800 lines. The per-function difftest covers it (125
-functions, 2,500 calls, no differences; 4 native stack overflows on huge
-random counts; types nested through `List` render through a `mutual` block of
+proofs are about 2,800 lines. The per-function difftest covers it (131
+functions, 2,620 calls after the move to 64-bit words, no differences; 10
+native stack overflows on huge random counts; types nested through `List` render through a `mutual` block of
 `partial def`s); at 30 cases per function the harness is now too large for
 laniusc on the laptop (a GPU buffer fails to allocate). Assumptions the theorem does not cover yet: Core
 programs outside the subset, traps and divergence (the theorem covers runs that
@@ -220,7 +229,7 @@ The extractor rejects anything outside the subset (loops, mutation, `usize`
 `+`/`-`/`*` outside the prelude, signed comparisons, shifts by a variable,
 missing match arms), and checks every prelude item against a fixed table of
 signatures and Lean meanings. Types map one to one: `usize` to `Nat`, `i32`
-and `u32` to `BitVec 32` (Lanius integer arithmetic wraps), `u8` to `UInt8`,
+and `u32` to `BitVec 32`, `u64` to `BitVec 64` (Lanius integer arithmetic wraps), `u8` to `UInt8`,
 `List<T>` to `List T`, `Option<T>` to `Option T`, `Box<T>` to `T`. A prelude
 `plus` that returns computed the `Nat` sum, so the `Nat` definitions agree
 with every run of the Lanius code that returns. Functions marked
@@ -246,7 +255,11 @@ seeds, 602 programs, 157,000 image bytes: no differences. The fact/fib/mix/gcd
 image from the extracted definitions also passes the native run (2,368 calls).
 After functions began returning several slots (2026-10-21): 201 programs,
 58,000 image bytes, no differences, and the native run, now with a
-two-result function and its caller, passes 3,368 calls.
+two-result function and its caller, passes 3,368 calls. After the move to
+64-bit words: 201 programs (random `S32` and `U64` operations, literals over
+the full 64 bits), 78,000 image bytes, no differences, and the native run,
+with three functions on 64-bit arguments (unsigned comparisons, `S32` sums
+of 64-bit inputs), passes 12,368 calls.
 
 Two more checks of the extraction, 2026-10-21. The same difftest over six more
 seeds: 3,006 programs, 757,000 image bytes, no differences. And a per-function

@@ -139,23 +139,29 @@ pub fn get_or<T>(items: List<T>, index: usize, fallback: T) -> T {
     };
 }
 
-// Source language: i32 code with comparisons, if, while, and functions with
-// parameters and direct calls. Locals are frame indices; a function's
-// parameters are its first locals. Comparisons produce 1 or 0, and
+// Source language: code over 64-bit words with comparisons, if, while, and
+// functions with parameters and direct calls. Locals are frame indices; a
+// function's parameters are its first locals. Comparisons produce 1 or 0, and
 // conditions test for nonzero. Calls are statements: a function returns a
 // fixed number of values, and a call stores them in consecutive locals.
 
 pub enum BinOp { Add, Sub, Mul, And, Or, Xor, }
 
-// Signed comparisons.
 pub enum CmpOp { Eq, Ne, Lt, Le, Gt, Ge, }
 
+// How an operation reads its words. An S32 operation acts on the low 32 bits
+// and zero-extends its result, as x86's 32-bit instructions do, and its
+// comparisons are signed. A U64 operation uses all 64 bits, and its
+// comparisons are unsigned.
+pub enum Word { S32, U64, }
+
 pub enum Expr {
-    Lit(i32),
+    Lit(u64),
     Var(usize),
+    // S32 negation
     Neg(Box<Expr>),
-    Binary(BinOp, Box<Expr>, Box<Expr>),
-    Compare(CmpOp, Box<Expr>, Box<Expr>),
+    Binary(Word, BinOp, Box<Expr>, Box<Expr>),
+    Compare(Word, CmpOp, Box<Expr>, Box<Expr>),
 }
 
 pub enum Stmt {
@@ -183,31 +189,31 @@ pub struct Program {
     funcs: List<Func>,
 }
 
-// The abstract target: an accumulator (eax), frame slots, and a program
+// The abstract target: an accumulator (rax), frame slots, and a program
 // counter that is a byte offset into the function's code. Each instruction is
 // one fixed byte sequence, Instr::size bytes long.
 pub enum Instr {
-    // mov eax, imm32
-    Imm(i32),
-    // mov eax, [rbp - 8 * (slot + 1)]
+    // mov rax, imm64
+    Imm(u64),
+    // mov rax, [rbp - 8 * (slot + 1)]
     Load(usize),
-    // mov [rbp - 8 * (slot + 1)], eax
+    // mov [rbp - 8 * (slot + 1)], rax
     Store(usize),
     // neg eax
     Neg,
-    // eax := slot op eax
-    Op(BinOp, usize),
-    // eax := (slot cmp eax) ? 1 : 0
-    Cmp(CmpOp, usize),
+    // rax := slot op rax
+    Op(Word, BinOp, usize),
+    // rax := (slot cmp rax) ? 1 : 0
+    Cmp(Word, CmpOp, usize),
     // jmp rel32
     Jmp(usize),
-    // test eax, eax; jz rel32
+    // test rax, rax; jz rel32
     Jz(usize),
     // Copy the argument slots into the callee's parameter slots, call rel32,
     // then copy count results from the callee's first slots to target, ...
     Call(usize, List<usize>, usize, usize),
     // Copy the source slots to the first slots, then the frame epilogue and
-    // ret. The results replace the arguments, and eax holds the last one.
+    // ret. The results replace the arguments, and rax holds the last one.
     Ret(List<usize>),
 }
 
@@ -215,12 +221,22 @@ impl BinOp {
     // imul is one byte longer than the other operators.
     pub fn size(self) -> usize {
         return match (self) {
-            Add -> 10,
-            Sub -> 10,
-            Mul -> 11,
-            And -> 10,
-            Or -> 10,
-            Xor -> 10,
+            Add -> 12,
+            Sub -> 12,
+            Mul -> 13,
+            And -> 12,
+            Or -> 12,
+            Xor -> 12,
+        };
+    }
+}
+
+impl Word {
+    // U64 operations take a REX.W prefix byte.
+    pub fn prefix(self) -> usize {
+        return match (self) {
+            S32 -> 0,
+            U64 -> 1,
         };
     }
 }
@@ -228,16 +244,16 @@ impl BinOp {
 impl Instr {
     pub fn size(self) -> usize {
         return match (self) {
-            Imm(value) -> 5,
-            Load(slot) -> 6,
-            Store(slot) -> 6,
+            Imm(value) -> 10,
+            Load(slot) -> 7,
+            Store(slot) -> 7,
             Instr::Neg -> 2,
-            Op(operation, slot) -> operation.size(),
-            Cmp(operation, slot) -> 16,
+            Op(word, operation, slot) -> plus(operation.size(), word.prefix()),
+            Cmp(word, operation, slot) -> plus(18, word.prefix()),
             Jmp(target) -> 5,
-            Jz(target) -> 8,
-            Instr::Call(callee, args, target, count) -> plus(plus(times(12, length(args)), 5), times(12, count)),
-            Instr::Ret(sources) -> plus(times(12, length(sources)), 5),
+            Jz(target) -> 9,
+            Instr::Call(callee, args, target, count) -> plus(plus(times(14, length(args)), 5), times(14, count)),
+            Instr::Ret(sources) -> plus(times(14, length(sources)), 5),
         };
     }
 }
@@ -257,8 +273,8 @@ pub fn compile_expr(base: usize, e: Expr, depth: usize) -> List<Instr> {
         Lit(value) -> single(Imm(value)),
         Var(index) -> single(Load(index)),
         Expr::Neg(operand) -> concat(compile_expr(base, unbox(operand), depth), single(Instr::Neg)),
-        Binary(operation, left, right) -> concat(concat(concat(compile_expr(base, unbox(left), depth), single(Store(plus(base, depth)))), compile_expr(base, unbox(right), plus(depth, 1))), single(Op(operation, plus(base, depth)))),
-        Compare(operation, left, right) -> concat(concat(concat(compile_expr(base, unbox(left), depth), single(Store(plus(base, depth)))), compile_expr(base, unbox(right), plus(depth, 1))), single(Cmp(operation, plus(base, depth)))),
+        Binary(word, operation, left, right) -> concat(concat(concat(compile_expr(base, unbox(left), depth), single(Store(plus(base, depth)))), compile_expr(base, unbox(right), plus(depth, 1))), single(Op(word, operation, plus(base, depth)))),
+        Compare(word, operation, left, right) -> concat(concat(concat(compile_expr(base, unbox(left), depth), single(Store(plus(base, depth)))), compile_expr(base, unbox(right), plus(depth, 1))), single(Cmp(word, operation, plus(base, depth)))),
     };
 }
 
@@ -298,7 +314,7 @@ fn seq_code(base: usize, pos: usize, first_code: List<Instr>, second: Stmt) -> L
 
 // extract: inline
 fn ite_code(base: usize, pos: usize, condition_code: List<Instr>, then_branch: Stmt, else_branch: Stmt) -> List<Instr> {
-    let then_start: usize = plus(plus(pos, code_size(condition_code)), 8);
+    let then_start: usize = plus(plus(pos, code_size(condition_code)), 9);
     let then_code: List<Instr> = compile_stmt(base, then_start, then_branch);
     let else_start: usize = plus(plus(then_start, code_size(then_code)), 5);
     let else_code: List<Instr> = compile_stmt(base, else_start, else_branch);
@@ -307,7 +323,7 @@ fn ite_code(base: usize, pos: usize, condition_code: List<Instr>, then_branch: S
 
 // extract: inline
 fn loop_code(base: usize, pos: usize, condition_code: List<Instr>, body: Stmt) -> List<Instr> {
-    let body_start: usize = plus(plus(pos, code_size(condition_code)), 8);
+    let body_start: usize = plus(plus(pos, code_size(condition_code)), 9);
     let body_code: List<Instr> = compile_stmt(base, body_start, body);
     return concat(concat(concat(condition_code, single(Jz(plus(plus(body_start, code_size(body_code)), 5)))), body_code), single(Jmp(pos)));
 }
@@ -319,8 +335,8 @@ impl Expr {
             Lit(value) -> true,
             Var(index) -> locals > index,
             Expr::Neg(operand) -> unbox(operand).within(locals),
-            Binary(operation, left, right) -> unbox(left).within(locals) && unbox(right).within(locals),
-            Compare(operation, left, right) -> unbox(left).within(locals) && unbox(right).within(locals),
+            Binary(word, operation, left, right) -> unbox(left).within(locals) && unbox(right).within(locals),
+            Compare(word, operation, left, right) -> unbox(left).within(locals) && unbox(right).within(locals),
         };
     }
 
@@ -330,8 +346,8 @@ impl Expr {
             Lit(value) -> 0,
             Var(index) -> 0,
             Expr::Neg(operand) -> unbox(operand).temps(),
-            Binary(operation, left, right) -> max_of(unbox(left).temps(), plus(unbox(right).temps(), 1)),
-            Compare(operation, left, right) -> max_of(unbox(left).temps(), plus(unbox(right).temps(), 1)),
+            Binary(word, operation, left, right) -> max_of(unbox(left).temps(), plus(unbox(right).temps(), 1)),
+            Compare(word, operation, left, right) -> max_of(unbox(left).temps(), plus(unbox(right).temps(), 1)),
         };
     }
 }
@@ -452,44 +468,62 @@ pub fn le32(value: i32) -> List<u8> {
     return cons(bits as u8, cons((bits >> 8) as u8, cons((bits >> 16) as u8, single((bits >> 24) as u8))));
 }
 
+// Little-endian bytes of a 64-bit field.
+pub fn le64(value: u64) -> List<u8> {
+    return cons(value as u8, cons((value >> 8) as u8, cons((value >> 16) as u8, cons((value >> 24) as u8, cons((value >> 32) as u8, cons((value >> 40) as u8, cons((value >> 48) as u8, single((value >> 56) as u8))))))));
+}
+
 // rbp-relative displacement of a frame slot.
 pub fn slot_offset(slot: usize) -> i32 {
     return 0 - (times(plus(slot, 1), 8) as i32);
 }
 
-// mov eax, [rbp + disp32]
+// mov rax, [rbp + disp32]
 pub fn slot_load(slot: usize) -> List<u8> {
-    return concat(cons(139, single(133)), le32(slot_offset(slot)));
+    return concat(cons(72, cons(139, single(133))), le32(slot_offset(slot)));
 }
 
-// mov [rbp + disp32], eax
+// mov [rbp + disp32], rax
 pub fn slot_store(slot: usize) -> List<u8> {
-    return concat(cons(137, single(133)), le32(slot_offset(slot)));
+    return concat(cons(72, cons(137, single(133))), le32(slot_offset(slot)));
 }
 
-// mov ecx, eax; mov eax, [slot]
+// mov rcx, rax; mov rax, [slot]
 pub fn slot_operands(slot: usize) -> List<u8> {
-    return concat(cons(137, single(193)), slot_load(slot));
+    return concat(cons(72, cons(137, single(193))), slot_load(slot));
 }
 
-impl BinOp {
-    // slot_operands, then op eax, ecx
-    pub fn bytes(self, slot: usize) -> List<u8> {
+impl Word {
+    // The REX.W prefix of a U64 operation.
+    pub fn rex(self) -> List<u8> {
         return match (self) {
-            Add -> concat(slot_operands(slot), cons(1, single(200))),
-            Sub -> concat(slot_operands(slot), cons(41, single(200))),
-            Mul -> concat(slot_operands(slot), cons(15, cons(175, single(193)))),
-            And -> concat(slot_operands(slot), cons(33, single(200))),
-            Or -> concat(slot_operands(slot), cons(9, single(200))),
-            Xor -> concat(slot_operands(slot), cons(49, single(200))),
+            S32 -> empty(),
+            U64 -> single(72),
         };
     }
 }
 
+impl BinOp {
+    // op eax, ecx without its prefix
+    pub fn opcode(self) -> List<u8> {
+        return match (self) {
+            Add -> cons(1, single(200)),
+            Sub -> cons(41, single(200)),
+            Mul -> cons(15, cons(175, single(193))),
+            And -> cons(33, single(200)),
+            Or -> cons(9, single(200)),
+            Xor -> cons(49, single(200)),
+        };
+    }
+
+    // slot_operands, then op eax, ecx or op rax, rcx
+    pub fn bytes(self, word: Word, slot: usize) -> List<u8> {
+        return concat(slot_operands(slot), concat(word.rex(), self.opcode()));
+    }
+}
+
 impl CmpOp {
-    // The setcc opcode byte whose condition holds after cmp left, right
-    // exactly when the comparison does.
-    pub fn setcc(self) -> u8 {
+    pub fn setcc_signed(self) -> u8 {
         return match (self) {
             Eq -> 148,
             Ne -> 149,
@@ -499,11 +533,32 @@ impl CmpOp {
             Ge -> 157,
         };
     }
+
+    pub fn setcc_unsigned(self) -> u8 {
+        return match (self) {
+            Eq -> 148,
+            Ne -> 149,
+            Lt -> 146,
+            Le -> 150,
+            Gt -> 151,
+            Ge -> 147,
+        };
+    }
+
+    // The setcc opcode byte whose condition holds after cmp left, right
+    // exactly when the comparison does: signed for S32, unsigned for U64.
+    // (Two helpers: laniusc does not carry the u8 result type into a nested match.)
+    pub fn setcc(self, word: Word) -> u8 {
+        return match (word) {
+            S32 -> self.setcc_signed(),
+            U64 -> self.setcc_unsigned(),
+        };
+    }
 }
 
-// slot_operands; cmp eax, ecx; setcc al; movzx eax, al
-pub fn slot_compare(operation: CmpOp, slot: usize) -> List<u8> {
-    return concat(concat(slot_operands(slot), cons(57, single(200))), cons(15, cons(operation.setcc(), cons(192, cons(15, cons(182, single(192)))))));
+// slot_operands; cmp eax, ecx or cmp rax, rcx; setcc al; movzx eax, al
+pub fn slot_compare(word: Word, operation: CmpOp, slot: usize) -> List<u8> {
+    return concat(concat(slot_operands(slot), concat(word.rex(), cons(57, single(200)))), cons(15, cons(operation.setcc(word), cons(192, cons(15, cons(182, single(192)))))));
 }
 
 // mov rsp, rbp; pop rbp; ret
@@ -562,15 +617,15 @@ impl Instr {
     // The bytes of the instruction at body offset pc.
     pub fn encode(self, place: Place, pc: usize) -> List<u8> {
         return match (self) {
-            Imm(value) -> cons(184, le32(value)),
+            Imm(value) -> cons(72, cons(184, le64(value))),
             Load(slot) -> slot_load(slot),
             Store(slot) -> slot_store(slot),
             Instr::Neg -> cons(247, single(216)),
-            Op(operation, slot) -> operation.bytes(slot),
-            Cmp(operation, slot) -> slot_compare(operation, slot),
+            Op(word, operation, slot) -> operation.bytes(word, slot),
+            Cmp(word, operation, slot) -> slot_compare(word, operation, slot),
             Jmp(target) -> cons(233, le32(relative(plus(pc, 5), target))),
-            Jz(target) -> concat(cons(133, cons(192, cons(15, single(132)))), le32(relative(plus(pc, 8), target))),
-            Instr::Call(callee, args, target, count) -> concat(concat(copy_bytes(arg_base(place.slots), args, 0), cons(232, le32(relative(plus(plus(plus(place.body, pc), times(12, length(args))), 5), get_or(place.entries, callee, 0))))), copy_bytes(target, slot_range(arg_base(place.slots), count), 0)),
+            Jz(target) -> concat(cons(72, cons(133, cons(192, cons(15, single(132))))), le32(relative(plus(pc, 9), target))),
+            Instr::Call(callee, args, target, count) -> concat(concat(copy_bytes(arg_base(place.slots), args, 0), cons(232, le32(relative(plus(plus(plus(place.body, pc), times(14, length(args))), 5), get_or(place.entries, callee, 0))))), copy_bytes(target, slot_range(arg_base(place.slots), count), 0)),
             Instr::Ret(sources) -> concat(copy_bytes(0, sources, 0), epilogue()),
         };
     }
@@ -748,7 +803,7 @@ fn lookup_at(binding: Binding, rest: List<Binding>, id: usize) -> core::option::
     return lookup(rest, id);
 }
 
-pub fn bool_bits(value: bool) -> i32 {
+pub fn bool_bits(value: bool) -> u64 {
     if (value) {
         return 1;
     }
@@ -887,36 +942,36 @@ pub struct Typed {
 
 pub fn arith(operation: BinOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
     if (left.ty.is_i32() && right.ty.is_i32()) {
-        return Some(Typed { expr: Binary(operation, boxed(left.expr), boxed(right.expr)), ty: I32 });
+        return Some(Typed { expr: Binary(S32, operation, boxed(left.expr), boxed(right.expr)), ty: I32 });
     }
     return None;
 }
 
 pub fn order(operation: CmpOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
     if (left.ty.is_i32() && right.ty.is_i32()) {
-        return Some(Typed { expr: Compare(operation, boxed(left.expr), boxed(right.expr)), ty: Bool });
+        return Some(Typed { expr: Compare(S32, operation, boxed(left.expr), boxed(right.expr)), ty: Bool });
     }
     return None;
 }
 
 pub fn equality(operation: CmpOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
     if (left.ty.same(right.ty)) {
-        return Some(Typed { expr: Compare(operation, boxed(left.expr), boxed(right.expr)), ty: Bool });
+        return Some(Typed { expr: Compare(S32, operation, boxed(left.expr), boxed(right.expr)), ty: Bool });
     }
     return None;
 }
 
 pub fn conjunction(left: Typed, right: Typed) -> core::option::Option<Typed> {
     if (left.ty.is_bool() && right.ty.is_bool()) {
-        return Some(Typed { expr: Binary(And, boxed(left.expr), boxed(right.expr)), ty: Bool });
+        return Some(Typed { expr: Binary(S32, And, boxed(left.expr), boxed(right.expr)), ty: Bool });
     }
     return None;
 }
 
 pub fn disjunction(left: Typed, right: Typed) -> core::option::Option<Typed> {
     if (left.ty.is_bool() && right.ty.is_bool()) {
-        let either: Expr = Binary(Or, boxed(left.expr), boxed(right.expr));
-        return Some(Typed { expr: Compare(Ne, boxed(either), boxed(Lit(0))), ty: Bool });
+        let either: Expr = Binary(S32, Or, boxed(left.expr), boxed(right.expr));
+        return Some(Typed { expr: Compare(S32, Ne, boxed(either), boxed(Lit(0))), ty: Bool });
     }
     return None;
 }
@@ -1004,7 +1059,7 @@ pub fn lower_negate(operand: core::option::Option<Typed>) -> core::option::Optio
 
 pub fn lower_not_typed(operand: Typed) -> core::option::Option<Typed> {
     if (operand.ty.is_bool()) {
-        return Some(Typed { expr: Compare(Eq, boxed(operand.expr), boxed(Lit(0))), ty: Bool });
+        return Some(Typed { expr: Compare(S32, Eq, boxed(operand.expr), boxed(Lit(0))), ty: Bool });
     }
     return None;
 }
@@ -1029,7 +1084,7 @@ pub fn lower_apply(op: SrcOp, left: core::option::Option<Typed>, right: core::op
 impl SrcExpr {
     pub fn lower(self, scope: List<Binding>) -> core::option::Option<Typed> {
         return match (self) {
-            Int(value) -> Some(Typed { expr: Lit(value), ty: I32 }),
+            Int(value) -> Some(Typed { expr: Lit((value as u32) as u64), ty: I32 }),
             Boolean(value) -> Some(Typed { expr: Lit(bool_bits(value)), ty: Bool }),
             Local(id) -> lower_local(lookup(scope, id)),
             Field(id, index) -> lower_field(lookup(scope, id), index),
@@ -1183,7 +1238,7 @@ pub fn lower_literal(scope: List<Binding>, ty: SrcType, fields: List<SrcExpr>) -
 pub fn lower_tag(variant: usize, payload: core::option::Option<List<Expr>>) -> core::option::Option<List<Expr>> {
     return match (payload) {
         None -> None,
-        Some(es) -> Some(cons(Lit(variant as i32), es)),
+        Some(es) -> Some(cons(Lit(variant as u64), es)),
     };
 }
 
@@ -1260,7 +1315,7 @@ pub fn lower_arm(slot: usize, target: usize, k: usize, values: core::option::Opt
             Nil -> Some(assign_from(target, vs, Skip)),
             Cons(arm, more) -> match (others) {
                 None -> None,
-                Some(o) -> Some(Ite(Compare(Eq, boxed(Var(slot)), boxed(Lit(k as i32))), boxed(assign_from(target, vs, Skip)), boxed(o))),
+                Some(o) -> Some(Ite(Compare(U64, Eq, boxed(Var(slot)), boxed(Lit(k as u64))), boxed(assign_from(target, vs, Skip)), boxed(o))),
             },
         },
     };

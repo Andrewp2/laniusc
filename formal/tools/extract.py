@@ -7,18 +7,19 @@
 The accepted subset is small enough that each construct has one obvious Lean
 meaning, and everything else is rejected:
 
-  types      usize -> Nat, i32 and u32 -> BitVec 32, u8 -> UInt8, bool -> Bool,
+  types      usize -> Nat, i32 and u32 -> BitVec 32, u64 -> BitVec 64,
+             u8 -> UInt8, bool -> Bool,
              the prelude's List<T> -> List T (Nil is [], Cons(x, rest) is
              x :: rest), core::option::Option<T> -> Option T, Box<T> -> T;
              user enums -> inductive, user structs -> structure
   functions  fn and impl methods (self first) -> def, recursion as written;
              generic functions only as the list operations in SPEC_FNS
   bodies     let, if/else, return; match on an enum, an Option, or a List
-  arithmetic i32/u32 + - * & | ^ wrap, like BitVec; u32 >> by a constant;
+  arithmetic i32/u32/u64 + - * & | ^ wrap, like BitVec; u32/u64 >> by a constant;
              usize only / and comparisons, since + - * go through the prelude's
              panicking plus/minus/times, which equal Nat + - * whenever they
-             return; casts usize -> i32 (BitVec.ofNat), i32 -> u32 (same bits),
-             i32/u32 -> u8 (low byte)
+             return; casts usize -> i32/u64 (BitVec.ofNat), i32 -> u32 (same
+             bits), u32 -> u64 (zero-extended), i32/u32/u64 -> u8 (low byte)
 
 The prelude section (between `// extract: prelude begin` and `end`) is not
 extracted. Every item in it must be in PRELUDE below with exactly the listed
@@ -168,13 +169,14 @@ class Ty:
         return self.args[0].strip_box() if self.name == 'Box' else self
 
 
-USIZE, I32, U32, U8, BOOL = Ty('usize'), Ty('i32'), Ty('u32'), Ty('u8'), Ty('bool')
+USIZE, I32, U32, U64, U8, BOOL = Ty('usize'), Ty('i32'), Ty('u32'), Ty('u64'), Ty('u8'), Ty('bool')
 TYPE_PATHS = {'core::option::Option': 'Option'}
 
 
 def lean_type(t):
     t = t.strip_box()
-    simple = {'usize': 'Nat', 'i32': 'BitVec 32', 'u32': 'BitVec 32', 'u8': 'UInt8', 'bool': 'Bool'}
+    simple = {'usize': 'Nat', 'i32': 'BitVec 32', 'u32': 'BitVec 32', 'u64': 'BitVec 64', 'u8': 'UInt8',
+              'bool': 'Bool'}
     if t.name in simple:
         return simple[t.name]
     if t.name == 'List':
@@ -829,7 +831,7 @@ class Extractor:
             ty = expected if expected is not None else None
             if ty is None:
                 fail('integer literal needs a known type', e[-1])
-            limits = {'usize': 2 ** 64, 'i32': 2 ** 31, 'u32': 2 ** 32, 'u8': 2 ** 8}
+            limits = {'usize': 2 ** 64, 'i32': 2 ** 31, 'u32': 2 ** 32, 'u64': 2 ** 64, 'u8': 2 ** 8}
             if ty.name not in limits or e[1] >= limits[ty.name]:
                 fail(f'literal {e[1]} does not fit {ty!r}', e[-1])
             return (str(e[1]), ATOM), ty
@@ -1069,14 +1071,15 @@ class Extractor:
         if ty is None:
             fail('arithmetic on two literals needs a known type', t)
         if op == '>>':
-            if ty != U32 or right[0] != 'int' or right[1] >= 32:
-                fail('>> is only extracted for u32 by a constant below 32', t)
-            return lean_infix('>>>', self.expr(left, env, U32), (str(right[1]), ATOM)), U32
+            width = {U32: 32, U64: 64}.get(ty)
+            if width is None or right[0] != 'int' or right[1] >= width:
+                fail('>> is only extracted for u32 and u64 by a constant below the width', t)
+            return lean_infix('>>>', self.expr(left, env, ty), (str(right[1]), ATOM)), ty
         if ty == USIZE:
             if op in ('/', '%'):
                 return lean_infix(op, self.expr(left, env, USIZE), self.expr(right, env, USIZE)), USIZE
             fail(f'usize {op} must use the prelude (plus, minus, times)', t)
-        if ty in (I32, U32) and op in ('+', '-', '*', '&', '|', '^'):
+        if ty in (I32, U32, U64) and op in ('+', '-', '*', '&', '|', '^'):
             lean_op = {'&': '&&&', '|': '|||', '^': '^^^'}.get(op, op)
             return lean_infix(lean_op, self.expr(left, env, ty), self.expr(right, env, ty)), ty
         fail(f'{op} on {ty!r} is not in the extracted subset', t)
@@ -1087,9 +1090,13 @@ class Extractor:
         source = source.strip_box()
         if source == USIZE and target == I32:
             return app('BitVec.ofNat', [('32', ATOM), term]), I32
+        if source == USIZE and target == U64:
+            return app('BitVec.ofNat', [('64', ATOM), term]), U64
         if source == I32 and target == U32:
             return term, U32
-        if source in (I32, U32) and target == U8:
+        if source == U32 and target == U64:
+            return app('BitVec.setWidth', [('64', ATOM), term]), U64
+        if source in (I32, U32, U64) and target == U8:
             return app('UInt8.ofNat', [(f'{paren(term, ATOM)}.toNat', ATOM)]), U8
         fail(f'cast {source!r} as {target!r} is not in the extracted subset', t)
 

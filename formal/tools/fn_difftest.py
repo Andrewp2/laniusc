@@ -56,6 +56,9 @@ class Types:
             v = rng.choice([0, 1, -1, 2, 7, -8, 127, 128, 255, 256, -129, 2 ** 31 - 1, -2 ** 31,
                             rng.randrange(-2 ** 31, 2 ** 31)])
             return ('bits', v % 2 ** 32)
+        if n == 'u64':
+            return ('bits64', rng.choice([0, 1, 2, 255, 256, 2 ** 31, 2 ** 32 - 1, 2 ** 32, 2 ** 63,
+                                          2 ** 64 - 1, rng.randrange(2 ** 32), rng.randrange(2 ** 64)]))
         if n == 'u8':
             return ('u8', rng.randrange(256))
         if n == 'bool':
@@ -83,6 +86,8 @@ class Types:
             return str(v[1])
         if k == 'bits':
             return f'(BitVec.ofNat 32 {v[1]})'
+        if k == 'bits64':
+            return f'(BitVec.ofNat 64 {v[1]})'
         if k == 'u8':
             return f'({v[1]} : UInt8)'
         if k == 'bool':
@@ -111,6 +116,10 @@ class Types:
             signed = v[1] - 2 ** 32 if v[1] >= 2 ** 31 else v[1]
             text = str(signed) if signed >= 0 else f'(0 - {-signed - 1} - 1)'
             return text if t.name == 'i32' else f'({text} as u32)'
+        if k == 'bits64':
+            # laniusc literals are i32, so build the word from 16-bit pieces.
+            parts = [f'(({(v[1] >> shift) & 65535} as u64) << {shift})' for shift in (48, 32, 16)]
+            return '(' + ' | '.join(parts + [f'({v[1] & 65535} as u64)']) + ')'
         if k == 'u8':
             return f'({v[1]} as u8)'
         if k == 'bool':
@@ -148,6 +157,8 @@ class Types:
             return f'(toString {term})'
         if n in ('i32', 'u32'):
             return f'(hex8 {term}.toNat)'
+        if n == 'u64':
+            return f'(hex16 {term}.toNat)'
         if n == 'u8':
             return f'(hex2 {term}.toNat)'
         if n in ('bool', 'List', 'Option') or n in self.ex.enums or n in self.ex.structs:
@@ -246,6 +257,11 @@ class Types:
                 out.append(f'fn r_{k}(v: {n}) -> i32 {{\n    let b: i32 = {bits};\n    let shift: i32 = 28;\n'
                            f'    while (shift >= 0) {{\n        put_hex((b >> shift) & 15);\n        shift -= 4;\n    }}\n'
                            f'    return 0;\n}}')
+            elif n == 'u64':
+                out.append(f'fn r_{k}(v: u64) -> i32 {{\n    return r_{k}_digits(v, 16);\n}}')
+                out.append(f'fn r_{k}_digits(v: u64, n: i32) -> i32 {{\n    if (n > 1) {{\n'
+                           f'        r_{k}_digits(v >> 4, n - 1);\n    }}\n'
+                           f'    return put_hex((v & 15) as i32);\n}}')
             elif n == 'u8':
                 out.append(f'fn r_{k}(v: u8) -> i32 {{\n    let b: i32 = v as i32;\n    put_hex(b / 16);\n'
                            f'    return put_hex(b % 16);\n}}')
@@ -289,7 +305,7 @@ class Types:
         return '\n\n'.join(out)
 
     def lani_type(self, t):
-        names = {'usize': 'usize', 'i32': 'i32', 'u32': 'u32', 'u8': 'u8', 'bool': 'bool'}
+        names = {'usize': 'usize', 'i32': 'i32', 'u32': 'u32', 'u64': 'u64', 'u8': 'u8', 'bool': 'bool'}
         if t.name in names:
             return names[t.name]
         if t.name == 'Option':
@@ -320,6 +336,7 @@ open Lanius.Mini
 
 def hexDigit (n : Nat) : String := String.singleton ("0123456789abcdef".toList.getD n '0')
 def hex8 (n : Nat) : String := String.join ((List.range 8).reverse.map (fun i => hexDigit (n / 16 ^ i % 16)))
+def hex16 (n : Nat) : String := String.join ((List.range 16).reverse.map (fun i => hexDigit (n / 16 ^ i % 16)))
 def hex2 (n : Nat) : String := hexDigit (n / 16 % 16) ++ hexDigit (n % 16)
 '''
 

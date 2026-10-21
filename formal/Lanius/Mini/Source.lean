@@ -92,9 +92,9 @@ def SrcProgram.toCore (prog : SrcProgram) : Core.Program where
   functions := coreFuncs 0 prog.funcs
 
 /-- `ty.Holds value bits`: one slot holding `bits` represents the Core `value`
-of scalar type `ty`. Booleans are 1 and 0. -/
-def SrcType.Holds : SrcType → Value → BitVec 32 → Prop
-  | .i32, value, bits => value = .signed .i32 bits.toInt
+of scalar type `ty`. An `i32` is its bits zero-extended; booleans are 1 and 0. -/
+def SrcType.Holds : SrcType → Value → BitVec 64 → Prop
+  | .i32, value, bits => value = .signed .i32 (low bits).toInt ∧ bits = widen (low bits)
   | .bool, value, bits => ∃ b, value = .boolean b ∧ bits = boolBits b
   | .struct _ _, _, _ => False
   | .enum _ _, _, _ => False
@@ -112,7 +112,7 @@ inductive SrcType.HoldsAt : SrcType → Value → Env → Nat → Prop where
       FieldsHold fields vs env slot → SrcType.HoldsAt (.struct id fields) (.structure id vs) env slot
   | enum {id : Nat} {variants : List (List SrcType)} {k : Nat} {fs : List SrcType} {vs : List Value}
       {env : Env} {slot : Nat} :
-      variants[k]? = some fs → env slot = BitVec.ofNat 32 k → FieldsHold fs vs env (slot + 1) →
+      variants[k]? = some fs → env slot = BitVec.ofNat 64 k → FieldsHold fs vs env (slot + 1) →
       SrcType.HoldsAt (.enum id variants) (.enumeration id k vs) env slot
 
 /-- Values of these types, one after another from `slot`: a struct's fields,
@@ -228,7 +228,7 @@ theorem SrcType.size_scalar {ty : SrcType} (scalar : ty.isScalar = true) : ty.si
 
 /-- Storing a scalar field `k`. -/
 theorem FieldsHold.set : ∀ {fs vs env slot}, FieldsHold fs vs env slot → ∀ {k : Nat} {f : SrcType},
-    fs[k]? = some f → f.isScalar = true → ∀ {nv : Value} {x : BitVec 32}, f.Holds nv x →
+    fs[k]? = some f → f.isScalar = true → ∀ {nv : Value} {x : BitVec 64}, f.Holds nv x →
       FieldsHold fs (Semantics.setValue vs k nv) (env.set (slot + fieldOffset fs k) x) slot
   | [], _, _, _, .nil, _, _, found, _, _, _, _ => by simp at found
   | ty :: tys, v :: vs, env, slot, .cons head rest, k, f, found, scalar, nv, x, holdsNew => by
@@ -286,6 +286,13 @@ theorem wrap_nat (n : Nat) :
     Semantics.wrapSigned Core.Target.x86_64 .i32 (Int.ofNat n) = (BitVec.ofNat 32 n).toInt := by
   rw [wrapSigned_i32]
   congr 1
+
+@[simp] theorem low_widen (x : BitVec 32) : low (widen x) = x := by
+  simp only [low, widen]
+  rw [BitVec.setWidth_setWidth_of_le _ (by decide), BitVec.setWidth_eq]
+
+theorem holds_i32 (x : BitVec 32) : SrcType.i32.Holds (.signed .i32 x.toInt) (widen x) := by
+  simp [SrcType.Holds]
 
 theorem boolBits_ne_zero (b : Bool) : (boolBits b ≠ 0) = (b = true) := by
   cases b <;> simp [boolBits]

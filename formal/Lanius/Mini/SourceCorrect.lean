@@ -56,7 +56,7 @@ compiled `f`, entered by a near call with `bits` in its parameter slots,
 returns `results` representing `v` in the same slots, laid out the same way. -/
 theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
     (compiled : compileSource sp = some binary) {f : Nat} {func : SrcFunc}
-    (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 32)}
+    (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 64)}
     (typed : FieldsHold (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {fuel : Nat} {v : Value}
     {final : Semantics.State}
@@ -69,7 +69,7 @@ theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
           ¬Below (s.registers rspRegister) window (imageBase + BitVec.ofNat 64 index)) →
         s.rip = imageBase + BitVec.ofNat 64 (binary.entries.getD f 0) →
         (∀ k (bound : k < bits.length),
-          read32 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = bits[k]) →
+          read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = bits[k]) →
         ∃ n s', Steps n s s' ∧ Returned window s s' results := by
   obtain ⟨funcs, lowered, compiledProgram⟩ := compileSource_some compiled
   cases fuel with

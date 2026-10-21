@@ -8,7 +8,7 @@ namespace Lanius.Mini
 
 def Instr.Fits (slots bound funcs : Nat) : Instr → Prop
   | .imm _ | .neg => True
-  | .load slot | .store slot | .op _ slot | .cmp _ slot => slot < slots
+  | .load slot | .store slot | .op _ _ slot | .cmp _ _ slot => slot < slots
   | .jmp target | .jz target => target ≤ bound
   | .call callee args target count => callee < funcs ∧ args.length ≤ slots ∧ (∀ slot ∈ args, slot < slots) ∧
       target + count ≤ slots ∧ 0 < count
@@ -39,7 +39,7 @@ theorem compileExpr_fits (base : Nat) (e : Expr) (depth : Nat) (within : e.withi
     rintro i (inner | rfl)
     · exact ih depth within i inner
     · trivial
-  | binary _ left right ihLeft ihRight =>
+  | binary _ _ left right ihLeft ihRight =>
     simp only [Expr.within, Bool.and_eq_true] at within
     simp only [compileExpr, List.mem_append, List.mem_singleton, Expr.temps]
     rintro i (((inLeft | rfl) | inRight) | rfl)
@@ -47,7 +47,7 @@ theorem compileExpr_fits (base : Nat) (e : Expr) (depth : Nat) (within : e.withi
     · simp only [Instr.Fits]; omega
     · exact (ihRight (depth + 1) within.2 i inRight).mono (by omega) (Nat.le_refl _)
     · simp only [Instr.Fits]; omega
-  | compare _ left right ihLeft ihRight =>
+  | compare _ _ left right ihLeft ihRight =>
     simp only [Expr.within, Bool.and_eq_true] at within
     simp only [compileExpr, List.mem_append, List.mem_singleton, Expr.temps]
     rintro i (((inLeft | rfl) | inRight) | rfl)

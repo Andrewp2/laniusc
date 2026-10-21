@@ -24,15 +24,15 @@ theorem compileExpr_straight (base : Nat) (e : Expr) (depth : Nat) :
   induction e generalizing depth with
   | lit | var => rfl
   | neg operand ih => simp only [compileExpr, List.all_append, ih]; rfl
-  | binary _ left right ihLeft ihRight =>
+  | binary _ _ left right ihLeft ihRight =>
     simp only [compileExpr, List.all_append, ihLeft, ihRight]; rfl
-  | compare _ left right ihLeft ihRight =>
+  | compare _ _ left right ihLeft ihRight =>
     simp only [compileExpr, List.all_append, ihLeft, ihRight]; rfl
 
 /-- The shared shape of binary operators and comparisons: after the operands'
 code, the left value waits in slot `base + depth` and the right is in the accumulator. -/
 theorem operands_correct (base depth : Nat) (env : Env) (m : Machine) (agree : Agree base env m)
-    (leftCode rightCode : List Instr) (leftValue rightValue : BitVec 32)
+    (leftCode rightCode : List Instr) (leftValue rightValue : BitVec 64)
     (left : ∀ m, Agree base env m → (Instr.exec leftCode m).acc = leftValue ∧
       ∀ slot, slot < base + depth → (Instr.exec leftCode m).slots slot = m.slots slot)
     (right : ∀ m, Agree base env m → (Instr.exec rightCode m).acc = rightValue ∧
@@ -72,13 +72,13 @@ theorem compileExpr_correct (base : Nat) (e : Expr) (depth : Nat) (env : Env) (m
     obtain ⟨acc, slots⟩ := ih depth m agree within
     simp only [compileExpr, Instr.exec_append, Instr.exec_singleton]
     exact ⟨by simp [Instr.step, Instr.update, Expr.eval, acc], slots⟩
-  | binary operation left right ihLeft ihRight =>
+  | binary word operation left right ihLeft ihRight =>
     simp only [Expr.within, Bool.and_eq_true] at within
     obtain ⟨kept, acc, slots⟩ := operands_correct base depth env m agree _ _ _ _
       (fun m agree => ihLeft depth m agree within.1) (fun m agree => ihRight (depth + 1) m agree within.2)
     simp only [compileExpr, Instr.exec_append (_ ++ _ ++ _), Instr.exec_singleton]
     exact ⟨by simp only [Instr.step, Instr.update, Expr.eval]; rw [kept, acc], slots⟩
-  | compare operation left right ihLeft ihRight =>
+  | compare word operation left right ihLeft ihRight =>
     simp only [Expr.within, Bool.and_eq_true] at within
     obtain ⟨kept, acc, slots⟩ := operands_correct base depth env m agree _ _ _ _
       (fun m agree => ihLeft depth m agree within.1) (fun m agree => ihRight (depth + 1) m agree within.2)
@@ -201,7 +201,7 @@ theorem Block.pair (placed : Block code pos [first, second]) :
   have split : Block code pos ([first] ++ [second]) := placed
   exact ⟨split.left, by simpa [codeSize] using split.right⟩
 
-theorem setMany_eq : ∀ (values : List (BitVec 32)) (env : Env) (target slot : Nat),
+theorem setMany_eq : ∀ (values : List (BitVec 64)) (env : Env) (target slot : Nat),
     env.setMany target values slot =
       if target ≤ slot ∧ slot < target + values.length then values.getD (slot - target) 0 else env slot
   | [], env, target, slot => by
@@ -277,7 +277,7 @@ theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Arity}
     apply StmtResult.prefix (pc ▸ placed.left.left.left.left) (compileExpr_straight _ _ _)
     have jz := placed.left.left.left.right.fetch
     apply StmtResult.step (.jzNot (by rw [Instr.exec_pc, pc]; exact jz) (by rw [acc]; exact nonzero))
-    refine StmtResult.retarget (ihThen (pos + codeSize (compileExpr base condition 0) + 8) _ ?_ ?_ ?_
+    refine StmtResult.retarget (ihThen (pos + codeSize (compileExpr base condition 0) + 9) _ ?_ ?_ ?_
       within.1.2) ?_
     · exact placed.left.left.right.at (by simp only [codeSize_append, codeSize, Instr.size]; omega)
     · simp only [Instr.exec_pc, pc, Instr.size]
@@ -294,8 +294,8 @@ theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Arity}
     apply StmtResult.prefix (pc ▸ placed.left.left.left.left) (compileExpr_straight _ _ _)
     have jz := placed.left.left.left.right.fetch
     apply StmtResult.step (.jzTaken (by rw [Instr.exec_pc, pc]; exact jz) (by rw [acc]; exact zero))
-    refine StmtResult.retarget (ihElse (pos + codeSize (compileExpr base condition 0) + 8 +
-      codeSize (compileStmt base (pos + codeSize (compileExpr base condition 0) + 8) thenBranch) + 5)
+    refine StmtResult.retarget (ihElse (pos + codeSize (compileExpr base condition 0) + 9 +
+      codeSize (compileStmt base (pos + codeSize (compileExpr base condition 0) + 9) thenBranch) + 5)
       _ ?_ rfl ?_ within.2) ?_
     · exact placed.right.at (by simp only [codeSize_append, codeSize, Instr.size]; omega)
     · exact agree.of_slots fun slot below => kept slot (by omega)
@@ -321,7 +321,7 @@ theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Arity}
     apply StmtResult.prefix (pc ▸ placed.left.left.left) (compileExpr_straight _ _ _)
     have jz := placed.left.left.right.fetch
     apply StmtResult.step (.jzNot (by rw [Instr.exec_pc, pc]; exact jz) (by rw [acc]; exact nonzero))
-    refine StmtResult.andThen (ihBody (pos + codeSize (compileExpr base condition 0) + 8) _ ?_ ?_ ?_
+    refine StmtResult.andThen (ihBody (pos + codeSize (compileExpr base condition 0) + 9) _ ?_ ?_ ?_
       within.2) ?_
     · exact placed.left.right.at (by simp only [codeSize_append, codeSize, Instr.size]; omega)
     · simp only [Instr.exec_pc, pc, Instr.size]
@@ -341,7 +341,7 @@ theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Arity}
     apply StmtResult.prefix (pc ▸ placed.left.left.left) (compileExpr_straight _ _ _)
     have jz := placed.left.left.right.fetch
     apply StmtResult.step (.jzNot (by rw [Instr.exec_pc, pc]; exact jz) (by rw [acc]; exact nonzero))
-    refine ihBody (pos + codeSize (compileExpr base condition 0) + 8) _ ?_ ?_ ?_ within.2
+    refine ihBody (pos + codeSize (compileExpr base condition 0) + 9) _ ?_ ?_ ?_ within.2
     · exact placed.left.right.at (by simp only [codeSize_append, codeSize, Instr.size]; omega)
     · simp only [Instr.exec_pc, pc, Instr.size]
     · exact agree.of_slots fun slot below => kept slot (by omega)
@@ -432,7 +432,7 @@ theorem compileFunc_spec {arities : List Arity} {func : Func} {code : Code}
 to a `ret` holding the source function's return value. -/
 theorem compileFunc_correct {arities : List Arity} {func : Func} {code : Code}
     (compiled : compileFunc arities func = some code) {prog : Program} {depth : Nat}
-    {args : List (BitVec 32)} {value : List (BitVec 32)} (length : args.length = func.params)
+    {args : List (BitVec 64)} {value : List (BitVec 64)} (length : args.length = func.params)
     (exec : Exec prog depth (Func.entry args) func.body (.returned value)) (m : Machine) (start : m.pc = 0)
     (params : ∀ index, index < func.params → m.slots index = args.getD index 0) :
     ∃ m' sources, Star (SourceCalls prog depth) code.instrs m m' ∧
