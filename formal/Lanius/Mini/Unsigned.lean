@@ -88,6 +88,16 @@ theorem eval_uint_ne (k : UintTy) (a b : BitVec 64) :
       .ok (.boolean (CmpOp.ne.holdsU a b)) := by
   simp [evalBinaryValue, scalarEqual, CmpOp.holdsU, toNat_beq, bne]
 
+theorem eval_ptr_eq (a b : BitVec 64) :
+    evalBinaryValue .x86_64 .equal (.pointer a.toNat) (.pointer b.toNat) =
+      .ok (.boolean (CmpOp.eq.holdsU a b)) := by
+  simp [evalBinaryValue, scalarEqual, CmpOp.holdsU, toNat_beq]
+
+theorem eval_ptr_ne (a b : BitVec 64) :
+    evalBinaryValue .x86_64 .notEqual (.pointer a.toNat) (.pointer b.toNat) =
+      .ok (.boolean (CmpOp.ne.holdsU a b)) := by
+  simp [evalBinaryValue, scalarEqual, CmpOp.holdsU, toNat_beq, bne]
+
 theorem cast_i32_i32 (x : BitVec 32) :
     evalScalarCast .x86_64 (.signed .i32) (.signed .i32 x.toInt) = .ok (.signed .i32 x.toInt) := by
   simp [evalScalarCast, wrapSigned_i32]

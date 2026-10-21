@@ -602,6 +602,8 @@ inductive SrcType where
   | uint : UintTy → SrcType
   | struct : Nat → (List SrcType) → SrcType
   | enum : Nat → (List (List SrcType)) → SrcType
+  /-- a raw pointer into the heap -/
+  | ptr : SrcType
   deriving Repr
 
 inductive SrcOp where
@@ -663,6 +665,14 @@ inductive SrcStmt where
   | if : SrcExpr → SrcStmt → SrcStmt → SrcStmt
   | while : SrcExpr → SrcStmt → SrcStmt
   | return : SrcExpr → SrcStmt
+  /-- let id: ptr = alloc(size, 2^shift); then body -/
+  | letAlloc : Nat → SrcExpr → Nat → SrcStmt → SrcStmt
+  /-- let id: u8 = load_byte(pointer, offset); then body -/
+  | letLoad : Nat → SrcExpr → SrcExpr → SrcStmt → SrcStmt
+  /-- store_byte(pointer, offset, value) -/
+  | setByte : SrcExpr → SrcExpr → SrcExpr → SrcStmt
+  /-- dealloc(pointer, size, 2^shift) -/
+  | free : SrcExpr → SrcExpr → Nat → SrcStmt
   deriving Repr
 
 structure SrcParam where
@@ -709,6 +719,7 @@ def SrcType.isI32 (self : SrcType) : Bool :=
   | .uint kind => false
   | .struct id fields => false
   | .enum id variants => false
+  | .ptr => false
 
 def SrcType.isBool (self : SrcType) : Bool :=
   match self with
@@ -717,6 +728,7 @@ def SrcType.isBool (self : SrcType) : Bool :=
   | .uint kind => false
   | .struct id fields => false
   | .enum id variants => false
+  | .ptr => false
 
 def SrcType.isScalar (self : SrcType) : Bool :=
   match self with
@@ -725,6 +737,7 @@ def SrcType.isScalar (self : SrcType) : Bool :=
   | .uint kind => true
   | .struct id fields => false
   | .enum id variants => false
+  | .ptr => true
 
 def SrcType.isUint (self : SrcType) (kind : UintTy) : Bool :=
   match self with
@@ -733,6 +746,16 @@ def SrcType.isUint (self : SrcType) (kind : UintTy) : Bool :=
   | .uint other => decide (UintTy.code other = UintTy.code kind)
   | .struct id fields => false
   | .enum id variants => false
+  | .ptr => false
+
+def SrcType.isPtr (self : SrcType) : Bool :=
+  match self with
+  | .i32 => false
+  | .bool => false
+  | .uint kind => false
+  | .struct id fields => false
+  | .enum id variants => false
+  | .ptr => true
 
 /-- The unsigned type this is, if it is one. -/
 def SrcType.uintKind (self : SrcType) : Option UintTy :=
@@ -742,6 +765,7 @@ def SrcType.uintKind (self : SrcType) : Option UintTy :=
   | .uint kind => some kind
   | .struct id fields => none
   | .enum id variants => none
+  | .ptr => none
 
 /-- How a comparison of two values of this type reads their slots. -/
 def SrcType.word (self : SrcType) : Word :=
@@ -751,6 +775,7 @@ def SrcType.word (self : SrcType) : Word :=
   | .uint kind => Word.u64
   | .struct id fields => Word.s32
   | .enum id variants => Word.s32
+  | .ptr => Word.u64
 
 mutual
 
@@ -765,14 +790,17 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .bool => false
      | .uint otherKind => false
      | .struct otherId otherFields => decide (id = otherId) && typesSame fields otherFields
-     | .enum otherId otherVariants => false)
+     | .enum otherId otherVariants => false
+     | .ptr => false)
   | .enum id variants =>
-    match other with
-    | .i32 => false
-    | .bool => false
-    | .uint otherKind => false
-    | .struct otherId otherFields => false
-    | .enum otherId otherVariants => decide (id = otherId) && variantsSame variants otherVariants
+    (match other with
+     | .i32 => false
+     | .bool => false
+     | .uint otherKind => false
+     | .struct otherId otherFields => false
+     | .enum otherId otherVariants => decide (id = otherId) && variantsSame variants otherVariants
+     | .ptr => false)
+  | .ptr => SrcType.isPtr other
 
 def typesSame (types : List SrcType) (others : List SrcType) : Bool :=
   match types with
@@ -808,6 +836,7 @@ def SrcType.size (self : SrcType) : Nat :=
   | .uint kind => 1
   | .struct id fields => sizes fields
   | .enum id variants => 1 + maxSize variants
+  | .ptr => 1
 
 def sizes (types : List SrcType) : Nat :=
   match types with
@@ -939,6 +968,7 @@ def lowerFieldOf (b : Binding) (field : Nat) : Option Typed :=
   | .uint kind => none
   | .struct id fields => lowerFieldAt (b.slot + fieldOffset fields field) fields[field]?
   | .enum id variants => none
+  | .ptr => none
 
 def lowerField (binding : Option Binding) (field : Nat) : Option Typed :=
   match binding with
@@ -988,6 +1018,7 @@ def castToI32 (e : Typed) : Option Typed :=
   | .uint kind => some ({ expr := wrap UintTy.uint32 e.expr, ty := SrcType.i32 } : Typed)
   | .struct id fields => none
   | .enum id variants => none
+  | .ptr => none
 
 def castToUint (kind : UintTy) (e : Typed) : Option Typed :=
   match e.ty with
@@ -996,6 +1027,7 @@ def castToUint (kind : UintTy) (e : Typed) : Option Typed :=
   | .uint source => some ({ expr := wrap kind e.expr, ty := SrcType.uint kind } : Typed)
   | .struct id fields => none
   | .enum id variants => none
+  | .ptr => none
 
 def castTo (ty : SrcType) (e : Typed) : Option Typed :=
   match ty with
@@ -1004,6 +1036,7 @@ def castTo (ty : SrcType) (e : Typed) : Option Typed :=
   | .uint kind => castToUint kind e
   | .struct id fields => none
   | .enum id variants => none
+  | .ptr => none
 
 def lowerCast (ty : SrcType) (operand : Option Typed) : Option Typed :=
   match operand with
@@ -1082,6 +1115,7 @@ def copyFieldOf (b : Binding) (index : Nat) (ty : SrcType) : Option (List Expr) 
   | .uint kind => none
   | .struct id fields => copyFieldAt (b.slot + fieldOffset fields index) fields[index]? ty
   | .enum id variants => none
+  | .ptr => none
 
 /-- A field of type ty of a struct local, slot by slot. It takes slots. -/
 def copyField (binding : Option Binding) (index : Nat) (ty : SrcType) : Option (List Expr) :=
@@ -1140,6 +1174,7 @@ def lowerLiteral (scope : List Binding) (ty : SrcType) (fields : List SrcExpr) :
   | .uint kind => none
   | .struct id types => lowerStructFields scope fields types
   | .enum id variants => none
+  | .ptr => none
 
 def lowerTag (variant : Nat) (payload : Option (List Expr)) : Option (List Expr) :=
   match payload with
@@ -1166,6 +1201,7 @@ def lowerEnumValue (scope : List Binding) (ty : SrcType) (variant : Nat) (payloa
   | .uint kind => none
   | .struct id types => none
   | .enum id variants => lowerTagged scope variants variant payload
+  | .ptr => none
 
 /-- The scope of an arm: each binder names its payload field's slots, binding in order as Core's bindLocals does. A binder takes slots, so no two share a first slot. -/
 def armScope (binders : List Nat) (types : List SrcType) (slot : Nat) (scope : List Binding) : Option (List Binding) :=
@@ -1229,6 +1265,7 @@ def lowerMatchOn (scope : List Binding) (b : Binding) (enumId : Nat) (arms : Lis
   | .uint kind => none
   | .struct id types => none
   | .enum id variants => lowerMatchArms scope b.slot (decide (id = enumId)) variants arms ty target
+  | .ptr => none
 
 def lowerMatch (scope : List Binding) (binding : Option Binding) (enumId : Nat) (arms : List SrcArm) (ty : SrcType) (target : Nat) : Option Stmt :=
   match binding with
@@ -1301,6 +1338,7 @@ def lowerSetFieldOf (b : Binding) (field : Nat) (scope : List Binding) (value : 
   | .uint kind => none
   | .struct id fields => lowerSetFieldAt (b.slot + fieldOffset fields field) fields[field]? scope value
   | .enum id variants => none
+  | .ptr => none
 
 def lowerSetField (binding : Option Binding) (field : Nat) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
   match binding with
@@ -1349,6 +1387,58 @@ def lowerReturn (values : Option (List Expr)) : Option Stmt :=
   | none => none
   | some vs => some (Stmt.ret vs)
 
+/-- The bump allocator's size: Core gives a block of size 0 one byte. -/
+def atLeastOne (size : Expr) : Expr :=
+  Expr.binary Word.u64 BinOp.add size (Expr.compare Word.u64 CmpOp.eq size (Expr.lit 0))
+
+def lowerAlloc (slot : Nat) (shift : Nat) (size : Option Expr) (body : Option Stmt) : Option Stmt :=
+  if shift < 32 then
+    match size with
+    | none => none
+    | some s =>
+      match body with
+      | none => none
+      | some b => some (Stmt.seq (Stmt.alloc slot shift (atLeastOne s)) b)
+  else
+    none
+
+/-- A pointer and a usize offset as an address. -/
+def lowerAddress (pointer : Option Expr) (offset : Option Expr) : Option Expr :=
+  match pointer with
+  | none => none
+  | some p =>
+    match offset with
+    | none => none
+    | some o => some (Expr.binary Word.u64 BinOp.add p o)
+
+def lowerLoad (slot : Nat) (address : Option Expr) (body : Option Stmt) : Option Stmt :=
+  match address with
+  | none => none
+  | some a =>
+    match body with
+    | none => none
+    | some b => some (Stmt.seq (Stmt.loadByte slot a) b)
+
+def lowerStore (address : Option Expr) (value : Option Expr) : Option Stmt :=
+  match address with
+  | none => none
+  | some a =>
+    match value with
+    | none => none
+    | some v => some (Stmt.storeByte a v)
+
+/-- The bump allocator never frees, so a free only checks its operands' types. -/
+def lowerFree (shift : Nat) (pointer : Option Expr) (size : Option Expr) : Option Stmt :=
+  if shift < 32 then
+    match pointer with
+    | none => none
+    | some p =>
+      match size with
+      | none => none
+      | some s => some Stmt.skip
+  else
+    none
+
 def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (ret : SrcType) (scope : List Binding) (next : Nat) : Option Stmt :=
   match self with
   | .nop => some Stmt.skip
@@ -1364,6 +1454,10 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (ret : SrcType) (scope : Li
   | .if condition thenBranch elseBranch => lowerIf (lowerAs scope condition SrcType.bool) (SrcStmt.lower thenBranch sigs ret scope next) (SrcStmt.lower elseBranch sigs ret scope next)
   | .while condition body => lowerWhile (lowerAs scope condition SrcType.bool) (SrcStmt.lower body sigs ret scope next)
   | .return value => lowerReturn (lowerValue scope value ret)
+  | .letAlloc id size shift body => lowerAlloc next shift (lowerAs scope size (SrcType.uint UintTy.usize)) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := SrcType.ptr } : Binding) :: scope) (next + 1))
+  | .letLoad id pointer offset body => lowerLoad next (lowerAddress (lowerAs scope pointer SrcType.ptr) (lowerAs scope offset (SrcType.uint UintTy.usize))) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := SrcType.uint UintTy.uint8 } : Binding) :: scope) (next + 1))
+  | .setByte pointer offset value => lowerStore (lowerAddress (lowerAs scope pointer SrcType.ptr) (lowerAs scope offset (SrcType.uint UintTy.usize))) (lowerAs scope value (SrcType.uint UintTy.uint8))
+  | .free pointer size shift => lowerFree shift (lowerAs scope pointer SrcType.ptr) (lowerAs scope size (SrcType.uint UintTy.usize))
 
 /-- Slots the statement's lets need beyond the ones in scope. -/
 def SrcStmt.depth (self : SrcStmt) : Nat :=
@@ -1381,6 +1475,10 @@ def SrcStmt.depth (self : SrcStmt) : Nat :=
   | .if condition thenBranch elseBranch => max (SrcStmt.depth thenBranch) (SrcStmt.depth elseBranch)
   | .while condition body => SrcStmt.depth body
   | .return value => 0
+  | .letAlloc id size shift body => SrcStmt.depth body + 1
+  | .letLoad id pointer offset body => SrcStmt.depth body + 1
+  | .setByte pointer offset value => 0
+  | .free pointer size shift => 0
 
 /-- Parameters take slots from 0 in order, a struct one per field; a later parameter with the same id shadows an earlier one, as Core's bindLocals does. -/
 def paramScope (params : List SrcParam) (slot : Nat) (scope : List Binding) : List Binding :=

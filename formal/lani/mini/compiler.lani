@@ -803,6 +803,8 @@ pub enum SrcType {
     Uint(UintTy),
     Struct(usize, Box<List<SrcType>>),
     Enum(usize, Box<List<List<SrcType>>>),
+    // a raw pointer into the heap
+    Ptr,
 }
 
 pub enum SrcOp {
@@ -855,6 +857,14 @@ pub enum SrcStmt {
     If(SrcExpr, Box<SrcStmt>, Box<SrcStmt>),
     While(SrcExpr, Box<SrcStmt>),
     Return(SrcExpr),
+    // let id: ptr = alloc(size, 2^shift); then body
+    LetAlloc(usize, SrcExpr, usize, Box<SrcStmt>),
+    // let id: u8 = load_byte(pointer, offset); then body
+    LetLoad(usize, SrcExpr, SrcExpr, Box<SrcStmt>),
+    // store_byte(pointer, offset, value)
+    SetByte(SrcExpr, SrcExpr, SrcExpr),
+    // dealloc(pointer, size, 2^shift)
+    Free(SrcExpr, SrcExpr, usize),
 }
 
 pub struct SrcParam {
@@ -918,6 +928,7 @@ impl SrcType {
             Uint(kind) -> false,
             Struct(id, fields) -> false,
             Enum(id, variants) -> false,
+            Ptr -> false,
         };
     }
 
@@ -928,6 +939,7 @@ impl SrcType {
             Uint(kind) -> false,
             Struct(id, fields) -> false,
             Enum(id, variants) -> false,
+            Ptr -> false,
         };
     }
 
@@ -938,6 +950,7 @@ impl SrcType {
             Uint(kind) -> true,
             Struct(id, fields) -> false,
             Enum(id, variants) -> false,
+            Ptr -> true,
         };
     }
 
@@ -948,6 +961,18 @@ impl SrcType {
             Uint(other) -> other.code() == kind.code(),
             Struct(id, fields) -> false,
             Enum(id, variants) -> false,
+            Ptr -> false,
+        };
+    }
+
+    pub fn is_ptr(self) -> bool {
+        return match (self) {
+            I32 -> false,
+            Bool -> false,
+            Uint(kind) -> false,
+            Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
+            Ptr -> true,
         };
     }
 
@@ -959,6 +984,7 @@ impl SrcType {
             Uint(kind) -> Some(kind),
             Struct(id, fields) -> None,
             Enum(id, variants) -> None,
+            Ptr -> None,
         };
     }
 
@@ -970,6 +996,7 @@ impl SrcType {
             Uint(kind) -> U64,
             Struct(id, fields) -> S32,
             Enum(id, variants) -> S32,
+            Ptr -> U64,
         };
     }
 }
@@ -987,6 +1014,7 @@ impl SrcType {
                 Uint(other_kind) -> false,
                 Struct(other_id, other_fields) -> (id == other_id) && types_same(unbox(fields), unbox(other_fields)),
                 Enum(other_id, other_variants) -> false,
+                Ptr -> false,
             },
             Enum(id, variants) -> match (other) {
                 I32 -> false,
@@ -994,7 +1022,9 @@ impl SrcType {
                 Uint(other_kind) -> false,
                 Struct(other_id, other_fields) -> false,
                 Enum(other_id, other_variants) -> (id == other_id) && variants_same(unbox(variants), unbox(other_variants)),
+                Ptr -> false,
             },
+            Ptr -> other.is_ptr(),
         };
     }
 }
@@ -1037,6 +1067,7 @@ impl SrcType {
             Uint(kind) -> 1,
             Struct(id, fields) -> sizes(unbox(fields)),
             Enum(id, variants) -> plus(1, max_size(unbox(variants))),
+            Ptr -> 1,
         };
     }
 }
@@ -1211,6 +1242,7 @@ pub fn lower_field_of(b: Binding, field: usize) -> core::option::Option<Typed> {
         Uint(kind) -> None,
         Struct(id, fields) -> lower_field_at(plus(b.slot, field_offset(unbox(fields), field)), get(unbox(fields), field)),
         Enum(id, variants) -> None,
+        Ptr -> None,
     };
 }
 
@@ -1273,6 +1305,7 @@ pub fn cast_to_i32(e: Typed) -> core::option::Option<Typed> {
         Uint(kind) -> Some(Typed { expr: wrap(Uint32, e.expr), ty: I32 }),
         Struct(id, fields) -> None,
         Enum(id, variants) -> None,
+        Ptr -> None,
     };
 }
 
@@ -1283,6 +1316,7 @@ pub fn cast_to_uint(kind: UintTy, e: Typed) -> core::option::Option<Typed> {
         Uint(source) -> Some(Typed { expr: wrap(kind, e.expr), ty: Uint(kind) }),
         Struct(id, fields) -> None,
         Enum(id, variants) -> None,
+        Ptr -> None,
     };
 }
 
@@ -1293,6 +1327,7 @@ pub fn cast_to(ty: SrcType, e: Typed) -> core::option::Option<Typed> {
         Uint(kind) -> cast_to_uint(kind, e),
         Struct(id, fields) -> None,
         Enum(id, variants) -> None,
+        Ptr -> None,
     };
 }
 
@@ -1399,6 +1434,7 @@ pub fn copy_field_of(b: Binding, index: usize, ty: SrcType) -> core::option::Opt
         Uint(kind) -> None,
         Struct(id, fields) -> copy_field_at(plus(b.slot, field_offset(unbox(fields), index)), get(unbox(fields), index), ty),
         Enum(id, variants) -> None,
+        Ptr -> None,
     };
 }
 
@@ -1470,6 +1506,7 @@ pub fn lower_literal(scope: List<Binding>, ty: SrcType, fields: List<SrcExpr>) -
         Uint(kind) -> None,
         Struct(id, types) -> lower_struct_fields(scope, fields, unbox(types)),
         Enum(id, variants) -> None,
+        Ptr -> None,
     };
 }
 
@@ -1504,6 +1541,7 @@ pub fn lower_enum_value(scope: List<Binding>, ty: SrcType, variant: usize, paylo
         Uint(kind) -> None,
         Struct(id, types) -> None,
         Enum(id, variants) -> lower_tagged(scope, unbox(variants), variant, payload),
+        Ptr -> None,
     };
 }
 
@@ -1586,6 +1624,7 @@ pub fn lower_match_on(scope: List<Binding>, b: Binding, enum_id: usize, arms: Li
         Uint(kind) -> None,
         Struct(id, types) -> None,
         Enum(id, variants) -> lower_match_arms(scope, b.slot, id == enum_id, unbox(variants), arms, ty, target),
+        Ptr -> None,
     };
 }
 
@@ -1682,6 +1721,7 @@ pub fn lower_set_field_of(b: Binding, field: usize, scope: List<Binding>, value:
         Uint(kind) -> None,
         Struct(id, fields) -> lower_set_field_at(plus(b.slot, field_offset(unbox(fields), field)), get(unbox(fields), field), scope, value),
         Enum(id, variants) -> None,
+        Ptr -> None,
     };
 }
 
@@ -1746,6 +1786,69 @@ pub fn lower_return(values: core::option::Option<List<Expr>>) -> core::option::O
     };
 }
 
+// The bump allocator's size: Core gives a block of size 0 one byte.
+pub fn at_least_one(size: Expr) -> Expr {
+    return Binary(U64, Add, boxed(size), boxed(Compare(U64, Eq, boxed(size), boxed(Lit(0)))));
+}
+
+pub fn lower_alloc(slot: usize, shift: usize, size: core::option::Option<Expr>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    if (shift < 32) {
+        return match (size) {
+            None -> None,
+            Some(s) -> match (body) {
+                None -> None,
+                Some(b) -> Some(Seq(boxed(Alloc(slot, shift, at_least_one(s))), boxed(b))),
+            },
+        };
+    }
+    return None;
+}
+
+// A pointer and a usize offset as an address.
+pub fn lower_address(pointer: core::option::Option<Expr>, offset: core::option::Option<Expr>) -> core::option::Option<Expr> {
+    return match (pointer) {
+        None -> None,
+        Some(p) -> match (offset) {
+            None -> None,
+            Some(o) -> Some(Binary(U64, Add, boxed(p), boxed(o))),
+        },
+    };
+}
+
+pub fn lower_load(slot: usize, address: core::option::Option<Expr>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (address) {
+        None -> None,
+        Some(a) -> match (body) {
+            None -> None,
+            Some(b) -> Some(Seq(boxed(LoadByte(slot, a)), boxed(b))),
+        },
+    };
+}
+
+pub fn lower_store(address: core::option::Option<Expr>, value: core::option::Option<Expr>) -> core::option::Option<Stmt> {
+    return match (address) {
+        None -> None,
+        Some(a) -> match (value) {
+            None -> None,
+            Some(v) -> Some(StoreByte(a, v)),
+        },
+    };
+}
+
+// The bump allocator never frees, so a free only checks its operands' types.
+pub fn lower_free(shift: usize, pointer: core::option::Option<Expr>, size: core::option::Option<Expr>) -> core::option::Option<Stmt> {
+    if (shift < 32) {
+        return match (pointer) {
+            None -> None,
+            Some(p) -> match (size) {
+                None -> None,
+                Some(s) -> Some(Skip),
+            },
+        };
+    }
+    return None;
+}
+
 // sigs are the program's signatures and ret the function's result type; next
 // is the first slot no binding in scope uses.
 impl SrcStmt {
@@ -1764,6 +1867,10 @@ impl SrcStmt {
             If(condition, then_branch, else_branch) -> lower_if(lower_as(scope, condition, Bool), unbox(then_branch).lower(sigs, ret, scope, next), unbox(else_branch).lower(sigs, ret, scope, next)),
             While(condition, body) -> lower_while(lower_as(scope, condition, Bool), unbox(body).lower(sigs, ret, scope, next)),
             Return(value) -> lower_return(lower_value(scope, value, ret)),
+            LetAlloc(id, size, shift, body) -> lower_alloc(next, shift, lower_as(scope, size, Uint(Usize)), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: Ptr }, scope), plus(next, 1))),
+            LetLoad(id, pointer, offset, body) -> lower_load(next, lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: Uint(Uint8) }, scope), plus(next, 1))),
+            SetByte(pointer, offset, value) -> lower_store(lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), lower_as(scope, value, Uint(Uint8))),
+            Free(pointer, size, shift) -> lower_free(shift, lower_as(scope, pointer, Ptr), lower_as(scope, size, Uint(Usize))),
         };
     }
 
@@ -1783,6 +1890,10 @@ impl SrcStmt {
             If(condition, then_branch, else_branch) -> max_of(unbox(then_branch).depth(), unbox(else_branch).depth()),
             While(condition, body) -> unbox(body).depth(),
             Return(value) -> 0,
+            LetAlloc(id, size, shift, body) -> plus(unbox(body).depth(), 1),
+            LetLoad(id, pointer, offset, body) -> plus(unbox(body).depth(), 1),
+            SetByte(pointer, offset, value) -> 0,
+            Free(pointer, size, shift) -> 0,
         };
     }
 }

@@ -123,7 +123,7 @@ The proof has two layers.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Compiler` | 1443 | 2.8 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass |
+| `Compiler` | 1541 | 2.9 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass |
 | `Semantics` | 157 | 0.8 | big-step source semantics with call depth |
 | `Asm` | 189 | 0.9 | abstract machine, byte-offset placement, `Star` runs |
 | `CompileCorrect` | 518 | 1.3 | compiler against the abstract machine |
@@ -154,7 +154,10 @@ reads (a struct or enum field copies its slots), writes of scalar fields,
 whole-struct copies, and struct parameters; and enums whose payloads have any
 type: `let x = E::V(...)`, copies, enum parameters, and
 `let y = match x { ... }` with one arm per variant in order, each binding its
-variant's payload and giving a value of any type. Each binding gets its own
+variant's payload and giving a value of any type; and raw pointers with the
+byte heap, as Core's `let p = alloc(size, 2^k)`, `let b = loadByte(p, offset)`,
+`storeByte(p, offset, b)` and `dealloc(p, size, 2^k)` (sizes and offsets
+`usize`, bytes `u8`). Each binding gets its own
 slots (lets after the parameters): a scalar one, a struct its fields' slots
 one after another, an enum a tag slot (the variant number) and then room for
 its longest payload; booleans are 1 and 0. An unsigned value is its number,
@@ -172,10 +175,13 @@ evaluator, `Lanius.Semantics.evalExpr`, on that program:
 compileSource sp = some binary
 ∧ sp.funcs[f]? = some func
 ∧ ArgsHold (paramTypes func.params) args bits   -- each argument value is its bits
+∧ heap.cursor = 1 ∧ (∀ a ≥ 1, heap.bytes a = 0) ∧ heap.limit < 2^62
 ∧ evalExpr fuel sp.toCore {} (call f args) = done v final
-→ ∃ depth results, func.ret.HoldsAt v (Func.entry results) 0   -- laid out like an argument
+∧ final.heap.nextAddress ≤ heap.limit                   -- Core's run fits the heap
+→ ∃ depth results after, func.ret.HoldsAt v (Func.entry results) 0   -- laid out like an argument
     ∧ results.length = func.ret.size
-    ∧ (the compileProgram_correct conclusion for f, bits, results and depth)
+    ∧ after.cursor = final.heap.nextAddress
+    ∧ (the compileProgram_correct conclusion for f, bits, heap, results, after and depth)
 ```
 
 `compileSource_correct` in `Lanius/Mini/SourceCorrect.lean`. The proof is
@@ -198,21 +204,38 @@ semantics:
   to the payload slots. `stmt_sound` is strong
   induction on fuel, one lemma per statement form; the mini derivation's call
   depth is existential, and `Exec.mono` lifts it.
+- The heap (`Grows`, `HeapCorr`): a pointer is its address in one slot.
+  Core's `Heap.allocate` puts a block at `nextAddress` rounded up to the
+  alignment and moves `nextAddress` past it by `max size 1`; the lowered
+  `alloc` bumps the mini cursor the same way (the size goes through
+  `x + (x == 0)`), so the cursor is always Core's `nextAddress`. `HeapCorr`
+  says that, and that every live block's bytes are the mini heap's bytes at
+  its addresses, that the blocks lie in order below the cursor without
+  overlapping, and that the bytes from the cursor up are zero (Core's blocks
+  start zeroed). A load or store Core completes is inside a live block, so it
+  is below the cursor and reads or writes the same byte; `dealloc` changes no
+  live bytes the mini heap needs, so it lowers to nothing (the bump allocator
+  never frees). The theorem's premise bounds Core's final `nextAddress` by the
+  mini limit; `execStmt_grows` (Core's `nextAddress` never decreases) carries
+  that bound back to every allocation.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Source` | 334 | 1.1 | Core meaning of source programs, value representation, `i32` wrap lemmas |
-| `Unsigned` | 156 | 2.0 | unsigned arithmetic, comparisons and casts as slot arithmetic |
-| `LowerExpr` | 656 | 4.5 | expressions |
-| `LowerStmt` | 2094 | 8.5 | Core cells, frames, flat values, calls, enums and `match`, statements |
-| `SourceCorrect` | 93 | 0.7 | top-level theorem |
+| `Source` | 353 | 1.1 | Core meaning of source programs, value representation, `i32` wrap lemmas |
+| `Unsigned` | 166 | 2.4 | unsigned arithmetic, comparisons and casts as slot arithmetic |
+| `LowerExpr` | 665 | 5.0 | expressions |
+| `Grows` | 788 | 3.8 | Core's `nextAddress` never decreases; Core call and statement inversions |
+| `HeapCorr` | 342 | 1.0 | Core heap to mini heap correspondence; allocate, load, store, free |
+| `LowerStmt` | 2339 | 8.2 | Core cells, frames, flat values, calls, enums and `match`, statements |
+| `SourceCorrect` | 111 | 0.8 | top-level theorem |
 
-The pass is about 1,100 lines of Lanius (the end of `compiler.lani`), and the
-proofs are about 3,200 lines. The per-function difftest covers it (146
+The pass is about 1,200 lines of Lanius (the end of `compiler.lani`), and the
+proofs are about 4,800 lines. The per-function difftest covers it (146
 functions, 2,920 calls after the unsigned types, run as two shards with
 `--shard 0/2` and `1/2`, no differences; 11 native stack overflows on huge
 random counts; types nested through `List` render through a `mutual` block of
-`partial def`s); at 30 cases per function the harness is now too large for
+`partial def`s; after the front-pass heap, 157 functions and 3,140 calls,
+no differences, 9 native stack overflows); at 30 cases per function the harness is now too large for
 laniusc on the laptop (a GPU buffer fails to allocate). Assumptions the theorem does not cover yet: Core
 programs outside the subset, traps and divergence (the theorem covers runs that
 return), and the source's type checker against Core's typing rules (step 7).

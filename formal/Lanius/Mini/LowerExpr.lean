@@ -232,6 +232,7 @@ theorem cast_sound {ty : SrcType} {inner t : Typed} {env : Env} {w result : Valu
       exact holds_i32 _
     · simp at lowered
     · simp at lowered
+    · simp at lowered
   | bool => simp [castTo] at lowered
   | uint kind =>
     have positive := Nat.two_pow_pos kind.width
@@ -263,8 +264,10 @@ theorem cast_sound {ty : SrcType} {inner t : Typed} {env : Env} {w result : Valu
       exact holds_uint kind (Nat.mod_lt _ positive)
     · simp at lowered
     · simp at lowered
+    · simp at lowered
   | struct => simp [castTo] at lowered
   | enum => simp [castTo] at lowered
+  | ptr => simp [castTo] at lowered
 
 theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat → Nat} {st : State}
     {env : Env} {prog : Core.Program} (corr : Corr scope frame st env) (target : prog.target = .x86_64) :
@@ -365,7 +368,7 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
             obtain ⟨rfl, rfl⟩ := run
             exact ⟨rfl, by simpa [Expr.eval] using (SrcType.holdsAt_scalar scalar).mp holdsField⟩
         · simp at lowered
-        simp at lowered
+        all_goals simp at lowered
   | negate operand ih =>
     intro t fuel v st' lowered run
     cases fuel with
@@ -528,7 +531,7 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
           rw [target] at evaluated
           simp only [SrcOp.toCore] at evaluated
           cases htl : tl.ty <;> cases htr : tr.ty <;>
-            simp [htl, htr, SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isUint] at types <;>
+            simp [htl, htr, SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isUint, SrcType.isPtr] at types <;>
             rw [htl] at holdsl <;> rw [htr] at holdsr
           · obtain ⟨rfl, _⟩ := holdsl
             obtain ⟨rfl, _⟩ := holdsr
@@ -552,6 +555,12 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
             exact holds_compare _
           · simp [SrcType.Holds] at holdsl
           · simp [SrcType.Holds] at holdsl
+          · subst holdsl
+            subst holdsr
+            simp only [eval_ptr_eq, eval_ptr_ne, Except.ok.injEq] at evaluated
+            subst evaluated
+            simp only [Expr.eval, htl, SrcType.word, Word.holds]
+            exact holds_compare _
         · simp at lowered
       case logicalAnd =>
         simp only [SrcOp.lower, conjunction] at lowered

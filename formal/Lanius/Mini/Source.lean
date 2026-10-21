@@ -30,6 +30,7 @@ def SrcType.toCore : SrcType → Core.Ty
   | .uint kind => .scalar (.unsigned kind.toCore)
   | .struct id _ => .structure id
   | .enum id _ => .enumeration id
+  | .ptr => .scalar .rawPtr
 
 /-- The Core type id of a struct or enum type. -/
 def SrcType.typeId : SrcType → Nat
@@ -38,6 +39,7 @@ def SrcType.typeId : SrcType → Nat
   | .uint _ => 0
   | .struct id _ => id
   | .enum id _ => id
+  | .ptr => 0
 
 /-- The Core type a cast to this type names. Lowering only casts to `i32`
 and the unsigned types. -/
@@ -47,6 +49,7 @@ def SrcType.toScalar : SrcType → Core.ScalarTy
   | .uint kind => .unsigned kind.toCore
   | .struct _ _ => .bool
   | .enum _ _ => .bool
+  | .ptr => .rawPtr
 
 def SrcOp.toCore : SrcOp → Core.BinaryOp
   | .plus => .add
@@ -101,6 +104,13 @@ def SrcStmt.toCore : SrcStmt → Core.Stmt
       .ifThenElse condition.toCore thenBranch.toCore elseBranch.toCore
   | .while condition body => .whileLoop condition.toCore body.toCore
   | .return value => .returnValue (some value.toCore)
+  | .letAlloc id size shift body =>
+      .letLocal id (.scalar .rawPtr) (.alloc size.toCore (.value (.unsigned .usize (2 ^ shift)))) body.toCore
+  | .letLoad id pointer offset body =>
+      .letLocal id (.scalar (.unsigned .u8)) (.loadByte pointer.toCore offset.toCore) body.toCore
+  | .setByte pointer offset value => .expression (.storeByte pointer.toCore offset.toCore value.toCore)
+  | .free pointer size shift =>
+      .expression (.dealloc pointer.toCore size.toCore (.value (.unsigned .usize (2 ^ shift))))
 
 def SrcFunc.toCore (id : Nat) (func : SrcFunc) : Core.Function where
   id := id
@@ -118,13 +128,15 @@ def SrcProgram.toCore (prog : SrcProgram) : Core.Program where
 
 /-- `ty.Holds value bits`: one slot holding `bits` represents the Core `value`
 of scalar type `ty`. An `i32` is its bits zero-extended; booleans are 1 and 0;
-an unsigned value is the slot's number, below its type's bound. -/
+an unsigned value is the slot's number, below its type's bound; a pointer is
+its address. -/
 def SrcType.Holds : SrcType → Value → BitVec 64 → Prop
   | .i32, value, bits => value = .signed .i32 (low bits).toInt ∧ bits = widen (low bits)
   | .bool, value, bits => ∃ b, value = .boolean b ∧ bits = boolBits b
   | .uint kind, value, bits => value = .unsigned kind.toCore bits.toNat ∧ bits.toNat < 2 ^ kind.width
   | .struct _ _, _, _ => False
   | .enum _ _, _, _ => False
+  | .ptr, value, bits => value = .pointer bits.toNat
 
 mutual
 /-- `ty.HoldsAt value env slot`: the `ty.size` slots of `env` from `slot`
@@ -143,6 +155,8 @@ inductive SrcType.HoldsAt : SrcType → Value → Env → Nat → Prop where
       {env : Env} {slot : Nat} :
       variants[k]? = some fs → env slot = BitVec.ofNat 64 k → FieldsHold fs vs env (slot + 1) →
       SrcType.HoldsAt (.enum id variants) (.enumeration id k vs) env slot
+  | ptr {value : Value} {env : Env} {slot : Nat} :
+      SrcType.ptr.Holds value (env slot) → SrcType.HoldsAt .ptr value env slot
 
 /-- Values of these types, one after another from `slot`: a struct's fields,
 a payload, or arguments. -/
@@ -160,6 +174,7 @@ theorem SrcType.holdsAt_scalar {ty : SrcType} (scalar : ty.isScalar = true) {v :
   | uint => exact ⟨fun | .uint h => h, .uint⟩
   | struct => simp [SrcType.isScalar] at scalar
   | enum => simp [SrcType.isScalar] at scalar
+  | ptr => exact ⟨fun | .ptr h => h, .ptr⟩
 
 theorem FieldsHold.length : ∀ {fs vs env slot}, FieldsHold fs vs env slot → vs.length = fs.length
   | [], _, _, _, .nil => rfl
@@ -207,6 +222,10 @@ theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot
       rw [show slot' + 1 + i = slot' + (i + 1) by omega, this]
       congr 1
       omega
+  | .ptr, _, _, _, .ptr holds, _, _, agree => by
+    have := agree 0 (by simp [SrcType.size])
+    simp only [Nat.add_zero] at this
+    exact .ptr (by rw [this]; exact holds)
 
 theorem FieldsHold.congr : ∀ {fs : List SrcType} {vs : List Value} {env : Env} {slot : Nat},
     FieldsHold fs vs env slot → ∀ {env' : Env} {slot' : Nat},
