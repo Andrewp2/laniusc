@@ -116,6 +116,55 @@ Check times are `lake env lean` per file on the laptop, about 0.4 s of each is
 import loading. The compiler is 359 lines of Lanius (plus a 63-line prelude
 and 64 lines of list operations); the proofs are about 2,500 lines.
 
+### The front pass: a Core subset to the mini IR
+
+The first piece of the verified compiler (roadmap step 4). `compile_source` in
+`compiler.lani` type-checks and lowers a source program, a subset of Lanius
+Core, to the mini IR, then runs `compile_program`. The subset: `i32` and
+`bool` locals and parameters, `+ - * & | ^`, unary `-` and `!`, the six
+comparisons, `&&` and `||`, `let`, assignment, `let x = f(...)` and
+`x = f(...)`, sequencing, `if`, `while`, and `return`. Each binding gets its
+own slot (lets after the parameters); booleans are 1 and 0.
+
+`Lanius/Mini/Source.lean` maps each source construct to the Core construct of
+the same name (`SrcProgram.toCore`). The theorem is about Core's own
+evaluator, `Lanius.Semantics.evalExpr`, on that program:
+
+```text
+compileSource sp = some binary
+∧ sp.funcs[f]? = some func
+∧ ArgsHold (paramTypes func.params) args bits   -- each argument value is its bits
+∧ evalExpr fuel sp.toCore {} (call f args) = done v final
+→ ∃ depth b, func.ret.Holds v b
+    ∧ (the compileProgram_correct conclusion for f, bits, b and depth)
+```
+
+`compileSource_correct` in `Lanius/Mini/SourceCorrect.lean`. The proof is
+forward simulation of Core's fuel-indexed evaluator into the mini big-step
+semantics:
+
+- Expressions (`LowerExpr`): a lowered expression evaluates in Core without
+  changing the state, to a value its mini expression represents. `wrapSigned`
+  on `i32` is `BitVec 32` arithmetic; `&&`/`||` short-circuit in Core and are
+  `&`/`|` on 1/0 bits in the mini IR.
+- Statements and calls (`LowerStmt`): Core's locals mirror the scope through a
+  slot-to-cell map, every cell id is below `nextCell`, and a callee only
+  touches cells allocated after its call, so the caller's cells survive.
+  `stmt_sound` is strong induction on fuel, one lemma per statement form; the
+  mini derivation's call depth is existential, and `Exec.mono` lifts it.
+
+| file | lines | check (s) | role |
+|---|---:|---:|---|
+| `Source` | 118 | 0.7 | Core meaning of source programs, value representation, `i32` wrap lemmas |
+| `LowerExpr` | 426 | 3.8 | expressions |
+| `LowerStmt` | 1026 | 2.1 | Core cells, frames, calls, statements |
+| `SourceCorrect` | 87 | 0.7 | top-level theorem |
+
+The pass is about 470 lines of Lanius (the end of `compiler.lani`), and the
+proofs are about 1,650 lines. Assumptions the theorem does not cover yet: Core
+programs outside the subset, traps and divergence (the theorem covers runs that
+return), and the source's type checker against Core's typing rules (step 7).
+
 ### Milestone 4: the compiler in Lanius, and extraction
 
 `formal/lani/mini/compiler.lani` is the compiler, written in a pure subset of

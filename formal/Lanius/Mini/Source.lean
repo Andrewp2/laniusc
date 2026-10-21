@@ -60,8 +60,13 @@ def SrcFunc.toCore (id : Nat) (func : SrcFunc) : Core.Function where
   returnType := func.ret.toCore
   body := some func.body.toCore
 
+/-- Functions numbered from `id`. -/
+def coreFuncs : Nat → List SrcFunc → List Core.Function
+  | _, [] => []
+  | id, func :: rest => func.toCore id :: coreFuncs (id + 1) rest
+
 def SrcProgram.toCore (prog : SrcProgram) : Core.Program where
-  functions := prog.funcs.mapIdx fun index func => func.toCore index
+  functions := coreFuncs 0 prog.funcs
 
 /-- `ty.Holds value bits`: slot contents `bits` represent the Core `value` of
 type `ty`. Booleans are 1 and 0. -/
