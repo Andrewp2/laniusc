@@ -1,11 +1,13 @@
-import Lanius.Mini.Compile
+import Lanius.Mini.Asm
 import Lanius.X86.Machine.FrameSlots
 import Lanius.X86.Machine.ControlEncoding
 
-/-! Assembly. Each abstract instruction is a fixed byte sequence from the
-existing encoders, `Instr.size` bytes long. Jumps are relative to the end of
-the instruction. A call copies its arguments to just below the return address
-it pushes, which is where the callee's prologue puts its parameter slots.
+/-! Assembly. The extracted `Instr.encode` (`Lanius.Mini.Compiler`) writes
+literal bytes; here each is proved equal to the existing encoders in
+`X86/Machine/*Encoding.lean`, whose decoding the machine semantics uses, so
+`Instr.encode` is `Instr.bytes` below. Jumps are relative to the end of the
+instruction. A call copies its arguments to just below the return address it
+pushes, which is where the callee's prologue puts its parameter slots.
 
 A program image is its functions back to back, each the frame prologue
 followed by its body. -/
@@ -21,7 +23,8 @@ def BinOp.alu : BinOp → Alu
   | .or => .or
   | .xor => .xor
 
-def BinOp.bytes (operation : BinOp) (slot : Nat) : List UInt8 :=
+/-- The x86 encoding of `slot op eax` into eax. -/
+def BinOp.spec (operation : BinOp) (slot : Nat) : List UInt8 :=
   match operation with
   | .mul => frameMultiplyBytes slot
   | .add | .sub | .and | .or | .xor => frameAluBytes slot operation.alu
@@ -44,49 +47,14 @@ def cmpBytes (operation : CmpOp) (slot : Nat) : List UInt8 :=
 def epilogueBytes : List UInt8 :=
   moveBytes .w64 rspRegister rbpRegister ++ popBytes rbpRegister ++ returnBytes
 
-/-- The rel32 field of a transfer from the end of an instruction at `source`
-to `target`. -/
-def relative (source target : Nat) : BitVec 32 := BitVec.ofInt 32 ((target : Int) - source)
-
-/-- A transfer by `relative source target` from `base + source` lands on `base + target`. -/
-theorem relative_eq (base : BitVec 64) (source target : Nat) (sourceSmall : source < 2 ^ 31)
-    (targetSmall : target < 2 ^ 31) :
-    base + BitVec.ofNat 64 source + (relative source target).signExtend 64 = base + BitVec.ofNat 64 target := by
-  have extended : (relative source target).signExtend 64 = BitVec.ofInt 64 ((target : Int) - source) := by
-    apply BitVec.eq_of_toInt_eq
-    rw [relative, BitVec.toInt_signExtend, BitVec.toInt_ofInt, BitVec.toInt_ofInt]
-    simp only [Nat.min_eq_right (by decide : 32 ≤ 64)]
-    rw [Int.bmod_eq_emod, Int.bmod_eq_emod, Int.bmod_eq_emod]
-    split <;> split <;> split <;> omega
-  rw [extended, Int.sub_eq_add_neg, BitVec.ofInt_add, BitVec.ofInt_neg, BitVec.ofInt_natCast,
-    BitVec.ofInt_natCast]
-  bv_omega
-
-/-- Where a function's code sits in the program image. -/
-structure Place where
-  /-- Image offset of the body's first instruction. -/
-  body : Nat
-  /-- The function's frame slots. -/
-  slots : Nat
-  /-- Image offset of every function's entry. -/
-  entries : List Nat
-
-/-- The caller's virtual slot that is the callee's parameter 0: the slot just
-below the return address the call pushes. -/
-def argBase (slots : Nat) : Nat := frameBytes slots / 8 + 2
-
-/-- Copy argument slots `args` to virtual slots `first + k, first + k + 1, ...`. -/
-def copyBytes (first : Nat) : List Nat → Nat → List UInt8
-  | [], _ => []
-  | slot :: rest, k => frameLoadBytes slot ++ frameStoreBytes (first + k) ++ copyBytes first rest (k + 1)
-
-/-- The bytes of the instruction at body offset `pc`. -/
-def Instr.encode (place : Place) (pc : Nat) : Instr → List UInt8
+/-- The bytes of the instruction at body offset `pc`, as the x86 encoders write them. -/
+def Instr.bytes (i : Instr) (place : Place) (pc : Nat) : List UInt8 :=
+  match i with
   | .imm value => immediateBytes .w32 0 value 0
   | .load slot => frameLoadBytes slot
   | .store slot => frameStoreBytes slot
   | .neg => negateBytes .w32 0
-  | .op operation slot => operation.bytes slot
+  | .op operation slot => operation.spec slot
   | .cmp operation slot => cmpBytes operation slot
   | .jmp target => jumpBytes (relative (pc + 5) target)
   | .jz target => testBytes .w32 0 0 ++ branchBytes 4 (relative (pc + 8) target)
@@ -94,9 +62,84 @@ def Instr.encode (place : Place) (pc : Nat) : Instr → List UInt8
       callBytes (relative (place.body + pc + 12 * args.length + 5) (place.entries.getD callee 0))
   | .ret => epilogueBytes
 
-def encodeFrom (place : Place) : Nat → List Instr → List UInt8
-  | _, [] => []
-  | pc, i :: rest => i.encode place pc ++ encodeFrom place (pc + i.size) rest
+/-! The extracted encoders are the x86 ones. -/
+
+theorem uint8_ofNat_mod (n : Nat) : UInt8.ofNat (n % 256) = UInt8.ofNat n := by
+  apply UInt8.toNat_inj.mp
+  simp
+
+theorem le32_toNat (value : BitVec 32) :
+    le32 value = [UInt8.ofNat value.toNat, UInt8.ofNat (value.toNat / 256), UInt8.ofNat (value.toNat / 65536),
+      UInt8.ofNat (value.toNat / 16777216)] := by
+  simp only [le32, BitVec.toNat_ushiftRight, Nat.shiftRight_eq_div_pow]
+
+theorem le32_eq (value : BitVec 32) : le32 value = displacementBytes value := by
+  rw [le32_toNat]
+  simp only [displacementBytes, Lanius.X86.wordBytes, uint8_ofNat_mod]
+
+theorem le32_i32Bytes (value : BitVec 32) (x : Int) (same : value.toNat = Int.toNat (x % 2 ^ 32)) :
+    le32 value = Lanius.Semantics.i32Bytes x := by
+  rw [le32_toNat]
+  simp only [Lanius.Semantics.i32Bytes, ← same]
+  simp [List.range_succ, uint8_ofNat_mod]
+
+theorem slotOffset_toNat (slot : Nat) :
+    (slotOffset slot).toNat = Int.toNat (frameDisplacement slot % 2 ^ 32) := by
+  have zero : BitVec.toNat (0 : BitVec 32) = 0 := rfl
+  simp only [slotOffset, frameDisplacement, BitVec.toNat_sub, BitVec.toNat_ofNat, zero, Int.ofNat_eq_natCast]
+  omega
+
+theorem slotLoad_eq (slot : Nat) : slotLoad slot = frameLoadBytes slot := by
+  rw [slotLoad, le32_i32Bytes _ _ (slotOffset_toNat slot)]
+  rfl
+
+theorem slotStore_eq (slot : Nat) : slotStore slot = frameStoreBytes slot := by
+  rw [slotStore, le32_i32Bytes _ _ (slotOffset_toNat slot)]
+  rfl
+
+theorem frameSize_eq (slots : Nat) : frameSize slots = frameBytes slots := rfl
+
+theorem prologue_eq (slots : Nat) : prologue slots = framePrologueBytes slots := by
+  rw [prologue, le32_eq]
+  rfl
+
+theorem relative_ofInt (source target : Nat) : relative source target = BitVec.ofInt 32 ((target : Int) - source) := by
+  rw [relative, Int.sub_eq_add_neg, BitVec.ofInt_add, BitVec.ofInt_neg, BitVec.ofInt_natCast, BitVec.ofInt_natCast,
+    BitVec.sub_eq_add_neg]
+
+
+theorem BinOp.bytes_eq (operation : BinOp) (slot : Nat) : operation.bytes slot = operation.spec slot := by
+  cases operation <;> rw [BinOp.bytes, slotOperands, slotLoad_eq] <;> rfl
+
+theorem slotCompare_eq (operation : CmpOp) (slot : Nat) : slotCompare operation slot = cmpBytes operation slot := by
+  cases operation <;> rw [slotCompare, slotOperands, slotLoad_eq] <;> rfl
+
+theorem Instr.encode_eq (i : Instr) (place : Place) (pc : Nat) : i.encode place pc = i.bytes place pc := by
+  cases i with
+  | imm value => rw [Instr.encode, Instr.bytes, le32_eq]; rfl
+  | load slot => exact slotLoad_eq slot
+  | store slot => exact slotStore_eq slot
+  | neg => rfl
+  | op operation slot => exact BinOp.bytes_eq operation slot
+  | cmp operation slot => exact slotCompare_eq operation slot
+  | jmp target => rw [Instr.encode, Instr.bytes, le32_eq]; rfl
+  | jz target => rw [Instr.encode, Instr.bytes, le32_eq]; rfl
+  | call callee args => rw [Instr.encode, Instr.bytes, le32_eq]; rfl
+  | ret => rfl
+
+/-- A transfer by `relative source target` from `base + source` lands on `base + target`. -/
+theorem relative_eq (base : BitVec 64) (source target : Nat) (sourceSmall : source < 2 ^ 31)
+    (targetSmall : target < 2 ^ 31) :
+    base + BitVec.ofNat 64 source + (relative source target).signExtend 64 = base + BitVec.ofNat 64 target := by
+  have extended : (relative source target).signExtend 64 = BitVec.ofInt 64 ((target : Int) - source) := by
+    apply BitVec.eq_of_toInt_eq
+    rw [relative_ofInt, BitVec.toInt_signExtend, BitVec.toInt_ofInt, BitVec.toInt_ofInt]
+    simp only [Nat.min_eq_right (by decide : 32 ≤ 64)]
+    rw [Int.bmod_eq_emod, Int.bmod_eq_emod, Int.bmod_eq_emod]
+    split <;> split <;> split <;> omega
+  rw [extended, Int.sub_eq_add_neg, BitVec.ofInt_add, BitVec.ofInt_neg, BitVec.ofInt_natCast,
+    BitVec.ofInt_natCast]
+  bv_omega
 
 theorem frameLoadBytes_length (slot : Nat) : (frameLoadBytes slot).length = 6 := by
   simp only [frameLoadBytes, memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes, List.length_append,
@@ -118,36 +161,39 @@ theorem copyBytes_length (first : Nat) (args : List Nat) (k : Nat) :
   induction args generalizing k with
   | nil => rfl
   | cons slot rest ih =>
-    simp only [copyBytes, List.length_append, frameLoadBytes_length, frameStoreBytes_length, ih,
-      List.length_cons]
+    simp only [copyBytes, slotLoad_eq, slotStore_eq, List.length_append, frameLoadBytes_length,
+      frameStoreBytes_length, ih, List.length_cons]
     omega
 
-theorem Instr.encode_length (place : Place) (pc : Nat) (i : Instr) : (i.encode place pc).length = i.size := by
+theorem Instr.bytes_length (place : Place) (pc : Nat) (i : Instr) : (i.bytes place pc).length = i.size := by
   cases i with
   | imm value =>
-    simp only [Instr.encode, immediateBytes, displacementBytes, List.length_append, List.length_cons,
+    simp only [Instr.bytes, immediateBytes, displacementBytes, List.length_append, List.length_cons,
       List.length_nil, Instr.size]
     decide
   | load slot => exact frameLoadBytes_length slot
   | store slot => exact frameStoreBytes_length slot
-  | neg => simp only [Instr.encode, Instr.size]; decide
+  | neg => simp only [Instr.bytes, Instr.size]; decide
   | op operation slot =>
     cases operation <;>
-      simp only [Instr.encode, BinOp.bytes, BinOp.alu, frameAluBytes, frameMultiplyBytes, List.length_append,
+      simp only [Instr.bytes, BinOp.spec, BinOp.alu, frameAluBytes, frameMultiplyBytes, List.length_append,
         frameLoadBytes_length, Instr.size, BinOp.size] <;> decide
   | cmp operation slot =>
-    simp only [Instr.encode, cmpBytes, setConditionBytes, List.length_append, frameLoadBytes_length,
+    simp only [Instr.bytes, cmpBytes, setConditionBytes, List.length_append, frameLoadBytes_length,
       List.length_cons, List.length_nil, Instr.size]
     decide
-  | jmp target => simp [Instr.encode, jumpBytes, displacementBytes, Instr.size]
+  | jmp target => simp [Instr.bytes, jumpBytes, displacementBytes, Instr.size]
   | jz target =>
-    simp only [Instr.encode, branchBytes, displacementBytes, List.length_append, List.length_cons,
+    simp only [Instr.bytes, branchBytes, displacementBytes, List.length_append, List.length_cons,
       List.length_nil, Instr.size]
     decide
   | call callee args =>
-    simp only [Instr.encode, callBytes, displacementBytes, List.length_append, copyBytes_length,
+    simp only [Instr.bytes, callBytes, displacementBytes, List.length_append, copyBytes_length,
       List.length_cons, List.length_nil, Instr.size]
-  | ret => simp only [Instr.encode, Instr.size]; decide
+  | ret => simp only [Instr.bytes, Instr.size]; decide
+
+theorem Instr.encode_length (place : Place) (pc : Nat) (i : Instr) : (i.encode place pc).length = i.size := by
+  rw [Instr.encode_eq, Instr.bytes_length]
 
 theorem encodeFrom_length (place : Place) (pc : Nat) (code : List Instr) :
     (encodeFrom place pc code).length = codeSize code := by
@@ -197,24 +243,9 @@ theorem fetch_mem {code : List Instr} {pc : Nat} {i : Instr} (fetched : fetch co
 
 /-! The program image. -/
 
-/-- Image bytes of one function: the prologue, then the body. -/
-def Code.size (code : Code) : Nat := 13 + codeSize code.instrs
-
-def Code.image (code : Code) (start : Nat) (entries : List Nat) : List UInt8 :=
-  framePrologueBytes code.slots ++ encodeFrom ⟨start + 13, code.slots, entries⟩ 0 code.instrs
-
-/-- Entry offsets of functions laid out back to back from `start`. -/
-def layout : Nat → List Code → List Nat
-  | _, [] => []
-  | start, code :: rest => start :: layout (start + code.size) rest
-
-def linkFrom (entries : List Nat) : Nat → List Code → List UInt8
-  | _, [] => []
-  | start, code :: rest => code.image start entries ++ linkFrom entries (start + code.size) rest
-
 theorem Code.image_length (code : Code) (start : Nat) (entries : List Nat) :
     (code.image start entries).length = code.size := by
-  simp only [Code.image, List.length_append, framePrologueBytes_length, encodeFrom_length, Code.size]
+  simp only [Code.image, prologue_eq, List.length_append, framePrologueBytes_length, encodeFrom_length, Code.size]
 
 theorem linkFrom_at (entries : List Nat) (codes : List Code) (start f : Nat) (code : Code)
     (found : codes[f]? = some code) :
@@ -255,23 +286,6 @@ theorem layout_length (codes : List Code) (start : Nat) : (layout start codes).l
   induction codes generalizing start with
   | nil => rfl
   | cons first rest ih => simp [layout, ih]
-
-/-- Machine code of a compiled program. -/
-structure Binary where
-  codes : List Code
-  entries : List Nat
-  image : List UInt8
-
-/-- Images are small enough for every rel32 displacement. -/
-def imageLimit : Nat := 2 ^ 30
-
-def compileProgram (prog : Program) : Option Binary :=
-  match compileFuncs (arities prog.funcs) prog.funcs with
-  | none => none
-  | some codes =>
-    let entries := layout 0 codes
-    let image := linkFrom entries 0 codes
-    if image.length ≤ imageLimit then some { codes, entries, image } else none
 
 /-- Stack bytes one activation uses: its frame, saved rbp and return address. -/
 def frameNeed : List Code → Nat

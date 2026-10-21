@@ -1,4 +1,4 @@
-import Lanius.Mini.Syntax
+import Lanius.Mini.Compiler
 
 /-! Source semantics. Arithmetic wraps, as Lanius i32 does. Statements have a
 big-step semantics; the index bounds the call depth of the derivation, which is

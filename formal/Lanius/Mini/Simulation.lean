@@ -420,7 +420,8 @@ theorem copy_steps (top : BitVec 64) (first : Nat) :
     let s2 := s1.store32 0 rbpRegister (BitVec.ofInt 32 (frameDisplacement (first + k)))
       (frameStoreBytes (first + k)).length
     have bytes : CodeAt s.memory s.rip
-        (frameLoadBytes slot ++ frameStoreBytes (first + k) ++ copyBytes first rest (k + 1)) := loaded
+        (frameLoadBytes slot ++ frameStoreBytes (first + k) ++ copyBytes first rest (k + 1)) := by
+      simpa only [copyBytes, slotLoad_eq, slotStore_eq] using loaded
     have step1 := frameLoad_step s s1 slot bytes.prefix.prefix rfl
     have step2 := frameStore_step s1 s2 (first + k)
       (by simpa only [s1, State.load32, State.immediate32] using bytes.prefix.suffix) rfl
@@ -536,7 +537,7 @@ theorem Contract.mono {binary : Binary} {imageBase : BitVec 64} {window window' 
 contract carries the activation across. -/
 theorem call_simulates {binary : Binary} {imageBase : BitVec 64} {place : Place} {callee : Nat}
     {args : List Nat} (rel : Rel frame s m) (fits : frame.Fits)
-    (loaded : CodeAt s.memory s.rip ((Instr.call callee args).encode place m.pc))
+    (loaded : CodeAt s.memory s.rip ((Instr.call callee args).bytes place m.pc))
     (apart : ∀ index, index < (Instr.call callee args).size →
       ¬Below frame.top frame.window (s.rip + BitVec.ofNat 64 index))
     (placeSlots : place.slots = frame.slots) (placeEntries : place.entries = binary.entries)
@@ -560,7 +561,7 @@ theorem call_simulates {binary : Binary} {imageBase : BitVec 64} {place : Place}
   generalize fbEq : frameBytes frame.slots = fb at *
   have top := frame.top
   let first := argBase frame.slots
-  have firstEq : 8 * first = fb + 16 := by simp only [first, argBase, fbEq]; omega
+  have firstEq : 8 * first = fb + 16 := by simp only [first, argBase, frameSize_eq, fbEq]; omega
   -- every address the call touches, as a depth below `frame.top`
   have targetLane : ∀ j, j < args.length → ∀ lane, lane < 8 →
       frameSlotAddress (frame.top - 8) (first + 0 + j) + BitVec.ofNat 64 lane =
@@ -591,9 +592,9 @@ theorem call_simulates {binary : Binary} {imageBase : BitVec 64} {place : Place}
     rw [pushLane lane.val lane.isLt]
     exact below_depth _ (by omega) (by omega) (by omega)
   -- the argument copies
-  have encoded : (Instr.call callee args).encode place m.pc = copyBytes first args 0 ++
+  have encoded : (Instr.call callee args).bytes place m.pc = copyBytes first args 0 ++
       callBytes (relative (place.body + m.pc + 12 * args.length + 5) (binary.entries.getD callee 0)) := by
-    simp only [Instr.encode, placeSlots, placeEntries, first]
+    simp only [Instr.bytes, placeSlots, placeEntries, first]
   rw [encoded] at loaded
   obtain ⟨n1, s1, steps1, rip1, registers1, memory1, reads1⟩ := copy_steps frame.top first args 0 s rel.rbp
     loaded.prefix
@@ -750,7 +751,7 @@ variable {binary : Binary} {imageBase : BitVec 64} {place : Place} {instrs : Lis
 /-- The fetched instruction's bytes are at rip, apart from the stack window. -/
 theorem Body.fetch (body : Body frame binary imageBase place instrs) (rel : Rel frame s m) {i : Instr}
     (fetched : Lanius.Mini.fetch instrs m.pc = some i) :
-    CodeAt s.memory s.rip (i.encode place m.pc) ∧
+    CodeAt s.memory s.rip (i.bytes place m.pc) ∧
       (∀ index, index < i.size → ¬Below frame.top frame.window (s.rip + BitVec.ofNat 64 index)) ∧
       m.pc + i.size ≤ codeSize instrs := by
   obtain ⟨pre, post, split, length, bound⟩ := fetch_bytes place fetched
@@ -759,13 +760,13 @@ theorem Body.fetch (body : Body frame binary imageBase place instrs) (rel : Rel 
     rw [rel.rip, BitVec.add_assoc, ← BitVec.ofNat_add]
     exact body.apart _ (by omega)
   refine ⟨?_, apart, bound⟩
-  have inEntry : CodeAt frame.entry (frame.base + BitVec.ofNat 64 m.pc) (i.encode place m.pc) := by
+  have inEntry : CodeAt frame.entry (frame.base + BitVec.ofNat 64 m.pc) (i.bytes place m.pc) := by
     have whole := body.loaded
-    rw [split] at whole
+    rw [split, Instr.encode_eq] at whole
     have := CodeAt.middle whole
     rwa [length] at this
   intro index small
-  have small' : index < i.size := by rw [Instr.encode_length] at small; exact small
+  have small' : index < i.size := by rw [Instr.bytes_length] at small; exact small
   rw [rel.unchanged _ (apart index small'), rel.rip]
   exact inEntry index small
 

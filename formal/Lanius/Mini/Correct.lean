@@ -7,18 +7,26 @@ nesting depth. -/
 namespace Lanius.Mini
 open Lanius.X86.Machine
 
+theorem compileFuncs_cons {arities : List Nat} {func : Func} {rest : List Func} {codes : List Code}
+    (compiled : compileFuncs arities (func :: rest) = some codes) :
+    ∃ code codes', compileFunc arities func = some code ∧ compileFuncs arities rest = some codes' ∧
+      codes = code :: codes' := by
+  simp only [compileFuncs] at compiled
+  split at compiled
+  · contradiction
+  · rename_i code first
+    split at compiled
+    · contradiction
+    · rename_i codes' restCompiled
+      exact ⟨code, codes', first, restCompiled, (Option.some.inj compiled).symm⟩
+
 theorem compileFuncs_length {arities : List Nat} :
     ∀ {funcs : List Func} {codes : List Code}, compileFuncs arities funcs = some codes →
       codes.length = funcs.length
   | [], codes, compiled => by simp only [compileFuncs, Option.some.injEq] at compiled; subst compiled; rfl
   | func :: rest, codes, compiled => by
-    simp only [compileFuncs] at compiled
-    split at compiled
-    · rename_i code codes' _ restCompiled
-      simp only [Option.some.injEq] at compiled
-      subst compiled
-      simp [compileFuncs_length restCompiled]
-    · contradiction
+    obtain ⟨code, codes', -, restCompiled, rfl⟩ := compileFuncs_cons compiled
+    simp [compileFuncs_length restCompiled]
 
 theorem compileFuncs_get {arities : List Nat} :
     ∀ {funcs : List Func} {codes : List Code}, compileFuncs arities funcs = some codes →
@@ -26,20 +34,15 @@ theorem compileFuncs_get {arities : List Nat} :
         ∃ code, codes[f]? = some code ∧ compileFunc arities func = some code
   | [], _, _, _, _, found => by simp at found
   | first :: rest, codes, compiled, f, func, found => by
-    simp only [compileFuncs] at compiled
-    split at compiled
-    · rename_i code codes' firstCompiled restCompiled
-      simp only [Option.some.injEq] at compiled
-      subst compiled
-      cases f with
-      | zero =>
-        simp only [List.getElem?_cons_zero, Option.some.injEq] at found
-        subst found
-        exact ⟨code, rfl, firstCompiled⟩
-      | succ f =>
-        simp only [List.getElem?_cons_succ] at found ⊢
-        exact compileFuncs_get restCompiled found
-    · contradiction
+    obtain ⟨code, codes', firstCompiled, restCompiled, rfl⟩ := compileFuncs_cons compiled
+    cases f with
+    | zero =>
+      simp only [List.getElem?_cons_zero, Option.some.injEq] at found
+      subst found
+      exact ⟨code, rfl, firstCompiled⟩
+    | succ f =>
+      simp only [List.getElem?_cons_succ] at found ⊢
+      exact compileFuncs_get restCompiled found
 
 theorem arities_length (funcs : List Func) : (arities funcs).length = funcs.length := by
   induction funcs <;> simp_all [arities]
@@ -78,7 +81,7 @@ theorem layout_getD {codes : List Code} {f offset : Nat} (at_ : (layout 0 codes)
 
 /-- One compiled function meets its contract, given contracts for its calls. -/
 theorem function_contract {prog : Program} {binary : Binary} (compiled : compileProgram prog = some binary)
-    {imageBase : BitVec 64} {f : Nat} {func : Func} {code : Code} (found : prog.funcs[f]? = some func)
+    {imageBase : BitVec 64} {f : Nat} {func : Func} {code : Code} (_found : prog.funcs[f]? = some func)
     (codeFound : binary.codes[f]? = some code)
     (compiledFunc : compileFunc (arities prog.funcs) func = some code)
     {depth : Nat} {args : List (BitVec 32)} {value : BitVec 32} (length : args.length = func.params)
@@ -106,7 +109,7 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
     have := CodeAt.middle whole
     rw [Nat.zero_add] at preLength
     rw [preLength] at this
-    rw [entry, entryOffset]
+    rw [entry, entryOffset, ← prologue_eq]
     exact this
   have apartAt : ∀ index, index < code.size →
       ¬Below (s.registers rspRegister) window (s.rip + BitVec.ofNat 64 index) := by

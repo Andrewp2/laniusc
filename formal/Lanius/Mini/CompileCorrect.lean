@@ -1,4 +1,4 @@
-import Lanius.Mini.Compile
+import Lanius.Mini.Asm
 
 /-! The compiler against the abstract machine: induction on expression syntax
 and on the statement derivation, with one invariant — slots below `base` hold
@@ -95,13 +95,13 @@ theorem compileArgs_straight (base : Nat) (args : List Expr) (k : Nat) :
 
 /-- Argument `k` ends in slot `base + k`, and the slots below `base + k` are kept. -/
 theorem compileArgs_correct (base : Nat) (args : List Expr) (k : Nat) (env : Env) (m : Machine)
-    (agree : Agree base env m) (within : Expr.allWithin base args = true) :
+    (agree : Agree base env m) (within : allWithin base args = true) :
     readSlots (Instr.exec (compileArgs base args k) m).slots (argSlots base args k) = Expr.evalAll env args ∧
       ∀ slot, slot < base + k → (Instr.exec (compileArgs base args k) m).slots slot = m.slots slot := by
   induction args generalizing k m with
   | nil => exact ⟨rfl, fun _ _ => rfl⟩
   | cons arg rest ih =>
-    simp only [Expr.allWithin, Bool.and_eq_true] at within
+    simp only [allWithin, Bool.and_eq_true] at within
     obtain ⟨acc, kept⟩ := compileExpr_correct base arg (k + 1) env m agree within.1
     simp only [compileArgs, Instr.exec_append, Instr.exec_singleton]
     generalize storedEq : (Instr.store (base + k)).step (Instr.exec (compileExpr base arg (k + 1)) m) = stored
@@ -350,18 +350,33 @@ theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Nat} {
     exact ⟨_, Star.straight _ (pc ▸ placed.left) (compileExpr_straight _ _ _),
       by rw [Instr.exec_pc, pc]; exact placed.right.fetch, acc⟩
 
+theorem arityIs_eq (arities : List Nat) (callee count : Nat) :
+    arityIs arities callee count = true ↔ arities[callee]? = some count := by
+  unfold arityIs
+  split <;> simp_all
+
+theorem zeroLocals_zero (first : Nat) : zeroLocals first 0 = [] := by
+  rw [zeroLocals]; rfl
+
+theorem zeroLocals_succ (first count : Nat) :
+    zeroLocals first (count + 1) = .store first :: zeroLocals (first + 1) count := by
+  rw [zeroLocals]; rfl
+
 theorem zeroLocals_straight (first count : Nat) : (zeroLocals first count).all Instr.straight = true := by
   induction count generalizing first with
-  | zero => rfl
-  | succ count ih => simp only [zeroLocals, List.all_cons, ih]; rfl
+  | zero => rw [zeroLocals_zero]; rfl
+  | succ count ih => simp only [zeroLocals_succ, List.all_cons, ih]; rfl
 
 theorem zeroLocals_exec (first count : Nat) (m : Machine) (zero : m.acc = 0) :
     (Instr.exec (zeroLocals first count) m).acc = 0 ∧
       ∀ slot, (Instr.exec (zeroLocals first count) m).slots slot =
         if first ≤ slot ∧ slot < first + count then 0 else m.slots slot := by
   induction count generalizing first m with
-  | zero => exact ⟨zero, fun slot => by simp only [zeroLocals, Instr.exec]; rw [if_neg (by omega)]⟩
+  | zero =>
+    rw [zeroLocals_zero]
+    exact ⟨zero, fun slot => by simp only [Instr.exec]; rw [if_neg (by omega)]⟩
   | succ count ih =>
+    rw [zeroLocals_succ]
     obtain ⟨acc, slots⟩ := ih (first + 1) ((Instr.store first).step m) (by simp [Instr.step, Instr.update,
       Machine.store, zero])
     refine ⟨acc, fun slot => ?_⟩

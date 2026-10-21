@@ -4,58 +4,17 @@ import Lanius.Mini.Semantics
 counter that is a byte offset into the function's code. Each `Instr` is one
 fixed byte sequence of the real backend (`Lanius.Mini.Bytes`) whose length is
 `Instr.size`, so the x86 proof is one lemma per constructor and this level
-carries the compiler logic. Jump targets are offsets from the function's
-first instruction. A call's effect is a parameter: the callee's behavior. -/
+carries the compiler logic. Jump targets are offsets from the function's first
+instruction. A call's effect is a parameter: the callee's behavior. `Instr`,
+`Instr.size` and `codeSize` are extracted from the Lanius source
+(`Lanius.Mini.Compiler`). -/
 
 namespace Lanius.Mini
-
-inductive Instr where
-  /-- `mov eax, imm32` -/
-  | imm (value : BitVec 32)
-  /-- `mov eax, [rbp - 8 * (slot + 1)]` -/
-  | load (slot : Nat)
-  /-- `mov [rbp - 8 * (slot + 1)], eax` -/
-  | store (slot : Nat)
-  /-- `neg eax` -/
-  | neg
-  /-- `mov ecx, eax; mov eax, [slot]; op eax, ecx`: eax := slot `op` eax -/
-  | op (operation : BinOp) (slot : Nat)
-  /-- `mov ecx, eax; mov eax, [slot]; cmp eax, ecx; setcc al; movzx eax, al` -/
-  | cmp (operation : CmpOp) (slot : Nat)
-  /-- `jmp rel32` -/
-  | jmp (target : Nat)
-  /-- `test eax, eax; jz rel32` -/
-  | jz (target : Nat)
-  /-- Copy the argument slots into the callee's parameter slots, then `call rel32`. -/
-  | call (callee : Nat) (args : List Nat)
-  /-- frame epilogue and `ret`, returning eax -/
-  | ret
-  deriving DecidableEq, Repr
-
-/-- `imul` is one byte longer than the other operators. -/
-def BinOp.size : BinOp → Nat
-  | .mul => 11
-  | .add | .sub | .and | .or | .xor => 10
-
-def Instr.size : Instr → Nat
-  | .imm _ => 5
-  | .load _ | .store _ => 6
-  | .neg => 2
-  | .op operation _ => operation.size
-  | .cmp _ _ => 16
-  | .jmp _ => 5
-  | .jz _ => 8
-  | .call _ args => 12 * args.length + 5
-  | .ret => 5
 
 theorem Instr.size_pos (i : Instr) : 0 < i.size := by
   cases i with
   | op operation _ => cases operation <;> simp [Instr.size, BinOp.size]
   | _ => simp [Instr.size]
-
-def codeSize : List Instr → Nat
-  | [] => 0
-  | i :: rest => i.size + codeSize rest
 
 theorem codeSize_append (first second : List Instr) :
     codeSize (first ++ second) = codeSize first + codeSize second := by

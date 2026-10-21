@@ -54,12 +54,12 @@ theorem argsTemps_head (arg : Expr) (rest : List Expr) (k : Nat) :
     k + 1 + arg.temps ≤ argsTemps (arg :: rest) k ∧ argsTemps rest (k + 1) ≤ argsTemps (arg :: rest) k := by
   simp only [argsTemps]; omega
 
-theorem compileArgs_fits (base : Nat) (args : List Expr) (k : Nat) (within : Expr.allWithin base args = true)
+theorem compileArgs_fits (base : Nat) (args : List Expr) (k : Nat) (within : allWithin base args = true)
     (bound funcs : Nat) : ∀ i ∈ compileArgs base args k, i.Fits (base + argsTemps args k) bound funcs := by
   induction args generalizing k with
   | nil => simp [compileArgs]
   | cons arg rest ih =>
-    simp only [Expr.allWithin, Bool.and_eq_true] at within
+    simp only [allWithin, Bool.and_eq_true] at within
     have bounds := argsTemps_head arg rest k
     simp only [compileArgs, List.mem_append, List.mem_singleton]
     rintro i ((inArg | rfl) | inRest)
@@ -135,7 +135,7 @@ theorem compileStmt_fits (base : Nat) (arities : List Nat) (stmt : Stmt) (pos : 
     · exact (ihBody _ within.2 i inBody).mono (by omega) (by omega)
     · simp only [Instr.Fits]; omega
   | call target callee args =>
-    simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at within
+    simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq, arityIs_eq] at within
     have calleeBound : callee < arities.length := by
       obtain ⟨⟨_, found⟩, _⟩ := within
       exact (List.getElem?_eq_some_iff.mp found).1
@@ -154,9 +154,9 @@ theorem compileStmt_fits (base : Nat) (arities : List Nat) (stmt : Stmt) (pos : 
 theorem zeroLocals_fits (first count : Nat) (bound funcs : Nat) :
     ∀ i ∈ zeroLocals first count, i.Fits (first + count) bound funcs := by
   induction count generalizing first with
-  | zero => simp [zeroLocals]
+  | zero => simp [zeroLocals_zero]
   | succ count ih =>
-    simp only [zeroLocals, List.mem_cons]
+    simp only [zeroLocals_succ, List.mem_cons]
     rintro i (rfl | inRest)
     · simp only [Instr.Fits]; omega
     · exact (ih (first + 1) i inRest).mono (by omega) (Nat.le_refl _)

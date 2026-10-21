@@ -1,0 +1,629 @@
+// The mini compiler in Lanius. formal/tools/extract.py turns everything after
+// the prelude into the Lean definitions in formal/Lanius/Mini/Compiler.lean,
+// which the proofs in formal/Lanius/Mini/ are about.
+//
+// The code is pure: values are never mutated, recursion replaces loops, and
+// containers come from the prelude below. Arithmetic on usize goes through
+// plus/minus/times, which panic instead of wrapping, so a run that returns
+// computed exactly what the Lean definitions compute over Nat.
+//
+// Comparisons are written with > and >= only: a bare < earlier in a file makes
+// laniusc reject a later Type::Ctor(...) pattern.
+module mini::compiler;
+import alloc::allocator;
+import core::mem;
+import core::option;
+import core::panic;
+import std::vec;
+
+// extract: prelude begin
+// Each prelude item has a fixed Lean meaning (see PRELUDE in extract.py).
+// They are the only code that touches memory or loops.
+
+// Box<T> is T.
+pub struct Box<T> { storage: ptr }
+
+pub fn boxed<T>(value: T) -> Box<T> {
+    let size: usize = core::mem::size_of<T>();
+    let storage: ptr = alloc::allocator::alloc(size, 8);
+    if (storage == 0) {
+        core::panic::panic();
+    }
+    let slot: [T] = core::mem::typed_slice_from_storage(storage, 1);
+    slot[0] = value;
+    return Box { storage: storage };
+}
+
+pub fn unbox<T>(value: Box<T>) -> T {
+    let slot: [T] = core::mem::typed_slice_from_storage(value.storage, 1);
+    return slot[0];
+}
+
+// Vec<T> is List T. Every operation builds a fresh vector, so no vector is
+// ever changed after it is made.
+
+// match (view(v)) { Empty -> a, Cons(x, rest) -> b } is match v with | [] => a | x :: rest => b
+pub enum View<T> { Empty, Cons(T, std::vec::Vec<T>), }
+
+pub fn view<T>(items: std::vec::Vec<T>) -> View<T> {
+    if (std::vec::len(items) == 0) {
+        return Empty;
+    }
+    let rest: std::vec::Vec<T> = std::vec::new();
+    let index: i32 = 1;
+    while (std::vec::len(items) > index) {
+        rest = std::vec::push(rest, std::vec::at(items, index));
+        index += 1;
+    }
+    return Cons(std::vec::at(items, 0), rest);
+}
+
+// []
+pub fn empty<T>() -> std::vec::Vec<T> {
+    return std::vec::new();
+}
+
+// [item]
+pub fn single<T>(item: T) -> std::vec::Vec<T> {
+    let result: std::vec::Vec<T> = std::vec::new();
+    return std::vec::push(result, item);
+}
+
+// first ++ second
+pub fn concat<T>(first: std::vec::Vec<T>, second: std::vec::Vec<T>) -> std::vec::Vec<T> {
+    let result: std::vec::Vec<T> = std::vec::new();
+    let index: i32 = 0;
+    while (std::vec::len(first) > index) {
+        result = std::vec::push(result, std::vec::at(first, index));
+        index += 1;
+    }
+    index = 0;
+    while (std::vec::len(second) > index) {
+        result = std::vec::push(result, std::vec::at(second, index));
+        index += 1;
+    }
+    return result;
+}
+
+// item :: rest
+pub fn cons<T>(item: T, rest: std::vec::Vec<T>) -> std::vec::Vec<T> {
+    return concat(single(item), rest);
+}
+
+// items.length
+pub fn length<T>(items: std::vec::Vec<T>) -> usize {
+    return std::vec::len(items) as usize;
+}
+
+// items[index]?
+pub fn get<T>(items: std::vec::Vec<T>, index: usize) -> core::option::Option<T> {
+    if (length(items) > index) {
+        return Some(std::vec::at(items, index as i32));
+    }
+    return None;
+}
+
+// items.getD index fallback
+pub fn get_or<T>(items: std::vec::Vec<T>, index: usize, fallback: T) -> T {
+    if (length(items) > index) {
+        return std::vec::at(items, index as i32);
+    }
+    return fallback;
+}
+
+// Nat a + b
+pub fn plus(a: usize, b: usize) -> usize {
+    let sum: usize = a + b;
+    if (a > sum) {
+        core::panic::panic();
+    }
+    return sum;
+}
+
+// Nat a * b
+pub fn times(a: usize, b: usize) -> usize {
+    if (a == 0) {
+        return 0;
+    }
+    let product: usize = a * b;
+    if (product / a != b) {
+        core::panic::panic();
+    }
+    return product;
+}
+
+// Nat a - b, used only where a >= b
+pub fn minus(a: usize, b: usize) -> usize {
+    if (b > a) {
+        core::panic::panic();
+    }
+    return a - b;
+}
+
+// max a b
+pub fn max_of(a: usize, b: usize) -> usize {
+    if (b > a) {
+        return b;
+    }
+    return a;
+}
+// extract: prelude end
+
+// Source language: i32 code with comparisons, if, while, and functions with
+// parameters and direct calls. Locals are frame indices; a function's
+// parameters are its first locals. Comparisons produce 1 or 0, and
+// conditions test for nonzero. Calls are statements (target = callee(args)).
+
+pub enum BinOp { Add, Sub, Mul, And, Or, Xor, }
+
+// Signed comparisons.
+pub enum CmpOp { Eq, Ne, Lt, Le, Gt, Ge, }
+
+pub enum Expr {
+    Lit(i32),
+    Var(usize),
+    Neg(Box<Expr>),
+    Binary(BinOp, Box<Expr>, Box<Expr>),
+    Compare(CmpOp, Box<Expr>, Box<Expr>),
+}
+
+pub enum Stmt {
+    Skip,
+    Assign(usize, Expr),
+    Seq(Box<Stmt>, Box<Stmt>),
+    Ite(Expr, Box<Stmt>, Box<Stmt>),
+    // while condition { body }
+    Loop(Expr, Box<Stmt>),
+    // target = callee(args)
+    Call(usize, usize, std::vec::Vec<Expr>),
+    Ret(Expr),
+}
+
+pub struct Func {
+    params: usize,
+    // All locals, parameters included.
+    locals: usize,
+    body: Stmt,
+}
+
+pub struct Program {
+    funcs: std::vec::Vec<Func>,
+}
+
+// The abstract target: an accumulator (eax), frame slots, and a program
+// counter that is a byte offset into the function's code. Each instruction is
+// one fixed byte sequence, Instr::size bytes long.
+pub enum Instr {
+    // mov eax, imm32
+    Imm(i32),
+    // mov eax, [rbp - 8 * (slot + 1)]
+    Load(usize),
+    // mov [rbp - 8 * (slot + 1)], eax
+    Store(usize),
+    // neg eax
+    Neg,
+    // eax := slot op eax
+    Op(BinOp, usize),
+    // eax := (slot cmp eax) ? 1 : 0
+    Cmp(CmpOp, usize),
+    // jmp rel32
+    Jmp(usize),
+    // test eax, eax; jz rel32
+    Jz(usize),
+    // Copy the argument slots into the callee's parameter slots, then call rel32.
+    Call(usize, std::vec::Vec<usize>),
+    // frame epilogue and ret, returning eax
+    Ret,
+}
+
+impl BinOp {
+    // imul is one byte longer than the other operators.
+    pub fn size(self) -> usize {
+        return match (self) {
+            Add -> 10,
+            Sub -> 10,
+            Mul -> 11,
+            And -> 10,
+            Or -> 10,
+            Xor -> 10,
+        };
+    }
+}
+
+impl Instr {
+    pub fn size(self) -> usize {
+        return match (self) {
+            Imm(value) -> 5,
+            Load(slot) -> 6,
+            Store(slot) -> 6,
+            Instr::Neg -> 2,
+            Op(operation, slot) -> operation.size(),
+            Cmp(operation, slot) -> 16,
+            Jmp(target) -> 5,
+            Jz(target) -> 8,
+            Instr::Call(callee, args) -> plus(times(12, length(args)), 5),
+            Instr::Ret -> 5,
+        };
+    }
+}
+
+pub fn code_size(code: std::vec::Vec<Instr>) -> usize {
+    return match (view(code)) {
+        Empty -> 0,
+        Cons(i, rest) -> plus(i.size(), code_size(rest)),
+    };
+}
+
+// Expressions leave their value in the accumulator. A binary operator's left
+// operand waits in temporary slot base + depth, above the base local slots,
+// while the right operand is computed one level deeper.
+pub fn compile_expr(base: usize, e: Expr, depth: usize) -> std::vec::Vec<Instr> {
+    return match (e) {
+        Lit(value) -> single(Imm(value)),
+        Var(index) -> single(Load(index)),
+        Expr::Neg(operand) -> concat(compile_expr(base, unbox(operand), depth), single(Instr::Neg)),
+        Binary(operation, left, right) -> concat(concat(concat(compile_expr(base, unbox(left), depth), single(Store(plus(base, depth)))), compile_expr(base, unbox(right), plus(depth, 1))), single(Op(operation, plus(base, depth)))),
+        Compare(operation, left, right) -> concat(concat(concat(compile_expr(base, unbox(left), depth), single(Store(plus(base, depth)))), compile_expr(base, unbox(right), plus(depth, 1))), single(Cmp(operation, plus(base, depth)))),
+    };
+}
+
+// Argument k is evaluated into temporary base + k.
+pub fn compile_args(base: usize, args: std::vec::Vec<Expr>, k: usize) -> std::vec::Vec<Instr> {
+    return match (view(args)) {
+        Empty -> empty(),
+        Cons(arg, rest) -> concat(concat(compile_expr(base, arg, plus(k, 1)), single(Store(plus(base, k)))), compile_args(base, rest, plus(k, 1))),
+    };
+}
+
+pub fn arg_slots(base: usize, args: std::vec::Vec<Expr>, k: usize) -> std::vec::Vec<usize> {
+    return match (view(args)) {
+        Empty -> empty(),
+        Cons(arg, rest) -> cons(plus(base, k), arg_slots(base, rest, plus(k, 1))),
+    };
+}
+
+// Statement code is placed at offset pos, so jumps are absolute offsets
+// within the function.
+pub fn compile_stmt(base: usize, pos: usize, s: Stmt) -> std::vec::Vec<Instr> {
+    return match (s) {
+        Skip -> empty(),
+        Assign(index, value) -> concat(compile_expr(base, value, 0), single(Store(index))),
+        Seq(first, second) -> seq_code(base, pos, compile_stmt(base, pos, unbox(first)), unbox(second)),
+        Ite(condition, then_branch, else_branch) -> ite_code(base, pos, compile_expr(base, condition, 0), unbox(then_branch), unbox(else_branch)),
+        Loop(condition, body) -> loop_code(base, pos, compile_expr(base, condition, 0), unbox(body)),
+        Stmt::Call(target, callee, args) -> concat(compile_args(base, args, 0), cons(Instr::Call(callee, arg_slots(base, args, 0)), single(Store(target)))),
+        Stmt::Ret(value) -> concat(compile_expr(base, value, 0), single(Instr::Ret)),
+    };
+}
+
+// extract: inline
+fn seq_code(base: usize, pos: usize, first_code: std::vec::Vec<Instr>, second: Stmt) -> std::vec::Vec<Instr> {
+    return concat(first_code, compile_stmt(base, plus(pos, code_size(first_code)), second));
+}
+
+// extract: inline
+fn ite_code(base: usize, pos: usize, condition_code: std::vec::Vec<Instr>, then_branch: Stmt, else_branch: Stmt) -> std::vec::Vec<Instr> {
+    let then_start: usize = plus(plus(pos, code_size(condition_code)), 8);
+    let then_code: std::vec::Vec<Instr> = compile_stmt(base, then_start, then_branch);
+    let else_start: usize = plus(plus(then_start, code_size(then_code)), 5);
+    let else_code: std::vec::Vec<Instr> = compile_stmt(base, else_start, else_branch);
+    return concat(concat(concat(concat(condition_code, single(Jz(else_start))), then_code), single(Jmp(plus(else_start, code_size(else_code))))), else_code);
+}
+
+// extract: inline
+fn loop_code(base: usize, pos: usize, condition_code: std::vec::Vec<Instr>, body: Stmt) -> std::vec::Vec<Instr> {
+    let body_start: usize = plus(plus(pos, code_size(condition_code)), 8);
+    let body_code: std::vec::Vec<Instr> = compile_stmt(base, body_start, body);
+    return concat(concat(concat(condition_code, single(Jz(plus(plus(body_start, code_size(body_code)), 5)))), body_code), single(Jmp(pos)));
+}
+
+// Every local an expression reads is below locals.
+impl Expr {
+    pub fn within(self, locals: usize) -> bool {
+        return match (self) {
+            Lit(value) -> true,
+            Var(index) -> locals > index,
+            Expr::Neg(operand) -> unbox(operand).within(locals),
+            Binary(operation, left, right) -> unbox(left).within(locals) && unbox(right).within(locals),
+            Compare(operation, left, right) -> unbox(left).within(locals) && unbox(right).within(locals),
+        };
+    }
+
+    // Temporary slots an expression's code uses.
+    pub fn temps(self) -> usize {
+        return match (self) {
+            Lit(value) -> 0,
+            Var(index) -> 0,
+            Expr::Neg(operand) -> unbox(operand).temps(),
+            Binary(operation, left, right) -> max_of(unbox(left).temps(), plus(unbox(right).temps(), 1)),
+            Compare(operation, left, right) -> max_of(unbox(left).temps(), plus(unbox(right).temps(), 1)),
+        };
+    }
+}
+
+pub fn all_within(locals: usize, args: std::vec::Vec<Expr>) -> bool {
+    return match (view(args)) {
+        Empty -> true,
+        Cons(arg, rest) -> arg.within(locals) && all_within(locals, rest),
+    };
+}
+
+pub fn arity_is(arities: std::vec::Vec<usize>, callee: usize, count: usize) -> bool {
+    return match (get(arities, callee)) {
+        Some(arity) -> arity == count,
+        None -> false,
+    };
+}
+
+// Temporaries used by arguments from position k on.
+pub fn args_temps(args: std::vec::Vec<Expr>, k: usize) -> usize {
+    return match (view(args)) {
+        Empty -> 0,
+        Cons(arg, rest) -> max_of(plus(plus(k, 1), arg.temps()), args_temps(rest, plus(k, 1))),
+    };
+}
+
+impl Stmt {
+    // Locals are in range, and each call names a function and passes it as
+    // many arguments as it has parameters.
+    pub fn within(self, locals: usize, arities: std::vec::Vec<usize>) -> bool {
+        return match (self) {
+            Skip -> true,
+            Assign(index, value) -> locals > index && value.within(locals),
+            Seq(first, second) -> unbox(first).within(locals, arities) && unbox(second).within(locals, arities),
+            Ite(condition, then_branch, else_branch) -> condition.within(locals) && unbox(then_branch).within(locals, arities) && unbox(else_branch).within(locals, arities),
+            Loop(condition, body) -> condition.within(locals) && unbox(body).within(locals, arities),
+            Stmt::Call(target, callee, args) -> locals > target && arity_is(arities, callee, length(args)) && all_within(locals, args),
+            Stmt::Ret(value) -> value.within(locals),
+        };
+    }
+
+    pub fn temps(self) -> usize {
+        return match (self) {
+            Skip -> 0,
+            Assign(index, value) -> value.temps(),
+            Seq(first, second) -> max_of(unbox(first).temps(), unbox(second).temps()),
+            Ite(condition, then_branch, else_branch) -> max_of(condition.temps(), max_of(unbox(then_branch).temps(), unbox(else_branch).temps())),
+            Loop(condition, body) -> max_of(condition.temps(), unbox(body).temps()),
+            Stmt::Call(target, callee, args) -> args_temps(args, 0),
+            Stmt::Ret(value) -> value.temps(),
+        };
+    }
+}
+
+// Zero the non-parameter locals first, ..., first + count - 1.
+pub fn zero_locals(first: usize, count: usize) -> std::vec::Vec<Instr> {
+    if (count == 0) {
+        return empty();
+    }
+    return cons(Store(first), zero_locals(plus(first, 1), minus(count, 1)));
+}
+
+// Frames are bounded so every slot displacement fits a signed 32-bit field.
+pub fn frame_limit() -> usize {
+    return 1048576;
+}
+
+pub struct Code {
+    // Frame slots: the locals, then the deepest statement's temporaries.
+    slots: usize,
+    instrs: std::vec::Vec<Instr>,
+}
+
+pub fn compile_func(arities: std::vec::Vec<usize>, func: Func) -> core::option::Option<Code> {
+    let slots: usize = plus(func.locals, func.body.temps());
+    if (func.locals >= func.params && func.body.within(func.locals, arities) && frame_limit() >= slots) {
+        let init: std::vec::Vec<Instr> = cons(Imm(0), zero_locals(func.params, minus(func.locals, func.params)));
+        return Some(Code { slots: slots, instrs: concat(init, compile_stmt(func.locals, code_size(init), func.body)) });
+    }
+    return None;
+}
+
+pub fn arities(funcs: std::vec::Vec<Func>) -> std::vec::Vec<usize> {
+    return match (view(funcs)) {
+        Empty -> empty(),
+        Cons(func, rest) -> cons(func.params, arities(rest)),
+    };
+}
+
+pub fn compile_funcs(arities: std::vec::Vec<usize>, funcs: std::vec::Vec<Func>) -> core::option::Option<std::vec::Vec<Code>> {
+    return match (view(funcs)) {
+        Empty -> Some(empty()),
+        Cons(func, rest) -> match (compile_func(arities, func)) {
+            None -> None,
+            Some(code) -> match (compile_funcs(arities, rest)) {
+                None -> None,
+                Some(codes) -> Some(cons(code, codes)),
+            },
+        },
+    };
+}
+
+// Assembly. Jumps are relative to the end of the instruction. A call copies
+// its arguments to just below the return address it pushes, which is where
+// the callee's prologue puts its parameter slots.
+
+// Little-endian bytes of a 32-bit field.
+pub fn le32(value: i32) -> std::vec::Vec<u8> {
+    let bits: u32 = value as u32;
+    return cons(bits as u8, cons((bits >> 8) as u8, cons((bits >> 16) as u8, single((bits >> 24) as u8))));
+}
+
+// rbp-relative displacement of a frame slot.
+pub fn slot_offset(slot: usize) -> i32 {
+    return 0 - (times(plus(slot, 1), 8) as i32);
+}
+
+// mov eax, [rbp + disp32]
+pub fn slot_load(slot: usize) -> std::vec::Vec<u8> {
+    return concat(cons(139, single(133)), le32(slot_offset(slot)));
+}
+
+// mov [rbp + disp32], eax
+pub fn slot_store(slot: usize) -> std::vec::Vec<u8> {
+    return concat(cons(137, single(133)), le32(slot_offset(slot)));
+}
+
+// mov ecx, eax; mov eax, [slot]
+pub fn slot_operands(slot: usize) -> std::vec::Vec<u8> {
+    return concat(cons(137, single(193)), slot_load(slot));
+}
+
+impl BinOp {
+    // slot_operands, then op eax, ecx
+    pub fn bytes(self, slot: usize) -> std::vec::Vec<u8> {
+        return match (self) {
+            Add -> concat(slot_operands(slot), cons(1, single(200))),
+            Sub -> concat(slot_operands(slot), cons(41, single(200))),
+            Mul -> concat(slot_operands(slot), cons(15, cons(175, single(193)))),
+            And -> concat(slot_operands(slot), cons(33, single(200))),
+            Or -> concat(slot_operands(slot), cons(9, single(200))),
+            Xor -> concat(slot_operands(slot), cons(49, single(200))),
+        };
+    }
+}
+
+impl CmpOp {
+    // The setcc opcode byte whose condition holds after cmp left, right
+    // exactly when the comparison does.
+    pub fn setcc(self) -> u8 {
+        return match (self) {
+            Eq -> 148,
+            Ne -> 149,
+            Lt -> 156,
+            Le -> 158,
+            Gt -> 159,
+            Ge -> 157,
+        };
+    }
+}
+
+// slot_operands; cmp eax, ecx; setcc al; movzx eax, al
+pub fn slot_compare(operation: CmpOp, slot: usize) -> std::vec::Vec<u8> {
+    return concat(concat(slot_operands(slot), cons(57, single(200))), cons(15, cons(operation.setcc(), cons(192, cons(15, cons(182, single(192)))))));
+}
+
+// mov rsp, rbp; pop rbp; ret
+pub fn epilogue() -> std::vec::Vec<u8> {
+    return cons(72, cons(137, cons(236, cons(93, single(195)))));
+}
+
+// Frame bytes below rbp, a multiple of 16.
+pub fn frame_size(slots: usize) -> usize {
+    return times(plus(slots, 1) / 2, 16);
+}
+
+// push rbp; mov rbp, rsp; mov r11d, frame_size; sub rsp, r11
+pub fn prologue(slots: usize) -> std::vec::Vec<u8> {
+    return concat(concat(cons(85, cons(72, cons(137, cons(229, cons(65, single(187)))))), le32(frame_size(slots) as i32)), cons(76, cons(41, single(220))));
+}
+
+// The rel32 field of a transfer from the end of an instruction at source to target.
+pub fn relative(source: usize, target: usize) -> i32 {
+    return (target as i32) - (source as i32);
+}
+
+// Where a function's code sits in the program image.
+pub struct Place {
+    // Image offset of the body's first instruction.
+    body: usize,
+    // The function's frame slots.
+    slots: usize,
+    // Image offset of every function's entry.
+    entries: std::vec::Vec<usize>,
+}
+
+// The caller's virtual slot that is the callee's parameter 0: the slot just
+// below the return address the call pushes.
+pub fn arg_base(slots: usize) -> usize {
+    return plus(frame_size(slots) / 8, 2);
+}
+
+// Copy argument slots args to virtual slots first + k, first + k + 1, ...
+pub fn copy_bytes(first: usize, args: std::vec::Vec<usize>, k: usize) -> std::vec::Vec<u8> {
+    return match (view(args)) {
+        Empty -> empty(),
+        Cons(slot, rest) -> concat(concat(slot_load(slot), slot_store(plus(first, k))), copy_bytes(first, rest, plus(k, 1))),
+    };
+}
+
+impl Instr {
+    // The bytes of the instruction at body offset pc.
+    pub fn encode(self, place: Place, pc: usize) -> std::vec::Vec<u8> {
+        return match (self) {
+            Imm(value) -> cons(184, le32(value)),
+            Load(slot) -> slot_load(slot),
+            Store(slot) -> slot_store(slot),
+            Instr::Neg -> cons(247, single(216)),
+            Op(operation, slot) -> operation.bytes(slot),
+            Cmp(operation, slot) -> slot_compare(operation, slot),
+            Jmp(target) -> cons(233, le32(relative(plus(pc, 5), target))),
+            Jz(target) -> concat(cons(133, cons(192, cons(15, single(132)))), le32(relative(plus(pc, 8), target))),
+            Instr::Call(callee, args) -> concat(copy_bytes(arg_base(place.slots), args, 0), cons(232, le32(relative(plus(plus(plus(place.body, pc), times(12, length(args))), 5), get_or(place.entries, callee, 0))))),
+            Instr::Ret -> epilogue(),
+        };
+    }
+}
+
+pub fn encode_from(place: Place, pc: usize, code: std::vec::Vec<Instr>) -> std::vec::Vec<u8> {
+    return match (view(code)) {
+        Empty -> empty(),
+        Cons(i, rest) -> concat(i.encode(place, pc), encode_from(place, plus(pc, i.size()), rest)),
+    };
+}
+
+// A program image is its functions back to back, each the frame prologue
+// followed by its body.
+impl Code {
+    pub fn size(self) -> usize {
+        return plus(13, code_size(self.instrs));
+    }
+
+    pub fn image(self, start: usize, entries: std::vec::Vec<usize>) -> std::vec::Vec<u8> {
+        return concat(prologue(self.slots), encode_from(Place { body: plus(start, 13), slots: self.slots, entries: entries }, 0, self.instrs));
+    }
+}
+
+// Entry offsets of functions laid out back to back from start.
+pub fn layout(start: usize, codes: std::vec::Vec<Code>) -> std::vec::Vec<usize> {
+    return match (view(codes)) {
+        Empty -> empty(),
+        Cons(code, rest) -> cons(start, layout(plus(start, code.size()), rest)),
+    };
+}
+
+pub fn link_from(entries: std::vec::Vec<usize>, start: usize, codes: std::vec::Vec<Code>) -> std::vec::Vec<u8> {
+    return match (view(codes)) {
+        Empty -> empty(),
+        Cons(code, rest) -> concat(code.image(start, entries), link_from(entries, plus(start, code.size()), rest)),
+    };
+}
+
+// Machine code of a compiled program.
+pub struct Binary {
+    codes: std::vec::Vec<Code>,
+    entries: std::vec::Vec<usize>,
+    image: std::vec::Vec<u8>,
+}
+
+// Images are small enough for every rel32 displacement.
+pub fn image_limit() -> usize {
+    return 1073741824;
+}
+
+pub fn compile_program(prog: Program) -> core::option::Option<Binary> {
+    return match (compile_funcs(arities(prog.funcs), prog.funcs)) {
+        None -> None,
+        Some(codes) -> link(codes),
+    };
+}
+
+// extract: inline
+fn link(codes: std::vec::Vec<Code>) -> core::option::Option<Binary> {
+    let entries: std::vec::Vec<usize> = layout(0, codes);
+    let image: std::vec::Vec<u8> = link_from(entries, 0, codes);
+    if (image_limit() >= length(image)) {
+        return Some(Binary { codes: codes, entries: entries, image: image });
+    }
+    return None;
+}

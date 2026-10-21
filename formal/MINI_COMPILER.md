@@ -13,9 +13,10 @@ size relative to the compiler, and Lean check time.
   memory: no `slice_from_raw_parts`, no hand-computed record sizes, no packed
   word buffers. Allocation uses panicking operations, so a successful run never
   silently drops data.
-- The Lean side is ordinary definitions with the same shape as the Lanius code
-  (`Box<T>` is `T`, `Vec<T>` is `List T`, `i32` is `BitVec 32`). Proofs are
-  about those definitions; nothing is executed inside the kernel.
+- The Lean side is ordinary definitions extracted from the Lanius code, with
+  the same shape (`Box<T>` is `T`, `Vec<T>` is `List T`, `i32` is `BitVec 32`,
+  `usize` is `Nat`). Proofs are about those definitions; nothing is executed
+  inside the kernel.
 - The top-level theorem comes first. Every lemma is a premise of a pass theorem,
   and every pass theorem is a premise of the top-level theorem.
 - Each file checks in seconds. Proof size is measured against the compiler code
@@ -49,13 +50,17 @@ Divergence, traps and the ELF startup/exit wrapper come later; the existing
 
 ## Passes
 
+The compiler is `formal/lani/mini/compiler.lani`; `Lanius/Mini/Compiler.lean` is
+extracted from it.
+
 1. `compileExpr` (expressions into eax, temporaries in frame slots) and
    `compileStmt` (statements; jump targets are byte offsets in the body, since
    every abstract instruction has a fixed size).
-2. `Instr.encode` (offsets to rel32 displacements, then bytes through the
-   existing encoders in `X86/Machine/*Encoding.lean`) and `compileProgram`
-   (functions back to back, calls resolved to entry offsets).
-3. Prologue and epilogue: the existing `framePrologueBytes` and epilogue.
+2. `Instr.encode` (offsets to rel32 displacements, then literal bytes, proved
+   equal to the existing encoders in `X86/Machine/*Encoding.lean`) and
+   `compileProgram` (functions back to back, calls resolved to entry offsets).
+3. Prologue and epilogue, proved equal to the existing `framePrologueBytes` and
+   epilogue.
 
 Simulation invariant (one relation for every activation): `rip` is the body
 base plus the abstract pc, `rbp`/`rsp` are the frame's, each slot `x` is
@@ -75,10 +80,11 @@ Each milestone records proof lines, compiler lines and fresh check time.
 
 ## Status
 
-Milestones 1–3 are proved, with no `sorry` and only the standard axioms
+All four milestones are done, with no `sorry` and only the standard axioms
 (`propext`, `Classical.choice`, `Quot.sound`). The source language has i32
 arithmetic, signed comparisons producing 1/0, `if`, `while`, `return`, and
-functions with parameters and direct (also recursive) calls.
+functions with parameters and direct (also recursive) calls. The top-level
+theorem is about the definitions extracted from the Lanius source.
 
 The proof has two layers.
 
@@ -95,26 +101,76 @@ The proof has two layers.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Syntax`, `Semantics` | 144 | 0.8 | source language and big-step semantics with call depth |
-| `Asm` | 199 | 0.8 | abstract machine, byte-offset placement, `Star` runs |
-| `Compile` | 134 | 0.7 | the compiler: expressions, statements, calls, frames |
-| `CompileCorrect` | 428 | 1.1 | compiler against the abstract machine |
+| `Compiler` | 392 | 1.4 | extracted: syntax, abstract instructions, compiler, encoder, linker |
+| `Semantics` | 90 | 0.7 | big-step source semantics with call depth |
+| `Asm` | 158 | 0.7 | abstract machine, byte-offset placement, `Star` runs |
+| `CompileCorrect` | 443 | 1.1 | compiler against the abstract machine |
 | `Fits` | 176 | 0.9 | static facts: slots in frame, targets in body, callees exist |
-| `Bytes` | 285 | 1.2 | encoder with rel32 jumps and calls, program image layout |
+| `Bytes` | 299 | 1.2 | extracted encoders equal the x86 encoders; image layout |
 | `Flags` | 100 | 1.3 | each comparison's condition code after `cmp` |
 | `Frame` | 128 | 1.2 | stack windows and address depths (`bv_omega`) |
-| `Simulation` | 840 | 3.8 | x86 lemma per instruction, the call macro, body simulation |
-| `Correct` | 281 | 1.6 | layout, prologue, function contract, top-level theorem |
+| `Simulation` | 841 | 4.0 | x86 lemma per instruction, the call macro, body simulation |
+| `Correct` | 284 | 1.6 | layout, prologue, function contract, top-level theorem |
 
 Check times are `lake env lean` per file on the laptop, about 0.4 s of each is
-import loading. The compiler (`Compile`, `Bytes` definitions) is about 250
-lines; the proofs are about 2,200.
+import loading. The compiler is 359 lines of Lanius (plus a 96-line prelude);
+the proofs are about 2,500 lines.
 
-A test program (iterative factorial, recursive Fibonacci, a function mixing all
-six comparisons with a call, and gcd with `if` inside `while`) was compiled by
-`#eval compileProgram` and its image run natively through a small stub that
-puts SysV arguments where the convention expects them: 2,368 calls, all equal
-to a Python reference with i32 wrapping.
+### Milestone 4: the compiler in Lanius, and extraction
 
-Next: milestone 4, the same compiler written in Lanius and the shallow
-extractor that produces these Lean definitions from it.
+`formal/lani/mini/compiler.lani` is the compiler, written in a pure subset of
+Lanius: enums, structs, `match`, recursion, `let`, `if`/`return`. A prelude at
+the top of the file holds the only code that touches memory or loops: a
+generic `Box<T>`, list operations on `std::vec::Vec<T>` that always build a
+fresh vector (`empty`, `single`, `cons`, `concat`, `length`, `get`, `get_or`,
+and `view`, which a `match` uses to split off the head), and `usize`
+arithmetic (`plus`, `minus`, `times`) that panics instead of wrapping.
+
+`formal/tools/extract.py` turns everything after the prelude into
+`Lanius/Mini/Compiler.lean`:
+
+```bash
+python3 formal/tools/extract.py formal/lani/mini/compiler.lani formal/Lanius/Mini/Compiler.lean
+python3 formal/tools/extract.py --check formal/lani/mini/compiler.lani formal/Lanius/Mini/Compiler.lean
+```
+
+The extractor rejects anything outside the subset (loops, mutation, `usize`
+`+`/`-`/`*` outside the prelude, signed comparisons, shifts by a variable,
+missing match arms), and checks every prelude item against a fixed table of
+signatures and Lean meanings. Types map one to one: `usize` to `Nat`, `i32`
+and `u32` to `BitVec 32` (Lanius integer arithmetic wraps), `u8` to `UInt8`,
+`Vec<T>` to `List T`, `Option<T>` to `Option T`, `Box<T>` to `T`. A prelude
+`plus` that returns computed the `Nat` sum, so the `Nat` definitions agree
+with every run of the Lanius code that returns. Functions marked
+`// extract: inline` become `let` bindings at their call site; that is how a
+match arm gets local definitions, since Lanius match arms are expressions.
+
+What is trusted: the extractor and its prelude table, and the Lanius
+semantics of that small subset. The theorem itself is about the Lean
+definitions; the hand-written Lean compiler they replaced is gone. The x86
+encoders the compiler writes as literal bytes are proved equal to the existing
+`X86/Machine` encoders (`Instr.encode_eq`, `prologue_eq`).
+
+Testing the Lanius binary against the Lean definitions:
+
+```bash
+python3 formal/tools/mini_difftest.py target/claude-work/mini/diff --count 300 --seed 2
+```
+
+It generates random mini programs (a quarter of them ill-formed, so both sides
+must reject them), compiles each with `#eval compileProgram` and with the
+Lanius compiler built by laniusc, and compares the images byte for byte. Two
+seeds, 602 programs, 157,000 image bytes: no differences. The fact/fib/mix/gcd
+image from the extracted definitions also passes the native run (2,368 calls).
+
+Limits found on the way:
+
+- laniusc rejects a `Type::Ctor(...)` match pattern anywhere after a bare `<`
+  comparison in the same file, so the Lanius source writes comparisons with
+  `>` and `>=` only (the extractor emits `<` and `≤`).
+- Lanius match arms cannot contain blocks, `if`, or a `match` inside a larger
+  expression; helper functions and `// extract: inline` cover this.
+- The Lanius runtime gives every allocation its own page inside a 1 GiB
+  `MAP_32BIT` window and the prelude never frees, so one run of the Lanius
+  compiler handles a few dozen small programs; the difftest uses one binary per
+  40 programs. `view` copies the tail, so list walks are quadratic.
