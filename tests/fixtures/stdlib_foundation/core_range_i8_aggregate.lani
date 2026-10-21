@@ -1,47 +1,47 @@
 module app::main;
-import core::range_i8;
+import core::range;
 
 fn main() -> i32 {
     let start: i8 = -128;
     let middle: i8 = -1;
     let end: i8 = 100;
     let maximum: i8 = 127;
-    let half: core::range_i8::RangeI8 = core::range_i8::range(start, end);
-    let overlap: core::range_i8::RangeI8 = core::range_i8::range(middle, maximum);
-    let touch: core::range_i8::RangeI8 = core::range_i8::range(end, maximum);
-    let reversed: core::range_i8::RangeI8 = core::range_i8::range(end, start);
-    if (core::range_i8::start(half) != start ||
-        core::range_i8::end(half) != end) { return 1; }
-    if (core::range_i8::is_empty(half) ||
-        !core::range_i8::is_empty(reversed)) { return 2; }
-    if (!core::range_i8::contains(half, start) ||
-        !core::range_i8::contains(half, middle) ||
-        core::range_i8::contains(half, end)) { return 3; }
-    if (!core::range_i8::overlaps(half, overlap) ||
-        core::range_i8::overlaps(half, touch) ||
-        core::range_i8::overlaps(half, reversed)) { return 4; }
+    let half: core::range::Range<i8> = core::range::range(start, end);
+    let overlap: core::range::Range<i8> = core::range::range(middle, maximum);
+    let touch: core::range::Range<i8> = core::range::range(end, maximum);
+    let reversed: core::range::Range<i8> = core::range::range(end, start);
+    if (core::range::start(half) != start ||
+        core::range::end(half) != end) { return 1; }
+    if (core::range::is_empty(half) ||
+        !core::range::is_empty(reversed)) { return 2; }
+    if (!core::range::contains(half, start) ||
+        !core::range::contains(half, middle) ||
+        core::range::contains(half, end)) { return 3; }
+    if (!core::range::overlaps(half, overlap) ||
+        core::range::overlaps(half, touch) ||
+        core::range::overlaps(half, reversed)) { return 4; }
 
-    let closed: core::range_i8::RangeInclusiveI8 = core::range_i8::range_inclusive(start, end);
-    let closed_touch: core::range_i8::RangeInclusiveI8 = core::range_i8::range_inclusive(end, maximum);
-    let closed_reversed: core::range_i8::RangeInclusiveI8 = core::range_i8::range_inclusive(end, start);
-    if (core::range_i8::start_inclusive(closed) != start ||
-        core::range_i8::end_inclusive(closed) != end) { return 5; }
-    if (core::range_i8::is_empty_inclusive(closed) ||
-        !core::range_i8::is_empty_inclusive(closed_reversed)) { return 6; }
-    if (!core::range_i8::contains_inclusive(closed, start) ||
-        !core::range_i8::contains_inclusive(closed, end) ||
-        core::range_i8::contains_inclusive(closed, maximum)) { return 7; }
-    if (!core::range_i8::overlaps_inclusive(closed, closed_touch) ||
-        core::range_i8::overlaps_inclusive(closed, closed_reversed)) { return 8; }
+    let closed: core::range::RangeInclusive<i8> = core::range::range_inclusive(start, end);
+    let closed_touch: core::range::RangeInclusive<i8> = core::range::range_inclusive(end, maximum);
+    let closed_reversed: core::range::RangeInclusive<i8> = core::range::range_inclusive(end, start);
+    if (core::range::start_inclusive(closed) != start ||
+        core::range::end_inclusive(closed) != end) { return 5; }
+    if (core::range::is_empty_inclusive(closed) ||
+        !core::range::is_empty_inclusive(closed_reversed)) { return 6; }
+    if (!core::range::contains_inclusive(closed, start) ||
+        !core::range::contains_inclusive(closed, end) ||
+        core::range::contains_inclusive(closed, maximum)) { return 7; }
+    if (!core::range::overlaps_inclusive(closed, closed_touch) ||
+        core::range::overlaps_inclusive(closed, closed_reversed)) { return 8; }
 
-    let from: core::range_i8::RangeFromI8 = core::range_i8::range_from(middle);
-    if (core::range_i8::start_from(from) != middle ||
-        core::range_i8::contains_from(from, start) ||
-        !core::range_i8::contains_from(from, maximum)) { return 9; }
-    let to: core::range_i8::RangeToI8 = core::range_i8::range_to(end);
-    if (core::range_i8::end_to(to) != end ||
-        !core::range_i8::contains_to(to, middle) ||
-        core::range_i8::contains_to(to, end)) { return 10; }
+    let from: core::range::RangeFrom<i8> = core::range::range_from(middle);
+    if (core::range::start_from(from) != middle ||
+        core::range::contains_from(from, start) ||
+        !core::range::contains_from(from, maximum)) { return 9; }
+    let to: core::range::RangeTo<i8> = core::range::range_to(end);
+    if (core::range::end_to(to) != end ||
+        !core::range::contains_to(to, middle) ||
+        core::range::contains_to(to, end)) { return 10; }
     if (half.start() != start || half.end() != end ||
         half.is_empty() || !reversed.is_empty()) { return 11; }
     if (!half.contains(start) || !half.contains(middle) ||

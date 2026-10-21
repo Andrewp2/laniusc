@@ -3,26 +3,26 @@ import core::range;
 import core::mem;
 import core::slice;
 fn main() -> i32 {
-    let range: core::range::Range<i32> = core::range::range_i32(2, 6);
-    let touching: core::range::Range<i32> = core::range::range_i32(6, 8);
-    let overlap: core::range::Range<i32> = core::range::range_i32(5, 8);
-    let reversed: core::range::Range<i32> = core::range::range_i32(6, 2);
-    if (core::range::start_i32(range) != 2 || core::range::end_i32(range) != 6 || core::range::is_empty_i32(range) || !core::range::is_empty_i32(reversed)) {
+    let range: core::range::Range<i32> = core::range::range(2, 6);
+    let touching: core::range::Range<i32> = core::range::range(6, 8);
+    let overlap: core::range::Range<i32> = core::range::range(5, 8);
+    let reversed: core::range::Range<i32> = core::range::range(6, 2);
+    if (core::range::start(range) != 2 || core::range::end(range) != 6 || core::range::is_empty(range) || !core::range::is_empty(reversed)) {
         return 1;
     }
-    if (!core::range::contains_i32(range, 2) || !core::range::contains_i32(range, 5) || core::range::contains_i32(range, 6) || core::range::contains_i32(reversed, 4)) {
+    if (!core::range::contains(range, 2) || !core::range::contains(range, 5) || core::range::contains(range, 6) || core::range::contains(reversed, 4)) {
         return 2;
     }
-    if (core::range::overlaps_i32(range, touching) || !core::range::overlaps_i32(range, overlap) || core::range::overlaps_i32(range, reversed)) {
+    if (core::range::overlaps(range, touching) || !core::range::overlaps(range, overlap) || core::range::overlaps(range, reversed)) {
         return 3;
     }
-    let closed: core::range::RangeInclusive<i32> = core::range::range_inclusive_i32(2, 6);
-    let closed_touching: core::range::RangeInclusive<i32> = core::range::range_inclusive_i32(6, 8);
-    let closed_empty: core::range::RangeInclusive<i32> = core::range::range_inclusive_i32(7, 3);
-    if (core::range::start_inclusive_i32(closed) != 2 || core::range::end_inclusive_i32(closed) != 6 || core::range::is_empty_inclusive_i32(closed) || !core::range::is_empty_inclusive_i32(closed_empty)) {
+    let closed: core::range::RangeInclusive<i32> = core::range::range_inclusive(2, 6);
+    let closed_touching: core::range::RangeInclusive<i32> = core::range::range_inclusive(6, 8);
+    let closed_empty: core::range::RangeInclusive<i32> = core::range::range_inclusive(7, 3);
+    if (core::range::start_inclusive(closed) != 2 || core::range::end_inclusive(closed) != 6 || core::range::is_empty_inclusive(closed) || !core::range::is_empty_inclusive(closed_empty)) {
         return 4;
     }
-    if (!core::range::contains_inclusive_i32(closed, 6) || core::range::contains_inclusive_i32(closed, 7) || !core::range::overlaps_inclusive_i32(closed, closed_touching) || core::range::overlaps_inclusive_i32(closed, closed_empty)) {
+    if (!core::range::contains_inclusive(closed, 6) || core::range::contains_inclusive(closed, 7) || !core::range::overlaps_inclusive(closed, closed_touching) || core::range::overlaps_inclusive(closed, closed_empty)) {
         return 5;
     }
     let values:[i32; 3] =[3, 1, 4];

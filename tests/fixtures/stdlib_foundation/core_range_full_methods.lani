@@ -3,11 +3,14 @@ import core::range;
 
 fn main() -> i32 {
     let full: core::range::RangeFull = core::range::range_full();
-    if (!full.contains_i32(-2147483648)) { return 1; }
-    if (!full.contains_i32(0)) { return 2; }
-    if (!full.contains_i32(2147483647)) { return 3; }
-    if (!full.contains_u32(0)) { return 4; }
-    if (!full.contains_u32(2147483648)) { return 5; }
-    if (!full.contains_u32(4294967295)) { return 6; }
+    if (!full.contains(-2147483648)) { return 1; }
+    if (!full.contains(0)) { return 2; }
+    if (!full.contains(2147483647)) { return 3; }
+    let unsigned_zero: u32 = 0;
+    let unsigned_high: u32 = 2147483648;
+    let unsigned_max: u32 = 4294967295;
+    if (!full.contains(unsigned_zero)) { return 4; }
+    if (!full.contains(unsigned_high)) { return 5; }
+    if (!full.contains(unsigned_max)) { return 6; }
     return 0;
 }

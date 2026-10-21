@@ -599,8 +599,8 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
-            "core_range_u8",
-            "tests/fixtures/stdlib_foundation/range_u8.lani",
+            "core_range",
+            "tests/fixtures/stdlib_foundation/core_range.lani",
             0,
             b"",
         ),
@@ -611,44 +611,14 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
-            "core_range_char",
-            "tests/fixtures/stdlib_foundation/range_char.lani",
-            0,
-            b"",
-        ),
-        (
-            "core_range_f32",
-            "tests/fixtures/stdlib_foundation/range_f32.lani",
-            0,
-            b"",
-        ),
-        (
-            "core_range_i8",
-            "tests/fixtures/stdlib_foundation/range_i8.lani",
-            0,
-            b"",
-        ),
-        (
             "core_range_i8_aggregate",
             "tests/fixtures/stdlib_foundation/core_range_i8_aggregate.lani",
             0,
             b"",
         ),
         (
-            "core_range_u16",
-            "tests/fixtures/stdlib_foundation/range_u16.lani",
-            0,
-            b"",
-        ),
-        (
             "core_range_u16_aggregate",
             "tests/fixtures/stdlib_foundation/core_range_u16_aggregate.lani",
-            0,
-            b"",
-        ),
-        (
-            "core_range_i16",
-            "tests/fixtures/stdlib_foundation/range_i16.lani",
             0,
             b"",
         ),
@@ -1126,36 +1096,6 @@ fn executable_core_function_surface_has_runtime_cases() {
             include_str!("fixtures/stdlib_foundation/core_binary.lani"),
         ),
         (
-            "range_u8",
-            include_str!("../stdlib/core/range_u8.lani"),
-            include_str!("fixtures/stdlib_foundation/range_u8.lani"),
-        ),
-        (
-            "range_char",
-            include_str!("../stdlib/core/range_char.lani"),
-            include_str!("fixtures/stdlib_foundation/range_char.lani"),
-        ),
-        (
-            "range_f32",
-            include_str!("../stdlib/core/range_f32.lani"),
-            include_str!("fixtures/stdlib_foundation/range_f32.lani"),
-        ),
-        (
-            "range_i8",
-            include_str!("../stdlib/core/range_i8.lani"),
-            include_str!("fixtures/stdlib_foundation/range_i8.lani"),
-        ),
-        (
-            "range_u16",
-            include_str!("../stdlib/core/range_u16.lani"),
-            include_str!("fixtures/stdlib_foundation/range_u16.lani"),
-        ),
-        (
-            "range_i16",
-            include_str!("../stdlib/core/range_i16.lani"),
-            include_str!("fixtures/stdlib_foundation/range_i16.lani"),
-        ),
-        (
             "slice",
             include_str!("../stdlib/core/slice.lani"),
             include_str!("fixtures/stdlib_foundation/range_slice.lani"),
@@ -1223,18 +1163,6 @@ fn executable_core_function_surface_has_runtime_cases() {
                 || module == "utf8_view"
                     && include_str!("fixtures/stdlib_foundation/core_utf8_byte_edit.lani")
                         .contains(&call)
-                || module == "range_u8"
-                    && include_str!("fixtures/stdlib_foundation/core_range_u8_aggregate.lani")
-                        .contains(&call)
-                || module == "range_i8"
-                    && include_str!("fixtures/stdlib_foundation/core_range_i8_aggregate.lani")
-                        .contains(&call)
-                || module == "range_u16"
-                    && include_str!("fixtures/stdlib_foundation/core_range_u16_aggregate.lani")
-                        .contains(&call)
-                || module == "range_i16"
-                    && include_str!("fixtures/stdlib_foundation/core_range_i16_aggregate.lani")
-                        .contains(&call)
                 || module == "slice_char"
                     && include_str!("fixtures/stdlib_foundation/core_slice_char_extended.lani")
                         .contains(&call)
@@ -1293,29 +1221,28 @@ fn executable_core_function_surface_has_runtime_cases() {
         assert!(count > 0, "{module} has no public functions to audit");
     }
 
-    let range_cases = format!(
-        "{}{}{}",
-        include_str!("fixtures/stdlib_foundation/range_slice.lani"),
-        include_str!("fixtures/stdlib_foundation/core_unbounded_ranges.lani"),
-        include_str!("fixtures/stdlib_foundation/core_u32_ranges.lani")
-    );
-    let mut range_count = 0;
+    // core_range calls every core::range function and method; the methods
+    // are checked by name after a `.`.
+    let range_cases = include_str!("fixtures/stdlib_foundation/core_range.lani");
+    let (mut range_functions, mut range_methods) = (0, 0);
     for line in include_str!("../stdlib/core/range.lani").lines() {
-        let Some(tail) = line.strip_prefix("pub fn ") else {
+        let (tail, prefix) = if let Some(tail) = line.strip_prefix("pub fn ") {
+            range_functions += 1;
+            (tail, "core::range::")
+        } else if let Some(tail) = line.strip_prefix("    pub fn ") {
+            range_methods += 1;
+            (tail, ".")
+        } else {
             continue;
         };
         let name = tail
             .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
             .next()
             .expect("range function has a name");
-        let call = format!("core::range::{name}(");
-        assert!(
-            range_cases.contains(&call),
-            "core::range::{name} lacks a runtime case"
-        );
-        range_count += 1;
+        let call = format!("{prefix}{name}(");
+        assert!(range_cases.contains(&call), "core::range {call} lacks a runtime case");
     }
-    assert!(range_count > 0);
+    assert_eq!((range_functions, range_methods), (20, 15));
 
     let number_byte = include_str!("fixtures/stdlib_foundation/number_byte.lani");
     for module in ["byte", "number_i32"] {

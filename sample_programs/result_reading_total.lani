@@ -5,10 +5,10 @@ import core::number_i32;
 import std::io;
 
 fn checked_total(readings: [i32]) -> core::result::Result<i32, i32> {
-    let allowed: core::range::Range<i32> = core::range::range_i32(0, 101);
+    let allowed: core::range::Range<i32> = core::range::range(0, 101);
     let total: i32 = 0;
     for reading in readings {
-        if (!core::range::contains_i32(allowed, reading)) {
+        if (!core::range::contains(allowed, reading)) {
             let failure: core::result::Result<i32, i32> = core::result::Err(reading);
             return failure;
         }

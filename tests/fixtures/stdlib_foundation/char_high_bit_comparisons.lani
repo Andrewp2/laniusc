@@ -1,7 +1,7 @@
 module app::main;
 import core::cmp;
 import core::ordering;
-import core::range_char;
+import core::range;
 import core::slice_char;
 
 fn literal_before_char(value: char) -> bool { return '😀' < value; }
@@ -27,10 +27,10 @@ fn main() -> i32 {
         !core::ordering::is_greater(core::ordering::compare_char(last, high))) { return 2; }
     if (!char::lt('😀', high) || !char::gt(last, high) ||
         !char::le(high, last) || !char::ge(last, high)) { return 3; }
-    if (!core::range_char::half_open_contains('😀', last, high) ||
-        core::range_char::half_open_contains(high, last, '😀') ||
-        core::range_char::half_open_is_empty('😀', high) ||
-        !core::range_char::half_open_is_empty(last, high)) { return 4; }
+    if (!core::range::range('😀', last).contains(high) ||
+        core::range::range(high, last).contains('😀') ||
+        core::range::range('😀', high).is_empty() ||
+        !core::range::range(last, high).is_empty()) { return 4; }
     let values: [char; 4] = [last, '😀', high, '\0'];
     if (core::slice_char::min_or(values, 4, '?') != '\0' ||
         core::slice_char::max_or(values, 4, '?') != last) { return 5; }

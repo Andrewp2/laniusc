@@ -3,13 +3,13 @@ module app::main;
 import core::range;
 
 fn main() {
-    let range: core::range::Range<i32> = core::range::range_i32(2, 6);
+    let range: core::range::Range<i32> = core::range::range(2, 6);
     let total: i32 = 0;
     for index in range {
         total += index;
     }
-    let free_start: i32 = core::range::start_i32(range);
-    let free_end: i32 = core::range::end_i32(range);
+    let free_start: i32 = core::range::start(range);
+    let free_end: i32 = core::range::end(range);
     let method_start: i32 = range.start();
     let method_end: i32 = range.end();
     print(total + free_start + free_end + method_start + method_end);

@@ -5,9 +5,9 @@ import core::range;
 import core::number_i32;
 
 fn first_valid(values: [i32]) -> core::option::Option<i32> {
-    let allowed: core::range::Range<i32> = core::range::range_i32(-100, 101);
+    let allowed: core::range::Range<i32> = core::range::range(-100, 101);
     for value in values {
-        if (core::range::contains_i32(allowed, value)) {
+        if (core::range::contains(allowed, value)) {
             let found: core::option::Option<i32> = core::option::Some(value);
             return found;
         }

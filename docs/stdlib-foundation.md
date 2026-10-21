@@ -291,15 +291,7 @@ require further compiler work.
 | `core::array_u8_4` all 17 public functions | Executable on x86_64 | Runtime fixtures check access, search, extrema, full-range sum, equality, endian conversion, invalid-index fallback, and caller-backed copy, fill, and reverse of four-byte arrays. Reversal works with shared source and destination backing. Short destination lengths return false without writing; an overstated backing view traps on native indexing. |
 | Legacy `stdlib/bool.lani` all 9 public functions and `stdlib/i32.lani` all 16 public functions | Executable on x86_64 when included as source | A source-level native fixture checks both boolean values, both selection branches, ordinary and boundary signed arithmetic, wrapping overflow, comparisons, clamp bounds, and power-of-two overflow. The test calls every public function in both files. `abs` requires input above `i32::MIN`; `clamp` requires ordered bounds. |
 | Legacy `stdlib/array_i32_4.lani` all 14 public functions | Executable on x86_64 when included as source | A source-level native fixture checks length, access, search, fallback indices, extrema, a representable sum, and caller-backed copy, fill, and reverse. Fixed-array-returning predecessors were removed; see dependency 7. |
-| `core::range` free functions for all five i32 and u32 range forms, and methods for `Range`, `RangeInclusive`, `RangeFrom`, `RangeTo`, and `RangeFull` | Executable on x86_64 | Runtime fixtures check endpoints, empty/reversed ranges, touching and overlapping intervals, unbounded membership, and full-range membership, including values across the u32 high bit. The imported u32 method reproducer also checks that same-name i32 and u32 methods select the correct body. `RangeFull::contains_i32` and `contains_u32` execute through an imported empty receiver at both domain extremes and zero. |
-| `core::wide_u64_range` all 19 public free functions and 14 receiver methods | Executable on x86_64 | The imported runtime fixture calls every function and method for half-open, inclusive, from, and to ranges. It checks endpoints and membership across the two-word boundary and unsigned high bit, equal and reversed bounds, touching and overlapping intervals, and zero and maximum values. `full_contains` covers the unbounded full domain as a scalar predicate. Range values store four or two flat `u32` words; imported nested wide aggregates remain compiler dependencies, and `RangeFull` forwarding APIs are not implemented. |
-| `core::wide_i64_range` all 19 public free functions and 14 receiver methods | Executable on x86_64 | The imported runtime fixture calls every function and method for half-open, inclusive, from, and to ranges. It checks signed minimum and maximum, negative values in the same high word, the negative-to-zero boundary, equal and reversed bounds, touching and overlapping intervals, and full-domain membership. Range values store flat `u32` endpoint words and compare them in signed two's-complement order; no native `i64` behavior is claimed. |
-| `core::range_u8` all 27 public scalar and concrete aggregate functions and 14 receiver methods | Executable on x86_64 | Runtime fixtures call every function and method across half-open, inclusive, from, to, and full byte ranges, including reversed and equal bounds, touching intervals, and the byte maximum. The aggregate forms use `RangeU8`, `RangeInclusiveU8`, `RangeFromU8`, and `RangeToU8`. |
-| `core::range_i8` all 27 public scalar and concrete aggregate functions and 14 receiver methods | Executable on x86_64 | Runtime fixtures call every function and method across signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-128`, `127`, touching intervals, and empty or reversed bounds. |
-| `core::range_u16` all 27 public scalar and concrete aggregate functions and 14 receiver methods | Executable on x86_64 | Runtime fixtures call every function and method across half-open, inclusive, from, to, and full ranges, including equal or reversed bounds, touching intervals, and the `65535` endpoint. |
-| `core::range_i16` all 27 public scalar and concrete aggregate functions and 14 receiver methods | Executable on x86_64 | Runtime fixtures call every function and method across signed half-open, inclusive, from, to, and full ranges, including negative bounds, `-32768`, `32767`, touching intervals, and empty or reversed bounds. |
-| `core::range_char` all 27 public scalar and concrete aggregate functions and 14 receiver methods | Executable on x86_64 | A runtime fixture calls every function and method across half-open, inclusive, from, to, and full character ranges. It uses ASCII and two-, three-, and four-byte Unicode literals to check scalar ordering, equal and reversed bounds, touching intervals, endpoint inclusion, and aggregate forwarding. The character-inventory program uses its `contains` method with `core::range`, `core::slice_char`, `core::char`, and `core::number_i32`. |
-| `core::range_f32` all 27 public scalar and concrete aggregate functions and 14 receiver methods | Executable on x86_64 | Runtime fixtures call every public function and receiver method with finite values, signed zero, both infinities, and NaN. NaN bounds make bounded ranges empty; ordered ranges reject NaN values, while the full-range predicate accepts every `f32`. They check endpoint inclusion, equal and reversed bounds, touching intervals, aggregate forwarding, and imported floating method returns. The floating window sample uses an inclusive range method. |
+| `core::range` generic `Range<T>`, `RangeInclusive<T>`, `RangeFrom<T>`, `RangeTo<T>` and `RangeFull`, all 20 public functions and 15 methods | Executable on x86_64 | `tests/fixtures/stdlib_foundation/core_range.lani` runs every function and method through one generic checker for every integer width, char, f32, both wide integers and a user record with its own `Ord`, then checks f32 NaN bounds and members, infinities and signed zero; `tests/stdlib_foundation_execution.rs` checks that it calls each one. Membership needs `core::cmp::Ord`. Replaces `core::range_{u8,i8,u16,i16,char,f32}` and `core::wide_{u64,i64}_range`. |
 | `core::slice` 10 generic access/copy functions and 27 public i32 algorithms | Executable on x86_64 for the documented backed views | The shared generic functions execute for nine tested scalar spellings, including typed i32 raw views, mutation, overlap, NaN, negative zero, and explicit failures; see [the slice guide](stdlib-slice.md). Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, first and last contiguous subsequence matches, rotations, compaction, checked insertion and append within caller-owned capacity, partition boundaries and preserved contents, first and last binary matches, sorted insertion boundaries, extrema, sum, overlapping and nonoverlapping copies, sorting, and fallback behavior. Sorting also runs all 243 five-element arrays over `{-1, 0, 1}` against independently counted expected groups. Separate fixtures confirm native index trapping on overclaimed physical lengths. |
 | `core::slice_u8` all 36 public byte-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures exercise access, swaps, fill, rotation, overlap-safe and nonoverlapping copies, compaction, insertion, sequence comparison and search, unsigned ordering, heapsort, binary search, partitioning, and saturating sum. They cover empty and invalid logical lengths, rejected mutation, zero, and 255. Sorting also runs every five-element sequence over `{0,1,2}` against independently counted groups. A source scan requires a runtime call for every public function. Byte views over string or raw pointer storage remain outside this claim. |
 | `core::slice_i8` all 36 public signed-byte-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every public function and cover search, mutation, copy, rotation, compaction, insertion, signed ordering, sorting, binary search, partitioning, and left-to-right saturating sum. Cases include `-128`, `127`, empty and invalid logical lengths, every five-element sequence over `{-1,0,1}`, and a native trap on physical length overclaim. |
@@ -332,7 +324,7 @@ require further compiler work.
 | `core::result` all twenty source-defined public functions and methods | Executable on x86_64 for the documented instances | The actual module imports with unsupported payload templates deferred. Generic free and receiver unwrap_or/unwrap_err_or/or/and execute for nine tested scalar T/E pairs, including f32, char, and strings in either or both positions. Every pair of two success and two error values is exercised for both receiver combinators, preserving both inputs. Predicates, membership, and concrete matches also execute for independently sized caller-local records, strings, and borrowed i32 slices. Runtime fixtures check concrete returns, descriptor aliasing, and bounds traps. Wrong success and error argument types are rejected independently. See [the Result guide](stdlib-result.md). |
 | Generic payload bodies with compound, local, recursive, or durable-only specialization environments | Contract-only for native execution | Imported scalar free bodies and receiver bodies execute as documented above. Unsupported environments still require compiler support. Uninstantiated bodies retain their checked declarations and publish no native definition; a used unresolved template fails explicitly with `LNC0017`. The former by-value Option::replace ignored its input and was removed. Dependencies 1, 92, and 93 distinguish supported specialization from the remaining gaps. |
 | Native `core::i64` as a complete module | Contract-only for native execution | Native full-width comparison and arithmetic remain incomplete. The explicitly two-word signed and unsigned modules above provide executable full-width operations. |
-| `core::cmp` `Eq<T>` and `Ord<T>` impls for every integer width (`i8` through `u64`, `isize`, `usize`), `bool` and `char`; `core::wide_i64` and `core::wide_u64` implement both for their records | Executable on x86_64 | `tests/fixtures/stdlib_foundation/core_cmp_free.lani` checks all ten relations of each impl through one generic function bounded by `Eq<T>` and `Ord<T>`, with each type's extremes. The former per-type free functions (`core::cmp::lt_i32` and the rest) were removed; call `T::lt(a, b)` through a bound, or `i32::lt(a, b)` directly. |
+| `core::cmp` `Eq<T>` and `Ord<T>` impls for every integer width (`i8` through `u64`, `isize`, `usize`), `bool`, `char` and `f32` (IEEE: every relation with a NaN operand is false except `ne`, so `f32` is only partially ordered); `core::wide_i64` and `core::wide_u64` implement both for their records | Executable on x86_64 | `tests/fixtures/stdlib_foundation/core_cmp_free.lani` checks all ten relations of each impl through one generic function bounded by `Eq<T>` and `Ord<T>`, with each type's extremes. The former per-type free functions (`core::cmp::lt_i32` and the rest) were removed; call `T::lt(a, b)` through a bound, or `i32::lt(a, b)` directly. |
 | `core::hash::Hash<T>` trait methods | Complete API coverage not refreshed | The public hashing functions execute. The later [compiler checkpoint](compiler-generic-types.md#direct-generic-trait-implementation-methods-2026-10-11) establishes focused direct imported generic trait impl methods, but does not rerun the complete trait API. Dependency 31 retains the original audit evidence. |
 | `core::target` all 18 public functions and 16 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant. It checks the available allocator, filesystem, stdio, clock, secure RNG, process, and environment bindings against `core::runtime`; unbound network, threads, GPU, host services, panic hooks, and test harness remain false. This is a target snapshot, not a live host probe. |
 | `core::runtime` all 62 public functions and 40 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant, checking service IDs, ABI fields, available and unavailable services, unknown IDs, status classifiers, and fail-closed requirement rows. These helpers report bindings; they do not implement an unbound service operation. |
@@ -1087,57 +1079,19 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   cells. A view built from it must not outlive the owner or survive growth or
   destruction. This is an x86_64 Linux allocation-backed API, separate from
   the allocation-free `core::utf8` codec and from host I/O.
-- Half-open ranges exclude `end`; inclusive ranges include it. A reversed or
-  empty range contains no values and overlaps no range. `RangeFrom<i32>` includes
-  its start, `RangeTo<i32>` excludes its end, and `RangeFull` contains all i32
-  values. `RangeTo<i32>` ending at `MIN` contains no i32 value. The u32 free
-  functions and methods apply the same endpoint rules over `0..=u32::MAX`. A `RangeTo<u32>`
-  ending at zero is empty; an inclusive range ending at `u32::MAX` includes
-  that value.
-- `core::wide_u64_range` uses the same endpoint rules over the full unsigned
-  two-word domain. Half-open ranges exclude their upper endpoint even across
-  the high-bit boundary; inclusive ranges include it. Equal half-open and
-  reversed ranges contain nothing, and touching half-open ranges do not
-  overlap. `RangeFrom` includes its start and `RangeTo` excludes its end.
-  `full_contains` accepts every `WideU64` without constructing `RangeFull`.
-- `core::wide_i64_range` applies those rules in signed two's-complement order.
-  Its full-domain predicate accepts the signed minimum and maximum. A
-  half-open range ending at the minimum is empty, while an inclusive range
-  may include both extrema.
-- `core::range_u8` accepts scalar byte bounds or concrete caller-owned range
-  values. Half-open equal or reversed bounds are empty;
-  inclusive equal bounds contain one byte and reversed bounds are empty.
-  Touching half-open intervals do not overlap, while inclusive intervals
-  sharing an endpoint do. `from_contains` includes its start, `to_contains`
-  excludes its end, and `full_contains` is true for every `u8` value.
-- `core::range_char` applies the same endpoint and overlap rules to Unicode
-  scalar values. It provides concrete half-open, inclusive, from, and to
-  aggregates, scalar predicates, and receiver methods. The full-range
-  predicate accepts every valid `char`; it does not construct or iterate
-  character values. Run `cargo test --test stdlib_range_char_methods_execution`
-  for the imported receiver methods on x86.
-- `core::range_f32` uses IEEE ordering. A NaN bound makes a bounded interval
-  empty and unable to overlap. One-sided and bounded intervals never contain
-  NaN, while `full_contains` includes NaN because it is unbounded. Signed
-  zeros compare equal. Infinite endpoints are allowed: a closed singleton at
-  positive infinity contains positive infinity; the corresponding half-open
-  interval is empty. The concrete range types expose borrowed receiver methods
-  for their endpoints, emptiness, membership, and overlap where applicable.
-  These helpers test membership and do not iterate values. Run
-  `cargo test --test stdlib_range_f32_methods_execution` for imported receiver
-  methods and the floating return regression on x86.
-- `core::range_i8` applies the same endpoint rules across
-  `-128..=127`. Half-open ranges exclude the upper endpoint even when it is
-  `127`; inclusive ranges can contain both extrema. A to-range ending at
-  `-128` is empty.
-- `core::range_u16` and `core::range_i16` apply these rules across
-  `0..=65535` and `-32768..=32767`. The unsigned inclusive range can contain
-  `65535`; the signed inclusive range can contain both signed extrema. Each
-  small-width integer module provides concrete half-open, inclusive, from, and to
-  aggregates, with constructors, endpoint readers, predicates, and receiver
-  methods. The `full_contains` scalar helper covers the full range without an
-  aggregate. Run `cargo test --test stdlib_narrow_range_methods_execution`
-  for their imported x86 receiver-method cases.
+- `core::range` is generic over any T with `core::cmp::Ord`, which
+  `core::cmp` implements for every integer width, char, f32, and the wide
+  integers implement in their own modules. Half-open `Range` excludes `end`
+  and is empty for equal or reversed bounds; `RangeInclusive` includes `end`,
+  so equal bounds hold one value. Touching half-open ranges do not overlap;
+  inclusive ranges sharing an endpoint do. `RangeFrom` includes its start,
+  `RangeTo` excludes its end (so `range_to(MIN)` is empty), and `RangeFull`
+  contains every value of any type. Membership uses only `lt` and `le`, so
+  with f32 a NaN bound makes a bounded range empty and NaN is never a member
+  of one; the full range still contains NaN. Signed zeros compare equal, and
+  infinite endpoints are allowed. Every operation is a free function and a
+  method. The `start` and `end` methods crash when called from a generic body
+  with a record T (backlog b17); the free `core::range::start` works there.
 - Slice callers supply `len` because source code cannot read slice metadata
   yet. `len <= 0` is empty for the safe fallback and accumulation helpers.
   `first` traps on an empty view. `get_or` returns the fallback for an
@@ -1749,7 +1703,7 @@ modules and prints `3`.
 
 `sample_programs/floating_window_total.lani` sorts finite readings and searches
 them through `core::slice_f32`, sums and checks them against an inclusive
-`core::range_f32` interval using a receiver method, clamps them, and carries
+`core::range::RangeInclusive<f32>` interval using a receiver method, clamps them, and carries
 the result through `Option<f32>`. It prints the matched reading's index, `2`,
 after verifying the floating total is `7.0`. Floating-to-integer conversion remains a compiler
 dependency; see item 43 below.
@@ -1896,10 +1850,6 @@ Run `cargo test --test stdlib_binary_wide_u64_execution` for full-width
 binary formatting, bounded parsing, fallbacks, and native bounds trapping.
 Run `cargo test --test stdlib_binary_wide_i64_execution` for signed
 full-width binary formatting, bounded parsing, and native bounds trapping.
-Run `cargo test --test stdlib_wide_u64_range_execution` for the full-width
-unsigned range forms, their receiver methods, and endpoint boundaries.
-Run `cargo test --test stdlib_wide_i64_range_execution` for the signed
-two-word range forms, methods, negative ordering, and both extrema.
 Run `cargo test --test stdlib_wide_i64_bits_execution` for the signed
 two-word bit view, including negative patterns and sign-bit rotations.
 Run `cargo test --test stdlib_signed_bit_report_program` for a real program
@@ -2558,10 +2508,9 @@ also fixes the imported struct-return relocation path described below.
     receiver argument hash and exact comparison use those collapsed scalar
     payloads, so distinct width specializations share a lookup key. Raw GPU
     lexing and standalone parsing accept the repro; the type-check method-key
-    pass rejects it. The concrete `range_i8`, `range_i16`, `range_u8`, and
-    `range_u16` modules now expose and execute same-name receiver methods on
-    their distinct concrete range types. Generic `Range<T>` width-specific
-    method overloads still need width-preserving method keys.
+    pass rejects it. Generic `Range<T>` now replaces the concrete per-width
+    range modules; width-specific method overloads on one generic type still
+    need width-preserving method keys.
 38. **Resolved: RangeFull layout after unrelated exports.**
     `repro_range_full_growth.lani` imports the adjacent
     `repro_range_full_growth_root` copy of `core::range` with seven extra
@@ -2579,13 +2528,11 @@ also fixes the imported struct-return relocation path described below.
     machine representation for the runtime artifact. Unknown aggregate widths
     do not qualify. Compiler IR layouts and the x86 ABI are unchanged.
     `repro_wide_range_full_import.lani` is a smaller cross-module case: simply
-    importing both `core::range` and `core::wide_u64_range` and calling
+    importing both `core::range` and `core::wide_u64` and calling
     `range_full()` formerly produced the same diagnostic. Both reproductions
     now execute in `imported_empty_struct_results_execute_without_erasing_nominal_checks`.
     Assigning the empty result to an unrelated struct or to i32 still produces
-    `LNC0006`. The wide range module currently provides `full_contains` as a
-    scalar predicate; generic empty results and untested forwarding APIs are
-    not covered by this repair.
+    `LNC0006`.
 39. **Resolved: local helpers returning imported concrete Option or Result.**
     `repro_option_u16_local_return.lani` previously compiled but segfaulted.
     The type checker now carries the checked width of an imported flat struct
@@ -2913,7 +2860,7 @@ also fixes the imported struct-return relocation path described below.
     type checker's later local method lookup cleared an already resolved
     imported method's return type because it checked only the local function
     index. It now also checks the imported dependency ID before changing the
-    call record. The minimal repro, all 14 `core::range_f32` receiver methods,
+    call record. The minimal repro, the `f32` range receiver methods,
     and the floating window sample execute on x86_64. This changes GPU
     semantic resolution, not the x86 call ABI; user-program GPU device
     execution is still unverified.

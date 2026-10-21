@@ -17,33 +17,33 @@ module app::main;
 import core::range;
 
 fn main() {
-    let middle: core::range::Range<i32> = core::range::range_i32(2, 6);
-    let overlapping: core::range::Range<i32> = range_i32(5, 9);
-    let touching: core::range::Range<i32> = core::range::range_i32(6, 8);
-    let empty_inside: core::range::Range<i32> = range_i32(4, 4);
-    let reversed: core::range::Range<i32> = core::range::range_i32(9, 3);
+    let middle: core::range::Range<i32> = core::range::range(2, 6);
+    let overlapping: core::range::Range<i32> = range(5, 9);
+    let touching: core::range::Range<i32> = core::range::range(6, 8);
+    let empty_inside: core::range::Range<i32> = range(4, 4);
+    let reversed: core::range::Range<i32> = core::range::range(9, 3);
 
-    let free_overlap: bool = core::range::overlaps_i32(middle, overlapping);
-    let free_touching: bool = overlaps_i32(middle, touching);
-    let free_empty: bool = core::range::overlaps_i32(middle, empty_inside);
-    let free_reversed: bool = overlaps_i32(middle, reversed);
+    let free_overlap: bool = core::range::overlaps(middle, overlapping);
+    let free_touching: bool = overlaps(middle, touching);
+    let free_empty: bool = core::range::overlaps(middle, empty_inside);
+    let free_reversed: bool = overlaps(middle, reversed);
     let method_overlap: bool = middle.overlaps(overlapping);
     let method_touching: bool = middle.overlaps(touching);
 
-    let closed: core::range::RangeInclusive<i32> = range_inclusive_i32(2, 6);
+    let closed: core::range::RangeInclusive<i32> = range_inclusive(2, 6);
     let closed_touching: core::range::RangeInclusive<i32> =
-        core::range::range_inclusive_i32(6, 8);
+        core::range::range_inclusive(6, 8);
     let closed_disjoint: core::range::RangeInclusive<i32> =
-        range_inclusive_i32(7, 9);
+        range_inclusive(7, 9);
     let closed_empty: core::range::RangeInclusive<i32> =
-        core::range::range_inclusive_i32(8, 3);
+        core::range::range_inclusive(8, 3);
 
     let inclusive_touching: bool =
-        core::range::overlaps_inclusive_i32(closed, closed_touching);
+        core::range::overlaps_inclusive(closed, closed_touching);
     let inclusive_disjoint: bool =
-        overlaps_inclusive_i32(closed, closed_disjoint);
+        overlaps_inclusive(closed, closed_disjoint);
     let inclusive_empty: bool =
-        core::range::overlaps_inclusive_i32(closed, closed_empty);
+        core::range::overlaps_inclusive(closed, closed_empty);
     let inclusive_method_touching: bool = closed.overlaps(closed_touching);
     let inclusive_method_empty: bool = closed.overlaps(closed_empty);
 
@@ -74,8 +74,8 @@ fn main() {
         "path manifest should include core::range from the stdlib root"
     );
     for helper_name in [
-        "core::range::overlaps_i32",
-        "core::range::overlaps_inclusive_i32",
+        "core::range::overlaps",
+        "core::range::overlaps_inclusive",
     ] {
         assert!(
             runtime_bound_api_diagnostic_info(helper_name).is_none(),

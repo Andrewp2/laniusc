@@ -80,7 +80,7 @@ fn main() -> i32 {
     let borrowed: [i32] = recovered.values;
     let total: i32 = 0;
     for value in borrowed {
-        if (!core::range::contains_i32(core::range::range_i32(-10, 21), value)) { return 8; }
+        if (!core::range::contains(core::range::range(-10, 21), value)) { return 8; }
         total = total + value;
     }
     if (!recovered.valid || total != 22) { return 9; }

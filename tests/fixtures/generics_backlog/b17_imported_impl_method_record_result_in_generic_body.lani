@@ -1,0 +1,22 @@
+// expect: 42
+// x86 only. A method of an imported generic impl whose result type is the
+// impl's T, here core::range::Range<T>::start(self) -> T, called from a
+// generic body with a record T, segfaults. The caller stores the result
+// register as a 4-byte scalar (mov %eax) and then reads that slot as the
+// address of an aggregate. Wasm runs it; so do a direct call from main, the
+// free core::range::start, a local generic impl, and methods that also take
+// a T argument (unwrap_or).
+module app::main;
+import core::range;
+
+struct V { a: i32 }
+
+fn run<T>(v: T) -> i32 {
+    let b: core::range::Range<T> = core::range::range(v, v);
+    let got: T = b.start();
+    return 42;
+}
+
+fn main() -> i32 {
+    return run(V { a: 1 });
+}

@@ -9,11 +9,11 @@ struct Summary { count: i32, total: i32 }
 
 fn summarize(values: [i32]) -> core::option::Option<Summary> {
     let absent: core::option::Option<Summary> = core::option::None();
-    let allowed: core::range::Range<i32> = core::range::range_i32(-100, 101);
+    let allowed: core::range::Range<i32> = core::range::range(-100, 101);
     let count: i32 = 0;
     let total: i32 = 0;
     for value in values {
-        if (!core::range::contains_i32(allowed, value)) { return absent; }
+        if (!core::range::contains(allowed, value)) { return absent; }
         total = core::number_i32::saturating_add(total, value);
         count = count + 1;
     }

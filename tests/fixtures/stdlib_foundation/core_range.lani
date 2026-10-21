@@ -1,0 +1,206 @@
+// expect: 0
+// Every core::range function, free and as a method, through one generic
+// checker over three ordered values, for every integer width, char, f32,
+// both wide integers and a user record with its own Ord. f32 then checks
+// NaN bounds and members, infinities and signed zero. Exits 0. On a failure
+// it prints 100 * row + the failing check and exits with the row.
+module app::main;
+
+import core::cmp;
+import core::range;
+import core::wide_i64;
+import core::wide_u64;
+
+struct Version { major: i32, minor: i32 }
+
+pub impl core::cmp::Eq<Version> for Version {
+    pub fn eq(left: Version, right: Version) -> bool {
+        return left.major == right.major && left.minor == right.minor;
+    }
+    pub fn ne(left: Version, right: Version) -> bool {
+        return !Version::eq(left, right);
+    }
+}
+
+pub impl core::cmp::Ord<Version> for Version {
+    pub fn lt(left: Version, right: Version) -> bool {
+        return left.major < right.major || left.major == right.major && left.minor < right.minor;
+    }
+    pub fn le(left: Version, right: Version) -> bool {
+        return !Version::lt(right, left);
+    }
+    pub fn gt(left: Version, right: Version) -> bool {
+        return Version::lt(right, left);
+    }
+    pub fn ge(left: Version, right: Version) -> bool {
+        return !Version::lt(left, right);
+    }
+}
+
+// low < mid < high.
+fn range_checks<T>(low: T, mid: T, high: T) -> i32
+    where T: core::cmp::Ord<T>, T: core::cmp::Eq<T> {
+    let span: core::range::Range<T> = core::range::range(low, high);
+    let upper: core::range::Range<T> = core::range::range(mid, high);
+    let lower: core::range::Range<T> = core::range::range(low, mid);
+    let point: core::range::Range<T> = core::range::range(mid, mid);
+    let reversed: core::range::Range<T> = core::range::range(high, low);
+
+    if (!T::eq(core::range::start(span), low) || !T::eq(core::range::end(span), high)) { return 1; }
+    // The start and end methods run from main: from a generic body with a
+    // record T they crash (tests/fixtures/generics_backlog/b17).
+    if (core::range::is_empty(span) || !core::range::is_empty(point)) { return 3; }
+    if (!core::range::is_empty(reversed) || span.is_empty() || !point.is_empty()) { return 4; }
+    if (!reversed.is_empty()) { return 5; }
+    if (!core::range::contains(span, low) || !core::range::contains(span, mid)) { return 6; }
+    if (core::range::contains(span, high) || core::range::contains(upper, low)) { return 7; }
+    if (core::range::contains(point, mid) || core::range::contains(reversed, mid)) { return 8; }
+    if (!span.contains(mid) || span.contains(high) || point.contains(mid)) { return 9; }
+    if (!core::range::overlaps(span, upper) || core::range::overlaps(lower, upper)) { return 10; }
+    if (core::range::overlaps(span, point) || core::range::overlaps(reversed, span)) { return 11; }
+    if (!span.overlaps(lower) || lower.overlaps(upper) || point.overlaps(span)) { return 12; }
+
+    let closed: core::range::RangeInclusive<T> = core::range::range_inclusive(low, mid);
+    let touching: core::range::RangeInclusive<T> = core::range::range_inclusive(mid, high);
+    let single: core::range::RangeInclusive<T> = core::range::range_inclusive(high, high);
+    let backwards: core::range::RangeInclusive<T> = core::range::range_inclusive(high, mid);
+    if (!T::eq(core::range::start_inclusive(closed), low)) { return 13; }
+    if (!T::eq(core::range::end_inclusive(closed), mid)) { return 14; }
+    if (core::range::is_empty_inclusive(single) || !core::range::is_empty_inclusive(backwards)) {
+        return 16;
+    }
+    if (closed.is_empty() || single.is_empty() || !backwards.is_empty()) { return 17; }
+    if (!core::range::contains_inclusive(closed, mid) || core::range::contains_inclusive(closed, high)) {
+        return 18;
+    }
+    if (!core::range::contains_inclusive(single, high) || core::range::contains_inclusive(backwards, mid)) {
+        return 19;
+    }
+    if (!closed.contains(low) || !closed.contains(mid) || closed.contains(high)) { return 20; }
+    if (!core::range::overlaps_inclusive(closed, touching)) { return 21; }
+    if (core::range::overlaps_inclusive(closed, single) || core::range::overlaps_inclusive(backwards, touching)) {
+        return 22;
+    }
+    if (!closed.overlaps(touching) || !touching.overlaps(single) || closed.overlaps(single)) {
+        return 23;
+    }
+
+    let from: core::range::RangeFrom<T> = core::range::range_from(mid);
+    let to: core::range::RangeTo<T> = core::range::range_to(mid);
+    if (!T::eq(core::range::start_from(from), mid)) { return 24; }
+    if (!core::range::contains_from(from, mid) || !core::range::contains_from(from, high)) { return 25; }
+    if (core::range::contains_from(from, low) || !from.contains(high) || from.contains(low)) { return 26; }
+    if (!T::eq(core::range::end_to(to), mid)) { return 27; }
+    if (!core::range::contains_to(to, low) || core::range::contains_to(to, mid)) { return 28; }
+    if (!to.contains(low) || to.contains(mid) || to.contains(high)) { return 29; }
+
+    let full: core::range::RangeFull = core::range::range_full();
+    if (!core::range::contains_full(full, low) || !full.contains(high)) { return 30; }
+    return 0;
+}
+
+fn row(index: i32, code: i32) -> i32 {
+    if (code == 0) { return 0; }
+    print(index * 100 + code);
+    return index;
+}
+
+fn float_checks() -> i32 {
+    let zero: f32 = 0.0;
+    let nan: f32 = zero / zero;
+    let infinity: f32 = 1.0 / zero;
+    let negative_zero: f32 = -0.0;
+    let finite: core::range::Range<f32> = core::range::range(-1.0, 2.0);
+    if (finite.contains(nan) || core::range::range(nan, 2.0).contains(1.0)) { return 1; }
+    if (!core::range::range(nan, 2.0).is_empty() || !core::range::range(-1.0, nan).is_empty()) { return 2; }
+    if (!core::range::range_inclusive(nan, nan).is_empty() || core::range::range_inclusive(-1.0, 2.0).contains(nan)) {
+        return 3;
+    }
+    if (core::range::range(nan, 2.0).overlaps(finite) || finite.overlaps(core::range::range(1.0, nan))) {
+        return 4;
+    }
+    if (core::range::range_from(1.0).contains(nan) || core::range::range_from(nan).contains(1.0)) { return 5; }
+    if (core::range::range_to(1.0).contains(nan) || core::range::range_to(nan).contains(0.0)) { return 6; }
+    if (!core::range::range_full().contains(nan)) { return 7; }
+    let everything: core::range::Range<f32> = core::range::range(0.0 - infinity, infinity);
+    if (!everything.contains(1.0) || everything.contains(infinity)) { return 8; }
+    if (!core::range::range_inclusive(infinity, infinity).contains(infinity)) { return 9; }
+    // -0.0 and 0.0 compare equal: [-0.0, 0.0) is empty, [-0.0, 0.0] holds both.
+    if (!core::range::range(negative_zero, zero).is_empty()) { return 10; }
+    let zeros: core::range::RangeInclusive<f32> = core::range::range_inclusive(negative_zero, zero);
+    if (!zeros.contains(zero) || !zeros.contains(negative_zero)) { return 11; }
+    return 0;
+}
+
+// The accessor methods, on concrete record and scalar ranges.
+fn accessor_checks() -> i32 {
+    let low: Version = Version { major: 1, minor: 2 };
+    let high: Version = Version { major: 3, minor: 4 };
+    let span: core::range::Range<Version> = core::range::range(low, high);
+    let closed: core::range::RangeInclusive<Version> = core::range::range_inclusive(low, high);
+    if (span.start().minor != 2 || span.end().major != 3) { return 1; }
+    if (closed.start().major != 1 || closed.end().minor != 4) { return 2; }
+    if (core::range::range_from(high).start().minor != 4) { return 3; }
+    if (core::range::range_to(low).end().major != 1) { return 4; }
+    let numbers: core::range::Range<u8> = core::range::range(3, 9);
+    if (numbers.start() != 3 || numbers.end() != 9) { return 5; }
+    return 0;
+}
+
+fn main() -> i32 {
+    let i8_low: i8 = -128;
+    let i8_mid: i8 = 0;
+    let i8_high: i8 = 127;
+    let i16_low: i16 = -32768;
+    let i16_mid: i16 = -1;
+    let i16_high: i16 = 32767;
+    let i64_low: i64 = -9223372036854775808;
+    let i64_mid: i64 = 0;
+    let i64_high: i64 = 9223372036854775807;
+    let isize_low: isize = -5;
+    let isize_mid: isize = 0;
+    let isize_high: isize = 5;
+    let u8_low: u8 = 0;
+    let u8_mid: u8 = 128;
+    let u8_high: u8 = 255;
+    let u16_low: u16 = 1;
+    let u16_mid: u16 = 32768;
+    let u16_high: u16 = 65535;
+    let u32_low: u32 = 0;
+    let u32_mid: u32 = 2147483648;
+    let u32_high: u32 = 4294967295;
+    let u64_low: u64 = 0;
+    let u64_mid: u64 = 4294967296;
+    let u64_high: u64 = 18446744073709551615;
+    let usize_low: usize = 0;
+    let usize_mid: usize = 1;
+    let usize_high: usize = 4096;
+    let checks: [i32; 17] = [
+        row(1, range_checks(-2147483648, 0, 2147483647)),
+        row(2, range_checks(i8_low, i8_mid, i8_high)),
+        row(3, range_checks(i16_low, i16_mid, i16_high)),
+        row(4, range_checks(i64_low, i64_mid, i64_high)),
+        row(5, range_checks(isize_low, isize_mid, isize_high)),
+        row(6, range_checks(u8_low, u8_mid, u8_high)),
+        row(7, range_checks(u16_low, u16_mid, u16_high)),
+        row(8, range_checks(u32_low, u32_mid, u32_high)),
+        row(9, range_checks(u64_low, u64_mid, u64_high)),
+        row(10, range_checks(usize_low, usize_mid, usize_high)),
+        row(11, range_checks('\0', 'é', '😀')),
+        row(12, range_checks(-2.5, 0.0, 3.5)),
+        row(13, range_checks(core::wide_i64::from_i32(-1), core::wide_i64::from_i32(0),
+            core::wide_i64::from_words(1, 0))),
+        row(14, range_checks(core::wide_u64::from_u32(7), core::wide_u64::from_words(1, 0),
+            core::wide_u64::from_words(4294967295, 4294967295))),
+        row(15, range_checks(Version { major: 1, minor: 9 }, Version { major: 2, minor: 0 },
+            Version { major: 2, minor: 1 })),
+        row(16, float_checks()),
+        row(17, accessor_checks()),
+    ];
+    let index: i32 = 0;
+    while (index < 17) {
+        if (checks[index] != 0) { return checks[index]; }
+        index += 1;
+    }
+    return 0;
+}

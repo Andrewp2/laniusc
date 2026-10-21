@@ -22,14 +22,17 @@ stdlib modules that a generic replacement cannot cover until the gap closes.
   node rejects ("not enough arguments on the stack for local.set"). The same
   shape with a local `enum R<T>` runs, and x86 runs both. It blocks the
   generic Option/Result stdlib on Wasm (found 2026-10-20). Owner: TBD.
-- b17: `some.unwrap()` on the stdlib's Option<T> inside a generic body with
-  a record T (`fn run<T>(value: T)` called with a struct) segfaults (-11)
-  at run time on x86. The free `core::option::unwrap(some)` runs in the same
-  place, and so do scalar payloads, a direct call outside a generic body and
-  a local enum's diverging method. Result's unwrap and unwrap_err methods
-  crash the same way. core_option_result.lani calls the free forms from
-  its generic checker and the methods on concrete records (found
-  2026-10-20). Owner: TBD.
+- b17 (x86): a method of an imported generic impl whose result type is the
+  impl's T, called from a generic body with a record T, segfaults (-11):
+  `b.start()` on `core::range::Range<T>`, `some.unwrap()` on Option<T>,
+  `ok.unwrap()` on Result<T, E>. In the caller's instance the result is
+  stored as a 4-byte scalar (`mov %eax`) and the slot is then read as the
+  address of an aggregate, so the call's result type is not substituted
+  from the receiver. Wasm runs it, and so do a direct call from main, the
+  free functions, a local generic impl and methods that also take a T
+  argument (`unwrap_or`). core_option_result.lani and core_range.lani call
+  the free forms from their generic checkers and the methods on concrete
+  types (found 2026-10-20). Owner: TBD.
 
 Not probes here:
 - An imported call's record result passed straight to another call, e.g.

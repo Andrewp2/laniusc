@@ -22,11 +22,11 @@ fn main() -> i32 {
     }
     let first: i32 = core::slice::lower_bound_i32(view, 4, 24);
     let end: i32 = core::slice::upper_bound_i32(view, 4, 42);
-    let window: core::range::Range<i32> = core::range::range_i32(first, end);
+    let window: core::range::Range<i32> = core::range::range(first, end);
     let index: i32 = 0;
     let checksum: i32 = 0;
     while (index<4) {
-        if (core::range::contains_i32(window, index)) {
+        if (core::range::contains(window, index)) {
             let reading: i32 = core::slice::get_or(view, 4, index, 0);
             checksum = core::number_i32::saturating_add(checksum, reading);
         }

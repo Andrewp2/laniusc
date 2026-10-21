@@ -18,11 +18,11 @@ fn main() -> i32 {
     if (!core::slice_u8::starts_with(packet, 7, header, 3)) {
         return 1;
     }
-    let payload: core::range::Range<i32> = core::range::range_i32(3, 7);
+    let payload: core::range::Range<i32> = core::range::range(3, 7);
     let index: i32 = 0;
     let checksum: u32 = 0;
     while (index < 7) {
-        if (core::range::contains_i32(payload, index)) {
+        if (core::range::contains(payload, index)) {
             let ascii: u8 = core::slice_u8::get_or(packet, 7, index, 0);
             if (!core::byte::is_ascii_hexdigit(ascii)) {
                 return 2;

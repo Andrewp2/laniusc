@@ -2,7 +2,6 @@ module app::main;
 import core::char;
 import core::number_i32;
 import core::range;
-import core::range_char;
 import core::slice_char;
 fn main() -> i32 {
     let a: char = 'a';
@@ -16,8 +15,8 @@ fn main() -> i32 {
     if (first<0 || after<first) {
         return 2;
     }
-    let matches: core::range::Range<i32> = core::range::range_i32(first, after);
-    let lowercase: core::range_char::RangeInclusiveChar = core::range_char::range_inclusive(a, z);
+    let matches: core::range::Range<i32> = core::range::range(first, after);
+    let lowercase: core::range::RangeInclusive<char> = core::range::range_inclusive(a, z);
     let count: i32 = 0;
     let index: i32 = 0;
     while (index<6) {

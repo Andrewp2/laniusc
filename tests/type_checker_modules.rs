@@ -98,7 +98,7 @@ fn assert_gpu_type_check_rejects(src: &str) {
 #[test]
 fn range_interface_preserves_generic_fields_and_methods() {
     let artifact =
-        common::semantic_interface_with_timeout(7, &[include_str!("../stdlib/core/range.lani")])
+        common::semantic_interface_with_timeout(7, &[include_str!("../stdlib/core/cmp.lani"), include_str!("../stdlib/core/range.lani")])
             .unwrap();
     let (range_index, declaration) = artifact
         .declarations
@@ -130,44 +130,34 @@ fn range_interface_preserves_generic_fields_and_methods() {
             && (subject.payload_lo, subject.nominal_unit_id, subject.payload_hi)
                 == (artifact.library_id, artifact.unit_id, range_index as u32)
     }).collect::<Vec<_>>();
-    assert_eq!(implementations.len(), 2, "Range<i32> and Range<u32> retain distinct lexical implementations");
-    let mut seen = std::collections::BTreeSet::new();
-    for function_name in ["start_i32", "start_u32"] {
-        let function = artifact.declarations.iter().find(|declaration|
-            semantic_interface_name(&artifact.name_bytes, declaration.name_byte_start,
-                declaration.name_byte_len) == function_name).unwrap();
-        let signature = artifact.types[function.signature_type as usize];
-        assert_eq!(signature.kind, GpuSemanticInterfaceTypeKind::Function as u32);
-        let result = artifact.type_edges[(signature.first_edge + signature.edge_count - 1) as usize].type_index;
-        let scalar = artifact.types[result as usize];
-        assert_eq!(scalar.kind, GpuSemanticInterfaceTypeKind::Scalar as u32);
-        assert!(seen.insert(scalar.payload_lo), "signed and unsigned receivers are distinct");
-        let (implementation_index, implementation) = implementations.iter().copied().find(|(_, implementation)| {
-            let subject = artifact.types[implementation.subject_type as usize];
-            if subject.edge_count != 1 { return false; }
-            let argument = artifact.types[artifact.type_edges[subject.first_edge as usize].type_index as usize];
-            argument.kind == GpuSemanticInterfaceTypeKind::Scalar as u32
-                && argument.payload_lo == scalar.payload_lo
-        }).expect("full receiver application matches its signed or unsigned scalar");
-        let members = &artifact.members[implementation.first_member as usize
-            ..(implementation.first_member + implementation.member_count) as usize];
-        assert!(members.iter().all(|member| member.owner_ref == (0x8000_0000 | implementation_index as u32)));
-        let methods = members.iter().filter(|member|
-            member.kind == GpuSemanticInterfaceMemberKind::ImplementationMethod as u32).collect::<Vec<_>>();
-        assert_eq!(methods.len(), 5);
-        let mut names = methods.iter().map(|member|
-            semantic_interface_name(&artifact.name_bytes, member.name_byte_start, member.name_byte_len))
-            .collect::<Vec<_>>();
-        names.sort_unstable();
-        assert_eq!(names, ["contains", "end", "is_empty", "overlaps", "start"]);
-        for method in methods {
-            assert_eq!(method.receiver_type_index, implementation.subject_type);
-            assert_eq!(method.method_type_parameter_count(), 0);
-            assert_eq!(method.method_constant_parameter_count(), 0);
-            assert!(method.trait_method_is_public());
-        }
-        assert_eq!(implementation.argument_count, 0);
-        assert_eq!(implementation.method_binding_count, 0);
+    assert_eq!(implementations.len(), 1, "one generic impl<T> Range<T> serves every element type");
+    let (implementation_index, implementation) = implementations[0];
+    let subject = artifact.types[implementation.subject_type as usize];
+    assert_eq!(subject.edge_count, 1);
+    let argument = artifact.types[artifact.type_edges[subject.first_edge as usize].type_index as usize];
+    assert_eq!(argument.kind, GpuSemanticInterfaceTypeKind::GenericParameter as u32);
+    let start = artifact.declarations.iter().find(|declaration|
+        semantic_interface_name(&artifact.name_bytes, declaration.name_byte_start,
+            declaration.name_byte_len) == "start").unwrap();
+    let signature = artifact.types[start.signature_type as usize];
+    assert_eq!(signature.kind, GpuSemanticInterfaceTypeKind::Function as u32);
+    let result = artifact.type_edges[(signature.first_edge + signature.edge_count - 1) as usize].type_index;
+    assert_eq!(artifact.types[result as usize].kind, GpuSemanticInterfaceTypeKind::GenericParameter as u32);
+    let members = &artifact.members[implementation.first_member as usize
+        ..(implementation.first_member + implementation.member_count) as usize];
+    assert!(members.iter().all(|member| member.owner_ref == (0x8000_0000 | implementation_index as u32)));
+    let methods = members.iter().filter(|member|
+        member.kind == GpuSemanticInterfaceMemberKind::ImplementationMethod as u32).collect::<Vec<_>>();
+    let mut names = methods.iter().map(|member|
+        semantic_interface_name(&artifact.name_bytes, member.name_byte_start, member.name_byte_len))
+        .collect::<Vec<_>>();
+    names.sort_unstable();
+    assert_eq!(names, ["contains", "end", "is_empty", "overlaps", "start"]);
+    for method in methods {
+        assert_eq!(method.receiver_type_index, implementation.subject_type);
+        assert_eq!(method.method_type_parameter_count(), 1, "the impl parameter T");
+        assert_eq!(method.method_constant_parameter_count(), 0);
+        assert!(method.trait_method_is_public());
     }
 }
 
@@ -4556,17 +4546,17 @@ fn main() {
 fn type_checker_accepts_core_range_module_calls() {
     let cases = [
         (
-            &[include_str!("../stdlib/core/range.lani")][..],
+            &[include_str!("../stdlib/core/cmp.lani"), include_str!("../stdlib/core/range.lani")][..],
             r#"
 module app::main;
 
 import core::range;
 
 fn main() {
-    let range: core::range::Range<i32> = core::range::range_i32(1, 4);
-    let start: i32 = core::range::start_i32(range);
-    let end: i32 = core::range::end_i32(range);
-    if (core::range::contains_i32(range, 2)) {
+    let range: core::range::Range<i32> = core::range::range(1, 4);
+    let start: i32 = core::range::start(range);
+    let end: i32 = core::range::end(range);
+    if (core::range::contains(range, 2)) {
         return start;
     }
     return end;
@@ -4575,18 +4565,18 @@ fn main() {
 "#,
         ),
         (
-            &[include_str!("../stdlib/core/range.lani")][..],
+            &[include_str!("../stdlib/core/cmp.lani"), include_str!("../stdlib/core/range.lani")][..],
             r#"
 module app::main;
 
 import core::range;
 
 fn main() {
-    let range: core::range::Range<i32> = core::range::range_i32(1, 4);
+    let range: core::range::Range<i32> = core::range::range(1, 4);
     let start: i32 = range.start();
     let end: i32 = range.end();
-    let direct_start: i32 = core::range::range_i32(1, 4).start();
-    let direct_contains: bool = core::range::range_i32(1, 4).contains(2);
+    let direct_start: i32 = core::range::range(1, 4).start();
+    let direct_contains: bool = core::range::range(1, 4).contains(2);
     if (range.contains(2) && direct_contains) {
         return start + direct_start;
     }
@@ -4595,20 +4585,20 @@ fn main() {
 "#,
         ),
         (
-            &[include_str!("../stdlib/core/range.lani")][..],
+            &[include_str!("../stdlib/core/cmp.lani"), include_str!("../stdlib/core/range.lani")][..],
             r#"
 module app::main;
 
 import core::range;
 
 fn main() {
-    let range: core::range::RangeInclusive<i32> = core::range::range_inclusive_i32(1, 4);
+    let range: core::range::RangeInclusive<i32> = core::range::range_inclusive(1, 4);
     let start: i32 = range.start();
     let end: i32 = range.end();
     let empty: bool = range.is_empty();
-    let direct_end: i32 = core::range::range_inclusive_i32(1, 4).end();
-    let direct_contains: bool = core::range::range_inclusive_i32(1, 4).contains(4);
-    let direct_empty: bool = core::range::range_inclusive_i32(5, 4).is_empty();
+    let direct_end: i32 = core::range::range_inclusive(1, 4).end();
+    let direct_contains: bool = core::range::range_inclusive(1, 4).contains(4);
+    let direct_empty: bool = core::range::range_inclusive(5, 4).is_empty();
     if (range.contains(4) && !empty && !direct_empty) {
         return direct_end;
     }
