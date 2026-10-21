@@ -1,0 +1,99 @@
+// Arithmetic traits that generic code can bound on. SaturatingAdd clamps an
+// integer sum to the type's range; f32 adds with IEEE rules, where overflow
+// already gives an infinity and a NaN operand gives NaN. The wide integers
+// implement it in their own modules.
+module core::ops;
+
+pub trait SaturatingAdd<T> {
+    pub fn saturating_add(left: T, right: T) -> T;
+}
+
+pub impl SaturatingAdd<i8> for i8 {
+    pub fn saturating_add(left: i8, right: i8) -> i8 {
+        let total: i32 = (left as i32) + (right as i32);
+        if (total > 127) { return 127; }
+        if (total < -128) { return -128; }
+        return total as i8;
+    }
+}
+
+pub impl SaturatingAdd<i16> for i16 {
+    pub fn saturating_add(left: i16, right: i16) -> i16 {
+        let total: i32 = (left as i32) + (right as i32);
+        if (total > 32767) { return 32767; }
+        if (total < -32768) { return -32768; }
+        return total as i16;
+    }
+}
+
+pub impl SaturatingAdd<i32> for i32 {
+    pub fn saturating_add(left: i32, right: i32) -> i32 {
+        if (right > 0 && left > 2147483647 - right) { return 2147483647; }
+        if (right < 0 && left < -2147483648 - right) { return -2147483648; }
+        return left + right;
+    }
+}
+
+pub impl SaturatingAdd<i64> for i64 {
+    pub fn saturating_add(left: i64, right: i64) -> i64 {
+        let max: i64 = 9223372036854775807;
+        let min: i64 = -9223372036854775808;
+        if (right > 0 && left > max - right) { return max; }
+        if (right < 0 && left < min - right) { return min; }
+        return left + right;
+    }
+}
+
+pub impl SaturatingAdd<isize> for isize {
+    pub fn saturating_add(left: isize, right: isize) -> isize {
+        let max: isize = 9223372036854775807;
+        let min: isize = -9223372036854775808;
+        if (right > 0 && left > max - right) { return max; }
+        if (right < 0 && left < min - right) { return min; }
+        return left + right;
+    }
+}
+
+pub impl SaturatingAdd<u8> for u8 {
+    pub fn saturating_add(left: u8, right: u8) -> u8 {
+        if (left > 255 - right) { return 255; }
+        return left + right;
+    }
+}
+
+pub impl SaturatingAdd<u16> for u16 {
+    pub fn saturating_add(left: u16, right: u16) -> u16 {
+        if (left > 65535 - right) { return 65535; }
+        return left + right;
+    }
+}
+
+pub impl SaturatingAdd<u32> for u32 {
+    pub fn saturating_add(left: u32, right: u32) -> u32 {
+        let max: u32 = 4294967295;
+        if (left > max - right) { return max; }
+        return left + right;
+    }
+}
+
+pub impl SaturatingAdd<u64> for u64 {
+    pub fn saturating_add(left: u64, right: u64) -> u64 {
+        let max: u64 = 18446744073709551615;
+        if (left > max - right) { return max; }
+        return left + right;
+    }
+}
+
+pub impl SaturatingAdd<usize> for usize {
+    pub fn saturating_add(left: usize, right: usize) -> usize {
+        let max: usize = 18446744073709551615;
+        if (left > max - right) { return max; }
+        return left + right;
+    }
+}
+
+pub impl SaturatingAdd<f32> for f32 {
+    pub fn saturating_add(left: f32, right: f32) -> f32 {
+        return left + right;
+    }
+}

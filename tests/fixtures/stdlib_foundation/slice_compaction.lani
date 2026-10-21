@@ -4,47 +4,47 @@ import core::slice;
 fn main() -> i32 {
     let runs:[i32; 8] =[1, 1, 2, 2, 2, 3, 3, 1];
     let runs_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(runs), 8);
-    let compact_len: i32 = core::slice::dedup_adjacent_i32(runs_view, 8);
+    let compact_len: i32 = core::slice::dedup_adjacent(runs_view, 8);
     if (compact_len != 4 || runs[0] != 1 || runs[1] != 2 || runs[2] != 3 || runs[3] != 1) {
         return 1;
     }
-    if (core::slice::dedup_adjacent_i32(runs_view, -1) != 0 || runs[0] != 1 || runs[1] != 2) {
+    if (core::slice::dedup_adjacent(runs_view, -1) != 0 || runs[0] != 1 || runs[1] != 2) {
         return 2;
     }
-    let retained_len: i32 = core::slice::retain_not_equal_i32(runs_view, compact_len, 2);
+    let retained_len: i32 = core::slice::retain_not_equal(runs_view, compact_len, 2);
     if (retained_len != 3 || runs[0] != 1 || runs[1] != 3 || runs[2] != 1) {
         return 3;
     }
-    if (core::slice::retain_not_equal_i32(runs_view, retained_len, 9) != 3 || runs[0] != 1 || runs[1] != 3 || runs[2] != 1) {
+    if (core::slice::retain_not_equal(runs_view, retained_len, 9) != 3 || runs[0] != 1 || runs[1] != 3 || runs[2] != 1) {
         return 4;
     }
     let repeated:[i32; 3] =[7, 7, 7];
     let repeated_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(repeated), 3);
-    if (core::slice::dedup_adjacent_i32(repeated_view, 3) != 1 || repeated[0] != 7 || core::slice::retain_not_equal_i32(repeated_view, -1, 7) != 0 || repeated[0] != 7) {
+    if (core::slice::dedup_adjacent(repeated_view, 3) != 1 || repeated[0] != 7 || core::slice::retain_not_equal(repeated_view, -1, 7) != 0 || repeated[0] != 7) {
         return 5;
     }
-    if (core::slice::retain_not_equal_i32(repeated_view, 3, 7) != 0) {
+    if (core::slice::retain_not_equal(repeated_view, 3, 7) != 0) {
         return 6;
     }
     let empty:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(repeated), 0);
-    if (core::slice::dedup_adjacent_i32(empty, 0) != 0 || core::slice::retain_not_equal_i32(empty, 0, 7) != 0) {
+    if (core::slice::dedup_adjacent(empty, 0) != 0 || core::slice::retain_not_equal(empty, 0, 7) != 0) {
         return 7;
     }
     let remove:[i32; 4] =[5, 6, 7, 8];
     let remove_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(remove), 4);
-    if (core::slice::remove_at_i32(remove_view, 4, -1) || core::slice::remove_at_i32(remove_view, 4, 4) || remove[0] != 5 || remove[1] != 6 || remove[2] != 7 || remove[3] != 8) {
+    if (core::slice::remove_at(remove_view, 4, -1) || core::slice::remove_at(remove_view, 4, 4) || remove[0] != 5 || remove[1] != 6 || remove[2] != 7 || remove[3] != 8) {
         return 8;
     }
-    if (!core::slice::remove_at_i32(remove_view, 4, 1) || remove[0] != 5 || remove[1] != 7 || remove[2] != 8) {
+    if (!core::slice::remove_at(remove_view, 4, 1) || remove[0] != 5 || remove[1] != 7 || remove[2] != 8) {
         return 9;
     }
-    if (!core::slice::remove_at_i32(remove_view, 3, 0) || remove[0] != 7 || remove[1] != 8) {
+    if (!core::slice::remove_at(remove_view, 3, 0) || remove[0] != 7 || remove[1] != 8) {
         return 10;
     }
-    if (!core::slice::remove_at_i32(remove_view, 2, 1) || remove[0] != 7) {
+    if (!core::slice::remove_at(remove_view, 2, 1) || remove[0] != 7) {
         return 11;
     }
-    if (!core::slice::remove_at_i32(remove_view, 1, 0) || core::slice::remove_at_i32(remove_view, 0, 0) || core::slice::remove_at_i32(remove_view, -1, 0)) {
+    if (!core::slice::remove_at(remove_view, 1, 0) || core::slice::remove_at(remove_view, 0, 0) || core::slice::remove_at(remove_view, -1, 0)) {
         return 12;
     }
     return 0;

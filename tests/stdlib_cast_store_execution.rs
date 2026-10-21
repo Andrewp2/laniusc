@@ -10,8 +10,7 @@ fn indexed_stores_follow_lvalue_element_type_on_x86() {
         "repro_u8_cast_store_named_local",
         "repro_i32_index_store",
         "slice_sequence",
-        "core_slice_u8",
-        "core_slice_u8_complete",
+        "core_slice",
     ] {
         let entry = root.join(format!("tests/fixtures/stdlib_foundation/{name}.lani"));
         let stdlib_root = root.join("stdlib");

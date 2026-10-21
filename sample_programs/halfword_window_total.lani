@@ -1,5 +1,5 @@
 module app::main;
-import core::slice_u16;
+import core::slice;
 import core::range;
 import core::number_u16;
 import core::option;
@@ -8,7 +8,7 @@ import core::result;
 fn first_in_band(values: [u16], len: i32, band: core::range::RangeInclusive<u16>) -> core::option::Option<u16> {
     let index: i32 = 0;
     while (index < len) {
-        let value: u16 = core::slice_u16::get_or(values, len, index, 0);
+        let value: u16 = core::slice::get_or(values, len, index, 0);
         if (core::range::contains_inclusive(band, value)) {
             return core::option::Some(value);
         }
@@ -24,7 +24,7 @@ fn main() -> i32 {
     let high: u16 = 32768;
     let maximum: u16 = 65535;
     let readings: [u16; 6] = [maximum, seven, high, four, seven, two];
-    if (core::slice_u16::sort(readings, 6) != 6) { return 1; }
+    if (core::slice::sort(readings, 6) != 6) { return 1; }
 
     let band: core::range::RangeInclusive<u16> = core::range::range_inclusive(four, high);
     let first: core::option::Option<u16> = first_in_band(readings, 6, band);
@@ -34,7 +34,7 @@ fn main() -> i32 {
     let total: u16 = 0;
     let index: i32 = 0;
     while (index < 6) {
-        let value: u16 = core::slice_u16::get_or(readings, 6, index, 0);
+        let value: u16 = core::slice::get_or(readings, 6, index, 0);
         if (core::range::contains_inclusive(band, value)) {
             total = core::number_u16::saturating_add(total, value);
         }

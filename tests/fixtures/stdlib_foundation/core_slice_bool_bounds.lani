@@ -1,9 +1,0 @@
-module app::main;
-import core::slice_bool;
-
-fn main() -> i32 {
-    let values: [bool; 1] = [true];
-    let result: bool = core::slice_bool::get_or(values, 2, 1, false);
-    if (result) { return 0; }
-    return 1;
-}

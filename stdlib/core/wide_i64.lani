@@ -2,6 +2,7 @@
 // This avoids the current native i64 literal and high-bit arithmetic path.
 module core::wide_i64;
 import core::cmp;
+import core::ops;
 import core::wide_u64;
 
 pub struct WideI64 {
@@ -289,4 +290,16 @@ pub impl core::cmp::Ord<WideI64> for WideI64 {
     pub fn le(left: WideI64, right: WideI64) -> bool { return compare(left, right) <= 0; }
     pub fn gt(left: WideI64, right: WideI64) -> bool { return compare(left, right) > 0; }
     pub fn ge(left: WideI64, right: WideI64) -> bool { return compare(left, right) >= 0; }
+}
+
+pub impl core::ops::SaturatingAdd<WideI64> for WideI64 {
+    pub fn saturating_add(left: WideI64, right: WideI64) -> WideI64 {
+        let total: WideI64 = wrapping_add(left, right);
+        if (is_negative(left) == is_negative(right) &&
+            is_negative(total) != is_negative(left)) {
+            if (is_negative(left)) { return min_value(); }
+            return max_value();
+        }
+        return total;
+    }
 }

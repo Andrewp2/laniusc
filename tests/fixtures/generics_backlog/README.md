@@ -93,3 +93,11 @@ Open stdlib needs (owner TBD):
   calls the operator unsupported. Keyed string containers and parsers need
   it. Repro: tests/fixtures/stdlib_foundation/repro_ordinary_string_comparison.lani
   (expects exit 42; listed in tests/fixtures/known_gaps.txt).
+- b18 (check only): `laniusc check --stdlib-root stdlib` rejects a call to a
+  generic function bounded by an imported trait, `g(x, y)` with
+  `T: core::cmp::Ord<T>`, with LNC0008 "unsatisfied trait bound", while
+  compiling the same file runs it (exit 42). A bound on a trait declared in
+  the same file passes check. The matrix compiles, so this probe passes there;
+  reproduce with `check`. It makes `check` useless on generic stdlib callers
+  (core_range.lani, core_slice.lani), so they are verified by compiling.
+  Found 2026-10-20. Owner: TBD.

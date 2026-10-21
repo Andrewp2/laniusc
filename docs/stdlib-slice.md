@@ -1,103 +1,88 @@
-# Generic slices
+# `core::slice`
 
-`core::slice` supplies ten allocation-free access and copying functions with
-shared generic Lanius bodies. The other 27 public functions in this module
-remain i32 arithmetic, comparison, search, and ordering algorithms.
+`core::slice` is 40 allocation-free functions over a view `[T]` of any
+element type. A fixed array passes as a view directly; raw views come from
+`core::mem`. Callers supply a logical element length because Lanius source
+cannot yet read slice metadata. A view borrows its storage and never
+allocates or frees it.
 
-## Supported execution
+```lanius
+import core::cmp;
+import core::slice;
 
-The generic functions execute through imported calls on x86_64 Linux ELF output
-from the GPU compiler. Runtime tests cover i32, u32, bool, f32, char, i8, i16,
-u8, and u16 views borrowed from fixed arrays. They also cover typed i32 views
-constructed from raw storage. Narrow integer spellings share their signed or
-unsigned 32-bit compiler identity; distinct-width type checking remains a
-compiler dependency. Focused compiler tests also execute record access,
-mutation, reversal, fill, and copying, plus string access, swap, and fill.
-The [compiler checkpoint](compiler-generic-types.md) lists the exact cases;
-nested-view and native i64/u64 elements remain unverified.
+struct Version { major: i32, minor: i32 }
 
-GPU compiler execution does not establish user-program GPU-device support.
-Wasm is not a dependency or a claimed target.
-
-## Operations and failures
-
-Callers supply a logical element length because Lanius source cannot yet read
-slice metadata. A logical length must fit the physical view. Checked logical
-bounds do not validate a fabricated pointer or its allocation.
-
-| Function | Result and behavior |
-| --- | --- |
-| `first<T>(values)` | Returns element zero. An empty physical view traps. |
-| `first_or<T>(values, len, fallback)` | Returns the fallback for `len <= 0`; otherwise reads element zero. |
-| `get_or<T>(values, len, index, fallback)` | Returns the fallback for a negative index or `index >= len`; otherwise reads that element. |
-| `set<T>(values, len, index, value)` | Returns false without mutation for an invalid logical index; otherwise assigns and returns true. |
-| `swap<T>(values, len, left, right)` | Returns false without mutation if either index is invalid; otherwise exchanges the two values. Equal valid indices succeed. |
-| `fill<T>(values, len, value)` | Writes the first `len` elements and returns the number written. Nonpositive lengths return zero without accessing storage. |
-| `reverse_in_place<T>(values, len)` | Reverses the prefix and returns the number of swaps. Lengths at most one return zero. |
-| `copy_within<T>(values, len, source_start, source_end, destination_start)` | Copies a half-open source range within one view, supporting overlap in either direction. Invalid logical bounds return false without mutation. Empty ranges at the end are valid. |
-| `copy_nonoverlapping_prefix<T>(destination, destination_len, source, source_len)` | Copies the source prefix. Negative lengths or insufficient destination length return false without mutation. An empty source succeeds. Copied storage ranges must not overlap. |
-| `copy_nonoverlapping_range<T>(destination, destination_len, destination_start, source, source_len, source_start, count)` | Copies a requested range. Negative or out-of-range arguments return false before writing. Empty ranges at either end are valid. Copied storage ranges must not overlap. |
-
-If indexing reaches beyond the physical view, native execution terminates with
-exit 101. An overstated logical length can remain unobserved when an operation
-returns before accessing that position. Raw views require live, correctly
-aligned backing storage for their declared length. They borrow that storage
-and never allocate or free it.
-
-The ten generic names replace the former i32-suffixed access/copy names in
-`core::slice`; callers use `core::slice::get_or` and similar unsuffixed names.
-The separate concrete slice modules retain their own APIs.
-
-## Compiler boundary
-
-Indexing a symbolic T requires its concrete storage stride even if the function
-returns only a Boolean or count. Such bodies are deferred and replayed using a
-GPU-checked concrete call environment. Unspecialized bodies publish no guessed
-native implementation.
-
-Local generic calls in a combined source pack now have body scheduling.
-`tests/fixtures/stdlib_foundation/repro_generic_slice_local_body.lani` is a
-minimal reproduction: it reverses three i32 elements through a local generic
-function and now executes in the template suite. The owned i32, i8, i16,
-u8, u16, and bool vectors reverse their concrete allocation cells directly in
-Lanius; their storage, logical length, and capacity remain intact. Refactoring
-those concrete vector bodies is separate from these compiler fixes. General
-generic collections remain unfinished.
-
-The imported-call validator resolves a field argument from the field's type,
-including `extent.length`, instead of its receiver's type. Array/slice generic
-claims bind T to the checked element, preserving the distinction from a direct
-T parameter that receives an entire slice. Wrong element relations and Boolean
-field lengths are rejected with LNC0006.
-
-## Executable evidence
-
-`tests/stdlib_slice_generic_execution.rs` has eight tests. They execute all ten
-functions across the nine scalar spellings above, normal and invalid bounds,
-empty operations, overlap in both directions, preserved source storage, raw
-views, NaN, negative zero, native bounds traps, and wrong-type rejection. A
-focused matrix reverses all six owned vector types after the API migration.
-The reading-summary program composes generic slice access with Option, ranges,
-and arithmetic and prints `4\n20\n`.
-
-All 30 adjacent template, generic memory, Option payload/slice, and Result
-checks also pass in `generic-slice-adjacent-runtime-tests.log` in that directory.
-They include the explicit local-specialization failure reproduction.
-
-The latest focused run also checks nonzero first elements and equal-index
-swaps; all eight tests pass in `generic-slice-complete-runtime-tests.log`.
-
-The combined checkpoint also passes all seven foundation tests, including the
-139-entry executable source matrix. Its log is
-`tests/fixtures/stdlib_compiler_state/generic-slice-foundation-complete-tests.log`.
-
-```sh
-CARGO_INCREMENTAL=0 CARGO_PROFILE_RELEASE_DEBUG=0 \
-CARGO_TARGET_DIR="$PWD/target/stdlib-perf/build" \
-timeout 110s cargo test --locked --release \
-  --test stdlib_slice_generic_execution \
-  --test stdlib_foundation_execution -- --test-threads=1
+// With Eq and Ord impls for Version, every search and sort works on it.
+fn newest(versions: [Version], len: i32, fallback: Version) -> Version {
+    return core::slice::max_or(versions, len, fallback);
+}
 ```
 
-The latest compiler changes have no fresh performance comparison. Earlier
-measurements are recorded in [the GPU compiler performance report](stdlib-gpu-performance.md).
+## Bounds
+
+The functions need nothing from T, `core::cmp::Eq<T>` (searching),
+`core::cmp::Ord<T>` (ordering) or `core::ops::SaturatingAdd<T>` (`sum`).
+`core::cmp` implements `Eq` and `Ord` for every integer width, `bool`, `char`
+and `f32`. `core::ops` implements `SaturatingAdd` for every integer width and
+`f32`. The wide integers implement all three in `core::wide_i64` and
+`core::wide_u64`. A user type implements the traits it needs for itself.
+
+## Operations
+
+| Needs | Functions |
+| --- | --- |
+| nothing | `first`, `first_or`, `last_or`, `get_or`, `set`, `swap`, `fill`, `reverse_in_place`, `rotate_left`, `rotate_right`, `copy_within`, `copy_nonoverlapping_prefix`, `copy_nonoverlapping_range`, `insert`, `push`, `remove_at` |
+| `Eq` | `contains`, `count`, `index_of_or`, `last_index_of_or`, `starts_with`, `ends_with`, `equals`, `index_of_subslice`, `last_index_of_subslice`, `dedup_adjacent`, `retain_not_equal` |
+| `Ord` | `compare_lexicographic`, `min_or`, `max_or`, `is_sorted`, `sort`, `lower_bound`, `upper_bound`, `binary_search_first_or`, `binary_search_last_or`, `partition_lt` |
+| `SaturatingAdd` | `sum(values, len, initial)` |
+
+## Lengths and failures
+
+- `first` traps on an empty view. The `_or` functions return their fallback
+  for an empty view, an index outside `len`, or no match.
+- `set`, `swap`, the rotations, `insert`, `push`, `remove_at` and the copies
+  return false without writing when a logical bound is invalid. `insert` and
+  `push` need `len < capacity`, and the caller increments its length after
+  success. `remove_at`, `dedup_adjacent` and `retain_not_equal` leave the tail
+  past the new length unspecified.
+- `copy_within` supports overlap in either direction. The
+  `copy_nonoverlapping_` functions need separate backing.
+- A nonpositive length is an empty view for search, fill, compaction, sort,
+  the bounds and `sum`. Prefix, suffix, equality, lexicographic comparison
+  and subsequence search treat a negative length as empty.
+- `compare_lexicographic` returns -1, 0 or 1; the first unequal element
+  decides before the lengths. Subsequence search returns -1 when absent, and
+  an empty needle matches at the first or final boundary.
+- `sort` is an in-place heapsort and is not stable. The binary searches and
+  bounds need nondecreasing input.
+- If the supplied length overstates the physical view and indexing reaches
+  past it, native execution exits 101.
+
+## Floating point
+
+Searching uses IEEE equality: NaN matches nothing, not even itself, and
+`0.0` matches `-0.0`. Ordering only calls `lt` and `le`, so NaN is never
+below or above anything: `min_or` and `max_or` skip a NaN unless it comes
+first, and sorting or searching a view that holds NaN gives an unspecified
+order. `sum` of `f32` adds with IEEE rules, so overflow gives an infinity.
+
+## Targets
+
+x86_64 Linux runs every function for every element type above. Wasm does not
+compile generic stdlib code yet.
+
+## Verification
+
+- `tests/fixtures/stdlib_foundation/core_slice.lani` runs every function
+  through one generic checker for i8, i16, i32, i64, isize, u8, u16, u32,
+  u64, usize, char, f32, both wide integers and a user record, then bool
+  views, f32 NaN and signed zero, and `sum` past each type's limit.
+  `tests/stdlib_foundation_execution.rs` runs it and checks that it calls
+  every public function.
+- `core_slice_record_bounds.lani` checks that an overclaimed multiword
+  record view exits 101; `slice_bounds.lani` does the same for i32.
+- The `slice_*.lani` fixtures cover i32 raw views in depth: subsequences,
+  compaction, insertion, partitioning and exhaustive small sorts.
+- Sample programs `character_inventory`, `floating_window_total`,
+  `boolean_window_checksum`, `halfword_window_total` and the two wide median
+  programs use the generic module on char, f32, bool, u16 and wide views.

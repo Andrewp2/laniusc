@@ -2,16 +2,16 @@ module app::main;
 import core::char;
 import core::number_i32;
 import core::range;
-import core::slice_char;
+import core::slice;
 fn main() -> i32 {
     let a: char = 'a';
     let z: char = 'z';
     let letters:[char; 6] =['Ω', 'z', 'a', 'é', 'z', 'z'];
-    if (!core::slice_char::sort(letters, 6)) {
+    if (core::slice::sort(letters, 6) != 6) {
         return 1;
     }
-    let first: i32 = core::slice_char::lower_bound_or(letters, 6, z, -1);
-    let after: i32 = core::slice_char::upper_bound_or(letters, 6, z, -1);
+    let first: i32 = core::slice::lower_bound(letters, 6, z);
+    let after: i32 = core::slice::upper_bound(letters, 6, z);
     if (first<0 || after<first) {
         return 2;
     }
@@ -20,7 +20,7 @@ fn main() -> i32 {
     let count: i32 = 0;
     let index: i32 = 0;
     while (index<6) {
-        let letter: char = core::slice_char::get_or(letters, 6, index, a);
+        let letter: char = core::slice::get_or(letters, 6, index, a);
         if (matches.contains(index) && lowercase.contains(letter) && core::char::is_ascii_alphabetic(letter)) {
             count = core::number_i32::saturating_add(count, 1);
         }

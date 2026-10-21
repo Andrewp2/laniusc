@@ -18,32 +18,8 @@ enum Kind {
 }
 
 impl Kind {
-    fn module(self) -> &'static str {
-        match self {
-            Self::Bool => "deque_bool",
-            Self::I8 => "deque_i8",
-            Self::I16 => "deque_i16",
-            Self::U8 => "deque_u8",
-            Self::U16 => "deque_u16",
-            Self::I32 => "deque_i32",
-            Self::U32 => "deque_u32",
-            Self::WideU64 => "deque_wide_u64",
-            Self::WideI64 => "deque_wide_i64",
-        }
-    }
-
-    fn deque_type(self) -> &'static str {
-        match self {
-            Self::Bool => "DequeBool",
-            Self::I8 => "DequeI8",
-            Self::I16 => "DequeI16",
-            Self::U8 => "DequeU8",
-            Self::U16 => "DequeU16",
-            Self::I32 => "DequeI32",
-            Self::U32 => "DequeU32",
-            Self::WideU64 => "DequeWideU64",
-            Self::WideI64 => "DequeWideI64",
-        }
+    fn deque_type(self) -> String {
+        format!("Deque<{}>", self.value_type())
     }
 
     fn value_type(self) -> &'static str {
@@ -114,7 +90,7 @@ fn next(seed: &mut u64) -> u64 {
 }
 
 fn generate(kind: Kind) -> String {
-    let module = kind.module();
+    let module = "deque";
     let ty = kind.deque_type();
     let item_type = kind.value_type();
     let mut source = format!("module app::main;\nimport std::{module};\n");
@@ -295,7 +271,8 @@ fn generate(kind: Kind) -> String {
 }
 
 fn run(kind: Kind) {
-    let name = kind.module();
+    let label = kind.value_type().replace("::", "_");
+    let name = label.as_str();
     let source = generate(kind);
     let entry = common::TempArtifact::new("laniusc_deque", name, Some("lani"));
     entry.write_str(&source);

@@ -292,18 +292,9 @@ require further compiler work.
 | Legacy `stdlib/bool.lani` all 9 public functions and `stdlib/i32.lani` all 16 public functions | Executable on x86_64 when included as source | A source-level native fixture checks both boolean values, both selection branches, ordinary and boundary signed arithmetic, wrapping overflow, comparisons, clamp bounds, and power-of-two overflow. The test calls every public function in both files. `abs` requires input above `i32::MIN`; `clamp` requires ordered bounds. |
 | Legacy `stdlib/array_i32_4.lani` all 14 public functions | Executable on x86_64 when included as source | A source-level native fixture checks length, access, search, fallback indices, extrema, a representable sum, and caller-backed copy, fill, and reverse. Fixed-array-returning predecessors were removed; see dependency 7. |
 | `core::range` generic `Range<T>`, `RangeInclusive<T>`, `RangeFrom<T>`, `RangeTo<T>` and `RangeFull`, all 20 public functions and 15 methods | Executable on x86_64 | `tests/fixtures/stdlib_foundation/core_range.lani` runs every function and method through one generic checker for every integer width, char, f32, both wide integers and a user record with its own `Ord`, then checks f32 NaN bounds and members, infinities and signed zero; `tests/stdlib_foundation_execution.rs` checks that it calls each one. Membership needs `core::cmp::Ord`. Replaces `core::range_{u8,i8,u16,i16,char,f32}` and `core::wide_{u64,i64}_range`. |
-| `core::slice` 10 generic access/copy functions and 27 public i32 algorithms | Executable on x86_64 for the documented backed views | The shared generic functions execute for nine tested scalar spellings, including typed i32 raw views, mutation, overlap, NaN, negative zero, and explicit failures; see [the slice guide](stdlib-slice.md). Runtime fixtures check backed, empty, unsorted, duplicate, and sorted views; sequence comparisons, first and last contiguous subsequence matches, rotations, compaction, checked insertion and append within caller-owned capacity, partition boundaries and preserved contents, first and last binary matches, sorted insertion boundaries, extrema, sum, overlapping and nonoverlapping copies, sorting, and fallback behavior. Sorting also runs all 243 five-element arrays over `{-1, 0, 1}` against independently counted expected groups. Separate fixtures confirm native index trapping on overclaimed physical lengths. |
-| `core::slice_u8` all 36 public byte-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures exercise access, swaps, fill, rotation, overlap-safe and nonoverlapping copies, compaction, insertion, sequence comparison and search, unsigned ordering, heapsort, binary search, partitioning, and saturating sum. They cover empty and invalid logical lengths, rejected mutation, zero, and 255. Sorting also runs every five-element sequence over `{0,1,2}` against independently counted groups. A source scan requires a runtime call for every public function. Byte views over string or raw pointer storage remain outside this claim. |
-| `core::slice_i8` all 36 public signed-byte-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every public function and cover search, mutation, copy, rotation, compaction, insertion, signed ordering, sorting, binary search, partitioning, and left-to-right saturating sum. Cases include `-128`, `127`, empty and invalid logical lengths, every five-element sequence over `{-1,0,1}`, and a native trap on physical length overclaim. |
-| `core::slice_i16` all 36 public signed-halfword-view functions | Executable on x86_64 for fixed-array-backed views | Matching fixtures cover every public function, `-32768`, `32767`, signed ordering and binary search, sums clamped after each addition, all 243 small sorting sequences, invalid logical lengths, and a native trap on physical length overclaim. |
-| `core::slice_u16` all 36 public unsigned-halfword-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every public function and check access, mutation, copy and rotation, compaction, insertion, sequence search, unsigned ordering across `32768`, sort and binary search, partitioning, and sums saturating at `65535`. They cover empty and invalid logical lengths, rejected mutation, and all 243 five-element sequences over `{0,1,2}` for sorting. A separate fixture confirms exit 101 when the claimed length exceeds the physical backing and is indexed. |
-| `core::slice_u32` all 36 public unsigned-word-view functions | Executable on x86_64 for fixed-array-backed views | Matching runtime fixtures cover the same operations and failure cases, including unsigned ordering across `2^31` and saturation at `u32::MAX`, plus the exhaustive small-sort fixture. The caller supplies a logical length within the physical backing. A source scan requires a runtime call for every public function. |
+| `core::slice` all 40 public functions, generic over the element type | Executable on x86_64 for fixed-array-backed and raw views | `tests/fixtures/stdlib_foundation/core_slice.lani` runs every function through one generic checker for every integer width, char, f32, both wide integers and a user record with its own `Eq` and `Ord`, then bool views, f32 NaN and signed zero, and `sum` for every `SaturatingAdd` impl; `tests/stdlib_foundation_execution.rs` checks that it calls each one. `core_slice_record_bounds.lani` checks that an overclaimed record view exits 101. Searching needs `core::cmp::Eq`, ordering needs `core::cmp::Ord`, `sum` needs `core::ops::SaturatingAdd`. Replaces `core::slice_{u8,i8,i16,u16,u32,bool,char,f32,wide_u64,wide_i64}`. |
+| `core::ops` `SaturatingAdd<T>` impls for every integer width and f32; `core::wide_i64` and `core::wide_u64` implement it for their records | Executable on x86_64 | `core_slice.lani` sums each type past its limit: integers clamp, f32 overflows to infinity. |
 | `core::u32_cells` all 4 public functions | Executable on x86_64 for caller-backed i32 cells that hold u32 bit patterns | The unsigned vector sort fixture directly calls sort, reverse, lower bound, and upper bound on cells containing zero, one, the unsigned high bit, and the maximum word, and checks all 243 five-cell sequences over three representative unsigned values against independent input counts. The helper also runs through the owned `VecU32` APIs. Search requires nondecreasing unsigned order; invalid physical length claims can trap on native indexing. |
-| `core::slice_wide_u64` all 36 public two-word slice functions and its length limit | Executable on x86_64 for caller-backed `[u32]` views | Each element uses adjacent low/high words. The imported runtime fixture calls every function and checks full-width access, mutation, overlap-safe copying, rotation, compaction, insertion, subsequence search, unsigned ordering, heapsort, binary search, partitioning, and wrapping sum. Sorting and extrema run all 243 five-element sequences over zero, `2^32`, and `u64::MAX`. Invalid logical bounds use documented fallbacks or reject mutation; physical backing overclaims exit 101. A five-number median program reads and prints full-width decimal values. Native `u64` behavior and GPU device execution are not claimed. |
-| `core::slice_wide_i64` all 36 public two-word slice functions and its length limit | Executable on x86_64 for caller-backed `[u32]` views | Each element retains adjacent low/high two's-complement words. The imported runtime fixture calls every function and checks full-width access, mutation, overlap-safe copying, rotation, compaction, insertion, subsequence search, signed ordering, heapsort, binary search, partitioning, and wrapping sum. Sorting and extrema run all 243 five-element sequences over signed minimum, zero, and maximum, plus an ordinary negative and `2^32` matrix. Invalid logical bounds use documented fallbacks or reject mutation; physical backing overclaims exit 101. A five-number median program parses and prints negative and signed-extreme values. Native `i64` behavior and GPU device execution are not claimed. |
-| `core::slice_bool` all 35 public boolean-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every function and check reads, writes, fill, swap, overlapping and disjoint-range copies, rotation, compaction, insertion and removal, prefix, suffix, and subsequence search, false-before-true comparison, binary bounds and search, partitioning, true counts, `any` and `all`, empty and invalid lengths, and an overclaimed physical length that traps. Sorting and binary search check all 32 five-element Boolean sequences. The boolean checksum sample uses it with numeric and Option helpers. Generic `[T]` operations are withheld because signed element instantiations misexecute; see dependency 41. |
-| `core::slice_char` all 35 public character-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every function and check access, mutation, overlap-safe and disjoint-range copying, rotation, compaction, insertion, extrema, partitioning, prefix and subsequence matching, equality, Unicode scalar ordering, sorting, bounds, binary search, empty and invalid lengths, and non-ASCII values. They assert the scalar values of two-, three-, and four-byte UTF-8 character literals, including two literals with the same leading byte. Sorting checks all 243 five-element sequences over `{'a', 'z', 'é'}`. An overclaimed physical length traps. The character inventory sample combines it with `core::char`, `core::range`, `core::range_char`, and `core::number_i32`. |
-| `core::slice_f32` all 36 public floating-view functions | Executable on x86_64 for fixed-array-backed views | Runtime fixtures call every function and check finite, infinite, and NaN values, IEEE equality and signed zero, left-to-right sums, overlap-safe and disjoint-range copying, rotation, compaction, insertion, prefix and subsequence matching, finite extrema and lexicographic comparison, checked partitioning, invalid bounds, and native trapping on an overclaimed physical length. Finite-only heapsort, extrema, and partitioning check all 243 five-element sequences over `{-1, 0, 1}`; binary bounds and searches cover duplicates, missing values, signed zero, and invalid input. The floating window sample combines it with `core::f32`, `core::range_f32`, and `Option<f32>`. |
 | `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. A `[u8]` raw view over string data or packed i32 storage reads and writes single bytes; see dependency 16. |
 | `core::mem::typed_slice_from_raw_parts<T>` | Executable on x86_64 Linux for tested caller-backed `i32`, `u32`, and record slices | The imported runtime fixture checks access, mutation, aliasing, an empty view, and three element types. Separate imported fixtures check that a negative length traps with SIGILL and indexing at the length exits 101. The caller must provide storage in the target's layout, keep it alive, and supply a valid aligned pointer; the constructor cannot validate physical backing. The `u32` and record cases use separately allocated native element slots, not a reinterpretation of a packed `i32` array. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for tested scalar and string instantiations on the resident native path | Runtime fixture exercises each helper and both selector branches for `i32`, high-bit `u32`, Unicode `char`, and finite `f32`, plus `identity<bool>`. The new actual-root fixture executes every helper for bool, i32, u32, f32, char, and str, including both selector branches, NaN, negative zero, empty strings, and forwarding through another function. Record body specialization remains unavailable and deferred; dependency 62 records the earlier miscompile, while dependency 92 records the scalar repair. |
@@ -1092,168 +1083,29 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   infinite endpoints are allowed. Every operation is a free function and a
   method. The `start` and `end` methods crash when called from a generic body
   with a record T (backlog b17); the free `core::range::start` works there.
-- Slice callers supply `len` because source code cannot read slice metadata
-  yet. `len <= 0` is empty for the safe fallback and accumulation helpers.
-  `first` traps on an empty view. `get_or` returns the fallback for an
-  index outside the supplied length; if the supplied length exceeds the actual
-  view and indexing reaches beyond it, native execution traps with exit 101.
-  `core::slice_u8`, `core::slice_i8`, `core::slice_i16`, `core::slice_u16`,
-  and `core::slice_u32` use the same caller-supplied logical length for fixed
-  byte, halfword, or word arrays. `first` traps on an empty physical view;
-  `first_or`, `get_or`, and first/last search helpers return their
-  fallback for empty, invalid, or absent positions. `set`, `swap`, rotation,
-  insertion, append, and copy helpers reject invalid logical bounds without
-  mutation. `copy_within` supports overlap; `copy_nonoverlapping_prefix`
-  requires separate backing. `insert` and `push` need capacity within the
-  physical view, and the caller increments its logical length after success.
-  Search, fill, compaction, sort, and reverse treat nonpositive lengths as
-  empty. Equality and prefix or suffix checks reject negative lengths.
-  `compare_lexicographic` returns -2 for negative lengths; subsequence search
-  returns -1 for invalid lengths or no match and treats an empty needle as a
-  match at the first or final boundary. Binary search requires sorted input.
-  Unsigned `sum` saturates at the element type's maximum. Signed narrow `sum`
-  folds from left to right and clamps after each addition, so later negative
-  values can lower an earlier saturated total. The physical backing
-  must contain at least the claimed length, or native indexing can trap.
-  String-backed and arbitrary raw byte views remain outside this claim.
-  `core::slice_wide_u64` uses a caller-owned `[u32]` view with two words per
-  logical element. `len` and `capacity` count elements, never words, and are
-  limited to 1,073,741,823 so index arithmetic cannot overflow `i32`. All
-  checked calls reject invalid logical bounds before writing; an overstated
-  physical view traps with exit 101 if indexed. `first` requires at least two
-  backing words. Search and extrema compare full unsigned 64-bit values,
-  `sort` is in-place heapsort, and `sum` wraps modulo 2^64. The caller must
-  advance its logical length after successful `insert` or `push`; copying
-  between distinct views requires nonoverlapping backing.
-  `core::slice_wide_i64` uses the same two-word backing, element-length limit,
-  logical bounds rules, and ownership contract. It preserves both words of
-  signed two's-complement values and compares them in signed order. Its
-  in-place heapsort and binary search use that order; `sum` wraps modulo 2^64
-  and returns the corresponding signed bit pattern. `first` and overstated
-  physical backing can exit 101.
-  `core::slice_bool` provides access, mutation, copying, rotation, compaction,
-  insertion, search, and sorting for the tested scalar element
-  type `bool`. `get_or` returns its caller fallback for a negative
-  length or out-of-range index. `set` returns false without writing for those
-  invalid bounds. `fill` treats a nonpositive length as empty and returns the
-  number of elements written. `swap` rejects invalid indices without writing.
-  `copy_within` supports overlap and rejects invalid logical bounds before
-  writing. `reverse` treats nonpositive lengths as empty and returns the
-  logical length otherwise. `copy_prefix` copies the shorter of the two
-  supplied nonnegative logical lengths and returns that count; a negative
-  length returns -1 without writing. Its backing views must be distinct or
-  start at the same element; other overlap is unsupported.
-  `copy_nonoverlapping_range` requires disjoint backing and treats its
-  destination length as writable capacity. Rotations accept amounts from zero
-  through the logical length. Compaction returns a new length and leaves the
-  tail unspecified; insertion and removal require the caller to update its
-  logical length after success. Negative compaction lengths return -1 without
-  writing. Empty prefixes and suffixes match valid views. Each operation can
-  trap when a caller overstates the physical backing length and indexing
-  reaches past it. `count_true` returns -1 for a negative length and zero for
-  an empty view. `any` returns false for empty or invalid lengths; `all`
-  returns true for an empty view and false for an invalid length. Searches
-  return the caller's fallback index when absent or invalid. `equal` rejects
-  negative or unequal lengths and accepts two empty views. `sort` puts false
-  before true, returning false without writing for a negative length.
-  Lexicographic comparison uses the same order; empty subsequences match at
-  the first or final boundary. Binary bounds and searches validate sortedness
-  and return the caller's fallback for an unsorted view. `partition_lt` places
-  false values before true values when its pivot is true, returning -1 for a
-  negative length without writing. A fallback can
-  equal a stored value; callers that need a distinct success indication use
-  `set` for mutation or validate the index separately for reading.
-  `core::slice_char` operates on caller-backed character views and compares
-  Unicode scalar values. It checks logical bounds for access and mutation,
-  supports overlap within one view, and requires disjoint or same-start backing
-  for prefix copying. `copy_nonoverlapping_range` requires disjoint backing
-  and treats the destination length as writable capacity. Rotations accept
-  amounts from zero through the logical length. Compaction returns a new
-  length and leaves the tail unspecified; successful insertion and removal
-  require the caller to update its logical length. A negative length returns
-  -1 for compaction and partitioning, without writing. Empty subsequence
-  searches return the first or final
-  boundary; invalid lengths return false, -1, or the caller's fallback as
-  documented by each function. Sort uses in-place heapsort, and binary bounds
-  and searches validate that the input is sorted. An overclaimed physical
-  length can trap when indexed. A direct fixed-array literal of character
-  literals currently fails type checking; typed character variables work
-  (dependency 48).
-  `core::slice_f32` offers bounded access and mutation, fill, swap, overlap-safe
-  in-place copy, disjoint range copy, rotation, reverse, prefix copy,
-  compaction, insertion, search, equality, and left-to-right sum
-  over caller-backed float views. Invalid indices return a fallback or false;
-  a negative length makes `sum_or` return its fallback. Searches and equality
-  use IEEE equality: NaN never matches, even against itself, while signed zeros
-  compare equal. Thus adjacent NaNs remain distinct during compaction, a NaN
-  target is never removed by `retain_not_equal`, and a subsequence containing
-  NaN never matches. Empty subsequences match at the first or final boundary.
-  Negative compaction lengths return -1 without writing, and rejected
-  insertion or range copies leave the view unchanged. `sort_finite` checks
-  the entire view first and returns false
-  without writing for a negative length, NaN, or infinity. It sorts finite
-  values ascending in place; signed zeros can appear in either order.
-  `min_finite_or`, `max_finite_or`, and `compare_lexicographic_finite_or`
-  inspect the complete logical view and return the caller's fallback for NaN,
-  infinity, or invalid lengths; empty extrema also use the fallback.
-  `partition_lt_finite_or` validates the finite pivot and entire view before
-  writing, then returns the boundary before values at or above the pivot.
-  Invalid input leaves the view unchanged and returns its fallback.
-  `is_sorted_finite` checks the same finite precondition. Lower and upper bound
-  helpers return the first index at least or greater than a finite needle;
-  binary search returns the first or last matching index. They validate sorted
-  finite input and return the caller's fallback for invalid views or needles.
-  Physical backing overclaims can trap when indexed.
-  `sum_i32` folds from left to right with saturating i32 addition, so each
-  overflow clamps to `MIN` or `MAX` before the next element. Search helpers
-  return the first or last matching index as named, or the caller's fallback.
-  Empty extrema return the fallback. `is_sorted_i32` accepts equal neighbors;
-  `lower_bound_i32` and `upper_bound_i32` require that order and return the
-  insertion index before and after equal values respectively, including `len`
-  when the insertion point is past the last element. A nonpositive length
-  returns zero. `binary_search_first_or_i32` and `binary_search_last_or_i32`
-  use the lower and upper bounds respectively, returning the first or last
-  match or the caller's fallback. `partition_lt_i32` moves all values below a
-  pivot ahead of values at or above it and returns their boundary. It does not
-  preserve relative order; a nonpositive length returns zero without mutation.
-  `set` and `swap` reject invalid indices without mutation.
-  `fill` returns the number of elements written, and `reverse_in_place`
-  returns the number of swaps. `copy_within` handles overlap in either
-  direction and rejects invalid source or destination bounds before writing.
-  `copy_nonoverlapping_prefix` copies the requested source prefix into a
-  separate backed view, returns false without writing for negative lengths or
-  insufficient destination length, and accepts an empty source. Its source and
-  destination element ranges must not overlap in memory.
-  `copy_nonoverlapping_range` accepts source and destination offsets plus
-  a count. It returns false before writing for a negative or out-of-range
-  argument, accepts an empty range at either view's end, and requires the
-  copied element ranges to be disjoint. The seven-argument imported call is
-  exercised by the runtime fixture and `portable_window_checksum.lani`.
-  `starts_with_i32`, `ends_with_i32`, and `equals_i32` compare elements in
-  backed views; they treat negative lengths as empty.
-  `compare_lexicographic_i32` returns -1, 0, or 1 after comparing the first
-  differing element, then the lengths. `index_of_subslice_i32` and
-  `last_index_of_subslice_i32` return the first or last contiguous match, or
-  -1 when absent. An empty needle matches at index zero for the first search
-  and at the logical view length for the last search; negative lengths count
-  as empty. All three require valid backed views for any indexed element.
-  `rotate_left_i32` and
-  `rotate_right_i32` mutate in place and return false without writing unless
-  `len >= 0` and `0 <= amount <= len`. Rotating an empty view by zero succeeds.
-  `dedup_adjacent_i32` retains one element from each adjacent run;
-  `retain_not_equal_i32` removes every matching element while preserving the
-  rest in order. Both return the new logical length, or zero without writing
-  for a nonpositive length. `remove_at_i32` shifts successors left and returns
-  false without writing for an invalid index. After any of these operations,
-  elements outside the new logical length are unspecified.
-  `insert_i32` shifts a suffix right and writes at an index in `0..=len`;
-  `push_i32` appends at `len`. Both require `0 <= len < capacity`, reject invalid
-  bounds without writing, and return true when the caller should advance the
-  logical length by one. The backed view must contain at least `capacity`
-  writable elements; an overstated capacity can trap on native indexing.
-  `sort_i32` uses an in-place heapsort in ascending order and returns the
-  number of elements sorted, or zero for a nonpositive length. The backing
-  array sees these mutations.
+- `core::slice` is generic over the element type. Callers supply `len`
+  because source code cannot read slice metadata yet; if it overstates the
+  view and indexing reaches past it, native execution exits 101. `first`
+  traps on an empty view; `first_or`, `last_or`, `get_or` and the `_or`
+  searches return their fallback for an empty view, a bad index or no match.
+  `set`, `swap`, rotation, `insert`, `push`, `remove_at` and the copies reject
+  invalid logical bounds without writing and return false. `copy_within`
+  supports overlap; the `copy_nonoverlapping_` pair needs separate backing.
+  `insert` and `push` need capacity within the physical view, and the caller
+  increments its length after success. Search, fill, compaction, sort and the
+  bounds treat a nonpositive length as empty; prefix, suffix, equality,
+  lexicographic comparison and subsequence search treat a negative length as
+  empty. `compare_lexicographic` returns -1, 0 or 1. Subsequence search
+  returns -1 when absent, and an empty needle matches at the first or final
+  boundary. `sort` is an in-place heapsort (not stable), and binary search
+  needs nondecreasing input. Searching uses `core::cmp::Eq` and ordering uses
+  only `lt` and `le` of `core::cmp::Ord`, so for f32 NaN matches nothing,
+  signed zeros compare equal, `min_or` and `max_or` skip a NaN unless it comes
+  first, and sorting or searching a view that holds NaN gives an unspecified
+  order. `sum(values, len, initial)` folds with `core::ops::SaturatingAdd`:
+  integer totals clamp after each addition, f32 adds with IEEE rules, and the
+  wide integers clamp at their 64-bit limits. Wide integers are ordinary
+  `[WideU64]` and `[WideI64]` record views, not packed `[u32]` words.
 - `core::mem` raw-view construction borrows the backing array. The array must
   remain alive for every use of the view. The selected tests use stack-backed
   arrays and no allocator. These four intrinsics are compiler-provided, with
@@ -1649,7 +1501,7 @@ sorts the copy, selects a half-open window from sorted-value boundaries, reads
 the view, and accumulates with saturating arithmetic. It prints `96`.
 
 `sample_programs/hex_packet_checksum.lani` validates a fixed byte packet's
-header and hexadecimal payload with `core::slice_u8`, `core::range`,
+header and hexadecimal payload with `core::slice`, `core::range`,
 `core::byte`, and `core::number_u32`. It prints the digit checksum `28`.
 
 `sample_programs/path_extension_lowercase.lani` finds the final component of
@@ -1701,8 +1553,8 @@ prints the full-width decimal result. Its x86 test checks `0!`, `5!`, and
 finds an ASCII letter range, and counts its members. It combines five portable
 modules and prints `3`.
 
-`sample_programs/floating_window_total.lani` sorts finite readings and searches
-them through `core::slice_f32`, sums and checks them against an inclusive
+`sample_programs/floating_window_total.lani` sorts readings and searches
+them through `core::slice`, sums and checks them against an inclusive
 `core::range::RangeInclusive<f32>` interval using a receiver method, clamps them, and carries
 the result through `Option<f32>`. It prints the matched reading's index, `2`,
 after verifying the floating total is `7.0`. Floating-to-integer conversion remains a compiler
@@ -1891,12 +1743,6 @@ Run `cargo test --test stdlib_mem_execution` for all public memory helper
 functions, including capability metadata, value helpers, and intrinsics.
 Run `cargo test --test stdlib_array_i32_view_execution` for both borrowed
 array helpers across fixed lengths and native bounds failures.
-Run `cargo test --test stdlib_slice_wide_u64_execution` for every two-word
-unsigned slice operation, backing traps, exhaustive small sorts, and a median
-program.
-Run `cargo test --test stdlib_slice_wide_i64_execution` for every signed
-two-word slice operation, backing traps, exhaustive signed sorts, and a median
-program.
 Run `cargo test --test stdlib_allocator_metadata_execution` for allocator
 capability metadata and live pointer classification.
 Run `cargo test --test stdlib_generic_vec_flat_execution` for empty generic
@@ -2304,7 +2150,7 @@ also fixes the imported struct-return relocation path described below.
     the interface type tree. `tests/imported_concrete_method_execution.rs`
     compiles and executes the original `[u8]` and `[u32]` imported-helper
     reproductions and rejects an `[i32]` argument to an imported `[u8]`
-    helper. `core::slice_u8` exercises the imported byte-slice path
+    helper. `core::slice` exercises the imported byte-slice path
     across reads and mutations. The raw-view behavior in dependency 16 is a
     separate obstacle.
 21. **Resolved: raw signed integer short writes.** The native
@@ -2490,9 +2336,7 @@ also fixes the imported struct-return relocation path described below.
     with `[u8; 1]` and `[u32; 1]` arguments; the focused execution test also
     confirms that a `[u8]` argument with a `bool` fallback is rejected.
     This verifies generic slice substitution for those scalar cases. The
-    concrete `core::slice_bool`, `core::slice_u8`, `core::slice_i8`,
-    `core::slice_i16`, `core::slice_u16`, and `core::slice_u32` modules remain the complete
-    executable slice APIs in this audit.
+    generic `core::slice` now replaces the former concrete slice modules.
 37. **Same-name generic methods collide across signed widths.**
     The smaller `repro_method_signed_width_collision.lani` declares only
     `Small<i8>::get` and `Small<i32>::get`; `laniusc check` rejects the second
@@ -2562,12 +2406,12 @@ also fixes the imported struct-return relocation path described below.
     if the function returns only a Boolean or count. Scalar body replay then
     supplies the concrete element type before normal lowering.
 
-    The actual core::slice exposes ten shared generic access/copy functions;
-    its remaining 27 algorithms are i32-specific. Runtime tests execute i32,
-    u32, bool, f32, char, i8, i16, u8, and u16, including both overlap
-    directions, invalid bounds, NaN, negative zero, physical bounds traps,
-    and a real program using Option and ranges. No x86 array ABI is changed.
-    String, record, nested-view, and native i64/u64 elements remain outside
+    core::slice is now generic in every function, with Eq and Ord bounds
+    for searching and ordering. Runtime tests execute every integer width,
+    char, f32, bool, both wide integers and a user record, including both
+    overlap directions, invalid bounds, NaN, negative zero, physical bounds
+    traps, and real programs using Option and ranges. No x86 array ABI is
+    changed. String and nested-view elements remain outside
     this checkpoint. See the slice guide and dependency 94 for raw views and
     local calls.
 42. **Resolved: imported Boolean calls accept comparison expressions.**
@@ -2632,7 +2476,7 @@ also fixes the imported struct-return relocation path described below.
     The GPU array-element checker now identifies a direct character expression
     as `char`. `repro_char_array_literals.lani` initializes `[char; 3]`
     with ASCII and two- and four-byte Unicode literals, reads the values
-    directly and through imported `core::slice_char`, and mutates the array.
+    directly and through imported `core::slice`, and mutates the array.
     The emitted x86_64 ELF exits zero. A separate fixture with an `i32`
     element still reports `LNC0006`. The character inventory sample also
     uses direct literals and prints its expected count. All three run in

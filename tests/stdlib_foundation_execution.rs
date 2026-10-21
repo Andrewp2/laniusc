@@ -383,153 +383,15 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"",
         ),
         (
-            "core_slice_u8",
-            "tests/fixtures/stdlib_foundation/core_slice_u8.lani",
+            "core_slice",
+            "tests/fixtures/stdlib_foundation/core_slice.lani",
             0,
             b"",
         ),
         (
-            "core_slice_u8_complete",
-            "tests/fixtures/stdlib_foundation/core_slice_u8_complete.lani",
-            0,
-            b"",
-        ),
-        (
-            "core_slice_i8",
-            "tests/fixtures/stdlib_foundation/core_slice_i8.lani",
-            0,
-            b"",
-        ),
-        (
-            "core_slice_i8_complete",
-            "tests/fixtures/stdlib_foundation/core_slice_i8_complete.lani",
-            0,
-            b"",
-        ),
-        (
-            "core_slice_i8_bounds",
-            "tests/fixtures/stdlib_foundation/core_slice_i8_bounds.lani",
+            "core_slice_record_bounds",
+            "tests/fixtures/stdlib_foundation/core_slice_record_bounds.lani",
             101,
-            b"",
-        ),
-        (
-            "core_slice_i16",
-            "tests/fixtures/stdlib_foundation/core_slice_i16.lani",
-            0,
-            b"",
-        ),
-        (
-            "core_slice_i16_complete",
-            "tests/fixtures/stdlib_foundation/core_slice_i16_complete.lani",
-            0,
-            b"",
-        ),
-        (
-            "core_slice_i16_bounds",
-            "tests/fixtures/stdlib_foundation/core_slice_i16_bounds.lani",
-            101,
-            b"",
-        ),
-        (
-            "core_slice_u16",
-            "tests/fixtures/stdlib_foundation/core_slice_u16.lani",
-            0,
-            b"",
-        ),
-        (
-            "core_slice_u16_complete",
-            "tests/fixtures/stdlib_foundation/core_slice_u16_complete.lani",
-            0,
-            b"",
-        ),
-        (
-            "core_slice_u16_bounds",
-            "tests/fixtures/stdlib_foundation/core_slice_u16_bounds.lani",
-            101,
-            b"",
-        ),
-        (
-            "core_slice_u32",
-            "tests/fixtures/stdlib_foundation/core_slice_u32.lani",
-            0,
-            b"",
-        ),
-        (
-            "core_slice_bool",
-            "tests/fixtures/stdlib_foundation/core_slice_bool.lani",
-            0,
-            b"",
-        ),
-        (
-            "core_slice_bool_extended",
-            "tests/fixtures/stdlib_foundation/core_slice_bool_extended.lani",
-            0,
-            b"",
-        ),
-        (
-            "core_slice_bool_search",
-            "tests/fixtures/stdlib_foundation/core_slice_bool_search.lani",
-            0,
-            b"",
-        ),
-        (
-            "core_slice_bool_bounds",
-            "tests/fixtures/stdlib_foundation/core_slice_bool_bounds.lani",
-            101,
-            b"",
-        ),
-        (
-            "core_slice_char",
-            "tests/fixtures/stdlib_foundation/core_slice_char.lani",
-            0,
-            b"",
-        ),
-        (
-            "core_slice_char_extended",
-            "tests/fixtures/stdlib_foundation/core_slice_char_extended.lani",
-            0,
-            b"",
-        ),
-        (
-            "core_slice_char_bounds",
-            "tests/fixtures/stdlib_foundation/core_slice_char_bounds.lani",
-            101,
-            b"",
-        ),
-        (
-            "core_slice_f32",
-            "tests/fixtures/stdlib_foundation/core_slice_f32.lani",
-            0,
-            b"",
-        ),
-        (
-            "core_slice_f32_extended",
-            "tests/fixtures/stdlib_foundation/core_slice_f32_extended.lani",
-            0,
-            b"",
-        ),
-        (
-            "core_slice_f32_ordering",
-            "tests/fixtures/stdlib_foundation/core_slice_f32_ordering.lani",
-            0,
-            b"",
-        ),
-        (
-            "core_slice_f32_finite_analysis",
-            "tests/fixtures/stdlib_foundation/core_slice_f32_finite_analysis.lani",
-            0,
-            b"",
-        ),
-        (
-            "core_slice_f32_bounds",
-            "tests/fixtures/stdlib_foundation/core_slice_f32_bounds.lani",
-            101,
-            b"",
-        ),
-        (
-            "core_slice_u32_complete",
-            "tests/fixtures/stdlib_foundation/core_slice_u32_complete.lani",
-            0,
             b"",
         ),
         (
@@ -1098,47 +960,7 @@ fn executable_core_function_surface_has_runtime_cases() {
         (
             "slice",
             include_str!("../stdlib/core/slice.lani"),
-            include_str!("fixtures/stdlib_foundation/range_slice.lani"),
-        ),
-        (
-            "slice_u8",
-            include_str!("../stdlib/core/slice_u8.lani"),
-            include_str!("fixtures/stdlib_foundation/core_slice_u8.lani"),
-        ),
-        (
-            "slice_i8",
-            include_str!("../stdlib/core/slice_i8.lani"),
-            include_str!("fixtures/stdlib_foundation/core_slice_i8.lani"),
-        ),
-        (
-            "slice_i16",
-            include_str!("../stdlib/core/slice_i16.lani"),
-            include_str!("fixtures/stdlib_foundation/core_slice_i16.lani"),
-        ),
-        (
-            "slice_u16",
-            include_str!("../stdlib/core/slice_u16.lani"),
-            include_str!("fixtures/stdlib_foundation/core_slice_u16.lani"),
-        ),
-        (
-            "slice_u32",
-            include_str!("../stdlib/core/slice_u32.lani"),
-            include_str!("fixtures/stdlib_foundation/core_slice_u32.lani"),
-        ),
-        (
-            "slice_bool",
-            include_str!("../stdlib/core/slice_bool.lani"),
-            include_str!("fixtures/stdlib_foundation/core_slice_bool.lani"),
-        ),
-        (
-            "slice_char",
-            include_str!("../stdlib/core/slice_char.lani"),
-            include_str!("fixtures/stdlib_foundation/core_slice_char.lani"),
-        ),
-        (
-            "slice_f32",
-            include_str!("../stdlib/core/slice_f32.lani"),
-            include_str!("fixtures/stdlib_foundation/core_slice_f32.lani"),
+            include_str!("fixtures/stdlib_foundation/core_slice.lani"),
         ),
     ];
 
@@ -1162,59 +984,7 @@ fn executable_core_function_surface_has_runtime_cases() {
                         .contains(&call)
                 || module == "utf8_view"
                     && include_str!("fixtures/stdlib_foundation/core_utf8_byte_edit.lani")
-                        .contains(&call)
-                || module == "slice_char"
-                    && include_str!("fixtures/stdlib_foundation/core_slice_char_extended.lani")
-                        .contains(&call)
-                || module == "slice_bool"
-                    && include_str!("fixtures/stdlib_foundation/core_slice_bool_extended.lani")
-                        .contains(&call)
-                || module == "slice_bool"
-                    && include_str!("fixtures/stdlib_foundation/core_slice_bool_search.lani")
-                        .contains(&call)
-                || module == "slice_u8"
-                    && include_str!("fixtures/stdlib_foundation/core_slice_u8_complete.lani")
-                        .contains(&call)
-                || module == "slice_i8"
-                    && include_str!("fixtures/stdlib_foundation/core_slice_i8_complete.lani")
-                        .contains(&call)
-                || module == "slice_i16"
-                    && include_str!("fixtures/stdlib_foundation/core_slice_i16_complete.lani")
-                        .contains(&call)
-                || module == "slice_u16"
-                    && include_str!("fixtures/stdlib_foundation/core_slice_u16_complete.lani")
-                        .contains(&call)
-                || module == "slice_u32"
-                    && include_str!("fixtures/stdlib_foundation/core_slice_u32_complete.lani")
-                        .contains(&call)
-                || module == "slice"
-                    && include_str!("fixtures/stdlib_foundation/slice_sequence.lani")
-                        .contains(&call)
-                || module == "slice"
-                    && include_str!("fixtures/stdlib_foundation/slice_subsequence.lani")
-                        .contains(&call)
-                || module == "slice"
-                    && include_str!("fixtures/stdlib_foundation/slice_compaction.lani")
-                        .contains(&call)
-                || module == "slice"
-                    && include_str!("fixtures/stdlib_foundation/slice_copy_nonoverlapping.lani")
-                        .contains(&call)
-                || module == "slice"
-                    && include_str!("fixtures/stdlib_foundation/slice_partition_search.lani")
-                        .contains(&call)
-                || module == "slice"
-                    && include_str!("fixtures/stdlib_foundation/slice_insert.lani").contains(&call)
-                || module == "slice_f32"
-                    && include_str!("fixtures/stdlib_foundation/core_slice_f32_ordering.lani")
-                        .contains(&call)
-                || module == "slice_f32"
-                    && include_str!("fixtures/stdlib_foundation/core_slice_f32_extended.lani")
-                        .contains(&call)
-                || module == "slice_f32"
-                    && include_str!(
-                        "fixtures/stdlib_foundation/core_slice_f32_finite_analysis.lani"
-                    )
-                    .contains(&call);
+                        .contains(&call);
             assert!(covered, "{module}::{name} lacks a runtime case");
             count += 1;
         }

@@ -7,8 +7,8 @@ fn main() {
     let first: i32 = core::slice::first(values);
     let third: i32 = core::slice::get_or(values, 4, 2, 0);
     let fallback: i32 = core::slice::get_or(values, 4, 9, 7);
-    let total: i32 = core::slice::sum_i32(values, 4);
-    let found: bool = core::slice::contains_i32(values, 4, third);
+    let total: i32 = core::slice::sum(values, 4, 0);
+    let found: bool = core::slice::contains(values, 4, third);
     if (found) {
         print(first + third + fallback + total);
     } else {

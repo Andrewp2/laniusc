@@ -2,15 +2,15 @@ module app::main;
 import core::f32;
 import core::option;
 import core::range;
-import core::slice_f32;
+import core::slice;
 
 fn main() -> i32 {
     let readings: [f32; 3] = [3.0, 1.5, 2.5];
-    if (!core::slice_f32::sort_finite(readings, 3) ||
-        core::slice_f32::binary_search_first_finite_or(readings, 3, 2.5, -1) != 1) {
+    if (core::slice::sort(readings, 3) != 3 ||
+        core::slice::binary_search_first_or(readings, 3, 2.5, -1) != 1) {
         return 1;
     }
-    let raw_total: f32 = core::slice_f32::sum_or(readings, 3, -1.0);
+    let raw_total: f32 = core::slice::sum(readings, 3, 0.0);
     let acceptable: core::range::RangeInclusive<f32> =
         core::range::range_inclusive(0.0, 100.0);
     if (!core::f32::is_finite(raw_total) ||
@@ -19,7 +19,7 @@ fn main() -> i32 {
     let result: core::option::Option<f32> = core::option::Some(bounded);
     let total: f32 = core::option::unwrap_or(result, -1.0);
     if (total != 7.0) { return 2; }
-    let matched_index: i32 = core::slice_f32::binary_search_last_finite_or(readings, 3, 3.0, -1);
+    let matched_index: i32 = core::slice::binary_search_last_or(readings, 3, 3.0, -1);
     print(matched_index);
     return 0;
 }

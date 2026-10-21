@@ -2,6 +2,7 @@
 // not use the native u64 arithmetic path, which currently loses high bits.
 module core::wide_u64;
 import core::cmp;
+import core::ops;
 import core::number_u32;
 
 pub struct WideU64 {
@@ -250,4 +251,12 @@ pub impl core::cmp::Ord<WideU64> for WideU64 {
     pub fn le(left: WideU64, right: WideU64) -> bool { return compare(left, right) <= 0; }
     pub fn gt(left: WideU64, right: WideU64) -> bool { return compare(left, right) > 0; }
     pub fn ge(left: WideU64, right: WideU64) -> bool { return compare(left, right) >= 0; }
+}
+
+pub impl core::ops::SaturatingAdd<WideU64> for WideU64 {
+    pub fn saturating_add(left: WideU64, right: WideU64) -> WideU64 {
+        let total: WideU64 = wrapping_add(left, right);
+        if (compare(total, left) < 0) { return max_value(); }
+        return total;
+    }
 }

@@ -2,7 +2,7 @@ module app::main;
 import core::byte;
 import core::number_u32;
 import core::range;
-import core::slice_u8;
+import core::slice;
 
 fn main() -> i32 {
     // The payload of this seven-byte packet is four hexadecimal digits.
@@ -15,7 +15,7 @@ fn main() -> i32 {
     let f: u8 = 70;
     let packet: [u8; 7] = [l, n, colon, one, a, two, f];
     let header: [u8; 3] = [l, n, colon];
-    if (!core::slice_u8::starts_with(packet, 7, header, 3)) {
+    if (!core::slice::starts_with(packet, 7, header, 3)) {
         return 1;
     }
     let payload: core::range::Range<i32> = core::range::range(3, 7);
@@ -23,7 +23,7 @@ fn main() -> i32 {
     let checksum: u32 = 0;
     while (index < 7) {
         if (core::range::contains(payload, index)) {
-            let ascii: u8 = core::slice_u8::get_or(packet, 7, index, 0);
+            let ascii: u8 = core::slice::get_or(packet, 7, index, 0);
             if (!core::byte::is_ascii_hexdigit(ascii)) {
                 return 2;
             }

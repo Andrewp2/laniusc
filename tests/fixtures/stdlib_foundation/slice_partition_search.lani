@@ -5,16 +5,16 @@ import core::slice;
 fn main() -> i32 {
     let ordered: [i32; 5] = [-2147483648, -2, -2, 0, 2147483647];
     let ordered_view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(ordered), 5);
-    if (core::slice::binary_search_last_or_i32(ordered_view, 5, -2147483648, 99) != 0 ||
-        core::slice::binary_search_last_or_i32(ordered_view, 5, -2, 99) != 2 ||
-        core::slice::binary_search_last_or_i32(ordered_view, 5, 2147483647, 99) != 4 ||
-        core::slice::binary_search_last_or_i32(ordered_view, 5, 1, 99) != 99 ||
-        core::slice::binary_search_last_or_i32(ordered_view, 0, -2, 99) != 99) {
+    if (core::slice::binary_search_last_or(ordered_view, 5, -2147483648, 99) != 0 ||
+        core::slice::binary_search_last_or(ordered_view, 5, -2, 99) != 2 ||
+        core::slice::binary_search_last_or(ordered_view, 5, 2147483647, 99) != 4 ||
+        core::slice::binary_search_last_or(ordered_view, 5, 1, 99) != 99 ||
+        core::slice::binary_search_last_or(ordered_view, 0, -2, 99) != 99) {
         return 1;
     }
     let values: [i32; 8] = [7, -3, 0, 7, 2147483647, -2147483648, 4, -3];
     let view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(values), 8);
-    let boundary: i32 = core::slice::partition_lt_i32(view, 8, 4);
+    let boundary: i32 = core::slice::partition_lt(view, 8, 4);
     if (boundary != 4) {
         return 2;
     }
@@ -31,22 +31,22 @@ fn main() -> i32 {
         }
         index += 1;
     }
-    if (core::slice::sort_i32(view, 8) != 8 || values[0] != -2147483648 ||
+    if (core::slice::sort(view, 8) != 8 || values[0] != -2147483648 ||
         values[1] != -3 || values[2] != -3 || values[3] != 0 ||
         values[4] != 4 || values[5] != 7 || values[6] != 7 || values[7] != 2147483647) {
         return 5;
     }
     let small: [i32; 2] = [1, 2];
     let small_view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(small), 2);
-    if (core::slice::partition_lt_i32(small_view, -1, 2) != 0 || small[0] != 1 || small[1] != 2 ||
-        core::slice::partition_lt_i32(small_view, 2, 0) != 0 ||
-        core::slice::partition_lt_i32(small_view, 2, 3) != 2 ||
+    if (core::slice::partition_lt(small_view, -1, 2) != 0 || small[0] != 1 || small[1] != 2 ||
+        core::slice::partition_lt(small_view, 2, 0) != 0 ||
+        core::slice::partition_lt(small_view, 2, 3) != 2 ||
         small[0] != 1 || small[1] != 2) {
         return 6;
     }
     let empty: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(small), 0);
-    if (core::slice::partition_lt_i32(empty, 0, 2) != 0 ||
-        core::slice::binary_search_last_or_i32(empty, 0, 1, 99) != 99) {
+    if (core::slice::partition_lt(empty, 0, 2) != 0 ||
+        core::slice::binary_search_last_or(empty, 0, 1, 99) != 99) {
         return 7;
     }
     return 0;

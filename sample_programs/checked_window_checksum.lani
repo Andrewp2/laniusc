@@ -20,9 +20,9 @@ fn main() -> i32 {
     let sorted: [i32; 4] = decoded.unwrap_or([0, 0, 0, 0]);
     readings[0] = -100;
     let view: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(sorted), 4);
-    if (core::slice::sort_i32(view, 4) != 4) { return 2; }
-    let first: i32 = core::slice::lower_bound_i32(view, 4, 24);
-    let end: i32 = core::slice::upper_bound_i32(view, 4, 42);
+    if (core::slice::sort(view, 4) != 4) { return 2; }
+    let first: i32 = core::slice::lower_bound(view, 4, 24);
+    let end: i32 = core::slice::upper_bound(view, 4, 42);
     let window: core::range::Range<i32> = core::range::range(first, end);
     let index: i32 = 0;
     let checksum: i32 = 0;

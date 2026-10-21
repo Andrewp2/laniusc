@@ -1,49 +1,63 @@
-// Allocation-free generic view access and copying, plus i32 algorithms.
-// The caller supplies the view length
-// because the source language cannot read slice metadata yet. A length larger
-// than the actual view is invalid; native indexing traps if it reaches beyond
-// the view. Functions below specify whether a negative length is treated as
-// empty or rejected without mutation.
+// Allocation-free algorithms over a view of any element type. The caller
+// supplies the view length because the source language cannot read slice
+// metadata yet. A length larger than the actual view is invalid; native
+// indexing traps if it reaches beyond the view. Functions below specify
+// whether a negative length is treated as empty or rejected without mutation.
+//
+// Searching needs core::cmp::Eq and ordering needs core::cmp::Ord. Ordered
+// functions only call lt and le, so for f32 a NaN is never below or above
+// anything: min_or and max_or skip it unless it comes first, and sorting or
+// searching a view that holds NaN gives an unspecified order.
 module core::slice;
-import core::number_i32;
-fn nonnegative_len_i32(len: i32) -> i32 {
+
+import core::cmp;
+import core::ops;
+
+fn nonnegative_len(len: i32) -> i32 {
     if (len <= 0) {
         return 0;
     }
     return len;
 }
-pub fn first<T>(values:[T]) -> T {
+
+pub fn first<T>(values: [T]) -> T {
     // Native indexing traps if values is empty.
     return values[0];
 }
-pub fn first_or<T>(values:[T], len: i32, fallback: T) -> T {
+
+pub fn first_or<T>(values: [T], len: i32, fallback: T) -> T {
     if (len <= 0) {
         return fallback;
     }
     return values[0];
 }
-pub fn get_or<T>(values:[T], len: i32, index: i32, fallback: T) -> T {
-    if (index<0) {
+
+pub fn last_or<T>(values: [T], len: i32, fallback: T) -> T {
+    if (len <= 0) {
         return fallback;
-    } else {
-        if (index >= len) {
-            return fallback;
-        } else {
-            return values[index];
-        }
     }
+    return values[len - 1];
 }
+
+pub fn get_or<T>(values: [T], len: i32, index: i32, fallback: T) -> T {
+    if (index < 0 || index >= len) {
+        return fallback;
+    }
+    return values[index];
+}
+
 // Returns false and leaves the view unchanged for an out-of-range index.
-pub fn set<T>(values:[T], len: i32, index: i32, value: T) -> bool {
-    if (index<0 || index >= len) {
+pub fn set<T>(values: [T], len: i32, index: i32, value: T) -> bool {
+    if (index < 0 || index >= len) {
         return false;
     }
     values[index] = value;
     return true;
 }
+
 // Returns false and leaves the view unchanged if either index is invalid.
-pub fn swap<T>(values:[T], len: i32, left: i32, right: i32) -> bool {
-    if (left<0 || right<0 || left >= len || right >= len) {
+pub fn swap<T>(values: [T], len: i32, left: i32, right: i32) -> bool {
+    if (left < 0 || right < 0 || left >= len || right >= len) {
         return false;
     }
     let previous: T = values[left];
@@ -51,24 +65,22 @@ pub fn swap<T>(values:[T], len: i32, left: i32, right: i32) -> bool {
     values[right] = previous;
     return true;
 }
+
 // Returns the number of elements written; nonpositive lengths write nothing.
-pub fn fill<T>(values:[T], len: i32, value: T) -> i32 {
+pub fn fill<T>(values: [T], len: i32, value: T) -> i32 {
     let index: i32 = 0;
-    while (index<len) {
+    while (index < len) {
         values[index] = value;
         index += 1;
     }
     return index;
 }
-// Returns the number of swaps performed.
-pub fn reverse_in_place<T>(values:[T], len: i32) -> i32 {
-    if (len <= 1) {
-        return 0;
-    }
-    let left: i32 = 0;
-    let right: i32 = len - 1;
+
+fn reverse_segment<T>(values: [T], start: i32, end: i32) -> i32 {
+    let left: i32 = start;
+    let right: i32 = end - 1;
     let swaps: i32 = 0;
-    while (left<right) {
+    while (left < right) {
         let previous: T = values[left];
         values[left] = values[right];
         values[right] = previous;
@@ -78,498 +90,505 @@ pub fn reverse_in_place<T>(values:[T], len: i32) -> i32 {
     }
     return swaps;
 }
-fn reverse_segment_i32(values:[i32], start: i32, end: i32) {
-    let left: i32 = start;
-    let right: i32 = end - 1;
-    while (left<right) {
-        let previous: i32 = values[left];
-        values[left] = values[right];
-        values[right] = previous;
-        left += 1;
-        right -= 1;
+
+// Returns the number of swaps performed.
+pub fn reverse_in_place<T>(values: [T], len: i32) -> i32 {
+    if (len <= 1) {
+        return 0;
     }
+    return reverse_segment(values, 0, len);
 }
+
 // Rotate the first len elements by amount positions. Amount must be in
 // [0, len]; invalid arguments return false without modifying the view.
-pub fn rotate_left_i32(values:[i32], len: i32, amount: i32) -> bool {
-    if (len<0 || amount<0 || amount>len) {
+pub fn rotate_left<T>(values: [T], len: i32, amount: i32) -> bool {
+    if (len < 0 || amount < 0 || amount > len) {
         return false;
     }
     if (amount == 0 || amount == len) {
         return true;
     }
-    reverse_segment_i32(values, 0, amount);
-    reverse_segment_i32(values, amount, len);
-    reverse_segment_i32(values, 0, len);
+    reverse_segment(values, 0, amount);
+    reverse_segment(values, amount, len);
+    reverse_segment(values, 0, len);
     return true;
 }
-pub fn rotate_right_i32(values:[i32], len: i32, amount: i32) -> bool {
-    if (len<0 || amount<0 || amount>len) {
+
+pub fn rotate_right<T>(values: [T], len: i32, amount: i32) -> bool {
+    if (len < 0 || amount < 0 || amount > len) {
         return false;
     }
-    return rotate_left_i32(values, len, len - amount);
+    return rotate_left(values, len, len - amount);
 }
+
 // Copies [source_start, source_end) to destination_start within one view.
 // Overlap is supported. Bounds invalid relative to `len` return false without
 // writing; the caller must still supply the actual backing view length.
-pub fn copy_within<T>(values:[T], len: i32, source_start: i32, source_end: i32, destination_start: i32) -> bool {
-    if (len<0 || source_start<0 || source_end<source_start || source_end>len || destination_start<0) {
+pub fn copy_within<T>(values: [T], len: i32, source_start: i32, source_end: i32,
+    destination_start: i32) -> bool {
+    if (len < 0 || source_start < 0 || source_end < source_start || source_end > len ||
+        destination_start < 0) {
         return false;
     }
     let count: i32 = source_end - source_start;
-    if (destination_start>len - count) {
+    if (destination_start > len - count) {
         return false;
     }
-    if (destination_start>source_start) {
+    if (destination_start > source_start) {
         let remaining: i32 = count;
-        while (remaining>0) {
+        while (remaining > 0) {
             remaining -= 1;
             values[destination_start + remaining] = values[source_start + remaining];
         }
     } else {
         let offset: i32 = 0;
-        while (offset<count) {
+        while (offset < count) {
             values[destination_start + offset] = values[source_start + offset];
             offset += 1;
         }
     }
     return true;
 }
+
 // Copies the source prefix into a backed destination view. The copied ranges
 // must not overlap in memory; use copy_within for overlap in one view.
 // Invalid lengths return false without writing. Caller-supplied lengths must
 // not exceed the actual backing view lengths.
-pub fn copy_nonoverlapping_prefix<T>(destination:[T], destination_len: i32, source:[T], source_len: i32) -> bool {
-    if (destination_len<0 || source_len<0) {
-        return false;
-    }
-    if (source_len>destination_len) {
+pub fn copy_nonoverlapping_prefix<T>(destination: [T], destination_len: i32, source: [T],
+    source_len: i32) -> bool {
+    if (destination_len < 0 || source_len < 0 || source_len > destination_len) {
         return false;
     }
     let offset: i32 = 0;
-    while (offset<source_len) {
+    while (offset < source_len) {
         destination[offset] = source[offset];
         offset += 1;
     }
     return true;
 }
+
 // Copies `count` elements between distinct backed view ranges. The source
 // and destination ranges must not overlap in memory; use copy_within for
 // overlap. Invalid logical lengths or ranges return false without writing.
 // Claimed lengths must fit the actual backing views or native indexing traps.
-pub fn copy_nonoverlapping_range<T>(destination:[T], destination_len: i32, destination_start: i32, source:[T], source_len: i32, source_start: i32, count: i32) -> bool {
-    if (destination_len<0 || source_len<0 || destination_start<0 || source_start<0 || count<0) {
+pub fn copy_nonoverlapping_range<T>(destination: [T], destination_len: i32,
+    destination_start: i32, source: [T], source_len: i32, source_start: i32,
+    count: i32) -> bool {
+    if (destination_len < 0 || source_len < 0 || destination_start < 0 || source_start < 0 ||
+        count < 0) {
         return false;
     }
-    if (destination_start>destination_len || source_start>source_len) {
+    if (destination_start > destination_len || source_start > source_len) {
         return false;
     }
-    if (count>destination_len - destination_start || count>source_len - source_start) {
+    if (count > destination_len - destination_start || count > source_len - source_start) {
         return false;
     }
     let offset: i32 = 0;
-    while (offset<count) {
+    while (offset < count) {
         destination[destination_start + offset] = source[source_start + offset];
         offset += 1;
     }
     return true;
 }
-// Keep the first element of each adjacent run, preserving order. Returns the
-// new logical length; elements at or beyond it are unspecified. A nonpositive
-// len returns zero without writing.
-pub fn dedup_adjacent_i32(values:[i32], len: i32) -> i32 {
-    if (len <= 0) {
-        return 0;
-    }
-    let write: i32 = 1;
-    let read: i32 = 1;
-    while (read<len) {
-        let current: i32 = values[read];
-        if (current != values[write - 1]) {
-            values[write] = current;
-            write += 1;
-        }
-        read += 1;
-    }
-    return write;
-}
-// Remove every matching value from the logical view while preserving the
-// order of retained values. Returns the new length; the tail is unspecified.
-// A nonpositive len returns zero without writing.
-pub fn retain_not_equal_i32(values:[i32], len: i32, needle: i32) -> i32 {
-    let read: i32 = 0;
-    let write: i32 = 0;
-    while (read<len) {
-        let current: i32 = values[read];
-        if (current != needle) {
-            values[write] = current;
-            write += 1;
-        }
-        read += 1;
-    }
-    return write;
-}
+
 // Remove one logical element and shift its successors left. A valid index
 // returns true; an invalid index returns false without writing. The previous
 // final element is outside the new logical length and is unspecified.
-pub fn remove_at_i32(values:[i32], len: i32, index: i32) -> bool {
-    if (index<0 || index >= len) {
+pub fn remove_at<T>(values: [T], len: i32, index: i32) -> bool {
+    if (index < 0 || index >= len) {
         return false;
     }
     let read: i32 = index + 1;
-    while (read<len) {
+    while (read < len) {
         values[read - 1] = values[read];
         read += 1;
     }
     return true;
 }
+
 // Insert at an index in [0, len], shifting the suffix right by one. A valid
 // call needs 0 <= len < capacity, and the backed view must actually contain
 // at least capacity writable elements. Invalid logical bounds return false
 // without writing. On success the caller's new logical length is len + 1.
 // If capacity overstates the physical view, native indexing can trap.
-pub fn insert_i32(values:[i32], len: i32, capacity: i32, index: i32, value: i32) -> bool {
-    if (len<0 || capacity<=0 || len>=capacity || index<0 || index>len) {
+pub fn insert<T>(values: [T], len: i32, capacity: i32, index: i32, value: T) -> bool {
+    if (len < 0 || capacity <= 0 || len >= capacity || index < 0 || index > len) {
         return false;
     }
     let cursor: i32 = len;
-    while (cursor>index) {
+    while (cursor > index) {
         values[cursor] = values[cursor - 1];
         cursor -= 1;
     }
     values[index] = value;
     return true;
 }
+
 // Append within caller-owned capacity; the caller increments len on success.
 // Rejected bounds leave the backing view unchanged. A capacity greater than
 // the actual view length can trap when the appended element is indexed.
-pub fn push_i32(values:[i32], len: i32, capacity: i32, value: i32) -> bool {
-    return insert_i32(values, len, capacity, len, value);
+pub fn push<T>(values: [T], len: i32, capacity: i32, value: T) -> bool {
+    return insert(values, len, capacity, len, value);
 }
-// Negative lengths count as empty. An empty prefix matches every view.
-pub fn starts_with_i32(values:[i32], len: i32, prefix:[i32], prefix_len: i32) -> bool {
-    let count: i32 = nonnegative_len_i32(len);
-    let prefix_count: i32 = nonnegative_len_i32(prefix_len);
-    if (prefix_count>count) {
-        return false;
-    }
+
+pub fn contains<T>(values: [T], len: i32, needle: T) -> bool where T: core::cmp::Eq<T> {
     let index: i32 = 0;
-    while (index<prefix_count) {
-        if (values[index] != prefix[index]) {
-            return false;
-        }
-        index += 1;
-    }
-    return true;
-}
-// Negative lengths count as empty. An empty suffix matches every view.
-pub fn ends_with_i32(values:[i32], len: i32, suffix:[i32], suffix_len: i32) -> bool {
-    let count: i32 = nonnegative_len_i32(len);
-    let suffix_count: i32 = nonnegative_len_i32(suffix_len);
-    if (suffix_count>count) {
-        return false;
-    }
-    let offset: i32 = count - suffix_count;
-    let index: i32 = 0;
-    while (index<suffix_count) {
-        if (values[offset + index] != suffix[index]) {
-            return false;
-        }
-        index += 1;
-    }
-    return true;
-}
-// Negative lengths count as empty; equal-length views compare elementwise.
-pub fn equals_i32(left:[i32], left_len: i32, right:[i32], right_len: i32) -> bool {
-    let left_count: i32 = nonnegative_len_i32(left_len);
-    let right_count: i32 = nonnegative_len_i32(right_len);
-    if (left_count != right_count) {
-        return false;
-    }
-    return starts_with_i32(left, left_count, right, right_count);
-}
-// Returns -1, 0, or 1 for lexicographic order. Negative lengths count as
-// empty; the first unequal element decides before the lengths are compared.
-pub fn compare_lexicographic_i32(left:[i32], left_len: i32, right:[i32], right_len: i32) -> i32 {
-    let left_count: i32 = nonnegative_len_i32(left_len);
-    let right_count: i32 = nonnegative_len_i32(right_len);
-    let common: i32 = left_count;
-    if (right_count<common) {
-        common = right_count;
-    }
-    let index: i32 = 0;
-    while (index<common) {
-        if (left[index]<right[index]) {
-            return -1;
-        }
-        if (left[index]>right[index]) {
-            return 1;
-        }
-        index += 1;
-    }
-    if (left_count<right_count) {
-        return -1;
-    }
-    if (left_count>right_count) {
-        return 1;
-    }
-    return 0;
-}
-// Returns the first start index of a contiguous needle, or -1 if absent.
-// Negative lengths count as empty; an empty needle matches at zero.
-pub fn index_of_subslice_i32(values:[i32], len: i32, needle:[i32], needle_len: i32) -> i32 {
-    let count: i32 = nonnegative_len_i32(len);
-    let needle_count: i32 = nonnegative_len_i32(needle_len);
-    if (needle_count>count) {
-        return -1;
-    }
-    let last_start: i32 = count - needle_count;
-    let start: i32 = 0;
-    while (start<=last_start) {
-        let offset: i32 = 0;
-        while (offset<needle_count) {
-            if (values[start + offset] != needle[offset]) {
-                break;
-            }
-            offset += 1;
-        }
-        if (offset == needle_count) {
-            return start;
-        }
-        if (start == last_start) {
-            return -1;
-        }
-        start += 1;
-    }
-    return -1;
-}
-// The last match of an empty needle is at the end of the logical view.
-// Returns -1 when the needle is absent.
-pub fn last_index_of_subslice_i32(values:[i32], len: i32, needle:[i32], needle_len: i32) -> i32 {
-    let count: i32 = nonnegative_len_i32(len);
-    let needle_count: i32 = nonnegative_len_i32(needle_len);
-    if (needle_count>count) {
-        return -1;
-    }
-    let start: i32 = count - needle_count;
-    while (start>=0) {
-        let offset: i32 = 0;
-        while (offset<needle_count) {
-            if (values[start + offset] != needle[offset]) {
-                break;
-            }
-            offset += 1;
-        }
-        if (offset == needle_count) {
-            return start;
-        }
-        start -= 1;
-    }
-    return -1;
-}
-pub fn contains_i32(values:[i32], len: i32, needle: i32) -> bool {
-    let index: i32 = 0;
-    while (index<len) {
-        if (values[index] == needle) {
+    while (index < len) {
+        if (T::eq(values[index], needle)) {
             return true;
         }
         index += 1;
     }
     return false;
 }
-pub fn count_i32(values:[i32], len: i32, needle: i32) -> i32 {
+
+pub fn count<T>(values: [T], len: i32, needle: T) -> i32 where T: core::cmp::Eq<T> {
     let index: i32 = 0;
-    let count: i32 = 0;
-    while (index<len) {
-        if (values[index] == needle) {
-            count += 1;
+    let total: i32 = 0;
+    while (index < len) {
+        if (T::eq(values[index], needle)) {
+            total += 1;
         }
         index += 1;
     }
-    return count;
+    return total;
 }
+
 // Returns the first matching index or the caller's fallback.
-pub fn index_of_or_i32(values:[i32], len: i32, needle: i32, fallback: i32) -> i32 {
+pub fn index_of_or<T>(values: [T], len: i32, needle: T, fallback: i32) -> i32
+    where T: core::cmp::Eq<T> {
     let index: i32 = 0;
-    while (index<len) {
-        if (values[index] == needle) {
+    while (index < len) {
+        if (T::eq(values[index], needle)) {
             return index;
         }
         index += 1;
     }
     return fallback;
 }
+
 // Returns the last matching index or the caller's fallback.
-pub fn last_index_of_or_i32(values:[i32], len: i32, needle: i32, fallback: i32) -> i32 {
+pub fn last_index_of_or<T>(values: [T], len: i32, needle: T, fallback: i32) -> i32
+    where T: core::cmp::Eq<T> {
     if (len <= 0) {
         return fallback;
     }
     let index: i32 = len - 1;
     while (index >= 0) {
-        if (values[index] == needle) {
+        if (T::eq(values[index], needle)) {
             return index;
         }
         index -= 1;
     }
     return fallback;
 }
-pub fn min_or_i32(values:[i32], len: i32, fallback: i32) -> i32 {
-    if (len <= 0) {
-        return fallback;
+
+// Negative lengths count as empty. An empty prefix matches every view.
+pub fn starts_with<T>(values: [T], len: i32, prefix: [T], prefix_len: i32) -> bool
+    where T: core::cmp::Eq<T> {
+    let total: i32 = nonnegative_len(len);
+    let prefix_total: i32 = nonnegative_len(prefix_len);
+    if (prefix_total > total) {
+        return false;
     }
-    let lowest: i32 = values[0];
-    let index: i32 = 1;
-    while (index<len) {
-        if (values[index]<lowest) {
-            lowest = values[index];
-        }
-        index += 1;
-    }
-    return lowest;
-}
-pub fn max_or_i32(values:[i32], len: i32, fallback: i32) -> i32 {
-    if (len <= 0) {
-        return fallback;
-    }
-    let highest: i32 = values[0];
-    let index: i32 = 1;
-    while (index<len) {
-        if (values[index]>highest) {
-            highest = values[index];
-        }
-        index += 1;
-    }
-    return highest;
-}
-// Empty and single-element views are sorted.
-pub fn is_sorted_i32(values:[i32], len: i32) -> bool {
-    let index: i32 = 1;
-    while (index<len) {
-        if (values[index - 1]>values[index]) {
+    let index: i32 = 0;
+    while (index < prefix_total) {
+        if (!T::eq(values[index], prefix[index])) {
             return false;
         }
         index += 1;
     }
     return true;
 }
-fn sift_down_max_i32(values:[i32], heap_len: i32, start: i32) {
-    if (heap_len>1) {
-        let root: i32 = start;
-        while (root <=(heap_len - 2) / 2) {
-            let child: i32 = root * 2 + 1;
-            let largest: i32 = root;
-            if (values[largest]<values[child]) {
-                largest = child;
-            }
-            if (child + 1<heap_len && values[largest]<values[child + 1]) {
-                largest = child + 1;
-            }
-            if (largest == root) {
-                break;
-            }
-            let previous: i32 = values[root];
-            values[root] = values[largest];
-            values[largest] = previous;
-            root = largest;
+
+// Negative lengths count as empty. An empty suffix matches every view.
+pub fn ends_with<T>(values: [T], len: i32, suffix: [T], suffix_len: i32) -> bool
+    where T: core::cmp::Eq<T> {
+    let total: i32 = nonnegative_len(len);
+    let suffix_total: i32 = nonnegative_len(suffix_len);
+    if (suffix_total > total) {
+        return false;
+    }
+    let offset: i32 = total - suffix_total;
+    let index: i32 = 0;
+    while (index < suffix_total) {
+        if (!T::eq(values[offset + index], suffix[index])) {
+            return false;
         }
+        index += 1;
     }
+    return true;
 }
-// In-place ascending heapsort. Returns the number of elements sorted;
-// nonpositive lengths return zero and do not touch storage.
-pub fn sort_i32(values:[i32], len: i32) -> i32 {
-    if (len <= 0) {
-        return 0;
+
+// Negative lengths count as empty; equal-length views compare elementwise.
+pub fn equals<T>(left: [T], left_len: i32, right: [T], right_len: i32) -> bool
+    where T: core::cmp::Eq<T> {
+    if (nonnegative_len(left_len) != nonnegative_len(right_len)) {
+        return false;
     }
-    if (len == 1) {
-        return 1;
+    return starts_with(left, left_len, right, right_len);
+}
+
+fn matches_at<T>(values: [T], start: i32, needle: [T], needle_len: i32) -> bool
+    where T: core::cmp::Eq<T> {
+    let offset: i32 = 0;
+    while (offset < needle_len) {
+        if (!T::eq(values[start + offset], needle[offset])) {
+            return false;
+        }
+        offset += 1;
     }
-    let start: i32 =(len - 2) / 2;
+    return true;
+}
+
+// Returns the first start index of a contiguous needle, or -1 if absent.
+// Negative lengths count as empty; an empty needle matches at zero.
+pub fn index_of_subslice<T>(values: [T], len: i32, needle: [T], needle_len: i32) -> i32
+    where T: core::cmp::Eq<T> {
+    let total: i32 = nonnegative_len(len);
+    let needle_total: i32 = nonnegative_len(needle_len);
+    let start: i32 = 0;
+    while (start <= total - needle_total) {
+        if (matches_at(values, start, needle, needle_total)) {
+            return start;
+        }
+        start += 1;
+    }
+    return -1;
+}
+
+// The last match of an empty needle is at the end of the logical view.
+// Returns -1 when the needle is absent.
+pub fn last_index_of_subslice<T>(values: [T], len: i32, needle: [T], needle_len: i32) -> i32
+    where T: core::cmp::Eq<T> {
+    let total: i32 = nonnegative_len(len);
+    let needle_total: i32 = nonnegative_len(needle_len);
+    let start: i32 = total - needle_total;
     while (start >= 0) {
-        sift_down_max_i32(values, len, start);
-        if (start == 0) {
-            break;
+        if (matches_at(values, start, needle, needle_total)) {
+            return start;
         }
         start -= 1;
     }
-    let remaining: i32 = len;
-    while (remaining>1) {
-        remaining -= 1;
-        let previous: i32 = values[0];
-        values[0] = values[remaining];
-        values[remaining] = previous;
-        sift_down_max_i32(values, remaining, 0);
-    }
-    return len;
+    return -1;
 }
-// Requires nondecreasing input. Returns the first index whose value is >=
-// needle, or len when every value is smaller. A nonpositive len returns zero.
-// The midpoint calculation avoids overflowing i32 for a large valid view.
-pub fn lower_bound_i32(values:[i32], len: i32, needle: i32) -> i32 {
+
+// Keep the first element of each adjacent run, preserving order. Returns the
+// new logical length; elements at or beyond it are unspecified. A nonpositive
+// len returns zero without writing.
+pub fn dedup_adjacent<T>(values: [T], len: i32) -> i32 where T: core::cmp::Eq<T> {
     if (len <= 0) {
         return 0;
     }
-    let low: i32 = 0;
-    let high: i32 = len;
-    while (low<high) {
-        let middle: i32 = low +(high - low) / 2;
-        if (values[middle]<needle) {
-            low = middle + 1;
-        } else {
-            high = middle;
+    let write: i32 = 1;
+    let read: i32 = 1;
+    while (read < len) {
+        let current: T = values[read];
+        if (!T::eq(current, values[write - 1])) {
+            values[write] = current;
+            write += 1;
         }
+        read += 1;
     }
-    return low;
+    return write;
 }
-// Requires nondecreasing input. Returns the first index whose value is
-// strictly greater than needle, or len when every value is <= needle.
-pub fn upper_bound_i32(values:[i32], len: i32, needle: i32) -> i32 {
-    if (len <= 0) {
-        return 0;
-    }
-    let low: i32 = 0;
-    let high: i32 = len;
-    while (low<high) {
-        let middle: i32 = low +(high - low) / 2;
-        if (values[middle] <= needle) {
-            low = middle + 1;
-        } else {
-            high = middle;
+
+// Remove every matching value from the logical view while preserving the
+// order of retained values. Returns the new length; the tail is unspecified.
+// A nonpositive len returns zero without writing.
+pub fn retain_not_equal<T>(values: [T], len: i32, needle: T) -> i32
+    where T: core::cmp::Eq<T> {
+    let read: i32 = 0;
+    let write: i32 = 0;
+    while (read < len) {
+        let current: T = values[read];
+        if (!T::eq(current, needle)) {
+            values[write] = current;
+            write += 1;
         }
+        read += 1;
     }
-    return low;
+    return write;
 }
-// Requires nondecreasing input and returns the first matching index.
-pub fn binary_search_first_or_i32(values:[i32], len: i32, needle: i32, fallback: i32) -> i32 {
+
+// Returns -1, 0, or 1 for lexicographic order. Negative lengths count as
+// empty; the first unequal element decides before the lengths are compared.
+// Two elements neither below nor above each other (NaN) count as equal.
+pub fn compare_lexicographic<T>(left: [T], left_len: i32, right: [T], right_len: i32) -> i32
+    where T: core::cmp::Ord<T> {
+    let left_total: i32 = nonnegative_len(left_len);
+    let right_total: i32 = nonnegative_len(right_len);
+    let common: i32 = left_total;
+    if (right_total < common) {
+        common = right_total;
+    }
+    let index: i32 = 0;
+    while (index < common) {
+        if (T::lt(left[index], right[index])) {
+            return -1;
+        }
+        if (T::lt(right[index], left[index])) {
+            return 1;
+        }
+        index += 1;
+    }
+    if (left_total < right_total) {
+        return -1;
+    }
+    if (left_total > right_total) {
+        return 1;
+    }
+    return 0;
+}
+
+pub fn min_or<T>(values: [T], len: i32, fallback: T) -> T where T: core::cmp::Ord<T> {
     if (len <= 0) {
         return fallback;
     }
-    let index: i32 = lower_bound_i32(values, len, needle);
-    if (index<len && values[index] == needle) {
+    let lowest: T = values[0];
+    let index: i32 = 1;
+    while (index < len) {
+        if (T::lt(values[index], lowest)) {
+            lowest = values[index];
+        }
+        index += 1;
+    }
+    return lowest;
+}
+
+pub fn max_or<T>(values: [T], len: i32, fallback: T) -> T where T: core::cmp::Ord<T> {
+    if (len <= 0) {
+        return fallback;
+    }
+    let highest: T = values[0];
+    let index: i32 = 1;
+    while (index < len) {
+        if (T::lt(highest, values[index])) {
+            highest = values[index];
+        }
+        index += 1;
+    }
+    return highest;
+}
+
+// Empty and single-element views are sorted.
+pub fn is_sorted<T>(values: [T], len: i32) -> bool where T: core::cmp::Ord<T> {
+    let index: i32 = 1;
+    while (index < len) {
+        if (T::lt(values[index], values[index - 1])) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+fn sift_down<T>(values: [T], heap_len: i32, start: i32) where T: core::cmp::Ord<T> {
+    let root: i32 = start;
+    while (root * 2 + 1 < heap_len) {
+        let child: i32 = root * 2 + 1;
+        let largest: i32 = root;
+        if (T::lt(values[largest], values[child])) {
+            largest = child;
+        }
+        if (child + 1 < heap_len && T::lt(values[largest], values[child + 1])) {
+            largest = child + 1;
+        }
+        if (largest == root) {
+            return;
+        }
+        let previous: T = values[root];
+        values[root] = values[largest];
+        values[largest] = previous;
+        root = largest;
+    }
+}
+
+// In-place ascending heapsort; not stable. Returns the number of elements
+// sorted; nonpositive lengths return zero and do not touch storage.
+pub fn sort<T>(values: [T], len: i32) -> i32 where T: core::cmp::Ord<T> {
+    if (len <= 0) {
+        return 0;
+    }
+    let start: i32 = len / 2;
+    while (start > 0) {
+        start -= 1;
+        sift_down(values, len, start);
+    }
+    let remaining: i32 = len;
+    while (remaining > 1) {
+        remaining -= 1;
+        let previous: T = values[0];
+        values[0] = values[remaining];
+        values[remaining] = previous;
+        sift_down(values, remaining, 0);
+    }
+    return len;
+}
+
+// Requires nondecreasing input. Returns the first index whose value is not
+// below needle, or len when every value is smaller. A nonpositive len
+// returns zero. The midpoint calculation avoids overflowing i32.
+pub fn lower_bound<T>(values: [T], len: i32, needle: T) -> i32 where T: core::cmp::Ord<T> {
+    let low: i32 = 0;
+    let high: i32 = nonnegative_len(len);
+    while (low < high) {
+        let middle: i32 = low + (high - low) / 2;
+        if (T::lt(values[middle], needle)) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
+
+// Requires nondecreasing input. Returns the first index whose value is
+// strictly greater than needle, or len when every value is at most needle.
+pub fn upper_bound<T>(values: [T], len: i32, needle: T) -> i32 where T: core::cmp::Ord<T> {
+    let low: i32 = 0;
+    let high: i32 = nonnegative_len(len);
+    while (low < high) {
+        let middle: i32 = low + (high - low) / 2;
+        if (T::le(values[middle], needle)) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
+
+// Requires nondecreasing input and returns the first matching index.
+pub fn binary_search_first_or<T>(values: [T], len: i32, needle: T, fallback: i32) -> i32
+    where T: core::cmp::Ord<T> {
+    let index: i32 = lower_bound(values, len, needle);
+    if (index < len && T::le(values[index], needle)) {
         return index;
     }
     return fallback;
 }
+
 // Requires nondecreasing input and returns the last matching index.
-pub fn binary_search_last_or_i32(values:[i32], len: i32, needle: i32, fallback: i32) -> i32 {
-    if (len <= 0) {
-        return fallback;
-    }
-    let after: i32 = upper_bound_i32(values, len, needle);
-    if (after>0 && values[after - 1] == needle) {
+pub fn binary_search_last_or<T>(values: [T], len: i32, needle: T, fallback: i32) -> i32
+    where T: core::cmp::Ord<T> {
+    let after: i32 = upper_bound(values, len, needle);
+    if (after > 0 && T::le(needle, values[after - 1])) {
         return after - 1;
     }
     return fallback;
 }
+
 // Partition the first len elements so every element below pivot precedes
-// every element at or above it. Returns the boundary between those groups.
-// Relative order is not preserved. A nonpositive len returns zero without
-// writing; a claimed len beyond the actual backing view can trap on indexing.
-pub fn partition_lt_i32(values:[i32], len: i32, pivot: i32) -> i32 {
+// every other element. Returns the boundary between those groups. Relative
+// order is not preserved. A nonpositive len returns zero without writing.
+pub fn partition_lt<T>(values: [T], len: i32, pivot: T) -> i32 where T: core::cmp::Ord<T> {
     let boundary: i32 = 0;
     let index: i32 = 0;
-    while (index<len) {
-        if (values[index]<pivot) {
-            let previous: i32 = values[boundary];
+    while (index < len) {
+        if (T::lt(values[index], pivot)) {
+            let previous: T = values[boundary];
             values[boundary] = values[index];
             values[index] = previous;
             boundary += 1;
@@ -578,11 +597,15 @@ pub fn partition_lt_i32(values:[i32], len: i32, pivot: i32) -> i32 {
     }
     return boundary;
 }
-pub fn sum_i32(values:[i32], len: i32) -> i32 {
+
+// Adds every element to `initial` with the type's saturating addition, so
+// integer totals clamp at the type's limits instead of wrapping. A
+// nonpositive len returns `initial`.
+pub fn sum<T>(values: [T], len: i32, initial: T) -> T where T: core::ops::SaturatingAdd<T> {
+    let total: T = initial;
     let index: i32 = 0;
-    let total: i32 = 0;
-    while (index<len) {
-        total = core::number_i32::saturating_add(total, values[index]);
+    while (index < len) {
+        total = T::saturating_add(total, values[index]);
         index += 1;
     }
     return total;

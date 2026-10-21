@@ -1,7 +1,5 @@
 module app::main;
-import core::slice_u8;
-import core::slice_u16;
-import core::slice_u32;
+import core::slice;
 
 fn main() -> i32 {
     let zero_byte: u8 = 0;
@@ -31,9 +29,9 @@ fn main() -> i32 {
             if (digit == 1) { one_count += 1; }
             index += 1;
         }
-        if (core::slice_u8::sort(bytes, 5) != 5 ||
-            core::slice_u16::sort(halfwords, 5) != 5 ||
-            core::slice_u32::sort(words, 5) != 5) { return 1; }
+        if (core::slice::sort(bytes, 5) != 5 ||
+            core::slice::sort(halfwords, 5) != 5 ||
+            core::slice::sort(words, 5) != 5) { return 1; }
         index = 0;
         while (index < 5) {
             let expected: i32 = 2;

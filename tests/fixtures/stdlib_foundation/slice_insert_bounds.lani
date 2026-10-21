@@ -5,7 +5,7 @@ import core::slice;
 fn main() -> i32 {
     let backing: [i32; 2] = [1, 2];
     let values: [i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(backing), 2);
-    if (core::slice::push_i32(values, 2, 3, 7)) {
+    if (core::slice::push(values, 2, 3, 7)) {
         return 1;
     }
     return 2;

@@ -16,7 +16,7 @@ fn main() -> i32 {
     if (!std::random_checked::shuffle_i32(view, 8)) {
         return 2;
     }
-    if (core::slice::sort_i32(view, 8) != 8 ||
+    if (core::slice::sort(view, 8) != 8 ||
         values[0] != -2147483648 || values[1] != -3 || values[2] != -3 ||
         values[3] != 0 || values[4] != 4 || values[5] != 7 ||
         values[6] != 7 || values[7] != 2147483647) {

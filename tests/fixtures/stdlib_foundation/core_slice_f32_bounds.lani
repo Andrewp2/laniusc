@@ -1,9 +1,0 @@
-module app::main;
-import core::slice_f32;
-
-fn main() -> i32 {
-    let values: [f32; 1] = [1.5];
-    let overclaimed: f32 = core::slice_f32::get_or(values, 2, 1, 9.0);
-    if (overclaimed == 9.0) { return 1; }
-    return 2;
-}

@@ -1,0 +1,11 @@
+// A length that overclaims a multiword record view traps (exit 101)
+// instead of reading past the array.
+module app::main;
+import core::slice;
+import core::wide_u64;
+fn main() -> i32 {
+    let zero: core::wide_u64::WideU64 = core::wide_u64::zero();
+    let values: [core::wide_u64::WideU64; 2] = [zero, zero];
+    let item: core::wide_u64::WideU64 = core::slice::get_or(values, 3, 2, zero);
+    return core::wide_u64::low_word(item) as i32;
+}

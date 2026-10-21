@@ -35,10 +35,10 @@ fn main() -> i32 {
     if (core::slice::get_or(view, 3, 2, 9) != 4 || core::slice::get_or(view, 3, -1, 9) != 9 || core::slice::get_or(view, 3, 3, 9) != 9 || core::slice::get_or(view, -1, 0, 9) != 9) {
         return 7;
     }
-    if (!core::slice::contains_i32(view, 3, 1) || core::slice::contains_i32(view, 3, 2) || core::slice::contains_i32(empty, 0, 3) || core::slice::contains_i32(view, -1, 3)) {
+    if (!core::slice::contains(view, 3, 1) || core::slice::contains(view, 3, 2) || core::slice::contains(empty, 0, 3) || core::slice::contains(view, -1, 3)) {
         return 8;
     }
-    if (core::slice::sum_i32(view, 3) != 8 || core::slice::sum_i32(empty, 0) != 0 || core::slice::sum_i32(view, -1) != 0) {
+    if (core::slice::sum(view, 3, 0) != 8 || core::slice::sum(empty, 0, 0) != 0 || core::slice::sum(view, -1, 0) != 0) {
         return 9;
     }
     let large:[i32; 2] =[2147483647, 1];
@@ -47,40 +47,40 @@ fn main() -> i32 {
     let small_pointer: ptr = core::mem::i32_array_data_ptr(small);
     let large_view:[i32] = core::mem::i32_slice_from_raw_parts(large_pointer, 2);
     let small_view:[i32] = core::mem::i32_slice_from_raw_parts(small_pointer, 2);
-    if (core::slice::sum_i32(large_view, 2) != 2147483647 || core::slice::sum_i32(small_view, 2) != -2147483648) {
+    if (core::slice::sum(large_view, 2, 0) != 2147483647 || core::slice::sum(small_view, 2, 0) != -2147483648) {
         return 10;
     }
     let duplicates:[i32; 4] =[3, 1, 3, 4];
     let duplicate_ptr: ptr = core::mem::i32_array_data_ptr(duplicates);
     let duplicate_view:[i32] = core::mem::i32_slice_from_raw_parts(duplicate_ptr, 4);
-    if (core::slice::count_i32(duplicate_view, 4, 3) != 2 || core::slice::count_i32(duplicate_view, 4, 9) != 0 || core::slice::count_i32(empty, 0, 3) != 0) {
+    if (core::slice::count(duplicate_view, 4, 3) != 2 || core::slice::count(duplicate_view, 4, 9) != 0 || core::slice::count(empty, 0, 3) != 0) {
         return 11;
     }
-    if (core::slice::index_of_or_i32(duplicate_view, 4, 3, 99) != 0 || core::slice::index_of_or_i32(duplicate_view, 4, 4, 99) != 3 || core::slice::index_of_or_i32(duplicate_view, 4, 9, 99) != 99 || core::slice::index_of_or_i32(empty, 0, 3, 99) != 99) {
+    if (core::slice::index_of_or(duplicate_view, 4, 3, 99) != 0 || core::slice::index_of_or(duplicate_view, 4, 4, 99) != 3 || core::slice::index_of_or(duplicate_view, 4, 9, 99) != 99 || core::slice::index_of_or(empty, 0, 3, 99) != 99) {
         return 12;
     }
-    if (core::slice::last_index_of_or_i32(duplicate_view, 4, 3, 99) != 2 || core::slice::last_index_of_or_i32(duplicate_view, 4, 1, 99) != 1 || core::slice::last_index_of_or_i32(duplicate_view, 4, 9, 99) != 99 || core::slice::last_index_of_or_i32(empty, -2147483648, 3, 99) != 99) {
+    if (core::slice::last_index_of_or(duplicate_view, 4, 3, 99) != 2 || core::slice::last_index_of_or(duplicate_view, 4, 1, 99) != 1 || core::slice::last_index_of_or(duplicate_view, 4, 9, 99) != 99 || core::slice::last_index_of_or(empty, -2147483648, 3, 99) != 99) {
         return 13;
     }
     let sorted:[i32; 5] =[-2147483648, -2, -2, 0, 2147483647];
     let sorted_ptr: ptr = core::mem::i32_array_data_ptr(sorted);
     let sorted_view:[i32] = core::mem::i32_slice_from_raw_parts(sorted_ptr, 5);
-    if (core::slice::min_or_i32(view, 3, 99) != 1 || core::slice::min_or_i32(sorted_view, 5, 99) != -2147483648 || core::slice::min_or_i32(empty, 0, 99) != 99 || core::slice::min_or_i32(view, -1, 99) != 99) {
+    if (core::slice::min_or(view, 3, 99) != 1 || core::slice::min_or(sorted_view, 5, 99) != -2147483648 || core::slice::min_or(empty, 0, 99) != 99 || core::slice::min_or(view, -1, 99) != 99) {
         return 14;
     }
-    if (core::slice::max_or_i32(view, 3, 99) != 4 || core::slice::max_or_i32(sorted_view, 5, 99) != 2147483647 || core::slice::max_or_i32(empty, 0, 99) != 99 || core::slice::max_or_i32(view, -1, 99) != 99) {
+    if (core::slice::max_or(view, 3, 99) != 4 || core::slice::max_or(sorted_view, 5, 99) != 2147483647 || core::slice::max_or(empty, 0, 99) != 99 || core::slice::max_or(view, -1, 99) != 99) {
         return 15;
     }
-    if (!core::slice::is_sorted_i32(sorted_view, 5) || core::slice::is_sorted_i32(view, 3) || !core::slice::is_sorted_i32(empty, 0) || !core::slice::is_sorted_i32(view, 1)) {
+    if (!core::slice::is_sorted(sorted_view, 5) || core::slice::is_sorted(view, 3) || !core::slice::is_sorted(empty, 0) || !core::slice::is_sorted(view, 1)) {
         return 16;
     }
-    if (core::slice::binary_search_first_or_i32(sorted_view, 5, -2147483648, 99) != 0 || core::slice::binary_search_first_or_i32(sorted_view, 5, -2, 99) != 1 || core::slice::binary_search_first_or_i32(sorted_view, 5, 2147483647, 99) != 4 || core::slice::binary_search_first_or_i32(sorted_view, 5, -3, 99) != 99 || core::slice::binary_search_first_or_i32(sorted_view, 5, 1, 99) != 99 || core::slice::binary_search_first_or_i32(view, 1, 3, 99) != 0 || core::slice::binary_search_first_or_i32(view, 1, 4, 99) != 99 || core::slice::binary_search_first_or_i32(empty, 0, 1, 99) != 99) {
+    if (core::slice::binary_search_first_or(sorted_view, 5, -2147483648, 99) != 0 || core::slice::binary_search_first_or(sorted_view, 5, -2, 99) != 1 || core::slice::binary_search_first_or(sorted_view, 5, 2147483647, 99) != 4 || core::slice::binary_search_first_or(sorted_view, 5, -3, 99) != 99 || core::slice::binary_search_first_or(sorted_view, 5, 1, 99) != 99 || core::slice::binary_search_first_or(view, 1, 3, 99) != 0 || core::slice::binary_search_first_or(view, 1, 4, 99) != 99 || core::slice::binary_search_first_or(empty, 0, 1, 99) != 99) {
         return 17;
     }
-    if (core::slice::lower_bound_i32(sorted_view, 5, -2147483648) != 0 || core::slice::lower_bound_i32(sorted_view, 5, -3) != 1 || core::slice::lower_bound_i32(sorted_view, 5, -2) != 1 || core::slice::lower_bound_i32(sorted_view, 5, 0) != 3 || core::slice::lower_bound_i32(sorted_view, 5, 1) != 4 || core::slice::lower_bound_i32(sorted_view, 5, 2147483647) != 4 || core::slice::lower_bound_i32(empty, 0, 1) != 0 || core::slice::lower_bound_i32(empty, -1, 1) != 0 || core::slice::lower_bound_i32(view, 1, 4) != 1 || core::slice::lower_bound_i32(view, 1, 2) != 0) {
+    if (core::slice::lower_bound(sorted_view, 5, -2147483648) != 0 || core::slice::lower_bound(sorted_view, 5, -3) != 1 || core::slice::lower_bound(sorted_view, 5, -2) != 1 || core::slice::lower_bound(sorted_view, 5, 0) != 3 || core::slice::lower_bound(sorted_view, 5, 1) != 4 || core::slice::lower_bound(sorted_view, 5, 2147483647) != 4 || core::slice::lower_bound(empty, 0, 1) != 0 || core::slice::lower_bound(empty, -1, 1) != 0 || core::slice::lower_bound(view, 1, 4) != 1 || core::slice::lower_bound(view, 1, 2) != 0) {
         return 29;
     }
-    if (core::slice::upper_bound_i32(sorted_view, 5, -2147483648) != 1 || core::slice::upper_bound_i32(sorted_view, 5, -3) != 1 || core::slice::upper_bound_i32(sorted_view, 5, -2) != 3 || core::slice::upper_bound_i32(sorted_view, 5, 0) != 4 || core::slice::upper_bound_i32(sorted_view, 5, 1) != 4 || core::slice::upper_bound_i32(sorted_view, 5, 2147483647) != 5 || core::slice::upper_bound_i32(empty, 0, 1) != 0 || core::slice::upper_bound_i32(empty, -1, 1) != 0 || core::slice::upper_bound_i32(view, 1, 3) != 1 || core::slice::upper_bound_i32(view, 1, 2) != 0) {
+    if (core::slice::upper_bound(sorted_view, 5, -2147483648) != 1 || core::slice::upper_bound(sorted_view, 5, -3) != 1 || core::slice::upper_bound(sorted_view, 5, -2) != 3 || core::slice::upper_bound(sorted_view, 5, 0) != 4 || core::slice::upper_bound(sorted_view, 5, 1) != 4 || core::slice::upper_bound(sorted_view, 5, 2147483647) != 5 || core::slice::upper_bound(empty, 0, 1) != 0 || core::slice::upper_bound(empty, -1, 1) != 0 || core::slice::upper_bound(view, 1, 3) != 1 || core::slice::upper_bound(view, 1, 2) != 0) {
         return 30;
     }
     let editable:[i32; 4] =[3, 1, 4, 1];
@@ -122,16 +122,16 @@ fn main() -> i32 {
     let sortable:[i32; 8] =[7, -3, 0, 7, 2147483647, -2147483648, 4, -3];
     let sortable_ptr: ptr = core::mem::i32_array_data_ptr(sortable);
     let sortable_view:[i32] = core::mem::i32_slice_from_raw_parts(sortable_ptr, 8);
-    if (core::slice::sort_i32(sortable_view, 8) != 8 || !core::slice::is_sorted_i32(sortable_view, 8) || sortable[0] != -2147483648 || sortable[1] != -3 || sortable[2] != -3 || sortable[3] != 0 || sortable[4] != 4 || sortable[5] != 7 || sortable[6] != 7 || sortable[7] != 2147483647) {
+    if (core::slice::sort(sortable_view, 8) != 8 || !core::slice::is_sorted(sortable_view, 8) || sortable[0] != -2147483648 || sortable[1] != -3 || sortable[2] != -3 || sortable[3] != 0 || sortable[4] != 4 || sortable[5] != 7 || sortable[6] != 7 || sortable[7] != 2147483647) {
         return 26;
     }
     let descending:[i32; 5] =[5, 4, 3, 2, 1];
     let descending_ptr: ptr = core::mem::i32_array_data_ptr(descending);
     let descending_view:[i32] = core::mem::i32_slice_from_raw_parts(descending_ptr, 5);
-    if (core::slice::sort_i32(descending_view, 5) != 5 || descending[0] != 1 || descending[1] != 2 || descending[2] != 3 || descending[3] != 4 || descending[4] != 5) {
+    if (core::slice::sort(descending_view, 5) != 5 || descending[0] != 1 || descending[1] != 2 || descending[2] != 3 || descending[3] != 4 || descending[4] != 5) {
         return 27;
     }
-    if (core::slice::sort_i32(sorted_view, 5) != 5 || !core::slice::is_sorted_i32(sorted_view, 5) || core::slice::sort_i32(view, 1) != 1 || core::slice::sort_i32(empty, 0) != 0 || core::slice::sort_i32(view, -1) != 0) {
+    if (core::slice::sort(sorted_view, 5) != 5 || !core::slice::is_sorted(sorted_view, 5) || core::slice::sort(view, 1) != 1 || core::slice::sort(empty, 0) != 0 || core::slice::sort(view, -1) != 0) {
         return 28;
     }
     return 0;

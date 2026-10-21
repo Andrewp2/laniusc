@@ -27,45 +27,45 @@ fn main() -> i32 {
     let middle_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(middle), 2);
     let empty:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(values), 0);
 
-    if (core::slice::compare_lexicographic_i32(view, 5, equal_view, 5) != 0 ||
-        core::slice::compare_lexicographic_i32(view, 5, later_view, 5) != -1 ||
-        core::slice::compare_lexicographic_i32(later_view, 5, view, 5) != 1 ||
-        core::slice::compare_lexicographic_i32(pair_view, 2, view, 5) != -1 ||
-        core::slice::compare_lexicographic_i32(view, 5, pair_view, 2) != 1) {
+    if (core::slice::compare_lexicographic(view, 5, equal_view, 5) != 0 ||
+        core::slice::compare_lexicographic(view, 5, later_view, 5) != -1 ||
+        core::slice::compare_lexicographic(later_view, 5, view, 5) != 1 ||
+        core::slice::compare_lexicographic(pair_view, 2, view, 5) != -1 ||
+        core::slice::compare_lexicographic(view, 5, pair_view, 2) != 1) {
         return 1;
     }
-    if (core::slice::compare_lexicographic_i32(empty, 0, empty, 0) != 0 ||
-        core::slice::compare_lexicographic_i32(view, -1, pair_view, -2) != 0 ||
-        core::slice::compare_lexicographic_i32(empty, 0, view, 5) != -1 ||
-        core::slice::compare_lexicographic_i32(view, 5, empty, 0) != 1 ||
-        core::slice::compare_lexicographic_i32(extremes_view, 2, middle_view, 2) != -1 ||
-        core::slice::compare_lexicographic_i32(middle_view, 2, extremes_view, 2) != 1) {
+    if (core::slice::compare_lexicographic(empty, 0, empty, 0) != 0 ||
+        core::slice::compare_lexicographic(view, -1, pair_view, -2) != 0 ||
+        core::slice::compare_lexicographic(empty, 0, view, 5) != -1 ||
+        core::slice::compare_lexicographic(view, 5, empty, 0) != 1 ||
+        core::slice::compare_lexicographic(extremes_view, 2, middle_view, 2) != -1 ||
+        core::slice::compare_lexicographic(middle_view, 2, extremes_view, 2) != 1) {
         return 2;
     }
-    if (core::slice::index_of_subslice_i32(view, 5, pair_view, 2) != 0 ||
-        core::slice::last_index_of_subslice_i32(view, 5, pair_view, 2) != 2 ||
-        core::slice::index_of_subslice_i32(view, 5, tail_view, 2) != 3 ||
-        core::slice::last_index_of_subslice_i32(view, 5, tail_view, 2) != 3 ||
-        core::slice::index_of_subslice_i32(view, 5, equal_view, 5) != 0 ||
-        core::slice::last_index_of_subslice_i32(view, 5, equal_view, 5) != 0) {
+    if (core::slice::index_of_subslice(view, 5, pair_view, 2) != 0 ||
+        core::slice::last_index_of_subslice(view, 5, pair_view, 2) != 2 ||
+        core::slice::index_of_subslice(view, 5, tail_view, 2) != 3 ||
+        core::slice::last_index_of_subslice(view, 5, tail_view, 2) != 3 ||
+        core::slice::index_of_subslice(view, 5, equal_view, 5) != 0 ||
+        core::slice::last_index_of_subslice(view, 5, equal_view, 5) != 0) {
         return 3;
     }
-    if (core::slice::index_of_subslice_i32(repeated_view, 4, repeated_pair_view, 2) != 0 ||
-        core::slice::last_index_of_subslice_i32(repeated_view, 4, repeated_pair_view, 2) != 2 ||
-        core::slice::index_of_subslice_i32(view, 5, missing_view, 2) != -1 ||
-        core::slice::last_index_of_subslice_i32(view, 5, missing_view, 2) != -1 ||
-        core::slice::index_of_subslice_i32(view, 5, longer_view, 6) != -1 ||
-        core::slice::last_index_of_subslice_i32(view, 5, longer_view, 6) != -1) {
+    if (core::slice::index_of_subslice(repeated_view, 4, repeated_pair_view, 2) != 0 ||
+        core::slice::last_index_of_subslice(repeated_view, 4, repeated_pair_view, 2) != 2 ||
+        core::slice::index_of_subslice(view, 5, missing_view, 2) != -1 ||
+        core::slice::last_index_of_subslice(view, 5, missing_view, 2) != -1 ||
+        core::slice::index_of_subslice(view, 5, longer_view, 6) != -1 ||
+        core::slice::last_index_of_subslice(view, 5, longer_view, 6) != -1) {
         return 4;
     }
-    if (core::slice::index_of_subslice_i32(view, 5, empty, 0) != 0 ||
-        core::slice::last_index_of_subslice_i32(view, 5, empty, 0) != 5 ||
-        core::slice::index_of_subslice_i32(empty, 0, empty, 0) != 0 ||
-        core::slice::last_index_of_subslice_i32(empty, 0, empty, 0) != 0 ||
-        core::slice::index_of_subslice_i32(view, -1, empty, -1) != 0 ||
-        core::slice::last_index_of_subslice_i32(view, -1, empty, -1) != 0 ||
-        core::slice::index_of_subslice_i32(empty, 0, pair_view, 2) != -1 ||
-        core::slice::last_index_of_subslice_i32(empty, 0, pair_view, 2) != -1) {
+    if (core::slice::index_of_subslice(view, 5, empty, 0) != 0 ||
+        core::slice::last_index_of_subslice(view, 5, empty, 0) != 5 ||
+        core::slice::index_of_subslice(empty, 0, empty, 0) != 0 ||
+        core::slice::last_index_of_subslice(empty, 0, empty, 0) != 0 ||
+        core::slice::index_of_subslice(view, -1, empty, -1) != 0 ||
+        core::slice::last_index_of_subslice(view, -1, empty, -1) != 0 ||
+        core::slice::index_of_subslice(empty, 0, pair_view, 2) != -1 ||
+        core::slice::last_index_of_subslice(empty, 0, pair_view, 2) != -1) {
         return 5;
     }
     return 0;

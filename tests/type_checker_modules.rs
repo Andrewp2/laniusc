@@ -4252,6 +4252,7 @@ fn type_checker_enforces_stdlib_trait_where_obligations_from_source_pack() {
         include_str!("../stdlib/core/cmp.lani"),
         include_str!("../stdlib/core/hash.lani"),
         include_str!("../stdlib/core/number_u32.lani"),
+        include_str!("../stdlib/core/ops.lani"),
         include_str!("../stdlib/core/wide_u64.lani"),
         include_str!("../stdlib/core/wide_i64.lani"),
         r#"
@@ -4284,6 +4285,7 @@ fn main() {
         include_str!("../stdlib/core/cmp.lani"),
         include_str!("../stdlib/core/hash.lani"),
         include_str!("../stdlib/core/number_u32.lani"),
+        include_str!("../stdlib/core/ops.lani"),
         include_str!("../stdlib/core/wide_u64.lani"),
         include_str!("../stdlib/core/wide_i64.lani"),
         r#"
@@ -4679,6 +4681,7 @@ fn type_checker_accepts_core_ordering_module_calls() {
     assert_gpu_type_check_pack_accepts(&[
         include_str!("../stdlib/core/cmp.lani"),
         include_str!("../stdlib/core/number_u32.lani"),
+        include_str!("../stdlib/core/ops.lani"),
         include_str!("../stdlib/core/wide_u64.lani"),
         include_str!("../stdlib/core/wide_i64.lani"),
         include_str!("../stdlib/core/ordering.lani"),

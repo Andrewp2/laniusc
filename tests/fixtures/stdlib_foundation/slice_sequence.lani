@@ -15,38 +15,38 @@ fn main() -> i32 {
     let suffix_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(suffix), 2);
     let long_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(too_long), 6);
     let empty:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(values), 0);
-    if (!core::slice::starts_with_i32(view, 5, prefix_view, 2) || core::slice::starts_with_i32(view, 5, suffix_view, 2) || !core::slice::starts_with_i32(view, 5, empty, 0) || !core::slice::starts_with_i32(empty, 0, empty, 0) || core::slice::starts_with_i32(empty, 0, prefix_view, 2) || !core::slice::starts_with_i32(view, -1, prefix_view, -1) || core::slice::starts_with_i32(view, 5, long_view, 6)) {
+    if (!core::slice::starts_with(view, 5, prefix_view, 2) || core::slice::starts_with(view, 5, suffix_view, 2) || !core::slice::starts_with(view, 5, empty, 0) || !core::slice::starts_with(empty, 0, empty, 0) || core::slice::starts_with(empty, 0, prefix_view, 2) || !core::slice::starts_with(view, -1, prefix_view, -1) || core::slice::starts_with(view, 5, long_view, 6)) {
         return 1;
     }
-    if (!core::slice::ends_with_i32(view, 5, suffix_view, 2) || core::slice::ends_with_i32(view, 5, prefix_view, 2) || !core::slice::ends_with_i32(view, 5, empty, 0) || !core::slice::ends_with_i32(empty, 0, empty, 0) || core::slice::ends_with_i32(empty, 0, suffix_view, 2) || !core::slice::ends_with_i32(view, -1, suffix_view, -1) || core::slice::ends_with_i32(view, 5, long_view, 6)) {
+    if (!core::slice::ends_with(view, 5, suffix_view, 2) || core::slice::ends_with(view, 5, prefix_view, 2) || !core::slice::ends_with(view, 5, empty, 0) || !core::slice::ends_with(empty, 0, empty, 0) || core::slice::ends_with(empty, 0, suffix_view, 2) || !core::slice::ends_with(view, -1, suffix_view, -1) || core::slice::ends_with(view, 5, long_view, 6)) {
         return 2;
     }
-    if (!core::slice::equals_i32(view, 5, equal_view, 5) || core::slice::equals_i32(view, 5, different_view, 5) || core::slice::equals_i32(view, 5, prefix_view, 2) || !core::slice::equals_i32(empty, 0, view, 0) || !core::slice::equals_i32(view, -1, equal_view, -2) || core::slice::equals_i32(view, -1, equal_view, 5)) {
+    if (!core::slice::equals(view, 5, equal_view, 5) || core::slice::equals(view, 5, different_view, 5) || core::slice::equals(view, 5, prefix_view, 2) || !core::slice::equals(empty, 0, view, 0) || !core::slice::equals(view, -1, equal_view, -2) || core::slice::equals(view, -1, equal_view, 5)) {
         return 3;
     }
     let rotating:[i32; 5] =[1, 2, 3, 4, 5];
     let rotating_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(rotating), 5);
-    if (!core::slice::rotate_left_i32(rotating_view, 5, 2) || rotating[0] != 3 || rotating[1] != 4 || rotating[2] != 5 || rotating[3] != 1 || rotating[4] != 2) {
+    if (!core::slice::rotate_left(rotating_view, 5, 2) || rotating[0] != 3 || rotating[1] != 4 || rotating[2] != 5 || rotating[3] != 1 || rotating[4] != 2) {
         return 4;
     }
-    if (!core::slice::rotate_right_i32(rotating_view, 5, 2) || rotating[0] != 1 || rotating[1] != 2 || rotating[2] != 3 || rotating[3] != 4 || rotating[4] != 5) {
+    if (!core::slice::rotate_right(rotating_view, 5, 2) || rotating[0] != 1 || rotating[1] != 2 || rotating[2] != 3 || rotating[3] != 4 || rotating[4] != 5) {
         return 5;
     }
-    if (!core::slice::rotate_right_i32(rotating_view, 5, 1) || rotating[0] != 5 || rotating[1] != 1 || rotating[2] != 2 || rotating[3] != 3 || rotating[4] != 4 || !core::slice::rotate_left_i32(rotating_view, 5, 1) || rotating[0] != 1 || rotating[4] != 5) {
+    if (!core::slice::rotate_right(rotating_view, 5, 1) || rotating[0] != 5 || rotating[1] != 1 || rotating[2] != 2 || rotating[3] != 3 || rotating[4] != 4 || !core::slice::rotate_left(rotating_view, 5, 1) || rotating[0] != 1 || rotating[4] != 5) {
         return 6;
     }
-    if (!core::slice::rotate_left_i32(rotating_view, 5, 0) || !core::slice::rotate_left_i32(rotating_view, 5, 5) || !core::slice::rotate_right_i32(rotating_view, 5, 0) || !core::slice::rotate_right_i32(rotating_view, 5, 5) || rotating[0] != 1 || rotating[4] != 5) {
+    if (!core::slice::rotate_left(rotating_view, 5, 0) || !core::slice::rotate_left(rotating_view, 5, 5) || !core::slice::rotate_right(rotating_view, 5, 0) || !core::slice::rotate_right(rotating_view, 5, 5) || rotating[0] != 1 || rotating[4] != 5) {
         return 7;
     }
-    if (core::slice::rotate_left_i32(rotating_view, 5, -1) || core::slice::rotate_left_i32(rotating_view, 5, 6) || core::slice::rotate_right_i32(rotating_view, 5, -1) || core::slice::rotate_right_i32(rotating_view, 5, 6) || core::slice::rotate_left_i32(rotating_view, -1, 0) || rotating[0] != 1 || rotating[4] != 5) {
+    if (core::slice::rotate_left(rotating_view, 5, -1) || core::slice::rotate_left(rotating_view, 5, 6) || core::slice::rotate_right(rotating_view, 5, -1) || core::slice::rotate_right(rotating_view, 5, 6) || core::slice::rotate_left(rotating_view, -1, 0) || rotating[0] != 1 || rotating[4] != 5) {
         return 8;
     }
-    if (!core::slice::rotate_left_i32(empty, 0, 0) || !core::slice::rotate_right_i32(empty, 0, 0) || core::slice::rotate_left_i32(empty, 0, 1) || core::slice::rotate_right_i32(empty, 0, 1)) {
+    if (!core::slice::rotate_left(empty, 0, 0) || !core::slice::rotate_right(empty, 0, 0) || core::slice::rotate_left(empty, 0, 1) || core::slice::rotate_right(empty, 0, 1)) {
         return 9;
     }
     let single:[i32; 1] =[7];
     let single_view:[i32] = core::mem::i32_slice_from_raw_parts(core::mem::i32_array_data_ptr(single), 1);
-    if (!core::slice::rotate_left_i32(single_view, 1, 1) || !core::slice::rotate_right_i32(single_view, 1, 1) || single[0] != 7) {
+    if (!core::slice::rotate_left(single_view, 1, 1) || !core::slice::rotate_right(single_view, 1, 1) || single[0] != 7) {
         return 10;
     }
     return 0;

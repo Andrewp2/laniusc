@@ -245,7 +245,7 @@ pub fn sort_in_place(value: VecU8) -> i32 {
         return value.length;
     }
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
-    return core::slice::sort_i32(cells, value.length);
+    return core::slice::sort(cells, value.length);
 }
 
 // Reverse initialized values and return the number of swaps performed.
@@ -278,7 +278,7 @@ pub fn lower_bound(value: VecU8, needle: u8) -> i32 {
     }
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
     let needle_word: i32 = needle as i32;
-    return core::slice::lower_bound_i32(cells, value.length, needle_word);
+    return core::slice::lower_bound(cells, value.length, needle_word);
 }
 
 pub fn upper_bound(value: VecU8, needle: u8) -> i32 {
@@ -287,7 +287,7 @@ pub fn upper_bound(value: VecU8, needle: u8) -> i32 {
     }
     let cells: [i32] = core::mem::i32_slice_from_raw_parts(value.storage, value.length);
     let needle_word: i32 = needle as i32;
-    return core::slice::upper_bound_i32(cells, value.length, needle_word);
+    return core::slice::upper_bound(cells, value.length, needle_word);
 }
 
 // Return the first or last matching index, or fallback when absent.

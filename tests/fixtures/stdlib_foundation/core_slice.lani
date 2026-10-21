@@ -1,0 +1,385 @@
+// expect: 0
+// Every core::slice function through one generic checker over four ordered
+// values, for every integer width, char, f32, both
+// wide integers and a user record with its own Eq and Ord. Then bool views,
+// f32 NaN and signed zero, and saturating sums for each SaturatingAdd impl.
+// Exits 0. On a failure it prints 100 * row + the failing check and exits
+// with the row.
+module app::main;
+
+import core::cmp;
+import core::ops;
+import core::slice;
+import core::wide_i64;
+import core::wide_u64;
+
+struct Version { major: i32, minor: i32 }
+
+pub impl core::cmp::Eq<Version> for Version {
+    pub fn eq(left: Version, right: Version) -> bool {
+        return left.major == right.major && left.minor == right.minor;
+    }
+    pub fn ne(left: Version, right: Version) -> bool {
+        return !Version::eq(left, right);
+    }
+}
+
+pub impl core::cmp::Ord<Version> for Version {
+    pub fn lt(left: Version, right: Version) -> bool {
+        return left.major < right.major || left.major == right.major && left.minor < right.minor;
+    }
+    pub fn le(left: Version, right: Version) -> bool {
+        return !Version::lt(right, left);
+    }
+    pub fn gt(left: Version, right: Version) -> bool {
+        return Version::lt(right, left);
+    }
+    pub fn ge(left: Version, right: Version) -> bool {
+        return !Version::lt(left, right);
+    }
+}
+
+fn same4<T>(values: [T], a: T, b: T, c: T, d: T) -> bool where T: core::cmp::Eq<T> {
+    return T::eq(values[0], a) && T::eq(values[1], b) && T::eq(values[2], c) &&
+        T::eq(values[3], d);
+}
+
+// a < b < c < d.
+fn slice_checks<T>(a: T, b: T, c: T, d: T) -> i32
+    where T: core::cmp::Ord<T>, T: core::cmp::Eq<T> {
+    let values: [T; 4] = [c, a, d, b];
+    if (!T::eq(core::slice::first(values), c)) { return 1; }
+    if (!T::eq(core::slice::first_or(values, 0, d), d) || !T::eq(core::slice::first_or(values, 4, d), c)) {
+        return 2;
+    }
+    if (!T::eq(core::slice::last_or(values, 0, a), a) || !T::eq(core::slice::last_or(values, 4, a), b)) {
+        return 3;
+    }
+    if (!T::eq(core::slice::get_or(values, 4, 2, a), d) || !T::eq(core::slice::get_or(values, 4, 4, a), a) ||
+        !T::eq(core::slice::get_or(values, 4, -1, b), b)) {
+        return 4;
+    }
+    if (core::slice::set(values, 4, 4, a) || core::slice::set(values, 4, -1, a) ||
+        !core::slice::set(values, 4, 0, d) || !T::eq(values[0], d)) {
+        return 5;
+    }
+    if (core::slice::swap(values, 4, 0, 4) || !core::slice::swap(values, 4, 0, 1) ||
+        !same4(values, a, d, d, b)) {
+        return 6;
+    }
+    if (core::slice::fill(values, -1, c) != 0 || core::slice::fill(values, 4, c) != 4 ||
+        !same4(values, c, c, c, c)) {
+        return 7;
+    }
+
+    let order: [T; 4] = [a, b, c, d];
+    if (core::slice::reverse_in_place(order, 1) != 0 || core::slice::reverse_in_place(order, 4) != 2 ||
+        !same4(order, d, c, b, a)) {
+        return 8;
+    }
+    if (core::slice::reverse_in_place(order, 3) != 1 || !same4(order, b, c, d, a)) { return 9; }
+    if (core::slice::rotate_left(order, 4, 5) || core::slice::rotate_right(order, -1, 0) ||
+        !core::slice::rotate_left(order, 4, 1) || !same4(order, c, d, a, b)) {
+        return 10;
+    }
+    if (!core::slice::rotate_right(order, 4, 3) || !same4(order, d, a, b, c) ||
+        !core::slice::rotate_left(order, 4, 4) || !same4(order, d, a, b, c)) {
+        return 11;
+    }
+    if (!core::slice::copy_within(order, 4, 1, 3, 2) || !same4(order, d, a, a, b)) { return 12; }
+    if (!core::slice::copy_within(order, 4, 2, 4, 0) || !same4(order, a, b, a, b)) { return 13; }
+    if (core::slice::copy_within(order, 4, 0, 2, 3) || core::slice::copy_within(order, 4, 2, 1, 0) ||
+        !same4(order, a, b, a, b)) {
+        return 14;
+    }
+    let target: [T; 4] = [d, d, d, d];
+    let source: [T; 2] = [a, c];
+    if (core::slice::copy_nonoverlapping_prefix(source, 2, target, 4) ||
+        !core::slice::copy_nonoverlapping_prefix(target, 4, source, 2) || !same4(target, a, c, d, d)) {
+        return 15;
+    }
+    if (core::slice::copy_nonoverlapping_range(target, 4, 3, source, 2, 0, 2) ||
+        !core::slice::copy_nonoverlapping_range(target, 4, 2, source, 2, 1, 1) ||
+        !same4(target, a, c, c, d)) {
+        return 16;
+    }
+
+    let room: [T; 4] = [b, c, a, a];
+    if (core::slice::insert(room, 4, 4, 0, a) || core::slice::insert(room, 2, 4, 3, a)) { return 17; }
+    if (!core::slice::insert(room, 2, 4, 0, a) || !same4(room, a, b, c, a)) { return 18; }
+    if (!core::slice::push(room, 3, 4, d) || !same4(room, a, b, c, d)) { return 19; }
+    if (core::slice::remove_at(room, 4, 4) || !core::slice::remove_at(room, 4, 1) ||
+        !T::eq(room[0], a) || !T::eq(room[1], c) || !T::eq(room[2], d)) {
+        return 20;
+    }
+
+    let mixed: [T; 6] = [b, a, b, c, b, a];
+    if (!core::slice::contains(mixed, 6, c) || core::slice::contains(mixed, 3, c) ||
+        core::slice::contains(mixed, 6, d)) {
+        return 21;
+    }
+    if (core::slice::count(mixed, 6, b) != 3 || core::slice::count(mixed, -1, b) != 0) { return 22; }
+    if (core::slice::index_of_or(mixed, 6, a, -1) != 1 || core::slice::index_of_or(mixed, 6, d, 9) != 9) {
+        return 23;
+    }
+    if (core::slice::last_index_of_or(mixed, 6, a, -1) != 5 ||
+        core::slice::last_index_of_or(mixed, 0, a, 7) != 7 ||
+        core::slice::last_index_of_or(mixed, -2147483648, a, 7) != 7) {
+        return 24;
+    }
+    let prefix: [T; 2] = [b, a];
+    let tail: [T; 2] = [b, a];
+    let pair: [T; 2] = [a, b];
+    if (!core::slice::starts_with(mixed, 6, prefix, 2) || core::slice::starts_with(mixed, 6, pair, 2) ||
+        !core::slice::starts_with(mixed, 6, pair, 0) || core::slice::starts_with(prefix, 1, prefix, 2)) {
+        return 25;
+    }
+    if (!core::slice::ends_with(mixed, 6, tail, 2) || core::slice::ends_with(mixed, 6, pair, 2) ||
+        !core::slice::ends_with(mixed, -2, pair, -1)) {
+        return 26;
+    }
+    if (!core::slice::equals(prefix, 2, tail, 2) || core::slice::equals(prefix, 2, pair, 2) ||
+        core::slice::equals(prefix, 2, tail, 1) || !core::slice::equals(prefix, -1, pair, 0)) {
+        return 27;
+    }
+    if (core::slice::index_of_subslice(mixed, 6, pair, 2) != 1 ||
+        core::slice::index_of_subslice(mixed, 6, prefix, 2) != 0 ||
+        core::slice::index_of_subslice(mixed, 6, pair, 0) != 0 ||
+        core::slice::index_of_subslice(pair, 1, pair, 2) != -1) {
+        return 28;
+    }
+    if (core::slice::last_index_of_subslice(mixed, 6, prefix, 2) != 4 ||
+        core::slice::last_index_of_subslice(mixed, 6, pair, 0) != 6 ||
+        core::slice::last_index_of_subslice(mixed, 6, source, 2) != -1) {
+        return 29;
+    }
+
+    let runs: [T; 6] = [a, a, b, b, a, c];
+    if (core::slice::dedup_adjacent(runs, 0) != 0 || core::slice::dedup_adjacent(runs, 6) != 4 ||
+        !same4(runs, a, b, a, c)) {
+        return 30;
+    }
+    let keep: [T; 6] = [b, a, c, a, d, a];
+    if (core::slice::retain_not_equal(keep, 6, a) != 3 || !T::eq(keep[0], b) || !T::eq(keep[1], c) ||
+        !T::eq(keep[2], d)) {
+        return 31;
+    }
+
+    let low: [T; 3] = [a, b, c];
+    let high: [T; 3] = [a, c, a];
+    if (core::slice::compare_lexicographic(low, 3, high, 3) != -1 ||
+        core::slice::compare_lexicographic(high, 3, low, 3) != 1 ||
+        core::slice::compare_lexicographic(low, 3, low, 3) != 0 ||
+        core::slice::compare_lexicographic(low, 2, low, 3) != -1 ||
+        core::slice::compare_lexicographic(low, 3, low, -1) != 1) {
+        return 32;
+    }
+    let spread: [T; 5] = [c, a, d, b, c];
+    if (!T::eq(core::slice::min_or(spread, 5, d), a) || !T::eq(core::slice::max_or(spread, 5, a), d) ||
+        !T::eq(core::slice::min_or(spread, 0, b), b) || !T::eq(core::slice::max_or(spread, -1, c), c)) {
+        return 33;
+    }
+    if (core::slice::is_sorted(spread, 5) || !core::slice::is_sorted(spread, 1) ||
+        !core::slice::is_sorted(low, 3)) {
+        return 34;
+    }
+    if (core::slice::partition_lt(spread, 5, c) != 2 || !T::lt(spread[0], c) || !T::lt(spread[1], c) ||
+        T::lt(spread[2], c) || T::lt(spread[3], c) || T::lt(spread[4], c)) {
+        return 35;
+    }
+    if (core::slice::sort(spread, 0) != 0 || core::slice::sort(spread, 5) != 5 ||
+        !core::slice::is_sorted(spread, 5) || !T::eq(spread[0], a) || !T::eq(spread[2], c) ||
+        !T::eq(spread[3], c) || !T::eq(spread[4], d)) {
+        return 36;
+    }
+    // spread is now [a, b, c, c, d].
+    if (core::slice::lower_bound(spread, 5, c) != 2 || core::slice::lower_bound(spread, 5, a) != 0 ||
+        core::slice::lower_bound(spread, -1, d) != 0) {
+        return 37;
+    }
+    if (core::slice::upper_bound(spread, 5, c) != 4 || core::slice::upper_bound(spread, 5, d) != 5 ||
+        core::slice::upper_bound(spread, 0, a) != 0) {
+        return 38;
+    }
+    if (core::slice::binary_search_first_or(spread, 5, c, -1) != 2 ||
+        core::slice::binary_search_first_or(spread, 4, d, -1) != -1) {
+        return 39;
+    }
+    if (core::slice::binary_search_last_or(spread, 5, c, -1) != 3 ||
+        core::slice::binary_search_last_or(spread, 5, d, -1) != 4 ||
+        core::slice::binary_search_last_or(spread, 1, b, 8) != 8) {
+        return 40;
+    }
+    return 0;
+}
+
+fn row(index: i32, code: i32) -> i32 {
+    if (code == 0) { return 0; }
+    print(index * 100 + code);
+    return index;
+}
+
+fn bool_checks() -> i32 {
+    let flags: [bool; 5] = [true, false, true, true, false];
+    if (core::slice::count(flags, 5, true) != 3 || !core::slice::contains(flags, 5, false)) { return 1; }
+    if (core::slice::contains(flags, 1, false) || core::slice::index_of_or(flags, 5, false, -1) != 1) {
+        return 2;
+    }
+    if (core::slice::sort(flags, 5) != 5 || flags[1] || !flags[2] || !core::slice::is_sorted(flags, 5)) {
+        return 3;
+    }
+    if (core::slice::lower_bound(flags, 5, true) != 2 || core::slice::upper_bound(flags, 5, false) != 2) {
+        return 4;
+    }
+    return 0;
+}
+
+fn float_checks() -> i32 {
+    let zero: f32 = 0.0;
+    let nan: f32 = zero / zero;
+    let infinity: f32 = 1.0 / zero;
+    let negative_zero: f32 = -0.0;
+    let values: [f32; 4] = [1.0, nan, -2.0, 3.0];
+    // NaN equals nothing, and it is never below or above anything.
+    if (core::slice::contains(values, 4, nan) || core::slice::count(values, 4, nan) != 0) { return 1; }
+    if (core::slice::index_of_or(values, 4, nan, -1) != -1) { return 2; }
+    if (core::slice::min_or(values, 4, 9.0) != -2.0 || core::slice::max_or(values, 4, 9.0) != 3.0) {
+        return 3;
+    }
+    let leading: [f32; 3] = [nan, 1.0, 2.0];
+    let first_min: f32 = core::slice::min_or(leading, 3, 0.0);
+    if (first_min == first_min) { return 4; }
+    if (core::slice::compare_lexicographic(leading, 1, values, 1) != 0) { return 5; }
+    let zeros: [f32; 2] = [negative_zero, zero];
+    if (core::slice::count(zeros, 2, zero) != 2 || core::slice::binary_search_first_or(zeros, 2, zero, -1) != 0) {
+        return 6;
+    }
+    let ends: [f32; 3] = [infinity, 0.0 - infinity, 0.5];
+    if (core::slice::sort(ends, 3) != 3 || ends[0] != 0.0 - infinity || ends[2] != infinity) { return 7; }
+    return 0;
+}
+
+fn sum_checks() -> i32 {
+    let small: [i8; 3] = [100, 27, 1];
+    let negative: [i8; 2] = [-100, -100];
+    if (core::slice::sum(small, 3, 0) != 127 || core::slice::sum(small, 2, 0) != 127 ||
+        core::slice::sum(negative, 2, 0) != -128) {
+        return 1;
+    }
+    let halves: [i16; 2] = [30000, 30000];
+    let words: [i32; 3] = [2147483647, 1, -5];
+    if (core::slice::sum(halves, 2, 0) != 32767 || core::slice::sum(words, 3, 0) != 2147483642) {
+        return 2;
+    }
+    let initial: i32 = 10;
+    if (core::slice::sum(words, 0, initial) != 10 || core::slice::sum(words, -1, 3) != 3) { return 3; }
+    let longs: [i64; 2] = [9223372036854775807, 1];
+    let sizes: [isize; 2] = [-9223372036854775807, -2];
+    if (core::slice::sum(longs, 2, 0) != 9223372036854775807 ||
+        core::slice::sum(sizes, 2, 0) != -9223372036854775808) {
+        return 4;
+    }
+    let bytes: [u8; 3] = [200, 50, 6];
+    let halfwords: [u16; 2] = [65000, 600];
+    if (core::slice::sum(bytes, 2, 0) != 250 || core::slice::sum(bytes, 3, 0) != 255 ||
+        core::slice::sum(halfwords, 2, 0) != 65535) {
+        return 5;
+    }
+    let units: [u32; 2] = [4294967295, 1];
+    let quads: [u64; 2] = [18446744073709551615, 1];
+    let counts: [usize; 3] = [1, 2, 3];
+    if (core::slice::sum(units, 2, 0) != 4294967295 || core::slice::sum(quads, 2, 0) != 18446744073709551615 ||
+        core::slice::sum(counts, 3, 0) != 6) {
+        return 6;
+    }
+    let reals: [f32; 3] = [1.5, 2.25, -0.75];
+    let zero: f32 = 0.0;
+    let big: f32 = 1.0;
+    let doublings: i32 = 0;
+    while (doublings < 127) {
+        big = big * 2.0;
+        doublings += 1;
+    }
+    let huge: [f32; 2] = [big, big];
+    if (core::slice::sum(reals, 3, 0.0) != 3.0 || core::slice::sum(huge, 2, 0.0) != 1.0 / zero) {
+        return 7;
+    }
+    let wide: [core::wide_u64::WideU64; 2] = [core::wide_u64::max_value(), core::wide_u64::from_u32(1)];
+    if (core::wide_u64::compare(core::slice::sum(wide, 2, core::wide_u64::zero()), core::wide_u64::max_value()) != 0) {
+        return 8;
+    }
+    let signed: [core::wide_i64::WideI64; 2] = [core::wide_i64::min_value(), core::wide_i64::from_i32(-1)];
+    if (core::wide_i64::compare(core::slice::sum(signed, 2, core::wide_i64::zero()),
+        core::wide_i64::min_value()) != 0) {
+        return 9;
+    }
+    return 0;
+}
+
+fn main() -> i32 {
+    let i8_a: i8 = -128;
+    let i8_b: i8 = -1;
+    let i8_c: i8 = 0;
+    let i8_d: i8 = 127;
+    let i16_a: i16 = -32768;
+    let i16_b: i16 = -1;
+    let i16_c: i16 = 1;
+    let i16_d: i16 = 32767;
+    let i64_a: i64 = -9223372036854775808;
+    let i64_b: i64 = 0;
+    let i64_c: i64 = 4294967296;
+    let i64_d: i64 = 9223372036854775807;
+    let isize_a: isize = -5;
+    let isize_b: isize = 0;
+    let isize_c: isize = 5;
+    let isize_d: isize = 9;
+    let u8_a: u8 = 0;
+    let u8_b: u8 = 1;
+    let u8_c: u8 = 128;
+    let u8_d: u8 = 255;
+    let u16_a: u16 = 0;
+    let u16_b: u16 = 255;
+    let u16_c: u16 = 32768;
+    let u16_d: u16 = 65535;
+    let u32_a: u32 = 0;
+    let u32_b: u32 = 7;
+    let u32_c: u32 = 2147483648;
+    let u32_d: u32 = 4294967295;
+    let u64_a: u64 = 0;
+    let u64_b: u64 = 4294967295;
+    let u64_c: u64 = 4294967296;
+    let u64_d: u64 = 18446744073709551615;
+    let usize_a: usize = 0;
+    let usize_b: usize = 1;
+    let usize_c: usize = 64;
+    let usize_d: usize = 4096;
+    let checks: [i32; 18] = [
+        row(1, slice_checks(-2147483648, -1, 0, 2147483647)),
+        row(2, slice_checks(i8_a, i8_b, i8_c, i8_d)),
+        row(3, slice_checks(i16_a, i16_b, i16_c, i16_d)),
+        row(4, slice_checks(i64_a, i64_b, i64_c, i64_d)),
+        row(5, slice_checks(isize_a, isize_b, isize_c, isize_d)),
+        row(6, slice_checks(u8_a, u8_b, u8_c, u8_d)),
+        row(7, slice_checks(u16_a, u16_b, u16_c, u16_d)),
+        row(8, slice_checks(u32_a, u32_b, u32_c, u32_d)),
+        row(9, slice_checks(u64_a, u64_b, u64_c, u64_d)),
+        row(10, slice_checks(usize_a, usize_b, usize_c, usize_d)),
+        row(11, slice_checks('\0', 'A', 'é', '😀')),
+        row(12, slice_checks(-2.5, -0.0, 1.0, 3.5)),
+        row(13, slice_checks(core::wide_i64::min_value(), core::wide_i64::from_i32(-1),
+            core::wide_i64::from_words(1, 0), core::wide_i64::max_value())),
+        row(14, slice_checks(core::wide_u64::zero(), core::wide_u64::from_u32(7),
+            core::wide_u64::from_words(1, 0), core::wide_u64::max_value())),
+        row(15, slice_checks(Version { major: 1, minor: 9 }, Version { major: 2, minor: 0 },
+            Version { major: 2, minor: 1 }, Version { major: 3, minor: 0 })),
+        row(16, bool_checks()),
+        row(17, float_checks()),
+        row(18, sum_checks()),
+    ];
+    let index: i32 = 0;
+    while (index < 18) {
+        if (checks[index] != 0) { return checks[index]; }
+        index += 1;
+    }
+    return 0;
+}

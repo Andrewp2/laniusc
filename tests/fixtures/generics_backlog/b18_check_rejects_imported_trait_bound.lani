@@ -1,0 +1,18 @@
+// expect: 42
+// Compiling and running this returns 42. `laniusc check --stdlib-root stdlib`
+// on the same file reports LNC0008 "unsatisfied trait bound" at g(x, y): the
+// check path finds no impl for a bound on an imported trait, even with typed
+// arguments. A bound on a trait declared in this file passes check.
+module app::main;
+import core::cmp;
+
+fn g<T>(a: T, b: T) -> i32 where T: core::cmp::Ord<T>, T: core::cmp::Eq<T> {
+    if (!T::lt(a, b)) { return 1; }
+    return 42;
+}
+
+fn main() -> i32 {
+    let x: i32 = 1;
+    let y: i32 = 2;
+    return g(x, y);
+}
