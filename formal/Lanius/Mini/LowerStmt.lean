@@ -300,11 +300,21 @@ theorem fieldsSame_eq : ∀ {fs gs : List FieldTy}, fieldsSame fs gs = true → 
     simp only [fieldsSame, Bool.and_eq_true] at same
     rw [FieldTy.same_eq same.1, fieldsSame_eq same.2]
 
+theorem variantsSame_eq : ∀ {vs ws : List (List FieldTy)}, variantsSame vs ws = true → vs = ws
+  | [], [], _ => rfl
+  | [], _ :: _, same => by simp [variantsSame] at same
+  | _ :: _, [], same => by simp [variantsSame] at same
+  | f :: fs, g :: gs, same => by
+    simp only [variantsSame, Bool.and_eq_true] at same
+    rw [fieldsSame_eq same.1, variantsSame_eq same.2]
+
 theorem SrcType.same_eq {a b : SrcType} (same : a.same b = true) : a = b := by
   cases a <;> cases b <;>
-    simp only [SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isStruct, Bool.false_eq_true,
-      Bool.and_eq_true, decide_eq_true_eq, SrcType.struct.injEq] at same ⊢
-  exact ⟨same.1.symm, (fieldsSame_eq same.2).symm⟩
+    simp only [SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isStruct, SrcType.isEnum,
+      Bool.false_eq_true, Bool.and_eq_true, decide_eq_true_eq, SrcType.struct.injEq,
+      SrcType.enum.injEq] at same ⊢
+  · exact ⟨same.1.symm, (fieldsSame_eq same.2).symm⟩
+  · exact ⟨same.1.symm, (variantsSame_eq same.2).symm⟩
 
 theorem SrcType.size_scalar {ty : SrcType} (scalar : ty.isScalar = true) : ty.size = 1 := by
   cases ty <;> simp_all [SrcType.isScalar, SrcType.size]
@@ -1041,6 +1051,7 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
     split at lowered
     · simp at lowered
     · simp at lowered
+    case h_4 => simp at lowered
     rename_i sid fields hty
     simp only [lowerFieldAt] at lowered
     split at lowered
@@ -1151,6 +1162,186 @@ theorem let_tail {sp : SrcProgram} {mp : Program} {fuel : Nat} (ih : StmtSound s
   | exited => simp [bodyRun, Semantics.restoreOutcomeLocals] at run
   | outOfFuel => simp [bodyRun, Semantics.restoreOutcomeLocals] at run
 
+/-! ## Enums and `match` -/
+
+/-- Like `Corr.push`, for a binding on a slot no binding of the scope owns: a
+match binder names a payload slot of the scrutinee. -/
+theorem Corr.alias {scope frame st env} (corr : Corr scope frame st env) (fresh : st.Fresh)
+    {j : Nat} (away : ∀ b ∈ scope, b.slot ≠ j) (id : Nat) {ty : SrcType} {v : Value}
+    (holds : ty.HoldsAt v env j) :
+    Corr (⟨id, j, ty⟩ :: scope) (upd frame j st.nextCell) (st.bindLocal id v) env := by
+  have same : ∀ b ∈ scope, upd frame j st.nextCell b.slot = frame b.slot := fun b mem => by
+    simp only [upd]
+    rw [if_neg (away b mem)]
+  refine ⟨?_, ?_⟩
+  · simp only [State.bindLocal, State.bindCell, List.map_cons, corr.locals, upd, if_pos]
+    congr 1
+    apply List.map_congr_left
+    intro b mem
+    rw [← upd, same b mem]
+  · intro b mem
+    simp only [List.mem_cons] at mem
+    rcases mem with rfl | mem
+    · refine ⟨v, ?_, holds⟩
+      simp only [upd, if_pos]
+      exact bindLocal_self fresh id v
+    · obtain ⟨w, entry, holdsb⟩ := corr.values b mem
+      refine ⟨w, ?_, holdsb⟩
+      rw [same b mem, bindLocal_entry (corr.below fresh b mem)]
+      exact entry
+
+theorem bindLocals_cons (st : State) (id : Nat) (v : Value) (rest : List (Nat × Value)) :
+    st.bindLocals ((id, v) :: rest) = (st.bindLocal id v).bindLocals rest := rfl
+
+/-- Binding an arm's payload gives the arm's scope. -/
+theorem armScope_corr :
+    ∀ (binders : List Nat) {types : List FieldTy} {vs : List Value} {slot : Nat}
+      {scope s' : List Binding} {frame : Nat → Nat} {st : State} {env : Env},
+      armScope binders types slot scope = some s' → FieldsHold types vs env slot →
+      (∀ b ∈ scope, b.slot < slot ∨ slot + types.length ≤ b.slot) →
+      Corr scope frame st env → st.Fresh →
+      ∃ frame', Corr s' frame' (st.bindLocals (binders.zip vs)) env ∧
+        (st.bindLocals (binders.zip vs)).Fresh ∧
+        Keeps st.nextCell st (st.bindLocals (binders.zip vs)) ∧ binders.length = vs.length
+  | [], types, vs, slot, scope, s', frame, st, env, ok, holds, _, corr, fresh => by
+    cases types with
+    | cons => simp [armScope] at ok
+    | nil =>
+      simp only [armScope, Option.some.injEq] at ok
+      subst ok
+      cases holds
+      exact ⟨frame, corr, fresh, Keeps.refl _ _, rfl⟩
+  | binder :: rest, types, vs, slot, scope, s', frame, st, env, ok, holds, clear, corr, fresh => by
+    cases types with
+    | nil => simp [armScope] at ok
+    | cons f more =>
+      simp only [armScope] at ok
+      cases holds with
+      | cons head tail =>
+      rename_i v vs'
+      rw [List.zip_cons_cons, bindLocals_cons]
+      have pushed := corr.alias fresh (j := slot) (fun b mem => by
+        have := clear b mem
+        simp only [List.length_cons] at this
+        omega) binder ((SrcType.holdsAt_scalar f.ty_scalar).mpr head)
+      obtain ⟨frame', corr', fresh', keeps', len⟩ := armScope_corr rest ok tail (fun b mem => by
+          simp only [List.mem_cons] at mem
+          rcases mem with rfl | mem
+          · simp
+          · have := clear b mem
+            simp only [List.length_cons] at this
+            omega) pushed (bindLocal_fresh fresh binder v)
+      exact ⟨frame', corr', fresh', (bindLocal_keeps (Nat.le_refl _) binder v).trans
+        (keeps'.lower (Nat.le_succ _)), by simp [len]⟩
+
+theorem matchBinds : ∀ (binders : List Nat) (vs : List Value), binders.length = vs.length →
+    Semantics.matchPatterns (binders.map Core.Pattern.bind) vs = some (binders.zip vs)
+  | [], [], _ => by simp [Semantics.matchPatterns]
+  | [], _ :: _, len => by simp at len
+  | _ :: _, [], len => by simp at len
+  | b :: bs, v :: vs, len => by
+    simp only [List.length_cons, Nat.add_right_cancel_iff] at len
+    simp [Semantics.matchPatterns, Semantics.matchPattern, matchBinds bs vs len]
+
+theorem ofNat_ne {a b : Nat} (ha : a < 2 ^ 32) (hb : b < 2 ^ 32) (ne : a ≠ b) :
+    BitVec.ofNat 32 a ≠ BitVec.ofNat 32 b := by
+  intro h
+  have := congrArg BitVec.toNat h
+  simp only [BitVec.toNat_ofNat, Nat.mod_eq_of_lt ha, Nat.mod_eq_of_lt hb] at this
+  exact ne this
+
+theorem length_le_maxLen_of_mem : ∀ {variants : List (List FieldTy)} {fs : List FieldTy},
+    fs ∈ variants → fs.length ≤ maxLen variants
+  | [], _, mem => by simp at mem
+  | v :: rest, fs, mem => by
+    simp only [List.mem_cons] at mem
+    simp only [maxLen]
+    rcases mem with rfl | mem
+    · omega
+    · have := length_le_maxLen_of_mem mem
+      omega
+
+/-- The tag tests pick the arm Core picks, and it stores that arm's value. -/
+theorem lowerArms_sound {P : Core.Program} {mp : Program} (target : P.target = .x86_64)
+    {scope frame st env} (corr : Corr scope frame st env) (fresh : st.Fresh)
+    {slot dst eid : Nat} {ty : SrcType} :
+    ∀ (arms : List SrcArm) {variants : List (List FieldTy)} {k kv : Nat} {stmt : Stmt} {fuel : Nat}
+      {fs : List FieldTy} {vs : List Value} {v : Value} {st' : State},
+      lowerArms scope slot dst ty k variants arms = some stmt → arms.length = variants.length →
+      (∀ fs ∈ variants, ∀ b ∈ scope, b.slot < slot + 1 ∨ slot + 1 + fs.length ≤ b.slot) →
+      k ≤ kv → variants[kv - k]? = some fs → kv < 2 ^ 32 →
+      env slot = BitVec.ofNat 32 kv → FieldsHold fs vs env (slot + 1) →
+      Semantics.evalMatchArms fuel P st (.enumeration eid kv vs) (coreArms eid k arms) = .done v st' →
+      st'.Fresh ∧ Keeps st.nextCell st st' ∧ st'.locals = st.locals ∧
+        ∃ x, ty.Holds v x ∧ ∀ d, Exec mp d env stmt (.normal (env.set dst x)) := by
+  intro arms
+  induction arms with
+  | nil =>
+    intro variants k kv stmt fuel fs vs v st' ok
+    simp [lowerArms] at ok
+  | cons arm rest ih =>
+    intro variants k kv stmt fuel fs vs v st' ok len clear le found bound tag payload run
+    cases variants with
+    | nil => simp [lowerArms] at ok
+    | cons types more =>
+      cases fuel with
+      | zero => simp [Semantics.evalMatchArms] at run
+      | succ fuel =>
+        simp only [lowerArms, lowerArm] at ok
+        split at ok
+        · simp at ok
+        rename_i x valueOk
+        simp only [coreArms, Semantics.evalMatchArms, Semantics.matchPattern] at run
+        by_cases hk : k = kv
+        · subst hk
+          simp only [Nat.sub_self, List.getElem?_cons_zero, Option.some.injEq] at found
+          subst found
+          simp only [lowerArmValue] at valueOk
+          split at valueOk
+          · simp at valueOk
+          rename_i s' scopeOk
+          obtain ⟨frame', corr', fresh', keeps', blen⟩ := armScope_corr arm.binders scopeOk payload
+            (clear _ (List.mem_cons_self ..)) corr fresh
+          simp only [beq_self_eq_true, Bool.and_self, ↓reduceIte, matchBinds _ _ blen] at run
+          cases armRun : evalExpr fuel P (st.bindLocals (arm.binders.zip vs)) arm.value.toCore with
+          | done w st2 =>
+            simp only [armRun, Semantics.restoreOutcomeLocals, Semantics.Outcome.done.injEq] at run
+            obtain ⟨rfl, rfl⟩ := run
+            obtain ⟨rfl, holds⟩ := lowerAs_sound corr' target valueOk armRun
+            refine ⟨restore_fresh fresh', keeps'.trans (restore_keeps _ _ _), rfl, _, holds, fun d => ?_⟩
+            split at ok
+            · simp only [Option.some.injEq] at ok
+              subst ok
+              exact .assign
+            · split at ok
+              · simp at ok
+              · simp only [Option.some.injEq] at ok
+                subst ok
+                exact .ifTrue (by simp [Expr.eval, CmpOp.holds, tag]) .assign
+          | trapped => simp [armRun, Semantics.restoreOutcomeLocals] at run
+          | exited => simp [armRun, Semantics.restoreOutcomeLocals] at run
+          | outOfFuel => simp [armRun, Semantics.restoreOutcomeLocals] at run
+        · have hne : (k == kv) = false := by simpa using hk
+          simp only [beq_self_eq_true, Bool.true_and, hne, Bool.false_eq_true, ↓reduceIte] at run
+          have found' : more[kv - (k + 1)]? = some fs := by
+            rw [show kv - k = kv - (k + 1) + 1 by omega] at found
+            simpa using found
+          split at ok
+          · have := (List.getElem?_eq_some_iff.mp found').1
+            simp only [List.length_cons, List.length_nil] at len
+            omega
+          · split at ok
+            · simp at ok
+            rename_i o othersOk
+            simp only [Option.some.injEq] at ok
+            subst ok
+            obtain ⟨fresh', keeps', locals', x', holds', exec'⟩ := ih othersOk (by simpa using len)
+              (fun fs mem => clear fs (List.mem_cons_of_mem _ mem)) (by omega) found' bound tag
+              payload run
+            have differ : BitVec.ofNat 32 kv ≠ BitVec.ofNat 32 k := ofNat_ne bound (by omega) (Ne.symm hk)
+            exact ⟨fresh', keeps', locals', x', holds', fun d =>
+              .ifFalse (by simp [Expr.eval, CmpOp.holds, tag, differ]) (exec' d)⟩
+
 /-! ## Statements -/
 
 section Statements
@@ -1214,6 +1405,7 @@ theorem stmt_letStruct (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {fi
   cases ty with
   | i32 => simp [lowerLiteral] at literalOk
   | bool => simp [lowerLiteral] at literalOk
+  | enum => simp [lowerLiteral] at literalOk
   | struct sid types =>
     simp only [lowerLiteral, lowerStructFields] at literalOk
     split at literalOk
@@ -1225,7 +1417,7 @@ theorem stmt_letStruct (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {fi
       cases fuel with
       | zero => simp [evalExpr] at valueRun
       | succ k =>
-        simp only [SrcType.structId, evalExpr] at valueRun
+        simp only [SrcType.typeId, evalExpr] at valueRun
         split at valueRun
         · rename_i vs st2 fieldsRun
           simp only [Semantics.Outcome.done.injEq] at valueRun
@@ -1281,6 +1473,152 @@ theorem stmt_letCall (lowered : lowerFuncs (sigs sp.funcs) sp.funcs = some mp.fu
         .seq ((callExec next).mono (Nat.le_max_left _ _)) (exec.mono (Nat.le_max_right _ _)), matched⟩
   all_goals simp at run
 
+theorem stmt_letEnum (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {variant : Nat}
+    {payload : List SrcExpr} {body : SrcStmt}
+    (ok : (SrcStmt.letEnum id ty variant payload body).lower (sigs sp.funcs) ret scope next = some stmt)
+    (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (le : base ≤ st.nextCell)
+    (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letEnum id ty variant payload body).toCore =
+      .done c st') :
+    Simulates mp ret scope frame base st env stmt c st' := by
+  simp only [SrcStmt.lower, lowerLet] at ok
+  split at ok
+  · simp at ok
+  rename_i xs valueOk
+  split at ok
+  · simp at ok
+  rename_i bstmt bodyOk
+  simp only [Option.some.injEq] at ok
+  subst ok
+  cases ty with
+  | i32 => simp [lowerEnumValue] at valueOk
+  | bool => simp [lowerEnumValue] at valueOk
+  | struct => simp [lowerEnumValue] at valueOk
+  | enum eid variants =>
+    simp only [lowerEnumValue, lowerTagged] at valueOk
+    split at valueOk
+    case isFalse => simp at valueOk
+    simp only [lowerVariant] at valueOk
+    split at valueOk
+    · simp at valueOk
+    rename_i fs found
+    simp only [lowerTag] at valueOk
+    split at valueOk
+    · simp at valueOk
+    rename_i fxs fieldsOk
+    simp only [Option.some.injEq] at valueOk
+    subst valueOk
+    simp only [SrcStmt.toCore, execStmt] at run
+    split at run
+    · rename_i v st1 valueRun
+      cases fuel with
+      | zero => simp [evalExpr] at valueRun
+      | succ k =>
+        simp only [SrcType.typeId, evalExpr] at valueRun
+        split at valueRun
+        · rename_i vs st2 fieldsRun
+          simp only [Semantics.Outcome.done.injEq] at valueRun
+          obtain ⟨rfl, rfl⟩ := valueRun
+          obtain ⟨rfl, fieldsHold, len, shapes⟩ :=
+            lowerFields_sound corr (SrcProgram.target_toCore sp) fieldsOk fieldsRun
+          have insens : Insens (.lit (BitVec.ofNat 32 variant) :: fxs) next := Insens.below fun x mem => by
+            simp only [List.mem_cons] at mem
+            rcases mem with rfl | mem
+            · trivial
+            · obtain ⟨e, t, lowered, rfl⟩ := shapes x mem
+              exact SrcExpr.lower_below fr.slots e lowered
+          have holds : (SrcType.enum eid variants).HoldsAt (.enumeration eid variant vs)
+              (env.setFrom next (.lit (BitVec.ofNat 32 variant) :: fxs)) next := by
+            refine ⟨variant, fs, vs, rfl, found, ?_, fieldsHold.congr fun i below => ?_⟩
+            · simpa [Expr.eval] using setFrom_value _ next env insens 0 _ rfl
+            · have : i < fxs.length := by rw [len]; exact below
+              obtain ⟨x, xFound⟩ : ∃ x, fxs[i]? = some x := ⟨fxs[i], by simp [this]⟩
+              rw [show next + 1 + i = next + (i + 1) by omega,
+                setFrom_value _ next env insens (i + 1) x (by simpa using xFound), Nat.zero_add,
+                entry_evalAll env fxs i x xFound]
+          obtain ⟨fresh', keeps, d, out, exec, matched⟩ := let_tail ih bodyOk corr fr fresh le
+            (by simp only [SrcType.size]; omega)
+            (fr.agree fun j below => setFrom_outside _ next env j (.inl below)) holds run
+          exact ⟨fresh', keeps, d, out, assignFrom_exec _ next exec, matched⟩
+        all_goals simp at valueRun
+    all_goals simp at run
+
+theorem stmt_letMatch (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {scrutinee enumId : Nat}
+    {arms : List SrcArm} {body : SrcStmt}
+    (ok : (SrcStmt.letMatch id ty scrutinee enumId arms body).lower (sigs sp.funcs) ret scope next =
+      some stmt)
+    (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (le : base ≤ st.nextCell)
+    (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letMatch id ty scrutinee enumId arms body).toCore =
+      .done c st') :
+    Simulates mp ret scope frame base st env stmt c st' := by
+  simp only [SrcStmt.lower, lowerThen] at ok
+  split at ok
+  · simp at ok
+  rename_i mstmt matchOk
+  split at ok
+  · simp at ok
+  rename_i bstmt bodyOk
+  simp only [Option.some.injEq] at ok
+  subst ok
+  simp only [lowerMatch] at matchOk
+  split at matchOk
+  · simp at matchOk
+  rename_i b found
+  simp only [lowerMatchOn] at matchOk
+  split at matchOk
+  · simp at matchOk
+  · simp at matchOk
+  · simp at matchOk
+  rename_i eid variants hty
+  simp only [lowerMatchArms] at matchOk
+  split at matchOk
+  case isFalse => simp at matchOk
+  rename_i cond
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at cond
+  obtain ⟨⟨⟨rfl, scalar⟩, len⟩, few⟩ := cond
+  have bmem := (lookup_mem found).1
+  have clear : ∀ fs ∈ variants, ∀ b' ∈ scope, b'.slot < b.slot + 1 ∨ b.slot + 1 + fs.length ≤ b'.slot := by
+    intro fs mem b' mem'
+    have bound := length_le_maxLen_of_mem mem
+    by_cases same : b' = b
+    · subst same
+      omega
+    · rcases fr.apart b' mem' b bmem same with h | h
+      · have := fr.sized b' mem'
+        omega
+      · rw [hty] at h
+        simp only [SrcType.size] at h
+        omega
+  simp only [SrcStmt.toCore, execStmt] at run
+  split at run
+  · rename_i v st1 matchRun
+    cases fuel with
+    | zero => simp [evalExpr] at matchRun
+    | succ k =>
+      cases k with
+      | zero => simp [evalExpr] at matchRun
+      | succ k =>
+        obtain ⟨w, localRun, holdsW⟩ := corr.local found k sp.toCore
+        simp only [evalExpr] at matchRun
+        simp only [evalExpr] at localRun
+        rw [localRun] at matchRun
+        rw [hty] at holdsW
+        obtain ⟨kv, fs, vs, rfl, fsFound, tag, payload⟩ := holdsW
+        have kvLt : kv < variants.length := (List.getElem?_eq_some_iff.mp fsFound).1
+        have kvBound : kv < 2 ^ 32 := Nat.lt_trans kvLt (by omega)
+        obtain ⟨fresh1, keeps1, locals1, x, holds, mexec⟩ :=
+          lowerArms_sound (mp := mp) (SrcProgram.target_toCore sp) corr fresh arms matchOk len clear
+            (Nat.zero_le _) (by simpa using fsFound) kvBound tag payload matchRun
+        have corr1 := corr.keeps fresh keeps1 locals1
+        obtain ⟨fresh', keeps', d, out, exec, matched⟩ :=
+          let_tail ih bodyOk corr1 fr fresh1 (Nat.le_trans le keeps1.next)
+            (by rw [SrcType.size_scalar scalar]; omega) (env' := env.set next x)
+            (fr.agree fun j below => by simp only [Env.set]; rw [if_neg (by omega)])
+            ((SrcType.holdsAt_scalar scalar).mpr (by simpa [Env.set] using holds)) run
+        exact ⟨fresh', (keeps1.lower le).trans keeps', d, out, .seq (mexec d) exec, matched⟩
+  all_goals simp at run
+
 theorem stmt_set {id : Nat} {value : SrcExpr}
     (ok : (SrcStmt.set id value).lower (sigs sp.funcs) ret scope next = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
@@ -1329,6 +1667,7 @@ theorem stmt_setField {id index : Nat} {value : SrcExpr}
   split at ok
   · simp at ok
   · simp at ok
+  case h_4 => simp at ok
   rename_i sid types hty
   simp only [lowerSetFieldAt] at ok
   split at ok
@@ -1588,6 +1927,8 @@ theorem stmt_sound {sp : SrcProgram} {mp : Program}
       | «let» => exact stmt_let here ok corr fr fresh le run
       | letStruct => exact stmt_letStruct here ok corr fr fresh le run
       | letCall => exact stmt_letCall lowered below ok corr fr fresh le run
+      | letEnum => exact stmt_letEnum here ok corr fr fresh le run
+      | letMatch => exact stmt_letMatch here ok corr fr fresh le run
       | set => exact stmt_set ok corr fr fresh run
       | setField => exact stmt_setField ok corr fr fresh run
       | setCall => exact stmt_setCall lowered below ok corr fr fresh le run

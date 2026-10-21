@@ -467,6 +467,7 @@ inductive SrcType where
   | i32 : SrcType
   | bool : SrcType
   | struct : Nat → (List FieldTy) → SrcType
+  | enum : Nat → (List (List FieldTy)) → SrcType
   deriving DecidableEq, Repr
 
 inductive SrcOp where
@@ -497,6 +498,12 @@ inductive SrcExpr where
   | apply : SrcOp → SrcExpr → SrcExpr → SrcExpr
   deriving DecidableEq, Repr
 
+/-- A match arm: the binders of its variant's payload, and its value. -/
+structure SrcArm where
+  binders : List Nat
+  value : SrcExpr
+  deriving DecidableEq, Repr
+
 inductive SrcStmt where
   | nop : SrcStmt
   /-- let id: ty = value; then body, with id in scope. A struct value is a struct local. -/
@@ -505,6 +512,10 @@ inductive SrcStmt where
   | letStruct : Nat → SrcType → (List SrcExpr) → SrcStmt → SrcStmt
   /-- let id: ty = callee(args); then body -/
   | letCall : Nat → SrcType → Nat → (List SrcExpr) → SrcStmt → SrcStmt
+  /-- let id: ty = variant(payload) of the enum type ty; then body -/
+  | letEnum : Nat → SrcType → Nat → (List SrcExpr) → SrcStmt → SrcStmt
+  /-- let id: ty = match scrutinee { arms }; then body. The scrutinee is a local of the enum type with Core id enum_id, and arm k is variant k. -/
+  | letMatch : Nat → SrcType → Nat → Nat → (List SrcArm) → SrcStmt → SrcStmt
   | set : Nat → SrcExpr → SrcStmt
   /-- id.field = value -/
   | setField : Nat → Nat → SrcExpr → SrcStmt
@@ -580,42 +591,72 @@ def fieldsSame (fields : List FieldTy) (others : List FieldTy) : Bool :=
     | [] => false
     | other :: more => FieldTy.same field other && fieldsSame rest more
 
+def variantsSame (variants : List (List FieldTy)) (others : List (List FieldTy)) : Bool :=
+  match variants with
+  | [] =>
+    (match others with
+     | [] => true
+     | other :: more => false)
+  | fields :: rest =>
+    match others with
+    | [] => false
+    | other :: more => fieldsSame fields other && variantsSame rest more
+
+/-- The longest payload. -/
+def maxLen (variants : List (List FieldTy)) : Nat :=
+  match variants with
+  | [] => 0
+  | fields :: rest => max fields.length (maxLen rest)
+
 def SrcType.isI32 (self : SrcType) : Bool :=
   match self with
   | .i32 => true
   | .bool => false
   | .struct id fields => false
+  | .enum id variants => false
 
 def SrcType.isBool (self : SrcType) : Bool :=
   match self with
   | .i32 => false
   | .bool => true
   | .struct id fields => false
+  | .enum id variants => false
 
 def SrcType.isScalar (self : SrcType) : Bool :=
   match self with
   | .i32 => true
   | .bool => true
   | .struct id fields => false
+  | .enum id variants => false
 
 def SrcType.isStruct (self : SrcType) (id : Nat) (fields : List FieldTy) : Bool :=
   match self with
   | .i32 => false
   | .bool => false
   | .struct otherId otherFields => decide (otherId = id) && fieldsSame otherFields fields
+  | .enum otherId variants => false
+
+def SrcType.isEnum (self : SrcType) (id : Nat) (variants : List (List FieldTy)) : Bool :=
+  match self with
+  | .i32 => false
+  | .bool => false
+  | .struct otherId fields => false
+  | .enum otherId otherVariants => decide (otherId = id) && variantsSame otherVariants variants
 
 def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
   match self with
   | .i32 => SrcType.isI32 other
   | .bool => SrcType.isBool other
   | .struct id fields => SrcType.isStruct other id fields
+  | .enum id variants => SrcType.isEnum other id variants
 
-/-- Slots a value of this type takes. -/
+/-- Slots a value of this type takes: an enum's tag, then room for its longest payload. -/
 def SrcType.size (self : SrcType) : Nat :=
   match self with
   | .i32 => 1
   | .bool => 1
   | .struct id fields => fields.length
+  | .enum id variants => 1 + maxLen variants
 
 /-- A lowered expression and its source type. -/
 structure Typed where
@@ -692,6 +733,7 @@ def lowerFieldOf (b : Binding) (field : Nat) : Option Typed :=
   | .i32 => none
   | .bool => none
   | .struct id fields => lowerFieldAt b.slot field fields[field]?
+  | .enum id variants => none
 
 def lowerField (binding : Option Binding) (field : Nat) : Option Typed :=
   match binding with
@@ -841,6 +883,89 @@ def lowerLiteral (scope : List Binding) (ty : SrcType) (fields : List SrcExpr) :
   | .i32 => none
   | .bool => none
   | .struct id types => lowerStructFields scope fields types
+  | .enum id variants => none
+
+def lowerTag (variant : Nat) (payload : Option (List Expr)) : Option (List Expr) :=
+  match payload with
+  | none => none
+  | some es => some (Expr.lit (BitVec.ofNat 32 variant) :: es)
+
+def lowerVariant (scope : List Binding) (variant : Nat) (found : Option (List FieldTy)) (payload : List SrcExpr) : Option (List Expr) :=
+  match found with
+  | none => none
+  | some types => lowerTag variant (lowerFields scope payload types)
+
+/-- Tags are 32-bit, so an enum has fewer than 2^32 variants. -/
+def lowerTagged (scope : List Binding) (variants : List (List FieldTy)) (variant : Nat) (payload : List SrcExpr) : Option (List Expr) :=
+  if variants.length < 4294967296 then
+    lowerVariant scope variant variants[variant]? payload
+  else
+    none
+
+/-- An enum value: its tag, then the variant's payload. Slots past the payload are left as they are. -/
+def lowerEnumValue (scope : List Binding) (ty : SrcType) (variant : Nat) (payload : List SrcExpr) : Option (List Expr) :=
+  match ty with
+  | .i32 => none
+  | .bool => none
+  | .struct id types => none
+  | .enum id variants => lowerTagged scope variants variant payload
+
+/-- The scope of an arm: binder i names the payload slot slot + i, binding in order as Core's bindLocals does. -/
+def armScope (binders : List Nat) (types : List FieldTy) (slot : Nat) (scope : List Binding) : Option (List Binding) :=
+  match binders with
+  | [] =>
+    (match types with
+     | [] => some scope
+     | ty :: more => none)
+  | binder :: rest =>
+    match types with
+    | [] => none
+    | ty :: more => armScope rest more (slot + 1) (({ id := binder, slot := slot, ty := FieldTy.ty ty } : Binding) :: scope)
+
+def lowerArmValue (scope : Option (List Binding)) (value : SrcExpr) (ty : SrcType) : Option Expr :=
+  match scope with
+  | none => none
+  | some s => lowerAs s value ty
+
+/-- Arm k stores value into target; the last arm needs no tag test. -/
+def lowerArm (slot : Nat) (target : Nat) (k : Nat) (value : Option Expr) (rest : List SrcArm) (others : Option Stmt) : Option Stmt :=
+  match value with
+  | none => none
+  | some v =>
+    match rest with
+    | [] => some (Stmt.assign target v)
+    | arm :: more =>
+      match others with
+      | none => none
+      | some o => some (Stmt.ite (Expr.compare CmpOp.eq (Expr.var slot) (Expr.lit (BitVec.ofNat 32 k))) (Stmt.assign target v) o)
+
+/-- Arms k, k + 1, ... of a match on the enum at slot, one per variant from k. -/
+def lowerArms (scope : List Binding) (slot : Nat) (target : Nat) (ty : SrcType) (k : Nat) (variants : List (List FieldTy)) (arms : List SrcArm) : Option Stmt :=
+  match arms with
+  | [] => none
+  | arm :: rest =>
+    match variants with
+    | [] => none
+    | types :: more => lowerArm slot target k (lowerArmValue (armScope arm.binders types (slot + 1) scope) arm.value ty) rest (lowerArms scope slot target ty (k + 1) more rest)
+
+/-- The match is exhaustive, its value scalar, and its tags fit in 32 bits. -/
+def lowerMatchArms (scope : List Binding) (slot : Nat) (same : Bool) (variants : List (List FieldTy)) (arms : List SrcArm) (ty : SrcType) (target : Nat) : Option Stmt :=
+  if same && SrcType.isScalar ty && decide (arms.length = variants.length) && decide (variants.length < 4294967296) then
+    lowerArms scope slot target ty 0 variants arms
+  else
+    none
+
+def lowerMatchOn (scope : List Binding) (b : Binding) (enumId : Nat) (arms : List SrcArm) (ty : SrcType) (target : Nat) : Option Stmt :=
+  match b.ty with
+  | .i32 => none
+  | .bool => none
+  | .struct id types => none
+  | .enum id variants => lowerMatchArms scope b.slot (decide (id = enumId)) variants arms ty target
+
+def lowerMatch (scope : List Binding) (binding : Option Binding) (enumId : Nat) (arms : List SrcArm) (ty : SrcType) (target : Nat) : Option Stmt :=
+  match binding with
+  | none => none
+  | some b => lowerMatchOn scope b enumId arms ty target
 
 /-- A function's parameter types and result type. -/
 structure Sig where
@@ -907,6 +1032,7 @@ def lowerSetFieldOf (b : Binding) (field : Nat) (scope : List Binding) (value : 
   | .i32 => none
   | .bool => none
   | .struct id fields => lowerSetFieldAt b.slot field fields[field]? scope value
+  | .enum id variants => none
 
 def lowerSetField (binding : Option Binding) (field : Nat) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
   match binding with
@@ -961,6 +1087,8 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (ret : SrcType) (scope : Li
   | .let id ty value body => lowerLet next (lowerValue scope value ty) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
   | .letStruct id ty fields body => lowerLet next (lowerLiteral scope ty fields) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
   | .letCall id ty callee args body => lowerLetCall next callee (lowerCall sigs scope callee args ty) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
+  | .letEnum id ty variant payload body => lowerLet next (lowerEnumValue scope ty variant payload) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
+  | .letMatch id ty scrutinee enumId arms body => lowerThen (lowerMatch scope (lookup scope scrutinee) enumId arms ty next) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
   | .set id value => lowerSet (lookup scope id) scope value
   | .setField id index value => lowerSetField (lookup scope id) index scope value
   | .setCall id callee args => lowerSetCall sigs scope (lookup scope id) callee args
@@ -976,6 +1104,8 @@ def SrcStmt.depth (self : SrcStmt) : Nat :=
   | .let id ty value body => SrcStmt.depth body + SrcType.size ty
   | .letStruct id ty fields body => SrcStmt.depth body + SrcType.size ty
   | .letCall id ty callee args body => SrcStmt.depth body + SrcType.size ty
+  | .letEnum id ty variant payload body => SrcStmt.depth body + SrcType.size ty
+  | .letMatch id ty scrutinee enumId arms body => SrcStmt.depth body + SrcType.size ty
   | .set id value => 0
   | .setField id index value => 0
   | .setCall id callee args => 0

@@ -125,10 +125,15 @@ Core, to the mini IR, then runs `compile_program`. The subset: `i32` and
 comparisons, `&&` and `||`, `let`, assignment, `let x = f(...)` and
 `x = f(...)`, sequencing, `if`, `while`, and `return`; and structs with
 `i32`/`bool` fields: literals in `let`, field reads and writes, whole-struct
-copies, and struct parameters. Each binding gets its own slots (lets after the
-parameters), a struct one per field; booleans are 1 and 0. Functions return
-scalars, and a struct type must have a field, so no two bindings share a
-slot.
+copies, and struct parameters; and enums whose variants carry `i32`/`bool`
+payloads: `let x = E::V(...)`, copies, enum parameters, and
+`let y = match x { ... }` with one arm per variant in order, each binding its
+variant's payload and giving a scalar value. Each binding gets its own slots
+(lets after the parameters), a struct one per field, an enum a tag slot (the
+variant number) and then room for its longest payload; booleans are 1 and 0.
+A `match` is a chain of tag tests, and an arm's binders name the scrutinee's
+payload slots, since an arm only reads them. Functions return scalars, and a
+struct type must have a field, so no two bindings share a slot.
 
 `Lanius/Mini/Source.lean` maps each source construct to the Core construct of
 the same name (`SrcProgram.toCore`). The theorem is about Core's own
@@ -156,21 +161,26 @@ semantics:
   touches cells allocated after its call, so the caller's cells survive. A
   struct is one Core cell holding a `.structure` value and several mini slots
   (`HoldsAt`); bindings' slot ranges are disjoint (`Layout.apart`), which is
-  what makes a copy `a = b` safe slot by slot. `stmt_sound` is strong
+  what makes a copy `a = b` safe slot by slot. An enum value is a
+  `.enumeration` whose variant is the tag and whose payload sits after it;
+  `lowerArms_sound` follows Core's `evalMatchArms` down the arms against the
+  tag tests, with the arm's binders bound to cells Core allocates and mapped
+  to the payload slots. `stmt_sound` is strong
   induction on fuel, one lemma per statement form; the mini derivation's call
   depth is existential, and `Exec.mono` lifts it.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Source` | 225 | 0.7 | Core meaning of source programs, value representation, `i32` wrap lemmas |
-| `LowerExpr` | 464 | 4.0 | expressions |
-| `LowerStmt` | 1599 | 7.7 | Core cells, frames, flat values, calls, statements |
-| `SourceCorrect` | 89 | 0.7 | top-level theorem |
+| `Source` | 266 | 0.9 | Core meaning of source programs, value representation, `i32` wrap lemmas |
+| `LowerExpr` | 466 | 4.5 | expressions |
+| `LowerStmt` | 1940 | 8.6 | Core cells, frames, flat values, calls, enums and `match`, statements |
+| `SourceCorrect` | 89 | 0.8 | top-level theorem |
 
-The pass is about 730 lines of Lanius (the end of `compiler.lani`), and the
-proofs are about 2,400 lines. The per-function difftest covers it (111
-functions, 3,330 calls, no differences); at 40 cases per function the harness
-is too large for laniusc on the laptop (a GPU buffer fails to allocate). Assumptions the theorem does not cover yet: Core
+The pass is about 900 lines of Lanius (the end of `compiler.lani`), and the
+proofs are about 2,800 lines. The per-function difftest covers it (125
+functions, 2,500 calls, no differences; 8 native stack overflows on huge
+random counts); at 30 cases per function the harness is now too large for
+laniusc on the laptop (a GPU buffer fails to allocate). Assumptions the theorem does not cover yet: Core
 programs outside the subset, traps and divergence (the theorem covers runs that
 return), and the source's type checker against Core's typing rules (step 7).
 

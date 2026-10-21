@@ -240,6 +240,7 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
         simp only [got, Semantics.Outcome.done.injEq] at run
         obtain ⟨rfl, rfl⟩ := run
         exact ⟨rfl, by simpa [Expr.eval] using holdsField⟩
+        simp at lowered
   | negate operand ih =>
     intro t fuel v st' lowered run
     cases fuel with
@@ -369,7 +370,7 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
           rw [target] at evaluated
           simp only [SrcOp.toCore] at evaluated
           cases htl : tl.ty <;> cases htr : tr.ty <;>
-            simp [htl, htr, SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isStruct] at types <;>
+            simp [htl, htr, SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isStruct, SrcType.isEnum] at types <;>
             rw [htl] at holdsl <;> rw [htr] at holdsr
           · simp only [SrcType.Holds] at holdsl holdsr
             subst holdsl holdsr
@@ -383,6 +384,7 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
             subst evaluated
             simp only [Expr.eval, bitsl, bitsr]
             exact holds_compare _
+          · simp [SrcType.Holds] at holdsl
           · simp [SrcType.Holds] at holdsl
         · simp at lowered
       case logicalAnd =>

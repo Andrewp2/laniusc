@@ -622,7 +622,9 @@ fn link(codes: List<Code>) -> core::option::Option<Binary> {
 // this compiler accepts. Lanius/Mini/Source.lean gives each its Core program,
 // and the top-level theorem is about Core's evaluator on that program.
 // Locals are Core variable ids; functions are numbered by position. A struct
-// type carries its Core type id and its field types; fields are scalars.
+// type carries its Core type id and its field types; an enum type carries its
+// Core type id and each variant's payload types. Fields and payloads are
+// scalars.
 
 pub enum FieldTy { FieldI32, FieldBool, }
 
@@ -630,6 +632,7 @@ pub enum SrcType {
     I32,
     Bool,
     Struct(usize, List<FieldTy>),
+    Enum(usize, List<List<FieldTy>>),
 }
 
 pub enum SrcOp {
@@ -649,6 +652,12 @@ pub enum SrcExpr {
     Apply(SrcOp, Box<SrcExpr>, Box<SrcExpr>),
 }
 
+// A match arm: the binders of its variant's payload, and its value.
+pub struct SrcArm {
+    binders: List<usize>,
+    value: SrcExpr,
+}
+
 pub enum SrcStmt {
     Nop,
     // let id: ty = value; then body, with id in scope. A struct value is a
@@ -658,6 +667,11 @@ pub enum SrcStmt {
     LetStruct(usize, SrcType, List<SrcExpr>, Box<SrcStmt>),
     // let id: ty = callee(args); then body
     LetCall(usize, SrcType, usize, List<SrcExpr>, Box<SrcStmt>),
+    // let id: ty = variant(payload) of the enum type ty; then body
+    LetEnum(usize, SrcType, usize, List<SrcExpr>, Box<SrcStmt>),
+    // let id: ty = match scrutinee { arms }; then body. The scrutinee is a
+    // local of the enum type with Core id enum_id, and arm k is variant k.
+    LetMatch(usize, SrcType, usize, usize, List<SrcArm>, Box<SrcStmt>),
     Set(usize, SrcExpr),
     // id.field = value
     SetField(usize, usize, SrcExpr),
@@ -757,12 +771,34 @@ pub fn fields_same(fields: List<FieldTy>, others: List<FieldTy>) -> bool {
     };
 }
 
+pub fn variants_same(variants: List<List<FieldTy>>, others: List<List<FieldTy>>) -> bool {
+    return match (variants) {
+        Nil -> match (others) {
+            Nil -> true,
+            Cons(other, more) -> false,
+        },
+        Cons(fields, rest) -> match (others) {
+            Nil -> false,
+            Cons(other, more) -> fields_same(fields, other) && variants_same(unbox(rest), unbox(more)),
+        },
+    };
+}
+
+// The longest payload.
+pub fn max_len(variants: List<List<FieldTy>>) -> usize {
+    return match (variants) {
+        Nil -> 0,
+        Cons(fields, rest) -> max_of(length(fields), max_len(unbox(rest))),
+    };
+}
+
 impl SrcType {
     pub fn is_i32(self) -> bool {
         return match (self) {
             I32 -> true,
             Bool -> false,
             Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
         };
     }
 
@@ -771,6 +807,7 @@ impl SrcType {
             I32 -> false,
             Bool -> true,
             Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
         };
     }
 
@@ -779,6 +816,7 @@ impl SrcType {
             I32 -> true,
             Bool -> true,
             Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
         };
     }
 
@@ -787,6 +825,16 @@ impl SrcType {
             I32 -> false,
             Bool -> false,
             Struct(other_id, other_fields) -> (other_id == id) && fields_same(other_fields, fields),
+            Enum(other_id, variants) -> false,
+        };
+    }
+
+    pub fn is_enum(self, id: usize, variants: List<List<FieldTy>>) -> bool {
+        return match (self) {
+            I32 -> false,
+            Bool -> false,
+            Struct(other_id, fields) -> false,
+            Enum(other_id, other_variants) -> (other_id == id) && variants_same(other_variants, variants),
         };
     }
 
@@ -795,15 +843,18 @@ impl SrcType {
             I32 -> other.is_i32(),
             Bool -> other.is_bool(),
             Struct(id, fields) -> other.is_struct(id, fields),
+            Enum(id, variants) -> other.is_enum(id, variants),
         };
     }
 
-    // Slots a value of this type takes.
+    // Slots a value of this type takes: an enum's tag, then room for its
+    // longest payload.
     pub fn size(self) -> usize {
         return match (self) {
             I32 -> 1,
             Bool -> 1,
             Struct(id, fields) -> length(fields),
+            Enum(id, variants) -> plus(1, max_len(variants)),
         };
     }
 }
@@ -897,6 +948,7 @@ pub fn lower_field_of(b: Binding, field: usize) -> core::option::Option<Typed> {
         I32 -> None,
         Bool -> None,
         Struct(id, fields) -> lower_field_at(b.slot, field, get(fields, field)),
+        Enum(id, variants) -> None,
     };
 }
 
@@ -1086,6 +1138,111 @@ pub fn lower_literal(scope: List<Binding>, ty: SrcType, fields: List<SrcExpr>) -
         I32 -> None,
         Bool -> None,
         Struct(id, types) -> lower_struct_fields(scope, fields, types),
+        Enum(id, variants) -> None,
+    };
+}
+
+pub fn lower_tag(variant: usize, payload: core::option::Option<List<Expr>>) -> core::option::Option<List<Expr>> {
+    return match (payload) {
+        None -> None,
+        Some(es) -> Some(cons(Lit(variant as i32), es)),
+    };
+}
+
+pub fn lower_variant(scope: List<Binding>, variant: usize, found: core::option::Option<List<FieldTy>>, payload: List<SrcExpr>) -> core::option::Option<List<Expr>> {
+    return match (found) {
+        None -> None,
+        Some(types) -> lower_tag(variant, lower_fields(scope, payload, types)),
+    };
+}
+
+// Tags are 32-bit, so an enum has fewer than 2^32 variants.
+pub fn lower_tagged(scope: List<Binding>, variants: List<List<FieldTy>>, variant: usize, payload: List<SrcExpr>) -> core::option::Option<List<Expr>> {
+    if (length(variants) < 4294967296) {
+        return lower_variant(scope, variant, get(variants, variant), payload);
+    }
+    return None;
+}
+
+// An enum value: its tag, then the variant's payload. Slots past the payload
+// are left as they are.
+pub fn lower_enum_value(scope: List<Binding>, ty: SrcType, variant: usize, payload: List<SrcExpr>) -> core::option::Option<List<Expr>> {
+    return match (ty) {
+        I32 -> None,
+        Bool -> None,
+        Struct(id, types) -> None,
+        Enum(id, variants) -> lower_tagged(scope, variants, variant, payload),
+    };
+}
+
+// The scope of an arm: binder i names the payload slot slot + i, binding in
+// order as Core's bindLocals does.
+pub fn arm_scope(binders: List<usize>, types: List<FieldTy>, slot: usize, scope: List<Binding>) -> core::option::Option<List<Binding>> {
+    return match (binders) {
+        Nil -> match (types) {
+            Nil -> Some(scope),
+            Cons(ty, more) -> None,
+        },
+        Cons(binder, rest) -> match (types) {
+            Nil -> None,
+            Cons(ty, more) -> arm_scope(unbox(rest), unbox(more), plus(slot, 1), cons(Binding { id: binder, slot: slot, ty: ty.ty() }, scope)),
+        },
+    };
+}
+
+pub fn lower_arm_value(scope: core::option::Option<List<Binding>>, value: SrcExpr, ty: SrcType) -> core::option::Option<Expr> {
+    return match (scope) {
+        None -> None,
+        Some(s) -> lower_as(s, value, ty),
+    };
+}
+
+// Arm k stores value into target; the last arm needs no tag test.
+pub fn lower_arm(slot: usize, target: usize, k: usize, value: core::option::Option<Expr>, rest: List<SrcArm>, others: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (value) {
+        None -> None,
+        Some(v) -> match (rest) {
+            Nil -> Some(Assign(target, v)),
+            Cons(arm, more) -> match (others) {
+                None -> None,
+                Some(o) -> Some(Ite(Compare(Eq, boxed(Var(slot)), boxed(Lit(k as i32))), boxed(Assign(target, v)), boxed(o))),
+            },
+        },
+    };
+}
+
+// Arms k, k + 1, ... of a match on the enum at slot, one per variant from k.
+pub fn lower_arms(scope: List<Binding>, slot: usize, target: usize, ty: SrcType, k: usize, variants: List<List<FieldTy>>, arms: List<SrcArm>) -> core::option::Option<Stmt> {
+    return match (arms) {
+        Nil -> None,
+        Cons(arm, rest) -> match (variants) {
+            Nil -> None,
+            Cons(types, more) -> lower_arm(slot, target, k, lower_arm_value(arm_scope(arm.binders, types, plus(slot, 1), scope), arm.value, ty), unbox(rest), lower_arms(scope, slot, target, ty, plus(k, 1), unbox(more), unbox(rest))),
+        },
+    };
+}
+
+// The match is exhaustive, its value scalar, and its tags fit in 32 bits.
+pub fn lower_match_arms(scope: List<Binding>, slot: usize, same: bool, variants: List<List<FieldTy>>, arms: List<SrcArm>, ty: SrcType, target: usize) -> core::option::Option<Stmt> {
+    if (same && ty.is_scalar() && (length(arms) == length(variants)) && (length(variants) < 4294967296)) {
+        return lower_arms(scope, slot, target, ty, 0, variants, arms);
+    }
+    return None;
+}
+
+pub fn lower_match_on(scope: List<Binding>, b: Binding, enum_id: usize, arms: List<SrcArm>, ty: SrcType, target: usize) -> core::option::Option<Stmt> {
+    return match (b.ty) {
+        I32 -> None,
+        Bool -> None,
+        Struct(id, types) -> None,
+        Enum(id, variants) -> lower_match_arms(scope, b.slot, id == enum_id, variants, arms, ty, target),
+    };
+}
+
+pub fn lower_match(scope: List<Binding>, binding: core::option::Option<Binding>, enum_id: usize, arms: List<SrcArm>, ty: SrcType, target: usize) -> core::option::Option<Stmt> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> lower_match_on(scope, b, enum_id, arms, ty, target),
     };
 }
 
@@ -1172,6 +1329,7 @@ pub fn lower_set_field_of(b: Binding, field: usize, scope: List<Binding>, value:
         I32 -> None,
         Bool -> None,
         Struct(id, fields) -> lower_set_field_at(b.slot, field, get(fields, field), scope, value),
+        Enum(id, variants) -> None,
     };
 }
 
@@ -1245,6 +1403,8 @@ impl SrcStmt {
             Let(id, ty, value, body) -> lower_let(next, lower_value(scope, value, ty), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
             LetStruct(id, ty, fields, body) -> lower_let(next, lower_literal(scope, ty, fields), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
             LetCall(id, ty, callee, args, body) -> lower_let_call(next, callee, lower_call(sigs, scope, callee, args, ty), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
+            LetEnum(id, ty, variant, payload, body) -> lower_let(next, lower_enum_value(scope, ty, variant, payload), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
+            LetMatch(id, ty, scrutinee, enum_id, arms, body) -> lower_then(lower_match(scope, lookup(scope, scrutinee), enum_id, arms, ty, next), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
             Set(id, value) -> lower_set(lookup(scope, id), scope, value),
             SetField(id, index, value) -> lower_set_field(lookup(scope, id), index, scope, value),
             SetCall(id, callee, args) -> lower_set_call(sigs, scope, lookup(scope, id), callee, args),
@@ -1262,6 +1422,8 @@ impl SrcStmt {
             Let(id, ty, value, body) -> plus(unbox(body).depth(), ty.size()),
             LetStruct(id, ty, fields, body) -> plus(unbox(body).depth(), ty.size()),
             LetCall(id, ty, callee, args, body) -> plus(unbox(body).depth(), ty.size()),
+            LetEnum(id, ty, variant, payload, body) -> plus(unbox(body).depth(), ty.size()),
+            LetMatch(id, ty, scrutinee, enum_id, arms, body) -> plus(unbox(body).depth(), ty.size()),
             Set(id, value) -> 0,
             SetField(id, index, value) -> 0,
             SetCall(id, callee, args) -> 0,
