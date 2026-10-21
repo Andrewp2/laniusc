@@ -30,7 +30,7 @@ fn main() -> i32 {
             return 3;
         }
         let number: u32 = core::wide_u64::low_word(parsed);
-        let narrowed: u16 = number;
+        let narrowed: u16 = number as u16;
         if (std::deque_u16::len(recent) == 3) {
             recent = std::deque_u16::try_pop_front(recent);
         }
@@ -48,7 +48,7 @@ fn main() -> i32 {
             return 5;
         }
         let halfword: u16 = std::deque_u16::at_or(recent, index, 0);
-        let number: u32 = halfword;
+        let number: u32 = halfword as u32;
         if (std::io_decimal::write_u32(1, number) <= 0) {
             std::deque_u16::destroy(recent);
             return 5;

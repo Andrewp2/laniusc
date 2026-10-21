@@ -19,7 +19,7 @@ fn main() -> i32 {
         product = core::option_wide_u64::unwrap_or(candidate, core::wide_u64::zero());
         factor += 1;
     }
-    let digits: i32 = core::wide_u64::decimal_len(product);
+    let digits: i32 = core::wide_u64::decimal_len(product) as i32;
     if (std::io_decimal::write_wide_u64(1, product) != digits ||
         !std::io_byte::write_stdout_byte(10)) { return 4; }
     return 0;

@@ -8,7 +8,7 @@ fn main() -> i32 {
     let recent: std::deque_bool::DequeBool = std::deque_bool::new();
     let next: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
     while (next >= 0) {
-        let character: u8 = next;
+        let character: u8 = next as u8;
         if (!core::byte::is_ascii_whitespace(character)) {
             if (character != 48 && character != 49) {
                 std::deque_bool::destroy(recent);

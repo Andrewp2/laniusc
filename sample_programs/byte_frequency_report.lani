@@ -33,7 +33,7 @@ fn main() -> i32 {
         let code: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
         if (code == -1) { break; }
         if (code == -2) { return 2; }
-        let key: u8 = code;
+        let key: u8 = code as u8;
         let old: u32 = std::map_u8_u32::get_or(keys, values, key, 0);
         if (old == maximum) { return 3; }
         std::map_u8_u32::put(keys, values, key, old + 1);
@@ -45,7 +45,7 @@ fn main() -> i32 {
         let key: u8 = std::map_u8_u32::key_at_or(keys, ordinal, 0);
         let count: u32 = std::map_u8_u32::value_at_or(keys, values, ordinal, 0);
         if (count > best_count) {
-            best_key = key;
+            best_key = key as i32;
             best_count = count;
         }
         ordinal += 1;

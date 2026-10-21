@@ -8,7 +8,7 @@ fn main() -> i32 {
         std::io_decimal::read_wide_u64_stdin_or(0, fallback), fallback)) { return 1; }
     let value: core::wide_u64::WideU64 =
         std::io_decimal::read_wide_u64_stdin_or(64, fallback);
-    let expected: i32 = core::wide_u64::decimal_len(value);
+    let expected: i32 = core::wide_u64::decimal_len(value) as i32;
     if (std::io_decimal::write_wide_u64(1, value) != expected) { return 2; }
     return 0;
 }

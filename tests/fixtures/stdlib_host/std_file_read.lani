@@ -11,7 +11,7 @@ fn exercise(buffer: ptr) -> i32 {
     if (output<0) {
         return 2;
     }
-    let received_len: usize = received;
+    let received_len: usize = received as usize;
     let written: bool = std::file::write_all_bytes(output, buffer, received_len);
     let closed: i32 = std::fs::close_file(output);
     if (!written || closed<0) {
@@ -40,7 +40,7 @@ fn exercise(buffer: ptr) -> i32 {
     if (short_output<0) {
         return 11;
     }
-    let short_len: usize = short_read;
+    let short_len: usize = short_read as usize;
     let short_written: bool = std::file::write_all_bytes(short_output, buffer, short_len);
     let short_closed: i32 = std::fs::close_file(short_output);
     if (!short_written || short_closed<0) {

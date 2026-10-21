@@ -32,8 +32,8 @@ fn main() -> i32 {
             return 3;
         }
         let word: u32 = core::wide_i64::low_word(parsed);
-        let number: i32 = word;
-        let narrowed: i16 = number;
+        let number: i32 = word as i32;
+        let narrowed: i16 = number as i16;
         if (std::deque_i16::len(recent) == 3) {
             recent = std::deque_i16::try_pop_front(recent);
         }
@@ -51,7 +51,7 @@ fn main() -> i32 {
             return 5;
         }
         let signed_halfword: i16 = std::deque_i16::at_or(recent, index, 0);
-        let number: i32 = signed_halfword;
+        let number: i32 = signed_halfword as i32;
         if (std::io_decimal::write_i32(1, number) <= 0) {
             std::deque_i16::destroy(recent);
             return 5;

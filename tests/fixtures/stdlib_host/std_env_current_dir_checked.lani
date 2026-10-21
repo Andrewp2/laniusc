@@ -22,7 +22,7 @@ fn main() -> i32 {
     if (count <= 0 || count >= 128) {
         return 5;
     }
-    let length: usize = count;
+    let length: usize = count as usize;
     if (std::io::write_stdout(buffer, length + 1) != count + 1) {
         return 6;
     }

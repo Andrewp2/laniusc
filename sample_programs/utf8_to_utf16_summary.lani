@@ -21,7 +21,7 @@ fn main() -> i32 {
         if (code == -1) { break; }
         if (code == -2) { return 2; }
         if (length >= 64) { return 3; }
-        let byte: u8 = code;
+        let byte: u8 = code as u8;
         bytes[length] = byte;
         length += 1;
     }

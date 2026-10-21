@@ -9,7 +9,7 @@ fn main() -> i32 {
     if (count < 0) {
         return 1;
     }
-    let byte_count: usize = count;
+    let byte_count: usize = count as usize;
     if (!std::io_checked::write_all_stdout(buffer, byte_count)) {
         return 2;
     }

@@ -10,7 +10,7 @@ fn main() -> i32 {
     let next: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
     while (next >= 0) {
         let before: i32 = std::deque_u8::len(recent);
-        let next_byte: u8 = next;
+        let next_byte: u8 = next as u8;
         recent = std::deque_u8::try_push_back(recent, next_byte);
         if (std::deque_u8::len(recent) != before + 1) {
             std::deque_u8::destroy(recent);
@@ -35,7 +35,7 @@ fn main() -> i32 {
     std::deque_u8::destroy(recent);
     let wrapped: core::option_u8::OptionU8 = core::option_u8::some(checksum);
     let result: u8 = core::option_u8::unwrap_or(wrapped, 0);
-    let printable: i32 = result;
+    let printable: i32 = result as i32;
     print(printable);
     return 0;
 }

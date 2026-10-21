@@ -34,7 +34,7 @@ fn report(values: [u32]) -> i32 {
         let key: i8 = std::map_i8_u32::key_at_or(keys, ordinal, 0);
         let count: u32 = std::map_i8_u32::value_at_or(keys, values, ordinal, 0);
         if (count > best_count) {
-            best_key = key;
+            best_key = key as i32;
             best_count = count;
         }
         ordinal += 1;

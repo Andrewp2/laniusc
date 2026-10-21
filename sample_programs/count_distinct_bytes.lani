@@ -14,14 +14,14 @@ fn main() -> i32 {
         let code: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
         if (code == -1) { break; }
         if (code == -2) { return 2; }
-        let item: u8 = code;
+        let item: u8 = code as u8;
         std::set_u8::insert(all, item);
         if (core::byte::is_ascii_digit(item)) {
             std::set_u8::insert(digits, item);
         }
     }
-    let count: u32 = std::set_u8::len(all);
-    let digit_count: u32 = std::set_u8::len(digits);
+    let count: u32 = std::set_u8::len(all) as u32;
+    let digit_count: u32 = std::set_u8::len(digits) as u32;
     if (std::io_decimal::write_u32(1, count) < 0 ||
         std::io::write_byte(1, 10) != 1 ||
         std::io_decimal::write_u32(1, digit_count) < 0 ||
