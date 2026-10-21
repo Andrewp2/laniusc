@@ -30,14 +30,15 @@ execute `f`'s entry:
 
 ```text
 compileProgram prog = some binary
-∧ prog.Returns depth f args v       -- f returns v, calls nested < depth deep
+∧ prog.Returns depth f args vs      -- f returns the slots vs, calls nested < depth deep
 ∧ binary.image is loaded at imageBase, s.rip is f's entry
 ∧ argument k is at rsp - (8k + 16)  -- just below the return address
 ∧ window ≥ binary.stackNeed depth, and the image is apart from the
   window bytes below rsp
 → ∃ n s', Steps n s s'
     ∧ s'.rip = the return address at [s.rsp]
-    ∧ low 32 bits of s'.rax = v
+    ∧ vs[k] is at s.rsp - (8k + 16)  -- the results replace the arguments
+    ∧ low 32 bits of s'.rax = the last of vs
     ∧ s'.rsp = s.rsp + 8, rbp is restored
     ∧ every register but rax, rcx, r11 is unchanged
     ∧ no memory outside the window changed
@@ -94,27 +95,28 @@ The proof has two layers.
   abstract machine: whatever the callee is known to return.
 - Bytes: one x86 lemma per abstract instruction (`Simulation`). A call copies
   its arguments to just below the return address it pushes, which is where the
-  callee's prologue puts its parameter slots, and then uses the callee's
-  `Contract`. `compiled_contract` proves every function's contract by strong
+  callee's prologue puts its parameter slots, uses the callee's `Contract`,
+  and copies the results the callee left in those slots to its target slots.
+  A return copies its values to slots 0, 1, ... before the epilogue. `compiled_contract` proves every function's contract by strong
   induction on call depth: an activation that nests calls fewer than `d` deep
   uses at most `(d + 1) * frameNeed` stack bytes and changes nothing else.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Compiler` | 392 | 1.4 | extracted: syntax, abstract instructions, compiler, encoder, linker |
-| `Semantics` | 90 | 0.7 | big-step source semantics with call depth |
-| `Asm` | 158 | 0.7 | abstract machine, byte-offset placement, `Star` runs |
-| `CompileCorrect` | 443 | 1.1 | compiler against the abstract machine |
-| `Fits` | 176 | 0.9 | static facts: slots in frame, targets in body, callees exist |
-| `Bytes` | 299 | 1.2 | extracted encoders equal the x86 encoders; image layout |
+| `Compiler` | 1191 | 2.7 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass |
+| `Semantics` | 97 | 0.7 | big-step source semantics with call depth |
+| `Asm` | 163 | 0.8 | abstract machine, byte-offset placement, `Star` runs |
+| `CompileCorrect` | 466 | 1.2 | compiler against the abstract machine |
+| `Fits` | 194 | 1.0 | static facts: slots in frame, targets in body, callees exist |
+| `Bytes` | 312 | 1.2 | extracted encoders equal the x86 encoders; image layout |
 | `Flags` | 100 | 1.3 | each comparison's condition code after `cmp` |
 | `Frame` | 128 | 1.2 | stack windows and address depths (`bv_omega`) |
-| `Simulation` | 841 | 4.0 | x86 lemma per instruction, the call macro, body simulation |
-| `Correct` | 284 | 1.6 | layout, prologue, function contract, top-level theorem |
+| `Simulation` | 1070 | 4.9 | x86 lemma per instruction, slot copies, the call macro, body simulation |
+| `Correct` | 287 | 1.6 | layout, prologue, function contract, top-level theorem |
 
 Check times are `lake env lean` per file on the laptop, about 0.4 s of each is
 import loading. The compiler is 359 lines of Lanius (plus a 63-line prelude
-and 64 lines of list operations); the proofs are about 2,500 lines.
+and 64 lines of list operations); the proofs are about 2,800 lines.
 
 ### The front pass: a Core subset to the mini IR
 
@@ -132,8 +134,9 @@ variant's payload and giving a scalar value. Each binding gets its own slots
 (lets after the parameters), a struct one per field, an enum a tag slot (the
 variant number) and then room for its longest payload; booleans are 1 and 0.
 A `match` is a chain of tag tests, and an arm's binders name the scrutinee's
-payload slots, since an arm only reads them. Functions return scalars, and a
-struct type must have a field, so no two bindings share a slot.
+payload slots, since an arm only reads them. A function returns its result
+type's slots, so `return`, `let x = f(...)` and `x = f(...)` take structs and
+enums too. A struct type must have a field, so no two bindings share a slot.
 
 `Lanius/Mini/Source.lean` maps each source construct to the Core construct of
 the same name (`SrcProgram.toCore`). The theorem is about Core's own
@@ -144,8 +147,9 @@ compileSource sp = some binary
 ∧ sp.funcs[f]? = some func
 ∧ ArgsHold (paramTypes func.params) args bits   -- each argument value is its bits
 ∧ evalExpr fuel sp.toCore {} (call f args) = done v final
-→ ∃ depth b, func.ret.Holds v b
-    ∧ (the compileProgram_correct conclusion for f, bits, b and depth)
+→ ∃ depth results, func.ret.HoldsAt v (Func.entry results) 0   -- laid out like an argument
+    ∧ results.length = func.ret.size
+    ∧ (the compileProgram_correct conclusion for f, bits, results and depth)
 ```
 
 `compileSource_correct` in `Lanius/Mini/SourceCorrect.lean`. The proof is
@@ -171,14 +175,14 @@ semantics:
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Source` | 266 | 0.9 | Core meaning of source programs, value representation, `i32` wrap lemmas |
-| `LowerExpr` | 466 | 4.5 | expressions |
-| `LowerStmt` | 1940 | 8.6 | Core cells, frames, flat values, calls, enums and `match`, statements |
-| `SourceCorrect` | 89 | 0.8 | top-level theorem |
+| `Source` | 266 | 0.8 | Core meaning of source programs, value representation, `i32` wrap lemmas |
+| `LowerExpr` | 466 | 4.1 | expressions |
+| `LowerStmt` | 1941 | 8.1 | Core cells, frames, flat values, calls, enums and `match`, statements |
+| `SourceCorrect` | 89 | 0.7 | top-level theorem |
 
 The pass is about 900 lines of Lanius (the end of `compiler.lani`), and the
-proofs are about 2,800 lines. The per-function difftest covers it (125
-functions, 2,500 calls, no differences; 8 native stack overflows on huge
+proofs are about 2,800 lines. The per-function difftest covers it (126
+functions, 2,520 calls, no differences; 9 native stack overflows on huge
 random counts); at 30 cases per function the harness is now too large for
 laniusc on the laptop (a GPU buffer fails to allocate). Assumptions the theorem does not cover yet: Core
 programs outside the subset, traps and divergence (the theorem covers runs that
@@ -237,6 +241,9 @@ must reject them), compiles each with `#eval compileProgram` and with the
 Lanius compiler built by laniusc, and compares the images byte for byte. Two
 seeds, 602 programs, 157,000 image bytes: no differences. The fact/fib/mix/gcd
 image from the extracted definitions also passes the native run (2,368 calls).
+After functions began returning several slots (2026-10-21): 201 programs,
+58,000 image bytes, no differences, and the native run, now with a
+two-result function and its caller, passes 3,368 calls.
 
 Two more checks of the extraction, 2026-10-21. The same difftest over six more
 seeds: 3,006 programs, 757,000 image bytes, no differences. And a per-function

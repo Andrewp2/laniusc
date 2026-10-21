@@ -7,7 +7,7 @@ nesting depth. -/
 namespace Lanius.Mini
 open Lanius.X86.Machine
 
-theorem compileFuncs_cons {arities : List Nat} {func : Func} {rest : List Func} {codes : List Code}
+theorem compileFuncs_cons {arities : List Arity} {func : Func} {rest : List Func} {codes : List Code}
     (compiled : compileFuncs arities (func :: rest) = some codes) :
     ∃ code codes', compileFunc arities func = some code ∧ compileFuncs arities rest = some codes' ∧
       codes = code :: codes' := by
@@ -20,7 +20,7 @@ theorem compileFuncs_cons {arities : List Nat} {func : Func} {rest : List Func} 
     · rename_i codes' restCompiled
       exact ⟨code, codes', first, restCompiled, (Option.some.inj compiled).symm⟩
 
-theorem compileFuncs_length {arities : List Nat} :
+theorem compileFuncs_length {arities : List Arity} :
     ∀ {funcs : List Func} {codes : List Code}, compileFuncs arities funcs = some codes →
       codes.length = funcs.length
   | [], codes, compiled => by simp only [compileFuncs, Option.some.injEq] at compiled; subst compiled; rfl
@@ -28,7 +28,7 @@ theorem compileFuncs_length {arities : List Nat} :
     obtain ⟨code, codes', -, restCompiled, rfl⟩ := compileFuncs_cons compiled
     simp [compileFuncs_length restCompiled]
 
-theorem compileFuncs_get {arities : List Nat} :
+theorem compileFuncs_get {arities : List Arity} :
     ∀ {funcs : List Func} {codes : List Code}, compileFuncs arities funcs = some codes →
       ∀ {f : Nat} {func : Func}, funcs[f]? = some func →
         ∃ code, codes[f]? = some code ∧ compileFunc arities func = some code
@@ -84,7 +84,7 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
     {imageBase : BitVec 64} {f : Nat} {func : Func} {code : Code} (_found : prog.funcs[f]? = some func)
     (codeFound : binary.codes[f]? = some code)
     (compiledFunc : compileFunc (arities prog.funcs) func = some code)
-    {depth : Nat} {args : List (BitVec 32)} {value : BitVec 32} (length : args.length = func.params)
+    {depth : Nat} {args value : List (BitVec 32)} (length : args.length = func.params)
     (exec : Exec prog depth (Func.entry args) func.body (.returned value))
     {window : Nat} (room : frameBytes code.slots + 16 ≤ window)
     (callContract : ∀ callee vals result, SourceCalls prog depth callee vals result → ∃ inner,
@@ -218,14 +218,16 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
         depth_lane _ _ _ (by omega)]
       exact depth_ne _ (by omega) (by omega) (by omega)), slot_eq _ bound, params index (by omega)]
     simp [List.getD, List.getElem?_eq_getElem (show index < args.length by omega)]
-  obtain ⟨m', run, atRet, acc⟩ := compileFunc_correct compiledFunc length exec start rfl startParams
+  obtain ⟨m', sources, run, atRet, vals⟩ := compileFunc_correct compiledFunc length exec start rfl startParams
   obtain ⟨n, s', steps2, exit⟩ := body_simulates body fits callContract run atRet entered rel
+  rw [vals] at exit
   refine ⟨_, s', steps1.trans steps2, ?_⟩
   exact
     { rip := exit.rip
       rsp := exit.rsp
       rbp := exit.rbp
-      value := acc ▸ exit.value
+      value := exit.value
+      results := exit.results
       preserved := exit.preserved
       unchanged := exit.unchanged }
 
@@ -262,14 +264,15 @@ theorem compiled_contract {prog : Program} {binary : Binary} (compiled : compile
     exact Nat.mul_le_mul_right _ (by omega)
 
 /-- **The mini compiler is correct.** If the source program's function `f`
-returns `value` on `args`, nesting calls fewer than `depth` deep, then its
+returns `values` on `args`, nesting calls fewer than `depth` deep, then its
 machine code, loaded anywhere and entered by a near call with the arguments
 just below the return address and at least `binary.stackNeed depth` bytes of
-stack apart from the image, returns `value` in eax to the return address. It
-restores rsp and rbp, preserves every register other than rax, rcx, r11, and
-changes no memory outside the stack it was given. -/
+stack apart from the image, returns to the return address with `values` in
+the argument slots and the last of them in eax. It restores rsp and rbp,
+preserves every register other than rax, rcx, r11, and changes no memory
+outside the stack it was given. -/
 theorem compileProgram_correct {prog : Program} {binary : Binary} (compiled : compileProgram prog = some binary)
-    {depth f : Nat} {args : List (BitVec 32)} {value : BitVec 32} (returns : prog.Returns depth f args value)
+    {depth f : Nat} {args value : List (BitVec 32)} (returns : prog.Returns depth f args value)
     (s : State) (imageBase : BitVec 64) (window : Nat)
     (enough : binary.stackNeed depth ≤ window) (bounded : window ≤ 2 ^ 62)
     (loaded : CodeAt s.memory imageBase binary.image)

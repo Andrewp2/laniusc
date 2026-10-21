@@ -12,7 +12,7 @@ def Agree (base : Nat) (env : Env) (m : Machine) : Prop := ∀ index, index < ba
 
 /-- What a call may return in a derivation of depth `depth`. -/
 def SourceCalls (prog : Program) (depth : Nat) : Calls :=
-  fun callee args value => ∃ inner, inner < depth ∧ prog.Returns inner callee args value
+  fun callee args values => ∃ inner, inner < depth ∧ prog.Returns inner callee args values
 
 theorem Instr.exec_singleton (i : Instr) (m : Machine) : Instr.exec [i] m = i.step m := rfl
 
@@ -132,7 +132,8 @@ theorem evalAll_length (env : Env) (args : List Expr) : (Expr.evalAll env args).
 def StmtResult (calls : Calls) (code : List Instr) (base pos : Nat) (block : List Instr) (m : Machine) :
     Outcome → Prop
   | .normal env => ∃ m', Star calls code m m' ∧ m'.pc = pos + codeSize block ∧ Agree base env m'
-  | .returned value => ∃ m', Star calls code m m' ∧ fetch code m'.pc = some .ret ∧ m'.acc = value
+  | .returned values => ∃ m' sources, Star calls code m m' ∧ fetch code m'.pc = some (.ret sources) ∧
+      readSlots m'.slots sources = values
 
 /-- A placed straight-line block, then the rest of a statement's run. -/
 theorem StmtResult.prefix {calls : Calls} {code block : List Instr} {m : Machine}
@@ -145,8 +146,8 @@ theorem StmtResult.prefix {calls : Calls} {code block : List Instr} {m : Machine
     obtain ⟨m', steps, pc, agree⟩ := rest
     exact ⟨m', run.trans steps, pc, agree⟩
   | returned value =>
-    obtain ⟨m', steps, fetched, acc⟩ := rest
-    exact ⟨m', run.trans steps, fetched, acc⟩
+    obtain ⟨m', sources, steps, fetched, acc⟩ := rest
+    exact ⟨m', sources, run.trans steps, fetched, acc⟩
 
 theorem StmtResult.step {calls : Calls} {code : List Instr} {m next : Machine}
     (step : Step calls code m next) (rest : StmtResult calls code base pos whole next outcome) :
@@ -156,8 +157,8 @@ theorem StmtResult.step {calls : Calls} {code : List Instr} {m next : Machine}
     obtain ⟨m', steps, pc, agree⟩ := rest
     exact ⟨m', .step step steps, pc, agree⟩
   | returned value =>
-    obtain ⟨m', steps, fetched, acc⟩ := rest
-    exact ⟨m', .step step steps, fetched, acc⟩
+    obtain ⟨m', sources, steps, fetched, acc⟩ := rest
+    exact ⟨m', sources, .step step steps, fetched, acc⟩
 
 /-- A statement's result through a sub-block, with the end of the block moved. -/
 theorem StmtResult.retarget {calls : Calls} {code : List Instr} {m : Machine}
@@ -179,8 +180,8 @@ theorem StmtResult.star {calls : Calls} {code : List Instr} {m next : Machine}
     obtain ⟨m', steps, pc, agree⟩ := rest
     exact ⟨m', run.trans steps, pc, agree⟩
   | returned value =>
-    obtain ⟨m', steps, fetched, acc⟩ := rest
-    exact ⟨m', run.trans steps, fetched, acc⟩
+    obtain ⟨m', sources, steps, fetched, acc⟩ := rest
+    exact ⟨m', sources, run.trans steps, fetched, acc⟩
 
 /-- A sub-block that ends normally, then the rest of the statement. -/
 theorem StmtResult.andThen {calls : Calls} {code : List Instr} {m : Machine}
@@ -200,11 +201,33 @@ theorem Block.pair (placed : Block code pos [first, second]) :
   have split : Block code pos ([first] ++ [second]) := placed
   exact ⟨split.left, by simpa [codeSize] using split.right⟩
 
-theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Nat} {code : List Instr}
+theorem setMany_eq : ∀ (values : List (BitVec 32)) (env : Env) (target slot : Nat),
+    env.setMany target values slot =
+      if target ≤ slot ∧ slot < target + values.length then values.getD (slot - target) 0 else env slot
+  | [], env, target, slot => by
+    simp only [Env.setMany, List.length_nil, Nat.add_zero]
+    rw [if_neg (by omega)]
+  | v :: rest, env, target, slot => by
+    simp only [Env.setMany]
+    rw [setMany_eq rest]
+    simp only [Env.set, List.length_cons]
+    by_cases here : slot = target
+    · subst here
+      rw [if_neg (by omega), if_pos rfl, if_pos (by omega)]
+      simp
+    · by_cases inside : target + 1 ≤ slot ∧ slot < target + 1 + rest.length
+      · rw [if_pos inside, if_pos (by omega)]
+        obtain ⟨k, rfl⟩ : ∃ k, slot = target + 1 + k := ⟨slot - (target + 1), by omega⟩
+        rw [show target + 1 + k - target = k + 1 by omega, show target + 1 + k - (target + 1) = k by omega]
+        simp
+      · rw [if_neg inside, if_neg here, if_neg (by omega)]
+
+theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Arity} {results : Nat}
+    {code : List Instr}
     {depth : Nat} {env : Env} {stmt : Stmt} {outcome : Outcome}
     (exec : Exec prog depth env stmt outcome) :
     ∀ pos m, Block code pos (compileStmt base pos stmt) → m.pc = pos → Agree base env m →
-      stmt.within base arities = true →
+      stmt.within base arities results = true →
       StmtResult (SourceCalls prog depth) code base pos (compileStmt base pos stmt) m outcome := by
   induction exec with
   | skip =>
@@ -239,8 +262,8 @@ theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Nat} {
       obtain ⟨m'', steps', pc'', agree''⟩ := run
       exact ⟨m'', steps.trans steps', pc'', agree''⟩
     | returned value =>
-      obtain ⟨m'', steps', fetched, acc⟩ := run
-      exact ⟨m'', steps.trans steps', fetched, acc⟩
+      obtain ⟨m'', sources, steps', fetched, acc⟩ := run
+      exact ⟨m'', sources, steps.trans steps', fetched, acc⟩
   | @seqReturned depth env first second value _ ihFirst =>
     intro pos m placed pc agree within
     simp only [Stmt.within, Bool.and_eq_true] at within
@@ -322,36 +345,36 @@ theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Nat} {
     · exact placed.left.right.at (by simp only [codeSize_append, codeSize, Instr.size]; omega)
     · simp only [Instr.exec_pc, pc, Instr.size]
     · exact agree.of_slots fun slot below => kept slot (by omega)
-  | @call depth inner target callee env args func value lookup length lower calleeExec _ =>
+  | @call depth inner target count callee env args func value lookup length counted lower calleeExec _ =>
     intro pos m placed pc agree within
     simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
     simp only [compileStmt] at placed ⊢
     obtain ⟨values, kept⟩ := compileArgs_correct base args 0 env m agree within.2
     apply StmtResult.prefix (pc ▸ placed.left) (compileArgs_straight _ _ _)
-    obtain ⟨callPlaced, storePlaced⟩ := placed.right.pair
     have returns : SourceCalls prog depth callee
         (readSlots (Instr.exec (compileArgs base args 0) m).slots (argSlots base args 0)) value := by
       rw [values]
       exact ⟨inner, lower, func, lookup, by rw [evalAll_length, length], calleeExec⟩
-    apply StmtResult.step (.call (by rw [Instr.exec_pc, pc]; exact callPlaced.fetch) returns)
-    apply StmtResult.step (.straight (by simp only [Instr.exec_pc, pc]; exact storePlaced.fetch) rfl)
-    refine ⟨_, .refl _, by simp only [Instr.step, Instr.exec_pc, pc, codeSize_append, codeSize]; omega, ?_⟩
+    apply StmtResult.step (.call (by rw [Instr.exec_pc, pc]; exact placed.right.fetch) returns counted)
+    refine ⟨_, .refl _, by simp only [Instr.exec_pc, pc, codeSize_append, codeSize]; omega, ?_⟩
     intro other below
-    simp only [Instr.step, Instr.update, Machine.store, Env.set]
-    split
-    · rfl
-    · rw [kept other (by omega)]
+    simp only [writeSlots]
+    rw [setMany_eq]
+    by_cases inside : target ≤ other ∧ other < target + value.length
+    · rw [if_pos inside, if_pos inside]
+    · rw [if_neg inside, if_neg inside, kept other (by omega)]
       exact agree other below
-  | @ret depth env value =>
+  | @ret depth env values =>
     intro pos m placed pc agree within
-    simp only [Stmt.within] at within
+    simp only [Stmt.within, Bool.and_eq_true] at within
     simp only [compileStmt] at placed ⊢
-    obtain ⟨acc, _⟩ := compileExpr_correct base value 0 env m agree within
-    exact ⟨_, Star.straight _ (pc ▸ placed.left) (compileExpr_straight _ _ _),
-      by rw [Instr.exec_pc, pc]; exact placed.right.fetch, acc⟩
+    obtain ⟨vals, _⟩ := compileArgs_correct base values 0 env m agree within.2
+    exact ⟨_, _, Star.straight _ (pc ▸ placed.left) (compileArgs_straight _ _ _),
+      by rw [Instr.exec_pc, pc]; exact placed.right.fetch, vals⟩
 
-theorem arityIs_eq (arities : List Nat) (callee count : Nat) :
-    arityIs arities callee count = true ↔ arities[callee]? = some count := by
+theorem arityIs_eq (arities : List Arity) (callee count results : Nat) :
+    arityIs arities callee count results = true ↔
+      ∃ arity, arities[callee]? = some arity ∧ arity.params = count ∧ arity.results = results := by
   unfold arityIs
   split <;> simp_all
 
@@ -390,31 +413,31 @@ theorem zeroLocals_exec (first count : Nat) (m : Machine) (zero : m.acc = 0) :
       · rw [if_pos inside, if_pos (by omega)]
       · rw [if_neg inside, if_neg (by omega)]
 
-theorem compileFunc_spec {arities : List Nat} {func : Func} {code : Code}
+theorem compileFunc_spec {arities : List Arity} {func : Func} {code : Code}
     (compiled : compileFunc arities func = some code) :
-    func.params ≤ func.locals ∧ func.body.within func.locals arities = true ∧
+    func.params ≤ func.locals ∧ func.body.within func.locals arities func.results = true ∧
       code.slots = func.locals + func.body.temps ∧ code.slots ≤ frameLimit ∧
       code.instrs = (Instr.imm 0 :: zeroLocals func.params (func.locals - func.params)) ++
         compileStmt func.locals (codeSize (Instr.imm 0 :: zeroLocals func.params (func.locals - func.params)))
-          func.body := by
+          func.body ∧ 0 < func.results ∧ func.results ≤ func.locals := by
   simp only [compileFunc] at compiled
   split at compiled
   · rename_i checks
     cases compiled
     simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
-    exact ⟨checks.1.1, checks.1.2, rfl, checks.2, rfl⟩
+    exact ⟨checks.1.1.1.1, checks.1.2, rfl, checks.2, rfl, checks.1.1.1.2, checks.1.1.2⟩
   · contradiction
 
 /-- A compiled function, entered with its parameters in the first slots, runs
 to a `ret` holding the source function's return value. -/
-theorem compileFunc_correct {arities : List Nat} {func : Func} {code : Code}
+theorem compileFunc_correct {arities : List Arity} {func : Func} {code : Code}
     (compiled : compileFunc arities func = some code) {prog : Program} {depth : Nat}
-    {args : List (BitVec 32)} {value : BitVec 32} (length : args.length = func.params)
+    {args : List (BitVec 32)} {value : List (BitVec 32)} (length : args.length = func.params)
     (exec : Exec prog depth (Func.entry args) func.body (.returned value)) (m : Machine) (start : m.pc = 0)
     (params : ∀ index, index < func.params → m.slots index = args.getD index 0) :
-    ∃ m', Star (SourceCalls prog depth) code.instrs m m' ∧ fetch code.instrs m'.pc = some .ret ∧
-      m'.acc = value := by
-  obtain ⟨paramsFit, within, -, -, instrs⟩ := compileFunc_spec compiled
+    ∃ m' sources, Star (SourceCalls prog depth) code.instrs m m' ∧
+      fetch code.instrs m'.pc = some (.ret sources) ∧ readSlots m'.slots sources = value := by
+  obtain ⟨paramsFit, within, -, -, instrs, -⟩ := compileFunc_spec compiled
   rw [instrs]
   generalize initEq : (Instr.imm 0 :: zeroLocals func.params (func.locals - func.params)) = init
   have initStraight : init.all Instr.straight = true := by
@@ -437,7 +460,7 @@ theorem compileFunc_correct {arities : List Nat} {func : Func} {code : Code}
       simp [List.getD, List.getElem?_eq_none (show args.length ≤ index by omega)]
   have result := compileStmt_correct exec (code := init ++ compileStmt func.locals (codeSize init) func.body)
     (codeSize init) (Instr.exec init m) bodyPlaced (by rw [Instr.exec_pc, start]; omega) agree within
-  obtain ⟨m', steps, fetched, acc⟩ := result
-  exact ⟨m', initRun.trans steps, fetched, acc⟩
+  obtain ⟨m', sources, steps, fetched, acc⟩ := result
+  exact ⟨m', sources, initRun.trans steps, fetched, acc⟩
 
 end Lanius.Mini

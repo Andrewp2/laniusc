@@ -7,18 +7,24 @@ program. -/
 namespace Lanius.Mini
 
 def Instr.Fits (slots bound funcs : Nat) : Instr → Prop
-  | .imm _ | .neg | .ret => True
+  | .imm _ | .neg => True
   | .load slot | .store slot | .op _ slot | .cmp _ slot => slot < slots
   | .jmp target | .jz target => target ≤ bound
-  | .call callee args => callee < funcs ∧ args.length ≤ slots ∧ ∀ slot ∈ args, slot < slots
+  | .call callee args target count => callee < funcs ∧ args.length ≤ slots ∧ (∀ slot ∈ args, slot < slots) ∧
+      target + count ≤ slots ∧ 0 < count
+  | .ret sources => ∀ slot ∈ sources, slot < slots ∧ sources.length ≤ slot
 
 theorem Instr.Fits.mono {i : Instr} {slots slots' bound bound' funcs : Nat} (fits : i.Fits slots bound funcs)
     (moreSlots : slots ≤ slots') (moreBound : bound ≤ bound') : i.Fits slots' bound' funcs := by
   cases i with
-  | imm | neg | ret => trivial
+  | imm | neg => trivial
   | load | store | op | cmp => simp only [Instr.Fits] at fits ⊢; omega
   | jmp | jz => simp only [Instr.Fits] at fits ⊢; omega
-  | call callee args => exact ⟨fits.1, by have := fits.2.1; omega, fun slot inArgs => by have := fits.2.2 slot inArgs; omega⟩
+  | call callee args target count =>
+    exact ⟨fits.1, by have := fits.2.1; omega, fun slot inArgs => by have := fits.2.2.1 slot inArgs; omega,
+      by have := fits.2.2.2.1; omega, fits.2.2.2.2⟩
+  | ret sources =>
+    exact fun slot mem => ⟨by have := (fits slot mem).1; omega, (fits slot mem).2⟩
 
 theorem compileExpr_fits (base : Nat) (e : Expr) (depth : Nat) (within : e.within base = true)
     (bound funcs : Nat) : ∀ i ∈ compileExpr base e depth, i.Fits (base + depth + e.temps) bound funcs := by
@@ -97,8 +103,18 @@ theorem argSlots_count (base : Nat) (args : List Expr) : (argSlots base args 0).
   | nil => simp
   | cons arg rest => have := argsTemps_length (arg :: rest) 0 (by simp); omega
 
-theorem compileStmt_fits (base : Nat) (arities : List Nat) (stmt : Stmt) (pos : Nat)
-    (within : stmt.within base arities = true) :
+theorem argSlots_ge (base : Nat) (args : List Expr) (k : Nat) :
+    ∀ slot ∈ argSlots base args k, base + k ≤ slot := by
+  induction args generalizing k with
+  | nil => simp [argSlots]
+  | cons arg rest ih =>
+    simp only [argSlots, List.mem_cons]
+    rintro slot (rfl | inRest)
+    · omega
+    · have := ih (k + 1) slot inRest; omega
+
+theorem compileStmt_fits (base : Nat) (arities : List Arity) {results : Nat} (resultsFit : results ≤ base)
+    (stmt : Stmt) (pos : Nat) (within : stmt.within base arities results = true) :
     ∀ i ∈ compileStmt base pos stmt,
       i.Fits (base + stmt.temps) (pos + codeSize (compileStmt base pos stmt)) arities.length := by
   induction stmt generalizing pos with
@@ -134,22 +150,24 @@ theorem compileStmt_fits (base : Nat) (arities : List Nat) (stmt : Stmt) (pos : 
     · simp only [Instr.Fits]; omega
     · exact (ihBody _ within.2 i inBody).mono (by omega) (by omega)
     · simp only [Instr.Fits]; omega
-  | call target callee args =>
+  | call target count callee args =>
     simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq, arityIs_eq] at within
-    have calleeBound : callee < arities.length := by
-      obtain ⟨⟨_, found⟩, _⟩ := within
-      exact (List.getElem?_eq_some_iff.mp found).1
+    obtain ⟨⟨⟨fit, positive⟩, ⟨arity, found, -, -⟩⟩, argsWithin⟩ := within
+    have calleeBound : callee < arities.length := (List.getElem?_eq_some_iff.mp found).1
     simp only [compileStmt, List.mem_append, List.mem_cons, List.not_mem_nil, or_false, Stmt.temps]
-    rintro i (inArgs | rfl | rfl)
-    · exact compileArgs_fits base args 0 within.2 _ _ i inArgs
-    · exact ⟨calleeBound, argSlots_count base args, argSlots_fit base args 0⟩
-    · simp only [Instr.Fits]; omega
-  | ret value =>
-    simp only [Stmt.within] at within
+    rintro i (inArgs | rfl)
+    · exact compileArgs_fits base args 0 argsWithin _ _ i inArgs
+    · exact ⟨calleeBound, argSlots_count base args, argSlots_fit base args 0, by omega, positive⟩
+  | ret values =>
+    simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
     simp only [compileStmt, List.mem_append, List.mem_singleton, Stmt.temps]
-    rintro i (inValue | rfl)
-    · exact (compileExpr_fits base value 0 within _ _ i inValue).mono (by omega) (Nat.le_refl _)
-    · trivial
+    rintro i (inValues | rfl)
+    · exact compileArgs_fits base values 0 within.2 _ _ i inValues
+    · intro slot mem
+      refine ⟨argSlots_fit base values 0 slot mem, ?_⟩
+      have := argSlots_ge base values 0 slot mem
+      rw [argSlots_length]
+      omega
 
 theorem zeroLocals_fits (first count : Nat) (bound funcs : Nat) :
     ∀ i ∈ zeroLocals first count, i.Fits (first + count) bound funcs := by
@@ -161,16 +179,16 @@ theorem zeroLocals_fits (first count : Nat) (bound funcs : Nat) :
     · simp only [Instr.Fits]; omega
     · exact (ih (first + 1) i inRest).mono (by omega) (Nat.le_refl _)
 
-theorem compileFunc_fits {arities : List Nat} {func : Func} {code : Code}
+theorem compileFunc_fits {arities : List Arity} {func : Func} {code : Code}
     (compiled : compileFunc arities func = some code) :
     ∀ i ∈ code.instrs, i.Fits code.slots (codeSize code.instrs) arities.length := by
-  obtain ⟨paramsFit, within, slots, -, instrs⟩ := compileFunc_spec compiled
+  obtain ⟨paramsFit, within, slots, -, instrs, -, resultsFit⟩ := compileFunc_spec compiled
   rw [instrs, slots]
   simp only [List.mem_append, List.mem_cons]
   rintro i ((rfl | inInit) | inBody)
   · trivial
   · exact (zeroLocals_fits _ _ _ _ i inInit).mono (by omega) (Nat.le_refl _)
-  · exact (compileStmt_fits _ _ _ _ within i inBody).mono (Nat.le_refl _)
+  · exact (compileStmt_fits _ _ resultsFit _ _ within i inBody).mono (Nat.le_refl _)
       (by rw [codeSize_append]; omega)
 
 end Lanius.Mini

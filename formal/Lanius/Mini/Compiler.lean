@@ -113,13 +113,15 @@ inductive Stmt where
   | ite : Expr → Stmt → Stmt → Stmt
   /-- while condition { body } -/
   | loop : Expr → Stmt → Stmt
-  /-- target = callee(args) -/
-  | call : Nat → Nat → (List Expr) → Stmt
-  | ret : Expr → Stmt
+  /-- target, ..., target + count - 1 = callee(args) -/
+  | call : Nat → Nat → Nat → (List Expr) → Stmt
+  | ret : (List Expr) → Stmt
   deriving DecidableEq, Repr
 
 structure Func where
   params : Nat
+  /-- Values each return gives. -/
+  results : Nat
   /-- All locals, parameters included. -/
   locals : Nat
   body : Stmt
@@ -147,10 +149,10 @@ inductive Instr where
   | jmp : Nat → Instr
   /-- test eax, eax; jz rel32 -/
   | jz : Nat → Instr
-  /-- Copy the argument slots into the callee's parameter slots, then call rel32. -/
-  | call : Nat → (List Nat) → Instr
-  /-- frame epilogue and ret, returning eax -/
-  | ret : Instr
+  /-- Copy the argument slots into the callee's parameter slots, call rel32, then copy count results from the callee's first slots to target, ... -/
+  | call : Nat → (List Nat) → Nat → Nat → Instr
+  /-- Copy the source slots to the first slots, then the frame epilogue and ret. The results replace the arguments, and eax holds the last one. -/
+  | ret : (List Nat) → Instr
   deriving DecidableEq, Repr
 
 /-- imul is one byte longer than the other operators. -/
@@ -173,8 +175,8 @@ def Instr.size (self : Instr) : Nat :=
   | .cmp operation slot => 16
   | .jmp target => 5
   | .jz target => 8
-  | .call callee args => 12 * args.length + 5
-  | .ret => 5
+  | .call callee args target count => 12 * args.length + 5 + 12 * count
+  | .ret sources => 12 * sources.length + 5
 
 def codeSize (code : List Instr) : Nat :=
   match code with
@@ -221,8 +223,8 @@ def compileStmt (base : Nat) (pos : Nat) (s : Stmt) : List Instr :=
      let bodyStart : Nat := pos + codeSize conditionCode + 8
      let bodyCode : List Instr := compileStmt base bodyStart body
      conditionCode ++ [Instr.jz (bodyStart + codeSize bodyCode + 5)] ++ bodyCode ++ [Instr.jmp pos])
-  | .call target callee args => compileArgs base args 0 ++ Instr.call callee (argSlots base args 0) :: [Instr.store target]
-  | .ret value => compileExpr base value 0 ++ [Instr.ret]
+  | .call target count callee args => compileArgs base args 0 ++ [Instr.call callee (argSlots base args 0) target count]
+  | .ret values => compileArgs base values 0 ++ [Instr.ret (argSlots base values 0)]
 
 def Expr.within (self : Expr) (locals : Nat) : Bool :=
   match self with
@@ -246,9 +248,15 @@ def allWithin (locals : Nat) (args : List Expr) : Bool :=
   | [] => true
   | arg :: rest => Expr.within arg locals && allWithin locals rest
 
-def arityIs (arities : List Nat) (callee : Nat) (count : Nat) : Bool :=
+/-- A function's parameter and result counts. -/
+structure Arity where
+  params : Nat
+  results : Nat
+  deriving DecidableEq, Repr
+
+def arityIs (arities : List Arity) (callee : Nat) (count : Nat) (results : Nat) : Bool :=
   match arities[callee]? with
-  | some arity => decide (arity = count)
+  | some arity => decide (arity.params = count) && decide (arity.results = results)
   | none => false
 
 /-- Temporaries used by arguments from position k on. -/
@@ -257,16 +265,16 @@ def argsTemps (args : List Expr) (k : Nat) : Nat :=
   | [] => 0
   | arg :: rest => max (k + 1 + Expr.temps arg) (argsTemps rest (k + 1))
 
-/-- Locals are in range, and each call names a function and passes it as many arguments as it has parameters. -/
-def Stmt.within (self : Stmt) (locals : Nat) (arities : List Nat) : Bool :=
+/-- Locals are in range, each call names a function, passes it as many arguments as it has parameters and stores all its results, and each return gives results values. -/
+def Stmt.within (self : Stmt) (locals : Nat) (arities : List Arity) (results : Nat) : Bool :=
   match self with
   | .skip => true
   | .assign index value => decide (index < locals) && Expr.within value locals
-  | .seq first second => Stmt.within first locals arities && Stmt.within second locals arities
-  | .ite condition thenBranch elseBranch => Expr.within condition locals && Stmt.within thenBranch locals arities && Stmt.within elseBranch locals arities
-  | .loop condition body => Expr.within condition locals && Stmt.within body locals arities
-  | .call target callee args => decide (target < locals) && arityIs arities callee args.length && allWithin locals args
-  | .ret value => Expr.within value locals
+  | .seq first second => Stmt.within first locals arities results && Stmt.within second locals arities results
+  | .ite condition thenBranch elseBranch => Expr.within condition locals && Stmt.within thenBranch locals arities results && Stmt.within elseBranch locals arities results
+  | .loop condition body => Expr.within condition locals && Stmt.within body locals arities results
+  | .call target count callee args => decide (target + count ≤ locals) && decide (0 < count) && arityIs arities callee args.length count && allWithin locals args
+  | .ret values => decide (values.length = results) && allWithin locals values
 
 def Stmt.temps (self : Stmt) : Nat :=
   match self with
@@ -275,8 +283,8 @@ def Stmt.temps (self : Stmt) : Nat :=
   | .seq first second => max (Stmt.temps first) (Stmt.temps second)
   | .ite condition thenBranch elseBranch => max (Expr.temps condition) (max (Stmt.temps thenBranch) (Stmt.temps elseBranch))
   | .loop condition body => max (Expr.temps condition) (Stmt.temps body)
-  | .call target callee args => argsTemps args 0
-  | .ret value => Expr.temps value
+  | .call target count callee args => argsTemps args 0
+  | .ret values => argsTemps values 0
 
 /-- Zero the non-parameter locals first, ..., first + count - 1. -/
 def zeroLocals (first : Nat) (count : Nat) : List Instr :=
@@ -295,20 +303,21 @@ structure Code where
   instrs : List Instr
   deriving DecidableEq, Repr
 
-def compileFunc (arities : List Nat) (func : Func) : Option Code :=
+/-- A function returns at least one value, and its results fit in its locals. -/
+def compileFunc (arities : List Arity) (func : Func) : Option Code :=
   let slots : Nat := func.locals + Stmt.temps func.body
-  if decide (func.params ≤ func.locals) && Stmt.within func.body func.locals arities && decide (slots ≤ frameLimit) then
+  if decide (func.params ≤ func.locals) && decide (0 < func.results) && decide (func.results ≤ func.locals) && Stmt.within func.body func.locals arities func.results && decide (slots ≤ frameLimit) then
     let init : List Instr := Instr.imm 0 :: zeroLocals func.params (func.locals - func.params)
     some ({ slots := slots, instrs := init ++ compileStmt func.locals (codeSize init) func.body } : Code)
   else
     none
 
-def arities (funcs : List Func) : List Nat :=
+def arities (funcs : List Func) : List Arity :=
   match funcs with
   | [] => []
-  | func :: rest => func.params :: arities rest
+  | func :: rest => ({ params := func.params, results := func.results } : Arity) :: arities rest
 
-def compileFuncs (arities : List Nat) (funcs : List Func) : Option (List Code) :=
+def compileFuncs (arities : List Arity) (funcs : List Func) : Option (List Code) :=
   match funcs with
   | [] => some []
   | func :: rest =>
@@ -394,6 +403,13 @@ structure Place where
 def argBase (slots : Nat) : Nat :=
   frameSize slots / 8 + 2
 
+/-- slot, slot + 1, ..., count of them. -/
+def slotRange (slot : Nat) (count : Nat) : List Nat :=
+  if count = 0 then
+    []
+  else
+    slot :: slotRange (slot + 1) (count - 1)
+
 /-- Copy argument slots args to virtual slots first + k, first + k + 1, ... -/
 def copyBytes (first : Nat) (args : List Nat) (k : Nat) : List UInt8 :=
   match args with
@@ -411,8 +427,8 @@ def Instr.encode (self : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   | .cmp operation slot => slotCompare operation slot
   | .jmp target => 233 :: le32 (relative (pc + 5) target)
   | .jz target => 133 :: 192 :: 15 :: [132] ++ le32 (relative (pc + 8) target)
-  | .call callee args => copyBytes (argBase place.slots) args 0 ++ 232 :: le32 (relative (place.body + pc + 12 * args.length + 5) (place.entries.getD callee 0))
-  | .ret => epilogue
+  | .call callee args target count => copyBytes (argBase place.slots) args 0 ++ 232 :: le32 (relative (place.body + pc + 12 * args.length + 5) (place.entries.getD callee 0)) ++ copyBytes target (slotRange (argBase place.slots) count) 0
+  | .ret sources => copyBytes 0 sources 0 ++ epilogue
 
 def encodeFrom (place : Place) (pc : Nat) (code : List Instr) : List UInt8 :=
   match code with
@@ -974,7 +990,7 @@ structure Sig where
   deriving DecidableEq, Repr
 
 def lowerCallSig (scope : List Binding) (sig : Sig) (args : List SrcExpr) (ty : SrcType) : Option (List Expr) :=
-  if SrcType.same sig.ret ty && SrcType.isScalar ty then
+  if SrcType.same sig.ret ty then
     lowerArgs scope args sig.params
   else
     none
@@ -999,13 +1015,13 @@ def lowerLet (slot : Nat) (values : Option (List Expr)) (body : Option Stmt) : O
     | none => none
     | some b => some (assignFrom slot vs b)
 
-def lowerLetCall (slot : Nat) (callee : Nat) (args : Option (List Expr)) (body : Option Stmt) : Option Stmt :=
+def lowerLetCall (slot : Nat) (count : Nat) (callee : Nat) (args : Option (List Expr)) (body : Option Stmt) : Option Stmt :=
   match args with
   | none => none
   | some a =>
     match body with
     | none => none
-    | some b => some (Stmt.seq (Stmt.call slot callee a) b)
+    | some b => some (Stmt.seq (Stmt.call slot count callee a) b)
 
 def lowerSetValues (slot : Nat) (values : Option (List Expr)) : Option Stmt :=
   match values with
@@ -1039,15 +1055,15 @@ def lowerSetField (binding : Option Binding) (field : Nat) (scope : List Binding
   | none => none
   | some b => lowerSetFieldOf b field scope value
 
-def lowerSetCallArgs (slot : Nat) (callee : Nat) (args : Option (List Expr)) : Option Stmt :=
+def lowerSetCallArgs (slot : Nat) (count : Nat) (callee : Nat) (args : Option (List Expr)) : Option Stmt :=
   match args with
   | none => none
-  | some a => some (Stmt.call slot callee a)
+  | some a => some (Stmt.call slot count callee a)
 
 def lowerSetCall (sigs : List Sig) (scope : List Binding) (binding : Option Binding) (callee : Nat) (args : List SrcExpr) : Option Stmt :=
   match binding with
   | none => none
-  | some b => lowerSetCallArgs b.slot callee (lowerCall sigs scope callee args b.ty)
+  | some b => lowerSetCallArgs b.slot (SrcType.size b.ty) callee (lowerCall sigs scope callee args b.ty)
 
 def lowerThen (first : Option Stmt) (second : Option Stmt) : Option Stmt :=
   match first with
@@ -1076,17 +1092,17 @@ def lowerWhile (condition : Option Expr) (body : Option Stmt) : Option Stmt :=
     | none => none
     | some b => some (Stmt.loop c b)
 
-def lowerReturn (value : Option Expr) : Option Stmt :=
-  match value with
+def lowerReturn (values : Option (List Expr)) : Option Stmt :=
+  match values with
   | none => none
-  | some v => some (Stmt.ret v)
+  | some vs => some (Stmt.ret vs)
 
 def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (ret : SrcType) (scope : List Binding) (next : Nat) : Option Stmt :=
   match self with
   | .nop => some Stmt.skip
   | .let id ty value body => lowerLet next (lowerValue scope value ty) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
   | .letStruct id ty fields body => lowerLet next (lowerLiteral scope ty fields) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
-  | .letCall id ty callee args body => lowerLetCall next callee (lowerCall sigs scope callee args ty) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
+  | .letCall id ty callee args body => lowerLetCall next (SrcType.size ty) callee (lowerCall sigs scope callee args ty) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
   | .letEnum id ty variant payload body => lowerLet next (lowerEnumValue scope ty variant payload) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
   | .letMatch id ty scrutinee enumId arms body => lowerThen (lowerMatch scope (lookup scope scrutinee) enumId arms ty next) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
   | .set id value => lowerSet (lookup scope id) scope value
@@ -1095,7 +1111,7 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (ret : SrcType) (scope : Li
   | .then first second => lowerThen (SrcStmt.lower first sigs ret scope next) (SrcStmt.lower second sigs ret scope next)
   | .if condition thenBranch elseBranch => lowerIf (lowerAs scope condition SrcType.bool) (SrcStmt.lower thenBranch sigs ret scope next) (SrcStmt.lower elseBranch sigs ret scope next)
   | .while condition body => lowerWhile (lowerAs scope condition SrcType.bool) (SrcStmt.lower body sigs ret scope next)
-  | .return value => lowerReturn (lowerAs scope value ret)
+  | .return value => lowerReturn (lowerValue scope value ret)
 
 /-- Slots the statement's lets need beyond the ones in scope. -/
 def SrcStmt.depth (self : SrcStmt) : Nat :=
@@ -1140,16 +1156,16 @@ def sigs (funcs : List SrcFunc) : List Sig :=
   | [] => []
   | func :: rest => ({ params := paramTypes func.params, ret := func.ret } : Sig) :: sigs rest
 
-def lowerBody (count : Nat) (depth : Nat) (body : Option Stmt) : Option Func :=
+def lowerBody (count : Nat) (results : Nat) (depth : Nat) (body : Option Stmt) : Option Func :=
   match body with
   | none => none
-  | some b => some ({ params := count, locals := count + depth, body := b } : Func)
+  | some b => some ({ params := count, results := results, locals := max (count + depth) results, body := b } : Func)
 
-/-- Functions return scalars, and struct parameters have fields. -/
+/-- Results and struct parameters have slots; a function returns its result type's slots, so it has at least that many locals. -/
 def lowerFunc (sigs : List Sig) (func : SrcFunc) : Option Func :=
   let count : Nat := paramsSize func.params
-  if SrcType.isScalar func.ret && paramsValid func.params then
-    lowerBody count (SrcStmt.depth func.body) (SrcStmt.lower func.body sigs func.ret (paramScope func.params 0 []) count)
+  if decide (0 < SrcType.size func.ret) && paramsValid func.params then
+    lowerBody count (SrcType.size func.ret) (SrcStmt.depth func.body) (SrcStmt.lower func.body sigs func.ret (paramScope func.params 0 []) count)
   else
     none
 

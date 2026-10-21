@@ -32,7 +32,7 @@ def gen_expr(rng, depth, locals_):
     return (kind, op, gen_expr(rng, depth - 1, locals_), gen_expr(rng, depth - 1, locals_))
 
 
-def gen_stmt(rng, depth, locals_, arities):
+def gen_stmt(rng, depth, locals_, arities, results):
     if depth == 0:
         return ('assign', rng.randrange(locals_), gen_expr(rng, 2, locals_)) if locals_ else ('skip',)
     kind = rng.choice(['skip', 'assign', 'seq', 'seq', 'ite', 'loop', 'call', 'ret'])
@@ -41,39 +41,50 @@ def gen_stmt(rng, depth, locals_, arities):
     if kind == 'assign':
         return ('assign', rng.randrange(locals_), gen_expr(rng, 3, locals_))
     if kind == 'seq':
-        return ('seq', gen_stmt(rng, depth - 1, locals_, arities), gen_stmt(rng, depth - 1, locals_, arities))
+        return ('seq', gen_stmt(rng, depth - 1, locals_, arities, results), gen_stmt(rng, depth - 1, locals_, arities, results))
     if kind == 'ite':
-        return ('ite', gen_expr(rng, 2, locals_), gen_stmt(rng, depth - 1, locals_, arities),
-                gen_stmt(rng, depth - 1, locals_, arities))
+        return ('ite', gen_expr(rng, 2, locals_), gen_stmt(rng, depth - 1, locals_, arities, results),
+                gen_stmt(rng, depth - 1, locals_, arities, results))
     if kind == 'loop':
-        return ('loop', gen_expr(rng, 2, locals_), gen_stmt(rng, depth - 1, locals_, arities))
+        return ('loop', gen_expr(rng, 2, locals_), gen_stmt(rng, depth - 1, locals_, arities, results))
     if kind == 'call':
         callee = rng.randrange(len(arities))
-        return ('call', rng.randrange(locals_), callee, [gen_expr(rng, 2, locals_) for _ in range(arities[callee])])
-    return ('ret', gen_expr(rng, 3, locals_))
+        params, count = arities[callee]
+        target = rng.randrange(max(1, locals_ - count + 1))
+        return ('call', target, count, callee, [gen_expr(rng, 2, locals_) for _ in range(params)])
+    return ('ret', [gen_expr(rng, 3, locals_) for _ in range(results)])
 
 
 def break_program(rng, funcs):
-    """Make one function ill-formed: a local out of range, a wrong arity, or params > locals."""
+    """Make one function ill-formed: a local out of range, a wrong arity or
+    result count, a call writing past the locals, params > locals, or no results."""
     f = rng.randrange(len(funcs))
-    params, locals_, body = funcs[f]
-    how = rng.choice(['var', 'arity', 'params'])
+    params, results, locals_, body = funcs[f]
+    how = rng.choice(['var', 'arity', 'count', 'target', 'results', 'params', 'none'])
     if how == 'var':
-        body = ('seq', body, ('ret', ('var', locals_ + rng.randrange(3))))
+        body = ('seq', body, ('ret', [('var', locals_ + rng.randrange(3))] * results))
     elif how == 'arity':
-        body = ('seq', ('call', 0, 0, [('lit', 1)] * (funcs[0][0] + 1)), body) if locals_ else ('ret', ('var', 99))
-    else:
+        body = ('seq', ('call', 0, funcs[0][1], 0, [('lit', 1)] * (funcs[0][0] + 1)), body)
+    elif how == 'count':
+        body = ('seq', ('call', 0, funcs[0][1] + 1, 0, [('lit', 1)] * funcs[0][0]), body)
+    elif how == 'target':
+        body = ('seq', ('call', locals_, funcs[0][1], 0, [('lit', 1)] * funcs[0][0]), body)
+    elif how == 'results':
+        body = ('seq', body, ('ret', [('lit', 3)] * (results + 1)))
+    elif how == 'params':
         params = locals_ + 1
-    funcs[f] = (params, locals_, body)
+    else:
+        results = 0
+    funcs[f] = (params, results, locals_, body)
 
 
 def gen_program(rng, broken):
     count = rng.randint(1, 4)
-    arities = [rng.randint(0, 3) for _ in range(count)]
+    arities = [(rng.randint(0, 3), rng.randint(1, 3)) for _ in range(count)]
     funcs = []
-    for arity in arities:
-        locals_ = arity + rng.randint(0, 3)
-        funcs.append((arity, locals_, gen_stmt(rng, rng.randint(1, 4), locals_, arities)))
+    for params, results in arities:
+        locals_ = max(params, results) + rng.randint(0, 3)
+        funcs.append((params, results, locals_, gen_stmt(rng, rng.randint(1, 4), locals_, arities, results)))
     if broken:
         break_program(rng, funcs)
     return funcs
@@ -93,25 +104,25 @@ def n(k):
 
 
 NATIVE = [
-    (1, 2, seqs([('assign', 1, n(1)),
+    (1, 1, 2, seqs([('assign', 1, n(1)),
                  ('loop', ('compare', 'gt', v(0), n(0)),
                   seqs([('assign', 1, ('binary', 'mul', v(1), v(0))), ('assign', 0, ('binary', 'sub', v(0), n(1)))])),
-                 ('ret', v(1))])),
-    (1, 3, ('ite', ('compare', 'lt', v(0), n(2)), ('ret', v(0)),
-            seqs([('call', 1, 1, [('binary', 'sub', v(0), n(1))]), ('call', 2, 1, [('binary', 'sub', v(0), n(2))]),
-                  ('ret', ('binary', 'add', v(1), v(2)))]))),
-    (3, 5, seqs([
+                 ('ret', [v(1)])])),
+    (1, 1, 3, ('ite', ('compare', 'lt', v(0), n(2)), ('ret', [v(0)]),
+            seqs([('call', 1, 1, 1, [('binary', 'sub', v(0), n(1))]), ('call', 2, 1, 1, [('binary', 'sub', v(0), n(2))]),
+                  ('ret', [('binary', 'add', v(1), v(2))])]))),
+    (3, 1, 5, seqs([
         ('assign', 3, ('binary', 'add', ('compare', 'le', v(0), v(1)), ('binary', 'mul', ('compare', 'ge', v(1), v(2)), n(2)))),
         ('assign', 3, ('binary', 'add', v(3), ('binary', 'mul', ('compare', 'eq', v(0), v(2)), n(4)))),
         ('assign', 3, ('binary', 'add', v(3), ('binary', 'mul', ('compare', 'ne', v(0), v(1)), n(8)))),
-        ('call', 4, 0, [('binary', 'and', v(2), n(7))]),
+        ('call', 4, 1, 0, [('binary', 'and', v(2), n(7))]),
         ('ite', ('compare', 'lt', v(3), n(100)),
-         ('ret', ('binary', 'xor', ('binary', 'or', v(4), ('binary', 'mul', v(3), n(65536))), ('neg', v(0)))),
-         ('ret', n(-1)))])),
-    (2, 2, seqs([('loop', ('compare', 'ne', v(0), v(1)),
+         ('ret', [('binary', 'xor', ('binary', 'or', v(4), ('binary', 'mul', v(3), n(65536))), ('neg', v(0)))]),
+         ('ret', [n(-1)]))])),
+    (2, 1, 2, seqs([('loop', ('compare', 'ne', v(0), v(1)),
                   ('ite', ('compare', 'gt', v(0), v(1)), ('assign', 0, ('binary', 'sub', v(0), v(1))),
                    ('assign', 1, ('binary', 'sub', v(1), v(0))))),
-                 ('ret', v(0))])),
+                 ('ret', [v(0)])])),
 ]
 
 
@@ -141,8 +152,8 @@ def lean_stmt(s):
     if k == 'loop':
         return f'(.loop {lean_expr(s[1])} {lean_stmt(s[2])})'
     if k == 'call':
-        return f'(.call {s[1]} {s[2]} [{", ".join(lean_expr(a) for a in s[3])}])'
-    return f'(.ret {lean_expr(s[1])})'
+        return f'(.call {s[1]} {s[2]} {s[3]} [{", ".join(lean_expr(a) for a in s[4])}])'
+    return f'(.ret [{", ".join(lean_expr(a) for a in s[1])}])'
 
 
 def lean_file(programs):
@@ -152,7 +163,8 @@ def lean_file(programs):
            '  | none => "none"',
            '  | some b => String.join (b.image.map fun byte => String.ofList ((Nat.toDigits 16 (byte.toNat + 256)).drop 1))', '']
     for index, funcs in enumerate(programs):
-        fs = ', '.join(f'{{ params := {p}, locals := {l}, body := {lean_stmt(b)} }}' for p, l, b in funcs)
+        fs = ', '.join(f'{{ params := {p}, results := {r}, locals := {l}, body := {lean_stmt(b)} }}'
+                       for p, r, l, b in funcs)
         out.append(f'def p{index} : Program := {{ funcs := [{fs}] }}')
     out.append('')
     out.append('#eval IO.println (String.intercalate "\\n" [' + ', '.join(f'render p{i}' for i in range(len(programs))) + '])')
@@ -189,11 +201,15 @@ def lani_stmt(s):
     if k == 'loop':
         return f'loop_while({lani_expr(s[1])}, {lani_stmt(s[2])})'
     if k == 'call':
-        args = 'no_args()'
-        for a in reversed(s[3]):
-            args = f'{M}cons({lani_expr(a)}, {args})'
-        return f'{M}Stmt::Call({s[1]}, {s[2]}, {args})'
-    return f'{M}Stmt::Ret({lani_expr(s[1])})'
+        return f'{M}Stmt::Call({s[1]}, {s[2]}, {s[3]}, {lani_exprs(s[4])})'
+    return f'{M}Stmt::Ret({lani_exprs(s[1])})'
+
+
+def lani_exprs(es):
+    out = 'no_args()'
+    for e in reversed(es):
+        out = f'{M}cons({lani_expr(e)}, {out})'
+    return out
 
 
 LANI_HEAD = f'''module app::main;
@@ -210,7 +226,7 @@ fn seq(a: {M}Stmt, b: {M}Stmt) -> {M}Stmt {{ return {M}Seq({M}boxed(a), {M}boxed
 fn ite(c: {M}Expr, a: {M}Stmt, b: {M}Stmt) -> {M}Stmt {{ return {M}Ite(c, {M}boxed(a), {M}boxed(b)); }}
 fn loop_while(c: {M}Expr, b: {M}Stmt) -> {M}Stmt {{ return {M}Loop(c, {M}boxed(b)); }}
 fn no_args() -> {M}List<{M}Expr> {{ return {M}empty(); }}
-fn func(params: usize, locals: usize, body: {M}Stmt) -> {M}Func {{ return {M}Func {{ params: params, locals: locals, body: body }}; }}
+fn func(params: usize, results: usize, locals: usize, body: {M}Stmt) -> {M}Func {{ return {M}Func {{ params: params, results: results, locals: locals, body: body }}; }}
 fn no_funcs() -> {M}List<{M}Func> {{ return {M}empty(); }}
 
 fn put(value: i32) -> i32 {{
@@ -262,8 +278,8 @@ def lani_file(programs):
     out = [LANI_HEAD]
     for index, funcs in enumerate(programs):
         fs = 'no_funcs()'
-        for p, l, b in reversed(funcs):
-            fs = f'{M}cons(func({p}, {l}, {lani_stmt(b)}), {fs})'
+        for p, r, l, b in reversed(funcs):
+            fs = f'{M}cons(func({p}, {r}, {l}, {lani_stmt(b)}), {fs})'
         out.append(f'fn p{index}() -> {M}Program {{ return {M}Program {{ funcs: {fs} }}; }}')
     out.append('fn main() -> i32 {')
     for index in range(len(programs)):

@@ -40,12 +40,17 @@ def Expr.evalAll (env : Env) : List Expr → List (BitVec 32)
 def Env.set (env : Env) (index : Nat) (value : BitVec 32) : Env :=
   fun other => if other = index then value else env other
 
+/-- `values` stored at `slot`, `slot + 1`, ... -/
+def Env.setMany (env : Env) : Nat → List (BitVec 32) → Env
+  | _, [] => env
+  | slot, value :: rest => Env.setMany (env.set slot value) (slot + 1) rest
+
 /-- Parameters hold the arguments; every other local starts at zero. -/
 def Func.entry (args : List (BitVec 32)) : Env := fun index => args.getD index 0
 
 inductive Outcome where
   | normal (env : Env)
-  | returned (value : BitVec 32)
+  | returned (values : List (BitVec 32))
 
 /-- `Exec prog depth env stmt outcome`: running `stmt` from `env` ends in
 `outcome`, with calls nested fewer than `depth` deep. -/
@@ -56,7 +61,7 @@ inductive Exec (prog : Program) : Nat → Env → Stmt → Outcome → Prop wher
   | seq {depth : Nat} {env middle : Env} {first second : Stmt} {outcome : Outcome} :
       Exec prog depth env first (.normal middle) → Exec prog depth middle second outcome →
       Exec prog depth env (.seq first second) outcome
-  | seqReturned {depth : Nat} {env : Env} {first second : Stmt} {value : BitVec 32} :
+  | seqReturned {depth : Nat} {env : Env} {first second : Stmt} {value : List (BitVec 32)} :
       Exec prog depth env first (.returned value) →
       Exec prog depth env (.seq first second) (.returned value)
   | ifTrue {depth : Nat} {env : Env} {condition : Expr} {thenBranch elseBranch : Stmt} {outcome : Outcome} :
@@ -71,19 +76,21 @@ inductive Exec (prog : Program) : Nat → Env → Stmt → Outcome → Prop wher
       condition.eval env ≠ 0 → Exec prog depth env body (.normal middle) →
       Exec prog depth middle (.loop condition body) outcome →
       Exec prog depth env (.loop condition body) outcome
-  | loopReturned {depth : Nat} {env : Env} {condition : Expr} {body : Stmt} {value : BitVec 32} :
+  | loopReturned {depth : Nat} {env : Env} {condition : Expr} {body : Stmt} {value : List (BitVec 32)} :
       condition.eval env ≠ 0 → Exec prog depth env body (.returned value) →
       Exec prog depth env (.loop condition body) (.returned value)
-  | call {depth inner target callee : Nat} {env : Env} {args : List Expr} {func : Func} {value : BitVec 32} :
-      prog.funcs[callee]? = some func → args.length = func.params → inner < depth →
+  | call {depth inner target count callee : Nat} {env : Env} {args : List Expr} {func : Func}
+      {value : List (BitVec 32)} :
+      prog.funcs[callee]? = some func → args.length = func.params → value.length = count → inner < depth →
       Exec prog inner (Func.entry (Expr.evalAll env args)) func.body (.returned value) →
-      Exec prog depth env (.call target callee args) (.normal (env.set target value))
-  | ret {depth : Nat} {env : Env} {value : Expr} : Exec prog depth env (.ret value) (.returned (value.eval env))
+      Exec prog depth env (.call target count callee args) (.normal (env.setMany target value))
+  | ret {depth : Nat} {env : Env} {values : List Expr} :
+      Exec prog depth env (.ret values) (.returned (Expr.evalAll env values))
 
 /-- Calling function `callee` with `args` returns `value`, nesting calls fewer
 than `depth` deep. -/
 def Program.Returns (prog : Program) (depth callee : Nat) (args : List (BitVec 32))
-    (value : BitVec 32) : Prop :=
+    (value : List (BitVec 32)) : Prop :=
   ∃ func, prog.funcs[callee]? = some func ∧ args.length = func.params ∧
     Exec prog depth (Func.entry args) func.body (.returned value)
 

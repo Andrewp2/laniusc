@@ -3,7 +3,7 @@ import Lanius.Mini.LowerStmt
 
 /-! The verified compiler's top-level theorem for the Core subset: if Core
 evaluates a call of a source function to a value, the machine code that
-`compileSource` produces returns bits representing that value, provided the
+`compileSource` produces returns slots representing that value, provided the
 stack has room for the call's nesting depth. -/
 
 namespace Lanius.Mini
@@ -53,7 +53,7 @@ theorem compileSource_some {sp : SrcProgram} {binary : Binary} (compiled : compi
 /-- Core runs `f(args)` from the empty state to `v`, and `bits` lay the
 arguments out by parameter type (a struct one slot per field). Then the
 compiled `f`, entered by a near call with `bits` in its parameter slots,
-returns bits representing `v`. -/
+returns `results` representing `v` in the same slots, laid out the same way. -/
 theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
     (compiled : compileSource sp = some binary) {f : Nat} {func : SrcFunc}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 32)}
@@ -61,7 +61,7 @@ theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
     (bitsLen : bits.length = paramsSize func.params) {fuel : Nat} {v : Value}
     {final : Semantics.State}
     (runs : Semantics.evalExpr fuel sp.toCore {} (.call f (args.map Core.Expr.value)) = .done v final) :
-    ∃ depth b, func.ret.Holds v b ∧
+    ∃ depth results, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
       ∀ (s : State) (imageBase : BitVec 64) (window : Nat),
         binary.stackNeed depth ≤ window → window ≤ 2 ^ 62 →
         CodeAt s.memory imageBase binary.image →
@@ -70,7 +70,7 @@ theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
         s.rip = imageBase + BitVec.ofNat 64 (binary.entries.getD f 0) →
         (∀ k (bound : k < bits.length),
           read32 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = bits[k]) →
-        ∃ n s', Steps n s s' ∧ Returned window s s' b := by
+        ∃ n s', Steps n s s' ∧ Returned window s s' results := by
   obtain ⟨funcs, lowered, compiledProgram⟩ := compileSource_some compiled
   cases fuel with
   | zero => simp [Semantics.evalExpr] at runs
@@ -79,10 +79,10 @@ theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
     rw [found] at found'
     cases found'
     obtain ⟨rfl, rfl⟩ := evalExprs_values argsRun
-    obtain ⟨_, _, depth, b, returns, holds⟩ :=
+    obtain ⟨_, _, depth, results, returns, holds, len⟩ :=
       body_sound (mp := { funcs := funcs }) lowered (stmt_sound lowered k) found
         ⟨fun _ mem => by simp at mem, rfl⟩ typed bitsLen bodyRun
-    exact ⟨depth, b, holds, fun s imageBase window enough bounded loaded apart entry params =>
+    exact ⟨depth, results, holds, len, fun s imageBase window enough bounded loaded apart entry params =>
       compileProgram_correct compiledProgram returns s imageBase window enough bounded loaded apart
         entry params⟩
 

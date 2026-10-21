@@ -14,7 +14,7 @@ namespace Lanius.Mini
 theorem Instr.size_pos (i : Instr) : 0 < i.size := by
   cases i with
   | op operation _ => cases operation <;> simp [Instr.size, BinOp.size]
-  | _ => simp [Instr.size]
+  | _ => simp [Instr.size] <;> omega
 
 theorem codeSize_append (first second : List Instr) :
     codeSize (first ++ second) = codeSize first + codeSize second := by
@@ -71,7 +71,7 @@ def readSlots (slots : Nat → BitVec 32) : List Nat → List (BitVec 32)
 /-- Instructions that fall through to the next one. -/
 def Instr.straight : Instr → Bool
   | .imm _ | .load _ | .store _ | .neg | .op _ _ | .cmp _ _ => true
-  | .jmp _ | .jz _ | .call _ _ | .ret => false
+  | .jmp _ | .jz _ | .call _ _ _ _ | .ret _ => false
 
 /-- Effect on the accumulator and slots of a straight-line instruction. -/
 def Instr.update : Instr → Machine → Machine
@@ -81,7 +81,7 @@ def Instr.update : Instr → Machine → Machine
   | .neg, m => { m with acc := -m.acc }
   | .op operation slot, m => { m with acc := operation.apply (m.slots slot) m.acc }
   | .cmp operation slot, m => { m with acc := if operation.holds (m.slots slot) m.acc then 1 else 0 }
-  | .jmp _, m | .jz _, m | .call _ _, m | .ret, m => m
+  | .jmp _, m | .jz _, m | .call _ _ _ _, m | .ret _, m => m
 
 def Instr.step (i : Instr) (m : Machine) : Machine := { i.update m with pc := m.pc + i.size }
 
@@ -90,8 +90,12 @@ def Instr.exec : List Instr → Machine → Machine
   | [], m => m
   | i :: rest, m => Instr.exec rest (i.step m)
 
-/-- What a call may return: `calls callee args value`. -/
-abbrev Calls := Nat → List (BitVec 32) → BitVec 32 → Prop
+/-- What a call may return: `calls callee args values`. -/
+abbrev Calls := Nat → List (BitVec 32) → List (BitVec 32) → Prop
+
+/-- `values` stored at `target`, `target + 1`, ... -/
+def writeSlots (slots : Nat → BitVec 32) (target : Nat) (values : List (BitVec 32)) : Nat → BitVec 32 :=
+  fun slot => if target ≤ slot ∧ slot < target + values.length then values.getD (slot - target) 0 else slots slot
 
 inductive Step (calls : Calls) (code : List Instr) : Machine → Machine → Prop where
   | straight : fetch code m.pc = some i → i.straight = true → Step calls code m (i.step m)
@@ -100,8 +104,9 @@ inductive Step (calls : Calls) (code : List Instr) : Machine → Machine → Pro
       Step calls code m { m with pc := target }
   | jzNot : fetch code m.pc = some (.jz target) → m.acc ≠ 0 →
       Step calls code m { m with pc := m.pc + (Instr.jz target).size }
-  | call : fetch code m.pc = some (.call callee args) → calls callee (readSlots m.slots args) value →
-      Step calls code m { m with pc := m.pc + (Instr.call callee args).size, acc := value }
+  | call : fetch code m.pc = some (.call callee args target count) →
+      calls callee (readSlots m.slots args) values → values.length = count →
+      Step calls code m { m with pc := m.pc + (Instr.call callee args target count).size, acc := values.getLastD m.acc, slots := writeSlots m.slots target values }
 
 inductive Star (calls : Calls) (code : List Instr) : Machine → Machine → Prop where
   | refl (m : Machine) : Star calls code m m
@@ -122,7 +127,7 @@ theorem Step.mono (sub : ∀ callee args value, calls callee args value → call
   | jmp fetched => exact .jmp fetched
   | jzTaken fetched zero => exact .jzTaken fetched zero
   | jzNot fetched nonzero => exact .jzNot fetched nonzero
-  | call fetched returns => exact .call fetched (sub _ _ _ returns)
+  | call fetched returns count => exact .call fetched (sub _ _ _ returns) count
 
 theorem Star.mono (sub : ∀ callee args value, calls callee args value → calls' callee args value)
     (run : Star calls code m last) : Star calls' code m last := by

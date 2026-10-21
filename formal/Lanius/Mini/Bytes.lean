@@ -58,9 +58,10 @@ def Instr.bytes (i : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   | .cmp operation slot => cmpBytes operation slot
   | .jmp target => jumpBytes (relative (pc + 5) target)
   | .jz target => testBytes .w32 0 0 ++ branchBytes 4 (relative (pc + 8) target)
-  | .call callee args => copyBytes (argBase place.slots) args 0 ++
-      callBytes (relative (place.body + pc + 12 * args.length + 5) (place.entries.getD callee 0))
-  | .ret => epilogueBytes
+  | .call callee args target count => copyBytes (argBase place.slots) args 0 ++
+      callBytes (relative (place.body + pc + 12 * args.length + 5) (place.entries.getD callee 0)) ++
+      copyBytes target (slotRange (argBase place.slots) count) 0
+  | .ret sources => copyBytes 0 sources 0 ++ epilogueBytes
 
 /-! The extracted encoders are the x86 ones. -/
 
@@ -124,8 +125,8 @@ theorem Instr.encode_eq (i : Instr) (place : Place) (pc : Nat) : i.encode place 
   | cmp operation slot => exact slotCompare_eq operation slot
   | jmp target => rw [Instr.encode, Instr.bytes, le32_eq]; rfl
   | jz target => rw [Instr.encode, Instr.bytes, le32_eq]; rfl
-  | call callee args => rw [Instr.encode, Instr.bytes, le32_eq]; rfl
-  | ret => rfl
+  | call callee args target count => rw [Instr.encode, Instr.bytes, le32_eq]; rfl
+  | ret sources => rfl
 
 /-- A transfer by `relative source target` from `base + source` lands on `base + target`. -/
 theorem relative_eq (base : BitVec 64) (source target : Nat) (sourceSmall : source < 2 ^ 31)
@@ -165,6 +166,16 @@ theorem copyBytes_length (first : Nat) (args : List Nat) (k : Nat) :
       frameStoreBytes_length, ih, List.length_cons]
     omega
 
+theorem slotRange_length (slot count : Nat) : (slotRange slot count).length = count := by
+  induction count generalizing slot with
+  | zero => simp [slotRange]
+  | succ count ih => rw [slotRange]; simp [ih]
+
+theorem slotRange_eq (slot count : Nat) : slotRange slot count = List.range' slot count := by
+  induction count generalizing slot with
+  | zero => simp [slotRange]
+  | succ count ih => rw [slotRange]; simp [ih, List.range'_succ]
+
 theorem Instr.bytes_length (place : Place) (pc : Nat) (i : Instr) : (i.bytes place pc).length = i.size := by
   cases i with
   | imm value =>
@@ -187,10 +198,12 @@ theorem Instr.bytes_length (place : Place) (pc : Nat) (i : Instr) : (i.bytes pla
     simp only [Instr.bytes, branchBytes, displacementBytes, List.length_append, List.length_cons,
       List.length_nil, Instr.size]
     decide
-  | call callee args =>
+  | call callee args target count =>
     simp only [Instr.bytes, callBytes, displacementBytes, List.length_append, copyBytes_length,
-      List.length_cons, List.length_nil, Instr.size]
-  | ret => simp only [Instr.bytes, Instr.size]; decide
+      slotRange_length, List.length_cons, List.length_nil, Instr.size]
+  | ret sources =>
+    have : epilogueBytes.length = 5 := by decide
+    simp only [Instr.bytes, List.length_append, copyBytes_length, Instr.size, this]
 
 theorem Instr.encode_length (place : Place) (pc : Nat) (i : Instr) : (i.encode place pc).length = i.size := by
   rw [Instr.encode_eq, Instr.bytes_length]
