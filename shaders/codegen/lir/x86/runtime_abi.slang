@@ -162,13 +162,14 @@ uint x86_runtime_byte(uint pos)
     if (pos < X86_RUNTIME_ALLOC_OFFSET)
         return arg_read_bytes[pos - X86_RUNTIME_ARG_READ_OFFSET];
 
-    // mmap(..., MAP_PRIVATE | MAP_ANONYMOUS | MAP_32BIT, -1, 0) returns
-    // page-aligned storage for every supported alignment. MAP_32BIT is not an
-    // ABI requirement now that source pointers are target-sized. A negative
-    // Linux syscall result is an error; return null so callers can test it.
+    // mmap(..., MAP_PRIVATE | MAP_ANONYMOUS, -1, 0) returns page-aligned
+    // storage for every supported alignment. Source pointers are target-sized,
+    // so storage may come from anywhere in the address space (MAP_32BIT capped
+    // a process at 1 GiB). A negative Linux syscall result is an error; return
+    // null so callers can test it.
     static const uint alloc_bytes[39] = {
         0x89u, 0xfeu, 0x31u, 0xffu, 0xbau, 3u, 0u, 0u, 0u,
-        0x41u, 0xbau, 0x62u, 0u, 0u, 0u, 0x41u, 0xb8u, 0xffu, 0xffu,
+        0x41u, 0xbau, 0x22u, 0u, 0u, 0u, 0x41u, 0xb8u, 0xffu, 0xffu,
         0xffu, 0xffu, 0x45u, 0x31u, 0xc9u, 0xb8u, 9u, 0u, 0u, 0u,
         0x0fu, 0x05u, 0x48u, 0x85u, 0xc0u, 0x79u, 0x02u,
         0x31u, 0xc0u, 0xc3u
