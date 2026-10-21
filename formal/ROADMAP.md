@@ -20,7 +20,7 @@ it still trusts, proof lines against code lines, and check time.
 | 11 | Self-hosting: laniusc-built and self-built verified compiler agree byte for byte | |
 | 12 | The verified compiler as an oracle for laniusc on the stdlib and fuzzed programs | |
 | 13 | Optimizations as unverified passes checked by proved validators | |
-| 14 | Trusted base: list every unproved assumption; test the x86 model against the CPU | |
+| 14 | Trusted base: list every unproved assumption; test the x86 model against the CPU | first pass done: `TRUSTED_BASE.md` lists the Lean kernel and axioms, the statement's definitions, Core as the meaning of Lanius, the front end, extraction and the prelude, the x86 model, the existential theorem against a nondeterministic `Step`, and the caller/loader premises. `x86_model_test.py` runs all 57 emitted instruction forms natively and through `decode`/`execute`: 56,006 cases, no disagreements. A probe outside the emitted forms found a decoder defect (`88 /r` without REX takes reg 4-7 as SPL..DIL, the CPU stores AH..BH). Open: fix that decoder case, prove `Step` deterministic on compiled bytes up to free flags, a verified loader |
 
 Order of work: 3, 1, 2, 4, then 5 to 14. Steps 5 to 7 are the long stretch;
 12 is where the proofs start making laniusc itself more trustworthy.
