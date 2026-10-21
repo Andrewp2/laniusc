@@ -8,6 +8,10 @@ package «lanius-formal» where
 @[default_target]
 lean_lib Lanius
 
+/-- The mini compiler pilot (see MINI_COMPILER.md). -/
+lean_lib LaniusMini where
+  globs := #[.submodules `Lanius.Mini]
+
 lean_exe checkCompact where
   root := `Lanius.Extraction.CheckCompact
 
