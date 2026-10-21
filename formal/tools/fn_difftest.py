@@ -204,7 +204,6 @@ class Types:
 
     def lani_render(self, t, term):
         """A Lanius statement-free expression (an i32 call) printing term : t."""
-        t = t.strip_box()
         if t.name == 'Box':
             return self.lani_render(t.args[0], f'unbox({term})')
         self.need_lani.add(t)

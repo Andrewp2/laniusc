@@ -458,4 +458,384 @@ def compileProgram (prog : Program) : Option Binary :=
     else
       none
 
+inductive SrcType where
+  | i32 : SrcType
+  | bool : SrcType
+  deriving DecidableEq, Repr
+
+inductive SrcOp where
+  | plus : SrcOp
+  | minus : SrcOp
+  | times : SrcOp
+  | bitAnd : SrcOp
+  | bitOr : SrcOp
+  | bitXor : SrcOp
+  | less : SrcOp
+  | lessEq : SrcOp
+  | greater : SrcOp
+  | greaterEq : SrcOp
+  | equal : SrcOp
+  | notEqual : SrcOp
+  | logicalAnd : SrcOp
+  | logicalOr : SrcOp
+  deriving DecidableEq, Repr
+
+inductive SrcExpr where
+  | int : (BitVec 32) → SrcExpr
+  | boolean : Bool → SrcExpr
+  | local : Nat → SrcExpr
+  | negate : SrcExpr → SrcExpr
+  | not : SrcExpr → SrcExpr
+  | apply : SrcOp → SrcExpr → SrcExpr → SrcExpr
+  deriving DecidableEq, Repr
+
+inductive SrcStmt where
+  | nop : SrcStmt
+  /-- let id: ty = value; then body, with id in scope -/
+  | let : Nat → SrcType → SrcExpr → SrcStmt → SrcStmt
+  /-- let id: ty = callee(args); then body -/
+  | letCall : Nat → SrcType → Nat → (List SrcExpr) → SrcStmt → SrcStmt
+  | set : Nat → SrcExpr → SrcStmt
+  /-- id = callee(args) -/
+  | setCall : Nat → Nat → (List SrcExpr) → SrcStmt
+  | then : SrcStmt → SrcStmt → SrcStmt
+  | if : SrcExpr → SrcStmt → SrcStmt → SrcStmt
+  | while : SrcExpr → SrcStmt → SrcStmt
+  | return : SrcExpr → SrcStmt
+  deriving DecidableEq, Repr
+
+structure SrcParam where
+  id : Nat
+  ty : SrcType
+  deriving DecidableEq, Repr
+
+structure SrcFunc where
+  params : List SrcParam
+  ret : SrcType
+  body : SrcStmt
+  deriving DecidableEq, Repr
+
+structure SrcProgram where
+  funcs : List SrcFunc
+  deriving DecidableEq, Repr
+
+structure Binding where
+  id : Nat
+  slot : Nat
+  ty : SrcType
+  deriving DecidableEq, Repr
+
+/-- The innermost binding of id. -/
+def lookup (scope : List Binding) (id : Nat) : Option Binding :=
+  match scope with
+  | [] => none
+  | binding :: rest =>
+    if binding.id = id then
+      some binding
+    else
+      lookup rest id
+
+def boolBits (value : Bool) : BitVec 32 :=
+  if value then
+    1
+  else
+    0
+
+def SrcType.isI32 (self : SrcType) : Bool :=
+  match self with
+  | .i32 => true
+  | .bool => false
+
+def SrcType.isBool (self : SrcType) : Bool :=
+  match self with
+  | .i32 => false
+  | .bool => true
+
+def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
+  match self with
+  | .i32 => SrcType.isI32 other
+  | .bool => SrcType.isBool other
+
+/-- A lowered expression and its source type. -/
+structure Typed where
+  expr : Expr
+  ty : SrcType
+  deriving DecidableEq, Repr
+
+def arith (operation : BinOp) (left : Typed) (right : Typed) : Option Typed :=
+  if SrcType.isI32 left.ty && SrcType.isI32 right.ty then
+    some ({ expr := Expr.binary operation left.expr right.expr, ty := SrcType.i32 } : Typed)
+  else
+    none
+
+def order (operation : CmpOp) (left : Typed) (right : Typed) : Option Typed :=
+  if SrcType.isI32 left.ty && SrcType.isI32 right.ty then
+    some ({ expr := Expr.compare operation left.expr right.expr, ty := SrcType.bool } : Typed)
+  else
+    none
+
+def equality (operation : CmpOp) (left : Typed) (right : Typed) : Option Typed :=
+  if SrcType.same left.ty right.ty then
+    some ({ expr := Expr.compare operation left.expr right.expr, ty := SrcType.bool } : Typed)
+  else
+    none
+
+def conjunction (left : Typed) (right : Typed) : Option Typed :=
+  if SrcType.isBool left.ty && SrcType.isBool right.ty then
+    some ({ expr := Expr.binary BinOp.and left.expr right.expr, ty := SrcType.bool } : Typed)
+  else
+    none
+
+def disjunction (left : Typed) (right : Typed) : Option Typed :=
+  if SrcType.isBool left.ty && SrcType.isBool right.ty then
+    let either : Expr := Expr.binary BinOp.or left.expr right.expr
+    some ({ expr := Expr.compare CmpOp.ne either (Expr.lit 0), ty := SrcType.bool } : Typed)
+  else
+    none
+
+def SrcOp.lower (self : SrcOp) (left : Typed) (right : Typed) : Option Typed :=
+  match self with
+  | .plus => arith BinOp.add left right
+  | .minus => arith BinOp.sub left right
+  | .times => arith BinOp.mul left right
+  | .bitAnd => arith BinOp.and left right
+  | .bitOr => arith BinOp.or left right
+  | .bitXor => arith BinOp.xor left right
+  | .less => order CmpOp.lt left right
+  | .lessEq => order CmpOp.le left right
+  | .greater => order CmpOp.gt left right
+  | .greaterEq => order CmpOp.ge left right
+  | .equal => equality CmpOp.eq left right
+  | .notEqual => equality CmpOp.ne left right
+  | .logicalAnd => conjunction left right
+  | .logicalOr => disjunction left right
+
+def lowerLocal (binding : Option Binding) : Option Typed :=
+  match binding with
+  | none => none
+  | some b => some ({ expr := Expr.var b.slot, ty := b.ty } : Typed)
+
+def lowerNegateTyped (operand : Typed) : Option Typed :=
+  if SrcType.isI32 operand.ty then
+    some ({ expr := Expr.neg operand.expr, ty := SrcType.i32 } : Typed)
+  else
+    none
+
+def lowerNegate (operand : Option Typed) : Option Typed :=
+  match operand with
+  | none => none
+  | some e => lowerNegateTyped e
+
+def lowerNotTyped (operand : Typed) : Option Typed :=
+  if SrcType.isBool operand.ty then
+    some ({ expr := Expr.compare CmpOp.eq operand.expr (Expr.lit 0), ty := SrcType.bool } : Typed)
+  else
+    none
+
+def lowerNot (operand : Option Typed) : Option Typed :=
+  match operand with
+  | none => none
+  | some e => lowerNotTyped e
+
+def lowerApply (op : SrcOp) (left : Option Typed) (right : Option Typed) : Option Typed :=
+  match left with
+  | none => none
+  | some l =>
+    match right with
+    | none => none
+    | some r => SrcOp.lower op l r
+
+def SrcExpr.lower (self : SrcExpr) (scope : List Binding) : Option Typed :=
+  match self with
+  | .int value => some ({ expr := Expr.lit value, ty := SrcType.i32 } : Typed)
+  | .boolean value => some ({ expr := Expr.lit (boolBits value), ty := SrcType.bool } : Typed)
+  | .local id => lowerLocal (lookup scope id)
+  | .negate operand => lowerNegate (SrcExpr.lower operand scope)
+  | .not operand => lowerNot (SrcExpr.lower operand scope)
+  | .apply op left right => lowerApply op (SrcExpr.lower left scope) (SrcExpr.lower right scope)
+
+def expectType (typed : Typed) (ty : SrcType) : Option Expr :=
+  if SrcType.same typed.ty ty then
+    some typed.expr
+  else
+    none
+
+/-- The expression, if it lowers and has type ty. -/
+def lowerAs (scope : List Binding) (e : SrcExpr) (ty : SrcType) : Option Expr :=
+  match SrcExpr.lower e scope with
+  | none => none
+  | some typed => expectType typed ty
+
+def lowerCons (first : Option Expr) (rest : Option (List Expr)) : Option (List Expr) :=
+  match first with
+  | none => none
+  | some e =>
+    match rest with
+    | none => none
+    | some es => some (e :: es)
+
+/-- The arguments, if there is one of each parameter type. -/
+def lowerArgs (scope : List Binding) (args : List SrcExpr) (types : List SrcType) : Option (List Expr) :=
+  match args with
+  | [] =>
+    (match types with
+     | [] => some []
+     | ty :: more => none)
+  | arg :: rest =>
+    match types with
+    | [] => none
+    | ty :: more => lowerCons (lowerAs scope arg ty) (lowerArgs scope rest more)
+
+/-- A function's parameter types and result type. -/
+structure Sig where
+  params : List SrcType
+  ret : SrcType
+  deriving DecidableEq, Repr
+
+def lowerCallSig (scope : List Binding) (sig : Sig) (args : List SrcExpr) (ty : SrcType) : Option (List Expr) :=
+  if SrcType.same sig.ret ty then
+    lowerArgs scope args sig.params
+  else
+    none
+
+/-- The arguments of a call returning ty to callee. -/
+def lowerCall (sigs : List Sig) (scope : List Binding) (callee : Nat) (args : List SrcExpr) (ty : SrcType) : Option (List Expr) :=
+  match sigs[callee]? with
+  | none => none
+  | some sig => lowerCallSig scope sig args ty
+
+def lowerLet (slot : Nat) (value : Option Expr) (body : Option Stmt) : Option Stmt :=
+  match value with
+  | none => none
+  | some v =>
+    match body with
+    | none => none
+    | some b => some (Stmt.seq (Stmt.assign slot v) b)
+
+def lowerLetCall (slot : Nat) (callee : Nat) (args : Option (List Expr)) (body : Option Stmt) : Option Stmt :=
+  match args with
+  | none => none
+  | some a =>
+    match body with
+    | none => none
+    | some b => some (Stmt.seq (Stmt.call slot callee a) b)
+
+def lowerSetValue (slot : Nat) (value : Option Expr) : Option Stmt :=
+  match value with
+  | none => none
+  | some v => some (Stmt.assign slot v)
+
+def lowerSet (binding : Option Binding) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
+  match binding with
+  | none => none
+  | some b => lowerSetValue b.slot (lowerAs scope value b.ty)
+
+def lowerSetCallArgs (slot : Nat) (callee : Nat) (args : Option (List Expr)) : Option Stmt :=
+  match args with
+  | none => none
+  | some a => some (Stmt.call slot callee a)
+
+def lowerSetCall (sigs : List Sig) (scope : List Binding) (binding : Option Binding) (callee : Nat) (args : List SrcExpr) : Option Stmt :=
+  match binding with
+  | none => none
+  | some b => lowerSetCallArgs b.slot callee (lowerCall sigs scope callee args b.ty)
+
+def lowerThen (first : Option Stmt) (second : Option Stmt) : Option Stmt :=
+  match first with
+  | none => none
+  | some a =>
+    match second with
+    | none => none
+    | some b => some (Stmt.seq a b)
+
+def lowerIf (condition : Option Expr) (thenBranch : Option Stmt) (elseBranch : Option Stmt) : Option Stmt :=
+  match condition with
+  | none => none
+  | some c =>
+    match thenBranch with
+    | none => none
+    | some t =>
+      match elseBranch with
+      | none => none
+      | some e => some (Stmt.ite c t e)
+
+def lowerWhile (condition : Option Expr) (body : Option Stmt) : Option Stmt :=
+  match condition with
+  | none => none
+  | some c =>
+    match body with
+    | none => none
+    | some b => some (Stmt.loop c b)
+
+def lowerReturn (value : Option Expr) : Option Stmt :=
+  match value with
+  | none => none
+  | some v => some (Stmt.ret v)
+
+def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (ret : SrcType) (scope : List Binding) (next : Nat) : Option Stmt :=
+  match self with
+  | .nop => some Stmt.skip
+  | .let id ty value body => lowerLet next (lowerAs scope value ty) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + 1))
+  | .letCall id ty callee args body => lowerLetCall next callee (lowerCall sigs scope callee args ty) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + 1))
+  | .set id value => lowerSet (lookup scope id) scope value
+  | .setCall id callee args => lowerSetCall sigs scope (lookup scope id) callee args
+  | .then first second => lowerThen (SrcStmt.lower first sigs ret scope next) (SrcStmt.lower second sigs ret scope next)
+  | .if condition thenBranch elseBranch => lowerIf (lowerAs scope condition SrcType.bool) (SrcStmt.lower thenBranch sigs ret scope next) (SrcStmt.lower elseBranch sigs ret scope next)
+  | .while condition body => lowerWhile (lowerAs scope condition SrcType.bool) (SrcStmt.lower body sigs ret scope next)
+  | .return value => lowerReturn (lowerAs scope value ret)
+
+/-- Slots the statement's lets need beyond the ones in scope. -/
+def SrcStmt.depth (self : SrcStmt) : Nat :=
+  match self with
+  | .nop => 0
+  | .let id ty value body => SrcStmt.depth body + 1
+  | .letCall id ty callee args body => SrcStmt.depth body + 1
+  | .set id value => 0
+  | .setCall id callee args => 0
+  | .then first second => max (SrcStmt.depth first) (SrcStmt.depth second)
+  | .if condition thenBranch elseBranch => max (SrcStmt.depth thenBranch) (SrcStmt.depth elseBranch)
+  | .while condition body => SrcStmt.depth body
+  | .return value => 0
+
+/-- Parameters take slots 0, 1, ... in order; a later parameter with the same id shadows an earlier one, as Core's bindLocals does. -/
+def paramScope (params : List SrcParam) (slot : Nat) (scope : List Binding) : List Binding :=
+  match params with
+  | [] => scope
+  | param :: rest => paramScope rest (slot + 1) (({ id := param.id, slot := slot, ty := param.ty } : Binding) :: scope)
+
+def paramTypes (params : List SrcParam) : List SrcType :=
+  match params with
+  | [] => []
+  | param :: rest => param.ty :: paramTypes rest
+
+def sigs (funcs : List SrcFunc) : List Sig :=
+  match funcs with
+  | [] => []
+  | func :: rest => ({ params := paramTypes func.params, ret := func.ret } : Sig) :: sigs rest
+
+def lowerFunc (sigs : List Sig) (func : SrcFunc) : Option Func :=
+  let count : Nat := func.params.length
+  match SrcStmt.lower func.body sigs func.ret (paramScope func.params 0 []) count with
+  | none => none
+  | some body => some ({ params := count, locals := count + SrcStmt.depth func.body, body := body } : Func)
+
+def lowerFuncCons (first : Option Func) (rest : Option (List Func)) : Option (List Func) :=
+  match first with
+  | none => none
+  | some f =>
+    match rest with
+    | none => none
+    | some fs => some (f :: fs)
+
+def lowerFuncs (sigs : List Sig) (funcs : List SrcFunc) : Option (List Func) :=
+  match funcs with
+  | [] => some []
+  | func :: rest => lowerFuncCons (lowerFunc sigs func) (lowerFuncs sigs rest)
+
+/-- Machine code of a source program. -/
+def compileSource (prog : SrcProgram) : Option Binary :=
+  match lowerFuncs (sigs prog.funcs) prog.funcs with
+  | none => none
+  | some funcs => compileProgram ({ funcs := funcs } : Program)
+
 end Lanius.Mini

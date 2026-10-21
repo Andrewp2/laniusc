@@ -637,6 +637,10 @@ class Extractor:
             self.order.append(item)
         if not self.prelude_seen:
             fail('no prelude section')
+        ctor_names = {lower_first(c) for c in self.ctors}
+        clash = sorted(n for n in self.fns if camel(n) in ctor_names)
+        if clash:
+            fail(f'functions named like a constructor resolve to it inside that enum\'s methods: {clash}')
         missing = sorted(set(SPEC_FNS) - set(self.fns))
         if missing:
             fail(f'list operations missing: {missing}')

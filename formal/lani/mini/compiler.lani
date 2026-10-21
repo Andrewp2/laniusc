@@ -617,3 +617,473 @@ fn link(codes: List<Code>) -> core::option::Option<Binary> {
     }
     return None;
 }
+
+// Source programs: the subset of Lanius Core (formal/Lanius/Core.lean) that
+// this compiler accepts. Lanius/Mini/Source.lean gives each its Core program,
+// and the top-level theorem is about Core's evaluator on that program.
+// Locals are Core variable ids; functions are numbered by position.
+
+pub enum SrcType { I32, Bool, }
+
+pub enum SrcOp {
+    Plus, Minus, Times, BitAnd, BitOr, BitXor,
+    Less, LessEq, Greater, GreaterEq, Equal, NotEqual,
+    LogicalAnd, LogicalOr,
+}
+
+pub enum SrcExpr {
+    Int(i32),
+    Boolean(bool),
+    Local(usize),
+    Negate(Box<SrcExpr>),
+    Not(Box<SrcExpr>),
+    Apply(SrcOp, Box<SrcExpr>, Box<SrcExpr>),
+}
+
+pub enum SrcStmt {
+    Nop,
+    // let id: ty = value; then body, with id in scope
+    Let(usize, SrcType, SrcExpr, Box<SrcStmt>),
+    // let id: ty = callee(args); then body
+    LetCall(usize, SrcType, usize, List<SrcExpr>, Box<SrcStmt>),
+    Set(usize, SrcExpr),
+    // id = callee(args)
+    SetCall(usize, usize, List<SrcExpr>),
+    Then(Box<SrcStmt>, Box<SrcStmt>),
+    If(SrcExpr, Box<SrcStmt>, Box<SrcStmt>),
+    While(SrcExpr, Box<SrcStmt>),
+    Return(SrcExpr),
+}
+
+pub struct SrcParam {
+    id: usize,
+    ty: SrcType,
+}
+
+pub struct SrcFunc {
+    params: List<SrcParam>,
+    ret: SrcType,
+    body: SrcStmt,
+}
+
+pub struct SrcProgram {
+    funcs: List<SrcFunc>,
+}
+
+// Lowering to the language above. It also type-checks: an ill-typed program
+// is rejected, so the theorem needs no typing premise (Core would, for
+// example, evaluate true && 5 to 5). A Core local becomes a frame slot: a
+// function's parameters are slots 0, 1, ..., and each let takes the next slot
+// for its body. Booleans are 1 and 0. Subset expressions neither trap nor have
+// effects, so && and || need no short circuit: a && b is a & b on 0 and 1, and
+// a || b is (a | b) != 0.
+
+pub struct Binding {
+    id: usize,
+    slot: usize,
+    ty: SrcType,
+}
+
+// The innermost binding of id.
+pub fn lookup(scope: List<Binding>, id: usize) -> core::option::Option<Binding> {
+    return match (scope) {
+        Nil -> None,
+        Cons(binding, rest) -> lookup_at(binding, unbox(rest), id),
+    };
+}
+
+// extract: inline
+fn lookup_at(binding: Binding, rest: List<Binding>, id: usize) -> core::option::Option<Binding> {
+    if (binding.id == id) {
+        return Some(binding);
+    }
+    return lookup(rest, id);
+}
+
+pub fn bool_bits(value: bool) -> i32 {
+    if (value) {
+        return 1;
+    }
+    return 0;
+}
+
+impl SrcType {
+    pub fn is_i32(self) -> bool {
+        return match (self) {
+            I32 -> true,
+            Bool -> false,
+        };
+    }
+
+    pub fn is_bool(self) -> bool {
+        return match (self) {
+            I32 -> false,
+            Bool -> true,
+        };
+    }
+
+    pub fn same(self, other: SrcType) -> bool {
+        return match (self) {
+            I32 -> other.is_i32(),
+            Bool -> other.is_bool(),
+        };
+    }
+}
+
+// A lowered expression and its source type.
+pub struct Typed {
+    expr: Expr,
+    ty: SrcType,
+}
+
+pub fn arith(operation: BinOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
+    if (left.ty.is_i32() && right.ty.is_i32()) {
+        return Some(Typed { expr: Binary(operation, boxed(left.expr), boxed(right.expr)), ty: I32 });
+    }
+    return None;
+}
+
+pub fn order(operation: CmpOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
+    if (left.ty.is_i32() && right.ty.is_i32()) {
+        return Some(Typed { expr: Compare(operation, boxed(left.expr), boxed(right.expr)), ty: Bool });
+    }
+    return None;
+}
+
+pub fn equality(operation: CmpOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
+    if (left.ty.same(right.ty)) {
+        return Some(Typed { expr: Compare(operation, boxed(left.expr), boxed(right.expr)), ty: Bool });
+    }
+    return None;
+}
+
+pub fn conjunction(left: Typed, right: Typed) -> core::option::Option<Typed> {
+    if (left.ty.is_bool() && right.ty.is_bool()) {
+        return Some(Typed { expr: Binary(And, boxed(left.expr), boxed(right.expr)), ty: Bool });
+    }
+    return None;
+}
+
+pub fn disjunction(left: Typed, right: Typed) -> core::option::Option<Typed> {
+    if (left.ty.is_bool() && right.ty.is_bool()) {
+        let either: Expr = Binary(Or, boxed(left.expr), boxed(right.expr));
+        return Some(Typed { expr: Compare(Ne, boxed(either), boxed(Lit(0))), ty: Bool });
+    }
+    return None;
+}
+
+impl SrcOp {
+    pub fn lower(self, left: Typed, right: Typed) -> core::option::Option<Typed> {
+        return match (self) {
+            Plus -> arith(Add, left, right),
+            Minus -> arith(Sub, left, right),
+            Times -> arith(Mul, left, right),
+            BitAnd -> arith(And, left, right),
+            BitOr -> arith(Or, left, right),
+            BitXor -> arith(Xor, left, right),
+            Less -> order(Lt, left, right),
+            LessEq -> order(Le, left, right),
+            Greater -> order(Gt, left, right),
+            GreaterEq -> order(Ge, left, right),
+            Equal -> equality(Eq, left, right),
+            NotEqual -> equality(Ne, left, right),
+            LogicalAnd -> conjunction(left, right),
+            LogicalOr -> disjunction(left, right),
+        };
+    }
+}
+
+pub fn lower_local(binding: core::option::Option<Binding>) -> core::option::Option<Typed> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> Some(Typed { expr: Var(b.slot), ty: b.ty }),
+    };
+}
+
+pub fn lower_negate_typed(operand: Typed) -> core::option::Option<Typed> {
+    if (operand.ty.is_i32()) {
+        return Some(Typed { expr: Expr::Neg(boxed(operand.expr)), ty: I32 });
+    }
+    return None;
+}
+
+pub fn lower_negate(operand: core::option::Option<Typed>) -> core::option::Option<Typed> {
+    return match (operand) {
+        None -> None,
+        Some(e) -> lower_negate_typed(e),
+    };
+}
+
+pub fn lower_not_typed(operand: Typed) -> core::option::Option<Typed> {
+    if (operand.ty.is_bool()) {
+        return Some(Typed { expr: Compare(Eq, boxed(operand.expr), boxed(Lit(0))), ty: Bool });
+    }
+    return None;
+}
+
+pub fn lower_not(operand: core::option::Option<Typed>) -> core::option::Option<Typed> {
+    return match (operand) {
+        None -> None,
+        Some(e) -> lower_not_typed(e),
+    };
+}
+
+pub fn lower_apply(op: SrcOp, left: core::option::Option<Typed>, right: core::option::Option<Typed>) -> core::option::Option<Typed> {
+    return match (left) {
+        None -> None,
+        Some(l) -> match (right) {
+            None -> None,
+            Some(r) -> op.lower(l, r),
+        },
+    };
+}
+
+impl SrcExpr {
+    pub fn lower(self, scope: List<Binding>) -> core::option::Option<Typed> {
+        return match (self) {
+            Int(value) -> Some(Typed { expr: Lit(value), ty: I32 }),
+            Boolean(value) -> Some(Typed { expr: Lit(bool_bits(value)), ty: Bool }),
+            Local(id) -> lower_local(lookup(scope, id)),
+            Negate(operand) -> lower_negate(unbox(operand).lower(scope)),
+            Not(operand) -> lower_not(unbox(operand).lower(scope)),
+            Apply(op, left, right) -> lower_apply(op, unbox(left).lower(scope), unbox(right).lower(scope)),
+        };
+    }
+}
+
+pub fn expect_type(typed: Typed, ty: SrcType) -> core::option::Option<Expr> {
+    if (typed.ty.same(ty)) {
+        return Some(typed.expr);
+    }
+    return None;
+}
+
+// The expression, if it lowers and has type ty.
+pub fn lower_as(scope: List<Binding>, e: SrcExpr, ty: SrcType) -> core::option::Option<Expr> {
+    return match (e.lower(scope)) {
+        None -> None,
+        Some(typed) -> expect_type(typed, ty),
+    };
+}
+
+pub fn lower_cons(first: core::option::Option<Expr>, rest: core::option::Option<List<Expr>>) -> core::option::Option<List<Expr>> {
+    return match (first) {
+        None -> None,
+        Some(e) -> match (rest) {
+            None -> None,
+            Some(es) -> Some(cons(e, es)),
+        },
+    };
+}
+
+// The arguments, if there is one of each parameter type.
+pub fn lower_args(scope: List<Binding>, args: List<SrcExpr>, types: List<SrcType>) -> core::option::Option<List<Expr>> {
+    return match (args) {
+        Nil -> match (types) {
+            Nil -> Some(empty()),
+            Cons(ty, more) -> None,
+        },
+        Cons(arg, rest) -> match (types) {
+            Nil -> None,
+            Cons(ty, more) -> lower_cons(lower_as(scope, arg, ty), lower_args(scope, unbox(rest), unbox(more))),
+        },
+    };
+}
+
+// A function's parameter types and result type.
+pub struct Sig {
+    params: List<SrcType>,
+    ret: SrcType,
+}
+
+pub fn lower_call_sig(scope: List<Binding>, sig: Sig, args: List<SrcExpr>, ty: SrcType) -> core::option::Option<List<Expr>> {
+    if (sig.ret.same(ty)) {
+        return lower_args(scope, args, sig.params);
+    }
+    return None;
+}
+
+// The arguments of a call returning ty to callee.
+pub fn lower_call(sigs: List<Sig>, scope: List<Binding>, callee: usize, args: List<SrcExpr>, ty: SrcType) -> core::option::Option<List<Expr>> {
+    return match (get(sigs, callee)) {
+        None -> None,
+        Some(sig) -> lower_call_sig(scope, sig, args, ty),
+    };
+}
+
+pub fn lower_let(slot: usize, value: core::option::Option<Expr>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (value) {
+        None -> None,
+        Some(v) -> match (body) {
+            None -> None,
+            Some(b) -> Some(Seq(boxed(Assign(slot, v)), boxed(b))),
+        },
+    };
+}
+
+pub fn lower_let_call(slot: usize, callee: usize, args: core::option::Option<List<Expr>>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (args) {
+        None -> None,
+        Some(a) -> match (body) {
+            None -> None,
+            Some(b) -> Some(Seq(boxed(Stmt::Call(slot, callee, a)), boxed(b))),
+        },
+    };
+}
+
+pub fn lower_set_value(slot: usize, value: core::option::Option<Expr>) -> core::option::Option<Stmt> {
+    return match (value) {
+        None -> None,
+        Some(v) -> Some(Assign(slot, v)),
+    };
+}
+
+pub fn lower_set(binding: core::option::Option<Binding>, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> lower_set_value(b.slot, lower_as(scope, value, b.ty)),
+    };
+}
+
+pub fn lower_set_call_args(slot: usize, callee: usize, args: core::option::Option<List<Expr>>) -> core::option::Option<Stmt> {
+    return match (args) {
+        None -> None,
+        Some(a) -> Some(Stmt::Call(slot, callee, a)),
+    };
+}
+
+pub fn lower_set_call(sigs: List<Sig>, scope: List<Binding>, binding: core::option::Option<Binding>, callee: usize, args: List<SrcExpr>) -> core::option::Option<Stmt> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> lower_set_call_args(b.slot, callee, lower_call(sigs, scope, callee, args, b.ty)),
+    };
+}
+
+pub fn lower_then(first: core::option::Option<Stmt>, second: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (first) {
+        None -> None,
+        Some(a) -> match (second) {
+            None -> None,
+            Some(b) -> Some(Seq(boxed(a), boxed(b))),
+        },
+    };
+}
+
+pub fn lower_if(condition: core::option::Option<Expr>, then_branch: core::option::Option<Stmt>, else_branch: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (condition) {
+        None -> None,
+        Some(c) -> match (then_branch) {
+            None -> None,
+            Some(t) -> match (else_branch) {
+                None -> None,
+                Some(e) -> Some(Ite(c, boxed(t), boxed(e))),
+            },
+        },
+    };
+}
+
+pub fn lower_while(condition: core::option::Option<Expr>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (condition) {
+        None -> None,
+        Some(c) -> match (body) {
+            None -> None,
+            Some(b) -> Some(Loop(c, boxed(b))),
+        },
+    };
+}
+
+pub fn lower_return(value: core::option::Option<Expr>) -> core::option::Option<Stmt> {
+    return match (value) {
+        None -> None,
+        Some(v) -> Some(Stmt::Ret(v)),
+    };
+}
+
+// sigs are the program's signatures and ret the function's result type; next
+// is the first slot no binding in scope uses.
+impl SrcStmt {
+    pub fn lower(self, sigs: List<Sig>, ret: SrcType, scope: List<Binding>, next: usize) -> core::option::Option<Stmt> {
+        return match (self) {
+            Nop -> Some(Skip),
+            Let(id, ty, value, body) -> lower_let(next, lower_as(scope, value, ty), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, 1))),
+            LetCall(id, ty, callee, args, body) -> lower_let_call(next, callee, lower_call(sigs, scope, callee, args, ty), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, 1))),
+            Set(id, value) -> lower_set(lookup(scope, id), scope, value),
+            SetCall(id, callee, args) -> lower_set_call(sigs, scope, lookup(scope, id), callee, args),
+            Then(first, second) -> lower_then(unbox(first).lower(sigs, ret, scope, next), unbox(second).lower(sigs, ret, scope, next)),
+            If(condition, then_branch, else_branch) -> lower_if(lower_as(scope, condition, Bool), unbox(then_branch).lower(sigs, ret, scope, next), unbox(else_branch).lower(sigs, ret, scope, next)),
+            While(condition, body) -> lower_while(lower_as(scope, condition, Bool), unbox(body).lower(sigs, ret, scope, next)),
+            Return(value) -> lower_return(lower_as(scope, value, ret)),
+        };
+    }
+
+    // Slots the statement's lets need beyond the ones in scope.
+    pub fn depth(self) -> usize {
+        return match (self) {
+            Nop -> 0,
+            Let(id, ty, value, body) -> plus(unbox(body).depth(), 1),
+            LetCall(id, ty, callee, args, body) -> plus(unbox(body).depth(), 1),
+            Set(id, value) -> 0,
+            SetCall(id, callee, args) -> 0,
+            Then(first, second) -> max_of(unbox(first).depth(), unbox(second).depth()),
+            If(condition, then_branch, else_branch) -> max_of(unbox(then_branch).depth(), unbox(else_branch).depth()),
+            While(condition, body) -> unbox(body).depth(),
+            Return(value) -> 0,
+        };
+    }
+}
+
+// Parameters take slots 0, 1, ... in order; a later parameter with the same
+// id shadows an earlier one, as Core's bindLocals does.
+pub fn param_scope(params: List<SrcParam>, slot: usize, scope: List<Binding>) -> List<Binding> {
+    return match (params) {
+        Nil -> scope,
+        Cons(param, rest) -> param_scope(unbox(rest), plus(slot, 1), cons(Binding { id: param.id, slot: slot, ty: param.ty }, scope)),
+    };
+}
+
+pub fn param_types(params: List<SrcParam>) -> List<SrcType> {
+    return match (params) {
+        Nil -> empty(),
+        Cons(param, rest) -> cons(param.ty, param_types(unbox(rest))),
+    };
+}
+
+pub fn sigs(funcs: List<SrcFunc>) -> List<Sig> {
+    return match (funcs) {
+        Nil -> empty(),
+        Cons(func, rest) -> cons(Sig { params: param_types(func.params), ret: func.ret }, sigs(unbox(rest))),
+    };
+}
+
+pub fn lower_func(sigs: List<Sig>, func: SrcFunc) -> core::option::Option<Func> {
+    let count: usize = length(func.params);
+    return match (func.body.lower(sigs, func.ret, param_scope(func.params, 0, empty()), count)) {
+        None -> None,
+        Some(body) -> Some(Func { params: count, locals: plus(count, func.body.depth()), body: body }),
+    };
+}
+
+pub fn lower_func_cons(first: core::option::Option<Func>, rest: core::option::Option<List<Func>>) -> core::option::Option<List<Func>> {
+    return match (first) {
+        None -> None,
+        Some(f) -> match (rest) {
+            None -> None,
+            Some(fs) -> Some(cons(f, fs)),
+        },
+    };
+}
+
+pub fn lower_funcs(sigs: List<Sig>, funcs: List<SrcFunc>) -> core::option::Option<List<Func>> {
+    return match (funcs) {
+        Nil -> Some(empty()),
+        Cons(func, rest) -> lower_func_cons(lower_func(sigs, func), lower_funcs(sigs, unbox(rest))),
+    };
+}
+
+// Machine code of a source program.
+pub fn compile_source(prog: SrcProgram) -> core::option::Option<Binary> {
+    return match (lower_funcs(sigs(prog.funcs), prog.funcs)) {
+        None -> None,
+        Some(funcs) -> compile_program(Program { funcs: funcs }),
+    };
+}
