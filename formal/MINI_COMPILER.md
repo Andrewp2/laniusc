@@ -103,7 +103,7 @@ The proof has two layers.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Compiler` | 1191 | 2.7 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass |
+| `Compiler` | 1183 | 2.7 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass |
 | `Semantics` | 97 | 0.7 | big-step source semantics with call depth |
 | `Asm` | 163 | 0.8 | abstract machine, byte-offset placement, `Star` runs |
 | `CompileCorrect` | 466 | 1.2 | compiler against the abstract machine |
@@ -125,18 +125,19 @@ The first piece of the verified compiler (roadmap step 4). `compile_source` in
 Core, to the mini IR, then runs `compile_program`. The subset: `i32` and
 `bool` locals and parameters, `+ - * & | ^`, unary `-` and `!`, the six
 comparisons, `&&` and `||`, `let`, assignment, `let x = f(...)` and
-`x = f(...)`, sequencing, `if`, `while`, and `return`; and structs with
-`i32`/`bool` fields: literals in `let`, field reads and writes, whole-struct
-copies, and struct parameters; and enums whose variants carry `i32`/`bool`
-payloads: `let x = E::V(...)`, copies, enum parameters, and
-`let y = match x { ... }` with one arm per variant in order, each binding its
-variant's payload and giving a scalar value. Each binding gets its own slots
-(lets after the parameters), a struct one per field, an enum a tag slot (the
-variant number) and then room for its longest payload; booleans are 1 and 0.
+`x = f(...)`, sequencing, `if`, `while`, and `return`; and structs whose
+fields have any type, structs and enums included: literals in `let`, reads and
+writes of scalar fields, whole-struct copies, and struct parameters; and enums
+whose payloads have any type: `let x = E::V(...)`, copies, enum parameters,
+and `let y = match x { ... }` with one arm per variant in order, each binding
+its variant's payload and giving a scalar value. Each binding gets its own
+slots (lets after the parameters): a scalar one, a struct its fields' slots
+one after another, an enum a tag slot (the variant number) and then room for
+its longest payload; booleans are 1 and 0.
 A `match` is a chain of tag tests, and an arm's binders name the scrutinee's
 payload slots, since an arm only reads them. A function returns its result
 type's slots, so `return`, `let x = f(...)` and `x = f(...)` take structs and
-enums too. A struct type must have a field, so no two bindings share a slot.
+enums too. A struct type must take a slot, so no two bindings share one.
 
 `Lanius/Mini/Source.lean` maps each source construct to the Core construct of
 the same name (`SrcProgram.toCore`). The theorem is about Core's own
@@ -164,7 +165,7 @@ semantics:
   slot-to-cell map, every cell id is below `nextCell`, and a callee only
   touches cells allocated after its call, so the caller's cells survive. A
   struct is one Core cell holding a `.structure` value and several mini slots
-  (`HoldsAt`); bindings' slot ranges are disjoint (`Layout.apart`), which is
+  (`HoldsAt`, mutual with `FieldsHold` since types nest); bindings' slot ranges are disjoint (`Layout.apart`), which is
   what makes a copy `a = b` safe slot by slot. An enum value is a
   `.enumeration` whose variant is the tag and whose payload sits after it;
   `lowerArms_sound` follows Core's `evalMatchArms` down the arms against the
@@ -175,15 +176,16 @@ semantics:
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Source` | 266 | 0.8 | Core meaning of source programs, value representation, `i32` wrap lemmas |
-| `LowerExpr` | 466 | 4.1 | expressions |
-| `LowerStmt` | 1941 | 8.1 | Core cells, frames, flat values, calls, enums and `match`, statements |
+| `Source` | 293 | 0.8 | Core meaning of source programs, value representation, `i32` wrap lemmas |
+| `LowerExpr` | 470 | 4.1 | expressions |
+| `LowerStmt` | 1921 | 8.1 | Core cells, frames, flat values, calls, enums and `match`, statements |
 | `SourceCorrect` | 89 | 0.7 | top-level theorem |
 
 The pass is about 900 lines of Lanius (the end of `compiler.lani`), and the
-proofs are about 2,800 lines. The per-function difftest covers it (126
-functions, 2,520 calls, no differences; 9 native stack overflows on huge
-random counts); at 30 cases per function the harness is now too large for
+proofs are about 2,800 lines. The per-function difftest covers it (122
+functions, 2,440 calls, no differences; 11 native stack overflows on huge
+random counts; types nested through `List` render through a `mutual` block of
+`partial def`s); at 30 cases per function the harness is now too large for
 laniusc on the laptop (a GPU buffer fails to allocate). Assumptions the theorem does not cover yet: Core
 programs outside the subset, traps and divergence (the theorem covers runs that
 return), and the source's type checker against Core's typing rules (step 7).

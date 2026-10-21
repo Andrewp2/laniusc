@@ -57,7 +57,7 @@ returns `results` representing `v` in the same slots, laid out the same way. -/
 theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
     (compiled : compileSource sp = some binary) {f : Nat} {func : SrcFunc}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 32)}
-    (typed : ArgsAt (paramTypes func.params) args (Func.entry bits) 0)
+    (typed : FieldsHold (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {fuel : Nat} {v : Value}
     {final : Semantics.State}
     (runs : Semantics.evalExpr fuel sp.toCore {} (.call f (args.map Core.Expr.value)) = .done v final) :

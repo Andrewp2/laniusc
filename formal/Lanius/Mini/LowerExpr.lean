@@ -228,18 +228,22 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
         split at lowered
         · simp at lowered
         rename_i f fieldFound
-        simp only [Option.some.injEq] at lowered
-        subst lowered
-        obtain ⟨w, eval, holds⟩ := corr.local found fuel prog
-        rw [hty] at holds
-        obtain ⟨vs, rfl, fieldsHold⟩ := holds
-        obtain ⟨fv, got, holdsField⟩ := fieldsHold.get fieldFound
-        simp only [SrcExpr.toCore, evalExpr] at run
-        simp only [evalExpr] at eval
-        rw [eval] at run
-        simp only [got, Semantics.Outcome.done.injEq] at run
-        obtain ⟨rfl, rfl⟩ := run
-        exact ⟨rfl, by simpa [Expr.eval] using holdsField⟩
+        split at lowered
+        · rename_i scalar
+          simp only [Option.some.injEq] at lowered
+          subst lowered
+          obtain ⟨w, eval, holds⟩ := corr.local found fuel prog
+          rw [hty] at holds
+          cases holds with
+          | struct fieldsHold =>
+            obtain ⟨fv, got, holdsField⟩ := fieldsHold.get fieldFound
+            simp only [SrcExpr.toCore, evalExpr] at run
+            simp only [evalExpr] at eval
+            rw [eval] at run
+            simp only [got, Semantics.Outcome.done.injEq] at run
+            obtain ⟨rfl, rfl⟩ := run
+            exact ⟨rfl, by simpa [Expr.eval] using (SrcType.holdsAt_scalar scalar).mp holdsField⟩
+        · simp at lowered
         simp at lowered
   | negate operand ih =>
     intro t fuel v st' lowered run
@@ -370,7 +374,7 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
           rw [target] at evaluated
           simp only [SrcOp.toCore] at evaluated
           cases htl : tl.ty <;> cases htr : tr.ty <;>
-            simp [htl, htr, SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isStruct, SrcType.isEnum] at types <;>
+            simp [htl, htr, SrcType.same, SrcType.isI32, SrcType.isBool] at types <;>
             rw [htl] at holdsl <;> rw [htr] at holdsr
           · simp only [SrcType.Holds] at holdsl holdsr
             subst holdsl holdsr

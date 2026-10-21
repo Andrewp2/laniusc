@@ -191,15 +191,37 @@ class Types:
                 out.append(head + '\n' + '\n'.join(arms))
             text[t], deps[t] = out[0], set(self.need_render) - {t}
             self.need_render |= before
-        order, seen = [], set()
+        # Tarjan's algorithm: components come out dependencies first. Renderers
+        # that call each other (a type nested in a List of itself) are one
+        # mutual block of partial defs.
+        order, index, low, stack, on = [], {}, {}, [], set()
         def visit(t):
-            if t not in seen:
-                seen.add(t)
-                for d in sorted(deps[t], key=repr):
+            index[t] = low[t] = len(index)
+            stack.append(t)
+            on.add(t)
+            for d in sorted(deps[t], key=repr):
+                if d not in index:
                     visit(d)
-                order.append(text[t])
+                    low[t] = min(low[t], low[d])
+                elif d in on:
+                    low[t] = min(low[t], index[d])
+            if low[t] == index[t]:
+                group = []
+                while True:
+                    u = stack.pop()
+                    on.discard(u)
+                    group.append(u)
+                    if u == t:
+                        break
+                if len(group) == 1:
+                    order.append(text[t])
+                else:
+                    defs = [text[u] if text[u].startswith('partial ') else 'partial ' + text[u]
+                            for u in sorted(group, key=repr)]
+                    order.append('mutual\n' + '\n\n'.join(defs) + '\nend')
         for t in sorted(text, key=repr):
-            visit(t)
+            if t not in index:
+                visit(t)
         return '\n\n'.join(order)
 
     def lani_render(self, t, term):

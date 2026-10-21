@@ -28,6 +28,10 @@ that it equals its Lean list function; calls to it from other code are written
 as that function. A function marked
 `// extract: inline` is not emitted: each call becomes `let` bindings of its
 arguments followed by its body (calls to it must not be recursive).
+Functions and impl blocks between `// extract: mutual begin` and `end` are one
+Lean `mutual` block, for recursion through a type nested in a List. A type
+nested in itself that way, and every type containing one, derives only Repr,
+since Lean cannot derive DecidableEq for it.
 """
 
 import os
@@ -270,6 +274,10 @@ class Parser:
                     prelude = None
                 elif t.text == 'inline':
                     inline = True
+                elif t.text in ('mutual begin', 'mutual end'):
+                    if prelude is not None:
+                        fail('mutual blocks are not allowed in the prelude', t)
+                    items.append(('item', {'kind': 'mutual', 'begin': t.text == 'mutual begin', 'doc': []}))
                 else:
                     fail(f'unknown marker {t.text!r}', t)
                 continue
@@ -605,10 +613,20 @@ class Extractor:
         self.ctors = {}  # bare constructor name -> [enum names]
         self.prelude_seen = False
         self.order = []
+        in_mutual = False
         for kind, item in items:
             if kind == 'prelude':
                 self.check_prelude(item)
                 continue
+            if item['kind'] == 'mutual':
+                if item['begin'] == in_mutual:
+                    fail('mutual blocks must alternate begin and end, and cannot nest')
+                in_mutual = item['begin']
+                self.order.append(item)
+                continue
+            if in_mutual and (item['kind'] not in ('fn', 'impl') or item.get('inline')
+                              or item.get('name') in SPEC_FNS):
+                fail(f'{item.get("name")}: a mutual block holds only extracted functions and impl blocks')
             if item['kind'] in ('struct', 'enum') and item['tparams']:
                 fail(f'{item["name"]}: generic types are only allowed in the prelude')
             if item['kind'] == 'struct':
@@ -635,8 +653,11 @@ class Extractor:
                         fail(f'{item["name"]}::{f["name"]} is defined twice')
                     self.methods[key] = f
             self.order.append(item)
+        if in_mutual:
+            fail('mutual block is not closed')
         if not self.prelude_seen:
             fail('no prelude section')
+        self.no_deq = self.nested_types()
         ctor_names = {lower_first(c) for c in self.ctors}
         clash = sorted(n for n in self.fns if camel(n) in ctor_names)
         if clash:
@@ -645,6 +666,36 @@ class Extractor:
         if missing:
             fail(f'list operations missing: {missing}')
         self.current = None
+
+    def nested_types(self):
+        """Types Lean cannot derive DecidableEq for: an enum that occurs in
+        its own constructors inside a type argument (after Box is dropped),
+        and every type that contains such a type."""
+        def mentions(t, name):
+            t = t.strip_box()
+            return t.name == name or any(mentions(a, name) for a in t.args)
+
+        def nested_in(t, name):
+            t = t.strip_box()
+            return any(mentions(a, name) for a in t.args)
+
+        def field_types(item):
+            if item['kind'] == 'struct':
+                return [ty for _, ty, _ in item['fields']]
+            return [ty for _, payload, _ in item['ctors'] for ty in payload]
+
+        types = dict(self.structs)
+        types.update(self.enums)
+        bad = {name for name, item in self.enums.items()
+               if any(nested_in(ty, name) for ty in field_types(item))}
+        changed = True
+        while changed:
+            changed = False
+            for name, item in types.items():
+                if name not in bad and any(mentions(ty, other) for ty in field_types(item) for other in bad):
+                    bad.add(name)
+                    changed = True
+        return bad
 
     def check_prelude(self, prelude):
         self.prelude_seen = True
@@ -673,7 +724,9 @@ class Extractor:
     def run(self, source_name):
         out = [HEADER.format(source=source_name)]
         for item in self.order:
-            if item['kind'] == 'struct':
+            if item['kind'] == 'mutual':
+                out.append('mutual\n' if item['begin'] else 'end\n')
+            elif item['kind'] == 'struct':
                 out.append(self.emit_struct(item))
             elif item['kind'] == 'enum':
                 out.append(self.emit_enum(item))
@@ -696,7 +749,7 @@ class Extractor:
         lines = doc(item['doc'], '') + [f'structure {item["name"]} where']
         for name, ty, field_doc in item['fields']:
             lines += doc(field_doc, '  ') + [f'  {camel(name)} : {lean_type(ty)}']
-        lines.append('  deriving DecidableEq, Repr')
+        lines.append(self.deriving(item))
         return '\n'.join(lines) + '\n'
 
     def emit_enum(self, item):
@@ -704,8 +757,11 @@ class Extractor:
         for ctor, payload, ctor_doc in item['ctors']:
             sig = ''.join(f'{atom_type(t)} → ' for t in payload)
             lines += doc(ctor_doc, '  ') + [f'  | {lower_first(ctor)} : {sig}{item["name"]}']
-        lines.append('  deriving DecidableEq, Repr')
+        lines.append(self.deriving(item))
         return '\n'.join(lines) + '\n'
+
+    def deriving(self, item):
+        return '  deriving Repr' if item['name'] in self.no_deq else '  deriving DecidableEq, Repr'
 
     def emit_fn(self, f, lean_name):
         if f['ret'] is None:

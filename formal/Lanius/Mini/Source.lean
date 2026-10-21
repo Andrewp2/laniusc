@@ -99,82 +99,73 @@ def SrcType.Holds : SrcType → Value → BitVec 32 → Prop
   | .struct _ _, _, _ => False
   | .enum _ _, _, _ => False
 
-/-- Struct fields, one slot each from `slot`. -/
-inductive FieldsHold : List FieldTy → List Value → Env → Nat → Prop where
-  | nil {env : Env} {slot : Nat} : FieldsHold [] [] env slot
-  | cons {f : FieldTy} {fs : List FieldTy} {v : Value} {vs : List Value} {env : Env} {slot : Nat} :
-      f.ty.Holds v (env slot) → FieldsHold fs vs env (slot + 1) → FieldsHold (f :: fs) (v :: vs) env slot
-
+mutual
 /-- `ty.HoldsAt value env slot`: the `ty.size` slots of `env` from `slot`
-represent `value`. An enum's tag is its variant number, and its payload
-follows. -/
-def SrcType.HoldsAt : SrcType → Value → Env → Nat → Prop
-  | .i32, value, env, slot => SrcType.i32.Holds value (env slot)
-  | .bool, value, env, slot => SrcType.bool.Holds value (env slot)
-  | .struct id fields, value, env, slot => ∃ vs, value = .structure id vs ∧ FieldsHold fields vs env slot
-  | .enum id variants, value, env, slot => ∃ k fs vs, value = .enumeration id k vs ∧
-      variants[k]? = some fs ∧ env slot = BitVec.ofNat 32 k ∧ FieldsHold fs vs env (slot + 1)
+represent `value`. A struct's fields follow one another; an enum's tag is its
+variant number, and its payload follows. -/
+inductive SrcType.HoldsAt : SrcType → Value → Env → Nat → Prop where
+  | i32 {value : Value} {env : Env} {slot : Nat} :
+      SrcType.i32.Holds value (env slot) → SrcType.HoldsAt .i32 value env slot
+  | bool {value : Value} {env : Env} {slot : Nat} :
+      SrcType.bool.Holds value (env slot) → SrcType.HoldsAt .bool value env slot
+  | struct {id : Nat} {fields : List SrcType} {vs : List Value} {env : Env} {slot : Nat} :
+      FieldsHold fields vs env slot → SrcType.HoldsAt (.struct id fields) (.structure id vs) env slot
+  | enum {id : Nat} {variants : List (List SrcType)} {k : Nat} {fs : List SrcType} {vs : List Value}
+      {env : Env} {slot : Nat} :
+      variants[k]? = some fs → env slot = BitVec.ofNat 32 k → FieldsHold fs vs env (slot + 1) →
+      SrcType.HoldsAt (.enum id variants) (.enumeration id k vs) env slot
+
+/-- Values of these types, one after another from `slot`: a struct's fields,
+a payload, or arguments. -/
+inductive FieldsHold : List SrcType → List Value → Env → Nat → Prop where
+  | nil {env : Env} {slot : Nat} : FieldsHold [] [] env slot
+  | cons {ty : SrcType} {tys : List SrcType} {v : Value} {vs : List Value} {env : Env} {slot : Nat} :
+      ty.HoldsAt v env slot → FieldsHold tys vs env (slot + ty.size) → FieldsHold (ty :: tys) (v :: vs) env slot
+end
 
 theorem SrcType.holdsAt_scalar {ty : SrcType} (scalar : ty.isScalar = true) {v : Value} {env : Env}
     {slot : Nat} : ty.HoldsAt v env slot ↔ ty.Holds v (env slot) := by
-  cases ty <;> simp_all [SrcType.HoldsAt, SrcType.isScalar]
+  cases ty with
+  | i32 => exact ⟨fun | .i32 h => h, .i32⟩
+  | bool => exact ⟨fun | .bool h => h, .bool⟩
+  | struct => simp [SrcType.isScalar] at scalar
+  | enum => simp [SrcType.isScalar] at scalar
 
-theorem FieldTy.ty_scalar (f : FieldTy) : f.ty.isScalar = true := by
-  cases f <;> rfl
+theorem FieldsHold.length : ∀ {fs vs env slot}, FieldsHold fs vs env slot → vs.length = fs.length
+  | [], _, _, _, .nil => rfl
+  | _ :: _, _, _, _, .cons _ rest => by simp [rest.length]
 
-theorem FieldsHold.length {fs vs env slot} (holds : FieldsHold fs vs env slot) :
-    vs.length = fs.length := by
-  induction holds with
-  | nil => rfl
-  | cons _ _ ih => simp [ih]
-
-theorem FieldsHold.congr {fs vs env slot} (holds : FieldsHold fs vs env slot) {env' : Env} {slot' : Nat}
-    (agree : ∀ i < fs.length, env' (slot' + i) = env (slot + i)) : FieldsHold fs vs env' slot' := by
-  induction holds generalizing slot' with
-  | nil => exact .nil
-  | cons head _ ih =>
-    refine .cons ?_ (ih fun i h => ?_)
-    · have := agree 0 (by simp)
-      simp only [Nat.add_zero] at this
-      rw [this]; exact head
-    · have := agree (i + 1) (by simp; omega)
-      rw [show slot' + 1 + i = slot' + (i + 1) by omega, this]
-      congr 1
-      omega
-
-theorem length_le_maxLen : ∀ {variants : List (List FieldTy)} {k : Nat} {fs : List FieldTy},
-    variants[k]? = some fs → fs.length ≤ maxLen variants
+theorem sizes_le_maxSize : ∀ {variants : List (List SrcType)} {k : Nat} {fs : List SrcType},
+    variants[k]? = some fs → sizes fs ≤ maxSize variants
   | [], _, _, found => by simp at found
   | v :: rest, 0, fs, found => by
     simp only [List.getElem?_cons_zero, Option.some.injEq] at found
     subst found
-    simp only [maxLen]
+    simp only [maxSize]
     omega
   | v :: rest, k + 1, fs, found => by
     simp only [List.getElem?_cons_succ] at found
-    have := length_le_maxLen found
-    simp only [maxLen]
+    have := sizes_le_maxSize found
+    simp only [maxSize]
     omega
 
-theorem SrcType.HoldsAt.congr {ty : SrcType} {v : Value} {env : Env} {slot : Nat}
-    (holds : ty.HoldsAt v env slot) {env' : Env} {slot' : Nat}
-    (agree : ∀ i < ty.size, env' (slot' + i) = env (slot + i)) : ty.HoldsAt v env' slot' := by
-  cases ty with
-  | i32 =>
+mutual
+theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot : Nat},
+    ty.HoldsAt v env slot → ∀ {env' : Env} {slot' : Nat},
+      (∀ i < ty.size, env' (slot' + i) = env (slot + i)) → ty.HoldsAt v env' slot'
+  | .i32, _, _, _, .i32 holds, _, _, agree => by
     have := agree 0 (by simp [SrcType.size])
     simp only [Nat.add_zero] at this
-    simpa [SrcType.HoldsAt, this] using holds
-  | bool =>
+    exact .i32 (by rw [this]; exact holds)
+  | .bool, _, _, _, .bool holds, _, _, agree => by
     have := agree 0 (by simp [SrcType.size])
     simp only [Nat.add_zero] at this
-    simpa [SrcType.HoldsAt, this] using holds
-  | struct id fields =>
-    obtain ⟨vs, rfl, fieldsHold⟩ := holds
-    exact ⟨vs, rfl, fieldsHold.congr (by simpa [SrcType.size] using agree)⟩
-  | enum id variants =>
-    obtain ⟨k, fs, vs, rfl, found, tag, payload⟩ := holds
-    have bound := length_le_maxLen found
-    refine ⟨k, fs, vs, rfl, found, ?_, payload.congr fun i below => ?_⟩
+    exact .bool (by rw [this]; exact holds)
+  | .struct _ fields, _, _, _, .struct holds, _, _, agree =>
+    .struct (FieldsHold.congr holds fun i below => agree i (by simp only [SrcType.size]; exact below))
+  | .enum _ variants, _, _, slot, .enum found tag payload, _, slot', agree => by
+    have bound := sizes_le_maxSize found
+    refine .enum found ?_ (FieldsHold.congr payload fun i below => ?_)
     · have := agree 0 (by simp only [SrcType.size]; omega)
       simp only [Nat.add_zero] at this
       rw [this, tag]
@@ -183,44 +174,80 @@ theorem SrcType.HoldsAt.congr {ty : SrcType} {v : Value} {env : Env} {slot : Nat
       congr 1
       omega
 
-theorem FieldsHold.get {fs vs env slot} (holds : FieldsHold fs vs env slot) {k : Nat} {f : FieldTy}
-    (found : fs[k]? = some f) : ∃ v, vs[k]? = some v ∧ f.ty.Holds v (env (slot + k)) := by
-  induction holds generalizing k with
-  | nil => simp at found
-  | cons head _ ih =>
+theorem FieldsHold.congr : ∀ {fs : List SrcType} {vs : List Value} {env : Env} {slot : Nat},
+    FieldsHold fs vs env slot → ∀ {env' : Env} {slot' : Nat},
+      (∀ i < sizes fs, env' (slot' + i) = env (slot + i)) → FieldsHold fs vs env' slot'
+  | [], _, _, _, .nil, _, _, _ => .nil
+  | ty :: tys, _, _, slot, .cons head rest, _, slot', agree => by
+    refine .cons (SrcType.HoldsAt.congr head fun i below => agree i (by simp only [sizes]; omega))
+      (FieldsHold.congr rest fun i below => ?_)
+    have := agree (ty.size + i) (by simp only [sizes]; omega)
+    rw [show slot' + ty.size + i = slot' + (ty.size + i) by omega, this]
+    congr 1
+    omega
+end
+
+theorem fieldOffset_zero (fs : List SrcType) : fieldOffset fs 0 = 0 := by
+  cases fs <;> simp [fieldOffset]
+
+theorem fieldOffset_succ (ty : SrcType) (rest : List SrcType) (k : Nat) :
+    fieldOffset (ty :: rest) (k + 1) = ty.size + fieldOffset rest k := by
+  simp [fieldOffset]
+
+/-- Field `k`, at its offset. -/
+theorem FieldsHold.get : ∀ {fs vs env slot}, FieldsHold fs vs env slot → ∀ {k : Nat} {f : SrcType},
+    fs[k]? = some f → ∃ v, vs[k]? = some v ∧ f.HoldsAt v env (slot + fieldOffset fs k)
+  | [], _, _, _, .nil, _, _, found => by simp at found
+  | _ :: _, _, _, _, .cons head rest, k, f, found => by
     cases k with
     | zero =>
       simp only [List.getElem?_cons_zero, Option.some.injEq] at found
       subst found
-      exact ⟨_, rfl, by simpa using head⟩
+      exact ⟨_, rfl, by simpa [fieldOffset] using head⟩
     | succ k =>
       simp only [List.getElem?_cons_succ] at found ⊢
-      obtain ⟨v, got, holdsV⟩ := ih found
-      have shift : ∀ a : Nat, a + (k + 1) = a + 1 + k := fun a => by omega
-      exact ⟨v, got, by rw [shift]; exact holdsV⟩
+      obtain ⟨v, got, holdsV⟩ := rest.get found
+      exact ⟨v, got, by rw [fieldOffset_succ, ← Nat.add_assoc]; exact holdsV⟩
 
-theorem FieldsHold.set {fs vs env slot} (holds : FieldsHold fs vs env slot) {k : Nat} {f : FieldTy}
-    (found : fs[k]? = some f) {nv : Value} {x : BitVec 32} (holdsNew : f.ty.Holds nv x) :
-    FieldsHold fs (Semantics.setValue vs k nv) (env.set (slot + k) x) slot := by
-  induction holds generalizing k with
-  | nil => simp at found
-  | cons head rest ih =>
+theorem fieldOffset_lt : ∀ {fs : List SrcType} {k : Nat} {f : SrcType}, fs[k]? = some f →
+    fieldOffset fs k + f.size ≤ sizes fs
+  | [], _, _, found => by simp at found
+  | ty :: rest, 0, f, found => by
+    simp only [List.getElem?_cons_zero, Option.some.injEq] at found
+    subst found
+    simp [fieldOffset, sizes]
+  | ty :: rest, k + 1, f, found => by
+    simp only [List.getElem?_cons_succ] at found
+    have := fieldOffset_lt found
+    rw [fieldOffset_succ]
+    simp only [sizes]
+    omega
+
+theorem SrcType.size_scalar {ty : SrcType} (scalar : ty.isScalar = true) : ty.size = 1 := by
+  cases ty <;> simp_all [SrcType.isScalar, SrcType.size]
+
+/-- Storing a scalar field `k`. -/
+theorem FieldsHold.set : ∀ {fs vs env slot}, FieldsHold fs vs env slot → ∀ {k : Nat} {f : SrcType},
+    fs[k]? = some f → f.isScalar = true → ∀ {nv : Value} {x : BitVec 32}, f.Holds nv x →
+      FieldsHold fs (Semantics.setValue vs k nv) (env.set (slot + fieldOffset fs k) x) slot
+  | [], _, _, _, .nil, _, _, found, _, _, _, _ => by simp at found
+  | ty :: tys, v :: vs, env, slot, .cons head rest, k, f, found, scalar, nv, x, holdsNew => by
     cases k with
     | zero =>
       simp only [List.getElem?_cons_zero, Option.some.injEq] at found
       subst found
-      refine .cons (by simpa [Env.set] using holdsNew) (rest.congr fun i _ => ?_)
-      simp only [Env.set]
+      have one := SrcType.size_scalar scalar
+      refine .cons ((SrcType.holdsAt_scalar scalar).mpr (by simpa [Env.set, fieldOffset_zero] using holdsNew))
+        (rest.congr fun i _ => ?_)
+      simp only [Env.set, fieldOffset_zero]
       rw [if_neg (by omega)]
     | succ k =>
       simp only [List.getElem?_cons_succ] at found
-      refine .cons ?_ ?_
+      refine .cons (head.congr fun i below => ?_) ?_
       · simp only [Env.set]
-        rw [if_neg (by omega)]
-        exact head
-      · have shift : ∀ a : Nat, a + (k + 1) = a + 1 + k := fun a => by omega
-        rw [shift]
-        exact ih found
+        rw [fieldOffset_succ, if_neg (by omega)]
+      · rw [fieldOffset_succ, ← Nat.add_assoc]
+        exact rest.set found scalar holdsNew
 
 /-! Core's i32 arithmetic is `BitVec 32` arithmetic on `toInt`. -/
 

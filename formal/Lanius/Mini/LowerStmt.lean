@@ -289,35 +289,48 @@ theorem Exec.mono {prog : Program} {d : Nat} {env : Env} {s : Stmt} {out : Outco
 
 /-! ## Programs -/
 
-theorem FieldTy.same_eq {a b : FieldTy} (same : a.same b = true) : a = b := by
-  cases a <;> cases b <;> simp_all [FieldTy.same]
+mutual
+theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true → a = b
+  | .i32, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isI32]
+  | .bool, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isBool]
+  | .struct id fs, b, same => by
+    cases b with
+    | struct id' gs =>
+      simp only [SrcType.same, Bool.and_eq_true, decide_eq_true_eq] at same
+      rw [same.1, typesSame_eq fs same.2]
+    | i32 => simp [SrcType.same] at same
+    | bool => simp [SrcType.same] at same
+    | enum => simp [SrcType.same] at same
+  | .enum id vs, b, same => by
+    cases b with
+    | enum id' ws =>
+      simp only [SrcType.same, Bool.and_eq_true, decide_eq_true_eq] at same
+      rw [same.1, variantsSame_eq vs same.2]
+    | i32 => simp [SrcType.same] at same
+    | bool => simp [SrcType.same] at same
+    | struct => simp [SrcType.same] at same
 
-theorem fieldsSame_eq : ∀ {fs gs : List FieldTy}, fieldsSame fs gs = true → fs = gs
-  | [], [], _ => rfl
-  | [], _ :: _, same => by simp [fieldsSame] at same
-  | _ :: _, [], same => by simp [fieldsSame] at same
-  | f :: fs, g :: gs, same => by
-    simp only [fieldsSame, Bool.and_eq_true] at same
-    rw [FieldTy.same_eq same.1, fieldsSame_eq same.2]
+theorem typesSame_eq : ∀ (fs : List SrcType) {gs : List SrcType}, typesSame fs gs = true → fs = gs
+  | [], gs, same => by cases gs <;> simp_all [typesSame]
+  | f :: fs, gs, same => by
+    cases gs with
+    | nil => simp [typesSame] at same
+    | cons g gs =>
+      simp only [typesSame, Bool.and_eq_true] at same
+      rw [SrcType.eq_of_same f same.1, typesSame_eq fs same.2]
 
-theorem variantsSame_eq : ∀ {vs ws : List (List FieldTy)}, variantsSame vs ws = true → vs = ws
-  | [], [], _ => rfl
-  | [], _ :: _, same => by simp [variantsSame] at same
-  | _ :: _, [], same => by simp [variantsSame] at same
-  | f :: fs, g :: gs, same => by
-    simp only [variantsSame, Bool.and_eq_true] at same
-    rw [fieldsSame_eq same.1, variantsSame_eq same.2]
+theorem variantsSame_eq : ∀ (vs : List (List SrcType)) {ws : List (List SrcType)},
+    variantsSame vs ws = true → vs = ws
+  | [], ws, same => by cases ws <;> simp_all [variantsSame]
+  | v :: vs, ws, same => by
+    cases ws with
+    | nil => simp [variantsSame] at same
+    | cons w ws =>
+      simp only [variantsSame, Bool.and_eq_true] at same
+      rw [typesSame_eq v same.1, variantsSame_eq vs same.2]
+end
 
-theorem SrcType.same_eq {a b : SrcType} (same : a.same b = true) : a = b := by
-  cases a <;> cases b <;>
-    simp only [SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isStruct, SrcType.isEnum,
-      Bool.false_eq_true, Bool.and_eq_true, decide_eq_true_eq, SrcType.struct.injEq,
-      SrcType.enum.injEq] at same ⊢
-  · exact ⟨same.1.symm, (fieldsSame_eq same.2).symm⟩
-  · exact ⟨same.1.symm, (variantsSame_eq same.2).symm⟩
-
-theorem SrcType.size_scalar {ty : SrcType} (scalar : ty.isScalar = true) : ty.size = 1 := by
-  cases ty <;> simp_all [SrcType.isScalar, SrcType.size]
+theorem SrcType.same_eq {a b : SrcType} (same : a.same b = true) : a = b := SrcType.eq_of_same a same
 
 theorem SrcType.toCore_ne_unit (ty : SrcType) : ty.toCore ≠ .unit := by
   cases ty <;> simp [SrcType.toCore]
@@ -395,9 +408,6 @@ theorem paramTypes_length (params : List SrcParam) : (paramTypes params).length 
   | nil => rfl
   | cons head rest ih => simp [paramTypes, ih]
 
-/-- Slots of values of these types. -/
-def sizes (types : List SrcType) : Nat := (types.map SrcType.size).sum
-
 theorem paramsSize_eq (params : List SrcParam) : paramsSize params = sizes (paramTypes params) := by
   induction params with
   | nil => rfl
@@ -405,24 +415,9 @@ theorem paramsSize_eq (params : List SrcParam) : paramsSize params = sizes (para
 
 /-! ## Values -/
 
-/-- Values of these types, laid out from `slot` in `env`. -/
-inductive ArgsAt : List SrcType → List Value → Env → Nat → Prop where
-  | nil {env : Env} {slot : Nat} : ArgsAt [] [] env slot
-  | cons {ty : SrcType} {tys : List SrcType} {v : Value} {vs : List Value} {env : Env} {slot : Nat} :
-      ty.HoldsAt v env slot → ArgsAt tys vs env (slot + ty.size) → ArgsAt (ty :: tys) (v :: vs) env slot
-
-theorem ArgsAt.length {tys vs env slot} (holds : ArgsAt tys vs env slot) : vs.length = tys.length := by
-  induction holds with
-  | nil => rfl
-  | cons _ _ ih => simp [ih]
-
-theorem ArgsAt.congr {tys vs env slot} (holds : ArgsAt tys vs env slot) {env' : Env} {slot' : Nat}
-    (agree : ∀ i, env' (slot' + i) = env (slot + i)) : ArgsAt tys vs env' slot' := by
-  induction holds generalizing slot' with
-  | nil => exact .nil
-  | cons head _ ih =>
-    refine .cons (head.congr fun i _ => agree i) (ih fun i => ?_)
-    rw [Nat.add_assoc, agree, Nat.add_assoc]
+theorem FieldsHold.congr_all {tys vs env slot} (holds : FieldsHold tys vs env slot) {env' : Env}
+    {slot' : Nat} (agree : ∀ i, env' (slot' + i) = env (slot + i)) : FieldsHold tys vs env' slot' :=
+  holds.congr fun i _ => agree i
 
 theorem evalAll_append (env : Env) (xs ys : List Expr) :
     Expr.evalAll env (xs ++ ys) = Expr.evalAll env xs ++ Expr.evalAll env ys := by
@@ -550,7 +545,8 @@ theorem lowerArgs_sound {scope frame st env} {prog : Core.Program} (corr : Corr 
     ∀ {args : List SrcExpr} {types : List SrcType} {es : List Expr} {fuel : Nat} {vs : List Value}
       {st' : State}, lowerArgs scope args types = some es →
       evalExprs fuel prog st (args.map SrcExpr.toCore) = .done vs st' →
-      st' = st ∧ ArgsAt types vs (Func.entry (Expr.evalAll env es)) 0 ∧ es.length = sizes types := by
+      st' = st ∧ FieldsHold types vs (Func.entry (Expr.evalAll env es)) 0 ∧ es.length = sizes types ∧
+        ∀ x ∈ es, ∃ xs, ValueShape scope xs ∧ x ∈ xs := by
   intro args
   induction args with
   | nil =>
@@ -565,7 +561,7 @@ theorem lowerArgs_sound {scope frame st env} {prog : Core.Program} (corr : Corr 
         subst ok
         simp only [List.map_nil, evalExprs, Semantics.Outcome.done.injEq] at run
         obtain ⟨rfl, rfl⟩ := run
-        exact ⟨rfl, .nil, rfl⟩
+        exact ⟨rfl, .nil, rfl, by simp⟩
   | cons arg rest ih =>
     intro types es fuel vs st' ok run
     cases fuel with
@@ -586,80 +582,24 @@ theorem lowerArgs_sound {scope frame st env} {prog : Core.Program} (corr : Corr 
         simp only [List.map_cons, evalExprs] at run
         split at run
         · rename_i v mid argRun
-          obtain ⟨rfl, flat, _⟩ := lowerValue_sound corr target argOk argRun
-          split at run
-          · rename_i rvs fin restRun
-            simp only [Semantics.Outcome.done.injEq] at run
-            obtain ⟨rfl, rfl⟩ := run
-            obtain ⟨rfl, restHolds, len⟩ := ih restOk restRun
-            have lenAll := evalAll_length env xs
-            refine ⟨rfl, .cons ?_ ?_, by simp [sizes, len, flat.length]⟩
-            · refine flat.holds.congr fun i below => ?_
-              simp only [evalAll_append, Nat.zero_add]
-              rw [entry_append_left _ _ (by rw [lenAll, flat.length]; exact below)]
-            · refine restHolds.congr fun i => ?_
-              simp only [evalAll_append, Nat.zero_add]
-              rw [← flat.length, ← lenAll, entry_append_right]
-          all_goals simp at run
-        all_goals simp at run
-
-theorem lowerFields_sound {scope frame st env} {prog : Core.Program} (corr : Corr scope frame st env)
-    (target : prog.target = .x86_64) :
-    ∀ {fields : List SrcExpr} {types : List FieldTy} {xs : List Expr} {fuel : Nat} {vs : List Value}
-      {st' : State}, lowerFields scope fields types = some xs →
-      evalExprs fuel prog st (fields.map SrcExpr.toCore) = .done vs st' →
-      st' = st ∧ FieldsHold types vs (Func.entry (Expr.evalAll env xs)) 0 ∧ xs.length = types.length ∧
-        ∀ x ∈ xs, ∃ (e : SrcExpr) (t : Typed), e.lower scope = some t ∧ t.expr = x := by
-  intro fields
-  induction fields with
-  | nil =>
-    intro types xs fuel vs st' ok run
-    cases fuel with
-    | zero => simp [evalExprs] at run
-    | succ fuel =>
-      cases types with
-      | cons => simp [lowerFields] at ok
-      | nil =>
-        simp only [lowerFields, Option.some.injEq] at ok
-        subst ok
-        simp only [List.map_nil, evalExprs, Semantics.Outcome.done.injEq] at run
-        obtain ⟨rfl, rfl⟩ := run
-        exact ⟨rfl, .nil, rfl, by simp⟩
-  | cons field rest ih =>
-    intro types xs fuel vs st' ok run
-    cases fuel with
-    | zero => simp [evalExprs] at run
-    | succ fuel =>
-      cases types with
-      | nil => simp [lowerFields] at ok
-      | cons f more =>
-        simp only [lowerFields, lowerCons] at ok
-        split at ok
-        · simp at ok
-        rename_i x fieldOk
-        split at ok
-        · simp at ok
-        rename_i ys restOk
-        simp only [Option.some.injEq] at ok
-        subst ok
-        simp only [List.map_cons, evalExprs] at run
-        split at run
-        · rename_i v mid fieldRun
-          obtain ⟨rfl, holds⟩ := lowerAs_sound corr target fieldOk fieldRun
+          obtain ⟨rfl, flat, shape⟩ := lowerValue_sound corr target argOk argRun
           split at run
           · rename_i rvs fin restRun
             simp only [Semantics.Outcome.done.injEq] at run
             obtain ⟨rfl, rfl⟩ := run
             obtain ⟨rfl, restHolds, len, shapes⟩ := ih restOk restRun
-            refine ⟨rfl, .cons (by simpa [Func.entry, Expr.evalAll] using holds) ?_, by simp [len], ?_⟩
-            · refine restHolds.congr fun i _ => ?_
-              simp [Func.entry, Expr.evalAll, Nat.add_comm]
-            · intro y mem
-              simp only [List.mem_cons] at mem
-              rcases mem with rfl | mem
-              · obtain ⟨t, lowered, _, rfl⟩ := lowerAs_some fieldOk
-                exact ⟨field, t, lowered, rfl⟩
-              · exact shapes y mem
+            have lenAll := evalAll_length env xs
+            refine ⟨rfl, .cons ?_ ?_, by simp [sizes, len, flat.length], ?_⟩
+            · refine flat.holds.congr fun i below => ?_
+              simp only [evalAll_append, Nat.zero_add]
+              rw [entry_append_left _ _ (by rw [lenAll, flat.length]; exact below)]
+            · refine restHolds.congr_all fun i => ?_
+              simp only [evalAll_append, Nat.zero_add]
+              rw [← flat.length, ← lenAll, entry_append_right]
+            · intro x mem
+              rcases List.mem_append.mp mem with here | there
+              · exact ⟨xs, shape, here⟩
+              · exact shapes x there
           all_goals simp at run
         all_goals simp at run
 
@@ -683,7 +623,7 @@ theorem restore_keeps (base : Nat) (caller st : State) : Keeps base st (restoreL
 theorem entry_corr (env : Env) (base : Nat) :
     ∀ (params : List SrcParam) {values : List Value} {k : Nat} {scope : List Binding}
       {frame : Nat → Nat} {st : State},
-      ArgsAt (paramTypes params) values env k → paramsValid params = true →
+      FieldsHold (paramTypes params) values env k → paramsValid params = true →
       base ≤ st.nextCell → st.Fresh →
       Corr scope frame st env → Layout scope frame base k →
       ∃ frame', Corr (paramScope params k scope) frame' (st.bindLocals (paramBindings params values)) env ∧
@@ -782,7 +722,7 @@ theorem body_sound {sp : SrcProgram} {mp : Program}
     (lowered : lowerFuncs (sigs sp.funcs) sp.funcs = some mp.funcs) {fuel : Nat}
     (ih : StmtSound sp mp fuel) {callee : Nat} {f : SrcFunc} (found : sp.funcs[callee]? = some f)
     {st : State} (fresh : st.Fresh) {values : List Value} {bits : List (BitVec 32)}
-    (holds : ArgsAt (paramTypes f.params) values (Func.entry bits) 0)
+    (holds : FieldsHold (paramTypes f.params) values (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize f.params) {v : Value} {completed : State}
     (run : execStmt fuel sp.toCore (({ st with locals := [] } : State).bindLocals
       (paramBindings f.params values)) f.body.toCore = .done (.returned (some v)) completed) :
@@ -820,7 +760,7 @@ theorem call_sound {sp : SrcProgram} {mp : Program}
   · rename_i same
     have tyEq := SrcType.same_eq same
     subst tyEq
-    obtain ⟨rfl, holds, esLen⟩ := lowerArgs_sound corr (SrcProgram.target_toCore sp) ok argsRun
+    obtain ⟨rfl, holds, esLen, -⟩ := lowerArgs_sound corr (SrcProgram.target_toCore sp) ok argsRun
     obtain ⟨freshDone, keeps, d, rs, ⟨g, gFound, arity, exec⟩, holdsRet, len⟩ :=
       body_sound lowered ih found fresh holds (by rw [evalAll_length, esLen, paramsSize_eq]) bodyRun
     obtain ⟨g', -, gOk⟩ := lowerFuncs_get lowered found
@@ -1065,14 +1005,18 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
     split at lowered
     · simp at lowered
     rename_i f fieldFound
-    simp only [Option.some.injEq] at lowered
-    subst lowered
-    have := slots b (lookup_mem found).1
-    rw [hty] at this
-    have := (List.getElem?_eq_some_iff.mp fieldFound).1
-    simp only [SrcType.size] at *
-    simp only [Expr.Below]
-    omega
+    split at lowered
+    · rename_i scalar
+      simp only [Option.some.injEq] at lowered
+      subst lowered
+      have := slots b (lookup_mem found).1
+      rw [hty] at this
+      have := fieldOffset_lt fieldFound
+      have := SrcType.size_scalar scalar
+      simp only [SrcType.size] at *
+      simp only [Expr.Below]
+      omega
+    · simp at lowered
   | negate operand ih =>
     intro t lowered
     simp only [SrcExpr.lower, lowerNegate] at lowered
@@ -1139,6 +1083,31 @@ theorem ValueShape.insens_self {scope frame base next} {xs : List Expr} (shape :
       · exact Insens.copy (.inr (.inl left))
       · exact Insens.copy (.inr (.inr (by rw [len]; exact right)))
 
+theorem slotVars_mem {slot count : Nat} {x : Expr} (mem : x ∈ slotVars slot count) :
+    ∃ j, x = .var j ∧ slot ≤ j ∧ j < slot + count := by
+  obtain ⟨i, found⟩ := List.mem_iff_getElem?.mp mem
+  have below : i < count := by
+    have := (List.getElem?_eq_some_iff.mp found).1
+    rwa [slotVars_length] at this
+  rw [slotVars_get _ _ _ below, Option.some.injEq] at found
+  exact ⟨slot + i, found.symm, by omega, by omega⟩
+
+theorem ValueShape.below {scope frame base next} {xs : List Expr} (shape : ValueShape scope xs)
+    (fr : Layout scope frame base next) : ∀ x ∈ xs, x.Below next := by
+  cases shape with
+  | single lowered same =>
+    intro x mem
+    simp only [List.mem_singleton] at mem
+    subst mem
+    rw [← same]
+    exact SrcExpr.lower_below fr.slots _ lowered
+  | copy bmem =>
+    intro x mem
+    obtain ⟨j, rfl, _, below⟩ := slotVars_mem mem
+    have := fr.slots _ bmem
+    simp only [Expr.Below]
+    omega
+
 /-- The body of a `let`, from the state after its initializer. -/
 theorem let_tail {sp : SrcProgram} {mp : Program} {fuel : Nat} (ih : StmtSound sp mp fuel)
     {body : SrcStmt} {ret : SrcType} {scope : List Binding} {next : Nat} {bstmt : Stmt}
@@ -1203,10 +1172,10 @@ theorem bindLocals_cons (st : State) (id : Nat) (v : Value) (rest : List (Nat ×
 
 /-- Binding an arm's payload gives the arm's scope. -/
 theorem armScope_corr :
-    ∀ (binders : List Nat) {types : List FieldTy} {vs : List Value} {slot : Nat}
+    ∀ (binders : List Nat) {types : List SrcType} {vs : List Value} {slot : Nat}
       {scope s' : List Binding} {frame : Nat → Nat} {st : State} {env : Env},
       armScope binders types slot scope = some s' → FieldsHold types vs env slot →
-      (∀ b ∈ scope, b.slot < slot ∨ slot + types.length ≤ b.slot) →
+      (∀ b ∈ scope, b.slot < slot ∨ slot + sizes types ≤ b.slot) →
       Corr scope frame st env → st.Fresh →
       ∃ frame', Corr s' frame' (st.bindLocals (binders.zip vs)) env ∧
         (st.bindLocals (binders.zip vs)).Fresh ∧
@@ -1224,23 +1193,28 @@ theorem armScope_corr :
     | nil => simp [armScope] at ok
     | cons f more =>
       simp only [armScope] at ok
-      cases holds with
-      | cons head tail =>
-      rename_i v vs'
-      rw [List.zip_cons_cons, bindLocals_cons]
-      have pushed := corr.alias fresh (j := slot) (fun b mem => by
-        have := clear b mem
-        simp only [List.length_cons] at this
-        omega) binder ((SrcType.holdsAt_scalar f.ty_scalar).mpr head)
-      obtain ⟨frame', corr', fresh', keeps', len⟩ := armScope_corr rest ok tail (fun b mem => by
-          simp only [List.mem_cons] at mem
-          rcases mem with rfl | mem
-          · simp
-          · have := clear b mem
-            simp only [List.length_cons] at this
-            omega) pushed (bindLocal_fresh fresh binder v)
-      exact ⟨frame', corr', fresh', (bindLocal_keeps (Nat.le_refl _) binder v).trans
-        (keeps'.lower (Nat.le_succ _)), by simp [len]⟩
+      split at ok
+      · rename_i sized
+        cases holds with
+        | cons head tail =>
+        rename_i v vs'
+        rw [List.zip_cons_cons, bindLocals_cons]
+        have pushed := corr.alias fresh (j := slot) (fun b mem => by
+          have := clear b mem
+          simp only [sizes] at this
+          omega) binder head
+        obtain ⟨frame', corr', fresh', keeps', len⟩ := armScope_corr rest ok tail (fun b mem => by
+            simp only [List.mem_cons] at mem
+            rcases mem with rfl | mem
+            · left
+              show slot < slot + f.size
+              omega
+            · have := clear b mem
+              simp only [sizes] at this
+              omega) pushed (bindLocal_fresh fresh binder v)
+        exact ⟨frame', corr', fresh', (bindLocal_keeps (Nat.le_refl _) binder v).trans
+          (keeps'.lower (Nat.le_succ _)), by simp [len]⟩
+      · simp at ok
 
 theorem matchBinds : ∀ (binders : List Nat) (vs : List Value), binders.length = vs.length →
     Semantics.matchPatterns (binders.map Core.Pattern.bind) vs = some (binders.zip vs)
@@ -1258,25 +1232,25 @@ theorem ofNat_ne {a b : Nat} (ha : a < 2 ^ 32) (hb : b < 2 ^ 32) (ne : a ≠ b) 
   simp only [BitVec.toNat_ofNat, Nat.mod_eq_of_lt ha, Nat.mod_eq_of_lt hb] at this
   exact ne this
 
-theorem length_le_maxLen_of_mem : ∀ {variants : List (List FieldTy)} {fs : List FieldTy},
-    fs ∈ variants → fs.length ≤ maxLen variants
+theorem sizes_le_maxSize_of_mem : ∀ {variants : List (List SrcType)} {fs : List SrcType},
+    fs ∈ variants → sizes fs ≤ maxSize variants
   | [], _, mem => by simp at mem
   | v :: rest, fs, mem => by
     simp only [List.mem_cons] at mem
-    simp only [maxLen]
+    simp only [maxSize]
     rcases mem with rfl | mem
     · omega
-    · have := length_le_maxLen_of_mem mem
+    · have := sizes_le_maxSize_of_mem mem
       omega
 
 /-- The tag tests pick the arm Core picks, and it stores that arm's value. -/
 theorem lowerArms_sound {P : Core.Program} {mp : Program} (target : P.target = .x86_64)
     {scope frame st env} (corr : Corr scope frame st env) (fresh : st.Fresh)
     {slot dst eid : Nat} {ty : SrcType} :
-    ∀ (arms : List SrcArm) {variants : List (List FieldTy)} {k kv : Nat} {stmt : Stmt} {fuel : Nat}
-      {fs : List FieldTy} {vs : List Value} {v : Value} {st' : State},
+    ∀ (arms : List SrcArm) {variants : List (List SrcType)} {k kv : Nat} {stmt : Stmt} {fuel : Nat}
+      {fs : List SrcType} {vs : List Value} {v : Value} {st' : State},
       lowerArms scope slot dst ty k variants arms = some stmt → arms.length = variants.length →
-      (∀ fs ∈ variants, ∀ b ∈ scope, b.slot < slot + 1 ∨ slot + 1 + fs.length ≤ b.slot) →
+      (∀ fs ∈ variants, ∀ b ∈ scope, b.slot < slot + 1 ∨ slot + 1 + sizes fs ≤ b.slot) →
       k ≤ kv → variants[kv - k]? = some fs → kv < 2 ^ 32 →
       env slot = BitVec.ofNat 32 kv → FieldsHold fs vs env (slot + 1) →
       Semantics.evalMatchArms fuel P st (.enumeration eid kv vs) (coreArms eid k arms) = .done v st' →
@@ -1431,12 +1405,12 @@ theorem stmt_letStruct (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {fi
           simp only [Semantics.Outcome.done.injEq] at valueRun
           obtain ⟨rfl, rfl⟩ := valueRun
           obtain ⟨rfl, fieldsHold, len, shapes⟩ :=
-            lowerFields_sound corr (SrcProgram.target_toCore sp) literalOk fieldsRun
+            lowerArgs_sound corr (SrcProgram.target_toCore sp) literalOk fieldsRun
           have flat : FlatValue (.struct sid types) (.structure sid vs) env xs :=
-            ⟨by simp [SrcType.size, len], ⟨vs, rfl, fieldsHold⟩⟩
+            ⟨by simp [SrcType.size, len], .struct fieldsHold⟩
           have insens : Insens xs next := Insens.below fun x mem => by
-            obtain ⟨e, t, lowered, rfl⟩ := shapes x mem
-            exact SrcExpr.lower_below fr.slots e lowered
+            obtain ⟨ys, shape, inYs⟩ := shapes x mem
+            exact shape.below fr x inYs
           obtain ⟨fresh', keeps, d, out, exec, matched⟩ := let_tail ih bodyOk corr fr fresh le
             (by simp only [SrcType.size]; omega)
             (fr.agree fun j below => setFrom_outside xs next env j (.inl below))
@@ -1528,16 +1502,16 @@ theorem stmt_letEnum (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {vari
           simp only [Semantics.Outcome.done.injEq] at valueRun
           obtain ⟨rfl, rfl⟩ := valueRun
           obtain ⟨rfl, fieldsHold, len, shapes⟩ :=
-            lowerFields_sound corr (SrcProgram.target_toCore sp) fieldsOk fieldsRun
+            lowerArgs_sound corr (SrcProgram.target_toCore sp) fieldsOk fieldsRun
           have insens : Insens (.lit (BitVec.ofNat 32 variant) :: fxs) next := Insens.below fun x mem => by
             simp only [List.mem_cons] at mem
             rcases mem with rfl | mem
             · trivial
-            · obtain ⟨e, t, lowered, rfl⟩ := shapes x mem
-              exact SrcExpr.lower_below fr.slots e lowered
+            · obtain ⟨ys, shape, inYs⟩ := shapes x mem
+              exact shape.below fr x inYs
           have holds : (SrcType.enum eid variants).HoldsAt (.enumeration eid variant vs)
               (env.setFrom next (.lit (BitVec.ofNat 32 variant) :: fxs)) next := by
-            refine ⟨variant, fs, vs, rfl, found, ?_, fieldsHold.congr fun i below => ?_⟩
+            refine .enum found ?_ (fieldsHold.congr fun i below => ?_)
             · simpa [Expr.eval] using setFrom_value _ next env insens 0 _ rfl
             · have : i < fxs.length := by rw [len]; exact below
               obtain ⟨x, xFound⟩ : ∃ x, fxs[i]? = some x := ⟨fxs[i], by simp [this]⟩
@@ -1586,9 +1560,9 @@ theorem stmt_letMatch (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {scr
   simp only [Bool.and_eq_true, decide_eq_true_eq] at cond
   obtain ⟨⟨⟨rfl, scalar⟩, len⟩, few⟩ := cond
   have bmem := (lookup_mem found).1
-  have clear : ∀ fs ∈ variants, ∀ b' ∈ scope, b'.slot < b.slot + 1 ∨ b.slot + 1 + fs.length ≤ b'.slot := by
+  have clear : ∀ fs ∈ variants, ∀ b' ∈ scope, b'.slot < b.slot + 1 ∨ b.slot + 1 + sizes fs ≤ b'.slot := by
     intro fs mem b' mem'
-    have bound := length_le_maxLen_of_mem mem
+    have bound := sizes_le_maxSize_of_mem mem
     by_cases same : b' = b
     · subst same
       omega
@@ -1612,7 +1586,8 @@ theorem stmt_letMatch (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {scr
         simp only [evalExpr] at localRun
         rw [localRun] at matchRun
         rw [hty] at holdsW
-        obtain ⟨kv, fs, vs, rfl, fsFound, tag, payload⟩ := holdsW
+        cases holdsW with
+        | @enum _ _ kv fs vs _ _ fsFound tag payload =>
         have kvLt : kv < variants.length := (List.getElem?_eq_some_iff.mp fsFound).1
         have kvBound : kv < 2 ^ 32 := Nat.lt_trans kvLt (by omega)
         obtain ⟨fresh1, keeps1, locals1, x, holds, mexec⟩ :=
@@ -1681,6 +1656,9 @@ theorem stmt_setField {id index : Nat} {value : SrcExpr}
   split at ok
   · simp at ok
   rename_i f fieldFound
+  split at ok
+  case isFalse => simp at ok
+  rename_i scalar
   simp only [lowerSetValue] at ok
   split at ok
   · simp at ok
@@ -1690,7 +1668,8 @@ theorem stmt_setField {id index : Nat} {value : SrcExpr}
   have bmem := (lookup_mem found).1
   obtain ⟨v0, entry, holds0⟩ := corr.values b bmem
   rw [hty] at holds0
-  obtain ⟨vs, rfl, fieldsHold⟩ := holds0
+  cases holds0 with
+  | @struct _ _ vs _ _ fieldsHold =>
   obtain ⟨old, got, _⟩ := fieldsHold.get fieldFound
   simp only [SrcStmt.toCore, execStmt] at run
   split at run
@@ -1703,7 +1682,8 @@ theorem stmt_setField {id index : Nat} {value : SrcExpr}
       obtain ⟨rv, valueRun, rfl⟩ := field_assign_step corr found entry got fresh.2 assignRun
         fun valueRun => (lowerAs_sound corr (SrcProgram.target_toCore sp) valueOk valueRun).1
       obtain ⟨_, holds⟩ := lowerAs_sound corr (SrcProgram.target_toCore sp) valueOk valueRun
-      have inRange := (List.getElem?_eq_some_iff.mp fieldFound).1
+      have inRange := fieldOffset_lt fieldFound
+      have one := SrcType.size_scalar scalar
       refine ⟨assigned_fresh fresh _ _, assigned_keeps (fr.above b bmem) _ _, 0, _, .assign,
         .next (corr.assign fr bmem (fun j away => ?_) ?_)⟩
       · simp only [Env.set]
@@ -1711,7 +1691,7 @@ theorem stmt_setField {id index : Nat} {value : SrcExpr}
         simp only [SrcType.size] at away
         rw [if_neg (by omega)]
       · rw [hty]
-        exact ⟨_, rfl, fieldsHold.set fieldFound holds⟩
+        exact .struct (fieldsHold.set fieldFound scalar holds)
   all_goals simp at run
 
 theorem stmt_setCall (lowered : lowerFuncs (sigs sp.funcs) sp.funcs = some mp.funcs)
