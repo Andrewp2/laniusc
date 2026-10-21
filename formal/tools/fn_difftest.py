@@ -1,0 +1,425 @@
+#!/usr/bin/env python3
+"""Differential test of every extracted function against its Lean definition.
+
+    python3 -I formal/tools/fn_difftest.py WORKDIR [--per-fn N] [--seed S] [--laniusc PATH] [--source FILE]
+
+For each function and method that extract.py emits (not the inline helpers or
+the list operations, which have spec theorems), generate N random arguments
+from the declared types, run the Lean definition with #eval and the Lanius
+function natively, and compare canonical renderings of the results.
+
+The Lanius side is a copy of formal/lani/mini/compiler.lani with only its
+module line changed, followed by generated renderers and one function per
+case, so the code under test is the extracted source byte for byte. A Lanius
+run that does not return is not a mismatch: the extracted definitions agree
+with every run that returns. That covers a panic (minus below zero, which
+Lean's Nat truncates) and a native stack overflow (SIGSEGV), since Lean has no
+stack limit and the compiler recurses once per list element or local. The
+binary restarts after a failed case at the next one, passed as its argument
+count, and the summary reports each failure by function and signal.
+"""
+
+import argparse
+import os
+import random
+import subprocess
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import extract  # noqa: E402
+from extract import Ty, camel, lower_first  # noqa: E402
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SOURCE = os.path.join(ROOT, 'formal/lani/mini/compiler.lani')
+FORMAL = os.path.join(ROOT, 'formal')
+HEAVY = os.path.join(ROOT, 'target/claude-work/bin/heavy')
+
+
+def key(t):
+    """A name fragment for a type, used in generated Lanius helper names."""
+    t = t.strip_box()
+    return t.name + ''.join('_' + key(a) for a in t.args)
+
+
+class Types:
+    def __init__(self, ex):
+        self.ex = ex
+
+    # ------------------------------------------------------------ values
+
+    def gen(self, t, rng, depth):
+        t = t.strip_box()
+        n = t.name
+        if n == 'usize':
+            return ('nat', rng.choice([0, 0, 1, 1, 2, 3, 4, 5, 7, 8, 12, 31, 100, 4096, rng.randrange(1 << 20)]))
+        if n in ('i32', 'u32'):
+            v = rng.choice([0, 1, -1, 2, 7, -8, 127, 128, 255, 256, -129, 2 ** 31 - 1, -2 ** 31,
+                            rng.randrange(-2 ** 31, 2 ** 31)])
+            return ('bits', v % 2 ** 32)
+        if n == 'u8':
+            return ('u8', rng.randrange(256))
+        if n == 'bool':
+            return ('bool', rng.random() < 0.5)
+        if n == 'List':
+            count = 0 if depth <= 0 else rng.choice([0, 1, 1, 2, 2, 3, 4])
+            return ('list', t.args[0], [self.gen(t.args[0], rng, depth - 1) for _ in range(count)])
+        if n == 'Option':
+            if depth <= 0 or rng.random() < 0.3:
+                return ('none', t.args[0])
+            return ('some', t.args[0], self.gen(t.args[0], rng, depth - 1))
+        if n in self.ex.enums:
+            ctors = self.ex.enums[n]['ctors']
+            leaves = [c for c in ctors if not any(p.strip_box().name == n for p in c[1])]
+            ctor, payload, _ = rng.choice(leaves if depth <= 0 else ctors)
+            return ('enum', n, ctor, [self.gen(p, rng, depth - 1) for p in payload])
+        if n in self.ex.structs:
+            fields = self.ex.structs[n]['fields']
+            return ('struct', n, [(f, self.gen(ft, rng, depth - 1)) for f, ft, _ in fields])
+        raise ValueError(f'cannot generate {t!r}')
+
+    def lean(self, v):
+        k = v[0]
+        if k == 'nat':
+            return str(v[1])
+        if k == 'bits':
+            return f'(BitVec.ofNat 32 {v[1]})'
+        if k == 'u8':
+            return f'({v[1]} : UInt8)'
+        if k == 'bool':
+            return 'true' if v[1] else 'false'
+        if k == 'list':
+            return '[' + ', '.join(self.lean(x) for x in v[2]) + ']'
+        if k == 'none':
+            return 'none'
+        if k == 'some':
+            return f'(some {self.lean(v[2])})'
+        if k == 'enum':
+            head = f'{v[1]}.{lower_first(v[2])}'
+            return f'({" ".join([head] + [self.lean(x) for x in v[3]])})' if v[3] else head
+        if k == 'struct':
+            return '({ ' + ', '.join(f'{camel(f)} := {self.lean(x)}' for f, x in v[2]) + f' }} : {v[1]})'
+        raise ValueError(k)
+
+    def lani(self, v, t):
+        """A Lanius expression of type t (Box<T> wraps with boxed)."""
+        if t.name == 'Box':
+            return f'boxed({self.lani(v, t.args[0])})'
+        k = v[0]
+        if k == 'nat':
+            return f'({v[1]} as usize)'
+        if k == 'bits':
+            signed = v[1] - 2 ** 32 if v[1] >= 2 ** 31 else v[1]
+            text = str(signed) if signed >= 0 else f'(0 - {-signed - 1} - 1)'
+            return text if t.name == 'i32' else f'({text} as u32)'
+        if k == 'u8':
+            return f'({v[1]} as u8)'
+        if k == 'bool':
+            return 'true' if v[1] else 'false'
+        if k == 'list':
+            self.need_nil.add(v[1])
+            text = f'nil_{key(v[1])}()'
+            for x in reversed(v[2]):
+                text = f'cons({self.lani(x, v[1])}, {text})'
+            return text
+        if k == 'none':
+            self.need_none.add(v[1])
+            return f'none_{key(v[1])}()'
+        if k == 'some':
+            return f'Some({self.lani(v[2], v[1])})'
+        if k == 'enum':
+            payload = next(p for c, p, _ in self.ex.enums[v[1]]['ctors'] if c == v[2])
+            head = f'{v[1]}::{v[2]}'
+            if not payload:
+                return head
+            return f'{head}({", ".join(self.lani(x, pt) for x, pt in zip(v[3], payload))})'
+        if k == 'struct':
+            fields = self.ex.structs[v[1]]['fields']
+            parts = [f'{f}: {self.lani(x, ft)}' for (f, x), (_, ft, _) in zip(v[2], fields)]
+            return f'{v[1]} {{ {", ".join(parts)} }}'
+        raise ValueError(k)
+
+    # ------------------------------------------------------------ rendering
+
+    def lean_render(self, t, term):
+        """A Lean String expression rendering term : t."""
+        t = t.strip_box()
+        n = t.name
+        if n == 'usize':
+            return f'(toString {term})'
+        if n in ('i32', 'u32'):
+            return f'(hex8 {term}.toNat)'
+        if n == 'u8':
+            return f'(hex2 {term}.toNat)'
+        if n in ('bool', 'List', 'Option') or n in self.ex.enums or n in self.ex.structs:
+            self.need_render.add(t)
+            return f'(render_{key(t)} {term})'
+        raise ValueError(n)
+
+    def lean_renderers(self):
+        text, deps, done = {}, {}, set()
+        while self.need_render - done:
+            t = sorted(self.need_render - done, key=repr)[0]
+            done.add(t)
+            before = set(self.need_render)
+            self.need_render.clear()
+            out = []
+            n, name = t.name, f'render_{key(t)}'
+            lt = extract.lean_type(t)
+            if n == 'bool':
+                out.append(f'def {name} (b : Bool) : String := if b then "t" else "f"')
+            elif n == 'List':
+                inner = self.lean_render(t.args[0], 'x')
+                out.append(f'def {name} (xs : {lt}) : String :=\n'
+                           f'  "[" ++ String.join (xs.map (fun x => {inner} ++ ",")) ++ "]"')
+            elif n == 'Option':
+                inner = self.lean_render(t.args[0], 'x')
+                out.append(f'def {name} : {lt} → String\n  | none => "N"\n  | some x => "S(" ++ {inner} ++ ")"')
+            elif n in self.ex.structs:
+                fields = self.ex.structs[n]['fields']
+                parts = ' ++ '.join(f'{self.lean_render(ft, f"s.{camel(f)}")} ++ ","' for f, ft, _ in fields)
+                out.append(f'def {name} (s : {n}) : String := "{{" ++ {parts} ++ "}}"')
+            else:
+                ctors = self.ex.enums[n]['ctors']
+                recursive = any(p.strip_box() == t for _, ps, _ in ctors for p in ps)
+                arms = []
+                for c, ps, _ in ctors:
+                    binders = [f'p{i}' for i in range(len(ps))]
+                    pat = ' '.join([f'.{lower_first(c)}'] + binders)
+                    body = f'"{c}("' + ''.join(f' ++ {self.lean_render(p, b)} ++ ","' for p, b in zip(ps, binders)) + ' ++ ")"'
+                    arms.append(f'  | {pat} => {body}')
+                head = f'{"partial " if recursive else ""}def {name} : {n} → String'
+                out.append(head + '\n' + '\n'.join(arms))
+            text[t], deps[t] = out[0], set(self.need_render) - {t}
+            self.need_render |= before
+        order, seen = [], set()
+        def visit(t):
+            if t not in seen:
+                seen.add(t)
+                for d in sorted(deps[t], key=repr):
+                    visit(d)
+                order.append(text[t])
+        for t in sorted(text, key=repr):
+            visit(t)
+        return '\n\n'.join(order)
+
+    def lani_render(self, t, term):
+        """A Lanius statement-free expression (an i32 call) printing term : t."""
+        t = t.strip_box()
+        if t.name == 'Box':
+            return self.lani_render(t.args[0], f'unbox({term})')
+        self.need_lani.add(t)
+        return f'r_{key(t)}({term})'
+
+    def lani_renderers(self):
+        out, done = [], set()
+        while self.need_lani - done:
+            t = sorted(self.need_lani - done, key=repr)[0]
+            done.add(t)
+            n, k = t.name, key(t)
+            lt = self.lani_type(t)
+            if n == 'usize':
+                out.append(f'fn r_{k}(v: usize) -> i32 {{\n    if (v > 9) {{\n        r_{k}(v / 10);\n    }}\n'
+                           f'    return put((v % 10) as i32 + 48);\n}}')
+            elif n in ('i32', 'u32'):
+                bits = 'v' if n == 'i32' else '(v as i32)'
+                out.append(f'fn r_{k}(v: {n}) -> i32 {{\n    let b: i32 = {bits};\n    let shift: i32 = 28;\n'
+                           f'    while (shift >= 0) {{\n        put_hex((b >> shift) & 15);\n        shift -= 4;\n    }}\n'
+                           f'    return 0;\n}}')
+            elif n == 'u8':
+                out.append(f'fn r_{k}(v: u8) -> i32 {{\n    let b: i32 = v as i32;\n    put_hex(b / 16);\n'
+                           f'    return put_hex(b % 16);\n}}')
+            elif n == 'bool':
+                out.append(f'fn r_{k}(v: bool) -> i32 {{\n    if (v) {{\n        return put(116);\n    }}\n'
+                           f'    return put(102);\n}}')
+            elif n == 'List':
+                el = t.args[0]
+                out.append(f'fn r_{k}(xs: {lt}) -> i32 {{\n    put(91);\n    r_{k}_items(xs);\n    return put(93);\n}}')
+                out.append(f'fn r_{k}_items(xs: {lt}) -> i32 {{\n    return match (xs) {{\n        Nil -> 0,\n'
+                           f'        Cons(x, rest) -> r_{k}_item(x, unbox(rest)),\n    }};\n}}')
+                out.append(f'fn r_{k}_item(x: {self.lani_type(el)}, rest: {lt}) -> i32 {{\n'
+                           f'    {self.lani_render(el, "x")};\n    put(44);\n    return r_{k}_items(rest);\n}}')
+            elif n == 'Option':
+                el = t.args[0]
+                out.append(f'fn r_{k}(v: {lt}) -> i32 {{\n    return match (v) {{\n        None -> put(78),\n'
+                           f'        Some(x) -> r_{k}_some(x),\n    }};\n}}')
+                out.append(f'fn r_{k}_some(x: {self.lani_type(el)}) -> i32 {{\n    put(83);\n    put(40);\n'
+                           f'    {self.lani_render(el, "x")};\n    return put(41);\n}}')
+            elif n in self.ex.structs:
+                fields = self.ex.structs[n]['fields']
+                lines = [f'fn r_{k}(s: {n}) -> i32 {{', '    put(123);']
+                for f, ft, _ in fields:
+                    lines += [f'    {self.lani_render(ft, f"s.{f}")};', '    put(44);']
+                lines += ['    return put(125);', '}']
+                out.append('\n'.join(lines))
+            else:
+                ctors = self.ex.enums[n]['ctors']
+                arms = []
+                for c, ps, _ in ctors:
+                    binders = [f'p{i}' for i in range(len(ps))]
+                    pat = f'{n}::{c}' + (f'({", ".join(binders)})' if ps else '')
+                    arms.append(f'        {pat} -> r_{k}_{c}({", ".join(binders)}),')
+                    lines = [f'fn r_{k}_{c}({", ".join(f"{b}: {self.lani_type(p)}" for b, p in zip(binders, ps))}) -> i32 {{']
+                    lines += [f'    put({ord(ch)});' for ch in c + '(']
+                    for p, b in zip(ps, binders):
+                        lines += [f'    {self.lani_render(p, b)};', '    put(44);']
+                    lines += ['    return put(41);', '}']
+                    out.append('\n'.join(lines))
+                out.append(f'fn r_{k}(v: {n}) -> i32 {{\n    return match (v) {{\n' + '\n'.join(arms) + '\n    };\n}')
+        return '\n\n'.join(out)
+
+    def lani_type(self, t):
+        names = {'usize': 'usize', 'i32': 'i32', 'u32': 'u32', 'u8': 'u8', 'bool': 'bool'}
+        if t.name in names:
+            return names[t.name]
+        if t.name == 'Option':
+            return f'core::option::Option<{self.lani_type(t.args[0])}>'
+        if t.args:
+            return f'{t.name}<{", ".join(self.lani_type(a) for a in t.args)}>'
+        return t.name
+
+
+def targets(ex):
+    """(label, lean head, lanius call builder, params, ret) for each tested function."""
+    out = []
+    for item in ex.order:
+        if item['kind'] == 'fn' and not item['inline'] and item['name'] not in extract.SPEC_FNS:
+            name = item['name']
+            out.append((name, camel(name), item['params'], item['ret'],
+                        lambda args, name=name: f'{name}({", ".join(args)})'))
+        elif item['kind'] == 'impl':
+            for f in item['fns']:
+                label = f'{item["name"]}.{f["name"]}'
+                out.append((label, f'{item["name"]}.{camel(f["name"])}', f['params'], f['ret'],
+                            lambda args, m=f['name']: f'{args[0]}.{m}({", ".join(args[1:])})'))
+    return out
+
+
+LEAN_HEAD = '''import Lanius.Mini.Compiler
+open Lanius.Mini
+
+def hexDigit (n : Nat) : String := String.singleton ("0123456789abcdef".toList.getD n '0')
+def hex8 (n : Nat) : String := String.join ((List.range 8).reverse.map (fun i => hexDigit (n / 16 ^ i % 16)))
+def hex2 (n : Nat) : String := hexDigit (n / 16 % 16) ++ hexDigit (n % 16)
+'''
+
+LANI_TAIL_HEAD = '''
+fn put(value: i32) -> i32 {
+    let written: bool = std::io_byte::write_stdout_byte(value);
+    return 0;
+}
+
+fn put_hex(digit: i32) -> i32 {
+    if (digit > 9) {
+        return put(digit + 87);
+    }
+    return put(digit + 48);
+}
+'''
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('workdir')
+    parser.add_argument('--per-fn', type=int, default=20)
+    parser.add_argument('--seed', type=int, default=1)
+    parser.add_argument('--laniusc', default=os.path.join(ROOT, 'target/release/laniusc'))
+    parser.add_argument('--source', default=SOURCE,
+                        help='Lanius source (default: the mini compiler; the Lean side is always the built one)')
+    args = parser.parse_args()
+    rng = random.Random(args.seed)
+    os.makedirs(os.path.join(args.workdir, 'app'), exist_ok=True)
+
+    source = open(args.source).read()
+    ex = extract.Extractor(extract.Parser(extract.lex(source)).items())
+    ty = Types(ex)
+    ty.need_render, ty.need_lani, ty.need_nil, ty.need_none = set(), set(), set(), set()
+
+    cases = []  # (label, lean expr, lanius case fn)
+    for label, lean_head, params, ret, call in targets(ex):
+        for _ in range(args.per_fn):
+            values = [ty.gen(pt, rng, 3) for _, pt in params]
+            lean_args = [ty.lean(v) for v in values]
+            lean_term = f'({" ".join([lean_head] + lean_args)})'
+            lets = [f'    let a{i}: {ty.lani_type(pt)} = {ty.lani(v, pt)};'
+                    for i, (v, (_, pt)) in enumerate(zip(values, params))]
+            index = len(cases)
+            body = '\n'.join(lets + [f'    return {ty.lani_render(ret, call([f"a{i}" for i in range(len(params))]))};'])
+            cases.append((label, ty.lean_render(ret, lean_term), f'fn case{index}() -> i32 {{\n{body}\n}}'))
+
+    # Lean: one line per case.
+    lean = [LEAN_HEAD, ty.lean_renderers(), '']
+    for index, (_, term, _) in enumerate(cases):
+        lean.append(f'def case{index} : String := {term}')
+    for chunk in range(0, len(cases), 100):
+        indices = range(chunk, min(chunk + 100, len(cases)))
+        lean.append('#eval IO.println (String.intercalate "\\n" [' +
+                    ', '.join(f's!"{i}:{{case{i}}}"' for i in indices) + '])')
+    lean_path = os.path.join(args.workdir, 'Cases.lean')
+    open(lean_path, 'w').write('\n'.join(lean) + '\n')
+
+    # Lanius: the compiler source as module app::main, then the harness.
+    body = source.replace('module mini::compiler;', 'module app::main;\nimport std::io_byte;\nimport std::process;', 1)
+    tail = [LANI_TAIL_HEAD]
+    for t in sorted(ty.need_nil, key=repr):
+        tail.append(f'fn nil_{key(t)}() -> List<{ty.lani_type(t)}> {{\n    return empty();\n}}')
+    for t in sorted(ty.need_none, key=repr):
+        tail.append(f'fn none_{key(t)}() -> core::option::Option<{ty.lani_type(t)}> {{\n    return None;\n}}')
+    tail.append(ty.lani_renderers())
+    for _, _, fn in cases:
+        tail.append(fn)
+    main_lines = ['fn main() -> i32 {', '    let start: i32 = std::process::argc() - 1;']
+    for index in range(len(cases)):
+        digits = ' '.join(f'put({ord(c)});' for c in f'{index}:')
+        main_lines.append(f'    if (start <= {index}) {{ {digits} case{index}(); put(10); }}')
+    main_lines += ['    return 0;', '}']
+    tail.append('\n'.join(main_lines))
+    lani_path = os.path.join(args.workdir, 'app/main.lani')
+    open(lani_path, 'w').write(body + '\n'.join(tail) + '\n')
+
+    lean_out = subprocess.run(['lake', 'env', 'lean', os.path.abspath(lean_path)], cwd=FORMAL,
+                              capture_output=True, text=True)
+    if lean_out.returncode != 0:
+        print(lean_out.stdout[-3000:], lean_out.stderr[-3000:], file=sys.stderr)
+        return 1
+    expected = dict(line.split(':', 1) for line in lean_out.stdout.splitlines() if ':' in line)
+
+    binary = os.path.join(args.workdir, 'cases')
+    built = subprocess.run([HEAVY, '-t', '20', args.laniusc, '--stdlib-root', os.path.join(ROOT, 'stdlib'),
+                            '-o', binary, lani_path], capture_output=True, text=True)
+    if built.returncode != 0:
+        print(built.stdout[-3000:], built.stderr[-3000:], file=sys.stderr)
+        return 1
+
+    actual, panicked, start, codes = {}, [], 0, {}
+    while start < len(cases):
+        run = subprocess.run([binary] + ['x'] * start, capture_output=True, timeout=120)
+        lines = run.stdout.decode('latin-1').split('\n')
+        complete = lines[:-1]  # the last piece has no newline
+        for line in complete:
+            index, text = line.split(':', 1)
+            actual[index] = text
+        if run.returncode == 0 and len(complete) == len(cases) - start:
+            break
+        failed = start + len(complete)
+        panicked.append(failed)
+        codes[failed] = run.returncode
+        start = failed + 1
+
+    mismatches = [(i, cases[i][0]) for i in range(len(cases))
+                  if str(i) in actual and actual[str(i)] != expected.get(str(i))]
+    for i, label in mismatches[:10]:
+        print(f'case {i} ({label}):\n  lean   {expected.get(str(i))}\n  lanius {actual[str(i)]}')
+    labels = sorted({label for label, _, _, _, _ in targets(ex)})
+    by_label = {}
+    for i in panicked:
+        why = {-11: 'stack overflow', -4: 'panic', -5: 'panic'}.get(codes[i], f'exit {codes[i]}')
+        label = f'{cases[i][0]} {why}'
+        by_label[label] = by_label.get(label, 0) + 1
+    panics = ', '.join(f'{label}: {n}' for label, n in sorted(by_label.items()))
+    print(f'{len(labels)} functions, {len(cases)} cases, {len(panicked)} did not return '
+          f'({panics or "none"}), {len(mismatches)} mismatches')
+    return 1 if mismatches else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

@@ -170,6 +170,23 @@ Lanius compiler built by laniusc, and compares the images byte for byte. Two
 seeds, 602 programs, 157,000 image bytes: no differences. The fact/fib/mix/gcd
 image from the extracted definitions also passes the native run (2,368 calls).
 
+Two more checks of the extraction, 2026-10-21. The same difftest over six more
+seeds: 3,006 programs, 757,000 image bytes, no differences. And a per-function
+difftest:
+
+```bash
+python3 -I formal/tools/fn_difftest.py target/claude-work/mini/fn --per-fn 100 --seed 21
+```
+
+It calls each of the 41 extracted functions and methods on random arguments
+generated from their declared types, in Lean with `#eval` and natively in a
+copy of `compiler.lani` (only the module line changes), and compares canonical
+renderings of the results. Two seeds, 8,200 calls: no differences. A run that
+does not return is reported, not compared; the only ones were native stack
+overflows in `zero_locals` and its callers on frames of about 10^6 locals,
+since the compiler recurses once per local. A one-character change to
+`BinOp.size` in the Lanius copy is caught.
+
 Limits found on the way:
 
 - laniusc rejected a `Type::Ctor(...)` match pattern anywhere after a bare `<`
@@ -178,6 +195,9 @@ Limits found on the way:
   match-pattern pass (`shaders/parser/tokens/match/pattern/arm_comma.slang`).
 - Lanius match arms cannot contain blocks, `if`, or a `match` inside a larger
   expression; helper functions and `// extract: inline` cover this.
+- Native recursion depth: the compiler recurses once per list element and per
+  zeroed local, so inputs near `frame_limit` overflow the stack. Lean has no
+  such limit, so this is outside the theorem (it covers runs that return).
 - The Lanius runtime gave every allocation its own page inside a 1 GiB
   `MAP_32BIT` window, which capped one run at about 262k live allocations. The
   window is gone (70a4134f), and the cons list made list walks free, so 300

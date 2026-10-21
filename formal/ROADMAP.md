@@ -8,7 +8,7 @@ it still trusts, proof lines against code lines, and check time.
 | # | step | status |
 |---|------|--------|
 | 1 | Mini compiler lists proved against the list specs the extractor assumes | done: a cons list `List<T>`; each list operation is extracted with a Lean-checked spec theorem; `std::vec` specs move to step 10 |
-| 2 | Extractor faithfulness: proof for the pure subset, at least a large difftest | |
+| 2 | Extractor faithfulness: proof for the pure subset, at least a large difftest | difftests done: 3,006 programs end to end and 8,200 per-function calls (`fn_difftest.py`), no differences. The proof needs a Core heap model for `Box`, so it moves to step 6 |
 | 3 | laniusc limits pure code hits at scale: per-allocation mmap and no free, `view` copying the tail, match arms without blocks or `if` | `<` match-arm parse fixed (fb6f3310); 1 GiB `MAP_32BIT` cap removed (70a4134f); `view` gone with the cons list. Open: a small-object allocator (needed by step 11; must keep the strace allocation-failure tests meaningful), block/`if` match arms |
 | 4 | The real verified compiler in `verified_compiler/`, pure style, top-level theorem first | |
 | 5 | Source features one at a time: structs, enums and `match`, `Vec`, generics (monomorphized) | |
