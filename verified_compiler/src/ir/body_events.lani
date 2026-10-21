@@ -31,6 +31,14 @@ pub struct FieldReference {
     index: i32,
 }
 
+pub fn field_index(event: Event) -> i32 {
+    return match (event) {
+        ExpressionField(field) -> field.index,
+        PlaceField(place_field) -> place_field.index,
+        _ -> -1,
+    };
+}
+
 pub struct StructFields {
     type_id: i32,
     count: i32,
@@ -210,6 +218,7 @@ fn invalid_local_reference() -> LocalReference {
 pub fn local_reference(event: Event) -> LocalReference {
     return match (event) {
         ExpressionLocal(local) -> local,
+        PlaceLocal(place_local) -> place_local,
         _ -> invalid_local_reference(),
     };
 }

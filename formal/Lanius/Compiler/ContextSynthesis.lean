@@ -163,6 +163,16 @@ def structureEntry (row : DeclarationLowering pack catalog program) :
       fieldOrder := List.range declaration.fields.length }
   | .enumeration _ | .constant _ | .function _ => none
 
+def structConstructor (pack : Declarations.SourcePack)
+    (row : DeclarationLowering pack catalog program) :
+    Option SurfaceElaboration.StructConstructorScheme :=
+  match row.core with
+  | .structure declaration => some {
+      declaration := row.header.declaration, sourceType := declaration.id
+      fields := (structureFields pack row).map fun field =>
+        { name := field.name, field := field.field, type := field.type.toTy } }
+  | _ => none
+
 def enumVariantRowsAt (catalog : Declarations.Catalog)
     (parent : Declarations.ItemAddress) (nominalDeclaration : Nat)
     (coreType : TypeId) : Nat → List (List Core.Ty) →
@@ -243,6 +253,7 @@ def synthesize
     nominalInstances := rows.filterMap nominalInstance
     typeAliases := aliases.map aliasEntry
     structures := rows.filterMap structureEntry
+    structConstructors := rows.filterMap (structConstructor pack)
     variants := variantRows.map Prod.fst
     variantConstructors := variantRows.map Prod.snd }
 

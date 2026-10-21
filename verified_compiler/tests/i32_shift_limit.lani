@@ -1,0 +1,5 @@
+module app::main;
+
+fn shift(value: i32, count: i32) -> i32 { return value << count; }
+
+fn main() -> i32 { return shift(1, 32); }

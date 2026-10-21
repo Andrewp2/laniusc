@@ -1,0 +1,8 @@
+module app::main;
+
+fn quotient(left: i32, right: i32) -> i32 { return left / right; }
+
+fn main() -> i32 {
+    let minimum: i32 = -2147483647 - 1;
+    return quotient(minimum, -1);
+}

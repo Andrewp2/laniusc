@@ -7,7 +7,7 @@ import verified::parse_output;
 import verified::output;
 import verified::host;
 
-const WORKSPACE_WORDS: i32 = 256;
+const WORKSPACE_WORDS: i32 = 4096;
 
 fn main() -> i32 {
     // Terminals map to raw kinds 0, 10, 20, and 30. The grammar is:
@@ -179,20 +179,29 @@ fn main() -> i32 {
             verified::parser::StateStorageFull)) {
         return 4;
     }
-    // Five lattice charts occupy 20 words; the remaining 18 words hold
+    // Five lattice charts and their indexes occupy 260 words; another 26 hold
     // exactly one typed state. The recognizer must stop before the canary.
-    workspace[38] = 12345678;
+    workspace[286] = 12345678;
     let one_state_workspace: [i32] =
-        verified::host::i32_slice_from_raw_parts(workspace_ptr, 38);
+        verified::host::i32_slice_from_raw_parts(workspace_ptr, 286);
     let one_state_full = verified::parser::recognize(
         balanced_grammar, 43, pair_tokens, 2,
         verified::parser::storage(
-            verified::host::i32_slice_data_ptr(one_state_workspace), 38));
+            verified::host::i32_slice_data_ptr(one_state_workspace), 286));
     if (!verified::parser::parse_has_stage(one_state_full,
             verified::parser::StateStorageFull)) {
         return 34;
     }
-    if (workspace[38] != 12345678) { return 35; }
+    if (verified::parser::parse_state_count(one_state_full) != 1
+        || workspace[286] != 12345678) { return 35; }
+    workspace[285] = 12345678;
+    let no_state = verified::parser::recognize(
+        balanced_grammar, 43, pair_tokens, 2,
+        verified::parser::storage(workspace_ptr, 285));
+    if (!verified::parser::parse_has_stage(no_state,
+            verified::parser::StateStorageFull)
+        || verified::parser::parse_state_count(no_state) != 0
+        || workspace[285] != 12345678) { return 36; }
 
     // One physical token of raw kind 99 may be consumed as two virtual
     // terminals whose canonical raw kind is 30.
@@ -278,6 +287,216 @@ fn main() -> i32 {
         || tree_records[5] != 0 || tree_records[8] != 1
         || tree_records[tree_offsets[0]] != 1 || tree_records[tree_offsets[1]] != 1) {
         return 27;
+    }
+
+    // Exhaust all binary token streams through length eight. This grammar
+    // accepts exactly n opening tokens followed by n closing tokens.
+    let corpus: [i32; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
+    let length: i32 = 0;
+    let variants: i32 = 1;
+    while (length <= 8) {
+        let word: i32 = 0;
+        while (word < variants) {
+            let bits: i32 = word;
+            let index: i32 = 0;
+            let expected: bool = length % 2 == 0;
+            while (index < length) {
+                let bit: i32 = bits % 2;
+                corpus[index] = 10 + bit * 10;
+                if ((index < length / 2 && bit != 0)
+                    || (index >= length / 2 && bit != 1)) {
+                    expected = false;
+                }
+                bits /= 2;
+                index += 1;
+            }
+            let actual: verified::parser::ParseResult =
+                verified::parser::recognize(balanced_grammar, 43,
+                    corpus, length, parser_storage);
+            if (verified::parser::parse_succeeded(actual) != expected) {
+                return 40;
+            }
+            if (!expected && !verified::parser::parse_has_stage(actual,
+                    verified::parser::Rejected)) { return 41; }
+            word += 1;
+        }
+        variants *= 2;
+        length += 1;
+    }
+
+    // A duplicate inside an LHS list must not suppress a later unseen rule.
+    // Start -> Choice; Choice -> 10 | 20, listed as [10, 10, 20].
+    let duplicate_grammar: [i32; 40] = [
+        1, 3, 3, 2, 0, 99, 30, 17, 20, 23, 26, 29, 3, 32, 34, 36, 4,
+        0, 10, 20, 0, 1, 1, 0, 1, 2, 1, 1, 1, 4, 1, 2,
+        0, 1, 1, 3, 0, 1, 1, 2,
+    ];
+    let second_choice: [i32; 1] = [20];
+    let duplicate = verified::parser::recognize(duplicate_grammar, 40,
+        second_choice, 1, parser_storage);
+    if (!verified::parser::parse_succeeded(duplicate)) { return 42; }
+
+    // Both Start and Choice have duplicate alternatives. Keep the first
+    // completed derivation, including its Choice child, in grammar order.
+    let ambiguous_grammar: [i32; 43] = [
+        1, 2, 4, 2, 0, 99, 30, 17, 19, 23, 27, 31, 4, 35, 37, 39, 4,
+        0, 10, 0, 0, 1, 1, 0, 1, 2, 3, 1, 1, 1, 1, 3, 3, 1, 1,
+        0, 2, 2, 2, 0, 1, 2, 3,
+    ];
+    let first_choice: [i32; 1] = [10];
+    let ambiguous = verified::parser::recognize(ambiguous_grammar, 43,
+        first_choice, 1, parser_storage);
+    if (!verified::parser::parse_succeeded(ambiguous)) { return 43; }
+    derivation_input.token_count = 1;
+    derivation_input.state_count = verified::parser::parse_state_count(ambiguous);
+    derivation_input.state_id = verified::parser::parse_root_state(ambiguous);
+    if (verified::parser::copy_derivation(derivation_input, derivation_output) != 1
+        || derivation[0] != 0) { return 44; }
+    derivation_input.state_id = derivation[5];
+    if (verified::parser::copy_derivation(derivation_input, derivation_output) != 1
+        || derivation[0] != 2) { return 45; }
+
+    // Left-recursive ambiguity creates more items per chart than hash buckets.
+    // Start -> Start Start | 10; collisions must not merge distinct states.
+    let collision_grammar: [i32; 31] = [
+        1, 1, 2, 1, 0, 99, 30, 17, 18, 20, 22, 24, 3, 27, 28, 29, 2,
+        10, 0, 0, 0, 2, 2, 1, 1, 1, 0, 0, 2, 0, 1,
+    ];
+    let collision_tokens: [i32; 17] = [
+        10, 10, 10, 10, 10, 10, 10, 10, 10,
+        10, 10, 10, 10, 10, 10, 10, 10,
+    ];
+    let collision_memory: ptr = verified::host::alloc_i32(32768);
+    if (collision_memory == 0) { return 46; }
+    let collision = verified::parser::recognize(collision_grammar, 31,
+        collision_tokens, 17, verified::parser::storage(collision_memory, 32768));
+    if (!verified::parser::parse_succeeded(collision)) { return 47; }
+    collision_tokens[8] = 20;
+    let collision_rejected = verified::parser::recognize(collision_grammar, 31,
+        collision_tokens, 17, verified::parser::storage(collision_memory, 32768));
+    if (!verified::parser::parse_has_stage(collision_rejected,
+            verified::parser::Rejected)) { return 48; }
+
+    // Start -> A B; A -> 10 | epsilon; B -> 20 | epsilon. A and B
+    // have IDs 1 and 9, colliding in both ordered action indexes. Exercise
+    // nullable replay and completion while new parents extend the same queue.
+    let action_grammar: [i32; 64] = [
+        1, 3, 5, 10, 0, 99, 30, 17, 20, 25, 30, 35, 4, 39, 49, 59, 5,
+        0, 10, 20,
+        0, 1, 1, 9, 9,
+        0, 2, 3, 3, 4,
+        2, 1, 0, 1, 0,
+        4, 12, 1, 2,
+        0, 1, 3, 3, 3, 3, 3, 3, 3, 3,
+        1, 2, 0, 0, 0, 0, 0, 0, 0, 2,
+        0, 1, 2, 3, 4,
+    ];
+    length = 0;
+    variants = 1;
+    while (length <= 3) {
+        let word: i32 = 0;
+        while (word < variants) {
+            let bits: i32 = word;
+            let index: i32 = 0;
+            while (index < length) {
+                corpus[index] = 10 + (bits % 2) * 10;
+                bits /= 2;
+                index += 1;
+            }
+            let expected: bool = length < 2
+                || (length == 2 && corpus[0] == 10 && corpus[1] == 20);
+            let actual: verified::parser::ParseResult =
+                verified::parser::recognize(action_grammar, 64,
+                    corpus, length, parser_storage);
+            if (verified::parser::parse_succeeded(actual) != expected) {
+                return 49;
+            }
+            if (expected) {
+                derivation_input.token_count = length;
+                derivation_input.state_count = verified::parser::parse_state_count(actual);
+                derivation_input.state_id = verified::parser::parse_root_state(actual);
+                if (verified::parser::copy_derivation(
+                    derivation_input, derivation_output) != 2
+                    || derivation[0] != 0) { return 50; }
+                let first: i32 = derivation[5];
+                let second: i32 = derivation[8];
+                let first_rule: i32 = 2;
+                let second_rule: i32 = 4;
+                if (length > 0 && corpus[0] == 10) { first_rule = 1; }
+                if (length > 0 && corpus[length - 1] == 20) { second_rule = 3; }
+                derivation_input.state_id = first;
+                if (verified::parser::copy_derivation(
+                    derivation_input, derivation_output) < 0
+                    || derivation[0] != first_rule) { return 51; }
+                derivation_input.state_id = second;
+                if (verified::parser::copy_derivation(
+                    derivation_input, derivation_output) < 0
+                    || derivation[0] != second_rule) { return 52; }
+            } else {
+                if (!verified::parser::parse_has_stage(actual,
+                    verified::parser::Rejected)) { return 53; }
+            }
+            word += 1;
+        }
+        length += 1;
+        variants *= 2;
+    }
+
+    // Start -> A A A; A -> 10 | epsilon. All three parents can wait on A
+    // at one chart. Predict once, but replay nullable children for each one.
+    let repeated_grammar: [i32; 40] = [
+        1, 3, 3, 2, 0, 99, 30, 17, 20, 23, 26, 29, 4, 33, 35, 37, 3,
+        0, 10, 20,
+        0, 1, 1,
+        0, 3, 4,
+        3, 1, 0,
+        4, 4, 4, 1,
+        0, 1, 1, 2, 0, 1, 2,
+    ];
+    length = 0;
+    variants = 1;
+    while (length <= 4) {
+        let word: i32 = 0;
+        while (word < variants) {
+            let bits: i32 = word;
+            let index: i32 = 0;
+            while (index < length) {
+                corpus[index] = 10 + (bits % 2) * 10;
+                bits /= 2;
+                index += 1;
+            }
+            let expected: bool = length <= 3 && word == 0;
+            let actual: verified::parser::ParseResult =
+                verified::parser::recognize(repeated_grammar, 40,
+                    corpus, length, parser_storage);
+            if (verified::parser::parse_succeeded(actual) != expected) { return 54; }
+            if (expected) {
+                derivation_input.token_count = length;
+                derivation_input.state_count = verified::parser::parse_state_count(actual);
+                derivation_input.state_id = verified::parser::parse_root_state(actual);
+                if (verified::parser::copy_derivation(derivation_input,
+                        derivation_output) != 3 || derivation[0] != 0) { return 55; }
+                let children: [i32; 3] = [derivation[5], derivation[8], derivation[11]];
+                index = 0;
+                while (index < 3) {
+                    derivation_input.state_id = children[index];
+                    let child_count: i32 = verified::parser::copy_derivation(
+                        derivation_input, derivation_output);
+                    // Chart order retains the derivation whose empty prefix
+                    // is followed by the consuming children, not a new parse.
+                    let rule: i32 = 1;
+                    if (index < 3 - length) { rule = 2; }
+                    if (child_count < 0 || derivation[0] != rule) { return 56; }
+                    index += 1;
+                }
+            } else {
+                if (!verified::parser::parse_has_stage(actual,
+                        verified::parser::Rejected)) { return 57; }
+            }
+            word += 1;
+        }
+        length += 1;
+        variants *= 2;
     }
 
     let bad_grammar: [i32; 17] = [

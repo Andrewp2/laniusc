@@ -8,7 +8,7 @@ import verified::parser;
 import verified::syntax_tree;
 import verified::token;
 
-const WORK_WORDS: i32 = 128;
+const WORK_WORDS: i32 = 256;
 
 fn main() -> i32 {
     // Start -> identifier, with the terminal's semantic kind retained.

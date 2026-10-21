@@ -1,0 +1,5 @@
+module choice::types;
+
+fn code(value: i32) -> i32 {
+    return value + 3;
+}

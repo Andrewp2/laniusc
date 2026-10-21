@@ -11,20 +11,6 @@ open Lanius.Compiler
    instance selection remain the existing executable checkers; this module
    only composes their witnesses with argument lowering evidence. -/
 
-def supportedScalar (type : Core.ScalarTy) : Bool :=
-  match type with
-  | .bool | .signed .i32 => true
-  | _ => false
-
-def supportedGround (type : Static.GroundTy) : Bool :=
-  match type with
-  | .scalar scalar => supportedScalar scalar
-  | _ => false
-
-def supportedGrounds : List Static.GroundTy → Bool
-  | [] => true
-  | type :: tail => supportedGround type && supportedGrounds tail
-
 def pathNotShadowed? (context : Context) (path : Surface.Path) : Bool :=
   match unqualifiedPathName? path with
   | none => true
@@ -75,34 +61,23 @@ def check {context : Context} {path : Surface.Path}
     {surfaceArguments : List Surface.Expr} {coreArguments : List Core.Expr}
     {argumentTypes : List Static.GroundTy}
     (lowered : ExprsLower context surfaceArguments argumentTypes coreArguments) :
-    Option (Checked context path surfaceArguments coreArguments argumentTypes) :=
-  if _argumentsSupported : supportedGrounds argumentTypes = true then
-    match _global : NameResolutionCheck.checkGlobal context .value path with
-    | none => none
-    | some resolvedName =>
-        match _selected : FunctionInstanceCheck.checkedForDeclaration context path
-            argumentTypes resolvedName.symbol.declaration with
-        | none => none
-        | some candidate =>
-            if _returnSupported : supportedGround candidate.candidate.resolved.returnType = true then
-              if shadowed : pathNotShadowed? context path = true then
-                if declaration : candidate.candidate.scheme.declaration =
-                    resolvedName.symbol.declaration then
-                  match intrinsic : builtinIntrinsic? path with
-                  | some _ => none
-                  | none =>
-                      some {
-                        candidate := candidate.candidate
-                        global := resolvedName
-                        arguments := exprsLower_checks context surfaceArguments
-                          argumentTypes coreArguments lowered
-                        notIntrinsic := intrinsic
-                        resolved := candidate.resolvesDirectCallOfGlobal
-                          (pathNotShadowed_sound shadowed)
-                          resolvedName.symbol resolvedName.resolved declaration }
-                else none
-              else none
-            else none
+    Option (Checked context path surfaceArguments coreArguments argumentTypes) := do
+  let global ← NameResolutionCheck.checkGlobal context .value path
+  let candidate ← FunctionInstanceCheck.checkedForDeclaration context path
+    argumentTypes global.symbol.declaration
+  -- Instance selection already proves argument and return-type agreement;
+  -- a second scalar-only whitelist would reject sound aggregate calls.
+  if shadowed : pathNotShadowed? context path = true then
+    if declaration : candidate.candidate.scheme.declaration = global.symbol.declaration then
+      if intrinsic : builtinIntrinsic? path = none then
+        return {
+          candidate := candidate.candidate, global
+          arguments := exprsLower_checks context surfaceArguments argumentTypes coreArguments lowered
+          notIntrinsic := intrinsic
+          resolved := candidate.resolvesDirectCallOfGlobal (pathNotShadowed_sound shadowed)
+            global.symbol global.resolved declaration }
+      else none
+    else none
   else none
 
 end Lanius.Compiler.DirectCallCheck

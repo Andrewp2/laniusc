@@ -63,6 +63,10 @@ inductive Instruction where
   | returnNear
   deriving DecidableEq, Repr
 
+def Instruction.isDivision : Instruction → Bool
+  | .divide32 _ _ | .divide64 _ _ => true
+  | _ => false
+
 def extendRegister (low : Fin 8) (high : Bool) : Register :=
   ⟨low.val + if high then 8 else 0, by split <;> omega⟩
 
@@ -601,12 +605,14 @@ def execute (instruction : Instruction) (size : Nat) (before : State) : State :=
   | .call displacement => before.call displacement size
   | .returnNear => before.returnNear
 
-/-- Decoding consumes bytes actually loaded at RIP. The pure register and
-stack effects above cannot be substituted without that byte-level premise. -/
+/-- Decoding consumes bytes actually loaded at RIP. Division must use
+`divided`, which also requires nonzero-divisor and quotient-range evidence;
+the total `execute` function alone does not establish a successful ISA step. -/
 inductive Step (before : State) (after : State) : Prop where
   | decoded (bytes : List UInt8) (loaded : CodeAt before.memory before.rip bytes)
       (instruction : Instruction) (size : Nat) (decoded : decode bytes = some (instruction, size))
       (result : after = execute instruction size before)
+      (nonDivision : instruction.isDivision = false)
   | tested (bytes : List UInt8) (loaded : CodeAt before.memory before.rip bytes)
       (left right : Register) (size : Nat) (decoded : decode bytes = some (.test32 left right, size))
       (auxiliary : Bool) (result : after = before.test32 left right auxiliary size)

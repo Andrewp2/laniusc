@@ -1,0 +1,60 @@
+module app::main;
+
+import verified::host;
+import verified::lean_output;
+
+fn check(data: [i32], value: i32, width: i32) -> bool {
+    let capacity: i32 = 0;
+    while (capacity <= width + 1) {
+        data[0] = -1;
+        data[1] = -1;
+        data[2] = -1;
+        let next: i32 = verified::lean_output::natural(data, capacity, 1, value);
+        if (capacity <= width) {
+            if (next != -1 || data[0] != -1 || data[1] != -1 || data[2] != -1) {
+                return false;
+            }
+        } else {
+            if (next != width + 1) { return false; }
+            let remaining: i32 = value;
+            let index: i32 = width;
+            while (index > 0) {
+                let actual: i32 = (data[index / 4] >> ((index % 4) * 8)) & 255;
+                if (actual != 48 + remaining % 10) { return false; }
+                remaining = remaining / 10;
+                index -= 1;
+            }
+            if (remaining != 0 || (data[0] & 255) != 255) { return false; }
+            index = width + 1;
+            while (index < 12) {
+                if (((data[index / 4] >> ((index % 4) * 8)) & 255) != 255) { return false; }
+                index += 1;
+            }
+        }
+        capacity += 1;
+    }
+    return true;
+}
+
+fn main() -> i32 {
+    let memory: ptr = verified::host::alloc_i32(3);
+    if (memory == 0) { return 1; }
+    let data: [i32] = verified::host::i32_slice_from_raw_parts(memory, 3);
+    if (!check(data, 0, 1) || !check(data, 1, 1)) { return 2; }
+    let threshold: i32 = 10;
+    let width: i32 = 1;
+    while (width < 10) {
+        if (!check(data, threshold - 1, width) || !check(data, threshold, width + 1)) { return 3; }
+        if (width < 9) { threshold *= 10; }
+        width += 1;
+    }
+    if (!check(data, 2147483647, 10)) { return 4; }
+    data[0] = -1;
+    data[1] = -1;
+    data[2] = -1;
+    if (verified::lean_output::natural(data, 12, 0, -1) != -1
+        || verified::lean_output::natural(data, 12, -1, 7) != -1
+        || verified::lean_output::natural(data, 12, 13, 7) != -1
+        || data[0] != -1 || data[1] != -1 || data[2] != -1) { return 5; }
+    return 37;
+}

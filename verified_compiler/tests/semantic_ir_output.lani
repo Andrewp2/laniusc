@@ -3,6 +3,7 @@ module app::main;
 import backend::syntax;
 import ir::body_catalog;
 import ir::body_events;
+import ir::body_tree;
 import ir::constant_catalog;
 import ir::function_catalog;
 import ir::program;
@@ -13,7 +14,11 @@ import runtime::service;
 import verified::core_transport;
 import verified::host;
 import verified::lean_program;
+import verified::lean_body_shape;
 import verified::token;
+
+const OUTPUT_WORD_CAPACITY: i32 = 4096;
+const OUTPUT_BYTE_CAPACITY: i32 = OUTPUT_WORD_CAPACITY * verified::host::I32_BYTES;
 
 fn output_contains(output: [i32], length: i32,
     pattern: str, pattern_length: i32) -> bool {
@@ -38,7 +43,36 @@ fn output_contains(output: [i32], length: i32,
     return false;
 }
 
+// Adding no-op statements must not change whether the same typed expression
+// has source-shaped output. Bad result annotations must still be rejected.
+fn larger_body(sequences: i32) -> bool {
+    let count: i32 = 2 * sequences + 2;
+    let memory: ptr = verified::host::alloc(
+        ir::body_events::allocation_bytes(count), ir::body_events::ALIGNMENT);
+    if (memory == 0) { return false; }
+    let region: ir::body_events::Region = ir::body_events::from_raw_parts(memory, count);
+    let events: [ir::body_events::Event] = region.events;
+    let index: i32 = 0;
+    while (index < 2 * sequences) {
+        events[index] = ir::body_events::StatementSequence;
+        events[index + 1] = ir::body_events::StatementSkip;
+        index += 2;
+    }
+    events[index] = ir::body_events::StatementReturnValue;
+    events[index + 1] = ir::body_events::ExpressionInteger(7);
+    if (!ir::body_events::record_result_type(region, index + 1, ir::type_ref::I32)) {
+        return false;
+    }
+    let tree: ir::body_tree::Tree = ir::body_tree::build(region, count);
+    if (!verified::lean_body_shape::surface_supported(tree)) { return false; }
+    events[index + 1] = ir::body_events::ExpressionBoolean(true);
+    return !verified::lean_body_shape::surface_supported(tree);
+}
+
 fn main() -> i32 {
+    if (ir::symbol_catalog::allocation_bytes(1, 1, 0, 1, 1, -1) != -1
+        || ir::symbol_catalog::allocation_bytes(1, 1, 0, 1, 1,
+            verified::host::I32_MAX) != -1) { return 36; }
     let type_memory: ptr = verified::host::alloc(
         ir::type_catalog::allocation_bytes(1, 0, 1),
         ir::type_catalog::ALIGNMENT);
@@ -54,14 +88,14 @@ fn main() -> i32 {
     let event_memory: ptr = verified::host::alloc(
         ir::body_events::allocation_bytes(3),
         ir::body_events::ALIGNMENT);
-    let source_memory: ptr = verified::host::alloc_i32(8);
+    let source_memory: ptr = verified::host::alloc_i32(13);
     let token_memory: ptr = verified::host::alloc(
-        2 * verified::token::RECORD_BYTES,
+        3 * verified::token::RECORD_BYTES,
         verified::token::ALIGNMENT);
     let name_memory: ptr = verified::host::alloc(
-        ir::symbol_catalog::allocation_bytes(1, 1, 0, 1),
+        ir::symbol_catalog::allocation_bytes(1, 1, 0, 1, 1, 1),
         ir::symbol_catalog::ALIGNMENT);
-    let output_memory: ptr = verified::host::alloc_i32(4096);
+    let output_memory: ptr = verified::host::alloc_i32(OUTPUT_WORD_CAPACITY);
     if (type_memory == 0 || constant_memory == 0
         || function_memory == 0 || body_memory == 0
         || event_memory == 0 || source_memory == 0
@@ -81,7 +115,7 @@ fn main() -> i32 {
         ir::constant_catalog::from_raw_parts(constant_memory, 1, 0);
     let values: [ir::constant_catalog::Constant] = constants.constants;
     values[0] = ir::constant_catalog::Constant {
-        id: 0, kind: ir::type_ref::Bool,
+        id: 91, kind: ir::type_ref::Bool,
         encoding: ir::constant_catalog::Scalar,
         low: 1, high: 0, byte_start: -1, byte_count: 0,
     };
@@ -108,11 +142,13 @@ fn main() -> i32 {
                 id: 0, result_type: ir::type_ref::I32, parameters: 0,
             }, events, 2) != 0) { return 2; }
     let source: [i32] = verified::host::i32_slice_from_raw_parts(
-        source_memory, 8);
+        source_memory, 13);
     source[0] = 80; source[1] = 97; source[2] = 105; source[3] = 114;
     source[4] = 109; source[5] = 97; source[6] = 105; source[7] = 110;
+    source[8] = 118; source[9] = 97; source[10] = 108;
+    source[11] = 117; source[12] = 101;
     let token_table: verified::token::TokenTable =
-        verified::token::from_raw_parts(token_memory, 2);
+        verified::token::from_raw_parts(token_memory, 3);
     let token_rows: [verified::token::TokenRow] = token_table.data;
     token_rows[0] = verified::token::TokenRow {
         kind: verified::token::Identifier, start: 0, finish: 4,
@@ -120,18 +156,36 @@ fn main() -> i32 {
     token_rows[1] = verified::token::TokenRow {
         kind: verified::token::Identifier, start: 4, finish: 8,
     };
+    token_rows[2] = verified::token::TokenRow {
+        kind: verified::token::Identifier, start: 8, finish: 13,
+    };
     let names: ir::symbol_catalog::Catalog =
         ir::symbol_catalog::from_raw_parts(name_memory,
-            source, 8, token_table, 1, 1, 0, 1);
+            source, 13, token_table, 1, 1, 0, 1, 1, 1);
     let name_units: [ir::symbol_catalog::Unit] = names.units;
     let type_names: [ir::symbol_catalog::Ref] = names.types;
     let function_names: [ir::symbol_catalog::Ref] = names.functions;
+    let field_names: [ir::symbol_catalog::Ref] = names.fields;
+    let constant_names: [ir::symbol_catalog::ConstantName] = names.constants;
+    let path_memory: ptr = verified::host::alloc(ir::symbol_catalog::REF_BYTES,
+        ir::symbol_catalog::ALIGNMENT);
+    if (path_memory == 0) { return 32; }
+    let path_parts: [ir::symbol_catalog::Ref] = slice_from_raw_parts(
+        path_memory + ir::symbol_catalog::REF_BYTES - ir::symbol_catalog::ALIGNMENT, 1);
+    path_parts[0] = ir::symbol_catalog::Ref { unit: 0, token: 0 };
+    let path: ir::symbol_catalog::ModulePath =
+        ir::symbol_catalog::ModulePath { segments: path_parts, count: 1 };
     name_units[0] = ir::symbol_catalog::Unit {
-        source_offset: 0, source_length: 8,
-        token_offset: 0, token_count: 2,
+        source_offset: 0, source_length: 13,
+        token_offset: 0, token_count: 3,
+        module_path: path,
     };
     type_names[0] = ir::symbol_catalog::Ref { unit: 0, token: 0 };
     function_names[0] = ir::symbol_catalog::Ref { unit: 0, token: 1 };
+    field_names[0] = ir::symbol_catalog::Ref { unit: 0, token: 2 };
+    constant_names[0] = ir::symbol_catalog::ConstantName {
+        id: 91, source: ir::symbol_catalog::Ref { unit: 0, token: 2 },
+    };
     let program: ir::program::Program = ir::program::Program {
         entrypoint: 0,
         types: types, constants: constants,
@@ -139,31 +193,53 @@ fn main() -> i32 {
         names: names,
     };
     if (!ir::program::valid(program)) { return 3; }
+    let named_constant: ir::symbol_catalog::Ref =
+        ir::symbol_catalog::constant_source(names, 91);
+    let missing_constant: ir::symbol_catalog::Ref =
+        ir::symbol_catalog::constant_source(names, 0);
+    if (named_constant.unit != 0 || named_constant.token != 2
+        || missing_constant.unit != -1) { return 37; }
+    constant_names[0].id = 99;
+    if (ir::program::valid(program)) { return 34; }
+    constant_names[0].id = 91;
+    constant_names[0].source = ir::symbol_catalog::Ref { unit: 0, token: 99 };
+    if (ir::program::valid(program)) { return 35; }
+    constant_names[0].source = ir::symbol_catalog::Ref { unit: 0, token: 2 };
+    path_parts[0] = ir::symbol_catalog::Ref { unit: 0, token: 99 };
+    if (ir::program::valid(program)) { return 33; }
+    path_parts[0] = ir::symbol_catalog::Ref { unit: 0, token: 0 };
+    field_names[0] = ir::symbol_catalog::Ref { unit: -1, token: -1 };
+    if (ir::program::valid(program)) { return 29; }
+    field_names[0] = ir::symbol_catalog::Ref { unit: 0, token: 99 };
+    if (ir::program::valid(program)) { return 30; }
+    field_names[0] = ir::symbol_catalog::Ref { unit: 0, token: 2 };
     let output: [i32] = verified::host::i32_slice_from_raw_parts(
-        output_memory, 4096);
+        output_memory, OUTPUT_WORD_CAPACITY);
     let count: i32 = verified::core_transport::serialize(program,
-        output, 4096);
+        output, OUTPUT_WORD_CAPACITY);
     if (count <= backend::syntax::PROGRAM_HEADER_WORDS) { return 4; }
     let header: backend::syntax::ProgramHeader =
         backend::syntax::read_program_header(output);
     if (header.types != 1 || header.constants != 1
         || header.functions != 1 || header.entry != 0) { return 5; }
+    // Lean output is packed bytes, whereas transport capacity is in i32 words.
+    if (verified::lean_program::emit(program, output, 1, 0) != -1) { return 38; }
     let lean_bytes: i32 = verified::lean_program::emit(program,
-        output, 4096, 0);
+        output, OUTPUT_BYTE_CAPACITY, 0);
     if (lean_bytes <= 0) { return 13; }
     if (!output_contains(output, lean_bytes,
             "def extractedProgram : Lanius.Core.Program", 42)) { return 25; }
     if (!output_contains(output, lean_bytes,
-            "extractedStructure0_Pair", 24)
+            "link (types := [Extracted.«Pair».Types.«Pair»]", 50)
         || !output_contains(output, lean_bytes,
-            "extractedFunction0_main", 23)) { return 26; }
+            "Extracted.«Pair».Functions.«main»", 37)) { return 26; }
     token_rows[1].kind = verified::token::InvalidToken;
     if (ir::program::valid(program)) { return 27; }
     token_rows[1].kind = verified::token::Identifier;
     fields[0].type_tag = ir::type_ref::Nominal(2);
     if (ir::program::valid(program)) { return 6; }
     if (verified::lean_program::emit(program, output,
-            4096, 0) != -1) { return 14; }
+            OUTPUT_BYTE_CAPACITY, 0) != -1) { return 14; }
     fields[0].type_tag = ir::type_ref::I32;
     values[0].low = 2;
     if (ir::program::valid(program)) { return 7; }
@@ -199,7 +275,7 @@ fn main() -> i32 {
                 id: 0, result_type: ir::type_ref::I32, parameters: 0,
             }, events, 2) != 0) { return 15; }
     if (ir::program::valid(program)
-        || verified::lean_program::emit(program, output, 4096, 0) != -1) {
+        || verified::lean_program::emit(program, output, OUTPUT_BYTE_CAPACITY, 0) != -1) {
         return 16;
     }
     ir::body_catalog::clear(bodies);
@@ -210,7 +286,7 @@ fn main() -> i32 {
                 id: 0, result_type: ir::type_ref::I32, parameters: 0,
             }, events, 2) != 0) { return 21; }
     if (ir::program::valid(program)
-        || verified::lean_program::emit(program, output, 4096, 0) != -1) {
+        || verified::lean_program::emit(program, output, OUTPUT_BYTE_CAPACITY, 0) != -1) {
         return 22;
     }
     ir::body_catalog::clear(bodies);
@@ -224,7 +300,7 @@ fn main() -> i32 {
                 id: 0, result_type: ir::type_ref::I32, parameters: 0,
             }, events, 2) != 0) { return 17; }
     if (ir::program::valid(program)
-        || verified::lean_program::emit(program, output, 4096, 0) != -1) {
+        || verified::lean_program::emit(program, output, OUTPUT_BYTE_CAPACITY, 0) != -1) {
         return 18;
     }
     ir::body_catalog::clear(bodies);
@@ -244,5 +320,7 @@ fn main() -> i32 {
                 id: 0, result_type: ir::type_ref::I32, parameters: 0,
             }, events, 2) != 0) { return 19; }
     if (!ir::program::valid(program)) { return 20; }
+    if (!larger_body(0) || !larger_body(127)
+        || !larger_body(128) || !larger_body(256)) { return 31; }
     return 0;
 }

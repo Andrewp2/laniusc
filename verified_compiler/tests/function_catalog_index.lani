@@ -1,0 +1,54 @@
+module app::main;
+
+import ir::function_catalog;
+import ir::type_ref;
+import runtime::service;
+import verified::host;
+
+fn main() -> i32 {
+    let count: i32 = 31;
+    let memory: ptr = verified::host::alloc(
+        ir::function_catalog::allocation_bytes(count, 0), 8);
+    if (memory == 0) { return 1; }
+    let table: ir::function_catalog::Table =
+        ir::function_catalog::from_raw_parts(memory, count, 0);
+    let rows: [ir::function_catalog::Function] = table.functions;
+    let row: i32 = 0;
+    while (row != count) {
+        // All IDs collide at the last bucket and wrap to the beginning;
+        // declaration positions and IDs are deliberately different.
+        rows[row] = ir::function_catalog::Function {
+            kind: ir::function_catalog::DefinedFunction,
+            id: (count - row) * (count * 2 + 1) - 1,
+            result_type: ir::type_ref::I32,
+            parameters: 0, parameter_start: 0,
+            service: runtime::service::NoService,
+        };
+        row += 1;
+    }
+    rows[5].id = verified::host::I32_MAX;
+    let lookup: ir::function_catalog::Index = ir::function_catalog::build_index(table);
+    if (lookup.capacity <= 0) { return 2; }
+    row = 0;
+    while (row != count) {
+        if (ir::function_catalog::find(lookup, rows[row].id) != row) { return 3; }
+        row += 1;
+    }
+    if (ir::function_catalog::find(lookup, -1) != -1
+        || ir::function_catalog::find(lookup, 0) != -1
+        || ir::function_catalog::find(lookup, 62 + 63 * count) != -1) { return 4; }
+    rows[1].id = rows[0].id;
+    let duplicate: ir::function_catalog::Index = ir::function_catalog::build_index(table);
+    if (duplicate.capacity != 0
+        || ir::function_catalog::find(duplicate, rows[0].id) != -1) { return 5; }
+    rows[1].id = -1;
+    let negative: ir::function_catalog::Index = ir::function_catalog::build_index(table);
+    if (negative.capacity != 0) { return 6; }
+    table.count = 0;
+    let empty: ir::function_catalog::Index = ir::function_catalog::build_index(table);
+    if (empty.capacity != 0) { return 7; }
+    table.count = verified::host::I32_MAX;
+    let oversized: ir::function_catalog::Index = ir::function_catalog::build_index(table);
+    if (oversized.capacity != 0) { return 8; }
+    return 0;
+}

@@ -1,0 +1,5 @@
+module app::main;
+
+extern "lanius_alloc" fn alloc(size: usize, align: usize) -> ptr;
+extern "lanius_alloc" fn alloc(size: usize, align: usize) -> ptr;
+fn main() -> i32 { return 7; }

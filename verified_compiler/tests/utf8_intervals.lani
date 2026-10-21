@@ -1,0 +1,56 @@
+module app::main;
+
+import verified::utf8;
+import verified::host;
+
+fn main() -> i32 {
+    let memory: ptr = verified::host::alloc_i32(6);
+    if (memory == 0) { return 20; }
+    let bytes: [i32] = verified::host::i32_slice_from_raw_parts(memory, 6);
+    bytes[0] = -1; bytes[1] = 240; bytes[2] = 159;
+    bytes[3] = 152; bytes[4] = 128; bytes[5] = 256;
+    // A selected interval must neither read nor validate its surrounding data.
+    if (!verified::utf8::valid_interval(bytes, 6, 1, 5)) { return 1; }
+    if (verified::utf8::valid_interval(bytes, 6, 1, 4)) { return 2; }
+    if (verified::utf8::valid_interval(bytes, 6, 2, 5)) { return 3; }
+    if (verified::utf8::valid_interval(bytes, 6, 0, 5)) { return 4; }
+    if (verified::utf8::valid_interval(bytes, 6, 1, 6)) { return 5; }
+    if (!verified::utf8::valid_interval(bytes, 6, 6, 6)) { return 6; }
+    if (verified::utf8::valid_interval(bytes, 6, -1, 5)
+        || verified::utf8::valid_interval(bytes, 6, 5, 4)
+        || verified::utf8::valid_interval(bytes, 6, 1, 7)
+        || verified::utf8::valid_interval(bytes, -1, 0, 0)) { return 7; }
+
+    // Single-word inputs accept exactly ASCII, including NUL.
+    let byte: i32 = -1;
+    while (byte <= 256) {
+        bytes[1] = byte;
+        if (verified::utf8::valid_interval(bytes, 6, 1, 2)
+            != (byte >= 0 && byte <= 127)) { return 8; }
+        byte += 1;
+    }
+
+    bytes[1] = 194; bytes[2] = 128;
+    if (!verified::utf8::valid_interval(bytes, 6, 1, 3)) { return 9; }
+    bytes[1] = 192;
+    if (verified::utf8::valid_interval(bytes, 6, 1, 3)) { return 10; }
+    bytes[1] = 224; bytes[2] = 159; bytes[3] = 128;
+    if (verified::utf8::valid_interval(bytes, 6, 1, 4)) { return 11; }
+    bytes[2] = 160;
+    if (!verified::utf8::valid_interval(bytes, 6, 1, 4)) { return 12; }
+    bytes[1] = 237; bytes[2] = 160;
+    if (verified::utf8::valid_interval(bytes, 6, 1, 4)) { return 13; }
+    bytes[2] = 159; bytes[3] = 191;
+    if (!verified::utf8::valid_interval(bytes, 6, 1, 4)) { return 14; }
+    bytes[1] = 240; bytes[2] = 143; bytes[3] = 128;
+    if (verified::utf8::valid_interval(bytes, 6, 1, 5)) { return 15; }
+    bytes[2] = 144;
+    if (!verified::utf8::valid_interval(bytes, 6, 1, 5)) { return 16; }
+    bytes[1] = 244; bytes[2] = 144;
+    if (verified::utf8::valid_interval(bytes, 6, 1, 5)) { return 17; }
+    bytes[2] = 143; bytes[3] = 191; bytes[4] = 191;
+    if (!verified::utf8::valid_interval(bytes, 6, 1, 5)) { return 18; }
+    bytes[3] = 127;
+    if (verified::utf8::valid_interval(bytes, 6, 1, 5)) { return 19; }
+    return 0;
+}

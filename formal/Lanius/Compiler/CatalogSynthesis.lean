@@ -1,5 +1,4 @@
 import Lanius.Declarations.CatalogCheck
-import Std.Data.HashMap.Basic
 
 namespace Lanius.Compiler.CatalogSynthesis
 
@@ -121,12 +120,12 @@ def allocationOrder (pack : SourcePack) (headers : List DeclarationHeader) :
 def assignSemanticIds? (pack : SourcePack) (headers : List DeclarationHeader) :
     Option (List DeclarationHeader) := do
   let order := allocationOrder pack headers
-  let ids := ((List.range order.length).zip order).foldl
-    (fun (index : Std.HashMap DeclarationOccurrence Nat) (pair : Nat × DeclarationHeader) =>
-      index.insert pair.2.source pair.1) {}
+  -- The reference checker must compute in the kernel too. Reverse preserves
+  -- the former hash index's last-write-wins behavior for duplicate keys.
+  let ids := ((List.range order.length).zip order).reverse
   headers.mapM fun header => do
-    let id ← ids[header.source]?
-    pure { header with declaration := id }
+    let row ← ids.find? (fun row => row.2.source == header.source)
+    pure { header with declaration := row.1 }
 
 def synthesize? (pack : SourcePack) : Option Catalog := do
   let headers ← headers? pack 0 (normalizedOccurrences pack)

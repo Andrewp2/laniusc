@@ -1,0 +1,4 @@
+module app::values;
+
+pub const BASE: i32 = SEED + 1;
+const SEED: i32 = 2;

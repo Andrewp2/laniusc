@@ -32,12 +32,12 @@ def importExists (environment : Names.Environment) (importer imported : ModuleId
   environment.imports.any (fun declaration =>
     decide (declaration.importer = importer ∧ declaration.imported = imported))
 
-def candidateAccepts (environment : Names.Environment) (current : ModuleId)
-    (reference : Names.Reference) (symbol : Names.Symbol) : Bool :=
+private def candidateAccepts (environment : Names.Environment) (current : ModuleId)
+    (reference : Names.Reference) (localPresent : Bool) (symbol : Names.Symbol) : Bool :=
   match reference with
   | .unqualified lookupNamespace name =>
       symbolMatches symbol current lookupNamespace name ||
-        (!hasLocal environment current lookupNamespace name &&
+        (!localPresent &&
           moduleExists environment symbol.moduleId &&
           importExists environment current symbol.moduleId &&
           decide (symbol.visibility = .exported) &&
@@ -50,9 +50,16 @@ def candidateAccepts (environment : Names.Environment) (current : ModuleId)
         decide (symbol.visibility = .exported) &&
         decide (symbol.lookupNamespace = lookupNamespace ∧ symbol.name = name))
 
+private def localPresent (environment : Names.Environment) (current : ModuleId) :
+    Names.Reference → Bool
+  | .unqualified lookupNamespace name => hasLocal environment current lookupNamespace name
+  | .qualified _ _ _ => false
+
 def candidates (environment : Names.Environment) (current : ModuleId)
     (reference : Names.Reference) : List Names.Symbol :=
-  environment.symbols.filter (candidateAccepts environment current reference)
+  -- Local shadowing is a property of the query, not of each candidate symbol.
+  let present := localPresent environment current reference
+  environment.symbols.filter (candidateAccepts environment current reference present)
 
 theorem symbolMatches_iff {symbol : Names.Symbol} :
     symbolMatches symbol module lookupNamespace name = true ↔
@@ -88,7 +95,7 @@ theorem candidates_mem_iff :
     have symbolMember := (List.mem_filter.mp member).1
     cases reference with
     | unqualified lookupNamespace name =>
-        simp only [candidateAccepts, Bool.or_eq_true, Bool.and_eq_true] at accepted
+        simp only [candidateAccepts, localPresent, Bool.or_eq_true, Bool.and_eq_true] at accepted
         rcases accepted with localCandidate | imported
         · apply Names.Candidate.local symbolMember
           exact (symbolMatches_iff.mp localCandidate).1
@@ -134,7 +141,7 @@ theorem candidates_mem_iff :
         | «local» member sameModule sameNamespace sameName =>
             apply List.mem_filter.mpr
             refine ⟨member, ?_⟩
-            simp [candidateAccepts, symbolMatches, sameModule, sameNamespace, sameName]
+            simp [candidateAccepts, localPresent, symbolMatches, sameModule, sameNamespace, sameName]
         | importedUnqualified module moduleMember imported noLocal member symbolModule isPublic
             sameNamespace sameName =>
             apply List.mem_filter.mpr
@@ -147,7 +154,7 @@ theorem candidates_mem_iff :
               apply Bool.eq_false_iff.mpr
               intro found
               exact noLocal (hasLocal_iff.mp (by simpa [found]))
-            simp [candidateAccepts, symbolMatches, moduleFound, importFound, noLocalBool,
+            simp [candidateAccepts, localPresent, symbolMatches, moduleFound, importFound, noLocalBool,
               symbolModule, isPublic, sameNamespace, sameName]
     | qualified lookupNamespace path name =>
         cases candidate with
@@ -181,14 +188,15 @@ structure Checked (environment : Names.Environment) (current : ModuleId)
 
 def check (environment : Names.Environment) (current : ModuleId)
     (reference : Names.Reference) : Option (Checked environment current reference) :=
-  match selected : candidates environment current reference with
+  let eligible := candidates environment current reference
+  match selected : eligible with
   | [] => none
   | symbol :: _ =>
-      if coherent : (candidates environment current reference).all (sameDeclaration symbol) then
+      if coherent : eligible.all (sameDeclaration symbol) then
         some {
           symbol := symbol
           resolved := by
-            refine ⟨candidates_mem_iff.mp (by simp [selected]), ?_⟩
+            refine ⟨candidates_mem_iff.mp (by change symbol ∈ eligible; simp [selected]), ?_⟩
             intro candidate candidateResolved
             have member : candidate ∈ candidates environment current reference :=
               candidates_mem_iff.mpr candidateResolved

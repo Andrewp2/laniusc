@@ -1,0 +1,2 @@
+module app::main;
+fn main() -> i32 { while (false) { return 7; } }

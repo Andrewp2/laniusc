@@ -1,0 +1,20 @@
+module app::main;
+
+import verified::host;
+
+fn main() -> i32 {
+    // Small lengths cover every residue class, including empty input.
+    let count: i32 = 0;
+    while (count < 9) {
+        if (verified::host::packed_words(count) != (count + 3) / 4) { return 1; }
+        count += 1;
+    }
+    // Exercise the arithmetic limit without allocating a large buffer.
+    if (verified::host::packed_words(2147483644) != 536870911
+        || verified::host::packed_words(2147483645) != 536870912
+        || verified::host::packed_words(2147483646) != 536870912
+        || verified::host::packed_words(2147483647) != 536870912) { return 2; }
+    if (verified::host::packed_words(-1) != -1
+        || verified::host::packed_words(-2147483648) != -1) { return 3; }
+    return 37;
+}

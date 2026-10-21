@@ -8,7 +8,7 @@ import ir::function_catalog;
 import ir::program;
 import ir::type_catalog;
 import ir::type_ref;
-import runtime::service;
+import backend::runtime_record;
 import verified::core_body;
 
 // The certificate wire format is an output view of the semantic Program.
@@ -106,7 +106,7 @@ fn function_record(program: ir::program::Program, index: i32,
     let body_words: i32 = 0;
     if (function.kind == ir::function_catalog::RuntimeFunction) {
         kind = backend::syntax::RuntimeFunction;
-        body_words = runtime::service::RUNTIME_SERVICE_BODY_WORDS;
+        body_words = backend::runtime_record::RUNTIME_SERVICE_BODY_WORDS;
     }
     let header: backend::syntax::FunctionHeader =
         backend::syntax::FunctionHeader {
@@ -132,7 +132,7 @@ fn function_record(program: ir::program::Program, index: i32,
     }
     if (function.kind == ir::function_catalog::RuntimeFunction) {
         next = append(output, capacity, next,
-            runtime::service::service_code(function.service));
+            backend::runtime_record::service_code(function.service));
     } else {
         let body_index: i32 = ir::body_catalog::find(program.bodies,
             function.id);

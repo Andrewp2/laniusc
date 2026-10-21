@@ -38,8 +38,9 @@ pub fn alloc_i32(words: i32) -> ptr {
 }
 
 pub fn packed_words(byte_count: i32) -> i32 {
-    if (byte_count <= -1) { return -1; }
-    return (byte_count + I32_BYTES - 1) / I32_BYTES;
+    if (byte_count < 0) { return -1; }
+    if (byte_count == 0) { return 0; }
+    return 1 + (byte_count - 1) / I32_BYTES;
 }
 
 pub extern "lanius_std" fn open_read(path_ptr: ptr, path_len: usize) -> i32;

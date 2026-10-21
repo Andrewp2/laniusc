@@ -1,0 +1,550 @@
+module verified::lean_body_shape;
+
+import ir::body_events;
+import ir::body_tree;
+import ir::type_catalog;
+import ir::type_ref;
+import verified::lean_operations;
+
+// Structural and type-annotation checks for readable Lean output.
+// This module owns no output buffer and renders no text.
+pub fn expression_local_id(event: ir::body_events::Event) -> i32 {
+    let reference: ir::body_events::LocalReference =
+        ir::body_events::local_reference(event);
+    return reference.id;
+}
+
+pub fn statement_let_id(event: ir::body_events::Event) -> i32 {
+    let declaration: ir::body_events::LocalDeclaration =
+        ir::body_events::local_declaration(event);
+    return declaration.id;
+}
+
+pub fn match_binding_id(event: ir::body_events::Event) -> i32 {
+    let binding: ir::body_events::LocalReference =
+        ir::body_events::matching_binding_fields(event);
+    return binding.id;
+}
+
+pub fn surface_atom(tree: ir::body_tree::Tree, index: i32) -> bool {
+    if (index < 0 || index >= tree.count) { return false; }
+    let events: [ir::body_events::Event] = tree.events;
+    return match (events[index]) {
+        ir::body_events::ExpressionInteger(value) ->
+            value >= 0 || value == -2147483647 - 1,
+        ir::body_events::ExpressionUsize(usize_value) -> usize_value >= 0,
+        ir::body_events::ExpressionPointerNull -> true,
+        ir::body_events::ExpressionBoolean(boolean_value) ->
+            ir::type_ref::same(ir::body_tree::result_type(tree, index), ir::type_ref::Bool),
+        ir::body_events::ExpressionString(string_value) ->
+            ir::type_ref::same(ir::body_tree::result_type(tree, index), ir::type_ref::String),
+        ir::body_events::ExpressionConstant(id) -> id >= 0,
+        ir::body_events::ExpressionLocal(reference) ->
+            expression_local_id(events[index]) >= 0,
+        _ -> false,
+    };
+}
+
+fn surface_binary(tree: ir::body_tree::Tree, index: i32,
+    fuel: i32) -> bool {
+    let left: i32 = ir::body_tree::first_child(tree, index);
+    let right: i32 = ir::body_tree::next_sibling(tree, index, left);
+    if (!surface_expression(tree, left, fuel - 1)
+        || !surface_expression(tree, right, fuel - 1)) {
+        return false;
+    }
+    let left_type: ir::type_ref::TypeRef =
+        ir::body_tree::result_type(tree, left);
+    let right_type: ir::type_ref::TypeRef =
+        ir::body_tree::result_type(tree, right);
+    let result_type: ir::type_ref::TypeRef =
+        ir::body_tree::result_type(tree, index);
+    if (pointer_binary_supported(tree, index)) { return true; }
+    if (!ir::type_ref::same(left_type, right_type)) {
+        return false;
+    }
+    let events: [ir::body_events::Event] = tree.events;
+    if (verified::lean_operations::binary_logical(events[index])) {
+        return ir::type_ref::same(left_type, ir::type_ref::Bool)
+            && ir::type_ref::same(result_type, ir::type_ref::Bool);
+    }
+    if (verified::lean_operations::binary_comparison(events[index])) {
+        return ir::type_ref::same(result_type, ir::type_ref::Bool);
+    }
+    return ir::type_ref::same(result_type, left_type);
+}
+
+fn numeric(kind: ir::type_ref::TypeRef) -> bool {
+    return ir::type_ref::same(kind, ir::type_ref::I32)
+        || ir::type_ref::same(kind, ir::type_ref::Usize);
+}
+
+pub fn pointer_binary_supported(tree: ir::body_tree::Tree, index: i32) -> bool {
+    let events: [ir::body_events::Event] = tree.events;
+    let operation: bool = match (events[index]) {
+        ir::body_events::ExpressionBinaryAdd -> true,
+        ir::body_events::ExpressionBinarySubtract -> true,
+        _ -> false,
+    };
+    let left: i32 = ir::body_tree::first_child(tree, index);
+    let right: i32 = ir::body_tree::next_sibling(tree, index, left);
+    return operation
+        && ir::type_ref::same(ir::body_tree::result_type(tree, left), ir::type_ref::Pointer)
+        && numeric(ir::body_tree::result_type(tree, right))
+        && ir::type_ref::same(ir::body_tree::result_type(tree, index), ir::type_ref::Pointer);
+}
+
+fn surface_intrinsic(tree: ir::body_tree::Tree, index: i32, fuel: i32) -> bool {
+    let events: [ir::body_events::Event] = tree.events;
+    let first: i32 = ir::body_tree::first_child(tree, index);
+    let second: i32 = ir::body_tree::next_sibling(tree, index, first);
+    let input: ir::type_ref::TypeRef = ir::body_tree::result_type(tree, first);
+    let valid_input: bool = match (events[index]) {
+        ir::body_events::ExpressionCast(target) -> numeric(input)
+            && numeric(ir::body_tree::result_type(tree, index))
+            && !ir::type_ref::same(input, ir::body_tree::result_type(tree, index)),
+        ir::body_events::ExpressionI32SliceDataPointer -> ir::type_ref::same(input, ir::type_ref::Slice),
+        ir::body_events::ExpressionStringDataPointer -> ir::type_ref::same(input, ir::type_ref::String),
+        _ -> ir::type_ref::same(input, ir::type_ref::Pointer)
+            && ir::type_ref::same(ir::body_tree::result_type(tree, second), ir::type_ref::I32),
+    };
+    if (!valid_input || !surface_expression(tree, first, fuel - 1)) { return false; }
+    return second < 0 || surface_expression(tree, second, fuel - 1);
+}
+
+fn surface_expression(tree: ir::body_tree::Tree, index: i32,
+    fuel: i32) -> bool {
+    if (fuel <= 0 || index < 0 || index >= tree.count) { return false; }
+    if (surface_atom(tree, index)) { return true; }
+    let events: [ir::body_events::Event] = tree.events;
+    let binary: verified::lean_operations::Name = verified::lean_operations::binary_symbol(events[index]);
+    if (binary.length > 0) {
+        return surface_binary(tree, index, fuel);
+    }
+    let intrinsic: verified::lean_operations::Name = verified::lean_operations::intrinsic_name(events[index]);
+    if (intrinsic.length > 0) { return surface_intrinsic(tree, index, fuel); }
+    return match (events[index]) {
+        ir::body_events::ExpressionCast(target) -> surface_intrinsic(tree, index, fuel),
+        ir::body_events::ExpressionUnaryPositive -> surface_unary(tree, index, fuel),
+        ir::body_events::ExpressionUnaryNot -> surface_unary(tree, index, fuel),
+        ir::body_events::ExpressionUnaryNegate -> surface_unary(tree, index, fuel),
+        ir::body_events::ExpressionField(field) ->
+            surface_field(tree, index, fuel),
+        ir::body_events::ExpressionIndex ->
+            surface_index(tree, index, fuel),
+        ir::body_events::ExpressionEnumeration(constructor) ->
+            surface_constructor(tree, index, fuel),
+        ir::body_events::ExpressionStruct(record) ->
+            surface_structure(tree, index, fuel),
+        ir::body_events::ExpressionCall(call) ->
+            surface_call(tree, index, fuel),
+        ir::body_events::ExpressionMatch(header) ->
+            surface_match(tree, index, fuel),
+        _ -> false,
+    };
+}
+
+pub fn unary_supported(tree: ir::body_tree::Tree, index: i32) -> bool {
+    if (index < 0 || index >= tree.count) { return false; }
+    let child: i32 = ir::body_tree::first_child(tree, index);
+    if (child < 0 || ir::body_tree::next_sibling(tree, index, child) != -1) {
+        return false;
+    }
+    let operand: ir::type_ref::TypeRef = ir::body_tree::result_type(tree, child);
+    if (!ir::type_ref::same(operand, ir::body_tree::result_type(tree, index))) {
+        return false;
+    }
+    let events: [ir::body_events::Event] = tree.events;
+    return match (events[index]) {
+        ir::body_events::ExpressionUnaryNot -> ir::type_ref::same(operand, ir::type_ref::Bool),
+        ir::body_events::ExpressionUnaryPositive ->
+            ir::type_ref::same(operand, ir::type_ref::I32)
+                || ir::type_ref::same(operand, ir::type_ref::Usize),
+        ir::body_events::ExpressionUnaryNegate ->
+            ir::type_ref::same(operand, ir::type_ref::I32)
+                || ir::type_ref::same(operand, ir::type_ref::Usize),
+        _ -> false,
+    };
+}
+
+fn surface_unary(tree: ir::body_tree::Tree, index: i32, fuel: i32) -> bool {
+    return unary_supported(tree, index)
+        && surface_expression(tree, ir::body_tree::first_child(tree, index), fuel - 1);
+}
+
+fn surface_field(tree: ir::body_tree::Tree, index: i32,
+    fuel: i32) -> bool {
+    let base: i32 = ir::body_tree::first_child(tree, index);
+    let events: [ir::body_events::Event] = tree.events;
+    return surface_expression(tree, base, fuel - 1)
+        && ir::type_ref::is_nominal(ir::body_tree::result_type(tree, base))
+        && ir::body_events::field_index(events[index]) >= 0;
+}
+
+// Resolve a field once against the shared declaration catalog. Names never
+// determine semantics: both the ordinal and result annotation must agree.
+pub fn field_slot(tree: ir::body_tree::Tree,
+    types: ir::type_catalog::Table, index: i32) -> i32 {
+    if (index < 0 || index >= tree.count) { return -1; }
+    let events: [ir::body_events::Event] = tree.events;
+    let ordinal: i32 = ir::body_events::field_index(events[index]);
+    let base: i32 = ir::body_tree::first_child(tree, index);
+    if (ordinal < 0 || base < 0) { return -1; }
+    let base_type: ir::type_ref::TypeRef = ir::body_tree::result_type(tree, base);
+    let owner: i32 = match (base_type) {
+        ir::type_ref::Nominal(id) -> id,
+        _ -> -1,
+    };
+    if (owner < 0 || owner >= types.type_count) { return -1; }
+    let declarations: [ir::type_catalog::TypeDecl] = types.types;
+    let declaration: ir::type_catalog::TypeDecl = declarations[owner];
+    if (declaration.kind != ir::type_catalog::Structure
+        || ordinal >= declaration.field_count) { return -1; }
+    let slot: i32 = declaration.field_start + ordinal;
+    let fields: [ir::type_catalog::Field] = types.fields;
+    if (!ir::type_ref::same(fields[slot].type_tag,
+        ir::body_tree::result_type(tree, index))) { return -1; }
+    return slot;
+}
+
+fn surface_index(tree: ir::body_tree::Tree, index: i32,
+    fuel: i32) -> bool {
+    let base: i32 = ir::body_tree::first_child(tree, index);
+    let offset: i32 = ir::body_tree::next_sibling(tree, index, base);
+    return surface_expression(tree, base, fuel - 1)
+        && surface_expression(tree, offset, fuel - 1) && index_supported(tree, index);
+}
+
+pub fn index_supported(tree: ir::body_tree::Tree, index: i32) -> bool {
+    let base: i32 = ir::body_tree::first_child(tree, index);
+    let offset: i32 = ir::body_tree::next_sibling(tree, index, base);
+    if (!ir::type_ref::same(ir::body_tree::result_type(tree, offset), ir::type_ref::I32)) {
+        return false;
+    }
+    let result: ir::type_ref::TypeRef =
+        ir::body_tree::result_type(tree, index);
+    return match (ir::body_tree::result_type(tree, base)) {
+        ir::type_ref::Slice -> ir::type_ref::same(result, ir::type_ref::I32),
+        ir::type_ref::NominalSlice(slice_id) ->
+            surface_nominal_slice_result(result, slice_id),
+        _ -> false,
+    };
+}
+
+fn surface_nominal_slice_result(result: ir::type_ref::TypeRef,
+    id: i32) -> bool {
+    let element: ir::type_ref::TypeRef = ir::type_ref::Nominal(id);
+    return ir::type_ref::same(result, element);
+}
+
+fn surface_constructor(tree: ir::body_tree::Tree, index: i32,
+    fuel: i32) -> bool {
+    let events: [ir::body_events::Event] = tree.events;
+    let constructor: ir::body_events::EnumVariant =
+        ir::body_events::enumeration_fields(events[index]);
+    return surface_arguments(tree, index, constructor.payload_count, fuel);
+}
+
+fn surface_structure(tree: ir::body_tree::Tree, index: i32,
+    fuel: i32) -> bool {
+    let events: [ir::body_events::Event] = tree.events;
+    let record: ir::body_events::StructFields =
+        ir::body_events::structure_fields(events[index]);
+    return record.type_id >= 0
+        && surface_arguments(tree, index, record.count, fuel);
+}
+
+fn surface_arguments(tree: ir::body_tree::Tree, index: i32,
+    count: i32, fuel: i32) -> bool {
+    if (count < 0) { return false; }
+    let child: i32 = ir::body_tree::first_child(tree, index);
+    let ordinal: i32 = 0;
+    while (ordinal < count) {
+        if (!surface_expression(tree, child, fuel - 1)) {
+            return false;
+        }
+        child = ir::body_tree::next_sibling(tree, index, child);
+        ordinal += 1;
+    }
+    return child == -1;
+}
+
+fn surface_call(tree: ir::body_tree::Tree, index: i32,
+    fuel: i32) -> bool {
+    let events: [ir::body_events::Event] = tree.events;
+    let call: ir::body_events::CallHeader =
+        ir::body_events::call_fields(events[index]);
+    if (call.function_id < 0 || call.argument_count < 0) {
+        return false;
+    }
+    return surface_arguments(tree, index, call.argument_count, fuel);
+}
+
+pub fn record_supported(tree: ir::body_tree::Tree,
+    types: ir::type_catalog::Table, index: i32) -> bool {
+    if (index < 0 || index >= tree.count) { return false; }
+    let events: [ir::body_events::Event] = tree.events;
+    let record: ir::body_events::StructFields =
+        ir::body_events::structure_fields(events[index]);
+    if (record.type_id < 0 || record.type_id >= types.type_count) { return false; }
+    let declarations: [ir::type_catalog::TypeDecl] = types.types;
+    let declaration: ir::type_catalog::TypeDecl = declarations[record.type_id];
+    if (declaration.kind != ir::type_catalog::Structure
+        || record.count != declaration.field_count
+        || !ir::type_ref::same(ir::body_tree::result_type(tree, index),
+            ir::type_ref::Nominal(record.type_id))) { return false; }
+    let fields: [ir::type_catalog::Field] = types.fields;
+    let child: i32 = ir::body_tree::first_child(tree, index);
+    let ordinal: i32 = 0;
+    while (ordinal < record.count) {
+        if (child < 0 || !ir::type_ref::same(ir::body_tree::result_type(tree, child),
+            fields[declaration.field_start + ordinal].type_tag)) { return false; }
+        child = ir::body_tree::next_sibling(tree, index, child);
+        ordinal += 1;
+    }
+    return child == -1;
+}
+
+fn surface_match(tree: ir::body_tree::Tree, index: i32,
+    fuel: i32) -> bool {
+    let child: i32 = ir::body_tree::first_child(tree, index);
+    if (!surface_expression(tree, child, fuel - 1)) { return false; }
+    child = ir::body_tree::next_sibling(tree, index, child);
+    let events: [ir::body_events::Event] = tree.events;
+    let header: ir::body_events::MatchHeader =
+        ir::body_events::matching_fields(events[index]);
+    let ordinal: i32 = 0;
+    while (ordinal < header.arm_count) {
+        if (child < 0) { return false; }
+        let arm: ir::body_events::MatchArm =
+            ir::body_events::matching_arm_fields(events[child]);
+        if (arm.ordinal < -1 || arm.binding_count < 0) {
+            return false;
+        }
+        if (arm.ordinal == -1 && (arm.binding_count != 0 || ordinal + 1 != header.arm_count)) {
+            return false;
+        }
+        let body: i32 = ir::body_tree::first_child(tree, child);
+        let binding: i32 = 0;
+        while (binding < arm.binding_count) {
+            if (body < 0 || match_binding_id(events[body]) < 0) {
+                return false;
+            }
+            body = ir::body_tree::next_sibling(tree, child, body);
+            binding += 1;
+        }
+        if (!surface_expression(tree, body, fuel - 1)) {
+            return false;
+        }
+        if (ir::body_tree::next_sibling(tree, child, body) != -1) {
+            return false;
+        }
+        child = ir::body_tree::next_sibling(tree, index, child);
+        ordinal += 1;
+    }
+    return child == -1;
+}
+
+fn surface_statement(tree: ir::body_tree::Tree, index: i32,
+    fuel: i32) -> bool {
+    if (fuel <= 0 || index < 0 || index >= tree.count) { return false; }
+    let events: [ir::body_events::Event] = tree.events;
+    return match (events[index]) {
+        ir::body_events::StatementSkip -> true,
+        ir::body_events::StatementSequence ->
+            surface_sequence(tree, index, fuel),
+        ir::body_events::StatementIf ->
+            surface_if(tree, index, fuel),
+        ir::body_events::StatementWhile -> surface_while(tree, index, fuel),
+        ir::body_events::StatementExpression -> surface_effect(tree, index, fuel),
+        ir::body_events::StatementLet(declaration) ->
+            surface_let(tree, index, fuel),
+        ir::body_events::StatementLetUninitialized(uninitialized_declaration) ->
+            surface_uninitialized(tree, index, fuel),
+        ir::body_events::StatementReturnVoid -> true,
+        ir::body_events::StatementReturnValue ->
+            surface_expression(tree,
+                ir::body_tree::first_child(tree, index), fuel - 1),
+        _ -> false,
+    };
+}
+
+fn surface_place(tree: ir::body_tree::Tree, index: i32, fuel: i32) -> bool {
+    if (fuel <= 0 || index < 0 || index >= tree.count) { return false; }
+    let events: [ir::body_events::Event] = tree.events;
+    let base: i32 = ir::body_tree::first_child(tree, index);
+    return match (events[index]) {
+        ir::body_events::PlaceLocal(place_local_reference) -> expression_local_id(events[index]) >= 0,
+        ir::body_events::PlaceField(place_field_reference) -> ir::body_events::field_index(events[index]) >= 0
+            && ir::type_ref::is_nominal(ir::body_tree::result_type(tree, base))
+            && surface_place(tree, base, fuel - 1),
+        ir::body_events::PlaceIndex -> surface_place(tree, base, fuel - 1)
+            && surface_expression(tree, ir::body_tree::next_sibling(tree, index, base), fuel - 1)
+            && index_supported(tree, index),
+        _ -> false,
+    };
+}
+
+fn surface_effect(tree: ir::body_tree::Tree, index: i32, fuel: i32) -> bool {
+    let child: i32 = ir::body_tree::first_child(tree, index);
+    if (child < 0) { return false; }
+    let events: [ir::body_events::Event] = tree.events;
+    let operation: verified::lean_operations::Name = verified::lean_operations::assignment_symbol(events[child]);
+    if (operation.length == 0) { return surface_expression(tree, child, fuel - 1); }
+    let target: i32 = ir::body_tree::first_child(tree, child);
+    let value: i32 = ir::body_tree::next_sibling(tree, child, target);
+    return surface_place(tree, target, fuel - 1)
+        && surface_expression(tree, value, fuel - 1)
+        && ir::type_ref::same(ir::body_tree::result_type(tree, target),
+            ir::body_tree::result_type(tree, value));
+}
+
+fn surface_while(tree: ir::body_tree::Tree, index: i32, fuel: i32) -> bool {
+    let condition: i32 = ir::body_tree::first_child(tree, index);
+    let body: i32 = ir::body_tree::next_sibling(tree, index, condition);
+    return ir::type_ref::same(ir::body_tree::result_type(tree, condition), ir::type_ref::Bool)
+        && surface_expression(tree, condition, fuel - 1)
+        && surface_statement(tree, body, fuel - 1);
+}
+
+fn surface_sequence(tree: ir::body_tree::Tree, index: i32,
+    fuel: i32) -> bool {
+    let first: i32 = ir::body_tree::first_child(tree, index);
+    let second: i32 = ir::body_tree::next_sibling(tree, index, first);
+    return surface_statement(tree, first, fuel - 1)
+        && surface_statement(tree, second, fuel - 1);
+}
+
+fn surface_if(tree: ir::body_tree::Tree, index: i32,
+    fuel: i32) -> bool {
+    let condition: i32 = ir::body_tree::first_child(tree, index);
+    let then_branch: i32 = ir::body_tree::next_sibling(tree,
+        index, condition);
+    let else_branch: i32 = ir::body_tree::next_sibling(tree,
+        index, then_branch);
+    return ir::type_ref::same(ir::body_tree::result_type(tree, condition),
+            ir::type_ref::Bool)
+        && surface_expression(tree, condition, fuel - 1)
+        && surface_statement(tree, then_branch, fuel - 1)
+        && surface_statement(tree, else_branch, fuel - 1);
+}
+
+fn surface_let(tree: ir::body_tree::Tree, index: i32,
+    fuel: i32) -> bool {
+    let events: [ir::body_events::Event] = tree.events;
+    let local: ir::body_events::LocalDeclaration =
+        ir::body_events::local_declaration(events[index]);
+    if (local.id < 0 || !ir::type_ref::valid(local.kind)) {
+        return false;
+    }
+    let initializer: i32 = ir::body_tree::first_child(tree, index);
+    let body: i32 = ir::body_tree::next_sibling(tree, index, initializer);
+    return surface_expression(tree, initializer, fuel - 1)
+        && surface_statement(tree, body, fuel - 1);
+}
+
+fn surface_uninitialized(tree: ir::body_tree::Tree, index: i32,
+    fuel: i32) -> bool {
+    let events: [ir::body_events::Event] = tree.events;
+    let local: ir::body_events::LocalDeclaration =
+        ir::body_events::local_declaration(events[index]);
+    return local.id >= 0 && ir::type_ref::valid(local.kind)
+        && surface_statement(tree, ir::body_tree::first_child(tree, index), fuel - 1);
+}
+
+pub fn surface_supported(tree: ir::body_tree::Tree) -> bool {
+    return tree.count > 0
+        && ir::body_tree::valid(tree)
+        && ir::body_tree::result_annotations_valid(tree)
+        && surface_statement(tree, 0, tree.count + 1);
+}
+
+// Only emit native raw slices whose entire by-value layout the Core heap
+// interpreter can currently read and write. Descriptor-bearing fields need a
+// borrowed-lifetime interpretation before they can cross this boundary.
+fn native_value_supported(types: ir::type_catalog::Table,
+    kind: ir::type_ref::TypeRef, depth: i32) -> bool {
+    if (depth >= 64) { return false; }
+    let primitive: bool = match (kind) {
+        ir::type_ref::I32 -> true,
+        ir::type_ref::Bool -> true,
+        ir::type_ref::Usize -> true,
+        ir::type_ref::Pointer -> true,
+        _ -> false,
+    };
+    if (primitive) { return true; }
+    if (ir::type_ref::same(kind, ir::type_ref::Slice)) { return true; }
+    let slice_id: i32 = match (kind) {
+        ir::type_ref::NominalSlice(slice_nominal_id) -> slice_nominal_id,
+        _ -> -1,
+    };
+    if (slice_id >= 0) {
+        return native_value_supported(types,
+            ir::type_ref::Nominal(slice_id), depth + 1);
+    }
+    let id: i32 = match (kind) {
+        ir::type_ref::Nominal(nominal_id) -> nominal_id,
+        _ -> -1,
+    };
+    if (id < 0 || id >= types.type_count) { return false; }
+    let declarations: [ir::type_catalog::TypeDecl] = types.types;
+    let fields: [ir::type_catalog::Field] = types.fields;
+    let variants: [ir::type_catalog::Variant] = types.variants;
+    let declaration: ir::type_catalog::TypeDecl = declarations[id];
+    if (declaration.id != id) { return false; }
+    if (declaration.kind == ir::type_catalog::Structure) {
+        let field: i32 = 0;
+        while (field < declaration.field_count) {
+            let slot: i32 = declaration.field_start + field;
+            if (slot < 0 || slot >= types.field_count
+                || !native_value_supported(types,
+                    fields[slot].type_tag, depth + 1)) {
+                return false;
+            }
+            field += 1;
+        }
+        return true;
+    }
+    if (declaration.kind != ir::type_catalog::Enumeration) {
+        return false;
+    }
+    let ordinal: i32 = 0;
+    while (ordinal < declaration.variant_count) {
+        let variant_slot: i32 = declaration.variant_start + ordinal;
+        if (variant_slot < 0 || variant_slot >= types.variant_count) {
+            return false;
+        }
+        let variant: ir::type_catalog::Variant = variants[variant_slot];
+        let field: i32 = 0;
+        while (field < variant.field_count) {
+            let slot: i32 = variant.field_start + field;
+            if (slot < 0 || slot >= types.field_count
+                || !native_value_supported(types,
+                    fields[slot].type_tag, depth + 1)) {
+                return false;
+            }
+            field += 1;
+        }
+        ordinal += 1;
+    }
+    return true;
+}
+
+pub fn typed_slice_supported(types: ir::type_catalog::Table,
+    element: ir::body_events::SliceElement) -> bool {
+    if (element.id < 0 || element.id >= types.type_count
+        || !native_value_supported(types,
+            ir::type_ref::Nominal(element.id), 0)) {
+        return false;
+    }
+    let declarations: [ir::type_catalog::TypeDecl] = types.types;
+    let declaration: ir::type_catalog::TypeDecl = declarations[element.id];
+    if ((element.kind == ir::body_events::StructureSlice
+            && declaration.kind != ir::type_catalog::Structure)
+        || (element.kind == ir::body_events::EnumerationSlice
+            && declaration.kind != ir::type_catalog::Enumeration)
+        || element.kind == ir::body_events::I32Slice) {
+        return false;
+    }
+    return true;
+}

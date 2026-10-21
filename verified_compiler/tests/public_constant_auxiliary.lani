@@ -1,0 +1,5 @@
+module app::constants;
+
+pub const theorem: i32 = 17;
+
+pub fn value() -> i32 { return theorem; }

@@ -104,7 +104,7 @@ theorem branch_step_rip (before after : State) (code : Fin 16) (displacement : B
       after.rip = before.rip + BitVec.ofNat 64 6 + displacement.signExtend 64 := by
   refine ⟨?_, ?_⟩
   · exact Step.decoded (branchBytes code displacement) loaded
-      (.branch code displacement) 6 (branch_decodes code displacement) result
+      (.branch code displacement) 6 (branch_decodes code displacement) result rfl
   · simp [result, State.branch, taken]
 
 theorem branch_step_rip_not_taken (before after : State) (code : Fin 16)
@@ -115,7 +115,7 @@ theorem branch_step_rip_not_taken (before after : State) (code : Fin 16)
     Step before after ∧ after.rip = before.rip + BitVec.ofNat 64 6 + 0 := by
   refine ⟨?_, ?_⟩
   · exact Step.decoded (branchBytes code displacement) loaded
-      (.branch code displacement) 6 (branch_decodes code displacement) result
+      (.branch code displacement) 6 (branch_decodes code displacement) result rfl
   · simp [result, State.branch, not_taken]
 
 def conditionalPrefix (thenBody : List UInt8) : List UInt8 :=

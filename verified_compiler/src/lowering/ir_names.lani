@@ -1,13 +1,18 @@
 module lowering::ir_names;
 
 import ir::function_catalog;
+import ir::constant_catalog;
 import ir::symbol_catalog;
 import ir::type_catalog;
 import lowering::allocation;
 import lowering::declarations;
 import lowering::signature_index;
+import lowering::signatures;
 import lowering::unit_descriptor;
+import lowering::unit_context;
 import verified::host;
+import verified::surface_path;
+import verified::syntax_tree;
 import verified::token;
 
 // Retain declaration spellings in the shared semantic program. The names
@@ -18,10 +23,13 @@ pub struct Input {
     source_count: i32,
     tokens: verified::token::TokenTable,
     descriptors: lowering::unit_descriptor::Table,
+    contexts: lowering::unit_context::Table,
+    trees: verified::syntax_tree::Catalog,
     allocations: lowering::allocation::Table,
     signatures: lowering::signature_index::Table,
     types: ir::type_catalog::Table,
     functions: ir::function_catalog::Table,
+    constants: ir::constant_catalog::Table,
 }
 
 fn invalid() -> ir::symbol_catalog::Catalog {
@@ -44,12 +52,60 @@ fn function_index(functions: ir::function_catalog::Table,
     return -1;
 }
 
+fn constant_index(constants: ir::constant_catalog::Table, id: i32) -> i32 {
+    if (constants.count <= 0) { return -1; }
+    let rows: [ir::constant_catalog::Constant] = constants.constants;
+    let index: i32 = 0;
+    while (index != constants.count) {
+        if (rows[index].id == id) { return index; }
+        index += 1;
+    }
+    return -1;
+}
+
+fn empty_path() -> ir::symbol_catalog::ModulePath {
+    let nowhere: ptr = 0;
+    let segments: [ir::symbol_catalog::Ref] = slice_from_raw_parts(nowhere, 0);
+    return ir::symbol_catalog::ModulePath { segments: segments, count: -1 };
+}
+
+fn module_path(tree: verified::syntax_tree::Tree, root: i32, unit: i32)
+    -> ir::symbol_catalog::ModulePath {
+    let segment: verified::surface_path::Segment = verified::surface_path::first(tree, root);
+    let count: i32 = 1;
+    while (segment.valid && !segment.last) {
+        count += 1;
+        segment = verified::surface_path::next(tree, segment);
+    }
+    if (!segment.valid || count <= 0
+        || count > verified::host::I32_MAX / ir::symbol_catalog::REF_BYTES) { return empty_path(); }
+    let bytes: i32 = count * ir::symbol_catalog::REF_BYTES;
+    let memory: ptr = verified::host::alloc(bytes as usize, ir::symbol_catalog::ALIGNMENT as usize);
+    if (memory == 0) { return empty_path(); }
+    let parts: [ir::symbol_catalog::Ref] = slice_from_raw_parts(
+        memory + bytes - ir::symbol_catalog::ALIGNMENT, count);
+    segment = verified::surface_path::first(tree, root);
+    let index: i32 = 0;
+    while (index != count) {
+        if (!segment.valid) { return empty_path(); }
+        parts[index] = ir::symbol_catalog::Ref { unit: unit, token: segment.token };
+        index += 1;
+        if (index != count) { segment = verified::surface_path::next(tree, segment); }
+    }
+    return ir::symbol_catalog::ModulePath { segments: parts, count: count };
+}
+
 pub fn build(input: Input) -> ir::symbol_catalog::Catalog {
+    if (input.contexts.count != input.descriptors.count
+        || input.trees.count != input.descriptors.count) { return invalid(); }
     let descriptors: [lowering::unit_descriptor::UnitDescriptor] =
         input.descriptors.data;
+    let contexts: [lowering::unit_context::UnitContext] = input.contexts.data;
+    let trees: [verified::syntax_tree::Tree] = input.trees.data;
     let bytes: i32 = ir::symbol_catalog::allocation_bytes(
         input.descriptors.count, input.types.type_count,
-        input.types.variant_count, input.functions.count);
+        input.types.variant_count, input.types.field_count, input.functions.count,
+        input.constants.count);
     if (bytes <= 0) { return invalid(); }
     let memory: ptr = verified::host::alloc(bytes as usize,
         ir::symbol_catalog::ALIGNMENT as usize);
@@ -58,18 +114,25 @@ pub fn build(input: Input) -> ir::symbol_catalog::Catalog {
         ir::symbol_catalog::from_raw_parts(memory,
             input.sources, input.source_count, input.tokens,
             input.descriptors.count, input.types.type_count,
-            input.types.variant_count, input.functions.count);
+            input.types.variant_count, input.types.field_count, input.functions.count,
+            input.constants.count);
     let units: [ir::symbol_catalog::Unit] = output.units;
     let types: [ir::symbol_catalog::Ref] = output.types;
     let variants: [ir::symbol_catalog::Ref] = output.variants;
+    let fields: [ir::symbol_catalog::Ref] = output.fields;
     let functions: [ir::symbol_catalog::Ref] = output.functions;
+    let constants: [ir::symbol_catalog::ConstantName] = output.constants;
     let ordinal: i32 = 0;
     while (ordinal != output.unit_count) {
+        let path: ir::symbol_catalog::ModulePath =
+            module_path(trees[ordinal], contexts[ordinal].module_target, ordinal);
+        if (path.count <= 0) { return invalid(); }
         units[ordinal] = ir::symbol_catalog::Unit {
             source_offset: descriptors[ordinal].source_offset,
             source_length: descriptors[ordinal].source_length,
             token_offset: descriptors[ordinal].token_offset,
             token_count: descriptors[ordinal].token_count,
+            module_path: path,
         };
         ordinal += 1;
     }
@@ -84,8 +147,18 @@ pub fn build(input: Input) -> ir::symbol_catalog::Catalog {
         ordinal += 1;
     }
     ordinal = 0;
+    while (ordinal != output.field_count) {
+        fields[ordinal] = unset();
+        ordinal += 1;
+    }
+    ordinal = 0;
     while (ordinal != output.function_count) {
         functions[ordinal] = unset();
+        ordinal += 1;
+    }
+    ordinal = 0;
+    while (ordinal != output.constant_count) {
+        constants[ordinal] = ir::symbol_catalog::ConstantName { id: -1, source: unset() };
         ordinal += 1;
     }
     let declaration_rows: [ir::type_catalog::TypeDecl] = input.types.types;
@@ -108,6 +181,19 @@ pub fn build(input: Input) -> ir::symbol_catalog::Catalog {
             let id: i32 = lowering::allocation::row_core_id(allocation);
             if (id <= -1 || id >= output.type_count) { return invalid(); }
             types[id] = reference;
+            if (lowering::allocation::row_has_kind(allocation,
+                    lowering::declarations::Structure)) {
+                let declaration: ir::type_catalog::TypeDecl = declaration_rows[id];
+                let field: i32 = 0;
+                while (field != declaration.field_count) {
+                    let signature: lowering::signatures::SignatureMember =
+                        lowering::signature_index::member_at(input.signatures,
+                            lowering::allocation::row_declaration_id(allocation), field);
+                    fields[declaration.field_start + field] =
+                        ir::symbol_catalog::Ref { unit: unit, token: signature.name };
+                    field += 1;
+                }
+            }
             if (lowering::allocation::row_has_kind(allocation,
                     lowering::declarations::Enumeration)) {
                 let declaration: ir::type_catalog::TypeDecl =
@@ -135,6 +221,13 @@ pub fn build(input: Input) -> ir::symbol_catalog::Catalog {
                 lowering::allocation::row_core_id(allocation));
             if (index <= -1) { return invalid(); }
             functions[index] = reference;
+        }
+        if (lowering::allocation::row_has_kind(allocation,
+                lowering::declarations::Constant)) {
+            let id: i32 = lowering::allocation::row_core_id(allocation);
+            let index: i32 = constant_index(input.constants, id);
+            if (index < 0) { return invalid(); }
+            constants[index] = ir::symbol_catalog::ConstantName { id: id, source: reference };
         }
         row += 1;
     }

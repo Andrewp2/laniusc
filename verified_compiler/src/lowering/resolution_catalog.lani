@@ -14,6 +14,7 @@ import verified::syntax_tree;
 import verified::token;
 import verified::production;
 import verified::parser;
+import verified::host;
 
 struct AliasDestination {
     owner: i32,
@@ -244,15 +245,21 @@ pub fn expression_owner_visible(input: ExpressionOwnerInput) -> bool {
     let target: i32 = module_target(input.owner, input.contexts,
         input.declarations);
     if (target < 0) { return false; }
-    if (input.owner != input.unit
-        && (!input.public_declaration
-            || !imports_module(catalog, input.unit, input.owner,
-                input.contexts, input.declarations, input.trees, target))) {
+    if (input.owner != input.unit && !input.public_declaration) {
         return false;
     }
-    return nodes[first].left == -1
-        || expression_module_matches(catalog, input.unit, input.owner,
-            first, arena, input.trees, target);
+    // Reject a different explicit module before traversing this unit's imports.
+    // Candidate lookup visits many owners; their import visibility cannot make
+    // a mismatched qualified path resolve to one of them.
+    if (nodes[first].left != -1
+        && !expression_module_matches(catalog, input.unit, input.owner,
+            first, arena, input.trees, target)) { return false; }
+    if (input.owner != input.unit
+        && !imports_module(catalog, input.unit, input.owner,
+            input.contexts, input.declarations, input.trees, target)) {
+        return false;
+    }
+    return true;
 }
 
 // Enum variants share the value namespace with constants and functions.
@@ -362,92 +369,149 @@ pub fn resolve_constant_path(input: ConstantPathInput) -> i32 {
     let imported: i32 = -1;
     let local_count: i32 = 0;
     let imported_count: i32 = 0;
-    let row: i32 = 0;
     let rows: i32 = lowering::allocation::table_header(
         input.allocations).rows;
-    while (row < rows) {
-        let selected: lowering::allocation::AllocationRow =
-            lowering::allocation::table_row(input.allocations, row);
-        let constant: bool = lowering::allocation::row_has_kind(selected,
-            lowering::declarations::Constant);
-        let callable: bool = lowering::allocation::row_has_kind(selected,
-                lowering::declarations::Function)
-            || lowering::allocation::row_has_kind(selected,
-                lowering::declarations::External);
-        if (constant || callable) {
-            let owner: i32 = lowering::allocation::row_unit(selected);
-            if (owner <= -1 || owner >= input.contexts.count) { return -1; }
-            if (lowering::token_names::same(catalog, unit, final_token,
-                    owner, lowering::allocation::row_name(selected))) {
-                let target: i32 = module_target(owner, input.contexts,
+    if (rows <= 0) { return -1; }
+    let contexts: [lowering::unit_context::UnitContext] = input.contexts.data;
+    // Locals shadow the entire imported value namespace, including when the
+    // local match is a function or variant rather than a constant. The shared
+    // pipeline has already recorded each owner's contiguous declaration span;
+    // use it rather than scanning every allocation to find this owner's rows.
+    let pass: i32 = 0;
+    while (pass < 2) {
+        let owner: i32 = unit;
+        let owner_end: i32 = unit + 1;
+        if (pass == 1) { owner = 0; owner_end = input.contexts.count; }
+        while (owner < owner_end) {
+            let selected_owner: bool = pass == 0 || owner != unit;
+            let target: i32 = -1;
+            if (selected_owner) {
+                target = module_target(owner, input.contexts,
                     input.declarations);
                 if (target <= -1) { return -1; }
-                let visible: bool = owner == unit
-                    || (lowering::allocation::row_is_public(selected)
-                        && imports_module(catalog, unit, owner,
-                            input.contexts, input.declarations, input.trees,
-                            target));
-                let correct_path: bool = !qualified
-                    || expression_module_matches(catalog, unit, owner,
-                        first, arena, input.trees, target);
-                if (visible && correct_path) {
-                    if (owner == unit) {
-                        local_count += 1;
-                        if (constant) {
-                            local = lowering::allocation::row_declaration_id(
-                                selected);
+                if (qualified) {
+                    selected_owner = expression_module_matches(catalog,
+                        unit, owner, first, arena, input.trees, target);
+                }
+                if (selected_owner && owner != unit) {
+                    selected_owner = imports_module(catalog, unit, owner,
+                        input.contexts, input.declarations, input.trees,
+                        target);
+                }
+            }
+            let row: i32 = 0;
+            let end: i32 = 0;
+            if (selected_owner) {
+                row = contexts[owner].declaration_start;
+                let size: i32 = contexts[owner].declaration_count;
+                if (row < 0 || size <= 0 || row > rows
+                    || size > rows - row) { return -1; }
+                end = row + size;
+            }
+            while (row < end) {
+                let selected: lowering::allocation::AllocationRow =
+                    lowering::allocation::table_row(input.allocations, row);
+                if (lowering::allocation::row_unit(selected) != owner) { return -1; }
+                if (owner == unit || lowering::allocation::row_is_public(selected)) {
+                    let constant: bool = lowering::allocation::row_has_kind(selected,
+                        lowering::declarations::Constant);
+                    let callable: bool = lowering::allocation::row_has_kind(selected,
+                            lowering::declarations::Function)
+                        || lowering::allocation::row_has_kind(selected,
+                            lowering::declarations::External);
+                    let enumeration: bool = lowering::allocation::row_has_kind(selected,
+                        lowering::declarations::Enumeration);
+                    if (constant || callable) {
+                        if (lowering::token_names::same(catalog, unit, final_token,
+                                owner, lowering::allocation::row_name(selected))) {
+                            if (owner == unit) {
+                                local_count += 1;
+                                if (constant) {
+                                    local = lowering::allocation::row_declaration_id(
+                                        selected);
+                                }
+                            } else {
+                                imported_count += 1;
+                                if (constant) {
+                                    imported = lowering::allocation::row_declaration_id(
+                                        selected);
+                                }
+                            }
                         }
-                    } else {
-                        imported_count += 1;
-                        if (constant) {
-                            imported = lowering::allocation::row_declaration_id(
-                                selected);
+                    }
+                    if (enumeration) {
+                        let trees: [verified::syntax_tree::Tree] = input.trees.data;
+                        let variant_count: i32 = enum_variant_matches(catalog,
+                            unit, owner, final_token, trees[owner],
+                            lowering::allocation::row_declaration(selected));
+                        if (variant_count <= -1) { return -1; }
+                        if (owner == unit) {
+                            local_count += variant_count;
+                        } else {
+                            imported_count += variant_count;
                         }
                     }
                 }
+                row += 1;
             }
+            owner += 1;
         }
-        if (lowering::allocation::row_has_kind(selected,
-                lowering::declarations::Enumeration)) {
-            let owner: i32 = lowering::allocation::row_unit(selected);
-            if (owner <= -1 || owner >= input.contexts.count) { return -1; }
-            let target: i32 = module_target(owner, input.contexts,
-                input.declarations);
-            if (target <= -1) { return -1; }
-            let visible: bool = owner == unit
-                || (lowering::allocation::row_is_public(selected)
-                    && imports_module(catalog, unit, owner,
-                        input.contexts, input.declarations, input.trees,
-                        target));
-            let correct_path: bool = !qualified
-                || expression_module_matches(catalog, unit, owner,
-                    first, arena, input.trees, target);
-            if (visible && correct_path) {
-                let trees: [verified::syntax_tree::Tree] = input.trees.data;
-                let variant_count: i32 = enum_variant_matches(catalog,
-                    unit, owner, final_token, trees[owner],
-                    lowering::allocation::row_declaration(selected));
-                if (variant_count <= -1) { return -1; }
-                if (owner == unit) {
-                    local_count += variant_count;
-                } else {
-                    imported_count += variant_count;
-                }
-            }
-        }
-        row += 1;
+        if (local_count > 1) { return -2; }
+        if (local_count == 1) { return local; }
+        pass += 1;
     }
-    if (local_count > 1) { return -2; }
-    if (local_count == 1) { return local; }
     if (imported_count > 1) { return -2; }
     if (imported_count == 1) { return imported; }
     return -1;
 }
 
+// Retain every nominal/alias candidate once, preserving source order and
+// ambiguity. Other declaration kinds cannot satisfy a nominal type lookup.
+pub struct NominalCatalog {
+    data: [lowering::allocation::AllocationRow],
+    count: i32,
+    valid: bool,
+}
+
+pub fn nominal_catalog(allocated: lowering::allocation::Table) -> NominalCatalog {
+    let result: NominalCatalog = NominalCatalog {
+        data: slice_from_raw_parts(0, 0), count: 0, valid: false,
+    };
+    let count: i32 = lowering::allocation::table_header(allocated).rows;
+    if (count < 0 || count > allocated.count
+        || count > verified::host::I32_MAX / lowering::allocation::ROW_BYTES) {
+        return result;
+    }
+    if (count > 0) {
+        let memory: ptr = verified::host::alloc(
+            (count * lowering::allocation::ROW_BYTES) as usize, lowering::allocation::ALIGNMENT as usize);
+        if (memory == 0) { return result; }
+        result.data = slice_from_raw_parts(
+            memory + count * lowering::allocation::ROW_BYTES
+                - lowering::allocation::ALIGNMENT, count);
+    }
+    let output: [lowering::allocation::AllocationRow] = result.data;
+    let row: i32 = 0;
+    while (row < count) {
+        let allocation: lowering::allocation::AllocationRow =
+            lowering::allocation::table_row(allocated, row);
+        let kind: lowering::declarations::DeclarationKind = allocation.source.kind;
+        if (kind == lowering::declarations::Structure
+            || kind == lowering::declarations::Enumeration
+            || kind == lowering::declarations::Alias) {
+            output[result.count] = allocation;
+            result.count += 1;
+        }
+        row += 1;
+    }
+    result.valid = true;
+    return result;
+}
+
 fn name_candidate(unit: i32, path: TypePath,
     arena: verified::surface_type::TypeArena,
     catalog: lowering::token_names::Catalog,
-    allocated: lowering::allocation::Table,
+    nominal: NominalCatalog,
     contexts: lowering::unit_context::Table,
     declarations: lowering::declarations::Table,
     trees: verified::syntax_tree::Catalog) -> NominalLookup {
@@ -457,52 +521,39 @@ fn name_candidate(unit: i32, path: TypePath,
     let imported: NominalLookup = Missing;
     let local_matches: i32 = 0;
     let imported_matches: i32 = 0;
+    let candidates: [lowering::allocation::AllocationRow] = nominal.data;
     let row: i32 = 0;
-    let allocation_rows: i32 = lowering::allocation::table_header(
-        allocated).rows;
-    while (row < allocation_rows) {
-        let allocation: lowering::allocation::AllocationRow =
-            lowering::allocation::table_row(allocated, row);
-        let structure: bool = lowering::allocation::row_has_kind(allocation,
-            lowering::declarations::Structure)
-            || lowering::allocation::row_has_kind(allocation,
-                lowering::declarations::Enumeration);
-        let alias: bool = lowering::allocation::row_has_kind(allocation,
-            lowering::declarations::Alias);
-        if (structure || alias) {
-            let owner: i32 = lowering::allocation::row_unit(allocation);
-            if (lowering::token_names::same(catalog, unit, path.last_token,
-                    owner, lowering::allocation::row_name(allocation))) {
-                let target: i32 = module_target(owner, contexts, declarations);
-                if (target <= -1) { return Ambiguous; }
-                let visible: bool = owner == unit
-                    || (lowering::allocation::row_is_public(allocation)
+    while (row < nominal.count) {
+        let allocation: lowering::allocation::AllocationRow = candidates[row];
+        let owner: i32 = allocation.source.unit;
+        if (lowering::token_names::same(catalog, unit, path.last_token,
+                owner, allocation.source.name)) {
+            let target: i32 = module_target(owner, contexts, declarations);
+            if (target <= -1) { return Ambiguous; }
+            let correct_path: bool = !qualified
+                || qualified_module_matches(catalog, unit, owner,
+                    path.first, arena, trees, target);
+            let visible: bool = correct_path
+                && (owner == unit
+                    || (allocation.source.is_public
                         && imports_module(catalog, unit, owner, contexts,
-                            declarations, trees, target));
-                let correct_path: bool = !qualified
-                    || qualified_module_matches(catalog, unit, owner,
-                        path.first, arena, trees, target);
-                if (visible && correct_path) {
-                    let selected: NominalLookup = Missing;
-                    if (alias) {
-                        let source: lowering::declarations::DeclarationRow =
-                            lowering::allocation::row_source(allocation);
-                        let destination: AliasDestination = AliasDestination {
-                            owner: owner,
-                            target: lowering::declarations::row_target(source),
-                        };
-                        selected = Deferred(destination);
-                    } else {
-                        selected = Found(
-                            lowering::allocation::row_core_id(allocation));
-                    }
-                    if (owner == unit) {
-                        local = selected;
-                        local_matches += 1;
-                    } else {
-                        imported = selected;
-                        imported_matches += 1;
-                    }
+                            declarations, trees, target)));
+            if (visible) {
+                let selected: NominalLookup = Missing;
+                if (allocation.source.kind == lowering::declarations::Alias) {
+                    let destination: AliasDestination = AliasDestination {
+                        owner: owner, target: allocation.source.target,
+                    };
+                    selected = Deferred(destination);
+                } else {
+                    selected = Found(allocation.core_id);
+                }
+                if (owner == unit) {
+                    local = selected;
+                    local_matches += 1;
+                } else {
+                    imported = selected;
+                    imported_matches += 1;
                 }
             }
         }
@@ -514,11 +565,10 @@ fn name_candidate(unit: i32, path: TypePath,
     if (imported_matches == 1) { return imported; }
     return Missing;
 }
-
 fn resolve_nominal(unit: i32, initial: TypePath,
     arena: verified::surface_type::TypeArena,
     catalog: lowering::token_names::Catalog,
-    allocated: lowering::allocation::Table,
+    nominal: NominalCatalog,
     contexts: lowering::unit_context::Table,
     declarations: lowering::declarations::Table,
     trees: verified::syntax_tree::Catalog) -> NominalLookup {
@@ -529,7 +579,7 @@ fn resolve_nominal(unit: i32, initial: TypePath,
     let sources: [verified::syntax_tree::Tree] = trees.data;
     while (remaining > 0) {
         let selected: NominalLookup = name_candidate(current_unit, path,
-            arena, catalog, allocated, contexts, declarations, trees);
+            arena, catalog, nominal, contexts, declarations, trees);
         let missing_alias: AliasDestination = AliasDestination {
             owner: -1, target: -1,
         };
@@ -561,7 +611,7 @@ pub struct ResolutionInput {
     tree: verified::syntax_tree::Tree,
     trees: verified::syntax_tree::Catalog,
     declarations: lowering::declarations::Table,
-    allocations: lowering::allocation::Table,
+    nominal: NominalCatalog,
 }
 
 pub struct ResolutionWorkspace {
@@ -613,7 +663,8 @@ pub fn build(input: ResolutionInput,
     let token_catalog: verified::token::TokenTable = input.tokens;
     let tree: verified::syntax_tree::Tree = input.tree;
     let declarations: lowering::declarations::Table = input.declarations;
-    let allocated: lowering::allocation::Table = input.allocations;
+    let nominal: NominalCatalog = input.nominal;
+    if (!nominal.valid) { return -1; }
     let output: [lowering::types::ResolutionRow] = workspace.output;
     let output_offset: i32 = workspace.output_offset;
     let capacity: i32 = workspace.output_capacity;
@@ -642,7 +693,7 @@ pub fn build(input: ResolutionInput,
             if (!path.valid || path.last_token >= token_count) { return -1; }
             let key: i32 = path.last_token;
             let resolved: NominalLookup = resolve_nominal(unit, path,
-                type_arena, token_names, allocated, input.contexts,
+                type_arena, token_names, nominal, input.contexts,
                 declarations,
                 input.trees);
             if (is_ambiguous(resolved)) { return -1; }

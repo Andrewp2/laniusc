@@ -209,8 +209,8 @@ def checkFunction (base : SurfaceElaboration.Context) (moduleId : ModuleId)
 
 def checkExternFunction (base : SurfaceElaboration.Context) (moduleId : ModuleId)
     (declaration : Surface.ExternFunction) (core : Core.Function) :=
-  match declaration.abi, declaration.genericParameters, declaration.wherePredicates with
-  | none, [], [] => check base moduleId declaration.parameters declaration.returnType core
-  | _, _, _ => .error .unsupportedDeclaration
+  match declaration.genericParameters, declaration.wherePredicates with
+  | [], [] => check base moduleId declaration.parameters declaration.returnType core
+  | _, _ => .error .unsupportedDeclaration
 
 end Lanius.Compiler.FunctionContextCheck

@@ -9,10 +9,15 @@ open Lanius.SurfaceSyntax
 abbrev ProofOf (predicate : Prop) := SurfaceSyntax.ProofOf predicate
 
 instance (item : Surface.Item) : Decidable (IsModuleItem item) := by
-  cases item <;> simp [IsModuleItem] <;> infer_instance
+  cases item <;> first
+    | exact .isTrue ⟨_, rfl⟩
+    | exact .isFalse (by rintro ⟨_, equality⟩; cases equality)
 
 instance (item : Surface.Item) : Decidable (IsImportItem item) := by
-  cases item <;> simp [IsImportItem] <;> infer_instance
+  cases item <;> first
+    | exact .isTrue (.inl ⟨_, rfl⟩)
+    | exact .isTrue (.inr ⟨_, rfl⟩)
+    | exact .isFalse (by rintro (⟨_, equality⟩ | ⟨_, equality⟩) <;> cases equality)
 
 def checkNonemptyPath (path : Names.ModulePath) : Option (ProofOf (path ≠ [])) :=
   match path with

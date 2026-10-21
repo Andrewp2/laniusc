@@ -1,0 +1,31 @@
+module app::main;
+
+pub extern "lanius_alloc" fn alloc(size: usize, align: usize) -> ptr;
+
+const SLOT: i32 = 1;
+
+fn read(values: [i32]) -> i32 {
+    return values[SLOT];
+}
+
+fn next_index(values: [i32]) -> i32 {
+    values[0] += 1;
+    return 1;
+}
+
+fn write(values: [i32]) -> i32 {
+    values[0] = 0;
+    values[1] = 36;
+    values[next_index(values)] += 1;
+    // Re-evaluating the assignment index would return 38, not 37.
+    return read(values) + values[0] - 1;
+}
+
+fn main() -> i32 {
+    // The current Core raw-i32-slice contract requires an exact 4-byte
+    // allocation alignment, not merely an allocation aligned at least that far.
+    let memory: ptr = alloc(8, 4);
+    if (memory == 0) { return 1; }
+    let values: [i32] = i32_slice_from_raw_parts(memory, 2);
+    return write(values);
+}

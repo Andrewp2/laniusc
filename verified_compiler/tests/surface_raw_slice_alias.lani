@@ -1,0 +1,27 @@
+module app::main;
+
+import verified::host;
+
+struct Holder {
+    items: [i32],
+}
+
+fn main() -> i32 {
+    let memory: ptr = verified::host::alloc(8, 4);
+    let record_memory: ptr = verified::host::alloc(16, 8);
+    if (memory == 0 || record_memory == 0) { return 1; }
+    let items: [i32] = verified::host::i32_slice_from_raw_parts(memory, 2);
+    let alias: [i32] = verified::host::i32_slice_from_raw_parts(memory, 2);
+    let holders: [Holder] = slice_from_raw_parts(record_memory + 8, 1);
+    items[0] = 11;
+    items[1] = 22;
+    holders[0] = Holder { items: alias };
+
+    // Loading a descriptor from a native record must keep its original pointer.
+    if (verified::host::i32_slice_data_ptr(holders[0].items) != memory) { return 2; }
+    holders[0].items[1] = 29;
+    if (items[1] != 29 || alias[1] != 29) { return 3; }
+    items[0] = 37;
+    if (holders[0].items[0] != 37) { return 4; }
+    return 37;
+}

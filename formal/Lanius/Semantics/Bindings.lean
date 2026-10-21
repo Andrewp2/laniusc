@@ -53,6 +53,13 @@ private theorem bindLocals_local?_of_not_mem (state : State) (bindings : List (V
       · exact State.bindLocal_local?_of_ne state formed id head.1 value head.2
           (notMem head (by simp)) found
 
+/-- Pattern bindings preserve locals whose names they do not shadow. -/
+theorem State.bindLocals_preservesLocal (state : State) (bindings : List (VarId × Value))
+    (formed : state.CellsWellFormed) (id : VarId) (value : Value)
+    (notMem : ∀ binding ∈ bindings, binding.1 ≠ id) (found : state.local? id = some value) :
+    (state.bindLocals bindings).local? id = some value :=
+  bindLocals_local?_of_not_mem state bindings formed id value notMem found
+
 theorem State.bindLocals_cellId?_get? (state : State) (bindings : List (VarId × Value))
     (unique : (bindings.map Prod.fst).Nodup) (index : Nat) (binding : VarId × Value)
     (found : bindings[index]? = some binding) :

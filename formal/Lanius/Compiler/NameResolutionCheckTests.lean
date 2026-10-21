@@ -56,6 +56,19 @@ example :
 
 example : (check ambiguousEnvironment 1 importedReference).isSome = false := by decide
 
+-- Caching query-wide shadowing must not change the selected declaration,
+-- conflate value/type namespaces, or bypass qualified import visibility.
+example : (check environment 1 localReference).map (·.symbol.declaration) = some 10 := by decide
+example : (check importedEnvironment 1 importedReference).map (·.symbol.declaration) = some 20 := by decide
+example : (check environment 1 qualifiedImportReference).map (·.symbol.declaration) = some 20 := by decide
+example : (check { environment with
+    symbols := [{ localRun with lookupNamespace := .type }, importedRun] }
+    1 localReference).map (·.symbol.declaration) = some 20 := by decide
+example : (check { environment with symbols := [{ importedRun with visibility := .modulePrivate }] }
+    1 qualifiedImportReference).isSome = false := by decide
+example : (check { importedEnvironment with imports := [] }
+    1 qualifiedImportReference).isSome = false := by decide
+
 example :
     (checkGlobal
       { names := environment, currentModule := 1,

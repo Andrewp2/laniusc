@@ -63,20 +63,24 @@ private theorem findFunction_of_mem_unique
         simp [List.find?, sameFalse,
           inductionHypothesis unique.2 tailMember]
 
+theorem selected_function (lowering : ProgramLowering.ProgramLowering)
+    (selection : MainSelection lowering) :
+    lowering.program.function? selection.body.core.id = some selection.body.core := by
+  have member := selection.body.row.member
+  rw [selection.body.coreMap] at member
+  unfold Core.Program.function?
+  exact findFunction_of_mem_unique lowering.functionsUnique member
+
 theorem selected_wellFormed (lowering : ProgramLowering.ProgramLowering)
     (selection : MainSelection lowering) :
     Execution.ExecutableWellFormed
       { program := lowering.program, entrypoint := selection.body.core.id } := by
   have member := selection.body.row.member
   rw [selection.body.coreMap] at member
-  have found : lowering.program.function?
-      selection.body.core.id = some selection.body.core := by
-    unfold Core.Program.function?
-    exact findFunction_of_mem_unique lowering.functionsUnique member
   have typed : Typing.FunctionWellTyped lowering.program
       selection.body.core :=
     lowering.wellTyped.2 selection.body.core member
-  exact ⟨selection.body.core, found, selection.zeroParameters,
+  exact ⟨selection.body.core, selected_function lowering selection, selection.zeroParameters,
     selection.allowedReturn, typed⟩
 
 theorem executable_wellFormed

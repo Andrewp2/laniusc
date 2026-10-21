@@ -13,6 +13,13 @@ import verified::token;
 const ALLOCATION_WORDS: i32 = lowering::allocation::HEADER
     + 2 * lowering::allocation::ROW;
 
+fn callable_id(target: lowering::value_catalog::ValueTarget) -> i32 {
+    return match (target) {
+        lowering::value_catalog::Callable(id) -> id,
+        _ -> -1,
+    };
+}
+
 // Two 13-byte catalog names share their first 12 bytes but must not resolve
 // as one callable through the aggregate value catalog.
 fn main() -> i32 {
@@ -121,21 +128,19 @@ fn main() -> i32 {
         lowering::value_catalog::from_raw_parts(value_memory, 2);
     let input: lowering::value_collection::ValueCatalogInput =
         lowering::value_collection::ValueCatalogInput {
-            unit: 0,
             contexts: context_table,
             sources: lowering::value_collection::region(source, 27),
             tokens: token_table,
             allocations: allocation_table,
             signature_index: signature_index,
         };
-    let rows: i32 = lowering::value_collection::build_value_catalog(input,
-        output);
+    let index: lowering::value_collection::NameIndex =
+        lowering::value_collection::build_name_index(input);
+    let rows: i32 = lowering::value_collection::build_value_catalog(index,
+        0, output);
     let found: lowering::value_catalog::ValueBinding =
         lowering::value_catalog::read_binding(output, 0);
-    let callable: bool = match (found.target) {
-        lowering::value_catalog::Callable(id) -> id == 10,
-        _ -> false,
-    };
+    let callable: bool = callable_id(found.target) == 10;
     if (rows != 1 || lowering::value_catalog::binding_token(found) != 0
         || !lowering::value_catalog::binding_is_kind(found,
             lowering::value_catalog::CallableBinding)
@@ -143,11 +148,44 @@ fn main() -> i32 {
             lowering::value_catalog::LocalBinding)
         || !callable
         || !lowering::value_catalog::valid_slice(output, 0, rows, 1,
-            allocation_table)) {
+            lowering::allocation::index(allocation_table, 12))) {
         return 1;
     }
-    // Two declarations with the same local name are ambiguous: no binding
-    // may be emitted, regardless of which allocation was visited first.
+    let candidate: lowering::value_collection::NameMatch =
+        lowering::value_collection::first_match(index, 0, 0);
+    if (!candidate.found) { return 11; }
+    if (callable_id(candidate.target) != 10
+        || lowering::value_collection::next_match(index, 0, 0,
+            candidate.next).found
+        || lowering::value_collection::first_match(index, -1, 0).found
+        || lowering::value_collection::first_match(index, 0, 1).found
+        || lowering::value_collection::next_match(index, 0, 0,
+            index.count).found) { return 12; }
+    // The index retains both owners of an equal spelling; qualification must
+    // choose between them later. A colliding but different spelling is skipped.
+    source[26] = 120;
+    let shared: lowering::value_collection::NameIndex =
+        lowering::value_collection::build_name_index(input);
+    candidate = lowering::value_collection::first_match(shared, 0, 0);
+    let seen: i32 = 0;
+    let matches: i32 = 0;
+    while (candidate.found && matches < 3) {
+        seen += callable_id(candidate.target);
+        matches += 1;
+        candidate = lowering::value_collection::next_match(shared, 0, 0,
+            candidate.next);
+    }
+    if (matches != 2 || seen != 21 || candidate.found) { return 13; }
+    source[25] = 107;
+    let collision: lowering::value_collection::NameIndex =
+        lowering::value_collection::build_name_index(input);
+    candidate = lowering::value_collection::first_match(collision, 0, 0);
+    if (!candidate.found || callable_id(candidate.target) != 10
+        || lowering::value_collection::next_match(collision, 0, 0,
+            candidate.next).found) { return 14; }
+    source[25] = 108;
+    source[26] = 121;
+    // Duplicate local callables invalidate the index even if no call uses them.
     let duplicate_source: lowering::declarations::DeclarationRow =
         lowering::declarations::DeclarationRow {
             unit: 0, kind: lowering::declarations::Function,
@@ -160,8 +198,11 @@ fn main() -> i32 {
         };
     lowering::allocation::table_write_row(allocation_table, 1,
         duplicate_allocation);
-    if (lowering::value_collection::build_value_catalog(input, output)
-        != 0) {
+    let duplicate_index: lowering::value_collection::NameIndex =
+        lowering::value_collection::build_name_index(input);
+    if (duplicate_index.capacity >= 0
+        || lowering::value_collection::build_value_catalog(duplicate_index, 0, output)
+            != -1) {
         return 6;
     }
     return 0;

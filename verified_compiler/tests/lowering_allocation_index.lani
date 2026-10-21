@@ -1,0 +1,142 @@
+module app::main;
+
+import lowering::allocation;
+import lowering::declarations;
+import lowering::value_catalog;
+import verified::host;
+
+fn row(declaration: i32, core: i32,
+    kind: lowering::declarations::DeclarationKind)
+    -> lowering::allocation::AllocationRow {
+    let source: lowering::declarations::DeclarationRow =
+        lowering::declarations::DeclarationRow {
+        unit: 0, kind: kind, is_public: false, item: 0,
+        declaration: 0, name: 0, target: -1, ordinal: 0,
+    };
+    return lowering::allocation::AllocationRow {
+        source: source,
+        declaration_id: declaration, core_id: core,
+    };
+}
+
+fn main() -> i32 {
+    let memory: ptr = verified::host::alloc(
+        lowering::allocation::HEADER_BYTES + 3 * lowering::allocation::ROW_BYTES,
+        lowering::allocation::ALIGNMENT);
+    if (memory == 0) { return 1; }
+    let table: lowering::allocation::Table =
+        lowering::allocation::from_raw_parts(memory, 3);
+    lowering::allocation::table_write_header(table,
+        lowering::allocation::AllocationHeader {
+            units: 1, rows: 3, structures: 0, enumerations: 1,
+            aliases: 1, constants: 0, functions: 1, externals: 0,
+            declarations: 3,
+        });
+    // Deliberately shuffled, sparse IDs, with distinct declaration/Core IDs.
+    lowering::allocation::table_write_row(table, 0,
+        row(2, 4, lowering::declarations::Function));
+    lowering::allocation::table_write_row(table, 1,
+        row(0, 0, lowering::declarations::Enumeration));
+    lowering::allocation::table_write_row(table, 2,
+        row(1, -1, lowering::declarations::Alias));
+    let index: lowering::allocation::Index = lowering::allocation::index(table, 6);
+    if (!index.valid) { return 2; }
+    if (index.enumeration_count != 1
+        || lowering::allocation::enumeration_row(index, 0) != 1
+        || lowering::allocation::enumeration_row(index, -1) != -1
+        || lowering::allocation::enumeration_row(index, 1) != -1) { return 17; }
+    let id: i32 = -1;
+    while (id <= 6) {
+        let declaration_row: i32 = -1;
+        let core_row: i32 = -1;
+        let slot: i32 = 0;
+        while (slot < table.count) {
+            let entry: lowering::allocation::AllocationRow =
+                lowering::allocation::table_row(table, slot);
+            if (id >= 0 && entry.declaration_id == id) { declaration_row = slot; }
+            if (id >= 0 && entry.core_id == id) { core_row = slot; }
+            slot += 1;
+        }
+        if (lowering::allocation::declaration_row(index, id) != declaration_row
+            || lowering::allocation::core_row(index, id) != core_row) { return 3; }
+        id += 1;
+    }
+    let binding_memory: ptr = verified::host::alloc(
+        lowering::value_catalog::RECORD_BYTES,
+        lowering::value_catalog::ALIGNMENT);
+    if (binding_memory == 0) { return 4; }
+    let values: lowering::value_catalog::ValueTable =
+        lowering::value_catalog::from_raw_parts(binding_memory, 1);
+    lowering::value_catalog::write_binding(values, 0,
+        lowering::value_catalog::binding(0,
+            lowering::value_catalog::LocalBinding,
+            lowering::value_catalog::Callable(4)));
+    if (!lowering::value_catalog::valid(values, 1, index)) { return 5; }
+    // An existing ID with the wrong declaration kind is not a callable.
+    lowering::value_catalog::write_binding(values, 0,
+        lowering::value_catalog::binding(0,
+            lowering::value_catalog::LocalBinding,
+            lowering::value_catalog::Callable(0)));
+    if (lowering::value_catalog::valid(values, 1, index)) { return 6; }
+    lowering::value_catalog::write_binding(values, 0,
+        lowering::value_catalog::binding(0,
+            lowering::value_catalog::LocalBinding,
+            lowering::value_catalog::Callable(5)));
+    if (lowering::value_catalog::valid(values, 1, index)) { return 12; }
+    let variant: lowering::value_catalog::VariantTarget =
+        lowering::value_catalog::VariantTarget {
+            type_id: 0, ordinal: 0, field_count: 0,
+        };
+    lowering::value_catalog::write_binding(values, 0,
+        lowering::value_catalog::binding(0,
+            lowering::value_catalog::LocalBinding,
+            lowering::value_catalog::Variant(variant)));
+    if (!lowering::value_catalog::valid(values, 1, index)) { return 13; }
+    // Derive candidates from the rows even when the header's category count
+    // is stale. Preserve every candidate and its order, not just the first.
+    lowering::allocation::table_write_row(table, 2,
+        row(1, 1, lowering::declarations::Enumeration));
+    index = lowering::allocation::index(table, 6);
+    if (!index.valid || index.enumeration_count != 2
+        || lowering::allocation::enumeration_row(index, 0) != 1
+        || lowering::allocation::enumeration_row(index, 1) != 2
+        || lowering::allocation::enumeration_row(index, 2) != -1) { return 18; }
+    // Reject either kind of duplicate, missing capacity, and malformed IDs.
+    lowering::allocation::table_write_row(table, 2,
+        row(2, -1, lowering::declarations::Alias));
+    index = lowering::allocation::index(table, 6);
+    if (index.valid || lowering::allocation::core_row(index, 4) != -1
+        || lowering::allocation::enumeration_row(index, 0) != -1) { return 7; }
+    lowering::allocation::table_write_row(table, 2,
+        row(1, 4, lowering::declarations::Function));
+    index = lowering::allocation::index(table, 6);
+    if (index.valid) { return 8; }
+    lowering::allocation::table_write_row(table, 2,
+        row(1, -1, lowering::declarations::Alias));
+    index = lowering::allocation::index(table, 4);
+    if (index.valid) { return 9; }
+    lowering::allocation::table_write_row(table, 2,
+        row(-2, -1, lowering::declarations::Alias));
+    index = lowering::allocation::index(table, 6);
+    if (index.valid) { return 10; }
+    index = lowering::allocation::index(
+        lowering::allocation::table_with_rows(table, 2), 6);
+    if (index.valid) { return 11; }
+    index = lowering::allocation::index(table, -1);
+    if (index.valid) { return 14; }
+    index = lowering::allocation::index(table, verified::host::I32_MAX);
+    if (index.valid) { return 15; }
+    let empty: lowering::allocation::Table =
+        lowering::allocation::table_with_rows(table, 0);
+    let header: lowering::allocation::AllocationHeader =
+        lowering::allocation::table_header(table);
+    header.rows = 0;
+    lowering::allocation::table_write_header(empty, header);
+    index = lowering::allocation::index(empty, 0);
+    if (!index.valid || lowering::allocation::core_row(index, 0) != -1
+        || index.enumeration_count != 0
+        || lowering::allocation::enumeration_row(index, 0) != -1) {
+        return 16;
+    }
+    return 0;
+}

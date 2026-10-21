@@ -1,0 +1,45 @@
+module app::main;
+
+import verified::host;
+import verified::lean_output;
+
+fn main() -> i32 {
+    let memory: ptr = verified::host::alloc_i32(3);
+    if (memory == 0) { return 1; }
+    let data: [i32] = verified::host::i32_slice_from_raw_parts(memory, 3);
+    let capacity: i32 = 0;
+    while (capacity <= 8) {
+        data[0] = -1;
+        data[1] = -1;
+        data[2] = 77;
+        let next: i32 = verified::lean_output::hex_word(
+            verified::lean_output::cursor(data, capacity, 0), 19088743);
+        if (capacity == 8) {
+            if (next != 8) { return 2; }
+        } else {
+            if (next != -1) { return 3; }
+        }
+        // 19088743 has hex spelling 01234567. A short buffer retains exactly
+        // the written prefix; the rejected byte and the canary stay unchanged.
+        let index: i32 = 0;
+        while (index < 8) {
+            let actual: i32 = (data[index / 4] >> ((index % 4) * 8)) & 255;
+            if (index < capacity) {
+                if (actual != 48 + index) { return 4; }
+            } else {
+                if (actual != 255) { return 5; }
+            }
+            index += 1;
+        }
+        if (data[2] != 77) { return 6; }
+        capacity += 1;
+    }
+    data[0] = -1;
+    data[1] = -1;
+    if (verified::lean_output::hex_word(
+            verified::lean_output::cursor(data, 8, -1), -1) != -1
+        || verified::lean_output::hex_word(
+            verified::lean_output::cursor(data, 8, 9), -1) != -1
+        || data[0] != -1 || data[1] != -1 || data[2] != 77) { return 7; }
+    return 37;
+}

@@ -40,6 +40,73 @@ pub struct Table {
     parameter_count: i32,
 }
 
+// A borrowed ID-to-slot index. IDs need not be dense or match declaration
+// order. Build once after lowering; the catalog must remain unchanged while
+// the index is in use. Slots contain table positions, not copied functions.
+pub struct Index {
+    table: Table,
+    slots: [i32],
+    capacity: i32,
+}
+
+fn invalid_index(table: Table) -> Index {
+    let nowhere: ptr = 0;
+    return Index { table: table,
+        slots: verified::host::i32_slice_from_raw_parts(nowhere, 0),
+        capacity: 0 };
+}
+
+pub fn build_index(table: Table) -> Index {
+    if (table.count <= 0
+        || table.count > (verified::host::I32_MAX / 4 - 1) / 2) {
+        return invalid_index(table);
+    }
+    let capacity: i32 = table.count * 2 + 1;
+    let memory: ptr = verified::host::alloc_i32(capacity);
+    if (memory == 0) { return invalid_index(table); }
+    let slots: [i32] = verified::host::i32_slice_from_raw_parts(memory, capacity);
+    let position: i32 = 0;
+    while (position != capacity) {
+        slots[position] = -1;
+        position += 1;
+    }
+    let functions: [Function] = table.functions;
+    let row: i32 = 0;
+    while (row != table.count) {
+        let id: i32 = functions[row].id;
+        if (id <= -1) { return invalid_index(table); }
+        let slot: i32 = id % capacity;
+        let probes: i32 = 0;
+        while (slots[slot] >= 0) {
+            if (functions[slots[slot]].id == id) { return invalid_index(table); }
+            probes += 1;
+            if (probes == capacity) { return invalid_index(table); }
+            slot += 1;
+            if (slot == capacity) { slot = 0; }
+        }
+        slots[slot] = row;
+        row += 1;
+    }
+    return Index { table: table, slots: slots, capacity: capacity };
+}
+
+pub fn find(index: Index, id: i32) -> i32 {
+    if (index.capacity <= 0 || id <= -1) { return -1; }
+    let slots: [i32] = index.slots;
+    let functions: [Function] = index.table.functions;
+    let slot: i32 = id % index.capacity;
+    let probes: i32 = 0;
+    while (probes != index.capacity) {
+        let row: i32 = slots[slot];
+        if (row <= -1 || row >= index.table.count) { return -1; }
+        if (functions[row].id == id) { return row; }
+        probes += 1;
+        slot += 1;
+        if (slot == index.capacity) { slot = 0; }
+    }
+    return -1;
+}
+
 fn slice_first(base: ptr, count: i32, bytes: i32) -> ptr {
     if (count <= 0) { return base; }
     return base + count * bytes - FIELD_BYTES;

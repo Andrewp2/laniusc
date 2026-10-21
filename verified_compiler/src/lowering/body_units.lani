@@ -5,6 +5,7 @@ import lowering::body_context;
 import ir::body_catalog;
 import ir::body_events;
 import lowering::value_catalog;
+import lowering::value_collection;
 import lowering::declarations;
 import lowering::aliases;
 import lowering::error;
@@ -84,7 +85,7 @@ struct ValueCatalogValidation {
     offset: i32,
     count: i32,
     token_count: i32,
-    allocations: lowering::allocation::Table,
+    allocations: lowering::allocation::Index,
     signature_index: lowering::signature_index::Table,
 }
 
@@ -133,7 +134,7 @@ fn valid_value_catalog(validation: ValueCatalogValidation) -> bool {
     let input: lowering::value_catalog::ValueTable = validation.catalog;
     let offset: i32 = validation.offset;
     let count: i32 = validation.count;
-    let allocation_table: lowering::allocation::Table =
+    let allocation_table: lowering::allocation::Index =
         validation.allocations;
     let signature_index: lowering::signature_index::Table =
         validation.signature_index;
@@ -158,7 +159,7 @@ struct OwnedContextValidation {
     context: lowering::unit_context::UnitContext,
     values: lowering::value_catalog::ValueTable,
     token_count: i32,
-    allocations: lowering::allocation::Table,
+    allocations: lowering::allocation::Index,
     signature_index: lowering::signature_index::Table,
 }
 
@@ -220,7 +221,7 @@ fn valid_global_allocation(input: lowering::allocation::Table,
 pub struct BodyUnitInputs {
     unit_count: i32,
     contexts: lowering::unit_context::Table,
-    transport_descriptors: lowering::unit_descriptor::Table,
+    unit_descriptors: lowering::unit_descriptor::Table,
     unit_declarations: lowering::declarations::Catalog,
     global_declarations: lowering::declarations::Table,
     sources: WordRegion,
@@ -228,6 +229,7 @@ pub struct BodyUnitInputs {
     trees: verified::syntax_tree::Catalog,
     resolutions: lowering::types::ResolutionTable,
     values: lowering::value_catalog::ValueTable,
+    value_names: lowering::value_collection::NameIndex,
     signature_index: lowering::signature_index::Table,
     allocations: lowering::allocation::Table,
     aliases: lowering::aliases::Table,
@@ -255,7 +257,7 @@ pub fn lower_units_owned(input: BodyUnitInputs,
     let unit_count: i32 = input.unit_count;
     let context_region: lowering::unit_context::Table = input.contexts;
     let transport_region: lowering::unit_descriptor::Table =
-        input.transport_descriptors;
+        input.unit_descriptors;
     let unit_declarations: lowering::declarations::Catalog =
         input.unit_declarations;
     let global_declarations: lowering::declarations::Table =
@@ -273,7 +275,7 @@ pub fn lower_units_owned(input: BodyUnitInputs,
     let contexts: [lowering::unit_context::UnitContext] =
         context_region.data;
     let context_count: i32 = context_region.count;
-    let transport_descriptors: [lowering::unit_descriptor::UnitDescriptor] =
+    let unit_descriptors: [lowering::unit_descriptor::UnitDescriptor] =
         transport_region.data;
     let transport_descriptor_count: i32 = transport_region.count;
     let source_catalog: [i32] = source_region.data;
@@ -343,6 +345,9 @@ pub fn lower_units_owned(input: BodyUnitInputs,
         || signature_index.count != expected_index_count) {
         return invalid();
     }
+    let allocation_index: lowering::allocation::Index =
+        lowering::allocation::index(allocation_table, expected_index_count);
+    if (!allocation_index.valid) { return invalid(); }
     let catalog_lengths: lowering::signature_producer::ContextCatalogLengths =
         lowering::signature_producer::context_catalog_lengths(source_catalog_length,
             token_catalog_length, resolution_catalog_length);
@@ -356,7 +361,7 @@ pub fn lower_units_owned(input: BodyUnitInputs,
                 context: contexts[context],
                 values: value_region,
                 token_count: contexts[context].token_count,
-                allocations: allocation_table,
+                allocations: allocation_index,
                 signature_index: signature_index,
             };
         if (!valid_declaration_table(declaration_table, unit)
@@ -369,10 +374,10 @@ pub fn lower_units_owned(input: BodyUnitInputs,
         let source_words: i32 = contexts[context].source_length;
         let token_offset: i32 = contexts[context].token_offset;
         let token_count: i32 = contexts[context].token_count;
-        if (transport_descriptors[unit].source_offset != source_offset
-            || transport_descriptors[unit].source_length != source_words
-            || transport_descriptors[unit].token_offset != token_offset
-            || transport_descriptors[unit].token_count != token_count) {
+        if (unit_descriptors[unit].source_offset != source_offset
+            || unit_descriptors[unit].source_length != source_words
+            || unit_descriptors[unit].token_offset != token_offset
+            || unit_descriptors[unit].token_count != token_count) {
             return invalid();
         }
         unit += 1;
@@ -437,7 +442,7 @@ pub fn lower_units_owned(input: BodyUnitInputs,
                     contexts[context].source_length),
                 tokens: unit_tokens,
                 tree: unit_tree,
-                allocations: allocation_table,
+                allocations: allocation_index,
                 signature_index: signature_index,
                 resolutions: lowering::types::resolutions(resolution_scratch,
                     contexts[context].resolution_count,
@@ -445,6 +450,7 @@ pub fn lower_units_owned(input: BodyUnitInputs,
                 aliases: aliases,
                 values: lowering::value_catalog::table(value_scratch.data,
                     value_count),
+                value_names: input.value_names,
                 contexts: context_region,
                 source_catalog: source_catalog,
                 token_catalog: token_catalog,

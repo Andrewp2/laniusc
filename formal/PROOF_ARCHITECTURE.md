@@ -1,12 +1,47 @@
 # Verified compiler proof architecture
 
-Status: active, incomplete. This file describes the current proof boundary,
-not the history of the proof reset.
+Status: active, incomplete. The target is correctness of the actual Lanius-written
+tools, not repeated authentication of each normal output. The implementation-proof
+spine below is current; the retained certificate-checker sections describe a
+bootstrap/checking boundary, not a second competing target architecture.
 
-## What the proof is meant to establish
+**Design update, 2026-09-27:** Read the
+[compiler working notes](../verified_compiler/NOTES.md) before extending the
+extraction architecture. The agreed target trusts the verified Lanius
+typechecker and extractor rather than reconstructing typing proofs for each
+emitted program. The notes distinguish that target from the unfinished proofs
+and the per-program checking mechanisms described below.
 
-The public result must be one connected implication about an actual compiler
-certificate:
+## Current implementation-proof spine (October 9)
+
+The eventual claim connects the actual compiler's successful output to the
+input program's meaning, through emitted x86 and the specified runtime. Its
+extraction mode must likewise preserve the input meaning in emitted Lean. These
+are universal tool-correctness results, not correctness assumptions about a
+particular successful compiler run. Prove the tools once; normal extraction must
+not reconstruct a second typing tree or rerun source/IR checking in Lean.
+
+| Required connection | Evidence and remaining obligation |
+| --- | --- |
+| Actual Lanius tool source → the Core implementation being proved | The designated SelfCore program and its identity are available. General correctness of that extraction/representation is still open; a source hash does not prove it. |
+| Source input → resolved, typed compiler IR | Frontend/model laws and restricted implementation proofs exist. Actual frontend, resolution and typechecker correspondence must discharge this connection for the agreed supported domain. |
+| IR lowering → native body catalog | The natural-body producer1179 and ordered lower_owned1180 caller now have independent accepted proofs from original inputs. Selected functions are still zero-parameter Void/Bool/decimal/negative/MIN returns. General body forms and the callers `lower_units_owned` and `lower_bodies` remain open. |
+| Shared IR → emitted Lean meaning | Direct emission without a second typing tree is implemented; the general actual extractor theorem and its output-import boundary remain open. |
+| Shared IR → x86 execution | Machine/encoding laws and checked fragments exist. Universal correctness of actual emission, calling conventions, memory representation and runtime composition remain open. |
+| Proved tools → the extractor executable and usable trusted output | Bootstrap provenance, executable correspondence and the explicit output trust mechanism must be composed with the preceding results. They cannot be inferred from self-extraction or component acceptance. |
+
+Each new proof must close a named connection or a premise of its next actual
+caller. Supporting safety or termination results remain useful, but do not close
+an end-to-end connection by themselves. See [current implementation evidence and
+costs](../verified_compiler/NOTES.md) and the [metatheory ledger](../verified_compiler/METATHEORY.md).
+The two-consumer interface experiment is independently accepted and installed;
+it does not meet the near-5x proof-size target or justify scaling the same adapters
+unchanged. The source-to-Core, extractor and x86 gaps remain explicit.
+
+## Retained certificate-checker theorem (bootstrap boundary)
+
+The certificate path has a separate connected implication about an actual
+compiler certificate:
 
 ```text
 the certificate checker accepts exact source files and exact ELF bytes
@@ -28,7 +63,7 @@ the Lean checker reconstructs or authenticates each one. A native build of
 that checker is a performance optimization; the kernel-checked soundness
 theorem remains the trust boundary.
 
-## Current connected spine
+## Retained checker's connected spine
 
 `Compiler.EndToEndCheck.check` currently composes these concrete boundaries:
 
@@ -82,23 +117,70 @@ executable that generated those bytes is still the bootstrap build; acceptance
 authenticates this output but does not yet prove universal generator
 correctness.
 
+Constants are checked against their declared type through `ExprChecks` rather
+than inferred with the unannotated integer default. Literal elaboration's
+bounds also supply Core value typing through one shared lemma. The direct
+source checker authenticates i32, bool, string, usize, and null-pointer literal
+initializers; computed initializers remain unsupported. Independent same-typed
+value mutations are rejected. Generated constant typing and shared lookup
+proofs now compose into `extractedVerifiedProgram` alongside supported function
+proofs, without rerunning the whole-program checker.
+
 A fresh nominal-structure/type-alias regression now passes source lowering,
 x86 execution, v3 certificate generation, and the independent Lean checker.
 This is connected evidence for that lowering path, not yet the general
 emitter-correctness theorem.
 
-The Lanius extractor self-extracts its 88-unit import closure directly to a
+The shared Lanius lowering API now returns only a semantic `ir::program::Program`.
+Its program pipeline and function-catalog assembly have no transport-output
+mode or buffer. The compiler's explicit certificate branch owns serialization;
+the extractor does not import the Core wire writers. The representative direct
+Lean output and the two-function certificate remain byte-identical across this
+boundary change, and their existing checkers accept them. This is an ownership
+cleanup, not a new semantic-preservation theorem or a relaxation of checking.
+
+The Lanius extractor self-extracts its import closure directly to a
 Lean `Core.Program` by default. Its `--lean-checked` mode additionally emits
 typed frontend evidence: the independent checker authenticates the source,
 lexer, grammar, and Surface tree. `Compiler.DirectCoreCheck` joins that
 checked frontend to the directly emitted Lean program and entrypoint, then
 checks the exact `ProgramLowering`. It accepts a two-source cross-unit call and rejects a
 different program or entrypoint. No Core transport certificate is involved in
-this direct extraction path. The shared native IR now retains source identifier
-spans for types, enum variants, and functions, so Lean declarations can carry
-names such as `extractedEnumeration0_Choice` and `extractedFunction0_main`
-without reparsing source. These names are metadata: the body is still a
-numeric `Core.Stmt`, not the desired source-like, type-indexed Lean IR.
+this direct extraction path. The shared native IR retains source identifier
+spans and module paths, so actual public Lean declarations use names such as
+`Extracted.«app::main».Types.Choice` and `Extracted.«app::main».Functions.main`
+without reparsing source. Type and function namespaces remain distinct, and
+Lean keywords and generated auxiliary names cannot collide with source names.
+Constructor notation such as `.Some 7` resolves through owner-scoped typed
+metadata; nested match expressions retain their grouping. Importers can use
+these declarations and instances in ordinary Lean proofs.
+Bodies use source-shaped typed notation that
+erases to the same `Core.Stmt`. Every defined function in the current
+self-extraction uses this notation, including bodies above the former
+256-node cutoff. Each body is normalized once into an ordinary checked
+definition, shared by execution and proof checking. Generated structural
+typing proofs cover the supported proof shapes; the notation alone is not
+a proof of source-to-Core correctness.
+Local binding descriptions are also shared before normalization, so repeated
+uses do not re-elaborate their types and `Code` instances. Explicit signature
+variables enter the same lexical scope; computed signatures still use ordinary
+typed elaboration. A fixed-input comparison reduced the fresh self-module check
+from 67.01 to 61.72 seconds, with byte-identical Core data and unchanged proof
+obligations. This does not yet meet the full-check performance target.
+The body-definition helper also uses Lean's let-expanding closure operation
+to avoid an extra meta-level dependency check. Kernel validation remains on,
+and generic/captured-variable tests cover the closure boundary. The current
+fixed self-module checks in 60.82 seconds with identical Core and compiled
+artifact size; this is not a large performance gain. Disabling asynchronous
+elaboration exceeded the 110-second experiment cap and is not used.
+Native lowering now builds the global callable/variant name index once for
+all units, while the allocation index retains every enum declaration in
+source order. Name resolution still checks full spellings, module identity,
+imports, privacy, and ambiguity. Rejecting wrong module prefixes before import
+lookup reduced generation from 25.35 to 21.85 seconds on identical input;
+indexing enum candidates later reduced it from 21.51 to 20.34 seconds on another
+fixed input. Both changes preserved every emitted Lean byte. Sharing the name
+index saved about 11 MB of peak memory but did not demonstrate a speedup.
 The exact emitted program and entrypoint now also
 yield `Execution.ExecutableWellFormed` through a reusable selection theorem,
 rather than duplicating the entrypoint proof for direct emission. The same
@@ -176,16 +258,22 @@ fast per-program proof path. Completing the migration requires an extractor
 correctness theorem that removes this repeated derivation from normal output.
 
 `verified_compiler/tests/direct_self_typing_check.sh` reproduces direct Lean
-emission for the current 88-source extractor closure, checks the generated
+emission for the current extractor closure, checks the generated
 module, and runs the independent Core typing checker on `extractedProgram`.
 This confirms that the self-emitted Core is well typed; it does not prove that
 the source-to-Core lowering is correct for that full closure. On the current
-bootstrap build, self-emission took 27 seconds and generated-module checking
-21 seconds after source-name retention. Earlier instrumented stage timings
-placed roughly 17 seconds
-of emission in shared function-body lowering, with first-pass expression type
-inference the largest measured substage; the Lean text writer is not the
-dominant cost. These timings are diagnostics, not a performance guarantee.
+bootstrap build, the latest September 27 fresh run took 107.98 seconds: 21 seconds
+for self-emission, 82 seconds for module checking, and 0.885 seconds for
+independent typing, plus setup. It contains 1,153 source-shaped defined functions,
+nine runtime imports, and 1,127 emitted function-typing proofs. Constant references
+no longer prevent a body proof. The remaining 26 defined bodies and runtime
+imports still lack generated proofs. This does not meet the
+seconds-scale full-check target. Profiling identifies elaboration and artifact
+serialization as substantial costs alongside kernel checking; body lowering
+still dominates generation. The representative enum let/match takes 0.02
+seconds to generate and 0.75 seconds to check freshly, with shared infrastructure
+built. See `../verified_compiler/VERIFICATION.md` for measurement conditions,
+controlled comparisons, and rejected performance experiments.
 
 ## Remaining semantic gaps
 
@@ -274,21 +362,186 @@ in the same traversal that emits code.
 
 ## Extractor proof shape
 
-Extractor correctness should be factored into format and phase contracts:
+The direct extractor's correctness argument should follow its actual pipeline:
 
 ```text
 source bytes
-  -> canonical token evidence
-  -> grammar derivation evidence
-  -> reconstructed Surface evidence
-  -> packed compact bytes
+  -> lexer/parser and reconstructed Surface
+  -> shared semantic typed IR
+  -> source-shaped Lean declarations
+  -> Lean Core interpretation
 ```
 
-The existing checker already proves that accepted evidence denotes the exact
-source and reconstructed Surface tree. The remaining generator theorem is
-therefore a compositional claim that each Lanius extraction phase emits the
-evidence accepted by the corresponding checker. It must reuse the checked
-phase formats rather than re-proving the parser through a second semantics.
+The remaining contracts must connect source lowering to the shared IR and
+Lean emission to that IR's meaning, then compose the two. Core typing alone
+does not establish either equality. The printer contract must cover every
+supported body and declaration, including names, references, and scoping;
+unsupported or malformed inputs must fail explicitly.
+
+Each source function has one named declaration. A `mutual functions` block
+supports forward and recursive calls through a temporary name-to-ID index
+read from those declarations' headers; there are no separate reference
+declarations. The printer resolves IDs through the shared function catalog;
+it neither reparses source nor renumbers semantic functions. The connected
+namespace test checks these names against exact source lowering and matching
+Lean/x86 execution.
+
+Normal Lean output now uses a proof-free representation. The Lanius frontend
+checks source typing and the emitter prints ordinary Core syntax through
+readable Surface notation. Expressions have only phantom source-type labels
+for resolving names and literal representations. Their stored syntax has no
+scope or signature index and no per-node typing proof. Calls accept ordinary
+argument lists without comparing them to a callee's parameter types.
+
+References carry resolved IDs, not authenticated lookups into a second
+signature table. Each native nominal type carries one `lanius_type` annotation
+with its kind and resolved IR ID. Its constructors supply field labels and
+positions; separate record/enum metadata instances and copied field tables
+are unnecessary. Constants are ordinary Core values.
+Functions assemble directly into `extractedProgram : Core.Program`; there is
+no generated `extractedVerifiedProgram` or automatic `ProgramWellTyped`
+theorem. The shared intrinsic library is not imported by normal output.
+
+The function notation constructs Core nodes directly, rather than expanding
+into nested polymorphic builder calls for ordinary Lean elaboration. Labels
+exist only while resolving source names. A public function retains its name
+and one Core declaration; linking projects those declarations without a
+second conversion pass over their bodies. Native runtime declarations use the
+same Core function representation.
+
+Closed `mutual functions` declarations use Lean's nonrecursive admission API
+after their bodies have become data with no free variables or metavariables.
+Temporary header locals preserve forward-name resolution; the emitted call IDs
+do not create Lean recursion. The kernel, compiler, documentation, and source
+information remain active. Generic, attributed, module-system, or genuinely
+dependent definitions continue through Lean's general definition machinery.
+This is shared elaborator work, not generated proof evidence or deferred checking.
+
+Defined-function parameters now bind source names directly to resolved IDs,
+for example `arguments := [value := 72]`. The notation reads labels from the
+existing function signature and builds the Core parameter list directly. It
+does not elaborate a dependent `Vars` value or require generated Lean `Var`
+bindings around the body. Captured IDs and computed/generic signatures remain
+supported. Runtime imports still use the small `Function.external` helper.
+
+This implements the representation part of the decision in
+[the compiler notes](../verified_compiler/NOTES.md). It does not complete the
+general typechecker or extractor proof and adds no new axioms. Until those
+proofs and the execution/import boundary are connected, trust in the current
+extractor is provisional. Proofs about the emitted program alone are distinct
+from proofs that the source program has the same behavior.
+
+The direct-parameter checkpoint contained 996 functions and 673 constants from
+80 source units. On September 28, that checkpoint emitted in
+9.77 seconds and checked/wrote one fresh Lean module in 18.29 seconds.
+The previous builder representation took 35.58 seconds; the earlier intrinsic
+representation took 87.27 seconds. Shared infrastructure was built beforehand;
+no cached program declarations or split checks were used. This remains slower
+than the seconds-scale goal.
+
+That checkpoint's profile records 6.06 seconds of elaboration, 1.47 seconds of typeclass
+inference, 2.23 seconds of interpretation, 926 ms of kernel checking,
+about 6.1 seconds of Lean compilation, and 3.61 seconds of artifact writing.
+These overlapping categories are not additive wall-clock phases. The optional
+self-typing regression audit passed in 432 ms. The full diagnostic script,
+including source-closure setup, took 33.87 seconds. Shared constant resolution
+now filters unrelated module owners before name checks and only searches
+imports when no local value matches. On an identical frozen input, generation
+fell from 17.24 to 11.70 seconds and emitted byte-identical Lean.
+
+The parser now caches grammar actions and uses a collision-checked state index,
+while retaining its insertion-ordered chart queue and first derivation. Its
+separate fixed-input comparison measured 11.62 versus 10.53 seconds and emitted
+byte-identical Lean. The shared workspace grows from 64 to 96 MiB to preserve
+state capacity. Exhaustive short-token and ambiguity/capacity regressions pass;
+this does not establish a correctness theorem for the revised implementation.
+
+Direct parameter binders removed 2,524 lines of generated scaffolding on the
+fixed input and checked in 17.89 seconds, versus the preceding 19.92-second
+check. The complete evaluated Core snapshot remained byte-identical, including
+all 997 functions and 673 constants. Current self-extraction has one fewer
+function because the old parameter-printing helper was deleted.
+
+Constant lookup now uses the module declaration spans that shared lowering
+already checked, avoiding unrelated allocation rows without adding an index.
+The fixed-input comparison improved generation from 11.58 to 9.38 seconds with
+byte-identical output. That checkpoint's full fresh run measured 9.76 seconds for
+emission, 23.21 seconds for Lean checking/artifact writing, and 39.97 seconds
+overall, including setup and the separate 468 ms typing audit. The unchanged
+previous program also checked more slowly in this session: a paired comparison
+measured 24.71 seconds before and 24.22 after. No Lean admission improvement is
+claimed for this native lookup change. See the compiler notes for the discarded
+Lean experiments and the subsequent native-executable checkpoint.
+
+Native declarations now own constructor and field metadata. The notation reads
+their names, payload labels, and ordinals from Lean's declaration information;
+record constructor binders use the source field names. The obsolete per-member
+instances and APIs were removed, without adding a compatibility table or
+reconstructing Lanius typing. A fixed-input comparison preserves the complete
+Core program and removes 1,395 instances and 3,301 generated lines. Fresh Lean
+admission takes 19.33 seconds versus 22.34 before this change.
+
+That checkpoint's self-module contains 992 functions and 673 constants; four obsolete
+printer functions were deleted. Fresh generation takes 7.75 seconds, Lean
+checking/artifact writing 19.21 seconds, and the full diagnostic script 33.50
+seconds. The optional typing audit takes 341 ms. The few-second target remains
+open. These current-source measurements are separate from the fixed-input
+comparison; they do not establish a native generation speedup.
+
+The linking step removes the separate emitted Core nominal-type tables. A small
+`link` notation reads the same native declarations used by body name resolution
+and constructs their Core declarations once. Explicit type lists preserve all
+IDs, field/variant order, and unused declarations. Shared label-reading code
+lives in `Surface/Labels.lean`; the old Lanius type-table printers were removed.
+The actual emitted program preserves the complete fixed-input Core snapshot.
+This is a representation cleanup, not a general correctness proof or a clear
+performance improvement. Current-source self-extraction covers 989 functions
+and 673 constants: 8.47 seconds to emit, 19.25 seconds to check/write, and 34.27
+seconds for the full diagnostic script. The few-second target remains open.
+
+The subsequent native parser change indexes completion and nullable-replay
+searches while retaining chart insertion order and exact action comparisons.
+Fixed-input generation uses 15.2% fewer user instructions and takes 7.77 versus
+6.70 seconds, with byte-identical Lean. The fresh 990-function, 674-constant
+self-module emits in 7.51 seconds and checks/writes in 14.37 seconds; the
+complete diagnostic takes 27.42 seconds.
+No Lean compilation change was retained, so this is not a controlled Lean-side
+speedup. The parser uses 120 MiB of scratch instead of 96 MiB to preserve its
+prior state capacity. Focused parser and connected Lean/x86 checks pass, but
+they do not establish general correctness of the optimized implementation.
+
+A fixed-program comparison preserved the complete evaluated Core data
+byte-for-byte. The current generated program definition has no axiom
+dependencies. This describes the data definition and regression evidence,
+not a general correctness proof of the extractor or compiler.
+
+`verified_compiler/tests/direct_emission_check.sh` checks expected execution
+in Lean and x86 for fourteen fixtures, including `Some(7)`. Twelve fixtures also
+pass the independent exact-source checker. Two raw-slice/memory fixtures are
+outside that checker's supported fragment; their coverage is execution and
+structural checking. Same-typed field/initializer substitutions and seven
+constant mutations remain rejected by the independent source checker.
+
+Typing rejection tests now run at the Lanius boundary: wrong call arguments,
+arity, return types, unknown locals, and wrong enum payloads fail in both
+extraction modes and the x86 compiler. Lean Surface tests check representation,
+binding identity, and execution, not a second implementation of source typing.
+
+The migration exposed missing definite-return validation in Lanius: non-unit
+functions could reach the end, and the old Lean representation was catching
+that later. Shared IR validation now rejects missing returns, one-sided returns,
+and loop-only returns. Unit fallthrough and valid branch/loop continuations
+remain accepted. The fixture gate covers ten malformed-source cases in both
+extraction modes and x86. The separate runtime-import gate also passed, including
+six same-signature service substitutions under forged policies.
+
+The existing source checker independently authenticates lexer and grammar
+evidence and reconstructed Surface. Small `--lean-checked` examples use that
+checker to establish exact source-to-Core agreement. Emitting a full parser
+derivation for every normal extraction is not the intended fast path, and
+integer transport is not part of direct Lean emission. The separate legacy
+backend certificate still has its own format contracts; it must not dictate
+the extractor's representation.
 
 ## Size and performance gates
 
@@ -307,7 +560,8 @@ For every connected increment:
   should normally be much smaller;
 - a focused changed-module check should take seconds;
 - cached whole-facade checking should take seconds;
-- no individual development command runs for more than 110 seconds;
+- no individual development command runs for more than two minutes; use a
+  shorter timeout to leave room for cleanup;
 - normal per-program certificate generation and checking must not replay the
   compiler or kernel-reduce a large extracted execution.
 
@@ -346,21 +600,26 @@ returning to hundreds of repetitive program traces.
 
 ## Next gates
 
-In order:
+The certificate-checker work above describes available bootstrap validation,
+not a requirement to regenerate typing evidence for every normal extraction.
+The earlier next-step list predated the trusted-tool decision. The remaining
+contracts now follow the actual implementation:
 
-1. extend the shared structural expression/statement validator with the
-   local/call/control-flow state relation used by real compiler functions;
-2. pass a real two-unit cross-call certificate through the same end-to-end
-   checker;
-3. prove the Lanius certificate emitter phases generate evidence accepted by
-   the existing v3 decoder and boundaries;
-4. make the native Lanius extractor carry the typed Core evidence consumed by
-   the checker, eliminating the bootstrap exporter's role in new artifacts;
-5. scale the structural validator across the source constructs actually used
-   by the compiler and extractor, rejecting unsupported constructs explicitly;
-6. self-extract and compile the extractor with the verified x86 path, then
-   retain the independently checked self-embedding as the bootstrap anchor.
+1. Connect the Lanius frontend and lowering implementation to source semantics
+   and shared-IR typing. Keep malformed/unsupported input rejection explicit.
+2. Prove that the Lanius printer and Lean notation preserve that IR's meaning,
+   including names, declaration identities, field order, and binding scope.
+   An emitted program being well typed does not discharge this contract.
+3. Connect the Lanius x86 emitter to the machine semantics for its supported
+   fragment, including the runtime services used by the extractor. Compose
+   this with source lowering; executable comparisons alone are insufficient.
+4. Establish the checked self-embedding and native bootstrap connection for
+   those actual implementations, not just abstract algorithms or validators.
+5. Specify the trusted execution/import mechanism that ties a tool invocation
+   to its exact input and output. State the assumptions explicitly; do not add
+   silent axioms or put per-program typing reconstruction back into admission.
 
-Completion means the last successful compiler/extractor output is covered by
-this one proof spine. It does not mean that several disconnected examples all
-have true theorems.
+Fresh per-program emission and Lean admission must also meet the seconds-scale
+performance target with shared infrastructure already built. These obligations
+remain open; the working direct pipeline and passing fixtures are progress,
+not completion of the general compiler/extractor proof.

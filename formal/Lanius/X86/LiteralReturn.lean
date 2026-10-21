@@ -168,9 +168,9 @@ theorem machine_returns (literal : Literal) (before : Machine.State)
   let after := middle.returnNear
   refine ⟨middle, after,
     .decoded (immediateBytes literal) loaded.prefix _ _
-      (immediate_decodes .w32 0 literal.bits 0) rfl,
+      (immediate_decodes .w32 0 literal.bits 0) rfl rfl,
     .decoded Machine.returnBytes loaded.suffix .returnNear 1
-      Machine.return_decodes rfl, ?_, ?_, ?_, ?_, ?_, ?_, rfl, rfl⟩
+      Machine.return_decodes rfl rfl, ?_, ?_, ?_, ?_, ?_, ?_, rfl, rfl⟩
   · simp [after, middle, Machine.State.returnNear, Machine.State.immediate32]
   · simp [after, middle, Machine.State.returnNear, Machine.State.immediate32]
   · simpa [after, middle, Machine.State.returnNear, Machine.State.immediate32,

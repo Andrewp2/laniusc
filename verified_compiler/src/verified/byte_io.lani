@@ -27,7 +27,7 @@ pub fn read_file(handle: i32, output:[i32], capacity: i32, packed:[i32],) -> i32
             request = remaining + 1;
         }
         let request_size: usize = request as usize;
-        let count: i32 = verified::host::read(handle, packed_pointer, request_size);
+        let count: i32 = verified::host::read(handle, packed_pointer, request_size as usize);
         if (count <= -1 || count>request) {
             return -1;
         }
@@ -82,7 +82,7 @@ pub fn write_stdout(input:[i32], length: i32, packed_pointer: ptr,) -> i32 {
             index += 1;
         }
         let chunk_size: usize = chunk_length as usize;
-        let written: i32 = verified::host::write_stdout(packed_pointer, chunk_size);
+        let written: i32 = verified::host::write_stdout(packed_pointer, chunk_size as usize);
         if (written <= 0 || written>chunk_length) {
             return -1;
         }

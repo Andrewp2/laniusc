@@ -1,0 +1,97 @@
+module verified::lean_operations;
+
+import ir::body_events;
+
+// Operator spellings and classification for the readable Lean body writer.
+pub struct Name {
+    spelling: str,
+    length: i32,
+}
+
+fn named(spelling: str, length: i32) -> Name {
+    return Name { spelling: spelling, length: length };
+}
+
+fn unknown() -> Name {
+    return named("", 0);
+}
+
+// These symbols build Core operations, not host-language arithmetic.
+pub fn binary_symbol(event: ir::body_events::Event) -> Name {
+    return match (event) {
+        ir::body_events::ExpressionBinaryAndThen -> named("&&", 2),
+        ir::body_events::ExpressionBinaryOrElse -> named("||", 2),
+        ir::body_events::ExpressionBinaryEqual -> named("==", 2),
+        ir::body_events::ExpressionBinaryNotEqual -> named("!=", 2),
+        ir::body_events::ExpressionBinaryLess -> named("<", 1),
+        ir::body_events::ExpressionBinaryLessEqual -> named("<=", 2),
+        ir::body_events::ExpressionBinaryGreater -> named(">", 1),
+        ir::body_events::ExpressionBinaryGreaterEqual -> named(">=", 2),
+        ir::body_events::ExpressionBinaryAdd -> named("+", 1),
+        ir::body_events::ExpressionBinarySubtract -> named("-", 1),
+        ir::body_events::ExpressionBinaryMultiply -> named("*", 1),
+        ir::body_events::ExpressionBinaryDivide -> named("/", 1),
+        ir::body_events::ExpressionBinaryRemainder -> named("%", 1),
+        ir::body_events::ExpressionBinaryBitAnd -> named("&&&", 3),
+        ir::body_events::ExpressionBinaryBitOr -> named("|||", 3),
+        ir::body_events::ExpressionBinaryBitXor -> named("^^^", 3),
+        ir::body_events::ExpressionBinaryShiftLeft -> named("<<<", 3),
+        ir::body_events::ExpressionBinaryShiftRight -> named(">>>", 3),
+        _ -> unknown(),
+    };
+}
+
+pub fn binary_logical(event: ir::body_events::Event) -> bool {
+    return match (event) {
+        ir::body_events::ExpressionBinaryAndThen -> true,
+        ir::body_events::ExpressionBinaryOrElse -> true,
+        _ -> false,
+    };
+}
+
+pub fn intrinsic_name(event: ir::body_events::Event) -> Name {
+    return match (event) {
+        ir::body_events::ExpressionI32SliceFromRawParts -> named("i32SliceFromRawParts", 20),
+        ir::body_events::ExpressionTypedSliceFromRawParts(element) -> named("typedSliceFromRawParts", 22),
+        ir::body_events::ExpressionI32SliceDataPointer -> named("i32SliceDataPtr", 15),
+        ir::body_events::ExpressionStringDataPointer -> named("stringDataPtr", 13),
+        _ -> unknown(),
+    };
+}
+
+pub fn pointer_binary_name(event: ir::body_events::Event) -> Name {
+    return match (event) {
+        ir::body_events::ExpressionBinaryAdd -> named("pointerAdd", 10),
+        ir::body_events::ExpressionBinarySubtract -> named("pointerSubtract", 15),
+        _ -> unknown(),
+    };
+}
+
+pub fn binary_comparison(event: ir::body_events::Event) -> bool {
+    return match (event) {
+        ir::body_events::ExpressionBinaryEqual -> true,
+        ir::body_events::ExpressionBinaryNotEqual -> true,
+        ir::body_events::ExpressionBinaryLess -> true,
+        ir::body_events::ExpressionBinaryLessEqual -> true,
+        ir::body_events::ExpressionBinaryGreater -> true,
+        ir::body_events::ExpressionBinaryGreaterEqual -> true,
+        _ -> false,
+    };
+}
+
+pub fn assignment_symbol(event: ir::body_events::Event) -> Name {
+    return match (event) {
+        ir::body_events::ExpressionAssignmentSet -> named(":=", 2),
+        ir::body_events::ExpressionAssignmentAdd -> named("+=", 2),
+        ir::body_events::ExpressionAssignmentSubtract -> named("-=", 2),
+        ir::body_events::ExpressionAssignmentMultiply -> named("*=", 2),
+        ir::body_events::ExpressionAssignmentDivide -> named("/=", 2),
+        ir::body_events::ExpressionAssignmentRemainder -> named("%=", 2),
+        ir::body_events::ExpressionAssignmentBitXor -> named("^=", 2),
+        ir::body_events::ExpressionAssignmentShiftLeft -> named("<<=", 3),
+        ir::body_events::ExpressionAssignmentShiftRight -> named(">>=", 3),
+        ir::body_events::ExpressionAssignmentBitAnd -> named("&=", 2),
+        ir::body_events::ExpressionAssignmentBitOr -> named("|=", 2),
+        _ -> named("", 0),
+    };
+}

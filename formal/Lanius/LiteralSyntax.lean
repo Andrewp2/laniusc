@@ -2,7 +2,7 @@ import Lanius.SurfaceSyntax
 
 namespace Lanius.Elaboration
 
-private def digitValue? (character : Char) : Option Nat :=
+def digitValue? (character : Char) : Option Nat :=
   let code := character.toNat
   if '0'.toNat ≤ code ∧ code ≤ '9'.toNat then
     some (code - '0'.toNat)
@@ -13,7 +13,7 @@ private def digitValue? (character : Char) : Option Nat :=
   else
     none
 
-private def parseDigitsLoop (base : Nat) : List Char → Nat → Bool → Option Nat
+def parseDigitsLoop (base : Nat) : List Char → Nat → Bool → Option Nat
   | [], value, seen => if seen then some value else none
   | '_' :: rest, value, seen => parseDigitsLoop base rest value seen
   | character :: rest, value, _ => do

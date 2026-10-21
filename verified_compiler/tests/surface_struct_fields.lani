@@ -1,0 +1,14 @@
+module app::main;
+
+import app::records;
+
+fn selected(record: app::records::Outer) -> i32 {
+    return record.value.value;
+}
+
+fn main() -> i32 {
+    let record: app::records::Outer = app::records::Outer {
+        value: app::records::Inner { value: 7, ignored: 99 },
+    };
+    return selected(record);
+}

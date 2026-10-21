@@ -323,7 +323,7 @@ theorem StableExpr.assignSetLocal
     StableExpr (rightFuel + 2) program state
       (.assign .set (.local id) expression) .unit after := by
   intro fuel enough
-  have place := evalPlace_local_of_local? (fuel - 2) program state id cell
+  have place := evalPlace_local_of_local? (fuel - 2) program state .address id cell
     current cellFound localFound
   have rightEval := right (fuel - 2).succ (by omega)
   have afterCell : afterRight.cellId? id = some cell := by
@@ -358,7 +358,7 @@ theorem StableExpr.assignSubtractI32
       (.assign .subtract (.local id) (.value (.signed .i32 decrement)))
       .unit after := by
   intro fuel enough
-  have place := evalPlace_local_of_local? (fuel - 2) program state id cell
+  have place := evalPlace_local_of_local? (fuel - 2) program state .read id cell
     (.signed .i32 current) cellFound localFound
   have right := evalExpr_value (fuel - 2) program state
     (.signed .i32 decrement)

@@ -23,5 +23,7 @@ example : imageEq
 
 #check startup_to_exit
 #check Lanius.X86.EntrypointExitComposition.entrypoint_to_exit
+#print axioms startup_to_exit
+#print axioms Lanius.X86.EntrypointExitComposition.entrypoint_to_exit
 
 end Lanius.Compiler.ELFExecutionCheckTests

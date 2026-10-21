@@ -1,0 +1,20 @@
+module app::main;
+
+fn noop() { }
+
+fn choose(value: bool) -> i32 {
+    let result: i32 = 7;
+    if (value) { return result; } else { return 2; }
+}
+
+fn after_loop() -> i32 {
+    while (false) { return 99; }
+    let result: i32;
+    result = 3;
+    return result;
+}
+
+fn main() -> i32 {
+    noop();
+    return choose(true) + choose(false) + after_loop();
+}

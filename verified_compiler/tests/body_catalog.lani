@@ -62,12 +62,12 @@ fn main() -> i32 {
         || words[1] != backend::syntax::type_code(
             backend::syntax::TypeI32)
         || words[2] != 42) { return 5; }
-    if (!ir::body_tree::expression_result_annotations_valid(original.tree)) {
+    if (!ir::body_tree::result_annotations_valid(original.tree)) {
         return 10;
     }
     let result_types: [ir::type_ref::TypeRef] = original.tree.result_types;
     result_types[0] = ir::type_ref::Bool;
-    if (ir::body_tree::expression_result_annotations_valid(original.tree)) {
+    if (ir::body_tree::result_annotations_valid(original.tree)) {
         return 11;
     }
     result_types[0] = ir::type_ref::I32;
@@ -99,5 +99,16 @@ fn main() -> i32 {
         || ir::body_catalog::at(catalog, 1).signature.id != 8) {
         return 8;
     }
+    // Place annotations are retained, and an absent/void target type is not
+    // accepted merely because this node is not an expression.
+    if (lowering::body_event_write::place_local(
+        ir::body_events::region(original.tree.events, original.tree.count), 0,
+        ir::body_events::LocalReference { id: 17 }) != 1) { return 15; }
+    result_types[0] = ir::type_ref::I32;
+    if (!ir::body_tree::result_annotations_valid(original.tree)) { return 12; }
+    result_types[0] = ir::type_ref::Invalid;
+    if (ir::body_tree::result_annotations_valid(original.tree)) { return 13; }
+    result_types[0] = ir::type_ref::Void;
+    if (ir::body_tree::result_annotations_valid(original.tree)) { return 14; }
     return 0;
 }

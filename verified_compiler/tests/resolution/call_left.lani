@@ -1,0 +1,7 @@
+module call::left;
+
+pub enum Choice { Value(i32), Empty }
+enum Hidden { Secret(i32) }
+
+pub fn abca() -> i32 { return 1; }
+pub fn adca() -> i32 { return 4; }

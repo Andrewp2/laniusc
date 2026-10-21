@@ -1,5 +1,6 @@
 module ir::symbol_catalog;
 
+import core::mem;
 import verified::host;
 import verified::token;
 
@@ -8,20 +9,36 @@ import verified::token;
 // The x86 consumer may ignore this metadata; Lean emission can name the same
 // declarations without reparsing source or guessing from Core IDs.
 const SLOT_BYTES: i32 = 8;
-const UNIT_BYTES: i32 = 4 * SLOT_BYTES;
-const REF_BYTES: i32 = 2 * SLOT_BYTES;
+pub const REF_BYTES: i32 = 2 * SLOT_BYTES;
+const CONSTANT_NAME_BYTES: i32 = 3 * SLOT_BYTES;
 pub const ALIGNMENT: i32 = SLOT_BYTES;
+
+// Unit holds a ModulePath, whose slice is three words.
+fn unit_bytes() -> i32 {
+    return core::mem::size_of<Unit>() as i32;
+}
 
 pub struct Unit {
     source_offset: i32,
     source_length: i32,
     token_offset: i32,
     token_count: i32,
+    module_path: ModulePath,
 }
 
 pub struct Ref {
     unit: i32,
     token: i32,
+}
+
+pub struct ConstantName {
+    id: i32,
+    source: Ref,
+}
+
+pub struct ModulePath {
+    segments: [Ref],
+    count: i32,
 }
 
 pub struct Spelling {
@@ -41,8 +58,12 @@ pub struct Catalog {
     type_count: i32,
     variants: [Ref],
     variant_count: i32,
+    fields: [Ref],
+    field_count: i32,
     functions: [Ref],
     function_count: i32,
+    constants: [ConstantName],
+    constant_count: i32,
 }
 
 fn first(base: ptr, count: i32, bytes: i32) -> ptr {
@@ -50,11 +71,12 @@ fn first(base: ptr, count: i32, bytes: i32) -> ptr {
     return base + count * bytes - SLOT_BYTES;
 }
 
-pub fn allocation_bytes(units: i32, types: i32, variants: i32,
-    functions: i32) -> i32 {
-    if (units <= 0 || types <= -1 || variants <= -1 || functions <= 0
-        || units > verified::host::I32_MAX / UNIT_BYTES) { return -1; }
-    let bytes: i32 = units * UNIT_BYTES;
+pub fn allocation_bytes(units: i32, types: i32, variants: i32, fields: i32,
+    functions: i32, constants: i32) -> i32 {
+    if (units <= 0 || types <= -1 || variants <= -1 || fields <= -1 || functions <= 0
+        || constants <= -1
+        || units > verified::host::I32_MAX / unit_bytes()) { return -1; }
+    let bytes: i32 = units * unit_bytes();
     if (types > (verified::host::I32_MAX - bytes) / REF_BYTES) {
         return -1;
     }
@@ -63,36 +85,61 @@ pub fn allocation_bytes(units: i32, types: i32, variants: i32,
         return -1;
     }
     bytes += variants * REF_BYTES;
+    if (fields > (verified::host::I32_MAX - bytes) / REF_BYTES) {
+        return -1;
+    }
+    bytes += fields * REF_BYTES;
     if (functions > (verified::host::I32_MAX - bytes) / REF_BYTES) {
         return -1;
     }
-    return bytes + functions * REF_BYTES;
+    bytes += functions * REF_BYTES;
+    if (constants > (verified::host::I32_MAX - bytes) / CONSTANT_NAME_BYTES) {
+        return -1;
+    }
+    return bytes + constants * CONSTANT_NAME_BYTES;
 }
 
 pub fn from_raw_parts(memory: ptr, sources: [i32],
     source_count: i32, tokens: verified::token::TokenTable,
-    units: i32, types: i32, variants: i32,
-    functions: i32) -> Catalog {
-    let type_base: ptr = memory + units * UNIT_BYTES;
+    units: i32, types: i32, variants: i32, fields: i32,
+    functions: i32, constants: i32) -> Catalog {
+    let type_base: ptr = memory + units * unit_bytes();
     let variant_base: ptr = type_base + types * REF_BYTES;
-    let function_base: ptr = variant_base + variants * REF_BYTES;
+    let field_base: ptr = variant_base + variants * REF_BYTES;
+    let function_base: ptr = field_base + fields * REF_BYTES;
+    let constant_base: ptr = function_base + functions * REF_BYTES;
     return Catalog {
         sources: sources, source_count: source_count, tokens: tokens,
-        units: slice_from_raw_parts(first(memory, units, UNIT_BYTES), units),
+        units: slice_from_raw_parts(first(memory, units, unit_bytes()), units),
         unit_count: units,
         types: slice_from_raw_parts(first(type_base, types, REF_BYTES), types),
         type_count: types,
         variants: slice_from_raw_parts(first(variant_base, variants, REF_BYTES), variants),
         variant_count: variants,
+        fields: slice_from_raw_parts(first(field_base, fields, REF_BYTES), fields),
+        field_count: fields,
         functions: slice_from_raw_parts(first(function_base, functions, REF_BYTES), functions),
         function_count: functions,
+        constants: slice_from_raw_parts(first(constant_base, constants, CONSTANT_NAME_BYTES), constants),
+        constant_count: constants,
     };
 }
 
 pub fn empty() -> Catalog {
     let nowhere: ptr = 0;
     return from_raw_parts(nowhere, slice_from_raw_parts(nowhere, 0),
-        0, verified::token::from_raw_parts(nowhere, 0), 0, 0, 0, 0);
+        0, verified::token::from_raw_parts(nowhere, 0), 0, 0, 0, 0, 0, 0);
+}
+
+pub fn constant_source(catalog: Catalog, id: i32) -> Ref {
+    if (id <= -1 || catalog.constant_count <= 0) { return Ref { unit: -1, token: -1 }; }
+    let entries: [ConstantName] = catalog.constants;
+    let index: i32 = 0;
+    while (index != catalog.constant_count) {
+        if (entries[index].id == id) { return entries[index].source; }
+        index += 1;
+    }
+    return Ref { unit: -1, token: -1 };
 }
 
 pub fn spelling(catalog: Catalog, reference: Ref) -> Spelling {
@@ -129,11 +176,30 @@ pub fn spelling(catalog: Catalog, reference: Ref) -> Spelling {
 
 pub fn valid(catalog: Catalog) -> bool {
     if (catalog.unit_count <= 0 || catalog.type_count <= -1
-        || catalog.variant_count <= -1 || catalog.function_count <= 0) {
+        || catalog.variant_count <= -1 || catalog.field_count <= -1
+        || catalog.function_count <= 0 || catalog.constant_count <= -1) {
         return false;
+    }
+    let units: [Unit] = catalog.units;
+    let unit: i32 = 0;
+    while (unit < catalog.unit_count) {
+        let path: ModulePath = units[unit].module_path;
+        if (path.count <= 0 || path.count > units[unit].token_count) { return false; }
+        let segments: [Ref] = path.segments;
+        let index: i32 = 0;
+        let previous: i32 = -1;
+        while (index != path.count) {
+            let segment: Ref = segments[index];
+            if (segment.unit != unit || segment.token <= previous
+                || !spelling(catalog, segment).valid) { return false; }
+            previous = segment.token;
+            index += 1;
+        }
+        unit += 1;
     }
     let types: [Ref] = catalog.types;
     let variants: [Ref] = catalog.variants;
+    let fields: [Ref] = catalog.fields;
     let functions: [Ref] = catalog.functions;
     let type_count: i32 = catalog.type_count;
     let variant_count: i32 = catalog.variant_count;
@@ -149,8 +215,24 @@ pub fn valid(catalog: Catalog) -> bool {
         index += 1;
     }
     index = 0;
+    while (index != catalog.field_count) {
+        // Enum payloads have no source field name. The program boundary
+        // separately requires a spelling for every structure field.
+        let reference: Ref = fields[index];
+        if (!(reference.unit == -1 && reference.token == -1)
+            && !spelling(catalog, reference).valid) { return false; }
+        index += 1;
+    }
+    index = 0;
     while (index != function_count) {
         if (!spelling(catalog, functions[index]).valid) { return false; }
+        index += 1;
+    }
+    let constants: [ConstantName] = catalog.constants;
+    index = 0;
+    while (index != catalog.constant_count) {
+        if (constants[index].id <= -1
+            || !spelling(catalog, constants[index].source).valid) { return false; }
         index += 1;
     }
     return true;

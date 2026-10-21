@@ -1,0 +1,9 @@
+module app::main;
+
+const message: str = "Aé";
+const count: usize = 19;
+const nowhere: ptr = 0;
+
+fn main() -> i32 {
+    return 0;
+}

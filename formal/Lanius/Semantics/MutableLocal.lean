@@ -14,6 +14,20 @@ theorem State.bindLocal_cellId
     (state.bindLocal id value).cellId? id = some state.nextCell := by
   simp [State.bindLocal, State.bindCell, State.cellId?]
 
+/-- A present local's cell lies below the allocation frontier. -/
+theorem State.CellsWellFormed.localCellBound {state : State} {id : VarId} {cell : CellId} {value : Value}
+    (formed : state.CellsWellFormed)
+    (slot : state.cellId? id = some cell) (found : state.local? id = some value) :
+    cell < state.nextCell := by
+  unfold State.local? at found
+  rw [slot] at found
+  simp only [Option.bind_some, State.cell?] at found
+  cases entry : state.cellEntry? cell with
+  | none => simp [entry] at found
+  | some stored =>
+      have same : stored.id = cell := by simpa using List.find?_some entry
+      simpa only [same] using formed stored (List.mem_of_find?_eq_some entry)
+
 theorem State.bindLocal_local?
     (state : State) (formed : state.CellsWellFormed)
     (id : VarId) (value : Value) :

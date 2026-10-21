@@ -13,8 +13,9 @@ import verified::semantic_token_output;
 import verified::syntax_artifact_output;
 import verified::canonical_tokens;
 import test_support::syntax_tree_decode;
-// Enough room for three typed lattice charts and the Earley states they own.
-const TEST_PARSER_WORK_WORDS: i32 = 128;
+// Room for three indexed charts and the split-token derivation's states.
+// Exact-capacity and exhaustion checks live in parser_recognizer.lani.
+const TEST_PARSER_WORK_WORDS: i32 = 256;
 fn main() -> i32 {
     // One-production grammar: Start -> identifier. This tests composition
     // using actual source bytes and lexical tags, not host-generated tokens.

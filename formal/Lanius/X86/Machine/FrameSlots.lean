@@ -191,7 +191,7 @@ theorem frameStore_step (before after : State) (slot : Nat)
     Step before after := by
   exact Step.decoded (frameStoreBytes slot) loaded
     (.store32 0 rbpRegister (BitVec.ofInt 32 (frameDisplacement slot)))
-    (frameStoreBytes slot).length (frameStore_decodes slot) result
+    (frameStoreBytes slot).length (frameStore_decodes slot) result rfl
 
 theorem frameLoad_step (before after : State) (slot : Nat)
     (loaded : CodeAt before.memory before.rip (frameLoadBytes slot))
@@ -200,7 +200,7 @@ theorem frameLoad_step (before after : State) (slot : Nat)
     Step before after := by
   exact Step.decoded (frameLoadBytes slot) loaded
     (.load32 0 rbpRegister (BitVec.ofInt 32 (frameDisplacement slot)))
-    (frameLoadBytes slot).length (frameLoad_decodes slot) result
+    (frameLoadBytes slot).length (frameLoad_decodes slot) result rfl
 
 theorem rightToRcx_step (before after : State)
     (loaded : CodeAt before.memory before.rip rightToRcxBytes)

@@ -1,6 +1,8 @@
 import Lanius.Declarations
 import Lanius.SurfaceElaboration
 import Lanius.Typing
+import Lanius.Compiler.RuntimeImports
+import Lanius.Semantics.Constant
 
 namespace Lanius.Compiler.ProgramLowering
 
@@ -20,8 +22,7 @@ def SupportedItem : Surface.Item → Prop
       declaration.genericParameters = [] ∧ declaration.wherePredicates = [] ∧
         NamedParametersSupported declaration.parameters
   | .externFunction declaration =>
-      declaration.abi = none ∧ declaration.genericParameters = [] ∧
-        declaration.wherePredicates = [] ∧
+      declaration.genericParameters = [] ∧ declaration.wherePredicates = [] ∧
         NamedParametersSupported declaration.parameters
   | .constant _ _ _ _ => True
   | .typeAlias _ _ parameters predicates _ =>
@@ -298,7 +299,7 @@ structure ExternalFunctionLowering
   parameters : NamedParametersLower context declaration.parameters context.locals core.parameters
   returnType : ReturnTypeLower context declaration.returnType core.returnType
   contextMatches : ContextMatches context baseContext environment row.header.moduleId
-  abi : declaration.abi = none
+  abi : RuntimeImports.Matches declaration core.external
   behavior : core.external = resolver row.header
   coreShape : core.body = none
   wellTyped : Typing.FunctionWellTyped program core
@@ -334,14 +335,34 @@ structure ConstantLowering
   core : Core.Constant
   coreMap : row.core = .constant core
   context : SurfaceElaboration.Context
-  typed : SurfaceElaboration.TypedExprLowering program context value
-  declaredType : SurfaceElaboration.TypeGrounds context surfaceType typed.groundType
-  typedType : typed.coreType = core.type
-  coreValue : Core.Value
-  typedValue : typed.core = Core.Expr.value coreValue
+  groundType : Static.GroundTy
+  declaredType : SurfaceElaboration.TypeGrounds context surfaceType groundType
+  grounded : groundType.toCore context.monomorphization = some core.type
+  /-- Preserve the initializer's elaboration separately from its evaluation;
+      arithmetic source expressions are not literal syntax. -/
+  initializer : Core.Expr
+  lowers : SurfaceElaboration.ExprChecks context value groundType initializer
+  available : List ConstantId
+  evaluates : Semantics.ConstantEvaluates program available initializer core.value
+  typed : Typing.ValueHasType program core.value core.type
+  target : program.target = context.target
   contextMatches : ContextMatches context baseContext environment row.header.moduleId
   noLocals : context.locals = []
-  coreShape : core.value = coreValue
+
+/-- Each initializer may use only values established earlier. The order is
+    stored newest-first, so extending it does not copy the verified prefix. -/
+inductive ConstantsInitialized
+    (pack : Declarations.SourcePack) (catalog : Declarations.Catalog)
+    (program : Core.Program) (environment : Names.Environment)
+    (baseContext : SurfaceElaboration.Context)
+    (rows : List (DeclarationLowering pack catalog program)) :
+    List (ConstantLowering pack catalog program environment baseContext rows) → Prop where
+  | nil : ConstantsInitialized pack catalog program environment baseContext rows []
+  | cons
+      (previous : ConstantsInitialized pack catalog program environment baseContext rows tail)
+      (fresh : head.core.id ∉ tail.map (·.core.id))
+      (available : head.available = tail.map (·.core.id)) :
+      ConstantsInitialized pack catalog program environment baseContext rows (head :: tail)
 
 def ConstantLoweringsExact
     (pack : Declarations.SourcePack) (catalog : Declarations.Catalog)
@@ -389,6 +410,8 @@ structure ProgramLowering where
   constants : List (ConstantLowering
     pack catalog program environment context declarations)
   constantsExact : ConstantLoweringsExact
+    pack catalog program environment context declarations constants
+  constantsInitialized : ConstantsInitialized
     pack catalog program environment context declarations constants
   enumerationsLowered : ∀ row ∈ declarations, EnumRowShape pack context row
   structuresUnique : (program.structures.map fun declaration => declaration.id).Nodup

@@ -5,8 +5,6 @@ import x86::register;
 import x86::encode;
 import x86::control;
 
-const MAX_I32_SHIFT_COUNT: i32 = x86::register::WIDTH_32 - 1;
-
 pub fn condition(operation: backend::syntax::BinaryOperation) -> x86::control::Condition {
     if (operation == backend::syntax::BinaryEqual) { return x86::control::Equal; }
     if (operation == backend::syntax::BinaryNotEqual) { return x86::control::NotEqual; }
@@ -44,30 +42,60 @@ pub fn from_slot(output: [i32], capacity: i32, cursor: i32, slot: i32,
         operation);
 }
 
+// RAX holds the right operand; restore the saved left operand at full width.
+pub fn usize_from_slot(output: [i32], capacity: i32, cursor: i32, slot: i32,
+    operation: backend::syntax::BinaryOperation) -> i32 {
+    return binary_width(output, capacity,
+        x86::encode::load(output, capacity,
+            x86::encode::move_register(output, capacity, cursor,
+                x86::register::WIDTH_64, x86::register::RCX, x86::register::RAX),
+            x86::register::WIDTH_64, x86::register::RAX, x86::register::RBP,
+            backend::frame::displacement(slot)), operation, x86::register::WIDTH_64);
+}
+
 // EAX is the left operand, ECX the right. All expression temporaries live
 // in frame slots, so these caller-saved scratch registers can be clobbered.
 pub fn binary(output: [i32], capacity: i32, cursor: i32,
     operation: backend::syntax::BinaryOperation) -> i32 {
+    return binary_width(output, capacity, cursor, operation, x86::register::WIDTH_32);
+}
+
+// Core i32 arithmetic is signed, usize arithmetic is unsigned and 64-bit.
+// Both wrap; only comparison, division, and right shift differ in signedness.
+fn binary_width(output: [i32], capacity: i32, cursor: i32,
+    operation: backend::syntax::BinaryOperation, width: i32) -> i32 {
+    let signed: bool = width == x86::register::WIDTH_32;
     let comparison: x86::control::Condition = condition(operation);
+    if (!signed) {
+        if (operation == backend::syntax::BinaryLess) { comparison = x86::control::Below; }
+        if (operation == backend::syntax::BinaryLessEqual) { comparison = x86::control::BelowEqual; }
+        if (operation == backend::syntax::BinaryGreater) { comparison = x86::control::Above; }
+        if (operation == backend::syntax::BinaryGreaterEqual) { comparison = x86::control::AboveEqual; }
+    }
     if (x86::control::valid_condition(comparison)) {
         return boolean(output, capacity,
-            x86::encode::binary(output, capacity, cursor, x86::register::WIDTH_32, x86::encode::Compare, x86::register::RAX, x86::register::RCX),
+            x86::encode::binary(output, capacity, cursor, width, x86::encode::Compare, x86::register::RAX, x86::register::RCX),
             comparison);
     }
     let opcode: x86::encode::BinaryOperation = opcode(operation);
     if (x86::encode::valid_binary_operation(opcode)) {
-        return x86::encode::binary(output, capacity, cursor, x86::register::WIDTH_32, opcode, x86::register::RAX, x86::register::RCX);
+        return x86::encode::binary(output, capacity, cursor, width, opcode, x86::register::RAX, x86::register::RCX);
     }
     if (operation == backend::syntax::BinaryMultiply) {
-        return x86::encode::multiply(output, capacity, cursor, x86::register::WIDTH_32, x86::register::RAX, x86::register::RCX);
+        return x86::encode::multiply(output, capacity, cursor, width, x86::register::RAX, x86::register::RCX);
     }
     if (operation == backend::syntax::BinaryDivide
         || operation == backend::syntax::BinaryRemainder) {
-        let next: i32 = x86::control::sign_extend_dividend(output, capacity,
-            cursor, x86::register::WIDTH_32);
-        next = x86::encode::divide(output, capacity, next, x86::register::WIDTH_32, x86::register::RCX, true);
+        let next: i32 = cursor;
+        if (signed) {
+            next = x86::control::sign_extend_dividend(output, capacity, next, width);
+        } else {
+            next = x86::encode::binary(output, capacity, next, width,
+                x86::encode::Xor, x86::register::RDX, x86::register::RDX);
+        }
+        next = x86::encode::divide(output, capacity, next, width, x86::register::RCX, signed);
         if (operation == backend::syntax::BinaryRemainder) {
-            next = x86::encode::move_register(output, capacity, next, x86::register::WIDTH_32, x86::register::RAX, x86::register::RDX);
+            next = x86::encode::move_register(output, capacity, next, width, x86::register::RAX, x86::register::RDX);
         }
         return next;
     }
@@ -75,15 +103,16 @@ pub fn binary(output: [i32], capacity: i32, cursor: i32,
         || operation == backend::syntax::BinaryShiftRight) {
         // An unsigned comparison also rejects negative counts. Do not let
         // hardware's masked shift count silently change Core trap behavior.
-        let next: i32 = x86::encode::immediate(output, capacity, cursor, x86::register::WIDTH_32, x86::register::R11, MAX_I32_SHIFT_COUNT, 0);
-        next = x86::encode::binary(output, capacity, next, x86::register::WIDTH_32, x86::encode::Compare, x86::register::RCX, x86::register::R11);
+        let next: i32 = x86::encode::immediate(output, capacity, cursor, width, x86::register::R11, width - 1, 0);
+        next = x86::encode::binary(output, capacity, next, width, x86::encode::Compare, x86::register::RCX, x86::register::R11);
         next = x86::control::branch_over_trap(output, capacity, next,
             x86::control::BelowEqual);
         let shift: x86::encode::ShiftOperation = x86::encode::ShiftLeft;
         if (operation == backend::syntax::BinaryShiftRight) {
-            shift = x86::encode::ShiftSignedRight;
+            shift = x86::encode::ShiftRight;
+            if (signed) { shift = x86::encode::ShiftSignedRight; }
         }
-        return x86::encode::shift(output, capacity, next, x86::register::WIDTH_32, shift, x86::register::RAX);
+        return x86::encode::shift(output, capacity, next, width, shift, x86::register::RAX);
     }
     return -1;
 }

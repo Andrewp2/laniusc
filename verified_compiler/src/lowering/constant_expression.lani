@@ -41,37 +41,57 @@ pub fn value(result: Result) -> i32 {
     };
 }
 
-fn decimal(source: [i32], length: i32, start: i32, finish: i32) -> Result {
-    if (start <= -1 || finish <= start || finish > length) { return Invalid; }
-    let answer: i32 = 0;
-    let digits: i32 = 0;
-    let min_magnitude: bool = false;
-    let position: i32 = start;
-    while (position <= finish - 1) {
-        let byte: i32 = source[position];
-        if (byte != verified::ascii::UNDERSCORE) {
-            if (min_magnitude) { return Invalid; }
-            if (byte < verified::ascii::ZERO
-                || byte > verified::ascii::NINE) { return Invalid; }
-            let digit: i32 = byte - verified::ascii::ZERO;
-            if (answer > (verified::host::I32_MAX - digit) / 10) {
-                if (answer != 214748364 || digit != 8) {
-                    return Invalid;
-                }
-                min_magnitude = true;
-            } else {
-                answer = answer * 10 + digit;
-            }
-            digits += 1;
-        }
-        position += 1;
+// Empty is distinct from zero: a separator-only span is not an integer.
+enum DecimalState { Empty, Number(i32), Min, Rejected }
+
+fn decimal_digit(answer: i32, digit: i32) -> DecimalState {
+    if (answer > (verified::host::I32_MAX - digit) / 10) {
+        if (answer == 214748364 && digit == 8) { return Min; }
+        return Rejected;
     }
-    if (digits <= 0) { return Invalid; }
-    if (min_magnitude) { return MinMagnitude; }
-    return Integer(answer);
+    return Number(answer * 10 + digit);
 }
 
-fn is_min_magnitude(result: Result) -> bool {
+fn decimal_step(state: DecimalState, byte: i32) -> DecimalState {
+    if (byte == verified::ascii::UNDERSCORE) { return state; }
+    if (byte < verified::ascii::ZERO || byte > verified::ascii::NINE) {
+        return Rejected;
+    }
+    let digit: i32 = byte - verified::ascii::ZERO;
+    return match (state) {
+        Empty -> Number(digit),
+        Number(answer) -> decimal_digit(answer, digit),
+        _ -> Rejected,
+    };
+}
+
+fn decimal_rejected(state: DecimalState) -> bool {
+    return match (state) { Rejected -> true, _ -> false, };
+}
+
+fn decimal_finish(state: DecimalState) -> Result {
+    return match (state) {
+        Number(answer) -> Integer(answer),
+        Min -> MinMagnitude,
+        _ -> Invalid,
+    };
+}
+
+// Shared with body literals: the one extra magnitude is valid only beneath
+// unary minus, never as a positive i32 value. Reject before reading any tail.
+pub fn decimal(source: [i32], length: i32, start: i32, finish: i32) -> Result {
+    if (start <= -1 || finish <= start || finish > length) { return Invalid; }
+    let state: DecimalState = Empty;
+    let position: i32 = start;
+    while (position <= finish - 1) {
+        state = decimal_step(state, source[position]);
+        if (decimal_rejected(state)) { return Invalid; }
+        position += 1;
+    }
+    return decimal_finish(state);
+}
+
+pub fn is_min_magnitude(result: Result) -> bool {
     return match (result) {
         MinMagnitude -> true,
         _ -> false,

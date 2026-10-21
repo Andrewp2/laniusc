@@ -1,0 +1,8 @@
+module app::main;
+
+fn finish() { return; }
+
+fn main() -> i32 {
+    !finish();
+    return 7;
+}

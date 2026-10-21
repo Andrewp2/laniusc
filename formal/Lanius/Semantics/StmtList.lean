@@ -1,5 +1,7 @@
 import Lanius.Semantics.Assignment
 import Lanius.Semantics.Branch
+import Lanius.Semantics.LexicalFrame
+import Lanius.Semantics.Allocation
 
 namespace Lanius.Semantics
 
@@ -19,17 +21,94 @@ def RunsStmt (program : Program) (state : State) (statement : Stmt)
   ∃ threshold, StableStmt threshold program state statement completion after ∧
     after.locals = state.locals
 
+theorem RunsExpr.ofEval (run : evalExpr fuel program state expression = .done value after) :
+    RunsExpr program state expression value after :=
+  ⟨fuel, .ofEval run, evalExpr_locals run⟩
+
+theorem RunsStmt.ofExec (run : execStmt fuel program state statement = .done completion after) :
+    RunsStmt program state statement completion after :=
+  ⟨fuel, .ofExec run, execStmt_locals run⟩
+
+/-- Finite successful execution already contains the lexical-frame guarantee. -/
+theorem Evaluates.runs (run : Evaluates program state expression value after) :
+    RunsExpr program state expression value after := by
+  obtain ⟨_, run⟩ := run
+  exact .ofEval run
+
+theorem Executes.runs (run : Executes program state statement completion after) :
+    RunsStmt program state statement completion after := by
+  obtain ⟨_, run⟩ := run
+  exact .ofExec run
+
+theorem RunsExpr.evaluates (run : RunsExpr program state expression value after) :
+    Evaluates program state expression value after := by
+  obtain ⟨fuel, stable, _⟩ := run
+  exact ⟨fuel, stable fuel (Nat.le_refl _)⟩
+
+theorem RunsStmt.executes (run : RunsStmt program state statement completion after) :
+    Executes program state statement completion after := by
+  obtain ⟨fuel, stable, _⟩ := run
+  exact ⟨fuel, stable fuel (Nat.le_refl _)⟩
+
+theorem RunsExpr.inventory (run : RunsExpr program state expression value after) :
+    state.cellInventory.Extends after.cellInventory := run.evaluates.inventory
+
+theorem RunsStmt.inventory (run : RunsStmt program state statement completion after) :
+    state.cellInventory.Extends after.cellInventory := run.executes.inventory
+
+theorem RunsExpr.cellsWellFormed (run : RunsExpr program state expression value after)
+    (formed : state.CellsWellFormed) : after.CellsWellFormed := run.inventory.cellsWellFormed formed
+
+theorem RunsStmt.cellsWellFormed (run : RunsStmt program state statement completion after)
+    (formed : state.CellsWellFormed) : after.CellsWellFormed := run.inventory.cellsWellFormed formed
+
+/-- Two total contracts for the same computation agree. This compares their
+    proved executions at a common fuel; it does not evaluate the program. -/
+theorem RunsExpr.agree (left : RunsExpr program state expression value after)
+    (right : RunsExpr program state expression other completed) :
+    value = other ∧ after = completed := left.evaluates.unique right.evaluates
+
 theorem RunsExpr.ofStable {threshold : Nat}
     (contract : StableExpr threshold program state expression value after)
     (locals : after.locals = state.locals) :
     RunsExpr program state expression value after :=
   ⟨threshold, contract, locals⟩
 
+theorem RunsExpr.binary
+    (left : RunsExpr program before leftExpression leftValue middle)
+    (right : RunsExpr program middle rightExpression rightValue after)
+    (eager : operation ≠ .logicalAnd ∧ operation ≠ .logicalOr)
+    (evaluates : evalBinaryValue program.target operation leftValue rightValue = .ok result) :
+    RunsExpr program before (.binary operation leftExpression rightExpression) result after := by
+  obtain ⟨_, left, leftLocals⟩ := left
+  obtain ⟨_, right, rightLocals⟩ := right
+  exact .ofStable (StableExpr.binary left right eager evaluates) (rightLocals.trans leftLocals)
+
 theorem RunsStmt.ofStable {threshold : Nat}
     (contract : StableStmt threshold program state statement completion after)
     (locals : after.locals = state.locals) :
     RunsStmt program state statement completion after :=
   ⟨threshold, contract, locals⟩
+
+theorem RunsExpr.unary
+    (operand : RunsExpr program before expression value after)
+    (operation : evalUnaryValue program.target operator value = .ok result) :
+    RunsExpr program before (.unary operator expression) result after :=
+  .ofStable (StableExpr.unary operand.choose_spec.1 operation) operand.choose_spec.2
+
+/-- The right operand may write memory; short-circuiting only determines
+    whether it runs, not whether its effects can be discarded. -/
+theorem RunsExpr.logicalOrFalse
+    (left : RunsExpr program before leftExpr (.boolean false) middle)
+    (right : RunsExpr program middle rightExpr value after) :
+    RunsExpr program before (.binary .logicalOr leftExpr rightExpr) value after := by
+  obtain ⟨leftFuel, left, leftLocals⟩ := left
+  obtain ⟨rightFuel, right, rightLocals⟩ := right
+  refine ⟨max leftFuel rightFuel + 1, ?_, rightLocals.trans leftLocals⟩
+  intro fuel enough
+  simpa only [show (fuel - 1).succ = fuel by omega] using
+    evalExpr_logicalOr_false (fuel - 1) program before leftExpr rightExpr value middle after
+      (left (fuel - 1) (by omega)) (right (fuel - 1) (by omega))
 
 theorem RunsStmt.skip (program : Program) (state : State) :
     RunsStmt program state .skip .next state :=
@@ -85,6 +164,27 @@ theorem RunsStmt.returnValueSequence
     RunsStmt program state (.sequence (.returnValue (some argument)) .skip)
       (.returned (some result)) after := by
   obtain ⟨fuel, run, locals⟩ := argRun; exact ⟨fuel + 2, StableStmt.returnValueSequence program state argument result run, locals⟩
+
+/-- Keep the inner local scope explicit when the final state is already known.
+    This avoids guessing the body's locals through `restoreLocals`. -/
+theorem RunsStmt.letLocalFrame {id : VarId}
+    (initRun : RunsExpr program state initializer value afterInit)
+    (bodyRun : RunsStmt program (afterInit.bindLocal id value) body completion
+      { after with locals := (afterInit.bindLocal id value).locals })
+    (locals : after.locals = state.locals) :
+    RunsStmt program state (.letLocal id type initializer body) completion after := by
+  have result := RunsStmt.letLocal (type := type) initRun bodyRun
+  have restored : restoreLocals afterInit
+      { after with locals := (afterInit.bindLocal id value).locals } = after := by
+    obtain ⟨_, _, initLocals⟩ := initRun
+    unfold restoreLocals
+    rw [initLocals, ← locals]
+  simpa only [restored] using result
+
+theorem RunsStmt.returnValue (run : RunsExpr program state argument result after) :
+    RunsStmt program state (.returnValue (some argument)) (.returned (some result)) after := by
+  obtain ⟨fuel, run, locals⟩ := run
+  exact ⟨fuel + 1, StableStmt.returnValue run, locals⟩
 
 theorem RunsStmt.sequenceNext
     (first : RunsStmt program state firstStmt .next middle)

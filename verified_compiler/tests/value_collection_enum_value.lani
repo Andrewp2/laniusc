@@ -112,15 +112,16 @@ fn main() -> i32 {
         lowering::value_catalog::from_raw_parts(value_memory, 2);
     let input: lowering::value_collection::ValueCatalogInput =
         lowering::value_collection::ValueCatalogInput {
-            unit: 0,
             contexts: context_table,
             sources: lowering::value_collection::region(source, 9),
             tokens: token_table,
             allocations: allocation_table,
             signature_index: signature_index,
         };
-    let rows: i32 = lowering::value_collection::build_value_catalog(input,
-        output);
+    let index: lowering::value_collection::NameIndex =
+        lowering::value_collection::build_name_index(input);
+    let rows: i32 = lowering::value_collection::build_value_catalog(index,
+        0, output);
     let found: lowering::value_catalog::ValueBinding =
         lowering::value_catalog::read_binding(output, 0);
     let variant: bool = match (found.target) {
@@ -135,8 +136,26 @@ fn main() -> i32 {
             lowering::value_catalog::ImportedBinding)
         || !variant
         || !lowering::value_catalog::valid_slice(output, 0, rows, 1,
-            allocation_table)) {
+            lowering::allocation::index(allocation_table,
+                signature_index.count))) {
         return 1;
+    }
+    // Reuse the same immutable index for its declaring unit. Ownership changes
+    // the binding's scope, not the target or spelling.
+    if (lowering::value_collection::build_value_catalog(index, 1, output) != 1) {
+        return 7;
+    }
+    let local: lowering::value_catalog::ValueBinding =
+        lowering::value_catalog::read_binding(output, 0);
+    let same_target: bool = match (local.target) {
+        lowering::value_catalog::Variant(local_value) -> local_value.type_id == 0
+            && local_value.ordinal == 0 && local_value.field_count == 1,
+        _ -> false,
+    };
+    if (local.scope != lowering::value_catalog::LocalBinding
+        || !same_target) { return 8; }
+    if (lowering::value_collection::build_value_catalog(index, 2, output) != -1) {
+        return 9;
     }
     return 0;
 }

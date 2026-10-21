@@ -2,6 +2,7 @@ import Lanius.Compiler.ProgramLowering
 import Lanius.Compiler.ConstantCheck
 import Lanius.Compiler.DirectCallCheck
 import Lanius.Compiler.VariantConstructorCheck
+import Lanius.Compiler.StructConstructorCheck
 import Lanius.Compiler.NameResolutionCheck
 import Lanius.Compiler.TypeLoweringCheck
 import Lanius.Typing.Check
@@ -24,7 +25,9 @@ local paths, indexed array/slice places, scalar unary expressions and
 well-typed binary expressions (including enum equality),
 assignments, sequences, nested blocks, boolean-guarded `if` statements,
 boolean-guarded `while` statements, and well-typed returns. Payload-bearing
-non-generic enum constructors are checked against their source arguments. A sequence may
+non-generic enum constructors are checked against their source arguments.
+Nongeneric struct construction and field projection check source names against
+declarations, not just result types. A sequence may
 also have expression statements, since those are emitted by the same lowering
 rule.
 Direct calls are accepted for the monomorphic function-instance fragment;
@@ -291,6 +294,37 @@ structure CheckedMatchArms
   lowers : SurfaceElaboration.MatchArmsLower context scrutineeType resultType
     surface candidate
 
+private def checkField (context : SurfaceElaboration.Context)
+    (receiver : Static.GroundTy) (name : Surface.Name) (index : FieldId) :
+    Option { entry : SurfaceElaboration.FieldEntry //
+      SurfaceElaboration.SelectsField context receiver name entry ∧ entry.field = index } := do
+  let found ← SelectionCheck.check context.fields
+    (fun entry => decide (entry.receiver = receiver ∧ entry.name = name))
+  if same : found.value.field = index then
+    have matching := of_decide_eq_true found.accepted
+    return ⟨found.value, ⟨found.member, matching.1, matching.2, by
+      intro other member receiverEq nameEq
+      have equal := found.unique other member (by simp [receiverEq, nameEq])
+      subst other
+      exact ⟨rfl, rfl⟩⟩, same⟩
+  else none
+
+private structure RemovedField (name : Surface.Name)
+    (fields : List (Surface.Name × Surface.Expr)) where
+  value : Surface.Expr
+  rest : List (Surface.Name × Surface.Expr)
+  removed : SurfaceElaboration.RemovesNamedField name fields value rest
+
+private def removeField (name : Surface.Name) :
+    (fields : List (Surface.Name × Surface.Expr)) → Option (RemovedField name fields)
+  | [] => none
+  | (other, value) :: tail =>
+      if equal : other = name then
+        some ⟨value, tail, equal ▸ .head⟩
+      else do
+        let rest ← removeField name tail
+        return ⟨rest.value, (other, value) :: rest.rest, .tail equal rest.removed⟩
+
 /- The candidate Core expression is an input to the checker.  Pattern
    matching it here makes agreement a validation step, rather than generating
    a Core term and assuming that it is the candidate. -/
@@ -310,6 +344,12 @@ def checkPlace (context : SurfaceElaboration.Context) :
                   groundType := selected.type
                   lowers := .local name single (resolveLocal_resolves found) }
               else none
+  | .member surfaceBase name, .field candidateBase index => do
+      let base ← checkPlace context surfaceBase candidateBase
+      let selected ← checkField context base.groundType name index
+      return ⟨selected.val.type, by
+        simpa only [selected.property.2] using
+          (SurfaceElaboration.PlaceLowers.field base.lowers selected.property.1)⟩
   | .index surfaceBase surfaceIndex, .index candidateBase candidateIndex =>
       match checkPlace context surfaceBase candidateBase with
       | none => none
@@ -413,6 +453,17 @@ def checkExpr (context : SurfaceElaboration.Context) :
                             resolved.resolved member declaration)
                         simpa only [sameId] using lowered }
                   else none
+  | .unary .negative (.literal (.integer text)), .value (.signed .i32 actual) =>
+      match parsed : Elaboration.parseUnsignedInteger text with
+      | none => none
+      | some magnitude =>
+          if minimum : Int.ofNat magnitude = -(Typing.signedMin context.target .i32) then
+            if equal : actual = Typing.signedMin context.target .i32 then
+              equal ▸ some {
+                groundType := .scalar (.signed .i32)
+                lowers := .signedMinimumLiteral (.minimum parsed minimum) rfl }
+            else none
+          else none
   | .unary surfaceOp surfaceOperand, .unary candidateOp candidateOperand =>
       if equal : SurfaceElaboration.lowerUnaryOp surfaceOp = candidateOp then
         match checkExpr context surfaceOperand candidateOperand with
@@ -430,6 +481,43 @@ def checkExpr (context : SurfaceElaboration.Context) :
                         lowers := .unary operandLowers rfl rfl typed.down }
                 | _ => none
         | some ⟨_, _⟩ => none
+      else none
+  | .member surfaceBase name, .field candidateBase index => do
+      let base ← checkExpr context surfaceBase candidateBase
+      let selected ← checkField context base.groundType name index
+      return ⟨selected.val.type, by
+        simpa only [selected.property.2] using
+          (SurfaceElaboration.ExprLowers.field base.lowers .direct selected.property.1)⟩
+  | .structValue path surfaceFields, .structValue typeId coreFields => do
+      let constructor ← StructConstructorCheck.check context path typeId
+      let fields ← checkStructFields context constructor.scheme.fields surfaceFields coreFields
+      return ⟨.nominal constructor.scheme.sourceType
+        constructor.instanceRow.typeArguments constructor.instanceRow.constArguments, by
+          simpa only [constructor.coreType] using
+            (SurfaceElaboration.ExprLowers.structValueNongeneric
+              constructor.selected constructor.noArguments constructor.nongeneric
+              constructor.instantiated fields.down)⟩
+  | .binary op surfaceLeft (.literal (.integer text)),
+      .binary candidateOp coreLeft (.value (.pointer 0)) => do
+      if equal : SurfaceElaboration.lowerBinaryOp op = candidateOp then
+        let ⟨.scalar .rawPtr, left⟩ ← checkExpr context surfaceLeft coreLeft | none
+        if parsed : Elaboration.parseUnsignedInteger text = some 0 then
+          let ⟨.scalar output, typed⟩ ← Typing.Check.checkBinaryAny
+            (SurfaceElaboration.lowerBinaryOp op) (.scalar .rawPtr) (.scalar .rawPtr) | none
+          return ⟨.scalar output, equal ▸
+            .binaryNullPointerRight left (.nullPointer parsed) rfl typed.down⟩
+        else none
+      else none
+  | .binary op (.literal (.integer text)) surfaceRight,
+      .binary candidateOp (.value (.pointer 0)) coreRight => do
+      if equal : SurfaceElaboration.lowerBinaryOp op = candidateOp then
+        let ⟨.scalar .rawPtr, right⟩ ← checkExpr context surfaceRight coreRight | none
+        if parsed : Elaboration.parseUnsignedInteger text = some 0 then
+          let ⟨.scalar output, typed⟩ ← Typing.Check.checkBinaryAny
+            (SurfaceElaboration.lowerBinaryOp op) (.scalar .rawPtr) (.scalar .rawPtr) | none
+          return ⟨.scalar output, equal ▸
+            .binaryNullPointerLeft (.nullPointer parsed) right rfl typed.down⟩
+        else none
       else none
   | .binary surfaceOp surfaceLeft surfaceRight,
       .binary candidateOp candidateLeft candidateRight =>
@@ -684,6 +772,21 @@ def checkExprs (context : SurfaceElaboration.Context) :
               some ⟨head.groundType :: tail.groundTypes, .cons head.lowers tail.lowers⟩
   | _, _ => none
 
+def checkStructFields (context : SurfaceElaboration.Context) :
+    (fields : List SurfaceElaboration.StructFieldScheme) →
+    (surface : List (Surface.Name × Surface.Expr)) → (candidate : List Core.Expr) →
+    Option (PLift (SurfaceElaboration.StructSchemeFieldsCheck
+      context context.substitution fields surface candidate))
+  | [], [], [] => some ⟨.nil⟩
+  | field :: fields, surface, value :: values => do
+      let removed ← removeField field.name surface
+      let lowered ← checkExpr context removed.value value
+      if instantiated : field.type.instantiate context.substitution = some lowered.groundType then
+        let tail ← checkStructFields context fields removed.rest values
+        return ⟨.cons removed.removed instantiated (.exact lowered.lowers) tail.down⟩
+      else none
+  | _, _, _ => none
+
 def checkSymbolicExprs (context : SurfaceElaboration.Context) :
     (surface : List Surface.Expr) → (symbolic : List Static.Ty) →
       (candidate : List Core.Expr) →
@@ -710,6 +813,24 @@ def checkSymbolicExprs (context : SurfaceElaboration.Context) :
               else none
   | _, _, _ => none
 end
+
+/-- An annotation supplies the expected literal type; it must not be inferred
+    back from the candidate. Share the existing literal/bounds checker. -/
+def checkExpectedExpr (context : SurfaceElaboration.Context) (surface : Surface.Expr)
+    (expected : Static.GroundTy) (candidate : Core.Expr) :
+    Option (PLift (SurfaceElaboration.ExprChecks context surface expected candidate)) := do
+  match surfaceEq : surface, candidateEq : candidate, expected.toCore context.monomorphization with
+  | .literal literal, .value value, some coreType =>
+      let literal ← ConstantCheck.checkLiteralExpr { target := context.target }
+        context (.literal literal) value coreType rfl
+      if same : literal.groundType = expected then
+        return ⟨by simpa only [surfaceEq, candidateEq, ← same] using literal.lowers⟩
+      else none
+  | _, _, _ =>
+      let inferred ← checkExpr context surface candidate
+      if same : inferred.groundType = expected then
+        return ⟨same ▸ .exact inferred.lowers⟩
+      else none
 
 structure LoweredStmts
     (context : SurfaceElaboration.Context) (next : VarId)
@@ -786,28 +907,20 @@ def checkStmts (context : SurfaceElaboration.Context) (next : VarId) :
             match checkFreshLocal context.locals id with
             | none => none
             | some fresh =>
-                match checkExpr context surfaceInitializer candidateInitializer with
+                match checkExpectedExpr context surfaceInitializer
+                    annotation.groundType candidateInitializer with
                 | none => none
                 | some initializer =>
-                    match Static.GroundTy.decEq initializer.groundType
-                        annotation.groundType with
-                    | isFalse _ => none
-                    | isTrue initializerType =>
-                        match checkStmts
-                            (context.bindLocal name id annotation.groundType)
-                            (id + 1) surfaceTail candidateTail with
-                        | none => none
-                        | some tail =>
-                            have initializerChecked :
-                                SurfaceElaboration.ExprChecks context surfaceInitializer
-                                  annotation.groundType candidateInitializer := by
-                              simpa [initializerType] using
-                                (SurfaceElaboration.ExprChecks.exact initializer.lowers)
-                            some {
-                              finalNext := tail.finalNext
-                              lowers := .letAnnotated (id := id) lower fresh.proof
-                                annotation.typed.down initializerChecked
-                                annotation.grounded tail.lowers }
+                    match checkStmts
+                        (context.bindLocal name id annotation.groundType)
+                        (id + 1) surfaceTail candidateTail with
+                    | none => none
+                    | some tail =>
+                        some {
+                          finalNext := tail.finalNext
+                          lowers := .letAnnotated (id := id) lower fresh.proof
+                            annotation.typed.down initializer.down
+                            annotation.grounded tail.lowers }
       else none
   | .letLocal name (some surfaceType) none :: surfaceTail,
       .letUninitialized id coreType candidateTail =>

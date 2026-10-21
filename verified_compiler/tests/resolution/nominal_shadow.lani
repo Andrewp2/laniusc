@@ -1,0 +1,21 @@
+module app::main;
+
+import resolution::left;
+import resolution::right;
+import resolution::aliases;
+
+struct Own { value: i32 }
+type Pair = Own;
+type Chain = Pair;
+
+// The local aliases shadow three imported Pair types and an imported Chain.
+// Qualified alias expansion must switch to its defining module's namespace.
+fn local_value(value: Chain) -> i32 { return value.value; }
+fn foreign_value(value: resolution::aliases::Chain) -> i32 {
+    return value.left + value.right;
+}
+
+fn main() -> i32 {
+    let value: Pair = Own { value: 7 };
+    return local_value(value) + foreign_value(resolution::aliases::make());
+}

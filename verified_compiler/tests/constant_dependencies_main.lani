@@ -1,0 +1,10 @@
+module app::main;
+import app::values;
+
+const ANSWER: i32 = NEXT + app::values::BASE;
+const NEXT: i32 = LEFT + RIGHT;
+const LEFT: i32 = BASE;
+const RIGHT: i32 = BASE;
+const BASE: i32 = 2;
+
+fn main() -> i32 { return ANSWER; }

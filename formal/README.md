@@ -46,6 +46,30 @@ cd formal
 lake build +Lanius
 ```
 
+For Lean emitted by the Lanius extractor:
+
+```sh
+lake run checkExtraction -- -o Program.olean Program.lean
+```
+
+This builds and loads only the shared extraction notation's native dependency
+graph, then runs ordinary Lean on the fresh program. It does not skip kernel
+checking or compilation. Build the shared graph first with
+`lake build +Lanius.TypedIR.Surface.Link:dynlib` when measuring per-program
+cost separately from infrastructure setup.
+
+The `mutual functions` notation admits closed source-function data through
+Lean's nonrecursive declaration API. Source recursion is already represented
+by Core call IDs, so it needs no Lean recursive closure conversion. Kernel
+checking, compilation, source information, and documentation remain. Generic
+or dependent definitions and module/attribute handling use ordinary elaboration.
+
+The shared `Surface.DataCompiler` hook recognizes closed constructor data. It
+skips optional optimizer scans and retains signatures instead of duplicate
+optimizer bodies for that data. Kernel definitions, executable compilation,
+and compiler validation remain; ordinary code and explicit inlining requests
+keep their normal cache behavior. The hook uses the pinned Lean compiler APIs.
+
 ## Scaling rule
 
 Each new family must prove the actual quoted program and the total contract its

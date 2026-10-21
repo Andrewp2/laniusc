@@ -1,0 +1,7 @@
+module app::main;
+
+import app::values;
+
+fn main() -> i32 {
+    return app::values::SEED;
+}

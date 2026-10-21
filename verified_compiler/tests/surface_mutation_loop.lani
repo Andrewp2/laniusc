@@ -1,0 +1,18 @@
+module app::main;
+
+struct Counter { total: i32, steps: i32 }
+
+fn sum_until(limit: i32) -> i32 {
+    let counter: Counter = Counter { total: 0, steps: 0 };
+    let index: i32 = 0;
+    while (index < limit) {
+        counter.total += index;
+        counter.steps = counter.steps + 1;
+        index += 1;
+    }
+    return counter.total + counter.steps;
+}
+
+fn main() -> i32 {
+    return sum_until(5) + sum_until(0);
+}

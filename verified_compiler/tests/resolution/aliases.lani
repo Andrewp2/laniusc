@@ -1,0 +1,10 @@
+module resolution::aliases;
+
+pub struct Pair { left: i32, right: i32 }
+pub type Alias = Pair;
+pub type Chain = Alias;
+type Hidden = Pair;
+
+pub fn make() -> Chain {
+    return Pair { left: 13, right: 17 };
+}

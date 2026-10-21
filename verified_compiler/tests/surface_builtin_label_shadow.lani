@@ -1,0 +1,19 @@
+module app::main;
+
+struct Bool {
+    value: bool,
+}
+
+struct String {
+    value: str,
+}
+
+fn main() -> i32 {
+    let flag: Bool = Bool { value: true };
+    let text: String = String { value: "kept as a primitive string" };
+    if (flag.value) {
+        return 7;
+    } else {
+        return 0;
+    }
+}

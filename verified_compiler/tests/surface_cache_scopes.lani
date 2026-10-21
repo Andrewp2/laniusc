@@ -1,0 +1,25 @@
+module app::main;
+
+enum Choice { Number(i32), Flag(bool) }
+
+fn flag_number(value: bool) -> i32 {
+    if (value) { return 7; }
+    return 0;
+}
+
+fn choose(choice: Choice) -> i32 {
+    let value: i32 = 11;
+    let selected: i32 = match (choice) {
+        Number(value) => value,
+        Flag(value) => flag_number(value),
+    };
+    return selected + value;
+}
+
+fn main() -> i32 {
+    let first: i32 = choose(Number(3));
+    let value: bool = true;
+    let second: i32 = choose(Flag(value));
+    if (first == 14 && second == 18) { return 37; }
+    return 1;
+}

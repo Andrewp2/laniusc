@@ -36,29 +36,47 @@ fn hex_digit(value: i32) -> i32 {
     return verified::ascii::LOWER_A + value - DECIMAL_RADIX;
 }
 
+const HEX_DIGITS: i32 = 8;
+
 pub fn hex_word(destination: Cursor, value: i32) -> i32 {
-    let next: i32 = destination.position;
-    let shift: i32 = 28;
-    while (shift >= 0) {
-        next = byte(destination.data, destination.capacity, next,
-            hex_digit((value >> shift) & NIBBLE_MASK));
-        if (next < 0) { return -1; }
-        shift -= NIBBLE_BITS;
+    let index: i32 = 0;
+    while (index < HEX_DIGITS) {
+        let nibble: i32 =
+            (value >> ((HEX_DIGITS - 1 - index) * NIBBLE_BITS)) & NIBBLE_MASK;
+        if (byte(destination.data, destination.capacity,
+                destination.position + index, hex_digit(nibble)) < 0) { return -1; }
+        index += 1;
     }
-    return next;
+    return destination.position + HEX_DIGITS;
+}
+
+// Nonnegative i32 values have at most ten decimal digits. Four comparisons
+// suffice; this avoids a counting loop and repeated integer division.
+fn decimal_width(value: i32) -> i32 {
+    if (value < 100000) {
+        if (value < 100) {
+            if (value < 10) { return 1; }
+            return 2;
+        }
+        if (value < 1000) { return 3; }
+        if (value < 10000) { return 4; }
+        return 5;
+    }
+    if (value < 10000000) {
+        if (value < 1000000) { return 6; }
+        return 7;
+    }
+    if (value < 100000000) { return 8; }
+    if (value < 1000000000) { return 9; }
+    return 10;
 }
 
 pub fn natural(output: [i32], capacity: i32, position: i32,
     value: i32) -> i32 {
     if (value < 0 || position < 0 || position > capacity) { return -1; }
-    let digits: i32 = 1;
-    let remaining: i32 = value;
-    while (remaining >= DECIMAL_RADIX) {
-        remaining = remaining / DECIMAL_RADIX;
-        digits += 1;
-    }
+    let digits: i32 = decimal_width(value);
     if (digits > capacity - position) { return -1; }
-    remaining = value;
+    let remaining: i32 = value;
     let index: i32 = position + digits;
     while (index != position) {
         index -= 1;
@@ -78,7 +96,6 @@ pub fn text(output: [i32], capacity: i32, position: i32,
     let words: [i32] = verified::host::i32_slice_from_raw_parts(
         verified::host::string_data_ptr(input),
         verified::host::packed_words(length));
-    let next: i32 = position;
     let index: i32 = 0;
     while (index != length) {
         let value: i32 =
@@ -86,9 +103,10 @@ pub fn text(output: [i32], capacity: i32, position: i32,
                 >> ((index % verified::host::I32_BYTES)
                     * verified::host::BITS_PER_BYTE))
             & verified::host::BYTE_MASK;
-        next = byte(output, capacity, next, value);
-        if (next < 0) { return -1; }
+        // The entry guard establishes room for the whole string; masking
+        // establishes the byte range. This call cannot reject those values.
+        byte(output, capacity, position + index, value);
         index += 1;
     }
-    return next;
+    return position + length;
 }

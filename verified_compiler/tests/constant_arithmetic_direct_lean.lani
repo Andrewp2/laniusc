@@ -1,0 +1,16 @@
+module app::main;
+
+const NEGATIVE: i32 = -7;
+const MINIMUM: i32 = -2147483648;
+const WRAPPED: i32 = 2147483647 + 1;
+const PRODUCT: i32 = 65536 * 65536;
+const QUOTIENT: i32 = -7 / 3;
+const REMAINDER: i32 = -7 % 3;
+const ANSWER: i32 = (84 / 2) - 35;
+
+fn main() -> i32 {
+    if (NEGATIVE != -7 || MINIMUM != WRAPPED) { return 1; }
+    if (PRODUCT != 0) { return 2; }
+    if (QUOTIENT != -2 || REMAINDER != -1) { return 3; }
+    return ANSWER;
+}

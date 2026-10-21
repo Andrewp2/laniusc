@@ -1,0 +1,21 @@
+module app::namespace;
+
+pub enum Type { example, instance }
+
+// Lanius has separate type and function namespaces, even in one module.
+pub struct theorem { value: i32 }
+
+pub enum GeneratedNames { rec, recOn, casesOn, ctorIdx, noConfusion, below, _sizeOf_1 }
+
+pub fn theorem() -> i32 {
+    let chosen: Type = example;
+    let reserved: GeneratedNames = rec;
+    // A match used as an operand or arm must not absorb the following syntax.
+    return match (reserved) {
+        rec => match (chosen) { example => 0, instance => 1 },
+        _ => 42,
+    } + match (chosen) {
+        example => 7,
+        instance => 0,
+    };
+}

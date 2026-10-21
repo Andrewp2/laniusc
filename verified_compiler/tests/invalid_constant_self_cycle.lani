@@ -1,0 +1,3 @@
+module app::main;
+const BAD: i32 = BAD;
+fn main() -> i32 { return BAD; }

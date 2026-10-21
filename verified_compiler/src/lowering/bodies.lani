@@ -31,7 +31,7 @@ fn append_function(input: BodyLoweringInputs,
     depth: i32) -> i32 {
     let source_region: WordRegion = input.source;
     let token_region: verified::token::TokenTable = input.tokens;
-    let allocation_table: lowering::allocation::Table = input.allocations;
+    let allocation_table: lowering::allocation::Table = input.allocations.table;
     let resolution_region: lowering::types::ResolutionTable =
         input.resolutions;
     let alias_region: lowering::aliases::Catalog = input.aliases;
@@ -66,7 +66,7 @@ fn append_function(input: BodyLoweringInputs,
     }
     let local_bytes: usize = lowering::locals::allocation_bytes(token_count) as usize;
     let local_alignment: usize = lowering::locals::ALIGNMENT as usize;
-    let local_memory: ptr = verified::host::alloc(local_bytes, local_alignment);
+    let local_memory: ptr = verified::host::alloc(local_bytes as usize, local_alignment as usize);
     if (local_memory == 0) { return lowering::body_context::invalid(); }
     let locals: lowering::locals::Table = lowering::locals::from_raw_parts(
         local_memory, token_count);
@@ -85,9 +85,10 @@ fn append_function(input: BodyLoweringInputs,
         alias_scratch: alias_scratch,
         alias_scratch_capacity: alias_scratch_capacity,
         type_output: type_output_region,
-        allocated: allocation_table,
+        allocated: input.allocations,
         signature_index: input.signature_index,
         values: value_region,
+        value_names: input.value_names,
         locals: locals,
         return_kind: lowering::signatures::record_result_type(signature_record),
         owner_unit: owner_unit,
@@ -131,7 +132,7 @@ pub fn lower_owned(input: BodyLoweringInputs,
     workspace: BodyLoweringWorkspace) -> i32 {
     let source_region: WordRegion = input.source;
     let token_region: verified::token::TokenTable = input.tokens;
-    let allocation_table: lowering::allocation::Table = input.allocations;
+    let allocation_table: lowering::allocation::Table = input.allocations.table;
     let resolution_region: lowering::types::ResolutionTable =
         input.resolutions;
     let value_region: lowering::value_catalog::ValueTable = input.values;
@@ -161,7 +162,7 @@ pub fn lower_owned(input: BodyLoweringInputs,
         return lowering::body_context::invalid();
     }
     if (!lowering::value_catalog::valid(value_region, token_count,
-            allocation_table)) { return lowering::body_context::invalid(); }
+            input.allocations)) { return lowering::body_context::invalid(); }
     let lowered: i32 = 0;
     let row: i32 = 0;
     while (row != rows) {

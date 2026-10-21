@@ -150,7 +150,7 @@ pub fn copy_rows(input: ValueTable, offset: i32, count: i32,
 }
 
 pub fn valid(values: ValueTable, token_count: i32,
-    allocated: lowering::allocation::Table) -> bool {
+    allocated: lowering::allocation::Index) -> bool {
     return valid_slice(values, 0, values.count, token_count,
         allocated);
 }
@@ -160,14 +160,13 @@ pub fn valid(values: ValueTable, token_count: i32,
 // authenticates that order and rejects duplicate token/scope keys in linear
 // time; other units may sit on either side of this span.
 pub fn valid_slice(values: ValueTable, offset: i32, count: i32,
-    token_count: i32, allocated: lowering::allocation::Table) -> bool {
+    token_count: i32, allocated: lowering::allocation::Index) -> bool {
     if (values.count <= -1 || offset <= -1 || count <= -1
         || offset > values.count || count > values.count - offset
         || token_count <= -1
-        || !lowering::allocation::table_has_exact_rows(allocated)) {
+        || !allocated.valid) {
         return false;
     }
-    let allocation_rows: i32 = lowering::allocation::table_header(allocated).rows;
     let row: i32 = offset;
     let finish: i32 = offset + count;
     while (row < finish) {
@@ -189,17 +188,16 @@ pub fn valid_slice(values: ValueTable, offset: i32, count: i32,
                 return false;
             }
         }
-        let allocation_index: i32 = 0;
-        let found: bool = false;
-        while (allocation_index < allocation_rows) {
-            let allocation: lowering::allocation::AllocationRow =
-                lowering::allocation::table_row(allocated, allocation_index);
-            if (target_matches_allocation(binding.target, allocation)) {
-                found = true;
-            }
-            allocation_index += 1;
-        }
-        if (!found) { return false; }
+        let allocation_index: i32 = match (binding.target) {
+            InvalidTarget -> -1,
+            Callable(id) -> lowering::allocation::core_row(allocated, id),
+            Variant(value) -> lowering::allocation::declaration_row(
+                allocated, value.type_id),
+        };
+        if (allocation_index <= -1
+            || !target_matches_allocation(binding.target,
+                lowering::allocation::table_row(allocated.table,
+                    allocation_index))) { return false; }
         row += 1;
     }
     return true;

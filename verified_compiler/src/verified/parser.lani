@@ -58,11 +58,15 @@ const MAX_TOKEN_COUNT: i32 = 536870911;
 // the first derivation for each (production, dot, origin) at a chart position.
 const VALUE_BYTES: i32 = 8;
 const CHART_FIELDS: i32 = 2;
-const STATE_FIELDS: i32 = 9;
+const STATE_FIELDS: i32 = 13;
 const CHART_RECORD_BYTES: i32 = CHART_FIELDS * VALUE_BYTES;
 const STATE_RECORD_BYTES: i32 = STATE_FIELDS * VALUE_BYTES;
 const CHART_RECORD_WORDS: i32 = CHART_RECORD_BYTES
     / verified::host::I32_BYTES;
+const STATE_BUCKETS: i32 = 16;
+const ACTION_BUCKETS: i32 = 16;
+const CHART_STORAGE_WORDS: i32 = CHART_RECORD_WORDS + STATE_BUCKETS
+    + ACTION_BUCKETS * 2;
 const STATE_RECORD_WORDS: i32 = STATE_RECORD_BYTES
     / verified::host::I32_BYTES;
 pub enum ChildKind {
@@ -76,20 +80,32 @@ struct Chart {
     tail: i32,
 }
 
+// Derived once from the immutable grammar, then reused by chart scans.
+enum StateAction {
+    Expect(i32),
+    Complete(i32),
+}
+
 struct State {
     production: i32,
     dot: i32,
     origin: i32,
     position: i32,
     next: i32,
+    bucket_next: i32,
+    action_next: i32,
     previous: i32,
     child: ChildKind,
     child_payload: i32,
     semantic_kind: i32,
+    action: StateAction,
 }
 
 struct ParserWorkspace {
     charts: [Chart],
+    state_heads: [i32],
+    action_heads: [i32],
+    action_tails: [i32],
     states: [State],
     state_capacity: i32,
 }
@@ -117,12 +133,23 @@ fn workspace_view(storage: WorkspaceStorage, chart_count: i32,
     // Aggregate slices address the first field at their pointer and later
     // fields/elements at descending machine words. Point to the last word of
     // each region, not one byte past it.
-    let state_start: ptr = base + chart_count * CHART_RECORD_BYTES;
-    let chart_first: ptr = state_start - VALUE_BYTES;
+    let index_start: ptr = base + chart_count * CHART_RECORD_BYTES;
+    let state_start: ptr = base
+        + chart_count * CHART_STORAGE_WORDS * verified::host::I32_BYTES;
+    let chart_first: ptr = index_start - VALUE_BYTES;
     let state_first: ptr = state_start
         + state_capacity * STATE_RECORD_BYTES - VALUE_BYTES;
     return ParserWorkspace {
         charts: chart_slice(chart_first, chart_count),
+        state_heads: verified::host::i32_slice_from_raw_parts(index_start,
+            chart_count * STATE_BUCKETS),
+        action_heads: verified::host::i32_slice_from_raw_parts(
+            index_start + chart_count * STATE_BUCKETS * verified::host::I32_BYTES,
+            chart_count * ACTION_BUCKETS),
+        action_tails: verified::host::i32_slice_from_raw_parts(
+            index_start + chart_count * (STATE_BUCKETS + ACTION_BUCKETS)
+                * verified::host::I32_BYTES,
+            chart_count * ACTION_BUCKETS),
         states: state_slice(state_first, state_capacity),
         state_capacity: state_capacity,
     };
@@ -213,10 +240,10 @@ fn derivation_view_valid(input: DerivationInput) -> bool {
     }
     let chart_count: i32 = input.token_count
         * LATTICE_POSITIONS_PER_TOKEN + 1;
-    if (chart_count > workspace_length / CHART_RECORD_WORDS) {
+    if (chart_count > workspace_length / CHART_STORAGE_WORDS) {
         return false;
     }
-    let chart_words: i32 = chart_count * CHART_RECORD_WORDS;
+    let chart_words: i32 = chart_count * CHART_STORAGE_WORDS;
     let state_capacity: i32 = (workspace_length - chart_words)
         / STATE_RECORD_WORDS;
     return input.state_count <= state_capacity;
@@ -226,7 +253,7 @@ fn derivation_states(input: DerivationInput) -> [State] {
     let chart_count: i32 = input.token_count
         * LATTICE_POSITIONS_PER_TOKEN + 1;
     let state_capacity: i32 = (input.workspace.words
-        - chart_count * CHART_RECORD_WORDS) / STATE_RECORD_WORDS;
+        - chart_count * CHART_STORAGE_WORDS) / STATE_RECORD_WORDS;
     let work: ParserWorkspace = workspace_view(input.workspace, chart_count,
         state_capacity);
     return work.states;
@@ -361,18 +388,7 @@ fn state_seed(production: i32, dot: i32, origin: i32, previous_state: i32,
 }
 struct AppendResult {
     stage: AppendStage,
-    state_id: i32,
     state_count: i32,
-    inserted: bool,
-}
-fn append_result(stage: AppendStage, state_id: i32, state_count: i32,
-    inserted: bool,) -> AppendResult {
-    return AppendResult {
-        stage: stage,
-        state_id: state_id,
-        state_count: state_count,
-        inserted: inserted,
-    };
 }
 fn append_storage_full(result: AppendResult) -> bool {
     return match (result.stage) {
@@ -446,32 +462,53 @@ fn grammar_is_valid(grammar:[i32], grammar_length: i32) -> bool {
     }
     return true;
 }
-fn find_state(workspace: ParserWorkspace, position: i32,
+fn state_bucket(position: i32, seed: StateSeed) -> i32 {
+    // Reduce before mixing so even large valid grammar/state IDs cannot
+    // overflow. Collisions are resolved by comparing the complete state key.
+    let key: i32 = seed.production % STATE_BUCKETS
+        + (seed.dot % STATE_BUCKETS) * 3
+        + (seed.origin % STATE_BUCKETS) * 5;
+    return position * STATE_BUCKETS + key % STATE_BUCKETS;
+}
+
+fn find_state(workspace: ParserWorkspace, bucket: i32,
     seed: StateSeed) -> i32 {
-    let charts: [Chart] = workspace.charts;
+    let heads: [i32] = workspace.state_heads;
     let states: [State] = workspace.states;
-    let current: i32 = charts[position].head;
+    let current: i32 = heads[bucket];
     while (current >= 0) {
         if (states[current].production == seed.production
             && states[current].dot == seed.dot
             && states[current].origin == seed.origin) {
             return current;
         }
-        current = states[current].next;
+        current = states[current].bucket_next;
     }
     return -1;
 }
-fn append_state(workspace: ParserWorkspace, position: i32,
+
+// Each queue is a stable subsequence of the chart: expecting parents and
+// zero-width completions use disjoint buckets. Hash collisions still compare
+// the exact action, and appends remain visible to a scan already in progress.
+fn action_bucket(position: i32, nonterminal: i32, nullable: bool) -> i32 {
+    let bucket: i32 = (nonterminal % (ACTION_BUCKETS / 2)) * 2;
+    if (nullable) { bucket += 1; }
+    return position * ACTION_BUCKETS + bucket;
+}
+
+fn append_state(workspace: ParserWorkspace, grammar: [i32], position: i32,
     seed: StateSeed, state_count: i32) -> AppendResult {
-    let existing: i32 = find_state(workspace, position, seed);
+    let bucket: i32 = state_bucket(position, seed);
+    let existing: i32 = find_state(workspace, bucket, seed);
     if (existing >= 0) {
-        return append_result(Appended, existing, state_count, false);
+        return AppendResult { stage: Appended, state_count: state_count };
     }
     if (state_count >= workspace.state_capacity) {
-        return append_result(StorageFull, -1, state_count, false);
+        return AppendResult { stage: StorageFull, state_count: state_count };
     }
     let charts: [Chart] = workspace.charts;
     let states: [State] = workspace.states;
+    let heads: [i32] = workspace.state_heads;
     let state_id: i32 = state_count;
     states[state_id].production = seed.production;
     states[state_id].dot = seed.dot;
@@ -482,6 +519,41 @@ fn append_state(workspace: ParserWorkspace, position: i32,
     states[state_id].child = seed.child;
     states[state_id].child_payload = seed.child_payload;
     states[state_id].semantic_kind = seed.semantic_kind;
+    let action: StateAction = Complete(-1);
+    let indexed_nonterminal: i32 = -1;
+    let nullable: bool = false;
+    if (seed.dot < production_rhs_length(grammar, seed.production)) {
+        let symbol: i32 = production_rhs_symbol(grammar, seed.production, seed.dot);
+        action = Expect(symbol);
+        if (symbol >= grammar[HEADER_KIND_COUNT]) {
+            indexed_nonterminal = symbol - grammar[HEADER_KIND_COUNT];
+        }
+    } else {
+        let lhs: i32 = production_lhs(grammar, seed.production);
+        action = Complete(lhs);
+        if (seed.origin == position) {
+            indexed_nonterminal = lhs;
+            nullable = true;
+        }
+    }
+    states[state_id].action = action;
+    states[state_id].action_next = -1;
+    if (indexed_nonterminal >= 0) {
+        let slot: i32 = action_bucket(position, indexed_nonterminal, nullable);
+        let action_heads: [i32] = workspace.action_heads;
+        let action_tails: [i32] = workspace.action_tails;
+        let previous_tail: i32 = action_tails[slot];
+        if (previous_tail < 0) {
+            action_heads[slot] = state_id;
+        } else {
+            states[previous_tail].action_next = state_id;
+        }
+        action_tails[slot] = state_id;
+    }
+    // This reverse link serves lookup only. The separate chart queue below
+    // retains insertion order and therefore the first retained derivation.
+    states[state_id].bucket_next = heads[bucket];
+    heads[bucket] = state_id;
     let tail: i32 = charts[position].tail;
     if (tail <= -1) {
         charts[position].head = state_id;
@@ -489,7 +561,7 @@ fn append_state(workspace: ParserWorkspace, position: i32,
         states[tail].next = state_id;
     }
     charts[position].tail = state_id;
-    return append_result(Appended, state_id, state_count + 1, true);
+    return AppendResult { stage: Appended, state_count: state_count + 1 };
 }
 fn production_rhs_length(grammar:[i32], production: i32) -> i32 {
     return grammar[grammar[HEADER_RHS_LENGTHS_OFFSET] + production];
@@ -530,8 +602,8 @@ fn append_or_full(appended: AppendResult, error_position: i32,) -> ParseResult {
 }
 // Recognizes one token stream. Grammar symbols encode terminals as
 // [0, kind_count) and nonterminals as kind_count + nonterminal. The workspace
-// requires one typed chart per lattice position and one typed record per
-// available Earley state. Both regions share the caller-owned allocation.
+// requires a chart and bucket heads per lattice position, plus one typed
+// record per available Earley state, all in the caller-owned allocation.
 pub fn recognize(grammar:[i32], grammar_length: i32, tokens:[i32],
     token_count: i32, workspace: WorkspaceStorage) -> ParseResult {
     let workspace_length: i32 = workspace.words;
@@ -549,20 +621,34 @@ pub fn recognize(grammar:[i32], grammar_length: i32, tokens:[i32],
     }
     let final_position: i32 = token_count * LATTICE_POSITIONS_PER_TOKEN;
     let chart_count: i32 = final_position + 1;
-    if (chart_count > workspace_length / CHART_RECORD_WORDS) {
+    if (chart_count > workspace_length / CHART_STORAGE_WORDS) {
         return parse_result(StateStorageFull, 0, -1, 0);
     }
-    let chart_words: i32 = chart_count * CHART_RECORD_WORDS;
+    let chart_words: i32 = chart_count * CHART_STORAGE_WORDS;
     let state_capacity: i32 = (workspace_length - chart_words)
         / STATE_RECORD_WORDS;
     let work: ParserWorkspace = workspace_view(workspace, chart_count,
         state_capacity);
     let charts: [Chart] = work.charts;
     let states: [State] = work.states;
+    let heads: [i32] = work.state_heads;
+    let action_heads: [i32] = work.action_heads;
+    let action_tails: [i32] = work.action_tails;
     let chart: i32 = 0;
     while (chart < chart_count) {
         charts[chart].head = -1;
         charts[chart].tail = -1;
+        let bucket: i32 = 0;
+        while (bucket < STATE_BUCKETS) {
+            heads[chart * STATE_BUCKETS + bucket] = -1;
+            bucket += 1;
+        }
+        bucket = 0;
+        while (bucket < ACTION_BUCKETS) {
+            action_heads[chart * ACTION_BUCKETS + bucket] = -1;
+            action_tails[chart * ACTION_BUCKETS + bucket] = -1;
+            bucket += 1;
+        }
         chart += 1;
     }
     let kind_count: i32 = grammar[HEADER_KIND_COUNT];
@@ -576,7 +662,7 @@ pub fn recognize(grammar:[i32], grammar_length: i32, tokens:[i32],
     let start_index: i32 = 0;
     while (start_index <= start_count - 1) {
         let production: i32 = grammar[lhs_productions_offset + start_first + start_index];
-        let appended: AppendResult = append_state(work, 0,
+        let appended: AppendResult = append_state(work, grammar, 0,
             state_seed(production, 0, 0, -1, NoChild, -1, -1), state_count);
         if (append_storage_full(appended)) {
             return append_or_full(appended, 0);
@@ -595,13 +681,15 @@ pub fn recognize(grammar:[i32], grammar_length: i32, tokens:[i32],
             let production: i32 = states[state_id].production;
             let dot: i32 = states[state_id].dot;
             let origin: i32 = states[state_id].origin;
-            let rhs_length: i32 = production_rhs_length(grammar, production);
-            if (dot <= rhs_length - 1) {
-                let symbol: i32 = production_rhs_symbol(grammar, production, dot);
+            let symbol: i32 = match (states[state_id].action) {
+                Expect(value) -> value,
+                _ -> -1,
+            };
+            if (symbol >= 0) {
                 if (symbol <= kind_count - 1) {
                     let next_position: i32 = scan_terminal(grammar, tokens, token_count, position, symbol);
                     if (next_position >= 0) {
-                        let appended: AppendResult = append_state(work,
+                        let appended: AppendResult = append_state(work, grammar,
                             next_position, state_seed(production, dot + 1,
                                 origin, state_id, TokenChild,
                                 position / LATTICE_POSITIONS_PER_TOKEN,
@@ -618,7 +706,7 @@ pub fn recognize(grammar:[i32], grammar_length: i32, tokens:[i32],
                     let predicted_index: i32 = 0;
                     while (predicted_index <= count - 1) {
                         let predicted: i32 = grammar[lhs_productions_offset + first + predicted_index];
-                        let appended: AppendResult = append_state(work,
+                        let appended: AppendResult = append_state(work, grammar,
                             position, state_seed(predicted, 0, position, -1,
                                 NoChild, -1, -1), state_count);
                         if (append_storage_full(appended)) {
@@ -629,13 +717,16 @@ pub fn recognize(grammar:[i32], grammar_length: i32, tokens:[i32],
                     }
                     // A nullable completion may predate this parent state, so
                     // replay already-completed zero-width children here.
-                    let candidate: i32 = charts[position].head;
+                    let candidate: i32 = action_heads[
+                        action_bucket(position, expected_nonterminal, true)];
                     while (candidate >= 0) {
-                        let candidate_production: i32 = states[candidate].production;
-                        let candidate_dot: i32 = states[candidate].dot;
                         let candidate_origin: i32 = states[candidate].origin;
-                        if (candidate_origin == position && candidate_dot == production_rhs_length(grammar, candidate_production) && production_lhs(grammar, candidate_production) == expected_nonterminal) {
-                            let appended: AppendResult = append_state(work,
+                        let candidate_matches: bool = match (states[candidate].action) {
+                            Complete(candidate_lhs) -> candidate_lhs == expected_nonterminal,
+                            _ -> false,
+                        };
+                        if (candidate_origin == position && candidate_matches) {
+                            let appended: AppendResult = append_state(work, grammar,
                                 position, state_seed(production, dot + 1,
                                     origin, state_id, StateChild, candidate,
                                     -1), state_count);
@@ -644,30 +735,35 @@ pub fn recognize(grammar:[i32], grammar_length: i32, tokens:[i32],
                             }
                             state_count = appended.state_count;
                         }
-                        candidate = states[candidate].next;
+                        candidate = states[candidate].action_next;
                     }
                 }
             } else {
-                let completed_lhs: i32 = production_lhs(grammar, production);
-                let parent: i32 = charts[origin].head;
+                let completed_lhs: i32 = match (states[state_id].action) {
+                    Complete(current_lhs) -> current_lhs,
+                    _ -> -1,
+                };
+                let parent: i32 = action_heads[
+                    action_bucket(origin, completed_lhs, false)];
                 while (parent >= 0) {
-                    let parent_production: i32 = states[parent].production;
-                    let parent_dot: i32 = states[parent].dot;
-                    let parent_rhs_length: i32 = production_rhs_length(grammar, parent_production);
-                    if (parent_dot <= parent_rhs_length - 1) {
-                        if (production_rhs_symbol(grammar, parent_production, parent_dot) == kind_count + completed_lhs) {
-                            let parent_origin: i32 = states[parent].origin;
-                            let appended: AppendResult = append_state(work,
-                                position, state_seed(parent_production,
-                                    parent_dot + 1, parent_origin, parent,
-                                    StateChild, state_id, -1), state_count);
-                            if (append_storage_full(appended)) {
-                                return append_or_full(appended, position);
-                            }
-                            state_count = appended.state_count;
+                    let parent_matches: bool = match (states[parent].action) {
+                        Expect(expected) -> expected == kind_count + completed_lhs,
+                        _ -> false,
+                    };
+                    if (parent_matches) {
+                        let parent_production: i32 = states[parent].production;
+                        let parent_dot: i32 = states[parent].dot;
+                        let parent_origin: i32 = states[parent].origin;
+                        let appended: AppendResult = append_state(work, grammar,
+                            position, state_seed(parent_production,
+                                parent_dot + 1, parent_origin, parent,
+                                StateChild, state_id, -1), state_count);
+                        if (append_storage_full(appended)) {
+                            return append_or_full(appended, position);
                         }
+                        state_count = appended.state_count;
                     }
-                    parent = states[parent].next;
+                    parent = states[parent].action_next;
                 }
             }
             // Read after processing: appending to the current chart can update

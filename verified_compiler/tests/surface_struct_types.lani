@@ -1,0 +1,4 @@
+module app::records;
+
+pub struct Inner { ignored: i32, value: i32 }
+pub struct Outer { value: Inner }

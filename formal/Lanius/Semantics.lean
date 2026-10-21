@@ -586,6 +586,12 @@ def integerIndex : Value → Except Trap Nat
   | .unsigned _ value => .ok value
   | _ => .error .typeMismatch
 
+/-- Resolving a write address does not inspect the bytes it will replace. -/
+inductive PlaceAccess where
+  | address
+  | read
+deriving DecidableEq, Repr
+
 structure ResolvedPlace where
   root : CellId
   projections : List ValueProjection
@@ -866,12 +872,6 @@ def State.i32ArrayView?
   state.i32ArrayViews.find? fun view =>
     decide (view.root = root ∧ view.projections = projections)
 
-def State.rawI32ArrayView?
-    (state : State) (address : Address) (length : Nat)
-    (projections : List ValueProjection) : Option I32ArrayView :=
-  state.i32ArrayViews.find? fun view =>
-    decide (view.address = address ∧ view.length = length ∧ view.projections = projections)
-
 def syncI32ViewsToHeapFrom :
     List I32ArrayView → State → Except Trap State
   | [], state => .ok state
@@ -948,36 +948,22 @@ def mapI32ArrayView
           | .exhausted heap => .trapped .allocationFailure { state with heap }
           | .trapped reason heap => .trapped reason { state with heap }
 
-/-- Construct a language i32 slice over one exact raw block. Protecting the
-    block first makes the resulting cell/view pair stable for the rest of the
-    execution and lets ordinary slice indexing share the existing semantics. -/
+/-- Borrow one exact raw block and retain its native pointer/length descriptor.
+    Raw storage has one source of truth: the heap. Only pointers into existing
+    language arrays need registered cell-backed views and synchronization. -/
 def mapRawI32Slice (state : State) (address : Address) (signedLength : Int) :
     Outcome Value :=
   if signedLength < 0 then
     .trapped .rawMemoryBounds state
+  else if signedLength = 0 then
+    .done (.rawSlice (.scalar (.signed .i32)) address 0) state
   else
     let length := signedLength.toNat
     match state.heap.protectAsBorrowed address (length * 4) 4 with
     | .error reason => .trapped reason state
     | .ok protectedHeap =>
-        match state.rawI32ArrayView? address length [] with
-        | some view =>
-            .done (.slice (.scalar (.signed .i32)) view.root view.projections 0 length)
-              { state with heap := protectedHeap }
-        | none =>
-            match protectedHeap.loadBytes address (length * 4) with
-            | .error reason => .trapped reason { state with heap := protectedHeap }
-            | .ok bytes =>
-                match decodeI32Array length bytes with
-                | .error reason => .trapped reason { state with heap := protectedHeap }
-                | .ok elements =>
-                    let (root, withTemporary) :=
-                      ({ state with heap := protectedHeap }).allocateTemporary (.array elements)
-                    let view : I32ArrayView := { address, root, projections := [], length }
-                    .done (.slice (.scalar (.signed .i32)) root [] 0 length) {
-                      withTemporary with
-                      i32ArrayViews := withTemporary.i32ArrayViews ++ [view]
-                    }
+        .done (.rawSlice (.scalar (.signed .i32)) address length)
+          { state with heap := protectedHeap }
 
 /-- Keep native aggregate views as heap aliases, not copied arrays. The
     descriptor points at the high word of element zero; its finite layout
@@ -1009,19 +995,6 @@ def mapRawNominalSlice (program : Program) (state : State)
                 .done (.rawSlice element address length)
                   { state with heap }
 
-theorem mapRawI32Slice_reuses_registered_view
-    (state : State) (address : Address) (length : Nat)
-    (view : I32ArrayView) (protectedHeap : Heap)
-    (registered : state.rawI32ArrayView? address length [] = some view)
-    (protectedHeapOk : state.heap.protectAsBorrowed address (length * 4) 4 =
-      .ok protectedHeap) :
-    mapRawI32Slice state address (Int.ofNat length) =
-        .done (.slice (.scalar (.signed .i32)) view.root view.projections 0 length)
-          { state with heap := protectedHeap } ∧
-      ({ state with heap := protectedHeap }).cells = state.cells ∧
-      ({ state with heap := protectedHeap }).i32ArrayViews = state.i32ArrayViews := by
-  simp [mapRawI32Slice, registered, protectedHeapOk]
-
 def mapI32SliceDataPtr
     (state : State) (cell : CellId) (projections : List ValueProjection)
     (start length : Nat) : Outcome Value :=
@@ -1040,8 +1013,24 @@ def mapI32SliceDataPtr
         .trapped .arrayBounds state
   | .ok _ => .trapped .typeMismatch state
 
+/-- The packed-byte host ABI exposes complete i32 words. The fresh raw view
+    includes zero padding through its final word, not extra string characters.
+    Native `runtime::string::pointer` copies into zero-filled aligned storage. -/
+def stringStorage (value : String) : List UInt8 :=
+  let bytes := World.utf8Bytes value
+  bytes ++ List.replicate ((4 - bytes.length % 4) % 4) 0
+
+theorem stringStorage_content (value : String) :
+    (stringStorage value).take (World.utf8Bytes value).length = World.utf8Bytes value := by
+  simp [stringStorage]
+
+theorem stringStorage_length (value : String) :
+    (stringStorage value).length = ((World.utf8Bytes value).length + 3) / 4 * 4 := by
+  simp only [stringStorage, List.length_append, List.length_replicate]
+  omega
+
 def mapStringDataPtr (state : State) (value : String) : Outcome Value :=
-  match state.heap.mapBorrowed (World.utf8Bytes value) 4 with
+  match state.heap.mapBorrowed (stringStorage value) 4 with
   | .allocated address heap => .done (.pointer address) { state with heap }
   | .exhausted heap => .trapped .allocationFailure { state with heap }
   | .trapped reason heap => .trapped reason { state with heap }
@@ -1174,7 +1163,7 @@ mutual
         | .arrayToSlice elementType array =>
             match expressionPlace? array with
             | some place =>
-                match evalPlace fuel program state place with
+                match evalPlace fuel program state .read place with
                 | .done { root, projections, value := some (.array elements), .. } next =>
                     .done (.slice elementType root projections 0 elements.length) next
                 | .done { value := none, .. } next => .trapped .uninitializedLocal next
@@ -1269,7 +1258,8 @@ mutual
             | .exited code exitedState => .exited code exitedState
             | .outOfFuel => .outOfFuel
         | .assign op place valueExpression =>
-            match evalPlace fuel program state place with
+            match evalPlace fuel program state
+                (match op with | .set => .address | _ => .read) place with
             | .done resolved afterPlace =>
                 match evalExpr fuel program afterPlace valueExpression with
                 | .done right afterValue =>
@@ -1294,7 +1284,7 @@ mutual
             | .exited code exitedState => .exited code exitedState
             | .outOfFuel => .outOfFuel
         | .borrow referent place =>
-            match evalPlace fuel program state place with
+            match evalPlace fuel program state .read place with
             | .done { value := none, .. } next => .trapped .uninitializedLocal next
             | .done { raw := some _, .. } next => .trapped .typeMismatch next
             | .done resolved next =>
@@ -1383,7 +1373,7 @@ mutual
         | .i32ArrayDataPtr array =>
             match expressionPlace? array with
             | some place =>
-                match evalPlace fuel program state place with
+                match evalPlace fuel program state .read place with
                 | .done { root, projections, value := some (.array elements), .. } next =>
                     mapI32ArrayView next root projections elements
                 | .done { value := none, .. } next => .trapped .uninitializedLocal next
@@ -1430,6 +1420,8 @@ mutual
             | .outOfFuel => .outOfFuel
         | .i32SliceDataPtr slice =>
             match evalExpr fuel program state slice with
+            | .done (.rawSlice (.scalar (.signed .i32)) address _) next =>
+                .done (.pointer address) next
             | .done (.slice (.scalar (.signed .i32)) cell projections start length) next =>
                 mapI32SliceDataPtr next cell projections start length
             | .done _ next => .trapped .typeMismatch next
@@ -1548,52 +1540,57 @@ mutual
             restoreOutcomeLocals state
               (evalExpr fuel program (state.bindLocals bindings) body)
 
-  def evalPlace : Nat → Program → State → Place → Outcome ResolvedPlace
-    | 0, _, _, _ => .outOfFuel
-    | _ + 1, _, state, .local id =>
+  def evalPlace : Nat → Program → State → PlaceAccess → Place → Outcome ResolvedPlace
+    | 0, _, _, _, _ => .outOfFuel
+    | _ + 1, _, state, access, .local id =>
         match state.cellId? id with
         | none => .trapped .typeMismatch state
         | some cell =>
             match state.cellEntry? cell with
             | none => .trapped .typeMismatch state
             | some entry =>
-                .done { root := cell, projections := [], value := entry.value } state
-    | fuel + 1, program, state, .field base field =>
-        match evalPlace fuel program state base with
+                match access, entry.value with
+                | .read, none => .trapped .uninitializedLocal state
+                | _, _ => .done { root := cell, projections := [], value := entry.value } state
+    | fuel + 1, program, state, access, .field base field =>
+        match evalPlace fuel program state .address base with
         | .done resolved next =>
-            match resolved.value with
-            | none => .trapped .uninitializedLocal next
-            | some (.structure id fields) =>
-                match fields[field]? with
-                | some value =>
-                    match resolved.raw with
-                    | none => .done {
-                        resolved with
+            match resolved.raw with
+            | some (.structure id, address) =>
+                match program.structure? id,
+                    NativeLayout.structureFieldOffset? program id field with
+                | some declaration, some offset =>
+                    match declaration.fields[field]? with
+                    | none => .trapped .typeMismatch next
+                    | some fieldType =>
+                        match access with
+                        | .address => .done { resolved with
+                            value := none
+                            raw := some (fieldType, address + offset) } next
+                        | .read =>
+                            match readNativeValue NativeLayout.maxDepth program
+                                next.heap fieldType (address + offset) with
+                            | .error reason => .trapped reason next
+                            | .ok value => .done { resolved with
+                                value := some value
+                                raw := some (fieldType, address + offset) } next
+                | _, _ => .trapped .typeMismatch next
+            | some _ => .trapped .typeMismatch next
+            | none =>
+                match resolved.value with
+                | none => .trapped .uninitializedLocal next
+                | some (.structure _ fields) =>
+                    match fields[field]? with
+                    | some value => .done { resolved with
                         projections := resolved.projections ++ [.field field]
-                        value := some value
-                      } next
-                    | some (.structure rawId, address) =>
-                        if id != rawId then .trapped .typeMismatch next
-                        else
-                          match program.structure? id,
-                              NativeLayout.structureFieldOffset? program id field with
-                          | some declaration, some offset =>
-                              match declaration.fields[field]? with
-                              | none => .trapped .typeMismatch next
-                              | some fieldType => .done {
-                                  resolved with
-                                  value := some value
-                                  raw := some (fieldType, address + offset)
-                                } next
-                          | _, _ => .trapped .typeMismatch next
-                    | some _ => .trapped .typeMismatch next
-                | none => .trapped .typeMismatch next
-            | _ => .trapped .typeMismatch next
+                        value := some value } next
+                    | none => .trapped .typeMismatch next
+                | _ => .trapped .typeMismatch next
         | .trapped reason next => .trapped reason next
         | .exited code exitedState => .exited code exitedState
         | .outOfFuel => .outOfFuel
-    | fuel + 1, program, state, .index base indexExpression =>
-        match evalPlace fuel program state base with
+    | fuel + 1, program, state, access, .index base indexExpression =>
+        match evalPlace fuel program state .read base with
         | .done resolved afterBase =>
             match resolved.value with
             | none => .trapped .uninitializedLocal afterBase
@@ -1645,14 +1642,17 @@ mutual
                           match rawSliceElementAddress? program element address index with
                           | .error reason => .trapped reason afterIndex
                           | .ok base =>
-                              match readNativeValue NativeLayout.maxDepth program
-                                  afterIndex.heap element base with
-                              | .error reason => .trapped reason afterIndex
-                              | .ok value => .done {
-                                  resolved with
-                                  value := some value
-                                  raw := some (element, base)
-                                } afterIndex
+                              match access with
+                              | .address => .done { resolved with
+                                  value := none
+                                  raw := some (element, base) } afterIndex
+                              | .read =>
+                                  match readNativeValue NativeLayout.maxDepth program
+                                      afterIndex.heap element base with
+                                  | .error reason => .trapped reason afterIndex
+                                  | .ok value => .done { resolved with
+                                      value := some value
+                                      raw := some (element, base) } afterIndex
                         else .trapped .arrayBounds afterIndex
                 | .trapped reason next => .trapped reason next
                 | .exited code exitedState => .exited code exitedState

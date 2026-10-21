@@ -1,0 +1,54 @@
+module app::main;
+
+import verified::host;
+import verified::lean_output;
+
+fn main() -> i32 {
+    let memory: ptr = verified::host::alloc_i32(3);
+    if (memory == 0) { return 1; }
+    let data: [i32] = verified::host::i32_slice_from_raw_parts(memory, 3);
+    data[0] = -1;
+    // Exercise the actual extractor writer, including a non-word-aligned
+    // cursor, short UTF-8 input, and preservation of neighboring bytes.
+    let next: i32 = verified::lean_output::text(data, 4, 1, "%", 1);
+    if (next != 2 || data[0] != -55809) { return 2; }
+    next = verified::lean_output::text(data, 4, next, "é", 2);
+    if (next != 4 || (data[0] & 255) != 255
+        || ((data[0] >> 8) & 255) != 37
+        || ((data[0] >> 16) & 65535) != 43459) { return 3; }
+    let previous: i32 = data[0];
+    if (verified::lean_output::text(data, 4, next, "!", 1) != -1
+        || data[0] != previous) { return 4; }
+    // Cross both an input-word and an output-word boundary. Embedded NUL is
+    // data, UTF-8 counts bytes, and the unused word remains a canary.
+    data[0] = -1;
+    data[1] = -1;
+    data[2] = 77;
+    next = verified::lean_output::text(data, 12, 3, "A\0éZ", 5);
+    if (next != 8 || (data[0] & 16777215) != 16777215
+        || ((data[0] >> 24) & 255) != 65 || (data[1] & 255) != 0
+        || ((data[1] >> 8) & 255) != 195 || ((data[1] >> 16) & 255) != 169
+        || ((data[1] >> 24) & 255) != 90 || data[2] != 77) { return 5; }
+    previous = data[1];
+    if (verified::lean_output::text(data, 12, 12, "", 0) != 12
+        || verified::lean_output::text(data, 12, 0, "", -1) != -1
+        || data[1] != previous || data[2] != 77) { return 6; }
+    // Exercise every hex digit through the actual formatter, including the
+    // sign bit and a neighboring word that must not be touched.
+    next = verified::lean_output::hex_word(
+        verified::lean_output::cursor(data, 8, 0), 19088743);
+    if (next != 8 || data[0] != 858927408
+        || data[1] != 926299444 || data[2] != 77) { return 7; }
+    next = verified::lean_output::hex_word(
+        verified::lean_output::cursor(data, 8, 0), -1985229329);
+    if (next != 8 || data[0] != 1650538808
+        || data[1] != 1717920867 || data[2] != 77) { return 8; }
+    data[0] = -1;
+    data[1] = -1;
+    data[2] = -1;
+    next = verified::lean_output::hex_word(
+        verified::lean_output::cursor(data, 12, 1), -1);
+    if (next != 9 || data[0] != 1717987071
+        || data[1] != 1717986918 || data[2] != -154) { return 9; }
+    return 37;
+}

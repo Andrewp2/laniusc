@@ -1,0 +1,15 @@
+module app::main;
+
+fn message() -> str {
+    return "A\n\"\\\0éλ";
+}
+
+fn identity(value: str) -> str {
+    return value;
+}
+
+fn main() -> i32 {
+    let empty: str = "";
+    let text: str = identity(message());
+    return 37;
+}

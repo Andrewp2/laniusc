@@ -1,15 +1,9 @@
 module runtime::service;
-import runtime::arguments;
-import runtime::heap;
-import runtime::io;
-import x86::encode;
-import x86::control;
-import x86::register;
-import backend::syntax;
+
 import ir::type_ref;
 
-// Runtime services are semantic values inside the compiler. Their integer
-// codes exist only in the serialized Core/backend transport.
+// Semantic runtime identities and signatures shared by both output paths.
+// Native instruction emission and wire decoding belong to the backend.
 pub enum RuntimeService {
     NoService,
     Allocate,
@@ -23,56 +17,12 @@ pub enum RuntimeService {
     ArgumentRead,
 }
 
-pub fn service_code(service: RuntimeService) -> i32 {
-    return match (service) {
-        NoService -> 0,
-        Allocate -> 1,
-        OpenRead -> 2,
-        Close -> 3,
-        Read -> 4,
-        WriteStdout -> 5,
-        WriteByte -> 6,
-        ArgumentCount -> 7,
-        ArgumentLength -> 8,
-        ArgumentRead -> 9,
-    };
-}
-
-pub fn service_from_code(encoded: i32) -> RuntimeService {
-    if (encoded_service_is(encoded, Allocate)) { return Allocate; }
-    if (encoded_service_is(encoded, OpenRead)) { return OpenRead; }
-    if (encoded_service_is(encoded, Close)) { return Close; }
-    if (encoded_service_is(encoded, Read)) { return Read; }
-    if (encoded_service_is(encoded, WriteStdout)) { return WriteStdout; }
-    if (encoded_service_is(encoded, WriteByte)) { return WriteByte; }
-    if (encoded_service_is(encoded, ArgumentCount)) {
-        return ArgumentCount;
-    }
-    if (encoded_service_is(encoded, ArgumentLength)) {
-        return ArgumentLength;
-    }
-    if (encoded_service_is(encoded, ArgumentRead)) { return ArgumentRead; }
-    return NoService;
-}
-
-pub fn encoded_service_is(encoded: i32, expected: RuntimeService) -> bool {
-    return encoded == service_code(expected);
-}
-
 struct ServiceSignature {
     result_type: ir::type_ref::TypeRef,
     arity: i32,
     first_type: ir::type_ref::TypeRef,
     second_type: ir::type_ref::TypeRef,
     third_type: ir::type_ref::TypeRef,
-}
-
-const MAX_SERVICE_PARAMETERS: i32 = 3;
-pub const RUNTIME_SERVICE_BODY_WORDS: i32 = 1;
-
-fn parameter_slot(first: i32, index: i32) -> i32 {
-    return first + backend::syntax::FUNCTION_HEADER_WORDS
-        + index * backend::syntax::PARAMETER_ROW_WORDS;
 }
 
 fn signature(service: RuntimeService) -> ServiceSignature {
@@ -130,118 +80,18 @@ fn signature(service: RuntimeService) -> ServiceSignature {
     };
 }
 
-pub fn valid(input: [i32], first: i32, count: i32) -> bool {
-    if (count <= backend::syntax::FUNCTION_HEADER_WORDS) { return false; }
-    let header: backend::syntax::FunctionHeader =
-        backend::syntax::read_function_header(input, first);
-    if (header.kind != backend::syntax::RuntimeFunction
-        || header.pointer_bits != backend::syntax::POINTER_BITS
-        || header.body_words != RUNTIME_SERVICE_BODY_WORDS) { return false; }
-    let parameters: i32 = header.parameters;
-    if (parameters <= -1 || parameters > MAX_SERVICE_PARAMETERS
-        || count != backend::syntax::FUNCTION_HEADER_WORDS
-            + parameters * backend::syntax::PARAMETER_ROW_WORDS
-            + RUNTIME_SERVICE_BODY_WORDS) { return false; }
-    let service: RuntimeService = service_from_code(
-        input[first + backend::syntax::FUNCTION_HEADER_WORDS
-            + parameters * backend::syntax::PARAMETER_ROW_WORDS]);
-    if (service == NoService) { return false; }
+pub fn accepts_signature(service: RuntimeService,
+    result_type: ir::type_ref::TypeRef, arity: i32) -> bool {
     let expected: ServiceSignature = signature(service);
-    if (!ir::type_ref::same(header.result_type, expected.result_type)
-        || parameters != expected.arity) { return false; }
-    let first_parameter: i32 = parameter_slot(first, 0);
-    let second_parameter: i32 = parameter_slot(first, 1);
-    let third_parameter: i32 = parameter_slot(first, 2);
-    if (expected.arity > 0
-        && (input[first_parameter + backend::syntax::PARAMETER_ID_FIELD] <= -1
-            || input[first_parameter + backend::syntax::PARAMETER_TYPE_FIELD]
-                != ir::type_ref::code(expected.first_type))) { return false; }
-    if (expected.arity > 1
-        && (input[second_parameter + backend::syntax::PARAMETER_ID_FIELD] <= -1
-            || input[second_parameter + backend::syntax::PARAMETER_TYPE_FIELD]
-                != ir::type_ref::code(expected.second_type)
-            || input[second_parameter + backend::syntax::PARAMETER_ID_FIELD]
-                == input[first_parameter + backend::syntax::PARAMETER_ID_FIELD])) {
-        return false;
-    }
-    if (expected.arity > 2
-        && (input[third_parameter + backend::syntax::PARAMETER_ID_FIELD] <= -1
-            || input[third_parameter + backend::syntax::PARAMETER_TYPE_FIELD]
-                != ir::type_ref::code(expected.third_type)
-            || input[third_parameter + backend::syntax::PARAMETER_ID_FIELD]
-                == input[first_parameter + backend::syntax::PARAMETER_ID_FIELD]
-            || input[third_parameter + backend::syntax::PARAMETER_ID_FIELD]
-                == input[second_parameter + backend::syntax::PARAMETER_ID_FIELD])) {
-        return false;
-    }
-    return true;
+    return service != NoService && arity == expected.arity
+        && ir::type_ref::same(result_type, expected.result_type);
 }
 
-pub fn emit(output: [i32], capacity: i32, cursor: i32,
-    service: RuntimeService) -> i32 {
-    if (service == Allocate) { return runtime::heap::allocate(output, capacity, cursor); }
-    if (service == OpenRead) { return runtime::io::open_read(output, capacity, cursor); }
-    if (service == Close) { return runtime::io::close(output, capacity, cursor); }
-    if (service == ArgumentCount) {
-        return runtime::arguments::emit(output, capacity, cursor,
-            runtime::arguments::Count);
-    }
-    if (service == ArgumentLength) {
-        return runtime::arguments::emit(output, capacity, cursor,
-            runtime::arguments::Length);
-    }
-    if (service == ArgumentRead) {
-        return runtime::arguments::emit(output, capacity, cursor,
-            runtime::arguments::Read);
-    }
-    let next: i32 = cursor;
-    if (service == Read) {
-        next = x86::encode::immediate(output, capacity, next,
-            x86::register::WIDTH_32, x86::register::R10,
-            runtime::io::FIRST_FILE_HANDLE, 0);
-        next = x86::encode::binary(output, capacity, next,
-            x86::register::WIDTH_32, x86::encode::Compare,
-            x86::register::RDI, x86::register::R10);
-        let valid: i32 = next + 2;
-        next = x86::control::branch(output, capacity, next, x86::control::GreaterEqual, 0);
-        next = x86::encode::immediate(output, capacity, next,
-            x86::register::WIDTH_32, x86::register::RAX, -1, 0);
-        next = x86::control::return_near(output, capacity, next);
-        if (x86::control::patch_relative(output, next, valid, next) <= -1) { return -1; }
-        return runtime::io::transfer(output, capacity, next, false);
-    }
-    if (service == WriteStdout) {
-        next = x86::encode::move_register(output, capacity, next,
-            x86::register::WIDTH_64, x86::register::RDX, x86::register::RSI);
-        next = x86::encode::move_register(output, capacity, next,
-            x86::register::WIDTH_64, x86::register::RSI, x86::register::RDI);
-        next = x86::encode::immediate(output, capacity, next,
-            x86::register::WIDTH_32, x86::register::RDI,
-            runtime::io::STDOUT_HANDLE, 0);
-        return runtime::io::transfer(output, capacity, next, true);
-    }
-    if (service == WriteByte) {
-        next = x86::encode::binary(output, capacity, next,
-            x86::register::WIDTH_32, x86::encode::Test,
-            x86::register::RDI, x86::register::RDI);
-        let valid: i32 = next + 2;
-        next = x86::control::branch(output, capacity, next, x86::control::Greater, 0);
-        next = x86::encode::immediate(output, capacity, next,
-            x86::register::WIDTH_32, x86::register::RAX, -1, 0);
-        next = x86::control::return_near(output, capacity, next);
-        if (x86::control::patch_relative(output, next, valid, next) <= -1) { return -1; }
-        // The single byte lives in a private stack word until transfer returns.
-        next = x86::control::push(output, capacity, next, x86::register::RSI);
-        next = x86::encode::move_register(output, capacity, next,
-            x86::register::WIDTH_64, x86::register::RSI, x86::register::RSP);
-        next = x86::encode::immediate(output, capacity, next,
-            x86::register::WIDTH_32, x86::register::RDX, 1, 0);
-        let call: i32 = next + 1;
-        next = x86::control::call(output, capacity, next, 0);
-        next = x86::control::pop(output, capacity, next, x86::register::R11);
-        next = x86::control::return_near(output, capacity, next);
-        if (x86::control::patch_relative(output, next, call, next) <= -1) { return -1; }
-        return runtime::io::transfer(output, capacity, next, true);
-    }
-    return -1;
+pub fn accepts_parameter(service: RuntimeService, index: i32,
+    type_tag: ir::type_ref::TypeRef) -> bool {
+    let expected: ServiceSignature = signature(service);
+    if (index <= -1 || index >= expected.arity) { return false; }
+    if (index == 0) { return ir::type_ref::same(type_tag, expected.first_type); }
+    if (index == 1) { return ir::type_ref::same(type_tag, expected.second_type); }
+    return ir::type_ref::same(type_tag, expected.third_type);
 }

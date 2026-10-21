@@ -49,7 +49,7 @@ def check
             candidate.declaration candidate.core with
         | .error failure => .error (.signature failure)
         | .ok checkedSignature =>
-            if abi : candidate.declaration.abi = none then
+            if abi : RuntimeImports.Matches candidate.declaration candidate.core.external then
               match body : candidate.core.body with
               | some _ => .error .bodyMismatch
               | none =>

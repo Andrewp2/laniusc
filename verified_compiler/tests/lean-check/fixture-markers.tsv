@@ -1,0 +1,10 @@
+verified_compiler.tests.direct_ir_catalog_copy_tests	catalog-copy fixtures: 2 annotation modes, opaque descriptor, 3 guard cases, frame and allocation
+verified_compiler.tests.direct_ir_catalog_build_tests	catalog-build fixtures: rooted success, forest/malformed rejection, second allocation exhaustion, annotations and frame
+verified_compiler.tests.direct_ir_catalog_store_tests	catalog-store fixtures: corrupt spare rows, field-only count storage, native read-back, union frame, annotations, rejection and exhaustion
+verified_compiler.tests.direct_ir_negative_tests	9 negative literal cases passed
+verified_compiler.tests.direct_ir_integer_tests	7 source-to-IR success/rejection cases passed
+verified_compiler.tests.direct_ir_count_store_tests	actual catalog store fixtures: 3 passed
+verified_compiler.tests.direct_ir_validator_tests	12 actual Core validator cases passed
+Lanius.Semantics.WritePlaceTests	write-place regressions: 15 passed
+verified_compiler.tests.direct_ir_catalog_append_outer_tests	actual catalog append outer fixtures: 4 passed
+verified_compiler.tests.direct_ir_catalog_append_tests	actual catalog append public fixtures: success and second-exhaustion retained copy passed

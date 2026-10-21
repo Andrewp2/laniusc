@@ -1,0 +1,19 @@
+module app::main;
+
+import call::left;
+import call::right;
+
+fn abca() -> i32 { return 16; }
+
+fn main() -> i32 {
+    // Equal names in three modules and unequal names in one hash bucket.
+    // Qualification selects the owner; neither load order nor bucket order does.
+    let left: call::left::Choice = call::left::Value(3);
+    let right: call::right::Choice = call::right::Value(5);
+    let first: i32 = match (left) { call::left::Value(value) => value, _ => 0 };
+    let second: i32 = match (right) { call::right::Value(value) => value, _ => 0 };
+    if (first != 3 || second != 5 || call::left::abca() != 1
+        || call::right::abca() != 2 || call::left::adca() != 4
+        || call::right::adca() != 8 || app::main::abca() != 16) { return 0; }
+    return 31;
+}
