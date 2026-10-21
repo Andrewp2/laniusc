@@ -2368,6 +2368,45 @@ fn main() {
 }
 
 #[test]
+fn x86_executes_match_arms_after_comparison_angles() {
+    // An unclosed comparison `<` used to swallow the following arm commas,
+    // so `Shape::Span(` was read as a call; generic argument commas inside
+    // an arm must still not split it.
+    assert_source_exit(
+        "match_arms_after_comparison_angles",
+        r#"
+enum Shape {
+    Dot(i32),
+    Span(i32),
+    Empty,
+}
+
+fn pick<A, B>(first: A, second: B) -> A {
+    return first;
+}
+
+fn if_less(less: bool) -> i32 {
+    if (less) { return 1; }
+    return 2;
+}
+
+fn score(shape: Shape, limit: i32) -> i32 {
+    return match (shape) {
+        Dot(value) -> if_less(value < limit),
+        Shape::Span(width) -> pick<i32, bool>(width, width > limit),
+        Shape::Empty -> 7,
+    };
+}
+
+fn main() -> i32 {
+    return score(Dot(3), 5) * 100 + score(Span(4), 5) * 10 + score(Empty, 5);
+}
+"#,
+        147,
+    );
+}
+
+#[test]
 fn x86_rejects_payload_enum_equality_instead_of_comparing_tags_only() {
     let source = r#"
 enum Kind { Empty, With(i32), }

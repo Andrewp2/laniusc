@@ -165,9 +165,10 @@ image from the extracted definitions also passes the native run (2,368 calls).
 
 Limits found on the way:
 
-- laniusc rejects a `Type::Ctor(...)` match pattern anywhere after a bare `<`
-  comparison in the same file, so the Lanius source writes comparisons with
-  `>` and `>=` only (the extractor emits `<` and `≤`).
+- laniusc rejected a `Type::Ctor(...)` match pattern anywhere after a bare `<`
+  comparison in the same file, which is why the Lanius source writes
+  comparisons with `>` and `>=` (the extractor emits `<` and `≤`). Fixed in the
+  match-pattern pass (`shaders/parser/tokens/match/pattern/arm_comma.slang`).
 - Lanius match arms cannot contain blocks, `if`, or a `match` inside a larger
   expression; helper functions and `// extract: inline` cover this.
 - The Lanius runtime gives every allocation its own page inside a 1 GiB

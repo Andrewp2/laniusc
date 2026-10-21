@@ -6,9 +6,6 @@
 // containers come from the prelude below. Arithmetic on usize goes through
 // plus/minus/times, which panic instead of wrapping, so a run that returns
 // computed exactly what the Lean definitions compute over Nat.
-//
-// Comparisons are written with > and >= only: a bare < earlier in a file makes
-// laniusc reject a later Type::Ctor(...) pattern.
 module mini::compiler;
 import alloc::allocator;
 import core::mem;

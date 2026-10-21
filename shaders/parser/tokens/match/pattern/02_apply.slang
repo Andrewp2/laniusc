@@ -173,19 +173,7 @@ bool enclosing_match_brace_before(uint token_i, out uint open_i)
            brace_semantic_kind[open_i] == TK_MATCH_LBRACE;
 }
 
-bool top_level_match_arm_comma(uint token_i)
-{
-    if (token_words[token_i].kind != TK_COMMA)
-        return false;
-
-    uint open_i;
-    if (!enclosing_match_brace_before(token_i, open_i))
-        return false;
-
-    return global_paren_depth_before_token(token_i) == global_paren_depth_before_token(open_i) &&
-           global_bracket_depth_before_token(token_i) == global_bracket_depth_before_token(open_i) &&
-           global_angle_depth_before_token(token_i) == global_angle_depth_before_token(open_i);
-}
+#include "arm_comma.slang"
 
 uint match_pattern_event_for(uint token_i, uint kind)
 {
