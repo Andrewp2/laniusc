@@ -360,10 +360,25 @@ impl TemplateIdentityMap<'_> {
     }
 
     pub(crate) fn target(&self, target: &mut CheckedGenericTarget) -> Result<()> {
-        if let CheckedGenericTarget::Local { function_start_token, native_symbol, specialization_symbol, .. } = target {
-            *function_start_token = self.token(*function_start_token)?;
-            *native_symbol = self.symbol(*native_symbol)?;
-            *specialization_symbol = self.symbol(*specialization_symbol)?;
+        match target {
+            CheckedGenericTarget::Local { function_start_token, native_symbol, specialization_symbol, .. } => {
+                *function_start_token = self.token(*function_start_token)?;
+                *native_symbol = self.symbol(*native_symbol)?;
+                *specialization_symbol = self.symbol(*specialization_symbol)?;
+            }
+            // A bound member routed through an impl binding to another module
+            // of this unit (methods/09) names it by this unit's symbol.
+            CheckedGenericTarget::Dependency { library_id, unit_id, declaration_index }
+                if self.local([*library_id, *unit_id]) =>
+            {
+                *declaration_index = self.symbol(*declaration_index)?;
+            }
+            CheckedGenericTarget::DependencyMethod { library_id, unit_id, method_symbol }
+                if self.local([*library_id, *unit_id]) =>
+            {
+                *method_symbol = self.symbol(*method_symbol)?;
+            }
+            _ => {}
         }
         Ok(())
     }

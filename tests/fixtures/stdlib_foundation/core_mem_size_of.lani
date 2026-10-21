@@ -1,7 +1,7 @@
 // expect: 0
-// core::mem::size_of<T>() and typed_slice_from_storage<T> from generic
-// bodies, and the slice_stride intrinsic under them. Exits 0; any other code
-// names the failing check.
+// core::mem::size_of<T>(), typed_slice_from_storage<T> and
+// typed_prefix_from_storage<T> from generic bodies, and the slice_stride
+// intrinsic under them. Exits 0; any other code names the failing check.
 module app::main;
 import core::mem;
 import alloc::allocator;
@@ -92,5 +92,28 @@ fn main() -> i32 {
     if (all[2].x != 3 || all[2].y != 4) { return 19; }
     if (inner[0].x != 1 || inner[2].y != 6) { return 20; }
     release(outer);
+
+    // A prefix view sees the first elements of the full view at the same
+    // addresses, for a word type and a packed one.
+    let words: Buf<P> = with_capacity(4);
+    let full: [P] = core::mem::typed_slice_from_storage(words.storage, 4);
+    full[0] = P { x: 11, y: 12 };
+    full[1] = P { x: 13, y: 14 };
+    full[3] = P { x: 15, y: 16 };
+    let head: [P] = core::mem::typed_prefix_from_storage(words.storage, 4, 2);
+    if (head[0].x != 11 || head[1].y != 14) { return 21; }
+    head[1] = P { x: 17, y: 18 };
+    if (full[1].x != 17 || full[3].y != 16) { return 22; }
+    let none: [P] = core::mem::typed_prefix_from_storage(words.storage, 4, 0);
+    if (core::mem::slice_stride(none) != -16) { return 25; }
+    let every: [P] = core::mem::typed_prefix_from_storage(words.storage, 4, 4);
+    if (every[3].x != 15 || every[0].y != 12) { return 23; }
+    release(words);
+    let packed: Buf<i32> = with_capacity(3);
+    packed = push(packed, 8);
+    packed = push(packed, 9);
+    let pair: [i32] = core::mem::typed_prefix_from_storage(packed.storage, 3, 2);
+    if (pair[0] != 8 || pair[1] != 9) { return 24; }
+    release(packed);
     return 0;
 }

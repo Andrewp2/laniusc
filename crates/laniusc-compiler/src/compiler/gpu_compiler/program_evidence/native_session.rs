@@ -1081,11 +1081,9 @@ fn impl_bindings(
     let mut bindings = Vec::new();
     for proof in evidence {
         let Some(implementation) = proof.implementation else { continue };
-        if catalog.implementation_unit(implementation)? == template_unit { continue; }
         let Some(slot) = catalog.predicate_subject_slot(proof.predicate_row)? else { continue };
         let Some(methods) = catalog.implementation_method_targets(implementation)? else { continue };
         for method in methods {
-            if method.target[..2] == template_unit { continue; }
             bindings.push(BodyImplBinding {
                 instance,
                 slot,

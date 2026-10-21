@@ -96,5 +96,5 @@ fn every_public_memory_function_has_a_runtime_case() {
         );
         covered += 1;
     }
-    assert_eq!(covered, 21);
+    assert_eq!(covered, 22);
 }

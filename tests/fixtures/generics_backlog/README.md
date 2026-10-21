@@ -3,23 +3,11 @@ implemented yet. Run with `tools/generics_matrix.py --probes tests/fixtures/gene
 When a probe passes, move it to `tests/fixtures/generics_matrix/`.
 
 Probes:
-- b02: a bound proved through two levels of a generic impl
-  (`total(Twice { inner: Twice { inner: Rect {..} } })`, `impl<T> Area for Twice<T>
-  where T: Area`). The call fails LNC0008 (no matching impl); one level is p30.
-  Two levels pass when the argument is an annotated `let two: Twice<Twice<Rect>>`;
-  only a type inferred from the nested struct literal fails (handed to P7a).
 
 Gaps found while writing the generic core::vec, core::set and core::pair
 (2026-10-15). Each probe returns 42 once the feature works; the diagnostic is
 what the current compiler prints. "Blocks" counts the existing per-type
 stdlib modules that a generic replacement cannot cover until the gap closes.
-- b13: a generic function returning another generic function's imported
-  `core::option::Option<T>` result, `return get(value);`. LNC0006 "type
-  mismatch" at 5:65, from both `check` and a compile, even with the function
-  uncalled. The same shape with a local enum, or with a plain `T` result,
-  passes. Present on 335e31b8; core::vec's form of it checked clean on
-  b8172cdf. core::vec repeats get's
-  body in first and last until it is fixed; then they should call get again.
 - b14 (directory): a self method called through a path on a type imported
   from a local module, `Counter::get(next)` after `import gen::count;`.
   LNC0027 "call resolution failed" ("call does not match a resolved function
@@ -29,20 +17,6 @@ stdlib modules that a generic replacement cannot cover until the gap closes.
   `gen::count::Counter::get(next)`, while a static `Counter::make(40)` works
   locally and imported. Calling a self method through its type's path is
   not an implemented call form (no doc or test claims it). Owner: P13.
-- b15: a bound member call in a generic stdlib body whose type argument is a
-  stdlib type with its impl in that type's own module:
-  `std::vec::is_sorted(Vec<core::wide_i64::WideI64>)` fails with LNC0027
-  "call resolution failed" ("this trait member call has no concrete
-  implementation member to route to", methods/09). Primitive impls in
-  core::cmp and impls in the root module route. All stdlib modules are one
-  unit ([0, 0]), so native_session's impl_bindings skips the impl as local,
-  and the replay has to find it itself. It fails to: with
-  `LANIUS_DECL_ONLY_TEMPLATES=0` and the generic module importing the impl's
-  module, the call routes, and with either missing it does not (measured
-  2026-10-20 against a three-module fake stdlib). The same three modules
-  under a source root (all root unit) route. It blocks sort and search
-  over Vec<WideI64>/Vec<WideU64>, and any generic stdlib container of a
-  stdlib type with a bound, such as a future Vec<String> sort.
 
 Not probes here:
 - An imported call's record result passed straight to another call, e.g.
@@ -66,7 +40,13 @@ Not probes here:
   rejection rather than exit 42 (docs/compiler-generic-types.md, "Recursive
   by-value types").
 
-Passed and moved to the matrix: b00 (a generic impl method called through a
+Passed and moved to the matrix: b02 (a bound proved through two levels of a
+generic impl) is p79 and b13 (returning another generic function's imported
+Option<T>) is p80, both passing by 2026-10-20. b15 (a bounded generic stdlib
+body over a stdlib type whose impl is in its own module, such as
+`std::vec::is_sorted(Vec<WideI64>)`) is p81: impl_bindings now binds
+implementations of the template's own unit too, and template blanking maps
+a dependency target in that unit back to the full template. b00 (a generic impl method called through a
 `T: Area` bound) is p30, with variants p31..p34; the cross-module trait impls
 P10 found (x1..x5) are the directory probes m00..m05. b03 (a generic trait's
 method through `S: Get<T>`, on `Slot<i32>` and `Slot<Rec>`) is p43; the

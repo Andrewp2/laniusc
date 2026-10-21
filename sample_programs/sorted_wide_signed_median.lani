@@ -6,52 +6,49 @@ import core::wide_i64;
 import std::io_byte;
 import std::io_decimal;
 import std::io_line;
-import std::vec_wide_i64;
+import std::vec;
 
 fn main() -> i32 {
     let line: [i32; 20] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    let values: std::vec_wide_i64::VecWideI64 = std::vec_wide_i64::new();
+    let values: std::vec::Vec<core::wide_i64::WideI64> = std::vec::new();
     while (true) {
         let length: i32 = std::io_line::read_stdin_lf_line_into_i32(line, 20);
         if (length == -1) { break; }
         if (length <= 0) {
-            std::vec_wide_i64::destroy(values);
+            std::vec::destroy(values);
             return 2;
         }
         if (!core::wide_i64::can_parse_ascii_decimal(line, length)) {
-            std::vec_wide_i64::destroy(values);
+            std::vec::destroy(values);
             return 3;
         }
         let parsed: core::wide_i64::WideI64 = core::wide_i64::parse_ascii_decimal_or(
             line, length, core::wide_i64::zero());
-        let before: i32 = std::vec_wide_i64::len(values);
-        values = std::vec_wide_i64::try_push(values, parsed);
-        if (std::vec_wide_i64::len(values) != before + 1) {
-            std::vec_wide_i64::destroy(values);
+        let before: i32 = std::vec::len(values);
+        values = std::vec::try_push(values, parsed);
+        if (std::vec::len(values) != before + 1) {
+            std::vec::destroy(values);
             return 4;
         }
     }
-    let count: i32 = std::vec_wide_i64::len(values);
+    let count: i32 = std::vec::len(values);
     if (count == 0) {
-        std::vec_wide_i64::destroy(values);
+        std::vec::destroy(values);
         return 2;
     }
-    if (std::vec_wide_i64::sort_in_place(values) != count) {
-        std::vec_wide_i64::destroy(values);
-        return 4;
-    }
+    values = std::vec::sort(values);
     let middle: i32 = count / 2;
-    let median: core::wide_i64::WideI64 = std::vec_wide_i64::get_or(
+    let median: core::wide_i64::WideI64 = std::vec::get_or(
         values, middle, core::wide_i64::zero());
-    let first: i32 = std::vec_wide_i64::lower_bound(values, median);
-    let after: i32 = std::vec_wide_i64::upper_bound(values, median);
+    let first: i32 = std::vec::lower_bound(values, median);
+    let after: i32 = std::vec::upper_bound(values, median);
     if (std::io_decimal::write_wide_i64(1, median) <= 0 ||
         !std::io_byte::write_stdout_byte(32) ||
         std::io_decimal::write_i32(1, after - first) <= 0 ||
         !std::io_byte::write_stdout_byte(10)) {
-        std::vec_wide_i64::destroy(values);
+        std::vec::destroy(values);
         return 5;
     }
-    std::vec_wide_i64::destroy(values);
+    std::vec::destroy(values);
     return 0;
 }

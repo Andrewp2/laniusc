@@ -198,22 +198,12 @@ pub fn at<T>(value: Vec<T>, index: i32) -> T {
     return items[index];
 }
 
-// first and last repeat get's body: returning get's Option<T> from another
-// generic function fails (tests/fixtures/generics_backlog b13).
 pub fn first<T>(value: Vec<T>) -> core::option::Option<T> {
-    if (value.length == 0) {
-        return core::option::None();
-    }
-    let items: [T] = slots(value);
-    return core::option::Some(items[0]);
+    return get(value, 0);
 }
 
 pub fn last<T>(value: Vec<T>) -> core::option::Option<T> {
-    if (value.length == 0) {
-        return core::option::None();
-    }
-    let items: [T] = slots(value);
-    return core::option::Some(items[value.length - 1]);
+    return get(value, value.length - 1);
 }
 
 pub fn try_set<T>(value: Vec<T>, index: i32, item: T) -> Vec<T> {
