@@ -98,6 +98,10 @@ def compiler_forms():
         form('mov [rbp+disp32], rax', [0x48, 0x89, 0x85], 'disp32', 'mem', base=RBP, width=8),
         form('movzx eax, byte [rax+disp32]', [0x0F, 0xB6, 0x80], 'disp32', 'mem', base=RAX, width=1),
         form('mov [rcx+disp32], al', [0x88, 0x81], 'disp32', 'mem', base=RCX, width=1),
+        form('mov eax, [rax+disp32]', [0x8B, 0x80], 'disp32', 'mem', base=RAX, width=4),
+        form('mov rax, [rax+disp32]', [0x48, 0x8B, 0x80], 'disp32', 'mem', base=RAX, width=8),
+        form('mov [rcx+disp32], eax', [0x89, 0x81], 'disp32', 'mem', base=RCX, width=4),
+        form('mov [rcx+disp32], rax', [0x48, 0x89, 0x81], 'disp32', 'mem', base=RCX, width=8),
         form('mov rcx, rax', [0x48, 0x89, 0xC1]),
         form('mov rax, rcx', [0x48, 0x89, 0xC8]),
         form('mov rcx, r13', [0x4C, 0x89, 0xE9]),
@@ -446,7 +450,9 @@ def encodings : List (String × List UInt8) :=
      ("store", .store 7), ("neg", .neg), ("jmp back", .jmp 0), ("jmp", .jmp 900),
      ("jz", .jz 50), ("call", .call 1 [0, 1, 2] 3 2), ("ret", .ret [0, 1]),
      ("bump 0", .bump 0), ("bump 3", .bump 3), ("bump 31", .bump 31),
-     ("loadAt", .loadAt), ("storeAt", .storeAt 4)]
+     ("loadAt", .loadAt), ("storeAt", .storeAt 4),
+     ("loadWordAt m32", .loadWordAt .m32), ("loadWordAt m64", .loadWordAt .m64),
+     ("storeWordAt m32", .storeWordAt .m32 4), ("storeWordAt m64", .storeWordAt .m64 4)]
   (ops ++ cmps ++ rest).map (fun (n, i) => (n, Instr.encode i place 100)) ++
     [("prologue", prologue 5), ("prologue big", prologue 1048576), ("epilogue", epilogue)]
 
