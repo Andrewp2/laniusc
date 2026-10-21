@@ -1,8 +1,11 @@
 import Lanius.Mini.Semantics
 
-/-! The abstract target: an accumulator (eax) and frame slots. Each `Instr` is
-one fixed byte sequence of the real backend (`Lanius.Mini.Bytes`), so the x86
-proof is one lemma per constructor and this level carries the compiler logic. -/
+/-! The abstract target: an accumulator (eax), frame slots, and a program
+counter that is a byte offset into the function's code. Each `Instr` is one
+fixed byte sequence of the real backend (`Lanius.Mini.Bytes`) whose length is
+`Instr.size`, so the x86 proof is one lemma per constructor and this level
+carries the compiler logic. Jump targets are offsets from the function's
+first instruction. A call's effect is a parameter: the callee's behavior. -/
 
 namespace Lanius.Mini
 
@@ -17,54 +20,180 @@ inductive Instr where
   | neg
   /-- `mov ecx, eax; mov eax, [slot]; op eax, ecx`: eax := slot `op` eax -/
   | op (operation : BinOp) (slot : Nat)
+  /-- `mov ecx, eax; mov eax, [slot]; cmp eax, ecx; setcc al; movzx eax, al` -/
+  | cmp (operation : CmpOp) (slot : Nat)
+  /-- `jmp rel32` -/
+  | jmp (target : Nat)
+  /-- `test eax, eax; jz rel32` -/
+  | jz (target : Nat)
+  /-- Copy the argument slots into the callee's parameter slots, then `call rel32`. -/
+  | call (callee : Nat) (args : List Nat)
   /-- frame epilogue and `ret`, returning eax -/
   | ret
   deriving DecidableEq, Repr
 
+/-- `imul` is one byte longer than the other operators. -/
+def BinOp.size : BinOp → Nat
+  | .mul => 11
+  | .add | .sub | .and | .or | .xor => 10
+
+def Instr.size : Instr → Nat
+  | .imm _ => 5
+  | .load _ | .store _ => 6
+  | .neg => 2
+  | .op operation _ => operation.size
+  | .cmp _ _ => 16
+  | .jmp _ => 5
+  | .jz _ => 8
+  | .call _ args => 12 * args.length + 5
+  | .ret => 5
+
+theorem Instr.size_pos (i : Instr) : 0 < i.size := by
+  cases i with
+  | op operation _ => cases operation <;> simp [Instr.size, BinOp.size]
+  | _ => simp [Instr.size]
+
+def codeSize : List Instr → Nat
+  | [] => 0
+  | i :: rest => i.size + codeSize rest
+
+theorem codeSize_append (first second : List Instr) :
+    codeSize (first ++ second) = codeSize first + codeSize second := by
+  induction first with
+  | nil => simp [codeSize]
+  | cons i rest ih => simp only [List.cons_append, codeSize, ih]; omega
+
+/-- The instruction that starts at byte offset `pc`. -/
+def fetch : List Instr → Nat → Option Instr
+  | [], _ => none
+  | i :: rest, pc => if pc = 0 then some i else if pc < i.size then none else fetch rest (pc - i.size)
+
+theorem fetch_append (first second : List Instr) (pc : Nat) :
+    fetch (first ++ second) (codeSize first + pc) = fetch second pc := by
+  induction first with
+  | nil => simp [codeSize]
+  | cons i rest ih =>
+    have positive := i.size_pos
+    simp only [List.cons_append, fetch, codeSize]
+    rw [if_neg (by omega), if_neg (by omega), show i.size + codeSize rest + pc - i.size =
+      codeSize rest + pc by omega]
+    exact ih
+
+/-- `block` is laid out in `code` starting at byte offset `pos`. -/
+def Block (code : List Instr) (pos : Nat) (block : List Instr) : Prop :=
+  ∃ pre post, code = pre ++ block ++ post ∧ codeSize pre = pos
+
+theorem Block.left (placed : Block code pos (first ++ second)) : Block code pos first := by
+  obtain ⟨pre, post, rfl, size⟩ := placed
+  exact ⟨pre, second ++ post, by simp, size⟩
+
+theorem Block.right (placed : Block code pos (first ++ second)) :
+    Block code (pos + codeSize first) second := by
+  obtain ⟨pre, post, rfl, size⟩ := placed
+  exact ⟨pre ++ first, post, by simp, by rw [codeSize_append, size]⟩
+
+theorem Block.fetch (placed : Block code pos [i]) : Lanius.Mini.fetch code pos = some i := by
+  obtain ⟨pre, post, rfl, rfl⟩ := placed
+  rw [List.append_assoc, show codeSize pre = codeSize pre + 0 from rfl, fetch_append]
+  rfl
+
 structure Machine where
+  pc : Nat
   acc : BitVec 32
   slots : Nat → BitVec 32
 
 def Machine.store (m : Machine) (slot : Nat) : Machine :=
   { m with slots := fun other => if other = slot then m.acc else m.slots other }
 
-/-- Effect of a non-returning instruction; `ret` is handled by `Instr.run`. -/
-def Instr.step : Instr → Machine → Machine
+def readSlots (slots : Nat → BitVec 32) : List Nat → List (BitVec 32)
+  | [] => []
+  | slot :: rest => slots slot :: readSlots slots rest
+
+/-- Instructions that fall through to the next one. -/
+def Instr.straight : Instr → Bool
+  | .imm _ | .load _ | .store _ | .neg | .op _ _ | .cmp _ _ => true
+  | .jmp _ | .jz _ | .call _ _ | .ret => false
+
+/-- Effect on the accumulator and slots of a straight-line instruction. -/
+def Instr.update : Instr → Machine → Machine
   | .imm value, m => { m with acc := value }
   | .load slot, m => { m with acc := m.slots slot }
   | .store slot, m => m.store slot
   | .neg, m => { m with acc := -m.acc }
   | .op operation slot, m => { m with acc := operation.apply (m.slots slot) m.acc }
-  | .ret, m => m
+  | .cmp operation slot, m => { m with acc := if operation.holds (m.slots slot) m.acc then 1 else 0 }
+  | .jmp _, m | .jz _, m | .call _ _, m | .ret, m => m
 
-/-- Straight-line execution of code that contains no `ret`. -/
-def Instr.exec (code : List Instr) (m : Machine) : Machine := code.foldl (fun m i => i.step m) m
+def Instr.step (i : Instr) (m : Machine) : Machine := { i.update m with pc := m.pc + i.size }
 
-/-- The value the code returns at its first `ret`, or `none` if it has none. -/
-def Instr.run : List Instr → Machine → Option (BitVec 32)
-  | [], _ => none
-  | .ret :: _, m => some m.acc
-  | i :: rest, m => Instr.run rest (i.step m)
+/-- Straight-line execution of a block. -/
+def Instr.exec : List Instr → Machine → Machine
+  | [], m => m
+  | i :: rest, m => Instr.exec rest (i.step m)
 
-theorem Instr.run_cons (i : Instr) (rest : List Instr) (m : Machine) (notRet : i ≠ .ret) :
-    Instr.run (i :: rest) m = Instr.run rest (i.step m) := by
-  cases i <;> first | exact absurd rfl notRet | rfl
+/-- What a call may return: `calls callee args value`. -/
+abbrev Calls := Nat → List (BitVec 32) → BitVec 32 → Prop
 
-theorem Instr.exec_singleton (i : Instr) (m : Machine) : Instr.exec [i] m = i.step m := rfl
+inductive Step (calls : Calls) (code : List Instr) : Machine → Machine → Prop where
+  | straight : fetch code m.pc = some i → i.straight = true → Step calls code m (i.step m)
+  | jmp : fetch code m.pc = some (.jmp target) → Step calls code m { m with pc := target }
+  | jzTaken : fetch code m.pc = some (.jz target) → m.acc = 0 →
+      Step calls code m { m with pc := target }
+  | jzNot : fetch code m.pc = some (.jz target) → m.acc ≠ 0 →
+      Step calls code m { m with pc := m.pc + (Instr.jz target).size }
+  | call : fetch code m.pc = some (.call callee args) → calls callee (readSlots m.slots args) value →
+      Step calls code m { m with pc := m.pc + (Instr.call callee args).size, acc := value }
+
+inductive Star (calls : Calls) (code : List Instr) : Machine → Machine → Prop where
+  | refl (m : Machine) : Star calls code m m
+  | step : Step calls code m middle → Star calls code middle last → Star calls code m last
+
+theorem Star.trans (first : Star calls code m middle) (second : Star calls code middle last) :
+    Star calls code m last := by
+  induction first with
+  | refl => exact second
+  | step head _ ih => exact .step head (ih second)
+
+theorem Star.single (step : Step calls code m next) : Star calls code m next := .step step (.refl _)
+
+theorem Step.mono (sub : ∀ callee args value, calls callee args value → calls' callee args value)
+    (step : Step calls code m next) : Step calls' code m next := by
+  cases step with
+  | straight fetched isStraight => exact .straight fetched isStraight
+  | jmp fetched => exact .jmp fetched
+  | jzTaken fetched zero => exact .jzTaken fetched zero
+  | jzNot fetched nonzero => exact .jzNot fetched nonzero
+  | call fetched returns => exact .call fetched (sub _ _ _ returns)
+
+theorem Star.mono (sub : ∀ callee args value, calls callee args value → calls' callee args value)
+    (run : Star calls code m last) : Star calls' code m last := by
+  induction run with
+  | refl => exact .refl _
+  | step head _ ih => exact .step (head.mono sub) ih
+
+theorem Instr.exec_pc (block : List Instr) (m : Machine) :
+    (Instr.exec block m).pc = m.pc + codeSize block := by
+  induction block generalizing m with
+  | nil => simp [Instr.exec, codeSize]
+  | cons i rest ih => simp only [Instr.exec, ih, Instr.step, codeSize]; omega
 
 theorem Instr.exec_append (first second : List Instr) (m : Machine) :
     Instr.exec (first ++ second) m = Instr.exec second (Instr.exec first m) := by
-  simp [Instr.exec, List.foldl_append]
-
-/-- Running code with no `ret` prefix runs the rest from the prefix's result. -/
-theorem Instr.run_append (first second : List Instr) (m : Machine)
-    (noRet : Instr.ret ∉ first) :
-    Instr.run (first ++ second) m = Instr.run second (Instr.exec first m) := by
   induction first generalizing m with
   | nil => rfl
+  | cons i rest ih => exact ih _
+
+/-- A placed straight-line block runs to its end. -/
+theorem Star.straight (block : List Instr) (placed : Block code m.pc block)
+    (allStraight : block.all Instr.straight = true) : Star calls code m (Instr.exec block m) := by
+  induction block generalizing m with
+  | nil => exact .refl _
   | cons i rest ih =>
-    have notRet : i ≠ .ret := fun same => noRet (same ▸ List.mem_cons_self ..)
-    have restNoRet : Instr.ret ∉ rest := fun mem => noRet (List.mem_cons_of_mem _ mem)
-    cases i <;> first | exact absurd rfl notRet | exact ih _ restNoRet
+    simp only [List.all_cons, Bool.and_eq_true] at allStraight
+    have here : Block code m.pc [i] := (show Block code m.pc ([i] ++ rest) from placed).left
+    have next : Block code (i.step m).pc rest := by
+      have := (show Block code m.pc ([i] ++ rest) from placed).right
+      simpa [Instr.step, codeSize] using this
+    exact .step (.straight here.fetch allStraight.1) (ih next allStraight.2)
 
 end Lanius.Mini

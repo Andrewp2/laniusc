@@ -23,17 +23,23 @@ size relative to the compiler, and Lean check time.
 
 ## Top-level theorem
 
-For a function `f` of the source language, an argument environment `args` and
-an x86 state `s` about to execute a near call target:
+`Lanius.Mini.compileProgram_correct` in `Lanius/Mini/Correct.lean`. For a
+program `prog`, function `f`, arguments `args` and an x86 state `s` about to
+execute `f`'s entry:
 
 ```text
-compile f = some code
-∧ run f args = some v                    -- the source function returns v
-∧ code is loaded at s.rip, and the frame below s.rsp is disjoint from it
+compileProgram prog = some binary
+∧ prog.Returns depth f args v       -- f returns v, calls nested < depth deep
+∧ binary.image is loaded at imageBase, s.rip is f's entry
+∧ argument k is at rsp - (8k + 16)  -- just below the return address
+∧ window ≥ binary.stackNeed depth, and the image is apart from the
+  window bytes below rsp
 → ∃ n s', Steps n s s'
     ∧ s'.rip = the return address at [s.rsp]
     ∧ low 32 bits of s'.rax = v
-    ∧ s'.rsp = s.rsp + 8 and rbp is restored
+    ∧ s'.rsp = s.rsp + 8, rbp is restored
+    ∧ every register but rax, rcx, r11 is unchanged
+    ∧ no memory outside the window changed
 ```
 
 This is forward simulation of terminating runs. The x86 model is deterministic
@@ -44,14 +50,17 @@ Divergence, traps and the ELF startup/exit wrapper come later; the existing
 ## Passes
 
 1. `compileExpr` (expressions into eax, temporaries in frame slots) and
-   `compileStmt` (statements, then control flow with labels).
-2. `assemble` (symbolic labels to rel32 displacements, then bytes through the
-   existing encoders in `X86/Machine/*Encoding.lean`).
+   `compileStmt` (statements; jump targets are byte offsets in the body, since
+   every abstract instruction has a fixed size).
+2. `Instr.encode` (offsets to rel32 displacements, then bytes through the
+   existing encoders in `X86/Machine/*Encoding.lean`) and `compileProgram`
+   (functions back to back, calls resolved to entry offsets).
 3. Prologue and epilogue: the existing `framePrologueBytes` and epilogue.
 
-Simulation invariant (one relation for every pass): `rbp`/`rsp` are the frame's,
-each local `x` is `read32` of frame slot `x`, temporaries live in slots above the
-locals, the code bytes are untouched, and memory outside the frame is unchanged.
+Simulation invariant (one relation for every activation): `rip` is the body
+base plus the abstract pc, `rbp`/`rsp` are the frame's, each slot `x` is
+`read32` of frame slot `x`, and memory outside the activation's stack window is
+what it was at entry, so the code bytes are untouched.
 
 ## Milestones
 
@@ -66,34 +75,46 @@ Each milestone records proof lines, compiler lines and fresh check time.
 
 ## Status
 
-Milestone 1 is proved: `Lanius.Mini.compile_correct` in `Lanius/Mini/Correct.lean`,
-with no `sorry` and only the standard axioms (`propext`, `Classical.choice`,
-`Quot.sound`). Its hypotheses, from the caller's side of a near call:
+Milestones 1–3 are proved, with no `sorry` and only the standard axioms
+(`propext`, `Classical.choice`, `Quot.sound`). The source language has i32
+arithmetic, signed comparisons producing 1/0, `if`, `while`, `return`, and
+functions with parameters and direct (also recursive) calls.
 
-- `compileFunc func = some code` and `func.run args = some value`;
-- `code.image` (prologue, then the body's bytes) is loaded at `rip`;
-- the image is apart from the stack window from the deepest frame slot up to the
-  return address at `rsp` (`StackApart`);
-- local `k` holds `args k` at `rsp - (8k + 16)`, where the prologue puts slot `k`.
+The proof has two layers.
 
-Conclusion: some run of `Steps` reaches a state whose `rip` is the return address,
-`rsp` is the entry `rsp + 8`, `rbp` is restored, `eax` is `value`, and every
-register except rax, rcx, rsp, rbp and r11 is unchanged.
+- Compiler logic: `compileStmt_correct` / `compileFunc_correct` prove the compiler
+  against an abstract machine (accumulator, frame slots, byte-offset pc), by
+  induction on the source derivation. A call's effect is a parameter of the
+  abstract machine: whatever the callee is known to return.
+- Bytes: one x86 lemma per abstract instruction (`Simulation`). A call copies
+  its arguments to just below the return address it pushes, which is where the
+  callee's prologue puts its parameter slots, and then uses the callee's
+  `Contract`. `compiled_contract` proves every function's contract by strong
+  induction on call depth: an activation that nests calls fewer than `d` deep
+  uses at most `(d + 1) * frameNeed` stack bytes and changes nothing else.
 
-| file | lines | role |
-|---|---:|---|
-| `Syntax`, `Semantics` | 64 | source language and its semantics |
-| `Asm` | 70 | abstract machine (accumulator + frame slots) |
-| `Compile` | 69 | the compiler: expressions, statements, frame size |
-| `Bytes` | 38 | one fixed byte sequence per abstract instruction |
-| `CompileCorrect` | 150 | compiler against the abstract machine, by induction on syntax |
-| `Frame` | 64 | slot address arithmetic (`bv_omega`) |
-| `Simulation` | 275 | one x86 lemma per abstract instruction, then the body |
-| `Correct` | 121 | prologue, body, epilogue: the top-level theorem |
+| file | lines | check (s) | role |
+|---|---:|---:|---|
+| `Syntax`, `Semantics` | 144 | 0.8 | source language and big-step semantics with call depth |
+| `Asm` | 199 | 0.8 | abstract machine, byte-offset placement, `Star` runs |
+| `Compile` | 134 | 0.7 | the compiler: expressions, statements, calls, frames |
+| `CompileCorrect` | 428 | 1.1 | compiler against the abstract machine |
+| `Fits` | 176 | 0.9 | static facts: slots in frame, targets in body, callees exist |
+| `Bytes` | 285 | 1.2 | encoder with rel32 jumps and calls, program image layout |
+| `Flags` | 100 | 1.3 | each comparison's condition code after `cmp` |
+| `Frame` | 128 | 1.2 | stack windows and address depths (`bv_omega`) |
+| `Simulation` | 840 | 3.8 | x86 lemma per instruction, the call macro, body simulation |
+| `Correct` | 281 | 1.6 | layout, prologue, function contract, top-level theorem |
 
-Every file checks in about a second, most of it import loading
-(`lake build LaniusMini`). The pass proof (`CompileCorrect`) is about 2x the
-compiler it covers. `Frame` and `Simulation` are per-instruction, not
-per-compiler-feature, so they grow with the instruction set, not with the
-compiler. A sample function's image was also run natively; it returned the same
-value as `Func.run`.
+Check times are `lake env lean` per file on the laptop, about 0.4 s of each is
+import loading. The compiler (`Compile`, `Bytes` definitions) is about 250
+lines; the proofs are about 2,200.
+
+A test program (iterative factorial, recursive Fibonacci, a function mixing all
+six comparisons with a call, and gcd with `if` inside `while`) was compiled by
+`#eval compileProgram` and its image run natively through a small stub that
+puts SysV arguments where the convention expects them: 2,368 calls, all equal
+to a Python reference with i32 wrapping.
+
+Next: milestone 4, the same compiler written in Lanius and the shallow
+extractor that produces these Lean definitions from it.
