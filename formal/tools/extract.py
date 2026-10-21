@@ -8,10 +8,12 @@ The accepted subset is small enough that each construct has one obvious Lean
 meaning, and everything else is rejected:
 
   types      usize -> Nat, i32 and u32 -> BitVec 32, u8 -> UInt8, bool -> Bool,
-             std::vec::Vec<T> -> List T, core::option::Option<T> -> Option T,
-             Box<T> -> T; user enums -> inductive, user structs -> structure
-  functions  fn and impl methods (self first) -> def, recursion as written
-  bodies     let, if/else, return; match on an enum, an Option, or view(v)
+             the prelude's List<T> -> List T (Nil is [], Cons(x, rest) is
+             x :: rest), core::option::Option<T> -> Option T, Box<T> -> T;
+             user enums -> inductive, user structs -> structure
+  functions  fn and impl methods (self first) -> def, recursion as written;
+             generic functions only as the list operations in SPEC_FNS
+  bodies     let, if/else, return; match on an enum, an Option, or a List
   arithmetic i32/u32 + - * & | ^ wrap, like BitVec; u32 >> by a constant;
              usize only / and comparisons, since + - * go through the prelude's
              panicking plus/minus/times, which equal Nat + - * whenever they
@@ -20,7 +22,10 @@ meaning, and everything else is rejected:
 
 The prelude section (between `// extract: prelude begin` and `end`) is not
 extracted. Every item in it must be in PRELUDE below with exactly the listed
-signature; calls to it become the listed Lean term. A function marked
+signature; calls to it become the listed Lean term. A list operation in
+SPEC_FNS is extracted as Lists.<name> followed by a theorem, checked by Lean,
+that it equals its Lean list function; calls to it from other code are written
+as that function. A function marked
 `// extract: inline` is not emitted: each call becomes `let` bindings of its
 arguments followed by its body (calls to it must not be recursive).
 """
@@ -33,14 +38,6 @@ import sys
 PRELUDE_FNS = {
     'boxed': ('fn boxed<T>(value: T) -> Box<T>', 'arg'),
     'unbox': ('fn unbox<T>(value: Box<T>) -> T', 'arg'),
-    'view': ('fn view<T>(items: Vec<T>) -> View<T>', 'view'),
-    'empty': ('fn empty<T>() -> Vec<T>', 'nil'),
-    'single': ('fn single<T>(item: T) -> Vec<T>', 'single'),
-    'concat': ('fn concat<T>(first: Vec<T>, second: Vec<T>) -> Vec<T>', '++'),
-    'cons': ('fn cons<T>(item: T, rest: Vec<T>) -> Vec<T>', '::'),
-    'length': ('fn length<T>(items: Vec<T>) -> usize', 'length'),
-    'get': ('fn get<T>(items: Vec<T>, index: usize) -> Option<T>', 'get'),
-    'get_or': ('fn get_or<T>(items: Vec<T>, index: usize, fallback: T) -> T', 'getD'),
     'plus': ('fn plus(a: usize, b: usize) -> usize', '+'),
     'times': ('fn times(a: usize, b: usize) -> usize', '*'),
     'minus': ('fn minus(a: usize, b: usize) -> usize', '-'),
@@ -48,7 +45,32 @@ PRELUDE_FNS = {
 }
 PRELUDE_TYPES = {
     'Box': 'struct Box<T> { storage: ptr }',
-    'View': 'enum View<T> { Empty, Cons(T, Vec<T>) }',
+    'List': 'enum List<T> { Nil, Cons(T, Box<List<T>>) }',
+}
+
+# List operations: Lanius signature, how a call from other code is written in
+# Lean, and the theorem (statement, proof) checked after the extracted
+# definition. The statement is exactly what that call rewriting assumes.
+SPEC_FNS = {
+    'empty': ('fn empty<T>() -> List<T>', 'nil',
+              '{T : Type} : (Lists.empty : List T) = []', 'rfl'),
+    'single': ('fn single<T>(item: T) -> List<T>', 'single',
+               '{T : Type} (item : T) : Lists.single item = [item]', 'rfl'),
+    'cons': ('fn cons<T>(item: T, rest: List<T>) -> List<T>', '::',
+             '{T : Type} (item : T) (rest : List T) : Lists.cons item rest = item :: rest', 'rfl'),
+    'concat': ('fn concat<T>(first: List<T>, second: List<T>) -> List<T>', '++',
+               '{T : Type} (first second : List T) : Lists.concat first second = first ++ second',
+               'by induction first <;> simp_all [Lists.concat]'),
+    'length': ('fn length<T>(items: List<T>) -> usize', 'length',
+               '{T : Type} (items : List T) : Lists.length items = items.length',
+               'by induction items <;> simp_all [Lists.length]'),
+    'get': ('fn get<T>(items: List<T>, index: usize) -> Option<T>', 'get',
+            '{T : Type} (items : List T) (index : Nat) : Lists.get items index = items[index]?',
+            'by induction items generalizing index <;> cases index <;> simp_all [Lists.get]'),
+    'get_or': ('fn get_or<T>(items: List<T>, index: usize, fallback: T) -> T', 'getD',
+               '{T : Type} (items : List T) (index : Nat) (fallback : T) :\n    '
+               'Lists.getOr items index fallback = items.getD index fallback',
+               'by induction items generalizing index <;> cases index <;> simp_all [Lists.getOr]'),
 }
 
 LEAN_KEYWORDS = set('''at by do else end fun from have if import in instance let match namespace open
@@ -143,7 +165,7 @@ class Ty:
 
 
 USIZE, I32, U32, U8, BOOL = Ty('usize'), Ty('i32'), Ty('u32'), Ty('u8'), Ty('bool')
-TYPE_PATHS = {'std::vec::Vec': 'Vec', 'core::option::Option': 'Option'}
+TYPE_PATHS = {'core::option::Option': 'Option'}
 
 
 def lean_type(t):
@@ -151,7 +173,7 @@ def lean_type(t):
     simple = {'usize': 'Nat', 'i32': 'BitVec 32', 'u32': 'BitVec 32', 'u8': 'UInt8', 'bool': 'Bool'}
     if t.name in simple:
         return simple[t.name]
-    if t.name == 'Vec':
+    if t.name == 'List':
         return f'List {atom_type(t.args[0])}'
     if t.name == 'Option':
         return f'Option {atom_type(t.args[0])}'
@@ -596,8 +618,13 @@ class Extractor:
                 for ctor, _, _ in item['ctors']:
                     self.ctors.setdefault(ctor, []).append(item['name'])
             elif item['kind'] == 'fn':
-                if item['tparams']:
-                    fail(f'{item["name"]}: generic functions are only allowed in the prelude')
+                if item['name'] in SPEC_FNS:
+                    if signature(item) != SPEC_FNS[item['name']][0]:
+                        fail(f'{item["name"]}: signature differs from extract.py SPEC_FNS: {signature(item)}')
+                    if item['inline']:
+                        fail(f'{item["name"]}: list operations cannot be inline')
+                elif item['tparams']:
+                    fail(f'{item["name"]}: generic functions are only the list operations in SPEC_FNS')
                 if item['name'] in PRELUDE_FNS or item['name'] in self.fns:
                     fail(f'{item["name"]} is defined twice')
                 self.fns[item['name']] = item
@@ -610,6 +637,10 @@ class Extractor:
             self.order.append(item)
         if not self.prelude_seen:
             fail('no prelude section')
+        missing = sorted(set(SPEC_FNS) - set(self.fns))
+        if missing:
+            fail(f'list operations missing: {missing}')
+        self.current = None
 
     def check_prelude(self, prelude):
         self.prelude_seen = True
@@ -643,7 +674,11 @@ class Extractor:
             elif item['kind'] == 'enum':
                 out.append(self.emit_enum(item))
             elif item['kind'] == 'fn':
-                if not item['inline']:
+                if item['name'] in SPEC_FNS:
+                    out.append(self.emit_fn(item, f'Lists.{camel(item["name"])}'))
+                    _, _, statement, proof = SPEC_FNS[item['name']]
+                    out.append(f'theorem Lists.{camel(item["name"])}_spec {statement} :=\n  {proof}\n')
+                elif not item['inline']:
                     out.append(self.emit_fn(item, camel(item['name'])))
             elif item['kind'] == 'impl':
                 for f in item['fns']:
@@ -672,12 +707,14 @@ class Extractor:
         if f['ret'] is None:
             fail(f'{f["name"]} returns nothing')
         env = {}
-        binders = []
+        binders = [f'{{{t} : Type}}' for t in f['tparams']]
+        self.current = f
         for name, ty in f['params']:
             lname = camel(name)
             env[name] = (lname, ty)
             binders.append(f'({lname} : {lean_type(ty)})')
         body = self.block(f['body'], env, f['ret'])
+        self.current = None
         head = ' '.join([f'def {lean_name}'] + binders) + f' : {lean_type(f["ret"])} :='
         return '\n'.join(doc(f['doc'], '')) + ('\n' if f['doc'] else '') + head + '\n  ' + indent_tail(body[0], 2) + '\n'
 
@@ -743,6 +780,10 @@ class Extractor:
             if len(path) == 1 and path[0] in env:
                 lname, ty = env[path[0]]
                 return (lname, ATOM), ty
+            if len(path) == 1 and path[0] == 'Nil':
+                if expected is None or expected.strip_box().name != 'List':
+                    fail('Nil needs a known List type', e[-1])
+                return ('[]', ATOM), expected.strip_box()
             if len(path) == 1 and path[0] == 'None':
                 if expected is None or expected.name != 'Option':
                     fail('None needs a known Option type', e[-1])
@@ -826,8 +867,23 @@ class Extractor:
             inner = expected.args[0] if expected is not None and expected.name == 'Option' else None
             term, ty = self.infer(args[0], env, inner)
             return app('some', [term]), Ty('Option', [ty])
+        if name == 'Cons':
+            if len(args) != 2:
+                fail('Cons takes two arguments', t)
+            lst = expected.strip_box() if expected is not None and expected.strip_box().name == 'List' else None
+            item, ity = self.infer(args[0], env, lst.args[0] if lst else None)
+            lst = lst or Ty('List', [ity])
+            rest = self.expr(args[1], env, Ty('Box', [lst]))
+            return lean_infix('::', item, rest), lst
         if name in PRELUDE_FNS:
             return self.prelude_call(name, args, env, expected, t)
+        if name in SPEC_FNS and self.current is not None and self.current['name'] in SPEC_FNS:
+            if name != self.current['name']:
+                fail('a list operation may call only itself', t)
+            f = self.fns[name]
+            return app(f'Lists.{camel(name)}', self.args(f['params'], args, env, t)), f['ret']
+        if name in SPEC_FNS:
+            return self.spec_call(name, args, env, expected, t)
         if name in self.fns:
             f = self.fns[name]
             if f['inline']:
@@ -839,12 +895,17 @@ class Extractor:
         return app(f'{enum}.{lower_first(ctor)}', terms), Ty(enum)
 
     def prelude_call(self, name, args, env, expected, t):
-        rule = PRELUDE_FNS[name][1]
-        arity = {'arg': 1, 'view': 1, 'nil': 0, 'single': 1, '++': 2, '::': 2, 'length': 1, 'get': 2,
+        return self.rule_call(name, PRELUDE_FNS[name][1], args, env, expected, t)
+
+    def spec_call(self, name, args, env, expected, t):
+        return self.rule_call(name, SPEC_FNS[name][1], args, env, expected, t)
+
+    def rule_call(self, name, rule, args, env, expected, t):
+        arity = {'arg': 1, 'nil': 0, 'single': 1, '++': 2, '::': 2, 'length': 1, 'get': 2,
                  'getD': 3, '+': 2, '*': 2, '-': 2, 'max': 2}[rule]
         if len(args) != arity:
             fail(f'{name} takes {arity} arguments', t)
-        elem = expected.args[0] if expected is not None and expected.name in ('Vec', 'Box') else None
+        elem = expected.args[0] if expected is not None and expected.name in ('List', 'Box') else None
         if rule == 'arg':
             if name == 'boxed':
                 term, ty = self.infer(args[0], env, elem)
@@ -853,38 +914,36 @@ class Extractor:
             if ty.name != 'Box':
                 fail('unbox needs a Box', t)
             return term, ty.args[0]
-        if rule == 'view':
-            fail('view(v) may only be matched on', t)
         if rule == 'nil':
-            if expected is None or expected.name != 'Vec':
-                fail('empty() needs a known Vec type', t)
+            if expected is None or expected.name != 'List':
+                fail('empty() needs a known List type', t)
             return ('[]', ATOM), expected
         if rule == 'single':
             term, ty = self.infer(args[0], env, elem)
-            return (f'[{paren(term, 1)}]', ATOM), Ty('Vec', [ty])
+            return (f'[{paren(term, 1)}]', ATOM), Ty('List', [ty])
         if rule == '++':
             left, lty = self.infer(args[0], env, expected)
             right = self.expr(args[1], env, lty)
-            if lty.name != 'Vec':
-                fail('concat needs vectors', t)
+            if lty.name != 'List':
+                fail('concat needs lists', t)
             return lean_infix('++', left, right), lty
         if rule == '::':
             rest, rty = self.infer(args[1], env, expected)
-            if rty.name != 'Vec':
-                fail('cons needs a vector', t)
+            if rty.name != 'List':
+                fail('cons needs a list', t)
             item = self.expr(args[0], env, rty.args[0])
             return lean_infix('::', item, rest), rty
         if rule == 'length':
             term, ty = self.infer(args[0], env, None)
-            if ty.name != 'Vec':
-                fail('length needs a vector', t)
+            if ty.name != 'List':
+                fail('length needs a list', t)
             return (f'{paren(term, ATOM)}.length', ATOM), USIZE
         if rule == 'get':
-            term, ty = self.infer(args[0], env, Ty('Vec', [expected.args[0]]) if expected is not None else None)
+            term, ty = self.infer(args[0], env, Ty('List', [expected.args[0]]) if expected is not None else None)
             index = self.expr(args[1], env, USIZE)
             return (f'{paren(term, ATOM)}[{index[0]}]?', ATOM), Ty('Option', [ty.args[0]])
         if rule == 'getD':
-            term, ty = self.infer(args[0], env, Ty('Vec', [expected]) if expected is not None else None)
+            term, ty = self.infer(args[0], env, Ty('List', [expected]) if expected is not None else None)
             index = self.expr(args[1], env, USIZE)
             fallback = self.expr(args[2], env, ty.args[0])
             return (f'{paren(term, ATOM)}.getD {paren(index, ATOM)} {paren(fallback, ATOM)}', APP), ty.args[0]
@@ -976,21 +1035,16 @@ class Extractor:
 
     def match(self, e, env, expected):
         _, scrutinee, arms, t = e
-        if scrutinee[0] == 'call' and scrutinee[1] == ['view']:
-            if len(scrutinee[2]) != 1:
-                fail('view takes one argument', t)
-            term, ty = self.infer(scrutinee[2][0], env, None)
-            if ty.name != 'Vec':
-                fail('view needs a vector', t)
-            shapes = {'Empty': 0, 'Cons': 2}
-            def pattern(ctor, binders):
-                return '[]' if ctor == 'Empty' else f'{binders[0]} :: {binders[1]}'
-            def binder_types(ctor):
-                return [] if ctor == 'Empty' else [ty.args[0], ty]
-        else:
-            term, ty = self.infer(scrutinee, env, None)
-            ty = ty.strip_box()
-            if ty.name == 'Option':
+        term, ty = self.infer(scrutinee, env, None)
+        ty = ty.strip_box()
+        if True:
+            if ty.name == 'List':
+                shapes = {'Nil': 0, 'Cons': 2}
+                def pattern(ctor, binders):
+                    return '[]' if ctor == 'Nil' else f'{binders[0]} :: {binders[1]}'
+                def binder_types(ctor):
+                    return [] if ctor == 'Nil' else [ty.args[0], Ty('Box', [ty])]
+            elif ty.name == 'Option':
                 shapes = {'Some': 1, 'None': 0}
                 def pattern(ctor, binders):
                     return 'none' if ctor == 'None' else f'some {binders[0]}'
@@ -1063,10 +1117,11 @@ def doc(comments, pad):
 HEADER = '''/-! Generated by formal/tools/extract.py from {source}. Do not edit.
 
 Shallow extraction: each Lanius function is the Lean definition of the same
-name (snake_case becomes camelCase, methods become `Type.method`). `usize` is
-`Nat`, `i32` is `BitVec 32`, `u8` is `UInt8`, `Vec<T>` is `List T`, `Box<T>`
-is `T`. The prelude's `plus`/`minus`/`times` panic instead of wrapping, so
-they are `+`/`-`/`*` on `Nat` for every run that returns. -/
+name (snake_case becomes camelCase, methods become `Type.method`, list
+operations become `Lists.name` with a spec theorem). `usize` is `Nat`, `i32` is
+`BitVec 32`, `u8` is `UInt8`, `List<T>` is `List T`, `Box<T>` is `T`. The
+prelude's `plus`/`minus`/`times` panic instead of wrapping, so they are
+`+`/`-`/`*` on `Nat` for every run that returns. -/
 
 set_option linter.unusedVariables false
 

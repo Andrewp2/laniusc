@@ -8,13 +8,13 @@ size relative to the compiler, and Lean check time.
 
 ## Rules
 
-- The compiler is pure: enums, structs, `std::vec::Vec<T>`, `Option`/`Result`,
+- The compiler is pure: enums, structs, a cons list `List<T>`, `Option`/`Result`,
   `match`, recursion, and a generic `Box<T>` for recursive syntax. No raw
   memory: no `slice_from_raw_parts`, no hand-computed record sizes, no packed
   word buffers. Allocation uses panicking operations, so a successful run never
   silently drops data.
 - The Lean side is ordinary definitions extracted from the Lanius code, with
-  the same shape (`Box<T>` is `T`, `Vec<T>` is `List T`, `i32` is `BitVec 32`,
+  the same shape (`Box<T>` is `T`, `List<T>` is `List T`, `i32` is `BitVec 32`,
   `usize` is `Nat`). Proofs are about those definitions; nothing is executed
   inside the kernel.
 - The top-level theorem comes first. Every lemma is a premise of a pass theorem,
@@ -113,18 +113,25 @@ The proof has two layers.
 | `Correct` | 284 | 1.6 | layout, prologue, function contract, top-level theorem |
 
 Check times are `lake env lean` per file on the laptop, about 0.4 s of each is
-import loading. The compiler is 359 lines of Lanius (plus a 96-line prelude);
-the proofs are about 2,500 lines.
+import loading. The compiler is 359 lines of Lanius (plus a 63-line prelude
+and 64 lines of list operations); the proofs are about 2,500 lines.
 
 ### Milestone 4: the compiler in Lanius, and extraction
 
 `formal/lani/mini/compiler.lani` is the compiler, written in a pure subset of
 Lanius: enums, structs, `match`, recursion, `let`, `if`/`return`. A prelude at
-the top of the file holds the only code that touches memory or loops: a
-generic `Box<T>`, list operations on `std::vec::Vec<T>` that always build a
-fresh vector (`empty`, `single`, `cons`, `concat`, `length`, `get`, `get_or`,
-and `view`, which a `match` uses to split off the head), and `usize`
-arithmetic (`plus`, `minus`, `times`) that panics instead of wrapping.
+the top of the file holds the only code that touches memory: a generic
+`Box<T>`, the cons list `enum List<T> { Nil, Cons(T, Box<List<T>>) }`, and
+`usize` arithmetic (`plus`, `minus`, `times`) that panics instead of wrapping.
+
+The list operations (`empty`, `single`, `cons`, `concat`, `length`, `get`,
+`get_or`) are ordinary recursive Lanius code after the prelude. Each is
+extracted as `Lists.name`, followed by a generated theorem that it equals the
+Lean list function (`Lists.concat_spec : Lists.concat a b = a ++ b`), and calls
+from the compiler are written as that function, so the proofs use the standard
+list lemmas. A wrong list operation fails its theorem when Lean checks the
+generated file. This replaced an earlier prelude on `std::vec::Vec<T>` whose
+operations were loops that copied, so their Lean meaning was trusted.
 
 `formal/tools/extract.py` turns everything after the prelude into
 `Lanius/Mini/Compiler.lean`:
@@ -139,14 +146,14 @@ The extractor rejects anything outside the subset (loops, mutation, `usize`
 missing match arms), and checks every prelude item against a fixed table of
 signatures and Lean meanings. Types map one to one: `usize` to `Nat`, `i32`
 and `u32` to `BitVec 32` (Lanius integer arithmetic wraps), `u8` to `UInt8`,
-`Vec<T>` to `List T`, `Option<T>` to `Option T`, `Box<T>` to `T`. A prelude
+`List<T>` to `List T`, `Option<T>` to `Option T`, `Box<T>` to `T`. A prelude
 `plus` that returns computed the `Nat` sum, so the `Nat` definitions agree
 with every run of the Lanius code that returns. Functions marked
 `// extract: inline` become `let` bindings at their call site; that is how a
 match arm gets local definitions, since Lanius match arms are expressions.
 
-What is trusted: the extractor and its prelude table, and the Lanius
-semantics of that small subset. The theorem itself is about the Lean
+What is trusted: the extractor and its prelude table (`Box` and the checked
+arithmetic), and the Lanius semantics of that small subset. The theorem itself is about the Lean
 definitions; the hand-written Lean compiler they replaced is gone. The x86
 encoders the compiler writes as literal bytes are proved equal to the existing
 `X86/Machine` encoders (`Instr.encode_eq`, `prologue_eq`).
@@ -171,7 +178,8 @@ Limits found on the way:
   match-pattern pass (`shaders/parser/tokens/match/pattern/arm_comma.slang`).
 - Lanius match arms cannot contain blocks, `if`, or a `match` inside a larger
   expression; helper functions and `// extract: inline` cover this.
-- The Lanius runtime gives every allocation its own page inside a 1 GiB
-  `MAP_32BIT` window and the prelude never frees, so one run of the Lanius
-  compiler handles a few dozen small programs; the difftest uses one binary per
-  40 programs. `view` copies the tail, so list walks are quadratic.
+- The Lanius runtime gave every allocation its own page inside a 1 GiB
+  `MAP_32BIT` window, which capped one run at about 262k live allocations. The
+  window is gone (70a4134f), and the cons list made list walks free, so 300
+  programs now run in one binary in 39 MB. Every allocation is still one page;
+  a small-object allocator matters once the verified compiler runs on itself.

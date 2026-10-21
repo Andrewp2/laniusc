@@ -200,7 +200,6 @@ LANI_HEAD = f'''module app::main;
 import core::option;
 import mini::compiler;
 import std::io_byte;
-import std::vec;
 
 fn v(index: usize) -> {M}Expr {{ return {M}Var(index); }}
 fn n(value: i32) -> {M}Expr {{ return {M}Lit(value); }}
@@ -210,19 +209,31 @@ fn cmp(op: {M}CmpOp, l: {M}Expr, r: {M}Expr) -> {M}Expr {{ return {M}Compare(op,
 fn seq(a: {M}Stmt, b: {M}Stmt) -> {M}Stmt {{ return {M}Seq({M}boxed(a), {M}boxed(b)); }}
 fn ite(c: {M}Expr, a: {M}Stmt, b: {M}Stmt) -> {M}Stmt {{ return {M}Ite(c, {M}boxed(a), {M}boxed(b)); }}
 fn loop_while(c: {M}Expr, b: {M}Stmt) -> {M}Stmt {{ return {M}Loop(c, {M}boxed(b)); }}
-fn no_args() -> std::vec::Vec<{M}Expr> {{ return {M}empty(); }}
+fn no_args() -> {M}List<{M}Expr> {{ return {M}empty(); }}
 fn func(params: usize, locals: usize, body: {M}Stmt) -> {M}Func {{ return {M}Func {{ params: params, locals: locals, body: body }}; }}
-fn no_funcs() -> std::vec::Vec<{M}Func> {{ return {M}empty(); }}
+fn no_funcs() -> {M}List<{M}Func> {{ return {M}empty(); }}
 
 fn put(value: i32) -> i32 {{
     let written: bool = std::io_byte::write_stdout_byte(value);
     return 0;
 }}
 
+fn put_then(value: u8, rest: {M}List<u8>) -> i32 {{
+    put(value as i32);
+    return put_all(rest);
+}}
+
+fn put_all(bytes: {M}List<u8>) -> i32 {{
+    return match (bytes) {{
+        Nil -> 0,
+        Cons(value, rest) -> put_then(value, {M}unbox(rest)),
+    }};
+}}
+
 // Each program writes 4 length bytes (255 255 255 255 for none), then its image.
 fn emit(prog: {M}Program) -> i32 {{
-    let none: std::vec::Vec<u8> = {M}empty();
-    let image: std::vec::Vec<u8> = match ({M}compile_program(prog)) {{
+    let none: {M}List<u8> = {M}empty();
+    let image: {M}List<u8> = match ({M}compile_program(prog)) {{
         Some(binary) -> binary.image,
         None -> none,
     }};
@@ -230,7 +241,7 @@ fn emit(prog: {M}Program) -> i32 {{
         Some(binary) -> true,
         None -> false,
     }};
-    let length: i32 = std::vec::len(image);
+    let length: i32 = {M}length(image) as i32;
     if (ok) {{
         put(length % 256);
         put((length / 256) % 256);
@@ -242,12 +253,7 @@ fn emit(prog: {M}Program) -> i32 {{
         put(255);
         put(255);
     }}
-    let index: i32 = 0;
-    while (length > index) {{
-        put(std::vec::at(image, index) as i32);
-        index += 1;
-    }}
-    return 0;
+    return put_all(image);
 }}
 '''
 
