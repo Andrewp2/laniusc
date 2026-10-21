@@ -1,0 +1,221 @@
+// expect: 0
+// Every std::deque function through one generic checker over four distinct
+// values: empty state, invalid reserves, wrap-around at both ends, growth
+// across the wrap, in-place set and swap, independent clones, shrinking and
+// clearing. It runs for every integer width, char, f32, both wide integers,
+// a record and a zero-sized record; bool gets its own short check. Exits 0. On a
+// failure it prints 100 * row + the failing check and exits with the row.
+module app::main;
+
+import core::cmp;
+import core::wide_i64;
+import core::wide_u64;
+import std::deque;
+
+struct Point { x: i32, y: i32, z: i32 }
+
+pub impl core::cmp::Eq<Point> for Point {
+    pub fn eq(left: Point, right: Point) -> bool {
+        return left.x == right.x && left.y == right.y && left.z == right.z;
+    }
+    pub fn ne(left: Point, right: Point) -> bool {
+        return !Point::eq(left, right);
+    }
+}
+
+struct Unit {}
+
+pub impl core::cmp::Eq<Unit> for Unit {
+    pub fn eq(left: Unit, right: Unit) -> bool { return true; }
+    pub fn ne(left: Unit, right: Unit) -> bool { return false; }
+}
+
+// The deque holds exactly a, b, c, d in order.
+fn holds4<T>(items: std::deque::Deque<T>, a: T, b: T, c: T, d: T, other: T) -> bool
+    where T: core::cmp::Eq<T> {
+    return std::deque::len(items) == 4 &&
+        T::eq(std::deque::at_or(items, 0, other), a) && T::eq(std::deque::at_or(items, 1, other), b) &&
+        T::eq(std::deque::at_or(items, 2, other), c) && T::eq(std::deque::at_or(items, 3, other), d);
+}
+
+// a, b, c, d are distinct unless T is zero-sized.
+fn deque_checks<T>(a: T, b: T, c: T, d: T) -> i32 where T: core::cmp::Eq<T> {
+    let empty: std::deque::Deque<T> = std::deque::new();
+    if (!std::deque::is_empty(empty) || std::deque::len(empty) != 0 || std::deque::capacity(empty) != 0) {
+        return 1;
+    }
+    if (!T::eq(std::deque::front_or(empty, a), a) || !T::eq(std::deque::back_or(empty, b), b) ||
+        !T::eq(std::deque::at_or(empty, 0, c), c) || std::deque::contains(empty, a)) {
+        return 2;
+    }
+    if (std::deque::try_set(empty, 0, a) || std::deque::try_swap(empty, 0, 0)) { return 3; }
+    empty = std::deque::try_pop_front(empty);
+    empty = std::deque::try_pop_back(empty);
+    empty = std::deque::try_reserve(empty, -1);
+    if (std::deque::len(empty) != 0 || std::deque::capacity(empty) != 0) { return 4; }
+    std::deque::destroy(empty);
+
+    let items: std::deque::Deque<T> = std::deque::try_with_capacity(3);
+    if (std::deque::capacity(items) != 3) { return 5; }
+    items = std::deque::try_push_back(items, b);
+    items = std::deque::try_push_back(items, c);
+    items = std::deque::try_push_back(items, a);
+    // [b, c, a]; popping the front then pushing the back wraps to slot zero.
+    items = std::deque::try_pop_front(items);
+    items = std::deque::try_push_back(items, d);
+    if (std::deque::len(items) != 3 || std::deque::capacity(items) != 3 ||
+        !T::eq(std::deque::front_or(items, b), c) || !T::eq(std::deque::back_or(items, b), d)) {
+        return 6;
+    }
+    // Full and wrapped: growth relocates in logical order.
+    items = std::deque::try_push_front(items, b);
+    if (std::deque::capacity(items) != 6 || !holds4(items, b, c, a, d, a)) { return 7; }
+    if (!T::eq(std::deque::at_or(items, -1, c), c) || !T::eq(std::deque::at_or(items, 4, c), c)) {
+        return 8;
+    }
+    if (!std::deque::contains(items, d) || std::deque::try_set(items, 4, a) ||
+        std::deque::try_set(items, -1, a)) {
+        return 9;
+    }
+    if (!std::deque::try_set(items, 1, d) || !holds4(items, b, d, a, d, a)) { return 10; }
+    if (std::deque::try_swap(items, 0, 4) || !std::deque::try_swap(items, 0, 2) ||
+        !holds4(items, a, d, b, d, c)) {
+        return 11;
+    }
+
+    let copy: std::deque::Deque<T> = std::deque::try_clone(items);
+    if (std::deque::capacity(copy) != 4 || !holds4(copy, a, d, b, d, c)) { return 12; }
+    if (!std::deque::try_set(copy, 0, c) || !T::eq(std::deque::front_or(items, c), a)) { return 13; }
+    std::deque::destroy(copy);
+
+    // Pushing the front at slot zero wraps to the last slot.
+    items = std::deque::clear(items);
+    if (!std::deque::is_empty(items) || std::deque::capacity(items) != 6) { return 14; }
+    items = std::deque::try_push_front(items, c);
+    items = std::deque::try_push_front(items, b);
+    items = std::deque::try_push_back(items, d);
+    items = std::deque::try_push_front(items, a);
+    if (!holds4(items, a, b, c, d, a)) { return 15; }
+    items = std::deque::try_pop_back(items);
+    items = std::deque::try_pop_front(items);
+    if (std::deque::len(items) != 2 || !T::eq(std::deque::front_or(items, a), b) ||
+        !T::eq(std::deque::back_or(items, a), c)) {
+        return 16;
+    }
+    items = std::deque::try_shrink_to_fit(items);
+    if (std::deque::capacity(items) != 2 || std::deque::len(items) != 2 ||
+        !T::eq(std::deque::at_or(items, 0, a), b) || !T::eq(std::deque::at_or(items, 1, a), c)) {
+        return 17;
+    }
+    items = std::deque::try_reserve(items, 5);
+    if (std::deque::capacity(items) != 5 || !T::eq(std::deque::back_or(items, a), c)) { return 18; }
+    items = std::deque::try_pop_back(items);
+    items = std::deque::try_pop_back(items);
+    items = std::deque::try_shrink_to_fit(items);
+    if (std::deque::capacity(items) != 0 || !std::deque::is_empty(items)) { return 19; }
+    std::deque::destroy(items);
+    return 0;
+}
+
+// bool has only two values, so it gets a check of its own.
+fn bool_checks() -> i32 {
+    let flags: std::deque::Deque<bool> = std::deque::new();
+    flags = std::deque::try_push_back(flags, true);
+    flags = std::deque::try_push_front(flags, false);
+    flags = std::deque::try_push_back(flags, true);
+    if (std::deque::len(flags) != 3 || std::deque::front_or(flags, true) ||
+        !std::deque::back_or(flags, false)) {
+        return 1;
+    }
+    flags = std::deque::try_pop_front(flags);
+    if (std::deque::contains(flags, false) || !std::deque::contains(flags, true)) { return 2; }
+    std::deque::destroy(flags);
+    return 0;
+}
+
+// A zero-sized T needs no storage, so its capacity is the maximum at once.
+fn unit_checks() -> i32 {
+    let units: std::deque::Deque<Unit> = std::deque::try_with_capacity(2);
+    if (std::deque::capacity(units) != std::deque::MAX_CAPACITY) { return 1; }
+    units = std::deque::try_push_back(units, Unit {});
+    units = std::deque::try_push_front(units, Unit {});
+    if (std::deque::len(units) != 2 || !std::deque::contains(units, Unit {})) { return 2; }
+    units = std::deque::try_shrink_to_fit(units);
+    units = std::deque::try_pop_front(units);
+    if (std::deque::len(units) != 1) { return 3; }
+    std::deque::destroy(units);
+    return 0;
+}
+
+fn row(index: i32, code: i32) -> i32 {
+    if (code == 0) { return 0; }
+    print(index * 100 + code);
+    return index;
+}
+
+fn main() -> i32 {
+    let i8_a: i8 = -128;
+    let i8_b: i8 = -1;
+    let i8_c: i8 = 1;
+    let i8_d: i8 = 127;
+    let i16_a: i16 = -32768;
+    let i16_b: i16 = -1;
+    let i16_c: i16 = 1;
+    let i16_d: i16 = 32767;
+    let i64_a: i64 = -9223372036854775808;
+    let i64_b: i64 = 0;
+    let i64_c: i64 = 4294967296;
+    let i64_d: i64 = 9223372036854775807;
+    let isize_a: isize = -5;
+    let isize_b: isize = 0;
+    let isize_c: isize = 5;
+    let isize_d: isize = 9;
+    let u8_a: u8 = 0;
+    let u8_b: u8 = 1;
+    let u8_c: u8 = 128;
+    let u8_d: u8 = 255;
+    let u16_a: u16 = 0;
+    let u16_b: u16 = 255;
+    let u16_c: u16 = 32768;
+    let u16_d: u16 = 65535;
+    let u32_a: u32 = 0;
+    let u32_b: u32 = 7;
+    let u32_c: u32 = 2147483648;
+    let u32_d: u32 = 4294967295;
+    let u64_a: u64 = 0;
+    let u64_b: u64 = 4294967295;
+    let u64_c: u64 = 4294967296;
+    let u64_d: u64 = 18446744073709551615;
+    let usize_a: usize = 0;
+    let usize_b: usize = 1;
+    let usize_c: usize = 64;
+    let usize_d: usize = 4096;
+    let checks: [i32; 17] = [
+        row(1, deque_checks(-2147483648, -1, 0, 2147483647)),
+        row(2, deque_checks(i8_a, i8_b, i8_c, i8_d)),
+        row(3, deque_checks(i16_a, i16_b, i16_c, i16_d)),
+        row(4, deque_checks(i64_a, i64_b, i64_c, i64_d)),
+        row(5, deque_checks(isize_a, isize_b, isize_c, isize_d)),
+        row(6, deque_checks(u8_a, u8_b, u8_c, u8_d)),
+        row(7, deque_checks(u16_a, u16_b, u16_c, u16_d)),
+        row(8, deque_checks(u32_a, u32_b, u32_c, u32_d)),
+        row(9, deque_checks(u64_a, u64_b, u64_c, u64_d)),
+        row(10, deque_checks(usize_a, usize_b, usize_c, usize_d)),
+        row(11, deque_checks('\0', 'A', 'é', '😀')),
+        row(12, deque_checks(-2.5, -0.5, 1.0, 3.5)),
+        row(13, deque_checks(core::wide_i64::min_value(), core::wide_i64::from_i32(-1),
+            core::wide_i64::from_words(1, 0), core::wide_i64::max_value())),
+        row(14, deque_checks(core::wide_u64::zero(), core::wide_u64::from_u32(7),
+            core::wide_u64::from_words(1, 0), core::wide_u64::max_value())),
+        row(15, deque_checks(Point { x: 1, y: 2, z: 3 }, Point { x: -1, y: 0, z: 0 },
+            Point { x: 0, y: 0, z: 7 }, Point { x: 9, y: 9, z: 9 })),
+        row(16, bool_checks()),
+        row(17, unit_checks()),
+    ];
+    let index: i32 = 0;
+    while (index < 17) {
+        if (checks[index] != 0) { return checks[index]; }
+        index += 1;
+    }
+    return 0;
+}

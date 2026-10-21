@@ -3,14 +3,14 @@
 // 4 for allocation failure, and 5 for output failure.
 module app::main;
 import core::wide_i64;
-import std::deque_i32;
+import std::deque;
 import std::io_byte;
 import std::io_decimal;
 import std::io_line;
 
 fn main() -> i32 {
     let line: [i32; 20] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    let recent: std::deque_i32::DequeI32 = std::deque_i32::new();
+    let recent: std::deque::Deque<i32> = std::deque::new();
     let lower: core::wide_i64::WideI64 = core::wide_i64::from_i32(-2147483648);
     let upper: core::wide_i64::WideI64 = core::wide_i64::from_i32(2147483647);
     let zero: core::wide_i64::WideI64 = core::wide_i64::zero();
@@ -18,48 +18,48 @@ fn main() -> i32 {
         let length: i32 = std::io_line::read_stdin_lf_line_into_i32(line, 20);
         if (length == -1) { break; }
         if (length <= 0) {
-            std::deque_i32::destroy(recent);
+            std::deque::destroy(recent);
             return 2;
         }
         if (!core::wide_i64::can_parse_ascii_decimal(line, length)) {
-            std::deque_i32::destroy(recent);
+            std::deque::destroy(recent);
             return 3;
         }
         let parsed: core::wide_i64::WideI64 = core::wide_i64::parse_ascii_decimal_or(line, length, zero);
         if (core::wide_i64::compare(parsed, lower) < 0 ||
             core::wide_i64::compare(parsed, upper) > 0) {
-            std::deque_i32::destroy(recent);
+            std::deque::destroy(recent);
             return 3;
         }
         let word: u32 = core::wide_i64::low_word(parsed);
         let number: i32 = word as i32;
-        if (std::deque_i32::len(recent) == 3) {
-            recent = std::deque_i32::try_pop_front(recent);
+        if (std::deque::len(recent) == 3) {
+            recent = std::deque::try_pop_front(recent);
         }
-        let before: i32 = std::deque_i32::len(recent);
-        recent = std::deque_i32::try_push_back(recent, number);
-        if (std::deque_i32::len(recent) != before + 1) {
-            std::deque_i32::destroy(recent);
+        let before: i32 = std::deque::len(recent);
+        recent = std::deque::try_push_back(recent, number);
+        if (std::deque::len(recent) != before + 1) {
+            std::deque::destroy(recent);
             return 4;
         }
     }
     let index: i32 = 0;
-    while (index < std::deque_i32::len(recent)) {
+    while (index < std::deque::len(recent)) {
         if (index > 0 && !std::io_byte::write_stdout_byte(32)) {
-            std::deque_i32::destroy(recent);
+            std::deque::destroy(recent);
             return 5;
         }
-        let number: i32 = std::deque_i32::at_or(recent, index, 0);
+        let number: i32 = std::deque::at_or(recent, index, 0);
         if (std::io_decimal::write_i32(1, number) <= 0) {
-            std::deque_i32::destroy(recent);
+            std::deque::destroy(recent);
             return 5;
         }
         index += 1;
     }
     if (!std::io_byte::write_stdout_byte(10)) {
-        std::deque_i32::destroy(recent);
+        std::deque::destroy(recent);
         return 5;
     }
-    std::deque_i32::destroy(recent);
+    std::deque::destroy(recent);
     return 0;
 }
