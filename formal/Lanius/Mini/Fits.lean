@@ -7,8 +7,8 @@ program. -/
 namespace Lanius.Mini
 
 def Instr.Fits (slots bound funcs : Nat) : Instr → Prop
-  | .imm _ | .neg | .loadAt => True
-  | .load slot | .store slot | .op _ _ slot | .cmp _ _ slot | .storeAt slot => slot < slots
+  | .imm _ | .neg | .loadAt | .loadWordAt _ => True
+  | .load slot | .store slot | .op _ _ slot | .cmp _ _ slot | .storeAt slot | .storeWordAt _ slot => slot < slots
   | .bump shift => shift < 32
   | .jmp target | .jz target => target ≤ bound
   | .call callee args target count => callee < funcs ∧ args.length ≤ slots ∧ (∀ slot ∈ args, slot < slots) ∧
@@ -18,8 +18,8 @@ def Instr.Fits (slots bound funcs : Nat) : Instr → Prop
 theorem Instr.Fits.mono {i : Instr} {slots slots' bound bound' funcs : Nat} (fits : i.Fits slots bound funcs)
     (moreSlots : slots ≤ slots') (moreBound : bound ≤ bound') : i.Fits slots' bound' funcs := by
   cases i with
-  | imm | neg | loadAt => trivial
-  | load | store | op | cmp | storeAt => simp only [Instr.Fits] at fits ⊢; omega
+  | imm | neg | loadAt | loadWordAt => trivial
+  | load | store | op | cmp | storeAt | storeWordAt => simp only [Instr.Fits] at fits ⊢; omega
   | bump => exact fits
   | jmp | jz => simp only [Instr.Fits] at fits ⊢; omega
   | call callee args target count =>
@@ -185,6 +185,21 @@ theorem compileStmt_fits (base : Nat) (arities : List Arity) {results : Nat} (re
     · trivial
     · simp only [Instr.Fits]; omega
   | storeByte address value =>
+    simp only [Stmt.within, Bool.and_eq_true] at within
+    simp only [compileStmt, List.mem_append, List.mem_singleton, Stmt.temps]
+    rintro i ((inAddress | rfl) | inValue | rfl)
+    · exact (compileExpr_fits base address 0 within.1 _ _ i inAddress).mono (by omega) (Nat.le_refl _)
+    · simp only [Instr.Fits]; omega
+    · exact (compileExpr_fits base value 1 within.2 _ _ i inValue).mono (by omega) (Nat.le_refl _)
+    · simp only [Instr.Fits]; omega
+  | loadWord width target address =>
+    simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
+    simp only [compileStmt, List.mem_append, List.mem_cons, List.not_mem_nil, or_false, Stmt.temps]
+    rintro i (inAddress | rfl | rfl)
+    · exact (compileExpr_fits base address 0 within.2 _ _ i inAddress).mono (by omega) (Nat.le_refl _)
+    · trivial
+    · simp only [Instr.Fits]; omega
+  | storeWord width address value =>
     simp only [Stmt.within, Bool.and_eq_true] at within
     simp only [compileStmt, List.mem_append, List.mem_singleton, Stmt.temps]
     rintro i ((inAddress | rfl) | inValue | rfl)

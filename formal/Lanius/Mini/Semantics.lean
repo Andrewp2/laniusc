@@ -91,6 +91,23 @@ def lowByte (value : BitVec 64) : UInt8 := UInt8.ofNat (value.setWidth 8).toNat
 def Heap.write (heap : Heap) (address : Nat) (byte : UInt8) : Heap :=
   { heap with bytes := fun other => if other = address then byte else heap.bytes other }
 
+/-- The `count` bytes from `address`, little-endian. -/
+def Heap.readLE (heap : Heap) (address : Nat) : Nat → Nat
+  | 0 => 0
+  | count + 1 => (heap.bytes address).toNat + 256 * heap.readLE (address + 1) count
+
+/-- The low `count` bytes of `value` written from `address`, little-endian. -/
+def Heap.writeLE (heap : Heap) (address value : Nat) : Nat → Heap
+  | 0 => heap
+  | count + 1 => (heap.write address (UInt8.ofNat value)).writeLE (address + 1) (value / 256) count
+
+theorem Heap.writeLE_limit : ∀ (heap : Heap) (address value count : Nat),
+    (heap.writeLE address value count).limit = heap.limit ∧ (heap.writeLE address value count).cursor = heap.cursor
+  | _, _, _, 0 => ⟨rfl, rfl⟩
+  | heap, address, value, count + 1 => by
+    have := Heap.writeLE_limit (heap.write address (UInt8.ofNat value)) (address + 1) (value / 256) count
+    exact ⟨this.1, this.2⟩
+
 inductive Outcome where
   | normal (env : Env) (heap : Heap)
   | returned (values : List (BitVec 64)) (heap : Heap)
@@ -146,6 +163,14 @@ inductive Exec (prog : Program) : Nat → Env → Heap → Stmt → Outcome → 
       (address.eval env).toNat < heap.limit →
       Exec prog depth env heap (.storeByte address value)
         (.normal env (heap.write (address.eval env).toNat (lowByte (value.eval env))))
+  | loadWord {depth : Nat} {env : Env} {heap : Heap} {width : MemWidth} {target : Nat} {address : Expr} :
+      (address.eval env).toNat + width.bytes ≤ heap.limit →
+      Exec prog depth env heap (.loadWord width target address)
+        (.normal (env.set target (BitVec.ofNat 64 (heap.readLE (address.eval env).toNat width.bytes))) heap)
+  | storeWord {depth : Nat} {env : Env} {heap : Heap} {width : MemWidth} {address value : Expr} :
+      (address.eval env).toNat + width.bytes ≤ heap.limit →
+      Exec prog depth env heap (.storeWord width address value)
+        (.normal env (heap.writeLE (address.eval env).toNat (value.eval env).toNat width.bytes))
 
 /-- Calling function `callee` with `args` from `heap` returns `value` and
 leaves `after`, nesting calls fewer than `depth` deep. -/

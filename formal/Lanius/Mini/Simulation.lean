@@ -1,4 +1,4 @@
-import Lanius.Mini.HeapSteps
+import Lanius.Mini.WordSteps
 import Lanius.Mini.Frame
 import Lanius.Mini.Fits
 
@@ -1286,6 +1286,85 @@ theorem storeAt_simulates (rel : Rel frame s m) (fits : frame.Fits) (inFrame : s
             have := (m.slots slot).isLt
             bv_omega }
 
+/-- `loadWordAt width`: the heap word at the accumulator. -/
+theorem loadWordAt_simulates (rel : Rel frame s m) {width : MemWidth} (loaded : CodeAt s.memory s.rip (loadWordSpec width))
+    (inside : m.acc.toNat + width.bytes ≤ m.heap.limit) :
+    ∃ n s', Steps n s s' ∧ Rel frame s' { m with
+      pc := m.pc + (Instr.loadWordAt width).size
+      acc := BitVec.ofNat 64 (m.heap.readLE m.acc.toNat width.bytes) } := by
+  obtain ⟨s', steps, memory, rip, acc, kept⟩ := loadWord_steps s width loaded
+  refine ⟨2, s', steps, Rel.accumulate rel memory _ rip (fun register zero _ => kept register zero) ?_⟩
+  rw [acc, rel.heapBase, rel.acc, wordRead_eq,
+    show frame.heapBase + m.acc = frame.heapBase + BitVec.ofNat 64 m.acc.toNat by simp,
+    memLE_heap _ _ _ _ _ (fun k lt => rel.heap _ (by omega))]
+
+/-- `storeWordAt width slot`: the low bytes of the accumulator to the heap at the offset in `slot`. -/
+theorem storeWordAt_simulates (rel : Rel frame s m) (fits : frame.Fits) {width : MemWidth} (inFrame : slot < frame.slots)
+    (loaded : CodeAt s.memory s.rip (storeWordSpec width slot))
+    (inside : (m.slots slot).toNat + width.bytes ≤ m.heap.limit) :
+    ∃ n s', Steps n s s' ∧ Rel frame s' { m with
+      pc := m.pc + (Instr.storeWordAt width slot).size
+      heap := m.heap.writeLE (m.slots slot).toNat m.acc.toNat width.bytes } := by
+  obtain ⟨s', steps, rip, memory, kept⟩ := storeWord_steps s width slot loaded
+  have target : s.registers heapBaseRegister + read64 s.memory (s.registers rbpRegister +
+      (BitVec.ofInt 32 (frameDisplacement slot)).signExtend 64) =
+      frame.heapBase + BitVec.ofNat 64 (m.slots slot).toNat := by
+    rw [rel.heapBase, show rbpRegister = (5 : Register) from rfl, rel_slot rel inFrame, BitVec.ofNat_toNat,
+      BitVec.setWidth_eq]
+  rw [target, rel.acc] at memory
+  have limitSmall := fits.heapSmall
+  have heapLimit := rel.limit
+  have lanes : ∀ k, k < width.bytes →
+      frame.InHeap (frame.heapBase + BitVec.ofNat 64 (m.slots slot).toNat + BitVec.ofNat 64 k) :=
+    fun k lt => ⟨(m.slots slot).toNat + k, by omega, by rw [BitVec.add_assoc, ← BitVec.ofNat_add]⟩
+  have outside : ∀ address, ¬frame.InHeap address → s'.memory address = s.memory address := by
+    intro address notHeap
+    rw [memory]
+    exact wordWrite_outside _ _ _ _ _ fun k lt same => notHeap (same ▸ lanes k lt)
+  have away : ∀ address, Below frame.top frame.window address → s'.memory address = s.memory address :=
+    fun address below => outside address (fits.notHeap below)
+  refine ⟨3, s', steps, ?_⟩
+  exact
+    { rip := rip.trans (rel.advance _)
+      rbp := (kept _ (by decide)).trans rel.rbp
+      rsp := (kept _ (by decide)).trans rel.rsp
+      acc := (kept _ (by decide)).trans rel.acc
+      slots := fun other otherIn => by
+        rw [← rel.slots other otherIn]
+        apply read64_congr
+        intro lane
+        exact away _ (slot_below fits otherIn lane.isLt)
+      saved := by
+        rw [← rel.saved]
+        apply read64_congr
+        intro lane
+        exact away _ (saved_below fits lane.isLt)
+      preserved := fun register other => by
+        obtain ⟨-, one, -⟩ := not_scratch other
+        rw [kept register one]
+        exact rel.preserved register other
+      unchanged := fun address outsideStack notHeap => by
+        rw [outside address notHeap]
+        exact rel.unchanged address outsideStack notHeap
+      cursor := by
+        rw [(Heap.writeLE_limit _ _ _ _).2]
+        exact (kept _ (by decide)).trans rel.cursor
+      limit := by rw [(Heap.writeLE_limit _ _ _ _).1]; exact rel.limit
+      heap := fun a below => by
+        rw [(Heap.writeLE_limit _ _ _ _).1] at below
+        have small : a < 2 ^ 62 := by omega
+        have pSmall := (m.slots slot).isLt
+        rw [Heap.writeLE_bytes]
+        by_cases hit : (m.slots slot).toNat ≤ a ∧ a < (m.slots slot).toNat + width.bytes
+        · rw [if_pos hit, show frame.heapBase + BitVec.ofNat 64 a = frame.heapBase +
+              BitVec.ofNat 64 (m.slots slot).toNat + BitVec.ofNat 64 (a - (m.slots slot).toNat) by
+              rw [BitVec.add_assoc, ← BitVec.ofNat_add, Nat.add_sub_cancel' hit.1],
+            memory, wordWrite_lane _ _ _ _ _ (by omega)]
+        · rw [if_neg hit, memory, wordWrite_outside _ _ _ _ _ fun k lt same => hit ?_]
+          · exact rel.heap a below
+          · have := MemWidth.bytes_le width
+            bv_omega }
+
 theorem CodeAt.middle {memory : Memory} {address : BitVec 64} {first middle rest : List UInt8}
     (loaded : CodeAt memory address (first ++ middle ++ rest)) :
     CodeAt memory (address + BitVec.ofNat 64 first.length) middle := by
@@ -1359,7 +1438,8 @@ theorem step_simulates (body : Body frame binary imageBase place instrs) (fits :
     | neg => exact neg_simulates rel loaded
     | op word operation slot => exact op_simulates word operation rel fitted loaded
     | cmp word operation slot => exact cmp_simulates word operation rel fitted loaded
-    | jmp | jz | call | ret | bump | loadAt | storeAt => simp [Instr.straight] at isStraight
+    | jmp | jz | call | ret | bump | loadAt | storeAt | loadWordAt | storeWordAt =>
+      simp [Instr.straight] at isStraight
   | @jmp target _ fetched =>
     obtain ⟨loaded, -, bound, -⟩ := body.fetch rel fetched
     have fitted : target ≤ codeSize instrs := body.fits _ (fetch_mem fetched)
@@ -1391,6 +1471,12 @@ theorem step_simulates (body : Body frame binary imageBase place instrs) (fits :
   | storeAt fetched inside =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
     exact storeAt_simulates rel fits (body.fits _ (fetch_mem fetched)) loaded inside
+  | loadWordAt fetched inside =>
+    obtain ⟨loaded, -⟩ := body.fetch rel fetched
+    exact loadWordAt_simulates rel loaded inside
+  | storeWordAt fetched inside =>
+    obtain ⟨loaded, -⟩ := body.fetch rel fetched
+    exact storeWordAt_simulates rel fits (body.fits _ (fetch_mem fetched)) loaded inside
 
 /-- The bytes of a body simulate its abstract run to `ret`. -/
 theorem body_simulates (body : Body frame binary imageBase place instrs) (fits : frame.Fits) {calls : Calls}

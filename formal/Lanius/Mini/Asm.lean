@@ -72,7 +72,8 @@ def readSlots (slots : Nat → BitVec 64) : List Nat → List (BitVec 64)
 /-- Instructions that fall through to the next one. -/
 def Instr.straight : Instr → Bool
   | .imm _ | .load _ | .store _ | .neg | .op _ _ _ | .cmp _ _ _ => true
-  | .jmp _ | .jz _ | .call _ _ _ _ | .ret _ | .bump _ | .loadAt | .storeAt _ => false
+  | .jmp _ | .jz _ | .call _ _ _ _ | .ret _ | .bump _ | .loadAt | .storeAt _ | .loadWordAt _
+  | .storeWordAt _ _ => false
 
 /-- Effect on the accumulator and slots of a straight-line instruction. -/
 def Instr.update : Instr → Machine → Machine
@@ -82,7 +83,8 @@ def Instr.update : Instr → Machine → Machine
   | .neg, m => { m with acc := widen (-low m.acc) }
   | .op word operation slot, m => { m with acc := word.apply operation (m.slots slot) m.acc }
   | .cmp word operation slot, m => { m with acc := if word.holds operation (m.slots slot) m.acc then 1 else 0 }
-  | .jmp _, m | .jz _, m | .call _ _ _ _, m | .ret _, m | .bump _, m | .loadAt, m | .storeAt _, m => m
+  | .jmp _, m | .jz _, m | .call _ _ _ _, m | .ret _, m | .bump _, m | .loadAt, m | .storeAt _, m
+  | .loadWordAt _, m | .storeWordAt _ _, m => m
 
 def Instr.step (i : Instr) (m : Machine) : Machine := { i.update m with pc := m.pc + i.size }
 
@@ -123,6 +125,15 @@ inductive Step (calls : Calls) (code : List Instr) : Machine → Machine → Pro
       Step calls code m { m with
         pc := m.pc + (Instr.storeAt slot).size
         heap := m.heap.write (m.slots slot).toNat (lowByte m.acc) }
+  | loadWordAt : fetch code m.pc = some (.loadWordAt width) → m.acc.toNat + width.bytes ≤ m.heap.limit →
+      Step calls code m { m with
+        pc := m.pc + (Instr.loadWordAt width).size
+        acc := BitVec.ofNat 64 (m.heap.readLE m.acc.toNat width.bytes) }
+  | storeWordAt : fetch code m.pc = some (.storeWordAt width slot) →
+      (m.slots slot).toNat + width.bytes ≤ m.heap.limit →
+      Step calls code m { m with
+        pc := m.pc + (Instr.storeWordAt width slot).size
+        heap := m.heap.writeLE (m.slots slot).toNat m.acc.toNat width.bytes }
 
 inductive Star (calls : Calls) (code : List Instr) : Machine → Machine → Prop where
   | refl (m : Machine) : Star calls code m m
@@ -148,6 +159,8 @@ theorem Step.mono (sub : ∀ callee args heap value after, calls callee args hea
   | bump fetched room => exact .bump fetched room
   | loadAt fetched below => exact .loadAt fetched below
   | storeAt fetched below => exact .storeAt fetched below
+  | loadWordAt fetched below => exact .loadWordAt fetched below
+  | storeWordAt fetched below => exact .storeWordAt fetched below
 
 theorem Star.mono (sub : ∀ callee args heap value after, calls callee args heap value after →
       calls' callee args heap value after)

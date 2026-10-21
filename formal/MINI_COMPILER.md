@@ -123,21 +123,22 @@ The proof has two layers.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Compiler` | 1541 | 2.9 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass |
-| `Semantics` | 157 | 0.8 | big-step source semantics with call depth |
-| `Asm` | 189 | 0.9 | abstract machine, byte-offset placement, `Star` runs |
-| `CompileCorrect` | 518 | 1.3 | compiler against the abstract machine |
-| `Fits` | 218 | 1.1 | static facts: slots in frame, targets in body, callees exist |
-| `Bytes` | 396 | 1.7 | extracted encoders equal the x86 encoders; image layout |
+| `Compiler` | 1591 | 3.3 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass |
+| `Semantics` | 182 | 0.9 | big-step source semantics with call depth |
+| `Asm` | 202 | 1.0 | abstract machine, byte-offset placement, `Star` runs |
+| `CompileCorrect` | 553 | 1.8 | compiler against the abstract machine |
+| `Fits` | 233 | 1.4 | static facts: slots in frame, targets in body, callees exist |
+| `Bytes` | 419 | 2.0 | extracted encoders equal the x86 encoders; image layout |
 | `Flags` | 135 | 1.4 | each comparison's condition code after `cmp` |
 | `Frame` | 128 | 1.2 | stack windows and address depths (`bv_omega`) |
 | `HeapSteps` | 250 | 1.6 | x86 runs of the bump allocator and the byte load and store |
-| `Simulation` | 1414 | 5.8 | x86 lemma per instruction, slot copies, the call macro, body simulation |
+| `WordSteps` | 285 | 2.0 | x86 runs of the 32- and 64-bit word load and store; memory words as bytes |
+| `Simulation` | 1500 | 6.9 | x86 lemma per instruction, slot copies, the call macro, body simulation |
 | `Correct` | 323 | 1.7 | layout, prologue, function contract, top-level theorem |
 
 Check times are `lake env lean` per file on the laptop, about 0.4 s of each is
 import loading. The compiler is about 400 lines of Lanius (plus a 63-line prelude
-and 64 lines of list operations); the proofs are about 3,700 lines.
+and 64 lines of list operations); the proofs are about 3,900 lines.
 
 ### The front pass: a Core subset to the mini IR
 
@@ -302,7 +303,11 @@ with three functions on 64-bit arguments (unsigned comparisons, `S32` sums
 of 64-bit inputs), passes 12,368 calls. After the heap: 201 programs (random `alloc`,
 `loadByte`, `storeByte`), 66,000 image bytes, no differences; the native run,
 with a stub that maps a heap and sets r12-r14, adds a byte-sum over a fresh
-allocation and an alignment probe and passes 12,427 calls. The per-function
+allocation and an alignment probe and passes 12,427 calls. After word loads and stores (`loadWord`, `storeWord`
+with a width of 4 or 8 bytes, little-endian, x86 `mov` through r12): 201
+programs, 54,000 image bytes, no differences; the native run adds a function
+that stores and reloads 64- and 32-bit words, aligned and not, and passes
+15,427 calls. The per-function
 difftest after the heap: 150 functions, 3,000 calls, no differences (9 native
 stack overflows on huge random counts).
 

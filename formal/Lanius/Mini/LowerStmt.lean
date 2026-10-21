@@ -289,6 +289,8 @@ theorem Exec.mono {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stmt
   | alloc room => exact .alloc room
   | loadByte inside => exact .loadByte inside
   | storeByte inside => exact .storeByte inside
+  | loadWord inside => exact .loadWord inside
+  | storeWord inside => exact .storeWord inside
 
 /-! ## Programs -/
 

@@ -103,6 +103,30 @@ inductive Word where
   | u64 : Word
   deriving DecidableEq, Repr
 
+/-- A heap word access: 4 or 8 bytes, little-endian. A 4-byte load zero-extends; a 4-byte store writes the low 4 bytes. -/
+inductive MemWidth where
+  | m32 : MemWidth
+  | m64 : MemWidth
+  deriving DecidableEq, Repr
+
+/-- The bytes a load or store covers. -/
+def MemWidth.bytes (self : MemWidth) : Nat :=
+  match self with
+  | .m32 => 4
+  | .m64 => 8
+
+/-- The length of the REX.W prefix of the 64-bit move. -/
+def MemWidth.prefix (self : MemWidth) : Nat :=
+  match self with
+  | .m32 => 0
+  | .m64 => 1
+
+/-- The REX.W prefix of the 64-bit move. -/
+def MemWidth.rex (self : MemWidth) : List UInt8 :=
+  match self with
+  | .m32 => []
+  | .m64 => [72]
+
 inductive Expr where
   | lit : (BitVec 64) → Expr
   | var : Nat → Expr
@@ -128,6 +152,10 @@ inductive Stmt where
   | loadByte : Nat → Expr → Stmt
   /-- the byte at address = the low byte of value -/
   | storeByte : Expr → Expr → Stmt
+  /-- target = the word at address -/
+  | loadWord : MemWidth → Nat → Expr → Stmt
+  /-- the word at address = the low bytes of value -/
+  | storeWord : MemWidth → Expr → Expr → Stmt
   deriving DecidableEq, Repr
 
 structure Func where
@@ -171,6 +199,10 @@ inductive Instr where
   | loadAt : Instr
   /-- mov [r12 + slot], al -/
   | storeAt : Nat → Instr
+  /-- mov eax, [r12 + rax], or rax for M64 -/
+  | loadWordAt : MemWidth → Instr
+  /-- mov [r12 + slot], eax, or rax for M64 -/
+  | storeWordAt : MemWidth → Nat → Instr
   deriving DecidableEq, Repr
 
 /-- imul is one byte longer than the other operators. -/
@@ -204,6 +236,8 @@ def Instr.size (self : Instr) : Nat :=
   | .bump shift => 52
   | .loadAt => 10
   | .storeAt slot => 16
+  | .loadWordAt width => 9 + MemWidth.prefix width
+  | .storeWordAt width slot => 16 + MemWidth.prefix width
 
 def codeSize (code : List Instr) : Nat :=
   match code with
@@ -255,6 +289,8 @@ def compileStmt (base : Nat) (pos : Nat) (s : Stmt) : List Instr :=
   | .alloc target shift size => compileExpr base size 0 ++ Instr.bump shift :: [Instr.store target]
   | .loadByte target address => compileExpr base address 0 ++ Instr.loadAt :: [Instr.store target]
   | .storeByte address value => compileExpr base address 0 ++ [Instr.store base] ++ (compileExpr base value 1 ++ [Instr.storeAt base])
+  | .loadWord width target address => compileExpr base address 0 ++ Instr.loadWordAt width :: [Instr.store target]
+  | .storeWord width address value => compileExpr base address 0 ++ [Instr.store base] ++ (compileExpr base value 1 ++ [Instr.storeWordAt width base])
 
 def Expr.within (self : Expr) (locals : Nat) : Bool :=
   match self with
@@ -308,6 +344,8 @@ def Stmt.within (self : Stmt) (locals : Nat) (arities : List Arity) (results : N
   | .alloc target shift size => decide (target < locals) && decide (shift < 32) && Expr.within size locals
   | .loadByte target address => decide (target < locals) && Expr.within address locals
   | .storeByte address value => Expr.within address locals && Expr.within value locals
+  | .loadWord width target address => decide (target < locals) && Expr.within address locals
+  | .storeWord width address value => Expr.within address locals && Expr.within value locals
 
 def Stmt.temps (self : Stmt) : Nat :=
   match self with
@@ -321,6 +359,8 @@ def Stmt.temps (self : Stmt) : Nat :=
   | .alloc target shift size => Expr.temps size
   | .loadByte target address => Expr.temps address
   | .storeByte address value => max (Expr.temps address) (Expr.temps value + 1)
+  | .loadWord width target address => Expr.temps address
+  | .storeWord width address value => max (Expr.temps address) (Expr.temps value + 1)
 
 /-- Zero the non-parameter locals first, ..., first + count - 1. -/
 def zeroLocals (first : Nat) (count : Nat) : List Instr :=
@@ -460,6 +500,14 @@ def loadAtBytes : List UInt8 :=
 def storeAtBytes (slot : Nat) : List UInt8 :=
   72 :: 139 :: [141] ++ le32 (slotOffset slot) ++ 76 :: 1 :: 225 :: 136 :: 129 :: 0 :: 0 :: 0 :: [0]
 
+/-- add rax, r12; mov eax, [rax + 0] (rax with REX.W) -/
+def loadWordBytes (width : MemWidth) : List UInt8 :=
+  76 :: 1 :: 224 :: (MemWidth.rex width ++ 139 :: 128 :: 0 :: 0 :: 0 :: [0])
+
+/-- mov rcx, [rbp + disp32]; add rcx, r12; mov [rcx + 0], eax (rax with REX.W) -/
+def storeWordBytes (width : MemWidth) (slot : Nat) : List UInt8 :=
+  72 :: 139 :: [141] ++ le32 (slotOffset slot) ++ 76 :: 1 :: 225 :: (MemWidth.rex width ++ 137 :: 129 :: 0 :: 0 :: 0 :: [0])
+
 /-- mov rsp, rbp; pop rbp; ret -/
 def epilogue : List UInt8 :=
   72 :: 137 :: 236 :: 93 :: [195]
@@ -519,6 +567,8 @@ def Instr.encode (self : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   | .bump shift => bumpBytes shift
   | .loadAt => loadAtBytes
   | .storeAt slot => storeAtBytes slot
+  | .loadWordAt width => loadWordBytes width
+  | .storeWordAt width slot => storeWordBytes width slot
 
 def encodeFrom (place : Place) (pc : Nat) (code : List Instr) : List UInt8 :=
   match code with

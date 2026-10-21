@@ -112,6 +112,20 @@ def storeAtSpec (slot : Nat) : List UInt8 :=
   memoryBytes .w64 true rcxRegister rbpRegister (frameDisplacement slot) ++
     (aluBytes .w64 .add rcxRegister heapBaseRegister ++ storeByteBytes 0 rcxRegister 0)
 
+/-- The x86 operand width of a heap word access. -/
+def MemWidth.x86 : MemWidth → X86.Register.Width
+  | .m32 => .w32
+  | .m64 => .w64
+
+/-- `add rax, r12; mov eax, [rax]` (`rax` for `m64`) -/
+def loadWordSpec (width : MemWidth) : List UInt8 :=
+  aluBytes .w64 .add 0 heapBaseRegister ++ memoryBytes width.x86 true 0 0 0
+
+/-- `mov rcx, [slot]; add rcx, r12; mov [rcx], eax` (`rax` for `m64`) -/
+def storeWordSpec (width : MemWidth) (slot : Nat) : List UInt8 :=
+  memoryBytes .w64 true rcxRegister rbpRegister (frameDisplacement slot) ++
+    (aluBytes .w64 .add rcxRegister heapBaseRegister ++ memoryBytes width.x86 false 0 rcxRegister 0)
+
 /-- The bytes of the instruction at body offset `pc`, as the x86 encoders write them. -/
 def Instr.bytes (i : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   match i with
@@ -130,6 +144,8 @@ def Instr.bytes (i : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   | .bump shift => bumpSpec shift
   | .loadAt => loadAtSpec
   | .storeAt slot => storeAtSpec slot
+  | .loadWordAt width => loadWordSpec width
+  | .storeWordAt width slot => storeWordSpec width slot
 
 /-! The extracted encoders are the x86 ones. -/
 
@@ -210,6 +226,9 @@ theorem Instr.encode_eq (i : Instr) (place : Place) (pc : Nat) : i.encode place 
   | bump shift => simp only [Instr.encode, Instr.bytes, bumpBytes, le64_eq]; rfl
   | loadAt => rfl
   | storeAt slot => rw [Instr.encode, Instr.bytes, storeAtBytes, le32_i32Bytes _ _ (slotOffset_toNat slot)]; rfl
+  | loadWordAt width => cases width <;> rfl
+  | storeWordAt width slot =>
+    cases width <;> rw [Instr.encode, Instr.bytes, storeWordBytes, le32_i32Bytes _ _ (slotOffset_toNat slot)] <;> rfl
 
 /-- A transfer by `relative source target` from `base + source` lands on `base + target`. -/
 theorem relative_eq (base : BitVec 64) (source target : Nat) (sourceSmall : source < 2 ^ 31)
@@ -288,6 +307,10 @@ theorem Instr.bytes_length (place : Place) (pc : Nat) (i : Instr) : (i.bytes pla
   | bump shift => rw [← Instr.encode_eq]; simp [Instr.encode, bumpBytes, le64, Instr.size]
   | loadAt => rfl
   | storeAt slot => rw [← Instr.encode_eq]; simp [Instr.encode, storeAtBytes, le32, Instr.size]
+  | loadWordAt width => cases width <;> rfl
+  | storeWordAt width slot =>
+    rw [← Instr.encode_eq]; cases width <;> simp [Instr.encode, storeWordBytes, MemWidth.rex, le32, Instr.size,
+      MemWidth.prefix]
 
 theorem Instr.encode_length (place : Place) (pc : Nat) (i : Instr) : (i.encode place pc).length = i.size := by
   rw [Instr.encode_eq, Instr.bytes_length]

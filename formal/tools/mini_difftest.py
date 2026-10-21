@@ -47,8 +47,8 @@ def gen_stmt(rng, depth, locals_, arities, results):
     if depth == 0:
         return ('assign', rng.randrange(locals_), gen_expr(rng, 2, locals_)) if locals_ else ('skip',)
     kind = rng.choice(['skip', 'assign', 'seq', 'seq', 'ite', 'loop', 'call', 'ret', 'alloc', 'loadByte',
-                       'storeByte'])
-    if kind == 'skip' or (kind in ('assign', 'call', 'alloc', 'loadByte') and not locals_):
+                       'storeByte', 'loadWord', 'storeWord'])
+    if kind == 'skip' or (kind in ('assign', 'call', 'alloc', 'loadByte', 'loadWord') and not locals_):
         return ('skip',)
     if kind == 'alloc':
         return ('alloc', rng.randrange(locals_), rng.choice([0, 0, 1, 3, 4, 12, 31, 32]), gen_expr(rng, 2, locals_))
@@ -56,6 +56,10 @@ def gen_stmt(rng, depth, locals_, arities, results):
         return ('loadByte', rng.randrange(locals_), gen_expr(rng, 2, locals_))
     if kind == 'storeByte':
         return ('storeByte', gen_expr(rng, 2, locals_), gen_expr(rng, 2, locals_))
+    if kind == 'loadWord':
+        return ('loadWord', rng.choice(['m32', 'm64']), rng.randrange(locals_), gen_expr(rng, 2, locals_))
+    if kind == 'storeWord':
+        return ('storeWord', rng.choice(['m32', 'm64']), gen_expr(rng, 2, locals_), gen_expr(rng, 2, locals_))
     if kind == 'assign':
         return ('assign', rng.randrange(locals_), gen_expr(rng, 3, locals_))
     if kind == 'seq':
@@ -185,6 +189,10 @@ def lean_stmt(s):
         return f'(.loadByte {s[1]} {lean_expr(s[2])})'
     if k == 'storeByte':
         return f'(.storeByte {lean_expr(s[1])} {lean_expr(s[2])})'
+    if k == 'loadWord':
+        return f'(.loadWord .{s[1]} {s[2]} {lean_expr(s[3])})'
+    if k == 'storeWord':
+        return f'(.storeWord .{s[1]} {lean_expr(s[2])} {lean_expr(s[3])})'
     return f'(.ret [{", ".join(lean_expr(a) for a in s[1])}])'
 
 
@@ -243,6 +251,10 @@ def lani_stmt(s):
         return f'{M}Stmt::LoadByte({s[1]}, {lani_expr(s[2])})'
     if k == 'storeByte':
         return f'{M}Stmt::StoreByte({lani_expr(s[1])}, {lani_expr(s[2])})'
+    if k == 'loadWord':
+        return f'{M}Stmt::LoadWord({M}{s[1].upper()}, {s[2]}, {lani_expr(s[3])})'
+    if k == 'storeWord':
+        return f'{M}Stmt::StoreWord({M}{s[1].upper()}, {lani_expr(s[2])}, {lani_expr(s[3])})'
     return f'{M}Stmt::Ret({lani_exprs(s[1])})'
 
 

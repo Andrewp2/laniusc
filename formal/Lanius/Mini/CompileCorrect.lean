@@ -421,6 +421,41 @@ theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Arity}
     refine ⟨_, .refl _, by simp only [Instr.exec_pc, pc, codeSize_append, codeSize]; omega,
       agree.of_slots slots, ?_⟩
     simp only [heapAt, kept, acc]
+  | @loadWord depth env heap width target address inside =>
+    intro pos m placed pc agree onHeap within
+    simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
+    simp only [compileStmt] at placed ⊢
+    obtain ⟨acc, kept⟩ := compileExpr_correct base address 0 env m agree within.2
+    apply StmtResult.prefix (pc ▸ placed.left) (compileExpr_straight _ _ _)
+    obtain ⟨loadAt, storeAt⟩ := placed.right.pair
+    have heapAt := (Instr.exec_heap (compileExpr base address 0) m).trans onHeap
+    apply StmtResult.step (.loadWordAt (by rw [Instr.exec_pc, pc]; exact loadAt.fetch)
+      (by rw [heapAt, acc]; exact inside))
+    rw [heapAt, acc]
+    refine stored_result ?_ ?_ ?_ _ ?_
+    · exact storeAt.at (by simp only [Instr.exec_pc, pc])
+    · simp only [Instr.exec_pc, pc, codeSize_append, codeSize, Instr.size]; omega
+    · exact fun slot below _ => (kept slot (by omega)).trans (agree slot below)
+    · first | rfl | exact heapAt
+  | @storeWord depth env heap width address value inside =>
+    intro pos m placed pc agree onHeap within
+    simp only [Stmt.within, Bool.and_eq_true] at within
+    simp only [compileStmt] at placed ⊢
+    have placed' : Block code pos ((compileExpr base address 0 ++ [Instr.store base] ++
+        compileExpr base value 1) ++ [Instr.storeWordAt width base]) := by simpa only [List.append_assoc] using placed
+    obtain ⟨kept, acc, slots⟩ := operands_correct base 0 env m agree _ _ _ _
+      (fun m agree => compileExpr_correct base address 0 env m agree within.1)
+      (fun m agree => compileExpr_correct base value 1 env m agree within.2)
+    simp only [Nat.add_zero] at kept acc slots
+    apply StmtResult.prefix (pc ▸ placed'.left)
+      (by simp only [List.all_append, compileExpr_straight]; rfl)
+    have heapAt := (Instr.exec_heap (compileExpr base address 0 ++ [Instr.store base] ++
+      compileExpr base value 1) m).trans onHeap
+    apply StmtResult.step (.storeWordAt (by rw [Instr.exec_pc, pc]; exact placed'.right.fetch)
+      (by rw [heapAt, kept]; exact inside))
+    refine ⟨_, .refl _, by simp only [Instr.exec_pc, pc, codeSize_append, codeSize]; omega,
+      agree.of_slots slots, ?_⟩
+    simp only [heapAt, kept, acc]
 
 theorem arityIs_eq (arities : List Arity) (callee count results : Nat) :
     arityIs arities callee count results = true ↔

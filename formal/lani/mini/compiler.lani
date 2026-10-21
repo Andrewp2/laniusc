@@ -157,6 +157,36 @@ pub enum CmpOp { Eq, Ne, Lt, Le, Gt, Ge, }
 // comparisons are unsigned.
 pub enum Word { S32, U64, }
 
+// A heap word access: 4 or 8 bytes, little-endian. A 4-byte load
+// zero-extends; a 4-byte store writes the low 4 bytes.
+pub enum MemWidth { M32, M64, }
+
+impl MemWidth {
+    // The bytes a load or store covers.
+    pub fn bytes(self) -> usize {
+        return match (self) {
+            M32 -> 4,
+            M64 -> 8,
+        };
+    }
+
+    // The length of the REX.W prefix of the 64-bit move.
+    pub fn prefix(self) -> usize {
+        return match (self) {
+            M32 -> 0,
+            M64 -> 1,
+        };
+    }
+
+    // The REX.W prefix of the 64-bit move.
+    pub fn rex(self) -> List<u8> {
+        return match (self) {
+            M32 -> empty(),
+            M64 -> single(72),
+        };
+    }
+}
+
 pub enum Expr {
     Lit(u64),
     Var(usize),
@@ -183,6 +213,10 @@ pub enum Stmt {
     LoadByte(usize, Expr),
     // the byte at address = the low byte of value
     StoreByte(Expr, Expr),
+    // target = the word at address
+    LoadWord(MemWidth, usize, Expr),
+    // the word at address = the low bytes of value
+    StoreWord(MemWidth, Expr, Expr),
 }
 
 pub struct Func {
@@ -231,6 +265,10 @@ pub enum Instr {
     LoadAt,
     // mov [r12 + slot], al
     StoreAt(usize),
+    // mov eax, [r12 + rax], or rax for M64
+    LoadWordAt(MemWidth),
+    // mov [r12 + slot], eax, or rax for M64
+    StoreWordAt(MemWidth, usize),
 }
 
 impl BinOp {
@@ -273,6 +311,8 @@ impl Instr {
             Bump(shift) -> 52,
             LoadAt -> 10,
             StoreAt(slot) -> 16,
+            LoadWordAt(width) -> plus(9, width.prefix()),
+            StoreWordAt(width, slot) -> plus(16, width.prefix()),
         };
     }
 }
@@ -326,6 +366,8 @@ pub fn compile_stmt(base: usize, pos: usize, s: Stmt) -> List<Instr> {
         Alloc(target, shift, size) -> concat(compile_expr(base, size, 0), cons(Bump(shift), single(Store(target)))),
         LoadByte(target, address) -> concat(compile_expr(base, address, 0), cons(LoadAt, single(Store(target)))),
         StoreByte(address, value) -> concat(concat(compile_expr(base, address, 0), single(Store(base))), concat(compile_expr(base, value, 1), single(StoreAt(base)))),
+        LoadWord(width, target, address) -> concat(compile_expr(base, address, 0), cons(LoadWordAt(width), single(Store(target)))),
+        StoreWord(width, address, value) -> concat(concat(compile_expr(base, address, 0), single(Store(base))), concat(compile_expr(base, value, 1), single(StoreWordAt(width, base)))),
     };
 }
 
@@ -418,6 +460,8 @@ impl Stmt {
             Alloc(target, shift, size) -> locals > target && 32 > shift && size.within(locals),
             LoadByte(target, address) -> locals > target && address.within(locals),
             StoreByte(address, value) -> address.within(locals) && value.within(locals),
+            LoadWord(width, target, address) -> locals > target && address.within(locals),
+            StoreWord(width, address, value) -> address.within(locals) && value.within(locals),
         };
     }
 
@@ -433,6 +477,8 @@ impl Stmt {
             Alloc(target, shift, size) -> size.temps(),
             LoadByte(target, address) -> address.temps(),
             StoreByte(address, value) -> max_of(address.temps(), plus(value.temps(), 1)),
+            LoadWord(width, target, address) -> address.temps(),
+            StoreWord(width, address, value) -> max_of(address.temps(), plus(value.temps(), 1)),
         };
     }
 }
@@ -618,6 +664,16 @@ pub fn store_at_bytes(slot: usize) -> List<u8> {
     return concat(concat(cons(72, cons(139, single(141))), le32(slot_offset(slot))), cons(76, cons(1, cons(225, cons(136, cons(129, cons(0, cons(0, cons(0, single(0))))))))));
 }
 
+// add rax, r12; mov eax, [rax + 0] (rax with REX.W)
+pub fn load_word_bytes(width: MemWidth) -> List<u8> {
+    return cons(76, cons(1, cons(224, concat(width.rex(), cons(139, cons(128, cons(0, cons(0, cons(0, single(0))))))))));
+}
+
+// mov rcx, [rbp + disp32]; add rcx, r12; mov [rcx + 0], eax (rax with REX.W)
+pub fn store_word_bytes(width: MemWidth, slot: usize) -> List<u8> {
+    return concat(concat(cons(72, cons(139, single(141))), le32(slot_offset(slot))), cons(76, cons(1, cons(225, concat(width.rex(), cons(137, cons(129, cons(0, cons(0, cons(0, single(0)))))))))));
+}
+
 // mov rsp, rbp; pop rbp; ret
 pub fn epilogue() -> List<u8> {
     return cons(72, cons(137, cons(236, cons(93, single(195)))));
@@ -687,6 +743,8 @@ impl Instr {
             Bump(shift) -> bump_bytes(shift),
             LoadAt -> load_at_bytes(),
             StoreAt(slot) -> store_at_bytes(slot),
+            LoadWordAt(width) -> load_word_bytes(width),
+            StoreWordAt(width, slot) -> store_word_bytes(width, slot),
         };
     }
 }
