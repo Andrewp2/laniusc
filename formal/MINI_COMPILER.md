@@ -112,7 +112,7 @@ The proof has two layers.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Compiler` | 1245 | 2.6 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass |
+| `Compiler` | 1393 | 2.7 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass |
 | `Semantics` | 123 | 0.7 | big-step source semantics with call depth |
 | `Asm` | 163 | 0.8 | abstract machine, byte-offset placement, `Star` runs |
 | `CompileCorrect` | 466 | 1.2 | compiler against the abstract machine |
@@ -131,9 +131,11 @@ and 64 lines of list operations); the proofs are about 3,000 lines.
 
 The first piece of the verified compiler (roadmap step 4). `compile_source` in
 `compiler.lani` type-checks and lowers a source program, a subset of Lanius
-Core, to the mini IR, then runs `compile_program`. The subset: `i32` and
-`bool` locals and parameters, `+ - * & | ^`, unary `-` and `!`, the six
-comparisons, `&&` and `||`, `let`, assignment, `let x = f(...)` and
+Core, to the mini IR, then runs `compile_program`. The subset: `i32`, `bool`,
+`u8`, `u32`, `u64` and `usize` locals and parameters, `+ - * & | ^`, unary
+`-` and `!`, the six comparisons (unsigned on the unsigned types), `&&` and
+`||`, unsigned literals, casts between `i32` and the unsigned types (Core's
+wrapping: an `i32` cast to a 64-bit type is sign-extended), `let`, assignment, `let x = f(...)` and
 `x = f(...)`, sequencing, `if`, `while`, and `return`; and structs whose
 fields have any type, structs and enums included: literals in `let`, field
 reads (a struct or enum field copies its slots), writes of scalar fields,
@@ -143,7 +145,8 @@ type: `let x = E::V(...)`, copies, enum parameters, and
 variant's payload and giving a value of any type. Each binding gets its own
 slots (lets after the parameters): a scalar one, a struct its fields' slots
 one after another, an enum a tag slot (the variant number) and then room for
-its longest payload; booleans are 1 and 0.
+its longest payload; booleans are 1 and 0. An unsigned value is its number,
+and arithmetic on a type narrower than 64 bits is masked back to its width.
 A `match` is a chain of tag tests, and an arm's binders name the scrutinee's
 payload slots, since an arm only reads them. A function returns its result
 type's slots, so `return`, `let x = f(...)` and `x = f(...)` take structs and
@@ -186,15 +189,17 @@ semantics:
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Source` | 300 | 1.1 | Core meaning of source programs, value representation, `i32` wrap lemmas |
-| `LowerExpr` | 471 | 4.3 | expressions |
-| `LowerStmt` | 2026 | 8.3 | Core cells, frames, flat values, calls, enums and `match`, statements |
+| `Source` | 334 | 1.1 | Core meaning of source programs, value representation, `i32` wrap lemmas |
+| `Unsigned` | 156 | 2.0 | unsigned arithmetic, comparisons and casts as slot arithmetic |
+| `LowerExpr` | 656 | 4.5 | expressions |
+| `LowerStmt` | 2091 | 8.4 | Core cells, frames, flat values, calls, enums and `match`, statements |
 | `SourceCorrect` | 89 | 0.7 | top-level theorem |
 
-The pass is about 900 lines of Lanius (the end of `compiler.lani`), and the
-proofs are about 2,800 lines. The per-function difftest covers it (131
-functions, 2,620 calls after the move to 64-bit words, no differences; 10
-native stack overflows on huge random counts; types nested through `List` render through a `mutual` block of
+The pass is about 1,100 lines of Lanius (the end of `compiler.lani`), and the
+proofs are about 3,200 lines. The per-function difftest covers it (146
+functions, 2,920 calls after the unsigned types, run as two shards with
+`--shard 0/2` and `1/2`, no differences; 11 native stack overflows on huge
+random counts; types nested through `List` render through a `mutual` block of
 `partial def`s); at 30 cases per function the harness is now too large for
 laniusc on the laptop (a GPU buffer fails to allocate). Assumptions the theorem does not cover yet: Core
 programs outside the subset, traps and divergence (the theorem covers runs that

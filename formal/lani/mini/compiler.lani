@@ -702,9 +702,45 @@ fn link(codes: List<Code>) -> core::option::Option<Binary> {
 // Core type id and each variant's payload types. Fields and payloads have
 // any of these types.
 
+// An unsigned integer type. A value sits zero-extended in its slot.
+pub enum UintTy { Uint8, Uint32, Uint64, Usize, }
+
+impl UintTy {
+    // Its index, for comparing types.
+    pub fn code(self) -> usize {
+        return match (self) {
+            Uint8 -> 0,
+            Uint32 -> 1,
+            Uint64 -> 2,
+            Usize -> 3,
+        };
+    }
+
+    // The largest value, 2^width - 1.
+    pub fn mask(self) -> u64 {
+        return match (self) {
+            Uint8 -> 255,
+            Uint32 -> 4294967295,
+            Uint64 -> 18446744073709551615,
+            Usize -> 18446744073709551615,
+        };
+    }
+
+    // 64 bits wide, so slot arithmetic wraps the same way.
+    pub fn is_wide(self) -> bool {
+        return match (self) {
+            Uint8 -> false,
+            Uint32 -> false,
+            Uint64 -> true,
+            Usize -> true,
+        };
+    }
+}
+
 pub enum SrcType {
     I32,
     Bool,
+    Uint(UintTy),
     Struct(usize, Box<List<SrcType>>),
     Enum(usize, Box<List<List<SrcType>>>),
 }
@@ -718,12 +754,16 @@ pub enum SrcOp {
 pub enum SrcExpr {
     Int(i32),
     Boolean(bool),
+    // a literal of an unsigned type
+    Unsigned(UintTy, u64),
     Local(usize),
     // field of a struct local
     Field(usize, usize),
     Negate(Box<SrcExpr>),
     Not(Box<SrcExpr>),
     Apply(SrcOp, Box<SrcExpr>, Box<SrcExpr>),
+    // between i32 and the unsigned types, wrapping like Core
+    Cast(SrcType, Box<SrcExpr>),
 }
 
 // A match arm: the binders of its variant's payload, and its value.
@@ -815,6 +855,7 @@ impl SrcType {
         return match (self) {
             I32 -> true,
             Bool -> false,
+            Uint(kind) -> false,
             Struct(id, fields) -> false,
             Enum(id, variants) -> false,
         };
@@ -824,6 +865,7 @@ impl SrcType {
         return match (self) {
             I32 -> false,
             Bool -> true,
+            Uint(kind) -> false,
             Struct(id, fields) -> false,
             Enum(id, variants) -> false,
         };
@@ -833,8 +875,41 @@ impl SrcType {
         return match (self) {
             I32 -> true,
             Bool -> true,
+            Uint(kind) -> true,
             Struct(id, fields) -> false,
             Enum(id, variants) -> false,
+        };
+    }
+
+    pub fn is_uint(self, kind: UintTy) -> bool {
+        return match (self) {
+            I32 -> false,
+            Bool -> false,
+            Uint(other) -> other.code() == kind.code(),
+            Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
+        };
+    }
+
+    // The unsigned type this is, if it is one.
+    pub fn uint_kind(self) -> core::option::Option<UintTy> {
+        return match (self) {
+            I32 -> None,
+            Bool -> None,
+            Uint(kind) -> Some(kind),
+            Struct(id, fields) -> None,
+            Enum(id, variants) -> None,
+        };
+    }
+
+    // How a comparison of two values of this type reads their slots.
+    pub fn word(self) -> Word {
+        return match (self) {
+            I32 -> S32,
+            Bool -> S32,
+            Uint(kind) -> U64,
+            Struct(id, fields) -> S32,
+            Enum(id, variants) -> S32,
         };
     }
 }
@@ -845,15 +920,18 @@ impl SrcType {
         return match (self) {
             I32 -> other.is_i32(),
             Bool -> other.is_bool(),
+            Uint(kind) -> other.is_uint(kind),
             Struct(id, fields) -> match (other) {
                 I32 -> false,
                 Bool -> false,
+                Uint(other_kind) -> false,
                 Struct(other_id, other_fields) -> (id == other_id) && types_same(unbox(fields), unbox(other_fields)),
                 Enum(other_id, other_variants) -> false,
             },
             Enum(id, variants) -> match (other) {
                 I32 -> false,
                 Bool -> false,
+                Uint(other_kind) -> false,
                 Struct(other_id, other_fields) -> false,
                 Enum(other_id, other_variants) -> (id == other_id) && variants_same(unbox(variants), unbox(other_variants)),
             },
@@ -896,6 +974,7 @@ impl SrcType {
         return match (self) {
             I32 -> 1,
             Bool -> 1,
+            Uint(kind) -> 1,
             Struct(id, fields) -> sizes(unbox(fields)),
             Enum(id, variants) -> plus(1, max_size(unbox(variants))),
         };
@@ -940,9 +1019,47 @@ pub struct Typed {
     ty: SrcType,
 }
 
+// e reduced to the width of kind.
+pub fn wrap(kind: UintTy, e: Expr) -> Expr {
+    if (kind.is_wide()) {
+        return e;
+    }
+    return Binary(U64, And, boxed(e), boxed(Lit(kind.mask())));
+}
+
+pub fn arith_uint(operation: BinOp, left: Typed, right: Typed, kind: core::option::Option<UintTy>) -> core::option::Option<Typed> {
+    return match (kind) {
+        None -> None,
+        Some(k) -> arith_of(operation, left, right, k),
+    };
+}
+
+// extract: inline
+fn arith_of(operation: BinOp, left: Typed, right: Typed, k: UintTy) -> core::option::Option<Typed> {
+    if (right.ty.is_uint(k)) {
+        return Some(Typed { expr: wrap(k, Binary(U64, operation, boxed(left.expr), boxed(right.expr))), ty: Uint(k) });
+    }
+    return None;
+}
+
 pub fn arith(operation: BinOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
     if (left.ty.is_i32() && right.ty.is_i32()) {
         return Some(Typed { expr: Binary(S32, operation, boxed(left.expr), boxed(right.expr)), ty: I32 });
+    }
+    return arith_uint(operation, left, right, left.ty.uint_kind());
+}
+
+pub fn order_uint(operation: CmpOp, left: Typed, right: Typed, kind: core::option::Option<UintTy>) -> core::option::Option<Typed> {
+    return match (kind) {
+        None -> None,
+        Some(k) -> order_of(operation, left, right, k),
+    };
+}
+
+// extract: inline
+fn order_of(operation: CmpOp, left: Typed, right: Typed, k: UintTy) -> core::option::Option<Typed> {
+    if (right.ty.is_uint(k)) {
+        return Some(Typed { expr: Compare(U64, operation, boxed(left.expr), boxed(right.expr)), ty: Bool });
     }
     return None;
 }
@@ -951,12 +1068,12 @@ pub fn order(operation: CmpOp, left: Typed, right: Typed) -> core::option::Optio
     if (left.ty.is_i32() && right.ty.is_i32()) {
         return Some(Typed { expr: Compare(S32, operation, boxed(left.expr), boxed(right.expr)), ty: Bool });
     }
-    return None;
+    return order_uint(operation, left, right, left.ty.uint_kind());
 }
 
 pub fn equality(operation: CmpOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
     if (left.ty.same(right.ty)) {
-        return Some(Typed { expr: Compare(S32, operation, boxed(left.expr), boxed(right.expr)), ty: Bool });
+        return Some(Typed { expr: Compare(left.ty.word(), operation, boxed(left.expr), boxed(right.expr)), ty: Bool });
     }
     return None;
 }
@@ -1031,6 +1148,7 @@ pub fn lower_field_of(b: Binding, field: usize) -> core::option::Option<Typed> {
     return match (b.ty) {
         I32 -> None,
         Bool -> None,
+        Uint(kind) -> None,
         Struct(id, fields) -> lower_field_at(plus(b.slot, field_offset(unbox(fields), field)), get(unbox(fields), field)),
         Enum(id, variants) -> None,
     };
@@ -1071,6 +1189,60 @@ pub fn lower_not(operand: core::option::Option<Typed>) -> core::option::Option<T
     };
 }
 
+pub fn lower_unsigned(kind: UintTy, value: u64) -> core::option::Option<Typed> {
+    if (value <= kind.mask()) {
+        return Some(Typed { expr: Lit(value), ty: Uint(kind) });
+    }
+    return None;
+}
+
+// An i32's bits as a value of kind: the low bits, or for 64 bits
+// sign-extended (minus 2^32 when the sign bit is set).
+pub fn from_i32(kind: UintTy, e: Expr) -> Expr {
+    if (kind.is_wide()) {
+        let negative: Expr = Compare(U64, Ge, boxed(e), boxed(Lit(2147483648)));
+        return Binary(U64, Sub, boxed(e), boxed(Binary(U64, Mul, boxed(negative), boxed(Lit(4294967296)))));
+    }
+    return wrap(kind, e);
+}
+
+pub fn cast_to_i32(e: Typed) -> core::option::Option<Typed> {
+    return match (e.ty) {
+        I32 -> Some(e),
+        Bool -> None,
+        Uint(kind) -> Some(Typed { expr: wrap(Uint32, e.expr), ty: I32 }),
+        Struct(id, fields) -> None,
+        Enum(id, variants) -> None,
+    };
+}
+
+pub fn cast_to_uint(kind: UintTy, e: Typed) -> core::option::Option<Typed> {
+    return match (e.ty) {
+        I32 -> Some(Typed { expr: from_i32(kind, e.expr), ty: Uint(kind) }),
+        Bool -> None,
+        Uint(source) -> Some(Typed { expr: wrap(kind, e.expr), ty: Uint(kind) }),
+        Struct(id, fields) -> None,
+        Enum(id, variants) -> None,
+    };
+}
+
+pub fn cast_to(ty: SrcType, e: Typed) -> core::option::Option<Typed> {
+    return match (ty) {
+        I32 -> cast_to_i32(e),
+        Bool -> None,
+        Uint(kind) -> cast_to_uint(kind, e),
+        Struct(id, fields) -> None,
+        Enum(id, variants) -> None,
+    };
+}
+
+pub fn lower_cast(ty: SrcType, operand: core::option::Option<Typed>) -> core::option::Option<Typed> {
+    return match (operand) {
+        None -> None,
+        Some(e) -> cast_to(ty, e),
+    };
+}
+
 pub fn lower_apply(op: SrcOp, left: core::option::Option<Typed>, right: core::option::Option<Typed>) -> core::option::Option<Typed> {
     return match (left) {
         None -> None,
@@ -1086,11 +1258,13 @@ impl SrcExpr {
         return match (self) {
             Int(value) -> Some(Typed { expr: Lit((value as u32) as u64), ty: I32 }),
             Boolean(value) -> Some(Typed { expr: Lit(bool_bits(value)), ty: Bool }),
+            Unsigned(kind, value) -> lower_unsigned(kind, value),
             Local(id) -> lower_local(lookup(scope, id)),
             Field(id, index) -> lower_field(lookup(scope, id), index),
             Negate(operand) -> lower_negate(unbox(operand).lower(scope)),
             Not(operand) -> lower_not(unbox(operand).lower(scope)),
             Apply(op, left, right) -> lower_apply(op, unbox(left).lower(scope), unbox(right).lower(scope)),
+            Cast(ty, operand) -> lower_cast(ty, unbox(operand).lower(scope)),
         };
     }
 }
@@ -1162,6 +1336,7 @@ pub fn copy_field_of(b: Binding, index: usize, ty: SrcType) -> core::option::Opt
     return match (b.ty) {
         I32 -> None,
         Bool -> None,
+        Uint(kind) -> None,
         Struct(id, fields) -> copy_field_at(plus(b.slot, field_offset(unbox(fields), index)), get(unbox(fields), index), ty),
         Enum(id, variants) -> None,
     };
@@ -1180,11 +1355,13 @@ pub fn lower_copy(scope: List<Binding>, e: SrcExpr, ty: SrcType) -> core::option
     return match (e) {
         Int(value) -> None,
         Boolean(value) -> None,
+        Unsigned(kind, value) -> None,
         Local(id) -> copy_binding(lookup(scope, id), ty),
         Field(id, index) -> copy_field(lookup(scope, id), index, ty),
         Negate(operand) -> None,
         Not(operand) -> None,
         Apply(op, left, right) -> None,
+        Cast(target, operand) -> None,
     };
 }
 
@@ -1230,6 +1407,7 @@ pub fn lower_literal(scope: List<Binding>, ty: SrcType, fields: List<SrcExpr>) -
     return match (ty) {
         I32 -> None,
         Bool -> None,
+        Uint(kind) -> None,
         Struct(id, types) -> lower_struct_fields(scope, fields, unbox(types)),
         Enum(id, variants) -> None,
     };
@@ -1263,6 +1441,7 @@ pub fn lower_enum_value(scope: List<Binding>, ty: SrcType, variant: usize, paylo
     return match (ty) {
         I32 -> None,
         Bool -> None,
+        Uint(kind) -> None,
         Struct(id, types) -> None,
         Enum(id, variants) -> lower_tagged(scope, unbox(variants), variant, payload),
     };
@@ -1344,6 +1523,7 @@ pub fn lower_match_on(scope: List<Binding>, b: Binding, enum_id: usize, arms: Li
     return match (b.ty) {
         I32 -> None,
         Bool -> None,
+        Uint(kind) -> None,
         Struct(id, types) -> None,
         Enum(id, variants) -> lower_match_arms(scope, b.slot, id == enum_id, unbox(variants), arms, ty, target),
     };
@@ -1439,6 +1619,7 @@ pub fn lower_set_field_of(b: Binding, field: usize, scope: List<Binding>, value:
     return match (b.ty) {
         I32 -> None,
         Bool -> None,
+        Uint(kind) -> None,
         Struct(id, fields) -> lower_set_field_at(plus(b.slot, field_offset(unbox(fields), field)), get(unbox(fields), field), scope, value),
         Enum(id, variants) -> None,
     };

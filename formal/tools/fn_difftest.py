@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Differential test of every extracted function against its Lean definition.
 
-    python3 -I formal/tools/fn_difftest.py WORKDIR [--per-fn N] [--seed S] [--laniusc PATH] [--source FILE]
+    python3 -I formal/tools/fn_difftest.py WORKDIR [--per-fn N] [--seed S] [--shard i/n] [--laniusc PATH] [--source FILE]
 
 For each function and method that extract.py emits (not the inline helpers or
 the list operations, which have spec theorems), generate N random arguments
@@ -360,6 +360,9 @@ def main():
     parser.add_argument('workdir')
     parser.add_argument('--per-fn', type=int, default=20)
     parser.add_argument('--seed', type=int, default=1)
+    parser.add_argument('--shard', default='0/1',
+                        help='i/n: test every n-th function from the i-th, so a large harness splits '
+                             'into n smaller ones (laniusc runs out of GPU memory on one big one)')
     parser.add_argument('--laniusc', default=os.path.join(ROOT, 'target/release/laniusc'))
     parser.add_argument('--source', default=SOURCE,
                         help='Lanius source (default: the mini compiler; the Lean side is always the built one)')
@@ -372,8 +375,10 @@ def main():
     ty = Types(ex)
     ty.need_render, ty.need_lani, ty.need_nil, ty.need_none = set(), set(), set(), set()
 
+    shard, shards = (int(part) for part in args.shard.split('/'))
+    chosen = [t for i, t in enumerate(targets(ex)) if i % shards == shard]
     cases = []  # (label, lean expr, lanius case fn)
-    for label, lean_head, params, ret, call in targets(ex):
+    for label, lean_head, params, ret, call in chosen:
         for _ in range(args.per_fn):
             values = [ty.gen(pt, rng, 3) for _, pt in params]
             lean_args = [ty.lean(v) for v in values]
@@ -447,7 +452,7 @@ def main():
                   if str(i) in actual and actual[str(i)] != expected.get(str(i))]
     for i, label in mismatches[:10]:
         print(f'case {i} ({label}):\n  lean   {expected.get(str(i))}\n  lanius {actual[str(i)]}')
-    labels = sorted({label for label, _, _, _, _ in targets(ex)})
+    labels = sorted({label for label, _, _, _, _ in chosen})
     by_label = {}
     for i in panicked:
         why = {-11: 'stack overflow', -4: 'panic', -5: 'panic'}.get(codes[i], f'exit {codes[i]}')

@@ -293,6 +293,7 @@ mutual
 theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true → a = b
   | .i32, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isI32]
   | .bool, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isBool]
+  | .uint k, b, same => (SrcType.eq_of_isUint (by simpa [SrcType.same] using same)).symm
   | .struct id fs, b, same => by
     cases b with
     | struct id' gs =>
@@ -300,6 +301,7 @@ theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true �
       rw [same.1, typesSame_eq fs same.2]
     | i32 => simp [SrcType.same] at same
     | bool => simp [SrcType.same] at same
+    | uint => simp [SrcType.same] at same
     | enum => simp [SrcType.same] at same
   | .enum id vs, b, same => by
     cases b with
@@ -308,6 +310,7 @@ theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true �
       rw [same.1, variantsSame_eq vs same.2]
     | i32 => simp [SrcType.same] at same
     | bool => simp [SrcType.same] at same
+    | uint => simp [SrcType.same] at same
     | struct => simp [SrcType.same] at same
 
 theorem typesSame_eq : ∀ (fs : List SrcType) {gs : List SrcType}, typesSame fs gs = true → fs = gs
@@ -548,6 +551,7 @@ theorem lowerValue_sound {scope frame st env} {prog : Core.Program} (corr : Corr
       rename_i b found
       simp only [copyFieldOf] at ok
       split at ok
+      · simp at ok
       · simp at ok
       · simp at ok
       rename_i sid fields hty
@@ -1016,6 +1020,32 @@ theorem Insens.copy {src dst n : Nat} (apart : src = dst ∨ src + n ≤ dst ∨
   simp only [Expr.eval, Env.set]
   rw [if_neg (by omega)]
 
+theorem Expr.Below.wrap {n : Nat} {e : Expr} (below : e.Below n) (k : UintTy) : (wrap k e).Below n := by
+  unfold Lanius.Mini.wrap
+  split
+  · exact below
+  · exact ⟨below, trivial⟩
+
+theorem castTo_below {n : Nat} {ty : SrcType} {inner t : Typed} (h : castTo ty inner = some t)
+    (below : inner.expr.Below n) : t.expr.Below n := by
+  cases ty with
+  | i32 =>
+    simp only [castTo, castToI32] at h
+    split at h <;> simp only [Option.some.injEq, reduceCtorEq] at h <;> subst h
+    · exact below
+    · exact below.wrap .uint32
+  | uint kind =>
+    simp only [castTo, castToUint] at h
+    split at h <;> simp only [Option.some.injEq, reduceCtorEq] at h <;> subst h
+    · simp only [fromI32]
+      split
+      · exact ⟨below, ⟨below, trivial⟩, trivial⟩
+      · exact below.wrap kind
+    · exact below.wrap kind
+  | bool => simp [castTo] at h
+  | struct => simp [castTo] at h
+  | enum => simp [castTo] at h
+
 theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
     (slots : ∀ b ∈ scope, b.slot + b.ty.size ≤ next) :
     ∀ (e : SrcExpr) {t : Typed}, e.lower scope = some t → t.expr.Below next := by
@@ -1023,6 +1053,12 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
   induction e with
   | int x => intro t lowered; simp only [SrcExpr.lower, Option.some.injEq] at lowered; subst lowered; trivial
   | boolean x => intro t lowered; simp only [SrcExpr.lower, Option.some.injEq] at lowered; subst lowered; trivial
+  | unsigned kind x =>
+    intro t lowered
+    simp only [SrcExpr.lower, lowerUnsigned] at lowered
+    split at lowered <;> simp only [Option.some.injEq, reduceCtorEq] at lowered
+    subst lowered
+    trivial
   | «local» id =>
     intro t lowered
     simp only [SrcExpr.lower, lowerLocal] at lowered
@@ -1049,7 +1085,8 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
     split at lowered
     · simp at lowered
     · simp at lowered
-    case h_4 => simp at lowered
+    · simp at lowered
+    case h_5 => simp at lowered
     rename_i sid fields hty
     simp only [lowerFieldAt] at lowered
     split at lowered
@@ -1102,10 +1139,34 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
     rename_i tr rightLowered
     have bl := ihl leftLowered
     have br := ihr rightLowered
-    cases op <;>
-      simp only [SrcOp.lower, arith, order, equality, conjunction, disjunction] at lowered <;>
+    cases op
+    case plus | minus | times | bitAnd | bitOr | bitXor =>
+      simp only [SrcOp.lower, arith] at lowered
+      split at lowered
+      · simp only [Option.some.injEq] at lowered
+        subst lowered
+        exact ⟨bl, br⟩
+      · obtain ⟨k, -, -, rfl⟩ := arithUint_some lowered
+        exact Expr.Below.wrap (e := .binary .u64 _ _ _) ⟨bl, br⟩ k
+    case less | lessEq | greater | greaterEq =>
+      simp only [SrcOp.lower, order] at lowered
+      split at lowered
+      · simp only [Option.some.injEq] at lowered
+        subst lowered
+        exact ⟨bl, br⟩
+      · obtain ⟨k, -, -, rfl⟩ := orderUint_some lowered
+        exact ⟨bl, br⟩
+    all_goals
+      simp only [SrcOp.lower, equality, conjunction, disjunction] at lowered
       split at lowered <;> simp only [Option.some.injEq, reduceCtorEq] at lowered <;> subst lowered <;>
       first | exact ⟨bl, br⟩ | exact ⟨⟨bl, br⟩, trivial⟩
+  | cast ty operand ih =>
+    intro t lowered
+    simp only [SrcExpr.lower, lowerCast] at lowered
+    split at lowered
+    · simp at lowered
+    rename_i inner innerLowered
+    exact castTo_below lowered (ih innerLowered)
 
 theorem ValueShape.sized {scope frame base next} {xs : List Expr} (shape : ValueShape scope xs)
     (fr : Layout scope frame base next) : 0 < xs.length := by
@@ -1485,6 +1546,7 @@ theorem stmt_letStruct (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {fi
   cases ty with
   | i32 => simp [lowerLiteral] at literalOk
   | bool => simp [lowerLiteral] at literalOk
+  | uint => simp [lowerLiteral] at literalOk
   | enum => simp [lowerLiteral] at literalOk
   | struct sid types =>
     simp only [lowerLiteral, lowerStructFields] at literalOk
@@ -1573,6 +1635,7 @@ theorem stmt_letEnum (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {vari
   cases ty with
   | i32 => simp [lowerEnumValue] at valueOk
   | bool => simp [lowerEnumValue] at valueOk
+  | uint => simp [lowerEnumValue] at valueOk
   | struct => simp [lowerEnumValue] at valueOk
   | enum eid variants =>
     simp only [lowerEnumValue, lowerTagged] at valueOk
@@ -1647,6 +1710,7 @@ theorem stmt_letMatch (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {scr
   rename_i b found
   simp only [lowerMatchOn] at matchOk
   split at matchOk
+  · simp at matchOk
   · simp at matchOk
   · simp at matchOk
   · simp at matchOk
@@ -1755,7 +1819,8 @@ theorem stmt_setField {id index : Nat} {value : SrcExpr}
   split at ok
   · simp at ok
   · simp at ok
-  case h_4 => simp at ok
+  · simp at ok
+  case h_5 => simp at ok
   rename_i sid types hty
   simp only [lowerSetFieldAt] at ok
   split at ok

@@ -1,5 +1,5 @@
 import Lanius.Mini.Semantics
-import Lanius.Mini.Source
+import Lanius.Mini.Unsigned
 
 /-! Expressions: a lowered subset expression evaluates in Core without changing
 the state, to a value its lowered mini expression represents. -/
@@ -160,8 +160,111 @@ theorem eval_ne_bool (x y : Bool) : evalBinaryValue .x86_64 .notEqual (.boolean 
 
 end Values
 
+theorem UintTy.eq_of_code {a b : UintTy} (same : a.code = b.code) : a = b := by
+  cases a <;> cases b <;> simp_all [UintTy.code]
+
+theorem SrcType.eq_of_isUint {ty : SrcType} {k : UintTy} (h : ty.isUint k = true) : ty = .uint k := by
+  cases ty <;> simp only [SrcType.isUint, decide_eq_true_eq, reduceCtorEq] at h ⊢
+  rw [UintTy.eq_of_code h]
+
+theorem SrcType.eq_of_uintKind {ty : SrcType} {k : UintTy} (h : ty.uintKind = some k) : ty = .uint k := by
+  cases ty <;> simp_all [SrcType.uintKind]
+
+theorem arithUint_some {op : BinOp} {l r t : Typed} {kind : Option UintTy}
+    (h : arithUint op l r kind = some t) : ∃ k, kind = some k ∧ r.ty = .uint k ∧
+      t = { expr := wrap k (.binary .u64 op l.expr r.expr), ty := .uint k } := by
+  cases kind with
+  | none => simp [arithUint] at h
+  | some k =>
+    simp only [arithUint] at h
+    split at h
+    · rename_i hr
+      simp only [Option.some.injEq] at h
+      exact ⟨k, rfl, SrcType.eq_of_isUint hr, h.symm⟩
+    · simp at h
+
+theorem orderUint_some {op : CmpOp} {l r t : Typed} {kind : Option UintTy}
+    (h : orderUint op l r kind = some t) : ∃ k, kind = some k ∧ r.ty = .uint k ∧
+      t = { expr := .compare .u64 op l.expr r.expr, ty := .bool } := by
+  cases kind with
+  | none => simp [orderUint] at h
+  | some k =>
+    simp only [orderUint] at h
+    split at h
+    · rename_i hr
+      simp only [Option.some.injEq] at h
+      exact ⟨k, rfl, SrcType.eq_of_isUint hr, h.symm⟩
+    · simp at h
+
 theorem holds_compare (c : Bool) : SrcType.Holds .bool (.boolean c) (if c then 1 else 0) :=
   ⟨c, rfl, by cases c <;> rfl⟩
+
+/-- A lowered cast holds Core's cast of the operand's value. -/
+theorem cast_sound {ty : SrcType} {inner t : Typed} {env : Env} {w result : Value}
+    (holds : inner.ty.Holds w (inner.expr.eval env)) (lowered : castTo ty inner = some t)
+    (casted : Semantics.evalScalarCast .x86_64 ty.toScalar w = .ok result) :
+    t.ty.Holds result (t.expr.eval env) := by
+  cases ty with
+  | i32 =>
+    simp only [castTo, castToI32] at lowered
+    split at lowered
+    · rename_i hty
+      simp only [Option.some.injEq] at lowered
+      subst lowered
+      rw [hty] at holds ⊢
+      obtain ⟨rfl, bits⟩ := holds
+      simp only [SrcType.toScalar, cast_i32_i32, Except.ok.injEq] at casted
+      subst casted
+      exact ⟨rfl, bits⟩
+    · simp at lowered
+    · rename_i kind hty
+      simp only [Option.some.injEq] at lowered
+      subst lowered
+      rw [hty] at holds
+      obtain ⟨rfl, bound⟩ := holds
+      simp only [SrcType.toScalar, cast_i32_uint, Except.ok.injEq] at casted
+      subst casted
+      have low32 : BitVec.ofNat 64 ((inner.expr.eval env).toNat % 2 ^ UintTy.width .uint32) =
+          widen (BitVec.ofNat 32 (inner.expr.eval env).toNat) := by
+        apply BitVec.eq_of_toNat_eq
+        simp only [widen, BitVec.toNat_ofNat, BitVec.toNat_setWidth, UintTy.width]
+      simp only [wrap_eval, low32]
+      exact holds_i32 _
+    · simp at lowered
+    · simp at lowered
+  | bool => simp [castTo] at lowered
+  | uint kind =>
+    have positive := Nat.two_pow_pos kind.width
+    simp only [castTo, castToUint] at lowered
+    split at lowered
+    · rename_i hty
+      simp only [Option.some.injEq] at lowered
+      subst lowered
+      rw [hty] at holds
+      obtain ⟨rfl, bits⟩ := holds
+      simp only [SrcType.toScalar, cast_uint_i32, Except.ok.injEq] at casted
+      subst casted
+      rw [fromI32_eval kind _ env bits]
+      refine holds_uint kind ?_
+      have : ((low (inner.expr.eval env)).toInt % (2 ^ kind.width : Nat)).toNat < 2 ^ kind.width := by
+        have := Int.emod_lt_of_pos (low (inner.expr.eval env)).toInt (show (0 : Int) < (2 ^ kind.width : Nat) by omega)
+        have := Int.emod_nonneg (low (inner.expr.eval env)).toInt (show ((2 ^ kind.width : Nat) : Int) ≠ 0 by omega)
+        omega
+      simpa using this
+    · simp at lowered
+    · rename_i source hty
+      simp only [Option.some.injEq] at lowered
+      subst lowered
+      rw [hty] at holds
+      obtain ⟨rfl, bound⟩ := holds
+      simp only [SrcType.toScalar, cast_uint_uint, Except.ok.injEq] at casted
+      subst casted
+      rw [wrap_eval]
+      exact holds_uint kind (Nat.mod_lt _ positive)
+    · simp at lowered
+    · simp at lowered
+  | struct => simp [castTo] at lowered
+  | enum => simp [castTo] at lowered
 
 theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat → Nat} {st : State}
     {env : Env} {prog : Core.Program} (corr : Corr scope frame st env) (target : prog.target = .x86_64) :
@@ -188,6 +291,23 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
       simp only [SrcExpr.toCore, evalExpr, Semantics.Outcome.done.injEq] at run
       obtain ⟨rfl, rfl⟩ := run
       exact ⟨rfl, x, rfl, rfl⟩
+  | unsigned kind value =>
+    intro t fuel v st' lowered run
+    cases fuel with
+    | zero => simp [evalExpr] at run
+    | succ fuel =>
+      simp only [SrcExpr.lower, lowerUnsigned] at lowered
+      split at lowered
+      · rename_i fits
+        simp only [Option.some.injEq] at lowered
+        subst lowered
+        simp only [SrcExpr.toCore, evalExpr, Semantics.Outcome.done.injEq] at run
+        obtain ⟨rfl, rfl⟩ := run
+        have mask := kind.mask_toNat
+        have positive := Nat.two_pow_pos kind.width
+        rw [BitVec.le_def] at fits
+        exact ⟨rfl, rfl, by simp only [Expr.eval]; omega⟩
+      · simp at lowered
   | «local» id =>
     intro t fuel v st' lowered run
     cases fuel with
@@ -221,6 +341,7 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
         rename_i b found
         simp only [lowerFieldOf] at lowered
         split at lowered
+        · simp at lowered
         · simp at lowered
         · simp at lowered
         rename_i sid fields hty
@@ -334,7 +455,25 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
             eval_bitXor, Except.ok.injEq] at evaluated
           subst evaluated
           exact ⟨rfl, by simp only [Expr.eval, Word.apply, BinOp.apply]; exact holds_i32 _⟩
-        · simp at lowered
+        · obtain ⟨k, hk, htr, rfl⟩ := arithUint_some lowered
+          rw [SrcType.eq_of_uintKind hk] at holdsl
+          rw [htr] at holdsr
+          obtain ⟨rfl, _⟩ := holdsl
+          obtain ⟨rfl, boundr⟩ := holdsr
+          rw [target] at evaluated
+          simp only [SrcOp.toCore] at evaluated
+          first
+            | rw [eval_uint_binop k boundr (op := .add) (.inl ⟨rfl, rfl⟩)] at evaluated
+            | rw [eval_uint_binop k boundr (op := .sub) (.inr (.inl ⟨rfl, rfl⟩))] at evaluated
+            | rw [eval_uint_binop k boundr (op := .mul) (.inr (.inr (.inl ⟨rfl, rfl⟩)))] at evaluated
+            | rw [eval_uint_binop k boundr (op := .and) (.inr (.inr (.inr (.inl ⟨rfl, rfl⟩))))] at evaluated
+            | rw [eval_uint_binop k boundr (op := .or) (.inr (.inr (.inr (.inr (.inl ⟨rfl, rfl⟩)))))] at evaluated
+            | rw [eval_uint_binop k boundr (op := .xor) (.inr (.inr (.inr (.inr (.inr ⟨rfl, rfl⟩)))))] at evaluated
+          simp only [Except.ok.injEq] at evaluated
+          subst evaluated
+          refine ⟨rfl, ?_⟩
+          rw [wrap_eval]
+          exact holds_uint k (Nat.mod_lt _ (Nat.two_pow_pos _))
       case less | lessEq | greater | greaterEq =>
         obtain ⟨rfl, vl, vr, holdsl, holdsr, evaluated⟩ :=
           binary_sound hl hr (by simp [SrcOp.toCore]) run
@@ -360,7 +499,23 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
           refine ⟨rfl, ?_⟩
           simp only [Expr.eval, Word.holds]
           exact holds_compare _
-        · simp at lowered
+        · obtain ⟨k, hk, htr, rfl⟩ := orderUint_some lowered
+          rw [SrcType.eq_of_uintKind hk] at holdsl
+          rw [htr] at holdsr
+          obtain ⟨rfl, _⟩ := holdsl
+          obtain ⟨rfl, _⟩ := holdsr
+          rw [target] at evaluated
+          simp only [SrcOp.toCore] at evaluated
+          first
+            | rw [eval_uint_order k _ _ (op := .lt) (.inl ⟨rfl, rfl⟩)] at evaluated
+            | rw [eval_uint_order k _ _ (op := .le) (.inr (.inl ⟨rfl, rfl⟩))] at evaluated
+            | rw [eval_uint_order k _ _ (op := .gt) (.inr (.inr (.inl ⟨rfl, rfl⟩)))] at evaluated
+            | rw [eval_uint_order k _ _ (op := .ge) (.inr (.inr (.inr ⟨rfl, rfl⟩)))] at evaluated
+          simp only [Except.ok.injEq] at evaluated
+          subst evaluated
+          refine ⟨rfl, ?_⟩
+          simp only [Expr.eval, Word.holds]
+          exact holds_compare _
       case equal | notEqual =>
         obtain ⟨rfl, vl, vr, holdsl, holdsr, evaluated⟩ :=
           binary_sound hl hr (by simp [SrcOp.toCore]) run
@@ -373,19 +528,27 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
           rw [target] at evaluated
           simp only [SrcOp.toCore] at evaluated
           cases htl : tl.ty <;> cases htr : tr.ty <;>
-            simp [htl, htr, SrcType.same, SrcType.isI32, SrcType.isBool] at types <;>
+            simp [htl, htr, SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isUint] at types <;>
             rw [htl] at holdsl <;> rw [htr] at holdsr
           · obtain ⟨rfl, _⟩ := holdsl
             obtain ⟨rfl, _⟩ := holdsr
             simp only [eval_eq_int, eval_ne_int, Except.ok.injEq] at evaluated
             subst evaluated
-            simp only [Expr.eval, Word.holds]
+            simp only [Expr.eval, SrcType.word, Word.holds]
             exact holds_compare _
           · obtain ⟨x, rfl, bitsl⟩ := holdsl
             obtain ⟨y, rfl, bitsr⟩ := holdsr
             simp only [eval_eq_bool, eval_ne_bool, Except.ok.injEq] at evaluated
             subst evaluated
-            simp only [Expr.eval, Word.holds, bitsl, bitsr]
+            simp only [Expr.eval, SrcType.word, Word.holds, bitsl, bitsr]
+            exact holds_compare _
+          · rename_i k k' _ _
+            cases UintTy.eq_of_code types
+            obtain ⟨rfl, _⟩ := holdsl
+            obtain ⟨rfl, _⟩ := holdsr
+            simp only [eval_uint_eq, eval_uint_ne, Except.ok.injEq] at evaluated
+            subst evaluated
+            simp only [Expr.eval, htl, SrcType.word, Word.holds]
             exact holds_compare _
           · simp [SrcType.Holds] at holdsl
           · simp [SrcType.Holds] at holdsl
@@ -467,5 +630,27 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
             cases x <;> simp_all
           all_goals simp at run
         · simp at lowered
+
+  | cast ty operand ih =>
+    intro t fuel v st' lowered run
+    cases fuel with
+    | zero => simp [evalExpr] at run
+    | succ fuel =>
+      simp only [SrcExpr.lower, lowerCast] at lowered
+      split at lowered
+      · simp at lowered
+      rename_i inner innerLowered
+      simp only [SrcExpr.toCore, evalExpr] at run
+      split at run
+      · rename_i w mid innerRun
+        obtain ⟨rfl, holds⟩ := ih innerLowered innerRun
+        split at run
+        · rename_i result casted
+          simp only [Semantics.Outcome.done.injEq] at run
+          obtain ⟨rfl, rfl⟩ := run
+          rw [target] at casted
+          exact ⟨rfl, cast_sound holds lowered casted⟩
+        · simp at run
+      all_goals simp at run
 
 end Lanius.Mini

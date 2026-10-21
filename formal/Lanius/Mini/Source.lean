@@ -12,9 +12,22 @@ namespace Lanius.Mini
 
 open Lanius.Core (Value)
 
+def UintTy.toCore : UintTy → Core.UnsignedIntTy
+  | .uint8 => .u8
+  | .uint32 => .u32
+  | .uint64 => .u64
+  | .usize => .usize
+
+def UintTy.width : UintTy → Nat
+  | .uint8 => 8
+  | .uint32 => 32
+  | .uint64 => 64
+  | .usize => 64
+
 def SrcType.toCore : SrcType → Core.Ty
   | .i32 => .scalar (.signed .i32)
   | .bool => .scalar .bool
+  | .uint kind => .scalar (.unsigned kind.toCore)
   | .struct id _ => .structure id
   | .enum id _ => .enumeration id
 
@@ -22,8 +35,18 @@ def SrcType.toCore : SrcType → Core.Ty
 def SrcType.typeId : SrcType → Nat
   | .i32 => 0
   | .bool => 0
+  | .uint _ => 0
   | .struct id _ => id
   | .enum id _ => id
+
+/-- The Core type a cast to this type names. Lowering only casts to `i32`
+and the unsigned types. -/
+def SrcType.toScalar : SrcType → Core.ScalarTy
+  | .i32 => .signed .i32
+  | .bool => .bool
+  | .uint kind => .unsigned kind.toCore
+  | .struct _ _ => .bool
+  | .enum _ _ => .bool
 
 def SrcOp.toCore : SrcOp → Core.BinaryOp
   | .plus => .add
@@ -44,11 +67,13 @@ def SrcOp.toCore : SrcOp → Core.BinaryOp
 def SrcExpr.toCore : SrcExpr → Core.Expr
   | .int value => .value (.signed .i32 value.toInt)
   | .boolean value => .value (.boolean value)
+  | .unsigned kind value => .value (.unsigned kind.toCore value.toNat)
   | .local id => .local id
   | .field id index => .field (.local id) index
   | .negate operand => .unary .negate operand.toCore
   | .not operand => .unary .logicalNot operand.toCore
   | .apply op left right => .binary op.toCore left.toCore right.toCore
+  | .cast ty operand => .cast ty.toScalar operand.toCore
 
 /-- Match arms from variant `k`: arm `k` matches variant `k` of enum type
 `id`, binding its payload. -/
@@ -92,10 +117,12 @@ def SrcProgram.toCore (prog : SrcProgram) : Core.Program where
   functions := coreFuncs 0 prog.funcs
 
 /-- `ty.Holds value bits`: one slot holding `bits` represents the Core `value`
-of scalar type `ty`. An `i32` is its bits zero-extended; booleans are 1 and 0. -/
+of scalar type `ty`. An `i32` is its bits zero-extended; booleans are 1 and 0;
+an unsigned value is the slot's number, below its type's bound. -/
 def SrcType.Holds : SrcType → Value → BitVec 64 → Prop
   | .i32, value, bits => value = .signed .i32 (low bits).toInt ∧ bits = widen (low bits)
   | .bool, value, bits => ∃ b, value = .boolean b ∧ bits = boolBits b
+  | .uint kind, value, bits => value = .unsigned kind.toCore bits.toNat ∧ bits.toNat < 2 ^ kind.width
   | .struct _ _, _, _ => False
   | .enum _ _, _, _ => False
 
@@ -108,6 +135,8 @@ inductive SrcType.HoldsAt : SrcType → Value → Env → Nat → Prop where
       SrcType.i32.Holds value (env slot) → SrcType.HoldsAt .i32 value env slot
   | bool {value : Value} {env : Env} {slot : Nat} :
       SrcType.bool.Holds value (env slot) → SrcType.HoldsAt .bool value env slot
+  | uint {kind : UintTy} {value : Value} {env : Env} {slot : Nat} :
+      (SrcType.uint kind).Holds value (env slot) → SrcType.HoldsAt (.uint kind) value env slot
   | struct {id : Nat} {fields : List SrcType} {vs : List Value} {env : Env} {slot : Nat} :
       FieldsHold fields vs env slot → SrcType.HoldsAt (.struct id fields) (.structure id vs) env slot
   | enum {id : Nat} {variants : List (List SrcType)} {k : Nat} {fs : List SrcType} {vs : List Value}
@@ -128,6 +157,7 @@ theorem SrcType.holdsAt_scalar {ty : SrcType} (scalar : ty.isScalar = true) {v :
   cases ty with
   | i32 => exact ⟨fun | .i32 h => h, .i32⟩
   | bool => exact ⟨fun | .bool h => h, .bool⟩
+  | uint => exact ⟨fun | .uint h => h, .uint⟩
   | struct => simp [SrcType.isScalar] at scalar
   | enum => simp [SrcType.isScalar] at scalar
 
@@ -161,6 +191,10 @@ theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot
     have := agree 0 (by simp [SrcType.size])
     simp only [Nat.add_zero] at this
     exact .bool (by rw [this]; exact holds)
+  | .uint _, _, _, _, .uint holds, _, _, agree => by
+    have := agree 0 (by simp [SrcType.size])
+    simp only [Nat.add_zero] at this
+    exact .uint (by rw [this]; exact holds)
   | .struct _ fields, _, _, _, .struct holds, _, _, agree =>
     .struct (FieldsHold.congr holds fun i below => agree i (by simp only [SrcType.size]; exact below))
   | .enum _ variants, _, _, slot, .enum found tag payload, _, slot', agree => by

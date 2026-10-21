@@ -16,9 +16,9 @@ meaning, and everything else is rejected:
              generic functions only as the list operations in SPEC_FNS
   bodies     let, if/else, return; match on an enum, an Option, or a List
   arithmetic i32/u32/u64 + - * & | ^ wrap, like BitVec; u32/u64 >> by a constant;
-             usize only / and comparisons, since + - * go through the prelude's
-             panicking plus/minus/times, which equal Nat + - * whenever they
-             return; casts usize -> i32/u64 (BitVec.ofNat), i32 -> u32 (same
+             usize only /, since + - * go through the prelude's panicking
+             plus/minus/times, which equal Nat + - * whenever they return;
+             comparisons on usize, u32, u64 and u8 (unsigned in Lean too); casts usize -> i32/u64 (BitVec.ofNat), i32 -> u32 (same
              bits), u32 -> u64 (zero-extended), i32/u32/u64 -> u8 (low byte)
 
 The prelude section (between `// extract: prelude begin` and `end`) is not
@@ -1048,7 +1048,9 @@ class Extractor:
         if ty is None:
             fail('comparison of two literals', t)
         a, b = self.expr(left, env, ty), self.expr(right, env, ty)
-        if ty != USIZE:
+        # Lean's < and ≤ on Nat, BitVec and UInt8 are unsigned, so signed i32
+        # comparisons stay out.
+        if ty not in (USIZE, U32, U64, U8):
             fail(f'comparison on {ty!r} is not in the extracted subset', t)
         flipped = {'<': ('<', a, b), '<=': ('≤', a, b), '>': ('<', b, a), '>=': ('≤', b, a),
                    '==': ('=', a, b), '!=': ('≠', a, b)}

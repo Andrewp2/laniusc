@@ -514,9 +514,42 @@ def compileProgram (prog : Program) : Option Binary :=
     else
       none
 
+/-- An unsigned integer type. A value sits zero-extended in its slot. -/
+inductive UintTy where
+  | uint8 : UintTy
+  | uint32 : UintTy
+  | uint64 : UintTy
+  | usize : UintTy
+  deriving DecidableEq, Repr
+
+/-- Its index, for comparing types. -/
+def UintTy.code (self : UintTy) : Nat :=
+  match self with
+  | .uint8 => 0
+  | .uint32 => 1
+  | .uint64 => 2
+  | .usize => 3
+
+/-- The largest value, 2^width - 1. -/
+def UintTy.mask (self : UintTy) : BitVec 64 :=
+  match self with
+  | .uint8 => 255
+  | .uint32 => 4294967295
+  | .uint64 => 18446744073709551615
+  | .usize => 18446744073709551615
+
+/-- 64 bits wide, so slot arithmetic wraps the same way. -/
+def UintTy.isWide (self : UintTy) : Bool :=
+  match self with
+  | .uint8 => false
+  | .uint32 => false
+  | .uint64 => true
+  | .usize => true
+
 inductive SrcType where
   | i32 : SrcType
   | bool : SrcType
+  | uint : UintTy → SrcType
   | struct : Nat → (List SrcType) → SrcType
   | enum : Nat → (List (List SrcType)) → SrcType
   deriving Repr
@@ -541,19 +574,23 @@ inductive SrcOp where
 inductive SrcExpr where
   | int : (BitVec 32) → SrcExpr
   | boolean : Bool → SrcExpr
+  /-- a literal of an unsigned type -/
+  | unsigned : UintTy → (BitVec 64) → SrcExpr
   | local : Nat → SrcExpr
   /-- field of a struct local -/
   | field : Nat → Nat → SrcExpr
   | negate : SrcExpr → SrcExpr
   | not : SrcExpr → SrcExpr
   | apply : SrcOp → SrcExpr → SrcExpr → SrcExpr
-  deriving DecidableEq, Repr
+  /-- between i32 and the unsigned types, wrapping like Core -/
+  | cast : SrcType → SrcExpr → SrcExpr
+  deriving Repr
 
 /-- A match arm: the binders of its variant's payload, and its value. -/
 structure SrcArm where
   binders : List Nat
   value : SrcExpr
-  deriving DecidableEq, Repr
+  deriving Repr
 
 inductive SrcStmt where
   | nop : SrcStmt
@@ -619,6 +656,7 @@ def SrcType.isI32 (self : SrcType) : Bool :=
   match self with
   | .i32 => true
   | .bool => false
+  | .uint kind => false
   | .struct id fields => false
   | .enum id variants => false
 
@@ -626,6 +664,7 @@ def SrcType.isBool (self : SrcType) : Bool :=
   match self with
   | .i32 => false
   | .bool => true
+  | .uint kind => false
   | .struct id fields => false
   | .enum id variants => false
 
@@ -633,8 +672,35 @@ def SrcType.isScalar (self : SrcType) : Bool :=
   match self with
   | .i32 => true
   | .bool => true
+  | .uint kind => true
   | .struct id fields => false
   | .enum id variants => false
+
+def SrcType.isUint (self : SrcType) (kind : UintTy) : Bool :=
+  match self with
+  | .i32 => false
+  | .bool => false
+  | .uint other => decide (UintTy.code other = UintTy.code kind)
+  | .struct id fields => false
+  | .enum id variants => false
+
+/-- The unsigned type this is, if it is one. -/
+def SrcType.uintKind (self : SrcType) : Option UintTy :=
+  match self with
+  | .i32 => none
+  | .bool => none
+  | .uint kind => some kind
+  | .struct id fields => none
+  | .enum id variants => none
+
+/-- How a comparison of two values of this type reads their slots. -/
+def SrcType.word (self : SrcType) : Word :=
+  match self with
+  | .i32 => Word.s32
+  | .bool => Word.s32
+  | .uint kind => Word.u64
+  | .struct id fields => Word.s32
+  | .enum id variants => Word.s32
 
 mutual
 
@@ -642,16 +708,19 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
   match self with
   | .i32 => SrcType.isI32 other
   | .bool => SrcType.isBool other
+  | .uint kind => SrcType.isUint other kind
   | .struct id fields =>
     (match other with
      | .i32 => false
      | .bool => false
+     | .uint otherKind => false
      | .struct otherId otherFields => decide (id = otherId) && typesSame fields otherFields
      | .enum otherId otherVariants => false)
   | .enum id variants =>
     match other with
     | .i32 => false
     | .bool => false
+    | .uint otherKind => false
     | .struct otherId otherFields => false
     | .enum otherId otherVariants => decide (id = otherId) && variantsSame variants otherVariants
 
@@ -686,6 +755,7 @@ def SrcType.size (self : SrcType) : Nat :=
   match self with
   | .i32 => 1
   | .bool => 1
+  | .uint kind => 1
   | .struct id fields => sizes fields
   | .enum id variants => 1 + maxSize variants
 
@@ -718,21 +788,46 @@ structure Typed where
   ty : SrcType
   deriving Repr
 
+/-- e reduced to the width of kind. -/
+def wrap (kind : UintTy) (e : Expr) : Expr :=
+  if UintTy.isWide kind then
+    e
+  else
+    Expr.binary Word.u64 BinOp.and e (Expr.lit (UintTy.mask kind))
+
+def arithUint (operation : BinOp) (left : Typed) (right : Typed) (kind : Option UintTy) : Option Typed :=
+  match kind with
+  | none => none
+  | some k =>
+    if SrcType.isUint right.ty k then
+      some ({ expr := wrap k (Expr.binary Word.u64 operation left.expr right.expr), ty := SrcType.uint k } : Typed)
+    else
+      none
+
 def arith (operation : BinOp) (left : Typed) (right : Typed) : Option Typed :=
   if SrcType.isI32 left.ty && SrcType.isI32 right.ty then
     some ({ expr := Expr.binary Word.s32 operation left.expr right.expr, ty := SrcType.i32 } : Typed)
   else
-    none
+    arithUint operation left right (SrcType.uintKind left.ty)
+
+def orderUint (operation : CmpOp) (left : Typed) (right : Typed) (kind : Option UintTy) : Option Typed :=
+  match kind with
+  | none => none
+  | some k =>
+    if SrcType.isUint right.ty k then
+      some ({ expr := Expr.compare Word.u64 operation left.expr right.expr, ty := SrcType.bool } : Typed)
+    else
+      none
 
 def order (operation : CmpOp) (left : Typed) (right : Typed) : Option Typed :=
   if SrcType.isI32 left.ty && SrcType.isI32 right.ty then
     some ({ expr := Expr.compare Word.s32 operation left.expr right.expr, ty := SrcType.bool } : Typed)
   else
-    none
+    orderUint operation left right (SrcType.uintKind left.ty)
 
 def equality (operation : CmpOp) (left : Typed) (right : Typed) : Option Typed :=
   if SrcType.same left.ty right.ty then
-    some ({ expr := Expr.compare Word.s32 operation left.expr right.expr, ty := SrcType.bool } : Typed)
+    some ({ expr := Expr.compare (SrcType.word left.ty) operation left.expr right.expr, ty := SrcType.bool } : Typed)
   else
     none
 
@@ -791,6 +886,7 @@ def lowerFieldOf (b : Binding) (field : Nat) : Option Typed :=
   match b.ty with
   | .i32 => none
   | .bool => none
+  | .uint kind => none
   | .struct id fields => lowerFieldAt (b.slot + fieldOffset fields field) fields[field]?
   | .enum id variants => none
 
@@ -821,6 +917,49 @@ def lowerNot (operand : Option Typed) : Option Typed :=
   | none => none
   | some e => lowerNotTyped e
 
+def lowerUnsigned (kind : UintTy) (value : BitVec 64) : Option Typed :=
+  if value ≤ UintTy.mask kind then
+    some ({ expr := Expr.lit value, ty := SrcType.uint kind } : Typed)
+  else
+    none
+
+/-- An i32's bits as a value of kind: the low bits, or for 64 bits sign-extended (minus 2^32 when the sign bit is set). -/
+def fromI32 (kind : UintTy) (e : Expr) : Expr :=
+  if UintTy.isWide kind then
+    let negative : Expr := Expr.compare Word.u64 CmpOp.ge e (Expr.lit 2147483648)
+    Expr.binary Word.u64 BinOp.sub e (Expr.binary Word.u64 BinOp.mul negative (Expr.lit 4294967296))
+  else
+    wrap kind e
+
+def castToI32 (e : Typed) : Option Typed :=
+  match e.ty with
+  | .i32 => some e
+  | .bool => none
+  | .uint kind => some ({ expr := wrap UintTy.uint32 e.expr, ty := SrcType.i32 } : Typed)
+  | .struct id fields => none
+  | .enum id variants => none
+
+def castToUint (kind : UintTy) (e : Typed) : Option Typed :=
+  match e.ty with
+  | .i32 => some ({ expr := fromI32 kind e.expr, ty := SrcType.uint kind } : Typed)
+  | .bool => none
+  | .uint source => some ({ expr := wrap kind e.expr, ty := SrcType.uint kind } : Typed)
+  | .struct id fields => none
+  | .enum id variants => none
+
+def castTo (ty : SrcType) (e : Typed) : Option Typed :=
+  match ty with
+  | .i32 => castToI32 e
+  | .bool => none
+  | .uint kind => castToUint kind e
+  | .struct id fields => none
+  | .enum id variants => none
+
+def lowerCast (ty : SrcType) (operand : Option Typed) : Option Typed :=
+  match operand with
+  | none => none
+  | some e => castTo ty e
+
 def lowerApply (op : SrcOp) (left : Option Typed) (right : Option Typed) : Option Typed :=
   match left with
   | none => none
@@ -833,11 +972,13 @@ def SrcExpr.lower (self : SrcExpr) (scope : List Binding) : Option Typed :=
   match self with
   | .int value => some ({ expr := Expr.lit (BitVec.setWidth 64 value), ty := SrcType.i32 } : Typed)
   | .boolean value => some ({ expr := Expr.lit (boolBits value), ty := SrcType.bool } : Typed)
+  | .unsigned kind value => lowerUnsigned kind value
   | .local id => lowerLocal (lookup scope id)
   | .field id index => lowerField (lookup scope id) index
   | .negate operand => lowerNegate (SrcExpr.lower operand scope)
   | .not operand => lowerNot (SrcExpr.lower operand scope)
   | .apply op left right => lowerApply op (SrcExpr.lower left scope) (SrcExpr.lower right scope)
+  | .cast ty operand => lowerCast ty (SrcExpr.lower operand scope)
 
 def expectType (typed : Typed) (ty : SrcType) : Option Expr :=
   if SrcType.same typed.ty ty then
@@ -888,6 +1029,7 @@ def copyFieldOf (b : Binding) (index : Nat) (ty : SrcType) : Option (List Expr) 
   match b.ty with
   | .i32 => none
   | .bool => none
+  | .uint kind => none
   | .struct id fields => copyFieldAt (b.slot + fieldOffset fields index) fields[index]? ty
   | .enum id variants => none
 
@@ -902,11 +1044,13 @@ def lowerCopy (scope : List Binding) (e : SrcExpr) (ty : SrcType) : Option (List
   match e with
   | .int value => none
   | .boolean value => none
+  | .unsigned kind value => none
   | .local id => copyBinding (lookup scope id) ty
   | .field id index => copyField (lookup scope id) index ty
   | .negate operand => none
   | .not operand => none
   | .apply op left right => none
+  | .cast target operand => none
 
 def lowerSingle (value : Option Expr) : Option (List Expr) :=
   match value with
@@ -943,6 +1087,7 @@ def lowerLiteral (scope : List Binding) (ty : SrcType) (fields : List SrcExpr) :
   match ty with
   | .i32 => none
   | .bool => none
+  | .uint kind => none
   | .struct id types => lowerStructFields scope fields types
   | .enum id variants => none
 
@@ -968,6 +1113,7 @@ def lowerEnumValue (scope : List Binding) (ty : SrcType) (variant : Nat) (payloa
   match ty with
   | .i32 => none
   | .bool => none
+  | .uint kind => none
   | .struct id types => none
   | .enum id variants => lowerTagged scope variants variant payload
 
@@ -1030,6 +1176,7 @@ def lowerMatchOn (scope : List Binding) (b : Binding) (enumId : Nat) (arms : Lis
   match b.ty with
   | .i32 => none
   | .bool => none
+  | .uint kind => none
   | .struct id types => none
   | .enum id variants => lowerMatchArms scope b.slot (decide (id = enumId)) variants arms ty target
 
@@ -1101,6 +1248,7 @@ def lowerSetFieldOf (b : Binding) (field : Nat) (scope : List Binding) (value : 
   match b.ty with
   | .i32 => none
   | .bool => none
+  | .uint kind => none
   | .struct id fields => lowerSetFieldAt (b.slot + fieldOffset fields field) fields[field]? scope value
   | .enum id variants => none
 
