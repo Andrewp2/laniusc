@@ -21,3 +21,5 @@ import Lanius.Std.VecShrink
 import Lanius.Std.VecEdge
 import Lanius.Std.VecInsert
 import Lanius.Std.VecReverse
+import Lanius.Std.VecCopy
+import Lanius.Std.VecExtend
