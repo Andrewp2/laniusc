@@ -812,6 +812,358 @@ fn link(codes: List<Code>) -> core::option::Option<Binary> {
     return None;
 }
 
+// Separate compilation (roadmap step 9). A module is functions plus the
+// functions it imports from other modules. Inside a module a call names
+// callee c: below the module's function count own, c is its own function c,
+// and own + i is its import i. An import names its owner, the module that
+// defines it, by its position in the link order, a function by its position
+// in that module, and the arity the importing module compiles its calls
+// against.
+pub struct Import {
+    owner: usize,
+    func: usize,
+    arity: Arity,
+}
+
+pub struct Module {
+    funcs: List<Func>,
+    imports: List<Import>,
+}
+
+// What a list of modules means: one program of all their functions in link
+// order, each call renamed to its callee's index there. It exists when every
+// import names a function that has the arity the import declares.
+
+// Each module's arities.
+pub fn module_exports(ms: List<Module>) -> List<List<Arity>> {
+    return match (ms) {
+        Nil -> empty(),
+        Cons(m, rest) -> cons(arities(m.funcs), module_exports(unbox(rest))),
+    };
+}
+
+pub fn import_ok(exports: List<List<Arity>>, imp: Import) -> bool {
+    return match (get(exports, imp.owner)) {
+        None -> false,
+        Some(found) -> arity_is(found, imp.func, imp.arity.params, imp.arity.results),
+    };
+}
+
+pub fn imports_ok(exports: List<List<Arity>>, imports: List<Import>) -> bool {
+    return match (imports) {
+        Nil -> true,
+        Cons(imp, rest) -> import_ok(exports, imp) && imports_ok(exports, unbox(rest)),
+    };
+}
+
+pub fn modules_ok(exports: List<List<Arity>>, ms: List<Module>) -> bool {
+    return match (ms) {
+        Nil -> true,
+        Cons(m, rest) -> imports_ok(exports, m.imports) && modules_ok(exports, unbox(rest)),
+    };
+}
+
+// The program index of each module's first function, from first.
+pub fn module_firsts(first: usize, ms: List<Module>) -> List<usize> {
+    return match (ms) {
+        Nil -> empty(),
+        Cons(m, rest) -> cons(first, module_firsts(plus(first, length(m.funcs)), unbox(rest))),
+    };
+}
+
+// The program index of each import's function.
+pub fn import_indices(firsts: List<usize>, imports: List<Import>) -> List<usize> {
+    return match (imports) {
+        Nil -> empty(),
+        Cons(imp, rest) -> cons(plus(get_or(firsts, imp.owner, 0), imp.func), import_indices(firsts, unbox(rest))),
+    };
+}
+
+impl Stmt {
+    // Each callee c becomes table[c], or missing past the table's end.
+    pub fn rename(self, table: List<usize>, missing: usize) -> Stmt {
+        return match (self) {
+            Skip -> Stmt::Skip,
+            Assign(index, value) -> Stmt::Assign(index, value),
+            Seq(first, second) -> Stmt::Seq(boxed(unbox(first).rename(table, missing)), boxed(unbox(second).rename(table, missing))),
+            Ite(condition, then_branch, else_branch) -> Stmt::Ite(condition, boxed(unbox(then_branch).rename(table, missing)), boxed(unbox(else_branch).rename(table, missing))),
+            Loop(condition, body) -> Stmt::Loop(condition, boxed(unbox(body).rename(table, missing))),
+            Stmt::Call(target, count, callee, args) -> Stmt::Call(target, count, get_or(table, callee, missing), args),
+            Stmt::Ret(values) -> Stmt::Ret(values),
+            Alloc(target, shift, size) -> Stmt::Alloc(target, shift, size),
+            LoadByte(target, address) -> Stmt::LoadByte(target, address),
+            StoreByte(address, value) -> Stmt::StoreByte(address, value),
+            LoadWord(width, target, address) -> Stmt::LoadWord(width, target, address),
+            StoreWord(width, address, value) -> Stmt::StoreWord(width, address, value),
+        };
+    }
+}
+
+pub fn rename_funcs(table: List<usize>, missing: usize, funcs: List<Func>) -> List<Func> {
+    return match (funcs) {
+        Nil -> empty(),
+        Cons(func, rest) -> cons(Func { params: func.params, results: func.results, locals: func.locals, body: func.body.rename(table, missing) }, rename_funcs(table, missing, unbox(rest))),
+    };
+}
+
+// The modules' functions from the one whose first function is first. A
+// call to a callee the module does not have becomes a call to missing, the
+// program's function count, which no function has.
+pub fn resolve_modules(firsts: List<usize>, missing: usize, first: usize, ms: List<Module>) -> List<Func> {
+    return match (ms) {
+        Nil -> empty(),
+        Cons(m, rest) -> concat(rename_funcs(concat(slot_range(first, length(m.funcs)), import_indices(firsts, m.imports)), missing, m.funcs), resolve_modules(firsts, missing, plus(first, length(m.funcs)), unbox(rest))),
+    };
+}
+
+pub fn func_count(ms: List<Module>) -> usize {
+    return match (ms) {
+        Nil -> 0,
+        Cons(m, rest) -> plus(length(m.funcs), func_count(unbox(rest))),
+    };
+}
+
+pub fn link_program(ms: List<Module>) -> core::option::Option<Program> {
+    if (modules_ok(module_exports(ms), ms)) {
+        return Some(Program { funcs: resolve_modules(module_firsts(0, ms), func_count(ms), 0, ms) });
+    }
+    return None;
+}
+
+// Object code: machine code with holes. A piece is literal bytes, or the
+// rel32 field of a call to import i, which the linker fills. Calls inside a
+// module are already bytes: a module's functions stay together, so the
+// distance between two of them is known when it is compiled.
+pub enum Piece {
+    Bytes(List<u8>),
+    Rel(usize),
+}
+
+// One function's object code: its prologue and body.
+pub struct ObjFunc {
+    slots: usize,
+    pieces: List<Piece>,
+}
+
+// A compiled module: its functions' arities, its imports, and its functions'
+// object code, in order.
+pub struct Object {
+    exports: List<Arity>,
+    imports: List<Import>,
+    funcs: List<ObjFunc>,
+}
+
+// A call to callee from body offset pc. A callee at or past own is an
+// import, so its rel32 field is a hole.
+pub fn call_pieces(own: usize, place: Place, pc: usize, callee: usize, args: List<usize>, target: usize, count: usize) -> List<Piece> {
+    if (callee >= own) {
+        return cons(Piece::Bytes(concat(copy_bytes(arg_base(place.slots), args, 0), single(232))), cons(Piece::Rel(minus(callee, own)), single(Piece::Bytes(copy_bytes(target, slot_range(arg_base(place.slots), count), 0)))));
+    }
+    let call: Instr = Instr::Call(callee, args, target, count);
+    return single(Piece::Bytes(call.encode(place, pc)));
+}
+
+impl Instr {
+    // The object code of the instruction at body offset pc: its bytes, but
+    // a call to an import leaves its rel32 field to the linker.
+    pub fn pieces(self, own: usize, place: Place, pc: usize) -> List<Piece> {
+        return match (self) {
+            Imm(value) -> single(Piece::Bytes(self.encode(place, pc))),
+            Load(slot) -> single(Piece::Bytes(self.encode(place, pc))),
+            Store(slot) -> single(Piece::Bytes(self.encode(place, pc))),
+            Instr::Neg -> single(Piece::Bytes(self.encode(place, pc))),
+            Op(word, operation, slot) -> single(Piece::Bytes(self.encode(place, pc))),
+            Cmp(word, operation, slot) -> single(Piece::Bytes(self.encode(place, pc))),
+            Jmp(target) -> single(Piece::Bytes(self.encode(place, pc))),
+            Jz(target) -> single(Piece::Bytes(self.encode(place, pc))),
+            Instr::Call(callee, args, target, count) -> call_pieces(own, place, pc, callee, args, target, count),
+            Instr::Ret(sources) -> single(Piece::Bytes(self.encode(place, pc))),
+            Bump(shift) -> single(Piece::Bytes(self.encode(place, pc))),
+            LoadAt -> single(Piece::Bytes(self.encode(place, pc))),
+            StoreAt(slot) -> single(Piece::Bytes(self.encode(place, pc))),
+            LoadWordAt(width) -> single(Piece::Bytes(self.encode(place, pc))),
+            StoreWordAt(width, slot) -> single(Piece::Bytes(self.encode(place, pc))),
+        };
+    }
+}
+
+pub fn pieces_from(own: usize, place: Place, pc: usize, code: List<Instr>) -> List<Piece> {
+    return match (code) {
+        Nil -> empty(),
+        Cons(i, rest) -> concat(i.pieces(own, place, pc), pieces_from(own, place, plus(pc, i.size()), unbox(rest))),
+    };
+}
+
+// The functions laid out back to back from start inside the module, with
+// entries their module offsets.
+pub fn object_funcs(own: usize, entries: List<usize>, start: usize, codes: List<Code>) -> List<ObjFunc> {
+    return match (codes) {
+        Nil -> empty(),
+        Cons(code, rest) -> cons(ObjFunc { slots: code.slots, pieces: cons(Piece::Bytes(prologue(code.slots)), pieces_from(own, Place { body: plus(start, 13), slots: code.slots, entries: entries }, 0, code.instrs)) }, object_funcs(own, entries, plus(start, code.size()), unbox(rest))),
+    };
+}
+
+pub fn import_arities(imports: List<Import>) -> List<Arity> {
+    return match (imports) {
+        Nil -> empty(),
+        Cons(imp, rest) -> cons(imp.arity, import_arities(unbox(rest))),
+    };
+}
+
+// Compile one module alone: its calls are checked against its own
+// functions' arities and its imports' declared ones.
+pub fn compile_module(m: Module) -> core::option::Option<Object> {
+    return match (compile_funcs(concat(arities(m.funcs), import_arities(m.imports)), m.funcs)) {
+        None -> None,
+        Some(codes) -> Some(Object { exports: arities(m.funcs), imports: m.imports, funcs: object_funcs(length(m.funcs), layout(0, codes), 0, codes) }),
+    };
+}
+
+pub fn compile_modules(ms: List<Module>) -> core::option::Option<List<Object>> {
+    return match (ms) {
+        Nil -> Some(empty()),
+        Cons(m, rest) -> match (compile_module(m)) {
+            None -> None,
+            Some(obj) -> match (compile_modules(unbox(rest))) {
+                None -> None,
+                Some(objs) -> Some(cons(obj, objs)),
+            },
+        },
+    };
+}
+
+// The linker. It checks every import against the objects' exports, lays
+// the objects out back to back in order, and fills each hole with the
+// distance from the end of its call to the import's entry.
+impl Piece {
+    pub fn size(self) -> usize {
+        return match (self) {
+            Bytes(code) -> length(code),
+            Rel(index) -> 4,
+        };
+    }
+
+    // The bytes of the piece at image offset pos; targets are the entries
+    // of the object's imports.
+    pub fn render(self, targets: List<usize>, pos: usize) -> List<u8> {
+        return match (self) {
+            Bytes(code) -> code,
+            Rel(index) -> le32(relative(plus(pos, 4), get_or(targets, index, 0))),
+        };
+    }
+}
+
+pub fn pieces_size(pieces: List<Piece>) -> usize {
+    return match (pieces) {
+        Nil -> 0,
+        Cons(piece, rest) -> plus(piece.size(), pieces_size(unbox(rest))),
+    };
+}
+
+pub fn render(targets: List<usize>, pos: usize, pieces: List<Piece>) -> List<u8> {
+    return match (pieces) {
+        Nil -> empty(),
+        Cons(piece, rest) -> concat(piece.render(targets, pos), render(targets, plus(pos, piece.size()), unbox(rest))),
+    };
+}
+
+pub fn funcs_size(funcs: List<ObjFunc>) -> usize {
+    return match (funcs) {
+        Nil -> 0,
+        Cons(func, rest) -> plus(pieces_size(func.pieces), funcs_size(unbox(rest))),
+    };
+}
+
+// Entry offsets of an object's functions placed from start.
+pub fn object_layout(start: usize, funcs: List<ObjFunc>) -> List<usize> {
+    return match (funcs) {
+        Nil -> empty(),
+        Cons(func, rest) -> cons(start, object_layout(plus(start, pieces_size(func.pieces)), unbox(rest))),
+    };
+}
+
+// Entry offsets of every function of the objects placed from start.
+pub fn objects_layout(start: usize, objs: List<Object>) -> List<usize> {
+    return match (objs) {
+        Nil -> empty(),
+        Cons(obj, rest) -> concat(object_layout(start, obj.funcs), objects_layout(plus(start, funcs_size(obj.funcs)), unbox(rest))),
+    };
+}
+
+pub fn object_exports(objs: List<Object>) -> List<List<Arity>> {
+    return match (objs) {
+        Nil -> empty(),
+        Cons(obj, rest) -> cons(obj.exports, object_exports(unbox(rest))),
+    };
+}
+
+pub fn objects_ok(exports: List<List<Arity>>, objs: List<Object>) -> bool {
+    return match (objs) {
+        Nil -> true,
+        Cons(obj, rest) -> imports_ok(exports, obj.imports) && objects_ok(exports, unbox(rest)),
+    };
+}
+
+// The image index of each object's first function, from first.
+pub fn object_firsts(first: usize, objs: List<Object>) -> List<usize> {
+    return match (objs) {
+        Nil -> empty(),
+        Cons(obj, rest) -> cons(first, object_firsts(plus(first, length(obj.funcs)), unbox(rest))),
+    };
+}
+
+pub fn entries_at(entries: List<usize>, indices: List<usize>) -> List<usize> {
+    return match (indices) {
+        Nil -> empty(),
+        Cons(index, rest) -> cons(get_or(entries, index, 0), entries_at(entries, unbox(rest))),
+    };
+}
+
+pub fn render_funcs(targets: List<usize>, pos: usize, funcs: List<ObjFunc>) -> List<u8> {
+    return match (funcs) {
+        Nil -> empty(),
+        Cons(func, rest) -> concat(render(targets, pos, func.pieces), render_funcs(targets, plus(pos, pieces_size(func.pieces)), unbox(rest))),
+    };
+}
+
+pub fn render_objects(firsts: List<usize>, entries: List<usize>, pos: usize, objs: List<Object>) -> List<u8> {
+    return match (objs) {
+        Nil -> empty(),
+        Cons(obj, rest) -> concat(render_funcs(entries_at(entries, import_indices(firsts, obj.imports)), pos, obj.funcs), render_objects(firsts, entries, plus(pos, funcs_size(obj.funcs)), unbox(rest))),
+    };
+}
+
+pub fn funcs_slots(funcs: List<ObjFunc>) -> List<usize> {
+    return match (funcs) {
+        Nil -> empty(),
+        Cons(func, rest) -> cons(func.slots, funcs_slots(unbox(rest))),
+    };
+}
+
+pub fn objects_slots(objs: List<Object>) -> List<usize> {
+    return match (objs) {
+        Nil -> empty(),
+        Cons(obj, rest) -> concat(funcs_slots(obj.funcs), objects_slots(unbox(rest))),
+    };
+}
+
+// A linked program: each function's frame slots, its entry offset, and the
+// image.
+pub struct Executable {
+    slots: List<usize>,
+    entries: List<usize>,
+    image: List<u8>,
+}
+
+pub fn link_objects(objs: List<Object>) -> core::option::Option<Executable> {
+    let entries: List<usize> = objects_layout(0, objs);
+    let image: List<u8> = render_objects(object_firsts(0, objs), entries, 0, objs);
+    if (objects_ok(object_exports(objs), objs) && image_limit() >= length(image)) {
+        return Some(Executable { slots: objects_slots(objs), entries: entries, image: image });
+    }
+    return None;
+}
+
 // Source programs: the subset of Lanius Core (formal/Lanius/Core.lean) that
 // this compiler accepts. Lanius/Mini/Source.lean gives each its Core program,
 // and the top-level theorem is about Core's evaluator on that program.

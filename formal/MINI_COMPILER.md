@@ -126,7 +126,7 @@ The proof has two layers.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Compiler` | 1944 | 3.2 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass |
+| `Compiler` | 2200 | 3.3 | extracted: syntax, abstract instructions, compiler, encoder, linker, modules and objects (step 9), front pass |
 | `Semantics` | 190 | 0.8 | big-step source semantics with call depth |
 | `Asm` | 202 | 1.0 | abstract machine, byte-offset placement, `Star` runs |
 | `CompileCorrect` | 553 | 1.8 | compiler against the abstract machine |
@@ -141,6 +141,7 @@ The proof has two layers.
 | `DecodeUnique` | 467 | 5.3 | `decode` reads only its instruction's bytes, so it is unique at a rip (step 14) |
 | `StepDet` | 377 | 2.1 | `Step` agrees on two states but for flags; `Det` runs (step 14) |
 | `DetSteps` | 177 | 1.0 | which emitted forms read or set flags; prologue and epilogue as `Det` runs (step 14) |
+| `Link` | 674 | 1.4 | separate compilation: linking separately compiled modules is `compileProgram` of their program (step 9) |
 
 Check times are `lake env lean` per file on the laptop, about 0.4 s of each is
 import loading. The compiler is about 400 lines of Lanius (plus a 63-line prelude
@@ -298,6 +299,107 @@ and `noReturn` is `fn f() -> i32 {}`. The lowering alone accepts both, Core
 rejects both whatever declarations they are given (`idClash_not_wellTyped`,
 `noReturn_not_wellTyped`), and `compileSource` rejects both
 (`idClash_rejected`, `noReturn_rejected`, by `rfl`).
+
+### Separate compilation and linking (step 9)
+
+A module (`Module` in `compiler.lani`) is a list of mini functions and the
+functions it imports. Inside a module, callee `c` below the module's function
+count `own` is its own function `c`, and `own + i` is its import `i`. An
+`Import` names its owner, the module that defines it, by its position in the
+link order, a function by its position in that module, and the arity the
+importing module compiles its calls against.
+
+- `compile_module` compiles one module with nothing else in view: it runs
+  `compile_funcs` against the module's own arity table (its functions', then
+  its imports' declared arities), lays the functions out in module offsets,
+  and encodes each into object code. An `Object` holds the module's
+  exports (its arities), its imports, and per function its frame slots and a
+  list of `Piece`s: literal bytes, or `Rel(i)`, the 4-byte rel32 field of a
+  call to import `i`, left as a hole. A call inside the module is already
+  bytes: a module's functions stay together, so the distance between two of
+  them is known when it is compiled, and a rel32 field depends only on that
+  distance.
+- `link_objects` checks every import against the objects' exports (the owner
+  exists, has the function, and the function has the declared arity), lays
+  the objects out back to back in order, renders each piece at its image
+  offset (a hole at offset `p` becomes `le32(relative(p + 4, entry))` with
+  the import's entry), and checks the image limit. It gives an `Executable`:
+  each function's frame slots, the entries and the image.
+- `link_program` says what a list of modules means: one mini program of all
+  their functions in link order, each call renamed (`Stmt.rename`) to a
+  program index. Own function `c` of the module whose first function is
+  program function `first` becomes `first + c`; import `i` becomes its
+  owner's first function plus its function index; a callee past the table
+  becomes the program's function count, which no function has. It is `none`
+  when an import fails the linker's check.
+
+The theorem, `Lanius/Mini/Link.lean`, is an equality of `Option`s, so
+separate compilation also fails exactly when compiling the whole program
+fails:
+
+```text
+link_eq : (compileModules ms).bind linkObjects
+            = ((linkProgram ms).bind compileProgram).map Binary.executable
+```
+
+`Binary.executable` keeps a binary's frame slots, entries and image (the
+abstract `codes` of a `Binary` exist only for the proofs). `linked_correct`
+is `compileProgram_correct` for a linked executable, with the same premises
+read off the executable (`exe.image`, `exe.entries`, `exe.stackNeed`, equal
+to the binary's) and `prog.Returns` for `linkProgram ms = some prog`;
+`linked_deterministic` is `compileProgram_deterministic` the same way. There
+are no new premises. `link_eq` depends on `propext` and `Quot.sound`; the two
+corollaries on the standard three.
+
+The proof has two layers.
+
+- Code (`compileFunc_rename`, `table_agrees`, `resolve_compile`): renaming
+  callees commutes with `compileStmt` (only `call` instructions change, and
+  their sizes do not) and keeps `within`, provided the program's arity at
+  every renamed callee is the module's arity at the callee. That holds when
+  the module's imports check out: own callees sit at `first + c` in the
+  program's arity list, an import's callee has its owner's arity there, which
+  the check made the declared one, and a callee past the table has no arity
+  on either side. By induction over the modules, `compileModules` fails
+  exactly when `compileFuncs` of the program does, and otherwise the
+  program's codes are each module's local codes, renamed, back to back
+  (`Agrees`).
+- Bytes (`Instr.pieces_render`, `objectFuncs_render`, `Agrees.bytes`): a
+  module's pieces, rendered at the module's image offset, are `linkFrom` of
+  its renamed codes. Non-call instructions do not depend on where they are
+  placed; a call inside the module has the same rel32 field at module
+  offsets as at image offsets (`relative_shift`); a hole's field is the
+  call's field, since the linker's target is the program entry of the
+  renamed callee. The layout and the frame slots agree the same way, and
+  the linker's import check is the program's.
+
+The linker is about 350 lines of Lanius (with comments) in the back end of
+`compiler.lani`, extracted into `Compiler.lean` (256 lines); the proof is
+674 lines and checks in 1.4 s.
+
+Test, Lean only:
+
+```bash
+python3 -I formal/tools/link_difftest.py target/claude-work/link --count 1000 --seed 9
+```
+
+It generates random lists of 1 to 4 modules of 1 to 3 functions (bodies from
+`mini_difftest.py`'s generator, against each module's own callee numbering),
+with random imports between them, including from a module to itself, and
+most functions calling one of their imports. A quarter are broken: an import
+with the wrong arity, naming a missing module or function, a call past the
+module's callees, or an ill-formed function. For each it evaluates both
+sides of `link_eq` with `#eval` and compares them. 2026-10-21, seeds 9 and
+10: 2,000 programs (5,058 modules), 1,353 linked, 647 rejected by both,
+1,356,524 image bytes, 3,492 holes filled, no differences.
+
+Not run: the Lanius build of the linker. laniusc and GPU jobs were out of
+scope for this step. The next check would build `compiler.lani` with
+laniusc and run `fn_difftest.py` over the new functions (it needs generators
+for `Module`, `Import`, `Piece` and `Object`) and a `mini_difftest.py` mode
+that compiles modules natively and compares linked images byte for byte with
+`#eval`. Modules in the front pass (named imports, Core's own module
+structure) are not done; this step is at the mini IR level.
 
 ### The verified compiler as an oracle for laniusc (step 12)
 

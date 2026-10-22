@@ -614,6 +614,262 @@ def compileProgram (prog : Program) : Option Binary :=
     else
       none
 
+/-- Separate compilation (roadmap step 9). A module is functions plus the functions it imports from other modules. Inside a module a call names callee c: below the module's function count own, c is its own function c, and own + i is its import i. An import names its owner, the module that defines it, by its position in the link order, a function by its position in that module, and the arity the importing module compiles its calls against. -/
+structure Import where
+  owner : Nat
+  func : Nat
+  arity : Arity
+  deriving DecidableEq, Repr
+
+structure Module where
+  funcs : List Func
+  imports : List Import
+  deriving DecidableEq, Repr
+
+/-- Each module's arities. -/
+def moduleExports (ms : List Module) : List (List Arity) :=
+  match ms with
+  | [] => []
+  | m :: rest => arities m.funcs :: moduleExports rest
+
+def importOk (exports : List (List Arity)) (imp : Import) : Bool :=
+  match exports[imp.owner]? with
+  | none => false
+  | some found => arityIs found imp.func imp.arity.params imp.arity.results
+
+def importsOk (exports : List (List Arity)) (imports : List Import) : Bool :=
+  match imports with
+  | [] => true
+  | imp :: rest => importOk exports imp && importsOk exports rest
+
+def modulesOk (exports : List (List Arity)) (ms : List Module) : Bool :=
+  match ms with
+  | [] => true
+  | m :: rest => importsOk exports m.imports && modulesOk exports rest
+
+/-- The program index of each module's first function, from first. -/
+def moduleFirsts (first : Nat) (ms : List Module) : List Nat :=
+  match ms with
+  | [] => []
+  | m :: rest => first :: moduleFirsts (first + m.funcs.length) rest
+
+/-- The program index of each import's function. -/
+def importIndices (firsts : List Nat) (imports : List Import) : List Nat :=
+  match imports with
+  | [] => []
+  | imp :: rest => (firsts.getD imp.owner 0 + imp.func) :: importIndices firsts rest
+
+/-- Each callee c becomes table[c], or missing past the table's end. -/
+def Stmt.rename (self : Stmt) (table : List Nat) (missing : Nat) : Stmt :=
+  match self with
+  | .skip => Stmt.skip
+  | .assign index value => Stmt.assign index value
+  | .seq first second => Stmt.seq (Stmt.rename first table missing) (Stmt.rename second table missing)
+  | .ite condition thenBranch elseBranch => Stmt.ite condition (Stmt.rename thenBranch table missing) (Stmt.rename elseBranch table missing)
+  | .loop condition body => Stmt.loop condition (Stmt.rename body table missing)
+  | .call target count callee args => Stmt.call target count (table.getD callee missing) args
+  | .ret values => Stmt.ret values
+  | .alloc target shift size => Stmt.alloc target shift size
+  | .loadByte target address => Stmt.loadByte target address
+  | .storeByte address value => Stmt.storeByte address value
+  | .loadWord width target address => Stmt.loadWord width target address
+  | .storeWord width address value => Stmt.storeWord width address value
+
+def renameFuncs (table : List Nat) (missing : Nat) (funcs : List Func) : List Func :=
+  match funcs with
+  | [] => []
+  | func :: rest => ({ params := func.params, results := func.results, locals := func.locals, body := Stmt.rename func.body table missing } : Func) :: renameFuncs table missing rest
+
+/-- The modules' functions from the one whose first function is first. A call to a callee the module does not have becomes a call to missing, the program's function count, which no function has. -/
+def resolveModules (firsts : List Nat) (missing : Nat) (first : Nat) (ms : List Module) : List Func :=
+  match ms with
+  | [] => []
+  | m :: rest => renameFuncs (slotRange first m.funcs.length ++ importIndices firsts m.imports) missing m.funcs ++ resolveModules firsts missing (first + m.funcs.length) rest
+
+def funcCount (ms : List Module) : Nat :=
+  match ms with
+  | [] => 0
+  | m :: rest => m.funcs.length + funcCount rest
+
+def linkProgram (ms : List Module) : Option Program :=
+  if modulesOk (moduleExports ms) ms then
+    some ({ funcs := resolveModules (moduleFirsts 0 ms) (funcCount ms) 0 ms } : Program)
+  else
+    none
+
+/-- Object code: machine code with holes. A piece is literal bytes, or the rel32 field of a call to import i, which the linker fills. Calls inside a module are already bytes: a module's functions stay together, so the distance between two of them is known when it is compiled. -/
+inductive Piece where
+  | bytes : (List UInt8) → Piece
+  | rel : Nat → Piece
+  deriving DecidableEq, Repr
+
+/-- One function's object code: its prologue and body. -/
+structure ObjFunc where
+  slots : Nat
+  pieces : List Piece
+  deriving DecidableEq, Repr
+
+/-- A compiled module: its functions' arities, its imports, and its functions' object code, in order. -/
+structure Object where
+  exports : List Arity
+  imports : List Import
+  funcs : List ObjFunc
+  deriving DecidableEq, Repr
+
+/-- A call to callee from body offset pc. A callee at or past own is an import, so its rel32 field is a hole. -/
+def callPieces (own : Nat) (place : Place) (pc : Nat) (callee : Nat) (args : List Nat) (target : Nat) (count : Nat) : List Piece :=
+  if own ≤ callee then
+    Piece.bytes (copyBytes (argBase place.slots) args 0 ++ [232]) :: Piece.rel (callee - own) :: [Piece.bytes (copyBytes target (slotRange (argBase place.slots) count) 0)]
+  else
+    let call : Instr := Instr.call callee args target count
+    [Piece.bytes (Instr.encode call place pc)]
+
+/-- The object code of the instruction at body offset pc: its bytes, but a call to an import leaves its rel32 field to the linker. -/
+def Instr.pieces (self : Instr) (own : Nat) (place : Place) (pc : Nat) : List Piece :=
+  match self with
+  | .imm value => [Piece.bytes (Instr.encode self place pc)]
+  | .load slot => [Piece.bytes (Instr.encode self place pc)]
+  | .store slot => [Piece.bytes (Instr.encode self place pc)]
+  | .neg => [Piece.bytes (Instr.encode self place pc)]
+  | .op word operation slot => [Piece.bytes (Instr.encode self place pc)]
+  | .cmp word operation slot => [Piece.bytes (Instr.encode self place pc)]
+  | .jmp target => [Piece.bytes (Instr.encode self place pc)]
+  | .jz target => [Piece.bytes (Instr.encode self place pc)]
+  | .call callee args target count => callPieces own place pc callee args target count
+  | .ret sources => [Piece.bytes (Instr.encode self place pc)]
+  | .bump shift => [Piece.bytes (Instr.encode self place pc)]
+  | .loadAt => [Piece.bytes (Instr.encode self place pc)]
+  | .storeAt slot => [Piece.bytes (Instr.encode self place pc)]
+  | .loadWordAt width => [Piece.bytes (Instr.encode self place pc)]
+  | .storeWordAt width slot => [Piece.bytes (Instr.encode self place pc)]
+
+def piecesFrom (own : Nat) (place : Place) (pc : Nat) (code : List Instr) : List Piece :=
+  match code with
+  | [] => []
+  | i :: rest => Instr.pieces i own place pc ++ piecesFrom own place (pc + Instr.size i) rest
+
+/-- The functions laid out back to back from start inside the module, with entries their module offsets. -/
+def objectFuncs (own : Nat) (entries : List Nat) (start : Nat) (codes : List Code) : List ObjFunc :=
+  match codes with
+  | [] => []
+  | code :: rest => ({ slots := code.slots, pieces := Piece.bytes (prologue code.slots) :: piecesFrom own ({ body := start + 13, slots := code.slots, entries := entries } : Place) 0 code.instrs } : ObjFunc) :: objectFuncs own entries (start + Code.size code) rest
+
+def importArities (imports : List Import) : List Arity :=
+  match imports with
+  | [] => []
+  | imp :: rest => imp.arity :: importArities rest
+
+/-- Compile one module alone: its calls are checked against its own functions' arities and its imports' declared ones. -/
+def compileModule (m : Module) : Option Object :=
+  match compileFuncs (arities m.funcs ++ importArities m.imports) m.funcs with
+  | none => none
+  | some codes => some ({ exports := arities m.funcs, imports := m.imports, funcs := objectFuncs m.funcs.length (layout 0 codes) 0 codes } : Object)
+
+def compileModules (ms : List Module) : Option (List Object) :=
+  match ms with
+  | [] => some []
+  | m :: rest =>
+    match compileModule m with
+    | none => none
+    | some obj =>
+      match compileModules rest with
+      | none => none
+      | some objs => some (obj :: objs)
+
+def Piece.size (self : Piece) : Nat :=
+  match self with
+  | .bytes code => code.length
+  | .rel index => 4
+
+/-- The bytes of the piece at image offset pos; targets are the entries of the object's imports. -/
+def Piece.render (self : Piece) (targets : List Nat) (pos : Nat) : List UInt8 :=
+  match self with
+  | .bytes code => code
+  | .rel index => le32 (relative (pos + 4) (targets.getD index 0))
+
+def piecesSize (pieces : List Piece) : Nat :=
+  match pieces with
+  | [] => 0
+  | piece :: rest => Piece.size piece + piecesSize rest
+
+def render (targets : List Nat) (pos : Nat) (pieces : List Piece) : List UInt8 :=
+  match pieces with
+  | [] => []
+  | piece :: rest => Piece.render piece targets pos ++ render targets (pos + Piece.size piece) rest
+
+def funcsSize (funcs : List ObjFunc) : Nat :=
+  match funcs with
+  | [] => 0
+  | func :: rest => piecesSize func.pieces + funcsSize rest
+
+/-- Entry offsets of an object's functions placed from start. -/
+def objectLayout (start : Nat) (funcs : List ObjFunc) : List Nat :=
+  match funcs with
+  | [] => []
+  | func :: rest => start :: objectLayout (start + piecesSize func.pieces) rest
+
+/-- Entry offsets of every function of the objects placed from start. -/
+def objectsLayout (start : Nat) (objs : List Object) : List Nat :=
+  match objs with
+  | [] => []
+  | obj :: rest => objectLayout start obj.funcs ++ objectsLayout (start + funcsSize obj.funcs) rest
+
+def objectExports (objs : List Object) : List (List Arity) :=
+  match objs with
+  | [] => []
+  | obj :: rest => obj.exports :: objectExports rest
+
+def objectsOk (exports : List (List Arity)) (objs : List Object) : Bool :=
+  match objs with
+  | [] => true
+  | obj :: rest => importsOk exports obj.imports && objectsOk exports rest
+
+/-- The image index of each object's first function, from first. -/
+def objectFirsts (first : Nat) (objs : List Object) : List Nat :=
+  match objs with
+  | [] => []
+  | obj :: rest => first :: objectFirsts (first + obj.funcs.length) rest
+
+def entriesAt (entries : List Nat) (indices : List Nat) : List Nat :=
+  match indices with
+  | [] => []
+  | index :: rest => entries.getD index 0 :: entriesAt entries rest
+
+def renderFuncs (targets : List Nat) (pos : Nat) (funcs : List ObjFunc) : List UInt8 :=
+  match funcs with
+  | [] => []
+  | func :: rest => render targets pos func.pieces ++ renderFuncs targets (pos + piecesSize func.pieces) rest
+
+def renderObjects (firsts : List Nat) (entries : List Nat) (pos : Nat) (objs : List Object) : List UInt8 :=
+  match objs with
+  | [] => []
+  | obj :: rest => renderFuncs (entriesAt entries (importIndices firsts obj.imports)) pos obj.funcs ++ renderObjects firsts entries (pos + funcsSize obj.funcs) rest
+
+def funcsSlots (funcs : List ObjFunc) : List Nat :=
+  match funcs with
+  | [] => []
+  | func :: rest => func.slots :: funcsSlots rest
+
+def objectsSlots (objs : List Object) : List Nat :=
+  match objs with
+  | [] => []
+  | obj :: rest => funcsSlots obj.funcs ++ objectsSlots rest
+
+/-- A linked program: each function's frame slots, its entry offset, and the image. -/
+structure Executable where
+  slots : List Nat
+  entries : List Nat
+  image : List UInt8
+  deriving DecidableEq, Repr
+
+def linkObjects (objs : List Object) : Option Executable :=
+  let entries : List Nat := objectsLayout 0 objs
+  let image : List UInt8 := renderObjects (objectFirsts 0 objs) entries 0 objs
+  if objectsOk (objectExports objs) objs && decide (image.length ≤ imageLimit) then
+    some ({ slots := objectsSlots objs, entries := entries, image := image } : Executable)
+  else
+    none
+
 /-- An unsigned integer type. A value sits zero-extended in its slot. -/
 inductive UintTy where
   | uint8 : UintTy
