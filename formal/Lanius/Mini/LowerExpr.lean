@@ -446,7 +446,23 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
       case plus | minus | times | bitAnd | bitOr | bitXor =>
         obtain ⟨rfl, vl, vr, holdsl, holdsr, evaluated⟩ :=
           binary_sound hl hr (by simp [SrcOp.toCore]) run
-        simp only [SrcOp.lower, arith] at lowered
+        simp only [SrcOp.lower] at lowered
+        try
+          rcases offsetOrArith_some lowered with ⟨htl, htr, rfl⟩ | lowered
+          · rw [htl] at holdsl
+            rw [htr] at holdsr
+            simp only [SrcType.Holds, UintTy.toCore] at holdsl holdsr
+            obtain ⟨rfl, -⟩ := holdsr
+            subst holdsl
+            rw [target] at evaluated
+            simp only [SrcOp.toCore] at evaluated
+            first
+              | rw [eval_ptr_add] at evaluated
+              | rw [eval_ptr_sub] at evaluated
+            simp only [Except.ok.injEq] at evaluated
+            subst evaluated
+            exact ⟨rfl, rfl⟩
+        simp only [arith] at lowered
         split at lowered
         · rename_i types
           simp only [Option.some.injEq] at lowered

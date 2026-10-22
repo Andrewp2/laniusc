@@ -126,7 +126,7 @@ The proof has two layers.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Compiler` | 2922 | 3.3 | extracted: syntax, abstract instructions, compiler, encoder, linker, modules and objects (step 9), front pass, optimizer and validator |
+| `Compiler` | 3044 | 3.3 | extracted: syntax, abstract instructions, compiler, encoder, linker, modules and objects (step 9), front pass, optimizer and validator |
 | `Semantics` | 190 | 0.8 | big-step source semantics with call depth |
 | `Asm` | 202 | 1.0 | abstract machine, byte-offset placement, `Star` runs |
 | `CompileCorrect` | 553 | 1.8 | compiler against the abstract machine |
@@ -166,7 +166,8 @@ type: `let x = E::V(...)`, copies, enum parameters, and
 variant's payload and giving a value of any type; and raw pointers with the
 byte heap, as Core's `let p = alloc(size, 2^k)`, `let b = loadByte(p, offset)`,
 `storeByte(p, offset, b)` and `dealloc(p, size, 2^k)` (sizes and offsets
-`usize`, bytes `u8`); and Core's raw `i32` slices, as
+`usize`, bytes `u8`), and `p + n` and `p - n` with a `usize` `n`, which wrap
+at 2^64 like Core's pointer offset; and Core's raw `i32` slices, as
 `let s = slice_from_raw_parts(p, n)`, `let x = s[i]` and `s[i] = v`, with an
 `i32` or `usize` index. Each binding gets its own
 slots (lets after the parameters): a scalar one, a struct its fields' slots
@@ -261,16 +262,16 @@ semantics:
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Source` | 456 | 1.2 | Core meaning of source programs and their declarations, value representation, `i32` wrap lemmas |
+| `Source` | 497 | 1.2 | Core meaning of source programs and their declarations, value representation, `i32` wrap lemmas |
 | `Unsigned` | 166 | 2.4 | unsigned arithmetic, comparisons and casts as slot arithmetic |
-| `LowerExpr` | 669 | 5.1 | expressions |
+| `LowerExpr` | 685 | 5.1 | expressions |
 | `Grows` | 1044 | 4.0 | Core's `nextAddress` never decreases; Core call and statement inversions |
 | `HeapCorr` | 501 | 1.1 | Core heap to mini heap correspondence; allocate, load, store, free |
 | `SliceLayout` | 601 | 6.3 | Core's native layout of word structs and enums; their field reads and the mini element address |
-| `LowerStmt` | 3655 | 9.4 | Core cells, frames, flat values, calls, enums and `match`, statements |
+| `LowerStmt` | 3659 | 9.4 | Core cells, frames, flat values, calls, enums and `match`, statements |
 | `SourceCorrect` | 104 | 0.7 | top-level theorem |
 | `Determinism` | 122 | 1.1 | both top-level theorems for every run of the same length, through the optimizer (step 14) |
-| `TypeSound` | 1802 | 2.3 | type checker soundness: an accepted program is well typed in Core (step 7) |
+| `TypeSound` | 1810 | 2.3 | type checker soundness: an accepted program is well typed in Core (step 7) |
 
 The pass is about 1,880 lines of Lanius (the end of `compiler.lani`), and the
 proofs are about 5,700 lines, plus 1,802 for type checker soundness. The per-function difftest covers it (146

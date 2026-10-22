@@ -1053,7 +1053,11 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
     have br := ihr rightLowered
     cases op
     case plus | minus | times | bitAnd | bitOr | bitXor =>
-      simp only [SrcOp.lower, arith] at lowered
+      simp only [SrcOp.lower] at lowered
+      try
+        rcases offsetOrArith_some lowered with ⟨-, -, rfl⟩ | lowered
+        · exact ⟨bl, br⟩
+      simp only [arith] at lowered
       split at lowered
       · simp only [Option.some.injEq] at lowered
         subst lowered

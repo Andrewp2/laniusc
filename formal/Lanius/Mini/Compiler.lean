@@ -1222,6 +1222,13 @@ def arith (operation : BinOp) (left : Typed) (right : Typed) : Option Typed :=
   else
     arithUint operation left right (SrcType.uintKind left.ty)
 
+/-- ptr + usize and ptr - usize move the address, wrapping at 2^64 like Core's pointerOffset; other operands are arithmetic. -/
+def offsetOrArith (operation : BinOp) (left : Typed) (right : Typed) : Option Typed :=
+  if SrcType.isPtr left.ty && SrcType.isUint right.ty UintTy.usize then
+    some ({ expr := Expr.binary Word.u64 operation left.expr right.expr, ty := SrcType.ptr } : Typed)
+  else
+    arith operation left right
+
 def orderUint (operation : CmpOp) (left : Typed) (right : Typed) (kind : Option UintTy) : Option Typed :=
   match kind with
   | none => none
@@ -1258,8 +1265,8 @@ def disjunction (left : Typed) (right : Typed) : Option Typed :=
 
 def SrcOp.lower (self : SrcOp) (left : Typed) (right : Typed) : Option Typed :=
   match self with
-  | .plus => arith BinOp.add left right
-  | .minus => arith BinOp.sub left right
+  | .plus => offsetOrArith BinOp.add left right
+  | .minus => offsetOrArith BinOp.sub left right
   | .times => arith BinOp.mul left right
   | .bitAnd => arith BinOp.and left right
   | .bitOr => arith BinOp.or left right

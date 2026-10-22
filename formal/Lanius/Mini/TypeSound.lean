@@ -280,8 +280,16 @@ theorem SrcOp.lower_typed {op : SrcOp} {l r t : Typed} (scalar : l.ty.isScalar =
     (h : op.lower l r = some t) :
     Typing.BinaryOpHasType op.toCore l.ty.toCore r.ty.toCore t.ty.toCore ∧ t.ty.isScalar = true := by
   cases op with
-  | plus => exact arith_typed (fun a _ => .add a) h
-  | minus => exact arith_typed (fun a _ => .subtract a) h
+  | plus =>
+    rcases offsetOrArith_some h with ⟨hl, hr, rfl⟩ | h
+    · rw [hl, hr]
+      exact ⟨.pointerAdd (.unsigned _), rfl⟩
+    · exact arith_typed (fun a _ => .add a) h
+  | minus =>
+    rcases offsetOrArith_some h with ⟨hl, hr, rfl⟩ | h
+    · rw [hl, hr]
+      exact ⟨.pointerSubtract (.unsigned _), rfl⟩
+    · exact arith_typed (fun a _ => .subtract a) h
   | times => exact arith_typed (fun a _ => .multiply a) h
   | bitAnd => exact arith_typed (fun _ i => .bitAnd i) h
   | bitOr => exact arith_typed (fun _ i => .bitOr i) h

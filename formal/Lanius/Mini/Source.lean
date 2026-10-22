@@ -214,6 +214,47 @@ theorem structFields_toCore {sp : SrcProgram} {id : Nat} {fs : List SrcType}
     sp.toCore.structure? id = some ⟨id, fs.map SrcType.toCore⟩ := by
   simp only [Core.Program.structure?, SrcProgram.toCore, find_structs, found, Option.map_some]
 
+/-- What `offsetOrArith` accepts: an address moved by a `usize`, or arithmetic. -/
+theorem offsetOrArith_some {op : BinOp} {l r t : Typed} (h : offsetOrArith op l r = some t) :
+    (l.ty = .ptr ∧ r.ty = .uint .usize ∧ t = { expr := .binary .u64 op l.expr r.expr, ty := .ptr }) ∨
+      arith op l r = some t := by
+  unfold offsetOrArith at h
+  split at h
+  · rename_i cond
+    simp only [Bool.and_eq_true] at cond
+    obtain ⟨hp, hu⟩ := cond
+    simp only [Option.some.injEq] at h
+    refine .inl ⟨?_, ?_, h.symm⟩
+    · cases hty : l.ty <;> simp [hty, SrcType.isPtr] at hp ⊢
+    · cases hty : r.ty <;> simp [hty, SrcType.isUint] at hu ⊢
+      rename_i k
+      cases k <;> simp [UintTy.code] at hu ⊢
+  · exact .inr h
+
+/-- Core's `ptr + usize` and `ptr - usize` on x86: the address wraps at 2^64. -/
+theorem eval_ptr_add (a o : BitVec 64) :
+    Semantics.evalBinaryValue .x86_64 .add (.pointer a.toNat) (.unsigned .usize o.toNat) = .ok (.pointer (a + o).toNat) := by
+  simp only [Semantics.evalBinaryValue, Semantics.pointerOffset, Bool.false_eq_true, if_false, Except.ok.injEq,
+    Core.Value.pointer.injEq, BitVec.toNat_add]
+  rw [show (2 : Int) ^ Core.Target.x86_64.pointerWidth.bits = 2 ^ 64 from rfl]
+  have h : (Int.ofNat a.toNat + Int.ofNat o.toNat) % 2 ^ 64 = (((a.toNat + o.toNat) % 2 ^ 64 : Nat) : Int) := by
+    simp only [Int.ofNat_eq_natCast]
+    omega
+  rw [h, Int.toNat_natCast]
+
+theorem eval_ptr_sub (a o : BitVec 64) :
+    Semantics.evalBinaryValue .x86_64 .subtract (.pointer a.toNat) (.unsigned .usize o.toNat) = .ok (.pointer (a - o).toNat) := by
+  simp only [Semantics.evalBinaryValue, Semantics.pointerOffset, if_true, Except.ok.injEq,
+    Core.Value.pointer.injEq, BitVec.toNat_sub]
+  rw [show (2 : Int) ^ Core.Target.x86_64.pointerWidth.bits = 2 ^ 64 from rfl]
+  have := a.isLt
+  have := o.isLt
+  have h : (Int.ofNat a.toNat - Int.ofNat o.toNat) % 2 ^ 64 =
+      (((2 ^ 64 - o.toNat + a.toNat) % 2 ^ 64 : Nat) : Int) := by
+    simp only [Int.ofNat_eq_natCast]
+    omega
+  rw [h, Int.toNat_natCast]
+
 theorem enumVariants_toCore {sp : SrcProgram} {id : Nat} {vs : List (List SrcType)}
     (found : enumVariants sp.decls.enums id = some vs) :
     sp.toCore.enumeration? id = some ⟨id, vs.map (List.map SrcType.toCore)⟩ := by

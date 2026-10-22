@@ -1577,6 +1577,15 @@ pub fn arith(operation: BinOp, left: Typed, right: Typed) -> core::option::Optio
     return arith_uint(operation, left, right, left.ty.uint_kind());
 }
 
+// ptr + usize and ptr - usize move the address, wrapping at 2^64 like
+// Core's pointerOffset; other operands are arithmetic.
+pub fn offset_or_arith(operation: BinOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
+    if (left.ty.is_ptr() && right.ty.is_uint(Usize)) {
+        return Some(Typed { expr: Binary(U64, operation, boxed(left.expr), boxed(right.expr)), ty: Ptr });
+    }
+    return arith(operation, left, right);
+}
+
 pub fn order_uint(operation: CmpOp, left: Typed, right: Typed, kind: core::option::Option<UintTy>) -> core::option::Option<Typed> {
     return match (kind) {
         None -> None,
@@ -1624,8 +1633,8 @@ pub fn disjunction(left: Typed, right: Typed) -> core::option::Option<Typed> {
 impl SrcOp {
     pub fn lower(self, left: Typed, right: Typed) -> core::option::Option<Typed> {
         return match (self) {
-            Plus -> arith(Add, left, right),
-            Minus -> arith(Sub, left, right),
+            Plus -> offset_or_arith(Add, left, right),
+            Minus -> offset_or_arith(Sub, left, right),
             Times -> arith(Mul, left, right),
             BitAnd -> arith(And, left, right),
             BitOr -> arith(Or, left, right),
