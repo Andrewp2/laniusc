@@ -332,6 +332,164 @@ theorem evalExprs_cons {P : Core.Program} {fuel : Nat} {st : State} {e : Core.Ex
       all_goals simp at run
     all_goals simp at run
 
+/-! ## Several bytes -/
+
+/-- A block replaced by one with the same place, bytes and liveness. -/
+theorem HeapCorr.replace {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {blk r : Block}
+    (mem : blk ∈ h.blocks) (base : r.base = blk.base) (size : r.size = blk.size)
+    (bytes : r.bytes = blk.bytes) (live : r.live = blk.live) :
+    HeapCorr { h with blocks := Memory.replaceBlock h.blocks r } hp := by
+  obtain ⟨rb, rs, ra, rby, rl, ro⟩ := r
+  simp only at base size bytes live
+  subst base size bytes live
+  have cases : ∀ b ∈ Memory.replaceBlock h.blocks ⟨blk.base, blk.size, ra, blk.bytes, blk.live, ro⟩,
+      b = ⟨blk.base, blk.size, ra, blk.bytes, blk.live, ro⟩ ∨ (b ∈ h.blocks ∧ b.base ≠ blk.base) :=
+    fun b m => mem_replaceBlock m
+  refine ⟨corr.cursor, corr.pos, corr.unbounded, corr.small, ?_, ?_, ?_, ?_, ?_, corr.zero⟩
+  · intro b m
+    rcases cases b m with rfl | ⟨m', -⟩
+    · exact corr.sized blk mem
+    · exact corr.sized b m'
+  · intro b m
+    rcases cases b m with rfl | ⟨m', -⟩
+    · exact corr.below blk mem
+    · exact corr.below b m'
+  · intro b m b' m' less
+    rcases cases b m with rfl | ⟨mb, -⟩ <;> rcases cases b' m' with rfl | ⟨mb', -⟩
+    · exact absurd less (Nat.lt_irrefl _)
+    · exact corr.apart blk mem b' mb' less
+    · exact corr.apart b mb blk mem less
+    · exact corr.apart b mb b' mb' less
+  · intro b m b' m' same
+    rcases cases b m with rfl | ⟨mb, nb⟩ <;> rcases cases b' m' with rfl | ⟨mb', nb'⟩
+    · rfl
+    · exact absurd same.symm nb'
+    · exact absurd same nb
+    · exact corr.unique b mb b' mb' same
+  · intro b m bl i inside
+    rcases cases b m with rfl | ⟨mb, -⟩
+    · exact corr.bytes blk mem bl i inside
+    · exact corr.bytes b mb bl i inside
+
+theorem HeapCorr.protect {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {p n a : Nat}
+    {h' : Memory.Heap} (ok : h.protectAsBorrowed p n a = .ok h') : HeapCorr h' hp := by
+  simp only [Memory.Heap.protectAsBorrowed] at ok
+  split at ok
+  · simp at ok
+  · rename_i blk found
+    split at ok
+    · simp at ok
+    · split at ok
+      · simp at ok
+      · simp only [Except.ok.injEq] at ok
+        subst ok
+        exact corr.replace (List.mem_of_find?_eq_some found) rfl rfl rfl rfl
+
+theorem HeapCorr.protectRange {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {p n a : Nat}
+    {h' : Memory.Heap} (ok : h.protectRangeAsBorrowed p n a = .ok h') : HeapCorr h' hp := by
+  simp only [Memory.Heap.protectRangeAsBorrowed] at ok
+  split at ok
+  · simp at ok
+  · split at ok
+    · simp at ok
+    · rename_i blk found
+      split at ok
+      · simp at ok
+      · simp only [Except.ok.injEq] at ok
+        subst ok
+        exact corr.replace (containing found).1 rfl rfl rfl rfl
+
+/-- Core's `count` bytes from `p + o`, little-endian, are the mini heap's,
+and lie below the cursor. -/
+theorem HeapCorr.loadBytesFrom {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {p : Nat} :
+    ∀ (count o : Nat) {bytes : List UInt8}, Memory.loadBytesFrom h p o count = .ok bytes →
+      Semantics.decodeNatLE bytes = hp.readLE (p + o) count ∧ (0 < count → p + o + count ≤ h.nextAddress)
+  | 0, o, bytes, ok => by
+    simp only [Memory.loadBytesFrom, Except.ok.injEq] at ok
+    subst ok
+    exact ⟨rfl, fun lt => absurd lt (Nat.lt_irrefl 0)⟩
+  | count + 1, o, bytes, ok => by
+    simp only [Memory.loadBytesFrom] at ok
+    split at ok
+    · simp at ok
+    · rename_i b loaded
+      split at ok
+      · simp at ok
+      · rename_i rest restOk
+        simp only [Except.ok.injEq] at ok
+        subst ok
+        obtain ⟨at_, below⟩ := corr.load loaded
+        obtain ⟨decoded, restBelow⟩ := corr.loadBytesFrom count (o + 1) restOk
+        refine ⟨?_, fun _ => ?_⟩
+        · simp only [Semantics.decodeNatLE, Heap.readLE, at_, decoded, Nat.add_assoc]
+        · rcases Nat.eq_zero_or_pos count with zero | pos
+          · subst zero; omega
+          · have := restBelow pos; omega
+
+theorem HeapCorr.loadNatLE {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {a count n : Nat}
+    (ok : Semantics.loadNatLE h a count = .ok n) :
+    n = hp.readLE a count ∧ (0 < count → a + count ≤ h.nextAddress) := by
+  simp only [Semantics.loadNatLE, Memory.Heap.loadBytes] at ok
+  obtain ⟨bytes, loaded, wrapped⟩ := except_bind_ok ok
+  simp only [pure, Except.pure, Except.ok.injEq] at wrapped
+  subst wrapped
+  have := corr.loadBytesFrom count 0 loaded
+  simpa using this
+
+/-- The mini heap with `bytes` written from `address`. -/
+def Heap.writeBytes (hp : Heap) (address : Nat) : List UInt8 → Heap
+  | [] => hp
+  | b :: rest => (hp.write address b).writeBytes (address + 1) rest
+
+theorem HeapCorr.storeBytesFrom {p : Nat} : ∀ (bytes : List UInt8) {h : Memory.Heap} {hp : Heap} (o : Nat)
+    {h' : Memory.Heap}, HeapCorr h hp → Memory.storeBytesFrom h p o bytes = .ok h' →
+      HeapCorr h' (hp.writeBytes (p + o) bytes) ∧ (bytes ≠ [] → p + o + bytes.length ≤ h.nextAddress)
+  | [], h, hp, o, h', corr, ok => by
+    simp only [Memory.storeBytesFrom, Except.ok.injEq] at ok
+    subst ok
+    exact ⟨corr, fun ne => absurd rfl ne⟩
+  | b :: rest, h, hp, o, h', corr, ok => by
+    simp only [Memory.storeBytesFrom] at ok
+    cases stored : h.storeByte p o b with
+    | error => simp [stored] at ok
+    | ok next =>
+      simp only [stored] at ok
+      obtain ⟨below, corr'⟩ := corr.store stored
+      obtain ⟨corr'', restBelow⟩ := HeapCorr.storeBytesFrom rest (o + 1) corr' ok
+      refine ⟨by simpa [Heap.writeBytes, Nat.add_assoc] using corr'', fun _ => ?_⟩
+      have same := storeByte_next stored
+      cases rest with
+      | nil => simp; addr_omega
+      | cons c more =>
+        have := restBelow (List.cons_ne_nil _ _)
+        simp only [List.length_cons] at this ⊢
+        addr_omega
+
+theorem encodeNatLE_succ (count value : Nat) :
+    Semantics.encodeNatLE (count + 1) value = UInt8.ofNat value :: Semantics.encodeNatLE count (value / 256) := by
+  simp only [Semantics.encodeNatLE, List.range_succ_eq_map, List.map_cons, List.map_map]
+  congr 1
+  · apply UInt8.toNat.inj
+    simp
+  · apply List.map_congr_left
+    intro i _
+    simp only [Function.comp, Nat.pow_succ', Nat.div_div_eq_div_mul]
+
+theorem writeLE_eq_writeBytes : ∀ (count : Nat) (hp : Heap) (address value : Nat),
+    hp.writeLE address value count = hp.writeBytes address (Semantics.encodeNatLE count value)
+  | 0, hp, address, value => by simp [Heap.writeLE, Semantics.encodeNatLE, Heap.writeBytes]
+  | count + 1, hp, address, value => by
+    rw [encodeNatLE_succ]
+    simp only [Heap.writeLE, Heap.writeBytes]
+    exact writeLE_eq_writeBytes count _ _ _
+
+theorem i32Bytes_eq (number : Int) :
+    Semantics.i32Bytes number = Semantics.encodeNatLE 4 (number % 2 ^ 32).toNat := by
+  simp only [Semantics.i32Bytes, Semantics.encodeNatLE]
+  apply List.map_congr_left
+  intro i _
+  rw [Nat.pow_mul]
+
 theorem HeapCorr.allocated {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) (n shift : Nat)
     {h' : Memory.Heap} (ok : h.allocate n (2 ^ shift) = .exhausted h') : False := by
   simp [Memory.Heap.allocate, validAlignment_pow, corr.unbounded, Memory.consumeBudget] at ok

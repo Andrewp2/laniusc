@@ -863,6 +863,8 @@ pub enum SrcType {
     Enum(usize, Box<List<List<SrcType>>>),
     // a raw pointer into the heap
     Ptr,
+    // Core's raw slice of this element type: one slot, its address
+    Slice(Box<SrcType>),
 }
 
 pub enum SrcOp {
@@ -923,6 +925,12 @@ pub enum SrcStmt {
     SetByte(SrcExpr, SrcExpr, SrcExpr),
     // dealloc(pointer, size, 2^shift)
     Free(SrcExpr, SrcExpr, usize),
+    // let id: [element] = slice_from_raw_parts(pointer, length); then body
+    LetSlice(usize, SrcType, SrcExpr, SrcExpr, Box<SrcStmt>),
+    // let id: ty = slice[index]; then body
+    LetIndex(usize, SrcType, usize, SrcExpr, Box<SrcStmt>),
+    // slice[index] = value
+    SetIndex(usize, SrcExpr, SrcExpr),
 }
 
 pub struct SrcParam {
@@ -987,6 +995,7 @@ impl SrcType {
             Struct(id, fields) -> false,
             Enum(id, variants) -> false,
             Ptr -> false,
+            Slice(element) -> false,
         };
     }
 
@@ -998,6 +1007,7 @@ impl SrcType {
             Struct(id, fields) -> false,
             Enum(id, variants) -> false,
             Ptr -> false,
+            Slice(element) -> false,
         };
     }
 
@@ -1009,6 +1019,7 @@ impl SrcType {
             Struct(id, fields) -> false,
             Enum(id, variants) -> false,
             Ptr -> true,
+            Slice(element) -> false,
         };
     }
 
@@ -1020,6 +1031,7 @@ impl SrcType {
             Struct(id, fields) -> false,
             Enum(id, variants) -> false,
             Ptr -> false,
+            Slice(element) -> false,
         };
     }
 
@@ -1031,6 +1043,7 @@ impl SrcType {
             Struct(id, fields) -> false,
             Enum(id, variants) -> false,
             Ptr -> true,
+            Slice(element) -> false,
         };
     }
 
@@ -1043,6 +1056,7 @@ impl SrcType {
             Struct(id, fields) -> None,
             Enum(id, variants) -> None,
             Ptr -> None,
+            Slice(element) -> None,
         };
     }
 
@@ -1055,6 +1069,7 @@ impl SrcType {
             Struct(id, fields) -> S32,
             Enum(id, variants) -> S32,
             Ptr -> U64,
+            Slice(element) -> U64,
         };
     }
 }
@@ -1073,6 +1088,7 @@ impl SrcType {
                 Struct(other_id, other_fields) -> (id == other_id) && types_same(unbox(fields), unbox(other_fields)),
                 Enum(other_id, other_variants) -> false,
                 Ptr -> false,
+                Slice(other_element) -> false,
             },
             Enum(id, variants) -> match (other) {
                 I32 -> false,
@@ -1081,8 +1097,18 @@ impl SrcType {
                 Struct(other_id, other_fields) -> false,
                 Enum(other_id, other_variants) -> (id == other_id) && variants_same(unbox(variants), unbox(other_variants)),
                 Ptr -> false,
+                Slice(other_element) -> false,
             },
             Ptr -> other.is_ptr(),
+            Slice(element) -> match (other) {
+                I32 -> false,
+                Bool -> false,
+                Uint(other_kind) -> false,
+                Struct(other_id, other_fields) -> false,
+                Enum(other_id, other_variants) -> false,
+                Ptr -> false,
+                Slice(other_element) -> unbox(element).same(unbox(other_element)),
+            },
         };
     }
 }
@@ -1126,6 +1152,7 @@ impl SrcType {
             Struct(id, fields) -> sizes(unbox(fields)),
             Enum(id, variants) -> plus(1, max_size(unbox(variants))),
             Ptr -> 1,
+            Slice(element) -> 1,
         };
     }
 }
@@ -1301,6 +1328,7 @@ pub fn lower_field_of(b: Binding, field: usize) -> core::option::Option<Typed> {
         Struct(id, fields) -> lower_field_at(plus(b.slot, field_offset(unbox(fields), field)), get(unbox(fields), field)),
         Enum(id, variants) -> None,
         Ptr -> None,
+        Slice(element) -> None,
     };
 }
 
@@ -1364,6 +1392,7 @@ pub fn cast_to_i32(e: Typed) -> core::option::Option<Typed> {
         Struct(id, fields) -> None,
         Enum(id, variants) -> None,
         Ptr -> None,
+        Slice(element) -> None,
     };
 }
 
@@ -1375,6 +1404,7 @@ pub fn cast_to_uint(kind: UintTy, e: Typed) -> core::option::Option<Typed> {
         Struct(id, fields) -> None,
         Enum(id, variants) -> None,
         Ptr -> None,
+        Slice(element) -> None,
     };
 }
 
@@ -1386,6 +1416,7 @@ pub fn cast_to(ty: SrcType, e: Typed) -> core::option::Option<Typed> {
         Struct(id, fields) -> None,
         Enum(id, variants) -> None,
         Ptr -> None,
+        Slice(element) -> None,
     };
 }
 
@@ -1493,6 +1524,7 @@ pub fn copy_field_of(b: Binding, index: usize, ty: SrcType) -> core::option::Opt
         Struct(id, fields) -> copy_field_at(plus(b.slot, field_offset(unbox(fields), index)), get(unbox(fields), index), ty),
         Enum(id, variants) -> None,
         Ptr -> None,
+        Slice(element) -> None,
     };
 }
 
@@ -1565,6 +1597,7 @@ pub fn lower_literal(scope: List<Binding>, ty: SrcType, fields: List<SrcExpr>) -
         Struct(id, types) -> lower_struct_fields(scope, fields, unbox(types)),
         Enum(id, variants) -> None,
         Ptr -> None,
+        Slice(element) -> None,
     };
 }
 
@@ -1600,6 +1633,7 @@ pub fn lower_enum_value(scope: List<Binding>, ty: SrcType, variant: usize, paylo
         Struct(id, types) -> None,
         Enum(id, variants) -> lower_tagged(scope, unbox(variants), variant, payload),
         Ptr -> None,
+        Slice(element) -> None,
     };
 }
 
@@ -1683,6 +1717,7 @@ pub fn lower_match_on(scope: List<Binding>, b: Binding, enum_id: usize, arms: Li
         Struct(id, types) -> None,
         Enum(id, variants) -> lower_match_arms(scope, b.slot, id == enum_id, unbox(variants), arms, ty, target),
         Ptr -> None,
+        Slice(element) -> None,
     };
 }
 
@@ -1780,6 +1815,7 @@ pub fn lower_set_field_of(b: Binding, field: usize, scope: List<Binding>, value:
         Struct(id, fields) -> lower_set_field_at(plus(b.slot, field_offset(unbox(fields), field)), get(unbox(fields), field), scope, value),
         Enum(id, variants) -> None,
         Ptr -> None,
+        Slice(element) -> None,
     };
 }
 
@@ -1907,6 +1943,119 @@ pub fn lower_free(shift: usize, pointer: core::option::Option<Expr>, size: core:
     return None;
 }
 
+// A raw slice's one slot: its address. Only i32 elements so far; Core checks
+// the length when the slice is made and each index against it.
+pub fn lower_slice(element: SrcType, pointer: core::option::Option<Expr>, length: core::option::Option<Expr>) -> core::option::Option<List<Expr>> {
+    if (element.is_i32()) {
+        return match (pointer) {
+            None -> None,
+            Some(p) -> match (length) {
+                None -> None,
+                Some(l) -> Some(single(p)),
+            },
+        };
+    }
+    return None;
+}
+
+// An index is an i32 or a usize.
+pub fn index_of(t: Typed) -> core::option::Option<Expr> {
+    if (t.ty.is_i32() || t.ty.is_uint(Usize)) {
+        return Some(t.expr);
+    }
+    return None;
+}
+
+pub fn lower_index(scope: List<Binding>, index: SrcExpr) -> core::option::Option<Expr> {
+    return match (index.lower(scope)) {
+        None -> None,
+        Some(t) -> index_of(t),
+    };
+}
+
+// The element type of a slice type.
+pub fn element_of(ty: SrcType) -> core::option::Option<SrcType> {
+    return match (ty) {
+        I32 -> None,
+        Bool -> None,
+        Uint(kind) -> None,
+        Struct(id, fields) -> None,
+        Enum(id, variants) -> None,
+        Ptr -> None,
+        Slice(element) -> Some(unbox(element)),
+    };
+}
+
+// extract: inline
+fn element_at(slot: usize, element: SrcType, index: Expr) -> core::option::Option<Expr> {
+    if (element.is_i32()) {
+        return Some(Binary(U64, Add, boxed(Var(slot)), boxed(Binary(U64, Mul, boxed(index), boxed(Lit(4))))));
+    }
+    return None;
+}
+
+// The address of element index of the slice local b.
+pub fn element_address(b: Binding, index: core::option::Option<Expr>) -> core::option::Option<Expr> {
+    return match (element_of(b.ty)) {
+        None -> None,
+        Some(element) -> match (index) {
+            None -> None,
+            Some(i) -> element_at(b.slot, element, i),
+        },
+    };
+}
+
+// extract: inline
+fn checked_element(b: Binding, ty: SrcType, index: core::option::Option<Expr>) -> core::option::Option<Expr> {
+    if (b.ty.same(Slice(boxed(ty)))) {
+        return element_address(b, index);
+    }
+    return None;
+}
+
+// slice[index] read as a ty.
+pub fn lower_element(binding: core::option::Option<Binding>, ty: SrcType, index: core::option::Option<Expr>) -> core::option::Option<Expr> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> checked_element(b, ty, index),
+    };
+}
+
+pub fn lower_load_word(slot: usize, address: core::option::Option<Expr>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (address) {
+        None -> None,
+        Some(a) -> match (body) {
+            None -> None,
+            Some(b) -> Some(Seq(boxed(LoadWord(M32, slot, a)), boxed(b))),
+        },
+    };
+}
+
+// extract: inline
+fn store_element(b: Binding, element: SrcType, index: core::option::Option<Expr>, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
+    return match (element_address(b, index)) {
+        None -> None,
+        Some(a) -> match (lower_as(scope, value, element)) {
+            None -> None,
+            Some(v) -> Some(StoreWord(M32, a, v)),
+        },
+    };
+}
+
+pub fn lower_set_index_of(b: Binding, index: core::option::Option<Expr>, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
+    return match (element_of(b.ty)) {
+        None -> None,
+        Some(element) -> store_element(b, element, index, scope, value),
+    };
+}
+
+pub fn lower_set_index(binding: core::option::Option<Binding>, index: core::option::Option<Expr>, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> lower_set_index_of(b, index, scope, value),
+    };
+}
+
 // sigs are the program's signatures and ret the function's result type; next
 // is the first slot no binding in scope uses.
 impl SrcStmt {
@@ -1929,6 +2078,9 @@ impl SrcStmt {
             LetLoad(id, pointer, offset, body) -> lower_load(next, lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: Uint(Uint8) }, scope), plus(next, 1))),
             SetByte(pointer, offset, value) -> lower_store(lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), lower_as(scope, value, Uint(Uint8))),
             Free(pointer, size, shift) -> lower_free(shift, lower_as(scope, pointer, Ptr), lower_as(scope, size, Uint(Usize))),
+            LetSlice(id, element, pointer, length, body) -> lower_let(next, lower_slice(element, lower_as(scope, pointer, Ptr), lower_as(scope, length, I32)), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: Slice(boxed(element)) }, scope), plus(next, 1))),
+            LetIndex(id, ty, slice, index, body) -> lower_load_word(next, lower_element(lookup(scope, slice), ty, lower_index(scope, index)), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, 1))),
+            SetIndex(slice, index, value) -> lower_set_index(lookup(scope, slice), lower_index(scope, index), scope, value),
         };
     }
 
@@ -1952,6 +2104,9 @@ impl SrcStmt {
             LetLoad(id, pointer, offset, body) -> plus(unbox(body).depth(), 1),
             SetByte(pointer, offset, value) -> 0,
             Free(pointer, size, shift) -> 0,
+            LetSlice(id, element, pointer, length, body) -> plus(unbox(body).depth(), 1),
+            LetIndex(id, ty, slice, index, body) -> plus(unbox(body).depth(), 1),
+            SetIndex(slice, index, value) -> 0,
         };
     }
 }
@@ -2157,6 +2312,7 @@ impl SrcType {
             Struct(id, fields) -> declare_struct(id, unbox(fields), declare_types(unbox(fields), decls)),
             Enum(id, variants) -> declare_enum(id, unbox(variants), declare_variants(unbox(variants), decls)),
             Ptr -> Some(decls),
+            Slice(element) -> unbox(element).declare(decls),
         };
     }
 }
@@ -2205,6 +2361,9 @@ impl SrcStmt {
             LetLoad(id, pointer, offset, body) -> unbox(body).declare(decls),
             SetByte(pointer, offset, value) -> Some(decls),
             Free(pointer, size, shift) -> Some(decls),
+            LetSlice(id, element, pointer, length, body) -> declare_in(element.declare(decls), unbox(body)),
+            LetIndex(id, ty, slice, index, body) -> declare_in(ty.declare(decls), unbox(body)),
+            SetIndex(slice, index, value) -> Some(decls),
         };
     }
 
@@ -2229,6 +2388,9 @@ impl SrcStmt {
             LetLoad(id, pointer, offset, body) -> unbox(body).returns(),
             SetByte(pointer, offset, value) -> false,
             Free(pointer, size, shift) -> false,
+            LetSlice(id, element, pointer, length, body) -> unbox(body).returns(),
+            LetIndex(id, ty, slice, index, body) -> unbox(body).returns(),
+            SetIndex(slice, index, value) -> false,
         };
     }
 }

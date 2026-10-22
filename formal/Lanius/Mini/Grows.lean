@@ -140,6 +140,121 @@ theorem storeByte_next {h h' : Memory.Heap} {p o : Nat} {b : UInt8}
   · simp only [Except.ok.injEq] at ok
     rw [← ok]
 
+theorem storeBytesFrom_next : ∀ (bytes : List UInt8) {h h' : Memory.Heap} {p o : Nat},
+    Memory.storeBytesFrom h p o bytes = .ok h' → h'.nextAddress = h.nextAddress
+  | [], h, h', p, o, ok => by simp [Memory.storeBytesFrom] at ok; rw [ok]
+  | b :: rest, h, h', p, o, ok => by
+    simp only [Memory.storeBytesFrom] at ok
+    cases hs : h.storeByte p o b with
+    | error => simp [hs] at ok
+    | ok next =>
+      simp only [hs] at ok
+      rw [storeBytesFrom_next rest ok, storeByte_next hs]
+
+theorem storeBytes_next {h h' : Memory.Heap} {p : Nat} {bytes : List UInt8}
+    (ok : h.storeBytes p bytes = .ok h') : h'.nextAddress = h.nextAddress :=
+  storeBytesFrom_next bytes ok
+
+theorem foldlM_inv {α β ε : Type} (P : β → Prop) (f : β → α → Except ε β)
+    (step : ∀ b a b', P b → f b a = .ok b' → P b') :
+    ∀ (l : List α) (b b' : β), P b → l.foldlM f b = .ok b' → P b'
+  | [], b, b', hb, ok => by simp only [List.foldlM] at ok; cases ok; exact hb
+  | a :: l, b, b', hb, ok => by
+    simp only [List.foldlM] at ok
+    cases h : f b a with
+    | error e => rw [h] at ok; exact absurd ok (by simp [bind, Except.bind])
+    | ok b1 =>
+      rw [h] at ok
+      exact foldlM_inv P f step l b1 b' (step b a b1 hb h) ok
+
+theorem except_bind_ok {α β ε : Type} {x : Except ε α} {f : α → Except ε β} {b : β}
+    (ok : x >>= f = .ok b) : ∃ a, x = .ok a ∧ f a = .ok b := by
+  cases x with
+  | error e => exact absurd ok (by simp [bind, Except.bind])
+  | ok a => exact ⟨a, rfl, ok⟩
+
+theorem writeNativeValue_next : ∀ (fuel : Nat) {P : Core.Program} {st : State} {h h' : Memory.Heap}
+    {ty : Core.Ty} {a : Nat} {v : Value},
+    Semantics.writeNativeValue fuel P st h ty a v = .ok h' → h'.nextAddress = h.nextAddress
+  | 0, _, _, _, _, _, _, _, ok => by simp [Semantics.writeNativeValue] at ok
+  | fuel + 1, P, st, h, h', ty, a, v, ok => by
+    simp only [Semantics.writeNativeValue] at ok
+    split at ok
+    all_goals first
+      | exact storeBytes_next ok
+      | skip
+    · split at ok
+      · simp at ok
+      · obtain ⟨w, first, second⟩ := except_bind_ok ok
+        rw [storeBytes_next second, storeBytes_next first]
+    · split at ok
+      · split at ok
+        · simp at ok
+        · obtain ⟨w, first, second⟩ := except_bind_ok ok
+          rw [storeBytes_next second, storeBytes_next first]
+      · simp at ok
+    · split at ok
+      · simp at ok
+      · split at ok
+        · split at ok
+          · simp at ok
+          · refine foldlM_inv (fun b => b.nextAddress = h.nextAddress) _ ?_ _ h h' rfl ok
+            intro b i b' hb step
+            try simp only at step
+            split at step
+            · split at step
+              · split at step
+                · rw [writeNativeValue_next fuel step, hb]
+                · simp at step
+              · simp at step
+            · simp at step
+        · simp at ok
+    · split at ok
+      · simp at ok
+      · split at ok
+        · split at ok
+          · split at ok
+            · simp at ok
+            · obtain ⟨w, first, second⟩ := except_bind_ok ok
+              refine foldlM_inv (fun b => b.nextAddress = h.nextAddress) _ ?_ _ w h'
+                (storeBytes_next first) second
+              intro b i b' hb step
+              try simp only at step
+              split at step
+              · split at step
+                · split at step
+                  · rw [writeNativeValue_next fuel step, hb]
+                  · simp at step
+                · simp at step
+              · simp at step
+          · simp at ok
+        · simp at ok
+    · simp at ok
+
+theorem protectAsBorrowed_next {h h' : Memory.Heap} {p n a : Nat}
+    (ok : h.protectAsBorrowed p n a = .ok h') : h'.nextAddress = h.nextAddress := by
+  simp only [Memory.Heap.protectAsBorrowed] at ok
+  split at ok
+  · simp at ok
+  · split at ok
+    · simp at ok
+    · split at ok
+      · simp at ok
+      · simp only [Except.ok.injEq] at ok
+        rw [← ok]
+
+theorem protectRangeAsBorrowed_next {h h' : Memory.Heap} {p n a : Nat}
+    (ok : h.protectRangeAsBorrowed p n a = .ok h') : h'.nextAddress = h.nextAddress := by
+  simp only [Memory.Heap.protectRangeAsBorrowed] at ok
+  split at ok
+  · simp at ok
+  · split at ok
+    · simp at ok
+    · split at ok
+      · simp at ok
+      · simp only [Except.ok.injEq] at ok
+        rw [← ok]
+
 theorem deallocate_next {h h' : Memory.Heap} {p s a : Nat}
     (ok : h.deallocate p s a = .ok h') : h'.nextAddress = h.nextAddress := by
   simp only [Memory.Heap.deallocate] at ok
@@ -371,29 +486,45 @@ theorem evalPlace_field {P : Core.Program} {k : Nat} {st : State} {id index : Na
 /-- `place = e` on a local or a field of one, where evaluating `e` grows. -/
 theorem assign_grows {P : Core.Program} {k : Nat} {st : State} {place : Core.Place} {e : Core.Expr}
     {u : Value} {st' : State}
-    (placeOk : ∀ {r st1}, Semantics.evalPlace k P st .address place = .done r st1 → st1 = st ∧ r.raw = none)
+    (placeOk : ∀ {r st1}, Semantics.evalPlace k P st .address place = .done r st1 → st1 = st)
     (value : ∀ {rv st2}, evalExpr k P st e = .done rv st2 → Grows st st2)
     (run : evalExpr (k + 1) P st (.assign .set place e) = .done u st') : Grows st st' := by
   intro views
   simp only [evalExpr] at run
   split at run
   · rename_i resolved afterPlace placeRun
-    obtain ⟨rfl, raw⟩ := placeOk placeRun
+    have := placeOk placeRun
+    subst this
     split at run
     · rename_i rv afterValue valueRun
       obtain ⟨views2, next2⟩ := value valueRun views
       split at run
       · simp at run
       rename_i result _
-      simp only [Semantics.writeResolvedPlaceNative, raw] at run
-      split at run
-      · rename_i assigned written
-        obtain ⟨heap3, views3⟩ := writeResolved_same written
-        have synced := sync_ok (st := assigned) (views3.trans views2)
-        simp only [synced, ite_self, Semantics.Outcome.done.injEq] at run
-        obtain ⟨-, rfl⟩ := run
-        exact ⟨views3.trans views2, by rw [heap3]; exact next2⟩
-      · simp at run
+      cases raw : resolved.raw with
+      | none =>
+        simp only [Semantics.writeResolvedPlaceNative, raw] at run
+        split at run
+        · rename_i assigned written
+          obtain ⟨heap3, views3⟩ := writeResolved_same written
+          have synced := sync_ok (st := assigned) (views3.trans views2)
+          simp only [synced, ite_self, Semantics.Outcome.done.injEq] at run
+          obtain ⟨-, rfl⟩ := run
+          exact ⟨views3.trans views2, by rw [heap3]; exact next2⟩
+        · simp at run
+      | some pair =>
+        simp only [Semantics.writeResolvedPlaceNative, raw] at run
+        split at run
+        · rename_i assigned written
+          obtain ⟨heap3, stored, wrapped⟩ := except_bind_ok written
+          simp only [pure, Except.pure, Except.ok.injEq] at wrapped
+          subst wrapped
+          have synced := syncFrom_ok (st := { afterValue with heap := heap3 }) views2
+          simp only [synced, ite_self, Semantics.Outcome.done.injEq] at run
+          obtain ⟨-, rfl⟩ := run
+          exact ⟨views2, by rw [show heap3.nextAddress = afterValue.heap.nextAddress from
+            writeNativeValue_next _ stored]; exact next2⟩
+        · simp at run
     all_goals simp at run
   all_goals simp at run
 
@@ -597,6 +728,105 @@ theorem matchValue_grows {P : Core.Program} {k : Nat} {st : State} {scrutinee id
       exact Grows.same this.1 this.2
     all_goals simp at run
 
+/-- Making a raw slice only marks heap bytes borrowed. -/
+theorem sliceFrom_grows {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
+    {pointer length : SrcExpr} {v : Value} {st' : State}
+    (run : evalExpr k P st (element.sliceFrom pointer.toCore length.toCore) = .done v st') :
+    Grows st st' := by
+  cases k with
+  | zero => cases element <;> simp [SrcType.sliceFrom, evalExpr] at run
+  | succ k =>
+    cases element <;> simp only [SrcType.sliceFrom, evalExpr] at run
+    all_goals
+      split at run
+      · rename_i a afterPointer pointerRun
+        have := pointer.eval_state pointerRun
+        subst this
+        split at run
+        · rename_i n afterLength lengthRun
+          have := length.eval_state lengthRun
+          subst this
+          simp only [Semantics.mapRawI32Slice, Semantics.mapRawNominalSlice] at run
+          repeat' split at run
+          all_goals first
+            | simp only [Semantics.Outcome.done.injEq] at run
+              obtain ⟨-, rfl⟩ := run
+              first
+                | exact Grows.refl _
+                | exact fun views => ⟨views, Nat.le_of_eq (protectAsBorrowed_next (by assumption)).symm⟩
+                | exact fun views => ⟨views, Nat.le_of_eq (protectRangeAsBorrowed_next (by assumption)).symm⟩
+            | simp at run
+        all_goals simp at run
+      all_goals simp at run
+
+theorem evalPlace_readLocal {P : Core.Program} {k : Nat} {st : State} {id : Nat}
+    {r : Semantics.ResolvedPlace} {st' : State}
+    (run : Semantics.evalPlace k P st .read (.local id) = .done r st') : st' = st := by
+  cases k with
+  | zero => simp [Semantics.evalPlace] at run
+  | succ k =>
+    simp only [Semantics.evalPlace] at run
+    split at run
+    · simp at run
+    split at run
+    · simp at run
+    split at run
+    · simp at run
+    · simp only [Semantics.Outcome.done.injEq] at run
+      exact run.2.symm
+
+/-- Reading a slice element changes nothing. -/
+theorem index_state {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {index : SrcExpr}
+    {v : Value} {st' : State}
+    (run : evalExpr k P st (.index (.local slice) index.toCore) = .done v st') : st' = st := by
+  cases k with
+  | zero => simp [evalExpr] at run
+  | succ k =>
+    simp only [evalExpr] at run
+    split at run
+    all_goals first
+      | (rename_i baseRun; have := eval_local_state baseRun; subst this)
+      | simp at run
+    all_goals first
+      | (simp at run; done)
+      | split at run
+        · rename_i iv afterIndex indexRun
+          have := index.eval_state indexRun
+          subst this
+          repeat' split at run
+          all_goals first
+            | (simp only [Semantics.Outcome.done.injEq] at run; exact run.2.symm)
+            | simp at run
+        all_goals simp at run
+
+/-- Resolving `slice[index]` for a write changes nothing. -/
+theorem evalPlace_index {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {index : SrcExpr}
+    {r : Semantics.ResolvedPlace} {st' : State}
+    (run : Semantics.evalPlace k P st .address (.index (.local slice) index.toCore) = .done r st') :
+    st' = st := by
+  cases k with
+  | zero => simp [Semantics.evalPlace] at run
+  | succ k =>
+    simp only [Semantics.evalPlace] at run
+    split at run
+    · rename_i resolved afterBase baseRun
+      have := evalPlace_readLocal baseRun
+      subst this
+      split at run
+      · simp at run
+      all_goals
+        try split at run
+        all_goals first
+          | (rename_i iv afterIndex indexRun
+             have := index.eval_state indexRun
+             subst this
+             repeat' split at run
+             all_goals first
+               | (simp only [Semantics.Outcome.done.injEq] at run; exact run.2.symm)
+               | simp at run)
+          | simp at run
+    all_goals simp at run
+
 theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st : State} {s : SrcStmt}
     {c : Completion} {st' : State} (run : execStmt fuel sp.toCore st s.toCore = .done c st') :
     Grows st st' := by
@@ -657,7 +887,7 @@ theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st 
         cases f with
         | zero => simp [evalExpr] at assignRun
         | succ k =>
-          exact assign_grows evalPlace_local
+          exact assign_grows (fun r => (evalPlace_local r).1)
             (fun r => by have := value.eval_state r; subst this; exact Grows.refl _) assignRun
       all_goals simp at run
     | setField id index value =>
@@ -669,7 +899,7 @@ theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st 
         cases f with
         | zero => simp [evalExpr] at assignRun
         | succ k =>
-          exact assign_grows evalPlace_field
+          exact assign_grows (fun r => (evalPlace_field r).1)
             (fun r => by have := value.eval_state r; subst this; exact Grows.refl _) assignRun
       all_goals simp at run
     | setCall id callee args =>
@@ -681,7 +911,7 @@ theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st 
         cases f with
         | zero => simp [evalExpr] at assignRun
         | succ k =>
-          exact assign_grows evalPlace_local
+          exact assign_grows (fun r => (evalPlace_local r).1)
             (fun r => call_grows (fun m lt => ihf m (Nat.lt_succ_of_lt lt)) r) assignRun
       all_goals simp at run
     | «then» first second =>
@@ -770,6 +1000,32 @@ theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st 
         simp only [Semantics.Outcome.done.injEq] at run
         obtain ⟨-, rfl⟩ := run
         exact dealloc_grows freeRun
+      all_goals simp at run
+    | letSlice id element pointer length body =>
+      simp only [SrcStmt.toCore, execStmt] at run
+      split at run
+      · rename_i v next valueRun
+        exact (sliceFrom_grows valueRun).trans (let_grows (fun r => below (s := body) r) run)
+      all_goals simp at run
+    | letIndex id ty slice index body =>
+      simp only [SrcStmt.toCore, execStmt] at run
+      split at run
+      · rename_i v next valueRun
+        have := index_state valueRun
+        subst this
+        exact let_grows (fun r => below (s := body) r) run
+      all_goals simp at run
+    | setIndex slice index value =>
+      simp only [SrcStmt.toCore, execStmt] at run
+      split at run
+      · rename_i u next assignRun
+        simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        cases f with
+        | zero => simp [evalExpr] at assignRun
+        | succ k =>
+          exact assign_grows evalPlace_index
+            (fun r => by have := value.eval_state r; subst this; exact Grows.refl _) assignRun
       all_goals simp at run
 
 /-- Every subset statement Core completes grows the heap. -/

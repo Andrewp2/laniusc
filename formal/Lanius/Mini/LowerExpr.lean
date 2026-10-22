@@ -233,6 +233,7 @@ theorem cast_sound {ty : SrcType} {inner t : Typed} {env : Env} {w result : Valu
     · simp at lowered
     · simp at lowered
     · simp at lowered
+    · simp at lowered
   | bool => simp [castTo] at lowered
   | uint kind =>
     have positive := Nat.two_pow_pos kind.width
@@ -265,9 +266,11 @@ theorem cast_sound {ty : SrcType} {inner t : Typed} {env : Env} {w result : Valu
     · simp at lowered
     · simp at lowered
     · simp at lowered
+    · simp at lowered
   | struct => simp [castTo] at lowered
   | enum => simp [castTo] at lowered
   | ptr => simp [castTo] at lowered
+  | slice => simp [castTo] at lowered
 
 theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat → Nat} {st : State}
     {env : Env} {prog : Core.Program} (corr : Corr scope frame st env) (target : prog.target = .x86_64) :
@@ -561,6 +564,7 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
             subst evaluated
             simp only [Expr.eval, htl, SrcType.word, Word.holds]
             exact holds_compare _
+          · simp [SrcType.Holds] at holdsl
         · simp at lowered
       case logicalAnd =>
         simp only [SrcOp.lower, conjunction] at lowered
