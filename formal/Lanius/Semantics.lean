@@ -220,6 +220,12 @@ theorem signedBits_i32_x86_value (value : Int) :
   change Int.toNat (value % (2 ^ 32 : Int)) = Int.toNat (value % 4294967296)
   rfl
 
+theorem signedBits_isize_x86_value (value : Int) :
+    signedBits Target.x86_64 .isize value =
+      Int.toNat (value % 18446744073709551616) := by
+  change Int.toNat (value % (2 ^ 64 : Int)) = Int.toNat (value % 18446744073709551616)
+  rfl
+
 theorem signedBits_i32_x86_nat (n : Nat) (bound : n < 2 ^ 32) :
     signedBits Target.x86_64 .i32 (Int.ofNat n) = n := by
   exact signedBits_i32_nat Target.x86_64 n bound

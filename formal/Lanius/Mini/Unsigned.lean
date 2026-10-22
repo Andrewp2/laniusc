@@ -163,4 +163,165 @@ theorem fromI32_eval (k : UintTy) (e : Expr) (env : Env) {x : BitVec 32} (bits :
     rcases toInt_cases x with ⟨_, eq⟩ | ⟨_, eq⟩ <;> rw [eq] <;>
       cases k <;> simp_all [UintTy.isWide, UintTy.width] <;> omega
 
+
+/-! Core's `isize` is `BitVec 64` arithmetic on `toInt`; its slot holds the
+bits. Its order is the unsigned order of the bits with the sign bit flipped. -/
+
+theorem toInt64_cond (x : BitVec 64) :
+    x.toInt = if x.toNat < 9223372036854775808 then (x.toNat : Int) else (x.toNat : Int) - 18446744073709551616 := by
+  rw [BitVec.toInt_eq_toNat_cond]
+  have := x.isLt
+  split <;> split <;> omega
+
+theorem wrapSigned_isize (n : Int) :
+    Semantics.wrapSigned Core.Target.x86_64 .isize n = (BitVec.ofInt 64 n).toInt := by
+  rw [BitVec.toInt_ofInt]
+  change (if n % 18446744073709551616 ≥ 9223372036854775808 then n % 18446744073709551616 - 18446744073709551616
+      else n % 18446744073709551616) =
+    (if n % 18446744073709551616 < 9223372036854775808 then n % 18446744073709551616
+      else n % 18446744073709551616 - 18446744073709551616)
+  by_cases h : 9223372036854775808 ≤ n % 18446744073709551616
+  · rw [if_pos h, if_neg (by omega)]
+  · rw [if_neg h, if_pos (by omega)]
+
+theorem toInt64_emod (x : BitVec 64) : x.toInt % 18446744073709551616 = (x.toNat : Int) := by
+  rw [toInt64_cond]
+  have := x.isLt
+  split <;> omega
+
+theorem wrap_isize (x : BitVec 64) :
+    Semantics.wrapSigned Core.Target.x86_64 .isize x.toInt = x.toInt := by
+  rw [wrapSigned_isize, BitVec.ofInt_toInt]
+
+theorem wrap_isize_nat (n : Nat) :
+    Semantics.wrapSigned Core.Target.x86_64 .isize (Int.ofNat n) = (BitVec.ofNat 64 n).toInt := by
+  rw [wrapSigned_isize]
+  congr 1
+
+/-- The bits with the sign bit flipped: `signKey` adds `2 ^ 63`. -/
+def flip (a : BitVec 64) : BitVec 64 := a + 9223372036854775808
+
+theorem flip_toNat (a : BitVec 64) :
+    (flip a).toNat = (a.toNat + 9223372036854775808) % 18446744073709551616 := by
+  have sign : (9223372036854775808 : BitVec 64).toNat = 9223372036854775808 := by rfl
+  rw [flip, BitVec.toNat_add, sign]
+
+theorem flip_lt (a b : BitVec 64) : (flip a).toNat < (flip b).toNat ↔ a.toInt < b.toInt := by
+  rw [flip_toNat, flip_toNat, toInt64_cond, toInt64_cond]
+  have := a.isLt
+  have := b.isLt
+  generalize a.toNat = x at *
+  generalize b.toNat = y at *
+  split <;> split <;> omega
+
+theorem flip_le (a b : BitVec 64) : (flip a).toNat ≤ (flip b).toNat ↔ a.toInt ≤ b.toInt := by
+  rw [flip_toNat, flip_toNat, toInt64_cond, toInt64_cond]
+  have := a.isLt
+  have := b.isLt
+  generalize a.toNat = x at *
+  generalize b.toNat = y at *
+  split <;> split <;> omega
+
+section Isize
+
+open Semantics
+
+variable (a b : BitVec 64)
+
+theorem wrap64_add : Semantics.wrapSigned .x86_64 .isize (a.toInt + b.toInt) = (a + b).toInt := by
+  rw [wrapSigned_isize, BitVec.toInt_ofInt, BitVec.toInt_add]
+
+theorem wrap64_sub : Semantics.wrapSigned .x86_64 .isize (a.toInt - b.toInt) = (a - b).toInt := by
+  rw [wrapSigned_isize, BitVec.toInt_ofInt, BitVec.toInt_sub]
+
+theorem wrap64_mul : Semantics.wrapSigned .x86_64 .isize (a.toInt * b.toInt) = (a * b).toInt := by
+  rw [wrapSigned_isize, BitVec.toInt_ofInt, BitVec.toInt_mul]
+
+theorem wrap64_of {c : BitVec 64} {n : Nat} (h : n = c.toNat) :
+    Semantics.wrapSigned .x86_64 .isize (Int.ofNat n) = c.toInt := by
+  rw [wrap_isize_nat, h]
+  simp
+
+theorem eval_isize_binop {op : BinOp} {cop : Core.BinaryOp}
+    (h : (cop = .add ∧ op = .add) ∨ (cop = .subtract ∧ op = .sub) ∨ (cop = .multiply ∧ op = .mul) ∨
+      (cop = .bitAnd ∧ op = .and) ∨ (cop = .bitOr ∧ op = .or) ∨ (cop = .bitXor ∧ op = .xor)) :
+    evalBinaryValue .x86_64 cop (.signed .isize a.toInt) (.signed .isize b.toInt) =
+      .ok (.signed .isize (op.apply a b).toInt) := by
+  rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+    simp only [evalBinaryValue, beq_self_eq_true, ↓reduceIte, evalSignedBinary, BinOp.apply]
+  · rw [wrap64_add]
+  · rw [wrap64_sub]
+  · rw [wrap64_mul]
+  · rw [signedBits_isize_x86_value, signedBits_isize_x86_value, toInt64_emod, toInt64_emod,
+      Int.toNat_natCast, Int.toNat_natCast]
+    exact congrArg (fun v => Except.ok (Value.signed .isize v)) (wrap64_of (BitVec.toNat_and a b).symm)
+  · rw [signedBits_isize_x86_value, signedBits_isize_x86_value, toInt64_emod, toInt64_emod,
+      Int.toNat_natCast, Int.toNat_natCast]
+    exact congrArg (fun v => Except.ok (Value.signed .isize v)) (wrap64_of (BitVec.toNat_or a b).symm)
+  · rw [signedBits_isize_x86_value, signedBits_isize_x86_value, toInt64_emod, toInt64_emod,
+      Int.toNat_natCast, Int.toNat_natCast]
+    exact congrArg (fun v => Except.ok (Value.signed .isize v)) (wrap64_of (BitVec.toNat_xor a b).symm)
+
+theorem eval_isize_order {cop : Core.BinaryOp} {op : CmpOp}
+    (h : (cop = .less ∧ op = .lt) ∨ (cop = .lessEqual ∧ op = .le) ∨
+      (cop = .greater ∧ op = .gt) ∨ (cop = .greaterEqual ∧ op = .ge)) :
+    evalBinaryValue .x86_64 cop (.signed .isize a.toInt) (.signed .isize b.toInt) =
+      .ok (.boolean (op.holdsU (flip a) (flip b))) := by
+  rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+    simp only [evalBinaryValue, beq_self_eq_true, ↓reduceIte, evalSignedBinary, CmpOp.holdsU, BitVec.ult, BitVec.ule, flip_lt,
+      flip_le, gt_iff_lt, ge_iff_le]
+
+theorem toInt64_beq : (a.toInt == b.toInt) = (a == b) := by
+  rw [Bool.eq_iff_iff]
+  simp [BitVec.toInt_inj]
+
+theorem eval_isize_eq :
+    evalBinaryValue .x86_64 .equal (.signed .isize a.toInt) (.signed .isize b.toInt) =
+      .ok (.boolean (CmpOp.eq.holdsU a b)) := by
+  simp [evalBinaryValue, scalarEqual, CmpOp.holdsU, toInt64_beq]
+
+theorem eval_isize_ne :
+    evalBinaryValue .x86_64 .notEqual (.signed .isize a.toInt) (.signed .isize b.toInt) =
+      .ok (.boolean (CmpOp.ne.holdsU a b)) := by
+  simp [evalBinaryValue, scalarEqual, CmpOp.holdsU, toInt64_beq, bne]
+
+theorem eval_isize_neg :
+    evalUnaryValue .x86_64 .negate (.signed .isize a.toInt) = .ok (.signed .isize (0 - a).toInt) := by
+  simp only [evalUnaryValue, wrapSigned_isize, BitVec.toInt_ofInt]
+  rw [show (0 : BitVec 64) - a = -a by simp, BitVec.toInt_neg]
+
+theorem cast_isize_isize :
+    evalScalarCast .x86_64 (.signed .isize) (.signed .isize a.toInt) = .ok (.signed .isize a.toInt) := by
+  simp only [evalScalarCast, wrap_isize]
+
+theorem cast_isize_i32 (x : BitVec 32) :
+    evalScalarCast .x86_64 (.signed .isize) (.signed .i32 x.toInt) =
+      .ok (.signed .isize (BitVec.ofInt 64 x.toInt).toInt) := by
+  simp only [evalScalarCast, wrapSigned_isize]
+
+theorem cast_isize_uint (k : UintTy) (n : Nat) :
+    evalScalarCast .x86_64 (.signed .isize) (.unsigned k.toCore n) =
+      .ok (.signed .isize (BitVec.ofNat 64 n).toInt) := by
+  simp only [evalScalarCast, wrap_isize_nat]
+
+theorem cast_i32_isize :
+    evalScalarCast .x86_64 (.signed .i32) (.signed .isize a.toInt) =
+      .ok (.signed .i32 (BitVec.ofNat 32 a.toNat).toInt) := by
+  simp only [evalScalarCast, wrapSigned_i32, Except.ok.injEq, Value.signed.injEq, true_and]
+  congr 1
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_ofInt, BitVec.toNat_ofNat, toInt64_cond]
+  have := a.isLt
+  split <;> omega
+
+theorem cast_uint_isize (k : UintTy) :
+    evalScalarCast .x86_64 (.unsigned k.toCore) (.signed .isize a.toInt) =
+      .ok (.unsigned k.toCore (a.toNat % 2 ^ k.width)) := by
+  simp only [evalScalarCast, wrapUnsignedInt, unsignedModulus, UintTy.bits_toCore]
+  rw [toInt64_cond]
+  have := a.isLt
+  cases k <;> simp only [UintTy.width] <;> split <;> simp <;> omega
+
+end Isize
+
 end Lanius.Mini

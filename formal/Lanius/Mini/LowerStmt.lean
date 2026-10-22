@@ -992,6 +992,7 @@ theorem castTo_below {n : Nat} {ty : SrcType} {inner t : Typed} (h : castTo ty i
     split at h <;> simp only [Option.some.injEq, reduceCtorEq] at h <;> subst h
     · exact below
     · exact below.wrap .uint32
+    · exact below.wrap .uint32
   | uint kind =>
     simp only [castTo, castToUint] at h
     split at h <;> simp only [Option.some.injEq, reduceCtorEq] at h <;> subst h
@@ -1000,6 +1001,16 @@ theorem castTo_below {n : Nat} {ty : SrcType} {inner t : Typed} (h : castTo ty i
       · exact ⟨below, ⟨below, trivial⟩, trivial⟩
       · exact below.wrap kind
     · exact below.wrap kind
+    · exact below.wrap kind
+  | isize =>
+    simp only [castTo, castToIsize] at h
+    split at h <;> simp only [Option.some.injEq, reduceCtorEq] at h <;> subst h
+    · simp only [fromI32]
+      split
+      · exact ⟨below, ⟨below, trivial⟩, trivial⟩
+      · exact below.wrap .uint64
+    · exact below
+    · exact below
   | bool => simp [castTo] at h
   | struct => simp [castTo] at h
   | enum => simp [castTo] at h
@@ -1051,6 +1062,7 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
     case h_6 => simp at lowered
     case h_7 => simp at lowered
     case h_8 => simp at lowered
+    case h_9 => simp at lowered
     rename_i sid fields hty
     simp only [lowerFieldAt] at lowered
     split at lowered
@@ -1079,6 +1091,10 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
     · simp only [Option.some.injEq] at lowered
       subst lowered
       exact ih (t := inner) innerLowered
+    split at lowered
+    · simp only [Option.some.injEq] at lowered
+      subst lowered
+      exact ⟨trivial, ih (t := inner) innerLowered⟩
     · simp at lowered
   | not operand ih =>
     intro t lowered
@@ -1114,6 +1130,10 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
       · simp only [Option.some.injEq] at lowered
         subst lowered
         exact ⟨bl, br⟩
+      split at lowered
+      · simp only [Option.some.injEq] at lowered
+        subst lowered
+        exact ⟨bl, br⟩
       · obtain ⟨k, -, -, rfl⟩ := arithUint_some lowered
         exact Expr.Below.wrap (e := .binary .u64 _ _ _) ⟨bl, br⟩ k
     case less | lessEq | greater | greaterEq =>
@@ -1122,6 +1142,10 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
       · simp only [Option.some.injEq] at lowered
         subst lowered
         exact ⟨bl, br⟩
+      split at lowered
+      · simp only [Option.some.injEq] at lowered
+        subst lowered
+        exact ⟨⟨bl, trivial⟩, ⟨br, trivial⟩⟩
       · obtain ⟨k, -, -, rfl⟩ := orderUint_some lowered
         exact ⟨bl, br⟩
     all_goals
@@ -1540,6 +1564,7 @@ theorem stmt_letStruct (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {fi
   | enum => simp [lowerLiteral] at literalOk
   | slice => simp [lowerLiteral] at literalOk
   | unit => simp [lowerLiteral] at literalOk
+  | isize => simp [lowerLiteral] at literalOk
   | ptr => simp [lowerLiteral] at literalOk
   | struct sid types =>
     simp only [lowerLiteral, lowerStructFields] at literalOk
@@ -1634,6 +1659,7 @@ theorem stmt_letEnum (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {vari
   | ptr => simp [lowerEnumValue] at valueOk
   | slice => simp [lowerEnumValue] at valueOk
   | unit => simp [lowerEnumValue] at valueOk
+  | isize => simp [lowerEnumValue] at valueOk
   | enum eid variants =>
     simp only [lowerEnumValue, lowerTagged] at valueOk
     split at valueOk
@@ -1714,6 +1740,7 @@ theorem stmt_letMatch (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {scr
   case h_6 => simp at matchOk
   case h_7 => simp at matchOk
   case h_8 => simp at matchOk
+  case h_9 => simp at matchOk
   rename_i eid variants hty
   simp only [lowerMatchArms] at matchOk
   split at matchOk
@@ -1826,6 +1853,7 @@ theorem stmt_setField {id index : Nat} {value : SrcExpr}
   case h_6 => simp at ok
   case h_7 => simp at ok
   case h_8 => simp at ok
+  case h_9 => simp at ok
   rename_i sid types hty
   simp only [lowerSetFieldAt] at ok
   split at ok
@@ -2383,7 +2411,7 @@ theorem slice_kind {ds : SrcDecls} {element : SrcType}
   | i32 => exact .inl rfl
   | struct sid fields => exact .inr (.inl ⟨sid, fields, rfl⟩)
   | enum eid variants => exact .inr (.inr ⟨eid, variants, rfl⟩)
-  | bool | uint | ptr | slice | unit => simp [SrcType.isI32, isWordStruct, elementWidths, isWordEnum, enumWidths] at cond
+  | bool | uint | ptr | slice | unit | isize => simp [SrcType.isI32, isWordStruct, elementWidths, isWordEnum, enumWidths] at cond
 
 /-- What Core's `slice_from_raw_parts` of an accepted element type did. -/
 theorem sliceFrom_inv {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
@@ -2497,7 +2525,7 @@ theorem index_toNat {t : Typed} {iv : Value} {x : BitVec 64} {pos : Nat}
     obtain ⟨rfl, -⟩ := holds
     simp only [Semantics.integerIndex, Except.ok.injEq] at ok
     exact ok
-  | bool | struct | enum | ptr | slice | unit => rw [hty] at kind; simp [SrcType.isI32, SrcType.isUint] at kind
+  | bool | struct | enum | ptr | slice | unit | isize => rw [hty] at kind; simp [SrcType.isI32, SrcType.isUint] at kind
 
 /-- Core's read of `slice[idx]` from a raw slice local. -/
 theorem eval_index_raw {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {idx : Core.Expr}

@@ -99,6 +99,16 @@ theorem negate_holds {inner t : Typed} {env : Env} {w r : Value} (lowered : lowe
     simp only [Expr.eval]
     rw [wrap_neg]
     exact holds_i32 _
+  split at lowered
+  · rename_i isIsize
+    simp only [Option.some.injEq] at lowered
+    subst lowered
+    cases hty : inner.ty <;> simp [hty, SrcType.isIsize] at isIsize
+    rw [hty] at holds
+    subst holds
+    rw [eval_isize_neg, Except.ok.injEq] at run
+    subst run
+    rfl
   · simp at lowered
 
 theorem not_holds {inner t : Typed} {env : Env} {w r : Value} (lowered : lowerNotTyped inner = some t)
@@ -788,6 +798,7 @@ theorem eval_struct {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcType
   | ptr => simp at ok
   | slice => simp at ok
   | unit => simp at ok
+  | isize => simp at ok
 
 /-- An enum literal: its payload from `slot + 1`, then its tag in `slot`. -/
 theorem eval_variant {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcType} {variant : Nat}
@@ -835,6 +846,7 @@ theorem eval_variant {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcTyp
   | ptr => simp at ok
   | slice => simp at ok
   | unit => simp at ok
+  | isize => simp at ok
 
 /-- Binding an arm's payload above the scope keeps the layout. -/
 theorem armScope_layout :
@@ -1051,6 +1063,7 @@ theorem eval_match {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {scrutinee :
       | ptr => cases values <;> simp [matchVariants, evalArms] at armsOk
       | slice => cases values <;> simp [matchVariants, evalArms] at armsOk
       | unit => cases values <;> simp [matchVariants, evalArms] at armsOk
+      | isize => cases values <;> simp [matchVariants, evalArms] at armsOk
     all_goals simp at run
   · simp at ok
 
@@ -1085,6 +1098,9 @@ theorem negate_scalar {inner t : Typed} (lowered : lowerNegateTyped inner = some
   split at lowered
   · rename_i isInt
     cases hty : inner.ty <;> simp_all [SrcType.isI32, SrcType.isScalar]
+  split at lowered
+  · rename_i isIsize
+    cases hty : inner.ty <;> simp_all [SrcType.isIsize, SrcType.isScalar]
   · simp at lowered
 
 theorem not_scalar {inner t : Typed} (lowered : lowerNotTyped inner = some t) : inner.ty.isScalar = true := by
@@ -1278,6 +1294,7 @@ theorem stmt_setFieldEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {id index : 
   case h_6 => simp at ok
   case h_7 => simp at ok
   case h_8 => simp at ok
+  case h_9 => simp at ok
   rename_i sid types hty
   simp only [setFieldEvalAt] at ok
   split at ok

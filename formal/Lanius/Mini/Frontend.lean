@@ -982,6 +982,7 @@ def srcTy (t : SrcType) : Option Ty :=
   | .ptr => some Ty.tyPtr
   | .slice e => none
   | .unit => none
+  | .isize => none
 
 def scalarSrc (t : Ty) : Option SrcType :=
   match t with
@@ -2558,6 +2559,7 @@ def isUsize (t : SrcType) : Bool :=
   | .ptr => false
   | .slice e => false
   | .unit => false
+  | .isize => false
 
 /-- An integer literal 2^shift with shift below 31. -/
 def literalShift (e : SrcExpr) : Option Nat :=
@@ -4034,6 +4036,7 @@ def srcEnumId (t : Option SrcType) : Option Nat :=
     | .ptr => none
     | .slice e => none
     | .unit => none
+    | .isize => none
 
 def letClosed (id : Nat) (ty : Option SrcType) (e : SrcExpr) (body : Option SrcStmt) : Option SrcStmt :=
   match ty with

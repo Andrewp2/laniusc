@@ -163,6 +163,7 @@ pub enum SrcType {
     Ptr,
     Slice(Box<SrcType>),
     Unit,
+    Isize,
 }
 
 pub enum SrcOp {
@@ -1555,6 +1556,7 @@ pub fn src_ty(t: SrcType) -> core::option::Option<Ty> {
         Ptr -> Some(TyPtr),
         Slice(e) -> None,
         Unit -> None,
+        Isize -> None,
     };
 }
 
@@ -3491,6 +3493,7 @@ pub fn is_usize(t: SrcType) -> bool {
         Ptr -> false,
         Slice(e) -> false,
         Unit -> false,
+        Isize -> false,
     };
 }
 
@@ -5283,6 +5286,7 @@ pub fn src_enum_id(t: core::option::Option<SrcType>) -> core::option::Option<usi
             Ptr -> None,
             Slice(e) -> None,
             Unit -> None,
+            Isize -> None,
         },
     };
 }

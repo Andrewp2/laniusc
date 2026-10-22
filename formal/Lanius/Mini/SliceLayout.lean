@@ -34,6 +34,7 @@ theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true �
     | ptr => simp [SrcType.same] at same
     | slice => simp [SrcType.same] at same
     | unit => simp [SrcType.same] at same
+    | isize => simp [SrcType.same] at same
   | .enum id vs, b, same => by
     cases b with
     | enum id' ws =>
@@ -46,6 +47,7 @@ theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true �
     | ptr => simp [SrcType.same] at same
     | slice => simp [SrcType.same] at same
     | unit => simp [SrcType.same] at same
+    | isize => simp [SrcType.same] at same
   | .slice e, b, same => by
     cases b with
     | slice e' =>
@@ -58,7 +60,9 @@ theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true �
     | enum => simp [SrcType.same] at same
     | ptr => simp [SrcType.same] at same
     | unit => simp [SrcType.same] at same
+    | isize => simp [SrcType.same] at same
   | .unit, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isUnit]
+  | .isize, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isIsize]
 
 theorem typesSame_eq : ∀ (fs : List SrcType) {gs : List SrcType}, typesSame fs gs = true → fs = gs
   | [], gs, same => by cases gs <;> simp_all [typesSame]
@@ -95,7 +99,7 @@ theorem wordWidth_cases {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) 
     cases k <;> simp only [wordWidth, usizeWidth, Option.some.injEq, reduceCtorEq] at h
     exact .inr (.inr (.inl ⟨rfl, h.symm⟩))
   | ptr => simp only [wordWidth, Option.some.injEq] at h; exact .inr (.inr (.inr ⟨rfl, h.symm⟩))
-  | struct | enum | slice | unit => simp [wordWidth] at h
+  | struct | enum | slice | unit | isize => simp [wordWidth] at h
 
 theorem wordWidth_size {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) : f.size = 1 := by
   rcases wordWidth_cases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> rfl
@@ -171,7 +175,7 @@ theorem elementWidths_some {ds : SrcDecls} {element : SrcType} {ws : List MemWid
     have := typesSame_eq fs same
     subst this
     exact ⟨sid, fs, rfl, found, hws, List.cons_ne_nil _ _⟩
-  | i32 | bool | uint | enum | ptr | slice | unit => simp [elementWidths] at h
+  | i32 | bool | uint | enum | ptr | slice | unit | isize => simp [elementWidths] at h
 
 /-- Core's `i32` read of 4 bytes `bits`, in the slot the mini load fills. -/
 theorem i32_load_holds {bits : Nat} (lt : bits < 2 ^ 32) :
@@ -473,7 +477,7 @@ theorem enumWidths_some {ds : SrcDecls} {element : SrcType} {wss : List (List Me
     have := variantsSame_eq vs same
     subst this
     exact ⟨eid, vs, rfl, found, h, pos, small⟩
-  | i32 | bool | uint | struct | ptr | slice | unit => simp [enumWidths] at h
+  | i32 | bool | uint | struct | ptr | slice | unit | isize => simp [enumWidths] at h
 
 theorem mapM_option_ok {α β : Type} {g : α → Option β} : ∀ {l : List α} {vs : List β},
     l.mapM g = some vs →

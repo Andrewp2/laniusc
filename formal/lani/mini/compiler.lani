@@ -1290,6 +1290,8 @@ pub enum SrcType {
     Slice(Box<SrcType>),
     // the unit type: one slot whose bits do not matter
     Unit,
+    // a signed 64-bit integer, its two's complement bits in one slot
+    Isize,
 }
 
 pub enum SrcOp {
@@ -1465,6 +1467,7 @@ impl SrcType {
             Ptr -> false,
             Slice(element) -> false,
             Unit -> false,
+            Isize -> false,
         };
     }
 
@@ -1478,6 +1481,7 @@ impl SrcType {
             Ptr -> false,
             Slice(element) -> false,
             Unit -> false,
+            Isize -> false,
         };
     }
 
@@ -1491,6 +1495,7 @@ impl SrcType {
             Ptr -> true,
             Slice(element) -> false,
             Unit -> false,
+            Isize -> true,
         };
     }
 
@@ -1504,6 +1509,7 @@ impl SrcType {
             Ptr -> false,
             Slice(element) -> false,
             Unit -> false,
+            Isize -> false,
         };
     }
 
@@ -1517,6 +1523,7 @@ impl SrcType {
             Ptr -> true,
             Slice(element) -> false,
             Unit -> false,
+            Isize -> false,
         };
     }
 
@@ -1530,6 +1537,21 @@ impl SrcType {
             Ptr -> false,
             Slice(element) -> false,
             Unit -> true,
+            Isize -> false,
+        };
+    }
+
+    pub fn is_isize(self) -> bool {
+        return match (self) {
+            I32 -> false,
+            Bool -> false,
+            Uint(kind) -> false,
+            Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
+            Ptr -> false,
+            Slice(element) -> false,
+            Unit -> false,
+            Isize -> true,
         };
     }
 
@@ -1544,6 +1566,7 @@ impl SrcType {
             Ptr -> None,
             Slice(element) -> None,
             Unit -> None,
+            Isize -> None,
         };
     }
 
@@ -1558,6 +1581,7 @@ impl SrcType {
             Ptr -> U64,
             Slice(element) -> U64,
             Unit -> S32,
+            Isize -> U64,
         };
     }
 }
@@ -1578,6 +1602,7 @@ impl SrcType {
                 Ptr -> false,
                 Slice(other_element) -> false,
                 Unit -> false,
+                Isize -> false,
             },
             Enum(id, variants) -> match (other) {
                 I32 -> false,
@@ -1588,6 +1613,7 @@ impl SrcType {
                 Ptr -> false,
                 Slice(other_element) -> false,
                 Unit -> false,
+                Isize -> false,
             },
             Ptr -> other.is_ptr(),
             Slice(element) -> match (other) {
@@ -1599,8 +1625,10 @@ impl SrcType {
                 Ptr -> false,
                 Slice(other_element) -> unbox(element).same(unbox(other_element)),
                 Unit -> false,
+                Isize -> false,
             },
             Unit -> other.is_unit(),
+            Isize -> other.is_isize(),
         };
     }
 }
@@ -1646,6 +1674,7 @@ impl SrcType {
             Ptr -> 1,
             Slice(element) -> 1,
             Unit -> 1,
+            Isize -> 1,
         };
     }
 }
@@ -1711,9 +1740,14 @@ fn arith_of(operation: BinOp, left: Typed, right: Typed, k: UintTy) -> core::opt
     return None;
 }
 
+// isize arithmetic is 64-bit arithmetic on the bits, which wraps as Core's
+// two's complement does.
 pub fn arith(operation: BinOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
     if (left.ty.is_i32() && right.ty.is_i32()) {
         return Some(Typed { expr: Binary(S32, operation, boxed(left.expr), boxed(right.expr)), ty: I32 });
+    }
+    if (left.ty.is_isize() && right.ty.is_isize()) {
+        return Some(Typed { expr: Binary(U64, operation, boxed(left.expr), boxed(right.expr)), ty: Isize });
     }
     return arith_uint(operation, left, right, left.ty.uint_kind());
 }
@@ -1742,9 +1776,18 @@ fn order_of(operation: CmpOp, left: Typed, right: Typed, k: UintTy) -> core::opt
     return None;
 }
 
+// An isize's bits plus 2^63, which flips the sign bit and so orders isizes
+// as unsigned numbers in their signed order.
+pub fn sign_key(e: Expr) -> Expr {
+    return Binary(U64, Add, boxed(e), boxed(Lit(9223372036854775808)));
+}
+
 pub fn order(operation: CmpOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
     if (left.ty.is_i32() && right.ty.is_i32()) {
         return Some(Typed { expr: Compare(S32, operation, boxed(left.expr), boxed(right.expr)), ty: Bool });
+    }
+    if (left.ty.is_isize() && right.ty.is_isize()) {
+        return Some(Typed { expr: Compare(U64, operation, boxed(sign_key(left.expr)), boxed(sign_key(right.expr))), ty: Bool });
     }
     return order_uint(operation, left, right, left.ty.uint_kind());
 }
@@ -1832,6 +1875,7 @@ pub fn lower_field_of(b: Binding, field: usize) -> core::option::Option<Typed> {
         Ptr -> None,
         Slice(element) -> None,
         Unit -> None,
+        Isize -> None,
     };
 }
 
@@ -1845,6 +1889,9 @@ pub fn lower_field(binding: core::option::Option<Binding>, field: usize) -> core
 pub fn lower_negate_typed(operand: Typed) -> core::option::Option<Typed> {
     if (operand.ty.is_i32()) {
         return Some(Typed { expr: Expr::Neg(boxed(operand.expr)), ty: I32 });
+    }
+    if (operand.ty.is_isize()) {
+        return Some(Typed { expr: Binary(U64, Sub, boxed(Lit(0)), boxed(operand.expr)), ty: Isize });
     }
     return None;
 }
@@ -1897,6 +1944,7 @@ pub fn cast_to_i32(e: Typed) -> core::option::Option<Typed> {
         Ptr -> None,
         Slice(element) -> None,
         Unit -> None,
+        Isize -> Some(Typed { expr: wrap(Uint32, e.expr), ty: I32 }),
     };
 }
 
@@ -1910,6 +1958,23 @@ pub fn cast_to_uint(kind: UintTy, e: Typed) -> core::option::Option<Typed> {
         Ptr -> None,
         Slice(element) -> None,
         Unit -> None,
+        Isize -> Some(Typed { expr: wrap(kind, e.expr), ty: Uint(kind) }),
+    };
+}
+
+// To isize: an i32 sign-extends; an unsigned value's bits stay, which is
+// Core's wrap at 2^64.
+pub fn cast_to_isize(e: Typed) -> core::option::Option<Typed> {
+    return match (e.ty) {
+        I32 -> Some(Typed { expr: from_i32(Uint64, e.expr), ty: Isize }),
+        Bool -> None,
+        Uint(kind) -> Some(Typed { expr: e.expr, ty: Isize }),
+        Struct(id, fields) -> None,
+        Enum(id, variants) -> None,
+        Ptr -> None,
+        Slice(element) -> None,
+        Unit -> None,
+        Isize -> Some(e),
     };
 }
 
@@ -1923,6 +1988,7 @@ pub fn cast_to(ty: SrcType, e: Typed) -> core::option::Option<Typed> {
         Ptr -> None,
         Slice(element) -> None,
         Unit -> None,
+        Isize -> cast_to_isize(e),
     };
 }
 
@@ -2032,6 +2098,7 @@ pub fn copy_field_of(b: Binding, index: usize, ty: SrcType) -> core::option::Opt
         Ptr -> None,
         Slice(element) -> None,
         Unit -> None,
+        Isize -> None,
     };
 }
 
@@ -2106,6 +2173,7 @@ pub fn lower_literal(scope: List<Binding>, ty: SrcType, fields: List<SrcExpr>) -
         Ptr -> None,
         Slice(element) -> None,
         Unit -> None,
+        Isize -> None,
     };
 }
 
@@ -2143,6 +2211,7 @@ pub fn lower_enum_value(scope: List<Binding>, ty: SrcType, variant: usize, paylo
         Ptr -> None,
         Slice(element) -> None,
         Unit -> None,
+        Isize -> None,
     };
 }
 
@@ -2228,6 +2297,7 @@ pub fn lower_match_on(scope: List<Binding>, b: Binding, enum_id: usize, arms: Li
         Ptr -> None,
         Slice(element) -> None,
         Unit -> None,
+        Isize -> None,
     };
 }
 
@@ -2404,6 +2474,7 @@ pub fn element_of(ty: SrcType) -> core::option::Option<SrcType> {
         Ptr -> None,
         Slice(element) -> Some(unbox(element)),
         Unit -> None,
+        Isize -> None,
     };
 }
 
@@ -2437,6 +2508,7 @@ pub fn eval_struct(ty: SrcType, args: core::option::Option<EvaluatedArgs>) -> co
             Ptr -> None,
             Slice(element) -> None,
             Unit -> None,
+            Isize -> None,
         },
     };
 }
@@ -2472,6 +2544,7 @@ pub fn eval_variant(ty: SrcType, variant: usize, slot: usize, args: core::option
             Ptr -> None,
             Slice(element) -> None,
             Unit -> None,
+            Isize -> None,
         },
     };
 }
@@ -2607,6 +2680,7 @@ pub fn match_variants(ty: SrcType) -> List<List<SrcType>> {
         Ptr -> empty(),
         Slice(element) -> empty(),
         Unit -> empty(),
+        Isize -> empty(),
     };
 }
 
@@ -2786,6 +2860,7 @@ pub fn lower_set_field_of(b: Binding, field: usize, scope: List<Binding>, value:
         Ptr -> None,
         Slice(element) -> None,
         Unit -> None,
+        Isize -> None,
     };
 }
 
@@ -2984,6 +3059,7 @@ pub fn word_width(ty: SrcType) -> core::option::Option<MemWidth> {
         Ptr -> Some(M64),
         Slice(element) -> None,
         Unit -> None,
+        Isize -> None,
     };
 }
 
@@ -3042,6 +3118,7 @@ pub fn element_widths(decls: SrcDecls, element: SrcType) -> core::option::Option
         Ptr -> None,
         Slice(inner) -> None,
         Unit -> None,
+        Isize -> None,
     };
 }
 
@@ -3106,6 +3183,7 @@ pub fn enum_widths(decls: SrcDecls, element: SrcType) -> core::option::Option<Li
         Ptr -> None,
         Slice(inner) -> None,
         Unit -> None,
+        Isize -> None,
     };
 }
 
@@ -3583,6 +3661,7 @@ pub fn set_field_eval_of(b: Binding, field: usize, slot: usize, v: Evaluated) ->
         Ptr -> None,
         Slice(element) -> None,
         Unit -> None,
+        Isize -> None,
     };
 }
 
@@ -3903,6 +3982,7 @@ impl SrcType {
             Ptr -> Some(decls),
             Slice(element) -> unbox(element).declare(decls),
             Unit -> Some(decls),
+            Isize -> Some(decls),
         };
     }
 }
