@@ -345,6 +345,8 @@ class Chunk:
             out.emit('(')
             self.emit_eff(k, ids, x[2])
             out.emit(f' as {x[1]})')
+        elif kind == 'eStride':
+            out.emit(f'slice_stride(v{x[1]})')
         elif kind == 'eIndex':
             out.emit(f'v{x[1]}[')
             self.emit_eff(k, ids, x[2])
@@ -406,6 +408,8 @@ class Chunk:
             return f'(.eCast {self.lean_ty(k, x[1])} {self.lean_eff(k, ids, x[2])})'
         if kind == 'eIndex':
             return f'(.eIndex {ids[x[1]]} {self.lean_eff(k, ids, x[2])})'
+        if kind == 'eStride':
+            return f'(.eStride {ids[x[1]]})'
         if kind in ('eApply', 'eDivide'):
             return f'(.{kind} .{x[1]} {self.lean_eff(k, ids, x[3])} {self.lean_eff(k, ids, x[4])})'
         if kind == 'eStruct':
@@ -791,7 +795,7 @@ def collapse(x):
     """An effectful expression as the reader reads it: the operators, casts
     and negations of pure operands are pure."""
     kind = x[0]
-    if kind == 'ePure':
+    if kind in ('ePure', 'eStride'):
         return x
     if kind == 'eCall':
         return ('eCall', x[1], [collapse(a) for a in x[2]])

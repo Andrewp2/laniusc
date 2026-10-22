@@ -676,7 +676,7 @@ program's own first; `sourceProgram` is the one-file case.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Frontend` | 5033 | 15 | extracted from `formal/lani/mini/frontend.lani`: the grammar table, `validate_tree`, `build`, the monomorphizer |
+| `Frontend` | 5191 | 15 | extracted from `formal/lani/mini/frontend.lani`: the grammar table, `validate_tree`, `build`, the monomorphizer |
 | `FrontLex` | 59 | 0.6 | tokens from the Lean lexer; `sourceProgram`, `sourceProgramFiles` |
 | `FrontSpec` | 354 | 0.9 | `CTree.leaves`, `CTree.preorder`, `Shape`, `Derives`, `Reads`; `validate_sound`, `sourceProgram_sound`, `sourceProgramFiles_sound` |
 
@@ -696,7 +696,7 @@ laniusc's lexer and parser are not trusted. The trusted parts are the Lean
 lexer, the grammar table, the grammar's unambiguity (not proved) and `build`
 as the meaning of the concrete syntax. TRUSTED_BASE.md section 4 lists them.
 
-`frontend.lani` is about 6,450 hand-written lines, followed by the generated
+`frontend.lani` is about 6,650 hand-written lines, followed by the generated
 grammar table: 318 productions, with terminals as lexer token codes. Two
 tools regenerate it:
 
@@ -918,6 +918,26 @@ operator comes from its other operand when the left one is only literals.
 Seeds 11 and 12, 400 programs, 7,692 `as isize` and 1,266 `isize` lets and
 parameters, all read as expected, 48/48 mutants rejected; `--generic` seeds
 11 and 12, 400 programs, 48/48; 19 of 19 cases.
+
+`slice_stride(x)` with `x` a slice local is `EStride(x)`, an `isize`; any
+other argument is rejected. So `core::mem::size_of<T>()` reads from
+`stdlib/core/mem.lani` as it is, one instance per `T` after monomorphization
+(the case `slice_stride`, at `i32`, a struct and `u8`). Its
+`let nowhere: ptr = 0;` reads as `Let(.., Ptr, Int(0))`, which
+`compileSource` type-checks. `typed_slice_from_storage` is still rejected:
+it returns a slice (`return slice_from_raw_parts(..)`), which has no
+statement form. With the oracle's `eStride` on, seeds 29 and 30, 400
+programs (712 `slice_stride`s), all read as expected, 48/48 mutants
+rejected; `--generic` seed 29, 200 programs, 24/24; 20 of 20 cases.
+
+Variants are scoped by their enum. A bare `V` is the one variant spelled V
+among the current module's enums, or else among the enums of the modules
+the file imports (`import m;`); two candidates are rejected. `E::V` and
+`m::E::V` name enum E's variant, values and patterns alike, and `m::V` is
+module m's one variant V. So a module may have variants of one name in two
+enums, or a variant spelled like a type; its functions, types and constants
+must still have distinct names, and no variant may be spelled like a
+function or constant.
 
 What it does not read yet:
 - shifts, `&self` and

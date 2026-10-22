@@ -250,6 +250,11 @@ still a parse tree of the same tokens. Trusted:
     from the types of locals, fields, parameters, callees and results; an
     operator's operands expect the type of whichever operand has one.
 
+  - `slice_stride(x)` of a slice local x is `EStride(x)`;
+  - a bare variant name is the one variant of that spelling among the
+    current module's enums, else among its imported modules' enums;
+    `E::V` and `m::E::V` name enum E's variant V, `m::V` module m's one V.
+
   It rejects anything outside the subset. `build` has no relational spec yet;
   the difftest checks it against the generator's programs. To shrink it:
   state the reading as an inductive relation on `CTree` and prove `build`

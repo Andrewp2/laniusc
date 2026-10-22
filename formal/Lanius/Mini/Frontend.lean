@@ -254,6 +254,11 @@ def textAssert : List Nat :=
   let t : List Nat := 97 :: 115 :: 115 :: 101 :: 114 :: [116]
   t
 
+/-- slice_stride -/
+def textSliceStride : List Nat :=
+  let t : List Nat := 115 :: 108 :: 105 :: 99 :: 101 :: 95 :: 115 :: 116 :: 114 :: 105 :: 100 :: [101]
+  t
+
 def textSliceFromRawParts : List Nat :=
   let t : List Nat := 115 :: 108 :: 105 :: 99 :: 101 :: 95 :: 102 :: 114 :: 111 :: 109 :: 95 :: 114 :: 97 :: 119 :: 95 :: 112 :: 97 :: 114 :: 116 :: [115]
   t
@@ -2385,6 +2390,8 @@ inductive MEff where
   /-- the scrutinee, its enum type, the result type, each arm's binders and value -/
   | xMatch : MEff → Ty → Ty → (List (List Nat)) → (List MEff) → MEff
   | xDivide : SrcDivOp → MEff → MEff → MEff
+  /-- slice_stride(x) of a slice local x -/
+  | xStride : Nat → MEff
   deriving Repr
 
 /-- The expression, when it is pure. -/
@@ -2401,6 +2408,7 @@ def purePart (x : MEff) : Option SrcExpr :=
   | .xVariant t k ps => none
   | .xMatch s ety t bs vs => none
   | .xDivide op l r => none
+  | .xStride sl => none
 
 /-- The operators, casts and negations of pure operands are pure. -/
 def applyEff (op : SrcOp) (l : MEff) (r : MEff) : MEff :=
@@ -2503,6 +2511,7 @@ def bareEff (x : MEff) : Bool :=
   | .xVariant t k ps => false
   | .xMatch s ety t bs vs => false
   | .xDivide op l r => bareEff l && bareEff r
+  | .xStride sl => false
 
 def effTy (fuel : Nat) (env : Env) (scope : List Local) (x : MEff) : Option Ty :=
   if fuel = 0 then
@@ -2520,6 +2529,7 @@ def effTy (fuel : Nat) (env : Env) (scope : List Local) (x : MEff) : Option Ty :
     | .xVariant t k ps => some t
     | .xMatch s ety t bs vs => some t
     | .xDivide op l r => pickTy (bareEff l) (effTy (fuel - 1) env scope l) (effTy (fuel - 1) env scope r)
+    | .xStride sl => some Ty.tyIsize
 
 def effsTys (fuel : Nat) (env : Env) (scope : List Local) (xs : List MEff) : Option (List Ty) :=
   match xs with
@@ -3439,7 +3449,31 @@ def effList (fuel : Nat) (env : Env) (scope : List Local) (expects : Option (Lis
     | [] => some []
     | c :: rest => consEff (effOf (fuel - 1) env scope (headTy expects) c) (effList (fuel - 1) env scope (tailTys expects) rest)
 
-/-- `path(args)`: a function, `T::m` for a type parameter T, or a variant. -/
+/-- `path(args)`: a function, `T::m` for a type parameter T, or a variant. slice_stride(x): one argument, a slice local. -/
+def strideArg (fuel : Nat) (env : Env) (scope : List Local) (items : List CTree) : Option MEff :=
+  match items with
+  | [] => none
+  | a :: rest =>
+    match rest with
+    | [] => strideOfPostfix env scope (peel fuel a)
+    | b :: more => none
+
+def strideOfPostfix (env : Env) (scope : List Local) (pf : Option CTree) : Option MEff :=
+  match pf with
+  | none => none
+  | some x => strideOfLocal (decide (nodeProd (kid x 1) = (164))) (localOf env scope (kid x 0))
+
+def strideOfLocal (plain : Bool) (l : Option Local) : Option MEff :=
+  if plain then
+    match l with
+    | none => none
+    | some x =>
+      match sliceElem x.ty with
+      | none => none
+      | some e => some (MEff.xStride x.id)
+  else
+    none
+
 def effPathCall (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (path : CTree) (args : CTree) : Option MEff :=
   if fuel = 0 then
     none
@@ -3448,15 +3482,20 @@ def effPathCall (fuel : Nat) (env : Env) (scope : List Local) (expected : Option
     if isPath segments allocPath || isPath segments deallocPath || isPath segments [textSliceFromRawParts] then
       none
     else
-      match pathRef fuel (kid path 0) (kid path 1) with
-      | none => none
-      | some pr =>
-        match splitLast pr.segments with
+      if isPath segments [textSliceStride] then
+        match listItems fuel args with
         | none => none
-        | some s =>
-          match listItems fuel args with
+        | some items => strideArg fuel env scope items
+      else
+        match pathRef fuel (kid path 0) (kid path 1) with
+        | none => none
+        | some pr =>
+          match splitLast pr.segments with
           | none => none
-          | some items => effNamed (fuel - 1) env scope expected s pr.targs items
+          | some s =>
+            match listItems fuel args with
+            | none => none
+            | some items => effNamed (fuel - 1) env scope expected s pr.targs items
 
 def effNamed (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (s : Split) (targs : List CTree) (items : List CTree) : Option MEff :=
   if fuel = 0 then
@@ -4202,6 +4241,7 @@ def effCalls (x : MEff) : List Inst :=
   | .xVariant t k ps => effsCalls ps
   | .xMatch s ety t bs vs => effCalls s ++ effsCalls vs
   | .xDivide op l r => effCalls l ++ effCalls r
+  | .xStride sl => []
 
 def effsCalls (xs : List MEff) : List Inst :=
   match xs with
@@ -4226,6 +4266,7 @@ def effNamedTys (x : MEff) : List Ty :=
   | .xVariant t k ps => t :: effsNamedTys ps
   | .xMatch s ety t bs vs => effNamedTys s ++ ety :: t :: effsNamedTys vs
   | .xDivide op l r => effNamedTys l ++ effNamedTys r
+  | .xStride sl => []
 
 def effsNamedTys (xs : List MEff) : List Ty :=
   match xs with
@@ -4565,6 +4606,7 @@ def closeEff (fuel : Nat) (t : Tables) (x : MEff) : Option SrcEff :=
   | .xVariant ty k ps => eVariantClosed (closeTy fuel t ty) k (closeEffs fuel t ps)
   | .xMatch s ety ty bs vs => eMatchClosed (closeEff fuel t s) (closeTy fuel t ety) (closeTy fuel t ty) bs (closeEffs fuel t vs)
   | .xDivide op l r => eDivideClosed op (closeEff fuel t l) (closeEff fuel t r)
+  | .xStride sl => some (SrcEff.eStride sl)
 
 def closeEffs (fuel : Nat) (t : Tables) (xs : List MEff) : Option (List SrcEff) :=
   match xs with

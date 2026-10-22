@@ -618,6 +618,12 @@ pub fn text_assert() -> List<usize> {
     return t;
 }
 
+// slice_stride
+pub fn text_slice_stride() -> List<usize> {
+    let t: List<usize> = cons(115, cons(108, cons(105, cons(99, cons(101, cons(95, cons(115, cons(116, cons(114, cons(105, cons(100, single(101))))))))))));
+    return t;
+}
+
 pub fn text_slice_from_raw_parts() -> List<usize> {
     let t: List<usize> = cons(115, cons(108, cons(105, cons(99, cons(101, cons(95, cons(102, cons(114, cons(111, cons(109, cons(95, cons(114, cons(97, cons(119, cons(95, cons(112, cons(97, cons(114, cons(116, single(115))))))))))))))))))));
     return t;
@@ -3299,6 +3305,8 @@ pub enum MEff {
     // the scrutinee, its enum type, the result type, each arm's binders and value
     XMatch(Box<MEff>, Ty, Ty, List<List<usize>>, Box<List<MEff>>),
     XDivide(SrcDivOp, Box<MEff>, Box<MEff>),
+    // slice_stride(x) of a slice local x
+    XStride(usize),
 }
 
 // The expression, when it is pure.
@@ -3315,6 +3323,7 @@ pub fn pure_part(x: MEff) -> core::option::Option<SrcExpr> {
         XVariant(t, k, ps) -> None,
         XMatch(s, ety, t, bs, vs) -> None,
         XDivide(op, l, r) -> None,
+        XStride(sl) -> None,
     };
 }
 
@@ -3442,6 +3451,7 @@ pub fn bare_eff(x: MEff) -> bool {
         XVariant(t, k, ps) -> false,
         XMatch(s, ety, t, bs, vs) -> false,
         XDivide(op, l, r) -> bare_eff(unbox(l)) && bare_eff(unbox(r)),
+        XStride(sl) -> false,
     };
 }
 
@@ -3461,6 +3471,7 @@ pub fn eff_ty(fuel: usize, env: Env, scope: List<Local>, x: MEff) -> core::optio
         XVariant(t, k, ps) -> Some(t),
         XMatch(s, ety, t, bs, vs) -> Some(t),
         XDivide(op, l, r) -> pick_ty(bare_eff(unbox(l)), eff_ty(minus(fuel, 1), env, scope, unbox(l)), eff_ty(minus(fuel, 1), env, scope, unbox(r))),
+        XStride(sl) -> Some(TyIsize),
     };
 }
 
@@ -4582,6 +4593,37 @@ pub fn eff_list(fuel: usize, env: Env, scope: List<Local>, expects: core::option
 }
 
 // `path(args)`: a function, `T::m` for a type parameter T, or a variant.
+// slice_stride(x): one argument, a slice local.
+pub fn stride_arg(fuel: usize, env: Env, scope: List<Local>, items: List<CTree>) -> core::option::Option<MEff> {
+    return match (items) {
+        Nil -> None,
+        Cons(a, rest) -> match (unbox(rest)) {
+            Nil -> stride_of_postfix(env, scope, peel(fuel, a)),
+            Cons(b, more) -> None,
+        },
+    };
+}
+
+pub fn stride_of_postfix(env: Env, scope: List<Local>, pf: core::option::Option<CTree>) -> core::option::Option<MEff> {
+    return match (pf) {
+        None -> None,
+        Some(x) -> stride_of_local(node_prod(kid(x, 1)) == p_postfix_end(), local_of(env, scope, kid(x, 0))),
+    };
+}
+
+pub fn stride_of_local(plain: bool, l: core::option::Option<Local>) -> core::option::Option<MEff> {
+    if (plain) {
+        return match (l) {
+            None -> None,
+            Some(x) -> match (slice_elem(x.ty)) {
+                None -> None,
+                Some(e) -> Some(XStride(x.id)),
+            },
+        };
+    }
+    return None;
+}
+
 pub fn eff_path_call(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, path: CTree, args: CTree) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
@@ -4589,6 +4631,12 @@ pub fn eff_path_call(fuel: usize, env: Env, scope: List<Local>, expected: core::
     let segments: core::option::Option<List<List<usize>>> = path_spellings(fuel, kid(path, 0), kid(path, 1));
     if (is_path(segments, alloc_path()) || is_path(segments, dealloc_path()) || is_path(segments, single(text_slice_from_raw_parts()))) {
         return None;
+    }
+    if (is_path(segments, single(text_slice_stride()))) {
+        return match (list_items(fuel, args)) {
+            None -> None,
+            Some(items) -> stride_arg(fuel, env, scope, items),
+        };
     }
     return match (path_ref(fuel, kid(path, 0), kid(path, 1))) {
         None -> None,
@@ -5508,6 +5556,7 @@ pub fn eff_calls(x: MEff) -> List<Inst> {
         XVariant(t, k, ps) -> effs_calls(unbox(ps)),
         XMatch(s, ety, t, bs, vs) -> concat(eff_calls(unbox(s)), effs_calls(unbox(vs))),
         XDivide(op, l, r) -> concat(eff_calls(unbox(l)), eff_calls(unbox(r))),
+        XStride(sl) -> empty(),
     };
 }
 
@@ -5535,6 +5584,7 @@ pub fn eff_named_tys(x: MEff) -> List<Ty> {
         XVariant(t, k, ps) -> cons(t, effs_named_tys(unbox(ps))),
         XMatch(s, ety, t, bs, vs) -> concat(eff_named_tys(unbox(s)), cons(ety, cons(t, effs_named_tys(unbox(vs))))),
         XDivide(op, l, r) -> concat(eff_named_tys(unbox(l)), eff_named_tys(unbox(r))),
+        XStride(sl) -> empty(),
     };
 }
 
@@ -5955,6 +6005,7 @@ pub fn close_eff(fuel: usize, t: Tables, x: MEff) -> core::option::Option<SrcEff
         XVariant(ty, k, ps) -> e_variant_closed(close_ty(fuel, t, ty), k, close_effs(fuel, t, unbox(ps))),
         XMatch(s, ety, ty, bs, vs) -> e_match_closed(close_eff(fuel, t, unbox(s)), close_ty(fuel, t, ety), close_ty(fuel, t, ty), bs, close_effs(fuel, t, unbox(vs))),
         XDivide(op, l, r) -> e_divide_closed(op, close_eff(fuel, t, unbox(l)), close_eff(fuel, t, unbox(r))),
+        XStride(sl) -> Some(EStride(sl)),
     };
 }
 
