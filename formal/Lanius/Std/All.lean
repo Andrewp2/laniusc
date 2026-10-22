@@ -23,3 +23,5 @@ import Lanius.Std.VecInsert
 import Lanius.Std.VecReverse
 import Lanius.Std.VecCopy
 import Lanius.Std.VecExtend
+import Lanius.Std.VecBound
+import Lanius.Std.VecSorted
