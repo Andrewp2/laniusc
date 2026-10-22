@@ -98,6 +98,33 @@ def coreArms (id : Nat) : Nat → List SrcArm → List (Core.Pattern × Core.Exp
   | _, [] => []
   | k, arm :: rest => (.enumVariant id k (arm.binders.map .bind), arm.value.toCore) :: coreArms id (k + 1) rest
 
+mutual
+/-- An effectful expression means the same Core expression as its pure
+counterpart, with calls, reads and literals where they occur. -/
+def SrcEff.toCore : SrcEff → Core.Expr
+  | .ePure e => e.toCore
+  | .eCall callee args => .call callee (SrcEff.toCoreList args)
+  | .eApply op left right => .binary op.toCore left.toCore right.toCore
+  | .eNeg operand => .unary .negate operand.toCore
+  | .eNot operand => .unary .logicalNot operand.toCore
+  | .eCast ty operand => .cast ty.toScalar operand.toCore
+  | .eIndex slice index => .index (.local slice) index.toCore
+  | .eStruct ty fields => .structValue ty.typeId (SrcEff.toCoreList fields)
+  | .eVariant ty variant payload => .enumValue ty.typeId variant (SrcEff.toCoreList payload)
+  | .eMatch scrutinee id binders values => .matchValue scrutinee.toCore (SrcEff.coreArms id 0 binders values)
+
+def SrcEff.toCoreList : List SrcEff → List Core.Expr
+  | [] => []
+  | e :: es => e.toCore :: SrcEff.toCoreList es
+
+/-- Arm `k` matches variant `k`, binding its payload. -/
+def SrcEff.coreArms (id : Nat) : Nat → List (List Nat) → List SrcEff → List (Core.Pattern × Core.Expr)
+  | _, [], _ => []
+  | _, _ :: _, [] => []
+  | k, binders :: rest, value :: values =>
+      (.enumVariant id k (binders.map .bind), value.toCore) :: SrcEff.coreArms id (k + 1) rest values
+end
+
 def SrcStmt.toCore : SrcStmt → Core.Stmt
   | .nop => .skip
   | .let id ty value body => .letLocal id ty.toCore value.toCore body.toCore
@@ -131,6 +158,13 @@ def SrcStmt.toCore : SrcStmt → Core.Stmt
       .letLocal id ty.toCore (.index (.local slice) index.toCore) body.toCore
   | .setIndex slice index value =>
       .expression (.assign .set (.index (.local slice) index.toCore) value.toCore)
+  | .letEval id ty value body => .letLocal id ty.toCore value.toCore body.toCore
+  | .setEval id value => .expression (.assign .set (.local id) value.toCore)
+  | .ifEval condition thenBranch elseBranch =>
+      .ifThenElse condition.toCore thenBranch.toCore elseBranch.toCore
+  | .whileEval condition body => .whileLoop condition.toCore body.toCore
+  | .returnEval value => .returnValue (some value.toCore)
+  | .discard value => .expression value.toCore
 
 def SrcFunc.toCore (id : Nat) (func : SrcFunc) : Core.Function where
   id := id

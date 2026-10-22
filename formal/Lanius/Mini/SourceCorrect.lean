@@ -1,5 +1,5 @@
 import Lanius.Mini.Validate
-import Lanius.Mini.LowerStmt
+import Lanius.Mini.LowerEval
 
 /-! The verified compiler's top-level theorem for the Core subset: if Core
 evaluates a call of a source function to a value, the machine code that

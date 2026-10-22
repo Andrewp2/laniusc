@@ -64,6 +64,12 @@ def SrcStmt.Declared (P : Core.Program) (s : SrcStmt) : Prop :=
   | .letSlice _ element _ _ body => TypeDeclared P element ∧ SrcStmt.Declared P body
   | .letIndex _ ty _ _ body => TypeDeclared P ty ∧ SrcStmt.Declared P body
   | .setIndex _ _ _ => True
+  | .letEval _ ty _ body => TypeDeclared P ty ∧ SrcStmt.Declared P body
+  | .setEval _ _ => True
+  | .ifEval _ thenBranch elseBranch => SrcStmt.Declared P thenBranch ∧ SrcStmt.Declared P elseBranch
+  | .whileEval _ body => SrcStmt.Declared P body
+  | .returnEval _ => True
+  | .discard _ => True
 
 /-- Every parameter type and binding type of every function is declared. -/
 def SrcProgram.Declared (P : Core.Program) (sp : SrcProgram) : Prop :=
@@ -98,6 +104,14 @@ theorem returns_sound : ∀ (s : SrcStmt), s.returns = true → Typing.Definitel
   | .letSlice _ _ _ _ body, h => .letLocal (returns_sound body h)
   | .letIndex _ _ _ _ body, h => .letLocal (returns_sound body h)
   | .setIndex _ _ _, h => by simp [SrcStmt.returns] at h
+  | .letEval _ _ _ body, h => .letLocal (returns_sound body h)
+  | .setEval _ _, h => by simp [SrcStmt.returns] at h
+  | .ifEval _ thenBranch elseBranch, h => by
+    simp only [SrcStmt.returns, Bool.and_eq_true] at h
+    exact .ifThenElse (returns_sound thenBranch h.1) (returns_sound elseBranch h.2)
+  | .whileEval _ _, h => by simp [SrcStmt.returns] at h
+  | .returnEval _, _ => .returnValue
+  | .discard _, h => by simp [SrcStmt.returns] at h
 
 /-! ## Types -/
 
@@ -868,6 +882,238 @@ theorem elementAddress_some {b : Binding} {index : Option Expr} {a : Expr}
     · simp at h
     · exact ⟨e, _, elementOf_some he, rfl⟩
 
+/-! ## Effectful expressions -/
+
+theorem typesSame_toCore : ∀ {a b : List SrcType}, typesSame a b = true →
+    a.map SrcType.toCore = b.map SrcType.toCore
+  | [], [], _ => rfl
+  | [], _ :: _, h => by simp [typesSame] at h
+  | _ :: _, [], h => by simp [typesSame] at h
+  | x :: xs, y :: ys, h => by
+    simp only [typesSame, Bool.and_eq_true] at h
+    simp only [List.map_cons, same_toCore h.1, typesSame_toCore h.2]
+
+theorem castTo_typed {P : Core.Program} {ctx : Typing.Context} {ce : Core.Expr} {ty : SrcType} {o t : Typed}
+    (inner : ExprHasType P ctx ce o.ty.toCore) (h : castTo ty o = some t) :
+    ExprHasType P ctx (.cast ty.toScalar ce) t.ty.toCore := by
+  cases ty with
+  | i32 =>
+    simp only [castTo, castToI32] at h
+    split at h
+    · rename_i hty
+      simp only [Option.some.injEq] at h
+      subst h
+      rw [hty] at inner ⊢
+      exact .cast inner (.signedToSigned _ _)
+    · simp at h
+    · rename_i k hty
+      simp only [Option.some.injEq] at h
+      subst h
+      rw [hty] at inner
+      exact .cast inner (.unsignedToSigned _ _)
+    all_goals simp at h
+  | uint kind =>
+    simp only [castTo, castToUint] at h
+    split at h
+    · rename_i hty
+      simp only [Option.some.injEq] at h
+      subst h
+      rw [hty] at inner
+      exact .cast inner (.signedToUnsigned _ _)
+    · simp at h
+    · rename_i k hty
+      simp only [Option.some.injEq] at h
+      subst h
+      rw [hty] at inner
+      exact .cast inner (.unsignedToUnsigned _ _)
+    all_goals simp at h
+  | bool => simp [castTo] at h
+  | struct => simp [castTo] at h
+  | enum => simp [castTo] at h
+  | ptr => simp [castTo] at h
+  | slice => simp [castTo] at h
+
+mutual
+
+theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
+    {sigs : List Sig} (sigsOk : SigsOk P sigs) :
+    ∀ (e : SrcEff) {scope : List Binding} {ctx : Typing.Context} {slot : Nat} {ev : Evaluated},
+      ScopeOk P ctx scope → e.eval sigs scope slot = some ev → ExprHasType P ctx e.toCore ev.ty.toCore
+  | .ePure e, scope, ctx, slot, ev, ok, h => by
+    simp only [SrcEff.eval, evalPure] at h
+    split at h
+    · rename_i t lowered
+      simp only [evalScalar, Option.some.injEq] at h
+      subst h
+      exact (SrcExpr.lower_typed target e ok lowered).1
+    · cases e with
+      | «local» id =>
+        simp only [evalCopy] at h
+        split at h
+        · simp at h
+        · rename_i b found
+          simp only [evalValues] at h
+          split at h
+          · simp at h
+          · rename_i xs hxs
+            simp only [Option.some.injEq] at h
+            subst h
+            exact lowerValue_typed target ok hxs
+      | int => simp at h
+      | boolean => simp at h
+      | unsigned => simp at h
+      | field => simp at h
+      | negate => simp at h
+      | not => simp at h
+      | apply => simp at h
+      | cast => simp at h
+  | .eCall callee args, scope, ctx, slot, ev, ok, h => by
+    simp only [SrcEff.eval, evalCall] at h
+    split at h
+    · simp at h
+    · rename_i sig hsig
+      split at h
+      · simp at h
+      · rename_i ea hea
+        simp only [evalCallSig] at h
+        split at h
+        · rename_i checks
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+          simp only [Option.some.injEq] at h
+          subst h
+          obtain ⟨f, found, params, ret⟩ := sigsOk callee sig hsig
+          have typedArgs := evalArgs_typed target sigsOk args ok hea
+          rw [typesSame_toCore checks.1, ← params] at typedArgs
+          have call := ExprHasType.call f found typedArgs
+          rw [ret] at call
+          exact call
+        · simp at h
+  | .eApply op left right, scope, ctx, slot, ev, ok, h => by
+    simp only [SrcEff.eval, evalApply] at h
+    split at h
+    · simp at h
+    · rename_i l hl
+      split at h
+      · simp at h
+      · rename_i r hr
+        have typedL := SrcEff.eval_typed target sigsOk left ok hl
+        have typedR := SrcEff.eval_typed target sigsOk right ok hr
+        simp only [evalOperands] at h
+        split at h
+        · rename_i checks
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+          split at h
+          · simp at h
+          · rename_i t lowered
+            simp only [Option.some.injEq] at h
+            subst h
+            exact .binary typedL typedR (SrcOp.lower_typed checks.1.1 lowered).1
+        · split at h
+          · rename_i checks
+            simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+            simp only [Option.some.injEq] at h
+            subst h
+            have opEq : op = .logicalAnd := by cases op <;> simp_all [shortCircuit]
+            subst opEq
+            rw [eq_bool checks.1.1] at typedL
+            rw [eq_bool checks.1.2] at typedR
+            exact .binary typedL typedR .logicalAnd
+          · split at h
+            · rename_i checks
+              simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+              simp only [Option.some.injEq] at h
+              subst h
+              have opEq : op = .logicalOr := by cases op <;> simp_all [shortCircuit]
+              subst opEq
+              rw [eq_bool checks.1.1] at typedL
+              rw [eq_bool checks.1.2] at typedR
+              exact .binary typedL typedR .logicalOr
+            · simp at h
+  | .eNeg operand, scope, ctx, slot, ev, ok, h => by
+    simp only [SrcEff.eval, evalNegate] at h
+    split at h
+    · simp at h
+    · rename_i o ho
+      have inner := SrcEff.eval_typed target sigsOk operand ok ho
+      simp only [evalThen] at h
+      split at h
+      · simp at h
+      · rename_i t ht
+        simp only [Option.some.injEq] at h
+        subst h
+        simp only [lowerNegateTyped] at ht
+        split at ht
+        · rename_i isI32
+          simp only [Option.some.injEq] at ht
+          subst ht
+          rw [eq_i32 isI32] at inner
+          exact .unary inner (.negate (.signed _))
+        · simp at ht
+  | .eNot operand, scope, ctx, slot, ev, ok, h => by
+    simp only [SrcEff.eval, evalNot] at h
+    split at h
+    · simp at h
+    · rename_i o ho
+      have inner := SrcEff.eval_typed target sigsOk operand ok ho
+      simp only [evalThen] at h
+      split at h
+      · simp at h
+      · rename_i t ht
+        simp only [Option.some.injEq] at h
+        subst h
+        simp only [lowerNotTyped] at ht
+        split at ht
+        · rename_i isBool
+          simp only [Option.some.injEq] at ht
+          subst ht
+          rw [eq_bool isBool] at inner
+          exact .unary inner .logicalNot
+        · simp at ht
+  | .eCast ty operand, scope, ctx, slot, ev, ok, h => by
+    simp only [SrcEff.eval, evalCast] at h
+    split at h
+    · simp at h
+    · rename_i o ho
+      have inner := SrcEff.eval_typed target sigsOk operand ok ho
+      simp only [evalThen] at h
+      split at h
+      · simp at h
+      · rename_i t ht
+        simp only [Option.some.injEq] at h
+        subst h
+        simp only [scalarCast] at ht
+        split at ht
+        · exact castTo_typed (o := { expr := Expr.var slot, ty := o.ty }) inner ht
+        · simp at ht
+  | .eIndex _ _, _, _, _, _, _, h => by simp [SrcEff.eval] at h
+  | .eStruct _ _, _, _, _, _, _, h => by simp [SrcEff.eval] at h
+  | .eVariant _ _ _, _, _, _, _, _, h => by simp [SrcEff.eval] at h
+  | .eMatch _ _ _ _, _, _, _, _, _, h => by simp [SrcEff.eval] at h
+
+theorem evalArgs_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
+    {sigs : List Sig} (sigsOk : SigsOk P sigs) :
+    ∀ (args : List SrcEff) {scope : List Binding} {ctx : Typing.Context} {slot : Nat} {ea : EvaluatedArgs},
+      ScopeOk P ctx scope → evalArgs sigs scope args slot = some ea →
+      ExprsHaveTypes P ctx (SrcEff.toCoreList args) (ea.types.map SrcType.toCore)
+  | [], scope, ctx, slot, ea, ok, h => by
+    simp only [evalArgs, Option.some.injEq] at h
+    subst h
+    exact .nil
+  | arg :: rest, scope, ctx, slot, ea, ok, h => by
+    simp only [evalArgs] at h
+    split at h
+    · simp at h
+    · rename_i first hfirst
+      simp only [consArgs] at h
+      split at h
+      · simp at h
+      · rename_i r hr
+        simp only [Option.some.injEq] at h
+        subst h
+        exact .cons (SrcEff.eval_typed target sigsOk arg ok hfirst) (evalArgs_typed target sigsOk rest ok hr)
+
+end
+
 theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {sigs : List Sig} {decls : SrcDecls} (sigsOk : SigsOk P sigs) {ret : SrcType} :
     ∀ (s : SrcStmt) {scope : List Binding} {ctx : Typing.Context} {next : Nat} {inLoop : Bool}
@@ -1214,6 +1460,91 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
             rw [elementOf_some he] at inCtx
             exact .expression (.assign (.indexSlice (.local inCtx) typedIndex integer)
               (lowerAs_typed target ok hv) .set)
+  | .letEval id ty value body, scope, ctx, next, inLoop, out, ok, d, h => by
+    simp only [SrcStmt.Declared] at d
+    simp only [SrcStmt.lower, lowerLetEval] at h
+    split at h
+    · simp at h
+    · rename_i v hv
+      split at h
+      · simp at h
+      · rename_i b hb
+        simp only [evalSame] at h
+        split at h
+        · rename_i same
+          have typed := SrcEff.eval_typed target sigsOk value ok hv
+          rw [same_toCore same] at typed
+          exact .letLocal typed (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 hb)
+        · simp at h
+  | .setEval id value, scope, ctx, next, inLoop, out, ok, _, h => by
+    simp only [SrcStmt.lower, lowerSetEval] at h
+    split at h
+    · simp at h
+    · rename_i b found
+      split at h
+      · simp at h
+      · rename_i v hv
+        simp only [evalSame] at h
+        split at h
+        · rename_i same
+          have typed := SrcEff.eval_typed target sigsOk value ok hv
+          rw [same_toCore same] at typed
+          exact .expression (.assign (.local (ok id b found).1) typed .set)
+        · simp at h
+  | .ifEval condition thenBranch elseBranch, scope, ctx, next, inLoop, out, ok, d, h => by
+    simp only [SrcStmt.Declared] at d
+    simp only [SrcStmt.lower, lowerIfEval] at h
+    split at h
+    · simp at h
+    · rename_i c hc
+      split at h
+      · simp at h
+      · rename_i a ha
+        split at h
+        · simp at h
+        · rename_i b hb
+          simp only [evalSame] at h
+          split at h
+          · rename_i same
+            have typed := SrcEff.eval_typed target sigsOk condition ok hc
+            rw [same_toCore same] at typed
+            exact .ifThenElse typed (SrcStmt.lower_typed target sigsOk thenBranch ok d.1 ha)
+              (SrcStmt.lower_typed target sigsOk elseBranch ok d.2 hb)
+          · simp at h
+  | .whileEval condition body, scope, ctx, next, inLoop, out, ok, d, h => by
+    simp only [SrcStmt.Declared] at d
+    simp only [SrcStmt.lower, lowerWhileEval] at h
+    split at h
+    · simp at h
+    · rename_i c hc
+      split at h
+      · simp at h
+      · rename_i b hb
+        simp only [evalSame] at h
+        split at h
+        · rename_i same
+          have typed := SrcEff.eval_typed target sigsOk condition ok hc
+          rw [same_toCore same] at typed
+          exact .whileLoop typed (SrcStmt.lower_typed target sigsOk body ok d hb)
+        · simp at h
+  | .returnEval value, scope, ctx, next, inLoop, out, ok, _, h => by
+    simp only [SrcStmt.lower, lowerReturnEval] at h
+    split at h
+    · simp at h
+    · rename_i v hv
+      simp only [evalSame] at h
+      split at h
+      · rename_i same
+        have typed := SrcEff.eval_typed target sigsOk value ok hv
+        rw [same_toCore same] at typed
+        exact .returnValue typed
+      · simp at h
+  | .discard value, scope, ctx, next, inLoop, out, ok, _, h => by
+    simp only [SrcStmt.lower, lowerDiscard] at h
+    split at h
+    · simp at h
+    · rename_i v hv
+      exact .expression (SrcEff.eval_typed target sigsOk value ok hv)
 
 /-! ## Functions and programs -/
 
@@ -1323,15 +1654,6 @@ theorem Extends.trans {a b c : SrcDecls} (ab : Extends a b) (bc : Extends b c) :
 theorem Agrees.of_extends {P : Core.Program} {d D : SrcDecls} (ext : Extends d D) (agrees : Agrees P D) :
     Agrees P d :=
   ⟨fun id fs h => agrees.1 id fs (ext.1 id fs h), fun id vs h => agrees.2 id vs (ext.2 id vs h)⟩
-
-theorem typesSame_toCore : ∀ {a b : List SrcType}, typesSame a b = true →
-    a.map SrcType.toCore = b.map SrcType.toCore
-  | [], [], _ => rfl
-  | [], _ :: _, h => by simp [typesSame] at h
-  | _ :: _, [], h => by simp [typesSame] at h
-  | x :: xs, y :: ys, h => by
-    simp only [typesSame, Bool.and_eq_true] at h
-    simp only [List.map_cons, same_toCore h.1, typesSame_toCore h.2]
 
 theorem variantsSame_toCore : ∀ {a b : List (List SrcType)}, variantsSame a b = true →
     a.map (List.map SrcType.toCore) = b.map (List.map SrcType.toCore)
@@ -1608,6 +1930,36 @@ theorem SrcStmt.declare_sound : ∀ (s : SrcStmt) {d d' : SrcDecls}, s.declare d
     · rename_i d1 first
       exact declare_let first (SrcStmt.declare_sound body h)
   | .setIndex _ _ _, _, _, h => by
+    simp only [SrcStmt.declare, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ => trivial⟩
+  | .letEval _ ty _ body, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    split at h
+    · simp at h
+    · rename_i d1 first
+      exact declare_let first (SrcStmt.declare_sound body h)
+  | .setEval _ _, _, _, h => by
+    simp only [SrcStmt.declare, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ => trivial⟩
+  | .ifEval _ thenBranch elseBranch, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    split at h
+    · simp at h
+    · rename_i d1 hthen
+      obtain ⟨ext1, declared1⟩ := SrcStmt.declare_sound thenBranch hthen
+      obtain ⟨ext2, declared2⟩ := SrcStmt.declare_sound elseBranch h
+      exact ⟨ext1.trans ext2, fun extD agrees =>
+        ⟨declared1 (ext2.trans extD) agrees, declared2 extD agrees⟩⟩
+  | .whileEval _ body, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    exact SrcStmt.declare_sound body h
+  | .returnEval _, _, _, h => by
+    simp only [SrcStmt.declare, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ => trivial⟩
+  | .discard _, _, _, h => by
     simp only [SrcStmt.declare, Option.some.injEq] at h
     subst h
     exact ⟨Extends.refl _, fun _ _ => trivial⟩

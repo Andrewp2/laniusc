@@ -952,6 +952,25 @@ structure SrcArm where
   value : SrcExpr
   deriving Repr
 
+/-- An expression that may call functions, evaluated in Core's order. The ones without calls are SrcExpr, whose proofs go by induction; this type nests through List, so its proofs go by Core's fuel instead. -/
+inductive SrcEff where
+  | ePure : SrcExpr → SrcEff
+  /-- callee(args) -/
+  | eCall : Nat → (List SrcEff) → SrcEff
+  | eApply : SrcOp → SrcEff → SrcEff → SrcEff
+  | eNeg : SrcEff → SrcEff
+  | eNot : SrcEff → SrcEff
+  | eCast : SrcType → SrcEff → SrcEff
+  /-- slice[index] of a slice local -/
+  | eIndex : Nat → SrcEff → SrcEff
+  /-- a struct of type ty -/
+  | eStruct : SrcType → (List SrcEff) → SrcEff
+  /-- variant(payload) of the enum type ty -/
+  | eVariant : SrcType → Nat → (List SrcEff) → SrcEff
+  /-- match scrutinee { arms } on the enum with Core id enum_id: arm k's binders and value -/
+  | eMatch : SrcEff → Nat → (List (List Nat)) → (List SrcEff) → SrcEff
+  deriving Repr
+
 inductive SrcStmt where
   | nop : SrcStmt
   /-- let id: ty = value; then body, with id in scope. A struct value is a struct local. -/
@@ -987,6 +1006,14 @@ inductive SrcStmt where
   | letIndex : Nat → SrcType → Nat → SrcExpr → SrcStmt → SrcStmt
   /-- slice[index] = value -/
   | setIndex : Nat → SrcExpr → SrcExpr → SrcStmt
+  /-- The forms above with expressions that may call functions. -/
+  | letEval : Nat → SrcType → SrcEff → SrcStmt → SrcStmt
+  | setEval : Nat → SrcEff → SrcStmt
+  | ifEval : SrcEff → SrcStmt → SrcStmt → SrcStmt
+  | whileEval : SrcEff → SrcStmt → SrcStmt
+  | returnEval : SrcEff → SrcStmt
+  /-- an expression evaluated for its effects -/
+  | discard : SrcEff → SrcStmt
   deriving Repr
 
 structure SrcParam where
@@ -1638,6 +1665,224 @@ def lowerCall (sigs : List Sig) (scope : List Binding) (callee : Nat) (args : Li
   | none => none
   | some sig => lowerCallSig scope sig args ty
 
+/-- Code that leaves a value of type ty in slots slot, slot + 1, ...; it may write any slot from slot on, and no slot below. -/
+structure Evaluated where
+  stmt : Stmt
+  ty : SrcType
+  deriving Repr
+
+/-- Arguments evaluated into consecutive slots, and their types. -/
+structure EvaluatedArgs where
+  stmt : Stmt
+  types : List SrcType
+  deriving Repr
+
+def evalScalar (slot : Nat) (t : Typed) : Evaluated :=
+  ({ stmt := Stmt.assign slot t.expr, ty := t.ty } : Evaluated)
+
+def evalTyped (slot : Nat) (t : Option Typed) : Option Evaluated :=
+  match t with
+  | none => none
+  | some x => some (evalScalar slot x)
+
+def evalValues (slot : Nat) (ty : SrcType) (values : Option (List Expr)) : Option Evaluated :=
+  match values with
+  | none => none
+  | some vs => some ({ stmt := assignFrom slot vs Stmt.skip, ty := ty } : Evaluated)
+
+/-- A local of any type, copied slot by slot. -/
+def evalCopy (scope : List Binding) (e : SrcExpr) (slot : Nat) (binding : Option Binding) : Option Evaluated :=
+  match binding with
+  | none => none
+  | some b => evalValues slot b.ty (lowerValue scope e b.ty)
+
+def evalPure (scope : List Binding) (e : SrcExpr) (slot : Nat) : Option Evaluated :=
+  match SrcExpr.lower e scope with
+  | some t => some (evalScalar slot t)
+  | none =>
+    match e with
+    | .int value => none
+    | .boolean value => none
+    | .unsigned kind value => none
+    | .local id => evalCopy scope e slot (lookup scope id)
+    | .field id index => none
+    | .negate operand => none
+    | .not operand => none
+    | .apply op left right => none
+    | .cast ty operand => none
+
+def evalCallSig (sig : Sig) (callee : Nat) (slot : Nat) (args : EvaluatedArgs) : Option Evaluated :=
+  if typesSame args.types sig.params && decide (0 < SrcType.size sig.ret) then
+    some ({ stmt := Stmt.seq args.stmt (Stmt.call slot (SrcType.size sig.ret) callee (slotVars slot (sizes sig.params))), ty := sig.ret } : Evaluated)
+  else
+    none
+
+def evalCall (sig : Option Sig) (callee : Nat) (slot : Nat) (args : Option EvaluatedArgs) : Option Evaluated :=
+  match sig with
+  | none => none
+  | some s =>
+    match args with
+    | none => none
+    | some a => evalCallSig s callee slot a
+
+def consArgs (first : Evaluated) (rest : Option EvaluatedArgs) : Option EvaluatedArgs :=
+  match rest with
+  | none => none
+  | some r => some ({ stmt := Stmt.seq first.stmt r.stmt, types := first.ty :: r.types } : EvaluatedArgs)
+
+/-- 1 for &&, 2 for ||, 0 for the operators that evaluate both sides. -/
+def shortCircuit (op : SrcOp) : Nat :=
+  match op with
+  | .plus => 0
+  | .minus => 0
+  | .times => 0
+  | .bitAnd => 0
+  | .bitOr => 0
+  | .bitXor => 0
+  | .less => 0
+  | .lessEq => 0
+  | .greater => 0
+  | .greaterEq => 0
+  | .equal => 0
+  | .notEqual => 0
+  | .logicalAnd => 1
+  | .logicalOr => 2
+
+/-- The right operand of && or ||, computed in slot + 1 and moved to slot. -/
+def evalRight (slot : Nat) (r : Evaluated) : Stmt :=
+  Stmt.seq r.stmt (Stmt.assign slot (Expr.var (slot + 1)))
+
+/-- left in slot, right in slot + 1. && and || run the right side's code only when Core evaluates it. -/
+def evalOperands (op : SrcOp) (slot : Nat) (l : Evaluated) (r : Evaluated) : Option Evaluated :=
+  if SrcType.isScalar l.ty && SrcType.isScalar r.ty && decide (shortCircuit op = 0) then
+    match SrcOp.lower op ({ expr := Expr.var slot, ty := l.ty } : Typed) ({ expr := Expr.var (slot + 1), ty := r.ty } : Typed) with
+    | none => none
+    | some t => some ({ stmt := Stmt.seq l.stmt (Stmt.seq r.stmt (Stmt.assign slot t.expr)), ty := t.ty } : Evaluated)
+  else
+    if SrcType.isBool l.ty && SrcType.isBool r.ty && decide (shortCircuit op = 1) then
+      some ({ stmt := Stmt.seq l.stmt (Stmt.ite (Expr.var slot) (evalRight slot r) Stmt.skip), ty := SrcType.bool } : Evaluated)
+    else
+      if SrcType.isBool l.ty && SrcType.isBool r.ty && decide (shortCircuit op = 2) then
+        some ({ stmt := Stmt.seq l.stmt (Stmt.ite (Expr.var slot) Stmt.skip (evalRight slot r)), ty := SrcType.bool } : Evaluated)
+      else
+        none
+
+def evalApply (op : SrcOp) (slot : Nat) (left : Option Evaluated) (right : Option Evaluated) : Option Evaluated :=
+  match left with
+  | none => none
+  | some l =>
+    match right with
+    | none => none
+    | some r => evalOperands op slot l r
+
+/-- The operand in slot, then op applied to it there. -/
+def evalThen (slot : Nat) (operand : Evaluated) (t : Option Typed) : Option Evaluated :=
+  match t with
+  | none => none
+  | some x => some ({ stmt := Stmt.seq operand.stmt (Stmt.assign slot x.expr), ty := x.ty } : Evaluated)
+
+/-- A cast's operand must be a scalar, which takes one slot. -/
+def scalarCast (ty : SrcType) (operand : Typed) : Option Typed :=
+  if SrcType.isScalar operand.ty then
+    castTo ty operand
+  else
+    none
+
+def evalNegate (slot : Nat) (operand : Option Evaluated) : Option Evaluated :=
+  match operand with
+  | none => none
+  | some o => evalThen slot o (lowerNegateTyped ({ expr := Expr.var slot, ty := o.ty } : Typed))
+
+def evalNot (slot : Nat) (operand : Option Evaluated) : Option Evaluated :=
+  match operand with
+  | none => none
+  | some o => evalThen slot o (lowerNotTyped ({ expr := Expr.var slot, ty := o.ty } : Typed))
+
+def evalCast (ty : SrcType) (slot : Nat) (operand : Option Evaluated) : Option Evaluated :=
+  match operand with
+  | none => none
+  | some o => evalThen slot o (scalarCast ty ({ expr := Expr.var slot, ty := o.ty } : Typed))
+
+mutual
+
+/-- The code computing this expression into slot, slot + 1, ..., and its type. -/
+def SrcEff.eval (self : SrcEff) (sigs : List Sig) (scope : List Binding) (slot : Nat) : Option Evaluated :=
+  match self with
+  | .ePure e => evalPure scope e slot
+  | .eCall callee args => evalCall sigs[callee]? callee slot (evalArgs sigs scope args slot)
+  | .eApply op left right => evalApply op slot (SrcEff.eval left sigs scope slot) (SrcEff.eval right sigs scope (slot + 1))
+  | .eNeg operand => evalNegate slot (SrcEff.eval operand sigs scope slot)
+  | .eNot operand => evalNot slot (SrcEff.eval operand sigs scope slot)
+  | .eCast ty operand => evalCast ty slot (SrcEff.eval operand sigs scope slot)
+  | .eIndex slice index => none
+  | .eStruct ty fields => none
+  | .eVariant ty variant payload => none
+  | .eMatch scrutinee enumId binders values => none
+
+/-- The arguments, each in the slots after the one before. -/
+def evalArgs (sigs : List Sig) (scope : List Binding) (args : List SrcEff) (slot : Nat) : Option EvaluatedArgs :=
+  match args with
+  | [] => some ({ stmt := Stmt.skip, types := [] } : EvaluatedArgs)
+  | arg :: rest =>
+    match SrcEff.eval arg sigs scope slot with
+    | none => none
+    | some first => consArgs first (evalArgs sigs scope rest (slot + SrcType.size first.ty))
+
+end
+
+/-- Some(stmt) when the value has type ty. -/
+def evalSame (v : Evaluated) (ty : SrcType) (stmt : Stmt) : Option Stmt :=
+  if SrcType.same v.ty ty then
+    some stmt
+  else
+    none
+
+def lowerLetEval (ty : SrcType) (value : Option Evaluated) (body : Option Stmt) : Option Stmt :=
+  match value with
+  | none => none
+  | some v =>
+    match body with
+    | none => none
+    | some b => evalSame v ty (Stmt.seq v.stmt b)
+
+def lowerSetEval (slot : Nat) (binding : Option Binding) (value : Option Evaluated) : Option Stmt :=
+  match binding with
+  | none => none
+  | some b =>
+    match value with
+    | none => none
+    | some v => evalSame v b.ty (Stmt.seq v.stmt (assignFrom b.slot (slotVars slot (SrcType.size b.ty)) Stmt.skip))
+
+def lowerIfEval (slot : Nat) (condition : Option Evaluated) (thenBranch : Option Stmt) (elseBranch : Option Stmt) : Option Stmt :=
+  match condition with
+  | none => none
+  | some c =>
+    match thenBranch with
+    | none => none
+    | some t =>
+      match elseBranch with
+      | none => none
+      | some e => evalSame c SrcType.bool (Stmt.seq c.stmt (Stmt.ite (Expr.var slot) t e))
+
+/-- The body may reuse the condition's slots, so the condition is computed again after it, before the loop tests it. -/
+def lowerWhileEval (slot : Nat) (condition : Option Evaluated) (body : Option Stmt) : Option Stmt :=
+  match condition with
+  | none => none
+  | some c =>
+    match body with
+    | none => none
+    | some b => evalSame c SrcType.bool (Stmt.seq c.stmt (Stmt.loop (Expr.var slot) (Stmt.seq b c.stmt)))
+
+def lowerReturnEval (slot : Nat) (ret : SrcType) (value : Option Evaluated) : Option Stmt :=
+  match value with
+  | none => none
+  | some v => evalSame v ret (Stmt.seq v.stmt (Stmt.ret (slotVars slot (SrcType.size ret))))
+
+def lowerDiscard (value : Option Evaluated) : Option Stmt :=
+  match value with
+  | none => none
+  | some v => some v.stmt
+
 def lowerLet (slot : Nat) (values : Option (List Expr)) (body : Option Stmt) : Option Stmt :=
   match values with
   | none => none
@@ -2180,6 +2425,12 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : S
   | .letSlice id element pointer length body => lowerLet next (lowerSlice decls element (lowerAs scope pointer SrcType.ptr) (lowerAs scope length SrcType.i32)) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := SrcType.slice element } : Binding) :: scope) (next + 1))
   | .letIndex id ty slice index body => lowerLetIndex decls next (lookup scope slice) ty (lowerIndex scope index) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
   | .setIndex slice index value => lowerSetIndex decls (lookup scope slice) (lowerIndex scope index) scope value
+  | .letEval id ty value body => lowerLetEval ty (SrcEff.eval value sigs scope next) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
+  | .setEval id value => lowerSetEval next (lookup scope id) (SrcEff.eval value sigs scope next)
+  | .ifEval condition thenBranch elseBranch => lowerIfEval next (SrcEff.eval condition sigs scope next) (SrcStmt.lower thenBranch sigs decls ret scope next) (SrcStmt.lower elseBranch sigs decls ret scope next)
+  | .whileEval condition body => lowerWhileEval next (SrcEff.eval condition sigs scope next) (SrcStmt.lower body sigs decls ret scope next)
+  | .returnEval value => lowerReturnEval next ret (SrcEff.eval value sigs scope next)
+  | .discard value => lowerDiscard (SrcEff.eval value sigs scope next)
 
 /-- Slots the statement's lets need beyond the ones in scope. -/
 def SrcStmt.depth (self : SrcStmt) : Nat :=
@@ -2204,6 +2455,12 @@ def SrcStmt.depth (self : SrcStmt) : Nat :=
   | .letSlice id element pointer length body => SrcStmt.depth body + 1
   | .letIndex id ty slice index body => SrcStmt.depth body + SrcType.size ty
   | .setIndex slice index value => 0
+  | .letEval id ty value body => SrcStmt.depth body + SrcType.size ty
+  | .setEval id value => 0
+  | .ifEval condition thenBranch elseBranch => max (SrcStmt.depth thenBranch) (SrcStmt.depth elseBranch)
+  | .whileEval condition body => SrcStmt.depth body
+  | .returnEval value => 0
+  | .discard value => 0
 
 /-- Parameters take slots from 0 in order, a struct one per field; a later parameter with the same id shadows an earlier one, as Core's bindLocals does. -/
 def paramScope (params : List SrcParam) (slot : Nat) (scope : List Binding) : List Binding :=
@@ -2231,10 +2488,38 @@ def sigs (funcs : List SrcFunc) : List Sig :=
   | [] => []
   | func :: rest => ({ params := paramTypes func.params, ret := func.ret } : Sig) :: sigs rest
 
+def Expr.extent (self : Expr) : Nat :=
+  match self with
+  | .lit value => 0
+  | .var index => index + 1
+  | .neg operand => Expr.extent operand
+  | .binary word operation left right => max (Expr.extent left) (Expr.extent right)
+  | .compare word operation left right => max (Expr.extent left) (Expr.extent right)
+
+def argsExtent (args : List Expr) : Nat :=
+  match args with
+  | [] => 0
+  | arg :: rest => max (Expr.extent arg) (argsExtent rest)
+
+def Stmt.extent (self : Stmt) : Nat :=
+  match self with
+  | .skip => 0
+  | .assign index value => max (index + 1) (Expr.extent value)
+  | .seq first second => max (Stmt.extent first) (Stmt.extent second)
+  | .ite condition thenBranch elseBranch => max (Expr.extent condition) (max (Stmt.extent thenBranch) (Stmt.extent elseBranch))
+  | .loop condition body => max (Expr.extent condition) (Stmt.extent body)
+  | .call target count callee args => max (target + count) (argsExtent args)
+  | .ret values => argsExtent values
+  | .alloc target shift size => max (target + 1) (Expr.extent size)
+  | .loadByte target address => max (target + 1) (Expr.extent address)
+  | .storeByte address value => max (Expr.extent address) (Expr.extent value)
+  | .loadWord width target address => max (target + 1) (Expr.extent address)
+  | .storeWord width address value => max (Expr.extent address) (Expr.extent value)
+
 def lowerBody (count : Nat) (results : Nat) (depth : Nat) (body : Option Stmt) : Option Func :=
   match body with
   | none => none
-  | some b => some ({ params := count, results := results, locals := max (count + depth) results, body := b } : Func)
+  | some b => some ({ params := count, results := results, locals := max (max (count + depth) results) (Stmt.extent b), body := b } : Func)
 
 /-- Results and struct parameters have slots; a function returns its result type's slots, so it has at least that many locals. -/
 def lowerFunc (sigs : List Sig) (decls : SrcDecls) (func : SrcFunc) : Option Func :=
@@ -2376,6 +2661,20 @@ def SrcStmt.declare (self : SrcStmt) (decls : SrcDecls) : Option SrcDecls :=
      | none => none
      | some decls => SrcStmt.declare body decls)
   | .setIndex slice index value => some decls
+  | .letEval id ty value body =>
+    (let after : Option SrcDecls := SrcType.declare ty decls
+     match after with
+     | none => none
+     | some decls => SrcStmt.declare body decls)
+  | .setEval id value => some decls
+  | .ifEval condition thenBranch elseBranch =>
+    (let after : Option SrcDecls := SrcStmt.declare thenBranch decls
+     match after with
+     | none => none
+     | some decls => SrcStmt.declare elseBranch decls)
+  | .whileEval condition body => SrcStmt.declare body decls
+  | .returnEval value => some decls
+  | .discard value => some decls
 
 /-- Every path ends in a return, the way Core's DefinitelyReturns counts: a while body never counts. -/
 def SrcStmt.returns (self : SrcStmt) : Bool :=
@@ -2400,6 +2699,12 @@ def SrcStmt.returns (self : SrcStmt) : Bool :=
   | .letSlice id element pointer length body => SrcStmt.returns body
   | .letIndex id ty slice index body => SrcStmt.returns body
   | .setIndex slice index value => false
+  | .letEval id ty value body => SrcStmt.returns body
+  | .setEval id value => false
+  | .ifEval condition thenBranch elseBranch => SrcStmt.returns thenBranch && SrcStmt.returns elseBranch
+  | .whileEval condition body => false
+  | .returnEval value => true
+  | .discard value => false
 
 def declareParams (params : List SrcParam) (decls : SrcDecls) : Option SrcDecls :=
   match params with

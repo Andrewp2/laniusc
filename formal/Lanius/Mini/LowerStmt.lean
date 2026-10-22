@@ -3622,38 +3622,4 @@ theorem stmt_setIndex {slice : Nat} {index value : SrcExpr}
 
 end Statements
 
-/-- The simulation, by induction on Core's fuel. -/
-theorem stmt_sound {sp : SrcProgram} {mp : Program}
-    (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) : ∀ fuel, StmtSound sp mp fuel := by
-  intro fuel
-  induction fuel using Nat.strongRecOn with
-  | _ fuel ih =>
-    intro hp s ret scope next stmt frame base st env c st' ok corr fr fresh le hc run bound
-    cases fuel with
-    | zero => simp [execStmt] at run
-    | succ fuel =>
-      have below : ∀ m ≤ fuel, StmtSound sp mp m := fun m h => ih m (Nat.lt_succ_of_le h)
-      have here : StmtSound sp mp fuel := below fuel (Nat.le_refl _)
-      cases s with
-      | nop => exact stmt_nop ok corr fresh hc run bound
-      | «let» => exact stmt_let here ok corr fr fresh le hc run bound
-      | letStruct => exact stmt_letStruct here ok corr fr fresh le hc run bound
-      | letCall => exact stmt_letCall lowered below ok corr fr fresh le hc run bound
-      | letEnum => exact stmt_letEnum here ok corr fr fresh le hc run bound
-      | letMatch => exact stmt_letMatch here ok corr fr fresh le hc run bound
-      | set => exact stmt_set ok corr fr fresh hc run bound
-      | setField => exact stmt_setField ok corr fr fresh hc run bound
-      | setCall => exact stmt_setCall lowered below ok corr fr fresh le hc run bound
-      | «then» => exact stmt_then here ok corr fr fresh le hc run bound
-      | «if» => exact stmt_if here ok corr fr fresh le hc run bound
-      | «while» => exact stmt_while here ok corr fr fresh le hc run bound
-      | «return» => exact stmt_return ok corr fresh hc run bound
-      | letAlloc => exact stmt_letAlloc here ok corr fr fresh le hc run bound
-      | letLoad => exact stmt_letLoad here ok corr fr fresh le hc run bound
-      | setByte => exact stmt_setByte ok corr fresh hc run bound
-      | free => exact stmt_free ok corr fresh hc run
-      | letSlice => exact stmt_letSlice here ok corr fr fresh le hc run bound
-      | letIndex => exact stmt_letIndex here ok corr fr fresh le hc run bound
-      | setIndex => exact stmt_setIndex ok corr fresh hc run bound
-
 end Lanius.Mini

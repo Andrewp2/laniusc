@@ -827,6 +827,168 @@ theorem evalPlace_index {P : Core.Program} {k : Nat} {st : State} {slice : Nat} 
           | simp at run
     all_goals simp at run
 
+/-! ## Effectful expressions -/
+
+/-- Every effectful expression Core completes with at most `k` fuel grows. -/
+def EffGrows (sp : SrcProgram) (k : Nat) : Prop :=
+  ∀ m ≤ k, ∀ {st : State} {e : SrcEff} {v : Value} {st' : State},
+    evalExpr m sp.toCore st e.toCore = .done v st' → Grows st st'
+
+theorem EffGrows.lower {sp : SrcProgram} {k j : Nat} (ih : EffGrows sp k) (le : j ≤ k) : EffGrows sp j :=
+  fun m lt => ih m (Nat.le_trans lt le)
+
+theorem effs_grows {sp : SrcProgram} : ∀ (es : List SrcEff) {k : Nat}, EffGrows sp k →
+    ∀ {st : State} {vs : List Value} {st' : State},
+      evalExprs k sp.toCore st (SrcEff.toCoreList es) = .done vs st' → Grows st st'
+  | [], k, _, st, vs, st', run => by
+    cases k with
+    | zero => simp [evalExprs] at run
+    | succ k =>
+      simp only [SrcEff.toCoreList, evalExprs, Semantics.Outcome.done.injEq] at run
+      rw [← run.2]
+      exact Grows.refl _
+  | e :: es, k, ih, st, vs, st', run => by
+    cases k with
+    | zero => simp [evalExprs] at run
+    | succ k =>
+      simp only [SrcEff.toCoreList, evalExprs] at run
+      split at run
+      · rename_i v next headRun
+        split at run
+        · rename_i vs' done restRun
+          simp only [Semantics.Outcome.done.injEq] at run
+          rw [← run.2]
+          exact (ih k (Nat.le_succ k) headRun).trans (effs_grows es (ih.lower (Nat.le_succ k)) restRun)
+        all_goals simp at run
+      all_goals simp at run
+
+theorem effArms_grows {sp : SrcProgram} {value : Value} :
+    ∀ (binders : List (List Nat)) (values : List SrcEff) (id j : Nat) {k : Nat}, EffGrows sp k →
+      ∀ {st : State} {v : Value} {st' : State},
+        Semantics.evalMatchArms k sp.toCore st value (SrcEff.coreArms id j binders values) = .done v st' →
+        Grows st st'
+  | [], _, _, _, k, _, st, v, st', run => by
+    cases k <;> simp [SrcEff.coreArms, Semantics.evalMatchArms] at run
+  | _ :: _, [], _, _, k, _, st, v, st', run => by
+    cases k <;> simp [SrcEff.coreArms, Semantics.evalMatchArms] at run
+  | bs :: rest, arm :: values, id, j, k, ih, st, v, st', run => by
+    cases k with
+    | zero => simp [Semantics.evalMatchArms] at run
+    | succ k =>
+      simp only [SrcEff.coreArms, Semantics.evalMatchArms] at run
+      split at run
+      · exact effArms_grows rest values id (j + 1) (ih.lower (Nat.le_succ k)) run
+      · rename_i bindings _
+        cases armRun : evalExpr k sp.toCore (st.bindLocals bindings) arm.toCore with
+        | done w completed =>
+          simp only [armRun, Semantics.restoreOutcomeLocals, Semantics.Outcome.done.injEq] at run
+          obtain ⟨-, rfl⟩ := run
+          have entry := bindLocals_same bindings st
+          exact ((Grows.same entry.1 entry.2).trans (ih k (Nat.le_succ k) armRun)).trans (Grows.same rfl rfl)
+        | trapped => simp [armRun, Semantics.restoreOutcomeLocals] at run
+        | exited => simp [armRun, Semantics.restoreOutcomeLocals] at run
+        | outOfFuel => simp [armRun, Semantics.restoreOutcomeLocals] at run
+
+/-- Reading a slice element grows as its index does. -/
+theorem index_grows {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {index : Core.Expr}
+    {v : Value} {st' : State}
+    (hi : ∀ {st1 : State} {v1 : Value} {st2 : State}, evalExpr k P st1 index = .done v1 st2 → Grows st1 st2)
+    (run : evalExpr (k + 1) P st (.index (.local slice) index) = .done v st') : Grows st st' := by
+  simp only [evalExpr] at run
+  split at run
+  all_goals first
+    | (rename_i baseRun; have := eval_local_state baseRun; subst this)
+    | simp at run
+  all_goals first
+    | (simp at run; done)
+    | split at run
+      · rename_i iv afterIndex indexRun
+        have grown := hi indexRun
+        repeat' split at run
+        all_goals first
+          | (simp only [Semantics.Outcome.done.injEq] at run; rw [← run.2]; exact grown)
+          | simp at run
+      all_goals simp at run
+
+theorem eff_grows_step {sp : SrcProgram} {k : Nat} (ih : GrowsBelow sp (k + 1)) (ihe : EffGrows sp k)
+    {st : State} {e : SrcEff} {v : Value} {st' : State}
+    (run : evalExpr (k + 1) sp.toCore st e.toCore = .done v st') : Grows st st' := by
+  have sub : ∀ {st1 : State} {e1 : SrcEff} {v1 : Value} {st2 : State},
+      evalExpr k sp.toCore st1 e1.toCore = .done v1 st2 → Grows st1 st2 := fun r => ihe k (Nat.le_refl _) r
+  cases e with
+  | ePure e =>
+    have := e.eval_state run
+    subst this
+    exact Grows.refl _
+  | eCall callee args =>
+    obtain ⟨f, values, afterArgs, completed, argsRun, found, _, bodyRun, rfl⟩ := call_inv run
+    have entry := bindLocals_same (paramBindings f.params values) { afterArgs with locals := [] }
+    exact ((effs_grows args ihe argsRun).trans ((Grows.same entry.1 entry.2).trans
+      (ih k (Nat.lt_succ_self k) bodyRun))).trans (Grows.same rfl rfl)
+  | eApply op left right =>
+    cases op
+    case logicalAnd | logicalOr =>
+      simp only [SrcEff.toCore, SrcOp.toCore, evalExpr] at run
+      split at run
+      · rename_i next leftRun
+        simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        exact sub leftRun
+      · rename_i next leftRun
+        exact (sub leftRun).trans (sub run)
+      all_goals simp at run
+    all_goals
+      simp only [SrcEff.toCore, SrcOp.toCore, evalExpr] at run
+      split at run
+      · rename_i vl afterLeft leftRun
+        split at run
+        · rename_i vr afterRight rightRun
+          split at run
+          · simp only [Semantics.Outcome.done.injEq] at run
+            obtain ⟨-, rfl⟩ := run
+            exact (sub leftRun).trans (sub rightRun)
+          · simp at run
+        all_goals simp at run
+      all_goals simp at run
+  | eNeg operand | eNot operand | eCast ty operand =>
+    simp only [SrcEff.toCore, evalExpr] at run
+    split at run
+    · rename_i w next operandRun
+      split at run
+      · simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        exact sub operandRun
+      · simp at run
+    all_goals simp at run
+  | eIndex slice index =>
+    exact index_grows (fun r => sub r) run
+  | eStruct ty fields | eVariant ty variant fields =>
+    simp only [SrcEff.toCore, evalExpr] at run
+    split at run
+    · rename_i vs next argsRun
+      simp only [Semantics.Outcome.done.injEq] at run
+      rw [← run.2]
+      exact effs_grows fields ihe argsRun
+    all_goals simp at run
+  | eMatch scrutinee id binders values =>
+    simp only [SrcEff.toCore, evalExpr] at run
+    split at run
+    · rename_i w next scrutineeRun
+      exact (sub scrutineeRun).trans (effArms_grows binders values id 0 ihe run)
+    all_goals simp at run
+
+/-- Every effectful expression Core completes grows the heap. -/
+theorem eff_grows {sp : SrcProgram} : ∀ k, GrowsBelow sp k → EffGrows sp k
+  | 0, _ => fun m le => by
+    intro st e v st' run
+    rw [Nat.le_zero.mp le] at run
+    simp [evalExpr] at run
+  | k + 1, ih => fun m le => by
+    intro st e v st' run
+    rcases Nat.lt_succ_iff_lt_or_eq.mp (Nat.lt_succ_of_le le) with lt | rfl
+    · exact eff_grows k (fun j lt' => ih j (Nat.lt_succ_of_lt lt')) m (Nat.le_of_lt_succ lt) run
+    · exact eff_grows_step ih (eff_grows k (fun j lt' => ih j (Nat.lt_succ_of_lt lt'))) run
+
 theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st : State} {s : SrcStmt}
     {c : Completion} {st' : State} (run : execStmt fuel sp.toCore st s.toCore = .done c st') :
     Grows st st' := by
@@ -1026,6 +1188,74 @@ theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st 
         | succ k =>
           exact assign_grows evalPlace_index
             (fun r => by have := value.eval_state r; subst this; exact Grows.refl _) assignRun
+      all_goals simp at run
+    | letEval id ty value body =>
+      simp only [SrcStmt.toCore, execStmt] at run
+      split at run
+      · rename_i v next valueRun
+        exact (eff_grows f ihf f (Nat.le_refl _) valueRun).trans (let_grows (fun r => below (s := body) r) run)
+      all_goals simp at run
+    | setEval id value =>
+      simp only [SrcStmt.toCore, execStmt] at run
+      split at run
+      · rename_i u next assignRun
+        simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        cases f with
+        | zero => simp [evalExpr] at assignRun
+        | succ k =>
+          exact assign_grows (fun r => (evalPlace_local r).1)
+            (fun r => eff_grows (k + 1) ihf k (Nat.le_succ k) r) assignRun
+      all_goals simp at run
+    | ifEval condition thenBranch elseBranch =>
+      simp only [SrcStmt.toCore, execStmt] at run
+      split at run
+      · rename_i next conditionRun
+        exact (eff_grows f ihf f (Nat.le_refl _) conditionRun).trans (below (s := thenBranch) run)
+      · rename_i next conditionRun
+        exact (eff_grows f ihf f (Nat.le_refl _) conditionRun).trans (below (s := elseBranch) run)
+      all_goals simp at run
+    | whileEval condition body =>
+      simp only [SrcStmt.toCore, execStmt] at run
+      have grown := fun {st1 v1 st2} (r : evalExpr f sp.toCore st1 condition.toCore = .done v1 st2) =>
+        eff_grows f ihf f (Nat.le_refl _) r
+      split at run
+      · rename_i next conditionRun
+        simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        exact grown conditionRun
+      · rename_i next conditionRun
+        refine (grown conditionRun).trans ?_
+        split at run
+        · rename_i completed bodyRun
+          exact (below (s := body) bodyRun).trans (below (s := .whileEval condition body) run)
+        · rename_i completed bodyRun
+          exact (below (s := body) bodyRun).trans (below (s := .whileEval condition body) run)
+        · rename_i completed bodyRun
+          simp only [Semantics.Outcome.done.injEq] at run
+          obtain ⟨-, rfl⟩ := run
+          exact below (s := body) bodyRun
+        · rename_i returned completed bodyRun
+          simp only [Semantics.Outcome.done.injEq] at run
+          obtain ⟨-, rfl⟩ := run
+          exact below (s := body) bodyRun
+        all_goals simp at run
+      all_goals simp at run
+    | returnEval value =>
+      simp only [SrcStmt.toCore, execStmt] at run
+      split at run
+      · rename_i v next valueRun
+        simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        exact eff_grows f ihf f (Nat.le_refl _) valueRun
+      all_goals simp at run
+    | discard value =>
+      simp only [SrcStmt.toCore, execStmt] at run
+      split at run
+      · rename_i u next valueRun
+        simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        exact eff_grows f ihf f (Nat.le_refl _) valueRun
       all_goals simp at run
 
 /-- Every subset statement Core completes grows the heap. -/

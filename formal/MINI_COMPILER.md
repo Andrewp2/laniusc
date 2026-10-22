@@ -259,19 +259,32 @@ semantics:
   payload of the value's variant the same way. `valueWords_enum` and
   `readNativeValue_enum` give Core's layout; `loadVariants_pick` and
   `storeVariants_pick` show the tag tests reach the variant Core used.
+- Effectful expressions (`LowerEval`): `SrcEff` is an expression that may
+  call functions anywhere inside it, with statements `LetEval`, `SetEval`,
+  `IfEval`, `WhileEval`, `ReturnEval` and `Discard` that take one. Its code
+  computes the value into the slots from a given slot, in Core's order: the
+  left operand in `slot`, the right in `slot + 1`, a call's arguments one
+  after another, and the right side of `&&` and `||` only when Core
+  evaluates it. A `while` computes its condition again after the body. Its
+  own type, apart from `SrcExpr`, keeps `SrcExpr`'s proofs by induction:
+  `SrcEff` nests through `List`, so `EvalSound` is proved together with
+  `StmtSound` by strong induction on Core's fuel (`sound_both`), which drops
+  at every subexpression. Indexing, struct and enum literals, and `match`
+  as effectful expressions lower to nothing yet.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
 | `Source` | 497 | 1.2 | Core meaning of source programs and their declarations, value representation, `i32` wrap lemmas |
 | `Unsigned` | 166 | 2.4 | unsigned arithmetic, comparisons and casts as slot arithmetic |
 | `LowerExpr` | 685 | 5.1 | expressions |
-| `Grows` | 1044 | 4.0 | Core's `nextAddress` never decreases; Core call and statement inversions |
+| `Grows` | 1274 | 4.0 | Core's `nextAddress` never decreases; Core call and statement inversions |
 | `HeapCorr` | 501 | 1.1 | Core heap to mini heap correspondence; allocate, load, store, free |
 | `SliceLayout` | 601 | 6.3 | Core's native layout of word structs and enums; their field reads and the mini element address |
-| `LowerStmt` | 3659 | 9.4 | Core cells, frames, flat values, calls, enums and `match`, statements |
+| `LowerStmt` | 3625 | 9.4 | Core cells, frames, flat values, calls, enums and `match`, statements |
+| `LowerEval` | 886 | 1.4 | effectful expressions and their statements; the simulation by induction on fuel |
 | `SourceCorrect` | 104 | 0.7 | top-level theorem |
 | `Determinism` | 122 | 1.1 | both top-level theorems for every run of the same length, through the optimizer (step 14) |
-| `TypeSound` | 1810 | 2.3 | type checker soundness: an accepted program is well typed in Core (step 7) |
+| `TypeSound` | 2162 | 2.3 | type checker soundness: an accepted program is well typed in Core (step 7) |
 
 The pass is about 1,880 lines of Lanius (the end of `compiler.lani`), and the
 proofs are about 5,700 lines, plus 1,802 for type checker soundness. The per-function difftest covers it (146

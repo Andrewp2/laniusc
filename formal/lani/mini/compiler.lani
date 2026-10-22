@@ -1246,6 +1246,28 @@ pub struct SrcArm {
     value: SrcExpr,
 }
 
+// An expression that may call functions, evaluated in Core's order. The
+// ones without calls are SrcExpr, whose proofs go by induction; this type
+// nests through List, so its proofs go by Core's fuel instead.
+pub enum SrcEff {
+    EPure(SrcExpr),
+    // callee(args)
+    ECall(usize, Box<List<SrcEff>>),
+    EApply(SrcOp, Box<SrcEff>, Box<SrcEff>),
+    ENeg(Box<SrcEff>),
+    ENot(Box<SrcEff>),
+    ECast(SrcType, Box<SrcEff>),
+    // slice[index] of a slice local
+    EIndex(usize, Box<SrcEff>),
+    // a struct of type ty
+    EStruct(SrcType, Box<List<SrcEff>>),
+    // variant(payload) of the enum type ty
+    EVariant(SrcType, usize, Box<List<SrcEff>>),
+    // match scrutinee { arms } on the enum with Core id enum_id: arm k's
+    // binders and value
+    EMatch(Box<SrcEff>, usize, List<List<usize>>, Box<List<SrcEff>>),
+}
+
 pub enum SrcStmt {
     Nop,
     // let id: ty = value; then body, with id in scope. A struct value is a
@@ -1283,6 +1305,14 @@ pub enum SrcStmt {
     LetIndex(usize, SrcType, usize, SrcExpr, Box<SrcStmt>),
     // slice[index] = value
     SetIndex(usize, SrcExpr, SrcExpr),
+    // The forms above with expressions that may call functions.
+    LetEval(usize, SrcType, SrcEff, Box<SrcStmt>),
+    SetEval(usize, SrcEff),
+    IfEval(SrcEff, Box<SrcStmt>, Box<SrcStmt>),
+    WhileEval(SrcEff, Box<SrcStmt>),
+    ReturnEval(SrcEff),
+    // an expression evaluated for its effects
+    Discard(SrcEff),
 }
 
 pub struct SrcParam {
@@ -2111,6 +2141,274 @@ pub fn lower_call(sigs: List<Sig>, scope: List<Binding>, callee: usize, args: Li
     };
 }
 
+// Code that leaves a value of type ty in slots slot, slot + 1, ...; it may
+// write any slot from slot on, and no slot below.
+pub struct Evaluated {
+    stmt: Stmt,
+    ty: SrcType,
+}
+
+// Arguments evaluated into consecutive slots, and their types.
+pub struct EvaluatedArgs {
+    stmt: Stmt,
+    types: List<SrcType>,
+}
+
+pub fn eval_scalar(slot: usize, t: Typed) -> Evaluated {
+    return Evaluated { stmt: Assign(slot, t.expr), ty: t.ty };
+}
+
+pub fn eval_typed(slot: usize, t: core::option::Option<Typed>) -> core::option::Option<Evaluated> {
+    return match (t) {
+        None -> None,
+        Some(x) -> Some(eval_scalar(slot, x)),
+    };
+}
+
+pub fn eval_values(slot: usize, ty: SrcType, values: core::option::Option<List<Expr>>) -> core::option::Option<Evaluated> {
+    return match (values) {
+        None -> None,
+        Some(vs) -> Some(Evaluated { stmt: assign_from(slot, vs, Skip), ty: ty }),
+    };
+}
+
+// A local of any type, copied slot by slot.
+pub fn eval_copy(scope: List<Binding>, e: SrcExpr, slot: usize, binding: core::option::Option<Binding>) -> core::option::Option<Evaluated> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> eval_values(slot, b.ty, lower_value(scope, e, b.ty)),
+    };
+}
+
+pub fn eval_pure(scope: List<Binding>, e: SrcExpr, slot: usize) -> core::option::Option<Evaluated> {
+    return match (e.lower(scope)) {
+        Some(t) -> Some(eval_scalar(slot, t)),
+        None -> match (e) {
+            Int(value) -> None,
+            Boolean(value) -> None,
+            Unsigned(kind, value) -> None,
+            Local(id) -> eval_copy(scope, e, slot, lookup(scope, id)),
+            Field(id, index) -> None,
+            Negate(operand) -> None,
+            Not(operand) -> None,
+            Apply(op, left, right) -> None,
+            Cast(ty, operand) -> None,
+        },
+    };
+}
+
+pub fn eval_call_sig(sig: Sig, callee: usize, slot: usize, args: EvaluatedArgs) -> core::option::Option<Evaluated> {
+    if (types_same(args.types, sig.params) && (sig.ret.size() > 0)) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(Stmt::Call(slot, sig.ret.size(), callee, slot_vars(slot, sizes(sig.params))))), ty: sig.ret });
+    }
+    return None;
+}
+
+pub fn eval_call(sig: core::option::Option<Sig>, callee: usize, slot: usize, args: core::option::Option<EvaluatedArgs>) -> core::option::Option<Evaluated> {
+    return match (sig) {
+        None -> None,
+        Some(s) -> match (args) {
+            None -> None,
+            Some(a) -> eval_call_sig(s, callee, slot, a),
+        },
+    };
+}
+
+pub fn cons_args(first: Evaluated, rest: core::option::Option<EvaluatedArgs>) -> core::option::Option<EvaluatedArgs> {
+    return match (rest) {
+        None -> None,
+        Some(r) -> Some(EvaluatedArgs { stmt: Seq(boxed(first.stmt), boxed(r.stmt)), types: cons(first.ty, r.types) }),
+    };
+}
+
+// 1 for &&, 2 for ||, 0 for the operators that evaluate both sides.
+pub fn short_circuit(op: SrcOp) -> usize {
+    return match (op) {
+        Plus -> 0,
+        Minus -> 0,
+        Times -> 0,
+        BitAnd -> 0,
+        BitOr -> 0,
+        BitXor -> 0,
+        Less -> 0,
+        LessEq -> 0,
+        Greater -> 0,
+        GreaterEq -> 0,
+        Equal -> 0,
+        NotEqual -> 0,
+        LogicalAnd -> 1,
+        LogicalOr -> 2,
+    };
+}
+
+// The right operand of && or ||, computed in slot + 1 and moved to slot.
+pub fn eval_right(slot: usize, r: Evaluated) -> Stmt {
+    return Seq(boxed(r.stmt), boxed(Assign(slot, Var(plus(slot, 1)))));
+}
+
+// left in slot, right in slot + 1. && and || run the right side's code
+// only when Core evaluates it.
+pub fn eval_operands(op: SrcOp, slot: usize, l: Evaluated, r: Evaluated) -> core::option::Option<Evaluated> {
+    if (l.ty.is_scalar() && r.ty.is_scalar() && (short_circuit(op) == 0)) {
+        return match (op.lower(Typed { expr: Var(slot), ty: l.ty }, Typed { expr: Var(plus(slot, 1)), ty: r.ty })) {
+            None -> None,
+            Some(t) -> Some(Evaluated { stmt: Seq(boxed(l.stmt), boxed(Seq(boxed(r.stmt), boxed(Assign(slot, t.expr))))), ty: t.ty }),
+        };
+    }
+    if (l.ty.is_bool() && r.ty.is_bool() && (short_circuit(op) == 1)) {
+        return Some(Evaluated { stmt: Seq(boxed(l.stmt), boxed(Ite(Var(slot), boxed(eval_right(slot, r)), boxed(Skip)))), ty: Bool });
+    }
+    if (l.ty.is_bool() && r.ty.is_bool() && (short_circuit(op) == 2)) {
+        return Some(Evaluated { stmt: Seq(boxed(l.stmt), boxed(Ite(Var(slot), boxed(Skip), boxed(eval_right(slot, r))))), ty: Bool });
+    }
+    return None;
+}
+
+pub fn eval_apply(op: SrcOp, slot: usize, left: core::option::Option<Evaluated>, right: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
+    return match (left) {
+        None -> None,
+        Some(l) -> match (right) {
+            None -> None,
+            Some(r) -> eval_operands(op, slot, l, r),
+        },
+    };
+}
+
+// The operand in slot, then op applied to it there.
+pub fn eval_then(slot: usize, operand: Evaluated, t: core::option::Option<Typed>) -> core::option::Option<Evaluated> {
+    return match (t) {
+        None -> None,
+        Some(x) -> Some(Evaluated { stmt: Seq(boxed(operand.stmt), boxed(Assign(slot, x.expr))), ty: x.ty }),
+    };
+}
+
+// A cast's operand must be a scalar, which takes one slot.
+pub fn scalar_cast(ty: SrcType, operand: Typed) -> core::option::Option<Typed> {
+    if (operand.ty.is_scalar()) {
+        return cast_to(ty, operand);
+    }
+    return None;
+}
+
+pub fn eval_negate(slot: usize, operand: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
+    return match (operand) {
+        None -> None,
+        Some(o) -> eval_then(slot, o, lower_negate_typed(Typed { expr: Var(slot), ty: o.ty })),
+    };
+}
+
+pub fn eval_not(slot: usize, operand: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
+    return match (operand) {
+        None -> None,
+        Some(o) -> eval_then(slot, o, lower_not_typed(Typed { expr: Var(slot), ty: o.ty })),
+    };
+}
+
+pub fn eval_cast(ty: SrcType, slot: usize, operand: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
+    return match (operand) {
+        None -> None,
+        Some(o) -> eval_then(slot, o, scalar_cast(ty, Typed { expr: Var(slot), ty: o.ty })),
+    };
+}
+
+// extract: mutual begin
+impl SrcEff {
+    // The code computing this expression into slot, slot + 1, ..., and its type.
+    pub fn eval(self, sigs: List<Sig>, scope: List<Binding>, slot: usize) -> core::option::Option<Evaluated> {
+        return match (self) {
+            EPure(e) -> eval_pure(scope, e, slot),
+            ECall(callee, args) -> eval_call(get(sigs, callee), callee, slot, eval_args(sigs, scope, unbox(args), slot)),
+            EApply(op, left, right) -> eval_apply(op, slot, unbox(left).eval(sigs, scope, slot), unbox(right).eval(sigs, scope, plus(slot, 1))),
+            ENeg(operand) -> eval_negate(slot, unbox(operand).eval(sigs, scope, slot)),
+            ENot(operand) -> eval_not(slot, unbox(operand).eval(sigs, scope, slot)),
+            ECast(ty, operand) -> eval_cast(ty, slot, unbox(operand).eval(sigs, scope, slot)),
+            EIndex(slice, index) -> None,
+            EStruct(ty, fields) -> None,
+            EVariant(ty, variant, payload) -> None,
+            EMatch(scrutinee, enum_id, binders, values) -> None,
+        };
+    }
+}
+
+// The arguments, each in the slots after the one before.
+pub fn eval_args(sigs: List<Sig>, scope: List<Binding>, args: List<SrcEff>, slot: usize) -> core::option::Option<EvaluatedArgs> {
+    return match (args) {
+        Nil -> Some(EvaluatedArgs { stmt: Skip, types: empty() }),
+        Cons(arg, rest) -> match (arg.eval(sigs, scope, slot)) {
+            None -> None,
+            Some(first) -> cons_args(first, eval_args(sigs, scope, unbox(rest), plus(slot, first.ty.size()))),
+        },
+    };
+}
+// extract: mutual end
+
+// Some(stmt) when the value has type ty.
+pub fn eval_same(v: Evaluated, ty: SrcType, stmt: Stmt) -> core::option::Option<Stmt> {
+    if (v.ty.same(ty)) {
+        return Some(stmt);
+    }
+    return None;
+}
+
+pub fn lower_let_eval(ty: SrcType, value: core::option::Option<Evaluated>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (value) {
+        None -> None,
+        Some(v) -> match (body) {
+            None -> None,
+            Some(b) -> eval_same(v, ty, Seq(boxed(v.stmt), boxed(b))),
+        },
+    };
+}
+
+pub fn lower_set_eval(slot: usize, binding: core::option::Option<Binding>, value: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> match (value) {
+            None -> None,
+            Some(v) -> eval_same(v, b.ty, Seq(boxed(v.stmt), boxed(assign_from(b.slot, slot_vars(slot, b.ty.size()), Skip)))),
+        },
+    };
+}
+
+pub fn lower_if_eval(slot: usize, condition: core::option::Option<Evaluated>, then_branch: core::option::Option<Stmt>, else_branch: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (condition) {
+        None -> None,
+        Some(c) -> match (then_branch) {
+            None -> None,
+            Some(t) -> match (else_branch) {
+                None -> None,
+                Some(e) -> eval_same(c, Bool, Seq(boxed(c.stmt), boxed(Ite(Var(slot), boxed(t), boxed(e))))),
+            },
+        },
+    };
+}
+
+// The body may reuse the condition's slots, so the condition is computed
+// again after it, before the loop tests it.
+pub fn lower_while_eval(slot: usize, condition: core::option::Option<Evaluated>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (condition) {
+        None -> None,
+        Some(c) -> match (body) {
+            None -> None,
+            Some(b) -> eval_same(c, Bool, Seq(boxed(c.stmt), boxed(Loop(Var(slot), boxed(Seq(boxed(b), boxed(c.stmt))))))),
+        },
+    };
+}
+
+pub fn lower_return_eval(slot: usize, ret: SrcType, value: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
+    return match (value) {
+        None -> None,
+        Some(v) -> eval_same(v, ret, Seq(boxed(v.stmt), boxed(Stmt::Ret(slot_vars(slot, ret.size()))))),
+    };
+}
+
+pub fn lower_discard(value: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
+    return match (value) {
+        None -> None,
+        Some(v) -> Some(v.stmt),
+    };
+}
+
 pub fn lower_let(slot: usize, values: core::option::Option<List<Expr>>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
     return match (values) {
         None -> None,
@@ -2833,6 +3131,12 @@ impl SrcStmt {
             LetSlice(id, element, pointer, length, body) -> lower_let(next, lower_slice(decls, element, lower_as(scope, pointer, Ptr), lower_as(scope, length, I32)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Slice(boxed(element)) }, scope), plus(next, 1))),
             LetIndex(id, ty, slice, index, body) -> lower_let_index(decls, next, lookup(scope, slice), ty, lower_index(scope, index), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
             SetIndex(slice, index, value) -> lower_set_index(decls, lookup(scope, slice), lower_index(scope, index), scope, value),
+            LetEval(id, ty, value, body) -> lower_let_eval(ty, value.eval(sigs, scope, next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
+            SetEval(id, value) -> lower_set_eval(next, lookup(scope, id), value.eval(sigs, scope, next)),
+            IfEval(condition, then_branch, else_branch) -> lower_if_eval(next, condition.eval(sigs, scope, next), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next)),
+            WhileEval(condition, body) -> lower_while_eval(next, condition.eval(sigs, scope, next), unbox(body).lower(sigs, decls, ret, scope, next)),
+            ReturnEval(value) -> lower_return_eval(next, ret, value.eval(sigs, scope, next)),
+            Discard(value) -> lower_discard(value.eval(sigs, scope, next)),
         };
     }
 
@@ -2859,6 +3163,12 @@ impl SrcStmt {
             LetSlice(id, element, pointer, length, body) -> plus(unbox(body).depth(), 1),
             LetIndex(id, ty, slice, index, body) -> plus(unbox(body).depth(), ty.size()),
             SetIndex(slice, index, value) -> 0,
+            LetEval(id, ty, value, body) -> plus(unbox(body).depth(), ty.size()),
+            SetEval(id, value) -> 0,
+            IfEval(condition, then_branch, else_branch) -> max_of(unbox(then_branch).depth(), unbox(else_branch).depth()),
+            WhileEval(condition, body) -> unbox(body).depth(),
+            ReturnEval(value) -> 0,
+            Discard(value) -> 0,
         };
     }
 }
@@ -2901,10 +3211,51 @@ pub fn sigs(funcs: List<SrcFunc>) -> List<Sig> {
     };
 }
 
+// One more than the largest slot an expression reads.
+impl Expr {
+    pub fn extent(self) -> usize {
+        return match (self) {
+            Lit(value) -> 0,
+            Var(index) -> plus(index, 1),
+            Expr::Neg(operand) -> unbox(operand).extent(),
+            Binary(word, operation, left, right) -> max_of(unbox(left).extent(), unbox(right).extent()),
+            Compare(word, operation, left, right) -> max_of(unbox(left).extent(), unbox(right).extent()),
+        };
+    }
+}
+
+pub fn args_extent(args: List<Expr>) -> usize {
+    return match (args) {
+        Nil -> 0,
+        Cons(arg, rest) -> max_of(arg.extent(), args_extent(unbox(rest))),
+    };
+}
+
+// One more than the largest slot a statement names, so its frame holds the
+// slots an effectful expression computes in.
+impl Stmt {
+    pub fn extent(self) -> usize {
+        return match (self) {
+            Skip -> 0,
+            Assign(index, value) -> max_of(plus(index, 1), value.extent()),
+            Seq(first, second) -> max_of(unbox(first).extent(), unbox(second).extent()),
+            Ite(condition, then_branch, else_branch) -> max_of(condition.extent(), max_of(unbox(then_branch).extent(), unbox(else_branch).extent())),
+            Loop(condition, body) -> max_of(condition.extent(), unbox(body).extent()),
+            Stmt::Call(target, count, callee, args) -> max_of(plus(target, count), args_extent(args)),
+            Stmt::Ret(values) -> args_extent(values),
+            Alloc(target, shift, size) -> max_of(plus(target, 1), size.extent()),
+            LoadByte(target, address) -> max_of(plus(target, 1), address.extent()),
+            StoreByte(address, value) -> max_of(address.extent(), value.extent()),
+            LoadWord(width, target, address) -> max_of(plus(target, 1), address.extent()),
+            StoreWord(width, address, value) -> max_of(address.extent(), value.extent()),
+        };
+    }
+}
+
 pub fn lower_body(count: usize, results: usize, depth: usize, body: core::option::Option<Stmt>) -> core::option::Option<Func> {
     return match (body) {
         None -> None,
-        Some(b) -> Some(Func { params: count, results: results, locals: max_of(plus(count, depth), results), body: b }),
+        Some(b) -> Some(Func { params: count, results: results, locals: max_of(max_of(plus(count, depth), results), b.extent()), body: b }),
     };
 }
 
@@ -3067,6 +3418,12 @@ impl SrcStmt {
             LetSlice(id, element, pointer, length, body) -> declare_in(element.declare(decls), unbox(body)),
             LetIndex(id, ty, slice, index, body) -> declare_in(ty.declare(decls), unbox(body)),
             SetIndex(slice, index, value) -> Some(decls),
+            LetEval(id, ty, value, body) -> declare_in(ty.declare(decls), unbox(body)),
+            SetEval(id, value) -> Some(decls),
+            IfEval(condition, then_branch, else_branch) -> declare_in(unbox(then_branch).declare(decls), unbox(else_branch)),
+            WhileEval(condition, body) -> unbox(body).declare(decls),
+            ReturnEval(value) -> Some(decls),
+            Discard(value) -> Some(decls),
         };
     }
 
@@ -3094,6 +3451,12 @@ impl SrcStmt {
             LetSlice(id, element, pointer, length, body) -> unbox(body).returns(),
             LetIndex(id, ty, slice, index, body) -> unbox(body).returns(),
             SetIndex(slice, index, value) -> false,
+            LetEval(id, ty, value, body) -> unbox(body).returns(),
+            SetEval(id, value) -> false,
+            IfEval(condition, then_branch, else_branch) -> unbox(then_branch).returns() && unbox(else_branch).returns(),
+            WhileEval(condition, body) -> false,
+            ReturnEval(value) -> true,
+            Discard(value) -> false,
         };
     }
 }

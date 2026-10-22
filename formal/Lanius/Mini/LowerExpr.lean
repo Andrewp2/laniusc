@@ -272,6 +272,139 @@ theorem cast_sound {ty : SrcType} {inner t : Typed} {env : Env} {w result : Valu
   | ptr => simp [castTo] at lowered
   | slice => simp [castTo] at lowered
 
+/-- A strict operator's lowering, on operands that represent `vl` and `vr`,
+represents Core's result. -/
+theorem SrcOp.lower_holds {op : SrcOp} {tl tr t : Typed} (lowered : op.lower tl tr = some t)
+    (strict : op ≠ .logicalAnd ∧ op ≠ .logicalOr) {env : Env} {vl vr v : Value}
+    (holdsl : tl.ty.Holds vl (tl.expr.eval env)) (holdsr : tr.ty.Holds vr (tr.expr.eval env))
+    (evaluated : Semantics.evalBinaryValue .x86_64 op.toCore vl vr = .ok v) :
+    t.ty.Holds v (t.expr.eval env) := by
+  cases op
+  case plus | minus | times | bitAnd | bitOr | bitXor =>
+    simp only [SrcOp.lower] at lowered
+    try
+      rcases offsetOrArith_some lowered with ⟨htl, htr, rfl⟩ | lowered
+      · rw [htl] at holdsl
+        rw [htr] at holdsr
+        simp only [SrcType.Holds, UintTy.toCore] at holdsl holdsr
+        obtain ⟨rfl, -⟩ := holdsr
+        subst holdsl
+        simp only [SrcOp.toCore] at evaluated
+        first
+          | rw [eval_ptr_add] at evaluated
+          | rw [eval_ptr_sub] at evaluated
+        simp only [Except.ok.injEq] at evaluated
+        subst evaluated
+        exact rfl
+    simp only [arith] at lowered
+    split at lowered
+    · rename_i types
+      simp only [Option.some.injEq] at lowered
+      subst lowered
+      cases htl : tl.ty <;> cases htr : tr.ty <;> simp [htl, htr, SrcType.isI32] at types
+      rw [htl] at holdsl
+      rw [htr] at holdsr
+      obtain ⟨rfl, _⟩ := holdsl
+      obtain ⟨rfl, _⟩ := holdsr
+      simp only [SrcOp.toCore, eval_add, eval_sub, eval_mul, eval_bitAnd, eval_bitOr,
+        eval_bitXor, Except.ok.injEq] at evaluated
+      subst evaluated
+      simp only [Expr.eval, Word.apply, BinOp.apply]; exact holds_i32 _
+    · obtain ⟨k, hk, htr, rfl⟩ := arithUint_some lowered
+      rw [SrcType.eq_of_uintKind hk] at holdsl
+      rw [htr] at holdsr
+      obtain ⟨rfl, _⟩ := holdsl
+      obtain ⟨rfl, boundr⟩ := holdsr
+      simp only [SrcOp.toCore] at evaluated
+      first
+        | rw [eval_uint_binop k boundr (op := .add) (.inl ⟨rfl, rfl⟩)] at evaluated
+        | rw [eval_uint_binop k boundr (op := .sub) (.inr (.inl ⟨rfl, rfl⟩))] at evaluated
+        | rw [eval_uint_binop k boundr (op := .mul) (.inr (.inr (.inl ⟨rfl, rfl⟩)))] at evaluated
+        | rw [eval_uint_binop k boundr (op := .and) (.inr (.inr (.inr (.inl ⟨rfl, rfl⟩))))] at evaluated
+        | rw [eval_uint_binop k boundr (op := .or) (.inr (.inr (.inr (.inr (.inl ⟨rfl, rfl⟩)))))] at evaluated
+        | rw [eval_uint_binop k boundr (op := .xor) (.inr (.inr (.inr (.inr (.inr ⟨rfl, rfl⟩)))))] at evaluated
+      simp only [Except.ok.injEq] at evaluated
+      subst evaluated
+      rw [wrap_eval]
+      exact holds_uint k (Nat.mod_lt _ (Nat.two_pow_pos _))
+  case less | lessEq | greater | greaterEq =>
+    simp only [SrcOp.lower, order] at lowered
+    split at lowered
+    · rename_i types
+      simp only [Option.some.injEq] at lowered
+      subst lowered
+      cases htl : tl.ty <;> cases htr : tr.ty <;> simp [htl, htr, SrcType.isI32] at types
+      rw [htl] at holdsl
+      rw [htr] at holdsr
+      obtain ⟨rfl, _⟩ := holdsl
+      obtain ⟨rfl, _⟩ := holdsr
+      simp only [SrcOp.toCore] at evaluated
+      first
+        | rw [eval_order (op := .lt) (h := .inl ⟨rfl, rfl⟩)] at evaluated
+        | rw [eval_order (op := .le) (h := .inr (.inl ⟨rfl, rfl⟩))] at evaluated
+        | rw [eval_order (op := .gt) (h := .inr (.inr (.inl ⟨rfl, rfl⟩)))] at evaluated
+        | rw [eval_order (op := .ge) (h := .inr (.inr (.inr ⟨rfl, rfl⟩)))] at evaluated
+      simp only [Except.ok.injEq] at evaluated
+      subst evaluated
+      simp only [Expr.eval, Word.holds]
+      exact holds_compare _
+    · obtain ⟨k, hk, htr, rfl⟩ := orderUint_some lowered
+      rw [SrcType.eq_of_uintKind hk] at holdsl
+      rw [htr] at holdsr
+      obtain ⟨rfl, _⟩ := holdsl
+      obtain ⟨rfl, _⟩ := holdsr
+      simp only [SrcOp.toCore] at evaluated
+      first
+        | rw [eval_uint_order k _ _ (op := .lt) (.inl ⟨rfl, rfl⟩)] at evaluated
+        | rw [eval_uint_order k _ _ (op := .le) (.inr (.inl ⟨rfl, rfl⟩))] at evaluated
+        | rw [eval_uint_order k _ _ (op := .gt) (.inr (.inr (.inl ⟨rfl, rfl⟩)))] at evaluated
+        | rw [eval_uint_order k _ _ (op := .ge) (.inr (.inr (.inr ⟨rfl, rfl⟩)))] at evaluated
+      simp only [Except.ok.injEq] at evaluated
+      subst evaluated
+      simp only [Expr.eval, Word.holds]
+      exact holds_compare _
+  case equal | notEqual =>
+    simp only [SrcOp.lower, equality] at lowered
+    split at lowered
+    · rename_i types
+      simp only [Option.some.injEq] at lowered
+      subst lowered
+      simp only [SrcOp.toCore] at evaluated
+      cases htl : tl.ty <;> cases htr : tr.ty <;>
+        simp [htl, htr, SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isUint, SrcType.isPtr] at types <;>
+        rw [htl] at holdsl <;> rw [htr] at holdsr
+      · obtain ⟨rfl, _⟩ := holdsl
+        obtain ⟨rfl, _⟩ := holdsr
+        simp only [eval_eq_int, eval_ne_int, Except.ok.injEq] at evaluated
+        subst evaluated
+        simp only [Expr.eval, SrcType.word, Word.holds]
+        exact holds_compare _
+      · obtain ⟨x, rfl, bitsl⟩ := holdsl
+        obtain ⟨y, rfl, bitsr⟩ := holdsr
+        simp only [eval_eq_bool, eval_ne_bool, Except.ok.injEq] at evaluated
+        subst evaluated
+        simp only [Expr.eval, SrcType.word, Word.holds, bitsl, bitsr]
+        exact holds_compare _
+      · cases UintTy.eq_of_code types
+        obtain ⟨rfl, _⟩ := holdsl
+        obtain ⟨rfl, _⟩ := holdsr
+        simp only [eval_uint_eq, eval_uint_ne, Except.ok.injEq] at evaluated
+        subst evaluated
+        simp only [Expr.eval, htl, SrcType.word, Word.holds]
+        exact holds_compare _
+      · simp [SrcType.Holds] at holdsl
+      · simp [SrcType.Holds] at holdsl
+      · subst holdsl
+        subst holdsr
+        simp only [eval_ptr_eq, eval_ptr_ne, Except.ok.injEq] at evaluated
+        subst evaluated
+        simp only [Expr.eval, htl, SrcType.word, Word.holds]
+        exact holds_compare _
+      · simp [SrcType.Holds] at holdsl
+    · simp at lowered
+  case logicalAnd => exact absurd rfl strict.1
+  case logicalOr => exact absurd rfl strict.2
+
 theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat → Nat} {st : State}
     {env : Env} {prog : Core.Program} (corr : Corr scope frame st env) (target : prog.target = .x86_64) :
     ∀ {t : Typed} {fuel : Nat} {v : Value} {st' : State}, e.lower scope = some t →
@@ -443,145 +576,11 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
           st' = st ∧ tr.ty.Holds v (tr.expr.eval env) := fun h => ihr rightLowered h
       simp only [SrcExpr.toCore] at run
       cases op
-      case plus | minus | times | bitAnd | bitOr | bitXor =>
+      case plus | minus | times | bitAnd | bitOr | bitXor | less | lessEq | greater | greaterEq | equal | notEqual =>
         obtain ⟨rfl, vl, vr, holdsl, holdsr, evaluated⟩ :=
           binary_sound hl hr (by simp [SrcOp.toCore]) run
-        simp only [SrcOp.lower] at lowered
-        try
-          rcases offsetOrArith_some lowered with ⟨htl, htr, rfl⟩ | lowered
-          · rw [htl] at holdsl
-            rw [htr] at holdsr
-            simp only [SrcType.Holds, UintTy.toCore] at holdsl holdsr
-            obtain ⟨rfl, -⟩ := holdsr
-            subst holdsl
-            rw [target] at evaluated
-            simp only [SrcOp.toCore] at evaluated
-            first
-              | rw [eval_ptr_add] at evaluated
-              | rw [eval_ptr_sub] at evaluated
-            simp only [Except.ok.injEq] at evaluated
-            subst evaluated
-            exact ⟨rfl, rfl⟩
-        simp only [arith] at lowered
-        split at lowered
-        · rename_i types
-          simp only [Option.some.injEq] at lowered
-          subst lowered
-          cases htl : tl.ty <;> cases htr : tr.ty <;> simp [htl, htr, SrcType.isI32] at types
-          rw [htl] at holdsl
-          rw [htr] at holdsr
-          obtain ⟨rfl, _⟩ := holdsl
-          obtain ⟨rfl, _⟩ := holdsr
-          rw [target] at evaluated
-          simp only [SrcOp.toCore, eval_add, eval_sub, eval_mul, eval_bitAnd, eval_bitOr,
-            eval_bitXor, Except.ok.injEq] at evaluated
-          subst evaluated
-          exact ⟨rfl, by simp only [Expr.eval, Word.apply, BinOp.apply]; exact holds_i32 _⟩
-        · obtain ⟨k, hk, htr, rfl⟩ := arithUint_some lowered
-          rw [SrcType.eq_of_uintKind hk] at holdsl
-          rw [htr] at holdsr
-          obtain ⟨rfl, _⟩ := holdsl
-          obtain ⟨rfl, boundr⟩ := holdsr
-          rw [target] at evaluated
-          simp only [SrcOp.toCore] at evaluated
-          first
-            | rw [eval_uint_binop k boundr (op := .add) (.inl ⟨rfl, rfl⟩)] at evaluated
-            | rw [eval_uint_binop k boundr (op := .sub) (.inr (.inl ⟨rfl, rfl⟩))] at evaluated
-            | rw [eval_uint_binop k boundr (op := .mul) (.inr (.inr (.inl ⟨rfl, rfl⟩)))] at evaluated
-            | rw [eval_uint_binop k boundr (op := .and) (.inr (.inr (.inr (.inl ⟨rfl, rfl⟩))))] at evaluated
-            | rw [eval_uint_binop k boundr (op := .or) (.inr (.inr (.inr (.inr (.inl ⟨rfl, rfl⟩)))))] at evaluated
-            | rw [eval_uint_binop k boundr (op := .xor) (.inr (.inr (.inr (.inr (.inr ⟨rfl, rfl⟩)))))] at evaluated
-          simp only [Except.ok.injEq] at evaluated
-          subst evaluated
-          refine ⟨rfl, ?_⟩
-          rw [wrap_eval]
-          exact holds_uint k (Nat.mod_lt _ (Nat.two_pow_pos _))
-      case less | lessEq | greater | greaterEq =>
-        obtain ⟨rfl, vl, vr, holdsl, holdsr, evaluated⟩ :=
-          binary_sound hl hr (by simp [SrcOp.toCore]) run
-        simp only [SrcOp.lower, order] at lowered
-        split at lowered
-        · rename_i types
-          simp only [Option.some.injEq] at lowered
-          subst lowered
-          cases htl : tl.ty <;> cases htr : tr.ty <;> simp [htl, htr, SrcType.isI32] at types
-          rw [htl] at holdsl
-          rw [htr] at holdsr
-          obtain ⟨rfl, _⟩ := holdsl
-          obtain ⟨rfl, _⟩ := holdsr
-          rw [target] at evaluated
-          simp only [SrcOp.toCore] at evaluated
-          first
-            | rw [eval_order (op := .lt) (h := .inl ⟨rfl, rfl⟩)] at evaluated
-            | rw [eval_order (op := .le) (h := .inr (.inl ⟨rfl, rfl⟩))] at evaluated
-            | rw [eval_order (op := .gt) (h := .inr (.inr (.inl ⟨rfl, rfl⟩)))] at evaluated
-            | rw [eval_order (op := .ge) (h := .inr (.inr (.inr ⟨rfl, rfl⟩)))] at evaluated
-          simp only [Except.ok.injEq] at evaluated
-          subst evaluated
-          refine ⟨rfl, ?_⟩
-          simp only [Expr.eval, Word.holds]
-          exact holds_compare _
-        · obtain ⟨k, hk, htr, rfl⟩ := orderUint_some lowered
-          rw [SrcType.eq_of_uintKind hk] at holdsl
-          rw [htr] at holdsr
-          obtain ⟨rfl, _⟩ := holdsl
-          obtain ⟨rfl, _⟩ := holdsr
-          rw [target] at evaluated
-          simp only [SrcOp.toCore] at evaluated
-          first
-            | rw [eval_uint_order k _ _ (op := .lt) (.inl ⟨rfl, rfl⟩)] at evaluated
-            | rw [eval_uint_order k _ _ (op := .le) (.inr (.inl ⟨rfl, rfl⟩))] at evaluated
-            | rw [eval_uint_order k _ _ (op := .gt) (.inr (.inr (.inl ⟨rfl, rfl⟩)))] at evaluated
-            | rw [eval_uint_order k _ _ (op := .ge) (.inr (.inr (.inr ⟨rfl, rfl⟩)))] at evaluated
-          simp only [Except.ok.injEq] at evaluated
-          subst evaluated
-          refine ⟨rfl, ?_⟩
-          simp only [Expr.eval, Word.holds]
-          exact holds_compare _
-      case equal | notEqual =>
-        obtain ⟨rfl, vl, vr, holdsl, holdsr, evaluated⟩ :=
-          binary_sound hl hr (by simp [SrcOp.toCore]) run
-        simp only [SrcOp.lower, equality] at lowered
-        split at lowered
-        · rename_i types
-          simp only [Option.some.injEq] at lowered
-          subst lowered
-          refine ⟨rfl, ?_⟩
-          rw [target] at evaluated
-          simp only [SrcOp.toCore] at evaluated
-          cases htl : tl.ty <;> cases htr : tr.ty <;>
-            simp [htl, htr, SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isUint, SrcType.isPtr] at types <;>
-            rw [htl] at holdsl <;> rw [htr] at holdsr
-          · obtain ⟨rfl, _⟩ := holdsl
-            obtain ⟨rfl, _⟩ := holdsr
-            simp only [eval_eq_int, eval_ne_int, Except.ok.injEq] at evaluated
-            subst evaluated
-            simp only [Expr.eval, SrcType.word, Word.holds]
-            exact holds_compare _
-          · obtain ⟨x, rfl, bitsl⟩ := holdsl
-            obtain ⟨y, rfl, bitsr⟩ := holdsr
-            simp only [eval_eq_bool, eval_ne_bool, Except.ok.injEq] at evaluated
-            subst evaluated
-            simp only [Expr.eval, SrcType.word, Word.holds, bitsl, bitsr]
-            exact holds_compare _
-          · rename_i k k' _ _
-            cases UintTy.eq_of_code types
-            obtain ⟨rfl, _⟩ := holdsl
-            obtain ⟨rfl, _⟩ := holdsr
-            simp only [eval_uint_eq, eval_uint_ne, Except.ok.injEq] at evaluated
-            subst evaluated
-            simp only [Expr.eval, htl, SrcType.word, Word.holds]
-            exact holds_compare _
-          · simp [SrcType.Holds] at holdsl
-          · simp [SrcType.Holds] at holdsl
-          · subst holdsl
-            subst holdsr
-            simp only [eval_ptr_eq, eval_ptr_ne, Except.ok.injEq] at evaluated
-            subst evaluated
-            simp only [Expr.eval, htl, SrcType.word, Word.holds]
-            exact holds_compare _
-          · simp [SrcType.Holds] at holdsl
-        · simp at lowered
+        rw [target] at evaluated
+        exact ⟨rfl, SrcOp.lower_holds lowered (by simp) holdsl holdsr evaluated⟩
       case logicalAnd =>
         simp only [SrcOp.lower, conjunction] at lowered
         split at lowered
