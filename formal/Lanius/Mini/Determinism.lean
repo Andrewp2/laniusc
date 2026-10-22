@@ -52,6 +52,31 @@ theorem compileProgram_deterministic {prog : Program} {binary : Binary}
       imageHeap entry params heapAt
   exact ⟨n, s', steps, returned, fun t run => ⟨det.final run, returned.congr (det.final run)⟩⟩
 
+/-- `compileProgram_deterministic` through the optimizer: the image is the
+original program's or a validated one's, and either returns the same way on
+every run. -/
+theorem compileOptimized_deterministic {prog : Program} {binary : Binary}
+    (compiled : compileOptimized prog = some binary)
+    {depth f : Nat} {args value : List (BitVec 64)} {heap after : Heap}
+    (returns : prog.Returns depth f args heap value after)
+    (s : State) (imageBase : BitVec 64) (window : Nat)
+    (enough : binary.stackNeed depth ≤ window) (bounded : window ≤ 2 ^ 62)
+    (loaded : CodeAt s.memory imageBase binary.image)
+    (apart : ∀ index, index < binary.image.length →
+      ¬Below (s.registers rspRegister) window (imageBase + BitVec.ofNat 64 index))
+    (imageHeap : ∀ index, index < binary.image.length → ¬s.InHeap (imageBase + BitVec.ofNat 64 index))
+    (entry : s.rip = imageBase + BitVec.ofNat 64 (binary.entries.getD f 0))
+    (params : ∀ k (bound : k < args.length),
+      read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = args[k])
+    (heapAt : HeapAt window s heap) :
+    ∃ n s', Steps n s s' ∧ Returned window s s' value after ∧
+      ∀ t, Steps n s t → DataEq s' t ∧ Returned window s t value after := by
+  rcases compileOptimized_some compiled with original | ⟨q, accepted, optimized⟩
+  · exact compileProgram_deterministic original returns s imageBase window enough bounded loaded apart imageHeap
+      entry params heapAt
+  · exact compileProgram_deterministic optimized (returns.validated accepted) s imageBase window enough bounded
+      loaded apart imageHeap entry params heapAt
+
 /-- `compileSource_correct`, with every run of the compiled call returning
 the same way: the results representing `v` and the heap cursor at Core's final
 next address. -/
@@ -91,7 +116,7 @@ theorem compileSource_deterministic {sp : SrcProgram} {binary : Binary}
         ⟨fun _ mem => by simp at mem, rfl⟩ (HeapCorr.empty start zero small) typed bitsLen bodyRun fits
     exact ⟨depth, results, after, holds, len, hc.cursor,
       fun s imageBase window enough bounded loaded apart imageHeap entry params heapAt =>
-        compileProgram_deterministic compiledProgram returns s imageBase window enough bounded loaded apart
+        compileOptimized_deterministic compiledProgram returns s imageBase window enough bounded loaded apart
           imageHeap entry params heapAt⟩
 
 end Lanius.Mini

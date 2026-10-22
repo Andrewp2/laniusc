@@ -58,7 +58,9 @@ the statement, so a reader has to agree that each one says what is intended:
 | `CodeAt`, `Steps`, `Step` | `X86/Machine/State.lean`, `X86/Machine/Scalar.lean` | the image is loaded, and the machine runs (see section 6) |
 
 `compileSource` and `compileProgram` themselves are not trusted. The theorem
-is about whatever they compute.
+is about whatever they compute. That includes the optimizer `compileSource`
+runs (roadmap step 13): it is not proved, and the theorem holds because its
+output is kept only when the proved validator accepts it.
 
 ## 3. Core semantics as the meaning of Lanius
 
@@ -359,5 +361,6 @@ These are evidence, not part of the trusted base:
 - the difftests (`mini_difftest.py`, `fn_difftest.py`, `x86_model_test.py`);
 - the native harness stubs (except as the loader in section 8, when they are
   used that way);
-- `compileSource` and `compileProgram`;
+- `compileSource` and `compileProgram`, and the optimizer
+  (`optimize_program`) inside `compileSource`;
 - the encoders and every proof file.

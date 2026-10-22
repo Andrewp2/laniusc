@@ -126,7 +126,7 @@ The proof has two layers.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Compiler` | 1944 | 3.2 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass |
+| `Compiler` | 2528 | 3.2 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass, optimizer and validator |
 | `Semantics` | 190 | 0.8 | big-step source semantics with call depth |
 | `Asm` | 202 | 1.0 | abstract machine, byte-offset placement, `Star` runs |
 | `CompileCorrect` | 553 | 1.8 | compiler against the abstract machine |
@@ -150,7 +150,8 @@ and 64 lines of list operations); the proofs are about 5,000 lines.
 
 The first piece of the verified compiler (roadmap step 4). `compile_source` in
 `compiler.lani` type-checks and lowers a source program, a subset of Lanius
-Core, to the mini IR, then runs `compile_program`. The subset: `i32`, `bool`,
+Core, to the mini IR, then runs `compile_optimized` (the optimizer, checked by
+the validator, then `compile_program`; see step 13 below). The subset: `i32`, `bool`,
 `u8`, `u32`, `u64` and `usize` locals and parameters, `+ - * & | ^`, unary
 `-` and `!`, the six comparisons (unsigned on the unsigned types), `&&` and
 `||`, unsigned literals, casts between `i32` and the unsigned types (Core's
@@ -258,8 +259,8 @@ semantics:
 | `HeapCorr` | 501 | 1.1 | Core heap to mini heap correspondence; allocate, load, store, free |
 | `SliceLayout` | 398 | 7.8 | Core's native layout of word structs; their field reads and the mini element address |
 | `LowerStmt` | 3232 | 10.7 | Core cells, frames, flat values, calls, enums and `match`, statements |
-| `SourceCorrect` | 102 | 0.8 | top-level theorem |
-| `Determinism` | 97 | 1.1 | both top-level theorems for every run of the same length (step 14) |
+| `SourceCorrect` | 104 | 0.7 | top-level theorem |
+| `Determinism` | 122 | 1.1 | both top-level theorems for every run of the same length, through the optimizer (step 14) |
 | `TypeSound` | 1745 | 2.3 | type checker soundness: an accepted program is well typed in Core (step 7) |
 
 The pass is about 1,880 lines of Lanius (the end of `compiler.lani`), and the
@@ -336,6 +337,89 @@ bits before the call.
 
 Not covered yet: the heap, raw slices, and the stdlib, which needs generics
 and modules in the front pass.
+
+### Optimizer and validator (step 13)
+
+The optimizer is not proved; a validator is. Both are Lanius code at the end
+of `compiler.lani`, before `compile_declared`, and both are extracted.
+
+- **Optimizer** (`optimize_program`, about 170 lines, marked NOT PROVED; no
+  proof mentions it). Over the mini IR: folds constant subexpressions
+  (`Word.compute`/`Word.test` give S32 and U64 arithmetic and comparisons on
+  64-bit values); rewrites `x + 0`, `x - 0`, `x * 1`, `x & -1`, `x | 0`,
+  `x ^ 0` and the commuted forms to `x` (for S32 only when `x` is narrow, that
+  is zero-extended, since an S32 result is), and `x * 0`, `x & 0` to `0`; takes
+  the branch of an `if` on a constant; drops `skip`, `x = x`, an `if` with two
+  empty branches and a `while` whose condition is 0.
+- **Validator** (`validate original optimized`, about 590 lines, most of them
+  exhaustive matches on the other statement). A structural walk of both
+  programs: same functions with the same params, results and locals, and
+  each optimized statement must agree with its original. Expressions agree
+  when the optimized one is the literal that `Expr.constant` (a constant
+  evaluator: literals, operations on constants, and `x * 0`, `x & 0`)
+  computes for the original, or has the same shape with agreeing operands,
+  or is the operand an identity keeps. Statements agree by shape, or when a
+  statement that does nothing became `skip`, or an `if` on a constant
+  became its branch, or both branches agree with the result.
+- **Pipeline** (`compile_optimized`): optimize, keep the result when
+  `validate` accepts it and it compiles, and otherwise compile the original
+  program. `compile_source` calls it.
+
+`Lanius/Mini/Validate.lean` proves:
+
+```text
+Expr.agrees_eval          : a.agrees b = true → ∀ env, b.eval env = a.eval env
+Exec.agrees               : funcsAgree p.funcs q.funcs = true → Exec p d env h s out →
+                              ∀ s', s.agrees s' = true → Exec q d env h s' out
+Returns.validated         : validate p q = true → p.Returns d f args h v after → q.Returns d f args h v after
+compileOptimized_correct  : compileProgram_correct's statement, with compileOptimized
+```
+
+`Exec.agrees` is induction on the original's derivation; a call uses the
+induction hypothesis on the callee's body derivation, since the optimized
+callee's body agrees with it. The outcome (environment, heap, results) and
+the call depth are the same, so the downstream theorem needs nothing new.
+`compileSource_correct` keeps its statement and premises; its proof uses
+`compileOptimized_correct` where it used `compileProgram_correct`, so the top
+theorem covers the optimizing pipeline. S32 constant folding needed the
+low-half lemmas (`low (op a b) = op (low a) (low b)`, `a & 0xFFFFFFFF =
+widen (low a)`) and a signed-order key: `signedKey a = (a + 2^31) & 0xFFFFFFFF`
+orders unsigned exactly as `low a` orders signed (`key_lt`, `key_le`). Axioms:
+`propext`, `Classical.choice`, `Quot.sound` for `compileSource_correct`,
+`compileOptimized_correct` and `Returns.validated`.
+
+| file | lines | check (s) | role |
+|---|---:|---:|---|
+| `Validate` | 660 | 1.2 | word arithmetic, constants and identities, expression and statement simulation, the pipeline theorem |
+
+The test:
+
+```bash
+python3 -I formal/tools/optimize_test.py target/claude-work/opt/run --count 1000 --seed 2
+```
+
+It generates mini IR programs (`mini_difftest.py`'s generator, well-formed
+ones) and source programs (`oracle_difftest.py`'s), lowers the source ones
+with `lowerFuncs`, and for each reports under `#eval` whether the optimizer
+changed it and whether `validate` accepts the change, with image sizes with
+and without it. A mutant of each optimized program (every literal plus one)
+must be rejected. The source programs are also compiled by `compileSource`
+and run natively against `oracle_difftest.py`'s reference interpreter.
+laniusc is not used. 2026-10-21, seed 2, 1,000 of each:
+
+| programs | changed | accepted | image bytes | mutants rejected |
+|---|---:|---:|---:|---:|
+| mini IR | 653 | 653 (100%) | 403,475 to 366,368 (9.2% smaller) | 890 / 890 |
+| front pass | 910 | 910 (100%) | 1,680,756 to 931,535 (44.6% smaller) | 965 / 965 |
+
+and 8,000 native calls of the optimized `compileSource` images, no
+disagreements with the reference. The front pass gains more because its
+casts, masks and literal operands lower to constant subexpressions.
+
+laniusc builds the new Lanius code: `fn_difftest.py` (265 functions, 5,300
+calls as four shards) finds no differences from the extracted Lean, and
+`oracle_difftest.py` (300 programs, 2,400 calls) finds no disagreements
+between the optimized images, laniusc and the reference interpreter.
 
 ### Milestone 4: the compiler in Lanius, and extraction
 

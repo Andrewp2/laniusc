@@ -2061,10 +2061,594 @@ def funcsReturn (funcs : List SrcFunc) : Bool :=
   | [] => true
   | func :: rest => SrcStmt.returns func.body && funcsReturn rest
 
+/-- The low 32 bits of a word, zero-extended. -/
+def lowBits (value : BitVec 64) : BitVec 64 :=
+  value &&& 4294967295
+
+/-- The low 32 bits plus 2^31, mod 2^32: unsigned order on keys is signed order on the low halves. -/
+def signedKey (value : BitVec 64) : BitVec 64 :=
+  lowBits (value + 2147483648)
+
+def BinOp.compute (self : BinOp) (a : BitVec 64) (b : BitVec 64) : BitVec 64 :=
+  match self with
+  | .add => a + b
+  | .sub => a - b
+  | .mul => a * b
+  | .and => a &&& b
+  | .or => a ||| b
+  | .xor => a ^^^ b
+
+/-- x op unit is x. -/
+def BinOp.unit (self : BinOp) : BitVec 64 :=
+  match self with
+  | .add => 0
+  | .sub => 0
+  | .mul => 1
+  | .and => 18446744073709551615
+  | .or => 0
+  | .xor => 0
+
+/-- unit op x is x too. -/
+def BinOp.commutes (self : BinOp) : Bool :=
+  match self with
+  | .add => true
+  | .sub => false
+  | .mul => true
+  | .and => true
+  | .or => true
+  | .xor => true
+
+/-- x op 0 and 0 op x are 0. -/
+def BinOp.annihilates (self : BinOp) : Bool :=
+  match self with
+  | .add => false
+  | .sub => false
+  | .mul => true
+  | .and => true
+  | .or => false
+  | .xor => false
+
+def BinOp.number (self : BinOp) : Nat :=
+  match self with
+  | .add => 0
+  | .sub => 1
+  | .mul => 2
+  | .and => 3
+  | .or => 4
+  | .xor => 5
+
+/-- Unsigned comparison. -/
+def CmpOp.test (self : CmpOp) (a : BitVec 64) (b : BitVec 64) : Bool :=
+  match self with
+  | .eq => decide (a = b)
+  | .ne => decide (a ≠ b)
+  | .lt => decide (a < b)
+  | .le => decide (a ≤ b)
+  | .gt => decide (b < a)
+  | .ge => decide (b ≤ a)
+
+def CmpOp.number (self : CmpOp) : Nat :=
+  match self with
+  | .eq => 0
+  | .ne => 1
+  | .lt => 2
+  | .le => 3
+  | .gt => 4
+  | .ge => 5
+
+/-- Word.apply. -/
+def Word.compute (self : Word) (operation : BinOp) (a : BitVec 64) (b : BitVec 64) : BitVec 64 :=
+  match self with
+  | .s32 => lowBits (BinOp.compute operation a b)
+  | .u64 => BinOp.compute operation a b
+
+/-- Word.holds. -/
+def Word.test (self : Word) (operation : CmpOp) (a : BitVec 64) (b : BitVec 64) : Bool :=
+  match self with
+  | .s32 => CmpOp.test operation (signedKey a) (signedKey b)
+  | .u64 => CmpOp.test operation a b
+
+/-- a and b are the same operand of an operation on this word. -/
+def Word.sameOperand (self : Word) (a : BitVec 64) (b : BitVec 64) : Bool :=
+  match self with
+  | .s32 => decide (lowBits a = lowBits b)
+  | .u64 => decide (a = b)
+
+/-- Results are zero-extended. -/
+def Word.narrows (self : Word) : Bool :=
+  match self with
+  | .s32 => true
+  | .u64 => false
+
+def Word.number (self : Word) : Nat :=
+  match self with
+  | .s32 => 0
+  | .u64 => 1
+
+/-- The value is below 2^32 in every environment. -/
+def Expr.narrow (self : Expr) : Bool :=
+  match self with
+  | .lit value => decide (value ≤ 4294967295)
+  | .var index => false
+  | .neg operand => true
+  | .binary word operation left right => Word.narrows word
+  | .compare word operation left right => true
+
+/-- An operation on this word may pass e through unchanged: an S32 one zero-extends, so e must be narrow. -/
+def Word.keeps (self : Word) (e : Expr) : Bool :=
+  match self with
+  | .s32 => Expr.narrow e
+  | .u64 => true
+
+def negateConstant (value : Option (BitVec 64)) : Option (BitVec 64) :=
+  match value with
+  | some v => some (lowBits (0 - v))
+  | none => none
+
+def absorbed (operation : BinOp) (value : BitVec 64) : Option (BitVec 64) :=
+  if BinOp.annihilates operation && decide (value = 0) then
+    some 0
+  else
+    none
+
+def binaryConstant (word : Word) (operation : BinOp) (left : Option (BitVec 64)) (right : Option (BitVec 64)) : Option (BitVec 64) :=
+  match left with
+  | some a =>
+    (match right with
+     | some b => some (Word.compute word operation a b)
+     | none => absorbed operation a)
+  | none =>
+    match right with
+    | some b => absorbed operation b
+    | none => none
+
+def compareConstant (word : Word) (operation : CmpOp) (left : Option (BitVec 64)) (right : Option (BitVec 64)) : Option (BitVec 64) :=
+  match left with
+  | some a =>
+    (match right with
+     | some b => some (boolBits (Word.test word operation a b))
+     | none => none)
+  | none => none
+
+def constantIs (value : Option (BitVec 64)) (literal : BitVec 64) : Bool :=
+  match value with
+  | some v => decide (v = literal)
+  | none => false
+
+/-- Some(v) when the expression is v in every environment. -/
+def Expr.constant (self : Expr) : Option (BitVec 64) :=
+  match self with
+  | .lit value => some value
+  | .var index => none
+  | .neg operand => negateConstant (Expr.constant operand)
+  | .binary word operation left right => binaryConstant word operation (Expr.constant left) (Expr.constant right)
+  | .compare word operation left right => compareConstant word operation (Expr.constant left) (Expr.constant right)
+
+/-- The expression is the literal value. -/
+def Expr.isConstant (self : Expr) (value : Option (BitVec 64)) : Bool :=
+  match self with
+  | .lit literal => constantIs value literal
+  | .var index => false
+  | .neg operand => false
+  | .binary word operation left right => false
+  | .compare word operation left right => false
+
+def Expr.isVar (self : Expr) (index : Nat) : Bool :=
+  match self with
+  | .lit value => false
+  | .var other => decide (other = index)
+  | .neg operand => false
+  | .binary word operation left right => false
+  | .compare word operation left right => false
+
+def Expr.isZero (self : Expr) : Bool :=
+  constantIs (Expr.constant self) 0
+
+/-- The expression is a constant c with x op c = x. -/
+def Expr.unitOf (self : Expr) (word : Word) (operation : BinOp) : Bool :=
+  match Expr.constant self with
+  | some c => Word.sameOperand word c (BinOp.unit operation)
+  | none => false
+
+/-- other has this expression's value in every environment: it is the constant, or it has the same shape with agreeing operands, or it is the operand kept by an identity like x + 0. -/
+def Expr.agrees (self : Expr) (other : Expr) : Bool :=
+  if Expr.isConstant other (Expr.constant self) then
+    true
+  else
+    match self with
+    | .lit value => false
+    | .var index => Expr.isVar other index
+    | .neg operand =>
+      (match other with
+       | .lit v => false
+       | .var i => false
+       | .neg o => Expr.agrees operand o
+       | .binary w op l r => false
+       | .compare w op l r => false)
+    | .binary word operation left right =>
+      (match other with
+       | .lit v => false
+       | .var i => false
+       | .neg o => false
+       | .binary w op l r => decide (Word.number word = Word.number w) && decide (BinOp.number operation = BinOp.number op) && Expr.agrees left l && Expr.agrees right r
+       | .compare w op l r => false) || (Expr.unitOf right word operation && Word.keeps word other && Expr.agrees left other || BinOp.commutes operation && Expr.unitOf left word operation && Word.keeps word other && Expr.agrees right other)
+    | .compare word operation left right =>
+      match other with
+      | .lit v => false
+      | .var i => false
+      | .neg o => false
+      | .binary w op l r => false
+      | .compare w op l r => decide (Word.number word = Word.number w) && decide (CmpOp.number operation = CmpOp.number op) && Expr.agrees left l && Expr.agrees right r
+
+def argsAgree (args : List Expr) (others : List Expr) : Bool :=
+  match args with
+  | [] =>
+    (match others with
+     | [] => true
+     | o :: more => false)
+  | arg :: rest =>
+    match others with
+    | [] => false
+    | o :: more => Expr.agrees arg o && argsAgree rest more
+
+def assignAgrees (index : Nat) (value : Expr) (other : Stmt) : Bool :=
+  match other with
+  | .skip => Expr.agrees value (Expr.var index)
+  | .assign i v => decide (index = i) && Expr.agrees value v
+  | .seq f s => false
+  | .ite c t e => false
+  | .loop c b => false
+  | .call t n f a => false
+  | .ret v => false
+  | .alloc t sh sz => false
+  | .loadByte t a => false
+  | .storeByte a v => false
+  | .loadWord w t a => false
+  | .storeWord w a v => false
+
+def callAgrees (target : Nat) (count : Nat) (callee : Nat) (args : List Expr) (other : Stmt) : Bool :=
+  match other with
+  | .skip => false
+  | .assign i v => false
+  | .seq f s => false
+  | .ite c t e => false
+  | .loop c b => false
+  | .call t n f a => decide (target = t) && decide (count = n) && decide (callee = f) && argsAgree args a
+  | .ret v => false
+  | .alloc t sh sz => false
+  | .loadByte t a => false
+  | .storeByte a v => false
+  | .loadWord w t a => false
+  | .storeWord w a v => false
+
+def retAgrees (values : List Expr) (other : Stmt) : Bool :=
+  match other with
+  | .skip => false
+  | .assign i v => false
+  | .seq f s => false
+  | .ite c t e => false
+  | .loop c b => false
+  | .call t n f a => false
+  | .ret v => argsAgree values v
+  | .alloc t sh sz => false
+  | .loadByte t a => false
+  | .storeByte a v => false
+  | .loadWord w t a => false
+  | .storeWord w a v => false
+
+def allocAgrees (target : Nat) (shift : Nat) (size : Expr) (other : Stmt) : Bool :=
+  match other with
+  | .skip => false
+  | .assign i v => false
+  | .seq f s => false
+  | .ite c t e => false
+  | .loop c b => false
+  | .call t n f a => false
+  | .ret v => false
+  | .alloc t sh sz => decide (target = t) && decide (shift = sh) && Expr.agrees size sz
+  | .loadByte t a => false
+  | .storeByte a v => false
+  | .loadWord w t a => false
+  | .storeWord w a v => false
+
+def loadByteAgrees (target : Nat) (address : Expr) (other : Stmt) : Bool :=
+  match other with
+  | .skip => false
+  | .assign i v => false
+  | .seq f s => false
+  | .ite c t e => false
+  | .loop c b => false
+  | .call t n f a => false
+  | .ret v => false
+  | .alloc t sh sz => false
+  | .loadByte t a => decide (target = t) && Expr.agrees address a
+  | .storeByte a v => false
+  | .loadWord w t a => false
+  | .storeWord w a v => false
+
+def storeByteAgrees (address : Expr) (value : Expr) (other : Stmt) : Bool :=
+  match other with
+  | .skip => false
+  | .assign i v => false
+  | .seq f s => false
+  | .ite c t e => false
+  | .loop c b => false
+  | .call t n f a => false
+  | .ret v => false
+  | .alloc t sh sz => false
+  | .loadByte t a => false
+  | .storeByte a v => Expr.agrees address a && Expr.agrees value v
+  | .loadWord w t a => false
+  | .storeWord w a v => false
+
+def loadWordAgrees (width : MemWidth) (target : Nat) (address : Expr) (other : Stmt) : Bool :=
+  match other with
+  | .skip => false
+  | .assign i v => false
+  | .seq f s => false
+  | .ite c t e => false
+  | .loop c b => false
+  | .call t n f a => false
+  | .ret v => false
+  | .alloc t sh sz => false
+  | .loadByte t a => false
+  | .storeByte a v => false
+  | .loadWord w t a => decide (MemWidth.bytes width = MemWidth.bytes w) && decide (target = t) && Expr.agrees address a
+  | .storeWord w a v => false
+
+def storeWordAgrees (width : MemWidth) (address : Expr) (value : Expr) (other : Stmt) : Bool :=
+  match other with
+  | .skip => false
+  | .assign i v => false
+  | .seq f s => false
+  | .ite c t e => false
+  | .loop c b => false
+  | .call t n f a => false
+  | .ret v => false
+  | .alloc t sh sz => false
+  | .loadByte t a => false
+  | .storeByte a v => false
+  | .loadWord w t a => false
+  | .storeWord w a v => decide (MemWidth.bytes width = MemWidth.bytes w) && Expr.agrees address a && Expr.agrees value v
+
+def Stmt.isSkip (self : Stmt) : Bool :=
+  match self with
+  | .skip => true
+  | .assign i v => false
+  | .seq f s => false
+  | .ite c t e => false
+  | .loop c b => false
+  | .call t n f a => false
+  | .ret v => false
+  | .alloc t sh sz => false
+  | .loadByte t a => false
+  | .storeByte a v => false
+  | .loadWord w t a => false
+  | .storeWord w a v => false
+
+/-- other ends every run of this statement the same way: the same shape with agreeing expressions, or a statement dropped because it does nothing (skip, x = x, a loop whose condition is 0), or a branch chosen because its condition is a constant or both branches agree with other. -/
+def Stmt.agrees (self : Stmt) (other : Stmt) : Bool :=
+  match self with
+  | .skip => Stmt.isSkip other
+  | .assign index value => assignAgrees index value other
+  | .seq first second =>
+    Stmt.agrees first Stmt.skip && Stmt.agrees second other || Stmt.agrees second Stmt.skip && Stmt.agrees first other || (match other with
+     | .skip => false
+     | .assign i v => false
+     | .seq f s => Stmt.agrees first f && Stmt.agrees second s
+     | .ite c t e => false
+     | .loop c b => false
+     | .call t n f a => false
+     | .ret v => false
+     | .alloc t sh sz => false
+     | .loadByte t a => false
+     | .storeByte a v => false
+     | .loadWord w t a => false
+     | .storeWord w a v => false)
+  | .ite condition thenBranch elseBranch =>
+    Stmt.agrees thenBranch other && Stmt.agrees elseBranch other || (let known : Option (BitVec 64) := Expr.constant condition
+     match known with
+     | some v => decide (v = 0) && Stmt.agrees elseBranch other || decide (v ≠ 0) && Stmt.agrees thenBranch other
+     | none => false) || (match other with
+     | .skip => false
+     | .assign i v => false
+     | .seq f s => false
+     | .ite c t e => Expr.agrees condition c && Stmt.agrees thenBranch t && Stmt.agrees elseBranch e
+     | .loop c b => false
+     | .call t n f a => false
+     | .ret v => false
+     | .alloc t sh sz => false
+     | .loadByte t a => false
+     | .storeByte a v => false
+     | .loadWord w t a => false
+     | .storeWord w a v => false)
+  | .loop condition body =>
+    Expr.isZero condition && Stmt.isSkip other || (match other with
+     | .skip => false
+     | .assign i v => false
+     | .seq f s => false
+     | .ite c t e => false
+     | .loop c b => Expr.agrees condition c && Stmt.agrees body b
+     | .call t n f a => false
+     | .ret v => false
+     | .alloc t sh sz => false
+     | .loadByte t a => false
+     | .storeByte a v => false
+     | .loadWord w t a => false
+     | .storeWord w a v => false)
+  | .call target count callee args => callAgrees target count callee args other
+  | .ret values => retAgrees values other
+  | .alloc target shift size => allocAgrees target shift size other
+  | .loadByte target address => loadByteAgrees target address other
+  | .storeByte address value => storeByteAgrees address value other
+  | .loadWord width target address => loadWordAgrees width target address other
+  | .storeWord width address value => storeWordAgrees width address value other
+
+def Func.agrees (self : Func) (other : Func) : Bool :=
+  decide (self.params = other.params) && decide (self.results = other.results) && decide (self.locals = other.locals) && Stmt.agrees self.body other.body
+
+def funcsAgree (funcs : List Func) (others : List Func) : Bool :=
+  match funcs with
+  | [] =>
+    (match others with
+     | [] => true
+     | o :: more => false)
+  | func :: rest =>
+    match others with
+    | [] => false
+    | o :: more => Func.agrees func o && funcsAgree rest more
+
+/-- The validator: optimized has the original's functions, in order, each agreeing with the original one. -/
+def validate (original : Program) (optimized : Program) : Bool :=
+  funcsAgree original.funcs optimized.funcs
+
+def Expr.literal (self : Expr) : Option (BitVec 64) :=
+  match self with
+  | .lit value => some value
+  | .var index => none
+  | .neg operand => none
+  | .binary word operation left right => none
+  | .compare word operation left right => none
+
+def optimizeNeg (operand : Expr) : Expr :=
+  match Expr.literal operand with
+  | some v => Expr.lit (lowBits (0 - v))
+  | none => Expr.neg operand
+
+/-- The left operand is the literal a. -/
+def optimizeLeft (word : Word) (operation : BinOp) (a : BitVec 64) (left : Expr) (right : Expr) : Expr :=
+  if BinOp.annihilates operation && decide (a = 0) then
+    Expr.lit 0
+  else
+    if BinOp.commutes operation && Word.sameOperand word a (BinOp.unit operation) && Word.keeps word right then
+      right
+    else
+      Expr.binary word operation left right
+
+/-- The right operand is the literal b. -/
+def optimizeRight (word : Word) (operation : BinOp) (left : Expr) (right : Expr) (b : BitVec 64) : Expr :=
+  if BinOp.annihilates operation && decide (b = 0) then
+    Expr.lit 0
+  else
+    if Word.sameOperand word b (BinOp.unit operation) && Word.keeps word left then
+      left
+    else
+      Expr.binary word operation left right
+
+def optimizeBinary (word : Word) (operation : BinOp) (left : Expr) (right : Expr) : Expr :=
+  match Expr.literal left with
+  | some a =>
+    (match Expr.literal right with
+     | some b => Expr.lit (Word.compute word operation a b)
+     | none => optimizeLeft word operation a left right)
+  | none =>
+    match Expr.literal right with
+    | some b => optimizeRight word operation left right b
+    | none => Expr.binary word operation left right
+
+def optimizeCompare (word : Word) (operation : CmpOp) (left : Expr) (right : Expr) : Expr :=
+  match Expr.literal left with
+  | some a =>
+    (match Expr.literal right with
+     | some b => Expr.lit (boolBits (Word.test word operation a b))
+     | none => Expr.compare word operation left right)
+  | none => Expr.compare word operation left right
+
+def Expr.optimize (self : Expr) : Expr :=
+  match self with
+  | .lit value => Expr.lit value
+  | .var index => Expr.var index
+  | .neg operand => optimizeNeg (Expr.optimize operand)
+  | .binary word operation left right => optimizeBinary word operation (Expr.optimize left) (Expr.optimize right)
+  | .compare word operation left right => optimizeCompare word operation (Expr.optimize left) (Expr.optimize right)
+
+def optimizeAll (values : List Expr) : List Expr :=
+  match values with
+  | [] => []
+  | value :: rest => Expr.optimize value :: optimizeAll rest
+
+def optimizeAssign (index : Nat) (value : Expr) : Stmt :=
+  if Expr.isVar value index then
+    Stmt.skip
+  else
+    Stmt.assign index value
+
+def optimizeSeq (first : Stmt) (second : Stmt) : Stmt :=
+  if Stmt.isSkip first then
+    second
+  else
+    if Stmt.isSkip second then
+      first
+    else
+      Stmt.seq first second
+
+def pickBranch (value : BitVec 64) (thenBranch : Stmt) (elseBranch : Stmt) : Stmt :=
+  if value = 0 then
+    elseBranch
+  else
+    thenBranch
+
+def iteOrSkip (condition : Expr) (thenBranch : Stmt) (elseBranch : Stmt) : Stmt :=
+  if Stmt.isSkip thenBranch && Stmt.isSkip elseBranch then
+    Stmt.skip
+  else
+    Stmt.ite condition thenBranch elseBranch
+
+def optimizeIte (condition : Expr) (thenBranch : Stmt) (elseBranch : Stmt) : Stmt :=
+  match Expr.literal condition with
+  | some v => pickBranch v thenBranch elseBranch
+  | none => iteOrSkip condition thenBranch elseBranch
+
+def loopUnlessZero (value : BitVec 64) (condition : Expr) (body : Stmt) : Stmt :=
+  if value = 0 then
+    Stmt.skip
+  else
+    Stmt.loop condition body
+
+def optimizeLoop (condition : Expr) (body : Stmt) : Stmt :=
+  match Expr.literal condition with
+  | some v => loopUnlessZero v condition body
+  | none => Stmt.loop condition body
+
+def Stmt.optimize (self : Stmt) : Stmt :=
+  match self with
+  | .skip => Stmt.skip
+  | .assign index value => optimizeAssign index (Expr.optimize value)
+  | .seq first second => optimizeSeq (Stmt.optimize first) (Stmt.optimize second)
+  | .ite condition thenBranch elseBranch => optimizeIte (Expr.optimize condition) (Stmt.optimize thenBranch) (Stmt.optimize elseBranch)
+  | .loop condition body => optimizeLoop (Expr.optimize condition) (Stmt.optimize body)
+  | .call target count callee args => Stmt.call target count callee (optimizeAll args)
+  | .ret values => Stmt.ret (optimizeAll values)
+  | .alloc target shift size => Stmt.alloc target shift (Expr.optimize size)
+  | .loadByte target address => Stmt.loadByte target (Expr.optimize address)
+  | .storeByte address value => Stmt.storeByte (Expr.optimize address) (Expr.optimize value)
+  | .loadWord width target address => Stmt.loadWord width target (Expr.optimize address)
+  | .storeWord width address value => Stmt.storeWord width (Expr.optimize address) (Expr.optimize value)
+
+def optimizeFuncs (funcs : List Func) : List Func :=
+  match funcs with
+  | [] => []
+  | func :: rest => ({ params := func.params, results := func.results, locals := func.locals, body := Stmt.optimize func.body } : Func) :: optimizeFuncs rest
+
+def optimizeProgram (prog : Program) : Program :=
+  ({ funcs := optimizeFuncs prog.funcs } : Program)
+
+def compileOr (binary : Option Binary) (prog : Program) : Option Binary :=
+  match binary with
+  | some b => some b
+  | none => compileProgram prog
+
+def compileOptimized (prog : Program) : Option Binary :=
+  let optimized : Program := optimizeProgram prog
+  if validate prog optimized then
+    compileOr (compileProgram optimized) prog
+  else
+    compileProgram prog
+
 def compileLowered (funcs : Option (List Func)) : Option Binary :=
   match funcs with
   | none => none
-  | some fs => compileProgram ({ funcs := fs } : Program)
+  | some fs => compileOptimized ({ funcs := fs } : Program)
 
 /-- The functions are lowered against the declarations, which the slice lowering consults for its element types. -/
 def compileDeclared (decls : Option SrcDecls) (prog : SrcProgram) : Option Binary :=

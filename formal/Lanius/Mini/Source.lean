@@ -165,11 +165,12 @@ def SrcProgram.toCore (prog : SrcProgram) : Core.Program where
   enumerations := prog.decls.enums.map SrcEnumDecl.toCore
   functions := coreFuncs 0 prog.funcs
 
-/-- What `compileSource` checks before it compiles the lowered functions. -/
+/-- What `compileSource` checks before it optimizes and compiles the lowered
+functions. -/
 theorem compileSource_some {sp : SrcProgram} {binary : Binary} (compiled : compileSource sp = some binary) :
     funcsReturn sp.funcs = true ∧ (∃ decls, declareProgram sp = some decls) ∧
       ∃ funcs, lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some funcs ∧
-        compileProgram { funcs := funcs } = some binary := by
+        compileOptimized { funcs := funcs } = some binary := by
   unfold compileSource at compiled
   split at compiled
   · rename_i returns

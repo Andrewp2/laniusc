@@ -1,10 +1,12 @@
-import Lanius.Mini.Correct
+import Lanius.Mini.Validate
 import Lanius.Mini.LowerStmt
 
 /-! The verified compiler's top-level theorem for the Core subset: if Core
 evaluates a call of a source function to a value, the machine code that
 `compileSource` produces returns slots representing that value, provided the
-stack has room for the call's nesting depth. -/
+stack has room for the call's nesting depth. `compileSource` runs the
+unverified optimizer, and the theorem covers its output through the proved
+validator (`compileOptimized_correct`). -/
 
 namespace Lanius.Mini
 
@@ -96,7 +98,7 @@ theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
         ⟨fun _ mem => by simp at mem, rfl⟩ (HeapCorr.empty start zero small) typed bitsLen bodyRun fits
     exact ⟨depth, results, after, holds, len, hc.cursor,
       fun s imageBase window enough bounded loaded apart imageHeap entry params heapAt =>
-        compileProgram_correct compiledProgram returns s imageBase window enough bounded loaded apart
+        compileOptimized_correct compiledProgram returns s imageBase window enough bounded loaded apart
           imageHeap entry params heapAt⟩
 
 end Lanius.Mini
