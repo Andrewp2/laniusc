@@ -8,3 +8,5 @@ import Lanius.Std.VecCheck
 import Lanius.Std.VecLoop
 import Lanius.Std.VecSearch
 import Lanius.Std.VecAlloc
+import Lanius.Std.VecHeap
+import Lanius.Std.VecGrow
