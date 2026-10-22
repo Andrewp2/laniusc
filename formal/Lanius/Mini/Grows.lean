@@ -256,30 +256,6 @@ theorem writeNativeValue_next : ∀ (fuel : Nat) {P : Core.Program} {st : State}
         · simp at ok
     · simp at ok
 
-theorem protectAsBorrowed_next {h h' : Memory.Heap} {p n a : Nat}
-    (ok : h.protectAsBorrowed p n a = .ok h') : h'.nextAddress = h.nextAddress := by
-  simp only [Memory.Heap.protectAsBorrowed] at ok
-  split at ok
-  · simp at ok
-  · split at ok
-    · simp at ok
-    · split at ok
-      · simp at ok
-      · simp only [Except.ok.injEq] at ok
-        rw [← ok]
-
-theorem protectRangeAsBorrowed_next {h h' : Memory.Heap} {p n a : Nat}
-    (ok : h.protectRangeAsBorrowed p n a = .ok h') : h'.nextAddress = h.nextAddress := by
-  simp only [Memory.Heap.protectRangeAsBorrowed] at ok
-  split at ok
-  · simp at ok
-  · split at ok
-    · simp at ok
-    · split at ok
-      · simp at ok
-      · simp only [Except.ok.injEq] at ok
-        rw [← ok]
-
 theorem deallocate_next {h h' : Memory.Heap} {p s a : Nat}
     (ok : h.deallocate p s a = .ok h') : h'.nextAddress = h.nextAddress := by
   simp only [Memory.Heap.deallocate] at ok
@@ -797,7 +773,7 @@ theorem matchValue_grows {P : Core.Program} {k : Nat} {st : State} {scrutinee id
       exact Grows.same this.1 this.2
     all_goals simp at run
 
-/-- Making a raw slice only marks heap bytes borrowed. -/
+/-- Making a raw slice leaves the state as it was. -/
 theorem sliceFrom_grows {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
     {pointer length : SrcExpr} {v : Value} {st' : State}
     (run : evalExpr k P st (element.sliceFrom pointer.toCore length.toCore) = .done v st') :
@@ -820,10 +796,7 @@ theorem sliceFrom_grows {P : Core.Program} {k : Nat} {st : State} {element : Src
           all_goals first
             | simp only [Semantics.Outcome.done.injEq] at run
               obtain ⟨-, rfl⟩ := run
-              first
-                | exact Grows.refl _
-                | exact fun views => ⟨views, Nat.le_of_eq (protectAsBorrowed_next (by assumption)).symm⟩
-                | exact fun views => ⟨views, Nat.le_of_eq (protectRangeAsBorrowed_next (by assumption)).symm⟩
+              exact Grows.refl _
             | simp at run
         all_goals simp at run
       all_goals simp at run

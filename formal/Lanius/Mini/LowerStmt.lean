@@ -2353,8 +2353,8 @@ theorem stmt_free {pointer size : SrcExpr} {shift : Nat}
 
 /-! ## Raw slices -/
 
-/-- What Core's `slice_from_raw_parts` did: a descriptor for the pointer,
-and a heap that agrees with the mini heap whenever the old one did. -/
+/-- What Core's `slice_from_raw_parts` did: a descriptor for the pointer, and
+the heap as it was. -/
 theorem mapRawI32Slice_inv {st : State} {a : Nat} {n : Int} {v : Value} {st1 : State}
     (run : Semantics.mapRawI32Slice st a n = .done v st1) :
     ∃ len heap, v = .rawSlice (.scalar (.signed .i32)) a len ∧ st1 = { st with heap } ∧
@@ -2368,10 +2368,9 @@ theorem mapRawI32Slice_inv {st : State} {a : Nat} {n : Int} {v : Value} {st1 : S
       exact ⟨0, st.heap, rfl, rfl, fun _ h => h⟩
     · split at run
       · simp at run
-      · rename_i heap borrowed
-        simp only [Semantics.Outcome.done.injEq] at run
+      · simp only [Semantics.Outcome.done.injEq] at run
         obtain ⟨rfl, rfl⟩ := run
-        exact ⟨_, heap, rfl, rfl, fun _ h => h.protect borrowed⟩
+        exact ⟨_, st.heap, rfl, rfl, fun _ h => h⟩
 
 theorem mapRawNominalSlice_inv {P : Core.Program} {st : State} {element : Core.Ty} {a : Nat} {n : Int}
     {v : Value} {st1 : State}
@@ -2398,10 +2397,9 @@ theorem mapRawNominalSlice_inv {P : Core.Program} {st : State} {element : Core.T
     · simp at run
     split at run
     · simp at run
-    rename_i heap borrowed
     simp only [Semantics.Outcome.done.injEq] at run
     obtain ⟨rfl, rfl⟩ := run
-    exact ⟨_, heap, rfl, rfl, fun _ h => h.protectRange borrowed⟩
+    exact ⟨_, st.heap, rfl, rfl, fun _ h => h⟩
 
 /-- The element types the slice lowering accepts. -/
 theorem slice_kind {ds : SrcDecls} {element : SrcType}

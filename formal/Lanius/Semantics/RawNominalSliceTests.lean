@@ -53,7 +53,7 @@ example :
     (match mapRawNominalSlice pairProgram state (.structure 3) 32 2 with
     | .done (.rawSlice (.structure 3) 32 2) after =>
         match after.heap.block? 8 with
-        | some block => !block.owned
+        | some block => block.owned
         | none => false
     | _ => false) = true := by
   decide

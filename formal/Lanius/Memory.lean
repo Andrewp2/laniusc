@@ -103,26 +103,12 @@ def Heap.mapBorrowed (heap : Heap) (bytes : List UInt8) (alignment : Nat) : Allo
       nextAddress := base + max bytes.length 1
     }
 
-/-- Validate an exact raw allocation and transfer it into protected borrowed
-    storage. This is the ownership boundary used by `slice_from_raw_parts`:
-    once a language slice exists, raw deallocation cannot invalidate it. -/
-def Heap.protectAsBorrowed
-    (heap : Heap) (pointer size alignment : Nat) : Except Trap Heap :=
-  match heap.block? pointer with
-  | none => .error .invalidPointer
-  | some block =>
-      if !block.live then
-        .error .invalidPointer
-      else if block.size != size || block.alignment != alignment then
-        .error .rawMemoryBounds
-      else
-        .ok { heap with blocks := replaceBlock heap.blocks { block with owned := false } }
-
-/-- Borrow a nonempty, aligned region inside one live allocation. Nominal
-    slices may expose a prefix of a larger typed table, so unlike packed-i32
-    raw slices they need not describe the entire allocation. -/
-def Heap.protectRangeAsBorrowed
-    (heap : Heap) (pointer size alignment : Nat) : Except Trap Heap :=
+/-- Check that a nonempty, aligned range lies inside one live allocation. This
+    is what `slice_from_raw_parts` checks: a raw view neither copies the bytes
+    nor takes the allocation from its owner, so the owner can still grow or free
+    it, and a later access through a view of freed storage traps. -/
+def Heap.checkRange
+    (heap : Heap) (pointer size alignment : Nat) : Except Trap Unit :=
   if size == 0 || !validAlignment alignment || pointer % alignment != 0 then
     .error .rawMemoryBounds
   else
@@ -133,8 +119,7 @@ def Heap.protectRangeAsBorrowed
             pointer + size > block.base + block.size then
           .error .rawMemoryBounds
         else
-          .ok { heap with
-            blocks := replaceBlock heap.blocks { block with owned := false } }
+          .ok ()
 
 def Heap.deallocate (heap : Heap) (pointer size alignment : Nat) : Except Trap Heap :=
   if pointer == null then

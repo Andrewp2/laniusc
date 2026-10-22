@@ -21,12 +21,24 @@ private def rejects (value : String) (words : Int) : Bool :=
   | .trapped .rawMemoryBounds _ => true
   | _ => false
 
--- Padding does not authorize another word, negative lengths, or a different
--- logical allocation size. Ordinary exact-block slice checks remain intact.
+private def traps (value : String) (words : Int) : Bool :=
+  match view value words with
+  | .trapped _ _ => true
+  | _ => false
+
+private def views (value : String) (words : Int) : Bool :=
+  match view value words with
+  | .done (.rawSlice _ _ _) _ => true
+  | _ => false
+
+-- Padding does not authorize another word, and negative lengths trap. A view
+-- of a prefix of the storage is a view of a range inside the block.
 example : rejects "A" 2 = true := by decide
 example : rejects "ABCD" 2 = true := by decide
-example : rejects "" 1 = true := by decide
+example : traps "" 1 = true := by decide
 example : rejects "A" (-1) = true := by decide
-example : rejects "ABCDE" 1 = true := by decide
+example : views "ABCDE" 1 = true := by decide
+example : views "ABCDE" 2 = true := by decide
+example : rejects "ABCDE" 3 = true := by decide
 
 end Lanius.Semantics.StringStorageTests

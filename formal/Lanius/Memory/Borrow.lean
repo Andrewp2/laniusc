@@ -64,10 +64,10 @@ theorem Heap.borrowedI32_block (below : HeapBlocksBelowNext heap) (bytes : List 
   rw [missing]
   simp
 
-theorem Heap.borrowedI32_read (below : HeapBlocksBelowNext heap)
-    (found : bytes[index]? = some byte) :
-    (heap.borrowedI32 bytes).loadByte heap.borrowedAddress index = .ok byte := by
-  have inside := (List.getElem?_eq_some_iff.mp found).1
+/-- The borrowed block is the one holding each of its addresses. -/
+theorem Heap.borrowedI32_containing (below : HeapBlocksBelowNext heap) (inside : index < bytes.length) :
+    (heap.borrowedI32 bytes).containingBlock? (heap.borrowedAddress + index) = some {
+      base := heap.borrowedAddress, size := bytes.length, alignment := 4, bytes := bytes, owned := false } := by
   have missing : heap.containingBlock? (heap.borrowedAddress + index) = none := by
     apply List.find?_eq_none.mpr
     intro block member
@@ -79,11 +79,16 @@ theorem Heap.borrowedI32_read (below : HeapBlocksBelowNext heap)
     simp only [Bool.and_eq_true, decide_eq_true_eq]
     dsimp only [Address] at *
     omega
+  simp only [Heap.containingBlock?, Heap.borrowedI32, List.find?_append] at missing ⊢
+  simp [missing, inside]
+
+theorem Heap.borrowedI32_read (below : HeapBlocksBelowNext heap)
+    (found : bytes[index]? = some byte) :
+    (heap.borrowedI32 bytes).loadByte heap.borrowedAddress index = .ok byte := by
+  have inside := (List.getElem?_eq_some_iff.mp found).1
   apply Heap.loadByte_ok_iff.mpr
-  refine ⟨{ base := heap.borrowedAddress, size := bytes.length, alignment := 4, bytes := bytes, owned := false }, ?_, ?_⟩
-  · simp only [Heap.containingBlock?, Heap.borrowedI32, List.find?_append] at missing ⊢
-    simp [missing, inside]
-  · simpa using found
+  refine ⟨_, Heap.borrowedI32_containing below inside, ?_⟩
+  simpa using found
 
 theorem Heap.borrowedI32_loadBytes (below : HeapBlocksBelowNext heap)
     (bytes : List UInt8) (length : Nat) :
