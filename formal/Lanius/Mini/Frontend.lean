@@ -494,20 +494,32 @@ structure ConstDecl where
   value : CTree
   deriving Repr
 
+/-- `import target;` in a file of module `module`. -/
+structure ImportDecl where
+  module : List (List Nat)
+  target : List (List Nat)
+  deriving DecidableEq, Repr
+
 /-- The declarations of all the files, in file order. -/
 structure Decls where
   types : List TypeDecl
   fns : List FnDecl
   consts : List ConstDecl
+  imports : List ImportDecl
   deriving Repr
 
 def noDecls : Decls :=
-  ({ types := [], fns := [], consts := [] } : Decls)
+  ({ types := [], fns := [], consts := [], imports := [] } : Decls)
 
 def joinDecls (a : Decls) (b : Option Decls) : Option Decls :=
   match b with
   | none => none
-  | some d => some ({ types := a.types ++ d.types, fns := a.fns ++ d.fns, consts := a.consts ++ d.consts } : Decls)
+  | some d => some ({ types := a.types ++ d.types, fns := a.fns ++ d.fns, consts := a.consts ++ d.consts, imports := a.imports ++ d.imports } : Decls)
+
+def importDecls (module : List (List Nat)) (target : Option (List (List Nat))) : Option Decls :=
+  match target with
+  | none => none
+  | some t => some ({ types := [], fns := [], consts := [], imports := [({ module := module, target := t } : ImportDecl)] } : Decls)
 
 /-- The item an item node holds, `pub` or not. -/
 def itemBody (item : CTree) : CTree :=
@@ -654,7 +666,7 @@ def methodsOf (fuel : Nat) (module : List (List Nat)) (implParams : List (List N
 def fnsDecls (fns : Option (List FnDecl)) : Option Decls :=
   match fns with
   | none => none
-  | some fs => some ({ types := [], fns := fs, consts := [] } : Decls)
+  | some fs => some ({ types := [], fns := fs, consts := [], imports := [] } : Decls)
 
 def implMethods (fuel : Nat) (module : List (List Nat)) (params : Option (List (List Nat))) (selfType : CTree) (list : CTree) : Option Decls :=
   match params with
@@ -667,7 +679,7 @@ def implMethods (fuel : Nat) (module : List (List Nat)) (params : Option (List (
 def typeDecls (t : Option TypeDecl) : Option Decls :=
   match t with
   | none => none
-  | some d => some ({ types := [d], fns := [], consts := [] } : Decls)
+  | some d => some ({ types := [d], fns := [], consts := [], imports := [] } : Decls)
 
 /-- The declarations an item makes. Imports, extern functions, traits and type aliases make none; a use of one is rejected when it is read. -/
 def itemDecls (fuel : Nat) (module : List (List Nat)) (item : CTree) : Option Decls :=
@@ -680,7 +692,7 @@ def itemDecls (fuel : Nat) (module : List (List Nat)) (item : CTree) : Option De
       fnsDecls (consFnDecl (fnDeclOf module b false [] b (typeParams fuel (kid b 2))) (some []))
     else
       if p = (208) then
-        some ({ types := [], fns := [], consts := [({ module := module, name := (kidToken b 1).text, ty := kid b 3, value := kid b 5 } : ConstDecl)] } : Decls)
+        some ({ types := [], fns := [], consts := [({ module := module, name := (kidToken b 1).text, ty := kid b 3, value := kid b 5 } : ConstDecl)], imports := [] } : Decls)
       else
         if decide (p = (17)) && decide (nodeProd (kid b 3) = (36)) then
           implMethods fuel module (typeParams fuel (kid b 1)) (kid b 2) (kid b 5)
@@ -688,10 +700,13 @@ def itemDecls (fuel : Nat) (module : List (List Nat)) (item : CTree) : Option De
           if decide (p = (18)) && decide (nodeProd (kid b 5) = (36)) then
             implMethods fuel module (typeParams fuel (kid b 1)) (kid b 4) (kid b 7)
           else
-            if decide (p = (46)) || decide (p = (43)) || decide (p = (15)) || decide (p = (25)) || decide (p = (16)) then
-              some noDecls
+            if decide (p = (43)) && decide (nodeProd (kid b 1) = (44)) then
+              importDecls module (pathSpellings fuel (kid (kid (kid b 1) 0) 0) (kid (kid (kid b 1) 0) 1))
             else
-              none
+              if decide (p = (46)) || decide (p = (43)) || decide (p = (15)) || decide (p = (25)) || decide (p = (16)) then
+                some noDecls
+              else
+                none
 
 def collect (fuel : Nat) (module : List (List Nat)) (items : List CTree) (acc : Decls) : Option Decls :=
   match items with
@@ -733,7 +748,7 @@ structure Collected where
   deriving Repr
 
 def collectedWith (c : Collected) (f : FileDecls) : Collected :=
-  ({ decls := ({ types := c.decls.types ++ f.decls.types, fns := c.decls.fns ++ f.decls.fns, consts := c.decls.consts ++ f.decls.consts } : Decls), modules := c.modules ++ [f.module] } : Collected)
+  ({ decls := ({ types := c.decls.types ++ f.decls.types, fns := c.decls.fns ++ f.decls.fns, consts := c.decls.consts ++ f.decls.consts, imports := c.decls.imports ++ f.decls.imports } : Decls), modules := c.modules ++ [f.module] } : Collected)
 
 def collectFiles (fuel : Nat) (roots : List CTree) (acc : Collected) : Option Collected :=
   match roots with
@@ -772,6 +787,35 @@ def constNamesIn (consts : List ConstDecl) (m : List (List Nat)) : List (List Na
     else
       constNamesIn rest m
 
+def typeOnlyNamesIn (types : List TypeDecl) (m : List (List Nat)) : List (List Nat) :=
+  match types with
+  | [] => []
+  | t :: rest =>
+    if sameSpellings t.module m then
+      t.name :: typeOnlyNamesIn rest m
+    else
+      typeOnlyNamesIn rest m
+
+def noneMember (names : List (List Nat)) (others : List (List Nat)) : Bool :=
+  match names with
+  | [] => true
+  | n :: rest => !(member others n) && noneMember rest others
+
+def enumNamedOk (t : TypeDecl) (m : List (List Nat)) (values : List (List Nat)) : Bool :=
+  if t.isEnum && sameSpellings t.module m then
+    distinct t.variants && noneMember t.variants values
+  else
+    true
+
+def enumsNamedOk (types : List TypeDecl) (m : List (List Nat)) (values : List (List Nat)) : Bool :=
+  match types with
+  | [] => true
+  | t :: rest => enumNamedOk t m values && enumsNamedOk rest m values
+
+/-- A module's functions, types and constants have distinct names. Variants are scoped by their enum: an enum's variants are distinct, and no variant is spelled like a function or constant of the module (a variant may share a name with a type, or with another enum's variant; a bare use of such a variant must then be unambiguous, see bare_variant). -/
+def moduleNamesOk (decls : Decls) (m : List (List Nat)) : Bool :=
+  distinct (fnNamesIn decls.fns m ++ (typeOnlyNamesIn decls.types m ++ constNamesIn decls.consts m)) && enumsNamedOk decls.types m (fnNamesIn decls.fns m ++ constNamesIn decls.consts m)
+
 def moduleGlobals (decls : Decls) (m : List (List Nat)) : List (List Nat) :=
   fnNamesIn decls.fns m ++ (typeNamesIn decls.types m ++ constNamesIn decls.consts m)
 
@@ -789,7 +833,7 @@ def noPrimitive (types : List TypeDecl) : Bool :=
 def modulesDistinctNames (decls : Decls) (modules : List (List (List Nat))) : Bool :=
   match modules with
   | [] => true
-  | m :: rest => distinct (moduleGlobals decls m) && modulesDistinctNames decls rest
+  | m :: rest => moduleNamesOk decls m && modulesDistinctNames decls rest
 
 /-- The files are distinct modules, and each module's names are distinct. -/
 def wellNamed (c : Collected) : Bool :=
@@ -995,6 +1039,73 @@ structure Env where
 
 def declEnv (decls : Decls) (module : List (List Nat)) (names : List (List Nat)) (subst : List Ty) : Env :=
   ({ decls := decls, module := module, names := names, subst := subst, globals := [], ret := none } : Env)
+
+/-- The variants spelled name among module m's enums (types counted from k). -/
+def variantsNamed (types : List TypeDecl) (m : List (List Nat)) (name : List Nat) (k : Nat) : List VariantAt :=
+  match types with
+  | [] => []
+  | t :: rest =>
+    if t.isEnum && sameSpellings t.module m then
+      match position t.variants name 0 with
+      | none => variantsNamed rest m name (k + 1)
+      | some j => ({ owner := k, index := j } : VariantAt) :: variantsNamed rest m name (k + 1)
+    else
+      variantsNamed rest m name (k + 1)
+
+/-- The variants spelled name in the modules that module m imports. -/
+def importedVariants (types : List TypeDecl) (imports : List ImportDecl) (m : List (List Nat)) (name : List Nat) : List VariantAt :=
+  match imports with
+  | [] => []
+  | i :: rest =>
+    if sameSpellings i.module m then
+      variantsNamed types i.target name 0 ++ importedVariants types rest m name
+    else
+      importedVariants types rest m name
+
+def onlyVariant (vs : List VariantAt) : Option VariantAt :=
+  match vs with
+  | [] => none
+  | v :: rest =>
+    match rest with
+    | [] => some v
+    | w :: more => none
+
+/-- A bare variant name: the one enum of the current module that has it, or else the one enum of the imported modules that has it. -/
+def bareVariant (env : Env) (name : List Nat) : Option VariantAt :=
+  match variantsNamed env.decls.types env.module name 0 with
+  | [] => onlyVariant (importedVariants env.decls.types env.decls.imports env.module name)
+  | v :: rest => onlyVariant (v :: rest)
+
+def variantOfDecl (t : TypeDecl) (k : Nat) (name : List Nat) : Option VariantAt :=
+  if t.isEnum then
+    match position t.variants name 0 with
+    | none => none
+    | some j => some ({ owner := k, index := j } : VariantAt)
+  else
+    none
+
+def variantIn (types : List TypeDecl) (d : Option Nat) (name : List Nat) : Option VariantAt :=
+  match d with
+  | none => none
+  | some k =>
+    match types[k]? with
+    | none => none
+    | some t => variantOfDecl t k name
+
+/-- `E::V` or `m::E::V`: the variant V of the enum E. -/
+def enumVariant (env : Env) (front : List (List Nat)) (name : List Nat) : Option VariantAt :=
+  match splitLast front with
+  | none => none
+  | some t => variantIn env.decls.types (findType env.decls.types (moduleOr env.module t.module) t.name 0) name
+
+/-- The variant a value path names: `V` (see bare_variant), `E::V` or `m::E::V` when the prefix names an enum, else `m::V`, the one enum of module m that has V. -/
+def variantByPath (env : Env) (s : Split) : Option VariantAt :=
+  if noNames s.module then
+    bareVariant env s.name
+  else
+    match enumVariant env s.module s.name with
+    | some v => some v
+    | none => onlyVariant (variantsNamed env.decls.types s.module s.name 0)
 
 /-- The primitive types as Ty, and back. -/
 def srcTy (t : SrcType) : Option Ty :=
@@ -2688,7 +2799,7 @@ def namedHead (fuel : Nat) (env : Env) (scope : List Local) (ty : Ty) (s : Split
   if isFnPath env s then
     callHeadOf (pathCall fuel env scope ty s targs es)
   else
-    variantHead ty (findVariant env.decls.types (moduleOr env.module s.module) s.name 0) targs es
+    variantHead ty (variantByPath env s) targs es
 
 /-- The shift of an alignment 2^shift, counting up from 2^s = p. -/
 def shiftOfU64 (fuel : Nat) (k : BitVec 64) (s : Nat) (p : Nat) : Option Nat :=
@@ -2832,7 +2943,7 @@ def unitHead (fuel : Nat) (env : Env) (scope : List Local) (ty : Ty) (path : CTr
     match splitLast ss with
     | none => none
     | some s =>
-      match findVariant env.decls.types (moduleOr env.module s.module) s.name 0 with
+      match variantByPath env s with
       | none => plainHead (exprOf fuel env scope init)
       | some v => variantHead ty (some v) [] []
 
@@ -2956,21 +3067,24 @@ def zipVariants (names : List (List Nat)) (payloads : List (List Ty)) : List Var
     | [] => []
     | p :: more => ({ name := n, payload := p } : VariantTy) :: zipVariants rest more
 
-/-- An arm's pattern names the variant: `V`, or `m::V` with m the enum's module. -/
-def armNamed (segments : Option (List (List Nat))) (module : List (List Nat)) (name : List Nat) : Bool :=
+def armPrefix (p : List (List Nat)) (owner : TypeDecl) : Bool :=
+  noNames p || sameSpellings p owner.module || sameSpellings p [owner.name] || sameSpellings p (owner.module ++ [owner.name])
+
+/-- An arm's pattern names the variant: `V`, `m::V` with m the enum's module, `E::V` with E the enum, or `m::E::V`. -/
+def armNamed (segments : Option (List (List Nat))) (owner : TypeDecl) (name : List Nat) : Bool :=
   match segments with
   | none => false
   | some ss =>
     match splitLast ss with
     | none => false
-    | some s => sameText s.name name && (noNames s.module || sameSpellings s.module module)
+    | some s => sameText s.name name && armPrefix s.module owner
 
 /-- `V -> value` or `V(b, ...) -> value` (match_arm -> pattern MatchArrow expr). -/
 def armOf (fuel : Nat) (env : Env) (scope : List Local) (owner : TypeDecl) (v : VariantTy) (arm : CTree) : Option SrcArm :=
   let pattern : CTree := kid arm 0
   let ptail : CTree := kid pattern 1
   let path : CTree := kid pattern 0
-  if decide (nodeProd pattern = (195)) && armNamed (pathSpellings fuel (kid path 0) (kid path 1)) owner.module v.name then
+  if decide (nodeProd pattern = (195)) && armNamed (pathSpellings fuel (kid path 0) (kid path 1)) owner v.name then
     if nodeProd ptail = (199) then
       armBound fuel env (some ({ ids := [], scope := scope } : Bound)) (kid arm 2)
     else
@@ -3277,7 +3391,7 @@ def effIdent (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty
       | some ss =>
         match splitLast ss with
         | none => none
-        | some s => effVariant (fuel - 1) env scope expected (findVariant env.decls.types (moduleOr env.module s.module) s.name 0) []
+        | some s => effVariant (fuel - 1) env scope expected (variantByPath env s) []
     else
       if nodeProd (kid c 1) = (275) then
         match pathSpellings fuel (kid path 0) (kid path 1) with
@@ -3352,7 +3466,7 @@ def effNamed (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty
       effFnPath (fuel - 1) env scope expected s targs items
     else
       if noTrees targs then
-        effVariant (fuel - 1) env scope expected (findVariant env.decls.types (moduleOr env.module s.module) s.name 0) items
+        effVariant (fuel - 1) env scope expected (variantByPath env s) items
       else
         none
 
@@ -3480,7 +3594,7 @@ def effArm (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) 
     let pattern : CTree := kid arm 0
     let ptail : CTree := kid pattern 1
     let path : CTree := kid pattern 0
-    if decide (nodeProd pattern = (195)) && armNamed (pathSpellings fuel (kid path 0) (kid path 1)) owner.module v.name then
+    if decide (nodeProd pattern = (195)) && armNamed (pathSpellings fuel (kid path 0) (kid path 1)) owner v.name then
       if nodeProd ptail = (199) then
         effArmBound (fuel - 1) env expected (some ({ ids := [], scope := scope } : Bound)) (kid arm 2)
       else
