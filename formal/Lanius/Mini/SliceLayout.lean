@@ -395,4 +395,207 @@ theorem fieldsHold_get {env : Env} : ∀ {fields : List SrcType} {vals : List Va
       obtain ⟨y, hy, hold⟩ := each j g (by simpa using hg)
       exact ⟨y, by simpa using hy, by rwa [show slot + (j + 1) = slot + 1 + j by omega]⟩
 
+/-! ## Enum elements -/
+
+theorem variantWidths_get : ∀ {variants : List (List SrcType)} {wss : List (List MemWidth)},
+    variantWidths variants = some wss →
+    wss.length = variants.length ∧ ∀ (m : Nat) fs, variants[m]? = some fs → ∃ ws, wss[m]? = some ws ∧ wordWidths fs = some ws
+  | [], wss, h => by
+    simp only [variantWidths, Option.some.injEq] at h
+    subst h
+    exact ⟨rfl, fun _ _ found => by simp at found⟩
+  | fs :: rest, wss, h => by
+    simp only [variantWidths, consWidths] at h
+    split at h
+    · simp at h
+    rename_i ws hws
+    split at h
+    · simp at h
+    rename_i wss' hrest
+    simp only [Option.some.injEq] at h
+    subst h
+    obtain ⟨len, each⟩ := variantWidths_get hrest
+    refine ⟨by simp [len], fun m gs hg => ?_⟩
+    cases m with
+    | zero =>
+      simp only [List.getElem?_cons_zero, Option.some.injEq] at hg
+      subst hg
+      exact ⟨ws, rfl, hws⟩
+    | succ m =>
+      obtain ⟨w, hw, hwidth⟩ := each m gs (by simpa using hg)
+      exact ⟨w, by simpa using hw, hwidth⟩
+
+theorem variantWidths_all {variants : List (List SrcType)} {wss : List (List MemWidth)}
+    (h : variantWidths variants = some wss) : ∀ fs ∈ variants, AllWord fs := by
+  intro fs mem
+  obtain ⟨m, found⟩ := List.getElem?_of_mem mem
+  obtain ⟨ws, -, hws⟩ := (variantWidths_get h).2 m fs found
+  exact wordWidths_all hws
+
+theorem maxLength_eq : ∀ {variants : List (List SrcType)} {wss : List (List MemWidth)},
+    variantWidths variants = some wss → maxLength wss = maxSize variants
+  | [], wss, h => by
+    simp only [variantWidths, Option.some.injEq] at h
+    subst h
+    rfl
+  | fs :: rest, wss, h => by
+    simp only [variantWidths, consWidths] at h
+    split at h
+    · simp at h
+    rename_i ws hws
+    split at h
+    · simp at h
+    rename_i wss' hrest
+    simp only [Option.some.injEq] at h
+    subst h
+    simp only [maxLength, maxSize, maxLength_eq hrest, sizes_allWord (wordWidths_all hws),
+      (wordWidths_get hws).1]
+
+theorem enumWidths_some {ds : SrcDecls} {element : SrcType} {wss : List (List MemWidth)}
+    (h : enumWidths ds element = some wss) :
+    ∃ eid variants, element = .enum eid variants ∧ enumVariants ds.enums eid = some variants ∧
+      variantWidths variants = some wss ∧ 0 < variants.length ∧ variants.length < 2 ^ 32 := by
+  cases element with
+  | enum eid variants =>
+    simp only [enumWidths, declaredVariantWidths] at h
+    split at h
+    · simp at h
+    rename_i vs found
+    split at h
+    case isFalse => simp at h
+    rename_i cond
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at cond
+    obtain ⟨⟨same, pos⟩, small⟩ := cond
+    have := variantsSame_eq vs same
+    subst this
+    exact ⟨eid, vs, rfl, found, h, pos, small⟩
+  | i32 | bool | uint | struct | ptr | slice => simp [enumWidths] at h
+
+theorem mapM_option_ok {α β : Type} {g : α → Option β} : ∀ {l : List α} {vs : List β},
+    l.mapM g = some vs →
+      vs.length = l.length ∧ ∀ (i : Nat) x, l[i]? = some x → ∃ y, vs[i]? = some y ∧ g x = some y
+  | [], vs, h => by
+    simp only [List.mapM_nil, pure, Option.some.injEq] at h
+    subst h
+    exact ⟨rfl, fun _ _ found => by simp at found⟩
+  | a :: rest, vs, h => by
+    simp only [List.mapM_cons, bind, Option.bind] at h
+    split at h
+    · simp at h
+    rename_i b hb
+    dsimp only at h
+    split at h
+    · simp at h
+    rename_i bs hbs
+    simp only [pure, Option.some.injEq] at h
+    subst h
+    obtain ⟨len, each⟩ := mapM_option_ok hbs
+    refine ⟨by simp [len], fun i x found => ?_⟩
+    cases i with
+    | zero =>
+      simp only [List.getElem?_cons_zero, Option.some.injEq] at found
+      subst found
+      exact ⟨b, rfl, hb⟩
+    | succ i =>
+      obtain ⟨y, hy, ok⟩ := each i x (by simpa using found)
+      exact ⟨y, by simpa using hy, ok⟩
+
+theorem foldl_max : ∀ (l : List Nat) (a : Nat), l.foldl max a = max a (l.foldr max 0)
+  | [], a => by simp
+  | x :: rest, a => by
+    simp only [List.foldl_cons, List.foldr_cons, foldl_max rest (max a x)]
+    omega
+
+theorem maxSize_lengths : ∀ {variants : List (List SrcType)}, (∀ fs ∈ variants, AllWord fs) →
+    (variants.map List.length).foldr max 0 = maxSize variants
+  | [], _ => rfl
+  | fs :: rest, all => by
+    simp only [List.map_cons, List.foldr_cons, maxSize, sizes_allWord (all fs (by simp)),
+      maxSize_lengths (variants := rest) (fun gs m => all gs (List.mem_cons_of_mem _ m))]
+
+theorem valueWords_enum {P : Core.Program} {eid : Nat} {variants : List (List SrcType)}
+    (found : P.enumeration? eid = some ⟨eid, variants.map (List.map SrcType.toCore)⟩)
+    (all : ∀ fs ∈ variants, AllWord fs) {words : Nat}
+    (h : NativeLayout.valueWords? P (.enumeration eid) = some words) :
+    words = 1 + maxSize variants ∧ maxSize variants < NativeLayout.maxWords := by
+  rw [NativeLayout.valueWords?, show NativeLayout.maxDepth = 63 + 1 from rfl, NativeLayout.words?] at h
+  dsimp only at h
+  rw [found, show (63 : Nat) = 62 + 1 from rfl] at h
+  simp only [bind, Option.bind] at h
+  split at h
+  · simp at h
+  rename_i ls hls
+  simp only [Option.some.injEq] at h
+  obtain ⟨len, each⟩ := mapM_option_ok hls
+  have per : ∀ (i : Nat) fs, variants[i]? = some fs → ls[i]? = some fs.length ∧ fs.length < NativeLayout.maxWords := by
+    intro i fs hf
+    obtain ⟨y, hy, ok⟩ := each i (fs.map SrcType.toCore) (by simp [List.getElem?_map, hf])
+    simp only [words_all 62 (all fs (List.mem_of_getElem? hf)), foldl_ones, Nat.zero_add, List.length_map] at ok
+    split at ok
+    · rename_i lt
+      simp only [Option.some.injEq] at ok
+      subst ok
+      exact ⟨hy, lt⟩
+    · simp at ok
+  have hls' : ls = variants.map List.length := by
+    apply List.ext_getElem?
+    intro i
+    cases hv : variants[i]? with
+    | none =>
+      have : variants.length ≤ i := List.getElem?_eq_none_iff.mp hv
+      simp only [List.getElem?_map, hv, Option.map_none]
+      exact List.getElem?_eq_none_iff.mpr (by simp at len; omega)
+    | some fs => simp [List.getElem?_map, hv, (per i fs hv).1]
+  subst hls'
+  rw [foldl_max, maxSize_lengths all] at h
+  refine ⟨by omega, ?_⟩
+  have bound : ∀ (vs : List (List SrcType)), (∀ fs ∈ vs, fs.length < NativeLayout.maxWords) →
+      (∀ fs ∈ vs, AllWord fs) → maxSize vs < NativeLayout.maxWords := by
+    intro vs
+    induction vs with
+    | nil => intro _ _; simp [maxSize, NativeLayout.maxWords]
+    | cons fs rest ih =>
+      intro lt allv
+      simp only [maxSize, sizes_allWord (allv fs (by simp))]
+      have := ih (fun g m => lt g (by simp [m])) (fun g m => allv g (by simp [m]))
+      have := lt fs (by simp)
+      omega
+  exact bound variants (fun fs mem => by
+    obtain ⟨i, hi⟩ := List.getElem?_of_mem mem
+    exact (per i fs hi).2) all
+
+theorem payloadOffset {P : Core.Program} {fs : List SrcType} (all : AllWord fs) {j : Nat} (lt : j < fs.length) :
+    ((fs.map SrcType.toCore).take j).mapM (fun member => NativeLayout.words? (NativeLayout.maxDepth - 1) P member) =
+      some ((fs.take j).map fun _ => 1) := by
+  rw [show NativeLayout.maxDepth - 1 = 62 + 1 from rfl, ← List.map_take]
+  exact words_all 62 (all.take j)
+
+theorem readNativeValue_enum {P : Core.Program} {heap : Memory.Heap} {eid : Nat} {variants : List (List SrcType)}
+    (found : P.enumeration? eid = some ⟨eid, variants.map (List.map SrcType.toCore)⟩)
+    (all : ∀ fs ∈ variants, AllWord fs) {k base : Nat} {v : Value}
+    (h : Semantics.readNativeValue (k + 1) P heap (.enumeration eid) base = .ok v) :
+    ∃ variant fs payload, v = .enumeration eid variant payload ∧ Semantics.loadNatLE heap base 4 = .ok variant ∧
+      variants[variant]? = some fs ∧ payload.length = fs.length ∧
+      ∀ (j : Nat) f, fs[j]? = some f → ∃ x, payload[j]? = some x ∧
+        Semantics.readNativeValue k P heap f.toCore (base + 8 * (1 + j)) = .ok x := by
+  simp only [Semantics.readNativeValue, found] at h
+  obtain ⟨variant, loaded, h⟩ := except_bind_ok h
+  cases hv : variants[variant]? with
+  | none => simp [List.getElem?_map, hv] at h
+  | some fs =>
+  simp only [List.getElem?_map, hv, Option.map_some] at h
+  obtain ⟨payload, mapped, wrapped⟩ := except_bind_ok h
+  simp only [pure, Except.pure, Except.ok.injEq] at wrapped
+  subst wrapped
+  obtain ⟨len, each⟩ := mapM_except_ok mapped
+  simp only [List.length_range, List.length_map] at len
+  have allF := all fs (List.mem_of_getElem? hv)
+  refine ⟨variant, fs, payload, rfl, loaded, hv, len, fun j f hf => ?_⟩
+  have lt : j < fs.length := (List.getElem?_eq_some_iff.mp hf).1
+  obtain ⟨x, hx, ok⟩ := each j j (by simp [List.getElem?_range, List.length_map, lt])
+  refine ⟨x, hx, ?_⟩
+  simp only [List.getElem?_map, hf, Option.map_some, payloadOffset allF lt, foldl_ones, Nat.zero_add,
+    List.length_take, NativeLayout.wordBytes, Nat.min_eq_left (Nat.le_of_lt lt)] at ok
+  exact ok
+
 end Lanius.Mini

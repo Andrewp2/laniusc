@@ -214,6 +214,11 @@ theorem structFields_toCore {sp : SrcProgram} {id : Nat} {fs : List SrcType}
     sp.toCore.structure? id = some ⟨id, fs.map SrcType.toCore⟩ := by
   simp only [Core.Program.structure?, SrcProgram.toCore, find_structs, found, Option.map_some]
 
+theorem enumVariants_toCore {sp : SrcProgram} {id : Nat} {vs : List (List SrcType)}
+    (found : enumVariants sp.decls.enums id = some vs) :
+    sp.toCore.enumeration? id = some ⟨id, vs.map (List.map SrcType.toCore)⟩ := by
+  simp only [Core.Program.enumeration?, SrcProgram.toCore, find_enums, found, Option.map_some]
+
 /-- `ty.Holds value bits`: one slot holding `bits` represents the Core `value`
 of scalar type `ty`. An `i32` is its bits zero-extended; booleans are 1 and 0;
 an unsigned value is the slot's number, below its type's bound; a pointer is

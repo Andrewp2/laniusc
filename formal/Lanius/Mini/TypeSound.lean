@@ -790,22 +790,36 @@ theorem elementWidths_struct {ds : SrcDecls} {e : SrcType} {ws : List MemWidth} 
   | struct id fields => exact ⟨id, fields, rfl⟩
   | i32 | bool | uint | enum | ptr | slice => simp [elementWidths] at h
 
+theorem enumWidths_enum {ds : SrcDecls} {e : SrcType} {wss : List (List MemWidth)}
+    (h : enumWidths ds e = some wss) : ∃ id variants, e = .enum id variants := by
+  cases e with
+  | enum id variants => exact ⟨id, variants, rfl⟩
+  | i32 | bool | uint | struct | ptr | slice => simp [enumWidths] at h
+
 theorem lowerSlice_some {ds : SrcDecls} {element : SrcType} {p l : Option Expr} {xs : List Expr}
     (h : lowerSlice ds element p l = some xs) :
-    (element = .i32 ∨ ∃ id fields, element = .struct id fields) ∧ ∃ x y, p = some x ∧ l = some y := by
+    (element = .i32 ∨ (∃ id fields, element = .struct id fields) ∨ ∃ id variants, element = .enum id variants) ∧
+      ∃ x y, p = some x ∧ l = some y := by
   unfold lowerSlice at h
   split at h
   · rename_i cond
-    have kind : element = .i32 ∨ ∃ id fields, element = .struct id fields := by
+    have kind : element = .i32 ∨ (∃ id fields, element = .struct id fields) ∨
+        ∃ id variants, element = .enum id variants := by
       simp only [Bool.or_eq_true] at cond
-      rcases cond with c | c
+      rcases cond with (c | c) | c
       · exact .inl (eq_i32 c)
-      · right
+      · right; left
         unfold isWordStruct at c
         split at c
         · simp at c
         · rename_i ws hws
           exact elementWidths_struct hws
+      · right; right
+        unfold isWordEnum at c
+        split at c
+        · simp at c
+        · rename_i wss hwss
+          exact enumWidths_enum hwss
     split at h
     · simp at h
     · split at h
@@ -1058,7 +1072,7 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       · simp at h
       · rename_i b hb
         obtain ⟨kind, x, y, hx, hy⟩ := lowerSlice_some hvs
-        rcases kind with rfl | ⟨sid, fields, rfl⟩
+        rcases kind with rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩
         · exact .letLocal (.i32SliceFromRawParts (lowerAs_typed target ok hx) (lowerAs_typed target ok hy))
             (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice .i32) (.slice d.1)) d.2 hb)
         · obtain ⟨found, -⟩ := declared_struct d.1
@@ -1066,11 +1080,38 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
               (lowerAs_typed target ok hy))
             (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice (.struct sid fields)) (.slice d.1))
               d.2 hb)
+        · obtain ⟨found, -⟩ := declared_enum d.1
+          exact .letLocal (.typedSliceFromRawParts (.enumerationType eid _ found) (lowerAs_typed target ok hx)
+              (lowerAs_typed target ok hy))
+            (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice (.enum eid variants)) (.slice d.1))
+              d.2 hb)
   | .letIndex id ty slice index body, scope, ctx, next, inLoop, out, ok, d, h => by
     simp only [SrcStmt.Declared] at d
     simp only [SrcStmt.lower, lowerLetIndex] at h
     split at h
     case isFalse =>
+      split at h
+      case isFalse =>
+        unfold lowerLoadEnum at h
+        split at h
+        · simp at h
+        rename_i sb found
+        split at h
+        · simp at h
+        split at h
+        · simp at h
+        rename_i i hi
+        split at h
+        · simp at h
+        rename_i b hb
+        split at h
+        · rename_i same
+          obtain ⟨T, typedIndex, integer⟩ := lowerIndex_typed target ok hi
+          have inCtx := (ok slice sb found).1
+          rw [same_toCore same] at inCtx
+          exact .letLocal (.indexSlice (.local inCtx) typedIndex integer)
+            (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 hb)
+        · simp at h
       unfold lowerLoadFields at h
       split at h
       · simp at h
@@ -1123,6 +1164,22 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         simp only [storeAny] at h
         split at h
         case isFalse =>
+          split at h
+          case isFalse =>
+            unfold storeEnum at h
+            split at h
+            · simp at h
+            split at h
+            · simp at h
+            rename_i i hi
+            split at h
+            · simp at h
+            rename_i vs hvs
+            obtain ⟨T, typedIndex, integer⟩ := lowerIndex_typed target ok hi
+            have inCtx := (ok slice sb found).1
+            rw [elementOf_some he] at inCtx
+            exact .expression (.assign (.indexSlice (.local inCtx) typedIndex integer)
+              (lowerValue_typed target ok hvs) .set)
           unfold storeStruct at h
           split at h
           · simp at h

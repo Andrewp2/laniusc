@@ -1883,6 +1883,51 @@ def isWordStruct (decls : SrcDecls) (element : SrcType) : Bool :=
   | none => false
   | some ws => true
 
+def consWidths (widths : Option (List MemWidth)) (rest : Option (List (List MemWidth))) : Option (List (List MemWidth)) :=
+  match widths with
+  | none => none
+  | some ws =>
+    match rest with
+    | none => none
+    | some wss => some (ws :: wss)
+
+/-- The payload widths of each variant, every payload field one native word. -/
+def variantWidths (variants : List (List SrcType)) : Option (List (List MemWidth)) :=
+  match variants with
+  | [] => some []
+  | types :: rest => consWidths (wordWidths types) (variantWidths rest)
+
+def maxLength (widths : List (List MemWidth)) : Nat :=
+  match widths with
+  | [] => 0
+  | ws :: rest => max ws.length (maxLength rest)
+
+def declaredVariantWidths (declared : Option (List (List SrcType))) (variants : List (List SrcType)) : Option (List (List MemWidth)) :=
+  match declared with
+  | none => none
+  | some vs =>
+    let same : Bool := variantsSame vs variants
+    if same && decide (0 < variants.length) && decide (variants.length < 4294967296) then
+      variantWidths variants
+    else
+      none
+
+/-- The payload widths of an enum slice element: at least one variant, with tags that fit in 32 bits, and payload fields of one native word each. Core lays the element out as its tag word followed by the longest payload's words; it must be the declared enum. -/
+def enumWidths (decls : SrcDecls) (element : SrcType) : Option (List (List MemWidth)) :=
+  match element with
+  | .i32 => none
+  | .bool => none
+  | .uint kind => none
+  | .struct id fields => none
+  | .enum id variants => declaredVariantWidths (enumVariants decls.enums id) variants
+  | .ptr => none
+  | .slice inner => none
+
+def isWordEnum (decls : SrcDecls) (element : SrcType) : Bool :=
+  match enumWidths decls element with
+  | none => false
+  | some wss => true
+
 /-- A struct slice's descriptor points at element zero's high word, and elements of `words` words run downward: element index starts (index * words + words - 1) words below it. -/
 def elementBase (slot : Nat) (words : Nat) (index : Expr) : Expr :=
   let stride : Expr := Expr.binary Word.u64 BinOp.mul index (Expr.lit (BitVec.ofNat 64 (8 * words)))
@@ -1899,21 +1944,50 @@ def storeThen (w : MemWidth) (address : Expr) (value : Expr) (rest : Option Stmt
   | none => none
   | some s => some (Stmt.seq (Stmt.storeWord w address value) s)
 
-/-- Store the field values at base + offset, base + offset + 8, ... -/
+/-- Store the field values at base + offset, base + offset + 8, ...; values past the widths are not stored. -/
 def storeFields (widths : List MemWidth) (values : List Expr) (base : Expr) (offset : Nat) : Option Stmt :=
   match widths with
-  | [] =>
-    (match values with
-     | [] => some Stmt.skip
-     | v :: more => none)
+  | [] => some Stmt.skip
   | w :: rest =>
     match values with
     | [] => none
     | v :: more => storeThen w (Expr.binary Word.u64 BinOp.add base (Expr.lit (BitVec.ofNat 64 offset))) v (storeFields rest more base (offset + 8))
 
+/-- Load the payload of the variant whose tag is in slot target, the variants from k on, into the slots after it. The last variant needs no tag test. -/
+def loadVariants (target : Nat) (base : Expr) (k : Nat) (widths : List (List MemWidth)) : Stmt :=
+  match widths with
+  | [] => Stmt.skip
+  | ws :: rest =>
+    match rest with
+    | [] => loadFields ws (target + 1) base 8 Stmt.skip
+    | more :: others => Stmt.ite (Expr.compare Word.u64 CmpOp.eq (Expr.var target) (Expr.lit (BitVec.ofNat 64 k))) (loadFields ws (target + 1) base 8 Stmt.skip) (loadVariants target base (k + 1) rest)
+
+def iteThen (condition : Expr) (thenBranch : Option Stmt) (elseBranch : Option Stmt) : Option Stmt :=
+  match thenBranch with
+  | none => none
+  | some t =>
+    match elseBranch with
+    | none => none
+    | some e => some (Stmt.ite condition t e)
+
+/-- Store the payload of the variant whose tag is tag, the variants from k on. -/
+def storeVariants (tag : Expr) (payload : List Expr) (base : Expr) (k : Nat) (widths : List (List MemWidth)) : Option Stmt :=
+  match widths with
+  | [] => none
+  | ws :: rest =>
+    match rest with
+    | [] => storeFields ws payload base 8
+    | more :: others => iteThen (Expr.compare Word.u64 CmpOp.eq tag (Expr.lit (BitVec.ofNat 64 k))) (storeFields ws payload base 8) (storeVariants tag payload base (k + 1) rest)
+
+/-- An enum element's tag word, then its payload. -/
+def storeEnumValues (widths : List (List MemWidth)) (values : List Expr) (base : Expr) : Option Stmt :=
+  match values with
+  | [] => none
+  | tag :: payload => lowerThen (storeFields [MemWidth.m32] [tag] base 0) (storeVariants tag payload base 0 widths)
+
 /-- A raw slice's one slot: its address. Elements are i32 or word structs; Core checks the length when the slice is made and each index against it. -/
 def lowerSlice (decls : SrcDecls) (element : SrcType) (pointer : Option Expr) (length : Option Expr) : Option (List Expr) :=
-  if SrcType.isI32 element || isWordStruct decls element then
+  if SrcType.isI32 element || isWordStruct decls element || isWordEnum decls element then
     match pointer with
     | none => none
     | some p =>
@@ -1990,6 +2064,18 @@ def storeStruct (decls : SrcDecls) (b : Binding) (element : SrcType) (index : Op
       | none => none
       | some vs => storeFields ws vs (elementBase b.slot ws.length i) 0
 
+/-- slice[index] = value for a word enum element: the tag, then the payload of the value's variant. -/
+def storeEnum (decls : SrcDecls) (b : Binding) (element : SrcType) (index : Option Expr) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
+  match enumWidths decls element with
+  | none => none
+  | some wss =>
+    match index with
+    | none => none
+    | some i =>
+      match lowerValue scope value element with
+      | none => none
+      | some vs => storeEnumValues wss vs (elementBase b.slot (maxLength wss + 1) i)
+
 def storeAny (decls : SrcDecls) (b : Binding) (element : SrcType) (index : Option Expr) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
   if SrcType.isI32 element then
     match elementAddress b index with
@@ -1999,7 +2085,10 @@ def storeAny (decls : SrcDecls) (b : Binding) (element : SrcType) (index : Optio
       | none => none
       | some v => some (Stmt.storeWord MemWidth.m32 a v)
   else
-    storeStruct decls b element index scope value
+    if isWordStruct decls element then
+      storeStruct decls b element index scope value
+    else
+      storeEnum decls b element index scope value
 
 def lowerSetIndexOf (decls : SrcDecls) (b : Binding) (index : Option Expr) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
   match elementOf b.ty with
@@ -2025,11 +2114,37 @@ def lowerLoadFields (decls : SrcDecls) (next : Nat) (binding : Option Binding) (
           else
             none
 
+/-- The tag into slot next, then the payload of its variant after it, then body. -/
+def loadEnum (next : Nat) (base : Expr) (widths : List (List MemWidth)) (body : Stmt) : Stmt :=
+  loadFields [MemWidth.m32] next base 0 (Stmt.seq (loadVariants next base 0 widths) body)
+
+/-- let x: ty = slice[index] for a word enum ty. -/
+def lowerLoadEnum (decls : SrcDecls) (next : Nat) (binding : Option Binding) (ty : SrcType) (index : Option Expr) (body : Option Stmt) : Option Stmt :=
+  match binding with
+  | none => none
+  | some b =>
+    match enumWidths decls ty with
+    | none => none
+    | some wss =>
+      match index with
+      | none => none
+      | some i =>
+        match body with
+        | none => none
+        | some s =>
+          if SrcType.same b.ty (SrcType.slice ty) then
+            some (loadEnum next (elementBase b.slot (maxLength wss + 1) i) wss s)
+          else
+            none
+
 def lowerLetIndex (decls : SrcDecls) (next : Nat) (binding : Option Binding) (ty : SrcType) (index : Option Expr) (body : Option Stmt) : Option Stmt :=
   if SrcType.isI32 ty then
     lowerLoadWord next (lowerElement binding ty index) body
   else
-    lowerLoadFields decls next binding ty index body
+    if isWordStruct decls ty then
+      lowerLoadFields decls next binding ty index body
+    else
+      lowerLoadEnum decls next binding ty index body
 
 def lowerSetIndex (decls : SrcDecls) (binding : Option Binding) (index : Option Expr) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
   match binding with

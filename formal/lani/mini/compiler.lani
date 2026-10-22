@@ -2432,6 +2432,69 @@ pub fn is_word_struct(decls: SrcDecls, element: SrcType) -> bool {
     };
 }
 
+pub fn cons_widths(widths: core::option::Option<List<MemWidth>>, rest: core::option::Option<List<List<MemWidth>>>) -> core::option::Option<List<List<MemWidth>>> {
+    return match (widths) {
+        None -> None,
+        Some(ws) -> match (rest) {
+            None -> None,
+            Some(wss) -> Some(cons(ws, wss)),
+        },
+    };
+}
+
+// The payload widths of each variant, every payload field one native word.
+pub fn variant_widths(variants: List<List<SrcType>>) -> core::option::Option<List<List<MemWidth>>> {
+    return match (variants) {
+        Nil -> Some(empty()),
+        Cons(types, rest) -> cons_widths(word_widths(types), variant_widths(unbox(rest))),
+    };
+}
+
+pub fn max_length(widths: List<List<MemWidth>>) -> usize {
+    return match (widths) {
+        Nil -> 0,
+        Cons(ws, rest) -> max_of(length(ws), max_length(unbox(rest))),
+    };
+}
+
+// extract: inline
+fn same_variant_widths(same: bool, variants: List<List<SrcType>>) -> core::option::Option<List<List<MemWidth>>> {
+    if (same && length(variants) > 0 && 4294967296 > length(variants)) {
+        return variant_widths(variants);
+    }
+    return None;
+}
+
+pub fn declared_variant_widths(declared: core::option::Option<List<List<SrcType>>>, variants: List<List<SrcType>>) -> core::option::Option<List<List<MemWidth>>> {
+    return match (declared) {
+        None -> None,
+        Some(vs) -> same_variant_widths(variants_same(vs, variants), variants),
+    };
+}
+
+// The payload widths of an enum slice element: at least one variant, with
+// tags that fit in 32 bits, and payload fields of one native word each. Core
+// lays the element out as its tag word followed by the longest payload's
+// words; it must be the declared enum.
+pub fn enum_widths(decls: SrcDecls, element: SrcType) -> core::option::Option<List<List<MemWidth>>> {
+    return match (element) {
+        I32 -> None,
+        Bool -> None,
+        Uint(kind) -> None,
+        Struct(id, fields) -> None,
+        Enum(id, variants) -> declared_variant_widths(enum_variants(decls.enums, id), unbox(variants)),
+        Ptr -> None,
+        Slice(inner) -> None,
+    };
+}
+
+pub fn is_word_enum(decls: SrcDecls, element: SrcType) -> bool {
+    return match (enum_widths(decls, element)) {
+        None -> false,
+        Some(wss) -> true,
+    };
+}
+
 // A struct slice's descriptor points at element zero's high word, and
 // elements of `words` words run downward: element index starts
 // (index * words + words - 1) words below it.
@@ -2456,13 +2519,11 @@ pub fn store_then(w: MemWidth, address: Expr, value: Expr, rest: core::option::O
     };
 }
 
-// Store the field values at base + offset, base + offset + 8, ...
+// Store the field values at base + offset, base + offset + 8, ...; values
+// past the widths are not stored.
 pub fn store_fields(widths: List<MemWidth>, values: List<Expr>, base: Expr, offset: usize) -> core::option::Option<Stmt> {
     return match (widths) {
-        Nil -> match (values) {
-            Nil -> Some(Skip),
-            Cons(v, more) -> None,
-        },
+        Nil -> Some(Skip),
         Cons(w, rest) -> match (values) {
             Nil -> None,
             Cons(v, more) -> store_then(w, Binary(U64, Add, boxed(base), boxed(Lit(offset as u64))), v, store_fields(unbox(rest), unbox(more), base, plus(offset, 8))),
@@ -2470,10 +2531,61 @@ pub fn store_fields(widths: List<MemWidth>, values: List<Expr>, base: Expr, offs
     };
 }
 
+// Load the payload of the variant whose tag is in slot target, the variants
+// from k on, into the slots after it. The last variant needs no tag test.
+pub fn load_variants(target: usize, base: Expr, k: usize, widths: List<List<MemWidth>>) -> Stmt {
+    return match (widths) {
+        Nil -> Skip,
+        Cons(ws, rest) -> load_variant(target, base, k, ws, unbox(rest)),
+    };
+}
+
+// extract: inline
+fn load_variant(target: usize, base: Expr, k: usize, ws: List<MemWidth>, rest: List<List<MemWidth>>) -> Stmt {
+    return match (rest) {
+        Nil -> load_fields(ws, plus(target, 1), base, 8, Skip),
+        Cons(more, others) -> Ite(Compare(U64, Eq, boxed(Var(target)), boxed(Lit(k as u64))), boxed(load_fields(ws, plus(target, 1), base, 8, Skip)), boxed(load_variants(target, base, plus(k, 1), rest))),
+    };
+}
+
+pub fn ite_then(condition: Expr, then_branch: core::option::Option<Stmt>, else_branch: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (then_branch) {
+        None -> None,
+        Some(t) -> match (else_branch) {
+            None -> None,
+            Some(e) -> Some(Ite(condition, boxed(t), boxed(e))),
+        },
+    };
+}
+
+// Store the payload of the variant whose tag is tag, the variants from k on.
+pub fn store_variants(tag: Expr, payload: List<Expr>, base: Expr, k: usize, widths: List<List<MemWidth>>) -> core::option::Option<Stmt> {
+    return match (widths) {
+        Nil -> None,
+        Cons(ws, rest) -> store_variant(tag, payload, base, k, ws, unbox(rest)),
+    };
+}
+
+// extract: inline
+fn store_variant(tag: Expr, payload: List<Expr>, base: Expr, k: usize, ws: List<MemWidth>, rest: List<List<MemWidth>>) -> core::option::Option<Stmt> {
+    return match (rest) {
+        Nil -> store_fields(ws, payload, base, 8),
+        Cons(more, others) -> ite_then(Compare(U64, Eq, boxed(tag), boxed(Lit(k as u64))), store_fields(ws, payload, base, 8), store_variants(tag, payload, base, plus(k, 1), rest)),
+    };
+}
+
+// An enum element's tag word, then its payload.
+pub fn store_enum_values(widths: List<List<MemWidth>>, values: List<Expr>, base: Expr) -> core::option::Option<Stmt> {
+    return match (values) {
+        Nil -> None,
+        Cons(tag, payload) -> lower_then(store_fields(single(M32), single(tag), base, 0), store_variants(tag, unbox(payload), base, 0, widths)),
+    };
+}
+
 // A raw slice's one slot: its address. Elements are i32 or word structs;
 // Core checks the length when the slice is made and each index against it.
 pub fn lower_slice(decls: SrcDecls, element: SrcType, pointer: core::option::Option<Expr>, length: core::option::Option<Expr>) -> core::option::Option<List<Expr>> {
-    if (element.is_i32() || is_word_struct(decls, element)) {
+    if (element.is_i32() || is_word_struct(decls, element) || is_word_enum(decls, element)) {
         return match (pointer) {
             None -> None,
             Some(p) -> match (length) {
@@ -2583,11 +2695,29 @@ pub fn store_struct(decls: SrcDecls, b: Binding, element: SrcType, index: core::
     };
 }
 
+// slice[index] = value for a word enum element: the tag, then the payload
+// of the value's variant.
+pub fn store_enum(decls: SrcDecls, b: Binding, element: SrcType, index: core::option::Option<Expr>, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
+    return match (enum_widths(decls, element)) {
+        None -> None,
+        Some(wss) -> match (index) {
+            None -> None,
+            Some(i) -> match (lower_value(scope, value, element)) {
+                None -> None,
+                Some(vs) -> store_enum_values(wss, vs, element_base(b.slot, plus(max_length(wss), 1), i)),
+            },
+        },
+    };
+}
+
 pub fn store_any(decls: SrcDecls, b: Binding, element: SrcType, index: core::option::Option<Expr>, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
     if (element.is_i32()) {
         return store_element(b, element, index, scope, value);
     }
-    return store_struct(decls, b, element, index, scope, value);
+    if (is_word_struct(decls, element)) {
+        return store_struct(decls, b, element, index, scope, value);
+    }
+    return store_enum(decls, b, element, index, scope, value);
 }
 
 pub fn lower_set_index_of(decls: SrcDecls, b: Binding, index: core::option::Option<Expr>, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
@@ -2622,11 +2752,44 @@ fn checked_fields(b: Binding, ty: SrcType, ws: List<MemWidth>, i: Expr, next: us
     return None;
 }
 
+// The tag into slot next, then the payload of its variant after it, then body.
+pub fn load_enum(next: usize, base: Expr, widths: List<List<MemWidth>>, body: Stmt) -> Stmt {
+    return load_fields(single(M32), next, base, 0, Seq(boxed(load_variants(next, base, 0, widths)), boxed(body)));
+}
+
+// let x: ty = slice[index] for a word enum ty.
+pub fn lower_load_enum(decls: SrcDecls, next: usize, binding: core::option::Option<Binding>, ty: SrcType, index: core::option::Option<Expr>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> match (enum_widths(decls, ty)) {
+            None -> None,
+            Some(wss) -> match (index) {
+                None -> None,
+                Some(i) -> match (body) {
+                    None -> None,
+                    Some(s) -> checked_enum(b, ty, wss, i, next, s),
+                },
+            },
+        },
+    };
+}
+
+// extract: inline
+fn checked_enum(b: Binding, ty: SrcType, wss: List<List<MemWidth>>, i: Expr, next: usize, s: Stmt) -> core::option::Option<Stmt> {
+    if (b.ty.same(Slice(boxed(ty)))) {
+        return Some(load_enum(next, element_base(b.slot, plus(max_length(wss), 1), i), wss, s));
+    }
+    return None;
+}
+
 pub fn lower_let_index(decls: SrcDecls, next: usize, binding: core::option::Option<Binding>, ty: SrcType, index: core::option::Option<Expr>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
     if (ty.is_i32()) {
         return lower_load_word(next, lower_element(binding, ty, index), body);
     }
-    return lower_load_fields(decls, next, binding, ty, index, body);
+    if (is_word_struct(decls, ty)) {
+        return lower_load_fields(decls, next, binding, ty, index, body);
+    }
+    return lower_load_enum(decls, next, binding, ty, index, body);
 }
 
 pub fn lower_set_index(decls: SrcDecls, binding: core::option::Option<Binding>, index: core::option::Option<Expr>, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {

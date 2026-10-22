@@ -250,22 +250,30 @@ semantics:
   (`valueWords_struct`, `fieldOffset_struct`) and reads them field by field;
   `exec_loadFields` and `exec_storeFields` match the mini loads and stores
   with Core's `readNativeValue` and `writeNativeValue`.
+- Enum slices: an enum whose payload fields are all word types, with at most
+  2^32 variants, takes 1 + (longest payload) words: Core stores the tag in
+  4 bytes of word 0 and payload field j in word 1 + j. A read loads the tag,
+  then tests it against each variant in turn (the last needs no test) and
+  loads that variant's payload words; a write stores the tag, then the
+  payload of the value's variant the same way. `valueWords_enum` and
+  `readNativeValue_enum` give Core's layout; `loadVariants_pick` and
+  `storeVariants_pick` show the tag tests reach the variant Core used.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Source` | 450 | 1.2 | Core meaning of source programs and their declarations, value representation, `i32` wrap lemmas |
+| `Source` | 456 | 1.2 | Core meaning of source programs and their declarations, value representation, `i32` wrap lemmas |
 | `Unsigned` | 166 | 2.4 | unsigned arithmetic, comparisons and casts as slot arithmetic |
 | `LowerExpr` | 669 | 5.1 | expressions |
 | `Grows` | 1044 | 4.0 | Core's `nextAddress` never decreases; Core call and statement inversions |
 | `HeapCorr` | 501 | 1.1 | Core heap to mini heap correspondence; allocate, load, store, free |
-| `SliceLayout` | 398 | 7.8 | Core's native layout of word structs; their field reads and the mini element address |
-| `LowerStmt` | 3232 | 10.7 | Core cells, frames, flat values, calls, enums and `match`, statements |
+| `SliceLayout` | 601 | 6.3 | Core's native layout of word structs and enums; their field reads and the mini element address |
+| `LowerStmt` | 3655 | 9.4 | Core cells, frames, flat values, calls, enums and `match`, statements |
 | `SourceCorrect` | 104 | 0.7 | top-level theorem |
 | `Determinism` | 122 | 1.1 | both top-level theorems for every run of the same length, through the optimizer (step 14) |
-| `TypeSound` | 1745 | 2.3 | type checker soundness: an accepted program is well typed in Core (step 7) |
+| `TypeSound` | 1802 | 2.3 | type checker soundness: an accepted program is well typed in Core (step 7) |
 
 The pass is about 1,880 lines of Lanius (the end of `compiler.lani`), and the
-proofs are about 5,700 lines, plus 1,745 for type checker soundness. The per-function difftest covers it (146
+proofs are about 5,700 lines, plus 1,802 for type checker soundness. The per-function difftest covers it (146
 functions, 2,920 calls after the unsigned types, run as two shards with
 `--shard 0/2` and `1/2`, no differences; 11 native stack overflows on huge
 random counts; types nested through `List` render through a `mutual` block of
