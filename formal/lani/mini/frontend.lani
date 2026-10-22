@@ -203,20 +203,6 @@ pub enum SrcEff {
     EDivide(SrcDivOp, Box<SrcEff>, Box<SrcEff>),
 }
 
-pub enum SrcEff {
-    EPure(SrcExpr),
-    ECall(usize, Box<List<SrcEff>>),
-    EApply(SrcOp, Box<SrcEff>, Box<SrcEff>),
-    ENeg(Box<SrcEff>),
-    ENot(Box<SrcEff>),
-    ECast(SrcType, Box<SrcEff>),
-    EIndex(usize, Box<SrcEff>),
-    EStruct(SrcType, Box<List<SrcEff>>),
-    EVariant(SrcType, usize, Box<List<SrcEff>>),
-    EMatch(Box<SrcEff>, SrcType, SrcType, List<List<usize>>, Box<List<SrcEff>>),
-    EDivide(SrcDivOp, Box<SrcEff>, Box<SrcEff>),
-}
-
 pub enum SrcStmt {
     Nop,
     Let(usize, SrcType, SrcExpr, Box<SrcStmt>),
@@ -1540,18 +1526,19 @@ pub fn add_insts(table: List<Inst>, new: List<Inst>) -> List<Inst> {
 }
 
 // Where a type expression is read: the declarations, the module, and the
-// type parameters in scope with their types; and the spellings a local may
-// not take.
+// type parameters in scope with their types; the spellings a local may
+// not take; and, in a function body, its result type.
 pub struct Env {
     decls: Decls,
     module: List<List<usize>>,
     names: List<List<usize>>,
     subst: List<Ty>,
     globals: List<List<usize>>,
+    ret: core::option::Option<Ty>,
 }
 
 pub fn decl_env(decls: Decls, module: List<List<usize>>, names: List<List<usize>>, subst: List<Ty>) -> Env {
-    return Env { decls: decls, module: module, names: names, subst: subst, globals: empty() };
+    return Env { decls: decls, module: module, names: names, subst: subst, globals: empty(), ret: None };
 }
 
 // The primitive types as Ty, and back.
@@ -2962,6 +2949,253 @@ fn find_method_at(mfuel: usize, mdecls: Decls, mfd: FnDecl, mrest: List<FnDecl>,
     return find_method(mfuel, mdecls, mrest, plus(mk, 1), mname, ms);
 }
 
+// ---------------------------------------------------------------- effectful expressions
+
+// An expression as build reads it, when it calls a function, indexes a
+// slice, divides, or is a struct literal, a variant or a match: like SrcEff,
+// but types are Ty and a call names its function instance.
+pub enum MEff {
+    XPure(SrcExpr),
+    XCall(Inst, Box<List<MEff>>),
+    XApply(SrcOp, Box<MEff>, Box<MEff>),
+    XNeg(Box<MEff>),
+    XNot(Box<MEff>),
+    XCast(SrcType, Box<MEff>),
+    XIndex(usize, Box<MEff>),
+    XStruct(Ty, Box<List<MEff>>),
+    XVariant(Ty, usize, Box<List<MEff>>),
+    // the scrutinee, its enum type, the result type, each arm's binders and value
+    XMatch(Box<MEff>, Ty, Ty, List<List<usize>>, Box<List<MEff>>),
+    XDivide(SrcDivOp, Box<MEff>, Box<MEff>),
+}
+
+// The expression, when it is pure.
+pub fn pure_part(x: MEff) -> core::option::Option<SrcExpr> {
+    return match (x) {
+        XPure(e) -> Some(e),
+        XCall(inst, args) -> None,
+        XApply(op, l, r) -> None,
+        XNeg(a) -> None,
+        XNot(a) -> None,
+        XCast(t, a) -> None,
+        XIndex(s, i) -> None,
+        XStruct(t, fs) -> None,
+        XVariant(t, k, ps) -> None,
+        XMatch(s, ety, t, bs, vs) -> None,
+        XDivide(op, l, r) -> None,
+    };
+}
+
+// The operators, casts and negations of pure operands are pure.
+pub fn apply_eff(op: SrcOp, l: MEff, r: MEff) -> MEff {
+    return match (pure_part(l)) {
+        None -> XApply(op, boxed(l), boxed(r)),
+        Some(a) -> match (pure_part(r)) {
+            None -> XApply(op, boxed(l), boxed(r)),
+            Some(b) -> XPure(Apply(op, boxed(a), boxed(b))),
+        },
+    };
+}
+
+pub fn x_apply_of(op: SrcOp, l: core::option::Option<MEff>, r: core::option::Option<MEff>) -> core::option::Option<MEff> {
+    return match (l) {
+        None -> None,
+        Some(a) -> match (r) {
+            None -> None,
+            Some(b) -> Some(apply_eff(op, a, b)),
+        },
+    };
+}
+
+pub fn x_divide_of(op: SrcDivOp, l: core::option::Option<MEff>, r: core::option::Option<MEff>) -> core::option::Option<MEff> {
+    return match (l) {
+        None -> None,
+        Some(a) -> match (r) {
+            None -> None,
+            Some(b) -> Some(XDivide(op, boxed(a), boxed(b))),
+        },
+    };
+}
+
+pub fn x_neg_of(x: core::option::Option<MEff>) -> core::option::Option<MEff> {
+    return match (x) {
+        None -> None,
+        Some(a) -> match (pure_part(a)) {
+            None -> Some(XNeg(boxed(a))),
+            Some(e) -> Some(XPure(Negate(boxed(e)))),
+        },
+    };
+}
+
+pub fn x_not_of(x: core::option::Option<MEff>) -> core::option::Option<MEff> {
+    return match (x) {
+        None -> None,
+        Some(a) -> match (pure_part(a)) {
+            None -> Some(XNot(boxed(a))),
+            Some(e) -> Some(XPure(Not(boxed(e)))),
+        },
+    };
+}
+
+pub fn x_cast_into(t: core::option::Option<SrcType>, x: core::option::Option<MEff>) -> core::option::Option<MEff> {
+    return match (t) {
+        None -> None,
+        Some(ty) -> match (x) {
+            None -> None,
+            Some(a) -> match (pure_part(a)) {
+                None -> Some(XCast(ty, boxed(a))),
+                Some(e) -> Some(XPure(Cast(ty, boxed(e)))),
+            },
+        },
+    };
+}
+
+pub fn x_index_of(l: core::option::Option<Local>, x: core::option::Option<MEff>) -> core::option::Option<MEff> {
+    return match (l) {
+        None -> None,
+        Some(s) -> match (x) {
+            None -> None,
+            Some(i) -> Some(XIndex(s.id, boxed(i))),
+        },
+    };
+}
+
+pub fn x_call_of(inst: core::option::Option<Inst>, args: List<MEff>) -> core::option::Option<MEff> {
+    return match (inst) {
+        None -> None,
+        Some(i) -> Some(XCall(i, boxed(args))),
+    };
+}
+
+pub fn cons_eff(head: core::option::Option<MEff>, tail: core::option::Option<List<MEff>>) -> core::option::Option<List<MEff>> {
+    return match (head) {
+        None -> None,
+        Some(x) -> match (tail) {
+            None -> None,
+            Some(xs) -> Some(cons(x, xs)),
+        },
+    };
+}
+
+// The result type of a function instance.
+pub fn inst_ret(fuel: usize, decls: Decls, inst: Inst) -> core::option::Option<Ty> {
+    return match (get(decls.fns, inst.decl)) {
+        None -> None,
+        Some(fd) -> match (ret_pattern(fd)) {
+            None -> None,
+            Some(r) -> ty_of(fuel, decl_env(decls, fd.module, concat(fd.impl_params, fd.params), inst.args), r),
+        },
+    };
+}
+
+pub fn index_ty(l: core::option::Option<Local>) -> core::option::Option<Ty> {
+    return match (l) {
+        None -> None,
+        Some(x) -> slice_elem(x.ty),
+    };
+}
+
+// The type of an effectful expression, as type arguments are inferred
+// from it.
+pub fn eff_ty(fuel: usize, env: Env, scope: List<Local>, x: MEff) -> core::option::Option<Ty> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (x) {
+        XPure(e) -> expr_ty(fuel, env, scope, e),
+        XCall(inst, args) -> inst_ret(fuel, env.decls, inst),
+        XApply(op, l, r) -> apply_ty(op, eff_ty(minus(fuel, 1), env, scope, unbox(l))),
+        XNeg(a) -> eff_ty(minus(fuel, 1), env, scope, unbox(a)),
+        XNot(a) -> Some(TyBool),
+        XCast(t, a) -> src_ty(t),
+        XIndex(s, i) -> index_ty(find_local_id(scope, s)),
+        XStruct(t, fs) -> Some(t),
+        XVariant(t, k, ps) -> Some(t),
+        XMatch(s, ety, t, bs, vs) -> Some(t),
+        XDivide(op, l, r) -> eff_ty(minus(fuel, 1), env, scope, unbox(l)),
+    };
+}
+
+pub fn effs_tys(fuel: usize, env: Env, scope: List<Local>, xs: List<MEff>) -> core::option::Option<List<Ty>> {
+    return match (xs) {
+        Nil -> Some(empty()),
+        Cons(x, rest) -> cons_ty(eff_ty(fuel, env, scope, x), effs_tys(fuel, env, scope, unbox(rest))),
+    };
+}
+
+// The first of a list of expected types, and the rest.
+pub fn head_ty(expects: core::option::Option<List<Ty>>) -> core::option::Option<Ty> {
+    return match (expects) {
+        None -> None,
+        Some(ts) -> match (ts) {
+            Nil -> None,
+            Cons(t, rest) -> Some(t),
+        },
+    };
+}
+
+pub fn tail_tys(expects: core::option::Option<List<Ty>>) -> core::option::Option<List<Ty>> {
+    return match (expects) {
+        None -> None,
+        Some(ts) -> match (ts) {
+            Nil -> None,
+            Cons(t, rest) -> Some(unbox(rest)),
+        },
+    };
+}
+
+// An arm of a match expression: its binders, its value and the value's type.
+pub struct EffArm {
+    binders: List<usize>,
+    value: MEff,
+    ty: core::option::Option<Ty>,
+}
+
+pub fn arm_binders(arms: List<EffArm>) -> List<List<usize>> {
+    return match (arms) {
+        Nil -> empty(),
+        Cons(a, rest) -> cons(a.binders, arm_binders(unbox(rest))),
+    };
+}
+
+pub fn arm_values(arms: List<EffArm>) -> List<MEff> {
+    return match (arms) {
+        Nil -> empty(),
+        Cons(a, rest) -> cons(a.value, arm_values(unbox(rest))),
+    };
+}
+
+// A match's type: the expected one, or else its first arm's.
+pub fn result_ty(expected: core::option::Option<Ty>, arms: List<EffArm>) -> core::option::Option<Ty> {
+    return match (expected) {
+        Some(t) -> Some(t),
+        None -> match (arms) {
+            Nil -> None,
+            Cons(a, rest) -> a.ty,
+        },
+    };
+}
+
+pub fn x_match_of(s: MEff, ety: Ty, expected: core::option::Option<Ty>, arms: core::option::Option<List<EffArm>>) -> core::option::Option<MEff> {
+    return match (arms) {
+        None -> None,
+        Some(a) -> match (result_ty(expected, a)) {
+            None -> None,
+            Some(t) -> Some(XMatch(boxed(s), ety, t, arm_binders(a), boxed(arm_values(a)))),
+        },
+    };
+}
+
+pub fn cons_eff_arm(head: core::option::Option<EffArm>, tail: core::option::Option<List<EffArm>>) -> core::option::Option<List<EffArm>> {
+    return match (head) {
+        None -> None,
+        Some(a) -> match (tail) {
+            None -> None,
+            Some(xs) -> Some(cons(a, xs)),
+        },
+    };
+}
+
 // ---------------------------------------------------------------- statements
 
 // A statement as build reads it, before monomorphization's numbering: like
@@ -2987,6 +3221,14 @@ pub enum MStmt {
     MLetSlice(usize, Ty, SrcExpr, SrcExpr, Box<MStmt>),
     MLetIndex(usize, Ty, usize, SrcExpr, Box<MStmt>),
     MSetIndex(usize, SrcExpr, SrcExpr),
+    // the effectful forms
+    MLetEval(usize, Ty, MEff, Box<MStmt>),
+    MSetEval(usize, MEff),
+    MIfEval(MEff, Box<MStmt>, Box<MStmt>),
+    MWhileEval(MEff, Box<MStmt>),
+    MReturnEval(MEff),
+    MDiscard(MEff),
+    MSetIndexEval(usize, MEff, MEff),
 }
 
 // A call: the function instance and the arguments.
@@ -2996,7 +3238,7 @@ pub struct Called {
 }
 
 // What a let binds: a value, a call, a variant, a struct literal, a match,
-// an allocation, a raw view or a slice element.
+// an allocation, a raw view, a slice element, or an effectful expression.
 pub enum LetHead {
     Plain(SrcExpr),
     CallOf(Called),
@@ -3010,6 +3252,7 @@ pub enum LetHead {
     SliceOf(SrcExpr, SrcExpr),
     // slice[index], the slice a local
     IndexOf(usize, SrcExpr),
+    EvalOf(MEff),
 }
 
 pub fn plain_head(e: core::option::Option<SrcExpr>) -> core::option::Option<LetHead> {
@@ -3655,6 +3898,546 @@ pub fn let_head(fuel: usize, env: Env, scope: List<Local>, ty: Ty, init: CTree) 
     };
 }
 
+// ---------------------------------------------------------------- effectful expressions, read
+
+pub fn same_decl_args(ok: bool, args: List<Ty>) -> core::option::Option<List<Ty>> {
+    if (ok) {
+        return Some(args);
+    }
+    return None;
+}
+
+// A struct's or enum's type arguments when they are known before its
+// fields or payload are read: none, or the expected type's.
+pub fn known_args(t: TypeDecl, d: usize, expected: core::option::Option<Ty>) -> core::option::Option<List<Ty>> {
+    if (no_names(t.params)) {
+        return Some(empty());
+    }
+    return match (expected) {
+        None -> None,
+        Some(e) -> match (named_parts(e)) {
+            None -> None,
+            Some(n) -> same_decl_args(n.decl == d, n.args),
+        },
+    };
+}
+
+pub fn named_inferred(d: usize, args: core::option::Option<List<Ty>>) -> core::option::Option<Ty> {
+    return match (args) {
+        None -> None,
+        Some(ts) -> Some(TyNamed(d, boxed(ts))),
+    };
+}
+
+// The type of a literal of declaration d: its known arguments, or else
+// those inferred by matching the field or payload types as written with
+// the values' types.
+pub fn decl_inst(fuel: usize, env: Env, scope: List<Local>, d: usize, t: TypeDecl, known: core::option::Option<List<Ty>>, patterns: core::option::Option<List<CTree>>, values: List<MEff>) -> core::option::Option<Ty> {
+    return match (known) {
+        Some(args) -> Some(TyNamed(d, boxed(args))),
+        None -> match (patterns) {
+            None -> None,
+            Some(ps) -> match (effs_tys(fuel, env, scope, values)) {
+                None -> None,
+                Some(ts) -> named_inferred(d, bound_or_none(t.params, match_tys(fuel, decl_env(env.decls, t.module, empty(), empty()), t.params, ps, ts, empty()))),
+            },
+        },
+    };
+}
+
+pub fn variant_expects(fuel: usize, decls: Decls, d: usize, index: usize, known: core::option::Option<List<Ty>>) -> core::option::Option<List<Ty>> {
+    return match (known) {
+        None -> None,
+        Some(args) -> match (payload_tys(fuel, decls, d, args)) {
+            None -> None,
+            Some(vs) -> get(vs, index),
+        },
+    };
+}
+
+pub fn field_expects(fuel: usize, decls: Decls, d: usize, known: core::option::Option<List<Ty>>) -> core::option::Option<List<Ty>> {
+    return match (known) {
+        None -> None,
+        Some(args) -> field_tys(fuel, decls, d, args),
+    };
+}
+
+pub fn x_variant_of(fuel: usize, env: Env, scope: List<Local>, d: usize, t: TypeDecl, index: usize, known: core::option::Option<List<Ty>>, payload: core::option::Option<List<MEff>>) -> core::option::Option<MEff> {
+    return match (payload) {
+        None -> None,
+        Some(ps) -> match (decl_inst(fuel, env, scope, d, t, known, get(t.payloads, index), ps)) {
+            None -> None,
+            Some(ty) -> Some(XVariant(ty, index, boxed(ps))),
+        },
+    };
+}
+
+pub fn x_struct_of(fuel: usize, env: Env, scope: List<Local>, d: usize, t: TypeDecl, known: core::option::Option<List<Ty>>, values: core::option::Option<List<MEff>>) -> core::option::Option<MEff> {
+    return match (values) {
+        None -> None,
+        Some(vs) -> match (decl_inst(fuel, env, scope, d, t, known, Some(t.field_types), vs)) {
+            None -> None,
+            Some(ty) -> Some(XStruct(ty, boxed(vs))),
+        },
+    };
+}
+
+// A function's parameter types, when its type arguments are known.
+pub fn param_expects(fuel: usize, decls: Decls, fd: FnDecl, args: core::option::Option<List<Ty>>) -> core::option::Option<List<Ty>> {
+    return match (args) {
+        None -> None,
+        Some(a) -> match (param_patterns(fuel, fd)) {
+            None -> None,
+            Some(ps) -> ty_list(fuel, decl_env(decls, fd.module, concat(fd.impl_params, fd.params), a), ps),
+        },
+    };
+}
+
+// The expected types of the arguments after the receiver, if any.
+pub fn skip_expects(expects: core::option::Option<List<Ty>>, pre: List<MEff>) -> core::option::Option<List<Ty>> {
+    return match (pre) {
+        Nil -> expects,
+        Cons(x, rest) -> tail_tys(expects),
+    };
+}
+
+// The instance a call of d means, inferred from its argument types alone.
+pub fn infer_args(fuel: usize, decls: Decls, d: usize, fd: FnDecl, start: List<Bind>, arg_tys: core::option::Option<List<Ty>>) -> core::option::Option<Inst> {
+    let names: List<List<usize>> = concat(fd.impl_params, fd.params);
+    if (no_names(names)) {
+        return Some(Inst { decl: d, args: empty() });
+    }
+    return match (arg_tys) {
+        None -> None,
+        Some(ts) -> match (param_patterns(fuel, fd)) {
+            None -> None,
+            Some(ps) -> inst_from(d, bound_or_none(names, match_tys(fuel, callee_env(decls, fd), names, ps, ts, start))),
+        },
+    };
+}
+
+// The instance a call of d means: from its argument types, and from the
+// type its value is stored at when that is known.
+pub fn infer_eff(fuel: usize, decls: Decls, d: usize, fd: FnDecl, start: List<Bind>, arg_tys: core::option::Option<List<Ty>>, expected: core::option::Option<Ty>) -> core::option::Option<Inst> {
+    return match (expected) {
+        Some(t) -> infer_inst(fuel, decls, d, fd, start, arg_tys, t),
+        None -> infer_args(fuel, decls, d, fd, start, arg_tys),
+    };
+}
+
+pub fn eff_called(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, d: usize, fd: FnDecl, start: List<Bind>, pre: List<MEff>, args: core::option::Option<List<MEff>>) -> core::option::Option<MEff> {
+    return match (args) {
+        None -> None,
+        Some(xs) -> x_call_of(infer_eff(fuel, env.decls, d, fd, start, effs_tys(fuel, env, scope, concat(pre, xs)), expected), concat(pre, xs)),
+    };
+}
+
+// An operator tail: a binary operator, `/` or `%`.
+pub fn eff_binary(p: usize, acc: core::option::Option<MEff>, right: core::option::Option<MEff>) -> core::option::Option<MEff> {
+    if (p == p_div_tail()) {
+        return x_divide_of(Quotient, acc, right);
+    }
+    if (p == p_mod_tail()) {
+        return x_divide_of(Remainder, acc, right);
+    }
+    return match (tail_op(p)) {
+        None -> None,
+        Some(o) -> x_apply_of(o, acc, right),
+    };
+}
+
+// `acc as T as U ...`
+pub fn eff_casts(fuel: usize, env: Env, acc: core::option::Option<MEff>, tail: CTree) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (has_kids(tail)) {
+        return eff_casts(minus(fuel, 1), env, x_cast_into(cast_type_of(env, kid(tail, 1)), acc), kid(tail, 2));
+    }
+    return acc;
+}
+
+pub fn arm_eff(fuel: usize, env: Env, b: Bound, value: core::option::Option<MEff>) -> core::option::Option<EffArm> {
+    return match (value) {
+        None -> None,
+        Some(x) -> Some(EffArm { binders: b.ids, value: x, ty: eff_ty(fuel, env, b.scope, x) }),
+    };
+}
+
+// extract: mutual begin
+// The effectful expression a node of the expression grammar denotes, its
+// value stored at type expected when that is known: the pure expression
+// expr_of reads, or else a call, a variant, a struct literal, a match, a
+// slice element, a division, or an operator, cast or negation of these.
+pub fn eff_of(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, c: CTree) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (expr_of(fuel, env, scope, c)) {
+        Some(e) -> Some(XPure(e)),
+        None -> eff_node(minus(fuel, 1), env, scope, expected, c),
+    };
+}
+
+pub fn eff_node(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, c: CTree) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    let f: usize = minus(fuel, 1);
+    let p: usize = node_prod(c);
+    if (p == p_expr() || p == p_base()) {
+        return eff_of(f, env, scope, expected, kid(c, 0));
+    }
+    if ((p == p_assign() || is_level(p) || p == p_cast()) && !has_kids(kid(c, 1))) {
+        return eff_of(f, env, scope, expected, kid(c, 0));
+    }
+    if (is_level(p)) {
+        return eff_fold(f, env, scope, eff_of(f, env, scope, None, kid(c, 0)), kid(c, 1));
+    }
+    if (p == p_cast()) {
+        return eff_casts(f, env, eff_of(f, env, scope, None, kid(c, 0)), kid(c, 1));
+    }
+    if (p == p_neg()) {
+        return x_neg_of(eff_of(f, env, scope, expected, kid(c, 1)));
+    }
+    if (p == p_not()) {
+        return x_not_of(eff_of(f, env, scope, Some(TyBool), kid(c, 1)));
+    }
+    if (p == p_postfix()) {
+        return eff_postfix(f, env, scope, expected, c);
+    }
+    if (p == p_group()) {
+        return eff_of(f, env, scope, expected, kid(c, 1));
+    }
+    if (p == p_ident()) {
+        return eff_ident(f, env, scope, expected, c);
+    }
+    if (p == p_match_expr()) {
+        return eff_match(f, env, scope, expected, c);
+    }
+    return None;
+}
+
+// acc op operand op operand ...
+pub fn eff_fold(fuel: usize, env: Env, scope: List<Local>, acc: core::option::Option<MEff>, tail: CTree) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (has_kids(tail)) {
+        return eff_fold(minus(fuel, 1), env, scope, eff_binary(node_prod(tail), acc, eff_of(minus(fuel, 1), env, scope, None, kid(tail, 1))), kid(tail, 2));
+    }
+    return acc;
+}
+
+// A primary with no postfix, `path(args)`, `x.m(args)`, or `v[index]`
+// for a slice local v.
+pub fn eff_postfix(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, pf: CTree) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    let f: usize = minus(fuel, 1);
+    let primary: CTree = kid(pf, 0);
+    let tail: CTree = kid(pf, 1);
+    if (node_prod(tail) == p_postfix_end()) {
+        return eff_node(f, env, scope, expected, primary);
+    }
+    if (is_path_call(pf)) {
+        return eff_path_call(f, env, scope, expected, kid(primary, 0), kid(tail, 1));
+    }
+    if (is_method_form(pf)) {
+        return eff_method(f, env, scope, expected, pf);
+    }
+    if (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain() && node_prod(tail) == p_postfix_index() && node_prod(kid(tail, 3)) == p_postfix_end()) {
+        return x_index_of(local_of(env, scope, primary), eff_of(f, env, scope, None, kid(tail, 1)));
+    }
+    return None;
+}
+
+// A name that is not a local or a constant: a unit variant; or a struct
+// literal `S { f: e, ... }`, fields in declared order.
+pub fn eff_ident(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, c: CTree) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    let path: CTree = kid(c, 0);
+    if (node_prod(kid(c, 1)) == p_ident_plain()) {
+        return match (path_spellings(fuel, kid(path, 0), kid(path, 1))) {
+            None -> None,
+            Some(ss) -> match (split_last(ss)) {
+                None -> None,
+                Some(s) -> eff_variant(minus(fuel, 1), env, scope, expected, find_variant(env.decls.types, module_or(env.module, s.module), s.name, 0), empty()),
+            },
+        };
+    }
+    if (node_prod(kid(c, 1)) == p_struct_lit()) {
+        return match (path_spellings(fuel, kid(path, 0), kid(path, 1))) {
+            None -> None,
+            Some(ss) -> match (list_items(fuel, kid(kid(c, 1), 1))) {
+                None -> None,
+                Some(fs) -> match (type_decl_at(env, ss)) {
+                    None -> None,
+                    Some(d) -> match (get(env.decls.types, d)) {
+                        None -> None,
+                        Some(t) -> eff_literal(minus(fuel, 1), env, scope, expected, d, t, fs),
+                    },
+                },
+            },
+        };
+    }
+    return None;
+}
+
+pub fn eff_literal(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, d: usize, t: TypeDecl, fs: List<CTree>) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (!t.is_enum && same_names(t.fields, fs)) {
+        return x_struct_of(fuel, env, scope, d, t, known_args(t, d, expected), eff_list(minus(fuel, 1), env, scope, field_expects(fuel, env.decls, d, known_args(t, d, expected)), field_values(fs)));
+    }
+    return None;
+}
+
+// A variant with its payload.
+pub fn eff_variant(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, v: core::option::Option<VariantAt>, items: List<CTree>) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (v) {
+        None -> None,
+        Some(x) -> match (get(env.decls.types, x.owner)) {
+            None -> None,
+            Some(t) -> x_variant_of(fuel, env, scope, x.owner, t, x.index, known_args(t, x.owner, expected), eff_list(minus(fuel, 1), env, scope, variant_expects(fuel, env.decls, x.owner, x.index, known_args(t, x.owner, expected)), items)),
+        },
+    };
+}
+
+// Expressions in order, each stored at its expected type when known.
+pub fn eff_list(fuel: usize, env: Env, scope: List<Local>, expects: core::option::Option<List<Ty>>, items: List<CTree>) -> core::option::Option<List<MEff>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (items) {
+        Nil -> Some(empty()),
+        Cons(c, rest) -> cons_eff(eff_of(minus(fuel, 1), env, scope, head_ty(expects), c), eff_list(minus(fuel, 1), env, scope, tail_tys(expects), unbox(rest))),
+    };
+}
+
+// `path(args)`: a function, `T::m` for a type parameter T, or a variant.
+pub fn eff_path_call(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, path: CTree, args: CTree) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    let segments: core::option::Option<List<List<usize>>> = path_spellings(fuel, kid(path, 0), kid(path, 1));
+    if (is_path(segments, alloc_path()) || is_path(segments, dealloc_path()) || is_path(segments, single(text_slice_from_raw_parts()))) {
+        return None;
+    }
+    return match (path_ref(fuel, kid(path, 0), kid(path, 1))) {
+        None -> None,
+        Some(pr) -> match (split_last(pr.segments)) {
+            None -> None,
+            Some(s) -> match (list_items(fuel, args)) {
+                None -> None,
+                Some(items) -> eff_named(minus(fuel, 1), env, scope, expected, s, pr.targs, items),
+            },
+        },
+    };
+}
+
+pub fn eff_named(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, s: Split, targs: List<CTree>, items: List<CTree>) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (is_fn_path(env, s)) {
+        return eff_fn_path(minus(fuel, 1), env, scope, expected, s, targs, items);
+    }
+    if (no_trees(targs)) {
+        return eff_variant(minus(fuel, 1), env, scope, expected, find_variant(env.decls.types, module_or(env.module, s.module), s.name, 0), items);
+    }
+    return None;
+}
+
+pub fn eff_fn_path(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, s: Split, targs: List<CTree>, items: List<CTree>) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    let owner: core::option::Option<List<usize>> = single_name(s.module);
+    if (is_type_param(env, owner) && no_trees(targs)) {
+        return match (owner_ty(env, owner)) {
+            None -> None,
+            Some(t) -> eff_found(minus(fuel, 1), env, scope, expected, find_method(fuel, env.decls, env.decls.fns, 0, s.name, t), empty(), items),
+        };
+    }
+    return match (find_fn(env.decls.fns, module_or(env.module, s.module), s.name, 0)) {
+        None -> None,
+        Some(d) -> match (get(env.decls.fns, d)) {
+            None -> None,
+            Some(fd) -> eff_free(minus(fuel, 1), env, scope, expected, d, fd, targs, items),
+        },
+    };
+}
+
+// A free function's call, its type arguments written or inferred.
+pub fn eff_free(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, d: usize, fd: FnDecl, targs: List<CTree>, items: List<CTree>) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (no_trees(targs)) {
+        return eff_infer(minus(fuel, 1), env, scope, expected, d, fd, empty(), empty(), items);
+    }
+    return match (explicit_inst(fuel, env, d, fd, targs)) {
+        None -> None,
+        Some(i) -> match (eff_list(minus(fuel, 1), env, scope, param_expects(fuel, env.decls, fd, Some(i.args)), items)) {
+            None -> None,
+            Some(xs) -> Some(XCall(i, boxed(xs))),
+        },
+    };
+}
+
+// A call whose type arguments are inferred, from start: the arguments
+// after pre (the receiver, if any).
+pub fn eff_infer(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, d: usize, fd: FnDecl, start: List<Bind>, pre: List<MEff>, items: List<CTree>) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    return eff_called(fuel, env, scope, expected, d, fd, start, pre, eff_list(minus(fuel, 1), env, scope, skip_expects(param_expects(fuel, env.decls, fd, bound_args(concat(fd.impl_params, fd.params), start)), pre), items));
+}
+
+pub fn eff_found(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, found: core::option::Option<Found>, pre: List<MEff>, items: List<CTree>) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (found) {
+        None -> None,
+        Some(x) -> match (get(env.decls.fns, x.decl)) {
+            None -> None,
+            Some(fd) -> eff_infer(minus(fuel, 1), env, scope, expected, x.decl, fd, x.binds, pre, items),
+        },
+    };
+}
+
+// `x.m(args)`: `T::m(x, args)` for x's type T.
+pub fn eff_method(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, pf: CTree) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    let tail: CTree = kid(pf, 1);
+    return match (local_of(env, scope, kid(pf, 0))) {
+        None -> None,
+        Some(x) -> match (list_items(fuel, kid(kid(tail, 3), 1))) {
+            None -> None,
+            Some(items) -> eff_found(minus(fuel, 1), env, scope, expected, find_method(fuel, env.decls, env.decls.fns, 0, kid_token(tail, 1).text, x.ty), single(XPure(Local(x.id))), items),
+        },
+    };
+}
+
+// `match (scrutinee) { arms }`: the scrutinee of an enum type, one arm per
+// variant in order.
+pub fn eff_match(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, m: CTree) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    return eff_match_on(minus(fuel, 1), env, scope, expected, eff_of(minus(fuel, 1), env, scope, None, kid(m, 2)), m);
+}
+
+pub fn eff_match_on(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, s: core::option::Option<MEff>, m: CTree) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (s) {
+        None -> None,
+        Some(x) -> match (eff_ty(fuel, env, scope, x)) {
+            None -> None,
+            Some(ety) -> match (named_parts(ety)) {
+                None -> None,
+                Some(n) -> match (get(env.decls.types, n.decl)) {
+                    None -> None,
+                    Some(t) -> eff_match_enum(minus(fuel, 1), env, scope, expected, x, ety, t, payload_tys(fuel, env.decls, n.decl, n.args), m),
+                },
+            },
+        },
+    };
+}
+
+pub fn eff_match_enum(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, x: MEff, ety: Ty, t: TypeDecl, payloads: core::option::Option<List<List<Ty>>>, m: CTree) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (t.is_enum) {
+        return match (payloads) {
+            None -> None,
+            Some(ps) -> match (list_items(fuel, kid(m, 5))) {
+                None -> None,
+                Some(arms) -> x_match_of(x, ety, expected, eff_arms(minus(fuel, 1), env, scope, expected, t, zip_variants(t.variants, ps), arms)),
+            },
+        };
+    }
+    return None;
+}
+
+// Arm k is variant k.
+pub fn eff_arms(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<EffArm>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (variants) {
+        Nil -> match (arms) {
+            Nil -> Some(empty()),
+            Cons(a, more) -> None,
+        },
+        Cons(v, rest) -> match (arms) {
+            Nil -> None,
+            Cons(a, more) -> cons_eff_arm(eff_arm(minus(fuel, 1), env, scope, expected, owner, v, a), eff_arms(minus(fuel, 1), env, scope, expected, owner, unbox(rest), unbox(more))),
+        },
+    };
+}
+
+// `V -> value` or `V(b, ...) -> value`.
+pub fn eff_arm(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, owner: TypeDecl, v: VariantTy, arm: CTree) -> core::option::Option<EffArm> {
+    if (fuel == 0) {
+        return None;
+    }
+    let pattern: CTree = kid(arm, 0);
+    let ptail: CTree = kid(pattern, 1);
+    let path: CTree = kid(pattern, 0);
+    if (node_prod(pattern) == p_pattern_ident() && arm_named(path_spellings(fuel, kid(path, 0), kid(path, 1)), owner.module, v.name)) {
+        if (node_prod(ptail) == p_pattern_plain()) {
+            return eff_arm_bound(minus(fuel, 1), env, expected, Some(Bound { ids: empty(), scope: scope }), kid(arm, 2));
+        }
+        return match (list_items(fuel, kid(ptail, 1))) {
+            None -> None,
+            Some(pats) -> eff_arm_bound(minus(fuel, 1), env, expected, binders_of(env, scope, pats, v.payload), kid(arm, 2)),
+        };
+    }
+    return None;
+}
+
+pub fn eff_arm_bound(fuel: usize, env: Env, expected: core::option::Option<Ty>, bound: core::option::Option<Bound>, value: CTree) -> core::option::Option<EffArm> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (bound) {
+        None -> None,
+        Some(b) -> arm_eff(fuel, env, b, eff_of(minus(fuel, 1), env, b.scope, expected, value)),
+    };
+}
+// extract: mutual end
+
+pub fn eval_head(x: core::option::Option<MEff>) -> core::option::Option<LetHead> {
+    return match (x) {
+        None -> None,
+        Some(e) -> Some(EvalOf(e)),
+    };
+}
+
+// The head of `let x: ty = init;`: a statement form, or else an effectful
+// expression.
+pub fn let_head_or_eval(fuel: usize, env: Env, scope: List<Local>, ty: Ty, init: CTree) -> core::option::Option<LetHead> {
+    return match (let_head(fuel, env, scope, ty, init)) {
+        Some(h) -> Some(h),
+        None -> eval_head(eff_of(fuel, env, scope, Some(ty), init)),
+    };
+}
+
 pub fn then_rest(h: MStmt, rest: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
     return match (rest) {
         None -> None,
@@ -3705,6 +4488,7 @@ pub fn let_stmt(id: usize, ty: Ty, head: LetHead, body: MStmt) -> core::option::
         AllocOf(size, shift) -> alloc_let(is_ptr_ty(ty), id, size, shift, body),
         SliceOf(pointer, length) -> slice_let(slice_elem(ty), id, pointer, length, body),
         IndexOf(slice, index) -> Some(MLetIndex(id, ty, slice, index, boxed(body))),
+        EvalOf(x) -> Some(MLetEval(id, ty, x, boxed(body))),
     };
 }
 
@@ -3722,13 +4506,6 @@ pub fn let_of(id: usize, ty: Ty, head: core::option::Option<LetHead>, body: core
     };
 }
 
-pub fn returned(e: core::option::Option<SrcExpr>) -> core::option::Option<MStmt> {
-    return match (e) {
-        None -> None,
-        Some(x) -> Some(MReturn(x)),
-    };
-}
-
 pub fn if_else(x: SrcExpr, s: MStmt, b: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
     return match (b) {
         None -> None,
@@ -3743,13 +4520,6 @@ pub fn if_branches(x: SrcExpr, a: core::option::Option<MStmt>, b: core::option::
     };
 }
 
-pub fn if_of(c: core::option::Option<SrcExpr>, a: core::option::Option<MStmt>, b: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
-    return match (c) {
-        None -> None,
-        Some(x) -> if_branches(x, a, b),
-    };
-}
-
 pub fn while_body(x: SrcExpr, body: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
     return match (body) {
         None -> None,
@@ -3757,10 +4527,57 @@ pub fn while_body(x: SrcExpr, body: core::option::Option<MStmt>) -> core::option
     };
 }
 
-pub fn while_of(c: core::option::Option<SrcExpr>, body: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
+pub fn return_eval_of(x: core::option::Option<MEff>) -> core::option::Option<MStmt> {
+    return match (x) {
+        None -> None,
+        Some(e) -> Some(MReturnEval(e)),
+    };
+}
+
+// `return e;`, e pure or else effectful (stored at the result type).
+pub fn return_or_eval(fuel: usize, env: Env, scope: List<Local>, e: CTree) -> core::option::Option<MStmt> {
+    return match (expr_of(fuel, env, scope, e)) {
+        Some(x) -> Some(MReturn(x)),
+        None -> return_eval_of(eff_of(fuel, env, scope, env.ret, e)),
+    };
+}
+
+pub fn if_eval_of(c: core::option::Option<MEff>, a: core::option::Option<MStmt>, b: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
     return match (c) {
         None -> None,
+        Some(x) -> match (a) {
+            None -> None,
+            Some(s) -> match (b) {
+                None -> None,
+                Some(t) -> Some(MIfEval(x, boxed(s), boxed(t))),
+            },
+        },
+    };
+}
+
+// `if (c) { a } else { b }`, c pure or else effectful.
+pub fn if_or_eval(fuel: usize, env: Env, scope: List<Local>, c: CTree, a: core::option::Option<MStmt>, b: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
+    return match (expr_of(fuel, env, scope, c)) {
+        Some(x) -> if_branches(x, a, b),
+        None -> if_eval_of(eff_of(fuel, env, scope, Some(TyBool), c), a, b),
+    };
+}
+
+pub fn while_eval_of(c: core::option::Option<MEff>, body: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
+    return match (c) {
+        None -> None,
+        Some(x) -> match (body) {
+            None -> None,
+            Some(b) -> Some(MWhileEval(x, boxed(b))),
+        },
+    };
+}
+
+// `while (c) { body }`, c pure or else effectful.
+pub fn while_or_eval(fuel: usize, env: Env, scope: List<Local>, c: CTree, body: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
+    return match (expr_of(fuel, env, scope, c)) {
         Some(x) -> while_body(x, body),
+        None -> while_eval_of(eff_of(fuel, env, scope, Some(TyBool), c), body),
     };
 }
 
@@ -3820,12 +4637,45 @@ pub fn set_index_of(slice: usize, index: core::option::Option<SrcExpr>, value: c
     };
 }
 
+pub fn set_eval_of(id: usize, x: core::option::Option<MEff>) -> core::option::Option<MStmt> {
+    return match (x) {
+        None -> None,
+        Some(e) -> Some(MSetEval(id, e)),
+    };
+}
+
+// `x = value;`: a statement form, or else an effectful expression.
+pub fn set_or_eval(fuel: usize, env: Env, scope: List<Local>, l: Local, value: CTree) -> core::option::Option<MStmt> {
+    return match (set_local(fuel, env, scope, l, value)) {
+        Some(s) -> Some(s),
+        None -> set_eval_of(l.id, eff_of(fuel, env, scope, Some(l.ty), value)),
+    };
+}
+
+pub fn set_index_eval_of(slice: usize, index: core::option::Option<MEff>, value: core::option::Option<MEff>) -> core::option::Option<MStmt> {
+    return match (index) {
+        None -> None,
+        Some(i) -> match (value) {
+            None -> None,
+            Some(v) -> Some(MSetIndexEval(slice, i, v)),
+        },
+    };
+}
+
+// `v[index] = value;`
+pub fn set_index_or_eval(fuel: usize, env: Env, scope: List<Local>, l: Local, index: CTree, value: CTree) -> core::option::Option<MStmt> {
+    return match (set_index_of(l.id, expr_of(fuel, env, scope, index), expr_of(fuel, env, scope, value))) {
+        Some(s) -> Some(s),
+        None -> set_index_eval_of(l.id, eff_of(fuel, env, scope, None, index), eff_of(fuel, env, scope, slice_elem(l.ty), value)),
+    };
+}
+
 pub fn assign_target(fuel: usize, env: Env, scope: List<Local>, target: CTree, value: CTree) -> core::option::Option<MStmt> {
     let tail: CTree = kid(target, 1);
     if (node_prod(tail) == p_postfix_end()) {
         return match (local_of(env, scope, kid(target, 0))) {
             None -> None,
-            Some(l) -> set_local(fuel, env, scope, l, value),
+            Some(l) -> set_or_eval(fuel, env, scope, l, value),
         };
     }
     if (node_prod(tail) == p_postfix_member() && node_prod(kid(tail, 2)) == p_member_type_args_none() && node_prod(kid(tail, 3)) == p_postfix_end()) {
@@ -3837,7 +4687,7 @@ pub fn assign_target(fuel: usize, env: Env, scope: List<Local>, target: CTree, v
     if (node_prod(tail) == p_postfix_index() && node_prod(kid(tail, 3)) == p_postfix_end()) {
         return match (local_of(env, scope, kid(target, 0))) {
             None -> None,
-            Some(l) -> set_index_of(l.id, expr_of(fuel, env, scope, kid(tail, 1)), expr_of(fuel, env, scope, value)),
+            Some(l) -> set_index_or_eval(fuel, env, scope, l, kid(tail, 1), value),
         };
     }
     return None;
@@ -3870,11 +4720,22 @@ pub fn free_of(args: core::option::Option<List<SrcExpr>>) -> core::option::Optio
     };
 }
 
-// A call statement: `alloc::allocator::dealloc(pointer, size, align);`.
+pub fn discard_of(x: core::option::Option<MEff>) -> core::option::Option<MStmt> {
+    return match (x) {
+        None -> None,
+        Some(e) -> Some(MDiscard(e)),
+    };
+}
+
+// A call statement: `alloc::allocator::dealloc(pointer, size, align);`, or
+// a call whose value is discarded.
 pub fn call_stmt(fuel: usize, env: Env, scope: List<Local>, pf: CTree) -> core::option::Option<MStmt> {
     let path: CTree = kid(kid(pf, 0), 0);
     if (is_path_call(pf) && is_path(path_spellings(fuel, kid(path, 0), kid(path, 1)), dealloc_path())) {
         return free_of(args_of(fuel, env, scope, kid(kid(pf, 1), 1)));
+    }
+    if (is_path_call(pf) || is_method_form(pf)) {
+        return discard_of(eff_postfix(fuel, env, scope, None, pf));
     }
     return None;
 }
@@ -3934,12 +4795,44 @@ pub fn compound_target(fuel: usize, env: Env, scope: List<Local>, target: CTree,
     return None;
 }
 
-pub fn compound_of(fuel: usize, env: Env, scope: List<Local>, target: core::option::Option<CTree>, op: core::option::Option<SrcOp>, value: CTree) -> core::option::Option<MStmt> {
+pub fn compound_pure(fuel: usize, env: Env, scope: List<Local>, target: CTree, op: core::option::Option<SrcOp>, value: CTree) -> core::option::Option<MStmt> {
     return match (op) {
         None -> None,
-        Some(o) -> match (target) {
+        Some(o) -> compound_target(fuel, env, scope, target, o, value),
+    };
+}
+
+// `x op= e` as an effectful expression, also for `/=` and `%=`.
+pub fn compound_eff(p: usize, left: MEff, right: core::option::Option<MEff>) -> core::option::Option<MEff> {
+    if (p == p_assign_div()) {
+        return x_divide_of(Quotient, Some(left), right);
+    }
+    if (p == p_assign_mod()) {
+        return x_divide_of(Remainder, Some(left), right);
+    }
+    return match (compound_op(p)) {
+        None -> None,
+        Some(o) -> x_apply_of(o, Some(left), right),
+    };
+}
+
+// `x op= e` for a local x, when e or op is effectful.
+pub fn compound_eval(fuel: usize, env: Env, scope: List<Local>, target: CTree, p: usize, value: CTree) -> core::option::Option<MStmt> {
+    if (node_prod(kid(target, 1)) == p_postfix_end()) {
+        return match (local_of(env, scope, kid(target, 0))) {
             None -> None,
-            Some(t) -> compound_target(fuel, env, scope, t, o, value),
+            Some(l) -> set_eval_of(l.id, compound_eff(p, XPure(Local(l.id)), eff_of(fuel, env, scope, Some(l.ty), value))),
+        };
+    }
+    return None;
+}
+
+pub fn compound_of(fuel: usize, env: Env, scope: List<Local>, target: core::option::Option<CTree>, p: usize, value: CTree) -> core::option::Option<MStmt> {
+    return match (target) {
+        None -> None,
+        Some(t) -> match (compound_pure(fuel, env, scope, t, compound_op(p), value)) {
+            Some(s) -> Some(s),
+            None -> compound_eval(fuel, env, scope, t, p, value),
         },
     };
 }
@@ -3957,7 +4850,7 @@ pub fn assignment(fuel: usize, env: Env, scope: List<Local>, e: CTree) -> core::
         };
     }
     if (node_prod(e) == p_expr() && node_prod(a) == p_assign() && has_kids(set) && node_prod(set) != p_assign_set()) {
-        return compound_of(fuel, env, scope, peel(fuel, kid(a, 0)), compound_op(node_prod(set)), kid(set, 1));
+        return compound_of(fuel, env, scope, peel(fuel, kid(a, 0)), node_prod(set), kid(set, 1));
     }
     if (node_prod(e) == p_expr() && node_prod(a) == p_assign() && node_prod(set) == p_assign_end()) {
         return match (peel(fuel, kid(a, 0))) {
@@ -4012,7 +4905,7 @@ pub fn let_first(fuel: usize, env: Env, scope: List<Local>, s: CTree, rest: List
     if (node_prod(kid(s, 2)) == p_let_type() && node_prod(kid(s, 3)) == p_let_init() && !member(env.globals, tok.text)) {
         return match (ty_of(fuel, env, kid(kid(s, 2), 1))) {
             None -> None,
-            Some(t) -> let_of(tok.start, t, let_head(minus(fuel, 1), env, scope, t, kid(kid(s, 3), 1)), stmts_of(minus(fuel, 1), env, cons(Local { name: tok.text, id: tok.start, ty: t }, scope), rest)),
+            Some(t) -> let_of(tok.start, t, let_head_or_eval(minus(fuel, 1), env, scope, t, kid(kid(s, 3), 1)), stmts_of(minus(fuel, 1), env, cons(Local { name: tok.text, id: tok.start, ty: t }, scope), rest)),
         };
     }
     return None;
@@ -4026,16 +4919,16 @@ pub fn stmt_of(fuel: usize, env: Env, scope: List<Local>, s: CTree) -> core::opt
     let f: usize = minus(fuel, 1);
     let p: usize = node_prod(s);
     if (p == p_return_stmt() && node_prod(kid(s, 1)) == p_return_value()) {
-        return returned(expr_of(f, env, scope, kid(kid(s, 1), 0)));
+        return return_or_eval(f, env, scope, kid(kid(s, 1), 0));
     }
     if (p == p_if_stmt() && node_prod(kid(s, 5)) == p_else_stmt()) {
-        return if_of(expr_of(f, env, scope, kid(s, 2)), block_of(f, env, scope, kid(kid(s, 4), 1)), block_of(f, env, scope, kid(kid(kid(s, 5), 1), 1)));
+        return if_or_eval(f, env, scope, kid(s, 2), block_of(f, env, scope, kid(kid(s, 4), 1)), block_of(f, env, scope, kid(kid(kid(s, 5), 1), 1)));
     }
     if (p == p_if_stmt() && node_prod(kid(s, 5)) == p_else_none()) {
-        return if_of(expr_of(f, env, scope, kid(s, 2)), block_of(f, env, scope, kid(kid(s, 4), 1)), Some(MNop));
+        return if_or_eval(f, env, scope, kid(s, 2), block_of(f, env, scope, kid(kid(s, 4), 1)), Some(MNop));
     }
     if (p == p_while_stmt()) {
-        return while_of(expr_of(f, env, scope, kid(s, 2)), block_of(f, env, scope, kid(kid(s, 4), 1)));
+        return while_or_eval(f, env, scope, kid(s, 2), block_of(f, env, scope, kid(kid(s, 4), 1)));
     }
     if (p == p_expr_stmt()) {
         return assignment(f, env, scope, kid(s, 0));
@@ -4118,9 +5011,10 @@ pub fn func_params(fuel: usize, env: Env, params: core::option::Option<MParams>,
 // then its own) standing for the instance's arguments. It has a result type.
 pub fn read_fn(fuel: usize, decls: Decls, fd: FnDecl, args: List<Ty>) -> core::option::Option<MFunc> {
     let names: List<List<usize>> = concat(fd.impl_params, fd.params);
-    let env: Env = Env { decls: decls, module: fd.module, names: names, subst: args, globals: module_globals(decls, fd.module) };
     let f: CTree = fd.tree;
     let ret: CTree = kid(f, 6);
+    let tenv: Env = Env { decls: decls, module: fd.module, names: names, subst: args, globals: module_globals(decls, fd.module), ret: None };
+    let env: Env = Env { decls: decls, module: fd.module, names: names, subst: args, globals: module_globals(decls, fd.module), ret: ty_of(fuel, tenv, kid(ret, 1)) };
     if (length(names) == length(args) && node_prod(ret) == p_ret_type()) {
         return match (list_items(fuel, kid(f, 4))) {
             None -> None,
@@ -4138,6 +5032,60 @@ pub fn read_inst(fuel: usize, decls: Decls, inst: Inst) -> core::option::Option<
 }
 
 // ---------------------------------------------------------------- monomorphization
+
+// extract: mutual begin
+// The function instances an expression calls, in order (a callee before
+// its arguments').
+pub fn eff_calls(x: MEff) -> List<Inst> {
+    return match (x) {
+        XPure(e) -> empty(),
+        XCall(inst, args) -> cons(inst, effs_calls(unbox(args))),
+        XApply(op, l, r) -> concat(eff_calls(unbox(l)), eff_calls(unbox(r))),
+        XNeg(a) -> eff_calls(unbox(a)),
+        XNot(a) -> eff_calls(unbox(a)),
+        XCast(t, a) -> eff_calls(unbox(a)),
+        XIndex(s, i) -> eff_calls(unbox(i)),
+        XStruct(t, fs) -> effs_calls(unbox(fs)),
+        XVariant(t, k, ps) -> effs_calls(unbox(ps)),
+        XMatch(s, ety, t, bs, vs) -> concat(eff_calls(unbox(s)), effs_calls(unbox(vs))),
+        XDivide(op, l, r) -> concat(eff_calls(unbox(l)), eff_calls(unbox(r))),
+    };
+}
+
+pub fn effs_calls(xs: List<MEff>) -> List<Inst> {
+    return match (xs) {
+        Nil -> empty(),
+        Cons(x, rest) -> concat(eff_calls(x), effs_calls(unbox(rest))),
+    };
+}
+// extract: mutual end
+
+// extract: mutual begin
+// The types an expression's literals and matches name, in order (a match's
+// enum type, then its result type).
+pub fn eff_named_tys(x: MEff) -> List<Ty> {
+    return match (x) {
+        XPure(e) -> empty(),
+        XCall(inst, args) -> effs_named_tys(unbox(args)),
+        XApply(op, l, r) -> concat(eff_named_tys(unbox(l)), eff_named_tys(unbox(r))),
+        XNeg(a) -> eff_named_tys(unbox(a)),
+        XNot(a) -> eff_named_tys(unbox(a)),
+        XCast(t, a) -> eff_named_tys(unbox(a)),
+        XIndex(s, i) -> eff_named_tys(unbox(i)),
+        XStruct(t, fs) -> cons(t, effs_named_tys(unbox(fs))),
+        XVariant(t, k, ps) -> cons(t, effs_named_tys(unbox(ps))),
+        XMatch(s, ety, t, bs, vs) -> concat(eff_named_tys(unbox(s)), cons(ety, cons(t, effs_named_tys(unbox(vs))))),
+        XDivide(op, l, r) -> concat(eff_named_tys(unbox(l)), eff_named_tys(unbox(r))),
+    };
+}
+
+pub fn effs_named_tys(xs: List<MEff>) -> List<Ty> {
+    return match (xs) {
+        Nil -> empty(),
+        Cons(x, rest) -> concat(eff_named_tys(x), effs_named_tys(unbox(rest))),
+    };
+}
+// extract: mutual end
 
 // The function instances a statement calls, in order.
 pub fn stmt_calls(m: MStmt) -> List<Inst> {
@@ -4160,6 +5108,13 @@ pub fn stmt_calls(m: MStmt) -> List<Inst> {
         MLetSlice(id, e, p, n, body) -> stmt_calls(unbox(body)),
         MLetIndex(id, ty, s, i, body) -> stmt_calls(unbox(body)),
         MSetIndex(s, i, v) -> empty(),
+        MLetEval(id, ty, x, body) -> concat(eff_calls(x), stmt_calls(unbox(body))),
+        MSetEval(id, x) -> eff_calls(x),
+        MIfEval(c, a, b) -> concat(eff_calls(c), concat(stmt_calls(unbox(a)), stmt_calls(unbox(b)))),
+        MWhileEval(c, body) -> concat(eff_calls(c), stmt_calls(unbox(body))),
+        MReturnEval(x) -> eff_calls(x),
+        MDiscard(x) -> eff_calls(x),
+        MSetIndexEval(s, i, v) -> concat(eff_calls(i), eff_calls(v)),
     };
 }
 
@@ -4212,6 +5167,13 @@ pub fn stmt_tys(m: MStmt) -> List<Ty> {
         MLetSlice(id, e, p, n, body) -> cons(e, stmt_tys(unbox(body))),
         MLetIndex(id, ty, s, i, body) -> cons(ty, stmt_tys(unbox(body))),
         MSetIndex(s, i, v) -> empty(),
+        MLetEval(id, ty, x, body) -> cons(ty, concat(eff_named_tys(x), stmt_tys(unbox(body)))),
+        MSetEval(id, x) -> eff_named_tys(x),
+        MIfEval(c, a, b) -> concat(eff_named_tys(c), concat(stmt_tys(unbox(a)), stmt_tys(unbox(b)))),
+        MWhileEval(c, body) -> concat(eff_named_tys(c), stmt_tys(unbox(body))),
+        MReturnEval(x) -> eff_named_tys(x),
+        MDiscard(x) -> eff_named_tys(x),
+        MSetIndexEval(s, i, v) -> concat(eff_named_tys(i), eff_named_tys(v)),
     };
 }
 
@@ -4399,6 +5361,204 @@ pub fn let_index_closed(id: usize, ty: core::option::Option<SrcType>, s: usize, 
     };
 }
 
+pub fn e_call_closed(callee: core::option::Option<usize>, args: core::option::Option<List<SrcEff>>) -> core::option::Option<SrcEff> {
+    return match (callee) {
+        None -> None,
+        Some(c) -> match (args) {
+            None -> None,
+            Some(xs) -> Some(ECall(c, boxed(xs))),
+        },
+    };
+}
+
+pub fn e_apply_closed(op: SrcOp, l: core::option::Option<SrcEff>, r: core::option::Option<SrcEff>) -> core::option::Option<SrcEff> {
+    return match (l) {
+        None -> None,
+        Some(a) -> match (r) {
+            None -> None,
+            Some(b) -> Some(EApply(op, boxed(a), boxed(b))),
+        },
+    };
+}
+
+pub fn e_divide_closed(op: SrcDivOp, l: core::option::Option<SrcEff>, r: core::option::Option<SrcEff>) -> core::option::Option<SrcEff> {
+    return match (l) {
+        None -> None,
+        Some(a) -> match (r) {
+            None -> None,
+            Some(b) -> Some(EDivide(op, boxed(a), boxed(b))),
+        },
+    };
+}
+
+pub fn e_neg_closed(x: core::option::Option<SrcEff>) -> core::option::Option<SrcEff> {
+    return match (x) {
+        None -> None,
+        Some(a) -> Some(ENeg(boxed(a))),
+    };
+}
+
+pub fn e_not_closed(x: core::option::Option<SrcEff>) -> core::option::Option<SrcEff> {
+    return match (x) {
+        None -> None,
+        Some(a) -> Some(ENot(boxed(a))),
+    };
+}
+
+pub fn e_cast_closed(t: SrcType, x: core::option::Option<SrcEff>) -> core::option::Option<SrcEff> {
+    return match (x) {
+        None -> None,
+        Some(a) -> Some(ECast(t, boxed(a))),
+    };
+}
+
+pub fn e_index_closed(s: usize, x: core::option::Option<SrcEff>) -> core::option::Option<SrcEff> {
+    return match (x) {
+        None -> None,
+        Some(a) -> Some(EIndex(s, boxed(a))),
+    };
+}
+
+pub fn e_struct_closed(t: core::option::Option<SrcType>, fs: core::option::Option<List<SrcEff>>) -> core::option::Option<SrcEff> {
+    return match (t) {
+        None -> None,
+        Some(ty) -> match (fs) {
+            None -> None,
+            Some(xs) -> Some(EStruct(ty, boxed(xs))),
+        },
+    };
+}
+
+pub fn e_variant_closed(t: core::option::Option<SrcType>, k: usize, ps: core::option::Option<List<SrcEff>>) -> core::option::Option<SrcEff> {
+    return match (t) {
+        None -> None,
+        Some(ty) -> match (ps) {
+            None -> None,
+            Some(xs) -> Some(EVariant(ty, k, boxed(xs))),
+        },
+    };
+}
+
+pub fn e_match_closed(s: core::option::Option<SrcEff>, ety: core::option::Option<SrcType>, t: core::option::Option<SrcType>, bs: List<List<usize>>, vs: core::option::Option<List<SrcEff>>) -> core::option::Option<SrcEff> {
+    return match (s) {
+        None -> None,
+        Some(x) -> match (ety) {
+            None -> None,
+            Some(e) -> match (t) {
+                None -> None,
+                Some(ty) -> match (vs) {
+                    None -> None,
+                    Some(xs) -> Some(EMatch(boxed(x), e, ty, bs, boxed(xs))),
+                },
+            },
+        },
+    };
+}
+
+pub fn cons_src_eff(head: core::option::Option<SrcEff>, tail: core::option::Option<List<SrcEff>>) -> core::option::Option<List<SrcEff>> {
+    return match (head) {
+        None -> None,
+        Some(x) -> match (tail) {
+            None -> None,
+            Some(xs) -> Some(cons(x, xs)),
+        },
+    };
+}
+
+// extract: mutual begin
+// The source expression: types become source types and a call names its
+// instance's position in the function table.
+pub fn close_eff(fuel: usize, t: Tables, x: MEff) -> core::option::Option<SrcEff> {
+    return match (x) {
+        XPure(e) -> Some(EPure(e)),
+        XCall(inst, args) -> e_call_closed(inst_index(t.fns, inst, 0), close_effs(fuel, t, unbox(args))),
+        XApply(op, l, r) -> e_apply_closed(op, close_eff(fuel, t, unbox(l)), close_eff(fuel, t, unbox(r))),
+        XNeg(a) -> e_neg_closed(close_eff(fuel, t, unbox(a))),
+        XNot(a) -> e_not_closed(close_eff(fuel, t, unbox(a))),
+        XCast(ty, a) -> e_cast_closed(ty, close_eff(fuel, t, unbox(a))),
+        XIndex(s, i) -> e_index_closed(s, close_eff(fuel, t, unbox(i))),
+        XStruct(ty, fs) -> e_struct_closed(close_ty(fuel, t, ty), close_effs(fuel, t, unbox(fs))),
+        XVariant(ty, k, ps) -> e_variant_closed(close_ty(fuel, t, ty), k, close_effs(fuel, t, unbox(ps))),
+        XMatch(s, ety, ty, bs, vs) -> e_match_closed(close_eff(fuel, t, unbox(s)), close_ty(fuel, t, ety), close_ty(fuel, t, ty), bs, close_effs(fuel, t, unbox(vs))),
+        XDivide(op, l, r) -> e_divide_closed(op, close_eff(fuel, t, unbox(l)), close_eff(fuel, t, unbox(r))),
+    };
+}
+
+pub fn close_effs(fuel: usize, t: Tables, xs: List<MEff>) -> core::option::Option<List<SrcEff>> {
+    return match (xs) {
+        Nil -> Some(empty()),
+        Cons(x, rest) -> cons_src_eff(close_eff(fuel, t, x), close_effs(fuel, t, unbox(rest))),
+    };
+}
+// extract: mutual end
+
+pub fn let_eval_closed(id: usize, ty: core::option::Option<SrcType>, x: core::option::Option<SrcEff>, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (ty) {
+        None -> None,
+        Some(t) -> match (x) {
+            None -> None,
+            Some(e) -> match (body) {
+                None -> None,
+                Some(b) -> Some(LetEval(id, t, e, boxed(b))),
+            },
+        },
+    };
+}
+
+pub fn set_eval_closed(id: usize, x: core::option::Option<SrcEff>) -> core::option::Option<SrcStmt> {
+    return match (x) {
+        None -> None,
+        Some(e) -> Some(SetEval(id, e)),
+    };
+}
+
+pub fn if_eval_closed(c: core::option::Option<SrcEff>, a: core::option::Option<SrcStmt>, b: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (c) {
+        None -> None,
+        Some(e) -> match (a) {
+            None -> None,
+            Some(x) -> match (b) {
+                None -> None,
+                Some(y) -> Some(IfEval(e, boxed(x), boxed(y))),
+            },
+        },
+    };
+}
+
+pub fn while_eval_closed(c: core::option::Option<SrcEff>, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (c) {
+        None -> None,
+        Some(e) -> match (body) {
+            None -> None,
+            Some(b) -> Some(WhileEval(e, boxed(b))),
+        },
+    };
+}
+
+pub fn return_eval_closed(x: core::option::Option<SrcEff>) -> core::option::Option<SrcStmt> {
+    return match (x) {
+        None -> None,
+        Some(e) -> Some(ReturnEval(e)),
+    };
+}
+
+pub fn discard_closed(x: core::option::Option<SrcEff>) -> core::option::Option<SrcStmt> {
+    return match (x) {
+        None -> None,
+        Some(e) -> Some(Discard(e)),
+    };
+}
+
+pub fn set_index_eval_closed(s: usize, i: core::option::Option<SrcEff>, v: core::option::Option<SrcEff>) -> core::option::Option<SrcStmt> {
+    return match (i) {
+        None -> None,
+        Some(x) -> match (v) {
+            None -> None,
+            Some(y) -> Some(SetIndexEval(s, x, y)),
+        },
+    };
+}
+
 // The source statement: types become source types and a call names its
 // instance's position in the function table.
 pub fn close_stmt(fuel: usize, t: Tables, m: MStmt) -> core::option::Option<SrcStmt> {
@@ -4421,6 +5581,13 @@ pub fn close_stmt(fuel: usize, t: Tables, m: MStmt) -> core::option::Option<SrcS
         MLetSlice(id, e, p, n, body) -> let_slice_closed(id, close_ty(fuel, t, e), p, n, close_stmt(fuel, t, unbox(body))),
         MLetIndex(id, ty, s, i, body) -> let_index_closed(id, close_ty(fuel, t, ty), s, i, close_stmt(fuel, t, unbox(body))),
         MSetIndex(s, i, v) -> Some(SetIndex(s, i, v)),
+        MLetEval(id, ty, x, body) -> let_eval_closed(id, close_ty(fuel, t, ty), close_eff(fuel, t, x), close_stmt(fuel, t, unbox(body))),
+        MSetEval(id, x) -> set_eval_closed(id, close_eff(fuel, t, x)),
+        MIfEval(c, a, b) -> if_eval_closed(close_eff(fuel, t, c), close_stmt(fuel, t, unbox(a)), close_stmt(fuel, t, unbox(b))),
+        MWhileEval(c, body) -> while_eval_closed(close_eff(fuel, t, c), close_stmt(fuel, t, unbox(body))),
+        MReturnEval(x) -> return_eval_closed(close_eff(fuel, t, x)),
+        MDiscard(x) -> discard_closed(close_eff(fuel, t, x)),
+        MSetIndexEval(s, i, v) -> set_index_eval_closed(s, close_eff(fuel, t, i), close_eff(fuel, t, v)),
     };
 }
 
@@ -5201,8 +6368,18 @@ fn p_assign_bor() -> usize {
 }
 
 // extract: inline
+fn p_assign_div() -> usize {
+    return 110;
+}
+
+// extract: inline
 fn p_assign_end() -> usize {
     return 117;
+}
+
+// extract: inline
+fn p_assign_mod() -> usize {
+    return 111;
 }
 
 // extract: inline
@@ -5288,6 +6465,11 @@ fn p_compare() -> usize {
 // extract: inline
 fn p_const() -> usize {
     return 208;
+}
+
+// extract: inline
+fn p_div_tail() -> usize {
+    return 153;
 }
 
 // extract: inline
@@ -5588,6 +6770,11 @@ fn p_match_expr() -> usize {
 // extract: inline
 fn p_member_type_args_none() -> usize {
     return 297;
+}
+
+// extract: inline
+fn p_mod_tail() -> usize {
+    return 154;
 }
 
 // extract: inline

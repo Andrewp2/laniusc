@@ -650,7 +650,7 @@ program's own first; `sourceProgram` is the one-file case.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Frontend` | 3485 | 9.3 | extracted from `formal/lani/mini/frontend.lani`: the grammar table, `validate_tree`, `build`, the monomorphizer |
+| `Frontend` | 4468 | 15 | extracted from `formal/lani/mini/frontend.lani`: the grammar table, `validate_tree`, `build`, the monomorphizer |
 | `FrontLex` | 59 | 0.6 | tokens from the Lean lexer; `sourceProgram`, `sourceProgramFiles` |
 | `FrontSpec` | 354 | 0.9 | `CTree.leaves`, `CTree.preorder`, `Shape`, `Derives`, `Reads`; `validate_sound`, `sourceProgram_sound`, `sourceProgramFiles_sound` |
 
@@ -670,7 +670,7 @@ laniusc's lexer and parser are not trusted. The trusted parts are the Lean
 lexer, the grammar table, the grammar's unambiguity (not proved) and `build`
 as the meaning of the concrete syntax. TRUSTED_BASE.md section 4 lists them.
 
-`frontend.lani` is about 4,540 hand-written lines, followed by the generated
+`frontend.lani` is about 5,740 hand-written lines, followed by the generated
 grammar table: 318 productions, with terminals as lexer token codes. Two
 tools regenerate it:
 
@@ -772,15 +772,66 @@ million tree nodes, 694 declarations made generic, 917 moved to `gen::lib`
 and 688 literals written as constants, all read as expected, no lexer
 disagreements, 48 of 48 mutants rejected; 12 of 12 hand-written cases pass.
 
+Effectful expressions. An expression that calls a function, indexes a
+slice, divides (`/`, `%`), or is a struct literal, a variant or a `match` is
+read as a `SrcEff`, and its statement takes the effectful form: `LetEval`,
+`SetEval`, `IfEval`, `WhileEval`, `ReturnEval`, `SetIndexEval`, or
+`Discard` for a call statement `f(x);`. Two things keep the old forms, so
+programs read before still read the same:
+- an expression with none of these inside is pure (`EPure`), and so are
+  operators, casts and negations of pure operands: `(f(x) + 1) * 2` is
+  `EApply(times, EApply(plus, ECall .., EPure 1), EPure 2)`;
+- a statement that has a form of its own keeps it: `let x: T = f(a);` with
+  pure arguments is `LetCall`, `x = f(a);` is `SetCall`, a `let` of a match
+  on a local with pure arms is `LetMatch`, and pure struct literals,
+  variants and `s[i]` in a `let` are `LetStruct`, `LetEnum` and `LetIndex`.
+
+Type arguments inside expressions:
+- a struct literal's or variant's come from the type its value is stored at
+  (a `let`'s type, the assigned local's, the function's result type for
+  `return`, or a parameter's type when the callee's type arguments are
+  known), or else are inferred from the field or payload types;
+- a call's are written, or inferred from the argument types and, when known,
+  the stored-at type;
+- a match's result type is the stored-at type, or else its first arm's.
+
+`x op= e` with `e` effectful, and `x /= e` and `x %= e`, are `SetEval(x,
+x op e)`. Reading the local `x` has no effect, so evaluating it before `e`
+gives what Core's own compound form gives. A field assignment `x.f = e`
+needs `e` pure, since `SrcStmt` has no effectful form of it.
+
+The difftest generates these with `oracle_difftest.py`'s `EFFECTS` (on except
+with `--generic`): calls nested in operators, casts, `/` and `%`, struct and
+enum literals with such fields, indexing at computed indices, `match`
+expressions of any type on a call, literal, local or match, effectful `if`
+and `while` conditions, returns and call statements, and struct, enum and
+slice parameters and results. The script reads each expected statement the
+same way: pure parts collapse, and a statement with a pure form keeps it.
+Some `x = x op e` with `e` effectful are printed `x op= e`. The case
+`effects` has generic calls inferred through effectful arguments, a variant
+typed by a parameter and by the result type, methods inside expressions,
+`/=` and `%=`, and an effectful slice store. `reject_effectful_field` must be
+rejected.
+
+2026-10-21, with effectful expressions: 400 programs (seeds 1 and 2), 572,000
+tokens and 5.0 million tree nodes, with 1,262 effectful statements (316
+`LetEval`, 89 `SetEval`, 122 `IfEval`, 70 `WhileEval`, 513 `ReturnEval`,
+152 `Discard`) holding 813 calls, 627 matches, 832 divisions, 420 slice
+indexings, 182 struct literals and 321 variants. All read as expected, no
+lexer disagreements, 48 of 48 mutants rejected. `--generic` (seeds 1 and 2)
+and the programs without effects read as before, and 14 of 14 hand-written
+cases pass.
+
 What it does not read yet:
-- calls inside expressions, unit functions (`core::panic::panic()`), `/`
-  and `%`, shifts, `&self`, `isize` and `size_of<T>()`, which have no
-  `SrcProgram` form;
+- unit functions (`core::panic::panic()`), shifts, `&self`, `isize` and
+  `size_of<T>()`, which have no `SrcProgram` form;
 - `=>` match arms, and block or `if` arms;
 - integer literals of 2^31 and above (so `const MIN: i32 = -2147483648;`);
 - methods of generic impls called as `T::m` where `T` is not a type
   parameter (`Vec::new()`), and trait-generic code that relies on bounds;
-- struct literals or calls in `return`.
+- an effectful value in a field assignment (`x.f = f(y);`), a field of a
+  call's result (`f(x).a`), indexing a slice that is not a local, and
+  method calls on a receiver that is not a local.
 
 ### Milestone 4: the compiler in Lanius, and extraction
 

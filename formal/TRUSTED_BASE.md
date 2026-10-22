@@ -199,7 +199,22 @@ still a parse tree of the same tokens. Trusted:
     `op` one of `+ - * & | ^`. Core has the compound form itself
     (`assign .add` and so on, `evalAssignValue`), which evaluates `e` before
     it reads `x`; for the subset's expressions, which neither trap nor have
-    effects, the two orders give the same value and state.
+    effects, the two orders give the same value and state;
+  - an expression that calls a function, indexes a slice, divides (`/`,
+    `%`), or is a struct literal, variant or `match` is a `SrcEff`, and its
+    statement the effectful form (`LetEval`, `SetEval`, `IfEval`,
+    `WhileEval`, `ReturnEval`, `SetIndexEval`, `Discard` for `f(x);`).
+    Operators, casts and negations of pure operands are `EPure`, and a
+    statement with a form of its own keeps it (`LetCall`, `SetCall`,
+    `LetStruct`, `LetEnum`, `LetMatch` on a local, `LetIndex`, when their
+    parts are pure). `x op= e` with `e` effectful, and `x /= e`, `x %= e`,
+    are `SetEval(x, x op e)`: `x` is read before `e` is evaluated, which
+    is Core's order too since reading a local has no effect. A struct
+    literal's or variant's type arguments come from the type its value is
+    stored at when that is known (a `let`, the assigned local, the result
+    type for `return`, a parameter of a callee whose type arguments are
+    known), else from its fields' or payload's types; a match's result type
+    is the stored-at type or its first arm's.
 
   It rejects anything outside the subset. `build` has no relational spec yet;
   the difftest checks it against the generator's programs. To shrink it:
