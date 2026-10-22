@@ -581,30 +581,22 @@ callees; `--modules a::b,c::d` limits the run.
 
 2026-10-22, all 113 modules: 2,187 targets. 1,160 are outside the harness
 (by type: u16 95, i8 73, i16 71, extern 63, slices at least 180, wide-integer
-structs at least 114, str 41). Of the 1,027 testable ones, 168 compile and run (all
-42 of core::cmp, core::option's is_some, is_none, contains, unwrap_or, or,
-and, xor, and others), 118 read but don't compile, and 741 don't read.
-1,396 calls compared, no disagreements.
+structs at least 114, str 41). Of the 1,027 testable ones, at first 281
+compiled, 5 read but didn't compile and 741 didn't read (674 for type
+aliases). After the type aliases, wide literals, null pointers, scalar
+type methods and `!` arms below: 943 compile and run, 3 read but don't
+compile, 81 don't read; 3,930 calls compared, no disagreements.
 
 Why the rest don't read or compile (a target can count under several; the
 counts include callers of a function that fails):
 
-- type aliases, 674: the front end doesn't read `type X = ...` yet. Nearly
-  all are std's capability and id aliases (`NetworkCapability`,
-  `Capability`, `EnvCapability`, `PathByte`, `FilesystemCapability`, ...).
-- unsigned literals, 113 (compileSource): a bare literal beside an unsigned
-  operand (`v == 0` with `v: u8`, `v & 15` with `u32`) is read as `i32`;
-  with `(0 as u8)` it compiles. Context typing exists only for `isize`.
-  Mostly core::byte, core::u8, core::number_u32, core::u32, core::decimal.
-- shifts, 60: `<<`, `>>`, `<<=`, `>>=`.
-- extern callees, 30.
-- literals of 2^31 or more, 25.
-- arrays, 13; `for`, `loop`, `break`, `continue`, 7.
-- `let p: ptr = 0;`, 4 (compileSource): this is core::mem::size_of, which
-  reads at every type but doesn't compile.
-- a method through a scalar type name (`i32::hash(value)`), 3.
-- a match arm that panics (`None -> core::panic::panic()`, type `!`), 1:
-  core::option::unwrap.
+- shifts, 60: `<<`, `>>`, `<<=`, `>>=` (being added).
+- extern callees, 30, and with them arrays, 13, and `for`, `loop`,
+  `break`, `continue`, 7 (std's I/O, env, random and time wrappers).
+- `core::mem::size_of` at `u8` and `bool`, 2 (compileSource): raw views of
+  `u8` and `bool` elements, which the front pass does not have.
+- `<isize as SaturatingAdd<isize>>::saturating_add`, 1 (compileSource),
+  cause not yet found.
 
 The per-function list is `unread.txt` in the work directory.
 
@@ -1106,6 +1098,17 @@ scoped by their enum, and `Some`/`None` resolve to core::option's through
 the import. With them loaded, core::option reads 15 of 21 (the rest need
 core::result or the trait call `T::eq`), alloc::allocator 29 of 32 before
 the `ptr` constant fix below, core::mem and core::panic all.
+
+The whole of `compiler.lani`, with `le32`'s and `le64`'s shifts written as
+divisions, now reads as one program with those four modules: 646 function
+instances after monomorphization, every body ending in a return, the
+declarations consistent. `compileSource` lowers all but 98 of them, every
+one part of `Box<T>`: `boxed`, `unbox`, `core::mem::typed_slice_from_storage`
+and `core::mem::size_of` at element types such as `Expr`, `Stmt`, `SrcType`
+and `List<X>`, whose raw views hold enums inside enums (`List<X>`'s payload
+is X and a `Box`). Enum fields and payloads in slice elements are the open
+item of step 6; with them the mini compiler's own source would compile.
+(Probe: `target/claude-work/census/Probe.lean` in the step 11 worktree.)
 
 Type aliases, wide literals, null pointers, `!` arms (10-22). Each closes a
 gap the stdlib oracle or the census found:
