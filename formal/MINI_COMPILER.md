@@ -495,8 +495,10 @@ Effectful expressions (`EFFECTS`, off in `frontend_difftest.py`): calls
 nested anywhere in an expression, in `let`, assignment, `if` and `while`
 conditions, `return` and as bare call statements (`Discard`); `/` and `%`
 with divisors that cannot trap (`(d | 1)`, and `(d | 1) & -3` for `i32`);
-struct and enum literals with such fields; `s[i]` of an `i32` slice (`EIndex`)
-at an `i32` or `usize` index that may call, kept in bounds as a literal,
+struct and enum literals with such fields; `s[i]` (`EIndex`) of a slice of
+`i32`, of word structs or of word enums (as `let`, assignment and return
+values, arguments and `match` scrutinees) at an `i32` or `usize` index that
+may call, kept in bounds as a literal,
 `e & (n - 1)` or a nonnegative `e % n`; `match` expressions (`EMatch`) of
 any type in any of those places, on a call, an enum literal, a local or
 another match, with arms that use their binders and may call, index and
@@ -522,7 +524,9 @@ no disagreements and no rejections, with 2,878 `match` expressions. With
 `SetIndexEval`, seeds 51-56 again: 1,800 programs, 14,400 calls, no
 disagreements and no rejections; 529 such stores, of which 305 runs had the
 value's call write the very element stored (with the value's write winning
-instead, 19 programs would give other results).
+instead, 19 programs would give other results). With word struct and
+enum element reads, seeds 51-54: 1,200 programs, 9,600 calls, no
+disagreements and no rejections.
 
 Not covered yet: the stdlib, which needs generics and modules in the front
 pass.
