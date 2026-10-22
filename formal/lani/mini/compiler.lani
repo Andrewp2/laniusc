@@ -2445,12 +2445,791 @@ pub fn funcs_return(funcs: List<SrcFunc>) -> bool {
     };
 }
 
+// Translation validation (roadmap step 13). The optimizer below is not
+// proved: no proof mentions it. Its output is checked by validate, which is
+// proved in Lanius/Mini/Validate.lean (validate p q = true: every run of p
+// that returns has a run of q with the same result and heap), and
+// compile_optimized compiles the original program when the check fails.
+
+// The validator. Word arithmetic first, as the mini semantics computes it.
+
+// The low 32 bits of a word, zero-extended.
+pub fn low_bits(value: u64) -> u64 {
+    return value & 4294967295;
+}
+
+// The low 32 bits plus 2^31, mod 2^32: unsigned order on keys is signed
+// order on the low halves.
+pub fn signed_key(value: u64) -> u64 {
+    return low_bits(value + 2147483648);
+}
+
+impl BinOp {
+    pub fn compute(self, a: u64, b: u64) -> u64 {
+        return match (self) {
+            Add -> a + b,
+            Sub -> a - b,
+            Mul -> a * b,
+            And -> a & b,
+            Or -> a | b,
+            Xor -> a ^ b,
+        };
+    }
+
+    // x op unit is x.
+    pub fn unit(self) -> u64 {
+        return match (self) {
+            Add -> 0,
+            Sub -> 0,
+            Mul -> 1,
+            And -> 18446744073709551615,
+            Or -> 0,
+            Xor -> 0,
+        };
+    }
+
+    // unit op x is x too.
+    pub fn commutes(self) -> bool {
+        return match (self) {
+            Add -> true,
+            Sub -> false,
+            Mul -> true,
+            And -> true,
+            Or -> true,
+            Xor -> true,
+        };
+    }
+
+    // x op 0 and 0 op x are 0.
+    pub fn annihilates(self) -> bool {
+        return match (self) {
+            Add -> false,
+            Sub -> false,
+            Mul -> true,
+            And -> true,
+            Or -> false,
+            Xor -> false,
+        };
+    }
+
+    pub fn number(self) -> usize {
+        return match (self) {
+            Add -> 0,
+            Sub -> 1,
+            Mul -> 2,
+            And -> 3,
+            Or -> 4,
+            Xor -> 5,
+        };
+    }
+}
+
+impl CmpOp {
+    // Unsigned comparison.
+    pub fn test(self, a: u64, b: u64) -> bool {
+        return match (self) {
+            Eq -> a == b,
+            Ne -> a != b,
+            Lt -> b > a,
+            Le -> b >= a,
+            Gt -> a > b,
+            Ge -> a >= b,
+        };
+    }
+
+    pub fn number(self) -> usize {
+        return match (self) {
+            Eq -> 0,
+            Ne -> 1,
+            Lt -> 2,
+            Le -> 3,
+            Gt -> 4,
+            Ge -> 5,
+        };
+    }
+}
+
+impl Word {
+    // Word.apply.
+    pub fn compute(self, operation: BinOp, a: u64, b: u64) -> u64 {
+        return match (self) {
+            S32 -> low_bits(operation.compute(a, b)),
+            U64 -> operation.compute(a, b),
+        };
+    }
+
+    // Word.holds.
+    pub fn test(self, operation: CmpOp, a: u64, b: u64) -> bool {
+        return match (self) {
+            S32 -> operation.test(signed_key(a), signed_key(b)),
+            U64 -> operation.test(a, b),
+        };
+    }
+
+    // a and b are the same operand of an operation on this word.
+    pub fn same_operand(self, a: u64, b: u64) -> bool {
+        return match (self) {
+            S32 -> low_bits(a) == low_bits(b),
+            U64 -> a == b,
+        };
+    }
+
+    // Results are zero-extended.
+    pub fn narrows(self) -> bool {
+        return match (self) {
+            S32 -> true,
+            U64 -> false,
+        };
+    }
+
+    pub fn number(self) -> usize {
+        return match (self) {
+            S32 -> 0,
+            U64 -> 1,
+        };
+    }
+}
+
+impl Expr {
+    // The value is below 2^32 in every environment.
+    pub fn narrow(self) -> bool {
+        return match (self) {
+            Lit(value) -> 4294967295 >= value,
+            Var(index) -> false,
+            Expr::Neg(operand) -> true,
+            Binary(word, operation, left, right) -> word.narrows(),
+            Compare(word, operation, left, right) -> true,
+        };
+    }
+}
+
+impl Word {
+    // An operation on this word may pass e through unchanged: an S32 one
+    // zero-extends, so e must be narrow.
+    pub fn keeps(self, e: Expr) -> bool {
+        return match (self) {
+            S32 -> e.narrow(),
+            U64 -> true,
+        };
+    }
+}
+
+pub fn negate_constant(value: core::option::Option<u64>) -> core::option::Option<u64> {
+    return match (value) {
+        Some(v) -> Some(low_bits(0 - v)),
+        None -> None,
+    };
+}
+
+pub fn absorbed(operation: BinOp, value: u64) -> core::option::Option<u64> {
+    if (operation.annihilates() && value == 0) {
+        return Some(0);
+    }
+    return None;
+}
+
+pub fn binary_constant(word: Word, operation: BinOp, left: core::option::Option<u64>, right: core::option::Option<u64>) -> core::option::Option<u64> {
+    return match (left) {
+        Some(a) -> match (right) {
+            Some(b) -> Some(word.compute(operation, a, b)),
+            None -> absorbed(operation, a),
+        },
+        None -> match (right) {
+            Some(b) -> absorbed(operation, b),
+            None -> None,
+        },
+    };
+}
+
+pub fn compare_constant(word: Word, operation: CmpOp, left: core::option::Option<u64>, right: core::option::Option<u64>) -> core::option::Option<u64> {
+    return match (left) {
+        Some(a) -> match (right) {
+            Some(b) -> Some(bool_bits(word.test(operation, a, b))),
+            None -> None,
+        },
+        None -> None,
+    };
+}
+
+pub fn constant_is(value: core::option::Option<u64>, literal: u64) -> bool {
+    return match (value) {
+        Some(v) -> v == literal,
+        None -> false,
+    };
+}
+
+impl Expr {
+    // Some(v) when the expression is v in every environment.
+    pub fn constant(self) -> core::option::Option<u64> {
+        return match (self) {
+            Lit(value) -> Some(value),
+            Var(index) -> None,
+            Expr::Neg(operand) -> negate_constant(unbox(operand).constant()),
+            Binary(word, operation, left, right) -> binary_constant(word, operation, unbox(left).constant(), unbox(right).constant()),
+            Compare(word, operation, left, right) -> compare_constant(word, operation, unbox(left).constant(), unbox(right).constant()),
+        };
+    }
+
+    // The expression is the literal value.
+    pub fn is_constant(self, value: core::option::Option<u64>) -> bool {
+        return match (self) {
+            Lit(literal) -> constant_is(value, literal),
+            Var(index) -> false,
+            Expr::Neg(operand) -> false,
+            Binary(word, operation, left, right) -> false,
+            Compare(word, operation, left, right) -> false,
+        };
+    }
+
+    pub fn is_var(self, index: usize) -> bool {
+        return match (self) {
+            Lit(value) -> false,
+            Var(other) -> other == index,
+            Expr::Neg(operand) -> false,
+            Binary(word, operation, left, right) -> false,
+            Compare(word, operation, left, right) -> false,
+        };
+    }
+
+    pub fn is_zero(self) -> bool {
+        return constant_is(self.constant(), 0);
+    }
+
+    // The expression is a constant c with x op c = x.
+    pub fn unit_of(self, word: Word, operation: BinOp) -> bool {
+        return match (self.constant()) {
+            Some(c) -> word.same_operand(c, operation.unit()),
+            None -> false,
+        };
+    }
+
+    // other has this expression's value in every environment: it is the
+    // constant, or it has the same shape with agreeing operands, or it is
+    // the operand kept by an identity like x + 0.
+    pub fn agrees(self, other: Expr) -> bool {
+        if (other.is_constant(self.constant())) {
+            return true;
+        }
+        return match (self) {
+            Lit(value) -> false,
+            Var(index) -> other.is_var(index),
+            Expr::Neg(operand) -> neg_agrees(unbox(operand), other),
+            Binary(word, operation, left, right) -> binary_agrees(word, operation, unbox(left), unbox(right), other) || unit_agrees(word, operation, unbox(left), unbox(right), other),
+            Compare(word, operation, left, right) -> compare_agrees(word, operation, unbox(left), unbox(right), other),
+        };
+    }
+}
+
+// extract: inline
+fn neg_agrees(operand: Expr, other: Expr) -> bool {
+    return match (other) {
+        Lit(v) -> false,
+        Var(i) -> false,
+        Expr::Neg(o) -> operand.agrees(unbox(o)),
+        Binary(w, op, l, r) -> false,
+        Compare(w, op, l, r) -> false,
+    };
+}
+
+// extract: inline
+fn binary_agrees(word: Word, operation: BinOp, left: Expr, right: Expr, other: Expr) -> bool {
+    return match (other) {
+        Lit(v) -> false,
+        Var(i) -> false,
+        Expr::Neg(o) -> false,
+        Binary(w, op, l, r) -> (word.number() == w.number()) && (operation.number() == op.number()) && left.agrees(unbox(l)) && right.agrees(unbox(r)),
+        Compare(w, op, l, r) -> false,
+    };
+}
+
+// extract: inline
+fn unit_agrees(word: Word, operation: BinOp, left: Expr, right: Expr, other: Expr) -> bool {
+    return (right.unit_of(word, operation) && word.keeps(other) && left.agrees(other)) || (operation.commutes() && left.unit_of(word, operation) && word.keeps(other) && right.agrees(other));
+}
+
+// extract: inline
+fn compare_agrees(word: Word, operation: CmpOp, left: Expr, right: Expr, other: Expr) -> bool {
+    return match (other) {
+        Lit(v) -> false,
+        Var(i) -> false,
+        Expr::Neg(o) -> false,
+        Binary(w, op, l, r) -> false,
+        Compare(w, op, l, r) -> (word.number() == w.number()) && (operation.number() == op.number()) && left.agrees(unbox(l)) && right.agrees(unbox(r)),
+    };
+}
+
+pub fn args_agree(args: List<Expr>, others: List<Expr>) -> bool {
+    return match (args) {
+        Nil -> match (others) {
+            Nil -> true,
+            Cons(o, more) -> false,
+        },
+        Cons(arg, rest) -> match (others) {
+            Nil -> false,
+            Cons(o, more) -> arg.agrees(o) && args_agree(unbox(rest), unbox(more)),
+        },
+    };
+}
+
+pub fn assign_agrees(index: usize, value: Expr, other: Stmt) -> bool {
+    return match (other) {
+        Skip -> value.agrees(Var(index)),
+        Assign(i, v) -> (index == i) && value.agrees(v),
+        Seq(f, s) -> false,
+        Ite(c, t, e) -> false,
+        Loop(c, b) -> false,
+        Stmt::Call(t, n, f, a) -> false,
+        Stmt::Ret(v) -> false,
+        Alloc(t, sh, sz) -> false,
+        LoadByte(t, a) -> false,
+        StoreByte(a, v) -> false,
+        LoadWord(w, t, a) -> false,
+        StoreWord(w, a, v) -> false,
+    };
+}
+
+pub fn call_agrees(target: usize, count: usize, callee: usize, args: List<Expr>, other: Stmt) -> bool {
+    return match (other) {
+        Skip -> false,
+        Assign(i, v) -> false,
+        Seq(f, s) -> false,
+        Ite(c, t, e) -> false,
+        Loop(c, b) -> false,
+        Stmt::Call(t, n, f, a) -> (target == t) && (count == n) && (callee == f) && args_agree(args, a),
+        Stmt::Ret(v) -> false,
+        Alloc(t, sh, sz) -> false,
+        LoadByte(t, a) -> false,
+        StoreByte(a, v) -> false,
+        LoadWord(w, t, a) -> false,
+        StoreWord(w, a, v) -> false,
+    };
+}
+
+pub fn ret_agrees(values: List<Expr>, other: Stmt) -> bool {
+    return match (other) {
+        Skip -> false,
+        Assign(i, v) -> false,
+        Seq(f, s) -> false,
+        Ite(c, t, e) -> false,
+        Loop(c, b) -> false,
+        Stmt::Call(t, n, f, a) -> false,
+        Stmt::Ret(v) -> args_agree(values, v),
+        Alloc(t, sh, sz) -> false,
+        LoadByte(t, a) -> false,
+        StoreByte(a, v) -> false,
+        LoadWord(w, t, a) -> false,
+        StoreWord(w, a, v) -> false,
+    };
+}
+
+pub fn alloc_agrees(target: usize, shift: usize, size: Expr, other: Stmt) -> bool {
+    return match (other) {
+        Skip -> false,
+        Assign(i, v) -> false,
+        Seq(f, s) -> false,
+        Ite(c, t, e) -> false,
+        Loop(c, b) -> false,
+        Stmt::Call(t, n, f, a) -> false,
+        Stmt::Ret(v) -> false,
+        Alloc(t, sh, sz) -> (target == t) && (shift == sh) && size.agrees(sz),
+        LoadByte(t, a) -> false,
+        StoreByte(a, v) -> false,
+        LoadWord(w, t, a) -> false,
+        StoreWord(w, a, v) -> false,
+    };
+}
+
+pub fn load_byte_agrees(target: usize, address: Expr, other: Stmt) -> bool {
+    return match (other) {
+        Skip -> false,
+        Assign(i, v) -> false,
+        Seq(f, s) -> false,
+        Ite(c, t, e) -> false,
+        Loop(c, b) -> false,
+        Stmt::Call(t, n, f, a) -> false,
+        Stmt::Ret(v) -> false,
+        Alloc(t, sh, sz) -> false,
+        LoadByte(t, a) -> (target == t) && address.agrees(a),
+        StoreByte(a, v) -> false,
+        LoadWord(w, t, a) -> false,
+        StoreWord(w, a, v) -> false,
+    };
+}
+
+pub fn store_byte_agrees(address: Expr, value: Expr, other: Stmt) -> bool {
+    return match (other) {
+        Skip -> false,
+        Assign(i, v) -> false,
+        Seq(f, s) -> false,
+        Ite(c, t, e) -> false,
+        Loop(c, b) -> false,
+        Stmt::Call(t, n, f, a) -> false,
+        Stmt::Ret(v) -> false,
+        Alloc(t, sh, sz) -> false,
+        LoadByte(t, a) -> false,
+        StoreByte(a, v) -> address.agrees(a) && value.agrees(v),
+        LoadWord(w, t, a) -> false,
+        StoreWord(w, a, v) -> false,
+    };
+}
+
+pub fn load_word_agrees(width: MemWidth, target: usize, address: Expr, other: Stmt) -> bool {
+    return match (other) {
+        Skip -> false,
+        Assign(i, v) -> false,
+        Seq(f, s) -> false,
+        Ite(c, t, e) -> false,
+        Loop(c, b) -> false,
+        Stmt::Call(t, n, f, a) -> false,
+        Stmt::Ret(v) -> false,
+        Alloc(t, sh, sz) -> false,
+        LoadByte(t, a) -> false,
+        StoreByte(a, v) -> false,
+        LoadWord(w, t, a) -> (width.bytes() == w.bytes()) && (target == t) && address.agrees(a),
+        StoreWord(w, a, v) -> false,
+    };
+}
+
+pub fn store_word_agrees(width: MemWidth, address: Expr, value: Expr, other: Stmt) -> bool {
+    return match (other) {
+        Skip -> false,
+        Assign(i, v) -> false,
+        Seq(f, s) -> false,
+        Ite(c, t, e) -> false,
+        Loop(c, b) -> false,
+        Stmt::Call(t, n, f, a) -> false,
+        Stmt::Ret(v) -> false,
+        Alloc(t, sh, sz) -> false,
+        LoadByte(t, a) -> false,
+        StoreByte(a, v) -> false,
+        LoadWord(w, t, a) -> false,
+        StoreWord(w, a, v) -> (width.bytes() == w.bytes()) && address.agrees(a) && value.agrees(v),
+    };
+}
+
+impl Stmt {
+    pub fn is_skip(self) -> bool {
+        return match (self) {
+            Skip -> true,
+            Assign(i, v) -> false,
+            Seq(f, s) -> false,
+            Ite(c, t, e) -> false,
+            Loop(c, b) -> false,
+            Stmt::Call(t, n, f, a) -> false,
+            Stmt::Ret(v) -> false,
+            Alloc(t, sh, sz) -> false,
+            LoadByte(t, a) -> false,
+            StoreByte(a, v) -> false,
+            LoadWord(w, t, a) -> false,
+            StoreWord(w, a, v) -> false,
+        };
+    }
+
+    // other ends every run of this statement the same way: the same shape
+    // with agreeing expressions, or a statement dropped because it does
+    // nothing (skip, x = x, a loop whose condition is 0), or a branch chosen
+    // because its condition is a constant or both branches agree with other.
+    pub fn agrees(self, other: Stmt) -> bool {
+        return match (self) {
+            Skip -> other.is_skip(),
+            Assign(index, value) -> assign_agrees(index, value, other),
+            Seq(first, second) -> (unbox(first).agrees(Skip) && unbox(second).agrees(other)) || (unbox(second).agrees(Skip) && unbox(first).agrees(other)) || seq_agrees(unbox(first), unbox(second), other),
+            Ite(condition, then_branch, else_branch) -> (unbox(then_branch).agrees(other) && unbox(else_branch).agrees(other)) || branch_agrees(condition.constant(), unbox(then_branch), unbox(else_branch), other) || ite_agrees(condition, unbox(then_branch), unbox(else_branch), other),
+            Loop(condition, body) -> (condition.is_zero() && other.is_skip()) || loop_agrees(condition, unbox(body), other),
+            Stmt::Call(target, count, callee, args) -> call_agrees(target, count, callee, args, other),
+            Stmt::Ret(values) -> ret_agrees(values, other),
+            Alloc(target, shift, size) -> alloc_agrees(target, shift, size, other),
+            LoadByte(target, address) -> load_byte_agrees(target, address, other),
+            StoreByte(address, value) -> store_byte_agrees(address, value, other),
+            LoadWord(width, target, address) -> load_word_agrees(width, target, address, other),
+            StoreWord(width, address, value) -> store_word_agrees(width, address, value, other),
+        };
+    }
+}
+
+// extract: inline
+fn seq_agrees(first: Stmt, second: Stmt, other: Stmt) -> bool {
+    return match (other) {
+        Skip -> false,
+        Assign(i, v) -> false,
+        Seq(f, s) -> first.agrees(unbox(f)) && second.agrees(unbox(s)),
+        Ite(c, t, e) -> false,
+        Loop(c, b) -> false,
+        Stmt::Call(t, n, f, a) -> false,
+        Stmt::Ret(v) -> false,
+        Alloc(t, sh, sz) -> false,
+        LoadByte(t, a) -> false,
+        StoreByte(a, v) -> false,
+        LoadWord(w, t, a) -> false,
+        StoreWord(w, a, v) -> false,
+    };
+}
+
+// extract: inline
+fn branch_agrees(known: core::option::Option<u64>, then_branch: Stmt, else_branch: Stmt, other: Stmt) -> bool {
+    return match (known) {
+        Some(v) -> ((v == 0) && else_branch.agrees(other)) || ((v != 0) && then_branch.agrees(other)),
+        None -> false,
+    };
+}
+
+// extract: inline
+fn ite_agrees(condition: Expr, then_branch: Stmt, else_branch: Stmt, other: Stmt) -> bool {
+    return match (other) {
+        Skip -> false,
+        Assign(i, v) -> false,
+        Seq(f, s) -> false,
+        Ite(c, t, e) -> condition.agrees(c) && then_branch.agrees(unbox(t)) && else_branch.agrees(unbox(e)),
+        Loop(c, b) -> false,
+        Stmt::Call(t, n, f, a) -> false,
+        Stmt::Ret(v) -> false,
+        Alloc(t, sh, sz) -> false,
+        LoadByte(t, a) -> false,
+        StoreByte(a, v) -> false,
+        LoadWord(w, t, a) -> false,
+        StoreWord(w, a, v) -> false,
+    };
+}
+
+// extract: inline
+fn loop_agrees(condition: Expr, body: Stmt, other: Stmt) -> bool {
+    return match (other) {
+        Skip -> false,
+        Assign(i, v) -> false,
+        Seq(f, s) -> false,
+        Ite(c, t, e) -> false,
+        Loop(c, b) -> condition.agrees(c) && body.agrees(unbox(b)),
+        Stmt::Call(t, n, f, a) -> false,
+        Stmt::Ret(v) -> false,
+        Alloc(t, sh, sz) -> false,
+        LoadByte(t, a) -> false,
+        StoreByte(a, v) -> false,
+        LoadWord(w, t, a) -> false,
+        StoreWord(w, a, v) -> false,
+    };
+}
+
+impl Func {
+    pub fn agrees(self, other: Func) -> bool {
+        return (self.params == other.params) && (self.results == other.results) && (self.locals == other.locals) && self.body.agrees(other.body);
+    }
+}
+
+pub fn funcs_agree(funcs: List<Func>, others: List<Func>) -> bool {
+    return match (funcs) {
+        Nil -> match (others) {
+            Nil -> true,
+            Cons(o, more) -> false,
+        },
+        Cons(func, rest) -> match (others) {
+            Nil -> false,
+            Cons(o, more) -> func.agrees(o) && funcs_agree(unbox(rest), unbox(more)),
+        },
+    };
+}
+
+// The validator: optimized has the original's functions, in order, each
+// agreeing with the original one.
+pub fn validate(original: Program, optimized: Program) -> bool {
+    return funcs_agree(original.funcs, optimized.funcs);
+}
+
+// The optimizer. NOT PROVED, and no proof mentions it: compile_optimized
+// keeps its output only when validate accepts it. It folds constant
+// subexpressions, applies x + 0, x - 0, x * 1, x & -1, x | 0, x ^ 0 (and the
+// commuted forms) and x * 0, x & 0, picks the branch of an if on a constant,
+// and drops statements that do nothing: skip, x = x, an if with two empty
+// branches, a while whose condition is 0.
+
+impl Expr {
+    pub fn literal(self) -> core::option::Option<u64> {
+        return match (self) {
+            Lit(value) -> Some(value),
+            Var(index) -> None,
+            Expr::Neg(operand) -> None,
+            Binary(word, operation, left, right) -> None,
+            Compare(word, operation, left, right) -> None,
+        };
+    }
+}
+
+pub fn optimize_neg(operand: Expr) -> Expr {
+    return match (operand.literal()) {
+        Some(v) -> Lit(low_bits(0 - v)),
+        None -> Expr::Neg(boxed(operand)),
+    };
+}
+
+// The left operand is the literal a.
+pub fn optimize_left(word: Word, operation: BinOp, a: u64, left: Expr, right: Expr) -> Expr {
+    if (operation.annihilates() && a == 0) {
+        return Lit(0);
+    }
+    if (operation.commutes() && word.same_operand(a, operation.unit()) && word.keeps(right)) {
+        return right;
+    }
+    return Binary(word, operation, boxed(left), boxed(right));
+}
+
+// The right operand is the literal b.
+pub fn optimize_right(word: Word, operation: BinOp, left: Expr, right: Expr, b: u64) -> Expr {
+    if (operation.annihilates() && b == 0) {
+        return Lit(0);
+    }
+    if (word.same_operand(b, operation.unit()) && word.keeps(left)) {
+        return left;
+    }
+    return Binary(word, operation, boxed(left), boxed(right));
+}
+
+pub fn optimize_binary(word: Word, operation: BinOp, left: Expr, right: Expr) -> Expr {
+    return match (left.literal()) {
+        Some(a) -> match (right.literal()) {
+            Some(b) -> Lit(word.compute(operation, a, b)),
+            None -> optimize_left(word, operation, a, left, right),
+        },
+        None -> match (right.literal()) {
+            Some(b) -> optimize_right(word, operation, left, right, b),
+            None -> Binary(word, operation, boxed(left), boxed(right)),
+        },
+    };
+}
+
+pub fn optimize_compare(word: Word, operation: CmpOp, left: Expr, right: Expr) -> Expr {
+    return match (left.literal()) {
+        Some(a) -> match (right.literal()) {
+            Some(b) -> Lit(bool_bits(word.test(operation, a, b))),
+            None -> Compare(word, operation, boxed(left), boxed(right)),
+        },
+        None -> Compare(word, operation, boxed(left), boxed(right)),
+    };
+}
+
+impl Expr {
+    pub fn optimize(self) -> Expr {
+        return match (self) {
+            Lit(value) -> Lit(value),
+            Var(index) -> Var(index),
+            Expr::Neg(operand) -> optimize_neg(unbox(operand).optimize()),
+            Binary(word, operation, left, right) -> optimize_binary(word, operation, unbox(left).optimize(), unbox(right).optimize()),
+            Compare(word, operation, left, right) -> optimize_compare(word, operation, unbox(left).optimize(), unbox(right).optimize()),
+        };
+    }
+}
+
+pub fn optimize_all(values: List<Expr>) -> List<Expr> {
+    return match (values) {
+        Nil -> empty(),
+        Cons(value, rest) -> cons(value.optimize(), optimize_all(unbox(rest))),
+    };
+}
+
+pub fn optimize_assign(index: usize, value: Expr) -> Stmt {
+    if (value.is_var(index)) {
+        return Skip;
+    }
+    return Assign(index, value);
+}
+
+pub fn optimize_seq(first: Stmt, second: Stmt) -> Stmt {
+    if (first.is_skip()) {
+        return second;
+    }
+    if (second.is_skip()) {
+        return first;
+    }
+    return Seq(boxed(first), boxed(second));
+}
+
+pub fn pick_branch(value: u64, then_branch: Stmt, else_branch: Stmt) -> Stmt {
+    if (value == 0) {
+        return else_branch;
+    }
+    return then_branch;
+}
+
+pub fn ite_or_skip(condition: Expr, then_branch: Stmt, else_branch: Stmt) -> Stmt {
+    if (then_branch.is_skip() && else_branch.is_skip()) {
+        return Skip;
+    }
+    return Ite(condition, boxed(then_branch), boxed(else_branch));
+}
+
+pub fn optimize_ite(condition: Expr, then_branch: Stmt, else_branch: Stmt) -> Stmt {
+    return match (condition.literal()) {
+        Some(v) -> pick_branch(v, then_branch, else_branch),
+        None -> ite_or_skip(condition, then_branch, else_branch),
+    };
+}
+
+pub fn loop_unless_zero(value: u64, condition: Expr, body: Stmt) -> Stmt {
+    if (value == 0) {
+        return Skip;
+    }
+    return Loop(condition, boxed(body));
+}
+
+pub fn optimize_loop(condition: Expr, body: Stmt) -> Stmt {
+    return match (condition.literal()) {
+        Some(v) -> loop_unless_zero(v, condition, body),
+        None -> Loop(condition, boxed(body)),
+    };
+}
+
+impl Stmt {
+    pub fn optimize(self) -> Stmt {
+        return match (self) {
+            Skip -> Skip,
+            Assign(index, value) -> optimize_assign(index, value.optimize()),
+            Seq(first, second) -> optimize_seq(unbox(first).optimize(), unbox(second).optimize()),
+            Ite(condition, then_branch, else_branch) -> optimize_ite(condition.optimize(), unbox(then_branch).optimize(), unbox(else_branch).optimize()),
+            Loop(condition, body) -> optimize_loop(condition.optimize(), unbox(body).optimize()),
+            Stmt::Call(target, count, callee, args) -> Stmt::Call(target, count, callee, optimize_all(args)),
+            Stmt::Ret(values) -> Stmt::Ret(optimize_all(values)),
+            Alloc(target, shift, size) -> Alloc(target, shift, size.optimize()),
+            LoadByte(target, address) -> LoadByte(target, address.optimize()),
+            StoreByte(address, value) -> StoreByte(address.optimize(), value.optimize()),
+            LoadWord(width, target, address) -> LoadWord(width, target, address.optimize()),
+            StoreWord(width, address, value) -> StoreWord(width, address.optimize(), value.optimize()),
+        };
+    }
+}
+
+pub fn optimize_funcs(funcs: List<Func>) -> List<Func> {
+    return match (funcs) {
+        Nil -> empty(),
+        Cons(func, rest) -> cons(Func { params: func.params, results: func.results, locals: func.locals, body: func.body.optimize() }, optimize_funcs(unbox(rest))),
+    };
+}
+
+pub fn optimize_program(prog: Program) -> Program {
+    return Program { funcs: optimize_funcs(prog.funcs) };
+}
+
+// The pipeline: optimize, keep the result when the validator accepts it and
+// it compiles, and otherwise compile the original program.
+
+pub fn compile_or(binary: core::option::Option<Binary>, prog: Program) -> core::option::Option<Binary> {
+    return match (binary) {
+        Some(b) -> Some(b),
+        None -> compile_program(prog),
+    };
+}
+
+pub fn compile_optimized(prog: Program) -> core::option::Option<Binary> {
+    let optimized: Program = optimize_program(prog);
+    if (validate(prog, optimized)) {
+        return compile_or(compile_program(optimized), prog);
+    }
+    return compile_program(prog);
+}
+
 pub fn compile_declared(decls: core::option::Option<SrcDecls>, funcs: core::option::Option<List<Func>>) -> core::option::Option<Binary> {
     return match (decls) {
         None -> None,
         Some(d) -> match (funcs) {
             None -> None,
-            Some(fs) -> compile_program(Program { funcs: fs }),
+            Some(fs) -> compile_optimized(Program { funcs: fs }),
         },
     };
 }
