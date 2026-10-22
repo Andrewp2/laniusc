@@ -13,3 +13,4 @@ import Lanius.Std.VecGrow
 import Lanius.Std.VecReserve
 import Lanius.Std.VecPush
 import Lanius.Std.VecMore
+import Lanius.Std.VecClone
