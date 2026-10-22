@@ -3062,6 +3062,91 @@ theorem exec_storeFields {mp : Program} {d : Nat} {P : Core.Program} {st : State
       rw [addr] at first'
       exact ⟨hp', .seq first' exec, hc', by rw [next', next1]⟩
 
+/-- Storing a word struct element of a raw slice, its fields given by `vs`,
+writes the bytes Core does. -/
+theorem storeStruct_sound {sp : SrcProgram} {mp : Program} {hp : Heap} {st : State}
+    (hc : HeapCorr st.heap hp) {element : SrcType} {ws : List MemWidth}
+    (hws : elementWidths sp.decls element = some ws) {env : Env} {bslot : Nat} {i : Expr} {pos at_ : Nat}
+    {right : Value} {vs : List Expr} {s : Stmt} {heap : Memory.Heap}
+    (posEq : (i.eval env).toNat = pos)
+    (located : Semantics.rawSliceElementAddress? sp.toCore element.toCore (env bslot).toNat pos = .ok at_)
+    (stored : Semantics.writeNativeValue NativeLayout.maxDepth sp.toCore st st.heap element.toCore at_ right =
+      .ok heap)
+    (flat : FlatValue element right env vs) (ok : storeFields ws vs (elementBase bslot ws.length i) 0 = some s)
+    (bound : heap.nextAddress ≤ hp.limit) :
+    ∃ hp', Exec mp 0 env hp s (.normal env hp') ∧ HeapCorr heap hp' := by
+  obtain ⟨sid, fields, rfl, declared, widths, nonempty⟩ := elementWidths_some hws
+  have all := wordWidths_all widths
+  obtain ⟨wlen, wget⟩ := wordWidths_get widths
+  have found' := structFields_toCore declared
+  have npos : 0 < fields.length := by
+    rw [← wlen]
+    cases ws with
+    | nil => exact absurd rfl nonempty
+    | cons => simp
+  simp only [Semantics.rawSliceElementAddress?, SrcType.toCore] at located
+  cases hwords : NativeLayout.valueWords? sp.toCore (Core.Ty.structure sid) with
+  | none => simp [hwords] at located
+  | some words =>
+  cases hcbase : NativeLayout.elementBase? (env bslot).toNat pos words with
+  | none => simp [hwords, hcbase] at located
+  | some cbase =>
+  simp only [hwords, hcbase, pure, Except.pure, Except.ok.injEq] at located
+  subst located
+  obtain ⟨wordsEq, small4096⟩ := valueWords_struct found' all hwords
+  have n1 : words = fields.length := by rw [wordsEq]; omega
+  subst n1
+  simp only [NativeLayout.elementBase?] at hcbase
+  split at hcbase
+  · simp at hcbase
+  rename_i notBelow
+  simp only [Option.some.injEq, NativeLayout.wordBytes] at hcbase
+  simp only [Bool.or_eq_true, beq_iff_eq, not_or, NativeLayout.wordBytes] at notBelow
+  rw [disp_eq pos fields.length npos] at hcbase
+  have fits : pos * (8 * fields.length) + 8 * (fields.length - 1) ≤ (env bslot).toNat := by
+    have h2 : ¬ ((env bslot).toNat < (pos * fields.length + fields.length - 1) * 8) := by
+      intro lt
+      have := notBelow.2
+      simp [lt] at this
+    rw [disp_eq pos fields.length npos] at h2
+    omega
+  subst hcbase
+  have small := hc.small
+  have baseEval : ((elementBase bslot ws.length i).eval env).toNat =
+      (env bslot).toNat - (pos * (8 * fields.length) + 8 * (fields.length - 1)) := by
+    rw [wlen]
+    exact elementBase_eval posEq (by simpa [NativeLayout.maxWords] using small4096) fits
+  obtain ⟨vals, rfl, fh⟩ := holdsAt_struct_inv flat.holds
+  obtain ⟨vlen, vget⟩ := fieldsHold_get all fh
+  have xslen : vs.length = fields.length := by
+    have := flat.length
+    simpa [SrcType.size, sizes_allWord all] using this
+  simp only [SrcType.toCore] at stored
+  rw [show NativeLayout.maxDepth = 63 + 1 from rfl, Semantics.writeNativeValue] at stored
+  simp only [bne_self_eq_false, Bool.false_eq_true, if_false, found', List.length_map, vlen] at stored
+  rw [List.range_eq_range', ← wlen] at stored
+  obtain ⟨hp', exec, hc', -⟩ := exec_storeFields (mp := mp) (d := 0) (P := sp.toCore) (st := st)
+    (env := env) (base := elementBase bslot ws.length i) (start := 0) (fields := fields) (vals := vals)
+    (fun j f x h0 h1 hf hx write => by
+      have jlt : j < fields.length := (List.getElem?_eq_some_iff.mp hf).1
+      simp only [List.getElem?_map, hf, hx, fieldOffset_struct found' all jlt, Option.map_some] at write
+      rw [baseEval, ← wlen, Nat.zero_add]
+      exact write)
+    ws vs 0 0 s st.heap heap hp rfl ok
+    (fun j w v hw hv => by
+      have jlt : j < fields.length := by rw [← wlen]; exact (List.getElem?_eq_some_iff.mp hw).1
+      obtain ⟨f, hf⟩ : ∃ f, fields[j]? = some f := ⟨fields[j], by simp [jlt]⟩
+      obtain ⟨w', hw', hwidth⟩ := wget j f hf
+      rw [hw] at hw'
+      simp only [Option.some.injEq] at hw'
+      subst hw'
+      obtain ⟨x, hx, holds⟩ := vget j f hf
+      refine ⟨f, x, by simpa using hf, by simpa using hx, hwidth, ?_⟩
+      rw [Nat.zero_add, entry_evalAll env vs j v hv] at holds
+      exact holds)
+    hc stored bound
+  exact ⟨hp', exec, hc'⟩
+
 theorem stmt_setIndex_struct {slice : Nat} {index value : SrcExpr} {b : Binding} {element : SrcType}
     (found : lookup scope slice = some b) (hElt : elementOf b.ty = some element)
     (ok : storeStruct sp.decls b element (lowerIndex scope index) scope value = some stmt)
@@ -3124,67 +3209,7 @@ theorem stmt_setIndex_struct {slice : Nat} {index value : SrcExpr} {b : Binding}
     obtain ⟨-, holdsI⟩ := index.lower_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun
     have posEq := index_toNat kind holdsI posOk
     obtain ⟨-, flat, -⟩ := lowerValue_sound corr (SrcProgram.target_toCore sp) vOk valueRun
-    simp only [Semantics.rawSliceElementAddress?, SrcType.toCore] at located
-    cases hwords : NativeLayout.valueWords? sp.toCore (Core.Ty.structure sid) with
-    | none => simp [hwords] at located
-    | some words =>
-    cases hcbase : NativeLayout.elementBase? (env b.slot).toNat pos' words with
-    | none => simp [hwords, hcbase] at located
-    | some cbase =>
-    simp only [hwords, hcbase, pure, Except.pure, Except.ok.injEq] at located
-    subst located
-    obtain ⟨wordsEq, small4096⟩ := valueWords_struct found' all hwords
-    have n1 : words = fields.length := by rw [wordsEq]; omega
-    subst n1
-    simp only [NativeLayout.elementBase?] at hcbase
-    split at hcbase
-    · simp at hcbase
-    rename_i notBelow
-    simp only [Option.some.injEq, NativeLayout.wordBytes] at hcbase
-    simp only [Bool.or_eq_true, beq_iff_eq, not_or, NativeLayout.wordBytes] at notBelow
-    rw [disp_eq pos' fields.length pos] at hcbase
-    have fits : pos' * (8 * fields.length) + 8 * (fields.length - 1) ≤ (env b.slot).toNat := by
-      have h2 : ¬ ((env b.slot).toNat < (pos' * fields.length + fields.length - 1) * 8) := by
-        intro lt
-        have := notBelow.2
-        simp [lt] at this
-      rw [disp_eq pos' fields.length pos] at h2
-      omega
-    subst hcbase
-    have small := hc.small
-    have baseEval : ((elementBase b.slot ws.length t.expr).eval env).toNat =
-        (env b.slot).toNat - (pos' * (8 * fields.length) + 8 * (fields.length - 1)) := by
-      rw [wlen]
-      exact elementBase_eval posEq (by simpa [NativeLayout.maxWords] using small4096) fits
-    obtain ⟨vals, rfl, fh⟩ := holdsAt_struct_inv flat.holds
-    obtain ⟨vlen, vget⟩ := fieldsHold_get all fh
-    have xslen : vs.length = fields.length := by
-      have := flat.length
-      simpa [SrcType.size, sizes_allWord all] using this
-    simp only [SrcType.toCore] at stored
-    rw [show NativeLayout.maxDepth = 63 + 1 from rfl, Semantics.writeNativeValue] at stored
-    simp only [bne_self_eq_false, Bool.false_eq_true, if_false, found', List.length_map, vlen] at stored
-    rw [List.range_eq_range', ← wlen] at stored
-    obtain ⟨hp', exec, hc', -⟩ := exec_storeFields (mp := mp) (d := 0) (P := sp.toCore) (st := st)
-      (env := env) (base := elementBase b.slot ws.length t.expr) (start := 0) (fields := fields) (vals := vals)
-      (fun j f x h0 h1 hf hx write => by
-        have jlt : j < fields.length := (List.getElem?_eq_some_iff.mp hf).1
-        simp only [List.getElem?_map, hf, hx, fieldOffset_struct found' all jlt, Option.map_some] at write
-        rw [baseEval, ← wlen, Nat.zero_add]
-        exact write)
-      ws vs 0 0 stmt st.heap heap hp rfl ok
-      (fun j w v hw hv => by
-        have jlt : j < fields.length := by rw [← wlen]; exact (List.getElem?_eq_some_iff.mp hw).1
-        obtain ⟨f, hf⟩ : ∃ f, fields[j]? = some f := ⟨fields[j], by simp [jlt]⟩
-        obtain ⟨w', hw', hwidth⟩ := wget j f hf
-        rw [hw] at hw'
-        simp only [Option.some.injEq] at hw'
-        subst hw'
-        obtain ⟨x, hx, holds⟩ := vget j f hf
-        refine ⟨f, x, by simpa using hf, by simpa using hx, hwidth, ?_⟩
-        rw [Nat.zero_add, entry_evalAll env vs j v hv] at holds
-        exact holds)
-      hc stored bound
+    obtain ⟨hp', exec, hc'⟩ := storeStruct_sound (mp := mp) hc hws posEq located stored flat ok bound
     exact ⟨fresh, ⟨fun _ _ => rfl, Nat.le_refl _⟩, 0, _, exec, .next (corr.cells_congr rfl fun _ _ => rfl) hc'⟩
   all_goals simp at run
 
@@ -3455,6 +3480,136 @@ theorem stmt_letIndex_enum (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType}
         exact ⟨fresh', keeps, d, out, load exec, matched⟩
   all_goals simp at run
 
+/-- Storing a word enum element of a raw slice, its tag and payload given
+by `vs`, writes the bytes Core does. -/
+theorem storeEnum_sound {sp : SrcProgram} {mp : Program} {hp : Heap} {st : State}
+    (hc : HeapCorr st.heap hp) {element : SrcType} {wss : List (List MemWidth)}
+    (hwss : enumWidths sp.decls element = some wss) {env : Env} {bslot : Nat} {i : Expr} {pos at_ : Nat}
+    {right : Value} {vs : List Expr} {s : Stmt} {heap : Memory.Heap}
+    (posEq : (i.eval env).toNat = pos)
+    (located : Semantics.rawSliceElementAddress? sp.toCore element.toCore (env bslot).toNat pos = .ok at_)
+    (stored : Semantics.writeNativeValue NativeLayout.maxDepth sp.toCore st st.heap element.toCore at_ right =
+      .ok heap)
+    (flat : FlatValue element right env vs)
+    (ok : storeEnumValues wss vs (elementBase bslot (maxLength wss + 1) i) = some s)
+    (bound : heap.nextAddress ≤ hp.limit) :
+    ∃ hp', Exec mp 0 env hp s (.normal env hp') ∧ HeapCorr heap hp' := by
+  obtain ⟨eid, variants, rfl, declared, widths, vpos, vsmall⟩ := enumWidths_some hwss
+  have allv := variantWidths_all widths
+  obtain ⟨wlen, wget⟩ := variantWidths_get widths
+  have mlen := maxLength_eq widths
+  have found' := enumVariants_toCore declared
+  simp only [Semantics.rawSliceElementAddress?, SrcType.toCore] at located
+  cases hwords : NativeLayout.valueWords? sp.toCore (Core.Ty.enumeration eid) with
+  | none => simp [hwords] at located
+  | some words =>
+  cases hcbase : NativeLayout.elementBase? (env bslot).toNat pos words with
+  | none => simp [hwords, hcbase] at located
+  | some cbase =>
+  simp only [hwords, hcbase, pure, Except.pure, Except.ok.injEq] at located
+  subst located
+  obtain ⟨wordsEq, smallW⟩ := valueWords_enum found' allv hwords
+  have n1 : words = maxLength wss + 1 := by rw [wordsEq, mlen]; omega
+  subst n1
+  have npos : 0 < maxLength wss + 1 := by omega
+  generalize hn : maxLength wss + 1 = n at *
+  simp only [NativeLayout.elementBase?] at hcbase
+  split at hcbase
+  · simp at hcbase
+  rename_i notBelow
+  simp only [Option.some.injEq, NativeLayout.wordBytes] at hcbase
+  simp only [Bool.or_eq_true, beq_iff_eq, not_or, NativeLayout.wordBytes] at notBelow
+  rw [disp_eq pos n npos] at hcbase
+  have fits : pos * (8 * n) + 8 * (n - 1) ≤ (env bslot).toNat := by
+    have h2 : ¬ ((env bslot).toNat < (pos * n + n - 1) * 8) := by
+      intro lt
+      have := notBelow.2
+      simp [lt] at this
+    rw [disp_eq pos n npos] at h2
+    omega
+  subst hcbase
+  have small := hc.small
+  have baseEval : ((elementBase bslot n i).eval env).toNat =
+      (env bslot).toNat - (pos * (8 * n) + 8 * (n - 1)) :=
+    elementBase_eval posEq (by simp only [NativeLayout.maxWords] at smallW; omega) fits
+  generalize hB : elementBase bslot n i = B at baseEval ok
+  obtain ⟨kv, fs, pvals, rfl, hfs, tagv, fh⟩ := holdsAt_enum_inv flat.holds
+  have allF := allv fs (List.mem_of_getElem? hfs)
+  obtain ⟨plen, pget⟩ := fieldsHold_get allF fh
+  have kvLt : kv < 2 ^ 32 := by
+    have := (List.getElem?_eq_some_iff.mp hfs).1
+    exact Nat.lt_trans this vsmall
+  obtain ⟨ws, hw, hws⟩ := wget kv fs hfs
+  obtain ⟨wslen, wsget⟩ := wordWidths_get hws
+  cases vs with
+  | nil => simp [storeEnumValues] at ok
+  | cons tag payload =>
+  simp only [storeEnumValues, lowerThen] at ok
+  split at ok
+  · simp at ok
+  rename_i s1 s1ok
+  split at ok
+  · simp at ok
+  rename_i s2 s2ok
+  simp only [Option.some.injEq] at ok
+  subst ok
+  simp only [storeFields, storeThen, Option.some.injEq] at s1ok
+  subst s1ok
+  have tagEval : tag.eval env = BitVec.ofNat 64 kv := by
+    rw [← entry_evalAll env (tag :: payload) 0 tag rfl]
+    exact tagv
+  have tagNat : (tag.eval env).toNat = kv := by
+    rw [tagEval, BitVec.toNat_ofNat]
+    exact Nat.mod_eq_of_lt (Nat.lt_trans kvLt (by decide))
+  obtain ⟨s', s'ok, lift⟩ := storeVariants_pick (env := env) wss 0 kv ws s2 s2ok hw (by rw [Nat.zero_add]; exact tagEval)
+    (by rw [Nat.zero_add]; exact Nat.lt_trans kvLt (by decide))
+  -- Core's write: the tag, then the payload fields
+  simp only [SrcType.toCore] at stored
+  rw [show NativeLayout.maxDepth = 63 + 1 from rfl, Semantics.writeNativeValue] at stored
+  simp only [bne_self_eq_false, Bool.false_eq_true, if_false, found', List.getElem?_map, hfs,
+    Option.map_some, List.length_map, plen] at stored
+  obtain ⟨tagged, tagStored, stored⟩ := except_bind_ok stored
+  obtain ⟨hcT, insideT⟩ := HeapCorr.storeBytesFrom _ 0 hc tagStored
+  have insideT := insideT (by simp [Semantics.encodeNatLE])
+  have nextT := storeBytes_next tagStored
+  simp only [Semantics.encodeNatLE, List.length_map, List.length_range, Nat.add_zero] at insideT
+  rw [List.range_eq_range', ← wslen] at stored
+  have hcT' : HeapCorr tagged (hp.writeLE ((B.eval env).toNat + 0) (tag.eval env).toNat MemWidth.m32.bytes) := by
+    rw [writeLE_eq_writeBytes, tagNat, baseEval]
+    simpa [MemWidth.bytes] using hcT
+  have lim := (Heap.writeLE_limit hp ((B.eval env).toNat + 0) (tag.eval env).toNat MemWidth.m32.bytes).1
+  obtain ⟨hp', exec2, hc', nextH⟩ := exec_storeFields (mp := mp) (d := 0) (P := sp.toCore) (st := st)
+    (env := env) (base := B) (start := 8) (fields := fs) (vals := pvals)
+    (fun j f x h0 h1 hf hx write => by
+      have jlt : j < fs.length := (List.getElem?_eq_some_iff.mp hf).1
+      simp only [List.getElem?_map, hf, hx, payloadOffset allF jlt, foldl_ones, Nat.zero_add,
+        List.length_take, NativeLayout.wordBytes, Nat.min_eq_left (Nat.le_of_lt jlt), Option.map_some] at write
+      rw [baseEval, show 8 + 8 * j = 8 * (1 + j) by omega]
+      exact write)
+    ws payload 0 8 s' tagged heap _ (by omega) s'ok
+    (fun j w v hwj hv => by
+      have jlt : j < fs.length := by rw [← wslen]; exact (List.getElem?_eq_some_iff.mp hwj).1
+      obtain ⟨f, hf⟩ : ∃ f, fs[j]? = some f := ⟨fs[j], by simp [jlt]⟩
+      obtain ⟨w', hw', hwidth⟩ := wsget j f hf
+      rw [hwj] at hw'
+      simp only [Option.some.injEq] at hw'
+      subst hw'
+      obtain ⟨x, hx, holds⟩ := pget j f hf
+      refine ⟨f, x, by simpa using hf, by simpa using hx, hwidth, ?_⟩
+      rw [show 0 + 1 + j = j + 1 by omega, entry_evalAll env (tag :: payload) (j + 1) v (by simpa using hv)] at holds
+      exact holds)
+    hcT' stored (by rw [lim]; exact bound)
+  have addr := fieldAddress_eval (env := env) (base := B) (offset := 0) (by omega)
+  have room : ((Expr.binary Word.u64 BinOp.add B (Expr.lit (BitVec.ofNat 64 0))).eval env).toNat +
+      MemWidth.m32.bytes ≤ hp.limit := by
+    rw [addr, baseEval]
+    simp only [MemWidth.bytes]
+    have : heap.nextAddress = st.heap.nextAddress := by rw [nextH, nextT]
+    addr_omega
+  have first := Exec.storeWord (prog := mp) (depth := 0) (env := env) (heap := hp) (value := tag) room
+  rw [addr] at first
+  exact ⟨_, .seq (.seq first .skip) (lift exec2), hc'⟩
+
 theorem stmt_setIndex_enum {slice : Nat} {index value : SrcExpr} {b : Binding} {element : SrcType}
     (found : lookup scope slice = some b) (hElt : elementOf b.ty = some element)
     (ok : storeEnum sp.decls b element (lowerIndex scope index) scope value = some stmt)
@@ -3513,117 +3668,8 @@ theorem stmt_setIndex_enum {slice : Nat} {index value : SrcExpr} {b : Binding} {
     obtain ⟨-, holdsI⟩ := index.lower_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun
     have posEq := index_toNat kind holdsI posOk
     obtain ⟨-, flat, -⟩ := lowerValue_sound corr (SrcProgram.target_toCore sp) vOk valueRun
-    simp only [Semantics.rawSliceElementAddress?, SrcType.toCore] at located
-    cases hwords : NativeLayout.valueWords? sp.toCore (Core.Ty.enumeration eid) with
-    | none => simp [hwords] at located
-    | some words =>
-    cases hcbase : NativeLayout.elementBase? (env b.slot).toNat pos' words with
-    | none => simp [hwords, hcbase] at located
-    | some cbase =>
-    simp only [hwords, hcbase, pure, Except.pure, Except.ok.injEq] at located
-    subst located
-    obtain ⟨wordsEq, smallW⟩ := valueWords_enum found' allv hwords
-    have n1 : words = maxLength wss + 1 := by rw [wordsEq, mlen]; omega
-    subst n1
-    have pos : 0 < maxLength wss + 1 := by omega
-    generalize hn : maxLength wss + 1 = n at *
-    simp only [NativeLayout.elementBase?] at hcbase
-    split at hcbase
-    · simp at hcbase
-    rename_i notBelow
-    simp only [Option.some.injEq, NativeLayout.wordBytes] at hcbase
-    simp only [Bool.or_eq_true, beq_iff_eq, not_or, NativeLayout.wordBytes] at notBelow
-    rw [disp_eq pos' n pos] at hcbase
-    have fits : pos' * (8 * n) + 8 * (n - 1) ≤ (env b.slot).toNat := by
-      have h2 : ¬ ((env b.slot).toNat < (pos' * n + n - 1) * 8) := by
-        intro lt
-        have := notBelow.2
-        simp [lt] at this
-      rw [disp_eq pos' n pos] at h2
-      omega
-    subst hcbase
-    have small := hc.small
-    have baseEval : ((elementBase b.slot n t.expr).eval env).toNat =
-        (env b.slot).toNat - (pos' * (8 * n) + 8 * (n - 1)) :=
-      elementBase_eval posEq (by simp only [NativeLayout.maxWords] at smallW; omega) fits
-    generalize hB : elementBase b.slot n t.expr = B at baseEval ok
-    obtain ⟨kv, fs, pvals, rfl, hfs, tagv, fh⟩ := holdsAt_enum_inv flat.holds
-    have allF := allv fs (List.mem_of_getElem? hfs)
-    obtain ⟨plen, pget⟩ := fieldsHold_get allF fh
-    have kvLt : kv < 2 ^ 32 := by
-      have := (List.getElem?_eq_some_iff.mp hfs).1
-      exact Nat.lt_trans this vsmall
-    obtain ⟨ws, hw, hws⟩ := wget kv fs hfs
-    obtain ⟨wslen, wsget⟩ := wordWidths_get hws
-    cases vs with
-    | nil => simp [storeEnumValues] at ok
-    | cons tag payload =>
-    simp only [storeEnumValues, lowerThen] at ok
-    split at ok
-    · simp at ok
-    rename_i s1 s1ok
-    split at ok
-    · simp at ok
-    rename_i s2 s2ok
-    simp only [Option.some.injEq] at ok
-    subst ok
-    simp only [storeFields, storeThen, Option.some.injEq] at s1ok
-    subst s1ok
-    have tagEval : tag.eval env = BitVec.ofNat 64 kv := by
-      rw [← entry_evalAll env (tag :: payload) 0 tag rfl]
-      exact tagv
-    have tagNat : (tag.eval env).toNat = kv := by
-      rw [tagEval, BitVec.toNat_ofNat]
-      exact Nat.mod_eq_of_lt (Nat.lt_trans kvLt (by decide))
-    obtain ⟨s', s'ok, lift⟩ := storeVariants_pick (env := env) wss 0 kv ws s2 s2ok hw (by rw [Nat.zero_add]; exact tagEval)
-      (by rw [Nat.zero_add]; exact Nat.lt_trans kvLt (by decide))
-    -- Core's write: the tag, then the payload fields
-    simp only [SrcType.toCore] at stored
-    rw [show NativeLayout.maxDepth = 63 + 1 from rfl, Semantics.writeNativeValue] at stored
-    simp only [bne_self_eq_false, Bool.false_eq_true, if_false, found', List.getElem?_map, hfs,
-      Option.map_some, List.length_map, plen] at stored
-    obtain ⟨tagged, tagStored, stored⟩ := except_bind_ok stored
-    obtain ⟨hcT, insideT⟩ := HeapCorr.storeBytesFrom _ 0 hc tagStored
-    have insideT := insideT (by simp [Semantics.encodeNatLE])
-    have nextT := storeBytes_next tagStored
-    simp only [Semantics.encodeNatLE, List.length_map, List.length_range, Nat.add_zero] at insideT
-    rw [List.range_eq_range', ← wslen] at stored
-    have hcT' : HeapCorr tagged (hp.writeLE ((B.eval env).toNat + 0) (tag.eval env).toNat MemWidth.m32.bytes) := by
-      rw [writeLE_eq_writeBytes, tagNat, baseEval]
-      simpa [MemWidth.bytes] using hcT
-    have lim := (Heap.writeLE_limit hp ((B.eval env).toNat + 0) (tag.eval env).toNat MemWidth.m32.bytes).1
-    obtain ⟨hp', exec2, hc', nextH⟩ := exec_storeFields (mp := mp) (d := 0) (P := sp.toCore) (st := st)
-      (env := env) (base := B) (start := 8) (fields := fs) (vals := pvals)
-      (fun j f x h0 h1 hf hx write => by
-        have jlt : j < fs.length := (List.getElem?_eq_some_iff.mp hf).1
-        simp only [List.getElem?_map, hf, hx, payloadOffset allF jlt, foldl_ones, Nat.zero_add,
-          List.length_take, NativeLayout.wordBytes, Nat.min_eq_left (Nat.le_of_lt jlt), Option.map_some] at write
-        rw [baseEval, show 8 + 8 * j = 8 * (1 + j) by omega]
-        exact write)
-      ws payload 0 8 s' tagged heap _ (by omega) s'ok
-      (fun j w v hwj hv => by
-        have jlt : j < fs.length := by rw [← wslen]; exact (List.getElem?_eq_some_iff.mp hwj).1
-        obtain ⟨f, hf⟩ : ∃ f, fs[j]? = some f := ⟨fs[j], by simp [jlt]⟩
-        obtain ⟨w', hw', hwidth⟩ := wsget j f hf
-        rw [hwj] at hw'
-        simp only [Option.some.injEq] at hw'
-        subst hw'
-        obtain ⟨x, hx, holds⟩ := pget j f hf
-        refine ⟨f, x, by simpa using hf, by simpa using hx, hwidth, ?_⟩
-        rw [show 0 + 1 + j = j + 1 by omega, entry_evalAll env (tag :: payload) (j + 1) v (by simpa using hv)] at holds
-        exact holds)
-      hcT' stored (by rw [lim]; exact bound)
-    have addr := fieldAddress_eval (env := env) (base := B) (offset := 0) (by omega)
-    have room : ((Expr.binary Word.u64 BinOp.add B (Expr.lit (BitVec.ofNat 64 0))).eval env).toNat +
-        MemWidth.m32.bytes ≤ hp.limit := by
-      rw [addr, baseEval]
-      simp only [MemWidth.bytes]
-      have : heap.nextAddress = st.heap.nextAddress := by rw [nextH, nextT]
-      addr_omega
-    have first := Exec.storeWord (prog := mp) (depth := 0) (env := env) (heap := hp) (value := tag) room
-    rw [addr] at first
-    exact ⟨fresh, ⟨fun _ _ => rfl, Nat.le_refl _⟩, 0, _, .seq (.seq first .skip) (lift exec2),
-      .next (corr.cells_congr rfl fun _ _ => rfl) hc'⟩
+    obtain ⟨hp', exec, hc'⟩ := storeEnum_sound (mp := mp) hc hwss posEq located stored flat ok bound
+    exact ⟨fresh, ⟨fun _ _ => rfl, Nat.le_refl _⟩, 0, _, exec, .next (corr.cells_congr rfl fun _ _ => rfl) hc'⟩
   all_goals simp at run
 
 theorem stmt_letIndex (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {slice : Nat}

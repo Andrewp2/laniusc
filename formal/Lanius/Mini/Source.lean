@@ -536,4 +536,23 @@ theorem holds_i32 (x : BitVec 32) : SrcType.i32.Holds (.signed .i32 x.toInt) (wi
 theorem boolBits_ne_zero (b : Bool) : (boolBits b ≠ 0) = (b = true) := by
   cases b <;> simp [boolBits]
 
+/-- The checks of an effectful word element store. -/
+theorem storeEvalThen_cond {i v : Evaluated} {e : SrcType} {store : Option Stmt} {s : Stmt}
+    (h : storeEvalThen i v e store = some s) :
+    ((i.ty.isI32 || i.ty.isUint .usize) && v.ty.same e) = true := by
+  simp only [storeEvalThen] at h
+  split at h
+  · assumption
+  · simp at h
+
+theorem storeEvalWord_cond {decls : SrcDecls} {b : Binding} {e : SrcType} {slot : Nat} {i v : Evaluated}
+    {s : Stmt} (h : storeEvalWord decls b e slot i v = some s) :
+    ((i.ty.isI32 || i.ty.isUint .usize) && v.ty.same e) = true := by
+  simp only [storeEvalWord] at h
+  split at h
+  · exact storeEvalThen_cond h
+  · split at h
+    · simp at h
+    · exact storeEvalThen_cond h
+
 end Lanius.Mini

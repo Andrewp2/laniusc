@@ -1252,7 +1252,105 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
   have bty := eq_of_elementOf elementOk
   simp only [storeEvalElement] at ok
   split at ok
-  case isFalse => simp at ok
+  case isFalse =>
+    split at ok
+    · simp at ok
+    rename_i i indexOk
+    split at ok
+    · simp at ok
+    rename_i w valueOk
+    have cond := storeEvalWord_cond ok
+    simp only [Bool.and_eq_true] at cond
+    obtain ⟨kind, wSame⟩ := cond
+    have wty := SrcType.same_eq wSame
+    have bmem := (lookup_mem found).1
+    simp only [SrcStmt.toCore, execStmt] at run
+    split at run
+    · rename_i u st3 assignRun
+      simp only [Semantics.Outcome.done.injEq] at run
+      obtain ⟨rfl, rfl⟩ := run
+      cases fuel with
+      | zero => simp [evalExpr] at assignRun
+      | succ k =>
+      cases k with
+      | zero => simp [evalExpr, Semantics.evalPlace] at assignRun
+      | succ k =>
+      cases k with
+      | zero =>
+        simp only [evalExpr, Semantics.evalPlace] at assignRun
+        repeat' split at assignRun
+        all_goals simp_all [evalExpr]
+      | succ k =>
+      obtain ⟨wv, place, holdsW⟩ := corr.readPlace found k sp.toCore
+      rw [bty] at holdsW
+      cases holdsW with
+      | @slice _ len _ _ =>
+      obtain ⟨iv, st1, pos, at_, right, st2, heap, indexRun, posOk, inside, located, valueRun, stored, rfl⟩ :=
+        eval_setIndex_eff fresh.2 (fun r => eff_grown r) (fun r => eff_grown r) place assignRun
+      have bound2 : st2.heap.nextAddress ≤ hp.limit := by
+        rw [← writeNativeValue_next _ stored]
+        exact bound
+      have views1 := (eff_grown indexRun fresh.2).1
+      obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1⟩ :=
+        ihe (k + 1) (by omega) indexOk corr fr fresh hc indexRun
+          (Nat.le_trans ((eff_grown valueRun views1).2) bound2)
+      have limit1 := exec1.limit_normal
+      obtain ⟨fresh2, keeps2, locals2, -, d2, env2, hp2, exec2, same2, holds2, hc2⟩ :=
+        ihe (k + 2) (by omega) valueOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _))
+          fresh1 hc1 valueRun (by rw [limit1]; exact bound2)
+      have limit2 := exec2.limit_normal
+      have scalar : i.ty.isScalar = true := by
+        simp only [Bool.or_eq_true] at kind
+        rcases kind with c | c
+        · rw [eq_of_isI32 c]; rfl
+        · rw [eq_of_isUint c]; rfl
+      have holdsI := holds_var (holds1.congr (env' := env2) (slot' := next) fun _ below =>
+        same2 _ (by have := SrcType.size_scalar scalar; omega)) scalar
+      have posEq := index_toNat (t := { expr := .var next, ty := i.ty }) kind holdsI posOk
+      rw [wty] at holds2
+      have bslot : env2 b.slot = env b.slot := by
+        have := fr.slots b bmem
+        have := fr.sized b bmem
+        rw [same2 b.slot (by omega), same1 b.slot (by omega)]
+      rw [← bslot] at located
+      have flat : FlatValue element right env2 (slotVars (next + 1) element.size) :=
+        ⟨slotVars_length _ _, holds2.congr fun j lt => by
+          rw [Nat.zero_add]; exact entry_slotVars env2 (next + 1) _ lt⟩
+      have bound3 : heap.nextAddress ≤ hp2.limit := by rw [limit2, limit1]; exact bound
+      have finish : ∀ {s hp'}, Exec mp 0 env2 hp2 s (.normal env2 hp') → HeapCorr heap hp' →
+          Simulates mp hp ret scope frame base st env (i.stmt.seq (w.stmt.seq s)) .next { st2 with heap } :=
+        fun exec hc' =>
+        ⟨fresh2, ((keeps1.chain keeps2).lower le).trans ⟨fun _ _ => rfl, Nat.le_refl _⟩, max d1 d2, _,
+          .seq (exec1.mono (Nat.le_max_left _ _)) (.seq (exec2.mono (Nat.le_max_right _ _)) (exec.mono (Nat.zero_le _))),
+          .next (((corr.after fr fresh (keeps1.chain keeps2) (locals2.trans locals1)
+            (fun j lt => (same2 j (by omega)).trans (same1 j lt)))).cells_congr rfl fun _ _ => rfl) hc'⟩
+      simp only [storeEvalWord] at ok
+      split at ok
+      · rename_i ws hws
+        simp only [storeEvalThen] at ok
+        split at ok
+        case isFalse => simp at ok
+        split at ok
+        · simp at ok
+        rename_i s sOk
+        simp only [Option.some.injEq] at ok
+        subst ok
+        obtain ⟨hp', exec, hc'⟩ := storeStruct_sound (mp := mp) hc2 hws posEq located stored flat sOk bound3
+        exact finish exec hc'
+      · split at ok
+        · simp at ok
+        rename_i wss hwss
+        simp only [storeEvalThen] at ok
+        split at ok
+        case isFalse => simp at ok
+        split at ok
+        · simp at ok
+        rename_i s sOk
+        simp only [Option.some.injEq] at ok
+        subst ok
+        obtain ⟨hp', exec, hc'⟩ := storeEnum_sound (mp := mp) hc2 hwss posEq located stored flat sOk bound3
+        exact finish exec hc'
+    all_goals simp at run
   rename_i isI32
   have eltEq := eq_of_isI32 isI32
   subst eltEq

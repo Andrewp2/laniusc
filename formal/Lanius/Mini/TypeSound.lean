@@ -1813,7 +1813,26 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
                   · rw [eq_uint c]; exact .unsigned _
                 exact .expression (.assign (.indexSlice (.local inCtx) typedIndex integer) typedValue .set)
               · simp at h
-        · simp at h
+        · split at h
+          · simp at h
+          · rename_i i hi
+            split at h
+            · simp at h
+            · rename_i v hv
+              have cond := storeEvalWord_cond h
+              simp only [Bool.and_eq_true, Bool.or_eq_true] at cond
+              have typedIndex := SrcEff.eval_typed target sigsOk index ok
+                (fun t mem => d t (List.mem_append_left _ mem)) hi
+              have typedValue := SrcEff.eval_typed target sigsOk value ok
+                (fun t mem => d t (List.mem_append_right _ mem)) hv
+              have inCtx := (ok slice sb found).1
+              rw [elementOf_some he] at inCtx
+              rw [same_toCore cond.2] at typedValue
+              have integer : Typing.IntegerTy i.ty.toCore := by
+                rcases cond.1 with c | c
+                · rw [eq_i32 c]; exact .signed _
+                · rw [eq_uint c]; exact .unsigned _
+              exact .expression (.assign (.indexSlice (.local inCtx) typedIndex integer) typedValue .set)
 
 /-! ## Functions and programs -/
 

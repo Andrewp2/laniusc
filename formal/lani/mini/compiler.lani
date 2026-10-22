@@ -2674,38 +2674,6 @@ pub fn lower_discard(value: core::option::Option<Evaluated>) -> core::option::Op
     };
 }
 
-// The index in slot, the value in slot + 1, then the 32-bit store.
-pub fn store_eval(b: Binding, slot: usize, i: Evaluated, v: Evaluated) -> core::option::Option<Stmt> {
-    if ((i.ty.is_i32() || i.ty.is_uint(Usize)) && v.ty.is_i32()) {
-        return Some(Seq(boxed(i.stmt), boxed(Seq(boxed(v.stmt), boxed(StoreWord(M32, Binary(U64, Add, boxed(Var(b.slot)), boxed(Binary(U64, Mul, boxed(Var(slot)), boxed(Lit(4))))), Var(plus(slot, 1))))))));
-    }
-    return None;
-}
-
-// slice[index] = value on a raw slice of i32.
-pub fn store_eval_element(b: Binding, element: SrcType, slot: usize, index: core::option::Option<Evaluated>, value: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
-    if (element.is_i32()) {
-        return match (index) {
-            None -> None,
-            Some(i) -> match (value) {
-                None -> None,
-                Some(v) -> store_eval(b, slot, i, v),
-            },
-        };
-    }
-    return None;
-}
-
-pub fn lower_set_index_eval(slot: usize, binding: core::option::Option<Binding>, index: core::option::Option<Evaluated>, value: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
-    return match (binding) {
-        None -> None,
-        Some(b) -> match (element_of(b.ty)) {
-            None -> None,
-            Some(element) -> store_eval_element(b, element, slot, index, value),
-        },
-    };
-}
-
 pub fn lower_let(slot: usize, values: core::option::Option<List<Expr>>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
     return match (values) {
         None -> None,
@@ -3490,6 +3458,66 @@ pub fn eval_arms(sigs: List<Sig>, decls: SrcDecls, scope: List<Binding>, slot: u
 }
 // extract: mutual end
 
+// The index in slot, the value from slot + 1, then the stores of its words.
+pub fn store_eval_then(i: Evaluated, v: Evaluated, element: SrcType, store: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    if ((i.ty.is_i32() || i.ty.is_uint(Usize)) && v.ty.same(element)) {
+        return match (store) {
+            None -> None,
+            Some(s) -> Some(Seq(boxed(i.stmt), boxed(Seq(boxed(v.stmt), boxed(s))))),
+        };
+    }
+    return None;
+}
+
+// slice[index] = value on a raw slice of word structs or word enums.
+pub fn store_eval_word(decls: SrcDecls, b: Binding, element: SrcType, slot: usize, i: Evaluated, v: Evaluated) -> core::option::Option<Stmt> {
+    return match (element_widths(decls, element)) {
+        Some(ws) -> store_eval_then(i, v, element, store_fields(ws, slot_vars(plus(slot, 1), element.size()), element_base(b.slot, length(ws), Var(slot)), 0)),
+        None -> match (enum_widths(decls, element)) {
+            None -> None,
+            Some(wss) -> store_eval_then(i, v, element, store_enum_values(wss, slot_vars(plus(slot, 1), element.size()), element_base(b.slot, plus(max_length(wss), 1), Var(slot)))),
+        },
+    };
+}
+
+// The index in slot, the value in slot + 1, then the 32-bit store.
+pub fn store_eval(b: Binding, slot: usize, i: Evaluated, v: Evaluated) -> core::option::Option<Stmt> {
+    if ((i.ty.is_i32() || i.ty.is_uint(Usize)) && v.ty.is_i32()) {
+        return Some(Seq(boxed(i.stmt), boxed(Seq(boxed(v.stmt), boxed(StoreWord(M32, Binary(U64, Add, boxed(Var(b.slot)), boxed(Binary(U64, Mul, boxed(Var(slot)), boxed(Lit(4))))), Var(plus(slot, 1))))))));
+    }
+    return None;
+}
+
+// slice[index] = value on a raw slice.
+pub fn store_eval_element(decls: SrcDecls, b: Binding, element: SrcType, slot: usize, index: core::option::Option<Evaluated>, value: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
+    if (element.is_i32()) {
+        return match (index) {
+            None -> None,
+            Some(i) -> match (value) {
+                None -> None,
+                Some(v) -> store_eval(b, slot, i, v),
+            },
+        };
+    }
+    return match (index) {
+        None -> None,
+        Some(i) -> match (value) {
+            None -> None,
+            Some(v) -> store_eval_word(decls, b, element, slot, i, v),
+        },
+    };
+}
+
+pub fn lower_set_index_eval(decls: SrcDecls, slot: usize, binding: core::option::Option<Binding>, index: core::option::Option<Evaluated>, value: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> match (element_of(b.ty)) {
+            None -> None,
+            Some(element) -> store_eval_element(decls, b, element, slot, index, value),
+        },
+    };
+}
+
 impl SrcStmt {
     pub fn lower(self, sigs: List<Sig>, decls: SrcDecls, ret: SrcType, scope: List<Binding>, next: usize) -> core::option::Option<Stmt> {
         return match (self) {
@@ -3519,7 +3547,7 @@ impl SrcStmt {
             WhileEval(condition, body) -> lower_while_eval(next, condition.eval(sigs, decls, scope, next), unbox(body).lower(sigs, decls, ret, scope, next)),
             ReturnEval(value) -> lower_return_eval(next, ret, value.eval(sigs, decls, scope, next)),
             Discard(value) -> lower_discard(value.eval(sigs, decls, scope, next)),
-            SetIndexEval(slice, index, value) -> lower_set_index_eval(next, lookup(scope, slice), index.eval(sigs, decls, scope, next), value.eval(sigs, decls, scope, plus(next, 1))),
+            SetIndexEval(slice, index, value) -> lower_set_index_eval(decls, next, lookup(scope, slice), index.eval(sigs, decls, scope, next), value.eval(sigs, decls, scope, plus(next, 1))),
         };
     }
 

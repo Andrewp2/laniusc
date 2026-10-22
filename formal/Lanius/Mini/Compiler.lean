@@ -2087,33 +2087,6 @@ def lowerDiscard (value : Option Evaluated) : Option Stmt :=
   | none => none
   | some v => some v.stmt
 
-/-- The index in slot, the value in slot + 1, then the 32-bit store. -/
-def storeEval (b : Binding) (slot : Nat) (i : Evaluated) (v : Evaluated) : Option Stmt :=
-  if (SrcType.isI32 i.ty || SrcType.isUint i.ty UintTy.usize) && SrcType.isI32 v.ty then
-    some (Stmt.seq i.stmt (Stmt.seq v.stmt (Stmt.storeWord MemWidth.m32 (Expr.binary Word.u64 BinOp.add (Expr.var b.slot) (Expr.binary Word.u64 BinOp.mul (Expr.var slot) (Expr.lit 4))) (Expr.var (slot + 1)))))
-  else
-    none
-
-/-- slice[index] = value on a raw slice of i32. -/
-def storeEvalElement (b : Binding) (element : SrcType) (slot : Nat) (index : Option Evaluated) (value : Option Evaluated) : Option Stmt :=
-  if SrcType.isI32 element then
-    match index with
-    | none => none
-    | some i =>
-      match value with
-      | none => none
-      | some v => storeEval b slot i v
-  else
-    none
-
-def lowerSetIndexEval (slot : Nat) (binding : Option Binding) (index : Option Evaluated) (value : Option Evaluated) : Option Stmt :=
-  match binding with
-  | none => none
-  | some b =>
-    match elementOf b.ty with
-    | none => none
-    | some element => storeEvalElement b element slot index value
-
 def lowerLet (slot : Nat) (values : Option (List Expr)) (body : Option Stmt) : Option Stmt :=
   match values with
   | none => none
@@ -2712,6 +2685,56 @@ def evalArms (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (slot :
 
 end
 
+/-- The index in slot, the value from slot + 1, then the stores of its words. -/
+def storeEvalThen (i : Evaluated) (v : Evaluated) (element : SrcType) (store : Option Stmt) : Option Stmt :=
+  if (SrcType.isI32 i.ty || SrcType.isUint i.ty UintTy.usize) && SrcType.same v.ty element then
+    match store with
+    | none => none
+    | some s => some (Stmt.seq i.stmt (Stmt.seq v.stmt s))
+  else
+    none
+
+/-- slice[index] = value on a raw slice of word structs or word enums. -/
+def storeEvalWord (decls : SrcDecls) (b : Binding) (element : SrcType) (slot : Nat) (i : Evaluated) (v : Evaluated) : Option Stmt :=
+  match elementWidths decls element with
+  | some ws => storeEvalThen i v element (storeFields ws (slotVars (slot + 1) (SrcType.size element)) (elementBase b.slot ws.length (Expr.var slot)) 0)
+  | none =>
+    match enumWidths decls element with
+    | none => none
+    | some wss => storeEvalThen i v element (storeEnumValues wss (slotVars (slot + 1) (SrcType.size element)) (elementBase b.slot (maxLength wss + 1) (Expr.var slot)))
+
+/-- The index in slot, the value in slot + 1, then the 32-bit store. -/
+def storeEval (b : Binding) (slot : Nat) (i : Evaluated) (v : Evaluated) : Option Stmt :=
+  if (SrcType.isI32 i.ty || SrcType.isUint i.ty UintTy.usize) && SrcType.isI32 v.ty then
+    some (Stmt.seq i.stmt (Stmt.seq v.stmt (Stmt.storeWord MemWidth.m32 (Expr.binary Word.u64 BinOp.add (Expr.var b.slot) (Expr.binary Word.u64 BinOp.mul (Expr.var slot) (Expr.lit 4))) (Expr.var (slot + 1)))))
+  else
+    none
+
+/-- slice[index] = value on a raw slice. -/
+def storeEvalElement (decls : SrcDecls) (b : Binding) (element : SrcType) (slot : Nat) (index : Option Evaluated) (value : Option Evaluated) : Option Stmt :=
+  if SrcType.isI32 element then
+    match index with
+    | none => none
+    | some i =>
+      match value with
+      | none => none
+      | some v => storeEval b slot i v
+  else
+    match index with
+    | none => none
+    | some i =>
+      match value with
+      | none => none
+      | some v => storeEvalWord decls b element slot i v
+
+def lowerSetIndexEval (decls : SrcDecls) (slot : Nat) (binding : Option Binding) (index : Option Evaluated) (value : Option Evaluated) : Option Stmt :=
+  match binding with
+  | none => none
+  | some b =>
+    match elementOf b.ty with
+    | none => none
+    | some element => storeEvalElement decls b element slot index value
+
 def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : SrcType) (scope : List Binding) (next : Nat) : Option Stmt :=
   match self with
   | .nop => some Stmt.skip
@@ -2740,7 +2763,7 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : S
   | .whileEval condition body => lowerWhileEval next (SrcEff.eval condition sigs decls scope next) (SrcStmt.lower body sigs decls ret scope next)
   | .returnEval value => lowerReturnEval next ret (SrcEff.eval value sigs decls scope next)
   | .discard value => lowerDiscard (SrcEff.eval value sigs decls scope next)
-  | .setIndexEval slice index value => lowerSetIndexEval next (lookup scope slice) (SrcEff.eval index sigs decls scope next) (SrcEff.eval value sigs decls scope (next + 1))
+  | .setIndexEval slice index value => lowerSetIndexEval decls next (lookup scope slice) (SrcEff.eval index sigs decls scope next) (SrcEff.eval value sigs decls scope (next + 1))
 
 /-- Slots the statement's lets need beyond the ones in scope. -/
 def SrcStmt.depth (self : SrcStmt) : Nat :=
