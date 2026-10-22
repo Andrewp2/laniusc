@@ -1838,6 +1838,41 @@ def evalApply (op : SrcOp) (slot : Nat) (left : Option Evaluated) (right : Optio
     | none => none
     | some r => evalOperands op slot l r
 
+/-- The element type of a slice type. -/
+def elementOf (ty : SrcType) : Option SrcType :=
+  match ty with
+  | .i32 => none
+  | .bool => none
+  | .uint kind => none
+  | .struct id fields => none
+  | .enum id variants => none
+  | .ptr => none
+  | .slice element => some element
+
+/-- The index in slot, then the element it picks loaded over it. -/
+def evalLoad (b : Binding) (slot : Nat) (i : Evaluated) : Option Evaluated :=
+  if SrcType.isI32 i.ty || SrcType.isUint i.ty UintTy.usize then
+    some ({ stmt := Stmt.seq i.stmt (Stmt.loadWord MemWidth.m32 slot (Expr.binary Word.u64 BinOp.add (Expr.var b.slot) (Expr.binary Word.u64 BinOp.mul (Expr.var slot) (Expr.lit 4)))), ty := SrcType.i32 } : Evaluated)
+  else
+    none
+
+/-- slice[index] of a raw slice of i32. -/
+def evalElement (b : Binding) (element : SrcType) (slot : Nat) (index : Option Evaluated) : Option Evaluated :=
+  if SrcType.isI32 element then
+    match index with
+    | none => none
+    | some i => evalLoad b slot i
+  else
+    none
+
+def evalIndex (scope : List Binding) (slice : Nat) (slot : Nat) (index : Option Evaluated) : Option Evaluated :=
+  match lookup scope slice with
+  | none => none
+  | some b =>
+    match elementOf b.ty with
+    | none => none
+    | some element => evalElement b element slot index
+
 /-- A struct value: its fields, one after another from slot. -/
 def evalStructOf (ty : SrcType) (types : List SrcType) (args : EvaluatedArgs) : Option Evaluated :=
   if typesSame args.types types && decide (0 < sizes types) then
@@ -1959,7 +1994,7 @@ def SrcEff.eval (self : SrcEff) (sigs : List Sig) (scope : List Binding) (slot :
   | .eNeg operand => evalNegate slot (SrcEff.eval operand sigs scope slot)
   | .eNot operand => evalNot slot (SrcEff.eval operand sigs scope slot)
   | .eCast ty operand => evalCast ty slot (SrcEff.eval operand sigs scope slot)
-  | .eIndex slice index => none
+  | .eIndex slice index => evalIndex scope slice slot (SrcEff.eval index sigs scope slot)
   | .eStruct ty fields => evalStruct ty (evalArgs sigs scope fields slot)
   | .eVariant ty variant payload => evalVariant ty variant slot (evalArgs sigs scope payload (slot + 1))
   | .eMatch scrutinee enumId binders values => none
@@ -2430,17 +2465,6 @@ def lowerIndex (scope : List Binding) (index : SrcExpr) : Option Expr :=
   match SrcExpr.lower index scope with
   | none => none
   | some t => indexOf t
-
-/-- The element type of a slice type. -/
-def elementOf (ty : SrcType) : Option SrcType :=
-  match ty with
-  | .i32 => none
-  | .bool => none
-  | .uint kind => none
-  | .struct id fields => none
-  | .enum id variants => none
-  | .ptr => none
-  | .slice element => some element
 
 /-- The address of element index of the slice local b. -/
 def elementAddress (b : Binding) (index : Option Expr) : Option Expr :=

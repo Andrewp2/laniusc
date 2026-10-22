@@ -1088,7 +1088,37 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
         split at ht
         · exact castTo_typed (o := { expr := Expr.var slot, ty := o.ty }) inner ht
         · simp at ht
-  | .eIndex _ _, _, _, _, _, _, _, h => by simp [SrcEff.eval] at h
+  | .eIndex slice index, scope, ctx, slot, ev, ok, dd, h => by
+    simp only [SrcEff.eval, evalIndex] at h
+    split at h
+    · simp at h
+    · rename_i b found
+      split at h
+      · simp at h
+      · rename_i element he
+        simp only [evalElement] at h
+        split at h
+        · rename_i isI32
+          split at h
+          · simp at h
+          · rename_i i hi
+            simp only [evalLoad] at h
+            split at h
+            · rename_i cond
+              simp only [Option.some.injEq] at h
+              subst h
+              have typedIndex := SrcEff.eval_typed target sigsOk index ok (by simpa [SrcEff.types] using dd) hi
+              have inCtx := (ok slice b found).1
+              have bty : b.ty = .slice element := by cases hb : b.ty <;> simp_all [elementOf]
+              rw [bty, eq_i32 isI32] at inCtx
+              have integer : Typing.IntegerTy i.ty.toCore := by
+                simp only [Bool.or_eq_true] at cond
+                rcases cond with c | c
+                · rw [eq_i32 c]; exact .signed _
+                · rw [eq_uint c]; exact .unsigned _
+              exact .indexSlice (.local inCtx) typedIndex integer
+            · simp at h
+        · simp at h
   | .eStruct ty fields, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalStruct] at h
     split at h

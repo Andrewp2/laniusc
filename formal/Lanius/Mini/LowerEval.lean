@@ -582,6 +582,86 @@ theorem eval_divide {k : Nat} (ihe : EvalSound sp mp k) {op : SrcDivOp} {l r : S
         below _, holdsAt_set (ty := .uint kind) ⟨rfl, fits⟩ env2 slot, hc2⟩
     · simp at ok
 
+theorem eq_of_elementOf {ty e : SrcType} (h : elementOf ty = some e) : ty = .slice e := by
+  cases ty <;> simp_all [elementOf]
+
+/-- `slice[index]` of a raw slice of `i32`: the index in `slot`, then the
+element loaded over it. -/
+theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {index : SrcEff}
+    (ok : evalIndex scope slice slot (index.eval (sigs sp.funcs) scope slot) = some ev)
+    (corr : Corr scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
+    (hc : HeapCorr st.heap hp)
+    (run : evalExpr (k + 2) sp.toCore st (.index (.local slice) index.toCore) = .done v st')
+    (bound : st'.heap.nextAddress ≤ hp.limit) :
+    Evaluates mp hp slot st env ev v st' := by
+  simp only [evalIndex] at ok
+  split at ok
+  · simp at ok
+  rename_i b found
+  split at ok
+  · simp at ok
+  rename_i element elementOk
+  have bty := eq_of_elementOf elementOk
+  simp only [evalElement] at ok
+  split at ok
+  case isFalse => simp at ok
+  rename_i isI32
+  have eltEq := eq_of_isI32 isI32
+  subst eltEq
+  split at ok
+  · simp at ok
+  rename_i i indexOk
+  simp only [evalLoad] at ok
+  split at ok
+  case isFalse => simp at ok
+  rename_i kind
+  simp only [Option.some.injEq] at ok
+  subst ok
+  obtain ⟨w, localRun, holdsW⟩ := corr.local found k sp.toCore
+  rw [bty] at holdsW
+  cases holdsW with
+  | @slice _ len _ _ =>
+  obtain ⟨iv, pos, indexRun, posOk, read⟩ := eval_index_raw localRun run
+  obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1⟩ :=
+    ihe indexOk corr fr fresh hc indexRun bound
+  have scalar : i.ty.isScalar = true := by
+    cases hty : i.ty <;> simp_all [SrcType.isI32, SrcType.isUint, SrcType.isScalar]
+  have holdsI := holds_var holds1 scalar
+  have posEq := index_toNat (t := { expr := .var slot, ty := i.ty }) kind holdsI posOk
+  have bslot : env1 b.slot = env b.slot := same1 b.slot (by have := fr.slots b (lookup_mem found).1; have := fr.sized b (lookup_mem found).1; omega)
+  simp only [Semantics.readRawSliceIndex] at read
+  split at read
+  · simp at read
+  simp only [Semantics.rawSliceElementAddress?, SrcType.toCore] at read
+  obtain ⟨elt, eltOk, read⟩ := except_bind_ok read
+  simp only [pure, Except.pure, Except.ok.injEq] at eltOk
+  subst eltOk
+  simp only [NativeLayout.maxDepth, Semantics.readNativeValue] at read
+  obtain ⟨bits, loaded, wrapped⟩ := except_bind_ok read
+  simp only [pure, Except.pure, Except.ok.injEq] at wrapped
+  subst wrapped
+  obtain ⟨rfl, inside⟩ := hc1.loadNatLE loaded
+  have inside := inside (by decide)
+  have small := hc1.small
+  have limit := exec1.limit_normal
+  have address : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot)
+      (Expr.binary Word.u64 BinOp.mul (Expr.var slot) (Expr.lit 4))).eval env1).toNat =
+      (env b.slot).toNat + pos * 4 := by
+    have four : (4 : BitVec 64).toNat = 4 := rfl
+    simp only [Expr.eval, Word.apply, BinOp.apply, BitVec.toNat_add, BitVec.toNat_mul, four, bslot]
+    simp only [Expr.eval] at posEq
+    rw [posEq]
+    rw [Nat.mod_eq_of_lt (a := pos * 4) (by addr_omega), Nat.mod_eq_of_lt (by addr_omega)]
+  have room : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot)
+      (Expr.binary Word.u64 BinOp.mul (Expr.var slot) (Expr.lit 4))).eval env1).toNat + MemWidth.m32.bytes ≤
+      hp1.limit := by
+    rw [address]; simp only [MemWidth.bytes]; addr_omega
+  have lt32 := hp1.readLE_lt ((env b.slot).toNat + pos * 4) 4
+  refine ⟨fresh1, keeps1, locals1, by simp [SrcType.size], d1, _, hp1, .seq exec1 (.loadWord room),
+    fun j lt => by rw [set_below lt, same1 j lt], .i32 ?_, hc1⟩
+  simp only [Env.set, if_pos, address, MemWidth.bytes]
+  exact i32_load_holds (by simpa using lt32)
+
 /-- A struct literal: its fields, one after another from `slot`. -/
 theorem eval_struct {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcType} {fields : List SrcEff}
     (ok : evalStruct ty (evalArgs (sigs sp.funcs) scope fields slot) = some ev)
@@ -1107,7 +1187,11 @@ theorem sound_both {sp : SrcProgram} {mp : Program}
               exact eval_then hereE operandOk ok corr fr fresh hc operandRun bound scalar
                 fun holds => cast_sound holds lowered' evaluated
             · simp at lowered'
-        | eIndex => simp [SrcEff.eval] at ok
+        | eIndex slice index =>
+          simp only [SrcEff.eval] at ok
+          cases fuel with
+          | zero => simp [SrcEff.toCore, evalExpr] at run
+          | succ k => exact eval_index hereE ok corr fr fresh hc run bound
         | eStruct ty fields =>
           simp only [SrcEff.eval] at ok
           exact eval_struct (fun m lt => belowE m (Nat.le_of_lt lt)) ok corr fr fresh hc run bound

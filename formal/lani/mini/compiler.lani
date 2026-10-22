@@ -2350,6 +2350,48 @@ pub fn eval_apply(op: SrcOp, slot: usize, left: core::option::Option<Evaluated>,
     };
 }
 
+// The element type of a slice type.
+pub fn element_of(ty: SrcType) -> core::option::Option<SrcType> {
+    return match (ty) {
+        I32 -> None,
+        Bool -> None,
+        Uint(kind) -> None,
+        Struct(id, fields) -> None,
+        Enum(id, variants) -> None,
+        Ptr -> None,
+        Slice(element) -> Some(unbox(element)),
+    };
+}
+
+// The index in slot, then the element it picks loaded over it.
+pub fn eval_load(b: Binding, slot: usize, i: Evaluated) -> core::option::Option<Evaluated> {
+    if (i.ty.is_i32() || i.ty.is_uint(Usize)) {
+        return Some(Evaluated { stmt: Seq(boxed(i.stmt), boxed(LoadWord(M32, slot, Binary(U64, Add, boxed(Var(b.slot)), boxed(Binary(U64, Mul, boxed(Var(slot)), boxed(Lit(4)))))))), ty: I32 });
+    }
+    return None;
+}
+
+// slice[index] of a raw slice of i32.
+pub fn eval_element(b: Binding, element: SrcType, slot: usize, index: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
+    if (element.is_i32()) {
+        return match (index) {
+            None -> None,
+            Some(i) -> eval_load(b, slot, i),
+        };
+    }
+    return None;
+}
+
+pub fn eval_index(scope: List<Binding>, slice: usize, slot: usize, index: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
+    return match (lookup(scope, slice)) {
+        None -> None,
+        Some(b) -> match (element_of(b.ty)) {
+            None -> None,
+            Some(element) -> eval_element(b, element, slot, index),
+        },
+    };
+}
+
 // A struct value: its fields, one after another from slot.
 pub fn eval_struct_of(ty: SrcType, types: List<SrcType>, args: EvaluatedArgs) -> core::option::Option<Evaluated> {
     if (types_same(args.types, types) && (0 < sizes(types))) {
@@ -2499,7 +2541,7 @@ impl SrcEff {
             ENeg(operand) -> eval_negate(slot, unbox(operand).eval(sigs, scope, slot)),
             ENot(operand) -> eval_not(slot, unbox(operand).eval(sigs, scope, slot)),
             ECast(ty, operand) -> eval_cast(ty, slot, unbox(operand).eval(sigs, scope, slot)),
-            EIndex(slice, index) -> None,
+            EIndex(slice, index) -> eval_index(scope, slice, slot, unbox(index).eval(sigs, scope, slot)),
             EStruct(ty, fields) -> eval_struct(ty, eval_args(sigs, scope, unbox(fields), slot)),
             EVariant(ty, variant, payload) -> eval_variant(ty, variant, slot, eval_args(sigs, scope, unbox(payload), plus(slot, 1))),
             EMatch(scrutinee, enum_id, binders, values) -> None,
@@ -3123,19 +3165,6 @@ pub fn lower_index(scope: List<Binding>, index: SrcExpr) -> core::option::Option
     return match (index.lower(scope)) {
         None -> None,
         Some(t) -> index_of(t),
-    };
-}
-
-// The element type of a slice type.
-pub fn element_of(ty: SrcType) -> core::option::Option<SrcType> {
-    return match (ty) {
-        I32 -> None,
-        Bool -> None,
-        Uint(kind) -> None,
-        Struct(id, fields) -> None,
-        Enum(id, variants) -> None,
-        Ptr -> None,
-        Slice(element) -> Some(unbox(element)),
     };
 }
 
