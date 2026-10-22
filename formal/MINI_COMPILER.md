@@ -292,6 +292,31 @@ rejects both whatever declarations they are given (`idClash_not_wellTyped`,
 `noReturn_not_wellTyped`), and `compileSource` rejects both
 (`idClash_rejected`, `noReturn_rejected`, by `rfl`).
 
+### The verified compiler as an oracle for laniusc (step 12)
+
+```bash
+python3 -I formal/tools/oracle_difftest.py target/claude-work/oracle --count 300 --seed 12
+```
+
+It generates random source programs in the front pass's subset: `i32`,
+`bool`, `u8`, `u32`, `u64` and `usize` values, structs and enums of those,
+literals, locals, fields, the operators, casts, `let`, assignment and field
+assignment, variants, `match`, `if`, bounded `while` loops, calls to later
+functions (so every run ends) and `return`. Each program is compiled twice: by
+`compileSource` under `#eval`, whose image runs natively in this process (a
+stub sets r12-r14 with the cursor at 1, as the top theorem assumes), and by
+laniusc, from the same program printed as Lanius with a `main` that writes
+each result. A Python interpreter of the programs gives a third answer, so a
+disagreement shows which side is wrong. `--only K` reruns one program.
+
+2026-10-21: 2,300 programs, 18,400 calls, no disagreements and no rejections.
+The first unsigned run reported 7 disagreements; the interpreter sided with
+laniusc, and the cause was the harness, which masked 64-bit arguments to 32
+bits before the call.
+
+Not covered yet: the heap, raw slices, and the stdlib, which needs generics
+and modules in the front pass.
+
 ### Milestone 4: the compiler in Lanius, and extraction
 
 `formal/lani/mini/compiler.lani` is the compiler, written in a pure subset of

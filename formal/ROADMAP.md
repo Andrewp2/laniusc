@@ -18,7 +18,7 @@ it still trusts, proof lines against code lines, and check time.
 | 9 | Modules and separate compilation; linking correctness | |
 | 10 | Stdlib (`std::vec`, `std::set`, `std::map`) proved against functional specs | |
 | 11 | Self-hosting: laniusc-built and self-built verified compiler agree byte for byte | |
-| 12 | The verified compiler as an oracle for laniusc on the stdlib and fuzzed programs | |
+| 12 | The verified compiler as an oracle for laniusc on the stdlib and fuzzed programs | started: `oracle_difftest.py` compiles random front-pass programs (integers, `bool`, structs, enums, `match`, loops, calls) with `compileSource`, runs the image natively, and compares each call with the laniusc build of the same program and with a reference interpreter: 2,300 programs, 18,400 calls, no disagreements. To do: heap and raw slices, then the stdlib (needs generics and modules) |
 | 13 | Optimizations as unverified passes checked by proved validators | |
 | 14 | Trusted base: list every unproved assumption; test the x86 model against the CPU | first pass done: `TRUSTED_BASE.md` lists the Lean kernel and axioms, the statement's definitions, Core as the meaning of Lanius, the front end, extraction and the prelude, the x86 model, the existential theorem against a nondeterministic `Step`, and the caller/loader premises. `x86_model_test.py` runs every emitted instruction form natively and through `decode`/`execute`: 56,006 cases, no disagreements. A probe outside the emitted forms found a decoder defect (`88 /r` without REX took reg 4-7 as SPL..DIL, the CPU stores AH..BH); fixed, `decode` now refuses those bytes. Word loads and stores added: 61 forms, 0 disagreements. Open: prove `Step` deterministic on compiled bytes up to free flags, a verified loader |
 
