@@ -546,7 +546,17 @@ body is empty (`fn f(v0: i32) {}` called as `f(3);` from `main`) failed with
 LNC0057 "compiler execution failed" while generating target output. An empty
 body owned no LIR rows, so laniusc registered no target function for it; it
 now lowers as a bare `return;`, and the generator makes empty bodies again
-(seeds 51-52: 600 programs, 4,800 calls, no disagreements).
+(seeds 51-52: 600 programs, 4,800 calls, no disagreements). With `isize`
+(locals, parameters, results, fields, payloads, the operators, unary minus,
+signed order and the casts, values near 2^63 included; literals are
+`.cast .isize (.int n)`, and laniusc also gets bare ones such as `x + 5`),
+seeds 61-64: 1,200 programs, 9,600 calls, no disagreements and no
+rejections. laniusc wraps isize arithmetic at 64 bits and does not trap on
+overflow, as Core and the reference interpreter do. The entry's result folds
+in an isize's low and high 32 bits and a signed comparison; about a quarter
+of the programs then answer differently if isize order is taken unsigned,
+and a deliberately unsigned laniusc side gives 363 disagreements in 800
+calls.
 
 Not covered yet: the stdlib, which needs generics and modules in the front
 pass.
