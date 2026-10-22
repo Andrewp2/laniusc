@@ -56,11 +56,14 @@ the statement, so a reader has to agree that each one says what is intended:
 | `Returned`, `HeapAt`, `Contract`, `Scratch`, `InHeap` | `Mini/Simulation.lean` | the calling convention and what "returns" means (below) |
 | `Below`, `Binary.stackNeed` | `Mini/Frame.lean`, `Mini/Bytes.lean` | the stack window |
 | `CodeAt`, `Steps`, `Step` | `X86/Machine/State.lean`, `X86/Machine/Scalar.lean` | the image is loaded, and the machine runs (see section 6) |
+| `linkProgram`, `Stmt.rename`, `Binary.executable`, `Executable.stackNeed` | `Mini/Compiler.lean` (extracted), `Mini/Link.lean` | for the step 9 theorems `link_eq` and `linked_correct`: which mini program a list of modules *is* (their functions in link order, each callee renamed to its program index, imports checked for owner, function and arity), and what of a binary a linked executable keeps |
 
 `compileSource` and `compileProgram` themselves are not trusted. The theorem
 is about whatever they compute. That includes the optimizer `compileSource`
 runs (roadmap step 13): it is not proved, and the theorem holds because its
-output is kept only when the proved validator accepts it.
+output is kept only when the proved validator accepts it. Nor are
+`compileModule` and `linkObjects`: `link_eq` says they give what
+`compileProgram` gives for `linkProgram`'s program.
 
 ## 3. Core semantics as the meaning of Lanius
 
