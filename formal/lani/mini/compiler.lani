@@ -1313,6 +1313,8 @@ pub enum SrcExpr {
     Apply(SrcOp, Box<SrcExpr>, Box<SrcExpr>),
     // between i32 and the unsigned types, wrapping like Core
     Cast(SrcType, Box<SrcExpr>),
+    // the null pointer, Core's pointer 0
+    Null,
 }
 
 // A match arm: the binders of its variant's payload, and its value.
@@ -2023,6 +2025,7 @@ impl SrcExpr {
             Not(operand) -> lower_not(unbox(operand).lower(scope)),
             Apply(op, left, right) -> lower_apply(op, unbox(left).lower(scope), unbox(right).lower(scope)),
             Cast(ty, operand) -> lower_cast(ty, unbox(operand).lower(scope)),
+            Null -> Some(Typed { expr: Lit(0), ty: Ptr }),
         };
     }
 }
@@ -2124,6 +2127,7 @@ pub fn lower_copy(scope: List<Binding>, e: SrcExpr, ty: SrcType) -> core::option
         Not(operand) -> None,
         Apply(op, left, right) -> None,
         Cast(target, operand) -> None,
+        Null -> None,
     };
 }
 
@@ -2423,6 +2427,7 @@ pub fn eval_pure(scope: List<Binding>, e: SrcExpr, slot: usize) -> core::option:
             Not(operand) -> None,
             Apply(op, left, right) -> None,
             Cast(ty, operand) -> None,
+            Null -> None,
         },
     };
 }

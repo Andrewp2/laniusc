@@ -1,0 +1,173 @@
+// Generic value helpers and compiler-provided memory intrinsics.
+// Value helpers do not define allocation, destruction, moves, borrowing, or
+// object layout. Intrinsic lowering is target-specific and has no Lanius body.
+
+module core::mem;
+
+pub type MemoryCapability = bool;
+pub type RawMemoryRuntimeAbiVersion = u32;
+pub type RawMemoryServiceId = u32;
+pub type RawMemoryServiceStatus = u32;
+
+pub const VALUE_HELPERS_REQUIRE_RUNTIME: MemoryCapability = false;
+pub const VALUE_HELPERS_REQUIRE_ALLOCATOR: MemoryCapability = false;
+pub const RAW_MEMORY_API_AVAILABLE: MemoryCapability = false;
+pub const RAW_MEMORY_RUNTIME_ABI_VERSION: RawMemoryRuntimeAbiVersion = 1;
+pub const RAW_MEMORY_SERVICE_ID: RawMemoryServiceId = 1;
+pub const RAW_MEMORY_SERVICE_STATUS_UNAVAILABLE: RawMemoryServiceStatus = 1;
+pub const RAW_MEMORY_HAS_RUNTIME_BINDING: MemoryCapability = false;
+
+pub fn value_helpers_require_runtime() -> MemoryCapability {
+    return VALUE_HELPERS_REQUIRE_RUNTIME;
+}
+
+pub fn value_helpers_require_allocator() -> MemoryCapability {
+    return VALUE_HELPERS_REQUIRE_ALLOCATOR;
+}
+
+pub fn value_helpers_are_runtime_free() -> MemoryCapability {
+    return !VALUE_HELPERS_REQUIRE_RUNTIME && !VALUE_HELPERS_REQUIRE_ALLOCATOR;
+}
+
+pub fn raw_memory_api_is_available() -> MemoryCapability {
+    return RAW_MEMORY_API_AVAILABLE;
+}
+
+pub fn raw_memory_api_is_blocked() -> MemoryCapability {
+    return !RAW_MEMORY_API_AVAILABLE;
+}
+
+pub fn raw_memory_runtime_abi_version() -> RawMemoryRuntimeAbiVersion {
+    return RAW_MEMORY_RUNTIME_ABI_VERSION;
+}
+
+pub fn raw_memory_service_id() -> RawMemoryServiceId {
+    return RAW_MEMORY_SERVICE_ID;
+}
+
+pub fn raw_memory_service_is_known() -> MemoryCapability {
+    return true;
+}
+
+pub fn raw_memory_contract_metadata_is_available() -> MemoryCapability {
+    return raw_memory_service_is_known();
+}
+
+pub fn raw_memory_service_status() -> RawMemoryServiceStatus {
+    return RAW_MEMORY_SERVICE_STATUS_UNAVAILABLE;
+}
+
+pub fn raw_memory_has_runtime_binding() -> MemoryCapability {
+    return RAW_MEMORY_HAS_RUNTIME_BINDING;
+}
+
+pub fn raw_memory_api_is_executable() -> MemoryCapability {
+    return RAW_MEMORY_HAS_RUNTIME_BINDING;
+}
+
+pub fn raw_memory_api_requires_runtime_binding() -> MemoryCapability {
+    return !raw_memory_api_is_executable();
+}
+
+pub fn raw_memory_host_abi_is_contract_only() -> MemoryCapability {
+    return raw_memory_api_requires_runtime_binding();
+}
+
+pub fn identity<T>(value: T) -> T {
+    return value;
+}
+
+pub fn first<T>(left: T, right: T) -> T {
+    return left;
+}
+
+pub fn second<T>(left: T, right: T) -> T {
+    return right;
+}
+
+pub fn select<T>(condition: bool, when_true: T, when_false: T) -> T {
+    if (condition) {
+        return when_true;
+    } else {
+        return when_false;
+    }
+}
+
+// Borrow `length` elements from caller-owned storage. The caller must keep
+// `data` alive, aligned for T, and backed by at least `length` T values for
+// the entire use of the returned view. The view does not own or free storage.
+// i32 elements are packed ascending with byte stride +4, and u8 elements are
+// bytes with stride +1. Other T use descending eight-byte words, with stride
+// -8 * native_words(T); zero-sized elements have stride 0.
+// A negative length traps; an invalid pointer cannot be checked here.
+pub fn typed_slice_from_raw_parts<T>(data: ptr, length: i32) -> [T] {
+    assert(length >= 0);
+    return slice_from_raw_parts(data, length);
+}
+
+// The bytes one T occupies in raw storage on this target: the stride of a
+// raw view of T without its sign. It sizes allocations for
+// typed_slice_from_storage, and an alignment of 8 serves every T.
+// This is not C's sizeof:
+//   i32               4 (packed)
+//   u8                1 (packed bytes)
+//   zero-sized types  0
+//   any other T       8 * native words of T: 8 for u32, i64, bool, char
+//                     and ptr; 16 for str; 24 for a slice; 8 * N * words(E)
+//                     for [E; N]; the sum of the fields' words for a record
+// It is a runtime value, not a constant expression: each instance of the
+// calling body reads it from the stride its raw view is built with.
+pub fn size_of<T>() -> usize {
+    let nowhere: ptr = 0;
+    let probe: [T] = slice_from_raw_parts(nowhere, 0);
+    let stride: isize = slice_stride(probe);
+    if (stride < 0) {
+        return (0 - stride) as usize;
+    }
+    return stride as usize;
+}
+
+// View `length` elements stored in the `length * size_of<T>()` bytes that
+// start at `storage`, whichever direction T's raw view runs. Packed i32 and
+// u8 views start at `storage`. Other types use descending words, so element
+// zero starts at the top of the storage and the last element at its bottom.
+// Every view of the same storage must use the same length to agree on which
+// element is where. The caller must keep the storage alive, aligned to 8 and
+// at least that size. A negative length traps.
+pub fn typed_slice_from_storage<T>(storage: ptr, length: i32) -> [T] {
+    assert(length >= 0);
+    let nowhere: ptr = 0;
+    let probe: [T] = slice_from_raw_parts(nowhere, 0);
+    let stride: isize = slice_stride(probe);
+    if (stride >= 0 || length == 0) {
+        return slice_from_raw_parts(storage, length);
+    }
+    let top: usize = ((0 - stride) as usize) * (length as usize) - 8;
+    return slice_from_raw_parts(storage + top, length);
+}
+
+// View the first `length` of the `capacity` elements that
+// typed_slice_from_storage(storage, capacity) sees, at the same addresses.
+// Lengths outside 0..=capacity trap.
+pub fn typed_prefix_from_storage<T>(storage: ptr, capacity: i32, length: i32) -> [T] {
+    assert(length >= 0 && length <= capacity);
+    let nowhere: ptr = 0;
+    let probe: [T] = slice_from_raw_parts(nowhere, 0);
+    let stride: isize = slice_stride(probe);
+    if (stride >= 0 || length == 0) {
+        return slice_from_raw_parts(storage, length);
+    }
+    let skip: usize = ((0 - stride) as usize) * ((capacity - length) as usize);
+    return typed_slice_from_storage(storage + skip, length);
+}
+
+// Compiler-provided intrinsics available through this module:
+// i32_array_data_ptr, i32_slice_data_ptr, string_data_ptr,
+// i32_slice_from_raw_parts, and slice_stride. They are not defined in Lanius
+// source because a placeholder body would silently return a null pointer or
+// empty view on a target without intrinsic lowering. Callers must keep
+// borrowed backing storage alive. Constructing a view also requires a valid
+// aligned pointer with at least the claimed number of i32 elements.
+// slice_stride(view) returns the view's signed byte stride as isize: element
+// i + 1 starts that many bytes after element i. A native array passed as a
+// slice keeps its own layout, so its stride can differ from a raw view's.

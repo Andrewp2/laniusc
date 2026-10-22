@@ -447,6 +447,10 @@ theorem SrcExpr.lower_typed {P : Core.Program} (target : P.target = Core.Target.
     simp only [SrcExpr.lower, Option.some.injEq] at h
     subst h
     exact ⟨.value (.boolean v) rfl, rfl⟩
+  | .null, _, _, _, _, h => by
+    simp only [SrcExpr.lower, Option.some.injEq] at h
+    subst h
+    exact ⟨.value (.pointer 0) rfl, rfl⟩
   | .unsigned kind v, _, _, _, _, h => by
     simp only [SrcExpr.lower, lowerUnsigned] at h
     split at h
@@ -679,6 +683,7 @@ theorem lowerValue_typed {P : Core.Program} (target : P.target = Core.Target.x86
     | not => simp [lowerCopy] at h
     | apply => simp [lowerCopy] at h
     | cast => simp [lowerCopy] at h
+    | null => simp [lowerCopy] at h
 
 theorem lowerArgs_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {scope : List Binding} {ctx : Typing.Context} (ok : ScopeOk P ctx scope) :
@@ -1130,6 +1135,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       | not => simp at h
       | apply => simp at h
       | cast => simp at h
+      | null => simp at h
   | .eCall callee args, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalCall] at h
     split at h

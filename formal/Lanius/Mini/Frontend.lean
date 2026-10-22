@@ -1798,6 +1798,7 @@ def negatedInt (x : SrcExpr) (e : SrcExpr) : Option SrcExpr :=
   | .not y => none
   | .apply op a b => none
   | .cast t y => none
+  | .null => none
 
 /-- A constant's value: a literal of its type. An integer literal of an unsigned type is that type's literal. -/
 def typedLiteral (t : Ty) (e : SrcExpr) : Option SrcExpr :=
@@ -1835,6 +1836,7 @@ def typedLiteral (t : Ty) (e : SrcExpr) : Option SrcExpr :=
   | .not x => none
   | .apply op a b => none
   | .cast s x => none
+  | .null => none
 
 def literalAs (t : Option Ty) (e : Option SrcExpr) : Option SrcExpr :=
   match t with
@@ -2128,6 +2130,7 @@ def bareInt (e : SrcExpr) : Bool :=
   | .not x => false
   | .apply op a b => !(givesBool op) && bareInt a && bareInt b
   | .cast t x => unitTy t
+  | .null => false
 
 def pickTy (leftBare : Bool) (a : Option Ty) (b : Option Ty) : Option Ty :=
   if leftBare then
@@ -2150,6 +2153,7 @@ def exprTy (fuel : Nat) (env : Env) (scope : List Local) (e : SrcExpr) : Option 
     | .not x => some Ty.tyBool
     | .apply op a b => applyTy op (pickTy (bareInt a) (exprTy (fuel - 1) env scope a) (exprTy (fuel - 1) env scope b))
     | .cast t x => srcTy t
+    | .null => some Ty.tyPtr
 
 def exprsTys (fuel : Nat) (env : Env) (scope : List Local) (es : List SrcExpr) : Option (List Ty) :=
   match es with
@@ -2965,6 +2969,7 @@ def literalShift (e : SrcExpr) : Option Nat :=
   | .not x => none
   | .apply op a b => none
   | .cast t x => none
+  | .null => none
 
 def castShift (usizeCast : Bool) (x : SrcExpr) : Option Nat :=
   if usizeCast then
@@ -2984,6 +2989,7 @@ def shiftOf (e : SrcExpr) : Option Nat :=
   | .not x => none
   | .apply op a b => none
   | .cast t x => castShift (isUsize t) x
+  | .null => none
 
 def allocShifted (size : SrcExpr) (shift : Option Nat) (more : List SrcExpr) : Option LetHead :=
   match shift with
@@ -3506,6 +3512,7 @@ def pureLocal (e : SrcExpr) : Option Nat :=
   | .not a => none
   | .apply op a b => none
   | .cast t a => none
+  | .null => none
 
 def effLocal (x : MEff) : Option Nat :=
   match purePart x with
@@ -5193,7 +5200,14 @@ def isizeTy (t : SrcType) : Bool :=
   | .unit => false
   | .isize => true
 
-/-- An integer literal at its expected type: an unsigned type's literal, or for isize the cast of the i32 literal. -/
+/-- `0` where a ptr is expected is the null pointer. -/
+def nullAt (k : BitVec 32) (e : SrcExpr) : SrcExpr :=
+  if k = 0 then
+    SrcExpr.null
+  else
+    e
+
+/-- An integer literal at its expected type: an unsigned type's literal, the null pointer for `0` at ptr, or for isize the cast of the i32 literal. -/
 def intLiteralAt (t : SrcType) (k : BitVec 32) (e : SrcExpr) : SrcExpr :=
   match t with
   | .i32 => e
@@ -5201,7 +5215,7 @@ def intLiteralAt (t : SrcType) (k : BitVec 32) (e : SrcExpr) : SrcExpr :=
   | .uint u => SrcExpr.unsigned u (BitVec.setWidth 64 k)
   | .struct id fields => e
   | .enum id variants => e
-  | .ptr => e
+  | .ptr => nullAt k e
   | .slice el => e
   | .unit => e
   | .isize => SrcExpr.cast SrcType.isize e
@@ -5408,6 +5422,7 @@ def wideInner (t : SrcType) (x : SrcExpr) : Option (BitVec 64) :=
     | .not y => none
     | .apply op a b => none
     | .cast s y => none
+    | .null => none
   else
     none
 
@@ -5423,6 +5438,7 @@ def wideValue (e : SrcExpr) : Option (BitVec 64) :=
   | .not x => none
   | .apply op a b => none
   | .cast t x => wideInner t x
+  | .null => none
 
 /-- An expression's type when it does not rest on literals. -/
 def knownExpr (locals : List LocalTy) (e : SrcExpr) : Option SrcType :=
@@ -5436,6 +5452,7 @@ def knownExpr (locals : List LocalTy) (e : SrcExpr) : Option SrcType :=
   | .not x => some SrcType.bool
   | .apply op a b => knownApply op (knownExpr locals a) (knownExpr locals b)
   | .cast t x => knownCast t
+  | .null => some SrcType.ptr
 
 def litExpr (locals : List LocalTy) (want : Option SrcType) (e : SrcExpr) : SrcExpr :=
   match e with
@@ -5451,9 +5468,10 @@ def litExpr (locals : List LocalTy) (want : Option SrcType) (e : SrcExpr) : SrcE
   | .not x => SrcExpr.not (litExpr locals (some SrcType.bool) x)
   | .apply op a b => SrcExpr.apply op (litExpr locals (operandWant op want (knownExpr locals a) (knownExpr locals b)) a) (litExpr locals (operandWant op want (knownExpr locals a) (knownExpr locals b)) b)
   | .cast t x =>
-    match wideValue e with
-    | none => SrcExpr.cast t (litExpr locals none x)
-    | some n => wideAt want n e
+    (match wideValue e with
+     | none => SrcExpr.cast t (litExpr locals none x)
+     | some n => wideAt want n e)
+  | .null => e
 
 def litExprs (locals : List LocalTy) (wants : Option (List SrcType)) (es : List SrcExpr) : List SrcExpr :=
   match es with
@@ -5584,6 +5602,7 @@ def wideLeft (e : SrcExpr) : Bool :=
   | .not x => wideLeft x
   | .apply op a b => wideLeft a || wideLeft b
   | .cast t x => unitTy t || wideLeft x
+  | .null => false
 
 def wideLeftExprs (es : List SrcExpr) : Bool :=
   match es with

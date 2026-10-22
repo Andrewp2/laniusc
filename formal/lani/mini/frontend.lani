@@ -182,6 +182,7 @@ pub enum SrcExpr {
     Not(Box<SrcExpr>),
     Apply(SrcOp, Box<SrcExpr>, Box<SrcExpr>),
     Cast(SrcType, Box<SrcExpr>),
+    Null,
 }
 
 pub struct SrcArm {
@@ -2604,6 +2605,7 @@ pub fn negated_int(x: SrcExpr, e: SrcExpr) -> core::option::Option<SrcExpr> {
         Not(y) -> None,
         Apply(op, a, b) -> None,
         Cast(t, y) -> None,
+        Null -> None,
     };
 }
 
@@ -2644,6 +2646,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
         Not(x) -> None,
         Apply(op, a, b) -> None,
         Cast(s, x) -> None,
+        Null -> None,
     };
 }
 
@@ -2986,6 +2989,7 @@ pub fn bare_int(e: SrcExpr) -> bool {
         Not(x) -> false,
         Apply(op, a, b) -> !gives_bool(op) && bare_int(unbox(a)) && bare_int(unbox(b)),
         Cast(t, x) -> unit_ty(t),
+        Null -> false,
     };
 }
 
@@ -3011,6 +3015,7 @@ pub fn expr_ty(fuel: usize, env: Env, scope: List<Local>, e: SrcExpr) -> core::o
         Not(x) -> Some(TyBool),
         Apply(op, a, b) -> apply_ty(op, pick_ty(bare_int(unbox(a)), expr_ty(minus(fuel, 1), env, scope, unbox(a)), expr_ty(minus(fuel, 1), env, scope, unbox(b)))),
         Cast(t, x) -> src_ty(t),
+        Null -> Some(TyPtr),
     };
 }
 
@@ -4018,6 +4023,7 @@ pub fn literal_shift(e: SrcExpr) -> core::option::Option<usize> {
         Not(x) -> None,
         Apply(op, a, b) -> None,
         Cast(t, x) -> None,
+        Null -> None,
     };
 }
 
@@ -4041,6 +4047,7 @@ pub fn shift_of(e: SrcExpr) -> core::option::Option<usize> {
         Not(x) -> None,
         Apply(op, a, b) -> None,
         Cast(t, x) -> cast_shift(is_usize(t), unbox(x)),
+        Null -> None,
     };
 }
 
@@ -4685,6 +4692,7 @@ pub fn pure_local(e: SrcExpr) -> core::option::Option<usize> {
         Not(a) -> None,
         Apply(op, a, b) -> None,
         Cast(t, a) -> None,
+        Null -> None,
     };
 }
 
@@ -6755,8 +6763,16 @@ pub fn isize_ty(t: SrcType) -> bool {
     };
 }
 
-// An integer literal at its expected type: an unsigned type's literal, or
-// for isize the cast of the i32 literal.
+// `0` where a ptr is expected is the null pointer.
+pub fn null_at(k: i32, e: SrcExpr) -> SrcExpr {
+    if ((k as u32) == 0) {
+        return Null;
+    }
+    return e;
+}
+
+// An integer literal at its expected type: an unsigned type's literal, the
+// null pointer for `0` at ptr, or for isize the cast of the i32 literal.
 pub fn int_literal_at(t: SrcType, k: i32, e: SrcExpr) -> SrcExpr {
     return match (t) {
         I32 -> e,
@@ -6764,7 +6780,7 @@ pub fn int_literal_at(t: SrcType, k: i32, e: SrcExpr) -> SrcExpr {
         Uint(u) -> Unsigned(u, (k as u32) as u64),
         Struct(id, fields) -> e,
         Enum(id, variants) -> e,
-        Ptr -> e,
+        Ptr -> null_at(k, e),
         Slice(el) -> e,
         Unit -> e,
         Isize -> Cast(Isize, boxed(e)),
@@ -7019,6 +7035,7 @@ pub fn wide_inner(t: SrcType, x: SrcExpr) -> core::option::Option<u64> {
             Not(y) -> None,
             Apply(op, a, b) -> None,
             Cast(s, y) -> None,
+            Null -> None,
         };
     }
     return None;
@@ -7036,6 +7053,7 @@ pub fn wide_value(e: SrcExpr) -> core::option::Option<u64> {
         Not(x) -> None,
         Apply(op, a, b) -> None,
         Cast(t, x) -> wide_inner(t, unbox(x)),
+        Null -> None,
     };
 }
 
@@ -7051,6 +7069,7 @@ pub fn known_expr(locals: List<LocalTy>, e: SrcExpr) -> core::option::Option<Src
         Not(x) -> Some(Bool),
         Apply(op, a, b) -> known_apply(op, known_expr(locals, unbox(a)), known_expr(locals, unbox(b))),
         Cast(t, x) -> known_cast(t),
+        Null -> Some(Ptr),
     };
 }
 
@@ -7071,6 +7090,8 @@ pub fn lit_expr(locals: List<LocalTy>, want: core::option::Option<SrcType>, e: S
             None -> Cast(t, boxed(lit_expr(locals, None, unbox(x)))),
             Some(n) -> wide_at(want, n, e),
         },
+
+        Null -> e,
     };
 }
 
@@ -7228,6 +7249,7 @@ pub fn wide_left(e: SrcExpr) -> bool {
         Not(x) -> wide_left(unbox(x)),
         Apply(op, a, b) -> wide_left(unbox(a)) || wide_left(unbox(b)),
         Cast(t, x) -> unit_ty(t) || wide_left(unbox(x)),
+        Null -> false,
     };
 }
 

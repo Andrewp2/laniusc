@@ -544,6 +544,16 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
       simp only [SrcExpr.toCore, evalExpr, Semantics.Outcome.done.injEq] at run
       obtain ⟨rfl, rfl⟩ := run
       exact ⟨rfl, x, rfl, rfl⟩
+  | null =>
+    intro t fuel v st' lowered run
+    cases fuel with
+    | zero => simp [evalExpr] at run
+    | succ fuel =>
+      simp only [SrcExpr.lower, Option.some.injEq] at lowered
+      subst lowered
+      simp only [SrcExpr.toCore, evalExpr, Semantics.Outcome.done.injEq] at run
+      obtain ⟨rfl, rfl⟩ := run
+      exact ⟨rfl, by simp [SrcType.Holds, Expr.eval]⟩
   | unsigned kind value =>
     intro t fuel v st' lowered run
     cases fuel with
