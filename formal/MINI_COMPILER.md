@@ -502,8 +502,10 @@ may call, kept in bounds as a literal,
 `e & (n - 1)` or a nonnegative `e % n`; `match` expressions (`EMatch`) of
 any type in any of those places, on a call, an enum literal, a local or
 another match, with arms that use their binders and may call, index and
-match; `s[i] = value` (`SetIndexEval`) of an `i32` slice with an effectful
-index and value, often a value that calls a function writing `s` at the same
+match; `s[i] = value` (`SetIndexEval`) of a slice of `i32`, word structs or
+word enums with an effectful index and value (for structs and enums a
+literal, a call, a `match` or, often, another slice's element: `to[i] =
+from[j]`), often a value that calls a function writing `s` at the same
 literal index, so the store (after the value in Core's order) must win; and
 later functions with struct,
 enum and slice parameters and struct and enum results. A function with a
@@ -526,7 +528,9 @@ disagreements and no rejections; 529 such stores, of which 305 runs had the
 value's call write the very element stored (with the value's write winning
 instead, 19 programs would give other results). With word struct and
 enum element reads, seeds 51-54: 1,200 programs, 9,600 calls, no
-disagreements and no rejections.
+disagreements and no rejections. With their writes, seeds 51-54 again: the
+same counts, no disagreements and no rejections (about 70 struct and enum
+element stores per 300 programs).
 
 Not covered yet: the stdlib, which needs generics and modules in the front
 pass.

@@ -32,8 +32,9 @@ reads of slices of i32, word structs and word enums at computed indices kept
 in bounds (a literal,
 e & (n - 1) or nonnegative e % n), and `match` expressions of any type on
 a call, literal, local or match, whose arms use their binders (an arm makes
-no new locals), and `s[i] = value` of an i32 slice with an effectful
-index and value; often the value calls a function that writes s at the same
+no new locals), and `s[i] = value` of a slice of i32, word structs or word
+enums with an effectful index and value (for structs and enums often another
+slice's element, to[i] = from[j]); often the value calls a function that writes s at the same
 literal index, which the store, after the value in Core's order, overwrites.
 Later
 functions take struct, enum and slice parameters and return structs and
@@ -373,30 +374,37 @@ class Gen:
         self.sealed -= 1
         return ('eMatch', scrutinee, ety, ty, binders, values)
 
-    def set_index_eval(self, view, n, env, items):
-        """view[i] = value. Often the value calls a function that writes view
-        at the same literal index, which this store, coming after the value
-        in Core's order, must overwrite."""
+    def set_index_eval(self, view, element, n, env, items):
+        """view[i] = value, value of the element type (i32, a word struct or a
+        word enum). Often the value calls a function that writes view at the
+        same literal index, which this store, coming after the value in
+        Core's order, must overwrite; a struct or enum value is often
+        another slice's element (to[i] = from[j])."""
         rng = self.rng
         writers = []
         for k in self.callees(None, env):
             params, cret = self.sigs[k]
-            slots = [j for j, t in enumerate(params) if fits(t, ('slice', 'i32', n)) and isinstance(t, tuple)]
-            if slots and cret in INTEGERS:
+            slots = [j for j, t in enumerate(params) if fits(t, ('slice', element, n)) and isinstance(t, tuple)]
+            if slots and (cret in INTEGERS if element == 'i32' else cret == element):
                 writers.append((k, slots[0]))
         if writers and rng.random() < 0.5:
             k, slot = rng.choice(writers)
             params, cret = self.sigs[k]
             args = [('ePure', ('local', view)) if j == slot else self.eff(t, 2, env, items) for j, t in enumerate(params)]
             value = ('eCall', k, args)
-            if cret != 'i32':
+            if element == 'i32' and cret != 'i32':
                 value = ('eCast', 'i32', value)
-            if rng.random() < 0.5:
+            if element == 'i32' and rng.random() < 0.5:
                 name, sym = rng.choice(ARITH)
                 value = ('eApply', name, sym, value, self.eff('i32', 1, env, items))
             index = ('ePure', ('int', rng.randrange(params[slot][2])))
             return ('setIndexEval', view, index, value)
-        return ('setIndexEval', view, self.in_bounds(n, 3, env, items), self.eff('i32', 3, env, items))
+        index = self.in_bounds(n, 3, env, items)
+        sources = [(i, t[2]) for i, t in env if isinstance(t, tuple) and t[0] == 'slice' and t[1] == element]
+        if element != 'i32' and rng.random() < 0.35:
+            source, m = rng.choice(sources)
+            return ('setIndexEval', view, index, ('eIndex', source, self.in_bounds(m, 2, env, items)))
+        return ('setIndexEval', view, index, self.eff(element, 3, env, items))
 
     def in_bounds(self, n, depth, env, items):
         """An i32 or usize index below n (the slice's length, or the least a
@@ -586,10 +594,10 @@ class Gen:
                 if later:
                     items.append(('discard', self.eff_call(rng.choice(later), 3, env, items)))
             elif kind == 'setIndexEval':
-                views = [(i, t[2]) for i, t in env if isinstance(t, tuple) and t[0] == 'slice' and t[1] == 'i32']
+                views = [(i, t[1], t[2]) for i, t in env if isinstance(t, tuple) and t[0] == 'slice']
                 if views:
-                    view, n = rng.choice(views)
-                    items.append(self.set_index_eval(view, n, env, items))
+                    view, element, n = rng.choice(views)
+                    items.append(self.set_index_eval(view, element, n, env, items))
         if must_return and not returned:
             if is_object(ret) or (EFFECTS and rng.random() < 0.5):
                 value = self.eff(ret, 3, env, items)
@@ -896,7 +904,7 @@ def run_stmt(s, env, funcs):
         k, elements = ev_eff(s[2], env, funcs), env[s[1]][0]
         if not 0 <= k < len(elements):
             raise SystemExit('a generated index is out of bounds')
-        elements[k] = ev_eff(s[3], env, funcs)
+        elements[k] = copy(ev_eff(s[3], env, funcs))
     elif kind == 'letStruct':
         env[s[1]] = [[ev(f, env) for f in s[3]], s[2]]
         run_stmt(s[4], env, funcs)
