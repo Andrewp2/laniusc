@@ -1,0 +1,58 @@
+struct P { a: isize, b: i32 }
+
+enum E {
+    Small(isize),
+    Big(isize, bool),
+}
+
+enum MaybeS {
+    Nothing,
+    Just(isize),
+}
+
+fn step(x: isize, n: i32) -> isize {
+    let y: isize = x * (3 as isize) + (1 as isize);
+    let z: isize = -(5 as isize);
+    let m: isize = -x;
+    if (y < (0 as isize) || (10 as isize) <= y) {
+        y = y - (100 as isize);
+    }
+    let p: P = P { a: (2 as isize), b: 4 };
+    p.a = p.a + (1 as isize);
+    let e: E = Big((9 as isize), true);
+    let w: isize = match (e) {
+        Small(s) -> s + (1 as isize),
+        Big(t, f) -> t - (2 as isize),
+    };
+    let c: i32 = (y as i32) + n;
+    let q: isize = (c as isize) & (255 as isize);
+    assert(q >= (0 as isize));
+    let i: isize = (0 as isize);
+    while (i < (3 as isize)) {
+        i = i + (1 as isize);
+    }
+    return y + z + m + p.a + w + q + i + (-(7 as isize));
+}
+
+fn top(n: i32) -> i32 {
+    let r: isize = step((4 as isize), n);
+    let s: isize = step(r + (2 as isize), 1) - (1 as isize);
+    let v: isize = step((1 as isize), n) / (2 as isize);
+    let u: isize = unwrap_or_s(wrap_s(r), r - (3 as isize));
+    if (s > (0 as isize) && step(s, n) != (0 as isize)) {
+        s = s * (2 as isize);
+    }
+    return (s as i32) + ((v + u) as i32);
+}
+
+fn unwrap_or_s(m: MaybeS, d: isize) -> isize {
+    let r: isize = match (m) {
+        Nothing -> d,
+        Just(x) -> x,
+    };
+    return r;
+}
+
+fn wrap_s(x: isize) -> MaybeS {
+    return Just(x);
+}

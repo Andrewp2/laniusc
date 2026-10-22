@@ -258,7 +258,7 @@ def textSliceFromRawParts : List Nat :=
   let t : List Nat := 115 :: 108 :: 105 :: 99 :: 101 :: 95 :: 102 :: 114 :: 111 :: 109 :: 95 :: 114 :: 97 :: 119 :: 95 :: 112 :: 97 :: 114 :: 116 :: [115]
   t
 
-/-- i32, bool, u8, u32, u64, usize, ptr -/
+/-- i32, bool, u8, u32, u64, usize, ptr, isize -/
 def primitive (name : List Nat) : Option SrcType :=
   let i32Text : List Nat := 105 :: 51 :: [50]
   let boolText : List Nat := 98 :: 111 :: 111 :: [108]
@@ -266,6 +266,7 @@ def primitive (name : List Nat) : Option SrcType :=
   let u32Text : List Nat := 117 :: 51 :: [50]
   let u64Text : List Nat := 117 :: 54 :: [52]
   let usizeText : List Nat := 117 :: 115 :: 105 :: 122 :: [101]
+  let isizeText : List Nat := 105 :: 115 :: 105 :: 122 :: [101]
   if spelled name i32Text then
     some SrcType.i32
   else
@@ -287,7 +288,10 @@ def primitive (name : List Nat) : Option SrcType :=
               if spelled name textPtr then
                 some SrcType.ptr
               else
-                none
+                if spelled name isizeText then
+                  some SrcType.isize
+                else
+                  none
 
 def member (names : List (List Nat)) (name : List Nat) : Bool :=
   match names with
@@ -448,6 +452,7 @@ inductive Ty where
   | tyBool : Ty
   | tyUint : UintTy → Ty
   | tyPtr : Ty
+  | tyIsize : Ty
   | tySlice : Ty → Ty
   | tyNamed : Nat → (List Ty) → Ty
   deriving Repr
@@ -877,6 +882,7 @@ def sameTy (a : Ty) (b : Ty) : Bool :=
      | .tyBool => false
      | .tyUint v => false
      | .tyPtr => false
+     | .tyIsize => false
      | .tySlice f => false
      | .tyNamed e bs => false)
   | .tyBool =>
@@ -885,6 +891,7 @@ def sameTy (a : Ty) (b : Ty) : Bool :=
      | .tyBool => true
      | .tyUint v => false
      | .tyPtr => false
+     | .tyIsize => false
      | .tySlice f => false
      | .tyNamed e bs => false)
   | .tyUint u =>
@@ -893,6 +900,7 @@ def sameTy (a : Ty) (b : Ty) : Bool :=
      | .tyBool => false
      | .tyUint v => decide (uintCode u = uintCode v)
      | .tyPtr => false
+     | .tyIsize => false
      | .tySlice f => false
      | .tyNamed e bs => false)
   | .tyPtr =>
@@ -901,6 +909,16 @@ def sameTy (a : Ty) (b : Ty) : Bool :=
      | .tyBool => false
      | .tyUint v => false
      | .tyPtr => true
+     | .tyIsize => false
+     | .tySlice f => false
+     | .tyNamed e bs => false)
+  | .tyIsize =>
+    (match b with
+     | .tyI32 => false
+     | .tyBool => false
+     | .tyUint v => false
+     | .tyPtr => false
+     | .tyIsize => true
      | .tySlice f => false
      | .tyNamed e bs => false)
   | .tySlice x =>
@@ -909,6 +927,7 @@ def sameTy (a : Ty) (b : Ty) : Bool :=
      | .tyBool => false
      | .tyUint v => false
      | .tyPtr => false
+     | .tyIsize => false
      | .tySlice f => sameTy x f
      | .tyNamed e bs => false)
   | .tyNamed d args =>
@@ -917,6 +936,7 @@ def sameTy (a : Ty) (b : Ty) : Bool :=
     | .tyBool => false
     | .tyUint v => false
     | .tyPtr => false
+    | .tyIsize => false
     | .tySlice f => false
     | .tyNamed e bs => decide (d = e) && sameTys args bs
 
@@ -987,7 +1007,7 @@ def srcTy (t : SrcType) : Option Ty :=
   | .ptr => some Ty.tyPtr
   | .slice e => none
   | .unit => none
-  | .isize => none
+  | .isize => some Ty.tyIsize
 
 def scalarSrc (t : Ty) : Option SrcType :=
   match t with
@@ -995,6 +1015,7 @@ def scalarSrc (t : Ty) : Option SrcType :=
   | .tyBool => some SrcType.bool
   | .tyUint k => some (SrcType.uint k)
   | .tyPtr => some SrcType.ptr
+  | .tyIsize => some SrcType.isize
   | .tySlice e => none
   | .tyNamed d args => none
 
@@ -1220,6 +1241,7 @@ def lowerTy (fuel : Nat) (decls : Decls) (table : List Inst) (t : Ty) : Option S
     | .tyBool => some SrcType.bool
     | .tyUint k => some (SrcType.uint k)
     | .tyPtr => some SrcType.ptr
+    | .tyIsize => some SrcType.isize
     | .tySlice e => sliceType (lowerTy (fuel - 1) decls table e)
     | .tyNamed d args => lowerNamed (fuel - 1) decls table d args
 
@@ -1289,6 +1311,7 @@ def tyInsts (fuel : Nat) (decls : Decls) (t : Ty) : Option (List Inst) :=
     | .tyBool => some []
     | .tyUint k => some []
     | .tyPtr => some []
+    | .tyIsize => some []
     | .tySlice e => tyInsts (fuel - 1) decls e
     | .tyNamed d args => consInst ({ decl := d, args := args } : Inst) (namedInsts (fuel - 1) decls d args)
 
@@ -1460,6 +1483,7 @@ def fieldIndex (env : Env) (t : Ty) (name : List Nat) : Option Nat :=
   | .tyBool => none
   | .tyUint k => none
   | .tyPtr => none
+  | .tyIsize => none
   | .tySlice e => none
   | .tyNamed d args => fieldIn env.decls.types[d]? name
 
@@ -1552,6 +1576,7 @@ def typedLiteral (t : Ty) (e : SrcExpr) : Option SrcExpr :=
      | .tyBool => none
      | .tyUint u => uintInRange u (BitVec.setWidth 64 k)
      | .tyPtr => none
+     | .tyIsize => some (SrcExpr.cast SrcType.isize e)
      | .tySlice x => none
      | .tyNamed d args => none)
   | .boolean b =>
@@ -1560,6 +1585,7 @@ def typedLiteral (t : Ty) (e : SrcExpr) : Option SrcExpr :=
      | .tyBool => some e
      | .tyUint u => none
      | .tyPtr => none
+     | .tyIsize => none
      | .tySlice x => none
      | .tyNamed d args => none)
   | .unsigned u k => none
@@ -1571,6 +1597,7 @@ def typedLiteral (t : Ty) (e : SrcExpr) : Option SrcExpr :=
      | .tyBool => none
      | .tyUint u => none
      | .tyPtr => none
+     | .tyIsize => negatedInt x (SrcExpr.negate (SrcExpr.cast SrcType.isize x))
      | .tySlice y => none
      | .tyNamed d args => none)
   | .not x => none
@@ -1773,6 +1800,7 @@ def structFieldTys (fuel : Nat) (decls : Decls) (t : Ty) : Option (List Ty) :=
   | .tyBool => none
   | .tyUint k => none
   | .tyPtr => none
+  | .tyIsize => none
   | .tySlice e => none
   | .tyNamed d args => fieldTys fuel decls d args
 
@@ -1862,6 +1890,7 @@ def sliceElem (t : Ty) : Option Ty :=
   | .tyBool => none
   | .tyUint k => none
   | .tyPtr => none
+  | .tyIsize => none
   | .tySlice e => some e
   | .tyNamed d args => none
 
@@ -1871,6 +1900,7 @@ def namedParts (t : Ty) : Option Inst :=
   | .tyBool => none
   | .tyUint k => none
   | .tyPtr => none
+  | .tyIsize => none
   | .tySlice e => none
   | .tyNamed d args => some ({ decl := d, args := args } : Inst)
 
@@ -2512,6 +2542,7 @@ def namedDecl (t : Ty) : Option Nat :=
   | .tyBool => none
   | .tyUint k => none
   | .tyPtr => none
+  | .tyIsize => none
   | .tySlice e => none
   | .tyNamed d args => some d
 
@@ -3378,6 +3409,7 @@ def isPtrTy (t : Ty) : Bool :=
   | .tyBool => false
   | .tyUint k => false
   | .tyPtr => true
+  | .tyIsize => false
   | .tySlice e => false
   | .tyNamed d args => false
 
@@ -4448,13 +4480,302 @@ def closeFuncs (fuel : Nat) (t : Tables) (fs : List MFunc) : Option (List SrcFun
   | [] => some []
   | f :: rest => consFunc (srcFunc (closeParams fuel t f.params) (closeRet fuel t f.ret) (closeStmt fuel t f.body)) (closeFuncs fuel t rest)
 
+structure LocalTy where
+  id : Nat
+  ty : SrcType
+  deriving Repr
+
+def isizeTy (t : SrcType) : Bool :=
+  match t with
+  | .i32 => false
+  | .bool => false
+  | .uint k => false
+  | .struct id fields => false
+  | .enum id variants => false
+  | .ptr => false
+  | .slice e => false
+  | .unit => false
+  | .isize => true
+
+def isizeCast (yes : Bool) (e : SrcExpr) : SrcExpr :=
+  if yes then
+    SrcExpr.cast SrcType.isize e
+  else
+    e
+
+def intAt (want : Option SrcType) (e : SrcExpr) : SrcExpr :=
+  match want with
+  | none => e
+  | some t => isizeCast (isizeTy t) e
+
+/-- The innermost local with this id, as a source type. -/
+def tyLocal (locals : List LocalTy) (id : Nat) : Option SrcType :=
+  match locals with
+  | [] => none
+  | l :: rest =>
+    if l.id = id then
+      some l.ty
+    else
+      tyLocal rest id
+
+def srcFields (t : Option SrcType) : Option (List SrcType) :=
+  match t with
+  | none => none
+  | some x =>
+    match x with
+    | .i32 => none
+    | .bool => none
+    | .uint k => none
+    | .struct id fields => some fields
+    | .enum id variants => none
+    | .ptr => none
+    | .slice e => none
+    | .unit => none
+    | .isize => none
+
+def srcVariants (t : Option SrcType) : Option (List (List SrcType)) :=
+  match t with
+  | none => none
+  | some x =>
+    match x with
+    | .i32 => none
+    | .bool => none
+    | .uint k => none
+    | .struct id fields => none
+    | .enum id variants => some variants
+    | .ptr => none
+    | .slice e => none
+    | .unit => none
+    | .isize => none
+
+def srcElement (t : Option SrcType) : Option SrcType :=
+  match t with
+  | none => none
+  | some x =>
+    match x with
+    | .i32 => none
+    | .bool => none
+    | .uint k => none
+    | .struct id fields => none
+    | .enum id variants => none
+    | .ptr => none
+    | .slice e => some e
+    | .unit => none
+    | .isize => none
+
+def tyAt (ts : Option (List SrcType)) (j : Nat) : Option SrcType :=
+  match ts with
+  | none => none
+  | some xs => xs[j]?
+
+def payloadAt (vs : Option (List (List SrcType))) (k : Nat) : Option (List SrcType) :=
+  match vs with
+  | none => none
+  | some xs => xs[k]?
+
+def firstSrc (ts : Option (List SrcType)) : Option SrcType :=
+  tyAt ts 0
+
+def restSrc (ts : Option (List SrcType)) : Option (List SrcType) :=
+  match ts with
+  | none => none
+  | some xs =>
+    match xs with
+    | [] => none
+    | x :: rest => some rest
+
+def restPayloads (vs : Option (List (List SrcType))) : Option (List (List SrcType)) :=
+  match vs with
+  | none => none
+  | some xs =>
+    match xs with
+    | [] => none
+    | x :: rest => some rest
+
+def firstIds (bs : List (List Nat)) : List Nat :=
+  match bs with
+  | [] => []
+  | b :: rest => b
+
+def restIds (bs : List (List Nat)) : List (List Nat) :=
+  match bs with
+  | [] => []
+  | b :: rest => rest
+
+/-- Binders with the payload types, innermost first. -/
+def boundTys (ids : List Nat) (tys : Option (List SrcType)) (locals : List LocalTy) : List LocalTy :=
+  match ids with
+  | [] => locals
+  | i :: rest =>
+    match firstSrc tys with
+    | none => locals
+    | some t => ({ id := i, ty := t } : LocalTy) :: boundTys rest (restSrc tys) locals
+
+def eitherTy (a : Option SrcType) (b : Option SrcType) : Option SrcType :=
+  match a with
+  | none => b
+  | some x => some x
+
+/-- What an operator's operands expect, from the operands' own types. -/
+def operandWant (op : SrcOp) (want : Option SrcType) (a : Option SrcType) (b : Option SrcType) : Option SrcType :=
+  if givesBool op then
+    eitherTy a b
+  else
+    eitherTy (eitherTy a b) want
+
+def knownApply (op : SrcOp) (a : Option SrcType) (b : Option SrcType) : Option SrcType :=
+  if givesBool op then
+    some SrcType.bool
+  else
+    eitherTy a b
+
+/-- An expression's type when it does not rest on literals. -/
+def knownExpr (locals : List LocalTy) (e : SrcExpr) : Option SrcType :=
+  match e with
+  | .int k => none
+  | .boolean b => some SrcType.bool
+  | .unsigned u k => some (SrcType.uint u)
+  | .local id => tyLocal locals id
+  | .field id j => tyAt (srcFields (tyLocal locals id)) j
+  | .negate x => knownExpr locals x
+  | .not x => some SrcType.bool
+  | .apply op a b => knownApply op (knownExpr locals a) (knownExpr locals b)
+  | .cast t x => some t
+
+def litExpr (locals : List LocalTy) (want : Option SrcType) (e : SrcExpr) : SrcExpr :=
+  match e with
+  | .int k => intAt want e
+  | .boolean b => e
+  | .unsigned u k => e
+  | .local id => e
+  | .field id j => e
+  | .negate x => SrcExpr.negate (litExpr locals want x)
+  | .not x => SrcExpr.not (litExpr locals (some SrcType.bool) x)
+  | .apply op a b => SrcExpr.apply op (litExpr locals (operandWant op want (knownExpr locals a) (knownExpr locals b)) a) (litExpr locals (operandWant op want (knownExpr locals a) (knownExpr locals b)) b)
+  | .cast t x => SrcExpr.cast t (litExpr locals none x)
+
+def litExprs (locals : List LocalTy) (wants : Option (List SrcType)) (es : List SrcExpr) : List SrcExpr :=
+  match es with
+  | [] => []
+  | e :: rest => litExpr locals (firstSrc wants) e :: litExprs locals (restSrc wants) rest
+
+def litSrcArms (locals : List LocalTy) (payloads : Option (List (List SrcType))) (t : SrcType) (arms : List SrcArm) : List SrcArm :=
+  match arms with
+  | [] => []
+  | a :: rest => ({ binders := a.binders, value := litExpr (boundTys a.binders (payloadAt payloads 0) locals) (some t) a.value } : SrcArm) :: litSrcArms locals (restPayloads payloads) t rest
+
+def srcParamTys (ps : List SrcParam) : List SrcType :=
+  match ps with
+  | [] => []
+  | p :: rest => p.ty :: srcParamTys rest
+
+def calleeParams (funcs : List SrcFunc) (f : Nat) : Option (List SrcType) :=
+  match funcs[f]? with
+  | none => none
+  | some g => some (srcParamTys g.params)
+
+def calleeRet (funcs : List SrcFunc) (f : Nat) : Option SrcType :=
+  match funcs[f]? with
+  | none => none
+  | some g => some g.ret
+
+def knownEff (funcs : List SrcFunc) (locals : List LocalTy) (x : SrcEff) : Option SrcType :=
+  match x with
+  | .ePure e => knownExpr locals e
+  | .eCall f args => calleeRet funcs f
+  | .eApply op a b => knownApply op (knownEff funcs locals a) (knownEff funcs locals b)
+  | .eNeg a => knownEff funcs locals a
+  | .eNot a => some SrcType.bool
+  | .eCast t a => some t
+  | .eIndex s i => srcElement (tyLocal locals s)
+  | .eStruct t fs => some t
+  | .eVariant t k ps => some t
+  | .eMatch s ety t bs vs => some t
+  | .eDivide op a b => eitherTy (knownEff funcs locals a) (knownEff funcs locals b)
+
+mutual
+
+def litEff (funcs : List SrcFunc) (locals : List LocalTy) (want : Option SrcType) (x : SrcEff) : SrcEff :=
+  match x with
+  | .ePure e => SrcEff.ePure (litExpr locals want e)
+  | .eCall f args => SrcEff.eCall f (litEffs funcs locals (calleeParams funcs f) args)
+  | .eApply op a b => SrcEff.eApply op (litEff funcs locals (operandWant op want (knownEff funcs locals a) (knownEff funcs locals b)) a) (litEff funcs locals (operandWant op want (knownEff funcs locals a) (knownEff funcs locals b)) b)
+  | .eNeg a => SrcEff.eNeg (litEff funcs locals want a)
+  | .eNot a => SrcEff.eNot (litEff funcs locals (some SrcType.bool) a)
+  | .eCast t a => SrcEff.eCast t (litEff funcs locals none a)
+  | .eIndex s i => SrcEff.eIndex s (litEff funcs locals none i)
+  | .eStruct t fs => SrcEff.eStruct t (litEffs funcs locals (srcFields (some t)) fs)
+  | .eVariant t k ps => SrcEff.eVariant t k (litEffs funcs locals (payloadAt (srcVariants (some t)) k) ps)
+  | .eMatch s ety t bs vs => SrcEff.eMatch (litEff funcs locals (some ety) s) ety t bs (litArmEffs funcs locals (srcVariants (some ety)) t bs vs)
+  | .eDivide op a b => SrcEff.eDivide op (litEff funcs locals (operandWant SrcOp.plus want (knownEff funcs locals a) (knownEff funcs locals b)) a) (litEff funcs locals (operandWant SrcOp.plus want (knownEff funcs locals a) (knownEff funcs locals b)) b)
+
+def litEffs (funcs : List SrcFunc) (locals : List LocalTy) (wants : Option (List SrcType)) (xs : List SrcEff) : List SrcEff :=
+  match xs with
+  | [] => []
+  | x :: rest => litEff funcs locals (firstSrc wants) x :: litEffs funcs locals (restSrc wants) rest
+
+/-- A match's arm values, each with its binders typed by its variant's payload. -/
+def litArmEffs (funcs : List SrcFunc) (locals : List LocalTy) (payloads : Option (List (List SrcType))) (t : SrcType) (bs : List (List Nat)) (vs : List SrcEff) : List SrcEff :=
+  match vs with
+  | [] => []
+  | v :: rest => litEff funcs (boundTys (firstIds bs) (payloadAt payloads 0) locals) (some t) v :: litArmEffs funcs locals (restPayloads payloads) t (restIds bs) rest
+
+end
+
+def withLocal (id : Nat) (ty : SrcType) (locals : List LocalTy) : List LocalTy :=
+  ({ id := id, ty := ty } : LocalTy) :: locals
+
+def litStmt (funcs : List SrcFunc) (ret : SrcType) (locals : List LocalTy) (s : SrcStmt) : SrcStmt :=
+  match s with
+  | .nop => SrcStmt.nop
+  | .let id ty e body => SrcStmt.let id ty (litExpr locals (some ty) e) (litStmt funcs ret (withLocal id ty locals) body)
+  | .letStruct id ty es body => SrcStmt.letStruct id ty (litExprs locals (srcFields (some ty)) es) (litStmt funcs ret (withLocal id ty locals) body)
+  | .letCall id ty f args body => SrcStmt.letCall id ty f (litExprs locals (calleeParams funcs f) args) (litStmt funcs ret (withLocal id ty locals) body)
+  | .letEnum id ty k es body => SrcStmt.letEnum id ty k (litExprs locals (payloadAt (srcVariants (some ty)) k) es) (litStmt funcs ret (withLocal id ty locals) body)
+  | .letMatch id ty sc eid arms body => SrcStmt.letMatch id ty sc eid (litSrcArms locals (srcVariants (tyLocal locals sc)) ty arms) (litStmt funcs ret (withLocal id ty locals) body)
+  | .set id e => SrcStmt.set id (litExpr locals (tyLocal locals id) e)
+  | .setField id j e => SrcStmt.setField id j (litExpr locals (tyAt (srcFields (tyLocal locals id)) j) e)
+  | .setCall id f args => SrcStmt.setCall id f (litExprs locals (calleeParams funcs f) args)
+  | .then a b => SrcStmt.then (litStmt funcs ret locals a) (litStmt funcs ret locals b)
+  | .if c a b => SrcStmt.if (litExpr locals (some SrcType.bool) c) (litStmt funcs ret locals a) (litStmt funcs ret locals b)
+  | .while c body => SrcStmt.while (litExpr locals (some SrcType.bool) c) (litStmt funcs ret locals body)
+  | .return e => SrcStmt.return (litExpr locals (some ret) e)
+  | .letAlloc id size shift body => SrcStmt.letAlloc id (litExpr locals none size) shift (litStmt funcs ret (withLocal id SrcType.ptr locals) body)
+  | .letLoad id p o body => SrcStmt.letLoad id (litExpr locals none p) (litExpr locals none o) (litStmt funcs ret (withLocal id (SrcType.uint UintTy.uint8) locals) body)
+  | .setByte p o v => SrcStmt.setByte (litExpr locals none p) (litExpr locals none o) (litExpr locals none v)
+  | .free p size shift => SrcStmt.free (litExpr locals none p) (litExpr locals none size) shift
+  | .letSlice id el p n body => SrcStmt.letSlice id el (litExpr locals none p) (litExpr locals none n) (litStmt funcs ret (withLocal id (SrcType.slice el) locals) body)
+  | .letIndex id ty sl i body => SrcStmt.letIndex id ty sl (litExpr locals none i) (litStmt funcs ret (withLocal id ty locals) body)
+  | .setIndex sl i v => SrcStmt.setIndex sl (litExpr locals none i) (litExpr locals (srcElement (tyLocal locals sl)) v)
+  | .letEval id ty x body => SrcStmt.letEval id ty (litEff funcs locals (some ty) x) (litStmt funcs ret (withLocal id ty locals) body)
+  | .setEval id x => SrcStmt.setEval id (litEff funcs locals (tyLocal locals id) x)
+  | .ifEval c a b => SrcStmt.ifEval (litEff funcs locals (some SrcType.bool) c) (litStmt funcs ret locals a) (litStmt funcs ret locals b)
+  | .whileEval c body => SrcStmt.whileEval (litEff funcs locals (some SrcType.bool) c) (litStmt funcs ret locals body)
+  | .returnEval x => SrcStmt.returnEval (litEff funcs locals (some ret) x)
+  | .discard x => SrcStmt.discard (litEff funcs locals none x)
+  | .setIndexEval sl i v => SrcStmt.setIndexEval sl (litEff funcs locals none i) (litEff funcs locals (srcElement (tyLocal locals sl)) v)
+  | .setFieldEval id j x => SrcStmt.setFieldEval id j (litEff funcs locals (tyAt (srcFields (tyLocal locals id)) j) x)
+  | .returnUnit => SrcStmt.returnUnit
+  | .assert x => SrcStmt.assert (litEff funcs locals (some SrcType.bool) x)
+
+def paramLocals (ps : List SrcParam) : List LocalTy :=
+  match ps with
+  | [] => []
+  | p :: rest => ({ id := p.id, ty := p.ty } : LocalTy) :: paramLocals rest
+
+/-- Every function's literals typed, with all the functions' signatures. -/
+def litFuncs (all : List SrcFunc) (fs : List SrcFunc) : List SrcFunc :=
+  match fs with
+  | [] => []
+  | g :: rest => ({ params := g.params, ret := g.ret, body := litStmt all g.ret (paramLocals g.params) g.body } : SrcFunc) :: litFuncs all rest
+
 def buildClosed (fuel : Nat) (decls : Decls) (fns : List Inst) (types : Option (List Inst)) (funcs : List MFunc) : Option SrcProgram :=
   match types with
   | none => none
   | some ts =>
     match closeFuncs fuel ({ decls := decls, fns := fns, types := ts } : Tables) funcs with
     | none => none
-    | some fs => some ({ funcs := fs } : SrcProgram)
+    | some fs => some ({ funcs := litFuncs fs fs } : SrcProgram)
 
 def buildMono (fuel : Nat) (decls : Decls) (seeds : List Inst) (m : Option Mono) : Option SrcProgram :=
   match m with

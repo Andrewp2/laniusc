@@ -1,0 +1,4 @@
+fn top(n: i32) -> isize {
+    let x: isize = 3000000000;
+    return x;
+}

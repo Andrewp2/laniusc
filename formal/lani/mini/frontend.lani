@@ -622,7 +622,7 @@ pub fn text_slice_from_raw_parts() -> List<usize> {
     return t;
 }
 
-// i32, bool, u8, u32, u64, usize, ptr
+// i32, bool, u8, u32, u64, usize, ptr, isize
 pub fn primitive(name: List<usize>) -> core::option::Option<SrcType> {
     // Typed lets, so that laniusc reads the literals as usize.
     let i32_text: List<usize> = cons(105, cons(51, single(50)));
@@ -631,6 +631,7 @@ pub fn primitive(name: List<usize>) -> core::option::Option<SrcType> {
     let u32_text: List<usize> = cons(117, cons(51, single(50)));
     let u64_text: List<usize> = cons(117, cons(54, single(52)));
     let usize_text: List<usize> = cons(117, cons(115, cons(105, cons(122, single(101)))));
+    let isize_text: List<usize> = cons(105, cons(115, cons(105, cons(122, single(101)))));
     if (spelled(name, i32_text)) {
         return Some(I32);
     }
@@ -651,6 +652,9 @@ pub fn primitive(name: List<usize>) -> core::option::Option<SrcType> {
     }
     if (spelled(name, text_ptr())) {
         return Some(Ptr);
+    }
+    if (spelled(name, isize_text)) {
+        return Some(Isize);
     }
     return None;
 }
@@ -858,6 +862,7 @@ pub enum Ty {
     TyBool,
     TyUint(UintTy),
     TyPtr,
+    TyIsize,
     TySlice(Box<Ty>),
     TyNamed(usize, Box<List<Ty>>),
 }
@@ -1433,6 +1438,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyBool -> false,
             TyUint(v) -> false,
             TyPtr -> false,
+            TyIsize -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
         },
@@ -1441,6 +1447,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyBool -> true,
             TyUint(v) -> false,
             TyPtr -> false,
+            TyIsize -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
         },
@@ -1449,6 +1456,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyBool -> false,
             TyUint(v) -> uint_code(u) == uint_code(v),
             TyPtr -> false,
+            TyIsize -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
         },
@@ -1457,6 +1465,16 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyBool -> false,
             TyUint(v) -> false,
             TyPtr -> true,
+            TyIsize -> false,
+            TySlice(f) -> false,
+            TyNamed(e, bs) -> false,
+        },
+        TyIsize -> match (b) {
+            TyI32 -> false,
+            TyBool -> false,
+            TyUint(v) -> false,
+            TyPtr -> false,
+            TyIsize -> true,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
         },
@@ -1465,6 +1483,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyBool -> false,
             TyUint(v) -> false,
             TyPtr -> false,
+            TyIsize -> false,
             TySlice(f) -> same_ty(unbox(x), unbox(f)),
             TyNamed(e, bs) -> false,
         },
@@ -1473,6 +1492,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyBool -> false,
             TyUint(v) -> false,
             TyPtr -> false,
+            TyIsize -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> (d == e) && same_tys(unbox(args), unbox(bs)),
         },
@@ -1562,7 +1582,7 @@ pub fn src_ty(t: SrcType) -> core::option::Option<Ty> {
         Ptr -> Some(TyPtr),
         Slice(e) -> None,
         Unit -> None,
-        Isize -> None,
+        Isize -> Some(TyIsize),
     };
 }
 
@@ -1572,6 +1592,7 @@ pub fn scalar_src(t: Ty) -> core::option::Option<SrcType> {
         TyBool -> Some(Bool),
         TyUint(k) -> Some(Uint(k)),
         TyPtr -> Some(Ptr),
+        TyIsize -> Some(Isize),
         TySlice(e) -> None,
         TyNamed(d, args) -> None,
     };
@@ -1861,6 +1882,7 @@ pub fn lower_ty(fuel: usize, decls: Decls, table: List<Inst>, t: Ty) -> core::op
         TyBool -> Some(Bool),
         TyUint(k) -> Some(Uint(k)),
         TyPtr -> Some(Ptr),
+        TyIsize -> Some(Isize),
         TySlice(e) -> slice_type(lower_ty(minus(fuel, 1), decls, table, unbox(e))),
         TyNamed(d, args) -> lower_named(minus(fuel, 1), decls, table, d, unbox(args)),
     };
@@ -1942,6 +1964,7 @@ pub fn ty_insts(fuel: usize, decls: Decls, t: Ty) -> core::option::Option<List<I
         TyBool -> Some(empty()),
         TyUint(k) -> Some(empty()),
         TyPtr -> Some(empty()),
+        TyIsize -> Some(empty()),
         TySlice(e) -> ty_insts(minus(fuel, 1), decls, unbox(e)),
         TyNamed(d, args) -> cons_inst(Inst { decl: d, args: unbox(args) }, named_insts(minus(fuel, 1), decls, d, unbox(args))),
     };
@@ -2158,6 +2181,7 @@ pub fn field_index(env: Env, t: Ty, name: List<usize>) -> core::option::Option<u
         TyBool -> None,
         TyUint(k) -> None,
         TyPtr -> None,
+        TyIsize -> None,
         TySlice(e) -> None,
         TyNamed(d, args) -> field_in(get(env.decls.types, d), name),
     };
@@ -2272,6 +2296,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyBool -> None,
             TyUint(u) -> uint_in_range(u, (k as u32) as u64),
             TyPtr -> None,
+            TyIsize -> Some(Cast(Isize, boxed(e))),
             TySlice(x) -> None,
             TyNamed(d, args) -> None,
         },
@@ -2280,6 +2305,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyBool -> Some(e),
             TyUint(u) -> None,
             TyPtr -> None,
+            TyIsize -> None,
             TySlice(x) -> None,
             TyNamed(d, args) -> None,
         },
@@ -2291,6 +2317,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyBool -> None,
             TyUint(u) -> None,
             TyPtr -> None,
+            TyIsize -> negated_int(unbox(x), Negate(boxed(Cast(Isize, x)))),
             TySlice(y) -> None,
             TyNamed(d, args) -> None,
         },
@@ -2520,6 +2547,7 @@ pub fn struct_field_tys(fuel: usize, decls: Decls, t: Ty) -> core::option::Optio
         TyBool -> None,
         TyUint(k) -> None,
         TyPtr -> None,
+        TyIsize -> None,
         TySlice(e) -> None,
         TyNamed(d, args) -> field_tys(fuel, decls, d, unbox(args)),
     };
@@ -2635,6 +2663,7 @@ pub fn slice_elem(t: Ty) -> core::option::Option<Ty> {
         TyBool -> None,
         TyUint(k) -> None,
         TyPtr -> None,
+        TyIsize -> None,
         TySlice(e) -> Some(unbox(e)),
         TyNamed(d, args) -> None,
     };
@@ -2646,6 +2675,7 @@ pub fn named_parts(t: Ty) -> core::option::Option<Inst> {
         TyBool -> None,
         TyUint(k) -> None,
         TyPtr -> None,
+        TyIsize -> None,
         TySlice(e) -> None,
         TyNamed(d, args) -> Some(Inst { decl: d, args: unbox(args) }),
     };
@@ -3438,6 +3468,7 @@ pub fn named_decl(t: Ty) -> core::option::Option<usize> {
         TyBool -> None,
         TyUint(k) -> None,
         TyPtr -> None,
+        TyIsize -> None,
         TySlice(e) -> None,
         TyNamed(d, args) -> Some(d),
     };
@@ -4475,6 +4506,7 @@ pub fn is_ptr_ty(t: Ty) -> bool {
         TyBool -> false,
         TyUint(k) -> false,
         TyPtr -> true,
+        TyIsize -> false,
         TySlice(e) -> false,
         TyNamed(d, args) -> false,
     };
@@ -5797,6 +5829,372 @@ pub fn close_funcs(fuel: usize, t: Tables, fs: List<MFunc>) -> core::option::Opt
     };
 }
 
+// ---------------------------------------------------------------- isize literals
+
+// laniusc gives an integer literal the type its context expects. In the
+// subset only isize needs this (the unsigned types' literals are written
+// `n as u64`): after monomorphization, an integer literal whose expected type
+// is isize becomes Cast(Isize, Int(n)), so n is below 2^31. The expected
+// types: a let's type, a local's or field's when stored to, a parameter's, the
+// function's result for return, a field's or payload's in a literal, a slice
+// element's in an index store, an arm's result type, Bool for conditions,
+// asserts and `!`. An operator's operands expect the type of whichever operand
+// has one (a literal has none), or else, for arithmetic, the operator's
+// expected type. The operand of `as`, an index and the heap operations'
+// operands expect nothing. A literal with no isize expectation stays Int(n).
+
+pub struct LocalTy {
+    id: usize,
+    ty: SrcType,
+}
+
+pub fn isize_ty(t: SrcType) -> bool {
+    return match (t) {
+        I32 -> false,
+        Bool -> false,
+        Uint(k) -> false,
+        Struct(id, fields) -> false,
+        Enum(id, variants) -> false,
+        Ptr -> false,
+        Slice(e) -> false,
+        Unit -> false,
+        Isize -> true,
+    };
+}
+
+pub fn isize_cast(yes: bool, e: SrcExpr) -> SrcExpr {
+    if (yes) {
+        return Cast(Isize, boxed(e));
+    }
+    return e;
+}
+
+pub fn int_at(want: core::option::Option<SrcType>, e: SrcExpr) -> SrcExpr {
+    return match (want) {
+        None -> e,
+        Some(t) -> isize_cast(isize_ty(t), e),
+    };
+}
+
+// The innermost local with this id, as a source type.
+pub fn ty_local(locals: List<LocalTy>, id: usize) -> core::option::Option<SrcType> {
+    return match (locals) {
+        Nil -> None,
+        Cons(l, rest) -> ty_local_at(l, unbox(rest), id),
+    };
+}
+
+// extract: inline
+fn ty_local_at(tl: LocalTy, trest: List<LocalTy>, tid: usize) -> core::option::Option<SrcType> {
+    if (tl.id == tid) {
+        return Some(tl.ty);
+    }
+    return ty_local(trest, tid);
+}
+
+pub fn src_fields(t: core::option::Option<SrcType>) -> core::option::Option<List<SrcType>> {
+    return match (t) {
+        None -> None,
+        Some(x) -> match (x) {
+            I32 -> None,
+            Bool -> None,
+            Uint(k) -> None,
+            Struct(id, fields) -> Some(unbox(fields)),
+            Enum(id, variants) -> None,
+            Ptr -> None,
+            Slice(e) -> None,
+            Unit -> None,
+            Isize -> None,
+        },
+    };
+}
+
+pub fn src_variants(t: core::option::Option<SrcType>) -> core::option::Option<List<List<SrcType>>> {
+    return match (t) {
+        None -> None,
+        Some(x) -> match (x) {
+            I32 -> None,
+            Bool -> None,
+            Uint(k) -> None,
+            Struct(id, fields) -> None,
+            Enum(id, variants) -> Some(unbox(variants)),
+            Ptr -> None,
+            Slice(e) -> None,
+            Unit -> None,
+            Isize -> None,
+        },
+    };
+}
+
+pub fn src_element(t: core::option::Option<SrcType>) -> core::option::Option<SrcType> {
+    return match (t) {
+        None -> None,
+        Some(x) -> match (x) {
+            I32 -> None,
+            Bool -> None,
+            Uint(k) -> None,
+            Struct(id, fields) -> None,
+            Enum(id, variants) -> None,
+            Ptr -> None,
+            Slice(e) -> Some(unbox(e)),
+            Unit -> None,
+            Isize -> None,
+        },
+    };
+}
+
+pub fn ty_at(ts: core::option::Option<List<SrcType>>, j: usize) -> core::option::Option<SrcType> {
+    return match (ts) {
+        None -> None,
+        Some(xs) -> get(xs, j),
+    };
+}
+
+pub fn payload_at(vs: core::option::Option<List<List<SrcType>>>, k: usize) -> core::option::Option<List<SrcType>> {
+    return match (vs) {
+        None -> None,
+        Some(xs) -> get(xs, k),
+    };
+}
+
+pub fn first_src(ts: core::option::Option<List<SrcType>>) -> core::option::Option<SrcType> {
+    return ty_at(ts, 0);
+}
+
+pub fn rest_src(ts: core::option::Option<List<SrcType>>) -> core::option::Option<List<SrcType>> {
+    return match (ts) {
+        None -> None,
+        Some(xs) -> match (xs) {
+            Nil -> None,
+            Cons(x, rest) -> Some(unbox(rest)),
+        },
+    };
+}
+
+pub fn rest_payloads(vs: core::option::Option<List<List<SrcType>>>) -> core::option::Option<List<List<SrcType>>> {
+    return match (vs) {
+        None -> None,
+        Some(xs) -> match (xs) {
+            Nil -> None,
+            Cons(x, rest) -> Some(unbox(rest)),
+        },
+    };
+}
+
+pub fn first_ids(bs: List<List<usize>>) -> List<usize> {
+    return match (bs) {
+        Nil -> empty(),
+        Cons(b, rest) -> b,
+    };
+}
+
+pub fn rest_ids(bs: List<List<usize>>) -> List<List<usize>> {
+    return match (bs) {
+        Nil -> empty(),
+        Cons(b, rest) -> unbox(rest),
+    };
+}
+
+// Binders with the payload types, innermost first.
+pub fn bound_tys(ids: List<usize>, tys: core::option::Option<List<SrcType>>, locals: List<LocalTy>) -> List<LocalTy> {
+    return match (ids) {
+        Nil -> locals,
+        Cons(i, rest) -> match (first_src(tys)) {
+            None -> locals,
+            Some(t) -> cons(LocalTy { id: i, ty: t }, bound_tys(unbox(rest), rest_src(tys), locals)),
+        },
+    };
+}
+
+pub fn either_ty(a: core::option::Option<SrcType>, b: core::option::Option<SrcType>) -> core::option::Option<SrcType> {
+    return match (a) {
+        None -> b,
+        Some(x) -> Some(x),
+    };
+}
+
+// What an operator's operands expect, from the operands' own types.
+pub fn operand_want(op: SrcOp, want: core::option::Option<SrcType>, a: core::option::Option<SrcType>, b: core::option::Option<SrcType>) -> core::option::Option<SrcType> {
+    if (gives_bool(op)) {
+        return either_ty(a, b);
+    }
+    return either_ty(either_ty(a, b), want);
+}
+
+pub fn known_apply(op: SrcOp, a: core::option::Option<SrcType>, b: core::option::Option<SrcType>) -> core::option::Option<SrcType> {
+    if (gives_bool(op)) {
+        return Some(Bool);
+    }
+    return either_ty(a, b);
+}
+
+// An expression's type when it does not rest on literals.
+pub fn known_expr(locals: List<LocalTy>, e: SrcExpr) -> core::option::Option<SrcType> {
+    return match (e) {
+        Int(k) -> None,
+        Boolean(b) -> Some(Bool),
+        Unsigned(u, k) -> Some(Uint(u)),
+        Local(id) -> ty_local(locals, id),
+        Field(id, j) -> ty_at(src_fields(ty_local(locals, id)), j),
+        Negate(x) -> known_expr(locals, unbox(x)),
+        Not(x) -> Some(Bool),
+        Apply(op, a, b) -> known_apply(op, known_expr(locals, unbox(a)), known_expr(locals, unbox(b))),
+        Cast(t, x) -> Some(t),
+    };
+}
+
+pub fn lit_expr(locals: List<LocalTy>, want: core::option::Option<SrcType>, e: SrcExpr) -> SrcExpr {
+    return match (e) {
+        Int(k) -> int_at(want, e),
+        Boolean(b) -> e,
+        Unsigned(u, k) -> e,
+        Local(id) -> e,
+        Field(id, j) -> e,
+        Negate(x) -> Negate(boxed(lit_expr(locals, want, unbox(x)))),
+        Not(x) -> Not(boxed(lit_expr(locals, Some(Bool), unbox(x)))),
+        Apply(op, a, b) -> Apply(op, boxed(lit_expr(locals, operand_want(op, want, known_expr(locals, unbox(a)), known_expr(locals, unbox(b))), unbox(a))), boxed(lit_expr(locals, operand_want(op, want, known_expr(locals, unbox(a)), known_expr(locals, unbox(b))), unbox(b)))),
+        Cast(t, x) -> Cast(t, boxed(lit_expr(locals, None, unbox(x)))),
+    };
+}
+
+pub fn lit_exprs(locals: List<LocalTy>, wants: core::option::Option<List<SrcType>>, es: List<SrcExpr>) -> List<SrcExpr> {
+    return match (es) {
+        Nil -> empty(),
+        Cons(e, rest) -> cons(lit_expr(locals, first_src(wants), e), lit_exprs(locals, rest_src(wants), unbox(rest))),
+    };
+}
+
+pub fn lit_src_arms(locals: List<LocalTy>, payloads: core::option::Option<List<List<SrcType>>>, t: SrcType, arms: List<SrcArm>) -> List<SrcArm> {
+    return match (arms) {
+        Nil -> empty(),
+        Cons(a, rest) -> cons(SrcArm { binders: a.binders, value: lit_expr(bound_tys(a.binders, payload_at(payloads, 0), locals), Some(t), a.value) }, lit_src_arms(locals, rest_payloads(payloads), t, unbox(rest))),
+    };
+}
+
+pub fn src_param_tys(ps: List<SrcParam>) -> List<SrcType> {
+    return match (ps) {
+        Nil -> empty(),
+        Cons(p, rest) -> cons(p.ty, src_param_tys(unbox(rest))),
+    };
+}
+
+pub fn callee_params(funcs: List<SrcFunc>, f: usize) -> core::option::Option<List<SrcType>> {
+    return match (get(funcs, f)) {
+        None -> None,
+        Some(g) -> Some(src_param_tys(g.params)),
+    };
+}
+
+pub fn callee_ret(funcs: List<SrcFunc>, f: usize) -> core::option::Option<SrcType> {
+    return match (get(funcs, f)) {
+        None -> None,
+        Some(g) -> Some(g.ret),
+    };
+}
+
+pub fn known_eff(funcs: List<SrcFunc>, locals: List<LocalTy>, x: SrcEff) -> core::option::Option<SrcType> {
+    return match (x) {
+        EPure(e) -> known_expr(locals, e),
+        ECall(f, args) -> callee_ret(funcs, f),
+        EApply(op, a, b) -> known_apply(op, known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))),
+        ENeg(a) -> known_eff(funcs, locals, unbox(a)),
+        ENot(a) -> Some(Bool),
+        ECast(t, a) -> Some(t),
+        EIndex(s, i) -> src_element(ty_local(locals, s)),
+        EStruct(t, fs) -> Some(t),
+        EVariant(t, k, ps) -> Some(t),
+        EMatch(s, ety, t, bs, vs) -> Some(t),
+        EDivide(op, a, b) -> either_ty(known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))),
+    };
+}
+
+// extract: mutual begin
+pub fn lit_eff(funcs: List<SrcFunc>, locals: List<LocalTy>, want: core::option::Option<SrcType>, x: SrcEff) -> SrcEff {
+    return match (x) {
+        EPure(e) -> EPure(lit_expr(locals, want, e)),
+        ECall(f, args) -> ECall(f, boxed(lit_effs(funcs, locals, callee_params(funcs, f), unbox(args)))),
+        EApply(op, a, b) -> EApply(op, boxed(lit_eff(funcs, locals, operand_want(op, want, known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))), unbox(a))), boxed(lit_eff(funcs, locals, operand_want(op, want, known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))), unbox(b)))),
+        ENeg(a) -> ENeg(boxed(lit_eff(funcs, locals, want, unbox(a)))),
+        ENot(a) -> ENot(boxed(lit_eff(funcs, locals, Some(Bool), unbox(a)))),
+        ECast(t, a) -> ECast(t, boxed(lit_eff(funcs, locals, None, unbox(a)))),
+        EIndex(s, i) -> EIndex(s, boxed(lit_eff(funcs, locals, None, unbox(i)))),
+        EStruct(t, fs) -> EStruct(t, boxed(lit_effs(funcs, locals, src_fields(Some(t)), unbox(fs)))),
+        EVariant(t, k, ps) -> EVariant(t, k, boxed(lit_effs(funcs, locals, payload_at(src_variants(Some(t)), k), unbox(ps)))),
+        EMatch(s, ety, t, bs, vs) -> EMatch(boxed(lit_eff(funcs, locals, Some(ety), unbox(s))), ety, t, bs, boxed(lit_arm_effs(funcs, locals, src_variants(Some(ety)), t, bs, unbox(vs)))),
+        EDivide(op, a, b) -> EDivide(op, boxed(lit_eff(funcs, locals, operand_want(Plus, want, known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))), unbox(a))), boxed(lit_eff(funcs, locals, operand_want(Plus, want, known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))), unbox(b)))),
+    };
+}
+
+pub fn lit_effs(funcs: List<SrcFunc>, locals: List<LocalTy>, wants: core::option::Option<List<SrcType>>, xs: List<SrcEff>) -> List<SrcEff> {
+    return match (xs) {
+        Nil -> empty(),
+        Cons(x, rest) -> cons(lit_eff(funcs, locals, first_src(wants), x), lit_effs(funcs, locals, rest_src(wants), unbox(rest))),
+    };
+}
+
+// A match's arm values, each with its binders typed by its variant's payload.
+pub fn lit_arm_effs(funcs: List<SrcFunc>, locals: List<LocalTy>, payloads: core::option::Option<List<List<SrcType>>>, t: SrcType, bs: List<List<usize>>, vs: List<SrcEff>) -> List<SrcEff> {
+    return match (vs) {
+        Nil -> empty(),
+        Cons(v, rest) -> cons(lit_eff(funcs, bound_tys(first_ids(bs), payload_at(payloads, 0), locals), Some(t), v), lit_arm_effs(funcs, locals, rest_payloads(payloads), t, rest_ids(bs), unbox(rest))),
+    };
+}
+// extract: mutual end
+
+pub fn with_local(id: usize, ty: SrcType, locals: List<LocalTy>) -> List<LocalTy> {
+    return cons(LocalTy { id: id, ty: ty }, locals);
+}
+
+pub fn lit_stmt(funcs: List<SrcFunc>, ret: SrcType, locals: List<LocalTy>, s: SrcStmt) -> SrcStmt {
+    return match (s) {
+        Nop -> Nop,
+        Let(id, ty, e, body) -> Let(id, ty, lit_expr(locals, Some(ty), e), boxed(lit_stmt(funcs, ret, with_local(id, ty, locals), unbox(body)))),
+        LetStruct(id, ty, es, body) -> LetStruct(id, ty, lit_exprs(locals, src_fields(Some(ty)), es), boxed(lit_stmt(funcs, ret, with_local(id, ty, locals), unbox(body)))),
+        LetCall(id, ty, f, args, body) -> LetCall(id, ty, f, lit_exprs(locals, callee_params(funcs, f), args), boxed(lit_stmt(funcs, ret, with_local(id, ty, locals), unbox(body)))),
+        LetEnum(id, ty, k, es, body) -> LetEnum(id, ty, k, lit_exprs(locals, payload_at(src_variants(Some(ty)), k), es), boxed(lit_stmt(funcs, ret, with_local(id, ty, locals), unbox(body)))),
+        LetMatch(id, ty, sc, eid, arms, body) -> LetMatch(id, ty, sc, eid, lit_src_arms(locals, src_variants(ty_local(locals, sc)), ty, arms), boxed(lit_stmt(funcs, ret, with_local(id, ty, locals), unbox(body)))),
+        Set(id, e) -> Set(id, lit_expr(locals, ty_local(locals, id), e)),
+        SetField(id, j, e) -> SetField(id, j, lit_expr(locals, ty_at(src_fields(ty_local(locals, id)), j), e)),
+        SetCall(id, f, args) -> SetCall(id, f, lit_exprs(locals, callee_params(funcs, f), args)),
+        Then(a, b) -> Then(boxed(lit_stmt(funcs, ret, locals, unbox(a))), boxed(lit_stmt(funcs, ret, locals, unbox(b)))),
+        If(c, a, b) -> If(lit_expr(locals, Some(Bool), c), boxed(lit_stmt(funcs, ret, locals, unbox(a))), boxed(lit_stmt(funcs, ret, locals, unbox(b)))),
+        While(c, body) -> While(lit_expr(locals, Some(Bool), c), boxed(lit_stmt(funcs, ret, locals, unbox(body)))),
+        Return(e) -> Return(lit_expr(locals, Some(ret), e)),
+        LetAlloc(id, size, shift, body) -> LetAlloc(id, lit_expr(locals, None, size), shift, boxed(lit_stmt(funcs, ret, with_local(id, Ptr, locals), unbox(body)))),
+        LetLoad(id, p, o, body) -> LetLoad(id, lit_expr(locals, None, p), lit_expr(locals, None, o), boxed(lit_stmt(funcs, ret, with_local(id, Uint(Uint8), locals), unbox(body)))),
+        SetByte(p, o, v) -> SetByte(lit_expr(locals, None, p), lit_expr(locals, None, o), lit_expr(locals, None, v)),
+        Free(p, size, shift) -> Free(lit_expr(locals, None, p), lit_expr(locals, None, size), shift),
+        LetSlice(id, el, p, n, body) -> LetSlice(id, el, lit_expr(locals, None, p), lit_expr(locals, None, n), boxed(lit_stmt(funcs, ret, with_local(id, Slice(boxed(el)), locals), unbox(body)))),
+        LetIndex(id, ty, sl, i, body) -> LetIndex(id, ty, sl, lit_expr(locals, None, i), boxed(lit_stmt(funcs, ret, with_local(id, ty, locals), unbox(body)))),
+        SetIndex(sl, i, v) -> SetIndex(sl, lit_expr(locals, None, i), lit_expr(locals, src_element(ty_local(locals, sl)), v)),
+        LetEval(id, ty, x, body) -> LetEval(id, ty, lit_eff(funcs, locals, Some(ty), x), boxed(lit_stmt(funcs, ret, with_local(id, ty, locals), unbox(body)))),
+        SetEval(id, x) -> SetEval(id, lit_eff(funcs, locals, ty_local(locals, id), x)),
+        IfEval(c, a, b) -> IfEval(lit_eff(funcs, locals, Some(Bool), c), boxed(lit_stmt(funcs, ret, locals, unbox(a))), boxed(lit_stmt(funcs, ret, locals, unbox(b)))),
+        WhileEval(c, body) -> WhileEval(lit_eff(funcs, locals, Some(Bool), c), boxed(lit_stmt(funcs, ret, locals, unbox(body)))),
+        ReturnEval(x) -> ReturnEval(lit_eff(funcs, locals, Some(ret), x)),
+        Discard(x) -> Discard(lit_eff(funcs, locals, None, x)),
+        SetIndexEval(sl, i, v) -> SetIndexEval(sl, lit_eff(funcs, locals, None, i), lit_eff(funcs, locals, src_element(ty_local(locals, sl)), v)),
+        SetFieldEval(id, j, x) -> SetFieldEval(id, j, lit_eff(funcs, locals, ty_at(src_fields(ty_local(locals, id)), j), x)),
+        ReturnUnit -> ReturnUnit,
+        Assert(x) -> Assert(lit_eff(funcs, locals, Some(Bool), x)),
+    };
+}
+
+pub fn param_locals(ps: List<SrcParam>) -> List<LocalTy> {
+    return match (ps) {
+        Nil -> empty(),
+        Cons(p, rest) -> cons(LocalTy { id: p.id, ty: p.ty }, param_locals(unbox(rest))),
+    };
+}
+
+// Every function's literals typed, with all the functions' signatures.
+pub fn lit_funcs(all: List<SrcFunc>, fs: List<SrcFunc>) -> List<SrcFunc> {
+    return match (fs) {
+        Nil -> empty(),
+        Cons(g, rest) -> cons(SrcFunc { params: g.params, ret: g.ret, body: lit_stmt(all, g.ret, param_locals(g.params), g.body) }, lit_funcs(all, unbox(rest))),
+    };
+}
+
 // ---------------------------------------------------------------- the program
 
 pub fn build_closed(fuel: usize, decls: Decls, fns: List<Inst>, types: core::option::Option<List<Inst>>, funcs: List<MFunc>) -> core::option::Option<SrcProgram> {
@@ -5804,7 +6202,7 @@ pub fn build_closed(fuel: usize, decls: Decls, fns: List<Inst>, types: core::opt
         None -> None,
         Some(ts) -> match (close_funcs(fuel, Tables { decls: decls, fns: fns, types: ts }, funcs)) {
             None -> None,
-            Some(fs) -> Some(SrcProgram { funcs: fs }),
+            Some(fs) -> Some(SrcProgram { funcs: lit_funcs(fs, fs) }),
         },
     };
 }
