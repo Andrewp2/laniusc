@@ -508,7 +508,13 @@ literal, a call, a `match` or, often, another slice's element: `to[i] =
 from[j]`), often a value that calls a function writing `s` at the same
 literal index, so the store (after the value in Core's order) must win;
 `x.f = value` (`SetFieldEval`) of a scalar field of a struct local (a
-parameter or a local) with an effectful value; and later functions with struct,
+parameter or a local) with an effectful value; unit functions (no `-> T`,
+mostly writing a slice they are passed), called as statements, ending
+without a return or with `return;`, also early inside `if` and `while`;
+`assert` with conditions that always hold (`c || true`, `c || !c` on a pure
+`c`, `(e & 255) >= 0`, `(e % 7) < 7`), since the verified compiler's image
+does not trap on a false assert (the theorem covers runs that return) and
+laniusc's does; and later functions with struct,
 enum and slice parameters and struct and enum results. A function with a
 slice parameter writes into its caller's slice, the right side of `&&` and
 `||` often calls one, and the entry's result folds in every element of its
@@ -533,7 +539,12 @@ disagreements and no rejections. With their writes, seeds 51-54 again: the
 same counts, no disagreements and no rejections (about 70 struct and enum
 element stores per 300 programs). With `SetFieldEval`, seeds 51-54 again:
 1,200 programs, 9,600 calls, no disagreements and no rejections (about 110
-field stores per 300 programs).
+field stores per 300 programs). With unit functions, `return;` and
+`assert`, seeds 51-54 again: 1,200 programs, 9,600 calls, no disagreements
+and no rejections, after one laniusc bug: a call to a unit function whose
+body is empty (`fn f(v0: i32) {}` called as `f(3);` from `main`) fails with
+LNC0057 "compiler execution failed" while generating target output. The
+generator gives such a body `return;` instead.
 
 Not covered yet: the stdlib, which needs generics and modules in the front
 pass.
