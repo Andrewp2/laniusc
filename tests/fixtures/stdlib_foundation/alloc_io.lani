@@ -1,0 +1,47 @@
+// expect: 0
+module app::main;
+import alloc::io;
+import core::io;
+import core::result;
+
+fn main() -> i32 {
+    let bytes: [u8; 6] = [0, 255, 1, 254, 2, 253];
+    let buffer: alloc::io::Buffer = alloc::io::new();
+    if (buffer.len() != 0 || buffer.capacity() != 0 || buffer.limit() != 2147483647) { return 1; }
+    if (core::result::unwrap(core::io::write_all(buffer.borrow(), bytes, 1, 4)) != 4) { return 2; }
+    let old: [u8] = buffer.as_bytes();
+    if (core::result::unwrap(buffer.write(old, 0, 4)) != 4 || buffer.len() != 8) { return 3; }
+    let duplicated: [u8] = buffer.as_bytes();
+    if (duplicated[0] != 255 || duplicated[3] != 2 || duplicated[4] != 255 || duplicated[7] != 2) { return 4; }
+    if (core::result::unwrap(buffer.try_reserve(20)) < 20) { return 5; }
+    let same: [u8] = buffer.as_bytes();
+    if (core::result::unwrap(buffer.write(same, 1, 2)) != 2 || buffer.len() != 10) { return 6; }
+    let cloned: core::result::Result<alloc::io::Buffer, core::io::Error> = buffer.try_clone();
+    let copy: alloc::io::Buffer = core::result::unwrap(cloned);
+    buffer.clear();
+    if (buffer.len() != 0 || buffer.capacity() < 20 || copy.len() != 10) { return 7; }
+    buffer.destroy();
+    buffer.destroy();
+    let kept: [u8] = copy.as_bytes();
+    if (kept[8] != 1 || kept[9] != 254) { return 8; }
+    copy.destroy();
+
+    let limited: core::result::Result<alloc::io::Buffer, core::io::Error> = alloc::io::with_limit(5);
+    let sink: alloc::io::Buffer = core::result::unwrap(limited);
+    if (!core::result::is_err(sink.try_reserve(6)) || sink.capacity() != 0) { return 9; }
+    let input: core::result::Result<core::io::SliceReader, core::io::Error> = core::io::slice_reader(bytes, 6);
+    let reader: core::io::SliceReader = core::result::unwrap(input);
+    let scratch: [u8; 3] = [0; 3];
+    let copied: core::result::Result<u64, core::io::CopyFailure> = core::io::copy(reader.borrow(), sink.borrow(), scratch, 3);
+    if (core::result::is_ok(copied)) { return 10; }
+    let failure: core::io::CopyFailure = core::result::unwrap_err(copied);
+    let limit: bool = match (failure.cause) { LimitExceeded -> true, _ -> false };
+    if (!limit || failure.read != 6 || failure.written != 3 || sink.len() != 3) { return 11; }
+    let retained: [u8] = sink.as_bytes();
+    if (retained[0] != 0 || retained[1] != 255 || retained[2] != 1) { return 12; }
+    if (!core::result::is_err(sink.write(bytes, -1, 0)) || sink.len() != 3) { return 13; }
+    if (core::result::unwrap(sink.flush()) != 0) { return 14; }
+    sink.destroy();
+    if (!core::result::is_err(alloc::io::with_limit(-1))) { return 15; }
+    return 0;
+}

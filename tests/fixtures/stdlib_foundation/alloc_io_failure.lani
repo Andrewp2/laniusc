@@ -1,0 +1,36 @@
+// expect: 1
+// Under strace inject=mmap:error=ENOMEM:when=2+ this returns zero, preserves
+// the buffer and frees the original allocation exactly once.
+module app::main;
+import alloc::io;
+import core::io;
+import core::result;
+
+fn allocation_failure(result: core::result::Result<i32, core::io::Error>) -> bool {
+    if (core::result::is_ok(result)) { return false; }
+    let error: core::io::Error = core::result::unwrap_err(result);
+    let failed: bool = match (error) { AllocationFailed -> true, _ -> false };
+    return failed;
+}
+
+fn main() -> i32 {
+    let bytes: [u8; 4] = [0, 255, 128, 7];
+    let buffer: alloc::io::Buffer = alloc::io::new();
+    if (!core::result::is_ok(buffer.write(bytes, 0, 4))) { return 2; }
+    let source: [u8] = buffer.as_bytes();
+    let appended: core::result::Result<i32, core::io::Error> = buffer.write(source, 0, 4);
+    if (core::result::is_ok(appended)) { buffer.destroy(); return 1; }
+    if (!allocation_failure(appended) || buffer.len() != 4) { return 3; }
+    if (!allocation_failure(buffer.try_reserve(16))) { return 4; }
+    let cloned: core::result::Result<alloc::io::Buffer, core::io::Error> = buffer.try_clone();
+    if (core::result::is_ok(cloned)) { return 5; }
+    let error: core::io::Error = core::result::unwrap_err(cloned);
+    let failed: bool = match (error) { AllocationFailed -> true, _ -> false };
+    if (!failed) { return 6; }
+    let preserved: [u8] = buffer.as_bytes();
+    if (preserved[0] != 0 || preserved[1] != 255 || preserved[2] != 128 || preserved[3] != 7) { return 7; }
+    buffer.clear();
+    if (core::result::unwrap(buffer.write(bytes, 1, 2)) != 2 || buffer.len() != 2) { return 8; }
+    buffer.destroy();
+    return 0;
+}

@@ -106,6 +106,12 @@ canonical CSV to stdout. Exit status is zero on success, two for invalid input,
 three for I/O failure, and four for allocation failure. Output may be partial
 when a write fails.
 
+The program now uses the shared [byte stream APIs](stdlib-streams.md) for bulk
+input and complete output writes. Its normalizer suite also injects allocation
+failures in input buffering, UTF-8 construction and parsing, checking status,
+diagnostics and cleanup. This integration suite passed on 2026-10-22 in 6.14
+seconds.
+
 The implementation currently materializes the entire input, table and encoded
 output. Streaming parsing/writing, constructing or editing rows, header-based
 access, and table transformations remain future work. Wasm and user-program

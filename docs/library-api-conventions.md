@@ -28,6 +28,8 @@ enforce unique ownership or automatic destruction.
 - `Option<T>` represents ordinary absence, such as a search without a match.
 - `Result<T, E>` represents recoverable failure. Error values identify the
   cause and carry useful context such as an input byte offset.
+- Qualify error variants when an application imports modules with overlapping
+  names, for example `alloc::string::Error::AllocationFailed`.
 - Operations that can fail allocation should return an explicit result.
   Do not require callers to compare lengths to discover failure in new APIs.
 - Fallible edits validate input and reserve storage before changing contents.

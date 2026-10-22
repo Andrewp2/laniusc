@@ -9,6 +9,8 @@
 
 tests/fixtures/stdlib_foundation/repro_nested_error_match.lani  LNC0005  TBD  nested match with an inner wildcard reports false as unresolved; a separately typed helper executes (docs/library-dependencies.md)
 tests/fixtures/stdlib_foundation/repro_payload_wildcard.lani  LNC0005  TBD  payload wildcard followed by a fallback arm reports an unresolved identifier; binding the payload and a local match result executes (docs/library-dependencies.md)
+tests/fixtures/stdlib_foundation/repro_byte_repeat_count.lani  LNC0069  TBD  byte-array repeat count 256 is incorrectly checked against u8 (docs/library-dependencies.md)
+tests/fixtures/stdlib_foundation/repro_named_repeat_count.lani  LNC0016  TBD  array repeat count requires an integer literal and rejects a named usize constant (docs/library-dependencies.md)
 
 tests/fixtures/stdlib_foundation/repro_ordinary_string_comparison.lani  LNC0006  TBD  `!=` between a str array element and a string literal is unsupported; see tests/fixtures/generics_backlog/README.md
 tests/fixtures/stdlib_foundation/repro_string_length.lani  LNC0027  P2  `str.len()` has no length metadata to read yet; docs/stdlib-foundation.md dependency 15

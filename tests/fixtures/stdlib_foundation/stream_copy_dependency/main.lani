@@ -1,0 +1,25 @@
+// expect: 0
+module app::main;
+import core::io;
+import core::result;
+struct Both { marker: i32 }
+impl Both { fn borrow(&self) -> &Both { return self; } }
+pub impl core::io::Read for Both {
+    pub fn read(&self, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> {
+        return core::result::Ok(0);
+    }
+}
+pub impl core::io::Write for Both {
+    pub fn write(&self, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> {
+        return core::result::Ok(count);
+    }
+    pub fn flush(&self) -> core::result::Result<i32, core::io::Error> { return core::result::Ok(0); }
+}
+fn main() -> i32 {
+    let first: Both = Both { marker: 0 };
+    let second: Both = Both { marker: 0 };
+    let scratch: [u8; 4] = [0; 4];
+    let result: core::result::Result<u64, core::io::CopyFailure> = core::io::copy(first.borrow(), second.borrow(), scratch, 4);
+    if (core::result::is_err(result)) { return 1; }
+    return 0;
+}

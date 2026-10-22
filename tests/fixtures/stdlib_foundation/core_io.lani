@@ -1,0 +1,160 @@
+// expect: 0
+module app::main;
+import core::io;
+import core::result;
+
+fn kind(error: core::io::Error) -> i32 {
+    let tag: i32 = match (error) {
+        InvalidInput -> 1, UnexpectedEof -> 2, WriteZero -> 3,
+        InvalidCount -> 4, Interrupted -> 5, WouldBlock -> 6,
+        Host(code) -> code + 100, _ -> 0,
+    };
+    return tag;
+}
+
+fn failure(result: core::result::Result<i32, core::io::Failure>, tag: i32, completed: i32) -> bool {
+    if (core::result::is_ok(result)) { return false; }
+    let value: core::io::Failure = core::result::unwrap_err(result);
+    return kind(value.cause) == tag && value.completed == completed;
+}
+
+// A short stream with a deliberate interruption and an optional final error.
+struct ShortReader { cursor: i32, calls: i32, fail: bool }
+impl ShortReader { fn borrow(&self) -> &ShortReader { return self; } }
+pub impl core::io::Read for ShortReader {
+    pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> {
+        self.calls += 1;
+        if (self.calls == 1) { return core::result::Err(core::io::Error::Interrupted); }
+        if (self.cursor == 5) {
+            if (self.fail) { return core::result::Err(core::io::Error::WouldBlock); }
+            return core::result::Ok(0);
+        }
+        let amount: i32 = count;
+        if (amount > 2) { amount = 2; }
+        if (amount > 5 - self.cursor) { amount = 5 - self.cursor; }
+        let index: i32 = 0;
+        while (index < amount) {
+            destination[offset + index] = (self.cursor + index + 10) as u8;
+            index += 1;
+        }
+        self.cursor += amount;
+        return core::result::Ok(amount);
+    }
+}
+
+struct ShortWriter { data: [u8], cursor: i32, calls: i32, stop: i32, fail: bool }
+impl ShortWriter { fn borrow(&self) -> &ShortWriter { return self; } }
+pub impl core::io::Write for ShortWriter {
+    pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> {
+        self.calls += 1;
+        if (self.calls == 1) { return core::result::Err(core::io::Error::Interrupted); }
+        if (self.cursor == self.stop) {
+            if (self.fail) { return core::result::Err(core::io::Error::Host(28)); }
+            return core::result::Ok(0);
+        }
+        let amount: i32 = count;
+        if (amount > 2) { amount = 2; }
+        if (amount > self.stop - self.cursor) { amount = self.stop - self.cursor; }
+        let index: i32 = 0;
+        while (index < amount) {
+            self.data[self.cursor + index] = source[offset + index];
+            index += 1;
+        }
+        self.cursor += amount;
+        return core::result::Ok(amount);
+    }
+    pub fn flush(&self) -> core::result::Result<i32, core::io::Error> { return core::result::Ok(0); }
+}
+
+struct Invalid { reported: i32, calls: i32 }
+impl Invalid { fn borrow(&self) -> &Invalid { return self; } }
+pub impl core::io::Read for Invalid {
+    pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> {
+        self.calls += 1;
+        return core::result::Ok(self.reported);
+    }
+}
+pub impl core::io::Write for Invalid {
+    pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> {
+        self.calls += 1;
+        return core::result::Ok(self.reported);
+    }
+    pub fn flush(&self) -> core::result::Result<i32, core::io::Error> { return core::result::Ok(0); }
+}
+
+fn main() -> i32 {
+    let source: [u8; 5] = [10, 11, 12, 13, 14];
+    let destination: [u8; 7] = [99; 7];
+    let built: core::result::Result<core::io::SliceReader, core::io::Error> = core::io::slice_reader(source, 5);
+    let reader: core::io::SliceReader = core::result::unwrap(built);
+    let read: core::result::Result<i32, core::io::Failure> = core::io::read_exact(reader.borrow(), destination, 1, 5);
+    if (core::result::unwrap(read) != 5 || reader.position() != 5 || reader.remaining() != 0) { return 1; }
+    if (destination[0] != 99 || destination[1] != 10 || destination[5] != 14 || destination[6] != 99) { return 2; }
+    if (!failure(core::io::read_exact(reader.borrow(), destination, 0, 1), 2, 0)) { return 3; }
+    if (!core::result::is_err(reader.seek(-1)) || reader.position() != 5) { return 4; }
+    if (core::result::unwrap(reader.seek(2)) != 2 || reader.remaining() != 3) { return 5; }
+    if (!failure(core::io::read_exact(reader.borrow(), destination, 0, 5), 2, 3)) { return 6; }
+    if (!core::result::is_err(core::io::slice_reader(source, -1))) { return 7; }
+
+    let short: ShortReader = ShortReader { cursor: 0, calls: 0, fail: true };
+    if (!failure(core::io::read_exact(short.borrow(), destination, 0, 6), 6, 5)) { return 8; }
+    if (short.calls != 5 || short.cursor != 5 || destination[4] != 14) { return 9; }
+    let stored: [u8; 7] = [99; 7];
+    let writer: ShortWriter = ShortWriter { data: stored, cursor: 0, calls: 0, stop: 5, fail: true };
+    let done: core::result::Result<i32, core::io::Failure> = core::io::write_all(writer.borrow(), source, 0, 5);
+    if (core::result::unwrap(done) != 5 || writer.cursor != 5 || writer.calls != 4) { return 10; }
+    if (stored[0] != 10 || stored[4] != 14 || stored[5] != 99) { return 11; }
+    writer.cursor = 0;
+    writer.stop = 3;
+    if (!failure(core::io::write_all(writer.borrow(), source, 0, 5), 128, 3)) { return 12; }
+    writer.cursor = 0;
+    writer.fail = false;
+    if (!failure(core::io::write_all(writer.borrow(), source, 0, 5), 3, 3)) { return 13; }
+
+    let invalid: Invalid = Invalid { reported: -1, calls: 0 };
+    if (!failure(core::io::read_exact(invalid.borrow(), destination, 0, 1), 4, 0)) { return 14; }
+    invalid.reported = 2;
+    if (!failure(core::io::write_all(invalid.borrow(), source, 0, 1), 4, 0)) { return 15; }
+    invalid.calls = 0;
+    if (!failure(core::io::write_all(invalid.borrow(), source, 2147483647, 1), 1, 0)) { return 16; }
+    if (!failure(core::io::read_exact(invalid.borrow(), destination, -1, 0), 1, 0)) { return 17; }
+    if (core::result::unwrap(core::io::write_all(invalid.borrow(), source, 0, 0)) != 0 || invalid.calls != 0) { return 18; }
+
+    let scratch: [u8; 4] = [0; 4];
+    let out: core::result::Result<core::io::SliceWriter, core::io::Error> = core::io::slice_writer(stored, 3);
+    let limited: core::io::SliceWriter = core::result::unwrap(out);
+    reader.seek(0);
+    let partial: core::result::Result<u64, core::io::CopyFailure> = core::io::copy(reader.borrow(), limited.borrow(), scratch, 4);
+    if (core::result::is_ok(partial)) { return 19; }
+    let failed: core::io::CopyFailure = core::result::unwrap_err(partial);
+    if (kind(failed.cause) != 3 || failed.read != 4 || failed.written != 3) { return 20; }
+    if (reader.position() != 4 || limited.position() != 3 || stored[2] != 12) { return 21; }
+    if (!core::result::is_err(limited.seek(4)) || limited.position() != 3) { return 22; }
+    if (core::result::unwrap(limited.flush()) != 0) { return 23; }
+
+    let complete_out: core::result::Result<core::io::SliceWriter, core::io::Error> = core::io::slice_writer(stored, 7);
+    let complete: core::io::SliceWriter = core::result::unwrap(complete_out);
+    short.cursor = 0;
+    short.calls = 0;
+    short.fail = false;
+    let copied: core::result::Result<u64, core::io::CopyFailure> = core::io::copy(short.borrow(), complete.borrow(), scratch, 4);
+    if (core::result::unwrap(copied) != 5 || complete.position() != 5 || stored[4] != 14) { return 24; }
+
+    reader.seek(0);
+    writer.cursor = 0;
+    writer.calls = 0;
+    writer.fail = true;
+    let failed_write: core::result::Result<u64, core::io::CopyFailure> = core::io::copy(reader.borrow(), writer.borrow(), scratch, 4);
+    if (core::result::is_ok(failed_write)) { return 25; }
+    let write_failure: core::io::CopyFailure = core::result::unwrap_err(failed_write);
+    if (kind(write_failure.cause) != 128 || write_failure.read != 4 || write_failure.written != 3) { return 26; }
+    reader.seek(0);
+    invalid.reported = 5;
+    let invalid_write: core::result::Result<u64, core::io::CopyFailure> = core::io::copy(reader.borrow(), invalid.borrow(), scratch, 4);
+    if (core::result::is_ok(invalid_write)) { return 27; }
+    let bad_count: core::io::CopyFailure = core::result::unwrap_err(invalid_write);
+    if (kind(bad_count.cause) != 4 || bad_count.read != 4 || bad_count.written != 0) { return 28; }
+    invalid.calls = 0;
+    if (core::result::unwrap(core::io::read_exact(invalid.borrow(), destination, 0, 0)) != 0 || invalid.calls != 0) { return 29; }
+    return 0;
+}

@@ -142,6 +142,39 @@ fn csv_normalizer_executes_quoting_unicode_and_error_cases() {
             assert!(output.stderr.is_empty(), "case {case}: {output:?}");
         }
     }
+
+    // Distinguish buffer, UTF-8 construction and parser allocation failures
+    // from malformed CSV. The native process performs no loader allocations.
+    let input = common::TempArtifact::new("laniusc_csv", "allocation_input", None);
+    input.write_bytes(b"a,b\nc,d\n");
+    let trace = common::TempArtifact::new("laniusc_csv", "normalizer_trace", None);
+    for when in [1, 2, 3] {
+        let output = common::short_process_output_with_timeout(
+            "CSV normalizer allocation failure",
+            std::process::Command::new("strace")
+                .args(["-qq", "-o"])
+                .arg(trace.path())
+                .args(["-e", "trace=mmap,munmap", "-e"])
+                .arg(format!("inject=mmap:error=ENOMEM:when={when}+"))
+                .arg(executable.path())
+                .stdin(std::process::Stdio::from(
+                    std::fs::File::open(input.path()).unwrap(),
+                )),
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(4),
+            "allocation {when}: {output:?}"
+        );
+        assert!(output.stdout.is_empty(), "{output:?}");
+        assert_eq!(output.stderr, b"allocation failed\n", "allocation {when}");
+        let events = std::fs::read_to_string(trace.path()).unwrap();
+        assert!(
+            events.contains("INJECTED") && events.contains("ENOMEM"),
+            "{events}"
+        );
+        assert_all_allocations_freed(&events);
+    }
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]

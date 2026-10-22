@@ -1,0 +1,88 @@
+// x86_64 Linux descriptor adapters for the portable core::io contracts.
+// Handles are borrowed: these adapters never close them or change their flags.
+module std::stream;
+import core::io;
+import core::mem;
+import core::result;
+import std::fs;
+
+pub struct Descriptor { handle: i32 }
+
+pub fn stdin() -> Descriptor { return Descriptor { handle: 0 }; }
+pub fn stdout() -> Descriptor { return Descriptor { handle: 1 }; }
+pub fn stderr() -> Descriptor { return Descriptor { handle: 2 }; }
+pub fn from_handle(handle: i32) -> Descriptor { return Descriptor { handle: handle }; }
+
+// Convenience copy with 1024 bytes of packed, stack-owned scratch storage.
+// Use core::io::copy to provide your own scratch view and capacity.
+pub fn copy<R, W>(reader: &R, writer: &W) -> core::result::Result<u64, core::io::CopyFailure>
+    where R: core::io::Read, W: core::io::Write {
+    let storage: [i32; 256] = [0; 256];
+    let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let scratch: [u8] = core::mem::typed_slice_from_raw_parts(pointer, 1024);
+    return core::io::copy(reader, writer, scratch, 1024);
+}
+
+pub impl Descriptor {
+    pub fn borrow(&self) -> &Descriptor { return self; }
+    pub fn raw_handle(&self) -> i32 { return self.handle; }
+}
+
+fn host_error(result: i32) -> core::io::Error {
+    if (result == -4) { return core::io::Error::Interrupted; }
+    if (result == -11) { return core::io::Error::WouldBlock; }
+    return core::io::Error::Host(0 - result);
+}
+
+// A packed staging buffer adapts any Lanius byte-slice stride to the Linux
+// contiguous-byte ABI. Each call transfers at most 1024 bytes and allocates
+// no heap memory. In particular, stack [u8; N] values are not raw byte arrays.
+pub impl core::io::Read for Descriptor {
+    pub fn read(&self, destination: [u8], offset: i32, count: i32)
+        -> core::result::Result<i32, core::io::Error> {
+        if (!core::io::valid_range(offset, count)) { return core::result::Err(core::io::Error::InvalidInput); }
+        if (count == 0) { return core::result::Ok(0); }
+        let amount: i32 = count;
+        if (amount > 1024) { amount = 1024; }
+        let storage: [i32; 256] = [0; 256];
+        let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+        let received: i32 = std::fs::read(self.handle, pointer, amount as usize);
+        if (received < 0) { return core::result::Err(host_error(received)); }
+        if (received > amount) { return core::result::Err(core::io::Error::InvalidCount); }
+        let packed: [u8] = core::mem::typed_slice_from_raw_parts(pointer, received);
+        let index: i32 = 0;
+        while (index < received) {
+            destination[offset + index] = packed[index];
+            index += 1;
+        }
+        return core::result::Ok(received);
+    }
+}
+
+pub impl core::io::Write for Descriptor {
+    pub fn write(&self, source: [u8], offset: i32, count: i32)
+        -> core::result::Result<i32, core::io::Error> {
+        if (!core::io::valid_range(offset, count)) { return core::result::Err(core::io::Error::InvalidInput); }
+        if (count == 0) { return core::result::Ok(0); }
+        let amount: i32 = count;
+        if (amount > 1024) { amount = 1024; }
+        let storage: [i32; 256] = [0; 256];
+        let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+        let packed: [u8] = core::mem::typed_slice_from_raw_parts(pointer, amount);
+        let index: i32 = 0;
+        while (index < amount) {
+            packed[index] = source[offset + index];
+            index += 1;
+        }
+        let written: i32 = std::fs::write(self.handle, pointer, amount as usize);
+        if (written < 0) { return core::result::Err(host_error(written)); }
+        if (written > amount) { return core::result::Err(core::io::Error::InvalidCount); }
+        return core::result::Ok(written);
+    }
+
+    pub fn flush(&self) -> core::result::Result<i32, core::io::Error> {
+        // Successful writes have crossed the host boundary already. This
+        // adapter has no pending user-space buffer and does not promise fsync.
+        return core::result::Ok(0);
+    }
+}

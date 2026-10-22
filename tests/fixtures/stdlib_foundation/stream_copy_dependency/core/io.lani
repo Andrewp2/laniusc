@@ -1,0 +1,104 @@
+// Allocation-free stream contracts and operations. See docs/stdlib-streams.md.
+module core::io;
+import core::result;
+
+pub enum Error {
+    InvalidInput,
+    UnexpectedEof,
+    WriteZero,
+    InvalidCount,
+    CountOverflow,
+    LimitExceeded,
+    Interrupted,
+    WouldBlock,
+    AllocationFailed,
+    Host(i32),
+}
+
+// A failed exact/all operation preserves the number of completed bytes.
+pub struct Failure { cause: Error, completed: i32 }
+// A copy can consume input before a later output error. Preserve both counts.
+pub struct CopyFailure { cause: Error, read: u64, written: u64 }
+
+pub trait Read {
+    // Ok(0) means EOF for nonempty requests. Err means no bytes transferred
+    // by this call. Short successful reads are normal.
+    pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32, Error>;
+}
+
+pub trait Write {
+    // A successful count is in 0..=count. Err transfers no bytes in this
+    // call. Callers must handle short writes, including zero progress.
+    pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, Error>;
+    // Drain library buffering; Ok(0) means complete. This is not fsync/close.
+    pub fn flush(&self) -> core::result::Result<i32, Error>;
+}
+
+// The physical view must back the claimed range. Indexing checks actual
+// bounds; this check rejects negative or overflowing logical ranges.
+pub fn valid_range(offset: i32, count: i32) -> bool {
+    return offset >= 0 && count >= 0 && offset <= 2147483647 - count;
+}
+
+pub fn is_interrupted(error: Error) -> bool {
+    let interrupted: bool = match (error) { Interrupted -> true, _ -> false };
+    return interrupted;
+}
+
+pub fn write_all<W>(writer: &W, source: [u8], offset: i32, count: i32)
+    -> core::result::Result<i32, Failure> where W: Write {
+    if (!valid_range(offset, count)) {
+        return core::result::Err(Failure { cause: Error::InvalidInput, completed: 0 });
+    }
+    let completed: i32 = 0;
+    while (completed < count) {
+        let result: core::result::Result<i32, Error> = writer.write(source, offset + completed, count - completed);
+        if (core::result::is_err(result)) {
+            let error: Error = core::result::unwrap_err(result);
+            if (is_interrupted(error)) { continue; }
+            return core::result::Err(Failure { cause: error, completed: completed });
+        }
+        let sent: i32 = core::result::unwrap(result);
+        if (sent < 0 || sent > count - completed) {
+            return core::result::Err(Failure { cause: Error::InvalidCount, completed: completed });
+        }
+        if (sent == 0) { return core::result::Err(Failure { cause: Error::WriteZero, completed: completed }); }
+        completed += sent;
+    }
+    return core::result::Ok(completed);
+}
+
+// Copy through caller-owned scratch space until EOF. Does not flush or close.
+pub fn copy<R, W>(reader: &R, writer: &W, scratch: [u8], capacity: i32)
+    -> core::result::Result<u64, CopyFailure> where R: Read, W: Write {
+    if (capacity <= 0) {
+        return core::result::Err(CopyFailure { cause: Error::InvalidInput, read: 0, written: 0 });
+    }
+    let total: u64 = 0;
+    while (true) {
+        // Reserve counter headroom before consuming another chunk.
+        if (total > 18446744073709551615 - (capacity as u64)) {
+            return core::result::Err(CopyFailure { cause: Error::CountOverflow, read: total, written: total });
+        }
+        let result: core::result::Result<i32, Error> = reader.read(scratch, 0, capacity);
+        if (core::result::is_err(result)) {
+            let error: Error = core::result::unwrap_err(result);
+            if (is_interrupted(error)) { continue; }
+            return core::result::Err(CopyFailure { cause: error, read: total, written: total });
+        }
+        let received: i32 = core::result::unwrap(result);
+        if (received < 0 || received > capacity) {
+            return core::result::Err(CopyFailure { cause: Error::InvalidCount, read: total, written: total });
+        }
+        if (received == 0) { return core::result::Ok(total); }
+        let sent: core::result::Result<i32, Failure> = write_all(writer, scratch, 0, received);
+        if (core::result::is_err(sent)) {
+            let failure: Failure = core::result::unwrap_err(sent);
+            return core::result::Err(CopyFailure {
+                cause: failure.cause, read: total + (received as u64), written: total + (failure.completed as u64),
+            });
+        }
+        total += received as u64;
+    }
+    return core::result::Ok(total);
+}

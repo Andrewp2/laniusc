@@ -31,7 +31,7 @@ package distribution is a separate deliverable.
 | Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed owned String, byte codecs and scalar operations execute; split/join, formatting and borrowed text integration remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings and raw views exist; ownership conventions need consolidation |
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Generic vectors/deques and linear maps/sets exist; other structures remain |
-| I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Concrete I/O helpers exist; shared abstractions remain |
+| I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks and native descriptor adapters execute; buffered adapters and owned files remain |
 | Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Basic bindings exist; complete path and directory interfaces remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Argument/environment helpers exist; subprocess management remains |
 | Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Clock and entropy helpers exist; coherent types and generators remain |
@@ -118,7 +118,10 @@ API list; unrelated library work can continue.
 - Extended CSV: parsing, independent field copies and canonical encoding execute
   on x86_64 Linux, including generated tables and allocation fault injection.
   See [extended-csv.md](extended-csv.md). Streaming and row construction remain.
-- Next integration milestone: shared reader/writer contracts, JSON, and a
-  CSV-to-JSON application using validation and grouping.
+- Shared I/O: portable Read/Write traits, exact/all/copy operations, slice
+  cursors, owned byte buffers and native descriptor adapters have execution
+  coverage. CSV uses these streams. See [stdlib-streams.md](stdlib-streams.md).
+- Next integration milestone: JSON and a CSV-to-JSON application using validation
+  and grouping, followed by remaining text/collection and I/O operations.
 - The older [execution audit](stdlib-foundation.md) remains historical evidence;
   its top-level checkpoints do not establish this branch's current behavior.

@@ -1,0 +1,7 @@
+// expect: 0
+// The repetition count must be checked as an array length, not as u8.
+module app::main;
+fn main() -> i32 {
+    let bytes: [u8; 256] = [0; 256];
+    return bytes[255] as i32;
+}

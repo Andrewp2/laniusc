@@ -2,11 +2,12 @@
 // Read UTF-8 CSV from stdin and emit quoted fields with CRLF record endings.
 module app::main;
 import alloc::string;
+import alloc::io;
+import core::io;
 import core::result;
 import ext::csv;
 import std::io;
-import std::io_byte;
-import std::vec;
+import std::stream;
 
 fn normalize(input: alloc::string::String) -> i32 {
     let options: ext::csv::Options = ext::csv::default_options();
@@ -15,7 +16,7 @@ fn normalize(input: alloc::string::String) -> i32 {
 }
 
 fn csv_error(error: ext::csv::Error) -> i32 {
-    let allocation: bool = match (error) { AllocationFailed -> true, _ -> false };
+    let allocation: bool = match (error) { ext::csv::Error::AllocationFailed -> true, _ -> false };
     if (allocation) { std::io::eprintln("allocation failed"); return 4; }
     std::io::eprintln("invalid CSV input");
     return 2;
@@ -29,30 +30,33 @@ fn write_table(table: ext::csv::Table) -> i32 {
 
 fn write_text(text: alloc::string::String) -> i32 {
     let bytes: [u8] = text.as_bytes();
-    let index: i32 = 0;
-    while (index < text.byte_len()) {
-        if (!std::io_byte::write_stdout_byte(bytes[index] as i32)) { text.destroy(); return 3; }
-        index += 1;
-    }
+    let output: std::stream::Descriptor = std::stream::stdout();
+    let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(output.borrow(), bytes, 0, text.byte_len());
     text.destroy();
+    if (core::result::is_err(written)) { return 3; }
     return 0;
 }
 
 fn main() -> i32 {
-    let input: std::vec::Vec<u8> = std::vec::new();
-    let byte: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
-    while (byte >= 0) {
-        let previous: i32 = std::vec::len(input);
-        input = std::vec::try_push(input, byte as u8);
-        if (std::vec::len(input) == previous) { std::vec::destroy(input); return 4; }
-        byte = std::io_byte::read_stdin_byte_or(-1, -2);
+    let input: alloc::io::Buffer = alloc::io::new();
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let received: core::result::Result<u64, core::io::CopyFailure> = std::stream::copy(source.borrow(), input.borrow());
+    if (core::result::is_err(received)) {
+        let failure: core::io::CopyFailure = core::result::unwrap_err(received);
+        input.destroy();
+        return input_error(failure.cause);
     }
-    if (byte == -2) { std::vec::destroy(input); return 3; }
-    let bytes: [u8] = std::vec::as_slice(input);
+    let bytes: [u8] = input.as_bytes();
     let decoded: core::result::Result<alloc::string::String, alloc::string::Error> =
-        alloc::string::from_utf8(bytes, std::vec::len(input));
-    std::vec::destroy(input);
+        alloc::string::from_utf8(bytes, input.len());
+    input.destroy();
     return match (decoded) { Ok(text) -> finish(text), Err(error) -> invalid_text(error) };
+}
+
+fn input_error(error: core::io::Error) -> i32 {
+    let capacity: bool = match (error) { core::io::Error::AllocationFailed -> true, core::io::Error::LimitExceeded -> true, _ -> false };
+    if (capacity) { std::io::eprintln("allocation failed"); return 4; }
+    return 3;
 }
 
 fn finish(text: alloc::string::String) -> i32 {
@@ -62,7 +66,7 @@ fn finish(text: alloc::string::String) -> i32 {
 }
 
 fn invalid_text(error: alloc::string::Error) -> i32 {
-    let allocation: bool = match (error) { AllocationFailed -> true, _ -> false };
+    let allocation: bool = match (error) { alloc::string::Error::AllocationFailed -> true, _ -> false };
     if (allocation) { std::io::eprintln("allocation failed"); return 4; }
     std::io::eprintln("invalid UTF-8 input");
     return 2;

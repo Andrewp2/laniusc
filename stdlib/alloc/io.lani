@@ -1,0 +1,85 @@
+// An owned byte sink for core::io. Writes append atomically, including views
+// into this buffer. Allocation or limit errors preserve the previous bytes.
+module alloc::io;
+import core::io;
+import core::result;
+import std::vec;
+
+pub struct Buffer { bytes: std::vec::Vec<u8>, maximum: i32 }
+
+pub fn new() -> Buffer {
+    let bytes: std::vec::Vec<u8> = std::vec::new();
+    return Buffer { bytes: bytes, maximum: 2147483647 };
+}
+
+pub fn with_limit(maximum: i32) -> core::result::Result<Buffer, core::io::Error> {
+    if (maximum < 0) { return core::result::Err(core::io::Error::InvalidInput); }
+    let bytes: std::vec::Vec<u8> = std::vec::new();
+    return core::result::Ok(Buffer { bytes: bytes, maximum: maximum });
+}
+
+pub impl Buffer {
+    pub fn borrow(&self) -> &Buffer { return self; }
+    pub fn len(&self) -> i32 { return std::vec::len(self.bytes); }
+    pub fn capacity(&self) -> i32 { return std::vec::capacity(self.bytes); }
+    pub fn limit(&self) -> i32 { return self.maximum; }
+    pub fn as_bytes(&self) -> [u8] { return std::vec::as_slice(self.bytes); }
+
+    pub fn try_reserve(&self, capacity: i32) -> core::result::Result<i32, core::io::Error> {
+        if (capacity < 0) { return core::result::Err(core::io::Error::InvalidInput); }
+        if (capacity > self.maximum) { return core::result::Err(core::io::Error::LimitExceeded); }
+        let grown: std::vec::Vec<u8> = std::vec::try_reserve(self.bytes, capacity);
+        if (std::vec::capacity(grown) < capacity) { return core::result::Err(core::io::Error::AllocationFailed); }
+        self.bytes = grown;
+        return core::result::Ok(std::vec::capacity(grown));
+    }
+
+    pub fn try_clone(&self) -> core::result::Result<Buffer, core::io::Error> {
+        let copy: std::vec::Vec<u8> = std::vec::try_clone(self.bytes);
+        if (std::vec::len(copy) != std::vec::len(self.bytes)) { return core::result::Err(core::io::Error::AllocationFailed); }
+        return core::result::Ok(Buffer { bytes: copy, maximum: self.maximum });
+    }
+
+    pub fn clear(&self) { self.bytes = std::vec::clear(self.bytes); }
+
+    pub fn destroy(&self) {
+        std::vec::destroy(self.bytes);
+        self.bytes = std::vec::new();
+    }
+}
+
+pub impl core::io::Write for Buffer {
+    pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> {
+        if (!core::io::valid_range(offset, count)) { return core::result::Err(core::io::Error::InvalidInput); }
+        let length: i32 = std::vec::len(self.bytes);
+        if (count > self.maximum - length) { return core::result::Err(core::io::Error::LimitExceeded); }
+        if (count == 0) { return core::result::Ok(0); }
+        let needed: i32 = length + count;
+        let capacity: i32 = std::vec::capacity(self.bytes);
+        let grown: std::vec::Vec<u8> = self.bytes;
+        if (needed > capacity) {
+            let target: i32 = self.maximum;
+            if (capacity <= self.maximum / 2) { target = capacity * 2; }
+            if (target < 4 && self.maximum >= 4) { target = 4; }
+            if (target < needed) { target = needed; }
+            grown = std::vec::try_with_capacity(target);
+            if (std::vec::capacity(grown) < target) { return core::result::Err(core::io::Error::AllocationFailed); }
+            let old: [u8] = std::vec::as_slice(self.bytes);
+            let index: i32 = 0;
+            while (index < length) { grown = std::vec::try_push(grown, old[index]); index += 1; }
+        }
+        let index: i32 = 0;
+        while (index < count) {
+            grown = std::vec::try_push(grown, source[offset + index]);
+            index += 1;
+        }
+        // Keep aliased source views alive through the final byte copy.
+        if (needed > capacity) { std::vec::destroy(self.bytes); }
+        self.bytes = grown;
+        return core::result::Ok(count);
+    }
+
+    pub fn flush(&self) -> core::result::Result<i32, core::io::Error> {
+        return core::result::Ok(0);
+    }
+}

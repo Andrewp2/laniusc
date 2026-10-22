@@ -1,0 +1,210 @@
+// Allocation-free stream contracts and operations. See docs/stdlib-streams.md.
+module core::io;
+import core::result;
+
+pub enum Error {
+    InvalidInput,
+    UnexpectedEof,
+    WriteZero,
+    InvalidCount,
+    CountOverflow,
+    LimitExceeded,
+    Interrupted,
+    WouldBlock,
+    AllocationFailed,
+    Host(i32),
+}
+
+// A failed exact/all operation preserves the number of completed bytes.
+pub struct Failure { cause: Error, completed: i32 }
+// A copy can consume input before a later output error. Preserve both counts.
+pub struct CopyFailure { cause: Error, read: u64, written: u64 }
+
+pub trait Read {
+    // Ok(0) means EOF for nonempty requests. Err means no bytes transferred
+    // by this call. Short successful reads are normal.
+    pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32, Error>;
+}
+
+pub trait Write {
+    // A successful count is in 0..=count. Err transfers no bytes in this
+    // call. Callers must handle short writes, including zero progress.
+    pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, Error>;
+    // Drain library buffering; Ok(0) means complete. This is not fsync/close.
+    pub fn flush(&self) -> core::result::Result<i32, Error>;
+}
+
+// The physical view must back the claimed range. Indexing checks actual
+// bounds; this check rejects negative or overflowing logical ranges.
+pub fn valid_range(offset: i32, count: i32) -> bool {
+    return offset >= 0 && count >= 0 && offset <= 2147483647 - count;
+}
+
+pub fn is_interrupted(error: Error) -> bool {
+    let interrupted: bool = match (error) { Interrupted -> true, _ -> false };
+    return interrupted;
+}
+
+pub fn read_exact<R>(reader: &R, destination: [u8], offset: i32, count: i32)
+    -> core::result::Result<i32, Failure> where R: Read {
+    if (!valid_range(offset, count)) {
+        return core::result::Err(Failure { cause: Error::InvalidInput, completed: 0 });
+    }
+    let completed: i32 = 0;
+    while (completed < count) {
+        let result: core::result::Result<i32, Error> = reader.read(destination, offset + completed, count - completed);
+        if (core::result::is_err(result)) {
+            let error: Error = core::result::unwrap_err(result);
+            if (is_interrupted(error)) { continue; }
+            return core::result::Err(Failure { cause: error, completed: completed });
+        }
+        let received: i32 = core::result::unwrap(result);
+        if (received < 0 || received > count - completed) {
+            return core::result::Err(Failure { cause: Error::InvalidCount, completed: completed });
+        }
+        if (received == 0) {
+            return core::result::Err(Failure { cause: Error::UnexpectedEof, completed: completed });
+        }
+        completed += received;
+    }
+    return core::result::Ok(completed);
+}
+
+pub fn write_all<W>(writer: &W, source: [u8], offset: i32, count: i32)
+    -> core::result::Result<i32, Failure> where W: Write {
+    if (!valid_range(offset, count)) {
+        return core::result::Err(Failure { cause: Error::InvalidInput, completed: 0 });
+    }
+    let completed: i32 = 0;
+    while (completed < count) {
+        let result: core::result::Result<i32, Error> = writer.write(source, offset + completed, count - completed);
+        if (core::result::is_err(result)) {
+            let error: Error = core::result::unwrap_err(result);
+            if (is_interrupted(error)) { continue; }
+            return core::result::Err(Failure { cause: error, completed: completed });
+        }
+        let sent: i32 = core::result::unwrap(result);
+        if (sent < 0 || sent > count - completed) {
+            return core::result::Err(Failure { cause: Error::InvalidCount, completed: completed });
+        }
+        if (sent == 0) { return core::result::Err(Failure { cause: Error::WriteZero, completed: completed }); }
+        completed += sent;
+    }
+    return core::result::Ok(completed);
+}
+
+// Copy through caller-owned scratch space until EOF. Does not flush or close.
+pub fn copy<R, W>(reader: &R, writer: &W, scratch: [u8], capacity: i32)
+    -> core::result::Result<u64, CopyFailure> where R: Read, W: Write {
+    if (capacity <= 0) {
+        return core::result::Err(CopyFailure { cause: Error::InvalidInput, read: 0, written: 0 });
+    }
+    let total: u64 = 0;
+    while (true) {
+        // Reserve counter headroom before consuming another chunk.
+        if (total > 18446744073709551615 - (capacity as u64)) {
+            return core::result::Err(CopyFailure { cause: Error::CountOverflow, read: total, written: total });
+        }
+        let result: core::result::Result<i32, Error> = reader.read(scratch, 0, capacity);
+        if (core::result::is_err(result)) {
+            let error: Error = core::result::unwrap_err(result);
+            if (is_interrupted(error)) { continue; }
+            return core::result::Err(CopyFailure { cause: error, read: total, written: total });
+        }
+        let received: i32 = core::result::unwrap(result);
+        if (received < 0 || received > capacity) {
+            return core::result::Err(CopyFailure { cause: Error::InvalidCount, read: total, written: total });
+        }
+        if (received == 0) { return core::result::Ok(total); }
+        let completed: i32 = 0;
+        while (completed < received) {
+            let sent: core::result::Result<i32, Error> = writer.write(scratch, completed, received - completed);
+            if (core::result::is_err(sent)) {
+                let error: Error = core::result::unwrap_err(sent);
+                if (is_interrupted(error)) { continue; }
+                return core::result::Err(CopyFailure { cause: error, read: total + (received as u64), written: total + (completed as u64) });
+            }
+            let count: i32 = core::result::unwrap(sent);
+            if (count < 0 || count > received - completed) {
+                return core::result::Err(CopyFailure { cause: Error::InvalidCount, read: total + (received as u64), written: total + (completed as u64) });
+            }
+            if (count == 0) {
+                return core::result::Err(CopyFailure { cause: Error::WriteZero, read: total + (received as u64), written: total + (completed as u64) });
+            }
+            completed += count;
+        }
+        total += received as u64;
+    }
+    return core::result::Ok(total);
+}
+
+pub struct SliceReader { data: [u8], length: i32, cursor: i32 }
+pub struct SliceWriter { data: [u8], length: i32, cursor: i32 }
+
+pub fn slice_reader(data: [u8], length: i32) -> core::result::Result<SliceReader, Error> {
+    if (length < 0) { return core::result::Err(Error::InvalidInput); }
+    return core::result::Ok(SliceReader { data: data, length: length, cursor: 0 });
+}
+
+pub fn slice_writer(data: [u8], length: i32) -> core::result::Result<SliceWriter, Error> {
+    if (length < 0) { return core::result::Err(Error::InvalidInput); }
+    return core::result::Ok(SliceWriter { data: data, length: length, cursor: 0 });
+}
+
+pub impl SliceReader {
+    pub fn borrow(&self) -> &SliceReader { return self; }
+    pub fn position(&self) -> i32 { return self.cursor; }
+    pub fn remaining(&self) -> i32 { return self.length - self.cursor; }
+    pub fn seek(&self, position: i32) -> core::result::Result<i32, Error> {
+        if (position < 0 || position > self.length) { return core::result::Err(Error::InvalidInput); }
+        self.cursor = position;
+        return core::result::Ok(position);
+    }
+}
+
+pub impl SliceWriter {
+    pub fn borrow(&self) -> &SliceWriter { return self; }
+    pub fn position(&self) -> i32 { return self.cursor; }
+    pub fn remaining(&self) -> i32 { return self.length - self.cursor; }
+    pub fn seek(&self, position: i32) -> core::result::Result<i32, Error> {
+        if (position < 0 || position > self.length) { return core::result::Err(Error::InvalidInput); }
+        self.cursor = position;
+        return core::result::Ok(position);
+    }
+}
+
+// Source and destination ranges must not overlap. Views retain their native
+// stride: packed heap bytes and stack arrays both work through indexing.
+pub impl Read for SliceReader {
+    pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32, Error> {
+        if (!valid_range(offset, count)) { return core::result::Err(Error::InvalidInput); }
+        let amount: i32 = count;
+        if (amount > self.length - self.cursor) { amount = self.length - self.cursor; }
+        let index: i32 = 0;
+        while (index < amount) {
+            destination[offset + index] = self.data[self.cursor + index];
+            index += 1;
+        }
+        self.cursor += amount;
+        return core::result::Ok(amount);
+    }
+}
+
+pub impl Write for SliceWriter {
+    pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, Error> {
+        if (!valid_range(offset, count)) { return core::result::Err(Error::InvalidInput); }
+        let amount: i32 = count;
+        if (amount > self.length - self.cursor) { amount = self.length - self.cursor; }
+        let index: i32 = 0;
+        while (index < amount) {
+            self.data[self.cursor + index] = source[offset + index];
+            index += 1;
+        }
+        self.cursor += amount;
+        return core::result::Ok(amount);
+    }
+    pub fn flush(&self) -> core::result::Result<i32, Error> {
+        // Writes are already in the caller's buffer; no pending bytes exist.
+        return core::result::Ok(0);
+    }
+}
