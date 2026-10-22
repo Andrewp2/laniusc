@@ -296,6 +296,17 @@ pub fn with_kid(kid: CTree, rest: core::option::Option<Attached>) -> core::optio
     };
 }
 
+// laniusc's parser reads a `>>` that closes two type argument lists (as in
+// `Vec<Option<T>>`) as two `>`, so a terminal `>` may take the first half of a
+// `>>` token, and the second half is then the next token.
+pub fn shr_first(t: Token) -> Token {
+    return Token { kind: t_gt(), start: t.start, text: single(62) };
+}
+
+pub fn shr_second(t: Token) -> Token {
+    return Token { kind: t_gt(), start: plus(t.start, 1), text: single(62) };
+}
+
 // extract: inline
 fn attach_term(tg: List<Rule>, tfuel: usize, tkind: usize, tmore: List<Sym>, tparent: usize, tcur: Cursor) -> core::option::Option<Attached> {
     return match (tcur.tokens) {
@@ -375,6 +386,9 @@ pub fn attach(g: List<Rule>, fuel: usize, rhs: List<Sym>, parent: usize, cur: Cu
 fn attach_leaf(lg: List<Rule>, lfuel: usize, lkind: usize, ltok: Token, ltoks: List<Token>, lmore: List<Sym>, lparent: usize, lcur: Cursor) -> core::option::Option<Attached> {
     if (ltok.kind == lkind) {
         return with_kid(Leaf(ltok), attach(lg, lfuel, lmore, lparent, Cursor { prods: lcur.prods, parents: lcur.parents, tokens: ltoks, index: lcur.index }));
+    }
+    if (ltok.kind == t_shr() && lkind == t_gt()) {
+        return with_kid(Leaf(shr_first(ltok)), attach(lg, lfuel, lmore, lparent, Cursor { prods: lcur.prods, parents: lcur.parents, tokens: cons(shr_second(ltok), ltoks), index: lcur.index }));
     }
     return None;
 }
@@ -5916,6 +5930,16 @@ fn p_while_stmt() -> usize {
 // extract: inline
 fn p_xor_tail() -> usize {
     return 128;
+}
+
+// extract: inline
+fn t_gt() -> usize {
+    return 13;
+}
+
+// extract: inline
+fn t_shr() -> usize {
+    return 44;
 }
 
 // grammar table end

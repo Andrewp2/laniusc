@@ -68,6 +68,13 @@ def withKid (kid : CTree) (rest : Option Attached) : Option Attached :=
   | none => none
   | some a => some ({ kids := kid :: a.kids, rest := a.rest } : Attached)
 
+/-- laniusc's parser reads a `>>` that closes two type argument lists (as in `Vec<Option<T>>`) as two `>`, so a terminal `>` may take the first half of a `>>` token, and the second half is then the next token. -/
+def shrFirst (t : Token) : Token :=
+  ({ kind := (13), start := t.start, text := [62] } : Token)
+
+def shrSecond (t : Token) : Token :=
+  ({ kind := (13), start := t.start + 1, text := [62] } : Token)
+
 /-- Attach the trees for the symbols rhs, children of the node with preorder index parent: a terminal takes the next token, which must have its kind; a nonterminal takes the next production, which must have it as its left side and parent as its recorded parent, and then that production's own symbols. -/
 def attach (g : List Rule) (fuel : Nat) (rhs : List Sym) (parent : Nat) (cur : Cursor) : Option Attached :=
   if fuel = 0 then
@@ -85,7 +92,10 @@ def attach (g : List Rule) (fuel : Nat) (rhs : List Sym) (parent : Nat) (cur : C
            if tok.kind = kind then
              withKid (CTree.leaf tok) (attach g sfuel more parent ({ prods := cur.prods, parents := cur.parents, tokens := toks, index := cur.index } : Cursor))
            else
-             none)
+             if decide (tok.kind = (44)) && decide (kind = (13)) then
+               withKid (CTree.leaf (shrFirst tok)) (attach g sfuel more parent ({ prods := cur.prods, parents := cur.parents, tokens := shrSecond tok :: toks, index := cur.index } : Cursor))
+             else
+               none)
       | .nonterm nt =>
         match cur.prods with
         | [] => none

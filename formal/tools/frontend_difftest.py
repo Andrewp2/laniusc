@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """The front end against laniusc's parse trees (roadmap step 8).
 
-    python3 -I formal/tools/frontend_difftest.py WORKDIR [--count N] [--seed S] [--chunk C] [--mutations M] [--laniusc PATH] [--heavy PATH]
+    python3 -I formal/tools/frontend_difftest.py WORKDIR [--count N] [--seed S] [--chunk C] [--mutations M] [--laniusc PATH] [--heavy PATH] [--generic]
+    python3 -I formal/tools/frontend_difftest.py WORKDIR --cases formal/tools/frontend_cases [--laniusc PATH] [--heavy PATH]
 
 Run from the repository root. Programs come from oracle_difftest.py's
 generator (the front pass's subset: integers, bool, structs, enums, match,
@@ -21,12 +22,20 @@ tokens must also be laniusc's (kind, start and length). Finally M mutated
 copies of each tree (a production id or a parent index changed) and of each
 source (one `+` written as `-`) must be rejected.
 
+With --generic, each file's programs are abstracted (see Chunk): generic
+structs, enums and functions, a second file for the module gen::lib,
+constants and a generic identity function. The expected program is the
+generated one numbered as the front end's monomorphizer numbers it.
+
+With --cases, runs hand-written cases instead (see run_cases).
+
 Prints one line per difference and a summary; exits nonzero on any.
 """
 
 import argparse
 import os
 import random
+import re
 import shutil
 import struct
 import subprocess
@@ -101,28 +110,67 @@ def lean_uint(ty, k):
 
 
 class Chunk:
-    """Programs printed to one file, with their global type and function numbers."""
+    """Programs printed to one file, and the program the reader must make of
+    them. With generic=True some declarations take a type parameter that
+    abstracts one of their types (every use writes the type it stands for, as a
+    type argument or by inference), some move to a second file, the module
+    gen::lib, some literals become constants, and a generic identity function
+    is called at several types. The reader's program is then numbered the way
+    build numbers it: the first file's non-generic functions in order, then
+    each other instance when first called; the first file's non-generic types
+    in order, then each other instance as the functions' types first need it."""
 
-    def __init__(self, programs):
+    def __init__(self, programs, rng=None, generic=False):
         self.programs = programs
-        self.type_base, self.fn_base = [], []
-        types = fns = 0
-        for p in programs:
-            self.type_base.append(types)
-            self.fn_base.append(fns)
-            types += len(p.structs) + len(p.enums)
-            fns += len(p)
-        self.out = Printer()
+        self.rng = rng
+        self.generic = generic
+        self.printers = {'main': Printer()}
+        if generic:
+            self.printers['lib'] = Printer()
+            self.printers['main'].emit('module gen::main;\n\n')
+            self.printers['lib'].emit('module gen::lib;\n\n')
+        self.cur = 'main'
         self.compounds = 0
+        self.module = {}      # ('t', k, kind, j) | ('f', k, j) | ('gid', k) | ('c', k, n) -> 'main' or 'lib'
+        self.gen_ty = {}      # (k, kind, j) -> the type a generic struct or enum abstracts
+        self.gen_fn = {}      # (k, j) -> the type a generic function abstracts
+        self.subst = {}       # while printing a generic declaration: its abstracted type -> 'T'
+        self.consts = {}      # k -> [(name, type, value text)]
+        self.memo = {}        # id(expr) -> (expr, constant name or None)
+        self.gid = {}         # k -> (the binding offset of gid's parameter, its file)
+        self.gid_types = {}   # k -> the types gid is called at
+        self.roots, self.seeds = [], []
+        self.calls, self.tys, self.terms = {}, {}, {}
+        self.key = None       # the function being printed
+
+    @property
+    def out(self):
+        return self.printers[self.cur]
+
+    def text(self, name='main'):
+        return self.printers[name].text()
+
+    # paths
+    def qualify(self, entity, name):
+        mod = self.module.get(entity, 'main')
+        return name if not self.generic or mod == self.cur else f'gen::{mod}::{name}'
+
+    def type_path(self, k, t):
+        kind, j = t
+        return self.qualify(('t', k, kind, j), f'P{k}{"S" if kind == "struct" else "E"}{j}')
+
+    def fn_path(self, k, j):
+        return self.qualify(('f', k, j), f'p{k}_f{j}')
 
     # names
     def ty(self, k, t):
+        if t in self.subst:
+            return self.subst[t]
         if t[0] == 'slice':
             return f'[{self.ty(k, t[1])}]'
-        if t[0] == 'struct':
-            return f'P{k}S{t[1]}'
-        if t[0] == 'enum':
-            return f'P{k}E{t[1]}'
+        if t[0] in ('struct', 'enum'):
+            g = self.gen_ty.get((k, t[0], t[1]))
+            return self.type_path(k, t) + (f'<{self.ty(k, g)}>' if g is not None else '')
         return t
 
     def lean_ty(self, k, t):
@@ -134,15 +182,34 @@ class Chunk:
             return f'(.slice {self.lean_ty(k, t[1])})'
         p = self.programs[k]
         if t[0] == 'struct':
-            return f'(.struct {self.type_base[k] + t[1]} [{", ".join(self.lean_ty(k, f) for f in p.structs[t[1]])}])'
+            return f'(.struct @T{k}s{t[1]}@ [{", ".join(self.lean_ty(k, f) for f in p.structs[t[1]])}])'
         if t[0] == 'enum':
             variants = ', '.join('[' + ', '.join(self.lean_ty(k, f) for f in v) + ']' for v in p.enums[t[1]])
-            return f'(.enum {self.type_base[k] + len(p.structs) + t[1]} [{variants}])'
+            return f'(.enum @T{k}e{t[1]}@ [{variants}])'
         raise ValueError(t)
 
+    # constants
+    def constant(self, k, e):
+        """The constant a literal is written as, if any (decided once per literal)."""
+        if id(e) in self.memo:
+            return self.memo[id(e)][1]
+        name = None
+        small = (e[0] == 'int' and 0 <= e[1]) or (e[0] == 'uint' and e[2] < 2 ** 31)
+        if self.generic and small and self.rng.random() < 0.15:
+            consts = self.consts.setdefault(k, [])
+            n = len(consts)
+            name = f'K{k}_{n}'
+            self.module[('c', k, n)] = 'lib' if self.rng.random() < 0.5 else 'main'
+            consts.append((name, 'i32' if e[0] == 'int' else e[1], str(e[1] if e[0] == 'int' else e[2])))
+            name = self.qualify(('c', k, n), name)
+        self.memo[id(e)] = (e, name)
+        return name
+
     # expressions: text, and the expected reading (ids by the binding table)
-    def lani_expr(self, e):
+    def lani_expr(self, k, e):
         kind = e[0]
+        if kind in ('int', 'uint') and self.constant(k, e):
+            return self.constant(k, e)
         if kind == 'int':
             return lani_i32(e[1])
         if kind == 'bool':
@@ -150,36 +217,38 @@ class Chunk:
         if kind == 'uint':
             return lani_uint(e[1], e[2])
         if kind == 'cast':
-            return f'({self.lani_expr(e[2])} as {e[1]})'
+            return f'({self.lani_expr(k, e[2])} as {e[1]})'
         if kind == 'local':
             return f'v{e[1]}'
         if kind == 'field':
             return f'v{e[1]}.f{e[2]}'
         if kind == 'neg':
-            return f'(-{self.lani_expr(e[1])})'
+            return f'(-{self.lani_expr(k, e[1])})'
         if kind == 'not':
-            return f'(!{self.lani_expr(e[1])})'
-        return f'({self.lani_expr(e[3])} {e[2]} {self.lani_expr(e[4])})'
+            return f'(!{self.lani_expr(k, e[1])})'
+        return f'({self.lani_expr(k, e[3])} {e[2]} {self.lani_expr(k, e[4])})'
 
-    def lean_expr(self, ids, e):
+    def lean_expr(self, k, ids, e):
         kind = e[0]
         if kind == 'int':
             return lean_i32(e[1])
         if kind == 'bool':
             return '(.boolean true)' if e[1] else '(.boolean false)'
         if kind == 'uint':
+            if self.constant(k, e):
+                return f'(.unsigned {UINT_LEAN[e[1]]} {e[2]})'
             return lean_uint(e[1], e[2])
         if kind == 'cast':
-            return f'(.cast {self.lean_ty(None, e[1])} {self.lean_expr(ids, e[2])})'
+            return f'(.cast {self.lean_ty(None, e[1])} {self.lean_expr(k, ids, e[2])})'
         if kind == 'local':
             return f'(.local {ids[e[1]]})'
         if kind == 'field':
             return f'(.field {ids[e[1]]} {e[2]})'
         if kind == 'neg':
-            return f'(.negate {self.lean_expr(ids, e[1])})'
+            return f'(.negate {self.lean_expr(k, ids, e[1])})'
         if kind == 'not':
-            return f'(.not {self.lean_expr(ids, e[1])})'
-        return f'(.apply .{e[1]} {self.lean_expr(ids, e[3])} {self.lean_expr(ids, e[4])})'
+            return f'(.not {self.lean_expr(k, ids, e[1])})'
+        return f'(.apply .{e[1]} {self.lean_expr(k, ids, e[3])} {self.lean_expr(k, ids, e[4])})'
 
     def compound(self, target, e):
         """Print every other `x = x op e` as `x op= e`."""
@@ -188,8 +257,28 @@ class Chunk:
             return self.compounds % 2 == 1
         return False
 
-    def variant(self, k, enum, v):
-        return f'P{k}E{enum}V{v}'
+    def variant(self, k, enum, v, arm=False):
+        name = f'P{k}E{enum}V{v}'
+        if arm and self.generic and self.rng.random() < 0.3:
+            return f'gen::{self.module[("t", k, "enum", enum)]}::{name}'
+        return name if arm else self.qualify(('t', k, 'enum', enum), name)
+
+    def call_text(self, k, j, args):
+        """A call of function j: a generic callee's type argument is written,
+        or left to inference when it shows in the callee's signature."""
+        params, ret, _ = self.programs[k][j]
+        g = self.gen_fn.get((k, j))
+        targs = ''
+        if g is not None and not ((g in params or g == ret) and self.rng.random() < 0.5):
+            targs = f'<{self.ty(k, g)}>'
+        return f'{self.fn_path(k, j)}{targs}(' + ', '.join(self.lani_expr(k, a) for a in args) + ')'
+
+    def bind_let(self, k, ids, ident, ty):
+        out = self.out
+        out.bind((self.cur, k, ident), f'v{ident}')
+        ids[ident] = out.binding[(self.cur, k, ident)]
+        out.emit(f': {self.ty(k, ty)} = ')
+        return ids[ident]
 
     # statements: print, and return the reader's items: ('let', head) whose
     # term is f'({head} {rest})', or ('stmt', term)
@@ -204,127 +293,256 @@ class Chunk:
             ident = s[1]
             ty = 'ptr' if kind == 'letAlloc' else ('slice', s[2]) if kind == 'letSlice' else s[2]
             out.emit(f'{pad}let ')
-            out.bind((k, ident), f'v{ident}')
-            ids[ident] = lid = out.binding[(k, ident)]
-            out.emit(f': {self.ty(k, ty)} = ')
+            lid = self.bind_let(k, ids, ident, ty)
             if kind == 'letAlloc':
                 size, shift = s[2], s[3]
                 out.emit(f'alloc::allocator::alloc({lani_uint("usize", size)}, {lani_uint("usize", 1 << shift)});\n')
                 head = f'.letAlloc {lid} {lean_uint("usize", size)} {shift}'
             elif kind == 'letSlice':
-                out.emit(f'slice_from_raw_parts({self.lani_expr(s[3])}, {s[4]});\n')
-                head = f'.letSlice {lid} {self.lean_ty(k, s[2])} {self.lean_expr(ids, s[3])} {lean_i32(s[4])}'
+                self.tys[self.key].append(s[2])
+                out.emit(f'slice_from_raw_parts({self.lani_expr(k, s[3])}, {s[4]});\n')
+                head = f'.letSlice {lid} {self.lean_ty(k, s[2])} {self.lean_expr(k, ids, s[3])} {lean_i32(s[4])}'
             else:
+                self.tys[self.key].append(s[2])
                 out.emit(f'v{s[3]}[{s[4]}];\n')
                 head = f'.letIndex {lid} {self.lean_ty(k, s[2])} {ids[s[3]]} {lean_i32(s[4])}'
             return [('let', head)] + self.stmt(k, ids, s[-1], indent)
         if kind == 'setIndex':
-            out.emit(f'{pad}v{s[1]}[{s[2]}] = {self.lani_expr(s[3])};\n')
-            return [('stmt', f'(.setIndex {ids[s[1]]} {lean_i32(s[2])} {self.lean_expr(ids, s[3])})')]
+            out.emit(f'{pad}v{s[1]}[{s[2]}] = {self.lani_expr(k, s[3])};\n')
+            return [('stmt', f'(.setIndex {ids[s[1]]} {lean_i32(s[2])} {self.lean_expr(k, ids, s[3])})')]
         if kind == 'free':
             size, shift = s[2], s[3]
             out.emit(f'{pad}alloc::allocator::dealloc(v{s[1]}, {lani_uint("usize", size)}, {lani_uint("usize", 1 << shift)});\n')
             return [('stmt', f'(.free (.local {ids[s[1]]}) {lean_uint("usize", size)} {shift})')]
         if kind in ('let', 'call', 'letStruct', 'letEnum', 'letMatch'):
             ident, ty = s[1], s[2]
+            self.tys[self.key].append(ty)
             out.emit(f'{pad}let ')
-            out.bind((k, ident), f'v{ident}')
-            ids[ident] = out.binding[(k, ident)]
-            out.emit(f': {self.ty(k, ty)} = ')
-            lid, lty = ids[ident], self.lean_ty(k, ty)
+            lid = self.bind_let(k, ids, ident, ty)
+            lty = self.lean_ty(k, ty)
             if kind == 'let':
-                out.emit(self.lani_expr(s[3]) + ';\n')
-                head = f'.let {lid} {lty} {self.lean_expr(ids, s[3])}'
+                out.emit(self.lani_expr(k, s[3]) + ';\n')
+                head = f'.let {lid} {lty} {self.lean_expr(k, ids, s[3])}'
             elif kind == 'call':
-                out.emit(f'p{k}_f{s[3]}(' + ', '.join(self.lani_expr(a) for a in s[4]) + ');\n')
-                head = (f'.letCall {lid} {lty} {self.fn_base[k] + s[3]} '
-                        f'[{", ".join(self.lean_expr(ids, a) for a in s[4])}]')
+                self.calls[self.key].append(('f', k, s[3]))
+                out.emit(self.call_text(k, s[3], s[4]) + ';\n')
+                head = (f'.letCall {lid} {lty} @F{k}_{s[3]}@ '
+                        f'[{", ".join(self.lean_expr(k, ids, a) for a in s[4])}]')
             elif kind == 'letStruct':
-                fields = ', '.join(f'f{j}: {self.lani_expr(f)}' for j, f in enumerate(s[3]))
-                out.emit(f'{self.ty(k, ty)} {{ {fields} }};\n')
-                head = f'.letStruct {lid} {lty} [{", ".join(self.lean_expr(ids, f) for f in s[3])}]'
+                fields = ', '.join(f'f{j}: {self.lani_expr(k, f)}' for j, f in enumerate(s[3]))
+                out.emit(f'{self.type_path(k, ty)} {{ {fields} }};\n')
+                head = f'.letStruct {lid} {lty} [{", ".join(self.lean_expr(k, ids, f) for f in s[3])}]'
             elif kind == 'letEnum':
-                payload = ', '.join(self.lani_expr(f) for f in s[4])
+                payload = ', '.join(self.lani_expr(k, f) for f in s[4])
                 out.emit(self.variant(k, ty[1], s[3]) + (f'({payload})' if s[4] else '') + ';\n')
-                head = f'.letEnum {lid} {lty} {s[3]} [{", ".join(self.lean_expr(ids, f) for f in s[4])}]'
+                head = f'.letEnum {lid} {lty} {s[3]} [{", ".join(self.lean_expr(k, ids, f) for f in s[4])}]'
             else:
                 _, _, _, scrutinee, enum, arms, _ = s
+                self.tys[self.key].append(('enum', enum))
                 out.emit(f'match (v{scrutinee}) {{\n')
                 lean_arms = []
                 for v, (binders, value) in enumerate(arms):
-                    out.emit(f'{pad}    {self.variant(k, enum, v)}')
+                    out.emit(f'{pad}    {self.variant(k, enum, v, arm=True)}')
                     if binders:
                         out.emit('(')
                         for i, b in enumerate(binders):
                             if i:
                                 out.emit(', ')
-                            out.bind((k, b), f'v{b}')
-                            ids[b] = out.binding[(k, b)]
+                            out.bind((self.cur, k, b), f'v{b}')
+                            ids[b] = out.binding[(self.cur, k, b)]
                         out.emit(')')
-                    out.emit(f' -> {self.lani_expr(value)},\n')
+                    out.emit(f' -> {self.lani_expr(k, value)},\n')
                     lean_arms.append(f'{{ binders := [{", ".join(str(ids[b]) for b in binders)}], '
-                                     f'value := {self.lean_expr(ids, value)} }}')
+                                     f'value := {self.lean_expr(k, ids, value)} }}')
                 out.emit(f'{pad}}};\n')
-                enum_id = self.type_base[k] + len(self.programs[k].structs) + enum
-                head = f'.letMatch {lid} {lty} {ids[scrutinee]} {enum_id} [{", ".join(lean_arms)}]'
+                head = f'.letMatch {lid} {lty} {ids[scrutinee]} @T{k}e{enum}@ [{", ".join(lean_arms)}]'
             return [('let', head)] + self.stmt(k, ids, s[-1], indent)
         if kind == 'set' and self.compound(('local', s[1]), s[2]):
             e = s[2]
-            out.emit(f'{pad}v{s[1]} {e[2]}= {self.lani_expr(e[4])};\n')
-            return [('stmt', f'(.set {ids[s[1]]} {self.lean_expr(ids, s[2])})')]
+            out.emit(f'{pad}v{s[1]} {e[2]}= {self.lani_expr(k, e[4])};\n')
+            return [('stmt', f'(.set {ids[s[1]]} {self.lean_expr(k, ids, s[2])})')]
         if kind == 'setField' and self.compound(('field', s[1], s[2]), s[3]):
             e = s[3]
-            out.emit(f'{pad}v{s[1]}.f{s[2]} {e[2]}= {self.lani_expr(e[4])};\n')
-            return [('stmt', f'(.setField {ids[s[1]]} {s[2]} {self.lean_expr(ids, s[3])})')]
+            out.emit(f'{pad}v{s[1]}.f{s[2]} {e[2]}= {self.lani_expr(k, e[4])};\n')
+            return [('stmt', f'(.setField {ids[s[1]]} {s[2]} {self.lean_expr(k, ids, s[3])})')]
         if kind == 'set':
-            out.emit(f'{pad}v{s[1]} = {self.lani_expr(s[2])};\n')
-            return [('stmt', f'(.set {ids[s[1]]} {self.lean_expr(ids, s[2])})')]
+            out.emit(f'{pad}v{s[1]} = {self.lani_expr(k, s[2])};\n')
+            return [('stmt', f'(.set {ids[s[1]]} {self.lean_expr(k, ids, s[2])})')]
         if kind == 'setField':
-            out.emit(f'{pad}v{s[1]}.f{s[2]} = {self.lani_expr(s[3])};\n')
-            return [('stmt', f'(.setField {ids[s[1]]} {s[2]} {self.lean_expr(ids, s[3])})')]
+            out.emit(f'{pad}v{s[1]}.f{s[2]} = {self.lani_expr(k, s[3])};\n')
+            return [('stmt', f'(.setField {ids[s[1]]} {s[2]} {self.lean_expr(k, ids, s[3])})')]
         if kind == 'if':
-            out.emit(f'{pad}if ({self.lani_expr(s[1])}) {{\n')
+            out.emit(f'{pad}if ({self.lani_expr(k, s[1])}) {{\n')
             a = nest(self.stmt(k, ids, s[2], indent + 1))
             out.emit(f'{pad}}} else {{\n')
             b = nest(self.stmt(k, ids, s[3], indent + 1))
             out.emit(f'{pad}}}\n')
-            return [('stmt', f'(.if {self.lean_expr(ids, s[1])} {a} {b})')]
+            return [('stmt', f'(.if {self.lean_expr(k, ids, s[1])} {a} {b})')]
         if kind == 'while':
-            out.emit(f'{pad}while ({self.lani_expr(s[1])}) {{\n')
+            out.emit(f'{pad}while ({self.lani_expr(k, s[1])}) {{\n')
             body = nest(self.stmt(k, ids, s[2], indent + 1))
             out.emit(f'{pad}}}\n')
-            return [('stmt', f'(.while {self.lean_expr(ids, s[1])} {body})')]
-        out.emit(f'{pad}return {self.lani_expr(s[1])};\n')
-        return [('stmt', f'(.return {self.lean_expr(ids, s[1])})')]
+            return [('stmt', f'(.while {self.lean_expr(k, ids, s[1])} {body})')]
+        out.emit(f'{pad}return {self.lani_expr(k, s[1])};\n')
+        return [('stmt', f'(.return {self.lean_expr(k, ids, s[1])})')]
 
-    def program(self, k):
-        """Print program k; return its functions' expected Lean terms."""
-        p, out = self.programs[k], self.out
-        oracle.TYPES = p
-        for j, fields in enumerate(p.structs):
-            out.emit(f'struct P{k}S{j} {{ ' + ', '.join(f'f{i}: {self.ty(k, f)}' for i, f in enumerate(fields)) + ' }\n')
-        for j, variants in enumerate(p.enums):
-            out.emit(f'enum P{k}E{j} {{\n')
-            for v, payload in enumerate(variants):
+    # declarations
+    def choose(self, k):
+        """Which declarations are generic, and which move to gen::lib."""
+        p, rng = self.programs[k], self.rng
+        for kind, decls in (('struct', p.structs), ('enum', p.enums)):
+            for j, d in enumerate(decls):
+                fields = d if kind == 'struct' else [f for v in d for f in v]
+                if fields and rng.random() < 0.5:
+                    self.gen_ty[(k, kind, j)] = rng.choice(fields)
+                self.module[('t', k, kind, j)] = 'lib' if rng.random() < 0.3 else 'main'
+        # Function 0 calls the others; it stays a root (non-generic, in the
+        # first file) so that they are reached.
+        for j, (params, ret, body) in enumerate(p):
+            if j and rng.random() < 0.5:
+                self.gen_fn[(k, j)] = rng.choice(params + [ret] + let_types(body))
+            self.module[('f', k, j)] = 'lib' if j and rng.random() < 0.25 else 'main'
+        self.module[('gid', k)] = 'lib' if rng.random() < 0.5 else 'main'
+
+    def type_decl(self, k, kind, j, decl):
+        self.cur = self.module.get(('t', k, kind, j), 'main')
+        g = self.gen_ty.get((k, kind, j))
+        self.subst = {g: 'T'} if g is not None else {}
+        out, params = self.out, '<T>' if g is not None else ''
+        if kind == 'struct':
+            out.emit(f'struct P{k}S{j}{params} {{ ' + ', '.join(f'f{i}: {self.ty(k, f)}' for i, f in enumerate(decl)) + ' }\n')
+        else:
+            out.emit(f'enum P{k}E{j}{params} {{\n')
+            for v, payload in enumerate(decl):
                 inner = '(' + ', '.join(self.ty(k, f) for f in payload) + ')' if payload else ''
                 out.emit(f'    P{k}E{j}V{v}{inner},\n')
             out.emit('}\n')
-        funcs = []
+        self.subst = {}
+        if self.cur == 'main' and g is None:
+            self.seeds.append((k, kind, j))
+
+    def gid_call(self, k, ids, params):
+        """`let gJ: T = gid(vI);` for a parameter I, at the start of a body."""
+        i = self.rng.randrange(len(params))
+        t = params[i]
+        types = self.gid_types.setdefault(k, [])
+        if t not in types:
+            types.append(t)
+        out = self.out
+        out.emit('    let ')
+        out.bind((self.cur, k, 'gid'), f'g{k}')
+        lid = out.binding[(self.cur, k, 'gid')]
+        targs = f'<{self.ty(k, t)}>' if self.rng.random() < 0.5 else ''
+        out.emit(f': {self.ty(k, t)} = {self.qualify(("gid", k), f"p{k}_gid")}{targs}(v{i});\n')
+        self.calls[self.key].append(('gid', k, types.index(t)))
+        self.tys[self.key].append(t)
+        return ('let', f'.letCall {lid} {self.lean_ty(k, t)} @G{k}_{types.index(t)}@ [(.local {ids[i]})]')
+
+    def program(self, k):
+        """Print program k, recording each function's expected Lean term, the
+        instances it calls and the types it binds."""
+        p = self.programs[k]
+        oracle.TYPES = p
+        if self.generic:
+            self.choose(k)
+        for j, fields in enumerate(p.structs):
+            self.type_decl(k, 'struct', j, fields)
+        for j, variants in enumerate(p.enums):
+            self.type_decl(k, 'enum', j, variants)
+        if self.generic:
+            self.cur = self.module[('gid', k)]
+            self.out.emit(f'fn p{k}_gid<T>(')
+            self.out.bind((self.cur, k, 'gid_x'), 'x')
+            self.gid[k] = self.out.binding[(self.cur, k, 'gid_x')]
+            self.out.emit(': T) -> T {\n    return x;\n}\n\n')
         for j, (params, ret, body) in enumerate(p):
-            ids = {}
-            out.emit(f'fn p{k}_f{j}(')
+            self.cur = self.module.get(('f', k, j), 'main')
+            g = self.gen_fn.get((k, j))
+            self.subst = {g: 'T'} if g is not None else {}
+            self.key = ('f', k, j)
+            self.calls[self.key], self.tys[self.key] = [], list(params) + [ret]
+            out, ids = self.out, {}
+            out.emit(f'fn p{k}_f{j}' + ('<T>' if g is not None else '') + '(')
             for i, t in enumerate(params):
                 if i:
                     out.emit(', ')
-                out.bind((k, (j, i)), f'v{i}')
-                ids[i] = out.binding[(k, (j, i))]
+                out.bind((self.cur, k, (j, i)), f'v{i}')
+                ids[i] = out.binding[(self.cur, k, (j, i))]
                 out.emit(f': {self.ty(k, t)}')
             out.emit(f') -> {self.ty(k, ret)} {{\n')
-            items = self.stmt(k, ids, body, 1)
+            items = []
+            if self.generic and self.rng.random() < 0.5:
+                items.append(self.gid_call(k, ids, params))
+            items += self.stmt(k, ids, body, 1)
             out.emit('}\n\n')
             ps = ', '.join(f'{{ id := {ids[i]}, ty := {self.lean_ty(k, t)} }}' for i, t in enumerate(params))
-            funcs.append(f'{{ params := [{ps}], ret := {self.lean_ty(k, ret)}, body := {nest(items)} }}')
-        return funcs
+            self.terms[self.key] = f'{{ params := [{ps}], ret := {self.lean_ty(k, ret)}, body := {nest(items)} }}'
+            if self.cur == 'main' and g is None:
+                self.roots.append(self.key)
+            self.subst = {}
+        for n, (name, t, value) in enumerate(self.consts.get(k, [])):
+            self.cur = self.module[('c', k, n)]
+            self.out.emit(f'const {name}: {t} = {value};\n')
+        self.cur = 'main'
+        for idx, t in enumerate(self.gid_types.get(k, [])):
+            key, x, lt = ('gid', k, idx), self.gid[k], self.lean_ty(k, t)
+            self.calls[key], self.tys[key] = [], [t, t]
+            self.terms[key] = f'{{ params := [{{ id := {x}, ty := {lt} }}], ret := {lt}, body := (.return (.local {x})) }}'
+
+    # numbering
+    def insts(self, k, t):
+        """The type instances t's source type has ids for, in build's order."""
+        if t[0] == 'slice':
+            return self.insts(k, t[1])
+        if t[0] not in ('struct', 'enum'):
+            return []
+        p = self.programs[k]
+        fields = p.structs[t[1]] if t[0] == 'struct' else [f for v in p.enums[t[1]] for f in v]
+        return [(k, t[0], t[1])] + [x for f in fields for x in self.insts(k, f)]
+
+    def finish(self):
+        """The expected functions, one Lean term per line, numbered as build numbers them."""
+        table = list(self.roots)
+        i = 0
+        while i < len(table):
+            for c in self.calls[table[i]]:
+                if c not in table:
+                    table.append(c)
+            i += 1
+        types = list(self.seeds)
+        for k, kind, j in list(self.seeds):
+            for x in self.insts(k, (kind, j)):
+                if x not in types:
+                    types.append(x)
+        for key in table:
+            k = key[1]
+            for t in self.tys[key]:
+                for x in self.insts(k, t):
+                    if x not in types:
+                        types.append(x)
+        fn_id = {key: n for n, key in enumerate(table)}
+        type_id = {key: n for n, key in enumerate(types)}
+
+        def fill(m):
+            tag = m.group(1)
+            if tag[0] == 'T':
+                k, rest = tag[1:].split('s') if 's' in tag else tag[1:].split('e')
+                kind = 'struct' if 's' in tag else 'enum'
+                return str(type_id[(int(k), kind, int(rest))])
+            k, j = tag[1:].split('_')
+            return str(fn_id[('f' if tag[0] == 'F' else 'gid', int(k), int(j))])
+        return [re.sub(r'@([TFG][0-9a-z_]+)@', fill, self.terms[key]) for key in table]
+
+
+def let_types(s):
+    """The types a statement's lets bind (a slice's element type)."""
+    if not isinstance(s, tuple) or not s:
+        return []
+    kind = s[0]
+    here = []
+    if kind in ('let', 'call', 'letStruct', 'letEnum', 'letMatch', 'letIndex', 'letSlice'):
+        here = [s[2]]
+    return here + [t for x in s[1:] if isinstance(x, tuple) for t in let_types(x)]
 
 
 def add_frees(rng, s):
@@ -495,6 +713,41 @@ def check (base : String) (mutants : List (String × String)) : IO Unit := do
         | none => IO.println s!"{mb}: rejected"
         | some root => IO.println s!"{mb}: ACCEPTED"
 
+-- Several files, the program's own first: as `check`, with the several-file
+-- front end, and mutants of the first file.
+def checkMulti (bases : List String) (mutants : List (String × String)) : IO Unit := do
+  let mut files : List FileInput := []
+  let mut firstTokens : List Token := []
+  for base in bases do
+    let source ← readSource (base ++ ".lani")
+    let prods ← readNats (base ++ ".prods")
+    let parents ← readNats (base ++ ".parents")
+    match lexTokens source with
+    | none => IO.println s!"{base}: does not lex"
+    | some tokens =>
+      IO.FS.writeFile (base ++ ".leantokens")
+        (" ".intercalate (tokens.map fun t => s!"{t.kind}:{t.start}:{t.text.length}"))
+      if files.isEmpty then firstTokens := tokens
+      files := files ++ [{ tokens := tokens, prods := prods, parents := parents }]
+  let first := bases.headD ""
+  match frontEndFiles grammar files with
+  | none => IO.println s!"{first}: rejected by the front end"
+  | some got =>
+    IO.FS.writeFile (first ++ ".got") (String.join (got.funcs.map fun f => serFunc f ++ "\\n"))
+    IO.println s!"{first}: read"
+  for (mb, src) in mutants do
+    let toks ← if src == first ++ ".lani" then pure (some firstTokens) else do
+      let s ← readSource src
+      pure (lexTokens s)
+    let mp ← readNats (mb ++ ".prods")
+    let mq ← readNats (mb ++ ".parents")
+    match toks with
+    | none => IO.println s!"{mb}: rejected"
+    | some ts =>
+      match validateTree grammar ts mp mq with
+      | none => IO.println s!"{mb}: rejected"
+      | some root => IO.println s!"{mb}: ACCEPTED"
+
 -- Locals renamed to their rank among the function's binding ids, so that two
 -- texts of one program (a generic one and its hand-monomorphized copy) can be
 -- compared.
@@ -643,6 +896,7 @@ def main():
     parser.add_argument('--mutations', type=int, default=3)
     parser.add_argument('--laniusc', default='target/release/laniusc')
     parser.add_argument('--heavy', default=HEAVY)
+    parser.add_argument('--generic', action='store_true', help='abstract types into type parameters, and use two modules')
     parser.add_argument('--cases', help='run the hand-written cases in this directory instead')
     args = parser.parse_args()
     if args.cases:
@@ -656,20 +910,28 @@ def main():
     lean = [LEAN_HEAD]
     problems = 0
     tokens_total = nodes_total = mutations = 0
+    generic_total = moved_total = consts_total = 0
     for c, start in enumerate(range(0, len(programs), args.chunk)):
-        chunk = Chunk(programs[start:start + args.chunk])
-        funcs = []
+        chunk = Chunk(programs[start:start + args.chunk], rng, args.generic)
         for k in range(len(chunk.programs)):
-            funcs += chunk.program(k)
+            chunk.program(k)
+        funcs = chunk.finish()
         base = os.path.join(workdir, f'chunk{c}')
-        text = chunk.out.text()
-        open(base + '.lani', 'w').write(text)
-        prods, parents, tokens = parse_with_laniusc(args.heavy, args.laniusc, base + '.lani', workdir)
-        tokens_total += len(tokens)
-        nodes_total += len(prods)
-        open(base + '.prods', 'w').write(' '.join(map(str, prods)))
-        open(base + '.parents', 'w').write(' '.join(map(str, parents)))
-        open(base + '.gputokens', 'w').write(' '.join(f'{k}:{s}:{n}' for k, s, n in tokens))
+        bases = [base] + ([base + '_lib'] if args.generic else [])
+        for b, name in zip(bases, ['main', 'lib']):
+            for ext in ('.got', '.leantokens'):
+                if os.path.exists(b + ext):
+                    os.remove(b + ext)
+            open(b + '.lani', 'w').write(chunk.text(name))
+            prods, parents, tokens = parse_with_laniusc(args.heavy, args.laniusc, b + '.lani', workdir)
+            tokens_total += len(tokens)
+            nodes_total += len(prods)
+            open(b + '.prods', 'w').write(' '.join(map(str, prods)))
+            open(b + '.parents', 'w').write(' '.join(map(str, parents)))
+            open(b + '.gputokens', 'w').write(' '.join(f'{k}:{s}:{n}' for k, s, n in tokens))
+            if name == 'main':
+                main_prods, main_parents = prods, parents
+        prods, parents, text = main_prods, main_parents, chunk.text('main')
         open(base + '.want', 'w').write(''.join(f + '\n' for f in funcs))
         mutants = []
         plus_at = [i for i, ch in enumerate(text) if ch == '+']
@@ -693,7 +955,13 @@ def main():
             open(mb + '.parents', 'w').write(' '.join(map(str, mq)))
             mutants.append(f'("{mb}", "{src}")')
             mutations += 1
-        lean.append(f'#eval check "{base}" [{", ".join(mutants)}]')
+        if args.generic:
+            lean.append(f'#eval checkMulti [{", ".join(chr(34) + b + chr(34) for b in bases)}] [{", ".join(mutants)}]')
+        else:
+            lean.append(f'#eval check "{base}" [{", ".join(mutants)}]')
+        generic_total += len(chunk.gen_ty) + len(chunk.gen_fn)
+        moved_total += sum(1 for m in chunk.module.values() if m == 'lib')
+        consts_total += sum(len(v) for v in chunk.consts.values())
     lean_path = os.path.join(workdir, 'frontend_check.lean')
     open(lean_path, 'w').write('\n'.join(lean) + '\n')
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
@@ -706,7 +974,7 @@ def main():
             print(line)
             problems += 1
     rejected = sum(line.endswith(': rejected') for line in lines)
-    lexer_diffs = oks = 0
+    lexer_diffs = oks = unchecked = 0
     for c in range((len(programs) + args.chunk - 1) // args.chunk):
         base = os.path.join(workdir, f'chunk{c}')
         if os.path.exists(base + '.got'):
@@ -719,14 +987,25 @@ def main():
                 diff = [i for i, (g, w) in enumerate(zip(got, want)) if g != w]
                 where = f'function {diff[0]}' if diff else f'{len(got)} lines, want {len(want)}'
                 print(f'{base}: the program differs from the expected one at {where} (see .got and .want)')
-        if not os.path.exists(base + '.leantokens'):
-            continue
-        if open(base + '.leantokens').read().split() != open(base + '.gputokens').read().split():
-            print(f'{base}: the Lean lexer and laniusc disagree')
-            lexer_diffs += 1
+        for b in [base] + ([base + '_lib'] if args.generic else []):
+            if not os.path.exists(b + '.leantokens'):
+                continue
+            gpu_tokens = open(b + '.gputokens').read().split()
+            size = os.path.getsize(b + '.lani')
+            if any(int(t.split(':')[1]) + int(t.split(':')[2]) > size for t in gpu_tokens):
+                # laniusc lexed a rewritten text after this one (its own
+                # handling of generics); its dump is not this file's.
+                unchecked += 1
+                continue
+            if open(b + '.leantokens').read().split() != gpu_tokens:
+                print(f'{b}: the Lean lexer and laniusc disagree')
+                lexer_diffs += 1
     problems += lexer_diffs
     print(f'{len(programs)} programs in {oks} files read as expected, {tokens_total} tokens, {nodes_total} tree nodes; '
           f'{rejected}/{mutations} mutations rejected; {lexer_diffs} lexer disagreements; {problems} problems')
+    if args.generic:
+        print(f'generic: {generic_total} declarations made generic, {moved_total} moved to gen::lib, '
+              f'{consts_total} literals written as constants; {unchecked} files whose tokens laniusc does not dump as written')
     return 1 if problems else 0
 
 

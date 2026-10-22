@@ -1,0 +1,13 @@
+struct H<T> { v: T }
+
+fn top(n: i32) -> i32 {
+    let a: H<i32> = H { v: n };
+    let p: H<H<i32>> = H { v: a };
+    let q: H<H<i32>> = id<H<H<i32>>>(p);
+    let r: i32 = n + 2;
+    return r;
+}
+
+fn id<T>(x: T) -> T {
+    return x;
+}

@@ -94,6 +94,7 @@ validation of laniusc's parser:
 
 ```text
 sourceProgram source prods parents : Option SrcProgram    (Mini/FrontLex.lean)
+sourceProgramFiles files : Option SrcProgram              (several files, the program's own first)
 ```
 
 `source` is the file's bytes. `prods` and `parents` are laniusc's parse tree:
@@ -105,12 +106,17 @@ parent. Then `build` reads the program off the tree. Proved
 (`Mini/FrontSpec.lean`, axioms `propext` and `Quot.sound`):
 
 - `validate_sound`: an accepted tree is a parse tree of the grammar for
-  `file` whose leaves are exactly the tokens and whose preorder is exactly
-  `prods`.
-- `validate_derives`: the token kinds are a sentence of the grammar
+  `file` whose leaves read exactly the tokens (`Reads`: token by token,
+  except that a `>>` may be read as its two halves, two `>`) and whose
+  preorder is exactly `prods`. The exception is how laniusc's parser reads
+  the `>>` that closes two type argument lists (`H<H<i32>>`); a `>` terminal
+  takes the `>>`'s first byte and the next terminal its second.
+- `validate_derives`: the leaves' token kinds are a sentence of the grammar
   (`Derives`, the usual derivation relation).
 - `sourceProgram_sound`: the program is `build` of such a tree, for the tokens
   the Lean lexer gives `source`.
+- `sourceProgramFiles_sound`: the program is `buildFiles` of one such tree
+  per file.
 
 Not trusted: laniusc's lexer and parser. A wrong tree is rejected, or it is
 still a parse tree of the same tokens. Trusted:
@@ -142,12 +148,42 @@ still a parse tree of the same tokens. Trusted:
 - **The reading.** `build` (in `Frontend.lean`) is the meaning of the subset's
   concrete syntax, as `toCore` is the meaning of `SrcProgram` (section 2). It
   makes these choices:
+  - each file is a module, named by its `module` item (the empty path
+    without one); `m::x` names `x` of the module `m`, a bare `x` names `x`
+    of the current module, and `import` items, traits, type aliases and
+    extern functions are skipped;
+  - generic declarations are monomorphized (`mono`): an instance is a
+    declaration with its type arguments, and a function or type id is a
+    position in the instance tables. The first file's functions without type
+    parameters come first, in order; every other function instance follows
+    in the order it is first called. Types: the first file's non-generic
+    types in order, then each instance as the functions' types (parameters,
+    result, then the body's lets) first need it. A program without generics
+    keeps the numbering of the next two lines;
   - a function is its position among the functions;
   - a struct or enum is its position among the type declarations;
+  - a call's type arguments are written, or inferred by matching the
+    callee's parameter types with the argument types and its result type
+    with the type of the `let` or assigned local; a conflict or an
+    unbound parameter rejects;
+  - `x.m(args)` (`x` a local) and `T::m(args)` (`T` a type parameter) call
+    the method `m` of the one `impl` whose type matches the receiver's type,
+    with `self` (by value) the receiver;
+  - bounds and `where` clauses on functions are not checked. A wrong
+    instance is still a well-formed `SrcProgram`, and its meaning is what
+    `toCore` gives it, so this choice affects which programs are read, not
+    what a read program means; an `impl` or type with a `where` clause is
+    rejected;
+  - a type parameter that no field or payload uses (a phantom) still makes
+    distinct instances, but they lower to the same field types;
+  - a constant is replaced by its value, which must be a literal of its
+    declared type: `Int` for `i32`, `Unsigned` (range-checked) for the
+    unsigned types, `Boolean` for `bool`;
   - a local is the byte offset of its binding (a parameter, `let` or match
     binder);
   - a use names the innermost binding with the same spelling, and locals may
-    not be spelled like a global;
+    not be spelled like a function, type, variant or constant of their
+    module;
   - `let` scopes over the rest of its block;
   - `if` without `else` has an empty else;
   - binary operators fold to the left;
@@ -178,12 +214,14 @@ still a parse tree of the same tokens. Trusted:
 - **Core**, as in section 3.
 
 What is still outside: the type premise `FieldsHold (paramTypes func.params)
-args ...` on the arguments, generics, modules, `=>` match arms, and block or
-`if` arms.
+args ...` on the arguments, `=>` match arms, and block or `if` arms.
 
 Checked by: `frontend_difftest.py` (MINI_COMPILER.md, step 8), which runs
 laniusc's parser on generated programs and requires `sourceProgram` to give
-the program the text was generated from.
+the program the text was generated from; with `--generic`, on the same
+programs abstracted into generic declarations over two modules, numbered as
+`mono` numbers them; and with `--cases`, on hand-written generic programs
+against hand-monomorphized copies.
 
 ## 5. Extraction, and how the compiler is run
 

@@ -17,7 +17,8 @@ contextual retags (`CallLParen`, `LetIdent`, ...) become the lexer kind that
 `TokenKind::canonical_lexer_kind` gives them, and `MatchArrow` becomes `Arrow`,
 since Lanius writes match arms with `->`, which the parser retags.
 
-Production ids used in the rest of the file as `p_<tag>()` get an inline
+Production ids used in the rest of the file as `p_<tag>()`, and lexer token
+kinds used as `t_<kind>()` (the kind's name in lower case), get an inline
 constant function each.
 """
 
@@ -129,6 +130,11 @@ def section(rest_of_file):
         if tag not in tags:
             raise SystemExit(f'p_{tag}(): no production is tagged {tag}')
         out += [f'// extract: inline', f'fn p_{tag}() -> usize {{', f'    return {tags[tag]};', '}', '']
+    codes = {name.lower(): code for name, code in token_codes().items()}
+    for name in sorted(set(re.findall(r'\bt_([a-z0-9_]+)\(\)', rest_of_file))):
+        if name.replace('_', '') not in codes:
+            raise SystemExit(f't_{name}(): no token kind is named {name}')
+        out += [f'// extract: inline', f'fn t_{name}() -> usize {{', f'    return {codes[name.replace("_", "")]};', '}', '']
     out.append(END)
     return '\n'.join(out)
 

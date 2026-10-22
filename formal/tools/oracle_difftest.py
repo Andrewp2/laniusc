@@ -42,7 +42,7 @@ UINT_BITS = {'u8': 8, 'u32': 32, 'u64': 64, 'usize': 64}
 UINT_LEAN = {'u8': '.uint8', 'u32': '.uint32', 'u64': '.uint64', 'usize': '.usize'}
 INTEGERS = ['i32'] + list(UINT_BITS)
 WORDS = ['i32', 'bool', 'usize']  # the field types Core lays out in one native word
-SLICES = True  # generate heap and slice statements (frontend_difftest.py turns them off)
+SLICES = True  # generate heap and slice statements
 
 
 def i32(x):

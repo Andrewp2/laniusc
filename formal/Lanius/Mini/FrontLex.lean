@@ -39,6 +39,7 @@ structure SourceFile where
   prods : List Nat
   parents : List Nat
 
+set_option linter.unusedVariables false in
 /-- Each file's tokens, with its parse tree, if every file lexes. -/
 def lexFiles : List SourceFile → Option (List FileInput)
   | [] => some []
