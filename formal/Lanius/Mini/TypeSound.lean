@@ -6,22 +6,19 @@ import Lanius.Typing
 When the front pass accepts a source program, the program's Core meaning is
 well typed by Core's own typing rules, `Lanius.Typing.ProgramWellTyped`.
 
-Core's typing differs from the front pass's checks in two places, so the
-theorem has two premises the front pass does not check yet:
+Two of Core's rules are checked by `compileSource` apart from the lowering:
 
 - Nominal types. Core looks struct and enum types up by id in the program's
-  declarations; the front pass's types carry their fields inline
-  (`SrcType.struct id fields`) and `SrcProgram.toCore` emits no declarations.
-  The theorem is about `sp.toCore` with declarations `structs` and `enums`
-  added, and assumes every type the program names agrees with them
-  (`SrcProgram.Declared`). Two types with the same id and different fields
-  have no such declarations; the front pass accepts them. A program whose
-  types are all scalar agrees with no declarations, which is `sp.toCore`
-  itself (`compileSource_wellTyped_scalar`).
+  declarations, while the front pass's types carry their fields inline
+  (`SrcType.struct id fields`). `declareProgram` derives one declaration per
+  id from the program's types and rejects a program that gives one id two
+  field or variant lists; `SrcProgram.toCore` emits those declarations, so
+  every type the program names agrees with them (`SrcProgram.Declared`,
+  `declareProgram_declared`).
 - Returns. Core requires a function with a non-unit result to end in a
-  `return` on every path (`DefinitelyReturns`: a `while` never counts); the
-  front pass has no such check. `SrcStmt.returns` is that check on source
-  statements, and the theorem assumes it of every function body. -/
+  `return` on every path (`DefinitelyReturns`: a `while` never counts).
+  `SrcStmt.returns` is that check on source statements (`returns_sound`), and
+  `compileSource` requires it of every function body. -/
 
 namespace Lanius.Mini
 
@@ -67,28 +64,6 @@ def SrcStmt.Declared (P : Core.Program) (s : SrcStmt) : Prop :=
 /-- Every parameter type and binding type of every function is declared. -/
 def SrcProgram.Declared (P : Core.Program) (sp : SrcProgram) : Prop :=
   ∀ func ∈ sp.funcs, (∀ param ∈ func.params, TypeDeclared P param.ty) ∧ SrcStmt.Declared P func.body
-
-/-- Every path through the statement ends in a `return`, the way Core's
-`DefinitelyReturns` counts: a `while` body never counts. -/
-def SrcStmt.returns (s : SrcStmt) : Bool :=
-  match s with
-  | .nop => false
-  | .let _ _ _ body => SrcStmt.returns body
-  | .letStruct _ _ _ body => SrcStmt.returns body
-  | .letCall _ _ _ _ body => SrcStmt.returns body
-  | .letEnum _ _ _ _ body => SrcStmt.returns body
-  | .letMatch _ _ _ _ _ body => SrcStmt.returns body
-  | .set _ _ => false
-  | .setField _ _ _ => false
-  | .setCall _ _ _ => false
-  | .then first second => SrcStmt.returns first || SrcStmt.returns second
-  | .if _ thenBranch elseBranch => SrcStmt.returns thenBranch && SrcStmt.returns elseBranch
-  | .while _ _ => false
-  | .return _ => true
-  | .letAlloc _ _ _ body => SrcStmt.returns body
-  | .letLoad _ _ _ body => SrcStmt.returns body
-  | .setByte _ _ _ => false
-  | .free _ _ _ => false
 
 namespace TypeSound
 
@@ -1075,17 +1050,408 @@ theorem lowerFunc_body {sigs : List Sig} {func : SrcFunc} {c : Func} (h : lowerF
       exact ⟨b, hb⟩
   · simp at h
 
-end TypeSound
 
-/-- `sp.toCore` with these struct and enum declarations. -/
-def SrcProgram.toCoreWith (sp : SrcProgram) (structs : List Core.StructDecl)
-    (enums : List Core.EnumDecl) : Core.Program :=
-  { sp.toCore with structures := structs, enumerations := enums }
+/-! ## Declarations
 
-namespace TypeSound
+`declareProgram` threads a table of declarations through the program's
+types. A table only grows (`Extends`), and every type it has passed is
+declared in any Core program that has the final table's declarations
+(`Agrees`). -/
 
-theorem sigsOk_program (sp : SrcProgram) (structs : List Core.StructDecl) (enums : List Core.EnumDecl) :
-    SigsOk (sp.toCoreWith structs enums) (sigs sp.funcs) := by
+/-- Every declaration in `d` is in `P`, at its Core types. -/
+def Agrees (P : Core.Program) (d : SrcDecls) : Prop :=
+  (∀ id fs, structFields d.structs id = some fs →
+      P.structure? id = some ⟨id, fs.map SrcType.toCore⟩) ∧
+    (∀ id vs, enumVariants d.enums id = some vs →
+      P.enumeration? id = some ⟨id, vs.map (List.map SrcType.toCore)⟩)
+
+/-- `d'` keeps every declaration of `d`. -/
+def Extends (d d' : SrcDecls) : Prop :=
+  (∀ id fs, structFields d.structs id = some fs → structFields d'.structs id = some fs) ∧
+    (∀ id vs, enumVariants d.enums id = some vs → enumVariants d'.enums id = some vs)
+
+theorem Extends.refl (d : SrcDecls) : Extends d d := ⟨fun _ _ h => h, fun _ _ h => h⟩
+
+theorem Extends.trans {a b c : SrcDecls} (ab : Extends a b) (bc : Extends b c) : Extends a c :=
+  ⟨fun id fs h => bc.1 id fs (ab.1 id fs h), fun id vs h => bc.2 id vs (ab.2 id vs h)⟩
+
+theorem Agrees.of_extends {P : Core.Program} {d D : SrcDecls} (ext : Extends d D) (agrees : Agrees P D) :
+    Agrees P d :=
+  ⟨fun id fs h => agrees.1 id fs (ext.1 id fs h), fun id vs h => agrees.2 id vs (ext.2 id vs h)⟩
+
+theorem typesSame_toCore : ∀ {a b : List SrcType}, typesSame a b = true →
+    a.map SrcType.toCore = b.map SrcType.toCore
+  | [], [], _ => rfl
+  | [], _ :: _, h => by simp [typesSame] at h
+  | _ :: _, [], h => by simp [typesSame] at h
+  | x :: xs, y :: ys, h => by
+    simp only [typesSame, Bool.and_eq_true] at h
+    simp only [List.map_cons, same_toCore h.1, typesSame_toCore h.2]
+
+theorem variantsSame_toCore : ∀ {a b : List (List SrcType)}, variantsSame a b = true →
+    a.map (List.map SrcType.toCore) = b.map (List.map SrcType.toCore)
+  | [], [], _ => rfl
+  | [], _ :: _, h => by simp [variantsSame] at h
+  | _ :: _, [], h => by simp [variantsSame] at h
+  | x :: xs, y :: ys, h => by
+    simp only [variantsSame, Bool.and_eq_true] at h
+    simp only [List.map_cons, typesSame_toCore h.1, variantsSame_toCore h.2]
+
+theorem structFields_cons_self {id : Nat} {fields : List SrcType} {rest : List SrcStructDecl} :
+    structFields ({ id := id, fields := fields } :: rest) id = some fields := by
+  simp [structFields]
+
+theorem structFields_cons_other {id x : Nat} {fields : List SrcType} {rest : List SrcStructDecl}
+    (ne : x ≠ id) : structFields ({ id := id, fields := fields } :: rest) x = structFields rest x := by
+  simp only [structFields]
+  rw [if_neg (fun h => ne h.symm)]
+
+theorem enumVariants_cons_self {id : Nat} {variants : List (List SrcType)} {rest : List SrcEnumDecl} :
+    enumVariants ({ id := id, variants := variants } :: rest) id = some variants := by
+  simp [enumVariants]
+
+theorem enumVariants_cons_other {id x : Nat} {variants : List (List SrcType)} {rest : List SrcEnumDecl}
+    (ne : x ≠ id) :
+    enumVariants ({ id := id, variants := variants } :: rest) x = enumVariants rest x := by
+  simp only [enumVariants]
+  rw [if_neg (fun h => ne h.symm)]
+
+theorem keepIf_some {agrees : Bool} {d d' : SrcDecls} (h : keepIf agrees d = some d') :
+    agrees = true ∧ d' = d := by
+  unfold keepIf at h
+  split at h
+  · rename_i yes
+    simp only [Option.some.injEq] at h
+    exact ⟨yes, h.symm⟩
+  · simp at h
+
+/-- A struct declaration step keeps the table and leaves `id` declared with
+fields of the same Core types. -/
+theorem declareStruct_some {id : Nat} {fields : List SrcType} {after : Option SrcDecls} {d' : SrcDecls}
+    (h : declareStruct id fields after = some d') :
+    ∃ d, after = some d ∧ Extends d d' ∧ ∃ fs, structFields d'.structs id = some fs ∧
+      fs.map SrcType.toCore = fields.map SrcType.toCore := by
+  unfold declareStruct at h
+  split at h
+  · simp at h
+  · rename_i d
+    dsimp only at h
+    split at h
+    · rename_i absent
+      simp only [Option.some.injEq] at h
+      subst h
+      refine ⟨d, rfl, ⟨fun x fs found => ?_, fun _ _ found => found⟩, fields, structFields_cons_self, rfl⟩
+      have ne : x ≠ id := by
+        rintro rfl
+        rw [absent] at found
+        cases found
+      rw [structFields_cons_other ne]
+      exact found
+    · rename_i other known
+      obtain ⟨same, rfl⟩ := keepIf_some h
+      exact ⟨d', rfl, Extends.refl d', other, known, typesSame_toCore same⟩
+
+theorem declareEnum_some {id : Nat} {variants : List (List SrcType)} {after : Option SrcDecls}
+    {d' : SrcDecls} (h : declareEnum id variants after = some d') :
+    ∃ d, after = some d ∧ Extends d d' ∧ ∃ vs, enumVariants d'.enums id = some vs ∧
+      vs.map (List.map SrcType.toCore) = variants.map (List.map SrcType.toCore) := by
+  unfold declareEnum at h
+  split at h
+  · simp at h
+  · rename_i d
+    dsimp only at h
+    split at h
+    · rename_i absent
+      simp only [Option.some.injEq] at h
+      subst h
+      refine ⟨d, rfl, ⟨fun _ _ found => found, fun x vs found => ?_⟩, variants,
+        enumVariants_cons_self, rfl⟩
+      have ne : x ≠ id := by
+        rintro rfl
+        rw [absent] at found
+        cases found
+      rw [enumVariants_cons_other ne]
+      exact found
+    · rename_i other known
+      obtain ⟨same, rfl⟩ := keepIf_some h
+      exact ⟨d', rfl, Extends.refl d', other, known, variantsSame_toCore same⟩
+
+mutual
+theorem SrcType.declare_sound : ∀ (ty : SrcType) {d d' : SrcDecls}, ty.declare d = some d' →
+    Extends d d' ∧ ∀ {P : Core.Program} {D : SrcDecls}, Extends d' D → Agrees P D → TypeDeclared P ty
+  | .i32, _, _, h => by
+    simp only [SrcType.declare, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ => .i32⟩
+  | .bool, _, _, h => by
+    simp only [SrcType.declare, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ => .bool⟩
+  | .uint kind, _, _, h => by
+    simp only [SrcType.declare, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ => .uint kind⟩
+  | .ptr, _, _, h => by
+    simp only [SrcType.declare, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ => .ptr⟩
+  | .struct id fields, d, d', h => by
+    simp only [SrcType.declare] at h
+    obtain ⟨d1, inner, ext, fs, found, same⟩ := declareStruct_some h
+    obtain ⟨ext1, declared⟩ := declareTypes_sound fields inner
+    refine ⟨ext1.trans ext, fun extD agrees => .struct ?_ (declared (ext.trans extD) agrees)⟩
+    rw [agrees.1 id fs (extD.1 id fs found), same]
+  | .enum id variants, d, d', h => by
+    simp only [SrcType.declare] at h
+    obtain ⟨d1, inner, ext, vs, found, same⟩ := declareEnum_some h
+    obtain ⟨ext1, declared⟩ := declareVariants_sound variants inner
+    refine ⟨ext1.trans ext, fun extD agrees => .enum ?_ (declared (ext.trans extD) agrees)⟩
+    rw [agrees.2 id vs (extD.2 id vs found), same]
+
+theorem declareTypes_sound : ∀ (types : List SrcType) {d d' : SrcDecls}, declareTypes types d = some d' →
+    Extends d d' ∧ ∀ {P : Core.Program} {D : SrcDecls}, Extends d' D → Agrees P D →
+      ∀ f ∈ types, TypeDeclared P f
+  | [], _, _, h => by
+    simp only [declareTypes, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ f mem => by cases mem⟩
+  | ty :: rest, d, d', h => by
+    simp only [declareTypes] at h
+    split at h
+    · simp at h
+    · rename_i d1 first
+      obtain ⟨ext1, head⟩ := SrcType.declare_sound ty first
+      obtain ⟨ext2, tail⟩ := declareTypes_sound rest h
+      refine ⟨ext1.trans ext2, fun extD agrees f mem => ?_⟩
+      simp only [List.mem_cons] at mem
+      rcases mem with rfl | mem
+      · exact head (ext2.trans extD) agrees
+      · exact tail extD agrees f mem
+
+theorem declareVariants_sound : ∀ (variants : List (List SrcType)) {d d' : SrcDecls},
+    declareVariants variants d = some d' →
+    Extends d d' ∧ ∀ {P : Core.Program} {D : SrcDecls}, Extends d' D → Agrees P D →
+      ∀ fs ∈ variants, ∀ f ∈ fs, TypeDeclared P f
+  | [], _, _, h => by
+    simp only [declareVariants, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ fs mem => by cases mem⟩
+  | types :: rest, d, d', h => by
+    simp only [declareVariants] at h
+    split at h
+    · simp at h
+    · rename_i d1 first
+      obtain ⟨ext1, head⟩ := declareTypes_sound types first
+      obtain ⟨ext2, tail⟩ := declareVariants_sound rest h
+      refine ⟨ext1.trans ext2, fun extD agrees fs mem => ?_⟩
+      simp only [List.mem_cons] at mem
+      rcases mem with rfl | mem
+      · exact head (ext2.trans extD) agrees
+      · exact tail extD agrees fs mem
+end
+
+/-- A binding's type, then the statement after it. -/
+theorem declare_let {ty : SrcType} {d d1 d' : SrcDecls} (first : ty.declare d = some d1)
+    {Q : Core.Program → Prop}
+    (body : Extends d1 d' ∧ ∀ {P : Core.Program} {D : SrcDecls}, Extends d' D → Agrees P D → Q P) :
+    Extends d d' ∧ ∀ {P : Core.Program} {D : SrcDecls}, Extends d' D → Agrees P D →
+      TypeDeclared P ty ∧ Q P := by
+  obtain ⟨ext1, head⟩ := SrcType.declare_sound ty first
+  exact ⟨ext1.trans body.1, fun extD agrees => ⟨head (body.1.trans extD) agrees, body.2 extD agrees⟩⟩
+
+theorem SrcStmt.declare_sound : ∀ (s : SrcStmt) {d d' : SrcDecls}, s.declare d = some d' →
+    Extends d d' ∧ ∀ {P : Core.Program} {D : SrcDecls}, Extends d' D → Agrees P D → s.Declared P
+  | .nop, _, _, h => by
+    simp only [SrcStmt.declare, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ => trivial⟩
+  | .let _ ty _ body, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    split at h
+    · simp at h
+    · rename_i d1 first
+      exact declare_let first (SrcStmt.declare_sound body h)
+  | .letStruct _ ty _ body, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    split at h
+    · simp at h
+    · rename_i d1 first
+      exact declare_let first (SrcStmt.declare_sound body h)
+  | .letCall _ ty _ _ body, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    split at h
+    · simp at h
+    · rename_i d1 first
+      exact declare_let first (SrcStmt.declare_sound body h)
+  | .letEnum _ ty _ _ body, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    split at h
+    · simp at h
+    · rename_i d1 first
+      exact declare_let first (SrcStmt.declare_sound body h)
+  | .letMatch _ ty _ _ _ body, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    split at h
+    · simp at h
+    · rename_i d1 first
+      exact declare_let first (SrcStmt.declare_sound body h)
+  | .set _ _, _, _, h => by
+    simp only [SrcStmt.declare, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ => trivial⟩
+  | .setField _ _ _, _, _, h => by
+    simp only [SrcStmt.declare, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ => trivial⟩
+  | .setCall _ _ _, _, _, h => by
+    simp only [SrcStmt.declare, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ => trivial⟩
+  | .then first second, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    split at h
+    · simp at h
+    · rename_i d1 hfirst
+      obtain ⟨ext1, declared1⟩ := SrcStmt.declare_sound first hfirst
+      obtain ⟨ext2, declared2⟩ := SrcStmt.declare_sound second h
+      exact ⟨ext1.trans ext2, fun extD agrees =>
+        ⟨declared1 (ext2.trans extD) agrees, declared2 extD agrees⟩⟩
+  | .if _ thenBranch elseBranch, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    split at h
+    · simp at h
+    · rename_i d1 hthen
+      obtain ⟨ext1, declared1⟩ := SrcStmt.declare_sound thenBranch hthen
+      obtain ⟨ext2, declared2⟩ := SrcStmt.declare_sound elseBranch h
+      exact ⟨ext1.trans ext2, fun extD agrees =>
+        ⟨declared1 (ext2.trans extD) agrees, declared2 extD agrees⟩⟩
+  | .while _ body, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    exact SrcStmt.declare_sound body h
+  | .return _, _, _, h => by
+    simp only [SrcStmt.declare, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ => trivial⟩
+  | .letAlloc _ _ _ body, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    exact SrcStmt.declare_sound body h
+  | .letLoad _ _ _ body, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    exact SrcStmt.declare_sound body h
+  | .setByte _ _ _, _, _, h => by
+    simp only [SrcStmt.declare, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ => trivial⟩
+  | .free _ _ _, _, _, h => by
+    simp only [SrcStmt.declare, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ => trivial⟩
+
+theorem declareParams_sound : ∀ (params : List SrcParam) {d d' : SrcDecls},
+    declareParams params d = some d' →
+    Extends d d' ∧ ∀ {P : Core.Program} {D : SrcDecls}, Extends d' D → Agrees P D →
+      ∀ param ∈ params, TypeDeclared P param.ty
+  | [], _, _, h => by
+    simp only [declareParams, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ param mem => by cases mem⟩
+  | param :: rest, d, d', h => by
+    simp only [declareParams] at h
+    split at h
+    · simp at h
+    · rename_i d1 first
+      obtain ⟨ext1, head⟩ := SrcType.declare_sound param.ty first
+      obtain ⟨ext2, tail⟩ := declareParams_sound rest h
+      refine ⟨ext1.trans ext2, fun extD agrees p mem => ?_⟩
+      simp only [List.mem_cons] at mem
+      rcases mem with rfl | mem
+      · exact head (ext2.trans extD) agrees
+      · exact tail extD agrees p mem
+
+theorem declareFunc_sound {func : SrcFunc} {d d' : SrcDecls} (h : declareFunc func d = some d') :
+    Extends d d' ∧ ∀ {P : Core.Program} {D : SrcDecls}, Extends d' D → Agrees P D →
+      (∀ param ∈ func.params, TypeDeclared P param.ty) ∧ func.body.Declared P := by
+  unfold declareFunc at h
+  split at h
+  · simp at h
+  · rename_i d1 hparams
+    dsimp only at h
+    split at h
+    · simp at h
+    · rename_i d2 hret
+      obtain ⟨ext1, params⟩ := declareParams_sound func.params hparams
+      obtain ⟨ext2, _⟩ := SrcType.declare_sound func.ret hret
+      obtain ⟨ext3, body⟩ := SrcStmt.declare_sound func.body h
+      exact ⟨ext1.trans (ext2.trans ext3), fun extD agrees =>
+        ⟨params (ext2.trans (ext3.trans extD)) agrees, body extD agrees⟩⟩
+
+theorem declareFuncs_sound : ∀ (funcs : List SrcFunc) {d d' : SrcDecls},
+    declareFuncs funcs d = some d' →
+    Extends d d' ∧ ∀ {P : Core.Program} {D : SrcDecls}, Extends d' D → Agrees P D →
+      ∀ func ∈ funcs, (∀ param ∈ func.params, TypeDeclared P param.ty) ∧ func.body.Declared P
+  | [], _, _, h => by
+    simp only [declareFuncs, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ func mem => by cases mem⟩
+  | func :: rest, d, d', h => by
+    simp only [declareFuncs] at h
+    split at h
+    · simp at h
+    · rename_i d1 first
+      obtain ⟨ext1, head⟩ := declareFunc_sound first
+      obtain ⟨ext2, tail⟩ := declareFuncs_sound rest h
+      refine ⟨ext1.trans ext2, fun extD agrees g mem => ?_⟩
+      simp only [List.mem_cons] at mem
+      rcases mem with rfl | mem
+      · exact head (ext2.trans extD) agrees
+      · exact tail extD agrees g mem
+
+theorem find_structs : ∀ (decls : List SrcStructDecl) (id : Nat),
+    (decls.map SrcStructDecl.toCore).find? (fun decl => decl.id == id) =
+      (structFields decls id).map fun fs => ⟨id, fs.map SrcType.toCore⟩
+  | [], _ => rfl
+  | decl :: rest, id => by
+    simp only [List.map_cons, List.find?_cons, structFields]
+    by_cases same : decl.id = id
+    · simp [same, SrcStructDecl.toCore]
+    · have ne : (decl.id == id) = false := by simpa using same
+      simp [same, ne, SrcStructDecl.toCore, find_structs rest id]
+
+theorem find_enums : ∀ (decls : List SrcEnumDecl) (id : Nat),
+    (decls.map SrcEnumDecl.toCore).find? (fun decl => decl.id == id) =
+      (enumVariants decls id).map fun vs => ⟨id, vs.map (List.map SrcType.toCore)⟩
+  | [], _ => rfl
+  | decl :: rest, id => by
+    simp only [List.map_cons, List.find?_cons, enumVariants]
+    by_cases same : decl.id = id
+    · simp [same, SrcEnumDecl.toCore]
+    · have ne : (decl.id == id) = false := by simpa using same
+      simp [same, ne, SrcEnumDecl.toCore, find_enums rest id]
+
+/-- `sp.toCore` has the declarations the front pass derives. -/
+theorem agrees_toCore {sp : SrcProgram} {decls : SrcDecls} (found : declareProgram sp = some decls) :
+    Agrees sp.toCore decls := by
+  have : sp.decls = decls := by simp [SrcProgram.decls, found]
+  refine ⟨fun id fs h => ?_, fun id vs h => ?_⟩
+  · simp only [Core.Program.structure?, SrcProgram.toCore, this, find_structs, h, Option.map_some]
+  · simp only [Core.Program.enumeration?, SrcProgram.toCore, this, find_enums, h, Option.map_some]
+
+/-- Every type an accepted program names is declared in its Core meaning. -/
+theorem declareProgram_declared {sp : SrcProgram} {decls : SrcDecls}
+    (found : declareProgram sp = some decls) : sp.Declared sp.toCore :=
+  (declareFuncs_sound sp.funcs found).2 (Extends.refl decls) (agrees_toCore found)
+
+theorem funcsReturn_each : ∀ {funcs : List SrcFunc}, funcsReturn funcs = true →
+    ∀ func ∈ funcs, func.body.returns = true
+  | [], _, _, mem => by cases mem
+  | func :: rest, h, g, mem => by
+    simp only [funcsReturn, Bool.and_eq_true] at h
+    simp only [List.mem_cons] at mem
+    rcases mem with rfl | mem
+    · exact h.1
+    · exact funcsReturn_each h.2 g mem
+
+theorem sigsOk_program (sp : SrcProgram) : SigsOk sp.toCore (sigs sp.funcs) := by
   intro callee sig found
   rw [sigs_getElem] at found
   cases hf : sp.funcs[callee]? with
@@ -1101,51 +1467,42 @@ theorem sigsOk_program (sp : SrcProgram) (structs : List Core.StructDecl) (enums
 end TypeSound
 
 open TypeSound in
-/-- Type checker soundness: when the front pass lowers every function, the
-Core meaning of the program, with struct and enum declarations its types
-agree with, is well typed by Core's rules, provided every function body ends
-in a `return` on every path. -/
+/-- When the front pass lowers every function, every type the program names
+is declared in `sp.toCore`, and every function body ends in a `return` on
+every path, the Core meaning of the program is well typed by Core's rules. -/
 theorem lowerFuncs_wellTyped {sp : SrcProgram} {funcs : List Func}
-    {structs : List Core.StructDecl} {enums : List Core.EnumDecl}
     (lowered : lowerFuncs (sigs sp.funcs) sp.funcs = some funcs)
-    (declared : sp.Declared (sp.toCoreWith structs enums))
+    (declared : sp.Declared sp.toCore)
     (returns : ∀ func ∈ sp.funcs, func.body.returns = true) :
-    Typing.ProgramWellTyped (sp.toCoreWith structs enums) := by
-  refine ⟨fun c hc => by simp [SrcProgram.toCoreWith, SrcProgram.toCore] at hc, ?_⟩
+    Typing.ProgramWellTyped sp.toCore := by
+  refine ⟨fun c hc => by simp [SrcProgram.toCore] at hc, ?_⟩
   intro f hf
   obtain ⟨i, func, mem, rfl⟩ := mem_coreFuncs (n := 0) (funcs := sp.funcs) hf
   obtain ⟨c, hc⟩ := lowerFuncs_each lowered func mem
   obtain ⟨out, hout⟩ := lowerFunc_body hc
   obtain ⟨dparams, dbody⟩ := declared func mem
-  have stmt := SrcStmt.lower_typed rfl (sigsOk_program sp structs enums) func.body (inLoop := false)
+  have stmt := SrcStmt.lower_typed rfl (sigsOk_program sp) func.body (inLoop := false)
     (paramScope_ok func.params (scopeOk_empty _) dparams) dbody hout
   simp only [Typing.FunctionWellTyped, SrcFunc.toCore]
   exact ⟨trivial, stmt, Or.inr (returns_sound _ (returns func mem))⟩
 
-/-- The same for `compileSource`, the whole compiler. -/
+open TypeSound in
+/-- Type checker soundness: when the front pass accepts a program, its Core
+meaning is well typed by Core's rules. -/
 theorem compileSource_wellTyped {sp : SrcProgram} {binary : Binary}
-    {structs : List Core.StructDecl} {enums : List Core.EnumDecl}
-    (compiled : compileSource sp = some binary)
-    (declared : sp.Declared (sp.toCoreWith structs enums))
-    (returns : ∀ func ∈ sp.funcs, func.body.returns = true) :
-    Typing.ProgramWellTyped (sp.toCoreWith structs enums) := by
-  unfold compileSource at compiled
-  split at compiled
-  · simp at compiled
-  · rename_i funcs lowered
-    exact lowerFuncs_wellTyped lowered declared returns
+    (compiled : compileSource sp = some binary) : Typing.ProgramWellTyped sp.toCore := by
+  obtain ⟨returns, ⟨decls, found⟩, funcs, lowered, _⟩ := compileSource_some compiled
+  exact lowerFuncs_wellTyped lowered (declareProgram_declared found) (funcsReturn_each returns)
 
-/-- A program whose types are all scalar needs no declarations: `sp.toCore`
-itself is well typed. -/
-theorem compileSource_wellTyped_scalar {sp : SrcProgram} {binary : Binary}
-    (compiled : compileSource sp = some binary) (declared : sp.Declared sp.toCore)
-    (returns : ∀ func ∈ sp.funcs, func.body.returns = true) :
-    Typing.ProgramWellTyped sp.toCore :=
-  compileSource_wellTyped (structs := []) (enums := []) compiled declared returns
+/-! ## What the two checks reject
 
-/-! ## Why the premises are there
+Two programs the lowering accepts and Core rejects, one per check, whatever
+declarations they are given; `compileSource` rejects both. -/
 
-Two programs the front pass lowers that Core rejects, one per premise. -/
+/-- `sp.toCore` with other struct and enum declarations. -/
+def SrcProgram.toCoreWith (sp : SrcProgram) (structs : List Core.StructDecl)
+    (enums : List Core.EnumDecl) : Core.Program :=
+  { sp.toCore with structures := structs, enumerations := enums }
 
 namespace TypeSound
 
@@ -1165,6 +1522,10 @@ theorem noReturn_lowers : ∃ funcs, lowerFuncs (sigs noReturn.funcs) noReturn.f
 
 theorem idClash_lowers : ∃ funcs, lowerFuncs (sigs idClash.funcs) idClash.funcs = some funcs :=
   ⟨_, rfl⟩
+
+theorem noReturn_rejected : compileSource noReturn = none := rfl
+
+theorem idClash_rejected : compileSource idClash = none := rfl
 
 theorem noReturn_not_wellTyped (structs : List Core.StructDecl) (enums : List Core.EnumDecl) :
     ¬ Typing.ProgramWellTyped (noReturn.toCoreWith structs enums) := by

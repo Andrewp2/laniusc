@@ -2028,10 +2028,275 @@ pub fn lower_funcs(sigs: List<Sig>, funcs: List<SrcFunc>) -> core::option::Optio
     };
 }
 
+// Core's typing needs two things the lowering does not check.
+//
+// Declarations: Core names a struct or enum type by its id and looks the
+// fields or variants up in the program's declarations, while a source type
+// carries them inline. The front pass derives one declaration per id from
+// the program's types (parameters, results and bindings, and the types
+// nested in them), and rejects a program that gives one id two field or
+// variant lists. Lanius/Mini/Source.lean puts these declarations in the
+// program's Core meaning.
+//
+// Returns: a function body ends in a return on every path.
+
+// Struct id's field types.
+pub struct SrcStructDecl {
+    id: usize,
+    fields: List<SrcType>,
+}
+
+// Enum id's variants, each its payload types.
+pub struct SrcEnumDecl {
+    id: usize,
+    variants: List<List<SrcType>>,
+}
+
+pub struct SrcDecls {
+    structs: List<SrcStructDecl>,
+    enums: List<SrcEnumDecl>,
+}
+
+// The fields declared for struct id.
+pub fn struct_fields(decls: List<SrcStructDecl>, id: usize) -> core::option::Option<List<SrcType>> {
+    return match (decls) {
+        Nil -> None,
+        Cons(decl, rest) -> struct_fields_at(decl, unbox(rest), id),
+    };
+}
+
+// extract: inline
+fn struct_fields_at(decl: SrcStructDecl, rest: List<SrcStructDecl>, id: usize) -> core::option::Option<List<SrcType>> {
+    if (decl.id == id) {
+        return Some(decl.fields);
+    }
+    return struct_fields(rest, id);
+}
+
+// The variants declared for enum id.
+pub fn enum_variants(decls: List<SrcEnumDecl>, id: usize) -> core::option::Option<List<List<SrcType>>> {
+    return match (decls) {
+        Nil -> None,
+        Cons(decl, rest) -> enum_variants_at(decl, unbox(rest), id),
+    };
+}
+
+// extract: inline
+fn enum_variants_at(decl: SrcEnumDecl, rest: List<SrcEnumDecl>, id: usize) -> core::option::Option<List<List<SrcType>>> {
+    if (decl.id == id) {
+        return Some(decl.variants);
+    }
+    return enum_variants(rest, id);
+}
+
+// decls, if the declaration already there agrees.
+pub fn keep_if(agrees: bool, decls: SrcDecls) -> core::option::Option<SrcDecls> {
+    if (agrees) {
+        return Some(decls);
+    }
+    return None;
+}
+
+// Struct id with these fields declared, unless id has other fields.
+pub fn declare_struct(id: usize, fields: List<SrcType>, after: core::option::Option<SrcDecls>) -> core::option::Option<SrcDecls> {
+    return match (after) {
+        None -> None,
+        Some(decls) -> declare_struct_in(id, fields, decls, struct_fields(decls.structs, id)),
+    };
+}
+
+// extract: inline
+fn declare_struct_in(id: usize, fields: List<SrcType>, decls: SrcDecls, known: core::option::Option<List<SrcType>>) -> core::option::Option<SrcDecls> {
+    return match (known) {
+        None -> Some(SrcDecls { structs: cons(SrcStructDecl { id: id, fields: fields }, decls.structs), enums: decls.enums }),
+        Some(other) -> keep_if(types_same(other, fields), decls),
+    };
+}
+
+// Enum id with these variants declared, unless id has other variants.
+pub fn declare_enum(id: usize, variants: List<List<SrcType>>, after: core::option::Option<SrcDecls>) -> core::option::Option<SrcDecls> {
+    return match (after) {
+        None -> None,
+        Some(decls) -> declare_enum_in(id, variants, decls, enum_variants(decls.enums, id)),
+    };
+}
+
+// extract: inline
+fn declare_enum_in(id: usize, variants: List<List<SrcType>>, decls: SrcDecls, known: core::option::Option<List<List<SrcType>>>) -> core::option::Option<SrcDecls> {
+    return match (known) {
+        None -> Some(SrcDecls { structs: decls.structs, enums: cons(SrcEnumDecl { id: id, variants: variants }, decls.enums) }),
+        Some(other) -> keep_if(variants_same(other, variants), decls),
+    };
+}
+
+// extract: inline
+fn declare_types_after(after: core::option::Option<SrcDecls>, rest: List<SrcType>) -> core::option::Option<SrcDecls> {
+    return match (after) {
+        None -> None,
+        Some(decls) -> declare_types(rest, decls),
+    };
+}
+
+// extract: inline
+fn declare_variants_after(after: core::option::Option<SrcDecls>, rest: List<List<SrcType>>) -> core::option::Option<SrcDecls> {
+    return match (after) {
+        None -> None,
+        Some(decls) -> declare_variants(rest, decls),
+    };
+}
+
+// extract: mutual begin
+impl SrcType {
+    // decls with every struct and enum type in this one declared, the nested
+    // ones first; None when one is declared with other fields or variants.
+    pub fn declare(self, decls: SrcDecls) -> core::option::Option<SrcDecls> {
+        return match (self) {
+            I32 -> Some(decls),
+            Bool -> Some(decls),
+            Uint(kind) -> Some(decls),
+            Struct(id, fields) -> declare_struct(id, unbox(fields), declare_types(unbox(fields), decls)),
+            Enum(id, variants) -> declare_enum(id, unbox(variants), declare_variants(unbox(variants), decls)),
+            Ptr -> Some(decls),
+        };
+    }
+}
+
+pub fn declare_types(types: List<SrcType>, decls: SrcDecls) -> core::option::Option<SrcDecls> {
+    return match (types) {
+        Nil -> Some(decls),
+        Cons(ty, rest) -> declare_types_after(ty.declare(decls), unbox(rest)),
+    };
+}
+
+pub fn declare_variants(variants: List<List<SrcType>>, decls: SrcDecls) -> core::option::Option<SrcDecls> {
+    return match (variants) {
+        Nil -> Some(decls),
+        Cons(types, rest) -> declare_variants_after(declare_types(types, decls), unbox(rest)),
+    };
+}
+// extract: mutual end
+
+// extract: inline
+fn declare_in(after: core::option::Option<SrcDecls>, body: SrcStmt) -> core::option::Option<SrcDecls> {
+    return match (after) {
+        None -> None,
+        Some(decls) -> body.declare(decls),
+    };
+}
+
+impl SrcStmt {
+    // decls with the types of the statement's bindings declared.
+    pub fn declare(self, decls: SrcDecls) -> core::option::Option<SrcDecls> {
+        return match (self) {
+            Nop -> Some(decls),
+            Let(id, ty, value, body) -> declare_in(ty.declare(decls), unbox(body)),
+            LetStruct(id, ty, fields, body) -> declare_in(ty.declare(decls), unbox(body)),
+            LetCall(id, ty, callee, args, body) -> declare_in(ty.declare(decls), unbox(body)),
+            LetEnum(id, ty, variant, payload, body) -> declare_in(ty.declare(decls), unbox(body)),
+            LetMatch(id, ty, scrutinee, enum_id, arms, body) -> declare_in(ty.declare(decls), unbox(body)),
+            Set(id, value) -> Some(decls),
+            SetField(id, index, value) -> Some(decls),
+            SetCall(id, callee, args) -> Some(decls),
+            Then(first, second) -> declare_in(unbox(first).declare(decls), unbox(second)),
+            If(condition, then_branch, else_branch) -> declare_in(unbox(then_branch).declare(decls), unbox(else_branch)),
+            While(condition, body) -> unbox(body).declare(decls),
+            Return(value) -> Some(decls),
+            LetAlloc(id, size, shift, body) -> unbox(body).declare(decls),
+            LetLoad(id, pointer, offset, body) -> unbox(body).declare(decls),
+            SetByte(pointer, offset, value) -> Some(decls),
+            Free(pointer, size, shift) -> Some(decls),
+        };
+    }
+
+    // Every path ends in a return, the way Core's DefinitelyReturns counts:
+    // a while body never counts.
+    pub fn returns(self) -> bool {
+        return match (self) {
+            Nop -> false,
+            Let(id, ty, value, body) -> unbox(body).returns(),
+            LetStruct(id, ty, fields, body) -> unbox(body).returns(),
+            LetCall(id, ty, callee, args, body) -> unbox(body).returns(),
+            LetEnum(id, ty, variant, payload, body) -> unbox(body).returns(),
+            LetMatch(id, ty, scrutinee, enum_id, arms, body) -> unbox(body).returns(),
+            Set(id, value) -> false,
+            SetField(id, index, value) -> false,
+            SetCall(id, callee, args) -> false,
+            Then(first, second) -> unbox(first).returns() || unbox(second).returns(),
+            If(condition, then_branch, else_branch) -> unbox(then_branch).returns() && unbox(else_branch).returns(),
+            While(condition, body) -> false,
+            Return(value) -> true,
+            LetAlloc(id, size, shift, body) -> unbox(body).returns(),
+            LetLoad(id, pointer, offset, body) -> unbox(body).returns(),
+            SetByte(pointer, offset, value) -> false,
+            Free(pointer, size, shift) -> false,
+        };
+    }
+}
+
+pub fn declare_params(params: List<SrcParam>, decls: SrcDecls) -> core::option::Option<SrcDecls> {
+    return match (params) {
+        Nil -> Some(decls),
+        Cons(param, rest) -> declare_params_after(param.ty.declare(decls), unbox(rest)),
+    };
+}
+
+// extract: inline
+fn declare_params_after(after: core::option::Option<SrcDecls>, rest: List<SrcParam>) -> core::option::Option<SrcDecls> {
+    return match (after) {
+        None -> None,
+        Some(decls) -> declare_params(rest, decls),
+    };
+}
+
+// A function's parameter, result and binding types.
+pub fn declare_func(func: SrcFunc, decls: SrcDecls) -> core::option::Option<SrcDecls> {
+    return match (declare_params(func.params, decls)) {
+        None -> None,
+        Some(with_params) -> declare_in(func.ret.declare(with_params), func.body),
+    };
+}
+
+pub fn declare_funcs(funcs: List<SrcFunc>, decls: SrcDecls) -> core::option::Option<SrcDecls> {
+    return match (funcs) {
+        Nil -> Some(decls),
+        Cons(func, rest) -> declare_funcs_after(declare_func(func, decls), unbox(rest)),
+    };
+}
+
+// extract: inline
+fn declare_funcs_after(after: core::option::Option<SrcDecls>, rest: List<SrcFunc>) -> core::option::Option<SrcDecls> {
+    return match (after) {
+        None -> None,
+        Some(decls) -> declare_funcs(rest, decls),
+    };
+}
+
+// The program's struct and enum declarations.
+pub fn declare_program(prog: SrcProgram) -> core::option::Option<SrcDecls> {
+    return declare_funcs(prog.funcs, SrcDecls { structs: empty(), enums: empty() });
+}
+
+pub fn funcs_return(funcs: List<SrcFunc>) -> bool {
+    return match (funcs) {
+        Nil -> true,
+        Cons(func, rest) -> func.body.returns() && funcs_return(unbox(rest)),
+    };
+}
+
+pub fn compile_declared(decls: core::option::Option<SrcDecls>, funcs: core::option::Option<List<Func>>) -> core::option::Option<Binary> {
+    return match (decls) {
+        None -> None,
+        Some(d) -> match (funcs) {
+            None -> None,
+            Some(fs) -> compile_program(Program { funcs: fs }),
+        },
+    };
+}
+
 // Machine code of a source program.
 pub fn compile_source(prog: SrcProgram) -> core::option::Option<Binary> {
-    return match (lower_funcs(sigs(prog.funcs), prog.funcs)) {
-        None -> None,
-        Some(funcs) -> compile_program(Program { funcs: funcs }),
-    };
+    if (funcs_return(prog.funcs)) {
+        return compile_declared(declare_program(prog), lower_funcs(sigs(prog.funcs), prog.funcs));
+    }
+    return None;
 }

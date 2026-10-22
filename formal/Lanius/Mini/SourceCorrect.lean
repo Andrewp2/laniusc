@@ -41,15 +41,6 @@ theorem evalExprs_values {P : Core.Program} {st : Semantics.State} :
           exact ⟨rfl, rfl⟩
         all_goals simp at run
 
-theorem compileSource_some {sp : SrcProgram} {binary : Binary} (compiled : compileSource sp = some binary) :
-    ∃ funcs, lowerFuncs (sigs sp.funcs) sp.funcs = some funcs ∧
-      compileProgram { funcs := funcs } = some binary := by
-  simp only [compileSource] at compiled
-  split at compiled
-  · simp at compiled
-  · rename_i funcs lowered
-    exact ⟨funcs, lowered, compiled⟩
-
 /-- Core's empty heap and a mini heap whose cursor is 1 and whose bytes from 1
 up are zero. -/
 theorem HeapCorr.empty {heap : Heap} (start : heap.cursor = 1) (zero : ∀ a, 1 ≤ a → heap.bytes a = 0)
@@ -92,7 +83,7 @@ theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
           read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = bits[k]) →
         HeapAt window s heap →
         ∃ n s', Steps n s s' ∧ Returned window s s' results after := by
-  obtain ⟨funcs, lowered, compiledProgram⟩ := compileSource_some compiled
+  obtain ⟨_, _, funcs, lowered, compiledProgram⟩ := compileSource_some compiled
   cases fuel with
   | zero => simp [Semantics.evalExpr] at runs
   | succ k =>

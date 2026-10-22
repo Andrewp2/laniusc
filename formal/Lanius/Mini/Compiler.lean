@@ -1582,10 +1582,223 @@ def lowerFuncs (sigs : List Sig) (funcs : List SrcFunc) : Option (List Func) :=
   | [] => some []
   | func :: rest => lowerFuncCons (lowerFunc sigs func) (lowerFuncs sigs rest)
 
+/-- Struct id's field types. -/
+structure SrcStructDecl where
+  id : Nat
+  fields : List SrcType
+  deriving Repr
+
+/-- Enum id's variants, each its payload types. -/
+structure SrcEnumDecl where
+  id : Nat
+  variants : List (List SrcType)
+  deriving Repr
+
+structure SrcDecls where
+  structs : List SrcStructDecl
+  enums : List SrcEnumDecl
+  deriving Repr
+
+/-- The fields declared for struct id. -/
+def structFields (decls : List SrcStructDecl) (id : Nat) : Option (List SrcType) :=
+  match decls with
+  | [] => none
+  | decl :: rest =>
+    if decl.id = id then
+      some decl.fields
+    else
+      structFields rest id
+
+/-- The variants declared for enum id. -/
+def enumVariants (decls : List SrcEnumDecl) (id : Nat) : Option (List (List SrcType)) :=
+  match decls with
+  | [] => none
+  | decl :: rest =>
+    if decl.id = id then
+      some decl.variants
+    else
+      enumVariants rest id
+
+/-- decls, if the declaration already there agrees. -/
+def keepIf (agrees : Bool) (decls : SrcDecls) : Option SrcDecls :=
+  if agrees then
+    some decls
+  else
+    none
+
+/-- Struct id with these fields declared, unless id has other fields. -/
+def declareStruct (id : Nat) (fields : List SrcType) (after : Option SrcDecls) : Option SrcDecls :=
+  match after with
+  | none => none
+  | some decls =>
+    let known : Option (List SrcType) := structFields decls.structs id
+    match known with
+    | none => some ({ structs := ({ id := id, fields := fields } : SrcStructDecl) :: decls.structs, enums := decls.enums } : SrcDecls)
+    | some other => keepIf (typesSame other fields) decls
+
+/-- Enum id with these variants declared, unless id has other variants. -/
+def declareEnum (id : Nat) (variants : List (List SrcType)) (after : Option SrcDecls) : Option SrcDecls :=
+  match after with
+  | none => none
+  | some decls =>
+    let known : Option (List (List SrcType)) := enumVariants decls.enums id
+    match known with
+    | none => some ({ structs := decls.structs, enums := ({ id := id, variants := variants } : SrcEnumDecl) :: decls.enums } : SrcDecls)
+    | some other => keepIf (variantsSame other variants) decls
+
+mutual
+
+/-- decls with every struct and enum type in this one declared, the nested ones first; None when one is declared with other fields or variants. -/
+def SrcType.declare (self : SrcType) (decls : SrcDecls) : Option SrcDecls :=
+  match self with
+  | .i32 => some decls
+  | .bool => some decls
+  | .uint kind => some decls
+  | .struct id fields => declareStruct id fields (declareTypes fields decls)
+  | .enum id variants => declareEnum id variants (declareVariants variants decls)
+  | .ptr => some decls
+
+def declareTypes (types : List SrcType) (decls : SrcDecls) : Option SrcDecls :=
+  match types with
+  | [] => some decls
+  | ty :: rest =>
+    let after : Option SrcDecls := SrcType.declare ty decls
+    match after with
+    | none => none
+    | some decls => declareTypes rest decls
+
+def declareVariants (variants : List (List SrcType)) (decls : SrcDecls) : Option SrcDecls :=
+  match variants with
+  | [] => some decls
+  | types :: rest =>
+    let after : Option SrcDecls := declareTypes types decls
+    match after with
+    | none => none
+    | some decls => declareVariants rest decls
+
+end
+
+/-- decls with the types of the statement's bindings declared. -/
+def SrcStmt.declare (self : SrcStmt) (decls : SrcDecls) : Option SrcDecls :=
+  match self with
+  | .nop => some decls
+  | .let id ty value body =>
+    (let after : Option SrcDecls := SrcType.declare ty decls
+     match after with
+     | none => none
+     | some decls => SrcStmt.declare body decls)
+  | .letStruct id ty fields body =>
+    (let after : Option SrcDecls := SrcType.declare ty decls
+     match after with
+     | none => none
+     | some decls => SrcStmt.declare body decls)
+  | .letCall id ty callee args body =>
+    (let after : Option SrcDecls := SrcType.declare ty decls
+     match after with
+     | none => none
+     | some decls => SrcStmt.declare body decls)
+  | .letEnum id ty variant payload body =>
+    (let after : Option SrcDecls := SrcType.declare ty decls
+     match after with
+     | none => none
+     | some decls => SrcStmt.declare body decls)
+  | .letMatch id ty scrutinee enumId arms body =>
+    (let after : Option SrcDecls := SrcType.declare ty decls
+     match after with
+     | none => none
+     | some decls => SrcStmt.declare body decls)
+  | .set id value => some decls
+  | .setField id index value => some decls
+  | .setCall id callee args => some decls
+  | .then first second =>
+    (let after : Option SrcDecls := SrcStmt.declare first decls
+     match after with
+     | none => none
+     | some decls => SrcStmt.declare second decls)
+  | .if condition thenBranch elseBranch =>
+    (let after : Option SrcDecls := SrcStmt.declare thenBranch decls
+     match after with
+     | none => none
+     | some decls => SrcStmt.declare elseBranch decls)
+  | .while condition body => SrcStmt.declare body decls
+  | .return value => some decls
+  | .letAlloc id size shift body => SrcStmt.declare body decls
+  | .letLoad id pointer offset body => SrcStmt.declare body decls
+  | .setByte pointer offset value => some decls
+  | .free pointer size shift => some decls
+
+/-- Every path ends in a return, the way Core's DefinitelyReturns counts: a while body never counts. -/
+def SrcStmt.returns (self : SrcStmt) : Bool :=
+  match self with
+  | .nop => false
+  | .let id ty value body => SrcStmt.returns body
+  | .letStruct id ty fields body => SrcStmt.returns body
+  | .letCall id ty callee args body => SrcStmt.returns body
+  | .letEnum id ty variant payload body => SrcStmt.returns body
+  | .letMatch id ty scrutinee enumId arms body => SrcStmt.returns body
+  | .set id value => false
+  | .setField id index value => false
+  | .setCall id callee args => false
+  | .then first second => SrcStmt.returns first || SrcStmt.returns second
+  | .if condition thenBranch elseBranch => SrcStmt.returns thenBranch && SrcStmt.returns elseBranch
+  | .while condition body => false
+  | .return value => true
+  | .letAlloc id size shift body => SrcStmt.returns body
+  | .letLoad id pointer offset body => SrcStmt.returns body
+  | .setByte pointer offset value => false
+  | .free pointer size shift => false
+
+def declareParams (params : List SrcParam) (decls : SrcDecls) : Option SrcDecls :=
+  match params with
+  | [] => some decls
+  | param :: rest =>
+    let after : Option SrcDecls := SrcType.declare param.ty decls
+    match after with
+    | none => none
+    | some decls => declareParams rest decls
+
+/-- A function's parameter, result and binding types. -/
+def declareFunc (func : SrcFunc) (decls : SrcDecls) : Option SrcDecls :=
+  match declareParams func.params decls with
+  | none => none
+  | some withParams =>
+    let after : Option SrcDecls := SrcType.declare func.ret withParams
+    let body : SrcStmt := func.body
+    match after with
+    | none => none
+    | some decls => SrcStmt.declare body decls
+
+def declareFuncs (funcs : List SrcFunc) (decls : SrcDecls) : Option SrcDecls :=
+  match funcs with
+  | [] => some decls
+  | func :: rest =>
+    let after : Option SrcDecls := declareFunc func decls
+    match after with
+    | none => none
+    | some decls => declareFuncs rest decls
+
+/-- The program's struct and enum declarations. -/
+def declareProgram (prog : SrcProgram) : Option SrcDecls :=
+  declareFuncs prog.funcs ({ structs := [], enums := [] } : SrcDecls)
+
+def funcsReturn (funcs : List SrcFunc) : Bool :=
+  match funcs with
+  | [] => true
+  | func :: rest => SrcStmt.returns func.body && funcsReturn rest
+
+def compileDeclared (decls : Option SrcDecls) (funcs : Option (List Func)) : Option Binary :=
+  match decls with
+  | none => none
+  | some d =>
+    match funcs with
+    | none => none
+    | some fs => compileProgram ({ funcs := fs } : Program)
+
 /-- Machine code of a source program. -/
 def compileSource (prog : SrcProgram) : Option Binary :=
-  match lowerFuncs (sigs prog.funcs) prog.funcs with
-  | none => none
-  | some funcs => compileProgram ({ funcs := funcs } : Program)
+  if funcsReturn prog.funcs then
+    compileDeclared (declareProgram prog) (lowerFuncs (sigs prog.funcs) prog.funcs)
+  else
+    none
 
 end Lanius.Mini

@@ -123,7 +123,7 @@ The proof has two layers.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Compiler` | 1591 | 3.3 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass |
+| `Compiler` | 1804 | 3.1 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass |
 | `Semantics` | 182 | 0.9 | big-step source semantics with call depth |
 | `Asm` | 202 | 1.0 | abstract machine, byte-offset placement, `Star` runs |
 | `CompileCorrect` | 553 | 1.8 | compiler against the abstract machine |
@@ -169,7 +169,8 @@ type's slots, so `return`, `let x = f(...)` and `x = f(...)` take structs and
 enums too. A struct type must take a slot, so no two bindings share one.
 
 `Lanius/Mini/Source.lean` maps each source construct to the Core construct of
-the same name (`SrcProgram.toCore`). The theorem is about Core's own
+the same name (`SrcProgram.toCore`), and declares each struct and enum id with
+the fields or variants the front pass derives from the program's types. The theorem is about Core's own
 evaluator, `Lanius.Semantics.evalExpr`, on that program:
 
 ```text
@@ -222,53 +223,64 @@ semantics:
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Source` | 353 | 1.1 | Core meaning of source programs, value representation, `i32` wrap lemmas |
+| `Source` | 390 | 1.1 | Core meaning of source programs and their declarations, value representation, `i32` wrap lemmas |
 | `Unsigned` | 166 | 2.4 | unsigned arithmetic, comparisons and casts as slot arithmetic |
 | `LowerExpr` | 665 | 5.0 | expressions |
 | `Grows` | 788 | 3.8 | Core's `nextAddress` never decreases; Core call and statement inversions |
 | `HeapCorr` | 342 | 1.0 | Core heap to mini heap correspondence; allocate, load, store, free |
 | `LowerStmt` | 2339 | 8.2 | Core cells, frames, flat values, calls, enums and `match`, statements |
-| `SourceCorrect` | 111 | 0.8 | top-level theorem |
-| `TypeSound` | 1206 | 2.2 | type checker soundness: an accepted program is well typed in Core (step 7) |
+| `SourceCorrect` | 102 | 0.8 | top-level theorem |
+| `TypeSound` | 1567 | 1.9 | type checker soundness: an accepted program is well typed in Core (step 7) |
 
-The pass is about 1,200 lines of Lanius (the end of `compiler.lani`), and the
-proofs are about 4,800 lines. The per-function difftest covers it (146
+The pass is about 1,450 lines of Lanius (the end of `compiler.lani`), and the
+proofs are about 4,800 lines, plus 1,567 for type checker soundness. The per-function difftest covers it (146
 functions, 2,920 calls after the unsigned types, run as two shards with
 `--shard 0/2` and `1/2`, no differences; 11 native stack overflows on huge
 random counts; types nested through `List` render through a `mutual` block of
 `partial def`s; after the front-pass heap, 157 functions and 3,140 calls,
 no differences, 9 native stack overflows); at 30 cases per function the harness is now too large for
 laniusc on the laptop (a GPU buffer fails to allocate). Assumptions the theorem does not cover yet: Core
-programs outside the subset, traps and divergence (the theorem covers runs that
-return), and the source's type checker against Core's typing rules (step 7).
+programs outside the subset, and traps and divergence (the theorem covers runs
+that return). The source's type checker is sound for Core's typing rules
+(step 7, below).
 
 Type checker soundness (step 7, `Lanius/Mini/TypeSound.lean`): when the front
 pass accepts a program, its Core meaning is well typed by Core's own rules,
 `Lanius.Typing.ProgramWellTyped` (the judgment Core's checker
-`checkProgramWellTyped` decides and the compiler boundaries use).
-`compileSource_wellTyped` says `compileSource sp = some binary`, with two
-premises the front pass does not check, gives
-`ProgramWellTyped (sp.toCoreWith structs enums)`, which is `sp.toCore` with
-those struct and enum declarations. Those are the two places the front pass
-accepts programs Core rejects. Each comes with a program the front pass
-lowers and a proof that Core rejects it. (1) Nominal types: Core looks struct
-and enum types up by id in the program's declarations, but `SrcType.struct id
-fields` carries its fields inline and `SrcProgram.toCore` emits no
-declarations. The premise `sp.Declared P` says every parameter and binding
-type agrees with `P`'s declarations. `idClash` uses struct id 0 with fields
-`[i32]` and with `[bool]`, and no declarations make it well typed. A program
-whose types are all scalar needs none (`compileSource_wellTyped_scalar`
-concludes `ProgramWellTyped sp.toCore`). (2) Returns: Core requires a
-function with a non-unit result to end in `return` on every path
-(`DefinitelyReturns`, where a `while` never counts), and the front pass does
-not check this. The premise is `func.body.returns = true` for every function;
-`SrcStmt.returns` is that check (`returns_sound`). `noReturn` is
-`fn f() -> i32 {}`. Everything else matches: operators, casts, literals
-(unsigned ones in range, alignments `2^shift` with `shift < 32`), shadowing
-(the scope's innermost binding is Core's last `Context.bind`, for parameters
-and match binders too), calls (function `i` is the `i`th signature), field
-reads and writes, and exhaustive non-empty `match`. The proof is one lemma per
-lowering function, by induction on the syntax.
+`checkProgramWellTyped` decides and the compiler boundaries use), with no
+other premise:
+
+```text
+compileSource_wellTyped : compileSource sp = some binary → Typing.ProgramWellTyped sp.toCore
+```
+
+`sp.toCore` is the program `compileSource_correct` is about. Two of Core's
+rules are checks of their own in `compile_source`, beside the lowering. (1)
+Nominal types: Core looks struct and enum types up by id in the program's
+declarations, but `SrcType.struct id fields` carries its fields inline.
+`declare_program` threads a table of declarations through every parameter,
+result and binding type and the types nested in them, adding an id the first
+time it appears and rejecting the program when a later appearance gives the
+same id other fields or variants (`types_same`); `SrcProgram.toCore` emits the
+table as Core's `structures` and `enumerations`. The proof: the table only
+grows, and every type it has passed is declared in a Core program holding
+the final table (`SrcType.declare_sound`, one mutual lemma per type list,
+then statements, parameters and functions); `declareProgram_declared`
+concludes `sp.Declared sp.toCore`. (2) Returns: Core requires a function with
+a non-unit result to end in `return` on every path (`DefinitelyReturns`,
+where a `while` never counts); `compile_source` requires `SrcStmt.returns` of
+every function body, which `returns_sound` proves is that rule. Everything
+else matches the lowering's own checks: operators, casts, literals (unsigned
+ones in range, alignments `2^shift` with `shift < 32`), shadowing (the
+scope's innermost binding is Core's last `Context.bind`, for parameters and
+match binders too), calls (function `i` is the `i`th signature), field reads
+and writes, and exhaustive non-empty `match`. The proof is one lemma per
+lowering function, by induction on the syntax. Two programs show each check
+is needed: `idClash` uses struct id 0 with fields `[i32]` and with `[bool]`,
+and `noReturn` is `fn f() -> i32 {}`. The lowering alone accepts both, Core
+rejects both whatever declarations they are given (`idClash_not_wellTyped`,
+`noReturn_not_wellTyped`), and `compileSource` rejects both
+(`idClash_rejected`, `noReturn_rejected`, by `rfl`).
 
 ### Milestone 4: the compiler in Lanius, and extraction
 

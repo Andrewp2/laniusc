@@ -123,8 +123,45 @@ def coreFuncs : Nat → List SrcFunc → List Core.Function
   | _, [] => []
   | id, func :: rest => func.toCore id :: coreFuncs (id + 1) rest
 
+def SrcStructDecl.toCore (decl : SrcStructDecl) : Core.StructDecl where
+  id := decl.id
+  fields := decl.fields.map SrcType.toCore
+
+def SrcEnumDecl.toCore (decl : SrcEnumDecl) : Core.EnumDecl where
+  id := decl.id
+  variants := decl.variants.map (List.map SrcType.toCore)
+
+/-- The struct and enum declarations the front pass derives from the
+program's types (`declareProgram`); none for a program it rejects. -/
+def SrcProgram.decls (prog : SrcProgram) : SrcDecls :=
+  match declareProgram prog with
+  | none => { structs := [], enums := [] }
+  | some decls => decls
+
+/-- Functions numbered by position, and one struct or enum declaration per
+type id the program's types name. -/
 def SrcProgram.toCore (prog : SrcProgram) : Core.Program where
+  structures := prog.decls.structs.map SrcStructDecl.toCore
+  enumerations := prog.decls.enums.map SrcEnumDecl.toCore
   functions := coreFuncs 0 prog.funcs
+
+/-- What `compileSource` checks before it compiles the lowered functions. -/
+theorem compileSource_some {sp : SrcProgram} {binary : Binary} (compiled : compileSource sp = some binary) :
+    funcsReturn sp.funcs = true ∧ (∃ decls, declareProgram sp = some decls) ∧
+      ∃ funcs, lowerFuncs (sigs sp.funcs) sp.funcs = some funcs ∧
+        compileProgram { funcs := funcs } = some binary := by
+  unfold compileSource at compiled
+  split at compiled
+  · rename_i returns
+    unfold compileDeclared at compiled
+    split at compiled
+    · simp at compiled
+    · rename_i decls found
+      split at compiled
+      · simp at compiled
+      · rename_i funcs lowered
+        exact ⟨returns, ⟨decls, found⟩, funcs, lowered, compiled⟩
+  · simp at compiled
 
 /-- `ty.Holds value bits`: one slot holding `bits` represents the Core `value`
 of scalar type `ty`. An `i32` is its bits zero-extended; booleans are 1 and 0;
