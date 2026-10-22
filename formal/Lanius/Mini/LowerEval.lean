@@ -694,52 +694,30 @@ theorem eval_stride {k slice : Nat} (ok : evalStride sp.decls scope slice slot =
     exact ⟨_, rfl, by simp only [SrcType.Holds, Expr.eval]; rfl⟩
   simp only [evalWordStride] at ok
   split at ok
-  · rename_i ws hws
-    simp only [Option.some.injEq] at ok
-    subst ok
-    obtain ⟨sid, fields, ls, rfl, declared, lv, wls, nonempty⟩ := elementWidths_leaves hws
-    obtain ⟨wlen, -⟩ := leafWidths_get wls
-    have npos : 0 < ws.length := by
-      cases ws with
-      | nil => exact absurd rfl nonempty
-      | cons => simp
-    simp only [Semantics.rawSliceStride?, NativeLayout.elementStride?, SrcType.toCore] at strideOk
-    cases hwords : NativeLayout.valueWords? sp.toCore (Core.Ty.structure sid) with
+  case isFalse => simp at ok
+  rename_i hel
+  simp only [Option.some.injEq] at ok
+  subst ok
+  have wok := wordElement_wordType hel
+  have agg : (∃ id, element.toCore = .structure id) ∨ ∃ id, element.toCore = .enumeration id := by
+    cases element <;> simp_all [wordElement, SrcType.toCore]
+  have agg2 := agg
+  rcases agg2 with ⟨id, e⟩ | ⟨id, e⟩ <;>
+    (simp only [Semantics.rawSliceStride?, NativeLayout.elementStride?, e] at strideOk; rw [← e] at strideOk)
+  all_goals
+    cases hwords : NativeLayout.valueWords? sp.toCore element.toCore with
     | none => simp [hwords] at strideOk
     | some words =>
     simp only [hwords, Option.some.injEq] at strideOk
     subst strideOk
-    obtain ⟨n1, small⟩ := valueWords_leaves declared lv (List.ne_nil_of_length_pos (by rw [← wlen]; exact npos)) hwords
-    rw [← wlen] at n1
-    subst n1
+    rw [NativeLayout.valueWords?, show NativeLayout.maxDepth = 63 + 1 from rfl] at hwords
+    have small := words_le_max agg hwords
+    have wEq := wordType_words element wok hwords
+    subst wEq
     refine ⟨_, rfl, ?_⟩
     simp only [SrcType.Holds, Expr.eval, Word.apply, BinOp.apply]
-    rw [stride_word_bits (by rw [wlen]; exact small)]
+    rw [stride_word_bits (by simpa [NativeLayout.maxWords] using small)]
     rfl
-  split at ok
-  · simp at ok
-  rename_i wss hwss
-  simp only [Option.some.injEq] at ok
-  subst ok
-  obtain ⟨eid, variants, rfl, declared, widths, vpos, vsmall⟩ := enumWidths_leaves hwss
-  have lvs : ∀ fs ∈ variants, ∃ ls, Leaves sp.decls fs ls := fun fs mem => by
-    obtain ⟨m, hm⟩ := List.getElem?_of_mem mem
-    obtain ⟨_, ls, _, lv, _⟩ := (variantWidths_leaves widths).2 m fs hm
-    exact ⟨ls, lv⟩
-  have mlen := maxLength_leaves widths
-  simp only [Semantics.rawSliceStride?, NativeLayout.elementStride?, SrcType.toCore] at strideOk
-  cases hwords : NativeLayout.valueWords? sp.toCore (Core.Ty.enumeration eid) with
-  | none => simp [hwords] at strideOk
-  | some words =>
-  simp only [hwords, Option.some.injEq] at strideOk
-  subst strideOk
-  obtain ⟨wordsEq, smallW⟩ := valueWords_enum_leaves declared lvs hwords
-  have n1 : words = maxLength wss + 1 := by rw [wordsEq, mlen]; omega
-  subst n1
-  refine ⟨_, rfl, ?_⟩
-  simp only [SrcType.Holds, Expr.eval, Word.apply, BinOp.apply]
-  rw [stride_word_bits (by have : maxSize variants < 4096 := smallW; omega)]
-  rfl
 
 /-- `slice[index]` of a raw slice of `i32`: the index in `slot`, then the
 element loaded over it. -/
@@ -780,51 +758,22 @@ theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {inde
     have tail : st'.heap.nextAddress ≤ hp1.limit := by rw [exec1.limit_normal]; exact bound
     simp only [evalWordElement] at ok
     split at ok
-    · rename_i ws hws
-      simp only [evalFields] at ok
-      split at ok
-      case isFalse => simp at ok
-      rename_i kind
-      simp only [Option.some.injEq] at ok
-      subst ok
-      have scalar : i.ty.isScalar = true := by
-        cases hty : i.ty <;> simp_all [SrcType.isI32, SrcType.isUint, SrcType.isScalar]
-      have posEq := index_toNat (t := { expr := .var slot, ty := i.ty }) kind (holds_var holds1 scalar) posOk
-      have below : (elementBase b.slot ws.length (.var slot)).Below (slot + 1) :=
-        ⟨(by simp only [Expr.Below]; omega), (by simp only [Expr.Below]; omega), trivial⟩
-      obtain ⟨holds, load⟩ := loadStruct_sound (mp := mp) hc1 tail hws posEq below read
-      obtain ⟨copied, agree⟩ := copy_down holds
-      obtain ⟨sid, fields, ls, rfl, declared, lv, wls, nonempty⟩ := elementWidths_leaves hws
-      obtain ⟨wlen, wget⟩ := leafWidths_get wls
-      refine ⟨fresh1, keeps1, locals1, ?_, d1, _, hp1, .seq exec1 (load (assignFrom_exec _ slot .skip)),
-        fun j lt => ?_, copied, hc1⟩
-      · simp only [SrcType.size, lv.sizes_eq]
-        rw [← wlen]
-        cases ws with
-        | nil => exact absurd rfl nonempty
-        | cons => simp
-      · rw [agree j lt, fieldsEnv_below hp1 _ ws (slot + 1) 0 env1 j (by omega), same1 j lt]
-    · split at ok
-      · simp at ok
-      rename_i wss hwss
-      simp only [evalEnumElement] at ok
-      split at ok
-      case isFalse => simp at ok
-      rename_i kind
-      simp only [Option.some.injEq] at ok
-      subst ok
-      have scalar : i.ty.isScalar = true := by
-        cases hty : i.ty <;> simp_all [SrcType.isI32, SrcType.isUint, SrcType.isScalar]
-      have posEq := index_toNat (t := { expr := .var slot, ty := i.ty }) kind (holds_var holds1 scalar) posOk
-      have below : (elementBase b.slot (maxLength wss + 1) (.var slot)).Below (slot + 1) :=
-        ⟨(by simp only [Expr.Below]; omega), (by simp only [Expr.Below]; omega), trivial⟩
-      obtain ⟨env2, agree2, holds, load⟩ := loadEnum_sound (mp := mp) hc1 tail hwss posEq below read
-      obtain ⟨copied, agree⟩ := copy_down holds
-      obtain ⟨eid, variants, rfl, declared, widths, vpos, vsmall⟩ := enumWidths_leaves hwss
-      have mlen := maxLength_leaves widths
-      refine ⟨fresh1, keeps1, locals1, by simp only [SrcType.size]; omega, d1, _, hp1,
-        .seq exec1 (load (assignFrom_exec _ slot .skip)), fun j lt => ?_, copied, hc1⟩
-      rw [agree j lt, agree2 j (by omega), same1 j lt]
+    case isFalse => simp at ok
+    rename_i cond
+    simp only [Bool.and_eq_true] at cond
+    obtain ⟨hel, kind⟩ := cond
+    simp only [Option.some.injEq] at ok
+    subst ok
+    have scalar : i.ty.isScalar = true := by
+      cases hty : i.ty <;> simp_all [SrcType.isI32, SrcType.isUint, SrcType.isScalar]
+    have posEq := index_toNat (t := { expr := .var slot, ty := i.ty }) kind (holds_var holds1 scalar) posOk
+    have below : (elementBase b.slot element.size (.var slot)).Below (slot + 1) :=
+      ⟨(by simp only [Expr.Below]; omega), (by simp only [Expr.Below]; omega), trivial⟩
+    obtain ⟨env2, agree2, holds, load⟩ := loadElement_sound (mp := mp) hc1 tail hel posEq below read
+    obtain ⟨copied, agree⟩ := copy_down holds
+    refine ⟨fresh1, keeps1, locals1, wordElement_size hel, d1, _, hp1,
+      .seq exec1 (load (assignFrom_exec _ slot .skip)), fun j lt => ?_, copied, hc1⟩
+    rw [agree j lt, agree2 j (.inl (by omega)), same1 j lt]
   rename_i isI32
   have eltEq := eq_of_isI32 isI32
   subst eltEq
@@ -1625,30 +1574,18 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
             (fun j lt => (same2 j (by omega)).trans (same1 j lt)))).cells_congr rfl fun _ _ => rfl) hc'⟩
       simp only [storeEvalWord] at ok
       split at ok
-      · rename_i ws hws
-        simp only [storeEvalThen] at ok
-        split at ok
-        case isFalse => simp at ok
-        split at ok
-        · simp at ok
-        rename_i s sOk
-        simp only [Option.some.injEq] at ok
-        subst ok
-        obtain ⟨hp', exec, hc'⟩ := storeStruct_sound (mp := mp) hc2 hws posEq located stored flat sOk bound3
-        exact finish exec hc'
-      · split at ok
-        · simp at ok
-        rename_i wss hwss
-        simp only [storeEvalThen] at ok
-        split at ok
-        case isFalse => simp at ok
-        split at ok
-        · simp at ok
-        rename_i s sOk
-        simp only [Option.some.injEq] at ok
-        subst ok
-        obtain ⟨hp', exec, hc'⟩ := storeEnum_sound (mp := mp) hc2 hwss posEq located stored flat sOk bound3
-        exact finish exec hc'
+      case isFalse => simp at ok
+      rename_i hel
+      simp only [storeEvalThen] at ok
+      split at ok
+      case isFalse => simp at ok
+      split at ok
+      · simp at ok
+      rename_i s sOk
+      simp only [Option.some.injEq] at ok
+      subst ok
+      obtain ⟨hp', exec, hc'⟩ := storeElement_sound (mp := mp) hc2 hel posEq located stored flat sOk bound3
+      exact finish exec hc'
     all_goals simp at run
   rename_i isI32
   have eltEq := eq_of_isI32 isI32

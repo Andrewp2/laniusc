@@ -576,8 +576,6 @@ theorem storeEvalWord_cond {decls : SrcDecls} {b : Binding} {e : SrcType} {slot 
   simp only [storeEvalWord] at h
   split at h
   · exact storeEvalThen_cond h
-  · split at h
-    · simp at h
-    · exact storeEvalThen_cond h
+  · simp at h
 
 end Lanius.Mini

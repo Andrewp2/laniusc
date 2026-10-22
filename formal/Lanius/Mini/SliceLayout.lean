@@ -3,11 +3,11 @@ import Lanius.Mini.HeapCorr
 /-!
 # Slice elements in Core's native layout: the word fields
 
-A struct slice element, or an enum payload, is laid out by its leaves, word
-fields (`i32`, `bool`, `u8`, `u32`, `u64`, `usize`, `isize`, `ptr`; `wordWidth`)
-of one 8-byte word each (`FlatLayout`). This file has the facts about one
-word: its widths (`leafWidths`), Core's read and write of it in the slot the
-mini code fills, and the mini side's element and field addresses.
+A struct or enum slice element is laid out a word per slot (`ElementLayout`);
+its scalars are word fields (`i32`, `bool`, `u8`, `u32`, `u64`, `usize`,
+`isize`, `ptr`; `wordWidth`) of one 8-byte word each. This file has the facts
+about one word: Core's read and write of it in the slot the mini code fills,
+and the mini side's element and field addresses.
 -/
 
 namespace Lanius.Mini
@@ -100,40 +100,6 @@ theorem wordWidth_size {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) :
 
 theorem wordWidth_scalar {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) : f.isScalar = true := by
   rcases wordWidth_cases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨k, rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> rfl
-
-/-- One width a field, each field one native word: the widths of a struct's
-leaves (`FlatLayout`), which `wordWidths` gives for nested structs too. -/
-def leafWidths : List SrcType → Option (List MemWidth)
-  | [] => some []
-  | f :: rest => consWidth (wordWidth f) (leafWidths rest)
-
-/-- `leafWidths` pairs each field with its width. -/
-theorem leafWidths_get : ∀ {fields : List SrcType} {ws : List MemWidth}, leafWidths fields = some ws →
-    ws.length = fields.length ∧ ∀ (j : Nat) f, fields[j]? = some f → ∃ w, ws[j]? = some w ∧ wordWidth f = some w
-  | [], ws, h => by
-    simp only [leafWidths, Option.some.injEq] at h
-    subst h
-    exact ⟨rfl, fun _ _ found => by simp at found⟩
-  | f :: rest, ws, h => by
-    simp only [leafWidths, consWidth] at h
-    split at h
-    · simp at h
-    rename_i w hw
-    split at h
-    · simp at h
-    rename_i rs hrs
-    simp only [Option.some.injEq] at h
-    subst h
-    obtain ⟨len, each⟩ := leafWidths_get hrs
-    refine ⟨by simp [len], fun j g found => ?_⟩
-    cases j with
-    | zero =>
-      simp only [List.getElem?_cons_zero, Option.some.injEq] at found
-      subst found
-      exact ⟨w, rfl, hw⟩
-    | succ j =>
-      simp only [List.getElem?_cons_succ] at found ⊢
-      exact each j g found
 
 theorem i32_load_holds {bits : Nat} (lt : bits < 2 ^ 32) :
     SrcType.i32.Holds (.signed .i32 (if bits ≥ 2 ^ 31 then Int.ofNat bits - 2 ^ 32 else Int.ofNat bits))
