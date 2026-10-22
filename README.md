@@ -36,6 +36,12 @@ The [execution audit and portable foundation](docs/stdlib-foundation.md) lists
 the stdlib APIs verified on x86_64, their edge behavior, and the remaining
 compiler and runtime dependencies.
 
+The [standard and extended library roadmap](docs/library-roadmap.md) tracks the
+full scope and delivery requirements. New APIs follow the
+[library conventions](docs/library-api-conventions.md); the first
+[owned UTF-8 String](docs/stdlib-string.md) has executable native examples and
+allocation-failure tests.
+
 ## Benchmarks
 
 TODO

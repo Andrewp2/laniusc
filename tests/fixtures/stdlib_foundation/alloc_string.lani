@@ -1,0 +1,99 @@
+// expect: 0
+module app::main;
+import alloc::string;
+import core::option;
+import core::result;
+
+fn length(result: core::result::Result<i32, alloc::string::Error>) -> i32 {
+    return match (result) { Ok(value) -> value, Err(_) -> -1 };
+}
+
+fn invalid_scalar(error: alloc::string::Error) -> bool {
+    return match (error) { InvalidScalar -> true, _ -> false };
+}
+
+fn interior_byte(error: alloc::string::Error) -> bool {
+    return match (error) { NotCharBoundary -> true, _ -> false };
+}
+
+fn main() -> i32 {
+    let text: alloc::string::String = alloc::string::new();
+    if (!text.is_empty() || text.byte_len() != 0 || text.capacity() != 0) { return 1; }
+    if (!text.is_char_boundary(0) || text.is_char_boundary(-1) || text.is_char_boundary(1)) { return 2; }
+    if (core::option::is_some(text.pop_scalar()) || core::option::is_some(text.byte_at(0))) { return 3; }
+    // NUL, two-, three- and four-byte scalars, including the maximum scalar.
+    if (length(text.try_push_scalar(0)) != 1) { return 4; }
+    if (length(text.try_push_scalar(233)) != 3) { return 5; }
+    if (length(text.try_push_scalar(8364)) != 6) { return 6; }
+    if (length(text.try_push_scalar(1114111)) != 10) { return 7; }
+    if (text.scalar_count() != 4 || text.byte_len() != 10) { return 8; }
+    if (core::option::unwrap_or(text.scalar_at_byte(1), 0) != 233) { return 9; }
+    if (core::option::unwrap_or(text.scalar_at_byte(3), 0) != 8364) { return 10; }
+    if (core::option::unwrap_or(text.scalar_at_byte(6), 0) != 1114111) { return 11; }
+    if (core::option::is_some(text.scalar_at_byte(2)) || core::option::is_some(text.scalar_at_byte(10))) { return 12; }
+    if (core::option::unwrap_or(text.byte_at(1), 0) != 195) { return 13; }
+    if (core::option::is_some(text.byte_at(-1)) || core::option::is_some(text.byte_at(10))) { return 14; }
+
+    let bad_scalar: bool = match (text.try_push_scalar(55296)) {
+        Ok(_) -> false, Err(error) -> invalid_scalar(error),
+    };
+    if (!bad_scalar || text.byte_len() != 10) { return 15; }
+    if (!core::result::is_err(text.try_push_scalar(1114112))) { return 16; }
+    let inside: bool = match (text.try_truncate(2)) {
+        Ok(_) -> false, Err(error) -> interior_byte(error),
+    };
+    if (!inside || text.byte_len() != 10) { return 17; }
+    if (!core::result::is_err(text.try_truncate(-1)) || !core::result::is_err(text.try_truncate(11))) { return 18; }
+
+    let duplicate: alloc::string::String = match (text.try_clone()) {
+        Ok(value) -> value, Err(_) -> alloc::string::new(),
+    };
+    if (!text.equals(duplicate)) { return 19; }
+    if (core::option::unwrap_or(text.pop_scalar(), 0) != 1114111 || text.byte_len() != 6) { return 20; }
+    if (duplicate.byte_len() != 10 || text.equals(duplicate)) { return 21; }
+    if (length(text.try_truncate(3)) != 3 || text.scalar_count() != 2) { return 22; }
+    if (core::option::unwrap_or(text.pop_scalar(), 0) != 233) { return 23; }
+    if (core::option::unwrap_or(text.pop_scalar(), 1) != 0 || !text.is_empty()) { return 24; }
+    if (core::option::is_some(text.pop_scalar())) { return 25; }
+    text.destroy();
+    duplicate.destroy();
+
+    let input: [u8; 4] = [97, 195, 169, 98];
+    let sentence: alloc::string::String = match (alloc::string::from_utf8(input, 4)) {
+        Ok(value) -> value, Err(_) -> alloc::string::new(),
+    };
+    if (sentence.byte_len() != 4 || sentence.scalar_count() != 3) { return 26; }
+    // Source copies are independent of their input array.
+    input[0] = 120;
+    if (core::option::unwrap_or(sentence.byte_at(0), 0) != 97) { return 27; }
+    // Self append exercises growth while its source still views old storage.
+    if (length(sentence.try_append(sentence)) != 8 || sentence.scalar_count() != 6) { return 28; }
+    if (core::option::unwrap_or(sentence.byte_at(4), 0) != 97) { return 29; }
+    if (length(sentence.try_reserve(32)) < 32) { return 30; }
+    // The same alias is safe when there is already enough capacity.
+    let borrowed: [u8] = sentence.as_bytes();
+    if (length(sentence.try_append_utf8(borrowed, 8)) != 16 || sentence.scalar_count() != 12) { return 31; }
+    if (!core::result::is_err(sentence.try_reserve(-1))) { return 32; }
+
+    let needle_bytes: [u8; 2] = [195, 169];
+    let needle: alloc::string::String = match (alloc::string::from_utf8(needle_bytes, 2)) {
+        Ok(value) -> value, Err(_) -> alloc::string::new(),
+    };
+    if (core::option::unwrap_or(sentence.find(needle), -1) != 1) { return 33; }
+    let absent: alloc::string::String = alloc::string::new();
+    if (length(absent.try_push_scalar(122)) != 1 || core::option::is_some(sentence.find(absent))) { return 34; }
+    absent.clear();
+    if (core::option::unwrap_or(sentence.find(absent), -1) != 0) { return 35; }
+    let reserved: i32 = sentence.capacity();
+    sentence.clear();
+    if (!sentence.is_empty() || sentence.capacity() != reserved) { return 36; }
+    if (length(sentence.try_append(needle)) != 2 || !sentence.equals(needle)) { return 37; }
+    sentence.destroy();
+    needle.destroy();
+    absent.destroy();
+    if (sentence.byte_len() != 0 || sentence.capacity() != 0) { return 38; }
+    // Reset owners can be reused and destroyed again.
+    if (length(sentence.try_push_scalar(65)) != 1) { return 39; }
+    sentence.destroy();
+    return 0;
+}

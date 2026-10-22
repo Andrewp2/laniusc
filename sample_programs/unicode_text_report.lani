@@ -1,0 +1,67 @@
+// Read UTF-8 from stdin, report its byte and scalar counts, then print its
+// scalars in reverse order. Reversal is by scalar, not by grapheme cluster.
+module app::main;
+import alloc::string;
+import core::option;
+import core::result;
+import std::io;
+import std::io_byte;
+import std::io_decimal;
+import std::vec;
+
+fn report(text: alloc::string::String) -> i32 {
+    if (std::io_decimal::write_i32(1, text.byte_len()) < 0) { return 3; }
+    if (!std::io_byte::write_stdout_byte(32)) { return 3; }
+    if (std::io_decimal::write_i32(1, text.scalar_count()) < 0) { return 3; }
+    if (!std::io_byte::write_stdout_byte(10)) { return 3; }
+    let reversed: alloc::string::String = alloc::string::new();
+    while (!text.is_empty()) {
+        let scalar: u32 = core::option::unwrap_or(text.pop_scalar(), 0);
+        if (core::result::is_err(reversed.try_push_scalar(scalar))) {
+            reversed.destroy();
+            return 4;
+        }
+    }
+    let bytes: [u8] = reversed.as_bytes();
+    let index: i32 = 0;
+    while (index < reversed.byte_len()) {
+        if (!std::io_byte::write_stdout_byte(bytes[index] as i32)) {
+            reversed.destroy();
+            return 3;
+        }
+        index += 1;
+    }
+    reversed.destroy();
+    return 0;
+}
+
+fn main() -> i32 {
+    let input: std::vec::Vec<u8> = std::vec::new();
+    let byte: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
+    while (byte >= 0) {
+        let previous: i32 = std::vec::len(input);
+        input = std::vec::try_push(input, byte as u8);
+        if (std::vec::len(input) == previous) { std::vec::destroy(input); return 4; }
+        byte = std::io_byte::read_stdin_byte_or(-1, -2);
+    }
+    if (byte == -2) { std::vec::destroy(input); return 3; }
+    let bytes: [u8] = std::vec::as_slice(input);
+    let decoded: core::result::Result<alloc::string::String, alloc::string::Error> =
+        alloc::string::from_utf8(bytes, std::vec::len(input));
+    std::vec::destroy(input);
+    return match (decoded) {
+        Ok(text) -> finish(text),
+        Err(_) -> invalid_input(),
+    };
+}
+
+fn finish(text: alloc::string::String) -> i32 {
+    let result: i32 = report(text);
+    text.destroy();
+    return result;
+}
+
+fn invalid_input() -> i32 {
+    std::io::eprintln("invalid UTF-8 input");
+    return 2;
+}

@@ -1,0 +1,89 @@
+# Library API conventions
+
+These conventions guide the standard and extended libraries. Existing modules
+must migrate with their callers as each family is completed.
+
+## Values and ownership
+
+Ordinary scalar and record values copy. A record containing an allocation handle
+does not acquire a second allocation when copied. The current language does not
+enforce unique ownership or automatic destruction.
+
+- An owned value has one active owner. `destroy` releases its allocation exactly
+  once. A clone allocates independent storage; nested ownership must specify
+  whether the clone is shallow or deep.
+- A consuming operation returns the replacement owner. On success, use only
+  that returned owner. On failure, the operation's contract states how the
+  original owner is recovered or retained.
+- Prefer a borrowed mutating receiver when the compiler supports its complete
+  behavior. It lets a fallible operation return `Result` without transferring
+  ownership merely to update a buffer.
+- Views borrow storage. Their owner must remain alive, and operations that
+  move or destroy the storage invalidate them. Read-only views must not expose
+  writable storage that can break an invariant without an explicit contract.
+- Do not describe manual ownership conventions as compiler-enforced safety.
+
+## Errors
+
+- `Option<T>` represents ordinary absence, such as a search without a match.
+- `Result<T, E>` represents recoverable failure. Error values identify the
+  cause and carry useful context such as an input byte offset.
+- Operations that can fail allocation should return an explicit result.
+  Do not require callers to compare lengths to discover failure in new APIs.
+- Fallible edits validate input and reserve storage before changing contents.
+  Allocation or validation failure leaves the original contents and owner
+  valid. State exceptions explicitly for stream operations that may already
+  have transferred bytes.
+- Panics are for documented checked preconditions and explicit convenience
+  operations. Missing host support must never look like successful execution.
+
+## Bytes, text and indices
+
+Bytes are arbitrary `u8` values. Text is valid UTF-8 and can contain NUL. String
+length means bytes unless the API explicitly names scalars or graphemes.
+
+Text edits and text slices require Unicode scalar boundaries. A negative index,
+an index beyond the length, and a byte index inside a scalar have explicit
+failure behavior. Empty text is valid. No normalization or locale-sensitive
+comparison happens implicitly.
+
+Use length-bearing slices when the compiler exposes their lengths. Existing
+slice APIs still take a separate `i32` count; a caller must back that many
+elements. This is a compiler/API prerequisite to remove, not a reason to read
+beyond a slice. Raw pointers and lengths remain explicit low-level interfaces.
+
+Owned UTF-8 storage should use packed bytes. Encoding validation belongs at
+construction and mutation boundaries; repeated queries should not revalidate
+an unchanged owned string.
+
+## Comparisons, hashing and iteration
+
+Equality and hashing must agree. A hash collection requires equivalence
+semantics, including a defined choice for floating-point NaNs and signed zero.
+Partial ordering and total ordering are different contracts. Sorting, binary
+search and ordered collections must state the relation they require.
+
+Iteration exposes progress and exhaustion explicitly. Adapters preserve
+documented ownership, error and cancellation behavior. Do not require closure
+or associated-type features without first establishing compiler support.
+
+## I/O and targets
+
+Readers report bytes read, EOF and errors distinctly. Writers report partial
+progress; `write_all` handles short writes. Buffering, flushing, closing and
+cancellation have separate meanings. Host bindings preserve errors needed by
+callers instead of converting every failure to a boolean.
+
+Module documentation names supported targets and required services. Portable
+algorithms remain separate from allocation and operating-system bindings.
+
+## Compatibility and evidence
+
+There is no identified external compatibility commitment for the APIs being
+developed here. Migrate repository consumers together rather than adding aliases
+or permanent wrappers around old APIs. Record a real external requirement before
+introducing compatibility support.
+
+Examples must run. Tests cover normal values, boundaries, malformed input and
+applicable resource failures. A declaration, source scan or successful type check
+does not establish an executable API.
