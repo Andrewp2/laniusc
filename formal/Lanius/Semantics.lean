@@ -954,8 +954,9 @@ def mapI32ArrayView
           | .exhausted heap => .trapped .allocationFailure { state with heap }
           | .trapped reason heap => .trapped reason { state with heap }
 
-/-- Borrow one exact raw block and retain its native pointer/length descriptor.
-    Raw storage has one source of truth: the heap. Only pointers into existing
+/-- View `length` packed i32 elements from `address`, a 4-aligned range inside
+    one live block, and retain its native pointer/length descriptor. Raw
+    storage has one source of truth: the heap. Only pointers into existing
     language arrays need registered cell-backed views and synchronization. -/
 def mapRawI32Slice (state : State) (address : Address) (signedLength : Int) :
     Outcome Value :=
@@ -965,15 +966,13 @@ def mapRawI32Slice (state : State) (address : Address) (signedLength : Int) :
     .done (.rawSlice (.scalar (.signed .i32)) address 0) state
   else
     let length := signedLength.toNat
-    match state.heap.protectAsBorrowed address (length * 4) 4 with
+    match state.heap.checkRange address (length * 4) 4 with
     | .error reason => .trapped reason state
-    | .ok protectedHeap =>
-        .done (.rawSlice (.scalar (.signed .i32)) address length)
-          { state with heap := protectedHeap }
+    | .ok () => .done (.rawSlice (.scalar (.signed .i32)) address length) state
 
 /-- Keep native aggregate views as heap aliases, not copied arrays. The
     descriptor points at the high word of element zero; its finite layout
-    determines the whole backward byte range before that range is borrowed. -/
+    determines the whole backward byte range, which must lie in one live block. -/
 def mapRawNominalSlice (program : Program) (state : State)
     (element : Ty) (address : Address) (signedLength : Int) : Outcome Value :=
   if signedLength < 0 then .trapped .rawMemoryBounds state
@@ -994,12 +993,22 @@ def mapRawNominalSlice (program : Program) (state : State)
             .trapped .rawMemoryBounds state
           else
             let first := address + NativeLayout.wordBytes - bytes
-            match state.heap.protectRangeAsBorrowed first bytes
-                NativeLayout.wordBytes with
+            match state.heap.checkRange first bytes NativeLayout.wordBytes with
             | .error reason => .trapped reason state
-            | .ok heap =>
-                .done (.rawSlice element address length)
-                  { state with heap }
+            | .ok () => .done (.rawSlice element address length) state
+
+/-- `slice_stride(view)`: element i + 1 of a raw view starts this many bytes
+    after element i. i32 views run forward; nominal views run down by their
+    native size. Views of language arrays have no stride here. -/
+def rawSliceStride? (program : Program) (value : Value) : Option Int :=
+  match value with
+  | .rawSlice element _ _ =>
+      if element = .scalar (.signed .i32) then some 4
+      else
+        match NativeLayout.valueWords? program element with
+        | some words => some (-((NativeLayout.wordBytes * words : Nat) : Int))
+        | none => none
+  | _ => none
 
 def mapI32SliceDataPtr
     (state : State) (cell : CellId) (projections : List ValueProjection)
@@ -1372,6 +1381,10 @@ mutual
                     .done .unit { next with world := next.world.afterPrintI32 integer }
                 | .assert, .boolean true => .done .unit next
                 | .assert, .boolean false => .trapped .assertionFailed next
+                | .sliceStride, view =>
+                    match rawSliceStride? program view with
+                    | some stride => .done (.signed .isize stride) next
+                    | none => .trapped .typeMismatch next
                 | _, _ => .trapped .typeMismatch next
             | .trapped reason next => .trapped reason next
             | .exited code exitedState => .exited code exitedState

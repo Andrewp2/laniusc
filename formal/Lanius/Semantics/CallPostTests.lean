@@ -7,8 +7,8 @@ open Lanius Lanius.Core Lanius.Memory
 
 private def before : State := { heap := { blocks := [
   { base := 4, size := 4, alignment := 4, bytes := [0, 0, 0, 0], owned := true }], nextAddress := 8 } }
-private def borrowed : State := { before with heap := { before.heap with blocks := [
-  { base := 4, size := 4, alignment := 4, bytes := [0, 0, 0, 0], owned := false }] } }
+-- A raw view leaves the state as it was.
+private def borrowed : State := before
 private def pointer : Value := .rawSlice (.scalar (.signed .i32)) 4 1
 private def initializer : Expr := .i32SliceFromRawParts (.value (.pointer 4)) (.value (.signed .i32 1))
 private def declaration : Function := {
@@ -23,7 +23,8 @@ theorem retainsBorrow : ∃ value after,
     value = pointer ∧ after.heap = borrowed.heap := by
   apply RunsExpr.callPost (function := declaration) (values := []) (bindings := []) rfl rfl rfl
   · have construct : mapRawI32Slice before 4 1 = .done pointer borrowed :=
-      mapRawI32Slice_of_block (state := before) (address := 4) 1 (by decide) rfl rfl rfl rfl
+      mapRawI32Slice_of_block (state := before) (address := 4) 1 (by decide) rfl (by decide) (by decide)
+        (by decide)
     have initial := RunsExpr.rawSliceFromParts (program := program)
       (RunsExpr.ofStable StableExpr.value rfl) (RunsExpr.ofStable StableExpr.value rfl) construct rfl
     apply RunsStmt.letLocalPost (ready := borrowed) initial

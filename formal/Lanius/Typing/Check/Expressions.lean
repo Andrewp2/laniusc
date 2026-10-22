@@ -193,6 +193,12 @@ mutual
     | .intrinsic .assert argument =>
         do let checked ← checkExprFuel fuel program context argument (.scalar .bool)
            pure ⟨.unit, ⟨.assert checked.down⟩⟩
+    | .intrinsic .sliceStride argument =>
+        do let checked ← checkExprAnyFuel fuel program context argument
+           match checked with
+           | ⟨.slice _, checked⟩ =>
+               pure ⟨.scalar (.signed .isize), ⟨.sliceStride checked.down⟩⟩
+           | _ => none
     | .i32ArrayDataPtr array =>
         do let checked ← checkExprAnyFuel fuel program context array
            match checked with

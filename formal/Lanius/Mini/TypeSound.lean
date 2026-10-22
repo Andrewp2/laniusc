@@ -1404,6 +1404,28 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
               · exact .binary typedL typedR (.divide (IsInt.uint k).arith)
               · exact .binary typedL typedR (.remainder (IsInt.uint k).integer)
             · simp at h
+  | .eStride slice, scope, ctx, slot, ev, ok, dd, h => by
+    simp only [SrcEff.eval, evalStride] at h
+    split at h
+    · simp at h
+    · rename_i b found
+      split at h
+      · simp at h
+      · rename_i element he
+        have inCtx := (ok slice b found).1
+        have bty : b.ty = .slice element := by cases hb : b.ty <;> simp_all [elementOf]
+        rw [bty] at inCtx
+        have tyEq : ev.ty = .isize := by
+          simp only [evalStrideOf, evalWordStride, wordStride] at h
+          split at h
+          · simp only [Option.some.injEq] at h; subst h; rfl
+          · split at h
+            · simp only [Option.some.injEq] at h; subst h; rfl
+            · split at h
+              · simp at h
+              · simp only [Option.some.injEq] at h; subst h; rfl
+        rw [tyEq]
+        exact .sliceStride (.local inCtx)
 
 theorem evalArgs_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {sigs : List Sig} {decls : SrcDecls} (sigsOk : SigsOk P sigs) :

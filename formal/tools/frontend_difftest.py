@@ -945,6 +945,7 @@ partial def serEff : SrcEff → String
   | .eMatch x e t bs vs =>
     s!"(.eMatch {serEff x} {serType e} {serType t} {bracket (bs.map fun b => bracket (b.map toString))} {bracket (vs.map serEff)})"
   | .eDivide o a b => s!"(.eDivide {serDiv o} {serEff a} {serEff b})"
+  | .eStride sl => s!"(.eStride {sl})"
 
 def serArm (a : SrcArm) : String :=
   "{ binders := " ++ bracket (a.binders.map toString) ++ ", value := " ++ serExpr a.value ++ " }"
@@ -1064,7 +1065,7 @@ def checkMulti (bases : List String) (mutants : List (String × String)) : IO Un
 -- texts of one program (a generic one and its hand-monomorphized copy) can be
 -- compared.
 partial def effBinders : SrcEff → List Nat
-  | .ePure _ => []
+  | .ePure _ | .eStride _ => []
   | .eCall _ xs | .eStruct _ xs | .eVariant _ _ xs => xs.flatMap effBinders
   | .eApply _ a b | .eDivide _ a b => effBinders a ++ effBinders b
   | .eNeg a | .eNot a | .eCast _ a | .eIndex _ a => effBinders a
@@ -1105,6 +1106,7 @@ partial def renEff (f : Nat → Nat) : SrcEff → SrcEff
   | .eVariant t k xs => .eVariant t k (xs.map (renEff f))
   | .eMatch x e t bs vs => .eMatch (renEff f x) e t (bs.map (·.map f)) (vs.map (renEff f))
   | .eDivide o a b => .eDivide o (renEff f a) (renEff f b)
+  | .eStride sl => .eStride (f sl)
 
 partial def renStmt (f : Nat → Nat) : SrcStmt → SrcStmt
   | .nop => .nop

@@ -371,34 +371,6 @@ theorem HeapCorr.replace {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {b
     · exact corr.bytes blk mem bl i inside
     · exact corr.bytes b mb bl i inside
 
-theorem HeapCorr.protect {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {p n a : Nat}
-    {h' : Memory.Heap} (ok : h.protectAsBorrowed p n a = .ok h') : HeapCorr h' hp := by
-  simp only [Memory.Heap.protectAsBorrowed] at ok
-  split at ok
-  · simp at ok
-  · rename_i blk found
-    split at ok
-    · simp at ok
-    · split at ok
-      · simp at ok
-      · simp only [Except.ok.injEq] at ok
-        subst ok
-        exact corr.replace (List.mem_of_find?_eq_some found) rfl rfl rfl rfl
-
-theorem HeapCorr.protectRange {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {p n a : Nat}
-    {h' : Memory.Heap} (ok : h.protectRangeAsBorrowed p n a = .ok h') : HeapCorr h' hp := by
-  simp only [Memory.Heap.protectRangeAsBorrowed] at ok
-  split at ok
-  · simp at ok
-  · split at ok
-    · simp at ok
-    · rename_i blk found
-      split at ok
-      · simp at ok
-      · simp only [Except.ok.injEq] at ok
-        subst ok
-        exact corr.replace (containing found).1 rfl rfl rfl rfl
-
 /-- Core's `count` bytes from `p + o`, little-endian, are the mini heap's,
 and lie below the cursor. -/
 theorem HeapCorr.loadBytesFrom {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {p : Nat} :

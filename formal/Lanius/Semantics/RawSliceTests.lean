@@ -8,11 +8,29 @@ private def block : Block := {
   base := 4, size := 8, alignment := 4, bytes := i32Bytes 7 ++ i32Bytes 11 }
 private def state : State := { heap := { blocks := [block], nextAddress := 12 } }
 
--- Raw construction adds neither backing cells nor registered views.
+-- Raw construction adds neither backing cells nor registered views, and
+-- leaves the allocation with its owner.
 example : (match mapRawI32Slice state 4 2 with
   | .done (.rawSlice (.scalar (.signed .i32)) 4 2) after =>
       after.cells.isEmpty && after.i32ArrayViews.isEmpty && after.nextCell == 0 &&
-        (match after.heap.block? 4 with | some block => !block.owned | _ => false)
+        (match after.heap.block? 4 with | some block => block.owned | _ => false)
+  | _ => false) = true := by decide
+
+-- A view may cover any aligned range inside the block.
+example : (match mapRawI32Slice state 8 1 with
+  | .done (.rawSlice (.scalar (.signed .i32)) 8 1) _ => true | _ => false) = true := by decide
+example : (match mapRawI32Slice state 6 1 with
+  | .trapped .rawMemoryBounds _ => true | _ => false) = true := by decide
+
+-- The owner can still free the storage after a view, and a read through the
+-- view then traps.
+example : (match mapRawI32Slice state 4 2 with
+  | .done (.rawSlice element address length) after =>
+      match after.heap.deallocate 4 8 4 with
+      | .ok heap =>
+          match readRawSliceIndex {} { after with heap } element address length 0 with
+          | .error .invalidPointer => true | _ => false
+      | .error _ => false
   | _ => false) = true := by decide
 
 example : (match mapRawI32Slice state 4 2 with
@@ -91,7 +109,6 @@ example (input : String) : mapRawI32Slice
     .done (.rawSlice (.scalar (.signed .i32)) 4 (((World.utf8Bytes input).length + 3) / 4))
       { heap := ({} : Heap).borrowedI32 (stringStorage input) } := by
   exact mapRawI32Slice_stringStorage rfl (by simp [HeapBlocksBelowNext])
-    (by simp [HeapBlockBasesUnique])
 
 #print axioms mapRawI32Slice_stringStorage
 #print axioms RunsExpr.stringDataPtr

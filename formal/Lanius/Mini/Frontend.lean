@@ -4924,6 +4924,7 @@ def knownEff (funcs : List SrcFunc) (locals : List LocalTy) (x : SrcEff) : Optio
   | .eVariant t k ps => some t
   | .eMatch s ety t bs vs => some t
   | .eDivide op a b => eitherTy (knownEff funcs locals a) (knownEff funcs locals b)
+  | .eStride s => some SrcType.isize
 
 mutual
 
@@ -4940,6 +4941,7 @@ def litEff (funcs : List SrcFunc) (locals : List LocalTy) (want : Option SrcType
   | .eVariant t k ps => SrcEff.eVariant t k (litEffs funcs locals (payloadAt (srcVariants (some t)) k) ps)
   | .eMatch s ety t bs vs => SrcEff.eMatch (litEff funcs locals (some ety) s) ety t bs (litArmEffs funcs locals (srcVariants (some ety)) t bs vs)
   | .eDivide op a b => SrcEff.eDivide op (litEff funcs locals (operandWant SrcOp.plus want (knownEff funcs locals a) (knownEff funcs locals b)) a) (litEff funcs locals (operandWant SrcOp.plus want (knownEff funcs locals a) (knownEff funcs locals b)) b)
+  | .eStride s => SrcEff.eStride s
 
 def litEffs (funcs : List SrcFunc) (locals : List LocalTy) (wants : Option (List SrcType)) (xs : List SrcEff) : List SrcEff :=
   match xs with

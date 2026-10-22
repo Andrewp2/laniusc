@@ -9,8 +9,8 @@ open Lanius.Core Lanius.Memory
 
 private def before : State := { heap := { blocks := [
   { base := 4, size := 4, alignment := 4, bytes := [0, 0, 0, 0], owned := true }], nextAddress := 8 } }
-private def borrowed : Heap := { before.heap with blocks := [
-  { base := 4, size := 4, alignment := 4, bytes := [0, 0, 0, 0], owned := false }] }
+-- A raw view leaves the heap as it was.
+private def borrowed : Heap := before.heap
 private def pointer : Value := .rawSlice (.scalar (.signed .i32)) 4 1
 private def declaration : Function := {
   id := 7, parameters := [], returnType := .slice (.scalar (.signed .i32))
@@ -25,7 +25,8 @@ theorem retainsOwnership : ∃ after, RunsExpr program before (.call 7 []) point
   have formed : before.CellsWellFormed := by simp [State.CellsWellFormed, before]
   core_call_framed (RunsExpr.callEffect (MemoryEffect.scopeStable relation)) declaration as callee
   have construct : mapRawI32Slice callee 4 1 = .done pointer { callee with heap := borrowed } :=
-    mapRawI32Slice_of_block (state := callee) (address := 4) 1 (by decide) rfl rfl rfl rfl
+    mapRawI32Slice_of_block (state := callee) (address := 4) 1 (by decide) rfl (by decide) (by decide)
+      (by decide)
   have run := RunsExpr.rawSliceFromParts (program := program)
     (RunsExpr.ofStable StableExpr.value rfl) (RunsExpr.ofStable StableExpr.value rfl) construct rfl
   apply RunsStmt.returnEffect

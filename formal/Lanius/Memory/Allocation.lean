@@ -1,4 +1,5 @@
 import Lanius.Memory.Borrow
+import Lanius.Memory.BorrowRange
 
 namespace Lanius.Memory
 
@@ -122,24 +123,39 @@ private theorem replaceBlock_appendFresh (blocks : List Block) (fresh replacemen
       have different := missing block (by simp)
       simp [replaceBlock, different, ih (fun item member => missing item (by simp [member]))]
 
-/-- Protecting freshly allocated storage changes ownership, not its bytes,
-    frontier, or already-consumed allocation budget. -/
-theorem Heap.appendI32_protect (below : HeapBlocksBelowNext heap) :
-    (heap.appendI32 bytes owned budget).protectAsBorrowed heap.borrowedAddress bytes.length 4 =
-      .ok (heap.appendI32 bytes false budget) := by
-  simp only [Heap.protectAsBorrowed, Heap.appendI32_block below, Bool.not_true,
-    Bool.false_eq_true, ↓reduceIte]
-  have replaced := replaceBlock_appendFresh heap.blocks
-    { base := heap.borrowedAddress, size := bytes.length, alignment := 4, bytes, owned }
-    { base := heap.borrowedAddress, size := bytes.length, alignment := 4, bytes, owned := false }
-    rfl (fun block member => Nat.ne_of_lt (oldBaseBefore below member))
-  simp [Heap.appendI32, replaced]
+/-- The fresh block is the one holding each of its addresses. -/
+theorem Heap.appendI32_containing (below : HeapBlocksBelowNext heap) (inside : index < bytes.length) :
+    (heap.appendI32 bytes owned budget).containingBlock? (heap.borrowedAddress + index) = some {
+      base := heap.borrowedAddress, size := bytes.length, alignment := 4, bytes := bytes, owned := owned } := by
+  have missing : heap.containingBlock? (heap.borrowedAddress + index) = none := by
+    apply List.find?_eq_none.mpr
+    intro block member
+    have bound := oldBefore below member
+    change ¬ (block.live && block.base ≤ heap.borrowedAddress + index &&
+      heap.borrowedAddress + index < block.base + block.size) = true
+    simp only [Bool.and_eq_true, decide_eq_true_eq]
+    dsimp only [Lanius.Address] at *
+    omega
+  simp only [Heap.containingBlock?, Heap.appendI32, List.find?_append] at missing ⊢
+  simp [missing, inside]
 
-theorem Heap.allocatedI32_protect (below : HeapBlocksBelowNext heap) :
-    (heap.allocatedI32 words budget).protectAsBorrowed heap.borrowedAddress (words * 4) 4 =
-      .ok (heap.appendI32 (List.replicate (words * 4) 0) false budget) := by
+theorem Heap.borrowedAddress_aligned (heap : Heap) : heap.borrowedAddress % 4 = 0 := by
+  simp only [Heap.borrowedAddress, alignUp]
+  exact Nat.mul_mod_left _ 4
+
+/-- Freshly allocated storage passes the raw view check. -/
+theorem Heap.appendI32_checkRange (below : HeapBlocksBelowNext heap) (positive : 0 < bytes.length) :
+    (heap.appendI32 bytes owned budget).checkRange heap.borrowedAddress bytes.length 4 = .ok () := by
+  have found := Heap.appendI32_containing (owned := owned) (budget := budget) below positive
+  rw [Nat.add_zero] at found
+  exact Heap.checkRange_of_block found positive heap.borrowedAddress_aligned (by decide) (Nat.le_refl _)
+    (Nat.le_refl _)
+
+theorem Heap.allocatedI32_checkRange (below : HeapBlocksBelowNext heap) (positive : 0 < words) :
+    (heap.allocatedI32 words budget).checkRange heap.borrowedAddress (words * 4) 4 = .ok () := by
   simpa only [Heap.allocatedI32, List.length_replicate] using
-    Heap.appendI32_protect (bytes := List.replicate (words * 4) 0) (owned := true) (budget := budget) below
+    Heap.appendI32_checkRange (bytes := List.replicate (words * 4) 0) (owned := true) (budget := budget) below
+      (by simp only [List.length_replicate]; omega)
 
 theorem Heap.appendI32_readable (below : HeapBlocksBelowNext heap) :
     (heap.appendI32 bytes owned budget).Readable heap.borrowedAddress bytes.length := by

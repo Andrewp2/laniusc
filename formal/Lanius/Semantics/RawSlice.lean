@@ -19,8 +19,9 @@ theorem rawSliceElementAddress_of_layout
   all_goals simp [rawSliceElementAddress?, layout, NativeLayout.elementBase?, NativeLayout.wordBytes,
     Nat.ne_of_gt width, Nat.not_lt_of_ge room, address] <;> rfl
 
-/-- A nonempty typed view borrows its full backward byte range inside the
-    actual allocation. Ownership transfer does not copy or decode elements. -/
+/-- A nonempty typed view needs its full backward byte range inside one live
+    allocation. Constructing it does not copy or decode elements, and leaves
+    the state as it was. -/
 theorem mapRawNominalSlice_of_block (count : Nat) (positive : 0 < count)
     (nominal : (match element with | .structure _ | .enumeration _ => true | _ => false) = true)
     (layout : NativeLayout.valueWords? program element = some words) (width : 0 < words)
@@ -28,28 +29,25 @@ theorem mapRawNominalSlice_of_block (count : Nat) (positive : 0 < count)
     (found : state.heap.containingBlock? (address + NativeLayout.wordBytes - count * words * NativeLayout.wordBytes) = some block)
     (aligned : (address + NativeLayout.wordBytes - count * words * NativeLayout.wordBytes) % NativeLayout.wordBytes = 0)
     (alignment : NativeLayout.wordBytes ≤ block.alignment)
-    (bounds : address + NativeLayout.wordBytes ≤ block.base + block.size)
-    (unique : HeapBlockBasesUnique state.heap) :
-    mapRawNominalSlice program state element address count = .done (.rawSlice element address count)
-      { state with heap := state.heap.borrowBlock block.base } := by
-  have borrowed := Heap.protectRangeAsBorrowed_of_block (size := count * words * NativeLayout.wordBytes) found
-    (Nat.mul_pos (Nat.mul_pos positive width) (by decide)) aligned (by decide) alignment (by omega) unique
+    (bounds : address + NativeLayout.wordBytes ≤ block.base + block.size) :
+    mapRawNominalSlice program state element address count = .done (.rawSlice element address count) state := by
+  have checked := Heap.checkRange_of_block (size := count * words * NativeLayout.wordBytes) found
+    (Nat.mul_pos (Nat.mul_pos positive width) (by decide)) aligned (by decide) alignment (by omega)
   have nonnegative : ¬((count : Int) < 0) := Int.not_lt_of_ge (Int.natCast_nonneg count)
   cases element <;> simp at nominal
   all_goals simp [mapRawNominalSlice, nonnegative, layout, Nat.ne_of_gt width,
-    Nat.ne_of_gt positive, Int.toNat_natCast, Nat.not_lt_of_ge room, borrowed]
+    Nat.ne_of_gt positive, Int.toNat_natCast, Nat.not_lt_of_ge room, checked]
 
 /-- Construct a raw slice from its allocation metadata, without assuming a
     successful constructor or copying/decoding the backing bytes. -/
 theorem mapRawI32Slice_of_block (length : Nat) (positive : 0 < length)
-    (found : state.heap.block? address = some block) (live : block.live = true)
-    (size : block.size = length * 4) (alignment : block.alignment = 4) :
+    (found : state.heap.containingBlock? address = some block) (aligned : address % 4 = 0)
+    (alignment : 4 ≤ block.alignment) (bounds : address + length * 4 ≤ block.base + block.size) :
     mapRawI32Slice state address (length : Int) =
-      .done (.rawSlice (.scalar (.signed .i32)) address length)
-        { state with heap := { state.heap with
-          blocks := replaceBlock state.heap.blocks { block with owned := false } } } := by
-  simp [mapRawI32Slice, Int.natCast_nonneg length, Nat.ne_of_gt positive,
-    Heap.protectAsBorrowed, found, live, size, alignment]
+      .done (.rawSlice (.scalar (.signed .i32)) address length) state := by
+  have checked := Heap.checkRange_of_block (size := length * 4) found (by omega) aligned (by decide)
+    alignment bounds
+  simp [mapRawI32Slice, Int.natCast_nonneg length, Nat.ne_of_gt positive, checked]
 
 theorem mapRawI32Slice_empty (state : State) (address : Lanius.Address) :
     mapRawI32Slice state address 0 = .done (.rawSlice (.scalar (.signed .i32)) address 0) state := by
@@ -65,35 +63,20 @@ theorem StableExpr.rawSliceDataPtr
   rw [show fuel = (fuel - 1).succ by omega, evalExpr.eq_def]
   simp only [evaluated]
 
-/-- Borrowing storage that is already protected does not rewrite the heap. -/
-theorem mapRawI32Slice_of_borrowed (length : Nat)
-    (found : state.heap.block? address = some block) (live : block.live = true)
-    (size : block.size = length * 4) (alignment : block.alignment = 4)
-    (owned : block.owned = false) (unique : HeapBlockBasesUnique state.heap) :
-    mapRawI32Slice state address (length : Int) =
-      .done (.rawSlice (.scalar (.signed .i32)) address length) state := by
-  by_cases zero : length = 0
-  · subst length; exact mapRawI32Slice_empty state address
-  have replacement : { block with owned := false } = block := by cases block; simp_all
-  have unchanged := replaceBlock_self state.heap.blocks block (fun other member same =>
-    unique other member block (List.mem_of_find?_eq_some found) same)
-  simpa only [replacement, unchanged] using mapRawI32Slice_of_block length (by omega) found live size alignment
-
 theorem mapRawI32Slice_stringStorage
     (heapIs : state.heap = heap.borrowedI32 (stringStorage input))
-    (below : HeapBlocksBelowNext heap) (unique : HeapBlockBasesUnique heap) :
+    (below : HeapBlocksBelowNext heap) :
     mapRawI32Slice state heap.borrowedAddress (((World.utf8Bytes input).length + 3) / 4 : Nat) =
       .done (.rawSlice (.scalar (.signed .i32)) heap.borrowedAddress
         (((World.utf8Bytes input).length + 3) / 4)) state := by
-  apply mapRawI32Slice_of_borrowed (block := {
-    base := heap.borrowedAddress, size := (stringStorage input).length,
-    alignment := 4, bytes := stringStorage input, owned := false })
-  · rw [heapIs]; exact Heap.borrowedI32_block below _
-  · rfl
-  · exact stringStorage_length input
-  · rfl
-  · rfl
-  · rw [heapIs]; exact Heap.borrowedI32_unique below unique
+  by_cases zero : ((World.utf8Bytes input).length + 3) / 4 = 0
+  · rw [zero]; exact mapRawI32Slice_empty state _
+  have size := stringStorage_length input
+  have found := Heap.borrowedI32_containing (bytes := stringStorage input) (index := 0) below
+    (by rw [size]; exact Nat.mul_pos (Nat.pos_of_ne_zero zero) (by decide))
+  rw [Nat.add_zero, ← heapIs] at found
+  exact mapRawI32Slice_of_block _ (by omega) found heap.borrowedAddress_aligned (Nat.le_refl _)
+    (by simp only [size]; exact Nat.le_refl _)
 
 theorem RunsExpr.stringDataPtr
     (source : RunsExpr program before expression (.string value) after) :
@@ -119,19 +102,17 @@ theorem RunsExpr.rawSliceFromParts
   simp only [pointerRun (fuel - 1) (by omega), lengthRun (fuel - 1) (by omega), construct]
 
 /-- Raw construction directly from a fresh allocation, after both argument
-    effects. Protection changes ownership, not bytes or allocation budget. -/
+    effects. The view leaves the allocation, and its owner, as they were. -/
 theorem RunsExpr.allocatedI32Slice {words : Nat}
     (pointer : RunsExpr program before pointerExpression (.pointer heap.borrowedAddress) middle)
     (length : RunsExpr program middle lengthExpression (.signed .i32 words) ready)
     (allocated : ready.heap = heap.allocatedI32 words budget)
     (positive : 0 < words) (below : HeapBlocksBelowNext heap) :
     RunsExpr program before (.i32SliceFromRawParts pointerExpression lengthExpression)
-      (.rawSlice (.scalar (.signed .i32)) heap.borrowedAddress words)
-      { ready with heap := heap.appendI32 (List.replicate (words * 4) 0) false budget } := by
-  apply RunsExpr.rawSliceFromParts
-    (after := { ready with heap := heap.appendI32 (List.replicate (words * 4) 0) false budget }) pointer length ?_ rfl
+      (.rawSlice (.scalar (.signed .i32)) heap.borrowedAddress words) ready := by
+  apply RunsExpr.rawSliceFromParts (after := ready) pointer length ?_ rfl
   simp only [mapRawI32Slice, Int.not_lt_of_ge (Int.natCast_nonneg words), ↓reduceIte,
-    show (words : Int) ≠ 0 by omega, Int.toNat_natCast, allocated, Heap.allocatedI32_protect below]
+    show (words : Int) ≠ 0 by omega, Int.toNat_natCast, allocated, Heap.allocatedI32_checkRange below positive]
 
 theorem RunsExpr.nominalSliceFromParts
     (pointerRun : RunsExpr program before pointer (.pointer address) middle)

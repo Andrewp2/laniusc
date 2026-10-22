@@ -70,33 +70,15 @@ theorem HeapBlocksBelowNext.borrowBlock (below : HeapBlocksBelowNext heap) :
   obtain ⟨original, oldMember, rfl⟩ := List.mem_map.mp member
   exact below original oldMember
 
-private theorem replaceBlock_borrow (blocks : List Block) (block : Block)
-    (same : ∀ other ∈ blocks, other.base = block.base → other = block) :
-    replaceBlock blocks { block with owned := false } = blocks.map (borrowedBlock block.base) := by
-  induction blocks with
-  | nil => rfl
-  | cons head rest ih =>
-      have tail := ih (fun other member equal => same other (by simp [member]) equal)
-      simp only [replaceBlock, List.map_cons, tail, borrowedBlock]
-      split
-      · rename_i equal
-        have sameHead := same head (by simp) (by simpa using equal)
-        subst head
-        rfl
-      · rfl
-
-/-- Derive the real interior-range borrow from one live allocation. Neither
-    descriptor construction nor successful borrowing is an input premise. -/
-theorem Heap.protectRangeAsBorrowed_of_block
+/-- A nonempty, aligned range inside one live allocation passes the raw view
+    check. -/
+theorem Heap.checkRange_of_block {heap : Heap} {block : Block} {pointer size alignment : Nat}
     (found : heap.containingBlock? pointer = some block)
     (positive : 0 < size) (aligned : pointer % alignment = 0)
     (valid : validAlignment alignment = true) (enough : alignment ≤ block.alignment)
-    (bounds : pointer + size ≤ block.base + block.size) (unique : HeapBlockBasesUnique heap) :
-    heap.protectRangeAsBorrowed pointer size alignment = .ok (heap.borrowBlock block.base) := by
-  have member := List.mem_of_find?_eq_some found
-  have replacement := replaceBlock_borrow heap.blocks block (fun other belongs same => unique other belongs block member same)
-  simp [Heap.protectRangeAsBorrowed, Nat.ne_of_gt positive, aligned, valid, found,
-    show ¬block.alignment < alignment by omega, show ¬pointer + size > block.base + block.size by omega,
-    replacement, Heap.borrowBlock]
+    (bounds : pointer + size ≤ block.base + block.size) :
+    heap.checkRange pointer size alignment = .ok () := by
+  simp [Heap.checkRange, Nat.ne_of_gt positive, aligned, valid, found,
+    show ¬block.alignment < alignment by omega, show ¬pointer + size > block.base + block.size by omega]
 
 end Lanius.Memory

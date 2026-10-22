@@ -53,7 +53,7 @@ example :
     (match mapRawNominalSlice pairProgram state (.structure 3) 32 2 with
     | .done (.rawSlice (.structure 3) 32 2) after =>
         match after.heap.block? 8 with
-        | some block => !block.owned
+        | some block => block.owned
         | none => false
     | _ => false) = true := by
   decide
@@ -185,6 +185,21 @@ example :
           | .ok (.structure 4 [.rawSlice (.scalar (.signed .i32)) 40 1]) => true
           | _ => false
       | .error _ => false) = true := by
+  decide
+
+-- slice_stride: a pair struct runs down 16 bytes, i32 elements forward 4.
+example : rawSliceStride? pairProgram (.rawSlice (.structure 3) 32 2) = some (-16) := by
+  decide
+
+example : rawSliceStride? pairProgram (.rawSlice (.scalar (.signed .i32)) 8 3) = some 4 := by
+  decide
+
+example : rawSliceStride? pairProgram (.rawSlice (.structure 9) 32 2) = none := by
+  decide
+
+example : (match evalExpr 2 pairProgram boundState (.intrinsic .sliceStride (.local 0)) with
+    | .done (.signed .isize stride) _ => stride == -16
+    | _ => false) = true := by
   decide
 
 end Lanius.Semantics.RawNominalSliceTests
