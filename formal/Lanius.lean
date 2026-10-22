@@ -110,6 +110,7 @@ import Lanius.Compiler.CertificateEncodingBridge
 import Lanius.Compiler.ELFExecutionCheck
 import Lanius.Compiler.ELFExecutionBridge
 import Lanius.Compiler.VerifiedExecution
+import Lanius.Std.All
 
 /-!
 # Lanius formal foundation
