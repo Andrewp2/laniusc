@@ -102,7 +102,7 @@ private theorem opcode_memory (width : X86.Register.Width) (load : Bool) (reg ba
     by_cases high : 8 ≤ base.val <;> simp [extendRegister, high] <;> omega
 
 private theorem byte_opcode_memory (load : Bool) (reg base : Register) (displacement : Int)
-    (tail : List UInt8) (rexPresent : Bool) :
+    (tail : List UInt8) (rexPresent : Bool) (allowed : load = true ∨ rexPresent = true ∨ reg.val % 8 < 4) :
     decodeOpcode (X86.Register.fields .w32 reg base) rexPresent
       (((if load then [15, 182] else [136]) ++
         [UInt8.ofNat (128 + reg.val % 8 * 8 + base.val % 8)] ++
@@ -112,9 +112,13 @@ private theorem byte_opcode_memory (load : Bool) (reg base : Register) (displace
   have fields := modrm reg base
   have alunone : Alu.ofOpcode? 15 = none := by decide
   generalize hbyte : UInt8.ofNat (128 + reg.val % 8 * 8 + base.val % 8) = byte at fields ⊢
+  have narrow : load = false → rexPresent = false → reg.val % 8 < 4 := by
+    intro store absent
+    rcases allowed with h | h | h <;> simp_all
   cases load <;> by_cases sib : base.val % 8 = 4 <;>
     simp [decodeOpcode, escapedForm, memoryForm, alunone, X86.Register.fields, fields.1, fields.2.1, fields.2.2,
       sib, displacement_i32Bytes, byteMemoryInstruction, extended]
+  all_goals try first | exact narrow rfl | refine ⟨narrow rfl, ?_⟩
   all_goals
     apply Fin.ext
     have bound := base.isLt
@@ -165,7 +169,15 @@ theorem byte_memory_decodes (load : Bool) (reg base : Register) (displacement : 
       omega
     have noRex : X86.Register.fields .w32 reg base = ⟨false, false, false, false⟩ := by
       simp [X86.Register.fields, show ¬ 8 ≤ reg.val by omega, show ¬ 8 ≤ base.val by omega]
-    have run := byte_opcode_memory load reg base displacement tail false
+    have allowed : load = true ∨ false = true ∨ reg.val % 8 < 4 := by
+      cases load with
+      | true => exact .inl rfl
+      | false =>
+        right; right
+        have h := omitted.2.2.2
+        simp [force] at h
+        omega
+    have run := byte_opcode_memory load reg base displacement tail false allowed
     rw [noRex] at run
     have absent' : X86.Register.value .w32 reg base force = 0 := absent
     have absent_noforce : X86.Register.value .w32 reg base false = 0 := by
@@ -186,7 +198,7 @@ theorem byte_memory_decodes (load : Bool) (reg base : Register) (displacement : 
     have byte : (UInt8.ofNat rex).toNat = rex := by
       rw [UInt8.toNat_ofNat', Nat.mod_eq_of_lt (by omega)]
     have parsed := X86.Register.present_decodes .w32 reg base force absent
-    have run := byte_opcode_memory load reg base displacement tail true
+    have run := byte_opcode_memory load reg base displacement tail true (.inr (.inl rfl))
     simp only [byteMemoryBytes, force, show X86.Register.value .w32 reg base force = rex from rfl,
       if_neg absent, List.cons_append, List.nil_append, decode, byte]
     rw [show X86.Register.Rex.decode? rex = some (X86.Register.fields .w32 reg base) from parsed]

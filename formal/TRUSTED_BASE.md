@@ -162,7 +162,7 @@ compiler that someone actually runs is one of these two:
   trusted: they are the model's claim about what the CPU does.
 - **Checked by.** `formal/tools/x86_model_test.py` (step 14), described in
   section 9. On this CPU it found no disagreement on any form the compiler
-  emits. It did find one decoder defect outside those forms (section 9).
+  emits. It did find one decoder defect outside those forms (section 9), now fixed.
 - **To shrink it.**
   - Run the same test on an Intel CPU.
   - Use a decoder oracle such as Intel XED for `decode`.
@@ -325,11 +325,15 @@ The `--probes` forms `mov [rcx+disp32], ah` and `bh` disagree on 950 of
 With a 0x40 prefix (SPL, DIL), the model and the CPU agree.
 
 The compiler emits only `88 81` (AL), and the encoder `byteMemoryBytes`
-forces a REX prefix for registers 4-7, so the theorems are not affected.
-But `Step` would accept the wrong successor for those bytes. The fix belongs
-in `memoryForm` in `Machine/Scalar.lean`: reject opcode 136 without REX when
-the reg field is 4-7, as `byteRegister?` already does for SETcc and MOVZX.
-It has not been changed here.
+forces a REX prefix for registers 4-7, so the theorems were not affected.
+But `Step` accepted the wrong successor for those bytes.
+
+**Fixed.** `decodeOpcode` in `Machine/Scalar.lean` now rejects opcode 136
+without REX when the reg field is 4-7, as `byteRegister?` already does for
+SETcc and MOVZX. `byte_opcode_memory` in `Machine/Encoding.lean` takes the
+matching side condition. The `--probes` AH and BH forms now expect `decode`
+to return `none`. Seed 6 at 200 cases per form, with probes: 61 compiler
+forms and 4 probe forms, 0 disagreements.
 
 ## 10. Not trusted
 

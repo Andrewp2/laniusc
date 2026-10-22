@@ -174,7 +174,10 @@ def decodeOpcode (rex : X86.Register.Rex) (rexPresent : Bool) : List UInt8 → O
     else if opcode.toNat = 136 then
       match rest with
       | [] => none
-      | modrm :: remaining => if modrm.toNat / 64 = 3 then none else memoryForm rex 136 modrm remaining
+      | modrm :: remaining =>
+        -- Without a REX prefix, reg 4-7 names AH, CH, DH, BH, which the model lacks.
+        if modrm.toNat / 64 = 3 || (!rexPresent && 4 ≤ modrm.toNat / 8 % 8) then none
+        else memoryForm rex 136 modrm remaining
     else if opcode.toNat = 137 || opcode.toNat = 139 then
       match rest with
       | [] => none

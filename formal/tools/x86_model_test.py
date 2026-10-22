@@ -32,7 +32,8 @@ The Lean file also prints `Instr.encode` for every instruction constructor,
 fails if any byte sequence is not covered, so a new emitted form is noticed.
 
 `--probes` adds byte-store forms outside the compiler's output that exercise a
-decoder corner (MOV r/m8, r8 without REX, where reg 4-7 name AH/CH/DH/BH).
+decoder corner (MOV r/m8, r8 without REX, where reg 4-7 name AH/CH/DH/BH,
+which the model must refuse to decode).
 Only machine code this tool generates runs, in its own process (UD2 runs in a
 forked child).
 """
@@ -153,8 +154,9 @@ def probe_forms():
     # MOV r/m8, r8 (88 /r): without REX, reg 4-7 is AH CH DH BH; with any REX
     # it is SPL BPL SIL DIL. The compiler only emits reg 0 (al).
     return [
-        form('[probe] mov [rcx+disp32], ah', [0x88, 0xA1], 'disp32', 'mem', base=RCX, width=1),
-        form('[probe] mov [rcx+disp32], bh', [0x88, 0xB9], 'disp32', 'mem', base=RCX, width=1),
+        # The model has no AH-BH, so decode must refuse these.
+        form('[probe] mov [rcx+disp32], ah', [0x88, 0xA1], 'disp32', 'undecoded', base=RCX, width=1),
+        form('[probe] mov [rcx+disp32], bh', [0x88, 0xB9], 'disp32', 'undecoded', base=RCX, width=1),
         form('[probe] mov [rcx+disp32], spl', [0x40, 0x88, 0xA1], 'disp32', 'mem', base=RCX, width=1),
         form('[probe] mov [rcx+disp32], dil', [0x40, 0x88, 0xB9], 'disp32', 'mem', base=RCX, width=1),
     ]
@@ -576,6 +578,9 @@ def main():
                 bad.append(f'model decodes a fault instruction: {shown}')
             if sig != signal.SIGILL:
                 bad.append(f'CPU: expected SIGILL, got signal {sig}')
+        elif fm['kind'] == 'undecoded':
+            if p[1] != 'none':
+                bad.append(f'model decodes an instruction it lacks: {shown}')
         elif p[1] != 'some':
             bad.append('model does not decode the bytes')
         else:
