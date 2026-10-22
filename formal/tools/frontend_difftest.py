@@ -183,7 +183,7 @@ class Chunk:
     def lean_ty(self, k, t):
         if t in UINT_BITS:
             return f'(.uint {UINT_LEAN[t]})'
-        if t in ('i32', 'bool', 'ptr'):
+        if t in ('i32', 'bool', 'ptr', 'unit'):
             return '.' + t
         if t[0] == 'slice':
             return f'(.slice {self.lean_ty(k, t[1])})'
@@ -474,6 +474,14 @@ class Chunk:
             if c[0] == 'ePure':
                 return [('stmt', f'(.setField {ids[s[1]]} {s[2]} {self.lean_expr(k, ids, c[1])})')]
             return [('stmt', f'(.setFieldEval {ids[s[1]]} {s[2]} {self.lean_eff(k, ids, c)})')]
+        if kind == 'returnUnit':
+            out.emit(f'{pad}return;\n')
+            return [('stmt', '.returnUnit')]
+        if kind == 'assert':
+            out.emit(f'{pad}assert(')
+            self.emit_eff(k, ids, s[1])
+            out.emit(');\n')
+            return [('stmt', f'(.assert {self.lean_eff(k, ids, collapse(s[1]))})')]
         if kind == 'returnEval':
             out.emit(f'{pad}return ')
             self.emit_eff(k, ids, s[1])
@@ -494,7 +502,8 @@ class Chunk:
         kind = s[0]
         if kind == 'nop':
             return []
-        if kind in ('letEval', 'setEval', 'ifEval', 'whileEval', 'returnEval', 'discard', 'setIndexEval', 'setFieldEval'):
+        if kind in ('letEval', 'setEval', 'ifEval', 'whileEval', 'returnEval', 'discard', 'setIndexEval', 'setFieldEval',
+                    'assert', 'returnUnit'):
             return self.eval_stmt(k, ids, s, indent)
         if kind == 'then':
             return self.stmt(k, ids, s[1], indent) + self.stmt(k, ids, s[2], indent)
@@ -678,7 +687,7 @@ class Chunk:
                 out.bind((self.cur, k, (j, i)), f'v{i}')
                 ids[i] = out.binding[(self.cur, k, (j, i))]
                 out.emit(f': {self.ty(k, t)}')
-            out.emit(f') -> {self.ty(k, ret)} {{\n')
+            out.emit(') {\n' if ret == 'unit' else f') -> {self.ty(k, ret)} {{\n')
             items = []
             if self.generic and self.rng.random() < 0.5:
                 items.append(self.gid_call(k, ids, params))

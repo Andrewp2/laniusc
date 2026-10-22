@@ -653,7 +653,7 @@ program's own first; `sourceProgram` is the one-file case.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Frontend` | 4504 | 15 | extracted from `formal/lani/mini/frontend.lani`: the grammar table, `validate_tree`, `build`, the monomorphizer |
+| `Frontend` | 4591 | 15 | extracted from `formal/lani/mini/frontend.lani`: the grammar table, `validate_tree`, `build`, the monomorphizer |
 | `FrontLex` | 59 | 0.6 | tokens from the Lean lexer; `sourceProgram`, `sourceProgramFiles` |
 | `FrontSpec` | 354 | 0.9 | `CTree.leaves`, `CTree.preorder`, `Shape`, `Derives`, `Reads`; `validate_sound`, `sourceProgram_sound`, `sourceProgramFiles_sound` |
 
@@ -673,7 +673,7 @@ laniusc's lexer and parser are not trusted. The trusted parts are the Lean
 lexer, the grammar table, the grammar's unambiguity (not proved) and `build`
 as the meaning of the concrete syntax. TRUSTED_BASE.md section 4 lists them.
 
-`frontend.lani` is about 5,790 hand-written lines, followed by the generated
+`frontend.lani` is about 5,900 hand-written lines, followed by the generated
 grammar table: 318 productions, with terminals as lexer token codes. Two
 tools regenerate it:
 
@@ -834,8 +834,22 @@ seeds 11 and 12, 400 programs, 571,000 tokens and 5.0 million tree nodes,
 (`effectful_field` reads 5 `SetFieldEval`s). The generator does not make
 `SetFieldEval` yet.
 
+Unit functions, `return;` and `assert`. A function without `-> T`, or with
+`-> !`, has result type `Unit`, and its body may end without a return.
+`return;` is `ReturnUnit`. `assert(c);` (the spelling `assert`, one
+argument) is `Assert(c)`, with `c` collapsed to `EPure` when pure. A call
+statement of a unit function is `Discard(ECall ..)`, like any discarded call.
+So `core::panic::panic()` is read from `stdlib/core/panic.lani` as it is: a
+unit function (`-> !`) whose body is `assert(false);`. The case `unit_fns`
+has all of these, with that file as the program's second file. The script
+prints `return;`, `assert(..)` and unit functions when the generator makes
+them (`('returnUnit',)`, `('assert', x)`, result type `'unit'`); it does
+not yet. Results, 2026-10-22: seeds 11 and 12, 400 programs, all read as
+expected, 48/48 mutants rejected; `--generic` seed 11, 200 programs, all
+read, 24/24 rejected; 15 hand-written cases pass.
+
 What it does not read yet:
-- unit functions (`core::panic::panic()`), shifts, `&self`, `isize` and
+- shifts, `&self`, `isize` and
   `size_of<T>()`, which have no `SrcProgram` form;
 - `=>` match arms, and block or `if` arms;
 - integer literals of 2^31 and above (so `const MIN: i32 = -2147483648;`);
