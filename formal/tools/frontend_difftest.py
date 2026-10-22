@@ -879,6 +879,7 @@ partial def serType : SrcType → String
   | .enum n vs => s!"(.enum {n} {bracket (vs.map fun v => bracket (v.map serType))})"
   | .slice t => s!"(.slice {serType t})"
   | .unit => ".unit"
+  | .isize => ".isize"
 
 partial def serExpr : SrcExpr → String
   | .int k => s!"(.int {k.toNat})"
