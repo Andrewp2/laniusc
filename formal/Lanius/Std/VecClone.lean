@@ -73,7 +73,7 @@ theorem tryClone_spec (inst : MoreInstance P T ids g mo) (kind : ElemKind P T si
   have locals : R.locals = E.locals := wcCall.choose_spec.2
   refine Grow.letRun wcCall ⟨fE, cells, world, views⟩ ?_
   have fR := FreshCellFrame.after_cellsWellFormed fE cells
-  obtain ⟨rep2, kept2, below2, unique2, next2⟩ := grown
+  obtain ⟨rep2, kept2, below2, unique2, next2, apart2⟩ := grown
   obtain ⟨_, _, _, buffer2, _⟩ := rep2.fields
   let copy := Value.structure ids.vec [.pointer Q, .signed .i32 0, .signed .i32 n]
   let B1 := R.bindLocal 1 copy
@@ -135,7 +135,8 @@ theorem tryClone_spec (inst : MoreInstance P T ids g mo) (kind : ElemKind P T si
   have bytesPos : 0 < size * n := Nat.mul_pos positive nonempty
   show Grown P T size ids.vec caller.heap 0 0 Q xs.length xs h2
   refine ⟨⟨Q, n, rfl, Nat.le_refl _, nBound, fun _ => (buffer2 (by omega)).afterWrite effect, copied⟩,
-    kept2.afterFreshWrite below fresh effect, effect.below below2, effect.unique, effect.frontier.trans next2⟩
+    kept2.afterFreshWrite below fresh effect, effect.below below2, effect.unique, effect.frontier.trans next2,
+    fun ap => HeapApart.ofWrite effect (apart2 ap)⟩
 
 #print axioms tryClone_spec
 

@@ -384,7 +384,7 @@ theorem tryInsert_room_spec (inst : VecInstance P T ids) (kind : ElemKind P T si
   obtain ⟨after, run, ext, rep', effect⟩ := insertTail_spec inst kind fB rep room inside b3 b1 b2 store stores
     noViews unique
   exact ⟨after, run, ext, rep', Kept.ofWrite effect ⟨Nat.le_refl _, Nat.le_refl _⟩, effect.below below,
-    effect.unique, Or.inl ⟨rfl, rfl, effect.frontier⟩⟩
+    effect.unique, fun ap => ap.ofWrite effect, Or.inl ⟨rfl, rfl, effect.frontier⟩⟩
 
 /-- `try_insert(v, i, x)` on a full vector with room in the heap for
 `pushTarget size len(v)` elements: grown as in `try_push`, then shifted and
@@ -500,7 +500,7 @@ theorem tryInsert_grow_spec (inst : GrowInstance P T ids g) (kind : ElemKind P T
   have a'2 : A'.local? 2 = some x := local_above extEA'.cells a'Locals (by decide) l2
   have hA' : A'.heap = R.heap := heapA
   have vA' : A'.i32ArrayViews = [] := viewsA.trans (rViews.trans vD)
-  obtain ⟨rep2, kept2, below2, unique2, next2⟩ := grown
+  obtain ⟨rep2, kept2, below2, unique2, next2, apart2⟩ := grown
   obtain ⟨F, tailRun, extTail, rep3, effect3⟩ := insertTail_spec inst.vec kind fA' (xs := xs) (q := Q) (m := m)
     (by rw [hA']; exact rep2) grows inside a'3 a'1 a'2 store stores vA' (by rw [hA']; exact unique2)
   rw [hA'] at effect3
@@ -508,7 +508,7 @@ theorem tryInsert_grow_spec (inst : GrowInstance P T ids g) (kind : ElemKind P T
     (RunsStmt.sequenceNext (RunsStmt.ifThenElseTrue cond2 branch) tailRun), (extEA'.trans extTail).restore E, ?_⟩
   have fresh : caller.heap.nextAddress ≤ Q := Heap.allocationAddress_ge caller.heap (by decide)
   exact ⟨rep3, kept2.afterFreshWrite below fresh effect3, effect3.below below2, effect3.unique,
-    Or.inr ⟨rfl, effect3.frontier.trans next2⟩⟩
+    fun ap => HeapApart.ofWrite effect3 (apart2 ap), Or.inr ⟨rfl, effect3.frontier.trans next2⟩⟩
 
 #print axioms insertTail_spec
 #print axioms tryInsert_room_spec

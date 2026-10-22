@@ -105,7 +105,8 @@ the old storage, and the frontier. -/
 def Grown (P : Program) (T : Ty) (size : Nat) (vec : TypeId) (h : Heap) (p n q m : Nat)
     (xs : List Value) (H : Heap) : Prop :=
   VecRep P T size vec H (.structure vec [.pointer q, .signed .i32 xs.length, .signed .i32 m]) xs ∧
-    Kept h H p n ∧ HeapBlocksBelowNext H ∧ HeapBlockBasesUnique H ∧ H.nextAddress = q + size * m
+    Kept h H p n ∧ HeapBlocksBelowNext H ∧ HeapBlockBasesUnique H ∧ H.nextAddress = q + size * m ∧
+    (HeapApart h → HeapApart H)
 
 theorem VecRep.fields {vec : TypeId} {h : Heap} {p cap : Nat} {len : Value} {xs : List Value}
     (rep : VecRep P T size vec h (.structure vec [.pointer p, len, .signed .i32 cap]) xs) :
@@ -254,7 +255,7 @@ theorem tryReserve_grow_spec (inst : GrowInstance P T ids g) (kind : ElemKind P 
     refine finish B3 (RunsStmt.ifThenElseFalse cond5 (RunsStmt.skip P B3)) (Ext.refl fB3) ?_
     refine ⟨⟨q, min, rfl, by omega, minBound, fun _ => bufQ, fun i inside => by subst nil; simp at inside⟩,
       Kept.afterAlloc _ _ _ _ _ _, Heap.allocatedBytes_below below (by decide),
-      Heap.allocatedBytes_unique below unique (by decide), ?_⟩
+      Heap.allocatedBytes_unique below unique (by decide), ?_, fun ap => ap.afterAlloc below _ _ _ (by decide)⟩
     show q + max (size * min) 1 = q + size * min
     rw [Nat.max_eq_left bytesPos]
   · have capPos : 0 < cap := Nat.pos_of_ne_zero empty
@@ -327,7 +328,8 @@ theorem tryReserve_grow_spec (inst : GrowInstance P T ids g) (kind : ElemKind P 
       fun i inside other within => copied i inside other (ReadsWithin.trans (freed.reads (Or.inr ?_)) within)⟩,
       ((Kept.afterAlloc caller.heap p (size * cap) (size * min) 8 budget).afterFreshWrite below fresh effect).afterFree
         freed,
-      freed.below (effect.below (Heap.allocatedBytes_below below (by decide))), freed.unique effect.unique, ?_⟩
+      freed.below (effect.below (Heap.allocatedBytes_below below (by decide))), freed.unique effect.unique, ?_,
+      fun ap => freed.apart (HeapApart.ofWrite effect (ap.afterAlloc below _ _ _ (by decide)))⟩
     · have := slot_inside (T := T) (size := size) (p := q) (show i < min by omega); omega
     · rw [freed.next, effect.frontier]
       show q + max (size * min) 1 = q + size * min

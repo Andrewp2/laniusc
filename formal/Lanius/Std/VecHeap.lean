@@ -11,6 +11,62 @@ namespace Lanius.Std
 
 open Lanius Lanius.Core Lanius.Semantics Lanius.Memory
 
+/-- Blocks ordered by base do not overlap (the verified compiler's
+`HeapCorr.apart`). With unique bases it gives `HeapBlocksDisjoint`, which
+`as_slice` and `at` need. -/
+def HeapApart (h : Heap) : Prop :=
+  ∀ b ∈ h.blocks, ∀ b' ∈ h.blocks, b.base < b'.base → b.base + b.size ≤ b'.base
+
+theorem HeapApart.disjoint {h : Heap} (apart : HeapApart h) (unique : HeapBlockBasesUnique h) :
+    HeapBlocksDisjoint h := by
+  intro l lm r rm ne
+  unfold BlockIntervalsDisjoint
+  rcases Nat.lt_trichotomy l.base r.base with lt | eq | gt
+  · exact Or.inl (apart l lm r rm lt)
+  · exact absurd (unique l lm r rm eq) ne
+  · exact Or.inr (apart r rm l lm gt)
+
+/-- Every block of `h'` has the interval of a block of `h`. -/
+theorem HeapApart.ofTwins {h h' : Heap} (apart : HeapApart h)
+    (twins : ∀ b ∈ h'.blocks, ∃ c ∈ h.blocks, c.base = b.base ∧ c.size = b.size) : HeapApart h' := by
+  intro b bm b' bm' lt
+  obtain ⟨c, cm, cb, cs⟩ := twins b bm
+  obtain ⟨c', cm', cb', _⟩ := twins b' bm'
+  have := apart c cm c' cm' (by rw [cb, cb']; exact lt)
+  rw [cb, cs, cb'] at this
+  exact this
+
+theorem HeapApart.ofWrite {h h' : Heap} {lo n : Nat} (effect : HeapRegionWrite h h' lo n) (apart : HeapApart h) :
+    HeapApart h' := by
+  refine apart.ofTwins fun b member => ?_
+  have masked : { b with bytes := [] } ∈ h'.blocks.map (fun item => { item with bytes := [] }) :=
+    List.mem_map.mpr ⟨b, member, rfl⟩
+  rw [effect.layout] at masked
+  obtain ⟨old, oldMember, same⟩ := List.mem_map.mp masked
+  have eb := congrArg (fun x : Block => x.base) same
+  have es := congrArg (fun x : Block => x.size) same
+  exact ⟨old, oldMember, eb, es⟩
+
+theorem HeapApart.afterAlloc {h : Heap} (apart : HeapApart h) (below : HeapBlocksBelowNext h) (size a : Nat)
+    (budget : Option Nat) (positive : 0 < a) : HeapApart (h.allocatedBytes size a budget) := by
+  have ge := Heap.allocationAddress_ge h positive
+  intro b bm b' bm' lt
+  simp only [Heap.allocatedBytes, List.mem_append, List.mem_singleton] at bm bm'
+  rcases bm with bm | rfl <;> rcases bm' with bm' | rfl
+  · exact apart b bm b' bm' lt
+  · have hb := below b bm
+    show b.base + b.size ≤ h.allocationAddress a
+    have hs : b.size ≤ max b.size 1 := Nat.le_max_left _ _
+    dsimp only [Lanius.Address] at *
+    omega
+  · have hb := below b' bm'
+    have hs : 1 ≤ max b'.size 1 := Nat.le_max_right _ _
+    have hbase : (h.allocationBlock size a).base = h.allocationAddress a := rfl
+    rw [hbase] at lt
+    dsimp only [Lanius.Address] at *
+    omega
+  · exact absurd lt (Nat.lt_irrefl _)
+
 /-- Reads and buffers apart from `[p, p + n)` survive from `h` to `h'`. -/
 structure Kept (h h' : Heap) (p n : Nat) : Prop where
   reads : ∀ lo m, (lo + m ≤ p ∨ p + n ≤ lo) → ReadsWithin h h' lo m
@@ -68,9 +124,10 @@ structure Freed (h h' : Heap) (p n : Nat) : Prop where
   next : h'.nextAddress = h.nextAddress
   below : HeapBlocksBelowNext h → HeapBlocksBelowNext h'
   unique : HeapBlockBasesUnique h → HeapBlockBasesUnique h'
+  apart : HeapApart h → HeapApart h'
 
 theorem Freed.refl (h : Heap) (p n : Nat) : Freed h h p n :=
-  ⟨fun _ _ => rfl, rfl, id, id⟩
+  ⟨fun _ _ => rfl, rfl, id, id, id⟩
 
 /-- `dealloc(p, n, 8)` of a buffer succeeds. -/
 theorem dealloc_buffer {h : Heap} {p n : Nat} (buffer : Buffer h p n) (unique : HeapBlockBasesUnique h) :
@@ -111,7 +168,7 @@ theorem dealloc_buffer {h : Heap} {p n : Nat} (buffer : Buffer h p n) (unique : 
           intro blk m; split
           · rename_i e; rw [only blk m (by simpa [r, base] using beq_iff_eq.mp e)]
           · rfl
-        refine ⟨fun a outside => ?_, rfl, fun below blk m => ?_, fun _ => ?_⟩
+        refine ⟨fun a outside => ?_, rfl, fun below blk m => ?_, fun _ => ?_, fun apart => ?_⟩
         · simp only [Heap.containingBlock?, replaceBlock_eq_map]
           apply find?_map_same
           · intro y m
@@ -142,6 +199,10 @@ theorem dealloc_buffer {h : Heap} {p n : Nat} (buffer : Buffer h p n) (unique : 
           obtain ⟨r0, r0m, rfl⟩ := rm
           rw [f_base, f_base] at same
           rw [unique l0 l0m r0 r0m same]
+        · refine apart.ofTwins fun b m => ?_
+          simp only [replaceBlock_eq_map, List.mem_map] at m
+          obtain ⟨old, om, rfl⟩ := m
+          exact ⟨old, om, (f_base old).symm, (f_size old om).symm⟩
 
 theorem Freed.reads {h h' : Heap} {p n : Nat} (freed : Freed h h' p n) {lo m : Nat}
     (apart : lo + m ≤ p ∨ p + n ≤ lo) : ReadsWithin h h' lo m := by

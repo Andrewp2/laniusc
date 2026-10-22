@@ -121,7 +121,7 @@ when the vector moved to a fresh block at the next aligned address. -/
 def Pushed (P : Program) (T : Ty) (size : Nat) (vec : TypeId) (h : Heap) (p cap q m : Nat)
     (xs : List Value) (H : Heap) : Prop :=
   VecRep P T size vec H (.structure vec [.pointer q, .signed .i32 xs.length, .signed .i32 m]) xs ∧
-    Kept h H p (size * cap) ∧ HeapBlocksBelowNext H ∧ HeapBlockBasesUnique H ∧
+    Kept h H p (size * cap) ∧ HeapBlocksBelowNext H ∧ HeapBlockBasesUnique H ∧ (HeapApart h → HeapApart H) ∧
     (q = p ∧ m = cap ∧ H.nextAddress = h.nextAddress ∨
       q = h.allocationAddress 8 ∧ H.nextAddress = q + size * m)
 
@@ -188,7 +188,7 @@ theorem tryPush_room_spec (inst : GrowInstance P T ids g) (kind : ElemKind P T s
   refine Grow.guardSkip cond2 (Ext.refl fB) ?_
   obtain ⟨after, run, ext, rep', effect⟩ := pushStore_spec inst.vec kind fB rep room b2 b1 store noViews unique
   refine ⟨after, run, ext, rep', Kept.ofWrite effect ?_, effect.below below, effect.unique,
-    Or.inl ⟨rfl, rfl, effect.frontier⟩⟩
+    fun ap => ap.ofWrite effect, Or.inl ⟨rfl, rfl, effect.frontier⟩⟩
   have := slot_inside (T := T) (size := size) (p := p) room
   omega
 
@@ -304,7 +304,7 @@ theorem tryPush_grow_spec (inst : GrowInstance P T ids g) (kind : ElemKind P T s
   have a'1 : A'.local? 1 = some x := local_above extEA'.cells a'Locals (by decide) l1
   have hA' : A'.heap = R.heap := heapA
   have vA' : A'.i32ArrayViews = [] := viewsA.trans (rViews.trans vD)
-  obtain ⟨rep2, kept2, below2, unique2, next2⟩ := grown
+  obtain ⟨rep2, kept2, below2, unique2, next2, apart2⟩ := grown
   -- the store
   obtain ⟨F, tailRun, extTail, rep3, effect3⟩ := pushStore_spec inst.vec kind fA' (xs := xs) (q := Q) (m := m)
     (by rw [hA']; exact rep2) grows a'2 a'1 store vA' (by rw [hA']; exact unique2)
@@ -316,7 +316,7 @@ theorem tryPush_grow_spec (inst : GrowInstance P T ids g) (kind : ElemKind P T s
     have := Heap.allocationAddress_ge caller.heap (alignment := 8) (by decide)
     unfold slotLo; dsimp only [Lanius.Address] at *; omega
   exact ⟨rep3, kept2.afterFreshWrite below fresh effect3, effect3.below below2, effect3.unique,
-    Or.inr ⟨rfl, effect3.frontier.trans next2⟩⟩
+    fun ap => HeapApart.ofWrite effect3 (apart2 ap), Or.inr ⟨rfl, effect3.frontier.trans next2⟩⟩
 
 /-- `try_push(v, x)` when the result has at most `capacity_limit()`
 elements and, if `v` is full, the heap has room for the grown storage. -/

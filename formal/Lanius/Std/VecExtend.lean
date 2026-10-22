@@ -229,7 +229,7 @@ theorem tryExtend_room_spec (inst : VecInstance P T ids) (kind : ElemKind P T si
   obtain ⟨after, run, ext, rep', effect⟩ := extendTail_spec inst kind fB rep room b4 b3 b2 b1 source apart
     stores noViews unique
   exact ⟨after, run, ext, rep', Kept.ofWrite effect ⟨Nat.le_refl _, Nat.le_refl _⟩, effect.below below,
-    effect.unique, Or.inl ⟨rfl, rfl, effect.frontier⟩⟩
+    effect.unique, fun ap => ap.ofWrite effect, Or.inl ⟨rfl, rfl, effect.frontier⟩⟩
 
 /-- The capacity `try_extend_from_slice` grows to. -/
 def extendTarget (size cap needed : Nat) : Nat := grownTarget (capLimit size) cap needed
@@ -380,7 +380,7 @@ theorem tryExtend_grow_spec (inst : GrowInstance P T ids g) (kind : ElemKind P T
       (RunsStmt.ifThenElseFalse cond3 (RunsStmt.skip P A)))
   have hA' : A'.heap = R.heap := heapA
   have vA' : A'.i32ArrayViews = [] := viewsA.trans (rViews.trans vD)
-  obtain ⟨rep2, kept2, below2, unique2, next2⟩ := grown
+  obtain ⟨rep2, kept2, below2, unique2, next2, apart2⟩ := grown
   have fresh : caller.heap.nextAddress ≤ Q := Heap.allocationAddress_ge caller.heap (by decide)
   have source2 : SliceRep P T size A'.heap sA sL lo ys := by
     rw [hA']; exact source.transfer (fun j inside => kept2.reads _ _ (apart j inside))
@@ -391,7 +391,7 @@ theorem tryExtend_grow_spec (inst : GrowInstance P T ids g) (kind : ElemKind P T
   refine ⟨restoreLocals E3 F, RunsStmt.letLocal (RunsExpr.local' e3_0)
     (RunsStmt.sequenceNext (RunsStmt.ifThenElseTrue cond2 branch) tailRun), (extEA'.trans extTail).restore E3, ?_⟩
   exact ⟨rep3, kept2.afterFreshWrite below fresh effect3, effect3.below below2, effect3.unique,
-    Or.inr ⟨rfl, effect3.frontier.trans next2⟩⟩
+    fun ap => HeapApart.ofWrite effect3 (apart2 ap), Or.inr ⟨rfl, effect3.frontier.trans next2⟩⟩
 
 #print axioms extendTail_spec
 #print axioms tryExtend_room_spec

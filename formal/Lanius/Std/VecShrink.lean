@@ -198,7 +198,8 @@ theorem tryShrinkToFit_spec (inst : GrowInstance P T ids g) (kind : ElemKind P T
       fun i inside other within => copied i inside other (ReadsWithin.trans (freed.reads (Or.inr ?_)) within)⟩,
     ((Kept.afterAlloc caller.heap p (size * cap) (size * xs.length) 8 budget).afterFreshWrite below fresh
       effect).afterFree freed,
-    freed.below (effect.below (Heap.allocatedBytes_below below (by decide))), freed.unique effect.unique, ?_⟩
+    freed.below (effect.below (Heap.allocatedBytes_below below (by decide))), freed.unique effect.unique, ?_,
+      fun ap => freed.apart (HeapApart.ofWrite effect (ap.afterAlloc below _ _ _ (by decide)))⟩
   · have := slot_inside (T := T) (size := size) (p := q) (show i < xs.length by omega); omega
   · rw [freed.next, effect.frontier]
     show q + max (size * xs.length) 1 = q + size * xs.length

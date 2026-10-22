@@ -287,7 +287,7 @@ theorem tryResize_grow_spec (inst : GrowInstance P T ids g) (kind : ElemKind P T
     (RunsExpr.field' (j := 2) (RunsExpr.local' a3) rfl) (RunsExpr.local' a1) (by decide) (eval_i32_lt _ _ _)
   rw [show decide ((N : Int) < N) = false by simp] at cond4
   have vA : A.i32ArrayViews = [] := viewsA.trans (rViews.trans noViews)
-  obtain ⟨rep2, kept2, below2, unique2, next2⟩ := grown
+  obtain ⟨rep2, kept2, below2, unique2, next2, apart2⟩ := grown
   have hA : A.heap = R.heap := heapA
   obtain ⟨F, tailRun, extTail, rep3, effect3⟩ := resizeTail_spec inst.vec kind fA (xs := xs) (q := Q) (m := N)
     (N := N) (by rw [hA]; exact rep2) (by omega) (Nat.le_refl _) a3 a1 a2 store vA (by rw [hA]; exact unique2)
