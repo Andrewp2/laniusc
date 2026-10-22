@@ -2599,13 +2599,43 @@ def projectionRet (fuel : Nat) (decls : Decls) (inst : Inst) : Option Ty :=
     | none => none
     | some ts => ts[inst.decl - decls.fns.length]?
 
-def instRet (fuel : Nat) (decls : Decls) (inst : Inst) : Option Ty :=
-  match decls.fns[inst.decl]? with
-  | none => projectionRet fuel decls inst
-  | some fd =>
+/-- A function declared `-> !`. -/
+def neverRet (fd : FnDecl) : Bool :=
+  let r : CTree := kid fd.tree 6
+  decide (nodeProd r = (34)) && decide (nodeProd (kid r 1) = (315))
+
+/-- An instance of a `-> !` function with one type argument more than it has type parameters: its call where a value of that last type is expected (see diverge_func). -/
+def diverges (fd : FnDecl) (inst : Inst) : Bool :=
+  neverRet fd && decide (inst.args.length = (fd.implParams ++ fd.params).length + 1)
+
+def lastTy (ts : List Ty) : Option Ty :=
+  match ts with
+  | [] => none
+  | t :: rest =>
+    match rest with
+    | [] => some t
+    | u :: more => lastTy rest
+
+def initTys (ts : List Ty) : List Ty :=
+  match ts with
+  | [] => []
+  | t :: rest =>
+    match rest with
+    | [] => []
+    | u :: more => t :: initTys rest
+
+def fnInstRet (fuel : Nat) (decls : Decls) (fd : FnDecl) (inst : Inst) : Option Ty :=
+  if diverges fd inst then
+    lastTy inst.args
+  else
     match retPattern fd with
     | none => none
     | some r => tyOf fuel (declEnv decls fd.module (fd.implParams ++ fd.params) inst.args) r
+
+def instRet (fuel : Nat) (decls : Decls) (inst : Inst) : Option Ty :=
+  match decls.fns[inst.decl]? with
+  | none => projectionRet fuel decls inst
+  | some fd => fnInstRet fuel decls fd inst
 
 def indexTy (l : Option Local) : Option Ty :=
   match l with
@@ -3605,6 +3635,42 @@ def effInferred (fuel : Nat) (env : Env) (scope : List Local) (d : Nat) (fd : Fn
   | none => none
   | some a => xCallOf (instBound fuel env scope d fd names ps a) a.args
 
+def divergeChecked (ok : Bool) (t : Ty) (inst : Inst) (args : List MEff) (x : MEff) : MEff :=
+  if ok then
+    MEff.xCall ({ decl := inst.decl, args := inst.args ++ [t] } : Inst) args
+  else
+    x
+
+/-- A call of a `-> !` function where a value of type t is expected: the call of its instance at t (see diverge_func). -/
+def divergeCall (decls : Decls) (t : Ty) (inst : Inst) (args : List MEff) (x : MEff) : MEff :=
+  match decls.fns[inst.decl]? with
+  | none => x
+  | some fd => divergeChecked (neverRet fd && decide (inst.args.length = (fd.implParams ++ fd.params).length)) t inst args x
+
+def divergeEff (decls : Decls) (t : Ty) (x : MEff) : MEff :=
+  match x with
+  | .xPure e => x
+  | .xCall inst args => divergeCall decls t inst args x
+  | .xApply op l r => x
+  | .xNeg a => x
+  | .xNot a => x
+  | .xCast c a => x
+  | .xIndex sl i => x
+  | .xStruct st fs => x
+  | .xVariant vt k ps => x
+  | .xMatch sc ety mt bs vs => x
+  | .xDivide op l r => x
+  | .xStride sl => x
+
+/-- A match arm's value: a call of a `-> !` function (`None -> panic()`) is its instance at the match's type. -/
+def divergeArm (decls : Decls) (expected : Option Ty) (x : Option MEff) : Option MEff :=
+  match x with
+  | none => none
+  | some v =>
+    match expected with
+    | none => some v
+    | some t => some (divergeEff decls t v)
+
 mutual
 
 /-- The effectful expression a node of the expression grammar denotes, its value stored at type expected when that is known: the pure expression expr_of reads, or else a call, a variant, a struct literal, a match, a slice element, a division, or an operator, cast or negation of these. -/
@@ -4033,7 +4099,7 @@ def effArmBound (fuel : Nat) (env : Env) (expected : Option Ty) (bound : Option 
   else
     match bound with
     | none => none
-    | some b => armEff fuel env b (effOf (fuel - 1) env b.scope expected value)
+    | some b => armEff fuel env b (divergeArm env.decls expected (effOf (fuel - 1) env b.scope expected value))
 
 end
 
@@ -4649,10 +4715,30 @@ def projectionFunc (ret : Option Ty) (inst : Inst) (decls : Decls) : Option MFun
     | [] => none
     | t :: rest => some ({ params := [({ id := 0, ty := t } : MParam)], ret := RetTy.retOf r, body := MStmt.mReturn (SrcExpr.field 0 (inst.decl - decls.fns.length)) } : MFunc)
 
+def paramEffs (ps : List MParam) : List MEff :=
+  match ps with
+  | [] => []
+  | p :: rest => MEff.xPure (SrcExpr.local p.id) :: paramEffs rest
+
+/-- The instance of a `-> !` function g at a value type t: the parameters of g, the result t, and the body `g(params); return self(params);`. The call of g does not return (Core traps in it, as `assert(false)` does in core::panic::panic), so the recursive return is never reached; it only gives the body a value of type t on every path. -/
+def divergeFunc (g : Option MFunc) (inst : Inst) : Option MFunc :=
+  match g with
+  | none => none
+  | some m =>
+    match lastTy inst.args with
+    | none => none
+    | some t => some ({ params := m.params, ret := RetTy.retOf t, body := MStmt.mThen (MStmt.mDiscard (MEff.xCall ({ decl := inst.decl, args := initTys inst.args } : Inst) (paramEffs m.params))) (MStmt.mReturnEval (MEff.xCall inst (paramEffs m.params))) } : MFunc)
+
+def readDeclInst (fuel : Nat) (decls : Decls) (fd : FnDecl) (inst : Inst) : Option MFunc :=
+  if diverges fd inst then
+    divergeFunc (readFn fuel decls fd (initTys inst.args)) inst
+  else
+    readFn fuel decls fd inst.args
+
 def readInst (fuel : Nat) (decls : Decls) (inst : Inst) : Option MFunc :=
   match decls.fns[inst.decl]? with
   | none => projectionFunc (projectionRet fuel decls inst) inst decls
-  | some fd => readFn fuel decls fd inst.args
+  | some fd => readDeclInst fuel decls fd inst
 
 mutual
 

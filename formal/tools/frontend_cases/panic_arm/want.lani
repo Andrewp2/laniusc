@@ -1,0 +1,19 @@
+enum Option { Some(i32), None }
+
+fn top(n: i32) -> i32 {
+    let o: Option = Some(n);
+    return unwrap_i(o);
+}
+
+fn unwrap_i(value: Option) -> i32 {
+    return match (value) { Some(inner) -> inner, None -> panic_at_i() };
+}
+
+fn panic_at_i() -> i32 {
+    panic();
+    return panic_at_i();
+}
+
+fn panic() -> ! {
+    assert(false);
+}

@@ -3572,13 +3572,53 @@ pub fn projection_ret(fuel: usize, decls: Decls, inst: Inst) -> core::option::Op
     };
 }
 
+// A function declared `-> !`.
+pub fn never_ret(fd: FnDecl) -> bool {
+    let r: CTree = kid(fd.tree, 6);
+    return node_prod(r) == p_ret_type() && node_prod(kid(r, 1)) == p_type_never();
+}
+
+// An instance of a `-> !` function with one type argument more than it has
+// type parameters: its call where a value of that last type is expected
+// (see diverge_func).
+pub fn diverges(fd: FnDecl, inst: Inst) -> bool {
+    return never_ret(fd) && length(inst.args) == plus(length(concat(fd.impl_params, fd.params)), 1);
+}
+
+pub fn last_ty(ts: List<Ty>) -> core::option::Option<Ty> {
+    return match (ts) {
+        Nil -> None,
+        Cons(t, rest) -> match (unbox(rest)) {
+            Nil -> Some(t),
+            Cons(u, more) -> last_ty(unbox(rest)),
+        },
+    };
+}
+
+pub fn init_tys(ts: List<Ty>) -> List<Ty> {
+    return match (ts) {
+        Nil -> empty(),
+        Cons(t, rest) -> match (unbox(rest)) {
+            Nil -> empty(),
+            Cons(u, more) -> cons(t, init_tys(unbox(rest))),
+        },
+    };
+}
+
+pub fn fn_inst_ret(fuel: usize, decls: Decls, fd: FnDecl, inst: Inst) -> core::option::Option<Ty> {
+    if (diverges(fd, inst)) {
+        return last_ty(inst.args);
+    }
+    return match (ret_pattern(fd)) {
+        None -> None,
+        Some(r) -> ty_of(fuel, decl_env(decls, fd.module, concat(fd.impl_params, fd.params), inst.args), r),
+    };
+}
+
 pub fn inst_ret(fuel: usize, decls: Decls, inst: Inst) -> core::option::Option<Ty> {
     return match (get(decls.fns, inst.decl)) {
         None -> projection_ret(fuel, decls, inst),
-        Some(fd) -> match (ret_pattern(fd)) {
-            None -> None,
-            Some(r) -> ty_of(fuel, decl_env(decls, fd.module, concat(fd.impl_params, fd.params), inst.args), r),
-        },
+        Some(fd) -> fn_inst_ret(fuel, decls, fd, inst),
     };
 }
 
@@ -4817,6 +4857,51 @@ pub fn eff_inferred(fuel: usize, env: Env, scope: List<Local>, d: usize, fd: FnD
     };
 }
 
+pub fn diverge_checked(ok: bool, t: Ty, inst: Inst, args: Box<List<MEff>>, x: MEff) -> MEff {
+    if (ok) {
+        return XCall(Inst { decl: inst.decl, args: concat(inst.args, single(t)) }, args);
+    }
+    return x;
+}
+
+// A call of a `-> !` function where a value of type t is expected: the call
+// of its instance at t (see diverge_func).
+pub fn diverge_call(decls: Decls, t: Ty, inst: Inst, args: Box<List<MEff>>, x: MEff) -> MEff {
+    return match (get(decls.fns, inst.decl)) {
+        None -> x,
+        Some(fd) -> diverge_checked(never_ret(fd) && length(inst.args) == length(concat(fd.impl_params, fd.params)), t, inst, args, x),
+    };
+}
+
+pub fn diverge_eff(decls: Decls, t: Ty, x: MEff) -> MEff {
+    return match (x) {
+        XPure(e) -> x,
+        XCall(inst, args) -> diverge_call(decls, t, inst, args, x),
+        XApply(op, l, r) -> x,
+        XNeg(a) -> x,
+        XNot(a) -> x,
+        XCast(c, a) -> x,
+        XIndex(sl, i) -> x,
+        XStruct(st, fs) -> x,
+        XVariant(vt, k, ps) -> x,
+        XMatch(sc, ety, mt, bs, vs) -> x,
+        XDivide(op, l, r) -> x,
+        XStride(sl) -> x,
+    };
+}
+
+// A match arm's value: a call of a `-> !` function (`None -> panic()`) is
+// its instance at the match's type.
+pub fn diverge_arm(decls: Decls, expected: core::option::Option<Ty>, x: core::option::Option<MEff>) -> core::option::Option<MEff> {
+    return match (x) {
+        None -> None,
+        Some(v) -> match (expected) {
+            None -> Some(v),
+            Some(t) -> Some(diverge_eff(decls, t, v)),
+        },
+    };
+}
+
 // extract: mutual begin
 // The effectful expression a node of the expression grammar denotes, its
 // value stored at type expected when that is known: the pure expression
@@ -5310,7 +5395,7 @@ pub fn eff_arm_bound(fuel: usize, env: Env, expected: core::option::Option<Ty>, 
     }
     return match (bound) {
         None -> None,
-        Some(b) -> arm_eff(fuel, env, b, eff_of(minus(fuel, 1), env, b.scope, expected, value)),
+        Some(b) -> arm_eff(fuel, env, b, diverge_arm(env.decls, expected, eff_of(minus(fuel, 1), env, b.scope, expected, value))),
     };
 }
 // extract: mutual end
@@ -6070,10 +6155,39 @@ pub fn projection_func(ret: core::option::Option<Ty>, inst: Inst, decls: Decls) 
     };
 }
 
+pub fn param_effs(ps: List<MParam>) -> List<MEff> {
+    return match (ps) {
+        Nil -> empty(),
+        Cons(p, rest) -> cons(XPure(Local(p.id)), param_effs(unbox(rest))),
+    };
+}
+
+// The instance of a `-> !` function g at a value type t: the parameters
+// of g, the result t, and the body `g(params); return self(params);`. The
+// call of g does not return (Core traps in it, as `assert(false)` does in
+// core::panic::panic), so the recursive return is never reached; it only
+// gives the body a value of type t on every path.
+pub fn diverge_func(g: core::option::Option<MFunc>, inst: Inst) -> core::option::Option<MFunc> {
+    return match (g) {
+        None -> None,
+        Some(m) -> match (last_ty(inst.args)) {
+            None -> None,
+            Some(t) -> Some(MFunc { params: m.params, ret: RetOf(t), body: MThen(boxed(MDiscard(XCall(Inst { decl: inst.decl, args: init_tys(inst.args) }, boxed(param_effs(m.params))))), boxed(MReturnEval(XCall(inst, boxed(param_effs(m.params)))))) }),
+        },
+    };
+}
+
+pub fn read_decl_inst(fuel: usize, decls: Decls, fd: FnDecl, inst: Inst) -> core::option::Option<MFunc> {
+    if (diverges(fd, inst)) {
+        return diverge_func(read_fn(fuel, decls, fd, init_tys(inst.args)), inst);
+    }
+    return read_fn(fuel, decls, fd, inst.args);
+}
+
 pub fn read_inst(fuel: usize, decls: Decls, inst: Inst) -> core::option::Option<MFunc> {
     return match (get(decls.fns, inst.decl)) {
         None -> projection_func(projection_ret(fuel, decls, inst), inst, decls),
-        Some(fd) -> read_fn(fuel, decls, fd, inst.args),
+        Some(fd) -> read_decl_inst(fuel, decls, fd, inst),
     };
 }
 

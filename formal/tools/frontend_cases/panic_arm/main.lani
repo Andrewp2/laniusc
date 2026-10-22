@@ -1,0 +1,9 @@
+module app::main;
+
+// A match arm that calls a `-> !` function (core::option::unwrap).
+import core::option;
+
+fn top(n: i32) -> i32 {
+    let o: core::option::Option<i32> = Some(n);
+    return core::option::unwrap(o);
+}

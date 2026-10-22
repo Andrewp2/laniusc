@@ -1,0 +1,133 @@
+// Optional values. A stored false is Some(false), not None. Every operation
+// takes the option by value and leaves the caller's copy unchanged. Each one
+// exists as a free function and as a method. contains needs Eq on the
+// payload. unwrap panics on None; unwrap_or takes an explicit fallback and
+// never panics. See docs/stdlib-option.md.
+module core::option;
+
+import core::cmp;
+import core::panic;
+import core::result;
+
+pub enum Option<T> {
+    Some(T),
+    None,
+}
+
+pub fn is_some<T>(value: Option<T>) -> bool {
+    return match (value) { Some(_) -> true, None -> false };
+}
+
+pub fn is_none<T>(value: Option<T>) -> bool {
+    return match (value) { Some(_) -> false, None -> true };
+}
+
+pub fn contains<T>(value: Option<T>, expected: T) -> bool where T: core::cmp::Eq<T> {
+    return match (value) { Some(inner) -> T::eq(inner, expected), None -> false };
+}
+
+pub fn unwrap<T>(value: Option<T>) -> T {
+    return match (value) { Some(inner) -> inner, None -> core::panic::panic() };
+}
+
+pub fn unwrap_or<T>(value: Option<T>, fallback: T) -> T {
+    return match (value) { Some(inner) -> inner, None -> fallback };
+}
+
+pub fn or<T>(value: Option<T>, fallback: Option<T>) -> Option<T> {
+    if (is_some(value)) { return value; }
+    return fallback;
+}
+
+pub fn and<T>(value: Option<T>, next: Option<T>) -> Option<T> {
+    if (is_some(value)) { return next; }
+    return value;
+}
+
+// Exactly one present value survives; two or none give None.
+pub fn xor<T>(value: Option<T>, right: Option<T>) -> Option<T> {
+    if (is_some(value)) {
+        if (is_some(right)) {
+            let absent: Option<T> = None();
+            return absent;
+        }
+        return value;
+    }
+    return right;
+}
+
+// Some(Some(v)) gives Some(v); Some(None) and None give None.
+pub fn flatten<T>(value: Option<Option<T>>) -> Option<T> {
+    let absent: Option<T> = None();
+    return match (value) { Some(inner) -> inner, None -> absent };
+}
+
+pub fn ok_or<T, E>(value: Option<T>, error: E) -> core::result::Result<T, E> {
+    return match (value) {
+        Some(inner) -> core::result::Ok(inner),
+        None -> core::result::Err(error),
+    };
+}
+
+// The success value of a result, or None for an error.
+pub fn ok<T, E>(value: core::result::Result<T, E>) -> Option<T> {
+    let absent: Option<T> = None();
+    return match (value) { Ok(inner) -> Some(inner), Err(_) -> absent };
+}
+
+// The error of a result, or None for a success.
+pub fn err<T, E>(value: core::result::Result<T, E>) -> Option<E> {
+    let absent: Option<E> = None();
+    return match (value) { Ok(_) -> absent, Err(error) -> Some(error) };
+}
+
+pub impl<T> Option<T> {
+    pub fn is_some(self) -> bool {
+        return match (self) { Some(_) -> true, None -> false };
+    }
+
+    pub fn is_none(self) -> bool {
+        return match (self) { Some(_) -> false, None -> true };
+    }
+
+    pub fn contains(self, expected: T) -> bool where T: core::cmp::Eq<T> {
+        return match (self) { Some(inner) -> T::eq(inner, expected), None -> false };
+    }
+
+    pub fn unwrap(self) -> T {
+        return match (self) { Some(inner) -> inner, None -> core::panic::panic() };
+    }
+
+    pub fn unwrap_or(self, fallback: T) -> T {
+        return match (self) { Some(inner) -> inner, None -> fallback };
+    }
+
+    pub fn or(self, fallback: Option<T>) -> Option<T> {
+        let present: bool = match (self) { Some(_) -> true, None -> false };
+        if (present) { return self; }
+        return fallback;
+    }
+
+    pub fn and(self, next: Option<T>) -> Option<T> {
+        let absent: Option<T> = None();
+        return match (self) { Some(_) -> next, None -> absent };
+    }
+
+    pub fn xor(self, right: Option<T>) -> Option<T> {
+        let absent: Option<T> = None();
+        let right_present: bool = match (right) { Some(_) -> true, None -> false };
+        if (right_present) {
+            let self_present: bool = match (self) { Some(_) -> true, None -> false };
+            if (self_present) { return absent; }
+            return right;
+        }
+        return self;
+    }
+
+    pub fn ok_or<E>(self, error: E) -> core::result::Result<T, E> {
+        return match (self) {
+            Some(inner) -> core::result::Ok(inner),
+            None -> core::result::Err(error),
+        };
+    }
+}
