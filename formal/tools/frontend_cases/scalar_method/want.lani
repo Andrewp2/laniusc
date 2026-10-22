@@ -1,0 +1,15 @@
+fn hash_i(value: i32) -> u32 {
+    return value as u32;
+}
+
+fn hash_b(value: bool) -> u32 {
+    if (value) {
+        return 1;
+    }
+    return 0;
+}
+
+fn top(n: i32, b: bool) -> u32 {
+    let h: u32 = hash_i(n);
+    return h + hash_b(b);
+}

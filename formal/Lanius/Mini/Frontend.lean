@@ -505,26 +505,35 @@ structure ImportDecl where
   target : List (List Nat)
   deriving DecidableEq, Repr
 
+/-- `type name<params> = ty;` (no where clause). -/
+structure AliasDecl where
+  module : List (List Nat)
+  name : List Nat
+  params : List (List Nat)
+  ty : CTree
+  deriving Repr
+
 /-- The declarations of all the files, in file order. -/
 structure Decls where
   types : List TypeDecl
   fns : List FnDecl
   consts : List ConstDecl
   imports : List ImportDecl
+  aliases : List AliasDecl
   deriving Repr
 
 def noDecls : Decls :=
-  ({ types := [], fns := [], consts := [], imports := [] } : Decls)
+  ({ types := [], fns := [], consts := [], imports := [], aliases := [] } : Decls)
 
 def joinDecls (a : Decls) (b : Option Decls) : Option Decls :=
   match b with
   | none => none
-  | some d => some ({ types := a.types ++ d.types, fns := a.fns ++ d.fns, consts := a.consts ++ d.consts, imports := a.imports ++ d.imports } : Decls)
+  | some d => some ({ types := a.types ++ d.types, fns := a.fns ++ d.fns, consts := a.consts ++ d.consts, imports := a.imports ++ d.imports, aliases := a.aliases ++ d.aliases } : Decls)
 
 def importDecls (module : List (List Nat)) (target : Option (List (List Nat))) : Option Decls :=
   match target with
   | none => none
-  | some t => some ({ types := [], fns := [], consts := [], imports := [({ module := module, target := t } : ImportDecl)] } : Decls)
+  | some t => some ({ types := [], fns := [], consts := [], imports := [({ module := module, target := t } : ImportDecl)], aliases := [] } : Decls)
 
 /-- The item an item node holds, `pub` or not. -/
 def itemBody (item : CTree) : CTree :=
@@ -671,7 +680,7 @@ def methodsOf (fuel : Nat) (module : List (List Nat)) (implParams : List (List N
 def fnsDecls (fns : Option (List FnDecl)) : Option Decls :=
   match fns with
   | none => none
-  | some fs => some ({ types := [], fns := fs, consts := [], imports := [] } : Decls)
+  | some fs => some ({ types := [], fns := fs, consts := [], imports := [], aliases := [] } : Decls)
 
 def implMethods (fuel : Nat) (module : List (List Nat)) (params : Option (List (List Nat))) (selfType : CTree) (list : CTree) : Option Decls :=
   match params with
@@ -684,9 +693,14 @@ def implMethods (fuel : Nat) (module : List (List Nat)) (params : Option (List (
 def typeDecls (t : Option TypeDecl) : Option Decls :=
   match t with
   | none => none
-  | some d => some ({ types := [d], fns := [], consts := [], imports := [] } : Decls)
+  | some d => some ({ types := [d], fns := [], consts := [], imports := [], aliases := [] } : Decls)
 
-/-- The declarations an item makes. Imports, extern functions, traits and type aliases make none; a use of one is rejected when it is read. -/
+def aliasDecls (module : List (List Nat)) (name : List Nat) (params : Option (List (List Nat))) (ty : CTree) : Option Decls :=
+  match params with
+  | none => none
+  | some ps => some ({ types := [], fns := [], consts := [], imports := [], aliases := [({ module := module, name := name, params := ps, ty := ty } : AliasDecl)] } : Decls)
+
+/-- The declarations an item makes. Imports, extern functions, traits and type aliases with a where clause make none; a use of one is rejected when it is read. -/
 def itemDecls (fuel : Nat) (module : List (List Nat)) (item : CTree) : Option Decls :=
   let b : CTree := itemBody item
   let p : Nat := nodeProd b
@@ -697,7 +711,7 @@ def itemDecls (fuel : Nat) (module : List (List Nat)) (item : CTree) : Option De
       fnsDecls (consFnDecl (fnDeclOf module b false [] b (typeParams fuel (kid b 2))) (some []))
     else
       if p = (208) then
-        some ({ types := [], fns := [], consts := [({ module := module, name := (kidToken b 1).text, ty := kid b 3, value := kid b 5 } : ConstDecl)], imports := [] } : Decls)
+        some ({ types := [], fns := [], consts := [({ module := module, name := (kidToken b 1).text, ty := kid b 3, value := kid b 5 } : ConstDecl)], imports := [], aliases := [] } : Decls)
       else
         if decide (p = (17)) && decide (nodeProd (kid b 3) = (36)) then
           implMethods fuel module (typeParams fuel (kid b 1)) (kid b 2) (kid b 5)
@@ -708,10 +722,13 @@ def itemDecls (fuel : Nat) (module : List (List Nat)) (item : CTree) : Option De
             if decide (p = (43)) && decide (nodeProd (kid b 1) = (44)) then
               importDecls module (pathSpellings fuel (kid (kid (kid b 1) 0) 0) (kid (kid (kid b 1) 0) 1))
             else
-              if decide (p = (46)) || decide (p = (43)) || decide (p = (15)) || decide (p = (25)) || decide (p = (16)) then
-                some noDecls
+              if decide (p = (16)) && decide (nodeProd (kid b 3) = (36)) then
+                aliasDecls module (kidToken b 1).text (typeParams fuel (kid b 2)) (kid b 5)
               else
-                none
+                if decide (p = (46)) || decide (p = (43)) || decide (p = (15)) || decide (p = (25)) || decide (p = (16)) then
+                  some noDecls
+                else
+                  none
 
 def collect (fuel : Nat) (module : List (List Nat)) (items : List CTree) (acc : Decls) : Option Decls :=
   match items with
@@ -753,7 +770,7 @@ structure Collected where
   deriving Repr
 
 def collectedWith (c : Collected) (f : FileDecls) : Collected :=
-  ({ decls := ({ types := c.decls.types ++ f.decls.types, fns := c.decls.fns ++ f.decls.fns, consts := c.decls.consts ++ f.decls.consts, imports := c.decls.imports ++ f.decls.imports } : Decls), modules := c.modules ++ [f.module] } : Collected)
+  ({ decls := ({ types := c.decls.types ++ f.decls.types, fns := c.decls.fns ++ f.decls.fns, consts := c.decls.consts ++ f.decls.consts, imports := c.decls.imports ++ f.decls.imports, aliases := c.decls.aliases ++ f.decls.aliases } : Decls), modules := c.modules ++ [f.module] } : Collected)
 
 def collectFiles (fuel : Nat) (roots : List CTree) (acc : Collected) : Option Collected :=
   match roots with
@@ -801,6 +818,15 @@ def typeOnlyNamesIn (types : List TypeDecl) (m : List (List Nat)) : List (List N
     else
       typeOnlyNamesIn rest m
 
+def aliasNamesIn (aliases : List AliasDecl) (m : List (List Nat)) : List (List Nat) :=
+  match aliases with
+  | [] => []
+  | a :: rest =>
+    if sameSpellings a.module m then
+      a.name :: aliasNamesIn rest m
+    else
+      aliasNamesIn rest m
+
 def noneMember (names : List (List Nat)) (others : List (List Nat)) : Bool :=
   match names with
   | [] => true
@@ -819,10 +845,11 @@ def enumsNamedOk (types : List TypeDecl) (m : List (List Nat)) (values : List (L
 
 /-- A module's functions, types and constants have distinct names. Variants are scoped by their enum: an enum's variants are distinct, and no variant is spelled like a function or constant of the module (a variant may share a name with a type, or with another enum's variant; a bare use of such a variant must then be unambiguous, see bare_variant). -/
 def moduleNamesOk (decls : Decls) (m : List (List Nat)) : Bool :=
-  distinct (fnNamesIn decls.fns m ++ (typeOnlyNamesIn decls.types m ++ constNamesIn decls.consts m)) && enumsNamedOk decls.types m (fnNamesIn decls.fns m ++ constNamesIn decls.consts m)
+  distinct (fnNamesIn decls.fns m ++ (typeOnlyNamesIn decls.types m ++ (aliasNamesIn decls.aliases m ++ constNamesIn decls.consts m))) && enumsNamedOk decls.types m (fnNamesIn decls.fns m ++ constNamesIn decls.consts m)
 
+/-- The spellings a local may not take: the module's types, type aliases, variants and constants. A local may be spelled like a function, since a function is only ever named by a call or a path. -/
 def moduleGlobals (decls : Decls) (m : List (List Nat)) : List (List Nat) :=
-  fnNamesIn decls.fns m ++ (typeNamesIn decls.types m ++ constNamesIn decls.consts m)
+  typeNamesIn decls.types m ++ (aliasNamesIn decls.aliases m ++ constNamesIn decls.consts m)
 
 def isNoneType (t : Option SrcType) : Bool :=
   match t with
@@ -835,6 +862,11 @@ def noPrimitive (types : List TypeDecl) : Bool :=
   | [] => true
   | t :: rest => isNoneType (primitive t.name) && noPrimitive rest
 
+def noPrimitiveAlias (aliases : List AliasDecl) : Bool :=
+  match aliases with
+  | [] => true
+  | a :: rest => isNoneType (primitive a.name) && noPrimitiveAlias rest
+
 def modulesDistinctNames (decls : Decls) (modules : List (List (List Nat))) : Bool :=
   match modules with
   | [] => true
@@ -842,7 +874,7 @@ def modulesDistinctNames (decls : Decls) (modules : List (List (List Nat))) : Bo
 
 /-- The files are distinct modules, and each module's names are distinct. -/
 def wellNamed (c : Collected) : Bool :=
-  distinctModules c.modules && modulesDistinctNames c.decls c.modules && noPrimitive c.decls.types
+  distinctModules c.modules && modulesDistinctNames c.decls c.modules && noPrimitive c.decls.types && noPrimitiveAlias c.decls.aliases
 
 def noNames (names : List (List Nat)) : Bool :=
   match names with
@@ -896,6 +928,15 @@ def findConst (consts : List ConstDecl) (m : List (List Nat)) (name : List Nat) 
       some c
     else
       findConst rest m name
+
+def findAlias (aliases : List AliasDecl) (m : List (List Nat)) (name : List Nat) : Option AliasDecl :=
+  match aliases with
+  | [] => none
+  | a :: rest =>
+    if sameSpellings a.module m && sameText a.name name then
+      some a
+    else
+      findAlias rest m name
 
 /-- The variant spelled name: its enum's declaration and its index there. -/
 structure VariantAt where
@@ -1220,7 +1261,7 @@ def tyOf (fuel : Nat) (env : Env) (t : CTree) : Option Ty :=
       sliceTy (tyOf f env (kid t 1))
     else
       if decide (nodeProd t = (69)) && decide (nodeProd (kid t 1) = (226)) then
-        bareOf env (typePathSpellings f (kid path 0) (kid path 1))
+        bareOrAlias f env (typePathSpellings f (kid path 0) (kid path 1))
       else
         if decide (nodeProd t = (69)) && decide (nodeProd (kid t 1) = (227)) then
           appliedOf f env (typePathSpellings f (kid path 0) (kid path 1)) (listItems f (kid t 1))
@@ -1236,7 +1277,46 @@ def appliedOf (fuel : Nat) (env : Env) (segments : Option (List (List Nat))) (it
     | some ss =>
       match items with
       | none => none
-      | some gs => namedOf env (typeDeclAt env ss) (argsTys (fuel - 1) env gs)
+      | some gs =>
+        match typeDeclAt env ss with
+        | some d => namedArgs env d (argsTys (fuel - 1) env gs)
+        | none => aliasTy (fuel - 1) env ss (argsTys (fuel - 1) env gs)
+
+/-- A type path without arguments: a type parameter, a primitive or declared type, or else a type alias. -/
+def bareOrAlias (fuel : Nat) (env : Env) (segments : Option (List (List Nat))) : Option Ty :=
+  if fuel = 0 then
+    none
+  else
+    match segments with
+    | none => none
+    | some ss =>
+      match bareTy env ss with
+      | some t => some t
+      | none => aliasTy (fuel - 1) env ss (some [])
+
+/-- The type alias a path names, at type arguments: its type, read in the alias's module with its parameters standing for the arguments. -/
+def aliasTy (fuel : Nat) (env : Env) (segments : List (List Nat)) (args : Option (List Ty)) : Option Ty :=
+  if fuel = 0 then
+    none
+  else
+    match splitLast segments with
+    | none => none
+    | some s =>
+      match findAlias env.decls.aliases (moduleOr env.module s.module) s.name with
+      | none => none
+      | some a =>
+        match args with
+        | none => none
+        | some ts => aliasAt (fuel - 1) env.decls a ts
+
+def aliasAt (fuel : Nat) (decls : Decls) (a : AliasDecl) (ts : List Ty) : Option Ty :=
+  if fuel = 0 then
+    none
+  else
+    if a.params.length = ts.length then
+      tyOf (fuel - 1) (declEnv decls a.module a.params ts) a.ty
+    else
+      none
 
 /-- The types of generic arguments (generic_argument_type). -/
 def argsTys (fuel : Nat) (env : Env) (items : List CTree) : Option (List Ty) :=
@@ -1534,9 +1614,40 @@ def decimal (text : List Nat) (acc : Nat) : Option Nat :=
       else
         none
 
+/-- Decimal digits, below 2^64. -/
+def wideDecimal (text : List Nat) (acc : Nat) : Option Nat :=
+  if 18446744073709551615 < acc then
+    none
+  else
+    match text with
+    | [] => some acc
+    | b :: rest =>
+      if decide (48 ≤ b) && decide (b ≤ 57) then
+        wideDecimal rest (acc * 10 + (b - 48))
+      else
+        none
+
+def unitTy (t : SrcType) : Bool :=
+  match t with
+  | .i32 => false
+  | .bool => false
+  | .uint k => false
+  | .struct id fields => false
+  | .enum id variants => false
+  | .ptr => false
+  | .slice e => false
+  | .unit => true
+  | .isize => false
+
+/-- A literal of 2^31 or more (below 2^64) is read as Cast(Unit, Unsigned(Uint64, n)), a form no other source has (no cast names Unit); lit_funcs gives it the type its context expects, and build rejects one that gets none. -/
+def wideMarker (v : Option Nat) : Option SrcExpr :=
+  match v with
+  | none => none
+  | some n => some (SrcExpr.cast SrcType.unit (SrcExpr.unsigned UintTy.uint64 (BitVec.ofNat 64 n)))
+
 def intLiteral (text : List Nat) : Option SrcExpr :=
   match decimal text 0 with
-  | none => none
+  | none => wideMarker (wideDecimal text 0)
   | some v =>
     if v ≤ 2147483647 then
       some (SrcExpr.int (BitVec.ofNat 32 v))
@@ -1617,19 +1728,24 @@ def memberOf (env : Env) (scope : List Local) (primary : CTree) (tail : CTree) :
   else
     none
 
-def namedScalar (env : Env) (name : List Nat) : Option SrcType :=
+def scalarOf (t : Option Ty) : Option SrcType :=
+  match t with
+  | none => none
+  | some x => scalarSrc x
+
+def namedScalar (fuel : Nat) (env : Env) (name : List Nat) : Option SrcType :=
   match paramTy env name with
   | some t => scalarSrc t
   | none =>
     match primTy name with
-    | none => none
+    | none => scalarOf (aliasTy fuel env [name] (some []))
     | some t => scalarSrc t
 
-/-- The type a cast names (cast_type -> one segment): a primitive type, or a type parameter standing for one. -/
-def castTypeOf (env : Env) (t : CTree) : Option SrcType :=
+/-- The type a cast names (cast_type -> one segment): a primitive type, a type parameter standing for one, or a type alias of the module naming one. -/
+def castTypeOf (fuel : Nat) (env : Env) (t : CTree) : Option SrcType :=
   let path : CTree := kid t 0
   if decide (nodeProd t = (310)) && decide (nodeProd path = (311)) && decide (nodeProd (kid path 0) = (312)) && decide (nodeProd (kid path 1) = (314)) then
-    namedScalar env (kidToken (kid path 0) 0).text
+    namedScalar fuel env (kidToken (kid path 0) 0).text
   else
     none
 
@@ -1649,7 +1765,7 @@ def casts (fuel : Nat) (env : Env) (acc : Option SrcExpr) (tail : CTree) : Optio
     none
   else
     if hasKids tail then
-      casts (fuel - 1) env (castInto (castTypeOf env (kid tail 1)) acc) (kid tail 2)
+      casts (fuel - 1) env (castInto (castTypeOf fuel env (kid tail 1)) acc) (kid tail 2)
     else
       acc
 
@@ -1741,19 +1857,6 @@ def treesTokens (ts : List CTree) : List Token :=
   | t :: rest => treeTokens t ++ treesTokens rest
 
 end
-
-/-- Decimal digits, below 2^64. -/
-def wideDecimal (text : List Nat) (acc : Nat) : Option Nat :=
-  if 18446744073709551615 < acc then
-    none
-  else
-    match text with
-    | [] => some acc
-    | b :: rest =>
-      if decide (48 ≤ b) && decide (b ≤ 57) then
-        wideDecimal rest (acc * 10 + (b - 48))
-      else
-        none
 
 def wideI32 (negative : Bool) (n : Nat) : Option SrcExpr :=
   if negative && decide (n = 2147483648) then
@@ -2024,7 +2127,7 @@ def bareInt (e : SrcExpr) : Bool :=
   | .negate x => bareInt x
   | .not x => false
   | .apply op a b => !(givesBool op) && bareInt a && bareInt b
-  | .cast t x => false
+  | .cast t x => unitTy t
 
 def pickTy (leftBare : Bool) (a : Option Ty) (b : Option Ty) : Option Ty :=
   if leftBare then
@@ -2726,15 +2829,19 @@ def methodCall (fuel : Nat) (env : Env) (scope : List Local) (expected : Ty) (l 
     | none => none
     | some args => staticCall fuel env scope expected (some x.ty) name (SrcExpr.local x.id :: args)
 
+/-- A path's one-segment prefix that names a type: a type parameter or a primitive type (`T::m`, `i32::hash`). -/
 def isTypeParam (env : Env) (owner : Option (List Nat)) : Bool :=
   match owner with
   | none => false
-  | some n => member env.names n
+  | some n => member env.names n || !(isNoneType (primitive n))
 
 def ownerTy (env : Env) (owner : Option (List Nat)) : Option Ty :=
   match owner with
   | none => none
-  | some n => paramTy env n
+  | some n =>
+    match paramTy env n with
+    | some t => some t
+    | none => primTy n
 
 def isSomeIndex (k : Option Nat) : Bool :=
   match k with
@@ -3348,7 +3455,7 @@ def effCasts (fuel : Nat) (env : Env) (acc : Option MEff) (tail : CTree) : Optio
     none
   else
     if hasKids tail then
-      effCasts (fuel - 1) env (xCastInto (castTypeOf env (kid tail 1)) acc) (kid tail 2)
+      effCasts (fuel - 1) env (xCastInto (castTypeOf fuel env (kid tail 1)) acc) (kid tail 2)
     else
       acc
 
@@ -5225,6 +5332,98 @@ def knownApply (op : SrcOp) (a : Option SrcType) (b : Option SrcType) : Option S
   else
     eitherTy a b
 
+/-- A cast's type; a wide literal (a cast to Unit) has none of its own. -/
+def knownCast (t : SrcType) : Option SrcType :=
+  if unitTy t then
+    none
+  else
+    some t
+
+def wideUintAt (u : UintTy) (n : BitVec 64) (e : SrcExpr) : SrcExpr :=
+  if n ≤ uintMask u then
+    SrcExpr.unsigned u n
+  else
+    e
+
+def wideIsizeAt (n : BitVec 64) (e : SrcExpr) : SrcExpr :=
+  if n ≤ 9223372036854775807 then
+    SrcExpr.cast SrcType.isize (SrcExpr.unsigned UintTy.uint64 n)
+  else
+    e
+
+/-- A wide literal n at its expected type: an unsigned type's literal when n fits it, for isize (n below 2^63) the cast of the u64 literal n; else it stays as read, and build rejects it. -/
+def wideAt (want : Option SrcType) (n : BitVec 64) (e : SrcExpr) : SrcExpr :=
+  match want with
+  | none => e
+  | some t =>
+    match t with
+    | .i32 => e
+    | .bool => e
+    | .uint u => wideUintAt u n e
+    | .struct id fields => e
+    | .enum id variants => e
+    | .ptr => e
+    | .slice el => e
+    | .unit => e
+    | .isize => wideIsizeAt n e
+
+def negWideI32 (n : BitVec 64) (e : SrcExpr) : SrcExpr :=
+  let low : BitVec 32 := 0 - 2147483647
+  if n = 2147483648 then
+    SrcExpr.int (low - 1)
+  else
+    e
+
+def negWideIsize (n : BitVec 64) (e : SrcExpr) : SrcExpr :=
+  if n ≤ 9223372036854775808 then
+    SrcExpr.cast SrcType.isize (SrcExpr.unsigned UintTy.uint64 (18446744073709551615 - n + 1))
+  else
+    e
+
+/-- `-n` for a wide literal n: -2^31 as an i32 literal (expected i32, or nothing), the cast of the u64 literal of its two's complement bits for isize (n at most 2^63). -/
+def negWideAt (want : Option SrcType) (n : BitVec 64) (e : SrcExpr) : SrcExpr :=
+  match want with
+  | none => negWideI32 n e
+  | some t =>
+    match t with
+    | .i32 => negWideI32 n e
+    | .bool => e
+    | .uint u => e
+    | .struct id fields => e
+    | .enum id variants => e
+    | .ptr => e
+    | .slice el => e
+    | .unit => e
+    | .isize => negWideIsize n e
+
+def wideInner (t : SrcType) (x : SrcExpr) : Option (BitVec 64) :=
+  if unitTy t then
+    match x with
+    | .int k => none
+    | .boolean b => none
+    | .unsigned u k => some k
+    | .local id => none
+    | .field id j => none
+    | .negate y => none
+    | .not y => none
+    | .apply op a b => none
+    | .cast s y => none
+  else
+    none
+
+/-- The literal a wide marker holds, if e is one. -/
+def wideValue (e : SrcExpr) : Option (BitVec 64) :=
+  match e with
+  | .int k => none
+  | .boolean b => none
+  | .unsigned u k => none
+  | .local id => none
+  | .field id j => none
+  | .negate x => none
+  | .not x => none
+  | .apply op a b => none
+  | .cast t x => wideInner t x
+
 /-- An expression's type when it does not rest on literals. -/
 def knownExpr (locals : List LocalTy) (e : SrcExpr) : Option SrcType :=
   match e with
@@ -5236,7 +5435,7 @@ def knownExpr (locals : List LocalTy) (e : SrcExpr) : Option SrcType :=
   | .negate x => knownExpr locals x
   | .not x => some SrcType.bool
   | .apply op a b => knownApply op (knownExpr locals a) (knownExpr locals b)
-  | .cast t x => some t
+  | .cast t x => knownCast t
 
 def litExpr (locals : List LocalTy) (want : Option SrcType) (e : SrcExpr) : SrcExpr :=
   match e with
@@ -5245,10 +5444,16 @@ def litExpr (locals : List LocalTy) (want : Option SrcType) (e : SrcExpr) : SrcE
   | .unsigned u k => e
   | .local id => e
   | .field id j => e
-  | .negate x => SrcExpr.negate (litExpr locals want x)
+  | .negate x =>
+    (match wideValue x with
+     | none => SrcExpr.negate (litExpr locals want x)
+     | some n => negWideAt want n e)
   | .not x => SrcExpr.not (litExpr locals (some SrcType.bool) x)
   | .apply op a b => SrcExpr.apply op (litExpr locals (operandWant op want (knownExpr locals a) (knownExpr locals b)) a) (litExpr locals (operandWant op want (knownExpr locals a) (knownExpr locals b)) b)
-  | .cast t x => SrcExpr.cast t (litExpr locals none x)
+  | .cast t x =>
+    match wideValue e with
+    | none => SrcExpr.cast t (litExpr locals none x)
+    | some n => wideAt want n e
 
 def litExprs (locals : List LocalTy) (wants : Option (List SrcType)) (es : List SrcExpr) : List SrcExpr :=
   match es with
@@ -5367,13 +5572,104 @@ def litFuncs (all : List SrcFunc) (fs : List SrcFunc) : List SrcFunc :=
   | [] => []
   | g :: rest => ({ params := g.params, ret := g.ret, body := litStmt all g.ret (paramLocals g.params) g.body } : SrcFunc) :: litFuncs all rest
 
+/-- A wide literal that lit_funcs gave no type (see wide_marker) is rejected. -/
+def wideLeft (e : SrcExpr) : Bool :=
+  match e with
+  | .int k => false
+  | .boolean b => false
+  | .unsigned u k => false
+  | .local id => false
+  | .field id j => false
+  | .negate x => wideLeft x
+  | .not x => wideLeft x
+  | .apply op a b => wideLeft a || wideLeft b
+  | .cast t x => unitTy t || wideLeft x
+
+def wideLeftExprs (es : List SrcExpr) : Bool :=
+  match es with
+  | [] => false
+  | e :: rest => wideLeft e || wideLeftExprs rest
+
+def wideLeftArms (arms : List SrcArm) : Bool :=
+  match arms with
+  | [] => false
+  | a :: rest => wideLeft a.value || wideLeftArms rest
+
+mutual
+
+def wideLeftEff (x : SrcEff) : Bool :=
+  match x with
+  | .ePure e => wideLeft e
+  | .eCall f args => wideLeftEffs args
+  | .eApply op a b => wideLeftEff a || wideLeftEff b
+  | .eNeg a => wideLeftEff a
+  | .eNot a => wideLeftEff a
+  | .eCast t a => wideLeftEff a
+  | .eIndex sl i => wideLeftEff i
+  | .eStruct t fs => wideLeftEffs fs
+  | .eVariant t k ps => wideLeftEffs ps
+  | .eMatch sc ety t bs vs => wideLeftEff sc || wideLeftEffs vs
+  | .eDivide op a b => wideLeftEff a || wideLeftEff b
+  | .eStride sl => false
+
+def wideLeftEffs (xs : List SrcEff) : Bool :=
+  match xs with
+  | [] => false
+  | x :: rest => wideLeftEff x || wideLeftEffs rest
+
+end
+
+def wideLeftStmt (s : SrcStmt) : Bool :=
+  match s with
+  | .nop => false
+  | .let id ty e body => wideLeft e || wideLeftStmt body
+  | .letStruct id ty es body => wideLeftExprs es || wideLeftStmt body
+  | .letCall id ty f args body => wideLeftExprs args || wideLeftStmt body
+  | .letEnum id ty k es body => wideLeftExprs es || wideLeftStmt body
+  | .letMatch id ty sc eid arms body => wideLeftArms arms || wideLeftStmt body
+  | .set id e => wideLeft e
+  | .setField id j e => wideLeft e
+  | .setCall id f args => wideLeftExprs args
+  | .then a b => wideLeftStmt a || wideLeftStmt b
+  | .if c a b => wideLeft c || wideLeftStmt a || wideLeftStmt b
+  | .while c body => wideLeft c || wideLeftStmt body
+  | .return e => wideLeft e
+  | .letAlloc id size shift body => wideLeft size || wideLeftStmt body
+  | .letLoad id p o body => wideLeft p || wideLeft o || wideLeftStmt body
+  | .setByte p o v => wideLeft p || wideLeft o || wideLeft v
+  | .free p size shift => wideLeft p || wideLeft size
+  | .letSlice id el p n body => wideLeft p || wideLeft n || wideLeftStmt body
+  | .letIndex id ty sl i body => wideLeft i || wideLeftStmt body
+  | .setIndex sl i v => wideLeft i || wideLeft v
+  | .letEval id ty x body => wideLeftEff x || wideLeftStmt body
+  | .setEval id x => wideLeftEff x
+  | .ifEval c a b => wideLeftEff c || wideLeftStmt a || wideLeftStmt b
+  | .whileEval c body => wideLeftEff c || wideLeftStmt body
+  | .returnEval x => wideLeftEff x
+  | .discard x => wideLeftEff x
+  | .setIndexEval sl i v => wideLeftEff i || wideLeftEff v
+  | .setFieldEval id j x => wideLeftEff x
+  | .returnUnit => false
+  | .assert x => wideLeftEff x
+
+def wideLeftFuncs (fs : List SrcFunc) : Bool :=
+  match fs with
+  | [] => false
+  | g :: rest => wideLeftStmt g.body || wideLeftFuncs rest
+
+def untypedRejected (fs : List SrcFunc) : Option SrcProgram :=
+  if wideLeftFuncs fs then
+    none
+  else
+    some ({ funcs := fs } : SrcProgram)
+
 def buildClosed (fuel : Nat) (decls : Decls) (fns : List Inst) (types : Option (List Inst)) (funcs : List MFunc) : Option SrcProgram :=
   match types with
   | none => none
   | some ts =>
     match closeFuncs fuel ({ decls := decls, fns := fns, types := ts } : Tables) funcs with
     | none => none
-    | some fs => some ({ funcs := litFuncs fs fs } : SrcProgram)
+    | some fs => untypedRejected (litFuncs fs fs)
 
 def buildMono (fuel : Nat) (decls : Decls) (seeds : List Inst) (m : Option Mono) : Option SrcProgram :=
   match m with

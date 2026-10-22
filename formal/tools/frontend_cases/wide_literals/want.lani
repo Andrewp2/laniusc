@@ -1,0 +1,39 @@
+const M64: u64 = 18446744073709551615;
+const M32A: u32 = 4294967294;
+const M32B: u32 = 3000000000;
+const LOW: i32 = -2147483648;
+const NEAR: isize = 9223372036854775807;
+const FAR: isize = -9223372036854775808;
+const P32: u64 = 4294967296;
+const P63: u64 = 9223372036854775808;
+const P31: u64 = 2147483648;
+
+enum L { Lit(u64), No }
+
+fn mask(x: u64) -> u64 {
+    return x & M64;
+}
+
+fn big(x: u32) -> bool {
+    return x > M32A && x != M32B;
+}
+
+fn low() -> i32 {
+    return LOW;
+}
+
+fn near(x: isize) -> isize {
+    return x + NEAR;
+}
+
+fn far() -> isize {
+    return FAR;
+}
+
+fn mk(n: i32) -> L {
+    if (n > 0) {
+        return Lit(P32);
+    }
+    let x: u64 = P63;
+    return Lit(x + P31);
+}

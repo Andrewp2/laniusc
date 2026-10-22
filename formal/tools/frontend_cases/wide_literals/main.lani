@@ -1,0 +1,31 @@
+// Integer literals of 2^31 and above outside constants, typed by the type
+// their context expects.
+enum L { Lit(u64), No }
+
+fn mask(x: u64) -> u64 {
+    return x & 18446744073709551615;
+}
+
+fn big(x: u32) -> bool {
+    return x > 4294967294 && x != 3000000000;
+}
+
+fn low() -> i32 {
+    return -2147483648;
+}
+
+fn near(x: isize) -> isize {
+    return x + 9223372036854775807;
+}
+
+fn far() -> isize {
+    return -9223372036854775808;
+}
+
+fn mk(n: i32) -> L {
+    if (n > 0) {
+        return Lit(4294967296);
+    }
+    let x: u64 = 9223372036854775808;
+    return Lit(x + 2147483648);
+}

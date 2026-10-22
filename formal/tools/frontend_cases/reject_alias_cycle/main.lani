@@ -1,0 +1,6 @@
+type A = B;
+type B = A;
+
+fn top(n: A) -> i32 {
+    return 0;
+}

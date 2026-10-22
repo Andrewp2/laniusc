@@ -1,0 +1,19 @@
+// Locals and parameters spelled like functions of the module: a function
+// is only named by a call, so the two never meet.
+fn kid(n: i32) -> i32 {
+    return n + 1;
+}
+
+fn top(kid: i32) -> i32 {
+    let sigs: i32 = kid(kid);
+    let length: i32 = sigs(sigs) + kid;
+    return length;
+}
+
+fn sigs(x: i32) -> i32 {
+    return x * 2;
+}
+
+fn length(x: i32) -> i32 {
+    return x;
+}

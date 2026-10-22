@@ -1,0 +1,17 @@
+fn kid(n: i32) -> i32 {
+    return n + 1;
+}
+
+fn top(a: i32) -> i32 {
+    let b: i32 = kid(a);
+    let c: i32 = sigs(b) + a;
+    return c;
+}
+
+fn sigs(x: i32) -> i32 {
+    return x * 2;
+}
+
+fn length(x: i32) -> i32 {
+    return x;
+}

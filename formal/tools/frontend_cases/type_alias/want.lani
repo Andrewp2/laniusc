@@ -1,0 +1,19 @@
+struct Point { x: i32, y: i32 }
+
+fn bump(c: u32, f: bool) -> u32 {
+    if (f) {
+        return c + (1 as u32);
+    }
+    return c;
+}
+
+fn run(n: i32, b: u8) -> i32 {
+    let p: Point = Point { x: n, y: 2 };
+    let c: u32 = bump((n as u32), true);
+    let k: u8 = low(b);
+    return p.x + (c as i32) + (k as i32);
+}
+
+fn low(v: u8) -> u8 {
+    return v & (15 as u8);
+}
