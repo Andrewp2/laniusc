@@ -1496,16 +1496,22 @@ def tailOp (p : Nat) : Option SrcOp :=
                       if p = (141) then
                         some SrcOp.greaterEq
                       else
-                        if p = (148) then
-                          some SrcOp.plus
+                        if p = (144) then
+                          some SrcOp.shiftLeft
                         else
-                          if p = (149) then
-                            some SrcOp.minus
+                          if p = (145) then
+                            some SrcOp.shiftRight
                           else
-                            if p = (152) then
-                              some SrcOp.times
+                            if p = (148) then
+                              some SrcOp.plus
                             else
-                              none
+                              if p = (149) then
+                                some SrcOp.minus
+                              else
+                                if p = (152) then
+                                  some SrcOp.times
+                                else
+                                  none
 
 /-- A level of binary operators: level -> operand level_tail. -/
 def isLevel (p : Nat) : Bool :=
@@ -1975,6 +1981,8 @@ def givesBool (op : SrcOp) : Bool :=
   | .bitAnd => false
   | .bitOr => false
   | .bitXor => false
+  | .shiftLeft => false
+  | .shiftRight => false
   | .less => true
   | .lessEq => true
   | .greater => true
@@ -4242,7 +4250,7 @@ def callStmt (fuel : Nat) (env : Env) (scope : List Local) (pf : CTree) : Option
       else
         none
 
-/-- The operator of a compound assignment `+=`, `-=`, `*=`, `&=`, `|=`, `^=`. -/
+/-- The operator of a compound assignment `+=`, `-=`, `*=`, `&=`, `|=`, `^=`, `<<=`, `>>=`. -/
 def compoundOp (p : Nat) : Option SrcOp :=
   if p = (107) then
     some SrcOp.plus
@@ -4262,7 +4270,13 @@ def compoundOp (p : Nat) : Option SrcOp :=
             if p = (112) then
               some SrcOp.bitXor
             else
-              none
+              if p = (113) then
+                some SrcOp.shiftLeft
+              else
+                if p = (114) then
+                  some SrcOp.shiftRight
+                else
+                  none
 
 def compoundValue (op : SrcOp) (left : SrcExpr) (right : Option SrcExpr) : Option SrcExpr :=
   match right with

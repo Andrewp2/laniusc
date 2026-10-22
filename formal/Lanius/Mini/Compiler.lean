@@ -79,6 +79,7 @@ theorem Lists.getOr_spec {T : Type} (items : List T) (index : Nat) (fallback : T
     Lists.getOr items index fallback = items.getD index fallback :=
   by induction items generalizing index <;> cases index <;> simp_all [Lists.getOr]
 
+/-- Shl, Shr and Sar shift by the right operand's low 5 bits (S32) or 6 bits (U64), as x86's shifts by cl do; Shr fills with zeros, Sar with the sign. -/
 inductive BinOp where
   | add : BinOp
   | sub : BinOp
@@ -86,6 +87,9 @@ inductive BinOp where
   | and : BinOp
   | or : BinOp
   | xor : BinOp
+  | shl : BinOp
+  | shr : BinOp
+  | sar : BinOp
   deriving DecidableEq, Repr
 
 inductive CmpOp where
@@ -226,6 +230,9 @@ def BinOp.size (self : BinOp) : Nat :=
   | .and => 12
   | .or => 12
   | .xor => 12
+  | .shl => 12
+  | .shr => 12
+  | .sar => 12
 
 /-- U64 operations take a REX.W prefix byte. -/
 def Word.prefix (self : Word) : Nat :=
@@ -459,7 +466,7 @@ def Word.rex (self : Word) : List UInt8 :=
   | .s32 => []
   | .u64 => [72]
 
-/-- op eax, ecx without its prefix -/
+/-- op eax, ecx or shl/shr/sar eax, cl without its prefix -/
 def BinOp.opcode (self : BinOp) : List UInt8 :=
   match self with
   | .add => 1 :: [200]
@@ -468,6 +475,9 @@ def BinOp.opcode (self : BinOp) : List UInt8 :=
   | .and => 33 :: [200]
   | .or => 9 :: [200]
   | .xor => 49 :: [200]
+  | .shl => 211 :: [224]
+  | .shr => 211 :: [232]
+  | .sar => 211 :: [248]
 
 /-- slot_operands, then op eax, ecx or op rax, rcx -/
 def BinOp.bytes (self : BinOp) (word : Word) (slot : Nat) : List UInt8 :=
@@ -980,6 +990,8 @@ inductive SrcOp where
   | bitAnd : SrcOp
   | bitOr : SrcOp
   | bitXor : SrcOp
+  | shiftLeft : SrcOp
+  | shiftRight : SrcOp
   | less : SrcOp
   | lessEq : SrcOp
   | greater : SrcOp
@@ -1378,6 +1390,13 @@ def arith (operation : BinOp) (left : Typed) (right : Typed) : Option Typed :=
     else
       arithUint operation left right (SrcType.uintKind left.ty)
 
+/-- >> is arithmetic on i32 and isize, logical on the unsigned types. Core traps on an amount outside the type's bits, so the low bits x86 keeps are the whole amount. -/
+def arithShiftRight (left : Typed) (right : Typed) : Option Typed :=
+  if SrcType.isI32 left.ty || SrcType.isIsize left.ty then
+    arith BinOp.sar left right
+  else
+    arith BinOp.shr left right
+
 /-- ptr + usize and ptr - usize move the address, wrapping at 2^64 like Core's pointerOffset; other operands are arithmetic. -/
 def offsetOrArith (operation : BinOp) (left : Typed) (right : Typed) : Option Typed :=
   if SrcType.isPtr left.ty && SrcType.isUint right.ty UintTy.usize then
@@ -1434,6 +1453,8 @@ def SrcOp.lower (self : SrcOp) (left : Typed) (right : Typed) : Option Typed :=
   | .bitAnd => arith BinOp.and left right
   | .bitOr => arith BinOp.or left right
   | .bitXor => arith BinOp.xor left right
+  | .shiftLeft => arith BinOp.shl left right
+  | .shiftRight => arithShiftRight left right
   | .less => order CmpOp.lt left right
   | .lessEq => order CmpOp.le left right
   | .greater => order CmpOp.gt left right
@@ -1936,6 +1957,8 @@ def shortCircuit (op : SrcOp) : Nat :=
   | .bitAnd => 0
   | .bitOr => 0
   | .bitXor => 0
+  | .shiftLeft => 0
+  | .shiftRight => 0
   | .less => 0
   | .lessEq => 0
   | .greater => 0
@@ -3275,6 +3298,22 @@ def BinOp.compute (self : BinOp) (a : BitVec 64) (b : BitVec 64) : BitVec 64 :=
   | .and => a &&& b
   | .or => a ||| b
   | .xor => a ^^^ b
+  | .shl => 0
+  | .shr => 0
+  | .sar => 0
+
+/-- compute is the operation (shifts are not folded). -/
+def BinOp.folds (self : BinOp) : Bool :=
+  match self with
+  | .add => true
+  | .sub => true
+  | .mul => true
+  | .and => true
+  | .or => true
+  | .xor => true
+  | .shl => false
+  | .shr => false
+  | .sar => false
 
 /-- x op unit is x. -/
 def BinOp.unit (self : BinOp) : BitVec 64 :=
@@ -3285,6 +3324,9 @@ def BinOp.unit (self : BinOp) : BitVec 64 :=
   | .and => 18446744073709551615
   | .or => 0
   | .xor => 0
+  | .shl => 0
+  | .shr => 0
+  | .sar => 0
 
 /-- unit op x is x too. -/
 def BinOp.commutes (self : BinOp) : Bool :=
@@ -3295,6 +3337,9 @@ def BinOp.commutes (self : BinOp) : Bool :=
   | .and => true
   | .or => true
   | .xor => true
+  | .shl => false
+  | .shr => false
+  | .sar => false
 
 /-- x op 0 and 0 op x are 0. -/
 def BinOp.annihilates (self : BinOp) : Bool :=
@@ -3305,6 +3350,9 @@ def BinOp.annihilates (self : BinOp) : Bool :=
   | .and => true
   | .or => false
   | .xor => false
+  | .shl => false
+  | .shr => false
+  | .sar => false
 
 def BinOp.number (self : BinOp) : Nat :=
   match self with
@@ -3314,6 +3362,9 @@ def BinOp.number (self : BinOp) : Nat :=
   | .and => 3
   | .or => 4
   | .xor => 5
+  | .shl => 6
+  | .shr => 7
+  | .sar => 8
 
 def DivOp.number (self : DivOp) : Nat :=
   match self with
@@ -3396,11 +3447,17 @@ def absorbed (operation : BinOp) (value : BitVec 64) : Option (BitVec 64) :=
   else
     none
 
+def foldConstant (word : Word) (operation : BinOp) (a : BitVec 64) (b : BitVec 64) : Option (BitVec 64) :=
+  if BinOp.folds operation then
+    some (Word.compute word operation a b)
+  else
+    none
+
 def binaryConstant (word : Word) (operation : BinOp) (left : Option (BitVec 64)) (right : Option (BitVec 64)) : Option (BitVec 64) :=
   match left with
   | some a =>
     (match right with
-     | some b => some (Word.compute word operation a b)
+     | some b => foldConstant word operation a b
      | none => absorbed operation a)
   | none =>
     match right with
@@ -3906,11 +3963,18 @@ def optimizeRight (word : Word) (operation : BinOp) (left : Expr) (right : Expr)
     else
       Expr.binary word operation left right
 
+/-- Both operands are the literals a and b. -/
+def optimizeBoth (word : Word) (operation : BinOp) (a : BitVec 64) (b : BitVec 64) (left : Expr) (right : Expr) : Expr :=
+  if BinOp.folds operation then
+    Expr.lit (Word.compute word operation a b)
+  else
+    Expr.binary word operation left right
+
 def optimizeBinary (word : Word) (operation : BinOp) (left : Expr) (right : Expr) : Expr :=
   match Expr.literal left with
   | some a =>
     (match Expr.literal right with
-     | some b => Expr.lit (Word.compute word operation a b)
+     | some b => optimizeBoth word operation a b left right
      | none => optimizeLeft word operation a left right)
   | none =>
     match Expr.literal right with

@@ -1,5 +1,6 @@
 import Lanius.Mini.Semantics
 import Lanius.Mini.Unsigned
+import Lanius.Mini.Shifts
 
 /-! Expressions: a lowered subset expression evaluates in Core without changing
 the state, to a value its lowered mini expression represents. -/
@@ -415,6 +416,84 @@ theorem SrcOp.lower_holds {op : SrcOp} {tl tr t : Typed} (lowered : op.lower tl 
       subst evaluated
       rw [wrap_eval]
       exact holds_uint k (Nat.mod_lt _ (Nat.two_pow_pos _))
+  case shiftLeft =>
+    simp only [SrcOp.lower, arith] at lowered
+    split at lowered
+    · rename_i types
+      simp only [Option.some.injEq] at lowered
+      subst lowered
+      cases htl : tl.ty <;> cases htr : tr.ty <;> simp [htl, htr, SrcType.isI32] at types
+      rw [htl] at holdsl
+      rw [htr] at holdsr
+      obtain ⟨rfl, _⟩ := holdsl
+      obtain ⟨rfl, _⟩ := holdsr
+      obtain rfl := eval_shl_i32 _ _ evaluated
+      simp only [Expr.eval, Word.apply, BinOp.apply]; exact holds_i32 _
+    split at lowered
+    · rename_i types
+      simp only [Option.some.injEq] at lowered
+      subst lowered
+      cases htl : tl.ty <;> cases htr : tr.ty <;> simp [htl, htr, SrcType.isIsize] at types
+      rw [htl] at holdsl
+      rw [htr] at holdsr
+      subst holdsl
+      subst holdsr
+      obtain rfl := eval_shl_isize _ _ evaluated
+      rfl
+    · obtain ⟨k, hk, htr, rfl⟩ := arithUint_some lowered
+      rw [SrcType.eq_of_uintKind hk] at holdsl
+      rw [htr] at holdsr
+      obtain ⟨rfl, _⟩ := holdsl
+      obtain ⟨rfl, _⟩ := holdsr
+      obtain rfl := eval_uint_shift _ _ k (.inl ⟨rfl, rfl⟩) evaluated
+      rw [wrap_eval]
+      exact holds_uint k (Nat.mod_lt _ (Nat.two_pow_pos _))
+  case shiftRight =>
+    simp only [SrcOp.lower, arithShiftRight] at lowered
+    split at lowered
+    · rename_i signed
+      simp only [arith] at lowered
+      split at lowered
+      · rename_i types
+        simp only [Option.some.injEq] at lowered
+        subst lowered
+        cases htl : tl.ty <;> cases htr : tr.ty <;> simp [htl, htr, SrcType.isI32] at types
+        rw [htl] at holdsl
+        rw [htr] at holdsr
+        obtain ⟨rfl, _⟩ := holdsl
+        obtain ⟨rfl, _⟩ := holdsr
+        obtain rfl := eval_sar_i32 _ _ evaluated
+        simp only [Expr.eval, Word.apply, BinOp.apply]; exact holds_i32 _
+      split at lowered
+      · rename_i types
+        simp only [Option.some.injEq] at lowered
+        subst lowered
+        cases htl : tl.ty <;> cases htr : tr.ty <;> simp [htl, htr, SrcType.isIsize] at types
+        rw [htl] at holdsl
+        rw [htr] at holdsr
+        subst holdsl
+        subst holdsr
+        obtain rfl := eval_sar_isize _ _ evaluated
+        rfl
+      · obtain ⟨k, hk, -, -⟩ := arithUint_some lowered
+        rw [SrcType.eq_of_uintKind hk] at signed
+        simp [SrcType.isI32, SrcType.isIsize] at signed
+    · rename_i signed
+      simp only [arith] at lowered
+      split at lowered
+      · rename_i types
+        cases htl : tl.ty <;> simp [htl, SrcType.isI32, SrcType.isIsize] at types signed
+      split at lowered
+      · rename_i types
+        cases htl : tl.ty <;> simp [htl, SrcType.isI32, SrcType.isIsize] at types signed
+      · obtain ⟨k, hk, htr, rfl⟩ := arithUint_some lowered
+        rw [SrcType.eq_of_uintKind hk] at holdsl
+        rw [htr] at holdsr
+        obtain ⟨rfl, _⟩ := holdsl
+        obtain ⟨rfl, _⟩ := holdsr
+        obtain rfl := eval_uint_shift _ _ k (.inr ⟨rfl, rfl⟩) evaluated
+        rw [wrap_eval]
+        exact holds_uint k (Nat.mod_lt _ (Nat.two_pow_pos _))
   case less | lessEq | greater | greaterEq =>
     simp only [SrcOp.lower, order] at lowered
     split at lowered
@@ -706,7 +785,8 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
           st' = st ∧ tr.ty.Holds v (tr.expr.eval env) := fun h => ihr rightLowered h
       simp only [SrcExpr.toCore] at run
       cases op
-      case plus | minus | times | bitAnd | bitOr | bitXor | less | lessEq | greater | greaterEq | equal | notEqual =>
+      case plus | minus | times | bitAnd | bitOr | bitXor | shiftLeft | shiftRight | less | lessEq | greater |
+          greaterEq | equal | notEqual =>
         obtain ⟨rfl, vl, vr, holdsl, holdsr, evaluated⟩ :=
           binary_sound hl hr (by simp [SrcOp.toCore]) run
         rw [target] at evaluated

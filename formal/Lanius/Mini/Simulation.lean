@@ -227,6 +227,9 @@ def BinOp.final (word : Word) (operation : BinOp) (st : State) : State :=
   | .and => st.alu word.width.bits .and 0 rcxRegister false (operation.opBytes word).length
   | .or => st.alu word.width.bits .or 0 rcxRegister false (operation.opBytes word).length
   | .xor => st.alu word.width.bits .xor 0 rcxRegister false (operation.opBytes word).length
+  | .shl => st.shift word.width.bits .left 0 st.flags (operation.opBytes word).length
+  | .shr => st.shift word.width.bits .right 0 st.flags (operation.opBytes word).length
+  | .sar => st.shift word.width.bits .arithmeticRight 0 st.flags (operation.opBytes word).length
 
 theorem BinOp.final_step (word : Word) (operation : BinOp) (st : State)
     (loaded : CodeAt st.memory st.rip (operation.opBytes word)) :
@@ -238,25 +241,44 @@ theorem BinOp.final_step (word : Word) (operation : BinOp) (st : State)
   · exact alu_step .w32 st _ .and 0 rcxRegister loaded false rfl
   · exact alu_step .w32 st _ .or 0 rcxRegister loaded false rfl
   · exact alu_step .w32 st _ .xor 0 rcxRegister loaded false rfl
+  · exact shift_step .w32 st _ .left 0 loaded st.flags rfl
+  · exact shift_step .w32 st _ .right 0 loaded st.flags rfl
+  · exact shift_step .w32 st _ .arithmeticRight 0 loaded st.flags rfl
   · exact alu_step .w64 st _ .add 0 rcxRegister loaded false rfl
   · exact alu_step .w64 st _ .subtract 0 rcxRegister loaded false rfl
   · exact multiply_step .w64 st _ 0 rcxRegister loaded st.flags rfl
   · exact alu_step .w64 st _ .and 0 rcxRegister loaded false rfl
   · exact alu_step .w64 st _ .or 0 rcxRegister loaded false rfl
   · exact alu_step .w64 st _ .xor 0 rcxRegister loaded false rfl
+  · exact shift_step .w64 st _ .left 0 loaded st.flags rfl
+  · exact shift_step .w64 st _ .right 0 loaded st.flags rfl
+  · exact shift_step .w64 st _ .arithmeticRight 0 loaded st.flags rfl
 
 theorem BinOp.final_noRead (word : Word) (operation : BinOp) {st : State}
     (loaded : CodeAt st.memory st.rip (operation.opBytes word)) : NoRead st := by
-  cases word <;> cases operation
-  all_goals first | exact alu_noRead loaded | exact multiply_noRead loaded
+  cases operation
+  case shl | shr | sar => exact shift_noRead loaded
+  case mul => exact multiply_noRead loaded
+  all_goals exact alu_noRead loaded
 
 theorem BinOp.final_registers (word : Word) (operation : BinOp) (st : State) (register : Register) :
     (operation.final word st).registers register =
       if register = 0 then word.apply operation (st.registers 0) (st.registers rcxRegister)
       else st.registers register := by
-  by_cases zero : register = 0 <;> cases word <;> cases operation <;>
-    simp [zero, BinOp.final, State.alu, State.multiply, Word.apply, BinOp.apply, Alu.result, Word.width,
-      X86.Register.Width.bits] <;> rfl
+  cases operation
+  case shl | shr | sar =>
+    by_cases zero : register = 0
+    · subst zero
+      have count : ∀ x : BitVec 64, (x.setWidth 32).toNat % 32 = x.toNat % 32 := fun x => by
+        rw [BitVec.toNat_setWidth]; exact Nat.mod_mod_of_dvd _ (by decide)
+      cases word <;>
+        simp only [BinOp.final, State.shift, Word.apply, BinOp.apply, Word.width,
+          X86.Register.Width.bits, rcxRegister, ↓reduceIte, count] <;> rfl
+    · cases word <;> simp [zero, BinOp.final, State.shift]
+  all_goals
+    by_cases zero : register = 0 <;> cases word <;>
+      simp [zero, BinOp.final, State.alu, State.multiply, Word.apply, BinOp.apply, Alu.result, Word.width,
+        X86.Register.Width.bits] <;> rfl
 
 theorem BinOp.final_memory (word : Word) (operation : BinOp) (st : State) :
     (operation.final word st).memory = st.memory := by

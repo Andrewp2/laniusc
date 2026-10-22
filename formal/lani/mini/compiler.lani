@@ -147,7 +147,9 @@ pub fn get_or<T>(items: List<T>, index: usize, fallback: T) -> T {
 // There is a heap of bytes below a fixed limit, and a bump allocator whose
 // cursor only moves up: addresses are heap offsets.
 
-pub enum BinOp { Add, Sub, Mul, And, Or, Xor, }
+// Shl, Shr and Sar shift by the right operand's low 5 bits (S32) or 6 bits
+// (U64), as x86's shifts by cl do; Shr fills with zeros, Sar with the sign.
+pub enum BinOp { Add, Sub, Mul, And, Or, Xor, Shl, Shr, Sar, }
 
 pub enum CmpOp { Eq, Ne, Lt, Le, Gt, Ge, }
 
@@ -292,6 +294,9 @@ impl BinOp {
             And -> 12,
             Or -> 12,
             Xor -> 12,
+            Shl -> 12,
+            Shr -> 12,
+            Sar -> 12,
         };
     }
 }
@@ -607,7 +612,7 @@ impl Word {
 }
 
 impl BinOp {
-    // op eax, ecx without its prefix
+    // op eax, ecx or shl/shr/sar eax, cl without its prefix
     pub fn opcode(self) -> List<u8> {
         return match (self) {
             Add -> cons(1, single(200)),
@@ -616,6 +621,9 @@ impl BinOp {
             And -> cons(33, single(200)),
             Or -> cons(9, single(200)),
             Xor -> cons(49, single(200)),
+            Shl -> cons(211, single(224)),
+            Shr -> cons(211, single(232)),
+            Sar -> cons(211, single(248)),
         };
     }
 
@@ -1295,7 +1303,7 @@ pub enum SrcType {
 }
 
 pub enum SrcOp {
-    Plus, Minus, Times, BitAnd, BitOr, BitXor,
+    Plus, Minus, Times, BitAnd, BitOr, BitXor, ShiftLeft, ShiftRight,
     Less, LessEq, Greater, GreaterEq, Equal, NotEqual,
     LogicalAnd, LogicalOr,
 }
@@ -1754,6 +1762,16 @@ pub fn arith(operation: BinOp, left: Typed, right: Typed) -> core::option::Optio
     return arith_uint(operation, left, right, left.ty.uint_kind());
 }
 
+// >> is arithmetic on i32 and isize, logical on the unsigned types. Core
+// traps on an amount outside the type's bits, so the low bits x86 keeps are
+// the whole amount.
+pub fn arith_shift_right(left: Typed, right: Typed) -> core::option::Option<Typed> {
+    if (left.ty.is_i32() || left.ty.is_isize()) {
+        return arith(Sar, left, right);
+    }
+    return arith(Shr, left, right);
+}
+
 // ptr + usize and ptr - usize move the address, wrapping at 2^64 like
 // Core's pointerOffset; other operands are arithmetic.
 pub fn offset_or_arith(operation: BinOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
@@ -1825,6 +1843,8 @@ impl SrcOp {
             BitAnd -> arith(And, left, right),
             BitOr -> arith(Or, left, right),
             BitXor -> arith(Xor, left, right),
+            ShiftLeft -> arith(Shl, left, right),
+            ShiftRight -> arith_shift_right(left, right),
             Less -> order(Lt, left, right),
             LessEq -> order(Le, left, right),
             Greater -> order(Gt, left, right),
@@ -2460,6 +2480,8 @@ pub fn short_circuit(op: SrcOp) -> usize {
         BitAnd -> 0,
         BitOr -> 0,
         BitXor -> 0,
+        ShiftLeft -> 0,
+        ShiftRight -> 0,
         Less -> 0,
         LessEq -> 0,
         Greater -> 0,
@@ -4128,6 +4150,24 @@ impl BinOp {
             And -> a & b,
             Or -> a | b,
             Xor -> a ^ b,
+            Shl -> 0,
+            Shr -> 0,
+            Sar -> 0,
+        };
+    }
+
+    // compute is the operation (shifts are not folded).
+    pub fn folds(self) -> bool {
+        return match (self) {
+            Add -> true,
+            Sub -> true,
+            Mul -> true,
+            And -> true,
+            Or -> true,
+            Xor -> true,
+            Shl -> false,
+            Shr -> false,
+            Sar -> false,
         };
     }
 
@@ -4140,6 +4180,9 @@ impl BinOp {
             And -> 18446744073709551615,
             Or -> 0,
             Xor -> 0,
+            Shl -> 0,
+            Shr -> 0,
+            Sar -> 0,
         };
     }
 
@@ -4152,6 +4195,9 @@ impl BinOp {
             And -> true,
             Or -> true,
             Xor -> true,
+            Shl -> false,
+            Shr -> false,
+            Sar -> false,
         };
     }
 
@@ -4164,6 +4210,9 @@ impl BinOp {
             And -> true,
             Or -> false,
             Xor -> false,
+            Shl -> false,
+            Shr -> false,
+            Sar -> false,
         };
     }
 
@@ -4175,6 +4224,9 @@ impl BinOp {
             And -> 3,
             Or -> 4,
             Xor -> 5,
+            Shl -> 6,
+            Shr -> 7,
+            Sar -> 8,
         };
     }
 }
@@ -4294,10 +4346,17 @@ pub fn absorbed(operation: BinOp, value: u64) -> core::option::Option<u64> {
     return None;
 }
 
+pub fn fold_constant(word: Word, operation: BinOp, a: u64, b: u64) -> core::option::Option<u64> {
+    if (operation.folds()) {
+        return Some(word.compute(operation, a, b));
+    }
+    return None;
+}
+
 pub fn binary_constant(word: Word, operation: BinOp, left: core::option::Option<u64>, right: core::option::Option<u64>) -> core::option::Option<u64> {
     return match (left) {
         Some(a) -> match (right) {
-            Some(b) -> Some(word.compute(operation, a, b)),
+            Some(b) -> fold_constant(word, operation, a, b),
             None -> absorbed(operation, a),
         },
         None -> match (right) {
@@ -4966,10 +5025,18 @@ pub fn optimize_right(word: Word, operation: BinOp, left: Expr, right: Expr, b: 
     return Binary(word, operation, boxed(left), boxed(right));
 }
 
+// Both operands are the literals a and b.
+pub fn optimize_both(word: Word, operation: BinOp, a: u64, b: u64, left: Expr, right: Expr) -> Expr {
+    if (operation.folds()) {
+        return Lit(word.compute(operation, a, b));
+    }
+    return Binary(word, operation, boxed(left), boxed(right));
+}
+
 pub fn optimize_binary(word: Word, operation: BinOp, left: Expr, right: Expr) -> Expr {
     return match (left.literal()) {
         Some(a) -> match (right.literal()) {
-            Some(b) -> Lit(word.compute(operation, a, b)),
+            Some(b) -> optimize_both(word, operation, a, b, left, right),
             None -> optimize_left(word, operation, a, left, right),
         },
         None -> match (right.literal()) {

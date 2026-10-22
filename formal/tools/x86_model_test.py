@@ -126,6 +126,13 @@ def compiler_forms():
         form('or rax, rcx', [0x48, 0x09, 0xC8], mask=ALL_DEFINED & ~AF),
         form('xor rax, rcx', [0x48, 0x31, 0xC8], mask=ALL_DEFINED & ~AF),
         form('imul rax, rcx', [0x48, 0x0F, 0xAF, 0xC1], mask=0),
+        # Shifts by cl: the model leaves every flag free.
+        form('shl eax, cl', [0xD3, 0xE0], mask=0),
+        form('shr eax, cl', [0xD3, 0xE8], mask=0),
+        form('sar eax, cl', [0xD3, 0xF8], mask=0),
+        form('shl rax, cl', [0x48, 0xD3, 0xE0], mask=0),
+        form('shr rax, cl', [0x48, 0xD3, 0xE8], mask=0),
+        form('sar rax, cl', [0x48, 0xD3, 0xF8], mask=0),
         form('add rcx, r11', [0x4C, 0x01, 0xD9]),
         form('and rcx, r11', [0x4C, 0x21, 0xD9], mask=ALL_DEFINED & ~AF),
         form('add r11, rax', [0x49, 0x01, 0xC3]),
@@ -476,7 +483,7 @@ open Lanius.Mini in
 def encodings : List (String × List UInt8) :=
   let place : Place := { body := 4096, slots := 9, entries := [0, 2000, 3000] }
   let words := [Word.s32, Word.u64]
-  let binops := [BinOp.add, BinOp.sub, BinOp.mul, BinOp.and, BinOp.or, BinOp.xor]
+  let binops := [BinOp.add, BinOp.sub, BinOp.mul, BinOp.and, BinOp.or, BinOp.xor, BinOp.shl, BinOp.shr, BinOp.sar]
   let cmpops := [CmpOp.eq, CmpOp.ne, CmpOp.lt, CmpOp.le, CmpOp.gt, CmpOp.ge]
   let ops := words.flatMap fun w => binops.map fun o => (s!"op {repr w} {repr o}", Instr.op w o 3)
   let cmps := words.flatMap fun w => cmpops.map fun o => (s!"cmp {repr w} {repr o}", Instr.cmp w o 1048575)

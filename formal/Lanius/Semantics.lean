@@ -366,6 +366,37 @@ def evalSignedBinary
       else .ok (result (arithmeticShiftRight left (Int.toNat right)))
   | _ => .error .typeMismatch
 
+/-- Core's arithmetic shift is `Int`'s, which rounds toward negative infinity. -/
+theorem arithmeticShiftRight_eq (value : Int) (amount : Nat) :
+    arithmeticShiftRight value amount = value >>> amount := by
+  rw [Int.shiftRight_eq_div_pow]
+  simp only [arithmeticShiftRight]
+  have pos : (0 : Int) < ((2 ^ amount : Nat) : Int) := by
+    have := Nat.two_pow_pos amount; omega
+  split
+  · rfl
+  · rename_i negative
+    show -((-value + ((2 ^ amount : Nat) : Int) - 1) / ((2 ^ amount : Nat) : Int)) =
+      value / ((2 ^ amount : Nat) : Int)
+    generalize ((2 ^ amount : Nat) : Int) = d at pos ⊢
+    have split := Int.emod_add_mul_ediv value d
+    have low := Int.emod_nonneg value (by omega : d ≠ 0)
+    have high := Int.emod_lt_of_pos value pos
+    have rewrite : -value + d - 1 = (d - 1 - value % d) + d * -(value / d) := by
+      rw [Int.mul_neg]
+      generalize d * (value / d) = m at split ⊢
+      omega
+    rw [rewrite, Int.add_mul_ediv_left _ _ (by omega : d ≠ 0),
+      Int.ediv_eq_zero_of_lt (by omega) (by omega)]
+    omega
+
+/-- A signed `>>` that does not trap is `Int`'s shift, wrapped. -/
+theorem evalSignedBinary_shiftRight (target : Target) (type : SignedIntTy) (left right : Int) :
+    evalSignedBinary target .shiftRight type left right =
+      if right < 0 || right >= Int.ofNat (type.bits target) then .error .invalidShift
+      else .ok (.signed type (wrapSigned target type (left >>> Int.toNat right))) := by
+  simp only [evalSignedBinary, arithmeticShiftRight_eq]
+
 theorem evalSignedBinary_shiftRight_i32_x86_word
     (value : Int) (k : Nat) (hk : k < 8) :
     evalSignedBinary Target.x86_64 .shiftRight .i32 value (Int.ofNat (4 * k)) =

@@ -1120,22 +1120,24 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
     have bl := ihl leftLowered
     have br := ihr rightLowered
     cases op
-    case plus | minus | times | bitAnd | bitOr | bitXor =>
-      simp only [SrcOp.lower] at lowered
+    case plus | minus | times | bitAnd | bitOr | bitXor | shiftLeft | shiftRight =>
+      simp only [SrcOp.lower, arithShiftRight] at lowered
       try
         rcases offsetOrArith_some lowered with ⟨-, -, rfl⟩ | lowered
         · exact ⟨bl, br⟩
-      simp only [arith] at lowered
-      split at lowered
-      · simp only [Option.some.injEq] at lowered
-        subst lowered
-        exact ⟨bl, br⟩
-      split at lowered
-      · simp only [Option.some.injEq] at lowered
-        subst lowered
-        exact ⟨bl, br⟩
-      · obtain ⟨k, -, -, rfl⟩ := arithUint_some lowered
-        exact Expr.Below.wrap (e := .binary .u64 _ _ _) ⟨bl, br⟩ k
+      try split at lowered
+      all_goals
+        simp only [arith] at lowered
+        split at lowered
+        · simp only [Option.some.injEq] at lowered
+          subst lowered
+          exact ⟨bl, br⟩
+        split at lowered
+        · simp only [Option.some.injEq] at lowered
+          subst lowered
+          exact ⟨bl, br⟩
+        · obtain ⟨k, -, -, rfl⟩ := arithUint_some lowered
+          exact Expr.Below.wrap (e := .binary .u64 _ _ _) ⟨bl, br⟩ k
     case less | lessEq | greater | greaterEq =>
       simp only [SrcOp.lower, order] at lowered
       split at lowered

@@ -32,6 +32,10 @@ theorem multiply_noRead {width : X86.Register.Width} {destination source : Regis
     (loaded : CodeAt s.memory s.rip (multiplyBytes width destination source)) : NoRead s :=
   NoRead.of loaded (multiply_decodes width destination source) (by cases width <;> rfl)
 
+theorem shift_noRead {width : X86.Register.Width} {operation : Shift} {destination : Register}
+    (loaded : CodeAt s.memory s.rip (shiftBytes width operation destination)) : NoRead s :=
+  NoRead.of loaded (shift_decodes width operation destination) (by cases width <;> rfl)
+
 theorem negate_noRead {width : X86.Register.Width} {destination : Register}
     (loaded : CodeAt s.memory s.rip (negateBytes width destination)) : NoRead s :=
   NoRead.of loaded (negate_decodes width destination) (by cases width <;> rfl)

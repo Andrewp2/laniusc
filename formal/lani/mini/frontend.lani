@@ -167,7 +167,7 @@ pub enum SrcType {
 }
 
 pub enum SrcOp {
-    Plus, Minus, Times, BitAnd, BitOr, BitXor,
+    Plus, Minus, Times, BitAnd, BitOr, BitXor, ShiftLeft, ShiftRight,
     Less, LessEq, Greater, GreaterEq, Equal, NotEqual,
     LogicalAnd, LogicalOr,
 }
@@ -2205,6 +2205,12 @@ pub fn tail_op(p: usize) -> core::option::Option<SrcOp> {
     if (p == p_ge_tail()) {
         return Some(GreaterEq);
     }
+    if (p == p_shl_tail()) {
+        return Some(ShiftLeft);
+    }
+    if (p == p_shr_tail()) {
+        return Some(ShiftRight);
+    }
     if (p == p_add_tail()) {
         return Some(Plus);
     }
@@ -2788,6 +2794,8 @@ pub fn gives_bool(op: SrcOp) -> bool {
         BitAnd -> false,
         BitOr -> false,
         BitXor -> false,
+        ShiftLeft -> false,
+        ShiftRight -> false,
         Less -> true,
         LessEq -> true,
         Greater -> true,
@@ -5569,7 +5577,8 @@ pub fn call_stmt(fuel: usize, env: Env, scope: List<Local>, pf: CTree) -> core::
     return None;
 }
 
-// The operator of a compound assignment `+=`, `-=`, `*=`, `&=`, `|=`, `^=`.
+// The operator of a compound assignment `+=`, `-=`, `*=`, `&=`, `|=`, `^=`,
+// `<<=`, `>>=`.
 pub fn compound_op(p: usize) -> core::option::Option<SrcOp> {
     if (p == p_assign_add()) {
         return Some(Plus);
@@ -5588,6 +5597,12 @@ pub fn compound_op(p: usize) -> core::option::Option<SrcOp> {
     }
     if (p == p_assign_xor()) {
         return Some(BitXor);
+    }
+    if (p == p_assign_shl()) {
+        return Some(ShiftLeft);
+    }
+    if (p == p_assign_shr()) {
+        return Some(ShiftRight);
     }
     return None;
 }
@@ -7708,6 +7723,16 @@ fn p_assign_set() -> usize {
 }
 
 // extract: inline
+fn p_assign_shl() -> usize {
+    return 113;
+}
+
+// extract: inline
+fn p_assign_shr() -> usize {
+    return 114;
+}
+
+// extract: inline
 fn p_assign_sub() -> usize {
     return 108;
 }
@@ -8320,6 +8345,16 @@ fn p_self_value() -> usize {
 // extract: inline
 fn p_shift() -> usize {
     return 143;
+}
+
+// extract: inline
+fn p_shl_tail() -> usize {
+    return 144;
+}
+
+// extract: inline
+fn p_shr_tail() -> usize {
+    return 145;
 }
 
 // extract: inline

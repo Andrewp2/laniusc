@@ -84,6 +84,8 @@ def SrcOp.toCore : SrcOp → Core.BinaryOp
   | .bitAnd => .bitAnd
   | .bitOr => .bitOr
   | .bitXor => .bitXor
+  | .shiftLeft => .shiftLeft
+  | .shiftRight => .shiftRight
   | .less => .less
   | .lessEq => .lessEqual
   | .greater => .greater

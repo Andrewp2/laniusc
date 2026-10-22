@@ -350,6 +350,12 @@ theorem SrcOp.lower_typed {op : SrcOp} {l r t : Typed} (scalar : l.ty.isScalar =
   | bitAnd => exact arith_typed (fun _ i => .bitAnd i) h
   | bitOr => exact arith_typed (fun _ i => .bitOr i) h
   | bitXor => exact arith_typed (fun _ i => .bitXor i) h
+  | shiftLeft => exact arith_typed (fun _ i => .shiftLeft i) h
+  | shiftRight =>
+    simp only [SrcOp.lower, arithShiftRight] at h
+    split at h
+    · exact arith_typed (fun _ i => .shiftRight i) h
+    · exact arith_typed (fun _ i => .shiftRight i) h
   | less => exact order_typed .less h
   | lessEq => exact order_typed .lessEqual h
   | greater => exact order_typed .greater h

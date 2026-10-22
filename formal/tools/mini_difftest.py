@@ -15,7 +15,7 @@ import random
 import subprocess
 import sys
 
-BINOPS = ['add', 'sub', 'mul', 'and', 'or', 'xor']
+BINOPS = ['add', 'sub', 'mul', 'and', 'or', 'xor', 'shl', 'shr', 'sar']
 CMPOPS = ['eq', 'ne', 'lt', 'le', 'gt', 'ge']
 WORDS = ['s32', 'u64']
 DIVOPS = ['sDiv', 'sRem', 'uDiv', 'uRem']

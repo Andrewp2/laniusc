@@ -979,7 +979,8 @@ def serTy : UintTy → String
 
 def serOp : SrcOp → String
   | .plus => "plus" | .minus => "minus" | .times => "times" | .bitAnd => "bitAnd"
-  | .bitOr => "bitOr" | .bitXor => "bitXor" | .less => "less" | .lessEq => "lessEq"
+  | .bitOr => "bitOr" | .bitXor => "bitXor" | .shiftLeft => "shiftLeft" | .shiftRight => "shiftRight"
+  | .less => "less" | .lessEq => "lessEq"
   | .greater => "greater" | .greaterEq => "greaterEq" | .equal => "equal"
   | .notEqual => "notEqual" | .logicalAnd => "logicalAnd" | .logicalOr => "logicalOr"
 

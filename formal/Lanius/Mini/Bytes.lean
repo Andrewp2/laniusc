@@ -23,6 +23,14 @@ def BinOp.alu : BinOp → Alu
   | .and => .and
   | .or => .or
   | .xor => .xor
+  | .shl | .shr | .sar => .add
+
+/-- The x86 shift of a shift operator. -/
+def BinOp.shift : BinOp → Shift
+  | .shl => .left
+  | .shr => .right
+  | .sar => .arithmeticRight
+  | .add | .sub | .mul | .and | .or | .xor => .left
 
 /-- `mov rax, [rbp + disp32]` -/
 def slotLoadBytes (slot : Nat) : List UInt8 :=
@@ -44,6 +52,7 @@ def BinOp.opBytes (word : Word) (operation : BinOp) : List UInt8 :=
   match operation with
   | .mul => multiplyBytes word.width 0 rcxRegister
   | .add | .sub | .and | .or | .xor => aluBytes word.width operation.alu 0 rcxRegister
+  | .shl | .shr | .sar => shiftBytes word.width operation.shift 0
 
 /-- The x86 encoding of `slot op rax` into rax. -/
 def BinOp.spec (word : Word) (operation : BinOp) (slot : Nat) : List UInt8 :=

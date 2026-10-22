@@ -20,6 +20,9 @@ def BinOp.apply {n : Nat} : BinOp → BitVec n → BitVec n → BitVec n
   | .and, a, b => a &&& b
   | .or, a, b => a ||| b
   | .xor, a, b => a ^^^ b
+  | .shl, a, b => a <<< (b.toNat % n)
+  | .shr, a, b => a >>> (b.toNat % n)
+  | .sar, a, b => a.sshiftRight (b.toNat % n)
 
 /-- Signed comparisons. -/
 def CmpOp.holds : CmpOp → BitVec 32 → BitVec 32 → Bool

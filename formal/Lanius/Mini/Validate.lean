@@ -45,9 +45,10 @@ theorem low_neg (a : BitVec 64) : low (0 - a) = - low a := by
   have : (0 : BitVec 64) - a = -a := by simp
   rw [this]; exact BitVec.setWidth_neg_of_le (by omega)
 
-theorem low_apply (operation : BinOp) (a b : BitVec 64) :
+theorem low_apply (operation : BinOp) (folds : operation.folds = true) (a b : BitVec 64) :
     low (operation.apply a b) = operation.apply (low a) (low b) := by
   cases operation
+  case shl | shr | sar => simp [BinOp.folds] at folds
   · exact BitVec.setWidth_add _ _ (by omega)
   · exact low_sub a b
   · exact BitVec.setWidth_mul _ _ (by omega)
@@ -55,15 +56,18 @@ theorem low_apply (operation : BinOp) (a b : BitVec 64) :
   · simp [BinOp.apply]
   · simp [BinOp.apply]
 
-theorem BinOp.compute_eq (operation : BinOp) (a b : BitVec 64) :
+theorem BinOp.compute_eq (operation : BinOp) (folds : operation.folds = true) (a b : BitVec 64) :
     operation.compute a b = operation.apply a b := by
-  cases operation <;> rfl
+  cases operation
+  case shl | shr | sar => simp [BinOp.folds] at folds
+  all_goals rfl
 
-theorem Word.compute_eq (word : Word) (operation : BinOp) (a b : BitVec 64) :
-    word.compute operation a b = word.apply operation a b := by
+theorem Word.compute_eq (word : Word) (operation : BinOp) (folds : operation.folds = true)
+    (a b : BitVec 64) : word.compute operation a b = word.apply operation a b := by
   cases word
-  · simp only [Word.compute, Word.apply, BinOp.compute_eq, lowBits_eq, low_apply]
-  · simp only [Word.compute, Word.apply, BinOp.compute_eq]
+  · simp only [Word.compute, Word.apply, BinOp.compute_eq operation folds, lowBits_eq,
+      low_apply operation folds]
+  · simp only [Word.compute, Word.apply, BinOp.compute_eq operation folds]
 
 theorem key_toNat (a : BitVec 64) : (signedKey a).toNat = ((low a).toNat + 2147483648) % 2 ^ 32 := by
   rw [signedKey, lowBits_eq, widen_toNat]
@@ -161,8 +165,12 @@ theorem Expr.constant_eval (env : Env) : ∀ (e : Expr) {v : BitVec 64}, e.const
       rw [Expr.constant_eval env left knownLeft]
       split at found
       · rename_i b knownRight
-        simp only [Option.some.injEq] at found
-        rw [Expr.constant_eval env right knownRight, ← found, Word.compute_eq]
+        simp only [foldConstant] at found
+        split at found
+        · rename_i folds
+          simp only [Option.some.injEq] at found
+          rw [Expr.constant_eval env right knownRight, ← found, Word.compute_eq word operation folds]
+        · simp at found
       · obtain ⟨zero, rfl, rfl⟩ := absorbed_some found
         exact absorb_left word zero _
     · split at found

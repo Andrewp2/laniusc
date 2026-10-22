@@ -1,0 +1,13 @@
+fn le_byte(value: u64, index: u64) -> u8 {
+    return ((value >> (index * 8)) & 255) as u8;
+}
+
+fn mix(a: i32, b: u32, c: isize, d: u8) -> i32 {
+    let x: i32 = (a << 3) >> 1;
+    let y: u32 = (b << 4) | (b >> 28);
+    let z: isize = c >> 2;
+    let w: u8 = d << 1;
+    x <<= 1;
+    y >>= (b & 31);
+    return x + (y as i32) + (z as i32) + (w as i32) + (le_byte(1234567, 1) as i32);
+}

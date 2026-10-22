@@ -81,6 +81,7 @@ LOGIC = [('logicalAnd', '&&'), ('logicalOr', '||')]
 UINT_BITS = {'u8': 8, 'u32': 32, 'u64': 64, 'usize': 64}
 UINT_LEAN = {'u8': '.uint8', 'u32': '.uint32', 'u64': '.uint64', 'usize': '.usize'}
 INTEGERS = ['i32'] + list(UINT_BITS)
+SHIFT_BITS = dict(UINT_BITS, i32=32, isize=64)
 WORDS = ['i32', 'bool'] + list(UINT_BITS)  # the field types slices hold, one native word each
 SLICES = True  # generate heap and slice statements
 # Struct fields and enum payloads of earlier declared struct and enum types,
@@ -90,7 +91,9 @@ NESTED = True
 # assignments and returns, and as statements) and struct, enum and slice
 # parameters and struct and enum results (frontend_difftest.py turns them off).
 EFFECTS = True
-ARITH_NAMES = [name for name, _ in ARITH]
+# Shifts by an amount Core accepts (below the left type's bits).
+SHIFT = [('shiftLeft', '<<'), ('shiftRight', '>>')]
+ARITH_NAMES = [name for name, _ in ARITH + SHIFT]
 DIVIDE = [('quotient', '/'), ('remainder', '%')]
 # isize (main turns it on; frontend_difftest.py's front end has no isize yet):
 # a scalar like the others, but no division and no slices of it.
@@ -209,6 +212,10 @@ class Gen:
         self.fresh += 1
         return self.fresh
 
+    def pure_shift(self, ty, depth, env):
+        name, sym, amount = self.shift_amount(ty, lambda: self.expr(ty, depth - 1, env), lambda x: x, 'op')
+        return ('op', name, sym, self.expr(ty, depth - 1, env), amount)
+
     def lit_i32(self):
         if self.rng.random() < 0.6:
             return self.rng.choice(I32_EDGES)
@@ -248,11 +255,15 @@ class Gen:
                 return ('cast', 'isize', self.expr(rng.choice(INTEGERS), depth - 1, env))
             if pick < 0.3:
                 return ('neg', self.expr('isize', depth - 1, env))
+            if pick < 0.4:
+                return self.pure_shift(ty, depth, env)
             name, sym = rng.choice(ARITH)
             return ('op', name, sym, self.expr(ty, depth - 1, env), self.expr(ty, depth - 1, env))
         if ty in UINT_BITS:
             if rng.random() < 0.2:
                 return ('cast', ty, self.expr(rng.choice(INTEGERS), depth - 1, env))
+            if rng.random() < 0.1:
+                return self.pure_shift(ty, depth, env)
             name, sym = rng.choice(ARITH)
             return ('op', name, sym, self.expr(ty, depth - 1, env), self.expr(ty, depth - 1, env))
         if ty == 'i32' and rng.random() < 0.1:
@@ -260,6 +271,8 @@ class Gen:
         if ty == 'i32':
             if rng.random() < 0.15:
                 return ('neg', self.expr('i32', depth - 1, env))
+            if rng.random() < 0.1:
+                return self.pure_shift(ty, depth, env)
             name, sym = rng.choice(ARITH)
             return ('op', name, sym, self.expr('i32', depth - 1, env), self.expr('i32', depth - 1, env))
         pick = rng.random()
@@ -415,6 +428,9 @@ class Gen:
             return self.eff(t, depth - 1, env, items)
         if rng.random() < 0.15 and ty not in ('bool', 'isize'):
             return self.divide(ty, sub)
+        if rng.random() < 0.1 and ty in SHIFT_BITS:
+            name, sym, amount = self.shift_amount(ty, lambda: sub(ty), lambda x: ('ePure', x), 'eApply')
+            return ('eApply', name, sym, sub(ty), amount)
         if ty == 'isize':
             pick = rng.random()
             if pick < 0.2:
@@ -450,6 +466,18 @@ class Gen:
         left = sub('bool')
         right = self.called_bool(depth - 1, env, items) if rng.random() < 0.6 else None
         return ('eApply', name, sym, left, right or sub('bool'))
+
+    def shift_amount(self, ty, sub, pure, apply):
+        """A shift and an amount below ty's bits: a literal, or an
+        expression masked to the bits (& bits - 1, which is not negative)."""
+        name, sym = self.rng.choice(SHIFT)
+        bits = SHIFT_BITS[ty]
+
+        def lit(k):
+            return ('int', k) if ty == 'i32' else ('uint', ty, k)
+        if self.rng.random() < 0.4:
+            return name, sym, pure(lit(self.rng.choice([0, 1, bits - 1, self.rng.randrange(bits)])))
+        return name, sym, (apply, 'bitAnd', '&', sub(), pure(lit(bits - 1)))
 
     def divide(self, ty, sub):
         """l / r or l % r with a divisor that never traps: (d | 1) for the
@@ -987,7 +1015,7 @@ def ty_of(e, env):
         return env[e[1]][1]
     if kind == 'field':
         return TYPES.structs[env[e[1]][1][1]][e[2]]
-    if e[1] in ('plus', 'minus', 'times', 'bitAnd', 'bitOr', 'bitXor'):
+    if e[1] in ARITH_NAMES:
         return ty_of(e[3], env)
     return 'bool'
 
@@ -1014,6 +1042,10 @@ def ev(e, env):
 def apply_op(name, l, r, ty):
     """A binary operator on its operands' values, ty the left operand's type."""
     if name in ARITH_NAMES:
+        if name in ('shiftLeft', 'shiftRight'):
+            # Python's >> on a negative value is arithmetic, as Core's is.
+            assert 0 <= r < SHIFT_BITS[ty], 'a generated shift traps'
+            return wrap_to(ty, l << r if name == 'shiftLeft' else l >> r)
         x = {'plus': l + r, 'minus': l - r, 'times': l * r, 'bitAnd': l & r, 'bitOr': l | r, 'bitXor': l ^ r}[name]
         return wrap_to(ty, x)
     return {'less': l < r, 'lessEq': l <= r, 'greater': l > r, 'greaterEq': l >= r, 'equal': l == r,
