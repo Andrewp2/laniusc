@@ -1,0 +1,33 @@
+fn top(n: i32) -> i32 {
+    let p: ptr = alloc::allocator::alloc((64 as usize), 8);
+    let a: i32 = fill_i(p, 4, n);
+    let b: u8 = fill_b(p, 4, (1 as u8));
+    let q: ptr = p + (8 as usize);
+    let c: u64 = fill_l(q, 2, (5 as u64));
+    alloc::allocator::dealloc(p, (64 as usize), (8 as usize));
+    return a;
+}
+
+fn fill_i(p: ptr, n: i32, v: i32) -> i32 {
+    let s: [i32] = slice_from_raw_parts(p, n);
+    s[0] = v;
+    s[1] = v;
+    let x: i32 = s[1];
+    return x;
+}
+
+fn fill_b(p: ptr, n: i32, v: u8) -> u8 {
+    let s: [u8] = slice_from_raw_parts(p, n);
+    s[0] = v;
+    s[1] = v;
+    let x: u8 = s[1];
+    return x;
+}
+
+fn fill_l(p: ptr, n: i32, v: u64) -> u64 {
+    let s: [u64] = slice_from_raw_parts(p, n);
+    s[0] = v;
+    s[1] = v;
+    let x: u64 = s[1];
+    return x;
+}

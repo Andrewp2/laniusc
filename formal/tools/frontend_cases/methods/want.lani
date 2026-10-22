@@ -1,0 +1,39 @@
+struct Counter { n: i32, step: i32 }
+
+fn counter_bump(c: Counter, k: i32) -> i32 {
+    let r: i32 = c.n + c.step * k;
+    return r;
+}
+
+struct HolderB { v: bool }
+
+fn i32_twice(z: i32) -> i32 {
+    let r: i32 = z + z;
+    return r;
+}
+
+fn top(n: i32) -> i32 {
+    let c: Counter = Counter { n: n, step: 2 };
+    let a: i32 = counter_bump(c, 3);
+    let b: HolderB = HolderB { v: true };
+    let t: bool = holder_get_b(b);
+    let w: i32 = use_twice_i(n);
+    let u: bool = via_hb(b);
+    a = counter_bump(c, a);
+    return a;
+}
+
+fn holder_get_b(h: HolderB) -> bool {
+    let x: bool = h.v;
+    return x;
+}
+
+fn use_twice_i(x: i32) -> i32 {
+    let y: i32 = i32_twice(x);
+    return y;
+}
+
+fn via_hb(h: HolderB) -> bool {
+    let r: bool = holder_get_b(h);
+    return r;
+}

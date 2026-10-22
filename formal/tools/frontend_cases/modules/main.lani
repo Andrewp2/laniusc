@@ -1,0 +1,21 @@
+module app::main;
+
+const BASE: i32 = 7;
+
+fn top(n: i32) -> i32 {
+    let c: util::num::Cell<i32> = util::num::Cell { v: n };
+    let a: i32 = util::num::get(c);
+    let b: i32 = util::num::clamp(a + BASE);
+    let m: u8 = util::num::MASK;
+    let o: util::num::Opt = util::num::Yes(b);
+    let r: i32 = match (o) {
+        util::num::No -> 0,
+        Yes(x) -> x,
+    };
+    return r;
+}
+
+fn helper(x: i32) -> i32 {
+    let y: i32 = x * BASE;
+    return y;
+}

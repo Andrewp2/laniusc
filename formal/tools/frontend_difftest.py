@@ -376,7 +376,9 @@ def parse_with_laniusc(heavy, laniusc, lani_path, workdir):
     count = words(os.path.join(cap, 'post', '002_tree_count_status.bin'))[5]
     prods = words(os.path.join(cap, 'post', '006_node_kind.bin'))[:count]
     parents = words(os.path.join(cap, 'post', '007_parent.bin'))[:count]
-    stage = 'x86_64'
+    # A generic program is lexed twice: as written (type_check), and again
+    # after laniusc's own monomorphization (x86_64).
+    stage = 'type_check' if os.path.exists(os.path.join(workdir, 'type_check.token_count.bin')) else 'x86_64'
     ntok = words(os.path.join(workdir, f'{stage}.token_count.bin'))[0]
     tw = words(os.path.join(workdir, f'{stage}.token_words.bin'))
     tokens = [(tw[3 * i], tw[3 * i + 1], tw[3 * i + 2]) for i in range(ntok)]
@@ -492,7 +494,144 @@ def check (base : String) (mutants : List (String × String)) : IO Unit := do
         match validateTree grammar ts mp mq with
         | none => IO.println s!"{mb}: rejected"
         | some root => IO.println s!"{mb}: ACCEPTED"
+
+-- Locals renamed to their rank among the function's binding ids, so that two
+-- texts of one program (a generic one and its hand-monomorphized copy) can be
+-- compared.
+partial def bindersOf : SrcStmt → List Nat
+  | .let n _ _ r | .letStruct n _ _ r | .letCall n _ _ _ r | .letEnum n _ _ _ r => n :: bindersOf r
+  | .letMatch n _ _ _ arms r => n :: arms.flatMap (·.binders) ++ bindersOf r
+  | .letAlloc n _ _ r | .letLoad n _ _ r | .letSlice n _ _ _ r | .letIndex n _ _ _ r => n :: bindersOf r
+  | .then a b | .if _ a b => bindersOf a ++ bindersOf b
+  | .while _ b => bindersOf b
+  | _ => []
+
+partial def renExpr (f : Nat → Nat) : SrcExpr → SrcExpr
+  | .local n => .local (f n)
+  | .field n j => .field (f n) j
+  | .negate e => .negate (renExpr f e)
+  | .not e => .not (renExpr f e)
+  | .apply o a b => .apply o (renExpr f a) (renExpr f b)
+  | .cast t e => .cast t (renExpr f e)
+  | e => e
+
+partial def renStmt (f : Nat → Nat) : SrcStmt → SrcStmt
+  | .nop => .nop
+  | .let n t e r => .let (f n) t (renExpr f e) (renStmt f r)
+  | .letStruct n t es r => .letStruct (f n) t (es.map (renExpr f)) (renStmt f r)
+  | .letCall n t c es r => .letCall (f n) t c (es.map (renExpr f)) (renStmt f r)
+  | .letEnum n t v es r => .letEnum (f n) t v (es.map (renExpr f)) (renStmt f r)
+  | .letMatch n t x e arms r =>
+    .letMatch (f n) t (f x) e (arms.map fun a => { binders := a.binders.map f, value := renExpr f a.value }) (renStmt f r)
+  | .set n e => .set (f n) (renExpr f e)
+  | .setField n j e => .setField (f n) j (renExpr f e)
+  | .setCall n c es => .setCall (f n) c (es.map (renExpr f))
+  | .then a b => .then (renStmt f a) (renStmt f b)
+  | .if e a b => .if (renExpr f e) (renStmt f a) (renStmt f b)
+  | .while e b => .while (renExpr f e) (renStmt f b)
+  | .return e => .return (renExpr f e)
+  | .letAlloc n s k r => .letAlloc (f n) (renExpr f s) k (renStmt f r)
+  | .letLoad n p o r => .letLoad (f n) (renExpr f p) (renExpr f o) (renStmt f r)
+  | .setByte p o v => .setByte (renExpr f p) (renExpr f o) (renExpr f v)
+  | .free p s k => .free (renExpr f p) (renExpr f s) k
+  | .letSlice n t p l r => .letSlice (f n) t (renExpr f p) (renExpr f l) (renStmt f r)
+  | .letIndex n t s i r => .letIndex (f n) t (f s) (renExpr f i) (renStmt f r)
+  | .setIndex s i v => .setIndex (f s) (renExpr f i) (renExpr f v)
+
+def canonFunc (fn : SrcFunc) : SrcFunc :=
+  let ids := (fn.params.map (·.id) ++ bindersOf fn.body).mergeSort (· ≤ ·)
+  let f := fun n => ids.findIdx (· == n)
+  { params := fn.params.map fun p => { id := f p.id, ty := p.ty }, ret := fn.ret, body := renStmt f fn.body }
+
+-- Several files, the program's own first: write the program with locals
+-- renamed by rank, or report a rejection.
+def checkFiles (bases : List String) (out : String) : IO Unit := do
+  let mut files : List FileInput := []
+  for base in bases do
+    let source ← readSource (base ++ ".lani")
+    let prods ← readNats (base ++ ".prods")
+    let parents ← readNats (base ++ ".parents")
+    match lexTokens source with
+    | none => IO.println s!"{base}: does not lex"
+    | some tokens =>
+      IO.FS.writeFile (base ++ ".leantokens")
+        (" ".intercalate (tokens.map fun t => s!"{t.kind}:{t.start}:{t.text.length}"))
+      files := files ++ [{ tokens := tokens, prods := prods, parents := parents }]
+  match frontEndFiles grammar files with
+  | none =>
+    IO.FS.writeFile out "rejected\\n"
+    IO.println s!"{out}: rejected"
+  | some got =>
+    IO.FS.writeFile out (String.join (got.funcs.map fun f => serFunc (canonFunc f) ++ "\\n"))
+    IO.println s!"{out}: read"
 '''
+
+
+def run_cases(args, cases_dir):
+    """Hand-written cases. A case directory holds the files of one program
+    (main.lani first, then the others in name order) and either want.lani,
+    a single-file monomorphic copy that must read as the same program up to
+    local names, or a file named reject, when the program must be rejected."""
+    workdir = os.path.abspath(args.workdir)
+    os.makedirs(workdir, exist_ok=True)
+    lean = [LEAN_HEAD]
+    checks = []
+    for case in sorted(os.listdir(cases_dir)):
+        src = os.path.join(cases_dir, case)
+        if not os.path.isdir(src):
+            continue
+        names = sorted(n for n in os.listdir(src) if n.endswith('.lani') and n not in ('main.lani', 'want.lani'))
+        groups = [('got', ['main.lani'] + names)]
+        if os.path.exists(os.path.join(src, 'want.lani')):
+            groups.append(('want', ['want.lani']))
+        out_dir = os.path.join(workdir, case)
+        os.makedirs(out_dir, exist_ok=True)
+        for kind, files in groups:
+            bases = []
+            for name in files:
+                base = os.path.join(out_dir, kind + '_' + name[:-5])
+                shutil.copy(os.path.join(src, name), base + '.lani')
+                prods, parents, tokens = parse_with_laniusc(args.heavy, args.laniusc, base + '.lani', out_dir)
+                open(base + '.gputokens', 'w').write(' '.join(f'{k}:{s}:{n}' for k, s, n in tokens))
+                open(base + '.prods', 'w').write(' '.join(map(str, prods)))
+                open(base + '.parents', 'w').write(' '.join(map(str, parents)))
+                bases.append(base)
+            out = os.path.join(out_dir, kind + '.out')
+            lean.append(f'#eval checkFiles [{", ".join(chr(34) + b + chr(34) for b in bases)}] "{out}"')
+        checks.append((case, out_dir, os.path.exists(os.path.join(src, 'reject'))))
+    lean_path = os.path.join(workdir, 'cases_check.lean')
+    open(lean_path, 'w').write('\n'.join(lean) + '\n')
+    env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
+    run = subprocess.run(['lake', 'env', 'lean', lean_path], cwd='formal', env=env, capture_output=True, text=True)
+    if run.returncode != 0:
+        raise SystemExit('lean failed:\n' + run.stdout[-4000:] + run.stderr[-4000:])
+    problems = unchecked = 0
+    for case, out_dir, reject in checks:
+        for name in sorted(os.listdir(out_dir)):
+            if name.endswith('.gputokens'):
+                base = os.path.join(out_dir, name[:-len('.gputokens')])
+                lean_tokens = open(base + '.leantokens').read().split() if os.path.exists(base + '.leantokens') else None
+                gpu_tokens = open(base + '.gputokens').read().split()
+                size = os.path.getsize(base + '.lani')
+                if any(int(t.split(':')[1]) + int(t.split(':')[2]) > size for t in gpu_tokens):
+                    # laniusc lexed a rewritten text after this one (its own
+                    # handling of generics); its dump is not this file's.
+                    unchecked += 1
+                    continue
+                if lean_tokens != gpu_tokens:
+                    problems += 1
+                    print(f'{base}: the Lean lexer and laniusc disagree')
+        got = open(os.path.join(out_dir, 'got.out')).read()
+        if reject:
+            ok = got == 'rejected\n'
+        else:
+            want = open(os.path.join(out_dir, 'want.out')).read()
+            ok = got != 'rejected\n' and got == want
+        if not ok:
+            problems += 1
+            print(f'{case}: {"accepted, should be rejected" if reject else "differs (see got.out and want.out)"}')
+    print(f'{len(checks)} cases, {problems} problems ({unchecked} files whose tokens laniusc does not dump as written)')
+    return 1 if problems else 0
 
 
 def main():
@@ -504,7 +643,10 @@ def main():
     parser.add_argument('--mutations', type=int, default=3)
     parser.add_argument('--laniusc', default='target/release/laniusc')
     parser.add_argument('--heavy', default=HEAVY)
+    parser.add_argument('--cases', help='run the hand-written cases in this directory instead')
     args = parser.parse_args()
+    if args.cases:
+        return run_cases(args, args.cases)
     rng = random.Random(args.seed)
     programs = [oracle.gen_program(rng) for _ in range(args.count)]
     for p in programs:

@@ -1,0 +1,9 @@
+struct S { f: i32, g: u8 }
+
+fn top(n: i32) -> i32 {
+    let s: S = S { f: n, g: (3 as u8) };
+    s.f = s.f + 4;
+    s.g = s.g ^ (1 as u8);
+    s.f = s.f * n;
+    return s.f;
+}

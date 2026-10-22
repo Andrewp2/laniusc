@@ -243,4 +243,75 @@ theorem sourceProgram_sound {source : List Lanius.Compiler.Lexer.Byte} {prods pa
       obtain ⟨shape, leaves, pre⟩ := validate_sound hv
       exact ⟨tokens, root, rfl, shape, leaves, pre, validate_derives hv, h⟩
 
+/-- `R` relates the two lists element by element (so they have one length). -/
+inductive ListRel {α β : Type} (R : α → β → Prop) : List α → List β → Prop
+  | nil : ListRel R [] []
+  | cons {a : α} {b : β} {as : List α} {bs : List β} : R a b → ListRel R as bs → ListRel R (a :: as) (b :: bs)
+
+/-- Each accepted file's tree is a parse tree for `file` that prints exactly
+its tokens and whose preorder is laniusc's production list. -/
+theorem validateFiles_sound {g : List Rule} :
+    ∀ {files : List FileInput} {roots : List CTree}, validateFiles g files = some roots →
+      ListRel (fun (f : FileInput) (root : CTree) =>
+        Shape g 0 root ∧ root.leaves = f.tokens ∧ root.preorder = f.prods) files roots
+  | [], roots, h => by
+    simp only [validateFiles, Option.some.injEq] at h
+    subst h
+    exact .nil
+  | f :: rest, roots, h => by
+    unfold validateFiles consRoot at h
+    cases hv : validateTree g f.tokens f.prods f.parents with
+    | none => simp [hv] at h
+    | some root =>
+      cases hr : validateFiles g rest with
+      | none => simp [hv, hr] at h
+      | some more =>
+        simp only [hv, hr, Option.some.injEq] at h
+        subst h
+        exact .cons (validate_sound hv) (validateFiles_sound hr)
+
+theorem lexFiles_tokens :
+    ∀ {files : List SourceFile} {inputs : List FileInput}, lexFiles files = some inputs →
+      ListRel (fun (f : SourceFile) (i : FileInput) =>
+        lexTokens f.source = some i.tokens ∧ i.prods = f.prods) files inputs
+  | [], inputs, h => by
+    simp only [lexFiles, Option.some.injEq] at h
+    subst h
+    exact .nil
+  | f :: rest, inputs, h => by
+    unfold lexFiles at h
+    cases hl : lexTokens f.source with
+    | none => simp [hl] at h
+    | some tokens =>
+      cases hr : lexFiles rest with
+      | none => simp [hl, hr] at h
+      | some more =>
+        simp only [hl, hr, Option.some.injEq] at h
+        subst h
+        exact .cons ⟨hl, rfl⟩ (lexFiles_tokens hr)
+
+/-- The several-file front end's program is `buildFiles` of one tree per
+file, each a parse tree for `file` in laniusc's grammar that prints exactly
+that file's tokens (as the Lean lexer reads them) and whose preorder is
+laniusc's production list for it. -/
+theorem sourceProgramFiles_sound {files : List SourceFile} {program : SrcProgram}
+    (h : sourceProgramFiles files = some program) :
+    ∃ inputs roots,
+      ListRel (fun (f : SourceFile) (i : FileInput) =>
+        lexTokens f.source = some i.tokens ∧ i.prods = f.prods) files inputs ∧
+      ListRel (fun (i : FileInput) (root : CTree) =>
+        Shape grammar 0 root ∧ root.leaves = i.tokens ∧ root.preorder = i.prods) inputs roots ∧
+      buildFiles (filesFuel inputs) roots = some program := by
+  unfold sourceProgramFiles at h
+  cases hl : lexFiles files with
+  | none => simp [hl] at h
+  | some inputs =>
+    simp only [hl] at h
+    unfold frontEndFiles at h
+    cases hv : validateFiles grammar inputs with
+    | none => simp [hv] at h
+    | some roots =>
+      simp only [hv] at h
+      exact ⟨inputs, roots, lexFiles_tokens hl, validateFiles_sound hv, h⟩
+
 end Lanius.Mini

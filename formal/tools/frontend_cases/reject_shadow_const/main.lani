@@ -1,0 +1,6 @@
+const LIMIT: i32 = 40;
+
+fn top(n: i32) -> i32 {
+    let LIMIT: i32 = n;
+    return LIMIT;
+}

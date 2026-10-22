@@ -1,0 +1,21 @@
+struct Holder<T> { v: T }
+
+impl<T> Holder<T> {
+    fn get(self) -> T {
+        let x: T = self.v;
+        return x;
+    }
+}
+
+impl Holder<i32> {
+    fn get(self) -> i32 {
+        let x: i32 = self.v;
+        return x;
+    }
+}
+
+fn top(n: i32) -> i32 {
+    let h: Holder<i32> = Holder { v: n };
+    let r: i32 = h.get();
+    return r;
+}

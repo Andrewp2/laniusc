@@ -1,0 +1,23 @@
+module util::num;
+
+pub const LIMIT: i32 = 40;
+pub const MASK: u8 = 15;
+
+pub struct Cell<T> { v: T }
+
+pub enum Opt {
+    No,
+    Yes(i32),
+}
+
+pub fn get<T>(c: Cell<T>) -> T {
+    let x: T = c.v;
+    return x;
+}
+
+pub fn clamp(x: i32) -> i32 {
+    if (x > LIMIT) {
+        return LIMIT;
+    }
+    return x;
+}

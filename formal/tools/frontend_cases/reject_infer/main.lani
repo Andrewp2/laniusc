@@ -1,0 +1,12 @@
+struct Pair<T> { a: T, b: T }
+
+fn top(n: i32) -> i32 {
+    let p: Pair<i32> = Pair { a: n, b: 2 };
+    let r: bool = first(p);
+    return n;
+}
+
+fn first<T>(p: Pair<T>) -> T {
+    let x: T = p.a;
+    return x;
+}
