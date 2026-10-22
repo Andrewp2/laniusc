@@ -27,3 +27,4 @@ import Lanius.Std.VecBound
 import Lanius.Std.VecSorted
 import Lanius.Std.VecSorted2
 import Lanius.Std.HeapSortMath
+import Lanius.Std.VecSwap
