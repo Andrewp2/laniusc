@@ -1356,6 +1356,18 @@ theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st 
               (fun r => eff_grows (k + 2) ihf k (by omega) r) r)
               (fun r => eff_grows (k + 2) ihf (k + 1) (Nat.le_succ _) r) assignRun
       all_goals simp at run
+    | setFieldEval id index value =>
+      simp only [SrcStmt.toCore, execStmt] at run
+      split at run
+      · rename_i u next assignRun
+        simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        cases f with
+        | zero => simp [evalExpr] at assignRun
+        | succ k =>
+          exact assign_grows_eff (fun r => by have := (evalPlace_field r).1; subst this; exact Grows.refl _)
+            (fun r => eff_grows (k + 1) ihf k (Nat.le_succ _) r) assignRun
+      all_goals simp at run
 
 /-- Every subset statement Core completes grows the heap. -/
 theorem grows (sp : SrcProgram) : ∀ fuel, GrowsBelow sp fuel

@@ -669,7 +669,7 @@ partial def serStmt : SrcStmt → String
   | .letSlice n t p len r => s!"(.letSlice {n} {serType t} {serExpr p} {serExpr len} {serStmt r})"
   | .letIndex n t sl i r => s!"(.letIndex {n} {serType t} {sl} {serExpr i} {serStmt r})"
   | .setIndex sl i v => s!"(.setIndex {sl} {serExpr i} {serExpr v})"
-  | .letEval .. | .setEval .. | .ifEval .. | .whileEval .. | .returnEval .. | .discard .. | .setIndexEval .. => "(eval)"
+  | .letEval .. | .setEval .. | .ifEval .. | .whileEval .. | .returnEval .. | .discard .. | .setIndexEval .. | .setFieldEval .. => "(eval)"
 
 def serParam (p : SrcParam) : String := "{ id := " ++ toString p.id ++ ", ty := " ++ serType p.ty ++ " }"
 

@@ -245,6 +245,7 @@ pub enum SrcStmt {
     ReturnEval(SrcEff),
     Discard(SrcEff),
     SetIndexEval(usize, SrcEff, SrcEff),
+    SetFieldEval(usize, usize, SrcEff),
 }
 
 pub struct SrcParam {

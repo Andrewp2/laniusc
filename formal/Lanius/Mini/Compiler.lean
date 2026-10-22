@@ -1079,6 +1079,8 @@ inductive SrcStmt where
   | discard : SrcEff → SrcStmt
   /-- slice[index] = value with expressions that may call functions -/
   | setIndexEval : Nat → SrcEff → SrcEff → SrcStmt
+  /-- x.field = value for a scalar field, with a value that may call functions -/
+  | setFieldEval : Nat → Nat → SrcEff → SrcStmt
   deriving Repr
 
 structure SrcParam where
@@ -2727,6 +2729,34 @@ def storeEvalElement (decls : SrcDecls) (b : Binding) (element : SrcType) (slot 
       | none => none
       | some v => storeEvalWord decls b element slot i v
 
+/-- x.field = value: the value in slot, then copied to the field's slot. -/
+def setFieldEvalAt (target : Nat) (found : Option SrcType) (slot : Nat) (v : Evaluated) : Option Stmt :=
+  match found with
+  | none => none
+  | some ty =>
+    if SrcType.isScalar ty then
+      evalSame v ty (Stmt.seq v.stmt (Stmt.assign target (Expr.var slot)))
+    else
+      none
+
+def setFieldEvalOf (b : Binding) (field : Nat) (slot : Nat) (v : Evaluated) : Option Stmt :=
+  match b.ty with
+  | .i32 => none
+  | .bool => none
+  | .uint kind => none
+  | .struct id fields => setFieldEvalAt (b.slot + fieldOffset fields field) fields[field]? slot v
+  | .enum id variants => none
+  | .ptr => none
+  | .slice element => none
+
+def lowerSetFieldEval (slot : Nat) (binding : Option Binding) (field : Nat) (value : Option Evaluated) : Option Stmt :=
+  match binding with
+  | none => none
+  | some b =>
+    match value with
+    | none => none
+    | some v => setFieldEvalOf b field slot v
+
 def lowerSetIndexEval (decls : SrcDecls) (slot : Nat) (binding : Option Binding) (index : Option Evaluated) (value : Option Evaluated) : Option Stmt :=
   match binding with
   | none => none
@@ -2764,6 +2794,7 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : S
   | .returnEval value => lowerReturnEval next ret (SrcEff.eval value sigs decls scope next)
   | .discard value => lowerDiscard (SrcEff.eval value sigs decls scope next)
   | .setIndexEval slice index value => lowerSetIndexEval decls next (lookup scope slice) (SrcEff.eval index sigs decls scope next) (SrcEff.eval value sigs decls scope (next + 1))
+  | .setFieldEval id field value => lowerSetFieldEval next (lookup scope id) field (SrcEff.eval value sigs decls scope next)
 
 /-- Slots the statement's lets need beyond the ones in scope. -/
 def SrcStmt.depth (self : SrcStmt) : Nat :=
@@ -2795,6 +2826,7 @@ def SrcStmt.depth (self : SrcStmt) : Nat :=
   | .returnEval value => 0
   | .discard value => 0
   | .setIndexEval slice index value => 0
+  | .setFieldEval id field value => 0
 
 /-- Parameters take slots from 0 in order, a struct one per field; a later parameter with the same id shadows an earlier one, as Core's bindLocals does. -/
 def paramScope (params : List SrcParam) (slot : Nat) (scope : List Binding) : List Binding :=
@@ -3018,6 +3050,7 @@ def SrcStmt.declare (self : SrcStmt) (decls : SrcDecls) : Option SrcDecls :=
   | .returnEval value => declareTypes (SrcEff.types value) decls
   | .discard value => declareTypes (SrcEff.types value) decls
   | .setIndexEval slice index value => declareTypes (SrcEff.types index ++ SrcEff.types value) decls
+  | .setFieldEval id field value => declareTypes (SrcEff.types value) decls
 
 /-- Every path ends in a return, the way Core's DefinitelyReturns counts: a while body never counts. -/
 def SrcStmt.returns (self : SrcStmt) : Bool :=
@@ -3049,6 +3082,7 @@ def SrcStmt.returns (self : SrcStmt) : Bool :=
   | .returnEval value => true
   | .discard value => false
   | .setIndexEval slice index value => false
+  | .setFieldEval id field value => false
 
 def declareParams (params : List SrcParam) (decls : SrcDecls) : Option SrcDecls :=
   match params with

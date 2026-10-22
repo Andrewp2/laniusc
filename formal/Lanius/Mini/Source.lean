@@ -173,6 +173,7 @@ def SrcStmt.toCore : SrcStmt → Core.Stmt
   | .discard value => .expression value.toCore
   | .setIndexEval slice index value =>
       .expression (.assign .set (.index (.local slice) index.toCore) value.toCore)
+  | .setFieldEval id index value => .expression (.assign .set (.field (.local id) index) value.toCore)
 
 def SrcFunc.toCore (id : Nat) (func : SrcFunc) : Core.Function where
   id := id

@@ -73,6 +73,7 @@ def SrcStmt.Declared (P : Core.Program) (s : SrcStmt) : Prop :=
   | .returnEval value => ∀ t ∈ value.types, TypeDeclared P t
   | .discard value => ∀ t ∈ value.types, TypeDeclared P t
   | .setIndexEval _ index value => ∀ t ∈ index.types ++ value.types, TypeDeclared P t
+  | .setFieldEval _ _ value => ∀ t ∈ value.types, TypeDeclared P t
 
 /-- Every parameter type and binding type of every function is declared. -/
 def SrcProgram.Declared (P : Core.Program) (sp : SrcProgram) : Prop :=
@@ -116,6 +117,7 @@ theorem returns_sound : ∀ (s : SrcStmt), s.returns = true → Typing.Definitel
   | .returnEval _, _ => .returnValue
   | .discard _, h => by simp [SrcStmt.returns] at h
   | .setIndexEval _ _ _, h => by simp [SrcStmt.returns] at h
+  | .setFieldEval _ _ _, h => by simp [SrcStmt.returns] at h
 
 /-! ## Types -/
 
@@ -1833,6 +1835,39 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
                 · rw [eq_i32 c]; exact .signed _
                 · rw [eq_uint c]; exact .unsigned _
               exact .expression (.assign (.indexSlice (.local inCtx) typedIndex integer) typedValue .set)
+  | .setFieldEval id index value, scope, ctx, next, inLoop, out, ok, d, h => by
+    simp only [SrcStmt.lower, lowerSetFieldEval] at h
+    split at h
+    · simp at h
+    · rename_i b found
+      split at h
+      · simp at h
+      · rename_i v hv
+        simp only [setFieldEvalOf] at h
+        split at h
+        · simp at h
+        · simp at h
+        · simp at h
+        · rename_i sid fields hty
+          simp only [setFieldEvalAt] at h
+          split at h
+          · simp at h
+          · rename_i f hf
+            split at h
+            · simp only [evalSame] at h
+              split at h
+              · rename_i same
+                obtain ⟨inCtx, declared⟩ := ok id b found
+                rw [hty] at inCtx declared
+                have typed := SrcEff.eval_typed target sigsOk value ok d hv
+                rw [same_toCore same] at typed
+                exact .expression (.assign
+                  (.field (.local inCtx) _ (declared_struct declared).1 (by simp [hf])) typed .set)
+              · simp at h
+            · simp at h
+        · simp at h
+        · simp at h
+        · simp at h
 
 /-! ## Functions and programs -/
 
@@ -2262,6 +2297,9 @@ theorem SrcStmt.declare_sound : ∀ (s : SrcStmt) {d d' : SrcDecls}, s.declare d
     simp only [SrcStmt.declare] at h
     exact declareTypes_sound _ h
   | .setIndexEval _ index value, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    exact declareTypes_sound _ h
+  | .setFieldEval _ _ value, d, d', h => by
     simp only [SrcStmt.declare] at h
     exact declareTypes_sound _ h
 

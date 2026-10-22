@@ -1177,6 +1177,161 @@ theorem stmt_setEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {id : Nat} {value
     all_goals simp at run
   · simp at ok
 
+/-- A write to a cell place changes only the cells. -/
+theorem writeResolvedPlace_cells {state s : State} {place : Semantics.ResolvedPlace} {value : Value}
+    (h : Semantics.writeResolvedPlace state place value = .ok s) : ∃ cells, s = { state with cells } := by
+  unfold Semantics.writeResolvedPlace at h
+  split at h
+  · split at h
+    · rename_i assigned hassigned
+      simp only [Semantics.State.assignCell] at hassigned
+      split at hassigned
+      · simp only [Option.some.injEq, Except.ok.injEq] at hassigned h
+        exact ⟨_, by rw [← h, ← hassigned]⟩
+      · simp at hassigned
+    · simp at h
+  · split at h
+    · simp at h
+    · simp at h
+    · split at h
+      · simp at h
+      · split at h
+        · rename_i assigned hassigned
+          simp only [Semantics.State.assignCell] at hassigned
+          split at hassigned
+          · simp only [Option.some.injEq, Except.ok.injEq] at hassigned h
+            exact ⟨_, by rw [← h, ← hassigned]⟩
+          · simp at hassigned
+        · simp at h
+
+/-- Core's `x.field = value` with a value that may change the state: the
+place first, then the value, then the write into the cell as it is then. -/
+theorem field_assign_eff {P : Core.Program} {scope frame st env} (corr : Corr scope frame st env)
+    {id : Nat} {b : Binding} (found : lookup scope id = some b) {sid : Nat} {vs : List Value}
+    (entry : st.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.structure sid vs)⟩)
+    {index : Nat} {old : Value} (got : vs[index]? = some old)
+    {e : Core.Expr} {k : Nat} {u : Value} {st' : State}
+    (run : evalExpr (k + 1) P st (.assign .set (.field (.local id) index) e) = .done u st')
+    (views : ∀ {rv st2}, evalExpr k P st e = .done rv st2 → st2.i32ArrayViews = []) :
+    ∃ rv st2, evalExpr k P st e = .done rv st2 ∧ st'.heap = st2.heap ∧
+      (st2.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.structure sid vs)⟩ →
+        st' = { st2 with
+          cells := Semantics.replaceCell st2.cells (frame b.slot) (.structure sid (Semantics.setValue vs index rv)) }) := by
+  cases k with
+  | zero => simp [evalExpr, Semantics.evalPlace] at run
+  | succ j =>
+    cases j with
+    | zero => simp [evalExpr, Semantics.evalPlace] at run
+    | succ m =>
+      have place : Semantics.evalPlace (m + 2) P st .address (.field (.local id) index) =
+          .done { root := frame b.slot, projections := [.field index], value := some old } st := by
+        simp [Semantics.evalPlace, corr.cellId, found, entry, got]
+      simp only [evalExpr, place] at run
+      split at run
+      · rename_i rv st2 valueRun
+        have views2 := views valueRun
+        refine ⟨rv, st2, valueRun, ?_, fun entry2 => ?_⟩
+        · simp only [Semantics.evalAssignValue, Semantics.assignOpBinary?,
+            Semantics.writeResolvedPlaceNative] at run
+          split at run
+          · rename_i assigned written
+            obtain ⟨cells, rfl⟩ := writeResolvedPlace_cells written
+            rw [sync_ok (st := { st2 with cells }) views2, ite_self] at run
+            simp only [Semantics.Outcome.done.injEq] at run
+            rw [← run.2]
+          · simp at run
+        · have synced := sync_ok
+            (st := { st2 with cells := Semantics.replaceCell st2.cells (frame b.slot) (.structure sid (Semantics.setValue vs index rv)) })
+            views2
+          simp only [Semantics.evalAssignValue, Semantics.assignOpBinary?,
+            Semantics.writeResolvedPlaceNative, Semantics.writeResolvedPlace, entry2,
+            Semantics.replaceProjectedValue, got, assignCell_some entry2, synced, ite_self,
+            Semantics.Outcome.done.injEq] at run
+          exact run.2.symm
+      all_goals simp at run
+
+/-- `x.field = value` for a scalar field: the value in `next`, then copied
+to the field's slot. -/
+theorem stmt_setFieldEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {id index : Nat} {value : SrcEff}
+    (ok : (SrcStmt.setFieldEval id index value).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
+    (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap hp)
+    (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.setFieldEval id index value).toCore = .done c st')
+    (bound : st'.heap.nextAddress ≤ hp.limit) :
+    Simulates mp hp ret scope frame base st env stmt c st' := by
+  simp only [SrcStmt.lower, lowerSetFieldEval] at ok
+  split at ok
+  · simp at ok
+  rename_i b found
+  split at ok
+  · simp at ok
+  rename_i ev valueOk
+  simp only [setFieldEvalOf] at ok
+  split at ok
+  · simp at ok
+  · simp at ok
+  · simp at ok
+  case h_5 => simp at ok
+  case h_6 => simp at ok
+  case h_7 => simp at ok
+  rename_i sid types hty
+  simp only [setFieldEvalAt] at ok
+  split at ok
+  · simp at ok
+  rename_i f fieldFound
+  split at ok
+  case isFalse => simp at ok
+  rename_i scalar
+  simp only [evalSame] at ok
+  split at ok
+  case isFalse => simp at ok
+  rename_i same
+  have tyEq := SrcType.same_eq same
+  simp only [Option.some.injEq] at ok
+  subst ok
+  have bmem := (lookup_mem found).1
+  obtain ⟨v0, entry, holds0⟩ := corr.values b bmem
+  rw [hty] at holds0
+  cases holds0 with
+  | @struct _ _ vs _ _ fieldsHold =>
+  obtain ⟨old, got, _⟩ := fieldsHold.get fieldFound
+  simp only [SrcStmt.toCore, execStmt] at run
+  split at run
+  · rename_i u st3 assignRun
+    simp only [Semantics.Outcome.done.injEq] at run
+    obtain ⟨rfl, rfl⟩ := run
+    cases fuel with
+    | zero => simp [evalExpr] at assignRun
+    | succ k =>
+      obtain ⟨rv, st2, valueRun, heapEq, write⟩ := field_assign_eff corr found entry got assignRun
+        fun valueRun => (eff_grown valueRun fresh.2).1
+      obtain ⟨fresh2, keeps2, locals2, -, d, env1, hp1, exec1, same1, holds1, hc1⟩ :=
+        ihe k (Nat.le_succ _) valueOk corr fr fresh hc valueRun (by rw [← heapEq]; exact bound)
+      have entry2 : st2.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.structure sid vs)⟩ := by
+        rw [keeps2.cells _ (corr.below fresh b bmem)]; exact entry
+      rw [write entry2]
+      rw [tyEq] at holds1
+      have holdsV := holds_var holds1 scalar
+      have sizeB := fr.sized b bmem
+      have slotB := fr.slots b bmem
+      rw [hty] at sizeB slotB
+      have holdsS : (SrcType.struct sid types).HoldsAt (.structure sid vs) env1 b.slot :=
+        (SrcType.HoldsAt.struct fieldsHold).congr fun i lt => same1 _ (by omega)
+      cases holdsS with
+      | @struct _ _ _ _ _ fieldsHold1 =>
+      have inRange := fieldOffset_lt fieldFound
+      refine ⟨assigned_fresh fresh2 _ _, (keeps2.lower le).trans (assigned_keeps (fr.above b bmem) _ _), d, _,
+        .seq exec1 .assign,
+        .next ((corr.after fr fresh keeps2 locals2 same1).assign fr bmem (fun j away => ?_) ?_) hc1⟩
+      · simp only [Env.set]
+        rw [hty] at away
+        simp only [SrcType.size] at away
+        have one := SrcType.size_scalar scalar
+        rw [if_neg (by omega)]
+      · rw [hty]
+        exact .struct (fieldsHold1.set fieldFound scalar holdsV)
+  all_goals simp at run
+
 /-- Core's `slice[idx] = value` on a raw slice local, with operands that may
 change the state: the index first, then the value, then the write. -/
 theorem eval_setIndex_eff {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {idx e : Core.Expr}
@@ -1716,6 +1871,7 @@ theorem sound_both {sp : SrcProgram} {mp : Program}
         | returnEval => exact stmt_returnEval hereE ok corr fr fresh le hc run bound
         | discard => exact stmt_discard hereE ok corr fr fresh le hc run bound
         | setIndexEval => exact stmt_setIndexEval belowE ok corr fr fresh le hc run bound
+        | setFieldEval => exact stmt_setFieldEval belowE ok corr fr fresh le hc run bound
       · intro hp e scope slot ev frame base st env v st' ok corr fr fresh hc run bound
         cases e with
         | ePure e => exact eval_pure ok corr fr fresh hc run

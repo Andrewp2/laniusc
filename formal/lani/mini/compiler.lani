@@ -1391,6 +1391,8 @@ pub enum SrcStmt {
     Discard(SrcEff),
     // slice[index] = value with expressions that may call functions
     SetIndexEval(usize, SrcEff, SrcEff),
+    // x.field = value for a scalar field, with a value that may call functions
+    SetFieldEval(usize, usize, SrcEff),
 }
 
 pub struct SrcParam {
@@ -3508,6 +3510,44 @@ pub fn store_eval_element(decls: SrcDecls, b: Binding, element: SrcType, slot: u
     };
 }
 
+// x.field = value: the value in slot, then copied to the field's slot.
+pub fn set_field_eval_at(target: usize, found: core::option::Option<SrcType>, slot: usize, v: Evaluated) -> core::option::Option<Stmt> {
+    return match (found) {
+        None -> None,
+        Some(ty) -> set_scalar_eval(target, ty, slot, v),
+    };
+}
+
+// extract: inline
+fn set_scalar_eval(target: usize, fty: SrcType, from: usize, value: Evaluated) -> core::option::Option<Stmt> {
+    if (fty.is_scalar()) {
+        return eval_same(value, fty, Seq(boxed(value.stmt), boxed(Assign(target, Var(from)))));
+    }
+    return None;
+}
+
+pub fn set_field_eval_of(b: Binding, field: usize, slot: usize, v: Evaluated) -> core::option::Option<Stmt> {
+    return match (b.ty) {
+        I32 -> None,
+        Bool -> None,
+        Uint(kind) -> None,
+        Struct(id, fields) -> set_field_eval_at(plus(b.slot, field_offset(unbox(fields), field)), get(unbox(fields), field), slot, v),
+        Enum(id, variants) -> None,
+        Ptr -> None,
+        Slice(element) -> None,
+    };
+}
+
+pub fn lower_set_field_eval(slot: usize, binding: core::option::Option<Binding>, field: usize, value: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> match (value) {
+            None -> None,
+            Some(v) -> set_field_eval_of(b, field, slot, v),
+        },
+    };
+}
+
 pub fn lower_set_index_eval(decls: SrcDecls, slot: usize, binding: core::option::Option<Binding>, index: core::option::Option<Evaluated>, value: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
     return match (binding) {
         None -> None,
@@ -3548,6 +3588,7 @@ impl SrcStmt {
             ReturnEval(value) -> lower_return_eval(next, ret, value.eval(sigs, decls, scope, next)),
             Discard(value) -> lower_discard(value.eval(sigs, decls, scope, next)),
             SetIndexEval(slice, index, value) -> lower_set_index_eval(decls, next, lookup(scope, slice), index.eval(sigs, decls, scope, next), value.eval(sigs, decls, scope, plus(next, 1))),
+            SetFieldEval(id, field, value) -> lower_set_field_eval(next, lookup(scope, id), field, value.eval(sigs, decls, scope, next)),
         };
     }
 
@@ -3581,6 +3622,7 @@ impl SrcStmt {
             ReturnEval(value) -> 0,
             Discard(value) -> 0,
             SetIndexEval(slice, index, value) -> 0,
+            SetFieldEval(id, field, value) -> 0,
         };
     }
 }
@@ -3838,6 +3880,7 @@ impl SrcStmt {
             ReturnEval(value) -> declare_types(value.types(), decls),
             Discard(value) -> declare_types(value.types(), decls),
             SetIndexEval(slice, index, value) -> declare_types(concat(index.types(), value.types()), decls),
+            SetFieldEval(id, field, value) -> declare_types(value.types(), decls),
         };
     }
 
@@ -3872,6 +3915,7 @@ impl SrcStmt {
             ReturnEval(value) -> true,
             Discard(value) -> false,
             SetIndexEval(slice, index, value) -> false,
+            SetFieldEval(id, field, value) -> false,
         };
     }
 }
