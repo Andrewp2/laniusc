@@ -13,8 +13,8 @@ private def thenBranch : Stmt := .expression (.value (.signed .i32 1))
 private def elseBranch : Stmt := .expression (.value (.signed .i32 0))
 private def source : Stmt := .ifThenElse condition thenBranch elseBranch
 private def conditionBytes := localNotEqualBytes (.frame 2) (.frame 3) 4
-private def thenBytes := immediateBytes .w32 resultRegister (BitVec.ofNat 32 1) 0
-private def elseBytes := immediateBytes .w32 resultRegister (BitVec.ofNat 32 0) 0
+private def thenBytes := immediateBytes .w32 ScalarValidator.resultRegister (BitVec.ofNat 32 1) 0
+private def elseBytes := immediateBytes .w32 ScalarValidator.resultRegister (BitVec.ofNat 32 0) 0
 private def emitted := conditionBytes ++ Machine.conditionalBytes thenBytes elseBytes
 
 example : (check source emitted conditionBytes thenBytes elseBytes (.frame 2) (.frame 3) 4).isSome := by

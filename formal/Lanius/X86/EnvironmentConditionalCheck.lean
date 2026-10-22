@@ -40,11 +40,24 @@ def branchCheck (source : Stmt) (base : Nat) (bytes : List UInt8) :
   | some shape => if exact : bytes = shape.bodyBytes base then some ⟨shape, exact⟩ else none
   | none => none
 
+theorem check_slot {leftId rightId : VarId} {bytes : List UInt8}
+    {left right : ExpressionEnvironment.Location} {slot : Nat}
+    {condition : NotEqualCertificate leftId rightId bytes}
+    (accepted : EnvironmentExpressionCheck.check
+      (.binary .notEqual (.local leftId) (.local rightId)) bytes left right slot =
+        some (.notEqual condition)) :
+    condition.slot = slot := by
+  simp only [EnvironmentExpressionCheck.check] at accepted
+  split at accepted
+  · cases accepted
+    rfl
+  · cases accepted
+
 def check (source : Stmt) (emitted : List UInt8) (conditionBytes thenBytes elseBytes : List UInt8)
     (left right : ExpressionEnvironment.Location) (slot : Nat) : Option (Supported source emitted) :=
   match source with
   | .ifThenElse (.binary .notEqual (.local leftId) (.local rightId)) thenBranch elseBranch =>
-      match EnvironmentExpressionCheck.check
+      match accepted : EnvironmentExpressionCheck.check
           (.binary .notEqual (.local leftId) (.local rightId)) conditionBytes left right slot with
       | some (.notEqual condition) =>
           match branchCheck thenBranch slot thenBytes, branchCheck elseBranch slot elseBytes with
@@ -61,7 +74,7 @@ def check (source : Stmt) (emitted : List UInt8) (conditionBytes thenBytes elseB
                       base := slot
                       thenShape := thenShape
                       elseShape := elseShape
-                      baseExact := by simp [EnvironmentExpressionCheck.check]
+                      baseExact := check_slot accepted
                       thenBytesExact := thenBytesExact
                       elseBytesExact := elseBytesExact
                       thenBound := thenBound
@@ -187,7 +200,8 @@ theorem sound
         (.binary .notEqual (.local leftId) (.local rightId))
         (.boolean (leftValue != rightValue)) coreBefore
         (conditionStable (fuel - 1) (by omega))
-    convert h using 1 <;> omega
+    rw [show fuel = (fuel - 1).succ by omega]
+    exact h
   let conditionResult : Result program coreBefore
       (.expression (.binary .notEqual (.local leftId) (.local rightId))) .next coreBefore
       certificate.base upper machineBefore prefixBefore := {
@@ -228,23 +242,34 @@ theorem sound
       BitVec.ofNat 32 (if leftValue != rightValue then 1 else 0) := by
     have exact := congrArg (fun bits : BitVec 64 => bits.setWidth 32) conditionRegister64
     cases h : (leftValue != rightValue) <;> simp [h] at exact ⊢ <;> exact exact
-  let control := conditional_prefix_steps (suffix := []) certificate.thenBound certificate.elseBound
-    (by simpa using conditionTail)
-      (BitVec.ofNat 32 (if leftValue != rightValue then 1 else 0)) conditionRegister
-  have controlInvariant := conditional_prefix_invariant (by simpa using conditionPrefixInvariant)
-    certificate.thenBound certificate.elseBound control
+  have prefixInvariant' : FrameCodeInvariant prefixBefore lower upper
+      (Machine.conditionalBytes certificate.thenBytes certificate.elseBytes ++ []) := by
+    simpa using conditionPrefixInvariant
+  have prefixLoaded : CodeAt prefixBefore.memory prefixBefore.rip
+      (Machine.conditionalBytes certificate.thenBytes certificate.elseBytes ++ []) := by
+    simpa using conditionTail
   by_cases equal : leftValue = rightValue
-  · have choice : control.takeThen = false := by
+  · have differs : (leftValue != rightValue) = false := by simp [equal]
+    let control := conditional_prefix_steps (suffix := []) certificate.thenBound
+      certificate.elseBound prefixLoaded (BitVec.ofNat 32 0)
+      (by rw [conditionRegister, differs]; rfl)
+    have choice : control.takeThen = false := by
       rw [control.choiceExact]
-      simp [equal]
-    have elseInvariant : FrameCodeInvariant control.after lower upper
-        (certificate.elseShape.bodyBytes certificate.base) := by
-      simpa [choice, certificate.thenBytesExact, certificate.elseBytesExact] using controlInvariant
+      decide
+    have controlInvariant := conditional_prefix_invariant prefixInvariant'
+      certificate.thenBound certificate.elseBound control
+    have elseInvariant : FrameCodeInvariant control.after certificate.base upper
+        (certificate.elseShape.bodyBytes certificate.base ++ []) := by
+      have selected : FrameCodeInvariant control.after lower upper
+          (certificate.elseShape.bodyBytes certificate.base ++ []) := by
+        simpa [choice, certificate.elseBytesExact] using controlInvariant
+      exact selected.restrict slotWindow.1 (Nat.le_refl _)
     obtain ⟨⟨elseAfter, elseExact⟩⟩ := checked_shape_result certificate.elseShape
       program coreBefore certificate.base upper control.after [] elseWindow elseInvariant
-    let finalResult := checked_conditional_false (trace := {
+    let finalResult := checked_conditional_false (thenBranch := thenBranch)
+      (elseBranch := elseBranch) (trace := {
       conditionResult := conditionResult
-      conditionStable := by simpa [equal] using (⟨2, conditionStable⟩)
+      conditionStable := ⟨2, by simpa [differs] using conditionStable⟩
       control := control
       elseResult := elseExact.result
       conditionRemainderExact := by simp [conditionResult]
@@ -252,26 +277,35 @@ theorem sound
       elseConsumedExact := by simpa [certificate.elseBytesExact] using elseExact.consumedExact
       elseRemainderExact := elseExact.remainderExact })
     exact ⟨⟨elseAfter, finalResult⟩⟩
-  · have choice : control.takeThen = true := by
+  · have differs : (leftValue != rightValue) = true := by simp [equal]
+    let control := conditional_prefix_steps (suffix := []) certificate.thenBound
+      certificate.elseBound prefixLoaded (BitVec.ofNat 32 1)
+      (by rw [conditionRegister, differs]; rfl)
+    have choice : control.takeThen = true := by
       rw [control.choiceExact]
-      simp [equal]
-    have thenInvariant : FrameCodeInvariant control.after lower upper
+      decide
+    have controlInvariant := conditional_prefix_invariant prefixInvariant'
+      certificate.thenBound certificate.elseBound control
+    have thenInvariant : FrameCodeInvariant control.after certificate.base upper
         (certificate.thenShape.bodyBytes certificate.base ++
           (Machine.jumpBytes (BitVec.ofNat 32 certificate.elseBytes.length) ++
-            certificate.elseShape.bodyBytes certificate.base)) := by
-      simpa [choice, certificate.thenBytesExact, certificate.elseBytesExact,
-        List.append_assoc] using controlInvariant
+            certificate.elseBytes)) := by
+      have selected : FrameCodeInvariant control.after lower upper
+          (certificate.thenShape.bodyBytes certificate.base ++
+            (Machine.jumpBytes (BitVec.ofNat 32 certificate.elseBytes.length) ++
+              certificate.elseBytes)) := by
+        simpa [choice, certificate.thenBytesExact, List.append_assoc] using controlInvariant
+      exact selected.restrict slotWindow.1 (Nat.le_refl _)
     obtain ⟨⟨thenAfter, thenExact⟩⟩ := checked_shape_result certificate.thenShape
       program coreBefore certificate.base upper control.after
       (Machine.jumpBytes (BitVec.ofNat 32 certificate.elseBytes.length) ++
-        certificate.elseBytes) thenWindow (by
-          simpa [certificate.thenBytesExact, certificate.elseBytesExact, List.append_assoc]
-            using thenInvariant)
+        certificate.elseBytes) thenWindow thenInvariant
     let final := thenAfter.jump (BitVec.ofNat 32 certificate.elseBytes.length)
       (Machine.jumpBytes (BitVec.ofNat 32 certificate.elseBytes.length)).length
-    let finalResult := checked_conditional_true (trace := {
+    let finalResult := checked_conditional_true (thenBranch := thenBranch)
+      (elseBranch := elseBranch) (trace := {
       conditionResult := conditionResult
-      conditionStable := by simpa [equal] using (⟨2, conditionStable⟩)
+      conditionStable := ⟨2, by simpa [differs] using conditionStable⟩
       control := control
       thenResult := thenExact.result
       conditionRemainderExact := by simp [conditionResult]
