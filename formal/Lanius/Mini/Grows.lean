@@ -984,11 +984,11 @@ theorem eff_grows_step {sp : SrcProgram} {k : Nat} (ih : GrowsBelow sp (k + 1)) 
       rw [← run.2]
       exact effs_grows fields ihe argsRun
     all_goals simp at run
-  | eMatch scrutinee id binders values =>
+  | eMatch scrutinee ety ty binders values =>
     simp only [SrcEff.toCore, evalExpr] at run
     split at run
     · rename_i w next scrutineeRun
-      exact (sub scrutineeRun).trans (effArms_grows binders values id 0 ihe run)
+      exact (sub scrutineeRun).trans (effArms_grows binders values ety.typeId 0 ihe run)
     all_goals simp at run
 
 /-- Every effectful expression Core completes grows the heap. -/

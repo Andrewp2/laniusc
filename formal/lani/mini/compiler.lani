@@ -1337,9 +1337,9 @@ pub enum SrcEff {
     EStruct(SrcType, Box<List<SrcEff>>),
     // variant(payload) of the enum type ty
     EVariant(SrcType, usize, Box<List<SrcEff>>),
-    // match scrutinee { arms } on the enum with Core id enum_id: arm k's
-    // binders and value
-    EMatch(Box<SrcEff>, usize, List<List<usize>>, Box<List<SrcEff>>),
+    // match scrutinee { arms } on the enum type ety, with result type ty:
+    // arm k's binders and value
+    EMatch(Box<SrcEff>, SrcType, SrcType, List<List<usize>>, Box<List<SrcEff>>),
     // left / right or left % right: a statement in the mini IR, so only here
     EDivide(SrcDivOp, Box<SrcEff>, Box<SrcEff>),
 }
@@ -2530,6 +2530,78 @@ pub fn eval_cast(ty: SrcType, slot: usize, operand: core::option::Option<Evaluat
     };
 }
 
+// Some(stmt) when the value has type ty.
+pub fn eval_same(v: Evaluated, ty: SrcType, stmt: Stmt) -> core::option::Option<Stmt> {
+    if (v.ty.same(ty)) {
+        return Some(stmt);
+    }
+    return None;
+}
+
+// Arm k's code; the last arm needs no tag test.
+pub fn eval_arm(slot: usize, k: usize, code: core::option::Option<Stmt>, rest: List<SrcEff>, others: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (code) {
+        None -> None,
+        Some(c) -> match (rest) {
+            Nil -> Some(c),
+            Cons(value, more) -> match (others) {
+                None -> None,
+                Some(o) -> Some(Ite(Compare(U64, Eq, boxed(Var(slot)), boxed(Lit(k as u64))), boxed(c), boxed(o))),
+            },
+        },
+    };
+}
+
+// Arm k's value evaluated from dst, under its payload's binders.
+// extract: inline
+fn eval_arm_in(sigs: List<Sig>, bound: core::option::Option<List<Binding>>, slot: usize, dst: usize, ty: SrcType, k: usize, value: SrcEff, rest: List<SrcEff>, later: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (bound) {
+        None -> None,
+        Some(s) -> match (value.eval(sigs, s, dst)) {
+            None -> None,
+            Some(e) -> eval_arm(slot, k, eval_same(e, ty, e.stmt), rest, later),
+        },
+    };
+}
+
+// Where a match's arms leave their values: above the scrutinee and above
+// the match's own value, so copying it down to slot reads no slot it writes.
+pub fn match_dst(slot: usize, ety: SrcType, ty: SrcType) -> usize {
+    return plus(slot, max_of(ety.size(), ty.size()));
+}
+
+pub fn match_variants(ty: SrcType) -> List<List<SrcType>> {
+    return match (ty) {
+        I32 -> empty(),
+        Bool -> empty(),
+        Uint(kind) -> empty(),
+        Struct(id, types) -> empty(),
+        Enum(id, variants) -> unbox(variants),
+        Ptr -> empty(),
+        Slice(element) -> empty(),
+    };
+}
+
+// The match is exhaustive, its value takes slots, and its tags fit in 32 bits.
+pub fn eval_match_of(slot: usize, ety: SrcType, ty: SrcType, s: Evaluated, arms: Stmt, binders: usize, values: usize) -> core::option::Option<Evaluated> {
+    if (s.ty.same(ety) && (0 < ty.size()) && (binders == length(match_variants(ety))) && (values == length(match_variants(ety))) && (length(match_variants(ety)) < 4294967296)) {
+        return Some(Evaluated { stmt: Seq(boxed(s.stmt), boxed(Seq(boxed(arms), boxed(assign_from(slot, slot_vars(match_dst(slot, ety, ty), ty.size()), Skip))))), ty: ty });
+    }
+    return None;
+}
+
+// The scrutinee in slot, the arm its tag picks from match_dst, then that
+// value copied down to slot.
+pub fn eval_match(slot: usize, ety: SrcType, ty: SrcType, scrutinee: core::option::Option<Evaluated>, arms: core::option::Option<Stmt>, binders: usize, values: usize) -> core::option::Option<Evaluated> {
+    return match (scrutinee) {
+        None -> None,
+        Some(s) -> match (arms) {
+            None -> None,
+            Some(a) -> eval_match_of(slot, ety, ty, s, a, binders, values),
+        },
+    };
+}
+
 // extract: mutual begin
 impl SrcEff {
     // The code computing this expression into slot, slot + 1, ..., and its type.
@@ -2544,7 +2616,7 @@ impl SrcEff {
             EIndex(slice, index) -> eval_index(scope, slice, slot, unbox(index).eval(sigs, scope, slot)),
             EStruct(ty, fields) -> eval_struct(ty, eval_args(sigs, scope, unbox(fields), slot)),
             EVariant(ty, variant, payload) -> eval_variant(ty, variant, slot, eval_args(sigs, scope, unbox(payload), plus(slot, 1))),
-            EMatch(scrutinee, enum_id, binders, values) -> None,
+            EMatch(scrutinee, ety, ty, binders, values) -> eval_match(slot, ety, ty, unbox(scrutinee).eval(sigs, scope, slot), eval_arms(sigs, scope, slot, match_dst(slot, ety, ty), ty, 0, match_variants(ety), binders, unbox(values)), length(binders), length(unbox(values))),
             EDivide(op, left, right) -> eval_division(op, slot, unbox(left).eval(sigs, scope, slot), unbox(right).eval(sigs, scope, plus(slot, 1))),
         };
     }
@@ -2557,6 +2629,20 @@ pub fn eval_args(sigs: List<Sig>, scope: List<Binding>, args: List<SrcEff>, slot
         Cons(arg, rest) -> match (arg.eval(sigs, scope, slot)) {
             None -> None,
             Some(first) -> cons_args(first, eval_args(sigs, scope, unbox(rest), plus(slot, first.ty.size()))),
+        },
+    };
+}
+
+// Arms k, k + 1, ... of a match on the enum in slot, one per variant from k.
+pub fn eval_arms(sigs: List<Sig>, scope: List<Binding>, slot: usize, dst: usize, ty: SrcType, k: usize, variants: List<List<SrcType>>, binders: List<List<usize>>, values: List<SrcEff>) -> core::option::Option<Stmt> {
+    return match (values) {
+        Nil -> None,
+        Cons(value, rest) -> match (variants) {
+            Nil -> None,
+            Cons(types, more) -> match (binders) {
+                Nil -> None,
+                Cons(bs, others) -> eval_arm_in(sigs, arm_scope(bs, types, plus(slot, 1), scope), slot, dst, ty, k, value, unbox(rest), eval_arms(sigs, scope, slot, dst, ty, plus(k, 1), unbox(more), unbox(others), unbox(rest))),
+            },
         },
     };
 }
@@ -2577,7 +2663,7 @@ impl SrcEff {
             EIndex(slice, index) -> unbox(index).types(),
             EStruct(ty, fields) -> cons(ty, effs_types(unbox(fields))),
             EVariant(ty, variant, payload) -> cons(ty, effs_types(unbox(payload))),
-            EMatch(scrutinee, enum_id, binders, values) -> concat(unbox(scrutinee).types(), effs_types(unbox(values))),
+            EMatch(scrutinee, ety, ty, binders, values) -> cons(ety, concat(unbox(scrutinee).types(), effs_types(unbox(values)))),
             EDivide(op, left, right) -> concat(unbox(left).types(), unbox(right).types()),
         };
     }
@@ -2591,13 +2677,6 @@ pub fn effs_types(es: List<SrcEff>) -> List<SrcType> {
 }
 // extract: mutual end
 
-// Some(stmt) when the value has type ty.
-pub fn eval_same(v: Evaluated, ty: SrcType, stmt: Stmt) -> core::option::Option<Stmt> {
-    if (v.ty.same(ty)) {
-        return Some(stmt);
-    }
-    return None;
-}
 
 pub fn lower_let_eval(ty: SrcType, value: core::option::Option<Evaluated>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
     return match (value) {

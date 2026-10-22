@@ -287,7 +287,10 @@ semantics:
   tag into `slot`. `SrcEff.types` lists the literals' types, which
   `SrcStmt.declare` declares, so Core's typing finds them. `slice[index]`
   on a raw `i32` slice computes the index into `slot`, then loads the
-  element over it. `match` as an effectful expression lowers to nothing yet.
+  element over it. A `match` (`EMatch`, which names the enum type and the
+  result type) computes the scrutinee into `slot`; the arm its tag picks binds
+  the payload and computes its value from `slot + max(enum size, result
+  size)`, which is then copied down to `slot`.
 - Division (`EDivide`, in `LowerEval`): `/` and `%` on `i32` or one unsigned
   type. The mini IR divides in a statement, so division is only an
   effectful expression: both operands, then `Divide` into the left one's
@@ -305,10 +308,10 @@ semantics:
 | `HeapCorr` | 501 | 1.1 | Core heap to mini heap correspondence; allocate, load, store, free |
 | `SliceLayout` | 601 | 6.3 | Core's native layout of word structs and enums; their field reads and the mini element address |
 | `LowerStmt` | 3626 | 9.4 | Core cells, frames, flat values, calls, enums and `match`, statements |
-| `LowerEval` | 1211 | 1.6 | effectful expressions and their statements; the simulation by induction on fuel |
+| `LowerEval` | 1430 | 1.8 | effectful expressions and their statements; the simulation by induction on fuel |
 | `SourceCorrect` | 104 | 0.7 | top-level theorem |
 | `Determinism` | 122 | 1.1 | both top-level theorems for every run of the same length, through the optimizer (step 14) |
-| `TypeSound` | 2291 | 2.4 | type checker soundness: an accepted program is well typed in Core (step 7) |
+| `TypeSound` | 2367 | 4.1 | type checker soundness: an accepted program is well typed in Core (step 7) |
 
 The pass is about 1,880 lines of Lanius (the end of `compiler.lani`), and the
 proofs are about 5,700 lines, plus 1,802 for type checker soundness. The per-function difftest covers it (146

@@ -115,7 +115,8 @@ def SrcEff.toCore : SrcEff → Core.Expr
   | .eIndex slice index => .index (.local slice) index.toCore
   | .eStruct ty fields => .structValue ty.typeId (SrcEff.toCoreList fields)
   | .eVariant ty variant payload => .enumValue ty.typeId variant (SrcEff.toCoreList payload)
-  | .eMatch scrutinee id binders values => .matchValue scrutinee.toCore (SrcEff.coreArms id 0 binders values)
+  | .eMatch scrutinee ety _ binders values =>
+      .matchValue scrutinee.toCore (SrcEff.coreArms ety.typeId 0 binders values)
   | .eDivide op left right => .binary op.toCore left.toCore right.toCore
 
 def SrcEff.toCoreList : List SrcEff → List Core.Expr

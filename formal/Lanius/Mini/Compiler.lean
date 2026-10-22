@@ -1028,8 +1028,8 @@ inductive SrcEff where
   | eStruct : SrcType → (List SrcEff) → SrcEff
   /-- variant(payload) of the enum type ty -/
   | eVariant : SrcType → Nat → (List SrcEff) → SrcEff
-  /-- match scrutinee { arms } on the enum with Core id enum_id: arm k's binders and value -/
-  | eMatch : SrcEff → Nat → (List (List Nat)) → (List SrcEff) → SrcEff
+  /-- match scrutinee { arms } on the enum type ety, with result type ty: arm k's binders and value -/
+  | eMatch : SrcEff → SrcType → SrcType → (List (List Nat)) → (List SrcEff) → SrcEff
   /-- left / right or left % right: a statement in the mini IR, so only here -/
   | eDivide : SrcDivOp → SrcEff → SrcEff → SrcEff
   deriving Repr
@@ -1983,6 +1983,55 @@ def evalCast (ty : SrcType) (slot : Nat) (operand : Option Evaluated) : Option E
   | none => none
   | some o => evalThen slot o (scalarCast ty ({ expr := Expr.var slot, ty := o.ty } : Typed))
 
+/-- Some(stmt) when the value has type ty. -/
+def evalSame (v : Evaluated) (ty : SrcType) (stmt : Stmt) : Option Stmt :=
+  if SrcType.same v.ty ty then
+    some stmt
+  else
+    none
+
+/-- Arm k's code; the last arm needs no tag test. -/
+def evalArm (slot : Nat) (k : Nat) (code : Option Stmt) (rest : List SrcEff) (others : Option Stmt) : Option Stmt :=
+  match code with
+  | none => none
+  | some c =>
+    match rest with
+    | [] => some c
+    | value :: more =>
+      match others with
+      | none => none
+      | some o => some (Stmt.ite (Expr.compare Word.u64 CmpOp.eq (Expr.var slot) (Expr.lit (BitVec.ofNat 64 k))) c o)
+
+/-- Where a match's arms leave their values: above the scrutinee and above the match's own value, so copying it down to slot reads no slot it writes. -/
+def matchDst (slot : Nat) (ety : SrcType) (ty : SrcType) : Nat :=
+  slot + max (SrcType.size ety) (SrcType.size ty)
+
+def matchVariants (ty : SrcType) : List (List SrcType) :=
+  match ty with
+  | .i32 => []
+  | .bool => []
+  | .uint kind => []
+  | .struct id types => []
+  | .enum id variants => variants
+  | .ptr => []
+  | .slice element => []
+
+/-- The match is exhaustive, its value takes slots, and its tags fit in 32 bits. -/
+def evalMatchOf (slot : Nat) (ety : SrcType) (ty : SrcType) (s : Evaluated) (arms : Stmt) (binders : Nat) (values : Nat) : Option Evaluated :=
+  if SrcType.same s.ty ety && decide (0 < SrcType.size ty) && decide (binders = (matchVariants ety).length) && decide (values = (matchVariants ety).length) && decide ((matchVariants ety).length < 4294967296) then
+    some ({ stmt := Stmt.seq s.stmt (Stmt.seq arms (assignFrom slot (slotVars (matchDst slot ety ty) (SrcType.size ty)) Stmt.skip)), ty := ty } : Evaluated)
+  else
+    none
+
+/-- The scrutinee in slot, the arm its tag picks from match_dst, then that value copied down to slot. -/
+def evalMatch (slot : Nat) (ety : SrcType) (ty : SrcType) (scrutinee : Option Evaluated) (arms : Option Stmt) (binders : Nat) (values : Nat) : Option Evaluated :=
+  match scrutinee with
+  | none => none
+  | some s =>
+    match arms with
+    | none => none
+    | some a => evalMatchOf slot ety ty s a binders values
+
 mutual
 
 /-- The code computing this expression into slot, slot + 1, ..., and its type. -/
@@ -1997,7 +2046,7 @@ def SrcEff.eval (self : SrcEff) (sigs : List Sig) (scope : List Binding) (slot :
   | .eIndex slice index => evalIndex scope slice slot (SrcEff.eval index sigs scope slot)
   | .eStruct ty fields => evalStruct ty (evalArgs sigs scope fields slot)
   | .eVariant ty variant payload => evalVariant ty variant slot (evalArgs sigs scope payload (slot + 1))
-  | .eMatch scrutinee enumId binders values => none
+  | .eMatch scrutinee ety ty binders values => evalMatch slot ety ty (SrcEff.eval scrutinee sigs scope slot) (evalArms sigs scope slot (matchDst slot ety ty) ty 0 (matchVariants ety) binders values) binders.length values.length
   | .eDivide op left right => evalDivision op slot (SrcEff.eval left sigs scope slot) (SrcEff.eval right sigs scope (slot + 1))
 
 /-- The arguments, each in the slots after the one before. -/
@@ -2008,6 +2057,26 @@ def evalArgs (sigs : List Sig) (scope : List Binding) (args : List SrcEff) (slot
     match SrcEff.eval arg sigs scope slot with
     | none => none
     | some first => consArgs first (evalArgs sigs scope rest (slot + SrcType.size first.ty))
+
+/-- Arms k, k + 1, ... of a match on the enum in slot, one per variant from k. -/
+def evalArms (sigs : List Sig) (scope : List Binding) (slot : Nat) (dst : Nat) (ty : SrcType) (k : Nat) (variants : List (List SrcType)) (binders : List (List Nat)) (values : List SrcEff) : Option Stmt :=
+  match values with
+  | [] => none
+  | value :: rest =>
+    match variants with
+    | [] => none
+    | types :: more =>
+      match binders with
+      | [] => none
+      | bs :: others =>
+        let bound : Option (List Binding) := armScope bs types (slot + 1) scope
+        let later : Option Stmt := evalArms sigs scope slot dst ty (k + 1) more others rest
+        match bound with
+        | none => none
+        | some s =>
+          match SrcEff.eval value sigs s dst with
+          | none => none
+          | some e => evalArm slot k (evalSame e ty e.stmt) rest later
 
 end
 
@@ -2025,7 +2094,7 @@ def SrcEff.types (self : SrcEff) : List SrcType :=
   | .eIndex slice index => SrcEff.types index
   | .eStruct ty fields => ty :: effsTypes fields
   | .eVariant ty variant payload => ty :: effsTypes payload
-  | .eMatch scrutinee enumId binders values => SrcEff.types scrutinee ++ effsTypes values
+  | .eMatch scrutinee ety ty binders values => ety :: (SrcEff.types scrutinee ++ effsTypes values)
   | .eDivide op left right => SrcEff.types left ++ SrcEff.types right
 
 def effsTypes (es : List SrcEff) : List SrcType :=
@@ -2034,13 +2103,6 @@ def effsTypes (es : List SrcEff) : List SrcType :=
   | e :: rest => SrcEff.types e ++ effsTypes rest
 
 end
-
-/-- Some(stmt) when the value has type ty. -/
-def evalSame (v : Evaluated) (ty : SrcType) (stmt : Stmt) : Option Stmt :=
-  if SrcType.same v.ty ty then
-    some stmt
-  else
-    none
 
 def lowerLetEval (ty : SrcType) (value : Option Evaluated) (body : Option Stmt) : Option Stmt :=
   match value with

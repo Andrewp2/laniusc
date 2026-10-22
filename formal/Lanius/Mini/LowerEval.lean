@@ -747,6 +747,223 @@ theorem eval_variant {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcTyp
   | ptr => simp at ok
   | slice => simp at ok
 
+/-- Binding an arm's payload above the scope keeps the layout. -/
+theorem armScope_layout :
+    ∀ (binders : List Nat) {types : List SrcType} {vs : List Value} {slot : Nat}
+      {scope s' : List Binding} {frame : Nat → Nat} {st : State} {env : Env},
+      armScope binders types slot scope = some s' → FieldsHold types vs env slot →
+      Layout scope frame 0 slot → Corr scope frame st env → st.Fresh →
+      ∃ frame', Corr s' frame' (st.bindLocals (binders.zip vs)) env ∧
+        Layout s' frame' 0 (slot + sizes types) ∧ (st.bindLocals (binders.zip vs)).Fresh ∧
+        Keeps st.nextCell st (st.bindLocals (binders.zip vs)) ∧ binders.length = vs.length
+  | [], types, vs, slot, scope, s', frame, st, env, ok, holds, fr, corr, fresh => by
+    cases types with
+    | cons => simp [armScope] at ok
+    | nil =>
+      simp only [armScope, Option.some.injEq] at ok
+      subst ok
+      cases holds
+      exact ⟨frame, corr, by simpa [sizes] using fr, fresh, Keeps.refl _ _, rfl⟩
+  | binder :: rest, types, vs, slot, scope, s', frame, st, env, ok, holds, fr, corr, fresh => by
+    cases types with
+    | nil => simp [armScope] at ok
+    | cons f more =>
+      simp only [armScope] at ok
+      split at ok
+      · rename_i sized
+        cases holds with
+        | cons head tail =>
+        rename_i v vs'
+        rw [List.zip_cons_cons, bindLocals_cons]
+        have pushed := corr.alias fresh (j := slot) (fun b mem => by
+          have := fr.slots b mem
+          have := fr.sized b mem
+          omega) binder head
+        have pushedL := fr.push (corr.below fresh) (Nat.zero_le _) binder sized
+        obtain ⟨frame', corr', fr', fresh', keeps', len⟩ :=
+          armScope_layout rest ok tail pushedL pushed (bindLocal_fresh fresh binder v)
+        refine ⟨frame', corr', ?_, fresh', (bindLocal_keeps (Nat.le_refl _) binder v).trans
+          (keeps'.lower (Nat.le_succ _)), by simp [len]⟩
+        simpa [sizes, Nat.add_assoc] using fr'
+      · simp at ok
+
+/-- The tag tests pick the arm Core picks, and it evaluates that arm's value
+from `dst`, above the payload. -/
+theorem evalArms_sound {dst eid : Nat} {ty : SrcType} :
+    ∀ (values : List SrcEff) {variants : List (List SrcType)} {binders : List (List Nat)} {j kv : Nat}
+      {stmt : Stmt} {fs : List SrcType} {vs : List Value} {v : Value} {st' : State} {k : Nat}
+      {hp : Heap} {frame : Nat → Nat} {st : State} {env : Env},
+      (∀ m < k, EvalSound sp mp m) → Corr scope frame st env → Layout scope frame 0 slot → st.Fresh →
+      HeapCorr st.heap hp →
+      evalArms (sigs sp.funcs) scope slot dst ty j variants binders values = some stmt →
+      values.length = variants.length → binders.length = variants.length →
+      (∀ fs ∈ variants, slot + 1 + sizes fs ≤ dst) → j ≤ kv → variants[kv - j]? = some fs → kv < 2 ^ 64 →
+      env slot = BitVec.ofNat 64 kv → FieldsHold fs vs env (slot + 1) →
+      Semantics.evalMatchArms k sp.toCore st (.enumeration eid kv vs) (SrcEff.coreArms eid j binders values) =
+        .done v st' → st'.heap.nextAddress ≤ hp.limit →
+      st'.Fresh ∧ Keeps st.nextCell st st' ∧ st'.locals = st.locals ∧
+        ∃ d env' hp', Exec mp d env hp stmt (.normal env' hp') ∧ (∀ i < dst, env' i = env i) ∧
+          ty.HoldsAt v env' dst ∧ HeapCorr st'.heap hp' := by
+  intro values
+  induction values with
+  | nil =>
+    intro variants binders j kv stmt fs vs v st' k hp frame st env ihe corr fr fresh hc ok
+    simp [evalArms] at ok
+  | cons value rest ih =>
+    intro variants binders j kv stmt fs vs v st' k hp frame st env ihe corr fr fresh hc ok vlen blen room le
+      found small tag payload run bound
+    cases variants with
+    | nil => simp [evalArms] at ok
+    | cons types more =>
+    cases binders with
+    | nil => simp [evalArms] at ok
+    | cons bs others =>
+    cases k with
+    | zero => simp [Semantics.evalMatchArms] at run
+    | succ k =>
+    simp only [evalArms] at ok
+    simp only [SrcEff.coreArms, Semantics.evalMatchArms, Semantics.matchPattern] at run
+    split at ok
+    · simp at ok
+    rename_i s' scopeOk
+    split at ok
+    · simp at ok
+    rename_i e valueOk
+    simp only [evalArm, evalSame] at ok
+    have same : e.ty.same ty = true := by
+      apply Classical.byContradiction
+      intro hne
+      rw [if_neg hne] at ok
+      simp at ok
+    rw [if_pos same] at ok
+    by_cases hj : j = kv
+    · subst hj
+      simp only [Nat.sub_self, List.getElem?_cons_zero, Option.some.injEq] at found
+      subst found
+      obtain ⟨frame', corr', fr', fresh', keeps', blen'⟩ :=
+        armScope_layout bs scopeOk payload (fr.mono (Nat.le_succ _)) corr fresh
+      simp only [beq_self_eq_true, Bool.and_self, ↓reduceIte, matchBinds _ _ blen'] at run
+      cases armRun : evalExpr k sp.toCore (st.bindLocals (bs.zip vs)) value.toCore with
+      | done w st2 =>
+        simp only [armRun, Semantics.restoreOutcomeLocals, Semantics.Outcome.done.injEq] at run
+        obtain ⟨rfl, rfl⟩ := run
+        have hc' : HeapCorr (st.bindLocals (bs.zip vs)).heap hp := by
+          rw [(bindLocals_same _ st).1]
+          exact hc
+        obtain ⟨fresh2, keeps2, locals2, _, d, env2, hp2, exec, same2, holds2, hc2⟩ :=
+          ihe k (Nat.lt_succ_self k) valueOk corr' (fr'.mono (room _ (List.mem_cons_self ..))) fresh' hc'
+            armRun bound
+        rw [SrcType.same_eq same] at holds2
+        refine ⟨restore_fresh fresh2, (keeps'.chain keeps2).trans (restore_keeps _ _ _), rfl, d, env2, hp2,
+          ?_, same2, holds2, hc2⟩
+        cases rest with
+        | nil =>
+          simp only [Option.some.injEq] at ok
+          subst ok
+          exact exec
+        | cons next more' =>
+          cases ho : evalArms (sigs sp.funcs) scope slot dst ty (j + 1) more others (next :: more') with
+          | none => simp [ho] at ok
+          | some o =>
+            simp only [ho, Option.some.injEq] at ok
+            subst ok
+            exact .ifTrue (by simp [Expr.eval, Word.holds, CmpOp.holdsU, tag]) exec
+      | trapped => simp [armRun, Semantics.restoreOutcomeLocals] at run
+      | exited => simp [armRun, Semantics.restoreOutcomeLocals] at run
+      | outOfFuel => simp [armRun, Semantics.restoreOutcomeLocals] at run
+    · have hne : (j == kv) = false := by simpa using hj
+      simp only [beq_self_eq_true, Bool.true_and, hne, Bool.false_eq_true, ↓reduceIte] at run
+      have found' : more[kv - (j + 1)]? = some fs := by
+        rw [show kv - j = kv - (j + 1) + 1 by omega] at found
+        simpa using found
+      cases rest with
+      | nil =>
+        have := (List.getElem?_eq_some_iff.mp found').1
+        simp only [List.length_cons, List.length_nil] at vlen
+        omega
+      | cons next more' =>
+        cases ho : evalArms (sigs sp.funcs) scope slot dst ty (j + 1) more others (next :: more') with
+        | none => simp [ho] at ok
+        | some o =>
+          simp only [ho, Option.some.injEq] at ok
+          subst ok
+          obtain ⟨fresh', keeps', locals', d, env', hp', exec', same', holds', hc'⟩ :=
+            ih (fun m lt => ihe m (by omega)) corr fr fresh hc ho (by simpa using vlen) (by simpa using blen)
+              (fun fs mem => room fs (List.mem_cons_of_mem _ mem)) (by omega) found' small tag payload run bound
+          have differ : BitVec.ofNat 64 kv ≠ BitVec.ofNat 64 j := ofNat_ne small (by omega) (Ne.symm hj)
+          exact ⟨fresh', keeps', locals', d, env', hp', .ifFalse (by simp [Expr.eval, Word.holds, CmpOp.holdsU,
+            tag, differ]) exec', same', holds', hc'⟩
+
+/-- A `match`: the scrutinee in `slot`, the arm its tag picks from
+`matchDst`, then that value copied down to `slot`. -/
+theorem eval_match {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {scrutinee : SrcEff} {ety ty : SrcType}
+    {binders : List (List Nat)} {values : List SrcEff}
+    (ok : evalMatch slot ety ty (scrutinee.eval (sigs sp.funcs) scope slot)
+      (evalArms (sigs sp.funcs) scope slot (matchDst slot ety ty) ty 0 (matchVariants ety) binders values)
+      binders.length values.length = some ev)
+    (corr : Corr scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
+    (hc : HeapCorr st.heap hp)
+    (run : evalExpr (k + 1) sp.toCore st (SrcEff.eMatch scrutinee ety ty binders values).toCore = .done v st')
+    (bound : st'.heap.nextAddress ≤ hp.limit) :
+    Evaluates mp hp slot st env ev v st' := by
+  simp only [evalMatch] at ok
+  split at ok
+  · simp at ok
+  rename_i s scrutOk
+  split at ok
+  · simp at ok
+  rename_i a armsOk
+  simp only [evalMatchOf] at ok
+  split at ok
+  · rename_i cond
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at cond
+    obtain ⟨⟨⟨⟨same, sized⟩, blen⟩, vlen⟩, small⟩ := cond
+    simp only [Option.some.injEq] at ok
+    subst ok
+    simp only [SrcEff.toCore, evalExpr] at run
+    split at run
+    · rename_i w st1 scrutRun
+      have views1 := (eff_grown scrutRun fresh.2).1
+      have grown := effArms_grows binders values ety.typeId 0 (eff_grows k (grows sp k)) run
+      obtain ⟨fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1⟩ :=
+        ihe k (Nat.le_refl _) scrutOk corr fr fresh hc scrutRun (Nat.le_trans (grown views1).2 bound)
+      rw [SrcType.same_eq same] at holds1
+      have fr0 : Layout scope frame 0 slot := ⟨fr.slots, fr.sized, fun _ _ => Nat.zero_le _, fr.inj, fr.apart⟩
+      cases ety with
+      | enum eid variants =>
+        cases holds1 with
+        | enum found tag payload =>
+          rename_i kv fs vs
+          simp only [SrcType.typeId] at run
+          simp only [matchVariants] at blen vlen small armsOk
+          have kvLt := (List.getElem?_eq_some_iff.mp found).1
+          have hdst : slot + ty.size ≤ matchDst slot (.enum eid variants) ty := by
+            have := Nat.le_max_right (SrcType.enum eid variants).size ty.size
+            simp only [matchDst]
+            omega
+          obtain ⟨fresh2, keeps2, locals2, d2, env2, hp2, exec2, same2, holds2, hc2⟩ :=
+            evalArms_sound values (fun m lt => ihe m (Nat.le_of_lt lt)) (corr.after fr fresh keeps1 locals1 same1)
+              fr0 fresh1 hc1 armsOk vlen blen (fun fs mem => by
+                have := sizes_le_maxSize_of_mem mem
+                have := Nat.le_max_left (SrcType.enum eid variants).size ty.size
+                simp only [matchDst, SrcType.size] at this ⊢
+                omega) (Nat.zero_le _) (by simpa using found) (by omega) tag payload run
+              (by rw [exec1.limit_normal]; exact bound)
+          refine ⟨fresh2, keeps1.chain keeps2, locals2.trans locals1, sized, max d1 d2,
+            env2.setFrom slot (slotVars (matchDst slot (.enum eid variants) ty) ty.size), hp2,
+            .seq (exec1.mono (Nat.le_max_left _ _)) (.seq (exec2.mono (Nat.le_max_right _ _))
+              (assignFrom_exec _ slot .skip)), fun j lt => ?_, ?_, hc2⟩
+          · rw [setFrom_outside _ slot env2 j (.inl lt), same2 j (by omega), same1 j lt]
+          · exact holds2.congr fun i below => setFrom_slotVars env2 (.inr hdst) below
+      | i32 => cases values <;> simp [matchVariants, evalArms] at armsOk
+      | bool => cases values <;> simp [matchVariants, evalArms] at armsOk
+      | uint => cases values <;> simp [matchVariants, evalArms] at armsOk
+      | struct => cases values <;> simp [matchVariants, evalArms] at armsOk
+      | ptr => cases values <;> simp [matchVariants, evalArms] at armsOk
+      | slice => cases values <;> simp [matchVariants, evalArms] at armsOk
+    all_goals simp at run
+  · simp at ok
+
 /-- An operator applied in place to its operand's slot. -/
 theorem eval_then {k : Nat} (ihe : EvalSound sp mp k) {operand : SrcEff} {o : Evaluated}
     (operandOk : operand.eval (sigs sp.funcs) scope slot = some o) {t : Typed}
@@ -1198,7 +1415,9 @@ theorem sound_both {sp : SrcProgram} {mp : Program}
         | eVariant ty variant payload =>
           simp only [SrcEff.eval] at ok
           exact eval_variant (fun m lt => belowE m (Nat.le_of_lt lt)) ok corr fr fresh hc run bound
-        | eMatch => simp [SrcEff.eval] at ok
+        | eMatch scrutinee ety ty binders values =>
+          simp only [SrcEff.eval] at ok
+          exact eval_match belowE ok corr fr fresh hc run bound
         | eDivide op l r =>
           simp only [SrcEff.eval] at ok
           exact eval_divide hereE ok corr fr fresh hc run bound

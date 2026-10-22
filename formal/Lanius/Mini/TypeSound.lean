@@ -1172,7 +1172,37 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       | struct => simp at h
       | ptr => simp at h
       | slice => simp at h
-  | .eMatch _ _ _ _, _, _, _, _, _, _, h => by simp [SrcEff.eval] at h
+  | .eMatch scrutinee ety ty binders values, scope, ctx, slot, ev, ok, dd, h => by
+    simp only [SrcEff.eval, evalMatch] at h
+    split at h
+    · simp at h
+    · rename_i s hs
+      split at h
+      · simp at h
+      · rename_i a ha
+        simp only [evalMatchOf] at h
+        split at h
+        · rename_i cond
+          simp only [Option.some.injEq] at h
+          subst h
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at cond
+          obtain ⟨⟨⟨⟨same, _⟩, _⟩, _⟩, _⟩ := cond
+          have typedS := SrcEff.eval_typed target sigsOk scrutinee ok
+            (fun t mem => dd t (by simp [SrcEff.types, mem])) hs
+          rw [same_toCore same] at typedS
+          have declared := dd ety (by simp [SrcEff.types])
+          cases ety with
+          | enum eid variants =>
+            obtain ⟨found, inner⟩ := declared_enum declared
+            exact .matchValue typedS (evalArms_typed target sigsOk found values 0 variants binders ok
+              (fun t mem => dd t (by simp [SrcEff.types, mem])) (fun j fs hj => by simp [hj]) inner ha)
+          | i32 => cases values <;> simp [matchVariants, evalArms] at ha
+          | bool => cases values <;> simp [matchVariants, evalArms] at ha
+          | uint => cases values <;> simp [matchVariants, evalArms] at ha
+          | struct => cases values <;> simp [matchVariants, evalArms] at ha
+          | ptr => cases values <;> simp [matchVariants, evalArms] at ha
+          | slice => cases values <;> simp [matchVariants, evalArms] at ha
+        · simp at h
   | .eDivide op left right, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalDivision] at h
     split at h
@@ -1230,6 +1260,52 @@ theorem evalArgs_typed {P : Core.Program} (target : P.target = Core.Target.x86_6
         simp only [Option.some.injEq] at h
         subst h
         exact .cons (SrcEff.eval_typed target sigsOk arg ok (fun t mem => dd t (by simp [effsTypes, mem])) hfirst) (evalArgs_typed target sigsOk rest ok (fun t mem => dd t (by simp [effsTypes, mem])) hr)
+
+theorem evalArms_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
+    {sigs : List Sig} (sigsOk : SigsOk P sigs) {eid : Nat} {decl : Core.EnumDecl}
+    (found : P.enumeration? eid = some decl) :
+    ∀ (values : List SrcEff) (k : Nat) (variants : List (List SrcType)) (binders : List (List Nat))
+      {scope : List Binding} {ctx : Typing.Context} {slot dst : Nat} {ty : SrcType} {out : Stmt},
+      ScopeOk P ctx scope → (∀ t ∈ effsTypes values, TypeDeclared P t) →
+      (∀ j fs, variants[j]? = some fs → decl.variants[k + j]? = some (fs.map SrcType.toCore)) →
+      (∀ fs ∈ variants, ∀ f ∈ fs, TypeDeclared P f) →
+      evalArms sigs scope slot dst ty k variants binders values = some out →
+      Typing.MatchArmsHaveType P ctx (SrcEff.coreArms eid k binders values) (.enumeration eid) ty.toCore
+  | [], _, _, _, _, _, _, _, _, _, _, _, _, _, h => by simp [evalArms] at h
+  | _ :: _, _, [], _, _, _, _, _, _, _, _, _, _, _, h => by simp [evalArms] at h
+  | _ :: _, _, _ :: _, [], _, _, _, _, _, _, _, _, _, _, h => by simp [evalArms] at h
+  | value :: rest, k, types :: more, bs :: others, scope, ctx, slot, dst, ty, out, ok, dd, vars, declared, h => by
+    simp only [evalArms] at h
+    split at h
+    · simp at h
+    · rename_i s' hscope
+      split at h
+      · simp at h
+      · rename_i e he
+        obtain ⟨ok', pats⟩ := armScope_ok bs types ok (declared types (by simp)) hscope
+        have body := SrcEff.eval_typed target sigsOk value ok' (fun t mem => dd t (by simp [effsTypes, mem])) he
+        have variantFound : decl.variants[k]? = some (types.map SrcType.toCore) := by
+          simpa using vars 0 types (by simp)
+        have pat := Typing.PatternHasType.enumVariant decl found variantFound pats
+        simp only [evalArm, evalSame] at h
+        by_cases same : e.ty.same ty = true
+        · rw [if_pos same] at h
+          rw [same_toCore same] at body
+          cases rest with
+          | nil => cases others <;> exact .one pat body
+          | cons next more' =>
+            cases ho : evalArms sigs scope slot dst ty (k + 1) more others (next :: more') with
+            | none => simp [ho] at h
+            | some o =>
+              have tail := evalArms_typed target sigsOk found (next :: more') (k + 1) more others ok
+                (fun t mem => dd t (List.mem_append_right _ mem))
+                (fun j fs hj => by
+                  have := vars (j + 1) fs (by simpa using hj)
+                  rwa [show k + (j + 1) = k + 1 + j by omega] at this)
+                (fun fs hfs => declared fs (by simp [hfs])) ho
+              exact .cons pat body tail
+        · rw [if_neg same] at h
+          simp at h
 
 end
 
