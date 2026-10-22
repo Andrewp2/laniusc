@@ -1,15 +1,13 @@
 import Lanius.Mini.HeapCorr
 
 /-!
-# Struct slice elements in Core's native layout
+# Slice elements in Core's native layout: the word fields
 
-The front pass accepts a raw slice of structs whose fields are each one native
-word (`i32`, `bool`, `u8`, `u32`, `u64`, `usize`, `isize`, `ptr`; `wordWidths`). Core lays such an element
-out as one 8-byte word per field (`NativeLayout.words?`), field `j` at byte
-`8 * j` (`structureFieldOffset?`), and reads and writes it field by field
-(`readNativeValue`, `writeNativeValue`). This file states those facts for the
-declaration the front pass checked, and the mini side: `loadFields` puts the
-fields in consecutive slots.
+A struct slice element, or an enum payload, is laid out by its leaves, word
+fields (`i32`, `bool`, `u8`, `u32`, `u64`, `usize`, `isize`, `ptr`; `wordWidth`)
+of one 8-byte word each (`FlatLayout`). This file has the facts about one
+word: its widths (`leafWidths`), Core's read and write of it in the slot the
+mini code fills, and the mini side's element and field addresses.
 -/
 
 namespace Lanius.Mini
@@ -86,9 +84,6 @@ end
 
 theorem SrcType.same_eq {a b : SrcType} (same : a.same b = true) : a = b := SrcType.eq_of_same a same
 
-/-- Every field is one native word. -/
-def AllWord (fields : List SrcType) : Prop := ∀ f ∈ fields, ∃ w, wordWidth f = some w
-
 theorem wordWidth_cases {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) :
     (f = .i32 ∧ w = .m32) ∨ (f = .bool ∧ w = .m32) ∨ (∃ k, f = .uint k ∧ usizeWidth k = some w) ∨
       (f = .ptr ∧ w = .m64) ∨ (f = .isize ∧ w = .m64) := by
@@ -106,15 +101,21 @@ theorem wordWidth_size {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) :
 theorem wordWidth_scalar {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) : f.isScalar = true := by
   rcases wordWidth_cases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨k, rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> rfl
 
-/-- `wordWidths` pairs each field with its width. -/
-theorem wordWidths_get : ∀ {fields : List SrcType} {ws : List MemWidth}, wordWidths fields = some ws →
+/-- One width a field, each field one native word: the widths of a struct's
+leaves (`FlatLayout`), which `wordWidths` gives for nested structs too. -/
+def leafWidths : List SrcType → Option (List MemWidth)
+  | [] => some []
+  | f :: rest => consWidth (wordWidth f) (leafWidths rest)
+
+/-- `leafWidths` pairs each field with its width. -/
+theorem leafWidths_get : ∀ {fields : List SrcType} {ws : List MemWidth}, leafWidths fields = some ws →
     ws.length = fields.length ∧ ∀ (j : Nat) f, fields[j]? = some f → ∃ w, ws[j]? = some w ∧ wordWidth f = some w
   | [], ws, h => by
-    simp only [wordWidths, Option.some.injEq] at h
+    simp only [leafWidths, Option.some.injEq] at h
     subst h
     exact ⟨rfl, fun _ _ found => by simp at found⟩
   | f :: rest, ws, h => by
-    simp only [wordWidths, consWidth] at h
+    simp only [leafWidths, consWidth] at h
     split at h
     · simp at h
     rename_i w hw
@@ -123,7 +124,7 @@ theorem wordWidths_get : ∀ {fields : List SrcType} {ws : List MemWidth}, wordW
     rename_i rs hrs
     simp only [Option.some.injEq] at h
     subst h
-    obtain ⟨len, each⟩ := wordWidths_get hrs
+    obtain ⟨len, each⟩ := leafWidths_get hrs
     refine ⟨by simp [len], fun j g found => ?_⟩
     cases j with
     | zero =>
@@ -134,49 +135,6 @@ theorem wordWidths_get : ∀ {fields : List SrcType} {ws : List MemWidth}, wordW
       simp only [List.getElem?_cons_succ] at found ⊢
       exact each j g found
 
-theorem wordWidths_all {fields : List SrcType} {ws : List MemWidth} (h : wordWidths fields = some ws) :
-    AllWord fields := by
-  intro f mem
-  obtain ⟨j, found⟩ := List.getElem?_of_mem mem
-  obtain ⟨w, -, hw⟩ := (wordWidths_get h).2 j f found
-  exact ⟨w, hw⟩
-
-theorem sizes_allWord : ∀ {fields : List SrcType}, AllWord fields → sizes fields = fields.length
-  | [], _ => rfl
-  | f :: rest, all => by
-    obtain ⟨w, hw⟩ := all f (by simp)
-    simp only [sizes, wordWidth_size hw, List.length_cons]
-    rw [sizes_allWord (fun g mem => all g (by simp [mem]))]
-    omega
-
-/-- What the front pass checked about a struct slice element. -/
-theorem elementWidths_some {ds : SrcDecls} {element : SrcType} {ws : List MemWidth}
-    (h : elementWidths ds element = some ws) :
-    ∃ sid fields, element = .struct sid fields ∧ structFields ds.structs sid = some fields ∧
-      wordWidths fields = some ws ∧ ws ≠ [] := by
-  cases element with
-  | struct sid fields =>
-    simp only [elementWidths, declaredWidths] at h
-    split at h
-    · simp at h
-    rename_i fs found
-    split at h
-    case isFalse => simp at h
-    rename_i same
-    simp only [nonemptyWidths] at h
-    split at h
-    · simp at h
-    rename_i ws' hws
-    split at h
-    · simp at h
-    simp only [Option.some.injEq] at h
-    subst h
-    have := typesSame_eq fs same
-    subst this
-    exact ⟨sid, fs, rfl, found, hws, List.cons_ne_nil _ _⟩
-  | i32 | bool | uint | enum | ptr | slice | unit | isize => simp [elementWidths] at h
-
-/-- Core's `i32` read of 4 bytes `bits`, in the slot the mini load fills. -/
 theorem i32_load_holds {bits : Nat} (lt : bits < 2 ^ 32) :
     SrcType.i32.Holds (.signed .i32 (if bits ≥ 2 ^ 31 then Int.ofNat bits - 2 ^ 32 else Int.ofNat bits))
       (BitVec.ofNat 64 bits) := by
@@ -191,53 +149,13 @@ theorem i32_load_holds {bits : Nat} (lt : bits < 2 ^ 32) :
   rw [w, i]
   exact holds_i32 _
 
-/-! ## Core's layout of a declared word struct -/
+/-! ## Core's words, one field at a time -/
 
 theorem words_word {P : Core.Program} {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) (k : Nat) :
     NativeLayout.words? (k + 1) P f.toCore = some 1 := by
   rcases wordWidth_cases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨k, rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩
   all_goals try cases k
   all_goals simp [NativeLayout.words?, SrcType.toCore, UintTy.toCore]
-
-theorem words_all {P : Core.Program} (k : Nat) : ∀ {fields : List SrcType}, AllWord fields →
-    (fields.map SrcType.toCore).mapM (NativeLayout.words? (k + 1) P) = some (fields.map fun _ => 1)
-  | [], _ => rfl
-  | f :: rest, all => by
-    obtain ⟨w, hw⟩ := all f (by simp)
-    have tail := words_all (P := P) k (fields := rest) (fun g m => all g (by simp [m]))
-    simp [List.mapM_cons, words_word hw k, tail]
-
-theorem foldl_ones {α : Type} : ∀ (l : List α) (a : Nat), (l.map fun _ => 1).foldl (· + ·) a = a + l.length
-  | [], a => by simp
-  | _ :: rest, a => by
-    simp only [List.map_cons, List.foldl_cons, List.length_cons]
-    rw [foldl_ones rest (a + 1)]
-    omega
-
-theorem AllWord.take {fields : List SrcType} (all : AllWord fields) (j : Nat) : AllWord (fields.take j) :=
-  fun f mem => all f (List.mem_of_mem_take mem)
-
-theorem valueWords_struct {P : Core.Program} {sid : Nat} {fields : List SrcType}
-    (found : P.structure? sid = some ⟨sid, fields.map SrcType.toCore⟩) (all : AllWord fields) {words : Nat}
-    (h : NativeLayout.valueWords? P (.structure sid) = some words) :
-    words = max 1 fields.length ∧ fields.length ≤ NativeLayout.maxWords := by
-  rw [NativeLayout.valueWords?, show NativeLayout.maxDepth = 63 + 1 from rfl, NativeLayout.words?] at h
-  dsimp only at h
-  rw [found, show (63 : Nat) = 62 + 1 from rfl] at h
-  simp only [bind, Option.bind, words_all 62 all, foldl_ones, Nat.zero_add, List.length_map] at h
-  split at h
-  · rename_i le
-    simp only [Option.some.injEq] at h
-    exact ⟨h.symm, le⟩
-  · simp at h
-
-theorem fieldOffset_struct {P : Core.Program} {sid : Nat} {fields : List SrcType}
-    (found : P.structure? sid = some ⟨sid, fields.map SrcType.toCore⟩) (all : AllWord fields) {j : Nat}
-    (lt : j < fields.length) : NativeLayout.structureFieldOffset? P sid j = some (8 * j) := by
-  rw [NativeLayout.structureFieldOffset?, show NativeLayout.maxDepth - 1 = 62 + 1 from rfl]
-  simp only [found, List.length_map, lt, if_true, ← List.map_take, words_all 62 (all.take j), foldl_ones,
-    Nat.zero_add, List.length_take, Option.bind_eq_bind, Option.bind_some, NativeLayout.wordBytes]
-  simp [Nat.min_eq_left (Nat.le_of_lt lt)]
 
 theorem mapM_except_ok {α β ε : Type} {g : α → Except ε β} : ∀ {l : List α} {vs : List β},
     l.mapM g = .ok vs →
@@ -271,31 +189,6 @@ theorem wordBelow_ok {address offset a : Nat} (h : Semantics.wordBelow address o
     exact ⟨by assumption, h.symm⟩
   · simp at h
 
-/-- Core's read of a declared word struct: field `j` at `8 * j` bytes below
-its word 0. -/
-theorem readNativeValue_struct {P : Core.Program} {heap : Memory.Heap} {sid : Nat} {fields : List SrcType}
-    (found : P.structure? sid = some ⟨sid, fields.map SrcType.toCore⟩) (all : AllWord fields)
-    {k base : Nat} {v : Value}
-    (h : Semantics.readNativeValue (k + 1) P heap (.structure sid) base = .ok v) :
-    ∃ vals, v = .structure sid vals ∧ vals.length = fields.length ∧
-      ∀ (j : Nat) f, fields[j]? = some f → ∃ x, vals[j]? = some x ∧ 8 * j ≤ base ∧
-        Semantics.readNativeValue k P heap f.toCore (base - 8 * j) = .ok x := by
-  simp only [Semantics.readNativeValue, found] at h
-  obtain ⟨vals, mapped, wrapped⟩ := except_bind_ok h
-  simp only [pure, Except.pure, Except.ok.injEq] at wrapped
-  subst wrapped
-  obtain ⟨len, each⟩ := mapM_except_ok mapped
-  simp only [List.length_range, List.length_map] at len
-  refine ⟨vals, rfl, len, fun j f hf => ?_⟩
-  have lt : j < fields.length := (List.getElem?_eq_some_iff.mp hf).1
-  obtain ⟨x, hx, ok⟩ := each j j (by simp [List.getElem?_range, List.length_map, lt])
-  refine ⟨x, hx, ?_⟩
-  simp only [List.getElem?_map, hf, Option.map_some, fieldOffset_struct found all lt] at ok
-  obtain ⟨a, below, ok⟩ := except_bind_ok ok
-  obtain ⟨le, rfl⟩ := wordBelow_ok below
-  exact ⟨le, ok⟩
-
-/-- Core's unsigned read of `bits`, in the slot the mini load fills. -/
 theorem uint_load_holds {k : UintTy} {bits : Nat} (lt : bits < 2 ^ k.width) :
     (SrcType.uint k).Holds (.unsigned k.toCore bits) (BitVec.ofNat 64 bits) := by
   have le : 2 ^ k.width ≤ 2 ^ 64 := Nat.pow_le_pow_right (by decide) (by cases k <;> decide)
@@ -405,124 +298,10 @@ theorem fieldAddress_eval {env : Env} {base : Expr} {offset : Nat}
   rw [Nat.mod_eq_of_lt (a := offset) (by omega)]
   omega
 
-theorem fieldsHold_of : ∀ {fields : List SrcType} {vals : List Value} {env : Env} {slot : Nat},
-    AllWord fields → vals.length = fields.length →
-    (∀ (j : Nat) f x, fields[j]? = some f → vals[j]? = some x → f.Holds x (env (slot + j))) →
-    FieldsHold fields vals env slot
-  | [], [], _, _, _, _, _ => .nil
-  | [], _ :: _, _, _, _, len, _ => by simp at len
-  | _ :: _, [], _, _, _, len, _ => by simp at len
-  | f :: rest, x :: xs, env, slot, all, len, each => by
-    obtain ⟨w, hw⟩ := all f (by simp)
-    refine .cons ((SrcType.holdsAt_scalar (wordWidth_scalar hw)).mpr (by simpa using each 0 f x rfl rfl)) ?_
-    rw [wordWidth_size hw]
-    refine fieldsHold_of (fun g m => all g (by simp [m])) (by simpa using len) fun j g y hg hy => ?_
-    have := each (j + 1) g y (by simpa using hg) (by simpa using hy)
-    rwa [show slot + (j + 1) = slot + 1 + j by omega] at this
-
 theorem holdsAt_struct_inv {id : Nat} {fields : List SrcType} {v : Value} {env : Env} {slot : Nat}
     (h : SrcType.HoldsAt (.struct id fields) v env slot) : ∃ vals, v = .structure id vals ∧ FieldsHold fields vals env slot := by
   cases h with
   | struct fh => exact ⟨_, rfl, fh⟩
-
-/-- The converse of `fieldsHold_of`. -/
-theorem fieldsHold_get {env : Env} : ∀ {fields : List SrcType} {vals : List Value} {slot : Nat},
-    AllWord fields → FieldsHold fields vals env slot →
-    vals.length = fields.length ∧ ∀ (j : Nat) f, fields[j]? = some f → ∃ x, vals[j]? = some x ∧ f.Holds x (env (slot + j))
-  | [], _, _, _, h => by
-    cases h
-    exact ⟨rfl, fun j f hf => by simp at hf⟩
-  | f :: rest, _, slot, all, h => by
-    cases h with
-    | @cons _ _ x xs _ _ head tail =>
-    obtain ⟨w, hw⟩ := all f (by simp)
-    rw [wordWidth_size hw] at tail
-    obtain ⟨len, each⟩ := fieldsHold_get (fun g m => all g (by simp [m])) tail
-    refine ⟨by simp [len], fun j g hg => ?_⟩
-    cases j with
-    | zero =>
-      simp only [List.getElem?_cons_zero, Option.some.injEq] at hg
-      subst hg
-      exact ⟨x, rfl, by simpa using (SrcType.holdsAt_scalar (wordWidth_scalar hw)).mp head⟩
-    | succ j =>
-      obtain ⟨y, hy, hold⟩ := each j g (by simpa using hg)
-      exact ⟨y, by simpa using hy, by rwa [show slot + (j + 1) = slot + 1 + j by omega]⟩
-
-/-! ## Enum elements -/
-
-theorem variantWidths_get : ∀ {variants : List (List SrcType)} {wss : List (List MemWidth)},
-    variantWidths variants = some wss →
-    wss.length = variants.length ∧ ∀ (m : Nat) fs, variants[m]? = some fs → ∃ ws, wss[m]? = some ws ∧ wordWidths fs = some ws
-  | [], wss, h => by
-    simp only [variantWidths, Option.some.injEq] at h
-    subst h
-    exact ⟨rfl, fun _ _ found => by simp at found⟩
-  | fs :: rest, wss, h => by
-    simp only [variantWidths, consWidths] at h
-    split at h
-    · simp at h
-    rename_i ws hws
-    split at h
-    · simp at h
-    rename_i wss' hrest
-    simp only [Option.some.injEq] at h
-    subst h
-    obtain ⟨len, each⟩ := variantWidths_get hrest
-    refine ⟨by simp [len], fun m gs hg => ?_⟩
-    cases m with
-    | zero =>
-      simp only [List.getElem?_cons_zero, Option.some.injEq] at hg
-      subst hg
-      exact ⟨ws, rfl, hws⟩
-    | succ m =>
-      obtain ⟨w, hw, hwidth⟩ := each m gs (by simpa using hg)
-      exact ⟨w, by simpa using hw, hwidth⟩
-
-theorem variantWidths_all {variants : List (List SrcType)} {wss : List (List MemWidth)}
-    (h : variantWidths variants = some wss) : ∀ fs ∈ variants, AllWord fs := by
-  intro fs mem
-  obtain ⟨m, found⟩ := List.getElem?_of_mem mem
-  obtain ⟨ws, -, hws⟩ := (variantWidths_get h).2 m fs found
-  exact wordWidths_all hws
-
-theorem maxLength_eq : ∀ {variants : List (List SrcType)} {wss : List (List MemWidth)},
-    variantWidths variants = some wss → maxLength wss = maxSize variants
-  | [], wss, h => by
-    simp only [variantWidths, Option.some.injEq] at h
-    subst h
-    rfl
-  | fs :: rest, wss, h => by
-    simp only [variantWidths, consWidths] at h
-    split at h
-    · simp at h
-    rename_i ws hws
-    split at h
-    · simp at h
-    rename_i wss' hrest
-    simp only [Option.some.injEq] at h
-    subst h
-    simp only [maxLength, maxSize, maxLength_eq hrest, sizes_allWord (wordWidths_all hws),
-      (wordWidths_get hws).1]
-
-theorem enumWidths_some {ds : SrcDecls} {element : SrcType} {wss : List (List MemWidth)}
-    (h : enumWidths ds element = some wss) :
-    ∃ eid variants, element = .enum eid variants ∧ enumVariants ds.enums eid = some variants ∧
-      variantWidths variants = some wss ∧ 0 < variants.length ∧ variants.length < 2 ^ 32 := by
-  cases element with
-  | enum eid variants =>
-    simp only [enumWidths, declaredVariantWidths] at h
-    split at h
-    · simp at h
-    rename_i vs found
-    split at h
-    case isFalse => simp at h
-    rename_i cond
-    simp only [Bool.and_eq_true, decide_eq_true_eq] at cond
-    obtain ⟨⟨same, pos⟩, small⟩ := cond
-    have := variantsSame_eq vs same
-    subst this
-    exact ⟨eid, vs, rfl, found, h, pos, small⟩
-  | i32 | bool | uint | struct | ptr | slice | unit | isize => simp [enumWidths] at h
 
 theorem mapM_option_ok {α β : Type} {g : α → Option β} : ∀ {l : List α} {vs : List β},
     l.mapM g = some vs →
@@ -558,99 +337,5 @@ theorem foldl_max : ∀ (l : List Nat) (a : Nat), l.foldl max a = max a (l.foldr
   | x :: rest, a => by
     simp only [List.foldl_cons, List.foldr_cons, foldl_max rest (max a x)]
     omega
-
-theorem maxSize_lengths : ∀ {variants : List (List SrcType)}, (∀ fs ∈ variants, AllWord fs) →
-    (variants.map List.length).foldr max 0 = maxSize variants
-  | [], _ => rfl
-  | fs :: rest, all => by
-    simp only [List.map_cons, List.foldr_cons, maxSize, sizes_allWord (all fs (by simp)),
-      maxSize_lengths (variants := rest) (fun gs m => all gs (List.mem_cons_of_mem _ m))]
-
-theorem valueWords_enum {P : Core.Program} {eid : Nat} {variants : List (List SrcType)}
-    (found : P.enumeration? eid = some ⟨eid, variants.map (List.map SrcType.toCore)⟩)
-    (all : ∀ fs ∈ variants, AllWord fs) {words : Nat}
-    (h : NativeLayout.valueWords? P (.enumeration eid) = some words) :
-    words = 1 + maxSize variants ∧ maxSize variants < NativeLayout.maxWords := by
-  rw [NativeLayout.valueWords?, show NativeLayout.maxDepth = 63 + 1 from rfl, NativeLayout.words?] at h
-  dsimp only at h
-  rw [found, show (63 : Nat) = 62 + 1 from rfl] at h
-  simp only [bind, Option.bind] at h
-  split at h
-  · simp at h
-  rename_i ls hls
-  simp only [Option.some.injEq] at h
-  obtain ⟨len, each⟩ := mapM_option_ok hls
-  have per : ∀ (i : Nat) fs, variants[i]? = some fs → ls[i]? = some fs.length ∧ fs.length < NativeLayout.maxWords := by
-    intro i fs hf
-    obtain ⟨y, hy, ok⟩ := each i (fs.map SrcType.toCore) (by simp [List.getElem?_map, hf])
-    simp only [words_all 62 (all fs (List.mem_of_getElem? hf)), foldl_ones, Nat.zero_add, List.length_map] at ok
-    split at ok
-    · rename_i lt
-      simp only [Option.some.injEq] at ok
-      subst ok
-      exact ⟨hy, lt⟩
-    · simp at ok
-  have hls' : ls = variants.map List.length := by
-    apply List.ext_getElem?
-    intro i
-    cases hv : variants[i]? with
-    | none =>
-      have : variants.length ≤ i := List.getElem?_eq_none_iff.mp hv
-      simp only [List.getElem?_map, hv, Option.map_none]
-      exact List.getElem?_eq_none_iff.mpr (by simp at len; omega)
-    | some fs => simp [List.getElem?_map, hv, (per i fs hv).1]
-  subst hls'
-  rw [foldl_max, maxSize_lengths all] at h
-  refine ⟨by omega, ?_⟩
-  have bound : ∀ (vs : List (List SrcType)), (∀ fs ∈ vs, fs.length < NativeLayout.maxWords) →
-      (∀ fs ∈ vs, AllWord fs) → maxSize vs < NativeLayout.maxWords := by
-    intro vs
-    induction vs with
-    | nil => intro _ _; simp [maxSize, NativeLayout.maxWords]
-    | cons fs rest ih =>
-      intro lt allv
-      simp only [maxSize, sizes_allWord (allv fs (by simp))]
-      have := ih (fun g m => lt g (by simp [m])) (fun g m => allv g (by simp [m]))
-      have := lt fs (by simp)
-      omega
-  exact bound variants (fun fs mem => by
-    obtain ⟨i, hi⟩ := List.getElem?_of_mem mem
-    exact (per i fs hi).2) all
-
-theorem payloadOffset {P : Core.Program} {fs : List SrcType} (all : AllWord fs) {j : Nat} (lt : j < fs.length) :
-    ((fs.map SrcType.toCore).take j).mapM (fun member => NativeLayout.words? (NativeLayout.maxDepth - 1) P member) =
-      some ((fs.take j).map fun _ => 1) := by
-  rw [show NativeLayout.maxDepth - 1 = 62 + 1 from rfl, ← List.map_take]
-  exact words_all 62 (all.take j)
-
-theorem readNativeValue_enum {P : Core.Program} {heap : Memory.Heap} {eid : Nat} {variants : List (List SrcType)}
-    (found : P.enumeration? eid = some ⟨eid, variants.map (List.map SrcType.toCore)⟩)
-    (all : ∀ fs ∈ variants, AllWord fs) {k base : Nat} {v : Value}
-    (h : Semantics.readNativeValue (k + 1) P heap (.enumeration eid) base = .ok v) :
-    ∃ variant fs payload, v = .enumeration eid variant payload ∧ Semantics.loadNatLE heap base 4 = .ok variant ∧
-      variants[variant]? = some fs ∧ payload.length = fs.length ∧
-      ∀ (j : Nat) f, fs[j]? = some f → ∃ x, payload[j]? = some x ∧ 8 * (1 + j) ≤ base ∧
-        Semantics.readNativeValue k P heap f.toCore (base - 8 * (1 + j)) = .ok x := by
-  simp only [Semantics.readNativeValue, found] at h
-  obtain ⟨variant, loaded, h⟩ := except_bind_ok h
-  cases hv : variants[variant]? with
-  | none => simp [List.getElem?_map, hv] at h
-  | some fs =>
-  simp only [List.getElem?_map, hv, Option.map_some] at h
-  obtain ⟨payload, mapped, wrapped⟩ := except_bind_ok h
-  simp only [pure, Except.pure, Except.ok.injEq] at wrapped
-  subst wrapped
-  obtain ⟨len, each⟩ := mapM_except_ok mapped
-  simp only [List.length_range, List.length_map] at len
-  have allF := all fs (List.mem_of_getElem? hv)
-  refine ⟨variant, fs, payload, rfl, loaded, hv, len, fun j f hf => ?_⟩
-  have lt : j < fs.length := (List.getElem?_eq_some_iff.mp hf).1
-  obtain ⟨x, hx, ok⟩ := each j j (by simp [List.getElem?_range, List.length_map, lt])
-  refine ⟨x, hx, ?_⟩
-  simp only [List.getElem?_map, hf, Option.map_some, payloadOffset allF lt, foldl_ones, Nat.zero_add,
-    List.length_take, NativeLayout.wordBytes, Nat.min_eq_left (Nat.le_of_lt lt)] at ok
-  obtain ⟨a, below, ok⟩ := except_bind_ok ok
-  obtain ⟨le, rfl⟩ := wordBelow_ok below
-  exact ⟨le, ok⟩
 
 end Lanius.Mini

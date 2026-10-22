@@ -2371,6 +2371,45 @@ pub fn eval_copy(scope: List<Binding>, e: SrcExpr, slot: usize, binding: core::o
     };
 }
 
+// A field's value, of an aggregate type, copied slot by slot.
+pub fn eval_field_type(scope: List<Binding>, e: SrcExpr, slot: usize, found: core::option::Option<SrcType>) -> core::option::Option<Evaluated> {
+    return match (found) {
+        None -> None,
+        Some(ty) -> eval_sized(slot, ty, lower_value(scope, e, ty)),
+    };
+}
+
+// extract: inline
+fn eval_sized(slot: usize, ty: SrcType, values: core::option::Option<List<Expr>>) -> core::option::Option<Evaluated> {
+    if (ty.size() > 0) {
+        return eval_values(slot, ty, values);
+    }
+    return None;
+}
+
+pub fn eval_field_of(scope: List<Binding>, e: SrcExpr, slot: usize, b: Binding, index: usize) -> core::option::Option<Evaluated> {
+    return match (b.ty) {
+        I32 -> None,
+        Bool -> None,
+        Uint(kind) -> None,
+        Struct(id, fields) -> eval_field_type(scope, e, slot, get(unbox(fields), index)),
+        Enum(id, variants) -> None,
+        Ptr -> None,
+        Slice(element) -> None,
+        Unit -> None,
+        Isize -> None,
+    };
+}
+
+// A struct local's field of any type (a scalar field lowers as an
+// expression first), copied slot by slot.
+pub fn eval_field_copy(scope: List<Binding>, e: SrcExpr, slot: usize, binding: core::option::Option<Binding>, index: usize) -> core::option::Option<Evaluated> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> eval_field_of(scope, e, slot, b, index),
+    };
+}
+
 pub fn eval_pure(scope: List<Binding>, e: SrcExpr, slot: usize) -> core::option::Option<Evaluated> {
     return match (e.lower(scope)) {
         Some(t) -> Some(eval_scalar(slot, t)),
@@ -2379,7 +2418,7 @@ pub fn eval_pure(scope: List<Binding>, e: SrcExpr, slot: usize) -> core::option:
             Boolean(value) -> None,
             Unsigned(kind, value) -> None,
             Local(id) -> eval_copy(scope, e, slot, lookup(scope, id)),
-            Field(id, index) -> None,
+            Field(id, index) -> eval_field_copy(scope, e, slot, lookup(scope, id), index),
             Negate(operand) -> None,
             Not(operand) -> None,
             Apply(op, left, right) -> None,
@@ -3049,9 +3088,10 @@ pub fn usize_width(kind: UintTy) -> core::option::Option<MemWidth> {
     };
 }
 
-// The width a field of a struct element is loaded and stored with. Each
-// field takes one native word: 4 bytes are read and written for i32, bool,
-// u8 and u32, 8 for u64, usize, isize and ptr. Aggregate fields are not
+// The width a scalar field of a struct element is loaded and stored with.
+// Each takes one native word: 4 bytes are read and written for i32, bool,
+// u8 and u32, 8 for u64, usize, isize and ptr. A nested struct field takes
+// its own fields' words (word_widths); enum and slice fields are not
 // supported in slices yet.
 pub fn word_width(ty: SrcType) -> core::option::Option<MemWidth> {
     return match (ty) {
@@ -3077,10 +3117,28 @@ pub fn cons_width(width: core::option::Option<MemWidth>, rest: core::option::Opt
     };
 }
 
-pub fn word_widths(fields: List<SrcType>) -> core::option::Option<List<MemWidth>> {
-    return match (fields) {
-        Nil -> Some(empty()),
-        Cons(field, rest) -> cons_width(word_width(field), word_widths(unbox(rest))),
+pub fn one_width(width: core::option::Option<MemWidth>) -> core::option::Option<List<MemWidth>> {
+    return match (width) {
+        None -> None,
+        Some(w) -> Some(single(w)),
+    };
+}
+
+pub fn append_widths(first: core::option::Option<List<MemWidth>>, rest: core::option::Option<List<MemWidth>>) -> core::option::Option<List<MemWidth>> {
+    return match (first) {
+        None -> None,
+        Some(ws) -> match (rest) {
+            None -> None,
+            Some(more) -> Some(concat(ws, more)),
+        },
+    };
+}
+
+// The fields of a declaration match the type's.
+pub fn declared_same(declared: core::option::Option<List<SrcType>>, fields: List<SrcType>) -> bool {
+    return match (declared) {
+        None -> false,
+        Some(fs) -> types_same(fs, fields),
     };
 }
 
@@ -3094,30 +3152,66 @@ pub fn nonempty_widths(widths: core::option::Option<List<MemWidth>>) -> core::op
     };
 }
 
-pub fn declared_widths(declared: core::option::Option<List<SrcType>>, fields: List<SrcType>) -> core::option::Option<List<MemWidth>> {
-    return match (declared) {
-        None -> None,
-        Some(fs) -> same_widths(types_same(fs, fields), fields),
-    };
-}
-
-// extract: inline
-fn same_widths(same: bool, fields: List<SrcType>) -> core::option::Option<List<MemWidth>> {
+// A nested struct's words, when it is declared as written and has some.
+pub fn nested_widths(same: bool, widths: core::option::Option<List<MemWidth>>) -> core::option::Option<List<MemWidth>> {
     if (same) {
-        return nonempty_widths(word_widths(fields));
+        return nonempty_widths(widths);
     }
     return None;
 }
 
-// The field widths of a struct slice element: at least one field, each one
-// native word, so the element takes as many words as it has fields. Core
-// lays the element out by its declaration, which must be these fields.
+// extract: mutual begin
+// The widths of the native words of these fields, in order. A scalar field
+// is one word (word_width). A struct field, declared with these fields and
+// not empty, takes its own fields' words in its place: Core's descending
+// words and the slots of the value both run in this order.
+pub fn word_widths(decls: SrcDecls, fields: List<SrcType>) -> core::option::Option<List<MemWidth>> {
+    return match (fields) {
+        Nil -> Some(empty()),
+        Cons(field, rest) -> append_widths(field_widths(decls, field), word_widths(decls, unbox(rest))),
+    };
+}
+
+pub fn field_widths(decls: SrcDecls, field: SrcType) -> core::option::Option<List<MemWidth>> {
+    return match (field) {
+        I32 -> one_width(word_width(field)),
+        Bool -> one_width(word_width(field)),
+        Uint(kind) -> one_width(word_width(field)),
+        Struct(id, fields) -> nested_widths(declared_same(struct_fields(decls.structs, id), unbox(fields)), word_widths(decls, unbox(fields))),
+        Enum(id, variants) -> None,
+        Ptr -> one_width(word_width(field)),
+        Slice(element) -> None,
+        Unit -> None,
+        Isize -> one_width(word_width(field)),
+    };
+}
+// extract: mutual end
+
+pub fn declared_widths(decls: SrcDecls, declared: core::option::Option<List<SrcType>>, fields: List<SrcType>) -> core::option::Option<List<MemWidth>> {
+    return match (declared) {
+        None -> None,
+        Some(fs) -> same_widths(decls, types_same(fs, fields), fields),
+    };
+}
+
+// extract: inline
+fn same_widths(decls: SrcDecls, same: bool, fields: List<SrcType>) -> core::option::Option<List<MemWidth>> {
+    if (same) {
+        return nonempty_widths(word_widths(decls, fields));
+    }
+    return None;
+}
+
+// The word widths of a struct slice element: at least one word, its fields'
+// words in order, nested structs flattened, so the element takes as many
+// words as it has scalar leaves. Core lays the element out by its
+// declaration, which must be these fields.
 pub fn element_widths(decls: SrcDecls, element: SrcType) -> core::option::Option<List<MemWidth>> {
     return match (element) {
         I32 -> None,
         Bool -> None,
         Uint(kind) -> None,
-        Struct(id, fields) -> declared_widths(struct_fields(decls.structs, id), unbox(fields)),
+        Struct(id, fields) -> declared_widths(decls, struct_fields(decls.structs, id), unbox(fields)),
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(inner) -> None,
@@ -3143,11 +3237,11 @@ pub fn cons_widths(widths: core::option::Option<List<MemWidth>>, rest: core::opt
     };
 }
 
-// The payload widths of each variant, every payload field one native word.
-pub fn variant_widths(variants: List<List<SrcType>>) -> core::option::Option<List<List<MemWidth>>> {
+// The payload widths of each variant: its fields' words, nested structs flattened.
+pub fn variant_widths(decls: SrcDecls, variants: List<List<SrcType>>) -> core::option::Option<List<List<MemWidth>>> {
     return match (variants) {
         Nil -> Some(empty()),
-        Cons(types, rest) -> cons_widths(word_widths(types), variant_widths(unbox(rest))),
+        Cons(types, rest) -> cons_widths(word_widths(decls, types), variant_widths(decls, unbox(rest))),
     };
 }
 
@@ -3159,22 +3253,22 @@ pub fn max_length(widths: List<List<MemWidth>>) -> usize {
 }
 
 // extract: inline
-fn same_variant_widths(same: bool, variants: List<List<SrcType>>) -> core::option::Option<List<List<MemWidth>>> {
+fn same_variant_widths(decls: SrcDecls, same: bool, variants: List<List<SrcType>>) -> core::option::Option<List<List<MemWidth>>> {
     if (same && length(variants) > 0 && 4294967296 > length(variants)) {
-        return variant_widths(variants);
+        return variant_widths(decls, variants);
     }
     return None;
 }
 
-pub fn declared_variant_widths(declared: core::option::Option<List<List<SrcType>>>, variants: List<List<SrcType>>) -> core::option::Option<List<List<MemWidth>>> {
+pub fn declared_variant_widths(decls: SrcDecls, declared: core::option::Option<List<List<SrcType>>>, variants: List<List<SrcType>>) -> core::option::Option<List<List<MemWidth>>> {
     return match (declared) {
         None -> None,
-        Some(vs) -> same_variant_widths(variants_same(vs, variants), variants),
+        Some(vs) -> same_variant_widths(decls, variants_same(vs, variants), variants),
     };
 }
 
 // The payload widths of an enum slice element: at least one variant, with
-// tags that fit in 32 bits, and payload fields of one native word each. Core
+// tags that fit in 32 bits, and payload fields of words (word_widths). Core
 // lays the element out as its tag word followed by the longest payload's
 // words; it must be the declared enum.
 pub fn enum_widths(decls: SrcDecls, element: SrcType) -> core::option::Option<List<List<MemWidth>>> {
@@ -3183,7 +3277,7 @@ pub fn enum_widths(decls: SrcDecls, element: SrcType) -> core::option::Option<Li
         Bool -> None,
         Uint(kind) -> None,
         Struct(id, fields) -> None,
-        Enum(id, variants) -> declared_variant_widths(enum_variants(decls.enums, id), unbox(variants)),
+        Enum(id, variants) -> declared_variant_widths(decls, enum_variants(decls.enums, id), unbox(variants)),
         Ptr -> None,
         Slice(inner) -> None,
         Unit -> None,

@@ -306,7 +306,8 @@ semantics:
 | `LowerExpr` | 685 | 5.1 | expressions |
 | `Grows` | 1274 | 4.0 | Core's `nextAddress` never decreases; Core call and statement inversions |
 | `HeapCorr` | 501 | 1.1 | Core heap to mini heap correspondence; allocate, load, store, free |
-| `SliceLayout` | 601 | 6.3 | Core's native layout of word structs and enums; their field reads and the mini element address |
+| `SliceLayout` | 341 | | one native word: its widths, Core's read and write of it, and the mini element address |
+| `FlatLayout` | 909 | | struct elements and enum payloads by their leaves, nested structs flattened: Core's words, offsets, reads and writes (`WriteChain`), and the mini slots |
 | `LowerStmt` | 3626 | 9.4 | Core cells, frames, flat values, calls, enums and `match`, statements |
 | `LowerEval` | 1430 | 1.8 | effectful expressions and their statements; the simulation by induction on fuel |
 | `SourceCorrect` | 104 | 0.7 | top-level theorem |
@@ -470,7 +471,8 @@ python3 -I formal/tools/oracle_difftest.py target/claude-work/oracle --count 300
 ```
 
 It generates random source programs in the front pass's subset: `i32`,
-`bool`, `u8`, `u32`, `u64` and `usize` values, structs and enums of those,
+`bool`, `u8`, `u32`, `u64` and `usize` values, structs and enums of those
+(fields and payloads may also be earlier structs, nested),
 literals, locals, fields, the operators, casts, `let`, assignment and field
 assignment, variants, `match`, `if`, bounded `while` loops, calls to later
 functions (so every run ends) and `return`. The entry function also allocates

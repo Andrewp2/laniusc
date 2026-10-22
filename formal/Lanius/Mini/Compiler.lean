@@ -1864,6 +1864,35 @@ def evalCopy (scope : List Binding) (e : SrcExpr) (slot : Nat) (binding : Option
   | none => none
   | some b => evalValues slot b.ty (lowerValue scope e b.ty)
 
+/-- A field's value, of an aggregate type, copied slot by slot. -/
+def evalFieldType (scope : List Binding) (e : SrcExpr) (slot : Nat) (found : Option SrcType) : Option Evaluated :=
+  match found with
+  | none => none
+  | some ty =>
+    let values : Option (List Expr) := lowerValue scope e ty
+    if 0 < SrcType.size ty then
+      evalValues slot ty values
+    else
+      none
+
+def evalFieldOf (scope : List Binding) (e : SrcExpr) (slot : Nat) (b : Binding) (index : Nat) : Option Evaluated :=
+  match b.ty with
+  | .i32 => none
+  | .bool => none
+  | .uint kind => none
+  | .struct id fields => evalFieldType scope e slot fields[index]?
+  | .enum id variants => none
+  | .ptr => none
+  | .slice element => none
+  | .unit => none
+  | .isize => none
+
+/-- A struct local's field of any type (a scalar field lowers as an expression first), copied slot by slot. -/
+def evalFieldCopy (scope : List Binding) (e : SrcExpr) (slot : Nat) (binding : Option Binding) (index : Nat) : Option Evaluated :=
+  match binding with
+  | none => none
+  | some b => evalFieldOf scope e slot b index
+
 def evalPure (scope : List Binding) (e : SrcExpr) (slot : Nat) : Option Evaluated :=
   match SrcExpr.lower e scope with
   | some t => some (evalScalar slot t)
@@ -1873,7 +1902,7 @@ def evalPure (scope : List Binding) (e : SrcExpr) (slot : Nat) : Option Evaluate
     | .boolean value => none
     | .unsigned kind value => none
     | .local id => evalCopy scope e slot (lookup scope id)
-    | .field id index => none
+    | .field id index => evalFieldCopy scope e slot (lookup scope id) index
     | .negate operand => none
     | .not operand => none
     | .apply op left right => none
@@ -2395,7 +2424,7 @@ def usizeWidth (kind : UintTy) : Option MemWidth :=
   | .uint64 => some MemWidth.m64
   | .usize => some MemWidth.m64
 
-/-- The width a field of a struct element is loaded and stored with. Each field takes one native word: 4 bytes are read and written for i32, bool, u8 and u32, 8 for u64, usize, isize and ptr. Aggregate fields are not supported in slices yet. -/
+/-- The width a scalar field of a struct element is loaded and stored with. Each takes one native word: 4 bytes are read and written for i32, bool, u8 and u32, 8 for u64, usize, isize and ptr. A nested struct field takes its own fields' words (word_widths); enum and slice fields are not supported in slices yet. -/
 def wordWidth (ty : SrcType) : Option MemWidth :=
   match ty with
   | .i32 => some MemWidth.m32
@@ -2416,10 +2445,24 @@ def consWidth (width : Option MemWidth) (rest : Option (List MemWidth)) : Option
     | none => none
     | some ws => some (w :: ws)
 
-def wordWidths (fields : List SrcType) : Option (List MemWidth) :=
-  match fields with
-  | [] => some []
-  | field :: rest => consWidth (wordWidth field) (wordWidths rest)
+def oneWidth (width : Option MemWidth) : Option (List MemWidth) :=
+  match width with
+  | none => none
+  | some w => some [w]
+
+def appendWidths (first : Option (List MemWidth)) (rest : Option (List MemWidth)) : Option (List MemWidth) :=
+  match first with
+  | none => none
+  | some ws =>
+    match rest with
+    | none => none
+    | some more => some (ws ++ more)
+
+/-- The fields of a declaration match the type's. -/
+def declaredSame (declared : Option (List SrcType)) (fields : List SrcType) : Bool :=
+  match declared with
+  | none => false
+  | some fs => typesSame fs fields
 
 def nonemptyWidths (widths : Option (List MemWidth)) : Option (List MemWidth) :=
   match widths with
@@ -2429,23 +2472,52 @@ def nonemptyWidths (widths : Option (List MemWidth)) : Option (List MemWidth) :=
     | [] => none
     | w :: rest => some (w :: rest)
 
-def declaredWidths (declared : Option (List SrcType)) (fields : List SrcType) : Option (List MemWidth) :=
+/-- A nested struct's words, when it is declared as written and has some. -/
+def nestedWidths (same : Bool) (widths : Option (List MemWidth)) : Option (List MemWidth) :=
+  if same then
+    nonemptyWidths widths
+  else
+    none
+
+mutual
+
+/-- The widths of the native words of these fields, in order. A scalar field is one word (word_width). A struct field, declared with these fields and not empty, takes its own fields' words in its place: Core's descending words and the slots of the value both run in this order. -/
+def wordWidths (decls : SrcDecls) (fields : List SrcType) : Option (List MemWidth) :=
+  match fields with
+  | [] => some []
+  | field :: rest => appendWidths (fieldWidths decls field) (wordWidths decls rest)
+
+def fieldWidths (decls : SrcDecls) (field : SrcType) : Option (List MemWidth) :=
+  match field with
+  | .i32 => oneWidth (wordWidth field)
+  | .bool => oneWidth (wordWidth field)
+  | .uint kind => oneWidth (wordWidth field)
+  | .struct id fields => nestedWidths (declaredSame (structFields decls.structs id) fields) (wordWidths decls fields)
+  | .enum id variants => none
+  | .ptr => oneWidth (wordWidth field)
+  | .slice element => none
+  | .unit => none
+  | .isize => oneWidth (wordWidth field)
+
+end
+
+def declaredWidths (decls : SrcDecls) (declared : Option (List SrcType)) (fields : List SrcType) : Option (List MemWidth) :=
   match declared with
   | none => none
   | some fs =>
     let same : Bool := typesSame fs fields
     if same then
-      nonemptyWidths (wordWidths fields)
+      nonemptyWidths (wordWidths decls fields)
     else
       none
 
-/-- The field widths of a struct slice element: at least one field, each one native word, so the element takes as many words as it has fields. Core lays the element out by its declaration, which must be these fields. -/
+/-- The word widths of a struct slice element: at least one word, its fields' words in order, nested structs flattened, so the element takes as many words as it has scalar leaves. Core lays the element out by its declaration, which must be these fields. -/
 def elementWidths (decls : SrcDecls) (element : SrcType) : Option (List MemWidth) :=
   match element with
   | .i32 => none
   | .bool => none
   | .uint kind => none
-  | .struct id fields => declaredWidths (structFields decls.structs id) fields
+  | .struct id fields => declaredWidths decls (structFields decls.structs id) fields
   | .enum id variants => none
   | .ptr => none
   | .slice inner => none
@@ -2465,35 +2537,35 @@ def consWidths (widths : Option (List MemWidth)) (rest : Option (List (List MemW
     | none => none
     | some wss => some (ws :: wss)
 
-/-- The payload widths of each variant, every payload field one native word. -/
-def variantWidths (variants : List (List SrcType)) : Option (List (List MemWidth)) :=
+/-- The payload widths of each variant: its fields' words, nested structs flattened. -/
+def variantWidths (decls : SrcDecls) (variants : List (List SrcType)) : Option (List (List MemWidth)) :=
   match variants with
   | [] => some []
-  | types :: rest => consWidths (wordWidths types) (variantWidths rest)
+  | types :: rest => consWidths (wordWidths decls types) (variantWidths decls rest)
 
 def maxLength (widths : List (List MemWidth)) : Nat :=
   match widths with
   | [] => 0
   | ws :: rest => max ws.length (maxLength rest)
 
-def declaredVariantWidths (declared : Option (List (List SrcType))) (variants : List (List SrcType)) : Option (List (List MemWidth)) :=
+def declaredVariantWidths (decls : SrcDecls) (declared : Option (List (List SrcType))) (variants : List (List SrcType)) : Option (List (List MemWidth)) :=
   match declared with
   | none => none
   | some vs =>
     let same : Bool := variantsSame vs variants
     if same && decide (0 < variants.length) && decide (variants.length < 4294967296) then
-      variantWidths variants
+      variantWidths decls variants
     else
       none
 
-/-- The payload widths of an enum slice element: at least one variant, with tags that fit in 32 bits, and payload fields of one native word each. Core lays the element out as its tag word followed by the longest payload's words; it must be the declared enum. -/
+/-- The payload widths of an enum slice element: at least one variant, with tags that fit in 32 bits, and payload fields of words (word_widths). Core lays the element out as its tag word followed by the longest payload's words; it must be the declared enum. -/
 def enumWidths (decls : SrcDecls) (element : SrcType) : Option (List (List MemWidth)) :=
   match element with
   | .i32 => none
   | .bool => none
   | .uint kind => none
   | .struct id fields => none
-  | .enum id variants => declaredVariantWidths (enumVariants decls.enums id) variants
+  | .enum id variants => declaredVariantWidths decls (enumVariants decls.enums id) variants
   | .ptr => none
   | .slice inner => none
   | .unit => none

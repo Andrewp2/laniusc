@@ -1102,10 +1102,30 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
             simp only [Option.some.injEq] at h
             subst h
             exact lowerValue_typed target ok hxs
+      | field id index =>
+        simp only [evalFieldCopy] at h
+        split at h
+        · simp at h
+        · rename_i b found
+          simp only [evalFieldOf] at h
+          split at h
+          case h_4 =>
+            simp only [evalFieldType] at h
+            split at h
+            · simp at h
+            · split at h
+              case isFalse => simp at h
+              simp only [evalValues] at h
+              split at h
+              · simp at h
+              · rename_i xs hxs
+                simp only [Option.some.injEq] at h
+                subst h
+                exact lowerValue_typed target ok hxs
+          all_goals simp at h
       | int => simp at h
       | boolean => simp at h
       | unsigned => simp at h
-      | field => simp at h
       | negate => simp at h
       | not => simp at h
       | apply => simp at h

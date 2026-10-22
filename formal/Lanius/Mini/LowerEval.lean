@@ -319,6 +319,31 @@ theorem eval_pure {e : SrcExpr} {fuel : Nat} (ok : evalPure scope e slot = some 
       obtain ⟨rfl, flat, shape⟩ := lowerValue_sound corr (SrcProgram.target_toCore sp) valueOk run
       exact ⟨fresh, Keeps.refl _ _, rfl, fr.sized b (lookup_mem found).1, 0, _, hp, assignFrom_exec xs slot .skip,
         fun j below => setFrom_outside xs slot env j (.inl below), flat.store (shape.insens_next fr), hc⟩
+    case field id index =>
+      simp only [evalFieldCopy] at ok
+      split at ok
+      · simp at ok
+      rename_i b found
+      simp only [evalFieldOf] at ok
+      split at ok
+      case h_4 =>
+        simp only [evalFieldType] at ok
+        split at ok
+        · simp at ok
+        rename_i ty hfield
+        split at ok
+        case isFalse => simp at ok
+        rename_i pos
+        simp only [evalValues] at ok
+        split at ok
+        · simp at ok
+        rename_i xs valueOk
+        simp only [Option.some.injEq] at ok
+        subst ok
+        obtain ⟨rfl, flat, shape⟩ := lowerValue_sound corr (SrcProgram.target_toCore sp) valueOk run
+        exact ⟨fresh, Keeps.refl _ _, rfl, pos, 0, _, hp, assignFrom_exec xs slot .skip,
+          fun j below => setFrom_outside xs slot env j (.inl below), flat.store (shape.insens_next fr), hc⟩
+      all_goals simp at ok
     all_goals simp at ok
 
 /-- Arguments evaluated one after another into consecutive slots. -/
@@ -672,10 +697,8 @@ theorem eval_stride {k slice : Nat} (ok : evalStride sp.decls scope slice slot =
   · rename_i ws hws
     simp only [Option.some.injEq] at ok
     subst ok
-    obtain ⟨sid, fields, rfl, declared, widths, nonempty⟩ := elementWidths_some hws
-    have all := wordWidths_all widths
-    obtain ⟨wlen, -⟩ := wordWidths_get widths
-    have found' := structFields_toCore declared
+    obtain ⟨sid, fields, ls, rfl, declared, lv, wls, nonempty⟩ := elementWidths_leaves hws
+    obtain ⟨wlen, -⟩ := leafWidths_get wls
     have npos : 0 < ws.length := by
       cases ws with
       | nil => exact absurd rfl nonempty
@@ -686,8 +709,8 @@ theorem eval_stride {k slice : Nat} (ok : evalStride sp.decls scope slice slot =
     | some words =>
     simp only [hwords, Option.some.injEq] at strideOk
     subst strideOk
-    obtain ⟨wordsEq, small⟩ := valueWords_struct found' all hwords
-    have n1 : words = ws.length := by rw [wordsEq, wlen, Nat.max_eq_right (by omega)]
+    obtain ⟨n1, small⟩ := valueWords_leaves declared lv (List.ne_nil_of_length_pos (by rw [← wlen]; exact npos)) hwords
+    rw [← wlen] at n1
     subst n1
     refine ⟨_, rfl, ?_⟩
     simp only [SrcType.Holds, Expr.eval, Word.apply, BinOp.apply]
@@ -698,17 +721,19 @@ theorem eval_stride {k slice : Nat} (ok : evalStride sp.decls scope slice slot =
   rename_i wss hwss
   simp only [Option.some.injEq] at ok
   subst ok
-  obtain ⟨eid, variants, rfl, declared, widths, vpos, vsmall⟩ := enumWidths_some hwss
-  have allv := variantWidths_all widths
-  have mlen := maxLength_eq widths
-  have found' := enumVariants_toCore declared
+  obtain ⟨eid, variants, rfl, declared, widths, vpos, vsmall⟩ := enumWidths_leaves hwss
+  have lvs : ∀ fs ∈ variants, ∃ ls, Leaves sp.decls fs ls := fun fs mem => by
+    obtain ⟨m, hm⟩ := List.getElem?_of_mem mem
+    obtain ⟨_, ls, _, lv, _⟩ := (variantWidths_leaves widths).2 m fs hm
+    exact ⟨ls, lv⟩
+  have mlen := maxLength_leaves widths
   simp only [Semantics.rawSliceStride?, NativeLayout.elementStride?, SrcType.toCore] at strideOk
   cases hwords : NativeLayout.valueWords? sp.toCore (Core.Ty.enumeration eid) with
   | none => simp [hwords] at strideOk
   | some words =>
   simp only [hwords, Option.some.injEq] at strideOk
   subst strideOk
-  obtain ⟨wordsEq, smallW⟩ := valueWords_enum found' allv hwords
+  obtain ⟨wordsEq, smallW⟩ := valueWords_enum_leaves declared lvs hwords
   have n1 : words = maxLength wss + 1 := by rw [wordsEq, mlen]; omega
   subst n1
   refine ⟨_, rfl, ?_⟩
@@ -769,12 +794,11 @@ theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {inde
         ⟨(by simp only [Expr.Below]; omega), (by simp only [Expr.Below]; omega), trivial⟩
       obtain ⟨holds, load⟩ := loadStruct_sound (mp := mp) hc1 tail hws posEq below read
       obtain ⟨copied, agree⟩ := copy_down holds
-      obtain ⟨sid, fields, rfl, declared, widths, nonempty⟩ := elementWidths_some hws
-      have all := wordWidths_all widths
-      obtain ⟨wlen, wget⟩ := wordWidths_get widths
+      obtain ⟨sid, fields, ls, rfl, declared, lv, wls, nonempty⟩ := elementWidths_leaves hws
+      obtain ⟨wlen, wget⟩ := leafWidths_get wls
       refine ⟨fresh1, keeps1, locals1, ?_, d1, _, hp1, .seq exec1 (load (assignFrom_exec _ slot .skip)),
         fun j lt => ?_, copied, hc1⟩
-      · simp only [SrcType.size, sizes_allWord all]
+      · simp only [SrcType.size, lv.sizes_eq]
         rw [← wlen]
         cases ws with
         | nil => exact absurd rfl nonempty
@@ -796,8 +820,8 @@ theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {inde
         ⟨(by simp only [Expr.Below]; omega), (by simp only [Expr.Below]; omega), trivial⟩
       obtain ⟨env2, agree2, holds, load⟩ := loadEnum_sound (mp := mp) hc1 tail hwss posEq below read
       obtain ⟨copied, agree⟩ := copy_down holds
-      obtain ⟨eid, variants, rfl, declared, widths, vpos, vsmall⟩ := enumWidths_some hwss
-      have mlen := maxLength_eq widths
+      obtain ⟨eid, variants, rfl, declared, widths, vpos, vsmall⟩ := enumWidths_leaves hwss
+      have mlen := maxLength_leaves widths
       refine ⟨fresh1, keeps1, locals1, by simp only [SrcType.size]; omega, d1, _, hp1,
         .seq exec1 (load (assignFrom_exec _ slot .skip)), fun j lt => ?_, copied, hc1⟩
       rw [agree j lt, agree2 j (by omega), same1 j lt]

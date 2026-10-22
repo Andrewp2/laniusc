@@ -50,6 +50,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import oracle_difftest as oracle  # noqa: E402
 oracle.EFFECTS = False  # set in main: effectful expressions, except with --generic
+oracle.NESTED = False  # nested struct fields: the oracle's, not yet the front end tests'
 
 HEAVY = 'target/claude-work/bin/heavy'
 UINT_LEAN = oracle.UINT_LEAN
