@@ -35,6 +35,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import oracle_difftest as oracle  # noqa: E402
 oracle.SLICES = False  # the front end does not read heap and slice constructs yet
+oracle.EFFECTS = False  # nor effectful expressions (calls inside expressions)
 
 HEAVY = 'target/claude-work/bin/heavy'
 UINT_LEAN = oracle.UINT_LEAN
@@ -387,6 +388,7 @@ partial def serStmt : SrcStmt → String
   | .while e b => s!"(.while {serExpr e} {serStmt b})"
   | .return e => s!"(.return {serExpr e})"
   | .letAlloc .. | .letLoad .. | .setByte .. | .free .. | .letSlice .. | .letIndex .. | .setIndex .. => "(heap)"
+  | .letEval .. | .setEval .. | .ifEval .. | .whileEval .. | .returnEval .. | .discard .. => "(eval)"
 
 def serParam (p : SrcParam) : String := "{ id := " ++ toString p.id ++ ", ty := " ++ serType p.ty ++ " }"
 
