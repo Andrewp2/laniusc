@@ -3419,9 +3419,20 @@ pub fn cons_eff(head: core::option::Option<MEff>, tail: core::option::Option<Lis
 }
 
 // The result type of a function instance.
+// A projection's field type.
+pub fn projection_ret(fuel: usize, decls: Decls, inst: Inst) -> core::option::Option<Ty> {
+    return match (inst.args) {
+        Nil -> None,
+        Cons(t, rest) -> match (struct_field_tys(fuel, decls, t)) {
+            None -> None,
+            Some(ts) -> get(ts, minus(inst.decl, length(decls.fns))),
+        },
+    };
+}
+
 pub fn inst_ret(fuel: usize, decls: Decls, inst: Inst) -> core::option::Option<Ty> {
     return match (get(decls.fns, inst.decl)) {
-        None -> None,
+        None -> projection_ret(fuel, decls, inst),
         Some(fd) -> match (ret_pattern(fd)) {
             None -> None,
             Some(r) -> ty_of(fuel, decl_env(decls, fd.module, concat(fd.impl_params, fd.params), inst.args), r),
@@ -4181,6 +4192,51 @@ pub fn arm_of(fuel: usize, env: Env, scope: List<Local>, owner: TypeDecl, v: Var
     return None;
 }
 
+// Whether an arm's pattern names the variant spelled name.
+pub fn arm_names(fuel: usize, owner: TypeDecl, name: List<usize>, arm: CTree) -> bool {
+    let pattern: CTree = kid(arm, 0);
+    let path: CTree = kid(pattern, 0);
+    return node_prod(pattern) == p_pattern_ident() && arm_named(path_spellings(fuel, kid(path, 0), kid(path, 1)), owner, name);
+}
+
+pub fn arms_naming_at(named: bool, a: CTree, rest: List<CTree>) -> List<CTree> {
+    if (named) {
+        return cons(a, rest);
+    }
+    return rest;
+}
+
+pub fn arms_naming(fuel: usize, owner: TypeDecl, name: List<usize>, arms: List<CTree>) -> List<CTree> {
+    return match (arms) {
+        Nil -> empty(),
+        Cons(a, rest) -> arms_naming_at(arm_names(fuel, owner, name, a), a, arms_naming(fuel, owner, name, unbox(rest))),
+    };
+}
+
+// For each variant in order, the one arm that names it.
+pub fn arms_by_variant(fuel: usize, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<CTree>> {
+    return match (variants) {
+        Nil -> Some(empty()),
+        Cons(v, rest) -> match (arms_naming(fuel, owner, v.name, arms)) {
+            Nil -> None,
+            Cons(a, more) -> match (unbox(more)) {
+                Nil -> cons_tree_tail(a, arms_by_variant(fuel, owner, unbox(rest), arms)),
+                Cons(b, others) -> None,
+            },
+        },
+    };
+}
+
+// The arms in variant order: as many arms as variants, each variant named
+// by exactly one. Only one arm runs, so the order they are written in has
+// no effect.
+pub fn arms_in_order(fuel: usize, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<CTree>> {
+    if (length(arms) == length(variants)) {
+        return arms_by_variant(fuel, owner, variants, arms);
+    }
+    return None;
+}
+
 // Arm k is variant k.
 pub fn arms_of(fuel: usize, env: Env, scope: List<Local>, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<SrcArm>> {
     return match (variants) {
@@ -4195,13 +4251,20 @@ pub fn arms_of(fuel: usize, env: Env, scope: List<Local>, owner: TypeDecl, varia
     };
 }
 
+pub fn arms_ordered(fuel: usize, env: Env, scope: List<Local>, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<SrcArm>> {
+    return match (arms_in_order(fuel, owner, variants, arms)) {
+        None -> None,
+        Some(os) -> arms_of(fuel, env, scope, owner, variants, os),
+    };
+}
+
 pub fn match_enum(fuel: usize, env: Env, scope: List<Local>, l: Local, owner: TypeDecl, payloads: core::option::Option<List<List<Ty>>>, m: CTree) -> core::option::Option<LetHead> {
     if (owner.is_enum) {
         return match (payloads) {
             None -> None,
             Some(ps) -> match (list_items(fuel, kid(m, 5))) {
                 None -> None,
-                Some(arms) -> match_arms(l.id, l.ty, arms_of(fuel, env, scope, owner, zip_variants(owner.variants, ps), arms)),
+                Some(arms) -> match_arms(l.id, l.ty, arms_ordered(fuel, env, scope, owner, zip_variants(owner.variants, ps), arms)),
             },
         };
     }
@@ -4434,6 +4497,176 @@ pub fn arm_eff(fuel: usize, env: Env, b: Bound, value: core::option::Option<MEff
     };
 }
 
+pub fn pure_list(xs: List<MEff>) -> core::option::Option<List<SrcExpr>> {
+    return match (xs) {
+        Nil -> Some(empty()),
+        Cons(x, rest) -> match (pure_part(x)) {
+            None -> None,
+            Some(e) -> match (pure_list(unbox(rest))) {
+                None -> None,
+                Some(es) -> Some(cons(e, es)),
+            },
+        },
+    };
+}
+
+// A call whose arguments are all pure.
+pub fn call_parts(x: MEff) -> core::option::Option<Called> {
+    return match (x) {
+        XPure(e) -> None,
+        XCall(inst, args) -> match (pure_list(unbox(args))) {
+            None -> None,
+            Some(es) -> Some(Called { inst: inst, args: es }),
+        },
+        XApply(op, l, r) -> None,
+        XNeg(a) -> None,
+        XNot(a) -> None,
+        XCast(t, a) -> None,
+        XIndex(sl, i) -> None,
+        XStruct(t, fs) -> None,
+        XVariant(t, k, ps) -> None,
+        XMatch(sc, ety, t, bs, vs) -> None,
+        XDivide(op, l, r) -> None,
+        XStride(sl) -> None,
+    };
+}
+
+// The local an expression is, if it is one.
+pub fn pure_local(e: SrcExpr) -> core::option::Option<usize> {
+    return match (e) {
+        Int(k) -> None,
+        Boolean(b) -> None,
+        Unsigned(u, k) -> None,
+        Local(id) -> Some(id),
+        Field(id, j) -> None,
+        Negate(a) -> None,
+        Not(a) -> None,
+        Apply(op, a, b) -> None,
+        Cast(t, a) -> None,
+    };
+}
+
+pub fn eff_local(x: MEff) -> core::option::Option<usize> {
+    return match (pure_part(x)) {
+        None -> None,
+        Some(e) -> pure_local(e),
+    };
+}
+
+// The projection of field j of type t: a function instance numbered past
+// the declared functions, `fn(v: t) -> f { return v.f; }`.
+pub fn projection(decls: Decls, t: Ty, j: usize) -> Inst {
+    return Inst { decl: plus(length(decls.fns), j), args: single(t) };
+}
+
+// Field j of the value x of type t: Field of a local, else the call of the
+// projection.
+pub fn field_value(decls: Decls, x: MEff, t: Ty, j: usize) -> MEff {
+    return match (eff_local(x)) {
+        Some(id) -> XPure(Field(id, j)),
+        None -> XCall(projection(decls, t, j), boxed(single(x))),
+    };
+}
+
+pub fn field_of_ty(env: Env, x: MEff, t: core::option::Option<Ty>, name: List<usize>) -> core::option::Option<MEff> {
+    return match (t) {
+        None -> None,
+        Some(ty) -> match (field_index(env, ty, name)) {
+            None -> None,
+            Some(j) -> Some(field_value(env.decls, x, ty, j)),
+        },
+    };
+}
+
+pub fn method_of_ty(fuel: usize, env: Env, t: core::option::Option<Ty>, name: List<usize>) -> core::option::Option<Found> {
+    return match (t) {
+        None -> None,
+        Some(ty) -> find_method(fuel, env.decls, env.decls.fns, 0, name, ty),
+    };
+}
+
+pub fn eff_slice_local(scope: List<Local>, x: MEff) -> core::option::Option<Local> {
+    return match (eff_local(x)) {
+        None -> None,
+        Some(id) -> find_local_id(scope, id),
+    };
+}
+
+// The expected type of a step whose tail is next: the chain's, for its last.
+pub fn step_expected(expected: core::option::Option<Ty>, next: CTree) -> core::option::Option<Ty> {
+    if (node_prod(next) == p_postfix_end()) {
+        return expected;
+    }
+    return None;
+}
+
+// Arguments read so far, and the type parameters they bind.
+pub struct ArgsBound {
+    args: List<MEff>,
+    binds: List<Bind>,
+}
+
+pub fn cons_bound(x: MEff, r: core::option::Option<ArgsBound>) -> core::option::Option<ArgsBound> {
+    return match (r) {
+        None -> None,
+        Some(a) -> Some(ArgsBound { args: cons(x, a.args), binds: a.binds }),
+    };
+}
+
+// The bindings from the result type matched with the expected type.
+pub fn ret_binds(fuel: usize, decls: Decls, fd: FnDecl, names: List<List<usize>>, start: List<Bind>, expected: core::option::Option<Ty>) -> core::option::Option<List<Bind>> {
+    return match (expected) {
+        None -> Some(start),
+        Some(t) -> match (ret_pattern(fd)) {
+            None -> None,
+            Some(r) -> match_ty(fuel, callee_env(decls, fd), names, r, t, start),
+        },
+    };
+}
+
+// A parameter's type, once every type parameter is bound.
+pub fn arg_expected(fuel: usize, decls: Decls, fd: FnDecl, names: List<List<usize>>, p: CTree, b: List<Bind>) -> core::option::Option<Ty> {
+    return match (bound_args(names, b)) {
+        None -> None,
+        Some(a) -> ty_of(fuel, decl_env(decls, fd.module, names, a), p),
+    };
+}
+
+// An argument's type matched with its parameter's; an integer literal binds
+// nothing (laniusc gives it the parameter's type).
+pub fn bind_arg(fuel: usize, env: Env, scope: List<Local>, fd: FnDecl, names: List<List<usize>>, p: CTree, x: MEff, b: List<Bind>) -> core::option::Option<List<Bind>> {
+    if (bare_eff(x)) {
+        return Some(b);
+    }
+    return match (eff_ty(fuel, env, scope, x)) {
+        None -> None,
+        Some(t) -> match_ty(fuel, callee_env(env.decls, fd), names, p, t, b),
+    };
+}
+
+pub fn match_tys_or_none(fuel: usize, env: Env, names: List<List<usize>>, ps: List<CTree>, ts: core::option::Option<List<Ty>>, b: List<Bind>) -> core::option::Option<List<Bind>> {
+    return match (ts) {
+        None -> None,
+        Some(xs) -> match_tys(fuel, env, names, ps, xs, b),
+    };
+}
+
+// The instance: from the bindings; if a type parameter is still unbound,
+// with the integer literal arguments taken as i32.
+pub fn inst_bound(fuel: usize, env: Env, scope: List<Local>, d: usize, fd: FnDecl, names: List<List<usize>>, ps: List<CTree>, a: ArgsBound) -> core::option::Option<Inst> {
+    return match (bound_args(names, a.binds)) {
+        Some(ts) -> Some(Inst { decl: d, args: ts }),
+        None -> inst_from(d, bound_or_none(names, match_tys_or_none(fuel, callee_env(env.decls, fd), names, ps, effs_tys(fuel, env, scope, a.args), a.binds))),
+    };
+}
+
+pub fn eff_inferred(fuel: usize, env: Env, scope: List<Local>, d: usize, fd: FnDecl, names: List<List<usize>>, ps: List<CTree>, r: core::option::Option<ArgsBound>) -> core::option::Option<MEff> {
+    return match (r) {
+        None -> None,
+        Some(a) -> x_call_of(inst_bound(fuel, env, scope, d, fd, names, ps, a), a.args),
+    };
+}
+
 // extract: mutual begin
 // The effectful expression a node of the expression grammar denotes, its
 // value stored at type expected when that is known: the pure expression
@@ -4519,6 +4752,54 @@ pub fn eff_postfix(fuel: usize, env: Env, scope: List<Local>, expected: core::op
     }
     if (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain() && node_prod(tail) == p_postfix_index() && node_prod(kid(tail, 3)) == p_postfix_end()) {
         return x_index_of(local_of(env, scope, primary), eff_of(f, env, scope, None, kid(tail, 1)));
+    }
+    if (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain() && node_prod(tail) == p_postfix_call()) {
+        return eff_chain(f, env, scope, expected, eff_path_call(f, env, scope, None, kid(primary, 0), kid(tail, 1)), kid(tail, 3));
+    }
+    return eff_chain(f, env, scope, expected, eff_primary(f, env, scope, primary), tail);
+}
+
+// The value a postfix starts from: a local, or any other primary.
+pub fn eff_primary(fuel: usize, env: Env, scope: List<Local>, primary: CTree) -> core::option::Option<MEff> {
+    return match (local_of(env, scope, primary)) {
+        Some(l) -> Some(XPure(Local(l.id))),
+        None -> eff_node(fuel, env, scope, None, primary),
+    };
+}
+
+// The rest of a postfix after the value x: `.f` (Field of a local, else the
+// call of the field's projection), `.m(args)` (the method m of x's type,
+// with x the receiver), or `[index]` of a slice local, then what follows.
+pub fn eff_chain(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, x: core::option::Option<MEff>, tail: CTree) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (node_prod(tail) == p_postfix_end()) {
+        return x;
+    }
+    return match (x) {
+        None -> None,
+        Some(v) -> eff_step(minus(fuel, 1), env, scope, expected, v, tail),
+    };
+}
+
+pub fn eff_step(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, x: MEff, tail: CTree) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    let f: usize = minus(fuel, 1);
+    if (node_prod(tail) == p_postfix_member() && node_prod(kid(tail, 2)) == p_member_type_args_none()) {
+        let next: CTree = kid(tail, 3);
+        if (node_prod(next) == p_postfix_call()) {
+            return match (list_items(f, kid(next, 1))) {
+                None -> None,
+                Some(items) -> eff_chain(f, env, scope, expected, eff_found(f, env, scope, step_expected(expected, kid(next, 3)), method_of_ty(f, env, eff_ty(f, env, scope, x), kid_token(tail, 1).text), single(x), items), kid(next, 3)),
+            };
+        }
+        return eff_chain(f, env, scope, expected, field_of_ty(env, x, eff_ty(f, env, scope, x), kid_token(tail, 1).text), next);
+    }
+    if (node_prod(tail) == p_postfix_index()) {
+        return eff_chain(f, env, scope, expected, x_index_of(eff_slice_local(scope, x), eff_of(f, env, scope, None, kid(tail, 1))), kid(tail, 3));
     }
     return None;
 }
@@ -4706,7 +4987,52 @@ pub fn eff_infer(fuel: usize, env: Env, scope: List<Local>, expected: core::opti
     if (fuel == 0) {
         return None;
     }
-    return eff_called(fuel, env, scope, expected, d, fd, start, pre, eff_list(minus(fuel, 1), env, scope, skip_expects(param_expects(fuel, env.decls, fd, bound_args(concat(fd.impl_params, fd.params), start)), pre), items));
+    let names: List<List<usize>> = concat(fd.impl_params, fd.params);
+    if (no_names(names)) {
+        return eff_called(fuel, env, scope, expected, d, fd, start, pre, eff_list(minus(fuel, 1), env, scope, skip_expects(param_expects(fuel, env.decls, fd, Some(empty())), pre), items));
+    }
+    return match (param_patterns(fuel, fd)) {
+        None -> None,
+        Some(ps) -> eff_inferred(fuel, env, scope, d, fd, names, ps, eff_args_bound(minus(fuel, 1), env, scope, fd, names, ps, pre, items, ret_binds(fuel, env.decls, fd, names, start, expected))),
+    };
+}
+
+// The arguments in order, each read at its parameter's type when the
+// bindings so far give it one, and the bindings they extend.
+pub fn eff_args_bound(fuel: usize, env: Env, scope: List<Local>, fd: FnDecl, names: List<List<usize>>, ps: List<CTree>, pre: List<MEff>, items: List<CTree>, binds: core::option::Option<List<Bind>>) -> core::option::Option<ArgsBound> {
+    if (fuel == 0) {
+        return None;
+    }
+    let f: usize = minus(fuel, 1);
+    return match (binds) {
+        None -> None,
+        Some(b) -> match (ps) {
+            Nil -> match (pre) {
+                Nil -> match (items) {
+                    Nil -> Some(ArgsBound { args: empty(), binds: b }),
+                    Cons(c, more) -> None,
+                },
+                Cons(x, more) -> None,
+            },
+            Cons(p, rest) -> match (pre) {
+                Cons(x, more) -> cons_bound(x, eff_args_bound(f, env, scope, fd, names, unbox(rest), unbox(more), items, bind_arg(f, env, scope, fd, names, p, x, b))),
+                Nil -> match (items) {
+                    Nil -> None,
+                    Cons(c, more) -> eff_arg_next(f, env, scope, fd, names, p, unbox(rest), unbox(more), b, eff_of(f, env, scope, arg_expected(f, env.decls, fd, names, p, b), c)),
+                },
+            },
+        },
+    };
+}
+
+pub fn eff_arg_next(fuel: usize, env: Env, scope: List<Local>, fd: FnDecl, names: List<List<usize>>, p: CTree, ps: List<CTree>, items: List<CTree>, b: List<Bind>, x: core::option::Option<MEff>) -> core::option::Option<ArgsBound> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (x) {
+        None -> None,
+        Some(v) -> cons_bound(v, eff_args_bound(minus(fuel, 1), env, scope, fd, names, ps, empty(), items, bind_arg(minus(fuel, 1), env, scope, fd, names, p, v, b))),
+    };
 }
 
 pub fn eff_found(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, found: core::option::Option<Found>, pre: List<MEff>, items: List<CTree>) -> core::option::Option<MEff> {
@@ -4774,11 +5100,21 @@ pub fn eff_match_enum(fuel: usize, env: Env, scope: List<Local>, expected: core:
             None -> None,
             Some(ps) -> match (list_items(fuel, kid(m, 5))) {
                 None -> None,
-                Some(arms) -> x_match_of(x, ety, expected, eff_arms(minus(fuel, 1), env, scope, expected, t, zip_variants(t.variants, ps), arms)),
+                Some(arms) -> x_match_of(x, ety, expected, eff_arms_ordered(minus(fuel, 1), env, scope, expected, t, zip_variants(t.variants, ps), arms)),
             },
         };
     }
     return None;
+}
+
+pub fn eff_arms_ordered(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<EffArm>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (arms_in_order(fuel, owner, variants, arms)) {
+        None -> None,
+        Some(os) -> eff_arms(minus(fuel, 1), env, scope, expected, owner, variants, os),
+    };
 }
 
 // Arm k is variant k.
@@ -4832,7 +5168,10 @@ pub fn eff_arm_bound(fuel: usize, env: Env, expected: core::option::Option<Ty>, 
 pub fn eval_head(x: core::option::Option<MEff>) -> core::option::Option<LetHead> {
     return match (x) {
         None -> None,
-        Some(e) -> Some(EvalOf(e)),
+        Some(e) -> match (call_parts(e)) {
+            Some(c) -> Some(CallOf(c)),
+            None -> Some(EvalOf(e)),
+        },
     };
 }
 
@@ -4943,10 +5282,46 @@ pub fn return_eval_of(x: core::option::Option<MEff>) -> core::option::Option<MSt
 }
 
 // `return e;`, e pure or else effectful (stored at the result type).
+pub fn slice_returned(id: usize, el: Ty, h: core::option::Option<LetHead>) -> core::option::Option<MStmt> {
+    return match (h) {
+        None -> None,
+        Some(head) -> match (head) {
+            Plain(x) -> None,
+            CallOf(c) -> None,
+            VariantOf(variant, payload) -> None,
+            LiteralOf(fields) -> None,
+            MatchOf(scrutinee, sty, arms) -> None,
+            AllocOf(size, shift) -> None,
+            SliceOf(pointer, length) -> Some(MLetSlice(id, el, pointer, length, boxed(MReturn(Local(id))))),
+            IndexOf(slice, index) -> None,
+            EvalOf(x) -> None,
+        },
+    };
+}
+
+// `return slice_from_raw_parts(pointer, length);` in a function whose
+// result is a slice: a slice local, then its return. The local's id is the
+// byte offset of the value's first token, which no binding has.
+pub fn return_slice(fuel: usize, env: Env, scope: List<Local>, e: CTree) -> core::option::Option<MStmt> {
+    return match (env.ret) {
+        None -> None,
+        Some(t) -> match (slice_elem(t)) {
+            None -> None,
+            Some(el) -> match (tree_tokens(e)) {
+                Nil -> None,
+                Cons(first, rest) -> slice_returned(first.start, el, let_head(fuel, env, scope, t, e)),
+            },
+        },
+    };
+}
+
 pub fn return_or_eval(fuel: usize, env: Env, scope: List<Local>, e: CTree) -> core::option::Option<MStmt> {
     return match (expr_of(fuel, env, scope, e)) {
         Some(x) -> Some(MReturn(x)),
-        None -> return_eval_of(eff_of(fuel, env, scope, env.ret, e)),
+        None -> match (return_slice(fuel, env, scope, e)) {
+            Some(m) -> Some(m),
+            None -> return_eval_of(eff_of(fuel, env, scope, env.ret, e)),
+        },
     };
 }
 
@@ -5041,7 +5416,10 @@ pub fn set_index_of(slice: usize, index: core::option::Option<SrcExpr>, value: c
 pub fn set_eval_of(id: usize, x: core::option::Option<MEff>) -> core::option::Option<MStmt> {
     return match (x) {
         None -> None,
-        Some(e) -> Some(MSetEval(id, e)),
+        Some(e) -> match (call_parts(e)) {
+            Some(c) -> Some(MSetCall(id, c.inst, c.args)),
+            None -> Some(MSetEval(id, e)),
+        },
     };
 }
 
@@ -5531,9 +5909,20 @@ pub fn read_fn(fuel: usize, decls: Decls, fd: FnDecl, args: List<Ty>) -> core::o
     return None;
 }
 
+// A projection: `fn(v: t) -> f { return v.f; }`, its parameter's id 0.
+pub fn projection_func(ret: core::option::Option<Ty>, inst: Inst, decls: Decls) -> core::option::Option<MFunc> {
+    return match (ret) {
+        None -> None,
+        Some(r) -> match (inst.args) {
+            Nil -> None,
+            Cons(t, rest) -> Some(MFunc { params: single(MParam { id: 0, ty: t }), ret: RetOf(r), body: MReturn(Field(0, minus(inst.decl, length(decls.fns)))) }),
+        },
+    };
+}
+
 pub fn read_inst(fuel: usize, decls: Decls, inst: Inst) -> core::option::Option<MFunc> {
     return match (get(decls.fns, inst.decl)) {
-        None -> None,
+        None -> projection_func(projection_ret(fuel, decls, inst), inst, decls),
         Some(fd) -> read_fn(fuel, decls, fd, inst.args),
     };
 }
@@ -6224,17 +6613,26 @@ pub fn isize_ty(t: SrcType) -> bool {
     };
 }
 
-pub fn isize_cast(yes: bool, e: SrcExpr) -> SrcExpr {
-    if (yes) {
-        return Cast(Isize, boxed(e));
-    }
-    return e;
+// An integer literal at its expected type: an unsigned type's literal, or
+// for isize the cast of the i32 literal.
+pub fn int_literal_at(t: SrcType, k: i32, e: SrcExpr) -> SrcExpr {
+    return match (t) {
+        I32 -> e,
+        Bool -> e,
+        Uint(u) -> Unsigned(u, (k as u32) as u64),
+        Struct(id, fields) -> e,
+        Enum(id, variants) -> e,
+        Ptr -> e,
+        Slice(el) -> e,
+        Unit -> e,
+        Isize -> Cast(Isize, boxed(e)),
+    };
 }
 
-pub fn int_at(want: core::option::Option<SrcType>, e: SrcExpr) -> SrcExpr {
+pub fn int_at(want: core::option::Option<SrcType>, k: i32, e: SrcExpr) -> SrcExpr {
     return match (want) {
         None -> e,
-        Some(t) -> isize_cast(isize_ty(t), e),
+        Some(t) -> int_literal_at(t, k, e),
     };
 }
 
@@ -6407,7 +6805,7 @@ pub fn known_expr(locals: List<LocalTy>, e: SrcExpr) -> core::option::Option<Src
 
 pub fn lit_expr(locals: List<LocalTy>, want: core::option::Option<SrcType>, e: SrcExpr) -> SrcExpr {
     return match (e) {
-        Int(k) -> int_at(want, e),
+        Int(k) -> int_at(want, k, e),
         Boolean(b) -> e,
         Unsigned(u, k) -> e,
         Local(id) -> e,

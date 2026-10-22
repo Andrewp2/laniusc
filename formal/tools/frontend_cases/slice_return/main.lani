@@ -1,0 +1,11 @@
+module app::main;
+
+struct W { a: i32, b: bool }
+
+fn run(n: i32) -> i32 {
+    let p: ptr = alloc::allocator::alloc((64 as usize), (8 as usize));
+    let v: [W] = core::mem::typed_slice_from_storage<W>(p, 2);
+    let u: [i32] = core::mem::typed_prefix_from_storage<i32>(p, 4, 2);
+    let x: i32 = u[1];
+    return x + n;
+}

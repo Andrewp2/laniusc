@@ -1,0 +1,13 @@
+module app::main;
+
+// An import line, so laniusc parses this file with it blanked and the
+// script splices the import back into the tree.
+import core::option;
+
+fn top(n: i32) -> i32 {
+    let o: core::option::Option<i32> = Some(n);
+    let a: i32 = match (o) { Some(v) -> v + 1, None -> 0 };
+    let b: i32 = core::option::unwrap_or(None, 5);
+    let c: i32 = o.unwrap_or(7);
+    return a + b + c;
+}

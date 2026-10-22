@@ -1,0 +1,24 @@
+struct W { a: i32, b: bool }
+
+fn run(n: i32) -> i32 {
+    let p: ptr = alloc::allocator::alloc((64 as usize), (8 as usize));
+    let v: [i32] = view_i(p, 3);
+    let w: [W] = view_w(p, 2);
+    let s: isize = slice_stride(w);
+    let x: i32 = v[1];
+    return x + n + (s as i32);
+}
+
+fn view_i(storage: ptr, length: i32) -> [i32] {
+    if (length == 0) {
+        return slice_from_raw_parts(storage, 0);
+    }
+    return slice_from_raw_parts(storage + (8 as usize), length - 1);
+}
+
+fn view_w(storage: ptr, length: i32) -> [W] {
+    if (length == 0) {
+        return slice_from_raw_parts(storage, 0);
+    }
+    return slice_from_raw_parts(storage + (8 as usize), length - 1);
+}

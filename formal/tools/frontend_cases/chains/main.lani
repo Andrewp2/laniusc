@@ -1,0 +1,30 @@
+struct P { x: i32, y: i32 }
+
+struct Q { p: P, k: i32 }
+
+impl P {
+    fn sum(self) -> i32 {
+        return self.x + self.y;
+    }
+
+    fn moved(self, d: i32) -> P {
+        return P { x: self.x + d, y: self.y };
+    }
+}
+
+fn mk(n: i32) -> Q {
+    return Q { p: P { x: n, y: 2 }, k: 3 };
+}
+
+fn run(n: i32) -> i32 {
+    let q: Q = mk(n);
+    let a: i32 = q.p.x;
+    let b: i32 = mk(a).k;
+    let c: i32 = q.p.sum();
+    let d: i32 = mk(b).p.sum() + q.p.moved(a).moved(b).y;
+    if (mk(d).p.x > q.k) {
+        return a;
+    }
+    a = mk(c).p.x;
+    return a + b + c + d;
+}

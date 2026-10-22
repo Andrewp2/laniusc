@@ -1,0 +1,17 @@
+enum OptionI { SomeI(i32), NoneI }
+
+fn top(n: i32) -> i32 {
+    let o: OptionI = SomeI(n);
+    let a: i32 = match (o) { SomeI(v) -> v + 1, NoneI -> 0 };
+    let b: i32 = unwrap_or_i(NoneI, 5);
+    let c: i32 = method_unwrap_or_i(o, 7);
+    return a + b + c;
+}
+
+fn unwrap_or_i(value: OptionI, fallback: i32) -> i32 {
+    return match (value) { SomeI(inner) -> inner, NoneI -> fallback };
+}
+
+fn method_unwrap_or_i(s: OptionI, fallback: i32) -> i32 {
+    return match (s) { SomeI(inner) -> inner, NoneI -> fallback };
+}

@@ -2483,10 +2483,18 @@ def consEff (head : Option MEff) (tail : Option (List MEff)) : Option (List MEff
     | none => none
     | some xs => some (x :: xs)
 
-/-- The result type of a function instance. -/
+/-- The result type of a function instance. A projection's field type. -/
+def projectionRet (fuel : Nat) (decls : Decls) (inst : Inst) : Option Ty :=
+  match inst.args with
+  | [] => none
+  | t :: rest =>
+    match structFieldTys fuel decls t with
+    | none => none
+    | some ts => ts[inst.decl - decls.fns.length]?
+
 def instRet (fuel : Nat) (decls : Decls) (inst : Inst) : Option Ty :=
   match decls.fns[inst.decl]? with
-  | none => none
+  | none => projectionRet fuel decls inst
   | some fd =>
     match retPattern fd with
     | none => none
@@ -3104,6 +3112,42 @@ def armOf (fuel : Nat) (env : Env) (scope : List Local) (owner : TypeDecl) (v : 
   else
     none
 
+/-- Whether an arm's pattern names the variant spelled name. -/
+def armNames (fuel : Nat) (owner : TypeDecl) (name : List Nat) (arm : CTree) : Bool :=
+  let pattern : CTree := kid arm 0
+  let path : CTree := kid pattern 0
+  decide (nodeProd pattern = (195)) && armNamed (pathSpellings fuel (kid path 0) (kid path 1)) owner name
+
+def armsNamingAt (named : Bool) (a : CTree) (rest : List CTree) : List CTree :=
+  if named then
+    a :: rest
+  else
+    rest
+
+def armsNaming (fuel : Nat) (owner : TypeDecl) (name : List Nat) (arms : List CTree) : List CTree :=
+  match arms with
+  | [] => []
+  | a :: rest => armsNamingAt (armNames fuel owner name a) a (armsNaming fuel owner name rest)
+
+/-- For each variant in order, the one arm that names it. -/
+def armsByVariant (fuel : Nat) (owner : TypeDecl) (variants : List VariantTy) (arms : List CTree) : Option (List CTree) :=
+  match variants with
+  | [] => some []
+  | v :: rest =>
+    match armsNaming fuel owner v.name arms with
+    | [] => none
+    | a :: more =>
+      match more with
+      | [] => consTreeTail a (armsByVariant fuel owner rest arms)
+      | b :: others => none
+
+/-- The arms in variant order: as many arms as variants, each variant named by exactly one. Only one arm runs, so the order they are written in has no effect. -/
+def armsInOrder (fuel : Nat) (owner : TypeDecl) (variants : List VariantTy) (arms : List CTree) : Option (List CTree) :=
+  if arms.length = variants.length then
+    armsByVariant fuel owner variants arms
+  else
+    none
+
 /-- Arm k is variant k. -/
 def armsOf (fuel : Nat) (env : Env) (scope : List Local) (owner : TypeDecl) (variants : List VariantTy) (arms : List CTree) : Option (List SrcArm) :=
   match variants with
@@ -3116,6 +3160,11 @@ def armsOf (fuel : Nat) (env : Env) (scope : List Local) (owner : TypeDecl) (var
     | [] => none
     | a :: more => consArm (armOf fuel env scope owner v a) (armsOf fuel env scope owner rest more)
 
+def armsOrdered (fuel : Nat) (env : Env) (scope : List Local) (owner : TypeDecl) (variants : List VariantTy) (arms : List CTree) : Option (List SrcArm) :=
+  match armsInOrder fuel owner variants arms with
+  | none => none
+  | some os => armsOf fuel env scope owner variants os
+
 def matchEnum (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (owner : TypeDecl) (payloads : Option (List (List Ty))) (m : CTree) : Option LetHead :=
   if owner.isEnum then
     match payloads with
@@ -3123,7 +3172,7 @@ def matchEnum (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (owner :
     | some ps =>
       match listItems fuel (kid m 5) with
       | none => none
-      | some arms => matchArms l.id l.ty (armsOf fuel env scope owner (zipVariants owner.variants ps) arms)
+      | some arms => matchArms l.id l.ty (armsOrdered fuel env scope owner (zipVariants owner.variants ps) arms)
   else
     none
 
@@ -3308,6 +3357,140 @@ def armEff (fuel : Nat) (env : Env) (b : Bound) (value : Option MEff) : Option E
   | none => none
   | some x => some ({ binders := b.ids, value := x, ty := effTy fuel env b.scope x } : EffArm)
 
+def pureList (xs : List MEff) : Option (List SrcExpr) :=
+  match xs with
+  | [] => some []
+  | x :: rest =>
+    match purePart x with
+    | none => none
+    | some e =>
+      match pureList rest with
+      | none => none
+      | some es => some (e :: es)
+
+/-- A call whose arguments are all pure. -/
+def callParts (x : MEff) : Option Called :=
+  match x with
+  | .xPure e => none
+  | .xCall inst args =>
+    (match pureList args with
+     | none => none
+     | some es => some ({ inst := inst, args := es } : Called))
+  | .xApply op l r => none
+  | .xNeg a => none
+  | .xNot a => none
+  | .xCast t a => none
+  | .xIndex sl i => none
+  | .xStruct t fs => none
+  | .xVariant t k ps => none
+  | .xMatch sc ety t bs vs => none
+  | .xDivide op l r => none
+  | .xStride sl => none
+
+/-- The local an expression is, if it is one. -/
+def pureLocal (e : SrcExpr) : Option Nat :=
+  match e with
+  | .int k => none
+  | .boolean b => none
+  | .unsigned u k => none
+  | .local id => some id
+  | .field id j => none
+  | .negate a => none
+  | .not a => none
+  | .apply op a b => none
+  | .cast t a => none
+
+def effLocal (x : MEff) : Option Nat :=
+  match purePart x with
+  | none => none
+  | some e => pureLocal e
+
+/-- The projection of field j of type t: a function instance numbered past the declared functions, `fn(v: t) -> f { return v.f; }`. -/
+def projection (decls : Decls) (t : Ty) (j : Nat) : Inst :=
+  ({ decl := decls.fns.length + j, args := [t] } : Inst)
+
+/-- Field j of the value x of type t: Field of a local, else the call of the projection. -/
+def fieldValue (decls : Decls) (x : MEff) (t : Ty) (j : Nat) : MEff :=
+  match effLocal x with
+  | some id => MEff.xPure (SrcExpr.field id j)
+  | none => MEff.xCall (projection decls t j) [x]
+
+def fieldOfTy (env : Env) (x : MEff) (t : Option Ty) (name : List Nat) : Option MEff :=
+  match t with
+  | none => none
+  | some ty =>
+    match fieldIndex env ty name with
+    | none => none
+    | some j => some (fieldValue env.decls x ty j)
+
+def methodOfTy (fuel : Nat) (env : Env) (t : Option Ty) (name : List Nat) : Option Found :=
+  match t with
+  | none => none
+  | some ty => findMethod fuel env.decls env.decls.fns 0 name ty
+
+def effSliceLocal (scope : List Local) (x : MEff) : Option Local :=
+  match effLocal x with
+  | none => none
+  | some id => findLocalId scope id
+
+/-- The expected type of a step whose tail is next: the chain's, for its last. -/
+def stepExpected (expected : Option Ty) (next : CTree) : Option Ty :=
+  if nodeProd next = (164) then
+    expected
+  else
+    none
+
+/-- Arguments read so far, and the type parameters they bind. -/
+structure ArgsBound where
+  args : List MEff
+  binds : List Bind
+  deriving Repr
+
+def consBound (x : MEff) (r : Option ArgsBound) : Option ArgsBound :=
+  match r with
+  | none => none
+  | some a => some ({ args := x :: a.args, binds := a.binds } : ArgsBound)
+
+/-- The bindings from the result type matched with the expected type. -/
+def retBinds (fuel : Nat) (decls : Decls) (fd : FnDecl) (names : List (List Nat)) (start : List Bind) (expected : Option Ty) : Option (List Bind) :=
+  match expected with
+  | none => some start
+  | some t =>
+    match retPattern fd with
+    | none => none
+    | some r => matchTy fuel (calleeEnv decls fd) names r t start
+
+/-- A parameter's type, once every type parameter is bound. -/
+def argExpected (fuel : Nat) (decls : Decls) (fd : FnDecl) (names : List (List Nat)) (p : CTree) (b : List Bind) : Option Ty :=
+  match boundArgs names b with
+  | none => none
+  | some a => tyOf fuel (declEnv decls fd.module names a) p
+
+/-- An argument's type matched with its parameter's; an integer literal binds nothing (laniusc gives it the parameter's type). -/
+def bindArg (fuel : Nat) (env : Env) (scope : List Local) (fd : FnDecl) (names : List (List Nat)) (p : CTree) (x : MEff) (b : List Bind) : Option (List Bind) :=
+  if bareEff x then
+    some b
+  else
+    match effTy fuel env scope x with
+    | none => none
+    | some t => matchTy fuel (calleeEnv env.decls fd) names p t b
+
+def matchTysOrNone (fuel : Nat) (env : Env) (names : List (List Nat)) (ps : List CTree) (ts : Option (List Ty)) (b : List Bind) : Option (List Bind) :=
+  match ts with
+  | none => none
+  | some xs => matchTys fuel env names ps xs b
+
+/-- The instance: from the bindings; if a type parameter is still unbound, with the integer literal arguments taken as i32. -/
+def instBound (fuel : Nat) (env : Env) (scope : List Local) (d : Nat) (fd : FnDecl) (names : List (List Nat)) (ps : List CTree) (a : ArgsBound) : Option Inst :=
+  match boundArgs names a.binds with
+  | some ts => some ({ decl := d, args := ts } : Inst)
+  | none => instFrom d (boundOrNone names (matchTysOrNone fuel (calleeEnv env.decls fd) names ps (effsTys fuel env scope a.args) a.binds))
+
+def effInferred (fuel : Nat) (env : Env) (scope : List Local) (d : Nat) (fd : FnDecl) (names : List (List Nat)) (ps : List CTree) (r : Option ArgsBound) : Option MEff :=
+  match r with
+  | none => none
+  | some a => xCallOf (instBound fuel env scope d fd names ps a) a.args
+
 mutual
 
 /-- The effectful expression a node of the expression grammar denotes, its value stored at type expected when that is known: the pure expression expr_of reads, or else a call, a variant, a struct literal, a match, a slice element, a division, or an operator, cast or negation of these. -/
@@ -3387,7 +3570,47 @@ def effPostfix (fuel : Nat) (env : Env) (scope : List Local) (expected : Option 
           if decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274)) && decide (nodeProd tail = (162)) && decide (nodeProd (kid tail 3) = (164)) then
             xIndexOf (localOf env scope primary) (effOf f env scope none (kid tail 1))
           else
-            none
+            if decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274)) && decide (nodeProd tail = (161)) then
+              effChain f env scope expected (effPathCall f env scope none (kid primary 0) (kid tail 1)) (kid tail 3)
+            else
+              effChain f env scope expected (effPrimary f env scope primary) tail
+
+/-- The value a postfix starts from: a local, or any other primary. -/
+def effPrimary (fuel : Nat) (env : Env) (scope : List Local) (primary : CTree) : Option MEff :=
+  match localOf env scope primary with
+  | some l => some (MEff.xPure (SrcExpr.local l.id))
+  | none => effNode fuel env scope none primary
+
+/-- The rest of a postfix after the value x: `.f` (Field of a local, else the call of the field's projection), `.m(args)` (the method m of x's type, with x the receiver), or `[index]` of a slice local, then what follows. -/
+def effChain (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (x : Option MEff) (tail : CTree) : Option MEff :=
+  if fuel = 0 then
+    none
+  else
+    if nodeProd tail = (164) then
+      x
+    else
+      match x with
+      | none => none
+      | some v => effStep (fuel - 1) env scope expected v tail
+
+def effStep (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (x : MEff) (tail : CTree) : Option MEff :=
+  if fuel = 0 then
+    none
+  else
+    let f : Nat := fuel - 1
+    if decide (nodeProd tail = (163)) && decide (nodeProd (kid tail 2) = (297)) then
+      let next : CTree := kid tail 3
+      if nodeProd next = (161) then
+        match listItems f (kid next 1) with
+        | none => none
+        | some items => effChain f env scope expected (effFound f env scope (stepExpected expected (kid next 3)) (methodOfTy f env (effTy f env scope x) (kidToken tail 1).text) [x] items) (kid next 3)
+      else
+        effChain f env scope expected (fieldOfTy env x (effTy f env scope x) (kidToken tail 1).text) next
+    else
+      if nodeProd tail = (162) then
+        effChain f env scope expected (xIndexOf (effSliceLocal scope x) (effOf f env scope none (kid tail 1))) (kid tail 3)
+      else
+        none
 
 /-- A name that is not a local or a constant: a unit variant; or a struct literal `S { f: e, ... }`, fields in declared order. -/
 def effIdent (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (c : CTree) : Option MEff :=
@@ -3546,7 +3769,46 @@ def effInfer (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty
   if fuel = 0 then
     none
   else
-    effCalled fuel env scope expected d fd start pre (effList (fuel - 1) env scope (skipExpects (paramExpects fuel env.decls fd (boundArgs (fd.implParams ++ fd.params) start)) pre) items)
+    let names : List (List Nat) := fd.implParams ++ fd.params
+    if noNames names then
+      effCalled fuel env scope expected d fd start pre (effList (fuel - 1) env scope (skipExpects (paramExpects fuel env.decls fd (some [])) pre) items)
+    else
+      match paramPatterns fuel fd with
+      | none => none
+      | some ps => effInferred fuel env scope d fd names ps (effArgsBound (fuel - 1) env scope fd names ps pre items (retBinds fuel env.decls fd names start expected))
+
+/-- The arguments in order, each read at its parameter's type when the bindings so far give it one, and the bindings they extend. -/
+def effArgsBound (fuel : Nat) (env : Env) (scope : List Local) (fd : FnDecl) (names : List (List Nat)) (ps : List CTree) (pre : List MEff) (items : List CTree) (binds : Option (List Bind)) : Option ArgsBound :=
+  if fuel = 0 then
+    none
+  else
+    let f : Nat := fuel - 1
+    match binds with
+    | none => none
+    | some b =>
+      match ps with
+      | [] =>
+        (match pre with
+         | [] =>
+           (match items with
+            | [] => some ({ args := [], binds := b } : ArgsBound)
+            | c :: more => none)
+         | x :: more => none)
+      | p :: rest =>
+        match pre with
+        | x :: more => consBound x (effArgsBound f env scope fd names rest more items (bindArg f env scope fd names p x b))
+        | [] =>
+          match items with
+          | [] => none
+          | c :: more => effArgNext f env scope fd names p rest more b (effOf f env scope (argExpected f env.decls fd names p b) c)
+
+def effArgNext (fuel : Nat) (env : Env) (scope : List Local) (fd : FnDecl) (names : List (List Nat)) (p : CTree) (ps : List CTree) (items : List CTree) (b : List Bind) (x : Option MEff) : Option ArgsBound :=
+  if fuel = 0 then
+    none
+  else
+    match x with
+    | none => none
+    | some v => consBound v (effArgsBound (fuel - 1) env scope fd names ps [] items (bindArg (fuel - 1) env scope fd names p v b))
 
 def effFound (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (found : Option Found) (pre : List MEff) (items : List CTree) : Option MEff :=
   if fuel = 0 then
@@ -3606,9 +3868,17 @@ def effMatchEnum (fuel : Nat) (env : Env) (scope : List Local) (expected : Optio
       | some ps =>
         match listItems fuel (kid m 5) with
         | none => none
-        | some arms => xMatchOf x ety expected (effArms (fuel - 1) env scope expected t (zipVariants t.variants ps) arms)
+        | some arms => xMatchOf x ety expected (effArmsOrdered (fuel - 1) env scope expected t (zipVariants t.variants ps) arms)
     else
       none
+
+def effArmsOrdered (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (owner : TypeDecl) (variants : List VariantTy) (arms : List CTree) : Option (List EffArm) :=
+  if fuel = 0 then
+    none
+  else
+    match armsInOrder fuel owner variants arms with
+    | none => none
+    | some os => effArms (fuel - 1) env scope expected owner variants os
 
 /-- Arm k is variant k. -/
 def effArms (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (owner : TypeDecl) (variants : List VariantTy) (arms : List CTree) : Option (List EffArm) :=
@@ -3656,7 +3926,10 @@ end
 def evalHead (x : Option MEff) : Option LetHead :=
   match x with
   | none => none
-  | some e => some (LetHead.evalOf e)
+  | some e =>
+    match callParts e with
+    | some c => some (LetHead.callOf c)
+    | none => some (LetHead.evalOf e)
 
 /-- The head of `let x: ty = init;`: a statement form, or else an effectful expression. -/
 def letHeadOrEval (fuel : Nat) (env : Env) (scope : List Local) (ty : Ty) (init : CTree) : Option LetHead :=
@@ -3739,10 +4012,40 @@ def returnEvalOf (x : Option MEff) : Option MStmt :=
   | some e => some (MStmt.mReturnEval e)
 
 /-- `return e;`, e pure or else effectful (stored at the result type). -/
+def sliceReturned (id : Nat) (el : Ty) (h : Option LetHead) : Option MStmt :=
+  match h with
+  | none => none
+  | some head =>
+    match head with
+    | .plain x => none
+    | .callOf c => none
+    | .variantOf variant payload => none
+    | .literalOf fields => none
+    | .matchOf scrutinee sty arms => none
+    | .allocOf size shift => none
+    | .sliceOf pointer length => some (MStmt.mLetSlice id el pointer length (MStmt.mReturn (SrcExpr.local id)))
+    | .indexOf slice index => none
+    | .evalOf x => none
+
+/-- `return slice_from_raw_parts(pointer, length);` in a function whose result is a slice: a slice local, then its return. The local's id is the byte offset of the value's first token, which no binding has. -/
+def returnSlice (fuel : Nat) (env : Env) (scope : List Local) (e : CTree) : Option MStmt :=
+  match env.ret with
+  | none => none
+  | some t =>
+    match sliceElem t with
+    | none => none
+    | some el =>
+      match treeTokens e with
+      | [] => none
+      | first :: rest => sliceReturned first.start el (letHead fuel env scope t e)
+
 def returnOrEval (fuel : Nat) (env : Env) (scope : List Local) (e : CTree) : Option MStmt :=
   match exprOf fuel env scope e with
   | some x => some (MStmt.mReturn x)
-  | none => returnEvalOf (effOf fuel env scope env.ret e)
+  | none =>
+    match returnSlice fuel env scope e with
+    | some m => some m
+    | none => returnEvalOf (effOf fuel env scope env.ret e)
 
 def ifEvalOf (c : Option MEff) (a : Option MStmt) (b : Option MStmt) : Option MStmt :=
   match c with
@@ -3816,7 +4119,10 @@ def setIndexOf (slice : Nat) (index : Option SrcExpr) (value : Option SrcExpr) :
 def setEvalOf (id : Nat) (x : Option MEff) : Option MStmt :=
   match x with
   | none => none
-  | some e => some (MStmt.mSetEval id e)
+  | some e =>
+    match callParts e with
+    | some c => some (MStmt.mSetCall id c.inst c.args)
+    | none => some (MStmt.mSetEval id e)
 
 /-- `x = value;`: a statement form, or else an effectful expression. -/
 def setOrEval (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (value : CTree) : Option MStmt :=
@@ -4220,9 +4526,18 @@ def readFn (fuel : Nat) (decls : Decls) (fd : FnDecl) (args : List Ty) : Option 
   else
     none
 
+/-- A projection: `fn(v: t) -> f { return v.f; }`, its parameter's id 0. -/
+def projectionFunc (ret : Option Ty) (inst : Inst) (decls : Decls) : Option MFunc :=
+  match ret with
+  | none => none
+  | some r =>
+    match inst.args with
+    | [] => none
+    | t :: rest => some ({ params := [({ id := 0, ty := t } : MParam)], ret := RetTy.retOf r, body := MStmt.mReturn (SrcExpr.field 0 (inst.decl - decls.fns.length)) } : MFunc)
+
 def readInst (fuel : Nat) (decls : Decls) (inst : Inst) : Option MFunc :=
   match decls.fns[inst.decl]? with
-  | none => none
+  | none => projectionFunc (projectionRet fuel decls inst) inst decls
   | some fd => readFn fuel decls fd inst.args
 
 mutual
@@ -4771,16 +5086,23 @@ def isizeTy (t : SrcType) : Bool :=
   | .unit => false
   | .isize => true
 
-def isizeCast (yes : Bool) (e : SrcExpr) : SrcExpr :=
-  if yes then
-    SrcExpr.cast SrcType.isize e
-  else
-    e
+/-- An integer literal at its expected type: an unsigned type's literal, or for isize the cast of the i32 literal. -/
+def intLiteralAt (t : SrcType) (k : BitVec 32) (e : SrcExpr) : SrcExpr :=
+  match t with
+  | .i32 => e
+  | .bool => e
+  | .uint u => SrcExpr.unsigned u (BitVec.setWidth 64 k)
+  | .struct id fields => e
+  | .enum id variants => e
+  | .ptr => e
+  | .slice el => e
+  | .unit => e
+  | .isize => SrcExpr.cast SrcType.isize e
 
-def intAt (want : Option SrcType) (e : SrcExpr) : SrcExpr :=
+def intAt (want : Option SrcType) (k : BitVec 32) (e : SrcExpr) : SrcExpr :=
   match want with
   | none => e
-  | some t => isizeCast (isizeTy t) e
+  | some t => intLiteralAt t k e
 
 /-- The innermost local with this id, as a source type. -/
 def tyLocal (locals : List LocalTy) (id : Nat) : Option SrcType :=
@@ -4918,7 +5240,7 @@ def knownExpr (locals : List LocalTy) (e : SrcExpr) : Option SrcType :=
 
 def litExpr (locals : List LocalTy) (want : Option SrcType) (e : SrcExpr) : SrcExpr :=
   match e with
-  | .int k => intAt want e
+  | .int k => intAt want k e
   | .boolean b => e
   | .unsigned u k => e
   | .local id => e
