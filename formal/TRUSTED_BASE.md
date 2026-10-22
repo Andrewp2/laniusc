@@ -223,6 +223,11 @@ still a parse tree of the same tokens. Trusted:
     `Assert(c)`, Core's assert intrinsic. So `core::panic::panic()`, whose
     body in `stdlib/core/panic.lani` is `assert(false);`, traps.
 
+  - `isize` is `Isize`. An integer literal whose expected type is `isize`
+    is `Cast(Isize, Int(n))`, decided after monomorphization by `lit_funcs`
+    from the types of locals, fields, parameters, callees and results; an
+    operator's operands expect the type of whichever operand has one.
+
   It rejects anything outside the subset. `build` has no relational spec yet;
   the difftest checks it against the generator's programs. To shrink it:
   state the reading as an inductive relation on `CTree` and prove `build`

@@ -1,0 +1,60 @@
+enum Maybe<T> {
+    Nothing,
+    Just(T),
+}
+
+struct P { a: isize, b: i32 }
+
+enum E {
+    Small(isize),
+    Big(isize, bool),
+}
+
+const LIMIT: isize = -7;
+
+fn step(x: isize, n: i32) -> isize {
+    let y: isize = x * 3 + 1;
+    let z: isize = -5;
+    let m: isize = -x;
+    if (y < 0 || 10 <= y) {
+        y = y - 100;
+    }
+    let p: P = P { a: 2, b: 4 };
+    p.a = p.a + 1;
+    let e: E = Big(9, true);
+    let w: isize = match (e) {
+        Small(s) -> s + 1,
+        Big(t, f) -> t - 2,
+    };
+    let c: i32 = (y as i32) + n;
+    let q: isize = (c as isize) & 255;
+    assert(q >= 0);
+    let i: isize = 0;
+    while (i < 3) {
+        i += 1;
+    }
+    return y + z + m + p.a + w + q + i + LIMIT;
+}
+
+fn top(n: i32) -> i32 {
+    let r: isize = step(4, n);
+    let s: isize = step(r + 2, 1) - 1;
+    let v: isize = step(1, n) / 2;
+    let u: isize = unwrap_or(wrap(r), r - 3);
+    if (s > 0 && step(s, n) != 0) {
+        s = s * 2;
+    }
+    return (s as i32) + ((v + u) as i32);
+}
+
+fn unwrap_or<T>(m: Maybe<T>, d: T) -> T {
+    let r: T = match (m) {
+        Nothing -> d,
+        Just(x) -> x,
+    };
+    return r;
+}
+
+fn wrap<T>(x: T) -> Maybe<T> {
+    return Just(x);
+}

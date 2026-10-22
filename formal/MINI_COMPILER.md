@@ -664,7 +664,7 @@ program's own first; `sourceProgram` is the one-file case.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Frontend` | 4591 | 15 | extracted from `formal/lani/mini/frontend.lani`: the grammar table, `validate_tree`, `build`, the monomorphizer |
+| `Frontend` | 4915 | 15 | extracted from `formal/lani/mini/frontend.lani`: the grammar table, `validate_tree`, `build`, the monomorphizer |
 | `FrontLex` | 59 | 0.6 | tokens from the Lean lexer; `sourceProgram`, `sourceProgramFiles` |
 | `FrontSpec` | 354 | 0.9 | `CTree.leaves`, `CTree.preorder`, `Shape`, `Derives`, `Reads`; `validate_sound`, `sourceProgram_sound`, `sourceProgramFiles_sound` |
 
@@ -684,7 +684,7 @@ laniusc's lexer and parser are not trusted. The trusted parts are the Lean
 lexer, the grammar table, the grammar's unambiguity (not proved) and `build`
 as the meaning of the concrete syntax. TRUSTED_BASE.md section 4 lists them.
 
-`frontend.lani` is about 5,900 hand-written lines, followed by the generated
+`frontend.lani` is about 6,300 hand-written lines, followed by the generated
 grammar table: 318 productions, with terminals as lexer token codes. Two
 tools regenerate it:
 
@@ -852,15 +852,38 @@ argument) is `Assert(c)`, with `c` collapsed to `EPure` when pure. A call
 statement of a unit function is `Discard(ECall ..)`, like any discarded call.
 So `core::panic::panic()` is read from `stdlib/core/panic.lani` as it is: a
 unit function (`-> !`) whose body is `assert(false);`. The case `unit_fns`
-has all of these, with that file as the program's second file. The script
-prints `return;`, `assert(..)` and unit functions when the generator makes
-them (`('returnUnit',)`, `('assert', x)`, result type `'unit'`); it does
-not yet. Results, 2026-10-22: seeds 11 and 12, 400 programs, all read as
-expected, 48/48 mutants rejected; `--generic` seed 11, 200 programs, all
-read, 24/24 rejected; 15 hand-written cases pass.
+has all of these, with that file as the program's second file. Results,
+2026-10-22: seeds 11 and 12, 400 programs, all read as expected, 48/48
+mutants rejected; `--generic` seed 11, 200 programs, all read, 24/24
+rejected; 15 hand-written cases pass. The oracle's generator now makes
+unit functions, `return;`, `if c { return; }` and `assert`, in the forms
+the script prints.
+
+`isize`. The type `isize` is `SrcType.Isize`; operators, comparisons,
+unary minus and `as` to and from `isize` read as for `i32`. laniusc gives
+an integer literal the type its context expects, and for `isize` the reading
+does too: after monomorphization a pass (`lit_funcs`) walks every function
+with the types of its locals, fields, parameters and callees, and an integer
+literal whose expected type is `isize` becomes `Cast(Isize, Int(n))`. The
+expected types are a `let`'s type, the type of the local, field or slice
+element stored to, a parameter's, the result type for `return`, a field's or
+payload's in a literal, a match's result type for its arms, and `Bool` for
+conditions and `assert`. An operator's operands expect the type of whichever
+operand has one, else (for arithmetic) the operator's expected type; the
+operand of `as` and the heap operations' operands expect nothing, so their
+literals stay `i32`. Literals of 2^31 and above are rejected, as for `i32`.
+A literal does not take a type parameter's type from the other arguments, so
+`unwrap_or(wrap(r), 0)` with `r: isize` is rejected (the `0` makes `T` both
+`i32` and `isize`), as `(0 as u64)` is needed for the unsigned types. The
+cases `isize` (its `want.lani` writes every literal as `(n as isize)`) and
+`reject_isize_big` test this. Results, 2026-10-22, with the oracle's unit
+functions and `assert` on: seeds 17 and 18, 400 programs (at seed 17, 162
+`return;`, 128 `assert`s and 192 unit functions), all read as expected,
+48/48 mutants rejected; `--generic` seed 11 as before; 17 of 17 cases. The
+generator does not make `isize` yet.
 
 What it does not read yet:
-- shifts, `&self`, `isize` and
+- shifts, `&self` and
   `size_of<T>()`, which have no `SrcProgram` form;
 - `=>` match arms, and block or `if` arms;
 - integer literals of 2^31 and above (so `const MIN: i32 = -2147483648;`);

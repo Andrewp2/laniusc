@@ -183,7 +183,7 @@ class Chunk:
     def lean_ty(self, k, t):
         if t in UINT_BITS:
             return f'(.uint {UINT_LEAN[t]})'
-        if t in ('i32', 'bool', 'ptr', 'unit'):
+        if t in ('i32', 'bool', 'ptr', 'unit', 'isize'):
             return '.' + t
         if t[0] == 'slice':
             return f'(.slice {self.lean_ty(k, t[1])})'
@@ -879,6 +879,7 @@ partial def serType : SrcType → String
   | .enum n vs => s!"(.enum {n} {bracket (vs.map fun v => bracket (v.map serType))})"
   | .slice t => s!"(.slice {serType t})"
   | .unit => ".unit"
+  | .isize => ".isize"
 
 partial def serExpr : SrcExpr → String
   | .int k => s!"(.int {k.toNat})"
