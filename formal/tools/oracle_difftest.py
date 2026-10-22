@@ -42,6 +42,7 @@ UINT_BITS = {'u8': 8, 'u32': 32, 'u64': 64, 'usize': 64}
 UINT_LEAN = {'u8': '.uint8', 'u32': '.uint32', 'u64': '.uint64', 'usize': '.usize'}
 INTEGERS = ['i32'] + list(UINT_BITS)
 WORDS = ['i32', 'bool', 'usize']  # the field types Core lays out in one native word
+SLICES = True  # generate heap and slice statements (frontend_difftest.py turns them off)
 
 
 def i32(x):
@@ -197,7 +198,7 @@ class Gen:
         env = list(env)
         mutable = list(mutable)
         returned = False
-        if depth == 3 and self.index == 0 and rng.random() < 0.6:
+        if SLICES and depth == 3 and self.index == 0 and rng.random() < 0.6:
             self.slices += 1
             self.make_slice(env, items)
         for _ in range(rng.randint(0, 4 if depth > 0 else 2)):
@@ -255,7 +256,7 @@ class Gen:
                 items.append(('letMatch', ident, ty, scrutinee, k, arms))
                 env.append((ident, ty))
                 mutable.append((ident, ty))
-            elif kind == 'slice' and depth == 3 and self.index == 0 and self.slices < 2:
+            elif kind == 'slice' and SLICES and depth == 3 and self.index == 0 and self.slices < 2:
                 # Only the entry's top level allocates, so a run allocates a few blocks at most.
                 self.slices += 1
                 self.make_slice(env, items)

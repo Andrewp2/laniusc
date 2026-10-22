@@ -33,6 +33,13 @@ Functions and impl blocks between `// extract: mutual begin` and `end` are one
 Lean `mutual` block, for recursion through a type nested in a List. A type
 nested in itself that way, and every type containing one, derives only Repr,
 since Lean cannot derive DecidableEq for it.
+
+A second program can use the types of the first: items between
+`// extract: external begin MODULE from PATH` and `// extract: external end`
+are copies of types and list operations of the Lanius file PATH (relative to
+the repository root), whose extraction is the Lean module MODULE. Each must be
+the item of the same name in PATH, with the same fields, constructors or
+signature. They are not emitted, and the output imports MODULE.
 """
 
 import os
@@ -264,12 +271,22 @@ class Parser:
     # items ------------------------------------------------------------
 
     def items(self):
-        items, prelude, inline = [], None, False
+        items, prelude, inline, external = [], None, False, None
         while self.peek().kind != 'eof':
             t = self.peek()
             if t.kind == 'marker':
                 self.next()
-                if t.text == 'prelude begin':
+                m = re.fullmatch(r'external begin (\S+) from (\S+)', t.text)
+                if m:
+                    if prelude is not None or external is not None:
+                        fail('an external section cannot nest', t)
+                    external = {'module': m.group(1), 'path': m.group(2)}
+                    items.append(('external', external))
+                elif t.text == 'external end':
+                    if external is None:
+                        fail('external end without begin', t)
+                    external = None
+                elif t.text == 'prelude begin':
                     prelude = []
                 elif t.text == 'prelude end':
                     items.append(('prelude', prelude))
@@ -304,12 +321,15 @@ class Parser:
             else:
                 fail(f'unexpected {t.text!r} at item level', t)
             item['doc'] = comments
+            item['external'] = external
             if prelude is not None:
                 prelude.append(item)
             else:
                 items.append(('item', item))
         if prelude is not None:
             fail('prelude section is not closed')
+        if external is not None:
+            fail('external section is not closed')
         return items
 
     def struct(self):
@@ -615,11 +635,17 @@ class Extractor:
         self.ctors = {}  # bare constructor name -> [enum names]
         self.prelude_seen = False
         self.order = []
+        self.imports = []
         in_mutual = False
         for kind, item in items:
             if kind == 'prelude':
                 self.check_prelude(item)
                 continue
+            if kind == 'external':
+                self.imports.append(item)
+                continue
+            if item.get('external') is not None:
+                self.check_external(item)
             if item['kind'] == 'mutual':
                 if item['begin'] == in_mutual:
                     fail('mutual blocks must alternate begin and end, and cannot nest')
@@ -654,7 +680,8 @@ class Extractor:
                     if key in self.methods:
                         fail(f'{item["name"]}::{f["name"]} is defined twice')
                     self.methods[key] = f
-            self.order.append(item)
+            if item.get('external') is None:
+                self.order.append(item)
         if in_mutual:
             fail('mutual block is not closed')
         if not self.prelude_seen:
@@ -721,10 +748,38 @@ class Extractor:
             diff = sorted(set(types.items()) ^ set(PRELUDE_TYPES.items()))
             fail(f'prelude types differ from extract.py PRELUDE_TYPES: {diff}')
 
+    def check_external(self, item):
+        """An external item must be the item of the same name in its source."""
+        source = item['external']
+        if 'items' not in source:
+            root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            try:
+                text = open(os.path.join(root, source['path'])).read()
+            except OSError as error:
+                fail(f'external source {source["path"]}: {error}')
+            source['items'] = {i['name']: i for k, i in Parser(lex(text)).items()
+                               if k == 'item' and i['kind'] in ('struct', 'enum', 'fn')}
+        if item['kind'] == 'fn' and item['name'] not in SPEC_FNS:
+            fail(f'{item["name"]}: only types and list operations can be external')
+        if item['kind'] == 'impl':
+            fail(f'{item["name"]}: impl blocks cannot be external')
+        theirs = source['items'].get(item['name'])
+        if theirs is None or theirs['kind'] != item['kind'] or self.shape(theirs) != self.shape(item):
+            fail(f'{item["name"]} differs from its definition in {source["path"]}')
+
+    @staticmethod
+    def shape(item):
+        if item['kind'] == 'struct':
+            return [(n, repr(t)) for n, t, _ in item['fields']]
+        if item['kind'] == 'enum':
+            return [(c, [repr(t) for t in p]) for c, p, _ in item['ctors']]
+        return signature(item)
+
     # declarations -----------------------------------------------------
 
     def run(self, source_name):
-        out = [HEADER.format(source=source_name)]
+        out = [''.join(f'import {source["module"]}\n' for source in self.imports) +
+               HEADER.format(source=source_name)]
         for item in self.order:
             if item['kind'] == 'mutual':
                 out.append('mutual\n' if item['begin'] else 'end\n')

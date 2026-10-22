@@ -537,6 +537,93 @@ calls as four shards) finds no differences from the extracted Lean, and
 `oracle_difftest.py` (300 programs, 2,400 calls) finds no disagreements
 between the optimized images, laniusc and the reference interpreter.
 
+### The front end by translation validation (step 8)
+
+Source text gets a `SrcProgram` without a parser proof. laniusc parses the
+file on the GPU, and the verified compiler checks its tree:
+
+```text
+sourceProgram source prods parents : Option SrcProgram
+```
+
+`prods` is laniusc's parse tree as its production ids in preorder (the
+`node_kind` array) and `parents` is each node's parent index.
+`lexTokens` lexes `source` with the Lean lexer (`lexCanonical`). Then
+`validate_tree` follows `prods` against the grammar. It matches each terminal on a
+production's right side with the next token, checks that each node's
+production has the expected left side and its recorded parent, and builds a
+concrete tree (`CTree`) whose leaves are the tokens. `build` reads the program
+off the concrete tree. It rejects anything outside the front pass's subset,
+and it resolves names to numbers:
+- a function is its position among the functions;
+- a struct or enum is its position among the type declarations;
+- a local is the byte offset of its binding.
+
+| file | lines | check (s) | role |
+|---|---:|---:|---|
+| `Frontend` | 1472 | 4.7 | extracted from `formal/lani/mini/frontend.lani`: the grammar table, `validate_tree`, `build` |
+| `FrontLex` | 36 | 0.5 | tokens from the Lean lexer; `sourceProgram` |
+| `FrontSpec` | 246 | 0.8 | `CTree.leaves`, `CTree.preorder`, `Shape`, `Derives`; `validate_sound`, `sourceProgram_sound` |
+
+Proved, with only `propext` and `Quot.sound`:
+
+- `validate_sound`: when `validateTree g tokens prods parents = some root`, then
+  `Shape g 0 root` (a parse tree of `file`), `root.leaves = tokens` (it prints
+  back to the tokens) and `root.preorder = prods` (it is laniusc's tree).
+- `validate_derives`: the token kinds are derived from `file`.
+- `sourceProgram_sound`: the program is `build` of such a tree for the tokens
+  of `source`.
+
+laniusc's lexer and parser are not trusted. The trusted parts are the Lean
+lexer, the grammar table, the grammar's unambiguity (not proved) and `build`
+as the meaning of the concrete syntax. TRUSTED_BASE.md section 4 lists them.
+
+`frontend.lani` is about 2,050 hand-written lines, followed by the generated
+grammar table: 318 productions, with terminals as lexer token codes. Two
+tools regenerate it:
+
+```bash
+python3 formal/tools/grammar_table.py formal/lani/mini/frontend.lani
+python3 formal/tools/extract.py formal/lani/mini/frontend.lani formal/Lanius/Mini/Frontend.lean
+```
+
+Both take `--check`. The source types and list operations sit in an
+`// extract: external` section. `extract.py` checks that section against
+`compiler.lani` and emits `import Lanius.Mini.Compiler` instead, so the front
+end builds `Compiler.lean`'s own `SrcProgram`.
+
+The test:
+
+```bash
+python3 -I formal/tools/frontend_difftest.py target/claude-work/frontend/dt --count 100 --seed 1
+```
+
+It generates programs with `oracle_difftest.py`'s generator and prints them
+as Lanius, 25 to a file, with uint literals of 2^31 and above built from
+16-bit pieces. laniusc parses each file under `heavy`. The tree is captured
+after `parser/tree/parent_parallel` and the lexer's tokens are dumped. Under
+`#eval`, the front end must give exactly the program the text was printed
+from, and the Lean lexer's tokens must equal laniusc's. The test also mutates
+the trees and the sources and expects every mutant to be rejected: a
+production id, a parent or one `+` is changed.
+
+2026-10-21: 400 programs (seeds 1 and 2), 292,000 tokens and 2.4 million
+tree nodes. Every file was read as expected, the lexers agreed on every
+token, and 132 of 132 mutants were rejected. 300 programs take about 4
+minutes, almost all of it in the Lean lexer under `#eval`. Comparing
+`SrcProgram`s as elaborated Lean terms was much slower, so the test compares
+a printed form of the programs instead.
+
+laniusc also compiles `frontend.lani` itself: with the module line changed and a
+`main` that returns the grammar's length, the binary exits with 318 mod 256.
+A native difftest of `front_end` is not written yet.
+
+What it does not read yet:
+- the heap and raw slice constructs;
+- generics, modules and `impl`;
+- `=>` match arms, and block or `if` arms;
+- integer literals of 2^31 and above.
+
 ### Milestone 4: the compiler in Lanius, and extraction
 
 `formal/lani/mini/compiler.lani` is the compiler, written in a pure subset of
