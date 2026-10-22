@@ -26,3 +26,4 @@ import Lanius.Std.VecExtend
 import Lanius.Std.VecBound
 import Lanius.Std.VecSorted
 import Lanius.Std.VecSorted2
+import Lanius.Std.HeapSortMath
