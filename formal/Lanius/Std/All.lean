@@ -29,3 +29,4 @@ import Lanius.Std.VecSorted2
 import Lanius.Std.HeapSortMath
 import Lanius.Std.VecSwap
 import Lanius.Std.VecSift
+import Lanius.Std.VecSort
