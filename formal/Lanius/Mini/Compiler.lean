@@ -1858,23 +1858,6 @@ def evalLoad (b : Binding) (slot : Nat) (i : Evaluated) : Option Evaluated :=
   else
     none
 
-/-- slice[index] of a raw slice of i32. -/
-def evalElement (b : Binding) (element : SrcType) (slot : Nat) (index : Option Evaluated) : Option Evaluated :=
-  if SrcType.isI32 element then
-    match index with
-    | none => none
-    | some i => evalLoad b slot i
-  else
-    none
-
-def evalIndex (scope : List Binding) (slice : Nat) (slot : Nat) (index : Option Evaluated) : Option Evaluated :=
-  match lookup scope slice with
-  | none => none
-  | some b =>
-    match elementOf b.ty with
-    | none => none
-    | some element => evalElement b element slot index
-
 /-- A struct value: its fields, one after another from slot. -/
 def evalStructOf (ty : SrcType) (types : List SrcType) (args : EvaluatedArgs) : Option Evaluated :=
   if typesSame args.types types && decide (0 < sizes types) then
@@ -2033,54 +2016,6 @@ def evalMatch (slot : Nat) (ety : SrcType) (ty : SrcType) (scrutinee : Option Ev
     match arms with
     | none => none
     | some a => evalMatchOf slot ety ty s a binders values
-
-mutual
-
-/-- The code computing this expression into slot, slot + 1, ..., and its type. -/
-def SrcEff.eval (self : SrcEff) (sigs : List Sig) (scope : List Binding) (slot : Nat) : Option Evaluated :=
-  match self with
-  | .ePure e => evalPure scope e slot
-  | .eCall callee args => evalCall sigs[callee]? callee slot (evalArgs sigs scope args slot)
-  | .eApply op left right => evalApply op slot (SrcEff.eval left sigs scope slot) (SrcEff.eval right sigs scope (slot + 1))
-  | .eNeg operand => evalNegate slot (SrcEff.eval operand sigs scope slot)
-  | .eNot operand => evalNot slot (SrcEff.eval operand sigs scope slot)
-  | .eCast ty operand => evalCast ty slot (SrcEff.eval operand sigs scope slot)
-  | .eIndex slice index => evalIndex scope slice slot (SrcEff.eval index sigs scope slot)
-  | .eStruct ty fields => evalStruct ty (evalArgs sigs scope fields slot)
-  | .eVariant ty variant payload => evalVariant ty variant slot (evalArgs sigs scope payload (slot + 1))
-  | .eMatch scrutinee ety ty binders values => evalMatch slot ety ty (SrcEff.eval scrutinee sigs scope slot) (evalArms sigs scope slot (matchDst slot ety ty) ty 0 (matchVariants ety) binders values) binders.length values.length
-  | .eDivide op left right => evalDivision op slot (SrcEff.eval left sigs scope slot) (SrcEff.eval right sigs scope (slot + 1))
-
-/-- The arguments, each in the slots after the one before. -/
-def evalArgs (sigs : List Sig) (scope : List Binding) (args : List SrcEff) (slot : Nat) : Option EvaluatedArgs :=
-  match args with
-  | [] => some ({ stmt := Stmt.skip, types := [] } : EvaluatedArgs)
-  | arg :: rest =>
-    match SrcEff.eval arg sigs scope slot with
-    | none => none
-    | some first => consArgs first (evalArgs sigs scope rest (slot + SrcType.size first.ty))
-
-/-- Arms k, k + 1, ... of a match on the enum in slot, one per variant from k. -/
-def evalArms (sigs : List Sig) (scope : List Binding) (slot : Nat) (dst : Nat) (ty : SrcType) (k : Nat) (variants : List (List SrcType)) (binders : List (List Nat)) (values : List SrcEff) : Option Stmt :=
-  match values with
-  | [] => none
-  | value :: rest =>
-    match variants with
-    | [] => none
-    | types :: more =>
-      match binders with
-      | [] => none
-      | bs :: others =>
-        let bound : Option (List Binding) := armScope bs types (slot + 1) scope
-        let later : Option Stmt := evalArms sigs scope slot dst ty (k + 1) more others rest
-        match bound with
-        | none => none
-        | some s =>
-          match SrcEff.eval value sigs s dst with
-          | none => none
-          | some e => evalArm slot k (evalSame e ty e.stmt) rest later
-
-end
 
 mutual
 
@@ -2688,6 +2623,95 @@ def lowerSetIndex (decls : SrcDecls) (binding : Option Binding) (index : Option 
   | none => none
   | some b => lowerSetIndexOf decls b index scope value
 
+/-- sigs are the program's signatures and ret the function's result type; next is the first slot no binding in scope uses. slice[index] of a raw slice of word structs: the index in slot, the fields loaded from slot + 1 at Core's native offsets, then copied down. -/
+def evalFields (b : Binding) (element : SrcType) (ws : List MemWidth) (slot : Nat) (i : Evaluated) : Option Evaluated :=
+  if SrcType.isI32 i.ty || SrcType.isUint i.ty UintTy.usize then
+    some ({ stmt := Stmt.seq i.stmt (loadFields ws (slot + 1) (elementBase b.slot ws.length (Expr.var slot)) 0 (assignFrom slot (slotVars (slot + 1) (SrcType.size element)) Stmt.skip)), ty := element } : Evaluated)
+  else
+    none
+
+/-- slice[index] of a raw slice of word enums: the tag and the payload of its variant loaded from slot + 1, then copied down. -/
+def evalEnumElement (b : Binding) (element : SrcType) (wss : List (List MemWidth)) (slot : Nat) (i : Evaluated) : Option Evaluated :=
+  if SrcType.isI32 i.ty || SrcType.isUint i.ty UintTy.usize then
+    some ({ stmt := Stmt.seq i.stmt (loadEnum (slot + 1) (elementBase b.slot (maxLength wss + 1) (Expr.var slot)) wss (assignFrom slot (slotVars (slot + 1) (SrcType.size element)) Stmt.skip)), ty := element } : Evaluated)
+  else
+    none
+
+def evalWordElement (decls : SrcDecls) (b : Binding) (element : SrcType) (slot : Nat) (i : Evaluated) : Option Evaluated :=
+  match elementWidths decls element with
+  | some ws => evalFields b element ws slot i
+  | none =>
+    match enumWidths decls element with
+    | none => none
+    | some wss => evalEnumElement b element wss slot i
+
+/-- slice[index] of a raw slice of i32. -/
+def evalElement (decls : SrcDecls) (b : Binding) (element : SrcType) (slot : Nat) (index : Option Evaluated) : Option Evaluated :=
+  if SrcType.isI32 element then
+    match index with
+    | none => none
+    | some i => evalLoad b slot i
+  else
+    match index with
+    | none => none
+    | some i => evalWordElement decls b element slot i
+
+def evalIndex (decls : SrcDecls) (scope : List Binding) (slice : Nat) (slot : Nat) (index : Option Evaluated) : Option Evaluated :=
+  match lookup scope slice with
+  | none => none
+  | some b =>
+    match elementOf b.ty with
+    | none => none
+    | some element => evalElement decls b element slot index
+
+mutual
+
+/-- The code computing this expression into slot, slot + 1, ..., and its type. -/
+def SrcEff.eval (self : SrcEff) (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (slot : Nat) : Option Evaluated :=
+  match self with
+  | .ePure e => evalPure scope e slot
+  | .eCall callee args => evalCall sigs[callee]? callee slot (evalArgs sigs decls scope args slot)
+  | .eApply op left right => evalApply op slot (SrcEff.eval left sigs decls scope slot) (SrcEff.eval right sigs decls scope (slot + 1))
+  | .eNeg operand => evalNegate slot (SrcEff.eval operand sigs decls scope slot)
+  | .eNot operand => evalNot slot (SrcEff.eval operand sigs decls scope slot)
+  | .eCast ty operand => evalCast ty slot (SrcEff.eval operand sigs decls scope slot)
+  | .eIndex slice index => evalIndex decls scope slice slot (SrcEff.eval index sigs decls scope slot)
+  | .eStruct ty fields => evalStruct ty (evalArgs sigs decls scope fields slot)
+  | .eVariant ty variant payload => evalVariant ty variant slot (evalArgs sigs decls scope payload (slot + 1))
+  | .eMatch scrutinee ety ty binders values => evalMatch slot ety ty (SrcEff.eval scrutinee sigs decls scope slot) (evalArms sigs decls scope slot (matchDst slot ety ty) ty 0 (matchVariants ety) binders values) binders.length values.length
+  | .eDivide op left right => evalDivision op slot (SrcEff.eval left sigs decls scope slot) (SrcEff.eval right sigs decls scope (slot + 1))
+
+/-- The arguments, each in the slots after the one before. -/
+def evalArgs (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (args : List SrcEff) (slot : Nat) : Option EvaluatedArgs :=
+  match args with
+  | [] => some ({ stmt := Stmt.skip, types := [] } : EvaluatedArgs)
+  | arg :: rest =>
+    match SrcEff.eval arg sigs decls scope slot with
+    | none => none
+    | some first => consArgs first (evalArgs sigs decls scope rest (slot + SrcType.size first.ty))
+
+/-- Arms k, k + 1, ... of a match on the enum in slot, one per variant from k. -/
+def evalArms (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (slot : Nat) (dst : Nat) (ty : SrcType) (k : Nat) (variants : List (List SrcType)) (binders : List (List Nat)) (values : List SrcEff) : Option Stmt :=
+  match values with
+  | [] => none
+  | value :: rest =>
+    match variants with
+    | [] => none
+    | types :: more =>
+      match binders with
+      | [] => none
+      | bs :: others =>
+        let bound : Option (List Binding) := armScope bs types (slot + 1) scope
+        let later : Option Stmt := evalArms sigs decls scope slot dst ty (k + 1) more others rest
+        match bound with
+        | none => none
+        | some s =>
+          match SrcEff.eval value sigs decls s dst with
+          | none => none
+          | some e => evalArm slot k (evalSame e ty e.stmt) rest later
+
+end
+
 def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : SrcType) (scope : List Binding) (next : Nat) : Option Stmt :=
   match self with
   | .nop => some Stmt.skip
@@ -2710,13 +2734,13 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : S
   | .letSlice id element pointer length body => lowerLet next (lowerSlice decls element (lowerAs scope pointer SrcType.ptr) (lowerAs scope length SrcType.i32)) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := SrcType.slice element } : Binding) :: scope) (next + 1))
   | .letIndex id ty slice index body => lowerLetIndex decls next (lookup scope slice) ty (lowerIndex scope index) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
   | .setIndex slice index value => lowerSetIndex decls (lookup scope slice) (lowerIndex scope index) scope value
-  | .letEval id ty value body => lowerLetEval ty (SrcEff.eval value sigs scope next) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
-  | .setEval id value => lowerSetEval next (lookup scope id) (SrcEff.eval value sigs scope next)
-  | .ifEval condition thenBranch elseBranch => lowerIfEval next (SrcEff.eval condition sigs scope next) (SrcStmt.lower thenBranch sigs decls ret scope next) (SrcStmt.lower elseBranch sigs decls ret scope next)
-  | .whileEval condition body => lowerWhileEval next (SrcEff.eval condition sigs scope next) (SrcStmt.lower body sigs decls ret scope next)
-  | .returnEval value => lowerReturnEval next ret (SrcEff.eval value sigs scope next)
-  | .discard value => lowerDiscard (SrcEff.eval value sigs scope next)
-  | .setIndexEval slice index value => lowerSetIndexEval next (lookup scope slice) (SrcEff.eval index sigs scope next) (SrcEff.eval value sigs scope (next + 1))
+  | .letEval id ty value body => lowerLetEval ty (SrcEff.eval value sigs decls scope next) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
+  | .setEval id value => lowerSetEval next (lookup scope id) (SrcEff.eval value sigs decls scope next)
+  | .ifEval condition thenBranch elseBranch => lowerIfEval next (SrcEff.eval condition sigs decls scope next) (SrcStmt.lower thenBranch sigs decls ret scope next) (SrcStmt.lower elseBranch sigs decls ret scope next)
+  | .whileEval condition body => lowerWhileEval next (SrcEff.eval condition sigs decls scope next) (SrcStmt.lower body sigs decls ret scope next)
+  | .returnEval value => lowerReturnEval next ret (SrcEff.eval value sigs decls scope next)
+  | .discard value => lowerDiscard (SrcEff.eval value sigs decls scope next)
+  | .setIndexEval slice index value => lowerSetIndexEval next (lookup scope slice) (SrcEff.eval index sigs decls scope next) (SrcEff.eval value sigs decls scope (next + 1))
 
 /-- Slots the statement's lets need beyond the ones in scope. -/
 def SrcStmt.depth (self : SrcStmt) : Nat :=

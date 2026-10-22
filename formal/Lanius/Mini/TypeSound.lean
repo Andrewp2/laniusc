@@ -937,12 +937,35 @@ theorem castTo_typed {P : Core.Program} {ctx : Typing.Context} {ce : Core.Expr} 
   | ptr => simp [castTo] at h
   | slice => simp [castTo] at h
 
+/-- An element read of a word struct or enum slice has the element's type. -/
+theorem evalWordElement_ty {decls : SrcDecls} {b : Binding} {element : SrcType} {slot : Nat}
+    {i ev : Evaluated} (h : evalWordElement decls b element slot i = some ev) :
+    ev.ty = element ∧ (i.ty.isI32 || i.ty.isUint .usize) = true := by
+  simp only [evalWordElement] at h
+  split at h
+  · simp only [evalFields] at h
+    split at h
+    · rename_i c
+      simp only [Option.some.injEq] at h
+      subst h
+      exact ⟨rfl, c⟩
+    · simp at h
+  · split at h
+    · simp at h
+    · simp only [evalEnumElement] at h
+      split at h
+      · rename_i c
+        simp only [Option.some.injEq] at h
+        subst h
+        exact ⟨rfl, c⟩
+      · simp at h
+
 mutual
 
 theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
-    {sigs : List Sig} (sigsOk : SigsOk P sigs) :
+    {sigs : List Sig} {decls : SrcDecls} (sigsOk : SigsOk P sigs) :
     ∀ (e : SrcEff) {scope : List Binding} {ctx : Typing.Context} {slot : Nat} {ev : Evaluated},
-      ScopeOk P ctx scope → (∀ t ∈ e.types, TypeDeclared P t) → e.eval sigs scope slot = some ev →
+      ScopeOk P ctx scope → (∀ t ∈ e.types, TypeDeclared P t) → e.eval sigs decls scope slot = some ev →
         ExprHasType P ctx e.toCore ev.ty.toCore
   | .ePure e, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalPure] at h
@@ -1120,7 +1143,21 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
                 · rw [eq_uint c]; exact .unsigned _
               exact .indexSlice (.local inCtx) typedIndex integer
             · simp at h
-        · simp at h
+        · split at h
+          · simp at h
+          · rename_i i hi
+            obtain ⟨tyEq, cond⟩ := evalWordElement_ty h
+            have typedIndex := SrcEff.eval_typed target sigsOk index ok (by simpa [SrcEff.types] using dd) hi
+            have inCtx := (ok slice b found).1
+            have bty : b.ty = .slice element := by cases hb : b.ty <;> simp_all [elementOf]
+            rw [bty] at inCtx
+            have integer : Typing.IntegerTy i.ty.toCore := by
+              simp only [Bool.or_eq_true] at cond
+              rcases cond with c | c
+              · rw [eq_i32 c]; exact .signed _
+              · rw [eq_uint c]; exact .unsigned _
+            rw [tyEq]
+            exact .indexSlice (.local inCtx) typedIndex integer
   | .eStruct ty fields, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalStruct] at h
     split at h
@@ -1242,9 +1279,9 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
             · simp at h
 
 theorem evalArgs_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
-    {sigs : List Sig} (sigsOk : SigsOk P sigs) :
+    {sigs : List Sig} {decls : SrcDecls} (sigsOk : SigsOk P sigs) :
     ∀ (args : List SrcEff) {scope : List Binding} {ctx : Typing.Context} {slot : Nat} {ea : EvaluatedArgs},
-      ScopeOk P ctx scope → (∀ t ∈ effsTypes args, TypeDeclared P t) → evalArgs sigs scope args slot = some ea →
+      ScopeOk P ctx scope → (∀ t ∈ effsTypes args, TypeDeclared P t) → evalArgs sigs decls scope args slot = some ea →
       ExprsHaveTypes P ctx (SrcEff.toCoreList args) (ea.types.map SrcType.toCore)
   | [], scope, ctx, slot, ea, ok, dd, h => by
     simp only [evalArgs, Option.some.injEq] at h
@@ -1264,14 +1301,14 @@ theorem evalArgs_typed {P : Core.Program} (target : P.target = Core.Target.x86_6
         exact .cons (SrcEff.eval_typed target sigsOk arg ok (fun t mem => dd t (by simp [effsTypes, mem])) hfirst) (evalArgs_typed target sigsOk rest ok (fun t mem => dd t (by simp [effsTypes, mem])) hr)
 
 theorem evalArms_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
-    {sigs : List Sig} (sigsOk : SigsOk P sigs) {eid : Nat} {decl : Core.EnumDecl}
+    {sigs : List Sig} {decls : SrcDecls} (sigsOk : SigsOk P sigs) {eid : Nat} {decl : Core.EnumDecl}
     (found : P.enumeration? eid = some decl) :
     ∀ (values : List SrcEff) (k : Nat) (variants : List (List SrcType)) (binders : List (List Nat))
       {scope : List Binding} {ctx : Typing.Context} {slot dst : Nat} {ty : SrcType} {out : Stmt},
       ScopeOk P ctx scope → (∀ t ∈ effsTypes values, TypeDeclared P t) →
       (∀ j fs, variants[j]? = some fs → decl.variants[k + j]? = some (fs.map SrcType.toCore)) →
       (∀ fs ∈ variants, ∀ f ∈ fs, TypeDeclared P f) →
-      evalArms sigs scope slot dst ty k variants binders values = some out →
+      evalArms sigs decls scope slot dst ty k variants binders values = some out →
       Typing.MatchArmsHaveType P ctx (SrcEff.coreArms eid k binders values) (.enumeration eid) ty.toCore
   | [], _, _, _, _, _, _, _, _, _, _, _, _, _, h => by simp [evalArms] at h
   | _ :: _, _, [], _, _, _, _, _, _, _, _, _, _, _, h => by simp [evalArms] at h
@@ -1296,7 +1333,7 @@ theorem evalArms_typed {P : Core.Program} (target : P.target = Core.Target.x86_6
           cases rest with
           | nil => cases others <;> exact .one pat body
           | cons next more' =>
-            cases ho : evalArms sigs scope slot dst ty (k + 1) more others (next :: more') with
+            cases ho : evalArms sigs decls scope slot dst ty (k + 1) more others (next :: more') with
             | none => simp [ho] at h
             | some o =>
               have tail := evalArms_typed target sigsOk found (next :: more') (k + 1) more others ok

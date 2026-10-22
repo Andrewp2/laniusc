@@ -40,6 +40,28 @@ theorem setFrom_slotVars (env : Env) {src dst n i : Nat} (apart : src + n ≤ ds
   rw [setFrom_value _ dst env (Insens.copy (.inr apart)) i _ (slotVars_get src n i below)]
   rfl
 
+/-- A copy down to `dst` from `src` above it never reads a slot it has
+already written. -/
+theorem Insens.down {src dst n : Nat} (le : dst ≤ src) : Insens (slotVars src n) dst := by
+  intro i x found j below E w
+  have inRange : i < n := by
+    obtain ⟨h, _⟩ := List.getElem?_eq_some_iff.mp found
+    rw [slotVars_length] at h
+    exact h
+  rw [slotVars_get src n i inRange, Option.some.injEq] at found
+  subst found
+  simp only [Expr.eval, Env.set]
+  rw [if_neg (by omega)]
+
+/-- A value at `slot + 1` copied down by one slot. -/
+theorem copy_down {ty : SrcType} {v : Value} {F : Env} {slot : Nat} (holds : ty.HoldsAt v F (slot + 1)) :
+    ty.HoldsAt v (F.setFrom slot (slotVars (slot + 1) ty.size)) slot ∧
+      ∀ j < slot, F.setFrom slot (slotVars (slot + 1) ty.size) j = F j :=
+  ⟨holds.congr fun i below => by
+      rw [setFrom_value _ slot F (Insens.down (Nat.le_succ slot)) i _ (slotVars_get (slot + 1) ty.size i below)]
+      rfl,
+    fun j lt => setFrom_outside _ slot F j (.inl lt)⟩
+
 theorem Corr.after {scope frame st env base slot} (corr : Corr scope frame st env)
     (fr : Layout scope frame base slot) (fresh : st.Fresh) {st' : State} {env' : Env}
     (keeps : Keeps st.nextCell st st') (locals : st'.locals = st.locals) (same : ∀ j < slot, env' j = env j) :
@@ -249,7 +271,7 @@ code leaving a representation of its value from `slot`. -/
 def EvalSound (sp : SrcProgram) (mp : Program) (fuel : Nat) : Prop :=
   ∀ {hp : Heap} {e : SrcEff} {scope : List Binding} {slot : Nat} {ev : Evaluated}
     {frame : Nat → Nat} {base : Nat} {st : State} {env : Env} {v : Value} {st' : State},
-    e.eval (sigs sp.funcs) scope slot = some ev →
+    e.eval (sigs sp.funcs) sp.decls scope slot = some ev →
     Corr scope frame st env → Layout scope frame base slot → st.Fresh →
     HeapCorr st.heap hp → evalExpr fuel sp.toCore st e.toCore = .done v st' →
     st'.heap.nextAddress ≤ hp.limit →
@@ -292,7 +314,7 @@ theorem eval_pure {e : SrcExpr} {fuel : Nat} (ok : evalPure scope e slot = some 
 /-- Arguments evaluated one after another into consecutive slots. -/
 theorem evalArgs_sound : ∀ (args : List SrcEff) {k : Nat}, (∀ m < k, EvalSound sp mp m) →
     ∀ {hp : Heap} {slot : Nat} {ea : EvaluatedArgs} {st : State} {env : Env} {vs : List Value} {st' : State},
-    evalArgs (sigs sp.funcs) scope args slot = some ea → Corr scope frame st env →
+    evalArgs (sigs sp.funcs) sp.decls scope args slot = some ea → Corr scope frame st env →
     Layout scope frame base slot → st.Fresh → HeapCorr st.heap hp →
     evalExprs k sp.toCore st (SrcEff.toCoreList args) = .done vs st' → st'.heap.nextAddress ≤ hp.limit →
     st'.Fresh ∧ Keeps st.nextCell st st' ∧ st'.locals = st.locals ∧
@@ -344,7 +366,7 @@ theorem evalArgs_sound : ∀ (args : List SrcEff) {k : Nat}, (∀ m < k, EvalSou
 
 theorem eval_call (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {k : Nat}
     (ih : StmtSound sp mp k) (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} {args : List SrcEff}
-    (ok : evalCall (sigs sp.funcs)[callee]? callee slot (evalArgs (sigs sp.funcs) scope args slot) = some ev)
+    (ok : evalCall (sigs sp.funcs)[callee]? callee slot (evalArgs (sigs sp.funcs) sp.decls scope args slot) = some ev)
     (corr : Corr scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap hp)
     (run : evalExpr (k + 1) sp.toCore st (.call callee (SrcEff.toCoreList args)) = .done v st')
@@ -406,7 +428,7 @@ theorem bool_bits {v : Value} {x : BitVec 64} (holds : SrcType.bool.Holds v x) :
     ∃ b, v = .boolean b ∧ x = boolBits b := holds
 
 theorem eval_apply {k : Nat} (ihe : EvalSound sp mp k) {op : SrcOp} {l r : SrcEff}
-    (ok : evalApply op slot (l.eval (sigs sp.funcs) scope slot) (r.eval (sigs sp.funcs) scope (slot + 1)) = some ev)
+    (ok : evalApply op slot (l.eval (sigs sp.funcs) sp.decls scope slot) (r.eval (sigs sp.funcs) sp.decls scope (slot + 1)) = some ev)
     (corr : Corr scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap hp)
     (run : evalExpr (k + 1) sp.toCore st (.binary op.toCore l.toCore r.toCore) = .done v st')
@@ -521,7 +543,7 @@ theorem eval_apply {k : Nat} (ihe : EvalSound sp mp k) {op : SrcOp} {l r : SrcEf
 /-- A division: both operands, then the mini division, which has a run
 whenever Core's has a value. -/
 theorem eval_divide {k : Nat} (ihe : EvalSound sp mp k) {op : SrcDivOp} {l r : SrcEff}
-    (ok : evalDivision op slot (l.eval (sigs sp.funcs) scope slot) (r.eval (sigs sp.funcs) scope (slot + 1)) =
+    (ok : evalDivision op slot (l.eval (sigs sp.funcs) sp.decls scope slot) (r.eval (sigs sp.funcs) sp.decls scope (slot + 1)) =
       some ev)
     (corr : Corr scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap hp)
@@ -588,7 +610,7 @@ theorem eq_of_elementOf {ty e : SrcType} (h : elementOf ty = some e) : ty = .sli
 /-- `slice[index]` of a raw slice of `i32`: the index in `slot`, then the
 element loaded over it. -/
 theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {index : SrcEff}
-    (ok : evalIndex scope slice slot (index.eval (sigs sp.funcs) scope slot) = some ev)
+    (ok : evalIndex sp.decls scope slice slot (index.eval (sigs sp.funcs) sp.decls scope slot) = some ev)
     (corr : Corr scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap hp)
     (run : evalExpr (k + 2) sp.toCore st (.index (.local slice) index.toCore) = .done v st')
@@ -604,7 +626,72 @@ theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {inde
   have bty := eq_of_elementOf elementOk
   simp only [evalElement] at ok
   split at ok
-  case isFalse => simp at ok
+  case isFalse =>
+    split at ok
+    · simp at ok
+    rename_i i indexOk
+    obtain ⟨w, localRun, holdsW⟩ := corr.local found k sp.toCore
+    rw [bty] at holdsW
+    cases holdsW with
+    | @slice _ len _ _ =>
+    obtain ⟨iv, pos, indexRun, posOk, read⟩ := eval_index_raw localRun run
+    obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1⟩ :=
+      ihe indexOk corr fr fresh hc indexRun bound
+    have bslotLt : b.slot < slot := by
+      have := fr.slots b (lookup_mem found).1
+      have := fr.sized b (lookup_mem found).1
+      omega
+    have bslot : env1 b.slot = env b.slot := same1 b.slot bslotLt
+    rw [← bslot] at read
+    have tail : st'.heap.nextAddress ≤ hp1.limit := by rw [exec1.limit_normal]; exact bound
+    simp only [evalWordElement] at ok
+    split at ok
+    · rename_i ws hws
+      simp only [evalFields] at ok
+      split at ok
+      case isFalse => simp at ok
+      rename_i kind
+      simp only [Option.some.injEq] at ok
+      subst ok
+      have scalar : i.ty.isScalar = true := by
+        cases hty : i.ty <;> simp_all [SrcType.isI32, SrcType.isUint, SrcType.isScalar]
+      have posEq := index_toNat (t := { expr := .var slot, ty := i.ty }) kind (holds_var holds1 scalar) posOk
+      have below : (elementBase b.slot ws.length (.var slot)).Below (slot + 1) :=
+        ⟨(by simp only [Expr.Below]; omega), ⟨(by simp only [Expr.Below]; omega), trivial⟩, trivial⟩
+      obtain ⟨holds, load⟩ := loadStruct_sound (mp := mp) hc1 tail hws posEq below read
+      obtain ⟨copied, agree⟩ := copy_down holds
+      obtain ⟨sid, fields, rfl, declared, widths, nonempty⟩ := elementWidths_some hws
+      have all := wordWidths_all widths
+      obtain ⟨wlen, wget⟩ := wordWidths_get widths
+      refine ⟨fresh1, keeps1, locals1, ?_, d1, _, hp1, .seq exec1 (load (assignFrom_exec _ slot .skip)),
+        fun j lt => ?_, copied, hc1⟩
+      · simp only [SrcType.size, sizes_allWord all]
+        rw [← wlen]
+        cases ws with
+        | nil => exact absurd rfl nonempty
+        | cons => simp
+      · rw [agree j lt, fieldsEnv_below hp1 _ ws (slot + 1) 0 env1 j (by omega), same1 j lt]
+    · split at ok
+      · simp at ok
+      rename_i wss hwss
+      simp only [evalEnumElement] at ok
+      split at ok
+      case isFalse => simp at ok
+      rename_i kind
+      simp only [Option.some.injEq] at ok
+      subst ok
+      have scalar : i.ty.isScalar = true := by
+        cases hty : i.ty <;> simp_all [SrcType.isI32, SrcType.isUint, SrcType.isScalar]
+      have posEq := index_toNat (t := { expr := .var slot, ty := i.ty }) kind (holds_var holds1 scalar) posOk
+      have below : (elementBase b.slot (maxLength wss + 1) (.var slot)).Below (slot + 1) :=
+        ⟨(by simp only [Expr.Below]; omega), ⟨(by simp only [Expr.Below]; omega), trivial⟩, trivial⟩
+      obtain ⟨env2, agree2, holds, load⟩ := loadEnum_sound (mp := mp) hc1 tail hwss posEq below read
+      obtain ⟨copied, agree⟩ := copy_down holds
+      obtain ⟨eid, variants, rfl, declared, widths, vpos, vsmall⟩ := enumWidths_some hwss
+      have mlen := maxLength_eq widths
+      refine ⟨fresh1, keeps1, locals1, by simp only [SrcType.size]; omega, d1, _, hp1,
+        .seq exec1 (load (assignFrom_exec _ slot .skip)), fun j lt => ?_, copied, hc1⟩
+      rw [agree j lt, agree2 j (by omega), same1 j lt]
   rename_i isI32
   have eltEq := eq_of_isI32 isI32
   subst eltEq
@@ -664,7 +751,7 @@ theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {inde
 
 /-- A struct literal: its fields, one after another from `slot`. -/
 theorem eval_struct {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcType} {fields : List SrcEff}
-    (ok : evalStruct ty (evalArgs (sigs sp.funcs) scope fields slot) = some ev)
+    (ok : evalStruct ty (evalArgs (sigs sp.funcs) sp.decls scope fields slot) = some ev)
     (corr : Corr scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap hp)
     (run : evalExpr (k + 1) sp.toCore st (.structValue ty.typeId (SrcEff.toCoreList fields)) = .done v st')
@@ -704,7 +791,7 @@ theorem eval_struct {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcType
 /-- An enum literal: its payload from `slot + 1`, then its tag in `slot`. -/
 theorem eval_variant {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcType} {variant : Nat}
     {payload : List SrcEff}
-    (ok : evalVariant ty variant slot (evalArgs (sigs sp.funcs) scope payload (slot + 1)) = some ev)
+    (ok : evalVariant ty variant slot (evalArgs (sigs sp.funcs) sp.decls scope payload (slot + 1)) = some ev)
     (corr : Corr scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap hp)
     (run : evalExpr (k + 1) sp.toCore st (.enumValue ty.typeId variant (SrcEff.toCoreList payload)) = .done v st')
@@ -795,7 +882,7 @@ theorem evalArms_sound {dst eid : Nat} {ty : SrcType} :
       {hp : Heap} {frame : Nat → Nat} {st : State} {env : Env},
       (∀ m < k, EvalSound sp mp m) → Corr scope frame st env → Layout scope frame 0 slot → st.Fresh →
       HeapCorr st.heap hp →
-      evalArms (sigs sp.funcs) scope slot dst ty j variants binders values = some stmt →
+      evalArms (sigs sp.funcs) sp.decls scope slot dst ty j variants binders values = some stmt →
       values.length = variants.length → binders.length = variants.length →
       (∀ fs ∈ variants, slot + 1 + sizes fs ≤ dst) → j ≤ kv → variants[kv - j]? = some fs → kv < 2 ^ 64 →
       env slot = BitVec.ofNat 64 kv → FieldsHold fs vs env (slot + 1) →
@@ -862,7 +949,7 @@ theorem evalArms_sound {dst eid : Nat} {ty : SrcType} :
           subst ok
           exact exec
         | cons next more' =>
-          cases ho : evalArms (sigs sp.funcs) scope slot dst ty (j + 1) more others (next :: more') with
+          cases ho : evalArms (sigs sp.funcs) sp.decls scope slot dst ty (j + 1) more others (next :: more') with
           | none => simp [ho] at ok
           | some o =>
             simp only [ho, Option.some.injEq] at ok
@@ -882,7 +969,7 @@ theorem evalArms_sound {dst eid : Nat} {ty : SrcType} :
         simp only [List.length_cons, List.length_nil] at vlen
         omega
       | cons next more' =>
-        cases ho : evalArms (sigs sp.funcs) scope slot dst ty (j + 1) more others (next :: more') with
+        cases ho : evalArms (sigs sp.funcs) sp.decls scope slot dst ty (j + 1) more others (next :: more') with
         | none => simp [ho] at ok
         | some o =>
           simp only [ho, Option.some.injEq] at ok
@@ -898,8 +985,8 @@ theorem evalArms_sound {dst eid : Nat} {ty : SrcType} :
 `matchDst`, then that value copied down to `slot`. -/
 theorem eval_match {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {scrutinee : SrcEff} {ety ty : SrcType}
     {binders : List (List Nat)} {values : List SrcEff}
-    (ok : evalMatch slot ety ty (scrutinee.eval (sigs sp.funcs) scope slot)
-      (evalArms (sigs sp.funcs) scope slot (matchDst slot ety ty) ty 0 (matchVariants ety) binders values)
+    (ok : evalMatch slot ety ty (scrutinee.eval (sigs sp.funcs) sp.decls scope slot)
+      (evalArms (sigs sp.funcs) sp.decls scope slot (matchDst slot ety ty) ty 0 (matchVariants ety) binders values)
       binders.length values.length = some ev)
     (corr : Corr scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap hp)
@@ -966,7 +1053,7 @@ theorem eval_match {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {scrutinee :
 
 /-- An operator applied in place to its operand's slot. -/
 theorem eval_then {k : Nat} (ihe : EvalSound sp mp k) {operand : SrcEff} {o : Evaluated}
-    (operandOk : operand.eval (sigs sp.funcs) scope slot = some o) {t : Typed}
+    (operandOk : operand.eval (sigs sp.funcs) sp.decls scope slot = some o) {t : Typed}
     (ok : evalThen slot o (some t) = some ev) {w : Value}
     (corr : Corr scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap hp) (operandRun : evalExpr k sp.toCore st operand.toCore = .done w st')

@@ -2373,26 +2373,7 @@ pub fn eval_load(b: Binding, slot: usize, i: Evaluated) -> core::option::Option<
     return None;
 }
 
-// slice[index] of a raw slice of i32.
-pub fn eval_element(b: Binding, element: SrcType, slot: usize, index: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
-    if (element.is_i32()) {
-        return match (index) {
-            None -> None,
-            Some(i) -> eval_load(b, slot, i),
-        };
-    }
-    return None;
-}
 
-pub fn eval_index(scope: List<Binding>, slice: usize, slot: usize, index: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
-    return match (lookup(scope, slice)) {
-        None -> None,
-        Some(b) -> match (element_of(b.ty)) {
-            None -> None,
-            Some(element) -> eval_element(b, element, slot, index),
-        },
-    };
-}
 
 // A struct value: its fields, one after another from slot.
 pub fn eval_struct_of(ty: SrcType, types: List<SrcType>, args: EvaluatedArgs) -> core::option::Option<Evaluated> {
@@ -2556,10 +2537,10 @@ pub fn eval_arm(slot: usize, k: usize, code: core::option::Option<Stmt>, rest: L
 
 // Arm k's value evaluated from dst, under its payload's binders.
 // extract: inline
-fn eval_arm_in(sigs: List<Sig>, bound: core::option::Option<List<Binding>>, slot: usize, dst: usize, ty: SrcType, k: usize, value: SrcEff, rest: List<SrcEff>, later: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+fn eval_arm_in(sigs: List<Sig>, decls: SrcDecls, bound: core::option::Option<List<Binding>>, slot: usize, dst: usize, ty: SrcType, k: usize, value: SrcEff, rest: List<SrcEff>, later: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
     return match (bound) {
         None -> None,
-        Some(s) -> match (value.eval(sigs, s, dst)) {
+        Some(s) -> match (value.eval(sigs, decls, s, dst)) {
             None -> None,
             Some(e) -> eval_arm(slot, k, eval_same(e, ty, e.stmt), rest, later),
         },
@@ -2603,52 +2584,6 @@ pub fn eval_match(slot: usize, ety: SrcType, ty: SrcType, scrutinee: core::optio
         },
     };
 }
-
-// extract: mutual begin
-impl SrcEff {
-    // The code computing this expression into slot, slot + 1, ..., and its type.
-    pub fn eval(self, sigs: List<Sig>, scope: List<Binding>, slot: usize) -> core::option::Option<Evaluated> {
-        return match (self) {
-            EPure(e) -> eval_pure(scope, e, slot),
-            ECall(callee, args) -> eval_call(get(sigs, callee), callee, slot, eval_args(sigs, scope, unbox(args), slot)),
-            EApply(op, left, right) -> eval_apply(op, slot, unbox(left).eval(sigs, scope, slot), unbox(right).eval(sigs, scope, plus(slot, 1))),
-            ENeg(operand) -> eval_negate(slot, unbox(operand).eval(sigs, scope, slot)),
-            ENot(operand) -> eval_not(slot, unbox(operand).eval(sigs, scope, slot)),
-            ECast(ty, operand) -> eval_cast(ty, slot, unbox(operand).eval(sigs, scope, slot)),
-            EIndex(slice, index) -> eval_index(scope, slice, slot, unbox(index).eval(sigs, scope, slot)),
-            EStruct(ty, fields) -> eval_struct(ty, eval_args(sigs, scope, unbox(fields), slot)),
-            EVariant(ty, variant, payload) -> eval_variant(ty, variant, slot, eval_args(sigs, scope, unbox(payload), plus(slot, 1))),
-            EMatch(scrutinee, ety, ty, binders, values) -> eval_match(slot, ety, ty, unbox(scrutinee).eval(sigs, scope, slot), eval_arms(sigs, scope, slot, match_dst(slot, ety, ty), ty, 0, match_variants(ety), binders, unbox(values)), length(binders), length(unbox(values))),
-            EDivide(op, left, right) -> eval_division(op, slot, unbox(left).eval(sigs, scope, slot), unbox(right).eval(sigs, scope, plus(slot, 1))),
-        };
-    }
-}
-
-// The arguments, each in the slots after the one before.
-pub fn eval_args(sigs: List<Sig>, scope: List<Binding>, args: List<SrcEff>, slot: usize) -> core::option::Option<EvaluatedArgs> {
-    return match (args) {
-        Nil -> Some(EvaluatedArgs { stmt: Skip, types: empty() }),
-        Cons(arg, rest) -> match (arg.eval(sigs, scope, slot)) {
-            None -> None,
-            Some(first) -> cons_args(first, eval_args(sigs, scope, unbox(rest), plus(slot, first.ty.size()))),
-        },
-    };
-}
-
-// Arms k, k + 1, ... of a match on the enum in slot, one per variant from k.
-pub fn eval_arms(sigs: List<Sig>, scope: List<Binding>, slot: usize, dst: usize, ty: SrcType, k: usize, variants: List<List<SrcType>>, binders: List<List<usize>>, values: List<SrcEff>) -> core::option::Option<Stmt> {
-    return match (values) {
-        Nil -> None,
-        Cons(value, rest) -> match (variants) {
-            Nil -> None,
-            Cons(types, more) -> match (binders) {
-                Nil -> None,
-                Cons(bs, others) -> eval_arm_in(sigs, arm_scope(bs, types, plus(slot, 1), scope), slot, dst, ty, k, value, unbox(rest), eval_arms(sigs, scope, slot, dst, ty, plus(k, 1), unbox(more), unbox(others), unbox(rest))),
-            },
-        },
-    };
-}
-// extract: mutual end
 
 // extract: mutual begin
 impl SrcEff {
@@ -3457,6 +3392,104 @@ pub fn lower_set_index(decls: SrcDecls, binding: core::option::Option<Binding>, 
 
 // sigs are the program's signatures and ret the function's result type; next
 // is the first slot no binding in scope uses.
+// slice[index] of a raw slice of word structs: the index in slot, the
+// fields loaded from slot + 1 at Core's native offsets, then copied down.
+pub fn eval_fields(b: Binding, element: SrcType, ws: List<MemWidth>, slot: usize, i: Evaluated) -> core::option::Option<Evaluated> {
+    if (i.ty.is_i32() || i.ty.is_uint(Usize)) {
+        return Some(Evaluated { stmt: Seq(boxed(i.stmt), boxed(load_fields(ws, plus(slot, 1), element_base(b.slot, length(ws), Var(slot)), 0, assign_from(slot, slot_vars(plus(slot, 1), element.size()), Skip)))), ty: element });
+    }
+    return None;
+}
+
+// slice[index] of a raw slice of word enums: the tag and the payload of its
+// variant loaded from slot + 1, then copied down.
+pub fn eval_enum_element(b: Binding, element: SrcType, wss: List<List<MemWidth>>, slot: usize, i: Evaluated) -> core::option::Option<Evaluated> {
+    if (i.ty.is_i32() || i.ty.is_uint(Usize)) {
+        return Some(Evaluated { stmt: Seq(boxed(i.stmt), boxed(load_enum(plus(slot, 1), element_base(b.slot, plus(max_length(wss), 1), Var(slot)), wss, assign_from(slot, slot_vars(plus(slot, 1), element.size()), Skip)))), ty: element });
+    }
+    return None;
+}
+
+pub fn eval_word_element(decls: SrcDecls, b: Binding, element: SrcType, slot: usize, i: Evaluated) -> core::option::Option<Evaluated> {
+    return match (element_widths(decls, element)) {
+        Some(ws) -> eval_fields(b, element, ws, slot, i),
+        None -> match (enum_widths(decls, element)) {
+            None -> None,
+            Some(wss) -> eval_enum_element(b, element, wss, slot, i),
+        },
+    };
+}
+
+// slice[index] of a raw slice of i32.
+pub fn eval_element(decls: SrcDecls, b: Binding, element: SrcType, slot: usize, index: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
+    if (element.is_i32()) {
+        return match (index) {
+            None -> None,
+            Some(i) -> eval_load(b, slot, i),
+        };
+    }
+    return match (index) {
+        None -> None,
+        Some(i) -> eval_word_element(decls, b, element, slot, i),
+    };
+}
+
+pub fn eval_index(decls: SrcDecls, scope: List<Binding>, slice: usize, slot: usize, index: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
+    return match (lookup(scope, slice)) {
+        None -> None,
+        Some(b) -> match (element_of(b.ty)) {
+            None -> None,
+            Some(element) -> eval_element(decls, b, element, slot, index),
+        },
+    };
+}
+
+// extract: mutual begin
+impl SrcEff {
+    // The code computing this expression into slot, slot + 1, ..., and its type.
+    pub fn eval(self, sigs: List<Sig>, decls: SrcDecls, scope: List<Binding>, slot: usize) -> core::option::Option<Evaluated> {
+        return match (self) {
+            EPure(e) -> eval_pure(scope, e, slot),
+            ECall(callee, args) -> eval_call(get(sigs, callee), callee, slot, eval_args(sigs, decls, scope, unbox(args), slot)),
+            EApply(op, left, right) -> eval_apply(op, slot, unbox(left).eval(sigs, decls, scope, slot), unbox(right).eval(sigs, decls, scope, plus(slot, 1))),
+            ENeg(operand) -> eval_negate(slot, unbox(operand).eval(sigs, decls, scope, slot)),
+            ENot(operand) -> eval_not(slot, unbox(operand).eval(sigs, decls, scope, slot)),
+            ECast(ty, operand) -> eval_cast(ty, slot, unbox(operand).eval(sigs, decls, scope, slot)),
+            EIndex(slice, index) -> eval_index(decls, scope, slice, slot, unbox(index).eval(sigs, decls, scope, slot)),
+            EStruct(ty, fields) -> eval_struct(ty, eval_args(sigs, decls, scope, unbox(fields), slot)),
+            EVariant(ty, variant, payload) -> eval_variant(ty, variant, slot, eval_args(sigs, decls, scope, unbox(payload), plus(slot, 1))),
+            EMatch(scrutinee, ety, ty, binders, values) -> eval_match(slot, ety, ty, unbox(scrutinee).eval(sigs, decls, scope, slot), eval_arms(sigs, decls, scope, slot, match_dst(slot, ety, ty), ty, 0, match_variants(ety), binders, unbox(values)), length(binders), length(unbox(values))),
+            EDivide(op, left, right) -> eval_division(op, slot, unbox(left).eval(sigs, decls, scope, slot), unbox(right).eval(sigs, decls, scope, plus(slot, 1))),
+        };
+    }
+}
+
+// The arguments, each in the slots after the one before.
+pub fn eval_args(sigs: List<Sig>, decls: SrcDecls, scope: List<Binding>, args: List<SrcEff>, slot: usize) -> core::option::Option<EvaluatedArgs> {
+    return match (args) {
+        Nil -> Some(EvaluatedArgs { stmt: Skip, types: empty() }),
+        Cons(arg, rest) -> match (arg.eval(sigs, decls, scope, slot)) {
+            None -> None,
+            Some(first) -> cons_args(first, eval_args(sigs, decls, scope, unbox(rest), plus(slot, first.ty.size()))),
+        },
+    };
+}
+
+// Arms k, k + 1, ... of a match on the enum in slot, one per variant from k.
+pub fn eval_arms(sigs: List<Sig>, decls: SrcDecls, scope: List<Binding>, slot: usize, dst: usize, ty: SrcType, k: usize, variants: List<List<SrcType>>, binders: List<List<usize>>, values: List<SrcEff>) -> core::option::Option<Stmt> {
+    return match (values) {
+        Nil -> None,
+        Cons(value, rest) -> match (variants) {
+            Nil -> None,
+            Cons(types, more) -> match (binders) {
+                Nil -> None,
+                Cons(bs, others) -> eval_arm_in(sigs, decls, arm_scope(bs, types, plus(slot, 1), scope), slot, dst, ty, k, value, unbox(rest), eval_arms(sigs, decls, scope, slot, dst, ty, plus(k, 1), unbox(more), unbox(others), unbox(rest))),
+            },
+        },
+    };
+}
+// extract: mutual end
+
 impl SrcStmt {
     pub fn lower(self, sigs: List<Sig>, decls: SrcDecls, ret: SrcType, scope: List<Binding>, next: usize) -> core::option::Option<Stmt> {
         return match (self) {
@@ -3480,13 +3513,13 @@ impl SrcStmt {
             LetSlice(id, element, pointer, length, body) -> lower_let(next, lower_slice(decls, element, lower_as(scope, pointer, Ptr), lower_as(scope, length, I32)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Slice(boxed(element)) }, scope), plus(next, 1))),
             LetIndex(id, ty, slice, index, body) -> lower_let_index(decls, next, lookup(scope, slice), ty, lower_index(scope, index), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
             SetIndex(slice, index, value) -> lower_set_index(decls, lookup(scope, slice), lower_index(scope, index), scope, value),
-            LetEval(id, ty, value, body) -> lower_let_eval(ty, value.eval(sigs, scope, next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
-            SetEval(id, value) -> lower_set_eval(next, lookup(scope, id), value.eval(sigs, scope, next)),
-            IfEval(condition, then_branch, else_branch) -> lower_if_eval(next, condition.eval(sigs, scope, next), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next)),
-            WhileEval(condition, body) -> lower_while_eval(next, condition.eval(sigs, scope, next), unbox(body).lower(sigs, decls, ret, scope, next)),
-            ReturnEval(value) -> lower_return_eval(next, ret, value.eval(sigs, scope, next)),
-            Discard(value) -> lower_discard(value.eval(sigs, scope, next)),
-            SetIndexEval(slice, index, value) -> lower_set_index_eval(next, lookup(scope, slice), index.eval(sigs, scope, next), value.eval(sigs, scope, plus(next, 1))),
+            LetEval(id, ty, value, body) -> lower_let_eval(ty, value.eval(sigs, decls, scope, next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
+            SetEval(id, value) -> lower_set_eval(next, lookup(scope, id), value.eval(sigs, decls, scope, next)),
+            IfEval(condition, then_branch, else_branch) -> lower_if_eval(next, condition.eval(sigs, decls, scope, next), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next)),
+            WhileEval(condition, body) -> lower_while_eval(next, condition.eval(sigs, decls, scope, next), unbox(body).lower(sigs, decls, ret, scope, next)),
+            ReturnEval(value) -> lower_return_eval(next, ret, value.eval(sigs, decls, scope, next)),
+            Discard(value) -> lower_discard(value.eval(sigs, decls, scope, next)),
+            SetIndexEval(slice, index, value) -> lower_set_index_eval(next, lookup(scope, slice), index.eval(sigs, decls, scope, next), value.eval(sigs, decls, scope, plus(next, 1))),
         };
     }
 
