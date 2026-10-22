@@ -83,13 +83,91 @@ is about whatever they compute.
 
 ## 4. The front end
 
-- **What.** The input is a `SrcProgram` value, not source text. Nothing in
-  the chain parses Lanius. Whatever builds the `SrcProgram` (today the
-  difftest generators) is trusted to build the program that was meant. The
-  only premise about argument types is `FieldsHold (paramTypes func.params)
-  args ...`. The source type checker is roadmap step 7, and translation
-  validation of the parser is step 8.
-- **To shrink it.** Steps 7 and 8.
+`compileSource_correct` takes a `SrcProgram` value, not source text. Roadmap
+step 8 adds a front end that gives source text a `SrcProgram`, by translation
+validation of laniusc's parser:
+
+```text
+sourceProgram source prods parents : Option SrcProgram    (Mini/FrontLex.lean)
+```
+
+`source` is the file's bytes. `prods` and `parents` are laniusc's parse tree:
+the production ids in preorder (its `node_kind` array) and each node's parent.
+The validator, `validate` in `Mini/Frontend.lean` (extracted from
+`formal/lani/mini/frontend.lani`), follows the production list. It matches
+each terminal with the next token and checks each node's production and
+parent. Then `build` reads the program off the tree. Proved
+(`Mini/FrontSpec.lean`, axioms `propext` and `Quot.sound`):
+
+- `validate_sound`: an accepted tree is a parse tree of the grammar for
+  `file` whose leaves are exactly the tokens and whose preorder is exactly
+  `prods`.
+- `validate_derives`: the token kinds are a sentence of the grammar
+  (`Derives`, the usual derivation relation).
+- `sourceProgram_sound`: the program is `build` of such a tree, for the tokens
+  the Lean lexer gives `source`.
+
+Not trusted: laniusc's lexer and parser. A wrong tree is rejected, or it is
+still a parse tree of the same tokens. Trusted:
+
+- **The lexer.** `Lanius.Compiler.Lexer.lexCanonical`
+  (`Lanius/Compiler/LexerCanonical.lean`) is the meaning of Lanius's lexical
+  syntax. `lexTokens` adds one keyword that `keywordRules` lacks: `as` is
+  token code 195, as in laniusc. Token kinds are laniusc's codes
+  (`TokenKind.gpuCode`). The difftest below compares these tokens with
+  laniusc's lexer (kind, start and length).
+- **The grammar.** The table `grammar` in `frontend.lani` is
+  `grammar/lanius.bnf` as laniusc built its parse tables
+  (`tables/parse_tables.meta.json`). Production `k` is entry `k`, a terminal
+  is the token code of its lexer kind, and parser retags map back through
+  `canonical_lexer_kind` (`crates/laniusc-compiler/src/lexer/tables/tokens.rs`).
+  One mapping is added: `MatchArrow` becomes `Arrow`, because the lexer emits
+  `->` in match arms as `Arrow`. `formal/tools/grammar_table.py` writes the
+  table mechanically, and `--check` confirms that it is current. The grammar
+  is trusted to say what Lanius's concrete syntax is, including precedence
+  and associativity, which it encodes in its levels.
+- **Unambiguity.** It is not proved that the grammar gives each token
+  sequence at most one parse tree. `sourceProgram_sound` says the program is
+  `build` of *some* parse tree of the tokens, namely laniusc's. If the grammar
+  were ambiguous on the subset, a different tree could have a different
+  reading, and the trusted claim is that it does not. The difftest's
+  mutations (a production id, a parent or a token changed, all rejected) are
+  evidence, not a proof. To shrink it: prove the grammar unambiguous on the
+  subset, for example from the determinism of laniusc's LLP tables.
+- **The reading.** `build` (in `Frontend.lean`) is the meaning of the subset's
+  concrete syntax, as `toCore` is the meaning of `SrcProgram` (section 2). It
+  makes these choices:
+  - a function is its position among the functions;
+  - a struct or enum is its position among the type declarations;
+  - a local is the byte offset of its binding (a parameter, `let` or match
+    binder);
+  - a use names the innermost binding with the same spelling, and locals may
+    not be spelled like a global;
+  - `let` scopes over the rest of its block;
+  - `if` without `else` has an empty else;
+  - binary operators fold to the left;
+  - an integer literal is below 2^31, and `-` before it is `negate`.
+
+  It rejects anything outside the subset. `build` has no relational spec yet;
+  the difftest checks it against the generator's programs. To shrink it:
+  state the reading as an inductive relation on `CTree` and prove `build`
+  against it.
+- **Extraction.** `Frontend.lean` is extracted, so section 5 applies to it.
+  `extract.py`'s external sections (`// extract: external begin MODULE from
+  PATH`) copy the source types and list operations from `compiler.lani`. The
+  extractor checks that each copy has the same fields, constructors or
+  signature as the original and emits `import MODULE` instead, so
+  `Frontend.lean` uses `Compiler.lean`'s own `SrcProgram`.
+- **Core**, as in section 3.
+
+What is still outside: the type premise `FieldsHold (paramTypes func.params)
+args ...` on the arguments, the heap and raw slice constructs of the front
+pass (the front end does not read them yet), generics, modules, `=>` match
+arms, and block or `if` arms.
+
+Checked by: `frontend_difftest.py` (MINI_COMPILER.md, step 8), which runs
+laniusc's parser on generated programs and requires `sourceProgram` to give
+the program the text was generated from.
 
 ## 5. Extraction, and how the compiler is run
 
@@ -356,7 +434,9 @@ forms and 4 probe forms, 0 disagreements.
 ## 10. Not trusted
 
 These are evidence, not part of the trusted base:
-- the difftests (`mini_difftest.py`, `fn_difftest.py`, `x86_model_test.py`);
+- the difftests (`mini_difftest.py`, `fn_difftest.py`, `x86_model_test.py`,
+  `frontend_difftest.py`);
+- laniusc's lexer and parser, whose tree the front end validates (section 4);
 - the native harness stubs (except as the loader in section 8, when they are
   used that way);
 - `compileSource` and `compileProgram`;

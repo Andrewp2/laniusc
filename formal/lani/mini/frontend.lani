@@ -1,0 +1,3268 @@
+// The verified compiler's front end, by translation validation (roadmap step
+// 8). formal/tools/extract.py turns everything after the prelude, except the
+// external section, into formal/Lanius/Mini/Frontend.lean.
+//
+// laniusc's GPU parser produces a parse tree: the productions it applied, in
+// preorder (its node_kind array), and each node's parent. This file does not
+// parse. It checks that tree against the grammar and against the lexer's
+// tokens: `attach` follows the productions, matching each terminal on a
+// production's right side with the next token, and builds the concrete tree
+// whose leaves are the tokens. A tree that `attach` accepts is a derivation of
+// exactly the token sequence (formal/Lanius/Mini/FrontSpec.lean proves it).
+// `build` then reads the source program off the concrete tree, for the subset
+// of Lanius the front pass compiles, and rejects anything else.
+//
+// Names. A function is its position among the functions, a struct or enum its
+// position among the type declarations. A local (parameter, let, match binder)
+// is the byte offset of its binding occurrence, and a use names the innermost
+// binding of the same spelling. A local cannot be spelled like a function, a
+// type or a variant, so every use has one reading.
+module mini::frontend;
+import alloc::allocator;
+import core::mem;
+import core::option;
+import core::panic;
+
+// extract: prelude begin
+// Each prelude item has a fixed Lean meaning (see PRELUDE in extract.py).
+// They are the only code that touches memory.
+
+// Box<T> is T.
+pub struct Box<T> { storage: ptr }
+
+pub fn boxed<T>(value: T) -> Box<T> {
+    let size: usize = core::mem::size_of<T>();
+    let storage: ptr = alloc::allocator::alloc(size, 8);
+    if (storage == 0) {
+        core::panic::panic();
+    }
+    let slot: [T] = core::mem::typed_slice_from_storage(storage, 1);
+    slot[0] = value;
+    return Box { storage: storage };
+}
+
+pub fn unbox<T>(value: Box<T>) -> T {
+    let slot: [T] = core::mem::typed_slice_from_storage(value.storage, 1);
+    return slot[0];
+}
+
+// List<T> is List T: Nil is [] and Cons(x, rest) is x :: rest.
+pub enum List<T> { Nil, Cons(T, Box<List<T>>), }
+
+// Nat a + b
+pub fn plus(a: usize, b: usize) -> usize {
+    let sum: usize = a + b;
+    if (a > sum) {
+        core::panic::panic();
+    }
+    return sum;
+}
+
+// Nat a * b
+pub fn times(a: usize, b: usize) -> usize {
+    if (a == 0) {
+        return 0;
+    }
+    let product: usize = a * b;
+    if (product / a != b) {
+        core::panic::panic();
+    }
+    return product;
+}
+
+// Nat a - b, used only where a >= b
+pub fn minus(a: usize, b: usize) -> usize {
+    if (b > a) {
+        core::panic::panic();
+    }
+    return a - b;
+}
+
+// max a b
+pub fn max_of(a: usize, b: usize) -> usize {
+    if (b > a) {
+        return b;
+    }
+    return a;
+}
+// extract: prelude end
+
+// extract: external begin Lanius.Mini.Compiler from formal/lani/mini/compiler.lani
+// The list operations and the source program types of compiler.lani, which
+// extract.py checks are the same there.
+
+pub fn empty<T>() -> List<T> {
+    return Nil;
+}
+
+pub fn single<T>(item: T) -> List<T> {
+    return Cons(item, boxed(Nil));
+}
+
+pub fn cons<T>(item: T, rest: List<T>) -> List<T> {
+    return Cons(item, boxed(rest));
+}
+
+pub fn concat<T>(first: List<T>, second: List<T>) -> List<T> {
+    return match (first) {
+        Nil -> second,
+        Cons(item, rest) -> Cons(item, boxed(concat(unbox(rest), second))),
+    };
+}
+
+pub fn length<T>(items: List<T>) -> usize {
+    return match (items) {
+        Nil -> 0,
+        Cons(item, rest) -> plus(length(unbox(rest)), 1),
+    };
+}
+
+pub fn get<T>(items: List<T>, index: usize) -> core::option::Option<T> {
+    if (index == 0) {
+        return match (items) {
+            Nil -> None,
+            Cons(item, rest) -> Some(item),
+        };
+    }
+    return match (items) {
+        Nil -> None,
+        Cons(item, rest) -> get(unbox(rest), minus(index, 1)),
+    };
+}
+
+pub fn get_or<T>(items: List<T>, index: usize, fallback: T) -> T {
+    if (index == 0) {
+        return match (items) {
+            Nil -> fallback,
+            Cons(item, rest) -> item,
+        };
+    }
+    return match (items) {
+        Nil -> fallback,
+        Cons(item, rest) -> get_or(unbox(rest), minus(index, 1), fallback),
+    };
+}
+
+pub enum UintTy { Uint8, Uint32, Uint64, Usize, }
+
+pub enum SrcType {
+    I32,
+    Bool,
+    Uint(UintTy),
+    Struct(usize, Box<List<SrcType>>),
+    Enum(usize, Box<List<List<SrcType>>>),
+    Ptr,
+    Slice(Box<SrcType>),
+}
+
+pub enum SrcOp {
+    Plus, Minus, Times, BitAnd, BitOr, BitXor,
+    Less, LessEq, Greater, GreaterEq, Equal, NotEqual,
+    LogicalAnd, LogicalOr,
+}
+
+pub enum SrcExpr {
+    Int(i32),
+    Boolean(bool),
+    Unsigned(UintTy, u64),
+    Local(usize),
+    Field(usize, usize),
+    Negate(Box<SrcExpr>),
+    Not(Box<SrcExpr>),
+    Apply(SrcOp, Box<SrcExpr>, Box<SrcExpr>),
+    Cast(SrcType, Box<SrcExpr>),
+}
+
+pub struct SrcArm {
+    binders: List<usize>,
+    value: SrcExpr,
+}
+
+pub enum SrcStmt {
+    Nop,
+    Let(usize, SrcType, SrcExpr, Box<SrcStmt>),
+    LetStruct(usize, SrcType, List<SrcExpr>, Box<SrcStmt>),
+    LetCall(usize, SrcType, usize, List<SrcExpr>, Box<SrcStmt>),
+    LetEnum(usize, SrcType, usize, List<SrcExpr>, Box<SrcStmt>),
+    LetMatch(usize, SrcType, usize, usize, List<SrcArm>, Box<SrcStmt>),
+    Set(usize, SrcExpr),
+    SetField(usize, usize, SrcExpr),
+    SetCall(usize, usize, List<SrcExpr>),
+    Then(Box<SrcStmt>, Box<SrcStmt>),
+    If(SrcExpr, Box<SrcStmt>, Box<SrcStmt>),
+    While(SrcExpr, Box<SrcStmt>),
+    Return(SrcExpr),
+    LetAlloc(usize, SrcExpr, usize, Box<SrcStmt>),
+    LetLoad(usize, SrcExpr, SrcExpr, Box<SrcStmt>),
+    SetByte(SrcExpr, SrcExpr, SrcExpr),
+    Free(SrcExpr, SrcExpr, usize),
+    LetSlice(usize, SrcType, SrcExpr, SrcExpr, Box<SrcStmt>),
+    LetIndex(usize, SrcType, usize, SrcExpr, Box<SrcStmt>),
+    SetIndex(usize, SrcExpr, SrcExpr),
+}
+
+pub struct SrcParam {
+    id: usize,
+    ty: SrcType,
+}
+
+pub struct SrcFunc {
+    params: List<SrcParam>,
+    ret: SrcType,
+    body: SrcStmt,
+}
+
+pub struct SrcProgram {
+    funcs: List<SrcFunc>,
+}
+// extract: external end
+
+// ---------------------------------------------------------------- tokens and trees
+
+// A lexer token: its kind (laniusc's TokenKind code), the byte offset where it
+// starts, and its bytes.
+pub struct Token {
+    kind: usize,
+    start: usize,
+    text: List<usize>,
+}
+
+// A grammar symbol: a terminal, written as the token kind it matches, or a
+// nonterminal.
+pub enum Sym {
+    Term(usize),
+    Nonterm(usize),
+}
+
+// A production: lhs -> rhs.
+pub struct Rule {
+    lhs: usize,
+    rhs: List<Sym>,
+}
+
+// A concrete parse tree: a token, or a node with its production and one child
+// per symbol on the production's right side.
+pub enum CTree {
+    Leaf(Token),
+    Node(usize, Box<List<CTree>>),
+}
+
+// What is left of the parse tree's preorder production ids, the matching
+// parent indices, and the tokens; index is the preorder index of the next node.
+pub struct Cursor {
+    prods: List<usize>,
+    parents: List<usize>,
+    tokens: List<Token>,
+    index: usize,
+}
+
+// The children attached for a right side, and what is left after them.
+pub struct Attached {
+    kids: List<CTree>,
+    rest: Cursor,
+}
+
+// ---------------------------------------------------------------- reading the tree
+
+pub fn no_token() -> Token {
+    return Token { kind: 0, start: 0, text: empty() };
+}
+
+pub fn kids_of(c: CTree) -> List<CTree> {
+    return match (c) {
+        Leaf(t) -> empty(),
+        Node(p, kids) -> unbox(kids),
+    };
+}
+
+// Child i (a dummy leaf if there is none).
+pub fn kid(c: CTree, i: usize) -> CTree {
+    return get_or(kids_of(c), i, Leaf(no_token()));
+}
+
+pub fn with_kid(kid: CTree, rest: core::option::Option<Attached>) -> core::option::Option<Attached> {
+    return match (rest) {
+        None -> None,
+        Some(a) -> Some(Attached { kids: cons(kid, a.kids), rest: a.rest }),
+    };
+}
+
+// extract: inline
+fn attach_term(tg: List<Rule>, tfuel: usize, tkind: usize, tmore: List<Sym>, tparent: usize, tcur: Cursor) -> core::option::Option<Attached> {
+    return match (tcur.tokens) {
+        Nil -> None,
+        Cons(tok, toks) -> attach_leaf(tg, tfuel, tkind, tok, unbox(toks), tmore, tparent, tcur),
+    };
+}
+
+// extract: inline
+fn attach_after(dg: List<Rule>, dfuel: usize, dp: usize, inner: core::option::Option<Attached>, dmore: List<Sym>, dparent: usize) -> core::option::Option<Attached> {
+    return match (inner) {
+        None -> None,
+        Some(a) -> with_kid(Node(dp, boxed(a.kids)), attach(dg, dfuel, dmore, dparent, a.rest)),
+    };
+}
+
+// extract: inline
+fn attach_node(cg: List<Rule>, cfuel: usize, cnt: usize, cp: usize, cprod: Rule, cps: List<usize>, cqs: List<usize>, cmore: List<Sym>, cparent: usize, ccur: Cursor) -> core::option::Option<Attached> {
+    if (cprod.lhs != cnt) {
+        return None;
+    }
+    return attach_after(cg, cfuel, cp, attach(cg, cfuel, cprod.rhs, ccur.index, Cursor { prods: cps, parents: cqs, tokens: ccur.tokens, index: plus(ccur.index, 1) }), cmore, cparent);
+}
+
+// extract: inline
+fn attach_prod(bg: List<Rule>, bfuel: usize, bnt: usize, bp: usize, bps: List<usize>, bq: usize, bqs: List<usize>, bmore: List<Sym>, bparent: usize, bcur: Cursor) -> core::option::Option<Attached> {
+    if (bq != bparent) {
+        return None;
+    }
+    return match (get(bg, bp)) {
+        None -> None,
+        Some(prod) -> attach_node(bg, bfuel, bnt, bp, prod, bps, bqs, bmore, bparent, bcur),
+    };
+}
+
+// extract: inline
+fn attach_parent(ag: List<Rule>, afuel: usize, ant: usize, ap: usize, aps: List<usize>, amore: List<Sym>, aparent: usize, acur: Cursor) -> core::option::Option<Attached> {
+    return match (acur.parents) {
+        Nil -> None,
+        Cons(q, qs) -> attach_prod(ag, afuel, ant, ap, aps, q, unbox(qs), amore, aparent, acur),
+    };
+}
+
+// extract: inline
+fn attach_nonterm(ng: List<Rule>, nfuel: usize, nt: usize, nmore: List<Sym>, nparent: usize, ncur: Cursor) -> core::option::Option<Attached> {
+    return match (ncur.prods) {
+        Nil -> None,
+        Cons(p, ps) -> attach_parent(ng, nfuel, nt, p, unbox(ps), nmore, nparent, ncur),
+    };
+}
+
+// extract: inline
+fn attach_sym(sg: List<Rule>, sfuel: usize, sym: Sym, smore: List<Sym>, sparent: usize, scur: Cursor) -> core::option::Option<Attached> {
+    return match (sym) {
+        Term(kind) -> attach_term(sg, sfuel, kind, smore, sparent, scur),
+        Nonterm(nt) -> attach_nonterm(sg, sfuel, nt, smore, sparent, scur),
+    };
+}
+
+// ---------------------------------------------------------------- the validator
+
+// Attach the trees for the symbols rhs, children of the node with preorder
+// index parent: a terminal takes the next token, which must have its kind; a
+// nonterminal takes the next production, which must have it as its left side
+// and parent as its recorded parent, and then that production's own symbols.
+pub fn attach(g: List<Rule>, fuel: usize, rhs: List<Sym>, parent: usize, cur: Cursor) -> core::option::Option<Attached> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (rhs) {
+        Nil -> Some(Attached { kids: empty(), rest: cur }),
+        Cons(sym, more) -> attach_sym(g, minus(fuel, 1), sym, unbox(more), parent, cur),
+    };
+}
+
+// extract: inline
+fn attach_leaf(lg: List<Rule>, lfuel: usize, lkind: usize, ltok: Token, ltoks: List<Token>, lmore: List<Sym>, lparent: usize, lcur: Cursor) -> core::option::Option<Attached> {
+    if (ltok.kind == lkind) {
+        return with_kid(Leaf(ltok), attach(lg, lfuel, lmore, lparent, Cursor { prods: lcur.prods, parents: lcur.parents, tokens: ltoks, index: lcur.index }));
+    }
+    return None;
+}
+
+pub fn only(root: CTree, more: List<CTree>) -> core::option::Option<CTree> {
+    return match (more) {
+        Nil -> Some(root),
+        Cons(other, rest) -> None,
+    };
+}
+
+pub fn is_empty_usize(items: List<usize>) -> bool {
+    return match (items) {
+        Nil -> true,
+        Cons(item, rest) -> false,
+    };
+}
+
+pub fn no_tokens(items: List<Token>) -> bool {
+    return match (items) {
+        Nil -> true,
+        Cons(item, rest) -> false,
+    };
+}
+
+pub fn used_up(cur: Cursor) -> bool {
+    return is_empty_usize(cur.prods) && is_empty_usize(cur.parents) && no_tokens(cur.tokens);
+}
+
+pub fn whole(a: Attached) -> core::option::Option<CTree> {
+    if (used_up(a.rest)) {
+        return match (a.kids) {
+            Nil -> None,
+            Cons(root, more) -> only(root, unbox(more)),
+        };
+    }
+    return None;
+}
+
+// The concrete tree of a whole parse: the root derives nonterminal 0 (file)
+// and has no parent, and every production, parent and token is used.
+pub fn validate(g: List<Rule>, tokens: List<Token>, prods: List<usize>, parents: List<usize>) -> core::option::Option<CTree> {
+    let fuel: usize = plus(times(2, plus(length(prods), length(tokens))), 2);
+    return match (attach(g, fuel, single(Nonterm(0)), 4294967295, Cursor { prods: prods, parents: parents, tokens: tokens, index: 0 })) {
+        None -> None,
+        Some(a) -> whole(a),
+    };
+}
+
+// The production of a node (none of a leaf).
+pub fn node_prod(c: CTree) -> usize {
+    return match (c) {
+        Leaf(t) -> 4294967295,
+        Node(p, kids) -> p,
+    };
+}
+
+pub fn has_kids(c: CTree) -> bool {
+    return match (kids_of(c)) {
+        Nil -> false,
+        Cons(k, rest) -> true,
+    };
+}
+
+// The productions that only chain the items of a list: item lists, statement
+// lists, parameters, arguments, fields, variants, payloads, arms, patterns.
+pub fn is_link(p: usize) -> bool {
+    return p == p_items_more() || p == p_items_end() || p == p_stmts_more() || p == p_stmts_end()
+        || p == p_params_none() || p == p_params_some() || p == p_params_more() || p == p_params_end()
+        || p == p_params_after_comma_more() || p == p_params_after_comma_trailing()
+        || p == p_args_none() || p == p_args_some() || p == p_args_more() || p == p_args_end()
+        || p == p_args_after_comma_more() || p == p_args_after_comma_trailing()
+        || p == p_struct_fields_none() || p == p_struct_fields_some() || p == p_struct_fields_more() || p == p_struct_fields_end()
+        || p == p_struct_fields_after_comma_more() || p == p_struct_fields_after_comma_trailing()
+        || p == p_struct_lit_fields_none() || p == p_struct_lit_fields_some() || p == p_struct_lit_fields_more() || p == p_struct_lit_fields_end()
+        || p == p_struct_lit_fields_after_comma_more() || p == p_struct_lit_fields_after_comma_trailing()
+        || p == p_enum_variants_none() || p == p_enum_variants_some() || p == p_enum_variants_more() || p == p_enum_variants_end()
+        || p == p_enum_variants_after_comma_more() || p == p_enum_variants_after_comma_trailing()
+        || p == p_enum_variant_fields_none() || p == p_enum_variant_fields_some() || p == p_enum_variant_fields_more() || p == p_enum_variant_fields_end()
+        || p == p_enum_variant_fields_after_comma_more() || p == p_enum_variant_fields_after_comma_trailing()
+        || p == p_match_arms_none() || p == p_match_arms_some() || p == p_match_arms_more() || p == p_match_arms_end()
+        || p == p_match_arms_after_comma_more() || p == p_match_arms_after_comma_trailing()
+        || p == p_patterns_none() || p == p_patterns_some() || p == p_patterns_more() || p == p_patterns_end()
+        || p == p_patterns_after_comma_more() || p == p_patterns_after_comma_trailing();
+}
+
+pub fn join_second(a: List<CTree>, second: core::option::Option<List<CTree>>) -> core::option::Option<List<CTree>> {
+    return match (second) {
+        None -> None,
+        Some(b) -> Some(concat(a, b)),
+    };
+}
+
+pub fn join_items(first: core::option::Option<List<CTree>>, second: core::option::Option<List<CTree>>) -> core::option::Option<List<CTree>> {
+    return match (first) {
+        None -> None,
+        Some(a) -> join_second(a, second),
+    };
+}
+
+// extract: mutual begin
+// The items of a list: the children that are not separators or links, in order.
+pub fn list_items(fuel: usize, c: CTree) -> core::option::Option<List<CTree>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return items_in(minus(fuel, 1), kids_of(c));
+}
+
+pub fn items_in(fuel: usize, kids: List<CTree>) -> core::option::Option<List<CTree>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (kids) {
+        Nil -> Some(empty()),
+        Cons(k, rest) -> items_cons(minus(fuel, 1), k, unbox(rest)),
+    };
+}
+
+pub fn items_cons(fuel: usize, k: CTree, rest: List<CTree>) -> core::option::Option<List<CTree>> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (is_link(node_prod(k))) {
+        return join_items(list_items(minus(fuel, 1), k), items_in(minus(fuel, 1), rest));
+    }
+    if (has_kids(k)) {
+        return join_items(Some(single(k)), items_in(minus(fuel, 1), rest));
+    }
+    return items_in(minus(fuel, 1), rest);
+}
+// extract: mutual end
+
+// The items of the file, split into type declarations and functions; any
+// other item is rejected.
+pub struct Items {
+    decls: List<CTree>,
+    fns: List<CTree>,
+}
+
+// extract: inline
+fn split_one(sitem: CTree, sr: Items) -> core::option::Option<Items> {
+    let p: usize = node_prod(sitem);
+    if (p == p_item_struct() || p == p_item_enum()) {
+        return Some(Items { decls: cons(sitem, sr.decls), fns: sr.fns });
+    }
+    if (p == p_item_fn()) {
+        return Some(Items { decls: sr.decls, fns: cons(kid(sitem, 0), sr.fns) });
+    }
+    return None;
+}
+
+pub fn split_next(item: CTree, rest: core::option::Option<Items>) -> core::option::Option<Items> {
+    return match (rest) {
+        None -> None,
+        Some(r) -> split_one(item, r),
+    };
+}
+
+pub fn split_items(items: List<CTree>) -> core::option::Option<Items> {
+    return match (items) {
+        Nil -> Some(Items { decls: empty(), fns: empty() }),
+        Cons(item, rest) -> split_next(item, split_items(unbox(rest))),
+    };
+}
+
+pub struct Variant {
+    name: List<usize>,
+    payload: List<SrcType>,
+}
+
+// ---------------------------------------------------------------- declarations
+
+// A declared struct or enum: its spelling, its source type, its field
+// spellings (a struct) and its variants (an enum).
+pub struct TypeEntry {
+    name: List<usize>,
+    ty: SrcType,
+    fields: List<List<usize>>,
+    variants: List<Variant>,
+}
+
+pub fn leaf_token(c: CTree) -> Token {
+    return match (c) {
+        Leaf(t) -> t,
+        Node(p, kids) -> no_token(),
+    };
+}
+
+// The token of child i, a leaf.
+pub fn kid_token(c: CTree, i: usize) -> Token {
+    return leaf_token(kid(c, i));
+}
+
+// The spelling of a type expression naming one type (type_ident, no
+// arguments, one segment).
+pub fn type_name(t: CTree) -> core::option::Option<List<usize>> {
+    let path: CTree = kid(t, 0);
+    if (node_prod(t) == p_type_ident() && node_prod(kid(t, 1)) == p_type_args_none() && node_prod(path) == p_type_path() && node_prod(kid(path, 0)) == p_type_path_ident() && node_prod(kid(path, 1)) == p_type_path_end()) {
+        return Some(kid_token(kid(path, 0), 0).text);
+    }
+    return None;
+}
+
+// A struct's fields: (spelling, type spelling) for each struct_field.
+pub struct FieldDecl {
+    names: List<List<usize>>,
+    types: List<List<usize>>,
+}
+
+pub fn cons_field_rest(name: List<usize>, t: List<usize>, rest: core::option::Option<FieldDecl>) -> core::option::Option<FieldDecl> {
+    return match (rest) {
+        None -> None,
+        Some(r) -> Some(FieldDecl { names: cons(name, r.names), types: cons(t, r.types) }),
+    };
+}
+
+pub fn cons_field(name: List<usize>, ty: core::option::Option<List<usize>>, rest: core::option::Option<FieldDecl>) -> core::option::Option<FieldDecl> {
+    return match (ty) {
+        None -> None,
+        Some(t) -> cons_field_rest(name, t, rest),
+    };
+}
+
+pub fn field_decls(items: List<CTree>) -> core::option::Option<FieldDecl> {
+    return match (items) {
+        Nil -> Some(FieldDecl { names: empty(), types: empty() }),
+        Cons(f, rest) -> cons_field(kid_token(f, 0).text, type_name(kid(f, 2)), field_decls(unbox(rest))),
+    };
+}
+
+pub fn same_text(a: List<usize>, b: List<usize>) -> bool {
+    return match (a) {
+        Nil -> match (b) {
+            Nil -> true,
+            Cons(y, more) -> false,
+        },
+        Cons(x, rest) -> match (b) {
+            Nil -> false,
+            Cons(y, more) -> (x == y) && same_text(unbox(rest), unbox(more)),
+        },
+    };
+}
+
+pub fn spelled(a: List<usize>, b: List<usize>) -> bool {
+    return same_text(a, b);
+}
+
+// i32, bool, u8, u32, u64, usize
+pub fn primitive(name: List<usize>) -> core::option::Option<SrcType> {
+    // Typed lets, so that laniusc reads the literals as usize.
+    let i32_text: List<usize> = cons(105, cons(51, single(50)));
+    let bool_text: List<usize> = cons(98, cons(111, cons(111, single(108))));
+    let u8_text: List<usize> = cons(117, single(56));
+    let u32_text: List<usize> = cons(117, cons(51, single(50)));
+    let u64_text: List<usize> = cons(117, cons(54, single(52)));
+    let usize_text: List<usize> = cons(117, cons(115, cons(105, cons(122, single(101)))));
+    if (spelled(name, i32_text)) {
+        return Some(I32);
+    }
+    if (spelled(name, bool_text)) {
+        return Some(Bool);
+    }
+    if (spelled(name, u8_text)) {
+        return Some(Uint(Uint8));
+    }
+    if (spelled(name, u32_text)) {
+        return Some(Uint(Uint32));
+    }
+    if (spelled(name, u64_text)) {
+        return Some(Uint(Uint64));
+    }
+    if (spelled(name, usize_text)) {
+        return Some(Uint(Usize));
+    }
+    return None;
+}
+
+pub fn declared(types: List<TypeEntry>, name: List<usize>) -> core::option::Option<SrcType> {
+    return match (types) {
+        Nil -> None,
+        Cons(entry, rest) -> declared_at(entry, unbox(rest), name),
+    };
+}
+
+// extract: inline
+fn declared_at(dentry: TypeEntry, drest: List<TypeEntry>, dname: List<usize>) -> core::option::Option<SrcType> {
+    if (same_text(dentry.name, dname)) {
+        return Some(dentry.ty);
+    }
+    return declared(drest, dname);
+}
+
+// A type by spelling: a primitive type or a declared one.
+pub fn resolve(types: List<TypeEntry>, name: List<usize>) -> core::option::Option<SrcType> {
+    return match (primitive(name)) {
+        Some(t) -> Some(t),
+        None -> declared(types, name),
+    };
+}
+
+pub fn cons_type_tail(t: SrcType, tail: core::option::Option<List<SrcType>>) -> core::option::Option<List<SrcType>> {
+    return match (tail) {
+        None -> None,
+        Some(ts) -> Some(cons(t, ts)),
+    };
+}
+
+pub fn cons_type(head: core::option::Option<SrcType>, tail: core::option::Option<List<SrcType>>) -> core::option::Option<List<SrcType>> {
+    return match (head) {
+        None -> None,
+        Some(t) -> cons_type_tail(t, tail),
+    };
+}
+
+pub fn resolve_all(types: List<TypeEntry>, names: List<List<usize>>) -> core::option::Option<List<SrcType>> {
+    return match (names) {
+        Nil -> Some(empty()),
+        Cons(name, rest) -> cons_type(resolve(types, name), resolve_all(types, unbox(rest))),
+    };
+}
+
+pub fn member(names: List<List<usize>>, name: List<usize>) -> bool {
+    return match (names) {
+        Nil -> false,
+        Cons(n, rest) -> same_text(n, name) || member(unbox(rest), name),
+    };
+}
+
+// No spelling occurs twice.
+pub fn distinct(names: List<List<usize>>) -> bool {
+    return match (names) {
+        Nil -> true,
+        Cons(n, rest) -> !member(unbox(rest), n) && distinct(unbox(rest)),
+    };
+}
+
+// extract: inline
+fn struct_checked(sindex: usize, sname: List<usize>, snames: List<List<usize>>, sts: List<SrcType>) -> core::option::Option<TypeEntry> {
+    if (distinct(snames)) {
+        return Some(TypeEntry { name: sname, ty: Struct(sindex, boxed(sts)), fields: snames, variants: empty() });
+    }
+    return None;
+}
+
+pub fn struct_typed(index: usize, name: List<usize>, names: List<List<usize>>, tys: core::option::Option<List<SrcType>>) -> core::option::Option<TypeEntry> {
+    return match (tys) {
+        None -> None,
+        Some(ts) -> struct_checked(index, name, names, ts),
+    };
+}
+
+pub fn struct_with_fields(types: List<TypeEntry>, index: usize, name: List<usize>, fields: core::option::Option<FieldDecl>) -> core::option::Option<TypeEntry> {
+    return match (fields) {
+        None -> None,
+        Some(f) -> struct_typed(index, name, f.names, resolve_all(types, f.types)),
+    };
+}
+
+// The entry of the struct declaration s (struct_item), the index-th type
+// declaration. Its field types are primitive or declared earlier.
+pub fn struct_entry(fuel: usize, types: List<TypeEntry>, index: usize, s: CTree) -> core::option::Option<TypeEntry> {
+    if (node_prod(s) == p_struct() && node_prod(kid(s, 2)) == p_enum_type_params_none() && node_prod(kid(s, 3)) == p_where_none()) {
+        return match (list_items(fuel, kid(s, 5))) {
+            None -> None,
+            Some(items) -> struct_with_fields(types, index, kid_token(s, 1).text, field_decls(items)),
+        };
+    }
+    return None;
+}
+
+pub fn cons_name_tail(n: List<usize>, tail: core::option::Option<List<List<usize>>>) -> core::option::Option<List<List<usize>>> {
+    return match (tail) {
+        None -> None,
+        Some(ns) -> Some(cons(n, ns)),
+    };
+}
+
+pub fn cons_name(head: core::option::Option<List<usize>>, tail: core::option::Option<List<List<usize>>>) -> core::option::Option<List<List<usize>>> {
+    return match (head) {
+        None -> None,
+        Some(n) -> cons_name_tail(n, tail),
+    };
+}
+
+// The spellings of the types listed by a list of type expressions.
+pub fn type_names(items: List<CTree>) -> core::option::Option<List<List<usize>>> {
+    return match (items) {
+        Nil -> Some(empty()),
+        Cons(t, rest) -> cons_name(type_name(t), type_names(unbox(rest))),
+    };
+}
+
+pub fn variant_resolved(name: List<usize>, tys: core::option::Option<List<SrcType>>) -> core::option::Option<Variant> {
+    return match (tys) {
+        None -> None,
+        Some(ts) -> Some(Variant { name: name, payload: ts }),
+    };
+}
+
+pub fn variant_typed(name: List<usize>, types: List<TypeEntry>, names: core::option::Option<List<List<usize>>>) -> core::option::Option<Variant> {
+    return match (names) {
+        None -> None,
+        Some(ns) -> variant_resolved(name, resolve_all(types, ns)),
+    };
+}
+
+// One enum variant (enum_variant): its spelling and payload types.
+pub fn variant_decl(fuel: usize, types: List<TypeEntry>, v: CTree) -> core::option::Option<Variant> {
+    let payload: CTree = kid(v, 1);
+    if (node_prod(payload) == p_enum_variant_unit()) {
+        return Some(Variant { name: kid_token(v, 0).text, payload: empty() });
+    }
+    return match (list_items(fuel, kid(payload, 1))) {
+        None -> None,
+        Some(items) -> variant_typed(kid_token(v, 0).text, types, type_names(items)),
+    };
+}
+
+pub fn cons_variant_tail(v: Variant, tail: core::option::Option<List<Variant>>) -> core::option::Option<List<Variant>> {
+    return match (tail) {
+        None -> None,
+        Some(vs) -> Some(cons(v, vs)),
+    };
+}
+
+pub fn cons_variant(head: core::option::Option<Variant>, tail: core::option::Option<List<Variant>>) -> core::option::Option<List<Variant>> {
+    return match (head) {
+        None -> None,
+        Some(v) -> cons_variant_tail(v, tail),
+    };
+}
+
+pub fn variants_of(fuel: usize, types: List<TypeEntry>, items: List<CTree>) -> core::option::Option<List<Variant>> {
+    return match (items) {
+        Nil -> Some(empty()),
+        Cons(v, rest) -> cons_variant(variant_decl(fuel, types, v), variants_of(fuel, types, unbox(rest))),
+    };
+}
+
+pub fn payloads(variants: List<Variant>) -> List<List<SrcType>> {
+    return match (variants) {
+        Nil -> empty(),
+        Cons(v, rest) -> cons(v.payload, payloads(unbox(rest))),
+    };
+}
+
+pub fn enum_with_variants(index: usize, name: List<usize>, variants: core::option::Option<List<Variant>>) -> core::option::Option<TypeEntry> {
+    return match (variants) {
+        None -> None,
+        Some(vs) -> Some(TypeEntry { name: name, ty: Enum(index, boxed(payloads(vs))), fields: empty(), variants: vs }),
+    };
+}
+
+// The entry of the enum declaration e (enum_item), the index-th type
+// declaration. Payload types are primitive or declared earlier.
+pub fn enum_entry(fuel: usize, types: List<TypeEntry>, index: usize, e: CTree) -> core::option::Option<TypeEntry> {
+    if (node_prod(e) == p_enum() && node_prod(kid(e, 2)) == p_enum_type_params_none() && node_prod(kid(e, 3)) == p_where_none()) {
+        return match (list_items(fuel, kid(e, 5))) {
+            None -> None,
+            Some(items) -> enum_with_variants(index, kid_token(e, 1).text, variants_of(fuel, types, items)),
+        };
+    }
+    return None;
+}
+
+pub fn type_entry(fuel: usize, types: List<TypeEntry>, index: usize, d: CTree) -> core::option::Option<TypeEntry> {
+    if (node_prod(d) == p_item_struct()) {
+        return struct_entry(fuel, types, index, kid(d, 0));
+    }
+    return enum_entry(fuel, types, index, kid(d, 0));
+}
+
+// The type declarations, in order, each seeing the ones before it.
+pub fn type_entries(fuel: usize, types: List<TypeEntry>, decls: List<CTree>) -> core::option::Option<List<TypeEntry>> {
+    return match (decls) {
+        Nil -> Some(types),
+        Cons(d, rest) -> type_entries_next(fuel, types, type_entry(fuel, types, length(types), d), unbox(rest)),
+    };
+}
+
+// extract: inline
+fn type_entries_next(fuel: usize, types: List<TypeEntry>, entry: core::option::Option<TypeEntry>, rest: List<CTree>) -> core::option::Option<List<TypeEntry>> {
+    return match (entry) {
+        None -> None,
+        Some(e) -> type_entries(fuel, concat(types, single(e)), rest),
+    };
+}
+
+// Everything a function body can name besides its locals.
+pub struct Env {
+    types: List<TypeEntry>,
+    fns: List<List<usize>>,
+    globals: List<List<usize>>,
+}
+
+pub fn variant_names(variants: List<Variant>) -> List<List<usize>> {
+    return match (variants) {
+        Nil -> empty(),
+        Cons(v, rest) -> cons(v.name, variant_names(unbox(rest))),
+    };
+}
+
+pub fn type_spellings(types: List<TypeEntry>) -> List<List<usize>> {
+    return match (types) {
+        Nil -> empty(),
+        Cons(t, rest) -> cons(t.name, concat(variant_names(t.variants), type_spellings(unbox(rest)))),
+    };
+}
+
+pub fn fn_names(fns: List<CTree>) -> List<List<usize>> {
+    return match (fns) {
+        Nil -> empty(),
+        Cons(f, rest) -> cons(kid_token(f, 1).text, fn_names(unbox(rest))),
+    };
+}
+
+pub fn is_none_type(t: core::option::Option<SrcType>) -> bool {
+    return match (t) {
+        None -> true,
+        Some(x) -> false,
+    };
+}
+
+// No declared type is spelled like a primitive type.
+pub fn no_primitive(types: List<TypeEntry>) -> bool {
+    return match (types) {
+        Nil -> true,
+        Cons(t, rest) -> is_none_type(primitive(t.name)) && no_primitive(unbox(rest)),
+    };
+}
+
+pub fn cons_func_tail(f: SrcFunc, tail: core::option::Option<List<SrcFunc>>) -> core::option::Option<List<SrcFunc>> {
+    return match (tail) {
+        None -> None,
+        Some(fs) -> Some(cons(f, fs)),
+    };
+}
+
+pub fn cons_func(head: core::option::Option<SrcFunc>, tail: core::option::Option<List<SrcFunc>>) -> core::option::Option<List<SrcFunc>> {
+    return match (head) {
+        None -> None,
+        Some(f) -> cons_func_tail(f, tail),
+    };
+}
+
+// A local in scope: its spelling, its id and its type.
+pub struct Local {
+    name: List<usize>,
+    id: usize,
+    ty: SrcType,
+}
+
+// Parameters, and the scope they make (the last one innermost).
+pub struct Params {
+    params: List<SrcParam>,
+    scope: List<Local>,
+}
+
+pub fn func_body(ps: Params, r: SrcType, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcFunc> {
+    return match (body) {
+        None -> None,
+        Some(b) -> Some(SrcFunc { params: ps.params, ret: r, body: b }),
+    };
+}
+
+// The type a type expression names.
+pub fn type_of(env: Env, t: CTree) -> core::option::Option<SrcType> {
+    return match (type_name(t)) {
+        None -> None,
+        Some(name) -> resolve(env.types, name),
+    };
+}
+
+// ---------------------------------------------------------------- expressions
+
+// The binary operator of an operator tail production.
+pub fn tail_op(p: usize) -> core::option::Option<SrcOp> {
+    if (p == p_or_tail()) {
+        return Some(LogicalOr);
+    }
+    if (p == p_and_tail()) {
+        return Some(LogicalAnd);
+    }
+    if (p == p_bor_tail()) {
+        return Some(BitOr);
+    }
+    if (p == p_xor_tail()) {
+        return Some(BitXor);
+    }
+    if (p == p_band_tail()) {
+        return Some(BitAnd);
+    }
+    if (p == p_eq_tail()) {
+        return Some(Equal);
+    }
+    if (p == p_ne_tail()) {
+        return Some(NotEqual);
+    }
+    if (p == p_lt_tail()) {
+        return Some(Less);
+    }
+    if (p == p_gt_tail()) {
+        return Some(Greater);
+    }
+    if (p == p_le_tail()) {
+        return Some(LessEq);
+    }
+    if (p == p_ge_tail()) {
+        return Some(GreaterEq);
+    }
+    if (p == p_add_tail()) {
+        return Some(Plus);
+    }
+    if (p == p_sub_tail()) {
+        return Some(Minus);
+    }
+    if (p == p_mul_tail()) {
+        return Some(Times);
+    }
+    return None;
+}
+
+// A level of binary operators: level -> operand level_tail.
+pub fn is_level(p: usize) -> bool {
+    return p == p_orexpr() || p == p_andexpr() || p == p_bit_or() || p == p_bit_xor() || p == p_bit_and()
+        || p == p_equality() || p == p_compare() || p == p_shift() || p == p_add() || p == p_mul();
+}
+
+pub fn negated(e: core::option::Option<SrcExpr>) -> core::option::Option<SrcExpr> {
+    return match (e) {
+        None -> None,
+        Some(x) -> Some(Negate(boxed(x))),
+    };
+}
+
+pub fn notted(e: core::option::Option<SrcExpr>) -> core::option::Option<SrcExpr> {
+    return match (e) {
+        None -> None,
+        Some(x) -> Some(Not(boxed(x))),
+    };
+}
+
+// The value of a decimal literal below 2^31.
+pub fn decimal(text: List<usize>, acc: usize) -> core::option::Option<usize> {
+    if (acc > 2147483647) {
+        return None;
+    }
+    return match (text) {
+        Nil -> Some(acc),
+        Cons(b, rest) -> decimal_digit(b, unbox(rest), acc),
+    };
+}
+
+// extract: inline
+fn decimal_digit(db: usize, drest: List<usize>, dacc: usize) -> core::option::Option<usize> {
+    if (db >= 48 && 57 >= db) {
+        return decimal(drest, plus(times(dacc, 10), minus(db, 48)));
+    }
+    return None;
+}
+
+// extract: inline
+fn int_in_range(iv: usize) -> core::option::Option<SrcExpr> {
+    if (2147483647 >= iv) {
+        return Some(Int(iv as i32));
+    }
+    return None;
+}
+
+pub fn int_literal(text: List<usize>) -> core::option::Option<SrcExpr> {
+    return match (decimal(text, 0)) {
+        None -> None,
+        Some(v) -> int_in_range(v),
+    };
+}
+
+// The spelling of a path with one segment (path -> path_ident path_end).
+pub fn path_name(path: CTree) -> core::option::Option<List<usize>> {
+    if (node_prod(path) == p_path() && node_prod(kid(path, 0)) == p_path_ident() && node_prod(kid(path, 1)) == p_path_end()) {
+        return Some(kid_token(kid(path, 0), 0).text);
+    }
+    return None;
+}
+
+// The innermost local spelled name.
+pub fn find_local(scope: List<Local>, name: List<usize>) -> core::option::Option<Local> {
+    return match (scope) {
+        Nil -> None,
+        Cons(l, rest) -> find_local_at(l, unbox(rest), name),
+    };
+}
+
+// extract: inline
+fn find_local_at(fl: Local, frest: List<Local>, fname: List<usize>) -> core::option::Option<Local> {
+    if (same_text(fl.name, fname)) {
+        return Some(fl);
+    }
+    return find_local(frest, fname);
+}
+
+// A primary `name` (ident -> path ident_plain): a local.
+pub fn local_of(env: Env, scope: List<Local>, c: CTree) -> core::option::Option<Local> {
+    if (node_prod(c) == p_ident() && node_prod(kid(c, 1)) == p_ident_plain()) {
+        return match (path_name(kid(c, 0))) {
+            None -> None,
+            Some(name) -> find_local(scope, name),
+        };
+    }
+    return None;
+}
+
+pub fn local_expr(l: core::option::Option<Local>) -> core::option::Option<SrcExpr> {
+    return match (l) {
+        None -> None,
+        Some(x) -> Some(Local(x.id)),
+    };
+}
+
+pub fn struct_id(t: SrcType) -> core::option::Option<usize> {
+    return match (t) {
+        I32 -> None,
+        Bool -> None,
+        Uint(k) -> None,
+        Struct(id, fields) -> Some(id),
+        Enum(id, variants) -> None,
+        Ptr -> None,
+        Slice(e) -> None,
+    };
+}
+
+// The position of name in names, counting from k.
+pub fn position(names: List<List<usize>>, name: List<usize>, k: usize) -> core::option::Option<usize> {
+    return match (names) {
+        Nil -> None,
+        Cons(n, rest) -> position_at(n, unbox(rest), name, k),
+    };
+}
+
+// extract: inline
+fn position_at(pn: List<usize>, prest: List<List<usize>>, pname: List<usize>, pk: usize) -> core::option::Option<usize> {
+    if (same_text(pn, pname)) {
+        return Some(pk);
+    }
+    return position(prest, pname, plus(pk, 1));
+}
+
+pub fn field_in(entry: core::option::Option<TypeEntry>, name: List<usize>) -> core::option::Option<usize> {
+    return match (entry) {
+        None -> None,
+        Some(e) -> position(e.fields, name, 0),
+    };
+}
+
+// The field index of member in the struct type t.
+pub fn field_index(env: Env, t: SrcType, name: List<usize>) -> core::option::Option<usize> {
+    return match (struct_id(t)) {
+        None -> None,
+        Some(id) -> field_in(get(env.types, id), name),
+    };
+}
+
+pub fn field_expr(id: usize, index: core::option::Option<usize>) -> core::option::Option<SrcExpr> {
+    return match (index) {
+        None -> None,
+        Some(j) -> Some(Field(id, j)),
+    };
+}
+
+// `primary.member`: a field of a struct local.
+pub fn member_of(env: Env, scope: List<Local>, primary: CTree, tail: CTree) -> core::option::Option<SrcExpr> {
+    if (node_prod(kid(tail, 2)) == p_member_type_args_none() && node_prod(kid(tail, 3)) == p_postfix_end()) {
+        return match (local_of(env, scope, primary)) {
+            None -> None,
+            Some(l) -> field_expr(l.id, field_index(env, l.ty, kid_token(tail, 1).text)),
+        };
+    }
+    return None;
+}
+
+// The type a cast names (cast_type -> one segment).
+pub fn cast_type_of(env: Env, t: CTree) -> core::option::Option<SrcType> {
+    let path: CTree = kid(t, 0);
+    if (node_prod(t) == p_cast_type_name() && node_prod(path) == p_cast_type_path() && node_prod(kid(path, 0)) == p_cast_type_path_ident() && node_prod(kid(path, 1)) == p_cast_type_path_end()) {
+        return resolve(env.types, kid_token(kid(path, 0), 0).text);
+    }
+    return None;
+}
+
+pub fn cast_value(ty: SrcType, e: core::option::Option<SrcExpr>) -> core::option::Option<SrcExpr> {
+    return match (e) {
+        None -> None,
+        Some(x) -> Some(Cast(ty, boxed(x))),
+    };
+}
+
+pub fn cast_into(t: core::option::Option<SrcType>, e: core::option::Option<SrcExpr>) -> core::option::Option<SrcExpr> {
+    return match (t) {
+        None -> None,
+        Some(ty) -> cast_value(ty, e),
+    };
+}
+
+// `acc as T as U ...`: casts apply left to right.
+pub fn casts(fuel: usize, env: Env, acc: core::option::Option<SrcExpr>, tail: CTree) -> core::option::Option<SrcExpr> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (has_kids(tail)) {
+        return casts(minus(fuel, 1), env, cast_into(cast_type_of(env, kid(tail, 1)), acc), kid(tail, 2));
+    }
+    return acc;
+}
+
+pub fn apply_of(op: SrcOp, left: SrcExpr, right: core::option::Option<SrcExpr>) -> core::option::Option<SrcExpr> {
+    return match (right) {
+        None -> None,
+        Some(r) -> Some(Apply(op, boxed(left), boxed(r))),
+    };
+}
+
+// extract: mutual begin
+// The expression a node of the expression grammar denotes. Calls, struct
+// literals and match are statement forms, so they are not expressions here.
+pub fn expr_of(fuel: usize, env: Env, scope: List<Local>, c: CTree) -> core::option::Option<SrcExpr> {
+    if (fuel == 0) {
+        return None;
+    }
+    let f: usize = minus(fuel, 1);
+    let p: usize = node_prod(c);
+    if (p == p_expr() || p == p_base()) {
+        return expr_of(f, env, scope, kid(c, 0));
+    }
+    if (p == p_assign()) {
+        return assign_value(f, env, scope, c);
+    }
+    if (is_level(p)) {
+        return fold(f, env, scope, expr_of(f, env, scope, kid(c, 0)), kid(c, 1));
+    }
+    if (p == p_cast()) {
+        return casts(f, env, expr_of(f, env, scope, kid(c, 0)), kid(c, 1));
+    }
+    if (p == p_neg()) {
+        return negated(expr_of(f, env, scope, kid(c, 1)));
+    }
+    if (p == p_not()) {
+        return notted(expr_of(f, env, scope, kid(c, 1)));
+    }
+    if (p == p_postfix()) {
+        return postfix_value(f, env, scope, kid(c, 0), kid(c, 1));
+    }
+    if (p == p_group()) {
+        return expr_of(f, env, scope, kid(c, 1));
+    }
+    if (p == p_ident()) {
+        return local_expr(local_of(env, scope, c));
+    }
+    if (p == p_int()) {
+        return int_literal(kid_token(c, 0).text);
+    }
+    if (p == p_true()) {
+        return Some(Boolean(true));
+    }
+    if (p == p_false()) {
+        return Some(Boolean(false));
+    }
+    return None;
+}
+
+// assign -> orexpr assign_end, as a value.
+pub fn assign_value(fuel: usize, env: Env, scope: List<Local>, c: CTree) -> core::option::Option<SrcExpr> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (node_prod(kid(c, 1)) == p_assign_end()) {
+        return expr_of(minus(fuel, 1), env, scope, kid(c, 0));
+    }
+    return None;
+}
+
+// postfix -> primary postfix_tail, as a value: the primary, or a field.
+pub fn postfix_value(fuel: usize, env: Env, scope: List<Local>, primary: CTree, tail: CTree) -> core::option::Option<SrcExpr> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (node_prod(tail) == p_postfix_end()) {
+        return expr_of(minus(fuel, 1), env, scope, primary);
+    }
+    if (node_prod(tail) == p_postfix_member()) {
+        return member_of(env, scope, primary, tail);
+    }
+    return None;
+}
+
+// acc op operand op operand ...: binary operators apply left to right.
+pub fn fold(fuel: usize, env: Env, scope: List<Local>, acc: core::option::Option<SrcExpr>, tail: CTree) -> core::option::Option<SrcExpr> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (has_kids(tail)) {
+        return fold_op(minus(fuel, 1), env, scope, acc, tail_op(node_prod(tail)), tail);
+    }
+    return acc;
+}
+
+pub fn fold_op(fuel: usize, env: Env, scope: List<Local>, acc: core::option::Option<SrcExpr>, op: core::option::Option<SrcOp>, tail: CTree) -> core::option::Option<SrcExpr> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (acc) {
+        None -> None,
+        Some(left) -> fold_left(minus(fuel, 1), env, scope, left, op, tail),
+    };
+}
+
+pub fn fold_left(fuel: usize, env: Env, scope: List<Local>, left: SrcExpr, op: core::option::Option<SrcOp>, tail: CTree) -> core::option::Option<SrcExpr> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (op) {
+        None -> None,
+        Some(o) -> fold(minus(fuel, 1), env, scope, apply_of(o, left, expr_of(minus(fuel, 1), env, scope, kid(tail, 1))), kid(tail, 2)),
+    };
+}
+// extract: mutual end
+
+// The postfix node an expression is, when no operator, cast or assignment
+// applies on the way down.
+pub fn peel(fuel: usize, c: CTree) -> core::option::Option<CTree> {
+    if (fuel == 0) {
+        return None;
+    }
+    let p: usize = node_prod(c);
+    if (p == p_expr() || p == p_base()) {
+        return peel(minus(fuel, 1), kid(c, 0));
+    }
+    if ((p == p_assign() || is_level(p) || p == p_cast()) && !has_kids(kid(c, 1))) {
+        return peel(minus(fuel, 1), kid(c, 0));
+    }
+    if (p == p_postfix()) {
+        return Some(c);
+    }
+    return None;
+}
+
+// ---------------------------------------------------------------- statements
+
+// What a let binds: a value, a call, a variant, a struct literal or a match.
+pub enum LetHead {
+    Plain(SrcExpr),
+    CallOf(usize, List<SrcExpr>),
+    VariantOf(usize, List<SrcExpr>),
+    LiteralOf(List<SrcExpr>),
+    MatchOf(usize, usize, List<SrcArm>),
+}
+
+pub fn plain_head(e: core::option::Option<SrcExpr>) -> core::option::Option<LetHead> {
+    return match (e) {
+        None -> None,
+        Some(x) -> Some(Plain(x)),
+    };
+}
+
+// The variant spelled name: its enum's type id and its index there.
+pub struct VariantAt {
+    owner: usize,
+    index: usize,
+}
+
+pub fn enum_id(t: SrcType) -> core::option::Option<usize> {
+    return match (t) {
+        I32 -> None,
+        Bool -> None,
+        Uint(k) -> None,
+        Struct(id, fields) -> None,
+        Enum(id, variants) -> Some(id),
+        Ptr -> None,
+        Slice(e) -> None,
+    };
+}
+
+pub fn variant_at(t: SrcType, k: usize) -> core::option::Option<VariantAt> {
+    return match (enum_id(t)) {
+        None -> None,
+        Some(e) -> Some(VariantAt { owner: e, index: k }),
+    };
+}
+
+pub fn find_variant(types: List<TypeEntry>, name: List<usize>) -> core::option::Option<VariantAt> {
+    return match (types) {
+        Nil -> None,
+        Cons(t, rest) -> find_variant_in(t, unbox(rest), name),
+    };
+}
+
+// extract: inline
+fn find_variant_in(vt: TypeEntry, vrest: List<TypeEntry>, vname: List<usize>) -> core::option::Option<VariantAt> {
+    return match (position(variant_names(vt.variants), vname, 0)) {
+        None -> find_variant(vrest, vname),
+        Some(k) -> variant_at(vt.ty, k),
+    };
+}
+
+pub fn variant_payload(same: bool, index: usize, payload: core::option::Option<List<SrcExpr>>) -> core::option::Option<LetHead> {
+    if (same) {
+        return match (payload) {
+            None -> None,
+            Some(es) -> Some(VariantOf(index, es)),
+        };
+    }
+    return None;
+}
+
+// A variant of the let's own enum type.
+pub fn variant_head(ty: SrcType, v: VariantAt, payload: core::option::Option<List<SrcExpr>>) -> core::option::Option<LetHead> {
+    return match (enum_id(ty)) {
+        None -> None,
+        Some(e) -> variant_payload(e == v.owner, v.index, payload),
+    };
+}
+
+// extract: inline
+fn unit_named(uenv: Env, uscope: List<Local>, uty: SrcType, un: List<usize>, uinit: CTree, ufuel: usize) -> core::option::Option<LetHead> {
+    return match (find_variant(uenv.types, un)) {
+        None -> plain_head(expr_of(ufuel, uenv, uscope, uinit)),
+        Some(v) -> variant_head(uty, v, Some(empty())),
+    };
+}
+
+// `name`: a unit variant, or else a local.
+pub fn unit_head(env: Env, scope: List<Local>, ty: SrcType, name: core::option::Option<List<usize>>, init: CTree, fuel: usize) -> core::option::Option<LetHead> {
+    return match (name) {
+        None -> None,
+        Some(n) -> unit_named(env, scope, ty, n, init, fuel),
+    };
+}
+
+pub fn variant_call(env: Env, ty: SrcType, n: List<usize>, args: core::option::Option<List<SrcExpr>>) -> core::option::Option<LetHead> {
+    return match (find_variant(env.types, n)) {
+        None -> None,
+        Some(v) -> variant_head(ty, v, args),
+    };
+}
+
+pub fn call_args(callee: usize, args: core::option::Option<List<SrcExpr>>) -> core::option::Option<LetHead> {
+    return match (args) {
+        None -> None,
+        Some(es) -> Some(CallOf(callee, es)),
+    };
+}
+
+pub fn call_named(fuel: usize, env: Env, scope: List<Local>, ty: SrcType, n: List<usize>, args: core::option::Option<List<SrcExpr>>) -> core::option::Option<LetHead> {
+    return match (position(env.fns, n, 0)) {
+        None -> variant_call(env, ty, n, args),
+        Some(callee) -> call_args(callee, args),
+    };
+}
+
+pub fn cons_expr_tail(e: SrcExpr, tail: core::option::Option<List<SrcExpr>>) -> core::option::Option<List<SrcExpr>> {
+    return match (tail) {
+        None -> None,
+        Some(es) -> Some(cons(e, es)),
+    };
+}
+
+pub fn cons_expr(head: core::option::Option<SrcExpr>, tail: core::option::Option<List<SrcExpr>>) -> core::option::Option<List<SrcExpr>> {
+    return match (head) {
+        None -> None,
+        Some(e) -> cons_expr_tail(e, tail),
+    };
+}
+
+pub fn exprs_of(fuel: usize, env: Env, scope: List<Local>, items: List<CTree>) -> core::option::Option<List<SrcExpr>> {
+    return match (items) {
+        Nil -> Some(empty()),
+        Cons(e, rest) -> cons_expr(expr_of(fuel, env, scope, e), exprs_of(fuel, env, scope, unbox(rest))),
+    };
+}
+
+pub fn args_of(fuel: usize, env: Env, scope: List<Local>, args: CTree) -> core::option::Option<List<SrcExpr>> {
+    return match (list_items(fuel, args)) {
+        None -> None,
+        Some(items) -> exprs_of(fuel, env, scope, items),
+    };
+}
+
+// `name(args)`: a call of a function, or a variant with a payload.
+pub fn call_head(fuel: usize, env: Env, scope: List<Local>, ty: SrcType, name: core::option::Option<List<usize>>, args: CTree) -> core::option::Option<LetHead> {
+    return match (name) {
+        None -> None,
+        Some(n) -> call_named(fuel, env, scope, ty, n, args_of(fuel, env, scope, args)),
+    };
+}
+
+pub fn field_values(fs: List<CTree>) -> List<CTree> {
+    return match (fs) {
+        Nil -> empty(),
+        Cons(f, rest) -> cons(kid(f, 2), field_values(unbox(rest))),
+    };
+}
+
+pub fn literal_checked(fuel: usize, env: Env, scope: List<Local>, ok: bool, fs: List<CTree>) -> core::option::Option<LetHead> {
+    if (ok) {
+        return match (exprs_of(fuel, env, scope, field_values(fs))) {
+            None -> None,
+            Some(es) -> Some(LiteralOf(es)),
+        };
+    }
+    return None;
+}
+
+// The struct literal fields are spelled names, in order.
+pub fn same_names(names: List<List<usize>>, fs: List<CTree>) -> bool {
+    return match (names) {
+        Nil -> match (fs) {
+            Nil -> true,
+            Cons(f, more) -> false,
+        },
+        Cons(n, rest) -> match (fs) {
+            Nil -> false,
+            Cons(f, more) -> same_text(n, kid_token(f, 0).text) && same_names(unbox(rest), unbox(more)),
+        },
+    };
+}
+
+pub fn literal_entry(fuel: usize, env: Env, scope: List<Local>, n: List<usize>, entry: core::option::Option<TypeEntry>, fs: List<CTree>) -> core::option::Option<LetHead> {
+    return match (entry) {
+        None -> None,
+        Some(e) -> literal_checked(fuel, env, scope, same_text(e.name, n) && same_names(e.fields, fs), fs),
+    };
+}
+
+pub fn literal_fields(fuel: usize, env: Env, scope: List<Local>, ty: SrcType, n: List<usize>, fs: List<CTree>) -> core::option::Option<LetHead> {
+    return match (struct_id(ty)) {
+        None -> None,
+        Some(id) -> literal_entry(fuel, env, scope, n, get(env.types, id), fs),
+    };
+}
+
+pub fn literal_typed(fuel: usize, env: Env, scope: List<Local>, ty: SrcType, n: List<usize>, items: core::option::Option<List<CTree>>) -> core::option::Option<LetHead> {
+    return match (items) {
+        None -> None,
+        Some(fs) -> literal_fields(fuel, env, scope, ty, n, fs),
+    };
+}
+
+// `S { f: e, ... }` of the let's own struct type, fields in declared order.
+pub fn literal_head(fuel: usize, env: Env, scope: List<Local>, ty: SrcType, name: core::option::Option<List<usize>>, fields: CTree) -> core::option::Option<LetHead> {
+    return match (name) {
+        None -> None,
+        Some(n) -> literal_typed(fuel, env, scope, ty, n, list_items(fuel, fields)),
+    };
+}
+
+pub fn match_arms(scrutinee: usize, e: usize, arms: core::option::Option<List<SrcArm>>) -> core::option::Option<LetHead> {
+    return match (arms) {
+        None -> None,
+        Some(a) -> Some(MatchOf(scrutinee, e, a)),
+    };
+}
+
+pub fn cons_arm_tail(a: SrcArm, tail: core::option::Option<List<SrcArm>>) -> core::option::Option<List<SrcArm>> {
+    return match (tail) {
+        None -> None,
+        Some(others) -> Some(cons(a, others)),
+    };
+}
+
+pub fn cons_arm(head: core::option::Option<SrcArm>, tail: core::option::Option<List<SrcArm>>) -> core::option::Option<List<SrcArm>> {
+    return match (head) {
+        None -> None,
+        Some(a) -> cons_arm_tail(a, tail),
+    };
+}
+
+pub fn is_spelled(name: core::option::Option<List<usize>>, other: List<usize>) -> bool {
+    return match (name) {
+        None -> false,
+        Some(n) -> same_text(n, other),
+    };
+}
+
+// Binder ids, and the scope with the binders in it.
+pub struct Bound {
+    ids: List<usize>,
+    scope: List<Local>,
+}
+
+pub fn arm_value(ids: List<usize>, value: core::option::Option<SrcExpr>) -> core::option::Option<SrcArm> {
+    return match (value) {
+        None -> None,
+        Some(e) -> Some(SrcArm { binders: ids, value: e }),
+    };
+}
+
+pub fn arm_bound(fuel: usize, env: Env, bound: core::option::Option<Bound>, payload: List<SrcType>, value: CTree) -> core::option::Option<SrcArm> {
+    return match (bound) {
+        None -> None,
+        Some(b) -> arm_value(b.ids, expr_of(fuel, env, b.scope, value)),
+    };
+}
+
+pub fn is_some_name(name: core::option::Option<List<usize>>) -> bool {
+    return match (name) {
+        None -> false,
+        Some(n) -> true,
+    };
+}
+
+pub fn cons_binder(id: usize, rest: core::option::Option<Bound>) -> core::option::Option<Bound> {
+    return match (rest) {
+        None -> None,
+        Some(b) -> Some(Bound { ids: cons(id, b.ids), scope: b.scope }),
+    };
+}
+
+// One plain name pattern per payload type, each a fresh local.
+pub fn binders_of(env: Env, scope: List<Local>, pats: List<CTree>, payload: List<SrcType>) -> core::option::Option<Bound> {
+    return match (payload) {
+        Nil -> match (pats) {
+            Nil -> Some(Bound { ids: empty(), scope: scope }),
+            Cons(p, more) -> None,
+        },
+        Cons(t, rest) -> match (pats) {
+            Nil -> None,
+            Cons(p, more) -> binder_of(env, scope, p, t, unbox(more), unbox(rest)),
+        },
+    };
+}
+
+// extract: inline
+fn binder_of(env: Env, scope: List<Local>, p: CTree, t: SrcType, pats: List<CTree>, payload: List<SrcType>) -> core::option::Option<Bound> {
+    let path: CTree = kid(p, 0);
+    let tok: Token = kid_token(kid(path, 0), 0);
+    if (node_prod(p) == p_pattern_ident() && node_prod(kid(p, 1)) == p_pattern_plain() && is_some_name(path_name(path)) && !member(env.globals, tok.text)) {
+        return cons_binder(tok.start, binders_of(env, cons(Local { name: tok.text, id: tok.start, ty: t }, scope), pats, payload));
+    }
+    return None;
+}
+
+// `V -> value` or `V(b, ...) -> value` (match_arm -> pattern MatchArrow expr).
+pub fn arm_of(fuel: usize, env: Env, scope: List<Local>, v: Variant, arm: CTree) -> core::option::Option<SrcArm> {
+    let pattern: CTree = kid(arm, 0);
+    let ptail: CTree = kid(pattern, 1);
+    if (node_prod(pattern) == p_pattern_ident() && is_spelled(path_name(kid(pattern, 0)), v.name)) {
+        if (node_prod(ptail) == p_pattern_plain()) {
+            return arm_bound(fuel, env, Some(Bound { ids: empty(), scope: scope }), v.payload, kid(arm, 2));
+        }
+        return match (list_items(fuel, kid(ptail, 1))) {
+            None -> None,
+            Some(pats) -> arm_bound(fuel, env, binders_of(env, scope, pats, v.payload), v.payload, kid(arm, 2)),
+        };
+    }
+    return None;
+}
+
+// Arm k is variant k.
+pub fn arms_of(fuel: usize, env: Env, scope: List<Local>, variants: List<Variant>, arms: List<CTree>) -> core::option::Option<List<SrcArm>> {
+    return match (variants) {
+        Nil -> match (arms) {
+            Nil -> Some(empty()),
+            Cons(a, more) -> None,
+        },
+        Cons(v, rest) -> match (arms) {
+            Nil -> None,
+            Cons(a, more) -> cons_arm(arm_of(fuel, env, scope, v, a), arms_of(fuel, env, scope, unbox(rest), unbox(more))),
+        },
+    };
+}
+
+pub fn arms_list(fuel: usize, env: Env, scope: List<Local>, variants: List<Variant>, items: core::option::Option<List<CTree>>) -> core::option::Option<List<SrcArm>> {
+    return match (items) {
+        None -> None,
+        Some(arms) -> arms_of(fuel, env, scope, variants, arms),
+    };
+}
+
+pub fn match_enum(fuel: usize, env: Env, scope: List<Local>, scrutinee: usize, e: usize, entry: core::option::Option<TypeEntry>, m: CTree) -> core::option::Option<LetHead> {
+    return match (entry) {
+        None -> None,
+        Some(t) -> match_arms(scrutinee, e, arms_list(fuel, env, scope, t.variants, list_items(fuel, kid(m, 5)))),
+    };
+}
+
+pub fn match_local(fuel: usize, env: Env, scope: List<Local>, l: Local, m: CTree) -> core::option::Option<LetHead> {
+    return match (enum_id(l.ty)) {
+        None -> None,
+        Some(e) -> match_enum(fuel, env, scope, l.id, e, get(env.types, e), m),
+    };
+}
+
+pub fn match_scrutinee(fuel: usize, env: Env, scope: List<Local>, pf: CTree, m: CTree) -> core::option::Option<LetHead> {
+    if (node_prod(kid(pf, 1)) == p_postfix_end()) {
+        return match (local_of(env, scope, kid(pf, 0))) {
+            None -> None,
+            Some(l) -> match_local(fuel, env, scope, l, m),
+        };
+    }
+    return None;
+}
+
+// `match (x) { arms }`: x a local of an enum type, one arm per variant in order.
+pub fn match_head(fuel: usize, env: Env, scope: List<Local>, ty: SrcType, m: CTree) -> core::option::Option<LetHead> {
+    return match (peel(fuel, kid(m, 2))) {
+        None -> None,
+        Some(pf) -> match_scrutinee(fuel, env, scope, pf, m),
+    };
+}
+
+pub fn postfix_head(fuel: usize, env: Env, scope: List<Local>, ty: SrcType, pf: CTree, init: CTree) -> core::option::Option<LetHead> {
+    let primary: CTree = kid(pf, 0);
+    let tail: CTree = kid(pf, 1);
+    if (node_prod(primary) == p_match_expr() && node_prod(tail) == p_postfix_end()) {
+        return match_head(fuel, env, scope, ty, primary);
+    }
+    if (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_struct_lit() && node_prod(tail) == p_postfix_end()) {
+        return literal_head(fuel, env, scope, ty, path_name(kid(primary, 0)), kid(kid(primary, 1), 1));
+    }
+    if (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain() && node_prod(tail) == p_postfix_call() && node_prod(kid(tail, 3)) == p_postfix_end()) {
+        return call_head(fuel, env, scope, ty, path_name(kid(primary, 0)), kid(tail, 1));
+    }
+    if (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain() && node_prod(tail) == p_postfix_end()) {
+        return unit_head(env, scope, ty, path_name(kid(primary, 0)), init, fuel);
+    }
+    return plain_head(expr_of(fuel, env, scope, init));
+}
+
+// The head of `let x: ty = init;`.
+pub fn let_head(fuel: usize, env: Env, scope: List<Local>, ty: SrcType, init: CTree) -> core::option::Option<LetHead> {
+    return match (peel(fuel, init)) {
+        None -> plain_head(expr_of(fuel, env, scope, init)),
+        Some(pf) -> postfix_head(fuel, env, scope, ty, pf, init),
+    };
+}
+
+pub fn then_rest(h: SrcStmt, rest: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (rest) {
+        None -> None,
+        Some(r) -> Some(Then(boxed(h), boxed(r))),
+    };
+}
+
+pub fn then_of(head: core::option::Option<SrcStmt>, rest: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (head) {
+        None -> None,
+        Some(h) -> then_rest(h, rest),
+    };
+}
+
+pub fn let_stmt(id: usize, ty: SrcType, head: LetHead, body: SrcStmt) -> SrcStmt {
+    return match (head) {
+        Plain(e) -> Let(id, ty, e, boxed(body)),
+        CallOf(callee, args) -> LetCall(id, ty, callee, args, boxed(body)),
+        VariantOf(variant, payload) -> LetEnum(id, ty, variant, payload, boxed(body)),
+        LiteralOf(fields) -> LetStruct(id, ty, fields, boxed(body)),
+        MatchOf(scrutinee, owner, arms) -> LetMatch(id, ty, scrutinee, owner, arms, boxed(body)),
+    };
+}
+
+pub fn let_body(id: usize, ty: SrcType, h: LetHead, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (body) {
+        None -> None,
+        Some(b) -> Some(let_stmt(id, ty, h, b)),
+    };
+}
+
+pub fn let_of(id: usize, ty: SrcType, head: core::option::Option<LetHead>, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (head) {
+        None -> None,
+        Some(h) -> let_body(id, ty, h, body),
+    };
+}
+
+pub fn returned(e: core::option::Option<SrcExpr>) -> core::option::Option<SrcStmt> {
+    return match (e) {
+        None -> None,
+        Some(x) -> Some(Return(x)),
+    };
+}
+
+pub fn if_else(x: SrcExpr, s: SrcStmt, b: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (b) {
+        None -> None,
+        Some(t) -> Some(If(x, boxed(s), boxed(t))),
+    };
+}
+
+pub fn if_branches(x: SrcExpr, a: core::option::Option<SrcStmt>, b: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (a) {
+        None -> None,
+        Some(s) -> if_else(x, s, b),
+    };
+}
+
+pub fn if_of(c: core::option::Option<SrcExpr>, a: core::option::Option<SrcStmt>, b: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (c) {
+        None -> None,
+        Some(x) -> if_branches(x, a, b),
+    };
+}
+
+pub fn while_body(x: SrcExpr, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (body) {
+        None -> None,
+        Some(b) -> Some(While(x, boxed(b))),
+    };
+}
+
+pub fn while_of(c: core::option::Option<SrcExpr>, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (c) {
+        None -> None,
+        Some(x) -> while_body(x, body),
+    };
+}
+
+pub fn set_field_value(id: usize, j: usize, value: core::option::Option<SrcExpr>) -> core::option::Option<SrcStmt> {
+    return match (value) {
+        None -> None,
+        Some(v) -> Some(SetField(id, j, v)),
+    };
+}
+
+pub fn field_into(index: core::option::Option<usize>, id: usize, value: core::option::Option<SrcExpr>) -> core::option::Option<SrcStmt> {
+    return match (index) {
+        None -> None,
+        Some(j) -> set_field_value(id, j, value),
+    };
+}
+
+pub fn set_value(id: usize, value: core::option::Option<SrcExpr>) -> core::option::Option<SrcStmt> {
+    return match (value) {
+        None -> None,
+        Some(v) -> Some(Set(id, v)),
+    };
+}
+
+pub fn position_of(names: List<List<usize>>, name: core::option::Option<List<usize>>) -> core::option::Option<usize> {
+    return match (name) {
+        None -> None,
+        Some(n) -> position(names, n, 0),
+    };
+}
+
+pub fn set_call_args(id: usize, f: usize, args: core::option::Option<List<SrcExpr>>) -> core::option::Option<SrcStmt> {
+    return match (args) {
+        None -> None,
+        Some(es) -> Some(SetCall(id, f, es)),
+    };
+}
+
+pub fn call_into(id: usize, callee: core::option::Option<usize>, args: core::option::Option<List<SrcExpr>>) -> core::option::Option<SrcStmt> {
+    return match (callee) {
+        None -> None,
+        Some(f) -> set_call_args(id, f, args),
+    };
+}
+
+pub fn set_postfix(fuel: usize, env: Env, scope: List<Local>, id: usize, pf: CTree, value: CTree) -> core::option::Option<SrcStmt> {
+    let primary: CTree = kid(pf, 0);
+    let tail: CTree = kid(pf, 1);
+    if (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain() && node_prod(tail) == p_postfix_call() && node_prod(kid(tail, 3)) == p_postfix_end()) {
+        return call_into(id, position_of(env.fns, path_name(kid(primary, 0))), args_of(fuel, env, scope, kid(tail, 1)));
+    }
+    return set_value(id, expr_of(fuel, env, scope, value));
+}
+
+pub fn set_local(fuel: usize, env: Env, scope: List<Local>, id: usize, value: CTree) -> core::option::Option<SrcStmt> {
+    return match (peel(fuel, value)) {
+        None -> set_value(id, expr_of(fuel, env, scope, value)),
+        Some(pf) -> set_postfix(fuel, env, scope, id, pf, value),
+    };
+}
+
+pub fn assign_target(fuel: usize, env: Env, scope: List<Local>, target: CTree, value: CTree) -> core::option::Option<SrcStmt> {
+    let tail: CTree = kid(target, 1);
+    if (node_prod(tail) == p_postfix_end()) {
+        return match (local_of(env, scope, kid(target, 0))) {
+            None -> None,
+            Some(l) -> set_local(fuel, env, scope, l.id, value),
+        };
+    }
+    if (node_prod(tail) == p_postfix_member() && node_prod(kid(tail, 2)) == p_member_type_args_none() && node_prod(kid(tail, 3)) == p_postfix_end()) {
+        return match (local_of(env, scope, kid(target, 0))) {
+            None -> None,
+            Some(l) -> field_into(field_index(env, l.ty, kid_token(tail, 1).text), l.id, expr_of(fuel, env, scope, value)),
+        };
+    }
+    return None;
+}
+
+// `target = value;`: target a local or a field of one; value a call of a
+// function (to a plain local) or an expression.
+pub fn assignment(fuel: usize, env: Env, scope: List<Local>, e: CTree) -> core::option::Option<SrcStmt> {
+    let a: CTree = kid(e, 0);
+    let set: CTree = kid(a, 1);
+    if (node_prod(e) == p_expr() && node_prod(a) == p_assign() && node_prod(set) == p_assign_set()) {
+        return match (peel(fuel, kid(a, 0))) {
+            None -> None,
+            Some(target) -> assign_target(fuel, env, scope, target, kid(set, 1)),
+        };
+    }
+    return None;
+}
+
+// extract: mutual begin
+// A statement list: a let scopes over the statements after it.
+pub fn block_of(fuel: usize, env: Env, scope: List<Local>, list: CTree) -> core::option::Option<SrcStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (list_items(fuel, list)) {
+        None -> None,
+        Some(items) -> stmts_of(minus(fuel, 1), env, scope, items),
+    };
+}
+
+pub fn stmts_of(fuel: usize, env: Env, scope: List<Local>, items: List<CTree>) -> core::option::Option<SrcStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (items) {
+        Nil -> Some(Nop),
+        Cons(s, rest) -> stmt_first(minus(fuel, 1), env, scope, s, unbox(rest)),
+    };
+}
+
+pub fn stmt_first(fuel: usize, env: Env, scope: List<Local>, s: CTree, rest: List<CTree>) -> core::option::Option<SrcStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (node_prod(s) == p_let_stmt()) {
+        return let_first(minus(fuel, 1), env, scope, s, rest);
+    }
+    return match (rest) {
+        Nil -> stmt_of(minus(fuel, 1), env, scope, s),
+        Cons(next, more) -> then_of(stmt_of(minus(fuel, 1), env, scope, s), stmts_of(minus(fuel, 1), env, scope, rest)),
+    };
+}
+
+// `let x: ty = init;` (let_stmt -> Let LetIdent let_type let_init LetSemicolon).
+pub fn let_first(fuel: usize, env: Env, scope: List<Local>, s: CTree, rest: List<CTree>) -> core::option::Option<SrcStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    let tok: Token = kid_token(s, 1);
+    if (node_prod(kid(s, 2)) == p_let_type() && node_prod(kid(s, 3)) == p_let_init() && !member(env.globals, tok.text)) {
+        return match (type_of(env, kid(kid(s, 2), 1))) {
+            None -> None,
+            Some(t) -> let_of(tok.start, t, let_head(minus(fuel, 1), env, scope, t, kid(kid(s, 3), 1)), stmts_of(minus(fuel, 1), env, cons(Local { name: tok.text, id: tok.start, ty: t }, scope), rest)),
+        };
+    }
+    return None;
+}
+
+// return, if, while, and assignments.
+pub fn stmt_of(fuel: usize, env: Env, scope: List<Local>, s: CTree) -> core::option::Option<SrcStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    let f: usize = minus(fuel, 1);
+    let p: usize = node_prod(s);
+    if (p == p_return_stmt() && node_prod(kid(s, 1)) == p_return_value()) {
+        return returned(expr_of(f, env, scope, kid(kid(s, 1), 0)));
+    }
+    if (p == p_if_stmt() && node_prod(kid(s, 5)) == p_else_stmt()) {
+        return if_of(expr_of(f, env, scope, kid(s, 2)), block_of(f, env, scope, kid(kid(s, 4), 1)), block_of(f, env, scope, kid(kid(kid(s, 5), 1), 1)));
+    }
+    if (p == p_if_stmt() && node_prod(kid(s, 5)) == p_else_none()) {
+        return if_of(expr_of(f, env, scope, kid(s, 2)), block_of(f, env, scope, kid(kid(s, 4), 1)), Some(Nop));
+    }
+    if (p == p_while_stmt()) {
+        return while_of(expr_of(f, env, scope, kid(s, 2)), block_of(f, env, scope, kid(kid(s, 4), 1)));
+    }
+    if (p == p_expr_stmt()) {
+        return assignment(f, env, scope, kid(s, 0));
+    }
+    return None;
+}
+// extract: mutual end
+
+pub fn func_ret(fuel: usize, env: Env, ps: Params, ret: core::option::Option<SrcType>, body: CTree) -> core::option::Option<SrcFunc> {
+    return match (ret) {
+        None -> None,
+        Some(r) -> func_body(ps, r, block_of(fuel, env, ps.scope, body)),
+    };
+}
+
+pub fn func_params(fuel: usize, env: Env, params: core::option::Option<Params>, ret: core::option::Option<SrcType>, body: CTree) -> core::option::Option<SrcFunc> {
+    return match (params) {
+        None -> None,
+        Some(ps) -> func_ret(fuel, env, ps, ret, body),
+    };
+}
+
+pub fn cons_param(p: SrcParam, rest: core::option::Option<Params>) -> core::option::Option<Params> {
+    return match (rest) {
+        None -> None,
+        Some(r) -> Some(Params { params: cons(p, r.params), scope: r.scope }),
+    };
+}
+
+pub fn params_of(env: Env, scope: List<Local>, items: List<CTree>) -> core::option::Option<Params> {
+    return match (items) {
+        Nil -> Some(Params { params: empty(), scope: scope }),
+        Cons(p, rest) -> param_of(env, scope, p, unbox(rest)),
+    };
+}
+
+// extract: inline
+fn param_of(env: Env, scope: List<Local>, p: CTree, rest: List<CTree>) -> core::option::Option<Params> {
+    let tok: Token = kid_token(p, 0);
+    if (node_prod(p) == p_param_named() && !member(env.globals, tok.text)) {
+        return match (type_of(env, kid(p, 2))) {
+            None -> None,
+            Some(t) -> cons_param(SrcParam { id: tok.start, ty: t }, params_of(env, cons(Local { name: tok.text, id: tok.start, ty: t }, scope), rest)),
+        };
+    }
+    return None;
+}
+
+// A function (fn_item): no type parameters or where clause, a result type.
+pub fn func_of(fuel: usize, env: Env, f: CTree) -> core::option::Option<SrcFunc> {
+    let ret: CTree = kid(f, 6);
+    if (node_prod(kid(f, 2)) == p_enum_type_params_none() && node_prod(kid(f, 7)) == p_where_none() && node_prod(ret) == p_ret_type()) {
+        return match (list_items(fuel, kid(f, 4))) {
+            None -> None,
+            Some(items) -> func_params(fuel, env, params_of(env, empty(), items), type_of(env, kid(ret, 1)), kid(kid(f, 8), 1)),
+        };
+    }
+    return None;
+}
+
+pub fn funcs_of(fuel: usize, env: Env, fns: List<CTree>) -> core::option::Option<List<SrcFunc>> {
+    return match (fns) {
+        Nil -> Some(empty()),
+        Cons(f, rest) -> cons_func(func_of(fuel, env, f), funcs_of(fuel, env, unbox(rest))),
+    };
+}
+
+pub fn build_env(fuel: usize, fns: List<CTree>, env: Env) -> core::option::Option<SrcProgram> {
+    if (distinct(env.globals) && no_primitive(env.types)) {
+        return match (funcs_of(fuel, env, fns)) {
+            None -> None,
+            Some(funcs) -> Some(SrcProgram { funcs: funcs }),
+        };
+    }
+    return None;
+}
+
+pub fn build_typed(fuel: usize, fns: List<CTree>, types: core::option::Option<List<TypeEntry>>) -> core::option::Option<SrcProgram> {
+    return match (types) {
+        None -> None,
+        Some(ts) -> build_env(fuel, fns, Env { types: ts, fns: fn_names(fns), globals: concat(type_spellings(ts), fn_names(fns)) }),
+    };
+}
+
+pub fn build_items(fuel: usize, items: core::option::Option<Items>) -> core::option::Option<SrcProgram> {
+    return match (items) {
+        None -> None,
+        Some(its) -> build_typed(fuel, its.fns, type_entries(fuel, empty(), its.decls)),
+    };
+}
+
+// ---------------------------------------------------------------- the program
+
+// The source program of the concrete tree of a file.
+pub fn build(fuel: usize, root: CTree) -> core::option::Option<SrcProgram> {
+    if (node_prod(root) == p_file()) {
+        return match (list_items(fuel, kid(root, 0))) {
+            None -> None,
+            Some(items) -> build_items(fuel, split_items(items)),
+        };
+    }
+    return None;
+}
+
+// The front end: the source program of a parse, if the parse is a derivation
+// of the tokens and the program is in the subset.
+pub fn front_end(g: List<Rule>, tokens: List<Token>, prods: List<usize>, parents: List<usize>) -> core::option::Option<SrcProgram> {
+    return match (validate(g, tokens, prods, parents)) {
+        None -> None,
+        Some(root) -> build(plus(times(4, plus(length(prods), length(tokens))), 16), root),
+    };
+}
+
+// grammar table begin
+// Generated by formal/tools/grammar_table.py from tables/parse_tables.meta.json
+// and the lexer token kinds; do not edit. Production k of grammar/lanius.bnf is
+// element k. Nonterminals:
+// 0 file, 1 item_list, 2 item, 3 fn_item, 4 fn_block, 5 impl_fn_item,
+// 6 impl_fn_block, 7 extern_fn_item, 8 type_alias_item, 9 impl_item,
+// 10 impl_method_list_opt, 11 impl_method, 12 impl_method_tail, 13 trait_item,
+// 14 trait_method_list_opt, 15 trait_method, 16 trait_method_tail,
+// 17 extern_abi_opt, 18 return_type_opt, 19 where_clause_opt,
+// 20 where_predicate, 21 where_predicate_tail,
+// 22 where_predicate_tail_after_comma, 23 import_item, 24 import_tail,
+// 25 module_item, 26 path, 27 path_segment, 28 path_tail,
+// 29 path_type_arg_tail, 30 path_type_arg_tail_after_comma, 31 type_path,
+// 32 type_path_segment, 33 type_path_tail, 34 param_list_opt, 35 param,
+// 36 self_param_tail, 37 param_tail, 38 type_expr, 39 block, 40 if_block,
+// 41 stmt_list, 42 stmt, 43 else_tail, 44 let_type_opt, 45 let_init_opt,
+// 46 return_value_opt, 47 for_iterable, 48 range_start, 49 range_start_tail,
+// 50 range_bound, 51 range_bound_ident, 52 range_bound_opt, 53 expr, 54 assign,
+// 55 assign_tail, 56 orexpr, 57 orexpr_tail, 58 andexpr, 59 andexpr_tail,
+// 60 bit_or, 61 bit_or_tail, 62 bit_xor, 63 bit_xor_tail, 64 bit_and,
+// 65 bit_and_tail, 66 equality, 67 equality_tail, 68 compare, 69 compare_tail,
+// 70 shift, 71 shift_tail, 72 add, 73 add_tail, 74 mul, 75 mul_tail, 76 unary,
+// 77 postfix, 78 postfix_tail, 79 arg_list_opt, 80 arg_tail,
+// 81 arg_tail_after_comma, 82 primary, 83 array_elems_opt, 84 array_elems_tail,
+// 85 array_elems_tail_after_comma, 86 match_arm_list_opt, 87 match_arm,
+// 88 match_arm_tail, 89 match_arm_tail_after_comma, 90 pattern,
+// 91 pattern_ident_tail, 92 pattern_list_opt, 93 pattern_tail,
+// 94 pattern_tail_after_comma, 95 const_item, 96 enum_item,
+// 97 enum_variant_list_opt, 98 enum_variant, 99 enum_variant_payload_opt,
+// 100 enum_variant_fields_opt, 101 enum_variant_fields_tail,
+// 102 enum_variant_fields_tail_after_comma, 103 enum_variant_tail,
+// 104 enum_variant_tail_after_comma, 105 type_args_opt, 106 type_arg_tail,
+// 107 type_arg_tail_after_comma, 108 enum_type_params_opt, 109 enum_type_param,
+// 110 type_param_bound_opt, 111 type_param_bound_list,
+// 112 type_param_bound_tail, 113 bound_type_expr, 114 bound_type_path,
+// 115 bound_type_path_segment, 116 bound_type_path_tail,
+// 117 bound_type_args_opt, 118 bound_type_arg_tail,
+// 119 bound_type_arg_tail_after_comma, 120 enum_type_param_tail,
+// 121 enum_type_param_tail_after_comma, 122 struct_item,
+// 123 struct_field_list_opt, 124 struct_field, 125 struct_field_tail,
+// 126 struct_field_tail_after_comma, 127 pub_item, 128 primary_ident_tail,
+// 129 struct_lit_field_list_opt, 130 struct_lit_field,
+// 131 struct_lit_field_tail, 132 struct_lit_field_tail_after_comma,
+// 133 type_bracket_tail, 134 type_array_len, 135 array_length_path,
+// 136 array_length_path_segment, 137 array_length_path_tail,
+// 138 param_tail_after_comma, 139 generic_argument,
+// 140 scalar_constant_argument, 141 member_type_args_opt,
+// 142 generic_argument_magnitude, 143 cast, 144 cast_tail, 145 cast_type,
+// 146 cast_type_path, 147 cast_type_path_segment, 148 cast_type_path_tail,
+// 149 array_repeat_count.
+
+// Productions 0 to 19:
+// 0 file, 1 items_more, 2 items_end, 3 item_pub, 4 item_fn, 5 item_extern_fn,
+// 6 item_import, 7 item_module, 8 item_type_alias, 9 item_impl, 10 item_trait,
+// 11 fn, 12 fn_block, 13 impl_fn, 14 impl_fn_block, 15 extern_fn,
+// 16 type_alias, 17 impl_inherent, 18 impl_trait, 19 impl_methods_none.
+pub fn grammar_part_0() -> List<Rule> {
+    return cons(Rule { lhs: 0, rhs: cons(Nonterm(1), empty()) },
+        cons(Rule { lhs: 1, rhs: cons(Nonterm(2), cons(Nonterm(1), empty())) },
+        cons(Rule { lhs: 1, rhs: empty() },
+        cons(Rule { lhs: 2, rhs: cons(Term(66), cons(Nonterm(127), empty())) },
+        cons(Rule { lhs: 2, rhs: cons(Nonterm(3), empty()) },
+        cons(Rule { lhs: 2, rhs: cons(Nonterm(7), empty()) },
+        cons(Rule { lhs: 2, rhs: cons(Nonterm(23), empty()) },
+        cons(Rule { lhs: 2, rhs: cons(Nonterm(25), empty()) },
+        cons(Rule { lhs: 2, rhs: cons(Nonterm(8), empty()) },
+        cons(Rule { lhs: 2, rhs: cons(Nonterm(9), empty()) },
+        cons(Rule { lhs: 2, rhs: cons(Nonterm(13), empty()) },
+        cons(Rule { lhs: 3, rhs: cons(Term(67), cons(Term(1), cons(Nonterm(108), cons(Term(4), cons(Nonterm(34), cons(Term(5), cons(Nonterm(18), cons(Nonterm(19), cons(Nonterm(4), empty()))))))))) },
+        cons(Rule { lhs: 4, rhs: cons(Term(22), cons(Nonterm(41), cons(Term(23), empty()))) },
+        cons(Rule { lhs: 5, rhs: cons(Term(67), cons(Term(1), cons(Nonterm(108), cons(Term(4), cons(Nonterm(34), cons(Term(5), cons(Nonterm(18), cons(Nonterm(19), cons(Nonterm(6), empty()))))))))) },
+        cons(Rule { lhs: 6, rhs: cons(Term(22), cons(Nonterm(41), cons(Term(23), empty()))) },
+        cons(Rule { lhs: 7, rhs: cons(Term(102), cons(Nonterm(17), cons(Term(67), cons(Term(1), cons(Nonterm(108), cons(Term(4), cons(Nonterm(34), cons(Term(5), cons(Nonterm(18), cons(Nonterm(19), cons(Term(37), empty()))))))))))) },
+        cons(Rule { lhs: 8, rhs: cons(Term(103), cons(Term(1), cons(Nonterm(108), cons(Nonterm(19), cons(Term(8), cons(Nonterm(38), cons(Term(37), empty()))))))) },
+        cons(Rule { lhs: 9, rhs: cons(Term(98), cons(Nonterm(108), cons(Nonterm(38), cons(Nonterm(19), cons(Term(22), cons(Nonterm(10), cons(Term(23), empty()))))))) },
+        cons(Rule { lhs: 9, rhs: cons(Term(98), cons(Nonterm(108), cons(Nonterm(38), cons(Term(100), cons(Nonterm(38), cons(Nonterm(19), cons(Term(22), cons(Nonterm(10), cons(Term(23), empty()))))))))) },
+        cons(Rule { lhs: 10, rhs: empty() },
+        empty()))))))))))))))))))));
+}
+
+// Productions 20 to 39:
+// 20 impl_methods_some, 21 impl_method, 22 impl_method_pub,
+// 23 impl_methods_more, 24 impl_methods_end, 25 trait, 26 trait_methods_none,
+// 27 trait_methods_some, 28 trait_method, 29 trait_method_pub,
+// 30 trait_methods_more, 31 trait_methods_end, 32 extern_abi,
+// 33 extern_abi_none, 34 ret_type, 35 ret_void, 36 where_none, 37 where_some,
+// 38 where_type_bound, 39 where_predicates_more.
+pub fn grammar_part_1() -> List<Rule> {
+    return cons(Rule { lhs: 10, rhs: cons(Nonterm(11), cons(Nonterm(12), empty())) },
+        cons(Rule { lhs: 11, rhs: cons(Nonterm(5), empty()) },
+        cons(Rule { lhs: 11, rhs: cons(Term(66), cons(Nonterm(5), empty())) },
+        cons(Rule { lhs: 12, rhs: cons(Nonterm(11), cons(Nonterm(12), empty())) },
+        cons(Rule { lhs: 12, rhs: empty() },
+        cons(Rule { lhs: 13, rhs: cons(Term(99), cons(Term(1), cons(Nonterm(108), cons(Nonterm(19), cons(Term(22), cons(Nonterm(14), cons(Term(23), empty()))))))) },
+        cons(Rule { lhs: 14, rhs: empty() },
+        cons(Rule { lhs: 14, rhs: cons(Nonterm(15), cons(Nonterm(16), empty())) },
+        cons(Rule { lhs: 15, rhs: cons(Term(67), cons(Term(1), cons(Nonterm(108), cons(Term(4), cons(Nonterm(34), cons(Term(5), cons(Nonterm(18), cons(Nonterm(19), cons(Term(37), empty()))))))))) },
+        cons(Rule { lhs: 15, rhs: cons(Term(66), cons(Term(67), cons(Term(1), cons(Nonterm(108), cons(Term(4), cons(Nonterm(34), cons(Term(5), cons(Nonterm(18), cons(Nonterm(19), cons(Term(37), empty())))))))))) },
+        cons(Rule { lhs: 16, rhs: cons(Nonterm(15), cons(Nonterm(16), empty())) },
+        cons(Rule { lhs: 16, rhs: empty() },
+        cons(Rule { lhs: 17, rhs: cons(Term(32), empty()) },
+        cons(Rule { lhs: 17, rhs: empty() },
+        cons(Rule { lhs: 18, rhs: cons(Term(75), cons(Nonterm(38), empty())) },
+        cons(Rule { lhs: 18, rhs: empty() },
+        cons(Rule { lhs: 19, rhs: empty() },
+        cons(Rule { lhs: 19, rhs: cons(Term(104), cons(Nonterm(20), cons(Nonterm(21), empty()))) },
+        cons(Rule { lhs: 20, rhs: cons(Term(1), cons(Term(38), cons(Nonterm(111), empty()))) },
+        cons(Rule { lhs: 21, rhs: cons(Term(36), cons(Nonterm(22), empty())) },
+        empty()))))))))))))))))))));
+}
+
+// Productions 40 to 59:
+// 40 where_predicates_end, 41 where_predicate_more_after_comma,
+// 42 where_predicate_trailing, 43 import, 44 import_path, 45 import_string,
+// 46 module, 47 path, 48 path_ident, 49 path_ident_args, 50 path_more,
+// 51 path_end, 52 path_type_args_more, 53 path_type_args_end,
+// 54 path_type_args_after_comma_more, 55 path_type_args_after_comma_trailing,
+// 56 type_path, 57 type_path_ident, 58 type_path_more, 59 type_path_end.
+pub fn grammar_part_2() -> List<Rule> {
+    return cons(Rule { lhs: 21, rhs: empty() },
+        cons(Rule { lhs: 22, rhs: cons(Nonterm(20), cons(Nonterm(21), empty())) },
+        cons(Rule { lhs: 22, rhs: empty() },
+        cons(Rule { lhs: 23, rhs: cons(Term(96), cons(Nonterm(24), empty())) },
+        cons(Rule { lhs: 24, rhs: cons(Nonterm(26), cons(Term(37), empty())) },
+        cons(Rule { lhs: 24, rhs: cons(Term(32), cons(Term(37), empty())) },
+        cons(Rule { lhs: 25, rhs: cons(Term(97), cons(Nonterm(26), cons(Term(37), empty()))) },
+        cons(Rule { lhs: 26, rhs: cons(Nonterm(27), cons(Nonterm(28), empty())) },
+        cons(Rule { lhs: 27, rhs: cons(Term(1), empty()) },
+        cons(Rule { lhs: 27, rhs: cons(Term(1), cons(Term(12), cons(Nonterm(139), cons(Nonterm(29), cons(Term(13), empty()))))) },
+        cons(Rule { lhs: 28, rhs: cons(Term(38), cons(Term(38), cons(Nonterm(27), cons(Nonterm(28), empty())))) },
+        cons(Rule { lhs: 28, rhs: empty() },
+        cons(Rule { lhs: 29, rhs: cons(Term(36), cons(Nonterm(30), empty())) },
+        cons(Rule { lhs: 29, rhs: empty() },
+        cons(Rule { lhs: 30, rhs: cons(Nonterm(139), cons(Nonterm(29), empty())) },
+        cons(Rule { lhs: 30, rhs: empty() },
+        cons(Rule { lhs: 31, rhs: cons(Nonterm(32), cons(Nonterm(33), empty())) },
+        cons(Rule { lhs: 32, rhs: cons(Term(1), empty()) },
+        cons(Rule { lhs: 33, rhs: cons(Term(38), cons(Term(38), cons(Nonterm(32), cons(Nonterm(33), empty())))) },
+        cons(Rule { lhs: 33, rhs: empty() },
+        empty()))))))))))))))))))));
+}
+
+// Productions 60 to 79:
+// 60 params_none, 61 params_some, 62 param_named, 63 param_self,
+// 64 param_self_ref, 65 self_param_typed, 66 self_param_plain, 67 params_more,
+// 68 params_end, 69 type_ident, 70 type_array, 71 block, 72 if_block,
+// 73 stmts_more, 74 stmts_end, 75 let_stmt, 76 return_stmt, 77 if_stmt,
+// 78 else_stmt, 79 else_none.
+pub fn grammar_part_3() -> List<Rule> {
+    return cons(Rule { lhs: 34, rhs: empty() },
+        cons(Rule { lhs: 34, rhs: cons(Nonterm(35), cons(Nonterm(37), empty())) },
+        cons(Rule { lhs: 35, rhs: cons(Term(1), cons(Term(38), cons(Nonterm(38), empty()))) },
+        cons(Rule { lhs: 35, rhs: cons(Term(105), cons(Nonterm(36), empty())) },
+        cons(Rule { lhs: 35, rhs: cons(Term(25), cons(Term(105), empty())) },
+        cons(Rule { lhs: 36, rhs: cons(Term(38), cons(Nonterm(38), empty())) },
+        cons(Rule { lhs: 36, rhs: empty() },
+        cons(Rule { lhs: 37, rhs: cons(Term(36), cons(Nonterm(138), empty())) },
+        cons(Rule { lhs: 37, rhs: empty() },
+        cons(Rule { lhs: 38, rhs: cons(Nonterm(31), cons(Nonterm(105), empty())) },
+        cons(Rule { lhs: 38, rhs: cons(Term(20), cons(Nonterm(38), cons(Nonterm(133), empty()))) },
+        cons(Rule { lhs: 39, rhs: cons(Term(22), cons(Nonterm(41), cons(Term(23), empty()))) },
+        cons(Rule { lhs: 40, rhs: cons(Term(22), cons(Nonterm(41), cons(Term(23), empty()))) },
+        cons(Rule { lhs: 41, rhs: cons(Nonterm(42), cons(Nonterm(41), empty())) },
+        cons(Rule { lhs: 41, rhs: empty() },
+        cons(Rule { lhs: 42, rhs: cons(Term(68), cons(Term(1), cons(Nonterm(44), cons(Nonterm(45), cons(Term(37), empty()))))) },
+        cons(Rule { lhs: 42, rhs: cons(Term(69), cons(Nonterm(46), cons(Term(37), empty()))) },
+        cons(Rule { lhs: 42, rhs: cons(Term(70), cons(Term(4), cons(Nonterm(53), cons(Term(5), cons(Nonterm(40), cons(Nonterm(43), empty())))))) },
+        cons(Rule { lhs: 43, rhs: cons(Term(71), cons(Nonterm(39), empty())) },
+        cons(Rule { lhs: 43, rhs: empty() },
+        empty()))))))))))))))))))));
+}
+
+// Productions 80 to 99:
+// 80 while_stmt, 81 for_stmt, 82 break_stmt, 83 continue_stmt, 84 block_stmt,
+// 85 expr_stmt, 86 let_type, 87 let_type_none, 88 let_init, 89 let_init_none,
+// 90 return_value, 91 return_void, 92 for_iter_path,
+// 93 for_iter_range_from_start, 94 for_iter_range_to,
+// 95 for_iter_range_to_inclusive, 96 range_start_int, 97 range_exclusive,
+// 98 range_inclusive, 99 range_bound_name.
+pub fn grammar_part_4() -> List<Rule> {
+    return cons(Rule { lhs: 42, rhs: cons(Term(72), cons(Term(4), cons(Nonterm(53), cons(Term(5), cons(Nonterm(39), empty()))))) },
+        cons(Rule { lhs: 42, rhs: cons(Term(100), cons(Term(1), cons(Term(101), cons(Nonterm(47), cons(Nonterm(39), empty()))))) },
+        cons(Rule { lhs: 42, rhs: cons(Term(73), cons(Term(37), empty())) },
+        cons(Rule { lhs: 42, rhs: cons(Term(74), cons(Term(37), empty())) },
+        cons(Rule { lhs: 42, rhs: cons(Nonterm(39), empty()) },
+        cons(Rule { lhs: 42, rhs: cons(Nonterm(53), cons(Term(37), empty())) },
+        cons(Rule { lhs: 44, rhs: cons(Term(38), cons(Nonterm(38), empty())) },
+        cons(Rule { lhs: 44, rhs: empty() },
+        cons(Rule { lhs: 45, rhs: cons(Term(8), cons(Nonterm(53), empty())) },
+        cons(Rule { lhs: 45, rhs: empty() },
+        cons(Rule { lhs: 46, rhs: cons(Nonterm(53), empty()) },
+        cons(Rule { lhs: 46, rhs: empty() },
+        cons(Rule { lhs: 47, rhs: cons(Nonterm(26), empty()) },
+        cons(Rule { lhs: 47, rhs: cons(Nonterm(48), cons(Nonterm(49), empty())) },
+        cons(Rule { lhs: 47, rhs: cons(Term(182), cons(Nonterm(52), empty())) },
+        cons(Rule { lhs: 47, rhs: cons(Term(189), cons(Term(8), cons(Nonterm(50), empty()))) },
+        cons(Rule { lhs: 48, rhs: cons(Term(2), empty()) },
+        cons(Rule { lhs: 49, rhs: cons(Term(182), cons(Nonterm(52), empty())) },
+        cons(Rule { lhs: 49, rhs: cons(Term(189), cons(Term(8), cons(Nonterm(50), empty()))) },
+        cons(Rule { lhs: 50, rhs: cons(Nonterm(51), cons(Nonterm(78), empty())) },
+        empty()))))))))))))))))))));
+}
+
+// Productions 100 to 119:
+// 100 range_bound_int, 101 range_bound_ident, 102 range_bound,
+// 103 range_unbounded, 104 expr, 105 assign, 106 assign_set, 107 assign_add,
+// 108 assign_sub, 109 assign_mul, 110 assign_div, 111 assign_mod,
+// 112 assign_xor, 113 assign_shl, 114 assign_shr, 115 assign_band,
+// 116 assign_bor, 117 assign_end, 118 orexpr, 119 or_tail.
+pub fn grammar_part_5() -> List<Rule> {
+    return cons(Rule { lhs: 50, rhs: cons(Term(2), empty()) },
+        cons(Rule { lhs: 51, rhs: cons(Term(1), empty()) },
+        cons(Rule { lhs: 52, rhs: cons(Nonterm(50), empty()) },
+        cons(Rule { lhs: 52, rhs: empty() },
+        cons(Rule { lhs: 53, rhs: cons(Nonterm(54), empty()) },
+        cons(Rule { lhs: 54, rhs: cons(Nonterm(56), cons(Nonterm(55), empty())) },
+        cons(Rule { lhs: 55, rhs: cons(Term(8), cons(Nonterm(54), empty())) },
+        cons(Rule { lhs: 55, rhs: cons(Term(46), cons(Nonterm(54), empty())) },
+        cons(Rule { lhs: 55, rhs: cons(Term(47), cons(Nonterm(54), empty())) },
+        cons(Rule { lhs: 55, rhs: cons(Term(48), cons(Nonterm(54), empty())) },
+        cons(Rule { lhs: 55, rhs: cons(Term(49), cons(Nonterm(54), empty())) },
+        cons(Rule { lhs: 55, rhs: cons(Term(50), cons(Nonterm(54), empty())) },
+        cons(Rule { lhs: 55, rhs: cons(Term(51), cons(Nonterm(54), empty())) },
+        cons(Rule { lhs: 55, rhs: cons(Term(52), cons(Nonterm(54), empty())) },
+        cons(Rule { lhs: 55, rhs: cons(Term(53), cons(Nonterm(54), empty())) },
+        cons(Rule { lhs: 55, rhs: cons(Term(54), cons(Nonterm(54), empty())) },
+        cons(Rule { lhs: 55, rhs: cons(Term(55), cons(Nonterm(54), empty())) },
+        cons(Rule { lhs: 55, rhs: empty() },
+        cons(Rule { lhs: 56, rhs: cons(Nonterm(58), cons(Nonterm(57), empty())) },
+        cons(Rule { lhs: 57, rhs: cons(Term(18), cons(Nonterm(58), cons(Nonterm(57), empty()))) },
+        empty()))))))))))))))))))));
+}
+
+// Productions 120 to 139:
+// 120 or_end, 121 andexpr, 122 and_tail, 123 and_end, 124 bit_or, 125 bor_tail,
+// 126 bor_end, 127 bit_xor, 128 xor_tail, 129 xor_end, 130 bit_and,
+// 131 band_tail, 132 band_end, 133 equality, 134 eq_tail, 135 ne_tail,
+// 136 eq_end, 137 compare, 138 lt_tail, 139 gt_tail.
+pub fn grammar_part_6() -> List<Rule> {
+    return cons(Rule { lhs: 57, rhs: empty() },
+        cons(Rule { lhs: 58, rhs: cons(Nonterm(60), cons(Nonterm(59), empty())) },
+        cons(Rule { lhs: 59, rhs: cons(Term(17), cons(Nonterm(60), cons(Nonterm(59), empty()))) },
+        cons(Rule { lhs: 59, rhs: empty() },
+        cons(Rule { lhs: 60, rhs: cons(Nonterm(62), cons(Nonterm(61), empty())) },
+        cons(Rule { lhs: 61, rhs: cons(Term(26), cons(Nonterm(62), cons(Nonterm(61), empty()))) },
+        cons(Rule { lhs: 61, rhs: empty() },
+        cons(Rule { lhs: 62, rhs: cons(Nonterm(64), cons(Nonterm(63), empty())) },
+        cons(Rule { lhs: 63, rhs: cons(Term(42), cons(Nonterm(64), cons(Nonterm(63), empty()))) },
+        cons(Rule { lhs: 63, rhs: empty() },
+        cons(Rule { lhs: 64, rhs: cons(Nonterm(66), cons(Nonterm(65), empty())) },
+        cons(Rule { lhs: 65, rhs: cons(Term(25), cons(Nonterm(66), cons(Nonterm(65), empty()))) },
+        cons(Rule { lhs: 65, rhs: empty() },
+        cons(Rule { lhs: 66, rhs: cons(Nonterm(68), cons(Nonterm(67), empty())) },
+        cons(Rule { lhs: 67, rhs: cons(Term(16), cons(Nonterm(68), cons(Nonterm(67), empty()))) },
+        cons(Rule { lhs: 67, rhs: cons(Term(40), cons(Nonterm(68), cons(Nonterm(67), empty()))) },
+        cons(Rule { lhs: 67, rhs: empty() },
+        cons(Rule { lhs: 68, rhs: cons(Nonterm(70), cons(Nonterm(69), empty())) },
+        cons(Rule { lhs: 69, rhs: cons(Term(12), cons(Nonterm(70), cons(Nonterm(69), empty()))) },
+        cons(Rule { lhs: 69, rhs: cons(Term(13), cons(Nonterm(70), cons(Nonterm(69), empty()))) },
+        empty()))))))))))))))))))));
+}
+
+// Productions 140 to 159:
+// 140 le_tail, 141 ge_tail, 142 compare_end, 143 shift, 144 shl_tail,
+// 145 shr_tail, 146 shift_end, 147 add, 148 add_tail, 149 sub_tail,
+// 150 add_end, 151 mul, 152 mul_tail, 153 div_tail, 154 mod_tail, 155 mul_end,
+// 156 pos, 157 neg, 158 not, 159 base.
+pub fn grammar_part_7() -> List<Rule> {
+    return cons(Rule { lhs: 69, rhs: cons(Term(14), cons(Nonterm(70), cons(Nonterm(69), empty()))) },
+        cons(Rule { lhs: 69, rhs: cons(Term(15), cons(Nonterm(70), cons(Nonterm(69), empty()))) },
+        cons(Rule { lhs: 69, rhs: empty() },
+        cons(Rule { lhs: 70, rhs: cons(Nonterm(72), cons(Nonterm(71), empty())) },
+        cons(Rule { lhs: 71, rhs: cons(Term(43), cons(Nonterm(72), cons(Nonterm(71), empty()))) },
+        cons(Rule { lhs: 71, rhs: cons(Term(44), cons(Nonterm(72), cons(Nonterm(71), empty()))) },
+        cons(Rule { lhs: 71, rhs: empty() },
+        cons(Rule { lhs: 72, rhs: cons(Nonterm(74), cons(Nonterm(73), empty())) },
+        cons(Rule { lhs: 73, rhs: cons(Term(6), cons(Nonterm(74), cons(Nonterm(73), empty()))) },
+        cons(Rule { lhs: 73, rhs: cons(Term(27), cons(Nonterm(74), cons(Nonterm(73), empty()))) },
+        cons(Rule { lhs: 73, rhs: empty() },
+        cons(Rule { lhs: 74, rhs: cons(Nonterm(143), cons(Nonterm(75), empty())) },
+        cons(Rule { lhs: 75, rhs: cons(Term(7), cons(Nonterm(143), cons(Nonterm(75), empty()))) },
+        cons(Rule { lhs: 75, rhs: cons(Term(9), cons(Nonterm(143), cons(Nonterm(75), empty()))) },
+        cons(Rule { lhs: 75, rhs: cons(Term(41), cons(Nonterm(143), cons(Nonterm(75), empty()))) },
+        cons(Rule { lhs: 75, rhs: empty() },
+        cons(Rule { lhs: 76, rhs: cons(Term(6), cons(Nonterm(76), empty())) },
+        cons(Rule { lhs: 76, rhs: cons(Term(27), cons(Nonterm(76), empty())) },
+        cons(Rule { lhs: 76, rhs: cons(Term(19), cons(Nonterm(76), empty())) },
+        cons(Rule { lhs: 76, rhs: cons(Nonterm(77), empty()) },
+        empty()))))))))))))))))))));
+}
+
+// Productions 160 to 179:
+// 160 postfix, 161 postfix_call, 162 postfix_index, 163 postfix_member,
+// 164 postfix_end, 165 args_none, 166 args_some, 167 args_more, 168 args_end,
+// 169 args_after_comma_more, 170 args_after_comma_trailing, 171 array_lit,
+// 172 group, 173 ident, 174 self_value, 175 int, 176 float, 177 string,
+// 178 char, 179 array_none.
+pub fn grammar_part_8() -> List<Rule> {
+    return cons(Rule { lhs: 77, rhs: cons(Nonterm(82), cons(Nonterm(78), empty())) },
+        cons(Rule { lhs: 78, rhs: cons(Term(4), cons(Nonterm(79), cons(Term(5), cons(Nonterm(78), empty())))) },
+        cons(Rule { lhs: 78, rhs: cons(Term(20), cons(Nonterm(53), cons(Term(21), cons(Nonterm(78), empty())))) },
+        cons(Rule { lhs: 78, rhs: cons(Term(35), cons(Term(1), cons(Nonterm(141), cons(Nonterm(78), empty())))) },
+        cons(Rule { lhs: 78, rhs: empty() },
+        cons(Rule { lhs: 79, rhs: empty() },
+        cons(Rule { lhs: 79, rhs: cons(Nonterm(53), cons(Nonterm(80), empty())) },
+        cons(Rule { lhs: 80, rhs: cons(Term(36), cons(Nonterm(81), empty())) },
+        cons(Rule { lhs: 80, rhs: empty() },
+        cons(Rule { lhs: 81, rhs: cons(Nonterm(53), cons(Nonterm(80), empty())) },
+        cons(Rule { lhs: 81, rhs: empty() },
+        cons(Rule { lhs: 82, rhs: cons(Term(20), cons(Nonterm(83), cons(Term(21), empty()))) },
+        cons(Rule { lhs: 82, rhs: cons(Term(4), cons(Nonterm(53), cons(Term(5), empty()))) },
+        cons(Rule { lhs: 82, rhs: cons(Nonterm(26), cons(Nonterm(128), empty())) },
+        cons(Rule { lhs: 82, rhs: cons(Term(105), empty()) },
+        cons(Rule { lhs: 82, rhs: cons(Term(2), empty()) },
+        cons(Rule { lhs: 82, rhs: cons(Term(33), empty()) },
+        cons(Rule { lhs: 82, rhs: cons(Term(32), empty()) },
+        cons(Rule { lhs: 82, rhs: cons(Term(34), empty()) },
+        cons(Rule { lhs: 83, rhs: empty() },
+        empty()))))))))))))))))))));
+}
+
+// Productions 180 to 199:
+// 180 array_some, 181 array_more, 182 array_end, 183 array_after_comma_more,
+// 184 array_after_comma_trailing, 185 true, 186 false, 187 match_expr,
+// 188 match_arms_none, 189 match_arms_some, 190 match_arm, 191 match_arms_more,
+// 192 match_arms_end, 193 match_arms_after_comma_more,
+// 194 match_arms_after_comma_trailing, 195 pattern_ident, 196 pattern_int,
+// 197 pattern_true, 198 pattern_false, 199 pattern_plain.
+pub fn grammar_part_9() -> List<Rule> {
+    return cons(Rule { lhs: 83, rhs: cons(Nonterm(53), cons(Nonterm(84), empty())) },
+        cons(Rule { lhs: 84, rhs: cons(Term(36), cons(Nonterm(85), empty())) },
+        cons(Rule { lhs: 84, rhs: empty() },
+        cons(Rule { lhs: 85, rhs: cons(Nonterm(53), cons(Nonterm(84), empty())) },
+        cons(Rule { lhs: 85, rhs: empty() },
+        cons(Rule { lhs: 82, rhs: cons(Term(90), empty()) },
+        cons(Rule { lhs: 82, rhs: cons(Term(91), empty()) },
+        cons(Rule { lhs: 82, rhs: cons(Term(95), cons(Term(4), cons(Nonterm(53), cons(Term(5), cons(Term(22), cons(Nonterm(86), cons(Term(23), empty()))))))) },
+        cons(Rule { lhs: 86, rhs: empty() },
+        cons(Rule { lhs: 86, rhs: cons(Nonterm(87), cons(Nonterm(88), empty())) },
+        cons(Rule { lhs: 87, rhs: cons(Nonterm(90), cons(Term(75), cons(Nonterm(53), empty()))) },
+        cons(Rule { lhs: 88, rhs: cons(Term(36), cons(Nonterm(89), empty())) },
+        cons(Rule { lhs: 88, rhs: empty() },
+        cons(Rule { lhs: 89, rhs: cons(Nonterm(87), cons(Nonterm(88), empty())) },
+        cons(Rule { lhs: 89, rhs: empty() },
+        cons(Rule { lhs: 90, rhs: cons(Nonterm(26), cons(Nonterm(91), empty())) },
+        cons(Rule { lhs: 90, rhs: cons(Term(2), empty()) },
+        cons(Rule { lhs: 90, rhs: cons(Term(90), empty()) },
+        cons(Rule { lhs: 90, rhs: cons(Term(91), empty()) },
+        cons(Rule { lhs: 91, rhs: empty() },
+        empty()))))))))))))))))))));
+}
+
+// Productions 200 to 219:
+// 200 pattern_tuple, 201 patterns_none, 202 patterns_some, 203 patterns_more,
+// 204 patterns_end, 205 patterns_after_comma_more,
+// 206 patterns_after_comma_trailing, 207 item_const, 208 const, 209 item_enum,
+// 210 enum, 211 enum_variants_none, 212 enum_variants_some, 213 enum_variant,
+// 214 enum_variant_unit, 215 enum_variant_tuple, 216 enum_variant_fields_none,
+// 217 enum_variant_fields_some, 218 enum_variant_fields_more,
+// 219 enum_variant_fields_end.
+pub fn grammar_part_10() -> List<Rule> {
+    return cons(Rule { lhs: 91, rhs: cons(Term(4), cons(Nonterm(92), cons(Term(5), empty()))) },
+        cons(Rule { lhs: 92, rhs: empty() },
+        cons(Rule { lhs: 92, rhs: cons(Nonterm(90), cons(Nonterm(93), empty())) },
+        cons(Rule { lhs: 93, rhs: cons(Term(36), cons(Nonterm(94), empty())) },
+        cons(Rule { lhs: 93, rhs: empty() },
+        cons(Rule { lhs: 94, rhs: cons(Nonterm(90), cons(Nonterm(93), empty())) },
+        cons(Rule { lhs: 94, rhs: empty() },
+        cons(Rule { lhs: 2, rhs: cons(Nonterm(95), empty()) },
+        cons(Rule { lhs: 95, rhs: cons(Term(92), cons(Term(1), cons(Term(38), cons(Nonterm(38), cons(Term(8), cons(Nonterm(53), cons(Term(37), empty()))))))) },
+        cons(Rule { lhs: 2, rhs: cons(Nonterm(96), empty()) },
+        cons(Rule { lhs: 96, rhs: cons(Term(93), cons(Term(1), cons(Nonterm(108), cons(Nonterm(19), cons(Term(22), cons(Nonterm(97), cons(Term(23), empty()))))))) },
+        cons(Rule { lhs: 97, rhs: empty() },
+        cons(Rule { lhs: 97, rhs: cons(Nonterm(98), cons(Nonterm(103), empty())) },
+        cons(Rule { lhs: 98, rhs: cons(Term(1), cons(Nonterm(99), empty())) },
+        cons(Rule { lhs: 99, rhs: empty() },
+        cons(Rule { lhs: 99, rhs: cons(Term(4), cons(Nonterm(100), cons(Term(5), empty()))) },
+        cons(Rule { lhs: 100, rhs: empty() },
+        cons(Rule { lhs: 100, rhs: cons(Nonterm(38), cons(Nonterm(101), empty())) },
+        cons(Rule { lhs: 101, rhs: cons(Term(36), cons(Nonterm(102), empty())) },
+        cons(Rule { lhs: 101, rhs: empty() },
+        empty()))))))))))))))))))));
+}
+
+// Productions 220 to 239:
+// 220 enum_variant_fields_after_comma_more,
+// 221 enum_variant_fields_after_comma_trailing, 222 enum_variants_more,
+// 223 enum_variants_end, 224 enum_variants_after_comma_more,
+// 225 enum_variants_after_comma_trailing, 226 type_args_none,
+// 227 type_args_some, 228 type_args_more, 229 type_args_end,
+// 230 type_args_after_comma_more, 231 type_args_after_comma_trailing,
+// 232 enum_type_params_none, 233 enum_type_params_some, 234 enum_type_param,
+// 235 enum_const_param, 236 type_param_bound, 237 type_param_bound_none,
+// 238 type_param_bound_list, 239 type_param_bound_more.
+pub fn grammar_part_11() -> List<Rule> {
+    return cons(Rule { lhs: 102, rhs: cons(Nonterm(38), cons(Nonterm(101), empty())) },
+        cons(Rule { lhs: 102, rhs: empty() },
+        cons(Rule { lhs: 103, rhs: cons(Term(36), cons(Nonterm(104), empty())) },
+        cons(Rule { lhs: 103, rhs: empty() },
+        cons(Rule { lhs: 104, rhs: cons(Nonterm(98), cons(Nonterm(103), empty())) },
+        cons(Rule { lhs: 104, rhs: empty() },
+        cons(Rule { lhs: 105, rhs: empty() },
+        cons(Rule { lhs: 105, rhs: cons(Term(12), cons(Nonterm(139), cons(Nonterm(106), cons(Term(13), empty())))) },
+        cons(Rule { lhs: 106, rhs: cons(Term(36), cons(Nonterm(107), empty())) },
+        cons(Rule { lhs: 106, rhs: empty() },
+        cons(Rule { lhs: 107, rhs: cons(Nonterm(139), cons(Nonterm(106), empty())) },
+        cons(Rule { lhs: 107, rhs: empty() },
+        cons(Rule { lhs: 108, rhs: empty() },
+        cons(Rule { lhs: 108, rhs: cons(Term(12), cons(Nonterm(109), cons(Nonterm(120), cons(Term(13), empty())))) },
+        cons(Rule { lhs: 109, rhs: cons(Term(1), cons(Nonterm(110), empty())) },
+        cons(Rule { lhs: 109, rhs: cons(Term(92), cons(Term(1), cons(Term(38), cons(Nonterm(38), empty())))) },
+        cons(Rule { lhs: 110, rhs: cons(Term(38), cons(Nonterm(111), empty())) },
+        cons(Rule { lhs: 110, rhs: empty() },
+        cons(Rule { lhs: 111, rhs: cons(Nonterm(113), cons(Nonterm(112), empty())) },
+        cons(Rule { lhs: 112, rhs: cons(Term(6), cons(Nonterm(113), cons(Nonterm(112), empty()))) },
+        empty()))))))))))))))))))));
+}
+
+// Productions 240 to 259:
+// 240 type_param_bound_end, 241 bound_type_ident, 242 bound_type_ref,
+// 243 bound_type_path, 244 bound_type_path_ident, 245 bound_type_path_more,
+// 246 bound_type_path_end, 247 bound_type_args_none, 248 bound_type_args_some,
+// 249 bound_type_args_more, 250 bound_type_args_end,
+// 251 bound_type_args_after_comma_more,
+// 252 bound_type_args_after_comma_trailing, 253 enum_type_params_more,
+// 254 enum_type_params_end, 255 enum_type_params_after_comma_more,
+// 256 enum_type_params_after_comma_trailing, 257 item_struct, 258 struct,
+// 259 struct_fields_none.
+pub fn grammar_part_12() -> List<Rule> {
+    return cons(Rule { lhs: 112, rhs: empty() },
+        cons(Rule { lhs: 113, rhs: cons(Nonterm(114), cons(Nonterm(117), empty())) },
+        cons(Rule { lhs: 113, rhs: cons(Term(25), cons(Nonterm(113), empty())) },
+        cons(Rule { lhs: 114, rhs: cons(Nonterm(115), cons(Nonterm(116), empty())) },
+        cons(Rule { lhs: 115, rhs: cons(Term(1), empty()) },
+        cons(Rule { lhs: 116, rhs: cons(Term(38), cons(Term(38), cons(Nonterm(115), cons(Nonterm(116), empty())))) },
+        cons(Rule { lhs: 116, rhs: empty() },
+        cons(Rule { lhs: 117, rhs: empty() },
+        cons(Rule { lhs: 117, rhs: cons(Term(12), cons(Nonterm(139), cons(Nonterm(118), cons(Term(13), empty())))) },
+        cons(Rule { lhs: 118, rhs: cons(Term(36), cons(Nonterm(119), empty())) },
+        cons(Rule { lhs: 118, rhs: empty() },
+        cons(Rule { lhs: 119, rhs: cons(Nonterm(139), cons(Nonterm(118), empty())) },
+        cons(Rule { lhs: 119, rhs: empty() },
+        cons(Rule { lhs: 120, rhs: cons(Term(36), cons(Nonterm(121), empty())) },
+        cons(Rule { lhs: 120, rhs: empty() },
+        cons(Rule { lhs: 121, rhs: cons(Nonterm(109), cons(Nonterm(120), empty())) },
+        cons(Rule { lhs: 121, rhs: empty() },
+        cons(Rule { lhs: 2, rhs: cons(Nonterm(122), empty()) },
+        cons(Rule { lhs: 122, rhs: cons(Term(94), cons(Term(1), cons(Nonterm(108), cons(Nonterm(19), cons(Term(22), cons(Nonterm(123), cons(Term(23), empty()))))))) },
+        cons(Rule { lhs: 123, rhs: empty() },
+        empty()))))))))))))))))))));
+}
+
+// Productions 260 to 279:
+// 260 struct_fields_some, 261 struct_field, 262 struct_fields_more,
+// 263 struct_fields_end, 264 struct_fields_after_comma_more,
+// 265 struct_fields_after_comma_trailing, 266 pub_fn, 267 pub_extern_fn,
+// 268 pub_const, 269 pub_type_alias, 270 pub_enum, 271 pub_struct,
+// 272 pub_impl, 273 pub_trait, 274 ident_plain, 275 struct_lit,
+// 276 struct_lit_fields_none, 277 struct_lit_fields_some, 278 struct_lit_field,
+// 279 struct_lit_fields_more.
+pub fn grammar_part_13() -> List<Rule> {
+    return cons(Rule { lhs: 123, rhs: cons(Nonterm(124), cons(Nonterm(125), empty())) },
+        cons(Rule { lhs: 124, rhs: cons(Term(1), cons(Term(38), cons(Nonterm(38), empty()))) },
+        cons(Rule { lhs: 125, rhs: cons(Term(36), cons(Nonterm(126), empty())) },
+        cons(Rule { lhs: 125, rhs: empty() },
+        cons(Rule { lhs: 126, rhs: cons(Nonterm(124), cons(Nonterm(125), empty())) },
+        cons(Rule { lhs: 126, rhs: empty() },
+        cons(Rule { lhs: 127, rhs: cons(Nonterm(3), empty()) },
+        cons(Rule { lhs: 127, rhs: cons(Nonterm(7), empty()) },
+        cons(Rule { lhs: 127, rhs: cons(Nonterm(95), empty()) },
+        cons(Rule { lhs: 127, rhs: cons(Nonterm(8), empty()) },
+        cons(Rule { lhs: 127, rhs: cons(Nonterm(96), empty()) },
+        cons(Rule { lhs: 127, rhs: cons(Nonterm(122), empty()) },
+        cons(Rule { lhs: 127, rhs: cons(Nonterm(9), empty()) },
+        cons(Rule { lhs: 127, rhs: cons(Nonterm(13), empty()) },
+        cons(Rule { lhs: 128, rhs: empty() },
+        cons(Rule { lhs: 128, rhs: cons(Term(22), cons(Nonterm(129), cons(Term(23), empty()))) },
+        cons(Rule { lhs: 129, rhs: empty() },
+        cons(Rule { lhs: 129, rhs: cons(Nonterm(130), cons(Nonterm(131), empty())) },
+        cons(Rule { lhs: 130, rhs: cons(Term(1), cons(Term(38), cons(Nonterm(53), empty()))) },
+        cons(Rule { lhs: 131, rhs: cons(Term(36), cons(Nonterm(132), empty())) },
+        empty()))))))))))))))))))));
+}
+
+// Productions 280 to 299:
+// 280 struct_lit_fields_end, 281 struct_lit_fields_after_comma_more,
+// 282 struct_lit_fields_after_comma_trailing, 283 type_array_tail,
+// 284 type_slice_tail, 285 type_ref, 286 type_array_len_name,
+// 287 array_length_path, 288 array_length_path_ident,
+// 289 array_length_path_more, 290 array_length_path_end,
+// 291 type_array_len_constant, 292 params_after_comma_more,
+// 293 params_after_comma_trailing, 294 generic_argument_type,
+// 295 generic_argument_constant, 296 generic_argument_integer,
+// 297 member_type_args_none, 298 member_type_args_some,
+// 299 generic_argument_negative.
+pub fn grammar_part_14() -> List<Rule> {
+    return cons(Rule { lhs: 131, rhs: empty() },
+        cons(Rule { lhs: 132, rhs: cons(Nonterm(130), cons(Nonterm(131), empty())) },
+        cons(Rule { lhs: 132, rhs: empty() },
+        cons(Rule { lhs: 133, rhs: cons(Term(37), cons(Nonterm(134), cons(Term(21), empty()))) },
+        cons(Rule { lhs: 133, rhs: cons(Term(21), empty()) },
+        cons(Rule { lhs: 38, rhs: cons(Term(25), cons(Nonterm(38), empty())) },
+        cons(Rule { lhs: 134, rhs: cons(Nonterm(135), empty()) },
+        cons(Rule { lhs: 135, rhs: cons(Nonterm(136), cons(Nonterm(137), empty())) },
+        cons(Rule { lhs: 136, rhs: cons(Term(1), empty()) },
+        cons(Rule { lhs: 137, rhs: cons(Term(38), cons(Term(38), cons(Nonterm(136), cons(Nonterm(137), empty())))) },
+        cons(Rule { lhs: 137, rhs: empty() },
+        cons(Rule { lhs: 134, rhs: cons(Nonterm(140), empty()) },
+        cons(Rule { lhs: 138, rhs: cons(Nonterm(35), cons(Nonterm(37), empty())) },
+        cons(Rule { lhs: 138, rhs: empty() },
+        cons(Rule { lhs: 139, rhs: cons(Nonterm(38), empty()) },
+        cons(Rule { lhs: 139, rhs: cons(Nonterm(140), empty()) },
+        cons(Rule { lhs: 140, rhs: cons(Term(2), empty()) },
+        cons(Rule { lhs: 141, rhs: empty() },
+        cons(Rule { lhs: 141, rhs: cons(Term(12), cons(Nonterm(139), cons(Nonterm(29), cons(Term(13), empty())))) },
+        cons(Rule { lhs: 140, rhs: cons(Term(27), cons(Nonterm(142), empty())) },
+        empty()))))))))))))))))))));
+}
+
+// Productions 300 to 317:
+// 300 generic_argument_positive, 301 generic_argument_magnitude_integer,
+// 302 generic_argument_magnitude_float, 303 generic_argument_true,
+// 304 generic_argument_false, 305 generic_argument_char,
+// 306 generic_argument_float, 307 cast, 308 cast_tail, 309 cast_end,
+// 310 cast_type_name, 311 cast_type_path, 312 cast_type_path_ident,
+// 313 cast_type_path_more, 314 cast_type_path_end, 315 type_never,
+// 316 array_repeat, 317 array_repeat_count.
+pub fn grammar_part_15() -> List<Rule> {
+    return cons(Rule { lhs: 140, rhs: cons(Term(6), cons(Nonterm(142), empty())) },
+        cons(Rule { lhs: 142, rhs: cons(Term(2), empty()) },
+        cons(Rule { lhs: 142, rhs: cons(Term(33), empty()) },
+        cons(Rule { lhs: 140, rhs: cons(Term(90), empty()) },
+        cons(Rule { lhs: 140, rhs: cons(Term(91), empty()) },
+        cons(Rule { lhs: 140, rhs: cons(Term(34), empty()) },
+        cons(Rule { lhs: 140, rhs: cons(Term(33), empty()) },
+        cons(Rule { lhs: 143, rhs: cons(Nonterm(76), cons(Nonterm(144), empty())) },
+        cons(Rule { lhs: 144, rhs: cons(Term(195), cons(Nonterm(145), cons(Nonterm(144), empty()))) },
+        cons(Rule { lhs: 144, rhs: empty() },
+        cons(Rule { lhs: 145, rhs: cons(Nonterm(146), empty()) },
+        cons(Rule { lhs: 146, rhs: cons(Nonterm(147), cons(Nonterm(148), empty())) },
+        cons(Rule { lhs: 147, rhs: cons(Term(1), empty()) },
+        cons(Rule { lhs: 148, rhs: cons(Term(38), cons(Term(38), cons(Nonterm(147), cons(Nonterm(148), empty())))) },
+        cons(Rule { lhs: 148, rhs: empty() },
+        cons(Rule { lhs: 38, rhs: cons(Term(19), empty()) },
+        cons(Rule { lhs: 84, rhs: cons(Term(37), cons(Nonterm(149), empty())) },
+        cons(Rule { lhs: 149, rhs: cons(Term(2), empty()) },
+        empty()))))))))))))))))));
+}
+
+// The productions of grammar/lanius.bnf, by production id.
+pub fn grammar() -> List<Rule> {
+    return concat(grammar_part_0(), concat(grammar_part_1(), concat(grammar_part_2(), concat(grammar_part_3(), concat(grammar_part_4(), concat(grammar_part_5(), concat(grammar_part_6(), concat(grammar_part_7(), concat(grammar_part_8(), concat(grammar_part_9(), concat(grammar_part_10(), concat(grammar_part_11(), concat(grammar_part_12(), concat(grammar_part_13(), concat(grammar_part_14(), grammar_part_15())))))))))))))));
+}
+
+// extract: inline
+fn p_add() -> usize {
+    return 147;
+}
+
+// extract: inline
+fn p_add_tail() -> usize {
+    return 148;
+}
+
+// extract: inline
+fn p_and_tail() -> usize {
+    return 122;
+}
+
+// extract: inline
+fn p_andexpr() -> usize {
+    return 121;
+}
+
+// extract: inline
+fn p_args_after_comma_more() -> usize {
+    return 169;
+}
+
+// extract: inline
+fn p_args_after_comma_trailing() -> usize {
+    return 170;
+}
+
+// extract: inline
+fn p_args_end() -> usize {
+    return 168;
+}
+
+// extract: inline
+fn p_args_more() -> usize {
+    return 167;
+}
+
+// extract: inline
+fn p_args_none() -> usize {
+    return 165;
+}
+
+// extract: inline
+fn p_args_some() -> usize {
+    return 166;
+}
+
+// extract: inline
+fn p_assign() -> usize {
+    return 105;
+}
+
+// extract: inline
+fn p_assign_end() -> usize {
+    return 117;
+}
+
+// extract: inline
+fn p_assign_set() -> usize {
+    return 106;
+}
+
+// extract: inline
+fn p_band_tail() -> usize {
+    return 131;
+}
+
+// extract: inline
+fn p_base() -> usize {
+    return 159;
+}
+
+// extract: inline
+fn p_bit_and() -> usize {
+    return 130;
+}
+
+// extract: inline
+fn p_bit_or() -> usize {
+    return 124;
+}
+
+// extract: inline
+fn p_bit_xor() -> usize {
+    return 127;
+}
+
+// extract: inline
+fn p_bor_tail() -> usize {
+    return 125;
+}
+
+// extract: inline
+fn p_cast() -> usize {
+    return 307;
+}
+
+// extract: inline
+fn p_cast_type_name() -> usize {
+    return 310;
+}
+
+// extract: inline
+fn p_cast_type_path() -> usize {
+    return 311;
+}
+
+// extract: inline
+fn p_cast_type_path_end() -> usize {
+    return 314;
+}
+
+// extract: inline
+fn p_cast_type_path_ident() -> usize {
+    return 312;
+}
+
+// extract: inline
+fn p_compare() -> usize {
+    return 137;
+}
+
+// extract: inline
+fn p_else_none() -> usize {
+    return 79;
+}
+
+// extract: inline
+fn p_else_stmt() -> usize {
+    return 78;
+}
+
+// extract: inline
+fn p_enum() -> usize {
+    return 210;
+}
+
+// extract: inline
+fn p_enum_type_params_none() -> usize {
+    return 232;
+}
+
+// extract: inline
+fn p_enum_variant_fields_after_comma_more() -> usize {
+    return 220;
+}
+
+// extract: inline
+fn p_enum_variant_fields_after_comma_trailing() -> usize {
+    return 221;
+}
+
+// extract: inline
+fn p_enum_variant_fields_end() -> usize {
+    return 219;
+}
+
+// extract: inline
+fn p_enum_variant_fields_more() -> usize {
+    return 218;
+}
+
+// extract: inline
+fn p_enum_variant_fields_none() -> usize {
+    return 216;
+}
+
+// extract: inline
+fn p_enum_variant_fields_some() -> usize {
+    return 217;
+}
+
+// extract: inline
+fn p_enum_variant_unit() -> usize {
+    return 214;
+}
+
+// extract: inline
+fn p_enum_variants_after_comma_more() -> usize {
+    return 224;
+}
+
+// extract: inline
+fn p_enum_variants_after_comma_trailing() -> usize {
+    return 225;
+}
+
+// extract: inline
+fn p_enum_variants_end() -> usize {
+    return 223;
+}
+
+// extract: inline
+fn p_enum_variants_more() -> usize {
+    return 222;
+}
+
+// extract: inline
+fn p_enum_variants_none() -> usize {
+    return 211;
+}
+
+// extract: inline
+fn p_enum_variants_some() -> usize {
+    return 212;
+}
+
+// extract: inline
+fn p_eq_tail() -> usize {
+    return 134;
+}
+
+// extract: inline
+fn p_equality() -> usize {
+    return 133;
+}
+
+// extract: inline
+fn p_expr() -> usize {
+    return 104;
+}
+
+// extract: inline
+fn p_expr_stmt() -> usize {
+    return 85;
+}
+
+// extract: inline
+fn p_false() -> usize {
+    return 186;
+}
+
+// extract: inline
+fn p_file() -> usize {
+    return 0;
+}
+
+// extract: inline
+fn p_ge_tail() -> usize {
+    return 141;
+}
+
+// extract: inline
+fn p_group() -> usize {
+    return 172;
+}
+
+// extract: inline
+fn p_gt_tail() -> usize {
+    return 139;
+}
+
+// extract: inline
+fn p_ident() -> usize {
+    return 173;
+}
+
+// extract: inline
+fn p_ident_plain() -> usize {
+    return 274;
+}
+
+// extract: inline
+fn p_if_stmt() -> usize {
+    return 77;
+}
+
+// extract: inline
+fn p_int() -> usize {
+    return 175;
+}
+
+// extract: inline
+fn p_item_enum() -> usize {
+    return 209;
+}
+
+// extract: inline
+fn p_item_fn() -> usize {
+    return 4;
+}
+
+// extract: inline
+fn p_item_struct() -> usize {
+    return 257;
+}
+
+// extract: inline
+fn p_items_end() -> usize {
+    return 2;
+}
+
+// extract: inline
+fn p_items_more() -> usize {
+    return 1;
+}
+
+// extract: inline
+fn p_le_tail() -> usize {
+    return 140;
+}
+
+// extract: inline
+fn p_let_init() -> usize {
+    return 88;
+}
+
+// extract: inline
+fn p_let_stmt() -> usize {
+    return 75;
+}
+
+// extract: inline
+fn p_let_type() -> usize {
+    return 86;
+}
+
+// extract: inline
+fn p_lt_tail() -> usize {
+    return 138;
+}
+
+// extract: inline
+fn p_match_arms_after_comma_more() -> usize {
+    return 193;
+}
+
+// extract: inline
+fn p_match_arms_after_comma_trailing() -> usize {
+    return 194;
+}
+
+// extract: inline
+fn p_match_arms_end() -> usize {
+    return 192;
+}
+
+// extract: inline
+fn p_match_arms_more() -> usize {
+    return 191;
+}
+
+// extract: inline
+fn p_match_arms_none() -> usize {
+    return 188;
+}
+
+// extract: inline
+fn p_match_arms_some() -> usize {
+    return 189;
+}
+
+// extract: inline
+fn p_match_expr() -> usize {
+    return 187;
+}
+
+// extract: inline
+fn p_member_type_args_none() -> usize {
+    return 297;
+}
+
+// extract: inline
+fn p_mul() -> usize {
+    return 151;
+}
+
+// extract: inline
+fn p_mul_tail() -> usize {
+    return 152;
+}
+
+// extract: inline
+fn p_ne_tail() -> usize {
+    return 135;
+}
+
+// extract: inline
+fn p_neg() -> usize {
+    return 157;
+}
+
+// extract: inline
+fn p_not() -> usize {
+    return 158;
+}
+
+// extract: inline
+fn p_or_tail() -> usize {
+    return 119;
+}
+
+// extract: inline
+fn p_orexpr() -> usize {
+    return 118;
+}
+
+// extract: inline
+fn p_param_named() -> usize {
+    return 62;
+}
+
+// extract: inline
+fn p_params_after_comma_more() -> usize {
+    return 292;
+}
+
+// extract: inline
+fn p_params_after_comma_trailing() -> usize {
+    return 293;
+}
+
+// extract: inline
+fn p_params_end() -> usize {
+    return 68;
+}
+
+// extract: inline
+fn p_params_more() -> usize {
+    return 67;
+}
+
+// extract: inline
+fn p_params_none() -> usize {
+    return 60;
+}
+
+// extract: inline
+fn p_params_some() -> usize {
+    return 61;
+}
+
+// extract: inline
+fn p_path() -> usize {
+    return 47;
+}
+
+// extract: inline
+fn p_path_end() -> usize {
+    return 51;
+}
+
+// extract: inline
+fn p_path_ident() -> usize {
+    return 48;
+}
+
+// extract: inline
+fn p_pattern_ident() -> usize {
+    return 195;
+}
+
+// extract: inline
+fn p_pattern_plain() -> usize {
+    return 199;
+}
+
+// extract: inline
+fn p_patterns_after_comma_more() -> usize {
+    return 205;
+}
+
+// extract: inline
+fn p_patterns_after_comma_trailing() -> usize {
+    return 206;
+}
+
+// extract: inline
+fn p_patterns_end() -> usize {
+    return 204;
+}
+
+// extract: inline
+fn p_patterns_more() -> usize {
+    return 203;
+}
+
+// extract: inline
+fn p_patterns_none() -> usize {
+    return 201;
+}
+
+// extract: inline
+fn p_patterns_some() -> usize {
+    return 202;
+}
+
+// extract: inline
+fn p_postfix() -> usize {
+    return 160;
+}
+
+// extract: inline
+fn p_postfix_call() -> usize {
+    return 161;
+}
+
+// extract: inline
+fn p_postfix_end() -> usize {
+    return 164;
+}
+
+// extract: inline
+fn p_postfix_member() -> usize {
+    return 163;
+}
+
+// extract: inline
+fn p_ret_type() -> usize {
+    return 34;
+}
+
+// extract: inline
+fn p_return_stmt() -> usize {
+    return 76;
+}
+
+// extract: inline
+fn p_return_value() -> usize {
+    return 90;
+}
+
+// extract: inline
+fn p_shift() -> usize {
+    return 143;
+}
+
+// extract: inline
+fn p_stmts_end() -> usize {
+    return 74;
+}
+
+// extract: inline
+fn p_stmts_more() -> usize {
+    return 73;
+}
+
+// extract: inline
+fn p_struct() -> usize {
+    return 258;
+}
+
+// extract: inline
+fn p_struct_fields_after_comma_more() -> usize {
+    return 264;
+}
+
+// extract: inline
+fn p_struct_fields_after_comma_trailing() -> usize {
+    return 265;
+}
+
+// extract: inline
+fn p_struct_fields_end() -> usize {
+    return 263;
+}
+
+// extract: inline
+fn p_struct_fields_more() -> usize {
+    return 262;
+}
+
+// extract: inline
+fn p_struct_fields_none() -> usize {
+    return 259;
+}
+
+// extract: inline
+fn p_struct_fields_some() -> usize {
+    return 260;
+}
+
+// extract: inline
+fn p_struct_lit() -> usize {
+    return 275;
+}
+
+// extract: inline
+fn p_struct_lit_fields_after_comma_more() -> usize {
+    return 281;
+}
+
+// extract: inline
+fn p_struct_lit_fields_after_comma_trailing() -> usize {
+    return 282;
+}
+
+// extract: inline
+fn p_struct_lit_fields_end() -> usize {
+    return 280;
+}
+
+// extract: inline
+fn p_struct_lit_fields_more() -> usize {
+    return 279;
+}
+
+// extract: inline
+fn p_struct_lit_fields_none() -> usize {
+    return 276;
+}
+
+// extract: inline
+fn p_struct_lit_fields_some() -> usize {
+    return 277;
+}
+
+// extract: inline
+fn p_sub_tail() -> usize {
+    return 149;
+}
+
+// extract: inline
+fn p_true() -> usize {
+    return 185;
+}
+
+// extract: inline
+fn p_type_args_none() -> usize {
+    return 226;
+}
+
+// extract: inline
+fn p_type_ident() -> usize {
+    return 69;
+}
+
+// extract: inline
+fn p_type_path() -> usize {
+    return 56;
+}
+
+// extract: inline
+fn p_type_path_end() -> usize {
+    return 59;
+}
+
+// extract: inline
+fn p_type_path_ident() -> usize {
+    return 57;
+}
+
+// extract: inline
+fn p_where_none() -> usize {
+    return 36;
+}
+
+// extract: inline
+fn p_while_stmt() -> usize {
+    return 80;
+}
+
+// extract: inline
+fn p_xor_tail() -> usize {
+    return 128;
+}
+
+// grammar table end
