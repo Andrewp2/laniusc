@@ -2033,9 +2033,22 @@ uint receiver_temporary_place(uint encoded, uint hir_count)
 SemanticLirRow materialize_semantic_lir_row(uint node, uint local_row, uint hir_count)
 {
     HirCore hir = compact_hir_core[node];
-    if (hir.kind == 3u && semantic_place_function_flags[node] != 0u)
+    // Count gives a block a row only when it is an empty function body. It
+    // is scheduled as a statement of that body.
+    if (hir.kind == SEMANTIC_HIR_BLOCK ||
+        (hir.kind == 3u && semantic_place_function_flags[node] != 0u))
     {
         SemanticLirRow result = place_empty_row(node, local_row, hir_count);
+        if (hir.kind == SEMANTIC_HIR_BLOCK)
+        {
+            // An empty function body lowers as a bare `return;`: no value,
+            // typed unit. The checker rejects an empty body for any other
+            // result type.
+            result.core.type_id = 1u;
+            result.core.type_ref_payload = LIR_INVALID;
+            result.core.flags = SEMANTIC_LIR_OP_RETURN << SEMANTIC_LIR_OP_SHIFT;
+            return result;
+        }
         SemanticLirFunction function = semantic_lir_functions[semantic_function_id[node]];
         uint declaration = local_row < function.param_count
             ? semantic_lir_params[function.param_start + local_row].declaration_id

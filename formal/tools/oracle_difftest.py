@@ -9,7 +9,8 @@ argument tuples must give the same result.
 
     python3 -I formal/tools/oracle_difftest.py WORKDIR [--count N] [--seed S] [--calls K] [--chunk C] [--only K,..] [--laniusc PATH]
 
-Run from the repository root. laniusc runs under target/claude-work/bin/heavy.
+Run from the repository root. laniusc runs under target/claude-work/bin/heavy, in a
+systemd-run scope capped at 6 GB.
 A Python interpreter of the generated programs gives a third answer, so a
 disagreement shows which side is wrong. Prints one line per disagreement and a
 summary; exits nonzero on any.
@@ -771,10 +772,6 @@ def gen_program(rng):
         env = [(j, t) for j, t in enumerate(params)]
         # A unit function may end without a return.
         body = g.block(3, env, ret, ret != 'unit' or rng.random() < 0.5, [])
-        if body == ('nop',):
-            # laniusc fails (LNC0057, "compiler execution failed") on a call to a
-            # unit function with an empty body, so such a body says return;.
-            body = ('returnUnit',)
         funcs.append((params, ret, body))
     return Program(funcs, structs, enums)
 
@@ -1480,7 +1477,8 @@ def main():
         lani_path = os.path.join(args.workdir, 'programs.lani')
         exe_path = os.path.join(args.workdir, 'programs')
         open(lani_path, 'w').write(lani_file(programs[start:start + args.chunk], calls[start:start + args.chunk]))
-        build = subprocess.run(['target/claude-work/bin/heavy', '-t', '20', args.laniusc, '--stdlib-root', 'stdlib',
+        build = subprocess.run(['systemd-run', '--user', '--scope', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+                                'target/claude-work/bin/heavy', '-t', '20', args.laniusc, '--stdlib-root', 'stdlib',
                                 '-o', exe_path, lani_path], capture_output=True, text=True)
         if build.returncode != 0:
             raise SystemExit('laniusc failed:\n' + build.stdout[-4000:] + build.stderr[-4000:])

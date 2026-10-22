@@ -25,6 +25,36 @@ fn main() -> i32 {
 }
 
 #[test]
+fn wasm_executes_calls_to_empty_unit_functions_with_node() {
+    // An empty body owns no statement rows; its function must still be a
+    // call target with a frame.
+    common::require_node();
+    let wasm = common::compile_source_to_wasm_with_timeout(
+        r#"
+fn ignore(value: i32) {
+}
+
+fn nothing() {}
+
+fn main() -> i32 {
+    nothing();
+    ignore(3);
+    nothing();
+    return 7;
+}
+"#,
+    )
+    .expect("calls to empty unit functions should compile to WASM");
+
+    let status = common::run_wasm_main_return_with_node(
+        "WASM calls to empty unit functions",
+        "calls_to_empty_unit_functions",
+        &wasm,
+    );
+    assert_eq!(status, 7);
+}
+
+#[test]
 fn wasm_executes_lets_without_initializers_as_zero_with_node() {
     common::require_node();
     let wasm = common::compile_source_to_wasm_with_timeout(

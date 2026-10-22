@@ -196,6 +196,11 @@ void count_original(uint3 dtid)
             semantic_lir_count[node] = 0u;
             return;
         }
+        if (semantic_lir_is_empty_fn_body(compact_hir_core, node, count))
+        {
+            semantic_lir_count[node] = 1u;
+            return;
+        }
         if (core.kind == HIR_MATCH_EXPR)
         {
             SemanticMatchRecipe match_recipe = semantic_match_recipe_for_hir(node, count);
