@@ -81,21 +81,24 @@ theorem ReadsWithin.narrow (reads : ReadsWithin before after outer capacity)
   fun _ _ _ left right => reads _ _ _ (by omega) (by omega)
 
 /-- A value justified by bytes in its own slot. This strengthens read-back:
-    unrelated stores can preserve it without decoding it a second time. -/
+    unrelated stores can preserve it without decoding it a second time.
+    Native words descend from a value's word 0 at `address`, so its slot of
+    `size` bytes is the one ending at `address + 8`. -/
 def NativeSnapshot (fuel : Nat) (program : Program) (heap : Heap) (type : Ty)
     (address : Nat) (value : Value) (size : Nat) : Prop :=
-  ∀ other, ReadsWithin heap other address size → readNativeValue fuel program other type address = .ok value
+  ∀ other, ReadsWithin heap other (address + 8 - size) size →
+    readNativeValue fuel program other type address = .ok value
 
 theorem NativeSnapshot.read (snapshot : NativeSnapshot fuel program heap type address value size) :
     readNativeValue fuel program heap type address = .ok value := snapshot heap (fun _ _ _ _ _ read => read)
 
 theorem NativeSnapshot.enlarge (snapshot : NativeSnapshot fuel program heap type address value size)
     (larger : size ≤ capacity) : NativeSnapshot fuel program heap type address value capacity :=
-  fun _ reads => snapshot _ (reads.narrow (Nat.le_refl _) (by omega))
+  fun _ reads => snapshot _ (reads.narrow (by omega) (by omega))
 
 theorem NativeSnapshot.afterWrite (snapshot : NativeSnapshot fuel program before type pointer value count)
     (effect : HeapRegionWrite before after address size)
-    (apart : pointer + count ≤ address ∨ address + size ≤ pointer) :
+    (apart : pointer + 8 - count + count ≤ address ∨ address + size ≤ pointer + 8 - count) :
     NativeSnapshot fuel program after type pointer value count := by
   intro other reads
   apply snapshot other
@@ -105,9 +108,9 @@ theorem NativeSnapshot.afterWrite (snapshot : NativeSnapshot fuel program before
 
 theorem NativeSnapshot.i32 (word : BitVec 32)
     (loaded : heap.loadBytes address 4 = .ok (i32Bytes word.toInt)) :
-    NativeSnapshot (fuel + 1) program heap (.scalar (.signed .i32)) address (.signed .i32 word.toInt) 4 := by
+    NativeSnapshot (fuel + 1) program heap (.scalar (.signed .i32)) address (.signed .i32 word.toInt) 8 := by
   intro other reads
-  have loaded := reads _ _ _ (Nat.le_refl _) (Nat.le_refl _) loaded
+  have loaded := reads _ _ _ (by omega) (by omega) loaded
   simp only [readNativeValue, loadNatLE, loaded]
   change Except.ok (Value.signed .i32 (if decodeNatLE (i32Bytes word.toInt) ≥ 2 ^ 31 then
     Int.ofNat (decodeNatLE (i32Bytes word.toInt)) - 2 ^ 32 else
@@ -120,9 +123,9 @@ theorem NativeSnapshot.enumEmpty {id : TypeId}
     (declaration : program.enumeration? id = some enumeration)
     (variant : enumeration.variants[ordinal]? = some []) (fits : ordinal < 256 ^ 4)
     (loaded : heap.loadBytes address 4 = .ok (encodeNatLE 4 ordinal)) :
-    NativeSnapshot (fuel + 1) program heap (.enumeration id) address (.enumeration id ordinal []) 4 := by
+    NativeSnapshot (fuel + 1) program heap (.enumeration id) address (.enumeration id ordinal []) 8 := by
   intro other reads
-  have loaded := reads _ _ _ (Nat.le_refl _) (Nat.le_refl _) loaded
+  have loaded := reads _ _ _ (by omega) (by omega) loaded
   simp only [readNativeValue, declaration, loadNatLE_of_encoded loaded fits]
   dsimp only [Bind.bind, Except.bind]
   simp [variant]
@@ -131,16 +134,16 @@ theorem NativeSnapshot.enumEmpty {id : TypeId}
 theorem NativeSnapshot.enumSingle {id : TypeId}
     (declaration : program.enumeration? id = some enumeration)
     (variant : enumeration.variants[ordinal]? = some [type]) (fits : ordinal < 256 ^ 4)
-    (tag : heap.loadBytes address 4 = .ok (encodeNatLE 4 ordinal))
-    (payload : NativeSnapshot fuel program heap type (address + 8) value size) :
+    (tag : heap.loadBytes address 4 = .ok (encodeNatLE 4 ordinal)) (above : 8 ≤ address)
+    (payload : NativeSnapshot fuel program heap type (address - 8) value size) :
     NativeSnapshot (fuel + 1) program heap (.enumeration id) address (.enumeration id ordinal [value]) (8 + size) := by
   intro other reads
-  have tag := reads _ _ _ (Nat.le_refl _) (by omega) tag
+  have tag := reads _ _ _ (by omega) (by omega) tag
   have payload := payload other (reads.narrow (by omega) (by omega))
   simp only [readNativeValue, declaration, loadNatLE_of_encoded tag fits]
   dsimp only [Bind.bind, Except.bind]
   simp only [variant]
-  simp [NativeLayout.wordBytes, List.range_succ]
+  simp [NativeLayout.wordBytes, List.range_succ, wordBelow, above]
   rw [payload]
   rfl
 
@@ -157,77 +160,94 @@ theorem writeNativeValue_enumEmpty_same {id : TypeId}
 
 /-- The reusable native-store contract: valid storage suffices to execute
     the real store, read back the value, and preserve everything outside it.
-    Constructors below prove this contract; callers need not decode bytes. -/
+    Constructors below prove this contract; callers need not decode bytes.
+    The slot is the `size` bytes ending at `address + 8` (see `NativeSnapshot`). -/
 def NativeStoreSpec (fuel : Nat) (program : Program) (type : Ty) (value : Value) (size : Nat) : Prop :=
-  ∀ (state : State) (heap : Heap) (address : Nat), heap.Readable address size → HeapBlockBasesUnique heap →
+  ∀ (state : State) (heap : Heap) (address : Nat), size ≤ address + 8 →
+    heap.Readable (address + 8 - size) size → HeapBlockBasesUnique heap →
     ∃ after, writeNativeValue fuel program state heap type address value = .ok after ∧
       NativeSnapshot fuel program after type address value size ∧
-      HeapRegionWrite heap after address size
+      HeapRegionWrite heap after (address + 8 - size) size
 
 theorem NativeStoreSpec.enlarge (store : NativeStoreSpec fuel program type value size)
     (larger : size ≤ capacity) : NativeStoreSpec fuel program type value capacity := by
-  intro state heap address readable unique
-  obtain ⟨after, written, read, effect⟩ := store state heap address
-    (by simpa using readable.subrange (start := 0) (by omega : 0 + size ≤ capacity)) unique
-  exact ⟨after, written, read.enlarge larger, effect.enlarge (Nat.le_refl _) (by omega)⟩
+  intro state heap address fits readable unique
+  have inner := readable.subrange (start := capacity - size) (length := size) (by omega)
+  rw [show address + 8 - capacity + (capacity - size) = address + 8 - size by omega] at inner
+  obtain ⟨after, written, read, effect⟩ := store state heap address (by omega) inner unique
+  exact ⟨after, written, read.enlarge larger, effect.enlarge (by omega) (by omega)⟩
 
 theorem NativeStoreSpec.i32 (word : BitVec 32) :
-    NativeStoreSpec (fuel + 1) program (.scalar (.signed .i32)) (.signed .i32 word.toInt) 4 := by
-  intro state heap address readable unique
+    NativeStoreSpec (fuel + 1) program (.scalar (.signed .i32)) (.signed .i32 word.toInt) 8 := by
+  intro state heap address _ readable unique
+  rw [Nat.add_sub_cancel] at readable ⊢
   obtain ⟨after, stored, effect⟩ := Heap.storeBytes_of_readable (i32Bytes word.toInt) unique
-    (by simpa only [Heap.Readable, i32Bytes, List.length_map, List.length_range] using readable)
-  refine ⟨after, stored, ?_, by simpa only [i32Bytes, List.length_map, List.length_range] using HeapRegionWrite.ofBytes effect⟩
+    (by simpa only [Heap.Readable, i32Bytes, List.length_map, List.length_range, Nat.add_zero] using
+      readable.subrange (start := 0) (length := 4) (by omega))
+  refine ⟨after, stored, ?_, (HeapRegionWrite.ofBytes effect).enlarge (Nat.le_refl _) (by
+    simp only [i32Bytes, List.length_map, List.length_range]; omega)⟩
   have loaded : after.loadBytes address 4 = .ok (i32Bytes word.toInt) := by
     simpa only [i32Bytes, List.length_map, List.length_range] using effect.loadBytes
   exact NativeSnapshot.i32 word loaded
 
 theorem NativeStoreSpec.boolean (value : Bool) :
-    NativeStoreSpec (fuel + 1) program (.scalar .bool) (.boolean value) 4 := by
-  intro state heap address readable unique
+    NativeStoreSpec (fuel + 1) program (.scalar .bool) (.boolean value) 8 := by
+  intro state heap address _ readable unique
+  rw [Nat.add_sub_cancel] at readable ⊢
   obtain ⟨after, stored, effect⟩ := Heap.storeBytes_of_readable
     (encodeNatLE 4 (if value then 1 else 0)) unique
-    (by simpa only [Heap.Readable, encodeNatLE, List.length_map, List.length_range] using readable)
-  refine ⟨after, stored, ?_, by simpa only [encodeNatLE, List.length_map, List.length_range] using HeapRegionWrite.ofBytes effect⟩
+    (by simpa only [Heap.Readable, encodeNatLE, List.length_map, List.length_range, Nat.add_zero] using
+      readable.subrange (start := 0) (length := 4) (by omega))
+  refine ⟨after, stored, ?_, (HeapRegionWrite.ofBytes effect).enlarge (Nat.le_refl _) (by
+    simp only [encodeNatLE, List.length_map, List.length_range]; omega)⟩
   have loaded : after.loadBytes address 4 = .ok (encodeNatLE 4 (if value then 1 else 0)) := by
     simpa only [encodeNatLE, List.length_map, List.length_range] using effect.loadBytes
   intro other reads
-  have loaded := reads _ _ _ (Nat.le_refl _) (Nat.le_refl _) loaded
+  have loaded := reads _ _ _ (by omega) (by omega) loaded
   have decoded := loadNatLE_of_encoded loaded (by cases value <;> decide)
   cases value <;> simp [readNativeValue, decoded] <;> rfl
 
 theorem NativeStoreSpec.enumEmpty {id : TypeId}
     (declaration : program.enumeration? id = some enumeration)
     (variant : enumeration.variants[ordinal]? = some []) (fits : ordinal < 256 ^ 4) :
-    NativeStoreSpec (fuel + 1) program (.enumeration id) (.enumeration id ordinal []) 4 := by
-  intro state heap address readable unique
+    NativeStoreSpec (fuel + 1) program (.enumeration id) (.enumeration id ordinal []) 8 := by
+  intro state heap address _ readable unique
+  rw [Nat.add_sub_cancel] at readable ⊢
   obtain ⟨after, stored, effect⟩ := Heap.storeBytes_of_readable (encodeNatLE 4 ordinal) unique
-    (by simpa only [Heap.Readable, encodeNatLE, List.length_map, List.length_range] using readable)
+    (by simpa only [Heap.Readable, encodeNatLE, List.length_map, List.length_range, Nat.add_zero] using
+      readable.subrange (start := 0) (length := 4) (by omega))
   have loaded : after.loadBytes address 4 = .ok (encodeNatLE 4 ordinal) := by
     simpa only [encodeNatLE, List.length_map, List.length_range] using effect.loadBytes
-  refine ⟨after, ?_, ?_, by simpa only [encodeNatLE, List.length_map, List.length_range] using HeapRegionWrite.ofBytes effect⟩
+  refine ⟨after, ?_, ?_, (HeapRegionWrite.ofBytes effect).enlarge (Nat.le_refl _) (by
+    simp only [encodeNatLE, List.length_map, List.length_range]; omega)⟩
   · simp [writeNativeValue, declaration, variant, stored]
   · exact NativeSnapshot.enumEmpty declaration variant fits loaded
 
 theorem NativeStoreSpec.enumSingle {id : TypeId}
     (declaration : program.enumeration? id = some enumeration)
-    (variant : enumeration.variants[ordinal]? = some [type]) (fits : ordinal < 256 ^ 4)
+    (variant : enumeration.variants[ordinal]? = some [type]) (fits : ordinal < 256 ^ 4) (wide : 8 ≤ size)
     (payload : NativeStoreSpec fuel program type value size) :
     NativeStoreSpec (fuel + 1) program (.enumeration id) (.enumeration id ordinal [value]) (8 + size) := by
-  intro state heap address readable unique
+  intro state heap address room readable unique
+  rw [show address + 8 - (8 + size) = address - size by omega] at readable ⊢
+  have tagRoom := readable.subrange (start := size) (length := 4) (by omega)
+  rw [show address - size + size = address by omega] at tagRoom
   obtain ⟨tagged, tagStore, tagEffect⟩ := Heap.storeBytes_of_readable (encodeNatLE 4 ordinal) unique
-    (by simpa only [Heap.Readable, Nat.add_zero, encodeNatLE, List.length_map, List.length_range] using
-      readable.subrange (start := 0) (length := 4) (by omega))
+    (by simpa only [Heap.Readable, encodeNatLE, List.length_map, List.length_range] using tagRoom)
   have tagRead : tagged.loadBytes address 4 = .ok (encodeNatLE 4 ordinal) := by
     simpa only [encodeNatLE, List.length_map, List.length_range] using tagEffect.loadBytes
-  obtain ⟨after, payloadStore, payloadSnapshot, payloadEffect⟩ := payload state tagged (address + 8)
-    ((tagEffect.readable readable).subrange (by omega)) tagEffect.unique
-  have tagPreserved := payloadEffect.loadBytes tagRead (Or.inl (by omega))
-  refine ⟨after, ?_, ?_, ((HeapRegionWrite.ofBytes tagEffect).enlarge (Nat.le_refl _) (by
+  have payloadRoom := (tagEffect.readable readable).subrange (start := 0) (length := size) (by omega)
+  rw [Nat.add_zero, show address - size = address - 8 + 8 - size by omega] at payloadRoom
+  obtain ⟨after, payloadStore, payloadSnapshot, payloadEffect⟩ := payload state tagged (address - 8)
+    (by omega) payloadRoom tagEffect.unique
+  have tagPreserved := payloadEffect.loadBytes tagRead (Or.inr (by omega))
+  refine ⟨after, ?_, ?_, ((HeapRegionWrite.ofBytes tagEffect).enlarge (by omega) (by
       simp only [encodeNatLE, List.length_map, List.length_range]; omega)).trans
     (payloadEffect.enlarge (by omega) (by omega))⟩
   · simp only [writeNativeValue, declaration, variant, tagStore]
     dsimp only [Bind.bind, Except.bind]
-    simpa [NativeLayout.wordBytes, List.range_succ, List.foldlM] using payloadStore
-  · exact NativeSnapshot.enumSingle declaration variant fits tagPreserved payloadSnapshot
+    simpa [NativeLayout.wordBytes, List.range_succ, List.foldlM, wordBelow,
+      show 8 ≤ address by omega] using payloadStore
+  · exact NativeSnapshot.enumSingle declaration variant fits tagPreserved (by omega) payloadSnapshot
 
 end Lanius.Semantics

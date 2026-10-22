@@ -664,7 +664,7 @@ theorem eval_stride {k slice : Nat} (ok : evalStride sp.decls scope slice slot =
     subst this
     simp only [Option.some.injEq] at ok
     subst ok
-    simp [Semantics.rawSliceStride?, SrcType.toCore] at strideOk
+    simp [Semantics.rawSliceStride?, NativeLayout.elementStride?, SrcType.toCore] at strideOk
     subst strideOk
     exact ⟨_, rfl, by simp only [SrcType.Holds, Expr.eval]; rfl⟩
   simp only [evalWordStride] at ok
@@ -680,7 +680,7 @@ theorem eval_stride {k slice : Nat} (ok : evalStride sp.decls scope slice slot =
       cases ws with
       | nil => exact absurd rfl nonempty
       | cons => simp
-    simp only [Semantics.rawSliceStride?, SrcType.toCore, reduceCtorEq, ↓reduceIte] at strideOk
+    simp only [Semantics.rawSliceStride?, NativeLayout.elementStride?, SrcType.toCore] at strideOk
     cases hwords : NativeLayout.valueWords? sp.toCore (Core.Ty.structure sid) with
     | none => simp [hwords] at strideOk
     | some words =>
@@ -702,7 +702,7 @@ theorem eval_stride {k slice : Nat} (ok : evalStride sp.decls scope slice slot =
   have allv := variantWidths_all widths
   have mlen := maxLength_eq widths
   have found' := enumVariants_toCore declared
-  simp only [Semantics.rawSliceStride?, SrcType.toCore, reduceCtorEq, ↓reduceIte] at strideOk
+  simp only [Semantics.rawSliceStride?, NativeLayout.elementStride?, SrcType.toCore] at strideOk
   cases hwords : NativeLayout.valueWords? sp.toCore (Core.Ty.enumeration eid) with
   | none => simp [hwords] at strideOk
   | some words =>
@@ -766,7 +766,7 @@ theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {inde
         cases hty : i.ty <;> simp_all [SrcType.isI32, SrcType.isUint, SrcType.isScalar]
       have posEq := index_toNat (t := { expr := .var slot, ty := i.ty }) kind (holds_var holds1 scalar) posOk
       have below : (elementBase b.slot ws.length (.var slot)).Below (slot + 1) :=
-        ⟨(by simp only [Expr.Below]; omega), ⟨(by simp only [Expr.Below]; omega), trivial⟩, trivial⟩
+        ⟨(by simp only [Expr.Below]; omega), (by simp only [Expr.Below]; omega), trivial⟩
       obtain ⟨holds, load⟩ := loadStruct_sound (mp := mp) hc1 tail hws posEq below read
       obtain ⟨copied, agree⟩ := copy_down holds
       obtain ⟨sid, fields, rfl, declared, widths, nonempty⟩ := elementWidths_some hws
@@ -793,7 +793,7 @@ theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {inde
         cases hty : i.ty <;> simp_all [SrcType.isI32, SrcType.isUint, SrcType.isScalar]
       have posEq := index_toNat (t := { expr := .var slot, ty := i.ty }) kind (holds_var holds1 scalar) posOk
       have below : (elementBase b.slot (maxLength wss + 1) (.var slot)).Below (slot + 1) :=
-        ⟨(by simp only [Expr.Below]; omega), ⟨(by simp only [Expr.Below]; omega), trivial⟩, trivial⟩
+        ⟨(by simp only [Expr.Below]; omega), (by simp only [Expr.Below]; omega), trivial⟩
       obtain ⟨env2, agree2, holds, load⟩ := loadEnum_sound (mp := mp) hc1 tail hwss posEq below read
       obtain ⟨copied, agree⟩ := copy_down holds
       obtain ⟨eid, variants, rfl, declared, widths, vpos, vsmall⟩ := enumWidths_some hwss

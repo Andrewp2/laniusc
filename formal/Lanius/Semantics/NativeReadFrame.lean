@@ -120,21 +120,24 @@ theorem HeapReads.nativeValue (reads : HeapReads before after)
           | rawPtr => exact Refines.bind reads.natLE (fun _ => .refl _)
           | string =>
               apply Refines.bind reads.natLE; intro pointer
+              apply Refines.bind (.refl _); intro below
               apply Refines.bind reads.natLE; intro length
               exact Refines.bind (fun _ loaded => reads.loadBytes loaded) (fun _ => .refl _)
           | _ => exact .refl _
       | slice element =>
           simp only [readNativeValue]
-          apply Refines.branch
+          split
           · exact .refl _
-          · exact Refines.bind reads.natLE (fun _ => Refines.bind reads.natLE (fun _ => .refl _))
+          · exact Refines.bind reads.natLE (fun _ => Refines.bind (.refl _) (fun _ =>
+              Refines.bind reads.natLE (fun _ => Refines.bind (.refl _) (fun _ =>
+                Refines.bind reads.natLE (fun _ => .refl _)))))
       | «structure» id =>
           simp only [readNativeValue]
           split <;> first | exact .refl _ | skip
           apply Refines.bind
           · apply Refines.mapM; intro field
             split <;> first | exact .refl _ | skip
-            split <;> first | exact .refl _ | exact ih
+            split <;> first | exact .refl _ | exact Refines.bind (.refl _) (fun _ => ih)
           · intro fields; exact .refl _
       | enumeration id =>
           simp only [readNativeValue]
@@ -144,7 +147,7 @@ theorem HeapReads.nativeValue (reads : HeapReads before after)
           apply Refines.bind
           · apply Refines.mapM; intro field
             split <;> first | exact .refl _ | skip
-            split <;> first | exact .refl _ | exact ih
+            split <;> first | exact .refl _ | exact Refines.bind (.refl _) (fun _ => ih)
           · intro fields; exact .refl _
       | _ => exact .refl _
 

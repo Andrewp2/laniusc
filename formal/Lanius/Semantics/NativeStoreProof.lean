@@ -60,7 +60,7 @@ private def solveRecord (program id values : Expr) : TacticM Unit := do
   evalTactic (← `(tactic| next => core_lookup))
   evalTactic (← `(tactic| next => rfl))
   let leaf ← `(tactic| first | native_store | rfl | decide +kernel | omega)
-  for _ in [:2] do
+  for _ in [:3] do
     let index := mkIdent (← mkFreshUserName `field)
     let bound := mkIdent (← mkFreshUserName `inside)
     let cases ← finiteCases index fields.size leaf
@@ -105,17 +105,17 @@ elab_rules : tactic
       else if payload.size == 1 then
         let size ← whnf size
         let .lit (.natVal bytes) := size | throwError "closed enum slot size required"
-        if bytes < 8 then throwError "enum slot too small"
+        if bytes < 16 then throwError "enum slot too small"
         let bytes := Syntax.mkNumLit (toString (bytes - 8))
         evalTactic (← `(tactic| apply NativeStoreSpec.enumSingle (size := $bytes)
-          (by core_lookup) rfl (by decide)))
+          (by core_lookup) rfl (by decide) (by decide)))
         evalTactic (← `(tactic| native_store))
       else throwError "multi-payload native enum codec required"
     else if value.isAppOfArity ``Lanius.Core.Value.boolean 1 then
       let value ← Term.exprToSyntax value.getAppArgs[0]!
       evalTactic (← `(tactic| exact (NativeStoreSpec.boolean $value).enlarge (by decide)))
     else if value.isAppOfArity ``Lanius.Core.Value.rawSlice 3 then
-      evalTactic (← `(tactic| apply NativeStoreSpec.enlarge (size := 16)))
+      evalTactic (← `(tactic| apply NativeStoreSpec.enlarge (size := 24)))
       evalTactic (← `(tactic| next => apply NativeStoreSpec.rawSlice
         <;> first | assumption | decide +kernel | omega))
       evalTactic (← `(tactic| decide +kernel))

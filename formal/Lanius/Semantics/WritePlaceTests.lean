@@ -29,9 +29,9 @@ private def initial : State :=
       blocks := [
       { base := 4, size := 4, alignment := 4, bytes := List.replicate 4 165 },
       { base := 8, size := 16, alignment := 8,
-        bytes := i32Bytes 17 ++ List.replicate 4 165 ++ encodeNatLE 4 2 ++ List.replicate 4 165 },
+        bytes := encodeNatLE 4 2 ++ List.replicate 4 165 ++ i32Bytes 17 ++ List.replicate 4 165 },
       { base := 32, size := 16, alignment := 8,
-        bytes := i32Bytes 51 ++ List.replicate 4 165 ++ encodeNatLE 4 0 ++ List.replicate 4 165 },
+        bytes := encodeNatLE 4 0 ++ List.replicate 4 165 ++ i32Bytes 51 ++ List.replicate 4 165 },
       { base := 48, size := 4, alignment := 4, bytes := List.replicate 4 165 }]
       nextAddress := 52
       remaining := some 100 }
@@ -76,20 +76,20 @@ private def callerFrame (before after : State) : Bool :=
 private def nativeIs (state : State) (type : Ty) (address : Nat) (value : Value) : Bool :=
   (readNativeValue 16 program state.heap type address).toOption == some value
 
-example : readNativeValue 16 program initial.heap (.structure 3) 8 = .error .typeMismatch := rfl
+example : readNativeValue 16 program initial.heap (.structure 3) 16 = .error .typeMismatch := rfl
 
 def wholeOverwrite : Bool :=
   match run initial (.assign .set (row) (.value (pair 19 true))) with
-  | .done .unit after => nativeIs after (.structure 3) 8 (pair 19 true) &&
-      nativeIs after (.structure 3) 32 (pair 51 false) &&
+  | .done .unit after => nativeIs after (.structure 3) 16 (pair 19 true) &&
+      nativeIs after (.structure 3) 40 (pair 51 false) &&
       heapFrame initial.heap after.heap 8 16 && callerFrame initial after
   | _ => false
 
 def plainField : Bool :=
   match run initial (.assign .set (field) (lit 99)) with
-  | .done .unit after => nativeIs after (.scalar (.signed .i32)) 8 (i 99) &&
-      (after.heap.loadBytes 16 4).toOption == some (encodeNatLE 4 2) &&
-      heapFrame initial.heap after.heap 8 4 && callerFrame initial after
+  | .done .unit after => nativeIs after (.scalar (.signed .i32)) 16 (i 99) &&
+      (after.heap.loadBytes 8 4).toOption == some (encodeNatLE 4 2) &&
+      heapFrame initial.heap after.heap 16 4 && callerFrame initial after
   | _ => false
 
 -- RHS overwrites the selected old value with 100. Compound addition must use
@@ -97,8 +97,8 @@ def plainField : Bool :=
 def compoundCapturedOld : Bool :=
   match run initial (.assign .add (field)
       (rhs (seq (.assign .set (field) (lit 100)) (lit 5)))) with
-  | .done .unit after => nativeIs after (.scalar (.signed .i32)) 8 (i 22) &&
-      localIs after 3 (i 1) && heapFrame initial.heap after.heap 8 4 && callerFrame initial after
+  | .done .unit after => nativeIs after (.scalar (.signed .i32)) 16 (i 22) &&
+      localIs after 3 (i 1) && heapFrame initial.heap after.heap 16 4 && callerFrame initial after
   | _ => false
 
 -- A changed base descriptor in the index must not redirect this assignment.
@@ -109,8 +109,8 @@ def descriptorCaptured : Bool :=
   let value := rhs (seq (set 1 (.binary .add (.binary .multiply (.local 1) (lit 10)) (lit 2)))
     (.value (pair 19 true)))
   match run initial (.assign .set (row index) value) with
-  | .done .unit after => nativeIs after (.structure 3) 8 (pair 19 true) &&
-      nativeIs after (.structure 3) 32 (pair 51 false) &&
+  | .done .unit after => nativeIs after (.structure 3) 16 (pair 19 true) &&
+      nativeIs after (.structure 3) 40 (pair 51 false) &&
       localIs after 0 (.rawSlice (.structure 3) 40 1) && localIs after 1 (i 12) &&
       localIs after 2 (i 1) && localIs after 3 (i 1) &&
       heapFrame initial.heap after.heap 8 16 && callerFrame initial after
@@ -267,14 +267,14 @@ private theorem initialUnique : HeapBlockBasesUnique initial.heap := by
     rcases rightFound with rfl | rfl | rfl | rfl <;> first | rfl | cases same
 
 private theorem ninetyNineCodec :
-    NativeStoreSpec 64 program (.scalar (.signed .i32)) (i 99) 4 := by
+    NativeStoreSpec 64 program (.scalar (.signed .i32)) (i 99) 8 := by
   exact NativeStoreSpec.i32 (fuel := 63) (BitVec.ofNat 32 99)
 
 theorem effectfulWholeRule : ∃ heap,
     RunsExpr program wholeBefore (.assign .set (row wholeIndex) markedValue)
       .unit { wholeReady with heap } ∧
-    NativeSnapshot 64 program heap (.scalar (.signed .i32)) 8 (i 99) 4 ∧
-    HeapRegionWrite wholeReady.heap heap 8 4 ∧
+    NativeSnapshot 64 program heap (.scalar (.signed .i32)) 8 (i 99) 8 ∧
+    HeapRegionWrite wholeReady.heap heap 8 8 ∧
     ({ wholeReady with heap } : State).local? 0 = some (.rawSlice (.scalar (.signed .i32)) 32 1) ∧
     ({ wholeReady with heap } : State).local? 1 = some (i 5) := by
   have index : RunsExpr program wholeBefore wholeIndex (i 0) wholeIndexed :=
@@ -287,15 +287,15 @@ theorem effectfulWholeRule : ∃ heap,
     (before := wholeBefore) (indexed := wholeIndexed) (ready := wholeReady)
     (sourceId := 0) (address := 8) (length := 1) (position := 0) (base := 8)
     (program := program) (indexExpression := wholeIndex) (expression := markedValue)
-    rfl index (by decide) rfl ninetyNineCodec
-    (Heap.Readable.of_loadBytes (bytes := i32Bytes 17) (by rfl)) initialUnique rfl right
+    rfl index (by decide) rfl ninetyNineCodec (by decide)
+    (Heap.Readable.of_loadBytes (bytes := encodeNatLE 4 2 ++ List.replicate 4 165) (by rfl)) initialUnique rfl right
   exact ⟨heap, run, snapshot, frame, rfl, rfl⟩
 
 theorem effectfulFieldRule : ∃ heap,
     RunsExpr program initial (.assign .set (field fieldIndex) markedValue)
       .unit { fieldReady with heap } ∧
-    NativeSnapshot 64 program heap (.scalar (.signed .i32)) 8 (i 99) 4 ∧
-    HeapRegionWrite fieldReady.heap heap 8 4 ∧
+    NativeSnapshot 64 program heap (.scalar (.signed .i32)) 16 (i 99) 8 ∧
+    HeapRegionWrite fieldReady.heap heap 16 8 ∧
     ({ fieldReady with heap } : State).local? 0 = some (.rawSlice (.structure 3) 40 1) ∧
     ({ fieldReady with heap } : State).local? 1 = some (i 5) := by
   have index : RunsExpr program initial fieldIndex (i 0) fieldIndexed :=
@@ -306,10 +306,10 @@ theorem effectfulFieldRule : ∃ heap,
       .done (i 99) fieldReady by rfl)) rfl
   obtain ⟨heap, run, snapshot, frame, _⟩ := RunsExpr.assignRawFieldNative
     (before := initial) (indexed := fieldIndexed) (ready := fieldReady)
-    (sourceId := 0) (address := 16) (length := 1) (position := 0) (base := 8) (field := 0)
+    (sourceId := 0) (address := 16) (length := 1) (position := 0) (base := 16) (field := 0)
     (program := program) (indexExpression := fieldIndex) (expression := markedValue)
-    rfl index (by decide) rfl rfl rfl rfl ninetyNineCodec
-    (Heap.Readable.of_loadBytes (bytes := i32Bytes 17) (by rfl)) initialUnique rfl right
+    rfl index (by decide) rfl rfl rfl rfl ninetyNineCodec (by decide) (by decide)
+    (Heap.Readable.of_loadBytes (bytes := i32Bytes 17 ++ List.replicate 4 165) (by rfl)) initialUnique rfl right
   exact ⟨heap, run, snapshot, frame, rfl, rfl⟩
 
 #print axioms effectfulWholeRule

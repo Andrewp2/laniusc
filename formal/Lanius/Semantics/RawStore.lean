@@ -78,12 +78,13 @@ theorem RunsExpr.assignRawNative {before indexed ready : State} {value : Value}
     (bound : position < length)
     (location : rawSliceElementAddress? program element address position = .ok base)
     (codec : NativeStoreSpec NativeLayout.maxDepth program element value size)
-    (readable : ready.heap.Readable base size) (unique : HeapBlockBasesUnique ready.heap)
+    (room : size ≤ base + 8) (readable : ready.heap.Readable (base + 8 - size) size)
+    (unique : HeapBlockBasesUnique ready.heap)
     (noViews : ready.i32ArrayViews = []) (right : RunsExpr program indexed expression value ready) :
     ∃ heap, RunsExpr program before (.assign .set (.index (.local sourceId) indexExpression) expression)
       .unit { ready with heap } ∧ NativeSnapshot NativeLayout.maxDepth program heap element base value size ∧
-      HeapRegionWrite ready.heap heap base size := by
-  obtain ⟨heap, stored, read, effect⟩ := codec ready ready.heap base readable unique
+      HeapRegionWrite ready.heap heap (base + 8 - size) size := by
+  obtain ⟨heap, stored, read, effect⟩ := codec ready ready.heap base room readable unique
   exact ⟨heap, .ofStable (StableExpr.assignRaw source index.choose_spec.1 bound location noViews
     right.choose_spec.1 stored) (right.choose_spec.2.trans index.choose_spec.2), read, effect⟩
 

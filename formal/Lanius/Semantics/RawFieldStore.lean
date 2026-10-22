@@ -15,20 +15,20 @@ theorem RunsExpr.assignRawFieldNative {before indexed ready : State} {id : TypeI
     (fieldType : record.fields[field]? = some type)
     (offset : NativeLayout.structureFieldOffset? program id field = some displacement)
     (codec : NativeStoreSpec NativeLayout.maxDepth program type value size)
-    (readable : ready.heap.Readable (base + displacement) size)
+    (fieldFits : displacement ≤ base) (room : size ≤ base - displacement + 8) (readable : ready.heap.Readable (base - displacement + 8 - size) size)
     (unique : HeapBlockBasesUnique ready.heap) (noViews : ready.i32ArrayViews = [])
     (right : RunsExpr program indexed expression value ready) :
     ∃ heap, RunsExpr program before
       (.assign .set (.field (.index (.local sourceId) indexExpression) field) expression)
       .unit { ready with heap } ∧
-      NativeSnapshot NativeLayout.maxDepth program heap type (base + displacement) value size ∧
-      HeapRegionWrite ready.heap heap (base + displacement) size ∧
-      writeNativeValue NativeLayout.maxDepth program ready ready.heap type (base + displacement) value = .ok heap := by
+      NativeSnapshot NativeLayout.maxDepth program heap type (base - displacement) value size ∧
+      HeapRegionWrite ready.heap heap (base - displacement + 8 - size) size ∧
+      writeNativeValue NativeLayout.maxDepth program ready ready.heap type (base - displacement) value = .ok heap := by
   cases cell : before.cellId? sourceId with
   | none => simp [State.local?, cell] at source
   | some root =>
     have entry := cellEntry_of_local before sourceId root _ cell source
-    obtain ⟨heap, stored, snapshot, effect⟩ := codec ready ready.heap (base + displacement) readable unique
+    obtain ⟨heap, stored, snapshot, effect⟩ := codec ready ready.heap (base - displacement) room readable unique
     obtain ⟨indexFuel, indexRun, indexLocals⟩ := index
     obtain ⟨rightFuel, rightRun, rightLocals⟩ := right
     refine ⟨heap, RunsExpr.ofStable (threshold := max (max 1 indexFuel + 2) rightFuel + 1) ?_
@@ -46,7 +46,7 @@ theorem RunsExpr.assignRawFieldNative {before indexed ready : State} {id : TypeI
     rw [show fuel - 3 = (fuel - 4).succ by omega, evalPlace.eq_def]
     simp only [cell, entry, indexResult]
     simp [integerIndex, Int.ofNat_eq_natCast, nonnegative, bound, location,
-      declaration, fieldType, offset, replacement, evalAssignValue,
+      declaration, fieldType, offset, Nat.not_lt.mpr fieldFits, replacement, evalAssignValue,
       assignOpBinary?, writeResolvedPlaceNative, stored, ResolvedPlace.viewFreeRootWrite,
       syncI32ViewsFromHeap, noViews]
     rfl

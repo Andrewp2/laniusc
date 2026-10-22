@@ -2504,30 +2504,29 @@ def isWordEnum (decls : SrcDecls) (element : SrcType) : Bool :=
   | none => false
   | some wss => true
 
-/-- A struct slice's descriptor points at element zero's high word, and elements of `words` words run downward: element index starts (index * words + words - 1) words below it. -/
+/-- A struct slice's descriptor points at element zero's word 0, its high word, and elements of `words` words run downward: element index's word 0 is index * words words below it. A value's words descend from its word 0. -/
 def elementBase (slot : Nat) (words : Nat) (index : Expr) : Expr :=
-  let stride : Expr := Expr.binary Word.u64 BinOp.mul index (Expr.lit (BitVec.ofNat 64 (8 * words)))
-  Expr.binary Word.u64 BinOp.sub (Expr.var slot) (Expr.binary Word.u64 BinOp.add stride (Expr.lit (BitVec.ofNat 64 (8 * (words - 1)))))
+  Expr.binary Word.u64 BinOp.sub (Expr.var slot) (Expr.binary Word.u64 BinOp.mul index (Expr.lit (BitVec.ofNat 64 (8 * words))))
 
-/-- Load the fields at base + offset, base + offset + 8, ... into the slots from target, then run body. -/
+/-- Load the fields at base - offset, base - offset - 8, ... into the slots from target, then run body. -/
 def loadFields (widths : List MemWidth) (target : Nat) (base : Expr) (offset : Nat) (body : Stmt) : Stmt :=
   match widths with
   | [] => body
-  | w :: rest => Stmt.seq (Stmt.loadWord w target (Expr.binary Word.u64 BinOp.add base (Expr.lit (BitVec.ofNat 64 offset)))) (loadFields rest (target + 1) base (offset + 8) body)
+  | w :: rest => Stmt.seq (Stmt.loadWord w target (Expr.binary Word.u64 BinOp.sub base (Expr.lit (BitVec.ofNat 64 offset)))) (loadFields rest (target + 1) base (offset + 8) body)
 
 def storeThen (w : MemWidth) (address : Expr) (value : Expr) (rest : Option Stmt) : Option Stmt :=
   match rest with
   | none => none
   | some s => some (Stmt.seq (Stmt.storeWord w address value) s)
 
-/-- Store the field values at base + offset, base + offset + 8, ...; values past the widths are not stored. -/
+/-- Store the field values at base - offset, base - offset - 8, ...; values past the widths are not stored. -/
 def storeFields (widths : List MemWidth) (values : List Expr) (base : Expr) (offset : Nat) : Option Stmt :=
   match widths with
   | [] => some Stmt.skip
   | w :: rest =>
     match values with
     | [] => none
-    | v :: more => storeThen w (Expr.binary Word.u64 BinOp.add base (Expr.lit (BitVec.ofNat 64 offset))) v (storeFields rest more base (offset + 8))
+    | v :: more => storeThen w (Expr.binary Word.u64 BinOp.sub base (Expr.lit (BitVec.ofNat 64 offset))) v (storeFields rest more base (offset + 8))
 
 /-- Load the payload of the variant whose tag is in slot target, the variants from k on, into the slots after it. The last variant needs no tag test. -/
 def loadVariants (target : Nat) (base : Expr) (k : Nat) (widths : List (List MemWidth)) : Stmt :=

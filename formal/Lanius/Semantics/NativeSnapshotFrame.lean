@@ -17,7 +17,7 @@ theorem NativeSnapshot.afterHeapReads
 /-- Retain one represented native slot through an already proved union footprint. -/
 theorem NativeSnapshot.afterFootprint (snapshot : NativeSnapshot fuel program before type pointer value size)
     (write : HeapWritesOn before after allowed)
-    (apart : ∀ address, pointer ≤ address → address < pointer + size → ¬allowed address) :
+    (apart : ∀ address, pointer + 8 - size ≤ address → address < pointer + 8 - size + size → ¬allowed address) :
     NativeSnapshot fuel program after type pointer value size := by
   intro other reads
   apply snapshot other

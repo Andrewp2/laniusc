@@ -263,14 +263,23 @@ theorem mapM_except_ok {α β ε : Type} {g : α → Except ε β} : ∀ {l : Li
       simp only [List.getElem?_cons_succ] at found ⊢
       exact each i x found
 
-/-- Core's read of a declared word struct: field `j` at byte `8 * j`. -/
+theorem wordBelow_ok {address offset a : Nat} (h : Semantics.wordBelow address offset = .ok a) :
+    offset ≤ address ∧ a = address - offset := by
+  simp only [Semantics.wordBelow] at h
+  split at h
+  · simp only [Except.ok.injEq] at h
+    exact ⟨by assumption, h.symm⟩
+  · simp at h
+
+/-- Core's read of a declared word struct: field `j` at `8 * j` bytes below
+its word 0. -/
 theorem readNativeValue_struct {P : Core.Program} {heap : Memory.Heap} {sid : Nat} {fields : List SrcType}
     (found : P.structure? sid = some ⟨sid, fields.map SrcType.toCore⟩) (all : AllWord fields)
     {k base : Nat} {v : Value}
     (h : Semantics.readNativeValue (k + 1) P heap (.structure sid) base = .ok v) :
     ∃ vals, v = .structure sid vals ∧ vals.length = fields.length ∧
-      ∀ (j : Nat) f, fields[j]? = some f → ∃ x, vals[j]? = some x ∧
-        Semantics.readNativeValue k P heap f.toCore (base + 8 * j) = .ok x := by
+      ∀ (j : Nat) f, fields[j]? = some f → ∃ x, vals[j]? = some x ∧ 8 * j ≤ base ∧
+        Semantics.readNativeValue k P heap f.toCore (base - 8 * j) = .ok x := by
   simp only [Semantics.readNativeValue, found] at h
   obtain ⟨vals, mapped, wrapped⟩ := except_bind_ok h
   simp only [pure, Except.pure, Except.ok.injEq] at wrapped
@@ -282,7 +291,9 @@ theorem readNativeValue_struct {P : Core.Program} {heap : Memory.Heap} {sid : Na
   obtain ⟨x, hx, ok⟩ := each j j (by simp [List.getElem?_range, List.length_map, lt])
   refine ⟨x, hx, ?_⟩
   simp only [List.getElem?_map, hf, Option.map_some, fieldOffset_struct found all lt] at ok
-  exact ok
+  obtain ⟨a, below, ok⟩ := except_bind_ok ok
+  obtain ⟨le, rfl⟩ := wordBelow_ok below
+  exact ⟨le, ok⟩
 
 /-- Core's read of one word field, in the slot the mini load fills. -/
 theorem readWord_holds {P : Core.Program} {heap : Memory.Heap} {hp : Heap} (hc : HeapCorr heap hp)
@@ -336,29 +347,28 @@ theorem disp_eq (i n : Nat) (pos : 0 < n) : (i * n + n - 1) * 8 = i * (8 * n) + 
   generalize i * n = m
   omega
 
-/-- The element base the mini code computes is Core's `elementBase?`. -/
+/-- The element base the mini code computes is Core's `elementBase?`: the
+element's word 0, `i * n` words below the descriptor. -/
 theorem elementBase_eval {env : Env} {slot n : Nat} {index : Expr} {i : Nat}
     (hi : (index.eval env).toNat = i) (small : n ≤ 4096)
-    (fits : i * (8 * n) + 8 * (n - 1) ≤ (env slot).toNat) :
-    ((elementBase slot n index).eval env).toNat = (env slot).toNat - (i * (8 * n) + 8 * (n - 1)) := by
+    (fits : i * (8 * n) ≤ (env slot).toNat) :
+    ((elementBase slot n index).eval env).toNat = (env slot).toNat - i * (8 * n) := by
   have lt := (env slot).isLt
   have n8 : (BitVec.ofNat 64 (8 * n)).toNat = 8 * n := by
     rw [BitVec.toNat_ofNat]; exact Nat.mod_eq_of_lt (by omega)
-  have n8' : (BitVec.ofNat 64 (8 * (n - 1))).toNat = 8 * (n - 1) := by
-    rw [BitVec.toNat_ofNat]; exact Nat.mod_eq_of_lt (by omega)
-  simp only [elementBase, Expr.eval, Word.apply, BinOp.apply, BitVec.toNat_sub, BitVec.toNat_add,
-    BitVec.toNat_mul, hi, n8, n8']
-  rw [Nat.mod_eq_of_lt (a := i * (8 * n)) (by omega), Nat.mod_eq_of_lt (a := i * (8 * n) + 8 * (n - 1)) (by omega)]
+  simp only [elementBase, Expr.eval, Word.apply, BinOp.apply, BitVec.toNat_sub, BitVec.toNat_mul, hi, n8]
+  rw [Nat.mod_eq_of_lt (a := i * (8 * n)) (by omega)]
   omega
 
-/-- A field's address: the base plus its offset, without wrapping. -/
+/-- A field's address: the base less its offset, without wrapping. -/
 theorem fieldAddress_eval {env : Env} {base : Expr} {offset : Nat}
-    (fits : (base.eval env).toNat + offset < 2 ^ 64) :
-    ((Expr.binary Word.u64 BinOp.add base (Expr.lit (BitVec.ofNat 64 offset))).eval env).toNat =
-      (base.eval env).toNat + offset := by
-  simp only [Expr.eval, Word.apply, BinOp.apply, BitVec.toNat_add, BitVec.toNat_ofNat]
+    (fits : offset ≤ (base.eval env).toNat) :
+    ((Expr.binary Word.u64 BinOp.sub base (Expr.lit (BitVec.ofNat 64 offset))).eval env).toNat =
+      (base.eval env).toNat - offset := by
+  have lt := (base.eval env).isLt
+  simp only [Expr.eval, Word.apply, BinOp.apply, BitVec.toNat_sub, BitVec.toNat_ofNat]
   rw [Nat.mod_eq_of_lt (a := offset) (by omega)]
-  exact Nat.mod_eq_of_lt fits
+  omega
 
 theorem fieldsHold_of : ∀ {fields : List SrcType} {vals : List Value} {env : Env} {slot : Nat},
     AllWord fields → vals.length = fields.length →
@@ -584,8 +594,8 @@ theorem readNativeValue_enum {P : Core.Program} {heap : Memory.Heap} {eid : Nat}
     (h : Semantics.readNativeValue (k + 1) P heap (.enumeration eid) base = .ok v) :
     ∃ variant fs payload, v = .enumeration eid variant payload ∧ Semantics.loadNatLE heap base 4 = .ok variant ∧
       variants[variant]? = some fs ∧ payload.length = fs.length ∧
-      ∀ (j : Nat) f, fs[j]? = some f → ∃ x, payload[j]? = some x ∧
-        Semantics.readNativeValue k P heap f.toCore (base + 8 * (1 + j)) = .ok x := by
+      ∀ (j : Nat) f, fs[j]? = some f → ∃ x, payload[j]? = some x ∧ 8 * (1 + j) ≤ base ∧
+        Semantics.readNativeValue k P heap f.toCore (base - 8 * (1 + j)) = .ok x := by
   simp only [Semantics.readNativeValue, found] at h
   obtain ⟨variant, loaded, h⟩ := except_bind_ok h
   cases hv : variants[variant]? with
@@ -604,6 +614,8 @@ theorem readNativeValue_enum {P : Core.Program} {heap : Memory.Heap} {eid : Nat}
   refine ⟨x, hx, ?_⟩
   simp only [List.getElem?_map, hf, Option.map_some, payloadOffset allF lt, foldl_ones, Nat.zero_add,
     List.length_take, NativeLayout.wordBytes, Nat.min_eq_left (Nat.le_of_lt lt)] at ok
-  exact ok
+  obtain ⟨a, below, ok⟩ := except_bind_ok ok
+  obtain ⟨le, rfl⟩ := wordBelow_ok below
+  exact ⟨le, ok⟩
 
 end Lanius.Mini

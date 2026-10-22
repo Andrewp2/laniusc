@@ -252,7 +252,7 @@ theorem loadBytes {bytes : List UInt8} (frame : HeapFrame footprint before after
 
 theorem snapshot (frame : HeapFrame footprint before after)
     (snapshot : NativeSnapshot fuel program before type base value size)
-    (covered : ∀ address, base ≤ address → address < base + size → footprint.bytes address) :
+    (covered : ∀ address, base + 8 - size ≤ address → address < base + 8 - size + size → footprint.bytes address) :
     NativeSnapshot fuel program after type base value size := by
   intro other within
   apply snapshot other

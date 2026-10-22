@@ -694,10 +694,24 @@ def loadNatLE (heap : Heap) (address width : Nat) : Except Trap Nat := do
   let bytes ← heap.loadBytes address width
   pure (decodeNatLE bytes)
 
+/-- `offset` bytes below `address`: a later word of a native value, whose
+    words descend from its word 0. -/
+def wordBelow (address offset : Nat) : Except Trap Address :=
+  if offset ≤ address then .ok (address - offset) else .error .rawMemoryBounds
+
+/-- A 32-bit word as two's complement. -/
+def signed32 (bits : Nat) : Int :=
+  if bits ≥ 2 ^ 31 then Int.ofNat bits - 2 ^ 32 else Int.ofNat bits
+
+/-- A 64-bit word as two's complement. -/
+def signed64 (bits : Nat) : Int :=
+  if bits ≥ 2 ^ 63 then Int.ofNat bits - 2 ^ 64 else Int.ofNat bits
+
 /-- Decode a snapshot of a native x86 value from heap storage. The layout is
     resolved from the Core type, not from untyped transport words. A slice
     descriptor retains its raw pointer and length; indexing checks the heap
-    when the referent is actually accessed. -/
+    when the referent is actually accessed. Words descend from `address`,
+    as laniusc lays values out. -/
 def readNativeValue : Nat → Program → Heap → Ty → Address → Except Trap Value
   | 0, _, _, _, _ => .error .typeMismatch
   | fuel + 1, program, heap, type, address => do
@@ -707,32 +721,52 @@ def readNativeValue : Nat → Program → Heap → Ty → Address → Except Tra
           let signed := if bits ≥ 2 ^ 31 then
             Int.ofNat bits - 2 ^ 32 else Int.ofNat bits
           pure (.signed .i32 signed)
+      | .scalar (.signed .i8) =>
+          let value := signed32 (← loadNatLE heap address 4)
+          if -128 ≤ value ∧ value < 128 then pure (.signed .i8 value)
+          else .error .typeMismatch
+      | .scalar (.signed .i16) =>
+          let value := signed32 (← loadNatLE heap address 4)
+          if -32768 ≤ value ∧ value < 32768 then pure (.signed .i16 value)
+          else .error .typeMismatch
+      | .scalar (.signed .i64) =>
+          pure (.signed .i64 (signed64 (← loadNatLE heap address 8)))
+      | .scalar (.signed .isize) =>
+          pure (.signed .isize (signed64 (← loadNatLE heap address 8)))
       | .scalar .bool =>
           let bits ← loadNatLE heap address 4
           if bits ≤ 1 then pure (.boolean (bits == 1))
           else .error .typeMismatch
+      | .scalar (.unsigned .u8) =>
+          let bits ← loadNatLE heap address 4
+          if bits < 256 then pure (.unsigned .u8 bits) else .error .typeMismatch
+      | .scalar (.unsigned .u16) =>
+          let bits ← loadNatLE heap address 4
+          if bits < 65536 then pure (.unsigned .u16 bits) else .error .typeMismatch
+      | .scalar (.unsigned .u32) =>
+          pure (.unsigned .u32 (← loadNatLE heap address 4))
+      | .scalar (.unsigned .u64) =>
+          pure (.unsigned .u64 (← loadNatLE heap address 8))
       | .scalar (.unsigned .usize) =>
           pure (.unsigned .usize (← loadNatLE heap address 8))
       | .scalar .rawPtr =>
           pure (.pointer (← loadNatLE heap address 8))
       | .scalar .string =>
           let pointer ← loadNatLE heap address 8
-          let length ← loadNatLE heap (address + 8) 8
+          let length ← loadNatLE heap (← wordBelow address 8) 8
           let bytes ← heap.loadBytes pointer length
           match String.fromUTF8? bytes.toByteArray with
           | some value => pure (.string value)
           | none => .error .typeMismatch
       | .slice element =>
-          let supported := match element with
-            | .scalar (.signed .i32) => true
-            | .structure id => (program.structure? id).isSome
-            | .enumeration id => (program.enumeration? id).isSome
-            | _ => false
-          if !supported then .error .typeMismatch
-          else
-            let pointer ← loadNatLE heap address 8
-            let length ← loadNatLE heap (address + 8) 8
-            pure (.rawSlice element pointer length)
+          match NativeLayout.elementStride? program element with
+          | none => .error .typeMismatch
+          | some stride =>
+              let pointer ← loadNatLE heap address 8
+              let length ← loadNatLE heap (← wordBelow address 8) 8
+              let stored ← loadNatLE heap (← wordBelow address 16) 8
+              if stored = Int.toNat (stride % 2 ^ 64) then pure (.rawSlice element pointer length)
+              else .error .typeMismatch
       | .structure id =>
           let some declaration := program.structure? id
             | .error .typeMismatch
@@ -741,7 +775,7 @@ def readNativeValue : Nat → Program → Heap → Ty → Address → Except Tra
               | .error .typeMismatch
             let some offset := NativeLayout.structureFieldOffset? program id field
               | .error .typeMismatch
-            readNativeValue fuel program heap fieldType (address + offset)
+            readNativeValue fuel program heap fieldType (← wordBelow address offset)
           pure (.structure id fields)
       | .enumeration id =>
           let some declaration := program.enumeration? id
@@ -756,7 +790,7 @@ def readNativeValue : Nat → Program → Heap → Ty → Address → Except Tra
                 NativeLayout.words? (NativeLayout.maxDepth - 1) program member
               | .error .typeMismatch
             let offset := NativeLayout.wordBytes * (1 + widths.foldl (· + ·) 0)
-            readNativeValue fuel program heap fieldType (address + offset)
+            readNativeValue fuel program heap fieldType (← wordBelow address offset)
           pure (.enumeration id variant payload)
       | _ => .error .typeMismatch
 
@@ -793,8 +827,24 @@ def writeNativeValue : Nat → Program → State → Heap → Ty → Address →
       match type, value with
       | .scalar (.signed .i32), .signed .i32 number =>
           heap.storeBytes address (i32Bytes number)
+      | .scalar (.signed .i8), .signed .i8 number =>
+          heap.storeBytes address (i32Bytes number)
+      | .scalar (.signed .i16), .signed .i16 number =>
+          heap.storeBytes address (i32Bytes number)
+      | .scalar (.signed .i64), .signed .i64 number =>
+          heap.storeBytes address (encodeNatLE 8 (Int.toNat (number % 2 ^ 64)))
+      | .scalar (.signed .isize), .signed .isize number =>
+          heap.storeBytes address (encodeNatLE 8 (Int.toNat (number % 2 ^ 64)))
       | .scalar .bool, .boolean boolean =>
           heap.storeBytes address (encodeNatLE 4 (if boolean then 1 else 0))
+      | .scalar (.unsigned .u8), .unsigned .u8 number =>
+          heap.storeBytes address (encodeNatLE 4 number)
+      | .scalar (.unsigned .u16), .unsigned .u16 number =>
+          heap.storeBytes address (encodeNatLE 4 number)
+      | .scalar (.unsigned .u32), .unsigned .u32 number =>
+          heap.storeBytes address (encodeNatLE 4 number)
+      | .scalar (.unsigned .u64), .unsigned .u64 number =>
+          heap.storeBytes address (encodeNatLE 8 number)
       | .scalar (.unsigned .usize), .unsigned .usize number =>
           heap.storeBytes address (encodeNatLE 8 number)
       | .scalar .rawPtr, .pointer pointer =>
@@ -802,8 +852,14 @@ def writeNativeValue : Nat → Program → State → Heap → Ty → Address →
       | .slice element, .rawSlice actual pointer length =>
           if element != actual then .error .typeMismatch
           else
-            let withPointer ← heap.storeBytes address (encodeNatLE 8 pointer)
-            withPointer.storeBytes (address + 8) (encodeNatLE 8 length)
+            match NativeLayout.elementStride? program element with
+            | none => .error .typeMismatch
+            | some stride =>
+                let withPointer ← heap.storeBytes address (encodeNatLE 8 pointer)
+                let withLength ← withPointer.storeBytes (← wordBelow address 8)
+                  (encodeNatLE 8 length)
+                withLength.storeBytes (← wordBelow address 16)
+                  (encodeNatLE 8 (Int.toNat (stride % 2 ^ 64)))
       | .slice (.scalar (.signed .i32)),
           .slice (.scalar (.signed .i32)) root projections start length =>
           let some view := state.i32ArrayViews.find? fun candidate =>
@@ -814,7 +870,9 @@ def writeNativeValue : Nat → Program → State → Heap → Ty → Address →
           else
             let pointer := view.address + start * 4
             let withPointer ← heap.storeBytes address (encodeNatLE 8 pointer)
-            withPointer.storeBytes (address + 8) (encodeNatLE 8 length)
+            let withLength ← withPointer.storeBytes (← wordBelow address 8)
+              (encodeNatLE 8 length)
+            withLength.storeBytes (← wordBelow address 16) (encodeNatLE 8 4)
       | .structure id, .structure valueId fields =>
           if id != valueId then .error .typeMismatch
           else
@@ -830,7 +888,7 @@ def writeNativeValue : Nat → Program → State → Heap → Ty → Address →
                 let some offset := NativeLayout.structureFieldOffset? program id field
                   | .error .typeMismatch
                 writeNativeValue fuel program state current fieldType
-                  (address + offset) fieldValue) heap
+                  (← wordBelow address offset) fieldValue) heap
       | .enumeration id, .enumeration valueId variant payload =>
           if id != valueId then .error .typeMismatch
           else
@@ -851,7 +909,7 @@ def writeNativeValue : Nat → Program → State → Heap → Ty → Address →
                   | .error .typeMismatch
                 let offset := NativeLayout.wordBytes * (1 + widths.foldl (· + ·) 0)
                 writeNativeValue fuel program state current fieldType
-                  (address + offset) fieldValue) tagged
+                  (← wordBelow address offset) fieldValue) tagged
       | _, _ => .error .typeMismatch
 
 def writeResolvedPlaceNative (program : Program) (state : State)
@@ -1002,12 +1060,7 @@ def mapRawNominalSlice (program : Program) (state : State)
     native size. Views of language arrays have no stride here. -/
 def rawSliceStride? (program : Program) (value : Value) : Option Int :=
   match value with
-  | .rawSlice element _ _ =>
-      if element = .scalar (.signed .i32) then some 4
-      else
-        match NativeLayout.valueWords? program element with
-        | some words => some (-((NativeLayout.wordBytes * words : Nat) : Int))
-        | none => none
+  | .rawSlice element _ _ => NativeLayout.elementStride? program element
   | _ => none
 
 def mapI32SliceDataPtr
@@ -1579,20 +1632,22 @@ mutual
                 match program.structure? id,
                     NativeLayout.structureFieldOffset? program id field with
                 | some declaration, some offset =>
+                    if address < offset then .trapped .rawMemoryBounds next
+                    else
                     match declaration.fields[field]? with
                     | none => .trapped .typeMismatch next
                     | some fieldType =>
                         match access with
                         | .address => .done { resolved with
                             value := none
-                            raw := some (fieldType, address + offset) } next
+                            raw := some (fieldType, address - offset) } next
                         | .read =>
                             match readNativeValue NativeLayout.maxDepth program
-                                next.heap fieldType (address + offset) with
+                                next.heap fieldType (address - offset) with
                             | .error reason => .trapped reason next
                             | .ok value => .done { resolved with
                                 value := some value
-                                raw := some (fieldType, address + offset) } next
+                                raw := some (fieldType, address - offset) } next
                 | _, _ => .trapped .typeMismatch next
             | some _ => .trapped .typeMismatch next
             | none =>

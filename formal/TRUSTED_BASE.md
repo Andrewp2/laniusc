@@ -69,7 +69,7 @@ output is kept only when the proved validator accepts it. Nor are
 
 - **What.** `compileSource_correct` states correctness against Core's
   fuel-indexed evaluator `Lanius.Semantics.evalExpr` (`Lanius/Semantics.lean`,
-  1,841 lines) and Core's heap (`Lanius/Memory.lean`; the allocator is
+  1,896 lines) and Core's heap (`Lanius/Memory.lean`; the allocator is
   unbounded and `nextAddress` starts at 1). We assume that this evaluator is
   what Lanius programs mean. No other formal semantics exists to compare it
   with, and laniusc, the GPU compiler, is not proved against it.
@@ -98,6 +98,28 @@ output is kept only when the proved validator accepts it. Nor are
   laniusc gives the same values; the oracle difftest checks them. Core gives
   a view of a language array no stride (it traps), while laniusc gives that
   array's own layout. Programs that ask for one are outside the theorem.
+- **Native layout (changed 10-22).** Core reads and writes values in memory
+  with laniusc's layout (`docs/wasm-memory-layout.md`). A value's address is
+  its word 0, its highest word; word k is 8k bytes below it. A struct's field
+  j has its word 0 at 8·W_j bytes below the struct's, W_j being the words of
+  the fields before it. An enum's tag is word 0, and its payload starts one
+  word below. Element i of a raw view of a w-word type is 8wi bytes below
+  element 0. `str` is 2 words (data, then length) and a slice is 3 (data,
+  length, stride). Each scalar is one word, so `u8`, `u16`, `u32`, `i8`,
+  `i16`, `i64`, `u64` and `isize` now have a native layout too. A raw field
+  place `s[i].f` is the element's address less the field's offset, and it
+  traps (`rawMemoryBounds`) when that would go below 0. Before 10-22 fields,
+  payloads and view elements went up from the value's lowest word, and
+  slices were 2 words, so Core and laniusc disagreed on every aggregate
+  stored in memory. One difference remains. Core writes `i32`, `bool`,
+  `i8`, `i16`, `u8`, `u16`, `u32` and enum tags as 4 bytes and the 64-bit
+  kinds as 8, while laniusc writes every scalar as a whole 8-byte word,
+  zero-extended. The 4-byte writes are needed because the same writer
+  stores packed `i32` view elements, which are 4 bytes apart. Both read the
+  32-bit kinds with 4-byte loads. So the two differ only in the upper half
+  of such a word, which only an aliasing 8-byte read sees. Core traps when a
+  4-byte `u8`, `u16`, `i8` or `i16` read is out of the type's range; laniusc
+  does not mask.
 - **Checked by.** Reading, and Core's own Lean tests (`Lanius/Semantics/*Tests.lean`).
   Core is not tested against laniusc-built binaries.
 - **To shrink it.** Run a differential test of `#eval evalExpr` against

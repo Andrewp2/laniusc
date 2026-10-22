@@ -13,7 +13,7 @@ theorem rawSliceElementAddress_of_layout
     (nominal : (match element with | .structure _ | .enumeration _ => true | _ => false) = true)
     (layout : NativeLayout.valueWords? program element = some words) (width : 0 < words)
     (room : (index * words + words - 1) * 8 ≤ pointer)
-    (address : pointer - (index * words + words - 1) * 8 = base) :
+    (address : pointer - index * words * 8 = base) :
     rawSliceElementAddress? program element pointer index = .ok base := by
   cases element <;> simp at nominal
   all_goals simp [rawSliceElementAddress?, layout, NativeLayout.elementBase?, NativeLayout.wordBytes,

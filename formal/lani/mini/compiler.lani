@@ -3197,20 +3197,19 @@ pub fn is_word_enum(decls: SrcDecls, element: SrcType) -> bool {
     };
 }
 
-// A struct slice's descriptor points at element zero's high word, and
-// elements of `words` words run downward: element index starts
-// (index * words + words - 1) words below it.
+// A struct slice's descriptor points at element zero's word 0, its high
+// word, and elements of `words` words run downward: element index's word 0
+// is index * words words below it. A value's words descend from its word 0.
 pub fn element_base(slot: usize, words: usize, index: Expr) -> Expr {
-    let stride: Expr = Binary(U64, Mul, boxed(index), boxed(Lit(times(8, words) as u64)));
-    return Binary(U64, Sub, boxed(Var(slot)), boxed(Binary(U64, Add, boxed(stride), boxed(Lit(times(8, minus(words, 1)) as u64)))));
+    return Binary(U64, Sub, boxed(Var(slot)), boxed(Binary(U64, Mul, boxed(index), boxed(Lit(times(8, words) as u64)))));
 }
 
-// Load the fields at base + offset, base + offset + 8, ... into the slots
+// Load the fields at base - offset, base - offset - 8, ... into the slots
 // from target, then run body.
 pub fn load_fields(widths: List<MemWidth>, target: usize, base: Expr, offset: usize, body: Stmt) -> Stmt {
     return match (widths) {
         Nil -> body,
-        Cons(w, rest) -> Seq(boxed(LoadWord(w, target, Binary(U64, Add, boxed(base), boxed(Lit(offset as u64))))), boxed(load_fields(unbox(rest), plus(target, 1), base, plus(offset, 8), body))),
+        Cons(w, rest) -> Seq(boxed(LoadWord(w, target, Binary(U64, Sub, boxed(base), boxed(Lit(offset as u64))))), boxed(load_fields(unbox(rest), plus(target, 1), base, plus(offset, 8), body))),
     };
 }
 
@@ -3221,14 +3220,14 @@ pub fn store_then(w: MemWidth, address: Expr, value: Expr, rest: core::option::O
     };
 }
 
-// Store the field values at base + offset, base + offset + 8, ...; values
+// Store the field values at base - offset, base - offset - 8, ...; values
 // past the widths are not stored.
 pub fn store_fields(widths: List<MemWidth>, values: List<Expr>, base: Expr, offset: usize) -> core::option::Option<Stmt> {
     return match (widths) {
         Nil -> Some(Skip),
         Cons(w, rest) -> match (values) {
             Nil -> None,
-            Cons(v, more) -> store_then(w, Binary(U64, Add, boxed(base), boxed(Lit(offset as u64))), v, store_fields(unbox(rest), unbox(more), base, plus(offset, 8))),
+            Cons(v, more) -> store_then(w, Binary(U64, Sub, boxed(base), boxed(Lit(offset as u64))), v, store_fields(unbox(rest), unbox(more), base, plus(offset, 8))),
         },
     };
 }

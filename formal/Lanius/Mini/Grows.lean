@@ -210,13 +210,21 @@ theorem writeNativeValue_next : ∀ (fuel : Nat) {P : Core.Program} {st : State}
       | skip
     · split at ok
       · simp at ok
-      · obtain ⟨w, first, second⟩ := except_bind_ok ok
-        rw [storeBytes_next second, storeBytes_next first]
+      · split at ok
+        · simp at ok
+        · obtain ⟨w1, s1, r1⟩ := except_bind_ok ok
+          obtain ⟨l1, -, r2⟩ := except_bind_ok r1
+          obtain ⟨w2, s2, r3⟩ := except_bind_ok r2
+          obtain ⟨l2, -, s3⟩ := except_bind_ok r3
+          rw [storeBytes_next s3, storeBytes_next s2, storeBytes_next s1]
     · split at ok
       · split at ok
         · simp at ok
-        · obtain ⟨w, first, second⟩ := except_bind_ok ok
-          rw [storeBytes_next second, storeBytes_next first]
+        · obtain ⟨w1, s1, r1⟩ := except_bind_ok ok
+          obtain ⟨l1, -, r2⟩ := except_bind_ok r1
+          obtain ⟨w2, s2, r3⟩ := except_bind_ok r2
+          obtain ⟨l2, -, s3⟩ := except_bind_ok r3
+          rw [storeBytes_next s3, storeBytes_next s2, storeBytes_next s1]
       · simp at ok
     · split at ok
       · simp at ok
@@ -229,7 +237,8 @@ theorem writeNativeValue_next : ∀ (fuel : Nat) {P : Core.Program} {st : State}
             split at step
             · split at step
               · split at step
-                · rw [writeNativeValue_next fuel step, hb]
+                · obtain ⟨l, -, w⟩ := except_bind_ok step
+                  rw [writeNativeValue_next fuel w, hb]
                 · simp at step
               · simp at step
             · simp at step
@@ -248,7 +257,8 @@ theorem writeNativeValue_next : ∀ (fuel : Nat) {P : Core.Program} {st : State}
               split at step
               · split at step
                 · split at step
-                  · rw [writeNativeValue_next fuel step, hb]
+                  · obtain ⟨l, -, w⟩ := except_bind_ok step
+                    rw [writeNativeValue_next fuel w, hb]
                   · simp at step
                 · simp at step
               · simp at step

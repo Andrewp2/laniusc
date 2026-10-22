@@ -32,7 +32,7 @@ def all (family : ι → Rep) : Rep where
     (effect.restrict ⟨fun _ h => ⟨i, h⟩, fun _ h => ⟨i, h⟩, fun _ h => ⟨i, h⟩⟩) (valid i)
 
 def native (fuel : Nat) (program : Program) (type : Ty) (base : Address) (value : Value) (size : Nat) : Rep where
-  footprint := ⟨fun p => base ≤ p ∧ p < base + size, fun _ => False, fun _ => False⟩
+  footprint := ⟨fun p => base + 8 - size ≤ p ∧ p < base + 8 - size + size, fun _ => False, fun _ => False⟩
   holds heap := NativeSnapshot fuel program heap type base value size
   stable effect snapshot := effect.snapshot snapshot (fun _ lower upper => ⟨lower, upper⟩)
 
@@ -75,7 +75,7 @@ end Rep
 theorem NativeSnapshot.scalarOfRead
     (inline : type = .scalar .bool ∨ type = .scalar (.signed .i32))
     (read : readNativeValue (fuel + 1) program heap type address = .ok value) :
-    NativeSnapshot (fuel + 1) program heap type address value 4 := by
+    NativeSnapshot (fuel + 1) program heap type address value 8 := by
   rcases inline with rfl | rfl <;> intro other within
   all_goals
     cases loaded : heap.loadBytes address 4 with
@@ -85,7 +85,7 @@ theorem NativeSnapshot.scalarOfRead
         dsimp only [Bind.bind, Except.bind, Pure.pure, Except.pure] at read
         cases read
     | ok bytes =>
-        have retained := within address 4 bytes (Nat.le_refl _) (Nat.le_refl _) loaded
+        have retained := within address 4 bytes (by omega) (by omega) loaded
         simpa only [readNativeValue, loadNatLE, loaded, retained] using read
 
 private theorem enumTagOfRead {id : TypeId}
@@ -120,10 +120,10 @@ theorem NativeSnapshot.enumEmptyOfRead {id : TypeId}
     (variant : enumeration.variants[ordinal]? = some [])
     (read : readNativeValue (fuel + 1) program heap (.enumeration id) address =
       .ok (.enumeration id ordinal [])) :
-    NativeSnapshot (fuel + 1) program heap (.enumeration id) address (.enumeration id ordinal []) 4 := by
+    NativeSnapshot (fuel + 1) program heap (.enumeration id) address (.enumeration id ordinal []) 8 := by
   obtain ⟨bytes, loaded, tag⟩ := enumTagOfRead declaration read
   intro other within
-  have retained := within address 4 bytes (Nat.le_refl _) (Nat.le_refl _) loaded
+  have retained := within address 4 bytes (by omega) (by omega) loaded
   rw [readNativeValue, declaration]
   simp only [loadNatLE, retained]
   dsimp only [Bind.bind, Except.bind, Pure.pure, Except.pure]
@@ -131,23 +131,24 @@ theorem NativeSnapshot.enumEmptyOfRead {id : TypeId}
   rfl
 
 /-- Only a single inline bool/i32 payload is admitted by this confinement
-    rule. Its eight-byte payload offset follows the existing native reader. -/
+    rule. Its payload word is the one below the tag, as the native reader has it. -/
 theorem NativeSnapshot.enumSingleOfRead {id : TypeId}
     (declaration : program.enumeration? id = some enumeration)
     (variant : enumeration.variants[ordinal]? = some [type])
     (inline : type = .scalar .bool ∨ type = .scalar (.signed .i32))
+    (above : 8 ≤ address)
     (read : readNativeValue (fuel + 2) program heap (.enumeration id) address =
       .ok (.enumeration id ordinal [value])) :
     NativeSnapshot (fuel + 2) program heap (.enumeration id) address
-      (.enumeration id ordinal [value]) 12 := by
+      (.enumeration id ordinal [value]) 16 := by
   obtain ⟨bytes, loaded, tag⟩ := enumTagOfRead declaration read
-  have payload : readNativeValue (fuel + 1) program heap type (address + 8) = .ok value := by
+  have payload : readNativeValue (fuel + 1) program heap type (address - 8) = .ok value := by
     rw [readNativeValue, declaration] at read
     simp only [loadNatLE, loaded] at read
     dsimp only [Bind.bind, Except.bind, Pure.pure, Except.pure] at read
     rw [tag, variant] at read
-    simp [NativeLayout.wordBytes, List.range_succ] at read
-    cases parsed : readNativeValue (fuel + 1) program heap type (address + 8) with
+    simp [NativeLayout.wordBytes, List.range_succ, wordBelow, above] at read
+    cases parsed : readNativeValue (fuel + 1) program heap type (address - 8) with
     | error reason =>
         have impossible : (Except.error reason : Except Trap Value) =
             .ok (Value.enumeration id ordinal [value]) := by
@@ -158,13 +159,13 @@ theorem NativeSnapshot.enumSingleOfRead {id : TypeId}
         simpa only [same] using parsed
   have snapshot := NativeSnapshot.scalarOfRead inline payload
   intro other within
-  have retained := within address 4 bytes (Nat.le_refl _) (by omega) loaded
+  have retained := within address 4 bytes (by omega) (by omega) loaded
   have payload := snapshot other (within.narrow (by omega) (by omega))
   rw [readNativeValue, declaration]
   simp only [loadNatLE, retained]
   dsimp only [Bind.bind, Except.bind, Pure.pure, Except.pure]
   rw [tag, variant]
-  simp [NativeLayout.wordBytes, List.range_succ]
+  simp [NativeLayout.wordBytes, List.range_succ, wordBelow, above]
   simp only [payload, Functor.map, Except.map]
 
 #print axioms Rep.frame
