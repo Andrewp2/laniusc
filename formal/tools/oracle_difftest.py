@@ -37,7 +37,13 @@ enums with an effectful index and value (for structs and enums often another
 slice's element, to[i] = from[j]); often the value calls a function that
 writes s at the same literal index, which the store, after the value in
 Core's order, overwrites. Also x.f = value for a scalar field of a struct
-local with an effectful value. Later
+local with an effectful value. Some later functions return unit (no
+`-> T`; mostly ones that write a slice they are passed), are called as
+statements, may end without a return and return early with `return;` inside
+if and while; `assert` conditions always hold ((c || true), (c || !c) on a
+pure c, (e & 255) >= 0, (e % 7) < 7), because the verified compiler's image
+does not trap on a false assert (its theorem is about runs that return)
+while laniusc's does. Later
 functions take struct, enum and slice parameters and return structs and
 enums; one with a slice parameter writes into the caller's slice, the right
 side of `&&` and `||` often calls one, and the entry's result folds in every
@@ -97,7 +103,7 @@ def i32(x):
 #             ('letIndex', id, element, slice, k, body) ('setIndex', slice, k, e)
 #             ('letEval', id, ty, x, body) ('setEval', id, x) ('ifEval', x, a, b) ('whileEval', x, body)
 #             ('returnEval', x) ('discard', x) ('setIndexEval', slice, x, y) ('setFieldEval', id, j, x),
-#             with x, y effectful expressions
+#             ('assert', x) ('returnUnit',), with x, y effectful expressions; a function's ret may be 'unit'
 
 SCALARS = ['i32', 'bool'] + list(UINT_BITS)
 LETS = ('let', 'call', 'letStruct', 'letEnum', 'letMatch', 'letAlloc', 'letSlice', 'letIndex', 'letEval')
@@ -465,9 +471,10 @@ class Gen:
                      if depth > 0 else ['let', 'set', 'struct', 'setField', 'index', 'store'])
             if EFFECTS:
                 kinds += (['letEval', 'letEval', 'setEval', 'ifEval', 'whileEval', 'discard', 'setIndexEval', 'setIndexEval',
-                           'setFieldEval', 'setFieldEval']
+                           'setFieldEval', 'setFieldEval', 'assert']
                           if depth > 0 else ['letEval', 'setEval', 'discard', 'setIndexEval', 'setIndexEval',
-                                             'setFieldEval'])
+                                             'setFieldEval', 'assert'])
+                kinds += ['discard', 'discard'] + (['earlyReturn', 'earlyReturn'] if ret == 'unit' else [])
             kind = rng.choice(kinds)
             slices = [(i, t) for i, t in env if t[0] == 'slice']
             if kind == 'let':
@@ -535,7 +542,7 @@ class Gen:
                 view, (_, element, n) = rng.choice(slices)
                 self.store(env, items, view, element, rng.randrange(n))
             elif kind == 'call':
-                later = self.callees(None, env)
+                later = [k for k in self.callees(None, env) if self.sigs[k][1] != 'unit']
                 if not later:
                     continue
                 callee = rng.choice(later)
@@ -595,8 +602,15 @@ class Gen:
                 items.append(('whileEval', cond, seq([body, step])))
             elif kind == 'discard':
                 later = self.callees(None, env)
+                units = [k for k in later if self.sigs[k][1] == 'unit']
                 if later:
-                    items.append(('discard', self.eff_call(rng.choice(later), 3, env, items)))
+                    callee = rng.choice(units if units and rng.random() < 0.6 else later)
+                    items.append(('discard', self.eff_call(callee, 3, env, items)))
+            elif kind == 'assert':
+                items.append(('assert', self.true_cond(env, items)))
+            elif kind == 'earlyReturn':
+                # if c { return; } in a unit function, the rest of the body skipped when c holds.
+                items.append(('ifEval', self.eff('bool', 3, env, items), ('returnUnit',), ('nop',)))
             elif kind == 'setFieldEval':
                 fields = [(i, j, f) for i, t in env if isinstance(t, tuple) and t[0] == 'struct'
                           for j, f in enumerate(TYPES.structs[t[1]])]
@@ -608,7 +622,9 @@ class Gen:
                 if views:
                     view, element, n = rng.choice(views)
                     items.append(self.set_index_eval(view, element, n, env, items))
-        if must_return and not returned:
+        if must_return and not returned and ret == 'unit':
+            items.append(('returnUnit',))
+        elif must_return and not returned:
             if is_object(ret) or (EFFECTS and rng.random() < 0.5):
                 value = self.eff(ret, 3, env, items)
                 if EFFECTS and depth == 3 and self.index == 0:
@@ -620,6 +636,28 @@ class Gen:
                     value = ('op', 'bitXor', '^', value, self.digest(env, items))
                 items.append(('return', value))
         return nest(items)
+
+    def true_cond(self, env, items):
+        """A bool that holds whatever its calls do, for assert: the verified
+        compiler's image does not trap on a false assert (the theorem is about
+        runs that return) while laniusc's does, so a false one cannot be
+        compared."""
+        rng = self.rng
+        pick = rng.random()
+        if pick < 0.3:
+            c = self.called_bool(2, env, items) or self.eff('bool', 2, env, items)
+            return ('eApply', 'logicalOr', '||', c, ('ePure', ('bool', True)))
+        if pick < 0.5:
+            c = ('ePure', self.expr('bool', 2, env))
+            return ('eApply', 'logicalOr', '||', c, ('eNot', c))
+        if pick < 0.75:
+            # (e & 255) >= 0 or <= 255
+            masked = ('eApply', 'bitAnd', '&', self.eff('i32', 3, env, items), ('ePure', ('int', 255)))
+            name, sym, bound = rng.choice([('greaterEq', '>=', 0), ('lessEq', '<=', 255)])
+            return ('eApply', name, sym, masked, ('ePure', ('int', bound)))
+        # (e % 7) < 7 on usize
+        seven = ('ePure', ('uint', 'usize', 7))
+        return ('eApply', 'less', '<', ('eDivide', 'remainder', '%', self.eff('usize', 3, env, items), seven), seven)
 
     def digest(self, env, items):
         """An i32 of the elements of the entry's slices, so that what its
@@ -673,7 +711,7 @@ def returns(s):
         return returns(s[1]) or returns(s[2])
     if kind in ('if', 'ifEval'):
         return returns(s[2]) and returns(s[3])
-    return kind in ('return', 'returnEval')
+    return kind in ('return', 'returnEval', 'returnUnit')
 
 
 def seq(stmts):
@@ -720,7 +758,10 @@ def gen_program(rng):
                 params.insert(rng.randint(1, len(params)), rng.choice(objects))
             if objects and rng.random() < 0.3:
                 ret = rng.choice(objects)
-            if rng.random() < 0.35:
+            if rng.random() < 0.25:
+                ret = 'unit'
+            if rng.random() < (0.6 if ret == 'unit' else 0.35):
+                # Unit functions mostly work through a slice they are passed.
                 element = shared if rng.random() < 0.75 else rng.choice(slice_elements())
                 params.insert(rng.randint(1, len(params)), ('slice', element, rng.randint(1, 3)))
         sigs.append((params, ret))
@@ -728,7 +769,12 @@ def gen_program(rng):
     for k, (params, ret) in enumerate(sigs):
         g = Gen(rng, sigs, k)
         env = [(j, t) for j, t in enumerate(params)]
-        body = g.block(3, env, ret, True, [])
+        # A unit function may end without a return.
+        body = g.block(3, env, ret, ret != 'unit' or rng.random() < 0.5, [])
+        if body == ('nop',):
+            # laniusc fails (LNC0057, "compiler execution failed") on a call to a
+            # unit function with an empty body, so such a body says return;.
+            body = ('returnUnit',)
         funcs.append((params, ret, body))
     return Program(funcs, structs, enums)
 
@@ -909,6 +955,11 @@ def run_stmt(s, env, funcs):
         raise Returned(ev_eff(s[1], env, funcs))
     elif kind == 'discard':
         ev_eff(s[1], env, funcs)
+    elif kind == 'assert':
+        if not ev_eff(s[1], env, funcs):
+            raise SystemExit('a generated assert fails')
+    elif kind == 'returnUnit':
+        raise Returned(None)
     elif kind == 'setFieldEval':
         # A callee cannot reach the caller's locals, so the value cannot move the struct.
         value = ev_eff(s[3], env, funcs)
@@ -968,6 +1019,8 @@ def call(funcs, index, args):
         run_stmt(body, env, funcs)
     except Returned as r:
         return r.value
+    if ret == 'unit':
+        return None
     raise SystemExit('a generated function fell off its end')
 
 
@@ -1064,6 +1117,10 @@ def lean_stmt(s):
         return f'(.setIndexEval {s[1]} {lean_eff(s[2])} {lean_eff(s[3])})'
     if kind == 'setFieldEval':
         return f'(.setFieldEval {s[1]} {s[2]} {lean_eff(s[3])})'
+    if kind == 'assert':
+        return f'(.assert {lean_eff(s[1])})'
+    if kind == 'returnUnit':
+        return '.returnUnit'
     if kind == 'let':
         return f'(.let {s[1]} {lean_ty(s[2])} {lean_expr(s[3])} {lean_stmt(s[4])})'
     if kind == 'call':
@@ -1232,6 +1289,10 @@ def lani_stmt(s, prefix, indent):
         return [f'{pad}v{s[1]}[{lani_eff(s[2], prefix)}] = {lani_eff(s[3], prefix)};']
     if kind == 'setFieldEval':
         return [f'{pad}v{s[1]}.f{s[2]} = {lani_eff(s[3], prefix)};']
+    if kind == 'assert':
+        return [f'{pad}assert({lani_eff(s[1], prefix)});']
+    if kind == 'returnUnit':
+        return [f'{pad}return;']
     if kind == 'let':
         return [f'{pad}let v{s[1]}: {lani_ty(s[2])} = {lani_expr(s[3])};'] + lani_stmt(s[4], prefix, indent)
     if kind == 'call':
@@ -1317,7 +1378,8 @@ def lani_file(programs, calls):
         out += lani_decls()
         for j, (params, ret, body) in enumerate(funcs):
             ps = ', '.join(f'v{i}: {lani_ty(t)}' for i, t in enumerate(params))
-            out.append(f'fn p{k}_f{j}({ps}) -> {lani_ty(ret)} {{')
+            arrow = '' if ret == 'unit' else f' -> {lani_ty(ret)}'
+            out.append(f'fn p{k}_f{j}({ps}){arrow} {{')
             out += lani_stmt(body, f'p{k}_', 1)
             out.append('}\n')
     out.append('fn main() -> i32 {')
