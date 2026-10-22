@@ -2350,6 +2350,7 @@ inductive MStmt where
   | mReturnEval : MEff → MStmt
   | mDiscard : MEff → MStmt
   | mSetIndexEval : Nat → MEff → MEff → MStmt
+  | mSetFieldEval : Nat → Nat → MEff → MStmt
   deriving Repr
 
 /-- A call: the function instance and the arguments. -/
@@ -3467,11 +3468,6 @@ def setFieldValue (id : Nat) (j : Nat) (value : Option SrcExpr) : Option MStmt :
   | none => none
   | some v => some (MStmt.mSetField id j v)
 
-def fieldInto (index : Option Nat) (id : Nat) (value : Option SrcExpr) : Option MStmt :=
-  match index with
-  | none => none
-  | some j => setFieldValue id j value
-
 def setValue (id : Nat) (value : Option SrcExpr) : Option MStmt :=
   match value with
   | none => none
@@ -3530,6 +3526,26 @@ def setIndexOrEval (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (in
   | some s => some s
   | none => setIndexEvalOf l.id (effOf fuel env scope none index) (effOf fuel env scope (sliceElem l.ty) value)
 
+def fieldEvalStmt (id : Nat) (j : Nat) (x : Option MEff) : Option MStmt :=
+  match x with
+  | none => none
+  | some e => some (MStmt.mSetFieldEval id j e)
+
+/-- Field j's type in a struct type. -/
+def fieldTyAt (fuel : Nat) (decls : Decls) (t : Ty) (j : Nat) : Option Ty :=
+  match structFieldTys fuel decls t with
+  | none => none
+  | some ts => ts[j]?
+
+/-- `x.f = value;`: value pure, or else effectful (stored at the field's type). -/
+def setFieldOrEval (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (name : List Nat) (value : CTree) : Option MStmt :=
+  match fieldIndex env l.ty name with
+  | none => none
+  | some j =>
+    match exprOf fuel env scope value with
+    | some v => some (MStmt.mSetField l.id j v)
+    | none => fieldEvalStmt l.id j (effOf fuel env scope (fieldTyAt fuel env.decls l.ty j) value)
+
 def assignTarget (fuel : Nat) (env : Env) (scope : List Local) (target : CTree) (value : CTree) : Option MStmt :=
   let tail : CTree := kid target 1
   if nodeProd tail = (164) then
@@ -3540,7 +3556,7 @@ def assignTarget (fuel : Nat) (env : Env) (scope : List Local) (target : CTree) 
     if decide (nodeProd tail = (163)) && decide (nodeProd (kid tail 2) = (297)) && decide (nodeProd (kid tail 3) = (164)) then
       match localOf env scope (kid target 0) with
       | none => none
-      | some l => fieldInto (fieldIndex env l.ty (kidToken tail 1).text) l.id (exprOf fuel env scope value)
+      | some l => setFieldOrEval fuel env scope l (kidToken tail 1).text value
     else
       if decide (nodeProd tail = (162)) && decide (nodeProd (kid tail 3) = (164)) then
         match localOf env scope (kid target 0) with
@@ -3652,14 +3668,26 @@ def compoundEff (p : Nat) (left : MEff) (right : Option MEff) : Option MEff :=
       | none => none
       | some o => xApplyOf o (some left) right
 
-/-- `x op= e` for a local x, when e or op is effectful. -/
+/-- `x.f op= e`, when e or op is effectful. -/
+def compoundFieldEval (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (index : Option Nat) (p : Nat) (value : CTree) : Option MStmt :=
+  match index with
+  | none => none
+  | some j => fieldEvalStmt l.id j (compoundEff p (MEff.xPure (SrcExpr.field l.id j)) (effOf fuel env scope (fieldTyAt fuel env.decls l.ty j) value))
+
+/-- `x op= e` or `x.f op= e`, when e or op is effectful. -/
 def compoundEval (fuel : Nat) (env : Env) (scope : List Local) (target : CTree) (p : Nat) (value : CTree) : Option MStmt :=
   if nodeProd (kid target 1) = (164) then
     match localOf env scope (kid target 0) with
     | none => none
     | some l => setEvalOf l.id (compoundEff p (MEff.xPure (SrcExpr.local l.id)) (effOf fuel env scope (some l.ty) value))
   else
-    none
+    let tail : CTree := kid target 1
+    if decide (nodeProd tail = (163)) && decide (nodeProd (kid tail 2) = (297)) && decide (nodeProd (kid tail 3) = (164)) then
+      match localOf env scope (kid target 0) with
+      | none => none
+      | some l => compoundFieldEval fuel env scope l (fieldIndex env l.ty (kidToken tail 1).text) p value
+    else
+      none
 
 def compoundOf (fuel : Nat) (env : Env) (scope : List Local) (target : Option CTree) (p : Nat) (value : CTree) : Option MStmt :=
   match target with
@@ -3905,6 +3933,7 @@ def stmtCalls (m : MStmt) : List Inst :=
   | .mReturnEval x => effCalls x
   | .mDiscard x => effCalls x
   | .mSetIndexEval s i v => effCalls i ++ effCalls v
+  | .mSetFieldEval id j x => effCalls x
 
 /-- The function instances, numbered in the order they are first requested, and their bodies. -/
 structure Mono where
@@ -3954,6 +3983,7 @@ def stmtTys (m : MStmt) : List Ty :=
   | .mReturnEval x => effNamedTys x
   | .mDiscard x => effNamedTys x
   | .mSetIndexEval s i v => effNamedTys i ++ effNamedTys v
+  | .mSetFieldEval id j x => effNamedTys x
 
 def paramTys (ps : List MParam) : List Ty :=
   match ps with
@@ -4257,6 +4287,11 @@ def setIndexEvalClosed (s : Nat) (i : Option SrcEff) (v : Option SrcEff) : Optio
     | none => none
     | some y => some (SrcStmt.setIndexEval s x y)
 
+def setFieldEvalClosed (id : Nat) (j : Nat) (x : Option SrcEff) : Option SrcStmt :=
+  match x with
+  | none => none
+  | some e => some (SrcStmt.setFieldEval id j e)
+
 /-- The source statement: types become source types and a call names its instance's position in the function table. -/
 def closeStmt (fuel : Nat) (t : Tables) (m : MStmt) : Option SrcStmt :=
   match m with
@@ -4285,6 +4320,7 @@ def closeStmt (fuel : Nat) (t : Tables) (m : MStmt) : Option SrcStmt :=
   | .mReturnEval x => returnEvalClosed (closeEff fuel t x)
   | .mDiscard x => discardClosed (closeEff fuel t x)
   | .mSetIndexEval s i v => setIndexEvalClosed s (closeEff fuel t i) (closeEff fuel t v)
+  | .mSetFieldEval id j x => setFieldEvalClosed id j (closeEff fuel t x)
 
 def consSrcParam (id : Nat) (ty : Option SrcType) (rest : Option (List SrcParam)) : Option (List SrcParam) :=
   match ty with

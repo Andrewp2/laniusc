@@ -653,7 +653,7 @@ program's own first; `sourceProgram` is the one-file case.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Frontend` | 4468 | 15 | extracted from `formal/lani/mini/frontend.lani`: the grammar table, `validate_tree`, `build`, the monomorphizer |
+| `Frontend` | 4504 | 15 | extracted from `formal/lani/mini/frontend.lani`: the grammar table, `validate_tree`, `build`, the monomorphizer |
 | `FrontLex` | 59 | 0.6 | tokens from the Lean lexer; `sourceProgram`, `sourceProgramFiles` |
 | `FrontSpec` | 354 | 0.9 | `CTree.leaves`, `CTree.preorder`, `Shape`, `Derives`, `Reads`; `validate_sound`, `sourceProgram_sound`, `sourceProgramFiles_sound` |
 
@@ -673,7 +673,7 @@ laniusc's lexer and parser are not trusted. The trusted parts are the Lean
 lexer, the grammar table, the grammar's unambiguity (not proved) and `build`
 as the meaning of the concrete syntax. TRUSTED_BASE.md section 4 lists them.
 
-`frontend.lani` is about 5,740 hand-written lines, followed by the generated
+`frontend.lani` is about 5,790 hand-written lines, followed by the generated
 grammar table: 318 productions, with terminals as lexer token codes. Two
 tools regenerate it:
 
@@ -778,7 +778,7 @@ disagreements, 48 of 48 mutants rejected; 12 of 12 hand-written cases pass.
 Effectful expressions. An expression that calls a function, indexes a
 slice, divides (`/`, `%`), or is a struct literal, a variant or a `match` is
 read as a `SrcEff`, and its statement takes the effectful form: `LetEval`,
-`SetEval`, `IfEval`, `WhileEval`, `ReturnEval`, `SetIndexEval`, or
+`SetEval`, `SetFieldEval`, `IfEval`, `WhileEval`, `ReturnEval`, `SetIndexEval`, or
 `Discard` for a call statement `f(x);`. Two things keep the old forms, so
 programs read before still read the same:
 - an expression with none of these inside is pure (`EPure`), and so are
@@ -800,8 +800,9 @@ Type arguments inside expressions:
 
 `x op= e` with `e` effectful, and `x /= e` and `x %= e`, are `SetEval(x,
 x op e)`. Reading the local `x` has no effect, so evaluating it before `e`
-gives what Core's own compound form gives. A field assignment `x.f = e`
-needs `e` pure, since `SrcStmt` has no effectful form of it.
+gives what Core's own compound form gives. Likewise `x.f = e` with `e`
+effectful is `SetFieldEval(x, f, e)`, and `x.f op= e` (effectful `e`, or
+`/=`, `%=`) is `SetFieldEval(x, f, x.f op e)`.
 
 The difftest generates these with `oracle_difftest.py`'s `EFFECTS` (on except
 with `--generic`): calls nested in operators, casts, `/` and `%`, struct and
@@ -813,8 +814,8 @@ same way: pure parts collapse, and a statement with a pure form keeps it.
 Some `x = x op e` with `e` effectful are printed `x op= e`. The case
 `effects` has generic calls inferred through effectful arguments, a variant
 typed by a parameter and by the result type, methods inside expressions,
-`/=` and `%=`, and an effectful slice store. `reject_effectful_field` must be
-rejected.
+`/=` and `%=`, and an effectful slice store. `effectful_field` has effectful
+field assignments, plain and compound, on a generic struct.
 
 2026-10-21, with effectful expressions: 400 programs (seeds 1 and 2), 572,000
 tokens and 5.0 million tree nodes, with 1,262 effectful statements (316
@@ -825,6 +826,14 @@ lexer disagreements, 48 of 48 mutants rejected. `--generic` (seeds 1 and 2)
 and the programs without effects read as before, and 14 of 14 hand-written
 cases pass.
 
+2026-10-22, with the oracle's effectful slice stores (`s[i] = v` on slices of
+`i32`, word structs and word enums, `to[i] = from[j]`) and `SetFieldEval`:
+seeds 11 and 12, 400 programs, 571,000 tokens and 5.0 million tree nodes,
+191 `SetIndexEval` and 645 slice reads in expressions, all read as expected,
+48 of 48 mutants rejected; `--generic` seed 11 as before; 14 of 14 cases
+(`effectful_field` reads 5 `SetFieldEval`s). The generator does not make
+`SetFieldEval` yet.
+
 What it does not read yet:
 - unit functions (`core::panic::panic()`), shifts, `&self`, `isize` and
   `size_of<T>()`, which have no `SrcProgram` form;
@@ -832,9 +841,8 @@ What it does not read yet:
 - integer literals of 2^31 and above (so `const MIN: i32 = -2147483648;`);
 - methods of generic impls called as `T::m` where `T` is not a type
   parameter (`Vec::new()`), and trait-generic code that relies on bounds;
-- an effectful value in a field assignment (`x.f = f(y);`), a field of a
-  call's result (`f(x).a`), indexing a slice that is not a local, and
-  method calls on a receiver that is not a local.
+- a field of a call's result (`f(x).a`), indexing a slice that is not a
+  local, and method calls on a receiver that is not a local.
 
 ### Milestone 4: the compiler in Lanius, and extraction
 
