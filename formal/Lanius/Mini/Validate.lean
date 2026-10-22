@@ -288,6 +288,9 @@ theorem BinOp.number_inj {a b : BinOp} (same : a.number = b.number) : a = b := b
 theorem CmpOp.number_inj {a b : CmpOp} (same : a.number = b.number) : a = b := by
   cases a <;> cases b <;> simp_all [CmpOp.number]
 
+theorem DivOp.number_inj {a b : DivOp} (same : a.number = b.number) : a = b := by
+  cases a <;> cases b <;> simp_all [DivOp.number]
+
 theorem MemWidth.bytes_inj {a b : MemWidth} (same : a.bytes = b.bytes) : a = b := by
   cases a <;> cases b <;> simp_all [MemWidth.bytes]
 
@@ -420,6 +423,16 @@ theorem storeWordAgrees_cases {width : MemWidth} {address value : Expr} {other :
   obtain ⟨⟨w, a⟩, v⟩ := h
   cases MemWidth.bytes_inj w
   exact ⟨_, _, rfl, a, v⟩
+
+theorem divideAgrees_cases {word : Word} {operation : DivOp} {target : Nat} {left right : Expr} {other : Stmt}
+    (h : divideAgrees word operation target left right other = true) :
+    ∃ left' right', other = .divide word operation target left' right' ∧ left.agrees left' = true ∧
+      right.agrees right' = true := by
+  cases other <;> simp only [divideAgrees, Bool.false_eq_true, Bool.and_eq_true, decide_eq_true_eq] at h
+  obtain ⟨⟨⟨⟨w, o⟩, rfl⟩, l⟩, r⟩ := h
+  cases Word.number_inj w
+  cases DivOp.number_inj o
+  exact ⟨_, _, rfl, l, r⟩
 
 theorem seqAgrees_cases {first second other : Stmt} (h : (Stmt.seq first second).agrees other = true) :
     (first.agrees .skip = true ∧ second.agrees other = true) ∨
@@ -606,6 +619,13 @@ theorem Exec.agrees {p q : Program} (ok : funcsAgree p.funcs q.funcs = true) {de
     rw [← a] at below
     rw [← a, ← v]
     exact .storeWord below
+  | @divide depth env heap word operation target left right defined =>
+    intro s' h
+    obtain ⟨left', right', rfl, sameLeft, sameRight⟩ := divideAgrees_cases h
+    have l := Expr.agrees_eval _ _ sameLeft env
+    have r := Expr.agrees_eval _ _ sameRight env
+    rw [← l, ← r] at defined ⊢
+    exact .divide defined
 
 /-- The validator's guarantee: a call that returns in the original program
 returns the same values and heap in the optimized one, at the same depth. -/

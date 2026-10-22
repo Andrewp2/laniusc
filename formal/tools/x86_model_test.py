@@ -16,13 +16,16 @@ instruction twice:
              generated file `<out>/ModelTest.lean` that reads the same states.
 
 `Step` is a relation; its only freedom is in flags (AF after AND/OR/XOR/TEST,
-every flag after IMUL/NEG/shifts) and `decode` may be applied to any byte list
+every flag after IMUL/NEG/shifts/DIV) and `decode` may be applied to any byte list
 loaded at rip. `decode` + `execute` is the computable form: `Step.decoded`
 says `after = execute instruction size before` for every non-division
 instruction, and the other constructors only widen the flags. So the comparison
 is exact on the sixteen registers, rip and the 256-byte memory region every
 access targets, and on the flag bits the relation fixes (CF PF AF ZF SF OF and
-DF, minus AF for the logical forms, none for IMUL/NEG). The Lean side also
+DF, minus AF for the logical forms, none for IMUL/NEG/DIV). Division cases
+are ones that succeed on the CPU (a nonzero divisor, a quotient that fits),
+where `Step.divided` fixes the quotient and remainder that `execute` writes.
+The Lean side also
 checks that `decode` returns exactly the instruction's length, that every
 shorter prefix decodes to nothing, and that trailing bytes do not change the
 result, which is what makes `Step` deterministic on these bytes.
@@ -55,7 +58,7 @@ DF = 0x400
 ALL_DEFINED = STATUS | DF
 REG_NAMES = ['rax', 'rcx', 'rdx', 'rbx', 'rsp', 'rbp', 'rsi', 'rdi',
              'r8', 'r9', 'r10', 'r11', 'r12', 'r13', 'r14', 'r15']
-RAX, RCX, RSP, RBP, R11, R12, R13, R14 = 0, 1, 4, 5, 11, 12, 13, 14
+RAX, RCX, RDX, RSP, RBP, R11, R12, R13, R14 = 0, 1, 2, 4, 5, 11, 12, 13, 14
 
 REGION = 256            # memory every access targets, compared byte for byte
 REGION_OFFSET = 0x800   # inside the data page
@@ -84,9 +87,9 @@ SETCC = {0x92: 'setb', 0x93: 'setae', 0x94: 'sete', 0x95: 'setne', 0x96: 'setbe'
          0x97: 'seta', 0x9C: 'setl', 0x9D: 'setge', 0x9E: 'setle', 0x9F: 'setg'}
 
 
-def form(name, prefix, field=None, kind='plain', mask=ALL_DEFINED, base=None, width=0):
+def form(name, prefix, field=None, kind='plain', mask=ALL_DEFINED, base=None, width=0, signed=False):
     return dict(name=name, prefix=bytes(prefix), field=field, kind=kind, mask=mask,
-                base=base, width=width)
+                base=base, width=width, signed=signed)
 
 
 def compiler_forms():
@@ -133,6 +136,17 @@ def compiler_forms():
         form('cmp rax, rcx', [0x48, 0x39, 0xC8]),
         form('cmp r11, r14', [0x4D, 0x39, 0xF3]),
         form('test rax, rax', [0x48, 0x85, 0xC0], mask=ALL_DEFINED & ~AF),
+        form('mov r11, rdx', [0x49, 0x89, 0xD3]),
+        form('mov rdx, r11', [0x4C, 0x89, 0xDA]),
+        form('mov rax, rdx', [0x48, 0x89, 0xD0]),
+        form('xor edx, edx', [0x31, 0xD2], mask=ALL_DEFINED & ~AF),
+        form('cdq', [0x99]),
+        form('cqo', [0x48, 0x99]),
+        # DIV and IDIV leave every status flag undefined.
+        form('idiv ecx', [0xF7, 0xF9], kind='div', mask=0, width=4, signed=True),
+        form('div ecx', [0xF7, 0xF1], kind='div', mask=0, width=4),
+        form('idiv rcx', [0x48, 0xF7, 0xF9], kind='div', mask=0, width=8, signed=True),
+        form('div rcx', [0x48, 0xF7, 0xF1], kind='div', mask=0, width=8),
     ]
     for opcode, name in sorted(SETCC.items()):
         f.append(form(f'{name} al', [0x0F, opcode, 0xC0]))
@@ -360,6 +374,25 @@ def make_case(rng, fm, native, ident):
         layout.append((target, 1, None))
         at = regs[RSP] - region
         mem[at:at + 8] = le(native.cbase + target, 8)
+    if fm['kind'] == 'div':
+        # A division that succeeds: a nonzero divisor, and a quotient that fits,
+        # as the compiled code sets up rdx (the sign of rax, or zero) or with any
+        # high half below the divisor for an unsigned one.
+        bits = 8 * fm['width']
+        mask = (1 << bits) - 1
+        while regs[RCX] & mask == 0:
+            regs[RCX] = rand64(rng)
+        divisor = regs[RCX] & mask
+        high_bits = regs[RDX] & ~mask & M64           # ignored by a 32-bit divide
+        if fm['signed']:
+            if regs[RAX] & mask == 1 << (bits - 1) and divisor == mask:
+                regs[RAX] ^= 1                           # the least value by -1 overflows
+            sign = mask if regs[RAX] >> (bits - 1) & 1 else 0
+            regs[RDX] = high_bits | sign
+        elif rng.random() < 0.5:
+            regs[RDX] = high_bits
+        else:
+            regs[RDX] = high_bits | rng.randrange(divisor)
     # alignment probes: unaligned stack and slot addresses happen naturally
 
     data = fm['prefix'] + (le(value, FIELD_LEN[field]) if field else b'')
@@ -447,6 +480,8 @@ def encodings : List (String × List UInt8) :=
   let cmpops := [CmpOp.eq, CmpOp.ne, CmpOp.lt, CmpOp.le, CmpOp.gt, CmpOp.ge]
   let ops := words.flatMap fun w => binops.map fun o => (s!"op {repr w} {repr o}", Instr.op w o 3)
   let cmps := words.flatMap fun w => cmpops.map fun o => (s!"cmp {repr w} {repr o}", Instr.cmp w o 1048575)
+  let divops := [DivOp.sDiv, DivOp.sRem, DivOp.uDiv, DivOp.uRem]
+  let divs := words.flatMap fun w => divops.map fun o => (s!"div {repr w} {repr o}", Instr.div w o 5)
   let rest : List (String × Instr) :=
     [("imm", .imm 0x123456789abcdef0), ("load", .load 0), ("load far", .load 1048575),
      ("store", .store 7), ("neg", .neg), ("jmp back", .jmp 0), ("jmp", .jmp 900),
@@ -455,7 +490,7 @@ def encodings : List (String × List UInt8) :=
      ("loadAt", .loadAt), ("storeAt", .storeAt 4),
      ("loadWordAt m32", .loadWordAt .m32), ("loadWordAt m64", .loadWordAt .m64),
      ("storeWordAt m32", .storeWordAt .m32 4), ("storeWordAt m64", .storeWordAt .m64 4)]
-  (ops ++ cmps ++ rest).map (fun (n, i) => (n, Instr.encode i place 100)) ++
+  (ops ++ cmps ++ divs ++ rest).map (fun (n, i) => (n, Instr.encode i place 100)) ++
     [("prologue", prologue 5), ("prologue big", prologue 1048576), ("epilogue", epilogue)]
 
 def main : IO Unit := do
@@ -594,8 +629,8 @@ def main():
                 bad.append('a shorter prefix decodes')
             if tailed != 'true':
                 bad.append('trailing bytes change the decoding')
-            if division != 'false':
-                bad.append('decoded as a division')
+            if division != ('true' if fm['kind'] == 'div' else 'false'):
+                bad.append('decoded as a division' if division == 'true' else 'not decoded as a division')
             for r in range(16):
                 if m_regs[r] != n_regs[r]:
                     bad.append(f'{REG_NAMES[r]}: model {m_regs[r]:#x} CPU {n_regs[r]:#x}')
@@ -647,7 +682,7 @@ def main():
             for b in bad:
                 print('  ' + b)
     print(f'{representative} cases where the CPU picked a different value than execute for a flag '
-          f'the Step relation leaves free (AF after AND/OR/XOR/TEST, all flags after IMUL/NEG)')
+          f'the Step relation leaves free (AF after AND/OR/XOR/TEST, all flags after IMUL/NEG/DIV)')
     print(f'{len(problems)} disagreeing cases')
     sys.exit(1 if problems or uncovered else 0)
 

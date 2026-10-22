@@ -110,6 +110,18 @@ that range is apart from the stack window. Its conclusion adds the final heap:
 cursor in r13, bytes at r12 + offset. Memory outside the stack and the heap is
 unchanged.
 
+The mini IR has integer division (roadmap step 10/11 item F4, back end,
+2026-10-21). It is a statement, `divide word op t left right`, so expressions
+stay total. `op` is one of `sDiv`, `sRem`, `uDiv`, `uRem`; the `Word` sets the
+width as for arithmetic (`S32` acts on the low halves and zero-extends, `U64`
+on all 64 bits). Signed division truncates and the remainder takes the
+dividend's sign, as in Core. A zero divisor, or a signed division of the
+least value by -1, has no run, like a trapping load. On x86 it is `mov rcx,
+rax; mov rax, [slot]; mov r11, rdx`, then `cdq`/`cqo` or `xor edx, edx`,
+`idiv`/`div` on ecx or rcx, `mov rax, rdx` for a remainder, and `mov rdx, r11`.
+The front pass can use `(S32, sDiv/sRem)` for `i32`, `(U64, uDiv/uRem)` for
+`usize` and `(U64, sDiv/sRem)` for `isize`; it does not yet.
+
 The proof has two layers.
 
 - Compiler logic: `compileStmt_correct` / `compileFunc_correct` prove the compiler
@@ -126,22 +138,23 @@ The proof has two layers.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Compiler` | 3044 | 3.3 | extracted: syntax, abstract instructions, compiler, encoder, linker, modules and objects (step 9), front pass, optimizer and validator |
-| `Semantics` | 190 | 0.8 | big-step source semantics with call depth |
-| `Asm` | 202 | 1.0 | abstract machine, byte-offset placement, `Star` runs |
-| `CompileCorrect` | 553 | 1.8 | compiler against the abstract machine |
-| `Fits` | 233 | 1.4 | static facts: slots in frame, targets in body, callees exist |
-| `Bytes` | 419 | 2.0 | extracted encoders equal the x86 encoders; image layout |
+| `Compiler` | 3136 | 3.6 | extracted: syntax, abstract instructions, compiler, encoder, linker, modules and objects (step 9), front pass, optimizer and validator |
+| `Semantics` | 220 | 0.7 | big-step source semantics with call depth |
+| `Asm` | 208 | 0.8 | abstract machine, byte-offset placement, `Star` runs |
+| `CompileCorrect` | 574 | 1.4 | compiler against the abstract machine |
+| `Fits` | 244 | 1.0 | static facts: slots in frame, targets in body, callees exist |
+| `Bytes` | 459 | 1.6 | extracted encoders equal the x86 encoders; image layout |
 | `Flags` | 135 | 1.4 | each comparison's condition code after `cmp` |
 | `Frame` | 128 | 1.2 | stack windows and address depths (`bv_omega`) |
 | `HeapSteps` | 262 | 1.9 | x86 runs of the bump allocator and the byte load and store |
 | `WordSteps` | 289 | 2.0 | x86 runs of the 32- and 64-bit word load and store; memory words as bytes |
-| `Simulation` | 1536 | 7.8 | x86 lemma per instruction, slot copies, the call macro, body simulation; each run with its `Det` |
+| `DivSteps` | 235 | 0.8 | x86 runs of a division: dividend extension, `div`/`idiv`, the result and rdx restored |
+| `Simulation` | 1624 | 6.8 | x86 lemma per instruction, slot copies, the call macro, body simulation; each run with its `Det` |
 | `Correct` | 325 | 2.1 | layout, prologue, function contract, top-level theorem |
 | `DecodeUnique` | 467 | 5.3 | `decode` reads only its instruction's bytes, so it is unique at a rip (step 14) |
 | `StepDet` | 377 | 2.1 | `Step` agrees on two states but for flags; `Det` runs (step 14) |
 | `DetSteps` | 177 | 1.0 | which emitted forms read or set flags; prologue and epilogue as `Det` runs (step 14) |
-| `Link` | 674 | 1.4 | separate compilation: linking separately compiled modules is `compileProgram` of their program (step 9) |
+| `Link` | 675 | 1.4 | separate compilation: linking separately compiled modules is `compileProgram` of their program (step 9) |
 
 Check times are `lake env lean` per file on the laptop, about 0.4 s of each is
 import loading. The compiler is about 400 lines of Lanius (plus a 63-line prelude
@@ -268,7 +281,7 @@ semantics:
 | `Grows` | 1044 | 4.0 | Core's `nextAddress` never decreases; Core call and statement inversions |
 | `HeapCorr` | 501 | 1.1 | Core heap to mini heap correspondence; allocate, load, store, free |
 | `SliceLayout` | 601 | 6.3 | Core's native layout of word structs and enums; their field reads and the mini element address |
-| `LowerStmt` | 3659 | 9.4 | Core cells, frames, flat values, calls, enums and `match`, statements |
+| `LowerStmt` | 3660 | 9.4 | Core cells, frames, flat values, calls, enums and `match`, statements |
 | `SourceCorrect` | 104 | 0.7 | top-level theorem |
 | `Determinism` | 122 | 1.1 | both top-level theorems for every run of the same length, through the optimizer (step 14) |
 | `TypeSound` | 1810 | 2.3 | type checker soundness: an accepted program is well typed in Core (step 7) |
@@ -460,7 +473,8 @@ of `compiler.lani`, before `compile_declared`, and both are extracted.
   `x ^ 0` and the commuted forms to `x` (for S32 only when `x` is narrow, that
   is zero-extended, since an S32 result is), and `x * 0`, `x & 0` to `0`; takes
   the branch of an `if` on a constant; drops `skip`, `x = x`, an `if` with two
-  empty branches and a `while` whose condition is 0.
+  empty branches and a `while` whose condition is 0. It leaves each division
+  in place (only its operands are optimized), so one that traps still traps.
 - **Validator** (`validate original optimized`, about 590 lines, most of them
   exhaustive matches on the other statement). A structural walk of both
   programs: same functions with the same params, results and locals, and
@@ -500,7 +514,7 @@ orders unsigned exactly as `low a` orders signed (`key_lt`, `key_le`). Axioms:
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Validate` | 660 | 1.2 | word arithmetic, constants and identities, expression and statement simulation, the pipeline theorem |
+| `Validate` | 680 | 1.3 | word arithmetic, constants and identities, expression and statement simulation, the pipeline theorem |
 
 The test:
 

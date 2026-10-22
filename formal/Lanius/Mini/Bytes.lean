@@ -1,6 +1,7 @@
 import Lanius.Mini.Asm
 import Lanius.X86.Machine.FrameSlots
 import Lanius.X86.Machine.ControlEncoding
+import Lanius.X86.Machine.DivisionEncoding
 
 /-! Assembly. The extracted `Instr.encode` (`Lanius.Mini.Compiler`) writes
 literal bytes; here each is proved equal to the existing encoders in
@@ -74,6 +75,35 @@ def cmpBytes (word : Word) (operation : CmpOp) (slot : Nat) : List UInt8 :=
   accToRcxBytes ++ slotLoadBytes slot ++ word.compareBytes ++
     setConditionBytes (operation.code word) 0 ++ zeroExtendByteBytes 0 0
 
+def rdxRegister : Register := 2
+
+def DivOp.signed : DivOp → Bool
+  | .sDiv | .sRem => true
+  | .uDiv | .uRem => false
+
+def DivOp.remainder : DivOp → Bool
+  | .sDiv | .uDiv => false
+  | .sRem | .uRem => true
+
+/-- The dividend's high half: `cdq` or `cqo` for a signed division, `xor edx, edx`
+for an unsigned one -/
+def dividendBytes (word : Word) : Bool → List UInt8
+  | true => signExtendDividendBytes word.width
+  | false => aluBytes .w32 .xor rdxRegister rdxRegister
+
+/-- `mov rax, rdx` for a remainder -/
+def resultBytes : Bool → List UInt8
+  | false => []
+  | true => moveBytes .w64 0 rdxRegister
+
+/-- The x86 encoding of `slot op rax` into rax: `mov rcx, rax; mov rax, [slot];
+mov r11, rdx; cdq, cqo or xor edx, edx; idiv or div ecx (rcx); mov rax, rdx
+for a remainder; mov rdx, r11`. rdx is not scratch, so r11 keeps it. -/
+def DivOp.spec (word : Word) (operation : DivOp) (slot : Nat) : List UInt8 :=
+  accToRcxBytes ++ slotLoadBytes slot ++ moveBytes .w64 r11Register rdxRegister ++
+    (dividendBytes word operation.signed ++ divisionBytes word.width operation.signed rcxRegister) ++
+    (resultBytes operation.remainder ++ moveBytes .w64 rdxRegister r11Register)
+
 /-- The two 32-bit halves of a 64-bit immediate. -/
 def lowHalf (value : BitVec 64) : BitVec 32 := value.setWidth 32
 def highHalf (value : BitVec 64) : BitVec 32 := (value >>> 32).setWidth 32
@@ -146,6 +176,7 @@ def Instr.bytes (i : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   | .storeAt slot => storeAtSpec slot
   | .loadWordAt width => loadWordSpec width
   | .storeWordAt width slot => storeWordSpec width slot
+  | .div word operation slot => operation.spec word slot
 
 /-! The extracted encoders are the x86 ones. -/
 
@@ -207,6 +238,10 @@ theorem BinOp.bytes_eq (operation : BinOp) (word : Word) (slot : Nat) :
     operation.bytes word slot = operation.spec word slot := by
   cases word <;> cases operation <;> rw [BinOp.bytes, slotOperands, slotLoad_eq] <;> rfl
 
+theorem DivOp.bytes_eq (operation : DivOp) (word : Word) (slot : Nat) :
+    operation.bytes word slot = operation.spec word slot := by
+  cases word <;> cases operation <;> rw [DivOp.bytes, slotOperands, slotLoad_eq] <;> rfl
+
 theorem slotCompare_eq (word : Word) (operation : CmpOp) (slot : Nat) :
     slotCompare word operation slot = cmpBytes word operation slot := by
   cases word <;> cases operation <;> rw [slotCompare, slotOperands, slotLoad_eq] <;> rfl
@@ -229,6 +264,7 @@ theorem Instr.encode_eq (i : Instr) (place : Place) (pc : Nat) : i.encode place 
   | loadWordAt width => cases width <;> rfl
   | storeWordAt width slot =>
     cases width <;> rw [Instr.encode, Instr.bytes, storeWordBytes, le32_i32Bytes _ _ (slotOffset_toNat slot)] <;> rfl
+  | div word operation slot => exact DivOp.bytes_eq operation word slot
 
 /-- A transfer by `relative source target` from `base + source` lands on `base + target`. -/
 theorem relative_eq (base : BitVec 64) (source target : Nat) (sourceSmall : source < 2 ^ 31)
@@ -311,6 +347,10 @@ theorem Instr.bytes_length (place : Place) (pc : Nat) (i : Instr) : (i.bytes pla
   | storeWordAt width slot =>
     rw [← Instr.encode_eq]; cases width <;> simp [Instr.encode, storeWordBytes, MemWidth.rex, le32, Instr.size,
       MemWidth.prefix]
+  | div word operation slot =>
+    cases word <;> cases operation <;>
+      simp only [Instr.bytes, DivOp.spec, List.length_append, slotLoadBytes_length, Instr.size, DivOp.size,
+        Word.prefix] <;> decide
 
 theorem Instr.encode_length (place : Place) (pc : Nat) (i : Instr) : (i.encode place pc).length = i.size := by
   rw [Instr.encode_eq, Instr.bytes_length]

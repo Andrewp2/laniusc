@@ -157,6 +157,12 @@ pub enum CmpOp { Eq, Ne, Lt, Le, Gt, Ge, }
 // comparisons are unsigned.
 pub enum Word { S32, U64, }
 
+// Division and remainder. The word sets the width: an S32 division divides
+// the low 32 bits and zero-extends its result, a U64 one divides all 64 bits.
+// A signed quotient is truncated toward zero, and a signed remainder has the
+// dividend's sign.
+pub enum DivOp { SDiv, SRem, UDiv, URem, }
+
 // A heap word access: 4 or 8 bytes, little-endian. A 4-byte load
 // zero-extends; a 4-byte store writes the low 4 bytes.
 pub enum MemWidth { M32, M64, }
@@ -217,6 +223,9 @@ pub enum Stmt {
     LoadWord(MemWidth, usize, Expr),
     // the word at address = the low bytes of value
     StoreWord(MemWidth, Expr, Expr),
+    // target = left op right; a zero divisor, or a signed division of the
+    // least value by -1, has no run
+    Divide(Word, DivOp, usize, Expr, Expr),
 }
 
 pub struct Func {
@@ -269,6 +278,8 @@ pub enum Instr {
     LoadWordAt(MemWidth),
     // mov [r12 + slot], eax, or rax for M64
     StoreWordAt(MemWidth, usize),
+    // rax := slot op rax
+    Div(Word, DivOp, usize),
 }
 
 impl BinOp {
@@ -295,6 +306,20 @@ impl Word {
     }
 }
 
+impl DivOp {
+    // A division is 18 bytes, the divide's REX.W prefix, and these: cdq or
+    // cqo (REX.W) for a signed one, xor edx, edx for an unsigned one, and
+    // mov rax, rdx for a remainder.
+    pub fn size(self, word: Word) -> usize {
+        return match (self) {
+            SDiv -> plus(1, word.prefix()),
+            SRem -> plus(4, word.prefix()),
+            UDiv -> 2,
+            URem -> 5,
+        };
+    }
+}
+
 impl Instr {
     pub fn size(self) -> usize {
         return match (self) {
@@ -313,6 +338,7 @@ impl Instr {
             StoreAt(slot) -> 16,
             LoadWordAt(width) -> plus(9, width.prefix()),
             StoreWordAt(width, slot) -> plus(16, width.prefix()),
+            Div(word, operation, slot) -> plus(plus(18, word.prefix()), operation.size(word)),
         };
     }
 }
@@ -368,6 +394,7 @@ pub fn compile_stmt(base: usize, pos: usize, s: Stmt) -> List<Instr> {
         StoreByte(address, value) -> concat(concat(compile_expr(base, address, 0), single(Store(base))), concat(compile_expr(base, value, 1), single(StoreAt(base)))),
         LoadWord(width, target, address) -> concat(compile_expr(base, address, 0), cons(LoadWordAt(width), single(Store(target)))),
         StoreWord(width, address, value) -> concat(concat(compile_expr(base, address, 0), single(Store(base))), concat(compile_expr(base, value, 1), single(StoreWordAt(width, base)))),
+        Divide(word, operation, target, left, right) -> concat(concat(concat(compile_expr(base, left, 0), single(Store(base))), compile_expr(base, right, 1)), cons(Div(word, operation, base), single(Store(target)))),
     };
 }
 
@@ -462,6 +489,7 @@ impl Stmt {
             StoreByte(address, value) -> address.within(locals) && value.within(locals),
             LoadWord(width, target, address) -> locals > target && address.within(locals),
             StoreWord(width, address, value) -> address.within(locals) && value.within(locals),
+            Divide(word, operation, target, left, right) -> locals > target && left.within(locals) && right.within(locals),
         };
     }
 
@@ -479,6 +507,7 @@ impl Stmt {
             StoreByte(address, value) -> max_of(address.temps(), plus(value.temps(), 1)),
             LoadWord(width, target, address) -> address.temps(),
             StoreWord(width, address, value) -> max_of(address.temps(), plus(value.temps(), 1)),
+            Divide(word, operation, target, left, right) -> max_of(left.temps(), plus(right.temps(), 1)),
         };
     }
 }
@@ -630,6 +659,45 @@ impl CmpOp {
     }
 }
 
+impl DivOp {
+    // The dividend's high half in edx: cdq (cqo with REX.W) sign-extends
+    // eax; xor edx, edx zeroes it.
+    pub fn extend(self, word: Word) -> List<u8> {
+        return match (self) {
+            SDiv -> concat(word.rex(), single(153)),
+            SRem -> concat(word.rex(), single(153)),
+            UDiv -> cons(49, single(210)),
+            URem -> cons(49, single(210)),
+        };
+    }
+
+    // idiv ecx or div ecx without its prefix
+    pub fn opcode(self) -> List<u8> {
+        return match (self) {
+            SDiv -> cons(247, single(249)),
+            SRem -> cons(247, single(249)),
+            UDiv -> cons(247, single(241)),
+            URem -> cons(247, single(241)),
+        };
+    }
+
+    // mov rax, rdx for a remainder
+    pub fn result(self) -> List<u8> {
+        return match (self) {
+            SDiv -> empty(),
+            SRem -> cons(72, cons(137, single(208))),
+            UDiv -> empty(),
+            URem -> cons(72, cons(137, single(208))),
+        };
+    }
+
+    // slot_operands; mov r11, rdx; extend; idiv or div ecx (rcx with
+    // REX.W); the remainder; mov rdx, r11. rdx is kept for the caller.
+    pub fn bytes(self, word: Word, slot: usize) -> List<u8> {
+        return concat(concat(slot_operands(slot), cons(73, cons(137, single(211)))), concat(concat(self.extend(word), concat(word.rex(), self.opcode())), concat(self.result(), cons(76, cons(137, single(218))))));
+    }
+}
+
 // slot_operands; cmp eax, ecx or cmp rax, rcx; setcc al; movzx eax, al
 pub fn slot_compare(word: Word, operation: CmpOp, slot: usize) -> List<u8> {
     return concat(concat(slot_operands(slot), concat(word.rex(), cons(57, single(200)))), cons(15, cons(operation.setcc(word), cons(192, cons(15, cons(182, single(192)))))));
@@ -745,6 +813,7 @@ impl Instr {
             StoreAt(slot) -> store_at_bytes(slot),
             LoadWordAt(width) -> load_word_bytes(width),
             StoreWordAt(width, slot) -> store_word_bytes(width, slot),
+            Div(word, operation, slot) -> operation.bytes(word, slot),
         };
     }
 }
@@ -895,6 +964,7 @@ impl Stmt {
             StoreByte(address, value) -> Stmt::StoreByte(address, value),
             LoadWord(width, target, address) -> Stmt::LoadWord(width, target, address),
             StoreWord(width, address, value) -> Stmt::StoreWord(width, address, value),
+            Divide(word, operation, target, left, right) -> Stmt::Divide(word, operation, target, left, right),
         };
     }
 }
@@ -983,6 +1053,7 @@ impl Instr {
             StoreAt(slot) -> single(Piece::Bytes(self.encode(place, pc))),
             LoadWordAt(width) -> single(Piece::Bytes(self.encode(place, pc))),
             StoreWordAt(width, slot) -> single(Piece::Bytes(self.encode(place, pc))),
+            Div(word, operation, slot) -> single(Piece::Bytes(self.encode(place, pc))),
         };
     }
 }
@@ -3227,6 +3298,17 @@ impl BinOp {
     }
 }
 
+impl DivOp {
+    pub fn number(self) -> usize {
+        return match (self) {
+            SDiv -> 0,
+            SRem -> 1,
+            UDiv -> 2,
+            URem -> 3,
+        };
+    }
+}
+
 impl CmpOp {
     // Unsigned comparison.
     pub fn test(self, a: u64, b: u64) -> bool {
@@ -3488,6 +3570,7 @@ pub fn assign_agrees(index: usize, value: Expr, other: Stmt) -> bool {
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
+        Divide(w, o, t, l, r) -> false,
     };
 }
 
@@ -3505,6 +3588,7 @@ pub fn call_agrees(target: usize, count: usize, callee: usize, args: List<Expr>,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
+        Divide(w, o, t, l, r) -> false,
     };
 }
 
@@ -3522,6 +3606,7 @@ pub fn ret_agrees(values: List<Expr>, other: Stmt) -> bool {
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
+        Divide(w, o, t, l, r) -> false,
     };
 }
 
@@ -3539,6 +3624,7 @@ pub fn alloc_agrees(target: usize, shift: usize, size: Expr, other: Stmt) -> boo
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
+        Divide(w, o, t, l, r) -> false,
     };
 }
 
@@ -3556,6 +3642,7 @@ pub fn load_byte_agrees(target: usize, address: Expr, other: Stmt) -> bool {
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
+        Divide(w, o, t, l, r) -> false,
     };
 }
 
@@ -3573,6 +3660,7 @@ pub fn store_byte_agrees(address: Expr, value: Expr, other: Stmt) -> bool {
         StoreByte(a, v) -> address.agrees(a) && value.agrees(v),
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
+        Divide(w, o, t, l, r) -> false,
     };
 }
 
@@ -3590,6 +3678,7 @@ pub fn load_word_agrees(width: MemWidth, target: usize, address: Expr, other: St
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> (width.bytes() == w.bytes()) && (target == t) && address.agrees(a),
         StoreWord(w, a, v) -> false,
+        Divide(w, o, t, l, r) -> false,
     };
 }
 
@@ -3607,6 +3696,25 @@ pub fn store_word_agrees(width: MemWidth, address: Expr, value: Expr, other: Stm
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> (width.bytes() == w.bytes()) && address.agrees(a) && value.agrees(v),
+        Divide(w, o, t, l, r) -> false,
+    };
+}
+
+pub fn divide_agrees(word: Word, operation: DivOp, target: usize, left: Expr, right: Expr, other: Stmt) -> bool {
+    return match (other) {
+        Skip -> false,
+        Assign(i, v) -> false,
+        Seq(f, s) -> false,
+        Ite(c, t, e) -> false,
+        Loop(c, b) -> false,
+        Stmt::Call(t, n, f, a) -> false,
+        Stmt::Ret(v) -> false,
+        Alloc(t, sh, sz) -> false,
+        LoadByte(t, a) -> false,
+        StoreByte(a, v) -> false,
+        LoadWord(w, t, a) -> false,
+        StoreWord(w, a, v) -> false,
+        Divide(w, o, t, l, r) -> (word.number() == w.number()) && (operation.number() == o.number()) && (target == t) && left.agrees(l) && right.agrees(r),
     };
 }
 
@@ -3625,6 +3733,7 @@ impl Stmt {
             StoreByte(a, v) -> false,
             LoadWord(w, t, a) -> false,
             StoreWord(w, a, v) -> false,
+            Divide(w, o, t, l, r) -> false,
         };
     }
 
@@ -3646,6 +3755,7 @@ impl Stmt {
             StoreByte(address, value) -> store_byte_agrees(address, value, other),
             LoadWord(width, target, address) -> load_word_agrees(width, target, address, other),
             StoreWord(width, address, value) -> store_word_agrees(width, address, value, other),
+            Divide(word, operation, target, left, right) -> divide_agrees(word, operation, target, left, right, other),
         };
     }
 }
@@ -3665,6 +3775,7 @@ fn seq_agrees(first: Stmt, second: Stmt, other: Stmt) -> bool {
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
+        Divide(w, o, t, l, r) -> false,
     };
 }
 
@@ -3691,6 +3802,7 @@ fn ite_agrees(condition: Expr, then_branch: Stmt, else_branch: Stmt, other: Stmt
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
+        Divide(w, o, t, l, r) -> false,
     };
 }
 
@@ -3709,6 +3821,7 @@ fn loop_agrees(condition: Expr, body: Stmt, other: Stmt) -> bool {
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
+        Divide(w, o, t, l, r) -> false,
     };
 }
 
@@ -3742,7 +3855,8 @@ pub fn validate(original: Program, optimized: Program) -> bool {
 // subexpressions, applies x + 0, x - 0, x * 1, x & -1, x | 0, x ^ 0 (and the
 // commuted forms) and x * 0, x & 0, picks the branch of an if on a constant,
 // and drops statements that do nothing: skip, x = x, an if with two empty
-// branches, a while whose condition is 0.
+// branches, a while whose condition is 0. It leaves divisions in place, so a
+// division that traps still traps.
 
 impl Expr {
     pub fn literal(self) -> core::option::Option<u64> {
@@ -3894,6 +4008,7 @@ impl Stmt {
             StoreByte(address, value) -> StoreByte(address.optimize(), value.optimize()),
             LoadWord(width, target, address) -> LoadWord(width, target, address.optimize()),
             StoreWord(width, address, value) -> StoreWord(width, address.optimize(), value.optimize()),
+            Divide(word, operation, target, left, right) -> Divide(word, operation, target, left.optimize(), right.optimize()),
         };
     }
 }

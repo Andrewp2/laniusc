@@ -288,7 +288,7 @@ theorem Exec.limit {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stm
   | ifTrue _ _ ih => exact ih
   | ifFalse _ _ ih => exact ih
   | loopReturned _ _ ih => exact ih
-  | skip | assign | loopDone | ret | alloc | loadByte | storeByte | loadWord => rfl
+  | skip | assign | loopDone | ret | alloc | loadByte | storeByte | loadWord | divide => rfl
   | storeWord => exact (Heap.writeLE_limit _ _ _ _).1
 
 /-! ## Lowered heap operations -/

@@ -18,6 +18,7 @@ import sys
 BINOPS = ['add', 'sub', 'mul', 'and', 'or', 'xor']
 CMPOPS = ['eq', 'ne', 'lt', 'le', 'gt', 'ge']
 WORDS = ['s32', 'u64']
+DIVOPS = ['sDiv', 'sRem', 'uDiv', 'uRem']
 EDGES = [0, 1, 2, 7, 100, 65536, 2 ** 31 - 1, 2 ** 31, 2 ** 32 - 1, 2 ** 32, 2 ** 32 + 5, 2 ** 63, 2 ** 64 - 1,
          2 ** 64 - 7, 2 ** 32 - 7]
 
@@ -47,9 +48,12 @@ def gen_stmt(rng, depth, locals_, arities, results):
     if depth == 0:
         return ('assign', rng.randrange(locals_), gen_expr(rng, 2, locals_)) if locals_ else ('skip',)
     kind = rng.choice(['skip', 'assign', 'seq', 'seq', 'ite', 'loop', 'call', 'ret', 'alloc', 'loadByte',
-                       'storeByte', 'loadWord', 'storeWord'])
-    if kind == 'skip' or (kind in ('assign', 'call', 'alloc', 'loadByte', 'loadWord') and not locals_):
+                       'storeByte', 'loadWord', 'storeWord', 'divide'])
+    if kind == 'skip' or (kind in ('assign', 'call', 'alloc', 'loadByte', 'loadWord', 'divide') and not locals_):
         return ('skip',)
+    if kind == 'divide':
+        return ('divide', rng.choice(WORDS), rng.choice(DIVOPS), rng.randrange(locals_), gen_expr(rng, 2, locals_),
+                gen_expr(rng, 2, locals_))
     if kind == 'alloc':
         return ('alloc', rng.randrange(locals_), rng.choice([0, 0, 1, 3, 4, 12, 31, 32]), gen_expr(rng, 2, locals_))
     if kind == 'loadByte':
@@ -193,6 +197,8 @@ def lean_stmt(s):
         return f'(.loadWord .{s[1]} {s[2]} {lean_expr(s[3])})'
     if k == 'storeWord':
         return f'(.storeWord .{s[1]} {lean_expr(s[2])} {lean_expr(s[3])})'
+    if k == 'divide':
+        return f'(.divide .{s[1]} .{s[2]} {s[3]} {lean_expr(s[4])} {lean_expr(s[5])})'
     return f'(.ret [{", ".join(lean_expr(a) for a in s[1])}])'
 
 
@@ -255,6 +261,9 @@ def lani_stmt(s):
         return f'{M}Stmt::LoadWord({M}{s[1].upper()}, {s[2]}, {lani_expr(s[3])})'
     if k == 'storeWord':
         return f'{M}Stmt::StoreWord({M}{s[1].upper()}, {lani_expr(s[2])}, {lani_expr(s[3])})'
+    if k == 'divide':
+        op = s[2][:1].upper() + s[2][1:]
+        return f'{M}Stmt::Divide({M}{s[1].upper()}, {M}{op}, {s[3]}, {lani_expr(s[4])}, {lani_expr(s[5])})'
     return f'{M}Stmt::Ret({lani_exprs(s[1])})'
 
 

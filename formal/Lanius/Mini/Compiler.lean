@@ -103,6 +103,14 @@ inductive Word where
   | u64 : Word
   deriving DecidableEq, Repr
 
+/-- Division and remainder. The word sets the width: an S32 division divides the low 32 bits and zero-extends its result, a U64 one divides all 64 bits. A signed quotient is truncated toward zero, and a signed remainder has the dividend's sign. -/
+inductive DivOp where
+  | sDiv : DivOp
+  | sRem : DivOp
+  | uDiv : DivOp
+  | uRem : DivOp
+  deriving DecidableEq, Repr
+
 /-- A heap word access: 4 or 8 bytes, little-endian. A 4-byte load zero-extends; a 4-byte store writes the low 4 bytes. -/
 inductive MemWidth where
   | m32 : MemWidth
@@ -156,6 +164,8 @@ inductive Stmt where
   | loadWord : MemWidth → Nat → Expr → Stmt
   /-- the word at address = the low bytes of value -/
   | storeWord : MemWidth → Expr → Expr → Stmt
+  /-- target = left op right; a zero divisor, or a signed division of the least value by -1, has no run -/
+  | divide : Word → DivOp → Nat → Expr → Expr → Stmt
   deriving DecidableEq, Repr
 
 structure Func where
@@ -203,6 +213,8 @@ inductive Instr where
   | loadWordAt : MemWidth → Instr
   /-- mov [r12 + slot], eax, or rax for M64 -/
   | storeWordAt : MemWidth → Nat → Instr
+  /-- rax := slot op rax -/
+  | div : Word → DivOp → Nat → Instr
   deriving DecidableEq, Repr
 
 /-- imul is one byte longer than the other operators. -/
@@ -221,6 +233,14 @@ def Word.prefix (self : Word) : Nat :=
   | .s32 => 0
   | .u64 => 1
 
+/-- A division is 18 bytes, the divide's REX.W prefix, and these: cdq or cqo (REX.W) for a signed one, xor edx, edx for an unsigned one, and mov rax, rdx for a remainder. -/
+def DivOp.size (self : DivOp) (word : Word) : Nat :=
+  match self with
+  | .sDiv => 1 + Word.prefix word
+  | .sRem => 4 + Word.prefix word
+  | .uDiv => 2
+  | .uRem => 5
+
 def Instr.size (self : Instr) : Nat :=
   match self with
   | .imm value => 10
@@ -238,6 +258,7 @@ def Instr.size (self : Instr) : Nat :=
   | .storeAt slot => 16
   | .loadWordAt width => 9 + MemWidth.prefix width
   | .storeWordAt width slot => 16 + MemWidth.prefix width
+  | .div word operation slot => 18 + Word.prefix word + DivOp.size operation word
 
 def codeSize (code : List Instr) : Nat :=
   match code with
@@ -291,6 +312,7 @@ def compileStmt (base : Nat) (pos : Nat) (s : Stmt) : List Instr :=
   | .storeByte address value => compileExpr base address 0 ++ [Instr.store base] ++ (compileExpr base value 1 ++ [Instr.storeAt base])
   | .loadWord width target address => compileExpr base address 0 ++ Instr.loadWordAt width :: [Instr.store target]
   | .storeWord width address value => compileExpr base address 0 ++ [Instr.store base] ++ (compileExpr base value 1 ++ [Instr.storeWordAt width base])
+  | .divide word operation target left right => compileExpr base left 0 ++ [Instr.store base] ++ compileExpr base right 1 ++ Instr.div word operation base :: [Instr.store target]
 
 def Expr.within (self : Expr) (locals : Nat) : Bool :=
   match self with
@@ -346,6 +368,7 @@ def Stmt.within (self : Stmt) (locals : Nat) (arities : List Arity) (results : N
   | .storeByte address value => Expr.within address locals && Expr.within value locals
   | .loadWord width target address => decide (target < locals) && Expr.within address locals
   | .storeWord width address value => Expr.within address locals && Expr.within value locals
+  | .divide word operation target left right => decide (target < locals) && Expr.within left locals && Expr.within right locals
 
 def Stmt.temps (self : Stmt) : Nat :=
   match self with
@@ -361,6 +384,7 @@ def Stmt.temps (self : Stmt) : Nat :=
   | .storeByte address value => max (Expr.temps address) (Expr.temps value + 1)
   | .loadWord width target address => Expr.temps address
   | .storeWord width address value => max (Expr.temps address) (Expr.temps value + 1)
+  | .divide word operation target left right => max (Expr.temps left) (Expr.temps right + 1)
 
 /-- Zero the non-parameter locals first, ..., first + count - 1. -/
 def zeroLocals (first : Nat) (count : Nat) : List Instr :=
@@ -473,6 +497,34 @@ def CmpOp.setcc (self : CmpOp) (word : Word) : UInt8 :=
   | .s32 => CmpOp.setccSigned self
   | .u64 => CmpOp.setccUnsigned self
 
+/-- The dividend's high half in edx: cdq (cqo with REX.W) sign-extends eax; xor edx, edx zeroes it. -/
+def DivOp.extend (self : DivOp) (word : Word) : List UInt8 :=
+  match self with
+  | .sDiv => Word.rex word ++ [153]
+  | .sRem => Word.rex word ++ [153]
+  | .uDiv => 49 :: [210]
+  | .uRem => 49 :: [210]
+
+/-- idiv ecx or div ecx without its prefix -/
+def DivOp.opcode (self : DivOp) : List UInt8 :=
+  match self with
+  | .sDiv => 247 :: [249]
+  | .sRem => 247 :: [249]
+  | .uDiv => 247 :: [241]
+  | .uRem => 247 :: [241]
+
+/-- mov rax, rdx for a remainder -/
+def DivOp.result (self : DivOp) : List UInt8 :=
+  match self with
+  | .sDiv => []
+  | .sRem => 72 :: 137 :: [208]
+  | .uDiv => []
+  | .uRem => 72 :: 137 :: [208]
+
+/-- slot_operands; mov r11, rdx; extend; idiv or div ecx (rcx with REX.W); the remainder; mov rdx, r11. rdx is kept for the caller. -/
+def DivOp.bytes (self : DivOp) (word : Word) (slot : Nat) : List UInt8 :=
+  slotOperands slot ++ 73 :: 137 :: [211] ++ (DivOp.extend self word ++ (Word.rex word ++ DivOp.opcode self) ++ (DivOp.result self ++ 76 :: 137 :: [218]))
+
 /-- slot_operands; cmp eax, ecx or cmp rax, rcx; setcc al; movzx eax, al -/
 def slotCompare (word : Word) (operation : CmpOp) (slot : Nat) : List UInt8 :=
   slotOperands slot ++ (Word.rex word ++ 57 :: [200]) ++ 15 :: CmpOp.setcc operation word :: 192 :: 15 :: 182 :: [192]
@@ -569,6 +621,7 @@ def Instr.encode (self : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   | .storeAt slot => storeAtBytes slot
   | .loadWordAt width => loadWordBytes width
   | .storeWordAt width slot => storeWordBytes width slot
+  | .div word operation slot => DivOp.bytes operation word slot
 
 def encodeFrom (place : Place) (pc : Nat) (code : List Instr) : List UInt8 :=
   match code with
@@ -674,6 +727,7 @@ def Stmt.rename (self : Stmt) (table : List Nat) (missing : Nat) : Stmt :=
   | .storeByte address value => Stmt.storeByte address value
   | .loadWord width target address => Stmt.loadWord width target address
   | .storeWord width address value => Stmt.storeWord width address value
+  | .divide word operation target left right => Stmt.divide word operation target left right
 
 def renameFuncs (table : List Nat) (missing : Nat) (funcs : List Func) : List Func :=
   match funcs with
@@ -742,6 +796,7 @@ def Instr.pieces (self : Instr) (own : Nat) (place : Place) (pc : Nat) : List Pi
   | .storeAt slot => [Piece.bytes (Instr.encode self place pc)]
   | .loadWordAt width => [Piece.bytes (Instr.encode self place pc)]
   | .storeWordAt width slot => [Piece.bytes (Instr.encode self place pc)]
+  | .div word operation slot => [Piece.bytes (Instr.encode self place pc)]
 
 def piecesFrom (own : Nat) (place : Place) (pc : Nat) (code : List Instr) : List Piece :=
   match code with
@@ -2495,6 +2550,13 @@ def BinOp.number (self : BinOp) : Nat :=
   | .or => 4
   | .xor => 5
 
+def DivOp.number (self : DivOp) : Nat :=
+  match self with
+  | .sDiv => 0
+  | .sRem => 1
+  | .uDiv => 2
+  | .uRem => 3
+
 /-- Unsigned comparison. -/
 def CmpOp.test (self : CmpOp) (a : BitVec 64) (b : BitVec 64) : Bool :=
   match self with
@@ -2683,6 +2745,7 @@ def assignAgrees (index : Nat) (value : Expr) (other : Stmt) : Bool :=
   | .storeByte a v => false
   | .loadWord w t a => false
   | .storeWord w a v => false
+  | .divide w o t l r => false
 
 def callAgrees (target : Nat) (count : Nat) (callee : Nat) (args : List Expr) (other : Stmt) : Bool :=
   match other with
@@ -2698,6 +2761,7 @@ def callAgrees (target : Nat) (count : Nat) (callee : Nat) (args : List Expr) (o
   | .storeByte a v => false
   | .loadWord w t a => false
   | .storeWord w a v => false
+  | .divide w o t l r => false
 
 def retAgrees (values : List Expr) (other : Stmt) : Bool :=
   match other with
@@ -2713,6 +2777,7 @@ def retAgrees (values : List Expr) (other : Stmt) : Bool :=
   | .storeByte a v => false
   | .loadWord w t a => false
   | .storeWord w a v => false
+  | .divide w o t l r => false
 
 def allocAgrees (target : Nat) (shift : Nat) (size : Expr) (other : Stmt) : Bool :=
   match other with
@@ -2728,6 +2793,7 @@ def allocAgrees (target : Nat) (shift : Nat) (size : Expr) (other : Stmt) : Bool
   | .storeByte a v => false
   | .loadWord w t a => false
   | .storeWord w a v => false
+  | .divide w o t l r => false
 
 def loadByteAgrees (target : Nat) (address : Expr) (other : Stmt) : Bool :=
   match other with
@@ -2743,6 +2809,7 @@ def loadByteAgrees (target : Nat) (address : Expr) (other : Stmt) : Bool :=
   | .storeByte a v => false
   | .loadWord w t a => false
   | .storeWord w a v => false
+  | .divide w o t l r => false
 
 def storeByteAgrees (address : Expr) (value : Expr) (other : Stmt) : Bool :=
   match other with
@@ -2758,6 +2825,7 @@ def storeByteAgrees (address : Expr) (value : Expr) (other : Stmt) : Bool :=
   | .storeByte a v => Expr.agrees address a && Expr.agrees value v
   | .loadWord w t a => false
   | .storeWord w a v => false
+  | .divide w o t l r => false
 
 def loadWordAgrees (width : MemWidth) (target : Nat) (address : Expr) (other : Stmt) : Bool :=
   match other with
@@ -2773,6 +2841,7 @@ def loadWordAgrees (width : MemWidth) (target : Nat) (address : Expr) (other : S
   | .storeByte a v => false
   | .loadWord w t a => decide (MemWidth.bytes width = MemWidth.bytes w) && decide (target = t) && Expr.agrees address a
   | .storeWord w a v => false
+  | .divide w o t l r => false
 
 def storeWordAgrees (width : MemWidth) (address : Expr) (value : Expr) (other : Stmt) : Bool :=
   match other with
@@ -2788,6 +2857,23 @@ def storeWordAgrees (width : MemWidth) (address : Expr) (value : Expr) (other : 
   | .storeByte a v => false
   | .loadWord w t a => false
   | .storeWord w a v => decide (MemWidth.bytes width = MemWidth.bytes w) && Expr.agrees address a && Expr.agrees value v
+  | .divide w o t l r => false
+
+def divideAgrees (word : Word) (operation : DivOp) (target : Nat) (left : Expr) (right : Expr) (other : Stmt) : Bool :=
+  match other with
+  | .skip => false
+  | .assign i v => false
+  | .seq f s => false
+  | .ite c t e => false
+  | .loop c b => false
+  | .call t n f a => false
+  | .ret v => false
+  | .alloc t sh sz => false
+  | .loadByte t a => false
+  | .storeByte a v => false
+  | .loadWord w t a => false
+  | .storeWord w a v => false
+  | .divide w o t l r => decide (Word.number word = Word.number w) && decide (DivOp.number operation = DivOp.number o) && decide (target = t) && Expr.agrees left l && Expr.agrees right r
 
 def Stmt.isSkip (self : Stmt) : Bool :=
   match self with
@@ -2803,6 +2889,7 @@ def Stmt.isSkip (self : Stmt) : Bool :=
   | .storeByte a v => false
   | .loadWord w t a => false
   | .storeWord w a v => false
+  | .divide w o t l r => false
 
 /-- other ends every run of this statement the same way: the same shape with agreeing expressions, or a statement dropped because it does nothing (skip, x = x, a loop whose condition is 0), or a branch chosen because its condition is a constant or both branches agree with other. -/
 def Stmt.agrees (self : Stmt) (other : Stmt) : Bool :=
@@ -2822,7 +2909,8 @@ def Stmt.agrees (self : Stmt) (other : Stmt) : Bool :=
      | .loadByte t a => false
      | .storeByte a v => false
      | .loadWord w t a => false
-     | .storeWord w a v => false)
+     | .storeWord w a v => false
+     | .divide w o t l r => false)
   | .ite condition thenBranch elseBranch =>
     Stmt.agrees thenBranch other && Stmt.agrees elseBranch other || (let known : Option (BitVec 64) := Expr.constant condition
      match known with
@@ -2839,7 +2927,8 @@ def Stmt.agrees (self : Stmt) (other : Stmt) : Bool :=
      | .loadByte t a => false
      | .storeByte a v => false
      | .loadWord w t a => false
-     | .storeWord w a v => false)
+     | .storeWord w a v => false
+     | .divide w o t l r => false)
   | .loop condition body =>
     Expr.isZero condition && Stmt.isSkip other || (match other with
      | .skip => false
@@ -2853,7 +2942,8 @@ def Stmt.agrees (self : Stmt) (other : Stmt) : Bool :=
      | .loadByte t a => false
      | .storeByte a v => false
      | .loadWord w t a => false
-     | .storeWord w a v => false)
+     | .storeWord w a v => false
+     | .divide w o t l r => false)
   | .call target count callee args => callAgrees target count callee args other
   | .ret values => retAgrees values other
   | .alloc target shift size => allocAgrees target shift size other
@@ -2861,6 +2951,7 @@ def Stmt.agrees (self : Stmt) (other : Stmt) : Bool :=
   | .storeByte address value => storeByteAgrees address value other
   | .loadWord width target address => loadWordAgrees width target address other
   | .storeWord width address value => storeWordAgrees width address value other
+  | .divide word operation target left right => divideAgrees word operation target left right other
 
 def Func.agrees (self : Func) (other : Func) : Bool :=
   decide (self.params = other.params) && decide (self.results = other.results) && decide (self.locals = other.locals) && Stmt.agrees self.body other.body
@@ -3002,6 +3093,7 @@ def Stmt.optimize (self : Stmt) : Stmt :=
   | .storeByte address value => Stmt.storeByte (Expr.optimize address) (Expr.optimize value)
   | .loadWord width target address => Stmt.loadWord width target (Expr.optimize address)
   | .storeWord width address value => Stmt.storeWord width (Expr.optimize address) (Expr.optimize value)
+  | .divide word operation target left right => Stmt.divide word operation target (Expr.optimize left) (Expr.optimize right)
 
 def optimizeFuncs (funcs : List Func) : List Func :=
   match funcs with
