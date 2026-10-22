@@ -27,7 +27,9 @@ With EFFECTS (frontend_difftest.py turns it off) the programs also use the
 front pass's effectful expressions (`SrcEff`, in `let`, assignment, `if` and
 `while` conditions, `return` and bare call statements): calls nested in the
 operators, casts, `/` and `%` (divisors (d | 1), and (d | 1) & -3 for i32, so
-no division traps), and struct and enum literals with such fields. Later
+no division traps), struct and enum literals with such fields, and
+indexing of i32 slices at computed indices kept in bounds (a literal,
+e & (n - 1) or nonnegative e % n). Later
 functions take struct, enum and slice parameters and return structs and
 enums; one with a slice parameter writes into the caller's slice, the right
 side of `&&` and `||` often calls one, and the entry's result folds in every
@@ -76,7 +78,7 @@ def i32(x):
 #              ('not', e) ('cast', ty, e) ('op', name, sym, l, r)
 # Effectful expressions: ('ePure', e) ('eCall', callee, args) ('eApply', name, sym, l, r) ('eNeg', x)
 #              ('eNot', x) ('eCast', ty, x) ('eDivide', name, sym, l, r) ('eStruct', ty, fields)
-#              ('eVariant', ty, variant, payload)
+#              ('eVariant', ty, variant, payload) ('eIndex', slice, x) of an i32 slice local
 # Statements: ('nop',) ('let', id, ty, e, body) ('call', id, ty, callee, args, body) ('set', id, e)
 #             ('letStruct', id, ty, fields, body) ('letEnum', id, ty, variant, payload, body)
 #             ('letMatch', id, ty, scrutinee, enum, arms, body) with arms [(binders, value)]
@@ -286,6 +288,10 @@ class Gen:
             return ('ePure', self.pure_arg(ty, env, items))
         if calls and rng.random() < 0.5:
             return self.eff_call(rng.choice(calls), depth, env, items)
+        views = [(i, t[2]) for i, t in env if isinstance(t, tuple) and t[0] == 'slice' and t[1] == 'i32']
+        if ty == 'i32' and views and rng.random() < 0.25:
+            view, n = rng.choice(views)
+            return ('eIndex', view, self.in_bounds(n, depth, env, items))
         if depth == 0 or rng.random() < 0.2:
             return ('ePure', self.expr(ty, rng.randint(0, 2), env))
 
@@ -331,6 +337,24 @@ class Gen:
         if ty == 'i32':
             divisor = ('eApply', 'bitAnd', '&', divisor, ('ePure', ('int', -3)))
         return ('eDivide', name, sym, sub(ty), divisor)
+
+    def in_bounds(self, n, depth, env, items):
+        """An i32 or usize index below n (the slice's length, or the least a
+        slice parameter has), since an index out of bounds traps: a literal,
+        e & (n - 1) when n is a power of two, or a nonnegative e % n."""
+        rng = self.rng
+        ty = rng.choice(['i32', 'usize'])
+
+        def lit(k):
+            return ('ePure', ('int', k) if ty == 'i32' else ('uint', 'usize', k))
+        if depth <= 0 or rng.random() < 0.2:
+            return lit(rng.randrange(n))
+        e = self.eff(ty, depth - 1, env, items)
+        if n & (n - 1) == 0 and rng.random() < 0.5:
+            return ('eApply', 'bitAnd', '&', e, lit(n - 1))
+        if ty == 'i32':
+            e = ('eApply', 'bitAnd', '&', e, lit(2 ** 31 - 1))
+        return ('eDivide', 'remainder', '%', e, lit(n))
 
     def called_bool(self, depth, env, items):
         """A bool that calls a function, preferring one that writes into a
@@ -708,6 +732,8 @@ def eff_ty(e, env):
         return eff_ty(e[3], env)
     if kind in ('eStruct', 'eVariant'):
         return e[1]
+    if kind == 'eIndex':
+        return 'i32'
     if kind == 'eNeg':
         return 'i32'
     if kind == 'eNot':
@@ -729,6 +755,11 @@ def ev_eff(e, env, funcs):
         return not ev_eff(e[1], env, funcs)
     if kind == 'eCast':
         return wrap_to(e[1], ev_eff(e[2], env, funcs))
+    if kind == 'eIndex':
+        k, elements = ev_eff(e[2], env, funcs), env[e[1]][0]
+        if not 0 <= k < len(elements):
+            raise SystemExit('a generated index is out of bounds')
+        return elements[k]
     if kind == 'eStruct':
         return [ev_eff(f, env, funcs) for f in e[2]]
     if kind == 'eVariant':
@@ -897,6 +928,8 @@ def lean_eff(e):
         return f'(.eCast {lean_ty(e[1])} {lean_eff(e[2])})'
     if kind == 'eDivide':
         return f'(.eDivide .{e[1]} {lean_eff(e[3])} {lean_eff(e[4])})'
+    if kind == 'eIndex':
+        return f'(.eIndex {e[1]} {lean_eff(e[2])})'
     if kind == 'eStruct':
         return f'(.eStruct {lean_ty(e[1])} [{", ".join(lean_eff(f) for f in e[2])}])'
     if kind == 'eVariant':
@@ -1052,6 +1085,8 @@ def lani_eff(e, prefix):
         return f'(!{lani_eff(e[1], prefix)})'
     if kind == 'eCast':
         return f'({lani_eff(e[2], prefix)} as {e[1]})'
+    if kind == 'eIndex':
+        return f'v{e[1]}[{lani_eff(e[2], prefix)}]'
     if kind == 'eStruct':
         fields = ', '.join(f'f{j}: {lani_eff(f, prefix)}' for j, f in enumerate(e[2]))
         return f'{lani_ty(e[1])} {{ {fields} }}'
