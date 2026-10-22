@@ -128,7 +128,13 @@ API list; unrelated library work can continue.
 - Decimal parsing: packed byte parsers for all signed/unsigned 8-, 16- and
   32-bit widths return explicit errors and execute across normal, boundary and
   malformed cases. See [stdlib-decimal.md](stdlib-decimal.md).
-- Next integration milestone: a CSV-to-JSON application using validation and
-  grouping, followed by remaining text/collection and I/O operations.
+- CSV-to-JSON integration: the [report application](csv-report.md) validates
+  schemas and integers, groups records, checks totals and emits JSON. Native
+  tests cover generated records, all allocation failures and partial I/O.
+  Initial runtime measurements identify the current linear-map and full-table
+  allocation design as work still to improve.
+- Next foundation work: hash-based collections with explicit failure results,
+  iterators and text operations, buffered I/O and streaming format interfaces.
+  Completing the integration application does not complete the first phase.
 - The older [execution audit](stdlib-foundation.md) remains historical evidence;
   its top-level checkpoints do not establish this branch's current behavior.

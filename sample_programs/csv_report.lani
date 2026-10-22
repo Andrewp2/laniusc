@@ -1,0 +1,248 @@
+// Compile with --stdlib-root stdlib --source-root extended.
+// Input header: group,value. Output: first-seen groups with i32 totals/counts.
+// See docs/csv-report.md for limits, errors and ownership.
+module app::main;
+import alloc::io;
+import alloc::string;
+import core::decimal;
+import core::i32;
+import core::io;
+import core::option;
+import core::result;
+import ext::csv;
+import ext::json;
+import std::io;
+import std::io_decimal;
+import std::map;
+import std::stream;
+import std::vec;
+
+struct Group { name: alloc::string::String, total: i32, count: i32 }
+struct Report {
+    groups: std::vec::Vec<Group>,
+    // Keys borrow the independently allocated names owned by groups.
+    index: std::map::Map<alloc::string::String, i32>,
+}
+fn new_report() -> Report {
+    let groups: std::vec::Vec<Group> = std::vec::new();
+    let index: std::map::Map<alloc::string::String, i32> = std::map::new();
+    return Report { groups: groups, index: index };
+}
+fn string_error(error: alloc::string::Error) -> i32 {
+    let allocation: bool = match (error) { alloc::string::Error::AllocationFailed -> true, _ -> false };
+    if (allocation) { return 4; }
+    return 2;
+}
+fn csv_error(error: ext::csv::Error) -> i32 {
+    let allocation: bool = match (error) { ext::csv::Error::AllocationFailed -> true, _ -> false };
+    if (allocation) { return 4; }
+    return 2;
+}
+fn json_error(error: ext::json::Error) -> i32 {
+    let allocation: bool = match (error.kind) { ext::json::ErrorKind::AllocationFailed -> true, _ -> false };
+    if (allocation) { return 4; }
+    return 2;
+}
+fn record_error(row: i32, message: str) {
+    std::io::write_text(2, "record ");
+    std::io_decimal::write_i32(2, row + 1);
+    std::io::write_text(2, ": ");
+    std::io::eprintln(message);
+}
+impl Report {
+    // Consumes name on every path. Failed insertion rolls back the new group.
+    fn add(&self, name: alloc::string::String, value: i32) -> i32 {
+        let ordinal: i32 = std::map::get_or(self.index, name, -1);
+        if (ordinal >= 0) {
+            name.destroy();
+            let group: Group = std::vec::at(self.groups, ordinal);
+            let total: core::option::Option<i32> = core::i32::checked_add(group.total, value);
+            let count: core::option::Option<i32> = core::i32::checked_add(group.count, 1);
+            if (core::option::is_none(total) || core::option::is_none(count)) { return 2; }
+            group.total = core::option::unwrap_or(total, 0);
+            group.count = core::option::unwrap_or(count, 0);
+            self.groups = std::vec::try_set(self.groups, ordinal, group);
+            return 0;
+        }
+        let before: i32 = std::vec::len(self.groups);
+        let group: Group = Group { name: name, total: value, count: 1 };
+        self.groups = std::vec::try_push(self.groups, group);
+        if (std::vec::len(self.groups) == before) { name.destroy(); return 4; }
+        self.index = std::map::try_insert(self.index, name, before);
+        if (std::map::len(self.index) != before + 1) {
+            self.groups = std::vec::try_pop(self.groups);
+            name.destroy();
+            return 4;
+        }
+        return 0;
+    }
+    fn read_rows(&self, table: ext::csv::Table) -> i32 {
+        let row: i32 = 1;
+        while (row < table.row_count()) {
+            let field: core::result::Result<alloc::string::String, ext::csv::Error> = table.try_field(row, 1);
+            if (core::result::is_err(field)) { return csv_error(core::result::unwrap_err(field)); }
+            let number: alloc::string::String = core::result::unwrap(field);
+            let parsed: core::result::Result<i32, core::decimal::ParseError> = core::decimal::parse_i32(number.as_bytes(), number.byte_len());
+            number.destroy();
+            if (core::result::is_err(parsed)) {
+                record_error(row, "value must be a signed 32-bit decimal integer");
+                return 2;
+            }
+            let copied: core::result::Result<alloc::string::String, ext::csv::Error> = table.try_field(row, 0);
+            if (core::result::is_err(copied)) { return csv_error(core::result::unwrap_err(copied)); }
+            let status: i32 = self.add(core::result::unwrap(copied), core::result::unwrap(parsed));
+            if (status != 0) {
+                if (status == 2) { record_error(row, "group total or count exceeds signed 32-bit range"); }
+                return status;
+            }
+            row += 1;
+        }
+        return 0;
+    }
+    fn destroy(&self) {
+        std::map::destroy(self.index);
+        let ordinal: i32 = 0;
+        while (ordinal < std::vec::len(self.groups)) {
+            let group: Group = std::vec::at(self.groups, ordinal);
+            group.name.destroy();
+            ordinal += 1;
+        }
+        std::vec::destroy(self.groups);
+        self.groups = std::vec::new();
+        self.index = std::map::new();
+    }
+}
+
+fn matches(text: alloc::string::String, bytes: [u8], count: i32) -> bool {
+    if (text.byte_len() != count) { return false; }
+    let actual: [u8] = text.as_bytes();
+    let index: i32 = 0;
+    while (index < count) { if (actual[index] != bytes[index]) { return false; } index += 1; }
+    return true;
+}
+fn check_header(table: ext::csv::Table) -> i32 {
+    if (table.row_count() == 0 || core::option::unwrap_or(table.field_count(0), 0) != 2) { return 2; }
+    let first: core::result::Result<alloc::string::String, ext::csv::Error> = table.try_field(0, 0);
+    if (core::result::is_err(first)) { return csv_error(core::result::unwrap_err(first)); }
+    let group: alloc::string::String = core::result::unwrap(first);
+    let group_bytes: [u8; 5] = [103, 114, 111, 117, 112];
+    let valid: bool = matches(group, group_bytes, 5);
+    group.destroy();
+    if (!valid) { return 2; }
+    let second: core::result::Result<alloc::string::String, ext::csv::Error> = table.try_field(0, 1);
+    if (core::result::is_err(second)) { return csv_error(core::result::unwrap_err(second)); }
+    let value: alloc::string::String = core::result::unwrap(second);
+    let value_bytes: [u8; 5] = [118, 97, 108, 117, 101];
+    valid = matches(value, value_bytes, 5);
+    value.destroy();
+    if (!valid) { return 2; }
+    return 0;
+}
+
+fn append_groups(document: &ext::json::Document, root: i32, groups: std::vec::Vec<Group>,
+    group_key: alloc::string::String, total_key: alloc::string::String, count_key: alloc::string::String) -> i32 {
+    let ordinal: i32 = 0;
+    while (ordinal < std::vec::len(groups)) {
+        let group: Group = std::vec::at(groups, ordinal);
+        let added: core::result::Result<i32, ext::json::Error> = document.add_object(ext::json::At::Element(root));
+        if (core::result::is_err(added)) { return json_error(core::result::unwrap_err(added)); }
+        let object: i32 = core::result::unwrap(added);
+        let name: core::result::Result<i32, ext::json::Error> = document.add_string(ext::json::At::Member(object, group_key), group.name);
+        if (core::result::is_err(name)) { return json_error(core::result::unwrap_err(name)); }
+        let total: core::result::Result<i32, ext::json::Error> = document.add_i32(ext::json::At::Member(object, total_key), group.total);
+        if (core::result::is_err(total)) { return json_error(core::result::unwrap_err(total)); }
+        let count: core::result::Result<i32, ext::json::Error> = document.add_i32(ext::json::At::Member(object, count_key), group.count);
+        if (core::result::is_err(count)) { return json_error(core::result::unwrap_err(count)); }
+        ordinal += 1;
+    }
+    return 0;
+}
+fn document_for(groups: std::vec::Vec<Group>, group_key: alloc::string::String,
+    total_key: alloc::string::String, count_key: alloc::string::String) -> core::result::Result<alloc::string::String, i32> {
+    let document: ext::json::Document = ext::json::new();
+    let root: core::result::Result<i32, ext::json::Error> = document.add_array(ext::json::At::Root);
+    if (core::result::is_err(root)) { document.destroy(); return core::result::Err(json_error(core::result::unwrap_err(root))); }
+    let status: i32 = append_groups(document.borrow(), core::result::unwrap(root), groups, group_key, total_key, count_key);
+    if (status != 0) { document.destroy(); return core::result::Err(status); }
+    let encoded: core::result::Result<alloc::string::String, ext::json::Error> = ext::json::encode(document);
+    document.destroy();
+    if (core::result::is_err(encoded)) { return core::result::Err(json_error(core::result::unwrap_err(encoded))); }
+    return core::result::Ok(core::result::unwrap(encoded));
+}
+fn encode(groups: std::vec::Vec<Group>) -> core::result::Result<alloc::string::String, i32> {
+    let a: [u8; 5] = [103, 114, 111, 117, 112];
+    let b: [u8; 5] = [116, 111, 116, 97, 108];
+    let c: [u8; 5] = [99, 111, 117, 110, 116];
+    let first: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_utf8(a, 5);
+    if (core::result::is_err(first)) { return core::result::Err(string_error(core::result::unwrap_err(first))); }
+    let group_key: alloc::string::String = core::result::unwrap(first);
+    let second: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_utf8(b, 5);
+    if (core::result::is_err(second)) { group_key.destroy(); return core::result::Err(string_error(core::result::unwrap_err(second))); }
+    let total_key: alloc::string::String = core::result::unwrap(second);
+    let third: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_utf8(c, 5);
+    if (core::result::is_err(third)) { group_key.destroy(); total_key.destroy(); return core::result::Err(string_error(core::result::unwrap_err(third))); }
+    let count_key: alloc::string::String = core::result::unwrap(third);
+    let output: core::result::Result<alloc::string::String, i32> = document_for(groups, group_key, total_key, count_key);
+    group_key.destroy(); total_key.destroy(); count_key.destroy();
+    return output;
+}
+fn report(table: ext::csv::Table) -> core::result::Result<alloc::string::String, i32> {
+    let header: i32 = check_header(table);
+    if (header != 0) {
+        if (header == 2) { std::io::eprintln("expected CSV header group,value"); }
+        return core::result::Err(header);
+    }
+    let report: Report = new_report();
+    let status: i32 = report.read_rows(table);
+    if (status != 0) { report.destroy(); return core::result::Err(status); }
+    let output: core::result::Result<alloc::string::String, i32> = encode(report.groups);
+    report.destroy();
+    return output;
+}
+fn process(input: alloc::string::String) -> core::result::Result<alloc::string::String, i32> {
+    let options: ext::csv::Options = ext::csv::default_options();
+    options.max_records = 100001; options.max_fields = 2; options.max_field_bytes = 1048576;
+    let parsed: core::result::Result<ext::csv::Table, ext::csv::Error> = ext::csv::parse(input, options);
+    if (core::result::is_err(parsed)) {
+        let status: i32 = csv_error(core::result::unwrap_err(parsed));
+        if (status == 2) { std::io::eprintln("invalid CSV or CSV limit exceeded"); }
+        return core::result::Err(status);
+    }
+    let table: ext::csv::Table = core::result::unwrap(parsed);
+    let output: core::result::Result<alloc::string::String, i32> = report(table);
+    table.destroy();
+    return output;
+}
+fn run() -> i32 {
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let input: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(16777216));
+    let received: core::result::Result<u64, core::io::CopyFailure> = std::stream::copy(source.borrow(), input.borrow());
+    if (core::result::is_err(received)) {
+        let failure: core::io::CopyFailure = core::result::unwrap_err(received);
+        let status: i32 = match (failure.cause) {
+            core::io::Error::AllocationFailed -> 4, core::io::Error::LimitExceeded -> 2, _ -> 3,
+        };
+        input.destroy();
+        return status;
+    }
+    let decoded: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_utf8(input.as_bytes(), input.len());
+    input.destroy();
+    if (core::result::is_err(decoded)) { return string_error(core::result::unwrap_err(decoded)); }
+    let text: alloc::string::String = core::result::unwrap(decoded);
+    let result: core::result::Result<alloc::string::String, i32> = process(text);
+    text.destroy();
+    if (core::result::is_err(result)) { return core::result::unwrap_err(result); }
+    let output: alloc::string::String = core::result::unwrap(result);
+    let target: std::stream::Descriptor = std::stream::stdout();
+    let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(target.borrow(), output.as_bytes(), 0, output.byte_len());
+    output.destroy();
+    if (core::result::is_err(written)) { return 3; }
+    return 0;
+}
+fn main() -> i32 {
+    let status: i32 = run();
+    if (status == 2) { std::io::eprintln("invalid input or configured limit exceeded"); }
+    if (status == 3) { std::io::eprintln("input/output failed"); }
+    if (status == 4) { std::io::eprintln("allocation failed"); }
+    return status;
+}

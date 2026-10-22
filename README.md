@@ -49,6 +49,10 @@ Optional modules use the [`extended` source root](extended/README.md).
 include executable normalizers, generated round trips and allocation-failure
 coverage.
 
+The [CSV report application](docs/csv-report.md) combines streams, UTF-8 text,
+checked decimal parsing, generic collections, CSV and JSON to validate and
+group records with executable failure coverage.
+
 ## Benchmarks
 
 TODO
