@@ -28,7 +28,8 @@ front pass's effectful expressions (`SrcEff`, in `let`, assignment, `if` and
 `while` conditions, `return` and bare call statements): calls nested in the
 operators, casts, `/` and `%` (divisors (d | 1), and (d | 1) & -3 for i32, so
 no division traps), struct and enum literals with such fields, and
-indexing of i32 slices at computed indices kept in bounds (a literal,
+reads of slices of i32, word structs and word enums at computed indices kept
+in bounds (a literal,
 e & (n - 1) or nonnegative e % n), and `match` expressions of any type on
 a call, literal, local or match, whose arms use their binders (an arm makes
 no new locals), and `s[i] = value` of an i32 slice with an effectful
@@ -83,7 +84,8 @@ def i32(x):
 #              ('not', e) ('cast', ty, e) ('op', name, sym, l, r)
 # Effectful expressions: ('ePure', e) ('eCall', callee, args) ('eApply', name, sym, l, r) ('eNeg', x)
 #              ('eNot', x) ('eCast', ty, x) ('eDivide', name, sym, l, r) ('eStruct', ty, fields)
-#              ('eVariant', ty, variant, payload) ('eIndex', slice, x) of an i32 slice local
+#              ('eVariant', ty, variant, payload) ('eIndex', slice, x) of a slice local (i32, word struct
+#              or word enum elements)
 #              ('eMatch', scrutinee, ety, ty, binders, values): arm k binds variant k's payload
 # Statements: ('nop',) ('let', id, ty, e, body) ('call', id, ty, callee, args, body) ('set', id, e)
 #             ('letStruct', id, ty, fields, body) ('letEnum', id, ty, variant, payload, body)
@@ -285,6 +287,11 @@ class Gen:
         if TYPES.enums and depth > 0 and (not isinstance(ty, tuple) or ty[0] != 'slice') and rng.random() < 0.1:
             return self.eff_match(ty, depth, env, items)
         if isinstance(ty, tuple):
+            views = [(i, t[2]) for i, t in env if isinstance(t, tuple) and t[0] == 'slice' and t[1] == ty]
+            if views and rng.random() < 0.4:
+                # A word struct or enum element, read at an effectful index.
+                view, n = rng.choice(views)
+                return ('eIndex', view, self.in_bounds(n, depth, env, items))
             if calls and rng.random() < 0.5:
                 return self.eff_call(rng.choice(calls), depth, env, items)
             if ty[0] != 'slice' and ((depth > 0 and rng.random() < 0.5) or
@@ -528,7 +535,10 @@ class Gen:
                 if not is_object(cret):
                     mutable.append((ident, cret))
             elif kind == 'letEval':
-                if objects and rng.random() < 0.3:
+                elements = [t[1] for _, t in env if isinstance(t, tuple) and t[0] == 'slice' and is_object(t[1])]
+                if elements and rng.random() < 0.3:
+                    ty = rng.choice(elements)  # often read from a slice of word structs or enums
+                elif objects and rng.random() < 0.3:
                     ty = rng.choice(objects)
                 else:
                     ty = rng.choice(['i32', 'i32', 'bool'] + list(UINT_BITS))
@@ -791,7 +801,7 @@ def eff_ty(e, env):
     if kind in ('eStruct', 'eVariant'):
         return e[1]
     if kind == 'eIndex':
-        return 'i32'
+        return env[e[1]][1][1]
     if kind == 'eMatch':
         return e[3]
     if kind == 'eNeg':
@@ -825,7 +835,7 @@ def ev_eff(e, env, funcs):
         k, elements = ev_eff(e[2], env, funcs), env[e[1]][0]
         if not 0 <= k < len(elements):
             raise SystemExit('a generated index is out of bounds')
-        return elements[k]
+        return copy(elements[k])
     if kind == 'eStruct':
         return [ev_eff(f, env, funcs) for f in e[2]]
     if kind == 'eVariant':
