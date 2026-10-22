@@ -62,7 +62,7 @@ theorem Kept.trans {a b c : Heap} {p n : Nat} (first : Kept a b p n) (second : K
 /-- A vector whose storage is apart from `[q, q + n)` is kept. -/
 theorem VecRep.keptApart {h H : Heap} {q n : Nat} (kept : Kept h H q n) {vec : TypeId} {p cap : Nat} {len : Value}
     {xs : List Value} (rep : VecRep P T size vec h (.structure vec [.pointer p, len, .signed .i32 cap]) xs)
-    (apart : p + size * cap ≤ q ∨ q + n ≤ p) (positive : 0 < size) :
+    (apart : 0 < cap → (p + size * cap ≤ q ∨ q + n ≤ p)) (positive : 0 < size) :
     VecRep P T size vec H (.structure vec [.pointer p, len, .signed .i32 cap]) xs := by
   obtain ⟨p', cap', same, lenLe, capBound, buffer, reads⟩ := rep
   simp only [Value.structure.injEq, List.cons.injEq, Value.pointer.injEq, Value.signed.injEq, true_and,
@@ -71,9 +71,10 @@ theorem VecRep.keptApart {h H : Heap} {q n : Nat} (kept : Kept h H q n) {vec : T
   have : cap = cap' := by omega
   subst this
   refine ⟨p, cap, by rw [lenEq], lenLe, capBound,
-    fun pos => kept.buffers p (size * cap) (Nat.mul_pos positive pos) apart (buffer pos),
+    fun pos => kept.buffers p (size * cap) (Nat.mul_pos positive pos) (apart pos) (buffer pos),
     fun i inside other within => reads i inside other (ReadsWithin.trans (kept.reads _ _ ?_) within)⟩
   have := slot_inside (T := T) (size := size) (p := p) (show i < cap by omega)
+  have := apart (by omega)
   omega
 
 theorem filter_take_step (p : Value → Bool) (xs : List Value) {k : Nat} (kn : k < xs.length) :
@@ -101,7 +102,8 @@ theorem setAppendWhere_spec (grow : GrowInstance P T ids g) (kind : ElemKind P T
       (.structure ids.vec [.pointer p, .signed .i32 xs.length, .signed .i32 cap]) xs)
     (repR : VecRep P T size ids.vec caller.heap
       (.structure ids.vec [.pointer r, .signed .i32 ys.length, .signed .i32 rc]) ys)
-    (apartL : p + size * cap ≤ q ∨ q + size * m ≤ p) (apartR : r + size * rc ≤ q ∨ q + size * m ≤ r)
+    (apartL : 0 < cap → (p + size * cap ≤ q ∨ q + size * m ≤ p))
+    (apartR : 0 < rc → (r + size * rc ≤ q ∨ q + size * m ≤ r))
     (present : Bool) (room : acc.length + (whereIn eqv ys present xs).length ≤ m)
     (subL : ∀ z ∈ xs, z ∈ vals) (subR : ∀ z ∈ ys, z ∈ vals) (stores : ∀ y ∈ xs, ElemStore P T size y)
     (below : HeapBlocksBelowNext caller.heap) (unique : HeapBlockBasesUnique caller.heap)
