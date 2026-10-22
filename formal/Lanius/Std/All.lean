@@ -38,5 +38,8 @@ import Lanius.Std.MapSpec
 import Lanius.Std.MapSet
 import Lanius.Std.SetCount
 import Lanius.Std.SetAppend
+import Lanius.Std.SetAlgebra
+import Lanius.Std.SetSymmetric
+import Lanius.Std.SetUnion
 import Lanius.Std.VecClient
 import Lanius.Std.StdClients
