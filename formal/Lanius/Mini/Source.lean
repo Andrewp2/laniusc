@@ -168,7 +168,7 @@ def SrcProgram.toCore (prog : SrcProgram) : Core.Program where
 /-- What `compileSource` checks before it compiles the lowered functions. -/
 theorem compileSource_some {sp : SrcProgram} {binary : Binary} (compiled : compileSource sp = some binary) :
     funcsReturn sp.funcs = true ∧ (∃ decls, declareProgram sp = some decls) ∧
-      ∃ funcs, lowerFuncs (sigs sp.funcs) sp.funcs = some funcs ∧
+      ∃ funcs, lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some funcs ∧
         compileProgram { funcs := funcs } = some binary := by
   unfold compileSource at compiled
   split at compiled
@@ -177,11 +177,41 @@ theorem compileSource_some {sp : SrcProgram} {binary : Binary} (compiled : compi
     split at compiled
     · simp at compiled
     · rename_i decls found
+      have same : sp.decls = decls := by simp [SrcProgram.decls, found]
+      unfold compileLowered at compiled
       split at compiled
       · simp at compiled
       · rename_i funcs lowered
-        exact ⟨returns, ⟨decls, found⟩, funcs, lowered, compiled⟩
+        exact ⟨returns, ⟨decls, found⟩, funcs, same ▸ lowered, compiled⟩
   · simp at compiled
+
+theorem find_structs : ∀ (decls : List SrcStructDecl) (id : Nat),
+    (decls.map SrcStructDecl.toCore).find? (fun decl => decl.id == id) =
+      (structFields decls id).map fun fs => ⟨id, fs.map SrcType.toCore⟩
+  | [], _ => rfl
+  | decl :: rest, id => by
+    simp only [List.map_cons, List.find?_cons, structFields]
+    by_cases same : decl.id = id
+    · simp [same, SrcStructDecl.toCore]
+    · have ne : (decl.id == id) = false := by simpa using same
+      simp [same, ne, SrcStructDecl.toCore, find_structs rest id]
+
+theorem find_enums : ∀ (decls : List SrcEnumDecl) (id : Nat),
+    (decls.map SrcEnumDecl.toCore).find? (fun decl => decl.id == id) =
+      (enumVariants decls id).map fun vs => ⟨id, vs.map (List.map SrcType.toCore)⟩
+  | [], _ => rfl
+  | decl :: rest, id => by
+    simp only [List.map_cons, List.find?_cons, enumVariants]
+    by_cases same : decl.id = id
+    · simp [same, SrcEnumDecl.toCore]
+    · have ne : (decl.id == id) = false := by simpa using same
+      simp [same, ne, SrcEnumDecl.toCore, find_enums rest id]
+
+/-- A struct the front pass declared is declared in the program's Core meaning. -/
+theorem structFields_toCore {sp : SrcProgram} {id : Nat} {fs : List SrcType}
+    (found : structFields sp.decls.structs id = some fs) :
+    sp.toCore.structure? id = some ⟨id, fs.map SrcType.toCore⟩ := by
+  simp only [Core.Program.structure?, SrcProgram.toCore, find_structs, found, Option.map_some]
 
 /-- `ty.Holds value bits`: one slot holding `bits` represents the Core `value`
 of scalar type `ty`. An `i32` is its bits zero-extended; booleans are 1 and 0;

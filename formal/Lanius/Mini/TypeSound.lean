@@ -784,16 +784,33 @@ theorem lowerAddress_some {p o : Option Expr} {a : Expr} (h : lowerAddress p o =
     · simp at h
     · exact ⟨_, _, rfl, rfl⟩
 
-theorem lowerSlice_some {element : SrcType} {p l : Option Expr} {xs : List Expr}
-    (h : lowerSlice element p l = some xs) : element = .i32 ∧ ∃ x y, p = some x ∧ l = some y := by
+theorem elementWidths_struct {ds : SrcDecls} {e : SrcType} {ws : List MemWidth} (h : elementWidths ds e = some ws) :
+    ∃ id fields, e = .struct id fields := by
+  cases e with
+  | struct id fields => exact ⟨id, fields, rfl⟩
+  | i32 | bool | uint | enum | ptr | slice => simp [elementWidths] at h
+
+theorem lowerSlice_some {ds : SrcDecls} {element : SrcType} {p l : Option Expr} {xs : List Expr}
+    (h : lowerSlice ds element p l = some xs) :
+    (element = .i32 ∨ ∃ id fields, element = .struct id fields) ∧ ∃ x y, p = some x ∧ l = some y := by
   unfold lowerSlice at h
   split at h
-  · rename_i isI32
+  · rename_i cond
+    have kind : element = .i32 ∨ ∃ id fields, element = .struct id fields := by
+      simp only [Bool.or_eq_true] at cond
+      rcases cond with c | c
+      · exact .inl (eq_i32 c)
+      · right
+        unfold isWordStruct at c
+        split at c
+        · simp at c
+        · rename_i ws hws
+          exact elementWidths_struct hws
     split at h
     · simp at h
     · split at h
       · simp at h
-      · exact ⟨eq_i32 isI32, _, _, rfl, rfl⟩
+      · exact ⟨kind, _, _, rfl, rfl⟩
   · simp at h
 
 /-- An index the front pass accepts is an `i32` or a `usize`, both integer
@@ -830,9 +847,9 @@ theorem elementAddress_some {b : Binding} {index : Option Expr} {a : Expr}
     · exact ⟨e, _, elementOf_some he, rfl⟩
 
 theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
-    {sigs : List Sig} (sigsOk : SigsOk P sigs) {ret : SrcType} :
+    {sigs : List Sig} {decls : SrcDecls} (sigsOk : SigsOk P sigs) {ret : SrcType} :
     ∀ (s : SrcStmt) {scope : List Binding} {ctx : Typing.Context} {next : Nat} {inLoop : Bool}
-      {out : Stmt}, ScopeOk P ctx scope → s.Declared P → s.lower sigs ret scope next = some out →
+      {out : Stmt}, ScopeOk P ctx scope → s.Declared P → s.lower sigs decls ret scope next = some out →
       StmtHasType P ret.toCore ctx inLoop s.toCore
   | .nop, _, _, _, _, _, _, _, _ => .skip
   | .let id ty value body, scope, ctx, next, inLoop, out, ok, d, h => by
@@ -1040,12 +1057,41 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       split at h
       · simp at h
       · rename_i b hb
-        obtain ⟨rfl, x, y, hx, hy⟩ := lowerSlice_some hvs
-        exact .letLocal (.i32SliceFromRawParts (lowerAs_typed target ok hx) (lowerAs_typed target ok hy))
-          (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice .i32) (.slice d.1)) d.2 hb)
+        obtain ⟨kind, x, y, hx, hy⟩ := lowerSlice_some hvs
+        rcases kind with rfl | ⟨sid, fields, rfl⟩
+        · exact .letLocal (.i32SliceFromRawParts (lowerAs_typed target ok hx) (lowerAs_typed target ok hy))
+            (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice .i32) (.slice d.1)) d.2 hb)
+        · obtain ⟨found, -⟩ := declared_struct d.1
+          exact .letLocal (.typedSliceFromRawParts (.structureType sid _ found) (lowerAs_typed target ok hx)
+              (lowerAs_typed target ok hy))
+            (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .slice (.struct sid fields)) (.slice d.1))
+              d.2 hb)
   | .letIndex id ty slice index body, scope, ctx, next, inLoop, out, ok, d, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower, lowerLoadWord] at h
+    simp only [SrcStmt.lower, lowerLetIndex] at h
+    split at h
+    case isFalse =>
+      unfold lowerLoadFields at h
+      split at h
+      · simp at h
+      rename_i sb found
+      split at h
+      · simp at h
+      split at h
+      · simp at h
+      rename_i i hi
+      split at h
+      · simp at h
+      rename_i b hb
+      split at h
+      · rename_i same
+        obtain ⟨T, typedIndex, integer⟩ := lowerIndex_typed target ok hi
+        have inCtx := (ok slice sb found).1
+        rw [same_toCore same] at inCtx
+        exact .letLocal (.indexSlice (.local inCtx) typedIndex integer)
+          (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 hb)
+      · simp at h
+    simp only [lowerLoadWord] at h
     split at h
     · simp at h
     · rename_i a ha
@@ -1074,6 +1120,23 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       split at h
       · simp at h
       · rename_i e he
+        simp only [storeAny] at h
+        split at h
+        case isFalse =>
+          unfold storeStruct at h
+          split at h
+          · simp at h
+          split at h
+          · simp at h
+          rename_i i hi
+          split at h
+          · simp at h
+          rename_i vs hvs
+          obtain ⟨T, typedIndex, integer⟩ := lowerIndex_typed target ok hi
+          have inCtx := (ok slice sb found).1
+          rw [elementOf_some he] at inCtx
+          exact .expression (.assign (.indexSlice (.local inCtx) typedIndex integer)
+            (lowerValue_typed target ok hvs) .set)
         split at h
         · simp at h
         · rename_i a ha
@@ -1139,8 +1202,8 @@ theorem mem_coreFuncs : ∀ {funcs : List SrcFunc} {n : Nat} {f : Core.Function}
     · obtain ⟨i, g, hg, rfl⟩ := mem_coreFuncs h
       exact ⟨i, g, by simp [hg], rfl⟩
 
-theorem lowerFuncs_each {sigs : List Sig} : ∀ {funcs : List SrcFunc} {out : List Func},
-    lowerFuncs sigs funcs = some out → ∀ func ∈ funcs, ∃ c, lowerFunc sigs func = some c
+theorem lowerFuncs_each {sigs : List Sig} {decls : SrcDecls} : ∀ {funcs : List SrcFunc} {out : List Func},
+    lowerFuncs sigs decls funcs = some out → ∀ func ∈ funcs, ∃ c, lowerFunc sigs decls func = some c
   | [], _, _, _, h => by simp at h
   | func :: rest, out, lowered, g, hg => by
     simp only [lowerFuncs, lowerFuncCons] at lowered
@@ -1155,8 +1218,8 @@ theorem lowerFuncs_each {sigs : List Sig} : ∀ {funcs : List SrcFunc} {out : Li
         · exact ⟨c, hc⟩
         · exact lowerFuncs_each hcs g hg
 
-theorem lowerFunc_body {sigs : List Sig} {func : SrcFunc} {c : Func} (h : lowerFunc sigs func = some c) :
-    ∃ out, func.body.lower sigs func.ret (paramScope func.params 0 []) (paramsSize func.params) = some out := by
+theorem lowerFunc_body {sigs : List Sig} {decls : SrcDecls} {func : SrcFunc} {c : Func} (h : lowerFunc sigs decls func = some c) :
+    ∃ out, func.body.lower sigs decls func.ret (paramScope func.params 0 []) (paramsSize func.params) = some out := by
   unfold lowerFunc at h
   split at h
   · unfold lowerBody at h
@@ -1543,28 +1606,6 @@ theorem declareFuncs_sound : ∀ (funcs : List SrcFunc) {d d' : SrcDecls},
       · exact head (ext2.trans extD) agrees
       · exact tail extD agrees g mem
 
-theorem find_structs : ∀ (decls : List SrcStructDecl) (id : Nat),
-    (decls.map SrcStructDecl.toCore).find? (fun decl => decl.id == id) =
-      (structFields decls id).map fun fs => ⟨id, fs.map SrcType.toCore⟩
-  | [], _ => rfl
-  | decl :: rest, id => by
-    simp only [List.map_cons, List.find?_cons, structFields]
-    by_cases same : decl.id = id
-    · simp [same, SrcStructDecl.toCore]
-    · have ne : (decl.id == id) = false := by simpa using same
-      simp [same, ne, SrcStructDecl.toCore, find_structs rest id]
-
-theorem find_enums : ∀ (decls : List SrcEnumDecl) (id : Nat),
-    (decls.map SrcEnumDecl.toCore).find? (fun decl => decl.id == id) =
-      (enumVariants decls id).map fun vs => ⟨id, vs.map (List.map SrcType.toCore)⟩
-  | [], _ => rfl
-  | decl :: rest, id => by
-    simp only [List.map_cons, List.find?_cons, enumVariants]
-    by_cases same : decl.id = id
-    · simp [same, SrcEnumDecl.toCore]
-    · have ne : (decl.id == id) = false := by simpa using same
-      simp [same, ne, SrcEnumDecl.toCore, find_enums rest id]
-
 /-- `sp.toCore` has the declarations the front pass derives. -/
 theorem agrees_toCore {sp : SrcProgram} {decls : SrcDecls} (found : declareProgram sp = some decls) :
     Agrees sp.toCore decls := by
@@ -1608,7 +1649,7 @@ open TypeSound in
 is declared in `sp.toCore`, and every function body ends in a `return` on
 every path, the Core meaning of the program is well typed by Core's rules. -/
 theorem lowerFuncs_wellTyped {sp : SrcProgram} {funcs : List Func}
-    (lowered : lowerFuncs (sigs sp.funcs) sp.funcs = some funcs)
+    (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some funcs)
     (declared : sp.Declared sp.toCore)
     (returns : ∀ func ∈ sp.funcs, func.body.returns = true) :
     Typing.ProgramWellTyped sp.toCore := by
@@ -1654,10 +1695,10 @@ def idClash : SrcProgram :=
       (SrcStmt.return (SrcExpr.field 1 0)))
   { funcs := [{ params := [], ret := .i32, body := body }] }
 
-theorem noReturn_lowers : ∃ funcs, lowerFuncs (sigs noReturn.funcs) noReturn.funcs = some funcs :=
+theorem noReturn_lowers : ∃ funcs, lowerFuncs (sigs noReturn.funcs) noReturn.decls noReturn.funcs = some funcs :=
   ⟨_, rfl⟩
 
-theorem idClash_lowers : ∃ funcs, lowerFuncs (sigs idClash.funcs) idClash.funcs = some funcs :=
+theorem idClash_lowers : ∃ funcs, lowerFuncs (sigs idClash.funcs) idClash.decls idClash.funcs = some funcs :=
   ⟨_, rfl⟩
 
 theorem noReturn_rejected : compileSource noReturn = none := rfl

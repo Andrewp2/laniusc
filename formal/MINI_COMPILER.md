@@ -236,26 +236,39 @@ semantics:
   match Core's little-endian `loadNatLE` and `storeBytes` with the mini heap's
   `readLE` and `writeLE`. Making a slice only marks its block borrowed, which
   `HeapCorr` does not depend on.
+- Struct slices (`SliceLayout`, `LowerStmt`): `slice_from_raw_parts` also
+  takes structs whose fields are all `i32`, `bool`, `usize` or `ptr`. Core
+  gives each such field one 8-byte native word, and element `i` of a struct
+  of `n` fields sits at address - (i*n + n - 1)*8 (Core's `elementBase?`,
+  which grows down). The front pass computes that base, then loads or stores
+  each field with one word operation at base + 8j: 4 bytes for `i32` and
+  `bool`, 8 for `usize` and `ptr`. The lowering now gets the program's
+  declarations, so it checks a slice's element type against the declared
+  struct. `SliceLayout` proves Core's layout for these structs
+  (`valueWords_struct`, `fieldOffset_struct`) and reads them field by field;
+  `exec_loadFields` and `exec_storeFields` match the mini loads and stores
+  with Core's `readNativeValue` and `writeNativeValue`.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Source` | 420 | 1.2 | Core meaning of source programs and their declarations, value representation, `i32` wrap lemmas |
+| `Source` | 450 | 1.2 | Core meaning of source programs and their declarations, value representation, `i32` wrap lemmas |
 | `Unsigned` | 166 | 2.4 | unsigned arithmetic, comparisons and casts as slot arithmetic |
 | `LowerExpr` | 669 | 5.1 | expressions |
 | `Grows` | 1044 | 4.0 | Core's `nextAddress` never decreases; Core call and statement inversions |
 | `HeapCorr` | 501 | 1.1 | Core heap to mini heap correspondence; allocate, load, store, free |
-| `LowerStmt` | 2794 | 8.8 | Core cells, frames, flat values, calls, enums and `match`, statements |
+| `SliceLayout` | 398 | 7.8 | Core's native layout of word structs; their field reads and the mini element address |
+| `LowerStmt` | 3232 | 10.7 | Core cells, frames, flat values, calls, enums and `match`, statements |
 | `SourceCorrect` | 102 | 0.8 | top-level theorem |
 | `Determinism` | 97 | 1.1 | both top-level theorems for every run of the same length (step 14) |
-| `TypeSound` | 1704 | 2.3 | type checker soundness: an accepted program is well typed in Core (step 7) |
+| `TypeSound` | 1745 | 2.3 | type checker soundness: an accepted program is well typed in Core (step 7) |
 
 The pass is about 1,880 lines of Lanius (the end of `compiler.lani`), and the
-proofs are about 5,700 lines, plus 1,704 for type checker soundness. The per-function difftest covers it (146
+proofs are about 5,700 lines, plus 1,745 for type checker soundness. The per-function difftest covers it (146
 functions, 2,920 calls after the unsigned types, run as two shards with
 `--shard 0/2` and `1/2`, no differences; 11 native stack overflows on huge
 random counts; types nested through `List` render through a `mutual` block of
 `partial def`s; after the front-pass heap, 157 functions and 3,140 calls,
-no differences, 9 native stack overflows); at 30 cases per function the harness is now too large for
+no differences, 9 native stack overflows; after struct slices, 204 functions and 4,080 calls as three shards, no differences, 9 stack overflows and 3 `element_base` panics on huge random counts, where `times` checks for overflow); at 30 cases per function the harness is now too large for
 laniusc on the laptop (a GPU buffer fails to allocate). Assumptions the theorem does not cover yet: Core
 programs outside the subset, and traps and divergence (the theorem covers runs
 that return). The source's type checker is sound for Core's typing rules

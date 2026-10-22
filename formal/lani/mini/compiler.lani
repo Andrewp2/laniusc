@@ -1943,10 +1943,185 @@ pub fn lower_free(shift: usize, pointer: core::option::Option<Expr>, size: core:
     return None;
 }
 
-// A raw slice's one slot: its address. Only i32 elements so far; Core checks
-// the length when the slice is made and each index against it.
-pub fn lower_slice(element: SrcType, pointer: core::option::Option<Expr>, length: core::option::Option<Expr>) -> core::option::Option<List<Expr>> {
-    if (element.is_i32()) {
+// Struct id's field types.
+pub struct SrcStructDecl {
+    id: usize,
+    fields: List<SrcType>,
+}
+
+// Enum id's variants, each its payload types.
+pub struct SrcEnumDecl {
+    id: usize,
+    variants: List<List<SrcType>>,
+}
+
+pub struct SrcDecls {
+    structs: List<SrcStructDecl>,
+    enums: List<SrcEnumDecl>,
+}
+
+// The fields declared for struct id.
+pub fn struct_fields(decls: List<SrcStructDecl>, id: usize) -> core::option::Option<List<SrcType>> {
+    return match (decls) {
+        Nil -> None,
+        Cons(decl, rest) -> struct_fields_at(decl, unbox(rest), id),
+    };
+}
+
+// extract: inline
+fn struct_fields_at(decl: SrcStructDecl, rest: List<SrcStructDecl>, id: usize) -> core::option::Option<List<SrcType>> {
+    if (decl.id == id) {
+        return Some(decl.fields);
+    }
+    return struct_fields(rest, id);
+}
+
+// The variants declared for enum id.
+pub fn enum_variants(decls: List<SrcEnumDecl>, id: usize) -> core::option::Option<List<List<SrcType>>> {
+    return match (decls) {
+        Nil -> None,
+        Cons(decl, rest) -> enum_variants_at(decl, unbox(rest), id),
+    };
+}
+
+// extract: inline
+fn enum_variants_at(decl: SrcEnumDecl, rest: List<SrcEnumDecl>, id: usize) -> core::option::Option<List<List<SrcType>>> {
+    if (decl.id == id) {
+        return Some(decl.variants);
+    }
+    return enum_variants(rest, id);
+}
+
+pub fn usize_width(kind: UintTy) -> core::option::Option<MemWidth> {
+    return match (kind) {
+        Uint8 -> None,
+        Uint32 -> None,
+        Uint64 -> None,
+        Usize -> Some(M64),
+    };
+}
+
+// The width a field of a struct element is loaded and stored with. Each
+// field takes one native word: 4 bytes are read for i32 and bool, 8 for
+// usize and ptr. Other field types are not supported in slices yet.
+pub fn word_width(ty: SrcType) -> core::option::Option<MemWidth> {
+    return match (ty) {
+        I32 -> Some(M32),
+        Bool -> Some(M32),
+        Uint(kind) -> usize_width(kind),
+        Struct(id, fields) -> None,
+        Enum(id, variants) -> None,
+        Ptr -> Some(M64),
+        Slice(element) -> None,
+    };
+}
+
+pub fn cons_width(width: core::option::Option<MemWidth>, rest: core::option::Option<List<MemWidth>>) -> core::option::Option<List<MemWidth>> {
+    return match (width) {
+        None -> None,
+        Some(w) -> match (rest) {
+            None -> None,
+            Some(ws) -> Some(cons(w, ws)),
+        },
+    };
+}
+
+pub fn word_widths(fields: List<SrcType>) -> core::option::Option<List<MemWidth>> {
+    return match (fields) {
+        Nil -> Some(empty()),
+        Cons(field, rest) -> cons_width(word_width(field), word_widths(unbox(rest))),
+    };
+}
+
+pub fn nonempty_widths(widths: core::option::Option<List<MemWidth>>) -> core::option::Option<List<MemWidth>> {
+    return match (widths) {
+        None -> None,
+        Some(ws) -> match (ws) {
+            Nil -> None,
+            Cons(w, rest) -> Some(cons(w, unbox(rest))),
+        },
+    };
+}
+
+pub fn declared_widths(declared: core::option::Option<List<SrcType>>, fields: List<SrcType>) -> core::option::Option<List<MemWidth>> {
+    return match (declared) {
+        None -> None,
+        Some(fs) -> same_widths(types_same(fs, fields), fields),
+    };
+}
+
+// extract: inline
+fn same_widths(same: bool, fields: List<SrcType>) -> core::option::Option<List<MemWidth>> {
+    if (same) {
+        return nonempty_widths(word_widths(fields));
+    }
+    return None;
+}
+
+// The field widths of a struct slice element: at least one field, each one
+// native word, so the element takes as many words as it has fields. Core
+// lays the element out by its declaration, which must be these fields.
+pub fn element_widths(decls: SrcDecls, element: SrcType) -> core::option::Option<List<MemWidth>> {
+    return match (element) {
+        I32 -> None,
+        Bool -> None,
+        Uint(kind) -> None,
+        Struct(id, fields) -> declared_widths(struct_fields(decls.structs, id), unbox(fields)),
+        Enum(id, variants) -> None,
+        Ptr -> None,
+        Slice(inner) -> None,
+    };
+}
+
+pub fn is_word_struct(decls: SrcDecls, element: SrcType) -> bool {
+    return match (element_widths(decls, element)) {
+        None -> false,
+        Some(ws) -> true,
+    };
+}
+
+// A struct slice's descriptor points at element zero's high word, and
+// elements of `words` words run downward: element index starts
+// (index * words + words - 1) words below it.
+pub fn element_base(slot: usize, words: usize, index: Expr) -> Expr {
+    let stride: Expr = Binary(U64, Mul, boxed(index), boxed(Lit(times(8, words) as u64)));
+    return Binary(U64, Sub, boxed(Var(slot)), boxed(Binary(U64, Add, boxed(stride), boxed(Lit(times(8, minus(words, 1)) as u64)))));
+}
+
+// Load the fields at base + offset, base + offset + 8, ... into the slots
+// from target, then run body.
+pub fn load_fields(widths: List<MemWidth>, target: usize, base: Expr, offset: usize, body: Stmt) -> Stmt {
+    return match (widths) {
+        Nil -> body,
+        Cons(w, rest) -> Seq(boxed(LoadWord(w, target, Binary(U64, Add, boxed(base), boxed(Lit(offset as u64))))), boxed(load_fields(unbox(rest), plus(target, 1), base, plus(offset, 8), body))),
+    };
+}
+
+pub fn store_then(w: MemWidth, address: Expr, value: Expr, rest: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (rest) {
+        None -> None,
+        Some(s) -> Some(Seq(boxed(StoreWord(w, address, value)), boxed(s))),
+    };
+}
+
+// Store the field values at base + offset, base + offset + 8, ...
+pub fn store_fields(widths: List<MemWidth>, values: List<Expr>, base: Expr, offset: usize) -> core::option::Option<Stmt> {
+    return match (widths) {
+        Nil -> match (values) {
+            Nil -> Some(Skip),
+            Cons(v, more) -> None,
+        },
+        Cons(w, rest) -> match (values) {
+            Nil -> None,
+            Cons(v, more) -> store_then(w, Binary(U64, Add, boxed(base), boxed(Lit(offset as u64))), v, store_fields(unbox(rest), unbox(more), base, plus(offset, 8))),
+        },
+    };
+}
+
+// A raw slice's one slot: its address. Elements are i32 or word structs;
+// Core checks the length when the slice is made and each index against it.
+pub fn lower_slice(decls: SrcDecls, element: SrcType, pointer: core::option::Option<Expr>, length: core::option::Option<Expr>) -> core::option::Option<List<Expr>> {
+    if (element.is_i32() || is_word_struct(decls, element)) {
         return match (pointer) {
             None -> None,
             Some(p) -> match (length) {
@@ -2042,45 +2217,98 @@ fn store_element(b: Binding, element: SrcType, index: core::option::Option<Expr>
     };
 }
 
-pub fn lower_set_index_of(b: Binding, index: core::option::Option<Expr>, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
-    return match (element_of(b.ty)) {
+// slice[index] = value for a word struct element: its fields, one store each.
+pub fn store_struct(decls: SrcDecls, b: Binding, element: SrcType, index: core::option::Option<Expr>, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
+    return match (element_widths(decls, element)) {
         None -> None,
-        Some(element) -> store_element(b, element, index, scope, value),
+        Some(ws) -> match (index) {
+            None -> None,
+            Some(i) -> match (lower_value(scope, value, element)) {
+                None -> None,
+                Some(vs) -> store_fields(ws, vs, element_base(b.slot, length(ws), i), 0),
+            },
+        },
     };
 }
 
-pub fn lower_set_index(binding: core::option::Option<Binding>, index: core::option::Option<Expr>, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
+pub fn store_any(decls: SrcDecls, b: Binding, element: SrcType, index: core::option::Option<Expr>, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
+    if (element.is_i32()) {
+        return store_element(b, element, index, scope, value);
+    }
+    return store_struct(decls, b, element, index, scope, value);
+}
+
+pub fn lower_set_index_of(decls: SrcDecls, b: Binding, index: core::option::Option<Expr>, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
+    return match (element_of(b.ty)) {
+        None -> None,
+        Some(element) -> store_any(decls, b, element, index, scope, value),
+    };
+}
+
+// let x: ty = slice[index] for a word struct ty: each field loaded into its slot.
+pub fn lower_load_fields(decls: SrcDecls, next: usize, binding: core::option::Option<Binding>, ty: SrcType, index: core::option::Option<Expr>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
     return match (binding) {
         None -> None,
-        Some(b) -> lower_set_index_of(b, index, scope, value),
+        Some(b) -> match (element_widths(decls, ty)) {
+            None -> None,
+            Some(ws) -> match (index) {
+                None -> None,
+                Some(i) -> match (body) {
+                    None -> None,
+                    Some(s) -> checked_fields(b, ty, ws, i, next, s),
+                },
+            },
+        },
+    };
+}
+
+// extract: inline
+fn checked_fields(b: Binding, ty: SrcType, ws: List<MemWidth>, i: Expr, next: usize, s: Stmt) -> core::option::Option<Stmt> {
+    if (b.ty.same(Slice(boxed(ty)))) {
+        return Some(load_fields(ws, next, element_base(b.slot, length(ws), i), 0, s));
+    }
+    return None;
+}
+
+pub fn lower_let_index(decls: SrcDecls, next: usize, binding: core::option::Option<Binding>, ty: SrcType, index: core::option::Option<Expr>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    if (ty.is_i32()) {
+        return lower_load_word(next, lower_element(binding, ty, index), body);
+    }
+    return lower_load_fields(decls, next, binding, ty, index, body);
+}
+
+pub fn lower_set_index(decls: SrcDecls, binding: core::option::Option<Binding>, index: core::option::Option<Expr>, scope: List<Binding>, value: SrcExpr) -> core::option::Option<Stmt> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> lower_set_index_of(decls, b, index, scope, value),
     };
 }
 
 // sigs are the program's signatures and ret the function's result type; next
 // is the first slot no binding in scope uses.
 impl SrcStmt {
-    pub fn lower(self, sigs: List<Sig>, ret: SrcType, scope: List<Binding>, next: usize) -> core::option::Option<Stmt> {
+    pub fn lower(self, sigs: List<Sig>, decls: SrcDecls, ret: SrcType, scope: List<Binding>, next: usize) -> core::option::Option<Stmt> {
         return match (self) {
             Nop -> Some(Skip),
-            Let(id, ty, value, body) -> lower_let(next, lower_value(scope, value, ty), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
-            LetStruct(id, ty, fields, body) -> lower_let(next, lower_literal(scope, ty, fields), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
-            LetCall(id, ty, callee, args, body) -> lower_let_call(next, ty.size(), callee, lower_call(sigs, scope, callee, args, ty), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
-            LetEnum(id, ty, variant, payload, body) -> lower_let(next, lower_enum_value(scope, ty, variant, payload), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
-            LetMatch(id, ty, scrutinee, enum_id, arms, body) -> lower_then(lower_match(scope, lookup(scope, scrutinee), enum_id, arms, ty, next), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
+            Let(id, ty, value, body) -> lower_let(next, lower_value(scope, value, ty), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
+            LetStruct(id, ty, fields, body) -> lower_let(next, lower_literal(scope, ty, fields), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
+            LetCall(id, ty, callee, args, body) -> lower_let_call(next, ty.size(), callee, lower_call(sigs, scope, callee, args, ty), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
+            LetEnum(id, ty, variant, payload, body) -> lower_let(next, lower_enum_value(scope, ty, variant, payload), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
+            LetMatch(id, ty, scrutinee, enum_id, arms, body) -> lower_then(lower_match(scope, lookup(scope, scrutinee), enum_id, arms, ty, next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
             Set(id, value) -> lower_set(lookup(scope, id), scope, value),
             SetField(id, index, value) -> lower_set_field(lookup(scope, id), index, scope, value),
             SetCall(id, callee, args) -> lower_set_call(sigs, scope, lookup(scope, id), callee, args),
-            Then(first, second) -> lower_then(unbox(first).lower(sigs, ret, scope, next), unbox(second).lower(sigs, ret, scope, next)),
-            If(condition, then_branch, else_branch) -> lower_if(lower_as(scope, condition, Bool), unbox(then_branch).lower(sigs, ret, scope, next), unbox(else_branch).lower(sigs, ret, scope, next)),
-            While(condition, body) -> lower_while(lower_as(scope, condition, Bool), unbox(body).lower(sigs, ret, scope, next)),
+            Then(first, second) -> lower_then(unbox(first).lower(sigs, decls, ret, scope, next), unbox(second).lower(sigs, decls, ret, scope, next)),
+            If(condition, then_branch, else_branch) -> lower_if(lower_as(scope, condition, Bool), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next)),
+            While(condition, body) -> lower_while(lower_as(scope, condition, Bool), unbox(body).lower(sigs, decls, ret, scope, next)),
             Return(value) -> lower_return(lower_value(scope, value, ret)),
-            LetAlloc(id, size, shift, body) -> lower_alloc(next, shift, lower_as(scope, size, Uint(Usize)), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: Ptr }, scope), plus(next, 1))),
-            LetLoad(id, pointer, offset, body) -> lower_load(next, lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: Uint(Uint8) }, scope), plus(next, 1))),
+            LetAlloc(id, size, shift, body) -> lower_alloc(next, shift, lower_as(scope, size, Uint(Usize)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Ptr }, scope), plus(next, 1))),
+            LetLoad(id, pointer, offset, body) -> lower_load(next, lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Uint(Uint8) }, scope), plus(next, 1))),
             SetByte(pointer, offset, value) -> lower_store(lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), lower_as(scope, value, Uint(Uint8))),
             Free(pointer, size, shift) -> lower_free(shift, lower_as(scope, pointer, Ptr), lower_as(scope, size, Uint(Usize))),
-            LetSlice(id, element, pointer, length, body) -> lower_let(next, lower_slice(element, lower_as(scope, pointer, Ptr), lower_as(scope, length, I32)), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: Slice(boxed(element)) }, scope), plus(next, 1))),
-            LetIndex(id, ty, slice, index, body) -> lower_load_word(next, lower_element(lookup(scope, slice), ty, lower_index(scope, index)), unbox(body).lower(sigs, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, 1))),
-            SetIndex(slice, index, value) -> lower_set_index(lookup(scope, slice), lower_index(scope, index), scope, value),
+            LetSlice(id, element, pointer, length, body) -> lower_let(next, lower_slice(decls, element, lower_as(scope, pointer, Ptr), lower_as(scope, length, I32)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Slice(boxed(element)) }, scope), plus(next, 1))),
+            LetIndex(id, ty, slice, index, body) -> lower_let_index(decls, next, lookup(scope, slice), ty, lower_index(scope, index), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
+            SetIndex(slice, index, value) -> lower_set_index(decls, lookup(scope, slice), lower_index(scope, index), scope, value),
         };
     }
 
@@ -2105,7 +2333,7 @@ impl SrcStmt {
             SetByte(pointer, offset, value) -> 0,
             Free(pointer, size, shift) -> 0,
             LetSlice(id, element, pointer, length, body) -> plus(unbox(body).depth(), 1),
-            LetIndex(id, ty, slice, index, body) -> plus(unbox(body).depth(), 1),
+            LetIndex(id, ty, slice, index, body) -> plus(unbox(body).depth(), ty.size()),
             SetIndex(slice, index, value) -> 0,
         };
     }
@@ -2158,10 +2386,10 @@ pub fn lower_body(count: usize, results: usize, depth: usize, body: core::option
 
 // Results and struct parameters have slots; a function returns its result
 // type's slots, so it has at least that many locals.
-pub fn lower_func(sigs: List<Sig>, func: SrcFunc) -> core::option::Option<Func> {
+pub fn lower_func(sigs: List<Sig>, decls: SrcDecls, func: SrcFunc) -> core::option::Option<Func> {
     let count: usize = params_size(func.params);
     if ((func.ret.size() > 0) && params_valid(func.params)) {
-        return lower_body(count, func.ret.size(), func.body.depth(), func.body.lower(sigs, func.ret, param_scope(func.params, 0, empty()), count));
+        return lower_body(count, func.ret.size(), func.body.depth(), func.body.lower(sigs, decls, func.ret, param_scope(func.params, 0, empty()), count));
     }
     return None;
 }
@@ -2176,10 +2404,10 @@ pub fn lower_func_cons(first: core::option::Option<Func>, rest: core::option::Op
     };
 }
 
-pub fn lower_funcs(sigs: List<Sig>, funcs: List<SrcFunc>) -> core::option::Option<List<Func>> {
+pub fn lower_funcs(sigs: List<Sig>, decls: SrcDecls, funcs: List<SrcFunc>) -> core::option::Option<List<Func>> {
     return match (funcs) {
         Nil -> Some(empty()),
-        Cons(func, rest) -> lower_func_cons(lower_func(sigs, func), lower_funcs(sigs, unbox(rest))),
+        Cons(func, rest) -> lower_func_cons(lower_func(sigs, decls, func), lower_funcs(sigs, decls, unbox(rest))),
     };
 }
 
@@ -2194,55 +2422,6 @@ pub fn lower_funcs(sigs: List<Sig>, funcs: List<SrcFunc>) -> core::option::Optio
 // program's Core meaning.
 //
 // Returns: a function body ends in a return on every path.
-
-// Struct id's field types.
-pub struct SrcStructDecl {
-    id: usize,
-    fields: List<SrcType>,
-}
-
-// Enum id's variants, each its payload types.
-pub struct SrcEnumDecl {
-    id: usize,
-    variants: List<List<SrcType>>,
-}
-
-pub struct SrcDecls {
-    structs: List<SrcStructDecl>,
-    enums: List<SrcEnumDecl>,
-}
-
-// The fields declared for struct id.
-pub fn struct_fields(decls: List<SrcStructDecl>, id: usize) -> core::option::Option<List<SrcType>> {
-    return match (decls) {
-        Nil -> None,
-        Cons(decl, rest) -> struct_fields_at(decl, unbox(rest), id),
-    };
-}
-
-// extract: inline
-fn struct_fields_at(decl: SrcStructDecl, rest: List<SrcStructDecl>, id: usize) -> core::option::Option<List<SrcType>> {
-    if (decl.id == id) {
-        return Some(decl.fields);
-    }
-    return struct_fields(rest, id);
-}
-
-// The variants declared for enum id.
-pub fn enum_variants(decls: List<SrcEnumDecl>, id: usize) -> core::option::Option<List<List<SrcType>>> {
-    return match (decls) {
-        Nil -> None,
-        Cons(decl, rest) -> enum_variants_at(decl, unbox(rest), id),
-    };
-}
-
-// extract: inline
-fn enum_variants_at(decl: SrcEnumDecl, rest: List<SrcEnumDecl>, id: usize) -> core::option::Option<List<List<SrcType>>> {
-    if (decl.id == id) {
-        return Some(decl.variants);
-    }
-    return enum_variants(rest, id);
-}
 
 // decls, if the declaration already there agrees.
 pub fn keep_if(agrees: bool, decls: SrcDecls) -> core::option::Option<SrcDecls> {
@@ -2445,20 +2624,26 @@ pub fn funcs_return(funcs: List<SrcFunc>) -> bool {
     };
 }
 
-pub fn compile_declared(decls: core::option::Option<SrcDecls>, funcs: core::option::Option<List<Func>>) -> core::option::Option<Binary> {
+pub fn compile_lowered(funcs: core::option::Option<List<Func>>) -> core::option::Option<Binary> {
+    return match (funcs) {
+        None -> None,
+        Some(fs) -> compile_program(Program { funcs: fs }),
+    };
+}
+
+// The functions are lowered against the declarations, which the slice
+// lowering consults for its element types.
+pub fn compile_declared(decls: core::option::Option<SrcDecls>, prog: SrcProgram) -> core::option::Option<Binary> {
     return match (decls) {
         None -> None,
-        Some(d) -> match (funcs) {
-            None -> None,
-            Some(fs) -> compile_program(Program { funcs: fs }),
-        },
+        Some(d) -> compile_lowered(lower_funcs(sigs(prog.funcs), d, prog.funcs)),
     };
 }
 
 // Machine code of a source program.
 pub fn compile_source(prog: SrcProgram) -> core::option::Option<Binary> {
     if (funcs_return(prog.funcs)) {
-        return compile_declared(declare_program(prog), lower_funcs(sigs(prog.funcs), prog.funcs));
+        return compile_declared(declare_program(prog), prog);
     }
     return None;
 }

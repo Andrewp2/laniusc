@@ -1525,9 +1525,139 @@ def lowerFree (shift : Nat) (pointer : Option Expr) (size : Option Expr) : Optio
   else
     none
 
-/-- A raw slice's one slot: its address. Only i32 elements so far; Core checks the length when the slice is made and each index against it. -/
-def lowerSlice (element : SrcType) (pointer : Option Expr) (length : Option Expr) : Option (List Expr) :=
-  if SrcType.isI32 element then
+/-- Struct id's field types. -/
+structure SrcStructDecl where
+  id : Nat
+  fields : List SrcType
+  deriving Repr
+
+/-- Enum id's variants, each its payload types. -/
+structure SrcEnumDecl where
+  id : Nat
+  variants : List (List SrcType)
+  deriving Repr
+
+structure SrcDecls where
+  structs : List SrcStructDecl
+  enums : List SrcEnumDecl
+  deriving Repr
+
+/-- The fields declared for struct id. -/
+def structFields (decls : List SrcStructDecl) (id : Nat) : Option (List SrcType) :=
+  match decls with
+  | [] => none
+  | decl :: rest =>
+    if decl.id = id then
+      some decl.fields
+    else
+      structFields rest id
+
+/-- The variants declared for enum id. -/
+def enumVariants (decls : List SrcEnumDecl) (id : Nat) : Option (List (List SrcType)) :=
+  match decls with
+  | [] => none
+  | decl :: rest =>
+    if decl.id = id then
+      some decl.variants
+    else
+      enumVariants rest id
+
+def usizeWidth (kind : UintTy) : Option MemWidth :=
+  match kind with
+  | .uint8 => none
+  | .uint32 => none
+  | .uint64 => none
+  | .usize => some MemWidth.m64
+
+/-- The width a field of a struct element is loaded and stored with. Each field takes one native word: 4 bytes are read for i32 and bool, 8 for usize and ptr. Other field types are not supported in slices yet. -/
+def wordWidth (ty : SrcType) : Option MemWidth :=
+  match ty with
+  | .i32 => some MemWidth.m32
+  | .bool => some MemWidth.m32
+  | .uint kind => usizeWidth kind
+  | .struct id fields => none
+  | .enum id variants => none
+  | .ptr => some MemWidth.m64
+  | .slice element => none
+
+def consWidth (width : Option MemWidth) (rest : Option (List MemWidth)) : Option (List MemWidth) :=
+  match width with
+  | none => none
+  | some w =>
+    match rest with
+    | none => none
+    | some ws => some (w :: ws)
+
+def wordWidths (fields : List SrcType) : Option (List MemWidth) :=
+  match fields with
+  | [] => some []
+  | field :: rest => consWidth (wordWidth field) (wordWidths rest)
+
+def nonemptyWidths (widths : Option (List MemWidth)) : Option (List MemWidth) :=
+  match widths with
+  | none => none
+  | some ws =>
+    match ws with
+    | [] => none
+    | w :: rest => some (w :: rest)
+
+def declaredWidths (declared : Option (List SrcType)) (fields : List SrcType) : Option (List MemWidth) :=
+  match declared with
+  | none => none
+  | some fs =>
+    let same : Bool := typesSame fs fields
+    if same then
+      nonemptyWidths (wordWidths fields)
+    else
+      none
+
+/-- The field widths of a struct slice element: at least one field, each one native word, so the element takes as many words as it has fields. Core lays the element out by its declaration, which must be these fields. -/
+def elementWidths (decls : SrcDecls) (element : SrcType) : Option (List MemWidth) :=
+  match element with
+  | .i32 => none
+  | .bool => none
+  | .uint kind => none
+  | .struct id fields => declaredWidths (structFields decls.structs id) fields
+  | .enum id variants => none
+  | .ptr => none
+  | .slice inner => none
+
+def isWordStruct (decls : SrcDecls) (element : SrcType) : Bool :=
+  match elementWidths decls element with
+  | none => false
+  | some ws => true
+
+/-- A struct slice's descriptor points at element zero's high word, and elements of `words` words run downward: element index starts (index * words + words - 1) words below it. -/
+def elementBase (slot : Nat) (words : Nat) (index : Expr) : Expr :=
+  let stride : Expr := Expr.binary Word.u64 BinOp.mul index (Expr.lit (BitVec.ofNat 64 (8 * words)))
+  Expr.binary Word.u64 BinOp.sub (Expr.var slot) (Expr.binary Word.u64 BinOp.add stride (Expr.lit (BitVec.ofNat 64 (8 * (words - 1)))))
+
+/-- Load the fields at base + offset, base + offset + 8, ... into the slots from target, then run body. -/
+def loadFields (widths : List MemWidth) (target : Nat) (base : Expr) (offset : Nat) (body : Stmt) : Stmt :=
+  match widths with
+  | [] => body
+  | w :: rest => Stmt.seq (Stmt.loadWord w target (Expr.binary Word.u64 BinOp.add base (Expr.lit (BitVec.ofNat 64 offset)))) (loadFields rest (target + 1) base (offset + 8) body)
+
+def storeThen (w : MemWidth) (address : Expr) (value : Expr) (rest : Option Stmt) : Option Stmt :=
+  match rest with
+  | none => none
+  | some s => some (Stmt.seq (Stmt.storeWord w address value) s)
+
+/-- Store the field values at base + offset, base + offset + 8, ... -/
+def storeFields (widths : List MemWidth) (values : List Expr) (base : Expr) (offset : Nat) : Option Stmt :=
+  match widths with
+  | [] =>
+    (match values with
+     | [] => some Stmt.skip
+     | v :: more => none)
+  | w :: rest =>
+    match values with
+    | [] => none
+    | v :: more => storeThen w (Expr.binary Word.u64 BinOp.add base (Expr.lit (BitVec.ofNat 64 offset))) v (storeFields rest more base (offset + 8))
+
+/-- A raw slice's one slot: its address. Elements are i32 or word structs; Core checks the length when the slice is made and each index against it. -/
+def lowerSlice (decls : SrcDecls) (element : SrcType) (pointer : Option Expr) (length : Option Expr) : Option (List Expr) :=
+  if SrcType.isI32 element || isWordStruct decls element then
     match pointer with
     | none => none
     | some p =>
@@ -1592,44 +1722,86 @@ def lowerLoadWord (slot : Nat) (address : Option Expr) (body : Option Stmt) : Op
     | none => none
     | some b => some (Stmt.seq (Stmt.loadWord MemWidth.m32 slot a) b)
 
-def lowerSetIndexOf (b : Binding) (index : Option Expr) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
-  match elementOf b.ty with
+/-- slice[index] = value for a word struct element: its fields, one store each. -/
+def storeStruct (decls : SrcDecls) (b : Binding) (element : SrcType) (index : Option Expr) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
+  match elementWidths decls element with
   | none => none
-  | some element =>
+  | some ws =>
+    match index with
+    | none => none
+    | some i =>
+      match lowerValue scope value element with
+      | none => none
+      | some vs => storeFields ws vs (elementBase b.slot ws.length i) 0
+
+def storeAny (decls : SrcDecls) (b : Binding) (element : SrcType) (index : Option Expr) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
+  if SrcType.isI32 element then
     match elementAddress b index with
     | none => none
     | some a =>
       match lowerAs scope value element with
       | none => none
       | some v => some (Stmt.storeWord MemWidth.m32 a v)
+  else
+    storeStruct decls b element index scope value
 
-def lowerSetIndex (binding : Option Binding) (index : Option Expr) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
+def lowerSetIndexOf (decls : SrcDecls) (b : Binding) (index : Option Expr) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
+  match elementOf b.ty with
+  | none => none
+  | some element => storeAny decls b element index scope value
+
+/-- let x: ty = slice[index] for a word struct ty: each field loaded into its slot. -/
+def lowerLoadFields (decls : SrcDecls) (next : Nat) (binding : Option Binding) (ty : SrcType) (index : Option Expr) (body : Option Stmt) : Option Stmt :=
   match binding with
   | none => none
-  | some b => lowerSetIndexOf b index scope value
+  | some b =>
+    match elementWidths decls ty with
+    | none => none
+    | some ws =>
+      match index with
+      | none => none
+      | some i =>
+        match body with
+        | none => none
+        | some s =>
+          if SrcType.same b.ty (SrcType.slice ty) then
+            some (loadFields ws next (elementBase b.slot ws.length i) 0 s)
+          else
+            none
 
-def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (ret : SrcType) (scope : List Binding) (next : Nat) : Option Stmt :=
+def lowerLetIndex (decls : SrcDecls) (next : Nat) (binding : Option Binding) (ty : SrcType) (index : Option Expr) (body : Option Stmt) : Option Stmt :=
+  if SrcType.isI32 ty then
+    lowerLoadWord next (lowerElement binding ty index) body
+  else
+    lowerLoadFields decls next binding ty index body
+
+def lowerSetIndex (decls : SrcDecls) (binding : Option Binding) (index : Option Expr) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
+  match binding with
+  | none => none
+  | some b => lowerSetIndexOf decls b index scope value
+
+def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : SrcType) (scope : List Binding) (next : Nat) : Option Stmt :=
   match self with
   | .nop => some Stmt.skip
-  | .let id ty value body => lowerLet next (lowerValue scope value ty) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
-  | .letStruct id ty fields body => lowerLet next (lowerLiteral scope ty fields) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
-  | .letCall id ty callee args body => lowerLetCall next (SrcType.size ty) callee (lowerCall sigs scope callee args ty) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
-  | .letEnum id ty variant payload body => lowerLet next (lowerEnumValue scope ty variant payload) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
-  | .letMatch id ty scrutinee enumId arms body => lowerThen (lowerMatch scope (lookup scope scrutinee) enumId arms ty next) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
+  | .let id ty value body => lowerLet next (lowerValue scope value ty) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
+  | .letStruct id ty fields body => lowerLet next (lowerLiteral scope ty fields) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
+  | .letCall id ty callee args body => lowerLetCall next (SrcType.size ty) callee (lowerCall sigs scope callee args ty) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
+  | .letEnum id ty variant payload body => lowerLet next (lowerEnumValue scope ty variant payload) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
+  | .letMatch id ty scrutinee enumId arms body => lowerThen (lowerMatch scope (lookup scope scrutinee) enumId arms ty next) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
   | .set id value => lowerSet (lookup scope id) scope value
   | .setField id index value => lowerSetField (lookup scope id) index scope value
   | .setCall id callee args => lowerSetCall sigs scope (lookup scope id) callee args
-  | .then first second => lowerThen (SrcStmt.lower first sigs ret scope next) (SrcStmt.lower second sigs ret scope next)
-  | .if condition thenBranch elseBranch => lowerIf (lowerAs scope condition SrcType.bool) (SrcStmt.lower thenBranch sigs ret scope next) (SrcStmt.lower elseBranch sigs ret scope next)
-  | .while condition body => lowerWhile (lowerAs scope condition SrcType.bool) (SrcStmt.lower body sigs ret scope next)
+  | .then first second => lowerThen (SrcStmt.lower first sigs decls ret scope next) (SrcStmt.lower second sigs decls ret scope next)
+  | .if condition thenBranch elseBranch => lowerIf (lowerAs scope condition SrcType.bool) (SrcStmt.lower thenBranch sigs decls ret scope next) (SrcStmt.lower elseBranch sigs decls ret scope next)
+  | .while condition body => lowerWhile (lowerAs scope condition SrcType.bool) (SrcStmt.lower body sigs decls ret scope next)
   | .return value => lowerReturn (lowerValue scope value ret)
-  | .letAlloc id size shift body => lowerAlloc next shift (lowerAs scope size (SrcType.uint UintTy.usize)) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := SrcType.ptr } : Binding) :: scope) (next + 1))
-  | .letLoad id pointer offset body => lowerLoad next (lowerAddress (lowerAs scope pointer SrcType.ptr) (lowerAs scope offset (SrcType.uint UintTy.usize))) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := SrcType.uint UintTy.uint8 } : Binding) :: scope) (next + 1))
+  | .letAlloc id size shift body => lowerAlloc next shift (lowerAs scope size (SrcType.uint UintTy.usize)) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := SrcType.ptr } : Binding) :: scope) (next + 1))
+  | .letLoad id pointer offset body => lowerLoad next (lowerAddress (lowerAs scope pointer SrcType.ptr) (lowerAs scope offset (SrcType.uint UintTy.usize))) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := SrcType.uint UintTy.uint8 } : Binding) :: scope) (next + 1))
   | .setByte pointer offset value => lowerStore (lowerAddress (lowerAs scope pointer SrcType.ptr) (lowerAs scope offset (SrcType.uint UintTy.usize))) (lowerAs scope value (SrcType.uint UintTy.uint8))
   | .free pointer size shift => lowerFree shift (lowerAs scope pointer SrcType.ptr) (lowerAs scope size (SrcType.uint UintTy.usize))
-  | .letSlice id element pointer length body => lowerLet next (lowerSlice element (lowerAs scope pointer SrcType.ptr) (lowerAs scope length SrcType.i32)) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := SrcType.slice element } : Binding) :: scope) (next + 1))
-  | .letIndex id ty slice index body => lowerLoadWord next (lowerElement (lookup scope slice) ty (lowerIndex scope index)) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + 1))
-  | .setIndex slice index value => lowerSetIndex (lookup scope slice) (lowerIndex scope index) scope value
+  | .letSlice id element pointer length body => lowerLet next (lowerSlice decls element (lowerAs scope pointer SrcType.ptr) (lowerAs scope length SrcType.i32)) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := SrcType.slice element } : Binding) :: scope) (next + 1))
+  | .letIndex id ty slice index body => lowerLetIndex decls next (lookup scope slice) ty (lowerIndex scope index) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
+  | .setIndex slice index value => lowerSetIndex decls (lookup scope slice) (lowerIndex scope index) scope value
 
 /-- Slots the statement's lets need beyond the ones in scope. -/
 def SrcStmt.depth (self : SrcStmt) : Nat :=
@@ -1652,7 +1824,7 @@ def SrcStmt.depth (self : SrcStmt) : Nat :=
   | .setByte pointer offset value => 0
   | .free pointer size shift => 0
   | .letSlice id element pointer length body => SrcStmt.depth body + 1
-  | .letIndex id ty slice index body => SrcStmt.depth body + 1
+  | .letIndex id ty slice index body => SrcStmt.depth body + SrcType.size ty
   | .setIndex slice index value => 0
 
 /-- Parameters take slots from 0 in order, a struct one per field; a later parameter with the same id shadows an earlier one, as Core's bindLocals does. -/
@@ -1687,10 +1859,10 @@ def lowerBody (count : Nat) (results : Nat) (depth : Nat) (body : Option Stmt) :
   | some b => some ({ params := count, results := results, locals := max (count + depth) results, body := b } : Func)
 
 /-- Results and struct parameters have slots; a function returns its result type's slots, so it has at least that many locals. -/
-def lowerFunc (sigs : List Sig) (func : SrcFunc) : Option Func :=
+def lowerFunc (sigs : List Sig) (decls : SrcDecls) (func : SrcFunc) : Option Func :=
   let count : Nat := paramsSize func.params
   if decide (0 < SrcType.size func.ret) && paramsValid func.params then
-    lowerBody count (SrcType.size func.ret) (SrcStmt.depth func.body) (SrcStmt.lower func.body sigs func.ret (paramScope func.params 0 []) count)
+    lowerBody count (SrcType.size func.ret) (SrcStmt.depth func.body) (SrcStmt.lower func.body sigs decls func.ret (paramScope func.params 0 []) count)
   else
     none
 
@@ -1702,47 +1874,10 @@ def lowerFuncCons (first : Option Func) (rest : Option (List Func)) : Option (Li
     | none => none
     | some fs => some (f :: fs)
 
-def lowerFuncs (sigs : List Sig) (funcs : List SrcFunc) : Option (List Func) :=
+def lowerFuncs (sigs : List Sig) (decls : SrcDecls) (funcs : List SrcFunc) : Option (List Func) :=
   match funcs with
   | [] => some []
-  | func :: rest => lowerFuncCons (lowerFunc sigs func) (lowerFuncs sigs rest)
-
-/-- Struct id's field types. -/
-structure SrcStructDecl where
-  id : Nat
-  fields : List SrcType
-  deriving Repr
-
-/-- Enum id's variants, each its payload types. -/
-structure SrcEnumDecl where
-  id : Nat
-  variants : List (List SrcType)
-  deriving Repr
-
-structure SrcDecls where
-  structs : List SrcStructDecl
-  enums : List SrcEnumDecl
-  deriving Repr
-
-/-- The fields declared for struct id. -/
-def structFields (decls : List SrcStructDecl) (id : Nat) : Option (List SrcType) :=
-  match decls with
-  | [] => none
-  | decl :: rest =>
-    if decl.id = id then
-      some decl.fields
-    else
-      structFields rest id
-
-/-- The variants declared for enum id. -/
-def enumVariants (decls : List SrcEnumDecl) (id : Nat) : Option (List (List SrcType)) :=
-  match decls with
-  | [] => none
-  | decl :: rest =>
-    if decl.id = id then
-      some decl.variants
-    else
-      enumVariants rest id
+  | func :: rest => lowerFuncCons (lowerFunc sigs decls func) (lowerFuncs sigs decls rest)
 
 /-- decls, if the declaration already there agrees. -/
 def keepIf (agrees : Bool) (decls : SrcDecls) : Option SrcDecls :=
@@ -1926,18 +2061,21 @@ def funcsReturn (funcs : List SrcFunc) : Bool :=
   | [] => true
   | func :: rest => SrcStmt.returns func.body && funcsReturn rest
 
-def compileDeclared (decls : Option SrcDecls) (funcs : Option (List Func)) : Option Binary :=
+def compileLowered (funcs : Option (List Func)) : Option Binary :=
+  match funcs with
+  | none => none
+  | some fs => compileProgram ({ funcs := fs } : Program)
+
+/-- The functions are lowered against the declarations, which the slice lowering consults for its element types. -/
+def compileDeclared (decls : Option SrcDecls) (prog : SrcProgram) : Option Binary :=
   match decls with
   | none => none
-  | some d =>
-    match funcs with
-    | none => none
-    | some fs => compileProgram ({ funcs := fs } : Program)
+  | some d => compileLowered (lowerFuncs (sigs prog.funcs) d prog.funcs)
 
 /-- Machine code of a source program. -/
 def compileSource (prog : SrcProgram) : Option Binary :=
   if funcsReturn prog.funcs then
-    compileDeclared (declareProgram prog) (lowerFuncs (sigs prog.funcs) prog.funcs)
+    compileDeclared (declareProgram prog) prog
   else
     none
 
