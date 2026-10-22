@@ -1077,6 +1077,8 @@ inductive SrcStmt where
   | returnEval : SrcEff → SrcStmt
   /-- an expression evaluated for its effects -/
   | discard : SrcEff → SrcStmt
+  /-- slice[index] = value with expressions that may call functions -/
+  | setIndexEval : Nat → SrcEff → SrcEff → SrcStmt
   deriving Repr
 
 structure SrcParam where
@@ -2150,6 +2152,33 @@ def lowerDiscard (value : Option Evaluated) : Option Stmt :=
   | none => none
   | some v => some v.stmt
 
+/-- The index in slot, the value in slot + 1, then the 32-bit store. -/
+def storeEval (b : Binding) (slot : Nat) (i : Evaluated) (v : Evaluated) : Option Stmt :=
+  if (SrcType.isI32 i.ty || SrcType.isUint i.ty UintTy.usize) && SrcType.isI32 v.ty then
+    some (Stmt.seq i.stmt (Stmt.seq v.stmt (Stmt.storeWord MemWidth.m32 (Expr.binary Word.u64 BinOp.add (Expr.var b.slot) (Expr.binary Word.u64 BinOp.mul (Expr.var slot) (Expr.lit 4))) (Expr.var (slot + 1)))))
+  else
+    none
+
+/-- slice[index] = value on a raw slice of i32. -/
+def storeEvalElement (b : Binding) (element : SrcType) (slot : Nat) (index : Option Evaluated) (value : Option Evaluated) : Option Stmt :=
+  if SrcType.isI32 element then
+    match index with
+    | none => none
+    | some i =>
+      match value with
+      | none => none
+      | some v => storeEval b slot i v
+  else
+    none
+
+def lowerSetIndexEval (slot : Nat) (binding : Option Binding) (index : Option Evaluated) (value : Option Evaluated) : Option Stmt :=
+  match binding with
+  | none => none
+  | some b =>
+    match elementOf b.ty with
+    | none => none
+    | some element => storeEvalElement b element slot index value
+
 def lowerLet (slot : Nat) (values : Option (List Expr)) (body : Option Stmt) : Option Stmt :=
   match values with
   | none => none
@@ -2687,6 +2716,7 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : S
   | .whileEval condition body => lowerWhileEval next (SrcEff.eval condition sigs scope next) (SrcStmt.lower body sigs decls ret scope next)
   | .returnEval value => lowerReturnEval next ret (SrcEff.eval value sigs scope next)
   | .discard value => lowerDiscard (SrcEff.eval value sigs scope next)
+  | .setIndexEval slice index value => lowerSetIndexEval next (lookup scope slice) (SrcEff.eval index sigs scope next) (SrcEff.eval value sigs scope (next + 1))
 
 /-- Slots the statement's lets need beyond the ones in scope. -/
 def SrcStmt.depth (self : SrcStmt) : Nat :=
@@ -2717,6 +2747,7 @@ def SrcStmt.depth (self : SrcStmt) : Nat :=
   | .whileEval condition body => SrcStmt.depth body
   | .returnEval value => 0
   | .discard value => 0
+  | .setIndexEval slice index value => 0
 
 /-- Parameters take slots from 0 in order, a struct one per field; a later parameter with the same id shadows an earlier one, as Core's bindLocals does. -/
 def paramScope (params : List SrcParam) (slot : Nat) (scope : List Binding) : List Binding :=
@@ -2939,6 +2970,7 @@ def SrcStmt.declare (self : SrcStmt) (decls : SrcDecls) : Option SrcDecls :=
      | some decls => SrcStmt.declare body decls)
   | .returnEval value => declareTypes (SrcEff.types value) decls
   | .discard value => declareTypes (SrcEff.types value) decls
+  | .setIndexEval slice index value => declareTypes (SrcEff.types index ++ SrcEff.types value) decls
 
 /-- Every path ends in a return, the way Core's DefinitelyReturns counts: a while body never counts. -/
 def SrcStmt.returns (self : SrcStmt) : Bool :=
@@ -2969,6 +3001,7 @@ def SrcStmt.returns (self : SrcStmt) : Bool :=
   | .whileEval condition body => false
   | .returnEval value => true
   | .discard value => false
+  | .setIndexEval slice index value => false
 
 def declareParams (params : List SrcParam) (decls : SrcDecls) : Option SrcDecls :=
   match params with

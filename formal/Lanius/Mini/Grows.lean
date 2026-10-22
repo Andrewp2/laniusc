@@ -528,6 +528,50 @@ theorem assign_grows {P : Core.Program} {k : Nat} {st : State} {place : Core.Pla
     all_goals simp at run
   all_goals simp at run
 
+/-- An assignment whose place and value may grow the heap. -/
+theorem assign_grows_eff {P : Core.Program} {k : Nat} {st : State} {place : Core.Place} {e : Core.Expr}
+    {u : Value} {st' : State}
+    (placeOk : ∀ {r st1}, Semantics.evalPlace k P st .address place = .done r st1 → Grows st st1)
+    (value : ∀ {st1 rv st2}, evalExpr k P st1 e = .done rv st2 → Grows st1 st2)
+    (run : evalExpr (k + 1) P st (.assign .set place e) = .done u st') : Grows st st' := by
+  intro views
+  simp only [evalExpr] at run
+  split at run
+  · rename_i resolved afterPlace placeRun
+    obtain ⟨views1, next1⟩ := placeOk placeRun views
+    split at run
+    · rename_i rv afterValue valueRun
+      obtain ⟨views2, next2⟩ := value valueRun views1
+      split at run
+      · simp at run
+      rename_i result _
+      cases raw : resolved.raw with
+      | none =>
+        simp only [Semantics.writeResolvedPlaceNative, raw] at run
+        split at run
+        · rename_i assigned written
+          obtain ⟨heap3, views3⟩ := writeResolved_same written
+          have synced := sync_ok (st := assigned) (views3.trans views2)
+          simp only [synced, ite_self, Semantics.Outcome.done.injEq] at run
+          obtain ⟨-, rfl⟩ := run
+          exact ⟨views3.trans views2, by rw [heap3]; exact Nat.le_trans next1 next2⟩
+        · simp at run
+      | some pair =>
+        simp only [Semantics.writeResolvedPlaceNative, raw] at run
+        split at run
+        · rename_i assigned written
+          obtain ⟨heap3, stored, wrapped⟩ := except_bind_ok written
+          simp only [pure, Except.pure, Except.ok.injEq] at wrapped
+          subst wrapped
+          have synced := syncFrom_ok (st := { afterValue with heap := heap3 }) views2
+          simp only [synced, ite_self, Semantics.Outcome.done.injEq] at run
+          obtain ⟨-, rfl⟩ := run
+          exact ⟨views2, by rw [show heap3.nextAddress = afterValue.heap.nextAddress from
+            writeNativeValue_next _ stored]; exact Nat.le_trans next1 next2⟩
+        · simp at run
+    all_goals simp at run
+  all_goals simp at run
+
 theorem let_grows {P : Core.Program} {f : Nat} {body : Core.Stmt}
     (ih : ∀ {st c st'}, execStmt f P st body = .done c st' → Grows st st') {st : State} {id : Nat}
     {v : Value} {c : Completion} {st' : State}
@@ -826,6 +870,31 @@ theorem evalPlace_index {P : Core.Program} {k : Nat} {st : State} {slice : Nat} 
                | simp at run)
           | simp at run
     all_goals simp at run
+
+/-- Resolving `slice[index]` for a write grows as its index does. -/
+theorem evalPlace_index_grows {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {index : Core.Expr}
+    {r : Semantics.ResolvedPlace} {st' : State}
+    (hi : ∀ {st1 v st2}, evalExpr k P st1 index = .done v st2 → Grows st1 st2)
+    (run : Semantics.evalPlace (k + 1) P st .address (.index (.local slice) index) = .done r st') :
+    Grows st st' := by
+  simp only [Semantics.evalPlace] at run
+  split at run
+  · rename_i resolved afterBase baseRun
+    have := evalPlace_readLocal baseRun
+    subst this
+    split at run
+    · simp at run
+    all_goals
+      try split at run
+      all_goals first
+        | (rename_i iv afterIndex indexRun
+           have grown := hi indexRun
+           repeat' split at run
+           all_goals first
+             | (simp only [Semantics.Outcome.done.injEq] at run; rw [← run.2]; exact grown)
+             | simp at run)
+        | simp at run
+  all_goals simp at run
 
 /-! ## Effectful expressions -/
 
@@ -1270,6 +1339,22 @@ theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st 
         simp only [Semantics.Outcome.done.injEq] at run
         obtain ⟨-, rfl⟩ := run
         exact eff_grows f ihf f (Nat.le_refl _) valueRun
+      all_goals simp at run
+    | setIndexEval slice index value =>
+      simp only [SrcStmt.toCore, execStmt] at run
+      split at run
+      · rename_i u next assignRun
+        simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        cases f with
+        | zero => simp [evalExpr] at assignRun
+        | succ k =>
+          cases k with
+          | zero => simp [evalExpr, Semantics.evalPlace] at assignRun
+          | succ k =>
+            exact assign_grows_eff (fun r => evalPlace_index_grows
+              (fun r => eff_grows (k + 2) ihf k (by omega) r) r)
+              (fun r => eff_grows (k + 2) ihf (k + 1) (Nat.le_succ _) r) assignRun
       all_goals simp at run
 
 /-- Every subset statement Core completes grows the heap. -/

@@ -1389,6 +1389,8 @@ pub enum SrcStmt {
     ReturnEval(SrcEff),
     // an expression evaluated for its effects
     Discard(SrcEff),
+    // slice[index] = value with expressions that may call functions
+    SetIndexEval(usize, SrcEff, SrcEff),
 }
 
 pub struct SrcParam {
@@ -2737,6 +2739,38 @@ pub fn lower_discard(value: core::option::Option<Evaluated>) -> core::option::Op
     };
 }
 
+// The index in slot, the value in slot + 1, then the 32-bit store.
+pub fn store_eval(b: Binding, slot: usize, i: Evaluated, v: Evaluated) -> core::option::Option<Stmt> {
+    if ((i.ty.is_i32() || i.ty.is_uint(Usize)) && v.ty.is_i32()) {
+        return Some(Seq(boxed(i.stmt), boxed(Seq(boxed(v.stmt), boxed(StoreWord(M32, Binary(U64, Add, boxed(Var(b.slot)), boxed(Binary(U64, Mul, boxed(Var(slot)), boxed(Lit(4))))), Var(plus(slot, 1))))))));
+    }
+    return None;
+}
+
+// slice[index] = value on a raw slice of i32.
+pub fn store_eval_element(b: Binding, element: SrcType, slot: usize, index: core::option::Option<Evaluated>, value: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
+    if (element.is_i32()) {
+        return match (index) {
+            None -> None,
+            Some(i) -> match (value) {
+                None -> None,
+                Some(v) -> store_eval(b, slot, i, v),
+            },
+        };
+    }
+    return None;
+}
+
+pub fn lower_set_index_eval(slot: usize, binding: core::option::Option<Binding>, index: core::option::Option<Evaluated>, value: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> match (element_of(b.ty)) {
+            None -> None,
+            Some(element) -> store_eval_element(b, element, slot, index, value),
+        },
+    };
+}
+
 pub fn lower_let(slot: usize, values: core::option::Option<List<Expr>>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
     return match (values) {
         None -> None,
@@ -3452,6 +3486,7 @@ impl SrcStmt {
             WhileEval(condition, body) -> lower_while_eval(next, condition.eval(sigs, scope, next), unbox(body).lower(sigs, decls, ret, scope, next)),
             ReturnEval(value) -> lower_return_eval(next, ret, value.eval(sigs, scope, next)),
             Discard(value) -> lower_discard(value.eval(sigs, scope, next)),
+            SetIndexEval(slice, index, value) -> lower_set_index_eval(next, lookup(scope, slice), index.eval(sigs, scope, next), value.eval(sigs, scope, plus(next, 1))),
         };
     }
 
@@ -3484,6 +3519,7 @@ impl SrcStmt {
             WhileEval(condition, body) -> unbox(body).depth(),
             ReturnEval(value) -> 0,
             Discard(value) -> 0,
+            SetIndexEval(slice, index, value) -> 0,
         };
     }
 }
@@ -3740,6 +3776,7 @@ impl SrcStmt {
             WhileEval(condition, body) -> declare_in(declare_types(condition.types(), decls), unbox(body)),
             ReturnEval(value) -> declare_types(value.types(), decls),
             Discard(value) -> declare_types(value.types(), decls),
+            SetIndexEval(slice, index, value) -> declare_types(concat(index.types(), value.types()), decls),
         };
     }
 
@@ -3773,6 +3810,7 @@ impl SrcStmt {
             WhileEval(condition, body) -> false,
             ReturnEval(value) -> true,
             Discard(value) -> false,
+            SetIndexEval(slice, index, value) -> false,
         };
     }
 }

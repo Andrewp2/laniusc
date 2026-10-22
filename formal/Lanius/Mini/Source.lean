@@ -171,6 +171,8 @@ def SrcStmt.toCore : SrcStmt → Core.Stmt
   | .whileEval condition body => .whileLoop condition.toCore body.toCore
   | .returnEval value => .returnValue (some value.toCore)
   | .discard value => .expression value.toCore
+  | .setIndexEval slice index value =>
+      .expression (.assign .set (.index (.local slice) index.toCore) value.toCore)
 
 def SrcFunc.toCore (id : Nat) (func : SrcFunc) : Core.Function where
   id := id

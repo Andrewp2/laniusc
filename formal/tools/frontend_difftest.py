@@ -388,7 +388,7 @@ partial def serStmt : SrcStmt → String
   | .while e b => s!"(.while {serExpr e} {serStmt b})"
   | .return e => s!"(.return {serExpr e})"
   | .letAlloc .. | .letLoad .. | .setByte .. | .free .. | .letSlice .. | .letIndex .. | .setIndex .. => "(heap)"
-  | .letEval .. | .setEval .. | .ifEval .. | .whileEval .. | .returnEval .. | .discard .. => "(eval)"
+  | .letEval .. | .setEval .. | .ifEval .. | .whileEval .. | .returnEval .. | .discard .. | .setIndexEval .. => "(eval)"
 
 def serParam (p : SrcParam) : String := "{ id := " ++ toString p.id ++ ", ty := " ++ serType p.ty ++ " }"
 

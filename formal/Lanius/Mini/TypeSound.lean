@@ -72,6 +72,7 @@ def SrcStmt.Declared (P : Core.Program) (s : SrcStmt) : Prop :=
   | .whileEval condition body => (∀ t ∈ condition.types, TypeDeclared P t) ∧ SrcStmt.Declared P body
   | .returnEval value => ∀ t ∈ value.types, TypeDeclared P t
   | .discard value => ∀ t ∈ value.types, TypeDeclared P t
+  | .setIndexEval _ index value => ∀ t ∈ index.types ++ value.types, TypeDeclared P t
 
 /-- Every parameter type and binding type of every function is declared. -/
 def SrcProgram.Declared (P : Core.Program) (sp : SrcProgram) : Prop :=
@@ -114,6 +115,7 @@ theorem returns_sound : ∀ (s : SrcStmt), s.returns = true → Typing.Definitel
   | .whileEval _ _, h => by simp [SrcStmt.returns] at h
   | .returnEval _, _ => .returnValue
   | .discard _, h => by simp [SrcStmt.returns] at h
+  | .setIndexEval _ _ _, h => by simp [SrcStmt.returns] at h
 
 /-! ## Types -/
 
@@ -1740,6 +1742,41 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
     · simp at h
     · rename_i v hv
       exact .expression (SrcEff.eval_typed target sigsOk value ok d hv)
+  | .setIndexEval slice index value, scope, ctx, next, inLoop, out, ok, d, h => by
+    simp only [SrcStmt.lower, lowerSetIndexEval] at h
+    split at h
+    · simp at h
+    · rename_i sb found
+      split at h
+      · simp at h
+      · rename_i e he
+        simp only [storeEvalElement] at h
+        split at h
+        · rename_i isI32
+          split at h
+          · simp at h
+          · rename_i i hi
+            split at h
+            · simp at h
+            · rename_i v hv
+              simp only [storeEval] at h
+              split at h
+              · rename_i cond
+                simp only [Bool.and_eq_true, Bool.or_eq_true] at cond
+                have typedIndex := SrcEff.eval_typed target sigsOk index ok
+                  (fun t mem => d t (List.mem_append_left _ mem)) hi
+                have typedValue := SrcEff.eval_typed target sigsOk value ok
+                  (fun t mem => d t (List.mem_append_right _ mem)) hv
+                have inCtx := (ok slice sb found).1
+                rw [elementOf_some he, eq_i32 isI32] at inCtx
+                rw [eq_i32 cond.2] at typedValue
+                have integer : Typing.IntegerTy i.ty.toCore := by
+                  rcases cond.1 with c | c
+                  · rw [eq_i32 c]; exact .signed _
+                  · rw [eq_uint c]; exact .unsigned _
+                exact .expression (.assign (.indexSlice (.local inCtx) typedIndex integer) typedValue .set)
+              · simp at h
+        · simp at h
 
 /-! ## Functions and programs -/
 
@@ -2166,6 +2203,9 @@ theorem SrcStmt.declare_sound : ∀ (s : SrcStmt) {d d' : SrcDecls}, s.declare d
     simp only [SrcStmt.declare] at h
     exact declareTypes_sound _ h
   | .discard value, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    exact declareTypes_sound _ h
+  | .setIndexEval _ index value, d, d', h => by
     simp only [SrcStmt.declare] at h
     exact declareTypes_sound _ h
 
