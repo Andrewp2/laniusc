@@ -33,3 +33,4 @@ import Lanius.Std.VecSort
 import Lanius.Std.SetSpec
 import Lanius.Std.VecPrefix
 import Lanius.Std.SetScan
+import Lanius.Std.MapFind
