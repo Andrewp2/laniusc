@@ -1036,6 +1036,8 @@ inductive SrcEff where
   | eMatch : SrcEff → SrcType → SrcType → (List (List Nat)) → (List SrcEff) → SrcEff
   /-- left / right or left % right: a statement in the mini IR, so only here -/
   | eDivide : SrcDivOp → SrcEff → SrcEff → SrcEff
+  /-- slice_stride(slice) of a slice local, an isize -/
+  | eStride : Nat → SrcEff
   deriving Repr
 
 inductive SrcStmt where
@@ -2142,6 +2144,7 @@ def SrcEff.types (self : SrcEff) : List SrcType :=
   | .eVariant ty variant payload => ty :: effsTypes payload
   | .eMatch scrutinee ety ty binders values => ety :: (SrcEff.types scrutinee ++ effsTypes values)
   | .eDivide op left right => SrcEff.types left ++ SrcEff.types right
+  | .eStride slice => []
 
 def effsTypes (es : List SrcEff) : List SrcType :=
   match es with
@@ -2754,6 +2757,32 @@ def evalIndex (decls : SrcDecls) (scope : List Binding) (slice : Nat) (slot : Na
     | none => none
     | some element => evalElement decls b element slot index
 
+/-- A raw slice's stride as isize bits: element i + 1 of an i32 slice starts 4 bytes after element i, and of a word struct or enum slice, 8 bytes a word before it. -/
+def wordStride (slot : Nat) (words : Nat) : Evaluated :=
+  ({ stmt := Stmt.assign slot (Expr.binary Word.u64 BinOp.sub (Expr.lit 0) (Expr.lit (BitVec.ofNat 64 (8 * words)))), ty := SrcType.isize } : Evaluated)
+
+def evalWordStride (decls : SrcDecls) (element : SrcType) (slot : Nat) : Option Evaluated :=
+  match elementWidths decls element with
+  | some ws => some (wordStride slot ws.length)
+  | none =>
+    match enumWidths decls element with
+    | none => none
+    | some wss => some (wordStride slot (maxLength wss + 1))
+
+def evalStrideOf (decls : SrcDecls) (element : SrcType) (slot : Nat) : Option Evaluated :=
+  if SrcType.isI32 element then
+    some ({ stmt := Stmt.assign slot (Expr.lit 4), ty := SrcType.isize } : Evaluated)
+  else
+    evalWordStride decls element slot
+
+def evalStride (decls : SrcDecls) (scope : List Binding) (slice : Nat) (slot : Nat) : Option Evaluated :=
+  match lookup scope slice with
+  | none => none
+  | some b =>
+    match elementOf b.ty with
+    | none => none
+    | some element => evalStrideOf decls element slot
+
 mutual
 
 /-- The code computing this expression into slot, slot + 1, ..., and its type. -/
@@ -2770,6 +2799,7 @@ def SrcEff.eval (self : SrcEff) (sigs : List Sig) (decls : SrcDecls) (scope : Li
   | .eVariant ty variant payload => evalVariant ty variant slot (evalArgs sigs decls scope payload (slot + 1))
   | .eMatch scrutinee ety ty binders values => evalMatch slot ety ty (SrcEff.eval scrutinee sigs decls scope slot) (evalArms sigs decls scope slot (matchDst slot ety ty) ty 0 (matchVariants ety) binders values) binders.length values.length
   | .eDivide op left right => evalDivision op slot (SrcEff.eval left sigs decls scope slot) (SrcEff.eval right sigs decls scope (slot + 1))
+  | .eStride slice => evalStride decls scope slice slot
 
 /-- The arguments, each in the slots after the one before. -/
 def evalArgs (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (args : List SrcEff) (slot : Nat) : Option EvaluatedArgs :=

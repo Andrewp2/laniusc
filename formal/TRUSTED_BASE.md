@@ -69,7 +69,7 @@ output is kept only when the proved validator accepts it. Nor are
 
 - **What.** `compileSource_correct` states correctness against Core's
   fuel-indexed evaluator `Lanius.Semantics.evalExpr` (`Lanius/Semantics.lean`,
-  1,824 lines) and Core's heap (`Lanius/Memory.lean`; the allocator is
+  1,841 lines) and Core's heap (`Lanius/Memory.lean`; the allocator is
   unbounded and `nextAddress` starts at 1). We assume that this evaluator is
   what Lanius programs mean. No other formal semantics exists to compare it
   with, and laniusc, the GPU compiler, is not proved against it.
@@ -92,6 +92,12 @@ output is kept only when the proved validator accepts it. Nor are
   that the language itself lends (`mapBorrowed`) still make borrowed blocks.
   This is the meaning `Vec` needs: its buffer is one block and its
   elements are a view of a prefix of it.
+- **`slice_stride` (added 10-22).** `Intrinsic.sliceStride` gives a raw
+  view's signed byte stride as an `isize` (`rawSliceStride?`): 4 for `i32`
+  views, and `-8 × words` for views of structs and enums. On these views
+  laniusc gives the same values; the oracle difftest checks them. Core gives
+  a view of a language array no stride (it traps), while laniusc gives that
+  array's own layout. Programs that ask for one are outside the theorem.
 - **Checked by.** Reading, and Core's own Lean tests (`Lanius/Semantics/*Tests.lean`).
   Core is not tested against laniusc-built binaries.
 - **To shrink it.** Run a differential test of `#eval evalExpr` against
@@ -190,7 +196,11 @@ still a parse tree of the same tokens. Trusted:
     distinct instances, but they lower to the same field types;
   - a constant is replaced by its value, which must be a literal of its
     declared type: `Int` for `i32`, `Unsigned` (range-checked) for the
-    unsigned types, `Boolean` for `bool`;
+    unsigned types, `Cast(Isize, Int(n))` for `isize`, `Boolean` for `bool`;
+    a value whose tokens are `n` or `-` `n` with n of 2^31 or more is the
+    type's literal of that value (`Int` of -2^31 for `i32`, `Unsigned` up to
+    the type's largest value, the cast of the `u64` literal of its bits for
+    `isize`);
   - a local is the byte offset of its binding (a parameter, `let` or match
     binder);
   - a use names the innermost binding with the same spelling, and locals may

@@ -353,6 +353,10 @@ mutual
     | assert
         (argument : ExprHasType program context expression (.scalar .bool)) :
         ExprHasType program context (.intrinsic .assert expression) .unit
+    | sliceStride
+        (view : ExprHasType program context expression (.slice element)) :
+        ExprHasType program context (.intrinsic .sliceStride expression)
+          (.scalar (.signed .isize))
     | i32ArrayDataPtr
         (array : ExprHasType program context expression
           (.array (.scalar (.signed .i32)) length)) :

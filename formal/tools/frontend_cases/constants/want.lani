@@ -1,0 +1,25 @@
+const MIN: i32 = -2147483648;
+const BIG: u64 = 18446744073709551615;
+const U: u32 = 4000000000;
+const B63: u64 = 9223372036854775808;
+const B63M: u64 = 9223372036854775807;
+const MAXB: usize = 2147483647;
+const AL: usize = 8;
+const S: usize = 5;
+
+fn top(n: i32) -> i32 {
+    let a: i32 = n + MIN;
+    let b: u64 = BIG & (n as u64);
+    let c: u32 = U;
+    let d: isize = (B63 as isize) + (B63M as isize) + (-(12 as isize));
+    let e: usize = S + byte_limit();
+    let k: i32 = 2147483647 - n;
+    if (true) {
+        a = a + k;
+    }
+    return a + (b as i32) + (c as i32) + (d as i32) + (e as i32);
+}
+
+fn byte_limit() -> usize {
+    return MAXB - AL;
+}

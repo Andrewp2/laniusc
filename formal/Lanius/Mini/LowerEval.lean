@@ -617,6 +617,105 @@ theorem eval_divide {k : Nat} (ihe : EvalSound sp mp k) {op : SrcDivOp} {l r : S
 theorem eq_of_elementOf {ty e : SrcType} (h : elementOf ty = some e) : ty = .slice e := by
   cases ty <;> simp_all [elementOf]
 
+theorem stride_inv {P : Core.Program} {k : Nat} {st : State} {slice : Nat}
+    {element : Core.Ty} {address length : Nat} {v : Value} {st1 : State}
+    (base : evalExpr (k + 1) P st (.local slice) = .done (.rawSlice element address length) st)
+    (run : evalExpr (k + 2) P st (.intrinsic .sliceStride (.local slice)) = .done v st1) :
+    st1 = st ∧ ∃ stride, Semantics.rawSliceStride? P (.rawSlice element address length) = some stride ∧
+      v = .signed .isize stride := by
+  simp only [evalExpr] at run base
+  rw [base] at run
+  simp only at run
+  split at run
+  · rename_i stride found
+    simp only [Semantics.Outcome.done.injEq] at run
+    obtain ⟨rfl, rfl⟩ := run
+    exact ⟨rfl, stride, found, rfl⟩
+  · simp at run
+
+/-- `slice_stride(slice)` of a slice local: Core's stride of the view, as
+`isize` bits in `slot`. -/
+theorem eval_stride {k slice : Nat} (ok : evalStride sp.decls scope slice slot = some ev)
+    (corr : Corr scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap hp)
+    (run : evalExpr (k + 2) sp.toCore st (.intrinsic .sliceStride (.local slice)) = .done v st') :
+    Evaluates mp hp slot st env ev v st' := by
+  simp only [evalStride] at ok
+  split at ok
+  · simp at ok
+  rename_i b found
+  split at ok
+  · simp at ok
+  rename_i element elementOk
+  have bty := eq_of_elementOf elementOk
+  obtain ⟨w, localRun, holdsW⟩ := corr.local found k sp.toCore
+  rw [bty] at holdsW
+  cases holdsW with
+  | @slice _ len _ _ =>
+  obtain ⟨rfl, stride, strideOk, rfl⟩ := stride_inv localRun run
+  suffices code : ∃ e, ev = { stmt := .assign slot e, ty := .isize } ∧
+      SrcType.isize.Holds (.signed .isize stride) (e.eval env) by
+    obtain ⟨e, rfl, holds⟩ := code
+    exact ⟨fresh, Keeps.refl _ _, rfl, by simp [SrcType.size], 0, _, hp, .assign,
+      fun j below => set_below below, holdsAt_set holds env slot, hc⟩
+  simp only [evalStrideOf] at ok
+  split at ok
+  · rename_i isI32
+    have := eq_of_isI32 isI32
+    subst this
+    simp only [Option.some.injEq] at ok
+    subst ok
+    simp [Semantics.rawSliceStride?, SrcType.toCore] at strideOk
+    subst strideOk
+    exact ⟨_, rfl, by simp only [SrcType.Holds, Expr.eval]; rfl⟩
+  simp only [evalWordStride] at ok
+  split at ok
+  · rename_i ws hws
+    simp only [Option.some.injEq] at ok
+    subst ok
+    obtain ⟨sid, fields, rfl, declared, widths, nonempty⟩ := elementWidths_some hws
+    have all := wordWidths_all widths
+    obtain ⟨wlen, -⟩ := wordWidths_get widths
+    have found' := structFields_toCore declared
+    have npos : 0 < ws.length := by
+      cases ws with
+      | nil => exact absurd rfl nonempty
+      | cons => simp
+    simp only [Semantics.rawSliceStride?, SrcType.toCore, reduceCtorEq, ↓reduceIte] at strideOk
+    cases hwords : NativeLayout.valueWords? sp.toCore (Core.Ty.structure sid) with
+    | none => simp [hwords] at strideOk
+    | some words =>
+    simp only [hwords, Option.some.injEq] at strideOk
+    subst strideOk
+    obtain ⟨wordsEq, small⟩ := valueWords_struct found' all hwords
+    have n1 : words = ws.length := by rw [wordsEq, wlen, Nat.max_eq_right (by omega)]
+    subst n1
+    refine ⟨_, rfl, ?_⟩
+    simp only [SrcType.Holds, Expr.eval, Word.apply, BinOp.apply]
+    rw [stride_word_bits (by rw [wlen]; exact small)]
+    rfl
+  split at ok
+  · simp at ok
+  rename_i wss hwss
+  simp only [Option.some.injEq] at ok
+  subst ok
+  obtain ⟨eid, variants, rfl, declared, widths, vpos, vsmall⟩ := enumWidths_some hwss
+  have allv := variantWidths_all widths
+  have mlen := maxLength_eq widths
+  have found' := enumVariants_toCore declared
+  simp only [Semantics.rawSliceStride?, SrcType.toCore, reduceCtorEq, ↓reduceIte] at strideOk
+  cases hwords : NativeLayout.valueWords? sp.toCore (Core.Ty.enumeration eid) with
+  | none => simp [hwords] at strideOk
+  | some words =>
+  simp only [hwords, Option.some.injEq] at strideOk
+  subst strideOk
+  obtain ⟨wordsEq, smallW⟩ := valueWords_enum found' allv hwords
+  have n1 : words = maxLength wss + 1 := by rw [wordsEq, mlen]; omega
+  subst n1
+  refine ⟨_, rfl, ?_⟩
+  simp only [SrcType.Holds, Expr.eval, Word.apply, BinOp.apply]
+  rw [stride_word_bits (by have : maxSize variants < 4096 := smallW; omega)]
+  rfl
+
 /-- `slice[index]` of a raw slice of `i32`: the index in `slot`, then the
 element loaded over it. -/
 theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {index : SrcEff}
@@ -1872,7 +1971,7 @@ theorem stmt_assert (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {condition : SrcEf
       · rename_i w mid condRun
         have done : mid = st1 := by
           split at assertRun
-          all_goals simp only [Semantics.Outcome.done.injEq, reduceCtorEq] at assertRun
+          all_goals (try simp only [Semantics.Outcome.done.injEq, reduceCtorEq] at assertRun)
           all_goals simp_all
         subst done
         obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, -, hc1⟩ :=
@@ -2018,6 +2117,11 @@ theorem sound_both {sp : SrcProgram} {mp : Program}
         | eDivide op l r =>
           simp only [SrcEff.eval] at ok
           exact eval_divide hereE ok corr fr fresh hc run bound
+        | eStride slice =>
+          simp only [SrcEff.eval] at ok
+          cases fuel with
+          | zero => simp [SrcEff.toCore, evalExpr] at run
+          | succ k => exact eval_stride ok corr fresh hc run
 
 /-- The simulation, by induction on Core's fuel. -/
 theorem stmt_sound {sp : SrcProgram} {mp : Program}

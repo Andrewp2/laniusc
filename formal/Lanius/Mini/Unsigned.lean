@@ -324,4 +324,22 @@ theorem cast_uint_isize (k : UintTy) :
 
 end Isize
 
+/-- The bits of a word slice's stride, `-(8 * words)`. -/
+theorem stride_word_bits {w : Nat} (small : w ≤ 4096) :
+    ((0 : BitVec 64) - BitVec.ofNat 64 (8 * w)).toInt = -((8 * w : Nat) : Int) := by
+  rw [toInt64_cond]
+  have lt : 8 * w < 18446744073709551616 := by omega
+  have val : ((0 : BitVec 64) - BitVec.ofNat 64 (8 * w)).toNat =
+      (18446744073709551616 - 8 * w) % 18446744073709551616 := by
+    rw [BitVec.toNat_sub, BitVec.toNat_ofNat]
+    have two : (2 : Nat) ^ 64 = 18446744073709551616 := by rfl
+    rw [two, Nat.mod_eq_of_lt lt]
+    rw [show BitVec.toNat (0 : BitVec 64) = 0 from rfl, Nat.add_zero]
+  rw [val]
+  by_cases zero : w = 0
+  · subst zero; simp
+  · rw [Nat.mod_eq_of_lt (by omega)]
+    rw [if_neg (by omega)]
+    omega
+
 end Lanius.Mini

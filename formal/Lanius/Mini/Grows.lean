@@ -1043,6 +1043,17 @@ theorem eff_grows_step {sp : SrcProgram} {k : Nat} (ih : GrowsBelow sp (k + 1)) 
     all_goals simp at run
   | eIndex slice index =>
     exact index_grows (fun r => sub r) run
+  | eStride slice =>
+    simp only [SrcEff.toCore, evalExpr] at run
+    split at run
+    · rename_i w next localRun
+      have := eval_local_state localRun
+      subst this
+      repeat' split at run
+      all_goals first
+        | (simp only [Semantics.Outcome.done.injEq] at run; rw [← run.2]; exact Grows.refl _)
+        | simp at run
+    all_goals simp at run
   | eStruct ty fields | eVariant ty variant fields =>
     simp only [SrcEff.toCore, evalExpr] at run
     split at run
@@ -1384,8 +1395,8 @@ theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st 
           · rename_i w mid condRun
             have g := eff_grows (k + 1) ihf k (Nat.le_succ _) condRun
             split at assertRun
-            all_goals simp only [Semantics.Outcome.done.injEq, reduceCtorEq] at assertRun
-            all_goals obtain ⟨-, rfl⟩ := assertRun
+            all_goals (try simp only [Semantics.Outcome.done.injEq, reduceCtorEq] at assertRun)
+            all_goals (try obtain ⟨-, rfl⟩ := assertRun)
             all_goals simp_all
           all_goals simp at assertRun
       all_goals simp at run

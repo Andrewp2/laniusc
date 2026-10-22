@@ -107,6 +107,30 @@ def lani_uint(ty, k):
     return out
 
 
+def lani_isize(k, bare):
+    """An isize literal as the oracle means it: below 2^31 in magnitude
+    `(n as isize)`, or a bare n beside an operand of known type (laniusc
+    infers it); else the cast of a u64 literal holding the same bits."""
+    if -2 ** 31 <= k < 2 ** 31:
+        return lani_i32(k) if bare else f'({lani_i32(k)} as isize)'
+    return f'({lani_uint("u64", k & (2 ** 64 - 1))} as isize)'
+
+
+def lean_isize(k, bare):
+    """The reading of lani_isize's text: a bare literal is typed by its
+    context, so each integer literal in it is `.cast .isize`."""
+    if -2 ** 31 <= k < 2 ** 31:
+        if bare:
+            return re.sub(r'\(\.int (\d+)\)', r'(.cast .isize (.int \1))', lean_i32(k))
+        return f'(.cast .isize {lean_i32(k)})'
+    return f'(.cast .isize {lean_uint("u64", k & (2 ** 64 - 1))})'
+
+
+def bare_beside(e, other):
+    """e is an isize literal printed bare, beside the operand other."""
+    return oracle.bare_isize(e) and oracle.typed_isize(other)
+
+
 def lean_uint(ty, k):
     t = f'(.uint {UINT_LEAN[ty]})'
     pieces = uint_pieces(ty, k)
@@ -201,7 +225,7 @@ class Chunk:
         if id(e) in self.memo:
             return self.memo[id(e)][1]
         name = None
-        small = (e[0] == 'int' and 0 <= e[1]) or (e[0] == 'uint' and e[2] < 2 ** 31)
+        small = (e[0] == 'int' and 0 <= e[1]) or (e[0] == 'uint' and 0 <= e[2] < 2 ** 31)
         if self.generic and small and self.rng.random() < 0.15:
             consts = self.consts.setdefault(k, [])
             n = len(consts)
@@ -213,7 +237,7 @@ class Chunk:
         return name
 
     # expressions: text, and the expected reading (ids by the binding table)
-    def lani_expr(self, k, e):
+    def lani_expr(self, k, e, bare=False):
         kind = e[0]
         if kind in ('int', 'uint') and self.constant(k, e):
             return self.constant(k, e)
@@ -221,6 +245,8 @@ class Chunk:
             return lani_i32(e[1])
         if kind == 'bool':
             return 'true' if e[1] else 'false'
+        if kind == 'uint' and e[1] == 'isize':
+            return lani_isize(e[2], bare)
         if kind == 'uint':
             return lani_uint(e[1], e[2])
         if kind == 'cast':
@@ -233,14 +259,19 @@ class Chunk:
             return f'(-{self.lani_expr(k, e[1])})'
         if kind == 'not':
             return f'(!{self.lani_expr(k, e[1])})'
-        return f'({self.lani_expr(k, e[3])} {e[2]} {self.lani_expr(k, e[4])})'
+        return (f'({self.lani_expr(k, e[3], bare_beside(e[3], e[4]))} {e[2]} '
+                f'{self.lani_expr(k, e[4], bare_beside(e[4], e[3]) and not bare_beside(e[3], e[4]))})')
 
-    def lean_expr(self, k, ids, e):
+    def lean_expr(self, k, ids, e, bare=False):
         kind = e[0]
         if kind == 'int':
             return lean_i32(e[1])
         if kind == 'bool':
             return '(.boolean true)' if e[1] else '(.boolean false)'
+        if kind == 'uint' and e[1] == 'isize':
+            if self.constant(k, e):
+                return f'(.cast .isize (.int {e[2]}))'
+            return lean_isize(e[2], bare)
         if kind == 'uint':
             if self.constant(k, e):
                 return f'(.unsigned {UINT_LEAN[e[1]]} {e[2]})'
@@ -255,7 +286,8 @@ class Chunk:
             return f'(.negate {self.lean_expr(k, ids, e[1])})'
         if kind == 'not':
             return f'(.not {self.lean_expr(k, ids, e[1])})'
-        return f'(.apply .{e[1]} {self.lean_expr(k, ids, e[3])} {self.lean_expr(k, ids, e[4])})'
+        return (f'(.apply .{e[1]} {self.lean_expr(k, ids, e[3], bare_beside(e[3], e[4]))} '
+                f'{self.lean_expr(k, ids, e[4], bare_beside(e[4], e[3]) and not bare_beside(e[3], e[4]))})')
 
     def compound(self, target, e):
         """Print every other `x = x op e` as `x op= e`."""
@@ -292,8 +324,11 @@ class Chunk:
     def emit_eff(self, k, ids, x, top=False):
         out = self.out
         kind = x[0]
-        if kind == 'ePure':
-            out.emit(self.lani_expr(k, x[1]))
+        pure = collapse(x)
+        if pure[0] == 'ePure':
+            # printed as the pure expression it reads as (an isize literal
+            # beside a typed operand is bare)
+            out.emit(self.lani_expr(k, pure[1]))
         elif kind == 'eCall':
             self.calls[self.key].append(('f', k, x[1]))
             out.emit(self.fn_path(k, x[1]) + '(')
@@ -577,11 +612,11 @@ class Chunk:
             return [('let', head)] + self.stmt(k, ids, s[-1], indent)
         if kind == 'set' and self.compound(('local', s[1]), s[2]):
             e = s[2]
-            out.emit(f'{pad}v{s[1]} {e[2]}= {self.lani_expr(k, e[4])};\n')
+            out.emit(f'{pad}v{s[1]} {e[2]}= {self.lani_expr(k, e[4], bare_beside(e[4], e[3]))};\n')
             return [('stmt', f'(.set {ids[s[1]]} {self.lean_expr(k, ids, s[2])})')]
         if kind == 'setField' and self.compound(('field', s[1], s[2]), s[3]):
             e = s[3]
-            out.emit(f'{pad}v{s[1]}.f{s[2]} {e[2]}= {self.lani_expr(k, e[4])};\n')
+            out.emit(f'{pad}v{s[1]}.f{s[2]} {e[2]}= {self.lani_expr(k, e[4], bare_beside(e[4], e[3]))};\n')
             return [('stmt', f'(.setField {ids[s[1]]} {s[2]} {self.lean_expr(k, ids, s[3])})')]
         if kind == 'set':
             out.emit(f'{pad}v{s[1]} = {self.lani_expr(k, s[2])};\n')
@@ -910,6 +945,7 @@ partial def serEff : SrcEff → String
   | .eMatch x e t bs vs =>
     s!"(.eMatch {serEff x} {serType e} {serType t} {bracket (bs.map fun b => bracket (b.map toString))} {bracket (vs.map serEff)})"
   | .eDivide o a b => s!"(.eDivide {serDiv o} {serEff a} {serEff b})"
+  | .eStride sl => s!"(.eStride {sl})"
 
 def serArm (a : SrcArm) : String :=
   "{ binders := " ++ bracket (a.binders.map toString) ++ ", value := " ++ serExpr a.value ++ " }"
@@ -1029,7 +1065,7 @@ def checkMulti (bases : List String) (mutants : List (String × String)) : IO Un
 -- texts of one program (a generic one and its hand-monomorphized copy) can be
 -- compared.
 partial def effBinders : SrcEff → List Nat
-  | .ePure _ => []
+  | .ePure _ | .eStride _ => []
   | .eCall _ xs | .eStruct _ xs | .eVariant _ _ xs => xs.flatMap effBinders
   | .eApply _ a b | .eDivide _ a b => effBinders a ++ effBinders b
   | .eNeg a | .eNot a | .eCast _ a | .eIndex _ a => effBinders a
@@ -1070,6 +1106,7 @@ partial def renEff (f : Nat → Nat) : SrcEff → SrcEff
   | .eVariant t k xs => .eVariant t k (xs.map (renEff f))
   | .eMatch x e t bs vs => .eMatch (renEff f x) e t (bs.map (·.map f)) (vs.map (renEff f))
   | .eDivide o a b => .eDivide o (renEff f a) (renEff f b)
+  | .eStride sl => .eStride (f sl)
 
 partial def renStmt (f : Nat → Nat) : SrcStmt → SrcStmt
   | .nop => .nop
@@ -1215,6 +1252,7 @@ def main():
     if args.cases:
         return run_cases(args, args.cases)
     oracle.EFFECTS = not args.generic
+    oracle.enable_isize()
     rng = random.Random(args.seed)
     programs = [oracle.gen_program(rng) for _ in range(args.count)]
     for p in programs:

@@ -117,7 +117,7 @@ def i32(x):
 # Effectful expressions: ('ePure', e) ('eCall', callee, args) ('eApply', name, sym, l, r) ('eNeg', x)
 #              ('eNot', x) ('eCast', ty, x) ('eDivide', name, sym, l, r) ('eStruct', ty, fields)
 #              ('eVariant', ty, variant, payload) ('eIndex', slice, x) of a slice local (i32, word struct
-#              or word enum elements)
+#              or word enum elements) ('eStride', slice) the slice local's slice_stride, an isize
 #              ('eMatch', scrutinee, ety, ty, binders, values): arm k binds variant k's payload
 # Statements: ('nop',) ('let', id, ty, e, body) ('call', id, ty, callee, args, body) ('set', id, e)
 #             ('letStruct', id, ty, fields, body) ('letEnum', id, ty, variant, payload, body)
@@ -359,6 +359,9 @@ class Gen:
         if ty == 'i32' and views and rng.random() < 0.25:
             view, n = rng.choice(views)
             return ('eIndex', view, self.in_bounds(n, depth, env, items))
+        slices = [i for i, t in env if isinstance(t, tuple) and t[0] == 'slice']
+        if ty == 'isize' and slices and rng.random() < 0.25:
+            return ('eStride', rng.choice(slices))
         if depth <= 0 or rng.random() < 0.2:
             return ('ePure', self.expr(ty, rng.randint(0, 2), env))
 
@@ -945,6 +948,8 @@ def eff_ty(e, env):
         return e[1]
     if kind == 'eIndex':
         return env[e[1]][1][1]
+    if kind == 'eStride':
+        return 'isize'
     if kind == 'eMatch':
         return e[3]
     if kind == 'eNeg':
@@ -952,6 +957,16 @@ def eff_ty(e, env):
     if kind == 'eNot':
         return 'bool'
     return e[1]
+
+
+def stride_of(element):
+    """slice_stride of a raw view: i32 elements run forward 4 bytes; word
+    structs and enums run down 8 bytes a word."""
+    if element == 'i32':
+        return 4
+    if element[0] == 'struct':
+        return -8 * len(TYPES.structs[element[1]])
+    return -8 * (1 + max(len(p) for p in TYPES.enums[element[1]]))
 
 
 def ev_eff(e, env, funcs):
@@ -974,6 +989,8 @@ def ev_eff(e, env, funcs):
         for b, v, t in zip(e[4][variant], payload, TYPES.enums[e[2][1]][variant]):
             env[b] = [v, t]
         return ev_eff(e[5][variant], env, funcs)
+    if kind == 'eStride':
+        return stride_of(env[e[1]][1][1])
     if kind == 'eIndex':
         k, elements = ev_eff(e[2], env, funcs), env[e[1]][0]
         if not 0 <= k < len(elements):
@@ -1173,6 +1190,8 @@ def lean_eff(e):
         return f'(.eDivide .{e[1]} {lean_eff(e[3])} {lean_eff(e[4])})'
     if kind == 'eIndex':
         return f'(.eIndex {e[1]} {lean_eff(e[2])})'
+    if kind == 'eStride':
+        return f'(.eStride {e[1]})'
     if kind == 'eMatch':
         return (f'(.eMatch {lean_eff(e[1])} {lean_ty(e[2])} {lean_ty(e[3])} {e[4]} '
                 f'[{", ".join(lean_eff(v) for v in e[5])}])')
@@ -1366,6 +1385,8 @@ def lani_eff(e, prefix):
         return f'({lani_eff(e[2], prefix)} as {e[1]})'
     if kind == 'eIndex':
         return f'v{e[1]}[{lani_eff(e[2], prefix)}]'
+    if kind == 'eStride':
+        return f'slice_stride(v{e[1]})'
     if kind == 'eMatch':
         arms = ' '.join(f'{lani_variant(e[2][1], v, [f"v{b}" for b in names])} -> {lani_eff(value, prefix)},'
                         for v, (names, value) in enumerate(zip(e[4], e[5])))
