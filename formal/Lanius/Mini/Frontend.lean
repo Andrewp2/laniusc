@@ -68,6 +68,13 @@ def withKid (kid : CTree) (rest : Option Attached) : Option Attached :=
   | none => none
   | some a => some ({ kids := kid :: a.kids, rest := a.rest } : Attached)
 
+/-- laniusc's parser reads a `>>` that closes two type argument lists (as in `Vec<Option<T>>`) as two `>`, so a terminal `>` may take the first half of a `>>` token, and the second half is then the next token. -/
+def shrFirst (t : Token) : Token :=
+  ({ kind := (13), start := t.start, text := [62] } : Token)
+
+def shrSecond (t : Token) : Token :=
+  ({ kind := (13), start := t.start + 1, text := [62] } : Token)
+
 /-- Attach the trees for the symbols rhs, children of the node with preorder index parent: a terminal takes the next token, which must have its kind; a nonterminal takes the next production, which must have it as its left side and parent as its recorded parent, and then that production's own symbols. -/
 def attach (g : List Rule) (fuel : Nat) (rhs : List Sym) (parent : Nat) (cur : Cursor) : Option Attached :=
   if fuel = 0 then
@@ -85,7 +92,10 @@ def attach (g : List Rule) (fuel : Nat) (rhs : List Sym) (parent : Nat) (cur : C
            if tok.kind = kind then
              withKid (CTree.leaf tok) (attach g sfuel more parent ({ prods := cur.prods, parents := cur.parents, tokens := toks, index := cur.index } : Cursor))
            else
-             none)
+             if decide (tok.kind = (44)) && decide (kind = (13)) then
+               withKid (CTree.leaf (shrFirst tok)) (attach g sfuel more parent ({ prods := cur.prods, parents := cur.parents, tokens := shrSecond tok :: toks, index := cur.index } : Cursor))
+             else
+               none)
       | .nonterm nt =>
         match cur.prods with
         | [] => none
@@ -151,9 +161,9 @@ def hasKids (c : CTree) : Bool :=
   | [] => false
   | k :: rest => true
 
-/-- The productions that only chain the items of a list: item lists, statement lists, parameters, arguments, fields, variants, payloads, arms, patterns. -/
+/-- The productions that only chain the items of a list: item lists, statement lists, parameters, arguments, fields, variants, payloads, arms, patterns, type parameters, type arguments and impl methods. -/
 def isLink (p : Nat) : Bool :=
-  decide (p = (1)) || decide (p = (2)) || decide (p = (73)) || decide (p = (74)) || decide (p = (60)) || decide (p = (61)) || decide (p = (67)) || decide (p = (68)) || decide (p = (292)) || decide (p = (293)) || decide (p = (165)) || decide (p = (166)) || decide (p = (167)) || decide (p = (168)) || decide (p = (169)) || decide (p = (170)) || decide (p = (259)) || decide (p = (260)) || decide (p = (262)) || decide (p = (263)) || decide (p = (264)) || decide (p = (265)) || decide (p = (276)) || decide (p = (277)) || decide (p = (279)) || decide (p = (280)) || decide (p = (281)) || decide (p = (282)) || decide (p = (211)) || decide (p = (212)) || decide (p = (222)) || decide (p = (223)) || decide (p = (224)) || decide (p = (225)) || decide (p = (216)) || decide (p = (217)) || decide (p = (218)) || decide (p = (219)) || decide (p = (220)) || decide (p = (221)) || decide (p = (188)) || decide (p = (189)) || decide (p = (191)) || decide (p = (192)) || decide (p = (193)) || decide (p = (194)) || decide (p = (201)) || decide (p = (202)) || decide (p = (203)) || decide (p = (204)) || decide (p = (205)) || decide (p = (206))
+  decide (p = (1)) || decide (p = (2)) || decide (p = (73)) || decide (p = (74)) || decide (p = (60)) || decide (p = (61)) || decide (p = (67)) || decide (p = (68)) || decide (p = (292)) || decide (p = (293)) || decide (p = (165)) || decide (p = (166)) || decide (p = (167)) || decide (p = (168)) || decide (p = (169)) || decide (p = (170)) || decide (p = (259)) || decide (p = (260)) || decide (p = (262)) || decide (p = (263)) || decide (p = (264)) || decide (p = (265)) || decide (p = (276)) || decide (p = (277)) || decide (p = (279)) || decide (p = (280)) || decide (p = (281)) || decide (p = (282)) || decide (p = (211)) || decide (p = (212)) || decide (p = (222)) || decide (p = (223)) || decide (p = (224)) || decide (p = (225)) || decide (p = (216)) || decide (p = (217)) || decide (p = (218)) || decide (p = (219)) || decide (p = (220)) || decide (p = (221)) || decide (p = (188)) || decide (p = (189)) || decide (p = (191)) || decide (p = (192)) || decide (p = (193)) || decide (p = (194)) || decide (p = (201)) || decide (p = (202)) || decide (p = (203)) || decide (p = (204)) || decide (p = (205)) || decide (p = (206)) || decide (p = (233)) || decide (p = (253)) || decide (p = (255)) || decide (p = (227)) || decide (p = (228)) || decide (p = (230)) || decide (p = (52)) || decide (p = (54)) || decide (p = (20)) || decide (p = (23))
 
 def joinSecond (a : List CTree) (second : Option (List CTree)) : Option (List CTree) :=
   match second with
@@ -196,43 +206,6 @@ def itemsCons (fuel : Nat) (k : CTree) (rest : List CTree) : Option (List CTree)
 
 end
 
-/-- The items of the file, split into type declarations and functions; any other item is rejected. -/
-structure Items where
-  decls : List CTree
-  fns : List CTree
-  deriving Repr
-
-def splitNext (item : CTree) (rest : Option Items) : Option Items :=
-  match rest with
-  | none => none
-  | some r =>
-    let p : Nat := nodeProd item
-    if decide (p = (257)) || decide (p = (209)) then
-      some ({ decls := item :: r.decls, fns := r.fns } : Items)
-    else
-      if p = (4) then
-        some ({ decls := r.decls, fns := kid item 0 :: r.fns } : Items)
-      else
-        none
-
-def splitItems (items : List CTree) : Option Items :=
-  match items with
-  | [] => some ({ decls := [], fns := [] } : Items)
-  | item :: rest => splitNext item (splitItems rest)
-
-structure Variant where
-  name : List Nat
-  payload : List SrcType
-  deriving Repr
-
-/-- A declared struct or enum: its spelling, its source type, its field spellings (a struct) and its variants (an enum). -/
-structure TypeEntry where
-  name : List Nat
-  ty : SrcType
-  fields : List (List Nat)
-  variants : List Variant
-  deriving Repr
-
 def leafToken (c : CTree) : Token :=
   match c with
   | .leaf t => t
@@ -241,35 +214,6 @@ def leafToken (c : CTree) : Token :=
 /-- The token of child i, a leaf. -/
 def kidToken (c : CTree) (i : Nat) : Token :=
   leafToken (kid c i)
-
-/-- The spelling of a type expression naming one type (type_ident, no arguments, one segment). -/
-def typeName (t : CTree) : Option (List Nat) :=
-  let path : CTree := kid t 0
-  if decide (nodeProd t = (69)) && decide (nodeProd (kid t 1) = (226)) && decide (nodeProd path = (56)) && decide (nodeProd (kid path 0) = (57)) && decide (nodeProd (kid path 1) = (59)) then
-    some (kidToken (kid path 0) 0).text
-  else
-    none
-
-/-- A struct's fields: (spelling, type spelling) for each struct_field. -/
-structure FieldDecl where
-  names : List (List Nat)
-  types : List (List Nat)
-  deriving DecidableEq, Repr
-
-def consFieldRest (name : List Nat) (t : List Nat) (rest : Option FieldDecl) : Option FieldDecl :=
-  match rest with
-  | none => none
-  | some r => some ({ names := name :: r.names, types := t :: r.types } : FieldDecl)
-
-def consField (name : List Nat) (ty : Option (List Nat)) (rest : Option FieldDecl) : Option FieldDecl :=
-  match ty with
-  | none => none
-  | some t => consFieldRest name t rest
-
-def fieldDecls (items : List CTree) : Option FieldDecl :=
-  match items with
-  | [] => some ({ names := [], types := [] } : FieldDecl)
-  | f :: rest => consField (kidToken f 0).text (typeName (kid f 2)) (fieldDecls rest)
 
 def sameText (a : List Nat) (b : List Nat) : Bool :=
   match a with
@@ -285,7 +229,31 @@ def sameText (a : List Nat) (b : List Nat) : Bool :=
 def spelled (a : List Nat) (b : List Nat) : Bool :=
   sameText a b
 
-/-- i32, bool, u8, u32, u64, usize -/
+def textPtr : List Nat :=
+  let t : List Nat := 112 :: 116 :: [114]
+  t
+
+def textSelf : List Nat :=
+  let t : List Nat := 115 :: 101 :: 108 :: [102]
+  t
+
+def textAlloc : List Nat :=
+  let t : List Nat := 97 :: 108 :: 108 :: 111 :: [99]
+  t
+
+def textAllocator : List Nat :=
+  let t : List Nat := 97 :: 108 :: 108 :: 111 :: 99 :: 97 :: 116 :: 111 :: [114]
+  t
+
+def textDealloc : List Nat :=
+  let t : List Nat := 100 :: 101 :: 97 :: 108 :: 108 :: 111 :: [99]
+  t
+
+def textSliceFromRawParts : List Nat :=
+  let t : List Nat := 115 :: 108 :: 105 :: 99 :: 101 :: 95 :: 102 :: 114 :: 111 :: 109 :: 95 :: 114 :: 97 :: 119 :: 95 :: 112 :: 97 :: 114 :: 116 :: [115]
+  t
+
+/-- i32, bool, u8, u32, u64, usize, ptr -/
 def primitive (name : List Nat) : Option SrcType :=
   let i32Text : List Nat := 105 :: 51 :: [50]
   let boolText : List Nat := 98 :: 111 :: 111 :: [108]
@@ -311,37 +279,10 @@ def primitive (name : List Nat) : Option SrcType :=
             if spelled name usizeText then
               some (SrcType.uint UintTy.usize)
             else
-              none
-
-def declared (types : List TypeEntry) (name : List Nat) : Option SrcType :=
-  match types with
-  | [] => none
-  | entry :: rest =>
-    if sameText entry.name name then
-      some entry.ty
-    else
-      declared rest name
-
-/-- A type by spelling: a primitive type or a declared one. -/
-def resolve (types : List TypeEntry) (name : List Nat) : Option SrcType :=
-  match primitive name with
-  | some t => some t
-  | none => declared types name
-
-def consTypeTail (t : SrcType) (tail : Option (List SrcType)) : Option (List SrcType) :=
-  match tail with
-  | none => none
-  | some ts => some (t :: ts)
-
-def consType (head : Option SrcType) (tail : Option (List SrcType)) : Option (List SrcType) :=
-  match head with
-  | none => none
-  | some t => consTypeTail t tail
-
-def resolveAll (types : List TypeEntry) (names : List (List Nat)) : Option (List SrcType) :=
-  match names with
-  | [] => some []
-  | name :: rest => consType (resolve types name) (resolveAll types rest)
+              if spelled name textPtr then
+                some SrcType.ptr
+              else
+                none
 
 def member (names : List (List Nat)) (name : List Nat) : Bool :=
   match names with
@@ -354,28 +295,15 @@ def distinct (names : List (List Nat)) : Bool :=
   | [] => true
   | n :: rest => !(member rest n) && distinct rest
 
-def structTyped (index : Nat) (name : List Nat) (names : List (List Nat)) (tys : Option (List SrcType)) : Option TypeEntry :=
-  match tys with
-  | none => none
-  | some ts =>
-    if distinct names then
-      some ({ name := name, ty := SrcType.struct index ts, fields := names, variants := [] } : TypeEntry)
+/-- The position of name in names, counting from k. -/
+def position (names : List (List Nat)) (name : List Nat) (k : Nat) : Option Nat :=
+  match names with
+  | [] => none
+  | n :: rest =>
+    if sameText n name then
+      some k
     else
-      none
-
-def structWithFields (types : List TypeEntry) (index : Nat) (name : List Nat) (fields : Option FieldDecl) : Option TypeEntry :=
-  match fields with
-  | none => none
-  | some f => structTyped index name f.names (resolveAll types f.types)
-
-/-- The entry of the struct declaration s (struct_item), the index-th type declaration. Its field types are primitive or declared earlier. -/
-def structEntry (fuel : Nat) (types : List TypeEntry) (index : Nat) (s : CTree) : Option TypeEntry :=
-  if decide (nodeProd s = (258)) && decide (nodeProd (kid s 2) = (232)) && decide (nodeProd (kid s 3) = (36)) then
-    match listItems fuel (kid s 5) with
-    | none => none
-    | some items => structWithFields types index (kidToken s 1).text (fieldDecls items)
-  else
-    none
+      position rest name (k + 1)
 
 def consNameTail (n : List Nat) (tail : Option (List (List Nat))) : Option (List (List Nat)) :=
   match tail with
@@ -387,103 +315,455 @@ def consName (head : Option (List Nat)) (tail : Option (List (List Nat))) : Opti
   | none => none
   | some n => consNameTail n tail
 
-/-- The spellings of the types listed by a list of type expressions. -/
-def typeNames (items : List CTree) : Option (List (List Nat)) :=
+def sameSpellings (a : List (List Nat)) (b : List (List Nat)) : Bool :=
+  match a with
+  | [] =>
+    (match b with
+     | [] => true
+     | y :: more => false)
+  | x :: rest =>
+    match b with
+    | [] => false
+    | y :: more => sameText x y && sameSpellings rest more
+
+/-- A module path occurs in a list of module paths. -/
+def moduleMember (modules : List (List (List Nat))) (m : List (List Nat)) : Bool :=
+  match modules with
+  | [] => false
+  | x :: rest => sameSpellings x m || moduleMember rest m
+
+def distinctModules (modules : List (List (List Nat))) : Bool :=
+  match modules with
+  | [] => true
+  | m :: rest => !(moduleMember rest m) && distinctModules rest
+
+/-- The one spelling of a one-segment path. -/
+def singleName (segments : List (List Nat)) : Option (List Nat) :=
+  match segments with
+  | [] => none
+  | n :: rest =>
+    match rest with
+    | [] => some n
+    | m :: more => none
+
+def noTrees (items : List CTree) : Bool :=
   match items with
-  | [] => some []
-  | t :: rest => consName (typeName t) (typeNames rest)
+  | [] => true
+  | t :: rest => false
 
-def variantResolved (name : List Nat) (tys : Option (List SrcType)) : Option Variant :=
-  match tys with
-  | none => none
-  | some ts => some ({ name := name, payload := ts } : Variant)
-
-def variantTyped (name : List Nat) (types : List TypeEntry) (names : Option (List (List Nat))) : Option Variant :=
-  match names with
-  | none => none
-  | some ns => variantResolved name (resolveAll types ns)
-
-/-- One enum variant (enum_variant): its spelling and payload types. -/
-def variantDecl (fuel : Nat) (types : List TypeEntry) (v : CTree) : Option Variant :=
-  let payload : CTree := kid v 1
-  if nodeProd payload = (214) then
-    some ({ name := (kidToken v 0).text, payload := [] } : Variant)
+/-- The spellings of a path's segments, none with type arguments. -/
+def pathSpellings (fuel : Nat) (segment : CTree) (tail : CTree) : Option (List (List Nat)) :=
+  if fuel = 0 then
+    none
   else
-    match listItems fuel (kid payload 1) with
-    | none => none
-    | some items => variantTyped (kidToken v 0).text types (typeNames items)
+    if decide (nodeProd segment = (48)) && decide (nodeProd tail = (51)) then
+      some [(kidToken segment 0).text]
+    else
+      if decide (nodeProd segment = (48)) && decide (nodeProd tail = (50)) then
+        consName (some (kidToken segment 0).text) (pathSpellings (fuel - 1) (kid tail 2) (kid tail 3))
+      else
+        none
 
-def consVariantTail (v : Variant) (tail : Option (List Variant)) : Option (List Variant) :=
-  match tail with
-  | none => none
-  | some vs => some (v :: vs)
-
-def consVariant (head : Option Variant) (tail : Option (List Variant)) : Option (List Variant) :=
-  match head with
-  | none => none
-  | some v => consVariantTail v tail
-
-def variantsOf (fuel : Nat) (types : List TypeEntry) (items : List CTree) : Option (List Variant) :=
-  match items with
-  | [] => some []
-  | v :: rest => consVariant (variantDecl fuel types v) (variantsOf fuel types rest)
-
-def payloads (variants : List Variant) : List (List SrcType) :=
-  match variants with
-  | [] => []
-  | v :: rest => v.payload :: payloads rest
-
-def enumWithVariants (index : Nat) (name : List Nat) (variants : Option (List Variant)) : Option TypeEntry :=
-  match variants with
-  | none => none
-  | some vs => some ({ name := name, ty := SrcType.enum index (payloads vs), fields := [], variants := vs } : TypeEntry)
-
-/-- The entry of the enum declaration e (enum_item), the index-th type declaration. Payload types are primitive or declared earlier. -/
-def enumEntry (fuel : Nat) (types : List TypeEntry) (index : Nat) (e : CTree) : Option TypeEntry :=
-  if decide (nodeProd e = (210)) && decide (nodeProd (kid e 2) = (232)) && decide (nodeProd (kid e 3) = (36)) then
-    match listItems fuel (kid e 5) with
-    | none => none
-    | some items => enumWithVariants index (kidToken e 1).text (variantsOf fuel types items)
+/-- The spelling of a path with one segment (path -> path_ident path_end). -/
+def pathName (path : CTree) : Option (List Nat) :=
+  if decide (nodeProd path = (47)) && decide (nodeProd (kid path 0) = (48)) && decide (nodeProd (kid path 1) = (51)) then
+    some (kidToken (kid path 0) 0).text
   else
     none
 
-def typeEntry (fuel : Nat) (types : List TypeEntry) (index : Nat) (d : CTree) : Option TypeEntry :=
-  if nodeProd d = (257) then
-    structEntry fuel types index (kid d 0)
-  else
-    enumEntry fuel types index (kid d 0)
-
-/-- The type declarations, in order, each seeing the ones before it. -/
-def typeEntries (fuel : Nat) (types : List TypeEntry) (decls : List CTree) : Option (List TypeEntry) :=
-  match decls with
-  | [] => some types
-  | d :: rest =>
-    let entry : Option TypeEntry := typeEntry fuel types types.length d
-    match entry with
-    | none => none
-    | some e => typeEntries fuel (types ++ [e]) rest
-
-/-- Everything a function body can name besides its locals. -/
-structure Env where
-  types : List TypeEntry
-  fns : List (List Nat)
-  globals : List (List Nat)
+/-- A path whose last segment may have type arguments (`f<T>`): its spellings, and the generic arguments of the last segment. -/
+structure PathRef where
+  segments : List (List Nat)
+  targs : List CTree
   deriving Repr
 
-def variantNames (variants : List Variant) : List (List Nat) :=
-  match variants with
-  | [] => []
-  | v :: rest => v.name :: variantNames rest
+def consSegment (n : List Nat) (rest : Option PathRef) : Option PathRef :=
+  match rest with
+  | none => none
+  | some r => some ({ segments := n :: r.segments, targs := r.targs } : PathRef)
 
-def typeSpellings (types : List TypeEntry) : List (List Nat) :=
-  match types with
-  | [] => []
-  | t :: rest => t.name :: (variantNames t.variants ++ typeSpellings rest)
+def argsSegment (n : List Nat) (items : Option (List CTree)) : Option PathRef :=
+  match items with
+  | none => none
+  | some gs => some ({ segments := [n], targs := gs } : PathRef)
 
-def fnNames (fns : List CTree) : List (List Nat) :=
+def pathRef (fuel : Nat) (segment : CTree) (tail : CTree) : Option PathRef :=
+  if fuel = 0 then
+    none
+  else
+    if decide (nodeProd segment = (48)) && decide (nodeProd tail = (51)) then
+      some ({ segments := [(kidToken segment 0).text], targs := [] } : PathRef)
+    else
+      if decide (nodeProd segment = (49)) && decide (nodeProd tail = (51)) then
+        argsSegment (kidToken segment 0).text (listItems fuel segment)
+      else
+        if decide (nodeProd segment = (48)) && decide (nodeProd tail = (50)) then
+          consSegment (kidToken segment 0).text (pathRef (fuel - 1) (kid tail 2) (kid tail 3))
+        else
+          none
+
+/-- The spellings of a type path's segments. -/
+def typePathSpellings (fuel : Nat) (segment : CTree) (tail : CTree) : Option (List (List Nat)) :=
+  if fuel = 0 then
+    none
+  else
+    if decide (nodeProd segment = (57)) && decide (nodeProd tail = (59)) then
+      some [(kidToken segment 0).text]
+    else
+      if decide (nodeProd segment = (57)) && decide (nodeProd tail = (58)) then
+        consName (some (kidToken segment 0).text) (typePathSpellings (fuel - 1) (kid tail 2) (kid tail 3))
+      else
+        none
+
+/-- A path as its module (the segments before the last) and its last name. -/
+structure Split where
+  module : List (List Nat)
+  name : List Nat
+  deriving DecidableEq, Repr
+
+def splitMore (n : List Nat) (rest : Option Split) : Option Split :=
+  match rest with
+  | none => some ({ module := [], name := n } : Split)
+  | some s => some ({ module := n :: s.module, name := s.name } : Split)
+
+def splitLast (segments : List (List Nat)) : Option Split :=
+  match segments with
+  | [] => none
+  | n :: rest => splitMore n (splitLast rest)
+
+/-- A path with no module part names an item of the current module. -/
+def moduleOr (current : List (List Nat)) (m : List (List Nat)) : List (List Nat) :=
+  match m with
+  | [] => current
+  | n :: rest => m
+
+/-- A type as build reads it: a primitive type, a raw view, or a declared struct or enum (its index among all type declarations) at type arguments. -/
+inductive Ty where
+  | tyI32 : Ty
+  | tyBool : Ty
+  | tyUint : UintTy → Ty
+  | tyPtr : Ty
+  | tySlice : Ty → Ty
+  | tyNamed : Nat → (List Ty) → Ty
+  deriving Repr
+
+/-- A declaration at type arguments: a type instance (the declaration is a type's index) or a function instance (a function's index). -/
+structure Inst where
+  decl : Nat
+  args : List Ty
+  deriving Repr
+
+/-- A struct or enum declaration: its module, spelling and type parameters, a struct's field spellings and types as written, an enum's variant spellings and payload types as written. -/
+structure TypeDecl where
+  module : List (List Nat)
+  name : List Nat
+  params : List (List Nat)
+  isEnum : Bool
+  fields : List (List Nat)
+  fieldTypes : List CTree
+  variants : List (List Nat)
+  payloads : List (List CTree)
+  deriving Repr
+
+/-- A function or an impl method: its module, spelling, the impl's type parameters and type as written (a method), its own type parameters, and its fn_item or impl_fn_item node. -/
+structure FnDecl where
+  module : List (List Nat)
+  name : List Nat
+  inImpl : Bool
+  implParams : List (List Nat)
+  selfType : CTree
+  params : List (List Nat)
+  tree : CTree
+  deriving Repr
+
+/-- `const name: ty = value;` -/
+structure ConstDecl where
+  module : List (List Nat)
+  name : List Nat
+  ty : CTree
+  value : CTree
+  deriving Repr
+
+/-- The declarations of all the files, in file order. -/
+structure Decls where
+  types : List TypeDecl
+  fns : List FnDecl
+  consts : List ConstDecl
+  deriving Repr
+
+def noDecls : Decls :=
+  ({ types := [], fns := [], consts := [] } : Decls)
+
+def joinDecls (a : Decls) (b : Option Decls) : Option Decls :=
+  match b with
+  | none => none
+  | some d => some ({ types := a.types ++ d.types, fns := a.fns ++ d.fns, consts := a.consts ++ d.consts } : Decls)
+
+/-- The item an item node holds, `pub` or not. -/
+def itemBody (item : CTree) : CTree :=
+  if nodeProd item = (3) then
+    kid (kid item 1) 0
+  else
+    kid item 0
+
+/-- The path of the file's `module` item; none is the empty path. -/
+def modulePath (fuel : Nat) (items : List CTree) : Option (List (List Nat)) :=
+  match items with
+  | [] => some []
+  | item :: rest =>
+    let mbody : CTree := itemBody item
+    let mpath : CTree := kid mbody 1
+    if nodeProd mbody = (46) then
+      pathSpellings fuel (kid mpath 0) (kid mpath 1)
+    else
+      modulePath fuel rest
+
+/-- The spellings of type parameters (enum_type_param, bounds ignored). -/
+def paramSpellings (items : List CTree) : Option (List (List Nat)) :=
+  match items with
+  | [] => some []
+  | p :: rest =>
+    if nodeProd p = (234) then
+      consName (some (kidToken p 0).text) (paramSpellings rest)
+    else
+      none
+
+/-- The type parameters of an enum_type_params_opt node. -/
+def typeParams (fuel : Nat) (t : CTree) : Option (List (List Nat)) :=
+  match listItems fuel t with
+  | none => none
+  | some items => paramSpellings items
+
+/-- A struct's fields: spellings and type expressions. -/
+structure Fields where
+  names : List (List Nat)
+  types : List CTree
+  deriving Repr
+
+def consField (f : CTree) (rest : Fields) : Fields :=
+  ({ names := (kidToken f 0).text :: rest.names, types := kid f 2 :: rest.types } : Fields)
+
+def fieldsOf (items : List CTree) : Fields :=
+  match items with
+  | [] => ({ names := [], types := [] } : Fields)
+  | f :: rest => consField f (fieldsOf rest)
+
+/-- An enum's variants: spellings and payload type expressions. -/
+structure Variants where
+  names : List (List Nat)
+  payloads : List (List CTree)
+  deriving Repr
+
+def consVariantTail (name : List Nat) (payload : List CTree) (rest : Option Variants) : Option Variants :=
+  match rest with
+  | none => none
+  | some r => some ({ names := name :: r.names, payloads := payload :: r.payloads } : Variants)
+
+def consVariant (name : List Nat) (payload : Option (List CTree)) (rest : Option Variants) : Option Variants :=
+  match payload with
+  | none => none
+  | some p => consVariantTail name p rest
+
+/-- The payload type expressions of an enum_variant. -/
+def variantPayload (fuel : Nat) (v : CTree) : Option (List CTree) :=
+  let payload : CTree := kid v 1
+  if nodeProd payload = (214) then
+    some []
+  else
+    listItems fuel (kid payload 1)
+
+def variantsOf (fuel : Nat) (items : List CTree) : Option Variants :=
+  match items with
+  | [] => some ({ names := [], payloads := [] } : Variants)
+  | v :: rest => consVariant (kidToken v 0).text (variantPayload fuel v) (variantsOf fuel rest)
+
+def structDeclFields (module : List (List Nat)) (name : List Nat) (ps : List (List Nat)) (fs : Fields) : Option TypeDecl :=
+  if distinct fs.names then
+    some ({ module := module, name := name, params := ps, isEnum := false, fields := fs.names, fieldTypes := fs.types, variants := [], payloads := [] } : TypeDecl)
+  else
+    none
+
+def structDeclOf (module : List (List Nat)) (name : List Nat) (params : Option (List (List Nat))) (items : Option (List CTree)) : Option TypeDecl :=
+  match params with
+  | none => none
+  | some ps =>
+    match items with
+    | none => none
+    | some fs => structDeclFields module name ps (fieldsOf fs)
+
+def enumDeclOf (module : List (List Nat)) (name : List Nat) (params : Option (List (List Nat))) (variants : Option Variants) : Option TypeDecl :=
+  match params with
+  | none => none
+  | some ps =>
+    match variants with
+    | none => none
+    | some vs => some ({ module := module, name := name, params := ps, isEnum := true, fields := [], fieldTypes := [], variants := vs.names, payloads := vs.payloads } : TypeDecl)
+
+/-- A struct_item or enum_item: no where clause. -/
+def typeDecl (fuel : Nat) (module : List (List Nat)) (s : CTree) : Option TypeDecl :=
+  if decide (nodeProd s = (258)) && decide (nodeProd (kid s 3) = (36)) then
+    structDeclOf module (kidToken s 1).text (typeParams fuel (kid s 2)) (listItems fuel (kid s 5))
+  else
+    if decide (nodeProd s = (210)) && decide (nodeProd (kid s 3) = (36)) then
+      match listItems fuel (kid s 5) with
+      | none => none
+      | some items => enumDeclOf module (kidToken s 1).text (typeParams fuel (kid s 2)) (variantsOf fuel items)
+    else
+      none
+
+def fnDeclOf (module : List (List Nat)) (f : CTree) (inImpl : Bool) (implParams : List (List Nat)) (selfType : CTree) (params : Option (List (List Nat))) : Option FnDecl :=
+  match params with
+  | none => none
+  | some ps => some ({ module := module, name := (kidToken f 1).text, inImpl := inImpl, implParams := implParams, selfType := selfType, params := ps, tree := f } : FnDecl)
+
+def consFnDecl (f : Option FnDecl) (rest : Option (List FnDecl)) : Option (List FnDecl) :=
+  match f with
+  | none => none
+  | some d =>
+    match rest with
+    | none => none
+    | some ds => some (d :: ds)
+
+def methodDecl (fuel : Nat) (module : List (List Nat)) (implParams : List (List Nat)) (selfType : CTree) (m : CTree) : Option FnDecl :=
+  let f : CTree := kid m 0
+  let g : CTree := kid m 1
+  if decide (nodeProd m = (21)) && decide (nodeProd f = (13)) then
+    fnDeclOf module f true implParams selfType (typeParams fuel (kid f 2))
+  else
+    if decide (nodeProd m = (22)) && decide (nodeProd g = (13)) then
+      fnDeclOf module g true implParams selfType (typeParams fuel (kid g 2))
+    else
+      none
+
+/-- The methods of an impl block: impl_method items holding impl_fn_items. -/
+def methodsOf (fuel : Nat) (module : List (List Nat)) (implParams : List (List Nat)) (selfType : CTree) (items : List CTree) : Option (List FnDecl) :=
+  match items with
+  | [] => some []
+  | m :: rest => consFnDecl (methodDecl fuel module implParams selfType m) (methodsOf fuel module implParams selfType rest)
+
+def fnsDecls (fns : Option (List FnDecl)) : Option Decls :=
+  match fns with
+  | none => none
+  | some fs => some ({ types := [], fns := fs, consts := [] } : Decls)
+
+def implMethods (fuel : Nat) (module : List (List Nat)) (params : Option (List (List Nat))) (selfType : CTree) (list : CTree) : Option Decls :=
+  match params with
+  | none => none
+  | some ps =>
+    match listItems fuel list with
+    | none => none
+    | some items => fnsDecls (methodsOf fuel module ps selfType items)
+
+def typeDecls (t : Option TypeDecl) : Option Decls :=
+  match t with
+  | none => none
+  | some d => some ({ types := [d], fns := [], consts := [] } : Decls)
+
+/-- The declarations an item makes. Imports, extern functions, traits and type aliases make none; a use of one is rejected when it is read. -/
+def itemDecls (fuel : Nat) (module : List (List Nat)) (item : CTree) : Option Decls :=
+  let b : CTree := itemBody item
+  let p : Nat := nodeProd b
+  if decide (p = (258)) || decide (p = (210)) then
+    typeDecls (typeDecl fuel module b)
+  else
+    if p = (11) then
+      fnsDecls (consFnDecl (fnDeclOf module b false [] b (typeParams fuel (kid b 2))) (some []))
+    else
+      if p = (208) then
+        some ({ types := [], fns := [], consts := [({ module := module, name := (kidToken b 1).text, ty := kid b 3, value := kid b 5 } : ConstDecl)] } : Decls)
+      else
+        if decide (p = (17)) && decide (nodeProd (kid b 3) = (36)) then
+          implMethods fuel module (typeParams fuel (kid b 1)) (kid b 2) (kid b 5)
+        else
+          if decide (p = (18)) && decide (nodeProd (kid b 5) = (36)) then
+            implMethods fuel module (typeParams fuel (kid b 1)) (kid b 4) (kid b 7)
+          else
+            if decide (p = (46)) || decide (p = (43)) || decide (p = (15)) || decide (p = (25)) || decide (p = (16)) then
+              some noDecls
+            else
+              none
+
+def collect (fuel : Nat) (module : List (List Nat)) (items : List CTree) (acc : Decls) : Option Decls :=
+  match items with
+  | [] => some acc
+  | item :: rest =>
+    let cacc : Option Decls := joinDecls acc (itemDecls fuel module item)
+    match cacc with
+    | none => none
+    | some d => collect fuel module rest d
+
+/-- One file's module path and declarations. -/
+structure FileDecls where
+  module : List (List Nat)
+  decls : Decls
+  deriving Repr
+
+def fileCollected (module : List (List Nat)) (decls : Option Decls) : Option FileDecls :=
+  match decls with
+  | none => none
+  | some d => some ({ module := module, decls := d } : FileDecls)
+
+def fileItems (fuel : Nat) (module : Option (List (List Nat))) (items : List CTree) : Option FileDecls :=
+  match module with
+  | none => none
+  | some m => fileCollected m (collect fuel m items noDecls)
+
+def fileDecls (fuel : Nat) (root : CTree) : Option FileDecls :=
+  if nodeProd root = (0) then
+    match listItems fuel (kid root 0) with
+    | none => none
+    | some items => fileItems fuel (modulePath fuel items) items
+  else
+    none
+
+/-- All files' declarations, and their module paths. -/
+structure Collected where
+  decls : Decls
+  modules : List (List (List Nat))
+  deriving Repr
+
+def collectedWith (c : Collected) (f : FileDecls) : Collected :=
+  ({ decls := ({ types := c.decls.types ++ f.decls.types, fns := c.decls.fns ++ f.decls.fns, consts := c.decls.consts ++ f.decls.consts } : Decls), modules := c.modules ++ [f.module] } : Collected)
+
+def collectFiles (fuel : Nat) (roots : List CTree) (acc : Collected) : Option Collected :=
+  match roots with
+  | [] => some acc
+  | root :: rest =>
+    let ffile : Option FileDecls := fileDecls fuel root
+    match ffile with
+    | none => none
+    | some f => collectFiles fuel rest (collectedWith acc f)
+
+/-- The spellings a module gives its items: free functions, types, variants and constants. A local cannot be spelled like one, so a use has one reading. -/
+def fnNamesIn (fns : List FnDecl) (m : List (List Nat)) : List (List Nat) :=
   match fns with
   | [] => []
-  | f :: rest => (kidToken f 1).text :: fnNames rest
+  | f :: rest =>
+    if !f.inImpl && sameSpellings f.module m then
+      f.name :: fnNamesIn rest m
+    else
+      fnNamesIn rest m
+
+def typeNamesIn (types : List TypeDecl) (m : List (List Nat)) : List (List Nat) :=
+  match types with
+  | [] => []
+  | t :: rest =>
+    if sameSpellings t.module m then
+      t.name :: (t.variants ++ typeNamesIn rest m)
+    else
+      typeNamesIn rest m
+
+def constNamesIn (consts : List ConstDecl) (m : List (List Nat)) : List (List Nat) :=
+  match consts with
+  | [] => []
+  | c :: rest =>
+    if sameSpellings c.module m then
+      c.name :: constNamesIn rest m
+    else
+      constNamesIn rest m
+
+def moduleGlobals (decls : Decls) (m : List (List Nat)) : List (List Nat) :=
+  fnNamesIn decls.fns m ++ (typeNamesIn decls.types m ++ constNamesIn decls.consts m)
 
 def isNoneType (t : Option SrcType) : Bool :=
   match t with
@@ -491,44 +771,548 @@ def isNoneType (t : Option SrcType) : Bool :=
   | some x => false
 
 /-- No declared type is spelled like a primitive type. -/
-def noPrimitive (types : List TypeEntry) : Bool :=
+def noPrimitive (types : List TypeDecl) : Bool :=
   match types with
   | [] => true
   | t :: rest => isNoneType (primitive t.name) && noPrimitive rest
 
-def consFuncTail (f : SrcFunc) (tail : Option (List SrcFunc)) : Option (List SrcFunc) :=
+def modulesDistinctNames (decls : Decls) (modules : List (List (List Nat))) : Bool :=
+  match modules with
+  | [] => true
+  | m :: rest => distinct (moduleGlobals decls m) && modulesDistinctNames decls rest
+
+/-- The files are distinct modules, and each module's names are distinct. -/
+def wellNamed (c : Collected) : Bool :=
+  distinctModules c.modules && modulesDistinctNames c.decls c.modules && noPrimitive c.decls.types
+
+def noNames (names : List (List Nat)) : Bool :=
+  match names with
+  | [] => true
+  | n :: rest => false
+
+/-- The functions without type parameters, counting from k: the first file's are the program's roots. -/
+def rootInsts (fns : List FnDecl) (k : Nat) : List Inst :=
+  match fns with
+  | [] => []
+  | f :: rest =>
+    if noNames f.implParams && noNames f.params then
+      ({ decl := k, args := [] } : Inst) :: rootInsts rest (k + 1)
+    else
+      rootInsts rest (k + 1)
+
+/-- The types without type parameters, counting from k: the first file's take the first type ids, in declaration order. -/
+def seedInsts (types : List TypeDecl) (k : Nat) : List Inst :=
+  match types with
+  | [] => []
+  | t :: rest =>
+    if noNames t.params then
+      ({ decl := k, args := [] } : Inst) :: seedInsts rest (k + 1)
+    else
+      seedInsts rest (k + 1)
+
+def findType (types : List TypeDecl) (m : List (List Nat)) (name : List Nat) (k : Nat) : Option Nat :=
+  match types with
+  | [] => none
+  | t :: rest =>
+    if sameSpellings t.module m && sameText t.name name then
+      some k
+    else
+      findType rest m name (k + 1)
+
+/-- A free function (not a method). -/
+def findFn (fns : List FnDecl) (m : List (List Nat)) (name : List Nat) (k : Nat) : Option Nat :=
+  match fns with
+  | [] => none
+  | f :: rest =>
+    if !f.inImpl && sameSpellings f.module m && sameText f.name name then
+      some k
+    else
+      findFn rest m name (k + 1)
+
+def findConst (consts : List ConstDecl) (m : List (List Nat)) (name : List Nat) : Option ConstDecl :=
+  match consts with
+  | [] => none
+  | c :: rest =>
+    if sameSpellings c.module m && sameText c.name name then
+      some c
+    else
+      findConst rest m name
+
+/-- The variant spelled name: its enum's declaration and its index there. -/
+structure VariantAt where
+  owner : Nat
+  index : Nat
+  deriving DecidableEq, Repr
+
+def findVariant (types : List TypeDecl) (m : List (List Nat)) (name : List Nat) (k : Nat) : Option VariantAt :=
+  match types with
+  | [] => none
+  | t :: rest =>
+    if t.isEnum && sameSpellings t.module m then
+      match position t.variants name 0 with
+      | none => findVariant rest m name (k + 1)
+      | some j => some ({ owner := k, index := j } : VariantAt)
+    else
+      findVariant rest m name (k + 1)
+
+def uintCode (u : UintTy) : Nat :=
+  match u with
+  | .uint8 => 0
+  | .uint32 => 1
+  | .uint64 => 2
+  | .usize => 3
+
+mutual
+
+def sameTy (a : Ty) (b : Ty) : Bool :=
+  match a with
+  | .tyI32 =>
+    (match b with
+     | .tyI32 => true
+     | .tyBool => false
+     | .tyUint v => false
+     | .tyPtr => false
+     | .tySlice f => false
+     | .tyNamed e bs => false)
+  | .tyBool =>
+    (match b with
+     | .tyI32 => false
+     | .tyBool => true
+     | .tyUint v => false
+     | .tyPtr => false
+     | .tySlice f => false
+     | .tyNamed e bs => false)
+  | .tyUint u =>
+    (match b with
+     | .tyI32 => false
+     | .tyBool => false
+     | .tyUint v => decide (uintCode u = uintCode v)
+     | .tyPtr => false
+     | .tySlice f => false
+     | .tyNamed e bs => false)
+  | .tyPtr =>
+    (match b with
+     | .tyI32 => false
+     | .tyBool => false
+     | .tyUint v => false
+     | .tyPtr => true
+     | .tySlice f => false
+     | .tyNamed e bs => false)
+  | .tySlice x =>
+    (match b with
+     | .tyI32 => false
+     | .tyBool => false
+     | .tyUint v => false
+     | .tyPtr => false
+     | .tySlice f => sameTy x f
+     | .tyNamed e bs => false)
+  | .tyNamed d args =>
+    match b with
+    | .tyI32 => false
+    | .tyBool => false
+    | .tyUint v => false
+    | .tyPtr => false
+    | .tySlice f => false
+    | .tyNamed e bs => decide (d = e) && sameTys args bs
+
+def sameTys (a : List Ty) (b : List Ty) : Bool :=
+  match a with
+  | [] =>
+    (match b with
+     | [] => true
+     | y :: more => false)
+  | x :: rest =>
+    match b with
+    | [] => false
+    | y :: more => sameTy x y && sameTys rest more
+
+end
+
+def sameInst (a : Inst) (b : Inst) : Bool :=
+  decide (a.decl = b.decl) && sameTys a.args b.args
+
+def instMember (table : List Inst) (x : Inst) : Bool :=
+  match table with
+  | [] => false
+  | y :: rest => sameInst y x || instMember rest x
+
+/-- The position of an instance in a table, counting from k. -/
+def instIndex (table : List Inst) (x : Inst) (k : Nat) : Option Nat :=
+  match table with
+  | [] => none
+  | y :: rest =>
+    if sameInst y x then
+      some k
+    else
+      instIndex rest x (k + 1)
+
+def addInst (table : List Inst) (x : Inst) : List Inst :=
+  if instMember table x then
+    table
+  else
+    table ++ [x]
+
+/-- The table with the new instances appended in order, each once. -/
+def addInsts (table : List Inst) (new : List Inst) : List Inst :=
+  match new with
+  | [] => table
+  | x :: rest => addInsts (addInst table x) rest
+
+/-- Where a type expression is read: the declarations, the module, and the type parameters in scope with their types; and the spellings a local may not take. -/
+structure Env where
+  decls : Decls
+  module : List (List Nat)
+  names : List (List Nat)
+  subst : List Ty
+  globals : List (List Nat)
+  deriving Repr
+
+def declEnv (decls : Decls) (module : List (List Nat)) (names : List (List Nat)) (subst : List Ty) : Env :=
+  ({ decls := decls, module := module, names := names, subst := subst, globals := [] } : Env)
+
+/-- The primitive types as Ty, and back. -/
+def srcTy (t : SrcType) : Option Ty :=
+  match t with
+  | .i32 => some Ty.tyI32
+  | .bool => some Ty.tyBool
+  | .uint k => some (Ty.tyUint k)
+  | .struct id fields => none
+  | .enum id variants => none
+  | .ptr => some Ty.tyPtr
+  | .slice e => none
+
+def scalarSrc (t : Ty) : Option SrcType :=
+  match t with
+  | .tyI32 => some SrcType.i32
+  | .tyBool => some SrcType.bool
+  | .tyUint k => some (SrcType.uint k)
+  | .tyPtr => some SrcType.ptr
+  | .tySlice e => none
+  | .tyNamed d args => none
+
+def primTy (name : List Nat) : Option Ty :=
+  match primitive name with
+  | none => none
+  | some t => srcTy t
+
+/-- The type a type parameter spelled name stands for. -/
+def paramTy (env : Env) (name : List Nat) : Option Ty :=
+  match position env.names name 0 with
+  | none => none
+  | some i => env.subst[i]?
+
+/-- The declaration a type path names: a path with no module part names a type of the current module. -/
+def typeDeclAt (env : Env) (segments : List (List Nat)) : Option Nat :=
+  match splitLast segments with
+  | none => none
+  | some s => findType env.decls.types (moduleOr env.module s.module) s.name 0
+
+def arityOk (env : Env) (d : Nat) (args : List Ty) : Bool :=
+  match env.decls.types[d]? with
+  | none => false
+  | some t => decide (t.params.length = args.length)
+
+def namedChecked (ok : Bool) (d : Nat) (ts : List Ty) : Option Ty :=
+  if ok then
+    some (Ty.tyNamed d ts)
+  else
+    none
+
+def namedArgs (env : Env) (d : Nat) (args : Option (List Ty)) : Option Ty :=
+  match args with
+  | none => none
+  | some ts => namedChecked (arityOk env d ts) d ts
+
+def namedOf (env : Env) (d : Option Nat) (args : Option (List Ty)) : Option Ty :=
+  match d with
+  | none => none
+  | some x => namedArgs env x args
+
+def primOrNamed (env : Env) (segments : List (List Nat)) (n : List Nat) : Option Ty :=
+  match primTy n with
+  | some t => some t
+  | none => namedOf env (typeDeclAt env segments) (some [])
+
+/-- A type without arguments: a type parameter, a primitive type or a declared type. -/
+def bareTy (env : Env) (segments : List (List Nat)) : Option Ty :=
+  match singleName segments with
+  | none => namedOf env (typeDeclAt env segments) (some [])
+  | some n =>
+    match paramTy env n with
+    | some t => some t
+    | none => primOrNamed env segments n
+
+def bareOf (env : Env) (segments : Option (List (List Nat))) : Option Ty :=
+  match segments with
+  | none => none
+  | some ss => bareTy env ss
+
+def sliceTy (element : Option Ty) : Option Ty :=
+  match element with
+  | none => none
+  | some e => some (Ty.tySlice e)
+
+def consTyTail (t : Ty) (tail : Option (List Ty)) : Option (List Ty) :=
   match tail with
   | none => none
-  | some fs => some (f :: fs)
+  | some ts => some (t :: ts)
 
-def consFunc (head : Option SrcFunc) (tail : Option (List SrcFunc)) : Option (List SrcFunc) :=
+def consTy (head : Option Ty) (tail : Option (List Ty)) : Option (List Ty) :=
   match head with
   | none => none
-  | some f => consFuncTail f tail
+  | some t => consTyTail t tail
 
-/-- A local in scope: its spelling, its id and its type. -/
-structure Local where
-  name : List Nat
-  id : Nat
-  ty : SrcType
-  deriving Repr
+mutual
 
-/-- Parameters, and the scope they make (the last one innermost). -/
-structure Params where
-  params : List SrcParam
-  scope : List Local
-  deriving Repr
+/-- The type a type expression names: `[T]`, a type parameter, a primitive type, or a declared type with its arguments. -/
+def tyOf (fuel : Nat) (env : Env) (t : CTree) : Option Ty :=
+  if fuel = 0 then
+    none
+  else
+    let f : Nat := fuel - 1
+    let path : CTree := kid t 0
+    if decide (nodeProd t = (70)) && decide (nodeProd (kid t 2) = (284)) then
+      sliceTy (tyOf f env (kid t 1))
+    else
+      if decide (nodeProd t = (69)) && decide (nodeProd (kid t 1) = (226)) then
+        bareOf env (typePathSpellings f (kid path 0) (kid path 1))
+      else
+        if decide (nodeProd t = (69)) && decide (nodeProd (kid t 1) = (227)) then
+          appliedOf f env (typePathSpellings f (kid path 0) (kid path 1)) (listItems f (kid t 1))
+        else
+          none
 
-def funcBody (ps : Params) (r : SrcType) (body : Option SrcStmt) : Option SrcFunc :=
-  match body with
+def appliedOf (fuel : Nat) (env : Env) (segments : Option (List (List Nat))) (items : Option (List CTree)) : Option Ty :=
+  if fuel = 0 then
+    none
+  else
+    match segments with
+    | none => none
+    | some ss =>
+      match items with
+      | none => none
+      | some gs => namedOf env (typeDeclAt env ss) (argsTys (fuel - 1) env gs)
+
+/-- The types of generic arguments (generic_argument_type). -/
+def argsTys (fuel : Nat) (env : Env) (items : List CTree) : Option (List Ty) :=
+  if fuel = 0 then
+    none
+  else
+    match items with
+    | [] => some []
+    | g :: rest => consTy (argTy (fuel - 1) env g) (argsTys (fuel - 1) env rest)
+
+def argTy (fuel : Nat) (env : Env) (g : CTree) : Option Ty :=
+  if fuel = 0 then
+    none
+  else
+    if nodeProd g = (294) then
+      tyOf (fuel - 1) env (kid g 0)
+    else
+      none
+
+/-- The types of a list of type expressions. -/
+def tyList (fuel : Nat) (env : Env) (ts : List CTree) : Option (List Ty) :=
+  if fuel = 0 then
+    none
+  else
+    match ts with
+    | [] => some []
+    | t :: rest => consTy (tyOf (fuel - 1) env t) (tyList (fuel - 1) env rest)
+
+end
+
+def consTysTail (t : List Ty) (tail : Option (List (List Ty))) : Option (List (List Ty)) :=
+  match tail with
   | none => none
-  | some b => some ({ params := ps.params, ret := r, body := b } : SrcFunc)
+  | some ts => some (t :: ts)
 
-/-- The type a type expression names. -/
-def typeOf (env : Env) (t : CTree) : Option SrcType :=
-  match typeName t with
+def consTys (head : Option (List Ty)) (tail : Option (List (List Ty))) : Option (List (List Ty)) :=
+  match head with
   | none => none
-  | some name => resolve env.types name
+  | some t => consTysTail t tail
+
+def payloadList (fuel : Nat) (env : Env) (ps : List (List CTree)) : Option (List (List Ty)) :=
+  match ps with
+  | [] => some []
+  | p :: rest => consTys (tyList fuel env p) (payloadList fuel env rest)
+
+/-- A struct's field types at type arguments. -/
+def fieldTys (fuel : Nat) (decls : Decls) (d : Nat) (args : List Ty) : Option (List Ty) :=
+  match decls.types[d]? with
+  | none => none
+  | some t => tyList fuel (declEnv decls t.module t.params args) t.fieldTypes
+
+/-- An enum's payload types at type arguments. -/
+def payloadTys (fuel : Nat) (decls : Decls) (d : Nat) (args : List Ty) : Option (List (List Ty)) :=
+  match decls.types[d]? with
+  | none => none
+  | some t => payloadList fuel (declEnv decls t.module t.params args) t.payloads
+
+def flattenTys (vs : List (List Ty)) : List Ty :=
+  match vs with
+  | [] => []
+  | v :: rest => v ++ flattenTys rest
+
+def flatPayloads (vs : Option (List (List Ty))) : Option (List Ty) :=
+  match vs with
+  | none => none
+  | some xs => some (flattenTys xs)
+
+def consTypeTail (t : SrcType) (tail : Option (List SrcType)) : Option (List SrcType) :=
+  match tail with
+  | none => none
+  | some ts => some (t :: ts)
+
+def consType (head : Option SrcType) (tail : Option (List SrcType)) : Option (List SrcType) :=
+  match head with
+  | none => none
+  | some t => consTypeTail t tail
+
+def consTypesTail (t : List SrcType) (tail : Option (List (List SrcType))) : Option (List (List SrcType)) :=
+  match tail with
+  | none => none
+  | some ts => some (t :: ts)
+
+def consTypes (head : Option (List SrcType)) (tail : Option (List (List SrcType))) : Option (List (List SrcType)) :=
+  match head with
+  | none => none
+  | some t => consTypesTail t tail
+
+def sliceType (element : Option SrcType) : Option SrcType :=
+  match element with
+  | none => none
+  | some e => some (SrcType.slice e)
+
+def structSrc (id : Option Nat) (fields : Option (List SrcType)) : Option SrcType :=
+  match id with
+  | none => none
+  | some k =>
+    match fields with
+    | none => none
+    | some fs => some (SrcType.struct k fs)
+
+def enumSrc (id : Option Nat) (variants : Option (List (List SrcType))) : Option SrcType :=
+  match id with
+  | none => none
+  | some k =>
+    match variants with
+    | none => none
+    | some vs => some (SrcType.enum k vs)
+
+mutual
+
+/-- The source type of a type: a declared type at arguments is the struct or enum whose id is the instance's position in the type table. -/
+def lowerTy (fuel : Nat) (decls : Decls) (table : List Inst) (t : Ty) : Option SrcType :=
+  if fuel = 0 then
+    none
+  else
+    match t with
+    | .tyI32 => some SrcType.i32
+    | .tyBool => some SrcType.bool
+    | .tyUint k => some (SrcType.uint k)
+    | .tyPtr => some SrcType.ptr
+    | .tySlice e => sliceType (lowerTy (fuel - 1) decls table e)
+    | .tyNamed d args => lowerNamed (fuel - 1) decls table d args
+
+def lowerNamed (fuel : Nat) (decls : Decls) (table : List Inst) (d : Nat) (args : List Ty) : Option SrcType :=
+  if fuel = 0 then
+    none
+  else
+    match decls.types[d]? with
+    | none => none
+    | some t => lowerDecl (fuel - 1) decls table t.isEnum (instIndex table ({ decl := d, args := args } : Inst) 0) d args
+
+def lowerDecl (fuel : Nat) (decls : Decls) (table : List Inst) (isEnum : Bool) (id : Option Nat) (d : Nat) (args : List Ty) : Option SrcType :=
+  if fuel = 0 then
+    none
+  else
+    if isEnum then
+      enumSrc id (lowerVariants (fuel - 1) decls table (payloadTys fuel decls d args))
+    else
+      structSrc id (lowerTys (fuel - 1) decls table (fieldTys fuel decls d args))
+
+def lowerTys (fuel : Nat) (decls : Decls) (table : List Inst) (ts : Option (List Ty)) : Option (List SrcType) :=
+  if fuel = 0 then
+    none
+  else
+    match ts with
+    | none => none
+    | some xs =>
+      match xs with
+      | [] => some []
+      | t :: rest => consType (lowerTy (fuel - 1) decls table t) (lowerTys (fuel - 1) decls table (some rest))
+
+def lowerVariants (fuel : Nat) (decls : Decls) (table : List Inst) (vs : Option (List (List Ty))) : Option (List (List SrcType)) :=
+  if fuel = 0 then
+    none
+  else
+    match vs with
+    | none => none
+    | some xs =>
+      match xs with
+      | [] => some []
+      | v :: rest => consTypes (lowerTys (fuel - 1) decls table (some v)) (lowerVariants (fuel - 1) decls table (some rest))
+
+end
+
+def joinInsts (a : Option (List Inst)) (b : Option (List Inst)) : Option (List Inst) :=
+  match a with
+  | none => none
+  | some xs =>
+    match b with
+    | none => none
+    | some ys => some (xs ++ ys)
+
+def consInst (x : Inst) (rest : Option (List Inst)) : Option (List Inst) :=
+  match rest with
+  | none => none
+  | some xs => some (x :: xs)
+
+mutual
+
+/-- The type instances a type's source type has ids for: the type itself, then those of its field or payload types, in order. -/
+def tyInsts (fuel : Nat) (decls : Decls) (t : Ty) : Option (List Inst) :=
+  if fuel = 0 then
+    none
+  else
+    match t with
+    | .tyI32 => some []
+    | .tyBool => some []
+    | .tyUint k => some []
+    | .tyPtr => some []
+    | .tySlice e => tyInsts (fuel - 1) decls e
+    | .tyNamed d args => consInst ({ decl := d, args := args } : Inst) (namedInsts (fuel - 1) decls d args)
+
+def namedInsts (fuel : Nat) (decls : Decls) (d : Nat) (args : List Ty) : Option (List Inst) :=
+  if fuel = 0 then
+    none
+  else
+    match decls.types[d]? with
+    | none => none
+    | some t => declInsts (fuel - 1) decls t.isEnum d args
+
+def declInsts (fuel : Nat) (decls : Decls) (isEnum : Bool) (d : Nat) (args : List Ty) : Option (List Inst) :=
+  if fuel = 0 then
+    none
+  else
+    if isEnum then
+      tysInsts (fuel - 1) decls (flatPayloads (payloadTys fuel decls d args))
+    else
+      tysInsts (fuel - 1) decls (fieldTys fuel decls d args)
+
+def tysInsts (fuel : Nat) (decls : Decls) (ts : Option (List Ty)) : Option (List Inst) :=
+  if fuel = 0 then
+    none
+  else
+    match ts with
+    | none => none
+    | some xs =>
+      match xs with
+      | [] => some []
+      | t :: rest => joinInsts (tyInsts (fuel - 1) decls t) (tysInsts (fuel - 1) decls (some rest))
+
+end
 
 /-- The binary operator of an operator tail production. -/
 def tailOp (p : Nat) : Option SrcOp :=
@@ -612,12 +1396,12 @@ def intLiteral (text : List Nat) : Option SrcExpr :=
     else
       none
 
-/-- The spelling of a path with one segment (path -> path_ident path_end). -/
-def pathName (path : CTree) : Option (List Nat) :=
-  if decide (nodeProd path = (47)) && decide (nodeProd (kid path 0) = (48)) && decide (nodeProd (kid path 1) = (51)) then
-    some (kidToken (kid path 0) 0).text
-  else
-    none
+/-- A local in scope: its spelling, its id and its type. -/
+structure Local where
+  name : List Nat
+  id : Nat
+  ty : Ty
+  deriving Repr
 
 /-- The innermost local spelled name. -/
 def findLocal (scope : List Local) (name : List Nat) : Option Local :=
@@ -629,50 +1413,47 @@ def findLocal (scope : List Local) (name : List Nat) : Option Local :=
     else
       findLocal rest name
 
-/-- A primary `name` (ident -> path ident_plain): a local. -/
+/-- The innermost local with this id. -/
+def findLocalId (scope : List Local) (id : Nat) : Option Local :=
+  match scope with
+  | [] => none
+  | l :: rest =>
+    if l.id = id then
+      some l
+    else
+      findLocalId rest id
+
+/-- A primary `name` (ident -> path ident_plain) or `self`: a local. -/
 def localOf (env : Env) (scope : List Local) (c : CTree) : Option Local :=
   if decide (nodeProd c = (173)) && decide (nodeProd (kid c 1) = (274)) then
     match pathName (kid c 0) with
     | none => none
     | some name => findLocal scope name
   else
-    none
+    if nodeProd c = (174) then
+      findLocal scope textSelf
+    else
+      none
 
 def localExpr (l : Option Local) : Option SrcExpr :=
   match l with
   | none => none
   | some x => some (SrcExpr.local x.id)
 
-def structId (t : SrcType) : Option Nat :=
-  match t with
-  | .i32 => none
-  | .bool => none
-  | .uint k => none
-  | .struct id fields => some id
-  | .enum id variants => none
-  | .ptr => none
-  | .slice e => none
-
-/-- The position of name in names, counting from k. -/
-def position (names : List (List Nat)) (name : List Nat) (k : Nat) : Option Nat :=
-  match names with
-  | [] => none
-  | n :: rest =>
-    if sameText n name then
-      some k
-    else
-      position rest name (k + 1)
-
-def fieldIn (entry : Option TypeEntry) (name : List Nat) : Option Nat :=
+def fieldIn (entry : Option TypeDecl) (name : List Nat) : Option Nat :=
   match entry with
   | none => none
   | some e => position e.fields name 0
 
 /-- The field index of member in the struct type t. -/
-def fieldIndex (env : Env) (t : SrcType) (name : List Nat) : Option Nat :=
-  match structId t with
-  | none => none
-  | some id => fieldIn env.types[id]? name
+def fieldIndex (env : Env) (t : Ty) (name : List Nat) : Option Nat :=
+  match t with
+  | .tyI32 => none
+  | .tyBool => none
+  | .tyUint k => none
+  | .tyPtr => none
+  | .tySlice e => none
+  | .tyNamed d args => fieldIn env.decls.types[d]? name
 
 def fieldExpr (id : Nat) (index : Option Nat) : Option SrcExpr :=
   match index with
@@ -688,11 +1469,19 @@ def memberOf (env : Env) (scope : List Local) (primary : CTree) (tail : CTree) :
   else
     none
 
-/-- The type a cast names (cast_type -> one segment). -/
+def namedScalar (env : Env) (name : List Nat) : Option SrcType :=
+  match paramTy env name with
+  | some t => scalarSrc t
+  | none =>
+    match primTy name with
+    | none => none
+    | some t => scalarSrc t
+
+/-- The type a cast names (cast_type -> one segment): a primitive type, or a type parameter standing for one. -/
 def castTypeOf (env : Env) (t : CTree) : Option SrcType :=
   let path : CTree := kid t 0
   if decide (nodeProd t = (310)) && decide (nodeProd path = (311)) && decide (nodeProd (kid path 0) = (312)) && decide (nodeProd (kid path 1) = (314)) then
-    resolve env.types (kidToken (kid path 0) 0).text
+    namedScalar env (kidToken (kid path 0) 0).text
   else
     none
 
@@ -720,6 +1509,73 @@ def applyOf (op : SrcOp) (left : SrcExpr) (right : Option SrcExpr) : Option SrcE
   match right with
   | none => none
   | some r => some (SrcExpr.apply op left r)
+
+def uintMask (u : UintTy) : BitVec 64 :=
+  match u with
+  | .uint8 => 255
+  | .uint32 => 4294967295
+  | .uint64 => 18446744073709551615
+  | .usize => 18446744073709551615
+
+def uintInRange (u : UintTy) (v : BitVec 64) : Option SrcExpr :=
+  if v ≤ uintMask u then
+    some (SrcExpr.unsigned u v)
+  else
+    none
+
+def negatedInt (x : SrcExpr) (e : SrcExpr) : Option SrcExpr :=
+  match x with
+  | .int k => some e
+  | .boolean b => none
+  | .unsigned u k => none
+  | .local id => none
+  | .field id j => none
+  | .negate y => none
+  | .not y => none
+  | .apply op a b => none
+  | .cast t y => none
+
+/-- A constant's value: a literal of its type. An integer literal of an unsigned type is that type's literal. -/
+def typedLiteral (t : Ty) (e : SrcExpr) : Option SrcExpr :=
+  match e with
+  | .int k =>
+    (match t with
+     | .tyI32 => some e
+     | .tyBool => none
+     | .tyUint u => uintInRange u (BitVec.setWidth 64 k)
+     | .tyPtr => none
+     | .tySlice x => none
+     | .tyNamed d args => none)
+  | .boolean b =>
+    (match t with
+     | .tyI32 => none
+     | .tyBool => some e
+     | .tyUint u => none
+     | .tyPtr => none
+     | .tySlice x => none
+     | .tyNamed d args => none)
+  | .unsigned u k => none
+  | .local id => none
+  | .field id j => none
+  | .negate x =>
+    (match t with
+     | .tyI32 => negatedInt x e
+     | .tyBool => none
+     | .tyUint u => none
+     | .tyPtr => none
+     | .tySlice y => none
+     | .tyNamed d args => none)
+  | .not x => none
+  | .apply op a b => none
+  | .cast s x => none
+
+def literalAs (t : Option Ty) (e : Option SrcExpr) : Option SrcExpr :=
+  match t with
+  | none => none
+  | some ty =>
+    match e with
+    | none => none
+    | some x => typedLiteral ty x
 
 mutual
 
@@ -755,18 +1611,56 @@ def exprOf (fuel : Nat) (env : Env) (scope : List Local) (c : CTree) : Option Sr
                     exprOf f env scope (kid c 1)
                   else
                     if p = (173) then
-                      localExpr (localOf env scope c)
+                      identExpr f env scope c
                     else
-                      if p = (175) then
-                        intLiteral (kidToken c 0).text
+                      if p = (174) then
+                        localExpr (localOf env scope c)
                       else
-                        if p = (185) then
-                          some (SrcExpr.boolean true)
+                        if p = (175) then
+                          intLiteral (kidToken c 0).text
                         else
-                          if p = (186) then
-                            some (SrcExpr.boolean false)
+                          if p = (185) then
+                            some (SrcExpr.boolean true)
                           else
-                            none
+                            if p = (186) then
+                              some (SrcExpr.boolean false)
+                            else
+                              none
+
+/-- A name: a local, or else a constant, whose literal value it is. -/
+def identExpr (fuel : Nat) (env : Env) (scope : List Local) (c : CTree) : Option SrcExpr :=
+  if fuel = 0 then
+    none
+  else
+    let path : CTree := kid c 0
+    if nodeProd (kid c 1) = (274) then
+      match localOf env scope c with
+      | some l => some (SrcExpr.local l.id)
+      | none => constRef (fuel - 1) env (pathSpellings fuel (kid path 0) (kid path 1))
+    else
+      none
+
+def constRef (fuel : Nat) (env : Env) (segments : Option (List (List Nat))) : Option SrcExpr :=
+  if fuel = 0 then
+    none
+  else
+    match segments with
+    | none => none
+    | some ss =>
+      match splitLast ss with
+      | none => none
+      | some s =>
+        match findConst env.decls.consts (moduleOr env.module s.module) s.name with
+        | none => none
+        | some k => constValue (fuel - 1) env.decls k
+
+/-- A constant's value, read in its own module. -/
+def constValue (fuel : Nat) (decls : Decls) (k : ConstDecl) : Option SrcExpr :=
+  if fuel = 0 then
+    none
+  else
+    let cenv : Env := declEnv decls k.module [] []
+    literalAs (tyOf (fuel - 1) cenv k.ty) (exprOf (fuel - 1) cenv [] k.value)
 
 /-- assign -> orexpr assign_end, as a value. -/
 def assignValue (fuel : Nat) (env : Env) (scope : List Local) (c : CTree) : Option SrcExpr :=
@@ -836,86 +1730,444 @@ def peel (fuel : Nat) (c : CTree) : Option CTree :=
         else
           none
 
-/-- What a let binds: a value, a call, a variant, a struct literal or a match. -/
+/-- Comparisons and logical operators give bool; the others their operand's type (a pointer plus an offset is a pointer). -/
+def givesBool (op : SrcOp) : Bool :=
+  match op with
+  | .plus => false
+  | .minus => false
+  | .times => false
+  | .bitAnd => false
+  | .bitOr => false
+  | .bitXor => false
+  | .less => true
+  | .lessEq => true
+  | .greater => true
+  | .greaterEq => true
+  | .equal => true
+  | .notEqual => true
+  | .logicalAnd => true
+  | .logicalOr => true
+
+def applyTy (op : SrcOp) (left : Option Ty) : Option Ty :=
+  if givesBool op then
+    some Ty.tyBool
+  else
+    left
+
+def localTy (l : Option Local) : Option Ty :=
+  match l with
+  | none => none
+  | some x => some x.ty
+
+def structFieldTys (fuel : Nat) (decls : Decls) (t : Ty) : Option (List Ty) :=
+  match t with
+  | .tyI32 => none
+  | .tyBool => none
+  | .tyUint k => none
+  | .tyPtr => none
+  | .tySlice e => none
+  | .tyNamed d args => fieldTys fuel decls d args
+
+def fieldTy (fuel : Nat) (decls : Decls) (l : Option Local) (j : Nat) : Option Ty :=
+  match l with
+  | none => none
+  | some x =>
+    match structFieldTys fuel decls x.ty with
+    | none => none
+    | some ts => ts[j]?
+
+/-- The type of an expression, as type arguments are inferred from it. -/
+def exprTy (fuel : Nat) (env : Env) (scope : List Local) (e : SrcExpr) : Option Ty :=
+  if fuel = 0 then
+    none
+  else
+    match e with
+    | .int k => some Ty.tyI32
+    | .boolean b => some Ty.tyBool
+    | .unsigned u k => some (Ty.tyUint u)
+    | .local id => localTy (findLocalId scope id)
+    | .field id j => fieldTy fuel env.decls (findLocalId scope id) j
+    | .negate x => exprTy (fuel - 1) env scope x
+    | .not x => some Ty.tyBool
+    | .apply op a b => applyTy op (exprTy (fuel - 1) env scope a)
+    | .cast t x => srcTy t
+
+def exprsTys (fuel : Nat) (env : Env) (scope : List Local) (es : List SrcExpr) : Option (List Ty) :=
+  match es with
+  | [] => some []
+  | e :: rest => consTy (exprTy fuel env scope e) (exprsTys fuel env scope rest)
+
+/-- A type parameter's inferred type. -/
+structure Bind where
+  name : List Nat
+  ty : Ty
+  deriving Repr
+
+def findBind (binds : List Bind) (name : List Nat) : Option Ty :=
+  match binds with
+  | [] => none
+  | b :: rest =>
+    if sameText b.name name then
+      some b.ty
+    else
+      findBind rest name
+
+def sameOrNone (ok : Bool) (binds : List Bind) : Option (List Bind) :=
+  if ok then
+    some binds
+  else
+    none
+
+/-- The parameter spelled name stands for actual: a new binding, or the same type as before. -/
+def bindTy (binds : List Bind) (name : List Nat) (actual : Ty) : Option (List Bind) :=
+  match findBind binds name with
+  | none => some (({ name := name, ty := actual } : Bind) :: binds)
+  | some t => sameOrNone (sameTy t actual) binds
+
+def paramNamed (ok : Bool) (n : List Nat) : Option (List Nat) :=
+  if ok then
+    some n
+  else
+    none
+
+/-- A pattern that is one of the type parameters being inferred. -/
+def paramSpelling (names : List (List Nat)) (segments : List (List Nat)) (items : List CTree) : Option (List Nat) :=
+  match singleName segments with
+  | none => none
+  | some n => paramNamed (member names n && noTrees items) n
+
+def primIf (ok : Bool) (n : List Nat) : Option Ty :=
+  if ok then
+    primTy n
+  else
+    none
+
+/-- A pattern that is a primitive type. -/
+def barePrim (segments : List (List Nat)) (items : List CTree) : Option Ty :=
+  match singleName segments with
+  | none => none
+  | some n => primIf (noTrees items) n
+
+def sliceElem (t : Ty) : Option Ty :=
+  match t with
+  | .tyI32 => none
+  | .tyBool => none
+  | .tyUint k => none
+  | .tyPtr => none
+  | .tySlice e => some e
+  | .tyNamed d args => none
+
+def namedParts (t : Ty) : Option Inst :=
+  match t with
+  | .tyI32 => none
+  | .tyBool => none
+  | .tyUint k => none
+  | .tyPtr => none
+  | .tySlice e => none
+  | .tyNamed d args => some ({ decl := d, args := args } : Inst)
+
+mutual
+
+/-- Match a type expression of a declaration, whose type parameters names are being inferred, against an actual type, extending binds. -/
+def matchTy (fuel : Nat) (env : Env) (names : List (List Nat)) (pattern : CTree) (actual : Ty) (binds : List Bind) : Option (List Bind) :=
+  if fuel = 0 then
+    none
+  else
+    let f : Nat := fuel - 1
+    let path : CTree := kid pattern 0
+    if decide (nodeProd pattern = (70)) && decide (nodeProd (kid pattern 2) = (284)) then
+      match sliceElem actual with
+      | none => none
+      | some a => matchTy f env names (kid pattern 1) a binds
+    else
+      if nodeProd pattern = (69) then
+        matchPath f env names (typePathSpellings f (kid path 0) (kid path 1)) (listItems f (kid pattern 1)) actual binds
+      else
+        none
+
+def matchPath (fuel : Nat) (env : Env) (names : List (List Nat)) (segments : Option (List (List Nat))) (items : Option (List CTree)) (actual : Ty) (binds : List Bind) : Option (List Bind) :=
+  if fuel = 0 then
+    none
+  else
+    match segments with
+    | none => none
+    | some ss =>
+      match items with
+      | none => none
+      | some gs => matchNamed (fuel - 1) env names ss gs actual binds
+
+def matchNamed (fuel : Nat) (env : Env) (names : List (List Nat)) (segments : List (List Nat)) (items : List CTree) (actual : Ty) (binds : List Bind) : Option (List Bind) :=
+  if fuel = 0 then
+    none
+  else
+    match paramSpelling names segments items with
+    | some n => bindTy binds n actual
+    | none =>
+      match barePrim segments items with
+      | some t => sameOrNone (sameTy t actual) binds
+      | none => matchDecl (fuel - 1) env names (typeDeclAt env segments) items (namedParts actual) binds
+
+def matchDecl (fuel : Nat) (env : Env) (names : List (List Nat)) (d : Option Nat) (items : List CTree) (actual : Option Inst) (binds : List Bind) : Option (List Bind) :=
+  if fuel = 0 then
+    none
+  else
+    match d with
+    | none => none
+    | some x =>
+      match actual with
+      | none => none
+      | some a => matchSameDecl (fuel - 1) env names (decide (x = a.decl)) items a.args binds
+
+def matchSameDecl (fuel : Nat) (env : Env) (names : List (List Nat)) (same : Bool) (items : List CTree) (args : List Ty) (binds : List Bind) : Option (List Bind) :=
+  if fuel = 0 then
+    none
+  else
+    if same then
+      matchArgs (fuel - 1) env names items args binds
+    else
+      none
+
+/-- Generic arguments (generic_argument_type) against the actual arguments. -/
+def matchArgs (fuel : Nat) (env : Env) (names : List (List Nat)) (items : List CTree) (actuals : List Ty) (binds : List Bind) : Option (List Bind) :=
+  if fuel = 0 then
+    none
+  else
+    match items with
+    | [] =>
+      (match actuals with
+       | [] => some binds
+       | a :: more => none)
+    | g :: rest =>
+      match actuals with
+      | [] => none
+      | a :: more => matchArgsNext (fuel - 1) env names rest more (matchArg (fuel - 1) env names g a binds)
+
+def matchArg (fuel : Nat) (env : Env) (names : List (List Nat)) (g : CTree) (actual : Ty) (binds : List Bind) : Option (List Bind) :=
+  if fuel = 0 then
+    none
+  else
+    if nodeProd g = (294) then
+      matchTy (fuel - 1) env names (kid g 0) actual binds
+    else
+      none
+
+def matchArgsNext (fuel : Nat) (env : Env) (names : List (List Nat)) (items : List CTree) (actuals : List Ty) (got : Option (List Bind)) : Option (List Bind) :=
+  if fuel = 0 then
+    none
+  else
+    match got with
+    | none => none
+    | some b => matchArgs (fuel - 1) env names items actuals b
+
+/-- Type expressions against actual types, in order. -/
+def matchTys (fuel : Nat) (env : Env) (names : List (List Nat)) (patterns : List CTree) (actuals : List Ty) (binds : List Bind) : Option (List Bind) :=
+  if fuel = 0 then
+    none
+  else
+    match patterns with
+    | [] =>
+      (match actuals with
+       | [] => some binds
+       | a :: more => none)
+    | p :: rest =>
+      match actuals with
+      | [] => none
+      | a :: more => matchTysNext (fuel - 1) env names rest more (matchTy (fuel - 1) env names p a binds)
+
+def matchTysNext (fuel : Nat) (env : Env) (names : List (List Nat)) (patterns : List CTree) (actuals : List Ty) (got : Option (List Bind)) : Option (List Bind) :=
+  if fuel = 0 then
+    none
+  else
+    match got with
+    | none => none
+    | some b => matchTys (fuel - 1) env names patterns actuals b
+
+end
+
+/-- The inferred arguments, in the order of the parameters. -/
+def boundArgs (names : List (List Nat)) (binds : List Bind) : Option (List Ty) :=
+  match names with
+  | [] => some []
+  | n :: rest => consTy (findBind binds n) (boundArgs rest binds)
+
+def consTreeTail (t : CTree) (rest : Option (List CTree)) : Option (List CTree) :=
+  match rest with
+  | none => none
+  | some ts => some (t :: ts)
+
+def consTree (t : Option CTree) (rest : Option (List CTree)) : Option (List CTree) :=
+  match t with
+  | none => none
+  | some x => consTreeTail x rest
+
+/-- The declared type of a parameter: `name: T`, `self` (the impl's type) or `self: T`. -/
+def patternOf (fd : FnDecl) (p : CTree) : Option CTree :=
+  let tail : CTree := kid p 1
+  if nodeProd p = (62) then
+    some (kid p 2)
+  else
+    if decide (nodeProd p = (63)) && decide (nodeProd tail = (66)) && fd.inImpl then
+      some fd.selfType
+    else
+      if decide (nodeProd p = (63)) && decide (nodeProd tail = (65)) then
+        some (kid tail 1)
+      else
+        none
+
+def patternsOf (fd : FnDecl) (items : List CTree) : Option (List CTree) :=
+  match items with
+  | [] => some []
+  | p :: rest => consTree (patternOf fd p) (patternsOf fd rest)
+
+def paramPatterns (fuel : Nat) (fd : FnDecl) : Option (List CTree) :=
+  match listItems fuel (kid fd.tree 4) with
+  | none => none
+  | some items => patternsOf fd items
+
+def retPattern (fd : FnDecl) : Option CTree :=
+  let ret : CTree := kid fd.tree 6
+  if nodeProd ret = (34) then
+    some (kid ret 1)
+  else
+    none
+
+def calleeEnv (decls : Decls) (fd : FnDecl) : Env :=
+  declEnv decls fd.module [] []
+
+def instFrom (d : Nat) (args : Option (List Ty)) : Option Inst :=
+  match args with
+  | none => none
+  | some ts => some ({ decl := d, args := ts } : Inst)
+
+def boundOrNone (names : List (List Nat)) (binds : Option (List Bind)) : Option (List Ty) :=
+  match binds with
+  | none => none
+  | some b => boundArgs names b
+
+def inferRet (fuel : Nat) (decls : Decls) (d : Nat) (fd : FnDecl) (names : List (List Nat)) (binds : Option (List Bind)) (expected : Ty) : Option Inst :=
+  match binds with
+  | none => none
+  | some b =>
+    match retPattern fd with
+    | none => none
+    | some r => instFrom d (boundOrNone names (matchTy fuel (calleeEnv decls fd) names r expected b))
+
+/-- The instance a call of function d means: its type arguments are inferred by matching its parameter types with the argument types and its result type with the type the call's value is stored at, starting from start. -/
+def inferInst (fuel : Nat) (decls : Decls) (d : Nat) (fd : FnDecl) (start : List Bind) (argTys : Option (List Ty)) (expected : Ty) : Option Inst :=
+  let names : List (List Nat) := fd.implParams ++ fd.params
+  if noNames names then
+    some ({ decl := d, args := [] } : Inst)
+  else
+    match argTys with
+    | none => none
+    | some ts =>
+      match paramPatterns fuel fd with
+      | none => none
+      | some ps => inferRet fuel decls d fd names (matchTys fuel (calleeEnv decls fd) names ps ts start) expected
+
+def explicitChecked (ok : Bool) (d : Nat) (args : List Ty) : Option Inst :=
+  if ok then
+    some ({ decl := d, args := args } : Inst)
+  else
+    none
+
+/-- `f<T, ...>(args)`: the type arguments as written (a free function's own). -/
+def explicitInst (fuel : Nat) (env : Env) (d : Nat) (fd : FnDecl) (targs : List CTree) : Option Inst :=
+  match argsTys fuel env targs with
+  | none => none
+  | some ts => explicitChecked (noNames fd.implParams && decide (ts.length = fd.params.length)) d ts
+
+/-- A method found for a type: its function and the impl's inferred parameters. -/
+structure Found where
+  decl : Nat
+  binds : List Bind
+  deriving Repr
+
+def implBinds (fuel : Nat) (decls : Decls) (fd : FnDecl) (s : Ty) : Option (List Bind) :=
+  if fd.inImpl then
+    matchTy fuel (calleeEnv decls fd) fd.implParams fd.selfType s []
+  else
+    none
+
+def isSomeBinds (b : Option (List Bind)) : Bool :=
+  match b with
+  | none => false
+  | some x => true
+
+/-- No method spelled name has an impl whose type matches s. -/
+def noMethod (fuel : Nat) (decls : Decls) (fns : List FnDecl) (name : List Nat) (s : Ty) : Bool :=
+  match fns with
+  | [] => true
+  | fd :: rest => !(sameText fd.name name && isSomeBinds (implBinds fuel decls fd s)) && noMethod fuel decls rest name s
+
+def uniqueFound (unique : Bool) (k : Nat) (b : List Bind) : Option Found :=
+  if unique then
+    some ({ decl := k, binds := b } : Found)
+  else
+    none
+
+/-- The one method spelled name of an impl whose type matches s. -/
+def findMethod (fuel : Nat) (decls : Decls) (fns : List FnDecl) (k : Nat) (name : List Nat) (s : Ty) : Option Found :=
+  match fns with
+  | [] => none
+  | fd :: rest =>
+    if sameText fd.name name then
+      match implBinds fuel decls fd s with
+      | none => findMethod fuel decls rest (k + 1) name s
+      | some b => uniqueFound (noMethod fuel decls rest name s) k b
+    else
+      findMethod fuel decls rest (k + 1) name s
+
+/-- A statement as build reads it, before monomorphization's numbering: like SrcStmt, but types are Ty and a call names its function instance. -/
+inductive MStmt where
+  | mNop : MStmt
+  | mLet : Nat → Ty → SrcExpr → MStmt → MStmt
+  | mLetStruct : Nat → Ty → (List SrcExpr) → MStmt → MStmt
+  | mLetCall : Nat → Ty → Inst → (List SrcExpr) → MStmt → MStmt
+  | mLetEnum : Nat → Ty → Nat → (List SrcExpr) → MStmt → MStmt
+  /-- the scrutinee local and its type -/
+  | mLetMatch : Nat → Ty → Nat → Ty → (List SrcArm) → MStmt → MStmt
+  | mSet : Nat → SrcExpr → MStmt
+  | mSetField : Nat → Nat → SrcExpr → MStmt
+  | mSetCall : Nat → Inst → (List SrcExpr) → MStmt
+  | mThen : MStmt → MStmt → MStmt
+  | mIf : SrcExpr → MStmt → MStmt → MStmt
+  | mWhile : SrcExpr → MStmt → MStmt
+  | mReturn : SrcExpr → MStmt
+  | mLetAlloc : Nat → SrcExpr → Nat → MStmt → MStmt
+  | mFree : SrcExpr → SrcExpr → Nat → MStmt
+  /-- the element type -/
+  | mLetSlice : Nat → Ty → SrcExpr → SrcExpr → MStmt → MStmt
+  | mLetIndex : Nat → Ty → Nat → SrcExpr → MStmt → MStmt
+  | mSetIndex : Nat → SrcExpr → SrcExpr → MStmt
+  deriving Repr
+
+/-- A call: the function instance and the arguments. -/
+structure Called where
+  inst : Inst
+  args : List SrcExpr
+  deriving Repr
+
+/-- What a let binds: a value, a call, a variant, a struct literal, a match, an allocation, a raw view or a slice element. -/
 inductive LetHead where
   | plain : SrcExpr → LetHead
-  | callOf : Nat → (List SrcExpr) → LetHead
+  | callOf : Called → LetHead
   | variantOf : Nat → (List SrcExpr) → LetHead
   | literalOf : (List SrcExpr) → LetHead
-  | matchOf : Nat → Nat → (List SrcArm) → LetHead
+  /-- the scrutinee local and its type, and the arms -/
+  | matchOf : Nat → Ty → (List SrcArm) → LetHead
+  /-- alloc(size, 2^shift) -/
+  | allocOf : SrcExpr → Nat → LetHead
+  /-- slice_from_raw_parts(pointer, length) -/
+  | sliceOf : SrcExpr → SrcExpr → LetHead
+  /-- slice[index], the slice a local -/
+  | indexOf : Nat → SrcExpr → LetHead
   deriving Repr
 
 def plainHead (e : Option SrcExpr) : Option LetHead :=
   match e with
   | none => none
   | some x => some (LetHead.plain x)
-
-/-- The variant spelled name: its enum's type id and its index there. -/
-structure VariantAt where
-  owner : Nat
-  index : Nat
-  deriving DecidableEq, Repr
-
-def enumId (t : SrcType) : Option Nat :=
-  match t with
-  | .i32 => none
-  | .bool => none
-  | .uint k => none
-  | .struct id fields => none
-  | .enum id variants => some id
-  | .ptr => none
-  | .slice e => none
-
-def variantAt (t : SrcType) (k : Nat) : Option VariantAt :=
-  match enumId t with
-  | none => none
-  | some e => some ({ owner := e, index := k } : VariantAt)
-
-def findVariant (types : List TypeEntry) (name : List Nat) : Option VariantAt :=
-  match types with
-  | [] => none
-  | t :: rest =>
-    match position (variantNames t.variants) name 0 with
-    | none => findVariant rest name
-    | some k => variantAt t.ty k
-
-def variantPayload (same : Bool) (index : Nat) (payload : Option (List SrcExpr)) : Option LetHead :=
-  if same then
-    match payload with
-    | none => none
-    | some es => some (LetHead.variantOf index es)
-  else
-    none
-
-/-- A variant of the let's own enum type. -/
-def variantHead (ty : SrcType) (v : VariantAt) (payload : Option (List SrcExpr)) : Option LetHead :=
-  match enumId ty with
-  | none => none
-  | some e => variantPayload (decide (e = v.owner)) v.index payload
-
-/-- `name`: a unit variant, or else a local. -/
-def unitHead (env : Env) (scope : List Local) (ty : SrcType) (name : Option (List Nat)) (init : CTree) (fuel : Nat) : Option LetHead :=
-  match name with
-  | none => none
-  | some n =>
-    match findVariant env.types n with
-    | none => plainHead (exprOf fuel env scope init)
-    | some v => variantHead ty v (some [])
-
-def variantCall (env : Env) (ty : SrcType) (n : List Nat) (args : Option (List SrcExpr)) : Option LetHead :=
-  match findVariant env.types n with
-  | none => none
-  | some v => variantHead ty v args
-
-def callArgs (callee : Nat) (args : Option (List SrcExpr)) : Option LetHead :=
-  match args with
-  | none => none
-  | some es => some (LetHead.callOf callee es)
-
-def callNamed (fuel : Nat) (env : Env) (scope : List Local) (ty : SrcType) (n : List Nat) (args : Option (List SrcExpr)) : Option LetHead :=
-  match position env.fns n 0 with
-  | none => variantCall env ty n args
-  | some callee => callArgs callee args
 
 def consExprTail (e : SrcExpr) (tail : Option (List SrcExpr)) : Option (List SrcExpr) :=
   match tail with
@@ -937,11 +2189,281 @@ def argsOf (fuel : Nat) (env : Env) (scope : List Local) (args : CTree) : Option
   | none => none
   | some items => exprsOf fuel env scope items
 
-/-- `name(args)`: a call of a function, or a variant with a payload. -/
-def callHead (fuel : Nat) (env : Env) (scope : List Local) (ty : SrcType) (name : Option (List Nat)) (args : CTree) : Option LetHead :=
-  match name with
+def called (inst : Option Inst) (args : List SrcExpr) : Option Called :=
+  match inst with
   | none => none
-  | some n => callNamed fuel env scope ty n (argsOf fuel env scope args)
+  | some i => some ({ inst := i, args := args } : Called)
+
+def freeCallOf (fuel : Nat) (env : Env) (scope : List Local) (expected : Ty) (d : Nat) (fd : FnDecl) (targs : List CTree) (es : List SrcExpr) : Option Called :=
+  if noTrees targs then
+    called (inferInst fuel env.decls d fd [] (exprsTys fuel env scope es) expected) es
+  else
+    called (explicitInst fuel env d fd targs) es
+
+/-- A call of the free function d, with type arguments written or inferred. -/
+def freeCall (fuel : Nat) (env : Env) (scope : List Local) (expected : Ty) (d : Nat) (targs : List CTree) (es : List SrcExpr) : Option Called :=
+  match env.decls.fns[d]? with
+  | none => none
+  | some fd => freeCallOf fuel env scope expected d fd targs es
+
+def methodInst (fuel : Nat) (env : Env) (scope : List Local) (expected : Ty) (found : Option Found) (es : List SrcExpr) : Option Called :=
+  match found with
+  | none => none
+  | some x =>
+    match env.decls.fns[x.decl]? with
+    | none => none
+    | some fd => called (inferInst fuel env.decls x.decl fd x.binds (exprsTys fuel env scope es) expected) es
+
+/-- `T::m(args)`: the method m of the one impl whose type matches the type s. -/
+def staticCall (fuel : Nat) (env : Env) (scope : List Local) (expected : Ty) (s : Option Ty) (name : List Nat) (es : List SrcExpr) : Option Called :=
+  match s with
+  | none => none
+  | some t => methodInst fuel env scope expected (findMethod fuel env.decls env.decls.fns 0 name t) es
+
+/-- `x.m(args)`: `T::m(x, args)` for x's type T. -/
+def methodCall (fuel : Nat) (env : Env) (scope : List Local) (expected : Ty) (l : Option Local) (name : List Nat) (es : Option (List SrcExpr)) : Option Called :=
+  match l with
+  | none => none
+  | some x =>
+    match es with
+    | none => none
+    | some args => staticCall fuel env scope expected (some x.ty) name (SrcExpr.local x.id :: args)
+
+def isTypeParam (env : Env) (owner : Option (List Nat)) : Bool :=
+  match owner with
+  | none => false
+  | some n => member env.names n
+
+def ownerTy (env : Env) (owner : Option (List Nat)) : Option Ty :=
+  match owner with
+  | none => none
+  | some n => paramTy env n
+
+def isSomeIndex (k : Option Nat) : Bool :=
+  match k with
+  | none => false
+  | some x => true
+
+/-- A path naming a function: `T::m` for a type parameter T, or a free function of the path's module. -/
+def isFnPath (env : Env) (s : Split) : Bool :=
+  isTypeParam env (singleName s.module) || isSomeIndex (findFn env.decls.fns (moduleOr env.module s.module) s.name 0)
+
+def pathCall (fuel : Nat) (env : Env) (scope : List Local) (expected : Ty) (s : Split) (targs : List CTree) (es : List SrcExpr) : Option Called :=
+  let owner : Option (List Nat) := singleName s.module
+  if isTypeParam env owner && noTrees targs then
+    staticCall fuel env scope expected (ownerTy env owner) s.name es
+  else
+    match findFn env.decls.fns (moduleOr env.module s.module) s.name 0 with
+    | none => none
+    | some d => freeCall fuel env scope expected d targs es
+
+/-- `path(args)` as a call, its value stored at type expected. -/
+def pathCallOf (fuel : Nat) (env : Env) (scope : List Local) (expected : Ty) (path : CTree) (args : CTree) : Option Called :=
+  match pathRef fuel (kid path 0) (kid path 1) with
+  | none => none
+  | some pr =>
+    match splitLast pr.segments with
+    | none => none
+    | some s =>
+      match argsOf fuel env scope args with
+      | none => none
+      | some es => pathCall fuel env scope expected s pr.targs es
+
+/-- A postfix `recv.m(args)` (recv a local, no further postfix). -/
+def isMethodForm (pf : CTree) : Bool :=
+  let primary : CTree := kid pf 0
+  let tail : CTree := kid pf 1
+  let call : CTree := kid tail 3
+  (decide (nodeProd primary = (174)) || decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274))) && decide (nodeProd tail = (163)) && decide (nodeProd (kid tail 2) = (297)) && decide (nodeProd call = (161)) && decide (nodeProd (kid call 3) = (164))
+
+def methodCallOf (fuel : Nat) (env : Env) (scope : List Local) (expected : Ty) (pf : CTree) : Option Called :=
+  let tail : CTree := kid pf 1
+  methodCall fuel env scope expected (localOf env scope (kid pf 0)) (kidToken tail 1).text (argsOf fuel env scope (kid (kid tail 3) 1))
+
+/-- A postfix `path(args)` (no further postfix). -/
+def isPathCall (pf : CTree) : Bool :=
+  let primary : CTree := kid pf 0
+  let tail : CTree := kid pf 1
+  decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274)) && decide (nodeProd tail = (161)) && decide (nodeProd (kid tail 3) = (164))
+
+def namedDecl (t : Ty) : Option Nat :=
+  match t with
+  | .tyI32 => none
+  | .tyBool => none
+  | .tyUint k => none
+  | .tyPtr => none
+  | .tySlice e => none
+  | .tyNamed d args => some d
+
+def variantChecked (ok : Bool) (index : Nat) (es : List SrcExpr) : Option LetHead :=
+  if ok then
+    some (LetHead.variantOf index es)
+  else
+    none
+
+/-- A variant of the let's own enum type. -/
+def variantHead (ty : Ty) (v : Option VariantAt) (targs : List CTree) (es : List SrcExpr) : Option LetHead :=
+  match v with
+  | none => none
+  | some x =>
+    match namedDecl ty with
+    | none => none
+    | some d => variantChecked (decide (d = x.owner) && noTrees targs) x.index es
+
+def callHeadOf (c : Option Called) : Option LetHead :=
+  match c with
+  | none => none
+  | some x => some (LetHead.callOf x)
+
+def namedHead (fuel : Nat) (env : Env) (scope : List Local) (ty : Ty) (s : Split) (targs : List CTree) (es : List SrcExpr) : Option LetHead :=
+  if isFnPath env s then
+    callHeadOf (pathCall fuel env scope ty s targs es)
+  else
+    variantHead ty (findVariant env.decls.types (moduleOr env.module s.module) s.name 0) targs es
+
+/-- The shift of an alignment 2^shift, counting up from 2^s = p. -/
+def shiftOfU64 (fuel : Nat) (k : BitVec 64) (s : Nat) (p : Nat) : Option Nat :=
+  if fuel = 0 then
+    none
+  else
+    if BitVec.ofNat 64 p = k then
+      some s
+    else
+      shiftOfU64 (fuel - 1) k (s + 1) (p * 2)
+
+def isUsize (t : SrcType) : Bool :=
+  match t with
+  | .i32 => false
+  | .bool => false
+  | .uint k =>
+    (match k with
+     | .uint8 => false
+     | .uint32 => false
+     | .uint64 => false
+     | .usize => true)
+  | .struct id fields => false
+  | .enum id variants => false
+  | .ptr => false
+  | .slice e => false
+
+/-- An integer literal 2^shift with shift below 31. -/
+def literalShift (e : SrcExpr) : Option Nat :=
+  match e with
+  | .int k => shiftOfU64 31 (BitVec.setWidth 64 k) 0 1
+  | .boolean b => none
+  | .unsigned u k => shiftOfU64 31 k 0 1
+  | .local id => none
+  | .field id j => none
+  | .negate x => none
+  | .not x => none
+  | .apply op a b => none
+  | .cast t x => none
+
+def castShift (usizeCast : Bool) (x : SrcExpr) : Option Nat :=
+  if usizeCast then
+    literalShift x
+  else
+    none
+
+/-- The shift of a literal alignment 2^shift: `8`, `(8 as usize)`, or an unsigned literal (a constant's value). -/
+def shiftOf (e : SrcExpr) : Option Nat :=
+  match e with
+  | .int k => literalShift e
+  | .boolean b => none
+  | .unsigned u k => literalShift e
+  | .local id => none
+  | .field id j => none
+  | .negate x => none
+  | .not x => none
+  | .apply op a b => none
+  | .cast t x => castShift (isUsize t) x
+
+def allocShifted (size : SrcExpr) (shift : Option Nat) (more : List SrcExpr) : Option LetHead :=
+  match shift with
+  | none => none
+  | some k =>
+    match more with
+    | [] => some (LetHead.allocOf size k)
+    | e :: others => none
+
+/-- alloc(size, align) -/
+def allocHead (args : Option (List SrcExpr)) : Option LetHead :=
+  match args with
+  | none => none
+  | some es =>
+    match es with
+    | [] => none
+    | size :: rest =>
+      match rest with
+      | [] => none
+      | align :: more => allocShifted size (shiftOf align) more
+
+/-- slice_from_raw_parts(pointer, length) -/
+def sliceHead (args : Option (List SrcExpr)) : Option LetHead :=
+  match args with
+  | none => none
+  | some es =>
+    match es with
+    | [] => none
+    | pointer :: rest =>
+      match rest with
+      | [] => none
+      | length :: more =>
+        match more with
+        | [] => some (LetHead.sliceOf pointer length)
+        | e :: others => none
+
+def isPath (segments : Option (List (List Nat))) (wanted : List (List Nat)) : Bool :=
+  match segments with
+  | none => false
+  | some ss => sameSpellings ss wanted
+
+/-- alloc::allocator::alloc, the allocator's alloc -/
+def allocPath : List (List Nat) :=
+  textAlloc :: textAllocator :: [textAlloc]
+
+/-- alloc::allocator::dealloc -/
+def deallocPath : List (List Nat) :=
+  textAlloc :: textAllocator :: [textDealloc]
+
+/-- `path(args)`: the allocator, a raw view, a function or a variant. -/
+def callPathHead (fuel : Nat) (env : Env) (scope : List Local) (ty : Ty) (path : CTree) (args : CTree) : Option LetHead :=
+  let segments : Option (List (List Nat)) := pathSpellings fuel (kid path 0) (kid path 1)
+  if isPath segments allocPath then
+    allocHead (argsOf fuel env scope args)
+  else
+    if isPath segments [textSliceFromRawParts] then
+      sliceHead (argsOf fuel env scope args)
+    else
+      match pathRef fuel (kid path 0) (kid path 1) with
+      | none => none
+      | some pr =>
+        match splitLast pr.segments with
+        | none => none
+        | some s =>
+          match argsOf fuel env scope args with
+          | none => none
+          | some es => namedHead fuel env scope ty s pr.targs es
+
+def indexHead (l : Option Local) (index : Option SrcExpr) : Option LetHead :=
+  match l with
+  | none => none
+  | some x =>
+    match index with
+    | none => none
+    | some i => some (LetHead.indexOf x.id i)
+
+/-- `name` or `m::name`: a unit variant, or else a value. -/
+def unitHead (fuel : Nat) (env : Env) (scope : List Local) (ty : Ty) (path : CTree) (init : CTree) : Option LetHead :=
+  match pathSpellings fuel (kid path 0) (kid path 1) with
+  | none => plainHead (exprOf fuel env scope init)
+  | some ss =>
+    match splitLast ss with
+    | none => none
+    | some s =>
+      match findVariant env.decls.types (moduleOr env.module s.module) s.name 0 with
+      | none => plainHead (exprOf fuel env scope init)
+      | some v => variantHead ty (some v) [] []
 
 def fieldValues (fs : List CTree) : List CTree :=
   match fs with
@@ -968,31 +2490,32 @@ def sameNames (names : List (List Nat)) (fs : List CTree) : Bool :=
     | [] => false
     | f :: more => sameText n (kidToken f 0).text && sameNames rest more
 
-def literalEntry (fuel : Nat) (env : Env) (scope : List Local) (n : List Nat) (entry : Option TypeEntry) (fs : List CTree) : Option LetHead :=
+def literalEntry (fuel : Nat) (env : Env) (scope : List Local) (same : Bool) (entry : Option TypeDecl) (fs : List CTree) : Option LetHead :=
   match entry with
   | none => none
-  | some e => literalChecked fuel env scope (sameText e.name n && sameNames e.fields fs) fs
+  | some t => literalChecked fuel env scope (same && !t.isEnum && sameNames t.fields fs) fs
 
-def literalFields (fuel : Nat) (env : Env) (scope : List Local) (ty : SrcType) (n : List Nat) (fs : List CTree) : Option LetHead :=
-  match structId ty with
+def literalAt (fuel : Nat) (env : Env) (scope : List Local) (ty : Ty) (d : Option Nat) (fs : List CTree) : Option LetHead :=
+  match d with
   | none => none
-  | some id => literalEntry fuel env scope n env.types[id]? fs
-
-def literalTyped (fuel : Nat) (env : Env) (scope : List Local) (ty : SrcType) (n : List Nat) (items : Option (List CTree)) : Option LetHead :=
-  match items with
-  | none => none
-  | some fs => literalFields fuel env scope ty n fs
+  | some x =>
+    match namedDecl ty with
+    | none => none
+    | some e => literalEntry fuel env scope (decide (x = e)) env.decls.types[x]? fs
 
 /-- `S { f: e, ... }` of the let's own struct type, fields in declared order. -/
-def literalHead (fuel : Nat) (env : Env) (scope : List Local) (ty : SrcType) (name : Option (List Nat)) (fields : CTree) : Option LetHead :=
-  match name with
+def literalHead (fuel : Nat) (env : Env) (scope : List Local) (ty : Ty) (path : CTree) (fields : CTree) : Option LetHead :=
+  match pathSpellings fuel (kid path 0) (kid path 1) with
   | none => none
-  | some n => literalTyped fuel env scope ty n (listItems fuel fields)
+  | some ss =>
+    match listItems fuel fields with
+    | none => none
+    | some fs => literalAt fuel env scope ty (typeDeclAt env ss) fs
 
-def matchArms (scrutinee : Nat) (e : Nat) (arms : Option (List SrcArm)) : Option LetHead :=
+def matchArms (scrutinee : Nat) (sty : Ty) (arms : Option (List SrcArm)) : Option LetHead :=
   match arms with
   | none => none
-  | some a => some (LetHead.matchOf scrutinee e a)
+  | some a => some (LetHead.matchOf scrutinee sty a)
 
 def consArmTail (a : SrcArm) (tail : Option (List SrcArm)) : Option (List SrcArm) :=
   match tail with
@@ -1003,11 +2526,6 @@ def consArm (head : Option SrcArm) (tail : Option (List SrcArm)) : Option (List 
   match head with
   | none => none
   | some a => consArmTail a tail
-
-def isSpelled (name : Option (List Nat)) (other : List Nat) : Bool :=
-  match name with
-  | none => false
-  | some n => sameText n other
 
 /-- Binder ids, and the scope with the binders in it. -/
 structure Bound where
@@ -1020,7 +2538,7 @@ def armValue (ids : List Nat) (value : Option SrcExpr) : Option SrcArm :=
   | none => none
   | some e => some ({ binders := ids, value := e } : SrcArm)
 
-def armBound (fuel : Nat) (env : Env) (bound : Option Bound) (payload : List SrcType) (value : CTree) : Option SrcArm :=
+def armBound (fuel : Nat) (env : Env) (bound : Option Bound) (value : CTree) : Option SrcArm :=
   match bound with
   | none => none
   | some b => armValue b.ids (exprOf fuel env b.scope value)
@@ -1036,7 +2554,7 @@ def consBinder (id : Nat) (rest : Option Bound) : Option Bound :=
   | some b => some ({ ids := id :: b.ids, scope := b.scope } : Bound)
 
 /-- One plain name pattern per payload type, each a fresh local. -/
-def bindersOf (env : Env) (scope : List Local) (pats : List CTree) (payload : List SrcType) : Option Bound :=
+def bindersOf (env : Env) (scope : List Local) (pats : List CTree) (payload : List Ty) : Option Bound :=
   match payload with
   | [] =>
     (match pats with
@@ -1053,22 +2571,46 @@ def bindersOf (env : Env) (scope : List Local) (pats : List CTree) (payload : Li
       else
         none
 
+/-- A variant's spelling and its payload types at the scrutinee's arguments. -/
+structure VariantTy where
+  name : List Nat
+  payload : List Ty
+  deriving Repr
+
+def zipVariants (names : List (List Nat)) (payloads : List (List Ty)) : List VariantTy :=
+  match names with
+  | [] => []
+  | n :: rest =>
+    match payloads with
+    | [] => []
+    | p :: more => ({ name := n, payload := p } : VariantTy) :: zipVariants rest more
+
+/-- An arm's pattern names the variant: `V`, or `m::V` with m the enum's module. -/
+def armNamed (segments : Option (List (List Nat))) (module : List (List Nat)) (name : List Nat) : Bool :=
+  match segments with
+  | none => false
+  | some ss =>
+    match splitLast ss with
+    | none => false
+    | some s => sameText s.name name && (noNames s.module || sameSpellings s.module module)
+
 /-- `V -> value` or `V(b, ...) -> value` (match_arm -> pattern MatchArrow expr). -/
-def armOf (fuel : Nat) (env : Env) (scope : List Local) (v : Variant) (arm : CTree) : Option SrcArm :=
+def armOf (fuel : Nat) (env : Env) (scope : List Local) (owner : TypeDecl) (v : VariantTy) (arm : CTree) : Option SrcArm :=
   let pattern : CTree := kid arm 0
   let ptail : CTree := kid pattern 1
-  if decide (nodeProd pattern = (195)) && isSpelled (pathName (kid pattern 0)) v.name then
+  let path : CTree := kid pattern 0
+  if decide (nodeProd pattern = (195)) && armNamed (pathSpellings fuel (kid path 0) (kid path 1)) owner.module v.name then
     if nodeProd ptail = (199) then
-      armBound fuel env (some ({ ids := [], scope := scope } : Bound)) v.payload (kid arm 2)
+      armBound fuel env (some ({ ids := [], scope := scope } : Bound)) (kid arm 2)
     else
       match listItems fuel (kid ptail 1) with
       | none => none
-      | some pats => armBound fuel env (bindersOf env scope pats v.payload) v.payload (kid arm 2)
+      | some pats => armBound fuel env (bindersOf env scope pats v.payload) (kid arm 2)
   else
     none
 
 /-- Arm k is variant k. -/
-def armsOf (fuel : Nat) (env : Env) (scope : List Local) (variants : List Variant) (arms : List CTree) : Option (List SrcArm) :=
+def armsOf (fuel : Nat) (env : Env) (scope : List Local) (owner : TypeDecl) (variants : List VariantTy) (arms : List CTree) : Option (List SrcArm) :=
   match variants with
   | [] =>
     (match arms with
@@ -1077,22 +2619,26 @@ def armsOf (fuel : Nat) (env : Env) (scope : List Local) (variants : List Varian
   | v :: rest =>
     match arms with
     | [] => none
-    | a :: more => consArm (armOf fuel env scope v a) (armsOf fuel env scope rest more)
+    | a :: more => consArm (armOf fuel env scope owner v a) (armsOf fuel env scope owner rest more)
 
-def armsList (fuel : Nat) (env : Env) (scope : List Local) (variants : List Variant) (items : Option (List CTree)) : Option (List SrcArm) :=
-  match items with
-  | none => none
-  | some arms => armsOf fuel env scope variants arms
-
-def matchEnum (fuel : Nat) (env : Env) (scope : List Local) (scrutinee : Nat) (e : Nat) (entry : Option TypeEntry) (m : CTree) : Option LetHead :=
-  match entry with
-  | none => none
-  | some t => matchArms scrutinee e (armsList fuel env scope t.variants (listItems fuel (kid m 5)))
+def matchEnum (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (owner : TypeDecl) (payloads : Option (List (List Ty))) (m : CTree) : Option LetHead :=
+  if owner.isEnum then
+    match payloads with
+    | none => none
+    | some ps =>
+      match listItems fuel (kid m 5) with
+      | none => none
+      | some arms => matchArms l.id l.ty (armsOf fuel env scope owner (zipVariants owner.variants ps) arms)
+  else
+    none
 
 def matchLocal (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (m : CTree) : Option LetHead :=
-  match enumId l.ty with
+  match namedParts l.ty with
   | none => none
-  | some e => matchEnum fuel env scope l.id e env.types[e]? m
+  | some n =>
+    match env.decls.types[n.decl]? with
+    | none => none
+    | some t => matchEnum fuel env scope l t (payloadTys fuel env.decls n.decl n.args) m
 
 def matchScrutinee (fuel : Nat) (env : Env) (scope : List Local) (pf : CTree) (m : CTree) : Option LetHead :=
   if nodeProd (kid pf 1) = (164) then
@@ -1103,151 +2649,272 @@ def matchScrutinee (fuel : Nat) (env : Env) (scope : List Local) (pf : CTree) (m
     none
 
 /-- `match (x) { arms }`: x a local of an enum type, one arm per variant in order. -/
-def matchHead (fuel : Nat) (env : Env) (scope : List Local) (ty : SrcType) (m : CTree) : Option LetHead :=
+def matchHead (fuel : Nat) (env : Env) (scope : List Local) (m : CTree) : Option LetHead :=
   match peel fuel (kid m 2) with
   | none => none
   | some pf => matchScrutinee fuel env scope pf m
 
-def postfixHead (fuel : Nat) (env : Env) (scope : List Local) (ty : SrcType) (pf : CTree) (init : CTree) : Option LetHead :=
+def postfixHead (fuel : Nat) (env : Env) (scope : List Local) (ty : Ty) (pf : CTree) (init : CTree) : Option LetHead :=
   let primary : CTree := kid pf 0
   let tail : CTree := kid pf 1
   if decide (nodeProd primary = (187)) && decide (nodeProd tail = (164)) then
-    matchHead fuel env scope ty primary
+    matchHead fuel env scope primary
   else
     if decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (275)) && decide (nodeProd tail = (164)) then
-      literalHead fuel env scope ty (pathName (kid primary 0)) (kid (kid primary 1) 1)
+      literalHead fuel env scope ty (kid primary 0) (kid (kid primary 1) 1)
     else
-      if decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274)) && decide (nodeProd tail = (161)) && decide (nodeProd (kid tail 3) = (164)) then
-        callHead fuel env scope ty (pathName (kid primary 0)) (kid tail 1)
+      if isPathCall pf then
+        callPathHead fuel env scope ty (kid primary 0) (kid tail 1)
       else
-        if decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274)) && decide (nodeProd tail = (164)) then
-          unitHead env scope ty (pathName (kid primary 0)) init fuel
+        if isMethodForm pf then
+          callHeadOf (methodCallOf fuel env scope ty pf)
         else
-          plainHead (exprOf fuel env scope init)
+          if decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274)) && decide (nodeProd tail = (162)) && decide (nodeProd (kid tail 3) = (164)) then
+            indexHead (localOf env scope primary) (exprOf fuel env scope (kid tail 1))
+          else
+            if decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274)) && decide (nodeProd tail = (164)) then
+              unitHead fuel env scope ty (kid primary 0) init
+            else
+              plainHead (exprOf fuel env scope init)
 
 /-- The head of `let x: ty = init;`. -/
-def letHead (fuel : Nat) (env : Env) (scope : List Local) (ty : SrcType) (init : CTree) : Option LetHead :=
+def letHead (fuel : Nat) (env : Env) (scope : List Local) (ty : Ty) (init : CTree) : Option LetHead :=
   match peel fuel init with
   | none => plainHead (exprOf fuel env scope init)
   | some pf => postfixHead fuel env scope ty pf init
 
-def thenRest (h : SrcStmt) (rest : Option SrcStmt) : Option SrcStmt :=
+def thenRest (h : MStmt) (rest : Option MStmt) : Option MStmt :=
   match rest with
   | none => none
-  | some r => some (SrcStmt.then h r)
+  | some r => some (MStmt.mThen h r)
 
-def thenOf (head : Option SrcStmt) (rest : Option SrcStmt) : Option SrcStmt :=
+def thenOf (head : Option MStmt) (rest : Option MStmt) : Option MStmt :=
   match head with
   | none => none
   | some h => thenRest h rest
 
-def letStmt (id : Nat) (ty : SrcType) (head : LetHead) (body : SrcStmt) : SrcStmt :=
-  match head with
-  | .plain e => SrcStmt.let id ty e body
-  | .callOf callee args => SrcStmt.letCall id ty callee args body
-  | .variantOf variant payload => SrcStmt.letEnum id ty variant payload body
-  | .literalOf fields => SrcStmt.letStruct id ty fields body
-  | .matchOf scrutinee owner arms => SrcStmt.letMatch id ty scrutinee owner arms body
+def isPtrTy (t : Ty) : Bool :=
+  match t with
+  | .tyI32 => false
+  | .tyBool => false
+  | .tyUint k => false
+  | .tyPtr => true
+  | .tySlice e => false
+  | .tyNamed d args => false
 
-def letBody (id : Nat) (ty : SrcType) (h : LetHead) (body : Option SrcStmt) : Option SrcStmt :=
+def allocLet (ok : Bool) (id : Nat) (size : SrcExpr) (shift : Nat) (body : MStmt) : Option MStmt :=
+  if ok then
+    some (MStmt.mLetAlloc id size shift body)
+  else
+    none
+
+def sliceLet (element : Option Ty) (id : Nat) (pointer : SrcExpr) (length : SrcExpr) (body : MStmt) : Option MStmt :=
+  match element with
+  | none => none
+  | some e => some (MStmt.mLetSlice id e pointer length body)
+
+/-- An allocation binds a `ptr`, a raw view a `[T]`. -/
+def letStmt (id : Nat) (ty : Ty) (head : LetHead) (body : MStmt) : Option MStmt :=
+  match head with
+  | .plain e => some (MStmt.mLet id ty e body)
+  | .callOf c => some (MStmt.mLetCall id ty c.inst c.args body)
+  | .variantOf variant payload => some (MStmt.mLetEnum id ty variant payload body)
+  | .literalOf fields => some (MStmt.mLetStruct id ty fields body)
+  | .matchOf scrutinee sty arms => some (MStmt.mLetMatch id ty scrutinee sty arms body)
+  | .allocOf size shift => allocLet (isPtrTy ty) id size shift body
+  | .sliceOf pointer length => sliceLet (sliceElem ty) id pointer length body
+  | .indexOf slice index => some (MStmt.mLetIndex id ty slice index body)
+
+def letBody (id : Nat) (ty : Ty) (h : LetHead) (body : Option MStmt) : Option MStmt :=
   match body with
   | none => none
-  | some b => some (letStmt id ty h b)
+  | some b => letStmt id ty h b
 
-def letOf (id : Nat) (ty : SrcType) (head : Option LetHead) (body : Option SrcStmt) : Option SrcStmt :=
+def letOf (id : Nat) (ty : Ty) (head : Option LetHead) (body : Option MStmt) : Option MStmt :=
   match head with
   | none => none
   | some h => letBody id ty h body
 
-def returned (e : Option SrcExpr) : Option SrcStmt :=
+def returned (e : Option SrcExpr) : Option MStmt :=
   match e with
   | none => none
-  | some x => some (SrcStmt.return x)
+  | some x => some (MStmt.mReturn x)
 
-def ifElse (x : SrcExpr) (s : SrcStmt) (b : Option SrcStmt) : Option SrcStmt :=
+def ifElse (x : SrcExpr) (s : MStmt) (b : Option MStmt) : Option MStmt :=
   match b with
   | none => none
-  | some t => some (SrcStmt.if x s t)
+  | some t => some (MStmt.mIf x s t)
 
-def ifBranches (x : SrcExpr) (a : Option SrcStmt) (b : Option SrcStmt) : Option SrcStmt :=
+def ifBranches (x : SrcExpr) (a : Option MStmt) (b : Option MStmt) : Option MStmt :=
   match a with
   | none => none
   | some s => ifElse x s b
 
-def ifOf (c : Option SrcExpr) (a : Option SrcStmt) (b : Option SrcStmt) : Option SrcStmt :=
+def ifOf (c : Option SrcExpr) (a : Option MStmt) (b : Option MStmt) : Option MStmt :=
   match c with
   | none => none
   | some x => ifBranches x a b
 
-def whileBody (x : SrcExpr) (body : Option SrcStmt) : Option SrcStmt :=
+def whileBody (x : SrcExpr) (body : Option MStmt) : Option MStmt :=
   match body with
   | none => none
-  | some b => some (SrcStmt.while x b)
+  | some b => some (MStmt.mWhile x b)
 
-def whileOf (c : Option SrcExpr) (body : Option SrcStmt) : Option SrcStmt :=
+def whileOf (c : Option SrcExpr) (body : Option MStmt) : Option MStmt :=
   match c with
   | none => none
   | some x => whileBody x body
 
-def setFieldValue (id : Nat) (j : Nat) (value : Option SrcExpr) : Option SrcStmt :=
+def setFieldValue (id : Nat) (j : Nat) (value : Option SrcExpr) : Option MStmt :=
   match value with
   | none => none
-  | some v => some (SrcStmt.setField id j v)
+  | some v => some (MStmt.mSetField id j v)
 
-def fieldInto (index : Option Nat) (id : Nat) (value : Option SrcExpr) : Option SrcStmt :=
+def fieldInto (index : Option Nat) (id : Nat) (value : Option SrcExpr) : Option MStmt :=
   match index with
   | none => none
   | some j => setFieldValue id j value
 
-def setValue (id : Nat) (value : Option SrcExpr) : Option SrcStmt :=
+def setValue (id : Nat) (value : Option SrcExpr) : Option MStmt :=
   match value with
   | none => none
-  | some v => some (SrcStmt.set id v)
+  | some v => some (MStmt.mSet id v)
 
-def positionOf (names : List (List Nat)) (name : Option (List Nat)) : Option Nat :=
-  match name with
+def setCallOf (id : Nat) (c : Option Called) : Option MStmt :=
+  match c with
   | none => none
-  | some n => position names n 0
+  | some x => some (MStmt.mSetCall id x.inst x.args)
 
-def setCallArgs (id : Nat) (f : Nat) (args : Option (List SrcExpr)) : Option SrcStmt :=
-  match args with
-  | none => none
-  | some es => some (SrcStmt.setCall id f es)
-
-def callInto (id : Nat) (callee : Option Nat) (args : Option (List SrcExpr)) : Option SrcStmt :=
-  match callee with
-  | none => none
-  | some f => setCallArgs id f args
-
-def setPostfix (fuel : Nat) (env : Env) (scope : List Local) (id : Nat) (pf : CTree) (value : CTree) : Option SrcStmt :=
-  let primary : CTree := kid pf 0
-  let tail : CTree := kid pf 1
-  if decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274)) && decide (nodeProd tail = (161)) && decide (nodeProd (kid tail 3) = (164)) then
-    callInto id (positionOf env.fns (pathName (kid primary 0))) (argsOf fuel env scope (kid tail 1))
+/-- `x = value;`: a call, or an expression. -/
+def setPostfix (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (pf : CTree) (value : CTree) : Option MStmt :=
+  if isPathCall pf then
+    setCallOf l.id (pathCallOf fuel env scope l.ty (kid (kid pf 0) 0) (kid (kid pf 1) 1))
   else
-    setValue id (exprOf fuel env scope value)
+    if isMethodForm pf then
+      setCallOf l.id (methodCallOf fuel env scope l.ty pf)
+    else
+      setValue l.id (exprOf fuel env scope value)
 
-def setLocal (fuel : Nat) (env : Env) (scope : List Local) (id : Nat) (value : CTree) : Option SrcStmt :=
+def setLocal (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (value : CTree) : Option MStmt :=
   match peel fuel value with
-  | none => setValue id (exprOf fuel env scope value)
-  | some pf => setPostfix fuel env scope id pf value
+  | none => setValue l.id (exprOf fuel env scope value)
+  | some pf => setPostfix fuel env scope l pf value
 
-def assignTarget (fuel : Nat) (env : Env) (scope : List Local) (target : CTree) (value : CTree) : Option SrcStmt :=
+def setIndexOf (slice : Nat) (index : Option SrcExpr) (value : Option SrcExpr) : Option MStmt :=
+  match index with
+  | none => none
+  | some i =>
+    match value with
+    | none => none
+    | some v => some (MStmt.mSetIndex slice i v)
+
+def assignTarget (fuel : Nat) (env : Env) (scope : List Local) (target : CTree) (value : CTree) : Option MStmt :=
   let tail : CTree := kid target 1
   if nodeProd tail = (164) then
     match localOf env scope (kid target 0) with
     | none => none
-    | some l => setLocal fuel env scope l.id value
+    | some l => setLocal fuel env scope l value
   else
     if decide (nodeProd tail = (163)) && decide (nodeProd (kid tail 2) = (297)) && decide (nodeProd (kid tail 3) = (164)) then
       match localOf env scope (kid target 0) with
       | none => none
       | some l => fieldInto (fieldIndex env l.ty (kidToken tail 1).text) l.id (exprOf fuel env scope value)
     else
+      if decide (nodeProd tail = (162)) && decide (nodeProd (kid tail 3) = (164)) then
+        match localOf env scope (kid target 0) with
+        | none => none
+        | some l => setIndexOf l.id (exprOf fuel env scope (kid tail 1)) (exprOf fuel env scope value)
+      else
+        none
+
+def freeShifted (pointer : SrcExpr) (size : SrcExpr) (shift : Option Nat) (more : List SrcExpr) : Option MStmt :=
+  match shift with
+  | none => none
+  | some k =>
+    match more with
+    | [] => some (MStmt.mFree pointer size k)
+    | e :: others => none
+
+/-- dealloc(pointer, size, align) -/
+def freeOf (args : Option (List SrcExpr)) : Option MStmt :=
+  match args with
+  | none => none
+  | some es =>
+    match es with
+    | [] => none
+    | pointer :: rest =>
+      match rest with
+      | [] => none
+      | size :: more =>
+        match more with
+        | [] => none
+        | align :: others => freeShifted pointer size (shiftOf align) others
+
+/-- A call statement: `alloc::allocator::dealloc(pointer, size, align);`. -/
+def callStmt (fuel : Nat) (env : Env) (scope : List Local) (pf : CTree) : Option MStmt :=
+  let path : CTree := kid (kid pf 0) 0
+  if isPathCall pf && isPath (pathSpellings fuel (kid path 0) (kid path 1)) deallocPath then
+    freeOf (argsOf fuel env scope (kid (kid pf 1) 1))
+  else
+    none
+
+/-- The operator of a compound assignment `+=`, `-=`, `*=`, `&=`, `|=`, `^=`. -/
+def compoundOp (p : Nat) : Option SrcOp :=
+  if p = (107) then
+    some SrcOp.plus
+  else
+    if p = (108) then
+      some SrcOp.minus
+    else
+      if p = (109) then
+        some SrcOp.times
+      else
+        if p = (115) then
+          some SrcOp.bitAnd
+        else
+          if p = (116) then
+            some SrcOp.bitOr
+          else
+            if p = (112) then
+              some SrcOp.bitXor
+            else
+              none
+
+def compoundValue (op : SrcOp) (left : SrcExpr) (right : Option SrcExpr) : Option SrcExpr :=
+  match right with
+  | none => none
+  | some r => some (SrcExpr.apply op left r)
+
+def compoundField (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (index : Option Nat) (op : SrcOp) (value : CTree) : Option MStmt :=
+  match index with
+  | none => none
+  | some j => setFieldValue l.id j (compoundValue op (SrcExpr.field l.id j) (exprOf fuel env scope value))
+
+/-- `x op= e` is `x = x op e`, and `x.f op= e` is `x.f = x.f op e`. -/
+def compoundTarget (fuel : Nat) (env : Env) (scope : List Local) (target : CTree) (op : SrcOp) (value : CTree) : Option MStmt :=
+  let tail : CTree := kid target 1
+  if nodeProd tail = (164) then
+    match localOf env scope (kid target 0) with
+    | none => none
+    | some l => setValue l.id (compoundValue op (SrcExpr.local l.id) (exprOf fuel env scope value))
+  else
+    if decide (nodeProd tail = (163)) && decide (nodeProd (kid tail 2) = (297)) && decide (nodeProd (kid tail 3) = (164)) then
+      match localOf env scope (kid target 0) with
+      | none => none
+      | some l => compoundField fuel env scope l (fieldIndex env l.ty (kidToken tail 1).text) op value
+    else
       none
 
-/-- `target = value;`: target a local or a field of one; value a call of a function (to a plain local) or an expression. -/
-def assignment (fuel : Nat) (env : Env) (scope : List Local) (e : CTree) : Option SrcStmt :=
+def compoundOf (fuel : Nat) (env : Env) (scope : List Local) (target : Option CTree) (op : Option SrcOp) (value : CTree) : Option MStmt :=
+  match op with
+  | none => none
+  | some o =>
+    match target with
+    | none => none
+    | some t => compoundTarget fuel env scope t o value
+
+/-- `target = value;`: target a local, a field of one or a slice element; value a call (to a plain local) or an expression. Also `target op= value;`, and the call statement `dealloc(...)`. -/
+def assignment (fuel : Nat) (env : Env) (scope : List Local) (e : CTree) : Option MStmt :=
   let a : CTree := kid e 0
   let set : CTree := kid a 1
   if decide (nodeProd e = (104)) && decide (nodeProd a = (105)) && decide (nodeProd set = (106)) then
@@ -1255,12 +2922,20 @@ def assignment (fuel : Nat) (env : Env) (scope : List Local) (e : CTree) : Optio
     | none => none
     | some target => assignTarget fuel env scope target (kid set 1)
   else
-    none
+    if decide (nodeProd e = (104)) && decide (nodeProd a = (105)) && hasKids set && decide (nodeProd set ≠ (106)) then
+      compoundOf fuel env scope (peel fuel (kid a 0)) (compoundOp (nodeProd set)) (kid set 1)
+    else
+      if decide (nodeProd e = (104)) && decide (nodeProd a = (105)) && decide (nodeProd set = (117)) then
+        match peel fuel (kid a 0) with
+        | none => none
+        | some pf => callStmt fuel env scope pf
+      else
+        none
 
 mutual
 
 /-- A statement list: a let scopes over the statements after it. -/
-def blockOf (fuel : Nat) (env : Env) (scope : List Local) (list : CTree) : Option SrcStmt :=
+def blockOf (fuel : Nat) (env : Env) (scope : List Local) (list : CTree) : Option MStmt :=
   if fuel = 0 then
     none
   else
@@ -1268,15 +2943,15 @@ def blockOf (fuel : Nat) (env : Env) (scope : List Local) (list : CTree) : Optio
     | none => none
     | some items => stmtsOf (fuel - 1) env scope items
 
-def stmtsOf (fuel : Nat) (env : Env) (scope : List Local) (items : List CTree) : Option SrcStmt :=
+def stmtsOf (fuel : Nat) (env : Env) (scope : List Local) (items : List CTree) : Option MStmt :=
   if fuel = 0 then
     none
   else
     match items with
-    | [] => some SrcStmt.nop
+    | [] => some MStmt.mNop
     | s :: rest => stmtFirst (fuel - 1) env scope s rest
 
-def stmtFirst (fuel : Nat) (env : Env) (scope : List Local) (s : CTree) (rest : List CTree) : Option SrcStmt :=
+def stmtFirst (fuel : Nat) (env : Env) (scope : List Local) (s : CTree) (rest : List CTree) : Option MStmt :=
   if fuel = 0 then
     none
   else
@@ -1288,20 +2963,20 @@ def stmtFirst (fuel : Nat) (env : Env) (scope : List Local) (s : CTree) (rest : 
       | next :: more => thenOf (stmtOf (fuel - 1) env scope s) (stmtsOf (fuel - 1) env scope rest)
 
 /-- `let x: ty = init;` (let_stmt -> Let LetIdent let_type let_init LetSemicolon). -/
-def letFirst (fuel : Nat) (env : Env) (scope : List Local) (s : CTree) (rest : List CTree) : Option SrcStmt :=
+def letFirst (fuel : Nat) (env : Env) (scope : List Local) (s : CTree) (rest : List CTree) : Option MStmt :=
   if fuel = 0 then
     none
   else
     let tok : Token := kidToken s 1
     if decide (nodeProd (kid s 2) = (86)) && decide (nodeProd (kid s 3) = (88)) && !(member env.globals tok.text) then
-      match typeOf env (kid (kid s 2) 1) with
+      match tyOf fuel env (kid (kid s 2) 1) with
       | none => none
       | some t => letOf tok.start t (letHead (fuel - 1) env scope t (kid (kid s 3) 1)) (stmtsOf (fuel - 1) env (({ name := tok.text, id := tok.start, ty := t } : Local) :: scope) rest)
     else
       none
 
 /-- return, if, while, and assignments. -/
-def stmtOf (fuel : Nat) (env : Env) (scope : List Local) (s : CTree) : Option SrcStmt :=
+def stmtOf (fuel : Nat) (env : Env) (scope : List Local) (s : CTree) : Option MStmt :=
   if fuel = 0 then
     none
   else
@@ -1314,7 +2989,7 @@ def stmtOf (fuel : Nat) (env : Env) (scope : List Local) (s : CTree) : Option Sr
         ifOf (exprOf f env scope (kid s 2)) (blockOf f env scope (kid (kid s 4) 1)) (blockOf f env scope (kid (kid (kid s 5) 1) 1))
       else
         if decide (p = (77)) && decide (nodeProd (kid s 5) = (79)) then
-          ifOf (exprOf f env scope (kid s 2)) (blockOf f env scope (kid (kid s 4) 1)) (some SrcStmt.nop)
+          ifOf (exprOf f env scope (kid s 2)) (blockOf f env scope (kid (kid s 4) 1)) (some MStmt.mNop)
         else
           if p = (80) then
             whileOf (exprOf f env scope (kid s 2)) (blockOf f env scope (kid (kid s 4) 1))
@@ -1326,80 +3001,418 @@ def stmtOf (fuel : Nat) (env : Env) (scope : List Local) (s : CTree) : Option Sr
 
 end
 
-def funcRet (fuel : Nat) (env : Env) (ps : Params) (ret : Option SrcType) (body : CTree) : Option SrcFunc :=
+structure MParam where
+  id : Nat
+  ty : Ty
+  deriving Repr
+
+structure MFunc where
+  params : List MParam
+  ret : Ty
+  body : MStmt
+  deriving Repr
+
+/-- Parameters, and the scope they make (the last one innermost). -/
+structure MParams where
+  params : List MParam
+  scope : List Local
+  deriving Repr
+
+def consParam (p : MParam) (rest : Option MParams) : Option MParams :=
+  match rest with
+  | none => none
+  | some r => some ({ params := p :: r.params, scope := r.scope } : MParams)
+
+/-- `name: T` or `self` (by value); each a local named by its spelling. -/
+def paramsOf (fuel : Nat) (env : Env) (fd : FnDecl) (scope : List Local) (items : List CTree) : Option MParams :=
+  match items with
+  | [] => some ({ params := [], scope := scope } : MParams)
+  | p :: rest =>
+    let tok : Token := kidToken p 0
+    if (decide (nodeProd p = (62)) || decide (nodeProd p = (63))) && !(member env.globals tok.text) then
+      match patternOf fd p with
+      | none => none
+      | some t =>
+        match tyOf fuel env t with
+        | none => none
+        | some x => consParam ({ id := tok.start, ty := x } : MParam) (paramsOf fuel env fd (({ name := tok.text, id := tok.start, ty := x } : Local) :: scope) rest)
+    else
+      none
+
+def funcBody (ps : MParams) (r : Ty) (body : Option MStmt) : Option MFunc :=
+  match body with
+  | none => none
+  | some b => some ({ params := ps.params, ret := r, body := b } : MFunc)
+
+def funcRet (fuel : Nat) (env : Env) (ps : MParams) (ret : Option Ty) (body : CTree) : Option MFunc :=
   match ret with
   | none => none
   | some r => funcBody ps r (blockOf fuel env ps.scope body)
 
-def funcParams (fuel : Nat) (env : Env) (params : Option Params) (ret : Option SrcType) (body : CTree) : Option SrcFunc :=
+def funcParams (fuel : Nat) (env : Env) (params : Option MParams) (ret : Option Ty) (body : CTree) : Option MFunc :=
   match params with
   | none => none
   | some ps => funcRet fuel env ps ret body
 
-def consParam (p : SrcParam) (rest : Option Params) : Option Params :=
-  match rest with
-  | none => none
-  | some r => some ({ params := p :: r.params, scope := r.scope } : Params)
-
-def paramsOf (env : Env) (scope : List Local) (items : List CTree) : Option Params :=
-  match items with
-  | [] => some ({ params := [], scope := scope } : Params)
-  | p :: rest =>
-    let tok : Token := kidToken p 0
-    if decide (nodeProd p = (62)) && !(member env.globals tok.text) then
-      match typeOf env (kid p 2) with
-      | none => none
-      | some t => consParam ({ id := tok.start, ty := t } : SrcParam) (paramsOf env (({ name := tok.text, id := tok.start, ty := t } : Local) :: scope) rest)
-    else
-      none
-
-/-- A function (fn_item): no type parameters or where clause, a result type. -/
-def funcOf (fuel : Nat) (env : Env) (f : CTree) : Option SrcFunc :=
+/-- A function instance's body, read with its type parameters (the impl's, then its own) standing for the instance's arguments. It has a result type. -/
+def readFn (fuel : Nat) (decls : Decls) (fd : FnDecl) (args : List Ty) : Option MFunc :=
+  let names : List (List Nat) := fd.implParams ++ fd.params
+  let env : Env := ({ decls := decls, module := fd.module, names := names, subst := args, globals := moduleGlobals decls fd.module } : Env)
+  let f : CTree := fd.tree
   let ret : CTree := kid f 6
-  if decide (nodeProd (kid f 2) = (232)) && decide (nodeProd (kid f 7) = (36)) && decide (nodeProd ret = (34)) then
+  if decide (names.length = args.length) && decide (nodeProd ret = (34)) then
     match listItems fuel (kid f 4) with
     | none => none
-    | some items => funcParams fuel env (paramsOf env [] items) (typeOf env (kid ret 1)) (kid (kid f 8) 1)
+    | some items => funcParams fuel env (paramsOf fuel env fd [] items) (tyOf fuel env (kid ret 1)) (kid (kid f 8) 1)
   else
     none
 
-def funcsOf (fuel : Nat) (env : Env) (fns : List CTree) : Option (List SrcFunc) :=
-  match fns with
-  | [] => some []
-  | f :: rest => consFunc (funcOf fuel env f) (funcsOf fuel env rest)
+def readInst (fuel : Nat) (decls : Decls) (inst : Inst) : Option MFunc :=
+  match decls.fns[inst.decl]? with
+  | none => none
+  | some fd => readFn fuel decls fd inst.args
 
-def buildEnv (fuel : Nat) (fns : List CTree) (env : Env) : Option SrcProgram :=
-  if distinct env.globals && noPrimitive env.types then
-    match funcsOf fuel env fns with
+/-- The function instances a statement calls, in order. -/
+def stmtCalls (m : MStmt) : List Inst :=
+  match m with
+  | .mNop => []
+  | .mLet id ty e body => stmtCalls body
+  | .mLetStruct id ty es body => stmtCalls body
+  | .mLetCall id ty inst args body => inst :: stmtCalls body
+  | .mLetEnum id ty k es body => stmtCalls body
+  | .mLetMatch id ty s sty arms body => stmtCalls body
+  | .mSet id e => []
+  | .mSetField id j e => []
+  | .mSetCall id inst args => [inst]
+  | .mThen a b => stmtCalls a ++ stmtCalls b
+  | .mIf c a b => stmtCalls a ++ stmtCalls b
+  | .mWhile c body => stmtCalls body
+  | .mReturn e => []
+  | .mLetAlloc id size shift body => stmtCalls body
+  | .mFree p size shift => []
+  | .mLetSlice id e p n body => stmtCalls body
+  | .mLetIndex id ty s i body => stmtCalls body
+  | .mSetIndex s i v => []
+
+/-- The function instances, numbered in the order they are first requested, and their bodies. -/
+structure Mono where
+  table : List Inst
+  funcs : List MFunc
+  deriving Repr
+
+/-- Read instance i of the table, append the instances it calls that are new, and go on with i + 1 until the table is done. -/
+def monoLoop (fuel : Nat) (rfuel : Nat) (decls : Decls) (table : List Inst) (done : List MFunc) (i : Nat) : Option Mono :=
+  if fuel = 0 then
+    none
+  else
+    match table[i]? with
+    | none => some ({ table := table, funcs := done } : Mono)
+    | some inst =>
+      let nfuel : Nat := fuel - 1
+      let nf : Option MFunc := readInst rfuel decls inst
+      match nf with
+      | none => none
+      | some mf => monoLoop nfuel rfuel decls (addInsts table (stmtCalls mf.body)) (done ++ [mf]) (i + 1)
+
+/-- The types a statement binds, in order (a match's result, then its scrutinee's). -/
+def stmtTys (m : MStmt) : List Ty :=
+  match m with
+  | .mNop => []
+  | .mLet id ty e body => ty :: stmtTys body
+  | .mLetStruct id ty es body => ty :: stmtTys body
+  | .mLetCall id ty inst args body => ty :: stmtTys body
+  | .mLetEnum id ty k es body => ty :: stmtTys body
+  | .mLetMatch id ty s sty arms body => ty :: sty :: stmtTys body
+  | .mSet id e => []
+  | .mSetField id j e => []
+  | .mSetCall id inst args => []
+  | .mThen a b => stmtTys a ++ stmtTys b
+  | .mIf c a b => stmtTys a ++ stmtTys b
+  | .mWhile c body => stmtTys body
+  | .mReturn e => []
+  | .mLetAlloc id size shift body => stmtTys body
+  | .mFree p size shift => []
+  | .mLetSlice id e p n body => e :: stmtTys body
+  | .mLetIndex id ty s i body => ty :: stmtTys body
+  | .mSetIndex s i v => []
+
+def paramTys (ps : List MParam) : List Ty :=
+  match ps with
+  | [] => []
+  | p :: rest => p.ty :: paramTys rest
+
+/-- A function's types: parameters, result, then its body's. -/
+def funcsTys (fs : List MFunc) : List Ty :=
+  match fs with
+  | [] => []
+  | f :: rest => paramTys f.params ++ f.ret :: (stmtTys f.body ++ funcsTys rest)
+
+def seedTys (seeds : List Inst) : List Ty :=
+  match seeds with
+  | [] => []
+  | s :: rest => Ty.tyNamed s.decl s.args :: seedTys rest
+
+/-- The type instances, from the seeds, in the order the types first need them. -/
+def typeTable (fuel : Nat) (decls : Decls) (table : List Inst) (ts : List Ty) : Option (List Inst) :=
+  match ts with
+  | [] => some table
+  | t :: rest =>
+    let tnew : Option (List Inst) := tyInsts fuel decls t
+    match tnew with
     | none => none
-    | some funcs => some ({ funcs := funcs } : SrcProgram)
-  else
-    none
+    | some xs => typeTable fuel decls (addInsts table xs) rest
 
-def buildTyped (fuel : Nat) (fns : List CTree) (types : Option (List TypeEntry)) : Option SrcProgram :=
+/-- The declarations and the function and type instance tables. -/
+structure Tables where
+  decls : Decls
+  fns : List Inst
+  types : List Inst
+  deriving Repr
+
+def closeTy (fuel : Nat) (t : Tables) (ty : Ty) : Option SrcType :=
+  lowerTy fuel t.decls t.types ty
+
+def srcEnumId (t : Option SrcType) : Option Nat :=
+  match t with
+  | none => none
+  | some x =>
+    match x with
+    | .i32 => none
+    | .bool => none
+    | .uint k => none
+    | .struct id fields => none
+    | .enum id variants => some id
+    | .ptr => none
+    | .slice e => none
+
+def letClosed (id : Nat) (ty : Option SrcType) (e : SrcExpr) (body : Option SrcStmt) : Option SrcStmt :=
+  match ty with
+  | none => none
+  | some t =>
+    match body with
+    | none => none
+    | some b => some (SrcStmt.let id t e b)
+
+def letStructClosed (id : Nat) (ty : Option SrcType) (es : List SrcExpr) (body : Option SrcStmt) : Option SrcStmt :=
+  match ty with
+  | none => none
+  | some t =>
+    match body with
+    | none => none
+    | some b => some (SrcStmt.letStruct id t es b)
+
+def letCallClosed (id : Nat) (ty : Option SrcType) (callee : Option Nat) (args : List SrcExpr) (body : Option SrcStmt) : Option SrcStmt :=
+  match ty with
+  | none => none
+  | some t =>
+    match callee with
+    | none => none
+    | some c =>
+      match body with
+      | none => none
+      | some b => some (SrcStmt.letCall id t c args b)
+
+def letEnumClosed (id : Nat) (ty : Option SrcType) (k : Nat) (es : List SrcExpr) (body : Option SrcStmt) : Option SrcStmt :=
+  match ty with
+  | none => none
+  | some t =>
+    match body with
+    | none => none
+    | some b => some (SrcStmt.letEnum id t k es b)
+
+def letMatchClosed (id : Nat) (ty : Option SrcType) (s : Nat) (e : Option Nat) (arms : List SrcArm) (body : Option SrcStmt) : Option SrcStmt :=
+  match ty with
+  | none => none
+  | some t =>
+    match e with
+    | none => none
+    | some x =>
+      match body with
+      | none => none
+      | some b => some (SrcStmt.letMatch id t s x arms b)
+
+def setCallClosed (id : Nat) (callee : Option Nat) (args : List SrcExpr) : Option SrcStmt :=
+  match callee with
+  | none => none
+  | some c => some (SrcStmt.setCall id c args)
+
+def thenClosed (a : Option SrcStmt) (b : Option SrcStmt) : Option SrcStmt :=
+  match a with
+  | none => none
+  | some x =>
+    match b with
+    | none => none
+    | some y => some (SrcStmt.then x y)
+
+def ifClosed (c : SrcExpr) (a : Option SrcStmt) (b : Option SrcStmt) : Option SrcStmt :=
+  match a with
+  | none => none
+  | some x =>
+    match b with
+    | none => none
+    | some y => some (SrcStmt.if c x y)
+
+def whileClosed (c : SrcExpr) (body : Option SrcStmt) : Option SrcStmt :=
+  match body with
+  | none => none
+  | some b => some (SrcStmt.while c b)
+
+def allocClosed (id : Nat) (size : SrcExpr) (shift : Nat) (body : Option SrcStmt) : Option SrcStmt :=
+  match body with
+  | none => none
+  | some b => some (SrcStmt.letAlloc id size shift b)
+
+def letSliceClosed (id : Nat) (element : Option SrcType) (p : SrcExpr) (n : SrcExpr) (body : Option SrcStmt) : Option SrcStmt :=
+  match element with
+  | none => none
+  | some t =>
+    match body with
+    | none => none
+    | some b => some (SrcStmt.letSlice id t p n b)
+
+def letIndexClosed (id : Nat) (ty : Option SrcType) (s : Nat) (i : SrcExpr) (body : Option SrcStmt) : Option SrcStmt :=
+  match ty with
+  | none => none
+  | some t =>
+    match body with
+    | none => none
+    | some b => some (SrcStmt.letIndex id t s i b)
+
+/-- The source statement: types become source types and a call names its instance's position in the function table. -/
+def closeStmt (fuel : Nat) (t : Tables) (m : MStmt) : Option SrcStmt :=
+  match m with
+  | .mNop => some SrcStmt.nop
+  | .mLet id ty e body => letClosed id (closeTy fuel t ty) e (closeStmt fuel t body)
+  | .mLetStruct id ty es body => letStructClosed id (closeTy fuel t ty) es (closeStmt fuel t body)
+  | .mLetCall id ty inst args body => letCallClosed id (closeTy fuel t ty) (instIndex t.fns inst 0) args (closeStmt fuel t body)
+  | .mLetEnum id ty k es body => letEnumClosed id (closeTy fuel t ty) k es (closeStmt fuel t body)
+  | .mLetMatch id ty s sty arms body => letMatchClosed id (closeTy fuel t ty) s (srcEnumId (closeTy fuel t sty)) arms (closeStmt fuel t body)
+  | .mSet id e => some (SrcStmt.set id e)
+  | .mSetField id j e => some (SrcStmt.setField id j e)
+  | .mSetCall id inst args => setCallClosed id (instIndex t.fns inst 0) args
+  | .mThen a b => thenClosed (closeStmt fuel t a) (closeStmt fuel t b)
+  | .mIf c a b => ifClosed c (closeStmt fuel t a) (closeStmt fuel t b)
+  | .mWhile c body => whileClosed c (closeStmt fuel t body)
+  | .mReturn e => some (SrcStmt.return e)
+  | .mLetAlloc id size shift body => allocClosed id size shift (closeStmt fuel t body)
+  | .mFree p size shift => some (SrcStmt.free p size shift)
+  | .mLetSlice id e p n body => letSliceClosed id (closeTy fuel t e) p n (closeStmt fuel t body)
+  | .mLetIndex id ty s i body => letIndexClosed id (closeTy fuel t ty) s i (closeStmt fuel t body)
+  | .mSetIndex s i v => some (SrcStmt.setIndex s i v)
+
+def consSrcParam (id : Nat) (ty : Option SrcType) (rest : Option (List SrcParam)) : Option (List SrcParam) :=
+  match ty with
+  | none => none
+  | some t =>
+    match rest with
+    | none => none
+    | some ps => some (({ id := id, ty := t } : SrcParam) :: ps)
+
+def closeParams (fuel : Nat) (t : Tables) (ps : List MParam) : Option (List SrcParam) :=
+  match ps with
+  | [] => some []
+  | p :: rest => consSrcParam p.id (closeTy fuel t p.ty) (closeParams fuel t rest)
+
+def srcFunc (params : Option (List SrcParam)) (ret : Option SrcType) (body : Option SrcStmt) : Option SrcFunc :=
+  match params with
+  | none => none
+  | some ps =>
+    match ret with
+    | none => none
+    | some r =>
+      match body with
+      | none => none
+      | some b => some ({ params := ps, ret := r, body := b } : SrcFunc)
+
+def consFuncTail (f : SrcFunc) (tail : Option (List SrcFunc)) : Option (List SrcFunc) :=
+  match tail with
+  | none => none
+  | some fs => some (f :: fs)
+
+def consFunc (head : Option SrcFunc) (tail : Option (List SrcFunc)) : Option (List SrcFunc) :=
+  match head with
+  | none => none
+  | some f => consFuncTail f tail
+
+def closeFuncs (fuel : Nat) (t : Tables) (fs : List MFunc) : Option (List SrcFunc) :=
+  match fs with
+  | [] => some []
+  | f :: rest => consFunc (srcFunc (closeParams fuel t f.params) (closeTy fuel t f.ret) (closeStmt fuel t f.body)) (closeFuncs fuel t rest)
+
+def buildClosed (fuel : Nat) (decls : Decls) (fns : List Inst) (types : Option (List Inst)) (funcs : List MFunc) : Option SrcProgram :=
   match types with
   | none => none
-  | some ts => buildEnv fuel fns ({ types := ts, fns := fnNames fns, globals := typeSpellings ts ++ fnNames fns } : Env)
+  | some ts =>
+    match closeFuncs fuel ({ decls := decls, fns := fns, types := ts } : Tables) funcs with
+    | none => none
+    | some fs => some ({ funcs := fs } : SrcProgram)
 
-def buildItems (fuel : Nat) (items : Option Items) : Option SrcProgram :=
-  match items with
+def buildMono (fuel : Nat) (decls : Decls) (seeds : List Inst) (m : Option Mono) : Option SrcProgram :=
+  match m with
   | none => none
-  | some its => buildTyped fuel its.fns (typeEntries fuel [] its.decls)
+  | some x => buildClosed fuel decls x.table (typeTable fuel decls seeds (seedTys seeds ++ funcsTys x.funcs)) x.funcs
+
+/-- The roots are the first file's functions without type parameters, in order; they keep their positions as ids. Every other function instance is numbered when it is first called. -/
+def buildChecked (fuel : Nat) (c : Collected) (roots : List Inst) (seeds : List Inst) : Option SrcProgram :=
+  if wellNamed c then
+    buildMono fuel c.decls seeds (monoLoop fuel fuel c.decls roots [] 0)
+  else
+    none
+
+def buildCollected (fuel : Nat) (first : FileDecls) (c : Option Collected) : Option SrcProgram :=
+  match c with
+  | none => none
+  | some x => buildChecked fuel x (rootInsts first.decls.fns 0) (seedInsts first.decls.types 0)
+
+/-- The source program of the concrete trees of several files, each a module; the first is the program's own. -/
+def buildFiles (fuel : Nat) (roots : List CTree) : Option SrcProgram :=
+  match roots with
+  | [] => none
+  | first :: rest =>
+    match fileDecls fuel first with
+    | none => none
+    | some f => buildCollected fuel f (collectFiles fuel rest ({ decls := f.decls, modules := [f.module] } : Collected))
 
 /-- The source program of the concrete tree of a file. -/
 def build (fuel : Nat) (root : CTree) : Option SrcProgram :=
-  if nodeProd root = (0) then
-    match listItems fuel (kid root 0) with
-    | none => none
-    | some items => buildItems fuel (splitItems items)
-  else
-    none
+  buildFiles fuel [root]
 
 /-- The front end: the source program of a parse, if the parse is a derivation of the tokens and the program is in the subset. -/
 def frontEnd (g : List Rule) (tokens : List Token) (prods : List Nat) (parents : List Nat) : Option SrcProgram :=
   match validateTree g tokens prods parents with
   | none => none
   | some root => build (4 * (prods.length + tokens.length) + 16) root
+
+/-- One file: its tokens and laniusc's parse tree. -/
+structure FileInput where
+  tokens : List Token
+  prods : List Nat
+  parents : List Nat
+  deriving DecidableEq, Repr
+
+def consRoot (root : Option CTree) (rest : Option (List CTree)) : Option (List CTree) :=
+  match root with
+  | none => none
+  | some r =>
+    match rest with
+    | none => none
+    | some rs => some (r :: rs)
+
+def validateFiles (g : List Rule) (files : List FileInput) : Option (List CTree) :=
+  match files with
+  | [] => some []
+  | f :: rest => consRoot (validateTree g f.tokens f.prods f.parents) (validateFiles g rest)
+
+def filesFuel (files : List FileInput) : Nat :=
+  match files with
+  | [] => 16
+  | f :: rest => 4 * (f.prods.length + f.tokens.length) + filesFuel rest
+
+/-- The front end for several files, the program's own first. -/
+def frontEndFiles (g : List Rule) (files : List FileInput) : Option SrcProgram :=
+  match validateFiles g files with
+  | none => none
+  | some roots => buildFiles (filesFuel files) roots
 
 /-- Productions 0 to 19: 0 file, 1 items_more, 2 items_end, 3 item_pub, 4 item_fn, 5 item_extern_fn, 6 item_import, 7 item_module, 8 item_type_alias, 9 item_impl, 10 item_trait, 11 fn, 12 fn_block, 13 impl_fn, 14 impl_fn_block, 15 extern_fn, 16 type_alias, 17 impl_inherent, 18 impl_trait, 19 impl_methods_none. -/
 def grammarPart0 : List Rule :=

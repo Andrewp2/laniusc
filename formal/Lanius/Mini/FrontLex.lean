@@ -33,4 +33,27 @@ def sourceProgram (source : List Byte) (prods parents : List Nat) : Option SrcPr
   | some tokens => frontEnd grammar tokens prods parents
   | none => none
 
+/-- One file of a several-file program: its bytes and laniusc's parse tree. -/
+structure SourceFile where
+  source : List Byte
+  prods : List Nat
+  parents : List Nat
+
+set_option linter.unusedVariables false in
+/-- Each file's tokens, with its parse tree, if every file lexes. -/
+def lexFiles : List SourceFile → Option (List FileInput)
+  | [] => some []
+  | f :: rest =>
+    match lexTokens f.source, lexFiles rest with
+    | some tokens, some more => some ({ tokens := tokens, prods := f.prods, parents := f.parents } :: more)
+    | some tokens, none => none
+    | none, more => none
+
+/-- The verified compiler's front end for several files, each a module, the
+program's own first. -/
+def sourceProgramFiles (files : List SourceFile) : Option SrcProgram :=
+  match lexFiles files with
+  | some inputs => frontEndFiles grammar inputs
+  | none => none
+
 end Lanius.Mini

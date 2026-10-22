@@ -1,0 +1,19 @@
+const ALIGN: usize = 8;
+
+fn top(n: i32) -> i32 {
+    let p: ptr = alloc::allocator::alloc((64 as usize), ALIGN);
+    let a: i32 = fill(p, 4, n);
+    let b: u8 = fill(p, 4, (1 as u8));
+    let q: ptr = p + (8 as usize);
+    let c: u64 = fill<u64>(q, 2, (5 as u64));
+    alloc::allocator::dealloc(p, (64 as usize), (8 as usize));
+    return a;
+}
+
+fn fill<T>(p: ptr, n: i32, v: T) -> T {
+    let s: [T] = slice_from_raw_parts(p, n);
+    s[0] = v;
+    s[1] = v;
+    let x: T = s[1];
+    return x;
+}

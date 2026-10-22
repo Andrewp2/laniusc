@@ -1,0 +1,44 @@
+enum Maybe<T> {
+    Nothing,
+    Just(T),
+}
+
+struct Pair<A, B> { a: A, b: B }
+
+fn top(n: i32) -> i32 {
+    let m: Maybe<i32> = Just(n);
+    let k: i32 = unwrap_or(m, 0);
+    let e: Maybe<bool> = Nothing;
+    let b: bool = unwrap_or(e, true);
+    let w: Maybe<i32> = wrap(k);
+    let p: Pair<Maybe<i32>, bool> = Pair { a: w, b: b };
+    let q: Pair<Maybe<i32>, bool> = swap_twice(p);
+    k = unwrap_or<i32>(w, n);
+    return k;
+}
+
+fn unwrap_or<T>(m: Maybe<T>, d: T) -> T {
+    let r: T = match (m) {
+        Nothing -> d,
+        Just(x) -> x,
+    };
+    return r;
+}
+
+fn wrap<T>(x: T) -> Maybe<T> {
+    let m: Maybe<T> = Just(x);
+    return m;
+}
+
+fn swap<A, B>(p: Pair<A, B>) -> Pair<B, A> {
+    let a: A = p.a;
+    let b: B = p.b;
+    let q: Pair<B, A> = Pair { a: b, b: a };
+    return q;
+}
+
+fn swap_twice<X, Y>(p: Pair<X, Y>) -> Pair<X, Y> {
+    let q: Pair<Y, X> = swap(p);
+    let r: Pair<X, Y> = swap(q);
+    return r;
+}

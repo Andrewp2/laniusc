@@ -12,11 +12,20 @@
 // `build` then reads the source program off the concrete tree, for the subset
 // of Lanius the front pass compiles, and rejects anything else.
 //
-// Names. A function is its position among the functions, a struct or enum its
-// position among the type declarations. A local (parameter, let, match binder)
-// is the byte offset of its binding occurrence, and a use names the innermost
-// binding of the same spelling. A local cannot be spelled like a function, a
-// type or a variant, so every use has one reading.
+// Names. The input is one or more files, each a module named by its `module`
+// item (the empty path without one); the first file is the program's own. A
+// path `m::x` names x of module m, a bare `x` names x of the current module.
+// Generic structs, enums, functions and impl methods are monomorphized: an
+// instance is a declaration with its type arguments (written, or inferred by
+// matching parameter and result types). The first file's functions without
+// type parameters keep their positions as function ids; every other function
+// instance is numbered when first called. Type ids are positions in the type
+// table: the first file's non-generic types in order, then each instance as
+// the functions' types first need it. Constants are replaced by their
+// literal values. A local (parameter, let, match binder) is the byte offset
+// of its binding occurrence, and a use names the innermost binding of the
+// same spelling. A local cannot be spelled like a function, a type, a variant
+// or a constant of its module, so every use has one reading.
 module mini::frontend;
 import alloc::allocator;
 import core::mem;
@@ -178,6 +187,36 @@ pub struct SrcArm {
     value: SrcExpr,
 }
 
+pub enum SrcDivOp { Quotient, Remainder, }
+
+pub enum SrcEff {
+    EPure(SrcExpr),
+    ECall(usize, Box<List<SrcEff>>),
+    EApply(SrcOp, Box<SrcEff>, Box<SrcEff>),
+    ENeg(Box<SrcEff>),
+    ENot(Box<SrcEff>),
+    ECast(SrcType, Box<SrcEff>),
+    EIndex(usize, Box<SrcEff>),
+    EStruct(SrcType, Box<List<SrcEff>>),
+    EVariant(SrcType, usize, Box<List<SrcEff>>),
+    EMatch(Box<SrcEff>, SrcType, SrcType, List<List<usize>>, Box<List<SrcEff>>),
+    EDivide(SrcDivOp, Box<SrcEff>, Box<SrcEff>),
+}
+
+pub enum SrcEff {
+    EPure(SrcExpr),
+    ECall(usize, Box<List<SrcEff>>),
+    EApply(SrcOp, Box<SrcEff>, Box<SrcEff>),
+    ENeg(Box<SrcEff>),
+    ENot(Box<SrcEff>),
+    ECast(SrcType, Box<SrcEff>),
+    EIndex(usize, Box<SrcEff>),
+    EStruct(SrcType, Box<List<SrcEff>>),
+    EVariant(SrcType, usize, Box<List<SrcEff>>),
+    EMatch(Box<SrcEff>, SrcType, SrcType, List<List<usize>>, Box<List<SrcEff>>),
+    EDivide(SrcDivOp, Box<SrcEff>, Box<SrcEff>),
+}
+
 pub enum SrcStmt {
     Nop,
     Let(usize, SrcType, SrcExpr, Box<SrcStmt>),
@@ -199,6 +238,13 @@ pub enum SrcStmt {
     LetSlice(usize, SrcType, SrcExpr, SrcExpr, Box<SrcStmt>),
     LetIndex(usize, SrcType, usize, SrcExpr, Box<SrcStmt>),
     SetIndex(usize, SrcExpr, SrcExpr),
+    LetEval(usize, SrcType, SrcEff, Box<SrcStmt>),
+    SetEval(usize, SrcEff),
+    IfEval(SrcEff, Box<SrcStmt>, Box<SrcStmt>),
+    WhileEval(SrcEff, Box<SrcStmt>),
+    ReturnEval(SrcEff),
+    Discard(SrcEff),
+    SetIndexEval(usize, SrcEff, SrcEff),
 }
 
 pub struct SrcParam {
@@ -287,6 +333,17 @@ pub fn with_kid(kid: CTree, rest: core::option::Option<Attached>) -> core::optio
     };
 }
 
+// laniusc's parser reads a `>>` that closes two type argument lists (as in
+// `Vec<Option<T>>`) as two `>`, so a terminal `>` may take the first half of a
+// `>>` token, and the second half is then the next token.
+pub fn shr_first(t: Token) -> Token {
+    return Token { kind: t_gt(), start: t.start, text: single(62) };
+}
+
+pub fn shr_second(t: Token) -> Token {
+    return Token { kind: t_gt(), start: plus(t.start, 1), text: single(62) };
+}
+
 // extract: inline
 fn attach_term(tg: List<Rule>, tfuel: usize, tkind: usize, tmore: List<Sym>, tparent: usize, tcur: Cursor) -> core::option::Option<Attached> {
     return match (tcur.tokens) {
@@ -367,6 +424,9 @@ fn attach_leaf(lg: List<Rule>, lfuel: usize, lkind: usize, ltok: Token, ltoks: L
     if (ltok.kind == lkind) {
         return with_kid(Leaf(ltok), attach(lg, lfuel, lmore, lparent, Cursor { prods: lcur.prods, parents: lcur.parents, tokens: ltoks, index: lcur.index }));
     }
+    if (ltok.kind == t_shr() && lkind == t_gt()) {
+        return with_kid(Leaf(shr_first(ltok)), attach(lg, lfuel, lmore, lparent, Cursor { prods: lcur.prods, parents: lcur.parents, tokens: cons(shr_second(ltok), ltoks), index: lcur.index }));
+    }
     return None;
 }
 
@@ -431,7 +491,8 @@ pub fn has_kids(c: CTree) -> bool {
 }
 
 // The productions that only chain the items of a list: item lists, statement
-// lists, parameters, arguments, fields, variants, payloads, arms, patterns.
+// lists, parameters, arguments, fields, variants, payloads, arms, patterns,
+// type parameters, type arguments and impl methods.
 pub fn is_link(p: usize) -> bool {
     return p == p_items_more() || p == p_items_end() || p == p_stmts_more() || p == p_stmts_end()
         || p == p_params_none() || p == p_params_some() || p == p_params_more() || p == p_params_end()
@@ -449,7 +510,11 @@ pub fn is_link(p: usize) -> bool {
         || p == p_match_arms_none() || p == p_match_arms_some() || p == p_match_arms_more() || p == p_match_arms_end()
         || p == p_match_arms_after_comma_more() || p == p_match_arms_after_comma_trailing()
         || p == p_patterns_none() || p == p_patterns_some() || p == p_patterns_more() || p == p_patterns_end()
-        || p == p_patterns_after_comma_more() || p == p_patterns_after_comma_trailing();
+        || p == p_patterns_after_comma_more() || p == p_patterns_after_comma_trailing()
+        || p == p_enum_type_params_some() || p == p_enum_type_params_more() || p == p_enum_type_params_after_comma_more()
+        || p == p_type_args_some() || p == p_type_args_more() || p == p_type_args_after_comma_more()
+        || p == p_path_type_args_more() || p == p_path_type_args_after_comma_more()
+        || p == p_impl_methods_some() || p == p_impl_methods_more();
 }
 
 pub fn join_second(a: List<CTree>, second: core::option::Option<List<CTree>>) -> core::option::Option<List<CTree>> {
@@ -499,54 +564,7 @@ pub fn items_cons(fuel: usize, k: CTree, rest: List<CTree>) -> core::option::Opt
 }
 // extract: mutual end
 
-// The items of the file, split into type declarations and functions; any
-// other item is rejected.
-pub struct Items {
-    decls: List<CTree>,
-    fns: List<CTree>,
-}
-
-// extract: inline
-fn split_one(sitem: CTree, sr: Items) -> core::option::Option<Items> {
-    let p: usize = node_prod(sitem);
-    if (p == p_item_struct() || p == p_item_enum()) {
-        return Some(Items { decls: cons(sitem, sr.decls), fns: sr.fns });
-    }
-    if (p == p_item_fn()) {
-        return Some(Items { decls: sr.decls, fns: cons(kid(sitem, 0), sr.fns) });
-    }
-    return None;
-}
-
-pub fn split_next(item: CTree, rest: core::option::Option<Items>) -> core::option::Option<Items> {
-    return match (rest) {
-        None -> None,
-        Some(r) -> split_one(item, r),
-    };
-}
-
-pub fn split_items(items: List<CTree>) -> core::option::Option<Items> {
-    return match (items) {
-        Nil -> Some(Items { decls: empty(), fns: empty() }),
-        Cons(item, rest) -> split_next(item, split_items(unbox(rest))),
-    };
-}
-
-pub struct Variant {
-    name: List<usize>,
-    payload: List<SrcType>,
-}
-
-// ---------------------------------------------------------------- declarations
-
-// A declared struct or enum: its spelling, its source type, its field
-// spellings (a struct) and its variants (an enum).
-pub struct TypeEntry {
-    name: List<usize>,
-    ty: SrcType,
-    fields: List<List<usize>>,
-    variants: List<Variant>,
-}
+// ---------------------------------------------------------------- names
 
 pub fn leaf_token(c: CTree) -> Token {
     return match (c) {
@@ -558,43 +576,6 @@ pub fn leaf_token(c: CTree) -> Token {
 // The token of child i, a leaf.
 pub fn kid_token(c: CTree, i: usize) -> Token {
     return leaf_token(kid(c, i));
-}
-
-// The spelling of a type expression naming one type (type_ident, no
-// arguments, one segment).
-pub fn type_name(t: CTree) -> core::option::Option<List<usize>> {
-    let path: CTree = kid(t, 0);
-    if (node_prod(t) == p_type_ident() && node_prod(kid(t, 1)) == p_type_args_none() && node_prod(path) == p_type_path() && node_prod(kid(path, 0)) == p_type_path_ident() && node_prod(kid(path, 1)) == p_type_path_end()) {
-        return Some(kid_token(kid(path, 0), 0).text);
-    }
-    return None;
-}
-
-// A struct's fields: (spelling, type spelling) for each struct_field.
-pub struct FieldDecl {
-    names: List<List<usize>>,
-    types: List<List<usize>>,
-}
-
-pub fn cons_field_rest(name: List<usize>, t: List<usize>, rest: core::option::Option<FieldDecl>) -> core::option::Option<FieldDecl> {
-    return match (rest) {
-        None -> None,
-        Some(r) -> Some(FieldDecl { names: cons(name, r.names), types: cons(t, r.types) }),
-    };
-}
-
-pub fn cons_field(name: List<usize>, ty: core::option::Option<List<usize>>, rest: core::option::Option<FieldDecl>) -> core::option::Option<FieldDecl> {
-    return match (ty) {
-        None -> None,
-        Some(t) -> cons_field_rest(name, t, rest),
-    };
-}
-
-pub fn field_decls(items: List<CTree>) -> core::option::Option<FieldDecl> {
-    return match (items) {
-        Nil -> Some(FieldDecl { names: empty(), types: empty() }),
-        Cons(f, rest) -> cons_field(kid_token(f, 0).text, type_name(kid(f, 2)), field_decls(unbox(rest))),
-    };
 }
 
 pub fn same_text(a: List<usize>, b: List<usize>) -> bool {
@@ -614,7 +595,37 @@ pub fn spelled(a: List<usize>, b: List<usize>) -> bool {
     return same_text(a, b);
 }
 
-// i32, bool, u8, u32, u64, usize
+pub fn text_ptr() -> List<usize> {
+    let t: List<usize> = cons(112, cons(116, single(114)));
+    return t;
+}
+
+pub fn text_self() -> List<usize> {
+    let t: List<usize> = cons(115, cons(101, cons(108, single(102))));
+    return t;
+}
+
+pub fn text_alloc() -> List<usize> {
+    let t: List<usize> = cons(97, cons(108, cons(108, cons(111, single(99)))));
+    return t;
+}
+
+pub fn text_allocator() -> List<usize> {
+    let t: List<usize> = cons(97, cons(108, cons(108, cons(111, cons(99, cons(97, cons(116, cons(111, single(114)))))))));
+    return t;
+}
+
+pub fn text_dealloc() -> List<usize> {
+    let t: List<usize> = cons(100, cons(101, cons(97, cons(108, cons(108, cons(111, single(99)))))));
+    return t;
+}
+
+pub fn text_slice_from_raw_parts() -> List<usize> {
+    let t: List<usize> = cons(115, cons(108, cons(105, cons(99, cons(101, cons(95, cons(102, cons(114, cons(111, cons(109, cons(95, cons(114, cons(97, cons(119, cons(95, cons(112, cons(97, cons(114, cons(116, single(115))))))))))))))))))));
+    return t;
+}
+
+// i32, bool, u8, u32, u64, usize, ptr
 pub fn primitive(name: List<usize>) -> core::option::Option<SrcType> {
     // Typed lets, so that laniusc reads the literals as usize.
     let i32_text: List<usize> = cons(105, cons(51, single(50)));
@@ -641,51 +652,10 @@ pub fn primitive(name: List<usize>) -> core::option::Option<SrcType> {
     if (spelled(name, usize_text)) {
         return Some(Uint(Usize));
     }
-    return None;
-}
-
-pub fn declared(types: List<TypeEntry>, name: List<usize>) -> core::option::Option<SrcType> {
-    return match (types) {
-        Nil -> None,
-        Cons(entry, rest) -> declared_at(entry, unbox(rest), name),
-    };
-}
-
-// extract: inline
-fn declared_at(dentry: TypeEntry, drest: List<TypeEntry>, dname: List<usize>) -> core::option::Option<SrcType> {
-    if (same_text(dentry.name, dname)) {
-        return Some(dentry.ty);
+    if (spelled(name, text_ptr())) {
+        return Some(Ptr);
     }
-    return declared(drest, dname);
-}
-
-// A type by spelling: a primitive type or a declared one.
-pub fn resolve(types: List<TypeEntry>, name: List<usize>) -> core::option::Option<SrcType> {
-    return match (primitive(name)) {
-        Some(t) -> Some(t),
-        None -> declared(types, name),
-    };
-}
-
-pub fn cons_type_tail(t: SrcType, tail: core::option::Option<List<SrcType>>) -> core::option::Option<List<SrcType>> {
-    return match (tail) {
-        None -> None,
-        Some(ts) -> Some(cons(t, ts)),
-    };
-}
-
-pub fn cons_type(head: core::option::Option<SrcType>, tail: core::option::Option<List<SrcType>>) -> core::option::Option<List<SrcType>> {
-    return match (head) {
-        None -> None,
-        Some(t) -> cons_type_tail(t, tail),
-    };
-}
-
-pub fn resolve_all(types: List<TypeEntry>, names: List<List<usize>>) -> core::option::Option<List<SrcType>> {
-    return match (names) {
-        Nil -> Some(empty()),
-        Cons(name, rest) -> cons_type(resolve(types, name), resolve_all(types, unbox(rest))),
-    };
+    return None;
 }
 
 pub fn member(names: List<List<usize>>, name: List<usize>) -> bool {
@@ -703,38 +673,20 @@ pub fn distinct(names: List<List<usize>>) -> bool {
     };
 }
 
+// The position of name in names, counting from k.
+pub fn position(names: List<List<usize>>, name: List<usize>, k: usize) -> core::option::Option<usize> {
+    return match (names) {
+        Nil -> None,
+        Cons(n, rest) -> position_at(n, unbox(rest), name, k),
+    };
+}
+
 // extract: inline
-fn struct_checked(sindex: usize, sname: List<usize>, snames: List<List<usize>>, sts: List<SrcType>) -> core::option::Option<TypeEntry> {
-    if (distinct(snames)) {
-        return Some(TypeEntry { name: sname, ty: Struct(sindex, boxed(sts)), fields: snames, variants: empty() });
+fn position_at(pn: List<usize>, prest: List<List<usize>>, pname: List<usize>, pk: usize) -> core::option::Option<usize> {
+    if (same_text(pn, pname)) {
+        return Some(pk);
     }
-    return None;
-}
-
-pub fn struct_typed(index: usize, name: List<usize>, names: List<List<usize>>, tys: core::option::Option<List<SrcType>>) -> core::option::Option<TypeEntry> {
-    return match (tys) {
-        None -> None,
-        Some(ts) -> struct_checked(index, name, names, ts),
-    };
-}
-
-pub fn struct_with_fields(types: List<TypeEntry>, index: usize, name: List<usize>, fields: core::option::Option<FieldDecl>) -> core::option::Option<TypeEntry> {
-    return match (fields) {
-        None -> None,
-        Some(f) -> struct_typed(index, name, f.names, resolve_all(types, f.types)),
-    };
-}
-
-// The entry of the struct declaration s (struct_item), the index-th type
-// declaration. Its field types are primitive or declared earlier.
-pub fn struct_entry(fuel: usize, types: List<TypeEntry>, index: usize, s: CTree) -> core::option::Option<TypeEntry> {
-    if (node_prod(s) == p_struct() && node_prod(kid(s, 2)) == p_enum_type_params_none() && node_prod(kid(s, 3)) == p_where_none()) {
-        return match (list_items(fuel, kid(s, 5))) {
-            None -> None,
-            Some(items) -> struct_with_fields(types, index, kid_token(s, 1).text, field_decls(items)),
-        };
-    }
-    return None;
+    return position(prest, pname, plus(pk, 1));
 }
 
 pub fn cons_name_tail(n: List<usize>, tail: core::option::Option<List<List<usize>>>) -> core::option::Option<List<List<usize>>> {
@@ -751,136 +703,578 @@ pub fn cons_name(head: core::option::Option<List<usize>>, tail: core::option::Op
     };
 }
 
-// The spellings of the types listed by a list of type expressions.
-pub fn type_names(items: List<CTree>) -> core::option::Option<List<List<usize>>> {
+pub fn same_spellings(a: List<List<usize>>, b: List<List<usize>>) -> bool {
+    return match (a) {
+        Nil -> match (b) {
+            Nil -> true,
+            Cons(y, more) -> false,
+        },
+        Cons(x, rest) -> match (b) {
+            Nil -> false,
+            Cons(y, more) -> same_text(x, y) && same_spellings(unbox(rest), unbox(more)),
+        },
+    };
+}
+
+// A module path occurs in a list of module paths.
+pub fn module_member(modules: List<List<List<usize>>>, m: List<List<usize>>) -> bool {
+    return match (modules) {
+        Nil -> false,
+        Cons(x, rest) -> same_spellings(x, m) || module_member(unbox(rest), m),
+    };
+}
+
+pub fn distinct_modules(modules: List<List<List<usize>>>) -> bool {
+    return match (modules) {
+        Nil -> true,
+        Cons(m, rest) -> !module_member(unbox(rest), m) && distinct_modules(unbox(rest)),
+    };
+}
+
+// The one spelling of a one-segment path.
+pub fn single_name(segments: List<List<usize>>) -> core::option::Option<List<usize>> {
+    return match (segments) {
+        Nil -> None,
+        Cons(n, rest) -> match (unbox(rest)) {
+            Nil -> Some(n),
+            Cons(m, more) -> None,
+        },
+    };
+}
+
+pub fn no_trees(items: List<CTree>) -> bool {
+    return match (items) {
+        Nil -> true,
+        Cons(t, rest) -> false,
+    };
+}
+
+// ---------------------------------------------------------------- paths
+
+// The spellings of a path's segments, none with type arguments.
+pub fn path_spellings(fuel: usize, segment: CTree, tail: CTree) -> core::option::Option<List<List<usize>>> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (node_prod(segment) == p_path_ident() && node_prod(tail) == p_path_end()) {
+        return Some(single(kid_token(segment, 0).text));
+    }
+    if (node_prod(segment) == p_path_ident() && node_prod(tail) == p_path_more()) {
+        return cons_name(Some(kid_token(segment, 0).text), path_spellings(minus(fuel, 1), kid(tail, 2), kid(tail, 3)));
+    }
+    return None;
+}
+
+// The spelling of a path with one segment (path -> path_ident path_end).
+pub fn path_name(path: CTree) -> core::option::Option<List<usize>> {
+    if (node_prod(path) == p_path() && node_prod(kid(path, 0)) == p_path_ident() && node_prod(kid(path, 1)) == p_path_end()) {
+        return Some(kid_token(kid(path, 0), 0).text);
+    }
+    return None;
+}
+
+// A path whose last segment may have type arguments (`f<T>`): its
+// spellings, and the generic arguments of the last segment.
+pub struct PathRef {
+    segments: List<List<usize>>,
+    targs: List<CTree>,
+}
+
+pub fn cons_segment(n: List<usize>, rest: core::option::Option<PathRef>) -> core::option::Option<PathRef> {
+    return match (rest) {
+        None -> None,
+        Some(r) -> Some(PathRef { segments: cons(n, r.segments), targs: r.targs }),
+    };
+}
+
+pub fn args_segment(n: List<usize>, items: core::option::Option<List<CTree>>) -> core::option::Option<PathRef> {
+    return match (items) {
+        None -> None,
+        Some(gs) -> Some(PathRef { segments: single(n), targs: gs }),
+    };
+}
+
+pub fn path_ref(fuel: usize, segment: CTree, tail: CTree) -> core::option::Option<PathRef> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (node_prod(segment) == p_path_ident() && node_prod(tail) == p_path_end()) {
+        return Some(PathRef { segments: single(kid_token(segment, 0).text), targs: empty() });
+    }
+    if (node_prod(segment) == p_path_ident_args() && node_prod(tail) == p_path_end()) {
+        return args_segment(kid_token(segment, 0).text, list_items(fuel, segment));
+    }
+    if (node_prod(segment) == p_path_ident() && node_prod(tail) == p_path_more()) {
+        return cons_segment(kid_token(segment, 0).text, path_ref(minus(fuel, 1), kid(tail, 2), kid(tail, 3)));
+    }
+    return None;
+}
+
+// The spellings of a type path's segments.
+pub fn type_path_spellings(fuel: usize, segment: CTree, tail: CTree) -> core::option::Option<List<List<usize>>> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (node_prod(segment) == p_type_path_ident() && node_prod(tail) == p_type_path_end()) {
+        return Some(single(kid_token(segment, 0).text));
+    }
+    if (node_prod(segment) == p_type_path_ident() && node_prod(tail) == p_type_path_more()) {
+        return cons_name(Some(kid_token(segment, 0).text), type_path_spellings(minus(fuel, 1), kid(tail, 2), kid(tail, 3)));
+    }
+    return None;
+}
+
+// A path as its module (the segments before the last) and its last name.
+pub struct Split {
+    module: List<List<usize>>,
+    name: List<usize>,
+}
+
+pub fn split_more(n: List<usize>, rest: core::option::Option<Split>) -> core::option::Option<Split> {
+    return match (rest) {
+        None -> Some(Split { module: empty(), name: n }),
+        Some(s) -> Some(Split { module: cons(n, s.module), name: s.name }),
+    };
+}
+
+pub fn split_last(segments: List<List<usize>>) -> core::option::Option<Split> {
+    return match (segments) {
+        Nil -> None,
+        Cons(n, rest) -> split_more(n, split_last(unbox(rest))),
+    };
+}
+
+// A path with no module part names an item of the current module.
+pub fn module_or(current: List<List<usize>>, m: List<List<usize>>) -> List<List<usize>> {
+    return match (m) {
+        Nil -> current,
+        Cons(n, rest) -> m,
+    };
+}
+
+// ---------------------------------------------------------------- declarations
+
+// A type as build reads it: a primitive type, a raw view, or a declared
+// struct or enum (its index among all type declarations) at type arguments.
+pub enum Ty {
+    TyI32,
+    TyBool,
+    TyUint(UintTy),
+    TyPtr,
+    TySlice(Box<Ty>),
+    TyNamed(usize, Box<List<Ty>>),
+}
+
+// A declaration at type arguments: a type instance (the declaration is a
+// type's index) or a function instance (a function's index).
+pub struct Inst {
+    decl: usize,
+    args: List<Ty>,
+}
+
+// A struct or enum declaration: its module, spelling and type parameters,
+// a struct's field spellings and types as written, an enum's variant
+// spellings and payload types as written.
+pub struct TypeDecl {
+    module: List<List<usize>>,
+    name: List<usize>,
+    params: List<List<usize>>,
+    is_enum: bool,
+    fields: List<List<usize>>,
+    field_types: List<CTree>,
+    variants: List<List<usize>>,
+    payloads: List<List<CTree>>,
+}
+
+// A function or an impl method: its module, spelling, the impl's type
+// parameters and type as written (a method), its own type parameters, and
+// its fn_item or impl_fn_item node.
+pub struct FnDecl {
+    module: List<List<usize>>,
+    name: List<usize>,
+    in_impl: bool,
+    impl_params: List<List<usize>>,
+    self_type: CTree,
+    params: List<List<usize>>,
+    tree: CTree,
+}
+
+// `const name: ty = value;`
+pub struct ConstDecl {
+    module: List<List<usize>>,
+    name: List<usize>,
+    ty: CTree,
+    value: CTree,
+}
+
+// The declarations of all the files, in file order.
+pub struct Decls {
+    types: List<TypeDecl>,
+    fns: List<FnDecl>,
+    consts: List<ConstDecl>,
+}
+
+pub fn no_decls() -> Decls {
+    return Decls { types: empty(), fns: empty(), consts: empty() };
+}
+
+pub fn join_decls(a: Decls, b: core::option::Option<Decls>) -> core::option::Option<Decls> {
+    return match (b) {
+        None -> None,
+        Some(d) -> Some(Decls { types: concat(a.types, d.types), fns: concat(a.fns, d.fns), consts: concat(a.consts, d.consts) }),
+    };
+}
+
+// The item an item node holds, `pub` or not.
+pub fn item_body(item: CTree) -> CTree {
+    if (node_prod(item) == p_item_pub()) {
+        return kid(kid(item, 1), 0);
+    }
+    return kid(item, 0);
+}
+
+// The path of the file's `module` item; none is the empty path.
+pub fn module_path(fuel: usize, items: List<CTree>) -> core::option::Option<List<List<usize>>> {
     return match (items) {
         Nil -> Some(empty()),
-        Cons(t, rest) -> cons_name(type_name(t), type_names(unbox(rest))),
+        Cons(item, rest) -> module_at(fuel, item_body(item), unbox(rest)),
     };
 }
 
-pub fn variant_resolved(name: List<usize>, tys: core::option::Option<List<SrcType>>) -> core::option::Option<Variant> {
-    return match (tys) {
+// extract: inline
+fn module_at(mfuel: usize, mbody: CTree, mrest: List<CTree>) -> core::option::Option<List<List<usize>>> {
+    let mpath: CTree = kid(mbody, 1);
+    if (node_prod(mbody) == p_module()) {
+        return path_spellings(mfuel, kid(mpath, 0), kid(mpath, 1));
+    }
+    return module_path(mfuel, mrest);
+}
+
+// The spellings of type parameters (enum_type_param, bounds ignored).
+pub fn param_spellings(items: List<CTree>) -> core::option::Option<List<List<usize>>> {
+    return match (items) {
+        Nil -> Some(empty()),
+        Cons(p, rest) -> param_spelling_at(p, unbox(rest)),
+    };
+}
+
+// extract: inline
+fn param_spelling_at(pp: CTree, prest: List<CTree>) -> core::option::Option<List<List<usize>>> {
+    if (node_prod(pp) == p_enum_type_param()) {
+        return cons_name(Some(kid_token(pp, 0).text), param_spellings(prest));
+    }
+    return None;
+}
+
+// The type parameters of an enum_type_params_opt node.
+pub fn type_params(fuel: usize, t: CTree) -> core::option::Option<List<List<usize>>> {
+    return match (list_items(fuel, t)) {
         None -> None,
-        Some(ts) -> Some(Variant { name: name, payload: ts }),
+        Some(items) -> param_spellings(items),
     };
 }
 
-pub fn variant_typed(name: List<usize>, types: List<TypeEntry>, names: core::option::Option<List<List<usize>>>) -> core::option::Option<Variant> {
-    return match (names) {
+// A struct's fields: spellings and type expressions.
+pub struct Fields {
+    names: List<List<usize>>,
+    types: List<CTree>,
+}
+
+pub fn cons_field(f: CTree, rest: Fields) -> Fields {
+    return Fields { names: cons(kid_token(f, 0).text, rest.names), types: cons(kid(f, 2), rest.types) };
+}
+
+pub fn fields_of(items: List<CTree>) -> Fields {
+    return match (items) {
+        Nil -> Fields { names: empty(), types: empty() },
+        Cons(f, rest) -> cons_field(f, fields_of(unbox(rest))),
+    };
+}
+
+// An enum's variants: spellings and payload type expressions.
+pub struct Variants {
+    names: List<List<usize>>,
+    payloads: List<List<CTree>>,
+}
+
+pub fn cons_variant_tail(name: List<usize>, payload: List<CTree>, rest: core::option::Option<Variants>) -> core::option::Option<Variants> {
+    return match (rest) {
         None -> None,
-        Some(ns) -> variant_resolved(name, resolve_all(types, ns)),
+        Some(r) -> Some(Variants { names: cons(name, r.names), payloads: cons(payload, r.payloads) }),
     };
 }
 
-// One enum variant (enum_variant): its spelling and payload types.
-pub fn variant_decl(fuel: usize, types: List<TypeEntry>, v: CTree) -> core::option::Option<Variant> {
+pub fn cons_variant(name: List<usize>, payload: core::option::Option<List<CTree>>, rest: core::option::Option<Variants>) -> core::option::Option<Variants> {
+    return match (payload) {
+        None -> None,
+        Some(p) -> cons_variant_tail(name, p, rest),
+    };
+}
+
+// The payload type expressions of an enum_variant.
+pub fn variant_payload(fuel: usize, v: CTree) -> core::option::Option<List<CTree>> {
     let payload: CTree = kid(v, 1);
     if (node_prod(payload) == p_enum_variant_unit()) {
-        return Some(Variant { name: kid_token(v, 0).text, payload: empty() });
+        return Some(empty());
     }
-    return match (list_items(fuel, kid(payload, 1))) {
-        None -> None,
-        Some(items) -> variant_typed(kid_token(v, 0).text, types, type_names(items)),
-    };
+    return list_items(fuel, kid(payload, 1));
 }
 
-pub fn cons_variant_tail(v: Variant, tail: core::option::Option<List<Variant>>) -> core::option::Option<List<Variant>> {
-    return match (tail) {
-        None -> None,
-        Some(vs) -> Some(cons(v, vs)),
-    };
-}
-
-pub fn cons_variant(head: core::option::Option<Variant>, tail: core::option::Option<List<Variant>>) -> core::option::Option<List<Variant>> {
-    return match (head) {
-        None -> None,
-        Some(v) -> cons_variant_tail(v, tail),
-    };
-}
-
-pub fn variants_of(fuel: usize, types: List<TypeEntry>, items: List<CTree>) -> core::option::Option<List<Variant>> {
+pub fn variants_of(fuel: usize, items: List<CTree>) -> core::option::Option<Variants> {
     return match (items) {
-        Nil -> Some(empty()),
-        Cons(v, rest) -> cons_variant(variant_decl(fuel, types, v), variants_of(fuel, types, unbox(rest))),
+        Nil -> Some(Variants { names: empty(), payloads: empty() }),
+        Cons(v, rest) -> cons_variant(kid_token(v, 0).text, variant_payload(fuel, v), variants_of(fuel, unbox(rest))),
     };
 }
 
-pub fn payloads(variants: List<Variant>) -> List<List<SrcType>> {
-    return match (variants) {
-        Nil -> empty(),
-        Cons(v, rest) -> cons(v.payload, payloads(unbox(rest))),
-    };
+pub fn struct_decl_fields(module: List<List<usize>>, name: List<usize>, ps: List<List<usize>>, fs: Fields) -> core::option::Option<TypeDecl> {
+    if (distinct(fs.names)) {
+        return Some(TypeDecl { module: module, name: name, params: ps, is_enum: false, fields: fs.names, field_types: fs.types, variants: empty(), payloads: empty() });
+    }
+    return None;
 }
 
-pub fn enum_with_variants(index: usize, name: List<usize>, variants: core::option::Option<List<Variant>>) -> core::option::Option<TypeEntry> {
-    return match (variants) {
+pub fn struct_decl_of(module: List<List<usize>>, name: List<usize>, params: core::option::Option<List<List<usize>>>, items: core::option::Option<List<CTree>>) -> core::option::Option<TypeDecl> {
+    return match (params) {
         None -> None,
-        Some(vs) -> Some(TypeEntry { name: name, ty: Enum(index, boxed(payloads(vs))), fields: empty(), variants: vs }),
+        Some(ps) -> match (items) {
+            None -> None,
+            Some(fs) -> struct_decl_fields(module, name, ps, fields_of(fs)),
+        },
     };
 }
 
-// The entry of the enum declaration e (enum_item), the index-th type
-// declaration. Payload types are primitive or declared earlier.
-pub fn enum_entry(fuel: usize, types: List<TypeEntry>, index: usize, e: CTree) -> core::option::Option<TypeEntry> {
-    if (node_prod(e) == p_enum() && node_prod(kid(e, 2)) == p_enum_type_params_none() && node_prod(kid(e, 3)) == p_where_none()) {
-        return match (list_items(fuel, kid(e, 5))) {
+pub fn enum_decl_of(module: List<List<usize>>, name: List<usize>, params: core::option::Option<List<List<usize>>>, variants: core::option::Option<Variants>) -> core::option::Option<TypeDecl> {
+    return match (params) {
+        None -> None,
+        Some(ps) -> match (variants) {
             None -> None,
-            Some(items) -> enum_with_variants(index, kid_token(e, 1).text, variants_of(fuel, types, items)),
+            Some(vs) -> Some(TypeDecl { module: module, name: name, params: ps, is_enum: true, fields: empty(), field_types: empty(), variants: vs.names, payloads: vs.payloads }),
+        },
+    };
+}
+
+// A struct_item or enum_item: no where clause.
+pub fn type_decl(fuel: usize, module: List<List<usize>>, s: CTree) -> core::option::Option<TypeDecl> {
+    if (node_prod(s) == p_struct() && node_prod(kid(s, 3)) == p_where_none()) {
+        return struct_decl_of(module, kid_token(s, 1).text, type_params(fuel, kid(s, 2)), list_items(fuel, kid(s, 5)));
+    }
+    if (node_prod(s) == p_enum() && node_prod(kid(s, 3)) == p_where_none()) {
+        return match (list_items(fuel, kid(s, 5))) {
+            None -> None,
+            Some(items) -> enum_decl_of(module, kid_token(s, 1).text, type_params(fuel, kid(s, 2)), variants_of(fuel, items)),
         };
     }
     return None;
 }
 
-pub fn type_entry(fuel: usize, types: List<TypeEntry>, index: usize, d: CTree) -> core::option::Option<TypeEntry> {
-    if (node_prod(d) == p_item_struct()) {
-        return struct_entry(fuel, types, index, kid(d, 0));
-    }
-    return enum_entry(fuel, types, index, kid(d, 0));
+pub fn fn_decl_of(module: List<List<usize>>, f: CTree, in_impl: bool, impl_params: List<List<usize>>, self_type: CTree, params: core::option::Option<List<List<usize>>>) -> core::option::Option<FnDecl> {
+    return match (params) {
+        None -> None,
+        Some(ps) -> Some(FnDecl { module: module, name: kid_token(f, 1).text, in_impl: in_impl, impl_params: impl_params, self_type: self_type, params: ps, tree: f }),
+    };
 }
 
-// The type declarations, in order, each seeing the ones before it.
-pub fn type_entries(fuel: usize, types: List<TypeEntry>, decls: List<CTree>) -> core::option::Option<List<TypeEntry>> {
-    return match (decls) {
-        Nil -> Some(types),
-        Cons(d, rest) -> type_entries_next(fuel, types, type_entry(fuel, types, length(types), d), unbox(rest)),
+pub fn cons_fn_decl(f: core::option::Option<FnDecl>, rest: core::option::Option<List<FnDecl>>) -> core::option::Option<List<FnDecl>> {
+    return match (f) {
+        None -> None,
+        Some(d) -> match (rest) {
+            None -> None,
+            Some(ds) -> Some(cons(d, ds)),
+        },
+    };
+}
+
+pub fn method_decl(fuel: usize, module: List<List<usize>>, impl_params: List<List<usize>>, self_type: CTree, m: CTree) -> core::option::Option<FnDecl> {
+    let f: CTree = kid(m, 0);
+    let g: CTree = kid(m, 1);
+    if (node_prod(m) == p_impl_method() && node_prod(f) == p_impl_fn()) {
+        return fn_decl_of(module, f, true, impl_params, self_type, type_params(fuel, kid(f, 2)));
+    }
+    if (node_prod(m) == p_impl_method_pub() && node_prod(g) == p_impl_fn()) {
+        return fn_decl_of(module, g, true, impl_params, self_type, type_params(fuel, kid(g, 2)));
+    }
+    return None;
+}
+
+// The methods of an impl block: impl_method items holding impl_fn_items.
+pub fn methods_of(fuel: usize, module: List<List<usize>>, impl_params: List<List<usize>>, self_type: CTree, items: List<CTree>) -> core::option::Option<List<FnDecl>> {
+    return match (items) {
+        Nil -> Some(empty()),
+        Cons(m, rest) -> cons_fn_decl(method_decl(fuel, module, impl_params, self_type, m), methods_of(fuel, module, impl_params, self_type, unbox(rest))),
+    };
+}
+
+pub fn fns_decls(fns: core::option::Option<List<FnDecl>>) -> core::option::Option<Decls> {
+    return match (fns) {
+        None -> None,
+        Some(fs) -> Some(Decls { types: empty(), fns: fs, consts: empty() }),
+    };
+}
+
+pub fn impl_methods(fuel: usize, module: List<List<usize>>, params: core::option::Option<List<List<usize>>>, self_type: CTree, list: CTree) -> core::option::Option<Decls> {
+    return match (params) {
+        None -> None,
+        Some(ps) -> match (list_items(fuel, list)) {
+            None -> None,
+            Some(items) -> fns_decls(methods_of(fuel, module, ps, self_type, items)),
+        },
+    };
+}
+
+pub fn type_decls(t: core::option::Option<TypeDecl>) -> core::option::Option<Decls> {
+    return match (t) {
+        None -> None,
+        Some(d) -> Some(Decls { types: single(d), fns: empty(), consts: empty() }),
+    };
+}
+
+// The declarations an item makes. Imports, extern functions, traits and
+// type aliases make none; a use of one is rejected when it is read.
+pub fn item_decls(fuel: usize, module: List<List<usize>>, item: CTree) -> core::option::Option<Decls> {
+    let b: CTree = item_body(item);
+    let p: usize = node_prod(b);
+    if (p == p_struct() || p == p_enum()) {
+        return type_decls(type_decl(fuel, module, b));
+    }
+    if (p == p_fn()) {
+        return fns_decls(cons_fn_decl(fn_decl_of(module, b, false, empty(), b, type_params(fuel, kid(b, 2))), Some(empty())));
+    }
+    if (p == p_const()) {
+        return Some(Decls { types: empty(), fns: empty(), consts: single(ConstDecl { module: module, name: kid_token(b, 1).text, ty: kid(b, 3), value: kid(b, 5) }) });
+    }
+    if (p == p_impl_inherent() && node_prod(kid(b, 3)) == p_where_none()) {
+        return impl_methods(fuel, module, type_params(fuel, kid(b, 1)), kid(b, 2), kid(b, 5));
+    }
+    if (p == p_impl_trait() && node_prod(kid(b, 5)) == p_where_none()) {
+        return impl_methods(fuel, module, type_params(fuel, kid(b, 1)), kid(b, 4), kid(b, 7));
+    }
+    if (p == p_module() || p == p_import() || p == p_extern_fn() || p == p_trait() || p == p_type_alias()) {
+        return Some(no_decls());
+    }
+    return None;
+}
+
+pub fn collect(fuel: usize, module: List<List<usize>>, items: List<CTree>, acc: Decls) -> core::option::Option<Decls> {
+    return match (items) {
+        Nil -> Some(acc),
+        Cons(item, rest) -> collect_next(fuel, module, join_decls(acc, item_decls(fuel, module, item)), unbox(rest)),
     };
 }
 
 // extract: inline
-fn type_entries_next(fuel: usize, types: List<TypeEntry>, entry: core::option::Option<TypeEntry>, rest: List<CTree>) -> core::option::Option<List<TypeEntry>> {
-    return match (entry) {
+fn collect_next(cfuel: usize, cmodule: List<List<usize>>, cacc: core::option::Option<Decls>, crest: List<CTree>) -> core::option::Option<Decls> {
+    return match (cacc) {
         None -> None,
-        Some(e) -> type_entries(fuel, concat(types, single(e)), rest),
+        Some(d) -> collect(cfuel, cmodule, crest, d),
     };
 }
 
-// Everything a function body can name besides its locals.
-pub struct Env {
-    types: List<TypeEntry>,
-    fns: List<List<usize>>,
-    globals: List<List<usize>>,
+// One file's module path and declarations.
+pub struct FileDecls {
+    module: List<List<usize>>,
+    decls: Decls,
 }
 
-pub fn variant_names(variants: List<Variant>) -> List<List<usize>> {
-    return match (variants) {
-        Nil -> empty(),
-        Cons(v, rest) -> cons(v.name, variant_names(unbox(rest))),
+pub fn file_collected(module: List<List<usize>>, decls: core::option::Option<Decls>) -> core::option::Option<FileDecls> {
+    return match (decls) {
+        None -> None,
+        Some(d) -> Some(FileDecls { module: module, decls: d }),
     };
 }
 
-pub fn type_spellings(types: List<TypeEntry>) -> List<List<usize>> {
-    return match (types) {
-        Nil -> empty(),
-        Cons(t, rest) -> cons(t.name, concat(variant_names(t.variants), type_spellings(unbox(rest)))),
+pub fn file_items(fuel: usize, module: core::option::Option<List<List<usize>>>, items: List<CTree>) -> core::option::Option<FileDecls> {
+    return match (module) {
+        None -> None,
+        Some(m) -> file_collected(m, collect(fuel, m, items, no_decls())),
     };
 }
 
-pub fn fn_names(fns: List<CTree>) -> List<List<usize>> {
+pub fn file_decls(fuel: usize, root: CTree) -> core::option::Option<FileDecls> {
+    if (node_prod(root) == p_file()) {
+        return match (list_items(fuel, kid(root, 0))) {
+            None -> None,
+            Some(items) -> file_items(fuel, module_path(fuel, items), items),
+        };
+    }
+    return None;
+}
+
+// All files' declarations, and their module paths.
+pub struct Collected {
+    decls: Decls,
+    modules: List<List<List<usize>>>,
+}
+
+pub fn collected_with(c: Collected, f: FileDecls) -> Collected {
+    return Collected { decls: Decls { types: concat(c.decls.types, f.decls.types), fns: concat(c.decls.fns, f.decls.fns), consts: concat(c.decls.consts, f.decls.consts) }, modules: concat(c.modules, single(f.module)) };
+}
+
+pub fn collect_files(fuel: usize, roots: List<CTree>, acc: Collected) -> core::option::Option<Collected> {
+    return match (roots) {
+        Nil -> Some(acc),
+        Cons(root, rest) -> collect_file_next(fuel, acc, file_decls(fuel, root), unbox(rest)),
+    };
+}
+
+// extract: inline
+fn collect_file_next(ffuel: usize, facc: Collected, ffile: core::option::Option<FileDecls>, frest: List<CTree>) -> core::option::Option<Collected> {
+    return match (ffile) {
+        None -> None,
+        Some(f) -> collect_files(ffuel, frest, collected_with(facc, f)),
+    };
+}
+
+// The spellings a module gives its items: free functions, types, variants
+// and constants. A local cannot be spelled like one, so a use has one
+// reading.
+pub fn fn_names_in(fns: List<FnDecl>, m: List<List<usize>>) -> List<List<usize>> {
     return match (fns) {
         Nil -> empty(),
-        Cons(f, rest) -> cons(kid_token(f, 1).text, fn_names(unbox(rest))),
+        Cons(f, rest) -> fn_name_at(f, unbox(rest), m),
     };
+}
+
+// extract: inline
+fn fn_name_at(nf: FnDecl, nrest: List<FnDecl>, nm: List<List<usize>>) -> List<List<usize>> {
+    if (!nf.in_impl && same_spellings(nf.module, nm)) {
+        return cons(nf.name, fn_names_in(nrest, nm));
+    }
+    return fn_names_in(nrest, nm);
+}
+
+pub fn type_names_in(types: List<TypeDecl>, m: List<List<usize>>) -> List<List<usize>> {
+    return match (types) {
+        Nil -> empty(),
+        Cons(t, rest) -> type_name_at(t, unbox(rest), m),
+    };
+}
+
+// extract: inline
+fn type_name_at(tt: TypeDecl, trest: List<TypeDecl>, tm: List<List<usize>>) -> List<List<usize>> {
+    if (same_spellings(tt.module, tm)) {
+        return cons(tt.name, concat(tt.variants, type_names_in(trest, tm)));
+    }
+    return type_names_in(trest, tm);
+}
+
+pub fn const_names_in(consts: List<ConstDecl>, m: List<List<usize>>) -> List<List<usize>> {
+    return match (consts) {
+        Nil -> empty(),
+        Cons(c, rest) -> const_name_at(c, unbox(rest), m),
+    };
+}
+
+// extract: inline
+fn const_name_at(kc: ConstDecl, krest: List<ConstDecl>, km: List<List<usize>>) -> List<List<usize>> {
+    if (same_spellings(kc.module, km)) {
+        return cons(kc.name, const_names_in(krest, km));
+    }
+    return const_names_in(krest, km);
+}
+
+pub fn module_globals(decls: Decls, m: List<List<usize>>) -> List<List<usize>> {
+    return concat(fn_names_in(decls.fns, m), concat(type_names_in(decls.types, m), const_names_in(decls.consts, m)));
 }
 
 pub fn is_none_type(t: core::option::Option<SrcType>) -> bool {
@@ -891,54 +1285,701 @@ pub fn is_none_type(t: core::option::Option<SrcType>) -> bool {
 }
 
 // No declared type is spelled like a primitive type.
-pub fn no_primitive(types: List<TypeEntry>) -> bool {
+pub fn no_primitive(types: List<TypeDecl>) -> bool {
     return match (types) {
         Nil -> true,
         Cons(t, rest) -> is_none_type(primitive(t.name)) && no_primitive(unbox(rest)),
     };
 }
 
-pub fn cons_func_tail(f: SrcFunc, tail: core::option::Option<List<SrcFunc>>) -> core::option::Option<List<SrcFunc>> {
+pub fn modules_distinct_names(decls: Decls, modules: List<List<List<usize>>>) -> bool {
+    return match (modules) {
+        Nil -> true,
+        Cons(m, rest) -> distinct(module_globals(decls, m)) && modules_distinct_names(decls, unbox(rest)),
+    };
+}
+
+// The files are distinct modules, and each module's names are distinct.
+pub fn well_named(c: Collected) -> bool {
+    return distinct_modules(c.modules) && modules_distinct_names(c.decls, c.modules) && no_primitive(c.decls.types);
+}
+
+pub fn no_names(names: List<List<usize>>) -> bool {
+    return match (names) {
+        Nil -> true,
+        Cons(n, rest) -> false,
+    };
+}
+
+// The functions without type parameters, counting from k: the first file's
+// are the program's roots.
+pub fn root_insts(fns: List<FnDecl>, k: usize) -> List<Inst> {
+    return match (fns) {
+        Nil -> empty(),
+        Cons(f, rest) -> root_at(f, unbox(rest), k),
+    };
+}
+
+// extract: inline
+fn root_at(rf: FnDecl, rrest: List<FnDecl>, rk: usize) -> List<Inst> {
+    if (no_names(rf.impl_params) && no_names(rf.params)) {
+        return cons(Inst { decl: rk, args: empty() }, root_insts(rrest, plus(rk, 1)));
+    }
+    return root_insts(rrest, plus(rk, 1));
+}
+
+// The types without type parameters, counting from k: the first file's
+// take the first type ids, in declaration order.
+pub fn seed_insts(types: List<TypeDecl>, k: usize) -> List<Inst> {
+    return match (types) {
+        Nil -> empty(),
+        Cons(t, rest) -> seed_at(t, unbox(rest), k),
+    };
+}
+
+// extract: inline
+fn seed_at(st: TypeDecl, srest: List<TypeDecl>, sk: usize) -> List<Inst> {
+    if (no_names(st.params)) {
+        return cons(Inst { decl: sk, args: empty() }, seed_insts(srest, plus(sk, 1)));
+    }
+    return seed_insts(srest, plus(sk, 1));
+}
+
+// ---------------------------------------------------------------- lookups
+
+pub fn find_type(types: List<TypeDecl>, m: List<List<usize>>, name: List<usize>, k: usize) -> core::option::Option<usize> {
+    return match (types) {
+        Nil -> None,
+        Cons(t, rest) -> find_type_at(t, unbox(rest), m, name, k),
+    };
+}
+
+// extract: inline
+fn find_type_at(ft: TypeDecl, frest: List<TypeDecl>, fm: List<List<usize>>, fname: List<usize>, fk: usize) -> core::option::Option<usize> {
+    if (same_spellings(ft.module, fm) && same_text(ft.name, fname)) {
+        return Some(fk);
+    }
+    return find_type(frest, fm, fname, plus(fk, 1));
+}
+
+// A free function (not a method).
+pub fn find_fn(fns: List<FnDecl>, m: List<List<usize>>, name: List<usize>, k: usize) -> core::option::Option<usize> {
+    return match (fns) {
+        Nil -> None,
+        Cons(f, rest) -> find_fn_at(f, unbox(rest), m, name, k),
+    };
+}
+
+// extract: inline
+fn find_fn_at(gf: FnDecl, grest: List<FnDecl>, gm: List<List<usize>>, gname: List<usize>, gk: usize) -> core::option::Option<usize> {
+    if (!gf.in_impl && same_spellings(gf.module, gm) && same_text(gf.name, gname)) {
+        return Some(gk);
+    }
+    return find_fn(grest, gm, gname, plus(gk, 1));
+}
+
+pub fn find_const(consts: List<ConstDecl>, m: List<List<usize>>, name: List<usize>) -> core::option::Option<ConstDecl> {
+    return match (consts) {
+        Nil -> None,
+        Cons(c, rest) -> find_const_at(c, unbox(rest), m, name),
+    };
+}
+
+// extract: inline
+fn find_const_at(hc: ConstDecl, hrest: List<ConstDecl>, hm: List<List<usize>>, hname: List<usize>) -> core::option::Option<ConstDecl> {
+    if (same_spellings(hc.module, hm) && same_text(hc.name, hname)) {
+        return Some(hc);
+    }
+    return find_const(hrest, hm, hname);
+}
+
+// The variant spelled name: its enum's declaration and its index there.
+pub struct VariantAt {
+    owner: usize,
+    index: usize,
+}
+
+pub fn find_variant(types: List<TypeDecl>, m: List<List<usize>>, name: List<usize>, k: usize) -> core::option::Option<VariantAt> {
+    return match (types) {
+        Nil -> None,
+        Cons(t, rest) -> find_variant_at(t, unbox(rest), m, name, k),
+    };
+}
+
+// extract: inline
+fn find_variant_at(vt: TypeDecl, vrest: List<TypeDecl>, vm: List<List<usize>>, vname: List<usize>, vk: usize) -> core::option::Option<VariantAt> {
+    if (vt.is_enum && same_spellings(vt.module, vm)) {
+        return match (position(vt.variants, vname, 0)) {
+            None -> find_variant(vrest, vm, vname, plus(vk, 1)),
+            Some(j) -> Some(VariantAt { owner: vk, index: j }),
+        };
+    }
+    return find_variant(vrest, vm, vname, plus(vk, 1));
+}
+
+// ---------------------------------------------------------------- types
+
+pub fn uint_code(u: UintTy) -> usize {
+    return match (u) {
+        Uint8 -> 0,
+        Uint32 -> 1,
+        Uint64 -> 2,
+        Usize -> 3,
+    };
+}
+
+// extract: mutual begin
+pub fn same_ty(a: Ty, b: Ty) -> bool {
+    return match (a) {
+        TyI32 -> match (b) {
+            TyI32 -> true,
+            TyBool -> false,
+            TyUint(v) -> false,
+            TyPtr -> false,
+            TySlice(f) -> false,
+            TyNamed(e, bs) -> false,
+        },
+        TyBool -> match (b) {
+            TyI32 -> false,
+            TyBool -> true,
+            TyUint(v) -> false,
+            TyPtr -> false,
+            TySlice(f) -> false,
+            TyNamed(e, bs) -> false,
+        },
+        TyUint(u) -> match (b) {
+            TyI32 -> false,
+            TyBool -> false,
+            TyUint(v) -> uint_code(u) == uint_code(v),
+            TyPtr -> false,
+            TySlice(f) -> false,
+            TyNamed(e, bs) -> false,
+        },
+        TyPtr -> match (b) {
+            TyI32 -> false,
+            TyBool -> false,
+            TyUint(v) -> false,
+            TyPtr -> true,
+            TySlice(f) -> false,
+            TyNamed(e, bs) -> false,
+        },
+        TySlice(x) -> match (b) {
+            TyI32 -> false,
+            TyBool -> false,
+            TyUint(v) -> false,
+            TyPtr -> false,
+            TySlice(f) -> same_ty(unbox(x), unbox(f)),
+            TyNamed(e, bs) -> false,
+        },
+        TyNamed(d, args) -> match (b) {
+            TyI32 -> false,
+            TyBool -> false,
+            TyUint(v) -> false,
+            TyPtr -> false,
+            TySlice(f) -> false,
+            TyNamed(e, bs) -> (d == e) && same_tys(unbox(args), unbox(bs)),
+        },
+    };
+}
+
+pub fn same_tys(a: List<Ty>, b: List<Ty>) -> bool {
+    return match (a) {
+        Nil -> match (b) {
+            Nil -> true,
+            Cons(y, more) -> false,
+        },
+        Cons(x, rest) -> match (b) {
+            Nil -> false,
+            Cons(y, more) -> same_ty(x, y) && same_tys(unbox(rest), unbox(more)),
+        },
+    };
+}
+// extract: mutual end
+
+pub fn same_inst(a: Inst, b: Inst) -> bool {
+    return (a.decl == b.decl) && same_tys(a.args, b.args);
+}
+
+pub fn inst_member(table: List<Inst>, x: Inst) -> bool {
+    return match (table) {
+        Nil -> false,
+        Cons(y, rest) -> same_inst(y, x) || inst_member(unbox(rest), x),
+    };
+}
+
+// The position of an instance in a table, counting from k.
+pub fn inst_index(table: List<Inst>, x: Inst, k: usize) -> core::option::Option<usize> {
+    return match (table) {
+        Nil -> None,
+        Cons(y, rest) -> inst_index_at(y, unbox(rest), x, k),
+    };
+}
+
+// extract: inline
+fn inst_index_at(iy: Inst, irest: List<Inst>, ix: Inst, ik: usize) -> core::option::Option<usize> {
+    if (same_inst(iy, ix)) {
+        return Some(ik);
+    }
+    return inst_index(irest, ix, plus(ik, 1));
+}
+
+pub fn add_inst(table: List<Inst>, x: Inst) -> List<Inst> {
+    if (inst_member(table, x)) {
+        return table;
+    }
+    return concat(table, single(x));
+}
+
+// The table with the new instances appended in order, each once.
+pub fn add_insts(table: List<Inst>, new: List<Inst>) -> List<Inst> {
+    return match (new) {
+        Nil -> table,
+        Cons(x, rest) -> add_insts(add_inst(table, x), unbox(rest)),
+    };
+}
+
+// Where a type expression is read: the declarations, the module, and the
+// type parameters in scope with their types; and the spellings a local may
+// not take.
+pub struct Env {
+    decls: Decls,
+    module: List<List<usize>>,
+    names: List<List<usize>>,
+    subst: List<Ty>,
+    globals: List<List<usize>>,
+}
+
+pub fn decl_env(decls: Decls, module: List<List<usize>>, names: List<List<usize>>, subst: List<Ty>) -> Env {
+    return Env { decls: decls, module: module, names: names, subst: subst, globals: empty() };
+}
+
+// The primitive types as Ty, and back.
+pub fn src_ty(t: SrcType) -> core::option::Option<Ty> {
+    return match (t) {
+        I32 -> Some(TyI32),
+        Bool -> Some(TyBool),
+        Uint(k) -> Some(TyUint(k)),
+        Struct(id, fields) -> None,
+        Enum(id, variants) -> None,
+        Ptr -> Some(TyPtr),
+        Slice(e) -> None,
+    };
+}
+
+pub fn scalar_src(t: Ty) -> core::option::Option<SrcType> {
+    return match (t) {
+        TyI32 -> Some(I32),
+        TyBool -> Some(Bool),
+        TyUint(k) -> Some(Uint(k)),
+        TyPtr -> Some(Ptr),
+        TySlice(e) -> None,
+        TyNamed(d, args) -> None,
+    };
+}
+
+pub fn prim_ty(name: List<usize>) -> core::option::Option<Ty> {
+    return match (primitive(name)) {
+        None -> None,
+        Some(t) -> src_ty(t),
+    };
+}
+
+// The type a type parameter spelled name stands for.
+pub fn param_ty(env: Env, name: List<usize>) -> core::option::Option<Ty> {
+    return match (position(env.names, name, 0)) {
+        None -> None,
+        Some(i) -> get(env.subst, i),
+    };
+}
+
+// The declaration a type path names: a path with no module part names a
+// type of the current module.
+pub fn type_decl_at(env: Env, segments: List<List<usize>>) -> core::option::Option<usize> {
+    return match (split_last(segments)) {
+        None -> None,
+        Some(s) -> find_type(env.decls.types, module_or(env.module, s.module), s.name, 0),
+    };
+}
+
+pub fn arity_ok(env: Env, d: usize, args: List<Ty>) -> bool {
+    return match (get(env.decls.types, d)) {
+        None -> false,
+        Some(t) -> length(t.params) == length(args),
+    };
+}
+
+pub fn named_checked(ok: bool, d: usize, ts: List<Ty>) -> core::option::Option<Ty> {
+    if (ok) {
+        return Some(TyNamed(d, boxed(ts)));
+    }
+    return None;
+}
+
+pub fn named_args(env: Env, d: usize, args: core::option::Option<List<Ty>>) -> core::option::Option<Ty> {
+    return match (args) {
+        None -> None,
+        Some(ts) -> named_checked(arity_ok(env, d, ts), d, ts),
+    };
+}
+
+pub fn named_of(env: Env, d: core::option::Option<usize>, args: core::option::Option<List<Ty>>) -> core::option::Option<Ty> {
+    return match (d) {
+        None -> None,
+        Some(x) -> named_args(env, x, args),
+    };
+}
+
+pub fn prim_or_named(env: Env, segments: List<List<usize>>, n: List<usize>) -> core::option::Option<Ty> {
+    return match (prim_ty(n)) {
+        Some(t) -> Some(t),
+        None -> named_of(env, type_decl_at(env, segments), Some(empty())),
+    };
+}
+
+// A type without arguments: a type parameter, a primitive type or a
+// declared type.
+pub fn bare_ty(env: Env, segments: List<List<usize>>) -> core::option::Option<Ty> {
+    return match (single_name(segments)) {
+        None -> named_of(env, type_decl_at(env, segments), Some(empty())),
+        Some(n) -> match (param_ty(env, n)) {
+            Some(t) -> Some(t),
+            None -> prim_or_named(env, segments, n),
+        },
+    };
+}
+
+pub fn bare_of(env: Env, segments: core::option::Option<List<List<usize>>>) -> core::option::Option<Ty> {
+    return match (segments) {
+        None -> None,
+        Some(ss) -> bare_ty(env, ss),
+    };
+}
+
+pub fn slice_ty(element: core::option::Option<Ty>) -> core::option::Option<Ty> {
+    return match (element) {
+        None -> None,
+        Some(e) -> Some(TySlice(boxed(e))),
+    };
+}
+
+pub fn cons_ty_tail(t: Ty, tail: core::option::Option<List<Ty>>) -> core::option::Option<List<Ty>> {
     return match (tail) {
         None -> None,
-        Some(fs) -> Some(cons(f, fs)),
+        Some(ts) -> Some(cons(t, ts)),
     };
 }
 
-pub fn cons_func(head: core::option::Option<SrcFunc>, tail: core::option::Option<List<SrcFunc>>) -> core::option::Option<List<SrcFunc>> {
+pub fn cons_ty(head: core::option::Option<Ty>, tail: core::option::Option<List<Ty>>) -> core::option::Option<List<Ty>> {
     return match (head) {
         None -> None,
-        Some(f) -> cons_func_tail(f, tail),
+        Some(t) -> cons_ty_tail(t, tail),
     };
 }
 
-// A local in scope: its spelling, its id and its type.
-pub struct Local {
-    name: List<usize>,
-    id: usize,
-    ty: SrcType,
+// extract: mutual begin
+// The type a type expression names: `[T]`, a type parameter, a primitive
+// type, or a declared type with its arguments.
+pub fn ty_of(fuel: usize, env: Env, t: CTree) -> core::option::Option<Ty> {
+    if (fuel == 0) {
+        return None;
+    }
+    let f: usize = minus(fuel, 1);
+    let path: CTree = kid(t, 0);
+    if (node_prod(t) == p_type_array() && node_prod(kid(t, 2)) == p_type_slice_tail()) {
+        return slice_ty(ty_of(f, env, kid(t, 1)));
+    }
+    if (node_prod(t) == p_type_ident() && node_prod(kid(t, 1)) == p_type_args_none()) {
+        return bare_of(env, type_path_spellings(f, kid(path, 0), kid(path, 1)));
+    }
+    if (node_prod(t) == p_type_ident() && node_prod(kid(t, 1)) == p_type_args_some()) {
+        return applied_of(f, env, type_path_spellings(f, kid(path, 0), kid(path, 1)), list_items(f, kid(t, 1)));
+    }
+    return None;
 }
 
-// Parameters, and the scope they make (the last one innermost).
-pub struct Params {
-    params: List<SrcParam>,
-    scope: List<Local>,
-}
-
-pub fn func_body(ps: Params, r: SrcType, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcFunc> {
-    return match (body) {
+pub fn applied_of(fuel: usize, env: Env, segments: core::option::Option<List<List<usize>>>, items: core::option::Option<List<CTree>>) -> core::option::Option<Ty> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (segments) {
         None -> None,
-        Some(b) -> Some(SrcFunc { params: ps.params, ret: r, body: b }),
+        Some(ss) -> match (items) {
+            None -> None,
+            Some(gs) -> named_of(env, type_decl_at(env, ss), args_tys(minus(fuel, 1), env, gs)),
+        },
     };
 }
 
-// The type a type expression names.
-pub fn type_of(env: Env, t: CTree) -> core::option::Option<SrcType> {
-    return match (type_name(t)) {
-        None -> None,
-        Some(name) -> resolve(env.types, name),
+// The types of generic arguments (generic_argument_type).
+pub fn args_tys(fuel: usize, env: Env, items: List<CTree>) -> core::option::Option<List<Ty>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (items) {
+        Nil -> Some(empty()),
+        Cons(g, rest) -> cons_ty(arg_ty(minus(fuel, 1), env, g), args_tys(minus(fuel, 1), env, unbox(rest))),
     };
 }
+
+pub fn arg_ty(fuel: usize, env: Env, g: CTree) -> core::option::Option<Ty> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (node_prod(g) == p_generic_argument_type()) {
+        return ty_of(minus(fuel, 1), env, kid(g, 0));
+    }
+    return None;
+}
+
+// The types of a list of type expressions.
+pub fn ty_list(fuel: usize, env: Env, ts: List<CTree>) -> core::option::Option<List<Ty>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (ts) {
+        Nil -> Some(empty()),
+        Cons(t, rest) -> cons_ty(ty_of(minus(fuel, 1), env, t), ty_list(minus(fuel, 1), env, unbox(rest))),
+    };
+}
+// extract: mutual end
+
+pub fn cons_tys_tail(t: List<Ty>, tail: core::option::Option<List<List<Ty>>>) -> core::option::Option<List<List<Ty>>> {
+    return match (tail) {
+        None -> None,
+        Some(ts) -> Some(cons(t, ts)),
+    };
+}
+
+pub fn cons_tys(head: core::option::Option<List<Ty>>, tail: core::option::Option<List<List<Ty>>>) -> core::option::Option<List<List<Ty>>> {
+    return match (head) {
+        None -> None,
+        Some(t) -> cons_tys_tail(t, tail),
+    };
+}
+
+pub fn payload_list(fuel: usize, env: Env, ps: List<List<CTree>>) -> core::option::Option<List<List<Ty>>> {
+    return match (ps) {
+        Nil -> Some(empty()),
+        Cons(p, rest) -> cons_tys(ty_list(fuel, env, p), payload_list(fuel, env, unbox(rest))),
+    };
+}
+
+// A struct's field types at type arguments.
+pub fn field_tys(fuel: usize, decls: Decls, d: usize, args: List<Ty>) -> core::option::Option<List<Ty>> {
+    return match (get(decls.types, d)) {
+        None -> None,
+        Some(t) -> ty_list(fuel, decl_env(decls, t.module, t.params, args), t.field_types),
+    };
+}
+
+// An enum's payload types at type arguments.
+pub fn payload_tys(fuel: usize, decls: Decls, d: usize, args: List<Ty>) -> core::option::Option<List<List<Ty>>> {
+    return match (get(decls.types, d)) {
+        None -> None,
+        Some(t) -> payload_list(fuel, decl_env(decls, t.module, t.params, args), t.payloads),
+    };
+}
+
+pub fn flatten_tys(vs: List<List<Ty>>) -> List<Ty> {
+    return match (vs) {
+        Nil -> empty(),
+        Cons(v, rest) -> concat(v, flatten_tys(unbox(rest))),
+    };
+}
+
+pub fn flat_payloads(vs: core::option::Option<List<List<Ty>>>) -> core::option::Option<List<Ty>> {
+    return match (vs) {
+        None -> None,
+        Some(xs) -> Some(flatten_tys(xs)),
+    };
+}
+
+pub fn cons_type_tail(t: SrcType, tail: core::option::Option<List<SrcType>>) -> core::option::Option<List<SrcType>> {
+    return match (tail) {
+        None -> None,
+        Some(ts) -> Some(cons(t, ts)),
+    };
+}
+
+pub fn cons_type(head: core::option::Option<SrcType>, tail: core::option::Option<List<SrcType>>) -> core::option::Option<List<SrcType>> {
+    return match (head) {
+        None -> None,
+        Some(t) -> cons_type_tail(t, tail),
+    };
+}
+
+pub fn cons_types_tail(t: List<SrcType>, tail: core::option::Option<List<List<SrcType>>>) -> core::option::Option<List<List<SrcType>>> {
+    return match (tail) {
+        None -> None,
+        Some(ts) -> Some(cons(t, ts)),
+    };
+}
+
+pub fn cons_types(head: core::option::Option<List<SrcType>>, tail: core::option::Option<List<List<SrcType>>>) -> core::option::Option<List<List<SrcType>>> {
+    return match (head) {
+        None -> None,
+        Some(t) -> cons_types_tail(t, tail),
+    };
+}
+
+pub fn slice_type(element: core::option::Option<SrcType>) -> core::option::Option<SrcType> {
+    return match (element) {
+        None -> None,
+        Some(e) -> Some(Slice(boxed(e))),
+    };
+}
+
+pub fn struct_src(id: core::option::Option<usize>, fields: core::option::Option<List<SrcType>>) -> core::option::Option<SrcType> {
+    return match (id) {
+        None -> None,
+        Some(k) -> match (fields) {
+            None -> None,
+            Some(fs) -> Some(Struct(k, boxed(fs))),
+        },
+    };
+}
+
+pub fn enum_src(id: core::option::Option<usize>, variants: core::option::Option<List<List<SrcType>>>) -> core::option::Option<SrcType> {
+    return match (id) {
+        None -> None,
+        Some(k) -> match (variants) {
+            None -> None,
+            Some(vs) -> Some(Enum(k, boxed(vs))),
+        },
+    };
+}
+
+// extract: mutual begin
+// The source type of a type: a declared type at arguments is the struct or
+// enum whose id is the instance's position in the type table.
+pub fn lower_ty(fuel: usize, decls: Decls, table: List<Inst>, t: Ty) -> core::option::Option<SrcType> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (t) {
+        TyI32 -> Some(I32),
+        TyBool -> Some(Bool),
+        TyUint(k) -> Some(Uint(k)),
+        TyPtr -> Some(Ptr),
+        TySlice(e) -> slice_type(lower_ty(minus(fuel, 1), decls, table, unbox(e))),
+        TyNamed(d, args) -> lower_named(minus(fuel, 1), decls, table, d, unbox(args)),
+    };
+}
+
+pub fn lower_named(fuel: usize, decls: Decls, table: List<Inst>, d: usize, args: List<Ty>) -> core::option::Option<SrcType> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (get(decls.types, d)) {
+        None -> None,
+        Some(t) -> lower_decl(minus(fuel, 1), decls, table, t.is_enum, inst_index(table, Inst { decl: d, args: args }, 0), d, args),
+    };
+}
+
+pub fn lower_decl(fuel: usize, decls: Decls, table: List<Inst>, is_enum: bool, id: core::option::Option<usize>, d: usize, args: List<Ty>) -> core::option::Option<SrcType> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (is_enum) {
+        return enum_src(id, lower_variants(minus(fuel, 1), decls, table, payload_tys(fuel, decls, d, args)));
+    }
+    return struct_src(id, lower_tys(minus(fuel, 1), decls, table, field_tys(fuel, decls, d, args)));
+}
+
+pub fn lower_tys(fuel: usize, decls: Decls, table: List<Inst>, ts: core::option::Option<List<Ty>>) -> core::option::Option<List<SrcType>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (ts) {
+        None -> None,
+        Some(xs) -> match (xs) {
+            Nil -> Some(empty()),
+            Cons(t, rest) -> cons_type(lower_ty(minus(fuel, 1), decls, table, t), lower_tys(minus(fuel, 1), decls, table, Some(unbox(rest)))),
+        },
+    };
+}
+
+pub fn lower_variants(fuel: usize, decls: Decls, table: List<Inst>, vs: core::option::Option<List<List<Ty>>>) -> core::option::Option<List<List<SrcType>>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (vs) {
+        None -> None,
+        Some(xs) -> match (xs) {
+            Nil -> Some(empty()),
+            Cons(v, rest) -> cons_types(lower_tys(minus(fuel, 1), decls, table, Some(v)), lower_variants(minus(fuel, 1), decls, table, Some(unbox(rest)))),
+        },
+    };
+}
+// extract: mutual end
+
+pub fn join_insts(a: core::option::Option<List<Inst>>, b: core::option::Option<List<Inst>>) -> core::option::Option<List<Inst>> {
+    return match (a) {
+        None -> None,
+        Some(xs) -> match (b) {
+            None -> None,
+            Some(ys) -> Some(concat(xs, ys)),
+        },
+    };
+}
+
+pub fn cons_inst(x: Inst, rest: core::option::Option<List<Inst>>) -> core::option::Option<List<Inst>> {
+    return match (rest) {
+        None -> None,
+        Some(xs) -> Some(cons(x, xs)),
+    };
+}
+
+// extract: mutual begin
+// The type instances a type's source type has ids for: the type itself,
+// then those of its field or payload types, in order.
+pub fn ty_insts(fuel: usize, decls: Decls, t: Ty) -> core::option::Option<List<Inst>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (t) {
+        TyI32 -> Some(empty()),
+        TyBool -> Some(empty()),
+        TyUint(k) -> Some(empty()),
+        TyPtr -> Some(empty()),
+        TySlice(e) -> ty_insts(minus(fuel, 1), decls, unbox(e)),
+        TyNamed(d, args) -> cons_inst(Inst { decl: d, args: unbox(args) }, named_insts(minus(fuel, 1), decls, d, unbox(args))),
+    };
+}
+
+pub fn named_insts(fuel: usize, decls: Decls, d: usize, args: List<Ty>) -> core::option::Option<List<Inst>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (get(decls.types, d)) {
+        None -> None,
+        Some(t) -> decl_insts(minus(fuel, 1), decls, t.is_enum, d, args),
+    };
+}
+
+pub fn decl_insts(fuel: usize, decls: Decls, is_enum: bool, d: usize, args: List<Ty>) -> core::option::Option<List<Inst>> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (is_enum) {
+        return tys_insts(minus(fuel, 1), decls, flat_payloads(payload_tys(fuel, decls, d, args)));
+    }
+    return tys_insts(minus(fuel, 1), decls, field_tys(fuel, decls, d, args));
+}
+
+pub fn tys_insts(fuel: usize, decls: Decls, ts: core::option::Option<List<Ty>>) -> core::option::Option<List<Inst>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (ts) {
+        None -> None,
+        Some(xs) -> match (xs) {
+            Nil -> Some(empty()),
+            Cons(t, rest) -> join_insts(ty_insts(minus(fuel, 1), decls, t), tys_insts(minus(fuel, 1), decls, Some(unbox(rest)))),
+        },
+    };
+}
+// extract: mutual end
 
 // ---------------------------------------------------------------- expressions
 
@@ -1043,12 +2084,11 @@ pub fn int_literal(text: List<usize>) -> core::option::Option<SrcExpr> {
     };
 }
 
-// The spelling of a path with one segment (path -> path_ident path_end).
-pub fn path_name(path: CTree) -> core::option::Option<List<usize>> {
-    if (node_prod(path) == p_path() && node_prod(kid(path, 0)) == p_path_ident() && node_prod(kid(path, 1)) == p_path_end()) {
-        return Some(kid_token(kid(path, 0), 0).text);
-    }
-    return None;
+// A local in scope: its spelling, its id and its type.
+pub struct Local {
+    name: List<usize>,
+    id: usize,
+    ty: Ty,
 }
 
 // The innermost local spelled name.
@@ -1067,13 +2107,32 @@ fn find_local_at(fl: Local, frest: List<Local>, fname: List<usize>) -> core::opt
     return find_local(frest, fname);
 }
 
-// A primary `name` (ident -> path ident_plain): a local.
+// The innermost local with this id.
+pub fn find_local_id(scope: List<Local>, id: usize) -> core::option::Option<Local> {
+    return match (scope) {
+        Nil -> None,
+        Cons(l, rest) -> find_local_id_at(l, unbox(rest), id),
+    };
+}
+
+// extract: inline
+fn find_local_id_at(il: Local, irest: List<Local>, iid: usize) -> core::option::Option<Local> {
+    if (il.id == iid) {
+        return Some(il);
+    }
+    return find_local_id(irest, iid);
+}
+
+// A primary `name` (ident -> path ident_plain) or `self`: a local.
 pub fn local_of(env: Env, scope: List<Local>, c: CTree) -> core::option::Option<Local> {
     if (node_prod(c) == p_ident() && node_prod(kid(c, 1)) == p_ident_plain()) {
         return match (path_name(kid(c, 0))) {
             None -> None,
             Some(name) -> find_local(scope, name),
         };
+    }
+    if (node_prod(c) == p_self_value()) {
+        return find_local(scope, text_self());
     }
     return None;
 }
@@ -1085,35 +2144,7 @@ pub fn local_expr(l: core::option::Option<Local>) -> core::option::Option<SrcExp
     };
 }
 
-pub fn struct_id(t: SrcType) -> core::option::Option<usize> {
-    return match (t) {
-        I32 -> None,
-        Bool -> None,
-        Uint(k) -> None,
-        Struct(id, fields) -> Some(id),
-        Enum(id, variants) -> None,
-        Ptr -> None,
-        Slice(e) -> None,
-    };
-}
-
-// The position of name in names, counting from k.
-pub fn position(names: List<List<usize>>, name: List<usize>, k: usize) -> core::option::Option<usize> {
-    return match (names) {
-        Nil -> None,
-        Cons(n, rest) -> position_at(n, unbox(rest), name, k),
-    };
-}
-
-// extract: inline
-fn position_at(pn: List<usize>, prest: List<List<usize>>, pname: List<usize>, pk: usize) -> core::option::Option<usize> {
-    if (same_text(pn, pname)) {
-        return Some(pk);
-    }
-    return position(prest, pname, plus(pk, 1));
-}
-
-pub fn field_in(entry: core::option::Option<TypeEntry>, name: List<usize>) -> core::option::Option<usize> {
+pub fn field_in(entry: core::option::Option<TypeDecl>, name: List<usize>) -> core::option::Option<usize> {
     return match (entry) {
         None -> None,
         Some(e) -> position(e.fields, name, 0),
@@ -1121,10 +2152,14 @@ pub fn field_in(entry: core::option::Option<TypeEntry>, name: List<usize>) -> co
 }
 
 // The field index of member in the struct type t.
-pub fn field_index(env: Env, t: SrcType, name: List<usize>) -> core::option::Option<usize> {
-    return match (struct_id(t)) {
-        None -> None,
-        Some(id) -> field_in(get(env.types, id), name),
+pub fn field_index(env: Env, t: Ty, name: List<usize>) -> core::option::Option<usize> {
+    return match (t) {
+        TyI32 -> None,
+        TyBool -> None,
+        TyUint(k) -> None,
+        TyPtr -> None,
+        TySlice(e) -> None,
+        TyNamed(d, args) -> field_in(get(env.decls.types, d), name),
     };
 }
 
@@ -1146,11 +2181,22 @@ pub fn member_of(env: Env, scope: List<Local>, primary: CTree, tail: CTree) -> c
     return None;
 }
 
-// The type a cast names (cast_type -> one segment).
+pub fn named_scalar(env: Env, name: List<usize>) -> core::option::Option<SrcType> {
+    return match (param_ty(env, name)) {
+        Some(t) -> scalar_src(t),
+        None -> match (prim_ty(name)) {
+            None -> None,
+            Some(t) -> scalar_src(t),
+        },
+    };
+}
+
+// The type a cast names (cast_type -> one segment): a primitive type, or a
+// type parameter standing for one.
 pub fn cast_type_of(env: Env, t: CTree) -> core::option::Option<SrcType> {
     let path: CTree = kid(t, 0);
     if (node_prod(t) == p_cast_type_name() && node_prod(path) == p_cast_type_path() && node_prod(kid(path, 0)) == p_cast_type_path_ident() && node_prod(kid(path, 1)) == p_cast_type_path_end()) {
-        return resolve(env.types, kid_token(kid(path, 0), 0).text);
+        return named_scalar(env, kid_token(kid(path, 0), 0).text);
     }
     return None;
 }
@@ -1184,6 +2230,83 @@ pub fn apply_of(op: SrcOp, left: SrcExpr, right: core::option::Option<SrcExpr>) 
     return match (right) {
         None -> None,
         Some(r) -> Some(Apply(op, boxed(left), boxed(r))),
+    };
+}
+
+pub fn uint_mask(u: UintTy) -> u64 {
+    return match (u) {
+        Uint8 -> 255,
+        Uint32 -> 4294967295,
+        Uint64 -> 18446744073709551615,
+        Usize -> 18446744073709551615,
+    };
+}
+
+pub fn uint_in_range(u: UintTy, v: u64) -> core::option::Option<SrcExpr> {
+    if (v <= uint_mask(u)) {
+        return Some(Unsigned(u, v));
+    }
+    return None;
+}
+
+pub fn negated_int(x: SrcExpr, e: SrcExpr) -> core::option::Option<SrcExpr> {
+    return match (x) {
+        Int(k) -> Some(e),
+        Boolean(b) -> None,
+        Unsigned(u, k) -> None,
+        Local(id) -> None,
+        Field(id, j) -> None,
+        Negate(y) -> None,
+        Not(y) -> None,
+        Apply(op, a, b) -> None,
+        Cast(t, y) -> None,
+    };
+}
+
+// A constant's value: a literal of its type. An integer literal of an
+// unsigned type is that type's literal.
+pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
+    return match (e) {
+        Int(k) -> match (t) {
+            TyI32 -> Some(e),
+            TyBool -> None,
+            TyUint(u) -> uint_in_range(u, (k as u32) as u64),
+            TyPtr -> None,
+            TySlice(x) -> None,
+            TyNamed(d, args) -> None,
+        },
+        Boolean(b) -> match (t) {
+            TyI32 -> None,
+            TyBool -> Some(e),
+            TyUint(u) -> None,
+            TyPtr -> None,
+            TySlice(x) -> None,
+            TyNamed(d, args) -> None,
+        },
+        Unsigned(u, k) -> None,
+        Local(id) -> None,
+        Field(id, j) -> None,
+        Negate(x) -> match (t) {
+            TyI32 -> negated_int(unbox(x), e),
+            TyBool -> None,
+            TyUint(u) -> None,
+            TyPtr -> None,
+            TySlice(y) -> None,
+            TyNamed(d, args) -> None,
+        },
+        Not(x) -> None,
+        Apply(op, a, b) -> None,
+        Cast(s, x) -> None,
+    };
+}
+
+pub fn literal_as(t: core::option::Option<Ty>, e: core::option::Option<SrcExpr>) -> core::option::Option<SrcExpr> {
+    return match (t) {
+        None -> None,
+        Some(ty) -> match (e) {
+            None -> None,
+            Some(x) -> typed_literal(ty, x),
+        },
     };
 }
 
@@ -1221,6 +2344,9 @@ pub fn expr_of(fuel: usize, env: Env, scope: List<Local>, c: CTree) -> core::opt
         return expr_of(f, env, scope, kid(c, 1));
     }
     if (p == p_ident()) {
+        return ident_expr(f, env, scope, c);
+    }
+    if (p == p_self_value()) {
         return local_expr(local_of(env, scope, c));
     }
     if (p == p_int()) {
@@ -1233,6 +2359,46 @@ pub fn expr_of(fuel: usize, env: Env, scope: List<Local>, c: CTree) -> core::opt
         return Some(Boolean(false));
     }
     return None;
+}
+
+// A name: a local, or else a constant, whose literal value it is.
+pub fn ident_expr(fuel: usize, env: Env, scope: List<Local>, c: CTree) -> core::option::Option<SrcExpr> {
+    if (fuel == 0) {
+        return None;
+    }
+    let path: CTree = kid(c, 0);
+    if (node_prod(kid(c, 1)) == p_ident_plain()) {
+        return match (local_of(env, scope, c)) {
+            Some(l) -> Some(Local(l.id)),
+            None -> const_ref(minus(fuel, 1), env, path_spellings(fuel, kid(path, 0), kid(path, 1))),
+        };
+    }
+    return None;
+}
+
+pub fn const_ref(fuel: usize, env: Env, segments: core::option::Option<List<List<usize>>>) -> core::option::Option<SrcExpr> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (segments) {
+        None -> None,
+        Some(ss) -> match (split_last(ss)) {
+            None -> None,
+            Some(s) -> match (find_const(env.decls.consts, module_or(env.module, s.module), s.name)) {
+                None -> None,
+                Some(k) -> const_value(minus(fuel, 1), env.decls, k),
+            },
+        },
+    };
+}
+
+// A constant's value, read in its own module.
+pub fn const_value(fuel: usize, decls: Decls, k: ConstDecl) -> core::option::Option<SrcExpr> {
+    if (fuel == 0) {
+        return None;
+    }
+    let cenv: Env = decl_env(decls, k.module, empty(), empty());
+    return literal_as(ty_of(minus(fuel, 1), cenv, k.ty), expr_of(minus(fuel, 1), cenv, empty(), k.value));
 }
 
 // assign -> orexpr assign_end, as a value.
@@ -1311,116 +2477,544 @@ pub fn peel(fuel: usize, c: CTree) -> core::option::Option<CTree> {
     return None;
 }
 
+// ---------------------------------------------------------------- expression types
+
+// Comparisons and logical operators give bool; the others their operand's
+// type (a pointer plus an offset is a pointer).
+pub fn gives_bool(op: SrcOp) -> bool {
+    return match (op) {
+        Plus -> false,
+        Minus -> false,
+        Times -> false,
+        BitAnd -> false,
+        BitOr -> false,
+        BitXor -> false,
+        Less -> true,
+        LessEq -> true,
+        Greater -> true,
+        GreaterEq -> true,
+        Equal -> true,
+        NotEqual -> true,
+        LogicalAnd -> true,
+        LogicalOr -> true,
+    };
+}
+
+pub fn apply_ty(op: SrcOp, left: core::option::Option<Ty>) -> core::option::Option<Ty> {
+    if (gives_bool(op)) {
+        return Some(TyBool);
+    }
+    return left;
+}
+
+pub fn local_ty(l: core::option::Option<Local>) -> core::option::Option<Ty> {
+    return match (l) {
+        None -> None,
+        Some(x) -> Some(x.ty),
+    };
+}
+
+pub fn struct_field_tys(fuel: usize, decls: Decls, t: Ty) -> core::option::Option<List<Ty>> {
+    return match (t) {
+        TyI32 -> None,
+        TyBool -> None,
+        TyUint(k) -> None,
+        TyPtr -> None,
+        TySlice(e) -> None,
+        TyNamed(d, args) -> field_tys(fuel, decls, d, unbox(args)),
+    };
+}
+
+pub fn field_ty(fuel: usize, decls: Decls, l: core::option::Option<Local>, j: usize) -> core::option::Option<Ty> {
+    return match (l) {
+        None -> None,
+        Some(x) -> match (struct_field_tys(fuel, decls, x.ty)) {
+            None -> None,
+            Some(ts) -> get(ts, j),
+        },
+    };
+}
+
+// The type of an expression, as type arguments are inferred from it.
+pub fn expr_ty(fuel: usize, env: Env, scope: List<Local>, e: SrcExpr) -> core::option::Option<Ty> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (e) {
+        Int(k) -> Some(TyI32),
+        Boolean(b) -> Some(TyBool),
+        Unsigned(u, k) -> Some(TyUint(u)),
+        Local(id) -> local_ty(find_local_id(scope, id)),
+        Field(id, j) -> field_ty(fuel, env.decls, find_local_id(scope, id), j),
+        Negate(x) -> expr_ty(minus(fuel, 1), env, scope, unbox(x)),
+        Not(x) -> Some(TyBool),
+        Apply(op, a, b) -> apply_ty(op, expr_ty(minus(fuel, 1), env, scope, unbox(a))),
+        Cast(t, x) -> src_ty(t),
+    };
+}
+
+pub fn exprs_tys(fuel: usize, env: Env, scope: List<Local>, es: List<SrcExpr>) -> core::option::Option<List<Ty>> {
+    return match (es) {
+        Nil -> Some(empty()),
+        Cons(e, rest) -> cons_ty(expr_ty(fuel, env, scope, e), exprs_tys(fuel, env, scope, unbox(rest))),
+    };
+}
+
+// ---------------------------------------------------------------- type arguments
+
+// A type parameter's inferred type.
+pub struct Bind {
+    name: List<usize>,
+    ty: Ty,
+}
+
+pub fn find_bind(binds: List<Bind>, name: List<usize>) -> core::option::Option<Ty> {
+    return match (binds) {
+        Nil -> None,
+        Cons(b, rest) -> find_bind_at(b, unbox(rest), name),
+    };
+}
+
+// extract: inline
+fn find_bind_at(bb: Bind, brest: List<Bind>, bname: List<usize>) -> core::option::Option<Ty> {
+    if (same_text(bb.name, bname)) {
+        return Some(bb.ty);
+    }
+    return find_bind(brest, bname);
+}
+
+pub fn same_or_none(ok: bool, binds: List<Bind>) -> core::option::Option<List<Bind>> {
+    if (ok) {
+        return Some(binds);
+    }
+    return None;
+}
+
+// The parameter spelled name stands for actual: a new binding, or the same
+// type as before.
+pub fn bind_ty(binds: List<Bind>, name: List<usize>, actual: Ty) -> core::option::Option<List<Bind>> {
+    return match (find_bind(binds, name)) {
+        None -> Some(cons(Bind { name: name, ty: actual }, binds)),
+        Some(t) -> same_or_none(same_ty(t, actual), binds),
+    };
+}
+
+pub fn param_named(ok: bool, n: List<usize>) -> core::option::Option<List<usize>> {
+    if (ok) {
+        return Some(n);
+    }
+    return None;
+}
+
+// A pattern that is one of the type parameters being inferred.
+pub fn param_spelling(names: List<List<usize>>, segments: List<List<usize>>, items: List<CTree>) -> core::option::Option<List<usize>> {
+    return match (single_name(segments)) {
+        None -> None,
+        Some(n) -> param_named(member(names, n) && no_trees(items), n),
+    };
+}
+
+pub fn prim_if(ok: bool, n: List<usize>) -> core::option::Option<Ty> {
+    if (ok) {
+        return prim_ty(n);
+    }
+    return None;
+}
+
+// A pattern that is a primitive type.
+pub fn bare_prim(segments: List<List<usize>>, items: List<CTree>) -> core::option::Option<Ty> {
+    return match (single_name(segments)) {
+        None -> None,
+        Some(n) -> prim_if(no_trees(items), n),
+    };
+}
+
+pub fn slice_elem(t: Ty) -> core::option::Option<Ty> {
+    return match (t) {
+        TyI32 -> None,
+        TyBool -> None,
+        TyUint(k) -> None,
+        TyPtr -> None,
+        TySlice(e) -> Some(unbox(e)),
+        TyNamed(d, args) -> None,
+    };
+}
+
+pub fn named_parts(t: Ty) -> core::option::Option<Inst> {
+    return match (t) {
+        TyI32 -> None,
+        TyBool -> None,
+        TyUint(k) -> None,
+        TyPtr -> None,
+        TySlice(e) -> None,
+        TyNamed(d, args) -> Some(Inst { decl: d, args: unbox(args) }),
+    };
+}
+
+// extract: mutual begin
+// Match a type expression of a declaration, whose type parameters names are
+// being inferred, against an actual type, extending binds.
+pub fn match_ty(fuel: usize, env: Env, names: List<List<usize>>, pattern: CTree, actual: Ty, binds: List<Bind>) -> core::option::Option<List<Bind>> {
+    if (fuel == 0) {
+        return None;
+    }
+    let f: usize = minus(fuel, 1);
+    let path: CTree = kid(pattern, 0);
+    if (node_prod(pattern) == p_type_array() && node_prod(kid(pattern, 2)) == p_type_slice_tail()) {
+        return match (slice_elem(actual)) {
+            None -> None,
+            Some(a) -> match_ty(f, env, names, kid(pattern, 1), a, binds),
+        };
+    }
+    if (node_prod(pattern) == p_type_ident()) {
+        return match_path(f, env, names, type_path_spellings(f, kid(path, 0), kid(path, 1)), list_items(f, kid(pattern, 1)), actual, binds);
+    }
+    return None;
+}
+
+pub fn match_path(fuel: usize, env: Env, names: List<List<usize>>, segments: core::option::Option<List<List<usize>>>, items: core::option::Option<List<CTree>>, actual: Ty, binds: List<Bind>) -> core::option::Option<List<Bind>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (segments) {
+        None -> None,
+        Some(ss) -> match (items) {
+            None -> None,
+            Some(gs) -> match_named(minus(fuel, 1), env, names, ss, gs, actual, binds),
+        },
+    };
+}
+
+pub fn match_named(fuel: usize, env: Env, names: List<List<usize>>, segments: List<List<usize>>, items: List<CTree>, actual: Ty, binds: List<Bind>) -> core::option::Option<List<Bind>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (param_spelling(names, segments, items)) {
+        Some(n) -> bind_ty(binds, n, actual),
+        None -> match (bare_prim(segments, items)) {
+            Some(t) -> same_or_none(same_ty(t, actual), binds),
+            None -> match_decl(minus(fuel, 1), env, names, type_decl_at(env, segments), items, named_parts(actual), binds),
+        },
+    };
+}
+
+pub fn match_decl(fuel: usize, env: Env, names: List<List<usize>>, d: core::option::Option<usize>, items: List<CTree>, actual: core::option::Option<Inst>, binds: List<Bind>) -> core::option::Option<List<Bind>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (d) {
+        None -> None,
+        Some(x) -> match (actual) {
+            None -> None,
+            Some(a) -> match_same_decl(minus(fuel, 1), env, names, x == a.decl, items, a.args, binds),
+        },
+    };
+}
+
+pub fn match_same_decl(fuel: usize, env: Env, names: List<List<usize>>, same: bool, items: List<CTree>, args: List<Ty>, binds: List<Bind>) -> core::option::Option<List<Bind>> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (same) {
+        return match_args(minus(fuel, 1), env, names, items, args, binds);
+    }
+    return None;
+}
+
+// Generic arguments (generic_argument_type) against the actual arguments.
+pub fn match_args(fuel: usize, env: Env, names: List<List<usize>>, items: List<CTree>, actuals: List<Ty>, binds: List<Bind>) -> core::option::Option<List<Bind>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (items) {
+        Nil -> match (actuals) {
+            Nil -> Some(binds),
+            Cons(a, more) -> None,
+        },
+        Cons(g, rest) -> match (actuals) {
+            Nil -> None,
+            Cons(a, more) -> match_args_next(minus(fuel, 1), env, names, unbox(rest), unbox(more), match_arg(minus(fuel, 1), env, names, g, a, binds)),
+        },
+    };
+}
+
+pub fn match_arg(fuel: usize, env: Env, names: List<List<usize>>, g: CTree, actual: Ty, binds: List<Bind>) -> core::option::Option<List<Bind>> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (node_prod(g) == p_generic_argument_type()) {
+        return match_ty(minus(fuel, 1), env, names, kid(g, 0), actual, binds);
+    }
+    return None;
+}
+
+pub fn match_args_next(fuel: usize, env: Env, names: List<List<usize>>, items: List<CTree>, actuals: List<Ty>, got: core::option::Option<List<Bind>>) -> core::option::Option<List<Bind>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (got) {
+        None -> None,
+        Some(b) -> match_args(minus(fuel, 1), env, names, items, actuals, b),
+    };
+}
+
+// Type expressions against actual types, in order.
+pub fn match_tys(fuel: usize, env: Env, names: List<List<usize>>, patterns: List<CTree>, actuals: List<Ty>, binds: List<Bind>) -> core::option::Option<List<Bind>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (patterns) {
+        Nil -> match (actuals) {
+            Nil -> Some(binds),
+            Cons(a, more) -> None,
+        },
+        Cons(p, rest) -> match (actuals) {
+            Nil -> None,
+            Cons(a, more) -> match_tys_next(minus(fuel, 1), env, names, unbox(rest), unbox(more), match_ty(minus(fuel, 1), env, names, p, a, binds)),
+        },
+    };
+}
+
+pub fn match_tys_next(fuel: usize, env: Env, names: List<List<usize>>, patterns: List<CTree>, actuals: List<Ty>, got: core::option::Option<List<Bind>>) -> core::option::Option<List<Bind>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (got) {
+        None -> None,
+        Some(b) -> match_tys(minus(fuel, 1), env, names, patterns, actuals, b),
+    };
+}
+// extract: mutual end
+
+// The inferred arguments, in the order of the parameters.
+pub fn bound_args(names: List<List<usize>>, binds: List<Bind>) -> core::option::Option<List<Ty>> {
+    return match (names) {
+        Nil -> Some(empty()),
+        Cons(n, rest) -> cons_ty(find_bind(binds, n), bound_args(unbox(rest), binds)),
+    };
+}
+
+pub fn cons_tree_tail(t: CTree, rest: core::option::Option<List<CTree>>) -> core::option::Option<List<CTree>> {
+    return match (rest) {
+        None -> None,
+        Some(ts) -> Some(cons(t, ts)),
+    };
+}
+
+pub fn cons_tree(t: core::option::Option<CTree>, rest: core::option::Option<List<CTree>>) -> core::option::Option<List<CTree>> {
+    return match (t) {
+        None -> None,
+        Some(x) -> cons_tree_tail(x, rest),
+    };
+}
+
+// The declared type of a parameter: `name: T`, `self` (the impl's type) or
+// `self: T`.
+pub fn pattern_of(fd: FnDecl, p: CTree) -> core::option::Option<CTree> {
+    let tail: CTree = kid(p, 1);
+    if (node_prod(p) == p_param_named()) {
+        return Some(kid(p, 2));
+    }
+    if (node_prod(p) == p_param_self() && node_prod(tail) == p_self_param_plain() && fd.in_impl) {
+        return Some(fd.self_type);
+    }
+    if (node_prod(p) == p_param_self() && node_prod(tail) == p_self_param_typed()) {
+        return Some(kid(tail, 1));
+    }
+    return None;
+}
+
+pub fn patterns_of(fd: FnDecl, items: List<CTree>) -> core::option::Option<List<CTree>> {
+    return match (items) {
+        Nil -> Some(empty()),
+        Cons(p, rest) -> cons_tree(pattern_of(fd, p), patterns_of(fd, unbox(rest))),
+    };
+}
+
+pub fn param_patterns(fuel: usize, fd: FnDecl) -> core::option::Option<List<CTree>> {
+    return match (list_items(fuel, kid(fd.tree, 4))) {
+        None -> None,
+        Some(items) -> patterns_of(fd, items),
+    };
+}
+
+pub fn ret_pattern(fd: FnDecl) -> core::option::Option<CTree> {
+    let ret: CTree = kid(fd.tree, 6);
+    if (node_prod(ret) == p_ret_type()) {
+        return Some(kid(ret, 1));
+    }
+    return None;
+}
+
+pub fn callee_env(decls: Decls, fd: FnDecl) -> Env {
+    return decl_env(decls, fd.module, empty(), empty());
+}
+
+pub fn inst_from(d: usize, args: core::option::Option<List<Ty>>) -> core::option::Option<Inst> {
+    return match (args) {
+        None -> None,
+        Some(ts) -> Some(Inst { decl: d, args: ts }),
+    };
+}
+
+pub fn bound_or_none(names: List<List<usize>>, binds: core::option::Option<List<Bind>>) -> core::option::Option<List<Ty>> {
+    return match (binds) {
+        None -> None,
+        Some(b) -> bound_args(names, b),
+    };
+}
+
+pub fn infer_ret(fuel: usize, decls: Decls, d: usize, fd: FnDecl, names: List<List<usize>>, binds: core::option::Option<List<Bind>>, expected: Ty) -> core::option::Option<Inst> {
+    return match (binds) {
+        None -> None,
+        Some(b) -> match (ret_pattern(fd)) {
+            None -> None,
+            Some(r) -> inst_from(d, bound_or_none(names, match_ty(fuel, callee_env(decls, fd), names, r, expected, b))),
+        },
+    };
+}
+
+// The instance a call of function d means: its type arguments are inferred
+// by matching its parameter types with the argument types and its result
+// type with the type the call's value is stored at, starting from start.
+pub fn infer_inst(fuel: usize, decls: Decls, d: usize, fd: FnDecl, start: List<Bind>, arg_tys: core::option::Option<List<Ty>>, expected: Ty) -> core::option::Option<Inst> {
+    let names: List<List<usize>> = concat(fd.impl_params, fd.params);
+    if (no_names(names)) {
+        return Some(Inst { decl: d, args: empty() });
+    }
+    return match (arg_tys) {
+        None -> None,
+        Some(ts) -> match (param_patterns(fuel, fd)) {
+            None -> None,
+            Some(ps) -> infer_ret(fuel, decls, d, fd, names, match_tys(fuel, callee_env(decls, fd), names, ps, ts, start), expected),
+        },
+    };
+}
+
+pub fn explicit_checked(ok: bool, d: usize, args: List<Ty>) -> core::option::Option<Inst> {
+    if (ok) {
+        return Some(Inst { decl: d, args: args });
+    }
+    return None;
+}
+
+// `f<T, ...>(args)`: the type arguments as written (a free function's own).
+pub fn explicit_inst(fuel: usize, env: Env, d: usize, fd: FnDecl, targs: List<CTree>) -> core::option::Option<Inst> {
+    return match (args_tys(fuel, env, targs)) {
+        None -> None,
+        Some(ts) -> explicit_checked(no_names(fd.impl_params) && length(ts) == length(fd.params), d, ts),
+    };
+}
+
+// A method found for a type: its function and the impl's inferred
+// parameters.
+pub struct Found {
+    decl: usize,
+    binds: List<Bind>,
+}
+
+pub fn impl_binds(fuel: usize, decls: Decls, fd: FnDecl, s: Ty) -> core::option::Option<List<Bind>> {
+    if (fd.in_impl) {
+        return match_ty(fuel, callee_env(decls, fd), fd.impl_params, fd.self_type, s, empty());
+    }
+    return None;
+}
+
+pub fn is_some_binds(b: core::option::Option<List<Bind>>) -> bool {
+    return match (b) {
+        None -> false,
+        Some(x) -> true,
+    };
+}
+
+// No method spelled name has an impl whose type matches s.
+pub fn no_method(fuel: usize, decls: Decls, fns: List<FnDecl>, name: List<usize>, s: Ty) -> bool {
+    return match (fns) {
+        Nil -> true,
+        Cons(fd, rest) -> !(same_text(fd.name, name) && is_some_binds(impl_binds(fuel, decls, fd, s))) && no_method(fuel, decls, unbox(rest), name, s),
+    };
+}
+
+pub fn unique_found(unique: bool, k: usize, b: List<Bind>) -> core::option::Option<Found> {
+    if (unique) {
+        return Some(Found { decl: k, binds: b });
+    }
+    return None;
+}
+
+// The one method spelled name of an impl whose type matches s.
+pub fn find_method(fuel: usize, decls: Decls, fns: List<FnDecl>, k: usize, name: List<usize>, s: Ty) -> core::option::Option<Found> {
+    return match (fns) {
+        Nil -> None,
+        Cons(fd, rest) -> find_method_at(fuel, decls, fd, unbox(rest), k, name, s),
+    };
+}
+
+// extract: inline
+fn find_method_at(mfuel: usize, mdecls: Decls, mfd: FnDecl, mrest: List<FnDecl>, mk: usize, mname: List<usize>, ms: Ty) -> core::option::Option<Found> {
+    if (same_text(mfd.name, mname)) {
+        return match (impl_binds(mfuel, mdecls, mfd, ms)) {
+            None -> find_method(mfuel, mdecls, mrest, plus(mk, 1), mname, ms),
+            Some(b) -> unique_found(no_method(mfuel, mdecls, mrest, mname, ms), mk, b),
+        };
+    }
+    return find_method(mfuel, mdecls, mrest, plus(mk, 1), mname, ms);
+}
+
 // ---------------------------------------------------------------- statements
 
-// What a let binds: a value, a call, a variant, a struct literal or a match.
+// A statement as build reads it, before monomorphization's numbering: like
+// SrcStmt, but types are Ty and a call names its function instance.
+pub enum MStmt {
+    MNop,
+    MLet(usize, Ty, SrcExpr, Box<MStmt>),
+    MLetStruct(usize, Ty, List<SrcExpr>, Box<MStmt>),
+    MLetCall(usize, Ty, Inst, List<SrcExpr>, Box<MStmt>),
+    MLetEnum(usize, Ty, usize, List<SrcExpr>, Box<MStmt>),
+    // the scrutinee local and its type
+    MLetMatch(usize, Ty, usize, Ty, List<SrcArm>, Box<MStmt>),
+    MSet(usize, SrcExpr),
+    MSetField(usize, usize, SrcExpr),
+    MSetCall(usize, Inst, List<SrcExpr>),
+    MThen(Box<MStmt>, Box<MStmt>),
+    MIf(SrcExpr, Box<MStmt>, Box<MStmt>),
+    MWhile(SrcExpr, Box<MStmt>),
+    MReturn(SrcExpr),
+    MLetAlloc(usize, SrcExpr, usize, Box<MStmt>),
+    MFree(SrcExpr, SrcExpr, usize),
+    // the element type
+    MLetSlice(usize, Ty, SrcExpr, SrcExpr, Box<MStmt>),
+    MLetIndex(usize, Ty, usize, SrcExpr, Box<MStmt>),
+    MSetIndex(usize, SrcExpr, SrcExpr),
+}
+
+// A call: the function instance and the arguments.
+pub struct Called {
+    inst: Inst,
+    args: List<SrcExpr>,
+}
+
+// What a let binds: a value, a call, a variant, a struct literal, a match,
+// an allocation, a raw view or a slice element.
 pub enum LetHead {
     Plain(SrcExpr),
-    CallOf(usize, List<SrcExpr>),
+    CallOf(Called),
     VariantOf(usize, List<SrcExpr>),
     LiteralOf(List<SrcExpr>),
-    MatchOf(usize, usize, List<SrcArm>),
+    // the scrutinee local and its type, and the arms
+    MatchOf(usize, Ty, List<SrcArm>),
+    // alloc(size, 2^shift)
+    AllocOf(SrcExpr, usize),
+    // slice_from_raw_parts(pointer, length)
+    SliceOf(SrcExpr, SrcExpr),
+    // slice[index], the slice a local
+    IndexOf(usize, SrcExpr),
 }
 
 pub fn plain_head(e: core::option::Option<SrcExpr>) -> core::option::Option<LetHead> {
     return match (e) {
         None -> None,
         Some(x) -> Some(Plain(x)),
-    };
-}
-
-// The variant spelled name: its enum's type id and its index there.
-pub struct VariantAt {
-    owner: usize,
-    index: usize,
-}
-
-pub fn enum_id(t: SrcType) -> core::option::Option<usize> {
-    return match (t) {
-        I32 -> None,
-        Bool -> None,
-        Uint(k) -> None,
-        Struct(id, fields) -> None,
-        Enum(id, variants) -> Some(id),
-        Ptr -> None,
-        Slice(e) -> None,
-    };
-}
-
-pub fn variant_at(t: SrcType, k: usize) -> core::option::Option<VariantAt> {
-    return match (enum_id(t)) {
-        None -> None,
-        Some(e) -> Some(VariantAt { owner: e, index: k }),
-    };
-}
-
-pub fn find_variant(types: List<TypeEntry>, name: List<usize>) -> core::option::Option<VariantAt> {
-    return match (types) {
-        Nil -> None,
-        Cons(t, rest) -> find_variant_in(t, unbox(rest), name),
-    };
-}
-
-// extract: inline
-fn find_variant_in(vt: TypeEntry, vrest: List<TypeEntry>, vname: List<usize>) -> core::option::Option<VariantAt> {
-    return match (position(variant_names(vt.variants), vname, 0)) {
-        None -> find_variant(vrest, vname),
-        Some(k) -> variant_at(vt.ty, k),
-    };
-}
-
-pub fn variant_payload(same: bool, index: usize, payload: core::option::Option<List<SrcExpr>>) -> core::option::Option<LetHead> {
-    if (same) {
-        return match (payload) {
-            None -> None,
-            Some(es) -> Some(VariantOf(index, es)),
-        };
-    }
-    return None;
-}
-
-// A variant of the let's own enum type.
-pub fn variant_head(ty: SrcType, v: VariantAt, payload: core::option::Option<List<SrcExpr>>) -> core::option::Option<LetHead> {
-    return match (enum_id(ty)) {
-        None -> None,
-        Some(e) -> variant_payload(e == v.owner, v.index, payload),
-    };
-}
-
-// extract: inline
-fn unit_named(uenv: Env, uscope: List<Local>, uty: SrcType, un: List<usize>, uinit: CTree, ufuel: usize) -> core::option::Option<LetHead> {
-    return match (find_variant(uenv.types, un)) {
-        None -> plain_head(expr_of(ufuel, uenv, uscope, uinit)),
-        Some(v) -> variant_head(uty, v, Some(empty())),
-    };
-}
-
-// `name`: a unit variant, or else a local.
-pub fn unit_head(env: Env, scope: List<Local>, ty: SrcType, name: core::option::Option<List<usize>>, init: CTree, fuel: usize) -> core::option::Option<LetHead> {
-    return match (name) {
-        None -> None,
-        Some(n) -> unit_named(env, scope, ty, n, init, fuel),
-    };
-}
-
-pub fn variant_call(env: Env, ty: SrcType, n: List<usize>, args: core::option::Option<List<SrcExpr>>) -> core::option::Option<LetHead> {
-    return match (find_variant(env.types, n)) {
-        None -> None,
-        Some(v) -> variant_head(ty, v, args),
-    };
-}
-
-pub fn call_args(callee: usize, args: core::option::Option<List<SrcExpr>>) -> core::option::Option<LetHead> {
-    return match (args) {
-        None -> None,
-        Some(es) -> Some(CallOf(callee, es)),
-    };
-}
-
-pub fn call_named(fuel: usize, env: Env, scope: List<Local>, ty: SrcType, n: List<usize>, args: core::option::Option<List<SrcExpr>>) -> core::option::Option<LetHead> {
-    return match (position(env.fns, n, 0)) {
-        None -> variant_call(env, ty, n, args),
-        Some(callee) -> call_args(callee, args),
     };
 }
 
@@ -1452,11 +3046,342 @@ pub fn args_of(fuel: usize, env: Env, scope: List<Local>, args: CTree) -> core::
     };
 }
 
-// `name(args)`: a call of a function, or a variant with a payload.
-pub fn call_head(fuel: usize, env: Env, scope: List<Local>, ty: SrcType, name: core::option::Option<List<usize>>, args: CTree) -> core::option::Option<LetHead> {
-    return match (name) {
+// ---------------------------------------------------------------- calls
+
+pub fn called(inst: core::option::Option<Inst>, args: List<SrcExpr>) -> core::option::Option<Called> {
+    return match (inst) {
         None -> None,
-        Some(n) -> call_named(fuel, env, scope, ty, n, args_of(fuel, env, scope, args)),
+        Some(i) -> Some(Called { inst: i, args: args }),
+    };
+}
+
+pub fn free_call_of(fuel: usize, env: Env, scope: List<Local>, expected: Ty, d: usize, fd: FnDecl, targs: List<CTree>, es: List<SrcExpr>) -> core::option::Option<Called> {
+    if (no_trees(targs)) {
+        return called(infer_inst(fuel, env.decls, d, fd, empty(), exprs_tys(fuel, env, scope, es), expected), es);
+    }
+    return called(explicit_inst(fuel, env, d, fd, targs), es);
+}
+
+// A call of the free function d, with type arguments written or inferred.
+pub fn free_call(fuel: usize, env: Env, scope: List<Local>, expected: Ty, d: usize, targs: List<CTree>, es: List<SrcExpr>) -> core::option::Option<Called> {
+    return match (get(env.decls.fns, d)) {
+        None -> None,
+        Some(fd) -> free_call_of(fuel, env, scope, expected, d, fd, targs, es),
+    };
+}
+
+pub fn method_inst(fuel: usize, env: Env, scope: List<Local>, expected: Ty, found: core::option::Option<Found>, es: List<SrcExpr>) -> core::option::Option<Called> {
+    return match (found) {
+        None -> None,
+        Some(x) -> match (get(env.decls.fns, x.decl)) {
+            None -> None,
+            Some(fd) -> called(infer_inst(fuel, env.decls, x.decl, fd, x.binds, exprs_tys(fuel, env, scope, es), expected), es),
+        },
+    };
+}
+
+// `T::m(args)`: the method m of the one impl whose type matches the type s.
+pub fn static_call(fuel: usize, env: Env, scope: List<Local>, expected: Ty, s: core::option::Option<Ty>, name: List<usize>, es: List<SrcExpr>) -> core::option::Option<Called> {
+    return match (s) {
+        None -> None,
+        Some(t) -> method_inst(fuel, env, scope, expected, find_method(fuel, env.decls, env.decls.fns, 0, name, t), es),
+    };
+}
+
+// `x.m(args)`: `T::m(x, args)` for x's type T.
+pub fn method_call(fuel: usize, env: Env, scope: List<Local>, expected: Ty, l: core::option::Option<Local>, name: List<usize>, es: core::option::Option<List<SrcExpr>>) -> core::option::Option<Called> {
+    return match (l) {
+        None -> None,
+        Some(x) -> match (es) {
+            None -> None,
+            Some(args) -> static_call(fuel, env, scope, expected, Some(x.ty), name, cons(Local(x.id), args)),
+        },
+    };
+}
+
+pub fn is_type_param(env: Env, owner: core::option::Option<List<usize>>) -> bool {
+    return match (owner) {
+        None -> false,
+        Some(n) -> member(env.names, n),
+    };
+}
+
+pub fn owner_ty(env: Env, owner: core::option::Option<List<usize>>) -> core::option::Option<Ty> {
+    return match (owner) {
+        None -> None,
+        Some(n) -> param_ty(env, n),
+    };
+}
+
+pub fn is_some_index(k: core::option::Option<usize>) -> bool {
+    return match (k) {
+        None -> false,
+        Some(x) -> true,
+    };
+}
+
+// A path naming a function: `T::m` for a type parameter T, or a free
+// function of the path's module.
+pub fn is_fn_path(env: Env, s: Split) -> bool {
+    return is_type_param(env, single_name(s.module)) || is_some_index(find_fn(env.decls.fns, module_or(env.module, s.module), s.name, 0));
+}
+
+pub fn path_call(fuel: usize, env: Env, scope: List<Local>, expected: Ty, s: Split, targs: List<CTree>, es: List<SrcExpr>) -> core::option::Option<Called> {
+    let owner: core::option::Option<List<usize>> = single_name(s.module);
+    if (is_type_param(env, owner) && no_trees(targs)) {
+        return static_call(fuel, env, scope, expected, owner_ty(env, owner), s.name, es);
+    }
+    return match (find_fn(env.decls.fns, module_or(env.module, s.module), s.name, 0)) {
+        None -> None,
+        Some(d) -> free_call(fuel, env, scope, expected, d, targs, es),
+    };
+}
+
+// `path(args)` as a call, its value stored at type expected.
+pub fn path_call_of(fuel: usize, env: Env, scope: List<Local>, expected: Ty, path: CTree, args: CTree) -> core::option::Option<Called> {
+    return match (path_ref(fuel, kid(path, 0), kid(path, 1))) {
+        None -> None,
+        Some(pr) -> match (split_last(pr.segments)) {
+            None -> None,
+            Some(s) -> match (args_of(fuel, env, scope, args)) {
+                None -> None,
+                Some(es) -> path_call(fuel, env, scope, expected, s, pr.targs, es),
+            },
+        },
+    };
+}
+
+// A postfix `recv.m(args)` (recv a local, no further postfix).
+pub fn is_method_form(pf: CTree) -> bool {
+    let primary: CTree = kid(pf, 0);
+    let tail: CTree = kid(pf, 1);
+    let call: CTree = kid(tail, 3);
+    return (node_prod(primary) == p_self_value() || (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain())) && node_prod(tail) == p_postfix_member() && node_prod(kid(tail, 2)) == p_member_type_args_none() && node_prod(call) == p_postfix_call() && node_prod(kid(call, 3)) == p_postfix_end();
+}
+
+pub fn method_call_of(fuel: usize, env: Env, scope: List<Local>, expected: Ty, pf: CTree) -> core::option::Option<Called> {
+    let tail: CTree = kid(pf, 1);
+    return method_call(fuel, env, scope, expected, local_of(env, scope, kid(pf, 0)), kid_token(tail, 1).text, args_of(fuel, env, scope, kid(kid(tail, 3), 1)));
+}
+
+// A postfix `path(args)` (no further postfix).
+pub fn is_path_call(pf: CTree) -> bool {
+    let primary: CTree = kid(pf, 0);
+    let tail: CTree = kid(pf, 1);
+    return node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain() && node_prod(tail) == p_postfix_call() && node_prod(kid(tail, 3)) == p_postfix_end();
+}
+
+// ---------------------------------------------------------------- let heads
+
+pub fn named_decl(t: Ty) -> core::option::Option<usize> {
+    return match (t) {
+        TyI32 -> None,
+        TyBool -> None,
+        TyUint(k) -> None,
+        TyPtr -> None,
+        TySlice(e) -> None,
+        TyNamed(d, args) -> Some(d),
+    };
+}
+
+pub fn variant_checked(ok: bool, index: usize, es: List<SrcExpr>) -> core::option::Option<LetHead> {
+    if (ok) {
+        return Some(VariantOf(index, es));
+    }
+    return None;
+}
+
+// A variant of the let's own enum type.
+pub fn variant_head(ty: Ty, v: core::option::Option<VariantAt>, targs: List<CTree>, es: List<SrcExpr>) -> core::option::Option<LetHead> {
+    return match (v) {
+        None -> None,
+        Some(x) -> match (named_decl(ty)) {
+            None -> None,
+            Some(d) -> variant_checked(d == x.owner && no_trees(targs), x.index, es),
+        },
+    };
+}
+
+pub fn call_head_of(c: core::option::Option<Called>) -> core::option::Option<LetHead> {
+    return match (c) {
+        None -> None,
+        Some(x) -> Some(CallOf(x)),
+    };
+}
+
+pub fn named_head(fuel: usize, env: Env, scope: List<Local>, ty: Ty, s: Split, targs: List<CTree>, es: List<SrcExpr>) -> core::option::Option<LetHead> {
+    if (is_fn_path(env, s)) {
+        return call_head_of(path_call(fuel, env, scope, ty, s, targs, es));
+    }
+    return variant_head(ty, find_variant(env.decls.types, module_or(env.module, s.module), s.name, 0), targs, es);
+}
+
+// The shift of an alignment 2^shift, counting up from 2^s = p.
+pub fn shift_of_u64(fuel: usize, k: u64, s: usize, p: usize) -> core::option::Option<usize> {
+    if (fuel == 0) {
+        return None;
+    }
+    if ((p as u64) == k) {
+        return Some(s);
+    }
+    return shift_of_u64(minus(fuel, 1), k, plus(s, 1), times(p, 2));
+}
+
+pub fn is_usize(t: SrcType) -> bool {
+    return match (t) {
+        I32 -> false,
+        Bool -> false,
+        Uint(k) -> match (k) {
+            Uint8 -> false,
+            Uint32 -> false,
+            Uint64 -> false,
+            Usize -> true,
+        },
+        Struct(id, fields) -> false,
+        Enum(id, variants) -> false,
+        Ptr -> false,
+        Slice(e) -> false,
+    };
+}
+
+// An integer literal 2^shift with shift below 31.
+pub fn literal_shift(e: SrcExpr) -> core::option::Option<usize> {
+    return match (e) {
+        Int(k) -> shift_of_u64(31, (k as u32) as u64, 0, 1),
+        Boolean(b) -> None,
+        Unsigned(u, k) -> shift_of_u64(31, k, 0, 1),
+        Local(id) -> None,
+        Field(id, j) -> None,
+        Negate(x) -> None,
+        Not(x) -> None,
+        Apply(op, a, b) -> None,
+        Cast(t, x) -> None,
+    };
+}
+
+pub fn cast_shift(usize_cast: bool, x: SrcExpr) -> core::option::Option<usize> {
+    if (usize_cast) {
+        return literal_shift(x);
+    }
+    return None;
+}
+
+// The shift of a literal alignment 2^shift: `8`, `(8 as usize)`, or an
+// unsigned literal (a constant's value).
+pub fn shift_of(e: SrcExpr) -> core::option::Option<usize> {
+    return match (e) {
+        Int(k) -> literal_shift(e),
+        Boolean(b) -> None,
+        Unsigned(u, k) -> literal_shift(e),
+        Local(id) -> None,
+        Field(id, j) -> None,
+        Negate(x) -> None,
+        Not(x) -> None,
+        Apply(op, a, b) -> None,
+        Cast(t, x) -> cast_shift(is_usize(t), unbox(x)),
+    };
+}
+
+pub fn alloc_shifted(size: SrcExpr, shift: core::option::Option<usize>, more: List<SrcExpr>) -> core::option::Option<LetHead> {
+    return match (shift) {
+        None -> None,
+        Some(k) -> match (more) {
+            Nil -> Some(AllocOf(size, k)),
+            Cons(e, others) -> None,
+        },
+    };
+}
+
+// alloc(size, align)
+pub fn alloc_head(args: core::option::Option<List<SrcExpr>>) -> core::option::Option<LetHead> {
+    return match (args) {
+        None -> None,
+        Some(es) -> match (es) {
+            Nil -> None,
+            Cons(size, rest) -> match (unbox(rest)) {
+                Nil -> None,
+                Cons(align, more) -> alloc_shifted(size, shift_of(align), unbox(more)),
+            },
+        },
+    };
+}
+
+// slice_from_raw_parts(pointer, length)
+pub fn slice_head(args: core::option::Option<List<SrcExpr>>) -> core::option::Option<LetHead> {
+    return match (args) {
+        None -> None,
+        Some(es) -> match (es) {
+            Nil -> None,
+            Cons(pointer, rest) -> match (unbox(rest)) {
+                Nil -> None,
+                Cons(length, more) -> match (unbox(more)) {
+                    Nil -> Some(SliceOf(pointer, length)),
+                    Cons(e, others) -> None,
+                },
+            },
+        },
+    };
+}
+
+pub fn is_path(segments: core::option::Option<List<List<usize>>>, wanted: List<List<usize>>) -> bool {
+    return match (segments) {
+        None -> false,
+        Some(ss) -> same_spellings(ss, wanted),
+    };
+}
+
+// alloc::allocator::alloc, the allocator's alloc
+pub fn alloc_path() -> List<List<usize>> {
+    return cons(text_alloc(), cons(text_allocator(), single(text_alloc())));
+}
+
+// alloc::allocator::dealloc
+pub fn dealloc_path() -> List<List<usize>> {
+    return cons(text_alloc(), cons(text_allocator(), single(text_dealloc())));
+}
+
+// `path(args)`: the allocator, a raw view, a function or a variant.
+pub fn call_path_head(fuel: usize, env: Env, scope: List<Local>, ty: Ty, path: CTree, args: CTree) -> core::option::Option<LetHead> {
+    let segments: core::option::Option<List<List<usize>>> = path_spellings(fuel, kid(path, 0), kid(path, 1));
+    if (is_path(segments, alloc_path())) {
+        return alloc_head(args_of(fuel, env, scope, args));
+    }
+    if (is_path(segments, single(text_slice_from_raw_parts()))) {
+        return slice_head(args_of(fuel, env, scope, args));
+    }
+    return match (path_ref(fuel, kid(path, 0), kid(path, 1))) {
+        None -> None,
+        Some(pr) -> match (split_last(pr.segments)) {
+            None -> None,
+            Some(s) -> match (args_of(fuel, env, scope, args)) {
+                None -> None,
+                Some(es) -> named_head(fuel, env, scope, ty, s, pr.targs, es),
+            },
+        },
+    };
+}
+
+pub fn index_head(l: core::option::Option<Local>, index: core::option::Option<SrcExpr>) -> core::option::Option<LetHead> {
+    return match (l) {
+        None -> None,
+        Some(x) -> match (index) {
+            None -> None,
+            Some(i) -> Some(IndexOf(x.id, i)),
+        },
+    };
+}
+
+// `name` or `m::name`: a unit variant, or else a value.
+pub fn unit_head(fuel: usize, env: Env, scope: List<Local>, ty: Ty, path: CTree, init: CTree) -> core::option::Option<LetHead> {
+    return match (path_spellings(fuel, kid(path, 0), kid(path, 1))) {
+        None -> plain_head(expr_of(fuel, env, scope, init)),
+        Some(ss) -> match (split_last(ss)) {
+            None -> None,
+            Some(s) -> match (find_variant(env.decls.types, module_or(env.module, s.module), s.name, 0)) {
+                None -> plain_head(expr_of(fuel, env, scope, init)),
+                Some(v) -> variant_head(ty, Some(v), empty(), empty()),
+            },
+        },
     };
 }
 
@@ -1491,39 +3416,38 @@ pub fn same_names(names: List<List<usize>>, fs: List<CTree>) -> bool {
     };
 }
 
-pub fn literal_entry(fuel: usize, env: Env, scope: List<Local>, n: List<usize>, entry: core::option::Option<TypeEntry>, fs: List<CTree>) -> core::option::Option<LetHead> {
+pub fn literal_entry(fuel: usize, env: Env, scope: List<Local>, same: bool, entry: core::option::Option<TypeDecl>, fs: List<CTree>) -> core::option::Option<LetHead> {
     return match (entry) {
         None -> None,
-        Some(e) -> literal_checked(fuel, env, scope, same_text(e.name, n) && same_names(e.fields, fs), fs),
+        Some(t) -> literal_checked(fuel, env, scope, same && !t.is_enum && same_names(t.fields, fs), fs),
     };
 }
 
-pub fn literal_fields(fuel: usize, env: Env, scope: List<Local>, ty: SrcType, n: List<usize>, fs: List<CTree>) -> core::option::Option<LetHead> {
-    return match (struct_id(ty)) {
+pub fn literal_at(fuel: usize, env: Env, scope: List<Local>, ty: Ty, d: core::option::Option<usize>, fs: List<CTree>) -> core::option::Option<LetHead> {
+    return match (d) {
         None -> None,
-        Some(id) -> literal_entry(fuel, env, scope, n, get(env.types, id), fs),
-    };
-}
-
-pub fn literal_typed(fuel: usize, env: Env, scope: List<Local>, ty: SrcType, n: List<usize>, items: core::option::Option<List<CTree>>) -> core::option::Option<LetHead> {
-    return match (items) {
-        None -> None,
-        Some(fs) -> literal_fields(fuel, env, scope, ty, n, fs),
+        Some(x) -> match (named_decl(ty)) {
+            None -> None,
+            Some(e) -> literal_entry(fuel, env, scope, x == e, get(env.decls.types, x), fs),
+        },
     };
 }
 
 // `S { f: e, ... }` of the let's own struct type, fields in declared order.
-pub fn literal_head(fuel: usize, env: Env, scope: List<Local>, ty: SrcType, name: core::option::Option<List<usize>>, fields: CTree) -> core::option::Option<LetHead> {
-    return match (name) {
+pub fn literal_head(fuel: usize, env: Env, scope: List<Local>, ty: Ty, path: CTree, fields: CTree) -> core::option::Option<LetHead> {
+    return match (path_spellings(fuel, kid(path, 0), kid(path, 1))) {
         None -> None,
-        Some(n) -> literal_typed(fuel, env, scope, ty, n, list_items(fuel, fields)),
+        Some(ss) -> match (list_items(fuel, fields)) {
+            None -> None,
+            Some(fs) -> literal_at(fuel, env, scope, ty, type_decl_at(env, ss), fs),
+        },
     };
 }
 
-pub fn match_arms(scrutinee: usize, e: usize, arms: core::option::Option<List<SrcArm>>) -> core::option::Option<LetHead> {
+pub fn match_arms(scrutinee: usize, sty: Ty, arms: core::option::Option<List<SrcArm>>) -> core::option::Option<LetHead> {
     return match (arms) {
         None -> None,
-        Some(a) -> Some(MatchOf(scrutinee, e, a)),
+        Some(a) -> Some(MatchOf(scrutinee, sty, a)),
     };
 }
 
@@ -1541,13 +3465,6 @@ pub fn cons_arm(head: core::option::Option<SrcArm>, tail: core::option::Option<L
     };
 }
 
-pub fn is_spelled(name: core::option::Option<List<usize>>, other: List<usize>) -> bool {
-    return match (name) {
-        None -> false,
-        Some(n) -> same_text(n, other),
-    };
-}
-
 // Binder ids, and the scope with the binders in it.
 pub struct Bound {
     ids: List<usize>,
@@ -1561,7 +3478,7 @@ pub fn arm_value(ids: List<usize>, value: core::option::Option<SrcExpr>) -> core
     };
 }
 
-pub fn arm_bound(fuel: usize, env: Env, bound: core::option::Option<Bound>, payload: List<SrcType>, value: CTree) -> core::option::Option<SrcArm> {
+pub fn arm_bound(fuel: usize, env: Env, bound: core::option::Option<Bound>, value: CTree) -> core::option::Option<SrcArm> {
     return match (bound) {
         None -> None,
         Some(b) -> arm_value(b.ids, expr_of(fuel, env, b.scope, value)),
@@ -1583,7 +3500,7 @@ pub fn cons_binder(id: usize, rest: core::option::Option<Bound>) -> core::option
 }
 
 // One plain name pattern per payload type, each a fresh local.
-pub fn binders_of(env: Env, scope: List<Local>, pats: List<CTree>, payload: List<SrcType>) -> core::option::Option<Bound> {
+pub fn binders_of(env: Env, scope: List<Local>, pats: List<CTree>, payload: List<Ty>) -> core::option::Option<Bound> {
     return match (payload) {
         Nil -> match (pats) {
             Nil -> Some(Bound { ids: empty(), scope: scope }),
@@ -1597,7 +3514,7 @@ pub fn binders_of(env: Env, scope: List<Local>, pats: List<CTree>, payload: List
 }
 
 // extract: inline
-fn binder_of(env: Env, scope: List<Local>, p: CTree, t: SrcType, pats: List<CTree>, payload: List<SrcType>) -> core::option::Option<Bound> {
+fn binder_of(env: Env, scope: List<Local>, p: CTree, t: Ty, pats: List<CTree>, payload: List<Ty>) -> core::option::Option<Bound> {
     let path: CTree = kid(p, 0);
     let tok: Token = kid_token(kid(path, 0), 0);
     if (node_prod(p) == p_pattern_ident() && node_prod(kid(p, 1)) == p_pattern_plain() && is_some_name(path_name(path)) && !member(env.globals, tok.text)) {
@@ -1606,24 +3523,52 @@ fn binder_of(env: Env, scope: List<Local>, p: CTree, t: SrcType, pats: List<CTre
     return None;
 }
 
+// A variant's spelling and its payload types at the scrutinee's arguments.
+pub struct VariantTy {
+    name: List<usize>,
+    payload: List<Ty>,
+}
+
+pub fn zip_variants(names: List<List<usize>>, payloads: List<List<Ty>>) -> List<VariantTy> {
+    return match (names) {
+        Nil -> empty(),
+        Cons(n, rest) -> match (payloads) {
+            Nil -> empty(),
+            Cons(p, more) -> cons(VariantTy { name: n, payload: p }, zip_variants(unbox(rest), unbox(more))),
+        },
+    };
+}
+
+// An arm's pattern names the variant: `V`, or `m::V` with m the enum's module.
+pub fn arm_named(segments: core::option::Option<List<List<usize>>>, module: List<List<usize>>, name: List<usize>) -> bool {
+    return match (segments) {
+        None -> false,
+        Some(ss) -> match (split_last(ss)) {
+            None -> false,
+            Some(s) -> same_text(s.name, name) && (no_names(s.module) || same_spellings(s.module, module)),
+        },
+    };
+}
+
 // `V -> value` or `V(b, ...) -> value` (match_arm -> pattern MatchArrow expr).
-pub fn arm_of(fuel: usize, env: Env, scope: List<Local>, v: Variant, arm: CTree) -> core::option::Option<SrcArm> {
+pub fn arm_of(fuel: usize, env: Env, scope: List<Local>, owner: TypeDecl, v: VariantTy, arm: CTree) -> core::option::Option<SrcArm> {
     let pattern: CTree = kid(arm, 0);
     let ptail: CTree = kid(pattern, 1);
-    if (node_prod(pattern) == p_pattern_ident() && is_spelled(path_name(kid(pattern, 0)), v.name)) {
+    let path: CTree = kid(pattern, 0);
+    if (node_prod(pattern) == p_pattern_ident() && arm_named(path_spellings(fuel, kid(path, 0), kid(path, 1)), owner.module, v.name)) {
         if (node_prod(ptail) == p_pattern_plain()) {
-            return arm_bound(fuel, env, Some(Bound { ids: empty(), scope: scope }), v.payload, kid(arm, 2));
+            return arm_bound(fuel, env, Some(Bound { ids: empty(), scope: scope }), kid(arm, 2));
         }
         return match (list_items(fuel, kid(ptail, 1))) {
             None -> None,
-            Some(pats) -> arm_bound(fuel, env, binders_of(env, scope, pats, v.payload), v.payload, kid(arm, 2)),
+            Some(pats) -> arm_bound(fuel, env, binders_of(env, scope, pats, v.payload), kid(arm, 2)),
         };
     }
     return None;
 }
 
 // Arm k is variant k.
-pub fn arms_of(fuel: usize, env: Env, scope: List<Local>, variants: List<Variant>, arms: List<CTree>) -> core::option::Option<List<SrcArm>> {
+pub fn arms_of(fuel: usize, env: Env, scope: List<Local>, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<SrcArm>> {
     return match (variants) {
         Nil -> match (arms) {
             Nil -> Some(empty()),
@@ -1631,29 +3576,31 @@ pub fn arms_of(fuel: usize, env: Env, scope: List<Local>, variants: List<Variant
         },
         Cons(v, rest) -> match (arms) {
             Nil -> None,
-            Cons(a, more) -> cons_arm(arm_of(fuel, env, scope, v, a), arms_of(fuel, env, scope, unbox(rest), unbox(more))),
+            Cons(a, more) -> cons_arm(arm_of(fuel, env, scope, owner, v, a), arms_of(fuel, env, scope, owner, unbox(rest), unbox(more))),
         },
     };
 }
 
-pub fn arms_list(fuel: usize, env: Env, scope: List<Local>, variants: List<Variant>, items: core::option::Option<List<CTree>>) -> core::option::Option<List<SrcArm>> {
-    return match (items) {
-        None -> None,
-        Some(arms) -> arms_of(fuel, env, scope, variants, arms),
-    };
-}
-
-pub fn match_enum(fuel: usize, env: Env, scope: List<Local>, scrutinee: usize, e: usize, entry: core::option::Option<TypeEntry>, m: CTree) -> core::option::Option<LetHead> {
-    return match (entry) {
-        None -> None,
-        Some(t) -> match_arms(scrutinee, e, arms_list(fuel, env, scope, t.variants, list_items(fuel, kid(m, 5)))),
-    };
+pub fn match_enum(fuel: usize, env: Env, scope: List<Local>, l: Local, owner: TypeDecl, payloads: core::option::Option<List<List<Ty>>>, m: CTree) -> core::option::Option<LetHead> {
+    if (owner.is_enum) {
+        return match (payloads) {
+            None -> None,
+            Some(ps) -> match (list_items(fuel, kid(m, 5))) {
+                None -> None,
+                Some(arms) -> match_arms(l.id, l.ty, arms_of(fuel, env, scope, owner, zip_variants(owner.variants, ps), arms)),
+            },
+        };
+    }
+    return None;
 }
 
 pub fn match_local(fuel: usize, env: Env, scope: List<Local>, l: Local, m: CTree) -> core::option::Option<LetHead> {
-    return match (enum_id(l.ty)) {
+    return match (named_parts(l.ty)) {
         None -> None,
-        Some(e) -> match_enum(fuel, env, scope, l.id, e, get(env.types, e), m),
+        Some(n) -> match (get(env.decls.types, n.decl)) {
+            None -> None,
+            Some(t) -> match_enum(fuel, env, scope, l, t, payload_tys(fuel, env.decls, n.decl, n.args), m),
+        },
     };
 }
 
@@ -1668,183 +3615,216 @@ pub fn match_scrutinee(fuel: usize, env: Env, scope: List<Local>, pf: CTree, m: 
 }
 
 // `match (x) { arms }`: x a local of an enum type, one arm per variant in order.
-pub fn match_head(fuel: usize, env: Env, scope: List<Local>, ty: SrcType, m: CTree) -> core::option::Option<LetHead> {
+pub fn match_head(fuel: usize, env: Env, scope: List<Local>, m: CTree) -> core::option::Option<LetHead> {
     return match (peel(fuel, kid(m, 2))) {
         None -> None,
         Some(pf) -> match_scrutinee(fuel, env, scope, pf, m),
     };
 }
 
-pub fn postfix_head(fuel: usize, env: Env, scope: List<Local>, ty: SrcType, pf: CTree, init: CTree) -> core::option::Option<LetHead> {
+pub fn postfix_head(fuel: usize, env: Env, scope: List<Local>, ty: Ty, pf: CTree, init: CTree) -> core::option::Option<LetHead> {
     let primary: CTree = kid(pf, 0);
     let tail: CTree = kid(pf, 1);
     if (node_prod(primary) == p_match_expr() && node_prod(tail) == p_postfix_end()) {
-        return match_head(fuel, env, scope, ty, primary);
+        return match_head(fuel, env, scope, primary);
     }
     if (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_struct_lit() && node_prod(tail) == p_postfix_end()) {
-        return literal_head(fuel, env, scope, ty, path_name(kid(primary, 0)), kid(kid(primary, 1), 1));
+        return literal_head(fuel, env, scope, ty, kid(primary, 0), kid(kid(primary, 1), 1));
     }
-    if (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain() && node_prod(tail) == p_postfix_call() && node_prod(kid(tail, 3)) == p_postfix_end()) {
-        return call_head(fuel, env, scope, ty, path_name(kid(primary, 0)), kid(tail, 1));
+    if (is_path_call(pf)) {
+        return call_path_head(fuel, env, scope, ty, kid(primary, 0), kid(tail, 1));
+    }
+    if (is_method_form(pf)) {
+        return call_head_of(method_call_of(fuel, env, scope, ty, pf));
+    }
+    if (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain() && node_prod(tail) == p_postfix_index() && node_prod(kid(tail, 3)) == p_postfix_end()) {
+        return index_head(local_of(env, scope, primary), expr_of(fuel, env, scope, kid(tail, 1)));
     }
     if (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain() && node_prod(tail) == p_postfix_end()) {
-        return unit_head(env, scope, ty, path_name(kid(primary, 0)), init, fuel);
+        return unit_head(fuel, env, scope, ty, kid(primary, 0), init);
     }
     return plain_head(expr_of(fuel, env, scope, init));
 }
 
 // The head of `let x: ty = init;`.
-pub fn let_head(fuel: usize, env: Env, scope: List<Local>, ty: SrcType, init: CTree) -> core::option::Option<LetHead> {
+pub fn let_head(fuel: usize, env: Env, scope: List<Local>, ty: Ty, init: CTree) -> core::option::Option<LetHead> {
     return match (peel(fuel, init)) {
         None -> plain_head(expr_of(fuel, env, scope, init)),
         Some(pf) -> postfix_head(fuel, env, scope, ty, pf, init),
     };
 }
 
-pub fn then_rest(h: SrcStmt, rest: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+pub fn then_rest(h: MStmt, rest: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
     return match (rest) {
         None -> None,
-        Some(r) -> Some(Then(boxed(h), boxed(r))),
+        Some(r) -> Some(MThen(boxed(h), boxed(r))),
     };
 }
 
-pub fn then_of(head: core::option::Option<SrcStmt>, rest: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+pub fn then_of(head: core::option::Option<MStmt>, rest: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
     return match (head) {
         None -> None,
         Some(h) -> then_rest(h, rest),
     };
 }
 
-pub fn let_stmt(id: usize, ty: SrcType, head: LetHead, body: SrcStmt) -> SrcStmt {
-    return match (head) {
-        Plain(e) -> Let(id, ty, e, boxed(body)),
-        CallOf(callee, args) -> LetCall(id, ty, callee, args, boxed(body)),
-        VariantOf(variant, payload) -> LetEnum(id, ty, variant, payload, boxed(body)),
-        LiteralOf(fields) -> LetStruct(id, ty, fields, boxed(body)),
-        MatchOf(scrutinee, owner, arms) -> LetMatch(id, ty, scrutinee, owner, arms, boxed(body)),
+pub fn is_ptr_ty(t: Ty) -> bool {
+    return match (t) {
+        TyI32 -> false,
+        TyBool -> false,
+        TyUint(k) -> false,
+        TyPtr -> true,
+        TySlice(e) -> false,
+        TyNamed(d, args) -> false,
     };
 }
 
-pub fn let_body(id: usize, ty: SrcType, h: LetHead, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+pub fn alloc_let(ok: bool, id: usize, size: SrcExpr, shift: usize, body: MStmt) -> core::option::Option<MStmt> {
+    if (ok) {
+        return Some(MLetAlloc(id, size, shift, boxed(body)));
+    }
+    return None;
+}
+
+pub fn slice_let(element: core::option::Option<Ty>, id: usize, pointer: SrcExpr, length: SrcExpr, body: MStmt) -> core::option::Option<MStmt> {
+    return match (element) {
+        None -> None,
+        Some(e) -> Some(MLetSlice(id, e, pointer, length, boxed(body))),
+    };
+}
+
+// An allocation binds a `ptr`, a raw view a `[T]`.
+pub fn let_stmt(id: usize, ty: Ty, head: LetHead, body: MStmt) -> core::option::Option<MStmt> {
+    return match (head) {
+        Plain(e) -> Some(MLet(id, ty, e, boxed(body))),
+        CallOf(c) -> Some(MLetCall(id, ty, c.inst, c.args, boxed(body))),
+        VariantOf(variant, payload) -> Some(MLetEnum(id, ty, variant, payload, boxed(body))),
+        LiteralOf(fields) -> Some(MLetStruct(id, ty, fields, boxed(body))),
+        MatchOf(scrutinee, sty, arms) -> Some(MLetMatch(id, ty, scrutinee, sty, arms, boxed(body))),
+        AllocOf(size, shift) -> alloc_let(is_ptr_ty(ty), id, size, shift, body),
+        SliceOf(pointer, length) -> slice_let(slice_elem(ty), id, pointer, length, body),
+        IndexOf(slice, index) -> Some(MLetIndex(id, ty, slice, index, boxed(body))),
+    };
+}
+
+pub fn let_body(id: usize, ty: Ty, h: LetHead, body: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
     return match (body) {
         None -> None,
-        Some(b) -> Some(let_stmt(id, ty, h, b)),
+        Some(b) -> let_stmt(id, ty, h, b),
     };
 }
 
-pub fn let_of(id: usize, ty: SrcType, head: core::option::Option<LetHead>, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+pub fn let_of(id: usize, ty: Ty, head: core::option::Option<LetHead>, body: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
     return match (head) {
         None -> None,
         Some(h) -> let_body(id, ty, h, body),
     };
 }
 
-pub fn returned(e: core::option::Option<SrcExpr>) -> core::option::Option<SrcStmt> {
+pub fn returned(e: core::option::Option<SrcExpr>) -> core::option::Option<MStmt> {
     return match (e) {
         None -> None,
-        Some(x) -> Some(Return(x)),
+        Some(x) -> Some(MReturn(x)),
     };
 }
 
-pub fn if_else(x: SrcExpr, s: SrcStmt, b: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+pub fn if_else(x: SrcExpr, s: MStmt, b: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
     return match (b) {
         None -> None,
-        Some(t) -> Some(If(x, boxed(s), boxed(t))),
+        Some(t) -> Some(MIf(x, boxed(s), boxed(t))),
     };
 }
 
-pub fn if_branches(x: SrcExpr, a: core::option::Option<SrcStmt>, b: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+pub fn if_branches(x: SrcExpr, a: core::option::Option<MStmt>, b: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
     return match (a) {
         None -> None,
         Some(s) -> if_else(x, s, b),
     };
 }
 
-pub fn if_of(c: core::option::Option<SrcExpr>, a: core::option::Option<SrcStmt>, b: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+pub fn if_of(c: core::option::Option<SrcExpr>, a: core::option::Option<MStmt>, b: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
     return match (c) {
         None -> None,
         Some(x) -> if_branches(x, a, b),
     };
 }
 
-pub fn while_body(x: SrcExpr, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+pub fn while_body(x: SrcExpr, body: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
     return match (body) {
         None -> None,
-        Some(b) -> Some(While(x, boxed(b))),
+        Some(b) -> Some(MWhile(x, boxed(b))),
     };
 }
 
-pub fn while_of(c: core::option::Option<SrcExpr>, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+pub fn while_of(c: core::option::Option<SrcExpr>, body: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
     return match (c) {
         None -> None,
         Some(x) -> while_body(x, body),
     };
 }
 
-pub fn set_field_value(id: usize, j: usize, value: core::option::Option<SrcExpr>) -> core::option::Option<SrcStmt> {
+pub fn set_field_value(id: usize, j: usize, value: core::option::Option<SrcExpr>) -> core::option::Option<MStmt> {
     return match (value) {
         None -> None,
-        Some(v) -> Some(SetField(id, j, v)),
+        Some(v) -> Some(MSetField(id, j, v)),
     };
 }
 
-pub fn field_into(index: core::option::Option<usize>, id: usize, value: core::option::Option<SrcExpr>) -> core::option::Option<SrcStmt> {
+pub fn field_into(index: core::option::Option<usize>, id: usize, value: core::option::Option<SrcExpr>) -> core::option::Option<MStmt> {
     return match (index) {
         None -> None,
         Some(j) -> set_field_value(id, j, value),
     };
 }
 
-pub fn set_value(id: usize, value: core::option::Option<SrcExpr>) -> core::option::Option<SrcStmt> {
+pub fn set_value(id: usize, value: core::option::Option<SrcExpr>) -> core::option::Option<MStmt> {
     return match (value) {
         None -> None,
-        Some(v) -> Some(Set(id, v)),
+        Some(v) -> Some(MSet(id, v)),
     };
 }
 
-pub fn position_of(names: List<List<usize>>, name: core::option::Option<List<usize>>) -> core::option::Option<usize> {
-    return match (name) {
+pub fn set_call_of(id: usize, c: core::option::Option<Called>) -> core::option::Option<MStmt> {
+    return match (c) {
         None -> None,
-        Some(n) -> position(names, n, 0),
+        Some(x) -> Some(MSetCall(id, x.inst, x.args)),
     };
 }
 
-pub fn set_call_args(id: usize, f: usize, args: core::option::Option<List<SrcExpr>>) -> core::option::Option<SrcStmt> {
-    return match (args) {
-        None -> None,
-        Some(es) -> Some(SetCall(id, f, es)),
-    };
-}
-
-pub fn call_into(id: usize, callee: core::option::Option<usize>, args: core::option::Option<List<SrcExpr>>) -> core::option::Option<SrcStmt> {
-    return match (callee) {
-        None -> None,
-        Some(f) -> set_call_args(id, f, args),
-    };
-}
-
-pub fn set_postfix(fuel: usize, env: Env, scope: List<Local>, id: usize, pf: CTree, value: CTree) -> core::option::Option<SrcStmt> {
-    let primary: CTree = kid(pf, 0);
-    let tail: CTree = kid(pf, 1);
-    if (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain() && node_prod(tail) == p_postfix_call() && node_prod(kid(tail, 3)) == p_postfix_end()) {
-        return call_into(id, position_of(env.fns, path_name(kid(primary, 0))), args_of(fuel, env, scope, kid(tail, 1)));
+// `x = value;`: a call, or an expression.
+pub fn set_postfix(fuel: usize, env: Env, scope: List<Local>, l: Local, pf: CTree, value: CTree) -> core::option::Option<MStmt> {
+    if (is_path_call(pf)) {
+        return set_call_of(l.id, path_call_of(fuel, env, scope, l.ty, kid(kid(pf, 0), 0), kid(kid(pf, 1), 1)));
     }
-    return set_value(id, expr_of(fuel, env, scope, value));
+    if (is_method_form(pf)) {
+        return set_call_of(l.id, method_call_of(fuel, env, scope, l.ty, pf));
+    }
+    return set_value(l.id, expr_of(fuel, env, scope, value));
 }
 
-pub fn set_local(fuel: usize, env: Env, scope: List<Local>, id: usize, value: CTree) -> core::option::Option<SrcStmt> {
+pub fn set_local(fuel: usize, env: Env, scope: List<Local>, l: Local, value: CTree) -> core::option::Option<MStmt> {
     return match (peel(fuel, value)) {
-        None -> set_value(id, expr_of(fuel, env, scope, value)),
-        Some(pf) -> set_postfix(fuel, env, scope, id, pf, value),
+        None -> set_value(l.id, expr_of(fuel, env, scope, value)),
+        Some(pf) -> set_postfix(fuel, env, scope, l, pf, value),
     };
 }
 
-pub fn assign_target(fuel: usize, env: Env, scope: List<Local>, target: CTree, value: CTree) -> core::option::Option<SrcStmt> {
+pub fn set_index_of(slice: usize, index: core::option::Option<SrcExpr>, value: core::option::Option<SrcExpr>) -> core::option::Option<MStmt> {
+    return match (index) {
+        None -> None,
+        Some(i) -> match (value) {
+            None -> None,
+            Some(v) -> Some(MSetIndex(slice, i, v)),
+        },
+    };
+}
+
+pub fn assign_target(fuel: usize, env: Env, scope: List<Local>, target: CTree, value: CTree) -> core::option::Option<MStmt> {
     let tail: CTree = kid(target, 1);
     if (node_prod(tail) == p_postfix_end()) {
         return match (local_of(env, scope, kid(target, 0))) {
             None -> None,
-            Some(l) -> set_local(fuel, env, scope, l.id, value),
+            Some(l) -> set_local(fuel, env, scope, l, value),
         };
     }
     if (node_prod(tail) == p_postfix_member() && node_prod(kid(tail, 2)) == p_member_type_args_none() && node_prod(kid(tail, 3)) == p_postfix_end()) {
@@ -1853,12 +3833,120 @@ pub fn assign_target(fuel: usize, env: Env, scope: List<Local>, target: CTree, v
             Some(l) -> field_into(field_index(env, l.ty, kid_token(tail, 1).text), l.id, expr_of(fuel, env, scope, value)),
         };
     }
+    if (node_prod(tail) == p_postfix_index() && node_prod(kid(tail, 3)) == p_postfix_end()) {
+        return match (local_of(env, scope, kid(target, 0))) {
+            None -> None,
+            Some(l) -> set_index_of(l.id, expr_of(fuel, env, scope, kid(tail, 1)), expr_of(fuel, env, scope, value)),
+        };
+    }
     return None;
 }
 
-// `target = value;`: target a local or a field of one; value a call of a
-// function (to a plain local) or an expression.
-pub fn assignment(fuel: usize, env: Env, scope: List<Local>, e: CTree) -> core::option::Option<SrcStmt> {
+pub fn free_shifted(pointer: SrcExpr, size: SrcExpr, shift: core::option::Option<usize>, more: List<SrcExpr>) -> core::option::Option<MStmt> {
+    return match (shift) {
+        None -> None,
+        Some(k) -> match (more) {
+            Nil -> Some(MFree(pointer, size, k)),
+            Cons(e, others) -> None,
+        },
+    };
+}
+
+// dealloc(pointer, size, align)
+pub fn free_of(args: core::option::Option<List<SrcExpr>>) -> core::option::Option<MStmt> {
+    return match (args) {
+        None -> None,
+        Some(es) -> match (es) {
+            Nil -> None,
+            Cons(pointer, rest) -> match (unbox(rest)) {
+                Nil -> None,
+                Cons(size, more) -> match (unbox(more)) {
+                    Nil -> None,
+                    Cons(align, others) -> free_shifted(pointer, size, shift_of(align), unbox(others)),
+                },
+            },
+        },
+    };
+}
+
+// A call statement: `alloc::allocator::dealloc(pointer, size, align);`.
+pub fn call_stmt(fuel: usize, env: Env, scope: List<Local>, pf: CTree) -> core::option::Option<MStmt> {
+    let path: CTree = kid(kid(pf, 0), 0);
+    if (is_path_call(pf) && is_path(path_spellings(fuel, kid(path, 0), kid(path, 1)), dealloc_path())) {
+        return free_of(args_of(fuel, env, scope, kid(kid(pf, 1), 1)));
+    }
+    return None;
+}
+
+// The operator of a compound assignment `+=`, `-=`, `*=`, `&=`, `|=`, `^=`.
+pub fn compound_op(p: usize) -> core::option::Option<SrcOp> {
+    if (p == p_assign_add()) {
+        return Some(Plus);
+    }
+    if (p == p_assign_sub()) {
+        return Some(Minus);
+    }
+    if (p == p_assign_mul()) {
+        return Some(Times);
+    }
+    if (p == p_assign_band()) {
+        return Some(BitAnd);
+    }
+    if (p == p_assign_bor()) {
+        return Some(BitOr);
+    }
+    if (p == p_assign_xor()) {
+        return Some(BitXor);
+    }
+    return None;
+}
+
+pub fn compound_value(op: SrcOp, left: SrcExpr, right: core::option::Option<SrcExpr>) -> core::option::Option<SrcExpr> {
+    return match (right) {
+        None -> None,
+        Some(r) -> Some(Apply(op, boxed(left), boxed(r))),
+    };
+}
+
+pub fn compound_field(fuel: usize, env: Env, scope: List<Local>, l: Local, index: core::option::Option<usize>, op: SrcOp, value: CTree) -> core::option::Option<MStmt> {
+    return match (index) {
+        None -> None,
+        Some(j) -> set_field_value(l.id, j, compound_value(op, Field(l.id, j), expr_of(fuel, env, scope, value))),
+    };
+}
+
+// `x op= e` is `x = x op e`, and `x.f op= e` is `x.f = x.f op e`.
+pub fn compound_target(fuel: usize, env: Env, scope: List<Local>, target: CTree, op: SrcOp, value: CTree) -> core::option::Option<MStmt> {
+    let tail: CTree = kid(target, 1);
+    if (node_prod(tail) == p_postfix_end()) {
+        return match (local_of(env, scope, kid(target, 0))) {
+            None -> None,
+            Some(l) -> set_value(l.id, compound_value(op, Local(l.id), expr_of(fuel, env, scope, value))),
+        };
+    }
+    if (node_prod(tail) == p_postfix_member() && node_prod(kid(tail, 2)) == p_member_type_args_none() && node_prod(kid(tail, 3)) == p_postfix_end()) {
+        return match (local_of(env, scope, kid(target, 0))) {
+            None -> None,
+            Some(l) -> compound_field(fuel, env, scope, l, field_index(env, l.ty, kid_token(tail, 1).text), op, value),
+        };
+    }
+    return None;
+}
+
+pub fn compound_of(fuel: usize, env: Env, scope: List<Local>, target: core::option::Option<CTree>, op: core::option::Option<SrcOp>, value: CTree) -> core::option::Option<MStmt> {
+    return match (op) {
+        None -> None,
+        Some(o) -> match (target) {
+            None -> None,
+            Some(t) -> compound_target(fuel, env, scope, t, o, value),
+        },
+    };
+}
+
+// `target = value;`: target a local, a field of one or a slice element;
+// value a call (to a plain local) or an expression. Also `target op=
+// value;`, and the call statement `dealloc(...)`.
+pub fn assignment(fuel: usize, env: Env, scope: List<Local>, e: CTree) -> core::option::Option<MStmt> {
     let a: CTree = kid(e, 0);
     let set: CTree = kid(a, 1);
     if (node_prod(e) == p_expr() && node_prod(a) == p_assign() && node_prod(set) == p_assign_set()) {
@@ -1867,12 +3955,21 @@ pub fn assignment(fuel: usize, env: Env, scope: List<Local>, e: CTree) -> core::
             Some(target) -> assign_target(fuel, env, scope, target, kid(set, 1)),
         };
     }
+    if (node_prod(e) == p_expr() && node_prod(a) == p_assign() && has_kids(set) && node_prod(set) != p_assign_set()) {
+        return compound_of(fuel, env, scope, peel(fuel, kid(a, 0)), compound_op(node_prod(set)), kid(set, 1));
+    }
+    if (node_prod(e) == p_expr() && node_prod(a) == p_assign() && node_prod(set) == p_assign_end()) {
+        return match (peel(fuel, kid(a, 0))) {
+            None -> None,
+            Some(pf) -> call_stmt(fuel, env, scope, pf),
+        };
+    }
     return None;
 }
 
 // extract: mutual begin
 // A statement list: a let scopes over the statements after it.
-pub fn block_of(fuel: usize, env: Env, scope: List<Local>, list: CTree) -> core::option::Option<SrcStmt> {
+pub fn block_of(fuel: usize, env: Env, scope: List<Local>, list: CTree) -> core::option::Option<MStmt> {
     if (fuel == 0) {
         return None;
     }
@@ -1882,17 +3979,17 @@ pub fn block_of(fuel: usize, env: Env, scope: List<Local>, list: CTree) -> core:
     };
 }
 
-pub fn stmts_of(fuel: usize, env: Env, scope: List<Local>, items: List<CTree>) -> core::option::Option<SrcStmt> {
+pub fn stmts_of(fuel: usize, env: Env, scope: List<Local>, items: List<CTree>) -> core::option::Option<MStmt> {
     if (fuel == 0) {
         return None;
     }
     return match (items) {
-        Nil -> Some(Nop),
+        Nil -> Some(MNop),
         Cons(s, rest) -> stmt_first(minus(fuel, 1), env, scope, s, unbox(rest)),
     };
 }
 
-pub fn stmt_first(fuel: usize, env: Env, scope: List<Local>, s: CTree, rest: List<CTree>) -> core::option::Option<SrcStmt> {
+pub fn stmt_first(fuel: usize, env: Env, scope: List<Local>, s: CTree, rest: List<CTree>) -> core::option::Option<MStmt> {
     if (fuel == 0) {
         return None;
     }
@@ -1906,13 +4003,13 @@ pub fn stmt_first(fuel: usize, env: Env, scope: List<Local>, s: CTree, rest: Lis
 }
 
 // `let x: ty = init;` (let_stmt -> Let LetIdent let_type let_init LetSemicolon).
-pub fn let_first(fuel: usize, env: Env, scope: List<Local>, s: CTree, rest: List<CTree>) -> core::option::Option<SrcStmt> {
+pub fn let_first(fuel: usize, env: Env, scope: List<Local>, s: CTree, rest: List<CTree>) -> core::option::Option<MStmt> {
     if (fuel == 0) {
         return None;
     }
     let tok: Token = kid_token(s, 1);
     if (node_prod(kid(s, 2)) == p_let_type() && node_prod(kid(s, 3)) == p_let_init() && !member(env.globals, tok.text)) {
-        return match (type_of(env, kid(kid(s, 2), 1))) {
+        return match (ty_of(fuel, env, kid(kid(s, 2), 1))) {
             None -> None,
             Some(t) -> let_of(tok.start, t, let_head(minus(fuel, 1), env, scope, t, kid(kid(s, 3), 1)), stmts_of(minus(fuel, 1), env, cons(Local { name: tok.text, id: tok.start, ty: t }, scope), rest)),
         };
@@ -1921,7 +4018,7 @@ pub fn let_first(fuel: usize, env: Env, scope: List<Local>, s: CTree, rest: List
 }
 
 // return, if, while, and assignments.
-pub fn stmt_of(fuel: usize, env: Env, scope: List<Local>, s: CTree) -> core::option::Option<SrcStmt> {
+pub fn stmt_of(fuel: usize, env: Env, scope: List<Local>, s: CTree) -> core::option::Option<MStmt> {
     if (fuel == 0) {
         return None;
     }
@@ -1934,7 +4031,7 @@ pub fn stmt_of(fuel: usize, env: Env, scope: List<Local>, s: CTree) -> core::opt
         return if_of(expr_of(f, env, scope, kid(s, 2)), block_of(f, env, scope, kid(kid(s, 4), 1)), block_of(f, env, scope, kid(kid(kid(s, 5), 1), 1)));
     }
     if (p == p_if_stmt() && node_prod(kid(s, 5)) == p_else_none()) {
-        return if_of(expr_of(f, env, scope, kid(s, 2)), block_of(f, env, scope, kid(kid(s, 4), 1)), Some(Nop));
+        return if_of(expr_of(f, env, scope, kid(s, 2)), block_of(f, env, scope, kid(kid(s, 4), 1)), Some(MNop));
     }
     if (p == p_while_stmt()) {
         return while_of(expr_of(f, env, scope, kid(s, 2)), block_of(f, env, scope, kid(kid(s, 4), 1)));
@@ -1946,100 +4043,488 @@ pub fn stmt_of(fuel: usize, env: Env, scope: List<Local>, s: CTree) -> core::opt
 }
 // extract: mutual end
 
-pub fn func_ret(fuel: usize, env: Env, ps: Params, ret: core::option::Option<SrcType>, body: CTree) -> core::option::Option<SrcFunc> {
+// ---------------------------------------------------------------- functions
+
+pub struct MParam {
+    id: usize,
+    ty: Ty,
+}
+
+pub struct MFunc {
+    params: List<MParam>,
+    ret: Ty,
+    body: MStmt,
+}
+
+// Parameters, and the scope they make (the last one innermost).
+pub struct MParams {
+    params: List<MParam>,
+    scope: List<Local>,
+}
+
+pub fn cons_param(p: MParam, rest: core::option::Option<MParams>) -> core::option::Option<MParams> {
+    return match (rest) {
+        None -> None,
+        Some(r) -> Some(MParams { params: cons(p, r.params), scope: r.scope }),
+    };
+}
+
+// `name: T` or `self` (by value); each a local named by its spelling.
+pub fn params_of(fuel: usize, env: Env, fd: FnDecl, scope: List<Local>, items: List<CTree>) -> core::option::Option<MParams> {
+    return match (items) {
+        Nil -> Some(MParams { params: empty(), scope: scope }),
+        Cons(p, rest) -> param_of(fuel, env, fd, scope, p, unbox(rest)),
+    };
+}
+
+// extract: inline
+fn param_of(pfuel: usize, penv: Env, pfd: FnDecl, pscope: List<Local>, pp: CTree, prest: List<CTree>) -> core::option::Option<MParams> {
+    let tok: Token = kid_token(pp, 0);
+    if ((node_prod(pp) == p_param_named() || node_prod(pp) == p_param_self()) && !member(penv.globals, tok.text)) {
+        return match (pattern_of(pfd, pp)) {
+            None -> None,
+            Some(t) -> match (ty_of(pfuel, penv, t)) {
+                None -> None,
+                Some(x) -> cons_param(MParam { id: tok.start, ty: x }, params_of(pfuel, penv, pfd, cons(Local { name: tok.text, id: tok.start, ty: x }, pscope), prest)),
+            },
+        };
+    }
+    return None;
+}
+
+pub fn func_body(ps: MParams, r: Ty, body: core::option::Option<MStmt>) -> core::option::Option<MFunc> {
+    return match (body) {
+        None -> None,
+        Some(b) -> Some(MFunc { params: ps.params, ret: r, body: b }),
+    };
+}
+
+pub fn func_ret(fuel: usize, env: Env, ps: MParams, ret: core::option::Option<Ty>, body: CTree) -> core::option::Option<MFunc> {
     return match (ret) {
         None -> None,
         Some(r) -> func_body(ps, r, block_of(fuel, env, ps.scope, body)),
     };
 }
 
-pub fn func_params(fuel: usize, env: Env, params: core::option::Option<Params>, ret: core::option::Option<SrcType>, body: CTree) -> core::option::Option<SrcFunc> {
+pub fn func_params(fuel: usize, env: Env, params: core::option::Option<MParams>, ret: core::option::Option<Ty>, body: CTree) -> core::option::Option<MFunc> {
     return match (params) {
         None -> None,
         Some(ps) -> func_ret(fuel, env, ps, ret, body),
     };
 }
 
-pub fn cons_param(p: SrcParam, rest: core::option::Option<Params>) -> core::option::Option<Params> {
-    return match (rest) {
+// A function instance's body, read with its type parameters (the impl's,
+// then its own) standing for the instance's arguments. It has a result type.
+pub fn read_fn(fuel: usize, decls: Decls, fd: FnDecl, args: List<Ty>) -> core::option::Option<MFunc> {
+    let names: List<List<usize>> = concat(fd.impl_params, fd.params);
+    let env: Env = Env { decls: decls, module: fd.module, names: names, subst: args, globals: module_globals(decls, fd.module) };
+    let f: CTree = fd.tree;
+    let ret: CTree = kid(f, 6);
+    if (length(names) == length(args) && node_prod(ret) == p_ret_type()) {
+        return match (list_items(fuel, kid(f, 4))) {
+            None -> None,
+            Some(items) -> func_params(fuel, env, params_of(fuel, env, fd, empty(), items), ty_of(fuel, env, kid(ret, 1)), kid(kid(f, 8), 1)),
+        };
+    }
+    return None;
+}
+
+pub fn read_inst(fuel: usize, decls: Decls, inst: Inst) -> core::option::Option<MFunc> {
+    return match (get(decls.fns, inst.decl)) {
         None -> None,
-        Some(r) -> Some(Params { params: cons(p, r.params), scope: r.scope }),
+        Some(fd) -> read_fn(fuel, decls, fd, inst.args),
     };
 }
 
-pub fn params_of(env: Env, scope: List<Local>, items: List<CTree>) -> core::option::Option<Params> {
-    return match (items) {
-        Nil -> Some(Params { params: empty(), scope: scope }),
-        Cons(p, rest) -> param_of(env, scope, p, unbox(rest)),
+// ---------------------------------------------------------------- monomorphization
+
+// The function instances a statement calls, in order.
+pub fn stmt_calls(m: MStmt) -> List<Inst> {
+    return match (m) {
+        MNop -> empty(),
+        MLet(id, ty, e, body) -> stmt_calls(unbox(body)),
+        MLetStruct(id, ty, es, body) -> stmt_calls(unbox(body)),
+        MLetCall(id, ty, inst, args, body) -> cons(inst, stmt_calls(unbox(body))),
+        MLetEnum(id, ty, k, es, body) -> stmt_calls(unbox(body)),
+        MLetMatch(id, ty, s, sty, arms, body) -> stmt_calls(unbox(body)),
+        MSet(id, e) -> empty(),
+        MSetField(id, j, e) -> empty(),
+        MSetCall(id, inst, args) -> single(inst),
+        MThen(a, b) -> concat(stmt_calls(unbox(a)), stmt_calls(unbox(b))),
+        MIf(c, a, b) -> concat(stmt_calls(unbox(a)), stmt_calls(unbox(b))),
+        MWhile(c, body) -> stmt_calls(unbox(body)),
+        MReturn(e) -> empty(),
+        MLetAlloc(id, size, shift, body) -> stmt_calls(unbox(body)),
+        MFree(p, size, shift) -> empty(),
+        MLetSlice(id, e, p, n, body) -> stmt_calls(unbox(body)),
+        MLetIndex(id, ty, s, i, body) -> stmt_calls(unbox(body)),
+        MSetIndex(s, i, v) -> empty(),
+    };
+}
+
+// The function instances, numbered in the order they are first requested,
+// and their bodies.
+pub struct Mono {
+    table: List<Inst>,
+    funcs: List<MFunc>,
+}
+
+// Read instance i of the table, append the instances it calls that are
+// new, and go on with i + 1 until the table is done.
+pub fn mono_loop(fuel: usize, rfuel: usize, decls: Decls, table: List<Inst>, done: List<MFunc>, i: usize) -> core::option::Option<Mono> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (get(table, i)) {
+        None -> Some(Mono { table: table, funcs: done }),
+        Some(inst) -> mono_next(minus(fuel, 1), rfuel, decls, table, done, i, read_inst(rfuel, decls, inst)),
     };
 }
 
 // extract: inline
-fn param_of(env: Env, scope: List<Local>, p: CTree, rest: List<CTree>) -> core::option::Option<Params> {
-    let tok: Token = kid_token(p, 0);
-    if (node_prod(p) == p_param_named() && !member(env.globals, tok.text)) {
-        return match (type_of(env, kid(p, 2))) {
-            None -> None,
-            Some(t) -> cons_param(SrcParam { id: tok.start, ty: t }, params_of(env, cons(Local { name: tok.text, id: tok.start, ty: t }, scope), rest)),
-        };
-    }
-    return None;
+fn mono_next(nfuel: usize, nrfuel: usize, ndecls: Decls, ntable: List<Inst>, ndone: List<MFunc>, ni: usize, nf: core::option::Option<MFunc>) -> core::option::Option<Mono> {
+    return match (nf) {
+        None -> None,
+        Some(mf) -> mono_loop(nfuel, nrfuel, ndecls, add_insts(ntable, stmt_calls(mf.body)), concat(ndone, single(mf)), plus(ni, 1)),
+    };
 }
 
-// A function (fn_item): no type parameters or where clause, a result type.
-pub fn func_of(fuel: usize, env: Env, f: CTree) -> core::option::Option<SrcFunc> {
-    let ret: CTree = kid(f, 6);
-    if (node_prod(kid(f, 2)) == p_enum_type_params_none() && node_prod(kid(f, 7)) == p_where_none() && node_prod(ret) == p_ret_type()) {
-        return match (list_items(fuel, kid(f, 4))) {
-            None -> None,
-            Some(items) -> func_params(fuel, env, params_of(env, empty(), items), type_of(env, kid(ret, 1)), kid(kid(f, 8), 1)),
-        };
-    }
-    return None;
+// The types a statement binds, in order (a match's result, then its
+// scrutinee's).
+pub fn stmt_tys(m: MStmt) -> List<Ty> {
+    return match (m) {
+        MNop -> empty(),
+        MLet(id, ty, e, body) -> cons(ty, stmt_tys(unbox(body))),
+        MLetStruct(id, ty, es, body) -> cons(ty, stmt_tys(unbox(body))),
+        MLetCall(id, ty, inst, args, body) -> cons(ty, stmt_tys(unbox(body))),
+        MLetEnum(id, ty, k, es, body) -> cons(ty, stmt_tys(unbox(body))),
+        MLetMatch(id, ty, s, sty, arms, body) -> cons(ty, cons(sty, stmt_tys(unbox(body)))),
+        MSet(id, e) -> empty(),
+        MSetField(id, j, e) -> empty(),
+        MSetCall(id, inst, args) -> empty(),
+        MThen(a, b) -> concat(stmt_tys(unbox(a)), stmt_tys(unbox(b))),
+        MIf(c, a, b) -> concat(stmt_tys(unbox(a)), stmt_tys(unbox(b))),
+        MWhile(c, body) -> stmt_tys(unbox(body)),
+        MReturn(e) -> empty(),
+        MLetAlloc(id, size, shift, body) -> stmt_tys(unbox(body)),
+        MFree(p, size, shift) -> empty(),
+        MLetSlice(id, e, p, n, body) -> cons(e, stmt_tys(unbox(body))),
+        MLetIndex(id, ty, s, i, body) -> cons(ty, stmt_tys(unbox(body))),
+        MSetIndex(s, i, v) -> empty(),
+    };
 }
 
-pub fn funcs_of(fuel: usize, env: Env, fns: List<CTree>) -> core::option::Option<List<SrcFunc>> {
-    return match (fns) {
+pub fn param_tys(ps: List<MParam>) -> List<Ty> {
+    return match (ps) {
+        Nil -> empty(),
+        Cons(p, rest) -> cons(p.ty, param_tys(unbox(rest))),
+    };
+}
+
+// A function's types: parameters, result, then its body's.
+pub fn funcs_tys(fs: List<MFunc>) -> List<Ty> {
+    return match (fs) {
+        Nil -> empty(),
+        Cons(f, rest) -> concat(param_tys(f.params), cons(f.ret, concat(stmt_tys(f.body), funcs_tys(unbox(rest))))),
+    };
+}
+
+pub fn seed_tys(seeds: List<Inst>) -> List<Ty> {
+    return match (seeds) {
+        Nil -> empty(),
+        Cons(s, rest) -> cons(TyNamed(s.decl, boxed(s.args)), seed_tys(unbox(rest))),
+    };
+}
+
+// The type instances, from the seeds, in the order the types first need
+// them.
+pub fn type_table(fuel: usize, decls: Decls, table: List<Inst>, ts: List<Ty>) -> core::option::Option<List<Inst>> {
+    return match (ts) {
+        Nil -> Some(table),
+        Cons(t, rest) -> type_table_next(fuel, decls, table, ty_insts(fuel, decls, t), unbox(rest)),
+    };
+}
+
+// extract: inline
+fn type_table_next(tfuel: usize, tdecls: Decls, ttable: List<Inst>, tnew: core::option::Option<List<Inst>>, trest: List<Ty>) -> core::option::Option<List<Inst>> {
+    return match (tnew) {
+        None -> None,
+        Some(xs) -> type_table(tfuel, tdecls, add_insts(ttable, xs), trest),
+    };
+}
+
+// ---------------------------------------------------------------- the closed program
+
+// The declarations and the function and type instance tables.
+pub struct Tables {
+    decls: Decls,
+    fns: List<Inst>,
+    types: List<Inst>,
+}
+
+pub fn close_ty(fuel: usize, t: Tables, ty: Ty) -> core::option::Option<SrcType> {
+    return lower_ty(fuel, t.decls, t.types, ty);
+}
+
+pub fn src_enum_id(t: core::option::Option<SrcType>) -> core::option::Option<usize> {
+    return match (t) {
+        None -> None,
+        Some(x) -> match (x) {
+            I32 -> None,
+            Bool -> None,
+            Uint(k) -> None,
+            Struct(id, fields) -> None,
+            Enum(id, variants) -> Some(id),
+            Ptr -> None,
+            Slice(e) -> None,
+        },
+    };
+}
+
+pub fn let_closed(id: usize, ty: core::option::Option<SrcType>, e: SrcExpr, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (ty) {
+        None -> None,
+        Some(t) -> match (body) {
+            None -> None,
+            Some(b) -> Some(Let(id, t, e, boxed(b))),
+        },
+    };
+}
+
+pub fn let_struct_closed(id: usize, ty: core::option::Option<SrcType>, es: List<SrcExpr>, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (ty) {
+        None -> None,
+        Some(t) -> match (body) {
+            None -> None,
+            Some(b) -> Some(LetStruct(id, t, es, boxed(b))),
+        },
+    };
+}
+
+pub fn let_call_closed(id: usize, ty: core::option::Option<SrcType>, callee: core::option::Option<usize>, args: List<SrcExpr>, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (ty) {
+        None -> None,
+        Some(t) -> match (callee) {
+            None -> None,
+            Some(c) -> match (body) {
+                None -> None,
+                Some(b) -> Some(LetCall(id, t, c, args, boxed(b))),
+            },
+        },
+    };
+}
+
+pub fn let_enum_closed(id: usize, ty: core::option::Option<SrcType>, k: usize, es: List<SrcExpr>, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (ty) {
+        None -> None,
+        Some(t) -> match (body) {
+            None -> None,
+            Some(b) -> Some(LetEnum(id, t, k, es, boxed(b))),
+        },
+    };
+}
+
+pub fn let_match_closed(id: usize, ty: core::option::Option<SrcType>, s: usize, e: core::option::Option<usize>, arms: List<SrcArm>, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (ty) {
+        None -> None,
+        Some(t) -> match (e) {
+            None -> None,
+            Some(x) -> match (body) {
+                None -> None,
+                Some(b) -> Some(LetMatch(id, t, s, x, arms, boxed(b))),
+            },
+        },
+    };
+}
+
+pub fn set_call_closed(id: usize, callee: core::option::Option<usize>, args: List<SrcExpr>) -> core::option::Option<SrcStmt> {
+    return match (callee) {
+        None -> None,
+        Some(c) -> Some(SetCall(id, c, args)),
+    };
+}
+
+pub fn then_closed(a: core::option::Option<SrcStmt>, b: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (a) {
+        None -> None,
+        Some(x) -> match (b) {
+            None -> None,
+            Some(y) -> Some(Then(boxed(x), boxed(y))),
+        },
+    };
+}
+
+pub fn if_closed(c: SrcExpr, a: core::option::Option<SrcStmt>, b: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (a) {
+        None -> None,
+        Some(x) -> match (b) {
+            None -> None,
+            Some(y) -> Some(If(c, boxed(x), boxed(y))),
+        },
+    };
+}
+
+pub fn while_closed(c: SrcExpr, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (body) {
+        None -> None,
+        Some(b) -> Some(While(c, boxed(b))),
+    };
+}
+
+pub fn alloc_closed(id: usize, size: SrcExpr, shift: usize, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (body) {
+        None -> None,
+        Some(b) -> Some(LetAlloc(id, size, shift, boxed(b))),
+    };
+}
+
+pub fn let_slice_closed(id: usize, element: core::option::Option<SrcType>, p: SrcExpr, n: SrcExpr, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (element) {
+        None -> None,
+        Some(t) -> match (body) {
+            None -> None,
+            Some(b) -> Some(LetSlice(id, t, p, n, boxed(b))),
+        },
+    };
+}
+
+pub fn let_index_closed(id: usize, ty: core::option::Option<SrcType>, s: usize, i: SrcExpr, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (ty) {
+        None -> None,
+        Some(t) -> match (body) {
+            None -> None,
+            Some(b) -> Some(LetIndex(id, t, s, i, boxed(b))),
+        },
+    };
+}
+
+// The source statement: types become source types and a call names its
+// instance's position in the function table.
+pub fn close_stmt(fuel: usize, t: Tables, m: MStmt) -> core::option::Option<SrcStmt> {
+    return match (m) {
+        MNop -> Some(Nop),
+        MLet(id, ty, e, body) -> let_closed(id, close_ty(fuel, t, ty), e, close_stmt(fuel, t, unbox(body))),
+        MLetStruct(id, ty, es, body) -> let_struct_closed(id, close_ty(fuel, t, ty), es, close_stmt(fuel, t, unbox(body))),
+        MLetCall(id, ty, inst, args, body) -> let_call_closed(id, close_ty(fuel, t, ty), inst_index(t.fns, inst, 0), args, close_stmt(fuel, t, unbox(body))),
+        MLetEnum(id, ty, k, es, body) -> let_enum_closed(id, close_ty(fuel, t, ty), k, es, close_stmt(fuel, t, unbox(body))),
+        MLetMatch(id, ty, s, sty, arms, body) -> let_match_closed(id, close_ty(fuel, t, ty), s, src_enum_id(close_ty(fuel, t, sty)), arms, close_stmt(fuel, t, unbox(body))),
+        MSet(id, e) -> Some(Set(id, e)),
+        MSetField(id, j, e) -> Some(SetField(id, j, e)),
+        MSetCall(id, inst, args) -> set_call_closed(id, inst_index(t.fns, inst, 0), args),
+        MThen(a, b) -> then_closed(close_stmt(fuel, t, unbox(a)), close_stmt(fuel, t, unbox(b))),
+        MIf(c, a, b) -> if_closed(c, close_stmt(fuel, t, unbox(a)), close_stmt(fuel, t, unbox(b))),
+        MWhile(c, body) -> while_closed(c, close_stmt(fuel, t, unbox(body))),
+        MReturn(e) -> Some(Return(e)),
+        MLetAlloc(id, size, shift, body) -> alloc_closed(id, size, shift, close_stmt(fuel, t, unbox(body))),
+        MFree(p, size, shift) -> Some(Free(p, size, shift)),
+        MLetSlice(id, e, p, n, body) -> let_slice_closed(id, close_ty(fuel, t, e), p, n, close_stmt(fuel, t, unbox(body))),
+        MLetIndex(id, ty, s, i, body) -> let_index_closed(id, close_ty(fuel, t, ty), s, i, close_stmt(fuel, t, unbox(body))),
+        MSetIndex(s, i, v) -> Some(SetIndex(s, i, v)),
+    };
+}
+
+pub fn cons_src_param(id: usize, ty: core::option::Option<SrcType>, rest: core::option::Option<List<SrcParam>>) -> core::option::Option<List<SrcParam>> {
+    return match (ty) {
+        None -> None,
+        Some(t) -> match (rest) {
+            None -> None,
+            Some(ps) -> Some(cons(SrcParam { id: id, ty: t }, ps)),
+        },
+    };
+}
+
+pub fn close_params(fuel: usize, t: Tables, ps: List<MParam>) -> core::option::Option<List<SrcParam>> {
+    return match (ps) {
         Nil -> Some(empty()),
-        Cons(f, rest) -> cons_func(func_of(fuel, env, f), funcs_of(fuel, env, unbox(rest))),
+        Cons(p, rest) -> cons_src_param(p.id, close_ty(fuel, t, p.ty), close_params(fuel, t, unbox(rest))),
     };
 }
 
-pub fn build_env(fuel: usize, fns: List<CTree>, env: Env) -> core::option::Option<SrcProgram> {
-    if (distinct(env.globals) && no_primitive(env.types)) {
-        return match (funcs_of(fuel, env, fns)) {
+pub fn src_func(params: core::option::Option<List<SrcParam>>, ret: core::option::Option<SrcType>, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcFunc> {
+    return match (params) {
+        None -> None,
+        Some(ps) -> match (ret) {
             None -> None,
-            Some(funcs) -> Some(SrcProgram { funcs: funcs }),
-        };
-    }
-    return None;
-}
-
-pub fn build_typed(fuel: usize, fns: List<CTree>, types: core::option::Option<List<TypeEntry>>) -> core::option::Option<SrcProgram> {
-    return match (types) {
-        None -> None,
-        Some(ts) -> build_env(fuel, fns, Env { types: ts, fns: fn_names(fns), globals: concat(type_spellings(ts), fn_names(fns)) }),
+            Some(r) -> match (body) {
+                None -> None,
+                Some(b) -> Some(SrcFunc { params: ps, ret: r, body: b }),
+            },
+        },
     };
 }
 
-pub fn build_items(fuel: usize, items: core::option::Option<Items>) -> core::option::Option<SrcProgram> {
-    return match (items) {
+pub fn cons_func_tail(f: SrcFunc, tail: core::option::Option<List<SrcFunc>>) -> core::option::Option<List<SrcFunc>> {
+    return match (tail) {
         None -> None,
-        Some(its) -> build_typed(fuel, its.fns, type_entries(fuel, empty(), its.decls)),
+        Some(fs) -> Some(cons(f, fs)),
+    };
+}
+
+pub fn cons_func(head: core::option::Option<SrcFunc>, tail: core::option::Option<List<SrcFunc>>) -> core::option::Option<List<SrcFunc>> {
+    return match (head) {
+        None -> None,
+        Some(f) -> cons_func_tail(f, tail),
+    };
+}
+
+pub fn close_funcs(fuel: usize, t: Tables, fs: List<MFunc>) -> core::option::Option<List<SrcFunc>> {
+    return match (fs) {
+        Nil -> Some(empty()),
+        Cons(f, rest) -> cons_func(src_func(close_params(fuel, t, f.params), close_ty(fuel, t, f.ret), close_stmt(fuel, t, f.body)), close_funcs(fuel, t, unbox(rest))),
     };
 }
 
 // ---------------------------------------------------------------- the program
 
-// The source program of the concrete tree of a file.
-pub fn build(fuel: usize, root: CTree) -> core::option::Option<SrcProgram> {
-    if (node_prod(root) == p_file()) {
-        return match (list_items(fuel, kid(root, 0))) {
+pub fn build_closed(fuel: usize, decls: Decls, fns: List<Inst>, types: core::option::Option<List<Inst>>, funcs: List<MFunc>) -> core::option::Option<SrcProgram> {
+    return match (types) {
+        None -> None,
+        Some(ts) -> match (close_funcs(fuel, Tables { decls: decls, fns: fns, types: ts }, funcs)) {
             None -> None,
-            Some(items) -> build_items(fuel, split_items(items)),
-        };
+            Some(fs) -> Some(SrcProgram { funcs: fs }),
+        },
+    };
+}
+
+pub fn build_mono(fuel: usize, decls: Decls, seeds: List<Inst>, m: core::option::Option<Mono>) -> core::option::Option<SrcProgram> {
+    return match (m) {
+        None -> None,
+        Some(x) -> build_closed(fuel, decls, x.table, type_table(fuel, decls, seeds, concat(seed_tys(seeds), funcs_tys(x.funcs))), x.funcs),
+    };
+}
+
+// The roots are the first file's functions without type parameters, in
+// order; they keep their positions as ids. Every other function instance
+// is numbered when it is first called.
+pub fn build_checked(fuel: usize, c: Collected, roots: List<Inst>, seeds: List<Inst>) -> core::option::Option<SrcProgram> {
+    if (well_named(c)) {
+        return build_mono(fuel, c.decls, seeds, mono_loop(fuel, fuel, c.decls, roots, empty(), 0));
     }
     return None;
+}
+
+pub fn build_collected(fuel: usize, first: FileDecls, c: core::option::Option<Collected>) -> core::option::Option<SrcProgram> {
+    return match (c) {
+        None -> None,
+        Some(x) -> build_checked(fuel, x, root_insts(first.decls.fns, 0), seed_insts(first.decls.types, 0)),
+    };
+}
+
+// The source program of the concrete trees of several files, each a
+// module; the first is the program's own.
+pub fn build_files(fuel: usize, roots: List<CTree>) -> core::option::Option<SrcProgram> {
+    return match (roots) {
+        Nil -> None,
+        Cons(first, rest) -> match (file_decls(fuel, first)) {
+            None -> None,
+            Some(f) -> build_collected(fuel, f, collect_files(fuel, unbox(rest), Collected { decls: f.decls, modules: single(f.module) })),
+        },
+    };
+}
+
+// The source program of the concrete tree of a file.
+pub fn build(fuel: usize, root: CTree) -> core::option::Option<SrcProgram> {
+    return build_files(fuel, single(root));
 }
 
 // The front end: the source program of a parse, if the parse is a derivation
@@ -2048,6 +4533,45 @@ pub fn front_end(g: List<Rule>, tokens: List<Token>, prods: List<usize>, parents
     return match (validate_tree(g, tokens, prods, parents)) {
         None -> None,
         Some(root) -> build(plus(times(4, plus(length(prods), length(tokens))), 16), root),
+    };
+}
+
+// One file: its tokens and laniusc's parse tree.
+pub struct FileInput {
+    tokens: List<Token>,
+    prods: List<usize>,
+    parents: List<usize>,
+}
+
+pub fn cons_root(root: core::option::Option<CTree>, rest: core::option::Option<List<CTree>>) -> core::option::Option<List<CTree>> {
+    return match (root) {
+        None -> None,
+        Some(r) -> match (rest) {
+            None -> None,
+            Some(rs) -> Some(cons(r, rs)),
+        },
+    };
+}
+
+pub fn validate_files(g: List<Rule>, files: List<FileInput>) -> core::option::Option<List<CTree>> {
+    return match (files) {
+        Nil -> Some(empty()),
+        Cons(f, rest) -> cons_root(validate_tree(g, f.tokens, f.prods, f.parents), validate_files(g, unbox(rest))),
+    };
+}
+
+pub fn files_fuel(files: List<FileInput>) -> usize {
+    return match (files) {
+        Nil -> 16,
+        Cons(f, rest) -> plus(times(4, plus(length(f.prods), length(f.tokens))), files_fuel(unbox(rest))),
+    };
+}
+
+// The front end for several files, the program's own first.
+pub fn front_end_files(g: List<Rule>, files: List<FileInput>) -> core::option::Option<SrcProgram> {
+    return match (validate_files(g, files)) {
+        None -> None,
+        Some(roots) -> build_files(files_fuel(files), roots),
     };
 }
 
@@ -2661,13 +5185,43 @@ fn p_assign() -> usize {
 }
 
 // extract: inline
+fn p_assign_add() -> usize {
+    return 107;
+}
+
+// extract: inline
+fn p_assign_band() -> usize {
+    return 115;
+}
+
+// extract: inline
+fn p_assign_bor() -> usize {
+    return 116;
+}
+
+// extract: inline
 fn p_assign_end() -> usize {
     return 117;
 }
 
 // extract: inline
+fn p_assign_mul() -> usize {
+    return 109;
+}
+
+// extract: inline
 fn p_assign_set() -> usize {
     return 106;
+}
+
+// extract: inline
+fn p_assign_sub() -> usize {
+    return 108;
+}
+
+// extract: inline
+fn p_assign_xor() -> usize {
+    return 112;
 }
 
 // extract: inline
@@ -2731,6 +5285,11 @@ fn p_compare() -> usize {
 }
 
 // extract: inline
+fn p_const() -> usize {
+    return 208;
+}
+
+// extract: inline
 fn p_else_none() -> usize {
     return 79;
 }
@@ -2746,8 +5305,23 @@ fn p_enum() -> usize {
 }
 
 // extract: inline
-fn p_enum_type_params_none() -> usize {
-    return 232;
+fn p_enum_type_param() -> usize {
+    return 234;
+}
+
+// extract: inline
+fn p_enum_type_params_after_comma_more() -> usize {
+    return 255;
+}
+
+// extract: inline
+fn p_enum_type_params_more() -> usize {
+    return 253;
+}
+
+// extract: inline
+fn p_enum_type_params_some() -> usize {
+    return 233;
 }
 
 // extract: inline
@@ -2836,6 +5410,11 @@ fn p_expr_stmt() -> usize {
 }
 
 // extract: inline
+fn p_extern_fn() -> usize {
+    return 15;
+}
+
+// extract: inline
 fn p_false() -> usize {
     return 186;
 }
@@ -2846,8 +5425,18 @@ fn p_file() -> usize {
 }
 
 // extract: inline
+fn p_fn() -> usize {
+    return 11;
+}
+
+// extract: inline
 fn p_ge_tail() -> usize {
     return 141;
+}
+
+// extract: inline
+fn p_generic_argument_type() -> usize {
+    return 294;
 }
 
 // extract: inline
@@ -2876,23 +5465,53 @@ fn p_if_stmt() -> usize {
 }
 
 // extract: inline
+fn p_impl_fn() -> usize {
+    return 13;
+}
+
+// extract: inline
+fn p_impl_inherent() -> usize {
+    return 17;
+}
+
+// extract: inline
+fn p_impl_method() -> usize {
+    return 21;
+}
+
+// extract: inline
+fn p_impl_method_pub() -> usize {
+    return 22;
+}
+
+// extract: inline
+fn p_impl_methods_more() -> usize {
+    return 23;
+}
+
+// extract: inline
+fn p_impl_methods_some() -> usize {
+    return 20;
+}
+
+// extract: inline
+fn p_impl_trait() -> usize {
+    return 18;
+}
+
+// extract: inline
+fn p_import() -> usize {
+    return 43;
+}
+
+// extract: inline
 fn p_int() -> usize {
     return 175;
 }
 
 // extract: inline
-fn p_item_enum() -> usize {
-    return 209;
-}
-
-// extract: inline
-fn p_item_fn() -> usize {
-    return 4;
-}
-
-// extract: inline
-fn p_item_struct() -> usize {
-    return 257;
+fn p_item_pub() -> usize {
+    return 3;
 }
 
 // extract: inline
@@ -2971,6 +5590,11 @@ fn p_member_type_args_none() -> usize {
 }
 
 // extract: inline
+fn p_module() -> usize {
+    return 46;
+}
+
+// extract: inline
 fn p_mul() -> usize {
     return 151;
 }
@@ -3008,6 +5632,11 @@ fn p_orexpr() -> usize {
 // extract: inline
 fn p_param_named() -> usize {
     return 62;
+}
+
+// extract: inline
+fn p_param_self() -> usize {
+    return 63;
 }
 
 // extract: inline
@@ -3053,6 +5682,26 @@ fn p_path_end() -> usize {
 // extract: inline
 fn p_path_ident() -> usize {
     return 48;
+}
+
+// extract: inline
+fn p_path_ident_args() -> usize {
+    return 49;
+}
+
+// extract: inline
+fn p_path_more() -> usize {
+    return 50;
+}
+
+// extract: inline
+fn p_path_type_args_after_comma_more() -> usize {
+    return 54;
+}
+
+// extract: inline
+fn p_path_type_args_more() -> usize {
+    return 52;
 }
 
 // extract: inline
@@ -3111,6 +5760,11 @@ fn p_postfix_end() -> usize {
 }
 
 // extract: inline
+fn p_postfix_index() -> usize {
+    return 162;
+}
+
+// extract: inline
 fn p_postfix_member() -> usize {
     return 163;
 }
@@ -3128,6 +5782,21 @@ fn p_return_stmt() -> usize {
 // extract: inline
 fn p_return_value() -> usize {
     return 90;
+}
+
+// extract: inline
+fn p_self_param_plain() -> usize {
+    return 66;
+}
+
+// extract: inline
+fn p_self_param_typed() -> usize {
+    return 65;
+}
+
+// extract: inline
+fn p_self_value() -> usize {
+    return 174;
 }
 
 // extract: inline
@@ -3221,8 +5890,28 @@ fn p_sub_tail() -> usize {
 }
 
 // extract: inline
+fn p_trait() -> usize {
+    return 25;
+}
+
+// extract: inline
 fn p_true() -> usize {
     return 185;
+}
+
+// extract: inline
+fn p_type_alias() -> usize {
+    return 16;
+}
+
+// extract: inline
+fn p_type_args_after_comma_more() -> usize {
+    return 230;
+}
+
+// extract: inline
+fn p_type_args_more() -> usize {
+    return 228;
 }
 
 // extract: inline
@@ -3231,13 +5920,18 @@ fn p_type_args_none() -> usize {
 }
 
 // extract: inline
-fn p_type_ident() -> usize {
-    return 69;
+fn p_type_args_some() -> usize {
+    return 227;
 }
 
 // extract: inline
-fn p_type_path() -> usize {
-    return 56;
+fn p_type_array() -> usize {
+    return 70;
+}
+
+// extract: inline
+fn p_type_ident() -> usize {
+    return 69;
 }
 
 // extract: inline
@@ -3248,6 +5942,16 @@ fn p_type_path_end() -> usize {
 // extract: inline
 fn p_type_path_ident() -> usize {
     return 57;
+}
+
+// extract: inline
+fn p_type_path_more() -> usize {
+    return 58;
+}
+
+// extract: inline
+fn p_type_slice_tail() -> usize {
+    return 284;
 }
 
 // extract: inline
@@ -3263,6 +5967,16 @@ fn p_while_stmt() -> usize {
 // extract: inline
 fn p_xor_tail() -> usize {
     return 128;
+}
+
+// extract: inline
+fn t_gt() -> usize {
+    return 13;
+}
+
+// extract: inline
+fn t_shr() -> usize {
+    return 44;
 }
 
 // grammar table end

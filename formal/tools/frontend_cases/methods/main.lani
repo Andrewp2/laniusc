@@ -1,0 +1,49 @@
+struct Counter { n: i32, step: i32 }
+
+impl Counter {
+    fn bump(self, k: i32) -> i32 {
+        let r: i32 = self.n + self.step * k;
+        return r;
+    }
+}
+
+struct Holder<T> { v: T }
+
+pub impl<T> Holder<T> {
+    pub fn get(self) -> T {
+        let x: T = self.v;
+        return x;
+    }
+}
+
+trait Twice<T> {
+    fn twice(self) -> T;
+}
+
+impl Twice<i32> for i32 {
+    fn twice(self) -> i32 {
+        let r: i32 = self + self;
+        return r;
+    }
+}
+
+fn top(n: i32) -> i32 {
+    let c: Counter = Counter { n: n, step: 2 };
+    let a: i32 = c.bump(3);
+    let b: Holder<bool> = Holder { v: true };
+    let t: bool = b.get();
+    let w: i32 = use_twice(n);
+    let u: bool = via(b);
+    a = c.bump(a);
+    return a;
+}
+
+fn use_twice<T>(x: T) -> T where T: Twice<T> {
+    let y: T = T::twice(x);
+    return y;
+}
+
+fn via<H>(h: H) -> bool {
+    let r: bool = H::get(h);
+    return r;
+}

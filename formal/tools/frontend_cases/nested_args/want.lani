@@ -1,0 +1,14 @@
+struct HI { v: i32 }
+struct HH { v: HI }
+
+fn top(n: i32) -> i32 {
+    let a: HI = HI { v: n };
+    let p: HH = HH { v: a };
+    let q: HH = id_hh(p);
+    let r: i32 = n + 2;
+    return r;
+}
+
+fn id_hh(x: HH) -> HH {
+    return x;
+}

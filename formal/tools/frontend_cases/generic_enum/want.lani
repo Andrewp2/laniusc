@@ -1,0 +1,66 @@
+enum MaybeI {
+    NothingI,
+    JustI(i32),
+}
+
+enum MaybeB {
+    NothingB,
+    JustB(bool),
+}
+
+struct PairMB { a: MaybeI, b: bool }
+
+struct PairBM { a: bool, b: MaybeI }
+
+fn top(n: i32) -> i32 {
+    let m: MaybeI = JustI(n);
+    let k: i32 = unwrap_i(m, 0);
+    let e: MaybeB = NothingB;
+    let b: bool = unwrap_b(e, true);
+    let w: MaybeI = wrap_i(k);
+    let p: PairMB = PairMB { a: w, b: b };
+    let q: PairMB = swap_twice_mb(p);
+    k = unwrap_i(w, n);
+    return k;
+}
+
+fn unwrap_i(m: MaybeI, d: i32) -> i32 {
+    let r: i32 = match (m) {
+        NothingI -> d,
+        JustI(x) -> x,
+    };
+    return r;
+}
+
+fn unwrap_b(m: MaybeB, d: bool) -> bool {
+    let r: bool = match (m) {
+        NothingB -> d,
+        JustB(x) -> x,
+    };
+    return r;
+}
+
+fn wrap_i(x: i32) -> MaybeI {
+    let m: MaybeI = JustI(x);
+    return m;
+}
+
+fn swap_twice_mb(p: PairMB) -> PairMB {
+    let q: PairBM = swap_mb(p);
+    let r: PairMB = swap_bm(q);
+    return r;
+}
+
+fn swap_mb(p: PairMB) -> PairBM {
+    let a: MaybeI = p.a;
+    let b: bool = p.b;
+    let q: PairBM = PairBM { a: b, b: a };
+    return q;
+}
+
+fn swap_bm(p: PairBM) -> PairMB {
+    let a: bool = p.a;
+    let b: MaybeI = p.b;
+    let q: PairMB = PairMB { a: b, b: a };
+    return q;
+}

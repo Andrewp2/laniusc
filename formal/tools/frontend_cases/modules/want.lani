@@ -1,0 +1,38 @@
+const MASK: u8 = 15;
+
+struct CellI { v: i32 }
+
+enum Opt {
+    No,
+    Yes(i32),
+}
+
+fn top(n: i32) -> i32 {
+    let c: CellI = CellI { v: n };
+    let a: i32 = get_i(c);
+    let b: i32 = clamp(a + 7);
+    let m: u8 = MASK;
+    let o: Opt = Yes(b);
+    let r: i32 = match (o) {
+        No -> 0,
+        Yes(x) -> x,
+    };
+    return r;
+}
+
+fn helper(x: i32) -> i32 {
+    let y: i32 = x * 7;
+    return y;
+}
+
+fn get_i(c: CellI) -> i32 {
+    let x: i32 = c.v;
+    return x;
+}
+
+fn clamp(x: i32) -> i32 {
+    if (x > 40) {
+        return 40;
+    }
+    return x;
+}

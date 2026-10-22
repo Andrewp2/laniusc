@@ -1,0 +1,6 @@
+struct Holder<T> { v: T }
+
+fn top(n: i32) -> i32 {
+    let h: Holder<i32, i32> = Holder { v: n };
+    return n;
+}

@@ -615,33 +615,43 @@ sourceProgram source prods parents : Option SrcProgram
 `validate_tree` follows `prods` against the grammar. It matches each terminal on a
 production's right side with the next token, checks that each node's
 production has the expected left side and its recorded parent, and builds a
-concrete tree (`CTree`) whose leaves are the tokens. `build` reads the program
-off the concrete tree. It rejects anything outside the front pass's subset,
-and it resolves names to numbers:
+concrete tree (`CTree`) whose leaves are the tokens. One exception: laniusc's
+parser reads the `>>` that closes two type argument lists (`H<H<i32>>`) as
+two `>`, so a `>` terminal may take the first half of a `>>` token, and the
+second half is then the next token. `build` reads the program off the
+concrete tree. It rejects anything outside the front pass's subset, and it
+resolves names to numbers:
 - a function is its position among the functions;
 - a struct or enum is its position among the type declarations;
 - a local is the byte offset of its binding.
 
+With generics these positions are positions in the instance tables (see
+below). `sourceProgramFiles` takes several files, each a module, the
+program's own first; `sourceProgram` is the one-file case.
+
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Frontend` | 1472 | 4.7 | extracted from `formal/lani/mini/frontend.lani`: the grammar table, `validate_tree`, `build` |
-| `FrontLex` | 36 | 0.5 | tokens from the Lean lexer; `sourceProgram` |
-| `FrontSpec` | 246 | 0.8 | `CTree.leaves`, `CTree.preorder`, `Shape`, `Derives`; `validate_sound`, `sourceProgram_sound` |
+| `Frontend` | 3485 | 9.3 | extracted from `formal/lani/mini/frontend.lani`: the grammar table, `validate_tree`, `build`, the monomorphizer |
+| `FrontLex` | 59 | 0.6 | tokens from the Lean lexer; `sourceProgram`, `sourceProgramFiles` |
+| `FrontSpec` | 354 | 0.9 | `CTree.leaves`, `CTree.preorder`, `Shape`, `Derives`, `Reads`; `validate_sound`, `sourceProgram_sound`, `sourceProgramFiles_sound` |
 
 Proved, with only `propext` and `Quot.sound`:
 
 - `validate_sound`: when `validateTree g tokens prods parents = some root`, then
-  `Shape g 0 root` (a parse tree of `file`), `root.leaves = tokens` (it prints
-  back to the tokens) and `root.preorder = prods` (it is laniusc's tree).
-- `validate_derives`: the token kinds are derived from `file`.
+  `Shape g 0 root` (a parse tree of `file`), `Reads root.leaves tokens []`
+  (its leaves are the tokens, with some `>>` read as two `>`) and
+  `root.preorder = prods` (it is laniusc's tree).
+- `validate_derives`: the leaves' token kinds are derived from `file`.
 - `sourceProgram_sound`: the program is `build` of such a tree for the tokens
   of `source`.
+- `sourceProgramFiles_sound`: the program is `buildFiles` of one such tree per
+  file.
 
 laniusc's lexer and parser are not trusted. The trusted parts are the Lean
 lexer, the grammar table, the grammar's unambiguity (not proved) and `build`
 as the meaning of the concrete syntax. TRUSTED_BASE.md section 4 lists them.
 
-`frontend.lani` is about 2,050 hand-written lines, followed by the generated
+`frontend.lani` is about 4,540 hand-written lines, followed by the generated
 grammar table: 318 productions, with terminals as lexer token codes. Two
 tools regenerate it:
 
@@ -677,15 +687,81 @@ minutes, almost all of it in the Lean lexer under `#eval`. Comparing
 `SrcProgram`s as elaborated Lean terms was much slower, so the test compares
 a printed form of the programs instead.
 
+2026-10-21, with the heap and slice constructs back in the generator
+(`oracle.SLICES`, half the allocations freed with `dealloc`) and every other
+`x = x op e` printed as `x op= e`: 400 programs (seeds 1 and 2), 248,000
+tokens and 2.1 million tree nodes, all read as expected, no lexer
+disagreements, 48 of 48 mutants rejected.
+
 laniusc also compiles `frontend.lani` itself: with the module line changed and a
 `main` that returns the grammar's length, the binary exits with 318 mod 256.
 A native difftest of `front_end` is not written yet.
 
+It reads the heap and raw slice constructs: `alloc::allocator::alloc(size,
+align)` in a `let` of type `ptr` is `LetAlloc` and `alloc::allocator::dealloc(p,
+size, align);` is `Free`, with the alignment a literal power of two (its
+exponent is the shift); `slice_from_raw_parts(p, n)` in a `let` of type `[T]`
+is `LetSlice`; `let x: T = s[i];` is `LetIndex` and `s[i] = v;` is
+`SetIndex`. `p + n` and `p - n` are ordinary `Apply`s. The stdlib has no
+byte load or store function, so `LetLoad` and `SetByte` have no spelling.
+Compound assignments `x op= e` and `x.f op= e`, for `+ - * & | ^`, read as
+`x = x op e` and `x.f = x.f op e`.
+
+Generics, modules, constants and methods. Each file is a module, named by
+its `module a::b;` item (the empty path without one). A path `a::b::x` names
+`x` of module `a::b`; a bare `x` names `x` of the current module. `import`
+items, traits, type aliases and extern functions are skipped. Generic structs,
+enums and functions are monomorphized by `mono`, a worklist of instances, each
+a declaration with its type arguments:
+- the roots are the first file's functions without type parameters, in order,
+  so a program without generics keeps its function numbers;
+- reading an instance's body (with its type parameters standing for its
+  arguments) adds the instances it calls that are new, numbered in the order
+  they are first requested;
+- the type table is the first file's non-generic types in order, then each
+  instance as the functions' types (parameters, result, then the body's
+  lets in order) first need it, the instance before its field types.
+
+A call's type arguments are written (`f<i32>(x)`) or inferred: the callee's
+parameter types are matched with the argument types and its result type with
+the type of the `let` (or the assigned local). Methods of `impl` blocks take
+`self` by value and are called as `x.m(args)` (`x` a local) or `T::m(args)`
+(`T` a type parameter); the method is the one whose impl type matches the
+receiver's type, and two matches are rejected. Bounds and `where` clauses on
+functions are ignored. A constant (`const K: u8 = 15;`) is replaced by its
+value, which must be a literal of its type: an `i32` constant is `Int`, an
+unsigned one `Unsigned`. A local may not be spelled like a function, type,
+variant or constant of its module.
+
+Two more tests. `--generic` takes each generated program and abstracts it:
+about half the structs, enums and functions get a type parameter standing for
+one of their types (uses write the type as an argument, or leave a call's to
+inference), about a quarter of the types and functions (and half the constants)
+move to a second file, the module `gen::lib`, with qualified paths both ways, some literals become constants,
+and half the functions start with a call of a generic identity function at
+one of their parameter types. The script numbers the expected program the
+way `mono` does, and the front end must give exactly it. `--cases DIR` runs
+the hand-written cases in `formal/tools/frontend_cases`: each is a program
+(one or more files) and either a monomorphic copy written by hand, which must
+read as the same program up to local ids, or a mark that it must be rejected
+(an ambiguous method, a wrong type argument count, a duplicate name, an
+inference conflict, a local spelled like a constant).
+
+2026-10-21, after the generics: 400 programs (seeds 1 and 2) read as before;
+with `--generic`, 400 programs (seeds 1 and 2), 276,000 tokens and 2.1
+million tree nodes, 694 declarations made generic, 917 moved to `gen::lib`
+and 688 literals written as constants, all read as expected, no lexer
+disagreements, 48 of 48 mutants rejected; 12 of 12 hand-written cases pass.
+
 What it does not read yet:
-- the heap and raw slice constructs;
-- generics, modules and `impl`;
+- calls inside expressions, unit functions (`core::panic::panic()`), `/`
+  and `%`, shifts, `&self`, `isize` and `size_of<T>()`, which have no
+  `SrcProgram` form;
 - `=>` match arms, and block or `if` arms;
-- integer literals of 2^31 and above.
+- integer literals of 2^31 and above (so `const MIN: i32 = -2147483648;`);
+- methods of generic impls called as `T::m` where `T` is not a type
+  parameter (`Vec::new()`), and trait-generic code that relies on bounds;
+- struct literals or calls in `return`.
 
 ### Milestone 4: the compiler in Lanius, and extraction
 

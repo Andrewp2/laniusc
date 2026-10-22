@@ -1,0 +1,20 @@
+struct PairI { a: i32, b: i32 }
+struct PairB { a: bool, b: bool }
+
+fn top(n: i32) -> i32 {
+    let p: PairI = PairI { a: n, b: 2 };
+    let r: i32 = first_i(p);
+    let q: PairB = PairB { a: true, b: false };
+    let s: bool = first_b(q);
+    return r;
+}
+
+fn first_i(p: PairI) -> i32 {
+    let x: i32 = p.a;
+    return x;
+}
+
+fn first_b(p: PairB) -> bool {
+    let x: bool = p.a;
+    return x;
+}

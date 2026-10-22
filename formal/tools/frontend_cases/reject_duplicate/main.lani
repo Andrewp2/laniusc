@@ -1,0 +1,8 @@
+fn top(n: i32) -> i32 {
+    return n;
+}
+
+fn top(n: i32) -> i32 {
+    let m: i32 = n + 1;
+    return m;
+}
