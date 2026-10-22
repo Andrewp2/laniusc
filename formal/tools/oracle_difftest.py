@@ -29,7 +29,9 @@ front pass's effectful expressions (`SrcEff`, in `let`, assignment, `if` and
 operators, casts, `/` and `%` (divisors (d | 1), and (d | 1) & -3 for i32, so
 no division traps), struct and enum literals with such fields, and
 indexing of i32 slices at computed indices kept in bounds (a literal,
-e & (n - 1) or nonnegative e % n). Later
+e & (n - 1) or nonnegative e % n), and `match` expressions of any type on
+a call, literal, local or match, whose arms use their binders (an arm makes
+no new locals). Later
 functions take struct, enum and slice parameters and return structs and
 enums; one with a slice parameter writes into the caller's slice, the right
 side of `&&` and `||` often calls one, and the entry's result folds in every
@@ -79,6 +81,7 @@ def i32(x):
 # Effectful expressions: ('ePure', e) ('eCall', callee, args) ('eApply', name, sym, l, r) ('eNeg', x)
 #              ('eNot', x) ('eCast', ty, x) ('eDivide', name, sym, l, r) ('eStruct', ty, fields)
 #              ('eVariant', ty, variant, payload) ('eIndex', slice, x) of an i32 slice local
+#              ('eMatch', scrutinee, ety, ty, binders, values): arm k binds variant k's payload
 # Statements: ('nop',) ('let', id, ty, e, body) ('call', id, ty, callee, args, body) ('set', id, e)
 #             ('letStruct', id, ty, fields, body) ('letEnum', id, ty, variant, payload, body)
 #             ('letMatch', id, ty, scrutinee, enum, arms, body) with arms [(binders, value)]
@@ -130,6 +133,7 @@ class Gen:
         self.index = index
         self.fresh = 100
         self.slices = 0
+        self.sealed = 0  # inside a match arm: no new locals, which could not see its binders
 
     def new_id(self):
         self.fresh += 1
@@ -260,7 +264,7 @@ class Gen:
         if t[0] == 'slice':
             return ('local', rng.choice([i for i, u in env if fits(t, u)]))
         named = [i for i, u in env if u == t]
-        if named and rng.random() < 0.7:
+        if named and (self.sealed or rng.random() < 0.7):
             return ('local', rng.choice(named))
         if t[0] == 'struct':
             return ('local', self.make_struct(env, items, t[1]))
@@ -275,10 +279,13 @@ class Gen:
         operators. Struct and enum locals it needs go into items first."""
         rng = self.rng
         calls = self.callees(ty, env) if depth > 0 else []
+        if TYPES.enums and depth > 0 and (not isinstance(ty, tuple) or ty[0] != 'slice') and rng.random() < 0.1:
+            return self.eff_match(ty, depth, env, items)
         if isinstance(ty, tuple):
             if calls and rng.random() < 0.5:
                 return self.eff_call(rng.choice(calls), depth, env, items)
-            if ty[0] != 'slice' and depth > 0 and rng.random() < 0.5:
+            if ty[0] != 'slice' and ((depth > 0 and rng.random() < 0.5) or
+                                     (self.sealed and all(u != ty for _, u in env))):
                 # A literal whose fields or payload may call functions.
                 if ty[0] == 'struct':
                     return ('eStruct', ty, [self.eff(f, depth - 1, env, items) for f in TYPES.structs[ty[1]]])
@@ -292,7 +299,7 @@ class Gen:
         if ty == 'i32' and views and rng.random() < 0.25:
             view, n = rng.choice(views)
             return ('eIndex', view, self.in_bounds(n, depth, env, items))
-        if depth == 0 or rng.random() < 0.2:
+        if depth <= 0 or rng.random() < 0.2:
             return ('ePure', self.expr(ty, rng.randint(0, 2), env))
 
         def sub(t):
@@ -337,6 +344,24 @@ class Gen:
         if ty == 'i32':
             divisor = ('eApply', 'bitAnd', '&', divisor, ('ePure', ('int', -3)))
         return ('eDivide', name, sym, sub(ty), divisor)
+
+    def eff_match(self, ty, depth, env, items):
+        """match scrutinee { arms } of type ty on an enum: the scrutinee a call,
+        literal, local or match; arm k binds variant k's payload to fresh
+        locals and its value may use them."""
+        k = self.rng.randrange(len(TYPES.enums))
+        ety = ('enum', k)
+        scrutinee = self.eff(ety, depth - 1, env, items)
+        binders, values = [], []
+        self.sealed += 1
+        before = len(items)
+        for payload in TYPES.enums[k]:
+            names = [self.new_id() for _ in payload]
+            binders.append(names)
+            values.append(self.eff(ty, depth - 1, env + list(zip(names, payload)), items))
+        assert len(items) == before, 'a match arm made a local'
+        self.sealed -= 1
+        return ('eMatch', scrutinee, ety, ty, binders, values)
 
     def in_bounds(self, n, depth, env, items):
         """An i32 or usize index below n (the slice's length, or the least a
@@ -734,6 +759,8 @@ def eff_ty(e, env):
         return e[1]
     if kind == 'eIndex':
         return 'i32'
+    if kind == 'eMatch':
+        return e[3]
     if kind == 'eNeg':
         return 'i32'
     if kind == 'eNot':
@@ -755,6 +782,12 @@ def ev_eff(e, env, funcs):
         return not ev_eff(e[1], env, funcs)
     if kind == 'eCast':
         return wrap_to(e[1], ev_eff(e[2], env, funcs))
+    if kind == 'eMatch':
+        # Binders are fresh ids, so binding them leaves the outer locals alone.
+        variant, payload = ev_eff(e[1], env, funcs)
+        for b, v, t in zip(e[4][variant], payload, TYPES.enums[e[2][1]][variant]):
+            env[b] = [v, t]
+        return ev_eff(e[5][variant], env, funcs)
     if kind == 'eIndex':
         k, elements = ev_eff(e[2], env, funcs), env[e[1]][0]
         if not 0 <= k < len(elements):
@@ -930,6 +963,9 @@ def lean_eff(e):
         return f'(.eDivide .{e[1]} {lean_eff(e[3])} {lean_eff(e[4])})'
     if kind == 'eIndex':
         return f'(.eIndex {e[1]} {lean_eff(e[2])})'
+    if kind == 'eMatch':
+        return (f'(.eMatch {lean_eff(e[1])} {lean_ty(e[2])} {lean_ty(e[3])} {e[4]} '
+                f'[{", ".join(lean_eff(v) for v in e[5])}])')
     if kind == 'eStruct':
         return f'(.eStruct {lean_ty(e[1])} [{", ".join(lean_eff(f) for f in e[2])}])'
     if kind == 'eVariant':
@@ -1087,6 +1123,10 @@ def lani_eff(e, prefix):
         return f'({lani_eff(e[2], prefix)} as {e[1]})'
     if kind == 'eIndex':
         return f'v{e[1]}[{lani_eff(e[2], prefix)}]'
+    if kind == 'eMatch':
+        arms = ' '.join(f'{lani_variant(e[2][1], v, [f"v{b}" for b in names])} -> {lani_eff(value, prefix)},'
+                        for v, (names, value) in enumerate(zip(e[4], e[5])))
+        return f'(match ({lani_eff(e[1], prefix)}) {{ {arms} }})'
     if kind == 'eStruct':
         fields = ', '.join(f'f{j}: {lani_eff(f, prefix)}' for j, f in enumerate(e[2]))
         return f'{lani_ty(e[1])} {{ {fields} }}'
