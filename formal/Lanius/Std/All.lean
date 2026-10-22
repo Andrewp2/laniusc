@@ -19,3 +19,4 @@ import Lanius.Std.VecResize
 import Lanius.Std.VecRemove
 import Lanius.Std.VecShrink
 import Lanius.Std.VecEdge
+import Lanius.Std.VecInsert
