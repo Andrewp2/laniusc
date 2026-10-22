@@ -654,6 +654,8 @@ inductive SrcType where
   | enum : Nat → (List (List SrcType)) → SrcType
   /-- a raw pointer into the heap -/
   | ptr : SrcType
+  /-- Core's raw slice of this element type: one slot, its address -/
+  | slice : SrcType → SrcType
   deriving Repr
 
 inductive SrcOp where
@@ -723,6 +725,12 @@ inductive SrcStmt where
   | setByte : SrcExpr → SrcExpr → SrcExpr → SrcStmt
   /-- dealloc(pointer, size, 2^shift) -/
   | free : SrcExpr → SrcExpr → Nat → SrcStmt
+  /-- let id: [element] = slice_from_raw_parts(pointer, length); then body -/
+  | letSlice : Nat → SrcType → SrcExpr → SrcExpr → SrcStmt → SrcStmt
+  /-- let id: ty = slice[index]; then body -/
+  | letIndex : Nat → SrcType → Nat → SrcExpr → SrcStmt → SrcStmt
+  /-- slice[index] = value -/
+  | setIndex : Nat → SrcExpr → SrcExpr → SrcStmt
   deriving Repr
 
 structure SrcParam where
@@ -770,6 +778,7 @@ def SrcType.isI32 (self : SrcType) : Bool :=
   | .struct id fields => false
   | .enum id variants => false
   | .ptr => false
+  | .slice element => false
 
 def SrcType.isBool (self : SrcType) : Bool :=
   match self with
@@ -779,6 +788,7 @@ def SrcType.isBool (self : SrcType) : Bool :=
   | .struct id fields => false
   | .enum id variants => false
   | .ptr => false
+  | .slice element => false
 
 def SrcType.isScalar (self : SrcType) : Bool :=
   match self with
@@ -788,6 +798,7 @@ def SrcType.isScalar (self : SrcType) : Bool :=
   | .struct id fields => false
   | .enum id variants => false
   | .ptr => true
+  | .slice element => false
 
 def SrcType.isUint (self : SrcType) (kind : UintTy) : Bool :=
   match self with
@@ -797,6 +808,7 @@ def SrcType.isUint (self : SrcType) (kind : UintTy) : Bool :=
   | .struct id fields => false
   | .enum id variants => false
   | .ptr => false
+  | .slice element => false
 
 def SrcType.isPtr (self : SrcType) : Bool :=
   match self with
@@ -806,6 +818,7 @@ def SrcType.isPtr (self : SrcType) : Bool :=
   | .struct id fields => false
   | .enum id variants => false
   | .ptr => true
+  | .slice element => false
 
 /-- The unsigned type this is, if it is one. -/
 def SrcType.uintKind (self : SrcType) : Option UintTy :=
@@ -816,6 +829,7 @@ def SrcType.uintKind (self : SrcType) : Option UintTy :=
   | .struct id fields => none
   | .enum id variants => none
   | .ptr => none
+  | .slice element => none
 
 /-- How a comparison of two values of this type reads their slots. -/
 def SrcType.word (self : SrcType) : Word :=
@@ -826,6 +840,7 @@ def SrcType.word (self : SrcType) : Word :=
   | .struct id fields => Word.s32
   | .enum id variants => Word.s32
   | .ptr => Word.u64
+  | .slice element => Word.u64
 
 mutual
 
@@ -841,7 +856,8 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .uint otherKind => false
      | .struct otherId otherFields => decide (id = otherId) && typesSame fields otherFields
      | .enum otherId otherVariants => false
-     | .ptr => false)
+     | .ptr => false
+     | .slice otherElement => false)
   | .enum id variants =>
     (match other with
      | .i32 => false
@@ -849,8 +865,18 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .uint otherKind => false
      | .struct otherId otherFields => false
      | .enum otherId otherVariants => decide (id = otherId) && variantsSame variants otherVariants
-     | .ptr => false)
+     | .ptr => false
+     | .slice otherElement => false)
   | .ptr => SrcType.isPtr other
+  | .slice element =>
+    match other with
+    | .i32 => false
+    | .bool => false
+    | .uint otherKind => false
+    | .struct otherId otherFields => false
+    | .enum otherId otherVariants => false
+    | .ptr => false
+    | .slice otherElement => SrcType.same element otherElement
 
 def typesSame (types : List SrcType) (others : List SrcType) : Bool :=
   match types with
@@ -887,6 +913,7 @@ def SrcType.size (self : SrcType) : Nat :=
   | .struct id fields => sizes fields
   | .enum id variants => 1 + maxSize variants
   | .ptr => 1
+  | .slice element => 1
 
 def sizes (types : List SrcType) : Nat :=
   match types with
@@ -1019,6 +1046,7 @@ def lowerFieldOf (b : Binding) (field : Nat) : Option Typed :=
   | .struct id fields => lowerFieldAt (b.slot + fieldOffset fields field) fields[field]?
   | .enum id variants => none
   | .ptr => none
+  | .slice element => none
 
 def lowerField (binding : Option Binding) (field : Nat) : Option Typed :=
   match binding with
@@ -1069,6 +1097,7 @@ def castToI32 (e : Typed) : Option Typed :=
   | .struct id fields => none
   | .enum id variants => none
   | .ptr => none
+  | .slice element => none
 
 def castToUint (kind : UintTy) (e : Typed) : Option Typed :=
   match e.ty with
@@ -1078,6 +1107,7 @@ def castToUint (kind : UintTy) (e : Typed) : Option Typed :=
   | .struct id fields => none
   | .enum id variants => none
   | .ptr => none
+  | .slice element => none
 
 def castTo (ty : SrcType) (e : Typed) : Option Typed :=
   match ty with
@@ -1087,6 +1117,7 @@ def castTo (ty : SrcType) (e : Typed) : Option Typed :=
   | .struct id fields => none
   | .enum id variants => none
   | .ptr => none
+  | .slice element => none
 
 def lowerCast (ty : SrcType) (operand : Option Typed) : Option Typed :=
   match operand with
@@ -1166,6 +1197,7 @@ def copyFieldOf (b : Binding) (index : Nat) (ty : SrcType) : Option (List Expr) 
   | .struct id fields => copyFieldAt (b.slot + fieldOffset fields index) fields[index]? ty
   | .enum id variants => none
   | .ptr => none
+  | .slice element => none
 
 /-- A field of type ty of a struct local, slot by slot. It takes slots. -/
 def copyField (binding : Option Binding) (index : Nat) (ty : SrcType) : Option (List Expr) :=
@@ -1225,6 +1257,7 @@ def lowerLiteral (scope : List Binding) (ty : SrcType) (fields : List SrcExpr) :
   | .struct id types => lowerStructFields scope fields types
   | .enum id variants => none
   | .ptr => none
+  | .slice element => none
 
 def lowerTag (variant : Nat) (payload : Option (List Expr)) : Option (List Expr) :=
   match payload with
@@ -1252,6 +1285,7 @@ def lowerEnumValue (scope : List Binding) (ty : SrcType) (variant : Nat) (payloa
   | .struct id types => none
   | .enum id variants => lowerTagged scope variants variant payload
   | .ptr => none
+  | .slice element => none
 
 /-- The scope of an arm: each binder names its payload field's slots, binding in order as Core's bindLocals does. A binder takes slots, so no two share a first slot. -/
 def armScope (binders : List Nat) (types : List SrcType) (slot : Nat) (scope : List Binding) : Option (List Binding) :=
@@ -1316,6 +1350,7 @@ def lowerMatchOn (scope : List Binding) (b : Binding) (enumId : Nat) (arms : Lis
   | .struct id types => none
   | .enum id variants => lowerMatchArms scope b.slot (decide (id = enumId)) variants arms ty target
   | .ptr => none
+  | .slice element => none
 
 def lowerMatch (scope : List Binding) (binding : Option Binding) (enumId : Nat) (arms : List SrcArm) (ty : SrcType) (target : Nat) : Option Stmt :=
   match binding with
@@ -1389,6 +1424,7 @@ def lowerSetFieldOf (b : Binding) (field : Nat) (scope : List Binding) (value : 
   | .struct id fields => lowerSetFieldAt (b.slot + fieldOffset fields field) fields[field]? scope value
   | .enum id variants => none
   | .ptr => none
+  | .slice element => none
 
 def lowerSetField (binding : Option Binding) (field : Nat) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
   match binding with
@@ -1489,6 +1525,89 @@ def lowerFree (shift : Nat) (pointer : Option Expr) (size : Option Expr) : Optio
   else
     none
 
+/-- A raw slice's one slot: its address. Only i32 elements so far; Core checks the length when the slice is made and each index against it. -/
+def lowerSlice (element : SrcType) (pointer : Option Expr) (length : Option Expr) : Option (List Expr) :=
+  if SrcType.isI32 element then
+    match pointer with
+    | none => none
+    | some p =>
+      match length with
+      | none => none
+      | some l => some [p]
+  else
+    none
+
+/-- An index is an i32 or a usize. -/
+def indexOf (t : Typed) : Option Expr :=
+  if SrcType.isI32 t.ty || SrcType.isUint t.ty UintTy.usize then
+    some t.expr
+  else
+    none
+
+def lowerIndex (scope : List Binding) (index : SrcExpr) : Option Expr :=
+  match SrcExpr.lower index scope with
+  | none => none
+  | some t => indexOf t
+
+/-- The element type of a slice type. -/
+def elementOf (ty : SrcType) : Option SrcType :=
+  match ty with
+  | .i32 => none
+  | .bool => none
+  | .uint kind => none
+  | .struct id fields => none
+  | .enum id variants => none
+  | .ptr => none
+  | .slice element => some element
+
+/-- The address of element index of the slice local b. -/
+def elementAddress (b : Binding) (index : Option Expr) : Option Expr :=
+  match elementOf b.ty with
+  | none => none
+  | some element =>
+    match index with
+    | none => none
+    | some i =>
+      let slot : Nat := b.slot
+      if SrcType.isI32 element then
+        some (Expr.binary Word.u64 BinOp.add (Expr.var slot) (Expr.binary Word.u64 BinOp.mul i (Expr.lit 4)))
+      else
+        none
+
+/-- slice[index] read as a ty. -/
+def lowerElement (binding : Option Binding) (ty : SrcType) (index : Option Expr) : Option Expr :=
+  match binding with
+  | none => none
+  | some b =>
+    if SrcType.same b.ty (SrcType.slice ty) then
+      elementAddress b index
+    else
+      none
+
+def lowerLoadWord (slot : Nat) (address : Option Expr) (body : Option Stmt) : Option Stmt :=
+  match address with
+  | none => none
+  | some a =>
+    match body with
+    | none => none
+    | some b => some (Stmt.seq (Stmt.loadWord MemWidth.m32 slot a) b)
+
+def lowerSetIndexOf (b : Binding) (index : Option Expr) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
+  match elementOf b.ty with
+  | none => none
+  | some element =>
+    match elementAddress b index with
+    | none => none
+    | some a =>
+      match lowerAs scope value element with
+      | none => none
+      | some v => some (Stmt.storeWord MemWidth.m32 a v)
+
+def lowerSetIndex (binding : Option Binding) (index : Option Expr) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
+  match binding with
+  | none => none
+  | some b => lowerSetIndexOf b index scope value
+
 def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (ret : SrcType) (scope : List Binding) (next : Nat) : Option Stmt :=
   match self with
   | .nop => some Stmt.skip
@@ -1508,6 +1627,9 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (ret : SrcType) (scope : Li
   | .letLoad id pointer offset body => lowerLoad next (lowerAddress (lowerAs scope pointer SrcType.ptr) (lowerAs scope offset (SrcType.uint UintTy.usize))) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := SrcType.uint UintTy.uint8 } : Binding) :: scope) (next + 1))
   | .setByte pointer offset value => lowerStore (lowerAddress (lowerAs scope pointer SrcType.ptr) (lowerAs scope offset (SrcType.uint UintTy.usize))) (lowerAs scope value (SrcType.uint UintTy.uint8))
   | .free pointer size shift => lowerFree shift (lowerAs scope pointer SrcType.ptr) (lowerAs scope size (SrcType.uint UintTy.usize))
+  | .letSlice id element pointer length body => lowerLet next (lowerSlice element (lowerAs scope pointer SrcType.ptr) (lowerAs scope length SrcType.i32)) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := SrcType.slice element } : Binding) :: scope) (next + 1))
+  | .letIndex id ty slice index body => lowerLoadWord next (lowerElement (lookup scope slice) ty (lowerIndex scope index)) (SrcStmt.lower body sigs ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + 1))
+  | .setIndex slice index value => lowerSetIndex (lookup scope slice) (lowerIndex scope index) scope value
 
 /-- Slots the statement's lets need beyond the ones in scope. -/
 def SrcStmt.depth (self : SrcStmt) : Nat :=
@@ -1529,6 +1651,9 @@ def SrcStmt.depth (self : SrcStmt) : Nat :=
   | .letLoad id pointer offset body => SrcStmt.depth body + 1
   | .setByte pointer offset value => 0
   | .free pointer size shift => 0
+  | .letSlice id element pointer length body => SrcStmt.depth body + 1
+  | .letIndex id ty slice index body => SrcStmt.depth body + 1
+  | .setIndex slice index value => 0
 
 /-- Parameters take slots from 0 in order, a struct one per field; a later parameter with the same id shadows an earlier one, as Core's bindLocals does. -/
 def paramScope (params : List SrcParam) (slot : Nat) (scope : List Binding) : List Binding :=
@@ -1657,6 +1782,7 @@ def SrcType.declare (self : SrcType) (decls : SrcDecls) : Option SrcDecls :=
   | .struct id fields => declareStruct id fields (declareTypes fields decls)
   | .enum id variants => declareEnum id variants (declareVariants variants decls)
   | .ptr => some decls
+  | .slice element => SrcType.declare element decls
 
 def declareTypes (types : List SrcType) (decls : SrcDecls) : Option SrcDecls :=
   match types with
@@ -1726,6 +1852,17 @@ def SrcStmt.declare (self : SrcStmt) (decls : SrcDecls) : Option SrcDecls :=
   | .letLoad id pointer offset body => SrcStmt.declare body decls
   | .setByte pointer offset value => some decls
   | .free pointer size shift => some decls
+  | .letSlice id element pointer length body =>
+    (let after : Option SrcDecls := SrcType.declare element decls
+     match after with
+     | none => none
+     | some decls => SrcStmt.declare body decls)
+  | .letIndex id ty slice index body =>
+    (let after : Option SrcDecls := SrcType.declare ty decls
+     match after with
+     | none => none
+     | some decls => SrcStmt.declare body decls)
+  | .setIndex slice index value => some decls
 
 /-- Every path ends in a return, the way Core's DefinitelyReturns counts: a while body never counts. -/
 def SrcStmt.returns (self : SrcStmt) : Bool :=
@@ -1747,6 +1884,9 @@ def SrcStmt.returns (self : SrcStmt) : Bool :=
   | .letLoad id pointer offset body => SrcStmt.returns body
   | .setByte pointer offset value => false
   | .free pointer size shift => false
+  | .letSlice id element pointer length body => SrcStmt.returns body
+  | .letIndex id ty slice index body => SrcStmt.returns body
+  | .setIndex slice index value => false
 
 def declareParams (params : List SrcParam) (decls : SrcDecls) : Option SrcDecls :=
   match params with

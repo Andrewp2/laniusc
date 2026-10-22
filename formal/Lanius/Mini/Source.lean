@@ -31,6 +31,7 @@ def SrcType.toCore : SrcType → Core.Ty
   | .struct id _ => .structure id
   | .enum id _ => .enumeration id
   | .ptr => .scalar .rawPtr
+  | .slice element => .slice element.toCore
 
 /-- The Core type id of a struct or enum type. -/
 def SrcType.typeId : SrcType → Nat
@@ -40,6 +41,7 @@ def SrcType.typeId : SrcType → Nat
   | .struct id _ => id
   | .enum id _ => id
   | .ptr => 0
+  | .slice _ => 0
 
 /-- The Core type a cast to this type names. Lowering only casts to `i32`
 and the unsigned types. -/
@@ -50,6 +52,18 @@ def SrcType.toScalar : SrcType → Core.ScalarTy
   | .struct _ _ => .bool
   | .enum _ _ => .bool
   | .ptr => .rawPtr
+  | .slice _ => .bool
+
+/-- Core's raw slice of this element type from a pointer and a length:
+`slice_from_raw_parts` for `i32`, the typed form for the rest. -/
+def SrcType.sliceFrom : SrcType → Core.Expr → Core.Expr → Core.Expr
+  | .i32, pointer, length => .i32SliceFromRawParts pointer length
+  | .bool, pointer, length => .typedSliceFromRawParts (.scalar .bool) pointer length
+  | .uint kind, pointer, length => .typedSliceFromRawParts (.scalar (.unsigned kind.toCore)) pointer length
+  | .struct id _, pointer, length => .typedSliceFromRawParts (.structure id) pointer length
+  | .enum id _, pointer, length => .typedSliceFromRawParts (.enumeration id) pointer length
+  | .ptr, pointer, length => .typedSliceFromRawParts (.scalar .rawPtr) pointer length
+  | .slice element, pointer, length => .typedSliceFromRawParts (.slice element.toCore) pointer length
 
 def SrcOp.toCore : SrcOp → Core.BinaryOp
   | .plus => .add
@@ -111,6 +125,12 @@ def SrcStmt.toCore : SrcStmt → Core.Stmt
   | .setByte pointer offset value => .expression (.storeByte pointer.toCore offset.toCore value.toCore)
   | .free pointer size shift =>
       .expression (.dealloc pointer.toCore size.toCore (.value (.unsigned .usize (2 ^ shift))))
+  | .letSlice id element pointer length body =>
+      .letLocal id (.slice element.toCore) (element.sliceFrom pointer.toCore length.toCore) body.toCore
+  | .letIndex id ty slice index body =>
+      .letLocal id ty.toCore (.index (.local slice) index.toCore) body.toCore
+  | .setIndex slice index value =>
+      .expression (.assign .set (.index (.local slice) index.toCore) value.toCore)
 
 def SrcFunc.toCore (id : Nat) (func : SrcFunc) : Core.Function where
   id := id
@@ -174,6 +194,7 @@ def SrcType.Holds : SrcType → Value → BitVec 64 → Prop
   | .struct _ _, _, _ => False
   | .enum _ _, _, _ => False
   | .ptr, value, bits => value = .pointer bits.toNat
+  | .slice _, _, _ => False
 
 mutual
 /-- `ty.HoldsAt value env slot`: the `ty.size` slots of `env` from `slot`
@@ -194,6 +215,9 @@ inductive SrcType.HoldsAt : SrcType → Value → Env → Nat → Prop where
       SrcType.HoldsAt (.enum id variants) (.enumeration id k vs) env slot
   | ptr {value : Value} {env : Env} {slot : Nat} :
       SrcType.ptr.Holds value (env slot) → SrcType.HoldsAt .ptr value env slot
+  /-- A raw slice is its address; its length lives only in Core. -/
+  | slice {element : SrcType} {length : Nat} {env : Env} {slot : Nat} :
+      SrcType.HoldsAt (.slice element) (.rawSlice element.toCore (env slot).toNat length) env slot
 
 /-- Values of these types, one after another from `slot`: a struct's fields,
 a payload, or arguments. -/
@@ -212,6 +236,7 @@ theorem SrcType.holdsAt_scalar {ty : SrcType} (scalar : ty.isScalar = true) {v :
   | struct => simp [SrcType.isScalar] at scalar
   | enum => simp [SrcType.isScalar] at scalar
   | ptr => exact ⟨fun | .ptr h => h, .ptr⟩
+  | slice => simp [SrcType.isScalar] at scalar
 
 theorem FieldsHold.length : ∀ {fs vs env slot}, FieldsHold fs vs env slot → vs.length = fs.length
   | [], _, _, _, .nil => rfl
@@ -263,6 +288,11 @@ theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot
     have := agree 0 (by simp [SrcType.size])
     simp only [Nat.add_zero] at this
     exact .ptr (by rw [this]; exact holds)
+  | .slice _, _, _, _, .slice, _, _, agree => by
+    have := agree 0 (by simp [SrcType.size])
+    simp only [Nat.add_zero] at this
+    rw [← this]
+    exact .slice
 
 theorem FieldsHold.congr : ∀ {fs : List SrcType} {vs : List Value} {env : Env} {slot : Nat},
     FieldsHold fs vs env slot → ∀ {env' : Env} {slot' : Nat},

@@ -79,14 +79,6 @@ theorem write64_lane (memory : Memory) (address value : BitVec 64) (k : Nat) (lt
     simp only [BitVec.toNat_setWidth, BitVec.toNat_ushiftRight, Nat.shiftRight_eq_div_pow]
     rcases (show j = 0 ∨ j = 1 ∨ j = 2 ∨ j = 3 by omega) with rfl | rfl | rfl | rfl <;> omega
 
-theorem Heap.readLE_lt (heap : Heap) : ∀ (address count : Nat), heap.readLE address count < 256 ^ count
-  | _, 0 => by simp [Heap.readLE]
-  | address, count + 1 => by
-    have := heap.readLE_lt (address + 1) count
-    have := (heap.bytes address).toNat_lt
-    simp only [Heap.readLE, Nat.pow_succ]
-    omega
-
 theorem Heap.writeLE_bytes : ∀ (heap : Heap) (address value count other : Nat),
     (heap.writeLE address value count).bytes other =
       if address ≤ other ∧ other < address + count then UInt8.ofNat (value / 256 ^ (other - address))

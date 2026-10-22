@@ -108,6 +108,14 @@ theorem Heap.writeLE_limit : ∀ (heap : Heap) (address value count : Nat),
     have := Heap.writeLE_limit (heap.write address (UInt8.ofNat value)) (address + 1) (value / 256) count
     exact ⟨this.1, this.2⟩
 
+theorem Heap.readLE_lt (heap : Heap) : ∀ (address count : Nat), heap.readLE address count < 256 ^ count
+  | _, 0 => by simp [Heap.readLE]
+  | address, count + 1 => by
+    have := heap.readLE_lt (address + 1) count
+    have := (heap.bytes address).toNat_lt
+    simp only [Heap.readLE, Nat.pow_succ]
+    omega
+
 inductive Outcome where
   | normal (env : Env) (heap : Heap)
   | returned (values : List (BitVec 64)) (heap : Heap)

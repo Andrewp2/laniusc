@@ -123,8 +123,8 @@ The proof has two layers.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Compiler` | 1804 | 3.1 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass |
-| `Semantics` | 182 | 0.9 | big-step source semantics with call depth |
+| `Compiler` | 1944 | 3.2 | extracted: syntax, abstract instructions, compiler, encoder, linker, front pass |
+| `Semantics` | 190 | 0.8 | big-step source semantics with call depth |
 | `Asm` | 202 | 1.0 | abstract machine, byte-offset placement, `Star` runs |
 | `CompileCorrect` | 553 | 1.8 | compiler against the abstract machine |
 | `Fits` | 233 | 1.4 | static facts: slots in frame, targets in body, callees exist |
@@ -132,7 +132,7 @@ The proof has two layers.
 | `Flags` | 135 | 1.4 | each comparison's condition code after `cmp` |
 | `Frame` | 128 | 1.2 | stack windows and address depths (`bv_omega`) |
 | `HeapSteps` | 250 | 1.6 | x86 runs of the bump allocator and the byte load and store |
-| `WordSteps` | 285 | 2.0 | x86 runs of the 32- and 64-bit word load and store; memory words as bytes |
+| `WordSteps` | 277 | 1.6 | x86 runs of the 32- and 64-bit word load and store; memory words as bytes |
 | `Simulation` | 1500 | 6.9 | x86 lemma per instruction, slot copies, the call macro, body simulation |
 | `Correct` | 323 | 1.7 | layout, prologue, function contract, top-level theorem |
 
@@ -158,7 +158,9 @@ type: `let x = E::V(...)`, copies, enum parameters, and
 variant's payload and giving a value of any type; and raw pointers with the
 byte heap, as Core's `let p = alloc(size, 2^k)`, `let b = loadByte(p, offset)`,
 `storeByte(p, offset, b)` and `dealloc(p, size, 2^k)` (sizes and offsets
-`usize`, bytes `u8`). Each binding gets its own
+`usize`, bytes `u8`); and Core's raw `i32` slices, as
+`let s = slice_from_raw_parts(p, n)`, `let x = s[i]` and `s[i] = v`, with an
+`i32` or `usize` index. Each binding gets its own
 slots (lets after the parameters): a scalar one, a struct its fields' slots
 one after another, an enum a tag slot (the variant number) and then room for
 its longest payload; booleans are 1 and 0. An unsigned value is its number,
@@ -220,20 +222,28 @@ semantics:
   never frees). The theorem's premise bounds Core's final `nextAddress` by the
   mini limit; `execStmt_grows` (Core's `nextAddress` never decreases) carries
   that bound back to every allocation.
+- Raw slices (`LowerStmt`, `HeapCorr`): a slice is its address in one slot.
+  Its length lives only in Core, which checks every index against it; the
+  theorem covers runs that return, so the lowered code needs no bounds test.
+  Element `i` is the 4 bytes at address + 4i, read by `loadWord M32` and
+  written by `storeWord M32`. `HeapCorr.loadNatLE` and `HeapCorr.storeBytesFrom`
+  match Core's little-endian `loadNatLE` and `storeBytes` with the mini heap's
+  `readLE` and `writeLE`. Making a slice only marks its block borrowed, which
+  `HeapCorr` does not depend on.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Source` | 390 | 1.1 | Core meaning of source programs and their declarations, value representation, `i32` wrap lemmas |
+| `Source` | 420 | 1.2 | Core meaning of source programs and their declarations, value representation, `i32` wrap lemmas |
 | `Unsigned` | 166 | 2.4 | unsigned arithmetic, comparisons and casts as slot arithmetic |
-| `LowerExpr` | 665 | 5.0 | expressions |
-| `Grows` | 788 | 3.8 | Core's `nextAddress` never decreases; Core call and statement inversions |
-| `HeapCorr` | 342 | 1.0 | Core heap to mini heap correspondence; allocate, load, store, free |
-| `LowerStmt` | 2339 | 8.2 | Core cells, frames, flat values, calls, enums and `match`, statements |
+| `LowerExpr` | 669 | 5.1 | expressions |
+| `Grows` | 1044 | 4.0 | Core's `nextAddress` never decreases; Core call and statement inversions |
+| `HeapCorr` | 501 | 1.1 | Core heap to mini heap correspondence; allocate, load, store, free |
+| `LowerStmt` | 2794 | 8.8 | Core cells, frames, flat values, calls, enums and `match`, statements |
 | `SourceCorrect` | 102 | 0.8 | top-level theorem |
-| `TypeSound` | 1567 | 1.9 | type checker soundness: an accepted program is well typed in Core (step 7) |
+| `TypeSound` | 1704 | 2.3 | type checker soundness: an accepted program is well typed in Core (step 7) |
 
-The pass is about 1,450 lines of Lanius (the end of `compiler.lani`), and the
-proofs are about 4,800 lines, plus 1,567 for type checker soundness. The per-function difftest covers it (146
+The pass is about 1,880 lines of Lanius (the end of `compiler.lani`), and the
+proofs are about 5,700 lines, plus 1,704 for type checker soundness. The per-function difftest covers it (146
 functions, 2,920 calls after the unsigned types, run as two shards with
 `--shard 0/2` and `1/2`, no differences; 11 native stack overflows on huge
 random counts; types nested through `List` render through a `mutual` block of
