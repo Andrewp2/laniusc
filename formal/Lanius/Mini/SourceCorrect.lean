@@ -55,6 +55,48 @@ theorem HeapCorr.empty {heap : Heap} (start : heap.cursor = 1) (zero : ∀ a, 1 
     bytes := fun _ mem => by cases mem
     zero }
 
+/-- `compileSource_correct` from any Core state whose cells are fresh and
+whose heap the mini heap represents (`HeapCorr`), not just the empty one:
+Core runs `f(args)` from `st` to `v` and `final`; the compiled `f` returns
+`results` representing `v`, and its heap `after` represents Core's final heap.
+A client that built values in the heap (a `Vec`, say) composes through this. -/
+theorem compileSource_correct_from {sp : SrcProgram} {binary : Binary}
+    (compiled : compileSource sp = some binary) {f : Nat} {func : SrcFunc}
+    (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 64)}
+    (typed : FieldsHold (paramTypes func.params) args (Func.entry bits) 0)
+    (bitsLen : bits.length = paramsSize func.params) {fuel : Nat} {v : Value}
+    {st final : Semantics.State} {heap : Heap} (fresh : st.Fresh) (hc : HeapCorr st.heap heap)
+    (runs : Semantics.evalExpr fuel sp.toCore st (.call f (args.map Core.Expr.value)) = .done v final)
+    (fits : final.heap.nextAddress ≤ heap.limit) :
+    ∃ depth results after, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
+      HeapCorr final.heap after ∧
+      ∀ (s : State) (imageBase : BitVec 64) (window : Nat),
+        binary.stackNeed depth ≤ window → window ≤ 2 ^ 62 →
+        CodeAt s.memory imageBase binary.image →
+        (∀ index, index < binary.image.length →
+          ¬Below (s.registers rspRegister) window (imageBase + BitVec.ofNat 64 index)) →
+        (∀ index, index < binary.image.length → ¬s.InHeap (imageBase + BitVec.ofNat 64 index)) →
+        s.rip = imageBase + BitVec.ofNat 64 (binary.entries.getD f 0) →
+        (∀ k (bound : k < bits.length),
+          read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = bits[k]) →
+        HeapAt window s heap →
+        ∃ n s', Steps n s s' ∧ Returned window s s' results after := by
+  obtain ⟨_, _, funcs, lowered, compiledProgram⟩ := compileSource_some compiled
+  cases fuel with
+  | zero => simp [Semantics.evalExpr] at runs
+  | succ k =>
+    obtain ⟨func', values, afterArgs, completed, c, argsRun, found', _, bodyRun, result, rfl⟩ := call_inv runs
+    rw [found] at found'
+    cases found'
+    obtain ⟨rfl, rfl⟩ := evalExprs_values argsRun
+    obtain ⟨_, _, depth, results, after, returns, holds, len, hc'⟩ :=
+      body_sound (mp := { funcs := funcs }) (hp := heap) lowered (stmt_sound lowered k) found
+        fresh hc typed bitsLen bodyRun result fits
+    exact ⟨depth, results, after, holds, len, hc',
+      fun s imageBase window enough bounded loaded apart imageHeap entry params heapAt =>
+        compileOptimized_correct compiledProgram returns s imageBase window enough bounded loaded apart
+          imageHeap entry params heapAt⟩
+
 /-- Core runs `f(args)` from the empty state to `v`, ending with its heap's
 next free address at `final.heap.nextAddress`, and `bits` lay the arguments
 out by parameter type (a struct one slot per field). Then the compiled `f`,
@@ -85,20 +127,8 @@ theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
           read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = bits[k]) →
         HeapAt window s heap →
         ∃ n s', Steps n s s' ∧ Returned window s s' results after := by
-  obtain ⟨_, _, funcs, lowered, compiledProgram⟩ := compileSource_some compiled
-  cases fuel with
-  | zero => simp [Semantics.evalExpr] at runs
-  | succ k =>
-    obtain ⟨func', values, afterArgs, completed, c, argsRun, found', _, bodyRun, result, rfl⟩ := call_inv runs
-    rw [found] at found'
-    cases found'
-    obtain ⟨rfl, rfl⟩ := evalExprs_values argsRun
-    obtain ⟨_, _, depth, results, after, returns, holds, len, hc⟩ :=
-      body_sound (mp := { funcs := funcs }) (hp := heap) lowered (stmt_sound lowered k) found
-        ⟨fun _ mem => by simp at mem, rfl⟩ (HeapCorr.empty start zero small) typed bitsLen bodyRun result fits
-    exact ⟨depth, results, after, holds, len, hc.cursor,
-      fun s imageBase window enough bounded loaded apart imageHeap entry params heapAt =>
-        compileOptimized_correct compiledProgram returns s imageBase window enough bounded loaded apart
-          imageHeap entry params heapAt⟩
+  obtain ⟨depth, results, after, holds, len, hc, run⟩ := compileSource_correct_from compiled found typed bitsLen
+    (st := {}) ⟨fun _ mem => by simp at mem, rfl⟩ (HeapCorr.empty start zero small) runs fits
+  exact ⟨depth, results, after, holds, len, hc.cursor, run⟩
 
 end Lanius.Mini
