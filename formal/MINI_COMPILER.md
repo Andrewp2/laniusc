@@ -497,21 +497,25 @@ conditions, `return` and as bare call statements (`Discard`); `/` and `%`
 with divisors that cannot trap (`(d | 1)`, and `(d | 1) & -3` for `i32`);
 struct and enum literals with such fields; `s[i]` of an `i32` slice (`EIndex`)
 at an `i32` or `usize` index that may call, kept in bounds as a literal,
-`e & (n - 1)` or a nonnegative `e % n`; and later functions with struct,
+`e & (n - 1)` or a nonnegative `e % n`; `match` expressions (`EMatch`) of
+any type in any of those places, on a call, an enum literal, a local or
+another match, with arms that use their binders and may call, index and
+match; and later functions with struct,
 enum and slice parameters and struct and enum results. A function with a
 slice parameter writes into its caller's slice, the right side of `&&` and
 `||` often calls one, and the entry's result folds in every element of its
 slices, so Core's order (left before right, arguments left to right, short
 circuit) shows in the result: with the interpreter changed to evaluate both
 sides of `&&` and `||`, 15 of 1,000 generated programs give other results, and
-with right-to-left evaluation 4. `while` conditions are `counter < bound && c`
+with right-to-left evaluation 6. `while` conditions are `counter < bound && c`
 in either order, so loops stay bounded. 2026-10-21, seeds 51-56 with
 indexing: 1,800 programs, 14,400 calls, no disagreements and no rejections.
 The programs hold 1,712 indexings, 3,524 calls in expressions, 3,772
 divisions, 1,266 struct and enum literals and 8,455 Eval statements (2,142
 `let`, 639 assignments, 1,018 `if`, 992 `while`, 4,004 `return`, 660 bare
 calls). The same seeds before indexing: 1,800 programs, 14,400 calls, no
-disagreements.
+disagreements. With `match`, seeds 51-56 again: 1,800 programs, 14,400 calls,
+no disagreements and no rejections, with 2,878 `match` expressions.
 
 Not covered yet: the stdlib, which needs generics and modules in the front
 pass.
