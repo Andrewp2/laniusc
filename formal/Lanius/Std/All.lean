@@ -10,3 +10,14 @@ import Lanius.Std.VecSearch
 import Lanius.Std.VecAlloc
 import Lanius.Std.VecHeap
 import Lanius.Std.VecGrow
+import Lanius.Std.VecReserve
+import Lanius.Std.VecPush
+import Lanius.Std.VecMore
+import Lanius.Std.VecClone
+import Lanius.Std.VecFill
+import Lanius.Std.VecResize
+import Lanius.Std.VecRemove
+import Lanius.Std.VecShrink
+import Lanius.Std.VecEdge
+import Lanius.Std.VecInsert
+import Lanius.Std.VecReverse
