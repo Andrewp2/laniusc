@@ -17,7 +17,8 @@ repository root. An application imports the CSV module with `import ext::csv;`.
 | Module | Working surface | Execution evidence |
 | --- | --- | --- |
 | [`ext::csv`](ext/csv.lani) | Parse owned UTF-8 tables, copy fields, encode canonical CSV | x86_64 Linux; [contracts and tests](../docs/extended-csv.md) |
+| [`ext::json`](ext/json.lani) | Parse/build owned documents, query nodes, encode compact JSON with exact number text | x86_64 Linux; [contracts and tests](../docs/extended-json.md) |
 
-This is the first extended module. The complete scope and dependency order are
+The complete scope and dependency order are
 tracked in the [library roadmap](../docs/library-roadmap.md). Package publishing,
 other formats and protocols, and additional targets remain separate work.

@@ -1,0 +1,53 @@
+// Compile with --source-root extended --stdlib-root stdlib.
+// Read UTF-8 JSON, then emit compact JSON preserving numbers and member order.
+module app::main;
+import alloc::io;
+import alloc::string;
+import core::io;
+import core::result;
+import ext::json;
+import std::stream;
+
+fn json_failure(error: ext::json::Error) -> i32 {
+    let allocation: bool = match (error.kind) { ext::json::ErrorKind::AllocationFailed -> true, _ -> false };
+    if (allocation) { return 4; }
+    return 2;
+}
+fn normalize(text: alloc::string::String) -> i32 {
+    let parsed: core::result::Result<ext::json::Document, ext::json::Error> = ext::json::parse(text, ext::json::default_options());
+    if (core::result::is_err(parsed)) { return json_failure(core::result::unwrap_err(parsed)); }
+    let document: ext::json::Document = core::result::unwrap(parsed);
+    let encoded: core::result::Result<alloc::string::String, ext::json::Error> = ext::json::encode(document);
+    document.destroy();
+    if (core::result::is_err(encoded)) { return json_failure(core::result::unwrap_err(encoded)); }
+    let output: alloc::string::String = core::result::unwrap(encoded);
+    let target: std::stream::Descriptor = std::stream::stdout();
+    let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(target.borrow(), output.as_bytes(), 0, output.byte_len());
+    output.destroy();
+    if (core::result::is_err(written)) { return 3; }
+    return 0;
+}
+fn main() -> i32 {
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let input: alloc::io::Buffer = alloc::io::new();
+    let received: core::result::Result<u64, core::io::CopyFailure> = std::stream::copy(source.borrow(), input.borrow());
+    if (core::result::is_err(received)) {
+        let failure: core::io::CopyFailure = core::result::unwrap_err(received);
+        let allocation: bool = match (failure.cause) { core::io::Error::AllocationFailed -> true, _ -> false };
+        input.destroy();
+        if (allocation) { return 4; }
+        return 3;
+    }
+    let decoded: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_utf8(input.as_bytes(), input.len());
+    input.destroy();
+    if (core::result::is_err(decoded)) {
+        let error: alloc::string::Error = core::result::unwrap_err(decoded);
+        let allocation: bool = match (error) { alloc::string::Error::AllocationFailed -> true, _ -> false };
+        if (allocation) { return 4; }
+        return 2;
+    }
+    let text: alloc::string::String = core::result::unwrap(decoded);
+    let status: i32 = normalize(text);
+    text.destroy();
+    return status;
+}

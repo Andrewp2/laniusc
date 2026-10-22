@@ -121,7 +121,11 @@ API list; unrelated library work can continue.
 - Shared I/O: portable Read/Write traits, exact/all/copy operations, slice
   cursors, owned byte buffers and native descriptor adapters have execution
   coverage. CSV uses these streams. See [stdlib-streams.md](stdlib-streams.md).
-- Next integration milestone: JSON and a CSV-to-JSON application using validation
-  and grouping, followed by remaining text/collection and I/O operations.
+- Extended JSON: iterative parsing/building/encoding, exact number text,
+  queries and independent string copies execute on x86_64 Linux, including
+  generated trees, limits and allocation fault injection. See
+  [extended-json.md](extended-json.md).
+- Next integration milestone: a CSV-to-JSON application using validation and
+  grouping, followed by remaining text/collection and I/O operations.
 - The older [execution audit](stdlib-foundation.md) remains historical evidence;
   its top-level checkpoints do not establish this branch's current behavior.

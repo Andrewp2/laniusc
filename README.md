@@ -44,9 +44,10 @@ allocation-failure tests.
 The [byte stream APIs](docs/stdlib-streams.md) provide shared reader/writer
 contracts, owned byte buffers and native descriptor adapters.
 
-Optional modules use the [`extended` source root](extended/README.md). The first
-is [`ext::csv`](docs/extended-csv.md), with an executable CSV normalizer and
-allocation-failure coverage.
+Optional modules use the [`extended` source root](extended/README.md).
+[`ext::csv`](docs/extended-csv.md) and [`ext::json`](docs/extended-json.md)
+include executable normalizers, generated round trips and allocation-failure
+coverage.
 
 ## Benchmarks
 

@@ -1,0 +1,148 @@
+// expect: 0
+module app::main;
+import alloc::string;
+import core::option;
+import core::result;
+import ext::json;
+
+fn text(bytes: [u8], count: i32) -> alloc::string::String {
+    let decoded: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_utf8(bytes, count);
+    return core::result::unwrap(decoded);
+}
+fn code(kind: ext::json::ErrorKind) -> i32 {
+    let result: i32 = match (kind) {
+        ext::json::ErrorKind::DepthLimit -> 1, ext::json::ErrorKind::NodeLimit -> 2,
+        ext::json::ErrorKind::StringLimit -> 3, ext::json::ErrorKind::NumberLimit -> 4,
+        ext::json::ErrorKind::OutputLimit -> 5, ext::json::ErrorKind::DuplicateKey -> 6,
+        ext::json::ErrorKind::UnexpectedByte -> 7, ext::json::ErrorKind::InvalidEscape -> 8,
+        ext::json::ErrorKind::InvalidSurrogate -> 9, ext::json::ErrorKind::InvalidNumber -> 10,
+        ext::json::ErrorKind::TrailingInput -> 11, ext::json::ErrorKind::UnexpectedEnd -> 12,
+        _ -> 0,
+    };
+    return result;
+}
+fn fails(input: alloc::string::String, options: ext::json::Options, expected: i32, offset: i32) -> bool {
+    let parsed: core::result::Result<ext::json::Document, ext::json::Error> = ext::json::parse(input, options);
+    if (core::result::is_ok(parsed)) { let doc: ext::json::Document = core::result::unwrap(parsed); doc.destroy(); return false; }
+    let error: ext::json::Error = core::result::unwrap_err(parsed);
+    return code(error.kind) == expected && error.offset == offset;
+}
+fn fails_bytes(bytes: [u8], count: i32, expected: i32, offset: i32) -> bool {
+    let input: alloc::string::String = text(bytes, count);
+    let valid: bool = fails(input, ext::json::default_options(), expected, offset);
+    input.destroy();
+    return valid;
+}
+fn append_borrowed(document: &ext::json::Document, root: i32) -> bool {
+    let count: i32 = 0;
+    while (count < 20) {
+        if (core::result::is_err(document.add_i32(ext::json::At::Element(root), count))) { return false; }
+        count += 1;
+    }
+    return true;
+}
+
+fn main() -> i32 {
+    let document: ext::json::Document = ext::json::new();
+    if (core::option::is_some(document.root()) || !core::result::is_err(ext::json::encode(document))) { return 1; }
+    if (!core::result::is_err(document.add_null(ext::json::At::Element(-1)))) { return 2; }
+    let root: i32 = core::result::unwrap(document.add_object(ext::json::At::Root));
+    let key_bytes: [u8; 5] = [105, 116, 101, 109, 115];
+    let key: alloc::string::String = text(key_bytes, 5);
+    let items: i32 = core::result::unwrap(document.add_array(ext::json::At::Member(root, key)));
+    let first: i32 = core::result::unwrap(document.add_null(ext::json::At::Element(items)));
+    let flag: i32 = core::result::unwrap(document.add_bool(ext::json::At::Element(items), false));
+    let number: i32 = core::result::unwrap(document.add_i32(ext::json::At::Element(items), -2147483648));
+    let content_bytes: [u8; 5] = [0, 195, 169, 34, 92];
+    let content: alloc::string::String = text(content_bytes, 5);
+    let string: i32 = core::result::unwrap(document.add_string(ext::json::At::Element(items), content));
+    content.clear(); content.destroy();
+    if (document.node_count() != 6 || core::result::unwrap(document.child_count(items)) != 4) { return 3; }
+    if (core::result::unwrap(document.boolean(flag))) { return 4; }
+    if (core::option::unwrap_or(core::result::unwrap(document.element(items, 2)), -1) != number) { return 5; }
+    if (core::option::is_some(core::result::unwrap(document.element(items, 4)))) { return 6; }
+    if (core::option::unwrap_or(core::result::unwrap(document.first_child(items)), -1) != first) { return 7; }
+    if (core::option::unwrap_or(core::result::unwrap(document.next_sibling(first)), -1) != flag) { return 8; }
+    if (!core::result::is_err(document.boolean(root)) || !core::result::is_err(document.element(items, -1))) { return 9; }
+    if (!core::result::is_err(document.kind(99)) || !core::result::is_err(document.copy_key(root))) { return 10; }
+    if (!core::result::is_err(document.add_null(ext::json::At::Root)) || document.node_count() != 6) { return 11; }
+    let duplicate: i32 = core::result::unwrap(document.add_bool(ext::json::At::Member(root, key), true));
+    if (core::option::unwrap_or(core::result::unwrap(document.member(root, key)), -1) != duplicate) { return 12; }
+    if (core::option::unwrap_or(core::result::unwrap(document.next_sibling(items)), -1) != duplicate) { return 13; }
+    let copied: alloc::string::String = core::result::unwrap(document.copy_string(string));
+    let copied_key: alloc::string::String = core::result::unwrap(document.copy_key(items));
+    let encoded: alloc::string::String = core::result::unwrap(ext::json::encode(document));
+    document.destroy(); document.destroy();
+    if (document.node_count() != 0 || copied.byte_len() != 5 || !copied_key.equals(key)) { return 14; }
+    let parsed: core::result::Result<ext::json::Document, ext::json::Error> = ext::json::parse(encoded, ext::json::default_options());
+    let roundtrip: ext::json::Document = core::result::unwrap(parsed);
+    if (roundtrip.node_count() != 7 || core::result::unwrap(roundtrip.child_count(0)) != 2) { return 15; }
+    let again: alloc::string::String = core::result::unwrap(ext::json::encode(roundtrip));
+    if (!again.equals(encoded)) { return 16; }
+    again.destroy(); roundtrip.destroy(); copied.destroy(); copied_key.destroy();
+    let options: ext::json::Options = ext::json::default_options();
+    options.reject_duplicate_keys = true;
+    let rejected: core::result::Result<ext::json::Document, ext::json::Error> = ext::json::parse(encoded, options);
+    if (core::result::is_ok(rejected) || code(core::result::unwrap_err(rejected).kind) != 6) { return 17; }
+    encoded.destroy(); key.destroy();
+
+    let nested_bytes: [u8; 4] = [91, 91, 93, 93];
+    let nested: alloc::string::String = text(nested_bytes, 4);
+    options = ext::json::default_options(); options.max_depth = 1;
+    if (!fails(nested, options, 1, 1)) { return 18; }
+    nested.destroy();
+    let many_bytes: [u8; 5] = [91, 48, 44, 49, 93];
+    let many: alloc::string::String = text(many_bytes, 5);
+    options = ext::json::default_options(); options.max_nodes = 2;
+    if (!fails(many, options, 2, 3)) { return 19; }
+    many.destroy();
+    let wide_bytes: [u8; 4] = [34, 195, 169, 34];
+    let wide: alloc::string::String = text(wide_bytes, 4);
+    options = ext::json::default_options(); options.max_string_bytes = 1;
+    if (!fails(wide, options, 3, 1)) { return 20; }
+    wide.destroy();
+    let number_bytes: [u8; 3] = [49, 101, 50];
+    let numeric: alloc::string::String = text(number_bytes, 3);
+    options = ext::json::default_options(); options.max_number_bytes = 2;
+    if (!fails(numeric, options, 4, 0)) { return 21; }
+    numeric.destroy();
+    options = ext::json::default_options(); options.max_output_bytes = 3;
+    let small: ext::json::Document = core::result::unwrap(ext::json::with_options(options));
+    small.add_null(ext::json::At::Root);
+    let overflow: core::result::Result<alloc::string::String, ext::json::Error> = ext::json::encode(small);
+    if (core::result::is_ok(overflow) || code(core::result::unwrap_err(overflow).kind) != 5 || small.node_count() != 1) { return 22; }
+    small.destroy();
+    options.max_nodes = -1;
+    if (!core::result::is_err(ext::json::with_options(options))) { return 23; }
+
+    options = ext::json::default_options(); options.max_depth = 512;
+    let deep: ext::json::Document = core::result::unwrap(ext::json::with_options(options));
+    let parent: i32 = core::result::unwrap(deep.add_array(ext::json::At::Root));
+    let depth: i32 = 1;
+    while (depth < 512) { parent = core::result::unwrap(deep.add_array(ext::json::At::Element(parent))); depth += 1; }
+    if (!core::result::is_err(deep.add_array(ext::json::At::Element(parent)))) { return 24; }
+    deep.add_null(ext::json::At::Element(parent));
+    let deep_text: alloc::string::String = core::result::unwrap(ext::json::encode(deep));
+    deep.destroy();
+    let deep_parse: ext::json::Document = core::result::unwrap(ext::json::parse(deep_text, options));
+    if (deep_parse.node_count() != 513) { return 25; }
+    deep_parse.destroy(); deep_text.destroy();
+    let borrowed: ext::json::Document = ext::json::new();
+    let array: i32 = core::result::unwrap(borrowed.add_array(ext::json::At::Root));
+    if (!append_borrowed(borrowed.borrow(), array) || borrowed.node_count() != 21) { return 26; }
+    if (core::result::unwrap(borrowed.child_count(array)) != 20) { return 27; }
+    borrowed.destroy();
+    let bad_escape: [u8; 4] = [34, 92, 113, 34];
+    if (!fails_bytes(bad_escape, 4, 8, 2)) { return 28; }
+    let surrogate: [u8; 8] = [34, 92, 117, 68, 56, 48, 48, 34];
+    if (!fails_bytes(surrogate, 8, 9, 1)) { return 29; }
+    let comma: [u8; 4] = [91, 49, 44, 93];
+    if (!fails_bytes(comma, 4, 7, 3)) { return 30; }
+    let invalid_number: [u8; 4] = [32, 32, 48, 49];
+    if (!fails_bytes(invalid_number, 4, 10, 2)) { return 31; }
+    let trailing: [u8; 7] = [110, 117, 108, 108, 32, 32, 120];
+    if (!fails_bytes(trailing, 7, 11, 6)) { return 32; }
+    let unfinished: [u8; 3] = [34, 97, 98];
+    if (!fails_bytes(unfinished, 3, 12, 3)) { return 33; }
+    return 0;
+}

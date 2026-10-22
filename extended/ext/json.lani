@@ -1,0 +1,615 @@
+// Owned JSON documents. RFC 8259 grammar with Unicode-scalar strings.
+// One owner frees the entire document; NodeId values borrow that owner.
+module ext::json;
+import alloc::string;
+import core::decimal;
+import core::option;
+import core::result;
+import core::utf8;
+import std::vec;
+
+pub type NodeId = i32;
+pub enum Kind { Null, Boolean, Number, Text, Array, Object }
+pub enum ErrorKind {
+    UnexpectedEnd, UnexpectedByte, InvalidEscape, InvalidSurrogate,
+    InvalidNumber, TrailingInput, DepthLimit, NodeLimit, StringLimit,
+    NumberLimit, OutputLimit, DuplicateKey, AllocationFailed, Bounds,
+    WrongKind, InvalidPlacement, InvalidOptions, NoRoot,
+}
+pub struct Error { kind: ErrorKind, offset: i32 }
+pub struct Options {
+    max_depth: i32, max_nodes: i32, max_string_bytes: i32,
+    max_number_bytes: i32, max_output_bytes: i32, reject_duplicate_keys: bool,
+}
+pub enum At { Root, Element(NodeId), Member(NodeId, alloc::string::String) }
+
+pub fn default_options() -> Options {
+    return Options {
+        max_depth: 128, max_nodes: 1000000, max_string_bytes: 16777216,
+        max_number_bytes: 1048576, max_output_bytes: 67108864, reject_duplicate_keys: false,
+    };
+}
+
+fn error(kind: ErrorKind, offset: i32) -> Error { return Error { kind: kind, offset: offset }; }
+fn tag(kind: Kind) -> i32 {
+    let value: i32 = match (kind) { Null -> 0, Boolean -> 1, Number -> 2, Text -> 3, Array -> 4, Object -> 5 };
+    return value;
+}
+fn valid_options(options: Options) -> bool {
+    return options.max_depth >= 0 && options.max_nodes >= 0 && options.max_string_bytes >= 0 &&
+        options.max_number_bytes >= 0 && options.max_output_bytes >= 0;
+}
+
+struct Node {
+    kind: Kind, flag: bool, text: alloc::string::String, key: alloc::string::String,
+    parent: NodeId, first: NodeId, last: NodeId, next: NodeId, count: i32, depth: i32,
+}
+pub struct Document { nodes: std::vec::Vec<Node>, options: Options }
+
+pub fn new() -> Document {
+    let nodes: std::vec::Vec<Node> = std::vec::new();
+    return Document { nodes: nodes, options: default_options() };
+}
+pub fn with_options(options: Options) -> core::result::Result<Document, Error> {
+    if (!valid_options(options)) { return core::result::Err(error(ErrorKind::InvalidOptions, -1)); }
+    let nodes: std::vec::Vec<Node> = std::vec::new();
+    return core::result::Ok(Document { nodes: nodes, options: options });
+}
+
+struct Destination { parent: NodeId, root: bool, member: bool, key: alloc::string::String }
+fn destination(at: At) -> Destination {
+    let empty: alloc::string::String = alloc::string::new();
+    let result: Destination = match (at) {
+        Root -> Destination { parent: -1, root: true, member: false, key: empty },
+        Element(parent) -> Destination { parent: parent, root: false, member: false, key: empty },
+        Member(parent, key) -> Destination { parent: parent, root: false, member: true, key: key },
+    };
+    return result;
+}
+
+pub impl Document {
+    // Pass the actual owner to a helper that may add nodes and grow storage.
+    pub fn borrow(&self) -> &Document { return self; }
+    pub fn node_count(&self) -> i32 { return std::vec::len(self.nodes); }
+    pub fn root(&self) -> core::option::Option<NodeId> {
+        if (std::vec::is_empty(self.nodes)) { return core::option::None(); }
+        return core::option::Some(0);
+    }
+    fn valid(&self, id: NodeId) -> bool { return id >= 0 && id < std::vec::len(self.nodes); }
+    pub fn kind(&self, id: NodeId) -> core::result::Result<Kind, Error> {
+        if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds, -1)); }
+        let node: Node = std::vec::at(self.nodes, id);
+        return core::result::Ok(node.kind);
+    }
+    pub fn child_count(&self, id: NodeId) -> core::result::Result<i32, Error> {
+        if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds, -1)); }
+        let node: Node = std::vec::at(self.nodes, id);
+        if (tag(node.kind) < 4) { return core::result::Err(error(ErrorKind::WrongKind, -1)); }
+        return core::result::Ok(node.count);
+    }
+    pub fn first_child(&self, id: NodeId) -> core::result::Result<core::option::Option<NodeId>, Error> {
+        if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds, -1)); }
+        let node: Node = std::vec::at(self.nodes, id);
+        if (tag(node.kind) < 4) { return core::result::Err(error(ErrorKind::WrongKind, -1)); }
+        if (node.first < 0) { return core::result::Ok(core::option::None()); }
+        return core::result::Ok(core::option::Some(node.first));
+    }
+    pub fn next_sibling(&self, id: NodeId) -> core::result::Result<core::option::Option<NodeId>, Error> {
+        if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds, -1)); }
+        let node: Node = std::vec::at(self.nodes, id);
+        if (node.next < 0) { return core::result::Ok(core::option::None()); }
+        return core::result::Ok(core::option::Some(node.next));
+    }
+    pub fn element(&self, id: NodeId, index: i32) -> core::result::Result<core::option::Option<NodeId>, Error> {
+        if (!self.valid(id) || index < 0) { return core::result::Err(error(ErrorKind::Bounds, -1)); }
+        let node: Node = std::vec::at(self.nodes, id);
+        if (tag(node.kind) != 4) { return core::result::Err(error(ErrorKind::WrongKind, -1)); }
+        if (index >= node.count) { return core::result::Ok(core::option::None()); }
+        let child: NodeId = node.first;
+        let ordinal: i32 = 0;
+        while (ordinal < index) { let current: Node = std::vec::at(self.nodes, child); child = current.next; ordinal += 1; }
+        return core::result::Ok(core::option::Some(child));
+    }
+    // Last matching member wins for lookup; ordered traversal retains all keys.
+    pub fn member(&self, id: NodeId, key: alloc::string::String) -> core::result::Result<core::option::Option<NodeId>, Error> {
+        if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds, -1)); }
+        let node: Node = std::vec::at(self.nodes, id);
+        if (tag(node.kind) != 5) { return core::result::Err(error(ErrorKind::WrongKind, -1)); }
+        let found: NodeId = -1;
+        let child: NodeId = node.first;
+        while (child >= 0) {
+            let current: Node = std::vec::at(self.nodes, child);
+            if (current.key.equals(key)) { found = child; }
+            child = current.next;
+        }
+        if (found < 0) { return core::result::Ok(core::option::None()); }
+        return core::result::Ok(core::option::Some(found));
+    }
+    pub fn boolean(&self, id: NodeId) -> core::result::Result<bool, Error> {
+        if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds, -1)); }
+        let node: Node = std::vec::at(self.nodes, id);
+        if (tag(node.kind) != 1) { return core::result::Err(error(ErrorKind::WrongKind, -1)); }
+        return core::result::Ok(node.flag);
+    }
+    fn copied_text(&self, id: NodeId, wanted: i32) -> core::result::Result<alloc::string::String, Error> {
+        if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds, -1)); }
+        let node: Node = std::vec::at(self.nodes, id);
+        if (tag(node.kind) != wanted) { return core::result::Err(error(ErrorKind::WrongKind, -1)); }
+        let cloned: core::result::Result<alloc::string::String, alloc::string::Error> = node.text.try_clone();
+        if (core::result::is_err(cloned)) { return core::result::Err(error(ErrorKind::AllocationFailed, -1)); }
+        return core::result::Ok(core::result::unwrap(cloned));
+    }
+    pub fn copy_string(&self, id: NodeId) -> core::result::Result<alloc::string::String, Error> { return self.copied_text(id, 3); }
+    pub fn copy_number(&self, id: NodeId) -> core::result::Result<alloc::string::String, Error> { return self.copied_text(id, 2); }
+    pub fn copy_key(&self, id: NodeId) -> core::result::Result<alloc::string::String, Error> {
+        if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds, -1)); }
+        let node: Node = std::vec::at(self.nodes, id);
+        if (node.parent < 0) { return core::result::Err(error(ErrorKind::WrongKind, -1)); }
+        let parent: Node = std::vec::at(self.nodes, node.parent);
+        if (tag(parent.kind) != 5) { return core::result::Err(error(ErrorKind::WrongKind, -1)); }
+        let cloned: core::result::Result<alloc::string::String, alloc::string::Error> = node.key.try_clone();
+        if (core::result::is_err(cloned)) { return core::result::Err(error(ErrorKind::AllocationFailed, -1)); }
+        return core::result::Ok(core::result::unwrap(cloned));
+    }
+
+    fn validate_destination(&self, at: Destination, kind: Kind, offset: i32) -> core::result::Result<i32, Error> {
+        let depth: i32 = 0;
+        if (at.root) {
+            if (at.member || !std::vec::is_empty(self.nodes)) { return core::result::Err(error(ErrorKind::InvalidPlacement, offset)); }
+        } else {
+            if (!self.valid(at.parent)) { return core::result::Err(error(ErrorKind::Bounds, offset)); }
+            let parent: Node = std::vec::at(self.nodes, at.parent);
+            if (at.member) {
+                if (tag(parent.kind) != 5) { return core::result::Err(error(ErrorKind::InvalidPlacement, offset)); }
+                if (at.key.byte_len() > self.options.max_string_bytes) { return core::result::Err(error(ErrorKind::StringLimit, offset)); }
+                if (self.options.reject_duplicate_keys) {
+                    let found: core::result::Result<core::option::Option<NodeId>, Error> = self.member(at.parent, at.key);
+                    if (core::option::is_some(core::result::unwrap(found))) { return core::result::Err(error(ErrorKind::DuplicateKey, offset)); }
+                }
+            } else {
+                if (tag(parent.kind) != 4) { return core::result::Err(error(ErrorKind::InvalidPlacement, offset)); }
+            }
+            depth = parent.depth;
+        }
+        if (tag(kind) >= 4) {
+            if (depth >= self.options.max_depth) { return core::result::Err(error(ErrorKind::DepthLimit, offset)); }
+            depth += 1;
+        }
+        if (std::vec::len(self.nodes) >= self.options.max_nodes) { return core::result::Err(error(ErrorKind::NodeLimit, offset)); }
+        return core::result::Ok(depth);
+    }
+
+    // Consumes key/text on both success and failure. Existing nodes survive.
+    fn insert_owned(&self, at: Destination, kind: Kind, flag: bool, text: alloc::string::String, offset: i32)
+        -> core::result::Result<NodeId, Error> {
+        let checked: core::result::Result<i32, Error> = self.validate_destination(at, kind, offset);
+        if (core::result::is_err(checked)) {
+            at.key.destroy(); text.destroy();
+            return core::result::Err(core::result::unwrap_err(checked));
+        }
+        let id: NodeId = std::vec::len(self.nodes);
+        let node: Node = Node {
+            kind: kind, flag: flag, text: text, key: at.key, parent: at.parent,
+            first: -1, last: -1, next: -1, count: 0, depth: core::result::unwrap(checked),
+        };
+        self.nodes = std::vec::try_push(self.nodes, node);
+        if (std::vec::len(self.nodes) == id) {
+            at.key.destroy(); text.destroy();
+            return core::result::Err(error(ErrorKind::AllocationFailed, offset));
+        }
+        if (at.parent >= 0) {
+            let parent: Node = std::vec::at(self.nodes, at.parent);
+            if (parent.last >= 0) {
+                let last: Node = std::vec::at(self.nodes, parent.last);
+                last.next = id;
+                self.nodes = std::vec::try_set(self.nodes, parent.last, last);
+            } else { parent.first = id; }
+            parent.last = id;
+            parent.count += 1;
+            self.nodes = std::vec::try_set(self.nodes, at.parent, parent);
+        }
+        return core::result::Ok(id);
+    }
+
+    fn insert_copy(&self, placement: At, kind: Kind, flag: bool, text: alloc::string::String)
+        -> core::result::Result<NodeId, Error> {
+        let at: Destination = destination(placement);
+        let checked: core::result::Result<i32, Error> = self.validate_destination(at, kind, -1);
+        if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+        let key: core::result::Result<alloc::string::String, alloc::string::Error> = at.key.try_clone();
+        if (core::result::is_err(key)) { return core::result::Err(error(ErrorKind::AllocationFailed, -1)); }
+        let key_copy: alloc::string::String = core::result::unwrap(key);
+        let value: core::result::Result<alloc::string::String, alloc::string::Error> = text.try_clone();
+        if (core::result::is_err(value)) { key_copy.destroy(); return core::result::Err(error(ErrorKind::AllocationFailed, -1)); }
+        let owned: Destination = Destination { parent: at.parent, root: at.root, member: at.member, key: key_copy };
+        return self.insert_owned(owned, kind, flag, core::result::unwrap(value), -1);
+    }
+    pub fn add_null(&self, at: At) -> core::result::Result<NodeId, Error> { return self.insert_copy(at, Kind::Null, false, alloc::string::new()); }
+    pub fn add_bool(&self, at: At, value: bool) -> core::result::Result<NodeId, Error> { return self.insert_copy(at, Kind::Boolean, value, alloc::string::new()); }
+    pub fn add_array(&self, at: At) -> core::result::Result<NodeId, Error> { return self.insert_copy(at, Kind::Array, false, alloc::string::new()); }
+    pub fn add_object(&self, at: At) -> core::result::Result<NodeId, Error> { return self.insert_copy(at, Kind::Object, false, alloc::string::new()); }
+    pub fn add_string(&self, at: At, value: alloc::string::String) -> core::result::Result<NodeId, Error> {
+        if (value.byte_len() > self.options.max_string_bytes) { return core::result::Err(error(ErrorKind::StringLimit, -1)); }
+        return self.insert_copy(at, Kind::Text, false, value);
+    }
+    pub fn add_number(&self, at: At, value: alloc::string::String) -> core::result::Result<NodeId, Error> {
+        if (value.byte_len() > self.options.max_number_bytes) { return core::result::Err(error(ErrorKind::NumberLimit, -1)); }
+        if (value.byte_len() == 0 || number_end(value.as_bytes(), value.byte_len(), 0) != value.byte_len()) {
+            return core::result::Err(error(ErrorKind::InvalidNumber, -1));
+        }
+        return self.insert_copy(at, Kind::Number, false, value);
+    }
+    pub fn add_i32(&self, at: At, value: i32) -> core::result::Result<NodeId, Error> {
+        let text: alloc::string::String = alloc::string::new();
+        let length: u32 = core::decimal::len_i32(value);
+        let index: u32 = 0;
+        while (index < length) {
+            let byte: u8 = core::decimal::byte_at_or_i32(value, index, 0);
+            if (core::result::is_err(text.try_push_scalar(byte as u32))) { text.destroy(); return core::result::Err(error(ErrorKind::AllocationFailed, -1)); }
+            index += 1;
+        }
+        let added: core::result::Result<NodeId, Error> = self.add_number(at, text);
+        text.destroy();
+        return added;
+    }
+    pub fn destroy(&self) {
+        let index: i32 = 0;
+        while (index < std::vec::len(self.nodes)) {
+            let node: Node = std::vec::at(self.nodes, index);
+            node.key.destroy(); node.text.destroy(); index += 1;
+        }
+        std::vec::destroy(self.nodes);
+        self.nodes = std::vec::new();
+    }
+}
+
+fn digit(byte: u8) -> bool { return byte >= 48 && byte <= 57; }
+fn space(byte: u8) -> bool { return byte == 32 || byte == 9 || byte == 10 || byte == 13; }
+fn delimiter(byte: u8) -> bool { return space(byte) || byte == 44 || byte == 93 || byte == 125; }
+// Returns token end or -1. Does not accept leading/trailing whitespace.
+fn number_end(bytes: [u8], length: i32, start: i32) -> i32 {
+    let index: i32 = start;
+    if (index >= length) { return -1; }
+    if (bytes[index] == 45) { index += 1; }
+    if (index >= length) { return -1; }
+    if (bytes[index] == 48) {
+        index += 1;
+        if (index < length && digit(bytes[index])) { return -1; }
+    } else {
+        if (bytes[index] < 49 || bytes[index] > 57) { return -1; }
+        while (index < length && digit(bytes[index])) { index += 1; }
+    }
+    if (index < length && bytes[index] == 46) {
+        index += 1;
+        let first: i32 = index;
+        while (index < length && digit(bytes[index])) { index += 1; }
+        if (index == first) { return -1; }
+    }
+    if (index < length && (bytes[index] == 101 || bytes[index] == 69)) {
+        index += 1;
+        if (index < length && (bytes[index] == 43 || bytes[index] == 45)) { index += 1; }
+        let first: i32 = index;
+        while (index < length && digit(bytes[index])) { index += 1; }
+        if (index == first) { return -1; }
+    }
+    if (index < length && !delimiter(bytes[index])) { return -1; }
+    return index;
+}
+
+struct Frame { node: NodeId, phase: i32 }
+struct Parser {
+    input: alloc::string::String, document: Document, frames: std::vec::Vec<Frame>,
+    position: i32, failure: Error,
+}
+
+fn failed_string(text: alloc::string::String, kind: ErrorKind, offset: i32)
+    -> core::result::Result<alloc::string::String, Error> {
+    text.destroy();
+    return core::result::Err(error(kind, offset));
+}
+fn hex(byte: u8) -> i32 {
+    if (byte >= 48 && byte <= 57) { return (byte as i32) - 48; }
+    if (byte >= 65 && byte <= 70) { return (byte as i32) - 55; }
+    if (byte >= 97 && byte <= 102) { return (byte as i32) - 87; }
+    return -1;
+}
+
+impl Parser {
+    fn fail(&self, kind: ErrorKind, offset: i32) -> bool { self.failure = error(kind, offset); return false; }
+    fn whitespace(&self) {
+        let bytes: [u8] = self.input.as_bytes();
+        while (self.position < self.input.byte_len() && space(bytes[self.position])) { self.position += 1; }
+    }
+    fn four_hex(&self) -> i32 {
+        let bytes: [u8] = self.input.as_bytes();
+        let value: i32 = 0;
+        let index: i32 = 0;
+        while (index < 4) {
+            if (self.position >= self.input.byte_len()) { self.fail(ErrorKind::UnexpectedEnd, self.position); return -1; }
+            let digit: i32 = hex(bytes[self.position]);
+            if (digit < 0) { self.fail(ErrorKind::InvalidEscape, self.position); return -1; }
+            value = value * 16 + digit;
+            self.position += 1;
+            index += 1;
+        }
+        return value;
+    }
+    // Called at an opening quote. Decodes escapes into an owned scalar string.
+    fn quoted(&self) -> core::result::Result<alloc::string::String, Error> {
+        let bytes: [u8] = self.input.as_bytes();
+        let length: i32 = self.input.byte_len();
+        let text: alloc::string::String = alloc::string::new();
+        self.position += 1;
+        while (self.position < length) {
+            let start: i32 = self.position;
+            let byte: u8 = bytes[start];
+            if (byte == 34) { self.position += 1; return core::result::Ok(text); }
+            if (byte < 32) { return failed_string(text, ErrorKind::UnexpectedByte, start); }
+            let scalar: u32 = 0;
+            if (byte == 92) {
+                self.position += 1;
+                if (self.position >= length) { return failed_string(text, ErrorKind::UnexpectedEnd, length); }
+                let escaped: u8 = bytes[self.position];
+                self.position += 1;
+                if (escaped == 117) {
+                    let first: i32 = self.four_hex();
+                    if (first < 0) { text.destroy(); return core::result::Err(self.failure); }
+                    scalar = first as u32;
+                    if (first >= 55296 && first <= 56319) {
+                        if (length - self.position < 6 || bytes[self.position] != 92 || bytes[self.position + 1] != 117) {
+                            return failed_string(text, ErrorKind::InvalidSurrogate, start);
+                        }
+                        self.position += 2;
+                        let second: i32 = self.four_hex();
+                        if (second < 0) { text.destroy(); return core::result::Err(self.failure); }
+                        if (second < 56320 || second > 57343) { return failed_string(text, ErrorKind::InvalidSurrogate, start); }
+                        scalar = (65536 + (first - 55296) * 1024 + second - 56320) as u32;
+                    } else {
+                        if (first >= 56320 && first <= 57343) { return failed_string(text, ErrorKind::InvalidSurrogate, start); }
+                    }
+                } else {
+                    scalar = 4294967295;
+                    if (escaped == 34 || escaped == 92 || escaped == 47) { scalar = escaped as u32; }
+                    if (escaped == 98) { scalar = 8; }
+                    if (escaped == 102) { scalar = 12; }
+                    if (escaped == 110) { scalar = 10; }
+                    if (escaped == 114) { scalar = 13; }
+                    if (escaped == 116) { scalar = 9; }
+                    if (scalar == 4294967295) { return failed_string(text, ErrorKind::InvalidEscape, self.position - 1); }
+                }
+            } else {
+                scalar = core::option::unwrap_or(self.input.scalar_at_byte(self.position), 4294967295);
+                if (scalar == 4294967295) { return failed_string(text, ErrorKind::UnexpectedByte, self.position); }
+                self.position += core::utf8::encoded_len_or(scalar, 0) as i32;
+            }
+            let width: i32 = core::utf8::encoded_len_or(scalar, 0) as i32;
+            if (width > self.document.options.max_string_bytes - text.byte_len()) {
+                return failed_string(text, ErrorKind::StringLimit, start);
+            }
+            if (core::result::is_err(text.try_push_scalar(scalar))) { return failed_string(text, ErrorKind::AllocationFailed, start); }
+        }
+        return failed_string(text, ErrorKind::UnexpectedEnd, length);
+    }
+    fn literal(&self, expected: [u8], count: i32) -> bool {
+        let bytes: [u8] = self.input.as_bytes();
+        let index: i32 = 0;
+        while (index < count) {
+            if (self.position >= self.input.byte_len()) { return self.fail(ErrorKind::UnexpectedEnd, self.position); }
+            if (bytes[self.position] != expected[index]) { return self.fail(ErrorKind::UnexpectedByte, self.position); }
+            self.position += 1;
+            index += 1;
+        }
+        return true;
+    }
+    // Consumes the pending key on every path. Containers push a frame;
+    // neither parsing nor later destruction uses native call-stack recursion.
+    fn value(&self, parent: NodeId, member: bool, key: alloc::string::String) -> bool {
+        let start: i32 = self.position;
+        if (start >= self.input.byte_len()) { key.destroy(); return self.fail(ErrorKind::UnexpectedEnd, start); }
+        let bytes: [u8] = self.input.as_bytes();
+        let first: u8 = bytes[start];
+        let kind: Kind = Kind::Null;
+        let flag: bool = false;
+        let text: alloc::string::String = alloc::string::new();
+        if (first == 34) {
+            kind = Kind::Text;
+            let decoded: core::result::Result<alloc::string::String, Error> = self.quoted();
+            if (core::result::is_err(decoded)) { key.destroy(); self.failure = core::result::unwrap_err(decoded); return false; }
+            text = core::result::unwrap(decoded);
+        } else {
+            if (first == 91 || first == 123) {
+                kind = Kind::Array;
+                if (first == 123) { kind = Kind::Object; }
+                self.position += 1;
+            } else {
+                if (first == 110) {
+                    let word: [u8; 4] = [110, 117, 108, 108];
+                    if (!self.literal(word, 4)) { key.destroy(); return false; }
+                } else {
+                    if (first == 116 || first == 102) {
+                        kind = Kind::Boolean;
+                        flag = first == 116;
+                        if (flag) {
+                            let word: [u8; 4] = [116, 114, 117, 101];
+                            if (!self.literal(word, 4)) { key.destroy(); return false; }
+                        } else {
+                            let word: [u8; 5] = [102, 97, 108, 115, 101];
+                            if (!self.literal(word, 5)) { key.destroy(); return false; }
+                        }
+                    } else {
+                        if (first != 45 && !digit(first)) { key.destroy(); return self.fail(ErrorKind::UnexpectedByte, start); }
+                        let end: i32 = number_end(bytes, self.input.byte_len(), start);
+                        if (end < 0) { key.destroy(); return self.fail(ErrorKind::InvalidNumber, start); }
+                        if (end - start > self.document.options.max_number_bytes) { key.destroy(); return self.fail(ErrorKind::NumberLimit, start); }
+                        let copied: core::result::Result<alloc::string::String, alloc::string::Error> = self.input.try_substring(start, end);
+                        if (core::result::is_err(copied)) { key.destroy(); return self.fail(ErrorKind::AllocationFailed, start); }
+                        text = core::result::unwrap(copied);
+                        kind = Kind::Number;
+                        self.position = end;
+                    }
+                }
+            }
+        }
+        let at: Destination = Destination { parent: parent, root: parent == -1, member: member, key: key };
+        let added: core::result::Result<NodeId, Error> = self.document.insert_owned(at, kind, flag, text, start);
+        if (core::result::is_err(added)) { self.failure = core::result::unwrap_err(added); return false; }
+        if (tag(kind) >= 4) {
+            let before: i32 = std::vec::len(self.frames);
+            let frame: Frame = Frame { node: core::result::unwrap(added), phase: 0 };
+            self.frames = std::vec::try_push(self.frames, frame);
+            if (std::vec::len(self.frames) == before) { return self.fail(ErrorKind::AllocationFailed, start); }
+        }
+        return true;
+    }
+    fn run(&self) -> bool {
+        self.whitespace();
+        if (!self.value(-1, false, alloc::string::new())) { return false; }
+        let bytes: [u8] = self.input.as_bytes();
+        while (!std::vec::is_empty(self.frames)) {
+            self.whitespace();
+            if (self.position >= self.input.byte_len()) { return self.fail(ErrorKind::UnexpectedEnd, self.position); }
+            let top: i32 = std::vec::len(self.frames) - 1;
+            let frame: Frame = std::vec::at(self.frames, top);
+            let node: Node = std::vec::at(self.document.nodes, frame.node);
+            let object: bool = tag(node.kind) == 5;
+            let closing: u8 = 93;
+            if (object) { closing = 125; }
+            let byte: u8 = bytes[self.position];
+            if (byte == closing) {
+                if (frame.phase == 2) { return self.fail(ErrorKind::UnexpectedByte, self.position); }
+                self.frames = std::vec::try_pop(self.frames);
+                self.position += 1;
+                continue;
+            }
+            if (frame.phase == 1) {
+                if (byte != 44) { return self.fail(ErrorKind::UnexpectedByte, self.position); }
+                frame.phase = 2;
+                self.frames = std::vec::try_set(self.frames, top, frame);
+                self.position += 1;
+                continue;
+            }
+            let key: alloc::string::String = alloc::string::new();
+            if (object) {
+                if (byte != 34) { return self.fail(ErrorKind::UnexpectedByte, self.position); }
+                let quoted: core::result::Result<alloc::string::String, Error> = self.quoted();
+                if (core::result::is_err(quoted)) { self.failure = core::result::unwrap_err(quoted); return false; }
+                key = core::result::unwrap(quoted);
+                self.whitespace();
+                if (self.position >= self.input.byte_len()) { key.destroy(); return self.fail(ErrorKind::UnexpectedEnd, self.position); }
+                if (bytes[self.position] != 58) { key.destroy(); return self.fail(ErrorKind::UnexpectedByte, self.position); }
+                self.position += 1;
+                self.whitespace();
+            }
+            frame.phase = 1;
+            self.frames = std::vec::try_set(self.frames, top, frame);
+            if (!self.value(frame.node, object, key)) { return false; }
+        }
+        self.whitespace();
+        if (self.position != self.input.byte_len()) { return self.fail(ErrorKind::TrailingInput, self.position); }
+        return true;
+    }
+}
+
+pub fn parse(input: alloc::string::String, options: Options) -> core::result::Result<Document, Error> {
+    let document: core::result::Result<Document, Error> = with_options(options);
+    if (core::result::is_err(document)) { return core::result::Err(core::result::unwrap_err(document)); }
+    let frames: std::vec::Vec<Frame> = std::vec::new();
+    let parser: Parser = Parser {
+        input: input, document: core::result::unwrap(document), frames: frames,
+        position: 0, failure: error(ErrorKind::UnexpectedEnd, 0),
+    };
+    let complete: bool = parser.run();
+    std::vec::destroy(parser.frames);
+    if (!complete) { parser.document.destroy(); return core::result::Err(parser.failure); }
+    return core::result::Ok(parser.document);
+}
+
+struct Encoder { output: alloc::string::String, maximum: i32, failure: Error }
+impl Encoder {
+    fn push(&self, scalar: u32) -> bool {
+        let width: i32 = core::utf8::encoded_len_or(scalar, 0) as i32;
+        if (width == 0) { self.failure = error(ErrorKind::InvalidSurrogate, -1); return false; }
+        if (width > self.maximum - self.output.byte_len()) { self.failure = error(ErrorKind::OutputLimit, -1); return false; }
+        if (core::result::is_err(self.output.try_push_scalar(scalar))) { self.failure = error(ErrorKind::AllocationFailed, -1); return false; }
+        return true;
+    }
+    fn literal(&self, bytes: [u8], count: i32) -> bool {
+        let index: i32 = 0;
+        while (index < count) { if (!self.push(bytes[index] as u32)) { return false; } index += 1; }
+        return true;
+    }
+    fn raw(&self, text: alloc::string::String) -> bool {
+        if (text.byte_len() > self.maximum - self.output.byte_len()) { self.failure = error(ErrorKind::OutputLimit, -1); return false; }
+        if (core::result::is_err(self.output.try_append(text))) { self.failure = error(ErrorKind::AllocationFailed, -1); return false; }
+        return true;
+    }
+    fn quoted(&self, text: alloc::string::String) -> bool {
+        if (!self.push(34)) { return false; }
+        let offset: i32 = 0;
+        while (offset < text.byte_len()) {
+            let scalar: u32 = core::option::unwrap_or(text.scalar_at_byte(offset), 4294967295);
+            let width: i32 = core::utf8::encoded_len_or(scalar, 0) as i32;
+            if (width == 0) { self.failure = error(ErrorKind::InvalidSurrogate, -1); return false; }
+            if (scalar == 34 || scalar == 92) {
+                if (!self.push(92) || !self.push(scalar)) { return false; }
+            } else {
+                if (scalar < 32) {
+                    let prefix: [u8; 4] = [92, 117, 48, 48];
+                    if (!self.literal(prefix, 4) || !self.push(hex_digit(scalar / 16)) || !self.push(hex_digit(scalar % 16))) { return false; }
+                } else { if (!self.push(scalar)) { return false; } }
+            }
+            offset += width;
+        }
+        return self.push(34);
+    }
+    fn value(&self, node: Node) -> bool {
+        let kind: i32 = tag(node.kind);
+        if (kind == 0) { let word: [u8; 4] = [110, 117, 108, 108]; return self.literal(word, 4); }
+        if (kind == 1) {
+            if (node.flag) { let word: [u8; 4] = [116, 114, 117, 101]; return self.literal(word, 4); }
+            let word: [u8; 5] = [102, 97, 108, 115, 101]; return self.literal(word, 5);
+        }
+        if (kind == 2) { return self.raw(node.text); }
+        if (kind == 3) { return self.quoted(node.text); }
+        if (kind == 4) { return self.push(91); }
+        return self.push(123);
+    }
+    fn close(&self, kind: Kind) -> bool {
+        if (tag(kind) == 4) { return self.push(93); }
+        return self.push(125);
+    }
+    fn run(&self, document: Document) -> bool {
+        let current: NodeId = 0;
+        while (current >= 0) {
+            let node: Node = std::vec::at(document.nodes, current);
+            if (node.parent >= 0) {
+                let parent: Node = std::vec::at(document.nodes, node.parent);
+                if (tag(parent.kind) == 5 && (!self.quoted(node.key) || !self.push(58))) { return false; }
+            }
+            if (!self.value(node)) { return false; }
+            if (tag(node.kind) >= 4) {
+                if (node.first >= 0) { current = node.first; continue; }
+                if (!self.close(node.kind)) { return false; }
+            }
+            while (true) {
+                if (node.next >= 0) {
+                    if (!self.push(44)) { return false; }
+                    current = node.next;
+                    break;
+                }
+                if (node.parent < 0) { current = -1; break; }
+                node = std::vec::at(document.nodes, node.parent);
+                if (!self.close(node.kind)) { return false; }
+            }
+        }
+        return true;
+    }
+}
+fn hex_digit(value: u32) -> u32 { if (value < 10) { return 48 + value; } return 87 + value; }
+
+pub fn encode(document: Document) -> core::result::Result<alloc::string::String, Error> {
+    if (std::vec::is_empty(document.nodes)) { return core::result::Err(error(ErrorKind::NoRoot, -1)); }
+    let encoder: Encoder = Encoder { output: alloc::string::new(), maximum: document.options.max_output_bytes, failure: error(ErrorKind::AllocationFailed, -1) };
+    if (!encoder.run(document)) { encoder.output.destroy(); return core::result::Err(encoder.failure); }
+    return core::result::Ok(encoder.output);
+}
