@@ -14,3 +14,5 @@ import Lanius.Std.VecReserve
 import Lanius.Std.VecPush
 import Lanius.Std.VecMore
 import Lanius.Std.VecClone
+import Lanius.Std.VecFill
+import Lanius.Std.VecResize
