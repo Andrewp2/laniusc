@@ -8,7 +8,8 @@ namespace Lanius.Mini
 
 def Instr.Fits (slots bound funcs : Nat) : Instr → Prop
   | .imm _ | .neg | .loadAt | .loadWordAt _ => True
-  | .load slot | .store slot | .op _ _ slot | .cmp _ _ slot | .storeAt slot | .storeWordAt _ slot => slot < slots
+  | .load slot | .store slot | .op _ _ slot | .cmp _ _ slot | .storeAt slot | .storeWordAt _ slot | .div _ _ slot =>
+      slot < slots
   | .bump shift => shift < 32
   | .jmp target | .jz target => target ≤ bound
   | .call callee args target count => callee < funcs ∧ args.length ≤ slots ∧ (∀ slot ∈ args, slot < slots) ∧
@@ -19,7 +20,7 @@ theorem Instr.Fits.mono {i : Instr} {slots slots' bound bound' funcs : Nat} (fit
     (moreSlots : slots ≤ slots') (moreBound : bound ≤ bound') : i.Fits slots' bound' funcs := by
   cases i with
   | imm | neg | loadAt | loadWordAt => trivial
-  | load | store | op | cmp | storeAt | storeWordAt => simp only [Instr.Fits] at fits ⊢; omega
+  | load | store | op | cmp | storeAt | storeWordAt | div => simp only [Instr.Fits] at fits ⊢; omega
   | bump => exact fits
   | jmp | jz => simp only [Instr.Fits] at fits ⊢; omega
   | call callee args target count =>
@@ -206,6 +207,16 @@ theorem compileStmt_fits (base : Nat) (arities : List Arity) {results : Nat} (re
     · exact (compileExpr_fits base address 0 within.1 _ _ i inAddress).mono (by omega) (Nat.le_refl _)
     · simp only [Instr.Fits]; omega
     · exact (compileExpr_fits base value 1 within.2 _ _ i inValue).mono (by omega) (Nat.le_refl _)
+    · simp only [Instr.Fits]; omega
+  | divide word operation target left right =>
+    simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
+    simp only [compileStmt, List.mem_append, List.mem_cons, List.mem_singleton, List.not_mem_nil, or_false,
+      Stmt.temps]
+    rintro i (((inLeft | rfl) | inRight) | rfl | rfl)
+    · exact (compileExpr_fits base left 0 within.1.2 _ _ i inLeft).mono (by omega) (Nat.le_refl _)
+    · simp only [Instr.Fits]; omega
+    · exact (compileExpr_fits base right 1 within.2 _ _ i inRight).mono (by omega) (Nat.le_refl _)
+    · simp only [Instr.Fits]; omega
     · simp only [Instr.Fits]; omega
 
 theorem zeroLocals_fits (first count : Nat) (bound funcs : Nat) :

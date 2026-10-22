@@ -1,4 +1,5 @@
 import Lanius.Mini.WordSteps
+import Lanius.Mini.DivSteps
 import Lanius.Mini.Frame
 import Lanius.Mini.Fits
 
@@ -141,6 +142,28 @@ theorem Rel.accumulate (rel : Rel frame s m) (memory : s'.memory = s.memory) (si
     exact rel.preserved register other
   unchanged := by rw [memory]; exact rel.unchanged
   cursor := (registers _ (by decide) (by decide)).trans rel.cursor
+  limit := rel.limit
+  heap := by rw [memory]; exact rel.heap
+
+/-- `Rel.accumulate` for code that also writes r11. -/
+theorem Rel.accumulate11 (rel : Rel frame s m) (memory : s'.memory = s.memory) (size : Nat)
+    (rip : s'.rip = s.rip + BitVec.ofNat 64 size)
+    (registers : ∀ register, register ≠ 0 → register ≠ 1 → register ≠ 11 →
+      s'.registers register = s.registers register)
+    (acc : s'.registers 0 = value) :
+    Rel frame s' { m with pc := m.pc + size, acc := value } where
+  rip := rip.trans (rel.advance size)
+  rbp := (registers _ (by decide) (by decide) (by decide)).trans rel.rbp
+  rsp := (registers _ (by decide) (by decide) (by decide)).trans rel.rsp
+  acc := acc
+  slots := by rw [memory]; exact rel.slots
+  saved := by rw [memory]; exact rel.saved
+  preserved register other := by
+    obtain ⟨zero, one, -, -, eleven, -⟩ := not_scratch other
+    rw [registers register zero one eleven]
+    exact rel.preserved register other
+  unchanged := by rw [memory]; exact rel.unchanged
+  cursor := (registers _ (by decide) (by decide) (by decide)).trans rel.cursor
   limit := rel.limit
   heap := by rw [memory]; exact rel.heap
 
@@ -359,6 +382,68 @@ theorem op_simulates (word : Word) (operation : BinOp) (rel : Rel frame s m) (in
       if_neg one']
   · simp [s', BinOp.final_registers, loadedLeft, moved, State.load64, State.move64, rcxRegister,
       rbpRegister, ← rel.acc, rel_slot rel inFrame, Instr.update]
+
+/-- `mov rcx, rax; mov rax, [slot]; mov r11, rdx`, the dividend's high half,
+`idiv` or `div`, `mov rax, rdx` for a remainder, `mov rdx, r11` -/
+theorem div_simulates (word : Word) (operation : DivOp) (rel : Rel frame s m) (inFrame : slot < frame.slots)
+    (loaded : CodeAt s.memory s.rip (operation.spec word slot))
+    (defined : word.divides operation (m.slots slot) m.acc = true) :
+    ∃ n s', Steps n s s' ∧ Det n s s' ∧ Rel frame s' { m with
+      pc := m.pc + (Instr.div word operation slot).size
+      acc := word.divide operation (m.slots slot) m.acc } := by
+  have split : operation.spec word slot = accToRcxBytes ++ (slotLoadBytes slot ++
+      (moveBytes .w64 r11Register rdxRegister ++
+      ((dividendBytes word operation.signed ++ divisionBytes word.width operation.signed rcxRegister) ++
+      (resultBytes operation.remainder ++ moveBytes .w64 rdxRegister r11Register)))) := by
+    simp only [DivOp.spec, List.append_assoc]
+  rw [split] at loaded
+  let s1 := s.move64 rcxRegister 0 3
+  have t1 := accToRcx_step s s1 loaded.prefix rfl
+  have c1 := loaded.next (s' := s1) rfl (by simp [s1, State.move64, accToRcx_length])
+  let s2 := s1.load64 0 rbpRegister (BitVec.ofInt 32 (frameDisplacement slot)) (slotLoadBytes slot).length
+  have t2 := slotLoad_step s1 s2 slot c1.prefix rfl
+  have c2 := c1.next (s' := s2) rfl rfl
+  let s3 := s2.move64 r11Register rdxRegister (moveBytes .w64 r11Register rdxRegister).length
+  have t3 := move_step s2 s3 .w64 r11Register rdxRegister c2.prefix rfl
+  have c3 := c2.next (s' := s3) rfl rfl
+  have a3 : s3.registers 0 = m.slots slot := by
+    simp [s3, s2, s1, State.move64, State.load64, rdxRegister, r11Register, rbpRegister, rcxRegister,
+      rel_slot rel inFrame]
+  have b3 : s3.registers rcxRegister = m.acc := by
+    simp [s3, s2, s1, State.move64, State.load64, rdxRegister, r11Register, rcxRegister, rel.acc]
+  have r3 : s3.registers r11Register = s.registers rdxRegister := by
+    simp [s3, s2, s1, State.move64, State.load64, rdxRegister, r11Register, rcxRegister]
+  have k3 : ∀ register, register ≠ 0 → register ≠ 1 → register ≠ 11 → s3.registers register = s.registers register := by
+    intro register zero one eleven
+    have one' : register ≠ rcxRegister := one
+    have eleven' : register ≠ r11Register := eleven
+    simp [s3, s2, s1, State.move64, State.load64, zero, one', eleven']
+  obtain ⟨nonzero, fits⟩ := word.divides_cases operation _ _ defined
+  rw [← b3] at nonzero
+  rw [← a3, ← b3] at fits
+  obtain ⟨s5, steps5, det5, memory5, rip5, q5, r5, k5⟩ :=
+    divide_steps word operation.signed s3 c3.prefix nonzero fits
+  have c5 := c3.next (s' := s5) memory5 rip5
+  obtain ⟨n7, s7, steps7, det7, memory7, rip7, acc7, rdx7, k7⟩ := result_steps operation.remainder s5 c5
+  refine ⟨_, s7, .cons t1 (.cons t2 (.cons t3 (steps5.trans steps7))),
+    Det.cons t1 (move_noRead loaded.prefix) (Det.cons t2 (slotLoad_noRead c1.prefix)
+      (Det.cons t3 (move_noRead c2.prefix) (det5.trans det7))), ?_⟩
+  have size := Instr.bytes_length ⟨0, 0, []⟩ 0 (.div word operation slot)
+  simp only [Instr.bytes, split, List.length_append, accToRcx_length, slotLoadBytes_length] at size
+  refine Rel.accumulate11 (s' := s7) rel (by rw [memory7, memory5]; rfl) _ ?_ ?_ ?_
+  · rw [rip7, rip5, ← size]
+    simp only [s3, s2, s1, State.move64, State.load64, slotLoadBytes_length, List.length_append,
+      BitVec.ofNat_add, BitVec.add_assoc]
+  · intro register zero one eleven
+    by_cases two : register = 2
+    · subst two
+      rw [rdx7, k5 _ (by decide) (by decide), r3]
+      rfl
+    · rw [k7 register zero two, k5 register zero two, k3 register zero one eleven]
+  · rw [acc7, Word.divide_eq, DivOp.apply_eq, ← a3, ← b3]
+    cases operation.remainder
+    · simp [q5]
+    · simp [r5]
 
 theorem setCondition_value (high : BitVec 56) (holds : Bool) :
     (((high ++ (if holds then (1 : BitVec 8) else 0)).setWidth 8).setWidth 64 : BitVec 64) =
@@ -1474,7 +1559,7 @@ theorem step_simulates (body : Body frame binary imageBase place instrs) (fits :
     | neg => exact neg_simulates rel loaded
     | op word operation slot => exact op_simulates word operation rel fitted loaded
     | cmp word operation slot => exact cmp_simulates word operation rel fitted loaded
-    | jmp | jz | call | ret | bump | loadAt | storeAt | loadWordAt | storeWordAt =>
+    | jmp | jz | call | ret | bump | loadAt | storeAt | loadWordAt | storeWordAt | div =>
       simp [Instr.straight] at isStraight
   | @jmp target _ fetched =>
     obtain ⟨loaded, -, bound, -⟩ := body.fetch rel fetched
@@ -1513,6 +1598,9 @@ theorem step_simulates (body : Body frame binary imageBase place instrs) (fits :
   | storeWordAt fetched inside =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
     exact storeWordAt_simulates rel fits (body.fits _ (fetch_mem fetched)) loaded inside
+  | div fetched defined =>
+    obtain ⟨loaded, -⟩ := body.fetch rel fetched
+    exact div_simulates _ _ rel (body.fits _ (fetch_mem fetched)) loaded defined
 
 /-- The bytes of a body simulate its abstract run to `ret`. -/
 theorem body_simulates (body : Body frame binary imageBase place instrs) (fits : frame.Fits) {calls : Calls}

@@ -59,6 +59,7 @@ partial def Stmt.bump : Stmt → Stmt
   | .storeByte a v => .storeByte a.bump v.bump
   | .loadWord w t a => .loadWord w t a.bump
   | .storeWord w a v => .storeWord w a.bump v.bump
+  | .divide w o t l r => .divide w o t l.bump r.bump
 
 def mutant (p : Program) : Program :=
   { funcs := p.funcs.map fun f => { f with body := f.body.bump } }
@@ -70,11 +71,14 @@ def report (p : Program) : String :=
   s!"{decide (q ≠ p)} {validate p q} {size (compileProgram p)} {size (compileOptimized p)} {decide (m ≠ q)} {validate p m}"
 
 def reportSource (sp : SrcProgram) : String :=
-  match lowerFuncs (sigs sp.funcs) sp.funcs with
+  match declareProgram sp with
   | none => "none"
-  | some fs => report { funcs := fs }
+  | some decls =>
+    match lowerFuncs (sigs sp.funcs) decls sp.funcs with
+    | none => "none"
+    | some fs => report { funcs := fs }
 
-def render : Option Binary → String
+def renderImage : Option Binary → String
   | none => "none"
   | some b => s!"{b.entries} {b.image.map (·.toNat)}"
 
@@ -97,7 +101,7 @@ def lean_file(minis, sources):
     for k, funcs in enumerate(sources):
         out.append(f'def s{k} : SrcProgram := {oracle_difftest.lean_program(funcs)}')
         out.append(f'#eval IO.println ("source " ++ reportSource s{k})')
-        out.append(f'#eval IO.println ("image " ++ render (compileSource s{k}))')
+        out.append(f'#eval IO.println ("image " ++ renderImage (compileSource s{k}))')
     return '\n'.join(out) + '\n'
 
 

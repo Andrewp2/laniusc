@@ -292,6 +292,7 @@ theorem Exec.mono {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stmt
   | storeByte inside => exact .storeByte inside
   | loadWord inside => exact .loadWord inside
   | storeWord inside => exact .storeWord inside
+  | divide defined => exact .divide defined
 
 /-! ## Programs -/
 

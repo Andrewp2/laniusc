@@ -50,6 +50,7 @@ def Instr.rename (table : List Nat) (missing : Nat) : Instr → Instr
   | .storeAt slot => .storeAt slot
   | .loadWordAt width => .loadWordAt width
   | .storeWordAt width slot => .storeWordAt width slot
+  | .div word operation slot => .div word operation slot
 
 def Code.rename (table : List Nat) (missing : Nat) (code : Code) : Code :=
   { slots := code.slots, instrs := code.instrs.map (Instr.rename table missing) }

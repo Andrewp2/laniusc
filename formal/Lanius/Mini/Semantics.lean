@@ -6,7 +6,8 @@ signed; a `u64` operation uses all 64 bits, unsigned. Statements have a
 big-step semantics; the index bounds the call depth of the derivation, which is
 what bounds the stack the compiled code uses. A function's non-parameter locals
 start at zero. The heap is bytes at offsets below a limit, with a bump
-allocator's cursor; a run that would pass the limit has no derivation. -/
+allocator's cursor; a run that would pass the limit has no derivation, and so
+has a division by zero or a signed division of the least value by -1. -/
 
 namespace Lanius.Mini
 
@@ -51,6 +52,30 @@ def Word.apply : Word → BinOp → BitVec 64 → BitVec 64 → BitVec 64
 def Word.holds : Word → CmpOp → BitVec 64 → BitVec 64 → Bool
   | .s32, operation, a, b => operation.holds (low a) (low b)
   | .u64, operation, a, b => operation.holdsU a b
+
+/-- Division on `n`-bit words: a signed quotient truncates toward zero and a
+signed remainder has the dividend's sign. -/
+def DivOp.apply {n : Nat} : DivOp → BitVec n → BitVec n → BitVec n
+  | .sDiv, a, b => a.sdiv b
+  | .sRem, a, b => a.srem b
+  | .uDiv, a, b => a / b
+  | .uRem, a, b => a % b
+
+/-- The division has a result: the divisor is not zero, and a signed one is
+not the least value divided by -1. -/
+def DivOp.defined {n : Nat} : DivOp → BitVec n → BitVec n → Bool
+  | .sDiv, a, b | .sRem, a, b => b != 0 && !(a == BitVec.intMin n && b == -1)
+  | .uDiv, _, b | .uRem, _, b => b != 0
+
+/-- An `s32` division divides the low 32 bits and zero-extends its result; a
+`u64` one divides all 64 bits. -/
+def Word.divide : Word → DivOp → BitVec 64 → BitVec 64 → BitVec 64
+  | .s32, operation, a, b => widen (operation.apply (low a) (low b))
+  | .u64, operation, a, b => operation.apply a b
+
+def Word.divides : Word → DivOp → BitVec 64 → BitVec 64 → Bool
+  | .s32, operation, a, b => operation.defined (low a) (low b)
+  | .u64, operation, a, b => operation.defined a b
 
 def Expr.eval (env : Env) : Expr → BitVec 64
   | .lit value => value
@@ -179,6 +204,11 @@ inductive Exec (prog : Program) : Nat → Env → Heap → Stmt → Outcome → 
       (address.eval env).toNat + width.bytes ≤ heap.limit →
       Exec prog depth env heap (.storeWord width address value)
         (.normal env (heap.writeLE (address.eval env).toNat (value.eval env).toNat width.bytes))
+  | divide {depth : Nat} {env : Env} {heap : Heap} {word : Word} {operation : DivOp} {target : Nat}
+      {left right : Expr} :
+      word.divides operation (left.eval env) (right.eval env) = true →
+      Exec prog depth env heap (.divide word operation target left right)
+        (.normal (env.set target (word.divide operation (left.eval env) (right.eval env))) heap)
 
 /-- Calling function `callee` with `args` from `heap` returns `value` and
 leaves `after`, nesting calls fewer than `depth` deep. -/

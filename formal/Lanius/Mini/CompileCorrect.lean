@@ -456,6 +456,27 @@ theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Arity}
     refine ⟨_, .refl _, by simp only [Instr.exec_pc, pc, codeSize_append, codeSize]; omega,
       agree.of_slots slots, ?_⟩
     simp only [heapAt, kept, acc]
+  | @divide depth env heap word operation target left right defined =>
+    intro pos m placed pc agree onHeap within
+    simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
+    simp only [compileStmt] at placed ⊢
+    obtain ⟨kept, acc, slots⟩ := operands_correct base 0 env m agree _ _ _ _
+      (fun m agree => compileExpr_correct base left 0 env m agree within.1.2)
+      (fun m agree => compileExpr_correct base right 1 env m agree within.2)
+    simp only [Nat.add_zero] at kept acc slots
+    apply StmtResult.prefix (pc ▸ placed.left)
+      (by simp only [List.all_append, compileExpr_straight]; rfl)
+    obtain ⟨divAt, storeAt⟩ := placed.right.pair
+    have heapAt := (Instr.exec_heap (compileExpr base left 0 ++ [Instr.store base] ++
+      compileExpr base right 1) m).trans onHeap
+    apply StmtResult.step (.div (by rw [Instr.exec_pc, pc]; exact divAt.fetch)
+      (by rw [kept, acc]; exact defined))
+    rw [kept, acc]
+    refine stored_result ?_ ?_ ?_ _ ?_
+    · exact storeAt.at (by simp only [Instr.exec_pc, pc])
+    · simp only [Instr.exec_pc, pc, codeSize_append, codeSize, Instr.size]; omega
+    · exact fun slot below _ => (slots slot below).trans (agree slot below)
+    · exact heapAt
 
 theorem arityIs_eq (arities : List Arity) (callee count results : Nat) :
     arityIs arities callee count results = true ↔
