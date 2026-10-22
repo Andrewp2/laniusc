@@ -3,13 +3,16 @@
 verified compiler itself, agrees with laniusc's build and with the Lean
 definitions.
 
-    python3 -I formal/tools/self_compile.py WORKDIR [--count N] [--seed S] [--laniusc PATH]
+    python3 -I formal/tools/self_compile.py WORKDIR [--stage encode|program] [--count N] [--seed S] [--laniusc PATH]
 
-Run from the repository root. Each test is an entry `w() -> i32` in a module
-that imports `mini::compiler` (formal/lani/mini/compiler.lani) and encodes a
-random list of instructions with `encode_from`; the entry returns a digest of
-the bytes (acc * 31 + byte over u32, from 7) and a second entry returns their
-count. Three ways:
+Run from the repository root. All tests sit in one module that imports
+`mini::compiler` (formal/lani/mini/compiler.lani), so each side compiles it
+once. Test k is two entries, `w(2k)` returning a digest of some bytes
+(acc * 31 + byte over u32, from 7) and `w(2k+1)` their count. With
+`--stage encode` (M11a) the bytes are `encode_from` of a random list of
+instructions; with `--stage program` (M11b) they are `compile_program`'s
+image of a random mini IR program from mini_difftest.py (-1 for none).
+Three ways:
 
   self       the front end (`frontEndFiles`, on laniusc's parse trees of the
              test module, compiler.lani and the stdlib modules it imports)
@@ -23,6 +26,8 @@ difference or if the verified compiler rejects a test.
 """
 
 import argparse
+import ctypes
+import mmap
 import os
 import random
 import re
@@ -44,6 +49,12 @@ WIDTHS = ['M32', 'M64']
 
 class Native(so.Native):
     HEAP = 1 << 26
+
+    def __init__(self):
+        super().__init__()
+        # Room for an image of many tests.
+        self.code = mmap.mmap(-1, 1 << 26, prot=mmap.PROT_READ | mmap.PROT_WRITE | mmap.PROT_EXEC)
+        self.base = ctypes.addressof(ctypes.c_char.from_buffer(self.code))
 
 
 def lower_first(name):
@@ -122,27 +133,24 @@ def lean_instr(i):
     return lean
 
 
-def test_text(t, part):
-    """The test module: the digest (part 0) or the count (part 1) of the bytes."""
+DIGEST = ['fn oracle_digest(xs: mini::compiler::List<u8>, acc: u32) -> u32 {',
+          '    return match (xs) {',
+          '        Nil -> acc,',
+          '        Cons(b, rest) -> oracle_digest(mini::compiler::unbox(rest), acc * 31 + (b as u32)),',
+          '    };', '}', '']
+
+
+def encode_parts(k, t):
+    """Test k's two entries, the digest and the count of the bytes, and the
+    functions they share."""
     entries = usize_list(t['entries'])
     place = f'{M}Place {{ body: {t["body"]}, slots: {t["slots"]}, entries: {entries} }}'
     call = f'{M}encode_from({place}, {t["pc"]}, {lani_instr_list(t["instrs"])})'
-    if part == 0:
-        helper = ['fn oracle_helper(xs: mini::compiler::List<u8>, acc: u32) -> u32 {',
-                  '    return match (xs) {',
-                  '        Nil -> acc,',
-                  '        Cons(b, rest) -> oracle_helper(mini::compiler::unbox(rest), acc * 31 + (b as u32)),',
-                  '    };', '}']
-        body = f'    return oracle_helper({call}, 7) as i32;'
-    else:
-        helper = ['fn oracle_helper(xs: mini::compiler::List<u8>) -> i32 {',
-                  '    return mini::compiler::length(xs) as i32;', '}']
-        body = f'    return oracle_helper({call});'
-    none = ['fn oracle_flag() -> mini::compiler::List<usize> {', '    return mini::compiler::empty();', '}']
-    # `w` comes first: the native run calls the first root's entry.
-    lines = ['module app::main;', 'import mini::compiler;', '', 'fn w() -> i32 {', body, '}', ''] + \
-        helper + [''] + none
-    return '\n'.join(lines) + '\n'
+    return ([f'    return oracle_digest(oracle_bytes{k}(), 7) as i32;', f'    return {M}length(oracle_bytes{k}()) as i32;'],
+            [f'fn oracle_bytes{k}() -> {M}List<u8> {{', f'    return {call};', '}', ''])
+
+
+ENCODE_HELPERS = DIGEST + ['fn oracle_flag() -> mini::compiler::List<usize> {', '    return mini::compiler::empty();', '}']
 
 
 def lean_test(t):
@@ -154,28 +162,37 @@ def lean_test(t):
 PROGRAM_HELPERS = md.LANI_HEAD.split('fn put(')[0].split('import std::io_byte;\n')[1].strip().split('\n')
 
 
-def program_text(funcs, part):
-    """The digest (part 0) or the count (part 1) of compile_program's image;
-    -1 for none."""
+def program_parts(k, funcs):
+    """Test k's two entries, the digest and the count of compile_program's
+    image (-1 for none), and its program."""
     fs = 'no_funcs()'
     for p, r, l, b in reversed(funcs):
         fs = f'{M}cons(func({p}, {r}, {l}, {md.lani_stmt(b)}), {fs})'
-    if part == 0:
-        digest_lines = ['fn oracle_digest(xs: mini::compiler::List<u8>, acc: u32) -> u32 {',
-                        '    return match (xs) {',
-                        '        Nil -> acc,',
-                        '        Cons(b, rest) -> oracle_digest(mini::compiler::unbox(rest), acc * 31 + (b as u32)),',
-                        '    };', '}', '']
-        some = 'oracle_digest(binary.image, 7) as i32'
-    else:
-        digest_lines, some = [], f'{M}length(binary.image) as i32'
-    lines = ['module app::main;', 'import core::option;', 'import mini::compiler;', '',
-             'fn w() -> i32 {', f'    return oracle_helper({M}compile_program(prog()));', '}', '',
-             f'fn oracle_helper(result: core::option::Option<{M}Binary>) -> i32 {{',
-             '    return match (result) {', f'        Some(binary) -> {some},', '        None -> 0 - 1,', '    };', '}',
-             ''] + digest_lines + \
-        [f'fn prog() -> {M}Program {{ return {M}Program {{ funcs: {fs} }}; }}', ''] + PROGRAM_HELPERS
-    return '\n'.join(lines) + '\n'
+    run = f'{M}compile_program(oracle_prog{k}())'
+    return ([f'    return oracle_digest_of({run});', f'    return oracle_count_of({run});'],
+            [f'fn oracle_prog{k}() -> {M}Program {{ return {M}Program {{ funcs: {fs} }}; }}', ''])
+
+
+PROGRAM_HELPERS = DIGEST + [
+    f'fn oracle_digest_of(result: core::option::Option<{M}Binary>) -> i32 {{',
+    '    return match (result) {', '        Some(binary) -> oracle_digest(binary.image, 7) as i32,', '        None -> 0 - 1,',
+    '    };', '}', '',
+    f'fn oracle_count_of(result: core::option::Option<{M}Binary>) -> i32 {{',
+    '    return match (result) {', f'        Some(binary) -> {M}length(binary.image) as i32,', '        None -> 0 - 1,',
+    '    };', '}', ''] + md.LANI_HEAD.split('fn put(')[0].split('import std::io_byte;\n')[1].strip().split('\n')
+
+
+def module_text(tests, parts, helpers, imports):
+    """One module holding every test: entries w0, w1, ... first (their ids are
+    their positions), then the shared helpers and each test's data."""
+    lines = ['module app::main;'] + [f'import {m};' for m in imports] + ['']
+    data = []
+    for k, t in enumerate(tests):
+        bodies, extra = parts(k, t)
+        for part, body in enumerate(bodies):
+            lines += [f'fn w{2 * k + part}() -> i32 {{', body, '}', '']
+        data += extra
+    return '\n'.join(lines + helpers + [''] + data) + '\n'
 
 
 def lean_program(funcs):
@@ -197,7 +214,6 @@ def main():
     parser.add_argument('workdir')
     parser.add_argument('--count', type=int, default=20)
     parser.add_argument('--seed', type=int, default=1)
-    parser.add_argument('--chunk', type=int, default=40)
     parser.add_argument('--laniusc', default='target/release/laniusc')
     parser.add_argument('--stage', choices=['encode', 'program'], default='encode',
                         help='M11a: encode_from on random instructions; M11b: compile_program on random programs')
@@ -239,25 +255,21 @@ def main():
 
     if args.stage == 'encode':
         tests = [gen_test(rng) for _ in range(args.count)]
-        text, lean_text = test_text, lambda t: f'toString (({lean_test(t)}).map (·.toNat))'
+        parts, helpers, imports = encode_parts, ENCODE_HELPERS, ['mini::compiler']
+        lean_text = lambda t: f'toString (({lean_test(t)}).map (·.toNat))'  # noqa: E731
     else:
         tests = [md.gen_program(rng, rng.random() < 0.2) for _ in range(args.count)]
-        text, lean_text = program_text, lean_program
-    programs = []
-    for k, t in enumerate(tests):
-        for part in (0, 1):
-            base = os.path.join(workdir, f'p{len(programs)}')
-            open(base + '.lani', 'w').write(text(t, part))
-            programs.append(dict(test=k, part=part, base=base))
-    manifest = []
-    for j, p in enumerate(programs):
-        if not parse(p['base']):
-            raise SystemExit(f'laniusc does not parse {p["base"]}.lani')
-        manifest.append(f'p{j} ' + ' '.join([p['base']] + dep_bases))
-    open(os.path.join(workdir, 'manifest.txt'), 'w').write('\n'.join(manifest) + '\n')
+        parts, helpers, imports = program_parts, PROGRAM_HELPERS, ['core::option', 'mini::compiler']
+        lean_text = lean_program
+    base = os.path.join(workdir, 'tests')
+    text = module_text(tests, parts, helpers, imports)
+    open(base + '.lani', 'w').write(text)
+    if not parse(base):
+        raise SystemExit(f'laniusc does not parse {base}.lani')
+    open(os.path.join(workdir, 'manifest.txt'), 'w').write(' '.join(['tests', base] + dep_bases) + '\n')
 
-    # Lean: the front end and compileSource on each program, and the
-    # extracted encoder on each test.
+    # Lean: the front end and compileSource on the module, once, and the
+    # extracted definitions on each test.
     lean_path = os.path.join(workdir, 'self_compile.lean')
     expected = '\n'.join(f'#eval IO.println ("t{k} " ++ ({lean_text(t)}))' for k, t in enumerate(tests))
     open(lean_path, 'w').write(so.LEAN + f'\n#eval runAll "{os.path.join(workdir, "manifest.txt")}"\n\n'
@@ -267,37 +279,46 @@ def main():
                            'lake', 'env', 'lean', lean_path], cwd='formal', env=env, capture_output=True, text=True)
     if lean.returncode != 0:
         raise SystemExit('lean failed:\n' + lean.stdout[-4000:] + lean.stderr[-4000:])
-    status, want = {}, {}
+    status, want = None, {}
     for line in lean.stdout.strip().split('\n'):
         name, rest = line.split(' ', 1)
-        if name.startswith('p'):
-            status[int(name[1:])] = rest
+        if name == 'tests':
+            status = rest
         else:
             want[int(name[1:])] = None if rest == 'none' else [int(x) for x in re.findall(r'\d+', rest)]
+    if status is None or not status.startswith('image'):
+        raise SystemExit(f'the verified compiler: {status}')
 
-    problems = []
+    entries_s, image_s = re.match(r'image \[(.*?)\] \[(.*?)\]$', status).groups()
+    entries = [int(x) for x in entries_s.split(',')]
+    image = bytes(int(x) for x in image_s.split(','))
+    print(f'the verified compiler: {len(image)} image bytes, {len(entries)} functions')
     native = Native()
+    programs = [dict(test=k, part=part) for k in range(len(tests)) for part in (0, 1)]
     for j, p in enumerate(programs):
-        s = status.get(j, 'missing')
-        if not s.startswith('image'):
-            problems.append(f'test {p["test"]} part {p["part"]}: the verified compiler: {s.split(" ")[0]}')
-            p['self'] = None
-            continue
-        entries_s, image_s = re.match(r'image \[(.*?)\] \[(.*?)\]$', s).groups()
-        native.load([int(x) for x in entries_s.split(',')], bytes(int(x) for x in image_s.split(',')), 0)
+        native.load(entries[j:], image, 0)
         p['self'] = so.native_call(native, [], [])
 
-    # laniusc: every program in harness binaries (stdlib_oracle's harness).
-    for p in programs:
-        p['wparams'] = []
-    results = []
-    for start in range(0, len(programs), args.chunk):
-        chunk = programs[start:start + args.chunk]
-        for p in chunk:
-            p['calls'], p['native'] = [[]], [p['self'] if p['self'] is not None else 0]
-        results += so.laniusc_chunk(args, workdir, chunk, start, mods)
+    # laniusc: the same module, with a main that writes each entry's result.
+    harness = text.replace('module app::main;\n', 'module app::main;\nimport std::io_byte;\n', 1)
+    harness += '\n'.join(so.oracle.LANI_HEAD.split('\n', 4)[4].split('\n')) + '\nfn main() -> i32 {\n'
+    harness += ''.join(f'    put32(w{j}());\n' for j in range(len(programs))) + '    return 0;\n}\n'
+    # mini::compiler from a source root: as a library unit under the stdlib
+    # root, laniusc rejects some of its generic instances (LNC0017).
+    exe = os.path.join(workdir, 'harness')
+    open(exe + '.lani', 'w').write(harness)
+    if os.path.exists(exe):
+        os.remove(exe)
+    build = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+                            so.HEAVY, '-t', '20', args.laniusc, '--stdlib-root', 'stdlib', '--source-root', 'formal/lani',
+                            '-o', exe, exe + '.lani'], capture_output=True, text=True)
+    if build.returncode != 0 or not os.path.exists(exe):
+        raise SystemExit('laniusc rejects the harness:\n' + build.stdout[-2000:] + build.stderr[-2000:])
+    data = subprocess.run([exe], capture_output=True, timeout=600).stdout
+    results = [[so.oracle.i32(int.from_bytes(data[4 * j:4 * j + 4], 'little')) if 4 * j + 4 <= len(data)
+                else 'missing'] for j in range(len(programs))]
 
-    agree = 0
+    problems, agree = [], 0
     for p, got in zip(programs, results):
         bs = want[p['test']]
         lean_value = -1 if bs is None else digest(bs) if p['part'] == 0 else len(bs)
