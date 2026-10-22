@@ -147,6 +147,91 @@ theorem cast_inv {P : Core.Program} {st : State} {e : Core.Expr} {ty : Core.Scal
     · simp at run
   all_goals simp at run
 
+/-! ## Division -/
+
+theorem truncDiv_eq_tdiv (l r : Int) : Semantics.truncDiv l r = l.tdiv r := by
+  unfold Semantics.truncDiv
+  cases l with
+  | ofNat m =>
+    have hm : ¬((m : Int) < 0) := by omega
+    cases r with
+    | ofNat n =>
+      have hn : ¬((n : Int) < 0) := by omega
+      simp [Int.tdiv, hm, hn]
+    | negSucc n => simp [Int.tdiv, Int.negSucc_lt_zero, hm]
+  | negSucc m =>
+    cases r with
+    | ofNat n =>
+      have hn : ¬((n : Int) < 0) := by omega
+      simp [Int.tdiv, Int.negSucc_lt_zero, hn]
+    | negSucc n => simp [Int.tdiv, Int.negSucc_lt_zero]
+
+theorem eval_i32_div {x y : BitVec 32} {op : DivOp} {cop : Core.BinaryOp}
+    (h : (cop = .divide ∧ op = .sDiv) ∨ (cop = .remainder ∧ op = .sRem)) {v : Core.Value}
+    (run : Semantics.evalBinaryValue .x86_64 cop (.signed .i32 x.toInt) (.signed .i32 y.toInt) = .ok v) :
+    op.defined x y = true ∧ v = .signed .i32 (op.apply x y).toInt := by
+  rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  all_goals
+    simp [Semantics.evalBinaryValue, Semantics.evalSignedBinary] at run
+    split at run
+    · simp at run
+    rename_i nonzero
+    split at run
+    · simp at run
+    rename_i notMin
+    simp only [Except.ok.injEq] at run
+    subst run
+    have y0 : y ≠ 0 := fun h => nonzero (by simp [h])
+    have notBoth : ¬(x = BitVec.intMin 32 ∧ y = -1) := fun ⟨hx, hy⟩ =>
+      notMin ⟨by subst hx; decide, by subst hy; decide⟩
+    refine ⟨by simp only [DivOp.defined]; simp; by_cases hx : x = BitVec.intMin 32 <;> simp_all, ?_⟩
+  · rw [truncDiv_eq_tdiv, wrapSigned_i32, BitVec.toInt_ofInt, DivOp.apply, BitVec.toInt_sdiv]
+  · rw [truncDiv_eq_tdiv, show x.toInt - x.toInt.tdiv y.toInt * y.toInt = x.toInt.tmod y.toInt by rw [Int.tmod_def, Int.mul_comm],
+      DivOp.apply, ← BitVec.toInt_srem, wrapSigned_i32, BitVec.ofInt_toInt]
+
+theorem eval_uint_div (k : UintTy) {a b : BitVec 64} (ha : a.toNat < 2 ^ k.width) {op : DivOp}
+    {cop : Core.BinaryOp} (h : (cop = .divide ∧ op = .uDiv) ∨ (cop = .remainder ∧ op = .uRem))
+    {v : Core.Value}
+    (run : Semantics.evalBinaryValue .x86_64 cop (.unsigned k.toCore a.toNat) (.unsigned k.toCore b.toNat) = .ok v) :
+    op.defined a b = true ∧ v = .unsigned k.toCore (op.apply a b).toNat ∧ (op.apply a b).toNat < 2 ^ k.width := by
+  rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  all_goals
+    simp [Semantics.evalBinaryValue, Semantics.evalUnsignedBinary] at run
+    split at run
+    · simp at run
+    rename_i nonzero
+    simp only [Except.ok.injEq] at run
+    subst run
+    have b0 : b ≠ 0 := fun h => nonzero (by simp [h])
+  · have le := Nat.div_le_self a.toNat b.toNat
+    refine ⟨by simp [DivOp.defined]; exact b0, ?_, by simp only [DivOp.apply, BitVec.toNat_udiv]; omega⟩
+    simp only [DivOp.apply, BitVec.toNat_udiv, Semantics.wrapUnsigned, Semantics.unsignedModulus, UintTy.bits_toCore]
+    rw [Nat.mod_eq_of_lt (by omega)]
+  · have pos : 0 < b.toNat := by
+      rcases Nat.eq_zero_or_pos b.toNat with z | p
+      · exact absurd (BitVec.eq_of_toNat_eq (by simp [z])) b0
+      · exact p
+    have le := Nat.mod_lt a.toNat pos
+    have le2 := Nat.mod_le a.toNat b.toNat
+    refine ⟨by simp [DivOp.defined]; exact b0, ?_, by simp only [DivOp.apply, BitVec.toNat_umod]; omega⟩
+    simp only [DivOp.apply, BitVec.toNat_umod, Semantics.wrapUnsigned, Semantics.unsignedModulus, UintTy.bits_toCore]
+    rw [Nat.mod_eq_of_lt (by omega)]
+
+theorem divOp_signed (op : SrcDivOp) :
+    (op.toCore = .divide ∧ signedDiv op = .sDiv) ∨ (op.toCore = .remainder ∧ signedDiv op = .sRem) := by
+  cases op <;> simp [SrcDivOp.toCore, signedDiv]
+
+theorem divOp_unsigned (op : SrcDivOp) :
+    (op.toCore = .divide ∧ unsignedDiv op = .uDiv) ∨ (op.toCore = .remainder ∧ unsignedDiv op = .uRem) := by
+  cases op <;> simp [SrcDivOp.toCore, unsignedDiv]
+
+theorem eq_of_isI32 {ty : SrcType} (h : ty.isI32 = true) : ty = .i32 := by
+  cases ty <;> simp_all [SrcType.isI32]
+
+theorem eq_of_isUint {ty : SrcType} {k : UintTy} (h : ty.isUint k = true) : ty = .uint k := by
+  cases ty <;> simp [SrcType.isUint] at h
+  rw [UintTy.eq_of_code h]
+
 /-! ## The simulation of an expression -/
 
 /-- What the code of an effectful expression does: Core went from `st` to
@@ -432,6 +517,70 @@ theorem eval_apply {k : Nat} (ihe : EvalSound sp mp k) {op : SrcOp} {l r : SrcEf
             fun j below => by rw [set_below below, same2 j (by omega), same1 j below],
             holdsAt_set ((SrcType.holdsAt_scalar rfl).mp holds2) env2 slot, hc2⟩
       · simp at ok
+
+/-- A division: both operands, then the mini division, which has a run
+whenever Core's has a value. -/
+theorem eval_divide {k : Nat} (ihe : EvalSound sp mp k) {op : SrcDivOp} {l r : SrcEff}
+    (ok : evalDivision op slot (l.eval (sigs sp.funcs) scope slot) (r.eval (sigs sp.funcs) scope (slot + 1)) =
+      some ev)
+    (corr : Corr scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
+    (hc : HeapCorr st.heap hp)
+    (run : evalExpr (k + 1) sp.toCore st (.binary op.toCore l.toCore r.toCore) = .done v st')
+    (bound : st'.heap.nextAddress ≤ hp.limit) :
+    Evaluates mp hp slot st env ev v st' := by
+  simp only [evalDivision] at ok
+  split at ok
+  · simp at ok
+  rename_i le leOk
+  split at ok
+  · simp at ok
+  rename_i re reOk
+  have general : op.toCore ≠ .logicalAnd ∧ op.toCore ≠ .logicalOr := by cases op <;> simp [SrcDivOp.toCore]
+  obtain ⟨vl, st1, vr, lRun, rRun, evaluated⟩ := binary_inv general run
+  have views1 := (eff_grown lRun fresh.2).1
+  obtain ⟨fresh1, keeps1, locals1, sized1, d1, env1, hp1, exec1, same1, holds1, hc1⟩ :=
+    ihe leOk corr fr fresh hc lRun (Nat.le_trans ((eff_grown rRun) views1).2 bound)
+  obtain ⟨fresh2, keeps2, locals2, _, d2, env2, hp2, exec2, same2, holds2, hc2⟩ :=
+    ihe reOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _)) fresh1 hc1 rRun
+      (by rw [exec1.limit_normal]; exact bound)
+  have below : ∀ (x : BitVec 64), ∀ j < slot, (env2.set slot x) j = env j := fun x j lt => by
+    rw [set_below lt, same2 j (by omega), same1 j lt]
+  simp only [evalDivide] at ok
+  split at ok
+  · rename_i both
+    simp only [Bool.and_eq_true] at both
+    simp only [Option.some.injEq] at ok
+    subst ok
+    rw [eq_of_isI32 both.1] at holds1
+    rw [eq_of_isI32 both.2] at holds2
+    have holdsl := holds_var (env := env2) (holds1.congr fun i lt => same2 _ (by simp [SrcType.size] at lt; omega)) rfl
+    have holdsr := holds_var holds2 rfl
+    obtain ⟨rfl, -⟩ := holdsl
+    obtain ⟨rfl, -⟩ := holdsr
+    obtain ⟨defined, rfl⟩ := eval_i32_div (divOp_signed op) evaluated
+    refine ⟨fresh2, keeps1.chain keeps2, locals2.trans locals1, by simp [SrcType.size], max d1 d2, _, hp2,
+      .seq (exec1.mono (Nat.le_max_left _ _)) (.seq (exec2.mono (Nat.le_max_right _ _)) (.divide defined)),
+      below _, holdsAt_set (holds_i32 _) env2 slot, hc2⟩
+  · split at ok
+    · simp at ok
+    rename_i kind hk
+    simp only [evalDivideUint] at ok
+    split at ok
+    · rename_i hr
+      simp only [Option.some.injEq] at ok
+      subst ok
+      have lty : le.ty = .uint kind := by cases hty : le.ty <;> simp_all [SrcType.uintKind]
+      rw [lty] at holds1
+      rw [eq_of_isUint hr] at holds2
+      have holdsl := holds_var (env := env2) (holds1.congr fun i lt => same2 _ (by simp [SrcType.size] at lt; omega)) rfl
+      have holdsr := holds_var holds2 rfl
+      obtain ⟨rfl, small⟩ := holdsl
+      obtain ⟨rfl, -⟩ := holdsr
+      obtain ⟨defined, rfl, fits⟩ := eval_uint_div kind small (divOp_unsigned op) evaluated
+      refine ⟨fresh2, keeps1.chain keeps2, locals2.trans locals1, by simp [SrcType.size], max d1 d2, _, hp2,
+        .seq (exec1.mono (Nat.le_max_left _ _)) (.seq (exec2.mono (Nat.le_max_right _ _)) (.divide defined)),
+        below _, holdsAt_set (ty := .uint kind) ⟨rfl, fits⟩ env2 slot, hc2⟩
+    · simp at ok
 
 /-- An operator applied in place to its operand's slot. -/
 theorem eval_then {k : Nat} (ihe : EvalSound sp mp k) {operand : SrcEff} {o : Evaluated}
@@ -877,6 +1026,9 @@ theorem sound_both {sp : SrcProgram} {mp : Program}
         | eStruct => simp [SrcEff.eval] at ok
         | eVariant => simp [SrcEff.eval] at ok
         | eMatch => simp [SrcEff.eval] at ok
+        | eDivide op l r =>
+          simp only [SrcEff.eval] at ok
+          exact eval_divide hereE ok corr fr fresh hc run bound
 
 /-- The simulation, by induction on Core's fuel. -/
 theorem stmt_sound {sp : SrcProgram} {mp : Program}

@@ -65,6 +65,10 @@ def SrcType.sliceFrom : SrcType → Core.Expr → Core.Expr → Core.Expr
   | .ptr, pointer, length => .typedSliceFromRawParts (.scalar .rawPtr) pointer length
   | .slice element, pointer, length => .typedSliceFromRawParts (.slice element.toCore) pointer length
 
+def SrcDivOp.toCore : SrcDivOp → Core.BinaryOp
+  | .quotient => .divide
+  | .remainder => .remainder
+
 def SrcOp.toCore : SrcOp → Core.BinaryOp
   | .plus => .add
   | .minus => .subtract
@@ -112,6 +116,7 @@ def SrcEff.toCore : SrcEff → Core.Expr
   | .eStruct ty fields => .structValue ty.typeId (SrcEff.toCoreList fields)
   | .eVariant ty variant payload => .enumValue ty.typeId variant (SrcEff.toCoreList payload)
   | .eMatch scrutinee id binders values => .matchValue scrutinee.toCore (SrcEff.coreArms id 0 binders values)
+  | .eDivide op left right => .binary op.toCore left.toCore right.toCore
 
 def SrcEff.toCoreList : List SrcEff → List Core.Expr
   | [] => []

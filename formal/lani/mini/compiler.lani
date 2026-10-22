@@ -1317,6 +1317,9 @@ pub struct SrcArm {
     value: SrcExpr,
 }
 
+// Division's quotient or remainder, truncating as Core does.
+pub enum SrcDivOp { Quotient, Remainder, }
+
 // An expression that may call functions, evaluated in Core's order. The
 // ones without calls are SrcExpr, whose proofs go by induction; this type
 // nests through List, so its proofs go by Core's fuel instead.
@@ -1337,6 +1340,8 @@ pub enum SrcEff {
     // match scrutinee { arms } on the enum with Core id enum_id: arm k's
     // binders and value
     EMatch(Box<SrcEff>, usize, List<List<usize>>, Box<List<SrcEff>>),
+    // left / right or left % right: a statement in the mini IR, so only here
+    EDivide(SrcDivOp, Box<SrcEff>, Box<SrcEff>),
 }
 
 pub enum SrcStmt {
@@ -2345,6 +2350,50 @@ pub fn eval_apply(op: SrcOp, slot: usize, left: core::option::Option<Evaluated>,
     };
 }
 
+pub fn signed_div(op: SrcDivOp) -> DivOp {
+    return match (op) {
+        Quotient -> SDiv,
+        Remainder -> SRem,
+    };
+}
+
+pub fn unsigned_div(op: SrcDivOp) -> DivOp {
+    return match (op) {
+        Quotient -> UDiv,
+        Remainder -> URem,
+    };
+}
+
+pub fn eval_divide_uint(op: SrcDivOp, slot: usize, l: Evaluated, r: Evaluated, k: UintTy) -> core::option::Option<Evaluated> {
+    if (r.ty.is_uint(k)) {
+        return Some(Evaluated { stmt: Seq(boxed(l.stmt), boxed(Seq(boxed(r.stmt), boxed(Stmt::Divide(U64, unsigned_div(op), slot, Var(slot), Var(plus(slot, 1))))))), ty: Uint(k) });
+    }
+    return None;
+}
+
+// left in slot, right in slot + 1, then the division into slot: on the
+// low 32 bits for i32, on the whole word for the unsigned types, whose
+// values are below their width.
+pub fn eval_divide(op: SrcDivOp, slot: usize, l: Evaluated, r: Evaluated) -> core::option::Option<Evaluated> {
+    if (l.ty.is_i32() && r.ty.is_i32()) {
+        return Some(Evaluated { stmt: Seq(boxed(l.stmt), boxed(Seq(boxed(r.stmt), boxed(Stmt::Divide(S32, signed_div(op), slot, Var(slot), Var(plus(slot, 1))))))), ty: I32 });
+    }
+    return match (l.ty.uint_kind()) {
+        None -> None,
+        Some(k) -> eval_divide_uint(op, slot, l, r, k),
+    };
+}
+
+pub fn eval_division(op: SrcDivOp, slot: usize, left: core::option::Option<Evaluated>, right: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
+    return match (left) {
+        None -> None,
+        Some(l) -> match (right) {
+            None -> None,
+            Some(r) -> eval_divide(op, slot, l, r),
+        },
+    };
+}
+
 // The operand in slot, then op applied to it there.
 pub fn eval_then(slot: usize, operand: Evaluated, t: core::option::Option<Typed>) -> core::option::Option<Evaluated> {
     return match (t) {
@@ -2397,6 +2446,7 @@ impl SrcEff {
             EStruct(ty, fields) -> None,
             EVariant(ty, variant, payload) -> None,
             EMatch(scrutinee, enum_id, binders, values) -> None,
+            EDivide(op, left, right) -> eval_division(op, slot, unbox(left).eval(sigs, scope, slot), unbox(right).eval(sigs, scope, plus(slot, 1))),
         };
     }
 }

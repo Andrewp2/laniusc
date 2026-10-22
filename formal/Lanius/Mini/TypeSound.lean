@@ -1089,6 +1089,41 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
   | .eStruct _ _, _, _, _, _, _, h => by simp [SrcEff.eval] at h
   | .eVariant _ _ _, _, _, _, _, _, h => by simp [SrcEff.eval] at h
   | .eMatch _ _ _ _, _, _, _, _, _, h => by simp [SrcEff.eval] at h
+  | .eDivide op left right, scope, ctx, slot, ev, ok, h => by
+    simp only [SrcEff.eval, evalDivision] at h
+    split at h
+    · simp at h
+    · rename_i l hl
+      split at h
+      · simp at h
+      · rename_i r hr
+        have typedL := SrcEff.eval_typed target sigsOk left ok hl
+        have typedR := SrcEff.eval_typed target sigsOk right ok hr
+        simp only [evalDivide] at h
+        split at h
+        · rename_i both
+          simp only [Bool.and_eq_true] at both
+          simp only [Option.some.injEq] at h
+          subst h
+          rw [eq_i32 both.1] at typedL
+          rw [eq_i32 both.2] at typedR
+          cases op
+          · exact .binary typedL typedR (.divide IsInt.i32.arith)
+          · exact .binary typedL typedR (.remainder IsInt.i32.integer)
+        · split at h
+          · simp at h
+          · rename_i k hk
+            simp only [evalDivideUint] at h
+            split at h
+            · rename_i hr'
+              simp only [Option.some.injEq] at h
+              subst h
+              rw [eq_uintKind hk] at typedL
+              rw [eq_uint hr'] at typedR
+              cases op
+              · exact .binary typedL typedR (.divide (IsInt.uint k).arith)
+              · exact .binary typedL typedR (.remainder (IsInt.uint k).integer)
+            · simp at h
 
 theorem evalArgs_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {sigs : List Sig} (sigsOk : SigsOk P sigs) :

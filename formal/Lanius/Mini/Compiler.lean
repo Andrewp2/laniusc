@@ -1007,6 +1007,12 @@ structure SrcArm where
   value : SrcExpr
   deriving Repr
 
+/-- Division's quotient or remainder, truncating as Core does. -/
+inductive SrcDivOp where
+  | quotient : SrcDivOp
+  | remainder : SrcDivOp
+  deriving DecidableEq, Repr
+
 /-- An expression that may call functions, evaluated in Core's order. The ones without calls are SrcExpr, whose proofs go by induction; this type nests through List, so its proofs go by Core's fuel instead. -/
 inductive SrcEff where
   | ePure : SrcExpr → SrcEff
@@ -1024,6 +1030,8 @@ inductive SrcEff where
   | eVariant : SrcType → Nat → (List SrcEff) → SrcEff
   /-- match scrutinee { arms } on the enum with Core id enum_id: arm k's binders and value -/
   | eMatch : SrcEff → Nat → (List (List Nat)) → (List SrcEff) → SrcEff
+  /-- left / right or left % right: a statement in the mini IR, so only here -/
+  | eDivide : SrcDivOp → SrcEff → SrcEff → SrcEff
   deriving Repr
 
 inductive SrcStmt where
@@ -1830,6 +1838,39 @@ def evalApply (op : SrcOp) (slot : Nat) (left : Option Evaluated) (right : Optio
     | none => none
     | some r => evalOperands op slot l r
 
+def signedDiv (op : SrcDivOp) : DivOp :=
+  match op with
+  | .quotient => DivOp.sDiv
+  | .remainder => DivOp.sRem
+
+def unsignedDiv (op : SrcDivOp) : DivOp :=
+  match op with
+  | .quotient => DivOp.uDiv
+  | .remainder => DivOp.uRem
+
+def evalDivideUint (op : SrcDivOp) (slot : Nat) (l : Evaluated) (r : Evaluated) (k : UintTy) : Option Evaluated :=
+  if SrcType.isUint r.ty k then
+    some ({ stmt := Stmt.seq l.stmt (Stmt.seq r.stmt (Stmt.divide Word.u64 (unsignedDiv op) slot (Expr.var slot) (Expr.var (slot + 1)))), ty := SrcType.uint k } : Evaluated)
+  else
+    none
+
+/-- left in slot, right in slot + 1, then the division into slot: on the low 32 bits for i32, on the whole word for the unsigned types, whose values are below their width. -/
+def evalDivide (op : SrcDivOp) (slot : Nat) (l : Evaluated) (r : Evaluated) : Option Evaluated :=
+  if SrcType.isI32 l.ty && SrcType.isI32 r.ty then
+    some ({ stmt := Stmt.seq l.stmt (Stmt.seq r.stmt (Stmt.divide Word.s32 (signedDiv op) slot (Expr.var slot) (Expr.var (slot + 1)))), ty := SrcType.i32 } : Evaluated)
+  else
+    match SrcType.uintKind l.ty with
+    | none => none
+    | some k => evalDivideUint op slot l r k
+
+def evalDivision (op : SrcDivOp) (slot : Nat) (left : Option Evaluated) (right : Option Evaluated) : Option Evaluated :=
+  match left with
+  | none => none
+  | some l =>
+    match right with
+    | none => none
+    | some r => evalDivide op slot l r
+
 /-- The operand in slot, then op applied to it there. -/
 def evalThen (slot : Nat) (operand : Evaluated) (t : Option Typed) : Option Evaluated :=
   match t with
@@ -1873,6 +1914,7 @@ def SrcEff.eval (self : SrcEff) (sigs : List Sig) (scope : List Binding) (slot :
   | .eStruct ty fields => none
   | .eVariant ty variant payload => none
   | .eMatch scrutinee enumId binders values => none
+  | .eDivide op left right => evalDivision op slot (SrcEff.eval left sigs scope slot) (SrcEff.eval right sigs scope (slot + 1))
 
 /-- The arguments, each in the slots after the one before. -/
 def evalArgs (sigs : List Sig) (scope : List Binding) (args : List SrcEff) (slot : Nat) : Option EvaluatedArgs :=

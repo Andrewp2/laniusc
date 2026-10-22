@@ -950,6 +950,20 @@ theorem eff_grows_step {sp : SrcProgram} {k : Nat} (ih : GrowsBelow sp (k + 1)) 
           · simp at run
         all_goals simp at run
       all_goals simp at run
+  | eDivide op left right =>
+    cases op <;>
+    · simp only [SrcEff.toCore, SrcDivOp.toCore, evalExpr] at run
+      split at run
+      · rename_i vl afterLeft leftRun
+        split at run
+        · rename_i vr afterRight rightRun
+          split at run
+          · simp only [Semantics.Outcome.done.injEq] at run
+            obtain ⟨-, rfl⟩ := run
+            exact (sub leftRun).trans (sub rightRun)
+          · simp at run
+        all_goals simp at run
+      all_goals simp at run
   | eNeg operand | eNot operand | eCast ty operand =>
     simp only [SrcEff.toCore, evalExpr] at run
     split at run

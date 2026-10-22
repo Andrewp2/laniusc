@@ -284,6 +284,13 @@ semantics:
   `StmtSound` by strong induction on Core's fuel (`sound_both`), which drops
   at every subexpression. Indexing, struct and enum literals, and `match`
   as effectful expressions lower to nothing yet.
+- Division (`EDivide`, in `LowerEval`): `/` and `%` on `i32` or one unsigned
+  type. The mini IR divides in a statement, so division is only an
+  effectful expression: both operands, then `Divide` into the left one's
+  slot, on the low 32 bits for `i32` and on the whole word for the unsigned
+  types. Core traps on a zero divisor and on the least `i32` divided by -1,
+  exactly the cases where the mini division has no run (`eval_i32_div`,
+  `eval_uint_div`; Core's `truncDiv` is `Int.tdiv`).
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
