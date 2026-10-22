@@ -1614,6 +1614,89 @@ def literalAs (t : Option Ty) (e : Option SrcExpr) : Option SrcExpr :=
 
 mutual
 
+def treeTokens (t : CTree) : List Token :=
+  match t with
+  | .leaf x => [x]
+  | .node p kids => treesTokens kids
+
+def treesTokens (ts : List CTree) : List Token :=
+  match ts with
+  | [] => []
+  | t :: rest => treeTokens t ++ treesTokens rest
+
+end
+
+/-- Decimal digits, below 2^64. -/
+def wideDecimal (text : List Nat) (acc : Nat) : Option Nat :=
+  if 18446744073709551615 < acc then
+    none
+  else
+    match text with
+    | [] => some acc
+    | b :: rest =>
+      if decide (48 ≤ b) && decide (b ≤ 57) then
+        wideDecimal rest (acc * 10 + (b - 48))
+      else
+        none
+
+def wideI32 (negative : Bool) (n : Nat) : Option SrcExpr :=
+  if negative && decide (n = 2147483648) then
+    some (SrcExpr.int (BitVec.ofNat 32 n))
+  else
+    none
+
+def wideUint (u : UintTy) (negative : Bool) (n : Nat) : Option SrcExpr :=
+  if !negative && decide (n ≤ 18446744073709551615) then
+    uintInRange u (BitVec.ofNat 64 n)
+  else
+    none
+
+def wideIsize (negative : Bool) (n : Nat) : Option SrcExpr :=
+  if !negative && decide (n ≤ 9223372036854775807) then
+    some (SrcExpr.cast SrcType.isize (SrcExpr.unsigned UintTy.uint64 (BitVec.ofNat 64 n)))
+  else
+    if negative && decide (n ≤ 9223372036854775808) then
+      some (SrcExpr.cast SrcType.isize (SrcExpr.unsigned UintTy.uint64 (BitVec.ofNat 64 (18446744073709551615 - n + 1))))
+    else
+      none
+
+def wideOf (ty : Ty) (negative : Bool) (n : Nat) : Option SrcExpr :=
+  match ty with
+  | .tyI32 => wideI32 negative n
+  | .tyBool => none
+  | .tyUint u => wideUint u negative n
+  | .tyPtr => none
+  | .tyIsize => wideIsize negative n
+  | .tySlice e => none
+  | .tyNamed d args => none
+
+def wideDigits (ty : Ty) (negative : Bool) (v : Option Nat) : Option SrcExpr :=
+  match v with
+  | none => none
+  | some n => wideOf ty negative n
+
+def wideSigned (ty : Ty) (minusSign : Bool) (v : Option Nat) : Option SrcExpr :=
+  if minusSign then
+    wideDigits ty true v
+  else
+    none
+
+def wideConst (t : Option Ty) (toks : List Token) : Option SrcExpr :=
+  match t with
+  | none => none
+  | some ty =>
+    match toks with
+    | [] => none
+    | a :: rest =>
+      match rest with
+      | [] => wideDigits ty false (wideDecimal a.text 0)
+      | b :: more =>
+        match more with
+        | [] => wideSigned ty (sameText a.text [45]) (wideDecimal b.text 0)
+        | c :: tail => none
+
+mutual
+
 /-- The expression a node of the expression grammar denotes. Calls, struct literals and match are statement forms, so they are not expressions here. -/
 def exprOf (fuel : Nat) (env : Env) (scope : List Local) (c : CTree) : Option SrcExpr :=
   if fuel = 0 then
@@ -1689,13 +1772,15 @@ def constRef (fuel : Nat) (env : Env) (segments : Option (List (List Nat))) : Op
         | none => none
         | some k => constValue (fuel - 1) env.decls k
 
-/-- A constant's value, read in its own module. -/
+/-- A constant's value, read in its own module: a literal of its type. A value whose tokens are an integer literal n, or `-` and n, with n of 2^31 or more is the declared type's literal of that value: Int for i32 (only -2^31), Unsigned up to the type's largest value, and for isize the cast of the u64 literal holding its two's complement bits. -/
 def constValue (fuel : Nat) (decls : Decls) (k : ConstDecl) : Option SrcExpr :=
   if fuel = 0 then
     none
   else
     let cenv : Env := declEnv decls k.module [] []
-    literalAs (tyOf (fuel - 1) cenv k.ty) (exprOf (fuel - 1) cenv [] k.value)
+    match literalAs (tyOf (fuel - 1) cenv k.ty) (exprOf (fuel - 1) cenv [] k.value) with
+    | some x => some x
+    | none => wideConst (tyOf (fuel - 1) cenv k.ty) (treeTokens k.value)
 
 /-- assign -> orexpr assign_end, as a value. -/
 def assignValue (fuel : Nat) (env : Env) (scope : List Local) (c : CTree) : Option SrcExpr :=
@@ -1812,6 +1897,25 @@ def fieldTy (fuel : Nat) (decls : Decls) (l : Option Local) (j : Nat) : Option T
     | none => none
     | some ts => ts[j]?
 
+/-- An integer literal, or arithmetic of them: its type comes from its context (an isize literal is written bare beside a typed operand), so an operator's type is its other operand's. -/
+def bareInt (e : SrcExpr) : Bool :=
+  match e with
+  | .int k => true
+  | .boolean b => false
+  | .unsigned u k => false
+  | .local id => false
+  | .field id j => false
+  | .negate x => bareInt x
+  | .not x => false
+  | .apply op a b => !(givesBool op) && bareInt a && bareInt b
+  | .cast t x => false
+
+def pickTy (leftBare : Bool) (a : Option Ty) (b : Option Ty) : Option Ty :=
+  if leftBare then
+    b
+  else
+    a
+
 /-- The type of an expression, as type arguments are inferred from it. -/
 def exprTy (fuel : Nat) (env : Env) (scope : List Local) (e : SrcExpr) : Option Ty :=
   if fuel = 0 then
@@ -1825,7 +1929,7 @@ def exprTy (fuel : Nat) (env : Env) (scope : List Local) (e : SrcExpr) : Option 
     | .field id j => fieldTy fuel env.decls (findLocalId scope id) j
     | .negate x => exprTy (fuel - 1) env scope x
     | .not x => some Ty.tyBool
-    | .apply op a b => applyTy op (exprTy (fuel - 1) env scope a)
+    | .apply op a b => applyTy op (pickTy (bareInt a) (exprTy (fuel - 1) env scope a) (exprTy (fuel - 1) env scope b))
     | .cast t x => srcTy t
 
 def exprsTys (fuel : Nat) (env : Env) (scope : List Local) (es : List SrcExpr) : Option (List Ty) :=
@@ -2275,6 +2379,20 @@ def indexTy (l : Option Local) : Option Ty :=
   | some x => sliceElem x.ty
 
 /-- The type of an effectful expression, as type arguments are inferred from it. -/
+def bareEff (x : MEff) : Bool :=
+  match x with
+  | .xPure e => bareInt e
+  | .xCall inst args => false
+  | .xApply op l r => !(givesBool op) && bareEff l && bareEff r
+  | .xNeg a => bareEff a
+  | .xNot a => false
+  | .xCast t a => false
+  | .xIndex s i => false
+  | .xStruct t fs => false
+  | .xVariant t k ps => false
+  | .xMatch s ety t bs vs => false
+  | .xDivide op l r => bareEff l && bareEff r
+
 def effTy (fuel : Nat) (env : Env) (scope : List Local) (x : MEff) : Option Ty :=
   if fuel = 0 then
     none
@@ -2282,7 +2400,7 @@ def effTy (fuel : Nat) (env : Env) (scope : List Local) (x : MEff) : Option Ty :
     match x with
     | .xPure e => exprTy fuel env scope e
     | .xCall inst args => instRet fuel env.decls inst
-    | .xApply op l r => applyTy op (effTy (fuel - 1) env scope l)
+    | .xApply op l r => applyTy op (pickTy (bareEff l) (effTy (fuel - 1) env scope l) (effTy (fuel - 1) env scope r))
     | .xNeg a => effTy (fuel - 1) env scope a
     | .xNot a => some Ty.tyBool
     | .xCast t a => srcTy t
@@ -2290,7 +2408,7 @@ def effTy (fuel : Nat) (env : Env) (scope : List Local) (x : MEff) : Option Ty :
     | .xStruct t fs => some t
     | .xVariant t k ps => some t
     | .xMatch s ety t bs vs => some t
-    | .xDivide op l r => effTy (fuel - 1) env scope l
+    | .xDivide op l r => pickTy (bareEff l) (effTy (fuel - 1) env scope l) (effTy (fuel - 1) env scope r)
 
 def effsTys (fuel : Nat) (env : Env) (scope : List Local) (xs : List MEff) : Option (List Ty) :=
   match xs with

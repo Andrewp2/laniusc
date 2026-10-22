@@ -676,7 +676,7 @@ program's own first; `sourceProgram` is the one-file case.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Frontend` | 4915 | 15 | extracted from `formal/lani/mini/frontend.lani`: the grammar table, `validate_tree`, `build`, the monomorphizer |
+| `Frontend` | 5033 | 15 | extracted from `formal/lani/mini/frontend.lani`: the grammar table, `validate_tree`, `build`, the monomorphizer |
 | `FrontLex` | 59 | 0.6 | tokens from the Lean lexer; `sourceProgram`, `sourceProgramFiles` |
 | `FrontSpec` | 354 | 0.9 | `CTree.leaves`, `CTree.preorder`, `Shape`, `Derives`, `Reads`; `validate_sound`, `sourceProgram_sound`, `sourceProgramFiles_sound` |
 
@@ -696,7 +696,7 @@ laniusc's lexer and parser are not trusted. The trusted parts are the Lean
 lexer, the grammar table, the grammar's unambiguity (not proved) and `build`
 as the meaning of the concrete syntax. TRUSTED_BASE.md section 4 lists them.
 
-`frontend.lani` is about 6,300 hand-written lines, followed by the generated
+`frontend.lani` is about 6,450 hand-written lines, followed by the generated
 grammar table: 318 productions, with terminals as lexer token codes. Two
 tools regenerate it:
 
@@ -775,8 +775,20 @@ the type of the `let` (or the assigned local). Methods of `impl` blocks take
 receiver's type, and two matches are rejected. Bounds and `where` clauses on
 functions are ignored. A constant (`const K: u8 = 15;`) is replaced by its
 value, which must be a literal of its type: an `i32` constant is `Int`, an
-unsigned one `Unsigned`. A local may not be spelled like a function, type,
-variant or constant of its module.
+unsigned one `Unsigned`, an `isize` one `Cast(Isize, Int(n))`. A constant
+whose value is a literal of 2^31 or more (its tokens are `n` or `-` `n`) is
+the declared type's literal of that value: `Int` for `i32` (only
+`-2147483648`), `Unsigned` up to the type's largest value, and for `isize`
+the cast of the `u64` literal holding its two's complement bits (as the
+oracle writes them). Anything else (an expression, a value out of range) is
+rejected where the constant is used. A local may not be spelled like a
+function, type, variant or constant of its module. The case `constants`
+reads `stdlib/std/vec.lani`'s three constants as written there (in a
+module `std::vec`): `MAX_CAPACITY: i32 = 2147483647` is `Int(2147483647)`,
+`MAX_BYTES: usize = 2147483647` is `Unsigned(Usize, 2147483647)` and
+`ALIGN: usize = 8` is `Unsigned(Usize, 8)`; it also has `-2147483648`,
+`u64` and `u32` values past 2^31, and both `isize` extremes.
+`reject_const_range` rejects `const BIG: i32 = 2147483648;`.
 
 Two more tests. `--generic` takes each generated program and abstracts it:
 about half the structs, enums and functions get a type parameter standing for
@@ -891,14 +903,27 @@ cases `isize` (its `want.lani` writes every literal as `(n as isize)`) and
 `reject_isize_big` test this. Results, 2026-10-22, with the oracle's unit
 functions and `assert` on: seeds 17 and 18, 400 programs (at seed 17, 162
 `return;`, 128 `assert`s and 192 unit functions), all read as expected,
-48/48 mutants rejected; `--generic` seed 11 as before; 17 of 17 cases. The
-generator does not make `isize` yet.
+48/48 mutants rejected; `--generic` seed 11 as before; 17 of 17 cases.
+
+Then with the oracle's `isize` on. The script writes an `isize` literal as
+the oracle means it: `(n as isize)` below 2^31 in magnitude, a bare `n` beside
+an operand whose type laniusc knows (`x + 5`), and past that the cast of a
+`u64` literal with the same bits, built from 16-bit pieces as the unsigned
+literals are. It expects what that text reads as: a bare literal is typed by
+its context, so its integer literals are `.cast .isize`. An effectful
+expression that reads as a pure one is printed as the pure one, so the same
+rule decides bare literals in both. Since a bare literal can now be an
+operator's left operand, the type that type argument inference gives an
+operator comes from its other operand when the left one is only literals.
+Seeds 11 and 12, 400 programs, 7,692 `as isize` and 1,266 `isize` lets and
+parameters, all read as expected, 48/48 mutants rejected; `--generic` seeds
+11 and 12, 400 programs, 48/48; 19 of 19 cases.
 
 What it does not read yet:
 - shifts, `&self` and
   `size_of<T>()`, which have no `SrcProgram` form;
 - `=>` match arms, and block or `if` arms;
-- integer literals of 2^31 and above (so `const MIN: i32 = -2147483648;`);
+- integer literals of 2^31 and above outside constants;
 - methods of generic impls called as `T::m` where `T` is not a type
   parameter (`Vec::new()`), and trait-generic code that relies on bounds;
 - a field of a call's result (`f(x).a`), indexing a slice that is not a

@@ -1,0 +1,5 @@
+const BIG: i32 = 2147483648;
+
+fn top(n: i32) -> i32 {
+    return n + BIG;
+}
