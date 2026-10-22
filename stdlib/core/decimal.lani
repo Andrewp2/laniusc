@@ -1,5 +1,6 @@
 // Allocation-free decimal byte access for integers up to 32 bits.
 module core::decimal;
+import core::result;
 
 pub fn len_u32(value: u32) -> u32 {
     let remaining: u32 = value;
@@ -232,4 +233,88 @@ pub fn parse_ascii_i16_or(values: [i32], len: i32, fallback: i16) -> i16 {
         return fallback;
     }
     return parsed as i16;
+}
+
+// Parse packed bytes without a sentinel. The slice must back count elements;
+// overclaiming its physical length traps on indexing until length projection
+// is available. Signed types accept one leading + or -, unsigned types neither.
+// Leading zeroes are accepted; whitespace, separators and non-ASCII digits are
+// rejected. Errors identify the first offending byte; a missing digit is EOF.
+pub enum ParseErrorKind { Bounds, Empty, MissingDigits, InvalidDigit, Overflow }
+pub struct ParseError { kind: ParseErrorKind, offset: i32 }
+
+fn parse_error(kind: ParseErrorKind, offset: i32) -> ParseError {
+    return ParseError { kind: kind, offset: offset };
+}
+fn parse_magnitude(bytes: [u8], count: i32, start: i32, limit: u32) -> core::result::Result<u32, ParseError> {
+    if (count < 0) { return core::result::Err(parse_error(ParseErrorKind::Bounds, -1)); }
+    if (count == 0) { return core::result::Err(parse_error(ParseErrorKind::Empty, 0)); }
+    if (start == count) { return core::result::Err(parse_error(ParseErrorKind::MissingDigits, count)); }
+    let value: u32 = 0;
+    let index: i32 = start;
+    while (index < count) {
+        let byte: u8 = bytes[index];
+        if (byte < 48 || byte > 57) { return core::result::Err(parse_error(ParseErrorKind::InvalidDigit, index)); }
+        if (!can_append_ascii_digit_u32(value, byte, limit)) {
+            return core::result::Err(parse_error(ParseErrorKind::Overflow, index));
+        }
+        value = value * 10 + ((byte as u32) - 48);
+        index += 1;
+    }
+    return core::result::Ok(value);
+}
+fn parse_signed(bytes: [u8], count: i32, positive_limit: u32, negative_limit: u32)
+    -> core::result::Result<i32, ParseError> {
+    if (count < 0) { return core::result::Err(parse_error(ParseErrorKind::Bounds, -1)); }
+    if (count == 0) { return core::result::Err(parse_error(ParseErrorKind::Empty, 0)); }
+    let negative: bool = bytes[0] == 45;
+    let start: i32 = 0;
+    if (negative || bytes[0] == 43) { start = 1; }
+    let limit: u32 = positive_limit;
+    if (negative) { limit = negative_limit; }
+    let parsed: core::result::Result<u32, ParseError> = parse_magnitude(bytes, count, start, limit);
+    if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); }
+    let magnitude: u32 = core::result::unwrap(parsed);
+    if (negative) {
+        if (magnitude == 2147483648) { return core::result::Ok(-2147483648); }
+        let signed: i32 = magnitude as i32;
+        return core::result::Ok(-signed);
+    }
+    return core::result::Ok(magnitude as i32);
+}
+
+pub fn parse_u8(bytes: [u8], count: i32) -> core::result::Result<u8, ParseError> {
+    let parsed: core::result::Result<u32, ParseError> = parse_magnitude(bytes, count, 0, 255);
+    if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); }
+    return core::result::Ok(core::result::unwrap(parsed) as u8);
+}
+
+pub fn parse_u16(bytes: [u8], count: i32) -> core::result::Result<u16, ParseError> {
+    let parsed: core::result::Result<u32, ParseError> = parse_magnitude(bytes, count, 0, 65535);
+    if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); }
+    return core::result::Ok(core::result::unwrap(parsed) as u16);
+}
+
+pub fn parse_u32(bytes: [u8], count: i32) -> core::result::Result<u32, ParseError> {
+    let parsed: core::result::Result<u32, ParseError> = parse_magnitude(bytes, count, 0, 4294967295);
+    if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); }
+    return core::result::Ok(core::result::unwrap(parsed) as u32);
+}
+
+pub fn parse_i8(bytes: [u8], count: i32) -> core::result::Result<i8, ParseError> {
+    let parsed: core::result::Result<i32, ParseError> = parse_signed(bytes, count, 127, 128);
+    if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); }
+    return core::result::Ok(core::result::unwrap(parsed) as i8);
+}
+
+pub fn parse_i16(bytes: [u8], count: i32) -> core::result::Result<i16, ParseError> {
+    let parsed: core::result::Result<i32, ParseError> = parse_signed(bytes, count, 32767, 32768);
+    if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); }
+    return core::result::Ok(core::result::unwrap(parsed) as i16);
+}
+
+pub fn parse_i32(bytes: [u8], count: i32) -> core::result::Result<i32, ParseError> {
+    let parsed: core::result::Result<i32, ParseError> = parse_signed(bytes, count, 2147483647, 2147483648);
+    if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); }
+    return core::result::Ok(core::result::unwrap(parsed) as i32);
 }

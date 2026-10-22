@@ -1,6 +1,7 @@
 module app::main;
 import core::decimal;
 import core::mem;
+import core::result;
 
 fn main() -> i32 {
     if (core::decimal::len_u32(0) != 1 || core::decimal::len_u32(9) != 1 || core::decimal::len_u32(10) != 2 || core::decimal::len_u32(4294967295) != 10) {
@@ -231,5 +232,19 @@ fn main() -> i32 {
         core::decimal::parse_ascii_i16_or(plus_view, 1, 99) != 99) {
         return 28;
     }
+    let packed_unsigned: [u8; 10] = [52, 50, 57, 52, 57, 54, 55, 50, 57, 53];
+    let packed_signed: [u8; 11] = [45, 50, 49, 52, 55, 52, 56, 51, 54, 52, 56];
+    if (core::result::unwrap(core::decimal::parse_u32(packed_unsigned, 10)) != 4294967295 ||
+        core::result::unwrap(core::decimal::parse_i32(packed_signed, 11)) != -2147483648 ||
+        core::result::unwrap(core::decimal::parse_u8(packed_unsigned, 2)) != 42 ||
+        core::result::unwrap(core::decimal::parse_u16(packed_unsigned, 4)) != 4294 ||
+        core::result::unwrap(core::decimal::parse_i8(packed_signed, 3)) != -21 ||
+        core::result::unwrap(core::decimal::parse_i16(packed_signed, 5)) != -2147) { return 29; }
+    if (!core::result::is_err(core::decimal::parse_i32(packed_unsigned, 10)) ||
+        !core::result::is_err(core::decimal::parse_u8(packed_unsigned, 3)) ||
+        !core::result::is_err(core::decimal::parse_i8(packed_signed, 4))) { return 30; }
+    let empty: core::decimal::ParseError = core::result::unwrap_err(core::decimal::parse_i32(packed_signed, 0));
+    let bounds: core::decimal::ParseError = core::result::unwrap_err(core::decimal::parse_u32(packed_unsigned, -1));
+    if (empty.offset != 0 || bounds.offset != -1) { return 31; }
     return 0;
 }

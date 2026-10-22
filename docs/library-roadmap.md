@@ -125,6 +125,9 @@ API list; unrelated library work can continue.
   queries and independent string copies execute on x86_64 Linux, including
   generated trees, limits and allocation fault injection. See
   [extended-json.md](extended-json.md).
+- Decimal parsing: packed byte parsers for all signed/unsigned 8-, 16- and
+  32-bit widths return explicit errors and execute across normal, boundary and
+  malformed cases. See [stdlib-decimal.md](stdlib-decimal.md).
 - Next integration milestone: a CSV-to-JSON application using validation and
   grouping, followed by remaining text/collection and I/O operations.
 - The older [execution audit](stdlib-foundation.md) remains historical evidence;
