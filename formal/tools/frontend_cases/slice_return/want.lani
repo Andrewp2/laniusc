@@ -1,0 +1,45 @@
+struct W { a: i32, b: bool }
+
+fn run(n: i32) -> i32 {
+    let p: ptr = alloc::allocator::alloc((64 as usize), (8 as usize));
+    let v: [W] = from_storage_w(p, 2);
+    let u: [i32] = prefix_i(p, 4, 2);
+    let x: i32 = u[1];
+    return x + n;
+}
+
+fn from_storage_w(storage: ptr, length: i32) -> [W] {
+    assert(length >= 0);
+    let nowhere: ptr = 0;
+    let probe: [W] = slice_from_raw_parts(nowhere, 0);
+    let stride: isize = slice_stride(probe);
+    if (stride >= (0 as isize) || length == 0) {
+        return slice_from_raw_parts(storage, length);
+    }
+    let top: usize = (((0 as isize) - stride) as usize) * (length as usize) - 8;
+    return slice_from_raw_parts(storage + top, length);
+}
+
+fn prefix_i(storage: ptr, capacity: i32, length: i32) -> [i32] {
+    assert(length >= 0 && length <= capacity);
+    let nowhere: ptr = 0;
+    let probe: [i32] = slice_from_raw_parts(nowhere, 0);
+    let stride: isize = slice_stride(probe);
+    if (stride >= (0 as isize) || length == 0) {
+        return slice_from_raw_parts(storage, length);
+    }
+    let skip: usize = (((0 as isize) - stride) as usize) * ((capacity - length) as usize);
+    return from_storage_i(storage + skip, length);
+}
+
+fn from_storage_i(storage: ptr, length: i32) -> [i32] {
+    assert(length >= 0);
+    let nowhere: ptr = 0;
+    let probe: [i32] = slice_from_raw_parts(nowhere, 0);
+    let stride: isize = slice_stride(probe);
+    if (stride >= (0 as isize) || length == 0) {
+        return slice_from_raw_parts(storage, length);
+    }
+    let top: usize = (((0 as isize) - stride) as usize) * (length as usize) - 8;
+    return slice_from_raw_parts(storage + top, length);
+}

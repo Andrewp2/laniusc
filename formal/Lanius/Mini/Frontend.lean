@@ -3739,10 +3739,40 @@ def returnEvalOf (x : Option MEff) : Option MStmt :=
   | some e => some (MStmt.mReturnEval e)
 
 /-- `return e;`, e pure or else effectful (stored at the result type). -/
+def sliceReturned (id : Nat) (el : Ty) (h : Option LetHead) : Option MStmt :=
+  match h with
+  | none => none
+  | some head =>
+    match head with
+    | .plain x => none
+    | .callOf c => none
+    | .variantOf variant payload => none
+    | .literalOf fields => none
+    | .matchOf scrutinee sty arms => none
+    | .allocOf size shift => none
+    | .sliceOf pointer length => some (MStmt.mLetSlice id el pointer length (MStmt.mReturn (SrcExpr.local id)))
+    | .indexOf slice index => none
+    | .evalOf x => none
+
+/-- `return slice_from_raw_parts(pointer, length);` in a function whose result is a slice: a slice local, then its return. The local's id is the byte offset of the value's first token, which no binding has. -/
+def returnSlice (fuel : Nat) (env : Env) (scope : List Local) (e : CTree) : Option MStmt :=
+  match env.ret with
+  | none => none
+  | some t =>
+    match sliceElem t with
+    | none => none
+    | some el =>
+      match treeTokens e with
+      | [] => none
+      | first :: rest => sliceReturned first.start el (letHead fuel env scope t e)
+
 def returnOrEval (fuel : Nat) (env : Env) (scope : List Local) (e : CTree) : Option MStmt :=
   match exprOf fuel env scope e with
   | some x => some (MStmt.mReturn x)
-  | none => returnEvalOf (effOf fuel env scope env.ret e)
+  | none =>
+    match returnSlice fuel env scope e with
+    | some m => some m
+    | none => returnEvalOf (effOf fuel env scope env.ret e)
 
 def ifEvalOf (c : Option MEff) (a : Option MStmt) (b : Option MStmt) : Option MStmt :=
   match c with
@@ -4771,16 +4801,23 @@ def isizeTy (t : SrcType) : Bool :=
   | .unit => false
   | .isize => true
 
-def isizeCast (yes : Bool) (e : SrcExpr) : SrcExpr :=
-  if yes then
-    SrcExpr.cast SrcType.isize e
-  else
-    e
+/-- An integer literal at its expected type: an unsigned type's literal, or for isize the cast of the i32 literal. -/
+def intLiteralAt (t : SrcType) (k : BitVec 32) (e : SrcExpr) : SrcExpr :=
+  match t with
+  | .i32 => e
+  | .bool => e
+  | .uint u => SrcExpr.unsigned u (BitVec.setWidth 64 k)
+  | .struct id fields => e
+  | .enum id variants => e
+  | .ptr => e
+  | .slice el => e
+  | .unit => e
+  | .isize => SrcExpr.cast SrcType.isize e
 
-def intAt (want : Option SrcType) (e : SrcExpr) : SrcExpr :=
+def intAt (want : Option SrcType) (k : BitVec 32) (e : SrcExpr) : SrcExpr :=
   match want with
   | none => e
-  | some t => isizeCast (isizeTy t) e
+  | some t => intLiteralAt t k e
 
 /-- The innermost local with this id, as a source type. -/
 def tyLocal (locals : List LocalTy) (id : Nat) : Option SrcType :=
@@ -4918,7 +4955,7 @@ def knownExpr (locals : List LocalTy) (e : SrcExpr) : Option SrcType :=
 
 def litExpr (locals : List LocalTy) (want : Option SrcType) (e : SrcExpr) : SrcExpr :=
   match e with
-  | .int k => intAt want e
+  | .int k => intAt want k e
   | .boolean b => e
   | .unsigned u k => e
   | .local id => e

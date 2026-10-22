@@ -1171,6 +1171,7 @@ def checkFiles (bases : List String) (out : String) : IO Unit := do
   | some got =>
     IO.FS.writeFile out (String.join (got.funcs.map fun f => serFunc (canonFunc f) ++ "\\n"))
     IO.println s!"{out}: read"
+    IO.FS.writeFile (out ++ ".compile") (if (compileSource got).isSome then "compiles\\n" else "rejected\\n")
 '''
 
 
@@ -1229,6 +1230,12 @@ def run_cases(args, cases_dir):
                     problems += 1
                     print(f'{base}: the Lean lexer and laniusc disagree')
         got = open(os.path.join(out_dir, 'got.out')).read()
+        if os.path.exists(os.path.join(cases_dir, case, 'compiles')):
+            # the program read must also pass compileSource
+            compiled = os.path.join(out_dir, 'got.out.compile')
+            if not os.path.exists(compiled) or open(compiled).read() != 'compiles\n':
+                problems += 1
+                print(f'{case}: compileSource rejects the program read')
         if reject:
             ok = got == 'rejected\n'
         else:

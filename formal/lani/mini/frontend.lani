@@ -4943,10 +4943,46 @@ pub fn return_eval_of(x: core::option::Option<MEff>) -> core::option::Option<MSt
 }
 
 // `return e;`, e pure or else effectful (stored at the result type).
+pub fn slice_returned(id: usize, el: Ty, h: core::option::Option<LetHead>) -> core::option::Option<MStmt> {
+    return match (h) {
+        None -> None,
+        Some(head) -> match (head) {
+            Plain(x) -> None,
+            CallOf(c) -> None,
+            VariantOf(variant, payload) -> None,
+            LiteralOf(fields) -> None,
+            MatchOf(scrutinee, sty, arms) -> None,
+            AllocOf(size, shift) -> None,
+            SliceOf(pointer, length) -> Some(MLetSlice(id, el, pointer, length, boxed(MReturn(Local(id))))),
+            IndexOf(slice, index) -> None,
+            EvalOf(x) -> None,
+        },
+    };
+}
+
+// `return slice_from_raw_parts(pointer, length);` in a function whose
+// result is a slice: a slice local, then its return. The local's id is the
+// byte offset of the value's first token, which no binding has.
+pub fn return_slice(fuel: usize, env: Env, scope: List<Local>, e: CTree) -> core::option::Option<MStmt> {
+    return match (env.ret) {
+        None -> None,
+        Some(t) -> match (slice_elem(t)) {
+            None -> None,
+            Some(el) -> match (tree_tokens(e)) {
+                Nil -> None,
+                Cons(first, rest) -> slice_returned(first.start, el, let_head(fuel, env, scope, t, e)),
+            },
+        },
+    };
+}
+
 pub fn return_or_eval(fuel: usize, env: Env, scope: List<Local>, e: CTree) -> core::option::Option<MStmt> {
     return match (expr_of(fuel, env, scope, e)) {
         Some(x) -> Some(MReturn(x)),
-        None -> return_eval_of(eff_of(fuel, env, scope, env.ret, e)),
+        None -> match (return_slice(fuel, env, scope, e)) {
+            Some(m) -> Some(m),
+            None -> return_eval_of(eff_of(fuel, env, scope, env.ret, e)),
+        },
     };
 }
 
@@ -6224,17 +6260,26 @@ pub fn isize_ty(t: SrcType) -> bool {
     };
 }
 
-pub fn isize_cast(yes: bool, e: SrcExpr) -> SrcExpr {
-    if (yes) {
-        return Cast(Isize, boxed(e));
-    }
-    return e;
+// An integer literal at its expected type: an unsigned type's literal, or
+// for isize the cast of the i32 literal.
+pub fn int_literal_at(t: SrcType, k: i32, e: SrcExpr) -> SrcExpr {
+    return match (t) {
+        I32 -> e,
+        Bool -> e,
+        Uint(u) -> Unsigned(u, (k as u32) as u64),
+        Struct(id, fields) -> e,
+        Enum(id, variants) -> e,
+        Ptr -> e,
+        Slice(el) -> e,
+        Unit -> e,
+        Isize -> Cast(Isize, boxed(e)),
+    };
 }
 
-pub fn int_at(want: core::option::Option<SrcType>, e: SrcExpr) -> SrcExpr {
+pub fn int_at(want: core::option::Option<SrcType>, k: i32, e: SrcExpr) -> SrcExpr {
     return match (want) {
         None -> e,
-        Some(t) -> isize_cast(isize_ty(t), e),
+        Some(t) -> int_literal_at(t, k, e),
     };
 }
 
@@ -6407,7 +6452,7 @@ pub fn known_expr(locals: List<LocalTy>, e: SrcExpr) -> core::option::Option<Src
 
 pub fn lit_expr(locals: List<LocalTy>, want: core::option::Option<SrcType>, e: SrcExpr) -> SrcExpr {
     return match (e) {
-        Int(k) -> int_at(want, e),
+        Int(k) -> int_at(want, k, e),
         Boolean(b) -> e,
         Unsigned(u, k) -> e,
         Local(id) -> e,

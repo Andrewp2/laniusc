@@ -246,11 +246,15 @@ still a parse tree of the same tokens. Trusted:
     body in `stdlib/core/panic.lani` is `assert(false);`, traps.
 
   - `isize` is `Isize`. An integer literal whose expected type is `isize`
-    is `Cast(Isize, Int(n))`, decided after monomorphization by `lit_funcs`
-    from the types of locals, fields, parameters, callees and results; an
-    operator's operands expect the type of whichever operand has one.
+    is `Cast(Isize, Int(n))`, and one whose expected type is unsigned is
+    `Unsigned(u, n)`, decided after monomorphization by `lit_funcs` from the
+    types of locals, fields, parameters, callees and results; an operator's
+    operands expect the type of whichever operand has one.
 
   - `slice_stride(x)` of a slice local x is `EStride(x)`;
+  - `return slice_from_raw_parts(p, n);` in a function whose result is a
+    slice is a slice local (named by the byte offset of `slice_from_raw_parts`)
+    and its return;
   - a bare variant name is the one variant of that spelling among the
     current module's enums, else among its imported modules' enums;
     `E::V` and `m::E::V` name enum E's variant V, `m::V` module m's one V.
