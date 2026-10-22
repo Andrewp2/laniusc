@@ -3180,7 +3180,7 @@ pub fn width_of(ty: SrcType) -> MemWidth {
     };
 }
 
-// A struct slice's descriptor points at element zero's word 0, its high
+// A struct or enum slice's descriptor points at element zero's word 0, its high
 // word, and elements of `words` words run downward: element index's word 0
 // is index * words words below it. A value's words descend from its word 0.
 pub fn element_base(slot: usize, words: usize, index: Expr) -> Expr {

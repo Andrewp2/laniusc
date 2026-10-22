@@ -2495,7 +2495,7 @@ def widthOf (ty : SrcType) : MemWidth :=
   | none => MemWidth.m64
   | some w => w
 
-/-- A struct slice's descriptor points at element zero's word 0, its high word, and elements of `words` words run downward: element index's word 0 is index * words words below it. A value's words descend from its word 0. -/
+/-- A struct or enum slice's descriptor points at element zero's word 0, its high word, and elements of `words` words run downward: element index's word 0 is index * words words below it. A value's words descend from its word 0. -/
 def elementBase (slot : Nat) (words : Nat) (index : Expr) : Expr :=
   Expr.binary Word.u64 BinOp.sub (Expr.var slot) (Expr.binary Word.u64 BinOp.mul index (Expr.lit (BitVec.ofNat 64 (8 * words))))
 

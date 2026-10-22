@@ -83,8 +83,8 @@ UINT_LEAN = {'u8': '.uint8', 'u32': '.uint32', 'u64': '.uint64', 'usize': '.usiz
 INTEGERS = ['i32'] + list(UINT_BITS)
 WORDS = ['i32', 'bool'] + list(UINT_BITS)  # the field types slices hold, one native word each
 SLICES = True  # generate heap and slice statements
-# Struct fields and enum payloads of earlier declared struct types, nested
-# (frontend_difftest.py turns them off).
+# Struct fields and enum payloads of earlier declared struct and enum types,
+# nested (frontend_difftest.py turns them off).
 NESTED = True
 # Generate effectful expressions (calls inside expressions, in conditions,
 # assignments and returns, and as statements) and struct, enum and slice
@@ -151,16 +151,22 @@ def fits(param, t):
 
 
 def word_field(f):
-    """A word, or a struct of word fields (nested), laid out by its leaves."""
+    """A word, a struct of word fields with at least one word, or an enum of
+    word payloads: a type Core and the mini compiler lay out a word a slot."""
     if isinstance(f, tuple) and f[0] == 'struct':
-        return all(word_field(g) for g in TYPES.structs[f[1]])
+        return all(word_field(g) for g in TYPES.structs[f[1]]) and words(f) > 0
+    if isinstance(f, tuple) and f[0] == 'enum':
+        return all(word_field(g) for v in TYPES.enums[f[1]] for g in v)
     return f in WORDS
 
 
-def leaves(t):
-    """The number of scalar leaves of a type, nested structs flattened."""
+def words(t):
+    """The slots (and native words) of a type: a struct's fields' in turn, an
+    enum's tag word and its longest payload's."""
     if isinstance(t, tuple) and t[0] == 'struct':
-        return sum(leaves(f) for f in TYPES.structs[t[1]])
+        return sum(words(f) for f in TYPES.structs[t[1]])
+    if isinstance(t, tuple) and t[0] == 'enum':
+        return 1 + max(sum(words(f) for f in v) for v in TYPES.enums[t[1]])
     return 1
 
 
@@ -174,8 +180,8 @@ def has_nested(t):
 
 def slice_elements():
     """i32 and the word structs and enums, the element types Core lays out."""
-    elements = ['i32'] + [('struct', k) for k, fs in enumerate(TYPES.structs) if all(word_field(f) for f in fs)]
-    return elements + [('enum', k) for k, vs in enumerate(TYPES.enums) if all(word_field(f) for v in vs for f in v)]
+    return ['i32'] + [t for t in [('struct', k) for k in range(len(TYPES.structs))] +
+                      [('enum', k) for k in range(len(TYPES.enums))] if word_field(t)]
 
 
 class Program(list):
@@ -271,12 +277,14 @@ class Gen:
 
     def field_value(self, f, env, items):
         """A literal's field or payload value: a scalar expression, or for a
-        nested struct a local of that type (a new one when there is none)."""
+        nested struct or enum a local of that type (a new one when there is none)."""
         if is_object(f):
             named = [i for i, u in env if u == f]
             if named and self.rng.random() < 0.6:
                 return ('local', self.rng.choice(named))
-            return ('local', self.make_struct(env, items, f[1]))
+            if f[0] == 'struct':
+                return ('local', self.make_struct(env, items, f[1]))
+            return ('local', self.make_enum(env, items, f[1])[0])
         return self.expr(f, 2, env)
 
     def make_struct(self, env, items, k=None):
@@ -763,17 +771,37 @@ class Gen:
             return e if ty == 'i32' else ('cast', 'i32', e) if ty == 'usize' else None
 
         def struct_parts(ident, k):
-            # Each leaf of struct local ident, a nested struct copied to a local first.
+            # Each leaf of struct local ident, a nested struct or enum copied to a local first.
             parts = []
             for j, f in enumerate(TYPES.structs[k]):
                 if is_object(f):
                     inner = self.new_id()
                     items.append(('letEval', inner, f, ('ePure', ('field', ident, j))))
                     env.append((inner, f))
-                    parts += struct_parts(inner, f[1])
+                    parts += struct_parts(inner, f[1]) if f[0] == 'struct' else enum_parts(inner, f[1])
                 else:
                     parts.append(as_i32(('field', ident, j), f))
             return parts
+
+        def enum_parts(ident, k):
+            # A match on enum local ident: its variant and its payload's scalars.
+            arms = []
+            for v, payload in enumerate(TYPES.enums[k]):
+                binders = [self.new_id() for _ in payload]
+                value = ('int', v + 1)
+                for b, f in zip(binders, payload):
+                    x = as_i32(('local', b), f)
+                    value = mix(value, x) if x else value
+                    if is_object(f) and f[0] == 'struct':
+                        # A nested struct binder's scalar fields (an arm makes no locals).
+                        for j, g in enumerate(TYPES.structs[f[1]]):
+                            y = None if is_object(g) else as_i32(('field', b, j), g)
+                            value = mix(value, y) if y else value
+                arms.append((binders, value))
+            m = self.new_id()
+            items.append(('letMatch', m, 'i32', ident, k, arms))
+            env.append((m, 'i32'))
+            return [('local', m)]
         h = ('int', 0)
         if 'isize' in SCALARS and self.rng.random() < 0.7:
             # Mostly one more isize, computed from the entry's values and calls.
@@ -809,32 +837,14 @@ class Gen:
                 elif element[0] == 'struct':
                     parts = struct_parts(ident, element[1])
                 else:
-                    arms = []
-                    for v, payload in enumerate(TYPES.enums[element[1]]):
-                        binders = [self.new_id() for _ in payload]
-                        value = ('int', v + 1)
-                        for b, f in zip(binders, payload):
-                            x = as_i32(('local', b), f)
-                            value = mix(value, x) if x else value
-                            if is_object(f):
-                                # A nested struct binder's scalar fields (an arm makes no locals).
-                                for j, g in enumerate(TYPES.structs[f[1]]):
-                                    y = None if is_object(g) else as_i32(('field', b, j), g)
-                                    value = mix(value, y) if y else value
-                        arms.append((binders, value))
-                    m = self.new_id()
-                    items.append(('letMatch', m, 'i32', ident, element[1], arms))
-                    env.append((m, 'i32'))
-                    parts = [('local', m)]
+                    parts = enum_parts(ident, element[1])
                 for x in parts:
                     h = mix(h, x) if x else h
         return h
 
 
 def element_words(t):
-    if t[0] == 'struct':
-        return leaves(t)
-    return 1 + max(sum(leaves(f) for f in v) for v in TYPES.enums[t[1]])
+    return words(t)
 
 
 def returns(s):
@@ -879,15 +889,21 @@ def gen_program(rng):
     enums = [[[rng.choice(pool) for _ in range(rng.randint(0, 2))] for _ in range(rng.randint(1, 3))]
              for pool in [pools() for _ in range(rng.randint(0, 2))]]
     if NESTED:
-        # Some fields and payloads of an earlier struct type, nested; a
-        # struct of word structs is still a word struct.
-        for k in range(1, len(structs)):
-            if rng.random() < 0.5:
-                structs[k].insert(rng.randint(0, len(structs[k])), ('struct', rng.randrange(k)))
-        for variants in enums:
-            for payload in variants:
-                if structs and rng.random() < 0.25:
-                    payload.insert(rng.randint(0, len(payload)), ('struct', rng.randrange(len(structs))))
+        # Some fields and payloads of a struct or enum type declared earlier
+        # in a random order, nested; a struct of word structs and word enums
+        # is still a word struct.
+        order = [('struct', k) for k in range(len(structs))] + [('enum', k) for k in range(len(enums))]
+        rng.shuffle(order)
+        for p, (kind, k) in enumerate(order):
+            if p == 0:
+                continue
+            if kind == 'struct':
+                if rng.random() < 0.6:
+                    structs[k].insert(rng.randint(0, len(structs[k])), rng.choice(order[:p]))
+            else:
+                for payload in enums[k]:
+                    if rng.random() < 0.3:
+                        payload.insert(rng.randint(0, len(payload)), rng.choice(order[:p]))
     TYPES = Program([], structs, enums)
     count = rng.randint(2, 4) if EFFECTS else rng.randint(1, 4)
     objects = [('struct', k) for k in range(len(structs))] + [('enum', k) for k in range(len(enums))]

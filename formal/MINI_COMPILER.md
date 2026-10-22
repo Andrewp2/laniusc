@@ -307,7 +307,7 @@ semantics:
 | `Grows` | 1274 | 4.0 | Core's `nextAddress` never decreases; Core call and statement inversions |
 | `HeapCorr` | 501 | 1.1 | Core heap to mini heap correspondence; allocate, load, store, free |
 | `SliceLayout` | 341 | | one native word: its widths, Core's read and write of it, and the mini element address |
-| `FlatLayout` | 909 | | struct elements and enum payloads by their leaves, nested structs flattened: Core's words, offsets, reads and writes (`WriteChain`), and the mini slots |
+| `ElementLayout` | 627 | | slice elements of word types (structs and enums nested in any order): Core's words, field and payload offsets, reads (`FieldReads`) and writes (`FieldWrites`) |
 | `LowerStmt` | 3626 | 9.4 | Core cells, frames, flat values, calls, enums and `match`, statements |
 | `LowerEval` | 1430 | 1.8 | effectful expressions and their statements; the simulation by induction on fuel |
 | `SourceCorrect` | 104 | 0.7 | top-level theorem |
