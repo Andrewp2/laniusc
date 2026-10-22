@@ -303,6 +303,7 @@ semantics:
 |---|---:|---:|---|
 | `Source` | 497 | 1.2 | Core meaning of source programs and their declarations, value representation, `i32` wrap lemmas |
 | `Unsigned` | 166 | 2.4 | unsigned arithmetic, comparisons and casts as slot arithmetic |
+| `Shifts` | 109 | | Core's `<<` and `>>` (which trap outside the type's bits) as the mini IR's `shl`, `shr`, `sar` |
 | `LowerExpr` | 685 | 5.1 | expressions |
 | `Grows` | 1274 | 4.0 | Core's `nextAddress` never decreases; Core call and statement inversions |
 | `HeapCorr` | 501 | 1.1 | Core heap to mini heap correspondence; allocate, load, store, free |
