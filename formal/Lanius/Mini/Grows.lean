@@ -10,8 +10,17 @@ namespace Lanius.Mini
 open Lanius.Core (Value)
 open Lanius.Semantics (State Completion evalExpr evalExprs execStmt restoreLocals)
 
-theorem SrcType.toCore_ne_unit (ty : SrcType) : ty.toCore ≠ .unit := by
-  cases ty <;> simp [SrcType.toCore]
+theorem SrcType.toCore_eq_unit {ty : SrcType} (h : ty.toCore = .unit) : ty = .unit := by
+  cases ty <;> simp_all [SrcType.toCore]
+
+/-- How a call's value comes from its callee body's completion: the value
+returned, or `.unit` when a unit function ends or runs `return;`. -/
+def CallResult (ret : SrcType) : Completion → Value → Prop
+  | .next, v => ret = .unit ∧ v = .unit
+  | .returned (some w), v => v = w
+  | .returned none, v => ret = .unit ∧ v = .unit
+  | .breakLoop, _ => False
+  | .continueLoop, _ => False
 
 theorem find_coreFuncs (funcs : List SrcFunc) (off i : Nat) (le : off ≤ i) :
     (coreFuncs off funcs).find? (fun function => function.id == i) =
@@ -50,10 +59,10 @@ theorem bindParameters_eq (params : List SrcParam) (values : List Value)
 theorem call_inv {sp : SrcProgram} {fuel : Nat} {st : State} {callee : Nat} {args : List Core.Expr}
     {v : Value} {st' : State}
     (run : evalExpr (fuel + 1) sp.toCore st (.call callee args) = .done v st') :
-    ∃ f values afterArgs completed, evalExprs fuel sp.toCore st args = .done values afterArgs ∧
+    ∃ f values afterArgs completed c, evalExprs fuel sp.toCore st args = .done values afterArgs ∧
       sp.funcs[callee]? = some f ∧ values.length = f.params.length ∧
       execStmt fuel sp.toCore (({ afterArgs with locals := [] } : State).bindLocals
-        (paramBindings f.params values)) f.body.toCore = .done (.returned (some v)) completed ∧
+        (paramBindings f.params values)) f.body.toCore = .done c completed ∧ CallResult f.ret c v ∧
       st' = restoreLocals afterArgs completed := by
   simp only [evalExpr] at run
   split at run
@@ -70,8 +79,24 @@ theorem call_inv {sp : SrcProgram} {fuel : Nat} {st : State} {callee : Nat} {arg
         · rename_i value completed bodyRun
           simp only [Semantics.Outcome.done.injEq] at run
           obtain ⟨rfl, rfl⟩ := run
-          exact ⟨f, values, afterArgs, completed, argsRun, rfl, len, bodyRun, rfl⟩
-        all_goals simp_all [SrcType.toCore_ne_unit]
+          exact ⟨f, values, afterArgs, completed, _, argsRun, rfl, len, bodyRun, rfl, rfl⟩
+        · rename_i completed bodyRun
+          split at run
+          · rename_i isUnit
+            simp only [Semantics.Outcome.done.injEq] at run
+            obtain ⟨rfl, rfl⟩ := run
+            exact ⟨f, values, afterArgs, completed, _, argsRun, rfl, len, bodyRun,
+              ⟨SrcType.toCore_eq_unit isUnit, rfl⟩, rfl⟩
+          · simp at run
+        · rename_i completed bodyRun
+          split at run
+          · rename_i isUnit
+            simp only [Semantics.Outcome.done.injEq] at run
+            obtain ⟨rfl, rfl⟩ := run
+            exact ⟨f, values, afterArgs, completed, _, argsRun, rfl, len, bodyRun,
+              ⟨SrcType.toCore_eq_unit isUnit, rfl⟩, rfl⟩
+          · simp at run
+        all_goals simp at run
       · have : Semantics.bindParameters (f.params.map fun p => (p.id, p.ty.toCore)) values = none := by
           simp [Semantics.bindParameters]; omega
         simp [this] at run
@@ -624,7 +649,7 @@ theorem call_grows {sp : SrcProgram} {k : Nat} (ih : GrowsBelow sp k) {st : Stat
   cases k with
   | zero => simp [evalExpr] at run
   | succ k =>
-    obtain ⟨f, values, afterArgs, completed, argsRun, found, _, bodyRun, rfl⟩ := call_inv run
+    obtain ⟨f, values, afterArgs, completed, c, argsRun, found, _, bodyRun, result, rfl⟩ := call_inv run
     have := evalExprs_state args argsRun
     subst this
     have entry := bindLocals_same (paramBindings f.params values) { afterArgs with locals := [] }
@@ -990,7 +1015,7 @@ theorem eff_grows_step {sp : SrcProgram} {k : Nat} (ih : GrowsBelow sp (k + 1)) 
     subst this
     exact Grows.refl _
   | eCall callee args =>
-    obtain ⟨f, values, afterArgs, completed, argsRun, found, _, bodyRun, rfl⟩ := call_inv run
+    obtain ⟨f, values, afterArgs, completed, c, argsRun, found, _, bodyRun, result, rfl⟩ := call_inv run
     have entry := bindLocals_same (paramBindings f.params values) { afterArgs with locals := [] }
     exact ((effs_grows args ihe argsRun).trans ((Grows.same entry.1 entry.2).trans
       (ih k (Nat.lt_succ_self k) bodyRun))).trans (Grows.same rfl rfl)
@@ -1367,6 +1392,29 @@ theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st 
         | succ k =>
           exact assign_grows_eff (fun r => by have := (evalPlace_field r).1; subst this; exact Grows.refl _)
             (fun r => eff_grows (k + 1) ihf k (Nat.le_succ _) r) assignRun
+      all_goals simp at run
+    | returnUnit =>
+      simp only [SrcStmt.toCore, execStmt, Semantics.Outcome.done.injEq] at run
+      obtain ⟨-, rfl⟩ := run
+      exact Grows.refl _
+    | assert condition =>
+      simp only [SrcStmt.toCore, execStmt] at run
+      split at run
+      · rename_i u next assertRun
+        simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        cases f with
+        | zero => simp [evalExpr] at assertRun
+        | succ k =>
+          simp only [evalExpr] at assertRun
+          split at assertRun
+          · rename_i w mid condRun
+            have g := eff_grows (k + 1) ihf k (Nat.le_succ _) condRun
+            split at assertRun
+            all_goals simp only [Semantics.Outcome.done.injEq, reduceCtorEq] at assertRun
+            all_goals obtain ⟨-, rfl⟩ := assertRun
+            all_goals simp_all
+          all_goals simp at assertRun
       all_goals simp at run
 
 /-- Every subset statement Core completes grows the heap. -/

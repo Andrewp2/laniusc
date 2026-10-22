@@ -851,6 +851,7 @@ partial def serType : SrcType → String
   | .struct n fs => s!"(.struct {n} {bracket (fs.map serType)})"
   | .enum n vs => s!"(.enum {n} {bracket (vs.map fun v => bracket (v.map serType))})"
   | .slice t => s!"(.slice {serType t})"
+  | .unit => ".unit"
 
 partial def serExpr : SrcExpr → String
   | .int k => s!"(.int {k.toNat})"
@@ -914,6 +915,8 @@ partial def serStmt : SrcStmt → String
   | .discard x => s!"(.discard {serEff x})"
   | .setIndexEval sl i v => s!"(.setIndexEval {sl} {serEff i} {serEff v})"
   | .setFieldEval n f x => s!"(.setFieldEval {n} {f} {serEff x})"
+  | .returnUnit => ".returnUnit"
+  | .assert x => s!"(.assert {serEff x})"
 
 def serParam (p : SrcParam) : String := "{ id := " ++ toString p.id ++ ", ty := " ++ serType p.ty ++ " }"
 
@@ -1015,7 +1018,7 @@ partial def bindersOf : SrcStmt → List Nat
   | .ifEval x a b => effBinders x ++ bindersOf a ++ bindersOf b
   | .whileEval x b => effBinders x ++ bindersOf b
   | .setIndexEval _ i v => effBinders i ++ effBinders v
-  | .setFieldEval _ _ x => effBinders x
+  | .setFieldEval _ _ x | .assert x => effBinders x
   | _ => []
 
 partial def renExpr (f : Nat → Nat) : SrcExpr → SrcExpr
@@ -1070,6 +1073,8 @@ partial def renStmt (f : Nat → Nat) : SrcStmt → SrcStmt
   | .discard x => .discard (renEff f x)
   | .setIndexEval sl i v => .setIndexEval (f sl) (renEff f i) (renEff f v)
   | .setFieldEval n k x => .setFieldEval (f n) k (renEff f x)
+  | .returnUnit => .returnUnit
+  | .assert x => .assert (renEff f x)
 
 def canonFunc (fn : SrcFunc) : SrcFunc :=
   let ids := (fn.params.map (·.id) ++ bindersOf fn.body).mergeSort (· ≤ ·)

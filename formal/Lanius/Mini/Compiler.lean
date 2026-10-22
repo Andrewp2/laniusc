@@ -967,6 +967,8 @@ inductive SrcType where
   | ptr : SrcType
   /-- Core's raw slice of this element type: one slot, its address -/
   | slice : SrcType → SrcType
+  /-- the unit type: one slot whose bits do not matter -/
+  | unit : SrcType
   deriving Repr
 
 inductive SrcOp where
@@ -1081,6 +1083,10 @@ inductive SrcStmt where
   | setIndexEval : Nat → SrcEff → SrcEff → SrcStmt
   /-- x.field = value for a scalar field, with a value that may call functions -/
   | setFieldEval : Nat → Nat → SrcEff → SrcStmt
+  /-- return; in a unit function -/
+  | returnUnit : SrcStmt
+  /-- assert(condition): Core traps when it is false -/
+  | assert : SrcEff → SrcStmt
   deriving Repr
 
 structure SrcParam where
@@ -1129,6 +1135,7 @@ def SrcType.isI32 (self : SrcType) : Bool :=
   | .enum id variants => false
   | .ptr => false
   | .slice element => false
+  | .unit => false
 
 def SrcType.isBool (self : SrcType) : Bool :=
   match self with
@@ -1139,6 +1146,7 @@ def SrcType.isBool (self : SrcType) : Bool :=
   | .enum id variants => false
   | .ptr => false
   | .slice element => false
+  | .unit => false
 
 def SrcType.isScalar (self : SrcType) : Bool :=
   match self with
@@ -1149,6 +1157,7 @@ def SrcType.isScalar (self : SrcType) : Bool :=
   | .enum id variants => false
   | .ptr => true
   | .slice element => false
+  | .unit => false
 
 def SrcType.isUint (self : SrcType) (kind : UintTy) : Bool :=
   match self with
@@ -1159,6 +1168,7 @@ def SrcType.isUint (self : SrcType) (kind : UintTy) : Bool :=
   | .enum id variants => false
   | .ptr => false
   | .slice element => false
+  | .unit => false
 
 def SrcType.isPtr (self : SrcType) : Bool :=
   match self with
@@ -1169,6 +1179,18 @@ def SrcType.isPtr (self : SrcType) : Bool :=
   | .enum id variants => false
   | .ptr => true
   | .slice element => false
+  | .unit => false
+
+def SrcType.isUnit (self : SrcType) : Bool :=
+  match self with
+  | .i32 => false
+  | .bool => false
+  | .uint kind => false
+  | .struct id fields => false
+  | .enum id variants => false
+  | .ptr => false
+  | .slice element => false
+  | .unit => true
 
 /-- The unsigned type this is, if it is one. -/
 def SrcType.uintKind (self : SrcType) : Option UintTy :=
@@ -1180,6 +1202,7 @@ def SrcType.uintKind (self : SrcType) : Option UintTy :=
   | .enum id variants => none
   | .ptr => none
   | .slice element => none
+  | .unit => none
 
 /-- How a comparison of two values of this type reads their slots. -/
 def SrcType.word (self : SrcType) : Word :=
@@ -1191,6 +1214,7 @@ def SrcType.word (self : SrcType) : Word :=
   | .enum id variants => Word.s32
   | .ptr => Word.u64
   | .slice element => Word.u64
+  | .unit => Word.s32
 
 mutual
 
@@ -1207,7 +1231,8 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .struct otherId otherFields => decide (id = otherId) && typesSame fields otherFields
      | .enum otherId otherVariants => false
      | .ptr => false
-     | .slice otherElement => false)
+     | .slice otherElement => false
+     | .unit => false)
   | .enum id variants =>
     (match other with
      | .i32 => false
@@ -1216,17 +1241,20 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .struct otherId otherFields => false
      | .enum otherId otherVariants => decide (id = otherId) && variantsSame variants otherVariants
      | .ptr => false
-     | .slice otherElement => false)
+     | .slice otherElement => false
+     | .unit => false)
   | .ptr => SrcType.isPtr other
   | .slice element =>
-    match other with
-    | .i32 => false
-    | .bool => false
-    | .uint otherKind => false
-    | .struct otherId otherFields => false
-    | .enum otherId otherVariants => false
-    | .ptr => false
-    | .slice otherElement => SrcType.same element otherElement
+    (match other with
+     | .i32 => false
+     | .bool => false
+     | .uint otherKind => false
+     | .struct otherId otherFields => false
+     | .enum otherId otherVariants => false
+     | .ptr => false
+     | .slice otherElement => SrcType.same element otherElement
+     | .unit => false)
+  | .unit => SrcType.isUnit other
 
 def typesSame (types : List SrcType) (others : List SrcType) : Bool :=
   match types with
@@ -1264,6 +1292,7 @@ def SrcType.size (self : SrcType) : Nat :=
   | .enum id variants => 1 + maxSize variants
   | .ptr => 1
   | .slice element => 1
+  | .unit => 1
 
 def sizes (types : List SrcType) : Nat :=
   match types with
@@ -1404,6 +1433,7 @@ def lowerFieldOf (b : Binding) (field : Nat) : Option Typed :=
   | .enum id variants => none
   | .ptr => none
   | .slice element => none
+  | .unit => none
 
 def lowerField (binding : Option Binding) (field : Nat) : Option Typed :=
   match binding with
@@ -1455,6 +1485,7 @@ def castToI32 (e : Typed) : Option Typed :=
   | .enum id variants => none
   | .ptr => none
   | .slice element => none
+  | .unit => none
 
 def castToUint (kind : UintTy) (e : Typed) : Option Typed :=
   match e.ty with
@@ -1465,6 +1496,7 @@ def castToUint (kind : UintTy) (e : Typed) : Option Typed :=
   | .enum id variants => none
   | .ptr => none
   | .slice element => none
+  | .unit => none
 
 def castTo (ty : SrcType) (e : Typed) : Option Typed :=
   match ty with
@@ -1475,6 +1507,7 @@ def castTo (ty : SrcType) (e : Typed) : Option Typed :=
   | .enum id variants => none
   | .ptr => none
   | .slice element => none
+  | .unit => none
 
 def lowerCast (ty : SrcType) (operand : Option Typed) : Option Typed :=
   match operand with
@@ -1555,6 +1588,7 @@ def copyFieldOf (b : Binding) (index : Nat) (ty : SrcType) : Option (List Expr) 
   | .enum id variants => none
   | .ptr => none
   | .slice element => none
+  | .unit => none
 
 /-- A field of type ty of a struct local, slot by slot. It takes slots. -/
 def copyField (binding : Option Binding) (index : Nat) (ty : SrcType) : Option (List Expr) :=
@@ -1615,6 +1649,7 @@ def lowerLiteral (scope : List Binding) (ty : SrcType) (fields : List SrcExpr) :
   | .enum id variants => none
   | .ptr => none
   | .slice element => none
+  | .unit => none
 
 def lowerTag (variant : Nat) (payload : Option (List Expr)) : Option (List Expr) :=
   match payload with
@@ -1643,6 +1678,7 @@ def lowerEnumValue (scope : List Binding) (ty : SrcType) (variant : Nat) (payloa
   | .enum id variants => lowerTagged scope variants variant payload
   | .ptr => none
   | .slice element => none
+  | .unit => none
 
 /-- The scope of an arm: each binder names its payload field's slots, binding in order as Core's bindLocals does. A binder takes slots, so no two share a first slot. -/
 def armScope (binders : List Nat) (types : List SrcType) (slot : Nat) (scope : List Binding) : Option (List Binding) :=
@@ -1708,6 +1744,7 @@ def lowerMatchOn (scope : List Binding) (b : Binding) (enumId : Nat) (arms : Lis
   | .enum id variants => lowerMatchArms scope b.slot (decide (id = enumId)) variants arms ty target
   | .ptr => none
   | .slice element => none
+  | .unit => none
 
 def lowerMatch (scope : List Binding) (binding : Option Binding) (enumId : Nat) (arms : List SrcArm) (ty : SrcType) (target : Nat) : Option Stmt :=
   match binding with
@@ -1852,6 +1889,7 @@ def elementOf (ty : SrcType) : Option SrcType :=
   | .enum id variants => none
   | .ptr => none
   | .slice element => some element
+  | .unit => none
 
 /-- The index in slot, then the element it picks loaded over it. -/
 def evalLoad (b : Binding) (slot : Nat) (i : Evaluated) : Option Evaluated :=
@@ -1879,6 +1917,7 @@ def evalStruct (ty : SrcType) (args : Option EvaluatedArgs) : Option Evaluated :
     | .enum id variants => none
     | .ptr => none
     | .slice element => none
+    | .unit => none
 
 /-- The payload, evaluated from slot + 1, then the tag in slot. -/
 def evalPayload (ty : SrcType) (types : List SrcType) (variant : Nat) (slot : Nat) (args : EvaluatedArgs) : Option Evaluated :=
@@ -1908,6 +1947,7 @@ def evalVariant (ty : SrcType) (variant : Nat) (slot : Nat) (args : Option Evalu
     | .enum id variants => evalTagged ty variants variant slot a
     | .ptr => none
     | .slice element => none
+    | .unit => none
 
 def signedDiv (op : SrcDivOp) : DivOp :=
   match op with
@@ -2002,6 +2042,7 @@ def matchVariants (ty : SrcType) : List (List SrcType) :=
   | .enum id variants => variants
   | .ptr => []
   | .slice element => []
+  | .unit => []
 
 /-- The match is exhaustive, its value takes slots, and its tags fit in 32 bits. -/
 def evalMatchOf (slot : Nat) (ety : SrcType) (ty : SrcType) (s : Evaluated) (arms : Stmt) (binders : Nat) (values : Nat) : Option Evaluated :=
@@ -2139,6 +2180,7 @@ def lowerSetFieldOf (b : Binding) (field : Nat) (scope : List Binding) (value : 
   | .enum id variants => none
   | .ptr => none
   | .slice element => none
+  | .unit => none
 
 def lowerSetField (binding : Option Binding) (field : Nat) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
   match binding with
@@ -2293,6 +2335,7 @@ def wordWidth (ty : SrcType) : Option MemWidth :=
   | .enum id variants => none
   | .ptr => some MemWidth.m64
   | .slice element => none
+  | .unit => none
 
 def consWidth (width : Option MemWidth) (rest : Option (List MemWidth)) : Option (List MemWidth) :=
   match width with
@@ -2335,6 +2378,7 @@ def elementWidths (decls : SrcDecls) (element : SrcType) : Option (List MemWidth
   | .enum id variants => none
   | .ptr => none
   | .slice inner => none
+  | .unit => none
 
 def isWordStruct (decls : SrcDecls) (element : SrcType) : Bool :=
   match elementWidths decls element with
@@ -2380,6 +2424,7 @@ def enumWidths (decls : SrcDecls) (element : SrcType) : Option (List (List MemWi
   | .enum id variants => declaredVariantWidths (enumVariants decls.enums id) variants
   | .ptr => none
   | .slice inner => none
+  | .unit => none
 
 def isWordEnum (decls : SrcDecls) (element : SrcType) : Bool :=
   match enumWidths decls element with
@@ -2748,6 +2793,7 @@ def setFieldEvalOf (b : Binding) (field : Nat) (slot : Nat) (v : Evaluated) : Op
   | .enum id variants => none
   | .ptr => none
   | .slice element => none
+  | .unit => none
 
 def lowerSetFieldEval (slot : Nat) (binding : Option Binding) (field : Nat) (value : Option Evaluated) : Option Stmt :=
   match binding with
@@ -2756,6 +2802,19 @@ def lowerSetFieldEval (slot : Nat) (binding : Option Binding) (field : Nat) (val
     match value with
     | none => none
     | some v => setFieldEvalOf b field slot v
+
+/-- return; in a unit function: its one slot, whose bits do not matter. -/
+def lowerReturnUnit (ret : SrcType) : Option Stmt :=
+  if SrcType.isUnit ret then
+    some (Stmt.ret [Expr.lit 0])
+  else
+    none
+
+/-- assert(condition): the condition's code. Core traps when it is false, and the theorem is about runs that return. -/
+def lowerAssert (condition : Option Evaluated) : Option Stmt :=
+  match condition with
+  | none => none
+  | some c => evalSame c SrcType.bool c.stmt
 
 def lowerSetIndexEval (decls : SrcDecls) (slot : Nat) (binding : Option Binding) (index : Option Evaluated) (value : Option Evaluated) : Option Stmt :=
   match binding with
@@ -2795,6 +2854,8 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : S
   | .discard value => lowerDiscard (SrcEff.eval value sigs decls scope next)
   | .setIndexEval slice index value => lowerSetIndexEval decls next (lookup scope slice) (SrcEff.eval index sigs decls scope next) (SrcEff.eval value sigs decls scope (next + 1))
   | .setFieldEval id field value => lowerSetFieldEval next (lookup scope id) field (SrcEff.eval value sigs decls scope next)
+  | .returnUnit => lowerReturnUnit ret
+  | .assert condition => lowerAssert (SrcEff.eval condition sigs decls scope next)
 
 /-- Slots the statement's lets need beyond the ones in scope. -/
 def SrcStmt.depth (self : SrcStmt) : Nat :=
@@ -2827,6 +2888,8 @@ def SrcStmt.depth (self : SrcStmt) : Nat :=
   | .discard value => 0
   | .setIndexEval slice index value => 0
   | .setFieldEval id field value => 0
+  | .returnUnit => 0
+  | .assert condition => 0
 
 /-- Parameters take slots from 0 in order, a struct one per field; a later parameter with the same id shadows an earlier one, as Core's bindLocals does. -/
 def paramScope (params : List SrcParam) (slot : Nat) (scope : List Binding) : List Binding :=
@@ -2888,11 +2951,20 @@ def lowerBody (count : Nat) (results : Nat) (depth : Nat) (body : Option Stmt) :
   | none => none
   | some b => some ({ params := count, results := results, locals := max (max (count + depth) results) (Stmt.extent b), body := b } : Func)
 
+/-- A unit function may end without a return: one is added after its body. -/
+def unitTail (ret : SrcType) (body : Option Stmt) : Option Stmt :=
+  if SrcType.isUnit ret then
+    match body with
+    | none => none
+    | some b => some (Stmt.seq b (Stmt.ret [Expr.lit 0]))
+  else
+    body
+
 /-- Results and struct parameters have slots; a function returns its result type's slots, so it has at least that many locals. -/
 def lowerFunc (sigs : List Sig) (decls : SrcDecls) (func : SrcFunc) : Option Func :=
   let count : Nat := paramsSize func.params
   if decide (0 < SrcType.size func.ret) && paramsValid func.params then
-    lowerBody count (SrcType.size func.ret) (SrcStmt.depth func.body) (SrcStmt.lower func.body sigs decls func.ret (paramScope func.params 0 []) count)
+    lowerBody count (SrcType.size func.ret) (SrcStmt.depth func.body) (unitTail func.ret (SrcStmt.lower func.body sigs decls func.ret (paramScope func.params 0 []) count))
   else
     none
 
@@ -2948,6 +3020,7 @@ def SrcType.declare (self : SrcType) (decls : SrcDecls) : Option SrcDecls :=
   | .enum id variants => declareEnum id variants (declareVariants variants decls)
   | .ptr => some decls
   | .slice element => SrcType.declare element decls
+  | .unit => some decls
 
 def declareTypes (types : List SrcType) (decls : SrcDecls) : Option SrcDecls :=
   match types with
@@ -3051,6 +3124,8 @@ def SrcStmt.declare (self : SrcStmt) (decls : SrcDecls) : Option SrcDecls :=
   | .discard value => declareTypes (SrcEff.types value) decls
   | .setIndexEval slice index value => declareTypes (SrcEff.types index ++ SrcEff.types value) decls
   | .setFieldEval id field value => declareTypes (SrcEff.types value) decls
+  | .returnUnit => some decls
+  | .assert condition => declareTypes (SrcEff.types condition) decls
 
 /-- Every path ends in a return, the way Core's DefinitelyReturns counts: a while body never counts. -/
 def SrcStmt.returns (self : SrcStmt) : Bool :=
@@ -3083,6 +3158,8 @@ def SrcStmt.returns (self : SrcStmt) : Bool :=
   | .discard value => false
   | .setIndexEval slice index value => false
   | .setFieldEval id field value => false
+  | .returnUnit => true
+  | .assert condition => false
 
 def declareParams (params : List SrcParam) (decls : SrcDecls) : Option SrcDecls :=
   match params with
@@ -3120,7 +3197,7 @@ def declareProgram (prog : SrcProgram) : Option SrcDecls :=
 def funcsReturn (funcs : List SrcFunc) : Bool :=
   match funcs with
   | [] => true
-  | func :: rest => SrcStmt.returns func.body && funcsReturn rest
+  | func :: rest => (SrcType.isUnit func.ret || SrcStmt.returns func.body) && funcsReturn rest
 
 /-- The low 32 bits of a word, zero-extended. -/
 def lowBits (value : BitVec 64) : BitVec 64 :=

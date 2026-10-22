@@ -234,6 +234,7 @@ theorem cast_sound {ty : SrcType} {inner t : Typed} {env : Env} {w result : Valu
     · simp at lowered
     · simp at lowered
     · simp at lowered
+    · simp at lowered
   | bool => simp [castTo] at lowered
   | uint kind =>
     have positive := Nat.two_pow_pos kind.width
@@ -267,10 +268,12 @@ theorem cast_sound {ty : SrcType} {inner t : Typed} {env : Env} {w result : Valu
     · simp at lowered
     · simp at lowered
     · simp at lowered
+    · simp at lowered
   | struct => simp [castTo] at lowered
   | enum => simp [castTo] at lowered
   | ptr => simp [castTo] at lowered
   | slice => simp [castTo] at lowered
+  | unit => simp [castTo] at lowered
 
 /-- A strict operator's lowering, on operands that represent `vl` and `vr`,
 represents Core's result. -/
@@ -371,7 +374,7 @@ theorem SrcOp.lower_holds {op : SrcOp} {tl tr t : Typed} (lowered : op.lower tl 
       subst lowered
       simp only [SrcOp.toCore] at evaluated
       cases htl : tl.ty <;> cases htr : tr.ty <;>
-        simp [htl, htr, SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isUint, SrcType.isPtr] at types <;>
+        simp [htl, htr, SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isUint, SrcType.isPtr, SrcType.isUnit] at types <;>
         rw [htl] at holdsl <;> rw [htr] at holdsr
       · obtain ⟨rfl, _⟩ := holdsl
         obtain ⟨rfl, _⟩ := holdsr
@@ -400,6 +403,7 @@ theorem SrcOp.lower_holds {op : SrcOp} {tl tr t : Typed} (lowered : op.lower tl 
         subst evaluated
         simp only [Expr.eval, htl, SrcType.word, Word.holds]
         exact holds_compare _
+      · simp [SrcType.Holds] at holdsl
       · simp [SrcType.Holds] at holdsl
     · simp at lowered
   case logicalAnd => exact absurd rfl strict.1

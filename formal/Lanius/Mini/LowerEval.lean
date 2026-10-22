@@ -372,7 +372,7 @@ theorem eval_call (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
     (run : evalExpr (k + 1) sp.toCore st (.call callee (SrcEff.toCoreList args)) = .done v st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Evaluates mp hp slot st env ev v st' := by
-  obtain ⟨f, values, afterArgs, completed, argsRun, found, _, bodyRun, rfl⟩ := call_inv run
+  obtain ⟨f, values, afterArgs, completed, c, argsRun, found, _, bodyRun, result, rfl⟩ := call_inv run
   simp only [sigs_get, found, Option.map_some, evalCall] at ok
   split at ok
   · simp at ok
@@ -397,7 +397,7 @@ theorem eval_call (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
       holdsA.congr fun i below => by rw [Nat.zero_add, entry_slotVars envA slot _ below]
     obtain ⟨freshDone, keeps, d, rs, hp', ⟨g, gFound, arity, exec⟩, holdsRet, len, hcDone⟩ :=
       body_sound lowered ih found (hp := hpA) freshA hcA holdsEntry
-        (by rw [evalAll_length, slotVars_length, paramsSize_eq]) bodyRun (by rw [execA.limit_normal]; exact bound')
+        (by rw [evalAll_length, slotVars_length, paramsSize_eq]) bodyRun result (by rw [execA.limit_normal]; exact bound')
     refine ⟨restore_fresh freshDone, keepsA.chain (keeps.trans (restore_keeps _ _ _)), localsA, sized,
       max dA (d + 1), envA.setMany slot rs, hp', .seq (execA.mono (Nat.le_max_left _ _))
         (Exec.call gFound ?_ len (by omega) exec), fun j below => ?_, setMany_holds holdsRet len envA slot, hcDone⟩
@@ -787,6 +787,7 @@ theorem eval_struct {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcType
   | enum => simp at ok
   | ptr => simp at ok
   | slice => simp at ok
+  | unit => simp at ok
 
 /-- An enum literal: its payload from `slot + 1`, then its tag in `slot`. -/
 theorem eval_variant {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcType} {variant : Nat}
@@ -833,6 +834,7 @@ theorem eval_variant {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcTyp
   | struct => simp at ok
   | ptr => simp at ok
   | slice => simp at ok
+  | unit => simp at ok
 
 /-- Binding an arm's payload above the scope keeps the layout. -/
 theorem armScope_layout :
@@ -1048,6 +1050,7 @@ theorem eval_match {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {scrutinee :
       | struct => cases values <;> simp [matchVariants, evalArms] at armsOk
       | ptr => cases values <;> simp [matchVariants, evalArms] at armsOk
       | slice => cases values <;> simp [matchVariants, evalArms] at armsOk
+      | unit => cases values <;> simp [matchVariants, evalArms] at armsOk
     all_goals simp at run
   · simp at ok
 
@@ -1274,6 +1277,7 @@ theorem stmt_setFieldEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {id index : 
   case h_5 => simp at ok
   case h_6 => simp at ok
   case h_7 => simp at ok
+  case h_8 => simp at ok
   rename_i sid types hty
   simp only [setFieldEvalAt] at ok
   split at ok
@@ -1820,6 +1824,63 @@ theorem stmt_discard (ihe : EvalSound sp mp fuel) {value : SrcEff}
     exact ⟨fresh1, keeps1.lower le, d1, _, exec1, .next (corr.after fr fresh keeps1 locals1 same1) hc1⟩
   all_goals simp at run
 
+/-- `assert(condition)`: the condition's code. Core continues only when it
+is true. -/
+theorem stmt_assert (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {condition : SrcEff}
+    (ok : (SrcStmt.assert condition).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
+    (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (le : base ≤ st.nextCell)
+    (hc : HeapCorr st.heap hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.assert condition).toCore = .done c st')
+    (bound : st'.heap.nextAddress ≤ hp.limit) :
+    Simulates mp hp ret scope frame base st env stmt c st' := by
+  simp only [SrcStmt.lower, lowerAssert] at ok
+  split at ok
+  · simp at ok
+  rename_i ev condOk
+  simp only [evalSame] at ok
+  split at ok
+  case isFalse => simp at ok
+  simp only [Option.some.injEq] at ok
+  subst ok
+  simp only [SrcStmt.toCore, execStmt] at run
+  split at run
+  · rename_i u st1 assertRun
+    simp only [Semantics.Outcome.done.injEq] at run
+    obtain ⟨rfl, rfl⟩ := run
+    cases fuel with
+    | zero => simp [evalExpr] at assertRun
+    | succ k =>
+      simp only [evalExpr] at assertRun
+      split at assertRun
+      · rename_i w mid condRun
+        have done : mid = st1 := by
+          split at assertRun
+          all_goals simp only [Semantics.Outcome.done.injEq, reduceCtorEq] at assertRun
+          all_goals simp_all
+        subst done
+        obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, -, hc1⟩ :=
+          ihe k (Nat.le_succ _) condOk corr fr fresh hc condRun bound
+        exact ⟨fresh1, keeps1.lower le, d1, _, exec1, .next (corr.after fr fresh keeps1 locals1 same1) hc1⟩
+      all_goals simp at assertRun
+  all_goals simp at run
+
+/-- `return;` in a unit function: one slot, whose bits do not matter. -/
+theorem stmt_returnUnit
+    (ok : SrcStmt.returnUnit.lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
+    (fresh : st.Fresh) (hc : HeapCorr st.heap hp)
+    (run : execStmt (fuel + 1) sp.toCore st SrcStmt.returnUnit.toCore = .done c st') :
+    Simulates mp hp ret scope frame base st env stmt c st' := by
+  simp only [SrcStmt.lower, lowerReturnUnit] at ok
+  split at ok
+  case isFalse => simp at ok
+  rename_i isUnit
+  simp only [Option.some.injEq] at ok
+  subst ok
+  simp only [SrcStmt.toCore, execStmt, Semantics.Outcome.done.injEq] at run
+  obtain ⟨rfl, rfl⟩ := run
+  have unit : ret = .unit := by cases ret <;> simp_all [SrcType.isUnit]
+  exact ⟨fresh, Keeps.refl _ _, 0, _, .ret, .returned unit (by rw [unit]; rfl) hc⟩
+
 end Statements
 
 /-! ## The simulation -/
@@ -1870,6 +1931,8 @@ theorem sound_both {sp : SrcProgram} {mp : Program}
         | whileEval => exact stmt_whileEval here hereE ok corr fr fresh le hc run bound
         | returnEval => exact stmt_returnEval hereE ok corr fr fresh le hc run bound
         | discard => exact stmt_discard hereE ok corr fr fresh le hc run bound
+        | assert => exact stmt_assert belowE ok corr fr fresh le hc run bound
+        | returnUnit => exact stmt_returnUnit ok fresh hc run
         | setIndexEval => exact stmt_setIndexEval belowE ok corr fr fresh le hc run bound
         | setFieldEval => exact stmt_setFieldEval belowE ok corr fr fresh le hc run bound
       · intro hp e scope slot ev frame base st env v st' ok corr fr fresh hc run bound

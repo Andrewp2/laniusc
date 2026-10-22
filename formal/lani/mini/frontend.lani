@@ -162,6 +162,7 @@ pub enum SrcType {
     Enum(usize, Box<List<List<SrcType>>>),
     Ptr,
     Slice(Box<SrcType>),
+    Unit,
 }
 
 pub enum SrcOp {
@@ -232,6 +233,8 @@ pub enum SrcStmt {
     Discard(SrcEff),
     SetIndexEval(usize, SrcEff, SrcEff),
     SetFieldEval(usize, usize, SrcEff),
+    ReturnUnit,
+    Assert(SrcEff),
 }
 
 pub struct SrcParam {
@@ -1551,6 +1554,7 @@ pub fn src_ty(t: SrcType) -> core::option::Option<Ty> {
         Enum(id, variants) -> None,
         Ptr -> Some(TyPtr),
         Slice(e) -> None,
+        Unit -> None,
     };
 }
 
@@ -3485,6 +3489,7 @@ pub fn is_usize(t: SrcType) -> bool {
         Enum(id, variants) -> false,
         Ptr -> false,
         Slice(e) -> false,
+        Unit -> false,
     };
 }
 
@@ -5240,6 +5245,7 @@ pub fn src_enum_id(t: core::option::Option<SrcType>) -> core::option::Option<usi
             Enum(id, variants) -> Some(id),
             Ptr -> None,
             Slice(e) -> None,
+            Unit -> None,
         },
     };
 }

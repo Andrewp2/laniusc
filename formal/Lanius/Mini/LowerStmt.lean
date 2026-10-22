@@ -328,7 +328,8 @@ theorem lowerFuncs_get {sg : List Sig} {ds : SrcDecls} {funcs : List SrcFunc} {l
 
 theorem lowerFunc_some {sg : List Sig} {ds : SrcDecls} {f : SrcFunc} {g : Func} (ok : lowerFunc sg ds f = some g) :
     g.params = paramsSize f.params ∧ 0 < f.ret.size ∧ paramsValid f.params = true ∧
-      f.body.lower sg ds f.ret (paramScope f.params 0 []) (paramsSize f.params) = some g.body := by
+      ∃ b, f.body.lower sg ds f.ret (paramScope f.params 0 []) (paramsSize f.params) = some b ∧
+        unitTail f.ret (some b) = some g.body := by
   simp only [lowerFunc] at ok
   split at ok
   · rename_i checks
@@ -339,7 +340,13 @@ theorem lowerFunc_some {sg : List Sig} {ds : SrcDecls} {f : SrcFunc} {g : Func} 
     rename_i body bodyOk
     simp only [Option.some.injEq] at ok
     subst ok
-    exact ⟨rfl, checks.1, checks.2, bodyOk⟩
+    simp only [unitTail] at bodyOk
+    split at bodyOk
+    · split at bodyOk
+      · simp at bodyOk
+      rename_i b lowered
+      exact ⟨rfl, checks.1, checks.2, b, lowered, by simp only [unitTail, bodyOk, ‹f.ret.isUnit = true›, if_true]⟩
+    · exact ⟨rfl, checks.1, checks.2, body, bodyOk, by simp only [unitTail, if_neg (by assumption)]⟩
   · simp at ok
 
 theorem paramTypes_length (params : List SrcParam) : (paramTypes params).length = params.length := by
@@ -640,6 +647,12 @@ theorem entry_corr (env : Env) (base : Nat) :
 
 /-! ## The simulation -/
 
+/-- The slots a return stores: the value, or nothing that matters for
+`return;` in a unit function. -/
+def RetHolds (ret : SrcType) : Option Value → List (BitVec 64) → Prop
+  | some v, bits => ret.HoldsAt v (Func.entry bits) 0
+  | none, _ => ret = .unit
+
 /-- A Core completion and a mini outcome that agree: both fall through with
 the scope still in correspondence, or both return represented values, and
 the heaps agree. -/
@@ -647,9 +660,9 @@ inductive Matches (ret : SrcType) (scope : List Binding) (frame : Nat → Nat) (
     Completion → Outcome → Prop where
   | next {env : Env} {hp : Heap} : Corr scope frame st env → HeapCorr st.heap hp →
       Matches ret scope frame st .next (.normal env hp)
-  | returned {v : Value} {bits : List (BitVec 64)} {hp : Heap} :
-      ret.HoldsAt v (Func.entry bits) 0 → bits.length = ret.size → HeapCorr st.heap hp →
-      Matches ret scope frame st (.returned (some v)) (.returned bits hp)
+  | returned {v : Option Value} {bits : List (BitVec 64)} {hp : Heap} :
+      RetHolds ret v bits → bits.length = ret.size → HeapCorr st.heap hp →
+      Matches ret scope frame st (.returned v) (.returned bits hp)
 
 /-- Core went from `st` to `st'` with completion `c`; the mini statement has a
 derivation from `env` and `hp` with a matching outcome. -/
@@ -677,15 +690,16 @@ theorem body_sound {sp : SrcProgram} {mp : Program}
     (ih : StmtSound sp mp fuel) {callee : Nat} {f : SrcFunc} (found : sp.funcs[callee]? = some f)
     {hp : Heap} {st : State} (fresh : st.Fresh) (hc : HeapCorr st.heap hp) {values : List Value}
     {bits : List (BitVec 64)} (holds : FieldsHold (paramTypes f.params) values (Func.entry bits) 0)
-    (bitsLen : bits.length = paramsSize f.params) {v : Value} {completed : State}
+    (bitsLen : bits.length = paramsSize f.params) {v : Value} {c : Completion} {completed : State}
     (run : execStmt fuel sp.toCore (({ st with locals := [] } : State).bindLocals
-      (paramBindings f.params values)) f.body.toCore = .done (.returned (some v)) completed)
+      (paramBindings f.params values)) f.body.toCore = .done c completed)
+    (result : CallResult f.ret c v)
     (bound : completed.heap.nextAddress ≤ hp.limit) :
     completed.Fresh ∧ Keeps st.nextCell st completed ∧
       ∃ d rs hp', mp.Returns d callee bits hp rs hp' ∧ f.ret.HoldsAt v (Func.entry rs) 0 ∧
         rs.length = f.ret.size ∧ HeapCorr completed.heap hp' := by
   obtain ⟨g, gFound, gOk⟩ := lowerFuncs_get lowered found
-  obtain ⟨gParams, _, valid, bodyOk⟩ := lowerFunc_some gOk
+  obtain ⟨gParams, _, valid, b, bodyOk, tail⟩ := lowerFunc_some gOk
   obtain ⟨frame, corr, fr, fresh0, keeps0⟩ := entry_corr (Func.entry bits) st.nextCell f.params
     (k := 0) (scope := []) (frame := fun _ => 0) (st := { st with locals := [] }) holds valid
     (Nat.le_refl _) fresh ⟨rfl, fun _ mem => by simp at mem⟩
@@ -697,11 +711,46 @@ theorem body_sound {sp : SrcProgram} {mp : Program}
     exact hc
   obtain ⟨freshDone, keepsDone, d, out, exec, agree⟩ :=
     ih (hp := hp) bodyOk corr fr fresh0 keeps0.next hc0 run bound
-  cases agree with
-  | returned holdsRet len hcDone =>
-    exact ⟨freshDone, ⟨fun c below => (keepsDone.cells c below).trans (keeps0.cells c below),
-      Nat.le_trans keeps0.next keepsDone.next⟩, d, _, _, ⟨g, gFound, by rw [gParams, bitsLen], exec⟩, holdsRet,
-      len, hcDone⟩
+  have keeps : Keeps st.nextCell st completed :=
+    ⟨fun c below => (keepsDone.cells c below).trans (keeps0.cells c below), Nat.le_trans keeps0.next keepsDone.next⟩
+  have arity : bits.length = g.params := by rw [gParams, bitsLen]
+  have returns : ∀ {rs hp'}, Exec mp d (Func.entry bits) hp b (.returned rs hp') →
+      Exec mp d (Func.entry bits) hp g.body (.returned rs hp') := by
+    intro rs hp' e
+    simp only [unitTail] at tail
+    split at tail
+    · simp only [Option.some.injEq] at tail
+      rw [← tail]
+      exact .seqReturned e
+    · simp only [Option.some.injEq] at tail
+      rw [← tail]
+      exact e
+  cases c with
+  | returned w =>
+    cases agree with
+    | returned holdsRet len hcDone =>
+      cases w with
+      | some w =>
+        simp only [CallResult] at result
+        subst result
+        exact ⟨freshDone, keeps, d, _, _, ⟨g, gFound, arity, returns exec⟩, holdsRet, len, hcDone⟩
+      | none =>
+        obtain ⟨unit, rfl⟩ := result
+        rw [unit] at len ⊢
+        exact ⟨freshDone, keeps, d, _, _, ⟨g, gFound, arity, returns exec⟩, .unit, len, hcDone⟩
+  | next =>
+    obtain ⟨unit, rfl⟩ := result
+    cases agree with
+    | @next envDone hpDone corrDone hcDone =>
+      simp only [unitTail, unit, SrcType.isUnit, if_true, Option.some.injEq] at tail
+      have exec' : Exec mp d (Func.entry bits) hp g.body
+          (.returned (Expr.evalAll envDone [.lit 0]) hpDone) := by
+        rw [← tail]
+        exact .seq exec .ret
+      rw [unit]
+      exact ⟨freshDone, keeps, d, _, _, ⟨g, gFound, arity, exec'⟩, .unit, rfl, hcDone⟩
+  | breakLoop => simp [CallResult] at result
+  | continueLoop => simp [CallResult] at result
 
 /-- A lowered call that Core completes: the caller's locals and cells are as
 they were, and the mini call stores slots representing the result. -/
@@ -715,7 +764,7 @@ theorem call_sound {sp : SrcProgram} {mp : Program}
     st'.Fresh ∧ Keeps st.nextCell st st' ∧ st'.locals = st.locals ∧ 0 < ty.size ∧
       ∃ d rs hp', ty.HoldsAt v (Func.entry rs) 0 ∧ rs.length = ty.size ∧ HeapCorr st'.heap hp' ∧
         ∀ target, Exec mp d env hp (.call target ty.size callee es) (.normal (env.setMany target rs) hp') := by
-  obtain ⟨f, values, afterArgs, completed, argsRun, found, _, bodyRun, rfl⟩ := call_inv run
+  obtain ⟨f, values, afterArgs, completed, c, argsRun, found, _, bodyRun, result, rfl⟩ := call_inv run
   simp only [lowerCall, sigs_get, found, Option.map_some, lowerCallSig] at ok
   split at ok
   · rename_i same
@@ -724,7 +773,7 @@ theorem call_sound {sp : SrcProgram} {mp : Program}
     obtain ⟨rfl, holds, esLen, -⟩ := lowerArgs_sound corr (SrcProgram.target_toCore sp) ok argsRun
     obtain ⟨freshDone, keeps, d, rs, hp', ⟨g, gFound, arity, exec⟩, holdsRet, len, hcDone⟩ :=
       body_sound lowered ih found (hp := hp) fresh hc holds (by rw [evalAll_length, esLen, paramsSize_eq])
-        bodyRun bound
+        bodyRun result bound
     obtain ⟨g', -, gOk⟩ := lowerFuncs_get lowered found
     refine ⟨restore_fresh freshDone, keeps.trans (restore_keeps _ _ _), rfl, (lowerFunc_some gOk).2.1, d + 1, rs,
       hp', holdsRet, len, hcDone, fun target => .call gFound ?_ len (Nat.lt_succ_self d) exec⟩
@@ -956,6 +1005,7 @@ theorem castTo_below {n : Nat} {ty : SrcType} {inner t : Typed} (h : castTo ty i
   | enum => simp [castTo] at h
   | ptr => simp [castTo] at h
   | slice => simp [castTo] at h
+  | unit => simp [castTo] at h
 
 theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
     (slots : ∀ b ∈ scope, b.slot + b.ty.size ≤ next) :
@@ -1000,6 +1050,7 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
     case h_5 => simp at lowered
     case h_6 => simp at lowered
     case h_7 => simp at lowered
+    case h_8 => simp at lowered
     rename_i sid fields hty
     simp only [lowerFieldAt] at lowered
     split at lowered
@@ -1488,6 +1539,7 @@ theorem stmt_letStruct (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {fi
   | uint => simp [lowerLiteral] at literalOk
   | enum => simp [lowerLiteral] at literalOk
   | slice => simp [lowerLiteral] at literalOk
+  | unit => simp [lowerLiteral] at literalOk
   | ptr => simp [lowerLiteral] at literalOk
   | struct sid types =>
     simp only [lowerLiteral, lowerStructFields] at literalOk
@@ -1581,6 +1633,7 @@ theorem stmt_letEnum (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {vari
   | struct => simp [lowerEnumValue] at valueOk
   | ptr => simp [lowerEnumValue] at valueOk
   | slice => simp [lowerEnumValue] at valueOk
+  | unit => simp [lowerEnumValue] at valueOk
   | enum eid variants =>
     simp only [lowerEnumValue, lowerTagged] at valueOk
     split at valueOk
@@ -1660,6 +1713,7 @@ theorem stmt_letMatch (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {scr
   · simp at matchOk
   case h_6 => simp at matchOk
   case h_7 => simp at matchOk
+  case h_8 => simp at matchOk
   rename_i eid variants hty
   simp only [lowerMatchArms] at matchOk
   split at matchOk
@@ -1771,6 +1825,7 @@ theorem stmt_setField {id index : Nat} {value : SrcExpr}
   case h_5 => simp at ok
   case h_6 => simp at ok
   case h_7 => simp at ok
+  case h_8 => simp at ok
   rename_i sid types hty
   simp only [lowerSetFieldAt] at ok
   split at ok
@@ -2328,7 +2383,7 @@ theorem slice_kind {ds : SrcDecls} {element : SrcType}
   | i32 => exact .inl rfl
   | struct sid fields => exact .inr (.inl ⟨sid, fields, rfl⟩)
   | enum eid variants => exact .inr (.inr ⟨eid, variants, rfl⟩)
-  | bool | uint | ptr | slice => simp [SrcType.isI32, isWordStruct, elementWidths, isWordEnum, enumWidths] at cond
+  | bool | uint | ptr | slice | unit => simp [SrcType.isI32, isWordStruct, elementWidths, isWordEnum, enumWidths] at cond
 
 /-- What Core's `slice_from_raw_parts` of an accepted element type did. -/
 theorem sliceFrom_inv {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
@@ -2442,7 +2497,7 @@ theorem index_toNat {t : Typed} {iv : Value} {x : BitVec 64} {pos : Nat}
     obtain ⟨rfl, -⟩ := holds
     simp only [Semantics.integerIndex, Except.ok.injEq] at ok
     exact ok
-  | bool | struct | enum | ptr | slice => rw [hty] at kind; simp [SrcType.isI32, SrcType.isUint] at kind
+  | bool | struct | enum | ptr | slice | unit => rw [hty] at kind; simp [SrcType.isI32, SrcType.isUint] at kind
 
 /-- Core's read of `slice[idx]` from a raw slice local. -/
 theorem eval_index_raw {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {idx : Core.Expr}

@@ -89,13 +89,13 @@ theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
   cases fuel with
   | zero => simp [Semantics.evalExpr] at runs
   | succ k =>
-    obtain ⟨func', values, afterArgs, completed, argsRun, found', _, bodyRun, rfl⟩ := call_inv runs
+    obtain ⟨func', values, afterArgs, completed, c, argsRun, found', _, bodyRun, result, rfl⟩ := call_inv runs
     rw [found] at found'
     cases found'
     obtain ⟨rfl, rfl⟩ := evalExprs_values argsRun
     obtain ⟨_, _, depth, results, after, returns, holds, len, hc⟩ :=
       body_sound (mp := { funcs := funcs }) (hp := heap) lowered (stmt_sound lowered k) found
-        ⟨fun _ mem => by simp at mem, rfl⟩ (HeapCorr.empty start zero small) typed bitsLen bodyRun fits
+        ⟨fun _ mem => by simp at mem, rfl⟩ (HeapCorr.empty start zero small) typed bitsLen bodyRun result fits
     exact ⟨depth, results, after, holds, len, hc.cursor,
       fun s imageBase window enough bounded loaded apart imageHeap entry params heapAt =>
         compileOptimized_correct compiledProgram returns s imageBase window enough bounded loaded apart

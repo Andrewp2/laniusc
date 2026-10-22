@@ -32,6 +32,7 @@ def SrcType.toCore : SrcType → Core.Ty
   | .enum id _ => .enumeration id
   | .ptr => .scalar .rawPtr
   | .slice element => .slice element.toCore
+  | .unit => .unit
 
 /-- The Core type id of a struct or enum type. -/
 def SrcType.typeId : SrcType → Nat
@@ -42,6 +43,7 @@ def SrcType.typeId : SrcType → Nat
   | .enum id _ => id
   | .ptr => 0
   | .slice _ => 0
+  | .unit => 0
 
 /-- The Core type a cast to this type names. Lowering only casts to `i32`
 and the unsigned types. -/
@@ -53,6 +55,7 @@ def SrcType.toScalar : SrcType → Core.ScalarTy
   | .enum _ _ => .bool
   | .ptr => .rawPtr
   | .slice _ => .bool
+  | .unit => .bool
 
 /-- Core's raw slice of this element type from a pointer and a length:
 `slice_from_raw_parts` for `i32`, the typed form for the rest. -/
@@ -64,6 +67,7 @@ def SrcType.sliceFrom : SrcType → Core.Expr → Core.Expr → Core.Expr
   | .enum id _, pointer, length => .typedSliceFromRawParts (.enumeration id) pointer length
   | .ptr, pointer, length => .typedSliceFromRawParts (.scalar .rawPtr) pointer length
   | .slice element, pointer, length => .typedSliceFromRawParts (.slice element.toCore) pointer length
+  | .unit, pointer, length => .typedSliceFromRawParts .unit pointer length
 
 def SrcDivOp.toCore : SrcDivOp → Core.BinaryOp
   | .quotient => .divide
@@ -174,6 +178,8 @@ def SrcStmt.toCore : SrcStmt → Core.Stmt
   | .setIndexEval slice index value =>
       .expression (.assign .set (.index (.local slice) index.toCore) value.toCore)
   | .setFieldEval id index value => .expression (.assign .set (.field (.local id) index) value.toCore)
+  | .returnUnit => .returnValue none
+  | .assert condition => .expression (.intrinsic .assert condition.toCore)
 
 def SrcFunc.toCore (id : Nat) (func : SrcFunc) : Core.Function where
   id := id
@@ -315,6 +321,7 @@ def SrcType.Holds : SrcType → Value → BitVec 64 → Prop
   | .enum _ _, _, _ => False
   | .ptr, value, bits => value = .pointer bits.toNat
   | .slice _, _, _ => False
+  | .unit, _, _ => False
 
 mutual
 /-- `ty.HoldsAt value env slot`: the `ty.size` slots of `env` from `slot`
@@ -338,6 +345,8 @@ inductive SrcType.HoldsAt : SrcType → Value → Env → Nat → Prop where
   /-- A raw slice is its address; its length lives only in Core. -/
   | slice {element : SrcType} {length : Nat} {env : Env} {slot : Nat} :
       SrcType.HoldsAt (.slice element) (.rawSlice element.toCore (env slot).toNat length) env slot
+  /-- The unit value's one slot holds any bits. -/
+  | unit {env : Env} {slot : Nat} : SrcType.HoldsAt .unit .unit env slot
 
 /-- Values of these types, one after another from `slot`: a struct's fields,
 a payload, or arguments. -/
@@ -357,6 +366,7 @@ theorem SrcType.holdsAt_scalar {ty : SrcType} (scalar : ty.isScalar = true) {v :
   | enum => simp [SrcType.isScalar] at scalar
   | ptr => exact ⟨fun | .ptr h => h, .ptr⟩
   | slice => simp [SrcType.isScalar] at scalar
+  | unit => simp [SrcType.isScalar] at scalar
 
 theorem FieldsHold.length : ∀ {fs vs env slot}, FieldsHold fs vs env slot → vs.length = fs.length
   | [], _, _, _, .nil => rfl
@@ -413,6 +423,7 @@ theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot
     simp only [Nat.add_zero] at this
     rw [← this]
     exact .slice
+  | .unit, _, _, _, .unit, _, _, _ => .unit
 
 theorem FieldsHold.congr : ∀ {fs : List SrcType} {vs : List Value} {env : Env} {slot : Nat},
     FieldsHold fs vs env slot → ∀ {env' : Env} {slot' : Nat},

@@ -40,6 +40,7 @@ inductive TypeDeclared (P : Core.Program) : SrcType → Prop where
       (found : P.enumeration? id = some ⟨id, variants.map (List.map SrcType.toCore)⟩)
       (inner : ∀ fs ∈ variants, ∀ f ∈ fs, TypeDeclared P f) : TypeDeclared P (.enum id variants)
   | slice {element : SrcType} (inner : TypeDeclared P element) : TypeDeclared P (.slice element)
+  | unit : TypeDeclared P .unit
 
 /-- The types a statement's bindings name are declared. -/
 def SrcStmt.Declared (P : Core.Program) (s : SrcStmt) : Prop :=
@@ -74,6 +75,8 @@ def SrcStmt.Declared (P : Core.Program) (s : SrcStmt) : Prop :=
   | .discard value => ∀ t ∈ value.types, TypeDeclared P t
   | .setIndexEval _ index value => ∀ t ∈ index.types ++ value.types, TypeDeclared P t
   | .setFieldEval _ _ value => ∀ t ∈ value.types, TypeDeclared P t
+  | .returnUnit => True
+  | .assert condition => ∀ t ∈ condition.types, TypeDeclared P t
 
 /-- Every parameter type and binding type of every function is declared. -/
 def SrcProgram.Declared (P : Core.Program) (sp : SrcProgram) : Prop :=
@@ -118,6 +121,8 @@ theorem returns_sound : ∀ (s : SrcStmt), s.returns = true → Typing.Definitel
   | .discard _, h => by simp [SrcStmt.returns] at h
   | .setIndexEval _ _ _, h => by simp [SrcStmt.returns] at h
   | .setFieldEval _ _ _, h => by simp [SrcStmt.returns] at h
+  | .returnUnit, _ => .returnValue
+  | .assert _, h => by simp [SrcStmt.returns] at h
 
 /-! ## Types -/
 
@@ -134,6 +139,9 @@ theorem eq_uint {ty : SrcType} {k : UintTy} (h : ty.isUint k = true) : ty = .uin
   cases ty <;> simp only [SrcType.isUint, decide_eq_true_eq, reduceCtorEq] at h ⊢
   rename_i other
   cases other <;> cases k <;> simp_all [UintTy.code]
+
+theorem eq_unit {ty : SrcType} (h : ty.isUnit = true) : ty = .unit := by
+  cases ty <;> simp_all [SrcType.isUnit]
 
 theorem eq_uintKind {ty : SrcType} {k : UintTy} (h : ty.uintKind = some k) : ty = .uint k := by
   cases ty <;> simp_all [SrcType.uintKind]
@@ -163,6 +171,8 @@ theorem same_toCore : ∀ {a b : SrcType}, a.same b = true → a.toCore = b.toCo
   | .slice element, b, h => by
     cases b <;> simp only [SrcType.same, Bool.false_eq_true] at h
     simp only [SrcType.toCore, same_toCore h]
+  | .unit, b, h => by
+    cases b <;> simp_all [SrcType.same, SrcType.isUnit]
 
 /-- An integer type of the front pass. -/
 inductive IsInt : SrcType → Prop where
@@ -194,6 +204,7 @@ theorem equalityTy {ty : SrcType} (scalar : ty.isScalar = true) : Typing.Equalit
   | struct => simp [SrcType.isScalar] at scalar
   | enum => simp [SrcType.isScalar] at scalar
   | slice => simp [SrcType.isScalar] at scalar
+  | unit => simp [SrcType.isScalar] at scalar
 
 /-! ## Operators -/
 
@@ -455,6 +466,7 @@ theorem SrcExpr.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       · simp at h
       · simp at h
       · simp at h
+      · simp at h
   | .negate operand, scope, ctx, t, ok, h => by
     simp only [SrcExpr.lower, lowerNegate] at h
     split at h
@@ -537,6 +549,7 @@ theorem SrcExpr.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       | enum => simp [castTo] at h
       | ptr => simp [castTo] at h
       | slice => simp [castTo] at h
+      | unit => simp [castTo] at h
 
 theorem lowerAs_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {scope : List Binding} {ctx : Typing.Context} (ok : ScopeOk P ctx scope) {e : SrcExpr}
@@ -596,6 +609,7 @@ theorem lowerValue_typed {P : Core.Program} (target : P.target = Core.Target.x86
               rw [← same_toCore cond.1]
               exact (field_typed ok found hty hf).1
             · simp at h
+        · simp at h
         · simp at h
         · simp at h
         · simp at h
@@ -668,6 +682,7 @@ theorem lowerLiteral_typed {P : Core.Program} (target : P.target = Core.Target.x
   | enum => simp [lowerLiteral] at h
   | ptr => simp [lowerLiteral] at h
   | slice => simp [lowerLiteral] at h
+  | unit => simp [lowerLiteral] at h
 
 theorem lowerEnumValue_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {scope : List Binding} {ctx : Typing.Context} (ok : ScopeOk P ctx scope) {ty : SrcType}
@@ -695,6 +710,7 @@ theorem lowerEnumValue_typed {P : Core.Program} (target : P.target = Core.Target
   | struct => simp [lowerEnumValue] at h
   | ptr => simp [lowerEnumValue] at h
   | slice => simp [lowerEnumValue] at h
+  | unit => simp [lowerEnumValue] at h
 
 /-! ## Match -/
 
@@ -791,6 +807,7 @@ theorem lowerMatch_typed {P : Core.Program} (target : P.target = Core.Target.x86
       · simp at h
     · simp at h
     · simp at h
+    · simp at h
 
 /-! ## Statements -/
 
@@ -816,13 +833,13 @@ theorem elementWidths_struct {ds : SrcDecls} {e : SrcType} {ws : List MemWidth} 
     ∃ id fields, e = .struct id fields := by
   cases e with
   | struct id fields => exact ⟨id, fields, rfl⟩
-  | i32 | bool | uint | enum | ptr | slice => simp [elementWidths] at h
+  | i32 | bool | uint | enum | ptr | slice | unit => simp [elementWidths] at h
 
 theorem enumWidths_enum {ds : SrcDecls} {e : SrcType} {wss : List (List MemWidth)}
     (h : enumWidths ds e = some wss) : ∃ id variants, e = .enum id variants := by
   cases e with
   | enum id variants => exact ⟨id, variants, rfl⟩
-  | i32 | bool | uint | struct | ptr | slice => simp [enumWidths] at h
+  | i32 | bool | uint | struct | ptr | slice | unit => simp [enumWidths] at h
 
 theorem lowerSlice_some {ds : SrcDecls} {element : SrcType} {p l : Option Expr} {xs : List Expr}
     (h : lowerSlice ds element p l = some xs) :
@@ -938,6 +955,7 @@ theorem castTo_typed {P : Core.Program} {ctx : Typing.Context} {ce : Core.Expr} 
   | enum => simp [castTo] at h
   | ptr => simp [castTo] at h
   | slice => simp [castTo] at h
+  | unit => simp [castTo] at h
 
 /-- An element read of a word struct or enum slice has the element's type. -/
 theorem evalWordElement_ty {decls : SrcDecls} {b : Binding} {element : SrcType} {slot : Nat}
@@ -1184,6 +1202,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       | enum => simp at h
       | ptr => simp at h
       | slice => simp at h
+      | unit => simp at h
   | .eVariant ty variant payload, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalVariant] at h
     split at h
@@ -1213,6 +1232,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       | struct => simp at h
       | ptr => simp at h
       | slice => simp at h
+      | unit => simp at h
   | .eMatch scrutinee ety ty binders values, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalMatch] at h
     split at h
@@ -1243,6 +1263,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           | struct => cases values <;> simp [matchVariants, evalArms] at ha
           | ptr => cases values <;> simp [matchVariants, evalArms] at ha
           | slice => cases values <;> simp [matchVariants, evalArms] at ha
+          | unit => cases values <;> simp [matchVariants, evalArms] at ha
         · simp at h
   | .eDivide op left right, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalDivision] at h
@@ -1447,6 +1468,7 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
                 (.field (.local inCtx) _ (declared_struct declared).1 (by simp [hf]))
                 (lowerAs_typed target ok hv) .set)
           · simp at h
+      · simp at h
       · simp at h
       · simp at h
       · simp at h
@@ -1781,6 +1803,25 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
     · simp at h
     · rename_i v hv
       exact .expression (SrcEff.eval_typed target sigsOk value ok d hv)
+  | .returnUnit, scope, ctx, next, inLoop, out, ok, d, h => by
+    simp only [SrcStmt.lower, lowerReturnUnit] at h
+    split at h
+    · rename_i isUnit
+      rw [eq_unit isUnit]
+      exact .returnUnit rfl
+    · simp at h
+  | .assert condition, scope, ctx, next, inLoop, out, ok, d, h => by
+    simp only [SrcStmt.lower, lowerAssert] at h
+    split at h
+    · simp at h
+    · rename_i c hc
+      simp only [evalSame] at h
+      split at h
+      · rename_i same
+        have typed := SrcEff.eval_typed target sigsOk condition ok d hc
+        rw [same_toCore same] at typed
+        exact .expression (.assert typed)
+      · simp at h
   | .setIndexEval slice index value, scope, ctx, next, inLoop, out, ok, d, h => by
     simp only [SrcStmt.lower, lowerSetIndexEval] at h
     split at h
@@ -1868,6 +1909,7 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         · simp at h
         · simp at h
         · simp at h
+        · simp at h
 
 /-! ## Functions and programs -/
 
@@ -1937,6 +1979,15 @@ theorem lowerFuncs_each {sigs : List Sig} {decls : SrcDecls} : ∀ {funcs : List
         · exact ⟨c, hc⟩
         · exact lowerFuncs_each hcs g hg
 
+theorem unitTail_some {ret : SrcType} {body : Option Stmt} {b : Stmt} (h : unitTail ret body = some b) :
+    ∃ out, body = some out := by
+  simp only [unitTail] at h
+  split at h
+  · cases body with
+    | none => simp at h
+    | some out => exact ⟨out, rfl⟩
+  · exact ⟨b, h⟩
+
 theorem lowerFunc_body {sigs : List Sig} {decls : SrcDecls} {func : SrcFunc} {c : Func} (h : lowerFunc sigs decls func = some c) :
     ∃ out, func.body.lower sigs decls func.ret (paramScope func.params 0 []) (paramsSize func.params) = some out := by
   unfold lowerFunc at h
@@ -1946,7 +1997,7 @@ theorem lowerFunc_body {sigs : List Sig} {decls : SrcDecls} {func : SrcFunc} {c 
     split at h
     · simp at h
     · rename_i b hb
-      exact ⟨b, hb⟩
+      exact unitTail_some hb
   · simp at h
 
 
@@ -2101,6 +2152,10 @@ theorem SrcType.declare_sound : ∀ (ty : SrcType) {d d' : SrcDecls}, ty.declare
     simp only [SrcType.declare] at h
     obtain ⟨ext, declared⟩ := SrcType.declare_sound element h
     exact ⟨ext, fun extD agrees => .slice (declared extD agrees)⟩
+  | .unit, _, _, h => by
+    simp only [SrcType.declare, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ => .unit⟩
 
 theorem declareTypes_sound : ∀ (types : List SrcType) {d d' : SrcDecls}, declareTypes types d = some d' →
     Extends d d' ∧ ∀ {P : Core.Program} {D : SrcDecls}, Extends d' D → Agrees P D →
@@ -2302,6 +2357,13 @@ theorem SrcStmt.declare_sound : ∀ (s : SrcStmt) {d d' : SrcDecls}, s.declare d
   | .setFieldEval _ _ value, d, d', h => by
     simp only [SrcStmt.declare] at h
     exact declareTypes_sound _ h
+  | .returnUnit, _, _, h => by
+    simp only [SrcStmt.declare, Option.some.injEq] at h
+    subst h
+    exact ⟨Extends.refl _, fun _ _ => trivial⟩
+  | .assert condition, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    exact declareTypes_sound _ h
 
 theorem declareParams_sound : ∀ (params : List SrcParam) {d d' : SrcDecls},
     declareParams params d = some d' →
@@ -2376,7 +2438,7 @@ theorem declareProgram_declared {sp : SrcProgram} {decls : SrcDecls}
   (declareFuncs_sound sp.funcs found).2 (Extends.refl decls) (agrees_toCore found)
 
 theorem funcsReturn_each : ∀ {funcs : List SrcFunc}, funcsReturn funcs = true →
-    ∀ func ∈ funcs, func.body.returns = true
+    ∀ func ∈ funcs, (func.ret.isUnit || func.body.returns) = true
   | [], _, _, mem => by cases mem
   | func :: rest, h, g, mem => by
     simp only [funcsReturn, Bool.and_eq_true] at h
@@ -2407,7 +2469,7 @@ every path, the Core meaning of the program is well typed by Core's rules. -/
 theorem lowerFuncs_wellTyped {sp : SrcProgram} {funcs : List Func}
     (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some funcs)
     (declared : sp.Declared sp.toCore)
-    (returns : ∀ func ∈ sp.funcs, func.body.returns = true) :
+    (returns : ∀ func ∈ sp.funcs, (func.ret.isUnit || func.body.returns) = true) :
     Typing.ProgramWellTyped sp.toCore := by
   refine ⟨fun c hc => by simp [SrcProgram.toCore] at hc, ?_⟩
   intro f hf
@@ -2418,7 +2480,11 @@ theorem lowerFuncs_wellTyped {sp : SrcProgram} {funcs : List Func}
   have stmt := SrcStmt.lower_typed rfl (sigsOk_program sp) func.body (inLoop := false)
     (paramScope_ok func.params (scopeOk_empty _) dparams) dbody hout
   simp only [Typing.FunctionWellTyped, SrcFunc.toCore]
-  exact ⟨trivial, stmt, Or.inr (returns_sound _ (returns func mem))⟩
+  have r := returns func mem
+  simp only [Bool.or_eq_true] at r
+  rcases r with unit | r
+  · exact ⟨trivial, stmt, Or.inl (by simp [SrcFunc.toCore, eq_unit unit, SrcType.toCore])⟩
+  · exact ⟨trivial, stmt, Or.inr (returns_sound _ r)⟩
 
 open TypeSound in
 /-- Type checker soundness: when the front pass accepts a program, its Core
