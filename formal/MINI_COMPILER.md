@@ -500,7 +500,10 @@ at an `i32` or `usize` index that may call, kept in bounds as a literal,
 `e & (n - 1)` or a nonnegative `e % n`; `match` expressions (`EMatch`) of
 any type in any of those places, on a call, an enum literal, a local or
 another match, with arms that use their binders and may call, index and
-match; and later functions with struct,
+match; `s[i] = value` (`SetIndexEval`) of an `i32` slice with an effectful
+index and value, often a value that calls a function writing `s` at the same
+literal index, so the store (after the value in Core's order) must win; and
+later functions with struct,
 enum and slice parameters and struct and enum results. A function with a
 slice parameter writes into its caller's slice, the right side of `&&` and
 `||` often calls one, and the entry's result folds in every element of its
@@ -515,7 +518,11 @@ divisions, 1,266 struct and enum literals and 8,455 Eval statements (2,142
 `let`, 639 assignments, 1,018 `if`, 992 `while`, 4,004 `return`, 660 bare
 calls). The same seeds before indexing: 1,800 programs, 14,400 calls, no
 disagreements. With `match`, seeds 51-56 again: 1,800 programs, 14,400 calls,
-no disagreements and no rejections, with 2,878 `match` expressions.
+no disagreements and no rejections, with 2,878 `match` expressions. With
+`SetIndexEval`, seeds 51-56 again: 1,800 programs, 14,400 calls, no
+disagreements and no rejections; 529 such stores, of which 305 runs had the
+value's call write the very element stored (with the value's write winning
+instead, 19 programs would give other results).
 
 Not covered yet: the stdlib, which needs generics and modules in the front
 pass.
