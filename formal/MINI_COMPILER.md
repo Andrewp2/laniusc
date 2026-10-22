@@ -709,7 +709,7 @@ program's own first; `sourceProgram` is the one-file case.
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Frontend` | 5228 | 15 | extracted from `formal/lani/mini/frontend.lani`: the grammar table, `validate_tree`, `build`, the monomorphizer |
+| `Frontend` | 5513 | 15 | extracted from `formal/lani/mini/frontend.lani`: the grammar table, `validate_tree`, `build`, the monomorphizer |
 | `FrontLex` | 59 | 0.6 | tokens from the Lean lexer; `sourceProgram`, `sourceProgramFiles` |
 | `FrontSpec` | 354 | 0.9 | `CTree.leaves`, `CTree.preorder`, `Shape`, `Derives`, `Reads`; `validate_sound`, `sourceProgram_sound`, `sourceProgramFiles_sound` |
 
@@ -729,7 +729,7 @@ laniusc's lexer and parser are not trusted. The trusted parts are the Lean
 lexer, the grammar table, the grammar's unambiguity (not proved) and `build`
 as the meaning of the concrete syntax. TRUSTED_BASE.md section 4 lists them.
 
-`frontend.lani` is about 6,700 hand-written lines, followed by the generated
+`frontend.lani` is about 7,050 hand-written lines, followed by the generated
 grammar table: 318 productions, with terminals as lexer token codes. Two
 tools regenerate it:
 
@@ -787,8 +787,9 @@ Compound assignments `x op= e` and `x.f op= e`, for `+ - * & | ^`, read as
 
 Generics, modules, constants and methods. Each file is a module, named by
 its `module a::b;` item (the empty path without one). A path `a::b::x` names
-`x` of module `a::b`; a bare `x` names `x` of the current module. `import`
-items, traits, type aliases and extern functions are skipped. Generic structs,
+`x` of module `a::b`; a bare `x` names `x` of the current module. An
+`import m;` item only adds m's variants to those a bare variant name may
+mean; traits, type aliases and extern functions are skipped. Generic structs,
 enums and functions are monomorphized by `mono`, a worklist of instances, each
 a declaration with its type arguments:
 - the roots are the first file's functions without type parameters, in order,
@@ -940,9 +941,9 @@ conditions and `assert`. An operator's operands expect the type of whichever
 operand has one, else (for arithmetic) the operator's expected type; the
 operand of `as` and the heap operations' operands expect nothing, so their
 literals stay `i32`. Literals of 2^31 and above are rejected, as for `i32`.
-A literal does not take a type parameter's type from the other arguments, so
-`unwrap_or(wrap(r), 0)` with `r: isize` is rejected (the `0` makes `T` both
-`i32` and `isize`), as `(0 as u64)` is needed for the unsigned types. The
+A literal argument of a generic call takes its parameter's type (see the
+type argument inference below), so `unwrap_or(wrap(r), 0)` with `r: isize`
+is `unwrap_or<isize>`. The
 cases `isize` (its `want.lani` writes every literal as `(n as isize)`) and
 `reject_isize_big` test this. Results, 2026-10-22, with the oracle's unit
 functions and `assert` on: seeds 17 and 18, 400 programs (at seed 17, 162
@@ -1001,14 +1002,69 @@ enums, or a variant spelled like a type; its functions, types and constants
 must still have distinct names, and no variant may be spelled like a
 function or constant.
 
+Fields and methods of any value. A postfix chain may continue past its first
+step: `q.p.x`, `mk(a).k`, `left.ty.is_i32()`, `unbox(l).within(locals)`. A
+field of a local is `Field`. A field of any other value is a call of that
+field's projection, `fn(v: T) -> F { return v.f; }`, a function instance
+that `mono` adds like any other: its declaration number is the number of
+declared functions plus the field's index, its one type argument T, and it
+is numbered when it is first requested. A method's receiver may be any
+value, passed as the call's first argument. Binding the value to a
+temporary before the statement would move its effects ahead of the
+statement's earlier ones, and has no place inside a `while` condition or a
+match arm; a projection call keeps Core's order. A call whose arguments are
+all pure keeps its statement form (`LetCall`, `SetCall`) however it is
+reached. The case `chains` tests these. `compileSource` rejects it: an
+aggregate field read inside an effectful expression,
+`ECall(f, [EPure(Field(x, j))])` with field j a struct, does not lower,
+while `LetCall(.., f, [Field(x, j)], ..)` does.
+
+Type arguments from the expected type and the arguments in order. A generic
+call's type parameters are bound first by matching its result type with the
+type its value is stored at, then by each argument in order, and each
+argument is read at its parameter's type once every type parameter is
+bound. So `cons(x, empty())`, `core::option::unwrap_or(None, 5)` and an arm
+`None -> empty()` read. An integer literal argument binds nothing, since
+laniusc gives it its parameter's type: with `u: u8`, `same(u, 7)` is
+`same<u8>` and its `7` is `Unsigned(U8, 7)`. If a type parameter is still
+unbound after the arguments, the literals count as `i32`, as before. The
+cases `infer_args` and `imports` test these.
+
+Match arms in any order. A `match` needs one arm per variant, each variant
+named by exactly one arm, and its arms are put in variant order (as
+`SrcArm`s and `EMatch` values are indexed); only one arm runs, so the order
+they are written in has no effect. `frontend.lani` writes `None -> ..` before
+`Some(..) -> ..` throughout. The cases `arm_order` and `reject_arm_twice`.
+Results, 2026-10-22, with all three: seeds 35 and 36, 400 programs, all read
+as expected, 48/48 mutants rejected; `--generic` seed 35, 200 programs,
+24/24; 27 of 27 cases (seeds 33 and 34 and `--generic` seed 33, before the
+arm order, also all as expected).
+
+A census of the mini compiler's own sources (step 11): laniusc parses each
+file, import lines kept as above (`frontend.lani` with its `module` fields
+and parameters renamed, since `module` is a keyword and laniusc rejects it
+as a name), and the front end reads each function on its own, type
+parameters at `i32`, with `core::option`, `core::mem`, `core::panic` and
+`alloc::allocator` loaded. Functions read, 2026-10-22:
+
+| front end | `compiler.lani` | `frontend.lani` |
+|---|---|---|
+| before the step 11 work | 145 of 442 | 279 of 757 |
+| variants by enum, slice returns | 242 of 462 | 449 of 796 |
+| fields and methods of any value, argument inference | 320 of 462 | 495 of 796 |
+| match arms in any order | 431 of 462 | 784 of 796 |
+
+What is left: literals of 2^31 and above outside constants (`Lit(4294967296)`,
+`uint_mask`), locals spelled like a function (`kid`, `sigs`, `arities`,
+`length`), and the shifts in `le32` and `le64`.
+
 What it does not read yet:
 - shifts and `&self`, which have no `SrcProgram` form;
 - `=>` match arms, and block or `if` arms;
 - integer literals of 2^31 and above outside constants;
 - methods of generic impls called as `T::m` where `T` is not a type
   parameter (`Vec::new()`), and trait-generic code that relies on bounds;
-- a field of a call's result (`f(x).a`), indexing a slice that is not a
-  local, and method calls on a receiver that is not a local.
+- indexing a slice that is not a local.
 
 ### Milestone 4: the compiler in Lanius, and extraction
 

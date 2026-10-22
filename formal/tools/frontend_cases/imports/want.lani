@@ -3,7 +3,7 @@ enum OptionI { SomeI(i32), NoneI }
 fn top(n: i32) -> i32 {
     let o: OptionI = SomeI(n);
     let a: i32 = match (o) { SomeI(v) -> v + 1, NoneI -> 0 };
-    let b: i32 = unwrap_or_i(o, 5);
+    let b: i32 = unwrap_or_i(NoneI, 5);
     let c: i32 = method_unwrap_or_i(o, 7);
     return a + b + c;
 }

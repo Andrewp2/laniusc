@@ -1,0 +1,44 @@
+struct P { x: i32, y: i32 }
+
+struct Q { p: P, k: i32 }
+
+fn p_sum(s: P) -> i32 {
+    return s.x + s.y;
+}
+
+fn p_moved(s: P, d: i32) -> P {
+    return P { x: s.x + d, y: s.y };
+}
+
+fn mk(n: i32) -> Q {
+    return Q { p: P { x: n, y: 2 }, k: 3 };
+}
+
+fn run(n: i32) -> i32 {
+    let q: Q = mk(n);
+    let a: i32 = p_x(q.p);
+    let b: i32 = q_k(mk(a));
+    let c: i32 = p_sum(q.p);
+    let d: i32 = p_sum(q_p(mk(b))) + p_y(p_moved(p_moved(q.p, a), b));
+    if (p_x(q_p(mk(d))) > q.k) {
+        return a;
+    }
+    a = p_x(q_p(mk(c)));
+    return a + b + c + d;
+}
+
+fn p_x(v: P) -> i32 {
+    return v.x;
+}
+
+fn q_k(v: Q) -> i32 {
+    return v.k;
+}
+
+fn q_p(v: Q) -> P {
+    return v.p;
+}
+
+fn p_y(v: P) -> i32 {
+    return v.y;
+}

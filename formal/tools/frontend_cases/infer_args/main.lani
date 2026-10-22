@@ -1,0 +1,23 @@
+enum Opt<T> { No, Yes(T) }
+
+fn nothing<T>() -> Opt<T> {
+    return No;
+}
+
+fn pick<T>(x: T, o: Opt<T>) -> T {
+    return match (o) { No -> x, Yes(v) -> v };
+}
+
+fn same<T>(x: T, y: T) -> T {
+    return y;
+}
+
+fn run(n: i32, u: u8) -> i32 {
+    let a: i32 = pick(n, nothing());
+    let b: i32 = pick(u, nothing()) as i32;
+    let c: u8 = same(u, 7);
+    let d: u8 = same(7, u);
+    let e: Opt<u8> = nothing();
+    let f: u64 = same(5, 6);
+    return a + b + (c as i32) + (d as i32) + (f as i32);
+}

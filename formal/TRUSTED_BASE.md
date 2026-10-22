@@ -168,8 +168,9 @@ still a parse tree of the same tokens. Trusted:
   makes these choices:
   - each file is a module, named by its `module` item (the empty path
     without one); `m::x` names `x` of the module `m`, a bare `x` names `x`
-    of the current module, and `import` items, traits, type aliases and
-    extern functions are skipped;
+    of the current module; `import m;` only adds m's variants to those a
+    bare variant name may mean, and traits, type aliases and extern
+    functions are skipped;
   - generic declarations are monomorphized (`mono`): an instance is a
     declaration with its type arguments, and a function or type id is a
     position in the instance tables. The first file's functions without type
@@ -181,12 +182,20 @@ still a parse tree of the same tokens. Trusted:
   - a function is its position among the functions;
   - a struct or enum is its position among the type declarations;
   - a call's type arguments are written, or inferred by matching the
-    callee's parameter types with the argument types and its result type
-    with the type of the `let` or assigned local; a conflict or an
-    unbound parameter rejects;
-  - `x.m(args)` (`x` a local) and `T::m(args)` (`T` a type parameter) call
+    callee's result type with the type its value is stored at, then its
+    parameter types with the argument types in order, each argument read at
+    its parameter's type once all are bound; an integer literal argument
+    binds nothing unless a parameter is left unbound, when it counts as
+    `i32`; a conflict or an unbound parameter rejects;
+  - `x.m(args)` (`x` any value) and `T::m(args)` (`T` a type parameter) call
     the method `m` of the one `impl` whose type matches the receiver's type,
     with `self` (by value) the receiver;
+  - a `match` has one arm per variant of its scrutinee's enum, in any order,
+    and its arms are listed in variant order (only one runs, so their order
+    has no effect);
+  - `x.f` is `Field` when `x` is a local, and otherwise the call of the
+    projection `fn(v: T) -> F { return v.f; }` on `x`, an instance numbered
+    like any other;
   - bounds and `where` clauses on functions are not checked. A wrong
     instance is still a well-formed `SrcProgram`, and its meaning is what
     `toCore` gives it, so this choice affects which programs are read, not

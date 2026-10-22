@@ -1,0 +1,37 @@
+enum OptB { NoB, YesB(u8) }
+
+enum OptI { NoI, YesI(i32) }
+
+fn run(n: i32, u: u8) -> i32 {
+    let a: i32 = pick_i(n, nothing_i());
+    let b: i32 = pick_b(u, nothing_b()) as i32;
+    let c: u8 = same_b(u, 7);
+    let d: u8 = same_b(7, u);
+    let e: OptB = nothing_b();
+    let f: u64 = same_w(5, 6);
+    return a + b + (c as i32) + (d as i32) + (f as i32);
+}
+
+fn pick_i(x: i32, o: OptI) -> i32 {
+    return match (o) { NoI -> x, YesI(v) -> v };
+}
+
+fn nothing_i() -> OptI {
+    return NoI;
+}
+
+fn pick_b(x: u8, o: OptB) -> u8 {
+    return match (o) { NoB -> x, YesB(v) -> v };
+}
+
+fn nothing_b() -> OptB {
+    return NoB;
+}
+
+fn same_b(x: u8, y: u8) -> u8 {
+    return y;
+}
+
+fn same_w(x: u64, y: u64) -> u64 {
+    return y;
+}

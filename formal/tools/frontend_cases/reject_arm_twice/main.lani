@@ -1,0 +1,7 @@
+enum Shape { Dot, Line(i32), Box(i32, i32) }
+
+fn run(n: i32) -> i32 {
+    let s: Shape = Line(n);
+    let a: i32 = match (s) { Line(k) -> k, Dot -> 1, Line(j) -> j };
+    return a;
+}

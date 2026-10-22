@@ -1,0 +1,12 @@
+enum Shape { Dot, Line(i32), Box(i32, i32) }
+
+fn area(s: Shape) -> i32 {
+    return match (s) { Dot -> 0, Line(k) -> 0, Box(w, h) -> w * h };
+}
+
+fn run(n: i32) -> i32 {
+    let s: Shape = Line(n);
+    let a: i32 = match (s) { Dot -> 1, Line(k) -> k, Box(w, h) -> w + h };
+    let b: i32 = area(s) + match (s) { Dot -> 2, Line(k) -> k + 1, Box(w, h) -> h };
+    return a + b;
+}
