@@ -77,7 +77,7 @@ theorem lexInto_refines_lexRaw_of_body
     parametersBind calleeShape bodyContract completedFrame
   simpa [lexRawValue, resultEq] using contract.erase
 
-theorem lexInto_id_current : FrontendArtifact.lexInto.id = 53 := by
+theorem lexInto_id_current : FrontendArtifact.lexInto.id = 54 := by
   rfl
 
 end Lanius.Compiler
