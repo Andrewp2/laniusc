@@ -34,9 +34,10 @@ e & (n - 1) or nonnegative e % n), and `match` expressions of any type on
 a call, literal, local or match, whose arms use their binders (an arm makes
 no new locals), and `s[i] = value` of a slice of i32, word structs or word
 enums with an effectful index and value (for structs and enums often another
-slice's element, to[i] = from[j]); often the value calls a function that writes s at the same
-literal index, which the store, after the value in Core's order, overwrites.
-Later
+slice's element, to[i] = from[j]); often the value calls a function that
+writes s at the same literal index, which the store, after the value in
+Core's order, overwrites. Also x.f = value for a scalar field of a struct
+local with an effectful value. Later
 functions take struct, enum and slice parameters and return structs and
 enums; one with a slice parameter writes into the caller's slice, the right
 side of `&&` and `||` often calls one, and the entry's result folds in every
@@ -95,7 +96,8 @@ def i32(x):
 #             ('letAlloc', id, size, shift, body) ('letSlice', id, element, address, n, body)
 #             ('letIndex', id, element, slice, k, body) ('setIndex', slice, k, e)
 #             ('letEval', id, ty, x, body) ('setEval', id, x) ('ifEval', x, a, b) ('whileEval', x, body)
-#             ('returnEval', x) ('discard', x) ('setIndexEval', slice, x, y), with x, y effectful expressions
+#             ('returnEval', x) ('discard', x) ('setIndexEval', slice, x, y) ('setFieldEval', id, j, x),
+#             with x, y effectful expressions
 
 SCALARS = ['i32', 'bool'] + list(UINT_BITS)
 LETS = ('let', 'call', 'letStruct', 'letEnum', 'letMatch', 'letAlloc', 'letSlice', 'letIndex', 'letEval')
@@ -462,8 +464,10 @@ class Gen:
                       'slice', 'index', 'index', 'store']
                      if depth > 0 else ['let', 'set', 'struct', 'setField', 'index', 'store'])
             if EFFECTS:
-                kinds += (['letEval', 'letEval', 'setEval', 'ifEval', 'whileEval', 'discard', 'setIndexEval', 'setIndexEval']
-                          if depth > 0 else ['letEval', 'setEval', 'discard', 'setIndexEval', 'setIndexEval'])
+                kinds += (['letEval', 'letEval', 'setEval', 'ifEval', 'whileEval', 'discard', 'setIndexEval', 'setIndexEval',
+                           'setFieldEval', 'setFieldEval']
+                          if depth > 0 else ['letEval', 'setEval', 'discard', 'setIndexEval', 'setIndexEval',
+                                             'setFieldEval'])
             kind = rng.choice(kinds)
             slices = [(i, t) for i, t in env if t[0] == 'slice']
             if kind == 'let':
@@ -593,6 +597,12 @@ class Gen:
                 later = self.callees(None, env)
                 if later:
                     items.append(('discard', self.eff_call(rng.choice(later), 3, env, items)))
+            elif kind == 'setFieldEval':
+                fields = [(i, j, f) for i, t in env if isinstance(t, tuple) and t[0] == 'struct'
+                          for j, f in enumerate(TYPES.structs[t[1]])]
+                if fields:
+                    ident, j, f = rng.choice(fields)
+                    items.append(('setFieldEval', ident, j, self.eff(f, 3, env, items)))
             elif kind == 'setIndexEval':
                 views = [(i, t[1], t[2]) for i, t in env if isinstance(t, tuple) and t[0] == 'slice']
                 if views:
@@ -899,6 +909,10 @@ def run_stmt(s, env, funcs):
         raise Returned(ev_eff(s[1], env, funcs))
     elif kind == 'discard':
         ev_eff(s[1], env, funcs)
+    elif kind == 'setFieldEval':
+        # A callee cannot reach the caller's locals, so the value cannot move the struct.
+        value = ev_eff(s[3], env, funcs)
+        env[s[1]][0][s[2]] = value
     elif kind == 'setIndexEval':
         # Core's order: the index, then the value, then the store.
         k, elements = ev_eff(s[2], env, funcs), env[s[1]][0]
@@ -1048,6 +1062,8 @@ def lean_stmt(s):
         return f'(.discard {lean_eff(s[1])})'
     if kind == 'setIndexEval':
         return f'(.setIndexEval {s[1]} {lean_eff(s[2])} {lean_eff(s[3])})'
+    if kind == 'setFieldEval':
+        return f'(.setFieldEval {s[1]} {s[2]} {lean_eff(s[3])})'
     if kind == 'let':
         return f'(.let {s[1]} {lean_ty(s[2])} {lean_expr(s[3])} {lean_stmt(s[4])})'
     if kind == 'call':
@@ -1214,6 +1230,8 @@ def lani_stmt(s, prefix, indent):
         return [f'{pad}{lani_eff(s[1], prefix)};']
     if kind == 'setIndexEval':
         return [f'{pad}v{s[1]}[{lani_eff(s[2], prefix)}] = {lani_eff(s[3], prefix)};']
+    if kind == 'setFieldEval':
+        return [f'{pad}v{s[1]}.f{s[2]} = {lani_eff(s[3], prefix)};']
     if kind == 'let':
         return [f'{pad}let v{s[1]}: {lani_ty(s[2])} = {lani_expr(s[3])};'] + lani_stmt(s[4], prefix, indent)
     if kind == 'call':
