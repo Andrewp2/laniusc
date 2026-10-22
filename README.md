@@ -42,6 +42,10 @@ full scope and delivery requirements. New APIs follow the
 [owned UTF-8 String](docs/stdlib-string.md) has executable native examples and
 allocation-failure tests.
 
+Optional modules use the [`extended` source root](extended/README.md). The first
+is [`ext::csv`](docs/extended-csv.md), with an executable CSV normalizer and
+allocation-failure coverage.
+
 ## Benchmarks
 
 TODO

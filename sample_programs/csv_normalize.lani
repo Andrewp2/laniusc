@@ -1,0 +1,69 @@
+// Compile with --source-root extended --stdlib-root stdlib.
+// Read UTF-8 CSV from stdin and emit quoted fields with CRLF record endings.
+module app::main;
+import alloc::string;
+import core::result;
+import ext::csv;
+import std::io;
+import std::io_byte;
+import std::vec;
+
+fn normalize(input: alloc::string::String) -> i32 {
+    let options: ext::csv::Options = ext::csv::default_options();
+    let parsed: core::result::Result<ext::csv::Table, ext::csv::Error> = ext::csv::parse(input, options);
+    return match (parsed) { Ok(table) -> write_table(table), Err(error) -> csv_error(error) };
+}
+
+fn csv_error(error: ext::csv::Error) -> i32 {
+    let allocation: bool = match (error) { AllocationFailed -> true, _ -> false };
+    if (allocation) { std::io::eprintln("allocation failed"); return 4; }
+    std::io::eprintln("invalid CSV input");
+    return 2;
+}
+
+fn write_table(table: ext::csv::Table) -> i32 {
+    let encoded: core::result::Result<alloc::string::String, ext::csv::Error> = ext::csv::encode(table);
+    table.destroy();
+    return match (encoded) { Ok(text) -> write_text(text), Err(error) -> csv_error(error) };
+}
+
+fn write_text(text: alloc::string::String) -> i32 {
+    let bytes: [u8] = text.as_bytes();
+    let index: i32 = 0;
+    while (index < text.byte_len()) {
+        if (!std::io_byte::write_stdout_byte(bytes[index] as i32)) { text.destroy(); return 3; }
+        index += 1;
+    }
+    text.destroy();
+    return 0;
+}
+
+fn main() -> i32 {
+    let input: std::vec::Vec<u8> = std::vec::new();
+    let byte: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
+    while (byte >= 0) {
+        let previous: i32 = std::vec::len(input);
+        input = std::vec::try_push(input, byte as u8);
+        if (std::vec::len(input) == previous) { std::vec::destroy(input); return 4; }
+        byte = std::io_byte::read_stdin_byte_or(-1, -2);
+    }
+    if (byte == -2) { std::vec::destroy(input); return 3; }
+    let bytes: [u8] = std::vec::as_slice(input);
+    let decoded: core::result::Result<alloc::string::String, alloc::string::Error> =
+        alloc::string::from_utf8(bytes, std::vec::len(input));
+    std::vec::destroy(input);
+    return match (decoded) { Ok(text) -> finish(text), Err(error) -> invalid_text(error) };
+}
+
+fn finish(text: alloc::string::String) -> i32 {
+    let result: i32 = normalize(text);
+    text.destroy();
+    return result;
+}
+
+fn invalid_text(error: alloc::string::Error) -> i32 {
+    let allocation: bool = match (error) { AllocationFailed -> true, _ -> false };
+    if (allocation) { std::io::eprintln("allocation failed"); return 4; }
+    std::io::eprintln("invalid UTF-8 input");
+    return 2;
+}

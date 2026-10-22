@@ -1,0 +1,72 @@
+// expect: 0
+module app::main;
+import alloc::string;
+import core::option;
+import core::result;
+import ext::csv;
+
+fn decode(bytes: [u8], count: i32) -> alloc::string::String {
+    let value: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_utf8(bytes, count);
+    return core::result::unwrap(value);
+}
+
+fn limit_error(error: ext::csv::Error) -> bool {
+    let limited: bool = match (error) { LimitExceeded(offset) -> offset >= 0, _ -> false };
+    return limited;
+}
+
+fn limited(input: alloc::string::String, options: ext::csv::Options) -> bool {
+    let result: core::result::Result<ext::csv::Table, ext::csv::Error> = ext::csv::parse(input, options);
+    return match (result) { Ok(_) -> false, Err(error) -> limit_error(error) };
+}
+
+fn main() -> i32 {
+    let bytes: [u8; 9] = [97, 44, 98, 13, 10, 99, 44, 100, 10];
+    let input: alloc::string::String = decode(bytes, 9);
+    let options: ext::csv::Options = ext::csv::default_options();
+    let parsed: core::result::Result<ext::csv::Table, ext::csv::Error> = ext::csv::parse(input, options);
+    let table: ext::csv::Table = core::result::unwrap(parsed);
+    if (table.row_count() != 2 || core::option::unwrap_or(table.field_count(0), -1) != 2) { return 1; }
+    if (core::option::is_some(table.field_count(-1)) || core::option::is_some(table.field_count(2))) { return 2; }
+    if (!core::result::is_err(table.try_field(-1, 0)) || !core::result::is_err(table.try_field(2, 0))) { return 3; }
+    if (!core::result::is_err(table.try_field(0, -1)) || !core::result::is_err(table.try_field(0, 2))) { return 4; }
+    let copied: core::result::Result<alloc::string::String, ext::csv::Error> = table.try_field(1, 1);
+    let field: alloc::string::String = core::result::unwrap(copied);
+    if (core::option::unwrap_or(field.byte_at(0), 0) != 100) { return 5; }
+    field.clear();
+    field.destroy();
+    let again: core::result::Result<alloc::string::String, ext::csv::Error> = table.try_field(1, 1);
+    let unchanged: alloc::string::String = core::result::unwrap(again);
+    if (unchanged.byte_len() != 1) { return 6; }
+    unchanged.destroy();
+    table.destroy();
+    if (table.row_count() != 0) { return 7; }
+    table.destroy();
+
+    options.allow_lf = false;
+    let strict: core::result::Result<ext::csv::Table, ext::csv::Error> = ext::csv::parse(input, options);
+    if (!core::result::is_err(strict)) { return 8; }
+    options.allow_lf = true;
+    options.max_records = 1;
+    if (!limited(input, options)) { return 9; }
+    options.max_records = 10;
+    options.max_fields = 1;
+    if (!limited(input, options)) { return 10; }
+    options.max_fields = 10;
+    options.max_field_bytes = 0;
+    if (!limited(input, options)) { return 11; }
+    options.max_field_bytes = -1;
+    if (!core::result::is_err(ext::csv::parse(input, options))) { return 12; }
+    options = ext::csv::default_options();
+    let uneven_bytes: [u8; 5] = [97, 10, 98, 44, 99];
+    let uneven: alloc::string::String = decode(uneven_bytes, 5);
+    if (!core::result::is_err(ext::csv::parse(uneven, options))) { return 13; }
+    options.require_same_width = false;
+    let flexible: core::result::Result<ext::csv::Table, ext::csv::Error> = ext::csv::parse(uneven, options);
+    let different: ext::csv::Table = core::result::unwrap(flexible);
+    if (core::option::unwrap_or(different.field_count(0), -1) != 1 || core::option::unwrap_or(different.field_count(1), -1) != 2) { return 14; }
+    different.destroy();
+    uneven.destroy();
+    input.destroy();
+    return 0;
+}

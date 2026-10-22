@@ -1,0 +1,51 @@
+// expect: 1
+// Failing any mmap after the input's allocation must return 0 and free all
+// successful allocations. The Rust harness checks the syscall trace.
+module app::main;
+import alloc::string;
+import core::option;
+import core::result;
+import ext::csv;
+
+fn failure_code(error: ext::csv::Error) -> i32 {
+    return match (error) { AllocationFailed -> 0, _ -> 2 };
+}
+
+fn copied_field(field: alloc::string::String) -> i32 {
+    let correct: bool = field.byte_len() == 1 && core::option::unwrap_or(field.byte_at(0), 0) == 100;
+    field.destroy();
+    if (correct) { return 1; }
+    return 3;
+}
+
+fn encode_and_copy(table: ext::csv::Table) -> i32 {
+    let encoded: core::result::Result<alloc::string::String, ext::csv::Error> = ext::csv::encode(table);
+    if (table.row_count() != 2 || core::option::unwrap_or(table.field_count(1), -1) != 2) { return 4; }
+    if (core::result::is_err(encoded)) {
+        let error: ext::csv::Error = core::result::unwrap_err(encoded);
+        table.destroy();
+        return failure_code(error);
+    }
+    let output: alloc::string::String = core::result::unwrap(encoded);
+    if (output.byte_len() != 18) { return 5; }
+    output.destroy();
+    let copied: core::result::Result<alloc::string::String, ext::csv::Error> = table.try_field(1, 1);
+    table.destroy();
+    return match (copied) { Ok(field) -> copied_field(field), Err(error) -> failure_code(error) };
+}
+
+fn run(input: alloc::string::String) -> i32 {
+    let options: ext::csv::Options = ext::csv::default_options();
+    let parsed: core::result::Result<ext::csv::Table, ext::csv::Error> = ext::csv::parse(input, options);
+    return match (parsed) { Ok(table) -> encode_and_copy(table), Err(error) -> failure_code(error) };
+}
+
+fn main() -> i32 {
+    let bytes: [u8; 7] = [97, 44, 98, 10, 99, 44, 100];
+    let decoded: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_utf8(bytes, 7);
+    let input: alloc::string::String = core::result::unwrap(decoded);
+    let status: i32 = run(input);
+    if (input.byte_len() != 7 || core::option::unwrap_or(input.byte_at(6), 0) != 100) { return 6; }
+    input.destroy();
+    return status;
+}

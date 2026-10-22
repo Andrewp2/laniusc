@@ -51,7 +51,7 @@ fn main() -> i32 {
     std::vec::destroy(input);
     return match (decoded) {
         Ok(text) -> finish(text),
-        Err(_) -> invalid_input(),
+        Err(error) -> invalid_input(error),
     };
 }
 
@@ -61,7 +61,9 @@ fn finish(text: alloc::string::String) -> i32 {
     return result;
 }
 
-fn invalid_input() -> i32 {
+fn invalid_input(error: alloc::string::Error) -> i32 {
+    let allocation: bool = match (error) { AllocationFailed -> true, _ -> false };
+    if (allocation) { std::io::eprintln("allocation failed"); return 4; }
     std::io::eprintln("invalid UTF-8 input");
     return 2;
 }

@@ -28,7 +28,7 @@ package distribution is a separate deliverable.
 | Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Many implementations and runtime fixtures exist; consolidate duplicate paths |
 | Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic operations exist; length-bearing APIs and uniform bounds errors remain |
 | Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | Shared protocol and collection integration remain |
-| Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Byte codecs and cell-based text helpers exist; owned String remains |
+| Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed owned String, byte codecs and scalar operations execute; split/join, formatting and borrowed text integration remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings and raw views exist; ownership conventions need consolidation |
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Generic vectors/deques and linear maps/sets exist; other structures remain |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Concrete I/O helpers exist; shared abstractions remain |
@@ -115,5 +115,10 @@ API list; unrelated library work can continue.
   text-processing program. See [stdlib-string.md](stdlib-string.md) for exact
   coverage and remaining String operations.
 - Compiler and runtime prerequisites: [library-dependencies.md](library-dependencies.md).
+- Extended CSV: parsing, independent field copies and canonical encoding execute
+  on x86_64 Linux, including generated tables and allocation fault injection.
+  See [extended-csv.md](extended-csv.md). Streaming and row construction remain.
+- Next integration milestone: shared reader/writer contracts, JSON, and a
+  CSV-to-JSON application using validation and grouping.
 - The older [execution audit](stdlib-foundation.md) remains historical evidence;
   its top-level checkpoints do not establish this branch's current behavior.
