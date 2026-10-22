@@ -37,3 +37,4 @@ import Lanius.Std.MapFind
 import Lanius.Std.MapSpec
 import Lanius.Std.MapSet
 import Lanius.Std.SetCount
+import Lanius.Std.VecClient
