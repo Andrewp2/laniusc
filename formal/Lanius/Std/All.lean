@@ -5,3 +5,5 @@ import Lanius.Std.VecRep
 import Lanius.Std.VecView
 import Lanius.Std.VecSpec
 import Lanius.Std.VecCheck
+import Lanius.Std.VecLoop
+import Lanius.Std.VecSearch
