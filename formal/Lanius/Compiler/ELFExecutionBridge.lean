@@ -251,8 +251,12 @@ noncomputable def directEnvironment
   have layout : DirectLayout program
       (reachedState before checked.displacement) :=
     { prologue, tail, call, calleePrologue, calleeCall }
+  have literal : program.calleeMode.LiteralEvidence := by
+    have ready := checked.ready
+    rw [programExact] at ready
+    exact ready
   rw [programExact]
-  exact PreservationEnvironment.direct formed layout
+  exact PreservationEnvironment.direct literal formed layout
 
 /- The checker-owned standard path now reaches the x86 exit boundary without
    making callers reconstruct or assume a preservation environment. -/

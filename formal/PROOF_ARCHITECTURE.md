@@ -279,13 +279,17 @@ controlled comparisons, and rejected performance experiments.
 
 The project is not yet a verified compiler. In particular:
 
-The full `lake build Lanius` facade currently has two known failures. The
-legacy `Lexer.Artifact` quotes `lexer.json`, whose embedded source predates the
-current enum-based lexer, so its exact-source provenance theorem correctly
-fails. `Compiler.ELFExecutionBridge` also needs literal-callee evidence for a
-direct-call preservation constructor, while the current authenticated direct
-mode can contain a body callee. Neither failure is bypassed by the direct
-source-to-Core checker; its focused target and connected tests pass separately.
+The full `lake build Lanius` facade builds. The legacy `Lexer.Artifact` quotes
+`lexer.json`, whose embedded source is `lexer.lani` as of f358fd89, before the
+current enum-based lexer; its exporter (`crates/laniusc-formal-export`) was
+removed in 472e2859, so the artifact cannot be regenerated. Its exact-source
+provenance theorem therefore pins that snapshot
+(`Compiler/Lexer/lexer_source.lani`), and the lexer proofs over
+`lexerProgram` are about it, not the current `verified_compiler` lexer.
+`ELFExecutionCheck.check` accepts a direct program only with literal-callee
+evidence (`ExecutionReady`), since runtime preservation is proved only for a
+literal callee; a direct program with a body callee is rejected
+(`directBodyCallee`) until body preservation is proved.
 
 - `FunctionCheck` is still a small backend fragment.  Its recursive
   expression/statement path is now authoritative, but local reads and writes,

@@ -81,7 +81,28 @@ inductive Failure where
   | startup
   | jump
   | entrypoint
+  | directBodyCallee
 deriving DecidableEq, Repr
+
+/- Runtime preservation is proved for a direct program only when its callee
+   returns a literal (`DirectCalleeMode.LiteralEvidence`); a generic body callee
+   has no preservation theorem yet.  The checker therefore accepts a direct
+   program only together with that evidence, so execution theorems never need
+   it as a premise. -/
+def literalEvidence? {callee : Core.Function} {calleeImage : FunctionImage} :
+    (mode : DirectCalleeMode callee calleeImage) → Option mode.LiteralEvidence
+  | .literal evidence => some evidence
+  | .literalParametersTrailing evidence => some evidence
+  | .body _ => none
+
+def ExecutionReady : Authenticated executable image → Type
+  | .standard _ => PUnit
+  | .direct _ checked => checked.calleeMode.LiteralEvidence
+
+def executionReady? : (program : Authenticated executable image) →
+    Option (ExecutionReady program)
+  | .standard _ => some PUnit.unit
+  | .direct _ checked => literalEvidence? checked.calleeMode
 
 /- This is the immutable evidence produced by the checker.  In particular,
    startup/jump bytes and the selected target slice are not runtime premises. -/
@@ -105,6 +126,7 @@ structure Checked (encoded : String)
     endToEnd.certificate.certificate.certificate.elf
   entrySliceMember : entrySlice ∈ endToEnd.image.slices
   entrySliceExact : entrySlice.image = endToEnd.program.entrypoint.image
+  ready : ExecutionReady endToEnd.program
 
 def check (encoded : String) (expectedSources : List Extraction.SourceFile)
     (resolver : optParam ProgramLowering.ExternalBehaviorResolver
@@ -129,6 +151,9 @@ def check (encoded : String) (expectedSources : List Extraction.SourceFile)
                       endToEnd.program.entrypoint.image endToEnd.image.slices with
                   | none => .error .entrypoint
                   | some found =>
+                    match executionReady? endToEnd.program with
+                    | none => .error .directBodyCallee
+                    | some ready =>
                       .ok {
                         endToEnd
                         endToEndAccepted
@@ -140,7 +165,8 @@ def check (encoded : String) (expectedSources : List Extraction.SourceFile)
                         jumpAccepted
                         entrySlice := found.1
                         entrySliceMember := found.2.2
-                        entrySliceExact := found.2.1 }
+                        entrySliceExact := found.2.1
+                        ready }
 
 /- The public runtime assumptions are the mapped ELF, the initial RIP, and
    image/stack separation.  Startup facts and the dynamic frame-window bound
