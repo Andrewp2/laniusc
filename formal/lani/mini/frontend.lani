@@ -2338,6 +2338,107 @@ pub fn literal_as(t: core::option::Option<Ty>, e: core::option::Option<SrcExpr>)
 }
 
 // extract: mutual begin
+pub fn tree_tokens(t: CTree) -> List<Token> {
+    return match (t) {
+        Leaf(x) -> single(x),
+        Node(p, kids) -> trees_tokens(unbox(kids)),
+    };
+}
+
+pub fn trees_tokens(ts: List<CTree>) -> List<Token> {
+    return match (ts) {
+        Nil -> empty(),
+        Cons(t, rest) -> concat(tree_tokens(t), trees_tokens(unbox(rest))),
+    };
+}
+// extract: mutual end
+
+// Decimal digits, below 2^64.
+pub fn wide_decimal(text: List<usize>, acc: usize) -> core::option::Option<usize> {
+    if (acc > 18446744073709551615) {
+        return None;
+    }
+    return match (text) {
+        Nil -> Some(acc),
+        Cons(b, rest) -> wide_digit(b, unbox(rest), acc),
+    };
+}
+
+// extract: inline
+fn wide_digit(wb: usize, wrest: List<usize>, wacc: usize) -> core::option::Option<usize> {
+    if (wb >= 48 && 57 >= wb) {
+        return wide_decimal(wrest, plus(times(wacc, 10), minus(wb, 48)));
+    }
+    return None;
+}
+
+pub fn wide_i32(negative: bool, n: usize) -> core::option::Option<SrcExpr> {
+    if (negative && n == 2147483648) {
+        return Some(Int(n as i32));
+    }
+    return None;
+}
+
+pub fn wide_uint(u: UintTy, negative: bool, n: usize) -> core::option::Option<SrcExpr> {
+    if (!negative && n <= 18446744073709551615) {
+        return uint_in_range(u, n as u64);
+    }
+    return None;
+}
+
+pub fn wide_isize(negative: bool, n: usize) -> core::option::Option<SrcExpr> {
+    if (!negative && n <= 9223372036854775807) {
+        return Some(Cast(Isize, boxed(Unsigned(Uint64, n as u64))));
+    }
+    if (negative && n <= 9223372036854775808) {
+        return Some(Cast(Isize, boxed(Unsigned(Uint64, plus(minus(18446744073709551615, n), 1) as u64))));
+    }
+    return None;
+}
+
+pub fn wide_of(ty: Ty, negative: bool, n: usize) -> core::option::Option<SrcExpr> {
+    return match (ty) {
+        TyI32 -> wide_i32(negative, n),
+        TyBool -> None,
+        TyUint(u) -> wide_uint(u, negative, n),
+        TyPtr -> None,
+        TyIsize -> wide_isize(negative, n),
+        TySlice(e) -> None,
+        TyNamed(d, args) -> None,
+    };
+}
+
+pub fn wide_digits(ty: Ty, negative: bool, v: core::option::Option<usize>) -> core::option::Option<SrcExpr> {
+    return match (v) {
+        None -> None,
+        Some(n) -> wide_of(ty, negative, n),
+    };
+}
+
+pub fn wide_signed(ty: Ty, minus_sign: bool, v: core::option::Option<usize>) -> core::option::Option<SrcExpr> {
+    if (minus_sign) {
+        return wide_digits(ty, true, v);
+    }
+    return None;
+}
+
+pub fn wide_const(t: core::option::Option<Ty>, toks: List<Token>) -> core::option::Option<SrcExpr> {
+    return match (t) {
+        None -> None,
+        Some(ty) -> match (toks) {
+            Nil -> None,
+            Cons(a, rest) -> match (unbox(rest)) {
+                Nil -> wide_digits(ty, false, wide_decimal(a.text, 0)),
+                Cons(b, more) -> match (unbox(more)) {
+                    Nil -> wide_signed(ty, same_text(a.text, single(45)), wide_decimal(b.text, 0)),
+                    Cons(c, tail) -> None,
+                },
+            },
+        },
+    };
+}
+
+// extract: mutual begin
 // The expression a node of the expression grammar denotes. Calls, struct
 // literals and match are statement forms, so they are not expressions here.
 pub fn expr_of(fuel: usize, env: Env, scope: List<Local>, c: CTree) -> core::option::Option<SrcExpr> {
@@ -2419,13 +2520,20 @@ pub fn const_ref(fuel: usize, env: Env, segments: core::option::Option<List<List
     };
 }
 
-// A constant's value, read in its own module.
+// A constant's value, read in its own module: a literal of its type. A
+// value whose tokens are an integer literal n, or `-` and n, with n of 2^31
+// or more is the declared type's literal of that value: Int for i32 (only
+// -2^31), Unsigned up to the type's largest value, and for isize the cast of
+// the u64 literal holding its two's complement bits.
 pub fn const_value(fuel: usize, decls: Decls, k: ConstDecl) -> core::option::Option<SrcExpr> {
     if (fuel == 0) {
         return None;
     }
     let cenv: Env = decl_env(decls, k.module, empty(), empty());
-    return literal_as(ty_of(minus(fuel, 1), cenv, k.ty), expr_of(minus(fuel, 1), cenv, empty(), k.value));
+    return match (literal_as(ty_of(minus(fuel, 1), cenv, k.ty), expr_of(minus(fuel, 1), cenv, empty(), k.value))) {
+        Some(x) -> Some(x),
+        None -> wide_const(ty_of(minus(fuel, 1), cenv, k.ty), tree_tokens(k.value)),
+    };
 }
 
 // assign -> orexpr assign_end, as a value.
@@ -2563,6 +2671,30 @@ pub fn field_ty(fuel: usize, decls: Decls, l: core::option::Option<Local>, j: us
     };
 }
 
+// An integer literal, or arithmetic of them: its type comes from its
+// context (an isize literal is written bare beside a typed operand), so an
+// operator's type is its other operand's.
+pub fn bare_int(e: SrcExpr) -> bool {
+    return match (e) {
+        Int(k) -> true,
+        Boolean(b) -> false,
+        Unsigned(u, k) -> false,
+        Local(id) -> false,
+        Field(id, j) -> false,
+        Negate(x) -> bare_int(unbox(x)),
+        Not(x) -> false,
+        Apply(op, a, b) -> !gives_bool(op) && bare_int(unbox(a)) && bare_int(unbox(b)),
+        Cast(t, x) -> false,
+    };
+}
+
+pub fn pick_ty(left_bare: bool, a: core::option::Option<Ty>, b: core::option::Option<Ty>) -> core::option::Option<Ty> {
+    if (left_bare) {
+        return b;
+    }
+    return a;
+}
+
 // The type of an expression, as type arguments are inferred from it.
 pub fn expr_ty(fuel: usize, env: Env, scope: List<Local>, e: SrcExpr) -> core::option::Option<Ty> {
     if (fuel == 0) {
@@ -2576,7 +2708,7 @@ pub fn expr_ty(fuel: usize, env: Env, scope: List<Local>, e: SrcExpr) -> core::o
         Field(id, j) -> field_ty(fuel, env.decls, find_local_id(scope, id), j),
         Negate(x) -> expr_ty(minus(fuel, 1), env, scope, unbox(x)),
         Not(x) -> Some(TyBool),
-        Apply(op, a, b) -> apply_ty(op, expr_ty(minus(fuel, 1), env, scope, unbox(a))),
+        Apply(op, a, b) -> apply_ty(op, pick_ty(bare_int(unbox(a)), expr_ty(minus(fuel, 1), env, scope, unbox(a)), expr_ty(minus(fuel, 1), env, scope, unbox(b)))),
         Cast(t, x) -> src_ty(t),
     };
 }
@@ -3139,6 +3271,22 @@ pub fn index_ty(l: core::option::Option<Local>) -> core::option::Option<Ty> {
 
 // The type of an effectful expression, as type arguments are inferred
 // from it.
+pub fn bare_eff(x: MEff) -> bool {
+    return match (x) {
+        XPure(e) -> bare_int(e),
+        XCall(inst, args) -> false,
+        XApply(op, l, r) -> !gives_bool(op) && bare_eff(unbox(l)) && bare_eff(unbox(r)),
+        XNeg(a) -> bare_eff(unbox(a)),
+        XNot(a) -> false,
+        XCast(t, a) -> false,
+        XIndex(s, i) -> false,
+        XStruct(t, fs) -> false,
+        XVariant(t, k, ps) -> false,
+        XMatch(s, ety, t, bs, vs) -> false,
+        XDivide(op, l, r) -> bare_eff(unbox(l)) && bare_eff(unbox(r)),
+    };
+}
+
 pub fn eff_ty(fuel: usize, env: Env, scope: List<Local>, x: MEff) -> core::option::Option<Ty> {
     if (fuel == 0) {
         return None;
@@ -3146,7 +3294,7 @@ pub fn eff_ty(fuel: usize, env: Env, scope: List<Local>, x: MEff) -> core::optio
     return match (x) {
         XPure(e) -> expr_ty(fuel, env, scope, e),
         XCall(inst, args) -> inst_ret(fuel, env.decls, inst),
-        XApply(op, l, r) -> apply_ty(op, eff_ty(minus(fuel, 1), env, scope, unbox(l))),
+        XApply(op, l, r) -> apply_ty(op, pick_ty(bare_eff(unbox(l)), eff_ty(minus(fuel, 1), env, scope, unbox(l)), eff_ty(minus(fuel, 1), env, scope, unbox(r)))),
         XNeg(a) -> eff_ty(minus(fuel, 1), env, scope, unbox(a)),
         XNot(a) -> Some(TyBool),
         XCast(t, a) -> src_ty(t),
@@ -3154,7 +3302,7 @@ pub fn eff_ty(fuel: usize, env: Env, scope: List<Local>, x: MEff) -> core::optio
         XStruct(t, fs) -> Some(t),
         XVariant(t, k, ps) -> Some(t),
         XMatch(s, ety, t, bs, vs) -> Some(t),
-        XDivide(op, l, r) -> eff_ty(minus(fuel, 1), env, scope, unbox(l)),
+        XDivide(op, l, r) -> pick_ty(bare_eff(unbox(l)), eff_ty(minus(fuel, 1), env, scope, unbox(l)), eff_ty(minus(fuel, 1), env, scope, unbox(r))),
     };
 }
 

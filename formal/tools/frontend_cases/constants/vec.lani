@@ -1,0 +1,11 @@
+// The constants of stdlib/std/vec.lani (lines 24-27), as written there.
+module std::vec;
+
+// i32 indexing limits the element count; byte sizes must also fit an i32.
+pub const MAX_CAPACITY: i32 = 2147483647;
+const MAX_BYTES: usize = 2147483647;
+const ALIGN: usize = 8;
+
+pub fn byte_limit() -> usize {
+    return MAX_BYTES - ALIGN;
+}

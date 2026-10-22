@@ -178,7 +178,11 @@ still a parse tree of the same tokens. Trusted:
     distinct instances, but they lower to the same field types;
   - a constant is replaced by its value, which must be a literal of its
     declared type: `Int` for `i32`, `Unsigned` (range-checked) for the
-    unsigned types, `Boolean` for `bool`;
+    unsigned types, `Cast(Isize, Int(n))` for `isize`, `Boolean` for `bool`;
+    a value whose tokens are `n` or `-` `n` with n of 2^31 or more is the
+    type's literal of that value (`Int` of -2^31 for `i32`, `Unsigned` up to
+    the type's largest value, the cast of the `u64` literal of its bits for
+    `isize`);
   - a local is the byte offset of its binding (a parameter, `let` or match
     binder);
   - a use names the innermost binding with the same spelling, and locals may
