@@ -56,7 +56,7 @@ private partial def forwardArguments (program state expressions : Expr)
         pure (if values.isAppOfArity ``List.cons 3 then some values.getAppArgs else none)
     | none => pure none
   let headRun ← forwardExpression program state head (requested.map fun args => args[1]!)
-  let headType ← inferType headRun
+  let headType := (← instantiateMVars (← inferType headRun)).consumeMData
   let tailRun ← forwardArguments program headType.getAppArgs[4]! tail
     (requested.map fun args => args[2]!)
   mkAppM ``RunsExprs.cons #[headRun, tailRun]
@@ -104,7 +104,7 @@ private partial def forwardStatement (program state statement : Expr) : TacticM 
   | some ``Lanius.Core.Stmt.letLocal =>
       let #[id, type, initial, body] := statement.getAppArgs | throwError "local statement shape"
       let initialRun ← forwardExpression program state initial
-      let initialType ← inferType initialRun
+      let initialType := (← instantiateMVars (← inferType initialRun)).consumeMData
       let value := initialType.getAppArgs[3]!
       let ready := initialType.getAppArgs[4]!
       let bound ← mkAppM ``State.bindLocal #[ready, id, value]
@@ -114,7 +114,7 @@ private partial def forwardStatement (program state statement : Expr) : TacticM 
   | some ``Lanius.Core.Stmt.sequence =>
       let #[first, second] := statement.getAppArgs | throwError "sequence statement shape"
       let firstRun ← forwardStatement program state first
-      let firstType ← inferType firstRun
+      let firstType := (← instantiateMVars (← inferType firstRun)).consumeMData
       let completion ← whnf firstType.getAppArgs[3]!
       if completion.isConstOf ``Completion.next then
         let rest ← forwardStatement program firstType.getAppArgs[4]! second
@@ -135,7 +135,7 @@ private partial def forwardStatement (program state statement : Expr) : TacticM 
         let trueValue ← mkAppM ``Lanius.Core.Value.boolean #[mkConst ``Bool.true]
         let guard ← forwardExpression program state condition (some trueValue)
         pure (guard, yes, ``RunsStmt.ifThenElseTrue)
-      let guardType ← inferType guard
+      let guardType := (← instantiateMVars (← inferType guard)).consumeMData
       let branch ← forwardStatement program guardType.getAppArgs[4]! branchStmt
       mkAppOptM rule #[some program, some state, some condition, none, some yes, some no,
         none, none, some guard, some branch]

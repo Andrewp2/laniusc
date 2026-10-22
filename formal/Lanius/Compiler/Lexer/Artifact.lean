@@ -12,11 +12,18 @@ def lexerArtifactSource : String := artifact_source_text%
   (include_str "../../Extraction/Artifacts/lexer.json"),
   "verified_compiler/src/verified/lexer.lani"
 
+/- The source this artifact was extracted from: verified_compiler's lexer.lani
+   as of f358fd89.  The lexer was rewritten afterwards (enum start classes,
+   verified::ascii constants), and the exporter that wrote lexer.json was
+   removed (crates/laniusc-formal-export, 472e2859), so the artifact cannot be
+   regenerated from the current file.  The proofs over `lexerProgram` are about
+   this pinned source, not the current verified_compiler lexer. -/
 def lexerSource : String :=
-  include_str "../../../../verified_compiler/src/verified/lexer.lani"
+  include_str "lexer_source.lani"
 
 /- The artifact embeds source bytes, so this is a kernel-checked provenance
-   witness for the exact source file used by the current checkout. -/
+   witness for the exact source file the artifact (and every proof about
+   `lexerProgram`) describes. -/
 theorem lexerSource_provenance : lexerArtifactSource = lexerSource := by
   rfl
 

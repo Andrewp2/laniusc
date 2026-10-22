@@ -72,8 +72,11 @@ example : RunsExpr {} before (.matchValue effectful [(.wildcard, .local 2)]) (.b
     .ofStable (StableExpr.assignSetBool {} before 2 0 (.boolean false) true after rfl rfl rfl rfl) rfl
   have found : after.local? 2 = some (.boolean true) := rfl
   have source : RunsExpr {} before effectful (.enumeration 7 1 []) after := by core_run
+  have bound : (after.bindLocals []).local? 2 = some (.boolean true) := rfl
+  have branch : RunsExpr {} (after.bindLocals []) (.local 2) (.boolean true)
+      (after.bindLocals []) := by core_run
   exact RunsExpr.matchValue (arms := [(.wildcard, .local 2)]) (bindings := []) (body := .local 2)
-    source rfl (by core_run)
+    source rfl branch
 
 #print axioms RunsExpr.matchValue
 #print axioms RunsExpr.matchPure

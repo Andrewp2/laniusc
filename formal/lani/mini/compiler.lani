@@ -4672,6 +4672,105 @@ pub fn divide_agrees(word: Word, operation: DivOp, target: usize, left: Expr, ri
     };
 }
 
+// Copy and constant propagation. A fact says that a slot holds a literal or
+// another slot's value. The validator reads each expression of the original
+// program with the facts known before it substituted, and checks the
+// optimized expression against that.
+pub struct Fact {
+    slot: usize,
+    value: Expr,
+}
+
+pub fn fact_value(facts: List<Fact>, index: usize) -> Expr {
+    return match (facts) {
+        Nil -> Var(index),
+        Cons(fact, rest) -> fact_or(fact, index, unbox(rest)),
+    };
+}
+
+// extract: inline
+fn fact_or(fact: Fact, index: usize, tail: List<Fact>) -> Expr {
+    if (fact.slot == index) {
+        return fact.value;
+    }
+    return fact_value(tail, index);
+}
+
+impl Expr {
+    // The expression reads slot index.
+    pub fn mentions(self, index: usize) -> bool {
+        return match (self) {
+            Lit(value) -> false,
+            Var(other) -> other == index,
+            Expr::Neg(operand) -> unbox(operand).mentions(index),
+            Binary(word, operation, left, right) -> unbox(left).mentions(index) || unbox(right).mentions(index),
+            Compare(word, operation, left, right) -> unbox(left).mentions(index) || unbox(right).mentions(index),
+        };
+    }
+
+    // Each slot with a fact replaced by the fact's value.
+    pub fn subst(self, facts: List<Fact>) -> Expr {
+        return match (self) {
+            Lit(value) -> Lit(value),
+            Var(index) -> fact_value(facts, index),
+            Expr::Neg(operand) -> Expr::Neg(boxed(unbox(operand).subst(facts))),
+            Binary(word, operation, left, right) -> Binary(word, operation, boxed(unbox(left).subst(facts)), boxed(unbox(right).subst(facts))),
+            Compare(word, operation, left, right) -> Compare(word, operation, boxed(unbox(left).subst(facts)), boxed(unbox(right).subst(facts))),
+        };
+    }
+
+    // A literal or a slot: cheap to copy into each use.
+    pub fn is_atom(self) -> bool {
+        return match (self) {
+            Lit(value) -> true,
+            Var(index) -> true,
+            Expr::Neg(operand) -> false,
+            Binary(word, operation, left, right) -> false,
+            Compare(word, operation, left, right) -> false,
+        };
+    }
+}
+
+pub fn subst_all(values: List<Expr>, facts: List<Fact>) -> List<Expr> {
+    return match (values) {
+        Nil -> empty(),
+        Cons(value, rest) -> cons(value.subst(facts), subst_all(unbox(rest), facts)),
+    };
+}
+
+pub fn mentions_any(values: List<Expr>, index: usize) -> bool {
+    return match (values) {
+        Nil -> false,
+        Cons(value, rest) -> value.mentions(index) || mentions_any(unbox(rest), index),
+    };
+}
+
+// The facts that still hold after slot index is written.
+pub fn kill(facts: List<Fact>, index: usize) -> List<Fact> {
+    return match (facts) {
+        Nil -> empty(),
+        Cons(fact, rest) -> kept(fact, index, kill(unbox(rest), index)),
+    };
+}
+
+// extract: inline
+fn kept(fact: Fact, index: usize, tail: List<Fact>) -> List<Fact> {
+    if ((fact.slot != index) && !fact.value.mentions(index)) {
+        return cons(fact, tail);
+    }
+    return tail;
+}
+
+// The facts after index = value.
+pub fn assigned(facts: List<Fact>, index: usize, value: Expr) -> List<Fact> {
+    let known: Expr = value.subst(facts);
+    let rest: List<Fact> = kill(facts, index);
+    if (known.is_atom() && !known.mentions(index)) {
+        return cons(Fact { slot: index, value: known }, rest);
+    }
+    return rest;
+}
+
 impl Stmt {
     pub fn is_skip(self) -> bool {
         return match (self) {
@@ -4691,35 +4790,99 @@ impl Stmt {
         };
     }
 
-    // other ends every run of this statement the same way: the same shape
-    // with agreeing expressions, or a statement dropped because it does
-    // nothing (skip, x = x, a loop whose condition is 0), or a branch chosen
-    // because its condition is a constant or both branches agree with other.
-    pub fn agrees(self, other: Stmt) -> bool {
+    // The facts that hold after a run of this statement that ends
+    // normally, given facts that hold before it. Branches, loops and calls
+    // forget them all.
+    pub fn facts_after(self, facts: List<Fact>) -> List<Fact> {
+        return match (self) {
+            Skip -> facts,
+            Assign(index, value) -> assigned(facts, index, value),
+            Seq(first, second) -> unbox(second).facts_after(unbox(first).facts_after(facts)),
+            Ite(c, t, e) -> empty(),
+            Loop(c, b) -> empty(),
+            Stmt::Call(t, n, f, a) -> empty(),
+            Stmt::Ret(v) -> empty(),
+            Alloc(target, sh, sz) -> kill(facts, target),
+            LoadByte(target, a) -> kill(facts, target),
+            StoreByte(a, v) -> facts,
+            LoadWord(w, target, a) -> kill(facts, target),
+            StoreWord(w, a, v) -> facts,
+            Divide(w, o, target, l, r) -> kill(facts, target),
+        };
+    }
+
+    // No run of this statement reads slot index: runs from two states that
+    // differ only at index end in states that differ only at index.
+    pub fn ignores(self, index: usize) -> bool {
+        return match (self) {
+            Skip -> true,
+            Assign(i, v) -> !v.mentions(index),
+            Seq(f, s) -> unbox(f).ignores(index) && unbox(s).ignores(index),
+            Ite(c, t, e) -> !c.mentions(index) && unbox(t).ignores(index) && unbox(e).ignores(index),
+            Loop(c, b) -> !c.mentions(index) && unbox(b).ignores(index),
+            Stmt::Call(t, n, f, a) -> !mentions_any(a, index),
+            Stmt::Ret(v) -> !mentions_any(v, index),
+            Alloc(t, sh, sz) -> !sz.mentions(index),
+            LoadByte(t, a) -> !a.mentions(index),
+            StoreByte(a, v) -> !a.mentions(index) && !v.mentions(index),
+            LoadWord(w, t, a) -> !a.mentions(index),
+            StoreWord(w, a, v) -> !a.mentions(index) && !v.mentions(index),
+            Divide(w, o, t, l, r) -> !l.mentions(index) && !r.mentions(index),
+        };
+    }
+
+    // Every run of this statement writes slot index before reading it, or
+    // returns without reading it: the value index holds on entry is dead.
+    pub fn kills(self, index: usize) -> bool {
+        return match (self) {
+            Skip -> false,
+            Assign(i, v) -> (i == index) && !v.mentions(index),
+            Seq(f, s) -> unbox(f).kills(index) || (unbox(f).ignores(index) && unbox(s).kills(index)),
+            Ite(c, t, e) -> !c.mentions(index) && unbox(t).kills(index) && unbox(e).kills(index),
+            Loop(c, b) -> false,
+            Stmt::Call(t, n, f, a) -> false,
+            Stmt::Ret(v) -> !mentions_any(v, index),
+            Alloc(t, sh, sz) -> false,
+            LoadByte(t, a) -> false,
+            StoreByte(a, v) -> false,
+            LoadWord(w, t, a) -> false,
+            StoreWord(w, a, v) -> false,
+            Divide(w, o, t, l, r) -> false,
+        };
+    }
+
+    // other ends every run of this statement the same way, when facts hold
+    // on entry: the same shape with agreeing expressions (each original one
+    // read with the facts substituted), or a statement dropped because it
+    // does nothing (skip, x = x, a loop whose condition is 0) or because it
+    // stores a slot the rest kills, or a branch chosen because its condition
+    // is a constant or both branches agree with other.
+    pub fn agrees(self, facts: List<Fact>, other: Stmt) -> bool {
         return match (self) {
             Skip -> other.is_skip(),
-            Assign(index, value) -> assign_agrees(index, value, other),
-            Seq(first, second) -> (unbox(first).agrees(Skip) && unbox(second).agrees(other)) || (unbox(second).agrees(Skip) && unbox(first).agrees(other)) || seq_agrees(unbox(first), unbox(second), other),
-            Ite(condition, then_branch, else_branch) -> (unbox(then_branch).agrees(other) && unbox(else_branch).agrees(other)) || branch_agrees(condition.constant(), unbox(then_branch), unbox(else_branch), other) || ite_agrees(condition, unbox(then_branch), unbox(else_branch), other),
+            Assign(index, value) -> assign_agrees(index, value.subst(facts), other),
+            Seq(first, second) -> (unbox(first).agrees(facts, Skip) && unbox(second).agrees(unbox(first).facts_after(facts), other)) || (unbox(second).agrees(unbox(first).facts_after(facts), Skip) && unbox(first).agrees(facts, other)) || dead_agrees(unbox(first), unbox(second), facts, other) || seq_agrees(unbox(first), unbox(second), facts, other),
+            Ite(condition, then_branch, else_branch) -> (unbox(then_branch).agrees(facts, other) && unbox(else_branch).agrees(facts, other)) || branch_agrees(condition.subst(facts).constant(), unbox(then_branch), unbox(else_branch), facts, other) || ite_agrees(condition.subst(facts), unbox(then_branch), unbox(else_branch), facts, other),
             Loop(condition, body) -> (condition.is_zero() && other.is_skip()) || loop_agrees(condition, unbox(body), other),
-            Stmt::Call(target, count, callee, args) -> call_agrees(target, count, callee, args, other),
-            Stmt::Ret(values) -> ret_agrees(values, other),
-            Alloc(target, shift, size) -> alloc_agrees(target, shift, size, other),
-            LoadByte(target, address) -> load_byte_agrees(target, address, other),
-            StoreByte(address, value) -> store_byte_agrees(address, value, other),
-            LoadWord(width, target, address) -> load_word_agrees(width, target, address, other),
-            StoreWord(width, address, value) -> store_word_agrees(width, address, value, other),
-            Divide(word, operation, target, left, right) -> divide_agrees(word, operation, target, left, right, other),
+            Stmt::Call(target, count, callee, args) -> call_agrees(target, count, callee, subst_all(args, facts), other),
+            Stmt::Ret(values) -> ret_agrees(subst_all(values, facts), other),
+            Alloc(target, shift, size) -> alloc_agrees(target, shift, size.subst(facts), other),
+            LoadByte(target, address) -> load_byte_agrees(target, address.subst(facts), other),
+            StoreByte(address, value) -> store_byte_agrees(address.subst(facts), value.subst(facts), other),
+            LoadWord(width, target, address) -> load_word_agrees(width, target, address.subst(facts), other),
+            StoreWord(width, address, value) -> store_word_agrees(width, address.subst(facts), value.subst(facts), other),
+            Divide(word, operation, target, left, right) -> divide_agrees(word, operation, target, left.subst(facts), right.subst(facts), other),
         };
     }
 }
 
+// first is index = value, and other, which agrees with second, kills index.
 // extract: inline
-fn seq_agrees(first: Stmt, second: Stmt, other: Stmt) -> bool {
-    return match (other) {
+fn dead_agrees(first: Stmt, second: Stmt, facts: List<Fact>, other: Stmt) -> bool {
+    return match (first) {
         Skip -> false,
-        Assign(i, v) -> false,
-        Seq(f, s) -> first.agrees(unbox(f)) && second.agrees(unbox(s)),
+        Assign(index, value) -> other.kills(index) && second.agrees(assigned(facts, index, value), other),
+        Seq(f, s) -> false,
         Ite(c, t, e) -> false,
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
@@ -4734,20 +4897,12 @@ fn seq_agrees(first: Stmt, second: Stmt, other: Stmt) -> bool {
 }
 
 // extract: inline
-fn branch_agrees(known: core::option::Option<u64>, then_branch: Stmt, else_branch: Stmt, other: Stmt) -> bool {
-    return match (known) {
-        Some(v) -> ((v == 0) && else_branch.agrees(other)) || ((v != 0) && then_branch.agrees(other)),
-        None -> false,
-    };
-}
-
-// extract: inline
-fn ite_agrees(condition: Expr, then_branch: Stmt, else_branch: Stmt, other: Stmt) -> bool {
+fn seq_agrees(first: Stmt, second: Stmt, facts: List<Fact>, other: Stmt) -> bool {
     return match (other) {
         Skip -> false,
         Assign(i, v) -> false,
-        Seq(f, s) -> false,
-        Ite(c, t, e) -> condition.agrees(c) && then_branch.agrees(unbox(t)) && else_branch.agrees(unbox(e)),
+        Seq(f, s) -> first.agrees(facts, unbox(f)) && second.agrees(first.facts_after(facts), unbox(s)),
+        Ite(c, t, e) -> false,
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
@@ -4760,6 +4915,34 @@ fn ite_agrees(condition: Expr, then_branch: Stmt, else_branch: Stmt, other: Stmt
     };
 }
 
+// extract: inline
+fn branch_agrees(known: core::option::Option<u64>, then_branch: Stmt, else_branch: Stmt, facts: List<Fact>, other: Stmt) -> bool {
+    return match (known) {
+        Some(v) -> ((v == 0) && else_branch.agrees(facts, other)) || ((v != 0) && then_branch.agrees(facts, other)),
+        None -> false,
+    };
+}
+
+// extract: inline
+fn ite_agrees(test: Expr, then_branch: Stmt, else_branch: Stmt, facts: List<Fact>, other: Stmt) -> bool {
+    return match (other) {
+        Skip -> false,
+        Assign(i, v) -> false,
+        Seq(f, s) -> false,
+        Ite(c, t, e) -> test.agrees(c) && then_branch.agrees(facts, unbox(t)) && else_branch.agrees(facts, unbox(e)),
+        Loop(c, b) -> false,
+        Stmt::Call(t, n, f, a) -> false,
+        Stmt::Ret(v) -> false,
+        Alloc(t, sh, sz) -> false,
+        LoadByte(t, a) -> false,
+        StoreByte(a, v) -> false,
+        LoadWord(w, t, a) -> false,
+        StoreWord(w, a, v) -> false,
+        Divide(w, o, t, l, r) -> false,
+    };
+}
+
+// A loop's body runs from states the facts may not describe: no facts.
 // extract: inline
 fn loop_agrees(condition: Expr, body: Stmt, other: Stmt) -> bool {
     return match (other) {
@@ -4767,7 +4950,7 @@ fn loop_agrees(condition: Expr, body: Stmt, other: Stmt) -> bool {
         Assign(i, v) -> false,
         Seq(f, s) -> false,
         Ite(c, t, e) -> false,
-        Loop(c, b) -> condition.agrees(c) && body.agrees(unbox(b)),
+        Loop(c, b) -> condition.agrees(c) && body.agrees(empty(), unbox(b)),
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
         Alloc(t, sh, sz) -> false,
@@ -4781,7 +4964,7 @@ fn loop_agrees(condition: Expr, body: Stmt, other: Stmt) -> bool {
 
 impl Func {
     pub fn agrees(self, other: Func) -> bool {
-        return (self.params == other.params) && (self.results == other.results) && (self.locals == other.locals) && self.body.agrees(other.body);
+        return (self.params == other.params) && (self.results == other.results) && (self.locals == other.locals) && self.body.agrees(empty(), other.body);
     }
 }
 
@@ -4810,7 +4993,10 @@ pub fn validate(original: Program, optimized: Program) -> bool {
 // commuted forms) and x * 0, x & 0, picks the branch of an if on a constant,
 // and drops statements that do nothing: skip, x = x, an if with two empty
 // branches, a while whose condition is 0. It leaves divisions in place, so a
-// division that traps still traps.
+// division that traps still traps. Along each sequence it propagates copies
+// and constants (x = y or x = 5 makes later reads of x read y or 5, until x
+// or y is written; branches, loops and calls forget all of them), and drops
+// x = e when the optimized rest of the sequence writes x before reading it.
 
 impl Expr {
     pub fn literal(self) -> core::option::Option<u64> {
@@ -4948,29 +5134,60 @@ pub fn optimize_loop(condition: Expr, body: Stmt) -> Stmt {
 }
 
 impl Stmt {
-    pub fn optimize(self) -> Stmt {
+    // first = index = value is dead when rest kills index.
+    pub fn dead_before(self, rest: Stmt) -> bool {
         return match (self) {
-            Skip -> Skip,
-            Assign(index, value) -> optimize_assign(index, value.optimize()),
-            Seq(first, second) -> optimize_seq(unbox(first).optimize(), unbox(second).optimize()),
-            Ite(condition, then_branch, else_branch) -> optimize_ite(condition.optimize(), unbox(then_branch).optimize(), unbox(else_branch).optimize()),
-            Loop(condition, body) -> optimize_loop(condition.optimize(), unbox(body).optimize()),
-            Stmt::Call(target, count, callee, args) -> Stmt::Call(target, count, callee, optimize_all(args)),
-            Stmt::Ret(values) -> Stmt::Ret(optimize_all(values)),
-            Alloc(target, shift, size) -> Alloc(target, shift, size.optimize()),
-            LoadByte(target, address) -> LoadByte(target, address.optimize()),
-            StoreByte(address, value) -> StoreByte(address.optimize(), value.optimize()),
-            LoadWord(width, target, address) -> LoadWord(width, target, address.optimize()),
-            StoreWord(width, address, value) -> StoreWord(width, address.optimize(), value.optimize()),
-            Divide(word, operation, target, left, right) -> Divide(word, operation, target, left.optimize(), right.optimize()),
+            Skip -> false,
+            Assign(index, value) -> rest.kills(index),
+            Seq(f, s) -> false,
+            Ite(c, t, e) -> false,
+            Loop(c, b) -> false,
+            Stmt::Call(t, n, f, a) -> false,
+            Stmt::Ret(v) -> false,
+            Alloc(t, sh, sz) -> false,
+            LoadByte(t, a) -> false,
+            StoreByte(a, v) -> false,
+            LoadWord(w, t, a) -> false,
+            StoreWord(w, a, v) -> false,
+            Divide(w, o, t, l, r) -> false,
         };
     }
+
+    // facts hold on entry: each expression is read with them substituted.
+    pub fn optimize(self, facts: List<Fact>) -> Stmt {
+        return match (self) {
+            Skip -> Skip,
+            Assign(index, value) -> optimize_assign(index, value.subst(facts).optimize()),
+            Seq(first, second) -> optimize_sequence(unbox(first), unbox(second), facts),
+            Ite(condition, then_branch, else_branch) -> optimize_ite(condition.subst(facts).optimize(), unbox(then_branch).optimize(facts), unbox(else_branch).optimize(facts)),
+            Loop(condition, body) -> optimize_loop(condition.optimize(), unbox(body).optimize(empty())),
+            Stmt::Call(target, count, callee, args) -> Stmt::Call(target, count, callee, optimize_all(subst_all(args, facts))),
+            Stmt::Ret(values) -> Stmt::Ret(optimize_all(subst_all(values, facts))),
+            Alloc(target, shift, size) -> Alloc(target, shift, size.subst(facts).optimize()),
+            LoadByte(target, address) -> LoadByte(target, address.subst(facts).optimize()),
+            StoreByte(address, value) -> StoreByte(address.subst(facts).optimize(), value.subst(facts).optimize()),
+            LoadWord(width, target, address) -> LoadWord(width, target, address.subst(facts).optimize()),
+            StoreWord(width, address, value) -> StoreWord(width, address.subst(facts).optimize(), value.subst(facts).optimize()),
+            Divide(word, operation, target, left, right) -> Divide(word, operation, target, left.subst(facts).optimize(), right.subst(facts).optimize()),
+        };
+    }
+}
+
+// The second statement is optimized with the facts after the first; a store
+// to a slot the optimized rest kills is dropped.
+// extract: inline
+fn optimize_sequence(first: Stmt, second: Stmt, facts: List<Fact>) -> Stmt {
+    let rest: Stmt = second.optimize(first.facts_after(facts));
+    if (first.dead_before(rest)) {
+        return rest;
+    }
+    return optimize_seq(first.optimize(facts), rest);
 }
 
 pub fn optimize_funcs(funcs: List<Func>) -> List<Func> {
     return match (funcs) {
         Nil -> empty(),
-        Cons(func, rest) -> cons(Func { params: func.params, results: func.results, locals: func.locals, body: func.body.optimize() }, optimize_funcs(unbox(rest))),
+        Cons(func, rest) -> cons(Func { params: func.params, results: func.results, locals: func.locals, body: func.body.optimize(empty()) }, optimize_funcs(unbox(rest))),
     };
 }
 
