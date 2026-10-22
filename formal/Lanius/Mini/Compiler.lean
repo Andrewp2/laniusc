@@ -969,6 +969,8 @@ inductive SrcType where
   | slice : SrcType → SrcType
   /-- the unit type: one slot whose bits do not matter -/
   | unit : SrcType
+  /-- a signed 64-bit integer, its two's complement bits in one slot -/
+  | isize : SrcType
   deriving Repr
 
 inductive SrcOp where
@@ -1136,6 +1138,7 @@ def SrcType.isI32 (self : SrcType) : Bool :=
   | .ptr => false
   | .slice element => false
   | .unit => false
+  | .isize => false
 
 def SrcType.isBool (self : SrcType) : Bool :=
   match self with
@@ -1147,6 +1150,7 @@ def SrcType.isBool (self : SrcType) : Bool :=
   | .ptr => false
   | .slice element => false
   | .unit => false
+  | .isize => false
 
 def SrcType.isScalar (self : SrcType) : Bool :=
   match self with
@@ -1158,6 +1162,7 @@ def SrcType.isScalar (self : SrcType) : Bool :=
   | .ptr => true
   | .slice element => false
   | .unit => false
+  | .isize => true
 
 def SrcType.isUint (self : SrcType) (kind : UintTy) : Bool :=
   match self with
@@ -1169,6 +1174,7 @@ def SrcType.isUint (self : SrcType) (kind : UintTy) : Bool :=
   | .ptr => false
   | .slice element => false
   | .unit => false
+  | .isize => false
 
 def SrcType.isPtr (self : SrcType) : Bool :=
   match self with
@@ -1180,6 +1186,7 @@ def SrcType.isPtr (self : SrcType) : Bool :=
   | .ptr => true
   | .slice element => false
   | .unit => false
+  | .isize => false
 
 def SrcType.isUnit (self : SrcType) : Bool :=
   match self with
@@ -1191,6 +1198,19 @@ def SrcType.isUnit (self : SrcType) : Bool :=
   | .ptr => false
   | .slice element => false
   | .unit => true
+  | .isize => false
+
+def SrcType.isIsize (self : SrcType) : Bool :=
+  match self with
+  | .i32 => false
+  | .bool => false
+  | .uint kind => false
+  | .struct id fields => false
+  | .enum id variants => false
+  | .ptr => false
+  | .slice element => false
+  | .unit => false
+  | .isize => true
 
 /-- The unsigned type this is, if it is one. -/
 def SrcType.uintKind (self : SrcType) : Option UintTy :=
@@ -1203,6 +1223,7 @@ def SrcType.uintKind (self : SrcType) : Option UintTy :=
   | .ptr => none
   | .slice element => none
   | .unit => none
+  | .isize => none
 
 /-- How a comparison of two values of this type reads their slots. -/
 def SrcType.word (self : SrcType) : Word :=
@@ -1215,6 +1236,7 @@ def SrcType.word (self : SrcType) : Word :=
   | .ptr => Word.u64
   | .slice element => Word.u64
   | .unit => Word.s32
+  | .isize => Word.u64
 
 mutual
 
@@ -1232,7 +1254,8 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .enum otherId otherVariants => false
      | .ptr => false
      | .slice otherElement => false
-     | .unit => false)
+     | .unit => false
+     | .isize => false)
   | .enum id variants =>
     (match other with
      | .i32 => false
@@ -1242,7 +1265,8 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .enum otherId otherVariants => decide (id = otherId) && variantsSame variants otherVariants
      | .ptr => false
      | .slice otherElement => false
-     | .unit => false)
+     | .unit => false
+     | .isize => false)
   | .ptr => SrcType.isPtr other
   | .slice element =>
     (match other with
@@ -1253,8 +1277,10 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .enum otherId otherVariants => false
      | .ptr => false
      | .slice otherElement => SrcType.same element otherElement
-     | .unit => false)
+     | .unit => false
+     | .isize => false)
   | .unit => SrcType.isUnit other
+  | .isize => SrcType.isIsize other
 
 def typesSame (types : List SrcType) (others : List SrcType) : Bool :=
   match types with
@@ -1293,6 +1319,7 @@ def SrcType.size (self : SrcType) : Nat :=
   | .ptr => 1
   | .slice element => 1
   | .unit => 1
+  | .isize => 1
 
 def sizes (types : List SrcType) : Nat :=
   match types with
@@ -1339,11 +1366,15 @@ def arithUint (operation : BinOp) (left : Typed) (right : Typed) (kind : Option 
     else
       none
 
+/-- isize arithmetic is 64-bit arithmetic on the bits, which wraps as Core's two's complement does. -/
 def arith (operation : BinOp) (left : Typed) (right : Typed) : Option Typed :=
   if SrcType.isI32 left.ty && SrcType.isI32 right.ty then
     some ({ expr := Expr.binary Word.s32 operation left.expr right.expr, ty := SrcType.i32 } : Typed)
   else
-    arithUint operation left right (SrcType.uintKind left.ty)
+    if SrcType.isIsize left.ty && SrcType.isIsize right.ty then
+      some ({ expr := Expr.binary Word.u64 operation left.expr right.expr, ty := SrcType.isize } : Typed)
+    else
+      arithUint operation left right (SrcType.uintKind left.ty)
 
 /-- ptr + usize and ptr - usize move the address, wrapping at 2^64 like Core's pointerOffset; other operands are arithmetic. -/
 def offsetOrArith (operation : BinOp) (left : Typed) (right : Typed) : Option Typed :=
@@ -1361,11 +1392,18 @@ def orderUint (operation : CmpOp) (left : Typed) (right : Typed) (kind : Option 
     else
       none
 
+/-- An isize's bits plus 2^63, which flips the sign bit and so orders isizes as unsigned numbers in their signed order. -/
+def signKey (e : Expr) : Expr :=
+  Expr.binary Word.u64 BinOp.add e (Expr.lit 9223372036854775808)
+
 def order (operation : CmpOp) (left : Typed) (right : Typed) : Option Typed :=
   if SrcType.isI32 left.ty && SrcType.isI32 right.ty then
     some ({ expr := Expr.compare Word.s32 operation left.expr right.expr, ty := SrcType.bool } : Typed)
   else
-    orderUint operation left right (SrcType.uintKind left.ty)
+    if SrcType.isIsize left.ty && SrcType.isIsize right.ty then
+      some ({ expr := Expr.compare Word.u64 operation (signKey left.expr) (signKey right.expr), ty := SrcType.bool } : Typed)
+    else
+      orderUint operation left right (SrcType.uintKind left.ty)
 
 def equality (operation : CmpOp) (left : Typed) (right : Typed) : Option Typed :=
   if SrcType.same left.ty right.ty then
@@ -1434,6 +1472,7 @@ def lowerFieldOf (b : Binding) (field : Nat) : Option Typed :=
   | .ptr => none
   | .slice element => none
   | .unit => none
+  | .isize => none
 
 def lowerField (binding : Option Binding) (field : Nat) : Option Typed :=
   match binding with
@@ -1444,7 +1483,10 @@ def lowerNegateTyped (operand : Typed) : Option Typed :=
   if SrcType.isI32 operand.ty then
     some ({ expr := Expr.neg operand.expr, ty := SrcType.i32 } : Typed)
   else
-    none
+    if SrcType.isIsize operand.ty then
+      some ({ expr := Expr.binary Word.u64 BinOp.sub (Expr.lit 0) operand.expr, ty := SrcType.isize } : Typed)
+    else
+      none
 
 def lowerNegate (operand : Option Typed) : Option Typed :=
   match operand with
@@ -1486,6 +1528,7 @@ def castToI32 (e : Typed) : Option Typed :=
   | .ptr => none
   | .slice element => none
   | .unit => none
+  | .isize => some ({ expr := wrap UintTy.uint32 e.expr, ty := SrcType.i32 } : Typed)
 
 def castToUint (kind : UintTy) (e : Typed) : Option Typed :=
   match e.ty with
@@ -1497,6 +1540,20 @@ def castToUint (kind : UintTy) (e : Typed) : Option Typed :=
   | .ptr => none
   | .slice element => none
   | .unit => none
+  | .isize => some ({ expr := wrap kind e.expr, ty := SrcType.uint kind } : Typed)
+
+/-- To isize: an i32 sign-extends; an unsigned value's bits stay, which is Core's wrap at 2^64. -/
+def castToIsize (e : Typed) : Option Typed :=
+  match e.ty with
+  | .i32 => some ({ expr := fromI32 UintTy.uint64 e.expr, ty := SrcType.isize } : Typed)
+  | .bool => none
+  | .uint kind => some ({ expr := e.expr, ty := SrcType.isize } : Typed)
+  | .struct id fields => none
+  | .enum id variants => none
+  | .ptr => none
+  | .slice element => none
+  | .unit => none
+  | .isize => some e
 
 def castTo (ty : SrcType) (e : Typed) : Option Typed :=
   match ty with
@@ -1508,6 +1565,7 @@ def castTo (ty : SrcType) (e : Typed) : Option Typed :=
   | .ptr => none
   | .slice element => none
   | .unit => none
+  | .isize => castToIsize e
 
 def lowerCast (ty : SrcType) (operand : Option Typed) : Option Typed :=
   match operand with
@@ -1589,6 +1647,7 @@ def copyFieldOf (b : Binding) (index : Nat) (ty : SrcType) : Option (List Expr) 
   | .ptr => none
   | .slice element => none
   | .unit => none
+  | .isize => none
 
 /-- A field of type ty of a struct local, slot by slot. It takes slots. -/
 def copyField (binding : Option Binding) (index : Nat) (ty : SrcType) : Option (List Expr) :=
@@ -1650,6 +1709,7 @@ def lowerLiteral (scope : List Binding) (ty : SrcType) (fields : List SrcExpr) :
   | .ptr => none
   | .slice element => none
   | .unit => none
+  | .isize => none
 
 def lowerTag (variant : Nat) (payload : Option (List Expr)) : Option (List Expr) :=
   match payload with
@@ -1679,6 +1739,7 @@ def lowerEnumValue (scope : List Binding) (ty : SrcType) (variant : Nat) (payloa
   | .ptr => none
   | .slice element => none
   | .unit => none
+  | .isize => none
 
 /-- The scope of an arm: each binder names its payload field's slots, binding in order as Core's bindLocals does. A binder takes slots, so no two share a first slot. -/
 def armScope (binders : List Nat) (types : List SrcType) (slot : Nat) (scope : List Binding) : Option (List Binding) :=
@@ -1745,6 +1806,7 @@ def lowerMatchOn (scope : List Binding) (b : Binding) (enumId : Nat) (arms : Lis
   | .ptr => none
   | .slice element => none
   | .unit => none
+  | .isize => none
 
 def lowerMatch (scope : List Binding) (binding : Option Binding) (enumId : Nat) (arms : List SrcArm) (ty : SrcType) (target : Nat) : Option Stmt :=
   match binding with
@@ -1890,6 +1952,7 @@ def elementOf (ty : SrcType) : Option SrcType :=
   | .ptr => none
   | .slice element => some element
   | .unit => none
+  | .isize => none
 
 /-- The index in slot, then the element it picks loaded over it. -/
 def evalLoad (b : Binding) (slot : Nat) (i : Evaluated) : Option Evaluated :=
@@ -1918,6 +1981,7 @@ def evalStruct (ty : SrcType) (args : Option EvaluatedArgs) : Option Evaluated :
     | .ptr => none
     | .slice element => none
     | .unit => none
+    | .isize => none
 
 /-- The payload, evaluated from slot + 1, then the tag in slot. -/
 def evalPayload (ty : SrcType) (types : List SrcType) (variant : Nat) (slot : Nat) (args : EvaluatedArgs) : Option Evaluated :=
@@ -1948,6 +2012,7 @@ def evalVariant (ty : SrcType) (variant : Nat) (slot : Nat) (args : Option Evalu
     | .ptr => none
     | .slice element => none
     | .unit => none
+    | .isize => none
 
 def signedDiv (op : SrcDivOp) : DivOp :=
   match op with
@@ -2043,6 +2108,7 @@ def matchVariants (ty : SrcType) : List (List SrcType) :=
   | .ptr => []
   | .slice element => []
   | .unit => []
+  | .isize => []
 
 /-- The match is exhaustive, its value takes slots, and its tags fit in 32 bits. -/
 def evalMatchOf (slot : Nat) (ety : SrcType) (ty : SrcType) (s : Evaluated) (arms : Stmt) (binders : Nat) (values : Nat) : Option Evaluated :=
@@ -2181,6 +2247,7 @@ def lowerSetFieldOf (b : Binding) (field : Nat) (scope : List Binding) (value : 
   | .ptr => none
   | .slice element => none
   | .unit => none
+  | .isize => none
 
 def lowerSetField (binding : Option Binding) (field : Nat) (scope : List Binding) (value : SrcExpr) : Option Stmt :=
   match binding with
@@ -2336,6 +2403,7 @@ def wordWidth (ty : SrcType) : Option MemWidth :=
   | .ptr => some MemWidth.m64
   | .slice element => none
   | .unit => none
+  | .isize => none
 
 def consWidth (width : Option MemWidth) (rest : Option (List MemWidth)) : Option (List MemWidth) :=
   match width with
@@ -2379,6 +2447,7 @@ def elementWidths (decls : SrcDecls) (element : SrcType) : Option (List MemWidth
   | .ptr => none
   | .slice inner => none
   | .unit => none
+  | .isize => none
 
 def isWordStruct (decls : SrcDecls) (element : SrcType) : Bool :=
   match elementWidths decls element with
@@ -2425,6 +2494,7 @@ def enumWidths (decls : SrcDecls) (element : SrcType) : Option (List (List MemWi
   | .ptr => none
   | .slice inner => none
   | .unit => none
+  | .isize => none
 
 def isWordEnum (decls : SrcDecls) (element : SrcType) : Bool :=
   match enumWidths decls element with
@@ -2794,6 +2864,7 @@ def setFieldEvalOf (b : Binding) (field : Nat) (slot : Nat) (v : Evaluated) : Op
   | .ptr => none
   | .slice element => none
   | .unit => none
+  | .isize => none
 
 def lowerSetFieldEval (slot : Nat) (binding : Option Binding) (field : Nat) (value : Option Evaluated) : Option Stmt :=
   match binding with
@@ -3021,6 +3092,7 @@ def SrcType.declare (self : SrcType) (decls : SrcDecls) : Option SrcDecls :=
   | .ptr => some decls
   | .slice element => SrcType.declare element decls
   | .unit => some decls
+  | .isize => some decls
 
 def declareTypes (types : List SrcType) (decls : SrcDecls) : Option SrcDecls :=
   match types with

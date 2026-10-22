@@ -199,6 +199,10 @@ theorem orderUint_some {op : CmpOp} {l r t : Typed} {kind : Option UintTy}
 theorem holds_compare (c : Bool) : SrcType.Holds .bool (.boolean c) (if c then 1 else 0) :=
   ⟨c, rfl, by cases c <;> rfl⟩
 
+/-- `signKey` flips the sign bit. -/
+theorem signKey_eval (e : Expr) (env : Env) : (signKey e).eval env = flip (e.eval env) := by
+  simp only [signKey, Expr.eval, Word.apply, BinOp.apply, flip]
+
 /-- A lowered cast holds Core's cast of the operand's value. -/
 theorem cast_sound {ty : SrcType} {inner t : Typed} {env : Env} {w result : Value}
     (holds : inner.ty.Holds w (inner.expr.eval env)) (lowered : castTo ty inner = some t)
@@ -235,6 +239,19 @@ theorem cast_sound {ty : SrcType} {inner t : Typed} {env : Env} {w result : Valu
     · simp at lowered
     · simp at lowered
     · simp at lowered
+    · rename_i hty
+      simp only [Option.some.injEq] at lowered
+      subst lowered
+      rw [hty] at holds
+      subst holds
+      simp only [SrcType.toScalar, cast_i32_isize, Except.ok.injEq] at casted
+      subst casted
+      have low32 : BitVec.ofNat 64 ((inner.expr.eval env).toNat % 2 ^ UintTy.width .uint32) =
+          widen (BitVec.ofNat 32 (inner.expr.eval env).toNat) := by
+        apply BitVec.eq_of_toNat_eq
+        simp only [widen, BitVec.toNat_ofNat, BitVec.toNat_setWidth, UintTy.width]
+      simp only [wrap_eval, low32]
+      exact holds_i32 _
   | bool => simp [castTo] at lowered
   | uint kind =>
     have positive := Nat.two_pow_pos kind.width
@@ -269,11 +286,59 @@ theorem cast_sound {ty : SrcType} {inner t : Typed} {env : Env} {w result : Valu
     · simp at lowered
     · simp at lowered
     · simp at lowered
+    · rename_i hty
+      simp only [Option.some.injEq] at lowered
+      subst lowered
+      rw [hty] at holds
+      subst holds
+      simp only [SrcType.toScalar, cast_uint_isize, Except.ok.injEq] at casted
+      subst casted
+      rw [wrap_eval]
+      exact holds_uint kind (Nat.mod_lt _ positive)
   | struct => simp [castTo] at lowered
   | enum => simp [castTo] at lowered
   | ptr => simp [castTo] at lowered
   | slice => simp [castTo] at lowered
   | unit => simp [castTo] at lowered
+  | isize =>
+    simp only [castTo, castToIsize] at lowered
+    split at lowered
+    · rename_i hty
+      simp only [Option.some.injEq] at lowered
+      subst lowered
+      rw [hty] at holds
+      obtain ⟨rfl, bits⟩ := holds
+      simp only [SrcType.toScalar, cast_isize_i32, Except.ok.injEq] at casted
+      subst casted
+      rw [fromI32_eval .uint64 _ env bits]
+      show _ = _
+      congr 2
+      apply BitVec.eq_of_toNat_eq
+      simp only [UintTy.width, BitVec.toNat_ofNat, BitVec.toNat_ofInt]
+      omega
+    · simp at lowered
+    · rename_i kind hty
+      simp only [Option.some.injEq] at lowered
+      subst lowered
+      rw [hty] at holds
+      obtain ⟨rfl, -⟩ := holds
+      simp only [SrcType.toScalar, cast_isize_uint, Except.ok.injEq] at casted
+      subst casted
+      show _ = _
+      simp
+    · simp at lowered
+    · simp at lowered
+    · simp at lowered
+    · simp at lowered
+    · simp at lowered
+    · rename_i hty
+      simp only [Option.some.injEq] at lowered
+      subst lowered
+      rw [hty] at holds ⊢
+      subst holds
+      simp only [SrcType.toScalar, cast_isize_isize, Except.ok.injEq] at casted
+      subst casted
+      rfl
 
 /-- A strict operator's lowering, on operands that represent `vl` and `vr`,
 represents Core's result. -/
@@ -313,6 +378,26 @@ theorem SrcOp.lower_holds {op : SrcOp} {tl tr t : Typed} (lowered : op.lower tl 
         eval_bitXor, Except.ok.injEq] at evaluated
       subst evaluated
       simp only [Expr.eval, Word.apply, BinOp.apply]; exact holds_i32 _
+    split at lowered
+    · rename_i types
+      simp only [Option.some.injEq] at lowered
+      subst lowered
+      cases htl : tl.ty <;> cases htr : tr.ty <;> simp [htl, htr, SrcType.isIsize] at types
+      rw [htl] at holdsl
+      rw [htr] at holdsr
+      subst holdsl
+      subst holdsr
+      simp only [SrcOp.toCore] at evaluated
+      first
+        | rw [eval_isize_binop (op := .add) (h := .inl ⟨rfl, rfl⟩)] at evaluated
+        | rw [eval_isize_binop (op := .sub) (h := .inr (.inl ⟨rfl, rfl⟩))] at evaluated
+        | rw [eval_isize_binop (op := .mul) (h := .inr (.inr (.inl ⟨rfl, rfl⟩)))] at evaluated
+        | rw [eval_isize_binop (op := .and) (h := .inr (.inr (.inr (.inl ⟨rfl, rfl⟩))))] at evaluated
+        | rw [eval_isize_binop (op := .or) (h := .inr (.inr (.inr (.inr (.inl ⟨rfl, rfl⟩)))))] at evaluated
+        | rw [eval_isize_binop (op := .xor) (h := .inr (.inr (.inr (.inr (.inr ⟨rfl, rfl⟩)))))] at evaluated
+      simp only [Except.ok.injEq] at evaluated
+      subst evaluated
+      rfl
     · obtain ⟨k, hk, htr, rfl⟩ := arithUint_some lowered
       rw [SrcType.eq_of_uintKind hk] at holdsl
       rw [htr] at holdsr
@@ -351,6 +436,25 @@ theorem SrcOp.lower_holds {op : SrcOp} {tl tr t : Typed} (lowered : op.lower tl 
       subst evaluated
       simp only [Expr.eval, Word.holds]
       exact holds_compare _
+    split at lowered
+    · rename_i types
+      simp only [Option.some.injEq] at lowered
+      subst lowered
+      cases htl : tl.ty <;> cases htr : tr.ty <;> simp [htl, htr, SrcType.isIsize] at types
+      rw [htl] at holdsl
+      rw [htr] at holdsr
+      subst holdsl
+      subst holdsr
+      simp only [SrcOp.toCore] at evaluated
+      first
+        | rw [eval_isize_order (op := .lt) (h := .inl ⟨rfl, rfl⟩)] at evaluated
+        | rw [eval_isize_order (op := .le) (h := .inr (.inl ⟨rfl, rfl⟩))] at evaluated
+        | rw [eval_isize_order (op := .gt) (h := .inr (.inr (.inl ⟨rfl, rfl⟩)))] at evaluated
+        | rw [eval_isize_order (op := .ge) (h := .inr (.inr (.inr ⟨rfl, rfl⟩)))] at evaluated
+      simp only [Except.ok.injEq] at evaluated
+      subst evaluated
+      simp only [Expr.eval, Word.holds, signKey_eval]
+      exact holds_compare _
     · obtain ⟨k, hk, htr, rfl⟩ := orderUint_some lowered
       rw [SrcType.eq_of_uintKind hk] at holdsl
       rw [htr] at holdsr
@@ -374,7 +478,7 @@ theorem SrcOp.lower_holds {op : SrcOp} {tl tr t : Typed} (lowered : op.lower tl 
       subst lowered
       simp only [SrcOp.toCore] at evaluated
       cases htl : tl.ty <;> cases htr : tr.ty <;>
-        simp [htl, htr, SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isUint, SrcType.isPtr, SrcType.isUnit] at types <;>
+        simp [htl, htr, SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isUint, SrcType.isPtr, SrcType.isUnit, SrcType.isIsize] at types <;>
         rw [htl] at holdsl <;> rw [htr] at holdsr
       · obtain ⟨rfl, _⟩ := holdsl
         obtain ⟨rfl, _⟩ := holdsr
@@ -405,6 +509,12 @@ theorem SrcOp.lower_holds {op : SrcOp} {tl tr t : Typed} (lowered : op.lower tl 
         exact holds_compare _
       · simp [SrcType.Holds] at holdsl
       · simp [SrcType.Holds] at holdsl
+      · subst holdsl
+        subst holdsr
+        simp only [eval_isize_eq, eval_isize_ne, Except.ok.injEq] at evaluated
+        subst evaluated
+        simp only [Expr.eval, htl, SrcType.word, Word.holds]
+        exact holds_compare _
     · simp at lowered
   case logicalAnd => exact absurd rfl strict.1
   case logicalOr => exact absurd rfl strict.2
@@ -534,7 +644,23 @@ theorem SrcExpr.lower_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
             obtain ⟨rfl, rfl⟩ := run
             exact ⟨rfl, by simp only [Expr.eval]; rw [wrap_neg]; exact holds_i32 _⟩
           all_goals simp at run
-        · simp at lowered
+        · split at lowered
+          · rename_i isIsize
+            simp only [Option.some.injEq] at lowered
+            subst lowered
+            simp only [SrcExpr.toCore, evalExpr] at run
+            split at run
+            · rename_i w mid innerRun
+              obtain ⟨rfl, holds⟩ := ih innerLowered innerRun
+              cases hty : inner.ty <;> simp [hty, SrcType.isIsize] at isIsize
+              rw [hty] at holds
+              subst holds
+              rw [target, eval_isize_neg] at run
+              simp only [Semantics.Outcome.done.injEq] at run
+              obtain ⟨rfl, rfl⟩ := run
+              exact ⟨rfl, rfl⟩
+            all_goals simp at run
+          · simp at lowered
   | not operand ih =>
     intro t fuel v st' lowered run
     cases fuel with
