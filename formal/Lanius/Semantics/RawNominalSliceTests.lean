@@ -187,4 +187,19 @@ example :
       | .error _ => false) = true := by
   decide
 
+-- slice_stride: a pair struct runs down 16 bytes, i32 elements forward 4.
+example : rawSliceStride? pairProgram (.rawSlice (.structure 3) 32 2) = some (-16) := by
+  decide
+
+example : rawSliceStride? pairProgram (.rawSlice (.scalar (.signed .i32)) 8 3) = some 4 := by
+  decide
+
+example : rawSliceStride? pairProgram (.rawSlice (.structure 9) 32 2) = none := by
+  decide
+
+example : (match evalExpr 2 pairProgram boundState (.intrinsic .sliceStride (.local 0)) with
+    | .done (.signed .isize stride) _ => stride == -16
+    | _ => false) = true := by
+  decide
+
 end Lanius.Semantics.RawNominalSliceTests

@@ -203,6 +203,7 @@ pub enum SrcEff {
     EVariant(SrcType, usize, Box<List<SrcEff>>),
     EMatch(Box<SrcEff>, SrcType, SrcType, List<List<usize>>, Box<List<SrcEff>>),
     EDivide(SrcDivOp, Box<SrcEff>, Box<SrcEff>),
+    EStride(usize),
 }
 
 pub enum SrcStmt {
@@ -6105,6 +6106,7 @@ pub fn known_eff(funcs: List<SrcFunc>, locals: List<LocalTy>, x: SrcEff) -> core
         EVariant(t, k, ps) -> Some(t),
         EMatch(s, ety, t, bs, vs) -> Some(t),
         EDivide(op, a, b) -> either_ty(known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))),
+        EStride(s) -> Some(Isize),
     };
 }
 
@@ -6122,6 +6124,7 @@ pub fn lit_eff(funcs: List<SrcFunc>, locals: List<LocalTy>, want: core::option::
         EVariant(t, k, ps) -> EVariant(t, k, boxed(lit_effs(funcs, locals, payload_at(src_variants(Some(t)), k), unbox(ps)))),
         EMatch(s, ety, t, bs, vs) -> EMatch(boxed(lit_eff(funcs, locals, Some(ety), unbox(s))), ety, t, bs, boxed(lit_arm_effs(funcs, locals, src_variants(Some(ety)), t, bs, unbox(vs)))),
         EDivide(op, a, b) -> EDivide(op, boxed(lit_eff(funcs, locals, operand_want(Plus, want, known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))), unbox(a))), boxed(lit_eff(funcs, locals, operand_want(Plus, want, known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))), unbox(b)))),
+        EStride(s) -> EStride(s),
     };
 }
 

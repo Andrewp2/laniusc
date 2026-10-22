@@ -247,6 +247,8 @@ deriving DecidableEq, Repr
 inductive Intrinsic where
   | printI32
   | assert
+  /-- `slice_stride(view)`: a raw view's signed byte stride, as `isize`. -/
+  | sliceStride
 deriving DecidableEq, Repr
 
 mutual
@@ -282,7 +284,7 @@ mutual
         temporary cell during evaluation. -/
     | i32ArrayDataPtr (array : Expr)
     /-- Unsafe compiler intrinsic constructing a pointer/length i32 slice.
-        Evaluation validates and protects the complete backing block. -/
+        Evaluation checks that the range lies inside one live block. -/
     | i32SliceFromRawParts (pointer length : Expr)
     /-- A raw pointer/length slice with a declared nominal element type.
         Native heap-backed access is defined for supported scalar-field

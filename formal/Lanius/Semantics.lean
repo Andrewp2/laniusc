@@ -997,6 +997,19 @@ def mapRawNominalSlice (program : Program) (state : State)
             | .error reason => .trapped reason state
             | .ok () => .done (.rawSlice element address length) state
 
+/-- `slice_stride(view)`: element i + 1 of a raw view starts this many bytes
+    after element i. i32 views run forward; nominal views run down by their
+    native size. Views of language arrays have no stride here. -/
+def rawSliceStride? (program : Program) (value : Value) : Option Int :=
+  match value with
+  | .rawSlice element _ _ =>
+      if element = .scalar (.signed .i32) then some 4
+      else
+        match NativeLayout.valueWords? program element with
+        | some words => some (-((NativeLayout.wordBytes * words : Nat) : Int))
+        | none => none
+  | _ => none
+
 def mapI32SliceDataPtr
     (state : State) (cell : CellId) (projections : List ValueProjection)
     (start length : Nat) : Outcome Value :=
@@ -1368,6 +1381,10 @@ mutual
                     .done .unit { next with world := next.world.afterPrintI32 integer }
                 | .assert, .boolean true => .done .unit next
                 | .assert, .boolean false => .trapped .assertionFailed next
+                | .sliceStride, view =>
+                    match rawSliceStride? program view with
+                    | some stride => .done (.signed .isize stride) next
+                    | none => .trapped .typeMismatch next
                 | _, _ => .trapped .typeMismatch next
             | .trapped reason next => .trapped reason next
             | .exited code exitedState => .exited code exitedState

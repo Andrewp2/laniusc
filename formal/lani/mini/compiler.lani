@@ -1346,6 +1346,8 @@ pub enum SrcEff {
     EMatch(Box<SrcEff>, SrcType, SrcType, List<List<usize>>, Box<List<SrcEff>>),
     // left / right or left % right: a statement in the mini IR, so only here
     EDivide(SrcDivOp, Box<SrcEff>, Box<SrcEff>),
+    // slice_stride(slice) of a slice local, an isize
+    EStride(usize),
 }
 
 pub enum SrcStmt {
@@ -2721,6 +2723,7 @@ impl SrcEff {
             EVariant(ty, variant, payload) -> cons(ty, effs_types(unbox(payload))),
             EMatch(scrutinee, ety, ty, binders, values) -> cons(ety, concat(unbox(scrutinee).types(), effs_types(unbox(values)))),
             EDivide(op, left, right) -> concat(unbox(left).types(), unbox(right).types()),
+            EStride(slice) -> empty(),
         };
     }
 }
@@ -3539,6 +3542,40 @@ pub fn eval_index(decls: SrcDecls, scope: List<Binding>, slice: usize, slot: usi
     };
 }
 
+// A raw slice's stride as isize bits: element i + 1 of an i32 slice starts 4
+// bytes after element i, and of a word struct or enum slice, 8 bytes a word
+// before it.
+pub fn word_stride(slot: usize, words: usize) -> Evaluated {
+    return Evaluated { stmt: Assign(slot, Binary(U64, Sub, boxed(Lit(0)), boxed(Lit(times(8, words) as u64)))), ty: Isize };
+}
+
+pub fn eval_word_stride(decls: SrcDecls, element: SrcType, slot: usize) -> core::option::Option<Evaluated> {
+    return match (element_widths(decls, element)) {
+        Some(ws) -> Some(word_stride(slot, length(ws))),
+        None -> match (enum_widths(decls, element)) {
+            None -> None,
+            Some(wss) -> Some(word_stride(slot, plus(max_length(wss), 1))),
+        },
+    };
+}
+
+pub fn eval_stride_of(decls: SrcDecls, element: SrcType, slot: usize) -> core::option::Option<Evaluated> {
+    if (element.is_i32()) {
+        return Some(Evaluated { stmt: Assign(slot, Lit(4)), ty: Isize });
+    }
+    return eval_word_stride(decls, element, slot);
+}
+
+pub fn eval_stride(decls: SrcDecls, scope: List<Binding>, slice: usize, slot: usize) -> core::option::Option<Evaluated> {
+    return match (lookup(scope, slice)) {
+        None -> None,
+        Some(b) -> match (element_of(b.ty)) {
+            None -> None,
+            Some(element) -> eval_stride_of(decls, element, slot),
+        },
+    };
+}
+
 // extract: mutual begin
 impl SrcEff {
     // The code computing this expression into slot, slot + 1, ..., and its type.
@@ -3555,6 +3592,7 @@ impl SrcEff {
             EVariant(ty, variant, payload) -> eval_variant(ty, variant, slot, eval_args(sigs, decls, scope, unbox(payload), plus(slot, 1))),
             EMatch(scrutinee, ety, ty, binders, values) -> eval_match(slot, ety, ty, unbox(scrutinee).eval(sigs, decls, scope, slot), eval_arms(sigs, decls, scope, slot, match_dst(slot, ety, ty), ty, 0, match_variants(ety), binders, unbox(values)), length(binders), length(unbox(values))),
             EDivide(op, left, right) -> eval_division(op, slot, unbox(left).eval(sigs, decls, scope, slot), unbox(right).eval(sigs, decls, scope, plus(slot, 1))),
+            EStride(slice) -> eval_stride(decls, scope, slice, slot),
         };
     }
 }
