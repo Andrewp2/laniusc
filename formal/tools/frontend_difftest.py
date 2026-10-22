@@ -6,7 +6,9 @@
 
 Run from the repository root. Programs come from oracle_difftest.py's
 generator (the front pass's subset: integers, bool, structs, enums, match,
-if, while, calls, return), printed as Lanius, C programs to a file. laniusc
+if, while, calls, return, heap and slices, and with oracle.EFFECTS calls,
+indexing, division, literals and match inside expressions), printed as
+Lanius, C programs to a file. laniusc
 parses each file on the GPU, under target/claude-work/bin/heavy; its parse
 tree (the node_kind and parent arrays) is captured right after the kernel
 that builds it (LANIUS_DEBUG_CAPTURE_PASS=parser/tree/parent_parallel), and
@@ -17,7 +19,10 @@ extracted validator and builder) reads each file with laniusc's tree, and the
 result must be the program this script expects the text to mean: the
 generated program with each local named by the byte offset of its binding,
 literals as the text writes them (`(-5)` is a negation, `(7 as u8)` a cast),
-and statement lists nested the way the reader nests them. The Lean lexer's
+statement lists nested the way the reader nests them, and effectful
+expressions collapsed the way the reader reads them (see collapse and
+let_eval_head: pure parts are pure, and a statement with a pure form keeps
+it). The Lean lexer's
 tokens must also be laniusc's (kind, start and length). Finally M mutated
 copies of each tree (a production id or a parent index changed) and of each
 source (one `+` written as `-`) must be rejected.
@@ -25,7 +30,8 @@ source (one `+` written as `-`) must be rejected.
 With --generic, each file's programs are abstracted (see Chunk): generic
 structs, enums and functions, a second file for the module gen::lib,
 constants and a generic identity function. The expected program is the
-generated one numbered as the front end's monomorphizer numbers it.
+generated one numbered as the front end's monomorphizer numbers it. The
+generic programs have no effectful expressions (oracle.EFFECTS is off).
 
 With --cases, runs hand-written cases instead (see run_cases).
 
@@ -43,7 +49,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import oracle_difftest as oracle  # noqa: E402
-oracle.EFFECTS = False  # the front end does not read effectful expressions (calls inside expressions) yet
+oracle.EFFECTS = False  # set in main: effectful expressions, except with --generic
 
 HEAVY = 'target/claude-work/bin/heavy'
 UINT_LEAN = oracle.UINT_LEAN
@@ -281,6 +287,188 @@ class Chunk:
         out.emit(f': {self.ty(k, ty)} = ')
         return ids[ident]
 
+    # effectful expressions: print (binding a match's binders), and the
+    # expected reading of the collapsed expression (see collapse)
+    def emit_eff(self, k, ids, x, top=False):
+        out = self.out
+        kind = x[0]
+        if kind == 'ePure':
+            out.emit(self.lani_expr(k, x[1]))
+        elif kind == 'eCall':
+            self.calls[self.key].append(('f', k, x[1]))
+            out.emit(self.fn_path(k, x[1]) + '(')
+            for i, a in enumerate(x[2]):
+                if i:
+                    out.emit(', ')
+                self.emit_eff(k, ids, a)
+            out.emit(')')
+        elif kind in ('eNeg', 'eNot'):
+            out.emit('(-' if kind == 'eNeg' else '(!')
+            self.emit_eff(k, ids, x[1])
+            out.emit(')')
+        elif kind == 'eCast':
+            out.emit('(')
+            self.emit_eff(k, ids, x[2])
+            out.emit(f' as {x[1]})')
+        elif kind == 'eIndex':
+            out.emit(f'v{x[1]}[')
+            self.emit_eff(k, ids, x[2])
+            out.emit(']')
+        elif kind in ('eApply', 'eDivide'):
+            out.emit('(')
+            self.emit_eff(k, ids, x[3])
+            out.emit(f' {x[2]} ')
+            self.emit_eff(k, ids, x[4])
+            out.emit(')')
+        elif kind == 'eStruct':
+            out.emit(f'{self.type_path(k, x[1])} {{ ')
+            for j, f in enumerate(x[2]):
+                out.emit((', ' if j else '') + f'f{j}: ')
+                self.emit_eff(k, ids, f)
+            out.emit(' }')
+        elif kind == 'eVariant':
+            out.emit(self.variant(k, x[1][1], x[2]))
+            if x[3]:
+                out.emit('(')
+                for i, a in enumerate(x[3]):
+                    if i:
+                        out.emit(', ')
+                    self.emit_eff(k, ids, a)
+                out.emit(')')
+        elif kind == 'eMatch':
+            _, scrutinee, ety, ty, binders, values = x
+            out.emit('match (' if top else '(match (')
+            self.emit_eff(k, ids, scrutinee)
+            out.emit(') { ')
+            for v, (names, value) in enumerate(zip(binders, values)):
+                out.emit(self.variant(k, ety[1], v, arm=True))
+                if names:
+                    out.emit('(')
+                    for i, b in enumerate(names):
+                        if i:
+                            out.emit(', ')
+                        out.bind((self.cur, k, b), f'v{b}')
+                        ids[b] = out.binding[(self.cur, k, b)]
+                    out.emit(')')
+                out.emit(' -> ')
+                self.emit_eff(k, ids, value)
+                out.emit(', ')
+            out.emit('}' if top else '})')
+        else:
+            raise ValueError(x)
+
+    def lean_eff(self, k, ids, x):
+        kind = x[0]
+        if kind == 'ePure':
+            return f'(.ePure {self.lean_expr(k, ids, x[1])})'
+        if kind == 'eCall':
+            return f'(.eCall @F{k}_{x[1]}@ [{", ".join(self.lean_eff(k, ids, a) for a in x[2])}])'
+        if kind == 'eNeg':
+            return f'(.eNeg {self.lean_eff(k, ids, x[1])})'
+        if kind == 'eNot':
+            return f'(.eNot {self.lean_eff(k, ids, x[1])})'
+        if kind == 'eCast':
+            return f'(.eCast {self.lean_ty(k, x[1])} {self.lean_eff(k, ids, x[2])})'
+        if kind == 'eIndex':
+            return f'(.eIndex {ids[x[1]]} {self.lean_eff(k, ids, x[2])})'
+        if kind in ('eApply', 'eDivide'):
+            return f'(.{kind} .{x[1]} {self.lean_eff(k, ids, x[3])} {self.lean_eff(k, ids, x[4])})'
+        if kind == 'eStruct':
+            return f'(.eStruct {self.lean_ty(k, x[1])} [{", ".join(self.lean_eff(k, ids, f) for f in x[2])}])'
+        if kind == 'eVariant':
+            return f'(.eVariant {self.lean_ty(k, x[1])} {x[2]} [{", ".join(self.lean_eff(k, ids, f) for f in x[3])}])'
+        _, scrutinee, ety, ty, binders, values = x
+        bs = '[' + ', '.join('[' + ', '.join(str(ids[b]) for b in names) + ']' for names in binders) + ']'
+        return (f'(.eMatch {self.lean_eff(k, ids, scrutinee)} {self.lean_ty(k, ety)} {self.lean_ty(k, ty)} {bs} '
+                f'[{", ".join(self.lean_eff(k, ids, v) for v in values)}])')
+
+    def let_eval_head(self, k, ids, lid, ty, x):
+        """The reader keeps a let's statement form when its value is one (a
+        pure expression, a call, literal or variant of pure values, a match
+        of a local with pure arms, a slice element at a pure index)."""
+        lty = self.lean_ty(k, ty)
+        kind = x[0]
+
+        def pures(xs):
+            return all(a[0] == 'ePure' for a in xs)
+
+        def exprs(xs):
+            return '[' + ', '.join(self.lean_expr(k, ids, a[1]) for a in xs) + ']'
+        if kind == 'ePure':
+            return f'.let {lid} {lty} {self.lean_expr(k, ids, x[1])}'
+        if kind == 'eCall' and pures(x[2]):
+            return f'.letCall {lid} {lty} @F{k}_{x[1]}@ {exprs(x[2])}'
+        if kind == 'eStruct' and pures(x[2]):
+            return f'.letStruct {lid} {lty} {exprs(x[2])}'
+        if kind == 'eVariant' and pures(x[3]):
+            return f'.letEnum {lid} {lty} {x[2]} {exprs(x[3])}'
+        if kind == 'eMatch' and x[1][0] == 'ePure' and x[1][1][0] == 'local' and pures(x[5]):
+            arms = ', '.join(f'{{ binders := [{", ".join(str(ids[b]) for b in names)}], '
+                             f'value := {self.lean_expr(k, ids, value[1])} }}' for names, value in zip(x[4], x[5]))
+            return f'.letMatch {lid} {lty} {ids[x[1][1][1]]} @T{k}e{x[2][1]}@ [{arms}]'
+        if kind == 'eIndex' and x[2][0] == 'ePure':
+            return f'.letIndex {lid} {lty} {ids[x[1]]} {self.lean_expr(k, ids, x[2][1])}'
+        return f'.letEval {lid} {lty} {self.lean_eff(k, ids, x)}'
+
+    def eval_stmt(self, k, ids, s, indent):
+        out, pad = self.out, '    ' * indent
+        kind = s[0]
+        if kind == 'letEval':
+            ident, ty, x = s[1], s[2], s[3]
+            self.tys[self.key].append(ty)
+            out.emit(f'{pad}let ')
+            lid = self.bind_let(k, ids, ident, ty)
+            self.emit_eff(k, ids, x, top=True)
+            out.emit(';\n')
+            return [('let', self.let_eval_head(k, ids, lid, ty, collapse(x)))] + self.stmt(k, ids, s[4], indent)
+        if kind == 'setEval':
+            ident, x = s[1], s[2]
+            arith = x[0] == 'eDivide' or (x[0] == 'eApply' and x[1] in oracle.ARITH_NAMES)
+            if arith and self.rng.random() < 0.4:
+                # `v op= e` reads as `v = v op e`
+                x = x[:3] + (('ePure', ('local', ident)), x[4])
+                out.emit(f'{pad}v{ident} {x[2]}= ')
+                self.emit_eff(k, ids, x[4])
+            else:
+                out.emit(f'{pad}v{ident} = ')
+                self.emit_eff(k, ids, x)
+            out.emit(';\n')
+            c = collapse(x)
+            if c[0] == 'ePure':
+                return [('stmt', f'(.set {ids[ident]} {self.lean_expr(k, ids, c[1])})')]
+            if c[0] == 'eCall' and all(a[0] == 'ePure' for a in c[2]):
+                args = ', '.join(self.lean_expr(k, ids, a[1]) for a in c[2])
+                return [('stmt', f'(.setCall {ids[ident]} @F{k}_{c[1]}@ [{args}])')]
+            return [('stmt', f'(.setEval {ids[ident]} {self.lean_eff(k, ids, c)})')]
+        if kind in ('ifEval', 'whileEval'):
+            word = kind[:-4]
+            out.emit(f'{pad}{word} (')
+            self.emit_eff(k, ids, s[1])
+            out.emit(') {\n')
+            c = collapse(s[1])
+            cond = self.lean_expr(k, ids, c[1]) if c[0] == 'ePure' else self.lean_eff(k, ids, c)
+            form = f'.{word}' + ('' if c[0] == 'ePure' else 'Eval')
+            a = nest(self.stmt(k, ids, s[2], indent + 1))
+            if kind == 'whileEval':
+                out.emit(f'{pad}}}\n')
+                return [('stmt', f'({form} {cond} {a})')]
+            out.emit(f'{pad}}} else {{\n')
+            b = nest(self.stmt(k, ids, s[3], indent + 1))
+            out.emit(f'{pad}}}\n')
+            return [('stmt', f'({form} {cond} {a} {b})')]
+        if kind == 'returnEval':
+            out.emit(f'{pad}return ')
+            self.emit_eff(k, ids, s[1])
+            out.emit(';\n')
+            c = collapse(s[1])
+            if c[0] == 'ePure':
+                return [('stmt', f'(.return {self.lean_expr(k, ids, c[1])})')]
+            return [('stmt', f'(.returnEval {self.lean_eff(k, ids, c)})')]
+        out.emit(pad)
+        self.emit_eff(k, ids, s[1])
+        out.emit(';\n')
+        return [('stmt', f'(.discard {self.lean_eff(k, ids, collapse(s[1]))})')]
+
     # statements: print, and return the reader's items: ('let', head) whose
     # term is f'({head} {rest})', or ('stmt', term)
     def stmt(self, k, ids, s, indent):
@@ -288,6 +476,8 @@ class Chunk:
         kind = s[0]
         if kind == 'nop':
             return []
+        if kind in ('letEval', 'setEval', 'ifEval', 'whileEval', 'returnEval', 'discard'):
+            return self.eval_stmt(k, ids, s, indent)
         if kind == 'then':
             return self.stmt(k, ids, s[1], indent) + self.stmt(k, ids, s[2], indent)
         if kind in ('letAlloc', 'letSlice', 'letIndex'):
@@ -535,6 +725,36 @@ class Chunk:
         return [re.sub(r'@([TFG][0-9a-z_]+)@', fill, self.terms[key]) for key in table]
 
 
+def collapse(x):
+    """An effectful expression as the reader reads it: the operators, casts
+    and negations of pure operands are pure."""
+    kind = x[0]
+    if kind == 'ePure':
+        return x
+    if kind == 'eCall':
+        return ('eCall', x[1], [collapse(a) for a in x[2]])
+    if kind in ('eNeg', 'eNot'):
+        a = collapse(x[1])
+        if a[0] == 'ePure':
+            return ('ePure', ('neg' if kind == 'eNeg' else 'not', a[1]))
+        return (kind, a)
+    if kind == 'eCast':
+        a = collapse(x[2])
+        return ('ePure', ('cast', x[1], a[1])) if a[0] == 'ePure' else ('eCast', x[1], a)
+    if kind == 'eIndex':
+        return ('eIndex', x[1], collapse(x[2]))
+    if kind in ('eApply', 'eDivide'):
+        a, b = collapse(x[3]), collapse(x[4])
+        if kind == 'eApply' and a[0] == 'ePure' and b[0] == 'ePure':
+            return ('ePure', ('op', x[1], x[2], a[1], b[1]))
+        return (kind, x[1], x[2], a, b)
+    if kind == 'eStruct':
+        return ('eStruct', x[1], [collapse(f) for f in x[2]])
+    if kind == 'eVariant':
+        return ('eVariant', x[1], x[2], [collapse(f) for f in x[3]])
+    return ('eMatch', collapse(x[1]), x[2], x[3], x[4], [collapse(v) for v in x[5]])
+
+
 def let_types(s):
     """The types a statement's lets bind (a slice's element type)."""
     if not isinstance(s, tuple) or not s:
@@ -645,6 +865,23 @@ partial def serExpr : SrcExpr → String
 
 def serExprs (es : List SrcExpr) : String := bracket (es.map serExpr)
 
+def serDiv : SrcDivOp → String
+  | .quotient => ".quotient" | .remainder => ".remainder"
+
+partial def serEff : SrcEff → String
+  | .ePure e => s!"(.ePure {serExpr e})"
+  | .eCall f args => s!"(.eCall {f} {bracket (args.map serEff)})"
+  | .eApply o a b => s!"(.eApply .{serOp o} {serEff a} {serEff b})"
+  | .eNeg a => s!"(.eNeg {serEff a})"
+  | .eNot a => s!"(.eNot {serEff a})"
+  | .eCast t a => s!"(.eCast {serType t} {serEff a})"
+  | .eIndex sl i => s!"(.eIndex {sl} {serEff i})"
+  | .eStruct t fs => s!"(.eStruct {serType t} {bracket (fs.map serEff)})"
+  | .eVariant t k ps => s!"(.eVariant {serType t} {k} {bracket (ps.map serEff)})"
+  | .eMatch x e t bs vs =>
+    s!"(.eMatch {serEff x} {serType e} {serType t} {bracket (bs.map fun b => bracket (b.map toString))} {bracket (vs.map serEff)})"
+  | .eDivide o a b => s!"(.eDivide {serDiv o} {serEff a} {serEff b})"
+
 def serArm (a : SrcArm) : String :=
   "{ binders := " ++ bracket (a.binders.map toString) ++ ", value := " ++ serExpr a.value ++ " }"
 
@@ -669,7 +906,13 @@ partial def serStmt : SrcStmt → String
   | .letSlice n t p len r => s!"(.letSlice {n} {serType t} {serExpr p} {serExpr len} {serStmt r})"
   | .letIndex n t sl i r => s!"(.letIndex {n} {serType t} {sl} {serExpr i} {serStmt r})"
   | .setIndex sl i v => s!"(.setIndex {sl} {serExpr i} {serExpr v})"
-  | .letEval .. | .setEval .. | .ifEval .. | .whileEval .. | .returnEval .. | .discard .. | .setIndexEval .. => "(eval)"
+  | .letEval n t x r => s!"(.letEval {n} {serType t} {serEff x} {serStmt r})"
+  | .setEval n x => s!"(.setEval {n} {serEff x})"
+  | .ifEval x a b => s!"(.ifEval {serEff x} {serStmt a} {serStmt b})"
+  | .whileEval x b => s!"(.whileEval {serEff x} {serStmt b})"
+  | .returnEval x => s!"(.returnEval {serEff x})"
+  | .discard x => s!"(.discard {serEff x})"
+  | .setIndexEval sl i v => s!"(.setIndexEval {sl} {serEff i} {serEff v})"
 
 def serParam (p : SrcParam) : String := "{ id := " ++ toString p.id ++ ", ty := " ++ serType p.ty ++ " }"
 
@@ -753,12 +996,24 @@ def checkMulti (bases : List String) (mutants : List (String × String)) : IO Un
 -- Locals renamed to their rank among the function's binding ids, so that two
 -- texts of one program (a generic one and its hand-monomorphized copy) can be
 -- compared.
+partial def effBinders : SrcEff → List Nat
+  | .ePure _ => []
+  | .eCall _ xs | .eStruct _ xs | .eVariant _ _ xs => xs.flatMap effBinders
+  | .eApply _ a b | .eDivide _ a b => effBinders a ++ effBinders b
+  | .eNeg a | .eNot a | .eCast _ a | .eIndex _ a => effBinders a
+  | .eMatch x _ _ bs vs => effBinders x ++ bs.flatten ++ vs.flatMap effBinders
+
 partial def bindersOf : SrcStmt → List Nat
   | .let n _ _ r | .letStruct n _ _ r | .letCall n _ _ _ r | .letEnum n _ _ _ r => n :: bindersOf r
   | .letMatch n _ _ _ arms r => n :: arms.flatMap (·.binders) ++ bindersOf r
   | .letAlloc n _ _ r | .letLoad n _ _ r | .letSlice n _ _ _ r | .letIndex n _ _ _ r => n :: bindersOf r
   | .then a b | .if _ a b => bindersOf a ++ bindersOf b
   | .while _ b => bindersOf b
+  | .letEval n _ x r => n :: effBinders x ++ bindersOf r
+  | .setEval _ x | .returnEval x | .discard x => effBinders x
+  | .ifEval x a b => effBinders x ++ bindersOf a ++ bindersOf b
+  | .whileEval x b => effBinders x ++ bindersOf b
+  | .setIndexEval _ i v => effBinders i ++ effBinders v
   | _ => []
 
 partial def renExpr (f : Nat → Nat) : SrcExpr → SrcExpr
@@ -769,6 +1024,19 @@ partial def renExpr (f : Nat → Nat) : SrcExpr → SrcExpr
   | .apply o a b => .apply o (renExpr f a) (renExpr f b)
   | .cast t e => .cast t (renExpr f e)
   | e => e
+
+partial def renEff (f : Nat → Nat) : SrcEff → SrcEff
+  | .ePure e => .ePure (renExpr f e)
+  | .eCall c xs => .eCall c (xs.map (renEff f))
+  | .eApply o a b => .eApply o (renEff f a) (renEff f b)
+  | .eNeg a => .eNeg (renEff f a)
+  | .eNot a => .eNot (renEff f a)
+  | .eCast t a => .eCast t (renEff f a)
+  | .eIndex sl i => .eIndex (f sl) (renEff f i)
+  | .eStruct t xs => .eStruct t (xs.map (renEff f))
+  | .eVariant t k xs => .eVariant t k (xs.map (renEff f))
+  | .eMatch x e t bs vs => .eMatch (renEff f x) e t (bs.map (·.map f)) (vs.map (renEff f))
+  | .eDivide o a b => .eDivide o (renEff f a) (renEff f b)
 
 partial def renStmt (f : Nat → Nat) : SrcStmt → SrcStmt
   | .nop => .nop
@@ -792,7 +1060,13 @@ partial def renStmt (f : Nat → Nat) : SrcStmt → SrcStmt
   | .letSlice n t p l r => .letSlice (f n) t (renExpr f p) (renExpr f l) (renStmt f r)
   | .letIndex n t s i r => .letIndex (f n) t (f s) (renExpr f i) (renStmt f r)
   | .setIndex s i v => .setIndex (f s) (renExpr f i) (renExpr f v)
-  | s => s  -- the front end reads no effectful forms yet
+  | .letEval n t x r => .letEval (f n) t (renEff f x) (renStmt f r)
+  | .setEval n x => .setEval (f n) (renEff f x)
+  | .ifEval x a b => .ifEval (renEff f x) (renStmt f a) (renStmt f b)
+  | .whileEval x b => .whileEval (renEff f x) (renStmt f b)
+  | .returnEval x => .returnEval (renEff f x)
+  | .discard x => .discard (renEff f x)
+  | .setIndexEval sl i v => .setIndexEval (f sl) (renEff f i) (renEff f v)
 
 def canonFunc (fn : SrcFunc) : SrcFunc :=
   let ids := (fn.params.map (·.id) ++ bindersOf fn.body).mergeSort (· ≤ ·)
@@ -904,6 +1178,7 @@ def main():
     args = parser.parse_args()
     if args.cases:
         return run_cases(args, args.cases)
+    oracle.EFFECTS = not args.generic
     rng = random.Random(args.seed)
     programs = [oracle.gen_program(rng) for _ in range(args.count)]
     for p in programs:

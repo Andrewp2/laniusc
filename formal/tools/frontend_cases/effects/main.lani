@@ -1,0 +1,59 @@
+enum Maybe<T> {
+    Nothing,
+    Just(T),
+}
+
+struct Pair<T> { a: T, b: T }
+
+struct Acc { n: i32 }
+
+impl Acc {
+    fn add(self, k: i32) -> i32 {
+        return self.n + k;
+    }
+}
+
+fn half(x: i32) -> Maybe<i32> {
+    if (x % 2 == 0) {
+        return Just(x / 2);
+    }
+    return Nothing;
+}
+
+fn top(n: i32) -> i32 {
+    let c: Acc = Acc { n: n };
+    let k: i32 = unwrap_or(wrap(n + 1), 0) * 2;
+    let d: i32 = unwrap_or<i32>(Nothing, c.add(k) + 1);
+    if (first(Pair { a: k > d, b: false })) {
+        k /= 3;
+    }
+    k %= (n | 1);
+    let r: i32 = match (half(k)) {
+        Nothing -> 0,
+        Just(v) -> v + c.add(1),
+    };
+    let p: ptr = alloc::allocator::alloc((16 as usize), (4 as usize));
+    let s: [i32] = slice_from_raw_parts(p, 4);
+    s[k & 3] = c.add(2);
+    while (r < 10 && c.add(r) > 0) {
+        r += 1;
+    }
+    c.add(5);
+    return s[r & 3] + r;
+}
+
+fn unwrap_or<T>(m: Maybe<T>, d: T) -> T {
+    let r: T = match (m) {
+        Nothing -> d,
+        Just(x) -> x,
+    };
+    return r;
+}
+
+fn wrap<T>(x: T) -> Maybe<T> {
+    return Just(x);
+}
+
+fn first<T>(p: Pair<T>) -> T {
+    return p.a;
+}

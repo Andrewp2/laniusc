@@ -1,0 +1,57 @@
+struct Acc { n: i32 }
+
+enum MaybeI {
+    Nothing,
+    Just(i32),
+}
+
+struct PairB { a: bool, b: bool }
+
+fn acc_add(c: Acc, k: i32) -> i32 {
+    return c.n + k;
+}
+
+fn half(x: i32) -> MaybeI {
+    if (x % 2 == 0) {
+        return Just(x / 2);
+    }
+    return Nothing;
+}
+
+fn top(n: i32) -> i32 {
+    let c: Acc = Acc { n: n };
+    let k: i32 = unwrap_or_i(wrap_i(n + 1), 0) * 2;
+    let d: i32 = unwrap_or_i(Nothing, acc_add(c, k) + 1);
+    if (first_b(PairB { a: k > d, b: false })) {
+        k = k / 3;
+    }
+    k = k % (n | 1);
+    let r: i32 = match (half(k)) {
+        Nothing -> 0,
+        Just(v) -> v + acc_add(c, 1),
+    };
+    let p: ptr = alloc::allocator::alloc((16 as usize), (4 as usize));
+    let s: [i32] = slice_from_raw_parts(p, 4);
+    s[k & 3] = acc_add(c, 2);
+    while (r < 10 && acc_add(c, r) > 0) {
+        r += 1;
+    }
+    acc_add(c, 5);
+    return s[r & 3] + r;
+}
+
+fn unwrap_or_i(m: MaybeI, d: i32) -> i32 {
+    let r: i32 = match (m) {
+        Nothing -> d,
+        Just(x) -> x,
+    };
+    return r;
+}
+
+fn wrap_i(x: i32) -> MaybeI {
+    return Just(x);
+}
+
+fn first_b(p: PairB) -> bool {
+    return p.a;
+}
