@@ -2609,6 +2609,14 @@ pub fn negated_int(x: SrcExpr, e: SrcExpr) -> core::option::Option<SrcExpr> {
     };
 }
 
+// A ptr constant's value: `0`, the null pointer.
+pub fn null_const(k: i32) -> core::option::Option<SrcExpr> {
+    if ((k as u32) == 0) {
+        return Some(Null);
+    }
+    return None;
+}
+
 // A constant's value: a literal of its type. An integer literal of an
 // unsigned type is that type's literal.
 pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
@@ -2617,7 +2625,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyI32 -> Some(e),
             TyBool -> None,
             TyUint(u) -> uint_in_range(u, (k as u32) as u64),
-            TyPtr -> None,
+            TyPtr -> null_const(k),
             TyIsize -> Some(Cast(Isize, boxed(e))),
             TySlice(x) -> None,
             TyNamed(d, args) -> None,

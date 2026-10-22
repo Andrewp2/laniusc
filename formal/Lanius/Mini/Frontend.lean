@@ -1800,6 +1800,13 @@ def negatedInt (x : SrcExpr) (e : SrcExpr) : Option SrcExpr :=
   | .cast t y => none
   | .null => none
 
+/-- A ptr constant's value: `0`, the null pointer. -/
+def nullConst (k : BitVec 32) : Option SrcExpr :=
+  if k = 0 then
+    some SrcExpr.null
+  else
+    none
+
 /-- A constant's value: a literal of its type. An integer literal of an unsigned type is that type's literal. -/
 def typedLiteral (t : Ty) (e : SrcExpr) : Option SrcExpr :=
   match e with
@@ -1808,7 +1815,7 @@ def typedLiteral (t : Ty) (e : SrcExpr) : Option SrcExpr :=
      | .tyI32 => some e
      | .tyBool => none
      | .tyUint u => uintInRange u (BitVec.setWidth 64 k)
-     | .tyPtr => none
+     | .tyPtr => nullConst k
      | .tyIsize => some (SrcExpr.cast SrcType.isize e)
      | .tySlice x => none
      | .tyNamed d args => none)
