@@ -542,9 +542,11 @@ element stores per 300 programs). With `SetFieldEval`, seeds 51-54 again:
 field stores per 300 programs). With unit functions, `return;` and
 `assert`, seeds 51-54 again: 1,200 programs, 9,600 calls, no disagreements
 and no rejections, after one laniusc bug: a call to a unit function whose
-body is empty (`fn f(v0: i32) {}` called as `f(3);` from `main`) fails with
-LNC0057 "compiler execution failed" while generating target output. The
-generator gives such a body `return;` instead.
+body is empty (`fn f(v0: i32) {}` called as `f(3);` from `main`) failed with
+LNC0057 "compiler execution failed" while generating target output. An empty
+body owned no LIR rows, so laniusc registered no target function for it; it
+now lowers as a bare `return;`, and the generator makes empty bodies again
+(seeds 51-52: 600 programs, 4,800 calls, no disagreements).
 
 Not covered yet: the stdlib, which needs generics and modules in the front
 pass.

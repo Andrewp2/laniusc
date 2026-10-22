@@ -4596,6 +4596,29 @@ fn main() -> i32 {
 }
 
 #[test]
+fn x86_executes_calls_to_empty_unit_functions() {
+    // An empty body owns no statement rows; its function must still be a
+    // call target with a frame.
+    assert_source_exit(
+        "calls_to_empty_unit_functions",
+        r#"
+fn ignore(value: i32) {
+}
+
+fn nothing() {}
+
+fn main() -> i32 {
+    nothing();
+    ignore(3);
+    nothing();
+    return 7;
+}
+"#,
+        7,
+    );
+}
+
+#[test]
 fn x86_executes_array_literal_with_local_element_expressions() {
     assert_source_exit(
         "array_literal_local_element_expressions",
