@@ -15,8 +15,9 @@ A Python interpreter of the generated programs gives a third answer, so a
 disagreement shows which side is wrong. Prints one line per disagreement and a
 summary; exits nonzero on any.
 
-The programs use i32, bool, the unsigned types, structs and enums of those:
-literals, locals, fields, the operators, casts, variants, `match`, `let`,
+The programs use i32, bool, the unsigned types, isize (frontend_difftest.py
+leaves it out), structs and enums of those: literals, locals, fields, the
+operators, casts, variants, `match`, `let`,
 assignment, `if`, bounded `while` loops, calls to later functions (so every
 run ends) and `return`. The entry function also allocates raw slices of i32,
 word structs and word enums (`alloc`, `ptr + usize`, `slice_from_raw_parts`),
@@ -51,6 +52,16 @@ side of `&&` and `||` often calls one, and the entry's result folds in every
 element of its slices, so evaluation order and short circuit show in the
 result. `while` conditions are `counter < bound && c` (either way round), so
 loops stay bounded whatever c calls.
+
+isize is a 64-bit two's complement slot: + - * & | ^ and unary minus wrap
+at 64 bits, < <= > >= are signed, and casts sign-extend an i32, keep an
+unsigned value's bits, and wrap on the way out; there is no isize division
+and no slice of isize. Its literals, edge values near 2^63 among them, are
+`.cast .isize (.int n)` in Lean (a u64 literal's bits beyond i32), and in
+Lanius `(n as isize)`, or a bare `n` beside an operand of known type (`x + 5`).
+The entry's result also folds in an isize computed from its values and calls
+and each isize local and field it has: low and high 32 bits and a signed
+comparison, so wraparound and sign reach the answer.
 """
 
 import argparse
@@ -78,6 +89,18 @@ SLICES = True  # generate heap and slice statements
 EFFECTS = True
 ARITH_NAMES = [name for name, _ in ARITH]
 DIVIDE = [('quotient', '/'), ('remainder', '%')]
+# isize (main turns it on; frontend_difftest.py's front end has no isize yet):
+# a scalar like the others, but no division and no slices of it.
+ISIZE_EDGES = [0, 1, -1, 2, -2, 2 ** 31 - 1, -2 ** 31, 2 ** 32, -2 ** 32, 2 ** 62, -2 ** 62,
+               2 ** 63 - 1, -2 ** 63, 2 ** 63 - 2, -2 ** 63 + 1]
+EXTRA = []  # ['isize', 'isize'] with isize: weighted into let, comparison and cast choices
+
+
+def enable_isize():
+    if 'isize' not in SCALARS:
+        SCALARS.append('isize')
+        INTEGERS.append('isize')
+        EXTRA.extend(['isize', 'isize'])
 
 
 def i32(x):
@@ -159,6 +182,13 @@ class Gen:
             return self.rng.choice(I32_EDGES)
         return self.rng.randint(-2 ** 31, 2 ** 31 - 1)
 
+    def lit_isize(self):
+        if self.rng.random() < 0.6:
+            return self.rng.choice(ISIZE_EDGES)
+        if self.rng.random() < 0.5:
+            return self.rng.randint(-2 ** 31, 2 ** 31 - 1)
+        return self.rng.randint(-2 ** 63, 2 ** 63 - 1)
+
     def lit_uint(self, ty):
         bits = UINT_BITS[ty]
         if self.rng.random() < 0.6:
@@ -177,14 +207,24 @@ class Gen:
                 return ('int', self.lit_i32())
             if ty == 'bool':
                 return ('bool', rng.random() < 0.5)
+            if ty == 'isize':
+                return ('uint', 'isize', self.lit_isize())
             return ('uint', ty, self.lit_uint(ty))
+        if ty == 'isize':
+            pick = rng.random()
+            if pick < 0.2:
+                return ('cast', 'isize', self.expr(rng.choice(INTEGERS), depth - 1, env))
+            if pick < 0.3:
+                return ('neg', self.expr('isize', depth - 1, env))
+            name, sym = rng.choice(ARITH)
+            return ('op', name, sym, self.expr(ty, depth - 1, env), self.expr(ty, depth - 1, env))
         if ty in UINT_BITS:
             if rng.random() < 0.2:
                 return ('cast', ty, self.expr(rng.choice(INTEGERS), depth - 1, env))
             name, sym = rng.choice(ARITH)
             return ('op', name, sym, self.expr(ty, depth - 1, env), self.expr(ty, depth - 1, env))
         if ty == 'i32' and rng.random() < 0.1:
-            return ('cast', 'i32', self.expr(rng.choice(list(UINT_BITS)), depth - 1, env))
+            return ('cast', 'i32', self.expr(rng.choice(list(UINT_BITS) + EXTRA), depth - 1, env))
         if ty == 'i32':
             if rng.random() < 0.15:
                 return ('neg', self.expr('i32', depth - 1, env))
@@ -195,7 +235,7 @@ class Gen:
             return ('not', self.expr('bool', depth - 1, env))
         if pick < 0.55:
             name, sym = rng.choice(ORDER + EQUAL)
-            operand = rng.choice(['i32', 'i32'] + list(UINT_BITS))
+            operand = rng.choice(['i32', 'i32'] + list(UINT_BITS) + EXTRA)
             return ('op', name, sym, self.expr(operand, depth - 1, env), self.expr(operand, depth - 1, env))
         if pick < 0.7:
             name, sym = rng.choice(EQUAL)
@@ -324,8 +364,16 @@ class Gen:
 
         def sub(t):
             return self.eff(t, depth - 1, env, items)
-        if rng.random() < 0.15 and ty != 'bool':
+        if rng.random() < 0.15 and ty not in ('bool', 'isize'):
             return self.divide(ty, sub)
+        if ty == 'isize':
+            pick = rng.random()
+            if pick < 0.2:
+                return ('eCast', 'isize', sub(rng.choice(INTEGERS)))
+            if pick < 0.3:
+                return ('eNeg', sub('isize'))
+            name, sym = rng.choice(ARITH)
+            return ('eApply', name, sym, sub(ty), sub(ty))
         if ty in UINT_BITS:
             if rng.random() < 0.2:
                 return ('eCast', ty, sub(rng.choice(INTEGERS)))
@@ -334,7 +382,7 @@ class Gen:
         if ty == 'i32':
             pick = rng.random()
             if pick < 0.1:
-                return ('eCast', 'i32', sub(rng.choice(list(UINT_BITS))))
+                return ('eCast', 'i32', sub(rng.choice(list(UINT_BITS) + EXTRA)))
             if pick < 0.25:
                 return ('eNeg', sub('i32'))
             name, sym = rng.choice(ARITH)
@@ -344,7 +392,7 @@ class Gen:
             return ('eNot', sub('bool'))
         if pick < 0.5:
             name, sym = rng.choice(ORDER + EQUAL)
-            operand = rng.choice(['i32', 'i32'] + list(UINT_BITS))
+            operand = rng.choice(['i32', 'i32'] + list(UINT_BITS) + EXTRA)
             return ('eApply', name, sym, sub(operand), sub(operand))
         if pick < 0.6:
             name, sym = rng.choice(EQUAL)
@@ -479,7 +527,7 @@ class Gen:
             kind = rng.choice(kinds)
             slices = [(i, t) for i, t in env if t[0] == 'slice']
             if kind == 'let':
-                ty = rng.choice(['i32', 'i32', 'bool'] + list(UINT_BITS))
+                ty = rng.choice(['i32', 'i32', 'bool'] + list(UINT_BITS) + EXTRA)
                 ident = self.new_id()
                 items.append(('let', ident, ty, self.expr(ty, 3, env)))
                 env.append((ident, ty))
@@ -561,7 +609,7 @@ class Gen:
                 elif objects and rng.random() < 0.3:
                     ty = rng.choice(objects)
                 else:
-                    ty = rng.choice(['i32', 'i32', 'bool'] + list(UINT_BITS))
+                    ty = rng.choice(['i32', 'i32', 'bool'] + list(UINT_BITS) + EXTRA)
                 probe = self.called_bool(2, env, items) if rng.random() < 0.3 else None
                 if probe:
                     # let b: bool = c && f(s, ..) < x: a call short circuit may skip.
@@ -662,13 +710,38 @@ class Gen:
 
     def digest(self, env, items):
         """An i32 of the elements of the entry's slices, so that what its
-        callees wrote into them (and which calls ran) shows in its result."""
+        callees wrote into them (and which calls ran) shows in its result,
+        and of its isize locals and fields: their low and high 32 bits (the
+        high ones by a u64 division) and a signed comparison, so 64-bit
+        wraparound and the sign show."""
         def mix(h, x):
             return ('op', 'plus', '+', ('op', 'times', '*', h, ('int', 31)), x)
 
         def as_i32(e, ty):
             return e if ty == 'i32' else ('cast', 'i32', e) if ty == 'usize' else None
         h = ('int', 0)
+        if 'isize' in SCALARS and self.rng.random() < 0.7:
+            # Mostly one more isize, computed from the entry's values and calls.
+            extra = self.new_id()
+            items.append(('letEval', extra, 'isize', self.eff('isize', 3, env, items)))
+            env.append((extra, 'isize'))
+        isizes = [('local', i) for i, t in env if t == 'isize']
+        isizes += [('field', i, j) for i, t in env if t[0] == 'struct'
+                   for j, f in enumerate(TYPES.structs[t[1]]) if f == 'isize']
+        for x in isizes:
+            high = self.new_id()
+            items.append(('letEval', high, 'u64', ('eDivide', 'quotient', '/', ('ePure', ('cast', 'u64', x)),
+                                                   ('ePure', ('uint', 'u64', 2 ** 32)))))
+            env.append((high, 'u64'))
+            h = mix(mix(h, ('cast', 'i32', x)), ('cast', 'i32', ('local', high)))
+            # Its signed order against a literal: 1 when x < k (or <=, >, >=).
+            name, sym = self.rng.choice(ORDER)
+            flag = self.new_id()
+            items.append(('let', flag, 'i32', ('int', 0)))
+            items.append(('if', ('op', name, sym, x, ('uint', 'isize', self.lit_isize())),
+                          ('set', flag, ('int', 1)), ('nop',)))
+            env.append((flag, 'i32'))
+            h = mix(h, ('local', flag))
         for view, t in list(env):
             if t[0] != 'slice':
                 continue
@@ -783,6 +856,8 @@ def gen_args(rng, params):
             out.append(rng.choice(I32_EDGES) if rng.random() < 0.5 else rng.randint(-2 ** 31, 2 ** 31 - 1))
         elif t == 'bool':
             out.append(int(rng.random() < 0.5))
+        elif t == 'isize':
+            out.append(rng.choice(ISIZE_EDGES) if rng.random() < 0.5 else rng.randint(-2 ** 63, 2 ** 63 - 1))
         else:
             out.append(rng.randrange(1 << UINT_BITS[t]))
     return out
@@ -801,13 +876,20 @@ def wrap_to(ty, x):
         return i32(x)
     if ty == 'bool':
         return x
+    if ty == 'isize':
+        # Two's complement at 64 bits: the bits of an unsigned value, an
+        # i32 sign-extended.
+        x &= (1 << 64) - 1
+        return x - (1 << 64) if x >> 63 else x
     return x & ((1 << UINT_BITS[ty]) - 1)
 
 
 def ty_of(e, env):
     kind = e[0]
-    if kind == 'int' or kind == 'neg':
+    if kind == 'int':
         return 'i32'
+    if kind == 'neg':
+        return ty_of(e[1], env)
     if kind in ('bool', 'not'):
         return 'bool'
     if kind == 'uint' or kind == 'cast':
@@ -832,7 +914,7 @@ def ev(e, env):
     if kind == 'field':
         return env[e[1]][0][e[2]]
     if kind == 'neg':
-        return i32(-ev(e[1], env))
+        return wrap_to(ty_of(e[1], env), -ev(e[1], env))
     if kind == 'not':
         return not ev(e[1], env)
     if kind == 'cast':
@@ -866,7 +948,7 @@ def eff_ty(e, env):
     if kind == 'eMatch':
         return e[3]
     if kind == 'eNeg':
-        return 'i32'
+        return eff_ty(e[1], env)
     if kind == 'eNot':
         return 'bool'
     return e[1]
@@ -881,7 +963,7 @@ def ev_eff(e, env, funcs):
     if kind == 'eCall':
         return call(funcs, e[1], [ev_eff(a, env, funcs) for a in e[2]])
     if kind == 'eNeg':
-        return i32(-ev_eff(e[1], env, funcs))
+        return wrap_to(eff_ty(e[1], env), -ev_eff(e[1], env, funcs))
     if kind == 'eNot':
         return not ev_eff(e[1], env, funcs)
     if kind == 'eCast':
@@ -1053,6 +1135,13 @@ def lean_expr(e):
         return f'(.int (BitVec.ofInt 32 ({e[1]})))'
     if kind == 'bool':
         return '(.boolean true)' if e[1] else '(.boolean false)'
+    if kind == 'uint' and e[1] == 'isize':
+        # isize has no literal: an i32 literal cast (sign-extended), or the
+        # bits of a u64 one.
+        k = e[2]
+        if -2 ** 31 <= k < 2 ** 31:
+            return f'(.cast .isize {lean_expr(("int", k))})'
+        return f'(.cast .isize (.unsigned .uint64 {k & (2 ** 64 - 1)}))'
     if kind == 'uint':
         return f'(.unsigned {UINT_LEAN[e[1]]} {e[2]})'
     if kind == 'cast':
@@ -1218,6 +1307,11 @@ def lani_expr(e):
         return f'({k})' if k < 0 else str(k)
     if kind == 'bool':
         return 'true' if e[1] else 'false'
+    if kind == 'uint' and e[1] == 'isize':
+        k = e[2]
+        if -2 ** 31 <= k < 2 ** 31:
+            return f'({lani_expr(("int", k))} as isize)'
+        return f'({lani_expr(("uint", "u64", k & (2 ** 64 - 1)))} as isize)'
     if kind == 'uint':
         # laniusc literals are i32, so build the value from 16-bit pieces.
         ty, k = e[1], e[2]
@@ -1235,7 +1329,27 @@ def lani_expr(e):
         return f'(-{lani_expr(e[1])})'
     if kind == 'not':
         return f'(!{lani_expr(e[1])})'
-    return f'({lani_expr(e[3])} {e[2]} {lani_expr(e[4])})'
+    l, r = lani_expr(e[3]), lani_expr(e[4])
+    # A small isize literal beside an operand whose type laniusc knows is
+    # written bare, as `x + 5`, so laniusc infers its type.
+    if bare_isize(e[3]) and typed_isize(e[4]):
+        l = lani_expr(('int', e[3][2]))
+    elif bare_isize(e[4]) and typed_isize(e[3]):
+        r = lani_expr(('int', e[4][2]))
+    return f'({l} {e[2]} {r})'
+
+
+def bare_isize(e):
+    return e[0] == 'uint' and e[1] == 'isize' and abs(e[2]) < 2 ** 31 - 1
+
+
+def typed_isize(e):
+    """e prints with a type laniusc reads off it (a local, field or cast in it)."""
+    if e[0] in ('local', 'field', 'cast'):
+        return True
+    if e[0] == 'neg':
+        return typed_isize(e[1])
+    return e[0] == 'op' and e[1] in ARITH_NAMES and (typed_isize(e[3]) or typed_isize(e[4]))
 
 
 def lani_eff(e, prefix):
@@ -1423,10 +1537,12 @@ class Native:
         self.code[at:at + len(stub)] = stub
         self.fn = ctypes.CFUNCTYPE(ctypes.c_uint64, *([ctypes.c_uint64] * arity))(self.base + at)
 
-    def call(self, args):
-        # An i32 sits zero-extended in its slot, an unsigned value as itself.
+    def call(self, args, params=()):
+        # An i32 sits zero-extended in its slot, an unsigned value as itself,
+        # an isize as its 64 bits.
         self.heap[0:self.HEAP] = bytes(self.HEAP)
-        return i32(self.fn(*[a & 0xffffffff if a < 0 else a for a in args]))
+        return i32(self.fn(*[a & (2 ** 64 - 1) if t == 'isize' else a & 0xffffffff if a < 0 else a
+                             for a, t in zip(args, list(params) + [None] * len(args))]))
 
 
 def main():
@@ -1439,6 +1555,7 @@ def main():
     parser.add_argument('--chunk', type=int, default=25)
     parser.add_argument('--only', help='comma-separated program indices to keep, for reproducing one')
     args = parser.parse_args()
+    enable_isize()
     rng = random.Random(args.seed)
     programs = [gen_program(rng) for _ in range(args.count)]
     calls = [[gen_args(rng, funcs[0][0]) for _ in range(args.calls)] for funcs in programs]
@@ -1469,7 +1586,7 @@ def main():
         entries = [int(x) for x in entries_s.split(',')]
         image = bytes(int(x) for x in image_s.split(','))
         native.load(entries, image, len(programs[k][0][0]))
-        expected.append([native.call(a) for a in calls[k]])
+        expected.append([native.call(a, programs[k][0][0]) for a in calls[k]])
 
     # One harness binary per chunk keeps each laniusc input small.
     data = b''
