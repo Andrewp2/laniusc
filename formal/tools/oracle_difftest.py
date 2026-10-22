@@ -22,6 +22,18 @@ word structs and word enums (`alloc`, `ptr + usize`, `slice_from_raw_parts`),
 writes every element, then reads and writes them at literal indices. A
 function's first parameter is an i32 the harness passes; the entry function
 returns an i32.
+
+With EFFECTS (frontend_difftest.py turns it off) the programs also use the
+front pass's effectful expressions (`SrcEff`, in `let`, assignment, `if` and
+`while` conditions, `return` and bare call statements): calls nested in the
+operators, casts, `/` and `%` (divisors (d | 1), and (d | 1) & -3 for i32, so
+no division traps), and struct and enum literals with such fields. Later
+functions take struct, enum and slice parameters and return structs and
+enums; one with a slice parameter writes into the caller's slice, the right
+side of `&&` and `||` often calls one, and the entry's result folds in every
+element of its slices, so evaluation order and short circuit show in the
+result. `while` conditions are `counter < bound && c` (either way round), so
+loops stay bounded whatever c calls.
 """
 
 import argparse
@@ -43,6 +55,12 @@ UINT_LEAN = {'u8': '.uint8', 'u32': '.uint32', 'u64': '.uint64', 'usize': '.usiz
 INTEGERS = ['i32'] + list(UINT_BITS)
 WORDS = ['i32', 'bool', 'usize']  # the field types Core lays out in one native word
 SLICES = True  # generate heap and slice statements (frontend_difftest.py turns them off)
+# Generate effectful expressions (calls inside expressions, in conditions,
+# assignments and returns, and as statements) and struct, enum and slice
+# parameters and struct and enum results (frontend_difftest.py turns them off).
+EFFECTS = True
+ARITH_NAMES = [name for name, _ in ARITH]
+DIVIDE = [('quotient', '/'), ('remainder', '%')]
 
 
 def i32(x):
@@ -56,15 +74,39 @@ def i32(x):
 # n is the slice's length, known statically.
 # Expressions: ('int', k) ('bool', b) ('uint', ty, k) ('local', id) ('field', id, j) ('neg', e)
 #              ('not', e) ('cast', ty, e) ('op', name, sym, l, r)
+# Effectful expressions: ('ePure', e) ('eCall', callee, args) ('eApply', name, sym, l, r) ('eNeg', x)
+#              ('eNot', x) ('eCast', ty, x) ('eDivide', name, sym, l, r) ('eStruct', ty, fields)
+#              ('eVariant', ty, variant, payload)
 # Statements: ('nop',) ('let', id, ty, e, body) ('call', id, ty, callee, args, body) ('set', id, e)
 #             ('letStruct', id, ty, fields, body) ('letEnum', id, ty, variant, payload, body)
 #             ('letMatch', id, ty, scrutinee, enum, arms, body) with arms [(binders, value)]
 #             ('setField', id, j, e) ('then', a, b) ('if', c, a, b) ('while', c, body) ('return', e)
 #             ('letAlloc', id, size, shift, body) ('letSlice', id, element, address, n, body)
 #             ('letIndex', id, element, slice, k, body) ('setIndex', slice, k, e)
+#             ('letEval', id, ty, x, body) ('setEval', id, x) ('ifEval', x, a, b) ('whileEval', x, body)
+#             ('returnEval', x) ('discard', x), with x an effectful expression
 
 SCALARS = ['i32', 'bool'] + list(UINT_BITS)
-LETS = ('let', 'call', 'letStruct', 'letEnum', 'letMatch', 'letAlloc', 'letSlice', 'letIndex')
+LETS = ('let', 'call', 'letStruct', 'letEnum', 'letMatch', 'letAlloc', 'letSlice', 'letIndex', 'letEval')
+
+
+def is_object(t):
+    """A struct or enum type: copied by value, several slots."""
+    return isinstance(t, tuple) and t[0] in ('struct', 'enum')
+
+
+def fits(param, t):
+    """A value of type t passes as param: a slice parameter's length is the
+    least its body indexes, so a longer slice passes too."""
+    if isinstance(param, tuple) and param[0] == 'slice':
+        return isinstance(t, tuple) and t[0] == 'slice' and t[1] == param[1] and t[2] >= param[2]
+    return t == param
+
+
+def slice_elements():
+    """i32 and the word structs and enums, the element types Core lays out."""
+    elements = ['i32'] + [('struct', k) for k, fs in enumerate(TYPES.structs) if all(f in WORDS for f in fs)]
+    return elements + [('enum', k) for k, vs in enumerate(TYPES.enums) if all(f in WORDS for v in vs for f in v)]
 
 
 class Program(list):
@@ -172,10 +214,14 @@ class Gen:
         descending words with element zero at the top. Every element is
         written before anything reads one."""
         rng = self.rng
-        elements = ['i32'] + [('struct', k) for k, fs in enumerate(TYPES.structs) if all(f in WORDS for f in fs)]
-        elements += [('enum', k) for k, vs in enumerate(TYPES.enums) if all(f in WORDS for v in vs for f in v)]
-        element = rng.choice(elements)
-        n = rng.randint(1, 6)
+        wanted = [t for params, _ in self.sigs for t in params if isinstance(t, tuple) and t[0] == 'slice']
+        if EFFECTS and wanted and rng.random() < 0.8:
+            # Mostly a slice the callees with slice parameters accept.
+            element = rng.choice(wanted)[1]
+            n = rng.randint(max(t[2] for t in wanted if t[1] == element), 6)
+        else:
+            element = rng.choice(slice_elements())
+            n = rng.randint(1, 6)
         pointer, view = self.new_id(), self.new_id()
         if element == 'i32':
             items.append(('letAlloc', pointer, 4 * n, 2))
@@ -190,6 +236,118 @@ class Gen:
         for i in range(n):
             self.store(env, items, view, element, i)
 
+    def callees(self, ret, env):
+        """The later functions returning ret (any type when None) whose
+        parameters this scope can pass: a slice parameter needs a long enough
+        slice local."""
+        out = []
+        for k in range(self.index + 1, len(self.sigs)):
+            params, cret = self.sigs[k]
+            if ret is not None and cret != ret:
+                continue
+            if all(not isinstance(t, tuple) or t[0] != 'slice' or any(fits(t, u) for _, u in env) for t in params):
+                out.append(k)
+        return out
+
+    def pure_arg(self, t, env, items):
+        """A call-free argument of type t: a scalar expression, or a local
+        (a new struct or enum when there is none of the type yet)."""
+        rng = self.rng
+        if not isinstance(t, tuple):
+            return self.expr(t, 2, env)
+        if t[0] == 'slice':
+            return ('local', rng.choice([i for i, u in env if fits(t, u)]))
+        named = [i for i, u in env if u == t]
+        if named and rng.random() < 0.7:
+            return ('local', rng.choice(named))
+        if t[0] == 'struct':
+            return ('local', self.make_struct(env, items, t[1]))
+        return ('local', self.make_enum(env, items, t[1])[0])
+
+    def eff_call(self, callee, depth, env, items):
+        return ('eCall', callee, [self.eff(t, depth - 1, env, items) for t in self.sigs[callee][0]])
+
+    def eff(self, ty, depth, env, items):
+        """An effectful expression of type ty. A struct, enum or slice value is
+        a local or (struct and enum) a call; scalars nest calls in the
+        operators. Struct and enum locals it needs go into items first."""
+        rng = self.rng
+        calls = self.callees(ty, env) if depth > 0 else []
+        if isinstance(ty, tuple):
+            if calls and rng.random() < 0.5:
+                return self.eff_call(rng.choice(calls), depth, env, items)
+            if ty[0] != 'slice' and depth > 0 and rng.random() < 0.5:
+                # A literal whose fields or payload may call functions.
+                if ty[0] == 'struct':
+                    return ('eStruct', ty, [self.eff(f, depth - 1, env, items) for f in TYPES.structs[ty[1]]])
+                variant = rng.randrange(len(TYPES.enums[ty[1]]))
+                payload = [self.eff(f, depth - 1, env, items) for f in TYPES.enums[ty[1]][variant]]
+                return ('eVariant', ty, variant, payload)
+            return ('ePure', self.pure_arg(ty, env, items))
+        if calls and rng.random() < 0.5:
+            return self.eff_call(rng.choice(calls), depth, env, items)
+        if depth == 0 or rng.random() < 0.2:
+            return ('ePure', self.expr(ty, rng.randint(0, 2), env))
+
+        def sub(t):
+            return self.eff(t, depth - 1, env, items)
+        if rng.random() < 0.15 and ty != 'bool':
+            return self.divide(ty, sub)
+        if ty in UINT_BITS:
+            if rng.random() < 0.2:
+                return ('eCast', ty, sub(rng.choice(INTEGERS)))
+            name, sym = rng.choice(ARITH)
+            return ('eApply', name, sym, sub(ty), sub(ty))
+        if ty == 'i32':
+            pick = rng.random()
+            if pick < 0.1:
+                return ('eCast', 'i32', sub(rng.choice(list(UINT_BITS))))
+            if pick < 0.25:
+                return ('eNeg', sub('i32'))
+            name, sym = rng.choice(ARITH)
+            return ('eApply', name, sym, sub('i32'), sub('i32'))
+        pick = rng.random()
+        if pick < 0.15:
+            return ('eNot', sub('bool'))
+        if pick < 0.5:
+            name, sym = rng.choice(ORDER + EQUAL)
+            operand = rng.choice(['i32', 'i32'] + list(UINT_BITS))
+            return ('eApply', name, sym, sub(operand), sub(operand))
+        if pick < 0.6:
+            name, sym = rng.choice(EQUAL)
+            return ('eApply', name, sym, sub('bool'), sub('bool'))
+        name, sym = rng.choice(LOGIC)
+        left = sub('bool')
+        right = self.called_bool(depth - 1, env, items) if rng.random() < 0.6 else None
+        return ('eApply', name, sym, left, right or sub('bool'))
+
+    def divide(self, ty, sub):
+        """l / r or l % r with a divisor that never traps: (d | 1) for the
+        unsigned types, (d | 1) & -3 for i32 (odd, so not zero, and bit 1
+        clear, so not -1: no i32::MIN / -1)."""
+        name, sym = self.rng.choice(DIVIDE)
+        one = ('ePure', ('int', 1) if ty == 'i32' else ('uint', ty, 1))
+        divisor = ('eApply', 'bitOr', '|', sub(ty), one)
+        if ty == 'i32':
+            divisor = ('eApply', 'bitAnd', '&', divisor, ('ePure', ('int', -3)))
+        return ('eDivide', name, sym, sub(ty), divisor)
+
+    def called_bool(self, depth, env, items):
+        """A bool that calls a function, preferring one that writes into a
+        slice, for the right side of && and ||: a call short circuit skips.
+        None when no later function can be called here."""
+        rng = self.rng
+        later = [k for k in self.callees(None, env) if self.sigs[k][1] in SCALARS]
+        if depth <= 0 or not later:
+            return None
+        writers = [k for k in later if any(isinstance(t, tuple) and t[0] == 'slice' for t in self.sigs[k][0])]
+        callee = rng.choice(writers if writers and rng.random() < 0.7 else later)
+        value, cret = self.eff_call(callee, depth, env, items), self.sigs[callee][1]
+        if cret == 'bool':
+            return value
+        name, sym = rng.choice(ORDER + EQUAL)
+        return ('eApply', name, sym, value, self.eff(cret, depth - 1, env, items))
+
     def block(self, depth, env, ret, must_return, mutable):
         """A statement list ending in a return when must_return. mutable: the ids
         assignments may change (loop counters are left out)."""
@@ -198,13 +356,23 @@ class Gen:
         env = list(env)
         mutable = list(mutable)
         returned = False
-        if SLICES and depth == 3 and self.index == 0 and rng.random() < 0.6:
+        if SLICES and depth == 3 and self.index == 0 and rng.random() < (0.85 if EFFECTS else 0.6):
             self.slices += 1
             self.make_slice(env, items)
+        params_slices = [(i, t) for i, t in env if i < 100 and t[0] == 'slice']
+        if EFFECTS and depth == 3 and params_slices:
+            # A callee writes into the caller's slice: a side effect the caller sees.
+            view, (_, element, n) = rng.choice(params_slices)
+            self.store(env, items, view, element, rng.randrange(n))
+        objects = [('struct', k) for k in range(len(TYPES.structs))] + [('enum', k) for k in range(len(TYPES.enums))]
         for _ in range(rng.randint(0, 4 if depth > 0 else 2)):
-            kind = rng.choice(['let', 'let', 'set', 'if', 'while', 'call', 'struct', 'enum', 'match', 'setField',
-                               'slice', 'index', 'index', 'store']
-                              if depth > 0 else ['let', 'set', 'struct', 'setField', 'index', 'store'])
+            kinds = (['let', 'let', 'set', 'if', 'while', 'call', 'struct', 'enum', 'match', 'setField',
+                      'slice', 'index', 'index', 'store']
+                     if depth > 0 else ['let', 'set', 'struct', 'setField', 'index', 'store'])
+            if EFFECTS:
+                kinds += (['letEval', 'letEval', 'setEval', 'ifEval', 'whileEval', 'discard']
+                          if depth > 0 else ['letEval', 'setEval', 'discard'])
+            kind = rng.choice(kinds)
             slices = [(i, t) for i, t in env if t[0] == 'slice']
             if kind == 'let':
                 ty = rng.choice(['i32', 'i32', 'bool'] + list(UINT_BITS))
@@ -271,19 +439,114 @@ class Gen:
                 view, (_, element, n) = rng.choice(slices)
                 self.store(env, items, view, element, rng.randrange(n))
             elif kind == 'call':
-                later = list(range(self.index + 1, len(self.sigs)))
+                later = self.callees(None, env)
                 if not later:
                     continue
                 callee = rng.choice(later)
                 params, cret = self.sigs[callee]
-                args = [self.expr(t, 2, env) for t in params]
+                args = [self.pure_arg(t, env, items) for t in params]
                 ident = self.new_id()
                 items.append(('call', ident, cret, callee, args))
                 env.append((ident, cret))
-                mutable.append((ident, cret))
+                if not is_object(cret):
+                    mutable.append((ident, cret))
+            elif kind == 'letEval':
+                if objects and rng.random() < 0.3:
+                    ty = rng.choice(objects)
+                else:
+                    ty = rng.choice(['i32', 'i32', 'bool'] + list(UINT_BITS))
+                probe = self.called_bool(2, env, items) if rng.random() < 0.3 else None
+                if probe:
+                    # let b: bool = c && f(s, ..) < x: a call short circuit may skip.
+                    ty = 'bool'
+                    name, sym = rng.choice(LOGIC)
+                    value = ('eApply', name, sym, self.eff('bool', 1, env, items), probe)
+                else:
+                    value = self.eff(ty, 3, env, items)
+                ident = self.new_id()
+                items.append(('letEval', ident, ty, value))
+                env.append((ident, ty))
+                if not is_object(ty):
+                    mutable.append((ident, ty))
+            elif kind == 'setEval':
+                # Scalars the body may change, and struct and enum locals (not parameters).
+                targets = mutable + [(i, t) for i, t in env if is_object(t) and i > 100]
+                if not targets:
+                    continue
+                ident, ty = rng.choice(targets)
+                items.append(('setEval', ident, self.eff(ty, 3, env, items)))
+            elif kind == 'ifEval':
+                then_ = self.block(depth - 1, env, ret, rng.random() < 0.3, mutable)
+                else_ = self.block(depth - 1, env, ret, rng.random() < 0.3, mutable)
+                items.append(('ifEval', self.eff('bool', 3, env, items), then_, else_))
+                if returns(then_) and returns(else_):
+                    returned = True
+                    break
+            elif kind == 'whileEval':
+                # counter < bound && c, either way round: bounded whatever c's calls return.
+                counter = self.new_id()
+                bound = rng.choice([0, 1, 3, 10, 50])
+                items.append(('let', counter, 'i32', ('int', 0)))
+                env.append((counter, 'i32'))
+                body = self.block(depth - 1, env, ret, rng.random() < 0.15, mutable)
+                step = ('set', counter, ('op', 'plus', '+', ('local', counter), ('int', 1)))
+                guard = ('ePure', ('op', 'less', '<', ('local', counter), ('int', bound)))
+                other = self.eff('bool', 2, env, items)
+                cond = ('eApply', 'logicalAnd', '&&') + ((guard, other) if rng.random() < 0.5 else (other, guard))
+                items.append(('whileEval', cond, seq([body, step])))
+            elif kind == 'discard':
+                later = self.callees(None, env)
+                if later:
+                    items.append(('discard', self.eff_call(rng.choice(later), 3, env, items)))
         if must_return and not returned:
-            items.append(('return', self.expr(ret, 3, env)))
+            if is_object(ret) or (EFFECTS and rng.random() < 0.5):
+                value = self.eff(ret, 3, env, items)
+                if EFFECTS and depth == 3 and self.index == 0:
+                    value = ('eApply', 'bitXor', '^', value, ('ePure', self.digest(env, items)))
+                items.append(('returnEval', value))
+            else:
+                value = self.expr(ret, 3, env)
+                if EFFECTS and depth == 3 and self.index == 0:
+                    value = ('op', 'bitXor', '^', value, self.digest(env, items))
+                items.append(('return', value))
         return nest(items)
+
+    def digest(self, env, items):
+        """An i32 of the elements of the entry's slices, so that what its
+        callees wrote into them (and which calls ran) shows in its result."""
+        def mix(h, x):
+            return ('op', 'plus', '+', ('op', 'times', '*', h, ('int', 31)), x)
+
+        def as_i32(e, ty):
+            return e if ty == 'i32' else ('cast', 'i32', e) if ty == 'usize' else None
+        h = ('int', 0)
+        for view, t in list(env):
+            if t[0] != 'slice':
+                continue
+            for i in range(t[2]):
+                element, ident = t[1], self.new_id()
+                items.append(('letIndex', ident, element, view, i))
+                env.append((ident, element))
+                if element == 'i32':
+                    parts = [('local', ident)]
+                elif element[0] == 'struct':
+                    parts = [as_i32(('field', ident, j), f) for j, f in enumerate(TYPES.structs[element[1]])]
+                else:
+                    arms = []
+                    for v, payload in enumerate(TYPES.enums[element[1]]):
+                        binders = [self.new_id() for _ in payload]
+                        value = ('int', v + 1)
+                        for b, f in zip(binders, payload):
+                            x = as_i32(('local', b), f)
+                            value = mix(value, x) if x else value
+                        arms.append((binders, value))
+                    m = self.new_id()
+                    items.append(('letMatch', m, 'i32', ident, element[1], arms))
+                    env.append((m, 'i32'))
+                    parts = [('local', m)]
+                for x in parts:
+                    h = mix(h, x) if x else h
+        return h
 
 
 def element_words(t):
@@ -298,9 +561,9 @@ def returns(s):
         return returns(s[-1])
     if kind == 'then':
         return returns(s[1]) or returns(s[2])
-    if kind == 'if':
+    if kind in ('if', 'ifEval'):
         return returns(s[2]) and returns(s[3])
-    return kind == 'return'
+    return kind in ('return', 'returnEval')
 
 
 def seq(stmts):
@@ -334,9 +597,23 @@ def gen_program(rng):
     enums = [[[rng.choice(pool) for _ in range(rng.randint(0, 2))] for _ in range(rng.randint(1, 3))]
              for pool in [pools() for _ in range(rng.randint(0, 2))]]
     TYPES = Program([], structs, enums)
-    count = rng.randint(1, 4)
-    sigs = [(['i32'] + [rng.choice(SCALARS) for _ in range(rng.randint(0, 2))],
-             'i32' if k == 0 else rng.choice(SCALARS)) for k in range(count)]
+    count = rng.randint(2, 4) if EFFECTS else rng.randint(1, 4)
+    objects = [('struct', k) for k in range(len(structs))] + [('enum', k) for k in range(len(enums))]
+    sigs = []
+    shared = rng.choice(slice_elements()) if EFFECTS else None  # most slice parameters' element type
+    for k in range(count):
+        params = ['i32'] + [rng.choice(SCALARS) for _ in range(rng.randint(0, 2))]
+        ret = 'i32' if k == 0 else rng.choice(SCALARS)
+        if EFFECTS and k > 0:
+            # The entry's parameters stay scalars the harness passes in registers.
+            if objects and rng.random() < 0.4:
+                params.insert(rng.randint(1, len(params)), rng.choice(objects))
+            if objects and rng.random() < 0.3:
+                ret = rng.choice(objects)
+            if rng.random() < 0.35:
+                element = shared if rng.random() < 0.75 else rng.choice(slice_elements())
+                params.insert(rng.randint(1, len(params)), ('slice', element, rng.randint(1, 3)))
+        sigs.append((params, ret))
     funcs = []
     for k, (params, ret) in enumerate(sigs):
         g = Gen(rng, sigs, k)
@@ -407,13 +684,69 @@ def ev(e, env):
         return not ev(e[1], env)
     if kind == 'cast':
         return wrap_to(e[1], ev(e[2], env))
-    l, r = ev(e[3], env), ev(e[4], env)
-    name = e[1]
-    if name in ('plus', 'minus', 'times', 'bitAnd', 'bitOr', 'bitXor'):
+    return apply_op(e[1], ev(e[3], env), ev(e[4], env), ty_of(e[3], env))
+
+
+def apply_op(name, l, r, ty):
+    """A binary operator on its operands' values, ty the left operand's type."""
+    if name in ARITH_NAMES:
         x = {'plus': l + r, 'minus': l - r, 'times': l * r, 'bitAnd': l & r, 'bitOr': l | r, 'bitXor': l ^ r}[name]
-        return wrap_to(ty_of(e[3], env), x)
+        return wrap_to(ty, x)
     return {'less': l < r, 'lessEq': l <= r, 'greater': l > r, 'greaterEq': l >= r, 'equal': l == r,
             'notEqual': l != r, 'logicalAnd': l and r, 'logicalOr': l or r}[name]
+
+
+def eff_ty(e, env):
+    kind = e[0]
+    if kind == 'ePure':
+        return ty_of(e[1], env)
+    if kind == 'eCall':
+        return TYPES[e[1]][1]
+    if kind == 'eApply':
+        return eff_ty(e[3], env) if e[1] in ARITH_NAMES else 'bool'
+    if kind == 'eDivide':
+        return eff_ty(e[3], env)
+    if kind in ('eStruct', 'eVariant'):
+        return e[1]
+    if kind == 'eNeg':
+        return 'i32'
+    if kind == 'eNot':
+        return 'bool'
+    return e[1]
+
+
+def ev_eff(e, env, funcs):
+    """Core's order: left before right, arguments left to right, and the
+    right side of && and || only when the left does not decide."""
+    kind = e[0]
+    if kind == 'ePure':
+        return copy_as(ev(e[1], env), ty_of(e[1], env))
+    if kind == 'eCall':
+        return call(funcs, e[1], [ev_eff(a, env, funcs) for a in e[2]])
+    if kind == 'eNeg':
+        return i32(-ev_eff(e[1], env, funcs))
+    if kind == 'eNot':
+        return not ev_eff(e[1], env, funcs)
+    if kind == 'eCast':
+        return wrap_to(e[1], ev_eff(e[2], env, funcs))
+    if kind == 'eStruct':
+        return [ev_eff(f, env, funcs) for f in e[2]]
+    if kind == 'eVariant':
+        return (e[2], [ev_eff(f, env, funcs) for f in e[3]])
+    name = e[1]
+    l = ev_eff(e[3], env, funcs)
+    if kind == 'eDivide':
+        r = ev_eff(e[4], env, funcs)
+        if r == 0 or (eff_ty(e[3], env) == 'i32' and l == -2 ** 31 and r == -1):
+            raise SystemExit('a generated division traps')
+        # Core truncates toward zero; the remainder takes the dividend's sign.
+        q = abs(l) // abs(r) * (1 if (l < 0) == (r < 0) else -1)
+        return wrap_to(eff_ty(e[3], env), q if name == 'quotient' else l - r * q)
+    if name == 'logicalAnd':
+        return bool(l) and bool(ev_eff(e[4], env, funcs))
+    if name == 'logicalOr':
+        return bool(l) or bool(ev_eff(e[4], env, funcs))
+    return apply_op(name, l, ev_eff(e[4], env, funcs), eff_ty(e[3], env))
 
 
 def copy(v):
@@ -424,14 +757,33 @@ def copy(v):
     return v
 
 
+def copy_as(v, ty):
+    """Struct and enum values are copied; a slice is a view of the heap."""
+    return copy(v) if is_object(ty) else v
+
+
 def run_stmt(s, env, funcs):
     kind = s[0]
     if kind == 'let':
         env[s[1]] = [ev(s[3], env), s[2]]
         run_stmt(s[4], env, funcs)
     elif kind == 'call':
-        env[s[1]] = [interpret(funcs, s[3], [ev(a, env) for a in s[4]]), s[2]]
+        env[s[1]] = [call(funcs, s[3], [ev(a, env) for a in s[4]]), s[2]]
         run_stmt(s[5], env, funcs)
+    elif kind == 'letEval':
+        env[s[1]] = [ev_eff(s[3], env, funcs), s[2]]
+        run_stmt(s[4], env, funcs)
+    elif kind == 'setEval':
+        env[s[1]][0] = ev_eff(s[2], env, funcs)
+    elif kind == 'ifEval':
+        run_stmt(s[2] if ev_eff(s[1], env, funcs) else s[3], env, funcs)
+    elif kind == 'whileEval':
+        while ev_eff(s[1], env, funcs):
+            run_stmt(s[2], env, funcs)
+    elif kind == 'returnEval':
+        raise Returned(ev_eff(s[1], env, funcs))
+    elif kind == 'discard':
+        ev_eff(s[1], env, funcs)
     elif kind == 'letStruct':
         env[s[1]] = [[ev(f, env) for f in s[3]], s[2]]
         run_stmt(s[4], env, funcs)
@@ -472,16 +824,23 @@ def run_stmt(s, env, funcs):
         raise Returned(ev(s[1], env))
 
 
-def interpret(funcs, index, args):
-    global TYPES
-    TYPES = funcs
+def call(funcs, index, args):
+    """Function index on its argument values; struct and enum arguments are
+    copies, a slice argument shares its elements with the caller."""
     params, ret, body = funcs[index]
-    env = {j: [a if t != 'bool' else bool(a), t] for j, (a, t) in enumerate(zip(args, params))}
+    env = {j: [bool(a) if t == 'bool' else copy_as(a, t), t] for j, (a, t) in enumerate(zip(args, params))}
     try:
         run_stmt(body, env, funcs)
     except Returned as r:
-        return int(r.value) if ret == 'bool' else r.value
+        return r.value
     raise SystemExit('a generated function fell off its end')
+
+
+def interpret(funcs, index, args):
+    global TYPES
+    TYPES = funcs
+    value = call(funcs, index, args)
+    return int(value) if funcs[index][1] == 'bool' else value
 
 
 # ---------------------------------------------------------------- Lean side
@@ -524,10 +883,43 @@ def lean_expr(e):
     return f'(.apply .{e[1]} {lean_expr(e[3])} {lean_expr(e[4])})'
 
 
+def lean_eff(e):
+    kind = e[0]
+    if kind == 'ePure':
+        return f'(.ePure {lean_expr(e[1])})'
+    if kind == 'eCall':
+        return f'(.eCall {e[1]} [{", ".join(lean_eff(a) for a in e[2])}])'
+    if kind == 'eNeg':
+        return f'(.eNeg {lean_eff(e[1])})'
+    if kind == 'eNot':
+        return f'(.eNot {lean_eff(e[1])})'
+    if kind == 'eCast':
+        return f'(.eCast {lean_ty(e[1])} {lean_eff(e[2])})'
+    if kind == 'eDivide':
+        return f'(.eDivide .{e[1]} {lean_eff(e[3])} {lean_eff(e[4])})'
+    if kind == 'eStruct':
+        return f'(.eStruct {lean_ty(e[1])} [{", ".join(lean_eff(f) for f in e[2])}])'
+    if kind == 'eVariant':
+        return f'(.eVariant {lean_ty(e[1])} {e[2]} [{", ".join(lean_eff(f) for f in e[3])}])'
+    return f'(.eApply .{e[1]} {lean_eff(e[3])} {lean_eff(e[4])})'
+
+
 def lean_stmt(s):
     kind = s[0]
     if kind == 'nop':
         return '.nop'
+    if kind == 'letEval':
+        return f'(.letEval {s[1]} {lean_ty(s[2])} {lean_eff(s[3])} {lean_stmt(s[4])})'
+    if kind == 'setEval':
+        return f'(.setEval {s[1]} {lean_eff(s[2])})'
+    if kind == 'ifEval':
+        return f'(.ifEval {lean_eff(s[1])} {lean_stmt(s[2])} {lean_stmt(s[3])})'
+    if kind == 'whileEval':
+        return f'(.whileEval {lean_eff(s[1])} {lean_stmt(s[2])})'
+    if kind == 'returnEval':
+        return f'(.returnEval {lean_eff(s[1])})'
+    if kind == 'discard':
+        return f'(.discard {lean_eff(s[1])})'
     if kind == 'let':
         return f'(.let {s[1]} {lean_ty(s[2])} {lean_expr(s[3])} {lean_stmt(s[4])})'
     if kind == 'call':
@@ -648,11 +1040,44 @@ def lani_expr(e):
     return f'({lani_expr(e[3])} {e[2]} {lani_expr(e[4])})'
 
 
+def lani_eff(e, prefix):
+    kind = e[0]
+    if kind == 'ePure':
+        return lani_expr(e[1])
+    if kind == 'eCall':
+        return f'{prefix}f{e[1]}({", ".join(lani_eff(a, prefix) for a in e[2])})'
+    if kind == 'eNeg':
+        return f'(-{lani_eff(e[1], prefix)})'
+    if kind == 'eNot':
+        return f'(!{lani_eff(e[1], prefix)})'
+    if kind == 'eCast':
+        return f'({lani_eff(e[2], prefix)} as {e[1]})'
+    if kind == 'eStruct':
+        fields = ', '.join(f'f{j}: {lani_eff(f, prefix)}' for j, f in enumerate(e[2]))
+        return f'{lani_ty(e[1])} {{ {fields} }}'
+    if kind == 'eVariant':
+        return lani_variant(e[1][1], e[2], [lani_eff(f, prefix) for f in e[3]])
+    return f'({lani_eff(e[3], prefix)} {e[2]} {lani_eff(e[4], prefix)})'
+
+
 def lani_stmt(s, prefix, indent):
     pad = '    ' * indent
     kind = s[0]
     if kind == 'nop':
         return []
+    if kind == 'letEval':
+        return [f'{pad}let v{s[1]}: {lani_ty(s[2])} = {lani_eff(s[3], prefix)};'] + lani_stmt(s[4], prefix, indent)
+    if kind == 'setEval':
+        return [f'{pad}v{s[1]} = {lani_eff(s[2], prefix)};']
+    if kind == 'ifEval':
+        return ([f'{pad}if ({lani_eff(s[1], prefix)}) {{'] + lani_stmt(s[2], prefix, indent + 1) + [f'{pad}}} else {{'] +
+                lani_stmt(s[3], prefix, indent + 1) + [f'{pad}}}'])
+    if kind == 'whileEval':
+        return [f'{pad}while ({lani_eff(s[1], prefix)}) {{'] + lani_stmt(s[2], prefix, indent + 1) + [f'{pad}}}']
+    if kind == 'returnEval':
+        return [f'{pad}return {lani_eff(s[1], prefix)};']
+    if kind == 'discard':
+        return [f'{pad}{lani_eff(s[1], prefix)};']
     if kind == 'let':
         return [f'{pad}let v{s[1]}: {lani_ty(s[2])} = {lani_expr(s[3])};'] + lani_stmt(s[4], prefix, indent)
     if kind == 'call':
