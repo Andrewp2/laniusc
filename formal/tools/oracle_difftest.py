@@ -17,8 +17,11 @@ summary; exits nonzero on any.
 The programs use i32, bool, the unsigned types, structs and enums of those:
 literals, locals, fields, the operators, casts, variants, `match`, `let`,
 assignment, `if`, bounded `while` loops, calls to later functions (so every
-run ends) and `return`. A function's first parameter is an i32 the harness
-passes; the entry function returns an i32.
+run ends) and `return`. The entry function also allocates raw slices of i32,
+word structs and word enums (`alloc`, `ptr + usize`, `slice_from_raw_parts`),
+writes every element, then reads and writes them at literal indices. A
+function's first parameter is an i32 the harness passes; the entry function
+returns an i32.
 """
 
 import argparse
@@ -38,6 +41,7 @@ LOGIC = [('logicalAnd', '&&'), ('logicalOr', '||')]
 UINT_BITS = {'u8': 8, 'u32': 32, 'u64': 64, 'usize': 64}
 UINT_LEAN = {'u8': '.uint8', 'u32': '.uint32', 'u64': '.uint64', 'usize': '.usize'}
 INTEGERS = ['i32'] + list(UINT_BITS)
+WORDS = ['i32', 'bool', 'usize']  # the field types Core lays out in one native word
 
 
 def i32(x):
@@ -46,17 +50,20 @@ def i32(x):
 
 
 # ---------------------------------------------------------------- generator
-# Types: 'i32' 'bool' 'u8' 'u32' 'u64' 'usize' ('struct', k) ('enum', k), struct k's
-# field types TYPES.structs[k], enum k's variants' payload types TYPES.enums[k].
+# Types: 'i32' 'bool' 'u8' 'u32' 'u64' 'usize' 'ptr' ('struct', k) ('enum', k) ('slice', element, n),
+# struct k's field types TYPES.structs[k], enum k's variants' payload types TYPES.enums[k];
+# n is the slice's length, known statically.
 # Expressions: ('int', k) ('bool', b) ('uint', ty, k) ('local', id) ('field', id, j) ('neg', e)
 #              ('not', e) ('cast', ty, e) ('op', name, sym, l, r)
 # Statements: ('nop',) ('let', id, ty, e, body) ('call', id, ty, callee, args, body) ('set', id, e)
 #             ('letStruct', id, ty, fields, body) ('letEnum', id, ty, variant, payload, body)
 #             ('letMatch', id, ty, scrutinee, enum, arms, body) with arms [(binders, value)]
 #             ('setField', id, j, e) ('then', a, b) ('if', c, a, b) ('while', c, body) ('return', e)
+#             ('letAlloc', id, size, shift, body) ('letSlice', id, element, address, n, body)
+#             ('letIndex', id, element, slice, k, body) ('setIndex', slice, k, e)
 
 SCALARS = ['i32', 'bool'] + list(UINT_BITS)
-LETS = ('let', 'call', 'letStruct', 'letEnum', 'letMatch')
+LETS = ('let', 'call', 'letStruct', 'letEnum', 'letMatch', 'letAlloc', 'letSlice', 'letIndex')
 
 
 class Program(list):
@@ -77,6 +84,7 @@ class Gen:
         self.sigs = sigs
         self.index = index
         self.fresh = 100
+        self.slices = 0
 
     def new_id(self):
         self.fresh += 1
@@ -131,20 +139,55 @@ class Gen:
         name, sym = rng.choice(LOGIC)
         return ('op', name, sym, self.expr('bool', depth - 1, env), self.expr('bool', depth - 1, env))
 
-    def make_struct(self, env, items):
-        k = self.rng.randrange(len(TYPES.structs))
+    def make_struct(self, env, items, k=None):
+        if k is None:
+            k = self.rng.randrange(len(TYPES.structs))
         ident = self.new_id()
         items.append(('letStruct', ident, ('struct', k), [self.expr(f, 2, env) for f in TYPES.structs[k]]))
         env.append((ident, ('struct', k)))
+        return ident
 
-    def make_enum(self, env, items):
-        k = self.rng.randrange(len(TYPES.enums))
+    def make_enum(self, env, items, k=None):
+        if k is None:
+            k = self.rng.randrange(len(TYPES.enums))
         variant = self.rng.randrange(len(TYPES.enums[k]))
         ident = self.new_id()
         payload = [self.expr(f, 2, env) for f in TYPES.enums[k][variant]]
         items.append(('letEnum', ident, ('enum', k), variant, payload))
         env.append((ident, ('enum', k)))
         return ident, k
+
+    def store(self, env, items, view, element, index):
+        if element == 'i32':
+            items.append(('setIndex', view, index, self.expr('i32', 2, env)))
+        elif element[0] == 'struct':
+            items.append(('setIndex', view, index, ('local', self.make_struct(env, items, element[1]))))
+        else:
+            items.append(('setIndex', view, index, ('local', self.make_enum(env, items, element[1])[0])))
+
+    def make_slice(self, env, items):
+        """A fresh allocation viewed as a slice the way Core lays it out: i32
+        elements packed upward from the pointer, any other element as
+        descending words with element zero at the top. Every element is
+        written before anything reads one."""
+        rng = self.rng
+        elements = ['i32'] + [('struct', k) for k, fs in enumerate(TYPES.structs) if all(f in WORDS for f in fs)]
+        elements += [('enum', k) for k, vs in enumerate(TYPES.enums) if all(f in WORDS for v in vs for f in v)]
+        element = rng.choice(elements)
+        n = rng.randint(1, 6)
+        pointer, view = self.new_id(), self.new_id()
+        if element == 'i32':
+            items.append(('letAlloc', pointer, 4 * n, 2))
+            address = ('local', pointer)
+        else:
+            words = element_words(element)
+            items.append(('letAlloc', pointer, 8 * words * n, 3))
+            address = ('op', 'plus', '+', ('local', pointer), ('uint', 'usize', 8 * (words * n - 1)))
+        env.append((pointer, 'ptr'))
+        items.append(('letSlice', view, element, address, n))
+        env.append((view, ('slice', element, n)))
+        for i in range(n):
+            self.store(env, items, view, element, i)
 
     def block(self, depth, env, ret, must_return, mutable):
         """A statement list ending in a return when must_return. mutable: the ids
@@ -154,9 +197,14 @@ class Gen:
         env = list(env)
         mutable = list(mutable)
         returned = False
+        if depth == 3 and self.index == 0 and rng.random() < 0.6:
+            self.slices += 1
+            self.make_slice(env, items)
         for _ in range(rng.randint(0, 4 if depth > 0 else 2)):
-            kind = rng.choice(['let', 'let', 'set', 'if', 'while', 'call', 'struct', 'enum', 'match', 'setField']
-                              if depth > 0 else ['let', 'set', 'struct', 'setField'])
+            kind = rng.choice(['let', 'let', 'set', 'if', 'while', 'call', 'struct', 'enum', 'match', 'setField',
+                               'slice', 'index', 'index', 'store']
+                              if depth > 0 else ['let', 'set', 'struct', 'setField', 'index', 'store'])
+            slices = [(i, t) for i, t in env if t[0] == 'slice']
             if kind == 'let':
                 ty = rng.choice(['i32', 'i32', 'bool'] + list(UINT_BITS))
                 ident = self.new_id()
@@ -207,6 +255,20 @@ class Gen:
                 items.append(('letMatch', ident, ty, scrutinee, k, arms))
                 env.append((ident, ty))
                 mutable.append((ident, ty))
+            elif kind == 'slice' and depth == 3 and self.index == 0 and self.slices < 2:
+                # Only the entry's top level allocates, so a run allocates a few blocks at most.
+                self.slices += 1
+                self.make_slice(env, items)
+            elif kind == 'index' and slices:
+                view, (_, element, n) = rng.choice(slices)
+                ident = self.new_id()
+                items.append(('letIndex', ident, element, view, rng.randrange(n)))
+                env.append((ident, element))
+                if element == 'i32':
+                    mutable.append((ident, element))
+            elif kind == 'store' and slices:
+                view, (_, element, n) = rng.choice(slices)
+                self.store(env, items, view, element, rng.randrange(n))
             elif kind == 'call':
                 later = list(range(self.index + 1, len(self.sigs)))
                 if not later:
@@ -221,6 +283,12 @@ class Gen:
         if must_return and not returned:
             items.append(('return', self.expr(ret, 3, env)))
         return nest(items)
+
+
+def element_words(t):
+    if t[0] == 'struct':
+        return len(TYPES.structs[t[1]])
+    return 1 + max(len(v) for v in TYPES.enums[t[1]])
 
 
 def returns(s):
@@ -258,9 +326,12 @@ def nest(items):
 
 def gen_program(rng):
     global TYPES
-    structs = [[rng.choice(SCALARS) for _ in range(rng.randint(1, 3))] for _ in range(rng.randint(0, 2))]
-    enums = [[[rng.choice(SCALARS) for _ in range(rng.randint(0, 2))] for _ in range(rng.randint(1, 3))]
-             for _ in range(rng.randint(0, 2))]
+    # Half the types have only word fields, so slices of them are possible.
+    pools = lambda: WORDS if rng.random() < 0.5 else SCALARS
+    structs = [[rng.choice(pool) for _ in range(rng.randint(1, 3))]
+               for pool in [pools() for _ in range(rng.randint(0, 2))]]
+    enums = [[[rng.choice(pool) for _ in range(rng.randint(0, 2))] for _ in range(rng.randint(1, 3))]
+             for pool in [pools() for _ in range(rng.randint(0, 2))]]
     TYPES = Program([], structs, enums)
     count = rng.randint(1, 4)
     sigs = [(['i32'] + [rng.choice(SCALARS) for _ in range(rng.randint(0, 2))],
@@ -344,6 +415,14 @@ def ev(e, env):
             'notEqual': l != r, 'logicalAnd': l and r, 'logicalOr': l or r}[name]
 
 
+def copy(v):
+    if isinstance(v, list):
+        return list(v)
+    if isinstance(v, tuple):
+        return (v[0], list(v[1]))
+    return v
+
+
 def run_stmt(s, env, funcs):
     kind = s[0]
     if kind == 'let':
@@ -365,6 +444,17 @@ def run_stmt(s, env, funcs):
             env[b] = [v, ty]
         env[s[1]] = [ev(value, env), s[2]]
         run_stmt(s[6], env, funcs)
+    elif kind == 'letAlloc':
+        env[s[1]] = [None, 'ptr']
+        run_stmt(s[4], env, funcs)
+    elif kind == 'letSlice':
+        env[s[1]] = [[None] * s[4], ('slice', s[2], s[4])]
+        run_stmt(s[5], env, funcs)
+    elif kind == 'letIndex':
+        env[s[1]] = [copy(env[s[3]][0][s[4]]), s[2]]
+        run_stmt(s[5], env, funcs)
+    elif kind == 'setIndex':
+        env[s[1]][0][s[2]] = copy(ev(s[3], env))
     elif kind == 'set':
         env[s[1]][0] = ev(s[2], env)
     elif kind == 'setField':
@@ -403,6 +493,8 @@ def lean_ty(t):
     if t[0] == 'enum':
         variants = ', '.join('[' + ', '.join(lean_ty(f) for f in v) + ']' for v in TYPES.enums[t[1]])
         return f'(.enum {len(TYPES.structs) + t[1]} [{variants}])'
+    if t[0] == 'slice':
+        return f'(.slice {lean_ty(t[1])})'
     return '.' + t
 
 
@@ -448,6 +540,14 @@ def lean_stmt(s):
         arms = ', '.join(f'{{ binders := {b}, value := {lean_expr(v)} }}' for b, v in s[5])
         return (f'(.letMatch {s[1]} {lean_ty(s[2])} {s[3]} {len(TYPES.structs) + s[4]} [{arms}] '
                 f'{lean_stmt(s[6])})')
+    if kind == 'letAlloc':
+        return f'(.letAlloc {s[1]} (.unsigned .usize {s[2]}) {s[3]} {lean_stmt(s[4])})'
+    if kind == 'letSlice':
+        return f'(.letSlice {s[1]} {lean_ty(s[2])} {lean_expr(s[3])} {lean_expr(("int", s[4]))} {lean_stmt(s[5])})'
+    if kind == 'letIndex':
+        return f'(.letIndex {s[1]} {lean_ty(s[2])} {s[3]} {lean_expr(("int", s[4]))} {lean_stmt(s[5])})'
+    if kind == 'setIndex':
+        return f'(.setIndex {s[1]} {lean_expr(("int", s[2]))} {lean_expr(s[3])})'
     if kind == 'set':
         return f'(.set {s[1]} {lean_expr(s[2])})'
     if kind == 'setField':
@@ -495,6 +595,8 @@ def lani_ty(t):
         return f'{TYPES.name}S{t[1]}'
     if t[0] == 'enum':
         return f'{TYPES.name}E{t[1]}'
+    if t[0] == 'slice':
+        return f'[{lani_ty(t[1])}]'
     return t
 
 
@@ -567,6 +669,16 @@ def lani_stmt(s, prefix, indent):
         for v, (binders, value) in enumerate(s[5]):
             out.append(f'{pad}    {lani_variant(s[4], v, [f"v{b}" for b in binders])} -> {lani_expr(value)},')
         return out + [f'{pad}}};'] + lani_stmt(s[6], prefix, indent)
+    if kind == 'letAlloc':
+        size, align = lani_expr(('uint', 'usize', s[2])), lani_expr(('uint', 'usize', 1 << s[3]))
+        return [f'{pad}let v{s[1]}: ptr = alloc::allocator::alloc({size}, {align});'] + lani_stmt(s[4], prefix, indent)
+    if kind == 'letSlice':
+        return ([f'{pad}let v{s[1]}: {lani_ty(("slice", s[2], s[4]))} = slice_from_raw_parts({lani_expr(s[3])}, {s[4]});'] +
+                lani_stmt(s[5], prefix, indent))
+    if kind == 'letIndex':
+        return [f'{pad}let v{s[1]}: {lani_ty(s[2])} = v{s[3]}[{s[4]}];'] + lani_stmt(s[5], prefix, indent)
+    if kind == 'setIndex':
+        return [f'{pad}v{s[1]}[{s[2]}] = {lani_expr(s[3])};']
     if kind == 'set':
         return [f'{pad}v{s[1]} = {lani_expr(s[2])};']
     if kind == 'setField':
@@ -582,6 +694,8 @@ def lani_stmt(s, prefix, indent):
 
 
 LANI_HEAD = '''module app::main;
+import alloc::allocator;
+import core::mem;
 import std::io_byte;
 
 fn put(value: i32) -> i32 {
