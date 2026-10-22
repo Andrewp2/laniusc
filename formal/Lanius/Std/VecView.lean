@@ -78,7 +78,7 @@ private theorem rawView_storage_nominal {P : Program} {S : State} {T : Ty} {w p 
     (nominal : (match T with | .structure _ | .enumeration _ => true | _ => false) = true)
     (notI32 : T ≠ i32Ty) (layout : NativeLayout.valueWords? P T = some w) (wpos : 0 < w)
     (positive : 0 < cap) (hb : S.heap.containingBlock? p = some block) (aligned : p % 8 = 0)
-    (base : block.base = p) (bsize : block.size = 8 * w * cap) (balign : block.alignment = 8)
+    (bounds : p + 8 * w * cap ≤ block.base + block.size) (balign : 8 ≤ block.alignment)
     (pointer : RunsExpr P S pe (.pointer (viewAddr T (8 * w) p cap)) S)
     (length : RunsExpr P S le (.signed .i32 cap) S) :
     RunsExpr P S (rawView T pe le) (.rawSlice T (viewAddr T (8 * w) p cap) cap) S := by
@@ -96,35 +96,54 @@ private theorem rawView_storage_nominal {P : Program} {S : State} {T : Ty} {w p 
   · rw [low]; exact hb
   · rw [low]; exact aligned
   · omega
-  · rw [base, bsize]; omega
+  · omega
+
+/-- `[q, q + n)` lies in the live block that holds `q`, which is aligned
+to 8; a `Buffer` is one, and so is a subrange of one in a heap whose blocks
+are disjoint. -/
+def Within (h : Heap) (q n : Nat) : Prop :=
+  ∃ block, h.containingBlock? q = some block ∧ 8 ≤ block.alignment ∧ q % 8 = 0 ∧
+    q + n ≤ block.base + block.size ∧ q + n < 2 ^ 64
+
+theorem Buffer.within {h : Heap} {p n : Nat} (buffer : Buffer h p n) : Within h p n := by
+  obtain ⟨found, _, aligned, room⟩ := buffer
+  cases hb : h.containingBlock? p with
+  | none => simp [hb] at found
+  | some block =>
+    simp only [hb, Option.map_some, Option.some.injEq, Block.shape] at found
+    have base : block.base = p := congrArg Block.base found
+    have bsize : block.size = n := congrArg Block.size found
+    have balign : block.alignment = 8 := congrArg Block.alignment found
+    exact ⟨block, hb, by rw [balign]; exact Nat.le_refl _, aligned, by rw [base, bsize]; exact Nat.le_refl _, room⟩
+
+/-- The view of `cap > 0` elements at `p`, inside a block. -/
+theorem rawView_within {P : Program} {S : State} {T : Ty} {size p cap : Nat} {pe le : Expr}
+    (kind : ElemKind P T size) (within : Within S.heap p (size * cap)) (positive : 0 < cap)
+    (pointer : RunsExpr P S pe (.pointer (viewAddr T size p cap)) S)
+    (length : RunsExpr P S le (.signed .i32 cap) S) :
+    RunsExpr P S (rawView T pe le) (.rawSlice T (viewAddr T size p cap) cap) S := by
+  obtain ⟨block, hb, balign, aligned, bounds, _⟩ := within
+  cases kind with
+  | i32 =>
+      rw [show rawView i32Ty pe le = .i32SliceFromRawParts pe le from if_pos rfl]
+      have view : viewAddr i32Ty 4 p cap = p := if_pos (Or.inl rfl)
+      rw [view] at pointer ⊢
+      exact RunsExpr.i32View pointer length (mapRawI32Slice_of_block cap positive hb (by omega)
+        (by omega) (by omega))
+  | «structure» layout wpos _ =>
+      exact rawView_storage_nominal rfl (by simp [i32Ty]) layout wpos positive hb aligned bounds
+        balign pointer length
+  | enumeration layout wpos _ =>
+      exact rawView_storage_nominal rfl (by simp [i32Ty]) layout wpos positive hb aligned bounds
+        balign pointer length
 
 /-- The view of `cap > 0` elements of a buffer. -/
 theorem rawView_storage {P : Program} {S : State} {T : Ty} {size p cap : Nat} {pe le : Expr}
     (kind : ElemKind P T size) (buffer : Buffer S.heap p (size * cap)) (positive : 0 < cap)
     (pointer : RunsExpr P S pe (.pointer (viewAddr T size p cap)) S)
     (length : RunsExpr P S le (.signed .i32 cap) S) :
-    RunsExpr P S (rawView T pe le) (.rawSlice T (viewAddr T size p cap) cap) S := by
-  obtain ⟨found, _, aligned, _⟩ := buffer
-  cases hb : S.heap.containingBlock? p with
-  | none => simp [hb] at found
-  | some block =>
-    simp only [hb, Option.map_some, Option.some.injEq, Block.shape] at found
-    have base : block.base = p := congrArg Block.base found
-    have bsize : block.size = size * cap := congrArg Block.size found
-    have balign : block.alignment = 8 := congrArg Block.alignment found
-    cases kind with
-    | i32 =>
-        rw [show rawView i32Ty pe le = .i32SliceFromRawParts pe le from if_pos rfl]
-        have view : viewAddr i32Ty 4 p cap = p := if_pos (Or.inl rfl)
-        rw [view] at pointer ⊢
-        exact RunsExpr.i32View pointer length (mapRawI32Slice_of_block cap positive hb (by omega)
-          (by omega) (by rw [base, bsize]; omega))
-    | «structure» layout wpos _ =>
-        exact rawView_storage_nominal rfl (by simp [i32Ty]) layout wpos positive hb aligned base bsize
-          balign pointer length
-    | enumeration layout wpos _ =>
-        exact rawView_storage_nominal rfl (by simp [i32Ty]) layout wpos positive hb aligned base bsize
-          balign pointer length
+    RunsExpr P S (rawView T pe le) (.rawSlice T (viewAddr T size p cap) cap) S :=
+  rawView_within kind buffer.within positive pointer length
 
 /-! ## Operator results in range -/
 
@@ -192,10 +211,10 @@ theorem cast_usize_of_i32 {n : Nat} (hi : n < 18446744073709551616) :
 
 /-! ## `typed_slice_from_storage` -/
 
-theorem fromStorage_spec {P : Program} {T : Ty} {ids : VecIds} {size : Nat}
+theorem fromStorage_within_spec {P : Program} {T : Ty} {ids : VecIds} {size : Nat}
     (inst : VecInstance P T ids) (kind : ElemKind P T size)
     {caller : State} (formed : caller.CellsWellFormed) {p cap : Nat} (capBound : cap < 2 ^ 31)
-    (buffer : 0 < cap → Buffer caller.heap p (size * cap)) :
+    (within : 0 < cap → Within caller.heap p (size * cap)) :
     ∃ after, RunsExpr P caller (.call ids.fromStorage ([Value.pointer p, .signed .i32 cap].map Expr.value))
       (.rawSlice T (viewAddr T size p cap) cap) after ∧ PureFrame caller after := by
   refine PureRun.call inst.fromStorage rfl rfl formed ?_
@@ -252,7 +271,7 @@ theorem fromStorage_spec {P : Program} {T : Ty} {ids : VecIds} {size : Nat}
         exact rawView_empty kind (RunsExpr.local' l4_0) (RunsExpr.local' l4_1)
       · have i32 : T = i32Ty := taken.resolve_right empty
         have atP : viewAddr T size p cap = p := if_pos (Or.inl i32)
-        exact rawView_storage kind (buffer (by omega)) (by omega)
+        exact rawView_within kind (within (by omega)) (by omega)
           (by rw [atP]; exact RunsExpr.local' l4_0) (RunsExpr.local' l4_1)
     refine PureRun.letPure f4 view ?_
     exact PureRun.ret (f4.bindLocal _ _) (RunsExpr.local' (local_bound f4 5 _))
@@ -260,8 +279,8 @@ theorem fromStorage_spec {P : Program} {T : Ty} {ids : VecIds} {size : Nat}
     have positive : 0 < cap := by omega
     have eight := kind.size_eight notI32
     have small := kind.size_le
-    have buf := buffer positive
-    have room : p + size * cap < 18446744073709551616 := buf.2.2.2
+    have buf := within positive
+    have room : p + size * cap < 18446744073709551616 := buf.choose_spec.2.2.2.2
     have big : 8 ≤ size * cap := Nat.le_trans eight (Nat.le_mul_of_pos_right _ positive)
     have isFalse : (decide (strideOf T size ≥ 0) || ((cap : Int) == 0)) = false := by
       have : ¬ (-(size : Int) ≥ 0) := by omega
@@ -296,8 +315,16 @@ theorem fromStorage_spec {P : Program} {T : Ty} {ids : VecIds} {size : Nat}
     have pointer : RunsExpr P S6 (.binary .add (.local 0) (.local 6)) (.pointer (viewAddr T size p cap)) S6 :=
       RunsExpr.binary (RunsExpr.local' l6_0) (RunsExpr.local' l6_6) (by decide)
         (by rw [target, atTop]; exact eval_ptr_add (by omega))
-    refine PureRun.letPure f6 (rawView_storage kind buf positive pointer (RunsExpr.local' l6_1)) ?_
+    refine PureRun.letPure f6 (rawView_within kind buf positive pointer (RunsExpr.local' l6_1)) ?_
     exact PureRun.ret (f6.bindLocal _ _) (RunsExpr.local' (local_bound f6 7 _))
+
+theorem fromStorage_spec {P : Program} {T : Ty} {ids : VecIds} {size : Nat}
+    (inst : VecInstance P T ids) (kind : ElemKind P T size)
+    {caller : State} (formed : caller.CellsWellFormed) {p cap : Nat} (capBound : cap < 2 ^ 31)
+    (buffer : 0 < cap → Buffer caller.heap p (size * cap)) :
+    ∃ after, RunsExpr P caller (.call ids.fromStorage ([Value.pointer p, .signed .i32 cap].map Expr.value))
+      (.rawSlice T (viewAddr T size p cap) cap) after ∧ PureFrame caller after :=
+  fromStorage_within_spec inst kind formed capBound (fun positive => (buffer positive).within)
 
 #print axioms fromStorage_spec
 
