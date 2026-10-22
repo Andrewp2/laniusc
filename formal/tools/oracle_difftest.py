@@ -53,6 +53,24 @@ element of its slices, so evaluation order and short circuit show in the
 result. `while` conditions are `counter < bound && c` (either way round), so
 loops stay bounded whatever c calls.
 
+With BOXES (half the programs) there are also box types, the shape of the
+mini compiler's own `Box<T>` and `List<T>`: a struct whose one field is a
+`ptr` to a heap block holding one value of its target type, the target a
+new enum whose payloads hold boxes of itself (a list's `Cons(x, Box)`, a
+tree's `Node(Box, x, Box)`, beside a variant without boxes) or an earlier
+type (i32, a struct, an enum, another box). The entry makes boxes as
+`boxed<T>` does (alloc, a one-element raw view, element 0 written, the
+pointer in the struct), so slice elements hold enums holding structs
+holding pointers, and its result follows every box local as `unbox` does
+(a new view of the same block, element 0 read): the leaves of what it
+holds, then each box in that value's payload, taken out by a `match` and
+compared (`==` on the pointers) with another box, to depth 2. Pointers
+themselves never reach the result: the two compilers' heaps differ. Later
+functions that take or return values holding boxes are passed a box of each
+type they hold, and copy those instead of allocating. The reference
+interpreter gives each allocation its views, so two views of one block
+share their elements.
+
 isize is a 64-bit two's complement slot: + - * & | ^ and unary minus wrap
 at 64 bits, < <= > >= are signed, and casts sign-extend an i32, keep an
 unsigned value's bits, and wrap on the way out; there is no isize division
@@ -87,6 +105,11 @@ SLICES = True  # generate heap and slice statements
 # Struct fields and enum payloads of earlier declared struct and enum types,
 # nested (frontend_difftest.py turns them off).
 NESTED = True
+# Boxes (with NESTED, SLICES and EFFECTS): struct types whose one field is a
+# ptr to a heap block holding one value of a target type, as the mini
+# compiler's own Box<T> is, and enums whose payloads hold boxes of themselves
+# (List<T>'s Cons(T, Box<List<T>>), trees); see Gen.make_box.
+BOXES = True
 # Generate effectful expressions (calls inside expressions, in conditions,
 # assignments and returns, and as statements) and struct, enum and slice
 # parameters and struct and enum results (frontend_difftest.py turns them off).
@@ -155,12 +178,36 @@ def fits(param, t):
 
 def word_field(f):
     """A word, a struct of word fields with at least one word, or an enum of
-    word payloads: a type Core and the mini compiler lay out a word a slot."""
+    word payloads: a type Core and the mini compiler lay out a word a slot
+    (a ptr is a word too; only box structs hold one)."""
     if isinstance(f, tuple) and f[0] == 'struct':
         return all(word_field(g) for g in TYPES.structs[f[1]]) and words(f) > 0
     if isinstance(f, tuple) and f[0] == 'enum':
         return all(word_field(g) for v in TYPES.enums[f[1]] for g in v)
-    return f in WORDS
+    return f in WORDS or f == 'ptr'
+
+
+def box_map():
+    """Box struct index -> the type of the value its pointer holds."""
+    return getattr(TYPES, 'boxes', {})
+
+
+def is_box(t):
+    return isinstance(t, tuple) and t[0] == 'struct' and t[1] in box_map()
+
+
+def boxes_in(t):
+    """The box struct indices among t's fields and payloads, nested (not
+    through a box's target)."""
+    if not is_object(t):
+        return set()
+    if is_box(t):
+        return {t[1]}
+    fields = TYPES.structs[t[1]] if t[0] == 'struct' else [f for v in TYPES.enums[t[1]] for f in v]
+    out = set()
+    for f in fields:
+        out |= boxes_in(f)
+    return out
 
 
 def words(t):
@@ -190,10 +237,11 @@ def slice_elements():
 class Program(list):
     """A program's functions (params, ret, body), with its struct and enum types."""
 
-    def __init__(self, funcs, structs, enums):
+    def __init__(self, funcs, structs, enums, boxes=None):
         super().__init__(funcs)
         self.structs = structs
         self.enums = enums
+        self.boxes = boxes or {}
 
 
 TYPES = Program([], [], [])  # the program being generated, printed or run
@@ -207,6 +255,54 @@ class Gen:
         self.fresh = 100
         self.slices = 0
         self.sealed = 0  # inside a match arm: no new locals, which could not see its binders
+        self.depth = 3  # the block being generated: 3 is the function body
+        self.box_nest = 0  # boxes being made around the value being made
+        self.boxes_made = 0
+
+    def may_box(self):
+        """Whether a new box may be made here: only the entry's top level
+        allocates (so a run allocates a few blocks), outside match arms."""
+        return self.index == 0 and self.depth == 3 and not self.sealed and self.boxes_made < 12
+
+    def can_make(self, t, env):
+        """Whether a value of type t can be made here: every box it holds is
+        either new (may_box) or a copy of a box local of its type."""
+        if self.may_box():
+            return True
+        return all(any(u == ('struct', b) for _, u in env) for b in boxes_in(t))
+
+    def makeable(self, kind, env):
+        n = len(TYPES.structs) if kind == 'struct' else len(TYPES.enums)
+        return [k for k in range(n) if self.can_make((kind, k), env)]
+
+    def make_box(self, env, items, b):
+        """A new box of struct type b, as the mini compiler's boxed<T> makes
+        one: a block of the target type's size, viewed as a one-element raw
+        slice the way Core lays it out (an i32 at the block's start, any
+        other type's word 0 at its top), the value written to element 0, and
+        the box struct holding the block's pointer."""
+        target = TYPES.boxes[b]
+        self.boxes_made += 1
+        self.box_nest += 1
+        if target == 'i32':
+            value = self.expr('i32', 2, env)
+        elif target[0] == 'struct':
+            value = ('local', self.make_struct(env, items, target[1]))
+        else:
+            value = ('local', self.make_enum(env, items, target[1])[0])
+        self.box_nest -= 1
+        pointer, view, ident = self.new_id(), self.new_id(), self.new_id()
+        if target == 'i32':
+            items.append(('letAlloc', pointer, 4, 3))
+        else:
+            items.append(('letAlloc', pointer, 8 * words(target), 3))
+        env.append((pointer, 'ptr'))
+        items.append(('letSlice', view, target, box_address(pointer, target), 1))
+        env.append((view, ('slice', target, 1)))
+        items.append(('setIndex', view, 0, value))
+        items.append(('letStruct', ident, ('struct', b), [('local', pointer)]))
+        env.append((ident, ('struct', b)))
+        return ident
 
     def new_id(self):
         self.fresh += 1
@@ -302,7 +398,13 @@ class Gen:
 
     def make_struct(self, env, items, k=None):
         if k is None:
-            k = self.rng.randrange(len(TYPES.structs))
+            k = self.rng.choice(self.makeable('struct', env))
+        if k in box_map():
+            # A box is new or a copy of one of its type.
+            named = [i for i, u in env if u == ('struct', k)]
+            if self.may_box() and (not named or self.rng.random() < 0.4):
+                return self.make_box(env, items, k)
+            return self.rng.choice(named)
         ident = self.new_id()
         items.append(('letStruct', ident, ('struct', k), [self.field_value(f, env, items) for f in TYPES.structs[k]]))
         env.append((ident, ('struct', k)))
@@ -310,8 +412,12 @@ class Gen:
 
     def make_enum(self, env, items, k=None):
         if k is None:
-            k = self.rng.randrange(len(TYPES.enums))
-        variant = self.rng.randrange(len(TYPES.enums[k]))
+            k = self.rng.choice(self.makeable('enum', env))
+        variants = list(range(len(TYPES.enums[k])))
+        if self.box_nest >= 2:
+            # Deep inside boxes: a variant without boxes (a list's Nil) ends the chain.
+            variants = [v for v in variants if not any(boxes_in(f) for f in TYPES.enums[k][v])] or variants
+        variant = self.rng.choice(variants)
         ident = self.new_id()
         payload = [self.field_value(f, env, items) for f in TYPES.enums[k][variant]]
         items.append(('letEnum', ident, ('enum', k), variant, payload))
@@ -365,7 +471,8 @@ class Gen:
             params, cret = self.sigs[k]
             if ret is not None and cret != ret:
                 continue
-            if all(not isinstance(t, tuple) or t[0] != 'slice' or any(fits(t, u) for _, u in env) for t in params):
+            if all(not isinstance(t, tuple) or t[0] != 'slice' or any(fits(t, u) for _, u in env) for t in params) \
+                    and all(self.can_make(t, env) for t in params):
                 out.append(k)
         return out
 
@@ -393,7 +500,8 @@ class Gen:
         operators. Struct and enum locals it needs go into items first."""
         rng = self.rng
         calls = self.callees(ty, env) if depth > 0 else []
-        if TYPES.enums and depth > 0 and (not isinstance(ty, tuple) or ty[0] != 'slice') and rng.random() < 0.1:
+        if TYPES.enums and depth > 0 and (not isinstance(ty, tuple) or ty[0] != 'slice') and rng.random() < 0.1 \
+                and self.makeable('enum', env):
             return self.eff_match(ty, depth, env, items)
         if isinstance(ty, tuple):
             views = [(i, t[2]) for i, t in env if isinstance(t, tuple) and t[0] == 'slice' and t[1] == ty]
@@ -403,8 +511,8 @@ class Gen:
                 return ('eIndex', view, self.in_bounds(n, depth, env, items))
             if calls and rng.random() < 0.5:
                 return self.eff_call(rng.choice(calls), depth, env, items)
-            if ty[0] != 'slice' and ((depth > 0 and rng.random() < 0.5) or
-                                     (self.sealed and all(u != ty for _, u in env))):
+            if ty[0] != 'slice' and not is_box(ty) and ((depth > 0 and rng.random() < 0.5) or
+                                                        (self.sealed and all(u != ty for _, u in env))):
                 # A literal whose fields or payload may call functions.
                 if ty[0] == 'struct':
                     return ('eStruct', ty, [self.eff(f, depth - 1, env, items) for f in TYPES.structs[ty[1]]])
@@ -494,7 +602,7 @@ class Gen:
         """match scrutinee { arms } of type ty on an enum: the scrutinee a call,
         literal, local or match; arm k binds variant k's payload to fresh
         locals and its value may use them."""
-        k = self.rng.randrange(len(TYPES.enums))
+        k = self.rng.choice(self.makeable('enum', env))
         ety = ('enum', k)
         scrutinee = self.eff(ety, depth - 1, env, items)
         binders, values = [], []
@@ -577,11 +685,23 @@ class Gen:
     def block(self, depth, env, ret, must_return, mutable):
         """A statement list ending in a return when must_return. mutable: the ids
         assignments may change (loop counters are left out)."""
+        outer, self.depth = self.depth, depth
+        try:
+            return self.block_items(depth, env, ret, must_return, mutable)
+        finally:
+            self.depth = outer
+
+    def block_items(self, depth, env, ret, must_return, mutable):
         rng = self.rng
         items = []
         env = list(env)
         mutable = list(mutable)
         returned = False
+        if depth == 3 and self.index == 0:
+            # One box of each box type first, so the entry always has one to copy.
+            for b in sorted(box_map()):
+                if all(u != ('struct', b) for _, u in env):
+                    self.make_box(env, items, b)
         if SLICES and depth == 3 and self.index == 0 and rng.random() < (0.85 if EFFECTS else 0.6):
             self.slices += 1
             self.make_slice(env, items)
@@ -628,19 +748,20 @@ class Gen:
                 items.append(('let', counter, 'i32', ('int', 0)))
                 items.append(loop)
                 env.append((counter, 'i32'))
-            elif kind == 'struct' and TYPES.structs:
+            elif kind == 'struct' and self.makeable('struct', env):
                 self.make_struct(env, items)
             elif kind == 'setField' and TYPES.structs:
                 fields = [(i, j, f) for i, t in env if t[0] == 'struct' for j, f in enumerate(TYPES.structs[t[1]])
-                          if not is_object(f)]
+                          if not is_object(f) and f != 'ptr']
                 if not fields:
-                    self.make_struct(env, items)
+                    if self.makeable('struct', env):
+                        self.make_struct(env, items)
                     continue
                 ident, j, f = rng.choice(fields)
                 items.append(('setField', ident, j, self.expr(f, 3, env)))
-            elif kind == 'enum' and TYPES.enums:
+            elif kind == 'enum' and self.makeable('enum', env):
                 self.make_enum(env, items)
-            elif kind == 'match' and TYPES.enums:
+            elif kind == 'match' and self.makeable('enum', env):
                 scrutinees = [(i, t[1]) for i, t in env if t[0] == 'enum']
                 if not scrutinees or rng.random() < 0.3:
                     scrutinees = [self.make_enum(env, items)]
@@ -684,8 +805,8 @@ class Gen:
                 elements = [t[1] for _, t in env if isinstance(t, tuple) and t[0] == 'slice' and is_object(t[1])]
                 if elements and rng.random() < 0.3:
                     ty = rng.choice(elements)  # often read from a slice of word structs or enums
-                elif objects and rng.random() < 0.3:
-                    ty = rng.choice(objects)
+                elif [t for t in objects if self.can_make(t, env)] and rng.random() < 0.3:
+                    ty = rng.choice([t for t in objects if self.can_make(t, env)])
                 else:
                     ty = rng.choice(['i32', 'i32', 'bool'] + list(UINT_BITS) + EXTRA)
                 probe = self.called_bool(2, env, items) if rng.random() < 0.3 else None
@@ -740,7 +861,7 @@ class Gen:
                 items.append(('ifEval', self.eff('bool', 3, env, items), ('returnUnit',), ('nop',)))
             elif kind == 'setFieldEval':
                 fields = [(i, j, f) for i, t in env if isinstance(t, tuple) and t[0] == 'struct'
-                          for j, f in enumerate(TYPES.structs[t[1]]) if not is_object(f)]
+                          for j, f in enumerate(TYPES.structs[t[1]]) if not is_object(f) and f != 'ptr']
                 if fields:
                     ident, j, f = rng.choice(fields)
                     items.append(('setFieldEval', ident, j, self.eff(f, 3, env, items)))
@@ -798,17 +919,68 @@ class Gen:
         def as_i32(e, ty):
             return e if ty == 'i32' else ('cast', 'i32', e) if ty == 'usize' else None
 
-        def struct_parts(ident, k):
-            # Each leaf of struct local ident, a nested struct or enum copied to a local first.
+        def struct_parts(ident, k, budget=2):
+            # Each leaf of struct local ident, a nested struct or enum copied
+            # to a local first, a box followed to its value.
             parts = []
             for j, f in enumerate(TYPES.structs[k]):
                 if is_object(f):
                     inner = self.new_id()
                     items.append(('letEval', inner, f, ('ePure', ('field', ident, j))))
                     env.append((inner, f))
-                    parts += struct_parts(inner, f[1]) if f[0] == 'struct' else enum_parts(inner, f[1])
+                    if is_box(f):
+                        parts += unbox_parts(inner, f[1], budget - 1)
+                    else:
+                        parts += struct_parts(inner, f[1], budget) if f[0] == 'struct' else enum_parts(inner, f[1])
                 else:
                     parts.append(as_i32(('field', ident, j), f))
+            return parts
+
+        unboxed = [0]
+
+        def unbox_parts(ident, b, budget):
+            # The value box local ident points at, read back as the mini
+            # compiler's unbox does (a one-element view of the block), and
+            # its leaves; the boxes inside it followed while budget lasts.
+            if budget < 0 or unboxed[0] >= 10:
+                return []
+            unboxed[0] += 1
+            target = TYPES.boxes[b]
+            pointer, view, value = self.new_id(), self.new_id(), self.new_id()
+            items.append(('letEval', pointer, 'ptr', ('ePure', ('field', ident, 0))))
+            env.append((pointer, 'ptr'))
+            items.append(('letSlice', view, target, box_address(pointer, target), 1))
+            env.append((view, ('slice', target, 1)))
+            items.append(('letIndex', value, target, view, 0))
+            env.append((value, target))
+            if target == 'i32':
+                return [('local', value)]
+            if target[0] == 'struct':
+                return struct_parts(value, target[1], budget)
+            return enum_parts(value, target[1]) + enum_boxes(value, target[1], budget)
+
+        def enum_boxes(ident, k, budget):
+            # Each box in a payload of enum local ident: taken out by a match
+            # (another box of its type when ident is another variant), its
+            # pointer compared with that other box's, and followed.
+            parts = []
+            for v, payload in enumerate(TYPES.enums[k]):
+                for j, f in enumerate(payload):
+                    if not is_box(f) or budget <= 0:
+                        continue
+                    other = self.rng.choice([i for i, u in env if u == f])
+                    binders = [[self.new_id() for _ in p] for p in TYPES.enums[k]]
+                    values = [('ePure', ('local', binders[v][j] if w == v else other))
+                              for w in range(len(TYPES.enums[k]))]
+                    taken, flag = self.new_id(), self.new_id()
+                    items.append(('letEval', taken, f, ('eMatch', ('ePure', ('local', ident)), ('enum', k), f,
+                                                         binders, values)))
+                    env.append((taken, f))
+                    items.append(('let', flag, 'i32', ('int', 0)))
+                    items.append(('if', ('op', 'equal', '==', ('field', taken, 0), ('field', other, 0)),
+                                  ('set', flag, ('int', 1)), ('nop',)))
+                    env.append((flag, 'i32'))
+                    parts += [('local', flag)] + unbox_parts(taken, f[1], budget - 1)
             return parts
 
         def enum_parts(ident, k):
@@ -868,11 +1040,54 @@ class Gen:
                     parts = enum_parts(ident, element[1])
                 for x in parts:
                     h = mix(h, x) if x else h
+        for ident, t in list(env):
+            if is_box(t) and ident > 100:
+                for x in unbox_parts(ident, t[1], 2):
+                    h = mix(h, x) if x else h
         return h
 
 
 def element_words(t):
     return words(t)
+
+
+def box_address(pointer, target):
+    """Where a one-element view of target in the block at pointer starts: an
+    i32 at the block's start, any other type's word 0 at its top word."""
+    if target == 'i32':
+        return ('local', pointer)
+    return ('op', 'plus', '+', ('local', pointer), ('uint', 'usize', 8 * (words(target) - 1)))
+
+
+def add_boxes(rng, structs, enums):
+    """One or two box struct types (one ptr field) and what they point at
+    (Program.boxes): a new enum whose payloads hold boxes of itself, a list
+    (Nil, Cons(x.., Box)) or a tree (Leaf(x..), Node(Box, x.., Box)), or
+    a type declared earlier (another box among them)."""
+    global TYPES
+    boxes = {}
+    for _ in range(rng.randint(1, 2)):
+        TYPES = Program([], structs, enums, boxes)
+        b = len(structs)
+        structs.append(['ptr'])
+        earlier = [t for t in slice_elements() if t != ('struct', b)]
+        if rng.random() < 0.6 or not earlier:
+            e = len(enums)
+            fields = lambda n: [rng.choice(WORDS + earlier if earlier and rng.random() < 0.3 else WORDS)
+                                for _ in range(n)]
+            payload = fields(rng.randint(0, 2))
+            for _ in range(2 if rng.random() < 0.35 else 1):
+                payload.insert(rng.randint(0, len(payload)), ('struct', b))
+            variants = [fields(rng.randint(0, 1)), payload]
+            if rng.random() < 0.3:
+                variants.append(fields(rng.randint(0, 2)) + [('struct', b)])
+            rng.shuffle(variants)
+            enums.append(variants)
+            boxes[b] = ('enum', e)
+        else:
+            boxes[b] = rng.choice(earlier)
+    TYPES = Program([], structs, enums, boxes)
+    return boxes
 
 
 def returns(s):
@@ -933,6 +1148,8 @@ def gen_program(rng):
                     if rng.random() < 0.3:
                         payload.insert(rng.randint(0, len(payload)), rng.choice(order[:p]))
     TYPES = Program([], structs, enums)
+    boxes = add_boxes(rng, structs, enums) if BOXES and NESTED and SLICES and EFFECTS and rng.random() < 0.5 else {}
+    TYPES = Program([], structs, enums, boxes)
     count = rng.randint(2, 4) if EFFECTS else rng.randint(1, 4)
     objects = [('struct', k) for k in range(len(structs))] + [('enum', k) for k in range(len(enums))]
     sigs = []
@@ -955,6 +1172,15 @@ def gen_program(rng):
                 # Unit functions mostly work through a slice they are passed.
                 element = shared if rng.random() < 0.75 else rng.choice(slice_elements())
                 params.insert(rng.randint(1, len(params)), ('slice', element, rng.randint(1, 3)))
+            # Only the entry makes boxes: a later function that handles values
+            # holding boxes is passed a box of each such type to copy.
+            needed = set()
+            for t in params:
+                needed |= boxes_in(t[1] if isinstance(t, tuple) and t[0] == 'slice' else t)
+            for b in sorted(needed - {t[1] for t in params if is_box(t)}):
+                params.insert(rng.randint(1, len(params)), ('struct', b))
+            if is_object(ret) and not boxes_in(ret) <= {t[1] for t in params if is_box(t)}:
+                ret = rng.choice(SCALARS)
         sigs.append((params, ret))
     funcs = []
     for k, (params, ret) in enumerate(sigs):
@@ -963,7 +1189,7 @@ def gen_program(rng):
         # A unit function may end without a return.
         body = g.block(3, env, ret, ret != 'unit' or rng.random() < 0.5, [])
         funcs.append((params, ret, body))
-    return Program(funcs, structs, enums)
+    return Program(funcs, structs, enums, boxes)
 
 
 def gen_args(rng, params):
@@ -986,6 +1212,24 @@ def gen_args(rng, params):
 class Returned(Exception):
     def __init__(self, value):
         self.value = value
+
+
+class Ptr:
+    """A pointer: an allocation (its views by start, element type and
+    length, so two views of the same storage share their elements) and a
+    byte offset into it."""
+
+    def __init__(self, block, offset):
+        self.block, self.offset = block, offset
+
+    def __eq__(self, other):
+        return isinstance(other, Ptr) and self.block is other.block and self.offset == other.offset
+
+    def __hash__(self):
+        return hash((id(self.block), self.offset))
+
+    def view(self, element, n):
+        return self.block.setdefault((self.offset, element, n), [None] * n)
 
 
 def wrap_to(ty, x):
@@ -1041,6 +1285,10 @@ def ev(e, env):
 
 def apply_op(name, l, r, ty):
     """A binary operator on its operands' values, ty the left operand's type."""
+    if isinstance(l, Ptr):
+        if name == 'plus':
+            return Ptr(l.block, l.offset + r)
+        return {'equal': l == r, 'notEqual': l != r}[name]
     if name in ARITH_NAMES:
         if name in ('shiftLeft', 'shiftRight'):
             # Python's >> on a negative value is arithmetic, as Core's is.
@@ -1197,10 +1445,10 @@ def run_stmt(s, env, funcs):
         env[s[1]] = [ev(value, env), s[2]]
         run_stmt(s[6], env, funcs)
     elif kind == 'letAlloc':
-        env[s[1]] = [None, 'ptr']
+        env[s[1]] = [Ptr({}, 0), 'ptr']
         run_stmt(s[4], env, funcs)
     elif kind == 'letSlice':
-        env[s[1]] = [[None] * s[4], ('slice', s[2], s[4])]
+        env[s[1]] = [ev(s[3], env).view(s[2], s[4]), ('slice', s[2], s[4])]
         run_stmt(s[5], env, funcs)
     elif kind == 'letIndex':
         env[s[1]] = [copy(env[s[3]][0][s[4]]), s[2]]
@@ -1389,6 +1637,8 @@ def lean_program(funcs):
 
 LEAN_HEAD = '''import Lanius.Mini.Compiler
 open Lanius.Mini
+-- Programs with boxes nest deeper than the default allows.
+set_option maxRecDepth 10000
 
 def render : Option Binary → String
   | none => "none"
@@ -1760,7 +2010,9 @@ def main():
             if x != y or x != reference:
                 disagreements += 1
                 print(f'program {k} args {a}: verified compiler {x}, laniusc {y}, reference {reference}')
-    print(f'{len(programs)} programs ({rejected} rejected), {total} calls, {disagreements} disagreements')
+    boxed = sum(1 for funcs in programs if funcs.boxes)
+    print(f'{len(programs)} programs ({rejected} rejected, {boxed} with boxes), {total} calls, '
+          f'{disagreements} disagreements')
     return 1 if disagreements else 0
 
 

@@ -561,6 +561,37 @@ of the programs then answer differently if isize order is taken unsigned,
 and a deliberately unsigned laniusc side gives 363 disagreements in 800
 calls.
 
+Boxes (`BOXES`, 10-22; off without `NESTED`, so off in
+`frontend_difftest.py`): half the programs get one or two box structs, the
+shape of the mini compiler's own `Box<T>` and `List<T>`: one `ptr` field,
+pointing at a block that holds one value of the box's target type. A target
+is a new enum whose payloads hold boxes of itself (a list's `Cons(x, Box)`,
+a tree's `Node(Box, x, Box)`, beside a variant without boxes), or a type
+declared earlier (`i32`, a struct, an enum, another box). The entry makes
+boxes as `boxed<T>` does: `alloc`, a one-element raw view of the block (an
+`i32` at its start, any other type's word 0 at its top word), element 0
+written, the pointer stored in the struct. So slice elements hold enums
+holding structs holding pointers, at Core's layout, and the boxes are
+copied, matched on, passed and returned like any struct. The entry's result
+follows each box local as `unbox` does (a second view of the same block,
+element 0 read): the leaves of the value, then each box in its payloads,
+taken out by a `match`, its pointer compared (`==`) with another box's, and
+followed, to depth 2. Pointers never reach the result directly (the two
+compilers' heaps differ). Later functions that handle values holding boxes
+are passed a box of each type they hold and copy those; only the entry's
+top level allocates. The reference interpreter gives each allocation its
+views by start, element type and length, so two views of one block share
+their elements. With the stores into the boxes left out of the laniusc side
+only, its programs fault on the first unbox (a null pointer read back), so
+the result does see what the boxes hold. Seeds 501, 503, 504, 506, 507
+(40 + 4 × 300): 1,240 programs (at least 594 with boxes), 9,920 calls, no
+disagreements and no rejections. Seeds 502 and 505 stopped on laniusc syntax errors (LNC0016) in
+programs without boxes: a `match` expression in an `if` or `while` condition
+beside comparisons and shifts, rejected only after some earlier functions
+(`target/claude-work/f9/repro/d3.lani` in the step 6 worktree fails at
+31:1039; the same function alone, `c1.lani`, parses). Not yet reduced
+further.
+
 The stdlib half:
 
 ```bash
@@ -1107,9 +1138,26 @@ declarations consistent. `compileSource` lowers all but 98 of them, every
 one part of `Box<T>`: `boxed`, `unbox`, `core::mem::typed_slice_from_storage`
 and `core::mem::size_of` at element types such as `Expr`, `Stmt`, `SrcType`
 and `List<X>`, whose raw views hold enums inside enums (`List<X>`'s payload
-is X and a `Box`). Enum fields and payloads in slice elements are the open
-item of step 6; with them the mini compiler's own source would compile.
-(Probe: `target/claude-work/census/Probe.lean` in the step 11 worktree.)
+is X and a `Box`). Enum fields and payloads in slice elements were the open
+item of step 6. (Probe: `target/claude-work/census/Probe.lean` in the step
+11 worktree.)
+
+Re-measured on integ2 at 176c0d14 (10-22), after F8 stage 2 (any word type
+as a slice element, enums nested anywhere) and with the shifts read as
+written: the whole of `compiler.lani` (457 functions now) with the same four
+modules reads as one program of 618 instances, every body ends in a return,
+the declarations are consistent, `lowerFunc` accepts all 618, and
+`compileSource` compiles the program. `Box<T>` at `Expr`, `Stmt`,
+`SrcType`, `List<X>` and the rest lowers: its element types are word types
+(the box is a struct of one `ptr`, `List<X>` an enum whose `Cons` payload
+is X and that struct), so F8 stage 2's `word_type`/`load_type`/`store_type`
+already cover them, and `size_of`'s probe view and `slice_stride` give
+`8 × words`. No front pass or proof change was needed. (Probe:
+`target/claude-work/f9/census/probe.sh` in the step 6 worktree, the step
+11 probe's `Probe.lean` on laniusc's parse trees of the current files; it
+takes about 2 minutes under `#eval`. The same probe on `frontend.lani` as
+one program was stopped after 82 minutes without output, so that file is
+still measured function by function only.)
 
 Type aliases, wide literals, null pointers, `!` arms (10-22). Each closes a
 gap the stdlib oracle or the census found:
