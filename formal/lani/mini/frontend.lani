@@ -611,6 +611,12 @@ pub fn text_dealloc() -> List<usize> {
     return t;
 }
 
+// assert
+pub fn text_assert() -> List<usize> {
+    let t: List<usize> = cons(97, cons(115, cons(115, cons(101, cons(114, single(116))))));
+    return t;
+}
+
 pub fn text_slice_from_raw_parts() -> List<usize> {
     let t: List<usize> = cons(115, cons(108, cons(105, cons(99, cons(101, cons(95, cons(102, cons(114, cons(111, cons(109, cons(95, cons(114, cons(97, cons(119, cons(95, cons(112, cons(97, cons(114, cons(116, single(115))))))))))))))))))));
     return t;
@@ -3236,6 +3242,8 @@ pub enum MStmt {
     MDiscard(MEff),
     MSetIndexEval(usize, MEff, MEff),
     MSetFieldEval(usize, usize, MEff),
+    MReturnUnit,
+    MAssert(MEff),
 }
 
 // A call: the function instance and the arguments.
@@ -4755,12 +4763,36 @@ pub fn discard_of(x: core::option::Option<MEff>) -> core::option::Option<MStmt> 
     };
 }
 
-// A call statement: `alloc::allocator::dealloc(pointer, size, align);`, or
-// a call whose value is discarded.
+pub fn assert_of(x: core::option::Option<MEff>) -> core::option::Option<MStmt> {
+    return match (x) {
+        None -> None,
+        Some(e) -> Some(MAssert(e)),
+    };
+}
+
+// `assert(c)`: its one argument, a bool.
+pub fn assert_arg(fuel: usize, env: Env, scope: List<Local>, args: core::option::Option<List<CTree>>) -> core::option::Option<MStmt> {
+    return match (args) {
+        None -> None,
+        Some(items) -> match (items) {
+            Nil -> None,
+            Cons(c, rest) -> match (unbox(rest)) {
+                Nil -> assert_of(eff_of(fuel, env, scope, Some(TyBool), c)),
+                Cons(d, more) -> None,
+            },
+        },
+    };
+}
+
+// A call statement: `alloc::allocator::dealloc(pointer, size, align);`,
+// `assert(c);`, or a call whose value (if any) is discarded.
 pub fn call_stmt(fuel: usize, env: Env, scope: List<Local>, pf: CTree) -> core::option::Option<MStmt> {
     let path: CTree = kid(kid(pf, 0), 0);
     if (is_path_call(pf) && is_path(path_spellings(fuel, kid(path, 0), kid(path, 1)), dealloc_path())) {
         return free_of(args_of(fuel, env, scope, kid(kid(pf, 1), 1)));
+    }
+    if (is_path_call(pf) && is_path(path_spellings(fuel, kid(path, 0), kid(path, 1)), single(text_assert()))) {
+        return assert_arg(fuel, env, scope, list_items(fuel, kid(kid(pf, 1), 1)));
     }
     if (is_path_call(pf) || is_method_form(pf)) {
         return discard_of(eff_postfix(fuel, env, scope, None, pf));
@@ -4964,6 +4996,9 @@ pub fn stmt_of(fuel: usize, env: Env, scope: List<Local>, s: CTree) -> core::opt
     if (p == p_return_stmt() && node_prod(kid(s, 1)) == p_return_value()) {
         return return_or_eval(f, env, scope, kid(kid(s, 1), 0));
     }
+    if (p == p_return_stmt() && node_prod(kid(s, 1)) == p_return_void()) {
+        return Some(MReturnUnit);
+    }
     if (p == p_if_stmt() && node_prod(kid(s, 5)) == p_else_stmt()) {
         return if_or_eval(f, env, scope, kid(s, 2), block_of(f, env, scope, kid(kid(s, 4), 1)), block_of(f, env, scope, kid(kid(kid(s, 5), 1), 1)));
     }
@@ -4987,9 +5022,15 @@ pub struct MParam {
     ty: Ty,
 }
 
+// A function's result type: a type, or unit (no `-> T`, or `-> !`).
+pub enum RetTy {
+    RetUnit,
+    RetOf(Ty),
+}
+
 pub struct MFunc {
     params: List<MParam>,
-    ret: Ty,
+    ret: RetTy,
     body: MStmt,
 }
 
@@ -5029,39 +5070,71 @@ fn param_of(pfuel: usize, penv: Env, pfd: FnDecl, pscope: List<Local>, pp: CTree
     return None;
 }
 
-pub fn func_body(ps: MParams, r: Ty, body: core::option::Option<MStmt>) -> core::option::Option<MFunc> {
+pub fn func_body(ps: MParams, r: RetTy, body: core::option::Option<MStmt>) -> core::option::Option<MFunc> {
     return match (body) {
         None -> None,
         Some(b) -> Some(MFunc { params: ps.params, ret: r, body: b }),
     };
 }
 
-pub fn func_ret(fuel: usize, env: Env, ps: MParams, ret: core::option::Option<Ty>, body: CTree) -> core::option::Option<MFunc> {
+pub fn func_ret(fuel: usize, env: Env, ps: MParams, ret: core::option::Option<RetTy>, body: CTree) -> core::option::Option<MFunc> {
     return match (ret) {
         None -> None,
         Some(r) -> func_body(ps, r, block_of(fuel, env, ps.scope, body)),
     };
 }
 
-pub fn func_params(fuel: usize, env: Env, params: core::option::Option<MParams>, ret: core::option::Option<Ty>, body: CTree) -> core::option::Option<MFunc> {
+pub fn func_params(fuel: usize, env: Env, params: core::option::Option<MParams>, ret: core::option::Option<RetTy>, body: CTree) -> core::option::Option<MFunc> {
     return match (params) {
         None -> None,
         Some(ps) -> func_ret(fuel, env, ps, ret, body),
     };
 }
 
+pub fn ret_of_ty(t: core::option::Option<Ty>) -> core::option::Option<RetTy> {
+    return match (t) {
+        None -> None,
+        Some(x) -> Some(RetOf(x)),
+    };
+}
+
+// The result type a return_type_opt names.
+pub fn result_of(fuel: usize, env: Env, ret: CTree) -> core::option::Option<RetTy> {
+    if (node_prod(ret) == p_ret_void()) {
+        return Some(RetUnit);
+    }
+    if (node_prod(ret) == p_ret_type() && node_prod(kid(ret, 1)) == p_type_never()) {
+        return Some(RetUnit);
+    }
+    if (node_prod(ret) == p_ret_type()) {
+        return ret_of_ty(ty_of(fuel, env, kid(ret, 1)));
+    }
+    return None;
+}
+
+// The type a `return e;` stores at: none in a unit function.
+pub fn ret_expected(r: core::option::Option<RetTy>) -> core::option::Option<Ty> {
+    return match (r) {
+        None -> None,
+        Some(x) -> match (x) {
+            RetUnit -> None,
+            RetOf(t) -> Some(t),
+        },
+    };
+}
+
 // A function instance's body, read with its type parameters (the impl's,
-// then its own) standing for the instance's arguments. It has a result type.
+// then its own) standing for the instance's arguments.
 pub fn read_fn(fuel: usize, decls: Decls, fd: FnDecl, args: List<Ty>) -> core::option::Option<MFunc> {
     let names: List<List<usize>> = concat(fd.impl_params, fd.params);
     let f: CTree = fd.tree;
-    let ret: CTree = kid(f, 6);
     let tenv: Env = Env { decls: decls, module: fd.module, names: names, subst: args, globals: module_globals(decls, fd.module), ret: None };
-    let env: Env = Env { decls: decls, module: fd.module, names: names, subst: args, globals: module_globals(decls, fd.module), ret: ty_of(fuel, tenv, kid(ret, 1)) };
-    if (length(names) == length(args) && node_prod(ret) == p_ret_type()) {
+    let rt: core::option::Option<RetTy> = result_of(fuel, tenv, kid(f, 6));
+    let env: Env = Env { decls: decls, module: fd.module, names: names, subst: args, globals: module_globals(decls, fd.module), ret: ret_expected(rt) };
+    if (length(names) == length(args)) {
         return match (list_items(fuel, kid(f, 4))) {
             None -> None,
-            Some(items) -> func_params(fuel, env, params_of(fuel, env, fd, empty(), items), ty_of(fuel, env, kid(ret, 1)), kid(kid(f, 8), 1)),
+            Some(items) -> func_params(fuel, env, params_of(fuel, env, fd, empty(), items), rt, kid(kid(f, 8), 1)),
         };
     }
     return None;
@@ -5159,6 +5232,8 @@ pub fn stmt_calls(m: MStmt) -> List<Inst> {
         MDiscard(x) -> eff_calls(x),
         MSetIndexEval(s, i, v) -> concat(eff_calls(i), eff_calls(v)),
         MSetFieldEval(id, j, x) -> eff_calls(x),
+        MReturnUnit -> empty(),
+        MAssert(x) -> eff_calls(x),
     };
 }
 
@@ -5219,6 +5294,8 @@ pub fn stmt_tys(m: MStmt) -> List<Ty> {
         MDiscard(x) -> eff_named_tys(x),
         MSetIndexEval(s, i, v) -> concat(eff_named_tys(i), eff_named_tys(v)),
         MSetFieldEval(id, j, x) -> eff_named_tys(x),
+        MReturnUnit -> empty(),
+        MAssert(x) -> eff_named_tys(x),
     };
 }
 
@@ -5229,11 +5306,18 @@ pub fn param_tys(ps: List<MParam>) -> List<Ty> {
     };
 }
 
+pub fn ret_tys(r: RetTy) -> List<Ty> {
+    return match (r) {
+        RetUnit -> empty(),
+        RetOf(t) -> single(t),
+    };
+}
+
 // A function's types: parameters, result, then its body's.
 pub fn funcs_tys(fs: List<MFunc>) -> List<Ty> {
     return match (fs) {
         Nil -> empty(),
-        Cons(f, rest) -> concat(param_tys(f.params), cons(f.ret, concat(stmt_tys(f.body), funcs_tys(unbox(rest))))),
+        Cons(f, rest) -> concat(param_tys(f.params), concat(ret_tys(f.ret), concat(stmt_tys(f.body), funcs_tys(unbox(rest))))),
     };
 }
 
@@ -5606,6 +5690,13 @@ pub fn set_index_eval_closed(s: usize, i: core::option::Option<SrcEff>, v: core:
     };
 }
 
+pub fn assert_closed(x: core::option::Option<SrcEff>) -> core::option::Option<SrcStmt> {
+    return match (x) {
+        None -> None,
+        Some(e) -> Some(Assert(e)),
+    };
+}
+
 pub fn set_field_eval_closed(id: usize, j: usize, x: core::option::Option<SrcEff>) -> core::option::Option<SrcStmt> {
     return match (x) {
         None -> None,
@@ -5643,6 +5734,8 @@ pub fn close_stmt(fuel: usize, t: Tables, m: MStmt) -> core::option::Option<SrcS
         MDiscard(x) -> discard_closed(close_eff(fuel, t, x)),
         MSetIndexEval(s, i, v) -> set_index_eval_closed(s, close_eff(fuel, t, i), close_eff(fuel, t, v)),
         MSetFieldEval(id, j, x) -> set_field_eval_closed(id, j, close_eff(fuel, t, x)),
+        MReturnUnit -> Some(ReturnUnit),
+        MAssert(x) -> assert_closed(close_eff(fuel, t, x)),
     };
 }
 
@@ -5690,10 +5783,17 @@ pub fn cons_func(head: core::option::Option<SrcFunc>, tail: core::option::Option
     };
 }
 
+pub fn close_ret(fuel: usize, t: Tables, r: RetTy) -> core::option::Option<SrcType> {
+    return match (r) {
+        RetUnit -> Some(Unit),
+        RetOf(x) -> close_ty(fuel, t, x),
+    };
+}
+
 pub fn close_funcs(fuel: usize, t: Tables, fs: List<MFunc>) -> core::option::Option<List<SrcFunc>> {
     return match (fs) {
         Nil -> Some(empty()),
-        Cons(f, rest) -> cons_func(src_func(close_params(fuel, t, f.params), close_ty(fuel, t, f.ret), close_stmt(fuel, t, f.body)), close_funcs(fuel, t, unbox(rest))),
+        Cons(f, rest) -> cons_func(src_func(close_params(fuel, t, f.params), close_ret(fuel, t, f.ret), close_stmt(fuel, t, f.body)), close_funcs(fuel, t, unbox(rest))),
     };
 }
 
@@ -7018,6 +7118,11 @@ fn p_ret_type() -> usize {
 }
 
 // extract: inline
+fn p_ret_void() -> usize {
+    return 35;
+}
+
+// extract: inline
 fn p_return_stmt() -> usize {
     return 76;
 }
@@ -7025,6 +7130,11 @@ fn p_return_stmt() -> usize {
 // extract: inline
 fn p_return_value() -> usize {
     return 90;
+}
+
+// extract: inline
+fn p_return_void() -> usize {
+    return 91;
 }
 
 // extract: inline
@@ -7175,6 +7285,11 @@ fn p_type_array() -> usize {
 // extract: inline
 fn p_type_ident() -> usize {
     return 69;
+}
+
+// extract: inline
+fn p_type_never() -> usize {
+    return 315;
 }
 
 // extract: inline

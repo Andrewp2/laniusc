@@ -249,6 +249,11 @@ def textDealloc : List Nat :=
   let t : List Nat := 100 :: 101 :: 97 :: 108 :: 108 :: 111 :: [99]
   t
 
+/-- assert -/
+def textAssert : List Nat :=
+  let t : List Nat := 97 :: 115 :: 115 :: 101 :: 114 :: [116]
+  t
+
 def textSliceFromRawParts : List Nat :=
   let t : List Nat := 115 :: 108 :: 105 :: 99 :: 101 :: 95 :: 102 :: 114 :: 111 :: 109 :: 95 :: 114 :: 97 :: 119 :: 95 :: 112 :: 97 :: 114 :: 116 :: [115]
   t
@@ -2352,6 +2357,8 @@ inductive MStmt where
   | mDiscard : MEff → MStmt
   | mSetIndexEval : Nat → MEff → MEff → MStmt
   | mSetFieldEval : Nat → Nat → MEff → MStmt
+  | mReturnUnit : MStmt
+  | mAssert : MEff → MStmt
   deriving Repr
 
 /-- A call: the function instance and the arguments. -/
@@ -3595,16 +3602,36 @@ def discardOf (x : Option MEff) : Option MStmt :=
   | none => none
   | some e => some (MStmt.mDiscard e)
 
-/-- A call statement: `alloc::allocator::dealloc(pointer, size, align);`, or a call whose value is discarded. -/
+def assertOf (x : Option MEff) : Option MStmt :=
+  match x with
+  | none => none
+  | some e => some (MStmt.mAssert e)
+
+/-- `assert(c)`: its one argument, a bool. -/
+def assertArg (fuel : Nat) (env : Env) (scope : List Local) (args : Option (List CTree)) : Option MStmt :=
+  match args with
+  | none => none
+  | some items =>
+    match items with
+    | [] => none
+    | c :: rest =>
+      match rest with
+      | [] => assertOf (effOf fuel env scope (some Ty.tyBool) c)
+      | d :: more => none
+
+/-- A call statement: `alloc::allocator::dealloc(pointer, size, align);`, `assert(c);`, or a call whose value (if any) is discarded. -/
 def callStmt (fuel : Nat) (env : Env) (scope : List Local) (pf : CTree) : Option MStmt :=
   let path : CTree := kid (kid pf 0) 0
   if isPathCall pf && isPath (pathSpellings fuel (kid path 0) (kid path 1)) deallocPath then
     freeOf (argsOf fuel env scope (kid (kid pf 1) 1))
   else
-    if isPathCall pf || isMethodForm pf then
-      discardOf (effPostfix fuel env scope none pf)
+    if isPathCall pf && isPath (pathSpellings fuel (kid path 0) (kid path 1)) [textAssert] then
+      assertArg fuel env scope (listItems fuel (kid (kid pf 1) 1))
     else
-      none
+      if isPathCall pf || isMethodForm pf then
+        discardOf (effPostfix fuel env scope none pf)
+      else
+        none
 
 /-- The operator of a compound assignment `+=`, `-=`, `*=`, `&=`, `|=`, `^=`. -/
 def compoundOp (p : Nat) : Option SrcOp :=
@@ -3771,19 +3798,22 @@ def stmtOf (fuel : Nat) (env : Env) (scope : List Local) (s : CTree) : Option MS
     if decide (p = (76)) && decide (nodeProd (kid s 1) = (90)) then
       returnOrEval f env scope (kid (kid s 1) 0)
     else
-      if decide (p = (77)) && decide (nodeProd (kid s 5) = (78)) then
-        ifOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1)) (blockOf f env scope (kid (kid (kid s 5) 1) 1))
+      if decide (p = (76)) && decide (nodeProd (kid s 1) = (91)) then
+        some MStmt.mReturnUnit
       else
-        if decide (p = (77)) && decide (nodeProd (kid s 5) = (79)) then
-          ifOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1)) (some MStmt.mNop)
+        if decide (p = (77)) && decide (nodeProd (kid s 5) = (78)) then
+          ifOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1)) (blockOf f env scope (kid (kid (kid s 5) 1) 1))
         else
-          if p = (80) then
-            whileOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1))
+          if decide (p = (77)) && decide (nodeProd (kid s 5) = (79)) then
+            ifOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1)) (some MStmt.mNop)
           else
-            if p = (85) then
-              assignment f env scope (kid s 0)
+            if p = (80) then
+              whileOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1))
             else
-              none
+              if p = (85) then
+                assignment f env scope (kid s 0)
+              else
+                none
 
 end
 
@@ -3792,9 +3822,15 @@ structure MParam where
   ty : Ty
   deriving Repr
 
+/-- A function's result type: a type, or unit (no `-> T`, or `-> !`). -/
+inductive RetTy where
+  | retUnit : RetTy
+  | retOf : Ty → RetTy
+  deriving Repr
+
 structure MFunc where
   params : List MParam
-  ret : Ty
+  ret : RetTy
   body : MStmt
   deriving Repr
 
@@ -3825,32 +3861,59 @@ def paramsOf (fuel : Nat) (env : Env) (fd : FnDecl) (scope : List Local) (items 
     else
       none
 
-def funcBody (ps : MParams) (r : Ty) (body : Option MStmt) : Option MFunc :=
+def funcBody (ps : MParams) (r : RetTy) (body : Option MStmt) : Option MFunc :=
   match body with
   | none => none
   | some b => some ({ params := ps.params, ret := r, body := b } : MFunc)
 
-def funcRet (fuel : Nat) (env : Env) (ps : MParams) (ret : Option Ty) (body : CTree) : Option MFunc :=
+def funcRet (fuel : Nat) (env : Env) (ps : MParams) (ret : Option RetTy) (body : CTree) : Option MFunc :=
   match ret with
   | none => none
   | some r => funcBody ps r (blockOf fuel env ps.scope body)
 
-def funcParams (fuel : Nat) (env : Env) (params : Option MParams) (ret : Option Ty) (body : CTree) : Option MFunc :=
+def funcParams (fuel : Nat) (env : Env) (params : Option MParams) (ret : Option RetTy) (body : CTree) : Option MFunc :=
   match params with
   | none => none
   | some ps => funcRet fuel env ps ret body
 
-/-- A function instance's body, read with its type parameters (the impl's, then its own) standing for the instance's arguments. It has a result type. -/
+def retOfTy (t : Option Ty) : Option RetTy :=
+  match t with
+  | none => none
+  | some x => some (RetTy.retOf x)
+
+/-- The result type a return_type_opt names. -/
+def resultOf (fuel : Nat) (env : Env) (ret : CTree) : Option RetTy :=
+  if nodeProd ret = (35) then
+    some RetTy.retUnit
+  else
+    if decide (nodeProd ret = (34)) && decide (nodeProd (kid ret 1) = (315)) then
+      some RetTy.retUnit
+    else
+      if nodeProd ret = (34) then
+        retOfTy (tyOf fuel env (kid ret 1))
+      else
+        none
+
+/-- The type a `return e;` stores at: none in a unit function. -/
+def retExpected (r : Option RetTy) : Option Ty :=
+  match r with
+  | none => none
+  | some x =>
+    match x with
+    | .retUnit => none
+    | .retOf t => some t
+
+/-- A function instance's body, read with its type parameters (the impl's, then its own) standing for the instance's arguments. -/
 def readFn (fuel : Nat) (decls : Decls) (fd : FnDecl) (args : List Ty) : Option MFunc :=
   let names : List (List Nat) := fd.implParams ++ fd.params
   let f : CTree := fd.tree
-  let ret : CTree := kid f 6
   let tenv : Env := ({ decls := decls, module := fd.module, names := names, subst := args, globals := moduleGlobals decls fd.module, ret := none } : Env)
-  let env : Env := ({ decls := decls, module := fd.module, names := names, subst := args, globals := moduleGlobals decls fd.module, ret := tyOf fuel tenv (kid ret 1) } : Env)
-  if decide (names.length = args.length) && decide (nodeProd ret = (34)) then
+  let rt : Option RetTy := resultOf fuel tenv (kid f 6)
+  let env : Env := ({ decls := decls, module := fd.module, names := names, subst := args, globals := moduleGlobals decls fd.module, ret := retExpected rt } : Env)
+  if names.length = args.length then
     match listItems fuel (kid f 4) with
     | none => none
-    | some items => funcParams fuel env (paramsOf fuel env fd [] items) (tyOf fuel env (kid ret 1)) (kid (kid f 8) 1)
+    | some items => funcParams fuel env (paramsOf fuel env fd [] items) rt (kid (kid f 8) 1)
   else
     none
 
@@ -3936,6 +3999,8 @@ def stmtCalls (m : MStmt) : List Inst :=
   | .mDiscard x => effCalls x
   | .mSetIndexEval s i v => effCalls i ++ effCalls v
   | .mSetFieldEval id j x => effCalls x
+  | .mReturnUnit => []
+  | .mAssert x => effCalls x
 
 /-- The function instances, numbered in the order they are first requested, and their bodies. -/
 structure Mono where
@@ -3986,17 +4051,24 @@ def stmtTys (m : MStmt) : List Ty :=
   | .mDiscard x => effNamedTys x
   | .mSetIndexEval s i v => effNamedTys i ++ effNamedTys v
   | .mSetFieldEval id j x => effNamedTys x
+  | .mReturnUnit => []
+  | .mAssert x => effNamedTys x
 
 def paramTys (ps : List MParam) : List Ty :=
   match ps with
   | [] => []
   | p :: rest => p.ty :: paramTys rest
 
+def retTys (r : RetTy) : List Ty :=
+  match r with
+  | .retUnit => []
+  | .retOf t => [t]
+
 /-- A function's types: parameters, result, then its body's. -/
 def funcsTys (fs : List MFunc) : List Ty :=
   match fs with
   | [] => []
-  | f :: rest => paramTys f.params ++ f.ret :: (stmtTys f.body ++ funcsTys rest)
+  | f :: rest => paramTys f.params ++ (retTys f.ret ++ (stmtTys f.body ++ funcsTys rest))
 
 def seedTys (seeds : List Inst) : List Ty :=
   match seeds with
@@ -4290,6 +4362,11 @@ def setIndexEvalClosed (s : Nat) (i : Option SrcEff) (v : Option SrcEff) : Optio
     | none => none
     | some y => some (SrcStmt.setIndexEval s x y)
 
+def assertClosed (x : Option SrcEff) : Option SrcStmt :=
+  match x with
+  | none => none
+  | some e => some (SrcStmt.assert e)
+
 def setFieldEvalClosed (id : Nat) (j : Nat) (x : Option SrcEff) : Option SrcStmt :=
   match x with
   | none => none
@@ -4324,6 +4401,8 @@ def closeStmt (fuel : Nat) (t : Tables) (m : MStmt) : Option SrcStmt :=
   | .mDiscard x => discardClosed (closeEff fuel t x)
   | .mSetIndexEval s i v => setIndexEvalClosed s (closeEff fuel t i) (closeEff fuel t v)
   | .mSetFieldEval id j x => setFieldEvalClosed id j (closeEff fuel t x)
+  | .mReturnUnit => some SrcStmt.returnUnit
+  | .mAssert x => assertClosed (closeEff fuel t x)
 
 def consSrcParam (id : Nat) (ty : Option SrcType) (rest : Option (List SrcParam)) : Option (List SrcParam) :=
   match ty with
@@ -4359,10 +4438,15 @@ def consFunc (head : Option SrcFunc) (tail : Option (List SrcFunc)) : Option (Li
   | none => none
   | some f => consFuncTail f tail
 
+def closeRet (fuel : Nat) (t : Tables) (r : RetTy) : Option SrcType :=
+  match r with
+  | .retUnit => some SrcType.unit
+  | .retOf x => closeTy fuel t x
+
 def closeFuncs (fuel : Nat) (t : Tables) (fs : List MFunc) : Option (List SrcFunc) :=
   match fs with
   | [] => some []
-  | f :: rest => consFunc (srcFunc (closeParams fuel t f.params) (closeTy fuel t f.ret) (closeStmt fuel t f.body)) (closeFuncs fuel t rest)
+  | f :: rest => consFunc (srcFunc (closeParams fuel t f.params) (closeRet fuel t f.ret) (closeStmt fuel t f.body)) (closeFuncs fuel t rest)
 
 def buildClosed (fuel : Nat) (decls : Decls) (fns : List Inst) (types : Option (List Inst)) (funcs : List MFunc) : Option SrcProgram :=
   match types with

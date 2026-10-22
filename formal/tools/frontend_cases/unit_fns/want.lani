@@ -1,0 +1,32 @@
+struct Cell { v: i32 }
+
+fn check(c: Cell, n: i32) {
+    assert(c.v > n);
+    if (n == 0) {
+        return;
+    }
+    assert(twice(n) != c.v);
+}
+
+fn top(n: i32) -> i32 {
+    let c: Cell = Cell { v: n + 1 };
+    check(c, n);
+    note_i(n);
+    if (n < 0) {
+        panic();
+    }
+    assert(n / 2 < n + 1);
+    return c.v;
+}
+
+fn twice(n: i32) -> i32 {
+    return n + n;
+}
+
+fn note_i(x: i32) {
+    let y: i32 = x;
+}
+
+fn panic() -> ! {
+    assert(false);
+}

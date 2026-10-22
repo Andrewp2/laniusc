@@ -218,6 +218,11 @@ still a parse tree of the same tokens. Trusted:
     known), else from its fields' or payload's types; a match's result type
     is the stored-at type or its first arm's.
 
+  - a function without `-> T`, or with `-> !`, returns `Unit`; `return;`
+    is `ReturnUnit`; `assert(c);` (that spelling, one argument) is
+    `Assert(c)`, Core's assert intrinsic. So `core::panic::panic()`, whose
+    body in `stdlib/core/panic.lani` is `assert(false);`, traps.
+
   It rejects anything outside the subset. `build` has no relational spec yet;
   the difftest checks it against the generator's programs. To shrink it:
   state the reading as an inductive relation on `CTree` and prove `build`
