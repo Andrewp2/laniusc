@@ -862,7 +862,80 @@ def words(path):
     return list(struct.unpack('<%dI' % (len(data) // 4), data))
 
 
+IMPORT_LINE = re.compile(rb'^[ \t]*import[ \t]+([A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*)[ \t]*;', re.M)
+GAP = re.compile(rb'(?:\s|//[^\n]*)*')
+
+
+def import_lines(source):
+    """The `import m;` lines of a file: they must come together, right after
+    its `module` item (or first), with only blanks and comments around."""
+    found = list(IMPORT_LINE.finditer(source))
+    if not found:
+        return []
+    head = source[:found[0].start()]
+    head = re.sub(rb'//[^\n]*', b'', head)
+    if head.strip() and not re.fullmatch(rb'\s*module[ \t]+[A-Za-z_][A-Za-z0-9_:]*[ \t]*;\s*', head):
+        raise SystemExit('import lines must follow the module line')
+    for a, b in zip(found, found[1:]):
+        if not GAP.fullmatch(source, a.end(), b.start()):
+            raise SystemExit('import lines must come together')
+    return found
+
+
+def import_spans(path):
+    """The byte spans of a file's import lines (laniusc's dump skips their tokens)."""
+    return [(m.start(), m.end()) for m in import_lines(open(path, 'rb').read())]
+
+
+def splice_imports(prods, parents, k, paths):
+    """laniusc's tree of the file with these imports (each a list of path
+    segments) as items k, k+1, ... of its item list. laniusc parsed the file
+    with the import lines blanked (with them it parses the whole program).
+    The front end validates the result against the file's own tokens."""
+    # item_list -> item item_list (1) | (2): the chain of item_list nodes
+    kids = {}
+    for i, q in enumerate(parents):
+        kids.setdefault(q, []).append(i)
+    chain = [1]
+    while prods[chain[-1]] == 1:
+        chain.append(kids[chain[-1]][-1])
+    at = chain[k]
+    new_prods, new_parents = [], []
+    up = parents[at]
+    for segs in paths:
+        base = at + len(new_prods)
+        nodes = [(1, up), (6, base), (43, base + 1), (44, base + 2), (47, base + 3), (48, base + 4)]
+        tail = base + 4
+        for _ in segs[1:]:
+            nodes += [(50, tail), (48, base + len(nodes))]
+            tail = base + len(nodes) - 2
+        nodes.append((51, tail))
+        new_prods += [a for a, _ in nodes]
+        new_parents += [b for _, b in nodes]
+        up = base
+    n = len(new_prods)
+    shifted = [q + n if q != 4294967295 and q >= at else q for q in parents]
+    shifted[at] = up
+    return (prods[:at] + new_prods + prods[at:], shifted[:at] + new_parents + shifted[at:])
+
+
 def parse_with_laniusc(heavy, laniusc, lani_path, workdir):
+    source = open(lani_path, 'rb').read()
+    found = import_lines(source)
+    if found:
+        blank = bytearray(source)
+        for m in found:
+            blank[m.start():m.end()] = b' ' * (m.end() - m.start())
+        blanked = os.path.join(workdir, 'blanked_' + os.path.basename(lani_path))
+        open(blanked, 'wb').write(bytes(blank))
+        prods, parents, tokens = parse_plain(heavy, laniusc, blanked, workdir)
+        k = 1 if re.match(rb'(?:\s|//[^\n]*)*module\b', source) else 0
+        prods, parents = splice_imports(prods, parents, k, [m.group(1).decode().split('::') for m in found])
+        return prods, parents, tokens
+    return parse_plain(heavy, laniusc, lani_path, workdir)
+
+
+def parse_plain(heavy, laniusc, lani_path, workdir):
     cap = os.path.join(workdir, 'cap')
     env = dict(os.environ,
                LANIUS_DEBUG_CAPTURE_PASS='parser/tree/parent_parallel',
@@ -1220,6 +1293,11 @@ def run_cases(args, cases_dir):
                 base = os.path.join(out_dir, name[:-len('.gputokens')])
                 lean_tokens = open(base + '.leantokens').read().split() if os.path.exists(base + '.leantokens') else None
                 gpu_tokens = open(base + '.gputokens').read().split()
+                spans = import_spans(base + '.lani')
+                if lean_tokens is not None and spans:
+                    # laniusc lexed the file with its import lines blanked
+                    lean_tokens = [t for t in lean_tokens
+                                   if not any(a <= int(t.split(':')[1]) < b for a, b in spans)]
                 size = os.path.getsize(base + '.lani')
                 if any(int(t.split(':')[1]) + int(t.split(':')[2]) > size for t in gpu_tokens):
                     # laniusc lexed a rewritten text after this one (its own

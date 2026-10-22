@@ -837,6 +837,17 @@ read as the same program up to local ids, or a mark that it must be rejected
 (an ambiguous method, a wrong type argument count, a duplicate name, an
 inference conflict, a local spelled like a constant).
 
+A file with `import m;` lines makes laniusc load the imported modules and
+capture the tree of the whole program, so the script gives laniusc a copy
+with those lines blanked to spaces and puts each import's subtree (`item ->
+import_item`, `import -> 'Import' import_tail`, `import_tail -> path ';'`,
+the path's segments) back into the item list where the line was. The front
+end validates the result against the tokens of the file as written, so a
+wrong splice is rejected; only the comparison with laniusc's own token dump
+leaves out the import lines' tokens. The import lines must come together,
+first in the file or right after its `module` line. The case `imports` has
+one, and its second file, `stdlib/core/option.lani` as it is, has three.
+
 2026-10-21, after the generics: 400 programs (seeds 1 and 2) read as before;
 with `--generic`, 400 programs (seeds 1 and 2), 276,000 tokens and 2.1
 million tree nodes, 694 declarations made generic, 917 moved to `gen::lib`
