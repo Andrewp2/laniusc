@@ -506,8 +506,9 @@ match; `s[i] = value` (`SetIndexEval`) of a slice of `i32`, word structs or
 word enums with an effectful index and value (for structs and enums a
 literal, a call, a `match` or, often, another slice's element: `to[i] =
 from[j]`), often a value that calls a function writing `s` at the same
-literal index, so the store (after the value in Core's order) must win; and
-later functions with struct,
+literal index, so the store (after the value in Core's order) must win;
+`x.f = value` (`SetFieldEval`) of a scalar field of a struct local (a
+parameter or a local) with an effectful value; and later functions with struct,
 enum and slice parameters and struct and enum results. A function with a
 slice parameter writes into its caller's slice, the right side of `&&` and
 `||` often calls one, and the entry's result folds in every element of its
@@ -530,7 +531,9 @@ instead, 19 programs would give other results). With word struct and
 enum element reads, seeds 51-54: 1,200 programs, 9,600 calls, no
 disagreements and no rejections. With their writes, seeds 51-54 again: the
 same counts, no disagreements and no rejections (about 70 struct and enum
-element stores per 300 programs).
+element stores per 300 programs). With `SetFieldEval`, seeds 51-54 again:
+1,200 programs, 9,600 calls, no disagreements and no rejections (about 110
+field stores per 300 programs).
 
 Not covered yet: the stdlib, which needs generics and modules in the front
 pass.
