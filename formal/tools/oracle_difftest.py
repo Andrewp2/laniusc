@@ -31,7 +31,10 @@ no division traps), struct and enum literals with such fields, and
 indexing of i32 slices at computed indices kept in bounds (a literal,
 e & (n - 1) or nonnegative e % n), and `match` expressions of any type on
 a call, literal, local or match, whose arms use their binders (an arm makes
-no new locals). Later
+no new locals), and `s[i] = value` of an i32 slice with an effectful
+index and value; often the value calls a function that writes s at the same
+literal index, which the store, after the value in Core's order, overwrites.
+Later
 functions take struct, enum and slice parameters and return structs and
 enums; one with a slice parameter writes into the caller's slice, the right
 side of `&&` and `||` often calls one, and the entry's result folds in every
@@ -89,7 +92,7 @@ def i32(x):
 #             ('letAlloc', id, size, shift, body) ('letSlice', id, element, address, n, body)
 #             ('letIndex', id, element, slice, k, body) ('setIndex', slice, k, e)
 #             ('letEval', id, ty, x, body) ('setEval', id, x) ('ifEval', x, a, b) ('whileEval', x, body)
-#             ('returnEval', x) ('discard', x), with x an effectful expression
+#             ('returnEval', x) ('discard', x) ('setIndexEval', slice, x, y), with x, y effectful expressions
 
 SCALARS = ['i32', 'bool'] + list(UINT_BITS)
 LETS = ('let', 'call', 'letStruct', 'letEnum', 'letMatch', 'letAlloc', 'letSlice', 'letIndex', 'letEval')
@@ -363,6 +366,31 @@ class Gen:
         self.sealed -= 1
         return ('eMatch', scrutinee, ety, ty, binders, values)
 
+    def set_index_eval(self, view, n, env, items):
+        """view[i] = value. Often the value calls a function that writes view
+        at the same literal index, which this store, coming after the value
+        in Core's order, must overwrite."""
+        rng = self.rng
+        writers = []
+        for k in self.callees(None, env):
+            params, cret = self.sigs[k]
+            slots = [j for j, t in enumerate(params) if fits(t, ('slice', 'i32', n)) and isinstance(t, tuple)]
+            if slots and cret in INTEGERS:
+                writers.append((k, slots[0]))
+        if writers and rng.random() < 0.5:
+            k, slot = rng.choice(writers)
+            params, cret = self.sigs[k]
+            args = [('ePure', ('local', view)) if j == slot else self.eff(t, 2, env, items) for j, t in enumerate(params)]
+            value = ('eCall', k, args)
+            if cret != 'i32':
+                value = ('eCast', 'i32', value)
+            if rng.random() < 0.5:
+                name, sym = rng.choice(ARITH)
+                value = ('eApply', name, sym, value, self.eff('i32', 1, env, items))
+            index = ('ePure', ('int', rng.randrange(params[slot][2])))
+            return ('setIndexEval', view, index, value)
+        return ('setIndexEval', view, self.in_bounds(n, 3, env, items), self.eff('i32', 3, env, items))
+
     def in_bounds(self, n, depth, env, items):
         """An i32 or usize index below n (the slice's length, or the least a
         slice parameter has), since an index out of bounds traps: a literal,
@@ -419,8 +447,8 @@ class Gen:
                       'slice', 'index', 'index', 'store']
                      if depth > 0 else ['let', 'set', 'struct', 'setField', 'index', 'store'])
             if EFFECTS:
-                kinds += (['letEval', 'letEval', 'setEval', 'ifEval', 'whileEval', 'discard']
-                          if depth > 0 else ['letEval', 'setEval', 'discard'])
+                kinds += (['letEval', 'letEval', 'setEval', 'ifEval', 'whileEval', 'discard', 'setIndexEval', 'setIndexEval']
+                          if depth > 0 else ['letEval', 'setEval', 'discard', 'setIndexEval', 'setIndexEval'])
             kind = rng.choice(kinds)
             slices = [(i, t) for i, t in env if t[0] == 'slice']
             if kind == 'let':
@@ -547,6 +575,11 @@ class Gen:
                 later = self.callees(None, env)
                 if later:
                     items.append(('discard', self.eff_call(rng.choice(later), 3, env, items)))
+            elif kind == 'setIndexEval':
+                views = [(i, t[2]) for i, t in env if isinstance(t, tuple) and t[0] == 'slice' and t[1] == 'i32']
+                if views:
+                    view, n = rng.choice(views)
+                    items.append(self.set_index_eval(view, n, env, items))
         if must_return and not returned:
             if is_object(ret) or (EFFECTS and rng.random() < 0.5):
                 value = self.eff(ret, 3, env, items)
@@ -848,6 +881,12 @@ def run_stmt(s, env, funcs):
         raise Returned(ev_eff(s[1], env, funcs))
     elif kind == 'discard':
         ev_eff(s[1], env, funcs)
+    elif kind == 'setIndexEval':
+        # Core's order: the index, then the value, then the store.
+        k, elements = ev_eff(s[2], env, funcs), env[s[1]][0]
+        if not 0 <= k < len(elements):
+            raise SystemExit('a generated index is out of bounds')
+        elements[k] = ev_eff(s[3], env, funcs)
     elif kind == 'letStruct':
         env[s[1]] = [[ev(f, env) for f in s[3]], s[2]]
         run_stmt(s[4], env, funcs)
@@ -989,6 +1028,8 @@ def lean_stmt(s):
         return f'(.returnEval {lean_eff(s[1])})'
     if kind == 'discard':
         return f'(.discard {lean_eff(s[1])})'
+    if kind == 'setIndexEval':
+        return f'(.setIndexEval {s[1]} {lean_eff(s[2])} {lean_eff(s[3])})'
     if kind == 'let':
         return f'(.let {s[1]} {lean_ty(s[2])} {lean_expr(s[3])} {lean_stmt(s[4])})'
     if kind == 'call':
@@ -1153,6 +1194,8 @@ def lani_stmt(s, prefix, indent):
         return [f'{pad}return {lani_eff(s[1], prefix)};']
     if kind == 'discard':
         return [f'{pad}{lani_eff(s[1], prefix)};']
+    if kind == 'setIndexEval':
+        return [f'{pad}v{s[1]}[{lani_eff(s[2], prefix)}] = {lani_eff(s[3], prefix)};']
     if kind == 'let':
         return [f'{pad}let v{s[1]}: {lani_ty(s[2])} = {lani_expr(s[3])};'] + lani_stmt(s[4], prefix, indent)
     if kind == 'call':
