@@ -1838,6 +1838,55 @@ def evalApply (op : SrcOp) (slot : Nat) (left : Option Evaluated) (right : Optio
     | none => none
     | some r => evalOperands op slot l r
 
+/-- A struct value: its fields, one after another from slot. -/
+def evalStructOf (ty : SrcType) (types : List SrcType) (args : EvaluatedArgs) : Option Evaluated :=
+  if typesSame args.types types && decide (0 < sizes types) then
+    some ({ stmt := args.stmt, ty := ty } : Evaluated)
+  else
+    none
+
+def evalStruct (ty : SrcType) (args : Option EvaluatedArgs) : Option Evaluated :=
+  match args with
+  | none => none
+  | some a =>
+    match ty with
+    | .i32 => none
+    | .bool => none
+    | .uint kind => none
+    | .struct id types => evalStructOf ty types a
+    | .enum id variants => none
+    | .ptr => none
+    | .slice element => none
+
+/-- The payload, evaluated from slot + 1, then the tag in slot. -/
+def evalPayload (ty : SrcType) (types : List SrcType) (variant : Nat) (slot : Nat) (args : EvaluatedArgs) : Option Evaluated :=
+  if typesSame args.types types then
+    some ({ stmt := Stmt.seq args.stmt (Stmt.assign slot (Expr.lit (BitVec.ofNat 64 variant))), ty := ty } : Evaluated)
+  else
+    none
+
+/-- Tags are 32-bit, so an enum has fewer than 2^32 variants. -/
+def evalTagged (ty : SrcType) (variants : List (List SrcType)) (variant : Nat) (slot : Nat) (args : EvaluatedArgs) : Option Evaluated :=
+  if variants.length < 4294967296 then
+    match variants[variant]? with
+    | none => none
+    | some types => evalPayload ty types variant slot args
+  else
+    none
+
+def evalVariant (ty : SrcType) (variant : Nat) (slot : Nat) (args : Option EvaluatedArgs) : Option Evaluated :=
+  match args with
+  | none => none
+  | some a =>
+    match ty with
+    | .i32 => none
+    | .bool => none
+    | .uint kind => none
+    | .struct id types => none
+    | .enum id variants => evalTagged ty variants variant slot a
+    | .ptr => none
+    | .slice element => none
+
 def signedDiv (op : SrcDivOp) : DivOp :=
   match op with
   | .quotient => DivOp.sDiv
@@ -1911,8 +1960,8 @@ def SrcEff.eval (self : SrcEff) (sigs : List Sig) (scope : List Binding) (slot :
   | .eNot operand => evalNot slot (SrcEff.eval operand sigs scope slot)
   | .eCast ty operand => evalCast ty slot (SrcEff.eval operand sigs scope slot)
   | .eIndex slice index => none
-  | .eStruct ty fields => none
-  | .eVariant ty variant payload => none
+  | .eStruct ty fields => evalStruct ty (evalArgs sigs scope fields slot)
+  | .eVariant ty variant payload => evalVariant ty variant slot (evalArgs sigs scope payload (slot + 1))
   | .eMatch scrutinee enumId binders values => none
   | .eDivide op left right => evalDivision op slot (SrcEff.eval left sigs scope slot) (SrcEff.eval right sigs scope (slot + 1))
 
@@ -1924,6 +1973,30 @@ def evalArgs (sigs : List Sig) (scope : List Binding) (args : List SrcEff) (slot
     match SrcEff.eval arg sigs scope slot with
     | none => none
     | some first => consArgs first (evalArgs sigs scope rest (slot + SrcType.size first.ty))
+
+end
+
+mutual
+
+/-- The struct and enum types of the literals in this expression, which the program's declarations must give. -/
+def SrcEff.types (self : SrcEff) : List SrcType :=
+  match self with
+  | .ePure e => []
+  | .eCall callee args => effsTypes args
+  | .eApply op left right => SrcEff.types left ++ SrcEff.types right
+  | .eNeg operand => SrcEff.types operand
+  | .eNot operand => SrcEff.types operand
+  | .eCast ty operand => SrcEff.types operand
+  | .eIndex slice index => SrcEff.types index
+  | .eStruct ty fields => ty :: effsTypes fields
+  | .eVariant ty variant payload => ty :: effsTypes payload
+  | .eMatch scrutinee enumId binders values => SrcEff.types scrutinee ++ effsTypes values
+  | .eDivide op left right => SrcEff.types left ++ SrcEff.types right
+
+def effsTypes (es : List SrcEff) : List SrcType :=
+  match es with
+  | [] => []
+  | e :: rest => SrcEff.types e ++ effsTypes rest
 
 end
 
@@ -2760,19 +2833,26 @@ def SrcStmt.declare (self : SrcStmt) (decls : SrcDecls) : Option SrcDecls :=
      | some decls => SrcStmt.declare body decls)
   | .setIndex slice index value => some decls
   | .letEval id ty value body =>
-    (let after : Option SrcDecls := SrcType.declare ty decls
+    (let after : Option SrcDecls := declareTypes (ty :: SrcEff.types value) decls
      match after with
      | none => none
      | some decls => SrcStmt.declare body decls)
-  | .setEval id value => some decls
+  | .setEval id value => declareTypes (SrcEff.types value) decls
   | .ifEval condition thenBranch elseBranch =>
-    (let after : Option SrcDecls := SrcStmt.declare thenBranch decls
+    (let after : Option SrcDecls := (let after : Option SrcDecls := declareTypes (SrcEff.types condition) decls
+      match after with
+      | none => none
+      | some decls => SrcStmt.declare thenBranch decls)
      match after with
      | none => none
      | some decls => SrcStmt.declare elseBranch decls)
-  | .whileEval condition body => SrcStmt.declare body decls
-  | .returnEval value => some decls
-  | .discard value => some decls
+  | .whileEval condition body =>
+    (let after : Option SrcDecls := declareTypes (SrcEff.types condition) decls
+     match after with
+     | none => none
+     | some decls => SrcStmt.declare body decls)
+  | .returnEval value => declareTypes (SrcEff.types value) decls
+  | .discard value => declareTypes (SrcEff.types value) decls
 
 /-- Every path ends in a return, the way Core's DefinitelyReturns counts: a while body never counts. -/
 def SrcStmt.returns (self : SrcStmt) : Bool :=

@@ -64,12 +64,14 @@ def SrcStmt.Declared (P : Core.Program) (s : SrcStmt) : Prop :=
   | .letSlice _ element _ _ body => TypeDeclared P element ∧ SrcStmt.Declared P body
   | .letIndex _ ty _ _ body => TypeDeclared P ty ∧ SrcStmt.Declared P body
   | .setIndex _ _ _ => True
-  | .letEval _ ty _ body => TypeDeclared P ty ∧ SrcStmt.Declared P body
-  | .setEval _ _ => True
-  | .ifEval _ thenBranch elseBranch => SrcStmt.Declared P thenBranch ∧ SrcStmt.Declared P elseBranch
-  | .whileEval _ body => SrcStmt.Declared P body
-  | .returnEval _ => True
-  | .discard _ => True
+  | .letEval _ ty value body =>
+      TypeDeclared P ty ∧ (∀ t ∈ value.types, TypeDeclared P t) ∧ SrcStmt.Declared P body
+  | .setEval _ value => ∀ t ∈ value.types, TypeDeclared P t
+  | .ifEval condition thenBranch elseBranch =>
+      (∀ t ∈ condition.types, TypeDeclared P t) ∧ SrcStmt.Declared P thenBranch ∧ SrcStmt.Declared P elseBranch
+  | .whileEval condition body => (∀ t ∈ condition.types, TypeDeclared P t) ∧ SrcStmt.Declared P body
+  | .returnEval value => ∀ t ∈ value.types, TypeDeclared P t
+  | .discard value => ∀ t ∈ value.types, TypeDeclared P t
 
 /-- Every parameter type and binding type of every function is declared. -/
 def SrcProgram.Declared (P : Core.Program) (sp : SrcProgram) : Prop :=
@@ -938,8 +940,9 @@ mutual
 theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {sigs : List Sig} (sigsOk : SigsOk P sigs) :
     ∀ (e : SrcEff) {scope : List Binding} {ctx : Typing.Context} {slot : Nat} {ev : Evaluated},
-      ScopeOk P ctx scope → e.eval sigs scope slot = some ev → ExprHasType P ctx e.toCore ev.ty.toCore
-  | .ePure e, scope, ctx, slot, ev, ok, h => by
+      ScopeOk P ctx scope → (∀ t ∈ e.types, TypeDeclared P t) → e.eval sigs scope slot = some ev →
+        ExprHasType P ctx e.toCore ev.ty.toCore
+  | .ePure e, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalPure] at h
     split at h
     · rename_i t lowered
@@ -967,7 +970,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       | not => simp at h
       | apply => simp at h
       | cast => simp at h
-  | .eCall callee args, scope, ctx, slot, ev, ok, h => by
+  | .eCall callee args, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalCall] at h
     split at h
     · simp at h
@@ -982,13 +985,13 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           simp only [Option.some.injEq] at h
           subst h
           obtain ⟨f, found, params, ret⟩ := sigsOk callee sig hsig
-          have typedArgs := evalArgs_typed target sigsOk args ok hea
+          have typedArgs := evalArgs_typed target sigsOk args ok (by simpa [SrcEff.types] using dd) hea
           rw [typesSame_toCore checks.1, ← params] at typedArgs
           have call := ExprHasType.call f found typedArgs
           rw [ret] at call
           exact call
         · simp at h
-  | .eApply op left right, scope, ctx, slot, ev, ok, h => by
+  | .eApply op left right, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalApply] at h
     split at h
     · simp at h
@@ -996,8 +999,8 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       split at h
       · simp at h
       · rename_i r hr
-        have typedL := SrcEff.eval_typed target sigsOk left ok hl
-        have typedR := SrcEff.eval_typed target sigsOk right ok hr
+        have typedL := SrcEff.eval_typed target sigsOk left ok (fun t mem => dd t (by simp [SrcEff.types, mem])) hl
+        have typedR := SrcEff.eval_typed target sigsOk right ok (fun t mem => dd t (by simp [SrcEff.types, mem])) hr
         simp only [evalOperands] at h
         split at h
         · rename_i checks
@@ -1029,12 +1032,12 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
               rw [eq_bool checks.1.2] at typedR
               exact .binary typedL typedR .logicalOr
             · simp at h
-  | .eNeg operand, scope, ctx, slot, ev, ok, h => by
+  | .eNeg operand, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalNegate] at h
     split at h
     · simp at h
     · rename_i o ho
-      have inner := SrcEff.eval_typed target sigsOk operand ok ho
+      have inner := SrcEff.eval_typed target sigsOk operand ok (by simpa [SrcEff.types] using dd) ho
       simp only [evalThen] at h
       split at h
       · simp at h
@@ -1049,12 +1052,12 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           rw [eq_i32 isI32] at inner
           exact .unary inner (.negate (.signed _))
         · simp at ht
-  | .eNot operand, scope, ctx, slot, ev, ok, h => by
+  | .eNot operand, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalNot] at h
     split at h
     · simp at h
     · rename_i o ho
-      have inner := SrcEff.eval_typed target sigsOk operand ok ho
+      have inner := SrcEff.eval_typed target sigsOk operand ok (by simpa [SrcEff.types] using dd) ho
       simp only [evalThen] at h
       split at h
       · simp at h
@@ -1069,12 +1072,12 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           rw [eq_bool isBool] at inner
           exact .unary inner .logicalNot
         · simp at ht
-  | .eCast ty operand, scope, ctx, slot, ev, ok, h => by
+  | .eCast ty operand, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalCast] at h
     split at h
     · simp at h
     · rename_i o ho
-      have inner := SrcEff.eval_typed target sigsOk operand ok ho
+      have inner := SrcEff.eval_typed target sigsOk operand ok (by simpa [SrcEff.types] using dd) ho
       simp only [evalThen] at h
       split at h
       · simp at h
@@ -1085,11 +1088,62 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
         split at ht
         · exact castTo_typed (o := { expr := Expr.var slot, ty := o.ty }) inner ht
         · simp at ht
-  | .eIndex _ _, _, _, _, _, _, h => by simp [SrcEff.eval] at h
-  | .eStruct _ _, _, _, _, _, _, h => by simp [SrcEff.eval] at h
-  | .eVariant _ _ _, _, _, _, _, _, h => by simp [SrcEff.eval] at h
-  | .eMatch _ _ _ _, _, _, _, _, _, h => by simp [SrcEff.eval] at h
-  | .eDivide op left right, scope, ctx, slot, ev, ok, h => by
+  | .eIndex _ _, _, _, _, _, _, _, h => by simp [SrcEff.eval] at h
+  | .eStruct ty fields, scope, ctx, slot, ev, ok, dd, h => by
+    simp only [SrcEff.eval, evalStruct] at h
+    split at h
+    · simp at h
+    · rename_i ea hea
+      have typedArgs := evalArgs_typed target sigsOk fields ok (fun t mem => dd t (by simp [SrcEff.types, mem])) hea
+      have declared := dd ty (by simp [SrcEff.types])
+      cases ty with
+      | struct sid types =>
+        simp only [evalStructOf] at h
+        split at h
+        · rename_i checks
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+          simp only [Option.some.injEq] at h
+          subst h
+          rw [typesSame_toCore checks.1] at typedArgs
+          exact .structValue _ (declared_struct declared).1 typedArgs
+        · simp at h
+      | i32 => simp at h
+      | bool => simp at h
+      | uint => simp at h
+      | enum => simp at h
+      | ptr => simp at h
+      | slice => simp at h
+  | .eVariant ty variant payload, scope, ctx, slot, ev, ok, dd, h => by
+    simp only [SrcEff.eval, evalVariant] at h
+    split at h
+    · simp at h
+    · rename_i ea hea
+      have typedArgs := evalArgs_typed target sigsOk payload ok (fun t mem => dd t (by simp [SrcEff.types, mem])) hea
+      have declared := dd ty (by simp [SrcEff.types])
+      cases ty with
+      | enum eid variants =>
+        simp only [evalTagged] at h
+        split at h
+        · split at h
+          · simp at h
+          · rename_i types found
+            simp only [evalPayload] at h
+            split at h
+            · rename_i same
+              simp only [Option.some.injEq] at h
+              subst h
+              rw [typesSame_toCore same] at typedArgs
+              exact .enumValue _ (declared_enum declared).1 (by simp [found]) typedArgs
+            · simp at h
+        · simp at h
+      | i32 => simp at h
+      | bool => simp at h
+      | uint => simp at h
+      | struct => simp at h
+      | ptr => simp at h
+      | slice => simp at h
+  | .eMatch _ _ _ _, _, _, _, _, _, _, h => by simp [SrcEff.eval] at h
+  | .eDivide op left right, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalDivision] at h
     split at h
     · simp at h
@@ -1097,8 +1151,8 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       split at h
       · simp at h
       · rename_i r hr
-        have typedL := SrcEff.eval_typed target sigsOk left ok hl
-        have typedR := SrcEff.eval_typed target sigsOk right ok hr
+        have typedL := SrcEff.eval_typed target sigsOk left ok (fun t mem => dd t (by simp [SrcEff.types, mem])) hl
+        have typedR := SrcEff.eval_typed target sigsOk right ok (fun t mem => dd t (by simp [SrcEff.types, mem])) hr
         simp only [evalDivide] at h
         split at h
         · rename_i both
@@ -1128,13 +1182,13 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
 theorem evalArgs_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {sigs : List Sig} (sigsOk : SigsOk P sigs) :
     ∀ (args : List SrcEff) {scope : List Binding} {ctx : Typing.Context} {slot : Nat} {ea : EvaluatedArgs},
-      ScopeOk P ctx scope → evalArgs sigs scope args slot = some ea →
+      ScopeOk P ctx scope → (∀ t ∈ effsTypes args, TypeDeclared P t) → evalArgs sigs scope args slot = some ea →
       ExprsHaveTypes P ctx (SrcEff.toCoreList args) (ea.types.map SrcType.toCore)
-  | [], scope, ctx, slot, ea, ok, h => by
+  | [], scope, ctx, slot, ea, ok, dd, h => by
     simp only [evalArgs, Option.some.injEq] at h
     subst h
     exact .nil
-  | arg :: rest, scope, ctx, slot, ea, ok, h => by
+  | arg :: rest, scope, ctx, slot, ea, ok, dd, h => by
     simp only [evalArgs] at h
     split at h
     · simp at h
@@ -1145,7 +1199,7 @@ theorem evalArgs_typed {P : Core.Program} (target : P.target = Core.Target.x86_6
       · rename_i r hr
         simp only [Option.some.injEq] at h
         subst h
-        exact .cons (SrcEff.eval_typed target sigsOk arg ok hfirst) (evalArgs_typed target sigsOk rest ok hr)
+        exact .cons (SrcEff.eval_typed target sigsOk arg ok (fun t mem => dd t (by simp [effsTypes, mem])) hfirst) (evalArgs_typed target sigsOk rest ok (fun t mem => dd t (by simp [effsTypes, mem])) hr)
 
 end
 
@@ -1507,11 +1561,11 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         simp only [evalSame] at h
         split at h
         · rename_i same
-          have typed := SrcEff.eval_typed target sigsOk value ok hv
+          have typed := SrcEff.eval_typed target sigsOk value ok d.2.1 hv
           rw [same_toCore same] at typed
-          exact .letLocal typed (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 hb)
+          exact .letLocal typed (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2.2 hb)
         · simp at h
-  | .setEval id value, scope, ctx, next, inLoop, out, ok, _, h => by
+  | .setEval id value, scope, ctx, next, inLoop, out, ok, d, h => by
     simp only [SrcStmt.lower, lowerSetEval] at h
     split at h
     · simp at h
@@ -1522,7 +1576,7 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         simp only [evalSame] at h
         split at h
         · rename_i same
-          have typed := SrcEff.eval_typed target sigsOk value ok hv
+          have typed := SrcEff.eval_typed target sigsOk value ok d hv
           rw [same_toCore same] at typed
           exact .expression (.assign (.local (ok id b found).1) typed .set)
         · simp at h
@@ -1541,10 +1595,10 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
           simp only [evalSame] at h
           split at h
           · rename_i same
-            have typed := SrcEff.eval_typed target sigsOk condition ok hc
+            have typed := SrcEff.eval_typed target sigsOk condition ok d.1 hc
             rw [same_toCore same] at typed
-            exact .ifThenElse typed (SrcStmt.lower_typed target sigsOk thenBranch ok d.1 ha)
-              (SrcStmt.lower_typed target sigsOk elseBranch ok d.2 hb)
+            exact .ifThenElse typed (SrcStmt.lower_typed target sigsOk thenBranch ok d.2.1 ha)
+              (SrcStmt.lower_typed target sigsOk elseBranch ok d.2.2 hb)
           · simp at h
   | .whileEval condition body, scope, ctx, next, inLoop, out, ok, d, h => by
     simp only [SrcStmt.Declared] at d
@@ -1558,11 +1612,11 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         simp only [evalSame] at h
         split at h
         · rename_i same
-          have typed := SrcEff.eval_typed target sigsOk condition ok hc
+          have typed := SrcEff.eval_typed target sigsOk condition ok d.1 hc
           rw [same_toCore same] at typed
-          exact .whileLoop typed (SrcStmt.lower_typed target sigsOk body ok d hb)
+          exact .whileLoop typed (SrcStmt.lower_typed target sigsOk body ok d.2 hb)
         · simp at h
-  | .returnEval value, scope, ctx, next, inLoop, out, ok, _, h => by
+  | .returnEval value, scope, ctx, next, inLoop, out, ok, d, h => by
     simp only [SrcStmt.lower, lowerReturnEval] at h
     split at h
     · simp at h
@@ -1570,16 +1624,16 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       simp only [evalSame] at h
       split at h
       · rename_i same
-        have typed := SrcEff.eval_typed target sigsOk value ok hv
+        have typed := SrcEff.eval_typed target sigsOk value ok d hv
         rw [same_toCore same] at typed
         exact .returnValue typed
       · simp at h
-  | .discard value, scope, ctx, next, inLoop, out, ok, _, h => by
+  | .discard value, scope, ctx, next, inLoop, out, ok, d, h => by
     simp only [SrcStmt.lower, lowerDiscard] at h
     split at h
     · simp at h
     · rename_i v hv
-      exact .expression (SrcEff.eval_typed target sigsOk value ok hv)
+      exact .expression (SrcEff.eval_typed target sigsOk value ok d hv)
 
 /-! ## Functions and programs -/
 
@@ -1968,36 +2022,46 @@ theorem SrcStmt.declare_sound : ∀ (s : SrcStmt) {d d' : SrcDecls}, s.declare d
     simp only [SrcStmt.declare, Option.some.injEq] at h
     subst h
     exact ⟨Extends.refl _, fun _ _ => trivial⟩
-  | .letEval _ ty _ body, d, d', h => by
+  | .letEval _ ty value body, d, d', h => by
     simp only [SrcStmt.declare] at h
     split at h
     · simp at h
     · rename_i d1 first
-      exact declare_let first (SrcStmt.declare_sound body h)
-  | .setEval _ _, _, _, h => by
-    simp only [SrcStmt.declare, Option.some.injEq] at h
-    subst h
-    exact ⟨Extends.refl _, fun _ _ => trivial⟩
-  | .ifEval _ thenBranch elseBranch, d, d', h => by
+      obtain ⟨ext1, head⟩ := declareTypes_sound _ first
+      obtain ⟨ext2, tail⟩ := SrcStmt.declare_sound body h
+      exact ⟨ext1.trans ext2, fun extD agrees =>
+        ⟨head (ext2.trans extD) agrees ty (by simp), fun t mem => head (ext2.trans extD) agrees t (by simp [mem]),
+          tail extD agrees⟩⟩
+  | .setEval _ value, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    exact declareTypes_sound _ h
+  | .ifEval condition thenBranch elseBranch, d, d', h => by
     simp only [SrcStmt.declare] at h
     split at h
     · simp at h
-    · rename_i d1 hthen
-      obtain ⟨ext1, declared1⟩ := SrcStmt.declare_sound thenBranch hthen
-      obtain ⟨ext2, declared2⟩ := SrcStmt.declare_sound elseBranch h
-      exact ⟨ext1.trans ext2, fun extD agrees =>
-        ⟨declared1 (ext2.trans extD) agrees, declared2 extD agrees⟩⟩
-  | .whileEval _ body, d, d', h => by
+    · rename_i d2 h2
+      split at h2
+      · simp at h2
+      · rename_i d1 first
+        obtain ⟨ext1, head⟩ := declareTypes_sound _ first
+        obtain ⟨ext2, declared2⟩ := SrcStmt.declare_sound thenBranch h2
+        obtain ⟨ext3, declared3⟩ := SrcStmt.declare_sound elseBranch h
+        exact ⟨(ext1.trans ext2).trans ext3, fun extD agrees =>
+          ⟨head ((ext2.trans ext3).trans extD) agrees, declared2 (ext3.trans extD) agrees, declared3 extD agrees⟩⟩
+  | .whileEval condition body, d, d', h => by
     simp only [SrcStmt.declare] at h
-    exact SrcStmt.declare_sound body h
-  | .returnEval _, _, _, h => by
-    simp only [SrcStmt.declare, Option.some.injEq] at h
-    subst h
-    exact ⟨Extends.refl _, fun _ _ => trivial⟩
-  | .discard _, _, _, h => by
-    simp only [SrcStmt.declare, Option.some.injEq] at h
-    subst h
-    exact ⟨Extends.refl _, fun _ _ => trivial⟩
+    split at h
+    · simp at h
+    · rename_i d1 first
+      obtain ⟨ext1, head⟩ := declareTypes_sound _ first
+      obtain ⟨ext2, declared2⟩ := SrcStmt.declare_sound body h
+      exact ⟨ext1.trans ext2, fun extD agrees => ⟨head (ext2.trans extD) agrees, declared2 extD agrees⟩⟩
+  | .returnEval value, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    exact declareTypes_sound _ h
+  | .discard value, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    exact declareTypes_sound _ h
 
 theorem declareParams_sound : ∀ (params : List SrcParam) {d d' : SrcDecls},
     declareParams params d = some d' →

@@ -282,8 +282,11 @@ semantics:
   own type, apart from `SrcExpr`, keeps `SrcExpr`'s proofs by induction:
   `SrcEff` nests through `List`, so `EvalSound` is proved together with
   `StmtSound` by strong induction on Core's fuel (`sound_both`), which drops
-  at every subexpression. Indexing, struct and enum literals, and `match`
-  as effectful expressions lower to nothing yet.
+  at every subexpression. A struct literal computes its fields one after
+  another from `slot`; an enum literal its payload from `slot + 1`, then the
+  tag into `slot`. `SrcEff.types` lists the literals' types, which
+  `SrcStmt.declare` declares, so Core's typing finds them. Indexing and
+  `match` as effectful expressions lower to nothing yet.
 - Division (`EDivide`, in `LowerEval`): `/` and `%` on `i32` or one unsigned
   type. The mini IR divides in a statement, so division is only an
   effectful expression: both operands, then `Divide` into the left one's

@@ -2350,6 +2350,63 @@ pub fn eval_apply(op: SrcOp, slot: usize, left: core::option::Option<Evaluated>,
     };
 }
 
+// A struct value: its fields, one after another from slot.
+pub fn eval_struct_of(ty: SrcType, types: List<SrcType>, args: EvaluatedArgs) -> core::option::Option<Evaluated> {
+    if (types_same(args.types, types) && (0 < sizes(types))) {
+        return Some(Evaluated { stmt: args.stmt, ty: ty });
+    }
+    return None;
+}
+
+pub fn eval_struct(ty: SrcType, args: core::option::Option<EvaluatedArgs>) -> core::option::Option<Evaluated> {
+    return match (args) {
+        None -> None,
+        Some(a) -> match (ty) {
+            I32 -> None,
+            Bool -> None,
+            Uint(kind) -> None,
+            Struct(id, types) -> eval_struct_of(ty, unbox(types), a),
+            Enum(id, variants) -> None,
+            Ptr -> None,
+            Slice(element) -> None,
+        },
+    };
+}
+
+// The payload, evaluated from slot + 1, then the tag in slot.
+pub fn eval_payload(ty: SrcType, types: List<SrcType>, variant: usize, slot: usize, args: EvaluatedArgs) -> core::option::Option<Evaluated> {
+    if (types_same(args.types, types)) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(Assign(slot, Lit(variant as u64)))), ty: ty });
+    }
+    return None;
+}
+
+// Tags are 32-bit, so an enum has fewer than 2^32 variants.
+pub fn eval_tagged(ty: SrcType, variants: List<List<SrcType>>, variant: usize, slot: usize, args: EvaluatedArgs) -> core::option::Option<Evaluated> {
+    if (length(variants) < 4294967296) {
+        return match (get(variants, variant)) {
+            None -> None,
+            Some(types) -> eval_payload(ty, types, variant, slot, args),
+        };
+    }
+    return None;
+}
+
+pub fn eval_variant(ty: SrcType, variant: usize, slot: usize, args: core::option::Option<EvaluatedArgs>) -> core::option::Option<Evaluated> {
+    return match (args) {
+        None -> None,
+        Some(a) -> match (ty) {
+            I32 -> None,
+            Bool -> None,
+            Uint(kind) -> None,
+            Struct(id, types) -> None,
+            Enum(id, variants) -> eval_tagged(ty, unbox(variants), variant, slot, a),
+            Ptr -> None,
+            Slice(element) -> None,
+        },
+    };
+}
+
 pub fn signed_div(op: SrcDivOp) -> DivOp {
     return match (op) {
         Quotient -> SDiv,
@@ -2443,8 +2500,8 @@ impl SrcEff {
             ENot(operand) -> eval_not(slot, unbox(operand).eval(sigs, scope, slot)),
             ECast(ty, operand) -> eval_cast(ty, slot, unbox(operand).eval(sigs, scope, slot)),
             EIndex(slice, index) -> None,
-            EStruct(ty, fields) -> None,
-            EVariant(ty, variant, payload) -> None,
+            EStruct(ty, fields) -> eval_struct(ty, eval_args(sigs, scope, unbox(fields), slot)),
+            EVariant(ty, variant, payload) -> eval_variant(ty, variant, slot, eval_args(sigs, scope, unbox(payload), plus(slot, 1))),
             EMatch(scrutinee, enum_id, binders, values) -> None,
             EDivide(op, left, right) -> eval_division(op, slot, unbox(left).eval(sigs, scope, slot), unbox(right).eval(sigs, scope, plus(slot, 1))),
         };
@@ -2459,6 +2516,35 @@ pub fn eval_args(sigs: List<Sig>, scope: List<Binding>, args: List<SrcEff>, slot
             None -> None,
             Some(first) -> cons_args(first, eval_args(sigs, scope, unbox(rest), plus(slot, first.ty.size()))),
         },
+    };
+}
+// extract: mutual end
+
+// extract: mutual begin
+impl SrcEff {
+    // The struct and enum types of the literals in this expression, which
+    // the program's declarations must give.
+    pub fn types(self) -> List<SrcType> {
+        return match (self) {
+            EPure(e) -> empty(),
+            ECall(callee, args) -> effs_types(unbox(args)),
+            EApply(op, left, right) -> concat(unbox(left).types(), unbox(right).types()),
+            ENeg(operand) -> unbox(operand).types(),
+            ENot(operand) -> unbox(operand).types(),
+            ECast(ty, operand) -> unbox(operand).types(),
+            EIndex(slice, index) -> unbox(index).types(),
+            EStruct(ty, fields) -> cons(ty, effs_types(unbox(fields))),
+            EVariant(ty, variant, payload) -> cons(ty, effs_types(unbox(payload))),
+            EMatch(scrutinee, enum_id, binders, values) -> concat(unbox(scrutinee).types(), effs_types(unbox(values))),
+            EDivide(op, left, right) -> concat(unbox(left).types(), unbox(right).types()),
+        };
+    }
+}
+
+pub fn effs_types(es: List<SrcEff>) -> List<SrcType> {
+    return match (es) {
+        Nil -> empty(),
+        Cons(e, rest) -> concat(e.types(), effs_types(unbox(rest))),
     };
 }
 // extract: mutual end
@@ -3540,12 +3626,12 @@ impl SrcStmt {
             LetSlice(id, element, pointer, length, body) -> declare_in(element.declare(decls), unbox(body)),
             LetIndex(id, ty, slice, index, body) -> declare_in(ty.declare(decls), unbox(body)),
             SetIndex(slice, index, value) -> Some(decls),
-            LetEval(id, ty, value, body) -> declare_in(ty.declare(decls), unbox(body)),
-            SetEval(id, value) -> Some(decls),
-            IfEval(condition, then_branch, else_branch) -> declare_in(unbox(then_branch).declare(decls), unbox(else_branch)),
-            WhileEval(condition, body) -> unbox(body).declare(decls),
-            ReturnEval(value) -> Some(decls),
-            Discard(value) -> Some(decls),
+            LetEval(id, ty, value, body) -> declare_in(declare_types(cons(ty, value.types()), decls), unbox(body)),
+            SetEval(id, value) -> declare_types(value.types(), decls),
+            IfEval(condition, then_branch, else_branch) -> declare_in(declare_in(declare_types(condition.types(), decls), unbox(then_branch)), unbox(else_branch)),
+            WhileEval(condition, body) -> declare_in(declare_types(condition.types(), decls), unbox(body)),
+            ReturnEval(value) -> declare_types(value.types(), decls),
+            Discard(value) -> declare_types(value.types(), decls),
         };
     }
 

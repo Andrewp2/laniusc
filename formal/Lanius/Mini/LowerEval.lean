@@ -582,6 +582,91 @@ theorem eval_divide {k : Nat} (ihe : EvalSound sp mp k) {op : SrcDivOp} {l r : S
         below _, holdsAt_set (ty := .uint kind) ⟨rfl, fits⟩ env2 slot, hc2⟩
     · simp at ok
 
+/-- A struct literal: its fields, one after another from `slot`. -/
+theorem eval_struct {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcType} {fields : List SrcEff}
+    (ok : evalStruct ty (evalArgs (sigs sp.funcs) scope fields slot) = some ev)
+    (corr : Corr scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
+    (hc : HeapCorr st.heap hp)
+    (run : evalExpr (k + 1) sp.toCore st (.structValue ty.typeId (SrcEff.toCoreList fields)) = .done v st')
+    (bound : st'.heap.nextAddress ≤ hp.limit) :
+    Evaluates mp hp slot st env ev v st' := by
+  simp only [evalStruct] at ok
+  split at ok
+  · simp at ok
+  rename_i ea argsOk
+  cases ty with
+  | struct sid types =>
+    simp only [evalStructOf] at ok
+    split at ok
+    · rename_i checks
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+      simp only [Option.some.injEq] at ok
+      subst ok
+      simp only [SrcType.typeId, evalExpr] at run
+      split at run
+      · rename_i vs st2 argsRun
+        simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨rfl, rfl⟩ := run
+        obtain ⟨fresh', keeps, locals, d, env', hp', exec, same, holds, hc'⟩ :=
+          evalArgs_sound fields ihe argsOk corr fr fresh hc argsRun bound
+        rw [typesSame_eq _ checks.1] at holds
+        exact ⟨fresh', keeps, locals, by simp only [SrcType.size]; exact checks.2, d, env', hp', exec, same,
+          .struct holds, hc'⟩
+      all_goals simp at run
+    · simp at ok
+  | i32 => simp at ok
+  | bool => simp at ok
+  | uint => simp at ok
+  | enum => simp at ok
+  | ptr => simp at ok
+  | slice => simp at ok
+
+/-- An enum literal: its payload from `slot + 1`, then its tag in `slot`. -/
+theorem eval_variant {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcType} {variant : Nat}
+    {payload : List SrcEff}
+    (ok : evalVariant ty variant slot (evalArgs (sigs sp.funcs) scope payload (slot + 1)) = some ev)
+    (corr : Corr scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
+    (hc : HeapCorr st.heap hp)
+    (run : evalExpr (k + 1) sp.toCore st (.enumValue ty.typeId variant (SrcEff.toCoreList payload)) = .done v st')
+    (bound : st'.heap.nextAddress ≤ hp.limit) :
+    Evaluates mp hp slot st env ev v st' := by
+  simp only [evalVariant] at ok
+  split at ok
+  · simp at ok
+  rename_i ea argsOk
+  cases ty with
+  | enum eid variants =>
+    simp only [evalTagged] at ok
+    split at ok
+    · split at ok
+      · simp at ok
+      rename_i fs found
+      simp only [evalPayload] at ok
+      split at ok
+      · rename_i same
+        simp only [Option.some.injEq] at ok
+        subst ok
+        simp only [SrcType.typeId, evalExpr] at run
+        split at run
+        · rename_i vs st2 argsRun
+          simp only [Semantics.Outcome.done.injEq] at run
+          obtain ⟨rfl, rfl⟩ := run
+          obtain ⟨fresh', keeps, locals, d, env', hp', exec, same', holds, hc'⟩ :=
+            evalArgs_sound payload ihe argsOk corr (fr.mono (Nat.le_succ _)) fresh hc argsRun bound
+          rw [typesSame_eq _ same] at holds
+          refine ⟨fresh', keeps, locals, by simp only [SrcType.size]; omega, d, _, hp', .seq exec .assign,
+            fun j lt => by rw [set_below lt, same' j (by omega)], .enum found (by simp [Env.set, Expr.eval])
+              (holds.congr fun i _ => by simp only [Env.set]; rw [if_neg (by omega)]), hc'⟩
+        all_goals simp at run
+      · simp at ok
+    · simp at ok
+  | i32 => simp at ok
+  | bool => simp at ok
+  | uint => simp at ok
+  | struct => simp at ok
+  | ptr => simp at ok
+  | slice => simp at ok
+
 /-- An operator applied in place to its operand's slot. -/
 theorem eval_then {k : Nat} (ihe : EvalSound sp mp k) {operand : SrcEff} {o : Evaluated}
     (operandOk : operand.eval (sigs sp.funcs) scope slot = some o) {t : Typed}
@@ -1023,8 +1108,12 @@ theorem sound_both {sp : SrcProgram} {mp : Program}
                 fun holds => cast_sound holds lowered' evaluated
             · simp at lowered'
         | eIndex => simp [SrcEff.eval] at ok
-        | eStruct => simp [SrcEff.eval] at ok
-        | eVariant => simp [SrcEff.eval] at ok
+        | eStruct ty fields =>
+          simp only [SrcEff.eval] at ok
+          exact eval_struct (fun m lt => belowE m (Nat.le_of_lt lt)) ok corr fr fresh hc run bound
+        | eVariant ty variant payload =>
+          simp only [SrcEff.eval] at ok
+          exact eval_variant (fun m lt => belowE m (Nat.le_of_lt lt)) ok corr fr fresh hc run bound
         | eMatch => simp [SrcEff.eval] at ok
         | eDivide op l r =>
           simp only [SrcEff.eval] at ok
