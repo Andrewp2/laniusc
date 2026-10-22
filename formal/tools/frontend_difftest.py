@@ -792,6 +792,7 @@ partial def renStmt (f : Nat → Nat) : SrcStmt → SrcStmt
   | .letSlice n t p l r => .letSlice (f n) t (renExpr f p) (renExpr f l) (renStmt f r)
   | .letIndex n t s i r => .letIndex (f n) t (f s) (renExpr f i) (renStmt f r)
   | .setIndex s i v => .setIndex (f s) (renExpr f i) (renExpr f v)
+  | s => s  -- the front end reads no effectful forms yet
 
 def canonFunc (fn : SrcFunc) : SrcFunc :=
   let ids := (fn.params.map (·.id) ++ bindersOf fn.body).mergeSort (· ≤ ·)
