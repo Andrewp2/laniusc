@@ -105,6 +105,7 @@ def SrcExpr.toCore : SrcExpr → Core.Expr
   | .not operand => .unary .logicalNot operand.toCore
   | .apply op left right => .binary op.toCore left.toCore right.toCore
   | .cast ty operand => .cast ty.toScalar operand.toCore
+  | .null => .value (.pointer 0)
 
 /-- Match arms from variant `k`: arm `k` matches variant `k` of enum type
 `id`, binding its payload. -/

@@ -1015,6 +1015,8 @@ inductive SrcExpr where
   | apply : SrcOp → SrcExpr → SrcExpr → SrcExpr
   /-- between i32 and the unsigned types, wrapping like Core -/
   | cast : SrcType → SrcExpr → SrcExpr
+  /-- the null pointer, Core's pointer 0 -/
+  | null : SrcExpr
   deriving Repr
 
 /-- A match arm: the binders of its variant's payload, and its value. -/
@@ -1614,6 +1616,7 @@ def SrcExpr.lower (self : SrcExpr) (scope : List Binding) : Option Typed :=
   | .not operand => lowerNot (SrcExpr.lower operand scope)
   | .apply op left right => lowerApply op (SrcExpr.lower left scope) (SrcExpr.lower right scope)
   | .cast ty operand => lowerCast ty (SrcExpr.lower operand scope)
+  | .null => some ({ expr := Expr.lit 0, ty := SrcType.ptr } : Typed)
 
 def expectType (typed : Typed) (ty : SrcType) : Option Expr :=
   if SrcType.same typed.ty ty then
@@ -1690,6 +1693,7 @@ def lowerCopy (scope : List Binding) (e : SrcExpr) (ty : SrcType) : Option (List
   | .not operand => none
   | .apply op left right => none
   | .cast target operand => none
+  | .null => none
 
 def lowerSingle (value : Option Expr) : Option (List Expr) :=
   match value with
@@ -1928,6 +1932,7 @@ def evalPure (scope : List Binding) (e : SrcExpr) (slot : Nat) : Option Evaluate
     | .not operand => none
     | .apply op left right => none
     | .cast ty operand => none
+    | .null => none
 
 def evalCallSig (sig : Sig) (callee : Nat) (slot : Nat) (args : EvaluatedArgs) : Option Evaluated :=
   if typesSame args.types sig.params && decide (0 < SrcType.size sig.ret) then

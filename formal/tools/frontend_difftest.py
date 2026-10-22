@@ -1005,6 +1005,7 @@ partial def serExpr : SrcExpr → String
   | .not e => s!"(.not {serExpr e})"
   | .apply o a b => s!"(.apply .{serOp o} {serExpr a} {serExpr b})"
   | .cast t e => s!"(.cast {serType t} {serExpr e})"
+  | .null => ".null"
 
 def serExprs (es : List SrcExpr) : String := bracket (es.map serExpr)
 

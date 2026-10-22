@@ -182,6 +182,7 @@ pub enum SrcExpr {
     Not(Box<SrcExpr>),
     Apply(SrcOp, Box<SrcExpr>, Box<SrcExpr>),
     Cast(SrcType, Box<SrcExpr>),
+    Null,
 }
 
 pub struct SrcArm {
@@ -922,29 +923,38 @@ pub struct ImportDecl {
     target: List<List<usize>>,
 }
 
+// `type name<params> = ty;` (no where clause).
+pub struct AliasDecl {
+    module: List<List<usize>>,
+    name: List<usize>,
+    params: List<List<usize>>,
+    ty: CTree,
+}
+
 // The declarations of all the files, in file order.
 pub struct Decls {
     types: List<TypeDecl>,
     fns: List<FnDecl>,
     consts: List<ConstDecl>,
     imports: List<ImportDecl>,
+    aliases: List<AliasDecl>,
 }
 
 pub fn no_decls() -> Decls {
-    return Decls { types: empty(), fns: empty(), consts: empty(), imports: empty() };
+    return Decls { types: empty(), fns: empty(), consts: empty(), imports: empty(), aliases: empty() };
 }
 
 pub fn join_decls(a: Decls, b: core::option::Option<Decls>) -> core::option::Option<Decls> {
     return match (b) {
         None -> None,
-        Some(d) -> Some(Decls { types: concat(a.types, d.types), fns: concat(a.fns, d.fns), consts: concat(a.consts, d.consts), imports: concat(a.imports, d.imports) }),
+        Some(d) -> Some(Decls { types: concat(a.types, d.types), fns: concat(a.fns, d.fns), consts: concat(a.consts, d.consts), imports: concat(a.imports, d.imports), aliases: concat(a.aliases, d.aliases) }),
     };
 }
 
 pub fn import_decls(module: List<List<usize>>, target: core::option::Option<List<List<usize>>>) -> core::option::Option<Decls> {
     return match (target) {
         None -> None,
-        Some(t) -> Some(Decls { types: empty(), fns: empty(), consts: empty(), imports: single(ImportDecl { module: module, target: t }) }),
+        Some(t) -> Some(Decls { types: empty(), fns: empty(), consts: empty(), imports: single(ImportDecl { module: module, target: t }), aliases: empty() }),
     };
 }
 
@@ -1131,7 +1141,7 @@ pub fn methods_of(fuel: usize, module: List<List<usize>>, impl_params: List<List
 pub fn fns_decls(fns: core::option::Option<List<FnDecl>>) -> core::option::Option<Decls> {
     return match (fns) {
         None -> None,
-        Some(fs) -> Some(Decls { types: empty(), fns: fs, consts: empty(), imports: empty() }),
+        Some(fs) -> Some(Decls { types: empty(), fns: fs, consts: empty(), imports: empty(), aliases: empty() }),
     };
 }
 
@@ -1148,12 +1158,20 @@ pub fn impl_methods(fuel: usize, module: List<List<usize>>, params: core::option
 pub fn type_decls(t: core::option::Option<TypeDecl>) -> core::option::Option<Decls> {
     return match (t) {
         None -> None,
-        Some(d) -> Some(Decls { types: single(d), fns: empty(), consts: empty(), imports: empty() }),
+        Some(d) -> Some(Decls { types: single(d), fns: empty(), consts: empty(), imports: empty(), aliases: empty() }),
+    };
+}
+
+pub fn alias_decls(module: List<List<usize>>, name: List<usize>, params: core::option::Option<List<List<usize>>>, ty: CTree) -> core::option::Option<Decls> {
+    return match (params) {
+        None -> None,
+        Some(ps) -> Some(Decls { types: empty(), fns: empty(), consts: empty(), imports: empty(), aliases: single(AliasDecl { module: module, name: name, params: ps, ty: ty }) }),
     };
 }
 
 // The declarations an item makes. Imports, extern functions, traits and
-// type aliases make none; a use of one is rejected when it is read.
+// type aliases with a where clause make none; a use of one is rejected when
+// it is read.
 pub fn item_decls(fuel: usize, module: List<List<usize>>, item: CTree) -> core::option::Option<Decls> {
     let b: CTree = item_body(item);
     let p: usize = node_prod(b);
@@ -1164,7 +1182,7 @@ pub fn item_decls(fuel: usize, module: List<List<usize>>, item: CTree) -> core::
         return fns_decls(cons_fn_decl(fn_decl_of(module, b, false, empty(), b, type_params(fuel, kid(b, 2))), Some(empty())));
     }
     if (p == p_const()) {
-        return Some(Decls { types: empty(), fns: empty(), consts: single(ConstDecl { module: module, name: kid_token(b, 1).text, ty: kid(b, 3), value: kid(b, 5) }), imports: empty() });
+        return Some(Decls { types: empty(), fns: empty(), consts: single(ConstDecl { module: module, name: kid_token(b, 1).text, ty: kid(b, 3), value: kid(b, 5) }), imports: empty(), aliases: empty() });
     }
     if (p == p_impl_inherent() && node_prod(kid(b, 3)) == p_where_none()) {
         return impl_methods(fuel, module, type_params(fuel, kid(b, 1)), kid(b, 2), kid(b, 5));
@@ -1174,6 +1192,9 @@ pub fn item_decls(fuel: usize, module: List<List<usize>>, item: CTree) -> core::
     }
     if (p == p_import() && node_prod(kid(b, 1)) == p_import_path()) {
         return import_decls(module, path_spellings(fuel, kid(kid(kid(b, 1), 0), 0), kid(kid(kid(b, 1), 0), 1)));
+    }
+    if (p == p_type_alias() && node_prod(kid(b, 3)) == p_where_none()) {
+        return alias_decls(module, kid_token(b, 1).text, type_params(fuel, kid(b, 2)), kid(b, 5));
     }
     if (p == p_module() || p == p_import() || p == p_extern_fn() || p == p_trait() || p == p_type_alias()) {
         return Some(no_decls());
@@ -1233,7 +1254,7 @@ pub struct Collected {
 }
 
 pub fn collected_with(c: Collected, f: FileDecls) -> Collected {
-    return Collected { decls: Decls { types: concat(c.decls.types, f.decls.types), fns: concat(c.decls.fns, f.decls.fns), consts: concat(c.decls.consts, f.decls.consts), imports: concat(c.decls.imports, f.decls.imports) }, modules: concat(c.modules, single(f.module)) };
+    return Collected { decls: Decls { types: concat(c.decls.types, f.decls.types), fns: concat(c.decls.fns, f.decls.fns), consts: concat(c.decls.consts, f.decls.consts), imports: concat(c.decls.imports, f.decls.imports), aliases: concat(c.decls.aliases, f.decls.aliases) }, modules: concat(c.modules, single(f.module)) };
 }
 
 pub fn collect_files(fuel: usize, roots: List<CTree>, acc: Collected) -> core::option::Option<Collected> {
@@ -1314,6 +1335,21 @@ fn type_only_at(ot: TypeDecl, orest: List<TypeDecl>, om: List<List<usize>>) -> L
     return type_only_names_in(orest, om);
 }
 
+pub fn alias_names_in(aliases: List<AliasDecl>, m: List<List<usize>>) -> List<List<usize>> {
+    return match (aliases) {
+        Nil -> empty(),
+        Cons(a, rest) -> alias_name_at(a, unbox(rest), m),
+    };
+}
+
+// extract: inline
+fn alias_name_at(aa: AliasDecl, arest: List<AliasDecl>, am: List<List<usize>>) -> List<List<usize>> {
+    if (same_spellings(aa.module, am)) {
+        return cons(aa.name, alias_names_in(arest, am));
+    }
+    return alias_names_in(arest, am);
+}
+
 pub fn none_member(names: List<List<usize>>, others: List<List<usize>>) -> bool {
     return match (names) {
         Nil -> true,
@@ -1341,11 +1377,14 @@ pub fn enums_named_ok(types: List<TypeDecl>, m: List<List<usize>>, values: List<
 // a name with a type, or with another enum's variant; a bare use of such a
 // variant must then be unambiguous, see bare_variant).
 pub fn module_names_ok(decls: Decls, m: List<List<usize>>) -> bool {
-    return distinct(concat(fn_names_in(decls.fns, m), concat(type_only_names_in(decls.types, m), const_names_in(decls.consts, m)))) && enums_named_ok(decls.types, m, concat(fn_names_in(decls.fns, m), const_names_in(decls.consts, m)));
+    return distinct(concat(fn_names_in(decls.fns, m), concat(type_only_names_in(decls.types, m), concat(alias_names_in(decls.aliases, m), const_names_in(decls.consts, m))))) && enums_named_ok(decls.types, m, concat(fn_names_in(decls.fns, m), const_names_in(decls.consts, m)));
 }
 
+// The spellings a local may not take: the module's types, type aliases,
+// variants and constants. A local may be spelled like a function, since a
+// function is only ever named by a call or a path.
 pub fn module_globals(decls: Decls, m: List<List<usize>>) -> List<List<usize>> {
-    return concat(fn_names_in(decls.fns, m), concat(type_names_in(decls.types, m), const_names_in(decls.consts, m)));
+    return concat(type_names_in(decls.types, m), concat(alias_names_in(decls.aliases, m), const_names_in(decls.consts, m)));
 }
 
 pub fn is_none_type(t: core::option::Option<SrcType>) -> bool {
@@ -1363,6 +1402,13 @@ pub fn no_primitive(types: List<TypeDecl>) -> bool {
     };
 }
 
+pub fn no_primitive_alias(aliases: List<AliasDecl>) -> bool {
+    return match (aliases) {
+        Nil -> true,
+        Cons(a, rest) -> is_none_type(primitive(a.name)) && no_primitive_alias(unbox(rest)),
+    };
+}
+
 pub fn modules_distinct_names(decls: Decls, modules: List<List<List<usize>>>) -> bool {
     return match (modules) {
         Nil -> true,
@@ -1372,7 +1418,7 @@ pub fn modules_distinct_names(decls: Decls, modules: List<List<List<usize>>>) ->
 
 // The files are distinct modules, and each module's names are distinct.
 pub fn well_named(c: Collected) -> bool {
-    return distinct_modules(c.modules) && modules_distinct_names(c.decls, c.modules) && no_primitive(c.decls.types);
+    return distinct_modules(c.modules) && modules_distinct_names(c.decls, c.modules) && no_primitive(c.decls.types) && no_primitive_alias(c.decls.aliases);
 }
 
 pub fn no_names(names: List<List<usize>>) -> bool {
@@ -1462,6 +1508,21 @@ fn find_const_at(hc: ConstDecl, hrest: List<ConstDecl>, hm: List<List<usize>>, h
         return Some(hc);
     }
     return find_const(hrest, hm, hname);
+}
+
+pub fn find_alias(aliases: List<AliasDecl>, m: List<List<usize>>, name: List<usize>) -> core::option::Option<AliasDecl> {
+    return match (aliases) {
+        Nil -> None,
+        Cons(a, rest) -> find_alias_at(a, unbox(rest), m, name),
+    };
+}
+
+// extract: inline
+fn find_alias_at(fa: AliasDecl, farest: List<AliasDecl>, fam: List<List<usize>>, faname: List<usize>) -> core::option::Option<AliasDecl> {
+    if (same_spellings(fa.module, fam) && same_text(fa.name, faname)) {
+        return Some(fa);
+    }
+    return find_alias(farest, fam, faname);
 }
 
 // The variant spelled name: its enum's declaration and its index there.
@@ -1874,7 +1935,7 @@ pub fn ty_of(fuel: usize, env: Env, t: CTree) -> core::option::Option<Ty> {
         return slice_ty(ty_of(f, env, kid(t, 1)));
     }
     if (node_prod(t) == p_type_ident() && node_prod(kid(t, 1)) == p_type_args_none()) {
-        return bare_of(env, type_path_spellings(f, kid(path, 0), kid(path, 1)));
+        return bare_or_alias(f, env, type_path_spellings(f, kid(path, 0), kid(path, 1)));
     }
     if (node_prod(t) == p_type_ident() && node_prod(kid(t, 1)) == p_type_args_some()) {
         return applied_of(f, env, type_path_spellings(f, kid(path, 0), kid(path, 1)), list_items(f, kid(t, 1)));
@@ -1890,9 +1951,55 @@ pub fn applied_of(fuel: usize, env: Env, segments: core::option::Option<List<Lis
         None -> None,
         Some(ss) -> match (items) {
             None -> None,
-            Some(gs) -> named_of(env, type_decl_at(env, ss), args_tys(minus(fuel, 1), env, gs)),
+            Some(gs) -> match (type_decl_at(env, ss)) {
+                Some(d) -> named_args(env, d, args_tys(minus(fuel, 1), env, gs)),
+                None -> alias_ty(minus(fuel, 1), env, ss, args_tys(minus(fuel, 1), env, gs)),
+            },
         },
     };
+}
+
+// A type path without arguments: a type parameter, a primitive or declared
+// type, or else a type alias.
+pub fn bare_or_alias(fuel: usize, env: Env, segments: core::option::Option<List<List<usize>>>) -> core::option::Option<Ty> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (segments) {
+        None -> None,
+        Some(ss) -> match (bare_ty(env, ss)) {
+            Some(t) -> Some(t),
+            None -> alias_ty(minus(fuel, 1), env, ss, Some(empty())),
+        },
+    };
+}
+
+// The type alias a path names, at type arguments: its type, read in the
+// alias's module with its parameters standing for the arguments.
+pub fn alias_ty(fuel: usize, env: Env, segments: List<List<usize>>, args: core::option::Option<List<Ty>>) -> core::option::Option<Ty> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (split_last(segments)) {
+        None -> None,
+        Some(s) -> match (find_alias(env.decls.aliases, module_or(env.module, s.module), s.name)) {
+            None -> None,
+            Some(a) -> match (args) {
+                None -> None,
+                Some(ts) -> alias_at(minus(fuel, 1), env.decls, a, ts),
+            },
+        },
+    };
+}
+
+pub fn alias_at(fuel: usize, decls: Decls, a: AliasDecl, ts: List<Ty>) -> core::option::Option<Ty> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (length(a.params) == length(ts)) {
+        return ty_of(minus(fuel, 1), decl_env(decls, a.module, a.params, ts), a.ty);
+    }
+    return None;
 }
 
 // The types of generic arguments (generic_argument_type).
@@ -2270,9 +2377,52 @@ fn int_in_range(iv: usize) -> core::option::Option<SrcExpr> {
     return None;
 }
 
+// Decimal digits, below 2^64.
+pub fn wide_decimal(text: List<usize>, acc: usize) -> core::option::Option<usize> {
+    if (acc > 18446744073709551615) {
+        return None;
+    }
+    return match (text) {
+        Nil -> Some(acc),
+        Cons(b, rest) -> wide_digit(b, unbox(rest), acc),
+    };
+}
+
+// extract: inline
+fn wide_digit(wb: usize, wrest: List<usize>, wacc: usize) -> core::option::Option<usize> {
+    if (wb >= 48 && 57 >= wb) {
+        return wide_decimal(wrest, plus(times(wacc, 10), minus(wb, 48)));
+    }
+    return None;
+}
+
+pub fn unit_ty(t: SrcType) -> bool {
+    return match (t) {
+        I32 -> false,
+        Bool -> false,
+        Uint(k) -> false,
+        Struct(id, fields) -> false,
+        Enum(id, variants) -> false,
+        Ptr -> false,
+        Slice(e) -> false,
+        Unit -> true,
+        Isize -> false,
+    };
+}
+
+// A literal of 2^31 or more (below 2^64) is read as Cast(Unit, Unsigned(Uint64, n)),
+// a form no other source has (no cast names Unit); lit_funcs gives it the
+// type its context expects, and build rejects one that gets none.
+pub fn wide_marker(v: core::option::Option<usize>) -> core::option::Option<SrcExpr> {
+    return match (v) {
+        None -> None,
+        Some(n) -> Some(Cast(Unit, boxed(Unsigned(Uint64, n as u64)))),
+    };
+}
+
 pub fn int_literal(text: List<usize>) -> core::option::Option<SrcExpr> {
     return match (decimal(text, 0)) {
-        None -> None,
+        None -> wide_marker(wide_decimal(text, 0)),
         Some(v) -> int_in_range(v),
     };
 }
@@ -2375,22 +2525,29 @@ pub fn member_of(env: Env, scope: List<Local>, primary: CTree, tail: CTree) -> c
     return None;
 }
 
-pub fn named_scalar(env: Env, name: List<usize>) -> core::option::Option<SrcType> {
+pub fn scalar_of(t: core::option::Option<Ty>) -> core::option::Option<SrcType> {
+    return match (t) {
+        None -> None,
+        Some(x) -> scalar_src(x),
+    };
+}
+
+pub fn named_scalar(fuel: usize, env: Env, name: List<usize>) -> core::option::Option<SrcType> {
     return match (param_ty(env, name)) {
         Some(t) -> scalar_src(t),
         None -> match (prim_ty(name)) {
-            None -> None,
+            None -> scalar_of(alias_ty(fuel, env, single(name), Some(empty()))),
             Some(t) -> scalar_src(t),
         },
     };
 }
 
-// The type a cast names (cast_type -> one segment): a primitive type, or a
-// type parameter standing for one.
-pub fn cast_type_of(env: Env, t: CTree) -> core::option::Option<SrcType> {
+// The type a cast names (cast_type -> one segment): a primitive type, a
+// type parameter standing for one, or a type alias of the module naming one.
+pub fn cast_type_of(fuel: usize, env: Env, t: CTree) -> core::option::Option<SrcType> {
     let path: CTree = kid(t, 0);
     if (node_prod(t) == p_cast_type_name() && node_prod(path) == p_cast_type_path() && node_prod(kid(path, 0)) == p_cast_type_path_ident() && node_prod(kid(path, 1)) == p_cast_type_path_end()) {
-        return named_scalar(env, kid_token(kid(path, 0), 0).text);
+        return named_scalar(fuel, env, kid_token(kid(path, 0), 0).text);
     }
     return None;
 }
@@ -2415,7 +2572,7 @@ pub fn casts(fuel: usize, env: Env, acc: core::option::Option<SrcExpr>, tail: CT
         return None;
     }
     if (has_kids(tail)) {
-        return casts(minus(fuel, 1), env, cast_into(cast_type_of(env, kid(tail, 1)), acc), kid(tail, 2));
+        return casts(minus(fuel, 1), env, cast_into(cast_type_of(fuel, env, kid(tail, 1)), acc), kid(tail, 2));
     }
     return acc;
 }
@@ -2454,7 +2611,16 @@ pub fn negated_int(x: SrcExpr, e: SrcExpr) -> core::option::Option<SrcExpr> {
         Not(y) -> None,
         Apply(op, a, b) -> None,
         Cast(t, y) -> None,
+        Null -> None,
     };
+}
+
+// A ptr constant's value: `0`, the null pointer.
+pub fn null_const(k: i32) -> core::option::Option<SrcExpr> {
+    if ((k as u32) == 0) {
+        return Some(Null);
+    }
+    return None;
 }
 
 // A constant's value: a literal of its type. An integer literal of an
@@ -2465,7 +2631,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyI32 -> Some(e),
             TyBool -> None,
             TyUint(u) -> uint_in_range(u, (k as u32) as u64),
-            TyPtr -> None,
+            TyPtr -> null_const(k),
             TyIsize -> Some(Cast(Isize, boxed(e))),
             TySlice(x) -> None,
             TyNamed(d, args) -> None,
@@ -2494,6 +2660,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
         Not(x) -> None,
         Apply(op, a, b) -> None,
         Cast(s, x) -> None,
+        Null -> None,
     };
 }
 
@@ -2522,25 +2689,6 @@ pub fn trees_tokens(ts: List<CTree>) -> List<Token> {
     };
 }
 // extract: mutual end
-
-// Decimal digits, below 2^64.
-pub fn wide_decimal(text: List<usize>, acc: usize) -> core::option::Option<usize> {
-    if (acc > 18446744073709551615) {
-        return None;
-    }
-    return match (text) {
-        Nil -> Some(acc),
-        Cons(b, rest) -> wide_digit(b, unbox(rest), acc),
-    };
-}
-
-// extract: inline
-fn wide_digit(wb: usize, wrest: List<usize>, wacc: usize) -> core::option::Option<usize> {
-    if (wb >= 48 && 57 >= wb) {
-        return wide_decimal(wrest, plus(times(wacc, 10), minus(wb, 48)));
-    }
-    return None;
-}
 
 pub fn wide_i32(negative: bool, n: usize) -> core::option::Option<SrcExpr> {
     if (negative && n == 2147483648) {
@@ -2856,7 +3004,8 @@ pub fn bare_int(e: SrcExpr) -> bool {
         Negate(x) -> bare_int(unbox(x)),
         Not(x) -> false,
         Apply(op, a, b) -> !gives_bool(op) && bare_int(unbox(a)) && bare_int(unbox(b)),
-        Cast(t, x) -> false,
+        Cast(t, x) -> unit_ty(t),
+        Null -> false,
     };
 }
 
@@ -2882,6 +3031,7 @@ pub fn expr_ty(fuel: usize, env: Env, scope: List<Local>, e: SrcExpr) -> core::o
         Not(x) -> Some(TyBool),
         Apply(op, a, b) -> apply_ty(op, pick_ty(bare_int(unbox(a)), expr_ty(minus(fuel, 1), env, scope, unbox(a)), expr_ty(minus(fuel, 1), env, scope, unbox(b)))),
         Cast(t, x) -> src_ty(t),
+        Null -> Some(TyPtr),
     };
 }
 
@@ -3438,13 +3588,53 @@ pub fn projection_ret(fuel: usize, decls: Decls, inst: Inst) -> core::option::Op
     };
 }
 
+// A function declared `-> !`.
+pub fn never_ret(fd: FnDecl) -> bool {
+    let r: CTree = kid(fd.tree, 6);
+    return node_prod(r) == p_ret_type() && node_prod(kid(r, 1)) == p_type_never();
+}
+
+// An instance of a `-> !` function with one type argument more than it has
+// type parameters: its call where a value of that last type is expected
+// (see diverge_func).
+pub fn diverges(fd: FnDecl, inst: Inst) -> bool {
+    return never_ret(fd) && length(inst.args) == plus(length(concat(fd.impl_params, fd.params)), 1);
+}
+
+pub fn last_ty(ts: List<Ty>) -> core::option::Option<Ty> {
+    return match (ts) {
+        Nil -> None,
+        Cons(t, rest) -> match (unbox(rest)) {
+            Nil -> Some(t),
+            Cons(u, more) -> last_ty(unbox(rest)),
+        },
+    };
+}
+
+pub fn init_tys(ts: List<Ty>) -> List<Ty> {
+    return match (ts) {
+        Nil -> empty(),
+        Cons(t, rest) -> match (unbox(rest)) {
+            Nil -> empty(),
+            Cons(u, more) -> cons(t, init_tys(unbox(rest))),
+        },
+    };
+}
+
+pub fn fn_inst_ret(fuel: usize, decls: Decls, fd: FnDecl, inst: Inst) -> core::option::Option<Ty> {
+    if (diverges(fd, inst)) {
+        return last_ty(inst.args);
+    }
+    return match (ret_pattern(fd)) {
+        None -> None,
+        Some(r) -> ty_of(fuel, decl_env(decls, fd.module, concat(fd.impl_params, fd.params), inst.args), r),
+    };
+}
+
 pub fn inst_ret(fuel: usize, decls: Decls, inst: Inst) -> core::option::Option<Ty> {
     return match (get(decls.fns, inst.decl)) {
         None -> projection_ret(fuel, decls, inst),
-        Some(fd) -> match (ret_pattern(fd)) {
-            None -> None,
-            Some(r) -> ty_of(fuel, decl_env(decls, fd.module, concat(fd.impl_params, fd.params), inst.args), r),
-        },
+        Some(fd) -> fn_inst_ret(fuel, decls, fd, inst),
     };
 }
 
@@ -3724,17 +3914,22 @@ pub fn method_call(fuel: usize, env: Env, scope: List<Local>, expected: Ty, l: c
     };
 }
 
+// A path's one-segment prefix that names a type: a type parameter or a
+// primitive type (`T::m`, `i32::hash`).
 pub fn is_type_param(env: Env, owner: core::option::Option<List<usize>>) -> bool {
     return match (owner) {
         None -> false,
-        Some(n) -> member(env.names, n),
+        Some(n) -> member(env.names, n) || !is_none_type(primitive(n)),
     };
 }
 
 pub fn owner_ty(env: Env, owner: core::option::Option<List<usize>>) -> core::option::Option<Ty> {
     return match (owner) {
         None -> None,
-        Some(n) -> param_ty(env, n),
+        Some(n) -> match (param_ty(env, n)) {
+            Some(t) -> Some(t),
+            None -> prim_ty(n),
+        },
     };
 }
 
@@ -3884,6 +4079,7 @@ pub fn literal_shift(e: SrcExpr) -> core::option::Option<usize> {
         Not(x) -> None,
         Apply(op, a, b) -> None,
         Cast(t, x) -> None,
+        Null -> None,
     };
 }
 
@@ -3907,6 +4103,7 @@ pub fn shift_of(e: SrcExpr) -> core::option::Option<usize> {
         Not(x) -> None,
         Apply(op, a, b) -> None,
         Cast(t, x) -> cast_shift(is_usize(t), unbox(x)),
+        Null -> None,
     };
 }
 
@@ -4493,7 +4690,7 @@ pub fn eff_casts(fuel: usize, env: Env, acc: core::option::Option<MEff>, tail: C
         return None;
     }
     if (has_kids(tail)) {
-        return eff_casts(minus(fuel, 1), env, x_cast_into(cast_type_of(env, kid(tail, 1)), acc), kid(tail, 2));
+        return eff_casts(minus(fuel, 1), env, x_cast_into(cast_type_of(fuel, env, kid(tail, 1)), acc), kid(tail, 2));
     }
     return acc;
 }
@@ -4551,6 +4748,7 @@ pub fn pure_local(e: SrcExpr) -> core::option::Option<usize> {
         Not(a) -> None,
         Apply(op, a, b) -> None,
         Cast(t, a) -> None,
+        Null -> None,
     };
 }
 
@@ -4672,6 +4870,51 @@ pub fn eff_inferred(fuel: usize, env: Env, scope: List<Local>, d: usize, fd: FnD
     return match (r) {
         None -> None,
         Some(a) -> x_call_of(inst_bound(fuel, env, scope, d, fd, names, ps, a), a.args),
+    };
+}
+
+pub fn diverge_checked(ok: bool, t: Ty, inst: Inst, args: Box<List<MEff>>, x: MEff) -> MEff {
+    if (ok) {
+        return XCall(Inst { decl: inst.decl, args: concat(inst.args, single(t)) }, args);
+    }
+    return x;
+}
+
+// A call of a `-> !` function where a value of type t is expected: the call
+// of its instance at t (see diverge_func).
+pub fn diverge_call(decls: Decls, t: Ty, inst: Inst, args: Box<List<MEff>>, x: MEff) -> MEff {
+    return match (get(decls.fns, inst.decl)) {
+        None -> x,
+        Some(fd) -> diverge_checked(never_ret(fd) && length(inst.args) == length(concat(fd.impl_params, fd.params)), t, inst, args, x),
+    };
+}
+
+pub fn diverge_eff(decls: Decls, t: Ty, x: MEff) -> MEff {
+    return match (x) {
+        XPure(e) -> x,
+        XCall(inst, args) -> diverge_call(decls, t, inst, args, x),
+        XApply(op, l, r) -> x,
+        XNeg(a) -> x,
+        XNot(a) -> x,
+        XCast(c, a) -> x,
+        XIndex(sl, i) -> x,
+        XStruct(st, fs) -> x,
+        XVariant(vt, k, ps) -> x,
+        XMatch(sc, ety, mt, bs, vs) -> x,
+        XDivide(op, l, r) -> x,
+        XStride(sl) -> x,
+    };
+}
+
+// A match arm's value: a call of a `-> !` function (`None -> panic()`) is
+// its instance at the match's type.
+pub fn diverge_arm(decls: Decls, expected: core::option::Option<Ty>, x: core::option::Option<MEff>) -> core::option::Option<MEff> {
+    return match (x) {
+        None -> None,
+        Some(v) -> match (expected) {
+            None -> Some(v),
+            Some(t) -> Some(diverge_eff(decls, t, v)),
+        },
     };
 }
 
@@ -5168,7 +5411,7 @@ pub fn eff_arm_bound(fuel: usize, env: Env, expected: core::option::Option<Ty>, 
     }
     return match (bound) {
         None -> None,
-        Some(b) -> arm_eff(fuel, env, b, eff_of(minus(fuel, 1), env, b.scope, expected, value)),
+        Some(b) -> arm_eff(fuel, env, b, diverge_arm(env.decls, expected, eff_of(minus(fuel, 1), env, b.scope, expected, value))),
     };
 }
 // extract: mutual end
@@ -5935,10 +6178,39 @@ pub fn projection_func(ret: core::option::Option<Ty>, inst: Inst, decls: Decls) 
     };
 }
 
+pub fn param_effs(ps: List<MParam>) -> List<MEff> {
+    return match (ps) {
+        Nil -> empty(),
+        Cons(p, rest) -> cons(XPure(Local(p.id)), param_effs(unbox(rest))),
+    };
+}
+
+// The instance of a `-> !` function g at a value type t: the parameters
+// of g, the result t, and the body `g(params); return self(params);`. The
+// call of g does not return (Core traps in it, as `assert(false)` does in
+// core::panic::panic), so the recursive return is never reached; it only
+// gives the body a value of type t on every path.
+pub fn diverge_func(g: core::option::Option<MFunc>, inst: Inst) -> core::option::Option<MFunc> {
+    return match (g) {
+        None -> None,
+        Some(m) -> match (last_ty(inst.args)) {
+            None -> None,
+            Some(t) -> Some(MFunc { params: m.params, ret: RetOf(t), body: MThen(boxed(MDiscard(XCall(Inst { decl: inst.decl, args: init_tys(inst.args) }, boxed(param_effs(m.params))))), boxed(MReturnEval(XCall(inst, boxed(param_effs(m.params)))))) }),
+        },
+    };
+}
+
+pub fn read_decl_inst(fuel: usize, decls: Decls, fd: FnDecl, inst: Inst) -> core::option::Option<MFunc> {
+    if (diverges(fd, inst)) {
+        return diverge_func(read_fn(fuel, decls, fd, init_tys(inst.args)), inst);
+    }
+    return read_fn(fuel, decls, fd, inst.args);
+}
+
 pub fn read_inst(fuel: usize, decls: Decls, inst: Inst) -> core::option::Option<MFunc> {
     return match (get(decls.fns, inst.decl)) {
         None -> projection_func(projection_ret(fuel, decls, inst), inst, decls),
-        Some(fd) -> read_fn(fuel, decls, fd, inst.args),
+        Some(fd) -> read_decl_inst(fuel, decls, fd, inst),
     };
 }
 
@@ -6597,17 +6869,19 @@ pub fn close_funcs(fuel: usize, t: Tables, fs: List<MFunc>) -> core::option::Opt
 
 // ---------------------------------------------------------------- isize literals
 
-// laniusc gives an integer literal the type its context expects. In the
-// subset only isize needs this (the unsigned types' literals are written
-// `n as u64`): after monomorphization, an integer literal whose expected type
-// is isize becomes Cast(Isize, Int(n)), so n is below 2^31. The expected
+// laniusc gives an integer literal the type its context expects, and so
+// does the reading: after monomorphization, an integer literal Int(n) whose
+// expected type is isize becomes Cast(Isize, Int(n)), one expected unsigned
+// Unsigned(u, n), and `0` expected ptr Null. A literal of 2^31 or more was
+// read as a wide marker (wide_marker) and gets its type here too (wide_at,
+// neg_wide_at). The expected
 // types: a let's type, a local's or field's when stored to, a parameter's, the
 // function's result for return, a field's or payload's in a literal, a slice
 // element's in an index store, an arm's result type, Bool for conditions,
 // asserts and `!`. An operator's operands expect the type of whichever operand
 // has one (a literal has none), or else, for arithmetic, the operator's
 // expected type. The operand of `as`, an index and the heap operations'
-// operands expect nothing. A literal with no isize expectation stays Int(n).
+// operands expect nothing. A literal with no expectation stays Int(n).
 
 pub struct LocalTy {
     id: usize,
@@ -6628,8 +6902,16 @@ pub fn isize_ty(t: SrcType) -> bool {
     };
 }
 
-// An integer literal at its expected type: an unsigned type's literal, or
-// for isize the cast of the i32 literal.
+// `0` where a ptr is expected is the null pointer.
+pub fn null_at(k: i32, e: SrcExpr) -> SrcExpr {
+    if ((k as u32) == 0) {
+        return Null;
+    }
+    return e;
+}
+
+// An integer literal at its expected type: an unsigned type's literal, the
+// null pointer for `0` at ptr, or for isize the cast of the i32 literal.
 pub fn int_literal_at(t: SrcType, k: i32, e: SrcExpr) -> SrcExpr {
     return match (t) {
         I32 -> e,
@@ -6637,7 +6919,7 @@ pub fn int_literal_at(t: SrcType, k: i32, e: SrcExpr) -> SrcExpr {
         Uint(u) -> Unsigned(u, (k as u32) as u64),
         Struct(id, fields) -> e,
         Enum(id, variants) -> e,
-        Ptr -> e,
+        Ptr -> null_at(k, e),
         Slice(el) -> e,
         Unit -> e,
         Isize -> Cast(Isize, boxed(e)),
@@ -6803,6 +7085,117 @@ pub fn known_apply(op: SrcOp, a: core::option::Option<SrcType>, b: core::option:
     return either_ty(a, b);
 }
 
+// A cast's type; a wide literal (a cast to Unit) has none of its own.
+pub fn known_cast(t: SrcType) -> core::option::Option<SrcType> {
+    if (unit_ty(t)) {
+        return None;
+    }
+    return Some(t);
+}
+
+pub fn wide_uint_at(u: UintTy, n: u64, e: SrcExpr) -> SrcExpr {
+    if (n <= uint_mask(u)) {
+        return Unsigned(u, n);
+    }
+    return e;
+}
+
+pub fn wide_isize_at(n: u64, e: SrcExpr) -> SrcExpr {
+    if (n <= 9223372036854775807) {
+        return Cast(Isize, boxed(Unsigned(Uint64, n)));
+    }
+    return e;
+}
+
+// A wide literal n at its expected type: an unsigned type's literal when n
+// fits it, for isize (n below 2^63) the cast of the u64 literal n; else it
+// stays as read, and build rejects it.
+pub fn wide_at(want: core::option::Option<SrcType>, n: u64, e: SrcExpr) -> SrcExpr {
+    return match (want) {
+        None -> e,
+        Some(t) -> match (t) {
+            I32 -> e,
+            Bool -> e,
+            Uint(u) -> wide_uint_at(u, n, e),
+            Struct(id, fields) -> e,
+            Enum(id, variants) -> e,
+            Ptr -> e,
+            Slice(el) -> e,
+            Unit -> e,
+            Isize -> wide_isize_at(n, e),
+        },
+    };
+}
+
+pub fn neg_wide_i32(n: u64, e: SrcExpr) -> SrcExpr {
+    let low: i32 = 0 - 2147483647;
+    if (n == 2147483648) {
+        return Int(low - 1);
+    }
+    return e;
+}
+
+pub fn neg_wide_isize(n: u64, e: SrcExpr) -> SrcExpr {
+    if (n <= 9223372036854775808) {
+        return Cast(Isize, boxed(Unsigned(Uint64, (18446744073709551615 - n) + 1)));
+    }
+    return e;
+}
+
+// `-n` for a wide literal n: -2^31 as an i32 literal (expected i32, or
+// nothing), the cast of the u64 literal of its two's complement bits for
+// isize (n at most 2^63).
+pub fn neg_wide_at(want: core::option::Option<SrcType>, n: u64, e: SrcExpr) -> SrcExpr {
+    return match (want) {
+        None -> neg_wide_i32(n, e),
+        Some(t) -> match (t) {
+            I32 -> neg_wide_i32(n, e),
+            Bool -> e,
+            Uint(u) -> e,
+            Struct(id, fields) -> e,
+            Enum(id, variants) -> e,
+            Ptr -> e,
+            Slice(el) -> e,
+            Unit -> e,
+            Isize -> neg_wide_isize(n, e),
+        },
+    };
+}
+
+pub fn wide_inner(t: SrcType, x: SrcExpr) -> core::option::Option<u64> {
+    if (unit_ty(t)) {
+        return match (x) {
+            Int(k) -> None,
+            Boolean(b) -> None,
+            Unsigned(u, k) -> Some(k),
+            Local(id) -> None,
+            Field(id, j) -> None,
+            Negate(y) -> None,
+            Not(y) -> None,
+            Apply(op, a, b) -> None,
+            Cast(s, y) -> None,
+            Null -> None,
+        };
+    }
+    return None;
+}
+
+// The literal a wide marker holds, if e is one.
+pub fn wide_value(e: SrcExpr) -> core::option::Option<u64> {
+    return match (e) {
+        Int(k) -> None,
+        Boolean(b) -> None,
+        Unsigned(u, k) -> None,
+        Local(id) -> None,
+        Field(id, j) -> None,
+        Negate(x) -> None,
+        Not(x) -> None,
+        Apply(op, a, b) -> None,
+        Cast(t, x) -> wide_inner(t, unbox(x)),
+        Null -> None,
+    };
+}
+
 // An expression's type when it does not rest on literals.
 pub fn known_expr(locals: List<LocalTy>, e: SrcExpr) -> core::option::Option<SrcType> {
     return match (e) {
@@ -6814,7 +7207,8 @@ pub fn known_expr(locals: List<LocalTy>, e: SrcExpr) -> core::option::Option<Src
         Negate(x) -> known_expr(locals, unbox(x)),
         Not(x) -> Some(Bool),
         Apply(op, a, b) -> known_apply(op, known_expr(locals, unbox(a)), known_expr(locals, unbox(b))),
-        Cast(t, x) -> Some(t),
+        Cast(t, x) -> known_cast(t),
+        Null -> Some(Ptr),
     };
 }
 
@@ -6825,10 +7219,18 @@ pub fn lit_expr(locals: List<LocalTy>, want: core::option::Option<SrcType>, e: S
         Unsigned(u, k) -> e,
         Local(id) -> e,
         Field(id, j) -> e,
-        Negate(x) -> Negate(boxed(lit_expr(locals, want, unbox(x)))),
+        Negate(x) -> match (wide_value(unbox(x))) {
+            None -> Negate(boxed(lit_expr(locals, want, unbox(x)))),
+            Some(n) -> neg_wide_at(want, n, e),
+        },
         Not(x) -> Not(boxed(lit_expr(locals, Some(Bool), unbox(x)))),
         Apply(op, a, b) -> Apply(op, boxed(lit_expr(locals, operand_want(op, want, known_expr(locals, unbox(a)), known_expr(locals, unbox(b))), unbox(a))), boxed(lit_expr(locals, operand_want(op, want, known_expr(locals, unbox(a)), known_expr(locals, unbox(b))), unbox(b)))),
-        Cast(t, x) -> Cast(t, boxed(lit_expr(locals, None, unbox(x)))),
+        Cast(t, x) -> match (wide_value(e)) {
+            None -> Cast(t, boxed(lit_expr(locals, None, unbox(x)))),
+            Some(n) -> wide_at(want, n, e),
+        },
+
+        Null -> e,
     };
 }
 
@@ -6972,6 +7374,113 @@ pub fn lit_funcs(all: List<SrcFunc>, fs: List<SrcFunc>) -> List<SrcFunc> {
     };
 }
 
+// ---------------------------------------------------------------- wide literals left untyped
+
+// A wide literal that lit_funcs gave no type (see wide_marker) is rejected.
+pub fn wide_left(e: SrcExpr) -> bool {
+    return match (e) {
+        Int(k) -> false,
+        Boolean(b) -> false,
+        Unsigned(u, k) -> false,
+        Local(id) -> false,
+        Field(id, j) -> false,
+        Negate(x) -> wide_left(unbox(x)),
+        Not(x) -> wide_left(unbox(x)),
+        Apply(op, a, b) -> wide_left(unbox(a)) || wide_left(unbox(b)),
+        Cast(t, x) -> unit_ty(t) || wide_left(unbox(x)),
+        Null -> false,
+    };
+}
+
+pub fn wide_left_exprs(es: List<SrcExpr>) -> bool {
+    return match (es) {
+        Nil -> false,
+        Cons(e, rest) -> wide_left(e) || wide_left_exprs(unbox(rest)),
+    };
+}
+
+pub fn wide_left_arms(arms: List<SrcArm>) -> bool {
+    return match (arms) {
+        Nil -> false,
+        Cons(a, rest) -> wide_left(a.value) || wide_left_arms(unbox(rest)),
+    };
+}
+
+// extract: mutual begin
+pub fn wide_left_eff(x: SrcEff) -> bool {
+    return match (x) {
+        EPure(e) -> wide_left(e),
+        ECall(f, args) -> wide_left_effs(unbox(args)),
+        EApply(op, a, b) -> wide_left_eff(unbox(a)) || wide_left_eff(unbox(b)),
+        ENeg(a) -> wide_left_eff(unbox(a)),
+        ENot(a) -> wide_left_eff(unbox(a)),
+        ECast(t, a) -> wide_left_eff(unbox(a)),
+        EIndex(sl, i) -> wide_left_eff(unbox(i)),
+        EStruct(t, fs) -> wide_left_effs(unbox(fs)),
+        EVariant(t, k, ps) -> wide_left_effs(unbox(ps)),
+        EMatch(sc, ety, t, bs, vs) -> wide_left_eff(unbox(sc)) || wide_left_effs(unbox(vs)),
+        EDivide(op, a, b) -> wide_left_eff(unbox(a)) || wide_left_eff(unbox(b)),
+        EStride(sl) -> false,
+    };
+}
+
+pub fn wide_left_effs(xs: List<SrcEff>) -> bool {
+    return match (xs) {
+        Nil -> false,
+        Cons(x, rest) -> wide_left_eff(x) || wide_left_effs(unbox(rest)),
+    };
+}
+// extract: mutual end
+
+pub fn wide_left_stmt(s: SrcStmt) -> bool {
+    return match (s) {
+        Nop -> false,
+        Let(id, ty, e, body) -> wide_left(e) || wide_left_stmt(unbox(body)),
+        LetStruct(id, ty, es, body) -> wide_left_exprs(es) || wide_left_stmt(unbox(body)),
+        LetCall(id, ty, f, args, body) -> wide_left_exprs(args) || wide_left_stmt(unbox(body)),
+        LetEnum(id, ty, k, es, body) -> wide_left_exprs(es) || wide_left_stmt(unbox(body)),
+        LetMatch(id, ty, sc, eid, arms, body) -> wide_left_arms(arms) || wide_left_stmt(unbox(body)),
+        Set(id, e) -> wide_left(e),
+        SetField(id, j, e) -> wide_left(e),
+        SetCall(id, f, args) -> wide_left_exprs(args),
+        Then(a, b) -> wide_left_stmt(unbox(a)) || wide_left_stmt(unbox(b)),
+        If(c, a, b) -> wide_left(c) || wide_left_stmt(unbox(a)) || wide_left_stmt(unbox(b)),
+        While(c, body) -> wide_left(c) || wide_left_stmt(unbox(body)),
+        Return(e) -> wide_left(e),
+        LetAlloc(id, size, shift, body) -> wide_left(size) || wide_left_stmt(unbox(body)),
+        LetLoad(id, p, o, body) -> wide_left(p) || wide_left(o) || wide_left_stmt(unbox(body)),
+        SetByte(p, o, v) -> wide_left(p) || wide_left(o) || wide_left(v),
+        Free(p, size, shift) -> wide_left(p) || wide_left(size),
+        LetSlice(id, el, p, n, body) -> wide_left(p) || wide_left(n) || wide_left_stmt(unbox(body)),
+        LetIndex(id, ty, sl, i, body) -> wide_left(i) || wide_left_stmt(unbox(body)),
+        SetIndex(sl, i, v) -> wide_left(i) || wide_left(v),
+        LetEval(id, ty, x, body) -> wide_left_eff(x) || wide_left_stmt(unbox(body)),
+        SetEval(id, x) -> wide_left_eff(x),
+        IfEval(c, a, b) -> wide_left_eff(c) || wide_left_stmt(unbox(a)) || wide_left_stmt(unbox(b)),
+        WhileEval(c, body) -> wide_left_eff(c) || wide_left_stmt(unbox(body)),
+        ReturnEval(x) -> wide_left_eff(x),
+        Discard(x) -> wide_left_eff(x),
+        SetIndexEval(sl, i, v) -> wide_left_eff(i) || wide_left_eff(v),
+        SetFieldEval(id, j, x) -> wide_left_eff(x),
+        ReturnUnit -> false,
+        Assert(x) -> wide_left_eff(x),
+    };
+}
+
+pub fn wide_left_funcs(fs: List<SrcFunc>) -> bool {
+    return match (fs) {
+        Nil -> false,
+        Cons(g, rest) -> wide_left_stmt(g.body) || wide_left_funcs(unbox(rest)),
+    };
+}
+
+pub fn untyped_rejected(fs: List<SrcFunc>) -> core::option::Option<SrcProgram> {
+    if (wide_left_funcs(fs)) {
+        return None;
+    }
+    return Some(SrcProgram { funcs: fs });
+}
+
 // ---------------------------------------------------------------- the program
 
 pub fn build_closed(fuel: usize, decls: Decls, fns: List<Inst>, types: core::option::Option<List<Inst>>, funcs: List<MFunc>) -> core::option::Option<SrcProgram> {
@@ -6979,7 +7488,7 @@ pub fn build_closed(fuel: usize, decls: Decls, fns: List<Inst>, types: core::opt
         None -> None,
         Some(ts) -> match (close_funcs(fuel, Tables { decls: decls, fns: fns, types: ts }, funcs)) {
             None -> None,
-            Some(fs) -> Some(SrcProgram { funcs: lit_funcs(fs, fs) }),
+            Some(fs) -> untyped_rejected(lit_funcs(fs, fs)),
         },
     };
 }

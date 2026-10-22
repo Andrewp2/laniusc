@@ -864,7 +864,7 @@ the declared type's literal of that value: `Int` for `i32` (only
 the cast of the `u64` literal holding its two's complement bits (as the
 oracle writes them). Anything else (an expression, a value out of range) is
 rejected where the constant is used. A local may not be spelled like a
-function, type, variant or constant of its module. The case `constants`
+type, variant or constant of its module (a function, since 10-22, it may). The case `constants`
 reads `stdlib/std/vec.lani`'s three constants as written there (in a
 module `std::vec`): `MAX_CAPACITY: i32 = 2147483647` is `Int(2147483647)`,
 `MAX_BYTES: usize = 2147483647` is `Unsigned(Usize, 2147483647)` and
@@ -1034,10 +1034,8 @@ from the result type). A case directory holding a file named `compiles`
 also checks that `compileSource` accepts the program read.
 `slice_return_compiles` does: a generic function that returns a slice, at
 `i32` and a struct, and a caller that indexes the result. `slice_return`
-does not, because `compileSource` rejects `Let(.., Ptr, Int(0))`: `lowerAs`
-types `Int(0)` as `i32`, and only a `ptr` local or `ptr + usize` types as
-`ptr` (`Cast(Ptr, ..)` is rejected too). With that literal replaced by a
-parameter, its four functions compile. Results, 2026-10-22: seeds 31 and
+did not at first, because `compileSource` rejected `Let(.., Ptr, Int(0))`;
+it compiles since `0` expected at `ptr` reads as `Null` (below). Results, 2026-10-22: seeds 31 and
 32, 400 programs, all read as expected, 48/48 mutants rejected; `--generic`
 seed 31, 200 programs, 24/24; 22 of 22 cases.
 
@@ -1062,10 +1060,9 @@ temporary before the statement would move its effects ahead of the
 statement's earlier ones, and has no place inside a `while` condition or a
 match arm; a projection call keeps Core's order. A call whose arguments are
 all pure keeps its statement form (`LetCall`, `SetCall`) however it is
-reached. The case `chains` tests these. `compileSource` rejects it: an
-aggregate field read inside an effectful expression,
-`ECall(f, [EPure(Field(x, j))])` with field j a struct, does not lower,
-while `LetCall(.., f, [Field(x, j)], ..)` does.
+reached. The case `chains` tests these, and compiles since the front pass
+copies a struct local's aggregate field in an effectful expression
+(`eval_field_copy`).
 
 Type arguments from the expected type and the arguments in order. A generic
 call's type parameters are bound first by matching its result type with the
@@ -1101,15 +1098,53 @@ parameters at `i32`, with `core::option`, `core::mem`, `core::panic` and
 | variants by enum, slice returns | 242 of 462 | 449 of 796 |
 | fields and methods of any value, argument inference | 320 of 462 | 495 of 796 |
 | match arms in any order | 431 of 462 | 784 of 796 |
+| aliases, wide literals, locals spelled like functions | 469 of 471 | 869 of 869 |
 
-What is left: literals of 2^31 and above outside constants (`Lit(4294967296)`,
-`uint_mask`), locals spelled like a function (`kid`, `sigs`, `arities`,
-`length`), and the shifts in `le32` and `le64`.
+The census of the last row (the sources as of 10-22, `frontend.lani` with
+its new functions) reads every function but `le32` and `le64`, whose shifts
+are being added separately. `wellNamed` holds for both files: variants are
+scoped by their enum, and `Some`/`None` resolve to core::option's through
+the import. With them loaded, core::option reads 15 of 21 (the rest need
+core::result or the trait call `T::eq`), alloc::allocator 29 of 32 before
+the `ptr` constant fix below, core::mem and core::panic all.
+
+Type aliases, wide literals, null pointers, `!` arms (10-22). Each closes a
+gap the stdlib oracle or the census found:
+- `type A<P..> = T;` (no `where` clause) is an alias: a type path that
+  names no type parameter, primitive or declared type names the alias of
+  its module (`m::A` another module's), read in the alias's module with its
+  parameters standing for the arguments; a cast may name an alias of a
+  scalar (`x as PathByte`). Alias names count with the module's type names
+  for distinctness. A cycle runs out of fuel (`reject_alias_cycle`). Case
+  `type_alias`.
+- an integer literal of 2^31 to 2^64 - 1 outside a constant reads as a
+  marker, `Cast(Unit, Unsigned(Uint64, n))` (no source cast names `Unit`),
+  which `lit_funcs` gives its expected type: `Unsigned(u, n)` when n fits,
+  the `u64` cast for `isize` below 2^63, `Int(-2^31)` for `-2147483648` at
+  `i32`, the two's complement cast for `-n` at `isize`; a marker left
+  untyped rejects the program (`wide_left_funcs`). Cases `wide_literals`,
+  `reject_wide_i32`, and `reject_isize_big` (now 2^63 at `isize`).
+- `0` expected at `ptr` (a `let`, an operand beside a `ptr`, a `ptr`
+  constant) is `SrcExpr.Null`, new in the front pass: Core's `.pointer 0`,
+  lowered to `Lit(0)` at `Ptr` (`lower_sound`, `lower_typed`, `lower_below`,
+  `eval_state` cover it). So `core::mem::size_of` compiles at `i32` and a
+  struct (`size_of_compiles`; at `u8` it needs raw `u8` views, which the
+  front pass does not have) and `slice_return` compiles. Case
+  `null_pointer`.
+- a local may be spelled like a function (`let kid: CTree = kid(c, 0)`): a
+  function is only named by a call. Case `local_like_fn`.
+- `i32::hash(v)`: a path prefix that is a primitive type calls the method
+  of the impl for that type, as for a type parameter. Case `scalar_method`.
+- a match arm whose value calls a `-> !` function g (`None ->
+  core::panic::panic()`), in a match of value type t, calls g's instance at
+  t: an instance with one type argument more, whose body is `g(params);
+  return self(params);`. Core traps in g, so the return is not reached; it
+  gives the body a value of type t on every path. Case `panic_arm`
+  (`core::option::unwrap`, which compiles).
 
 What it does not read yet:
-- shifts and `&self`, which have no `SrcProgram` form;
+- shifts (being added) and `&self`, which have no `SrcProgram` form;
 - `=>` match arms, and block or `if` arms;
-- integer literals of 2^31 and above outside constants;
 - methods of generic impls called as `T::m` where `T` is not a type
   parameter (`Vec::new()`), and trait-generic code that relies on bounds;
 - indexing a slice that is not a local.

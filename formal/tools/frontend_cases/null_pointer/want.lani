@@ -1,0 +1,8 @@
+fn none_of(p: ptr) -> bool {
+    return p == 0;
+}
+
+fn top(n: i32) -> bool {
+    let q: ptr = 0;
+    return none_of(q) && q == 0;
+}

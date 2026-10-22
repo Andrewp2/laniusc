@@ -1,4 +1,4 @@
 fn top(n: i32) -> isize {
-    let x: isize = 3000000000;
+    let x: isize = 9223372036854775808;
     return x;
 }

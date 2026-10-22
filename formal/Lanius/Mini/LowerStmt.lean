@@ -1025,6 +1025,7 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
   induction e with
   | int x => intro t lowered; simp only [SrcExpr.lower, Option.some.injEq] at lowered; subst lowered; trivial
   | boolean x => intro t lowered; simp only [SrcExpr.lower, Option.some.injEq] at lowered; subst lowered; trivial
+  | null => intro t lowered; simp only [SrcExpr.lower, Option.some.injEq] at lowered; subst lowered; trivial
   | unsigned kind x =>
     intro t lowered
     simp only [SrcExpr.lower, lowerUnsigned] at lowered

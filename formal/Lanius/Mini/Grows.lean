@@ -300,7 +300,7 @@ theorem SrcExpr.eval_state (e : SrcExpr) {P : Core.Program} :
     ∀ {fuel : Nat} {st : State} {v : Value} {st' : State},
       evalExpr fuel P st e.toCore = .done v st' → st' = st := by
   induction e with
-  | int _ | boolean _ | unsigned _ _ =>
+  | int _ | boolean _ | unsigned _ _ | null =>
     intro fuel st v st' run
     cases fuel with
     | zero => simp [evalExpr] at run

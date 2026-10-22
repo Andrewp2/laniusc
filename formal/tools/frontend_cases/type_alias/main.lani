@@ -1,0 +1,25 @@
+module app::main;
+
+// Type aliases: of a scalar, of another alias, of a struct, and one from
+// another module, as parameter, result, let and cast types.
+type Count = u32;
+type Total = Count;
+type Flag = bool;
+
+struct Point { x: i32, y: i32 }
+
+type Spot = Point;
+
+fn bump(c: Count, f: Flag) -> Total {
+    if (f) {
+        return c + (1 as u32);
+    }
+    return c;
+}
+
+fn run(n: i32, b: util::bytes::Byte) -> i32 {
+    let p: Spot = Point { x: n, y: 2 };
+    let c: Total = bump((n as Count), true);
+    let k: util::bytes::Byte = util::bytes::low(b);
+    return p.x + (c as i32) + (k as i32);
+}

@@ -1,0 +1,12 @@
+module app::main;
+
+struct W { a: i32, b: bool }
+
+fn top(n: i32) -> i32 {
+    let p: ptr = alloc::allocator::alloc((64 as usize), (8 as usize));
+    let s: [i32] = slice_from_raw_parts(p, 4);
+    let st: isize = slice_stride(s);
+    let a: usize = core::mem::size_of<i32>();
+    let b: usize = core::mem::size_of<W>();
+    return (st as i32) + (a as i32) + (b as i32);
+}

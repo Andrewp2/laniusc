@@ -1,0 +1,13 @@
+// The null pointer: `0` where a ptr is expected, in a constant and bare.
+type Pointer = ptr;
+
+const NOWHERE: Pointer = 0;
+
+fn none_of(p: Pointer) -> bool {
+    return p == NOWHERE;
+}
+
+fn top(n: i32) -> bool {
+    let q: ptr = 0;
+    return none_of(q) && q == 0;
+}

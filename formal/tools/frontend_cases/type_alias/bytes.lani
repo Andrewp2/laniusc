@@ -1,0 +1,7 @@
+module util::bytes;
+
+pub type Byte = u8;
+
+pub fn low(v: Byte) -> Byte {
+    return v & (15 as Byte);
+}
