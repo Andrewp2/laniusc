@@ -575,6 +575,11 @@ of `compiler.lani`, before `compile_declared`, and both are extracted.
   the branch of an `if` on a constant; drops `skip`, `x = x`, an `if` with two
   empty branches and a `while` whose condition is 0. It leaves each division
   in place (only its operands are optimized), so one that traps still traps.
+  Along each sequence it propagates copies and constants: after `x = y` or
+  `x = 5`, later reads of `x` read `y` or `5` until `x` or `y` is written
+  (branches, loops and calls forget every fact). And it drops `x = e` when
+  the optimized rest of the sequence kills `x`, that is writes it before
+  reading it on every path, or returns without reading it.
 - **Validator** (`validate original optimized`, about 590 lines, most of them
   exhaustive matches on the other statement). A structural walk of both
   programs: same functions with the same params, results and locals, and
@@ -584,7 +589,13 @@ of `compiler.lani`, before `compile_declared`, and both are extracted.
   computes for the original, or has the same shape with agreeing operands,
   or is the operand an identity keeps. Statements agree by shape, or when a
   statement that does nothing became `skip`, or an `if` on a constant
-  became its branch, or both branches agree with the result.
+  became its branch, or both branches agree with the result. The walk
+  carries a list of facts (slot = literal or slot) that hold on entry:
+  `Stmt.factsAfter` computes them along a sequence, and each original
+  expression is read with them substituted (`Expr.subst`) before it is
+  compared. A sequence `x = e; rest` also agrees with `other` when
+  `other.kills x` (`Stmt.kills`, with `Stmt.ignores` for "does not read")
+  and `rest` agrees with `other` under the facts after `x = e`.
 - **Pipeline** (`compile_optimized`): optimize, keep the result when
   `validate` accepts it and it compiles, and otherwise compile the original
   program. `compile_source` calls it.
@@ -594,14 +605,24 @@ of `compiler.lani`, before `compile_declared`, and both are extracted.
 ```text
 Expr.agrees_eval          : a.agrees b = true → ∀ env, b.eval env = a.eval env
 Exec.agrees               : funcsAgree p.funcs q.funcs = true → Exec p d env h s out →
-                              ∀ s', s.agrees s' = true → Exec q d env h s' out
+                              ∀ facts s', Facts.Hold env facts → s.agrees facts s' = true →
+                              Exec q d env h s' out
+Exec.killed               : s.kills i = true → Exec p d env h s out →
+                              ∀ env2, Env.Except i env env2 → Exec p d env2 h s out
 Returns.validated         : validate p q = true → p.Returns d f args h v after → q.Returns d f args h v after
 compileOptimized_correct  : compileProgram_correct's statement, with compileOptimized
 ```
 
 `Exec.agrees` is induction on the original's derivation; a call uses the
 induction hypothesis on the callee's body derivation, since the optimized
-callee's body agrees with it. The outcome (environment, heap, results) and
+callee's body agrees with it (with no facts, as a loop body is).
+`Expr.subst_eval` gives the substituted expression the original's value
+where the facts hold, and `Stmt.factsAfter_hold` keeps them holding along a
+sequence. For a dropped `x = e`, the induction hypothesis runs the optimized
+rest from the state after `x = e`, and `Exec.killed` moves that run to the
+state before it, which differs only at `x`; it uses `Exec.ignores` (a
+statement that does not read `x` keeps two such states differing only at
+`x`). The outcome (environment, heap, results) and
 the call depth are the same, so the downstream theorem needs nothing new.
 `compileSource_correct` keeps its statement and premises; its proof uses
 `compileOptimized_correct` where it used `compileProgram_correct`, so the top
@@ -614,7 +635,7 @@ orders unsigned exactly as `low a` orders signed (`key_lt`, `key_le`). Axioms:
 
 | file | lines | check (s) | role |
 |---|---:|---:|---|
-| `Validate` | 680 | 1.3 | word arithmetic, constants and identities, expression and statement simulation, the pipeline theorem |
+| `Validate` | 1057 | 1.7 | word arithmetic, constants and identities, facts and dead slots, expression and statement simulation, the pipeline theorem |
 
 The test:
 
@@ -639,6 +660,18 @@ laniusc is not used. 2026-10-21, seed 2, 1,000 of each:
 and 8,000 native calls of the optimized `compileSource` images, no
 disagreements with the reference. The front pass gains more because its
 casts, masks and literal operands lower to constant subexpressions.
+
+With copy and constant propagation and dead stores (2026-10-22, seed 2,
+1,000 of each; the generators have grown since, so the unoptimized sizes
+differ from the table above), on the same programs:
+
+| programs | unoptimized | first pass | both passes | mutants rejected |
+|---|---:|---:|---:|---:|
+| mini IR | 395,509 | 362,767 | 360,995 | 899 / 899 |
+| front pass | 6,611,872 | 4,722,125 | 4,165,929 (11.8% under the first pass) | 1,000 / 1,000 |
+
+Every change accepted (661 and 998), and 8,000 native calls agree with the
+reference.
 
 laniusc builds the new Lanius code: `fn_difftest.py` (265 functions, 5,300
 calls as four shards) finds no differences from the extracted Lean, and

@@ -3682,6 +3682,78 @@ def divideAgrees (word : Word) (operation : DivOp) (target : Nat) (left : Expr) 
   | .storeWord w a v => false
   | .divide w o t l r => decide (Word.number word = Word.number w) && decide (DivOp.number operation = DivOp.number o) && decide (target = t) && Expr.agrees left l && Expr.agrees right r
 
+/-- Copy and constant propagation. A fact says that a slot holds a literal or another slot's value. The validator reads each expression of the original program with the facts known before it substituted, and checks the optimized expression against that. -/
+structure Fact where
+  slot : Nat
+  value : Expr
+  deriving DecidableEq, Repr
+
+def factValue (facts : List Fact) (index : Nat) : Expr :=
+  match facts with
+  | [] => Expr.var index
+  | fact :: rest =>
+    if fact.slot = index then
+      fact.value
+    else
+      factValue rest index
+
+/-- The expression reads slot index. -/
+def Expr.mentions (self : Expr) (index : Nat) : Bool :=
+  match self with
+  | .lit value => false
+  | .var other => decide (other = index)
+  | .neg operand => Expr.mentions operand index
+  | .binary word operation left right => Expr.mentions left index || Expr.mentions right index
+  | .compare word operation left right => Expr.mentions left index || Expr.mentions right index
+
+/-- Each slot with a fact replaced by the fact's value. -/
+def Expr.subst (self : Expr) (facts : List Fact) : Expr :=
+  match self with
+  | .lit value => Expr.lit value
+  | .var index => factValue facts index
+  | .neg operand => Expr.neg (Expr.subst operand facts)
+  | .binary word operation left right => Expr.binary word operation (Expr.subst left facts) (Expr.subst right facts)
+  | .compare word operation left right => Expr.compare word operation (Expr.subst left facts) (Expr.subst right facts)
+
+/-- A literal or a slot: cheap to copy into each use. -/
+def Expr.isAtom (self : Expr) : Bool :=
+  match self with
+  | .lit value => true
+  | .var index => true
+  | .neg operand => false
+  | .binary word operation left right => false
+  | .compare word operation left right => false
+
+def substAll (values : List Expr) (facts : List Fact) : List Expr :=
+  match values with
+  | [] => []
+  | value :: rest => Expr.subst value facts :: substAll rest facts
+
+def mentionsAny (values : List Expr) (index : Nat) : Bool :=
+  match values with
+  | [] => false
+  | value :: rest => Expr.mentions value index || mentionsAny rest index
+
+/-- The facts that still hold after slot index is written. -/
+def kill (facts : List Fact) (index : Nat) : List Fact :=
+  match facts with
+  | [] => []
+  | fact :: rest =>
+    let tail : List Fact := kill rest index
+    if decide (fact.slot ≠ index) && !(Expr.mentions fact.value index) then
+      fact :: tail
+    else
+      tail
+
+/-- The facts after index = value. -/
+def assigned (facts : List Fact) (index : Nat) (value : Expr) : List Fact :=
+  let known : Expr := Expr.subst value facts
+  let rest : List Fact := kill facts index
+  if Expr.isAtom known && !(Expr.mentions known index) then
+    ({ slot := index, value := known } : Fact) :: rest
+  else
+    rest
+
 def Stmt.isSkip (self : Stmt) : Bool :=
   match self with
   | .skip => true
@@ -3698,16 +3770,80 @@ def Stmt.isSkip (self : Stmt) : Bool :=
   | .storeWord w a v => false
   | .divide w o t l r => false
 
-/-- other ends every run of this statement the same way: the same shape with agreeing expressions, or a statement dropped because it does nothing (skip, x = x, a loop whose condition is 0), or a branch chosen because its condition is a constant or both branches agree with other. -/
-def Stmt.agrees (self : Stmt) (other : Stmt) : Bool :=
+/-- The facts that hold after a run of this statement that ends normally, given facts that hold before it. Branches, loops and calls forget them all. -/
+def Stmt.factsAfter (self : Stmt) (facts : List Fact) : List Fact :=
+  match self with
+  | .skip => facts
+  | .assign index value => assigned facts index value
+  | .seq first second => Stmt.factsAfter second (Stmt.factsAfter first facts)
+  | .ite c t e => []
+  | .loop c b => []
+  | .call t n f a => []
+  | .ret v => []
+  | .alloc target sh sz => kill facts target
+  | .loadByte target a => kill facts target
+  | .storeByte a v => facts
+  | .loadWord w target a => kill facts target
+  | .storeWord w a v => facts
+  | .divide w o target l r => kill facts target
+
+/-- No run of this statement reads slot index: runs from two states that differ only at index end in states that differ only at index. -/
+def Stmt.ignores (self : Stmt) (index : Nat) : Bool :=
+  match self with
+  | .skip => true
+  | .assign i v => !(Expr.mentions v index)
+  | .seq f s => Stmt.ignores f index && Stmt.ignores s index
+  | .ite c t e => !(Expr.mentions c index) && Stmt.ignores t index && Stmt.ignores e index
+  | .loop c b => !(Expr.mentions c index) && Stmt.ignores b index
+  | .call t n f a => !(mentionsAny a index)
+  | .ret v => !(mentionsAny v index)
+  | .alloc t sh sz => !(Expr.mentions sz index)
+  | .loadByte t a => !(Expr.mentions a index)
+  | .storeByte a v => !(Expr.mentions a index) && !(Expr.mentions v index)
+  | .loadWord w t a => !(Expr.mentions a index)
+  | .storeWord w a v => !(Expr.mentions a index) && !(Expr.mentions v index)
+  | .divide w o t l r => !(Expr.mentions l index) && !(Expr.mentions r index)
+
+/-- Every run of this statement writes slot index before reading it, or returns without reading it: the value index holds on entry is dead. -/
+def Stmt.kills (self : Stmt) (index : Nat) : Bool :=
+  match self with
+  | .skip => false
+  | .assign i v => decide (i = index) && !(Expr.mentions v index)
+  | .seq f s => Stmt.kills f index || Stmt.ignores f index && Stmt.kills s index
+  | .ite c t e => !(Expr.mentions c index) && Stmt.kills t index && Stmt.kills e index
+  | .loop c b => false
+  | .call t n f a => false
+  | .ret v => !(mentionsAny v index)
+  | .alloc t sh sz => false
+  | .loadByte t a => false
+  | .storeByte a v => false
+  | .loadWord w t a => false
+  | .storeWord w a v => false
+  | .divide w o t l r => false
+
+/-- other ends every run of this statement the same way, when facts hold on entry: the same shape with agreeing expressions (each original one read with the facts substituted), or a statement dropped because it does nothing (skip, x = x, a loop whose condition is 0) or because it stores a slot the rest kills, or a branch chosen because its condition is a constant or both branches agree with other. -/
+def Stmt.agrees (self : Stmt) (facts : List Fact) (other : Stmt) : Bool :=
   match self with
   | .skip => Stmt.isSkip other
-  | .assign index value => assignAgrees index value other
+  | .assign index value => assignAgrees index (Expr.subst value facts) other
   | .seq first second =>
-    Stmt.agrees first Stmt.skip && Stmt.agrees second other || Stmt.agrees second Stmt.skip && Stmt.agrees first other || (match other with
+    Stmt.agrees first facts Stmt.skip && Stmt.agrees second (Stmt.factsAfter first facts) other || Stmt.agrees second (Stmt.factsAfter first facts) Stmt.skip && Stmt.agrees first facts other || (match first with
+     | .skip => false
+     | .assign index value => Stmt.kills other index && Stmt.agrees second (assigned facts index value) other
+     | .seq f s => false
+     | .ite c t e => false
+     | .loop c b => false
+     | .call t n f a => false
+     | .ret v => false
+     | .alloc t sh sz => false
+     | .loadByte t a => false
+     | .storeByte a v => false
+     | .loadWord w t a => false
+     | .storeWord w a v => false
+     | .divide w o t l r => false) || (match other with
      | .skip => false
      | .assign i v => false
-     | .seq f s => Stmt.agrees first f && Stmt.agrees second s
+     | .seq f s => Stmt.agrees first facts f && Stmt.agrees second (Stmt.factsAfter first facts) s
      | .ite c t e => false
      | .loop c b => false
      | .call t n f a => false
@@ -3719,14 +3855,15 @@ def Stmt.agrees (self : Stmt) (other : Stmt) : Bool :=
      | .storeWord w a v => false
      | .divide w o t l r => false)
   | .ite condition thenBranch elseBranch =>
-    Stmt.agrees thenBranch other && Stmt.agrees elseBranch other || (let known : Option (BitVec 64) := Expr.constant condition
+    Stmt.agrees thenBranch facts other && Stmt.agrees elseBranch facts other || (let known : Option (BitVec 64) := Expr.constant (Expr.subst condition facts)
      match known with
-     | some v => decide (v = 0) && Stmt.agrees elseBranch other || decide (v ≠ 0) && Stmt.agrees thenBranch other
-     | none => false) || (match other with
+     | some v => decide (v = 0) && Stmt.agrees elseBranch facts other || decide (v ≠ 0) && Stmt.agrees thenBranch facts other
+     | none => false) || (let test : Expr := Expr.subst condition facts
+     match other with
      | .skip => false
      | .assign i v => false
      | .seq f s => false
-     | .ite c t e => Expr.agrees condition c && Stmt.agrees thenBranch t && Stmt.agrees elseBranch e
+     | .ite c t e => Expr.agrees test c && Stmt.agrees thenBranch facts t && Stmt.agrees elseBranch facts e
      | .loop c b => false
      | .call t n f a => false
      | .ret v => false
@@ -3742,7 +3879,7 @@ def Stmt.agrees (self : Stmt) (other : Stmt) : Bool :=
      | .assign i v => false
      | .seq f s => false
      | .ite c t e => false
-     | .loop c b => Expr.agrees condition c && Stmt.agrees body b
+     | .loop c b => Expr.agrees condition c && Stmt.agrees body [] b
      | .call t n f a => false
      | .ret v => false
      | .alloc t sh sz => false
@@ -3751,17 +3888,17 @@ def Stmt.agrees (self : Stmt) (other : Stmt) : Bool :=
      | .loadWord w t a => false
      | .storeWord w a v => false
      | .divide w o t l r => false)
-  | .call target count callee args => callAgrees target count callee args other
-  | .ret values => retAgrees values other
-  | .alloc target shift size => allocAgrees target shift size other
-  | .loadByte target address => loadByteAgrees target address other
-  | .storeByte address value => storeByteAgrees address value other
-  | .loadWord width target address => loadWordAgrees width target address other
-  | .storeWord width address value => storeWordAgrees width address value other
-  | .divide word operation target left right => divideAgrees word operation target left right other
+  | .call target count callee args => callAgrees target count callee (substAll args facts) other
+  | .ret values => retAgrees (substAll values facts) other
+  | .alloc target shift size => allocAgrees target shift (Expr.subst size facts) other
+  | .loadByte target address => loadByteAgrees target (Expr.subst address facts) other
+  | .storeByte address value => storeByteAgrees (Expr.subst address facts) (Expr.subst value facts) other
+  | .loadWord width target address => loadWordAgrees width target (Expr.subst address facts) other
+  | .storeWord width address value => storeWordAgrees width (Expr.subst address facts) (Expr.subst value facts) other
+  | .divide word operation target left right => divideAgrees word operation target (Expr.subst left facts) (Expr.subst right facts) other
 
 def Func.agrees (self : Func) (other : Func) : Bool :=
-  decide (self.params = other.params) && decide (self.results = other.results) && decide (self.locals = other.locals) && Stmt.agrees self.body other.body
+  decide (self.params = other.params) && decide (self.results = other.results) && decide (self.locals = other.locals) && Stmt.agrees self.body [] other.body
 
 def funcsAgree (funcs : List Func) (others : List Func) : Bool :=
   match funcs with
@@ -3886,26 +4023,49 @@ def optimizeLoop (condition : Expr) (body : Stmt) : Stmt :=
   | some v => loopUnlessZero v condition body
   | none => Stmt.loop condition body
 
-def Stmt.optimize (self : Stmt) : Stmt :=
+/-- first = index = value is dead when rest kills index. -/
+def Stmt.deadBefore (self : Stmt) (rest : Stmt) : Bool :=
+  match self with
+  | .skip => false
+  | .assign index value => Stmt.kills rest index
+  | .seq f s => false
+  | .ite c t e => false
+  | .loop c b => false
+  | .call t n f a => false
+  | .ret v => false
+  | .alloc t sh sz => false
+  | .loadByte t a => false
+  | .storeByte a v => false
+  | .loadWord w t a => false
+  | .storeWord w a v => false
+  | .divide w o t l r => false
+
+/-- facts hold on entry: each expression is read with them substituted. -/
+def Stmt.optimize (self : Stmt) (facts : List Fact) : Stmt :=
   match self with
   | .skip => Stmt.skip
-  | .assign index value => optimizeAssign index (Expr.optimize value)
-  | .seq first second => optimizeSeq (Stmt.optimize first) (Stmt.optimize second)
-  | .ite condition thenBranch elseBranch => optimizeIte (Expr.optimize condition) (Stmt.optimize thenBranch) (Stmt.optimize elseBranch)
-  | .loop condition body => optimizeLoop (Expr.optimize condition) (Stmt.optimize body)
-  | .call target count callee args => Stmt.call target count callee (optimizeAll args)
-  | .ret values => Stmt.ret (optimizeAll values)
-  | .alloc target shift size => Stmt.alloc target shift (Expr.optimize size)
-  | .loadByte target address => Stmt.loadByte target (Expr.optimize address)
-  | .storeByte address value => Stmt.storeByte (Expr.optimize address) (Expr.optimize value)
-  | .loadWord width target address => Stmt.loadWord width target (Expr.optimize address)
-  | .storeWord width address value => Stmt.storeWord width (Expr.optimize address) (Expr.optimize value)
-  | .divide word operation target left right => Stmt.divide word operation target (Expr.optimize left) (Expr.optimize right)
+  | .assign index value => optimizeAssign index (Expr.optimize (Expr.subst value facts))
+  | .seq first second =>
+    (let rest : Stmt := Stmt.optimize second (Stmt.factsAfter first facts)
+     if Stmt.deadBefore first rest then
+       rest
+     else
+       optimizeSeq (Stmt.optimize first facts) rest)
+  | .ite condition thenBranch elseBranch => optimizeIte (Expr.optimize (Expr.subst condition facts)) (Stmt.optimize thenBranch facts) (Stmt.optimize elseBranch facts)
+  | .loop condition body => optimizeLoop (Expr.optimize condition) (Stmt.optimize body [])
+  | .call target count callee args => Stmt.call target count callee (optimizeAll (substAll args facts))
+  | .ret values => Stmt.ret (optimizeAll (substAll values facts))
+  | .alloc target shift size => Stmt.alloc target shift (Expr.optimize (Expr.subst size facts))
+  | .loadByte target address => Stmt.loadByte target (Expr.optimize (Expr.subst address facts))
+  | .storeByte address value => Stmt.storeByte (Expr.optimize (Expr.subst address facts)) (Expr.optimize (Expr.subst value facts))
+  | .loadWord width target address => Stmt.loadWord width target (Expr.optimize (Expr.subst address facts))
+  | .storeWord width address value => Stmt.storeWord width (Expr.optimize (Expr.subst address facts)) (Expr.optimize (Expr.subst value facts))
+  | .divide word operation target left right => Stmt.divide word operation target (Expr.optimize (Expr.subst left facts)) (Expr.optimize (Expr.subst right facts))
 
 def optimizeFuncs (funcs : List Func) : List Func :=
   match funcs with
   | [] => []
-  | func :: rest => ({ params := func.params, results := func.results, locals := func.locals, body := Stmt.optimize func.body } : Func) :: optimizeFuncs rest
+  | func :: rest => ({ params := func.params, results := func.results, locals := func.locals, body := Stmt.optimize func.body [] } : Func) :: optimizeFuncs rest
 
 def optimizeProgram (prog : Program) : Program :=
   ({ funcs := optimizeFuncs prog.funcs } : Program)
