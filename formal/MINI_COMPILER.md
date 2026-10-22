@@ -614,12 +614,27 @@ minutes, almost all of it in the Lean lexer under `#eval`. Comparing
 `SrcProgram`s as elaborated Lean terms was much slower, so the test compares
 a printed form of the programs instead.
 
+2026-10-22, with the heap and slice constructs back in the generator
+(`oracle.SLICES`, half the allocations freed with `dealloc`) and every other
+`x = x op e` printed as `x op= e`: 400 programs (seeds 1 and 2), 248,000
+tokens and 2.1 million tree nodes, all read as expected, no lexer
+disagreements, 48 of 48 mutants rejected.
+
 laniusc also compiles `frontend.lani` itself: with the module line changed and a
 `main` that returns the grammar's length, the binary exits with 318 mod 256.
 A native difftest of `front_end` is not written yet.
 
+It reads the heap and raw slice constructs: `alloc::allocator::alloc(size,
+align)` in a `let` of type `ptr` is `LetAlloc` and `alloc::allocator::dealloc(p,
+size, align);` is `Free`, with the alignment a literal power of two (its
+exponent is the shift); `slice_from_raw_parts(p, n)` in a `let` of type `[T]`
+is `LetSlice`; `let x: T = s[i];` is `LetIndex` and `s[i] = v;` is
+`SetIndex`. `p + n` and `p - n` are ordinary `Apply`s. The stdlib has no
+byte load or store function, so `LetLoad` and `SetByte` have no spelling.
+Compound assignments `x op= e` and `x.f op= e`, for `+ - * & | ^`, read as
+`x = x op e` and `x.f = x.f op e`.
+
 What it does not read yet:
-- the heap and raw slice constructs;
 - generics, modules and `impl`;
 - `=>` match arms, and block or `if` arms;
 - integer literals of 2^31 and above.

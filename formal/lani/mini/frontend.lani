@@ -614,7 +614,32 @@ pub fn spelled(a: List<usize>, b: List<usize>) -> bool {
     return same_text(a, b);
 }
 
-// i32, bool, u8, u32, u64, usize
+pub fn text_ptr() -> List<usize> {
+    let t: List<usize> = cons(112, cons(116, single(114)));
+    return t;
+}
+
+pub fn text_alloc() -> List<usize> {
+    let t: List<usize> = cons(97, cons(108, cons(108, cons(111, single(99)))));
+    return t;
+}
+
+pub fn text_allocator() -> List<usize> {
+    let t: List<usize> = cons(97, cons(108, cons(108, cons(111, cons(99, cons(97, cons(116, cons(111, single(114)))))))));
+    return t;
+}
+
+pub fn text_dealloc() -> List<usize> {
+    let t: List<usize> = cons(100, cons(101, cons(97, cons(108, cons(108, cons(111, single(99)))))));
+    return t;
+}
+
+pub fn text_slice_from_raw_parts() -> List<usize> {
+    let t: List<usize> = cons(115, cons(108, cons(105, cons(99, cons(101, cons(95, cons(102, cons(114, cons(111, cons(109, cons(95, cons(114, cons(97, cons(119, cons(95, cons(112, cons(97, cons(114, cons(116, single(115))))))))))))))))))));
+    return t;
+}
+
+// i32, bool, u8, u32, u64, usize, ptr
 pub fn primitive(name: List<usize>) -> core::option::Option<SrcType> {
     // Typed lets, so that laniusc reads the literals as usize.
     let i32_text: List<usize> = cons(105, cons(51, single(50)));
@@ -640,6 +665,9 @@ pub fn primitive(name: List<usize>) -> core::option::Option<SrcType> {
     }
     if (spelled(name, usize_text)) {
         return Some(Uint(Usize));
+    }
+    if (spelled(name, text_ptr())) {
+        return Some(Ptr);
     }
     return None;
 }
@@ -932,12 +960,26 @@ pub fn func_body(ps: Params, r: SrcType, body: core::option::Option<SrcStmt>) ->
     };
 }
 
-// The type a type expression names.
-pub fn type_of(env: Env, t: CTree) -> core::option::Option<SrcType> {
+pub fn named_type(env: Env, t: CTree) -> core::option::Option<SrcType> {
     return match (type_name(t)) {
         None -> None,
         Some(name) -> resolve(env.types, name),
     };
+}
+
+pub fn slice_type(element: core::option::Option<SrcType>) -> core::option::Option<SrcType> {
+    return match (element) {
+        None -> None,
+        Some(e) -> Some(Slice(boxed(e))),
+    };
+}
+
+// The type a type expression names: a named type, or a slice `[T]` of one.
+pub fn type_of(env: Env, t: CTree) -> core::option::Option<SrcType> {
+    if (node_prod(t) == p_type_array() && node_prod(kid(t, 2)) == p_type_slice_tail()) {
+        return slice_type(named_type(env, kid(t, 1)));
+    }
+    return named_type(env, t);
 }
 
 // ---------------------------------------------------------------- expressions
@@ -1320,6 +1362,12 @@ pub enum LetHead {
     VariantOf(usize, List<SrcExpr>),
     LiteralOf(List<SrcExpr>),
     MatchOf(usize, usize, List<SrcArm>),
+    // alloc(size, 2^shift)
+    AllocOf(SrcExpr, usize),
+    // slice_from_raw_parts(pointer, length)
+    SliceOf(SrcExpr, SrcExpr),
+    // slice[index], the slice a local
+    IndexOf(usize, SrcExpr),
 }
 
 pub fn plain_head(e: core::option::Option<SrcExpr>) -> core::option::Option<LetHead> {
@@ -1457,6 +1505,179 @@ pub fn call_head(fuel: usize, env: Env, scope: List<Local>, ty: SrcType, name: c
     return match (name) {
         None -> None,
         Some(n) -> call_named(fuel, env, scope, ty, n, args_of(fuel, env, scope, args)),
+    };
+}
+
+// The spellings of a path's segments, none with type arguments.
+pub fn path_spellings(fuel: usize, segment: CTree, tail: CTree) -> core::option::Option<List<List<usize>>> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (node_prod(segment) == p_path_ident() && node_prod(tail) == p_path_end()) {
+        return Some(single(kid_token(segment, 0).text));
+    }
+    if (node_prod(segment) == p_path_ident() && node_prod(tail) == p_path_more()) {
+        return cons_name(Some(kid_token(segment, 0).text), path_spellings(minus(fuel, 1), kid(tail, 2), kid(tail, 3)));
+    }
+    return None;
+}
+
+pub fn same_spellings(a: List<List<usize>>, b: List<List<usize>>) -> bool {
+    return match (a) {
+        Nil -> match (b) {
+            Nil -> true,
+            Cons(y, more) -> false,
+        },
+        Cons(x, rest) -> match (b) {
+            Nil -> false,
+            Cons(y, more) -> same_text(x, y) && same_spellings(unbox(rest), unbox(more)),
+        },
+    };
+}
+
+pub fn is_path(segments: core::option::Option<List<List<usize>>>, wanted: List<List<usize>>) -> bool {
+    return match (segments) {
+        None -> false,
+        Some(ss) -> same_spellings(ss, wanted),
+    };
+}
+
+// alloc::allocator::alloc, the allocator's alloc
+pub fn alloc_path() -> List<List<usize>> {
+    return cons(text_alloc(), cons(text_allocator(), single(text_alloc())));
+}
+
+// alloc::allocator::dealloc
+pub fn dealloc_path() -> List<List<usize>> {
+    return cons(text_alloc(), cons(text_allocator(), single(text_dealloc())));
+}
+
+// The shift of an alignment 2^shift, counting up from 2^s = p.
+pub fn shift_of_u64(fuel: usize, k: u64, s: usize, p: usize) -> core::option::Option<usize> {
+    if (fuel == 0) {
+        return None;
+    }
+    if ((p as u64) == k) {
+        return Some(s);
+    }
+    return shift_of_u64(minus(fuel, 1), k, plus(s, 1), times(p, 2));
+}
+
+pub fn is_usize(t: SrcType) -> bool {
+    return match (t) {
+        I32 -> false,
+        Bool -> false,
+        Uint(k) -> match (k) {
+            Uint8 -> false,
+            Uint32 -> false,
+            Uint64 -> false,
+            Usize -> true,
+        },
+        Struct(id, fields) -> false,
+        Enum(id, variants) -> false,
+        Ptr -> false,
+        Slice(e) -> false,
+    };
+}
+
+// An integer literal 2^shift with shift below 31.
+pub fn literal_shift(e: SrcExpr) -> core::option::Option<usize> {
+    return match (e) {
+        Int(k) -> shift_of_u64(31, (k as u32) as u64, 0, 1),
+        Boolean(b) -> None,
+        Unsigned(u, k) -> shift_of_u64(31, k, 0, 1),
+        Local(id) -> None,
+        Field(id, j) -> None,
+        Negate(x) -> None,
+        Not(x) -> None,
+        Apply(op, a, b) -> None,
+        Cast(t, x) -> None,
+    };
+}
+
+pub fn cast_shift(usize_cast: bool, x: SrcExpr) -> core::option::Option<usize> {
+    if (usize_cast) {
+        return literal_shift(x);
+    }
+    return None;
+}
+
+// The shift of a literal alignment 2^shift: `8`, `(8 as usize)`, or an
+// unsigned literal.
+pub fn shift_of(e: SrcExpr) -> core::option::Option<usize> {
+    return match (e) {
+        Int(k) -> literal_shift(e),
+        Boolean(b) -> None,
+        Unsigned(u, k) -> literal_shift(e),
+        Local(id) -> None,
+        Field(id, j) -> None,
+        Negate(x) -> None,
+        Not(x) -> None,
+        Apply(op, a, b) -> None,
+        Cast(t, x) -> cast_shift(is_usize(t), unbox(x)),
+    };
+}
+
+pub fn alloc_shifted(size: SrcExpr, shift: core::option::Option<usize>, more: List<SrcExpr>) -> core::option::Option<LetHead> {
+    return match (shift) {
+        None -> None,
+        Some(k) -> match (more) {
+            Nil -> Some(AllocOf(size, k)),
+            Cons(e, others) -> None,
+        },
+    };
+}
+
+// alloc(size, align)
+pub fn alloc_head(args: core::option::Option<List<SrcExpr>>) -> core::option::Option<LetHead> {
+    return match (args) {
+        None -> None,
+        Some(es) -> match (es) {
+            Nil -> None,
+            Cons(size, rest) -> match (unbox(rest)) {
+                Nil -> None,
+                Cons(align, more) -> alloc_shifted(size, shift_of(align), unbox(more)),
+            },
+        },
+    };
+}
+
+// slice_from_raw_parts(pointer, length)
+pub fn slice_head(args: core::option::Option<List<SrcExpr>>) -> core::option::Option<LetHead> {
+    return match (args) {
+        None -> None,
+        Some(es) -> match (es) {
+            Nil -> None,
+            Cons(pointer, rest) -> match (unbox(rest)) {
+                Nil -> None,
+                Cons(length, more) -> match (unbox(more)) {
+                    Nil -> Some(SliceOf(pointer, length)),
+                    Cons(e, others) -> None,
+                },
+            },
+        },
+    };
+}
+
+// `path(args)`: the allocator, a raw view, a function or a variant.
+pub fn call_path_head(fuel: usize, env: Env, scope: List<Local>, ty: SrcType, path: CTree, args: CTree) -> core::option::Option<LetHead> {
+    let segments: core::option::Option<List<List<usize>>> = path_spellings(fuel, kid(path, 0), kid(path, 1));
+    if (is_path(segments, alloc_path())) {
+        return alloc_head(args_of(fuel, env, scope, args));
+    }
+    if (is_path(segments, single(text_slice_from_raw_parts()))) {
+        return slice_head(args_of(fuel, env, scope, args));
+    }
+    return call_head(fuel, env, scope, ty, path_name(path), args);
+}
+
+pub fn index_head(l: core::option::Option<Local>, index: core::option::Option<SrcExpr>) -> core::option::Option<LetHead> {
+    return match (l) {
+        None -> None,
+        Some(x) -> match (index) {
+            None -> None,
+            Some(i) -> Some(IndexOf(x.id, i)),
+        },
     };
 }
 
@@ -1685,7 +1906,10 @@ pub fn postfix_head(fuel: usize, env: Env, scope: List<Local>, ty: SrcType, pf: 
         return literal_head(fuel, env, scope, ty, path_name(kid(primary, 0)), kid(kid(primary, 1), 1));
     }
     if (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain() && node_prod(tail) == p_postfix_call() && node_prod(kid(tail, 3)) == p_postfix_end()) {
-        return call_head(fuel, env, scope, ty, path_name(kid(primary, 0)), kid(tail, 1));
+        return call_path_head(fuel, env, scope, ty, kid(primary, 0), kid(tail, 1));
+    }
+    if (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain() && node_prod(tail) == p_postfix_index() && node_prod(kid(tail, 3)) == p_postfix_end()) {
+        return index_head(local_of(env, scope, primary), expr_of(fuel, env, scope, kid(tail, 1)));
     }
     if (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain() && node_prod(tail) == p_postfix_end()) {
         return unit_head(env, scope, ty, path_name(kid(primary, 0)), init, fuel);
@@ -1715,20 +1939,62 @@ pub fn then_of(head: core::option::Option<SrcStmt>, rest: core::option::Option<S
     };
 }
 
-pub fn let_stmt(id: usize, ty: SrcType, head: LetHead, body: SrcStmt) -> SrcStmt {
+pub fn is_ptr(t: SrcType) -> bool {
+    return match (t) {
+        I32 -> false,
+        Bool -> false,
+        Uint(k) -> false,
+        Struct(id, fields) -> false,
+        Enum(id, variants) -> false,
+        Ptr -> true,
+        Slice(e) -> false,
+    };
+}
+
+pub fn slice_element(t: SrcType) -> core::option::Option<SrcType> {
+    return match (t) {
+        I32 -> None,
+        Bool -> None,
+        Uint(k) -> None,
+        Struct(id, fields) -> None,
+        Enum(id, variants) -> None,
+        Ptr -> None,
+        Slice(e) -> Some(unbox(e)),
+    };
+}
+
+pub fn alloc_let(ok: bool, id: usize, size: SrcExpr, shift: usize, body: SrcStmt) -> core::option::Option<SrcStmt> {
+    if (ok) {
+        return Some(LetAlloc(id, size, shift, boxed(body)));
+    }
+    return None;
+}
+
+pub fn slice_let(element: core::option::Option<SrcType>, id: usize, pointer: SrcExpr, length: SrcExpr, body: SrcStmt) -> core::option::Option<SrcStmt> {
+    return match (element) {
+        None -> None,
+        Some(e) -> Some(LetSlice(id, e, pointer, length, boxed(body))),
+    };
+}
+
+// An allocation binds a `ptr`, a raw view a `[T]`.
+pub fn let_stmt(id: usize, ty: SrcType, head: LetHead, body: SrcStmt) -> core::option::Option<SrcStmt> {
     return match (head) {
-        Plain(e) -> Let(id, ty, e, boxed(body)),
-        CallOf(callee, args) -> LetCall(id, ty, callee, args, boxed(body)),
-        VariantOf(variant, payload) -> LetEnum(id, ty, variant, payload, boxed(body)),
-        LiteralOf(fields) -> LetStruct(id, ty, fields, boxed(body)),
-        MatchOf(scrutinee, owner, arms) -> LetMatch(id, ty, scrutinee, owner, arms, boxed(body)),
+        Plain(e) -> Some(Let(id, ty, e, boxed(body))),
+        CallOf(callee, args) -> Some(LetCall(id, ty, callee, args, boxed(body))),
+        VariantOf(variant, payload) -> Some(LetEnum(id, ty, variant, payload, boxed(body))),
+        LiteralOf(fields) -> Some(LetStruct(id, ty, fields, boxed(body))),
+        MatchOf(scrutinee, owner, arms) -> Some(LetMatch(id, ty, scrutinee, owner, arms, boxed(body))),
+        AllocOf(size, shift) -> alloc_let(is_ptr(ty), id, size, shift, body),
+        SliceOf(pointer, length) -> slice_let(slice_element(ty), id, pointer, length, body),
+        IndexOf(slice, index) -> Some(LetIndex(id, ty, slice, index, boxed(body))),
     };
 }
 
 pub fn let_body(id: usize, ty: SrcType, h: LetHead, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
     return match (body) {
         None -> None,
-        Some(b) -> Some(let_stmt(id, ty, h, b)),
+        Some(b) -> let_stmt(id, ty, h, b),
     };
 }
 
@@ -1839,6 +2105,16 @@ pub fn set_local(fuel: usize, env: Env, scope: List<Local>, id: usize, value: CT
     };
 }
 
+pub fn set_index_of(slice: usize, index: core::option::Option<SrcExpr>, value: core::option::Option<SrcExpr>) -> core::option::Option<SrcStmt> {
+    return match (index) {
+        None -> None,
+        Some(i) -> match (value) {
+            None -> None,
+            Some(v) -> Some(SetIndex(slice, i, v)),
+        },
+    };
+}
+
 pub fn assign_target(fuel: usize, env: Env, scope: List<Local>, target: CTree, value: CTree) -> core::option::Option<SrcStmt> {
     let tail: CTree = kid(target, 1);
     if (node_prod(tail) == p_postfix_end()) {
@@ -1853,11 +2129,121 @@ pub fn assign_target(fuel: usize, env: Env, scope: List<Local>, target: CTree, v
             Some(l) -> field_into(field_index(env, l.ty, kid_token(tail, 1).text), l.id, expr_of(fuel, env, scope, value)),
         };
     }
+    if (node_prod(tail) == p_postfix_index() && node_prod(kid(tail, 3)) == p_postfix_end()) {
+        return match (local_of(env, scope, kid(target, 0))) {
+            None -> None,
+            Some(l) -> set_index_of(l.id, expr_of(fuel, env, scope, kid(tail, 1)), expr_of(fuel, env, scope, value)),
+        };
+    }
     return None;
 }
 
-// `target = value;`: target a local or a field of one; value a call of a
-// function (to a plain local) or an expression.
+pub fn free_shifted(pointer: SrcExpr, size: SrcExpr, shift: core::option::Option<usize>, more: List<SrcExpr>) -> core::option::Option<SrcStmt> {
+    return match (shift) {
+        None -> None,
+        Some(k) -> match (more) {
+            Nil -> Some(Free(pointer, size, k)),
+            Cons(e, others) -> None,
+        },
+    };
+}
+
+// dealloc(pointer, size, align)
+pub fn free_of(args: core::option::Option<List<SrcExpr>>) -> core::option::Option<SrcStmt> {
+    return match (args) {
+        None -> None,
+        Some(es) -> match (es) {
+            Nil -> None,
+            Cons(pointer, rest) -> match (unbox(rest)) {
+                Nil -> None,
+                Cons(size, more) -> match (unbox(more)) {
+                    Nil -> None,
+                    Cons(align, others) -> free_shifted(pointer, size, shift_of(align), unbox(others)),
+                },
+            },
+        },
+    };
+}
+
+// A call statement: `alloc::allocator::dealloc(pointer, size, align);`.
+pub fn call_stmt(fuel: usize, env: Env, scope: List<Local>, pf: CTree) -> core::option::Option<SrcStmt> {
+    let primary: CTree = kid(pf, 0);
+    let tail: CTree = kid(pf, 1);
+    let path: CTree = kid(primary, 0);
+    if (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain() && node_prod(tail) == p_postfix_call() && node_prod(kid(tail, 3)) == p_postfix_end() && is_path(path_spellings(fuel, kid(path, 0), kid(path, 1)), dealloc_path())) {
+        return free_of(args_of(fuel, env, scope, kid(tail, 1)));
+    }
+    return None;
+}
+
+// The operator of a compound assignment `+=`, `-=`, `*=`, `&=`, `|=`, `^=`.
+pub fn compound_op(p: usize) -> core::option::Option<SrcOp> {
+    if (p == p_assign_add()) {
+        return Some(Plus);
+    }
+    if (p == p_assign_sub()) {
+        return Some(Minus);
+    }
+    if (p == p_assign_mul()) {
+        return Some(Times);
+    }
+    if (p == p_assign_band()) {
+        return Some(BitAnd);
+    }
+    if (p == p_assign_bor()) {
+        return Some(BitOr);
+    }
+    if (p == p_assign_xor()) {
+        return Some(BitXor);
+    }
+    return None;
+}
+
+pub fn compound_value(op: SrcOp, left: SrcExpr, right: core::option::Option<SrcExpr>) -> core::option::Option<SrcExpr> {
+    return match (right) {
+        None -> None,
+        Some(r) -> Some(Apply(op, boxed(left), boxed(r))),
+    };
+}
+
+pub fn compound_field(fuel: usize, env: Env, scope: List<Local>, l: Local, index: core::option::Option<usize>, op: SrcOp, value: CTree) -> core::option::Option<SrcStmt> {
+    return match (index) {
+        None -> None,
+        Some(j) -> set_field_value(l.id, j, compound_value(op, Field(l.id, j), expr_of(fuel, env, scope, value))),
+    };
+}
+
+// `x op= e` is `x = x op e`, and `x.f op= e` is `x.f = x.f op e`.
+pub fn compound_target(fuel: usize, env: Env, scope: List<Local>, target: CTree, op: SrcOp, value: CTree) -> core::option::Option<SrcStmt> {
+    let tail: CTree = kid(target, 1);
+    if (node_prod(tail) == p_postfix_end()) {
+        return match (local_of(env, scope, kid(target, 0))) {
+            None -> None,
+            Some(l) -> set_value(l.id, compound_value(op, Local(l.id), expr_of(fuel, env, scope, value))),
+        };
+    }
+    if (node_prod(tail) == p_postfix_member() && node_prod(kid(tail, 2)) == p_member_type_args_none() && node_prod(kid(tail, 3)) == p_postfix_end()) {
+        return match (local_of(env, scope, kid(target, 0))) {
+            None -> None,
+            Some(l) -> compound_field(fuel, env, scope, l, field_index(env, l.ty, kid_token(tail, 1).text), op, value),
+        };
+    }
+    return None;
+}
+
+pub fn compound_of(fuel: usize, env: Env, scope: List<Local>, target: core::option::Option<CTree>, op: core::option::Option<SrcOp>, value: CTree) -> core::option::Option<SrcStmt> {
+    return match (op) {
+        None -> None,
+        Some(o) -> match (target) {
+            None -> None,
+            Some(t) -> compound_target(fuel, env, scope, t, o, value),
+        },
+    };
+}
+
+// `target = value;`: target a local, a field of one or a slice element;
+// value a call of a function (to a plain local) or an expression. Also
+// `target op= value;`, and the call statement `dealloc(...)`.
 pub fn assignment(fuel: usize, env: Env, scope: List<Local>, e: CTree) -> core::option::Option<SrcStmt> {
     let a: CTree = kid(e, 0);
     let set: CTree = kid(a, 1);
@@ -1865,6 +2251,15 @@ pub fn assignment(fuel: usize, env: Env, scope: List<Local>, e: CTree) -> core::
         return match (peel(fuel, kid(a, 0))) {
             None -> None,
             Some(target) -> assign_target(fuel, env, scope, target, kid(set, 1)),
+        };
+    }
+    if (node_prod(e) == p_expr() && node_prod(a) == p_assign() && has_kids(set) && node_prod(set) != p_assign_set()) {
+        return compound_of(fuel, env, scope, peel(fuel, kid(a, 0)), compound_op(node_prod(set)), kid(set, 1));
+    }
+    if (node_prod(e) == p_expr() && node_prod(a) == p_assign() && node_prod(set) == p_assign_end()) {
+        return match (peel(fuel, kid(a, 0))) {
+            None -> None,
+            Some(pf) -> call_stmt(fuel, env, scope, pf),
         };
     }
     return None;
@@ -2661,13 +3056,43 @@ fn p_assign() -> usize {
 }
 
 // extract: inline
+fn p_assign_add() -> usize {
+    return 107;
+}
+
+// extract: inline
+fn p_assign_band() -> usize {
+    return 115;
+}
+
+// extract: inline
+fn p_assign_bor() -> usize {
+    return 116;
+}
+
+// extract: inline
 fn p_assign_end() -> usize {
     return 117;
 }
 
 // extract: inline
+fn p_assign_mul() -> usize {
+    return 109;
+}
+
+// extract: inline
 fn p_assign_set() -> usize {
     return 106;
+}
+
+// extract: inline
+fn p_assign_sub() -> usize {
+    return 108;
+}
+
+// extract: inline
+fn p_assign_xor() -> usize {
+    return 112;
 }
 
 // extract: inline
@@ -3056,6 +3481,11 @@ fn p_path_ident() -> usize {
 }
 
 // extract: inline
+fn p_path_more() -> usize {
+    return 50;
+}
+
+// extract: inline
 fn p_pattern_ident() -> usize {
     return 195;
 }
@@ -3108,6 +3538,11 @@ fn p_postfix_call() -> usize {
 // extract: inline
 fn p_postfix_end() -> usize {
     return 164;
+}
+
+// extract: inline
+fn p_postfix_index() -> usize {
+    return 162;
 }
 
 // extract: inline
@@ -3231,6 +3666,11 @@ fn p_type_args_none() -> usize {
 }
 
 // extract: inline
+fn p_type_array() -> usize {
+    return 70;
+}
+
+// extract: inline
 fn p_type_ident() -> usize {
     return 69;
 }
@@ -3248,6 +3688,11 @@ fn p_type_path_end() -> usize {
 // extract: inline
 fn p_type_path_ident() -> usize {
     return 57;
+}
+
+// extract: inline
+fn p_type_slice_tail() -> usize {
+    return 284;
 }
 
 // extract: inline

@@ -34,7 +34,6 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import oracle_difftest as oracle  # noqa: E402
-oracle.SLICES = False  # the front end does not read heap and slice constructs yet
 
 HEAVY = 'target/claude-work/bin/heavy'
 UINT_LEAN = oracle.UINT_LEAN
@@ -114,9 +113,12 @@ class Chunk:
             types += len(p.structs) + len(p.enums)
             fns += len(p)
         self.out = Printer()
+        self.compounds = 0
 
     # names
     def ty(self, k, t):
+        if t[0] == 'slice':
+            return f'[{self.ty(k, t[1])}]'
         if t[0] == 'struct':
             return f'P{k}S{t[1]}'
         if t[0] == 'enum':
@@ -126,8 +128,10 @@ class Chunk:
     def lean_ty(self, k, t):
         if t in UINT_BITS:
             return f'(.uint {UINT_LEAN[t]})'
-        if t in ('i32', 'bool'):
+        if t in ('i32', 'bool', 'ptr'):
             return '.' + t
+        if t[0] == 'slice':
+            return f'(.slice {self.lean_ty(k, t[1])})'
         p = self.programs[k]
         if t[0] == 'struct':
             return f'(.struct {self.type_base[k] + t[1]} [{", ".join(self.lean_ty(k, f) for f in p.structs[t[1]])}])'
@@ -177,6 +181,13 @@ class Chunk:
             return f'(.not {self.lean_expr(ids, e[1])})'
         return f'(.apply .{e[1]} {self.lean_expr(ids, e[3])} {self.lean_expr(ids, e[4])})'
 
+    def compound(self, target, e):
+        """Print every other `x = x op e` as `x op= e`."""
+        if e[0] == 'op' and e[2] in ('+', '-', '*', '&', '|', '^') and e[3] == target:
+            self.compounds += 1
+            return self.compounds % 2 == 1
+        return False
+
     def variant(self, k, enum, v):
         return f'P{k}E{enum}V{v}'
 
@@ -189,6 +200,31 @@ class Chunk:
             return []
         if kind == 'then':
             return self.stmt(k, ids, s[1], indent) + self.stmt(k, ids, s[2], indent)
+        if kind in ('letAlloc', 'letSlice', 'letIndex'):
+            ident = s[1]
+            ty = 'ptr' if kind == 'letAlloc' else ('slice', s[2]) if kind == 'letSlice' else s[2]
+            out.emit(f'{pad}let ')
+            out.bind((k, ident), f'v{ident}')
+            ids[ident] = lid = out.binding[(k, ident)]
+            out.emit(f': {self.ty(k, ty)} = ')
+            if kind == 'letAlloc':
+                size, shift = s[2], s[3]
+                out.emit(f'alloc::allocator::alloc({lani_uint("usize", size)}, {lani_uint("usize", 1 << shift)});\n')
+                head = f'.letAlloc {lid} {lean_uint("usize", size)} {shift}'
+            elif kind == 'letSlice':
+                out.emit(f'slice_from_raw_parts({self.lani_expr(s[3])}, {s[4]});\n')
+                head = f'.letSlice {lid} {self.lean_ty(k, s[2])} {self.lean_expr(ids, s[3])} {lean_i32(s[4])}'
+            else:
+                out.emit(f'v{s[3]}[{s[4]}];\n')
+                head = f'.letIndex {lid} {self.lean_ty(k, s[2])} {ids[s[3]]} {lean_i32(s[4])}'
+            return [('let', head)] + self.stmt(k, ids, s[-1], indent)
+        if kind == 'setIndex':
+            out.emit(f'{pad}v{s[1]}[{s[2]}] = {self.lani_expr(s[3])};\n')
+            return [('stmt', f'(.setIndex {ids[s[1]]} {lean_i32(s[2])} {self.lean_expr(ids, s[3])})')]
+        if kind == 'free':
+            size, shift = s[2], s[3]
+            out.emit(f'{pad}alloc::allocator::dealloc(v{s[1]}, {lani_uint("usize", size)}, {lani_uint("usize", 1 << shift)});\n')
+            return [('stmt', f'(.free (.local {ids[s[1]]}) {lean_uint("usize", size)} {shift})')]
         if kind in ('let', 'call', 'letStruct', 'letEnum', 'letMatch'):
             ident, ty = s[1], s[2]
             out.emit(f'{pad}let ')
@@ -232,6 +268,14 @@ class Chunk:
                 enum_id = self.type_base[k] + len(self.programs[k].structs) + enum
                 head = f'.letMatch {lid} {lty} {ids[scrutinee]} {enum_id} [{", ".join(lean_arms)}]'
             return [('let', head)] + self.stmt(k, ids, s[-1], indent)
+        if kind == 'set' and self.compound(('local', s[1]), s[2]):
+            e = s[2]
+            out.emit(f'{pad}v{s[1]} {e[2]}= {self.lani_expr(e[4])};\n')
+            return [('stmt', f'(.set {ids[s[1]]} {self.lean_expr(ids, s[2])})')]
+        if kind == 'setField' and self.compound(('field', s[1], s[2]), s[3]):
+            e = s[3]
+            out.emit(f'{pad}v{s[1]}.f{s[2]} {e[2]}= {self.lani_expr(e[4])};\n')
+            return [('stmt', f'(.setField {ids[s[1]]} {s[2]} {self.lean_expr(ids, s[3])})')]
         if kind == 'set':
             out.emit(f'{pad}v{s[1]} = {self.lani_expr(s[2])};\n')
             return [('stmt', f'(.set {ids[s[1]]} {self.lean_expr(ids, s[2])})')]
@@ -281,6 +325,17 @@ class Chunk:
             ps = ', '.join(f'{{ id := {ids[i]}, ty := {self.lean_ty(k, t)} }}' for i, t in enumerate(params))
             funcs.append(f'{{ params := [{ps}], ret := {self.lean_ty(k, ret)}, body := {nest(items)} }}')
         return funcs
+
+
+def add_frees(rng, s):
+    """Free some allocations at the end of their scope (the reader does not
+    run the program, so where does not matter)."""
+    if not isinstance(s, tuple) or not s:
+        return s
+    out = tuple(add_frees(rng, x) if isinstance(x, tuple) else x for x in s)
+    if out[0] == 'letAlloc' and rng.random() < 0.5:
+        out = out[:-1] + (('then', out[-1], ('free', out[1], out[2], out[3])),)
+    return out
 
 
 def nest(items):
@@ -386,7 +441,13 @@ partial def serStmt : SrcStmt → String
   | .if e a b => s!"(.if {serExpr e} {serStmt a} {serStmt b})"
   | .while e b => s!"(.while {serExpr e} {serStmt b})"
   | .return e => s!"(.return {serExpr e})"
-  | .letAlloc .. | .letLoad .. | .setByte .. | .free .. | .letSlice .. | .letIndex .. | .setIndex .. => "(heap)"
+  | .letAlloc n size shift r => s!"(.letAlloc {n} {serExpr size} {shift} {serStmt r})"
+  | .letLoad n p o r => s!"(.letLoad {n} {serExpr p} {serExpr o} {serStmt r})"
+  | .setByte p o v => s!"(.setByte {serExpr p} {serExpr o} {serExpr v})"
+  | .free p size shift => s!"(.free {serExpr p} {serExpr size} {shift})"
+  | .letSlice n t p len r => s!"(.letSlice {n} {serType t} {serExpr p} {serExpr len} {serStmt r})"
+  | .letIndex n t sl i r => s!"(.letIndex {n} {serType t} {sl} {serExpr i} {serStmt r})"
+  | .setIndex sl i v => s!"(.setIndex {sl} {serExpr i} {serExpr v})"
 
 def serParam (p : SrcParam) : String := "{ id := " ++ toString p.id ++ ", ty := " ++ serType p.ty ++ " }"
 
@@ -446,6 +507,8 @@ def main():
     args = parser.parse_args()
     rng = random.Random(args.seed)
     programs = [oracle.gen_program(rng) for _ in range(args.count)]
+    for p in programs:
+        p[:] = [(params, ret, add_frees(rng, body)) for params, ret, body in p]
     workdir = os.path.abspath(args.workdir)
     os.makedirs(workdir, exist_ok=True)
     lean = [LEAN_HEAD]

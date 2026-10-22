@@ -151,7 +151,19 @@ still a parse tree of the same tokens. Trusted:
   - `let` scopes over the rest of its block;
   - `if` without `else` has an empty else;
   - binary operators fold to the left;
-  - an integer literal is below 2^31, and `-` before it is `negate`.
+  - an integer literal is below 2^31, and `-` before it is `negate`;
+  - the path `alloc::allocator::alloc(size, align)`, in a `let` of type
+    `ptr`, is Core's `alloc`, and the statement
+    `alloc::allocator::dealloc(p, size, align);` is Core's `dealloc`; the
+    alignment must be a literal `2^k` (`8` or `(8 as usize)`), read as the
+    shift `k`. `slice_from_raw_parts(p, n)`, in a `let` of type `[T]`, is
+    Core's raw view of `T`. These spellings are fixed: build does not look
+    at the extern declarations in `alloc::allocator`;
+  - `x op= e` is `x = x op e`, and `x.f op= e` is `x.f = x.f op e`, for
+    `op` one of `+ - * & | ^`. Core has the compound form itself
+    (`assign .add` and so on, `evalAssignValue`), which evaluates `e` before
+    it reads `x`; for the subset's expressions, which neither trap nor have
+    effects, the two orders give the same value and state.
 
   It rejects anything outside the subset. `build` has no relational spec yet;
   the difftest checks it against the generator's programs. To shrink it:
@@ -166,9 +178,8 @@ still a parse tree of the same tokens. Trusted:
 - **Core**, as in section 3.
 
 What is still outside: the type premise `FieldsHold (paramTypes func.params)
-args ...` on the arguments, the heap and raw slice constructs of the front
-pass (the front end does not read them yet), generics, modules, `=>` match
-arms, and block or `if` arms.
+args ...` on the arguments, generics, modules, `=>` match arms, and block or
+`if` arms.
 
 Checked by: `frontend_difftest.py` (MINI_COMPILER.md, step 8), which runs
 laniusc's parser on generated programs and requires `sourceProgram` to give

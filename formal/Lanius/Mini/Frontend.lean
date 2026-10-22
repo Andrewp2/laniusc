@@ -285,7 +285,27 @@ def sameText (a : List Nat) (b : List Nat) : Bool :=
 def spelled (a : List Nat) (b : List Nat) : Bool :=
   sameText a b
 
-/-- i32, bool, u8, u32, u64, usize -/
+def textPtr : List Nat :=
+  let t : List Nat := 112 :: 116 :: [114]
+  t
+
+def textAlloc : List Nat :=
+  let t : List Nat := 97 :: 108 :: 108 :: 111 :: [99]
+  t
+
+def textAllocator : List Nat :=
+  let t : List Nat := 97 :: 108 :: 108 :: 111 :: 99 :: 97 :: 116 :: 111 :: [114]
+  t
+
+def textDealloc : List Nat :=
+  let t : List Nat := 100 :: 101 :: 97 :: 108 :: 108 :: 111 :: [99]
+  t
+
+def textSliceFromRawParts : List Nat :=
+  let t : List Nat := 115 :: 108 :: 105 :: 99 :: 101 :: 95 :: 102 :: 114 :: 111 :: 109 :: 95 :: 114 :: 97 :: 119 :: 95 :: 112 :: 97 :: 114 :: 116 :: [115]
+  t
+
+/-- i32, bool, u8, u32, u64, usize, ptr -/
 def primitive (name : List Nat) : Option SrcType :=
   let i32Text : List Nat := 105 :: 51 :: [50]
   let boolText : List Nat := 98 :: 111 :: 111 :: [108]
@@ -311,7 +331,10 @@ def primitive (name : List Nat) : Option SrcType :=
             if spelled name usizeText then
               some (SrcType.uint UintTy.usize)
             else
-              none
+              if spelled name textPtr then
+                some SrcType.ptr
+              else
+                none
 
 def declared (types : List TypeEntry) (name : List Nat) : Option SrcType :=
   match types with
@@ -524,11 +547,22 @@ def funcBody (ps : Params) (r : SrcType) (body : Option SrcStmt) : Option SrcFun
   | none => none
   | some b => some ({ params := ps.params, ret := r, body := b } : SrcFunc)
 
-/-- The type a type expression names. -/
-def typeOf (env : Env) (t : CTree) : Option SrcType :=
+def namedType (env : Env) (t : CTree) : Option SrcType :=
   match typeName t with
   | none => none
   | some name => resolve env.types name
+
+def sliceType (element : Option SrcType) : Option SrcType :=
+  match element with
+  | none => none
+  | some e => some (SrcType.slice e)
+
+/-- The type a type expression names: a named type, or a slice `[T]` of one. -/
+def typeOf (env : Env) (t : CTree) : Option SrcType :=
+  if decide (nodeProd t = (70)) && decide (nodeProd (kid t 2) = (284)) then
+    sliceType (namedType env (kid t 1))
+  else
+    namedType env t
 
 /-- The binary operator of an operator tail production. -/
 def tailOp (p : Nat) : Option SrcOp :=
@@ -843,6 +877,12 @@ inductive LetHead where
   | variantOf : Nat → (List SrcExpr) → LetHead
   | literalOf : (List SrcExpr) → LetHead
   | matchOf : Nat → Nat → (List SrcArm) → LetHead
+  /-- alloc(size, 2^shift) -/
+  | allocOf : SrcExpr → Nat → LetHead
+  /-- slice_from_raw_parts(pointer, length) -/
+  | sliceOf : SrcExpr → SrcExpr → LetHead
+  /-- slice[index], the slice a local -/
+  | indexOf : Nat → SrcExpr → LetHead
   deriving Repr
 
 def plainHead (e : Option SrcExpr) : Option LetHead :=
@@ -942,6 +982,154 @@ def callHead (fuel : Nat) (env : Env) (scope : List Local) (ty : SrcType) (name 
   match name with
   | none => none
   | some n => callNamed fuel env scope ty n (argsOf fuel env scope args)
+
+/-- The spellings of a path's segments, none with type arguments. -/
+def pathSpellings (fuel : Nat) (segment : CTree) (tail : CTree) : Option (List (List Nat)) :=
+  if fuel = 0 then
+    none
+  else
+    if decide (nodeProd segment = (48)) && decide (nodeProd tail = (51)) then
+      some [(kidToken segment 0).text]
+    else
+      if decide (nodeProd segment = (48)) && decide (nodeProd tail = (50)) then
+        consName (some (kidToken segment 0).text) (pathSpellings (fuel - 1) (kid tail 2) (kid tail 3))
+      else
+        none
+
+def sameSpellings (a : List (List Nat)) (b : List (List Nat)) : Bool :=
+  match a with
+  | [] =>
+    (match b with
+     | [] => true
+     | y :: more => false)
+  | x :: rest =>
+    match b with
+    | [] => false
+    | y :: more => sameText x y && sameSpellings rest more
+
+def isPath (segments : Option (List (List Nat))) (wanted : List (List Nat)) : Bool :=
+  match segments with
+  | none => false
+  | some ss => sameSpellings ss wanted
+
+/-- alloc::allocator::alloc, the allocator's alloc -/
+def allocPath : List (List Nat) :=
+  textAlloc :: textAllocator :: [textAlloc]
+
+/-- alloc::allocator::dealloc -/
+def deallocPath : List (List Nat) :=
+  textAlloc :: textAllocator :: [textDealloc]
+
+/-- The shift of an alignment 2^shift, counting up from 2^s = p. -/
+def shiftOfU64 (fuel : Nat) (k : BitVec 64) (s : Nat) (p : Nat) : Option Nat :=
+  if fuel = 0 then
+    none
+  else
+    if BitVec.ofNat 64 p = k then
+      some s
+    else
+      shiftOfU64 (fuel - 1) k (s + 1) (p * 2)
+
+def isUsize (t : SrcType) : Bool :=
+  match t with
+  | .i32 => false
+  | .bool => false
+  | .uint k =>
+    (match k with
+     | .uint8 => false
+     | .uint32 => false
+     | .uint64 => false
+     | .usize => true)
+  | .struct id fields => false
+  | .enum id variants => false
+  | .ptr => false
+  | .slice e => false
+
+/-- An integer literal 2^shift with shift below 31. -/
+def literalShift (e : SrcExpr) : Option Nat :=
+  match e with
+  | .int k => shiftOfU64 31 (BitVec.setWidth 64 k) 0 1
+  | .boolean b => none
+  | .unsigned u k => shiftOfU64 31 k 0 1
+  | .local id => none
+  | .field id j => none
+  | .negate x => none
+  | .not x => none
+  | .apply op a b => none
+  | .cast t x => none
+
+def castShift (usizeCast : Bool) (x : SrcExpr) : Option Nat :=
+  if usizeCast then
+    literalShift x
+  else
+    none
+
+/-- The shift of a literal alignment 2^shift: `8`, `(8 as usize)`, or an unsigned literal. -/
+def shiftOf (e : SrcExpr) : Option Nat :=
+  match e with
+  | .int k => literalShift e
+  | .boolean b => none
+  | .unsigned u k => literalShift e
+  | .local id => none
+  | .field id j => none
+  | .negate x => none
+  | .not x => none
+  | .apply op a b => none
+  | .cast t x => castShift (isUsize t) x
+
+def allocShifted (size : SrcExpr) (shift : Option Nat) (more : List SrcExpr) : Option LetHead :=
+  match shift with
+  | none => none
+  | some k =>
+    match more with
+    | [] => some (LetHead.allocOf size k)
+    | e :: others => none
+
+/-- alloc(size, align) -/
+def allocHead (args : Option (List SrcExpr)) : Option LetHead :=
+  match args with
+  | none => none
+  | some es =>
+    match es with
+    | [] => none
+    | size :: rest =>
+      match rest with
+      | [] => none
+      | align :: more => allocShifted size (shiftOf align) more
+
+/-- slice_from_raw_parts(pointer, length) -/
+def sliceHead (args : Option (List SrcExpr)) : Option LetHead :=
+  match args with
+  | none => none
+  | some es =>
+    match es with
+    | [] => none
+    | pointer :: rest =>
+      match rest with
+      | [] => none
+      | length :: more =>
+        match more with
+        | [] => some (LetHead.sliceOf pointer length)
+        | e :: others => none
+
+/-- `path(args)`: the allocator, a raw view, a function or a variant. -/
+def callPathHead (fuel : Nat) (env : Env) (scope : List Local) (ty : SrcType) (path : CTree) (args : CTree) : Option LetHead :=
+  let segments : Option (List (List Nat)) := pathSpellings fuel (kid path 0) (kid path 1)
+  if isPath segments allocPath then
+    allocHead (argsOf fuel env scope args)
+  else
+    if isPath segments [textSliceFromRawParts] then
+      sliceHead (argsOf fuel env scope args)
+    else
+      callHead fuel env scope ty (pathName path) args
+
+def indexHead (l : Option Local) (index : Option SrcExpr) : Option LetHead :=
+  match l with
+  | none => none
+  | some x =>
+    match index with
+    | none => none
+    | some i => some (LetHead.indexOf x.id i)
 
 def fieldValues (fs : List CTree) : List CTree :=
   match fs with
@@ -1118,12 +1306,15 @@ def postfixHead (fuel : Nat) (env : Env) (scope : List Local) (ty : SrcType) (pf
       literalHead fuel env scope ty (pathName (kid primary 0)) (kid (kid primary 1) 1)
     else
       if decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274)) && decide (nodeProd tail = (161)) && decide (nodeProd (kid tail 3) = (164)) then
-        callHead fuel env scope ty (pathName (kid primary 0)) (kid tail 1)
+        callPathHead fuel env scope ty (kid primary 0) (kid tail 1)
       else
-        if decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274)) && decide (nodeProd tail = (164)) then
-          unitHead env scope ty (pathName (kid primary 0)) init fuel
+        if decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274)) && decide (nodeProd tail = (162)) && decide (nodeProd (kid tail 3) = (164)) then
+          indexHead (localOf env scope primary) (exprOf fuel env scope (kid tail 1))
         else
-          plainHead (exprOf fuel env scope init)
+          if decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274)) && decide (nodeProd tail = (164)) then
+            unitHead env scope ty (pathName (kid primary 0)) init fuel
+          else
+            plainHead (exprOf fuel env scope init)
 
 /-- The head of `let x: ty = init;`. -/
 def letHead (fuel : Nat) (env : Env) (scope : List Local) (ty : SrcType) (init : CTree) : Option LetHead :=
@@ -1141,18 +1332,53 @@ def thenOf (head : Option SrcStmt) (rest : Option SrcStmt) : Option SrcStmt :=
   | none => none
   | some h => thenRest h rest
 
-def letStmt (id : Nat) (ty : SrcType) (head : LetHead) (body : SrcStmt) : SrcStmt :=
+def isPtr (t : SrcType) : Bool :=
+  match t with
+  | .i32 => false
+  | .bool => false
+  | .uint k => false
+  | .struct id fields => false
+  | .enum id variants => false
+  | .ptr => true
+  | .slice e => false
+
+def sliceElement (t : SrcType) : Option SrcType :=
+  match t with
+  | .i32 => none
+  | .bool => none
+  | .uint k => none
+  | .struct id fields => none
+  | .enum id variants => none
+  | .ptr => none
+  | .slice e => some e
+
+def allocLet (ok : Bool) (id : Nat) (size : SrcExpr) (shift : Nat) (body : SrcStmt) : Option SrcStmt :=
+  if ok then
+    some (SrcStmt.letAlloc id size shift body)
+  else
+    none
+
+def sliceLet (element : Option SrcType) (id : Nat) (pointer : SrcExpr) (length : SrcExpr) (body : SrcStmt) : Option SrcStmt :=
+  match element with
+  | none => none
+  | some e => some (SrcStmt.letSlice id e pointer length body)
+
+/-- An allocation binds a `ptr`, a raw view a `[T]`. -/
+def letStmt (id : Nat) (ty : SrcType) (head : LetHead) (body : SrcStmt) : Option SrcStmt :=
   match head with
-  | .plain e => SrcStmt.let id ty e body
-  | .callOf callee args => SrcStmt.letCall id ty callee args body
-  | .variantOf variant payload => SrcStmt.letEnum id ty variant payload body
-  | .literalOf fields => SrcStmt.letStruct id ty fields body
-  | .matchOf scrutinee owner arms => SrcStmt.letMatch id ty scrutinee owner arms body
+  | .plain e => some (SrcStmt.let id ty e body)
+  | .callOf callee args => some (SrcStmt.letCall id ty callee args body)
+  | .variantOf variant payload => some (SrcStmt.letEnum id ty variant payload body)
+  | .literalOf fields => some (SrcStmt.letStruct id ty fields body)
+  | .matchOf scrutinee owner arms => some (SrcStmt.letMatch id ty scrutinee owner arms body)
+  | .allocOf size shift => allocLet (isPtr ty) id size shift body
+  | .sliceOf pointer length => sliceLet (sliceElement ty) id pointer length body
+  | .indexOf slice index => some (SrcStmt.letIndex id ty slice index body)
 
 def letBody (id : Nat) (ty : SrcType) (h : LetHead) (body : Option SrcStmt) : Option SrcStmt :=
   match body with
   | none => none
-  | some b => some (letStmt id ty h b)
+  | some b => letStmt id ty h b
 
 def letOf (id : Nat) (ty : SrcType) (head : Option LetHead) (body : Option SrcStmt) : Option SrcStmt :=
   match head with
@@ -1232,6 +1458,14 @@ def setLocal (fuel : Nat) (env : Env) (scope : List Local) (id : Nat) (value : C
   | none => setValue id (exprOf fuel env scope value)
   | some pf => setPostfix fuel env scope id pf value
 
+def setIndexOf (slice : Nat) (index : Option SrcExpr) (value : Option SrcExpr) : Option SrcStmt :=
+  match index with
+  | none => none
+  | some i =>
+    match value with
+    | none => none
+    | some v => some (SrcStmt.setIndex slice i v)
+
 def assignTarget (fuel : Nat) (env : Env) (scope : List Local) (target : CTree) (value : CTree) : Option SrcStmt :=
   let tail : CTree := kid target 1
   if nodeProd tail = (164) then
@@ -1244,9 +1478,102 @@ def assignTarget (fuel : Nat) (env : Env) (scope : List Local) (target : CTree) 
       | none => none
       | some l => fieldInto (fieldIndex env l.ty (kidToken tail 1).text) l.id (exprOf fuel env scope value)
     else
+      if decide (nodeProd tail = (162)) && decide (nodeProd (kid tail 3) = (164)) then
+        match localOf env scope (kid target 0) with
+        | none => none
+        | some l => setIndexOf l.id (exprOf fuel env scope (kid tail 1)) (exprOf fuel env scope value)
+      else
+        none
+
+def freeShifted (pointer : SrcExpr) (size : SrcExpr) (shift : Option Nat) (more : List SrcExpr) : Option SrcStmt :=
+  match shift with
+  | none => none
+  | some k =>
+    match more with
+    | [] => some (SrcStmt.free pointer size k)
+    | e :: others => none
+
+/-- dealloc(pointer, size, align) -/
+def freeOf (args : Option (List SrcExpr)) : Option SrcStmt :=
+  match args with
+  | none => none
+  | some es =>
+    match es with
+    | [] => none
+    | pointer :: rest =>
+      match rest with
+      | [] => none
+      | size :: more =>
+        match more with
+        | [] => none
+        | align :: others => freeShifted pointer size (shiftOf align) others
+
+/-- A call statement: `alloc::allocator::dealloc(pointer, size, align);`. -/
+def callStmt (fuel : Nat) (env : Env) (scope : List Local) (pf : CTree) : Option SrcStmt :=
+  let primary : CTree := kid pf 0
+  let tail : CTree := kid pf 1
+  let path : CTree := kid primary 0
+  if decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274)) && decide (nodeProd tail = (161)) && decide (nodeProd (kid tail 3) = (164)) && isPath (pathSpellings fuel (kid path 0) (kid path 1)) deallocPath then
+    freeOf (argsOf fuel env scope (kid tail 1))
+  else
+    none
+
+/-- The operator of a compound assignment `+=`, `-=`, `*=`, `&=`, `|=`, `^=`. -/
+def compoundOp (p : Nat) : Option SrcOp :=
+  if p = (107) then
+    some SrcOp.plus
+  else
+    if p = (108) then
+      some SrcOp.minus
+    else
+      if p = (109) then
+        some SrcOp.times
+      else
+        if p = (115) then
+          some SrcOp.bitAnd
+        else
+          if p = (116) then
+            some SrcOp.bitOr
+          else
+            if p = (112) then
+              some SrcOp.bitXor
+            else
+              none
+
+def compoundValue (op : SrcOp) (left : SrcExpr) (right : Option SrcExpr) : Option SrcExpr :=
+  match right with
+  | none => none
+  | some r => some (SrcExpr.apply op left r)
+
+def compoundField (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (index : Option Nat) (op : SrcOp) (value : CTree) : Option SrcStmt :=
+  match index with
+  | none => none
+  | some j => setFieldValue l.id j (compoundValue op (SrcExpr.field l.id j) (exprOf fuel env scope value))
+
+/-- `x op= e` is `x = x op e`, and `x.f op= e` is `x.f = x.f op e`. -/
+def compoundTarget (fuel : Nat) (env : Env) (scope : List Local) (target : CTree) (op : SrcOp) (value : CTree) : Option SrcStmt :=
+  let tail : CTree := kid target 1
+  if nodeProd tail = (164) then
+    match localOf env scope (kid target 0) with
+    | none => none
+    | some l => setValue l.id (compoundValue op (SrcExpr.local l.id) (exprOf fuel env scope value))
+  else
+    if decide (nodeProd tail = (163)) && decide (nodeProd (kid tail 2) = (297)) && decide (nodeProd (kid tail 3) = (164)) then
+      match localOf env scope (kid target 0) with
+      | none => none
+      | some l => compoundField fuel env scope l (fieldIndex env l.ty (kidToken tail 1).text) op value
+    else
       none
 
-/-- `target = value;`: target a local or a field of one; value a call of a function (to a plain local) or an expression. -/
+def compoundOf (fuel : Nat) (env : Env) (scope : List Local) (target : Option CTree) (op : Option SrcOp) (value : CTree) : Option SrcStmt :=
+  match op with
+  | none => none
+  | some o =>
+    match target with
+    | none => none
+    | some t => compoundTarget fuel env scope t o value
+
+/-- `target = value;`: target a local, a field of one or a slice element; value a call of a function (to a plain local) or an expression. Also `target op= value;`, and the call statement `dealloc(...)`. -/
 def assignment (fuel : Nat) (env : Env) (scope : List Local) (e : CTree) : Option SrcStmt :=
   let a : CTree := kid e 0
   let set : CTree := kid a 1
@@ -1255,7 +1582,15 @@ def assignment (fuel : Nat) (env : Env) (scope : List Local) (e : CTree) : Optio
     | none => none
     | some target => assignTarget fuel env scope target (kid set 1)
   else
-    none
+    if decide (nodeProd e = (104)) && decide (nodeProd a = (105)) && hasKids set && decide (nodeProd set ≠ (106)) then
+      compoundOf fuel env scope (peel fuel (kid a 0)) (compoundOp (nodeProd set)) (kid set 1)
+    else
+      if decide (nodeProd e = (104)) && decide (nodeProd a = (105)) && decide (nodeProd set = (117)) then
+        match peel fuel (kid a 0) with
+        | none => none
+        | some pf => callStmt fuel env scope pf
+      else
+        none
 
 mutual
 
