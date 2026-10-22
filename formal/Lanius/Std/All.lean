@@ -7,3 +7,4 @@ import Lanius.Std.VecSpec
 import Lanius.Std.VecCheck
 import Lanius.Std.VecLoop
 import Lanius.Std.VecSearch
+import Lanius.Std.VecAlloc
