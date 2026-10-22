@@ -558,8 +558,53 @@ of the programs then answer differently if isize order is taken unsigned,
 and a deliberately unsigned laniusc side gives 363 disagreements in 800
 calls.
 
-Not covered yet: the stdlib, which needs generics and modules in the front
-pass.
+The stdlib half:
+
+```bash
+python3 -I formal/tools/stdlib_oracle.py target/claude-work/step12/full
+```
+
+It reads every module under `stdlib/` with a `module` line and its imports.
+The targets are the pub top-level functions and the trait-impl methods whose
+parameters and result are scalars or `Option` of a scalar (generics at
+`i32`), plus `core::mem::size_of` at `i32`, `u8`, `bool` and a struct. Each
+target gets a wrapper `fn w(...) -> i32` (an `Option` parameter is a flag
+and a payload; a 64-bit result is compared as its low and high halves; a
+trait method is called through a generic helper with a `where` clause). The
+wrapper and its modules are parsed by laniusc, read by the front end and
+compiled with `compileSource`; the image runs natively on 8 random
+arguments, and laniusc builds the same wrappers into one harness program.
+A function that doesn't read or compile gets a reason from its body and its
+callees; `--modules a::b,c::d` limits the run.
+
+2026-10-22, all 113 modules: 2,187 targets. 1,160 are outside the harness
+(by type: u16 95, i8 73, i16 71, extern 63, slices at least 180, wide-integer
+structs at least 114, str 41). Of the 1,027 testable ones, 168 compile and run (all
+42 of core::cmp, core::option's is_some, is_none, contains, unwrap_or, or,
+and, xor, and others), 118 read but don't compile, and 741 don't read.
+1,396 calls compared, no disagreements.
+
+Why the rest don't read or compile (a target can count under several; the
+counts include callers of a function that fails):
+
+- type aliases, 674: the front end doesn't read `type X = ...` yet. Nearly
+  all are std's capability and id aliases (`NetworkCapability`,
+  `Capability`, `EnvCapability`, `PathByte`, `FilesystemCapability`, ...).
+- unsigned literals, 113 (compileSource): a bare literal beside an unsigned
+  operand (`v == 0` with `v: u8`, `v & 15` with `u32`) is read as `i32`;
+  with `(0 as u8)` it compiles. Context typing exists only for `isize`.
+  Mostly core::byte, core::u8, core::number_u32, core::u32, core::decimal.
+- shifts, 60: `<<`, `>>`, `<<=`, `>>=`.
+- extern callees, 30.
+- literals of 2^31 or more, 25.
+- arrays, 13; `for`, `loop`, `break`, `continue`, 7.
+- `let p: ptr = 0;`, 4 (compileSource): this is core::mem::size_of, which
+  reads at every type but doesn't compile.
+- a method through a scalar type name (`i32::hash(value)`), 3.
+- a match arm that panics (`None -> core::panic::panic()`, type `!`), 1:
+  core::option::unwrap.
+
+The per-function list is `unread.txt` in the work directory.
 
 ### Optimizer and validator (step 13)
 
