@@ -26,8 +26,15 @@ fn main() -> i32 {
     };
     if (!clone_failed || text.byte_len() != 4 || text.capacity() != 4) { return 5; }
     if (core::option::unwrap_or(text.scalar_at_byte(0), 0) != 128578) { return 6; }
+    if (!failed(text.try_replace_range(0, 4, text))) { return 9; }
+    let substring_failed: bool = match (text.try_substring(0, 4)) {
+        Ok(_) -> false, Err(error) -> allocation_failed(error),
+    };
+    if (!substring_failed || text.byte_len() != 4) { return 10; }
     // Validation needs no allocation and leaves the same owner valid.
     if (!core::result::is_err(text.try_push_scalar(55296))) { return 7; }
+    // Removal is allocation-free, even when every later allocation fails.
+    if (core::result::is_err(text.try_remove_range(0, 4))) { return 11; }
     text.clear();
     if (core::result::is_err(text.try_push_scalar(66))) { return 8; }
     text.destroy();

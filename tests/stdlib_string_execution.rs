@@ -15,7 +15,7 @@ fn compile_fixture(name: &str) -> Vec<u8> {
 #[test]
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn owned_utf8_edits_aliases_and_invalid_inputs_execute() {
-    for name in ["alloc_string", "alloc_string_invalid"] {
+    for name in ["alloc_string", "alloc_string_invalid", "alloc_string_edits"] {
         let bytes = compile_fixture(name);
         let output = common::run_x86_64_elf_output("owned UTF-8 string", name, &bytes);
         assert_eq!(output.status.code(), Some(0), "{name}: {output:?}");

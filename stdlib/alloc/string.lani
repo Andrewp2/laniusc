@@ -3,6 +3,8 @@
 // All fallible edits preserve the owner and contents on Err. Successful
 // edits may invalidate borrowed byte views. NUL is an ordinary text scalar.
 module alloc::string;
+import core::byte;
+import core::cmp;
 import core::option;
 import core::result;
 import core::utf8;
@@ -224,6 +226,135 @@ pub impl String {
         return true;
     }
 
+    // Total lexicographic order of UTF-8 bytes (also Unicode scalar order).
+    pub fn compare(&self, other: String) -> i32 {
+        let left: [u8] = std::vec::as_slice(self.bytes);
+        let right: [u8] = std::vec::as_slice(other.bytes);
+        let left_len: i32 = std::vec::len(self.bytes);
+        let right_len: i32 = std::vec::len(other.bytes);
+        let common: i32 = left_len;
+        if (right_len < common) { common = right_len; }
+        let index: i32 = 0;
+        while (index < common) {
+            if (left[index] < right[index]) { return -1; }
+            if (left[index] > right[index]) { return 1; }
+            index += 1;
+        }
+        if (left_len < right_len) { return -1; }
+        if (left_len > right_len) { return 1; }
+        return 0;
+    }
+
+    pub fn starts_with(&self, prefix: String) -> bool {
+        let count: i32 = std::vec::len(prefix.bytes);
+        if (count > std::vec::len(self.bytes)) { return false; }
+        let bytes: [u8] = std::vec::as_slice(self.bytes);
+        let pattern: [u8] = std::vec::as_slice(prefix.bytes);
+        let index: i32 = 0;
+        while (index < count) {
+            if (bytes[index] != pattern[index]) { return false; }
+            index += 1;
+        }
+        return true;
+    }
+
+    pub fn ends_with(&self, suffix: String) -> bool {
+        let count: i32 = std::vec::len(suffix.bytes);
+        let length: i32 = std::vec::len(self.bytes);
+        if (count > length) { return false; }
+        let bytes: [u8] = std::vec::as_slice(self.bytes);
+        let pattern: [u8] = std::vec::as_slice(suffix.bytes);
+        let index: i32 = 0;
+        while (index < count) {
+            if (bytes[length - count + index] != pattern[index]) { return false; }
+            index += 1;
+        }
+        return true;
+    }
+
+    // An independent copy of the half-open byte range. Both endpoints must
+    // be scalar boundaries. An empty range produces an unallocated String.
+    pub fn try_substring(&self, start: i32, end: i32) -> core::result::Result<String, Error> {
+        if (start < 0 || end < start || end > std::vec::len(self.bytes)) {
+            return core::result::Err(Error::Bounds);
+        }
+        if (!self.is_char_boundary(start) || !self.is_char_boundary(end)) {
+            return core::result::Err(Error::NotCharBoundary);
+        }
+        let count: i32 = end - start;
+        let copy: std::vec::Vec<u8> = std::vec::try_with_capacity(count);
+        if (std::vec::capacity(copy) < count) { return core::result::Err(Error::AllocationFailed); }
+        let bytes: [u8] = std::vec::as_slice(self.bytes);
+        let index: i32 = start;
+        while (index < end) {
+            copy = std::vec::try_push(copy, bytes[index]);
+            index += 1;
+        }
+        return core::result::Ok(String { bytes: copy });
+    }
+
+    // Replace a half-open byte range. Nonempty replacement builds a fresh
+    // buffer before releasing the old one, including when replacement aliases
+    // this owner. Empty replacement removes in place without allocating.
+    pub fn try_replace_range(&self, start: i32, end: i32, replacement: String) -> core::result::Result<i32, Error> {
+        let length: i32 = std::vec::len(self.bytes);
+        if (start < 0 || end < start || end > length) { return core::result::Err(Error::Bounds); }
+        if (!self.is_char_boundary(start) || !self.is_char_boundary(end)) {
+            return core::result::Err(Error::NotCharBoundary);
+        }
+        let retained: i32 = length - (end - start);
+        let count: i32 = std::vec::len(replacement.bytes);
+        if (count > 2147483647 - retained) { return core::result::Err(Error::CapacityOverflow); }
+        let needed: i32 = retained + count;
+        let old: [u8] = std::vec::as_slice(self.bytes);
+        if (count == 0) {
+            let index: i32 = end;
+            while (index < length) {
+                old[start + (index - end)] = old[index];
+                index += 1;
+            }
+            self.bytes = std::vec::truncate(self.bytes, needed);
+            return core::result::Ok(needed);
+        }
+        let capacity: i32 = std::vec::capacity(self.bytes);
+        if (capacity < needed) { capacity = growth_capacity(capacity, needed); }
+        let fresh: std::vec::Vec<u8> = std::vec::try_with_capacity(capacity);
+        if (std::vec::capacity(fresh) < needed) { return core::result::Err(Error::AllocationFailed); }
+        let index: i32 = 0;
+        while (index < start) { fresh = std::vec::try_push(fresh, old[index]); index += 1; }
+        let source: [u8] = std::vec::as_slice(replacement.bytes);
+        fresh = std::vec::try_extend_from_slice(fresh, source, count);
+        index = end;
+        while (index < length) { fresh = std::vec::try_push(fresh, old[index]); index += 1; }
+        std::vec::destroy(self.bytes);
+        self.bytes = fresh;
+        return core::result::Ok(needed);
+    }
+
+    pub fn try_insert(&self, byte_index: i32, value: String) -> core::result::Result<i32, Error> {
+        return self.try_replace_range(byte_index, byte_index, value);
+    }
+
+    pub fn try_remove_range(&self, start: i32, end: i32) -> core::result::Result<i32, Error> {
+        let empty: String = new();
+        return self.try_replace_range(start, end, empty);
+    }
+
+    // Remove leading/trailing ASCII whitespace in place, retaining capacity.
+    // Unicode whitespace outside ASCII is left untouched.
+    pub fn trim_ascii(&self) -> i32 {
+        let bytes: [u8] = std::vec::as_slice(self.bytes);
+        let end: i32 = std::vec::len(self.bytes);
+        let start: i32 = 0;
+        while (start < end && core::byte::is_ascii_whitespace(bytes[start])) { start += 1; }
+        while (end > start && core::byte::is_ascii_whitespace(bytes[end - 1])) { end -= 1; }
+        let count: i32 = end - start;
+        let index: i32 = 0;
+        while (index < count) { bytes[index] = bytes[start + index]; index += 1; }
+        self.bytes = std::vec::truncate(self.bytes, count);
+        return count;
+    }
+
     // First matching byte offset. The empty needle matches at zero.
     pub fn find(&self, needle: String) -> core::option::Option<i32> {
         let length: i32 = std::vec::len(self.bytes);
@@ -247,4 +378,16 @@ pub impl String {
         std::vec::destroy(self.bytes);
         self.bytes = std::vec::new();
     }
+}
+
+pub impl core::cmp::Eq<String> for String {
+    pub fn eq(left: String, right: String) -> bool { return left.equals(right); }
+    pub fn ne(left: String, right: String) -> bool { return !left.equals(right); }
+}
+
+pub impl core::cmp::Ord<String> for String {
+    pub fn lt(left: String, right: String) -> bool { return left.compare(right) < 0; }
+    pub fn le(left: String, right: String) -> bool { return left.compare(right) <= 0; }
+    pub fn gt(left: String, right: String) -> bool { return left.compare(right) > 0; }
+    pub fn ge(left: String, right: String) -> bool { return left.compare(right) >= 0; }
 }

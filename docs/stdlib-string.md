@@ -39,6 +39,10 @@ invariant. Mutating methods may invalidate borrowed views.
 | `clear` | Empty the string while retaining capacity |
 | `try_clone` | Independent owned copy or AllocationFailed |
 | `equals`, `find` | Byte equality or first matching byte offset; empty needle matches zero |
+| `compare`, `starts_with`, `ends_with` | Total lexicographic byte order and prefix/suffix tests |
+| `try_substring` | Independent copy of a range with scalar-boundary endpoints |
+| `try_replace_range`, `try_insert`, `try_remove_range` | Checked byte-range edits; return the new length |
+| `trim_ascii` | Remove leading/trailing ASCII whitespace in place and return the length |
 | `destroy` | Release the allocation and reset this owner |
 
 Fallible edits return `Result`. Invalid UTF-8 records the first malformed or
@@ -51,11 +55,23 @@ Growth keeps the old allocation alive until both source copies finish. Capacity
 grows geometrically. `find` uses a direct scan with worst-case time proportional
 to haystack length times needle length.
 
+Nonempty replacement builds fresh storage before releasing the old buffer, so
+replacement may alias the owner. It takes linear time and can fail allocation
+even when the existing capacity would fit the result. Removing a range allocates
+nothing. Empty substrings also require no allocation.
+
+String implements `core::cmp::Eq<String>` and `Ord<String>`. Ordering compares
+UTF-8 bytes, which preserves Unicode scalar order. Generic maps and sorting can
+use these traits. Existing containers copy handles rather than automatically
+cloning or destroying nested String allocations; keep each key's owner alive
+until the container is destroyed, or manage transferred owners explicitly.
+
 ## Execution evidence
 
 On 2026-10-22, all three tests in `tests/stdlib_string_execution.rs` passed
 against compiler source `441e66f9` plus this library work, on x86_64 Linux with
-an RTX 3090 running the GPU compiler. Combined test runtime: 10.22 seconds.
+an RTX 3090 running the GPU compiler. The follow-up with range edits and generic
+collection integration passed all three test groups in 14.42 seconds.
 
 - `alloc_string.lani`: empty and NUL-containing text; 1/2/3/4-byte scalars;
   boundaries, growth, cloning, self-append, reserve, search, truncation,
@@ -63,8 +79,11 @@ an RTX 3090 running the GPU compiler. Combined test runtime: 10.22 seconds.
 - `alloc_string_invalid.lani`: continuation bytes, overlong encodings,
   surrogates, out-of-range values, bad tails, truncated sequences, negative
   counts and overflow rejected before source access.
+- `alloc_string_edits.lani`: independent and empty substrings, malformed
+  endpoints, aliasing replacement/insertion, allocation-free removal, ASCII
+  trimming, every comparison trait member, generic sorting and string-keyed maps.
 - Allocation fixtures use `strace` to fail `mmap`, covering initial allocation,
-  growth, reserve, clone and self-append. They verify preserved bytes and
+  growth, reserve, clone, self-append, replacement and substring copying. They verify preserved bytes and
   continued use of the original owner after failure.
 - `sample_programs/unicode_text_report.lani` reads stdin, validates UTF-8,
   reports byte/scalar counts and reverses scalars. Tests check exact output
@@ -80,6 +99,6 @@ timeout --kill-after=2s 100s env \
   cargo test --locked --test stdlib_string_execution -- --nocapture
 ```
 
-Wasm and user-program GPU execution are not established. Insertion/replacement,
-splitting/joining, formatting, native `str` interoperation and immutable views
+Wasm and user-program GPU execution are not established. Splitting/joining,
+formatting, native `str` interoperation and immutable views
 remain on the full [library roadmap](library-roadmap.md).
