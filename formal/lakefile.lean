@@ -12,6 +12,10 @@ lean_lib Lanius
 lean_lib LaniusMini where
   globs := #[.submodules `Lanius.Mini]
 
+/-- The front end and `compileSource`, compiled, for formal/tools/self_host.py. -/
+lean_exe runAll where
+  root := `Lanius.Tools.RunAll
+
 lean_exe checkCompact where
   root := `Lanius.Extraction.CheckCompact
 

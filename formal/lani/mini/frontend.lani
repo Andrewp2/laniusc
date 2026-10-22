@@ -835,14 +835,14 @@ pub fn type_path_spellings(fuel: usize, segment: CTree, tail: CTree) -> core::op
 
 // A path as its module (the segments before the last) and its last name.
 pub struct Split {
-    module: List<List<usize>>,
+    home: List<List<usize>>,
     name: List<usize>,
 }
 
 pub fn split_more(n: List<usize>, rest: core::option::Option<Split>) -> core::option::Option<Split> {
     return match (rest) {
-        None -> Some(Split { module: empty(), name: n }),
-        Some(s) -> Some(Split { module: cons(n, s.module), name: s.name }),
+        None -> Some(Split { home: empty(), name: n }),
+        Some(s) -> Some(Split { home: cons(n, s.home), name: s.name }),
     };
 }
 
@@ -886,7 +886,7 @@ pub struct Inst {
 // a struct's field spellings and types as written, an enum's variant
 // spellings and payload types as written.
 pub struct TypeDecl {
-    module: List<List<usize>>,
+    home: List<List<usize>>,
     name: List<usize>,
     params: List<List<usize>>,
     is_enum: bool,
@@ -900,7 +900,7 @@ pub struct TypeDecl {
 // parameters and type as written (a method), its own type parameters, and
 // its fn_item or impl_fn_item node.
 pub struct FnDecl {
-    module: List<List<usize>>,
+    home: List<List<usize>>,
     name: List<usize>,
     in_impl: bool,
     impl_params: List<List<usize>>,
@@ -911,7 +911,7 @@ pub struct FnDecl {
 
 // `const name: ty = value;`
 pub struct ConstDecl {
-    module: List<List<usize>>,
+    home: List<List<usize>>,
     name: List<usize>,
     ty: CTree,
     value: CTree,
@@ -919,13 +919,13 @@ pub struct ConstDecl {
 
 // `import target;` in a file of module `module`.
 pub struct ImportDecl {
-    module: List<List<usize>>,
+    home: List<List<usize>>,
     target: List<List<usize>>,
 }
 
 // `type name<params> = ty;` (no where clause).
 pub struct AliasDecl {
-    module: List<List<usize>>,
+    home: List<List<usize>>,
     name: List<usize>,
     params: List<List<usize>>,
     ty: CTree,
@@ -951,10 +951,10 @@ pub fn join_decls(a: Decls, b: core::option::Option<Decls>) -> core::option::Opt
     };
 }
 
-pub fn import_decls(module: List<List<usize>>, target: core::option::Option<List<List<usize>>>) -> core::option::Option<Decls> {
+pub fn import_decls(home: List<List<usize>>, target: core::option::Option<List<List<usize>>>) -> core::option::Option<Decls> {
     return match (target) {
         None -> None,
-        Some(t) -> Some(Decls { types: empty(), fns: empty(), consts: empty(), imports: single(ImportDecl { module: module, target: t }), aliases: empty() }),
+        Some(t) -> Some(Decls { types: empty(), fns: empty(), consts: empty(), imports: single(ImportDecl { home: home, target: t }), aliases: empty() }),
     };
 }
 
@@ -1060,51 +1060,51 @@ pub fn variants_of(fuel: usize, items: List<CTree>) -> core::option::Option<Vari
     };
 }
 
-pub fn struct_decl_fields(module: List<List<usize>>, name: List<usize>, ps: List<List<usize>>, fs: Fields) -> core::option::Option<TypeDecl> {
+pub fn struct_decl_fields(home: List<List<usize>>, name: List<usize>, ps: List<List<usize>>, fs: Fields) -> core::option::Option<TypeDecl> {
     if (distinct(fs.names)) {
-        return Some(TypeDecl { module: module, name: name, params: ps, is_enum: false, fields: fs.names, field_types: fs.types, variants: empty(), payloads: empty() });
+        return Some(TypeDecl { home: home, name: name, params: ps, is_enum: false, fields: fs.names, field_types: fs.types, variants: empty(), payloads: empty() });
     }
     return None;
 }
 
-pub fn struct_decl_of(module: List<List<usize>>, name: List<usize>, params: core::option::Option<List<List<usize>>>, items: core::option::Option<List<CTree>>) -> core::option::Option<TypeDecl> {
+pub fn struct_decl_of(home: List<List<usize>>, name: List<usize>, params: core::option::Option<List<List<usize>>>, items: core::option::Option<List<CTree>>) -> core::option::Option<TypeDecl> {
     return match (params) {
         None -> None,
         Some(ps) -> match (items) {
             None -> None,
-            Some(fs) -> struct_decl_fields(module, name, ps, fields_of(fs)),
+            Some(fs) -> struct_decl_fields(home, name, ps, fields_of(fs)),
         },
     };
 }
 
-pub fn enum_decl_of(module: List<List<usize>>, name: List<usize>, params: core::option::Option<List<List<usize>>>, variants: core::option::Option<Variants>) -> core::option::Option<TypeDecl> {
+pub fn enum_decl_of(home: List<List<usize>>, name: List<usize>, params: core::option::Option<List<List<usize>>>, variants: core::option::Option<Variants>) -> core::option::Option<TypeDecl> {
     return match (params) {
         None -> None,
         Some(ps) -> match (variants) {
             None -> None,
-            Some(vs) -> Some(TypeDecl { module: module, name: name, params: ps, is_enum: true, fields: empty(), field_types: empty(), variants: vs.names, payloads: vs.payloads }),
+            Some(vs) -> Some(TypeDecl { home: home, name: name, params: ps, is_enum: true, fields: empty(), field_types: empty(), variants: vs.names, payloads: vs.payloads }),
         },
     };
 }
 
 // A struct_item or enum_item: no where clause.
-pub fn type_decl(fuel: usize, module: List<List<usize>>, s: CTree) -> core::option::Option<TypeDecl> {
+pub fn type_decl(fuel: usize, home: List<List<usize>>, s: CTree) -> core::option::Option<TypeDecl> {
     if (node_prod(s) == p_struct() && node_prod(kid(s, 3)) == p_where_none()) {
-        return struct_decl_of(module, kid_token(s, 1).text, type_params(fuel, kid(s, 2)), list_items(fuel, kid(s, 5)));
+        return struct_decl_of(home, kid_token(s, 1).text, type_params(fuel, kid(s, 2)), list_items(fuel, kid(s, 5)));
     }
     if (node_prod(s) == p_enum() && node_prod(kid(s, 3)) == p_where_none()) {
         return match (list_items(fuel, kid(s, 5))) {
             None -> None,
-            Some(items) -> enum_decl_of(module, kid_token(s, 1).text, type_params(fuel, kid(s, 2)), variants_of(fuel, items)),
+            Some(items) -> enum_decl_of(home, kid_token(s, 1).text, type_params(fuel, kid(s, 2)), variants_of(fuel, items)),
         };
     }
     return None;
 }
 
-pub fn fn_decl_of(module: List<List<usize>>, f: CTree, in_impl: bool, impl_params: List<List<usize>>, self_type: CTree, params: core::option::Option<List<List<usize>>>) -> core::option::Option<FnDecl> {
+pub fn fn_decl_of(home: List<List<usize>>, f: CTree, in_impl: bool, impl_params: List<List<usize>>, self_type: CTree, params: core::option::Option<List<List<usize>>>) -> core::option::Option<FnDecl> {
     return match (params) {
         None -> None,
-        Some(ps) -> Some(FnDecl { module: module, name: kid_token(f, 1).text, in_impl: in_impl, impl_params: impl_params, self_type: self_type, params: ps, tree: f }),
+        Some(ps) -> Some(FnDecl { home: home, name: kid_token(f, 1).text, in_impl: in_impl, impl_params: impl_params, self_type: self_type, params: ps, tree: f }),
     };
 }
 
@@ -1118,23 +1118,23 @@ pub fn cons_fn_decl(f: core::option::Option<FnDecl>, rest: core::option::Option<
     };
 }
 
-pub fn method_decl(fuel: usize, module: List<List<usize>>, impl_params: List<List<usize>>, self_type: CTree, m: CTree) -> core::option::Option<FnDecl> {
+pub fn method_decl(fuel: usize, home: List<List<usize>>, impl_params: List<List<usize>>, self_type: CTree, m: CTree) -> core::option::Option<FnDecl> {
     let f: CTree = kid(m, 0);
     let g: CTree = kid(m, 1);
     if (node_prod(m) == p_impl_method() && node_prod(f) == p_impl_fn()) {
-        return fn_decl_of(module, f, true, impl_params, self_type, type_params(fuel, kid(f, 2)));
+        return fn_decl_of(home, f, true, impl_params, self_type, type_params(fuel, kid(f, 2)));
     }
     if (node_prod(m) == p_impl_method_pub() && node_prod(g) == p_impl_fn()) {
-        return fn_decl_of(module, g, true, impl_params, self_type, type_params(fuel, kid(g, 2)));
+        return fn_decl_of(home, g, true, impl_params, self_type, type_params(fuel, kid(g, 2)));
     }
     return None;
 }
 
 // The methods of an impl block: impl_method items holding impl_fn_items.
-pub fn methods_of(fuel: usize, module: List<List<usize>>, impl_params: List<List<usize>>, self_type: CTree, items: List<CTree>) -> core::option::Option<List<FnDecl>> {
+pub fn methods_of(fuel: usize, home: List<List<usize>>, impl_params: List<List<usize>>, self_type: CTree, items: List<CTree>) -> core::option::Option<List<FnDecl>> {
     return match (items) {
         Nil -> Some(empty()),
-        Cons(m, rest) -> cons_fn_decl(method_decl(fuel, module, impl_params, self_type, m), methods_of(fuel, module, impl_params, self_type, unbox(rest))),
+        Cons(m, rest) -> cons_fn_decl(method_decl(fuel, home, impl_params, self_type, m), methods_of(fuel, home, impl_params, self_type, unbox(rest))),
     };
 }
 
@@ -1145,12 +1145,12 @@ pub fn fns_decls(fns: core::option::Option<List<FnDecl>>) -> core::option::Optio
     };
 }
 
-pub fn impl_methods(fuel: usize, module: List<List<usize>>, params: core::option::Option<List<List<usize>>>, self_type: CTree, list: CTree) -> core::option::Option<Decls> {
+pub fn impl_methods(fuel: usize, home: List<List<usize>>, params: core::option::Option<List<List<usize>>>, self_type: CTree, list: CTree) -> core::option::Option<Decls> {
     return match (params) {
         None -> None,
         Some(ps) -> match (list_items(fuel, list)) {
             None -> None,
-            Some(items) -> fns_decls(methods_of(fuel, module, ps, self_type, items)),
+            Some(items) -> fns_decls(methods_of(fuel, home, ps, self_type, items)),
         },
     };
 }
@@ -1162,39 +1162,39 @@ pub fn type_decls(t: core::option::Option<TypeDecl>) -> core::option::Option<Dec
     };
 }
 
-pub fn alias_decls(module: List<List<usize>>, name: List<usize>, params: core::option::Option<List<List<usize>>>, ty: CTree) -> core::option::Option<Decls> {
+pub fn alias_decls(home: List<List<usize>>, name: List<usize>, params: core::option::Option<List<List<usize>>>, ty: CTree) -> core::option::Option<Decls> {
     return match (params) {
         None -> None,
-        Some(ps) -> Some(Decls { types: empty(), fns: empty(), consts: empty(), imports: empty(), aliases: single(AliasDecl { module: module, name: name, params: ps, ty: ty }) }),
+        Some(ps) -> Some(Decls { types: empty(), fns: empty(), consts: empty(), imports: empty(), aliases: single(AliasDecl { home: home, name: name, params: ps, ty: ty }) }),
     };
 }
 
 // The declarations an item makes. Imports, extern functions, traits and
 // type aliases with a where clause make none; a use of one is rejected when
 // it is read.
-pub fn item_decls(fuel: usize, module: List<List<usize>>, item: CTree) -> core::option::Option<Decls> {
+pub fn item_decls(fuel: usize, home: List<List<usize>>, item: CTree) -> core::option::Option<Decls> {
     let b: CTree = item_body(item);
     let p: usize = node_prod(b);
     if (p == p_struct() || p == p_enum()) {
-        return type_decls(type_decl(fuel, module, b));
+        return type_decls(type_decl(fuel, home, b));
     }
     if (p == p_fn()) {
-        return fns_decls(cons_fn_decl(fn_decl_of(module, b, false, empty(), b, type_params(fuel, kid(b, 2))), Some(empty())));
+        return fns_decls(cons_fn_decl(fn_decl_of(home, b, false, empty(), b, type_params(fuel, kid(b, 2))), Some(empty())));
     }
     if (p == p_const()) {
-        return Some(Decls { types: empty(), fns: empty(), consts: single(ConstDecl { module: module, name: kid_token(b, 1).text, ty: kid(b, 3), value: kid(b, 5) }), imports: empty(), aliases: empty() });
+        return Some(Decls { types: empty(), fns: empty(), consts: single(ConstDecl { home: home, name: kid_token(b, 1).text, ty: kid(b, 3), value: kid(b, 5) }), imports: empty(), aliases: empty() });
     }
     if (p == p_impl_inherent() && node_prod(kid(b, 3)) == p_where_none()) {
-        return impl_methods(fuel, module, type_params(fuel, kid(b, 1)), kid(b, 2), kid(b, 5));
+        return impl_methods(fuel, home, type_params(fuel, kid(b, 1)), kid(b, 2), kid(b, 5));
     }
     if (p == p_impl_trait() && node_prod(kid(b, 5)) == p_where_none()) {
-        return impl_methods(fuel, module, type_params(fuel, kid(b, 1)), kid(b, 4), kid(b, 7));
+        return impl_methods(fuel, home, type_params(fuel, kid(b, 1)), kid(b, 4), kid(b, 7));
     }
     if (p == p_import() && node_prod(kid(b, 1)) == p_import_path()) {
-        return import_decls(module, path_spellings(fuel, kid(kid(kid(b, 1), 0), 0), kid(kid(kid(b, 1), 0), 1)));
+        return import_decls(home, path_spellings(fuel, kid(kid(kid(b, 1), 0), 0), kid(kid(kid(b, 1), 0), 1)));
     }
     if (p == p_type_alias() && node_prod(kid(b, 3)) == p_where_none()) {
-        return alias_decls(module, kid_token(b, 1).text, type_params(fuel, kid(b, 2)), kid(b, 5));
+        return alias_decls(home, kid_token(b, 1).text, type_params(fuel, kid(b, 2)), kid(b, 5));
     }
     if (p == p_module() || p == p_import() || p == p_extern_fn() || p == p_trait() || p == p_type_alias()) {
         return Some(no_decls());
@@ -1202,10 +1202,10 @@ pub fn item_decls(fuel: usize, module: List<List<usize>>, item: CTree) -> core::
     return None;
 }
 
-pub fn collect(fuel: usize, module: List<List<usize>>, items: List<CTree>, acc: Decls) -> core::option::Option<Decls> {
+pub fn collect(fuel: usize, home: List<List<usize>>, items: List<CTree>, acc: Decls) -> core::option::Option<Decls> {
     return match (items) {
         Nil -> Some(acc),
-        Cons(item, rest) -> collect_next(fuel, module, join_decls(acc, item_decls(fuel, module, item)), unbox(rest)),
+        Cons(item, rest) -> collect_next(fuel, home, join_decls(acc, item_decls(fuel, home, item)), unbox(rest)),
     };
 }
 
@@ -1219,19 +1219,19 @@ fn collect_next(cfuel: usize, cmodule: List<List<usize>>, cacc: core::option::Op
 
 // One file's module path and declarations.
 pub struct FileDecls {
-    module: List<List<usize>>,
+    home: List<List<usize>>,
     decls: Decls,
 }
 
-pub fn file_collected(module: List<List<usize>>, decls: core::option::Option<Decls>) -> core::option::Option<FileDecls> {
+pub fn file_collected(home: List<List<usize>>, decls: core::option::Option<Decls>) -> core::option::Option<FileDecls> {
     return match (decls) {
         None -> None,
-        Some(d) -> Some(FileDecls { module: module, decls: d }),
+        Some(d) -> Some(FileDecls { home: home, decls: d }),
     };
 }
 
-pub fn file_items(fuel: usize, module: core::option::Option<List<List<usize>>>, items: List<CTree>) -> core::option::Option<FileDecls> {
-    return match (module) {
+pub fn file_items(fuel: usize, home: core::option::Option<List<List<usize>>>, items: List<CTree>) -> core::option::Option<FileDecls> {
+    return match (home) {
         None -> None,
         Some(m) -> file_collected(m, collect(fuel, m, items, no_decls())),
     };
@@ -1254,7 +1254,7 @@ pub struct Collected {
 }
 
 pub fn collected_with(c: Collected, f: FileDecls) -> Collected {
-    return Collected { decls: Decls { types: concat(c.decls.types, f.decls.types), fns: concat(c.decls.fns, f.decls.fns), consts: concat(c.decls.consts, f.decls.consts), imports: concat(c.decls.imports, f.decls.imports), aliases: concat(c.decls.aliases, f.decls.aliases) }, modules: concat(c.modules, single(f.module)) };
+    return Collected { decls: Decls { types: concat(c.decls.types, f.decls.types), fns: concat(c.decls.fns, f.decls.fns), consts: concat(c.decls.consts, f.decls.consts), imports: concat(c.decls.imports, f.decls.imports), aliases: concat(c.decls.aliases, f.decls.aliases) }, modules: concat(c.modules, single(f.home)) };
 }
 
 pub fn collect_files(fuel: usize, roots: List<CTree>, acc: Collected) -> core::option::Option<Collected> {
@@ -1284,7 +1284,7 @@ pub fn fn_names_in(fns: List<FnDecl>, m: List<List<usize>>) -> List<List<usize>>
 
 // extract: inline
 fn fn_name_at(nf: FnDecl, nrest: List<FnDecl>, nm: List<List<usize>>) -> List<List<usize>> {
-    if (!nf.in_impl && same_spellings(nf.module, nm)) {
+    if (!nf.in_impl && same_spellings(nf.home, nm)) {
         return cons(nf.name, fn_names_in(nrest, nm));
     }
     return fn_names_in(nrest, nm);
@@ -1299,7 +1299,7 @@ pub fn type_names_in(types: List<TypeDecl>, m: List<List<usize>>) -> List<List<u
 
 // extract: inline
 fn type_name_at(tt: TypeDecl, trest: List<TypeDecl>, tm: List<List<usize>>) -> List<List<usize>> {
-    if (same_spellings(tt.module, tm)) {
+    if (same_spellings(tt.home, tm)) {
         return cons(tt.name, concat(tt.variants, type_names_in(trest, tm)));
     }
     return type_names_in(trest, tm);
@@ -1314,7 +1314,7 @@ pub fn const_names_in(consts: List<ConstDecl>, m: List<List<usize>>) -> List<Lis
 
 // extract: inline
 fn const_name_at(kc: ConstDecl, krest: List<ConstDecl>, km: List<List<usize>>) -> List<List<usize>> {
-    if (same_spellings(kc.module, km)) {
+    if (same_spellings(kc.home, km)) {
         return cons(kc.name, const_names_in(krest, km));
     }
     return const_names_in(krest, km);
@@ -1329,7 +1329,7 @@ pub fn type_only_names_in(types: List<TypeDecl>, m: List<List<usize>>) -> List<L
 
 // extract: inline
 fn type_only_at(ot: TypeDecl, orest: List<TypeDecl>, om: List<List<usize>>) -> List<List<usize>> {
-    if (same_spellings(ot.module, om)) {
+    if (same_spellings(ot.home, om)) {
         return cons(ot.name, type_only_names_in(orest, om));
     }
     return type_only_names_in(orest, om);
@@ -1344,7 +1344,7 @@ pub fn alias_names_in(aliases: List<AliasDecl>, m: List<List<usize>>) -> List<Li
 
 // extract: inline
 fn alias_name_at(aa: AliasDecl, arest: List<AliasDecl>, am: List<List<usize>>) -> List<List<usize>> {
-    if (same_spellings(aa.module, am)) {
+    if (same_spellings(aa.home, am)) {
         return cons(aa.name, alias_names_in(arest, am));
     }
     return alias_names_in(arest, am);
@@ -1358,7 +1358,7 @@ pub fn none_member(names: List<List<usize>>, others: List<List<usize>>) -> bool 
 }
 
 pub fn enum_named_ok(t: TypeDecl, m: List<List<usize>>, values: List<List<usize>>) -> bool {
-    if (t.is_enum && same_spellings(t.module, m)) {
+    if (t.is_enum && same_spellings(t.home, m)) {
         return distinct(t.variants) && none_member(t.variants, values);
     }
     return true;
@@ -1473,7 +1473,7 @@ pub fn find_type(types: List<TypeDecl>, m: List<List<usize>>, name: List<usize>,
 
 // extract: inline
 fn find_type_at(ft: TypeDecl, frest: List<TypeDecl>, fm: List<List<usize>>, fname: List<usize>, fk: usize) -> core::option::Option<usize> {
-    if (same_spellings(ft.module, fm) && same_text(ft.name, fname)) {
+    if (same_spellings(ft.home, fm) && same_text(ft.name, fname)) {
         return Some(fk);
     }
     return find_type(frest, fm, fname, plus(fk, 1));
@@ -1489,7 +1489,7 @@ pub fn find_fn(fns: List<FnDecl>, m: List<List<usize>>, name: List<usize>, k: us
 
 // extract: inline
 fn find_fn_at(gf: FnDecl, grest: List<FnDecl>, gm: List<List<usize>>, gname: List<usize>, gk: usize) -> core::option::Option<usize> {
-    if (!gf.in_impl && same_spellings(gf.module, gm) && same_text(gf.name, gname)) {
+    if (!gf.in_impl && same_spellings(gf.home, gm) && same_text(gf.name, gname)) {
         return Some(gk);
     }
     return find_fn(grest, gm, gname, plus(gk, 1));
@@ -1504,7 +1504,7 @@ pub fn find_const(consts: List<ConstDecl>, m: List<List<usize>>, name: List<usiz
 
 // extract: inline
 fn find_const_at(hc: ConstDecl, hrest: List<ConstDecl>, hm: List<List<usize>>, hname: List<usize>) -> core::option::Option<ConstDecl> {
-    if (same_spellings(hc.module, hm) && same_text(hc.name, hname)) {
+    if (same_spellings(hc.home, hm) && same_text(hc.name, hname)) {
         return Some(hc);
     }
     return find_const(hrest, hm, hname);
@@ -1519,7 +1519,7 @@ pub fn find_alias(aliases: List<AliasDecl>, m: List<List<usize>>, name: List<usi
 
 // extract: inline
 fn find_alias_at(fa: AliasDecl, farest: List<AliasDecl>, fam: List<List<usize>>, faname: List<usize>) -> core::option::Option<AliasDecl> {
-    if (same_spellings(fa.module, fam) && same_text(fa.name, faname)) {
+    if (same_spellings(fa.home, fam) && same_text(fa.name, faname)) {
         return Some(fa);
     }
     return find_alias(farest, fam, faname);
@@ -1540,7 +1540,7 @@ pub fn find_variant(types: List<TypeDecl>, m: List<List<usize>>, name: List<usiz
 
 // extract: inline
 fn find_variant_at(vt: TypeDecl, vrest: List<TypeDecl>, vm: List<List<usize>>, vname: List<usize>, vk: usize) -> core::option::Option<VariantAt> {
-    if (vt.is_enum && same_spellings(vt.module, vm)) {
+    if (vt.is_enum && same_spellings(vt.home, vm)) {
         return match (position(vt.variants, vname, 0)) {
             None -> find_variant(vrest, vm, vname, plus(vk, 1)),
             Some(j) -> Some(VariantAt { owner: vk, index: j }),
@@ -1690,15 +1690,15 @@ pub fn add_insts(table: List<Inst>, new: List<Inst>) -> List<Inst> {
 // not take; and, in a function body, its result type.
 pub struct Env {
     decls: Decls,
-    module: List<List<usize>>,
+    home: List<List<usize>>,
     names: List<List<usize>>,
     subst: List<Ty>,
     globals: List<List<usize>>,
     ret: core::option::Option<Ty>,
 }
 
-pub fn decl_env(decls: Decls, module: List<List<usize>>, names: List<List<usize>>, subst: List<Ty>) -> Env {
-    return Env { decls: decls, module: module, names: names, subst: subst, globals: empty(), ret: None };
+pub fn decl_env(decls: Decls, home: List<List<usize>>, names: List<List<usize>>, subst: List<Ty>) -> Env {
+    return Env { decls: decls, home: home, names: names, subst: subst, globals: empty(), ret: None };
 }
 
 // The variants spelled name among module m's enums (types counted from k).
@@ -1711,7 +1711,7 @@ pub fn variants_named(types: List<TypeDecl>, m: List<List<usize>>, name: List<us
 
 // extract: inline
 fn variants_named_at(nt: TypeDecl, nrest: List<TypeDecl>, nm: List<List<usize>>, nname: List<usize>, nk: usize) -> List<VariantAt> {
-    if (nt.is_enum && same_spellings(nt.module, nm)) {
+    if (nt.is_enum && same_spellings(nt.home, nm)) {
         return match (position(nt.variants, nname, 0)) {
             None -> variants_named(nrest, nm, nname, plus(nk, 1)),
             Some(j) -> cons(VariantAt { owner: nk, index: j }, variants_named(nrest, nm, nname, plus(nk, 1))),
@@ -1730,7 +1730,7 @@ pub fn imported_variants(types: List<TypeDecl>, imports: List<ImportDecl>, m: Li
 
 // extract: inline
 fn imported_variants_at(it: List<TypeDecl>, ii: ImportDecl, irest: List<ImportDecl>, im: List<List<usize>>, iname: List<usize>) -> List<VariantAt> {
-    if (same_spellings(ii.module, im)) {
+    if (same_spellings(ii.home, im)) {
         return concat(variants_named(it, ii.target, iname, 0), imported_variants(it, irest, im, iname));
     }
     return imported_variants(it, irest, im, iname);
@@ -1749,8 +1749,8 @@ pub fn only_variant(vs: List<VariantAt>) -> core::option::Option<VariantAt> {
 // A bare variant name: the one enum of the current module that has it, or
 // else the one enum of the imported modules that has it.
 pub fn bare_variant(env: Env, name: List<usize>) -> core::option::Option<VariantAt> {
-    return match (variants_named(env.decls.types, env.module, name, 0)) {
-        Nil -> only_variant(imported_variants(env.decls.types, env.decls.imports, env.module, name)),
+    return match (variants_named(env.decls.types, env.home, name, 0)) {
+        Nil -> only_variant(imported_variants(env.decls.types, env.decls.imports, env.home, name)),
         Cons(v, rest) -> only_variant(cons(v, unbox(rest))),
     };
 }
@@ -1779,7 +1779,7 @@ pub fn variant_in(types: List<TypeDecl>, d: core::option::Option<usize>, name: L
 pub fn enum_variant(env: Env, front: List<List<usize>>, name: List<usize>) -> core::option::Option<VariantAt> {
     return match (split_last(front)) {
         None -> None,
-        Some(t) -> variant_in(env.decls.types, find_type(env.decls.types, module_or(env.module, t.module), t.name, 0), name),
+        Some(t) -> variant_in(env.decls.types, find_type(env.decls.types, module_or(env.home, t.home), t.name, 0), name),
     };
 }
 
@@ -1787,12 +1787,12 @@ pub fn enum_variant(env: Env, front: List<List<usize>>, name: List<usize>) -> co
 // `m::E::V` when the prefix names an enum, else `m::V`, the one enum of
 // module m that has V.
 pub fn variant_by_path(env: Env, s: Split) -> core::option::Option<VariantAt> {
-    if (no_names(s.module)) {
+    if (no_names(s.home)) {
         return bare_variant(env, s.name);
     }
-    return match (enum_variant(env, s.module, s.name)) {
+    return match (enum_variant(env, s.home, s.name)) {
         Some(v) -> Some(v),
-        None -> only_variant(variants_named(env.decls.types, s.module, s.name, 0)),
+        None -> only_variant(variants_named(env.decls.types, s.home, s.name, 0)),
     };
 }
 
@@ -1843,7 +1843,7 @@ pub fn param_ty(env: Env, name: List<usize>) -> core::option::Option<Ty> {
 pub fn type_decl_at(env: Env, segments: List<List<usize>>) -> core::option::Option<usize> {
     return match (split_last(segments)) {
         None -> None,
-        Some(s) -> find_type(env.decls.types, module_or(env.module, s.module), s.name, 0),
+        Some(s) -> find_type(env.decls.types, module_or(env.home, s.home), s.name, 0),
     };
 }
 
@@ -1982,7 +1982,7 @@ pub fn alias_ty(fuel: usize, env: Env, segments: List<List<usize>>, args: core::
     }
     return match (split_last(segments)) {
         None -> None,
-        Some(s) -> match (find_alias(env.decls.aliases, module_or(env.module, s.module), s.name)) {
+        Some(s) -> match (find_alias(env.decls.aliases, module_or(env.home, s.home), s.name)) {
             None -> None,
             Some(a) -> match (args) {
                 None -> None,
@@ -1997,7 +1997,7 @@ pub fn alias_at(fuel: usize, decls: Decls, a: AliasDecl, ts: List<Ty>) -> core::
         return None;
     }
     if (length(a.params) == length(ts)) {
-        return ty_of(minus(fuel, 1), decl_env(decls, a.module, a.params, ts), a.ty);
+        return ty_of(minus(fuel, 1), decl_env(decls, a.home, a.params, ts), a.ty);
     }
     return None;
 }
@@ -2060,7 +2060,7 @@ pub fn payload_list(fuel: usize, env: Env, ps: List<List<CTree>>) -> core::optio
 pub fn field_tys(fuel: usize, decls: Decls, d: usize, args: List<Ty>) -> core::option::Option<List<Ty>> {
     return match (get(decls.types, d)) {
         None -> None,
-        Some(t) -> ty_list(fuel, decl_env(decls, t.module, t.params, args), t.field_types),
+        Some(t) -> ty_list(fuel, decl_env(decls, t.home, t.params, args), t.field_types),
     };
 }
 
@@ -2068,7 +2068,7 @@ pub fn field_tys(fuel: usize, decls: Decls, d: usize, args: List<Ty>) -> core::o
 pub fn payload_tys(fuel: usize, decls: Decls, d: usize, args: List<Ty>) -> core::option::Option<List<List<Ty>>> {
     return match (get(decls.types, d)) {
         None -> None,
-        Some(t) -> payload_list(fuel, decl_env(decls, t.module, t.params, args), t.payloads),
+        Some(t) -> payload_list(fuel, decl_env(decls, t.home, t.params, args), t.payloads),
     };
 }
 
@@ -2740,6 +2740,12 @@ pub fn wide_signed(ty: Ty, minus_sign: bool, v: core::option::Option<usize>) -> 
     return None;
 }
 
+// The text of `-`.
+fn dash_text() -> List<usize> {
+    let t: List<usize> = single(45);
+    return t;
+}
+
 pub fn wide_const(t: core::option::Option<Ty>, toks: List<Token>) -> core::option::Option<SrcExpr> {
     return match (t) {
         None -> None,
@@ -2748,7 +2754,7 @@ pub fn wide_const(t: core::option::Option<Ty>, toks: List<Token>) -> core::optio
             Cons(a, rest) -> match (unbox(rest)) {
                 Nil -> wide_digits(ty, false, wide_decimal(a.text, 0)),
                 Cons(b, more) -> match (unbox(more)) {
-                    Nil -> wide_signed(ty, same_text(a.text, single(45)), wide_decimal(b.text, 0)),
+                    Nil -> wide_signed(ty, same_text(a.text, dash_text()), wide_decimal(b.text, 0)),
                     Cons(c, tail) -> None,
                 },
             },
@@ -2830,7 +2836,7 @@ pub fn const_ref(fuel: usize, env: Env, segments: core::option::Option<List<List
         None -> None,
         Some(ss) -> match (split_last(ss)) {
             None -> None,
-            Some(s) -> match (find_const(env.decls.consts, module_or(env.module, s.module), s.name)) {
+            Some(s) -> match (find_const(env.decls.consts, module_or(env.home, s.home), s.name)) {
                 None -> None,
                 Some(k) -> const_value(minus(fuel, 1), env.decls, k),
             },
@@ -2847,7 +2853,7 @@ pub fn const_value(fuel: usize, decls: Decls, k: ConstDecl) -> core::option::Opt
     if (fuel == 0) {
         return None;
     }
-    let cenv: Env = decl_env(decls, k.module, empty(), empty());
+    let cenv: Env = decl_env(decls, k.home, empty(), empty());
     return match (literal_as(ty_of(minus(fuel, 1), cenv, k.ty), expr_of(minus(fuel, 1), cenv, empty(), k.value))) {
         Some(x) -> Some(x),
         None -> wide_const(ty_of(minus(fuel, 1), cenv, k.ty), tree_tokens(k.value)),
@@ -3331,7 +3337,7 @@ pub fn ret_pattern(fd: FnDecl) -> core::option::Option<CTree> {
 }
 
 pub fn callee_env(decls: Decls, fd: FnDecl) -> Env {
-    return decl_env(decls, fd.module, empty(), empty());
+    return decl_env(decls, fd.home, empty(), empty());
 }
 
 pub fn inst_from(d: usize, args: core::option::Option<List<Ty>>) -> core::option::Option<Inst> {
@@ -3627,7 +3633,7 @@ pub fn fn_inst_ret(fuel: usize, decls: Decls, fd: FnDecl, inst: Inst) -> core::o
     }
     return match (ret_pattern(fd)) {
         None -> None,
-        Some(r) -> ty_of(fuel, decl_env(decls, fd.module, concat(fd.impl_params, fd.params), inst.args), r),
+        Some(r) -> ty_of(fuel, decl_env(decls, fd.home, concat(fd.impl_params, fd.params), inst.args), r),
     };
 }
 
@@ -3943,15 +3949,15 @@ pub fn is_some_index(k: core::option::Option<usize>) -> bool {
 // A path naming a function: `T::m` for a type parameter T, or a free
 // function of the path's module.
 pub fn is_fn_path(env: Env, s: Split) -> bool {
-    return is_type_param(env, single_name(s.module)) || is_some_index(find_fn(env.decls.fns, module_or(env.module, s.module), s.name, 0));
+    return is_type_param(env, single_name(s.home)) || is_some_index(find_fn(env.decls.fns, module_or(env.home, s.home), s.name, 0));
 }
 
 pub fn path_call(fuel: usize, env: Env, scope: List<Local>, expected: Ty, s: Split, targs: List<CTree>, es: List<SrcExpr>) -> core::option::Option<Called> {
-    let owner: core::option::Option<List<usize>> = single_name(s.module);
+    let owner: core::option::Option<List<usize>> = single_name(s.home);
     if (is_type_param(env, owner) && no_trees(targs)) {
         return static_call(fuel, env, scope, expected, owner_ty(env, owner), s.name, es);
     }
-    return match (find_fn(env.decls.fns, module_or(env.module, s.module), s.name, 0)) {
+    return match (find_fn(env.decls.fns, module_or(env.home, s.home), s.name, 0)) {
         None -> None,
         Some(d) -> free_call(fuel, env, scope, expected, d, targs, es),
     };
@@ -4365,7 +4371,7 @@ pub fn zip_variants(names: List<List<usize>>, payloads: List<List<Ty>>) -> List<
 }
 
 pub fn arm_prefix(p: List<List<usize>>, owner: TypeDecl) -> bool {
-    return no_names(p) || same_spellings(p, owner.module) || same_spellings(p, single(owner.name)) || same_spellings(p, concat(owner.module, single(owner.name)));
+    return no_names(p) || same_spellings(p, owner.home) || same_spellings(p, single(owner.name)) || same_spellings(p, concat(owner.home, single(owner.name)));
 }
 
 // An arm's pattern names the variant: `V`, `m::V` with m the enum's module,
@@ -4375,7 +4381,7 @@ pub fn arm_named(segments: core::option::Option<List<List<usize>>>, owner: TypeD
         None -> false,
         Some(ss) -> match (split_last(ss)) {
             None -> false,
-            Some(s) -> same_text(s.name, name) && arm_prefix(s.module, owner),
+            Some(s) -> same_text(s.name, name) && arm_prefix(s.home, owner),
         },
     };
 }
@@ -4577,7 +4583,7 @@ pub fn decl_inst(fuel: usize, env: Env, scope: List<Local>, d: usize, t: TypeDec
             None -> None,
             Some(ps) -> match (effs_tys(fuel, env, scope, values)) {
                 None -> None,
-                Some(ts) -> named_inferred(d, bound_or_none(t.params, match_tys(fuel, decl_env(env.decls, t.module, empty(), empty()), t.params, ps, ts, empty()))),
+                Some(ts) -> named_inferred(d, bound_or_none(t.params, match_tys(fuel, decl_env(env.decls, t.home, empty(), empty()), t.params, ps, ts, empty()))),
             },
         },
     };
@@ -4626,7 +4632,7 @@ pub fn param_expects(fuel: usize, decls: Decls, fd: FnDecl, args: core::option::
         None -> None,
         Some(a) -> match (param_patterns(fuel, fd)) {
             None -> None,
-            Some(ps) -> ty_list(fuel, decl_env(decls, fd.module, concat(fd.impl_params, fd.params), a), ps),
+            Some(ps) -> ty_list(fuel, decl_env(decls, fd.home, concat(fd.impl_params, fd.params), a), ps),
         },
     };
 }
@@ -4834,7 +4840,7 @@ pub fn ret_binds(fuel: usize, decls: Decls, fd: FnDecl, names: List<List<usize>>
 pub fn arg_expected(fuel: usize, decls: Decls, fd: FnDecl, names: List<List<usize>>, p: CTree, b: List<Bind>) -> core::option::Option<Ty> {
     return match (bound_args(names, b)) {
         None -> None,
-        Some(a) -> ty_of(fuel, decl_env(decls, fd.module, names, a), p),
+        Some(a) -> ty_of(fuel, decl_env(decls, fd.home, names, a), p),
     };
 }
 
@@ -5199,14 +5205,14 @@ pub fn eff_fn_path(fuel: usize, env: Env, scope: List<Local>, expected: core::op
     if (fuel == 0) {
         return None;
     }
-    let owner: core::option::Option<List<usize>> = single_name(s.module);
+    let owner: core::option::Option<List<usize>> = single_name(s.home);
     if (is_type_param(env, owner) && no_trees(targs)) {
         return match (owner_ty(env, owner)) {
             None -> None,
             Some(t) -> eff_found(minus(fuel, 1), env, scope, expected, find_method(fuel, env.decls, env.decls.fns, 0, s.name, t), empty(), items),
         };
     }
-    return match (find_fn(env.decls.fns, module_or(env.module, s.module), s.name, 0)) {
+    return match (find_fn(env.decls.fns, module_or(env.home, s.home), s.name, 0)) {
         None -> None,
         Some(d) -> match (get(env.decls.fns, d)) {
             None -> None,
@@ -6155,9 +6161,9 @@ pub fn ret_expected(r: core::option::Option<RetTy>) -> core::option::Option<Ty> 
 pub fn read_fn(fuel: usize, decls: Decls, fd: FnDecl, args: List<Ty>) -> core::option::Option<MFunc> {
     let names: List<List<usize>> = concat(fd.impl_params, fd.params);
     let f: CTree = fd.tree;
-    let tenv: Env = Env { decls: decls, module: fd.module, names: names, subst: args, globals: module_globals(decls, fd.module), ret: None };
+    let tenv: Env = Env { decls: decls, home: fd.home, names: names, subst: args, globals: module_globals(decls, fd.home), ret: None };
     let rt: core::option::Option<RetTy> = result_of(fuel, tenv, kid(f, 6));
-    let env: Env = Env { decls: decls, module: fd.module, names: names, subst: args, globals: module_globals(decls, fd.module), ret: ret_expected(rt) };
+    let env: Env = Env { decls: decls, home: fd.home, names: names, subst: args, globals: module_globals(decls, fd.home), ret: ret_expected(rt) };
     if (length(names) == length(args)) {
         return match (list_items(fuel, kid(f, 4))) {
             None -> None,
@@ -7524,7 +7530,7 @@ pub fn build_files(fuel: usize, roots: List<CTree>) -> core::option::Option<SrcP
         Nil -> None,
         Cons(first, rest) -> match (file_decls(fuel, first)) {
             None -> None,
-            Some(f) -> build_collected(fuel, f, collect_files(fuel, unbox(rest), Collected { decls: f.decls, modules: single(f.module) })),
+            Some(f) -> build_collected(fuel, f, collect_files(fuel, unbox(rest), Collected { decls: f.decls, modules: single(f.home) })),
         },
     };
 }
