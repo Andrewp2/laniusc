@@ -1,4 +1,5 @@
 import Lanius.Mini.Flags
+import Lanius.Mini.DetSteps
 
 /-! The x86 runs of the heap instructions. The heap is the bytes from r12;
 r13 holds the allocation cursor and r14 the limit, both offsets from r12. -/
@@ -80,7 +81,7 @@ theorem bump_steps (s : State) (shift : Nat) (shiftSmall : shift < 32)
     (atCursor : s.registers cursorRegister = BitVec.ofNat 64 cursor)
     (atLimit : (s.registers limitRegister).toNat = limit) (limitSmall : limit < 2 ^ 62)
     (room : alignUp cursor shift + (s.registers 0).toNat ≤ limit) :
-    ∃ s', Steps 11 s s' ∧ s'.memory = s.memory ∧ s'.rip = s.rip + BitVec.ofNat 64 52 ∧
+    ∃ s', Steps 11 s s' ∧ Det 11 s s' ∧ s'.memory = s.memory ∧ s'.rip = s.rip + BitVec.ofNat 64 52 ∧
       s'.registers 0 = BitVec.ofNat 64 (alignUp cursor shift) ∧
       s'.registers cursorRegister = BitVec.ofNat 64 (alignUp cursor shift + (s.registers 0).toNat) ∧
       ∀ register, register ≠ 0 → register ≠ rcxRegister → register ≠ r11Register → register ≠ cursorRegister →
@@ -156,7 +157,15 @@ theorem bump_steps (s : State) (shift : Nat) (shiftSmall : shift < 32)
   let s11 := s10.move64 0 rcxRegister (moveBytes .w64 0 rcxRegister).length
   have t11 : Lanius.X86.Machine.Step s10 s11 := move_step s10 s11 .w64 _ _ c10 rfl
   refine ⟨s11, .cons t1 (.cons t2 (.cons t3 (.cons t4 (.cons t5 (.cons t6 (.cons t7 (.cons t8 (.cons t9
-    (.cons t10 (.cons t11 (.refl _))))))))))), rfl, ?_, ?_, ?_, ?_⟩
+    (.cons t10 (.cons t11 (.refl _))))))))))),
+    Det.cons t1 (move_noRead c0.prefix) (Det.cons t2 (immediate_noRead c1.prefix)
+      (Det.cons t3 (alu_noRead c2.prefix) (Det.cons t4 (immediate_noRead c3.prefix)
+        (Det.cons t5 (alu_noRead c4.prefix) (Det.cons t6 (move_noRead c5.prefix)
+          (Det.cons t7 (alu_noRead c6.prefix)
+            (Det.pairCons t8 (Writes.of (i := .compare64 r11Register limitRegister) (k := 3) c7.prefix
+              (by decide) rfl) t9
+              (Det.cons t10 (move_noRead c9.prefix) (Det.cons t11 (move_noRead c10) (Det.refl _)))))))))),
+    rfl, ?_, ?_, ?_, ?_⟩
   · have lengths : (moveBytes .w64 0 rcxRegister).length = 3 ∧ (moveBytes .w64 cursorRegister r11Register).length = 3 ∧
         (r11Bytes (pow2 shift - 1)).length = 10 ∧ (r11Bytes (0 - pow2 shift)).length = 10 ∧
         (aluBytes .w64 .add rcxRegister r11Register).length = 3 ∧
@@ -186,7 +195,7 @@ theorem bump_steps (s : State) (shift : Nat) (shiftSmall : shift < 32)
 
 /-- The byte load: rax becomes the heap byte at offset rax. -/
 theorem loadAt_steps (s : State) (loaded : CodeAt s.memory s.rip loadAtSpec) :
-    ∃ s', Steps 2 s s' ∧ s'.memory = s.memory ∧ s'.rip = s.rip + BitVec.ofNat 64 10 ∧
+    ∃ s', Steps 2 s s' ∧ Det 2 s s' ∧ s'.memory = s.memory ∧ s'.rip = s.rip + BitVec.ofNat 64 10 ∧
       s'.registers 0 = BitVec.ofNat 64 (s.memory (s.registers heapBaseRegister + s.registers 0)).toNat ∧
       ∀ register, register ≠ 0 → s'.registers register = s.registers register := by
   have c0 := loaded
@@ -196,7 +205,8 @@ theorem loadAt_steps (s : State) (loaded : CodeAt s.memory s.rip loadAtSpec) :
   have c1 := c0.next (s' := s1) rfl rfl
   let s2 := s1.loadByte 0 0 (BitVec.ofInt 32 0) (loadByteBytes 0 0 0).length
   have t2 : Lanius.X86.Machine.Step s1 s2 := loadByte_step s1 s2 0 0 0 c1 rfl
-  refine ⟨s2, .cons t1 (.cons t2 (.refl _)), rfl, ?_, ?_, ?_⟩
+  refine ⟨s2, .cons t1 (.cons t2 (.refl _)),
+    Det.cons t1 (alu_noRead c0.prefix) (Det.cons t2 (loadByte_noRead c1) (Det.refl _)), rfl, ?_, ?_, ?_⟩
   · simp only [s2, s1, State.loadByte, State.alu64, State.alu]
     rw [show (aluBytes .w64 .add 0 heapBaseRegister).length = 3 from rfl,
       show (loadByteBytes 0 0 0).length = 7 from rfl]
@@ -209,7 +219,7 @@ theorem loadAt_steps (s : State) (loaded : CodeAt s.memory s.rip loadAtSpec) :
 
 /-- The byte store: the low byte of rax goes to the heap at the offset in `slot`. -/
 theorem storeAt_steps (s : State) (slot : Nat) (loaded : CodeAt s.memory s.rip (storeAtSpec slot)) :
-    ∃ s', Steps 3 s s' ∧ s'.rip = s.rip + BitVec.ofNat 64 16 ∧
+    ∃ s', Steps 3 s s' ∧ Det 3 s s' ∧ s'.rip = s.rip + BitVec.ofNat 64 16 ∧
       s'.memory = (fun address => if address = s.registers heapBaseRegister +
           read64 s.memory (s.registers rbpRegister + (BitVec.ofInt 32 (frameDisplacement slot)).signExtend 64)
         then lowByte (s.registers 0) else s.memory address) ∧
@@ -229,7 +239,9 @@ theorem storeAt_steps (s : State) (slot : Nat) (loaded : CodeAt s.memory s.rip (
   have c2 := c1.next (s' := s2) rfl rfl
   let s3 := s2.storeByte 0 rcxRegister (BitVec.ofInt 32 0) (storeByteBytes 0 rcxRegister 0).length
   have t3 : Lanius.X86.Machine.Step s2 s3 := storeByte_step s2 s3 0 rcxRegister 0 c2 rfl
-  refine ⟨s3, .cons t1 (.cons t2 (.cons t3 (.refl _))), ?_, ?_, ?_⟩
+  refine ⟨s3, .cons t1 (.cons t2 (.cons t3 (.refl _))),
+    Det.cons t1 (memory_noRead c0.prefix) (Det.cons t2 (alu_noRead c1.prefix)
+      (Det.cons t3 (storeByte_noRead c2) (Det.refl _))), ?_, ?_, ?_⟩
   · simp only [s3, s2, s1, State.storeByte, State.alu64, State.alu, State.load64]
     rw [show (memoryBytes .w64 true rcxRegister rbpRegister (frameDisplacement slot)).length = 7 from by
         simp only [memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes, List.length_append, List.length_map,

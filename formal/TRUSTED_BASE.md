@@ -28,6 +28,10 @@ it lives, how it is checked today, and what would shrink it. Last updated
   'Lanius.Mini.compileProgram_correct' depends on axioms: [propext, Classical.choice, Quot.sound]
   ```
 
+  The step 14 theorems `compileProgram_deterministic` and
+  `compileSource_deterministic` (`Lanius/Mini/Determinism.lean`, section 7)
+  depend on the same three axioms.
+
   These are Lean's standard axioms. There is no `sorryAx`, and there is no
   `Lean.ofReduceBool`, so nothing relies on `native_decide`, `bv_decide` or
   compiled code. Elaboration and tactics (`omega`, `bv_omega`, `simp`,
@@ -172,9 +176,9 @@ compiler that someone actually runs is one of these two:
 
 ## 7. One model run versus the CPU's run
 
-- **What.** Both theorems are existential: *some* model run
-  `Steps n s s'` returns. `Step` is a relation, and it leaves these choices
-  free:
+- **What.** `compileSource_correct` and `compileProgram_correct` are
+  existential: *some* model run `Steps n s s'` returns. `Step` is a relation,
+  and it leaves these choices free:
   - AF after AND, OR, XOR and TEST;
   - every flag after IMUL, NEG and shifts;
   - the byte list it decodes, which may be any list loaded at `rip`.
@@ -182,24 +186,38 @@ compiler that someone actually runs is one of these two:
   The proofs choose `AF = false` for the logical operations and keep the old
   flags after IMUL (`BinOp.final_step`). The CPU does neither. In the step 14
   test, the CPU's free flags differed from `execute`'s choice in about 3,200
-  of 28,000 cases per seed.
+  of 28,000 cases per seed. So the CPU's run is generally a *different* model
+  run from the one the proof builds.
+- **Proved (step 14).** Every model run of the same length ends the same way:
 
-  So the CPU's run is generally a *different* model run from the one the
-  proof builds. The theorem transfers to the CPU only if every model run from
-  `s` behaves the same up to those free flags. That holds if compiled code
-  never reads a free flag before a `cmp` or `test` overwrites it: `setcc`
-  follows `cmp`, `je` follows `test` and reads only ZF, and `jbe` follows
-  `cmp`. `MINI_COMPILER.md` argues this ("deterministic on everything the
-  theorem observes"), but Lean does not prove it.
-- **Partly checked.**
-  - Every encoder has a Lean theorem that decoding does not depend on the
-    bytes after the instruction.
-  - The step 14 test checks, for every emitted form, that every shorter
-    prefix decodes to nothing, so `decode` sees only one instruction at each
-    `rip`.
-- **To shrink it.** Prove that `Step` is deterministic on the compiled bytes up
-  to the free flags, and state the theorems for all runs. Or prove that each
-  instruction after a free-flag writer overwrites the flags before any read.
+  ```text
+  compileProgram_deterministic (Mini/Determinism.lean), same premises as
+  compileProgram_correct:
+    ∃ n s', Steps n s s' ∧ Returned window s s' value after ∧
+      ∀ t, Steps n s t → DataEq s' t ∧ Returned window s t value after
+  ```
+
+  `DataEq` is equality of registers, rip and memory, so only RFLAGS may
+  differ. `compileSource_deterministic` is the same for
+  `compileSource_correct`. Both depend only on propext, Classical.choice and
+  Quot.sound. The proof has three layers:
+  - `decode_unique` (`Mini/DecodeUnique.lean`): `decode` reads only the bytes
+    of the instruction it returns, so two byte lists loaded at the same `rip`
+    decode to the same instruction and size. The byte-list choice is gone.
+  - `Step` up to flags (`Mini/StepDet.lean`): two steps from states that are
+    `DataEq` are `DataEq` again, unless the instruction reads flags (`jcc`,
+    `setcc`). After CMP, TEST, ADD, SUB, AND, OR or XOR, the flag bits every
+    condition code reads agree too. `Det n s s'` says that every `n`-step run
+    from a state `DataEq` to `s` ends `DataEq` to `s'`.
+  - Runs (`Mini/DetSteps.lean`, `Simulation.lean`, `Correct.lean`): every
+    simulation lemma, `Contract` and the function contract now return `Det`
+    with their run. Each flag reader comes right after its writer in the same
+    abstract instruction (`cmp; setcc`, `test; jz`, `cmp; jbe` in `bump`), and
+    every other emitted form reads no flags.
+- **Still assumed.** That the CPU's run is one of the model's runs (section
+  6). The theorem covers runs of exactly `n` steps, the length of the run to
+  the return; after `n` steps the code is back in the caller. It says nothing
+  about runs of other lengths.
 
 ## 8. What the caller and the loader must provide
 

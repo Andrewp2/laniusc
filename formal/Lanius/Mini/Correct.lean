@@ -128,8 +128,8 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
     rw [show s.registers rspRegister - 8 = s.registers rspRegister - BitVec.ofNat 64 8 from rfl,
       depth_lane _ _ _ (by omega)]
     exact below_depth _ (by omega) (by omega) (by omega)
-  have steps1 : Steps 4 s (prologueState s code.slots) := by
-    apply framePrologue_steps code.slots s codeImage.prefix
+  have steps1 : Steps 4 s (prologueState s code.slots) ∧ Det 4 s (prologueState s code.slots) := by
+    apply framePrologue_det code.slots s codeImage.prefix
     intro index bound lane
     have pushLength : (pushBytes rbpRegister).length = 1 := by decide
     have restLength : (moveBytes .w64 rbpRegister rspRegister ++
@@ -245,9 +245,9 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
     simp [List.getD, List.getElem?_eq_getElem (show index < args.length by omega)]
   obtain ⟨m', sources, run, atRet, vals, onHeap⟩ :=
     compileFunc_correct compiledFunc length exec start rfl rfl startParams
-  obtain ⟨n, s', steps2, exit⟩ := body_simulates body fits callContract run atRet entered rel
+  obtain ⟨n, s', steps2, det2, exit⟩ := body_simulates body fits callContract run atRet entered rel
   rw [vals, onHeap] at exit
-  refine ⟨_, s', steps1.trans steps2, ?_⟩
+  refine ⟨_, s', steps1.1.trans steps2, steps1.2.trans det2, ?_⟩
   exact
     { rip := exit.rip
       rsp := exit.rsp
@@ -316,8 +316,10 @@ theorem compileProgram_correct {prog : Program} {binary : Binary} (compiled : co
     (params : ∀ k (bound : k < args.length),
       read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = args[k])
     (heapAt : HeapAt window s heap) :
-    ∃ n s', Steps n s s' ∧ Returned window s s' value after :=
-  (compiled_contract compiled imageBase depth f args heap value after returns).mono enough s bounded loaded apart
-    imageHeap entry params heapAt
+    ∃ n s', Steps n s s' ∧ Returned window s s' value after := by
+  obtain ⟨n, s', steps, -, returned⟩ :=
+    (compiled_contract compiled imageBase depth f args heap value after returns).mono enough s bounded loaded apart
+      imageHeap entry params heapAt
+  exact ⟨n, s', steps, returned⟩
 
 end Lanius.Mini

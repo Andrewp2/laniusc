@@ -44,8 +44,11 @@ compileProgram prog = some binary
     ∧ no memory outside the window changed
 ```
 
-This is forward simulation of terminating runs. The x86 model is deterministic
-on everything the theorem observes, so it also rules out any other result.
+This is forward simulation of terminating runs. The x86 `Step` leaves some
+flags free, so `compileProgram_deterministic` (`Lanius/Mini/Determinism.lean`)
+adds that every `n`-step run from `s` ends with the same registers, rip and
+memory as the one above, so it has returned the same results too. The compiled
+code reads a flag only right after the instruction that sets it.
 Divergence, traps and the ELF startup/exit wrapper come later; the existing
 `StartupExitCheck` composes with this function-level contract.
 
@@ -131,14 +134,17 @@ The proof has two layers.
 | `Bytes` | 419 | 2.0 | extracted encoders equal the x86 encoders; image layout |
 | `Flags` | 135 | 1.4 | each comparison's condition code after `cmp` |
 | `Frame` | 128 | 1.2 | stack windows and address depths (`bv_omega`) |
-| `HeapSteps` | 250 | 1.6 | x86 runs of the bump allocator and the byte load and store |
-| `WordSteps` | 277 | 1.6 | x86 runs of the 32- and 64-bit word load and store; memory words as bytes |
-| `Simulation` | 1500 | 6.9 | x86 lemma per instruction, slot copies, the call macro, body simulation |
-| `Correct` | 323 | 1.7 | layout, prologue, function contract, top-level theorem |
+| `HeapSteps` | 262 | 1.9 | x86 runs of the bump allocator and the byte load and store |
+| `WordSteps` | 289 | 2.0 | x86 runs of the 32- and 64-bit word load and store; memory words as bytes |
+| `Simulation` | 1536 | 7.8 | x86 lemma per instruction, slot copies, the call macro, body simulation; each run with its `Det` |
+| `Correct` | 325 | 2.1 | layout, prologue, function contract, top-level theorem |
+| `DecodeUnique` | 467 | 5.3 | `decode` reads only its instruction's bytes, so it is unique at a rip (step 14) |
+| `StepDet` | 377 | 2.1 | `Step` agrees on two states but for flags; `Det` runs (step 14) |
+| `DetSteps` | 177 | 1.0 | which emitted forms read or set flags; prologue and epilogue as `Det` runs (step 14) |
 
 Check times are `lake env lean` per file on the laptop, about 0.4 s of each is
 import loading. The compiler is about 400 lines of Lanius (plus a 63-line prelude
-and 64 lines of list operations); the proofs are about 3,900 lines.
+and 64 lines of list operations); the proofs are about 5,000 lines.
 
 ### The front pass: a Core subset to the mini IR
 
@@ -240,6 +246,7 @@ semantics:
 | `HeapCorr` | 501 | 1.1 | Core heap to mini heap correspondence; allocate, load, store, free |
 | `LowerStmt` | 2794 | 8.8 | Core cells, frames, flat values, calls, enums and `match`, statements |
 | `SourceCorrect` | 102 | 0.8 | top-level theorem |
+| `Determinism` | 97 | 1.1 | both top-level theorems for every run of the same length (step 14) |
 | `TypeSound` | 1704 | 2.3 | type checker soundness: an accepted program is well typed in Core (step 7) |
 
 The pass is about 1,880 lines of Lanius (the end of `compiler.lani`), and the
