@@ -3042,16 +3042,17 @@ fn enum_variants_at(decl: SrcEnumDecl, rest: List<SrcEnumDecl>, id: usize) -> co
 
 pub fn usize_width(kind: UintTy) -> core::option::Option<MemWidth> {
     return match (kind) {
-        Uint8 -> None,
-        Uint32 -> None,
-        Uint64 -> None,
+        Uint8 -> Some(M32),
+        Uint32 -> Some(M32),
+        Uint64 -> Some(M64),
         Usize -> Some(M64),
     };
 }
 
 // The width a field of a struct element is loaded and stored with. Each
-// field takes one native word: 4 bytes are read for i32 and bool, 8 for
-// usize and ptr. Other field types are not supported in slices yet.
+// field takes one native word: 4 bytes are read and written for i32, bool,
+// u8 and u32, 8 for u64, usize, isize and ptr. Aggregate fields are not
+// supported in slices yet.
 pub fn word_width(ty: SrcType) -> core::option::Option<MemWidth> {
     return match (ty) {
         I32 -> Some(M32),
@@ -3062,7 +3063,7 @@ pub fn word_width(ty: SrcType) -> core::option::Option<MemWidth> {
         Ptr -> Some(M64),
         Slice(element) -> None,
         Unit -> None,
-        Isize -> None,
+        Isize -> Some(M64),
     };
 }
 

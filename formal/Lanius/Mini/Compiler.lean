@@ -2390,12 +2390,12 @@ def enumVariants (decls : List SrcEnumDecl) (id : Nat) : Option (List (List SrcT
 
 def usizeWidth (kind : UintTy) : Option MemWidth :=
   match kind with
-  | .uint8 => none
-  | .uint32 => none
-  | .uint64 => none
+  | .uint8 => some MemWidth.m32
+  | .uint32 => some MemWidth.m32
+  | .uint64 => some MemWidth.m64
   | .usize => some MemWidth.m64
 
-/-- The width a field of a struct element is loaded and stored with. Each field takes one native word: 4 bytes are read for i32 and bool, 8 for usize and ptr. Other field types are not supported in slices yet. -/
+/-- The width a field of a struct element is loaded and stored with. Each field takes one native word: 4 bytes are read and written for i32, bool, u8 and u32, 8 for u64, usize, isize and ptr. Aggregate fields are not supported in slices yet. -/
 def wordWidth (ty : SrcType) : Option MemWidth :=
   match ty with
   | .i32 => some MemWidth.m32
@@ -2406,7 +2406,7 @@ def wordWidth (ty : SrcType) : Option MemWidth :=
   | .ptr => some MemWidth.m64
   | .slice element => none
   | .unit => none
-  | .isize => none
+  | .isize => some MemWidth.m64
 
 def consWidth (width : Option MemWidth) (rest : Option (List MemWidth)) : Option (List MemWidth) :=
   match width with

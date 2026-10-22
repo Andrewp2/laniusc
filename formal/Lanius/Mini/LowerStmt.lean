@@ -3050,6 +3050,15 @@ theorem stmt_letIndex_struct (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcTyp
         exact ⟨fresh', keeps, d, out, load exec, matched⟩
   all_goals simp at run
 
+/-- Core writes an `isize` as the 8 bytes of its two's complement bits. -/
+theorem isize_word_bits (bits : BitVec 64) : Int.toNat (bits.toInt % 2 ^ 64) = bits.toNat := by
+  rw [BitVec.toInt_eq_toNat_cond]
+  have lt := bits.isLt
+  have a : (2 : Nat) ^ 64 = 18446744073709551616 := by rfl
+  have c : (2 : Int) ^ 64 = 18446744073709551616 := by rfl
+  simp only [a, c] at lt ⊢
+  split <;> omega
+
 /-- A word field's store: Core writes the bytes the mini `storeWord` does. -/
 theorem writeWord_corr {P : Core.Program} {st : State} {heap heap' : Memory.Heap} {hp : Heap}
     (hc : HeapCorr heap hp) {f : SrcType} {w : MemWidth} (hw : wordWidth f = some w) {k a : Nat}
@@ -3057,7 +3066,7 @@ theorem writeWord_corr {P : Core.Program} {st : State} {heap heap' : Memory.Heap
     (h : Semantics.writeNativeValue (k + 1) P st heap f.toCore a x = .ok heap') :
     HeapCorr heap' (hp.writeLE a bits.toNat w.bytes) ∧ a + w.bytes ≤ heap.nextAddress ∧
       heap'.nextAddress = heap.nextAddress := by
-  rcases wordWidth_cases hw with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  rcases wordWidth_cases hw with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨kind, rfl, hk⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
   · obtain ⟨rfl, bitsV⟩ := holds
     simp only [SrcType.toCore, Semantics.writeNativeValue] at h
     obtain ⟨hc', inside⟩ := HeapCorr.storeBytesFrom _ 0 hc h
@@ -3079,7 +3088,16 @@ theorem writeWord_corr {P : Core.Program} {st : State} {heap heap' : Memory.Heap
     · have := inside (by simp [Semantics.encodeNatLE])
       simpa [Semantics.encodeNatLE, MemWidth.bytes] using this
   · obtain ⟨rfl, -⟩ := holds
-    simp only [SrcType.toCore, UintTy.toCore, Semantics.writeNativeValue] at h
+    cases kind <;> simp only [usizeWidth, Option.some.injEq] at hk <;> subst hk <;>
+      simp only [SrcType.toCore, UintTy.toCore, Semantics.writeNativeValue] at h <;>
+      obtain ⟨hc', inside⟩ := HeapCorr.storeBytesFrom _ 0 hc h <;>
+      refine ⟨?_, ?_, storeBytes_next h⟩
+    all_goals first
+      | (simp only [MemWidth.bytes]; rw [writeLE_eq_writeBytes]; simpa using hc')
+      | (have := inside (by simp [Semantics.encodeNatLE])
+         simpa [Semantics.encodeNatLE, MemWidth.bytes] using this)
+  · subst holds
+    simp only [SrcType.toCore, Semantics.writeNativeValue] at h
     obtain ⟨hc', inside⟩ := HeapCorr.storeBytesFrom _ 0 hc h
     refine ⟨?_, ?_, storeBytes_next h⟩
     · simp only [MemWidth.bytes]
@@ -3089,6 +3107,7 @@ theorem writeWord_corr {P : Core.Program} {st : State} {heap heap' : Memory.Heap
       simpa [Semantics.encodeNatLE, MemWidth.bytes] using this
   · subst holds
     simp only [SrcType.toCore, Semantics.writeNativeValue] at h
+    rw [isize_word_bits] at h
     obtain ⟨hc', inside⟩ := HeapCorr.storeBytesFrom _ 0 hc h
     refine ⟨?_, ?_, storeBytes_next h⟩
     · simp only [MemWidth.bytes]

@@ -4,7 +4,7 @@ import Lanius.Mini.HeapCorr
 # Struct slice elements in Core's native layout
 
 The front pass accepts a raw slice of structs whose fields are each one native
-word (`i32`, `bool`, `usize`, `ptr`; `wordWidths`). Core lays such an element
+word (`i32`, `bool`, `u8`, `u32`, `u64`, `usize`, `isize`, `ptr`; `wordWidths`). Core lays such an element
 out as one 8-byte word per field (`NativeLayout.words?`), field `j` at byte
 `8 * j` (`structureFieldOffset?`), and reads and writes it field by field
 (`readNativeValue`, `writeNativeValue`). This file states those facts for the
@@ -90,22 +90,21 @@ theorem SrcType.same_eq {a b : SrcType} (same : a.same b = true) : a = b := SrcT
 def AllWord (fields : List SrcType) : Prop := ∀ f ∈ fields, ∃ w, wordWidth f = some w
 
 theorem wordWidth_cases {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) :
-    (f = .i32 ∧ w = .m32) ∨ (f = .bool ∧ w = .m32) ∨ (f = .uint .usize ∧ w = .m64) ∨
-      (f = .ptr ∧ w = .m64) := by
+    (f = .i32 ∧ w = .m32) ∨ (f = .bool ∧ w = .m32) ∨ (∃ k, f = .uint k ∧ usizeWidth k = some w) ∨
+      (f = .ptr ∧ w = .m64) ∨ (f = .isize ∧ w = .m64) := by
   cases f with
   | i32 => simp only [wordWidth, Option.some.injEq] at h; exact .inl ⟨rfl, h.symm⟩
   | bool => simp only [wordWidth, Option.some.injEq] at h; exact .inr (.inl ⟨rfl, h.symm⟩)
-  | uint k =>
-    cases k <;> simp only [wordWidth, usizeWidth, Option.some.injEq, reduceCtorEq] at h
-    exact .inr (.inr (.inl ⟨rfl, h.symm⟩))
-  | ptr => simp only [wordWidth, Option.some.injEq] at h; exact .inr (.inr (.inr ⟨rfl, h.symm⟩))
-  | struct | enum | slice | unit | isize => simp [wordWidth] at h
+  | uint k => exact .inr (.inr (.inl ⟨k, rfl, h⟩))
+  | ptr => simp only [wordWidth, Option.some.injEq] at h; exact .inr (.inr (.inr (.inl ⟨rfl, h.symm⟩)))
+  | isize => simp only [wordWidth, Option.some.injEq] at h; exact .inr (.inr (.inr (.inr ⟨rfl, h.symm⟩)))
+  | struct | enum | slice | unit => simp [wordWidth] at h
 
 theorem wordWidth_size {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) : f.size = 1 := by
-  rcases wordWidth_cases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> rfl
+  rcases wordWidth_cases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨k, rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> rfl
 
 theorem wordWidth_scalar {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) : f.isScalar = true := by
-  rcases wordWidth_cases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> rfl
+  rcases wordWidth_cases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨k, rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> rfl
 
 /-- `wordWidths` pairs each field with its width. -/
 theorem wordWidths_get : ∀ {fields : List SrcType} {ws : List MemWidth}, wordWidths fields = some ws →
@@ -196,8 +195,9 @@ theorem i32_load_holds {bits : Nat} (lt : bits < 2 ^ 32) :
 
 theorem words_word {P : Core.Program} {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) (k : Nat) :
     NativeLayout.words? (k + 1) P f.toCore = some 1 := by
-  rcases wordWidth_cases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;>
-    simp [NativeLayout.words?, SrcType.toCore, UintTy.toCore]
+  rcases wordWidth_cases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨k, rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩
+  all_goals try cases k
+  all_goals simp [NativeLayout.words?, SrcType.toCore, UintTy.toCore]
 
 theorem words_all {P : Core.Program} (k : Nat) : ∀ {fields : List SrcType}, AllWord fields →
     (fields.map SrcType.toCore).mapM (NativeLayout.words? (k + 1) P) = some (fields.map fun _ => 1)
@@ -295,12 +295,31 @@ theorem readNativeValue_struct {P : Core.Program} {heap : Memory.Heap} {sid : Na
   obtain ⟨le, rfl⟩ := wordBelow_ok below
   exact ⟨le, ok⟩
 
+/-- Core's unsigned read of `bits`, in the slot the mini load fills. -/
+theorem uint_load_holds {k : UintTy} {bits : Nat} (lt : bits < 2 ^ k.width) :
+    (SrcType.uint k).Holds (.unsigned k.toCore bits) (BitVec.ofNat 64 bits) := by
+  have le : 2 ^ k.width ≤ 2 ^ 64 := Nat.pow_le_pow_right (by decide) (by cases k <;> decide)
+  simp only [SrcType.Holds, BitVec.toNat_ofNat]
+  rw [Nat.mod_eq_of_lt (by omega)]
+  exact ⟨rfl, lt⟩
+
+/-- Core's `isize` read of 8 bytes `bits`, in the slot the mini load fills. -/
+theorem isize_load_holds {bits : Nat} (lt : bits < 2 ^ 64) :
+    SrcType.isize.Holds (.signed .isize (Semantics.signed64 bits)) (BitVec.ofNat 64 bits) := by
+  simp only [SrcType.Holds, Value.signed.injEq, true_and]
+  rw [BitVec.toInt_eq_toNat_cond, BitVec.toNat_ofNat, Nat.mod_eq_of_lt lt]
+  have a : (2 : Nat) ^ 64 = 18446744073709551616 := by rfl
+  have b : (2 : Nat) ^ 63 = 9223372036854775808 := by rfl
+  have c : (2 : Int) ^ 64 = 18446744073709551616 := by rfl
+  simp only [Semantics.signed64, a, b, c, Int.ofNat_eq_natCast] at lt ⊢
+  split <;> split <;> omega
+
 /-- Core's read of one word field, in the slot the mini load fills. -/
 theorem readWord_holds {P : Core.Program} {heap : Memory.Heap} {hp : Heap} (hc : HeapCorr heap hp)
     {f : SrcType} {w : MemWidth} (hw : wordWidth f = some w) {k a : Nat} {x : Value}
     (h : Semantics.readNativeValue (k + 1) P heap f.toCore a = .ok x) :
     f.Holds x (BitVec.ofNat 64 (hp.readLE a w.bytes)) ∧ a + w.bytes ≤ heap.nextAddress := by
-  rcases wordWidth_cases hw with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  rcases wordWidth_cases hw with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨kind, rfl, hk⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
   · simp only [SrcType.toCore, Semantics.readNativeValue] at h
     obtain ⟨bits, loaded, wrapped⟩ := except_bind_ok h
     simp only [pure, Except.pure, Except.ok.injEq] at wrapped
@@ -319,16 +338,25 @@ theorem readWord_holds {P : Core.Program} {heap : Memory.Heap} {hp : Heap} (hc :
       simp only [MemWidth.bytes]
       rcases Nat.le_one_iff_eq_zero_or_eq_one.mp le with e | e <;> rw [e] <;> rfl
     · simp at wrapped
-  · simp only [SrcType.toCore, UintTy.toCore, Semantics.readNativeValue] at h
-    obtain ⟨bits, loaded, wrapped⟩ := except_bind_ok h
-    simp only [pure, Except.pure, Except.ok.injEq] at wrapped
-    subst wrapped
-    obtain ⟨rfl, inside⟩ := hc.loadNatLE loaded
-    have lt := hp.readLE_lt a 8
-    refine ⟨⟨?_, ?_⟩, inside (by decide)⟩ <;>
-      simp only [MemWidth.bytes, BitVec.toNat_ofNat, UintTy.toCore, UintTy.width] <;>
-      rw [Nat.mod_eq_of_lt (by simpa using lt)]
-    simpa using lt
+  · cases kind <;> simp only [usizeWidth, Option.some.injEq] at hk <;> subst hk <;>
+      simp only [SrcType.toCore, UintTy.toCore, Semantics.readNativeValue] at h <;>
+      obtain ⟨bits, loaded, wrapped⟩ := except_bind_ok h <;>
+      obtain ⟨rfl, inside⟩ := hc.loadNatLE loaded
+    · split at wrapped
+      · rename_i small
+        simp only [pure, Except.pure, Except.ok.injEq] at wrapped
+        subst wrapped
+        exact ⟨uint_load_holds (k := .uint8) (by simpa [UintTy.width] using small), inside (by decide)⟩
+      · simp at wrapped
+    all_goals
+      simp only [pure, Except.pure, Except.ok.injEq] at wrapped
+      subst wrapped
+    · have lt := hp.readLE_lt a 4
+      exact ⟨uint_load_holds (k := .uint32) (by simpa [UintTy.width] using lt), inside (by decide)⟩
+    · have lt := hp.readLE_lt a 8
+      exact ⟨uint_load_holds (k := .uint64) (by simpa [UintTy.width] using lt), inside (by decide)⟩
+    · have lt := hp.readLE_lt a 8
+      exact ⟨uint_load_holds (k := .usize) (by simpa [UintTy.width] using lt), inside (by decide)⟩
   · simp only [SrcType.toCore, Semantics.readNativeValue] at h
     obtain ⟨bits, loaded, wrapped⟩ := except_bind_ok h
     simp only [pure, Except.pure, Except.ok.injEq] at wrapped
@@ -338,6 +366,13 @@ theorem readWord_holds {P : Core.Program} {heap : Memory.Heap} {hp : Heap} (hc :
     refine ⟨?_, inside (by decide)⟩
     simp only [SrcType.Holds, MemWidth.bytes, BitVec.toNat_ofNat]
     rw [Nat.mod_eq_of_lt (by simpa using lt)]
+  · simp only [SrcType.toCore, Semantics.readNativeValue] at h
+    obtain ⟨bits, loaded, wrapped⟩ := except_bind_ok h
+    simp only [pure, Except.pure, Except.ok.injEq] at wrapped
+    subst wrapped
+    obtain ⟨rfl, inside⟩ := hc.loadNatLE loaded
+    have lt := hp.readLE_lt a 8
+    exact ⟨isize_load_holds (by simpa using lt), inside (by decide)⟩
 
 /-! ## The mini side -/
 
