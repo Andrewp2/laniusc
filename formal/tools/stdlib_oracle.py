@@ -606,15 +606,9 @@ def constructs(mods, module, fn):
     for ty in UNREAD_TYPES:
         if re.search(rf'\b{ty}\b', text):
             out.append(f'type {ty}')
-    aliases = set(mods[module].aliases) if module in mods else set()
-    used = sorted(a for a in aliases if re.search(rf'(?<!::)\b{a}\b', text))
-    used += sorted({f'{p}::{a}' for p, a in re.findall(r'\b([a-z_][\w:]*)::([A-Z]\w*)\b', text)
-                    if p in mods and a in mods[p].aliases})
-    if used:
-        out.append('type alias ' + ', '.join(used))
     if re.search(r'<<|>>=|>>\s*[\w(]', body):
         out.append('shift')
-    if re.search(r'\b(i8|i16|i32|i64|u8|u16|u32|u64|usize|isize|bool|char|f32)::\w+\s*\(', body):
+    if re.search(r'\b(i8|i16|i64|u16|char|f32)::\w+\s*\(', body):
         out.append('builtin type::method call')
     if '=>' in body:
         out.append('=> arm')
@@ -628,9 +622,9 @@ def constructs(mods, module, fn):
         out.append('char literal')
     if re.search(r'\b(for|loop|break|continue)\b', body):
         out.append('for/loop/break/continue')
-    big = [int(x) for x in re.findall(r'(?<![\w.])(\d+)(?![\w.])', body) if int(x) >= 2 ** 31]
+    big = [int(x) for x in re.findall(r'(?<![\w.])(\d+)(?![\w.])', body) if int(x) >= 2 ** 64]
     if big:
-        out.append(f'literal {big[0]} >= 2^31')
+        out.append(f'literal {big[0]} >= 2^64')
     if re.search(r'\)\s*\.\s*\w+', body):
         out.append('field or method of a call result')
     if re.search(r'\b(?!self\b)[a-z_]\w*\s*\.\s*\w+\s*\(', body):
@@ -648,15 +642,8 @@ def compile_constructs(mods, module, fn):
     """Constructs the front end reads that compileSource is known to reject."""
     body = fn['body'] or ''
     out = []
-    if re.search(r'\blet\s+\w+\s*:\s*ptr\s*=\s*-?\d', body):
-        out.append('a ptr local initialized from an integer literal')
-    if re.search(r'->\s*(?:[a-z_]\w*::)*(?:panic|unreachable)\s*\(\s*\)', body):
-        out.append('a match arm that panics (type !)')
-    sig = ' '.join(ty or '' for _, ty in fn['params']) + ' ' + fn['ret']
-    unsigned = re.search(r'\b(u8|u32|u64|usize)\b', sig + ' ' + body)
-    bare = re.search(r'(?<![\w.(])\d+(?!\s*as\b)(?![\w.])', re.sub(r'\(\s*\d+\s+as\s+\w+\s*\)', '', body))
-    if unsigned and bare and not out:
-        out.append('a bare integer literal where an unsigned type is expected (read as i32)')
+    if re.search(r'\[\s*u8\s*\]', body):
+        out.append('a raw view of u8')
     return out
 
 
@@ -891,7 +878,7 @@ def laniusc_trap(args, workdir, p, a, mods):
 
 def category(cause):
     c = cause.split(' (in ')[0]
-    for prefix, name in (('type alias', 'type alias'), ('literal', 'literal >= 2^31'), ('extern', 'extern callee')):
+    for prefix, name in (('literal', 'literal >= 2^64'), ('extern', 'extern callee')):
         if c.startswith(prefix):
             return name
     return c

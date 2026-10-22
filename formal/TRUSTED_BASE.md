@@ -51,7 +51,7 @@ the statement, so a reader has to agree that each one says what is intended:
 
 | definition | file | says |
 |---|---|---|
-| `SrcProgram.toCore` and the `toCore` of each construct | `Mini/Source.lean` | which Core program a source program *is*: each construct is the Core construct of the same name, and functions are numbered by position |
+| `SrcProgram.toCore` and the `toCore` of each construct | `Mini/Source.lean` | which Core program a source program *is*: each construct is the Core construct of the same name (`Null` is Core's literal `.pointer 0`), and functions are numbered by position |
 | `FieldsHold`, `SrcType.HoldsAt` | `Mini/Source.lean` | how a Core value sits in 64-bit slots: an `i32` is zero-extended, a `bool` is 1/0, a struct is its fields in order, an enum is a tag then its payload, a pointer is its address |
 | `Returned`, `HeapAt`, `Contract`, `Scratch`, `InHeap` | `Mini/Simulation.lean` | the calling convention and what "returns" means (below) |
 | `Below`, `Binary.stackNeed` | `Mini/Frame.lean`, `Mini/Bytes.lean` | the stack window |
@@ -191,8 +191,13 @@ still a parse tree of the same tokens. Trusted:
   - each file is a module, named by its `module` item (the empty path
     without one); `m::x` names `x` of the module `m`, a bare `x` names `x`
     of the current module; `import m;` only adds m's variants to those a
-    bare variant name may mean, and traits, type aliases and extern
-    functions are skipped;
+    bare variant name may mean, and traits, type aliases with a `where`
+    clause and extern functions are skipped;
+  - `type A<P..> = T;` is an alias: a type path that names no type
+    parameter, primitive or declared type names the alias of that module,
+    and means T read in the alias's module with its parameters standing for
+    the arguments (a cycle runs out of fuel and rejects); a cast may name an
+    alias of a scalar type;
   - generic declarations are monomorphized (`mono`): an instance is a
     declaration with its type arguments, and a function or type id is a
     position in the instance tables. The first file's functions without type
@@ -209,7 +214,8 @@ still a parse tree of the same tokens. Trusted:
     its parameter's type once all are bound; an integer literal argument
     binds nothing unless a parameter is left unbound, when it counts as
     `i32`; a conflict or an unbound parameter rejects;
-  - `x.m(args)` (`x` any value) and `T::m(args)` (`T` a type parameter) call
+  - `x.m(args)` (`x` any value) and `T::m(args)` (`T` a type parameter, or
+    a primitive type as in `i32::hash(v)`) call
     the method `m` of the one `impl` whose type matches the receiver's type,
     with `self` (by value) the receiver;
   - a `match` has one arm per variant of its scrutinee's enum, in any order,
@@ -235,12 +241,28 @@ still a parse tree of the same tokens. Trusted:
   - a local is the byte offset of its binding (a parameter, `let` or match
     binder);
   - a use names the innermost binding with the same spelling, and locals may
-    not be spelled like a function, type, variant or constant of their
-    module;
+    not be spelled like a type, type alias, variant or constant of their
+    module (a function is only named by a call, so a local may share its
+    spelling);
   - `let` scopes over the rest of its block;
   - `if` without `else` has an empty else;
   - binary operators fold to the left;
-  - an integer literal is below 2^31, and `-` before it is `negate`;
+  - an integer literal below 2^31 is `Int`, and `-` before it is `negate`;
+    one from 2^31 to 2^64 - 1 takes the type its context expects (decided by
+    `lit_funcs`, below): `Unsigned(u, n)` when n fits u, for `isize` below
+    2^63 the cast of the `u64` literal n, `-2147483648` at `i32` (or with no
+    expectation) `Int` of -2^31, and `-n` at `isize` (n at most 2^63) the
+    cast of the `u64` literal of its two's complement bits; any other
+    rejects the program;
+  - `0` where a `ptr` is expected (a `let`, a parameter, an operand beside a
+    `ptr`, a `ptr` constant) is `Null`, Core's null pointer;
+  - a match arm whose value calls a `-> !` function g, in a match of value
+    type t, calls g's instance at t: a function with g's parameters, result
+    t and body `g(params); return self(params);`. Core traps in g (each
+    `-> !` function in the stdlib is `assert(false)`), so the return, which
+    only gives every path a value of type t, is not reached; if g returned,
+    the instance would recurse until Core's fuel ran out, and the theorem
+    covers only runs that return;
   - the path `alloc::allocator::alloc(size, align)`, in a `let` of type
     `ptr`, is Core's `alloc`, and the statement
     `alloc::allocator::dealloc(p, size, align);` is Core's `dealloc`; the

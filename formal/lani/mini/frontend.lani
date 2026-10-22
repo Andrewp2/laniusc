@@ -6854,17 +6854,19 @@ pub fn close_funcs(fuel: usize, t: Tables, fs: List<MFunc>) -> core::option::Opt
 
 // ---------------------------------------------------------------- isize literals
 
-// laniusc gives an integer literal the type its context expects. In the
-// subset only isize needs this (the unsigned types' literals are written
-// `n as u64`): after monomorphization, an integer literal whose expected type
-// is isize becomes Cast(Isize, Int(n)), so n is below 2^31. The expected
+// laniusc gives an integer literal the type its context expects, and so
+// does the reading: after monomorphization, an integer literal Int(n) whose
+// expected type is isize becomes Cast(Isize, Int(n)), one expected unsigned
+// Unsigned(u, n), and `0` expected ptr Null. A literal of 2^31 or more was
+// read as a wide marker (wide_marker) and gets its type here too (wide_at,
+// neg_wide_at). The expected
 // types: a let's type, a local's or field's when stored to, a parameter's, the
 // function's result for return, a field's or payload's in a literal, a slice
 // element's in an index store, an arm's result type, Bool for conditions,
 // asserts and `!`. An operator's operands expect the type of whichever operand
 // has one (a literal has none), or else, for arithmetic, the operator's
 // expected type. The operand of `as`, an index and the heap operations'
-// operands expect nothing. A literal with no isize expectation stays Int(n).
+// operands expect nothing. A literal with no expectation stays Int(n).
 
 pub struct LocalTy {
     id: usize,
