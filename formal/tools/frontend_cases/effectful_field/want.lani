@@ -1,0 +1,19 @@
+struct CellI { v: i32, w: bool }
+
+fn top(n: i32) -> i32 {
+    let c: CellI = CellI { v: n, w: true };
+    c.v = next(n);
+    c.v = c.v + next(c.v);
+    c.v = c.v / (next(n) | 1);
+    c.w = flip(c.w) && c.v > 0;
+    c.v = c.v % 7;
+    return c.v;
+}
+
+fn next(n: i32) -> i32 {
+    return n + 1;
+}
+
+fn flip(b: bool) -> bool {
+    return !b;
+}

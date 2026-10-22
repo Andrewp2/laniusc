@@ -3229,6 +3229,7 @@ pub enum MStmt {
     MReturnEval(MEff),
     MDiscard(MEff),
     MSetIndexEval(usize, MEff, MEff),
+    MSetFieldEval(usize, usize, MEff),
 }
 
 // A call: the function instance and the arguments.
@@ -4588,13 +4589,6 @@ pub fn set_field_value(id: usize, j: usize, value: core::option::Option<SrcExpr>
     };
 }
 
-pub fn field_into(index: core::option::Option<usize>, id: usize, value: core::option::Option<SrcExpr>) -> core::option::Option<MStmt> {
-    return match (index) {
-        None -> None,
-        Some(j) -> set_field_value(id, j, value),
-    };
-}
-
 pub fn set_value(id: usize, value: core::option::Option<SrcExpr>) -> core::option::Option<MStmt> {
     return match (value) {
         None -> None,
@@ -4670,6 +4664,32 @@ pub fn set_index_or_eval(fuel: usize, env: Env, scope: List<Local>, l: Local, in
     };
 }
 
+pub fn field_eval_stmt(id: usize, j: usize, x: core::option::Option<MEff>) -> core::option::Option<MStmt> {
+    return match (x) {
+        None -> None,
+        Some(e) -> Some(MSetFieldEval(id, j, e)),
+    };
+}
+
+// Field j's type in a struct type.
+pub fn field_ty_at(fuel: usize, decls: Decls, t: Ty, j: usize) -> core::option::Option<Ty> {
+    return match (struct_field_tys(fuel, decls, t)) {
+        None -> None,
+        Some(ts) -> get(ts, j),
+    };
+}
+
+// `x.f = value;`: value pure, or else effectful (stored at the field's type).
+pub fn set_field_or_eval(fuel: usize, env: Env, scope: List<Local>, l: Local, name: List<usize>, value: CTree) -> core::option::Option<MStmt> {
+    return match (field_index(env, l.ty, name)) {
+        None -> None,
+        Some(j) -> match (expr_of(fuel, env, scope, value)) {
+            Some(v) -> Some(MSetField(l.id, j, v)),
+            None -> field_eval_stmt(l.id, j, eff_of(fuel, env, scope, field_ty_at(fuel, env.decls, l.ty, j), value)),
+        },
+    };
+}
+
 pub fn assign_target(fuel: usize, env: Env, scope: List<Local>, target: CTree, value: CTree) -> core::option::Option<MStmt> {
     let tail: CTree = kid(target, 1);
     if (node_prod(tail) == p_postfix_end()) {
@@ -4681,7 +4701,7 @@ pub fn assign_target(fuel: usize, env: Env, scope: List<Local>, target: CTree, v
     if (node_prod(tail) == p_postfix_member() && node_prod(kid(tail, 2)) == p_member_type_args_none() && node_prod(kid(tail, 3)) == p_postfix_end()) {
         return match (local_of(env, scope, kid(target, 0))) {
             None -> None,
-            Some(l) -> field_into(field_index(env, l.ty, kid_token(tail, 1).text), l.id, expr_of(fuel, env, scope, value)),
+            Some(l) -> set_field_or_eval(fuel, env, scope, l, kid_token(tail, 1).text, value),
         };
     }
     if (node_prod(tail) == p_postfix_index() && node_prod(kid(tail, 3)) == p_postfix_end()) {
@@ -4816,12 +4836,27 @@ pub fn compound_eff(p: usize, left: MEff, right: core::option::Option<MEff>) -> 
     };
 }
 
-// `x op= e` for a local x, when e or op is effectful.
+// `x.f op= e`, when e or op is effectful.
+pub fn compound_field_eval(fuel: usize, env: Env, scope: List<Local>, l: Local, index: core::option::Option<usize>, p: usize, value: CTree) -> core::option::Option<MStmt> {
+    return match (index) {
+        None -> None,
+        Some(j) -> field_eval_stmt(l.id, j, compound_eff(p, XPure(Field(l.id, j)), eff_of(fuel, env, scope, field_ty_at(fuel, env.decls, l.ty, j), value))),
+    };
+}
+
+// `x op= e` or `x.f op= e`, when e or op is effectful.
 pub fn compound_eval(fuel: usize, env: Env, scope: List<Local>, target: CTree, p: usize, value: CTree) -> core::option::Option<MStmt> {
     if (node_prod(kid(target, 1)) == p_postfix_end()) {
         return match (local_of(env, scope, kid(target, 0))) {
             None -> None,
             Some(l) -> set_eval_of(l.id, compound_eff(p, XPure(Local(l.id)), eff_of(fuel, env, scope, Some(l.ty), value))),
+        };
+    }
+    let tail: CTree = kid(target, 1);
+    if (node_prod(tail) == p_postfix_member() && node_prod(kid(tail, 2)) == p_member_type_args_none() && node_prod(kid(tail, 3)) == p_postfix_end()) {
+        return match (local_of(env, scope, kid(target, 0))) {
+            None -> None,
+            Some(l) -> compound_field_eval(fuel, env, scope, l, field_index(env, l.ty, kid_token(tail, 1).text), p, value),
         };
     }
     return None;
@@ -5115,6 +5150,7 @@ pub fn stmt_calls(m: MStmt) -> List<Inst> {
         MReturnEval(x) -> eff_calls(x),
         MDiscard(x) -> eff_calls(x),
         MSetIndexEval(s, i, v) -> concat(eff_calls(i), eff_calls(v)),
+        MSetFieldEval(id, j, x) -> eff_calls(x),
     };
 }
 
@@ -5174,6 +5210,7 @@ pub fn stmt_tys(m: MStmt) -> List<Ty> {
         MReturnEval(x) -> eff_named_tys(x),
         MDiscard(x) -> eff_named_tys(x),
         MSetIndexEval(s, i, v) -> concat(eff_named_tys(i), eff_named_tys(v)),
+        MSetFieldEval(id, j, x) -> eff_named_tys(x),
     };
 }
 
@@ -5559,6 +5596,13 @@ pub fn set_index_eval_closed(s: usize, i: core::option::Option<SrcEff>, v: core:
     };
 }
 
+pub fn set_field_eval_closed(id: usize, j: usize, x: core::option::Option<SrcEff>) -> core::option::Option<SrcStmt> {
+    return match (x) {
+        None -> None,
+        Some(e) -> Some(SetFieldEval(id, j, e)),
+    };
+}
+
 // The source statement: types become source types and a call names its
 // instance's position in the function table.
 pub fn close_stmt(fuel: usize, t: Tables, m: MStmt) -> core::option::Option<SrcStmt> {
@@ -5588,6 +5632,7 @@ pub fn close_stmt(fuel: usize, t: Tables, m: MStmt) -> core::option::Option<SrcS
         MReturnEval(x) -> return_eval_closed(close_eff(fuel, t, x)),
         MDiscard(x) -> discard_closed(close_eff(fuel, t, x)),
         MSetIndexEval(s, i, v) -> set_index_eval_closed(s, close_eff(fuel, t, i), close_eff(fuel, t, v)),
+        MSetFieldEval(id, j, x) -> set_field_eval_closed(id, j, close_eff(fuel, t, x)),
     };
 }
 

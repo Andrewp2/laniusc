@@ -456,6 +456,24 @@ class Chunk:
             b = nest(self.stmt(k, ids, s[3], indent + 1))
             out.emit(f'{pad}}}\n')
             return [('stmt', f'({form} {cond} {a} {b})')]
+        if kind == 'setIndexEval':
+            out.emit(f'{pad}v{s[1]}[')
+            self.emit_eff(k, ids, s[2])
+            out.emit('] = ')
+            self.emit_eff(k, ids, s[3])
+            out.emit(';\n')
+            i, v = collapse(s[2]), collapse(s[3])
+            if i[0] == 'ePure' and v[0] == 'ePure':
+                return [('stmt', f'(.setIndex {ids[s[1]]} {self.lean_expr(k, ids, i[1])} {self.lean_expr(k, ids, v[1])})')]
+            return [('stmt', f'(.setIndexEval {ids[s[1]]} {self.lean_eff(k, ids, i)} {self.lean_eff(k, ids, v)})')]
+        if kind == 'setFieldEval':
+            out.emit(f'{pad}v{s[1]}.f{s[2]} = ')
+            self.emit_eff(k, ids, s[3])
+            out.emit(';\n')
+            c = collapse(s[3])
+            if c[0] == 'ePure':
+                return [('stmt', f'(.setField {ids[s[1]]} {s[2]} {self.lean_expr(k, ids, c[1])})')]
+            return [('stmt', f'(.setFieldEval {ids[s[1]]} {s[2]} {self.lean_eff(k, ids, c)})')]
         if kind == 'returnEval':
             out.emit(f'{pad}return ')
             self.emit_eff(k, ids, s[1])
@@ -476,7 +494,7 @@ class Chunk:
         kind = s[0]
         if kind == 'nop':
             return []
-        if kind in ('letEval', 'setEval', 'ifEval', 'whileEval', 'returnEval', 'discard'):
+        if kind in ('letEval', 'setEval', 'ifEval', 'whileEval', 'returnEval', 'discard', 'setIndexEval', 'setFieldEval'):
             return self.eval_stmt(k, ids, s, indent)
         if kind == 'then':
             return self.stmt(k, ids, s[1], indent) + self.stmt(k, ids, s[2], indent)
