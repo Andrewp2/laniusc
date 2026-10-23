@@ -9,6 +9,11 @@ bindings.
 Read/Write contracts, and provides explicit close and ownership transfer.
 Descriptor adapters below continue to borrow handles.
 
+Generic buffered adapters remain pending the module-context implementation
+routing issue reproduced in `tests/fixtures/stdlib_foundation/buffered_io_dependency`.
+The existing concrete streams execute through these shared traits; that evidence
+does not establish support for a generic wrapper such as `BufferedWriter<W>`.
+
 ## Portable contracts
 
 `Read.read(destination, offset, count)` and `Write.write(source, offset, count)`

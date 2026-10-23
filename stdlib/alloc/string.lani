@@ -9,6 +9,7 @@ import core::decimal;
 import core::hash;
 import core::option;
 import core::result;
+import core::slice;
 import core::utf8;
 import core::text;
 import std::vec;
@@ -50,6 +51,51 @@ pub fn from_text(text: core::text::Text) -> core::result::Result<String, Error> 
     return core::result::Ok(value);
 }
 
+// Independent copies, with all length arithmetic checked before allocation.
+// Empty parts produce empty text; separators appear only between parts.
+pub fn join(parts: core::slice::View<core::text::Text>, separator: core::text::Text) -> core::result::Result<String, Error> {
+    let value: String = new();
+    let status: core::result::Result<i32, Error> = value.try_append_joined(parts, separator);
+    if (core::result::is_err(status)) { return core::result::Err(core::result::unwrap_err(status)); }
+    return core::result::Ok(value);
+}
+
+// A negative repetition count is Bounds. Zero repetitions and empty source
+// produce an empty String without allocating or reading source bytes.
+pub fn repeat(text: core::text::Text, count: i32) -> core::result::Result<String, Error> {
+    let value: String = new();
+    let status: core::result::Result<i32, Error> = value.try_append_repeated(text, count);
+    if (core::result::is_err(status)) { return core::result::Err(core::result::unwrap_err(status)); }
+    return core::result::Ok(value);
+}
+
+fn joined_length(parts: core::slice::View<core::text::Text>, separator: core::text::Text) -> core::result::Result<i32, Error> {
+    let count: i32 = parts.len();
+    if (count == 0) { return core::result::Ok(0); }
+    let width: i32 = separator.byte_len();
+    if (width > 0 && count - 1 > 2147483647 / width) { return core::result::Err(Error::CapacityOverflow); }
+    let length: i32 = (count - 1) * width;
+    let index: i32 = 0;
+    while (index < count) {
+        let part: core::text::Text = core::option::unwrap(parts.get(index));
+        if (part.byte_len() > 2147483647 - length) { return core::result::Err(Error::CapacityOverflow); }
+        length += part.byte_len();
+        index += 1;
+    }
+    return core::result::Ok(length);
+}
+
+// Caller reserved sufficient capacity. Text is already valid UTF-8.
+fn append_reserved(bytes: std::vec::Vec<u8>, text: core::text::Text) -> std::vec::Vec<u8> {
+    let result: std::vec::Vec<u8> = bytes;
+    let index: i32 = 0;
+    while (index < text.byte_len()) {
+        result = std::vec::try_push(result, core::option::unwrap(text.byte_at(index)));
+        index += 1;
+    }
+    return result;
+}
+
 // Exact base-ten integers, without padding or a leading plus. Smaller integer
 // types can widen to these signed/unsigned entry points without losing values.
 pub fn from_i64(number: i64) -> core::result::Result<String, Error> {
@@ -83,6 +129,27 @@ fn growth_capacity(current: i32, needed: i32) -> i32 {
 }
 
 pub impl String {
+    // If growth is needed, keep the original allocation live until every
+    // aliased input has been copied. Only commit_append releases that owner.
+    fn prepare_append(&self, count: i32) -> core::result::Result<std::vec::Vec<u8>, Error> {
+        let length: i32 = std::vec::len(self.bytes);
+        if (count > 2147483647 - length) { return core::result::Err(Error::CapacityOverflow); }
+        let needed: i32 = length + count;
+        if (needed <= std::vec::capacity(self.bytes)) { return core::result::Ok(self.bytes); }
+        let grown: std::vec::Vec<u8> = std::vec::try_with_capacity(growth_capacity(std::vec::capacity(self.bytes), needed));
+        if (std::vec::capacity(grown) < needed) { return core::result::Err(Error::AllocationFailed); }
+        grown = std::vec::try_extend_from_slice(grown, std::vec::as_slice(self.bytes), length);
+        return core::result::Ok(grown);
+    }
+
+    fn commit_append(&self, bytes: std::vec::Vec<u8>) -> i32 {
+        // prepare_append returns either our existing storage or a strictly
+        // larger allocation; appending within that reservation keeps capacity.
+        if (std::vec::capacity(bytes) != std::vec::capacity(self.bytes)) { std::vec::destroy(self.bytes); }
+        self.bytes = bytes;
+        return std::vec::len(bytes);
+    }
+
     pub fn byte_len(&self) -> i32 { return std::vec::len(self.bytes); }
     pub fn capacity(&self) -> i32 { return std::vec::capacity(self.bytes); }
     pub fn is_empty(&self) -> bool { return std::vec::is_empty(self.bytes); }
@@ -187,25 +254,44 @@ pub impl String {
     // Reserve before editing; retain old storage until an aliased copy finishes.
     pub fn try_append_text(&self, source: core::text::Text) -> core::result::Result<i32, Error> {
         let count: i32 = source.byte_len();
-        let length: i32 = std::vec::len(self.bytes);
-        if (count > 2147483647 - length) { return core::result::Err(Error::CapacityOverflow); }
-        if (count == 0) { return core::result::Ok(length); }
-        let needed: i32 = length + count;
-        let current_capacity: i32 = std::vec::capacity(self.bytes);
-        let grown: std::vec::Vec<u8> = self.bytes;
-        if (needed > current_capacity) {
-            grown = std::vec::try_with_capacity(growth_capacity(current_capacity, needed));
-            if (std::vec::capacity(grown) < needed) { return core::result::Err(Error::AllocationFailed); }
-            grown = std::vec::try_extend_from_slice(grown, std::vec::as_slice(self.bytes), length);
-        }
+        if (count == 0) { return core::result::Ok(self.byte_len()); }
+        let prepared: core::result::Result<std::vec::Vec<u8>, Error> = self.prepare_append(count);
+        if (core::result::is_err(prepared)) { return core::result::Err(core::result::unwrap_err(prepared)); }
+        let grown: std::vec::Vec<u8> = append_reserved(core::result::unwrap(prepared), source);
+        return core::result::Ok(self.commit_append(grown));
+    }
+
+    // Append the complete joined sequence atomically. Parts and separator may
+    // borrow this String, including during growth. Return the new byte length.
+    pub fn try_append_joined(&self, parts: core::slice::View<core::text::Text>, separator: core::text::Text) -> core::result::Result<i32, Error> {
+        let total: core::result::Result<i32, Error> = joined_length(parts, separator);
+        if (core::result::is_err(total)) { return core::result::Err(core::result::unwrap_err(total)); }
+        let count: i32 = core::result::unwrap(total);
+        if (count == 0) { return core::result::Ok(self.byte_len()); }
+        let prepared: core::result::Result<std::vec::Vec<u8>, Error> = self.prepare_append(count);
+        if (core::result::is_err(prepared)) { return core::result::Err(core::result::unwrap_err(prepared)); }
+        let grown: std::vec::Vec<u8> = core::result::unwrap(prepared);
         let index: i32 = 0;
-        while (index < count) {
-            grown = std::vec::try_push(grown, core::option::unwrap(source.byte_at(index)));
+        while (index < parts.len()) {
+            if (index > 0) { grown = append_reserved(grown, separator); }
+            grown = append_reserved(grown, core::option::unwrap(parts.get(index)));
             index += 1;
         }
-        if (needed > current_capacity) { std::vec::destroy(self.bytes); }
-        self.bytes = grown;
-        return core::result::Ok(needed);
+        return core::result::Ok(self.commit_append(grown));
+    }
+
+    // Append count copies atomically. Source may be a subview of this owner.
+    pub fn try_append_repeated(&self, source: core::text::Text, count: i32) -> core::result::Result<i32, Error> {
+        if (count < 0) { return core::result::Err(Error::Bounds); }
+        let width: i32 = source.byte_len();
+        if (width == 0 || count == 0) { return core::result::Ok(self.byte_len()); }
+        if (count > 2147483647 / width) { return core::result::Err(Error::CapacityOverflow); }
+        let prepared: core::result::Result<std::vec::Vec<u8>, Error> = self.prepare_append(count * width);
+        if (core::result::is_err(prepared)) { return core::result::Err(core::result::unwrap_err(prepared)); }
+        let grown: std::vec::Vec<u8> = core::result::unwrap(prepared);
+        let index: i32 = 0;
+        while (index < count) { grown = append_reserved(grown, source); index += 1; }
+        return core::result::Ok(self.commit_append(grown));
     }
 
     pub fn try_append(&self, other: String) -> core::result::Result<i32, Error> {

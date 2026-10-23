@@ -28,7 +28,7 @@ package distribution is a separate deliverable.
 | Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Many implementations and runtime fixtures exist; consolidate duplicate paths |
 | Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic algorithms and counted View values execute, including subviews, checked mutations and cursors; initial physical counts still require compiler length projection |
 | Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | Inherent slice/text/hash-map cursors execute; shared protocol dispatch hits an imported-generic compiler dependency; adapters and collection integration remain |
-| Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed owned String, byte codecs and scalar operations execute; borrowed Text, splitting and scalar iteration now execute; join and formatting remain |
+| Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat and integer conversion execute; general formatting and further Unicode operations remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings and raw views exist; ownership conventions need consolidation |
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Generic vectors/deques, linear maps/sets and an executable alloc hash map exist; hash-set composition is a compiler dependency |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks, native descriptor adapters and owned files execute; buffered adapters remain |
@@ -169,6 +169,16 @@ API list; unrelated library work can continue.
   remaining streaming format interfaces; complete HashSet when its compiler
   dependency is resolved.
   Completing the integration application does not complete the first phase.
+- Text composition: [join, repeat and word splitting](stdlib-text-composition.md)
+  execute with atomic, alias-safe appends, checked sizes and one-allocation
+  construction. An executable whitespace normalizer combines borrowed words,
+  owned strings, vectors, streams and decimal argument parsing. Generated models,
+  capacity overflow and every observed allocation failure are covered.
+  For 65,536 parts, paired native runtime is 75.73 ms for join versus 116.36 ms
+  for repeated appends; whole-program allocation calls fall from 19 to 2.
+  Generic buffered stream adapters hit the same module-context implementation
+  routing limitation as iterator consumers; the minimal Write reproduction and
+  successful controls are recorded in the compiler dependency list.
 - Owned files: [File and Path](stdlib-files.md) execute read/create/append,
   generic stream operations, explicit close and ownership transfer on x86_64
   Linux. Tests check binary and non-UTF-8 data, descriptor reuse, path bounds,

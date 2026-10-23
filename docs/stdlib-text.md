@@ -43,9 +43,10 @@ unchanged until their entries are removed or the map is destroyed.
 | `trim_ascii()` | Borrowed subview trimming HT, LF, VT, FF, CR and space |
 | `scalars()` | Iterator of `Scalar { byte_index, value: u32 }`, relative to this view |
 | `split(separator)` | Iterator of borrowed fields, preserving empty fields |
+| `split_ascii_whitespace()` | Iterator of nonempty borrowed words, separated by HT/LF/VT/FF/CR/space |
 | `parse_u8/u16/u32/u64/usize/i8/i16/i32/i64/isize()` | Checked decimal parsing with errors relative to this view |
 
-`Scalars.next()` and `Split.next()` return Option and remain exhausted after
+`Scalars.next()`, `Split.next()` and `SplitAsciiWhitespace.next()` return Option and remain exhausted after
 returning None. Copies of an iterator have independent cursor positions and
 borrow the same storage. A nonempty split separator consumes nonoverlapping
 matches. An empty separator yields a leading empty field, each Unicode scalar,
@@ -69,6 +70,8 @@ not revalidate already valid text.
 ## Owned and extended-library integration
 
 `alloc::string::from_text(view)` makes an independent owned copy.
+The [composition APIs](stdlib-text-composition.md) join or repeat Text views
+into independent Strings, or append them atomically to an existing String.
 `String.try_append_text(view)` accepts a subview of the destination itself,
 retaining old storage until copying finishes if it grows. Allocation failure
 preserves the original owner, contents and source view. A successful mutation
@@ -114,5 +117,5 @@ timeout --kill-after=2s 100s env \
 ```
 
 Native `str` conversion without an explicit count still needs compiler length
-access. Unicode normalization, grapheme operations, join/formatting and the
+access. Unicode normalization, grapheme operations, general formatting and the
 shared iteration protocol remain tracked in the full library roadmap.

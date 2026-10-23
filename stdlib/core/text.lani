@@ -15,6 +15,7 @@ pub struct Text { bytes: [u8], start: i32, length: i32 }
 pub struct Scalar { byte_index: i32, value: u32 }
 pub struct Scalars { text: Text, position: i32 }
 pub struct Split { text: Text, separator: Text, position: i32, empty_head: bool, done: bool }
+pub struct SplitAsciiWhitespace { text: Text, position: i32 }
 
 // Validate only this range. InvalidUtf8 identifies the malformed sequence's
 // start relative to the requested range, including truncated sequences.
@@ -173,6 +174,11 @@ pub impl Text {
     pub fn split(&self, separator: Text) -> Split {
         return Split { text: self.part(0, self.length), separator: separator, position: 0, empty_head: true, done: false };
     }
+    // Separate maximal nonempty words at HT, LF, VT, FF, CR and space.
+    // Non-ASCII whitespace and NUL remain ordinary text. The cursor is fused.
+    pub fn split_ascii_whitespace(&self) -> SplitAsciiWhitespace {
+        return SplitAsciiWhitespace { text: self.part(0, self.length), position: 0 };
+    }
     pub fn parse_u8(&self) -> core::result::Result<u8, core::decimal::ParseError> {
         return core::decimal::parse_u8_range(self.bytes, self.start, self.length);
     }
@@ -202,6 +208,20 @@ pub impl Text {
     }
     pub fn parse_isize(&self) -> core::result::Result<isize, core::decimal::ParseError> {
         return core::decimal::parse_isize_range(self.bytes, self.start, self.length);
+    }
+}
+
+pub impl SplitAsciiWhitespace {
+    pub fn next(&self) -> core::option::Option<Text> {
+        while (self.position < self.text.length && core::byte::is_ascii_whitespace(self.text.bytes[self.text.start + self.position])) {
+            self.position += 1;
+        }
+        let start: i32 = self.position;
+        while (self.position < self.text.length && !core::byte::is_ascii_whitespace(self.text.bytes[self.text.start + self.position])) {
+            self.position += 1;
+        }
+        if (start == self.position) { return core::option::None(); }
+        return core::option::Some(self.text.part(start, self.position));
     }
 }
 

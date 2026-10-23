@@ -11,6 +11,8 @@ do not operate on grapheme clusters.
 returning `Result<String, Error>`. The slice must physically back `count` bytes;
 negative counts return `Bounds`, while an overclaimed physical view traps.
 `alloc::string::from_text(view)` copies a borrowed Text into independent storage.
+`join(View<Text>, separator)` and `repeat(Text, count)` construct checked,
+independent results; see [text composition](stdlib-text-composition.md).
 `from_i64(number)` and `from_u64(number)` create canonical decimal text for the
 full signed/unsigned native domains. Smaller integer types can widen explicitly.
 Construction from native `str` awaits the length projection listed in
@@ -41,6 +43,7 @@ allocate nothing.
 | `try_push_scalar` | Append a Unicode scalar; return the new byte length |
 | `try_append_utf8`, `try_append`, `try_append_text` | Append bytes, a String or borrowed Text; return the new byte length |
 | `try_append_i64`, `try_append_u64` | Append canonical decimal integer text atomically; return the new byte length |
+| `try_append_joined`, `try_append_repeated` | Append a complete joined/repeated sequence atomically, including aliased Text views |
 | `try_truncate` | Truncate at a scalar boundary; return the resulting byte length |
 | `pop_scalar` | Remove and return the last scalar; empty gives None |
 | `clear` | Empty the string while retaining capacity |
@@ -114,6 +117,6 @@ timeout --kill-after=2s 100s env \
 The borrowed-text integration passed this suite again in 12.56 seconds, and
 `stdlib_text_execution` tests subview appends and copies under allocation failure.
 
-Wasm and user-program GPU execution are not established. Joining,
+Wasm and user-program GPU execution are not established. General
 formatting, native `str` interoperation and enforced immutable views
 remain on the full [library roadmap](library-roadmap.md).
