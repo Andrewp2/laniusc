@@ -1,0 +1,38 @@
+module app::main;
+import alloc::string;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::config;
+import ext::json;
+import std::io;
+fn text(value: str, length: i32) -> core::text::Text { let ptr: ptr = core::mem::string_data_ptr(value); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(ptr, length); return core::result::unwrap(core::text::from_utf8(bytes, length)); }
+fn source(value: str, length: i32) -> ext::config::Config {
+    let borrowed: core::text::Text = text(value, length); let owned: alloc::string::String = core::result::unwrap(alloc::string::from_text(borrowed));
+    let parsed: core::result::Result<ext::config::Config, ext::config::Error> = ext::config::parse(owned, ext::json::default_options()); owned.destroy(); return core::result::unwrap(parsed);
+}
+fn wrong(error: ext::json::Error) -> bool { let result: bool = match (error.kind) { ext::json::ErrorKind::WrongKind -> true, _ -> false }; return result; }
+fn main() -> i32 {
+    let low: ext::config::Config = source("{\"x\":true,\"n\":1.25e2,\"nested\":{\"a\":1,\"b\":2},\"list\":[\"hi\",null,false],\"\":7}", 74);
+    let high: ext::config::Config = source("{\"x\":null,\"nested\":{\"a\":3},\"wide\":18446744073709551615}", 55);
+    let configs: [ext::config::Config; 2] = [low, high]; let view: core::slice::View<ext::config::Config> = core::result::unwrap(core::slice::view(configs, 2)); let layers: ext::config::Layers = ext::config::layers(view);
+    assert(std::io::write_byte(1, 81) == 1);
+    assert(layers.len() == 2 && core::option::is_none(layers.get(text("missing", 7))));
+    let x: ext::config::Value = core::option::unwrap(layers.get(text("x", 1))); assert(x.is_null() && x.source_index() == 1 && wrong(core::result::unwrap_err(x.boolean())));
+    let n: ext::config::Value = core::option::unwrap(layers.get(text("n", 1))); assert(n.source_index() == 0 && core::result::unwrap(n.integer_i64()) == 125 as i64);
+    let number: core::text::Text = core::result::unwrap(n.number_text()); assert(number.equals(text("1.25e2", 6)));
+    let nested: ext::config::Value = core::option::unwrap(layers.get(text("nested", 6))); assert(nested.source_index() == 1 && core::result::unwrap(nested.len()) == 1);
+    assert(core::option::is_none(core::result::unwrap(nested.member(text("b", 1)))));
+    let a: ext::config::Value = core::option::unwrap(core::result::unwrap(nested.member(text("a", 1)))); assert(core::result::unwrap(a.integer_i64()) == 3 as i64 && a.source_index() == 1);
+    let wide: ext::config::Value = core::option::unwrap(layers.get(text("wide", 4))); let maximum: u64 = 18446744073709551615; assert(core::result::unwrap(wide.integer_u64()) == maximum);
+    let list: ext::config::Value = core::option::unwrap(layers.get(text("list", 4))); assert(core::result::unwrap(list.len()) == 3);
+    let children: ext::config::Children = core::result::unwrap(list.children()); let first: ext::config::Value = core::option::unwrap(children.next()); let word: core::text::Text = core::result::unwrap(first.text()); assert(word.equals(text("hi", 2)) && wrong(core::result::unwrap_err(first.key())));
+    let null: ext::config::Value = core::option::unwrap(children.next()); let boolean: ext::config::Value = core::option::unwrap(children.next()); assert(null.is_null() && !core::result::unwrap(boolean.boolean()) && core::option::is_none(children.next()) && core::option::is_none(children.next()));
+    assert(core::option::is_none(core::result::unwrap(list.element(3))) && core::result::is_err(list.element(-1)) && wrong(core::result::unwrap_err(list.member(text("x", 1)))));
+    let keyed: core::text::Text = core::result::unwrap(list.key()); assert(keyed.equals(text("list", 4)));
+    let empty_key: ext::config::Value = core::option::unwrap(layers.get(text("", 0))); assert(core::result::unwrap(empty_key.integer_u64()) == 7 as u64);
+    let empty: ext::config::Layers = ext::config::layers(core::result::unwrap(view.subview(0, 0))); assert(empty.len() == 0 && core::option::is_none(empty.get(text("x", 1))));
+    low.destroy(); high.destroy(); low.destroy(); high.destroy(); return 0;
+}

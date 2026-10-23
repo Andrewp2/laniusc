@@ -144,7 +144,14 @@ API list; unrelated library work can continue.
   32,768-argument lists and a streaming file-checksum application with injected
   I/O errors. Parsing makes no allocations after capture; two snapshot
   allocations suffice at both 4,096 and 32,768 arguments. Higher-level CLI help,
-  subcommands, configuration and logging remain.
+  subcommands and logging remain.
+- Configuration: [`ext::config`](extended-config.md) executes strict JSON object
+  sources, bounded file loading, typed borrowed queries and explicit shallow
+  overlays with source indices. The checksum application combines configuration
+  files and CLI overrides. Eight groups cover generated layers, numeric limits,
+  every observed allocation failure and host errors. JSON now also exposes
+  borrowed text/key queries and exact i64/u64 conversion of decimal/exponent
+  forms. Environment adapters, reusable schemas and TOML sources remain.
 - Extended CSV: parsing, independent field copies and canonical encoding execute
   on x86_64 Linux, including generated tables, borrowed field views and allocation fault injection.
   See [extended-csv.md](extended-csv.md). Incremental decoding now shares the same parser; row construction remains.

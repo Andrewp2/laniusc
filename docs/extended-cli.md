@@ -121,10 +121,13 @@ order. With no operands it reads stdin; a `-` operand reads stdin at its current
 position. Filenames retain their original bytes, including non-UTF-8 bytes.
 
 - `-d`, `--decimal`: print the checksum as an unsigned decimal integer.
+- `-x`, `--hex`: select hexadecimal output explicitly.
 - `-n BYTES`, `--limit=BYTES`: maximum bytes per input; the last occurrence wins.
   The default is u64::MAX. Exact-limit input succeeds; excess input fails after
   reading at most one byte beyond the limit.
 - `-h`, `--help`: show usage after validating the complete command line.
+- `-c FILE`, `--config FILE`: load [configuration sources](extended-config.md)
+  in order; explicit CLI settings override them. Help does not load these files.
 - `--`: permit filenames beginning with a hyphen.
 
 The program validates all options before opening inputs. It uses a fixed 4 KiB
@@ -194,5 +197,6 @@ timeout --kill-after=2s 100s env CARGO_TARGET_DIR="$PWD/target/stdlib-build" CAR
 The suite requires the GPU compiler's Vulkan environment and `strace`. No
 compiler or runtime implementation changed. The checksum scratch storage uses
 the documented packed-i32 workaround for large byte-array repeat initialization.
-Configuration, logging and complete directory/runtime support remain on the
+Configuration loading now has its own [contracts and execution suite](extended-config.md).
+Logging and complete directory/runtime support remain on the
 [library roadmap](library-roadmap.md).

@@ -13,8 +13,9 @@ Unpaired surrogates are rejected deliberately: the String representation
 requires scalar-valid UTF-8.
 
 Numbers retain their exact source spelling. Parsing does not round through a
-floating-point type or reject a large exponent such as `1e400`. Conversion to
-an application numeric type is separate work.
+floating-point type or reject a large exponent such as `1e400`. Exact i64/u64
+queries accept integral decimal/exponent forms and distinguish fractional
+values from out-of-range integers. Floating-point conversion remains work.
 
 Object traversal preserves order and duplicate keys. `member` returns the last
 matching value. Set `reject_duplicate_keys` to reject duplicates after decoding
@@ -38,6 +39,10 @@ from another document cannot be detected as foreign.
 - Parsing borrows the input and copies strings and numbers.
 - Builder operations copy keys and text; the caller retains those Strings.
 - String, number and key getters return independent owned copies.
+- The explicitly named `string_view`, `number_view` and `key_view` getters
+  borrow text without allocating. They survive document appends and expire at
+  destruction. Keep their backing unchanged, including keys; the compiler does
+  not enforce read-only access.
 - Failed insertion leaves the existing document unchanged. Failed parsing,
   encoding and copying release partial results and preserve their sources.
 - `destroy()` frees all owned allocations and resets this handle. Repeating
@@ -67,8 +72,11 @@ ownership or immutable String views.
 | `next_sibling(id)` | Optional following sibling; root has none |
 | `element(array, index)` | Optional child; past the end is None, negative index is Bounds |
 | `member(object, key)` | Optional last matching member |
+| `member_text(object, key: Text)` | Same lookup with a borrowed key and no temporary String allocation |
 | `boolean(id)` | Boolean value |
 | `copy_string(id)`, `copy_number(id)`, `copy_key(id)` | Independently owned String |
+| `string_view(id)`, `number_view(id)`, `key_view(id)` | Borrowed Text with the same type requirements as the copying getters |
+| `integer_i64(id)`, `integer_u64(id)` | Exact integer value, or WrongKind / NotInteger / NumberOutOfRange |
 | `add_null(at)`, `add_bool(at, value)` | Append a leaf, returning `Result<NodeId, Error>` |
 | `add_string(at, text)`, `add_number(at, text)` | Append copied text; number text must be one complete JSON number |
 | `add_i32(at, value)` | Append an exact signed 32-bit integer |
@@ -147,5 +155,13 @@ The normalizer reads stdin and writes stdout. Exit status is 0 for success,
 allocation failure. It produces no diagnostic text. A write failure can leave
 an output prefix.
 
-Streaming parsing/encoding, numeric conversion beyond i32 construction,
-editing/removal, deep cloning, schema validation and other targets remain work.
+Borrowed queries and exact integer conversion have additional execution
+evidence in [configuration](extended-config.md), including 64-bit boundaries,
+large exponents, allocation-free queries and views surviving node growth.
+Conversion accepts `1.25e2` as 125, rejects `1.25` as NotInteger, checks the
+destination range and treats negative zero as zero. It does not allocate or
+round through floating point; conversion errors have offset -1.
+
+Streaming parsing/encoding, floating-point conversion, further numeric builder
+helpers, editing/removal, deep cloning, schema validation and other targets
+remain work.

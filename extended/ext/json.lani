@@ -5,6 +5,7 @@ import alloc::string;
 import core::decimal;
 import core::option;
 import core::result;
+import core::text;
 import core::utf8;
 import alloc::vec;
 
@@ -14,7 +15,7 @@ pub enum ErrorKind {
     UnexpectedEnd, UnexpectedByte, InvalidEscape, InvalidSurrogate,
     InvalidNumber, TrailingInput, DepthLimit, NodeLimit, StringLimit,
     NumberLimit, OutputLimit, DuplicateKey, AllocationFailed, Bounds,
-    WrongKind, InvalidPlacement, InvalidOptions, NoRoot,
+    WrongKind, InvalidPlacement, InvalidOptions, NoRoot, NotInteger, NumberOutOfRange,
 }
 pub struct Error { kind: ErrorKind, offset: i32 }
 pub struct Options {
@@ -38,6 +39,54 @@ fn tag(kind: Kind) -> i32 {
 fn valid_options(options: Options) -> bool {
     return options.max_depth >= 0 && options.max_nodes >= 0 && options.max_string_bytes >= 0 &&
         options.max_number_bytes >= 0 && options.max_output_bytes >= 0;
+}
+
+// Exact conversion of an already validated JSON number. Normalize its decimal
+// scale and trailing zeros before accumulating at most twenty significant
+// digits. No floating-point rounding, exponent-sized loop or allocation.
+fn integer_magnitude(text: core::text::Text, limit: u64) -> core::result::Result<u64, Error> {
+    let start: i32 = 0; if (core::option::unwrap(text.byte_at(0)) == 45) { start = 1; }
+    let end: i32 = start; let digits: i32 = 0; let fraction: i32 = 0; let fractional: bool = false;
+    let first: i32 = -1; let last: i32 = -1; let first_byte: i32 = -1; let last_byte: i32 = -1;
+    while (end < text.byte_len()) {
+        let byte: u8 = core::option::unwrap(text.byte_at(end)); if (byte == 101 || byte == 69) { break; }
+        if (byte == 46) { fractional = true; }
+        else {
+            if (byte != 48) { if (first < 0) { first = digits; first_byte = end; } last = digits; last_byte = end; }
+            digits += 1; if (fractional) { fraction += 1; }
+        }
+        end += 1;
+    }
+    if (first < 0) { return core::result::Ok(0); }
+    let exponent: i64 = 0; let negative_exponent: bool = false; let index: i32 = end;
+    if (index < text.byte_len()) { index += 1; }
+    if (index < text.byte_len()) {
+        let sign: u8 = core::option::unwrap(text.byte_at(index));
+        if (sign == 43 || sign == 45) { negative_exponent = sign == 45; index += 1; }
+    }
+    // This cap exceeds every possible i32 digit count by more than 20, so
+    // saturating a larger exponent cannot change integral/range classification.
+    let cap: i64 = 4294967296;
+    while (index < text.byte_len()) {
+        if (exponent < cap) { exponent = exponent * 10 + ((core::option::unwrap(text.byte_at(index)) - 48) as i64); if (exponent > cap) { exponent = cap; } }
+        index += 1;
+    }
+    if (negative_exponent) { exponent = 0 - exponent; }
+    let scale: i64 = exponent - (fraction as i64) + ((digits - last - 1) as i64);
+    if (scale < 0) { return core::result::Err(error(ErrorKind::NotInteger, -1)); }
+    if (((last - first + 1) as i64) + scale > 20) { return core::result::Err(error(ErrorKind::NumberOutOfRange, -1)); }
+    let result: u64 = 0; index = first_byte;
+    while (index <= last_byte) {
+        let byte: u8 = core::option::unwrap(text.byte_at(index));
+        if (byte != 46) {
+            let digit: u64 = (byte - 48) as u64;
+            if (result > limit / 10 || (result == limit / 10 && digit > limit % 10)) { return core::result::Err(error(ErrorKind::NumberOutOfRange, -1)); }
+            result = result * 10 + digit;
+        }
+        index += 1;
+    }
+    while (scale > 0) { if (result > limit / 10) { return core::result::Err(error(ErrorKind::NumberOutOfRange, -1)); } result *= 10; scale -= 1; }
+    return core::result::Ok(result);
 }
 
 struct Node {
@@ -112,6 +161,9 @@ pub impl Document {
     }
     // Last matching member wins for lookup; ordered traversal retains all keys.
     pub fn member(&self, id: NodeId, key: alloc::string::String) -> core::result::Result<core::option::Option<NodeId>, Error> {
+        return self.member_text(id, key.as_text());
+    }
+    pub fn member_text(&self, id: NodeId, key: core::text::Text) -> core::result::Result<core::option::Option<NodeId>, Error> {
         if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds, -1)); }
         let node: Node = self.nodes.at(id);
         if (tag(node.kind) != 5) { return core::result::Err(error(ErrorKind::WrongKind, -1)); }
@@ -119,7 +171,8 @@ pub impl Document {
         let child: NodeId = node.first;
         while (child >= 0) {
             let current: Node = self.nodes.at(child);
-            if (current.key.equals(key)) { found = child; }
+            let name: core::text::Text = current.key.as_text();
+            if (name.equals(key)) { found = child; }
             child = current.next;
         }
         if (found < 0) { return core::result::Ok(core::option::None()); }
@@ -130,6 +183,45 @@ pub impl Document {
         let node: Node = self.nodes.at(id);
         if (tag(node.kind) != 1) { return core::result::Err(error(ErrorKind::WrongKind, -1)); }
         return core::result::Ok(node.flag);
+    }
+    // Borrowed text remains valid across document appends, until destruction.
+    // Do not mutate its backing storage through the currently writable view.
+    fn borrowed_text(&self, id: NodeId, wanted: i32) -> core::result::Result<core::text::Text, Error> {
+        if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds, -1)); }
+        let node: Node = self.nodes.at(id);
+        if (tag(node.kind) != wanted) { return core::result::Err(error(ErrorKind::WrongKind, -1)); }
+        return core::result::Ok(node.text.as_text());
+    }
+    pub fn string_view(&self, id: NodeId) -> core::result::Result<core::text::Text, Error> { return self.borrowed_text(id, 3); }
+    pub fn number_view(&self, id: NodeId) -> core::result::Result<core::text::Text, Error> { return self.borrowed_text(id, 2); }
+    pub fn key_view(&self, id: NodeId) -> core::result::Result<core::text::Text, Error> {
+        if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds, -1)); }
+        let node: Node = self.nodes.at(id);
+        if (node.parent < 0) { return core::result::Err(error(ErrorKind::WrongKind, -1)); }
+        let parent: Node = self.nodes.at(node.parent);
+        if (tag(parent.kind) != 5) { return core::result::Err(error(ErrorKind::WrongKind, -1)); }
+        return core::result::Ok(node.key.as_text());
+    }
+    pub fn integer_u64(&self, id: NodeId) -> core::result::Result<u64, Error> {
+        let viewed: core::result::Result<core::text::Text, Error> = self.number_view(id);
+        if (core::result::is_err(viewed)) { return core::result::Err(core::result::unwrap_err(viewed)); }
+        let text: core::text::Text = core::result::unwrap(viewed); let limit: u64 = 18446744073709551615;
+        let converted: core::result::Result<u64, Error> = integer_magnitude(text, limit);
+        if (core::result::is_err(converted)) { return converted; }
+        let value: u64 = core::result::unwrap(converted);
+        if (value != 0 && core::option::unwrap(text.byte_at(0)) == 45) { return core::result::Err(error(ErrorKind::NumberOutOfRange, -1)); }
+        return core::result::Ok(value);
+    }
+    pub fn integer_i64(&self, id: NodeId) -> core::result::Result<i64, Error> {
+        let viewed: core::result::Result<core::text::Text, Error> = self.number_view(id);
+        if (core::result::is_err(viewed)) { return core::result::Err(core::result::unwrap_err(viewed)); }
+        let text: core::text::Text = core::result::unwrap(viewed); let negative: bool = core::option::unwrap(text.byte_at(0)) == 45;
+        let limit: u64 = 9223372036854775807; if (negative) { limit += 1; }
+        let converted: core::result::Result<u64, Error> = integer_magnitude(text, limit);
+        if (core::result::is_err(converted)) { return core::result::Err(core::result::unwrap_err(converted)); }
+        let value: u64 = core::result::unwrap(converted);
+        if (negative) { if (value == limit) { let minimum: i64 = -9223372036854775808; return core::result::Ok(minimum); } return core::result::Ok(0 - (value as i64)); }
+        return core::result::Ok(value as i64);
     }
     fn copied_text(&self, id: NodeId, wanted: i32) -> core::result::Result<alloc::string::String, Error> {
         if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds, -1)); }

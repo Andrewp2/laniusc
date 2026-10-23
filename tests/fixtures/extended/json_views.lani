@@ -1,0 +1,32 @@
+module app::main;
+import alloc::string;
+import core::option;
+import core::result;
+import core::text;
+import ext::json;
+import std::io;
+fn wrong(error: ext::json::Error) -> bool { let yes: bool = match (error.kind) { ext::json::ErrorKind::WrongKind -> true, _ -> false }; assert(error.offset == -1); return yes; }
+fn bounds(error: ext::json::Error) -> bool { let yes: bool = match (error.kind) { ext::json::ErrorKind::Bounds -> true, _ -> false }; assert(error.offset == -1); return yes; }
+fn main() -> i32 {
+    let document: ext::json::Document = ext::json::new(); let root: i32 = core::result::unwrap(document.add_object(ext::json::At::Root));
+    let key_bytes: [u8; 3] = [107, 0, 121]; let word_bytes: [u8; 3] = [195, 169, 0]; let digits: [u8; 4] = [49, 46, 50, 53];
+    let key: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(key_bytes, 3));
+    let word: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(word_bytes, 3));
+    let number: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(digits, 4));
+    let string_id: i32 = core::result::unwrap(document.add_string(ext::json::At::Member(root, key), word));
+    let number_id: i32 = core::result::unwrap(document.add_number(ext::json::At::Member(root, key), number));
+    let saved_key: core::text::Text = core::result::unwrap(document.key_view(string_id)); let saved_word: core::text::Text = core::result::unwrap(document.string_view(string_id)); let saved_number: core::text::Text = core::result::unwrap(document.number_view(number_id));
+    word.destroy(); number.destroy(); let index: i32 = 0; let last: i32 = -1;
+    while (index < 256) { last = core::result::unwrap(document.add_bool(ext::json::At::Member(root, key), index % 2 == 0)); index += 1; } key.destroy();
+    assert(std::io::write_byte(1, 81) == 1);
+    let expected_key: core::text::Text = core::result::unwrap(core::text::from_utf8(key_bytes, 3));
+    let expected_word: core::text::Text = core::result::unwrap(core::text::from_utf8(word_bytes, 3));
+    let expected_number: core::text::Text = core::result::unwrap(core::text::from_utf8(digits, 4));
+    assert(saved_key.equals(expected_key) && saved_word.equals(expected_word) && saved_number.equals(expected_number));
+    let borrowed_key: core::text::Text = core::result::unwrap(document.key_view(string_id)); let borrowed_word: core::text::Text = core::result::unwrap(document.string_view(string_id)); let borrowed_number: core::text::Text = core::result::unwrap(document.number_view(number_id));
+    assert(borrowed_key.equals(expected_key) && borrowed_word.equals(expected_word) && borrowed_number.equals(expected_number));
+    assert(core::option::unwrap(core::result::unwrap(document.member_text(root, expected_key))) == last);
+    assert(wrong(core::result::unwrap_err(document.key_view(root))) && wrong(core::result::unwrap_err(document.string_view(number_id))) && wrong(core::result::unwrap_err(document.number_view(string_id))));
+    assert(bounds(core::result::unwrap_err(document.key_view(-1))) && bounds(core::result::unwrap_err(document.string_view(-1))) && bounds(core::result::unwrap_err(document.number_view(999))) && bounds(core::result::unwrap_err(document.integer_i64(-1))) && bounds(core::result::unwrap_err(document.integer_u64(999))));
+    document.destroy(); return 0;
+}
