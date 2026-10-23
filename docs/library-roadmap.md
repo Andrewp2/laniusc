@@ -70,8 +70,10 @@ traverse paths.
 [Borrowed URI parsing](extended-uri.md), [component percent coding](extended-percent.md)
 and a [component-extraction application](extended-uri-component.md) execute on
 x86_64 Linux. Parsing validates generic RFC 3986 syntax while preserving encoded
-spelling; decoding is an explicit later operation. URI reference resolution,
-scheme-specific URL handling and network protocols remain separate work.
+spelling; decoding is an explicit later operation.
+[Owned URI resolution and recomposition](extended-uri-resolve.md), including
+RFC dot-segment removal, execute with a [command-line resolver](extended-uri-resolve-program.md).
+Scheme-specific URL handling and network protocols remain separate work.
 
 For external formats and algorithms, use their primary specifications and
 published conformance vectors. Choose exact versions and formats when starting

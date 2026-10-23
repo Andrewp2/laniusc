@@ -1,0 +1,127 @@
+// Owned RFC 3986 reference resolution and component recomposition. Inputs keep
+// parser invariants; returned packed bytes have one owner and explicit destroy.
+module ext::uri_resolve;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::slice;
+import ext::uri;
+
+pub enum Error { InvalidBase, Bounds, OutputLimit, CapacityOverflow, AllocationFailed }
+struct Parts { scheme: core::option::Option<core::slice::View<u8>>, authority: core::option::Option<core::slice::View<u8>>, path: core::slice::View<u8>, query: core::option::Option<core::slice::View<u8>>, fragment: core::option::Option<core::slice::View<u8>> }
+fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length; }
+fn optional_valid(value: core::option::Option<core::slice::View<u8>>) -> bool { if (core::option::is_none(value)) { return true; } return valid(core::option::unwrap(value)); }
+fn byte(view: core::slice::View<u8>, index: i32) -> u8 { return core::option::unwrap(view.get(index)); }
+fn parts(reference: ext::uri::Reference) -> Parts {
+    let authority: core::option::Option<core::slice::View<u8>> = core::option::None();
+    if (core::option::is_some(reference.authority)) { let value: ext::uri::Authority = core::option::unwrap(reference.authority); authority = core::option::Some(value.raw); }
+    return Parts { scheme: reference.scheme, authority: authority, path: reference.path, query: reference.query, fragment: reference.fragment };
+}
+fn valid_parts(value: Parts) -> bool { return valid(value.path) && optional_valid(value.scheme) && optional_valid(value.authority) && optional_valid(value.query) && optional_valid(value.fragment); }
+fn allocation_error(error: alloc::vec::Error) -> Error {
+    let mapped: Error = match (error) { alloc::vec::Error::Bounds -> Error::Bounds, alloc::vec::Error::InvalidCapacity -> Error::Bounds, alloc::vec::Error::CapacityOverflow -> Error::CapacityOverflow, alloc::vec::Error::AllocationFailed -> Error::AllocationFailed }; return mapped;
+}
+fn add(length: i32, additional: i32) -> core::result::Result<i32, Error> {
+    if (additional > 2147483647-length) { return core::result::Err(Error::CapacityOverflow); } return core::result::Ok(length+additional);
+}
+fn component_length(length: i32, value: core::option::Option<core::slice::View<u8>>, delimiter: i32) -> core::result::Result<i32, Error> {
+    if (core::option::is_none(value)) { return core::result::Ok(length); }
+    let added: core::result::Result<i32, Error> = add(length,delimiter); if (core::result::is_err(added)) { return added; }
+    return add(core::result::unwrap(added),core::option::unwrap(value).len());
+}
+fn assemble(value: Parts, max_bytes: i32) -> core::result::Result<alloc::vec::Vec<u8>, Error> {
+    if (max_bytes < 0 || !valid_parts(value)) { return core::result::Err(Error::Bounds); }
+    let counted: core::result::Result<i32, Error> = component_length(value.path.len(),value.scheme,1);
+    if (core::result::is_err(counted)) { return core::result::Err(core::result::unwrap_err(counted)); }
+    counted = component_length(core::result::unwrap(counted),value.authority,2);
+    if (core::result::is_err(counted)) { return core::result::Err(core::result::unwrap_err(counted)); }
+    counted = component_length(core::result::unwrap(counted),value.query,1);
+    if (core::result::is_err(counted)) { return core::result::Err(core::result::unwrap_err(counted)); }
+    counted = component_length(core::result::unwrap(counted),value.fragment,1);
+    if (core::result::is_err(counted)) { return core::result::Err(core::result::unwrap_err(counted)); }
+    let length: i32 = core::result::unwrap(counted); if (length > max_bytes) { return core::result::Err(Error::OutputLimit); }
+    let allocated: core::result::Result<alloc::vec::Vec<u8>, alloc::vec::Error> = alloc::vec::with_capacity<u8>(length);
+    if (core::result::is_err(allocated)) { return core::result::Err(allocation_error(core::result::unwrap_err(allocated))); }
+    let output: alloc::vec::Vec<u8> = core::result::unwrap(allocated);
+    if (core::option::is_some(value.scheme)) { core::result::unwrap(output.try_extend(core::option::unwrap(value.scheme))); core::result::unwrap(output.try_push(58)); }
+    if (core::option::is_some(value.authority)) { core::result::unwrap(output.try_push(47)); core::result::unwrap(output.try_push(47)); core::result::unwrap(output.try_extend(core::option::unwrap(value.authority))); }
+    core::result::unwrap(output.try_extend(value.path));
+    if (core::option::is_some(value.query)) { core::result::unwrap(output.try_push(63)); core::result::unwrap(output.try_extend(core::option::unwrap(value.query))); }
+    if (core::option::is_some(value.fragment)) { core::result::unwrap(output.try_push(35)); core::result::unwrap(output.try_extend(core::option::unwrap(value.fragment))); }
+    return core::result::Ok(output);
+}
+// Compact in place following RFC 3986 section 5.2.4. The destination never
+// overtakes unread input. Removed output bytes are scanned at most once.
+fn remove_dots(input: alloc::vec::Vec<u8>) -> alloc::vec::Vec<u8> {
+    let output: alloc::vec::Vec<u8> = input; let bytes: [u8] = output.as_slice(); let length: i32 = output.len();
+    let read: i32 = 0; let written: i32 = 0;
+    while (read < length) {
+        let left: i32 = length-read;
+        if (left >= 3 && bytes[read] == 46 && bytes[read+1] == 46 && bytes[read+2] == 47) { read += 3; continue; }
+        if (left >= 2 && bytes[read] == 46 && bytes[read+1] == 47) { read += 2; continue; }
+        if (left >= 3 && bytes[read] == 47 && bytes[read+1] == 46 && bytes[read+2] == 47) { read += 2; continue; }
+        if (left == 2 && bytes[read] == 47 && bytes[read+1] == 46) { bytes[written] = 47; written += 1; read += 2; continue; }
+        let parent: bool = left >= 3 && bytes[read] == 47 && bytes[read+1] == 46 && bytes[read+2] == 46;
+        if (parent && (left == 3 || bytes[read+3] == 47)) {
+            while (written > 0 && bytes[written-1] != 47) { written -= 1; }
+            if (written > 0) { written -= 1; }
+            read += 3;
+            if (read == length) { bytes[written] = 47; written += 1; }
+            continue;
+        }
+        if ((left == 1 && bytes[read] == 46) || (left == 2 && bytes[read] == 46 && bytes[read+1] == 46)) { read = length; continue; }
+        if (bytes[read] == 47) { bytes[written] = 47; written += 1; read += 1; }
+        while (read < length && bytes[read] != 47) { bytes[written] = bytes[read]; written += 1; read += 1; }
+    }
+    core::result::unwrap(output.truncate(written)); return output;
+}
+fn merged_path(first: core::slice::View<u8>, separator: bool, second: core::slice::View<u8>) -> core::result::Result<alloc::vec::Vec<u8>, Error> {
+    let counted: core::result::Result<i32, Error> = add(first.len(),second.len());
+    if (separator && core::result::is_ok(counted)) { counted = add(core::result::unwrap(counted),1); }
+    if (core::result::is_err(counted)) { return core::result::Err(core::result::unwrap_err(counted)); }
+    let allocated: core::result::Result<alloc::vec::Vec<u8>, alloc::vec::Error> = alloc::vec::with_capacity<u8>(core::result::unwrap(counted));
+    if (core::result::is_err(allocated)) { return core::result::Err(allocation_error(core::result::unwrap_err(allocated))); }
+    let output: alloc::vec::Vec<u8> = core::result::unwrap(allocated);
+    core::result::unwrap(output.try_extend(first)); if (separator) { core::result::unwrap(output.try_push(47)); } core::result::unwrap(output.try_extend(second));
+    return core::result::Ok(remove_dots(output));
+}
+
+// Copy the five encoded component fields with their present delimiters. The
+// original raw field is not used; parsed-reference invariants remain required.
+pub fn recompose(reference: ext::uri::Reference, max_bytes: i32) -> core::result::Result<alloc::vec::Vec<u8>, Error> { return assemble(parts(reference),max_bytes); }
+
+// Strict absolute base: a scheme is required and even an empty fragment is
+// invalid. The limit applies to the final result after dot-segment removal.
+pub fn resolve(base: ext::uri::Reference, reference: ext::uri::Reference, max_bytes: i32) -> core::result::Result<alloc::vec::Vec<u8>, Error> {
+    if (max_bytes < 0) { return core::result::Err(Error::Bounds); }
+    if (core::option::is_none(base.scheme) || core::option::is_some(base.fragment)) { return core::result::Err(Error::InvalidBase); }
+    let base_parts: Parts = parts(base); let source: Parts = parts(reference);
+    if (!valid_parts(base_parts) || !valid_parts(source)) { return core::result::Err(Error::Bounds); }
+    let target: Parts = source; let normalize: bool = true;
+    let prefix: core::slice::View<u8> = core::result::unwrap(source.path.subview(0,0)); let separator: bool = false;
+    if (core::option::is_none(source.scheme)) {
+        target.scheme = base_parts.scheme;
+        if (core::option::is_none(source.authority)) {
+            target.authority = base_parts.authority;
+            if (source.path.is_empty()) {
+                target.path = base_parts.path; normalize = false;
+                if (core::option::is_none(source.query)) { target.query = base_parts.query; }
+            } else {
+                if (byte(source.path,0) != 47) {
+                    if (core::option::is_some(base_parts.authority) && base_parts.path.is_empty()) { separator = true; }
+                    else {
+                        let end: i32 = base_parts.path.len(); while (end > 0 && byte(base_parts.path,end-1) != 47) { end -= 1; }
+                        prefix = core::result::unwrap(base_parts.path.subview(0,end));
+                    }
+                }
+            }
+        }
+    }
+    let work: alloc::vec::Vec<u8> = alloc::vec::new();
+    if (normalize) {
+        let merged: core::result::Result<alloc::vec::Vec<u8>, Error> = merged_path(prefix,separator,source.path);
+        if (core::result::is_err(merged)) { return core::result::Err(core::result::unwrap_err(merged)); }
+        work = core::result::unwrap(merged); target.path = work.as_view();
+    }
+    let result: core::result::Result<alloc::vec::Vec<u8>, Error> = assemble(target,max_bytes); work.destroy(); return result;
+}

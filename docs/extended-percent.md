@@ -16,6 +16,10 @@ produces the bytes `[47, 0, 255, 43]`. NUL and non-UTF-8 bytes are data. Encodin
 an already encoded value treats its percent signs as data; decoding performs
 one pass, so `%252F` becomes `%2F`.
 
+Use [URI parsing](extended-uri.md) to select components before decoding. The
+[component-extraction application](extended-uri-component.md) demonstrates this
+sequence with owned argument storage, a decoded byte buffer and checked output.
+
 ## Public API
 
 Import `ext::percent`, `core::slice` and `core::result`. Sizes and positions use

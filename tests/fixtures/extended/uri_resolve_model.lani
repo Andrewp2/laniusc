@@ -1,0 +1,35 @@
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::uri;
+import ext::uri_resolve;
+import std::io;
+import std::io_decimal;
+import std::process;
+import std::stream;
+fn argument(index: i32, pointer: ptr, storage: [u8]) -> core::slice::View<u8> { let count: i32 = std::process::arg_len(index); assert(count >= 0 && count <= 4096); assert(std::process::arg_read(index,pointer,count as usize) == count); return core::result::unwrap(core::slice::view(storage,count)); }
+fn main() -> i32 {
+    let base_storage: [i32; 1024] = [0;1024]; let base_pointer: ptr = core::mem::i32_array_data_ptr(base_storage); let base_bytes: [u8] = core::mem::typed_slice_from_raw_parts(base_pointer,4096);
+    let source_storage: [i32; 1024] = [0;1024]; let source_pointer: ptr = core::mem::i32_array_data_ptr(source_storage); let source_bytes: [u8] = core::mem::typed_slice_from_raw_parts(source_pointer,4096);
+    let mode: core::slice::View<u8> = argument(1,source_pointer,source_bytes); let compose: bool = source_bytes[0] == 49;
+    let base: ext::uri::Reference = core::result::unwrap(ext::uri::parse(argument(2,base_pointer,base_bytes)));
+    let index: i32 = 3; let sink: std::stream::Descriptor = std::stream::stdout();
+    while (index < std::process::argc()) {
+        let source: ext::uri::Reference = core::result::unwrap(ext::uri::parse(argument(index,source_pointer,source_bytes)));
+        let result: core::result::Result<alloc::vec::Vec<u8>, ext::uri_resolve::Error> = core::result::Err(ext::uri_resolve::Error::Bounds);
+        if (compose) { result = ext::uri_resolve::recompose(source,1048576); } else { result = ext::uri_resolve::resolve(base,source,1048576); }
+        if (core::result::is_err(result)) {
+            let code: i32 = match (core::result::unwrap_err(result)) { ext::uri_resolve::Error::InvalidBase -> 1, ext::uri_resolve::Error::Bounds -> 2, ext::uri_resolve::Error::OutputLimit -> 3, ext::uri_resolve::Error::CapacityOverflow -> 4, ext::uri_resolve::Error::AllocationFailed -> 5 };
+            assert(std::io_decimal::write_i32(1,0-code) > 0);
+        } else {
+            let bytes: alloc::vec::Vec<u8> = core::result::unwrap(result);
+            assert(std::io::write_byte(1,48) == 1 && std::io::write_byte(1,32) == 1);
+            assert(core::result::is_ok(core::io::write_all(sink.borrow(),bytes.as_slice(),0,bytes.len()))); bytes.destroy();
+        }
+        assert(std::io::write_byte(1,10) == 1); index += 1;
+    }
+    return 0;
+}

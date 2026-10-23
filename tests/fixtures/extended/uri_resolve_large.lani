@@ -1,0 +1,23 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::uri;
+import ext::uri_resolve;
+import std::process;
+fn parsed(value: str, count: i32) -> ext::uri::Reference { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(ext::uri::parse(core::result::unwrap(core::slice::view(raw,count)))); }
+fn main() -> i32 {
+    let args: [i32; 8] = [0;8]; let pointer: ptr = core::mem::i32_array_data_ptr(args); let buffer: [u8] = core::mem::typed_slice_from_raw_parts(pointer,32);
+    let length: i32 = std::process::arg_len(1); assert(length >= 1 && length <= 16); assert(std::process::arg_read(1,pointer,length as usize) == length);
+    let count: i32 = core::result::unwrap(core::result::unwrap(core::text::from_utf8(buffer,length)).parse_i32()); assert(count > 0 && count <= 262144);
+    let source: alloc::vec::Vec<u8> = core::result::unwrap(alloc::vec::with_capacity<u8>(count*5+1));
+    let index: i32 = 0; while (index < count) { core::result::unwrap(source.try_push(97)); core::result::unwrap(source.try_push(47)); core::result::unwrap(source.try_push(46)); core::result::unwrap(source.try_push(46)); core::result::unwrap(source.try_push(47)); index += 1; } core::result::unwrap(source.try_push(103));
+    let reference: ext::uri::Reference = core::result::unwrap(ext::uri::parse_with_limit(source.as_view(),source.len()));
+    let output: alloc::vec::Vec<u8> = core::result::unwrap(ext::uri_resolve::resolve(parsed("http://a/b/c/d;p?q",18),reference,14));
+    let expected: core::slice::View<u8> = parsed("http://a/b/c/g",14).raw;
+    assert(output.len() == expected.len()); index = 0; while (index < output.len()) { assert(output.at(index) == core::option::unwrap(expected.get(index))); index += 1; }
+    output.destroy(); assert(source.len() == count*5+1 && source.at(0) == 97 && source.at(count*5) == 103); source.destroy(); return 0;
+}

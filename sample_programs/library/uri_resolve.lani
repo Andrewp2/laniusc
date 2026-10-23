@@ -1,0 +1,83 @@
+// Resolve encoded URI references against an absolute base without a fragment.
+// Validate arguments/references before output; emit one encoded URI per line.
+// Exit 2: arguments/syntax/base/output limit, 3: output I/O, 4: allocation.
+// Output may contain earlier complete results or a partial final write on error.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::cli;
+import ext::uri;
+import ext::uri_resolve;
+import std::args;
+import std::stream;
+struct Options { maximum_bytes: i32, help: bool, base: core::option::Option<ext::uri::Reference>, references: i32 }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn option(options: &Options, item: ext::cli::Occurrence) -> bool {
+    if (item.id == 2) { options.help = true; return true; }
+    let argument: ext::cli::Argument = core::option::unwrap(item.value); let bytes: core::slice::View<u8> = argument.bytes;
+    let parsed: core::result::Result<u64, core::decimal::ParseError> = core::decimal::parse_u64_range(bytes.values,bytes.start,bytes.len());
+    if (core::result::is_err(parsed)) { return false; } let value: u64 = core::result::unwrap(parsed);
+    if (value > 2147483647 as u64) { return false; } options.maximum_bytes = value as i32; return true;
+}
+fn resolve_error(error: ext::uri_resolve::Error) -> i32 {
+    let status: i32 = match (error) { ext::uri_resolve::Error::AllocationFailed -> 4, _ -> 2 }; return status;
+}
+fn operand(options: &Options, item: ext::cli::Argument, emit: bool) -> i32 {
+    let parsed: core::result::Result<ext::uri::Reference, ext::uri::Error> = ext::uri::parse(item.bytes);
+    if (core::result::is_err(parsed)) { return 2; } let reference: ext::uri::Reference = core::result::unwrap(parsed);
+    if (core::option::is_none(options.base)) {
+        if (reference.is_relative() || core::option::is_some(reference.fragment)) { return 2; }
+        options.base = core::option::Some(reference); return 0;
+    }
+    options.references += 1; if (!emit) { return 0; }
+    let resolved: core::result::Result<alloc::vec::Vec<u8>, ext::uri_resolve::Error> = ext::uri_resolve::resolve(core::option::unwrap(options.base),reference,options.maximum_bytes);
+    if (core::result::is_err(resolved)) { return resolve_error(core::result::unwrap_err(resolved)); }
+    let output: alloc::vec::Vec<u8> = core::result::unwrap(resolved); let sink: std::stream::Descriptor = std::stream::stdout();
+    let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(sink.borrow(),output.as_slice(),0,output.len());
+    output.destroy(); if (core::result::is_err(written)) { return 3; }
+    let newline: [u8; 1] = [10]; if (core::result::is_err(core::io::write_all(sink.borrow(),newline,0,1))) { return 3; } return 0;
+}
+fn process(arguments: std::args::Arguments) -> i32 {
+    let specs: [ext::cli::Spec; 2] = [
+        ext::cli::Spec { id: 1, long: literal("max-bytes",9), short: 110, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 2, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,2));
+    let maximum: i32 = 1048576; let pass: i32 = 0;
+    while (pass < 2) {
+        let options: Options = Options { maximum_bytes: maximum, help: false, base: core::option::None(), references: 0 };
+        let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),schema,ext::cli::Ordering::Intermixed));
+        while (true) {
+            let parsed: core::result::Result<core::option::Option<ext::cli::Event>, ext::cli::Error> = parser.next();
+            if (core::result::is_err(parsed)) { return 2; } let next: core::option::Option<ext::cli::Event> = core::result::unwrap(parsed);
+            if (core::option::is_none(next)) { break; }
+            let status: i32 = match (core::option::unwrap(next)) {
+                ext::cli::Event::Option(item) -> option_status(options.borrow(),item,pass == 0),
+                ext::cli::Event::Operand(item) -> operand(options.borrow(),item,pass == 1)
+            };
+            if (status != 0) { return status; }
+        }
+        if (options.help) {
+            let usage: core::slice::View<u8> = literal("Usage: uri-resolve [--max-bytes N] [--] BASE REF...\nBASE must have a scheme and no fragment. Output is one encoded URI per line.\n",129);
+            let sink: std::stream::Descriptor = std::stream::stdout();
+            if (core::result::is_err(core::io::write_all(sink.borrow(),usage.values,0,usage.len()))) { return 3; } return 0;
+        }
+        if (options.references == 0) { return 2; } maximum = options.maximum_bytes; pass += 1;
+    }
+    return 0;
+}
+fn option_status(options: &Options, item: ext::cli::Occurrence, apply: bool) -> i32 { if (apply && !option(options,item)) { return 2; } return 0; }
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1,1026,65536);
+    if (core::result::is_err(captured)) { let status: i32 = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }; return status; }
+    let arguments: std::args::Arguments = core::result::unwrap(captured); let status: i32 = process(arguments); arguments.destroy(); return status;
+}
