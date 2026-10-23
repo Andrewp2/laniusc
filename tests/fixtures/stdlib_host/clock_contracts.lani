@@ -1,0 +1,68 @@
+module app::main;
+import core::result;
+import core::time;
+import std::clock;
+
+pub struct Script {
+    times: [core::time::Instant], length: i32, reads: i32,
+    requests: [i32], sleeps: i32, interrupt_first: bool, fail_read: i32,
+    fail_sleep: i32, short_sleep: bool
+}
+impl Script { fn borrow(&self) -> &Script { return self; } }
+pub impl std::clock::Monotonic for Script {
+    pub fn now(&self) -> core::result::Result<core::time::Instant, std::clock::Error> {
+        self.reads += 1;
+        if (self.reads == self.fail_read) { return core::result::Err(std::clock::Error::Host(5)); }
+        assert(self.reads <= self.length); return core::result::Ok(self.times[self.reads-1]);
+    }
+    pub fn pause_ms(&self, milliseconds: i32) -> core::result::Result<i32, std::clock::Error> {
+        assert(self.sleeps < 8 && milliseconds > 0); self.requests[self.sleeps] = milliseconds; self.sleeps += 1;
+        if (self.sleeps == self.fail_sleep) { return core::result::Err(std::clock::Error::Host(5)); }
+        if (self.interrupt_first && self.sleeps == 1) { return core::result::Err(std::clock::Error::Host(4)); }
+        if (self.short_sleep) { return core::result::Ok(0); }
+        return core::result::Ok(milliseconds);
+    }
+}
+fn error_code(result: core::result::Result<core::time::Instant, std::clock::Error>) -> i32 {
+    let code: i32 = match (core::result::unwrap_err(result)) {
+        std::clock::Error::Host(code) -> code, std::clock::Error::ClockReversed -> 100,
+        std::clock::Error::Overflow -> 101, std::clock::Error::InvalidStatus -> 102, _ -> 999
+    }; return code;
+}
+fn main() -> i32 {
+    let z: core::time::Instant = core::time::instant(core::time::zero());
+    let t4: core::time::Instant = core::time::instant(core::time::from_millis(4));
+    let t10: core::time::Instant = core::time::instant(core::time::from_millis(10));
+    let times: [core::time::Instant; 4] = [z,t4,t10,t10]; let requests: [i32; 8] = [0;8];
+    let script: Script = Script { times: times,length: 4,reads: 0,requests: requests,sleeps: 0,interrupt_first: true,fail_read: 0,fail_sleep: 0,short_sleep: false };
+    let done: core::time::Instant = core::result::unwrap(std::clock::sleep_for(script.borrow(),core::time::from_millis(10)));
+    assert(done.compare(t10) == 0 && script.reads == 3 && script.sleeps == 2 && requests[0] == 10 && requests[1] == 6);
+    script.reads = 0; script.sleeps = 0;
+    assert(core::result::unwrap(std::clock::sleep_for(script.borrow(),core::time::zero())).compare(z) == 0 && script.reads == 1 && script.sleeps == 0);
+    script.reads = 2; script.sleeps = 0;
+    assert(core::result::unwrap(std::clock::sleep_until(script.borrow(),core::time::deadline_at(t4))).compare(t10) == 0 && script.sleeps == 0);
+    script.reads = 0; script.sleeps = 0; script.interrupt_first = false;
+    core::result::unwrap(std::clock::sleep_for(script.borrow(),core::time::from_nanos(1)));
+    assert(requests[0] == 1 && script.reads == 2 && script.sleeps == 1);
+    script.reads = 0; script.sleeps = 0; times[1] = z;
+    core::result::unwrap(std::clock::sleep_for(script.borrow(),core::time::from_nanos(1000001)));
+    assert(requests[0] == 2 && requests[1] == 2 && script.reads == 3);
+    script.reads = 0; script.sleeps = 0; times[0] = t4; times[1] = z;
+    assert(error_code(std::clock::sleep_for(script.borrow(),core::time::from_millis(10))) == 100);
+    times[0] = z; times[1] = t4; script.reads = 0; script.sleeps = 0; script.fail_read = 1;
+    assert(error_code(std::clock::sleep_for(script.borrow(),core::time::from_millis(10))) == 5 && script.sleeps == 0);
+    script.reads = 0; script.fail_read = 2;
+    assert(error_code(std::clock::sleep_for(script.borrow(),core::time::from_millis(10))) == 5 && script.sleeps == 1);
+    script.reads = 0; script.sleeps = 0; script.fail_read = 0; script.fail_sleep = 1;
+    assert(error_code(std::clock::sleep_for(script.borrow(),core::time::from_millis(10))) == 5 && script.reads == 1);
+    script.reads = 0; script.sleeps = 0; script.fail_sleep = 0; script.short_sleep = true;
+    assert(error_code(std::clock::sleep_for(script.borrow(),core::time::from_millis(10))) == 102 && script.reads == 1);
+    script.reads = 0; script.sleeps = 0; script.short_sleep = false;
+    times[0] = core::time::instant(core::time::max_duration());
+    assert(error_code(std::clock::sleep_for(script.borrow(),core::time::from_nanos(1))) == 101 && script.sleeps == 0);
+    times[0] = z; times[1] = core::time::instant(core::time::from_millis(2147483647));
+    times[2] = core::time::instant(core::time::from_millis(2147483648)); script.reads = 0; script.sleeps = 0;
+    core::result::unwrap(std::clock::sleep_for(script.borrow(),core::time::from_millis(2147483648)));
+    assert(requests[0] == 2147483647 && requests[1] == 1 && script.sleeps == 2);
+    return 0;
+}

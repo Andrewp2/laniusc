@@ -1,0 +1,17 @@
+module app::main;
+import core::result;
+import core::time;
+import std::deadline_probe;
+pub struct Clock {}
+impl Clock { fn borrow(&self) -> &Clock { return self; } }
+pub impl std::deadline_probe::Clock for Clock {
+    pub fn now(&self) -> core::result::Result<core::time::Instant,std::deadline_probe::Error> {
+        return core::result::Ok(core::time::instant(core::time::zero()));
+    }
+}
+fn main() -> i32 {
+    let clock: Clock = Clock {};let span: core::time::Duration = core::time::from_secs(1);
+    let made: core::result::Result<core::time::Instant,std::deadline_probe::Error> = std::deadline_probe::after(clock.borrow(),span);
+    let result: core::time::Instant = core::result::unwrap(made);
+    assert(result.ticks.compare(span) == 0);return 0;
+}

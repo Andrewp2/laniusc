@@ -1,0 +1,7 @@
+module std::forward_control;
+import core::result;
+import core::time;
+pub fn after<T>(unused: T, start: core::time::Instant, span: core::time::Duration)
+    -> core::result::Result<core::time::Deadline,core::time::Error> {
+    return core::time::deadline_after(start,span);
+}

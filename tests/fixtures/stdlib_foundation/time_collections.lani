@@ -1,0 +1,29 @@
+module app::main;
+import alloc::hash_map;
+import alloc::tree_map;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::time;
+fn main() -> i32 {
+    let map: alloc::hash_map::HashMap<core::time::Duration,i32> = alloc::hash_map::new();
+    let canonical: core::time::Duration = core::result::unwrap(core::time::duration(0,1500000000));
+    assert(core::option::is_none(core::result::unwrap(map.try_insert(canonical,7))));
+    let old: alloc::hash_map::Entry<core::time::Duration,i32> = core::option::unwrap(core::result::unwrap(map.try_insert(core::time::from_millis(1500),9)));
+    assert(old.key.compare(canonical) == 0 && old.value == 7 && map.len() == 1);
+    assert(core::option::unwrap(map.get(core::time::from_micros(1500000))) == 9);map.destroy();
+    let values: alloc::vec::Vec<core::time::Instant> = alloc::vec::new();
+    core::result::unwrap(values.try_push(core::time::instant(core::time::from_nanos(5))));
+    core::result::unwrap(values.try_push(core::time::instant(core::time::from_nanos(1))));
+    core::result::unwrap(values.try_push(core::time::instant(core::time::from_nanos(3))));values.sort();
+    assert(values.at(0).ticks.subsec_nanos() == 1 && values.at(1).ticks.subsec_nanos() == 3 && values.at(2).ticks.subsec_nanos() == 5);values.destroy();
+    let ordered: alloc::tree_map::TreeMap<core::time::SystemTime,i32> = alloc::tree_map::new();
+    let first: core::time::SystemTime = core::result::unwrap(core::time::system_time(-1,999999999));
+    let last: core::time::SystemTime = core::result::unwrap(core::time::system_time(1,0));
+    core::result::unwrap(ordered.try_insert(last,3));core::result::unwrap(ordered.try_insert(first,1));core::result::unwrap(ordered.try_insert(core::time::unix_epoch(),2));
+    let cursor: alloc::tree_map::Cursor<core::time::SystemTime,i32> = ordered.iter();
+    let item: alloc::tree_map::Entry<core::time::SystemTime,i32> = core::option::unwrap(cursor.next());assert(item.value == 1 && item.key.compare(first) == 0);
+    item = core::option::unwrap(cursor.next());assert(item.value == 2 && item.key.compare(core::time::unix_epoch()) == 0);
+    item = core::option::unwrap(cursor.next());assert(item.value == 3 && item.key.compare(last) == 0);
+    assert(core::option::is_none(cursor.next()));ordered.destroy();return 0;
+}

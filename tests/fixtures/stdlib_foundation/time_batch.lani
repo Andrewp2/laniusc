@@ -1,0 +1,35 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::text;
+import core::time;
+import std::clock;
+import std::io;
+import std::io_decimal;
+import std::process;
+fn argument(index: i32) -> u64 {
+    let count: i32 = std::process::arg_len(index);assert(count >= 1 && count <= 32);
+    let words: [i32; 8] = [0;8];let pointer: ptr = core::mem::i32_array_data_ptr(words);
+    assert(std::process::arg_read(index,pointer,count as usize) == count);
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,count);
+    let text: core::text::Text = core::result::unwrap(core::text::from_utf8(bytes,count));return core::result::unwrap(text.parse_u64());
+}
+fn output(value: u64) { assert(std::io_decimal::write_u64(1,value) > 0 && std::io::write_byte(1,10) == 1); }
+fn main() -> i32 {
+    let mode: u64 = argument(1);let count: u64 = argument(2);assert(mode <= 1 as u64 && count <= 2097152 as u64);
+    let i: u64 = 0;let total: core::time::Duration = core::time::zero();
+    if (mode == 0) {
+        let span: core::time::Duration = core::time::from_nanos(123456789);
+        while (i < count) { total = core::result::unwrap(total.checked_add(span));i += 1; }
+        output(core::result::unwrap(total.as_nanos()));
+    } else {
+        let before: core::time::Instant = core::result::unwrap(std::clock::monotonic_now());
+        let previous: core::time::Instant = before;
+        while (i < count) {
+            let current: core::time::Instant = core::result::unwrap(std::clock::monotonic_now());
+            assert(current.compare(previous) >= 0);previous = current;i += 1;
+        }
+        total = core::result::unwrap(previous.duration_since(before));output(core::result::unwrap(total.as_nanos()));
+    }
+    return 0;
+}

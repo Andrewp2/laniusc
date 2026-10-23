@@ -1,0 +1,44 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::time;
+import std::clock;
+import std::io;
+import std::io_decimal;
+import std::process;
+fn output(value: u64) { assert(std::io_decimal::write_u64(1,value) > 0 && std::io::write_byte(1,10) == 1); }
+fn error(error: std::clock::Error) {
+    let code: i32 = match (error) {
+        std::clock::Error::Host(code) -> code,std::clock::Error::InvalidTimestamp -> 1000,
+        std::clock::Error::InvalidStatus -> 1001,std::clock::Error::InvalidDuration -> 1002,
+        std::clock::Error::Overflow -> 1003,std::clock::Error::ClockReversed -> 1004
+    };output(code as u64);output(0);output(0);
+}
+fn instant(result: core::result::Result<core::time::Instant,std::clock::Error>) {
+    if (core::result::is_err(result)) { error(core::result::unwrap_err(result)); }
+    else { let value: core::time::Instant = core::result::unwrap(result);output(0);output(value.ticks.as_secs());output(value.ticks.subsec_nanos() as u64); }
+}
+fn main() -> i32 {
+    let words: [i32; 1] = [0];let pointer: ptr = core::mem::i32_array_data_ptr(words);assert(std::process::arg_read(1,pointer,1) == 1);let mode: i32 = words[0] - 48;
+    let clock: std::clock::NativeClock = std::clock::native();
+    if (mode == 0) { instant(std::clock::monotonic_now()); }
+    if (mode == 1) {
+        let result: core::result::Result<core::time::SystemTime,std::clock::Error> = std::clock::system_now();
+        if (core::result::is_err(result)) { error(core::result::unwrap_err(result)); }
+        else { let value: core::time::SystemTime = core::result::unwrap(result);output(0);output(value.unix_seconds() as u64);output(value.subsec_nanos() as u64); }
+    }
+    if (mode == 2) { instant(std::clock::sleep_for(clock.borrow(),core::time::from_millis(10))); }
+    if (mode == 3) { instant(std::clock::sleep_for(clock.borrow(),core::time::zero())); }
+    if (mode == 4) {
+        let result: core::result::Result<i32,std::clock::Error> = clock.pause_ms(-1);
+        error(core::result::unwrap_err(result));assert(core::result::unwrap(clock.pause_ms(0)) == 0);
+    }
+    if (mode == 5) { instant(std::clock::sleep_for(clock.borrow(),core::time::from_nanos(1))); }
+    if (mode == 6) {
+        let result: core::result::Result<i32,std::clock::Error> = clock.pause_ms(2147483647);
+        if (core::result::is_err(result)) { error(core::result::unwrap_err(result)); }
+        else { output(0);output(core::result::unwrap(result) as u64);output(0); }
+    }
+    if (mode == 7) { instant(std::clock::sleep_for(clock.borrow(),core::time::from_millis(2147483648))); }
+    return 0;
+}

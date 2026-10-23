@@ -1,0 +1,11 @@
+module app::main;
+import core::result;
+import core::time;
+import std::forward_control;
+fn main() -> i32 {
+    let start: core::time::Instant = core::time::instant(core::time::zero());
+    let span: core::time::Duration = core::time::from_secs(1);
+    let made: core::result::Result<core::time::Deadline,core::time::Error> = std::forward_control::after(0,start,span);
+    let deadline: core::time::Deadline = core::result::unwrap(made);
+    assert(deadline.remaining(start).compare(span) == 0);return 0;
+}

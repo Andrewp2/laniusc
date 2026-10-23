@@ -1,0 +1,180 @@
+// Portable nanosecond arithmetic. Use constructors; preserve normalized fields.
+// Duration is nonnegative, Instant has a clock-specific origin, and SystemTime
+// stores Unix seconds plus a nonnegative fractional second. No host calls.
+module core::time;
+import core::cmp;
+import core::hash;
+import core::result;
+
+pub enum Error { Overflow, Negative, DivisionByZero, InvalidNanoseconds }
+pub struct Duration { seconds: u64, nanos: u32 }
+pub struct Instant { ticks: Duration }
+pub struct SystemTime { seconds: i64, nanos: u32 }
+pub struct Deadline { instant: Instant }
+
+pub fn zero() -> Duration { return Duration { seconds: 0, nanos: 0 }; }
+pub fn max_duration() -> Duration { return Duration { seconds: 18446744073709551615, nanos: 999999999 }; }
+// Normalize excess nanoseconds; report a carry beyond u64 seconds.
+pub fn duration(seconds: u64, nanos: u32) -> core::result::Result<Duration, Error> {
+    let carry: u64 = (nanos / 1000000000) as u64;
+    let maximum: u64 = 18446744073709551615;
+    if (seconds > maximum - carry) { return core::result::Err(Error::Overflow); }
+    return core::result::Ok(Duration { seconds: seconds + carry, nanos: nanos % 1000000000 });
+}
+pub fn from_secs(value: u64) -> Duration { return Duration { seconds: value, nanos: 0 }; }
+pub fn from_millis(value: u64) -> Duration { return Duration { seconds: value / 1000, nanos: ((value % 1000) * 1000000) as u32 }; }
+pub fn from_micros(value: u64) -> Duration { return Duration { seconds: value / 1000000, nanos: ((value % 1000000) * 1000) as u32 }; }
+pub fn from_nanos(value: u64) -> Duration { return Duration { seconds: value / 1000000000, nanos: (value % 1000000000) as u32 }; }
+
+pub impl Duration {
+    pub fn is_zero(&self) -> bool { return self.seconds == 0 && self.nanos == 0; }
+    pub fn as_secs(&self) -> u64 { return self.seconds; }
+    pub fn subsec_nanos(&self) -> u32 { return self.nanos; }
+    pub fn subsec_micros(&self) -> u32 { return self.nanos / 1000; }
+    pub fn subsec_millis(&self) -> u32 { return self.nanos / 1000000; }
+    pub fn as_secs_f64(&self) -> f64 { return (self.seconds as f64) + (self.nanos as f64) / 1000000000.0; }
+    fn scaled(&self, units: u64, fraction: u64) -> core::result::Result<u64, Error> {
+        let maximum: u64 = 18446744073709551615;
+        if (self.seconds > (maximum - fraction) / units) { return core::result::Err(Error::Overflow); }
+        return core::result::Ok(self.seconds * units + fraction);
+    }
+    pub fn as_millis(&self) -> core::result::Result<u64, Error> { return self.scaled(1000,(self.nanos / 1000000) as u64); }
+    pub fn as_micros(&self) -> core::result::Result<u64, Error> { return self.scaled(1000000,(self.nanos / 1000) as u64); }
+    pub fn as_nanos(&self) -> core::result::Result<u64, Error> { return self.scaled(1000000000,self.nanos as u64); }
+    pub fn compare(&self, other: Duration) -> i32 {
+        if (self.seconds < other.seconds) { return -1; }
+        if (self.seconds > other.seconds) { return 1; }
+        if (self.nanos < other.nanos) { return -1; }
+        if (self.nanos > other.nanos) { return 1; } return 0;
+    }
+    pub fn checked_add(&self, other: Duration) -> core::result::Result<Duration, Error> {
+        let maximum: u64 = 18446744073709551615;
+        if (self.seconds > maximum - other.seconds) { return core::result::Err(Error::Overflow); }
+        return duration(self.seconds + other.seconds,self.nanos + other.nanos);
+    }
+    pub fn checked_sub(&self, other: Duration) -> core::result::Result<Duration, Error> {
+        if (self.compare(other) < 0) { return core::result::Err(Error::Negative); }
+        let seconds: u64 = self.seconds - other.seconds; let nanos: u32 = self.nanos;
+        if (nanos < other.nanos) { seconds -= 1; nanos += 1000000000; }
+        return core::result::Ok(Duration { seconds: seconds, nanos: nanos - other.nanos });
+    }
+    pub fn checked_mul(&self, factor: u32) -> core::result::Result<Duration, Error> {
+        if (factor == 0) { return core::result::Ok(zero()); }
+        let fraction: u64 = (self.nanos as u64) * (factor as u64);
+        let carry: u64 = fraction / 1000000000; let maximum: u64 = 18446744073709551615;
+        if (self.seconds > (maximum - carry) / (factor as u64)) { return core::result::Err(Error::Overflow); }
+        return core::result::Ok(Duration { seconds: self.seconds * (factor as u64) + carry, nanos: (fraction % 1000000000) as u32 });
+    }
+    // Integer division floors at a nanosecond; discarded fractions stay discarded.
+    pub fn checked_div(&self, divisor: u32) -> core::result::Result<Duration, Error> {
+        if (divisor == 0) { return core::result::Err(Error::DivisionByZero); }
+        let wide: u64 = divisor as u64;
+        let remainder: u64 = (self.seconds % wide) * 1000000000 + (self.nanos as u64);
+        return core::result::Ok(Duration { seconds: self.seconds / wide, nanos: (remainder / wide) as u32 });
+    }
+    pub fn saturating_add(&self, other: Duration) -> Duration { return core::result::unwrap_or(self.checked_add(other),max_duration()); }
+    pub fn saturating_sub(&self, other: Duration) -> Duration { return core::result::unwrap_or(self.checked_sub(other),zero()); }
+    pub fn saturating_mul(&self, factor: u32) -> Duration { return core::result::unwrap_or(self.checked_mul(factor),max_duration()); }
+}
+
+// An explicit origin is useful for injected clocks. Compare only one origin.
+pub fn instant(ticks: Duration) -> Instant { return Instant { ticks: ticks }; }
+pub impl Instant {
+    pub fn compare(&self, other: Instant) -> i32 { return self.ticks.compare(other.ticks); }
+    pub fn duration_since(&self, earlier: Instant) -> core::result::Result<Duration, Error> { return self.ticks.checked_sub(earlier.ticks); }
+    pub fn saturating_duration_since(&self, earlier: Instant) -> Duration { return self.ticks.saturating_sub(earlier.ticks); }
+    pub fn checked_add(&self, span: Duration) -> core::result::Result<Instant, Error> {
+        let shifted: core::result::Result<Duration, Error> = self.ticks.checked_add(span);
+        if (core::result::is_err(shifted)) { return core::result::Err(core::result::unwrap_err(shifted)); }
+        return core::result::Ok(instant(core::result::unwrap(shifted)));
+    }
+    pub fn checked_sub(&self, span: Duration) -> core::result::Result<Instant, Error> {
+        let shifted: core::result::Result<Duration, Error> = self.ticks.checked_sub(span);
+        if (core::result::is_err(shifted)) { return core::result::Err(core::result::unwrap_err(shifted)); }
+        return core::result::Ok(instant(core::result::unwrap(shifted)));
+    }
+}
+pub fn deadline_at(at: Instant) -> Deadline { return Deadline { instant: at }; }
+pub fn deadline_after(start: Instant, span: Duration) -> core::result::Result<Deadline, Error> {
+    let at: core::result::Result<Instant, Error> = start.checked_add(span);
+    if (core::result::is_err(at)) { return core::result::Err(core::result::unwrap_err(at)); }
+    return core::result::Ok(deadline_at(core::result::unwrap(at)));
+}
+pub impl Deadline {
+    pub fn is_expired(&self, now: Instant) -> bool { return now.compare(self.instant) >= 0; }
+    pub fn remaining(&self, now: Instant) -> Duration { return self.instant.saturating_duration_since(now); }
+}
+
+pub fn unix_epoch() -> SystemTime { return SystemTime { seconds: 0, nanos: 0 }; }
+// Fractional nanoseconds must already be normalized, as in a native timespec.
+pub fn system_time(seconds: i64, nanos: u32) -> core::result::Result<SystemTime, Error> {
+    if (nanos >= 1000000000) { return core::result::Err(Error::InvalidNanoseconds); }
+    return core::result::Ok(SystemTime { seconds: seconds, nanos: nanos });
+}
+pub impl SystemTime {
+    pub fn unix_seconds(&self) -> i64 { return self.seconds; }
+    pub fn subsec_nanos(&self) -> u32 { return self.nanos; }
+    // Bias signed seconds into an unsigned coordinate, preserving nanoseconds.
+    fn ordered(&self) -> Duration { let bias: u64 = 9223372036854775808; return Duration { seconds: (self.seconds as u64) ^ bias, nanos: self.nanos }; }
+    pub fn compare(&self, other: SystemTime) -> i32 { return self.ordered().compare(other.ordered()); }
+    pub fn duration_since(&self, earlier: SystemTime) -> core::result::Result<Duration, Error> { return self.ordered().checked_sub(earlier.ordered()); }
+    pub fn checked_add(&self, span: Duration) -> core::result::Result<SystemTime, Error> {
+        let shifted: core::result::Result<Duration, Error> = self.ordered().checked_add(span);
+        if (core::result::is_err(shifted)) { return core::result::Err(Error::Overflow); }
+        return core::result::Ok(system_from_ordered(core::result::unwrap(shifted)));
+    }
+    pub fn checked_sub(&self, span: Duration) -> core::result::Result<SystemTime, Error> {
+        let shifted: core::result::Result<Duration, Error> = self.ordered().checked_sub(span);
+        if (core::result::is_err(shifted)) { return core::result::Err(Error::Overflow); }
+        return core::result::Ok(system_from_ordered(core::result::unwrap(shifted)));
+    }
+}
+fn system_from_ordered(value: Duration) -> SystemTime {
+    let bias: u64 = 9223372036854775808;
+    return SystemTime { seconds: (value.seconds ^ bias) as i64, nanos: value.nanos };
+}
+
+pub impl core::cmp::Eq<Duration> for Duration {
+    pub fn eq(a: Duration,b: Duration) -> bool { return a.compare(b) == 0; }
+    pub fn ne(a: Duration,b: Duration) -> bool { return a.compare(b) != 0; }
+}
+pub impl core::cmp::Ord<Duration> for Duration {
+    pub fn lt(a: Duration,b: Duration) -> bool { return a.compare(b) < 0; }
+    pub fn le(a: Duration,b: Duration) -> bool { return a.compare(b) <= 0; }
+    pub fn gt(a: Duration,b: Duration) -> bool { return a.compare(b) > 0; }
+    pub fn ge(a: Duration,b: Duration) -> bool { return a.compare(b) >= 0; }
+}
+pub impl core::hash::Hash<Duration> for Duration {
+    pub fn hash(value: Duration) -> u32 { return hash_parts(value.seconds,value.nanos); }
+}
+pub impl core::cmp::Eq<Instant> for Instant {
+    pub fn eq(a: Instant,b: Instant) -> bool { return a.compare(b) == 0; }
+    pub fn ne(a: Instant,b: Instant) -> bool { return a.compare(b) != 0; }
+}
+pub impl core::cmp::Ord<Instant> for Instant {
+    pub fn lt(a: Instant,b: Instant) -> bool { return a.compare(b) < 0; }
+    pub fn le(a: Instant,b: Instant) -> bool { return a.compare(b) <= 0; }
+    pub fn gt(a: Instant,b: Instant) -> bool { return a.compare(b) > 0; }
+    pub fn ge(a: Instant,b: Instant) -> bool { return a.compare(b) >= 0; }
+}
+pub impl core::hash::Hash<Instant> for Instant {
+    pub fn hash(value: Instant) -> u32 { return Duration::hash(value.ticks); }
+}
+pub impl core::cmp::Eq<SystemTime> for SystemTime {
+    pub fn eq(a: SystemTime,b: SystemTime) -> bool { return a.compare(b) == 0; }
+    pub fn ne(a: SystemTime,b: SystemTime) -> bool { return a.compare(b) != 0; }
+}
+pub impl core::cmp::Ord<SystemTime> for SystemTime {
+    pub fn lt(a: SystemTime,b: SystemTime) -> bool { return a.compare(b) < 0; }
+    pub fn le(a: SystemTime,b: SystemTime) -> bool { return a.compare(b) <= 0; }
+    pub fn gt(a: SystemTime,b: SystemTime) -> bool { return a.compare(b) > 0; }
+    pub fn ge(a: SystemTime,b: SystemTime) -> bool { return a.compare(b) >= 0; }
+}
+pub impl core::hash::Hash<SystemTime> for SystemTime {
+    pub fn hash(value: SystemTime) -> u32 { return hash_parts(value.seconds as u64,value.nanos); }
+}
+fn hash_parts(seconds: u64, nanos: u32) -> u32 {
+    let state: u32 = u64::hash(seconds); let word: u32 = nanos; let i: i32 = 0;
+    while (i < 4) { state = core::hash::fnv1a_step(state,(word & 255) as u8); word >>= 8; i += 1; }
+    return state;
+}
