@@ -113,10 +113,13 @@ limitation, not a constant-time lookup claim.
 The existing checksum program now accepts repeated `-c FILE` / `--config FILE`
 options and `-x` / `--hex`. It reads settings from files in command-line order,
 then applies explicit command-line settings regardless of their positions.
-Within the CLI, the last limit and the last decimal/hex selection win.
+Within the CLI, the last limit, decimal/hex selection and log level win.
 
-Supported file keys are `decimal` (boolean) and `limit` (an exact nonnegative
-integer fitting u64). All supplied sources must pass this application schema,
+Supported file keys are `decimal` (boolean), `limit` (an exact nonnegative
+integer fitting u64), and `log_level` (one of the exact lowercase logging filter
+names). `-l LEVEL` / `--log-level LEVEL` overrides the configured filter;
+logging defaults to off. See [structured logging](extended-log.md) for record
+delivery and error behavior. All supplied sources must pass this application schema,
 including sources later overridden. Unknown keys and null/wrong-type values
 are errors. Each file is limited to 1 MiB, depth 32, 4,096 nodes, 65,536 bytes
 per key/string and 4,096 bytes per number. Sources are freed after scalar

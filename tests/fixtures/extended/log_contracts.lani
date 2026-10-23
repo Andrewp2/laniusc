@@ -1,0 +1,58 @@
+module app::main;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::log;
+import std::stream;
+fn text(value: str, length: i32) -> core::text::Text { let pointer: ptr = core::mem::string_data_ptr(value); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer, length); return core::text::from_utf8_unchecked(bytes, 0, length); }
+fn encoded(outcome: ext::log::Outcome) -> i32 { return match (outcome) { ext::log::Outcome::Encoded(count) -> count, ext::log::Outcome::Filtered -> -1 }; }
+fn small(error: core::fmt::Error) -> i32 { return match (error) { core::fmt::Error::BufferTooSmall(count) -> count, _ -> -1 }; }
+fn size_error(error: ext::log::Error) -> i32 { return match (error) { ext::log::Error::Format(cause) -> small(cause), _ -> -1 }; }
+fn duplicate(error: ext::log::Error) -> i32 { return match (error) { ext::log::Error::DuplicateKey(index) -> index, _ -> -1 }; }
+fn main() -> i32 {
+    let levels: [ext::log::Level; 5] = [ext::log::Level::Trace,ext::log::Level::Debug,ext::log::Level::Info,ext::log::Level::Warn,ext::log::Level::Error];
+    let i: i32 = 0; while (i < 5) {
+        let parsed: ext::log::Level = core::option::unwrap(ext::log::parse_level(ext::log::level_name(levels[i])));
+        let filter: ext::log::Filter = core::option::unwrap(ext::log::parse_filter(ext::log::level_name(levels[i])));
+        let j: i32 = 0; while (j < 5) { assert(ext::log::enabled(filter, levels[j]) == (j >= i)); j += 1; }
+        assert(ext::log::enabled(ext::log::Filter::AtLeast(parsed), levels[i]) && !ext::log::enabled(ext::log::Filter::Off, levels[i])); i += 1;
+    }
+    assert(core::option::is_some(ext::log::parse_filter(text("off",3))) && core::option::is_none(ext::log::parse_level(text("off",3))));
+    assert(core::option::is_none(ext::log::parse_filter(text("INFO",4))) && core::option::is_none(ext::log::parse_filter(text("warn ",5))) && core::option::is_none(ext::log::parse_filter(text("",0))));
+    let special: [u8; 8] = [0,10,13,34,92,195,169,9]; let message: core::text::Text = core::result::unwrap(core::text::from_utf8(special, 8));
+    let maximum: u64 = 18446744073709551615; let minimum: i64 = -9223372036854775807 - 1;
+    let fields: [ext::log::Field; 6] = [
+        ext::log::Field { key: text("text",4), value: ext::log::Value::Text(message) },
+        ext::log::Field { key: text("bool",4), value: ext::log::Value::Bool(false) },
+        ext::log::Field { key: text("signed",6), value: ext::log::Value::Signed(minimum) },
+        ext::log::Field { key: text("unsigned",8), value: ext::log::Value::Unsigned(maximum) },
+        ext::log::Field { key: text("",0), value: ext::log::Value::Null },
+        ext::log::Field { key: message, value: ext::log::Value::Null }
+    ];
+    let record: ext::log::Record = ext::log::Record { level: ext::log::Level::Info, target: text("test",4), message: message, fields: core::result::unwrap(core::slice::view(fields,6)) };
+    let storage: [i32; 256] = [0;256]; let pointer: ptr = core::mem::i32_array_data_ptr(storage); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,1024);
+    i = 0; while (i < 1024) { bytes[i] = 85; i += 1; }
+    let needed: i32 = core::result::unwrap(ext::log::encoded_len(record.borrow())); assert(needed > 100 && needed < 1000);
+    i = 0; while (i < needed) { assert(size_error(core::result::unwrap_err(ext::log::encode(record.borrow(),bytes,5,i))) == needed); i += 1; }
+    i = 0; while (i < 1024) { assert(bytes[i] == 85); i += 1; }
+    assert(core::result::is_err(ext::log::encode(record.borrow(),bytes,-1,0)) && core::result::is_err(ext::log::encode(record.borrow(),bytes,2147483647,1)));
+    let duplicates: [ext::log::Field; 2] = [fields[0], fields[0]]; let bad: ext::log::Record = record; bad.fields = core::result::unwrap(core::slice::view(duplicates,2));
+    assert(duplicate(core::result::unwrap_err(ext::log::encode(bad.borrow(),bytes,0,1024))) == 1);
+    assert(encoded(core::result::unwrap(ext::log::prepare(ext::log::Filter::Off,bad.borrow(),bytes,-1))) == -1);
+    assert(encoded(core::result::unwrap(ext::log::prepare(ext::log::Filter::AtLeast(ext::log::Level::Warn),record.borrow(),bytes,0))) == -1);
+    i = 0; while (i < 1024) { assert(bytes[i] == 85); i += 1; }
+    assert(core::result::unwrap(ext::log::encode(record.borrow(),bytes,5,needed)) == needed && bytes[4] == 85 && bytes[needed+5] == 85);
+    let outcome: ext::log::Outcome = core::result::unwrap(ext::log::prepare(ext::log::Filter::AtLeast(ext::log::Level::Info),record.borrow(),bytes,needed)); assert(encoded(outcome) == needed);
+    let copied_store: [i32; 256] = [0;256]; let copied_ptr: ptr = core::mem::i32_array_data_ptr(copied_store); let copied: [u8] = core::mem::typed_slice_from_raw_parts(copied_ptr,1024);
+    let sink: core::io::SliceWriter = core::result::unwrap(core::io::slice_writer(copied,needed-1));
+    let failure: core::io::Failure = core::result::unwrap_err(core::io::write_all(sink.borrow(),bytes,0,needed)); assert(failure.completed == needed-1 && sink.position() == needed-1);
+    let zero: bool = match (failure.cause) { core::io::Error::WriteZero -> true, _ -> false }; assert(zero);
+    i = 0; while (i < needed-1) { assert(copied[i] == bytes[i]); i += 1; }
+    let stdout: std::stream::Descriptor = std::stream::stdout(); core::result::unwrap(core::io::write_all(stdout.borrow(),bytes,0,needed));
+    let empty: ext::log::Record = record; empty.target = text("",0); empty.message = text("",0); empty.fields = core::result::unwrap(record.fields.subview(0,0));
+    let empty_size: i32 = core::result::unwrap(ext::log::encode(empty.borrow(),bytes,0,1024)); core::result::unwrap(core::io::write_all(stdout.borrow(),bytes,0,empty_size)); return 0;
+}

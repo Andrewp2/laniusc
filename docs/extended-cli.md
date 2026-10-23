@@ -128,13 +128,15 @@ position. Filenames retain their original bytes, including non-UTF-8 bytes.
 - `-h`, `--help`: show usage after validating the complete command line.
 - `-c FILE`, `--config FILE`: load [configuration sources](extended-config.md)
   in order; explicit CLI settings override them. Help does not load these files.
+- `-l LEVEL`, `--log-level LEVEL`: select the [structured logging](extended-log.md)
+  filter. Default off; enabled per-input records go to stderr.
 - `--`: permit filenames beginning with a hyphen.
 
 The program validates all options before opening inputs. It uses a fixed 4 KiB
 scratch buffer and does not allocate in proportion to file size. Every opened
 file receives one close attempt before its checksum is emitted. On Linux, close
 is not retried, including after EINTR. Stdin remains open. Exit 2 means invalid
-arguments or an input limit, 3 means I/O failure, and 4 means snapshot allocation
+configuration, arguments or an input limit, 3 means I/O failure, and 4 means allocation
 failure. Results for earlier files can already be emitted when a later file
 fails; a write failure can leave a partial output line.
 

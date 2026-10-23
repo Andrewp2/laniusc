@@ -1,0 +1,41 @@
+module app::main;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::text;
+import std::process;
+import std::stream;
+fn argument(index: i32, pointer: ptr, bytes: [u8]) -> core::text::Text {
+    let count: i32 = std::process::arg_len(index); assert(count >= 0 && count <= 128);
+    assert(std::process::arg_read(index, pointer, count as usize) == count);
+    return core::result::unwrap(core::text::from_utf8(bytes, count));
+}
+fn main() -> i32 {
+    let store: [i32; 32] = [0;32]; let pointer: ptr = core::mem::i32_array_data_ptr(store); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer, 128);
+    let output_store: [i32; 4096] = [0;4096]; let output_pointer: ptr = core::mem::i32_array_data_ptr(output_store); let output_bytes: [u8] = core::mem::typed_slice_from_raw_parts(output_pointer, 16384);
+    let output: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(output_bytes, 0, 16384));
+    let mode: core::text::Text = argument(1, pointer, bytes); let first: u8 = core::option::unwrap(mode.byte_at(0));
+    if (first == 113) {
+        let input_store: [i32; 512] = [0;512]; let input_pointer: ptr = core::mem::i32_array_data_ptr(input_store); let input: [u8] = core::mem::typed_slice_from_raw_parts(input_pointer, 2048);
+        let source: std::stream::Descriptor = std::stream::stdin(); let length: i32 = 0;
+        while (true) {
+            let result: core::result::Result<i32, core::io::Error> = source.read(input, length, 2048 - length);
+            if (core::result::is_err(result)) { if (core::io::is_interrupted(core::result::unwrap_err(result))) { continue; } return 3; }
+            let count: i32 = core::result::unwrap(result); if (count == 0) { break; } length += count; if (length == 2048) { return 2; }
+        }
+        let parsed: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8(input, length); if (core::result::is_err(parsed)) { return 2; }
+        output.write_quoted(core::result::unwrap(parsed));
+    } else {
+        let number: core::text::Text = argument(2, pointer, bytes); let signed: i64 = 0; let unsigned: u64 = 0;
+        if (first == 115) { signed = core::result::unwrap(number.parse_i64()); } else { unsigned = core::result::unwrap(number.parse_u64()); }
+        let base_text: core::text::Text = argument(3, pointer, bytes); let radix: u32 = core::result::unwrap(base_text.parse_u32());
+        let width_text: core::text::Text = argument(4, pointer, bytes); let width: i32 = core::result::unwrap(width_text.parse_i32());
+        let case_text: core::text::Text = argument(5, pointer, bytes); let uppercase: bool = core::option::unwrap(case_text.byte_at(0)) == 49;
+        let options: core::fmt::Integer = core::fmt::Integer { radix: radix, uppercase: uppercase, min_digits: width };
+        if (first == 115) { output.write_signed(signed, options); } else { output.write_unsigned(unsigned, options); }
+    }
+    let finished: core::result::Result<i32, core::fmt::Error> = output.finish(); if (core::result::is_err(finished)) { return 2; }
+    let sink: std::stream::Descriptor = std::stream::stdout(); if (core::result::is_err(core::io::write_all(sink.borrow(), output_bytes, 0, core::result::unwrap(finished)))) { return 3; } return 0;
+}

@@ -473,7 +473,7 @@ fn checksum_program_executes_streaming_files_raw_paths_options_and_limits() {
     checked(&output, 0);
     assert_eq!(
         output.stdout,
-        b"Usage: checksum [-d|-x] [-n BYTES] [-c CONFIG] [--] [FILE ...]\n"
+        b"Usage: checksum [-d|-x] [-n BYTES] [-c CONFIG] [-l LEVEL] [--] [FILE ...]\n"
     );
     let output = invoke(
         &["--limit".into(), OsString::from_vec(vec![255])],

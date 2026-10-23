@@ -1,0 +1,165 @@
+// Caller-backed formatting. See docs/stdlib-formatting.md for contracts.
+module core::fmt;
+import core::option;
+import core::result;
+import core::text;
+import core::utf8;
+
+pub enum Error { Bounds, BufferTooSmall(i32), SizeOverflow, InvalidRadix, InvalidWidth, InvalidScalar }
+pub struct Integer { radix: u32, uppercase: bool, min_digits: i32 }
+pub struct Formatter { data: [u8], start: i32, capacity: i32, length: i32, measuring: bool, failure: core::option::Option<Error> }
+
+// Implementations append to output and return its finish() result. Formatting
+// is compositional; a failure may leave earlier successful appends present.
+pub trait Display<T> { pub fn format(value: T, output: &Formatter) -> core::result::Result<i32, Error>; }
+pub fn display<T>(value: T, output: &Formatter) -> core::result::Result<i32, Error> where T: Display<T> {
+    return T::format(value, output);
+}
+pub fn decimal() -> Integer { return Integer { radix: 10, uppercase: false, min_digits: 1 }; }
+pub fn buffer(data: [u8], offset: i32, capacity: i32) -> core::result::Result<Formatter, Error> {
+    if (offset < 0 || capacity < 0 || offset > 2147483647 - capacity) { return core::result::Err(Error::Bounds); }
+    return core::result::Ok(Formatter { data: data, start: offset, capacity: capacity, length: 0, measuring: false, failure: core::option::None() });
+}
+pub fn measure() -> Formatter {
+    let empty: [u8; 0] = [];
+    return Formatter { data: empty, start: 0, capacity: 2147483647, length: 0, measuring: true, failure: core::option::None() };
+}
+fn digit(value: u8, uppercase: bool) -> u8 {
+    if (value < 10) { return 48 + value; }
+    if (uppercase) { return 65 + value - 10; } return 97 + value - 10;
+}
+fn magnitude(value: i64) -> u64 { if (value < 0) { let almost: i64 = -(value + 1); return (almost as u64) + 1; } return value as u64; }
+fn escaped_width(value: u8) -> i32 {
+    if (value == 34 || value == 92) { return 2; }
+    if (value < 32) { return 6; } return 1;
+}
+pub impl Formatter {
+    pub fn borrow(&self) -> &Formatter { return self; }
+    pub fn len(&self) -> i32 { return self.length; }
+    pub fn finish(&self) -> core::result::Result<i32, Error> {
+        if (core::option::is_some(self.failure)) { return core::result::Err(core::option::unwrap(self.failure)); }
+        return core::result::Ok(self.length);
+    }
+    fn fail(&self, error: Error) -> core::result::Result<i32, Error> {
+        if (core::option::is_none(self.failure)) { self.failure = core::option::Some(error); }
+        return self.finish();
+    }
+    // Reserve a complete append before touching destination bytes. Failures
+    // latch the first error. required is the total size at this append.
+    fn reserve(&self, amount: i32) -> core::result::Result<i32, Error> {
+        if (core::option::is_some(self.failure)) { return self.finish(); }
+        if (amount > 2147483647 - self.length) { return self.fail(Error::SizeOverflow); }
+        let required: i32 = self.length + amount;
+        if (required > self.capacity) { return self.fail(Error::BufferTooSmall(required)); }
+        let old: i32 = self.length; self.length = required; return core::result::Ok(old);
+    }
+    fn put(&self, at: i32, value: u8) { self.data[self.start + at] = value; }
+    pub fn write_text(&self, value: core::text::Text) -> core::result::Result<i32, Error> {
+        let reserved: core::result::Result<i32, Error> = self.reserve(value.byte_len());
+        if (core::result::is_err(reserved)) { return reserved; }
+        if (!self.measuring) {
+            let at: i32 = core::result::unwrap(reserved); let index: i32 = 0;
+            while (index < value.byte_len()) { self.put(at + index, core::option::unwrap(value.byte_at(index))); index += 1; }
+        }
+        return self.finish();
+    }
+    // JSON string quoting: quote/backslash escape, C0 as lowercase \u00xx,
+    // other UTF-8 unchanged. Source and destination must not overlap.
+    pub fn write_quoted(&self, value: core::text::Text) -> core::result::Result<i32, Error> {
+        if (core::option::is_some(self.failure)) { return self.finish(); }
+        let count: i32 = 2; let index: i32 = 0;
+        while (index < value.byte_len()) {
+            let width: i32 = escaped_width(core::option::unwrap(value.byte_at(index)));
+            if (width > 2147483647 - count) { return self.fail(Error::SizeOverflow); }
+            count += width; index += 1;
+        }
+        let reserved: core::result::Result<i32, Error> = self.reserve(count);
+        if (core::result::is_err(reserved)) { return reserved; }
+        if (self.measuring) { return self.finish(); }
+        let at: i32 = core::result::unwrap(reserved); self.put(at, 34); at += 1; index = 0;
+        while (index < value.byte_len()) {
+            let byte: u8 = core::option::unwrap(value.byte_at(index));
+            if (byte == 34 || byte == 92) { self.put(at, 92); self.put(at + 1, byte); at += 2; }
+            else { if (byte < 32) {
+                self.put(at, 92); self.put(at + 1, 117); self.put(at + 2, 48); self.put(at + 3, 48);
+                self.put(at + 4, digit(byte / 16, false)); self.put(at + 5, digit(byte % 16, false)); at += 6;
+            } else { self.put(at, byte); at += 1; } }
+            index += 1;
+        }
+        self.put(at, 34); return self.finish();
+    }
+    pub fn write_scalar(&self, value: u32) -> core::result::Result<i32, Error> {
+        let width: u32 = core::utf8::encoded_len_or(value, 0);
+        if (width == 0) { return self.fail(Error::InvalidScalar); }
+        let reserved: core::result::Result<i32, Error> = self.reserve(width as i32);
+        if (core::result::is_err(reserved)) { return reserved; }
+        if (!self.measuring) {
+            let at: i32 = core::result::unwrap(reserved); let index: u32 = 0;
+            while (index < width) { self.put(at + (index as i32), core::utf8::encoded_byte_or(value, index, 0)); index += 1; }
+        }
+        return self.finish();
+    }
+    fn integer(&self, value: u64, negative: bool, options: Integer) -> core::result::Result<i32, Error> {
+        if (core::option::is_some(self.failure)) { return self.finish(); }
+        if (options.radix < 2 || options.radix > 36) { return self.fail(Error::InvalidRadix); }
+        if (options.min_digits < 0) { return self.fail(Error::InvalidWidth); }
+        let radix: u64 = options.radix as u64; let remaining: u64 = value; let digits: i32 = 1;
+        while (remaining >= radix) { remaining /= radix; digits += 1; }
+        if (digits < options.min_digits) { digits = options.min_digits; }
+        let sign: i32 = 0; if (negative) { sign = 1; }
+        if (digits > 2147483647 - sign) { return self.fail(Error::SizeOverflow); }
+        let reserved: core::result::Result<i32, Error> = self.reserve(digits + sign);
+        if (core::result::is_err(reserved)) { return reserved; }
+        if (self.measuring) { return self.finish(); }
+        let start: i32 = core::result::unwrap(reserved); let at: i32 = start + digits + sign; remaining = value;
+        while (at > start + sign) { at -= 1; self.put(at, digit((remaining % radix) as u8, options.uppercase)); remaining /= radix; }
+        if (negative) { self.put(start, 45); } return self.finish();
+    }
+    pub fn write_unsigned(&self, value: u64, options: Integer) -> core::result::Result<i32, Error> { return self.integer(value, false, options); }
+    pub fn write_signed(&self, value: i64, options: Integer) -> core::result::Result<i32, Error> { return self.integer(magnitude(value), value < 0, options); }
+    pub fn write_bool(&self, value: bool) -> core::result::Result<i32, Error> {
+        let yes: [u8; 4] = [116,114,117,101]; let no: [u8; 5] = [102,97,108,115,101];
+        if (value) { return self.write_text(core::text::from_utf8_unchecked(yes, 0, 4)); }
+        return self.write_text(core::text::from_utf8_unchecked(no, 0, 5));
+    }
+}
+
+pub impl Display<core::text::Text> for core::text::Text {
+    pub fn format(value: core::text::Text, output: &Formatter) -> core::result::Result<i32, Error> { return output.write_text(value); }
+}
+pub impl Display<bool> for bool {
+    pub fn format(value: bool, output: &Formatter) -> core::result::Result<i32, Error> { return output.write_bool(value); }
+}
+pub impl Display<char> for char {
+    pub fn format(value: char, output: &Formatter) -> core::result::Result<i32, Error> { return output.write_scalar(value as u32); }
+}
+pub impl Display<i8> for i8 {
+    pub fn format(value: i8, output: &Formatter) -> core::result::Result<i32, Error> { return output.write_signed(value as i64, decimal()); }
+}
+pub impl Display<i16> for i16 {
+    pub fn format(value: i16, output: &Formatter) -> core::result::Result<i32, Error> { return output.write_signed(value as i64, decimal()); }
+}
+pub impl Display<i32> for i32 {
+    pub fn format(value: i32, output: &Formatter) -> core::result::Result<i32, Error> { return output.write_signed(value as i64, decimal()); }
+}
+pub impl Display<i64> for i64 {
+    pub fn format(value: i64, output: &Formatter) -> core::result::Result<i32, Error> { return output.write_signed(value as i64, decimal()); }
+}
+pub impl Display<isize> for isize {
+    pub fn format(value: isize, output: &Formatter) -> core::result::Result<i32, Error> { return output.write_signed(value as i64, decimal()); }
+}
+pub impl Display<u8> for u8 {
+    pub fn format(value: u8, output: &Formatter) -> core::result::Result<i32, Error> { return output.write_unsigned(value as u64, decimal()); }
+}
+pub impl Display<u16> for u16 {
+    pub fn format(value: u16, output: &Formatter) -> core::result::Result<i32, Error> { return output.write_unsigned(value as u64, decimal()); }
+}
+pub impl Display<u32> for u32 {
+    pub fn format(value: u32, output: &Formatter) -> core::result::Result<i32, Error> { return output.write_unsigned(value as u64, decimal()); }
+}
+pub impl Display<u64> for u64 {
+    pub fn format(value: u64, output: &Formatter) -> core::result::Result<i32, Error> { return output.write_unsigned(value as u64, decimal()); }
+}
+pub impl Display<usize> for usize {
+    pub fn format(value: usize, output: &Formatter) -> core::result::Result<i32, Error> { return output.write_unsigned(value as u64, decimal()); }
+}

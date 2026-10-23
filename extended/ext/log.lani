@@ -1,0 +1,101 @@
+// Bounded structured logging. No global state, allocation, clocks or implicit
+// output stream. See docs/extended-log.md.
+module ext::log;
+import core::fmt;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+
+pub enum Level { Trace, Debug, Info, Warn, Error }
+pub enum Filter { Off, AtLeast(Level) }
+pub enum Value { Text(core::text::Text), Bool(bool), Signed(i64), Unsigned(u64), Null }
+pub struct Field { key: core::text::Text, value: Value }
+pub struct Record { level: Level, target: core::text::Text, message: core::text::Text, fields: core::slice::View<Field> }
+pub impl Record { pub fn borrow(&self) -> &Record { return self; } }
+pub enum Error { DuplicateKey(i32), Format(core::fmt::Error) }
+pub enum Outcome { Filtered, Encoded(i32) }
+
+fn rank(level: Level) -> i32 { return match (level) { Trace -> 0, Debug -> 1, Info -> 2, Warn -> 3, Error -> 4 }; }
+fn threshold(filter: Filter) -> i32 { return match (filter) { Off -> 5, AtLeast(level) -> rank(level) }; }
+pub fn enabled(filter: Filter, level: Level) -> bool { return rank(level) >= threshold(filter); }
+fn text(literal: str, count: i32) -> core::text::Text {
+    let pointer: ptr = core::mem::string_data_ptr(literal); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer, count);
+    return core::text::from_utf8_unchecked(bytes, 0, count);
+}
+pub fn level_name(level: Level) -> core::text::Text {
+    return match (level) { Trace -> text("trace", 5), Debug -> text("debug", 5), Info -> text("info", 4), Warn -> text("warn", 4), Error -> text("error", 5) };
+}
+// Exact lowercase spellings only. Whitespace/case normalization is caller policy.
+pub fn parse_level(name: core::text::Text) -> core::option::Option<Level> {
+    if (name.equals(level_name(Level::Trace))) { return core::option::Some(Level::Trace); }
+    if (name.equals(level_name(Level::Debug))) { return core::option::Some(Level::Debug); }
+    if (name.equals(level_name(Level::Info))) { return core::option::Some(Level::Info); }
+    if (name.equals(level_name(Level::Warn))) { return core::option::Some(Level::Warn); }
+    if (name.equals(level_name(Level::Error))) { return core::option::Some(Level::Error); }
+    return core::option::None();
+}
+pub fn parse_filter(name: core::text::Text) -> core::option::Option<Filter> {
+    if (name.equals(text("off", 3))) { return core::option::Some(Filter::Off); }
+    let level: core::option::Option<Level> = parse_level(name); if (core::option::is_none(level)) { return core::option::None(); }
+    return core::option::Some(Filter::AtLeast(core::option::unwrap(level)));
+}
+fn render_value(value: Value, output: &core::fmt::Formatter) -> core::result::Result<i32, core::fmt::Error> {
+    return match (value) {
+        Text(item) -> output.write_quoted(item), Bool(item) -> output.write_bool(item),
+        Signed(item) -> output.write_signed(item, core::fmt::decimal()), Unsigned(item) -> output.write_unsigned(item, core::fmt::decimal()),
+        Null -> output.write_text(text("null", 4))
+    };
+}
+fn render(record: &Record, output: &core::fmt::Formatter) -> core::result::Result<i32, core::fmt::Error> {
+    // Each operation latches its first error; finish propagates it, including
+    // failures in earlier fixed framing or field values.
+    output.write_text(text("{\"level\":", 9)); output.write_quoted(level_name(record.level));
+    output.write_text(text(",\"target\":", 10)); output.write_quoted(record.target);
+    output.write_text(text(",\"message\":", 11)); output.write_quoted(record.message);
+    output.write_text(text(",\"fields\":{", 11)); let index: i32 = 0;
+    while (index < record.fields.len()) {
+        if (index > 0) { output.write_scalar(44); }
+        let field: Field = core::option::unwrap(record.fields.get(index));
+        output.write_quoted(field.key); output.write_scalar(58); render_value(field.value, output);
+        if (core::result::is_err(output.finish())) { return output.finish(); } index += 1;
+    }
+    output.write_text(text("}}\n", 3)); return output.finish();
+}
+pub fn encoded_len(record: &Record) -> core::result::Result<i32, Error> {
+    let index: i32 = 0;
+    while (index < record.fields.len()) {
+        let field: Field = core::option::unwrap(record.fields.get(index)); let previous: i32 = 0;
+        while (previous < index) {
+            let other: Field = core::option::unwrap(record.fields.get(previous));
+            if (field.key.equals(other.key)) { return core::result::Err(Error::DuplicateKey(index)); } previous += 1;
+        }
+        index += 1;
+    }
+    let output: core::fmt::Formatter = core::fmt::measure(); let result: core::result::Result<i32, core::fmt::Error> = render(record, output.borrow());
+    if (core::result::is_err(result)) { return core::result::Err(Error::Format(core::result::unwrap_err(result))); }
+    return core::result::Ok(core::result::unwrap(result));
+}
+// A complete record is one compact UTF-8 JSON object followed by LF. Invalid
+// bounds, duplicate keys and insufficient capacity leave all bytes unchanged.
+// All borrowed source ranges must remain unchanged and disjoint from output.
+pub fn encode(record: &Record, destination: [u8], offset: i32, capacity: i32) -> core::result::Result<i32, Error> {
+    let made: core::result::Result<core::fmt::Formatter, core::fmt::Error> = core::fmt::buffer(destination, offset, capacity);
+    if (core::result::is_err(made)) { return core::result::Err(Error::Format(core::result::unwrap_err(made))); }
+    let needed: core::result::Result<i32, Error> = encoded_len(record); if (core::result::is_err(needed)) { return needed; }
+    let length: i32 = core::result::unwrap(needed);
+    if (length > capacity) { return core::result::Err(Error::Format(core::fmt::Error::BufferTooSmall(length))); }
+    let output: core::fmt::Formatter = core::result::unwrap(made); let result: core::result::Result<i32, core::fmt::Error> = render(record, output.borrow());
+    if (core::result::is_err(result)) { return core::result::Err(Error::Format(core::result::unwrap_err(result))); }
+    return core::result::Ok(core::result::unwrap(result));
+}
+// Filtered records return an explicit outcome without accessing fields/scratch.
+// Encoded records are ready for core::io::write_all; the caller owns transport,
+// flush and close policy. This function performs no I/O.
+pub fn prepare(filter: Filter, record: &Record, scratch: [u8], capacity: i32) -> core::result::Result<Outcome, Error> {
+    if (!enabled(filter, record.level)) { return core::result::Ok(Outcome::Filtered); }
+    let encoded: core::result::Result<i32, Error> = encode(record, scratch, 0, capacity);
+    if (core::result::is_err(encoded)) { return core::result::Err(core::result::unwrap_err(encoded)); }
+    return core::result::Ok(Outcome::Encoded(core::result::unwrap(encoded)));
+}

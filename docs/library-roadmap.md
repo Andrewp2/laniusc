@@ -29,7 +29,7 @@ package distribution is a separate deliverable.
 | Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Many implementations and runtime fixtures exist; consolidate duplicate paths |
 | Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic algorithms and counted View values execute, including subviews, checked mutations and cursors; initial physical counts still require compiler length projection |
 | Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | Inherent slice/text/hash-map cursors execute; shared protocol dispatch hits an imported-generic compiler dependency; adapters and collection integration remain |
-| Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat and integer conversion execute; general formatting and further Unicode operations remain |
+| Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat, integer conversion and caller-buffer Display formatting execute; float formatting, format strings and further Unicode operations remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings and raw views exist; ownership conventions need consolidation |
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec and deque with explicit errors, linear maps/sets, alloc hash maps, ordered tree maps and min/max heaps execute; legacy migration and ordered sets remain |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks, native descriptor adapters and owned files execute; buffered adapters remain |
@@ -152,6 +152,17 @@ API list; unrelated library work can continue.
   every observed allocation failure and host errors. JSON now also exposes
   borrowed text/key queries and exact i64/u64 conversion of decimal/exponent
   forms. Environment adapters, reusable schemas and TOML sources remain.
+- Formatting and logging: [`core::fmt`](stdlib-formatting.md) composes integers
+  in bases 2–36, Text, scalars, booleans and custom Display implementations into
+  caller-backed buffers with measurement and sticky append errors.
+  [`ext::log`](extended-log.md) filters and prepares complete typed JSON records
+  before any output. The checksum application combines both with configuration
+  and CLI settings. Seven groups cover 746 integer reference cases, 67 quoted
+  text round trips, record bounds, every observed application allocation/I/O
+  failure and allocation-free batches of 8,192 records. Four existing checksum
+  groups still pass. A combined generic log-and-write facade exposes a runtime
+  compiler defect; it is outside production imports with a reproduction and
+  controls. Preparing records and then calling write_all executes.
 - Extended CSV: parsing, independent field copies and canonical encoding execute
   on x86_64 Linux, including generated tables, borrowed field views and allocation fault injection.
   See [extended-csv.md](extended-csv.md). Incremental decoding now shares the same parser; row construction remains.

@@ -1,16 +1,18 @@
 // CRC-32/ISO-HDLC per file, or stdin with no operands / a '-' operand.
 // -d/--decimal selects decimal output; -n/--limit BYTES bounds each input.
 // -c/--config FILE layers strict JSON settings; CLI options override files.
+// -l/--log-level LEVEL emits JSON records to stderr (default off).
 // Default output is eight lowercase hex digits and LF, in operand order.
-// Exit 2: arguments/input limit, 3: I/O, 4: argument-snapshot allocation.
+// Exit 2: configuration/arguments/input limit, 3: I/O, 4: allocation.
 module app::main;
 import alloc::vec;
 import ext::cli;
 import ext::config;
 import ext::json;
-import core::byte;
+import ext::log;
 import core::crc32;
 import core::decimal;
+import core::fmt;
 import core::io;
 import core::mem;
 import core::option;
@@ -23,16 +25,34 @@ import std::io_checked;
 import std::path;
 import std::stream;
 
-struct Config { decimal: bool, limit: u64, help: bool }
+struct Config { decimal: bool, limit: u64, help: bool, logging: ext::log::Filter }
 impl Config { fn borrow(&self) -> &Config { return self; } }
+fn text(value: str, length: i32) -> core::text::Text { let pointer: ptr = core::mem::string_data_ptr(value); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer, length); return core::text::from_utf8_unchecked(bytes, 0, length); }
 fn apply(config: &Config, option: ext::cli::Occurrence) -> bool {
     if (option.id == 0) { config.decimal = true; return true; }
     if (option.id == 2) { config.help = true; return true; }
     if (option.id == 3) { return true; }
     if (option.id == 4) { config.decimal = false; return true; }
     let value: ext::cli::Argument = core::option::unwrap(option.value); let bytes: core::slice::View<u8> = value.bytes;
+    if (option.id == 5) {
+        let parsed: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8_range(bytes.values, bytes.start, bytes.len()); if (core::result::is_err(parsed)) { return false; }
+        let filter: core::option::Option<ext::log::Filter> = ext::log::parse_filter(core::result::unwrap(parsed)); if (core::option::is_none(filter)) { return false; }
+        config.logging = core::option::unwrap(filter); return true;
+    }
     let parsed: core::result::Result<u64, core::decimal::ParseError> = core::decimal::parse_u64_range(bytes.values, bytes.start, bytes.len());
     if (core::result::is_err(parsed)) { return false; } config.limit = core::result::unwrap(parsed); return true;
+}
+fn report_status(config: Config, status: i32, input: i32) -> i32 {
+    let level: ext::log::Level = ext::log::Level::Info; let message: core::text::Text = text("input_complete", 14);
+    if (status != 0) { level = ext::log::Level::Error; message = text("input_failed", 12); }
+    if (!ext::log::enabled(config.logging, level)) { return status; }
+    let fields: [ext::log::Field; 2] = [ext::log::Field { key: text("input",5), value: ext::log::Value::Signed(input as i64) }, ext::log::Field { key: text("status",6), value: ext::log::Value::Signed(status as i64) }];
+    let record: ext::log::Record = ext::log::Record { level: level, target: text("checksum",8), message: message, fields: core::result::unwrap(core::slice::view(fields,2)) };
+    let bytes: [u8; 240] = [0;240]; let prepared: core::result::Result<ext::log::Outcome, ext::log::Error> = ext::log::prepare(config.logging, record.borrow(), bytes,240);
+    if (core::result::is_err(prepared)) { if (status == 0) { return 3; } return status; }
+    let count: i32 = match (core::result::unwrap(prepared)) { ext::log::Outcome::Filtered -> 0, ext::log::Outcome::Encoded(size) -> size };
+    let sink: std::stream::Descriptor = std::stream::stderr(); let sent: core::result::Result<i32, core::io::Failure> = core::io::write_all(sink.borrow(),bytes,0,count);
+    if (core::result::is_err(sent) && status == 0) { return 3; } return status;
 }
 fn digest<R>(source: &R, limit: u64) -> core::result::Result<u32, core::io::Error> where R: core::io::Read {
     let storage: [i32; 1024] = [0; 1024]; let pointer: ptr = core::mem::i32_array_data_ptr(storage);
@@ -52,11 +72,12 @@ fn digest<R>(source: &R, limit: u64) -> core::result::Result<u32, core::io::Erro
 }
 fn input_error(error: core::io::Error) -> i32 { let status: i32 = match (error) { core::io::Error::LimitExceeded -> 2, _ -> 3 }; return status; }
 fn emit(value: u32, decimal: bool) -> i32 {
-    let output: [u8; 11] = [0; 11]; let length: i32 = 8;
-    if (decimal) { length = core::result::unwrap(core::decimal::format_u32(output, 0, 10, value)); }
-    else { let index: i32 = 0; while (index < 8) { let nibble: u8 = ((value >> ((7 - index) * 4)) & 15) as u8; output[index] = core::byte::ascii_lower_hex_digit_or(nibble, 48); index += 1; } }
-    output[length] = 10; let sink: std::stream::Descriptor = std::stream::stdout();
-    if (core::result::is_err(core::io::write_all(sink.borrow(), output, 0, length + 1))) { return 3; } return 0;
+    let bytes: [u8; 11] = [0; 11]; let output: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes, 0, 11));
+    let options: core::fmt::Integer = core::fmt::Integer { radix: 16, uppercase: false, min_digits: 8 };
+    if (decimal) { options = core::fmt::decimal(); }
+    output.write_unsigned(value as u64, options); output.write_scalar(10);
+    let length: i32 = core::result::unwrap(output.finish()); let sink: std::stream::Descriptor = std::stream::stdout();
+    if (core::result::is_err(core::io::write_all(sink.borrow(), bytes, 0, length))) { return 3; } return 0;
 }
 fn stdin_digest(config: Config) -> i32 {
     let source: std::stream::Descriptor = std::stream::stdin(); let result: core::result::Result<u32, core::io::Error> = digest(source.borrow(), config.limit);
@@ -86,7 +107,12 @@ fn validate_source(source: ext::config::Config) -> bool {
         let next: core::option::Option<ext::config::Value> = children.next(); if (core::option::is_none(next)) { break; }
         let value: ext::config::Value = core::option::unwrap(next); let key: core::text::Text = core::result::unwrap(value.key());
         if (key.equals(decimal_key)) { if (core::result::is_err(value.boolean())) { return false; } }
-        else { if (!key.equals(limit_key) || core::result::is_err(value.integer_u64())) { return false; } }
+        else { if (key.equals(limit_key)) { if (core::result::is_err(value.integer_u64())) { return false; } }
+        else {
+            if (!key.equals(text("log_level",9))) { return false; }
+            let name: core::result::Result<core::text::Text, ext::json::Error> = value.text(); if (core::result::is_err(name)) { return false; }
+            if (core::option::is_none(ext::log::parse_filter(core::result::unwrap(name)))) { return false; }
+        } }
     }
     return true;
 }
@@ -115,10 +141,12 @@ fn main() -> i32 {
     let config_name: [u8; 6] = [99,111,110,102,105,103]; let hex_name: [u8; 3] = [104,101,120];
     let c: ext::cli::Spec = ext::cli::Spec { id: 3, long: core::result::unwrap(core::slice::view(config_name, 6)), short: 99, arity: ext::cli::Arity::Required };
     let x: ext::cli::Spec = ext::cli::Spec { id: 4, long: core::result::unwrap(core::slice::view(hex_name, 3)), short: 120, arity: ext::cli::Arity::Flag };
-    let specs: [ext::cli::Spec; 5] = [d, n, h, c, x];
-    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(), core::result::unwrap(core::slice::view(specs, 5)), ext::cli::Ordering::Intermixed));
+    let log_name: [u8; 9] = [108,111,103,45,108,101,118,101,108];
+    let l: ext::cli::Spec = ext::cli::Spec { id: 5, long: core::result::unwrap(core::slice::view(log_name,9)), short: 108, arity: ext::cli::Arity::Required };
+    let specs: [ext::cli::Spec; 6] = [d, n, h, c, x, l];
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(), core::result::unwrap(core::slice::view(specs, 6)), ext::cli::Ordering::Intermixed));
     let inputs: ext::cli::Parser = parser;
-    let maximum: u64 = 18446744073709551615; let config: Config = Config { decimal: false, limit: maximum, help: false }; let operands: i32 = 0;
+    let maximum: u64 = 18446744073709551615; let config: Config = Config { decimal: false, limit: maximum, help: false, logging: ext::log::Filter::Off }; let operands: i32 = 0;
     // Validate the complete command line before opening inputs or emitting data.
     while (true) {
         let next: core::result::Result<core::option::Option<ext::cli::Event>, ext::cli::Error> = parser.next();
@@ -130,8 +158,8 @@ fn main() -> i32 {
     }
     if (config.help) {
         arguments.destroy();
-        let usage: str = "Usage: checksum [-d|-x] [-n BYTES] [-c CONFIG] [--] [FILE ...]\n";
-        if (!std::io_checked::write_all_stdout(core::mem::string_data_ptr(usage), 63)) { return 3; } return 0;
+        let usage: str = "Usage: checksum [-d|-x] [-n BYTES] [-c CONFIG] [-l LEVEL] [--] [FILE ...]\n";
+        if (!std::io_checked::write_all_stdout(core::mem::string_data_ptr(usage), 74)) { return 3; } return 0;
     }
     let sources: alloc::vec::Vec<ext::config::Config> = alloc::vec::new(); let config_options: ext::cli::Parser = inputs;
     while (true) {
@@ -139,22 +167,27 @@ fn main() -> i32 {
         let status: i32 = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> load_option(sources.borrow(), item), _ -> 0 };
         if (status != 0) { destroy_sources(sources.borrow()); arguments.destroy(); return status; }
     }
-    config = Config { decimal: false, limit: maximum, help: false };
+    config = Config { decimal: false, limit: maximum, help: false, logging: ext::log::Filter::Off };
     let layers: ext::config::Layers = ext::config::layers(sources.as_view());
     let decimal_key: core::text::Text = core::result::unwrap(core::text::from_utf8(decimal, 7)); let limit_key: core::text::Text = core::result::unwrap(core::text::from_utf8(limit, 5));
     let decimal_value: core::option::Option<ext::config::Value> = layers.get(decimal_key); let limit_value: core::option::Option<ext::config::Value> = layers.get(limit_key);
     if (core::option::is_some(decimal_value)) { let value: ext::config::Value = core::option::unwrap(decimal_value); config.decimal = core::result::unwrap(value.boolean()); }
     if (core::option::is_some(limit_value)) { let value: ext::config::Value = core::option::unwrap(limit_value); config.limit = core::result::unwrap(value.integer_u64()); }
+    let log_value: core::option::Option<ext::config::Value> = layers.get(text("log_level",9));
+    if (core::option::is_some(log_value)) { let value: ext::config::Value = core::option::unwrap(log_value); config.logging = core::option::unwrap(ext::log::parse_filter(core::result::unwrap(value.text()))); }
     destroy_sources(sources.borrow());
     let overrides: ext::cli::Parser = inputs;
     while (true) {
         let next: core::option::Option<ext::cli::Event> = core::result::unwrap(overrides.next()); if (core::option::is_none(next)) { break; }
         let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> apply(config.borrow(), item), _ -> true }; assert(valid);
     }
-    if (operands == 0) { let status: i32 = stdin_digest(config); arguments.destroy(); return status; }
+    if (operands == 0) { let status: i32 = stdin_digest(config); status = report_status(config,status,0); arguments.destroy(); return status; }
+    let input_index: i32 = 0;
     while (true) {
         let next: core::option::Option<ext::cli::Event> = core::result::unwrap(inputs.next()); if (core::option::is_none(next)) { break; }
+        let operand: bool = match (core::option::unwrap(next)) { ext::cli::Event::Operand(item) -> true, _ -> false }; if (!operand) { continue; }
         let status: i32 = match (core::option::unwrap(next)) { ext::cli::Event::Operand(item) -> file_digest(item, config), _ -> 0 };
+        status = report_status(config,status,input_index); input_index += 1;
         if (status != 0) { arguments.destroy(); return status; }
     }
     arguments.destroy(); return 0;
