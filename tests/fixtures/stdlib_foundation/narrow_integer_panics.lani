@@ -1,0 +1,105 @@
+module app::main;
+import core::i8;
+import core::u8;
+import core::i16;
+import core::u16;
+import core::i32;
+import core::u32;
+import core::mem;
+import std::io_checked;
+fn main() -> i32 {
+    let words: [i32;2] = [0;2]; let pointer: ptr = core::mem::i32_array_data_ptr(words);
+    if (!std::io_checked::read_exact_stdin(pointer,8)) { return 1; }
+    let kind: i32 = words[0]; let operation: i32 = words[1];
+    if (kind == 0 && operation == 0) { let unused: i8 = core::i8::clamp(0,1,0); return 0; }
+    if (kind == 0 && operation == 1) { let unused: i8 = core::i8::div(1,0); return 0; }
+    if (kind == 0 && operation == 2) { let unused: i8 = core::i8::rem(1,0); return 0; }
+    if (kind == 0 && operation == 3) { let unused: i8 = core::i8::wrapping_div(1,0); return 0; }
+    if (kind == 0 && operation == 4) { let unused: i8 = core::i8::wrapping_rem(1,0); return 0; }
+    if (kind == 0 && operation == 5) { let unused: i8 = core::i8::saturating_div(1,0); return 0; }
+    if (kind == 0 && operation == 6) { let unused: i8 = core::i8::shl(1,8); return 0; }
+    if (kind == 0 && operation == 7) { let unused: i8 = core::i8::shr(1,8); return 0; }
+    if (kind == 0 && operation == 8) { let unused: i8 = core::i8::next_power_of_two(core::i8::MAX); return 0; }
+    if (kind == 0 && operation == 9) { let unused: i8 = core::i8::div_euclid(1,0); return 0; }
+    if (kind == 0 && operation == 10) { let unused: i8 = core::i8::rem_euclid(1,0); return 0; }
+    if (kind == 0 && operation == 11) { let unused: i8 = core::i8::abs(core::i8::MIN); return 0; }
+    if (kind == 0 && operation == 12) { let unused: i8 = core::i8::div(core::i8::MIN,-1); return 0; }
+    if (kind == 0 && operation == 13) { let unused: i8 = core::i8::rem(core::i8::MIN,-1); return 0; }
+    if (kind == 0 && operation == 14) { let unused: i8 = core::i8::div_euclid(core::i8::MIN,-1); return 0; }
+    if (kind == 0 && operation == 15) { let unused: i8 = core::i8::rem_euclid(core::i8::MIN,-1); return 0; }
+    if (kind == 1 && operation == 0) { let unused: u8 = core::u8::clamp(0,1,0); return 0; }
+    if (kind == 1 && operation == 1) { let unused: u8 = core::u8::div(1,0); return 0; }
+    if (kind == 1 && operation == 2) { let unused: u8 = core::u8::rem(1,0); return 0; }
+    if (kind == 1 && operation == 3) { let unused: u8 = core::u8::wrapping_div(1,0); return 0; }
+    if (kind == 1 && operation == 4) { let unused: u8 = core::u8::wrapping_rem(1,0); return 0; }
+    if (kind == 1 && operation == 5) { let unused: u8 = core::u8::saturating_div(1,0); return 0; }
+    if (kind == 1 && operation == 6) { let unused: u8 = core::u8::shl(1,8); return 0; }
+    if (kind == 1 && operation == 7) { let unused: u8 = core::u8::shr(1,8); return 0; }
+    if (kind == 1 && operation == 8) { let unused: u8 = core::u8::next_power_of_two(core::u8::MAX); return 0; }
+    if (kind == 1 && operation == 9) { let unused: u8 = core::u8::div_euclid(1,0); return 0; }
+    if (kind == 1 && operation == 10) { let unused: u8 = core::u8::rem_euclid(1,0); return 0; }
+    if (kind == 1 && operation == 11) { let unused: u8 = core::u8::align_up(1,0); return 0; }
+    if (kind == 1 && operation == 12) { let unused: u8 = core::u8::align_down(1,0); return 0; }
+    if (kind == 1 && operation == 13) { let unused: u8 = core::u8::align_up(core::u8::MAX,2); return 0; }
+    if (kind == 2 && operation == 0) { let unused: i16 = core::i16::clamp(0,1,0); return 0; }
+    if (kind == 2 && operation == 1) { let unused: i16 = core::i16::div(1,0); return 0; }
+    if (kind == 2 && operation == 2) { let unused: i16 = core::i16::rem(1,0); return 0; }
+    if (kind == 2 && operation == 3) { let unused: i16 = core::i16::wrapping_div(1,0); return 0; }
+    if (kind == 2 && operation == 4) { let unused: i16 = core::i16::wrapping_rem(1,0); return 0; }
+    if (kind == 2 && operation == 5) { let unused: i16 = core::i16::saturating_div(1,0); return 0; }
+    if (kind == 2 && operation == 6) { let unused: i16 = core::i16::shl(1,16); return 0; }
+    if (kind == 2 && operation == 7) { let unused: i16 = core::i16::shr(1,16); return 0; }
+    if (kind == 2 && operation == 8) { let unused: i16 = core::i16::next_power_of_two(core::i16::MAX); return 0; }
+    if (kind == 2 && operation == 9) { let unused: i16 = core::i16::div_euclid(1,0); return 0; }
+    if (kind == 2 && operation == 10) { let unused: i16 = core::i16::rem_euclid(1,0); return 0; }
+    if (kind == 2 && operation == 11) { let unused: i16 = core::i16::abs(core::i16::MIN); return 0; }
+    if (kind == 2 && operation == 12) { let unused: i16 = core::i16::div(core::i16::MIN,-1); return 0; }
+    if (kind == 2 && operation == 13) { let unused: i16 = core::i16::rem(core::i16::MIN,-1); return 0; }
+    if (kind == 2 && operation == 14) { let unused: i16 = core::i16::div_euclid(core::i16::MIN,-1); return 0; }
+    if (kind == 2 && operation == 15) { let unused: i16 = core::i16::rem_euclid(core::i16::MIN,-1); return 0; }
+    if (kind == 3 && operation == 0) { let unused: u16 = core::u16::clamp(0,1,0); return 0; }
+    if (kind == 3 && operation == 1) { let unused: u16 = core::u16::div(1,0); return 0; }
+    if (kind == 3 && operation == 2) { let unused: u16 = core::u16::rem(1,0); return 0; }
+    if (kind == 3 && operation == 3) { let unused: u16 = core::u16::wrapping_div(1,0); return 0; }
+    if (kind == 3 && operation == 4) { let unused: u16 = core::u16::wrapping_rem(1,0); return 0; }
+    if (kind == 3 && operation == 5) { let unused: u16 = core::u16::saturating_div(1,0); return 0; }
+    if (kind == 3 && operation == 6) { let unused: u16 = core::u16::shl(1,16); return 0; }
+    if (kind == 3 && operation == 7) { let unused: u16 = core::u16::shr(1,16); return 0; }
+    if (kind == 3 && operation == 8) { let unused: u16 = core::u16::next_power_of_two(core::u16::MAX); return 0; }
+    if (kind == 3 && operation == 9) { let unused: u16 = core::u16::div_euclid(1,0); return 0; }
+    if (kind == 3 && operation == 10) { let unused: u16 = core::u16::rem_euclid(1,0); return 0; }
+    if (kind == 3 && operation == 11) { let unused: u16 = core::u16::align_up(1,0); return 0; }
+    if (kind == 3 && operation == 12) { let unused: u16 = core::u16::align_down(1,0); return 0; }
+    if (kind == 3 && operation == 13) { let unused: u16 = core::u16::align_up(core::u16::MAX,2); return 0; }
+    if (kind == 4 && operation == 0) { let unused: i32 = core::i32::clamp(0,1,0); return 0; }
+    if (kind == 4 && operation == 1) { let unused: i32 = core::i32::div(1,0); return 0; }
+    if (kind == 4 && operation == 2) { let unused: i32 = core::i32::rem(1,0); return 0; }
+    if (kind == 4 && operation == 3) { let unused: i32 = core::i32::wrapping_div(1,0); return 0; }
+    if (kind == 4 && operation == 4) { let unused: i32 = core::i32::wrapping_rem(1,0); return 0; }
+    if (kind == 4 && operation == 5) { let unused: i32 = core::i32::saturating_div(1,0); return 0; }
+    if (kind == 4 && operation == 6) { let unused: i32 = core::i32::shl(1,32); return 0; }
+    if (kind == 4 && operation == 7) { let unused: i32 = core::i32::shr(1,32); return 0; }
+    if (kind == 4 && operation == 8) { let unused: i32 = core::i32::next_power_of_two(core::i32::MAX); return 0; }
+    if (kind == 4 && operation == 9) { let unused: i32 = core::i32::div_euclid(1,0); return 0; }
+    if (kind == 4 && operation == 10) { let unused: i32 = core::i32::rem_euclid(1,0); return 0; }
+    if (kind == 4 && operation == 11) { let unused: i32 = core::i32::abs(core::i32::MIN); return 0; }
+    if (kind == 4 && operation == 12) { let unused: i32 = core::i32::div(core::i32::MIN,-1); return 0; }
+    if (kind == 4 && operation == 13) { let unused: i32 = core::i32::rem(core::i32::MIN,-1); return 0; }
+    if (kind == 4 && operation == 14) { let unused: i32 = core::i32::div_euclid(core::i32::MIN,-1); return 0; }
+    if (kind == 4 && operation == 15) { let unused: i32 = core::i32::rem_euclid(core::i32::MIN,-1); return 0; }
+    if (kind == 5 && operation == 0) { let unused: u32 = core::u32::clamp(0,1,0); return 0; }
+    if (kind == 5 && operation == 1) { let unused: u32 = core::u32::div(1,0); return 0; }
+    if (kind == 5 && operation == 2) { let unused: u32 = core::u32::rem(1,0); return 0; }
+    if (kind == 5 && operation == 3) { let unused: u32 = core::u32::wrapping_div(1,0); return 0; }
+    if (kind == 5 && operation == 4) { let unused: u32 = core::u32::wrapping_rem(1,0); return 0; }
+    if (kind == 5 && operation == 5) { let unused: u32 = core::u32::saturating_div(1,0); return 0; }
+    if (kind == 5 && operation == 6) { let unused: u32 = core::u32::shl(1,32); return 0; }
+    if (kind == 5 && operation == 7) { let unused: u32 = core::u32::shr(1,32); return 0; }
+    if (kind == 5 && operation == 8) { let unused: u32 = core::u32::next_power_of_two(core::u32::MAX); return 0; }
+    if (kind == 5 && operation == 9) { let unused: u32 = core::u32::div_euclid(1,0); return 0; }
+    if (kind == 5 && operation == 10) { let unused: u32 = core::u32::rem_euclid(1,0); return 0; }
+    if (kind == 5 && operation == 11) { let unused: u32 = core::u32::align_up(1,0); return 0; }
+    if (kind == 5 && operation == 12) { let unused: u32 = core::u32::align_down(1,0); return 0; }
+    if (kind == 5 && operation == 13) { let unused: u32 = core::u32::align_up(core::u32::MAX,2); return 0; }
+    return 2;
+}

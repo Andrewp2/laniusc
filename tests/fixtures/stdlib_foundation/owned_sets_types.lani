@@ -1,0 +1,115 @@
+module app::main;
+import alloc::hash_set;
+import alloc::tree_set;
+import alloc::string;
+import core::cmp;
+import core::hash;
+import core::option;
+import core::result;
+struct Key { id: i32, mark: i64, owner: alloc::string::String }
+pub impl core::hash::Hash<Key> for Key { pub fn hash(key: Key) -> u32 { return key.id as u32; } }
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(a: Key, b: Key) -> bool { return a.id == b.id; }
+    pub fn ne(a: Key, b: Key) -> bool { return a.id != b.id; }
+}
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(a: Key, b: Key) -> bool { return a.id < b.id; }
+    pub fn le(a: Key, b: Key) -> bool { return a.id <= b.id; }
+    pub fn gt(a: Key, b: Key) -> bool { return a.id > b.id; }
+    pub fn ge(a: Key, b: Key) -> bool { return a.id >= b.id; }
+}
+struct Unit {}
+pub impl core::hash::Hash<Unit> for Unit { pub fn hash(key: Unit) -> u32 { return 17; } }
+pub impl core::cmp::Eq<Unit> for Unit {
+    pub fn eq(a: Unit, b: Unit) -> bool { return true; }
+    pub fn ne(a: Unit, b: Unit) -> bool { return false; }
+}
+pub impl core::cmp::Ord<Unit> for Unit {
+    pub fn lt(a: Unit, b: Unit) -> bool { return false; }
+    pub fn le(a: Unit, b: Unit) -> bool { return true; }
+    pub fn gt(a: Unit, b: Unit) -> bool { return false; }
+    pub fn ge(a: Unit, b: Unit) -> bool { return true; }
+}
+fn primitive<T>(low: T, high: T) -> bool where T: core::hash::Hash<T>, T: core::cmp::Eq<T>, T: core::cmp::Ord<T> {
+    let hash: alloc::hash_set::HashSet<T> = alloc::hash_set::new();
+    let tree: alloc::tree_set::TreeSet<T> = alloc::tree_set::new();
+    core::result::unwrap(hash.try_insert(low)); core::result::unwrap(hash.try_insert(high));
+    core::result::unwrap(tree.try_insert(low)); core::result::unwrap(tree.try_insert(high));
+    let valid: bool = hash.len() == 2 && tree.len() == 2 && T::eq(core::option::unwrap(tree.first()), low) && T::eq(core::option::unwrap(tree.last()), high) && T::eq(core::option::unwrap(hash.remove(low)), low) && T::eq(core::option::unwrap(tree.pop_first()), low) && hash.contains(high) && tree.contains(high);
+    hash.destroy(); tree.destroy(); return valid;
+}
+fn hash_owners() -> bool {
+    let bytes: [u8; 5] = [104, 101, 108, 108, 111];
+    let wide: i64 = 4294967297; let negative: i64 = -4294967297;
+    let a: alloc::hash_set::HashSet<Key> = alloc::hash_set::new();
+    let b: alloc::hash_set::HashSet<Key> = alloc::hash_set::new();
+    let first: Key = Key { id: 7, mark: wide, owner: core::result::unwrap(alloc::string::from_utf8(bytes, 1)) };
+    let supplied: Key = Key { id: 7, mark: negative, owner: core::result::unwrap(alloc::string::from_utf8(bytes, 2)) };
+    let replacement: Key = Key { id: 7, mark: wide + 1, owner: core::result::unwrap(alloc::string::from_utf8(bytes, 3)) };
+    core::result::unwrap(a.try_insert(first));
+    let returned: Key = core::option::unwrap(core::result::unwrap(a.try_insert(supplied)));
+    if (returned.mark != negative || returned.owner.byte_len() != 2 || core::option::unwrap(a.get(first)).owner.byte_len() != 1) { return false; } returned.owner.destroy();
+    let old: Key = core::option::unwrap(core::result::unwrap(a.try_replace(replacement)));
+    if (old.mark != wide || old.owner.byte_len() != 1 || core::option::unwrap(a.get(replacement)).owner.byte_len() != 3) { return false; } old.owner.destroy();
+    let right: Key = Key { id: 7, mark: negative - 1, owner: core::result::unwrap(alloc::string::from_utf8(bytes, 5)) }; core::result::unwrap(b.try_insert(right));
+    let union: alloc::hash_set::HashSet<Key> = core::result::unwrap(a.try_union(b.borrow()));
+    let intersection: alloc::hash_set::HashSet<Key> = core::result::unwrap(a.try_intersection(b.borrow()));
+    let clone: alloc::hash_set::HashSet<Key> = core::result::unwrap(a.try_clone());
+    if (core::option::unwrap(union.get(right)).owner.byte_len() != 3 || core::option::unwrap(intersection.get(right)).owner.byte_len() != 3 || !clone.equals(a.borrow())) { return false; }
+    let read: alloc::hash_set::Iter<Key> = union.iter(); let representative: Key = core::option::unwrap(read.next());
+    if (representative.mark != wide + 1 || representative.owner.byte_len() != 3 || core::option::is_some(read.next())) { return false; }
+    union.destroy(); intersection.destroy(); clone.destroy();
+    let removed: Key = core::option::unwrap(a.remove(replacement)); if (removed.mark != wide + 1 || removed.owner.byte_len() != 3) { return false; } removed.owner.destroy();
+    let removed_right: Key = core::option::unwrap(b.remove(right)); if (removed_right.mark != negative - 1 || removed_right.owner.byte_len() != 5) { return false; } removed_right.owner.destroy();
+    a.destroy(); b.destroy();
+    let units: alloc::hash_set::HashSet<Unit> = alloc::hash_set::new();
+    let unit: Unit = Unit {};
+    if (core::option::is_some(core::result::unwrap(units.try_insert(unit))) || core::option::is_none(core::result::unwrap(units.try_insert(unit))) || core::option::is_none(core::result::unwrap(units.try_replace(unit))) || units.len() != 1) { return false; }
+    let read_unit: alloc::hash_set::Iter<Unit> = units.iter();
+    if (core::option::is_none(read_unit.next()) || core::option::is_some(read_unit.next())) { return false; }
+    let union_unit: alloc::hash_set::HashSet<Unit> = core::result::unwrap(units.try_union(units.borrow()));
+    let intersection_unit: alloc::hash_set::HashSet<Unit> = core::result::unwrap(units.try_intersection(units.borrow()));
+    if (union_unit.len() != 1 || !union_unit.equals(units.borrow()) || !intersection_unit.equals(units.borrow())) { return false; }
+    union_unit.destroy(); intersection_unit.destroy();
+    if (core::option::is_none(units.remove(unit)) || !units.is_empty()) { return false; } units.destroy(); return true;
+}
+fn tree_owners() -> bool {
+    let bytes: [u8; 5] = [104, 101, 108, 108, 111];
+    let wide: i64 = 4294967297; let negative: i64 = -4294967297;
+    let a: alloc::tree_set::TreeSet<Key> = alloc::tree_set::new();
+    let b: alloc::tree_set::TreeSet<Key> = alloc::tree_set::new();
+    let first: Key = Key { id: 7, mark: wide, owner: core::result::unwrap(alloc::string::from_utf8(bytes, 1)) };
+    let supplied: Key = Key { id: 7, mark: negative, owner: core::result::unwrap(alloc::string::from_utf8(bytes, 2)) };
+    let replacement: Key = Key { id: 7, mark: wide + 1, owner: core::result::unwrap(alloc::string::from_utf8(bytes, 3)) };
+    core::result::unwrap(a.try_insert(first));
+    let returned: Key = core::option::unwrap(core::result::unwrap(a.try_insert(supplied)));
+    if (returned.mark != negative || returned.owner.byte_len() != 2 || core::option::unwrap(a.get(first)).owner.byte_len() != 1) { return false; } returned.owner.destroy();
+    let old: Key = core::option::unwrap(core::result::unwrap(a.try_replace(replacement)));
+    if (old.mark != wide || old.owner.byte_len() != 1 || core::option::unwrap(a.get(replacement)).owner.byte_len() != 3) { return false; } old.owner.destroy();
+    let right: Key = Key { id: 7, mark: negative - 1, owner: core::result::unwrap(alloc::string::from_utf8(bytes, 5)) }; core::result::unwrap(b.try_insert(right));
+    let union: alloc::tree_set::TreeSet<Key> = core::result::unwrap(a.try_union(b.borrow()));
+    let intersection: alloc::tree_set::TreeSet<Key> = core::result::unwrap(a.try_intersection(b.borrow()));
+    let clone: alloc::tree_set::TreeSet<Key> = core::result::unwrap(a.try_clone());
+    if (core::option::unwrap(union.get(right)).owner.byte_len() != 3 || core::option::unwrap(intersection.get(right)).owner.byte_len() != 3 || !clone.equals(a.borrow())) { return false; }
+    let read: alloc::tree_set::Cursor<Key> = union.iter(); let representative: Key = core::option::unwrap(read.next());
+    if (representative.mark != wide + 1 || representative.owner.byte_len() != 3 || core::option::is_some(read.next())) { return false; }
+    union.destroy(); intersection.destroy(); clone.destroy();
+    let removed: Key = core::option::unwrap(a.remove(replacement)); if (removed.mark != wide + 1 || removed.owner.byte_len() != 3) { return false; } removed.owner.destroy();
+    let removed_right: Key = core::option::unwrap(b.remove(right)); if (removed_right.mark != negative - 1 || removed_right.owner.byte_len() != 5) { return false; } removed_right.owner.destroy();
+    a.destroy(); b.destroy();
+    let units: alloc::tree_set::TreeSet<Unit> = alloc::tree_set::new();
+    let unit: Unit = Unit {};
+    if (core::option::is_some(core::result::unwrap(units.try_insert(unit))) || core::option::is_none(core::result::unwrap(units.try_insert(unit))) || core::option::is_none(core::result::unwrap(units.try_replace(unit))) || units.len() != 1) { return false; }
+    let read_unit: alloc::tree_set::Cursor<Unit> = units.iter();
+    if (core::option::is_none(read_unit.next()) || core::option::is_some(read_unit.next())) { return false; }
+    let union_unit: alloc::tree_set::TreeSet<Unit> = core::result::unwrap(units.try_union(units.borrow()));
+    let intersection_unit: alloc::tree_set::TreeSet<Unit> = core::result::unwrap(units.try_intersection(units.borrow()));
+    if (union_unit.len() != 1 || !union_unit.equals(units.borrow()) || !intersection_unit.equals(units.borrow())) { return false; }
+    union_unit.destroy(); intersection_unit.destroy();
+    if (core::option::is_none(units.remove(unit)) || !units.is_empty()) { return false; } units.destroy(); return true;
+}
+fn main() -> i32 {
+    let positive: i64 = 4294967297; let negative: i64 = -4294967297; let max: u64 = 18446744073709551615; let zero: u64 = 0;
+    if (!primitive(-32768 as i16, 32767 as i16) || !primitive(negative, positive) || !primitive(zero, max) || !primitive(false, true) || !primitive('a', '😀')) { return 1; }
+    if (!hash_owners()) { return 2; } if (!tree_owners()) { return 3; } return 0;
+}

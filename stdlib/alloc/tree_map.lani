@@ -317,3 +317,122 @@ pub impl<K, V> Cursor<K, V> {
         return core::option::Some(node.item);
     }
 }
+
+// Internal set-storage boundary. One typed facade owns each state; temporary
+// typed map/cursor views never escape. Width checks are layout guards, not
+// permission to reinterpret a different key schema. The map above remains the
+// only storage, allocation, hashing/probing or balancing implementation.
+struct KeyUnit {}
+pub struct KeyStorage { storage: ptr, reserved: i32, used: i32, length: i32, root: i32, free: i32, key_bytes: usize }
+pub struct KeyCursor { storage: ptr, reserved: i32, front: i32, back: i32, key_bytes: usize }
+pub impl KeyStorage { pub fn borrow(&self) -> &KeyStorage { return self; } }
+pub impl KeyCursor { pub fn borrow(&self) -> &KeyCursor { return self; } }
+pub fn key_storage<T>() -> KeyStorage {
+    let storage: ptr = 0;
+    return KeyStorage { storage: storage, reserved: 0, used: 0, length: 0, root: -1, free: -1, key_bytes: core::mem::size_of<T>() };
+}
+fn key_view<T>(owner: &KeyStorage) -> TreeMap<T, KeyUnit> {
+    assert(owner.key_bytes == core::mem::size_of<T>());
+    return TreeMap { storage: owner.storage, reserved: owner.reserved, used: owner.used, length: owner.length, root: owner.root, free: owner.free };
+}
+fn key_update<T>(owner: &KeyStorage, map: TreeMap<T, KeyUnit>) {
+    owner.storage = map.storage; owner.reserved = map.reserved; owner.used = map.used; owner.length = map.length; owner.root = map.root; owner.free = map.free;
+}
+pub fn key_replace<T>(owner: &KeyStorage, key: T) -> core::result::Result<core::option::Option<T>, Error> where T: core::cmp::Ord<T> {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner); let unit: KeyUnit = KeyUnit {};
+    let result: core::result::Result<core::option::Option<Entry<T, KeyUnit>>, Error> = map.try_insert(key, unit);
+    key_update<T>(owner, map);
+    if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+    let old: core::option::Option<Entry<T, KeyUnit>> = core::result::unwrap(result);
+    if (core::option::is_none(old)) { return core::result::Ok(core::option::None()); }
+    let entry: Entry<T, KeyUnit> = core::option::unwrap(old); return core::result::Ok(core::option::Some(entry.key));
+}
+pub fn key_contains<T>(owner: &KeyStorage, key: T) -> bool where T: core::cmp::Ord<T> {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner); return map.contains_key(key);
+}
+pub fn key_iter<T>(owner: &KeyStorage) -> KeyCursor {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner); let cursor: Cursor<T, KeyUnit> = map.iter();
+    return KeyCursor { storage: cursor.storage, reserved: cursor.reserved, front: cursor.front, back: cursor.back, key_bytes: owner.key_bytes };
+}
+pub fn key_next<T>(cursor: &KeyCursor) -> core::option::Option<T> {
+    assert(cursor.key_bytes == core::mem::size_of<T>());
+    let view: Cursor<T, KeyUnit> = Cursor { storage: cursor.storage, reserved: cursor.reserved, front: cursor.front, back: cursor.back };
+    let result: core::option::Option<Entry<T, KeyUnit>> = view.next();
+    cursor.storage = view.storage; cursor.reserved = view.reserved; cursor.front = view.front; cursor.back = view.back;
+    if (core::option::is_none(result)) { return core::option::None(); }
+    let entry: Entry<T, KeyUnit> = core::option::unwrap(result); return core::option::Some(entry.key);
+}
+pub fn key_destroy<T>(owner: &KeyStorage) {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner); map.destroy(); key_update<T>(owner, map);
+}
+
+pub fn key_get<T>(owner: &KeyStorage, key: T) -> core::option::Option<T> where T: core::cmp::Ord<T> {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner);
+    let result: core::option::Option<Entry<T, KeyUnit>> = map.get_entry(key);
+    if (core::option::is_none(result)) { return core::option::None(); }
+    let entry: Entry<T, KeyUnit> = core::option::unwrap(result); return core::option::Some(entry.key);
+}
+pub fn key_remove<T>(owner: &KeyStorage, key: T) -> core::option::Option<T> where T: core::cmp::Ord<T> {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner);
+    let result: core::option::Option<Entry<T, KeyUnit>> = map.remove(key);
+    key_update<T>(owner, map);
+    if (core::option::is_none(result)) { return core::option::None(); }
+    let entry: Entry<T, KeyUnit> = core::option::unwrap(result); return core::option::Some(entry.key);
+}
+pub fn key_reserve<T>(owner: &KeyStorage, additional: i32) -> core::result::Result<i32, Error> {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner);
+    let result: core::result::Result<i32, Error> = map.try_reserve(additional);
+    key_update<T>(owner, map); return result;
+}
+pub fn key_shrink<T>(owner: &KeyStorage) -> core::result::Result<i32, Error> {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner);
+    let result: core::result::Result<i32, Error> = map.try_shrink_to_fit();
+    key_update<T>(owner, map); return result;
+}
+pub fn key_clone<T>(owner: &KeyStorage) -> core::result::Result<KeyStorage, Error> {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner);
+    let result: core::result::Result<TreeMap<T, KeyUnit>, Error> = map.try_clone();
+    if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+    let copy: TreeMap<T, KeyUnit> = core::result::unwrap(result);
+    let state: KeyStorage = key_storage<T>(); key_update<T>(state.borrow(), copy); return core::result::Ok(state);
+}
+pub fn key_clear<T>(owner: &KeyStorage) {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner); map.clear(); key_update<T>(owner, map);
+}
+fn key_cursor<T>(cursor: Cursor<T, KeyUnit>) -> KeyCursor {
+    return KeyCursor { storage: cursor.storage, reserved: cursor.reserved, front: cursor.front, back: cursor.back, key_bytes: core::mem::size_of<T>() };
+}
+pub fn key_endpoint<T>(owner: &KeyStorage, last: bool) -> core::option::Option<T> {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner);
+    let result: core::option::Option<Entry<T, KeyUnit>> = map.first(); if (last) { result = map.last(); }
+    if (core::option::is_none(result)) { return core::option::None(); }
+    let entry: Entry<T, KeyUnit> = core::option::unwrap(result); return core::option::Some(entry.key);
+}
+pub fn key_pop<T>(owner: &KeyStorage, last: bool) -> core::option::Option<T> {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner);
+    let result: core::option::Option<Entry<T, KeyUnit>> = core::option::None();
+    if (last) { result = map.pop_last(); } else { result = map.pop_first(); }
+    key_update<T>(owner, map);
+    if (core::option::is_none(result)) { return core::option::None(); }
+    let entry: Entry<T, KeyUnit> = core::option::unwrap(result); return core::option::Some(entry.key);
+}
+pub fn key_bound<T>(owner: &KeyStorage, key: T, strict: bool) -> core::option::Option<T> where T: core::cmp::Ord<T> {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner);
+    let result: core::option::Option<Entry<T, KeyUnit>> = map.lower_bound(key); if (strict) { result = map.upper_bound(key); }
+    if (core::option::is_none(result)) { return core::option::None(); }
+    let entry: Entry<T, KeyUnit> = core::option::unwrap(result); return core::option::Some(entry.key);
+}
+pub fn key_range<T>(owner: &KeyStorage, lower: T, upper: T) -> core::result::Result<KeyCursor, Error> where T: core::cmp::Ord<T> {
+    let map: TreeMap<T, KeyUnit> = key_view<T>(owner);
+    let result: core::result::Result<Cursor<T, KeyUnit>, Error> = map.range(lower, upper);
+    if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+    let cursor: Cursor<T, KeyUnit> = core::result::unwrap(result); return core::result::Ok(key_cursor<T>(cursor));
+}
+pub fn key_next_back<T>(cursor: &KeyCursor) -> core::option::Option<T> {
+    assert(cursor.key_bytes == core::mem::size_of<T>());
+    let view: Cursor<T, KeyUnit> = Cursor { storage: cursor.storage, reserved: cursor.reserved, front: cursor.front, back: cursor.back };
+    let result: core::option::Option<Entry<T, KeyUnit>> = view.next_back();
+    cursor.storage = view.storage; cursor.reserved = view.reserved; cursor.front = view.front; cursor.back = view.back;
+    if (core::option::is_none(result)) { return core::option::None(); }
+    let entry: Entry<T, KeyUnit> = core::option::unwrap(result); return core::option::Some(entry.key);
+}

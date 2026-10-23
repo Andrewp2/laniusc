@@ -1,7 +1,7 @@
 # Collection consumer migration
 
-The repository now uses `alloc::hash_map`, `alloc::tree_map`, `alloc::vec`, and
-`alloc::string` for the consumers of the removed `std::map`, `std::set`, `std::vec_u8`, and
+The repository now uses `alloc::hash_map`, `alloc::tree_map`, `alloc::hash_set`,
+`alloc::tree_set`, `alloc::vec`, and `alloc::string` for the consumers of the removed `std::map`, `std::set`, `std::vec_u8`, and
 `std::utf8_vec` modules. Their fallible edits return explicit `Result` errors.
 The old owner-returning APIs could return an unchanged owner or an empty result
 when allocation failed, making failure look like success. They have no aliases.
@@ -20,8 +20,8 @@ compatibility commitment to maintain.
 | `unsigned_frequency_report` | `HashMap<u32, u32>`; checked insertion also replaces existing counts |
 | `unicode_frequency_report` | Checked hash map for counts and checked vector for first-seen keys; report order stays deterministic |
 | `wide_unsigned_frequency_report`, `wide_signed_frequency_report` | Checked tree map plus a checked vector for first-seen order; wide records provide `Eq` and `Ord` |
-| `unique_unsigned_total`, `unique_unicode_count` | Direct `HashMap<K, bool>` membership |
-| `wide_unsigned_distinct_sum`, `wide_signed_distinct_sum` | Direct `TreeMap<K, bool>` membership; sums update only after successful first insertion |
+| `unique_unsigned_total`, `unique_unicode_count` | Checked `HashSet<u32>` / `HashSet<char>` membership |
+| `wide_unsigned_distinct_sum`, `wide_signed_distinct_sum` | Checked `TreeSet<WideU64>` / `TreeSet<WideI64>` membership; sums update only after successful first insertion |
 | `count_digit_bytes` | Two checked scalar counters; the Boolean domain needs no container |
 | `count_distinct_bytes` | Caller-owned 256-element Boolean table |
 | `byte_frequency_report`, `signed_byte_frequency_report` | Caller-owned 256-element count table; ascending scans preserve smallest-key tie breaking |
@@ -74,20 +74,19 @@ contracts and cleanup checks across both owners in each report.
 
 ## Remaining boundary
 
-This migration does not establish a general owned `HashSet` or `TreeSet`.
-Wrapping a generic owned map as a set currently reaches compiler diagnostic
-`LNC0047`; the examples use direct maps until that compiler gap is resolved.
-Their membership use is not an advertised general set implementation.
-General owned set algebra also remains unfinished: union, intersection,
-difference and symmetric difference need checked executable replacement APIs
-and their own model/failure tests. The deleted legacy tests do not establish
-those future contracts.
+[Generic owned sets](stdlib-owned-sets.md) now provide checked membership,
+representative retention/replacement, clone and all four algebra operations.
+They share the existing map storage engines through a nongeneric owner-state
+boundary. Their independent model and allocation-failure tests establish these
+new contracts; the removed legacy suites are not their evidence. The earlier
+nested generic wrapper failure remains recorded as a compiler source-shape
+dependency, without blocking these working APIs.
 Wide integer records implement `Eq` and `Ord` but do not implement `Hash`, so
-those consumers use the checked tree map rather than adding an implicit hash
+those consumers use the checked tree set rather than adding an implicit hash
 policy at the call site.
 
 `std::vec` remains because the formal extractor recognizes that module identity
 and `alloc::binary_heap` still has a documented compiler dependency on it.
-The retained vector's failure contract and the general owned-set compiler gap
+The retained vector's failure contract and general generic adapter composition
 remain separate work. This migration does not change compiler, runtime, ABI,
 IR, shaders, or proofs.

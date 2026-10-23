@@ -1,0 +1,123 @@
+// TZif stdin inspection and conversion. Stage complete CSV before stdout.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::calendar;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::time;
+import ext::cli;
+import ext::timezone;
+import std::args;
+import std::stream;
+
+struct Options { mode: i32, argument: core::option::Option<core::slice::View<u8>>, policy: i32, nanos: u32, limits: ext::timezone::Limits, max_output: i32, seen: u32, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Diagnostic { stage: i32, reason: i32 }
+impl Diagnostic { fn borrow(&self) -> &Diagnostic { return self; } }
+fn bytes(value: str, length: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),length); return core::slice::view(raw,length).unwrap(); }
+fn text(value: str, length: i32) -> core::text::Text { let raw: core::slice::View<u8> = bytes(value,length); return core::text::from_utf8_unchecked(raw.values,raw.start,raw.length); }
+fn same(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.length != b.length) { return false; } let i: i32 = 0; while (i < a.length) { if (a.values[a.start+i] != b.values[b.start+i]) { return false; } i += 1; } return true; }
+fn fail(detail: &Diagnostic, status: i32, stage: i32, reason: i32) -> i32 { detail.stage = stage; detail.reason = reason; return status; }
+fn tz_error(error: ext::timezone::Error, detail: &Diagnostic) -> i32 {
+    let reason: i32 = match (error) { ext::timezone::Error::AllocationFailed -> 4, ext::timezone::Error::InputLimit -> 3, ext::timezone::Error::TransitionLimit -> 3, ext::timezone::Error::TypeLimit -> 3, ext::timezone::Error::DesignationLimit -> 3, ext::timezone::Error::FooterLimit -> 3, ext::timezone::Error::CandidateLimit -> 3, ext::timezone::Error::WorkLimit -> 3, ext::timezone::Error::Gap -> 6, ext::timezone::Error::Ambiguous -> 7, ext::timezone::Error::Unspecified -> 8, ext::timezone::Error::UnsupportedLeapScale -> 9, ext::timezone::Error::UnsupportedRule -> 10, _ -> 2 };
+    if (reason == 3) { return fail(detail,3,detail.stage,3); } if (reason == 4) { return fail(detail,4,detail.stage,4); } return fail(detail,2,detail.stage,reason);
+}
+fn option(options: &Options, item: ext::cli::Occurrence) -> bool {
+    let bit: u32 = (1 as u32) << item.id; if ((options.seen & bit) != 0) { return false; } options.seen = options.seen | bit;
+    if (item.id == 8) { options.help = true; return true; }
+    let value: ext::cli::Argument = core::option::unwrap(item.value);
+    if (item.id == 1) { if (same(value.bytes,bytes("all",3))) { options.policy = 0; return true; } if (same(value.bytes,bytes("reject",6))) { options.policy = 1; return true; } if (same(value.bytes,bytes("earliest",8))) { options.policy = 2; return true; } if (same(value.bytes,bytes("latest",6))) { options.policy = 3; return true; } return false; }
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(value.bytes.values,value.bytes.start,value.bytes.length); if (parsed.is_err()) { return false; } let n: u64 = parsed.unwrap();
+    if (item.id == 2) { if (n >= 1000000000) { return false; } options.nanos = n as u32; return true; }
+    if (item.id == 6) { if (n > 1000000000) { return false; } options.limits.max_work = n; return true; }
+    if (n > 67108864) { return false; }
+    if (item.id == 3) { options.limits.max_input = n as i32; }
+    if (item.id == 4) { if (n > 1000000) { return false; } options.limits.max_transitions = n as i32; }
+    if (item.id == 5) { if (n > 65536) { return false; } options.limits.max_candidates = n as i32; }
+    if (item.id == 7) { if (n > 16777216) { return false; } options.max_output = n as i32; } return true;
+}
+fn operand(options: &Options, value: ext::cli::Argument) -> bool {
+    if (options.mode == 0) { if (same(value.bytes,bytes("info",4))) { options.mode = 1; return true; } if (same(value.bytes,bytes("at",2))) { options.mode = 2; return true; } if (same(value.bytes,bytes("local",5))) { options.mode = 3; return true; } return false; }
+    if (options.mode == 1 || core::option::is_some(options.argument)) { return false; } options.argument = core::option::Some(value.bytes); return true;
+}
+fn civil(input: core::slice::View<u8>) -> core::result::Result<core::calendar::LocalDateTime,ext::timezone::Error> {
+    if (input.length < 19 || input.length > 29) { return core::result::Err(ext::timezone::Error::InvalidLocal); }
+    let raw: [u8;32] = [0;32]; let i: i32 = 0; while (i < input.length) { raw[i] = input.values[input.start+i]; i += 1; } raw[input.length] = 90;
+    let parsed: core::result::Result<core::calendar::ParsedDateTime,core::calendar::ParseError> = core::calendar::parse_rfc3339(core::slice::view(raw,input.length+1).unwrap()); if (parsed.is_err()) { return core::result::Err(ext::timezone::Error::InvalidLocal); } let value: core::calendar::ParsedDateTime = parsed.unwrap();
+    if (value.value.local.time.second == 60) { return core::result::Err(ext::timezone::Error::LeapSecond); } return core::result::Ok(value.value.local);
+}
+fn integer(output: &core::fmt::Formatter, value: i64) { output.write_signed(value,core::fmt::decimal()); }
+fn comma(output: &core::fmt::Formatter) { output.write_text(text(",",1)); }
+fn designation(output: &core::fmt::Formatter, value: core::slice::View<u8>) {
+    let alphabet: core::slice::View<u8> = bytes("0123456789abcdef",16); let i: i32 = 0;
+    while (i < value.length) { let b: u8 = value.values[value.start+i]; if ((b >= 65 && b <= 90) || (b >= 97 && b <= 122) || (b >= 48 && b <= 57) || b == 43 || b == 45) { let one: [u8;1] = [0;1]; one[0] = b; output.write_text(core::text::from_utf8_unchecked(one,0,1)); }
+        else { output.write_text(text("\\x",2)); let pair: [u8;2] = [0;2]; pair[0] = alphabet.values[alphabet.start+((b >> 4) as i32)]; pair[1] = alphabet.values[alphabet.start+((b & 15) as i32)]; output.write_text(core::text::from_utf8_unchecked(pair,0,2)); } i += 1; }
+}
+fn row(output: &core::fmt::Formatter, value: ext::timezone::Local, index: i32, count: i32) {
+    integer(output,index as i64); comma(output); integer(output,count as i64); comma(output); integer(output,value.instant.unix_seconds()); comma(output); integer(output,value.instant.subsec_nanos() as i64); comma(output);
+    integer(output,value.civil.date.year as i64); comma(output); integer(output,value.civil.date.month as i64); comma(output); integer(output,value.civil.date.day as i64); comma(output); integer(output,value.civil.time.hour as i64); comma(output); integer(output,value.civil.time.minute as i64); comma(output); integer(output,value.civil.time.second as i64); comma(output); integer(output,value.info.offset_seconds as i64); comma(output);
+    let dst: i64 = 0; if (value.info.is_dst) { dst = 1; } integer(output,dst); comma(output); designation(output,value.info.abbreviation); output.write_text(text("\n",1));
+}
+fn describe(zone: &ext::timezone::Zone, output: &core::fmt::Formatter, detail: &Diagnostic) -> i32 {
+    output.write_text(text("version,transitions,types,footer\n",33)); integer(output,zone.version() as i64); comma(output); integer(output,zone.transition_count() as i64); comma(output); integer(output,zone.type_count() as i64); comma(output); designation(output,zone.footer()); output.write_text(text("\ntype,offset_seconds,is_dst,designation\n",40));
+    let i: i32 = 0; while (i < zone.type_count()) { let result: core::result::Result<ext::timezone::Info,ext::timezone::Error> = zone.type_at(i); if (result.is_err()) { return tz_error(result.unwrap_err(),detail); } let info: ext::timezone::Info = result.unwrap(); integer(output,i as i64); comma(output); integer(output,info.offset_seconds as i64); comma(output); let dst: i64 = 0; if (info.is_dst) { dst = 1; } integer(output,dst); comma(output); designation(output,info.abbreviation); output.write_text(text("\n",1)); i += 1; } return 0;
+}
+fn convert(zone: &ext::timezone::Zone, options: Options, output: &core::fmt::Formatter, detail: &Diagnostic) -> i32 {
+    output.write_text(text("candidate,count,unix_seconds,nanos,year,month,day,hour,minute,second,offset_seconds,is_dst,designation\n",103));
+    let argument: core::slice::View<u8> = core::option::unwrap(options.argument);
+    if (options.mode == 2) { let seconds: core::result::Result<i64,core::decimal::ParseError> = core::decimal::parse_i64_range(argument.values,argument.start,argument.length); if (seconds.is_err()) { return fail(detail,2,0,0); }
+        let result: core::result::Result<ext::timezone::Local,ext::timezone::Error> = zone.to_local(core::time::system_time(seconds.unwrap(),options.nanos).unwrap()); if (result.is_err()) { return tz_error(result.unwrap_err(),detail); } row(output,result.unwrap(),0,1); return 0; }
+    let parsed: core::result::Result<core::calendar::LocalDateTime,ext::timezone::Error> = civil(argument); if (parsed.is_err()) { return tz_error(parsed.unwrap_err(),detail); } let local: core::calendar::LocalDateTime = parsed.unwrap();
+    let resolved: core::result::Result<alloc::vec::Vec<ext::timezone::Candidate>,ext::timezone::Error> = zone.candidates(local); if (resolved.is_err()) { return tz_error(resolved.unwrap_err(),detail); } let values: alloc::vec::Vec<ext::timezone::Candidate> = resolved.unwrap(); let count: i32 = values.len();
+    if (count == 0) { values.destroy(); return tz_error(ext::timezone::Error::Gap,detail); } if (count > 1 && options.policy == 1) { values.destroy(); return tz_error(ext::timezone::Error::Ambiguous,detail); }
+    let i: i32 = 0; while (i < count) { if (options.policy == 0 || (options.policy == 2 && i == 0) || (options.policy == 3 && i == count-1) || (options.policy == 1 && count == 1)) { let candidate: ext::timezone::Candidate = values.at(i); let value: ext::timezone::Local = ext::timezone::Local { instant: candidate.instant, civil: local, info: candidate.info }; row(output,value,i,count); } i += 1; } values.destroy(); return 0;
+}
+fn output(zone: &ext::timezone::Zone, options: Options, detail: &Diagnostic) -> i32 {
+    let allocated: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity<u8>(options.max_output); if (allocated.is_err()) { return fail(detail,4,3,4); } let bytes: alloc::vec::Vec<u8> = allocated.unwrap(); bytes.try_resize(options.max_output,0).unwrap(); let formatter: core::fmt::Formatter = core::fmt::buffer(bytes.as_slice(),0,bytes.len()).unwrap(); detail.stage = 3;
+    let status: i32 = 0; if (options.mode == 1) { status = describe(zone,formatter.borrow(),detail); } else { status = convert(zone,options,formatter.borrow(),detail); }
+    if (status == 0) { let done: core::result::Result<i32,core::fmt::Error> = formatter.finish(); if (done.is_err()) { status = fail(detail,3,3,3); } else { let sink: std::stream::Descriptor = std::stream::stdout(); if (core::io::write_all(sink.borrow(),bytes.as_slice(),0,done.unwrap()).is_err()) { status = fail(detail,5,4,5); } } } bytes.destroy(); return status;
+}
+fn execute(options: Options, detail: &Diagnostic) -> i32 {
+    detail.stage = 1; let input: alloc::io::Buffer = alloc::io::with_limit(options.limits.max_input).unwrap(); let storage: [i32;1024] = [0;1024]; let scratch: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),4096); let source: std::stream::Descriptor = std::stream::stdin();
+    let copied: core::result::Result<u64,core::io::CopyFailure> = core::io::copy(source.borrow(),input.borrow(),scratch,4096); if (copied.is_err()) { let cause: core::io::Error = copied.unwrap_err().cause; input.destroy(); let status: i32 = match (cause) { core::io::Error::AllocationFailed -> 4, core::io::Error::LimitExceeded -> 3, _ -> 5 }; return fail(detail,status,1,status); }
+    detail.stage = 2; let parsed: core::result::Result<ext::timezone::Zone,ext::timezone::Error> = ext::timezone::parse(core::slice::view(input.as_bytes(),input.len()).unwrap(),options.limits); input.destroy(); if (parsed.is_err()) { return tz_error(parsed.unwrap_err(),detail); } let zone: ext::timezone::Zone = parsed.unwrap(); let status: i32 = output(zone.borrow(),options,detail); zone.destroy(); return status;
+}
+fn process(arguments: std::args::Arguments, detail: &Diagnostic) -> i32 {
+    let specs: [ext::cli::Spec;8] = [
+        ext::cli::Spec { id: 1, long: bytes("resolve",7), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 2, long: bytes("nanos",5), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 3, long: bytes("max-input-bytes",15), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 4, long: bytes("max-transitions",15), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 5, long: bytes("max-candidates",14), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: bytes("max-work",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 7, long: bytes("max-output-bytes",16), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 8, long: bytes("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let parser: ext::cli::Parser = ext::cli::parser(arguments.as_view(),core::slice::view(specs,8).unwrap(),ext::cli::Ordering::Intermixed).unwrap(); let options: Options = Options { mode: 0, argument: core::option::None(), policy: 0, nanos: 0, limits: ext::timezone::default_limits(), max_output: 1048576, seen: 0, help: false };
+    while (true) { let event: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next(); if (event.is_err()) { return fail(detail,2,0,0); } let next: core::option::Option<ext::cli::Event> = event.unwrap(); if (core::option::is_none(next)) { break; } let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> option(options.borrow(),item), ext::cli::Event::Operand(item) -> operand(options.borrow(),item) }; if (!valid) { return fail(detail,2,0,0); } }
+    if (options.help) { if (arguments.len() != 1) { return fail(detail,2,0,0); } let usage: core::slice::View<u8> = bytes("Usage: timezone-tool info | at SECONDS [--nanos N] | local YYYY-MM-DDTHH:MM:SS[.NNNNNNNNN] [--resolve all|reject|earliest|latest] [LIMIT OPTIONS] <ZONE.tzif\n",157); let sink: std::stream::Descriptor = std::stream::stdout(); if (core::io::write_all(sink.borrow(),usage.values,usage.start,usage.length).is_err()) { return fail(detail,5,4,5); } return 0; }
+    if (options.mode == 0 || (options.mode != 1 && core::option::is_none(options.argument)) || (options.mode != 3 && (options.seen & 2) != 0) || (options.mode != 2 && (options.seen & 4) != 0)) { return fail(detail,2,0,0); }
+    if (options.mode != 1) { let argument: core::slice::View<u8> = core::option::unwrap(options.argument);
+        if (options.mode == 2) { if (core::decimal::parse_i64_range(argument.values,argument.start,argument.length).is_err()) { return fail(detail,2,0,0); } }
+        else { if (civil(argument).is_err()) { return fail(detail,2,0,0); } }
+    } return execute(options,detail);
+}
+fn diagnostic(detail: Diagnostic) -> bool {
+    let raw: [u8;128] = [0;128]; let formatter: core::fmt::Formatter = core::fmt::buffer(raw,0,128).unwrap(); formatter.write_text(text("timezone-tool: ",15));
+    if (detail.reason == 0) { formatter.write_text(text("invalid-arguments",17)); } if (detail.reason == 2) { formatter.write_text(text("invalid-zone-or-time",20)); } if (detail.reason == 3) { formatter.write_text(text("resource-limit",14)); } if (detail.reason == 4) { formatter.write_text(text("allocation-failure",18)); } if (detail.reason == 5) { formatter.write_text(text("io-failure",10)); } if (detail.reason == 6) { formatter.write_text(text("local-gap",9)); } if (detail.reason == 7) { formatter.write_text(text("local-fold",10)); } if (detail.reason == 8) { formatter.write_text(text("unspecified-zone-coverage",25)); } if (detail.reason == 9) { formatter.write_text(text("unsupported-leap-time-scale",27)); }
+    if (detail.reason == 10) { formatter.write_text(text("unsupported-transition-rule",27)); }
+    formatter.write_text(text(" stage=",7)); integer(formatter.borrow(),detail.stage as i64); formatter.write_text(text("\n",1)); let count: i32 = formatter.finish().unwrap(); let sink: std::stream::Descriptor = std::stream::stderr(); return core::io::write_all(sink.borrow(),raw,0,count).is_ok();
+}
+fn main() -> i32 {
+    let detail: Diagnostic = Diagnostic { stage: 0, reason: 0 }; let status: i32 = 0; let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,32,8192);
+    if (captured.is_err()) { status = match (captured.unwrap_err()) { std::args::Error::AllocationFailed -> fail(detail.borrow(),4,0,4), std::args::Error::HostRead(index) -> fail(detail.borrow(),5,0,5), _ -> fail(detail.borrow(),2,0,0) }; }
+    else { let arguments: std::args::Arguments = captured.unwrap(); status = process(arguments,detail.borrow()); arguments.destroy(); }
+    if (status != 0 && !diagnostic(detail)) { return 5; } return status;
+}

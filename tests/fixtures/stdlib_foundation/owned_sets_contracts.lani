@@ -1,0 +1,98 @@
+module app::main;
+import alloc::hash_set;
+import alloc::tree_set;
+import alloc::hash_map;
+import alloc::tree_map;
+import core::option;
+import core::result;
+fn hash_valid(set: &alloc::hash_set::HashSet<i32>, lower: i32, upper: i32) -> bool {
+    if (set.len() != upper - lower || set.is_empty() != (lower == upper) || set.capacity() < set.len()) { return false; }
+    let key: i32 = -2;
+    while (key < 42) { if (set.contains(key) != (key >= lower && key < upper)) { return false; } key += 1; }
+    let cursor: alloc::hash_set::Iter<i32> = set.iter(); let seen: [bool; 40] = [false; 40]; let count: i32 = 0;
+    while (true) {
+        let item: core::option::Option<i32> = cursor.next(); if (core::option::is_none(item)) { break; }
+        key = core::option::unwrap(item); if (key < lower || key >= upper || seen[key]) { return false; } seen[key] = true; count += 1;
+    }
+    return count == set.len() && core::option::is_none(cursor.next());
+}
+fn hash_computed(result: core::result::Result<alloc::hash_set::HashSet<i32>, alloc::hash_map::Error>, lower: i32, upper: i32) -> bool {
+    let set: alloc::hash_set::HashSet<i32> = core::result::unwrap(result); let valid: bool = hash_valid(set.borrow(), lower, upper); set.destroy(); return valid;
+}
+fn hash_contracts() -> bool {
+    let a: alloc::hash_set::HashSet<i32> = core::result::unwrap(alloc::hash_set::with_capacity<i32>(0));
+    let b: alloc::hash_set::HashSet<i32> = alloc::hash_set::new(); let key: i32 = 0;
+    if (!a.is_empty() || core::option::is_some(a.remove(5)) || !a.is_disjoint(b.borrow()) || !a.equals(b.borrow()) || !a.is_subset(b.borrow())) { return false; }
+    while (key < 20) { if (core::option::is_some(core::result::unwrap(a.try_insert(key)))) { return false; } key += 1; }
+    key = 10; while (key < 30) { core::result::unwrap(b.try_replace(key)); key += 1; }
+    if (core::option::unwrap(core::result::unwrap(a.try_insert(4))) != 4 || core::option::unwrap(core::result::unwrap(a.try_replace(4))) != 4 || core::option::unwrap(a.get(4)) != 4 || core::option::is_some(a.get(40))) { return false; }
+    if (a.equals(b.borrow()) || a.is_subset(b.borrow()) || b.is_subset(a.borrow()) || a.is_disjoint(b.borrow())) { return false; }
+    let before: i32 = a.capacity();
+    if (!core::result::is_err(a.try_reserve(-1)) || !core::result::is_err(a.try_reserve(2147483647)) || a.capacity() != before || !hash_valid(a.borrow(), 0, 20)) { return false; }
+    core::result::unwrap(a.try_reserve(100)); core::result::unwrap(a.try_shrink_to_fit());
+    let copy: alloc::hash_set::HashSet<i32> = core::result::unwrap(a.try_clone());
+    if (!copy.equals(a.borrow()) || !a.is_subset(copy.borrow()) || a.is_disjoint(copy.borrow())) { return false; }
+    if (core::option::unwrap(copy.remove(0)) != 0 || !a.contains(0) || core::option::is_some(copy.remove(0)) || a.is_subset(copy.borrow()) || !copy.is_subset(a.borrow()) || copy.equals(a.borrow())) { return false; } copy.destroy();
+    if (!hash_computed(a.try_union(b.borrow()), 0, 30) || !hash_computed(a.try_intersection(b.borrow()), 10, 20) || !hash_computed(a.try_difference(b.borrow()), 0, 10)) { return false; }
+    let symmetric: alloc::hash_set::HashSet<i32> = core::result::unwrap(a.try_symmetric_difference(b.borrow()));
+    key = 0; while (key < 40) { if (symmetric.contains(key) != (key < 10 || (key >= 20 && key < 30))) { return false; } key += 1; }
+    if (symmetric.len() != 20) { return false; } symmetric.destroy();
+    if (!hash_computed(a.try_union(a.borrow()), 0, 20) || !hash_computed(a.try_intersection(a.borrow()), 0, 20) || !hash_computed(a.try_difference(a.borrow()), 0, 0) || !hash_computed(a.try_symmetric_difference(a.borrow()), 0, 0)) { return false; }
+    if (!hash_valid(a.borrow(), 0, 20) || !hash_valid(b.borrow(), 10, 30)) { return false; }
+    a.clear(); if (!a.is_empty()) { return false; } core::result::unwrap(a.try_shrink_to_fit());
+    if (a.capacity() != 0) { return false; } a.destroy(); a.destroy();
+    core::result::unwrap(a.try_insert(7)); if (core::option::unwrap(a.remove(7)) != 7) { return false; }
+    a.destroy(); b.destroy(); return true;
+}
+fn tree_valid(set: &alloc::tree_set::TreeSet<i32>, lower: i32, upper: i32) -> bool {
+    if (set.len() != upper - lower || set.is_empty() != (lower == upper) || set.capacity() < set.len()) { return false; }
+    let key: i32 = -2;
+    while (key < 42) { if (set.contains(key) != (key >= lower && key < upper)) { return false; } key += 1; }
+    let cursor: alloc::tree_set::Cursor<i32> = set.iter(); let seen: [bool; 40] = [false; 40]; let count: i32 = 0;
+    while (true) {
+        let item: core::option::Option<i32> = cursor.next(); if (core::option::is_none(item)) { break; }
+        key = core::option::unwrap(item); if (key < lower || key >= upper || seen[key]) { return false; } seen[key] = true; count += 1;
+    }
+    return count == set.len() && core::option::is_none(cursor.next());
+}
+fn tree_computed(result: core::result::Result<alloc::tree_set::TreeSet<i32>, alloc::tree_map::Error>, lower: i32, upper: i32) -> bool {
+    let set: alloc::tree_set::TreeSet<i32> = core::result::unwrap(result); let valid: bool = tree_valid(set.borrow(), lower, upper); set.destroy(); return valid;
+}
+fn tree_contracts() -> bool {
+    let a: alloc::tree_set::TreeSet<i32> = core::result::unwrap(alloc::tree_set::with_capacity<i32>(0));
+    let b: alloc::tree_set::TreeSet<i32> = alloc::tree_set::new(); let key: i32 = 0;
+    if (!a.is_empty() || core::option::is_some(a.remove(5)) || !a.is_disjoint(b.borrow()) || !a.equals(b.borrow()) || !a.is_subset(b.borrow())) { return false; }
+    while (key < 20) { if (core::option::is_some(core::result::unwrap(a.try_insert(key)))) { return false; } key += 1; }
+    key = 10; while (key < 30) { core::result::unwrap(b.try_replace(key)); key += 1; }
+    if (core::option::unwrap(core::result::unwrap(a.try_insert(4))) != 4 || core::option::unwrap(core::result::unwrap(a.try_replace(4))) != 4 || core::option::unwrap(a.get(4)) != 4 || core::option::is_some(a.get(40))) { return false; }
+    if (a.equals(b.borrow()) || a.is_subset(b.borrow()) || b.is_subset(a.borrow()) || a.is_disjoint(b.borrow())) { return false; }
+    let before: i32 = a.capacity();
+    if (!core::result::is_err(a.try_reserve(-1)) || !core::result::is_err(a.try_reserve(2147483647)) || a.capacity() != before || !tree_valid(a.borrow(), 0, 20)) { return false; }
+    core::result::unwrap(a.try_reserve(100)); core::result::unwrap(a.try_shrink_to_fit());
+    let copy: alloc::tree_set::TreeSet<i32> = core::result::unwrap(a.try_clone());
+    if (!copy.equals(a.borrow()) || !a.is_subset(copy.borrow()) || a.is_disjoint(copy.borrow())) { return false; }
+    if (core::option::unwrap(copy.remove(0)) != 0 || !a.contains(0) || core::option::is_some(copy.remove(0)) || a.is_subset(copy.borrow()) || !copy.is_subset(a.borrow()) || copy.equals(a.borrow())) { return false; } copy.destroy();
+    if (!tree_computed(a.try_union(b.borrow()), 0, 30) || !tree_computed(a.try_intersection(b.borrow()), 10, 20) || !tree_computed(a.try_difference(b.borrow()), 0, 10)) { return false; }
+    let symmetric: alloc::tree_set::TreeSet<i32> = core::result::unwrap(a.try_symmetric_difference(b.borrow()));
+    key = 0; while (key < 40) { if (symmetric.contains(key) != (key < 10 || (key >= 20 && key < 30))) { return false; } key += 1; }
+    if (symmetric.len() != 20) { return false; } symmetric.destroy();
+    if (!tree_computed(a.try_union(a.borrow()), 0, 20) || !tree_computed(a.try_intersection(a.borrow()), 0, 20) || !tree_computed(a.try_difference(a.borrow()), 0, 0) || !tree_computed(a.try_symmetric_difference(a.borrow()), 0, 0)) { return false; }
+    if (!tree_valid(a.borrow(), 0, 20) || !tree_valid(b.borrow(), 10, 30)) { return false; }
+    if (core::option::unwrap(a.first()) != 0 || core::option::unwrap(a.last()) != 19 || core::option::unwrap(a.lower_bound(10)) != 10 || core::option::unwrap(a.upper_bound(10)) != 11 || core::option::is_some(a.upper_bound(19))) { return false; }
+    if (!core::result::is_err(a.range(12, 11))) { return false; }
+    let empty: alloc::tree_set::Cursor<i32> = core::result::unwrap(a.range(10, 10));
+    if (!empty.is_empty() || core::option::is_some(empty.next()) || core::option::is_some(empty.next_back())) { return false; }
+    let range: alloc::tree_set::Cursor<i32> = core::result::unwrap(a.range(3, 10));
+    let low: i32 = 3; let high: i32 = 9;
+    while (low <= high) {
+        if (core::option::unwrap(range.next()) != low) { return false; } low += 1;
+        if (low <= high) { if (core::option::unwrap(range.next_back()) != high) { return false; } high -= 1; }
+    }
+    if (!range.is_empty() || core::option::is_some(range.next()) || core::option::is_some(range.next_back())) { return false; }
+    if (core::option::unwrap(a.pop_first()) != 0 || core::option::unwrap(a.pop_last()) != 19 || !tree_valid(a.borrow(), 1, 19)) { return false; }
+    a.clear(); if (!a.is_empty()) { return false; } core::result::unwrap(a.try_shrink_to_fit());
+    if (a.capacity() != 0) { return false; } a.destroy(); a.destroy();
+    core::result::unwrap(a.try_insert(7)); if (core::option::unwrap(a.remove(7)) != 7) { return false; }
+    a.destroy(); b.destroy(); return true;
+}
+fn main() -> i32 { if (!hash_contracts()) { return 1; } if (!tree_contracts()) { return 2; } return 0; }

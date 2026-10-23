@@ -1,0 +1,12 @@
+module app::main;
+import core::admission_forward;
+import core::io;
+import core::result;
+fn main() -> i32 {
+    let bytes: [u8;3] = [1,2,3]; let output: [u8;3] = [0;3];
+    let sink: core::io::SliceWriter = core::result::unwrap(core::io::slice_writer(output,3));
+    let adapter: core::admission_forward::Forward<core::io::SliceWriter> = core::admission_forward::forward(sink.borrow());
+    let result: core::result::Result<i32,core::io::Failure> = core::io::write_all(adapter.borrow(),bytes,0,3);
+    if (core::result::unwrap(result) != 3 || sink.position() != 3 || output[0] != 1 || output[2] != 3) { return 1; }
+    return 0;
+}

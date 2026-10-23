@@ -1,0 +1,126 @@
+// Generic set over the shared map engine. Storage is owned; key copies borrow
+// nested resources. Keep one active owner. See docs/stdlib-owned-sets.md.
+module alloc::tree_set;
+import alloc::tree_map;
+import core::cmp;
+import core::option;
+import core::result;
+
+pub struct TreeSet<T> { state: alloc::tree_map::KeyStorage }
+pub struct Cursor<T> { state: alloc::tree_map::KeyCursor }
+
+pub fn new<T>() -> TreeSet<T> { return TreeSet { state: alloc::tree_map::key_storage<T>() }; }
+pub fn with_capacity<T>(capacity: i32) -> core::result::Result<TreeSet<T>, alloc::tree_map::Error> {
+    let set: TreeSet<T> = new();
+    let result: core::result::Result<i32, alloc::tree_map::Error> = set.try_reserve(capacity);
+    if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+    return core::result::Ok(set);
+}
+pub impl<T> TreeSet<T> {
+    pub fn borrow(&self) -> &TreeSet<T> { return self; }
+    pub fn len(&self) -> i32 { return self.state.length; }
+    pub fn is_empty(&self) -> bool { return self.state.length == 0; }
+    pub fn capacity(&self) -> i32 { return self.state.reserved; }
+    pub fn contains(&self, key: T) -> bool where T: core::cmp::Ord<T> { return alloc::tree_map::key_contains<T>(self.state.borrow(), key); }
+    // Returned copies borrow nested key resources; lookups do not transfer them.
+    pub fn get(&self, key: T) -> core::option::Option<T> where T: core::cmp::Ord<T> { return alloc::tree_map::key_get<T>(self.state.borrow(), key); }
+    // None stores the supplied key. Some(supplied) preserves an existing equal
+    // representative and explicitly returns the supplied key. Err retains input.
+    pub fn try_insert(&self, key: T) -> core::result::Result<core::option::Option<T>, alloc::tree_map::Error> where T: core::cmp::Ord<T> {
+        if (self.contains(key)) { return core::result::Ok(core::option::Some(key)); }
+        return alloc::tree_map::key_replace<T>(self.state.borrow(), key);
+    }
+    // Store the supplied representative and return the displaced stored key.
+    // None means newly inserted. Err preserves the set and caller-owned input.
+    pub fn try_replace(&self, key: T) -> core::result::Result<core::option::Option<T>, alloc::tree_map::Error> where T: core::cmp::Ord<T> {
+        return alloc::tree_map::key_replace<T>(self.state.borrow(), key);
+    }
+    // Return the stored representative; callers manage any nested resources.
+    pub fn remove(&self, key: T) -> core::option::Option<T> where T: core::cmp::Ord<T> { return alloc::tree_map::key_remove<T>(self.state.borrow(), key); }
+    // Any mutation/destruction invalidates outstanding cursors and borrowed keys.
+    pub fn iter(&self) -> Cursor<T> { return Cursor { state: alloc::tree_map::key_iter<T>(self.state.borrow()) }; }
+    pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, alloc::tree_map::Error> { return alloc::tree_map::key_reserve<T>(self.state.borrow(), additional); }
+    pub fn try_shrink_to_fit(&self) -> core::result::Result<i32, alloc::tree_map::Error> { return alloc::tree_map::key_shrink<T>(self.state.borrow()); }
+    // Independent storage with shallow borrowed key copies, as with map clone.
+    pub fn try_clone(&self) -> core::result::Result<TreeSet<T>, alloc::tree_map::Error> {
+        let result: core::result::Result<alloc::tree_map::KeyStorage, alloc::tree_map::Error> = alloc::tree_map::key_clone<T>(self.state.borrow());
+        if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+        return core::result::Ok(TreeSet { state: core::result::unwrap(result) });
+    }
+    // Neither operation destroys resources nested in keys. Remove/drain owners
+    // first when their resources must be reclaimed. destroy resets for reuse.
+    pub fn clear(&self) { alloc::tree_map::key_clear<T>(self.state.borrow()); }
+    pub fn destroy(&self) { alloc::tree_map::key_destroy<T>(self.state.borrow()); }
+    pub fn is_subset(&self, other: &TreeSet<T>) -> bool where T: core::cmp::Ord<T> {
+        if (self.len() > other.len()) { return false; }
+        let cursor: Cursor<T> = self.iter();
+        while (true) {
+            let item: core::option::Option<T> = cursor.next();
+            if (core::option::is_none(item)) { return true; }
+            if (!other.contains(core::option::unwrap(item))) { return false; }
+        }
+        return true;
+    }
+    pub fn is_disjoint(&self, other: &TreeSet<T>) -> bool where T: core::cmp::Ord<T> {
+        let cursor: Cursor<T> = self.iter();
+        while (true) {
+            let item: core::option::Option<T> = cursor.next();
+            if (core::option::is_none(item)) { return true; }
+            if (other.contains(core::option::unwrap(item))) { return false; }
+        }
+        return true;
+    }
+    pub fn equals(&self, other: &TreeSet<T>) -> bool where T: core::cmp::Ord<T> { return self.len() == other.len() && self.is_subset(other); }
+    // Read sources only, including self-aliasing. A failed allocation frees all
+    // partial destination storage. Left representatives win equivalent keys.
+    fn combine(&self, other: &TreeSet<T>, mode: i32) -> core::result::Result<TreeSet<T>, alloc::tree_map::Error> where T: core::cmp::Ord<T> {
+        let output: TreeSet<T> = new();
+        let cursor: Cursor<T> = self.iter();
+        while (true) {
+            let item: core::option::Option<T> = cursor.next();
+            if (core::option::is_none(item)) { break; }
+            let key: T = core::option::unwrap(item);
+            let include: bool = mode == 1;
+            if (mode == 2) { include = other.contains(key); }
+            if (mode == 3 || mode == 4) { include = !other.contains(key); }
+            if (include) {
+                let result: core::result::Result<core::option::Option<T>, alloc::tree_map::Error> = output.try_insert(key);
+                if (core::result::is_err(result)) { output.destroy(); return core::result::Err(core::result::unwrap_err(result)); }
+            }
+        }
+        if (mode == 1 || mode == 4) {
+            cursor = other.iter();
+            while (true) {
+                let item: core::option::Option<T> = cursor.next();
+                if (core::option::is_none(item)) { break; }
+                let key: T = core::option::unwrap(item);
+                if (mode == 1 || !self.contains(key)) {
+                    let result: core::result::Result<core::option::Option<T>, alloc::tree_map::Error> = output.try_insert(key);
+                    if (core::result::is_err(result)) { output.destroy(); return core::result::Err(core::result::unwrap_err(result)); }
+                }
+            }
+        }
+        return core::result::Ok(output);
+    }
+    pub fn try_union(&self, other: &TreeSet<T>) -> core::result::Result<TreeSet<T>, alloc::tree_map::Error> where T: core::cmp::Ord<T> { return self.combine(other, 1); }
+    pub fn try_intersection(&self, other: &TreeSet<T>) -> core::result::Result<TreeSet<T>, alloc::tree_map::Error> where T: core::cmp::Ord<T> { return self.combine(other, 2); }
+    pub fn try_difference(&self, other: &TreeSet<T>) -> core::result::Result<TreeSet<T>, alloc::tree_map::Error> where T: core::cmp::Ord<T> { return self.combine(other, 3); }
+    pub fn try_symmetric_difference(&self, other: &TreeSet<T>) -> core::result::Result<TreeSet<T>, alloc::tree_map::Error> where T: core::cmp::Ord<T> { return self.combine(other, 4); }
+    pub fn first(&self) -> core::option::Option<T> { return alloc::tree_map::key_endpoint<T>(self.state.borrow(), false); }
+    pub fn last(&self) -> core::option::Option<T> { return alloc::tree_map::key_endpoint<T>(self.state.borrow(), true); }
+    pub fn pop_first(&self) -> core::option::Option<T> { return alloc::tree_map::key_pop<T>(self.state.borrow(), false); }
+    pub fn pop_last(&self) -> core::option::Option<T> { return alloc::tree_map::key_pop<T>(self.state.borrow(), true); }
+    pub fn lower_bound(&self, key: T) -> core::option::Option<T> where T: core::cmp::Ord<T> { return alloc::tree_map::key_bound<T>(self.state.borrow(), key, false); }
+    pub fn upper_bound(&self, key: T) -> core::option::Option<T> where T: core::cmp::Ord<T> { return alloc::tree_map::key_bound<T>(self.state.borrow(), key, true); }
+    // Half-open [lower, upper); descending bounds are InvalidRange.
+    pub fn range(&self, lower: T, upper: T) -> core::result::Result<Cursor<T>, alloc::tree_map::Error> where T: core::cmp::Ord<T> {
+        let result: core::result::Result<alloc::tree_map::KeyCursor, alloc::tree_map::Error> = alloc::tree_map::key_range<T>(self.state.borrow(), lower, upper);
+        if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+        return core::result::Ok(Cursor { state: core::result::unwrap(result) });
+    }
+}
+pub impl<T> Cursor<T> {
+    pub fn next(&self) -> core::option::Option<T> { return alloc::tree_map::key_next<T>(self.state.borrow()); }
+    pub fn next_back(&self) -> core::option::Option<T> { return alloc::tree_map::key_next_back<T>(self.state.borrow()); }
+    pub fn is_empty(&self) -> bool { return self.state.front < 0; }
+}

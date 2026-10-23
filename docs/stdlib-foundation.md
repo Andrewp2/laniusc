@@ -1,6 +1,43 @@
 # Standard library execution audit and portable foundation
 
-**Current native integers, workflow and portable application checkpoint (2026-10-23):**
+**Current numeric, owned-set and portable extended-library checkpoint (2026-10-23):**
+[Canonical narrow integers](stdlib-narrow-integers.md),
+[binary64 elementary mathematics](stdlib-math.md),
+[generic owned hash/tree sets](stdlib-owned-sets.md),
+[TZif time zones](extended-timezone.md), [DNS wire messages](extended-dns.md),
+[WebSocket handshakes/messages](extended-websocket.md),
+[byte key/value storage](extended-kv.md) and [signal processing](extended-signal.md)
+execute in Lanius. Five new programs expose DNS, WebSocket, key/value files,
+time-zone queries and WAVE spectra. Four existing distinct-value consumers now
+use the real owned sets. [Selective source bundles](library-distribution.md)
+use the existing package resolver; a relocated bundle executes after the
+original package is removed.
+
+The focused gate passes 44 Rust runtime test groups across 15 targets, including
+the adjacent map and consumer regressions. Eleven CPU-only distribution checks
+and six migrated narrow-integer fixture executions also pass. These results
+are from bounded family-specific runs, not a whole-repository test rerun.
+
+Runtime checks include 787,067 Rust-reference and 393,851 Python-reference
+narrow-integer comparisons, 90 strict traps, 20,200 high-precision math cases,
+3,200 collision-heavy set model steps, 7,291 time-zone queries, protocol and
+snapshot interoperability, and allocation/I/O failure cleanup. Independent
+reviews corrected Pong-after-Close handling and ignored `-00` designations in
+perpetual DST. The set engine is shared with the maps; its original nested
+wrapper compiler failure remains preserved. No compiler/runtime implementation,
+IR, ABI, shader, extractor or proof changed. Each guide distinguishes measured
+accuracy and supported format profiles from broader claims.
+
+Execution support remains x86_64 Linux output from GPU compilation. User GPU
+execution and other targets are unverified. Import timings use the
+[existing performance harness](library-foundation-performance.md).
+The [host prerequisite audit](library-host-prerequisites.md) and
+[compiler dependency record](library-dependencies.md) name remaining boundaries.
+The [full roadmap](library-roadmap.md) remains incomplete, including host
+services, SQLite, generic stream/iterator adapters, numeric/ownership
+consolidation, binary SDK distribution and complete API references.
+
+**Preceding native integers, workflow and portable application checkpoint (2026-10-23):**
 [Native i64/u64/isize/usize utilities](stdlib-native-integers.md), the
 [Lanius testing/property/benchmark workflow](stdlib-development.md),
 [geometry](extended-geometry.md), [RGBA images](extended-image.md),
@@ -11,8 +48,9 @@ execute in Lanius. Six native consumers combine these APIs: image and audio
 transforms, convex hulls, HTTP inspection, CSV tables and the library test suite.
 The [legacy collection migration](stdlib-legacy-collections.md) removes ten
 obsolete owner modules that could hide failures and migrates their consumers to
-checked owners. The extractor-dependent `std::vec` and complete owned set
-replacements remain separate work.
+checked owners. At this checkpoint the extractor-dependent `std::vec` and
+complete owned set replacements remained separate work; current set support
+is recorded above.
 
 The final focused gate passes 58 checks: 55 new runtime test groups, existing
 calculator and strengthened BitView execution regressions, and one public API
@@ -28,8 +66,8 @@ execution and other targets are unverified. No compiler/runtime implementation,
 IR, ABI, shader, extractor or proof changed. Import and workload measurements
 use the [existing performance harness](library-foundation-performance.md).
 The [full library roadmap](library-roadmap.md) remains incomplete, including
-owned set composition, additional formats/algorithms, host services and
-distribution work.
+additional formats/algorithms, host services and distribution work. Owned sets
+and selective source distribution have since advanced as recorded above.
 
 **Preceding formatting/parsing checkpoint (2026-10-23):**
 [Float precision conversion](stdlib-float-precision.md),

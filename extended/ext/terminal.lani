@@ -42,6 +42,8 @@ fn cluster_width(text: core::text::Text, ambiguous: bool) -> i32 {
 // The policy budget charges six logical units per selected input byte before
 // scanning. It is not a count of decoder reads or machine instructions; scalar
 // decoding/lookahead can revisit bytes and property lookups use static ranges.
+// The inherited grapheme cursor checks metadata but has no separate budget;
+// this preflight bounds the complete input passed to it.
 pub fn width(text: core::text::Text, policy: Options) -> core::result::Result<i32, Error> {
     if (text.start < 0 || text.length < 0 || text.length > 2147483647 - text.start || policy.max_work < 0) { return core::result::Err(Error::Bounds); }
     if (text.length > policy.max_work / 6) { return core::result::Err(Error::WorkLimit); }

@@ -33,6 +33,11 @@ sample runner's fixed argument and text-output fixture.
 | `http_message.lani` | `tests/extended_http_message_execution.rs`, x86_64 Linux; offline HTTP framing/body inspection, chunking, limits and allocation/file/I/O failures | [HTTP message processing](../../docs/extended-http-message.md) |
 | `csv_table.lani` | `tests/extended_csv_table_execution.rs`, x86_64 Linux; Unicode cells, alignment, width policy, progress, limits and allocation/I/O failures | [CSV tables](../../docs/extended-csv-table.md) |
 | `library_tests.lani` | `tests/stdlib_development_execution.rs`, x86_64 Linux; explicit suites, checks, properties and native measurement | [Lanius test workflow](../../docs/stdlib-development.md) |
+| `dns_message.lani` | `tests/extended_dns_execution.rs`, x86_64 Linux; binary query writing, packet inspection, compression/RDATA limits and allocation/I/O faults | [Offline DNS messages](../../docs/extended-dns.md) |
+| `websocket_wire.lani` | `tests/extended_websocket_wire_execution.rs`, x86_64 Linux; handshakes, binary/fragmented messages, close state, limits and allocation/I/O faults | [Offline WebSocket processing](../../docs/extended-websocket.md) |
+| `kv_tool.lani` | `tests/extended_kv_execution.rs`, x86_64 Linux; checked snapshot storage, model/corruption cases and native replacement/fault cleanup | [Key-value snapshots and file replacement](../../docs/extended-kv.md) |
+| `wave_spectrum.lani` | `tests/extended_wave_spectrum_execution.rs`, x86_64 Linux; WAVE/FIR/window/FFT CSV, numerical models and allocation/I/O faults | [WAVE spectrum](../../docs/extended-wave-spectrum.md) |
+| `timezone_tool.lani` | `tests/extended_timezone_tool_execution.rs`, x86_64 Linux; TZif inspection, instant/local conversion, ambiguity, limits and allocation/I/O faults | [Time-zone queries](../../docs/extended-timezone.md) |
 
 Compile these applications with both `--stdlib-root stdlib` and `--source-root extended`.
 The library implementations are Lanius; the Rust test harness supplies inputs and

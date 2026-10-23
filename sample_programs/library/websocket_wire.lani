@@ -1,0 +1,91 @@
+// Offline RFC 6455 handshake/frame inspector. No network transport.
+module app::main;
+import alloc::vec;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::http;
+import ext::websocket;
+import std::args;
+import std::fs;
+import std::stream;
+fn bytes(value:str,count:i32) -> core::slice::View<u8> { let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn text(value:str,count:i32) -> core::text::Text { let raw:core::slice::View<u8> =bytes(value,count); return core::text::from_utf8_unchecked(raw.values,raw.start,raw.len()); }
+fn equal(value:core::slice::View<u8>,literal:str,count:i32) -> bool { if(value.len()!=count) { return false; } let raw:core::slice::View<u8> =bytes(literal,count); let i:i32=0; while(i<count) { if(core::option::unwrap(value.get(i))!=core::option::unwrap(raw.get(i))) { return false; } i+=1; } return true; }
+fn write(value:core::slice::View<u8>,handle:i32) -> bool { let sink:std::stream::Descriptor=std::stream::from_handle(handle); return core::result::is_ok(core::io::write_all(sink.borrow(),value.values,value.start,value.len())); }
+fn read(path:core::slice::View<u8>, output:&alloc::vec::Vec<u8>, maximum:i32) -> i32 {
+    let handle:i32=0; let opened:bool=false;
+    if(!equal(path,"-",1)) { let i:i32=0; while(i<path.len()) { if(core::option::unwrap(path.get(i))==0) { return 2; } i+=1; }
+        let copied=alloc::vec::from_view(path); if(core::result::is_err(copied)) { return 4; } let owner:alloc::vec::Vec<u8> =core::result::unwrap(copied); handle=std::fs::open_read(owner.storage,owner.len() as usize); owner.destroy(); if(handle<0) { return 3; } opened=true;
+    }
+    let source:std::stream::Descriptor=std::stream::from_handle(handle); let storage:[i32;256]=[0;256]; let scratch:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024); let status:i32=0;
+    while(true) { let received=source.read(scratch,0,1024); if(core::result::is_err(received)) { if(core::io::is_interrupted(core::result::unwrap_err(received))) { continue; } status=3; break; }
+        let n:i32=core::result::unwrap(received); if(n==0) { break; } if(n>maximum-output.len()) { status=2; break; }
+        if(core::result::is_err(output.try_extend(core::result::unwrap(core::slice::view(scratch,n))))) { status=4; break; }
+    }
+    if(opened && std::fs::close(handle)<0 && status==0) { status=3; } return status;
+}
+fn append(output:&alloc::vec::Vec<u8>,value:core::slice::View<u8>,maximum:i32) -> i32 { if(value.len()>maximum-output.len()) { return 2; } if(core::result::is_err(output.try_extend(value))) { return 4; } return 0; }
+fn number(value:core::slice::View<u8>) -> i32 { let parsed=core::text::from_utf8_range(value.values,value.start,value.len()); if(core::result::is_err(parsed)) { return -1; } let result=core::result::unwrap(parsed).parse_i32(); return core::result::unwrap_or(result,-1); }
+fn error(failure:ext::websocket::Error,base:i32) -> i32 {
+    let storage:[u8;128]=[0;128]; let f:core::fmt::Formatter=core::result::unwrap(core::fmt::buffer(storage,0,128)); f.write_text(text("websocket-wire: ",16));
+    let reason:i32=match(failure) { ext::websocket::Error::Incomplete(at)->1, ext::websocket::Error::Protocol(at)->2, ext::websocket::Error::InvalidUtf8(at)->3, ext::websocket::Error::InvalidClose(at)->4, ext::websocket::Error::Limit(at)->5, ext::websocket::Error::Handshake->6, ext::websocket::Error::Unsupported->7, ext::websocket::Error::UncleanEof->8, ext::websocket::Error::FragmentedEof->9, _->10 };
+    if(reason==1) { f.write_text(text("incomplete",10)); } if(reason==2) { f.write_text(text("protocol",8)); } if(reason==3) { f.write_text(text("utf8",4)); } if(reason==4) { f.write_text(text("close",5)); } if(reason==5) { f.write_text(text("limit",5)); } if(reason==6) { f.write_text(text("handshake",9)); } if(reason==7) { f.write_text(text("unsupported",11)); } if(reason==8) { f.write_text(text("unclean-eof",11)); } if(reason==9) { f.write_text(text("fragmented-eof",14)); } if(reason==10) { f.write_text(text("state",5)); }
+    let at:i32=match(failure) { ext::websocket::Error::Incomplete(at)->base+at, ext::websocket::Error::Protocol(at)->base+at, ext::websocket::Error::InvalidUtf8(at)->base+at, ext::websocket::Error::InvalidClose(at)->base+at, ext::websocket::Error::Limit(at)->base+at, _->-1 };
+    f.write_text(text(" byte=",6)); f.write_signed(at as i64,core::fmt::decimal()); f.write_text(text("\n",1)); let count:i32=core::result::unwrap(f.finish()); if(!write(core::result::unwrap(core::slice::view(storage,count)),2)) { return 3; } return 2;
+}
+fn frames(input:core::slice::View<u8>,role:ext::websocket::Role,open:bool,decode:bool,wanted:i32,output:&alloc::vec::Vec<u8>,maximum:i32) -> i32 {
+    let receiver:ext::websocket::Connection=core::result::unwrap(ext::websocket::connection(role,ext::websocket::default_limits())); let at:i32=0; let count:i32=0; let messages:i32=0; let found:bool=false; let status:i32=0;
+    while(at<input.len()) {
+        if(count==65536) { status=2; break; } let parsed=receiver.receive(core::result::unwrap(input.subview(at,input.len())));
+        if(core::result::is_err(parsed)) { let failure:ext::websocket::Error=core::result::unwrap_err(parsed); let allocation:bool=match(failure) { ext::websocket::Error::AllocationFailed->true, _->false }; if(allocation) { status=4; } else { status=error(failure,at); } break; }
+        let step:ext::websocket::Step=core::result::unwrap(parsed); let kind:i32=match(step.event) { ext::websocket::Event::Pending->0, ext::websocket::Event::Text->1, ext::websocket::Event::Binary->2, ext::websocket::Event::Ping->9, ext::websocket::Event::Pong->10, ext::websocket::Event::Close->8 };
+        at+=step.consumed; count+=1;
+        if(decode) { if(kind==1 || kind==2) { if(messages==wanted) { status=append(output,step.payload,maximum); found=true; } messages+=1; } }
+        else { let storage:[u8;160]=[0;160]; let f:core::fmt::Formatter=core::result::unwrap(core::fmt::buffer(storage,0,160));
+            f.write_text(text("event=",6)); f.write_signed(kind as i64,core::fmt::decimal()); f.write_text(text(" bytes=",7)); f.write_signed(step.payload.len() as i64,core::fmt::decimal()); f.write_text(text(" consumed=",10)); f.write_signed(at as i64,core::fmt::decimal()); f.write_text(text(" close=",7)); f.write_signed(step.close_code as i64,core::fmt::decimal()); f.write_text(text("\n",1));
+            let n:i32=core::result::unwrap(f.finish()); status=append(output,core::result::unwrap(core::slice::view(storage,n)),maximum);
+        }
+        if(status!=0) { break; }
+    }
+    if(status==0 && !open) { let ended=receiver.finish_receive(); if(core::result::is_err(ended)) { status=error(core::result::unwrap_err(ended),at); } }
+    if(status==0 && decode && !found) { status=2; } receiver.destroy(); return status;
+}
+fn handshake_report(head:ext::http::Head,protocols:i32,input_length:i32,output:&alloc::vec::Vec<u8>,maximum:i32) -> i32 {
+    let storage:[u8;160]=[0;160]; let f:core::fmt::Formatter=core::result::unwrap(core::fmt::buffer(storage,0,160)); f.write_text(text("handshake=1 protocols=",22)); f.write_signed(protocols as i64,core::fmt::decimal()); f.write_text(text(" consumed=",10)); f.write_signed(head.raw.len() as i64,core::fmt::decimal()); f.write_text(text(" remaining=",11)); f.write_signed((input_length-head.raw.len()) as i64,core::fmt::decimal()); f.write_text(text("\n",1)); let n:i32=core::result::unwrap(f.finish()); return append(output,core::result::unwrap(core::slice::view(storage,n)),maximum);
+}
+fn process(args:std::args::Arguments) -> i32 {
+    let mode:i32=0; let client:bool=false; let open:bool=false; let decode:bool=false; let wanted:i32=0; let message_set:bool=false; let maximum:i32=18874368; let max_output:i32=18874368; let path:core::slice::View<u8> =bytes("-",1); let request_path:core::slice::View<u8> =bytes("",0); let protocol:core::slice::View<u8> =bytes("",0); let path_set:bool=false; let options:bool=true; let i:i32=0;
+    while(i<args.len()) { let arg:core::slice::View<u8> =core::option::unwrap(args.get(i));
+        if(options && equal(arg,"--",2)) { options=false; }
+        else { if(options && equal(arg,"--help",6)) { if(!write(bytes("Usage: websocket-wire [--client] [--allow-open] [--decode [--message N]] [--request|--accept [--protocol NAME]|--response REQUEST_FILE] [--max-input N] [--max-output N] [--] [FILE|-]\n",183),1)) { return 3; } return 0; }
+        else { if(options && (equal(arg,"--request",9) || equal(arg,"--accept",8) || equal(arg,"--response",10))) { if(mode!=0) { return 2; } mode=1; if(equal(arg,"--accept",8)) { mode=2; } if(equal(arg,"--response",10)) { mode=3; i+=1; if(i==args.len()) { return 2; } request_path=core::option::unwrap(args.get(i)); if(request_path.is_empty() || equal(request_path,"-",1)) { return 2; } } }
+        else { if(options && (equal(arg,"--max-input",11) || equal(arg,"--max-output",12) || equal(arg,"--message",9) || equal(arg,"--protocol",10))) { i+=1; if(i==args.len()) { return 2; } let value:core::slice::View<u8> =core::option::unwrap(args.get(i)); if(equal(arg,"--protocol",10)) { protocol=value; if(protocol.is_empty()) { return 2; } } else { let n:i32=number(value); if(n<0) { return 2; } if(equal(arg,"--message",9)) { wanted=n; message_set=true; } else { if(n>67108864) { return 2; } if(equal(arg,"--max-input",11)) { maximum=n; } else { max_output=n; } } } }
+        else { if(options && equal(arg,"--client",8)) { client=true; }
+        else { if(options && equal(arg,"--allow-open",12)) { open=true; }
+        else { if(options && equal(arg,"--decode",8)) { if(decode) { return 2; } decode=true; }
+        else { if(path_set || (options && arg.len()>1 && core::option::unwrap(arg.get(0))==45)) { return 2; } path=arg; path_set=true; } } } } } } }
+        i+=1;
+    }
+    if((mode!=0 && (decode || client || open || message_set)) || (mode!=2 && !protocol.is_empty()) || (!decode && message_set)) { return 2; }
+    let input:alloc::vec::Vec<u8> =alloc::vec::new(); let request_input:alloc::vec::Vec<u8> =alloc::vec::new(); let output:alloc::vec::Vec<u8> =alloc::vec::new(); let status:i32=read(path,input.borrow(),maximum);
+    if(status==0 && mode==3) { status=read(request_path,request_input.borrow(),maximum); }
+    if(status==0) {
+        if(mode==0) { let role:ext::websocket::Role=ext::websocket::Role::Server; if(client) { role=ext::websocket::Role::Client; } status=frames(input.as_view(),role,open,decode,wanted,output.borrow(),max_output); }
+        else { let raw:core::slice::View<u8> =input.as_view(); if(mode==3) { raw=request_input.as_view(); }
+            let parsed=ext::websocket::validate_request(raw,ext::websocket::default_limits());
+            if(core::result::is_err(parsed)) { status=error(core::result::unwrap_err(parsed),0); }
+            else { let request:ext::websocket::Request=core::result::unwrap(parsed);
+                if(mode==1) { status=handshake_report(request.head,request.protocol_count,input.len(),output.borrow(),max_output); }
+                if(mode==2) { let dummy:ext::http::Field=ext::http::Field { raw:bytes("",0),name:bytes("",0),value:bytes("",0),offset:0 }; let fields:[ext::http::Field;1]=[dummy]; let encoded=ext::websocket::encode_response(request,protocol,core::result::unwrap(core::slice::view(fields,0)),ext::websocket::default_limits()); if(core::result::is_err(encoded)) { let failure:ext::websocket::Error=core::result::unwrap_err(encoded); let allocation:bool=match(failure) { ext::websocket::Error::AllocationFailed->true, _->false }; if(allocation) { status=4; } else { status=error(failure,0); } } else { let owner:alloc::vec::Vec<u8> =core::result::unwrap(encoded); if(owner.len()>max_output) { owner.destroy(); status=2; } else { output=owner; } } }
+                if(mode==3) { let checked=ext::websocket::validate_response(input.as_view(),request,ext::websocket::default_limits()); if(core::result::is_err(checked)) { status=error(core::result::unwrap_err(checked),0); } else { let response:ext::websocket::Response=core::result::unwrap(checked); let protocols:i32=0; if(core::option::is_some(response.protocol)) { protocols=1; } status=handshake_report(response.head,protocols,input.len(),output.borrow(),max_output); } }
+            }
+        }
+    }
+    if(status==0 && !write(output.as_view(),1)) { status=3; } output.destroy(); request_input.destroy(); input.destroy(); return status;
+}
+fn main() -> i32 { let snapshot=std::args::snapshot(1,32,65536); if(core::result::is_err(snapshot)) { return match(core::result::unwrap_err(snapshot)) { std::args::Error::AllocationFailed->4, std::args::Error::HostRead(at)->3, _->2 }; } let args:std::args::Arguments=core::result::unwrap(snapshot); let status:i32=process(args); args.destroy(); return status; }

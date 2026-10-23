@@ -7,7 +7,7 @@ fn main() -> i32 {
     let maximum: i32 = 2147483647;
     if (core::i32::MIN != minimum || core::i32::MAX != maximum ||
         core::i32::BITS != 32 || core::i32::BYTES != 4 ||
-        core::i32::abs(-7) != 7 || core::i32::abs(minimum) != maximum ||
+        core::i32::abs(-7) != 7 || core::i32::wrapping_abs(minimum) != minimum ||
         core::i32::saturating_abs(minimum) != maximum ||
         !core::option::contains(core::i32::checked_abs(-7), 7) ||
         !core::option::is_none(core::i32::checked_abs(minimum))) {
@@ -15,7 +15,7 @@ fn main() -> i32 {
     }
     if (core::i32::min(3, -5) != -5 || core::i32::max(3, -5) != 3 ||
         core::i32::clamp(12, 2, 10) != 10 ||
-        core::i32::clamp(5, 10, 3) != 5 ||
+        core::i32::clamp_or(5, 10, 3, 5) != 5 ||
         core::i32::signum(-7) != -1 || core::i32::signum(0) != 0 ||
         core::i32::signum(7) != 1 ||
         core::i32::compare_as_i32(3, 5) != -1 ||
@@ -57,7 +57,7 @@ fn main() -> i32 {
         core::i32::is_power_of_two(maximum) ||
         core::i32::is_power_of_two(0) ||
         core::i32::next_power_of_two(7) != 8 ||
-        core::i32::next_power_of_two(maximum) != 0) {
+        !core::option::is_none(core::i32::checked_next_power_of_two(maximum))) {
         return 7;
     }
     return 0;

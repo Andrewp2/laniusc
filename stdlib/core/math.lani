@@ -1,0 +1,461 @@
+// Portable binary64 elementary functions, translated from OpenLibm/fdlibm.
+// Source revision: 5fe399749f9276eaa0b8403e507470da05cbbb3f.
+//
+// Original notice for k_sin, k_cos, e_rem_pio2, k_rem_pio2, e_log, e_atan2:
+// Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+// Developed at SunSoft, a Sun Microsystems, Inc. business.
+// Permission to use, copy, modify, and distribute this
+// software is freely granted, provided that this notice
+// is preserved.
+//
+// Original notice for s_expm1, s_log1p, s_atan, s_scalbn:
+// Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+// Developed at SunPro, a Sun Microsystems, Inc. business.
+// Permission to use, copy, modify, and distribute this
+// software is freely granted, provided that this notice
+// is preserved.
+//
+// Original notice for e_exp, e_pow:
+// Copyright (C) 2004 by Sun Microsystems, Inc. All rights reserved.
+// Permission to use, copy, modify, and distribute this
+// software is freely granted, provided that this notice
+// is preserved.
+//
+// Trigonometric reduction includes optimizations by Bruce D. Evans.
+// See docs/stdlib-math.md for source provenance, IEEE behavior and accuracy.
+// All polynomial steps require binary64 round-to-nearest, ties-to-even.
+module core::math;
+import core::f64;
+pub const PI: f64 = 3.14159265358979323846264338327950288;
+pub const TAU: f64 = 6.28318530717958647692528676655900576;
+pub const FRAC_PI_2: f64 = 1.57079632679489661923132169163975144;
+pub const LN_2: f64 = 0.693147180559945309417232121458176568;
+pub struct SinCos { sin: f64, cos: f64 }
+struct Reduction { quadrant: i32, head: f64, tail: f64 }
+fn high(x: f64) -> i32 { return (core::f64::to_bits(x) >> 32) as i32; }
+fn low(x: f64) -> u32 { return core::f64::to_bits(x) as u32; }
+fn with_high(x: f64, word: i32) -> f64 { return core::f64::from_bits(((word as u32 as u64) << 32) | (low(x) as u64)); }
+fn with_low(x: f64, word: u32) -> f64 { let mask: u64 = 18446744069414584320; return core::f64::from_bits((core::f64::to_bits(x) & mask) | (word as u64)); }
+fn words(hi: i32, lo: u32) -> f64 { return core::f64::from_bits(((hi as u32 as u64) << 32) | (lo as u64)); }
+fn quiet(x: f64) -> f64 { return core::f64::from_bits(core::f64::to_bits(x) | core::f64::QUIET_MASK); }
+// Power-of-two scaling; guard arbitrary i32 exponents before addition.
+pub fn scalbn(x: f64, n: i32) -> f64 {
+    if (core::f64::is_nan(x)) { return quiet(x); }
+    if (x == 0.0 || core::f64::is_infinite(x)) { return x; }
+    if (n > 50000) { return core::f64::copy_sign(core::f64::infinity(),x); }
+    if (n < -50000) { return core::f64::copy_sign(0.0,x); }
+    let value: f64 = x; let hx: i32 = high(value); let k: i32 = (hx & 2146435072) >> 20;
+    if (k == 0) { value *= 18014398509481984.0; hx = high(value); k = ((hx & 2146435072) >> 20)-54; }
+    k += n;
+    if (k > 2046) { return core::f64::copy_sign(core::f64::infinity(),x); }
+    if (k > 0) { return with_high(value,(hx & -2146435073) | (k << 20)); }
+    if (k <= -54) { return core::f64::copy_sign(0.0,x); }
+    return with_high(value,(hx & -2146435073) | ((k+54) << 20))*0.000000000000000055511151231257827021181583404541015625;
+}
+
+pub fn exp(x: f64) -> f64 {
+    let halF: [f64;2] = [0.5, -0.5];
+    let ln2HI: [f64;2] = [6.93147180369123816490e-01, -6.93147180369123816490e-01];
+    let ln2LO: [f64;2] = [1.90821492927058770002e-10, -1.90821492927058770002e-10];
+    let one: f64 = 1.0;
+    let huge: f64 = 1.0e+300;
+    let o_threshold: f64 = 7.09782712893383973096e+02;
+    let u_threshold: f64 = -7.45133219101941108420e+02;
+    let invln2: f64 = 1.44269504088896338700e+00;
+    let P1: f64 = 1.66666666666666019037e-01;
+    let P2: f64 = -2.77777777770155933842e-03;
+    let P3: f64 = 6.61375632143793436117e-05;
+    let P4: f64 = -1.65339022054652515390e-06;
+    let P5: f64 = 4.13813679705723846039e-08;
+    let twom1000: f64 = 9.33263618503218878990e-302;
+
+    if (core::f64::is_nan(x)) { return quiet(x); }
+    if (x > o_threshold) { return core::f64::infinity(); }
+    if (x < u_threshold) { return 0.0; }
+    if (x == 1.0) { return 2.718281828459045235360; }
+    let value: f64 = x; let hx: i32 = high(x) & 2147483647; let sign: i32 = 0; if (x < 0.0) { sign = 1; }
+    let hi: f64 = 0.0; let lo: f64 = 0.0; let k: i32 = 0;
+    if (hx > 1071001154) {
+        if (hx < 1072734898) { hi = value-ln2HI[sign]; lo = ln2LO[sign]; k = 1-sign-sign; }
+        else { k = (invln2*value+halF[sign]) as i32; let t: f64 = k as f64; hi = value-t*ln2HI[0]; lo = t*ln2LO[0]; }
+        value = hi-lo;
+    } else { if (hx < 1043333120) { return one+value; } }
+    let t: f64 = value*value; let c: f64 = value-t*(P1+t*(P2+t*(P3+t*(P4+t*P5))));
+    if (k == 0) { return one-((value*c)/(c-2.0)-value); }
+    let y: f64 = one-((lo-(value*c)/(2.0-c))-hi);
+    if (k >= -1021) { if (k == 1024) { return y*2.0*words(2145386496,0); } return y*words(1072693248+(k << 20),0); }
+    return y*words(1072693248+((k+1000) << 20),0)*twom1000;
+}
+
+pub fn log(x: f64) -> f64 {
+    let ln2_hi: f64 = 6.93147180369123816490e-01;
+    let ln2_lo: f64 = 1.90821492927058770002e-10;
+    let two54: f64 = 1.80143985094819840000e+16;
+    let Lg1: f64 = 6.666666666666735130e-01;
+    let Lg2: f64 = 3.999999999940941908e-01;
+    let Lg3: f64 = 2.857142874366239149e-01;
+    let Lg4: f64 = 2.222219843214978396e-01;
+    let Lg5: f64 = 1.818357216161805012e-01;
+    let Lg6: f64 = 1.531383769920937332e-01;
+    let Lg7: f64 = 1.479819860511658591e-01;
+    let zero: f64 = 0.0;
+
+    if (core::f64::is_nan(x)) { return quiet(x); }
+    if (x == 0.0) { return core::f64::neg_infinity(); }
+    if (x < 0.0) { return core::f64::nan(); }
+    if (core::f64::is_infinite(x)) { return x; }
+    let value: f64 = x; let hx: i32 = high(value); let k: i32 = 0;
+    if (hx < 1048576) { k -= 54; value *= two54; hx = high(value); }
+    k += (hx >> 20)-1023; hx &= 1048575; let i: i32 = (hx+614244) & 1048576;
+    value = with_high(value,hx | (i ^ 1072693248)); k += i >> 20; let f: f64 = value-1.0;
+    if ((1048575 & (2+hx)) < 3) {
+        if (f == 0.0) { if (k == 0) { return 0.0; } let dk: f64 = k as f64; return dk*ln2_hi+dk*ln2_lo; }
+        let r: f64 = f*f*(0.5-0.33333333333333333*f); if (k == 0) { return f-r; } let dk: f64 = k as f64; return dk*ln2_hi-((r-dk*ln2_lo)-f);
+    }
+    let s: f64 = f/(2.0+f); let dk: f64 = k as f64; let z: f64 = s*s; let w: f64 = z*z;
+    let t1: f64 = w*(Lg2+w*(Lg4+w*Lg6)); let t2: f64 = z*(Lg1+w*(Lg3+w*(Lg5+w*Lg7))); let r: f64 = t2+t1;
+    if (((hx-398458) | (440401-hx)) > 0) { let hfsq: f64 = 0.5*f*f; if (k == 0) { return f-(hfsq-s*(hfsq+r)); } return dk*ln2_hi-((hfsq-(s*(hfsq+r)+dk*ln2_lo))-f); }
+    if (k == 0) { return f-s*(f-r); } return dk*ln2_hi-((s*(f-r)-dk*ln2_lo)-f);
+}
+
+pub fn expm1(x: f64) -> f64 {
+    let one: f64 = 1.0;
+    let huge: f64 = 1.0e+300;
+    let tiny: f64 = 1.0e-300;
+    let o_threshold: f64 = 7.09782712893383973096e+02;
+    let ln2_hi: f64 = 6.93147180369123816490e-01;
+    let ln2_lo: f64 = 1.90821492927058770002e-10;
+    let invln2: f64 = 1.44269504088896338700e+00;
+    let Q1: f64 = -3.33333333333331316428e-02;
+    let Q2: f64 = 1.58730158725481460165e-03;
+    let Q3: f64 = -7.93650757867487942473e-05;
+    let Q4: f64 = 4.00821782732936239552e-06;
+    let Q5: f64 = -2.01099218183624371326e-07;
+
+    if (core::f64::is_nan(x)) { return quiet(x); }
+    if (x > o_threshold) { return core::f64::infinity(); }
+    let hx: i32 = high(x) & 0x7fffffff; let negative: bool = core::f64::is_sign_negative(x);
+    if (negative && hx >= 0x4043687a) { return -1.0; }
+    if (hx < 0x3c900000) { return x; }
+    let value: f64 = x; let k: i32 = 0; let c: f64 = 0.0;
+    if (hx > 0x3fd62e42) {
+        let hi: f64 = 0.0; let lo: f64 = 0.0;
+        if (hx < 0x3ff0a2b2) { if (negative) { hi = value+ln2_hi; lo = -ln2_lo; k = -1; } else { hi = value-ln2_hi; lo = ln2_lo; k = 1; } }
+        else { let half: f64 = 0.5; if (negative) { half = -0.5; } k = (invln2*value+half) as i32; let t: f64 = k as f64; hi = value-t*ln2_hi; lo = t*ln2_lo; }
+        value = hi-lo; c = (hi-value)-lo;
+    }
+    let hfx: f64 = 0.5*value; let hxs: f64 = value*hfx;
+    let r1: f64 = one+hxs*(Q1+hxs*(Q2+hxs*(Q3+hxs*(Q4+hxs*Q5))));
+    let t: f64 = 3.0-r1*hfx; let e: f64 = hxs*((r1-t)/(6.0-value*t));
+    if (k == 0) { return value-(value*e-hxs); }
+    e = value*(e-c)-c; e -= hxs;
+    if (k == -1) { return 0.5*(value-e)-0.5; }
+    if (k == 1) { if (value < -0.25) { return -2.0*(e-(value+0.5)); } return one+2.0*(value-e); }
+    if (k <= -2 || k > 56) { let y: f64 = one-(e-value); if (k == 1024) { y = y*2.0*words(0x7fe00000,0); } else { y *= words(0x3ff00000+(k << 20),0); } return y-one; }
+    let y: f64 = 0.0;
+    if (k < 20) { let t: f64 = words(0x3ff00000-(0x200000 >> k),0); y = t-(e-value); }
+    else { let t: f64 = words((0x3ff-k) << 20,0); y = value-(e+t); y += one; }
+    return y*words(0x3ff00000+(k << 20),0);
+}
+
+pub fn log1p(x: f64) -> f64 {
+    let ln2_hi: f64 = 6.93147180369123816490e-01;
+    let ln2_lo: f64 = 1.90821492927058770002e-10;
+    let two54: f64 = 1.80143985094819840000e+16;
+    let Lp1: f64 = 6.666666666666735130e-01;
+    let Lp2: f64 = 3.999999999940941908e-01;
+    let Lp3: f64 = 2.857142874366239149e-01;
+    let Lp4: f64 = 2.222219843214978396e-01;
+    let Lp5: f64 = 1.818357216161805012e-01;
+    let Lp6: f64 = 1.531383769920937332e-01;
+    let Lp7: f64 = 1.479819860511658591e-01;
+    let zero: f64 = 0.0;
+
+    if (core::f64::is_nan(x)) { return quiet(x); }
+    if (x == -1.0) { return core::f64::neg_infinity(); }
+    if (x < -1.0) { return core::f64::nan(); }
+    if (core::f64::is_infinite(x)) { return x; }
+    let hx: i32 = high(x); let ax: i32 = hx & 0x7fffffff; let k: i32 = 1; let hu: i32 = 0; let f: f64 = 0.0; let c: f64 = 0.0;
+    if (hx < 0x3fda827a) {
+        if (ax < 0x3e200000) { if (ax < 0x3c900000) { return x; } return x-x*x*0.5; }
+        if (hx > 0 || hx <= -1076707644) { k = 0; f = x; hu = 1; }
+    }
+    if (k != 0) {
+        let u: f64 = 0.0;
+        if (hx < 0x43400000) { u = 1.0+x; hu = high(u); k = (hu >> 20)-1023; if (k > 0) { c = 1.0-(u-x); } else { c = x-(u-1.0); } c /= u; }
+        else { u = x; hu = high(u); k = (hu >> 20)-1023; c = 0.0; }
+        hu &= 0x000fffff;
+        if (hu < 0x6a09e) { u = with_high(u,hu | 0x3ff00000); }
+        else { k += 1; u = with_high(u,hu | 0x3fe00000); hu = (0x00100000-hu) >> 2; }
+        f = u-1.0;
+    }
+    let hfsq: f64 = 0.5*f*f; let dk: f64 = k as f64;
+    if (hu == 0) {
+        if (f == 0.0) { if (k == 0) { return 0.0; } c += dk*ln2_lo; return dk*ln2_hi+c; }
+        let r: f64 = hfsq*(1.0-0.66666666666666666*f); if (k == 0) { return f-r; } return dk*ln2_hi-((r-(dk*ln2_lo+c))-f);
+    }
+    let s: f64 = f/(2.0+f); let z: f64 = s*s;
+    let r: f64 = z*(Lp1+z*(Lp2+z*(Lp3+z*(Lp4+z*(Lp5+z*(Lp6+z*Lp7))))));
+    if (k == 0) { return f-(hfsq-s*(hfsq+r)); }
+    return dk*ln2_hi-((hfsq-(s*(hfsq+r)+(dk*ln2_lo+c)))-f);
+}
+
+pub fn atan(x: f64) -> f64 {
+    let atanhi: [f64;4] = [4.63647609000806093515e-01, 7.85398163397448278999e-01, 9.82793723247329054082e-01, 1.57079632679489655800e+00];
+    let atanlo: [f64;4] = [2.26987774529616870924e-17, 3.06161699786838301793e-17, 1.39033110312309984516e-17, 6.12323399573676603587e-17];
+    let aT: [f64;11] = [3.33333333333329318027e-01, -1.99999999998764832476e-01, 1.42857142725034663711e-01, -1.11111104054623557880e-01, 9.09088713343650656196e-02, -7.69187620504482999495e-02, 6.66107313738753120669e-02, -5.83357013379057348645e-02, 4.97687799461593236017e-02, -3.65315727442169155270e-02, 1.62858201153657823623e-02];
+    let one: f64 = 1.0;
+    let huge: f64 = 1.0e300;
+
+    if (core::f64::is_nan(x)) { return quiet(x); }
+    let hx: i32 = high(x); let ix: i32 = hx & 0x7fffffff; let value: f64 = x; let id: i32 = -1;
+    if (ix >= 0x44100000) { return core::f64::copy_sign(atanhi[3]+atanlo[3],x); }
+    if (ix < 0x3fdc0000) { if (ix < 0x3e400000) { return x; } }
+    else {
+        value = core::f64::abs(x);
+        if (ix < 0x3ff30000) { if (ix < 0x3fe60000) { id = 0; value = (2.0*value-one)/(2.0+value); } else { id = 1; value = (value-one)/(value+one); } }
+        else { if (ix < 0x40038000) { id = 2; value = (value-1.5)/(one+1.5*value); } else { id = 3; value = -1.0/value; } }
+    }
+    let z: f64 = value*value; let w: f64 = z*z;
+    let s1: f64 = z*(aT[0]+w*(aT[2]+w*(aT[4]+w*(aT[6]+w*(aT[8]+w*aT[10])))));
+    let s2: f64 = w*(aT[1]+w*(aT[3]+w*(aT[5]+w*(aT[7]+w*aT[9]))));
+    if (id < 0) { return value-value*(s1+s2); }
+    let answer: f64 = atanhi[id]-((value*(s1+s2)-atanlo[id])-value); if (hx < 0) { return -answer; } return answer;
+}
+
+pub fn atan2(y: f64, x: f64) -> f64 {
+    let tiny: f64 = 1.0e-300;
+    let zero: f64 = 0.0;
+    let pi_o_4: f64 = 7.8539816339744827900E-01;
+    let pi_o_2: f64 = 1.5707963267948965580E+00;
+    let pi: f64 = 3.1415926535897931160E+00;
+    let pi_lo: f64 = 1.2246467991473531772E-16;
+
+    if (core::f64::is_nan(y)) { return quiet(y); } if (core::f64::is_nan(x)) { return quiet(x); }
+    if (x == 1.0) { return atan(y); }
+    let hx: i32 = high(x); let hy: i32 = high(y); let ix: i32 = hx & 0x7fffffff; let iy: i32 = hy & 0x7fffffff;
+    let m: i32 = ((hy >> 31) & 1) | ((hx >> 30) & 2);
+    if (y == 0.0) { if (m < 2) { return y; } return core::f64::copy_sign(pi,y); }
+    if (x == 0.0) { return core::f64::copy_sign(pi_o_2,y); }
+    if (ix == 0x7ff00000) {
+        if (iy == 0x7ff00000) { let answer: f64 = pi_o_4; if (m >= 2) { answer = 3.0*pi_o_4; } return core::f64::copy_sign(answer,y); }
+        if (m < 2) { return core::f64::copy_sign(0.0,y); } return core::f64::copy_sign(pi,y);
+    }
+    if (iy == 0x7ff00000) { return core::f64::copy_sign(pi_o_2,y); }
+    let k: i32 = (iy-ix) >> 20; let z: f64 = 0.0;
+    if (k > 60) { z = pi_o_2+0.5*pi_lo; m &= 1; }
+    else { if (hx < 0 && k < -60) { z = 0.0; } else { z = atan(core::f64::abs(y/x)); } }
+    if (m == 0) { return z; } if (m == 1) { return -z; } if (m == 2) { return pi-(z-pi_lo); } return (z-pi_lo)-pi;
+}
+
+fn kernel_sin(x: f64, y: f64, tail: bool) -> f64 {
+    let half: f64 = 5.00000000000000000000e-01;
+    let S1: f64 = -1.66666666666666324348e-01;
+    let S2: f64 = 8.33333333332248946124e-03;
+    let S3: f64 = -1.98412698298579493134e-04;
+    let S4: f64 = 2.75573137070700676789e-06;
+    let S5: f64 = -2.50507602534068634195e-08;
+    let S6: f64 = 1.58969099521155010221e-10;
+
+    let z: f64 = x*x; let w: f64 = z*z; let r: f64 = S2+z*(S3+z*S4)+z*w*(S5+z*S6); let v: f64 = z*x;
+    if (!tail) { return x+v*(S1+z*r); } return x-((z*(half*y-v*r)-y)-v*S1);
+}
+
+fn kernel_cos(x: f64, y: f64) -> f64 {
+    let one: f64 = 1.00000000000000000000e+00;
+    let C1: f64 = 4.16666666666666019037e-02;
+    let C2: f64 = -1.38888888888741095749e-03;
+    let C3: f64 = 2.48015872894767294178e-05;
+    let C4: f64 = -2.75573143513906633035e-07;
+    let C5: f64 = 2.08757232129817482790e-09;
+    let C6: f64 = -1.13596475577881948265e-11;
+
+    let z: f64 = x*x; let w: f64 = z*z; let r: f64 = z*(C1+z*(C2+z*C3))+w*w*(C4+z*(C5+z*C6)); let hz: f64 = 0.5*z; w = one-hz;
+    return w+(((one-w)-hz)+(z*r-x*y));
+}
+
+// Payne-Hanek reduction: only the necessary 24-bit product window is formed.
+// 66 base-2^24 digits of 2/pi cover every finite binary64 exponent.
+fn reduce_large(x: [f64], e0: i32, nx: i32) -> Reduction {
+    let ipio2: [i32;66] = [10680707, 7228996, 1387004, 2578385, 16069853, 12639074, 9804092, 4427841, 16666979, 11263675, 12935607, 2387514, 4345298, 14681673, 3074569, 13734428, 16653803, 1880361, 10960616, 8533493, 3062596, 8710556, 7349940, 6258241, 3772886, 3769171, 3798172, 8675211, 12450088, 3874808, 9961438, 366607, 15675153, 9132554, 7151469, 3571407, 2607881, 12013382, 4155038, 6285869, 7677882, 13102053, 15825725, 473591, 9065106, 15363067, 6271263, 9264392, 5636912, 4652155, 7056368, 13614112, 10155062, 1944035, 9527646, 15080200, 6658437, 6231200, 6832269, 16767104, 5075751, 3212806, 1398474, 7579849, 6349435, 12618859];
+    let pio2: [f64;8] = [1.57079625129699707031e+00, 7.54978941586159635335e-08, 5.39030252995776476554e-15, 3.28200341580791294123e-22, 1.27065575308067607349e-29, 1.22933308981111328932e-36, 2.73370053816464559624e-44, 2.16741683877804819444e-51];
+    let iq: [i32;20] = [0;20]; let f: [f64;20] = [0.0;20]; let fq: [f64;20] = [0.0;20]; let q: [f64;20] = [0.0;20];
+    let jk: i32 = 4; let jp: i32 = jk; let jx: i32 = nx-1; let jv: i32 = (e0-3)/24; if (jv < 0) { jv = 0; }
+    let q0: i32 = e0-24*(jv+1); let j: i32 = jv-jx; let m: i32 = jx+jk; let i: i32 = 0;
+    while (i <= m) { if (j < 0) { f[i] = 0.0; } else { f[i] = ipio2[j] as f64; } i += 1; j += 1; }
+    i = 0; while (i <= jk) { j = 0; let fw: f64 = 0.0; while (j <= jx) { fw += x[j]*f[jx+i-j]; j += 1; } q[i] = fw; i += 1; }
+    let jz: i32 = jk; let z: f64 = 0.0; let n: i32 = 0; let ih: i32 = 0; let recompute: bool = true;
+    while (recompute) {
+        recompute = false; i = 0; j = jz; z = q[jz];
+        while (j > 0) { let fw: f64 = (0.000000059604644775390625*z) as i32 as f64; iq[i] = (z-16777216.0*fw) as i32; z = q[j-1]+fw; i += 1; j -= 1; }
+        z = scalbn(z,q0); z -= 8.0*core::f64::floor(z*0.125); n = z as i32; z -= n as f64; ih = 0;
+        if (q0 > 0) { i = iq[jz-1] >> (24-q0); n += i; iq[jz-1] -= i << (24-q0); ih = iq[jz-1] >> (23-q0); }
+        else { if (q0 == 0) { ih = iq[jz-1] >> 23; } else { if (z >= 0.5) { ih = 2; } } }
+        if (ih > 0) {
+            n += 1; let carry: i32 = 0; i = 0;
+            while (i < jz) { j = iq[i]; if (carry == 0) { if (j != 0) { carry = 1; iq[i] = 16777216-j; } } else { iq[i] = 16777215-j; } i += 1; }
+            if (q0 == 1) { iq[jz-1] &= 8388607; } if (q0 == 2) { iq[jz-1] &= 4194303; }
+            if (ih == 2) { z = 1.0-z; if (carry != 0) { z -= scalbn(1.0,q0); } }
+        }
+        if (z == 0.0) {
+            j = 0; i = jz-1; while (i >= jk) { j |= iq[i]; i -= 1; }
+            if (j == 0) {
+                let k: i32 = 1; while (iq[jk-k] == 0) { k += 1; }
+                i = jz+1; while (i <= jz+k) { f[jx+i] = ipio2[jv+i] as f64; j = 0; let fw: f64 = 0.0; while (j <= jx) { fw += x[j]*f[jx+i-j]; j += 1; } q[i] = fw; i += 1; }
+                jz += k; recompute = true;
+            }
+        }
+    }
+    if (z == 0.0) { jz -= 1; q0 -= 24; while (iq[jz] == 0) { jz -= 1; q0 -= 24; } }
+    else {
+        z = scalbn(z,-q0);
+        if (z >= 16777216.0) { let fw: f64 = (0.000000059604644775390625*z) as i32 as f64; iq[jz] = (z-16777216.0*fw) as i32; jz += 1; q0 += 24; iq[jz] = fw as i32; }
+        else { iq[jz] = z as i32; }
+    }
+    let fw: f64 = scalbn(1.0,q0); i = jz;
+    while (i >= 0) { q[i] = fw*(iq[i] as f64); fw *= 0.000000059604644775390625; i -= 1; }
+    i = jz; while (i >= 0) { fw = 0.0; let k: i32 = 0; while (k <= jp && k <= jz-i) { fw += pio2[k]*q[i+k]; k += 1; } fq[jz-i] = fw; i -= 1; }
+    fw = 0.0; i = jz; while (i >= 0) { fw += fq[i]; i -= 1; } let head: f64 = fw;
+    fw = fq[0]-fw; i = 1; while (i <= jz) { fw += fq[i]; i += 1; } let tail: f64 = fw;
+    if (ih != 0) { head = -head; tail = -tail; }
+    return Reduction { quadrant: n & 7, head: head, tail: tail };
+}
+
+fn reduce(x: f64) -> Reduction {
+    let zero: f64 = 0.00000000000000000000e+00;
+    let two24: f64 = 1.67772160000000000000e+07;
+    let invpio2: f64 = 6.36619772367581382433e-01;
+    let pio2_1: f64 = 1.57079632673412561417e+00;
+    let pio2_1t: f64 = 6.07710050650619224932e-11;
+    let pio2_2: f64 = 6.07710050630396597660e-11;
+    let pio2_2t: f64 = 2.02226624879595063154e-21;
+    let pio2_3: f64 = 2.02226624871116645580e-21;
+    let pio2_3t: f64 = 8.47842766036889956997e-32;
+
+    let hx: i32 = high(x); let ix: i32 = hx & 0x7fffffff;
+    if (ix < 0x413921fb) {
+        let fnn: f64 = core::f64::round_ties_even(x*invpio2); let n: i32 = fnn as i32;
+        let r: f64 = x-fnn*pio2_1; let w: f64 = fnn*pio2_1t; let head: f64 = r-w; let j: i32 = ix >> 20;
+        let lost: i32 = j-((high(head) >> 20) & 0x7ff);
+        if (lost > 16) {
+            let t: f64 = r; w = fnn*pio2_2; r = t-w; w = fnn*pio2_2t-((t-r)-w); head = r-w;
+            lost = j-((high(head) >> 20) & 0x7ff);
+            if (lost > 49) { let t: f64 = r; w = fnn*pio2_3; r = t-w; w = fnn*pio2_3t-((t-r)-w); head = r-w; }
+        }
+        return Reduction { quadrant: n, head: head, tail: (r-head)-w };
+    }
+    let e0: i32 = (ix >> 20)-1046; let z: f64 = words((ix & 0x000fffff) | 0x41600000,low(x));
+    let tx: [f64;3] = [0.0;3]; let i: i32 = 0;
+    while (i < 2) { tx[i] = z as i32 as f64; z = (z-tx[i])*two24; i += 1; } tx[2] = z; let nx: i32 = 3;
+    while (tx[nx-1] == 0.0) { nx -= 1; }
+    let answer: Reduction = reduce_large(tx,e0,nx);
+    if (hx < 0) { answer.quadrant = -answer.quadrant; answer.head = -answer.head; answer.tail = -answer.tail; }
+    return answer;
+}
+
+pub fn sin_cos(x: f64) -> SinCos {
+    if (core::f64::is_nan(x)) { let q: f64 = quiet(x); return SinCos { sin: q, cos: q }; }
+    if (core::f64::is_infinite(x)) { let q: f64 = core::f64::nan(); return SinCos { sin: q, cos: q }; }
+    let ix: i32 = high(x) & 0x7fffffff;
+    if (ix <= 0x3fe921fb) {
+        if (ix < 0x3e400000) { return SinCos { sin: x, cos: 1.0 }; }
+        return SinCos { sin: kernel_sin(x,0.0,false), cos: kernel_cos(x,0.0) };
+    }
+    let reduced: Reduction = reduce(x); let s: f64 = kernel_sin(reduced.head,reduced.tail,true); let c: f64 = kernel_cos(reduced.head,reduced.tail); let quadrant: i32 = reduced.quadrant & 3;
+    if (quadrant == 0) { return SinCos { sin: s, cos: c }; }
+    if (quadrant == 1) { return SinCos { sin: c, cos: -s }; }
+    if (quadrant == 2) { return SinCos { sin: -s, cos: -c }; }
+    return SinCos { sin: -c, cos: s };
+}
+pub fn sin(x: f64) -> f64 { let answer: SinCos = sin_cos(x); return answer.sin; }
+pub fn cos(x: f64) -> f64 { let answer: SinCos = sin_cos(x); return answer.cos; }
+
+// 0 noninteger, 1 odd integer, 2 even integer; finite binary64 parity is exact.
+fn integer_kind(y: f64) -> i32 {
+    let a: f64 = core::f64::abs(y); if (a >= 9007199254740992.0) { return 2; }
+    if (a < 1.0 || core::f64::trunc(a) != a) { return 0; }
+    let bits: u64 = core::f64::to_bits(a); let exponent: i32 = (bits >> 52) as i32-1023;
+    let mantissa: u64 = (bits & core::f64::FRACTION_MASK) | 4503599627370496;
+    if (((mantissa >> (52-exponent)) & 1) != 0) { return 1; } return 2;
+}
+pub fn pow(x: f64, y: f64) -> f64 {
+    let bp: [f64;2] = [1.0, 1.5];
+    let dp_h: [f64;2] = [0.0, 5.84962487220764160156e-01];
+    let dp_l: [f64;2] = [0.0, 1.35003920212974897128e-08];
+    let zero: f64 = 0.0;
+    let one: f64 = 1.0;
+    let two: f64 = 2.0;
+    let two53: f64 = 9007199254740992.0;
+    let huge: f64 = 1.0e300;
+    let tiny: f64 = 1.0e-300;
+    let L1: f64 = 5.99999999999994648725e-01;
+    let L2: f64 = 4.28571428578550184252e-01;
+    let L3: f64 = 3.33333329818377432918e-01;
+    let L4: f64 = 2.72728123808534006489e-01;
+    let L5: f64 = 2.30660745775561754067e-01;
+    let L6: f64 = 2.06975017800338417784e-01;
+    let P1: f64 = 1.66666666666666019037e-01;
+    let P2: f64 = -2.77777777770155933842e-03;
+    let P3: f64 = 6.61375632143793436117e-05;
+    let P4: f64 = -1.65339022054652515390e-06;
+    let P5: f64 = 4.13813679705723846039e-08;
+    let lg2: f64 = 6.93147180559945286227e-01;
+    let lg2_h: f64 = 6.93147182464599609375e-01;
+    let lg2_l: f64 = -1.90465429995776804525e-09;
+    let ovt: f64 = 8.0085662595372944372e-0017;
+    let cp: f64 = 9.61796693925975554329e-01;
+    let cp_h: f64 = 9.61796700954437255859e-01;
+    let cp_l: f64 = -7.02846165095275826516e-09;
+    let ivln2: f64 = 1.44269504088896338700e+00;
+    let ivln2_h: f64 = 1.44269502162933349609e+00;
+    let ivln2_l: f64 = 1.92596299112661746887e-08;
+
+    if (y == 0.0 || x == 1.0) { return 1.0; }
+    if (core::f64::is_nan(x)) { return quiet(x); } if (core::f64::is_nan(y)) { return quiet(y); }
+    let hx: i32 = high(x); let hy: i32 = high(y); let ix: i32 = hx & 0x7fffffff; let iy: i32 = hy & 0x7fffffff;
+    let lx: u32 = low(x); let ly: u32 = low(y); let ax: f64 = core::f64::abs(x); let yisint: i32 = 0;
+    if (hx < 0) { yisint = integer_kind(y); }
+    if (core::f64::is_infinite(y)) { if (ax == 1.0) { return 1.0; } if ((ax > 1.0) == (y > 0.0)) { return core::f64::infinity(); } return 0.0; }
+    if (y == 1.0) { return x; } if (y == -1.0) { return 1.0/x; }
+    if (y == 2.0) { return x*x; } if (y == 3.0) { return x*x*x; } if (y == 4.0) { let u: f64 = x*x; return u*u; }
+    if (y == 0.5 && hx >= 0) { return core::f64::sqrt(x); }
+    if (ax == 0.0 || core::f64::is_infinite(ax) || ax == 1.0) {
+        let z: f64 = ax; if (y < 0.0) { z = 1.0/z; }
+        if (hx < 0) { if (ax == 1.0 && yisint == 0) { return core::f64::nan(); } if (yisint == 1) { z = -z; } } return z;
+    }
+    if (hx < 0 && yisint == 0) { return core::f64::nan(); }
+    let sign: f64 = 1.0; if (hx < 0 && yisint == 1) { sign = -1.0; }
+    let t1: f64 = 0.0; let t2: f64 = 0.0;
+    if (iy > 0x41e00000) {
+        if (iy > 0x43f00000) { if ((ax < 1.0) == (y < 0.0)) { return core::f64::infinity(); } return 0.0; }
+        if (ix < 0x3fefffff) { if (y < 0.0) { return core::f64::copy_sign(core::f64::infinity(),sign); } return core::f64::copy_sign(0.0,sign); }
+        if (ix > 0x3ff00000) { if (y > 0.0) { return core::f64::copy_sign(core::f64::infinity(),sign); } return core::f64::copy_sign(0.0,sign); }
+        let t: f64 = ax-one; let w: f64 = (t*t)*(0.5-t*(0.3333333333333333333333-t*0.25));
+        let u: f64 = ivln2_h*t; let v: f64 = t*ivln2_l-w*ivln2; t1 = with_low(u+v,0); t2 = v-(t1-u);
+    } else {
+        let n: i32 = 0;
+        if (ix < 0x00100000) { ax *= two53; n -= 53; ix = high(ax); }
+        n += (ix >> 20)-1023; let j: i32 = ix & 0x000fffff; ix = j | 0x3ff00000; let k: i32 = 0;
+        if (j > 0x3988e) { if (j < 0xbb67a) { k = 1; } else { n += 1; ix -= 0x00100000; } }
+        ax = with_high(ax,ix); let u: f64 = ax-bp[k]; let v: f64 = one/(ax+bp[k]); let ss: f64 = u*v;
+        let s_h: f64 = with_low(ss,0); let t_h: f64 = words(((ix >> 1) | 0x20000000)+0x00080000+(k << 18),0);
+        let t_l: f64 = ax-(t_h-bp[k]); let s_l: f64 = v*((u-s_h*t_h)-s_h*t_l); let s2: f64 = ss*ss;
+        let r: f64 = s2*s2*(L1+s2*(L2+s2*(L3+s2*(L4+s2*(L5+s2*L6))))); r += s_l*(s_h+ss);
+        s2 = s_h*s_h; t_h = with_low(3.0+s2+r,0); t_l = r-((t_h-3.0)-s2); u = s_h*t_h; v = s_l*t_h+t_l*ss;
+        let p_h: f64 = with_low(u+v,0); let p_l: f64 = v-(p_h-u); let z_h: f64 = cp_h*p_h; let z_l: f64 = cp_l*p_h+p_l*cp+dp_l[k];
+        let t: f64 = n as f64; t1 = with_low(((z_h+z_l)+dp_h[k])+t,0); t2 = z_l-(((t1-t)-dp_h[k])-z_h);
+    }
+    let y1: f64 = with_low(y,0); let p_l: f64 = (y-y1)*t1+y*t2; let p_h: f64 = y1*t1; let z: f64 = p_l+p_h;
+    let j: i32 = high(z); let i: i32 = low(z) as i32;
+    if (j >= 0x40900000) { if (j != 0x40900000 || i != 0 || p_l+ovt > z-p_h) { return core::f64::copy_sign(core::f64::infinity(),sign); } }
+    else { if ((j & 0x7fffffff) >= 0x4090cc00) { if (j != -1064252416 || i != 0 || p_l <= z-p_h) { return core::f64::copy_sign(0.0,sign); } } }
+    i = j & 0x7fffffff; let k: i32 = (i >> 20)-1023; let n: i32 = 0;
+    if (i > 0x3fe00000) {
+        n = j+(0x00100000 >> (k+1)); k = ((n & 0x7fffffff) >> 20)-1023;
+        let t: f64 = words(n & ((0x000fffff >> k) ^ -1),0); n = ((n & 0x000fffff) | 0x00100000) >> (20-k); if (j < 0) { n = -n; } p_h -= t;
+    }
+    let t: f64 = with_low(p_l+p_h,0); let u: f64 = t*lg2_h; let v: f64 = (p_l-(t-p_h))*lg2+t*lg2_l;
+    z = u+v; let w: f64 = v-(z-u); t = z*z;
+    t1 = z-t*(P1+t*(P2+t*(P3+t*(P4+t*P5)))); let r: f64 = (z*t1)/(t1-two)-(w+z*w); z = one-(r-z);
+    j = high(z); j += n << 20; if ((j >> 20) <= 0) { z = scalbn(z,n); } else { z = with_high(z,j); } return sign*z;
+}

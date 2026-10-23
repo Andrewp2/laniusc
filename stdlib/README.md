@@ -19,19 +19,21 @@ contains optional codecs, protocols, mathematics and application utilities.
 | --- | --- | --- |
 | Optional values and failures | `core::option`, `core::result`, `core::pair` | [Option](../docs/stdlib-option.md), [Result](../docs/stdlib-result.md) |
 | Equality, ordering and hashing | `core::cmp`, `core::ordering`, `core::hash`, `core::float_order` | [Lawful comparison and float keys](../docs/stdlib-comparison.md) |
-| Integer arithmetic | `core::{i8,i16,i32,i64,u8,u16,u32,u64,isize,usize}`, byte/bit/conversion helpers | [Native 64-bit and pointer-sized contracts](../docs/stdlib-native-integers.md); each operation names its checked, wrapping or saturating policy |
+| Integer arithmetic | `core::{i8,i16,i32,i64,u8,u16,u32,u64,isize,usize}`, byte/bit/conversion helpers | [8/16/32-bit contracts](../docs/stdlib-narrow-integers.md), [64-bit and pointer-sized contracts](../docs/stdlib-native-integers.md); each operation names its checked, wrapping or saturating policy |
 | Floating values and conversion | `core::f32`, `core::f64`, `core::float_decimal` | [Exact precision formatting](../docs/stdlib-float-precision.md) |
+| Elementary mathematics | `core::math` | [Full-range binary64 functions and accuracy evidence](../docs/stdlib-math.md) |
+| Wire coding and checksums | `core::base64`, `core::hex`, `core::binary`, `core::varint`, `core::crc32`, `core::adler32`, `core::sha1` | SHA-1 is supplied for the [WebSocket handshake](../docs/extended-websocket.md), with its collision-resistance limitation explicit |
 | Borrowed data and algorithms | `core::slice`, `core::range`, array helpers | [Counted views](../docs/stdlib-slice-views.md), [slice algorithms](../docs/stdlib-slice.md) |
 | UTF-8 and Unicode | `core::text`, `core::char`, `core::utf8`, `core::utf16`, `core::transcode`, `core::unicode` | [Unicode properties](../docs/stdlib-unicode.md); normalization and full casing are optional extended modules |
 | Owned strings | `alloc::string` | [String ownership, edits and failures](../docs/stdlib-string.md) |
 | Formatting | `core::fmt`, `core::format`, `alloc::format` | [Runtime format strings and owned results](../docs/stdlib-format-strings.md) |
 | Inline collections | `core::vec`, `core::set` | [Borrowed free APIs, capacities, equality and returned values](../docs/stdlib-fixed-capacity.md) |
-| Owned collections | `alloc::vec`, `alloc::deque`, `alloc::hash_map`, `alloc::tree_map`, `alloc::binary_heap`, `alloc::bitset` | [Owned bitsets](../docs/stdlib-bitset-owned.md), [ordered maps](../docs/stdlib-tree-map.md); generic owned sets remain a [compiler dependency](../docs/stdlib-owned-sets.md) |
+| Owned collections | `alloc::vec`, `alloc::deque`, `alloc::hash_map`, `alloc::hash_set`, `alloc::tree_map`, `alloc::tree_set`, `alloc::binary_heap`, `alloc::bitset` | [Owned bitsets](../docs/stdlib-bitset-owned.md), [ordered maps](../docs/stdlib-tree-map.md), [generic sets, representatives and algebra](../docs/stdlib-owned-sets.md) |
 | Memory | `core::mem`, `alloc::allocator`, `alloc::arena` | [Arena layouts and ownership](../docs/stdlib-arena.md) |
 | Streams and files | `core::io`, `alloc::io`, `std::stream`, `std::file`, `std::filesystem` | [Files](../docs/stdlib-files.md), [filesystem operations](../docs/stdlib-filesystem.md) |
 | Paths | `core::path`, `alloc::path` | [Unix byte paths](../docs/stdlib-paths.md) |
 | Arguments and environment | `std::args`, `std::args_checked`, `std::env_checked` | Raw-byte process snapshots and checked host wrappers |
-| Time and randomness | `core::time`, `core::calendar`, `std::clock`, `core::random`, `std::entropy` | [Time](../docs/stdlib-time.md), [calendar](../docs/stdlib-calendar.md), [randomness](../docs/stdlib-randomness.md) |
+| Time and randomness | `core::time`, `core::calendar`, `std::clock`, `core::random`, `std::entropy` | [Time](../docs/stdlib-time.md), [calendar](../docs/stdlib-calendar.md), [randomness](../docs/stdlib-randomness.md); optional [TZif time zones](../docs/extended-timezone.md) |
 | Numeric network values | `core::net` | [Address values](../docs/stdlib-net.md); socket services remain unavailable |
 | Tests and benchmarks | `test::assert`, `test::check`, `test::suite`, `test::property`, `test::bench` | [Development workflow](../docs/stdlib-development.md), `tools/lanius-test` |
 
@@ -69,6 +71,11 @@ Expected output is `7` and `-11`, each on its own line. The
 [application index](../sample_programs/library/README.md) links executable
 programs, commands, resource limits and failure tests.
 
+For a relocatable package containing only reachable sources, use the
+[source distribution guide](../docs/library-distribution.md). The vendoring
+tool uses the compiler's existing package resolver and retains source hashes
+and license notices.
+
 ## Supported target and remaining work
 
 Verified execution is x86_64 Linux output from GPU compilation. Compiling on the
@@ -80,4 +87,4 @@ sockets, threads, directory enumeration and database integration still need
 host support. Metadata declarations do not implement these services. Generic
 composition limits have [reproductions and controls](../docs/library-dependencies.md).
 The [full library roadmap](../docs/library-roadmap.md) remains open, including
-distribution, selective dependencies and the final completion audit.
+binary SDK installation, complete API references and the final completion audit.

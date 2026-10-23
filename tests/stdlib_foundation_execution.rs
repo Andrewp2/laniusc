@@ -719,36 +719,6 @@ fn executable_core_function_surface_has_runtime_cases() {
     );
     let modules = [
         (
-            "i32",
-            include_str!("../stdlib/core/i32.lani"),
-            include_str!("fixtures/stdlib_foundation/core_i32_complete.lani"),
-        ),
-        (
-            "i16",
-            include_str!("../stdlib/core/i16.lani"),
-            include_str!("fixtures/stdlib_foundation/core_i16_complete.lani"),
-        ),
-        (
-            "i8",
-            include_str!("../stdlib/core/i8.lani"),
-            include_str!("fixtures/stdlib_foundation/core_i8_complete.lani"),
-        ),
-        (
-            "u8",
-            include_str!("../stdlib/core/u8.lani"),
-            include_str!("fixtures/stdlib_foundation/core_u8_complete.lani"),
-        ),
-        (
-            "u16",
-            include_str!("../stdlib/core/u16.lani"),
-            include_str!("fixtures/stdlib_foundation/core_u16_complete.lani"),
-        ),
-        (
-            "u32",
-            include_str!("../stdlib/core/u32.lani"),
-            include_str!("fixtures/stdlib_foundation/core_u32_complete.lani"),
-        ),
-        (
             "array_i32_4",
             include_str!("../stdlib/core/array_i32_4.lani"),
             include_str!("fixtures/stdlib_foundation/core_array_i32_4_complete.lani"),

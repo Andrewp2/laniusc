@@ -1,0 +1,76 @@
+// Native bounded snapshot store. Explicit disposable sibling scratch path.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import ext::kv;
+import std::args;
+import std::file;
+import std::filesystem;
+import std::stream;
+
+fn literal(text: str, count: i32) -> core::slice::View<u8> { return core::slice::View { values: core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(text),count), start: 0, length: count }; }
+fn same(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.length != b.length) { return false; } let i: i32 = 0; while (i < a.length) { if (a.values[a.start+i] != b.values[b.start+i]) { return false; } i += 1; } return true; }
+fn write(bytes: core::slice::View<u8>, error: bool) -> bool { let sink: std::stream::Descriptor = std::stream::stdout(); if (error) { sink = std::stream::stderr(); } return core::result::is_ok(core::io::write_all(sink.borrow(),bytes.values,bytes.start,bytes.length)); }
+fn limits() -> ext::kv::Limits { return ext::kv::Limits { max_entries: 4096, max_key: 65536, max_value: 4194304, max_bytes: 8388608, max_snapshot: 9437184, max_work: 134217728 }; }
+fn error_code(error: ext::kv::Error) -> i32 { let status: i32 = match (error) { ext::kv::Error::AllocationFailed -> 4, _ -> 2 }; return status; }
+fn io_code(error: core::io::Error) -> i32 { let status: i32 = match (error) { core::io::Error::AllocationFailed -> 4, core::io::Error::LimitExceeded -> 2, _ -> 3 }; return status; }
+fn hex_digit(value: u8) -> i32 { if (value >= 48 && value <= 57) { return (value-48) as i32; } if (value >= 65 && value <= 70) { return (value-55) as i32; } if (value >= 97 && value <= 102) { return (value-87) as i32; } return -1; }
+fn unhex(text: core::slice::View<u8>) -> core::result::Result<alloc::vec::Vec<u8>,i32> {
+    if (text.length % 2 != 0) { return core::result::Err(2); } let i: i32 = 0; while (i < text.length) { if (hex_digit(text.values[text.start+i]) < 0) { return core::result::Err(2); } i += 1; }
+    let result: alloc::vec::Vec<u8> = alloc::vec::new(); if (core::result::is_err(result.try_resize(text.length/2,0))) { result.destroy(); return core::result::Err(4); }
+    let bytes: [u8] = result.as_slice(); i = 0; while (i < result.len()) { bytes[i] = (hex_digit(text.values[text.start+i*2])*16+hex_digit(text.values[text.start+i*2+1])) as u8; i += 1; } return core::result::Ok(result);
+}
+fn load(path: core::path::Path) -> core::result::Result<ext::kv::Store,i32> {
+    let opened: core::result::Result<std::file::File,core::io::Error> = std::file::open(path,std::file::OpenMode::Read); if (core::result::is_err(opened)) { return core::result::Err(io_code(core::result::unwrap_err(opened))); } let file: std::file::File = core::result::unwrap(opened);
+    let input: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(9437184)); let copied: core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(file.borrow(),input.borrow()); let closed: core::result::Result<i32,core::io::Error> = file.close();
+    if (core::result::is_err(copied)) { input.destroy(); return core::result::Err(io_code(core::result::unwrap_err(copied).cause)); } if (core::result::is_err(closed)) { input.destroy(); return core::result::Err(3); }
+    let decoded: core::result::Result<ext::kv::Store,ext::kv::Error> = ext::kv::decode(core::result::unwrap(core::slice::view(input.as_bytes(),input.len())),limits()); input.destroy(); if (core::result::is_err(decoded)) { return core::result::Err(error_code(core::result::unwrap_err(decoded))); } return core::result::Ok(core::result::unwrap(decoded));
+}
+fn save(store: &ext::kv::Store, path: core::path::Path, scratch: core::path::Path) -> i32 {
+    let encoded: core::result::Result<alloc::vec::Vec<u8>,ext::kv::Error> = ext::kv::encode(store,9437184,134217728); if (core::result::is_err(encoded)) { return error_code(core::result::unwrap_err(encoded)); } let bytes: alloc::vec::Vec<u8> = core::result::unwrap(encoded);
+    let opened: core::result::Result<std::file::File,core::io::Error> = std::file::open(scratch,std::file::OpenMode::Create); if (core::result::is_err(opened)) { bytes.destroy(); return io_code(core::result::unwrap_err(opened)); } let file: std::file::File = core::result::unwrap(opened);
+    let complete: bool = core::result::is_ok(core::io::write_all(file.borrow(),bytes.as_slice(),0,bytes.len())); let closed: bool = core::result::is_ok(file.close()); bytes.destroy();
+    if (!complete || !closed) { std::filesystem::remove_file(scratch); return 3; }
+    let renamed: core::result::Result<i32,core::io::Error> = std::filesystem::rename(scratch,path); if (core::result::is_err(renamed)) { std::filesystem::remove_file(scratch); return 3; } return 0;
+}
+fn sibling(path: core::path::Path, scratch: core::path::Path) -> bool {
+    if (path.byte_len() > 4095 || scratch.byte_len() > 4095 || path.equals(scratch)) { return false; }
+    if (core::option::is_none(path.file_name()) || core::option::is_none(scratch.file_name())) { return false; }
+    let a: core::option::Option<core::path::Path> = path.parent(); let b: core::option::Option<core::path::Path> = scratch.parent(); if (core::option::is_none(a) || core::option::is_none(b)) { return false; } return core::option::unwrap(a).equals(core::option::unwrap(b));
+}
+fn listing(store: &ext::kv::Store) -> i32 {
+    let size: i64 = (store.byte_len() as i64)*2+(store.len() as i64)*2; if (size > 18874368) { return 2; }
+    let output: alloc::vec::Vec<u8> = alloc::vec::new(); if (core::result::is_err(output.try_resize(size as i32,0))) { output.destroy(); return 4; }
+    let alphabet: core::slice::View<u8> = literal("0123456789abcdef",16); let bytes: [u8] = output.as_slice(); let at: i32 = 0; let index: i32 = 0;
+    while (index < store.len()) { let entry: ext::kv::Entry = core::result::unwrap(store.entry(index)); let side: i32 = 0; while (side < 2) { let source: core::slice::View<u8> = entry.key; if (side == 1) { source = entry.value; } let i: i32 = 0; while (i < source.length) { let value: i32 = source.values[source.start+i] as i32; bytes[at] = alphabet.values[value/16]; bytes[at+1] = alphabet.values[value%16]; at += 2; i += 1; } bytes[at] = 9; if (side == 1) { bytes[at] = 10; } at += 1; side += 1; } index += 1; }
+    let okay: bool = write(output.as_view(),false); output.destroy(); if (!okay) { return 3; } return 0;
+}
+fn process(args: std::args::Arguments) -> i32 {
+    if (args.len() < 2) { return 2; } let command: core::slice::View<u8> = core::option::unwrap(args.get(0)); let mode: i32 = 0;
+    if (same(command,literal("init",4))) { mode = 1; } if (same(command,literal("put",3))) { mode = 2; } if (same(command,literal("remove",6))) { mode = 3; } if (same(command,literal("get",3))) { mode = 4; } if (same(command,literal("list",4))) { mode = 5; } if (same(command,literal("check",5))) { mode = 6; }
+    let count: i32 = 2; if (mode == 1 || mode == 4) { count = 3; } if (mode == 2) { count = 5; } if (mode == 3) { count = 4; } if (mode == 0 || args.len() != count) { return 2; }
+    let path_result: core::result::Result<core::path::Path,core::path::Error> = core::path::from_view(core::option::unwrap(args.get(1))); if (core::result::is_err(path_result)) { return 2; } let path: core::path::Path = core::result::unwrap(path_result); let scratch: core::path::Path = path;
+    if (mode <= 3) { let parsed: core::result::Result<core::path::Path,core::path::Error> = core::path::from_view(core::option::unwrap(args.get(2))); if (core::result::is_err(parsed)) { return 2; } scratch = core::result::unwrap(parsed); if (!sibling(path,scratch)) { return 2; } }
+    if (mode == 1) { let existing: core::result::Result<std::file::File,core::io::Error> = std::file::open(path,std::file::OpenMode::Read); if (core::result::is_ok(existing)) { let file: std::file::File = core::result::unwrap(existing); if (core::result::is_err(file.close())) { return 3; } return 2; } let missing: bool = match (core::result::unwrap_err(existing)) { core::io::Error::Host(code) -> code == 2, _ -> false }; if (!missing) { return 3; } let empty: ext::kv::Store = ext::kv::new(); let status: i32 = save(empty.borrow(),path,scratch); empty.destroy(); return status; }
+    let key: alloc::vec::Vec<u8> = alloc::vec::new(); let value: alloc::vec::Vec<u8> = alloc::vec::new();
+    if (mode >= 2 && mode <= 4) { let position: i32 = 3; if (mode == 4) { position = 2; } let decoded: core::result::Result<alloc::vec::Vec<u8>,i32> = unhex(core::option::unwrap(args.get(position))); if (core::result::is_err(decoded)) { return core::result::unwrap_err(decoded); } key = core::result::unwrap(decoded); }
+    if (mode == 2) { let decoded: core::result::Result<alloc::vec::Vec<u8>,i32> = unhex(core::option::unwrap(args.get(4))); if (core::result::is_err(decoded)) { key.destroy(); return core::result::unwrap_err(decoded); } value = core::result::unwrap(decoded); }
+    let loaded: core::result::Result<ext::kv::Store,i32> = load(path); if (core::result::is_err(loaded)) { key.destroy(); value.destroy(); return core::result::unwrap_err(loaded); } let store: ext::kv::Store = core::result::unwrap(loaded); let status: i32 = 0;
+    if (mode == 2) { let put: core::result::Result<ext::kv::Put,ext::kv::Error> = store.put(key.as_view(),value.as_view(),limits()); if (core::result::is_err(put)) { status = error_code(core::result::unwrap_err(put)); } else { status = save(store.borrow(),path,scratch); } }
+    if (mode == 3) { let removed: core::result::Result<bool,ext::kv::Error> = store.remove(key.as_view(),134217728); if (core::result::is_err(removed)) { status = error_code(core::result::unwrap_err(removed)); } else { if (core::result::unwrap(removed)) { status = save(store.borrow(),path,scratch); } else { status = 5; } } }
+    if (mode == 4) { let found: core::result::Result<core::option::Option<core::slice::View<u8>>,ext::kv::Error> = store.get(key.as_view(),134217728); if (core::result::is_err(found)) { status = error_code(core::result::unwrap_err(found)); } else { let item: core::option::Option<core::slice::View<u8>> = core::result::unwrap(found); if (core::option::is_none(item)) { status = 5; } else { if (!write(core::option::unwrap(item),false)) { status = 3; } } } }
+    if (mode == 5) { status = listing(store.borrow()); }
+    key.destroy(); value.destroy(); store.destroy(); return status;
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,5,262144); let status: i32 = 0;
+    if (core::result::is_err(captured)) { status = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(at) -> 3, _ -> 2 }; }
+    else { let args: std::args::Arguments = core::result::unwrap(captured); if (args.len() == 1 && same(core::option::unwrap(args.get(0)),literal("--help",6))) { if (!write(literal("Usage: kv-tool init DB SCRATCH | put DB SCRATCH KEY_HEX VALUE_HEX | remove DB SCRATCH KEY_HEX | get DB KEY_HEX | list DB | check DB\n",132),false)) { status = 3; } } else { status = process(args); } args.destroy(); }
+    let okay: bool = true; if (status == 2) { okay = write(literal("kv-tool: invalid input or resource limit\n",41),true); } if (status == 3) { okay = write(literal("kv-tool: I/O failure\n",21),true); } if (status == 4) { okay = write(literal("kv-tool: allocation failed\n",27),true); } if (!okay) { return 3; } return status;
+}

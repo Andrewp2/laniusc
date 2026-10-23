@@ -1,7 +1,7 @@
 // Count distinct Unicode scalars in UTF-8 stdin without retaining the text.
-// The hash map stores membership; allocation failure is an explicit Result.
+// The hash set stores membership; allocation failure is an explicit Result.
 module app::main;
-import alloc::hash_map;
+import alloc::hash_set;
 import core::char;
 import core::result;
 import std::io_byte;
@@ -9,14 +9,14 @@ import std::io_decimal;
 import std::io_utf8;
 
 fn main() -> i32 {
-    let seen: alloc::hash_map::HashMap<char, bool> = alloc::hash_map::new();
+    let seen: alloc::hash_set::HashSet<char> = alloc::hash_set::new();
     while (true) {
         let code: u32 = std::io_utf8::read_stdin_scalar_or(1114112, 1114113, 1114114);
         if (code == 1114112) { break; }
         if (code == 1114113) { seen.destroy(); return 2; }
         if (code == 1114114) { seen.destroy(); return 3; }
         let scalar: char = core::char::from_u32_or(code, '\0');
-        if (core::result::is_err(seen.try_insert(scalar, true))) { seen.destroy(); return 4; }
+        if (core::result::is_err(seen.try_insert(scalar))) { seen.destroy(); return 4; }
     }
     let count: i32 = seen.len();
     seen.destroy();

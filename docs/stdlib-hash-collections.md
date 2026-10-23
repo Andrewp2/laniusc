@@ -131,11 +131,11 @@ Native execution is established for x86_64 Linux. GPU user-program execution
 and other hosts remain unverified. Keyed hashing, automatic/deep destruction,
 borrowed-key lookup and shared iterator-protocol integration remain work.
 
-## Hash set dependency
+## Hash sets and the earlier wrapper dependency
 
-The proposed HashSet wrapper hits a compiler layout-replay error when forwarding
-to this generic map. Both empty-record and boolean payload versions reproduce
-it. Its implementation and intended tests are retained outside the production
-source root in [the dependency reproduction](../tests/fixtures/stdlib_foundation/hash_set_dependency/README.md).
-HashSet is not part of the executable support claim. The broader library goal
-still includes it.
+[HashSet](stdlib-owned-sets.md) now executes through this map's shared owner-state
+boundary, including representative ownership, algebra and allocation failures.
+The earlier nested generic wrapper shape remains preserved in the
+[dependency reproduction](../tests/fixtures/stdlib_foundation/hash_set_dependency/README.md).
+The production factoring does not repair that compiler source shape or establish
+general imported generic adapter support.

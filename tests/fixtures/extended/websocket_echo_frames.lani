@@ -1,0 +1,25 @@
+// Deterministic interoperability fixture; its mask key is test data only.
+module app::main;
+import alloc::vec;
+import core::result;
+import core::slice;
+import ext::websocket;
+import std::io_byte;
+import core::io;
+import std::stream;
+fn main() -> i32 {
+    let side:i32=std::io_byte::read_stdin_byte_or(-1,-2); if(side!=0 && side!=1) { return 2; } let role:ext::websocket::Role=ext::websocket::Role::Server; if(side==1) { role=ext::websocket::Role::Client; }
+    let input:alloc::vec::Vec<u8> =alloc::vec::new(); let output:alloc::vec::Vec<u8> =alloc::vec::new(); let c:ext::websocket::Connection=core::result::unwrap(ext::websocket::connection(role,ext::websocket::default_limits())); let status:i32=0;
+    while(true) { let code:i32=std::io_byte::read_stdin_byte_or(-1,-2); if(code==-1) { break; } if(code==-2) { status=3; break; } if(input.len()==1048576 || core::result::is_err(input.try_push(code as u8))) { status=4; break; } }
+    let wire:core::slice::View<u8> =input.as_view();
+    let at:i32=0; let key:[u8;4]=[17,34,51,68];
+    while(status==0 && at<input.len()) {
+        let parsed=c.receive(core::result::unwrap(wire.subview(at,input.len()))); if(core::result::is_err(parsed)) { status=2; break; } let step:ext::websocket::Step=core::result::unwrap(parsed); at+=step.consumed;
+        let opcode:i32=match(step.event) { ext::websocket::Event::Pending->-1, ext::websocket::Event::Text->1, ext::websocket::Event::Binary->2, ext::websocket::Event::Ping->10, ext::websocket::Event::Pong->-1, ext::websocket::Event::Close->8 };
+        if(opcode>=0) { let encoded=c.send(true,opcode,step.payload,key); if(core::result::is_err(encoded)) { status=4; break; } let owner:alloc::vec::Vec<u8> =core::result::unwrap(encoded); if(core::result::is_err(output.try_extend(owner.as_view()))) { status=4; } owner.destroy(); }
+    }
+    if(status==0 && core::result::is_err(c.finish_receive())) { status=2; }
+    let sink:std::stream::Descriptor=std::stream::from_handle(1);
+    if(status==0 && core::result::is_err(core::io::write_all(sink.borrow(),output.as_slice(),0,output.len()))) { status=5; }
+    c.destroy(); output.destroy(); input.destroy(); return status;
+}

@@ -1,0 +1,6 @@
+error[LNC0027]: call resolution failed
+ --> <staged-stdlib>/core/admission_static_iter.lani:10:88
+   |
+10 | pub fn pull<I,T>(source: &I) -> core::option::Option<T> where I: Pull<I,T> { return I::pull(source); }
+   |                                                                                        ^^^^ this trait member call has no concrete implementation member to route to
+     = note: the receiver's implementation must be a non-generic local impl of the bounding trait; routing through generic or imported implementations is not supported yet

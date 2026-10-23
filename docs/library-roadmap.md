@@ -27,19 +27,19 @@ package distribution is a separate deliverable.
 | Family | Required contents | Executable state and remaining work |
 | --- | --- | --- |
 | Fundamental values | Option, Result, ordering, comparison, hashing, cloning, explicit errors | Generic Option/Result execute; partial equality/order are distinct from total equality/order, with explicit total float keys. Some generic forwarding and record extraction compositions remain compiler dependencies; clone and ownership consolidation remain |
-| Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Native i64/u64/isize/usize arithmetic, division, bits and integer conversions now execute alongside narrower integers; pointer widths explicitly describe x86_64. Binary32/binary64 value utilities include exact bits, rounding and square root; decimal parsing and shortest/precision formatting execute. Native floats use partial comparison with explicit total key wrappers. Cross-width API consolidation, represented two-word paths and further mathematical operations remain |
+| Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Canonical primitive-width integer arithmetic, division, bits and conversion policies execute; pointer widths explicitly describe x86_64. Binary32/binary64 value utilities include exact bits, rounding and square root; decimal parsing and shortest/precision formatting execute. Full-range binary64 trigonometric, exponential, logarithmic and power functions have independent accuracy evidence. Native floats use partial comparison with explicit total key wrappers. Legacy number/byte helpers and represented two-word consumer paths still need consolidation |
 | Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic algorithms and counted View values execute, including subviews, checked mutations and cursors; initial physical counts still require compiler length projection |
 | Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | Inherent slice/text/hash-map cursors execute; shared protocol dispatch hits an imported-generic compiler dependency; adapters and collection integration remain |
-| Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat, integer/float conversion, caller-buffer Display, runtime format strings and owned formatting execute. Alignment counts scalars and numeric precision rounds exact binary values. Optional extended modules provide Unicode 17 full casing, normalization and default word/grapheme boundaries; richer format controls, terminal display width and collation remain |
+| Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat, integer/float conversion, caller-buffer Display, runtime format strings and owned formatting execute. Alignment counts scalars and numeric precision rounds exact binary values. Optional extended modules provide Unicode 17 full casing, normalization, default word/grapheme boundaries and an explicit terminal width policy. Richer format controls and collation remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings, raw views and stable chunked arenas with generic typed allocations execute; layout and ownership consolidation remain |
-| Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec, deque and bitset with explicit errors, inline generic Vec/Eq Set, hash maps, ordered tree maps and min/max heaps execute. Silent-failure legacy map/set/text owners are retired. Generic owned hash/tree sets and the protected std::vec/heap migration remain |
+| Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec, deque and bitset, inline generic Vec/Eq Set, hash/tree maps and sets, and min/max heaps execute. Owned sets include representative ownership and all four fallible algebra operations through shared map engines. Silent-failure legacy map/set/text owners are retired. The protected std::vec/heap migration and deep ownership consolidation remain |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks, native descriptor adapters and owned files execute; buffered adapters remain |
 | Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files, borrowed Unix byte paths, components, names, prefixes, owned buffers, explicit lexical normalization and checked directory/file mutations execute; metadata, directory enumeration, walking and further host operations remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Owned raw-byte argument snapshots and argument/environment helpers execute; subprocess management remains |
-| Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, Gregorian calendar/ISO weeks/RFC 3339 values, native clocks, generic deadline waits, deterministic generators, sampling/shuffle and explicit OS entropy errors execute; time zones, legacy consolidation, additional clocks and distributions remain |
+| Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, Gregorian calendar/ISO weeks/RFC 3339 values, native clocks, generic deadline waits, deterministic generators, sampling/shuffle and explicit OS entropy errors execute. Optional TZif/POSIX time zones provide historical/future conversion and complete ambiguity candidates over a documented profile. Legacy consolidation, additional clocks and distributions remain |
 | Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6, scopes, socket addresses and CIDR prefixes execute; host socket services remain contract-only |
 | Concurrency | Threads, joining, synchronization, atomics, channels, cancellation | Current thread module is contract-only; runtime prerequisites remain |
-| Development | Assertions, test runner, property helpers, benchmarks, diagnostics, API docs | Nontrapping checks, explicit source suites, filters, seeded properties, injected/native-clock benchmarks and a bounded native compiler/run driver execute. Automatic compiler discovery/runtime registration remains unavailable; distribution and complete API reference work remain |
+| Development | Assertions, test runner, property helpers, benchmarks, diagnostics, API docs | Nontrapping checks, explicit source suites, filters, seeded properties, injected/native-clock benchmarks and a bounded native compiler/run driver execute. Selective, relocatable source bundles use the existing package resolver and verify inventory hashes. Automatic compiler discovery/runtime registration, binary SDK distribution and complete API reference work remain |
 
 ## Extended library scope
 
@@ -135,8 +135,9 @@ provides counted strided matrices, owned matrices, products, pivoted LU and
 Householder QR least squares, with explicit numerical and resource limits.
 The [numerical CSV analyzer](extended-data-analyze.md) combines both libraries
 for summaries and optional multiple regression. These are binary64 APIs;
-distributions, weighted/higher moments, advanced decompositions, sparse matrices,
-geometry and wider mathematical functions remain work.
+distributions, weighted/higher moments, advanced decompositions and sparse
+matrices remain work. Geometry, elementary functions and signal algorithms
+are documented below.
 
 [Owned bitsets and counted views](stdlib-bitset-owned.md) add checked bit/range
 edits, searches, shifts, set algebra, cursors and explicit allocation failures.
@@ -182,8 +183,9 @@ Unsupported syntax fails explicitly. [Inline collections](stdlib-fixed-capacity.
 now use explicit Full/Bounds/absence outcomes, return displaced elements and
 use lawful full equality for sets. Borrowed free functions preserve symbolic
 element and capacity parameters. Imported method lookup with symbolic capacity
-and [generic owned set wrappers](stdlib-owned-sets.md) have reduced compiler
-dependencies and successful controls; they are excluded from passing claims.
+has a reduced compiler dependency and successful controls. [Owned sets](stdlib-owned-sets.md)
+now execute through shared map owner-state boundaries; the older nested wrapper
+failure is preserved separately from the production support claim.
 A general Display-to-owned-String helper also remains excluded after a minimal
 compiler failure; typed owned formatting executes independently. The
 [dependency record](library-dependencies.md) preserves the exact contexts.
@@ -218,14 +220,36 @@ filters, CRC/order validation and RGBA8 encoding. A
 and flips. [Finite audio](extended-audio.md) and [WAVE codecs](extended-wave.md)
 provide PCM/IEEE/extensible conversion, exact mean/DC/mono behavior, scaled RMS
 and checked signal operations through a [WAVE program](extended-wave-tool.md).
-Color management, other image/audio formats, playback and wider signal
-processing remain work.
+[Signal processing](extended-signal.md) adds checked complex values, radix-2
+FFT/inverse, windows, convolution and spectral bins. The
+[WAVE spectrum program](extended-wave-spectrum.md) combines downmixing, optional
+FIR smoothing and windowed FFT into CSV. Color management, other image/audio
+formats, playback and additional signal algorithms remain work.
 
 [HTTP/1 wire processing](extended-http.md) implements requests/responses,
 framing, chunk extensions/trailers, exact boundaries and checked writers. Its
 [offline message program](extended-http-message.md) validates and decodes real
 wire bytes. It provides no socket client/server, TLS or HTTP/2 implementation;
 those protocol and binding requirements remain on the full roadmap.
+
+[DNS wire processing](extended-dns.md) validates binary names, compression,
+QUERY sections, common RDATA and EDNS, with bounded complete message writing.
+[WebSocket processing](extended-websocket.md) provides RFC 6455 handshakes,
+role masking, fragmented UTF-8, control/close state and frame generation.
+Both have real offline programs and independent interoperability/failure tests;
+resolver, socket and TLS transport remain separate host work.
+
+[Byte key/value storage](extended-kv.md) provides atomic owned mutations and
+canonical CRC-checked snapshots. Its file program stages replacements through
+a caller-provided disposable sibling path. Crash durability, locking,
+transactions, SQLite and the persistent indexed-archive application remain.
+
+[Narrow primitive integers](stdlib-narrow-integers.md) now match the canonical
+native-width policy families, with exhaustive byte arithmetic and independent
+big-integer references. [Elementary binary64 functions](stdlib-math.md) include
+full-range argument reduction and explicit IEEE behavior, checked against
+high-precision independent references. These are Lanius implementations, with
+licensed algorithm provenance retained in source.
 
 [TOML 1.1.0](extended-toml.md) supplies owned typed documents and deterministic
 encoding, with the complete versioned official valid/invalid corpus and resource
@@ -234,7 +258,16 @@ types, exact temporal fractions, negative zero and unknown offsets. Configuratio
 overlays currently use JSON; a common typed configuration layer remains work.
 [Calendar values](stdlib-calendar.md) provide checked Gregorian day/ordinal/ISO
 week arithmetic, RFC 3339 parsing/formatting and explicit SystemTime conversion.
-Time zones and certified leap-second placement need separate data/services.
+[TZif time zones](extended-timezone.md) add historical offsets, supported POSIX
+future rules and complete local-time ambiguity candidates with an inspection
+and conversion program. Leap-bearing files and overlapping annual rule streams
+fail explicitly; certified leap-second placement needs separate data/services.
+
+[Selective source distribution](library-distribution.md) copies only the package
+resolver's reachable closure, retains notices and verifies a sorted hash
+inventory. Relocation tests delete the original source package and execute the
+bundled calculator. Binary SDK installation, registry publishing and complete
+API references remain open.
 
 For external formats and algorithms, use their primary specifications and
 published conformance vectors. Choose exact versions and formats when starting
@@ -289,21 +322,32 @@ API list; unrelated library work can continue.
 ## Current work
 
 - Branch: `codex/stdlib`, based on `441e66f9`.
-- Current milestone: native 64-bit/pointer integers; Lanius source test/property/
+- Current milestone: canonical narrow integers, full-range binary64 elementary
+  functions, generic owned hash/tree sets, TZif time zones, DNS and WebSocket
+  wire processing, byte key/value snapshots, signal processing and selective
+  source distribution. Five new native programs and four migrated set consumers
+  exercise real behavior. Independent models, malformed-input/resource cases,
+  allocation/I/O faults and independent source reviews are recorded per guide.
+  Supported execution remains x86_64 Linux output from GPU compilation. The
+  [host prerequisite audit](library-host-prerequisites.md) names missing services;
+  sockets/processes/threads, SQLite, generic adapter composition and final
+  distribution/reference/completion work remain.
+- Preceding milestone: native 64-bit/pointer integers; Lanius source test/property/
   benchmark workflow; legacy collection/text consumer migration; exact geometry;
   terminal tables/progress; PNG/image and WAVE/audio utilities; HTTP/1 wire codec.
   Six real applications integrate these families. Independent reviews found
   and corrected PNG unknown-chunk handling, HTTP 205/CONNECT rules, exact audio
   cancellation and Runner failure-state latching. All target claims remain
   native x86_64 Linux; the whole roadmap, host/database services and distribution
-  are still incomplete.
+  were still incomplete at that checkpoint; current support is recorded above.
 - Preceding formatting/parsing milestone: exact float precision, typed runtime
   format strings and owned String/byte results, inline Vec/Eq Set with explicit
   outcomes and symbolic-capacity borrowed APIs, checked parsing cursors,
   shortest line scripts and strict unified patches. The expression calculator
   and file comparison/patch application exercise these modules with reference,
-  resource, allocation and I/O failure evidence. Generic owned set wrappers
-  remain blocked with current reduced reproductions and map controls. A generic
+  resource, allocation and I/O failure evidence. The original nested owned set
+  wrappers remain preserved as compiler reproductions; current production sets
+  use the shared map boundary described above. A generic
   owned Display convenience also remains outside production: primitive-only
   callers expose a context-sensitive native-layout compiler failure.
 - Preceding collections/mathematics milestone: owned/counted bitsets with a
@@ -343,9 +387,10 @@ API list; unrelated library work can continue.
   scratch. `core::fmt` exposes both widths through Display and atomic appends.
   The [streaming normalizer](stdlib-float-normalize.md) exercises conversion,
   square root, generic formatting, bounded byte records and native streams.
-  Native bitwise, halfway, exponent, allocation and I/O tests pass. Transcendental
-  functions, generic floating comparison/hash consolidation and owned formatting
-  conveniences remain; these modules do not complete the numeric family.
+  Native bitwise, halfway, exponent, allocation and I/O tests pass. Elementary
+  functions, lawful partial/total float comparison and typed owned formatting
+  have since advanced as described above; generic owned Display composition
+  and numeric consumer consolidation remain.
 - Exact decimal validation: [`core::decimal_number`](stdlib-decimal-number.md)
   implements strict JSON-number parsing, exact comparisons/integer queries and
   divisibility with counted work. Two runtime groups compare 2,525 reference
@@ -388,7 +433,8 @@ API list; unrelated library work can continue.
   deadline, round up to milliseconds and split requests at the native i32 limit.
   A generic Deadline-factory composition has a reduced compiler reproduction
   and two successful controls; shipped APIs retain their generic interface.
-  Other clocks, cancellation, time zones and legacy migration remain.
+  Other clocks, cancellation and legacy migration remain; optional TZif zones
+  now execute as described above.
 - Randomness: [`core::random` and `std::entropy`](stdlib-randomness.md) execute
   xoshiro256++ generation, seed/state restoration, jumps, unbiased integer
   sampling, fixed-grid floats, byte filling, generic choice/shuffle and checked
@@ -420,15 +466,15 @@ API list; unrelated library work can continue.
   insertion orders and a sorted word-count program. Building from 65,536 sorted
   entries uses 65,535 key comparisons and about 32 ms whole-program CPU time,
   versus 1,966,082 comparisons and 312 ms for repeated insertion. The old
-  insertion-ordered linear map remains a separate migration; ordered sets
-  remain to be implemented.
+  insertion-ordered linear map has since been removed with its consumers
+  migrated. Ordered sets now share this tree engine.
 - CLI and host arguments: [`ext::cli` and `std::args`](extended-cli.md) execute
   borrowed option parsing and owned raw-byte argument snapshots. Eight test
   groups cover schema errors, 96 generated command lines, allocation failures,
   32,768-argument lists and a streaming file-checksum application with injected
   I/O errors. Parsing makes no allocations after capture; two snapshot
   allocations suffice at both 4,096 and 32,768 arguments. Higher-level CLI help,
-  subcommands and logging remain.
+  subcommands remain; logging executes as documented below.
 - Configuration: [`ext::config`](extended-config.md) executes strict JSON object
   sources, bounded file loading, typed borrowed queries and explicit shallow
   overlays with source indices. The checksum application combines configuration
@@ -468,8 +514,9 @@ API list; unrelated library work can continue.
 - Hash map: [`alloc::hash_map`](stdlib-hash-collections.md) executes generic
   lookup, replacement/removal, reserve, shrink, clone and iteration, including
   collision models and allocation failures. String and all integer widths
-  implement hashing. The HashSet wrapper is retained as a compiler reproduction,
-  outside the production source root.
+  implement hashing. Production HashSet now shares this engine through its
+  owner-state boundary; the earlier nested wrapper is retained separately as
+  a compiler reproduction.
 - Binary heap: [`alloc::binary_heap`](stdlib-binary-heap.md) executes min/max
   queues, linear bulk construction, root replacement, allocation-safe reserve,
   shrink, clone, aliased extension and sorted ownership transfer. Five test
@@ -504,12 +551,10 @@ API list; unrelated library work can continue.
   including allocation and I/O failure coverage. Initial counts still require
   valid physical backing; shared generic iterator dispatch remains a compiler
   dependency with a minimal reproduction and executable controls.
-- Next foundation work: resolve shared iterator and HashSet compiler dependencies;
-  continue text operations, buffered I/O and
-  remaining streaming format interfaces; complete HashSet when its compiler
-  dependency is resolved. Complete the remaining Vec consumer migrations and
-  consolidate legacy maps/sets and specialized collections under alloc with
-  explicit fallible APIs; ordered sets remain.
+- Next foundation work: shared iterator and buffered I/O composition, remaining
+  streaming format interfaces, protected Vec/heap migration and numeric/manual
+  ownership consolidation. Owned hash/tree sets now execute, and silent-failure
+  legacy map/set owners have been removed with their consumers migrated.
   Completing the integration application does not complete the first phase.
 - Text composition: [join, repeat and word splitting](stdlib-text-composition.md)
   execute with atomic, alias-safe appends, checked sizes and one-allocation

@@ -1,0 +1,127 @@
+// Owned arbitrary-byte key/value storage with compact atomic replacements.
+// Copies alias ownership. Keep one active owner; do not mutate public fields.
+module ext::kv;
+import alloc::vec;
+import core::crc32;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+
+pub struct Limits { max_entries: i32, max_key: i32, max_value: i32, max_bytes: i32, max_snapshot: i32, max_work: u64 }
+pub enum Error { Bounds, EntryLimit, KeyLimit, ValueLimit, ByteLimit, SnapshotLimit, WorkLimit, AllocationFailed, SizeOverflow, Truncated, Signature, Version, Header, Checksum, Order, DuplicateKey, TrailingData }
+pub enum Put { Inserted, Replaced }
+pub struct Entry { key: core::slice::View<u8>, value: core::slice::View<u8> }
+struct Record { key: i32, key_len: i32, value: i32, value_len: i32 }
+pub struct Store { bytes: alloc::vec::Vec<u8>, records: alloc::vec::Vec<Record> }
+struct Budget { left: u64 }
+struct Position { index: i32, found: bool }
+impl Budget { fn borrow(&self) -> &Budget { return self; } fn charge(&self, count: u64) -> bool { if (count > self.left) { return false; } self.left -= count; return true; } }
+pub fn default_limits() -> Limits { return Limits { max_entries: 65536, max_key: 65536, max_value: 16777216, max_bytes: 67108864, max_snapshot: 68157440, max_work: 536870912 }; }
+pub fn new() -> Store { let bytes: alloc::vec::Vec<u8> = alloc::vec::new(); let records: alloc::vec::Vec<Record> = alloc::vec::new(); return Store { bytes: bytes, records: records }; }
+fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.length <= 2147483647-view.start; }
+fn valid_limits(limits: Limits) -> bool { return limits.max_entries >= 0 && limits.max_key >= 0 && limits.max_value >= 0 && limits.max_bytes >= 0 && limits.max_snapshot >= 0; }
+fn byte(view: core::slice::View<u8>, index: i32) -> u8 { return view.values[view.start+index]; }
+fn part(view: core::slice::View<u8>, start: i32, count: i32) -> core::slice::View<u8> { return core::slice::View { values: view.values, start: view.start+start, length: count }; }
+fn compare(left: core::slice::View<u8>, right: core::slice::View<u8>, budget: &Budget) -> core::result::Result<i32,Error> {
+    if (!budget.charge(1)) { return core::result::Err(Error::WorkLimit); }
+    let count: i32 = left.length; if (right.length < count) { count = right.length; } let i: i32 = 0;
+    while (i < count) { if (!budget.charge(1)) { return core::result::Err(Error::WorkLimit); } let a: u8 = byte(left,i); let b: u8 = byte(right,i); if (a < b) { return core::result::Ok(-1); } if (a > b) { return core::result::Ok(1); } i += 1; }
+    if (left.length < right.length) { return core::result::Ok(-1); } if (left.length > right.length) { return core::result::Ok(1); } return core::result::Ok(0);
+}
+fn find(store: &Store, key: core::slice::View<u8>, budget: &Budget) -> core::result::Result<Position,Error> {
+    if (!valid(key)) { return core::result::Err(Error::Bounds); }
+    let low: i32 = 0; let high: i32 = store.len();
+    while (low < high) { let middle: i32 = low+(high-low)/2; let item: Entry = core::result::unwrap(store.entry(middle)); let order: core::result::Result<i32,Error> = compare(item.key,key,budget); if (core::result::is_err(order)) { return core::result::Err(core::result::unwrap_err(order)); } let n: i32 = core::result::unwrap(order); if (n == 0) { return core::result::Ok(Position { index: middle, found: true }); } if (n < 0) { low = middle+1; } else { high = middle; } }
+    return core::result::Ok(Position { index: low, found: false });
+}
+fn allocate(store: &Store, count: i32, size: i32) -> bool {
+    let records: &alloc::vec::Vec<Record> = store.records.borrow(); let bytes: &alloc::vec::Vec<u8> = store.bytes.borrow();
+    if (core::result::is_err(records.try_reserve(count))) { return false; }
+    if (core::result::is_err(bytes.try_resize(size,0))) { return false; } return true;
+}
+fn append(store: &Store, at: i32, key: core::slice::View<u8>, value: core::slice::View<u8>) -> i32 {
+    let destination: [u8] = store.bytes.as_slice(); let i: i32 = 0; while (i < key.length) { destination[at+i] = byte(key,i); i += 1; }
+    let start: i32 = at+key.length; i = 0; while (i < value.length) { destination[start+i] = byte(value,i); i += 1; }
+    let records: &alloc::vec::Vec<Record> = store.records.borrow(); core::result::unwrap(records.try_push(Record { key: at, key_len: key.length, value: start, value_len: value.length })); return start+value.length;
+}
+fn replacement(store: &Store, selected: Position, key: core::slice::View<u8>, value: core::slice::View<u8>, remove: bool, size: i32, budget: &Budget) -> core::result::Result<Store,Error> {
+    let count: i32 = store.len(); if (remove) { count -= 1; } else { if (!selected.found) { count += 1; } }
+    if ((count as usize) > 2147483647/core::mem::size_of<Record>()) { return core::result::Err(Error::SizeOverflow); }
+    // Two abstract units per byte (zero initialization and copying), one per
+    // output index entry. Charge before allocating or modifying either owner.
+    if (!budget.charge((size as u64)*2+(count as u64))) { return core::result::Err(Error::WorkLimit); }
+    let result: Store = new(); if (!allocate(result.borrow(),count,size)) { result.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let index: i32 = 0; let at: i32 = 0;
+    while (index <= store.len()) {
+        if (index == selected.index && !remove) { at = append(result.borrow(),at,key,value); }
+        if (index < store.len() && !(index == selected.index && selected.found)) { let item: Entry = core::result::unwrap(store.entry(index)); at = append(result.borrow(),at,item.key,item.value); }
+        index += 1;
+    }
+    assert(at == size && result.len() == count); return core::result::Ok(result);
+}
+pub impl Store {
+    pub fn borrow(&self) -> &Store { return self; }
+    pub fn len(&self) -> i32 { return self.records.len(); }
+    pub fn is_empty(&self) -> bool { return self.records.is_empty(); }
+    pub fn byte_len(&self) -> i32 { return self.bytes.len(); }
+    pub fn entry(&self, index: i32) -> core::result::Result<Entry,Error> {
+        if (index < 0 || index >= self.records.len()) { return core::result::Err(Error::Bounds); } let record: Record = self.records.at(index); let source: core::slice::View<u8> = self.bytes.as_view();
+        return core::result::Ok(Entry { key: part(source,record.key,record.key_len), value: part(source,record.value,record.value_len) });
+    }
+    pub fn get(&self, key: core::slice::View<u8>, max_work: u64) -> core::result::Result<core::option::Option<core::slice::View<u8>>,Error> {
+        let budget: Budget = Budget { left: max_work }; let checked: core::result::Result<Position,Error> = find(self,key,budget.borrow()); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+        let position: Position = core::result::unwrap(checked); if (!position.found) { return core::result::Ok(core::option::None()); } return core::result::Ok(core::option::Some(core::result::unwrap(self.entry(position.index)).value));
+    }
+    fn replace(&self, staged: Store) { self.bytes.destroy(); self.records.destroy(); self.bytes = staged.bytes; self.records = staged.records; }
+    pub fn put(&self, key: core::slice::View<u8>, value: core::slice::View<u8>, limits: Limits) -> core::result::Result<Put,Error> {
+        if (!valid(key) || !valid(value) || !valid_limits(limits)) { return core::result::Err(Error::Bounds); }
+        if (key.length > limits.max_key) { return core::result::Err(Error::KeyLimit); } if (value.length > limits.max_value) { return core::result::Err(Error::ValueLimit); }
+        let budget: Budget = Budget { left: limits.max_work }; let found: core::result::Result<Position,Error> = find(self,key,budget.borrow()); if (core::result::is_err(found)) { return core::result::Err(core::result::unwrap_err(found)); } let position: Position = core::result::unwrap(found);
+        if (self.len() > limits.max_entries || (!position.found && self.len() == limits.max_entries)) { return core::result::Err(Error::EntryLimit); }
+        let size: i64 = self.bytes.len() as i64; if (position.found) { let record: Record = self.records.at(position.index); size -= (record.key_len as i64)+(record.value_len as i64); } size += (key.length as i64)+(value.length as i64);
+        if (size > (limits.max_bytes as i64)) { return core::result::Err(Error::ByteLimit); }
+        let staged: core::result::Result<Store,Error> = replacement(self,position,key,value,false,size as i32,budget.borrow()); if (core::result::is_err(staged)) { return core::result::Err(core::result::unwrap_err(staged)); }
+        self.replace(core::result::unwrap(staged)); if (position.found) { return core::result::Ok(Put::Replaced); } return core::result::Ok(Put::Inserted);
+    }
+    pub fn remove(&self, key: core::slice::View<u8>, max_work: u64) -> core::result::Result<bool,Error> {
+        let budget: Budget = Budget { left: max_work }; let found: core::result::Result<Position,Error> = find(self,key,budget.borrow()); if (core::result::is_err(found)) { return core::result::Err(core::result::unwrap_err(found)); } let position: Position = core::result::unwrap(found); if (!position.found) { return core::result::Ok(false); }
+        let record: Record = self.records.at(position.index); let size: i32 = self.bytes.len()-record.key_len-record.value_len;
+        let empty: core::slice::View<u8> = part(self.bytes.as_view(),0,0); let staged: core::result::Result<Store,Error> = replacement(self,position,empty,empty,true,size,budget.borrow()); if (core::result::is_err(staged)) { return core::result::Err(core::result::unwrap_err(staged)); } self.replace(core::result::unwrap(staged)); return core::result::Ok(true);
+    }
+    pub fn destroy(&self) { self.bytes.destroy(); self.records.destroy(); }
+}
+fn little32(input: core::slice::View<u8>, at: i32) -> u32 { return (byte(input,at) as u32) | ((byte(input,at+1) as u32) << 8) | ((byte(input,at+2) as u32) << 16) | ((byte(input,at+3) as u32) << 24); }
+fn put32(bytes: [u8], at: i32, value: u32) { bytes[at] = (value & 255) as u8; bytes[at+1] = ((value >> 8) & 255) as u8; bytes[at+2] = ((value >> 16) & 255) as u8; bytes[at+3] = (value >> 24) as u8; }
+fn checksum(input: core::slice::View<u8>, count: i32) -> u32 { let state: u32 = core::crc32::INITIAL; let i: i32 = 0; while (i < count) { state = core::crc32::update_byte(state,byte(input,i)); i += 1; } return core::crc32::finish(state); }
+pub fn encode(store: &Store, max_output: i32, max_work: u64) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    if (max_output < 0) { return core::result::Err(Error::Bounds); }
+    let size: i64 = 28+(store.len() as i64)*8+(store.byte_len() as i64); if (size > (max_output as i64)) { return core::result::Err(Error::SnapshotLimit); }
+    if ((size as u64)*3+(store.len() as u64) > max_work) { return core::result::Err(Error::WorkLimit); }
+    let result: alloc::vec::Vec<u8> = alloc::vec::new(); let resized: core::result::Result<i32,alloc::vec::Error> = result.try_resize(size as i32,0); if (core::result::is_err(resized)) { result.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let bytes: [u8] = result.as_slice(); put32(bytes,0,1229865292); put32(bytes,4,168646219); put32(bytes,8,1); put32(bytes,12,store.len() as u32); put32(bytes,16,(size-28) as u32);
+    let at: i32 = 24; let index: i32 = 0; while (index < store.len()) { let item: Entry = core::result::unwrap(store.entry(index)); put32(bytes,at,item.key.length as u32); put32(bytes,at+4,item.value.length as u32); at += 8; let i: i32 = 0; while (i < item.key.length) { bytes[at] = byte(item.key,i); at += 1; i += 1; } i = 0; while (i < item.value.length) { bytes[at] = byte(item.value,i); at += 1; i += 1; } index += 1; }
+    assert(at == (size as i32)-4); put32(bytes,at,checksum(result.as_view(),at)); return core::result::Ok(result);
+}
+pub fn decode(input: core::slice::View<u8>, limits: Limits) -> core::result::Result<Store,Error> {
+    if (!valid(input) || !valid_limits(limits)) { return core::result::Err(Error::Bounds); } if (input.length > limits.max_snapshot) { return core::result::Err(Error::SnapshotLimit); }
+    if (input.length < 28) { return core::result::Err(Error::Truncated); }
+    if ((input.length as u64)*3 > limits.max_work) { return core::result::Err(Error::WorkLimit); }
+    if (little32(input,0) != 1229865292 || little32(input,4) != 168646219) { return core::result::Err(Error::Signature); } if (little32(input,8) != 1) { return core::result::Err(Error::Version); } if (little32(input,20) != 0) { return core::result::Err(Error::Header); }
+    let count_u: u32 = little32(input,12); let payload: u32 = little32(input,16); if (count_u > (limits.max_entries as u32)) { return core::result::Err(Error::EntryLimit); }
+    if ((count_u as usize) > 2147483647/core::mem::size_of<Record>()) { return core::result::Err(Error::SizeOverflow); }
+    if (payload > (input.length-28) as u32) { return core::result::Err(Error::Truncated); } if (payload < (input.length-28) as u32) { return core::result::Err(Error::TrailingData); }
+    if (checksum(input,input.length-4) != little32(input,input.length-4)) { return core::result::Err(Error::Checksum); }
+    let count: i32 = count_u as i32; let budget: Budget = Budget { left: limits.max_work-(input.length as u64)*3 }; let at: i32 = 24; let index: i32 = 0; let size: i32 = 0; let previous: core::slice::View<u8> = part(input,24,0);
+    while (index < count) {
+        if (input.length-4-at < 8) { return core::result::Err(Error::Truncated); } let key_u: u32 = little32(input,at); let value_u: u32 = little32(input,at+4); at += 8;
+        if (key_u > (limits.max_key as u32)) { return core::result::Err(Error::KeyLimit); } if (value_u > (limits.max_value as u32)) { return core::result::Err(Error::ValueLimit); } let key_len: i32 = key_u as i32; let value_len: i32 = value_u as i32;
+        if (key_len > input.length-4-at || value_len > input.length-4-at-key_len) { return core::result::Err(Error::Truncated); }
+        if (key_len > limits.max_bytes-size || value_len > limits.max_bytes-size-key_len) { return core::result::Err(Error::ByteLimit); } size += key_len+value_len;
+        let key: core::slice::View<u8> = part(input,at,key_len); if (index > 0) { let order: core::result::Result<i32,Error> = compare(previous,key,budget.borrow()); if (core::result::is_err(order)) { return core::result::Err(core::result::unwrap_err(order)); } let n: i32 = core::result::unwrap(order); if (n == 0) { return core::result::Err(Error::DuplicateKey); } if (n > 0) { return core::result::Err(Error::Order); } } previous = key; at += key_len+value_len; index += 1;
+    }
+    if (at != input.length-4) { return core::result::Err(Error::TrailingData); }
+    if (!budget.charge(count as u64)) { return core::result::Err(Error::WorkLimit); }
+    let result: Store = new(); if (!allocate(result.borrow(),count,size)) { result.destroy(); return core::result::Err(Error::AllocationFailed); }
+    at = 24; index = 0; let output: i32 = 0; while (index < count) { let key_len: i32 = little32(input,at) as i32; let value_len: i32 = little32(input,at+4) as i32; at += 8; output = append(result.borrow(),output,part(input,at,key_len),part(input,at+key_len,value_len)); at += key_len+value_len; index += 1; } return core::result::Ok(result);
+}

@@ -1,0 +1,20 @@
+module app::main;
+import alloc::admission_state;
+import alloc::hash_map;
+import core::option;
+import core::result;
+fn main() -> i32 {
+    let key: i16 = 7; let other: i16 = -3; let zero: i16 = 0;
+    let wide: i64 = 4294967297; let replacement: i64 = -9;
+    let set: alloc::admission_state::Set<i16> = alloc::admission_state::set();
+    let first: core::option::Option<i16> = core::result::unwrap(set.try_insert(key));
+    let duplicate: core::option::Option<i16> = core::result::unwrap(set.try_insert(key));
+    if (core::option::is_some(first) || core::option::unwrap_or(duplicate,zero) != key || !set.contains(key)) { set.destroy(); return 1; }
+    let map: alloc::admission_state::Map<i16,i64> = alloc::admission_state::map();
+    core::result::unwrap(map.try_insert(other,wide));
+    let old: core::option::Option<alloc::hash_map::Entry<i16,i64>> = core::result::unwrap(map.try_insert(other,replacement));
+    if (core::option::is_none(old)) { map.destroy(); set.destroy(); return 2; }
+    let entry: alloc::hash_map::Entry<i16,i64> = core::option::unwrap(old);
+    if (entry.key != other || entry.value != wide || !map.contains(other) || set.contains(other)) { map.destroy(); set.destroy(); return 3; }
+    map.destroy(); set.destroy(); return 0;
+}

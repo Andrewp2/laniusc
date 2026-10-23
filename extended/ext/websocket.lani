@@ -1,0 +1,273 @@
+// RFC 6455, HTTP/1 opening handshake and extension-free frames/messages.
+// Portable wire processing only. No sockets, TLS, clocks or random generator.
+module ext::websocket;
+import alloc::vec;
+import core::base64;
+import core::mem;
+import core::option;
+import core::result;
+import core::sha1;
+import core::slice;
+import ext::http;
+
+pub enum Error { Bounds, Incomplete(i32), Protocol(i32), InvalidUtf8(i32), InvalidClose(i32), Limit(i32), Unsupported, Handshake, Capacity, AllocationFailed, Closed, Failed, UncleanEof, FragmentedEof }
+pub enum Role { Client, Server }
+pub enum Event { Pending, Text, Binary, Ping, Pong, Close }
+pub struct Limits { frame_bytes: i32, message_bytes: i32, fragments: i32, protocols: i32, http: ext::http::Limits }
+pub struct Frame { fin: bool, opcode: i32, masked: bool, mask: [u8;4], payload: core::slice::View<u8>, consumed: i32 }
+pub struct Step { consumed: i32, event: Event, payload: core::slice::View<u8>, close_code: i32 }
+pub struct Request { head: ext::http::Head, key: core::slice::View<u8>, protocol_count: i32 }
+pub struct Response { head: ext::http::Head, protocol: core::option::Option<core::slice::View<u8>> }
+struct Flow { opcode: i32, length: i32, fragments: i32, need: i32, low: u8, high: u8 }
+pub struct Connection { role: Role, limits: Limits, incoming: Flow, outgoing: Flow, message: alloc::vec::Vec<u8>, control: alloc::vec::Vec<u8>, received_close: bool, sent_close: bool, failed: bool }
+pub fn default_limits() -> Limits { return Limits { frame_bytes: 16777216, message_bytes: 16777216, fragments: 65536, protocols: 32, http: ext::http::default_limits() }; }
+fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length; }
+fn valid_limits(value: Limits) -> bool { return value.frame_bytes >= 0 && value.message_bytes >= 0 && value.fragments >= 0 && value.protocols >= 0 && value.http.head_bytes >= 0 && value.http.line_bytes >= 0 && value.http.headers >= 0 && value.http.body_bytes >= 0 && value.http.trailer_bytes >= 0 && value.http.trailers >= 0 && value.http.chunks >= 0; }
+fn byte(view: core::slice::View<u8>, index: i32) -> u8 { return core::option::unwrap(view.get(index)); }
+fn part(view: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return core::result::unwrap(view.subview(start,end)); }
+fn literal(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn exact(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool { if (left.len() != right.len()) { return false; } let i: i32 = 0; while (i < left.len()) { if (byte(left,i) != byte(right,i)) { return false; } i += 1; } return true; }
+fn named(value: core::slice::View<u8>, name: str, count: i32) -> bool { return ext::http::equal_name(value,literal(name,count)); }
+fn client(role: Role) -> bool { return match (role) { Role::Client -> true, Role::Server -> false }; }
+fn opcode_valid(opcode: i32) -> bool { return opcode == 0 || opcode == 1 || opcode == 2 || opcode == 8 || opcode == 9 || opcode == 10; }
+fn empty_flow() -> Flow { return Flow { opcode: 0, length: 0, fragments: 0, need: 0, low: 128, high: 191 }; }
+
+// A complete single frame; trailing bytes belong to following frames.
+// For a receiver role, a server expects masked and a client unmasked frames.
+pub fn parse_frame(input: core::slice::View<u8>, receiver: Role, limits: Limits) -> core::result::Result<Frame,Error> {
+    if (!valid(input) || !valid_limits(limits)) { return core::result::Err(Error::Bounds); }
+    if (input.len() < 2) { return core::result::Err(Error::Incomplete(input.len())); }
+    let a: u8 = byte(input,0); let b: u8 = byte(input,1); let opcode: i32 = (a&15) as i32; let fin: bool = (a&128) != 0; let masked: bool = (b&128) != 0;
+    if ((a&112) != 0 || !opcode_valid(opcode)) { return core::result::Err(Error::Protocol(0)); }
+    if (masked == client(receiver)) { return core::result::Err(Error::Protocol(1)); }
+    let tag: i32 = (b&127) as i32; let length: u64 = tag as u64; let pos: i32 = 2;
+    if (opcode >= 8 && (!fin || tag > 125)) { return core::result::Err(Error::Protocol(0)); }
+    if (tag == 126) { if (input.len() < 4) { return core::result::Err(Error::Incomplete(input.len())); } length = ((byte(input,2) as u64)<<8)|(byte(input,3) as u64); pos=4; if (length < 126) { return core::result::Err(Error::Protocol(2)); } }
+    if (tag == 127) { if (input.len() < 10) { return core::result::Err(Error::Incomplete(input.len())); } if ((byte(input,2)&128) != 0) { return core::result::Err(Error::Protocol(2)); } length=0; let i: i32 = 2; while (i < 10) { length=(length<<8)|(byte(input,i) as u64); i += 1; } pos=10; if (length < 65536) { return core::result::Err(Error::Protocol(2)); } }
+    if (length > (limits.frame_bytes as u64)) { return core::result::Err(Error::Limit(pos)); }
+    let mask: [u8;4] = [0;4]; if (masked) { if (input.len()-pos < 4) { return core::result::Err(Error::Incomplete(input.len())); } let i: i32=0; while (i<4) { mask[i]=byte(input,pos+i); i+=1; } pos+=4; }
+    let count: i32=length as i32; if (count > input.len()-pos) { return core::result::Err(Error::Incomplete(input.len())); }
+    return core::result::Ok(Frame { fin: fin, opcode: opcode, masked: masked, mask: mask, payload: part(input,pos,pos+count), consumed: pos+count });
+}
+fn decoded(frame: Frame, index: i32) -> u8 { let value: u8=byte(frame.payload,index); if (frame.masked) { value=value^frame.mask[index%4]; } return value; }
+// Frame must come from parse_frame and remain unchanged. Source/destination
+// must be disjoint. Bounds/capacity failures leave destination untouched.
+pub fn decode_frame_into(frame: Frame, destination: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (!valid(destination)) { return core::result::Err(Error::Bounds); } if (destination.len()<frame.payload.len()) { return core::result::Err(Error::Capacity); }
+    let i:i32=0; while (i<frame.payload.len()) { core::result::unwrap(destination.try_set(i,decoded(frame,i))); i+=1; } return core::result::Ok(i);
+}
+fn utf8_from(flow: Flow, frame: Frame, start: i32) -> core::result::Result<Flow,Error> {
+    let next: Flow=flow; let i:i32=start;
+    while (i<frame.payload.len()) {
+        let c:u8=decoded(frame,i);
+        if (next.need>0) { if (c<next.low || c>next.high) { return core::result::Err(Error::InvalidUtf8(i)); } next.need-=1; next.low=128; next.high=191; }
+        else { if (c<128) {} else { next.low=128; next.high=191;
+            if (c>=194 && c<=223) { next.need=1; }
+            else { if (c>=224 && c<=239) { next.need=2; if (c==224) { next.low=160; } if (c==237) { next.high=159; } }
+            else { if (c>=240 && c<=244) { next.need=3; if (c==240) { next.low=144; } if (c==244) { next.high=143; } }
+            else { return core::result::Err(Error::InvalidUtf8(i)); } } }
+        } }
+        i+=1;
+    }
+    return core::result::Ok(next);
+}
+pub fn valid_close_code(code:i32) -> bool { return (code>=1000 && code<=1014 && code!=1004 && code!=1005 && code!=1006) || (code>=3000 && code<=4999); }
+fn close_code(frame:Frame) -> core::result::Result<i32,Error> {
+    if (frame.payload.len()==0) { return core::result::Ok(-1); } if (frame.payload.len()==1) { return core::result::Err(Error::InvalidClose(0)); }
+    let code:i32=((decoded(frame,0) as i32)<<8)|(decoded(frame,1) as i32); if (!valid_close_code(code)) { return core::result::Err(Error::InvalidClose(0)); }
+    let checked=utf8_from(empty_flow(),frame,2); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); } if (core::result::unwrap(checked).need!=0) { return core::result::Err(Error::InvalidUtf8(frame.payload.len())); }
+    return core::result::Ok(code);
+}
+fn advance(flow:Flow, frame:Frame, limits:Limits) -> core::result::Result<Flow,Error> {
+    let next:Flow=flow;
+    if (frame.opcode>=8) { if (frame.opcode==8) { let checked=close_code(frame); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); } } return core::result::Ok(next); }
+    if (frame.opcode==0) { if (next.opcode==0) { return core::result::Err(Error::Protocol(0)); } }
+    else { if (next.opcode!=0) { return core::result::Err(Error::Protocol(0)); } next=empty_flow(); next.opcode=frame.opcode; }
+    if (next.fragments==limits.fragments || frame.payload.len()>limits.message_bytes-next.length) { return core::result::Err(Error::Limit(0)); }
+    next.length+=frame.payload.len(); next.fragments+=1;
+    if (next.opcode==1) { let checked=utf8_from(next,frame,0); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); } next=core::result::unwrap(checked); if (frame.fin && next.need!=0) { return core::result::Err(Error::InvalidUtf8(frame.payload.len())); } }
+    return core::result::Ok(next);
+}
+fn reserve(buffer:&alloc::vec::Vec<u8>, required:i32, maximum:i32) -> bool {
+    if (required<=buffer.capacity()) { return true; } let capacity:i32=4;
+    if (buffer.capacity()>0) { capacity=maximum; if (buffer.capacity()<=maximum/2) { capacity=buffer.capacity()*2; } }
+    if (capacity<required) { capacity=required; } if (capacity>maximum) { capacity=maximum; }
+    return core::result::is_ok(buffer.try_reserve(capacity-buffer.len()));
+}
+pub fn connection(role:Role, limits:Limits) -> core::result::Result<Connection,Error> {
+    if (!valid_limits(limits)) { return core::result::Err(Error::Bounds); }
+    let message:alloc::vec::Vec<u8> =alloc::vec::new(); let control:alloc::vec::Vec<u8> =alloc::vec::new();
+    return core::result::Ok(Connection { role:role, limits:limits, incoming:empty_flow(), outgoing:empty_flow(), message:message, control:control, received_close:false, sent_close:false, failed:false });
+}
+pub impl Connection {
+    pub fn is_failed(&self) -> bool { return self.failed; }
+    pub fn close_received(&self) -> bool { return self.received_close; }
+    pub fn close_sent(&self) -> bool { return self.sent_close; }
+    pub fn is_closed(&self) -> bool { return self.received_close && self.sent_close; }
+    // Incomplete/AllocationFailed preserve this owner. Protocol/UTF-8/limit
+    // errors poison it. Complete payload borrows storage until next receive.
+    // Wire input must be disjoint from all views returned by this connection.
+    pub fn receive(&self, input:core::slice::View<u8>) -> core::result::Result<Step,Error> {
+        if (self.failed) { return core::result::Err(Error::Failed); } if (self.received_close) { return core::result::Err(Error::Closed); }
+        let parsed=parse_frame(input,self.role,self.limits); if (core::result::is_err(parsed)) { let error:Error=core::result::unwrap_err(parsed); let fatal:bool=match(error) { Error::Incomplete(at)->false, Error::Bounds->false, _->true }; if (fatal) { self.failed=true; } return core::result::Err(error); }
+        let frame:Frame=core::result::unwrap(parsed); let checked=advance(self.incoming,frame,self.limits);
+        if (core::result::is_err(checked)) { self.failed=true; let original:Error=core::result::unwrap_err(checked); let header:i32=frame.consumed-frame.payload.len(); let error:Error=match(original) { Error::InvalidUtf8(at)->Error::InvalidUtf8(header+at), Error::InvalidClose(at)->Error::InvalidClose(header+at), _->original }; return core::result::Err(error); } let next:Flow=core::result::unwrap(checked);
+        let event:Event=Event::Pending; let payload:core::slice::View<u8> =part(input,0,0); let code:i32=-1;
+        if (frame.opcode>=8) {
+            if (!reserve(self.control.borrow(),frame.payload.len(),125)) { return core::result::Err(Error::AllocationFailed); }
+            self.control.clear(); let i:i32=0; while (i<frame.payload.len()) { core::result::unwrap(self.control.try_push(decoded(frame,i))); i+=1; }
+            event=Event::Pong; if (frame.opcode==9) { event=Event::Ping; } if (frame.opcode==8) { event=Event::Close; code=core::result::unwrap(close_code(frame)); self.received_close=true; }
+            payload=self.control.as_view();
+        } else {
+            if (!reserve(self.message.borrow(),next.length,self.limits.message_bytes)) { return core::result::Err(Error::AllocationFailed); }
+            if (frame.opcode!=0) { self.message.clear(); }
+            let i:i32=0; while (i<frame.payload.len()) { core::result::unwrap(self.message.try_push(decoded(frame,i))); i+=1; }
+            self.incoming=next;
+            if (frame.fin) { event=Event::Binary; if (next.opcode==1) { event=Event::Text; } payload=self.message.as_view(); self.incoming=empty_flow(); }
+        }
+        return core::result::Ok(Step { consumed:frame.consumed, event:event, payload:payload, close_code:code });
+    }
+    // A new unpredictable key is required for every client frame. This API
+    // accepts the caller's key and provides no random-source substitute.
+    pub fn send(&self, fin:bool, opcode:i32, payload:core::slice::View<u8>, mask:[u8;4]) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+        if (self.failed && (opcode!=8 || self.sent_close)) { return core::result::Err(Error::Failed); } if ((self.sent_close && (opcode!=10 || self.received_close)) || (self.received_close && opcode!=8 && opcode!=10 && !(opcode==0 && self.outgoing.opcode!=0))) { return core::result::Err(Error::Closed); }
+        if (!valid(payload)) { return core::result::Err(Error::Bounds); } if (!opcode_valid(opcode) || (opcode>=8 && (!fin || payload.len()>125))) { return core::result::Err(Error::Protocol(0)); }
+        if (payload.len()>self.limits.frame_bytes) { return core::result::Err(Error::Limit(0)); }
+        let zero:[u8;4]=[0;4]; let logical:Frame=Frame { fin:fin,opcode:opcode,masked:false,mask:zero,payload:payload,consumed:0 };
+        let checked=advance(self.outgoing,logical,self.limits); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+        let header:i32=2; if (payload.len()>=126) { header=4; } if (payload.len()>=65536) { header=10; } if (client(self.role)) { header+=4; }
+        if (payload.len()>2147483647-header) { return core::result::Err(Error::Limit(0)); }
+        let allocated:core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> =alloc::vec::with_capacity(payload.len()+header); if (core::result::is_err(allocated)) { return core::result::Err(Error::AllocationFailed); } let out:alloc::vec::Vec<u8> =core::result::unwrap(allocated);
+        let a:u8=opcode as u8; if (fin) { a=a|128; } core::result::unwrap(out.try_push(a)); let b:u8=payload.len() as u8; if (payload.len()>=126) { b=126; } if (payload.len()>=65536) { b=127; } if (client(self.role)) { b=b|128; } core::result::unwrap(out.try_push(b));
+        if (payload.len()>=65536) { let i:i32=7; let length:u64=payload.len() as u64; while (i>=0) { core::result::unwrap(out.try_push(((length>>(i*8))&255) as u8)); i-=1; } }
+        else { if (payload.len()>=126) { core::result::unwrap(out.try_push(((payload.len()>>8)&255) as u8)); core::result::unwrap(out.try_push((payload.len()&255) as u8)); } }
+        let i:i32=0; if (client(self.role)) { while (i<4) { core::result::unwrap(out.try_push(mask[i])); i+=1; } } i=0;
+        while (i<payload.len()) { let value:u8=byte(payload,i); if (client(self.role)) { value=value^mask[i%4]; } core::result::unwrap(out.try_push(value)); i+=1; }
+        if (opcode<8) { self.outgoing=core::result::unwrap(checked); if (fin) { self.outgoing=empty_flow(); } } if (opcode==8) { self.sent_close=true; }
+        return core::result::Ok(out);
+    }
+    // EOF is explicit. Receiving Close alone does not prove a clean transport
+    // handshake; is_closed also requires a successfully encoded local Close.
+    pub fn finish_receive(&self) -> core::result::Result<i32,Error> { if (self.failed) { return core::result::Err(Error::Failed); } if (self.received_close) { return core::result::Ok(0); } if (self.incoming.opcode!=0) { return core::result::Err(Error::FragmentedEof); } return core::result::Err(Error::UncleanEof); }
+    pub fn destroy(&self) { self.message.destroy(); self.control.destroy(); self.failed=true; }
+}
+
+fn token(c:u8) -> bool { return (c>=65 && c<=90) || (c>=97 && c<=122) || (c>=48 && c<=57) || c==33 || c==35 || c==36 || c==37 || c==38 || c==39 || c==42 || c==43 || c==45 || c==46 || c==94 || c==95 || c==96 || c==124 || c==126; }
+fn ows(c:u8) -> bool { return c==32 || c==9; }
+fn list_count(value:core::slice::View<u8>, upgrade:bool) -> i32 {
+    if (value.is_empty()) { return -1; } let i:i32=0; let count:i32=0;
+    while(i<value.len()) { while(i<value.len() && ows(byte(value,i))) { i+=1; } let start:i32=i; while(i<value.len() && token(byte(value,i))) { i+=1; } if(i==start) { return -1; }
+        if(upgrade && i<value.len() && byte(value,i)==47) { i+=1; let start:i32=i; while(i<value.len() && token(byte(value,i))) { i+=1; } if(i==start) { return -1; } }
+        count+=1; while(i<value.len() && ows(byte(value,i))) { i+=1; } if(i==value.len()) { return count; } if(byte(value,i)!=44) { return -1; } i+=1; if(i==value.len()) { return -1; }
+    } return -1;
+}
+fn list_item(value:core::slice::View<u8>, ordinal:i32) -> core::slice::View<u8> {
+    let i:i32=0; let count:i32=0;
+    while(i<value.len()) { while(i<value.len() && ows(byte(value,i))) { i+=1; } let start:i32=i; while(i<value.len() && byte(value,i)!=44) { i+=1; } let end:i32=i; while(end>start && ows(byte(value,end-1))) { end-=1; } if(count==ordinal) { return part(value,start,end); } count+=1; i+=1; }
+    return part(value,0,0);
+}
+fn field_count(head:ext::http::Head, name:str, count:i32) -> i32 { let cursor:ext::http::Fields=head.headers(); let total:i32=0; while(true) { let next=cursor.next(); if(core::option::is_none(next)) { return total; } let item:ext::http::Field=core::option::unwrap(next); if(named(item.name,name,count)) { total+=1; } } return total; }
+fn required(head:ext::http::Head, name:str, count:i32) -> core::result::Result<core::slice::View<u8>,Error> {
+    if(field_count(head,name,count)!=1) { return core::result::Err(Error::Handshake); } let item:ext::http::Field=core::option::unwrap(head.lookup(literal(name,count))); return core::result::Ok(item.value);
+}
+fn contains_header_token(head:ext::http::Head, name:str, size:i32, wanted:str, length:i32, upgrade:bool) -> bool {
+    let cursor:ext::http::Fields=head.headers(); let found:bool=false;
+    while(true) { let next=cursor.next(); if(core::option::is_none(next)) { return found; } let item:ext::http::Field=core::option::unwrap(next); if(named(item.name,name,size)) { let count:i32=list_count(item.value,upgrade); if(count<0) { return false; } let i:i32=0; while(i<count) { if(named(list_item(item.value,i),wanted,length)) { found=true; } i+=1; } } }
+    return false;
+}
+// No extension is negotiated. A server may receive syntactically valid offers
+// and decline all of them. Quoted parameter values must unescape to a token.
+fn extensions_valid(value:core::slice::View<u8>) -> bool {
+    if(value.is_empty()) { return false; } let i:i32=0;
+    while(i<value.len()) {
+        while(i<value.len() && ows(byte(value,i))) { i+=1; } let start:i32=i; while(i<value.len() && token(byte(value,i))) { i+=1; } if(i==start) { return false; }
+        while(true) {
+            while(i<value.len() && ows(byte(value,i))) { i+=1; } if(i==value.len()) { return true; } if(byte(value,i)==44) { i+=1; if(i==value.len()) { return false; } break; }
+            if(byte(value,i)!=59) { return false; } i+=1; while(i<value.len() && ows(byte(value,i))) { i+=1; } let start:i32=i; while(i<value.len() && token(byte(value,i))) { i+=1; } if(i==start) { return false; }
+            while(i<value.len() && ows(byte(value,i))) { i+=1; }
+            if(i<value.len() && byte(value,i)==61) { i+=1; while(i<value.len() && ows(byte(value,i))) { i+=1; } if(i==value.len()) { return false; }
+                if(byte(value,i)==34) { i+=1; let count:i32=0; while(i<value.len() && byte(value,i)!=34) { if(byte(value,i)==92) { i+=1; if(i==value.len()) { return false; } } if(!token(byte(value,i))) { return false; } count+=1; i+=1; } if(i==value.len() || count==0) { return false; } i+=1; }
+                else { let start:i32=i; while(i<value.len() && token(byte(value,i))) { i+=1; } if(i==start) { return false; } }
+            }
+        }
+    } return false;
+}
+fn protocol_at_head(head:ext::http::Head, ordinal:i32) -> core::option::Option<core::slice::View<u8>> {
+    if(ordinal<0) { return core::option::None(); } let cursor:ext::http::Fields=head.headers(); let base:i32=0;
+    while(true) { let next=cursor.next(); if(core::option::is_none(next)) { return core::option::None(); } let item:ext::http::Field=core::option::unwrap(next); if(named(item.name,"sec-websocket-protocol",22)) { let count:i32=list_count(item.value,false); if(count<0) { return core::option::None(); } if(ordinal-base<count) { return core::option::Some(list_item(item.value,ordinal-base)); } base+=count; } }
+    return core::option::None();
+}
+pub fn protocol_at(request:Request, ordinal:i32) -> core::option::Option<core::slice::View<u8>> { return protocol_at_head(request.head,ordinal); }
+pub fn offers(request:Request, protocol:core::slice::View<u8>) -> bool { if(!valid(protocol)) { return false; } let i:i32=0; while(i<request.protocol_count) { if(exact(core::option::unwrap(protocol_at(request,i)),protocol)) { return true; } i+=1; } return false; }
+fn protocol_count(head:ext::http::Head, maximum:i32) -> core::result::Result<i32,Error> {
+    let cursor:ext::http::Fields=head.headers(); let total:i32=0;
+    while(true) { let next=cursor.next(); if(core::option::is_none(next)) { break; } let item:ext::http::Field=core::option::unwrap(next);
+        if(named(item.name,"sec-websocket-protocol",22)) { let count:i32=list_count(item.value,false); if(count<0) { return core::result::Err(Error::Handshake); } if(count>maximum-total) { return core::result::Err(Error::Limit(item.offset)); } total+=count; }
+    }
+    let i:i32=0; while(i<total) { let current:core::slice::View<u8> =core::option::unwrap(protocol_at_head(head,i)); let j:i32=0; while(j<i) { if(exact(current,core::option::unwrap(protocol_at_head(head,j)))) { return core::result::Err(Error::Handshake); } j+=1; } i+=1; }
+    return core::result::Ok(total);
+}
+fn http_error(error:ext::http::Error) -> Error { return match(error) { ext::http::Error::Bounds->Error::Bounds, ext::http::Error::Incomplete(at)->Error::Incomplete(at), ext::http::Error::Malformed(at)->Error::Protocol(at), ext::http::Error::Limit(at)->Error::Limit(at), ext::http::Error::AllocationFailed->Error::AllocationFailed, _->Error::Handshake }; }
+fn valid_key(key:core::slice::View<u8>) -> bool { if(!valid(key) || key.len()!=24) { return false; } let copied:[u8;24]=[0;24]; let i:i32=0; while(i<24) { copied[i]=byte(key,i); i+=1; } return core::base64::decoded_len_or(copied,24,-1)==16; }
+// Canonical padded Base64, with source copied before writing (overlap allowed).
+pub fn key_into(nonce:core::slice::View<u8>, destination:core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if(!valid(nonce) || !valid(destination) || nonce.len()!=16) { return core::result::Err(Error::Bounds); } if(destination.len()<24) { return core::result::Err(Error::Capacity); }
+    let raw:[u8;16]=[0;16]; let encoded:[u8;24]=[0;24]; let i:i32=0; while(i<16) { raw[i]=byte(nonce,i); i+=1; } assert(core::base64::encode_into(raw,16,encoded,24)==24); i=0; while(i<24) { core::result::unwrap(destination.try_set(i,encoded[i])); i+=1; } return core::result::Ok(24);
+}
+pub fn accept_into(key:core::slice::View<u8>, destination:core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if(!valid(key) || !valid(destination)) { return core::result::Err(Error::Bounds); } if(!valid_key(key)) { return core::result::Err(Error::Handshake); } if(destination.len()<28) { return core::result::Err(Error::Capacity); }
+    let state:core::sha1::State=core::sha1::new(); core::result::unwrap(state.update(key)); core::result::unwrap(state.update(literal("258EAFA5-E914-47DA-95CA-C5AB0DC85B11",36))); let hash:core::sha1::Digest=state.finish();
+    let encoded:[u8;28]=[0;28]; assert(core::base64::encode_into(hash.bytes,20,encoded,28)==28); let i:i32=0; while(i<28) { core::result::unwrap(destination.try_set(i,encoded[i])); i+=1; } return core::result::Ok(28);
+}
+pub fn validate_request(input:core::slice::View<u8>, limits:Limits) -> core::result::Result<Request,Error> {
+    if(!valid_limits(limits)) { return core::result::Err(Error::Bounds); } let parsed=ext::http::parse_request_head(input,limits.http); if(core::result::is_err(parsed)) { return core::result::Err(http_error(core::result::unwrap_err(parsed))); } let head:ext::http::Head=core::result::unwrap(parsed);
+    if(head.version!=11 || !exact(head.method,literal("GET",3)) || head.content_length>0 || core::option::is_some(head.lookup(literal("Transfer-Encoding",17)))) { return core::result::Err(Error::Handshake); }
+    if(!contains_header_token(head,"upgrade",7,"websocket",9,true) || !contains_header_token(head,"connection",10,"upgrade",7,false)) { return core::result::Err(Error::Handshake); }
+    let key=required(head,"sec-websocket-key",17); let version=required(head,"sec-websocket-version",21); if(core::result::is_err(key) || core::result::is_err(version)) { return core::result::Err(Error::Handshake); }
+    if(!valid_key(core::result::unwrap(key)) || !exact(core::result::unwrap(version),literal("13",2)) || field_count(head,"origin",6)>1 || field_count(head,"sec-websocket-accept",20)>0) { return core::result::Err(Error::Handshake); }
+    let count=protocol_count(head,limits.protocols); if(core::result::is_err(count)) { return core::result::Err(core::result::unwrap_err(count)); }
+    let cursor:ext::http::Fields=head.headers(); while(true) { let next=cursor.next(); if(core::option::is_none(next)) { break; } let item:ext::http::Field=core::option::unwrap(next); if(named(item.name,"sec-websocket-extensions",24) && !extensions_valid(item.value)) { return core::result::Err(Error::Handshake); } }
+    return core::result::Ok(Request { head:head,key:core::result::unwrap(key),protocol_count:core::result::unwrap(count) });
+}
+// Request and its backing must come from validate_request and remain immutable.
+pub fn validate_response(input:core::slice::View<u8>, request:Request, limits:Limits) -> core::result::Result<Response,Error> {
+    if(!valid_limits(limits)) { return core::result::Err(Error::Bounds); } let parsed=ext::http::parse_response_head(input,literal("GET",3),limits.http); if(core::result::is_err(parsed)) { return core::result::Err(http_error(core::result::unwrap_err(parsed))); } let head:ext::http::Head=core::result::unwrap(parsed);
+    if(head.version!=11 || head.status!=101 || field_count(head,"upgrade",7)!=1 || !named(core::result::unwrap(required(head,"upgrade",7)),"websocket",9) || !contains_header_token(head,"connection",10,"upgrade",7,false)) { return core::result::Err(Error::Handshake); }
+    if(field_count(head,"sec-websocket-extensions",24)>0) { return core::result::Err(Error::Unsupported); } if(field_count(head,"sec-websocket-key",17)>0 || field_count(head,"sec-websocket-version",21)>0) { return core::result::Err(Error::Handshake); }
+    let accept=required(head,"sec-websocket-accept",20); if(core::result::is_err(accept)) { return core::result::Err(Error::Handshake); } let expected:[u8;28]=[0;28]; let expected_view:core::slice::View<u8> =core::result::unwrap(core::slice::view(expected,28)); core::result::unwrap(accept_into(request.key,expected_view)); if(!exact(core::result::unwrap(accept),expected_view)) { return core::result::Err(Error::Handshake); }
+    let selected:core::option::Option<core::slice::View<u8>> =core::option::None(); let count:i32=field_count(head,"sec-websocket-protocol",22); if(count>1) { return core::result::Err(Error::Handshake); } if(count==1) { let protocol:core::slice::View<u8> =core::result::unwrap(required(head,"sec-websocket-protocol",22)); if(list_count(protocol,false)!=1 || !offers(request,protocol)) { return core::result::Err(Error::Handshake); } selected=core::option::Some(protocol); }
+    return core::result::Ok(Response { head:head,protocol:selected });
+}
+fn reserved(name:core::slice::View<u8>) -> bool { return named(name,"upgrade",7) || named(name,"connection",10) || named(name,"sec-websocket-key",17) || named(name,"sec-websocket-version",21) || named(name,"sec-websocket-accept",20) || named(name,"sec-websocket-protocol",22) || named(name,"sec-websocket-extensions",24) || named(name,"content-length",14) || named(name,"transfer-encoding",17); }
+fn add_field(fields:&alloc::vec::Vec<ext::http::Field>, name:core::slice::View<u8>, value:core::slice::View<u8>) -> bool { let item:ext::http::Field=ext::http::Field { raw:part(name,0,0),name:name,value:value,offset:0 }; return core::result::is_ok(fields.try_push(item)); }
+fn caller_fields(input:core::slice::View<ext::http::Field>, output:&alloc::vec::Vec<ext::http::Field>, limits:Limits) -> core::result::Result<i32,Error> {
+    if(input.start<0 || input.length<0 || input.start>2147483647-input.length) { return core::result::Err(Error::Bounds); } let i:i32=0; while(i<input.len()) { let item:ext::http::Field=core::option::unwrap(input.get(i)); if(!valid(item.name) || !valid(item.value)) { return core::result::Err(Error::Bounds); } if(reserved(item.name)) { return core::result::Err(Error::Handshake); } if(item.name.len()>limits.http.line_bytes-2 || item.value.len()>limits.http.line_bytes-2-item.name.len()) { return core::result::Err(Error::Limit(i)); } if(core::result::is_err(output.try_push(item))) { return core::result::Err(Error::AllocationFailed); } i+=1; } return core::result::Ok(i);
+}
+// Caller supplies Host and optional Origin/authentication fields, a fresh
+// unpredictable 16-byte nonce, and an optional unique comma-separated token list.
+pub fn encode_request(start_line:core::slice::View<u8>, fields:core::slice::View<ext::http::Field>, nonce:core::slice::View<u8>, protocols:core::slice::View<u8>, limits:Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    if(!valid(protocols) || !valid_limits(limits)) { return core::result::Err(Error::Bounds); }
+    let owned_fields:i32=5; if(!protocols.is_empty()) { owned_fields+=1; }
+    if(fields.start<0 || fields.length<0 || fields.start>2147483647-fields.length || !valid(start_line)) { return core::result::Err(Error::Bounds); }
+    if(owned_fields>limits.http.headers || fields.len()>limits.http.headers-owned_fields || start_line.len()>limits.http.line_bytes || start_line.len()>limits.http.head_bytes) { return core::result::Err(Error::Limit(0)); }
+    if(!valid(protocols) || !valid_limits(limits)) { return core::result::Err(Error::Bounds); } let key:[u8;24]=[0;24]; let key_view:core::slice::View<u8> =core::result::unwrap(core::slice::view(key,24)); let keyed=key_into(nonce,key_view); if(core::result::is_err(keyed)) { return core::result::Err(core::result::unwrap_err(keyed)); }
+    let headers:alloc::vec::Vec<ext::http::Field> =alloc::vec::new(); let copied=caller_fields(fields,headers.borrow(),limits); if(core::result::is_err(copied)) { headers.destroy(); return core::result::Err(core::result::unwrap_err(copied)); }
+    let ok:bool=add_field(headers.borrow(),literal("Upgrade",7),literal("websocket",9)) && add_field(headers.borrow(),literal("Connection",10),literal("Upgrade",7)) && add_field(headers.borrow(),literal("Sec-WebSocket-Key",17),key_view) && add_field(headers.borrow(),literal("Sec-WebSocket-Version",21),literal("13",2));
+    if(!protocols.is_empty() && ok) { ok=add_field(headers.borrow(),literal("Sec-WebSocket-Protocol",22),protocols); }
+    if(!ok) { headers.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let encoded=ext::http::encode_request(start_line,headers.as_view(),literal("",0),limits.http); headers.destroy(); if(core::result::is_err(encoded)) { return core::result::Err(http_error(core::result::unwrap_err(encoded))); }
+    let owner:alloc::vec::Vec<u8> =core::result::unwrap(encoded); let validated=validate_request(owner.as_view(),limits); if(core::result::is_err(validated)) { let error:Error=core::result::unwrap_err(validated); owner.destroy(); return core::result::Err(error); } return core::result::Ok(owner);
+}
+pub fn encode_response(request:Request, protocol:core::slice::View<u8>, fields:core::slice::View<ext::http::Field>, limits:Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    if(!valid(protocol) || !valid_limits(limits)) { return core::result::Err(Error::Bounds); }
+    let owned_fields:i32=3; if(!protocol.is_empty()) { owned_fields+=1; }
+    if(fields.start<0 || fields.length<0 || fields.start>2147483647-fields.length) { return core::result::Err(Error::Bounds); }
+    if(owned_fields>limits.http.headers || fields.len()>limits.http.headers-owned_fields) { return core::result::Err(Error::Limit(0)); }
+    if(!valid(protocol) || !valid_limits(limits)) { return core::result::Err(Error::Bounds); } if(!protocol.is_empty() && (list_count(protocol,false)!=1 || !offers(request,protocol))) { return core::result::Err(Error::Handshake); }
+    let accept:[u8;28]=[0;28]; let accept_view:core::slice::View<u8> =core::result::unwrap(core::slice::view(accept,28)); let accepted=accept_into(request.key,accept_view); if(core::result::is_err(accepted)) { return core::result::Err(core::result::unwrap_err(accepted)); }
+    let headers:alloc::vec::Vec<ext::http::Field> =alloc::vec::new(); let copied=caller_fields(fields,headers.borrow(),limits); if(core::result::is_err(copied)) { headers.destroy(); return core::result::Err(core::result::unwrap_err(copied)); }
+    let ok:bool=add_field(headers.borrow(),literal("Upgrade",7),literal("websocket",9)) && add_field(headers.borrow(),literal("Connection",10),literal("Upgrade",7)) && add_field(headers.borrow(),literal("Sec-WebSocket-Accept",20),accept_view);
+    if(ok && !protocol.is_empty()) { ok=add_field(headers.borrow(),literal("Sec-WebSocket-Protocol",22),protocol); } if(!ok) { headers.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let encoded=ext::http::encode_response(literal("HTTP/1.1 101 Switching Protocols",32),literal("GET",3),headers.as_view(),literal("",0),limits.http); headers.destroy(); if(core::result::is_err(encoded)) { return core::result::Err(http_error(core::result::unwrap_err(encoded))); }
+    let owner:alloc::vec::Vec<u8> =core::result::unwrap(encoded); let validated=validate_response(owner.as_view(),request,limits); if(core::result::is_err(validated)) { let error:Error=core::result::unwrap_err(validated); owner.destroy(); return core::result::Err(error); } return core::result::Ok(owner);
+}

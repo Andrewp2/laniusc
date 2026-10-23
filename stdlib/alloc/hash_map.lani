@@ -249,3 +249,85 @@ pub impl<K, V> Iter<K, V> {
         return core::option::None();
     }
 }
+
+// Internal set-storage boundary. One typed facade owns each state; temporary
+// typed map/cursor views never escape. Width checks are layout guards, not
+// permission to reinterpret a different key schema. The map above remains the
+// only storage, allocation, hashing/probing or balancing implementation.
+struct KeyUnit {}
+pub struct KeyStorage { storage: ptr, buckets: i32, length: i32, occupied: i32, key_bytes: usize }
+pub struct KeyCursor { storage: ptr, buckets: i32, position: i32, key_bytes: usize }
+pub impl KeyStorage { pub fn borrow(&self) -> &KeyStorage { return self; } }
+pub impl KeyCursor { pub fn borrow(&self) -> &KeyCursor { return self; } }
+pub fn key_storage<T>() -> KeyStorage {
+    let storage: ptr = 0;
+    return KeyStorage { storage: storage, buckets: 0, length: 0, occupied: 0, key_bytes: core::mem::size_of<T>() };
+}
+fn key_view<T>(owner: &KeyStorage) -> HashMap<T, KeyUnit> {
+    assert(owner.key_bytes == core::mem::size_of<T>());
+    return HashMap { storage: owner.storage, buckets: owner.buckets, length: owner.length, occupied: owner.occupied };
+}
+fn key_update<T>(owner: &KeyStorage, map: HashMap<T, KeyUnit>) {
+    owner.storage = map.storage; owner.buckets = map.buckets; owner.length = map.length; owner.occupied = map.occupied;
+}
+pub fn key_replace<T>(owner: &KeyStorage, key: T) -> core::result::Result<core::option::Option<T>, Error> where T: core::hash::Hash<T>, T: core::cmp::Eq<T> {
+    let map: HashMap<T, KeyUnit> = key_view<T>(owner); let unit: KeyUnit = KeyUnit {};
+    let result: core::result::Result<core::option::Option<Entry<T, KeyUnit>>, Error> = map.try_insert(key, unit);
+    key_update<T>(owner, map);
+    if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+    let old: core::option::Option<Entry<T, KeyUnit>> = core::result::unwrap(result);
+    if (core::option::is_none(old)) { return core::result::Ok(core::option::None()); }
+    let entry: Entry<T, KeyUnit> = core::option::unwrap(old); return core::result::Ok(core::option::Some(entry.key));
+}
+pub fn key_contains<T>(owner: &KeyStorage, key: T) -> bool where T: core::hash::Hash<T>, T: core::cmp::Eq<T> {
+    let map: HashMap<T, KeyUnit> = key_view<T>(owner); return map.contains_key(key);
+}
+pub fn key_iter<T>(owner: &KeyStorage) -> KeyCursor {
+    let map: HashMap<T, KeyUnit> = key_view<T>(owner); let cursor: Iter<T, KeyUnit> = map.iter();
+    return KeyCursor { storage: cursor.storage, buckets: cursor.buckets, position: cursor.position, key_bytes: owner.key_bytes };
+}
+pub fn key_next<T>(cursor: &KeyCursor) -> core::option::Option<T> {
+    assert(cursor.key_bytes == core::mem::size_of<T>());
+    let view: Iter<T, KeyUnit> = Iter { storage: cursor.storage, buckets: cursor.buckets, position: cursor.position };
+    let result: core::option::Option<Entry<T, KeyUnit>> = view.next();
+    cursor.storage = view.storage; cursor.buckets = view.buckets; cursor.position = view.position;
+    if (core::option::is_none(result)) { return core::option::None(); }
+    let entry: Entry<T, KeyUnit> = core::option::unwrap(result); return core::option::Some(entry.key);
+}
+pub fn key_destroy<T>(owner: &KeyStorage) {
+    let map: HashMap<T, KeyUnit> = key_view<T>(owner); map.destroy(); key_update<T>(owner, map);
+}
+
+pub fn key_get<T>(owner: &KeyStorage, key: T) -> core::option::Option<T> where T: core::hash::Hash<T>, T: core::cmp::Eq<T> {
+    let map: HashMap<T, KeyUnit> = key_view<T>(owner);
+    let result: core::option::Option<Entry<T, KeyUnit>> = map.get_entry(key);
+    if (core::option::is_none(result)) { return core::option::None(); }
+    let entry: Entry<T, KeyUnit> = core::option::unwrap(result); return core::option::Some(entry.key);
+}
+pub fn key_remove<T>(owner: &KeyStorage, key: T) -> core::option::Option<T> where T: core::hash::Hash<T>, T: core::cmp::Eq<T> {
+    let map: HashMap<T, KeyUnit> = key_view<T>(owner);
+    let result: core::option::Option<Entry<T, KeyUnit>> = map.remove(key);
+    key_update<T>(owner, map);
+    if (core::option::is_none(result)) { return core::option::None(); }
+    let entry: Entry<T, KeyUnit> = core::option::unwrap(result); return core::option::Some(entry.key);
+}
+pub fn key_reserve<T>(owner: &KeyStorage, additional: i32) -> core::result::Result<i32, Error> {
+    let map: HashMap<T, KeyUnit> = key_view<T>(owner);
+    let result: core::result::Result<i32, Error> = map.try_reserve(additional);
+    key_update<T>(owner, map); return result;
+}
+pub fn key_shrink<T>(owner: &KeyStorage) -> core::result::Result<i32, Error> {
+    let map: HashMap<T, KeyUnit> = key_view<T>(owner);
+    let result: core::result::Result<i32, Error> = map.try_shrink_to_fit();
+    key_update<T>(owner, map); return result;
+}
+pub fn key_clone<T>(owner: &KeyStorage) -> core::result::Result<KeyStorage, Error> {
+    let map: HashMap<T, KeyUnit> = key_view<T>(owner);
+    let result: core::result::Result<HashMap<T, KeyUnit>, Error> = map.try_clone();
+    if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+    let copy: HashMap<T, KeyUnit> = core::result::unwrap(result);
+    let state: KeyStorage = key_storage<T>(); key_update<T>(state.borrow(), copy); return core::result::Ok(state);
+}
+pub fn key_clear<T>(owner: &KeyStorage) {
+    let map: HashMap<T, KeyUnit> = key_view<T>(owner); map.clear(); key_update<T>(owner, map);
+}

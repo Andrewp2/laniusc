@@ -1,7 +1,7 @@
 // Sum distinct signed decimal lines modulo 2^64.
 // Each line contains one integer without surrounding whitespace.
 module app::main;
-import alloc::tree_map;
+import alloc::tree_set;
 import core::wide_i64;
 import core::result;
 import std::io_byte;
@@ -10,7 +10,7 @@ import std::io_line;
 
 fn main() -> i32 {
     let data: [i32; 20] = [0; 20];
-    let values: alloc::tree_map::TreeMap<core::wide_i64::WideI64, bool> = alloc::tree_map::new();
+    let values: alloc::tree_set::TreeSet<core::wide_i64::WideI64> = alloc::tree_set::new();
     let total: core::wide_i64::WideI64 = core::wide_i64::zero();
     while (true) {
         let length: i32 = std::io_line::read_stdin_lf_line_into_i32(data, 20);
@@ -18,8 +18,8 @@ fn main() -> i32 {
         if (length <= 0) { values.destroy(); return 2; }
         if (!core::wide_i64::can_parse_ascii_decimal(data, length)) { values.destroy(); return 3; }
         let value: core::wide_i64::WideI64 = core::wide_i64::parse_ascii_decimal_or(data, length, core::wide_i64::zero());
-        if (!values.contains_key(value)) {
-            if (core::result::is_err(values.try_insert(value, true))) { values.destroy(); return 4; }
+        if (!values.contains(value)) {
+            if (core::result::is_err(values.try_insert(value))) { values.destroy(); return 4; }
             total = core::wide_i64::wrapping_add(total, value);
         }
     }

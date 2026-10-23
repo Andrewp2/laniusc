@@ -7,7 +7,7 @@ fn main() -> i32 {
     let maximum: i8 = 127;
     if (core::i8::MIN != minimum || core::i8::MAX != maximum ||
         core::i8::BITS != 8 || core::i8::BYTES != 1 ||
-        core::i8::abs(-7) != 7 || core::i8::abs(minimum) != maximum ||
+        core::i8::abs(-7) != 7 || core::i8::wrapping_abs(minimum) != minimum ||
         core::i8::saturating_abs(minimum) != maximum ||
         !core::option::contains(core::i8::checked_abs(-7), 7) ||
         !core::option::is_none(core::i8::checked_abs(minimum))) {
@@ -15,7 +15,7 @@ fn main() -> i32 {
     }
     if (core::i8::min(3, -5) != -5 || core::i8::max(3, -5) != 3 ||
         core::i8::clamp(12, 2, 10) != 10 ||
-        core::i8::clamp(5, 10, 3) != 5 ||
+        core::i8::clamp_or(5, 10, 3, 5) != 5 ||
         core::i8::signum(-7) != -1 || core::i8::signum(0) != 0 ||
         core::i8::signum(7) != 1 ||
         core::i8::compare_as_i32(minimum, maximum) != -1 ||
@@ -66,7 +66,7 @@ fn main() -> i32 {
         core::i8::next_power_of_two(0) != 1 ||
         core::i8::next_power_of_two(7) != 8 ||
         core::i8::next_power_of_two(64) != 64 ||
-        core::i8::next_power_of_two(maximum) != 0) {
+        !core::option::is_none(core::i8::checked_next_power_of_two(maximum))) {
         return 7;
     }
     return 0;

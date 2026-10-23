@@ -1,0 +1,13 @@
+module app::main;
+import alloc::vec;
+import core::result;
+import core::slice;
+import ext::dns;
+fn main() -> i32 {
+ let raw: [u8;5] = [3,97,98,99,0]; let name: core::slice::View<u8> = core::result::unwrap(core::slice::view(raw,5));
+ let q: ext::dns::OutQuestion = ext::dns::OutQuestion { name: name, qtype: 1, qclass: 1 }; let qs: [ext::dns::OutQuestion;1] = [q]; let octets: [u8;4] = [192,0,2,1];
+ let r: ext::dns::OutRecord = ext::dns::OutRecord { name: name, rrtype: 1, rrclass: 1, ttl: 4294967295, data: core::result::unwrap(core::slice::view(octets,4)) }; let rs: [ext::dns::OutRecord;1] = [r]; let none: core::slice::View<ext::dns::OutRecord> = core::result::unwrap(core::slice::view(rs,0));
+ let encoded = ext::dns::encode(65535,33184,core::result::unwrap(core::slice::view(qs,1)),core::result::unwrap(core::slice::view(rs,1)),none,none,ext::dns::default_limits());
+ if (core::result::is_err(encoded)) { return match (core::result::unwrap_err(encoded)) { ext::dns::Error::AllocationFailed -> 4, _ -> 2 }; }
+ let owner: alloc::vec::Vec<u8> = core::result::unwrap(encoded); owner.destroy(); return 0;
+}

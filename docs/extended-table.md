@@ -21,7 +21,7 @@ The API supports single-line cells. Newlines, tabs, ANSI escapes, other terminal
 
 Limits must be nonnegative; `max_width` must be in `1..=2,147,483,646`. Negative terminal work limits are invalid. Integer metadata errors return `Bounds`, inconsistent row lengths return `Shape(row)`, and the corresponding cell, column, width, output, and work limits have distinct errors. A per-cell terminal work failure appears inside `Cell`.
 
-The work budget reserves two units per cell and one per column before allocation, six per input byte before width scanning, and two per output byte before output allocation. It covers row validation, scratch initialization, width policy, output initialization, and output filling. Bounded static Unicode property searches are included in the fixed width-policy factor. The algorithm runs in O(cells + input bytes + output bytes) with that fixed factor. Scratch space is O(cells + columns); output space is O(output bytes).
+The work budget uses abstract policy charges: two units per cell and one per column before allocation, six per input byte before width scanning, and two per output byte before output allocation. These charges do not count physical byte reads, decoder lookahead, property searches, or CPU instructions. The six-unit input charge matches `ext::terminal`; its per-cell budget is checked separately, and the inherited grapheme cursor has no additional work budget. The algorithm runs in O(cells + input bytes + output bytes) with fixed implementation factors. Scratch space is O(cells + columns); output space is O(output bytes).
 
 ## Ownership and failures
 

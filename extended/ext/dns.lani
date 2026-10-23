@@ -1,0 +1,181 @@
+// Portable bounded DNS QUERY wire messages. No resolver, sockets or host I/O.
+module ext::dns;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::slice;
+
+pub enum Error { Bounds, Truncated(i32), Malformed(i32), Unsupported(i32), Pointer(i32), NameLimit(i32), Limit(i32), WorkLimit(i32), OutputLimit(i32), Capacity, AllocationFailed }
+pub struct Limits { message_bytes: i32, records: i32, name_bytes: i32, pointer_hops: i32, options: i32, work: i32, output_bytes: i32 }
+pub struct Header { id: i32, flags: i32, questions: i32, answers: i32, authorities: i32, additionals: i32 }
+pub struct Name { packet: core::slice::View<u8>, offset: i32, end: i32 }
+pub struct Labels { packet: core::slice::View<u8>, position: i32, done: bool }
+pub struct Question { name: Name, qtype: i32, qclass: i32 }
+pub struct Record { name: Name, rrtype: i32, rrclass: i32, ttl: u32, data: core::slice::View<u8>, offset: i32, section: i32 }
+pub struct Message { raw: core::slice::View<u8>, header: Header, answer_start: i32, authority_start: i32, additional_start: i32, opt: core::option::Option<Record> }
+pub struct Questions { packet: core::slice::View<u8>, position: i32, remaining: i32 }
+pub struct Records { packet: core::slice::View<u8>, position: i32, remaining: i32, section: i32 }
+pub struct Mx { preference: i32, exchange: Name }
+pub struct Soa { primary: Name, mailbox: Name, serial: u32, refresh: u32, retry: u32, expire: u32, minimum: u32 }
+pub struct Strings { raw: core::slice::View<u8>, position: i32 }
+pub struct Edns { udp_size: i32, extended_rcode: i32, version: i32, flags: i32, options: core::slice::View<u8> }
+pub struct EdnsOption { code: i32, data: core::slice::View<u8> }
+pub struct Options { raw: core::slice::View<u8>, position: i32 }
+pub enum Data { A(core::slice::View<u8>), Aaaa(core::slice::View<u8>), Domain(Name), Mail(Mx), Authority(Soa), Text(Strings), Opt(Edns), Unknown(core::slice::View<u8>) }
+pub struct OutQuestion { name: core::slice::View<u8>, qtype: i32, qclass: i32 }
+pub struct OutRecord { name: core::slice::View<u8>, rrtype: i32, rrclass: i32, ttl: u32, data: core::slice::View<u8> }
+struct State { packet: core::slice::View<u8>, marks: alloc::vec::Vec<u8>, limits: Limits, spent: i32, option_count: i32, compression: bool }
+impl State { fn borrow(&self) -> &State { return self; } }
+
+pub fn default_limits() -> Limits { return Limits { message_bytes: 65535, records: 4096, name_bytes: 255, pointer_hops: 128, options: 1024, work: 1048576, output_bytes: 65535 }; }
+fn valid<T>(view: core::slice::View<T>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length; }
+fn limits_valid(l: Limits) -> bool { return l.message_bytes >= 0 && l.message_bytes <= 65535 && l.records >= 0 && l.name_bytes >= 1 && l.name_bytes <= 255 && l.pointer_hops >= 0 && l.options >= 0 && l.work >= 0 && l.output_bytes >= 0 && l.output_bytes <= 65535; }
+fn b(v: core::slice::View<u8>, i: i32) -> u8 { return core::option::unwrap(v.get(i)); }
+fn sub(v: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return core::result::unwrap(v.subview(start,end)); }
+fn read16(v: core::slice::View<u8>, at: i32) -> i32 { return (b(v,at) as i32)*256+(b(v,at+1) as i32); }
+fn read32(v: core::slice::View<u8>, at: i32) -> u32 { return ((b(v,at) as u32)<<24)|((b(v,at+1) as u32)<<16)|((b(v,at+2) as u32)<<8)|(b(v,at+3) as u32); }
+fn charge(s: &State, amount: i32, at: i32) -> core::result::Result<bool,Error> { if (amount > s.limits.work-s.spent) { return core::result::Err(Error::WorkLimit(at)); } s.spent += amount; return core::result::Ok(true); }
+// Track only direct encoded positions. A pointer may address a previously
+// completed name's label/root/pointer, never a header or label payload byte.
+fn name(s: &State, start: i32, bound: i32) -> core::result::Result<Name,Error> {
+    let positions: [i32;128] = [0;128]; let count: i32 = 0; let pos: i32 = start; let end: i32 = -1; let expanded: i32 = 1; let hops: i32 = 0; let direct: bool = true;
+    while (true) {
+        let limit: i32 = s.packet.len(); if (direct) { limit = bound; }
+        if (pos >= limit) { return core::result::Err(Error::Truncated(pos)); }
+        let c: i32 = b(s.packet,pos) as i32;
+        let paid: core::result::Result<bool,Error> = charge(s,1,pos); if (core::result::is_err(paid)) { return core::result::Err(core::result::unwrap_err(paid)); }
+        if (direct) { if (count == 128) { return core::result::Err(Error::NameLimit(pos)); } positions[count] = pos; count += 1; }
+        if (c == 0) { if (direct) { end = pos+1; } break; }
+        if (c >= 192) {
+            if (!s.compression) { return core::result::Err(Error::Pointer(pos)); }
+            if (limit-pos < 2) { return core::result::Err(Error::Truncated(pos)); }
+            let target: i32 = (c-192)*256+(b(s.packet,pos+1) as i32);
+            if (target < 12 || target >= pos || target >= s.packet.len() || s.marks.at(target) == 0) { return core::result::Err(Error::Pointer(pos)); }
+            if (hops == s.limits.pointer_hops) { return core::result::Err(Error::Limit(pos)); } hops += 1;
+            if (direct) { end = pos+2; } direct = false; pos = target;
+        } else {
+            if (c >= 64) { return core::result::Err(Error::Unsupported(pos)); }
+            if (c > limit-pos-1) { return core::result::Err(Error::Truncated(pos)); }
+            if (c+1 > s.limits.name_bytes-expanded) { return core::result::Err(Error::NameLimit(pos)); } expanded += c+1;
+            let paid: core::result::Result<bool,Error> = charge(s,c,pos); if (core::result::is_err(paid)) { return core::result::Err(core::result::unwrap_err(paid)); } pos += c+1;
+        }
+    }
+    if (s.marks.len() > 0) { let i: i32 = 0; while (i < count) { core::result::unwrap(s.marks.set(positions[i],1 as u8)); i += 1; } }
+    return core::result::Ok(Name { packet: s.packet, offset: start, end: end });
+}
+// Canonical standalone wire name: uncompressed, root terminated, no suffix.
+pub fn parse_name(bytes: core::slice::View<u8>, limits: Limits) -> core::result::Result<Name,Error> {
+    if (!valid(bytes) || !limits_valid(limits)) { return core::result::Err(Error::Bounds); }
+    if (bytes.len() > limits.name_bytes) { return core::result::Err(Error::NameLimit(0)); }
+    let scratch: alloc::vec::Vec<u8> = alloc::vec::new(); let state: State = State { packet: bytes, marks: scratch, limits: limits, spent: 0, option_count: 0, compression: false };
+    let parsed: core::result::Result<Name,Error> = name(state.borrow(),0,bytes.len()); if (core::result::is_err(parsed)) { return parsed; } if (core::result::unwrap(parsed).end != bytes.len()) { return core::result::Err(Error::Malformed(core::result::unwrap(parsed).end)); } return parsed;
+}
+pub impl Name {
+    pub fn labels(&self) -> Labels { return Labels { packet: self.packet, position: self.offset, done: false }; }
+    pub fn encoded(&self) -> core::slice::View<u8> { return sub(self.packet,self.offset,self.end); }
+    pub fn wire_len(&self) -> i32 { let cursor: Labels = self.labels(); let length: i32 = 1; while (true) { let next = cursor.next(); if (core::option::is_none(next)) { break; } length += core::option::unwrap(next).len()+1; } return length; }
+    pub fn is_root(&self) -> bool { return self.wire_len() == 1; }
+}
+pub impl Labels {
+    // Source must remain unchanged; construct only from a validated Name.
+    pub fn next(&self) -> core::option::Option<core::slice::View<u8>> { if (self.done) { return core::option::None(); } while (true) { let c: i32 = b(self.packet,self.position) as i32; if (c == 0) { self.done = true; return core::option::None(); } if (c >= 192) { self.position = (c-192)*256+(b(self.packet,self.position+1) as i32); } else { let start: i32 = self.position+1; self.position += c+1; return core::option::Some(sub(self.packet,start,self.position)); } } return core::option::None(); }
+}
+fn fold(c: u8) -> u8 { if (c >= 65 && c <= 90) { return c+32; } return c; }
+pub fn equal_dns(left: Name, right: Name) -> bool { let a: Labels = left.labels(); let z: Labels = right.labels(); while (true) { let x = a.next(); let y = z.next(); if (core::option::is_none(x) || core::option::is_none(y)) { return core::option::is_none(x) && core::option::is_none(y); } let p: core::slice::View<u8> = core::option::unwrap(x); let q: core::slice::View<u8> = core::option::unwrap(y); if (p.len() != q.len()) { return false; } let i: i32 = 0; while (i < p.len()) { if (fold(b(p,i)) != fold(b(q,i))) { return false; } i += 1; } } return false; }
+pub fn expand_into(value: Name, destination: core::slice::View<u8>) -> core::result::Result<i32,Error> { if (!valid(destination)) { return core::result::Err(Error::Bounds); } if (destination.len() < value.wire_len()) { return core::result::Err(Error::Capacity); } let cursor: Labels = value.labels(); let out: i32 = 0; while (true) { let next = cursor.next(); if (core::option::is_none(next)) { break; } let label: core::slice::View<u8> = core::option::unwrap(next); core::result::unwrap(destination.try_set(out,label.len() as u8)); out += 1; let i: i32 = 0; while (i < label.len()) { core::result::unwrap(destination.try_set(out,b(label,i))); i += 1; out += 1; } } core::result::unwrap(destination.try_set(out,0 as u8)); return core::result::Ok(out+1); }
+// These small readers are used only after whole-message validation.
+fn known_name(packet: core::slice::View<u8>, at: i32) -> Name { let end: i32 = at; while (true) { let c: i32 = b(packet,end) as i32; if (c == 0) { end += 1; break; } if (c >= 192) { end += 2; break; } end += c+1; } return Name { packet: packet, offset: at, end: end }; }
+pub impl Questions { pub fn next(&self) -> core::option::Option<Question> { if (self.remaining == 0) { return core::option::None(); } let n: Name = known_name(self.packet,self.position); let q: Question = Question { name: n, qtype: read16(self.packet,n.end), qclass: read16(self.packet,n.end+2) }; self.position = n.end+4; self.remaining -= 1; return core::option::Some(q); } }
+pub impl Records { pub fn next(&self) -> core::option::Option<Record> { if (self.remaining == 0) { return core::option::None(); } let start: i32 = self.position; let n: Name = known_name(self.packet,start); let p: i32 = n.end; let end: i32 = p+10+read16(self.packet,p+8); let r: Record = Record { name: n, rrtype: read16(self.packet,p), rrclass: read16(self.packet,p+2), ttl: read32(self.packet,p+4), data: sub(self.packet,p+10,end), offset: start, section: self.section }; self.position = end; self.remaining -= 1; return core::option::Some(r); } }
+pub impl Message {
+    pub fn questions(&self) -> Questions { return Questions { packet: self.raw, position: 12, remaining: self.header.questions }; }
+    // Section 1=answer, 2=authority, 3=additional; invalid sections are empty.
+    pub fn records(&self, section: i32) -> Records { let pos: i32 = self.raw.len(); let count: i32 = 0; if (section == 1) { pos = self.answer_start; count = self.header.answers; } if (section == 2) { pos = self.authority_start; count = self.header.authorities; } if (section == 3) { pos = self.additional_start; count = self.header.additionals; } return Records { packet: self.raw, position: pos, remaining: count, section: section }; }
+    pub fn rcode(&self) -> i32 { let code: i32 = self.header.flags & 15; if (core::option::is_some(self.opt)) { code |= edns(core::option::unwrap(self.opt)).extended_rcode << 4; } return code; }
+}
+pub impl Strings { pub fn next(&self) -> core::option::Option<core::slice::View<u8>> { if (self.position == self.raw.len()) { return core::option::None(); } let start: i32 = self.position+1; self.position = start+(b(self.raw,self.position) as i32); return core::option::Some(sub(self.raw,start,self.position)); } }
+pub impl Edns { pub fn option_iter(&self) -> Options { return Options { raw: self.options, position: 0 }; } pub fn dnssec_ok(&self) -> bool { return (self.flags & 32768) != 0; } pub fn effective_udp_size(&self) -> i32 { if (self.udp_size < 512) { return 512; } return self.udp_size; } }
+pub impl Options { pub fn next(&self) -> core::option::Option<EdnsOption> { if (self.position == self.raw.len()) { return core::option::None(); } let pos: i32 = self.position; self.position += 4+read16(self.raw,pos+2); return core::option::Some(EdnsOption { code: read16(self.raw,pos), data: sub(self.raw,pos+4,self.position) }); } }
+fn edns(r: Record) -> Edns { return Edns { udp_size: r.rrclass, extended_rcode: ((r.ttl>>24)&255) as i32, version: ((r.ttl>>16)&255) as i32, flags: (r.ttl&65535) as i32, options: r.data }; }
+pub fn data(r: Record) -> Data { let packet: core::slice::View<u8> = r.name.packet; let at: i32 = r.data.start-packet.start;
+    if (r.rrtype == 1 && r.rrclass == 1) { return Data::A(r.data); } if (r.rrtype == 28 && r.rrclass == 1) { return Data::Aaaa(r.data); }
+    if (r.rrtype == 2 || r.rrtype == 5 || r.rrtype == 12) { return Data::Domain(known_name(packet,at)); }
+    if (r.rrtype == 15) { return Data::Mail(Mx { preference: read16(packet,at), exchange: known_name(packet,at+2) }); }
+    if (r.rrtype == 6) { let primary: Name = known_name(packet,at); let mailbox: Name = known_name(packet,primary.end); let p: i32 = mailbox.end; return Data::Authority(Soa { primary: primary, mailbox: mailbox, serial: read32(packet,p), refresh: read32(packet,p+4), retry: read32(packet,p+8), expire: read32(packet,p+12), minimum: read32(packet,p+16) }); }
+    if (r.rrtype == 16) { return Data::Text(Strings { raw: r.data, position: 0 }); } if (r.rrtype == 41) { return Data::Opt(edns(r)); } return Data::Unknown(r.data);
+}
+fn validate_data(s: &State, r: Record) -> core::result::Result<bool,Error> {
+    let at: i32 = r.data.start-s.packet.start; let end: i32 = at+r.data.len(); let kind: i32 = r.rrtype;
+    if ((kind == 1 && r.rrclass == 1 && r.data.len() != 4) || (kind == 28 && r.rrclass == 1 && r.data.len() != 16)) { return core::result::Err(Error::Malformed(at)); }
+    // Include obsolete RFC1035 names in the compression boundary registry,
+    // while returning their data opaquely through the public typed API.
+    if (kind == 2 || kind == 3 || kind == 4 || kind == 5 || kind == 7 || kind == 8 || kind == 9 || kind == 12 || kind == 15 || kind == 6 || kind == 14) {
+        let pos: i32 = at; if (kind == 15) { if (end-pos < 2) { return core::result::Err(Error::Truncated(pos)); } pos += 2; }
+        let first = name(s,pos,end); if (core::result::is_err(first)) { return core::result::Err(core::result::unwrap_err(first)); } pos = core::result::unwrap(first).end;
+        if (kind == 6 || kind == 14) { let second = name(s,pos,end); if (core::result::is_err(second)) { return core::result::Err(core::result::unwrap_err(second)); } pos = core::result::unwrap(second).end; }
+        if (kind == 6) { if (end-pos != 20) { return core::result::Err(Error::Malformed(pos)); } pos += 20; }
+        if (pos != end) { return core::result::Err(Error::Malformed(pos)); }
+    }
+    if (kind == 16) { if (at == end) { return core::result::Err(Error::Malformed(at)); } let pos: i32 = at; while (pos < end) { let count: i32 = b(s.packet,pos) as i32; pos += 1; if (count > end-pos) { return core::result::Err(Error::Truncated(pos)); } pos += count; } }
+    if (kind == 41) {
+        if (r.section != 3 || !r.name.is_root()) { return core::result::Err(Error::Malformed(r.offset)); }
+        let pos: i32 = at; while (pos < end) { if (end-pos < 4) { return core::result::Err(Error::Truncated(pos)); } if (s.option_count == s.limits.options) { return core::result::Err(Error::Limit(pos)); } s.option_count += 1; let count: i32 = read16(s.packet,pos+2); pos += 4; if (count > end-pos) { return core::result::Err(Error::Truncated(pos)); } pos += count; }
+    }
+    return core::result::Ok(true);
+}
+fn parse_body(s: &State) -> core::result::Result<Message,Error> {
+    let initial = charge(s,12,0); if (core::result::is_err(initial)) { return core::result::Err(core::result::unwrap_err(initial)); }
+    let bytes: core::slice::View<u8> = s.packet; let h: Header = Header { id: read16(bytes,0), flags: read16(bytes,2), questions: read16(bytes,4), answers: read16(bytes,6), authorities: read16(bytes,8), additionals: read16(bytes,10) };
+    if ((h.flags & 30720) != 0) { return core::result::Err(Error::Unsupported(2)); } if ((h.flags & 64) != 0) { return core::result::Err(Error::Malformed(2)); }
+    if (h.questions+h.answers+h.authorities+h.additionals > s.limits.records) { return core::result::Err(Error::Limit(4)); }
+    let pos: i32 = 12; let i: i32 = 0;
+    while (i < h.questions) { let parsed = name(s,pos,bytes.len()); if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); } pos = core::result::unwrap(parsed).end; if (bytes.len()-pos < 4) { return core::result::Err(Error::Truncated(pos)); } let paid = charge(s,4,pos); if (core::result::is_err(paid)) { return core::result::Err(core::result::unwrap_err(paid)); } pos += 4; i += 1; }
+    let answers: i32 = pos; let authority: i32 = pos; let additional: i32 = pos; let opt: core::option::Option<Record> = core::option::None(); let section: i32 = 1;
+    while (section <= 3) {
+        if (section == 2) { authority = pos; } if (section == 3) { additional = pos; } let count: i32 = h.answers; if (section == 2) { count = h.authorities; } if (section == 3) { count = h.additionals; } i = 0;
+        while (i < count) {
+            let start: i32 = pos; let parsed = name(s,pos,bytes.len()); if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); } let n: Name = core::result::unwrap(parsed); pos = n.end;
+            if (bytes.len()-pos < 10) { return core::result::Err(Error::Truncated(pos)); } let length: i32 = read16(bytes,pos+8); if (length > bytes.len()-pos-10) { return core::result::Err(Error::Truncated(pos+10)); }
+            let r: Record = Record { name: n, rrtype: read16(bytes,pos), rrclass: read16(bytes,pos+2), ttl: read32(bytes,pos+4), data: sub(bytes,pos+10,pos+10+length), offset: start, section: section };
+            let checked = validate_data(s,r); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+            if (r.rrtype == 41) { if (core::option::is_some(opt)) { return core::result::Err(Error::Malformed(start)); } opt = core::option::Some(r); }
+            let paid = charge(s,10+length,pos); if (core::result::is_err(paid)) { return core::result::Err(core::result::unwrap_err(paid)); } pos += 10+length; i += 1;
+        } section += 1;
+    }
+    if (pos != bytes.len()) { return core::result::Err(Error::Malformed(pos)); }
+    return core::result::Ok(Message { raw: bytes, header: h, answer_start: answers, authority_start: authority, additional_start: additional, opt: opt });
+}
+fn parse_mode(bytes: core::slice::View<u8>, limits: Limits, compression: bool) -> core::result::Result<Message,Error> {
+    if (!valid(bytes) || !limits_valid(limits)) { return core::result::Err(Error::Bounds); } if (bytes.len() > limits.message_bytes) { return core::result::Err(Error::Limit(0)); } if (bytes.len() < 12) { return core::result::Err(Error::Truncated(bytes.len())); }
+    let scratch: alloc::vec::Vec<u8> = alloc::vec::new(); if (core::result::is_err(scratch.try_resize(bytes.len(),0 as u8))) { return core::result::Err(Error::AllocationFailed); }
+    let state: State = State { packet: bytes, marks: scratch, limits: limits, spent: 0, option_count: 0, compression: compression }; let parsed = parse_body(state.borrow()); scratch.destroy(); return parsed;
+}
+pub fn parse(bytes: core::slice::View<u8>, limits: Limits) -> core::result::Result<Message,Error> { return parse_mode(bytes,limits,true); }
+struct Writer { bytes: alloc::vec::Vec<u8>, limit: i32 }
+impl Writer { fn borrow(&self) -> &Writer { return self; } }
+fn put(w: &Writer, bytes: core::slice::View<u8>) -> core::result::Result<bool,Error> { if (!valid(bytes)) { return core::result::Err(Error::Bounds); } if (bytes.len() > w.limit-w.bytes.len()) { return core::result::Err(Error::OutputLimit(w.bytes.len())); } if (core::result::is_err(w.bytes.try_extend(bytes))) { return core::result::Err(Error::AllocationFailed); } return core::result::Ok(true); }
+fn number(w: &Writer, value: i32) -> core::result::Result<bool,Error> { if (value < 0 || value > 65535) { return core::result::Err(Error::Bounds); } let raw: [u8;2] = [(value/256) as u8,(value%256) as u8]; return put(w,core::result::unwrap(core::slice::view(raw,2))); }
+fn ttl(w: &Writer, value: u32) -> core::result::Result<bool,Error> { let raw: [u8;4] = [(value>>24) as u8,((value>>16)&255) as u8,((value>>8)&255) as u8,(value&255) as u8]; return put(w,core::result::unwrap(core::slice::view(raw,4))); }
+fn write_questions(w: &Writer, rows: core::slice::View<OutQuestion>, limits: Limits) -> core::result::Result<bool,Error> { let i: i32 = 0; while (i < rows.len()) { let q: OutQuestion = core::option::unwrap(rows.get(i)); let checked = parse_name(q.name,limits); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); } let p = put(w,q.name); if (core::result::is_err(p)) { return p; } let p = number(w,q.qtype); if (core::result::is_err(p)) { return p; } let p = number(w,q.qclass); if (core::result::is_err(p)) { return p; } i += 1; } return core::result::Ok(true); }
+fn write_records(w: &Writer, rows: core::slice::View<OutRecord>, limits: Limits) -> core::result::Result<bool,Error> { let i: i32 = 0; while (i < rows.len()) { let r: OutRecord = core::option::unwrap(rows.get(i)); let checked = parse_name(r.name,limits); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); } let p = put(w,r.name); if (core::result::is_err(p)) { return p; } let p = number(w,r.rrtype); if (core::result::is_err(p)) { return p; } let p = number(w,r.rrclass); if (core::result::is_err(p)) { return p; } let p = ttl(w,r.ttl); if (core::result::is_err(p)) { return p; } if (!valid(r.data)) { return core::result::Err(Error::Bounds); } let p = number(w,r.data.len()); if (core::result::is_err(p)) { return p; } let p = put(w,r.data); if (core::result::is_err(p)) { return p; } i += 1; } return core::result::Ok(true); }
+fn write_all(w: &Writer, id: i32, flags: i32, questions: core::slice::View<OutQuestion>, answers: core::slice::View<OutRecord>, authorities: core::slice::View<OutRecord>, additionals: core::slice::View<OutRecord>, limits: Limits) -> core::result::Result<bool,Error> {
+    let p = number(w,id); if (core::result::is_err(p)) { return p; } let p = number(w,flags); if (core::result::is_err(p)) { return p; } let p = number(w,questions.len()); if (core::result::is_err(p)) { return p; } let p = number(w,answers.len()); if (core::result::is_err(p)) { return p; } let p = number(w,authorities.len()); if (core::result::is_err(p)) { return p; } let p = number(w,additionals.len()); if (core::result::is_err(p)) { return p; }
+    let p = write_questions(w,questions,limits); if (core::result::is_err(p)) { return p; } let p = write_records(w,answers,limits); if (core::result::is_err(p)) { return p; } let p = write_records(w,authorities,limits); if (core::result::is_err(p)) { return p; } return write_records(w,additionals,limits);
+}
+// Emit no compression: all supplied known names/RDATA must be canonical wire.
+// Unknown RDATA is opaque and is never searched for pointer-looking octets.
+pub fn encode(id: i32, flags: i32, questions: core::slice::View<OutQuestion>, answers: core::slice::View<OutRecord>, authorities: core::slice::View<OutRecord>, additionals: core::slice::View<OutRecord>, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    if (!limits_valid(limits) || !valid(questions) || !valid(answers) || !valid(authorities) || !valid(additionals)) { return core::result::Err(Error::Bounds); }
+    if (questions.len() > 65535 || answers.len() > 65535 || authorities.len() > 65535 || additionals.len() > 65535) { return core::result::Err(Error::Limit(4)); }
+    if (questions.len()+answers.len()+authorities.len()+additionals.len() > limits.records) { return core::result::Err(Error::Limit(4)); }
+    let writer: Writer = Writer { bytes: alloc::vec::new(), limit: limits.output_bytes }; let written = write_all(writer.borrow(),id,flags,questions,answers,authorities,additionals,limits);
+    if (core::result::is_err(written)) { let error: Error = core::result::unwrap_err(written); writer.bytes.destroy(); return core::result::Err(error); }
+    let checked = parse_mode(writer.bytes.as_view(),limits,false); if (core::result::is_err(checked)) { let error: Error = core::result::unwrap_err(checked); writer.bytes.destroy(); return core::result::Err(error); } return core::result::Ok(writer.bytes);
+}
+pub fn query(id: i32, qtype: i32, qclass: i32, canonical_name: core::slice::View<u8>, udp_size: i32, dnssec: bool, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    if (udp_size < 0 || udp_size > 65535 || (dnssec && udp_size == 0)) { return core::result::Err(Error::Bounds); }
+    let root: [u8;1] = [0]; let empty: core::slice::View<u8> = core::result::unwrap(core::slice::view(root,0)); let zero: core::slice::View<u8> = core::result::unwrap(core::slice::view(root,1));
+    let q: OutQuestion = OutQuestion { name: canonical_name, qtype: qtype, qclass: qclass }; let qs: [OutQuestion;1] = [q]; let flags: u32 = 0; if (dnssec) { flags = 32768; }
+    let opt: OutRecord = OutRecord { name: zero, rrtype: 41, rrclass: udp_size, ttl: flags, data: empty }; let records: [OutRecord;1] = [opt]; let absent: core::slice::View<OutRecord> = core::result::unwrap(core::slice::view(records,0)); let count: i32 = 0; if (udp_size > 0) { count = 1; }
+    return encode(id,256,core::result::unwrap(core::slice::view(qs,1)),absent,absent,core::result::unwrap(core::slice::view(records,count)),limits);
+}

@@ -1,0 +1,6 @@
+error[LNC0027]: call resolution failed
+ --> <staged-stdlib>/core/admission_forward.lani:11:47
+   |
+11 |         let inner: &W = self.inner; return W::write(inner,bytes,offset,count);
+   |                                               ^^^^^ method receiver has no valid checked type adjustment
+     = note: the receiver needs a complete type graph within the supported 64-level traversal limit

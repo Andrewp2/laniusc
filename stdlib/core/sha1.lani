@@ -1,0 +1,57 @@
+// RFC 3174 SHA-1, for protocol interoperability such as RFC 6455 only.
+// SHA-1 is not collision-resistant; do not use it for new security designs.
+module core::sha1;
+import core::option;
+import core::result;
+import core::slice;
+
+pub enum Error { Bounds, LengthOverflow, Finished }
+pub struct Digest { bytes: [u8;20] }
+pub struct State { h0: u32, h1: u32, h2: u32, h3: u32, h4: u32, count: u64, used: i32, block: [u8;64], finished: bool }
+pub fn new() -> State {
+    let block: [u8;64] = [0;64];
+    return State { h0: 1732584193, h1: 4023233417, h2: 2562383102, h3: 271733878, h4: 3285377520, count: 0, used: 0, block: block, finished: false };
+}
+fn rotate(value: u32, count: u32) -> u32 { return (value << count) | (value >> (32-count)); }
+pub impl State {
+    fn compress(&self) {
+        let w: [u32;80] = [0;80]; let i: i32 = 0;
+        while (i < 16) { let j: i32 = i*4; w[i] = ((self.block[j] as u32)<<24) | ((self.block[j+1] as u32)<<16) | ((self.block[j+2] as u32)<<8) | (self.block[j+3] as u32); i += 1; }
+        while (i < 80) { w[i] = rotate(w[i-3]^w[i-8]^w[i-14]^w[i-16],1); i += 1; }
+        let a: u32 = self.h0; let b: u32 = self.h1; let c: u32 = self.h2; let d: u32 = self.h3; let e: u32 = self.h4; i = 0;
+        while (i < 80) {
+            let f: u32 = b^c^d; let k: u32 = 3395469782;
+            if (i < 20) { f = (b&c)|((b^4294967295)&d); k = 1518500249; }
+            else { if (i < 40) { k = 1859775393; } else { if (i < 60) { f = (b&c)|(b&d)|(c&d); k = 2400959708; } } }
+            let next: u32 = rotate(a,5)+f+e+k+w[i]; e=d; d=c; c=rotate(b,30); b=a; a=next; i += 1;
+        }
+        self.h0 += a; self.h1 += b; self.h2 += c; self.h3 += d; self.h4 += e; self.used = 0;
+    }
+    // Validate the complete logical range and 64-bit bit-count before mutation.
+    pub fn update(&self, input: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (input.start < 0 || input.length < 0 || input.start > 2147483647-input.length) { return core::result::Err(Error::Bounds); }
+        if (self.finished) { return core::result::Err(Error::Finished); }
+        if ((input.len() as u64) > 2305843009213693951-self.count) { return core::result::Err(Error::LengthOverflow); }
+        let i: i32 = 0;
+        while (i < input.len()) { self.block[self.used] = core::option::unwrap(input.get(i)); self.used += 1; if (self.used == 64) { self.compress(); } i += 1; }
+        self.count += input.len() as u64; return core::result::Ok(i);
+    }
+    // Finalize this context. Repeated finish returns the same digest; update
+    // after finish fails until reset. No allocation or borrowed digest storage.
+    pub fn finish(&self) -> Digest {
+        if (!self.finished) {
+            let bits: u64 = self.count*8; self.block[self.used] = 128; self.used += 1;
+            if (self.used > 56) { while (self.used < 64) { self.block[self.used] = 0; self.used += 1; } self.compress(); }
+            while (self.used < 56) { self.block[self.used] = 0; self.used += 1; }
+            let i: i32 = 0; while (i < 8) { self.block[56+i] = ((bits >> ((7-i)*8)) & 255) as u8; i += 1; }
+            self.compress(); self.finished = true;
+        }
+        let words: [u32;5] = [self.h0,self.h1,self.h2,self.h3,self.h4]; let bytes: [u8;20] = [0;20]; let i: i32 = 0;
+        while (i < 20) { bytes[i] = ((words[i/4] >> ((3-i%4)*8)) & 255) as u8; i += 1; }
+        return Digest { bytes: bytes };
+    }
+    pub fn reset(&self) { self.h0=1732584193; self.h1=4023233417; self.h2=2562383102; self.h3=271733878; self.h4=3285377520; self.count=0; self.used=0; self.finished=false; }
+}
+pub fn digest(input: core::slice::View<u8>) -> core::result::Result<Digest,Error> {
+    let state: State = new(); let result = state.update(input); if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); } return core::result::Ok(state.finish());
+}

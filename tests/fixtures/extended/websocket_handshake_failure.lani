@@ -1,0 +1,18 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::http;
+import ext::websocket;
+fn bytes(value:str,count:i32) -> core::slice::View<u8> { let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn allocation(error:ext::websocket::Error) -> i32 { return match(error) { ext::websocket::Error::AllocationFailed->4, _->2 }; }
+fn main() -> i32 {
+    let host:ext::http::Field=ext::http::Field { raw:bytes("",0),name:bytes("Host",4),value:bytes("example.test",12),offset:0 }; let headers:[ext::http::Field;1]=[host];
+    let made=ext::websocket::encode_request(bytes("GET /chat HTTP/1.1",18),core::result::unwrap(core::slice::view(headers,1)),bytes("the sample nonce",16),bytes("chat",4),ext::websocket::default_limits());
+    if(core::result::is_err(made)) { return allocation(core::result::unwrap_err(made)); } let request_owner:alloc::vec::Vec<u8> =core::result::unwrap(made);
+    let request:ext::websocket::Request=core::result::unwrap(ext::websocket::validate_request(request_owner.as_view(),ext::websocket::default_limits()));
+    let made=ext::websocket::encode_response(request,bytes("chat",4),core::result::unwrap(core::slice::view(headers,0)),ext::websocket::default_limits());
+    if(core::result::is_err(made)) { let code:i32=allocation(core::result::unwrap_err(made)); request_owner.destroy(); return code; } let response_owner:alloc::vec::Vec<u8> =core::result::unwrap(made);
+    assert(core::result::is_ok(ext::websocket::validate_response(response_owner.as_view(),request,ext::websocket::default_limits()))); response_owner.destroy(); request_owner.destroy(); return 0;
+}

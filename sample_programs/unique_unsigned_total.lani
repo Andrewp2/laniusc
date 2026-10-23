@@ -1,21 +1,21 @@
 // Count distinct unsigned readings and print their wrapping checksum.
 module app::main;
-import alloc::hash_map;
-import core::number_u32;
+import alloc::hash_set;
+import core::u32;
 import core::result;
 import std::io;
 import std::io_decimal;
 
 fn main() -> i32 {
     let readings: [u32; 5] = [0, 2147483648, 1, 2147483648, 4294967295];
-    let distinct: alloc::hash_map::HashMap<u32, bool> = alloc::hash_map::new();
+    let distinct: alloc::hash_set::HashSet<u32> = alloc::hash_set::new();
     let total: u32 = 0;
     let index: i32 = 0;
     while (index < 5) {
         let reading: u32 = readings[index];
-        if (!distinct.contains_key(reading)) {
-            if (core::result::is_err(distinct.try_insert(reading, true))) { distinct.destroy(); return 1; }
-            total = core::number_u32::wrapping_add(total, reading);
+        if (!distinct.contains(reading)) {
+            if (core::result::is_err(distinct.try_insert(reading))) { distinct.destroy(); return 1; }
+            total = core::u32::wrapping_add(total, reading);
         }
         index += 1;
     }

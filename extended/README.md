@@ -49,10 +49,15 @@ repository root. An application imports the CSV module with `import ext::csv;`.
 | [`ext::table`](ext/table.lani) | Bounded rectangular UTF-8 tables with alignment, borders and checked owned output | x86_64 Linux; [contracts and models](../docs/extended-table.md) |
 | [`ext::progress`](ext/progress.lani) | Allocation-free atomic rendering for known, unknown, zero and exceeded totals | x86_64 Linux; [contracts and tests](../docs/extended-progress.md) |
 | [`ext::http`](ext/http.lani) | HTTP/1 heads, framing, chunk extensions/trailers, exact message boundaries and checked encoding | x86_64 Linux wire processing; [profile and tests](../docs/extended-http.md). Socket client/server bindings remain unavailable. |
+| [`ext::dns`](ext/dns.lani) | Binary DNS names, validated compression, complete QUERY sections, common RDATA, EDNS and checked packet writing | x86_64 Linux offline processing; [profile, limits, models and program](../docs/extended-dns.md). Host resolution remains separate. |
+| [`ext::websocket`](ext/websocket.lani) | RFC 6455 handshakes, role masking, frames, fragmented messages, control/close state and checked encoding | x86_64 Linux offline processing; [contracts, independent oracles and program](../docs/extended-websocket.md). Socket/TLS transport remains separate. |
+| [`ext::kv`](ext/kv.lani) | Owned arbitrary-byte key/value storage, atomic mutations and canonical checked snapshots | x86_64 Linux; [models, file program and persistence limits](../docs/extended-kv.md). Crash durability and concurrent transactions require host services. |
+| [`ext::timezone`](ext/timezone.lani) | Owned TZif v1–v4, supported POSIX footer rules, historical offsets and complete local-time candidates | x86_64 Linux; [coverage, ambiguity, limits and command-line tool](../docs/extended-timezone.md). Leap-bearing files and unsupported annual rule streams fail explicitly. |
 | [`ext::image`](ext/image.lani) | Owned straight RGBA8 pixels, strided views, crop, rotation, flips, blit and source-over | x86_64 Linux; [pixel and ownership contracts](../docs/extended-image.md) |
 | [`ext::png`](ext/png.lani) | All standard PNG color/depth inputs, Adam7, filters and checked RGBA8 output/encoding | x86_64 Linux; [PNG profile and interoperability tests](../docs/extended-png.md) |
 | [`ext::audio`](ext/audio.lani) | Owned interleaved finite samples, checked edits, gain/mix/clip, metrics and mono conversion | x86_64 Linux; [numeric and ownership contracts](../docs/extended-audio.md) |
 | [`ext::wave`](ext/wave.lani) | PCM8/16/24/32, IEEE float and ordinary extensible WAVE decoding; checked canonical encoding | x86_64 Linux; [format and conversion contracts](../docs/extended-wave.md) |
+| [`ext::signal`](ext/signal.lani) | Finite complex arithmetic, FFT/inverse, windows, full convolution and spectral bins | x86_64 Linux; [numerical/resource contracts](../docs/extended-signal.md), [WAVE spectrum program](../docs/extended-wave-spectrum.md) |
 
 Generated Unicode table modules are implementation data rather than separate
 APIs. Their source versions and regeneration commands are recorded by the
@@ -61,5 +66,7 @@ x86_64 Linux programs produced by the GPU compiler; user GPU kernels and other
 targets have not been verified.
 
 The complete scope and dependency order are
-tracked in the [library roadmap](../docs/library-roadmap.md). Package publishing,
+tracked in the [library roadmap](../docs/library-roadmap.md). [Selective source
+distribution](../docs/library-distribution.md) uses the existing package resolver.
+Package publishing,
 other formats and protocols, and additional targets remain separate work.

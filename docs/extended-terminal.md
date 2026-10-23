@@ -25,7 +25,7 @@ The maximum rule keeps ordinary combining sequences, Indic conjuncts, Hangul syl
 
 The selected byte range must have physical backing. Keep its owner alive and unchanged until return. Logical range errors return `Bounds`; an overstated physical range can trap on indexing. The function validates UTF-8 in the selected range and returns `InvalidUtf8(at)` for malformed bytes. It ignores bytes outside that range. Negative `max_work` returns `Bounds`.
 
-The policy budget charges exactly six logical units per selected input byte before scanning. These abstract units are not a count of decoder byte reads, property comparisons or machine instructions: validation, scalar decoding and grapheme/selector lookahead can revisit bytes. Property lookup uses bounded binary searches of static ranges. `WorkLimit` rejects a range exceeding `max_work / 6` before scanning. Width overflow returns `Overflow`. Runtime is linear in input bytes with a fixed property lookup factor and constant scratch space.
+The policy budget charges exactly six logical units per selected input byte before scanning. These abstract units are not a count of decoder byte reads, property comparisons or machine instructions: validation, scalar decoding and grapheme/selector lookahead can revisit bytes. Property lookup uses bounded binary searches of static ranges. `WorkLimit` rejects a range exceeding `max_work / 6` before scanning. The inherited Unicode grapheme cursor checks its integer metadata but has no separate work limit; this preflight bounds the complete input passed to it. Width overflow returns `Overflow`. Runtime is linear in input bytes with a fixed property lookup factor and constant scratch space.
 
 ## Sources and verification
 

@@ -1,0 +1,20 @@
+// Quiet import workload for the existing stdlib compilation performance tool.
+module app::main;
+import core::f64;
+import core::math;
+fn near(left: f64, right: f64) -> bool { return core::f64::abs(left-right) <= 0.00000000000001; }
+fn main() -> i32 {
+    let pair: core::math::SinCos = core::math::sin_cos(0.75);
+    assert(pair.sin == core::math::sin(0.75) && pair.cos == core::math::cos(0.75));
+    assert(near(pair.sin*pair.sin+pair.cos*pair.cos,1.0));
+    assert(core::f64::is_finite(core::math::sin(core::f64::MAX)));
+    assert(core::math::exp(0.0) == 1.0 && core::math::log(1.0) == 0.0);
+    assert(near(core::math::expm1(core::math::log1p(0.25)),0.25));
+    assert(near(core::math::atan(1.0)*2.0,core::math::FRAC_PI_2));
+    assert(core::math::atan2(0.0,-1.0) == core::math::PI);
+    assert(core::math::pow(2.0,10.0) == 1024.0);
+    assert(core::math::scalbn(core::f64::from_bits(1),52) == core::f64::MIN_POSITIVE);
+    assert(near(core::math::exp(core::math::LN_2),2.0));
+    assert(core::math::TAU == core::math::PI*2.0);
+    return 0;
+}

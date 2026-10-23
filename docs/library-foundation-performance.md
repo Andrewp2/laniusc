@@ -1,5 +1,9 @@
 # Library foundation compilation measurements
 
+Tables below are chronological source snapshots. Current selective source
+bundling is documented in [distribution](library-distribution.md); it does not
+change the compiler's emitted-code granularity or make earlier timings current.
+
 On 2026-10-23, the existing `examples/stdlib_gpu_perf.rs` harness compiled and
 executed these real imported-library contract programs. Each row used one
 warmup and three measured entry rebuilds, with `LANIUS_PERF_REBUILD_ENTRY=1`.
@@ -396,3 +400,58 @@ The module/application guides separately record native scale checks for
 coverage. No compiler, runtime, shader, IR, ABI, extractor or proof implementation
 changed. User GPU execution, selective distribution and the full library
 completion audit remain unverified or unfinished.
+
+
+## Primitive integers, sets, math and portable protocol/storage/signal libraries
+
+On 2026-10-23, the existing `stdlib_gpu_perf` harness measured the sources in
+this checkpoint with one warmup and three private entry rebuilds per row.
+`LANIUS_PERF_REBUILD_ENTRY=1` invalidates the entry cache; the process/device and
+unchanged imports remain warm. Every emitted ELF executed with exit 0 and the
+expected empty stdout/stderr. Counts include the entry and recursive imports.
+
+| Entry | Import closure | Emitted ELF | Median | Range |
+| --- | --- | --- | --- | --- |
+| `tests/fixtures/stdlib_foundation/narrow_integer_contracts.lani` | 12 files, 170,534 bytes | 157,877 bytes | 188.054 ms | 183.863–208.211 ms |
+| `tests/fixtures/stdlib_foundation/math_import_contracts.lani` | 7 files, 71,884 bytes | 82,326 bytes | 118.094 ms | 109.180–123.200 ms |
+| `tests/fixtures/stdlib_foundation/owned_sets_contracts.lani` | 17 files, 174,974 bytes | 214,354 bytes | 412.363 ms | 388.260–412.426 ms |
+| `tests/fixtures/extended/timezone_contracts.lani` | 17 files, 195,737 bytes | 406,006 bytes | 360.171 ms | 347.807–365.507 ms |
+| `tests/fixtures/extended/dns_contracts.lani` | 11 files, 119,211 bytes | 265,359 bytes | 405.439 ms | 373.726–411.460 ms |
+| `tests/fixtures/extended/websocket_contracts.lani` | 24 files, 327,842 bytes | 954,973 bytes | 473.069 ms | 433.127–540.914 ms |
+| `tests/fixtures/extended/kv_contracts.lani` | 12 files, 103,990 bytes | 118,797 bytes | 322.137 ms | 298.165–338.995 ms |
+| `tests/fixtures/extended/signal_contracts.lani` | 14 files, 171,350 bytes | 265,328 bytes | 374.257 ms | 334.815–378.207 ms |
+
+The first three entries need only `stdlib`; the rest also need `extended`.
+The math entry is a quiet executable import contract; independent accuracy and
+special-value gates use the separate model driver. Measurements ran
+sequentially under uncontrolled desktop activity. They establish neither a
+compiler speedup/regression nor a cold-build or cross-compiler speed ratio.
+The generated 1 MB imported-library workload above remains the larger-workload
+evidence; these smaller entries answer the added module-import question.
+
+For example, each compile batch is bounded and uses the shared GPU lock:
+
+```sh
+timeout --kill-after=2s 100s flock -E 75 -w 35 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 60s env LANIUS_PERF_REBUILD_ENTRY=1 \
+  target/stdlib-build/debug/examples/stdlib_gpu_perf \
+  tests/fixtures/stdlib_foundation/owned_sets_contracts.lani stdlib - 1 3
+timeout --kill-after=2s 100s flock -E 75 -w 35 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 60s env LANIUS_PERF_REBUILD_ENTRY=1 \
+  target/stdlib-build/debug/examples/stdlib_gpu_perf \
+  tests/fixtures/extended/timezone_contracts.lani stdlib - 1 3 extended
+```
+
+Lock exit 75 means no measurement was taken. Correctness, malformed inputs,
+numerical profiles, modeled operation sequences and native allocation/I/O
+fault evidence are recorded in the corresponding module guides. In particular,
+DNS inspects a 1,600-record, 25,631-byte message in an observed 40 ms native
+process run. The time-zone model includes a 30,000-transition file, and the
+key/value model exercises 2,048-entry snapshots. These are native execution
+observations, distinct from compilation timings.
+
+No compiler, runtime, shader, IR, ABI, extractor or proof implementation changed.
+Verified execution remains x86_64 Linux output from GPU compilation; user GPU
+execution and other targets remain unverified. Source bundling is executable,
+while binary SDK installation, complete API reference and final completion
+audit remain open.

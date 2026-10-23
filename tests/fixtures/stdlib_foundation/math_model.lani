@@ -1,0 +1,16 @@
+module app::main;
+import core::f64;
+import core::math;
+import core::mem;
+import std::io_checked;
+fn get64(bytes:[u8],at:i32)->u64 { let value:u64=0; let i:i32=0; while(i<8){value=value|((bytes[at+i] as u64)<<(8*i));i+=1;}return value; }
+fn main()->i32 {
+ let header:[i32;1]=[0];let hp:ptr=core::mem::i32_array_data_ptr(header);if(!std::io_checked::read_exact_stdin(hp,4)){return 1;}let count:i32=header[0];if(count<0 || count>250000){return 2;}
+ let input:[i32;6]=[0;6];let ip:ptr=core::mem::i32_array_data_ptr(input);let ints:[i32]=core::mem::typed_slice_from_raw_parts(ip,6);let bytes:[u8]=core::mem::typed_slice_from_raw_parts(ip,24);
+ let output:[i32;4]=[0;4];let op:ptr=core::mem::i32_array_data_ptr(output);let out:[i32]=core::mem::typed_slice_from_raw_parts(op,4);let i:i32=0;
+ while(i<count){if(!std::io_checked::read_exact_stdin(ip,24)){return 3;}let operation:i32=ints[0];let argument:i32=ints[1];let x:f64=core::f64::from_bits(get64(bytes,8));let y:f64=core::f64::from_bits(get64(bytes,16));let value:f64=0.0;let second:f64=0.0;
+ if(operation==0){value=core::math::sin(x);}if(operation==1){value=core::math::cos(x);}if(operation==2){let pair:core::math::SinCos=core::math::sin_cos(x);value=pair.sin;second=pair.cos;}
+ if(operation==3){value=core::math::exp(x);}if(operation==4){value=core::math::expm1(x);}if(operation==5){value=core::math::log(x);}if(operation==6){value=core::math::log1p(x);}if(operation==7){value=core::math::atan(x);}if(operation==8){value=core::math::atan2(x,y);}if(operation==9){value=core::math::pow(x,y);}if(operation==10){value=core::math::scalbn(x,argument);}assert(operation>=0 && operation<=10);
+ let first:u64=core::f64::to_bits(value);let last:u64=core::f64::to_bits(second);out[0]=(first&4294967295) as i32;out[1]=(first>>32) as i32;out[2]=(last&4294967295) as i32;out[3]=(last>>32) as i32;if(!std::io_checked::write_all_stdout(op,16)){return 4;}i+=1;
+ }return 0;
+}

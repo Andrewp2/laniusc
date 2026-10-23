@@ -224,7 +224,7 @@ fn frequency_reports_preserve_order_full_width_values_and_explicit_errors() {
 }
 
 #[test]
-fn distinct_consumers_keep_unicode_and_wide_identity_on_checked_maps() {
+fn distinct_consumers_keep_unicode_and_wide_identity_on_checked_sets() {
     let exe = executable("sample_programs/unique_unsigned_total.lani");
     failures(&exe, b"", b"2147483648\n", &[1], 2);
     let exe = executable("sample_programs/unique_unicode_count.lani");

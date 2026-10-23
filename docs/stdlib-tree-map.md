@@ -106,8 +106,8 @@ replacement before releasing the original allocation.
 The old `std::map` was removed after its repository callers migrated to checked
 `alloc::hash_map` owners and explicit order vectors where their output needs
 first-seen order. See [collection migration](stdlib-legacy-collections.md).
-Ordered sets, entry APIs and lookup through a distinct borrowed key type remain
-future work.
+[Ordered sets](stdlib-owned-sets.md) delegate to this map's storage and cursor
+engine. Entry APIs and lookup through a distinct borrowed key type remain work.
 
 ## Executable evidence
 
