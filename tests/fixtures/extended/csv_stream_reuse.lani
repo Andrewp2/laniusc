@@ -1,0 +1,27 @@
+// A syscall marker separates initial growth from repeated buffer reuse.
+module app::main;
+import core::option;
+import core::result;
+import ext::csv;
+import std::io;
+fn main() -> i32 {
+    let bytes: [u8; 8] = [97, 98, 44, 34, 99, 34, 13, 10];
+    let parser: ext::csv::Decoder = core::result::unwrap(ext::csv::decoder(ext::csv::default_options()));
+    let first: ext::csv::Progress = core::result::unwrap(parser.feed(bytes, 0, 8));
+    if (!first.record) { return 1; }
+    let capacity: i32 = parser.byte_capacity(); let fields: i32 = parser.field_capacity();
+    std::io::write_text(2, "warm\n");
+    let row: i32 = 1;
+    while (row < 4096) {
+        let step: ext::csv::Progress = core::result::unwrap(parser.feed(bytes, 0, 8));
+        if (!step.record || step.consumed != 8 || parser.byte_capacity() != capacity || parser.field_capacity() != fields ||
+            core::result::unwrap(parser.field(0)).byte_len() != 2 || core::option::unwrap(parser.field_count()) != 2) { return 2; }
+        row += 1;
+    }
+    if (core::result::unwrap(parser.finish()) || parser.records_read() != 4096 || parser.byte_offset() != 32768) { return 3; }
+    parser.reset();
+    if (parser.byte_capacity() != capacity || parser.field_capacity() != fields || parser.records_read() != 0) { return 4; }
+    let again: ext::csv::Progress = core::result::unwrap(parser.feed(bytes, 0, 8));
+    if (!again.record) { return 5; }
+    parser.destroy(); parser.destroy(); return 0;
+}

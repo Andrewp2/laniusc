@@ -40,7 +40,9 @@ Output:
 
 Limits are 16 MiB input, 100,000 data records, two fields per record and 1 MiB
 decoded bytes per field. The JSON encoder also enforces its default limits.
-These are logical limits rather than a total-memory bound.
+Input is read in 1 KiB chunks; the decoder retains only its largest record
+buffers. Groups and the final JSON document/output remain owned. These logical
+limits do not impose an exact total-memory bound.
 
 | Exit status | Meaning |
 | --- | --- |
@@ -57,17 +59,17 @@ This is a record number, not a physical line number when quoted text spans lines
 
 | Module | Role |
 | --- | --- |
-| `alloc::io`, `core::io`, `std::stream` | Bounded input buffering, partial reads/writes and native descriptors |
+| `core::io`, `core::mem`, `std::stream` | Stack input chunks, partial reads/writes and native descriptors |
 | `alloc::string` | Valid UTF-8 ownership; one independent name per group |
 | `core::text` | Borrowed fields, decimal parsing and text-key lookup |
-| `ext::csv` | Table parsing, limits and field access |
+| `ext::csv` | Incremental records, limits and borrowed field access |
 | `core::decimal`, `core::i32` | Explicit numeric parsing errors and checked addition |
 | `std::vec`, `alloc::hash_map` | Owned group records and hashed Text-to-index lookup |
 | `ext::json` | Document building, borrowed mutation and encoding |
 | `core::option`, `core::result` | Absence and failure propagation |
 
 The group vector owns each name. The lookup map borrows those names and is
-destroyed before them. CSV fields are borrowed while reading rows; numeric
+destroyed before them. CSV fields are borrowed before reusing each record buffer; numeric
 fields and repeated group names are not copied. A failed insertion rolls back
 the new group. JSON copies
 its keys and values; helper functions borrow the actual document owner while
@@ -88,9 +90,8 @@ using the GPU compiler and executing the emitted binaries on x86_64 Linux:
   I/O errors and would-block return failure. An injected second-write error
   leaves exactly the first 1,024 output bytes and returns status 3.
 
-The traced failure group passed in 13.61 seconds. Each traced native process
-has a five-second bound; syscall tracing the generated workload exceeds the
-ordinary 500 ms process limit.
+After the streaming migration, both report groups passed in 8.49 seconds.
+Each traced native process retains a five-second bound for fault injection.
 
 ```sh
 timeout --kill-after=2s 100s env \
@@ -153,9 +154,39 @@ are not measurements of compiler throughput or GPU user-program execution.
 Both report test groups passed again in 13.32 seconds, including the allocation
 and I/O fault sweep.
 
+### Streaming input
+
+A paired comparison against commit `e0354bcc` uses the same workloads and
+measurement method: one warm-up pair, four measured pairs in alternating order,
+exact output verification, and the same compiler for both source revisions.
+
+| Records | Distinct groups | Table-input median | Streaming-input median |
+| ---: | ---: | ---: | ---: |
+| 4,096 | 64 | 173.48 ms | 26.44 ms |
+| 32,768 | 64 | 1,123.26 ms | 130.99 ms |
+| 4,096 | 1,024 | 284.25 ms | 127.09 ms |
+
+Samples are in `target/stdlib-work/csv-report-stream-runtime.tsv`. These are
+native CPU program runtimes, not GPU compiler throughput measurements.
+
+For the 4,096-record/64-group case, a separate syscall trace measured:
+
+| Metric | Table input | Streaming input |
+| --- | ---: | ---: |
+| Allocation calls | 12,921 | 612 |
+| Peak sum of live allocation request sizes | 778,963 bytes | 98,914 bytes |
+| Peak sum rounded to 4 KiB mapping pages | 52,539,392 bytes | 1,949,696 bytes |
+
+Every successful allocation was released, and both traced programs produced the
+same expected output. The byte totals track mmap/munmap request sizes; they
+exclude code, stack and other process memory and do not measure resident RAM.
+The trace summary is `target/stdlib-work/csv-report-stream-memory.tsv`.
+
 The new lookup is expected constant time with distributed hashes, with linear
-worst-case probes. CSV still owns the complete table and separately allocates
-fields. Streaming CSV and lower allocation overhead remain work. This application
+worst-case probes. The report now uses a streaming decoder with packed reusable records; it no
+longer retains an input String or CSV table. The table API remains available
+for callers that need all records. JSON output is still materialized before
+writing. This application
 establishes module composition and failure behavior; it does not complete the
 text/data foundation or the broader library roadmap. GPU user-program execution
 and other host targets are unverified.

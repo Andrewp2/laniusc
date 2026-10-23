@@ -1,8 +1,9 @@
-// Owned UTF-8 CSV records. RFC 4180 quoting and CRLF records, with optional
-// LF record endings and UTF-8 text. See docs/extended-csv.md for dialect and
-// ownership. Input is borrowed; parsed fields own independent strings.
+// Incremental UTF-8 CSV with reusable packed records. The table API collects
+// records from this same decoder. See docs/extended-csv.md for the dialect,
+// ownership, chunk/EOF behavior, limits and failure contracts.
 module ext::csv;
 import alloc::string;
+import core::io;
 import core::option;
 import core::result;
 import core::utf8;
@@ -15,273 +16,355 @@ pub struct Options {
     max_records: i32,
     max_fields: i32,
     max_field_bytes: i32,
+    max_record_bytes: i32,
 }
-
 pub fn default_options() -> Options {
-    return Options {
-        allow_lf: true, require_same_width: true,
-        max_records: 2147483647, max_fields: 2147483647, max_field_bytes: 2147483647,
-    };
+    return Options { allow_lf: true, require_same_width: true,
+        max_records: 2147483647, max_fields: 2147483647,
+        max_field_bytes: 2147483647, max_record_bytes: 2147483647 };
 }
-
 pub enum Error {
     InvalidOptions,
-    UnexpectedQuote(i32),
-    UnclosedQuote(i32),
-    TrailingText(i32),
-    InvalidLineEnding(i32),
-    InvalidCharacter(i32),
-    UnequalFields(i32),
-    LimitExceeded(i32),
-    AllocationFailed,
-    Bounds,
+    UnexpectedQuote(u64), UnclosedQuote(u64), TrailingText(u64),
+    InvalidLineEnding(u64), InvalidCharacter(u64), InvalidUtf8(u64),
+    UnequalFields(i32), LimitExceeded(u64),
+    AllocationFailed, CapacityOverflow, OffsetOverflow,
+    Bounds, NoRecord, Finished,
+}
+struct Span { start: i32, length: i32 }
+pub struct Record { bytes: std::vec::Vec<u8>, fields: std::vec::Vec<Span> }
+pub struct Table { rows: std::vec::Vec<Record> }
+pub struct Progress { consumed: i32, record: bool }
+pub struct Decoder {
+    current: Record, options: Options, failure: core::option::Option<Error>,
+    offset: u64, records: i32, width: i32,
+    mode: i32, quote_start: u64, field_start: i32, pending: bool,
+    cr_pending: bool, cr_start: u64, ready: bool, finished: bool,
+    utf8_width: u32, utf8_used: u32, utf8_start: u64,
+    first: u8, second: u8, third: u8,
+}
+fn empty_record() -> Record {
+    let bytes: std::vec::Vec<u8> = std::vec::new();
+    let fields: std::vec::Vec<Span> = std::vec::new();
+    return Record { bytes: bytes, fields: fields };
+}
+fn string_error(error: alloc::string::Error) -> Error {
+    let converted: Error = match (error) {
+        alloc::string::Error::AllocationFailed -> Error::AllocationFailed,
+        alloc::string::Error::CapacityOverflow -> Error::CapacityOverflow,
+        alloc::string::Error::InvalidUtf8(at) -> Error::InvalidUtf8(at as u64),
+        alloc::string::Error::InvalidScalar -> Error::InvalidCharacter(0),
+        _ -> Error::Bounds,
+    };
+    return converted;
+}
+pub impl Record {
+    pub fn field_count(&self) -> i32 { return std::vec::len(self.fields); }
+    pub fn byte_len(&self) -> i32 { return std::vec::len(self.bytes); }
+    pub fn byte_capacity(&self) -> i32 { return std::vec::capacity(self.bytes); }
+    pub fn field_capacity(&self) -> i32 { return std::vec::capacity(self.fields); }
+    pub fn field(&self, index: i32) -> core::result::Result<core::text::Text, Error> {
+        if (index < 0 || index >= std::vec::len(self.fields)) { return core::result::Err(Error::Bounds); }
+        let span: Span = std::vec::at(self.fields, index);
+        return core::result::Ok(core::text::from_utf8_unchecked(std::vec::as_slice(self.bytes), span.start, span.length));
+    }
+    pub fn try_field(&self, index: i32) -> core::result::Result<alloc::string::String, Error> {
+        let view: core::result::Result<core::text::Text, Error> = self.field(index);
+        if (core::result::is_err(view)) { return core::result::Err(core::result::unwrap_err(view)); }
+        let copied: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_text(core::result::unwrap(view));
+        if (core::result::is_err(copied)) { return core::result::Err(string_error(core::result::unwrap_err(copied))); }
+        return core::result::Ok(core::result::unwrap(copied));
+    }
+    pub fn clear(&self) {
+        self.bytes = std::vec::clear(self.bytes);
+        self.fields = std::vec::clear(self.fields);
+    }
+    pub fn destroy(&self) {
+        std::vec::destroy(self.bytes); std::vec::destroy(self.fields);
+        self.bytes = std::vec::new(); self.fields = std::vec::new();
+    }
 }
 
-struct Row { fields: std::vec::Vec<alloc::string::String> }
-
-pub struct Table { rows: std::vec::Vec<Row> }
-
-fn destroy_fields(fields: std::vec::Vec<alloc::string::String>) {
-    let index: i32 = 0;
-    while (index < std::vec::len(fields)) {
-        let field: alloc::string::String = std::vec::at(fields, index);
-        field.destroy();
-        index += 1;
+pub fn decoder(options: Options) -> core::result::Result<Decoder, Error> {
+    if (options.max_records < 0 || options.max_fields < 1 || options.max_field_bytes < 0 || options.max_record_bytes < 0) {
+        return core::result::Err(Error::InvalidOptions);
     }
-    std::vec::destroy(fields);
+    return core::result::Ok(Decoder { current: empty_record(), options: options,
+        failure: core::option::None(), offset: 0, records: 0, width: 0,
+        mode: 0, quote_start: 0, field_start: 0, pending: false,
+        cr_pending: false, cr_start: 0, ready: false, finished: false,
+        utf8_width: 0, utf8_used: 0, utf8_start: 0, first: 0, second: 0, third: 0 });
 }
 
-fn destroy_rows(rows: std::vec::Vec<Row>) {
-    let index: i32 = 0;
-    while (index < std::vec::len(rows)) {
-        let row: Row = std::vec::at(rows, index);
-        destroy_fields(row.fields);
-        index += 1;
+pub impl Decoder {
+    pub fn borrow(&self) -> &Decoder { return self; }
+    pub fn byte_offset(&self) -> u64 { return self.offset; }
+    pub fn records_read(&self) -> i32 { return self.records; }
+    pub fn has_record(&self) -> bool { return self.ready; }
+    pub fn byte_capacity(&self) -> i32 { return self.current.byte_capacity(); }
+    pub fn field_capacity(&self) -> i32 { return self.current.field_capacity(); }
+    pub fn field_count(&self) -> core::option::Option<i32> {
+        if (!self.ready) { return core::option::None(); }
+        return core::option::Some(self.current.field_count());
     }
-    std::vec::destroy(rows);
+    pub fn field(&self, index: i32) -> core::result::Result<core::text::Text, Error> {
+        if (!self.ready) { return core::result::Err(Error::NoRecord); }
+        return self.current.field(index);
+    }
+    // Transfer ownership, leaving this decoder with empty buffers. Ordinary
+    // streaming callers should use field() to retain and reuse the buffers.
+    pub fn take_record(&self) -> core::option::Option<Record> {
+        if (!self.ready) { return core::option::None(); }
+        let record: Record = self.current;
+        self.current = empty_record(); self.ready = false;
+        return core::option::Some(record);
+    }
+    fn fail(&self, error: Error) -> bool {
+        self.failure = core::option::Some(error); self.ready = false;
+        return false;
+    }
+    fn push_byte(&self, byte: u8) -> bool {
+        let before: i32 = std::vec::len(self.current.bytes);
+        if (before - self.field_start >= self.options.max_field_bytes || before >= self.options.max_record_bytes) {
+            return self.fail(Error::LimitExceeded(self.offset));
+        }
+        self.current.bytes = std::vec::try_push(self.current.bytes, byte);
+        if (std::vec::len(self.current.bytes) == before) { return self.fail(Error::AllocationFailed); }
+        return true;
+    }
+    fn finish_field(&self, at: u64) -> bool {
+        let before: i32 = std::vec::len(self.current.fields);
+        if (before >= self.options.max_fields) { return self.fail(Error::LimitExceeded(at)); }
+        let end: i32 = std::vec::len(self.current.bytes);
+        let span: Span = Span { start: self.field_start, length: end - self.field_start };
+        self.current.fields = std::vec::try_push(self.current.fields, span);
+        if (std::vec::len(self.current.fields) == before) { return self.fail(Error::AllocationFailed); }
+        self.field_start = end;
+        return true;
+    }
+    fn finish_row(&self, at: u64) -> bool {
+        let count: i32 = std::vec::len(self.current.fields);
+        if (self.records >= self.options.max_records) { return self.fail(Error::LimitExceeded(at)); }
+        if (self.records > 0 && self.options.require_same_width && count != self.width) {
+            return self.fail(Error::UnequalFields(self.records));
+        }
+        self.width = count; self.records += 1;
+        self.mode = 0; self.pending = false; self.ready = true; self.field_start = 0;
+        return true;
+    }
+    // Validate input across arbitrary chunk boundaries before interpreting CSV
+    // punctuation. A record can only become visible at a complete UTF-8 boundary.
+    fn accept_utf8(&self, byte: u8) -> bool {
+        if (self.utf8_used == 0) {
+            let width: u32 = core::utf8::sequence_len_or(byte, 0);
+            if (width == 0) { return self.fail(Error::InvalidUtf8(self.offset)); }
+            if (width > 1) {
+                self.utf8_width = width; self.utf8_used = 1;
+                self.utf8_start = self.offset; self.first = byte; self.second = 0; self.third = 0;
+            }
+            return true;
+        }
+        if (!core::utf8::is_continuation_byte(byte)) { return self.fail(Error::InvalidUtf8(self.utf8_start)); }
+        if (self.utf8_used == 1) { self.second = byte; }
+        if (self.utf8_used == 2) { self.third = byte; }
+        self.utf8_used += 1;
+        if (self.utf8_used == self.utf8_width) {
+            let scalar: u32 = core::utf8::decode_or(self.first, self.second, self.third, byte, self.utf8_width, 4294967295);
+            if (scalar == 4294967295) { return self.fail(Error::InvalidUtf8(self.utf8_start)); }
+            self.utf8_used = 0;
+        }
+        return true;
+    }
+    // Modes: 0 field start, 1 unquoted, 2 quoted, 3 after closing quote.
+    fn step(&self, byte: u8) -> bool {
+        if (self.cr_pending) {
+            if (byte != 10) { return self.fail(Error::InvalidLineEnding(self.cr_start)); }
+            self.cr_pending = false;
+            return self.finish_field(self.cr_start) && self.finish_row(self.cr_start);
+        }
+        if (!self.accept_utf8(byte)) { return false; }
+        if (self.mode == 2) {
+            if (byte == 34) { self.mode = 3; return true; }
+            if ((byte < 32 && byte != 13 && byte != 10) || byte == 127) { return self.fail(Error::InvalidCharacter(self.offset)); }
+            return self.push_byte(byte);
+        }
+        if (self.mode == 3 && byte == 34) {
+            if (!self.push_byte(byte)) { return false; }
+            self.mode = 2; return true;
+        }
+        if (byte == 44) {
+            if (!self.finish_field(self.offset)) { return false; }
+            self.mode = 0; self.pending = true; return true;
+        }
+        if (byte == 13) { self.cr_pending = true; self.cr_start = self.offset; return true; }
+        if (byte == 10) {
+            if (!self.options.allow_lf) { return self.fail(Error::InvalidLineEnding(self.offset)); }
+            return self.finish_field(self.offset) && self.finish_row(self.offset);
+        }
+        if (self.mode == 3) { return self.fail(Error::TrailingText(self.offset)); }
+        if (byte == 34) {
+            if (self.mode != 0) { return self.fail(Error::UnexpectedQuote(self.offset)); }
+            self.mode = 2; self.quote_start = self.offset; self.pending = true; return true;
+        }
+        if (byte < 32 || byte == 127) { return self.fail(Error::InvalidCharacter(self.offset)); }
+        if (!self.push_byte(byte)) { return false; }
+        self.mode = 1; self.pending = true; return true;
+    }
+    // Empty input is not EOF and preserves the current record. A valid
+    // nonempty attempt on an unfinished decoder invalidates the previous
+    // record and stops after at most one new record. On failure byte_offset reports the accepted prefix; the error
+    // is sticky until reset. Invalid integer ranges preserve all decoder state.
+    pub fn feed(&self, source: [u8], start: i32, count: i32) -> core::result::Result<Progress, Error> {
+        if (core::option::is_some(self.failure)) { return core::result::Err(core::option::unwrap(self.failure)); }
+        if (!core::io::valid_range(start, count)) { return core::result::Err(Error::Bounds); }
+        if (count == 0) { return core::result::Ok(Progress { consumed: 0, record: false }); }
+        if (self.finished) { return core::result::Err(Error::Finished); }
+        if (self.ready) { self.current.clear(); self.ready = false; }
+        let consumed: i32 = 0;
+        while (consumed < count) {
+            if (self.offset == 18446744073709551615) {
+                self.fail(Error::OffsetOverflow);
+                return core::result::Err(Error::OffsetOverflow);
+            }
+            if (self.records >= self.options.max_records) {
+                self.fail(Error::LimitExceeded(self.offset));
+                return core::result::Err(core::option::unwrap(self.failure));
+            }
+            if (!self.step(source[start + consumed])) { return core::result::Err(core::option::unwrap(self.failure)); }
+            consumed += 1; self.offset += 1;
+            if (self.ready) { return core::result::Ok(Progress { consumed: consumed, record: true }); }
+        }
+        return core::result::Ok(Progress { consumed: consumed, record: false });
+    }
+    // Explicit EOF. Returns true only when EOF completes a new final record.
+    // Repeated EOF is harmless, preserves the last record and returns false.
+    pub fn finish(&self) -> core::result::Result<bool, Error> {
+        if (core::option::is_some(self.failure)) { return core::result::Err(core::option::unwrap(self.failure)); }
+        if (self.finished) { return core::result::Ok(false); }
+        if (self.cr_pending) { self.fail(Error::InvalidLineEnding(self.cr_start)); }
+        else {
+            if (self.utf8_used != 0) { self.fail(Error::InvalidUtf8(self.utf8_start)); }
+            else { if (self.mode == 2) { self.fail(Error::UnclosedQuote(self.quote_start)); } }
+        }
+        if (core::option::is_some(self.failure)) { return core::result::Err(core::option::unwrap(self.failure)); }
+        if (self.pending) {
+            if (!self.finish_field(self.offset) || !self.finish_row(self.offset)) { return core::result::Err(core::option::unwrap(self.failure)); }
+            self.finished = true; return core::result::Ok(true);
+        }
+        self.finished = true; return core::result::Ok(false);
+    }
+    // Retain capacities; clear counters, error, EOF and all borrowed records.
+    pub fn reset(&self) {
+        self.current.clear(); self.failure = core::option::None();
+        self.offset = 0; self.records = 0; self.width = 0;
+        self.mode = 0; self.quote_start = 0; self.field_start = 0; self.pending = false;
+        self.cr_pending = false; self.cr_start = 0; self.ready = false; self.finished = false;
+        self.utf8_width = 0; self.utf8_used = 0; self.utf8_start = 0;
+        self.first = 0; self.second = 0; self.third = 0;
+    }
+    pub fn destroy(&self) { self.current.destroy(); self.reset(); }
 }
 
 pub impl Table {
     pub fn row_count(&self) -> i32 { return std::vec::len(self.rows); }
-
-    pub fn field_count(&self, row_index: i32) -> core::option::Option<i32> {
-        if (row_index < 0 || row_index >= std::vec::len(self.rows)) { return core::option::None(); }
-        let row: Row = std::vec::at(self.rows, row_index);
-        return core::option::Some(std::vec::len(row.fields));
+    pub fn field_count(&self, index: i32) -> core::option::Option<i32> {
+        if (index < 0 || index >= std::vec::len(self.rows)) { return core::option::None(); }
+        let row: Record = std::vec::at(self.rows, index);
+        return core::option::Some(row.field_count());
     }
-
-    // Borrow a field without allocating. The table must remain alive and
-    // unchanged for the lifetime of the view and any subviews/iterators.
     pub fn field(&self, row_index: i32, field_index: i32) -> core::result::Result<core::text::Text, Error> {
         if (row_index < 0 || row_index >= std::vec::len(self.rows)) { return core::result::Err(Error::Bounds); }
-        let row: Row = std::vec::at(self.rows, row_index);
-        if (field_index < 0 || field_index >= std::vec::len(row.fields)) { return core::result::Err(Error::Bounds); }
-        let field: alloc::string::String = std::vec::at(row.fields, field_index);
-        return core::result::Ok(field.as_text());
+        let row: Record = std::vec::at(self.rows, row_index);
+        return row.field(field_index);
     }
-
-    // An independent owned copy. Destroy it separately from the table.
     pub fn try_field(&self, row_index: i32, field_index: i32) -> core::result::Result<alloc::string::String, Error> {
         if (row_index < 0 || row_index >= std::vec::len(self.rows)) { return core::result::Err(Error::Bounds); }
-        let row: Row = std::vec::at(self.rows, row_index);
-        if (field_index < 0 || field_index >= std::vec::len(row.fields)) { return core::result::Err(Error::Bounds); }
-        let field: alloc::string::String = std::vec::at(row.fields, field_index);
-        let copy: core::result::Result<alloc::string::String, alloc::string::Error> = field.try_clone();
-        return match (copy) {
-            Ok(value) -> core::result::Ok(value),
-            Err(_) -> core::result::Err(Error::AllocationFailed),
-        };
+        let row: Record = std::vec::at(self.rows, row_index);
+        return row.try_field(field_index);
     }
-
-    pub fn destroy(&self) {
-        destroy_rows(self.rows);
-        self.rows = std::vec::new();
-    }
-}
-
-struct State {
-    rows: std::vec::Vec<Row>,
-    fields: std::vec::Vec<alloc::string::String>,
-    bytes: std::vec::Vec<u8>,
-    options: Options,
-    error: Error,
-    width: i32,
-}
-
-impl State {
-    fn push_byte(&self, byte: u8, offset: i32) -> bool {
-        let before: i32 = std::vec::len(self.bytes);
-        if (before >= self.options.max_field_bytes) { self.error = Error::LimitExceeded(offset); return false; }
-        self.bytes = std::vec::try_push(self.bytes, byte);
-        if (std::vec::len(self.bytes) == before) { self.error = Error::AllocationFailed; return false; }
-        return true;
-    }
-
-    fn finish_field(&self, offset: i32) -> bool {
-        let before: i32 = std::vec::len(self.fields);
-        if (before >= self.options.max_fields) { self.error = Error::LimitExceeded(offset); return false; }
-        let source: [u8] = std::vec::as_slice(self.bytes);
-        let built: core::result::Result<alloc::string::String, alloc::string::Error> =
-            alloc::string::from_utf8(source, std::vec::len(self.bytes));
-        // Input String is valid UTF-8, and CSV punctuation cannot split a
-        // multibyte sequence. Constructing the field can only fail allocation.
-        if (core::result::is_err(built)) { self.error = Error::AllocationFailed; return false; }
-        let field: alloc::string::String = core::result::unwrap(built);
-        self.fields = std::vec::try_push(self.fields, field);
-        if (std::vec::len(self.fields) == before) {
-            field.destroy();
-            self.error = Error::AllocationFailed;
-            return false;
-        }
-        self.bytes = std::vec::clear(self.bytes);
-        return true;
-    }
-
-    fn finish_row(&self, offset: i32) -> bool {
-        let count: i32 = std::vec::len(self.fields);
+    fn collect(&self, decoder: &Decoder) -> bool {
+        let row: Record = core::option::unwrap(decoder.take_record());
         let before: i32 = std::vec::len(self.rows);
-        if (before >= self.options.max_records) { self.error = Error::LimitExceeded(offset); return false; }
-        if (before > 0 && self.options.require_same_width && count != self.width) {
-            self.error = Error::UnequalFields(before);
-            return false;
-        }
-        let row: Row = Row { fields: self.fields };
         self.rows = std::vec::try_push(self.rows, row);
-        if (std::vec::len(self.rows) == before) { self.error = Error::AllocationFailed; return false; }
-        self.fields = std::vec::new();
-        self.width = count;
+        if (std::vec::len(self.rows) == before) { row.destroy(); return false; }
         return true;
     }
-}
-
-fn failed(state: State, error: Error) -> core::result::Result<Table, Error> {
-    destroy_rows(state.rows);
-    destroy_fields(state.fields);
-    std::vec::destroy(state.bytes);
-    return core::result::Err(error);
-}
-
-// Empty input has zero rows. A blank record has one empty field. A trailing
-// record terminator does not create an additional record. No header guessing.
-pub fn parse(input: alloc::string::String, options: Options) -> core::result::Result<Table, Error> {
-    if (options.max_records < 0 || options.max_fields < 1 || options.max_field_bytes < 0) {
-        return core::result::Err(Error::InvalidOptions);
+    pub fn destroy(&self) {
+        let index: i32 = 0;
+        while (index < std::vec::len(self.rows)) {
+            let row: Record = std::vec::at(self.rows, index); row.destroy(); index += 1;
+        }
+        std::vec::destroy(self.rows); self.rows = std::vec::new();
     }
-    let rows: std::vec::Vec<Row> = std::vec::new();
-    let fields: std::vec::Vec<alloc::string::String> = std::vec::new();
-    let bytes: std::vec::Vec<u8> = std::vec::new();
-    let state: State = State {
-        rows: rows, fields: fields, bytes: bytes, options: options,
-        error: Error::AllocationFailed, width: 0,
-    };
-    let source: [u8] = input.as_bytes();
-    let length: i32 = input.byte_len();
-    // Modes: 0 field start, 1 unquoted, 2 quoted, 3 after closing quote.
-    let mode: i32 = 0;
-    let quote_start: i32 = 0;
-    let pending: bool = false;
+}
+fn parse_failed(table: Table, decoder: Decoder, error: Error) -> core::result::Result<Table, Error> {
+    table.destroy(); decoder.destroy(); return core::result::Err(error);
+}
+// Decode a complete byte range using the incremental parser. Error offsets
+// start at zero for the selected input range, independent of its source offset.
+pub fn parse_bytes(source: [u8], offset: i32, count: i32, options: Options) -> core::result::Result<Table, Error> {
+    if (!core::io::valid_range(offset, count)) { return core::result::Err(Error::Bounds); }
+    let made: core::result::Result<Decoder, Error> = decoder(options);
+    if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
+    let parser: Decoder = core::result::unwrap(made);
+    let rows: std::vec::Vec<Record> = std::vec::new();
+    let table: Table = Table { rows: rows };
     let index: i32 = 0;
-    while (index < length) {
-        let byte: u8 = source[index];
-        if (mode == 2) {
-            if (byte == 34) { mode = 3; }
-            else {
-                if ((byte < 32 && byte != 13 && byte != 10) || byte == 127) {
-                    return failed(state, Error::InvalidCharacter(index));
-                }
-                if (!state.push_byte(byte, index)) { return failed(state, state.error); }
-            }
-            index += 1;
-            continue;
-        }
-        if (mode == 3 && byte == 34) {
-            if (!state.push_byte(byte, index)) { return failed(state, state.error); }
-            mode = 2;
-            index += 1;
-            continue;
-        }
-        if (byte == 44) {
-            if (!state.finish_field(index)) { return failed(state, state.error); }
-            mode = 0;
-            pending = true;
-            index += 1;
-            continue;
-        }
-        if (byte == 13 || byte == 10) {
-            let step: i32 = 1;
-            if (byte == 13) {
-                if (index + 1 >= length || source[index + 1] != 10) {
-                    return failed(state, Error::InvalidLineEnding(index));
-                }
-                step = 2;
-            } else {
-                if (!options.allow_lf) { return failed(state, Error::InvalidLineEnding(index)); }
-            }
-            if (!state.finish_field(index) || !state.finish_row(index)) { return failed(state, state.error); }
-            mode = 0;
-            pending = false;
-            index += step;
-            continue;
-        }
-        if (mode == 3) {
-            return failed(state, Error::TrailingText(index));
-        }
-        if (byte == 34) {
-            if (mode != 0) { return failed(state, Error::UnexpectedQuote(index)); }
-            mode = 2;
-            quote_start = index;
-            pending = true;
-            index += 1;
-        } else {
-            if (byte < 32 || byte == 127) { return failed(state, Error::InvalidCharacter(index)); }
-            if (!state.push_byte(byte, index)) { return failed(state, state.error); }
-            mode = 1;
-            pending = true;
-            index += 1;
-        }
+    while (index < count) {
+        let step: core::result::Result<Progress, Error> = parser.feed(source, offset + index, count - index);
+        if (core::result::is_err(step)) { return parse_failed(table, parser, core::result::unwrap_err(step)); }
+        let progress: Progress = core::result::unwrap(step);
+        index += progress.consumed;
+        if (progress.record && !table.collect(parser.borrow())) { return parse_failed(table, parser, Error::AllocationFailed); }
     }
-    if (mode == 2) { return failed(state, Error::UnclosedQuote(quote_start)); }
-    if (pending) {
-        if (!state.finish_field(length) || !state.finish_row(length)) { return failed(state, state.error); }
-    }
-    std::vec::destroy(state.bytes);
-    std::vec::destroy(state.fields);
-    return core::result::Ok(Table { rows: state.rows });
+    let ended: core::result::Result<bool, Error> = parser.finish();
+    if (core::result::is_err(ended)) { return parse_failed(table, parser, core::result::unwrap_err(ended)); }
+    if (core::result::unwrap(ended) && !table.collect(parser.borrow())) { return parse_failed(table, parser, Error::AllocationFailed); }
+    parser.destroy(); return core::result::Ok(table);
+}
+pub fn parse(input: alloc::string::String, options: Options) -> core::result::Result<Table, Error> {
+    return parse_bytes(input.as_bytes(), 0, input.byte_len(), options);
 }
 
-struct Encoder { output: alloc::string::String }
-
+struct Encoder { output: alloc::string::String, error: Error }
 impl Encoder {
     fn push(&self, scalar: u32) -> bool {
-        return core::result::is_ok(self.output.try_push_scalar(scalar));
+        let pushed: core::result::Result<i32, alloc::string::Error> = self.output.try_push_scalar(scalar);
+        if (core::result::is_err(pushed)) { self.error = string_error(core::result::unwrap_err(pushed)); return false; }
+        return true;
     }
-}
-
-// Quote every field and terminate every record with CRLF. Errors release
-// partial output and leave the source table unchanged.
-pub fn encode(table: Table) -> core::result::Result<alloc::string::String, Error> {
-    let output: alloc::string::String = alloc::string::new();
-    let writer: Encoder = Encoder { output: output };
-    let row_index: i32 = 0;
-    while (row_index < std::vec::len(table.rows)) {
-        let row: Row = std::vec::at(table.rows, row_index);
-        let field_index: i32 = 0;
-        while (field_index < std::vec::len(row.fields)) {
-            if (field_index > 0 && !writer.push(44)) { writer.output.destroy(); return core::result::Err(Error::AllocationFailed); }
-            if (!writer.push(34)) { writer.output.destroy(); return core::result::Err(Error::AllocationFailed); }
-            let field: alloc::string::String = std::vec::at(row.fields, field_index);
+    fn record(&self, row: Record) -> bool {
+        let column: i32 = 0;
+        while (column < row.field_count()) {
+            if (column > 0 && !self.push(44)) { return false; }
+            if (!self.push(34)) { return false; }
+            let field: core::text::Text = core::result::unwrap(row.field(column));
             let offset: i32 = 0;
             while (offset < field.byte_len()) {
-                let scalar: u32 = core::option::unwrap_or(field.scalar_at_byte(offset), 0);
-                if (scalar == 34 && !writer.push(34)) { writer.output.destroy(); return core::result::Err(Error::AllocationFailed); }
-                if (!writer.push(scalar)) { writer.output.destroy(); return core::result::Err(Error::AllocationFailed); }
+                let scalar: u32 = core::option::unwrap(field.scalar_at_byte(offset));
+                if (scalar == 34 && !self.push(34)) { return false; }
+                if (!self.push(scalar)) { return false; }
                 offset += core::utf8::encoded_len_or(scalar, 0) as i32;
             }
-            if (!writer.push(34)) { writer.output.destroy(); return core::result::Err(Error::AllocationFailed); }
-            field_index += 1;
+            if (!self.push(34)) { return false; }
+            column += 1;
         }
-        if (!writer.push(13) || !writer.push(10)) { writer.output.destroy(); return core::result::Err(Error::AllocationFailed); }
-        row_index += 1;
+        // A cleared/destroyed Record has no fields and encodes to no bytes.
+        if (row.field_count() == 0) { return true; }
+        return self.push(13) && self.push(10);
+    }
+}
+pub fn encode_record(record: Record) -> core::result::Result<alloc::string::String, Error> {
+    let writer: Encoder = Encoder { output: alloc::string::new(), error: Error::AllocationFailed };
+    if (!writer.record(record)) { writer.output.destroy(); return core::result::Err(writer.error); }
+    return core::result::Ok(writer.output);
+}
+pub fn encode(table: Table) -> core::result::Result<alloc::string::String, Error> {
+    let writer: Encoder = Encoder { output: alloc::string::new(), error: Error::AllocationFailed };
+    let index: i32 = 0;
+    while (index < std::vec::len(table.rows)) {
+        if (!writer.record(std::vec::at(table.rows, index))) { writer.output.destroy(); return core::result::Err(writer.error); }
+        index += 1;
     }
     return core::result::Ok(writer.output);
 }

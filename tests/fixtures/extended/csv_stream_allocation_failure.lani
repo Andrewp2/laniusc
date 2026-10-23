@@ -1,0 +1,38 @@
+// All allocations in decoder growth are fallible. Failure returns 0 after
+// verifying sticky error/reset behavior and releasing successful allocations.
+module app::main;
+import core::option;
+import core::result;
+import ext::csv;
+fn failed(parser: &ext::csv::Decoder, bytes: [u8]) -> i32 {
+    let repeated: core::result::Result<ext::csv::Progress, ext::csv::Error> = parser.feed(bytes, 0, 0);
+    if (core::result::is_ok(repeated) || core::result::is_ok(parser.finish()) || parser.has_record()) { return 10; }
+    let error: ext::csv::Error = core::result::unwrap_err(repeated);
+    let allocation: bool = match (error) { ext::csv::Error::AllocationFailed -> true, _ -> false };
+    if (!allocation) { return 11; }
+    let capacity: i32 = parser.byte_capacity(); let fields: i32 = parser.field_capacity();
+    parser.reset();
+    if (parser.byte_capacity() != capacity || parser.field_capacity() != fields || parser.byte_offset() != 0 || parser.records_read() != 0 ||
+        core::result::unwrap(parser.finish())) { return 12; }
+    return 0;
+}
+fn run(parser: &ext::csv::Decoder) -> i32 {
+    let start: [u8; 4] = [97, 44, 98, 10];
+    if (core::result::is_err(parser.feed(start, 0, 4))) { return failed(parser, start); }
+    let block: [u8; 64] = [97; 64];
+    let comma: [u8; 1] = [44];
+    let index: i32 = 0;
+    while (index < 17) {
+        if (core::result::is_err(parser.feed(block, 0, 64))) { return failed(parser, block); }
+        if (core::result::is_err(parser.feed(comma, 0, 1))) { return failed(parser, comma); }
+        index += 1;
+    }
+    if (core::result::is_err(parser.finish())) { return failed(parser, block); }
+    if (parser.records_read() != 2 || core::option::unwrap(parser.field_count()) != 18) { return 13; }
+    return 1;
+}
+fn main() -> i32 {
+    let options: ext::csv::Options = ext::csv::default_options(); options.require_same_width = false;
+    let parser: ext::csv::Decoder = core::result::unwrap(ext::csv::decoder(options));
+    let status: i32 = run(parser.borrow()); parser.destroy(); return status;
+}

@@ -117,7 +117,7 @@ API list; unrelated library work can continue.
 - Compiler and runtime prerequisites: [library-dependencies.md](library-dependencies.md).
 - Extended CSV: parsing, independent field copies and canonical encoding execute
   on x86_64 Linux, including generated tables, borrowed field views and allocation fault injection.
-  See [extended-csv.md](extended-csv.md). Streaming and row construction remain.
+  See [extended-csv.md](extended-csv.md). Incremental decoding now shares the same parser; row construction remains.
 - Shared I/O: portable Read/Write traits, exact/all/copy operations, slice
   cursors, owned byte buffers and native descriptor adapters have execution
   coverage. CSV uses these streams. See [stdlib-streams.md](stdlib-streams.md).
@@ -137,16 +137,24 @@ API list; unrelated library work can continue.
   schemas and integers, groups records, checks totals and emits JSON. Native
   tests cover generated records, all allocation failures and partial I/O.
   It now uses the hash map; paired measurements improve the 1,024-group case
-  from about 694 ms to 307 ms. Full-table allocation remains work to improve.
+  from about 694 ms to 307 ms. The report now uses incremental input and
+  packed reusable record buffers.
 - Borrowed text: [core::text::Text](stdlib-text.md) executes validation, checked
   subviews, comparison/search, scalar and split iteration, hashing and decimal
   parsing without copying. String and CSV expose borrowed views. The report
   copies each distinct group name once, and reads other fields directly. Paired
   native measurements show 232→175 ms for 4,096 records/64 groups and
-  303→269 ms for 4,096 records/1,024 groups; the complete table is still retained.
+  303→269 ms for 4,096 records/1,024 groups before the streaming migration.
+- Streaming CSV: one decoder handles complete tables and chunked input,
+  including split UTF-8/quotes/CRLF, explicit EOF, sticky errors, resource limits
+  and owned record transfer. A syscall-traced 4,096-record run allocates nothing
+  after warm-up. The grouping report now retains only current-record buffers
+  and group data during input. Paired native runtime falls from 173 to 26 ms
+  for 4,096 records/64 groups; peak live allocation request sizes fall from
+  779 KB to 99 KB. See [extended-csv.md](extended-csv.md) and [csv-report.md](csv-report.md).
 - Next foundation work: iterators and text operations, buffered I/O and
-  streaming format interfaces; complete HashSet when its compiler dependency
-  is resolved.
+  remaining streaming format interfaces; complete HashSet when its compiler
+  dependency is resolved.
   Completing the integration application does not complete the first phase.
 - The older [execution audit](stdlib-foundation.md) remains historical evidence;
   its top-level checkpoints do not establish this branch's current behavior.

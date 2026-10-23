@@ -1,0 +1,118 @@
+// Test protocol: policy, four byte-sized limits (255 means unlimited),
+// number of chunks, chunk byte lengths, then CSV. Remaining input is one chunk.
+module app::main;
+import alloc::io;
+import core::option;
+import core::result;
+import core::text;
+import ext::csv;
+import std::io;
+import std::io_decimal;
+import std::stream;
+
+fn code(error: ext::csv::Error) -> i32 {
+    let result: i32 = match (error) {
+        UnexpectedQuote(at) -> 1, UnclosedQuote(at) -> 2, TrailingText(at) -> 3,
+        InvalidLineEnding(at) -> 4, InvalidCharacter(at) -> 5, InvalidUtf8(at) -> 6,
+        UnequalFields(row) -> 7, LimitExceeded(at) -> 8, AllocationFailed -> 9,
+        CapacityOverflow -> 10, OffsetOverflow -> 11, Bounds -> 12, NoRecord -> 13,
+        Finished -> 14, InvalidOptions -> 15,
+    };
+    return result;
+}
+fn at(error: ext::csv::Error) -> u64 {
+    let result: u64 = match (error) {
+        UnexpectedQuote(at) -> at, UnclosedQuote(at) -> at, TrailingText(at) -> at,
+        InvalidLineEnding(at) -> at, InvalidCharacter(at) -> at, InvalidUtf8(at) -> at,
+        UnequalFields(row) -> row as u64, LimitExceeded(at) -> at, _ -> 0,
+    };
+    return result;
+}
+fn show_error(error: ext::csv::Error) {
+    std::io::write_byte(1, 88); std::io_decimal::write_i32(1, code(error));
+    std::io::write_byte(1, 58); std::io_decimal::write_u32(1, at(error) as u32);
+    std::io::write_byte(1, 10);
+}
+fn show_record(parser: &ext::csv::Decoder) {
+    let fields: i32 = core::option::unwrap(parser.field_count());
+    std::io::write_byte(1, 82); std::io_decimal::write_i32(1, fields); std::io::write_byte(1, 58);
+    let index: i32 = 0;
+    while (index < fields) {
+        let field: core::text::Text = core::result::unwrap(parser.field(index));
+        std::io_decimal::write_i32(1, field.byte_len()); std::io::write_byte(1, 58);
+        let byte: i32 = 0;
+        while (byte < field.byte_len()) {
+            std::io::write_byte(1, core::option::unwrap(field.byte_at(byte)) as i32); byte += 1;
+        }
+        index += 1;
+    }
+    std::io::write_byte(1, 10);
+}
+fn sticky(parser: &ext::csv::Decoder, bytes: [u8], error: ext::csv::Error) -> bool {
+    let offset: u64 = parser.byte_offset();
+    let again: core::result::Result<ext::csv::Progress, ext::csv::Error> = parser.feed(bytes, 0, 0);
+    let ended: core::result::Result<bool, ext::csv::Error> = parser.finish();
+    if (core::result::is_ok(again) || core::result::is_ok(ended)) { return false; }
+    let first: ext::csv::Error = core::result::unwrap_err(again);
+    let second: ext::csv::Error = core::result::unwrap_err(ended);
+    return code(first) == code(error) && at(first) == at(error) && code(second) == code(error) && at(second) == at(error) &&
+        parser.byte_offset() == offset && !parser.has_record() && core::option::is_none(parser.field_count()) &&
+        core::option::is_none(parser.take_record());
+}
+fn limit(value: u8) -> i32 { if (value == 255) { return 2147483647; } return value as i32; }
+fn run(bytes: [u8], length: i32) -> i32 {
+    if (length < 6) { return 90; }
+    let options: ext::csv::Options = ext::csv::default_options();
+    options.allow_lf = (bytes[0] & 1) != 0; options.require_same_width = (bytes[0] & 2) != 0;
+    options.max_records = limit(bytes[1]); options.max_fields = limit(bytes[2]);
+    options.max_field_bytes = limit(bytes[3]); options.max_record_bytes = limit(bytes[4]);
+    let chunks: i32 = bytes[5] as i32;
+    let origin: i32 = 6 + chunks;
+    if (origin > length) { return 91; }
+    let made: core::result::Result<ext::csv::Decoder, ext::csv::Error> = ext::csv::decoder(options);
+    if (core::result::is_err(made)) { show_error(core::result::unwrap_err(made)); return 2; }
+    let parser: ext::csv::Decoder = core::result::unwrap(made);
+    let position: i32 = origin;
+    let chunk: i32 = 0;
+    let records: i32 = 0;
+    while (chunk <= chunks) {
+        let end: i32 = length;
+        if (chunk < chunks) { end = position + (bytes[6 + chunk] as i32); if (end > length) { end = length; } }
+        while (position < end) {
+            let parsed: core::result::Result<ext::csv::Progress, ext::csv::Error> = parser.feed(bytes, position, end - position);
+            if (core::result::is_err(parsed)) {
+                let error: ext::csv::Error = core::result::unwrap_err(parsed); show_error(error);
+                let correct: bool = sticky(parser.borrow(), bytes, error); parser.destroy();
+                if (!correct) { return 92; } return 2;
+            }
+            let progress: ext::csv::Progress = core::result::unwrap(parsed);
+            if (progress.consumed <= 0 || progress.consumed > end - position) { parser.destroy(); return 93; }
+            position += progress.consumed;
+            if (parser.byte_offset() != (position - origin) as u64) { parser.destroy(); return 94; }
+            if (progress.record) { show_record(parser.borrow()); records += 1; }
+            if (parser.records_read() != records) { parser.destroy(); return 95; }
+        }
+        let was_ready: bool = parser.has_record();
+        let empty: ext::csv::Progress = core::result::unwrap(parser.feed(bytes, position, 0));
+        if (empty.consumed != 0 || empty.record || parser.has_record() != was_ready) { parser.destroy(); return 96; }
+        chunk += 1;
+    }
+    let ended: core::result::Result<bool, ext::csv::Error> = parser.finish();
+    if (core::result::is_err(ended)) {
+        let error: ext::csv::Error = core::result::unwrap_err(ended); show_error(error);
+        let correct: bool = sticky(parser.borrow(), bytes, error); parser.destroy();
+        if (!correct) { return 97; } return 2;
+    }
+    if (core::result::unwrap(ended)) { show_record(parser.borrow()); records += 1; }
+    if (core::result::unwrap(parser.finish()) || parser.records_read() != records) { parser.destroy(); return 98; }
+    if (code(core::result::unwrap_err(parser.feed(bytes, 0, 1))) != 14) { parser.destroy(); return 99; }
+    std::io::write_byte(1, 69); std::io_decimal::write_i32(1, records); std::io::write_byte(1, 58);
+    std::io_decimal::write_u32(1, parser.byte_offset() as u32); std::io::write_byte(1, 10);
+    parser.destroy(); parser.destroy(); return 0;
+}
+fn main() -> i32 {
+    let buffer: alloc::io::Buffer = alloc::io::new();
+    let source: std::stream::Descriptor = std::stream::stdin();
+    if (core::result::is_err(std::stream::copy(source.borrow(), buffer.borrow()))) { buffer.destroy(); return 89; }
+    let result: i32 = run(buffer.as_bytes(), buffer.len()); buffer.destroy(); return result;
+}
