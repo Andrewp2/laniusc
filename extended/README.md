@@ -22,6 +22,8 @@ repository root. An application imports the CSV module with `import ext::csv;`.
 | [`ext::config`](ext/config.lani) | Owned strict JSON sources, bounded file loading, borrowed typed queries and explicit shallow precedence | x86_64 Linux; [contracts and tests](../docs/extended-config.md) |
 | [`ext::log`](ext/log.lani) | Severity filters, borrowed typed records and atomic caller-buffer preparation of JSON log records | x86_64 Linux; [contracts, delivery and tests](../docs/extended-log.md) |
 | [`ext::glob`](ext/glob.lani) | Compiled raw-byte patterns, ASCII classes/case rules, recursive components and bounded matches with caller scratch | x86_64 Linux matcher and path-filter application tests; [contracts and evidence](../docs/extended-glob.md) |
+| [`ext::percent`](ext/percent.lani) | Checked raw-byte component percent encoding/decoding, caller buffers, in-place conversion and atomic errors | x86_64 Linux; [contracts and tests](../docs/extended-percent.md) |
+| [`ext::uri`](ext/uri.lani) | Strict borrowed RFC 3986 URI-reference parsing, exact encoded component views, IPv4/IPv6/IPvFuture syntax and explicit limits | x86_64 Linux; [contracts and tests](../docs/extended-uri.md), [component application](../docs/extended-uri-component.md) |
 
 The complete scope and dependency order are
 tracked in the [library roadmap](../docs/library-roadmap.md). Package publishing,

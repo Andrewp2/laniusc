@@ -67,6 +67,12 @@ creation/removal of one directory, file unlinking and renaming over existing
 host bindings. These operations retain Linux errors and do not recursively
 traverse paths.
 
+[Borrowed URI parsing](extended-uri.md), [component percent coding](extended-percent.md)
+and a [component-extraction application](extended-uri-component.md) execute on
+x86_64 Linux. Parsing validates generic RFC 3986 syntax while preserving encoded
+spelling; decoding is an explicit later operation. URI reference resolution,
+scheme-specific URL handling and network protocols remain separate work.
+
 For external formats and algorithms, use their primary specifications and
 published conformance vectors. Choose exact versions and formats when starting
 each family. Host and third-party integrations need explicit dependency and

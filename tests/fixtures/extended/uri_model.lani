@@ -1,0 +1,36 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::uri;
+import std::io;
+import std::io_decimal;
+import std::process;
+fn number(value: i32) { assert(std::io_decimal::write_i32(1,value) > 0 && std::io::write_byte(1,32) == 1); }
+fn view(value: core::slice::View<u8>, base: i32) { number(value.start-base); number(value.len()); }
+fn absent() { number(-1); number(-1); }
+fn optional(value: core::option::Option<core::slice::View<u8>>, base: i32) { if (core::option::is_none(value)) { absent(); } else { view(core::option::unwrap(value),base); } }
+fn main() -> i32 {
+    let storage: [i32; 16384] = [0;16384]; let pointer: ptr = core::mem::i32_array_data_ptr(storage); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,65536);
+    let index: i32 = 1;
+    while (index < std::process::argc()) {
+        let count: i32 = std::process::arg_len(index); assert(count >= 0 && count <= 65536); assert(std::process::arg_read(index,pointer,count as usize) == count);
+        let parsed: core::result::Result<ext::uri::Reference, ext::uri::Error> = ext::uri::parse(core::result::unwrap(core::slice::view(bytes,count)));
+        if (core::result::is_err(parsed)) {
+            let error: ext::uri::Error = core::result::unwrap_err(parsed); let offset: i32 = -1;
+            let code: i32 = match (error) { ext::uri::Error::Bounds -> 1, ext::uri::Error::LengthLimit -> 2, ext::uri::Error::InvalidByte(at) -> 3, ext::uri::Error::InvalidPercent(at) -> 4, ext::uri::Error::InvalidScheme(at) -> 5, ext::uri::Error::InvalidAuthority(at) -> 6, ext::uri::Error::InvalidHost(at) -> 7, ext::uri::Error::InvalidPort(at) -> 8 };
+            offset = match (error) { ext::uri::Error::InvalidByte(at) -> at, ext::uri::Error::InvalidPercent(at) -> at, ext::uri::Error::InvalidScheme(at) -> at, ext::uri::Error::InvalidAuthority(at) -> at, ext::uri::Error::InvalidHost(at) -> at, ext::uri::Error::InvalidPort(at) -> at, _ -> -1 };
+            number(-1); number(code); number(offset);
+        } else {
+            let uri: ext::uri::Reference = core::result::unwrap(parsed); number(0); let kind: i32 = -1;
+            if (core::option::is_some(uri.authority)) { let auth: ext::uri::Authority = core::option::unwrap(uri.authority); kind = match (auth.kind) { ext::uri::HostKind::RegName -> 0, ext::uri::HostKind::Ipv4 -> 1, ext::uri::HostKind::Ipv6 -> 2, ext::uri::HostKind::IpvFuture -> 3 }; }
+            number(kind); optional(uri.scheme,0);
+            if (core::option::is_some(uri.authority)) { let auth: ext::uri::Authority = core::option::unwrap(uri.authority); view(auth.raw,0); optional(auth.userinfo,0); view(auth.host,0); optional(auth.port,0); }
+            else { absent(); absent(); absent(); absent(); }
+            view(uri.path,0); optional(uri.query,0); optional(uri.fragment,0);
+        }
+        assert(std::io::write_byte(1,10) == 1); index += 1;
+    }
+    return 0;
+}

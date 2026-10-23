@@ -1,0 +1,21 @@
+module app::main;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::slice;
+import ext::uri;
+fn main() -> i32 {
+    let storage: alloc::vec::Vec<u8> = alloc::vec::new();
+    assert(core::result::is_ok(storage.try_resize(ext::uri::DEFAULT_MAX_BYTES+1,97)));
+    let too_large: core::result::Result<ext::uri::Reference, ext::uri::Error> = ext::uri::parse(storage.as_view());
+    assert(core::result::is_err(too_large));
+    let limit_error: ext::uri::Error = core::result::unwrap_err(too_large);
+    let limited: bool = match (limit_error) { ext::uri::Error::LengthLimit -> true, _ -> false }; assert(limited);
+    let accepted: ext::uri::Reference = core::result::unwrap(ext::uri::parse_with_limit(storage.as_view(),ext::uri::DEFAULT_MAX_BYTES+1));
+    assert(accepted.is_relative() && accepted.path.len() == ext::uri::DEFAULT_MAX_BYTES+1);
+    let exact: core::slice::View<u8> = core::result::unwrap(storage.as_view().subview(0,ext::uri::DEFAULT_MAX_BYTES));
+    let defaulted: ext::uri::Reference = core::result::unwrap(ext::uri::parse(exact));
+    assert(defaulted.path.len() == ext::uri::DEFAULT_MAX_BYTES);
+    assert(storage.len() == ext::uri::DEFAULT_MAX_BYTES+1 && storage.at(0) == 97 && storage.at(ext::uri::DEFAULT_MAX_BYTES) == 97);
+    storage.destroy(); return 0;
+}
