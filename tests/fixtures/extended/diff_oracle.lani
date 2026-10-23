@@ -1,0 +1,54 @@
+// Native byte-framed test driver: mode, context, old-length LE32, old, new/patch.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::io;
+import core::result;
+import core::slice;
+import core::option;
+import core::mem;
+import std::stream;
+import ext::diff;
+import ext::patch;
+fn literal(text:str,count:i32) -> core::slice::View<u8> { let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn diff_error(error:ext::diff::Error) -> i32 { return match(error) { ext::diff::Error::AllocationFailed -> 4, ext::diff::Error::WorkLimit -> 5, ext::diff::Error::TraceLimit -> 6, ext::diff::Error::LineLimit -> 7, ext::diff::Error::EditLimit -> 8, ext::diff::Error::OutputLimit -> 9, _ -> 2 }; }
+fn patch_error(error:ext::patch::Error) -> i32 { return match(error.kind) { ext::patch::ErrorKind::AllocationFailed -> 4, ext::patch::ErrorKind::Conflict -> 3, ext::patch::ErrorKind::WorkLimit -> 5, ext::patch::ErrorKind::OutputLimit -> 9, _ -> 2 }; }
+fn write(bytes:core::slice::View<u8>) -> i32 { let sink:std::stream::Descriptor=std::stream::stdout(); if(core::result::is_err(core::io::write_all(sink.borrow(),bytes.values,bytes.start,bytes.len()))) { return 10; } return 0; }
+fn script_witness(script:&ext::diff::Script) -> bool {
+ let old:i32=0; let new:i32=0; let edits:i32=0; let i:i32=0;
+ while(i<script.len()) {
+  let step:ext::diff::Step=core::result::unwrap(script.step(i));
+  if(step.before!=old || step.after!=new) { return false; }
+  if(step.kind==0) {
+   if(old>=script.before_len() || new>=script.after_len()) { return false; }
+   let a:core::slice::View<u8> = core::result::unwrap(script.before_line(old));
+   let b:core::slice::View<u8> = core::result::unwrap(script.after_line(new));
+   if(a.len()!=b.len()) { return false; } let j:i32=0;
+   while(j<a.len()) { if(core::option::unwrap(a.get(j))!=core::option::unwrap(b.get(j))) { return false; } j+=1; }
+   old+=1; new+=1;
+  } else {
+   if(step.kind==1) { if(old>=script.before_len()) { return false; } old+=1; edits+=1; }
+   else { if(step.kind!=2 || new>=script.after_len()) { return false; } new+=1; edits+=1; }
+  }
+  i+=1;
+ }
+ return old==script.before_len() && new==script.after_len() && edits==script.distance();
+}
+fn run(input:core::slice::View<u8>) -> i32 {
+ if(input.len()<6) { return 2; } let mode:u8=core::option::unwrap(input.get(0)); let context:i32=core::option::unwrap(input.get(1)) as i32;
+ let size:u32=0; let i:i32=0; while(i<4) { size |= (core::option::unwrap(input.get(2+i)) as u32) << ((8*i) as u32); i+=1; }
+ if(size>2147483641 || size as i32>input.len()-6) { return 2; }
+ let before:core::slice::View<u8> = core::result::unwrap(input.subview(6,6+size as i32)); let after:core::slice::View<u8> = core::result::unwrap(input.subview(6+size as i32,input.len()));
+ let limits:ext::diff::Limits=ext::diff::default_limits();
+ if(mode==0) {
+  let compared:core::result::Result<ext::diff::Script,ext::diff::Error> = ext::diff::compare_bytes(before,after,limits); if(core::result::is_err(compared)) { return diff_error(core::result::unwrap_err(compared)); }
+  let script:ext::diff::Script=core::result::unwrap(compared); if(!script_witness(script.borrow())) { script.destroy(); return 11; } let distance:u32=script.distance() as u32;
+  let encoded:core::result::Result<alloc::vec::Vec<u8>,ext::diff::Error> = ext::diff::encode_unified(script.borrow(),literal("before",6),literal("after",5),context,limits); script.destroy();
+  if(core::result::is_err(encoded)) { return diff_error(core::result::unwrap_err(encoded)); }
+  let patch:alloc::vec::Vec<u8> = core::result::unwrap(encoded); let head:[u8;4]=[0;4]; i=0; while(i<4) { head[i]=((distance >> ((8*i) as u32)) & 255) as u8; i+=1; }
+  let status:i32=write(core::result::unwrap(core::slice::view(head,4))); if(status==0) { status=write(patch.as_view()); } patch.destroy(); return status;
+ }
+ if(mode==1) { let applied:core::result::Result<alloc::vec::Vec<u8>,ext::patch::Error> = ext::patch::apply_unified(before,after,limits); if(core::result::is_err(applied)) { return patch_error(core::result::unwrap_err(applied)); } let output:alloc::vec::Vec<u8> = core::result::unwrap(applied); let status:i32=write(output.as_view()); output.destroy(); return status; }
+ return 2;
+}
+fn main() -> i32 { let source:std::stream::Descriptor=std::stream::stdin(); let input:alloc::io::Buffer=alloc::io::new(); let received:core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(source.borrow(),input.borrow()); if(core::result::is_err(received)) { input.destroy(); return 4; } let status:i32=run(core::result::unwrap(core::slice::view(input.as_bytes(),input.len()))); input.destroy(); return status; }

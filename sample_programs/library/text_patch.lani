@@ -1,0 +1,195 @@
+// Exact, bounded single-file unified diff and patch. No filesystem writes.
+// Exit0 unchanged/applied/checked;1 differences;2 arguments/data/limits;
+// 3 host I/O (including failed diagnostics);4 allocation.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import core::text;
+import ext::cli;
+import ext::diff;
+import ext::patch;
+import std::args;
+import std::file;
+import std::stream;
+
+struct Options { mode: i32, first: core::option::Option<core::path::Path>, second: core::option::Option<core::path::Path>, input: i32, limits: ext::diff::Limits, context: i32, old_name: core::slice::View<u8>, new_name: core::slice::View<u8>, diff_flags: bool, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Diagnostic { reason: i32, stage: i32, location: i32 }
+impl Diagnostic { fn borrow(&self) -> &Diagnostic { return self; } }
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn text(value: str, count: i32) -> core::text::Text {
+    let bytes: core::slice::View<u8> = literal(value,count);
+    return core::text::from_utf8_unchecked(bytes.values,bytes.start,count);
+}
+fn equal(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len() != right.len()) { return false; }
+    let index: i32 = 0; while (index < left.len()) { if (left.values[left.start+index] != right.values[right.start+index]) { return false; } index += 1; } return true;
+}
+fn fail(detail: &Diagnostic, status: i32, stage: i32, reason: i32) -> i32 { detail.stage = stage; detail.reason = reason; return status; }
+fn buffer_view(buffer: &alloc::io::Buffer) -> core::slice::View<u8> { return core::result::unwrap(core::slice::view(buffer.as_bytes(),buffer.len())); }
+fn header_name(value: core::slice::View<u8>) -> bool {
+    if (value.is_empty()) { return false; }
+    let index: i32 = 0; while (index < value.len()) { let byte: u8 = value.values[value.start+index]; if (byte == 0 || byte == 9 || byte == 10 || byte == 13) { return false; } index += 1; } return true;
+}
+fn option(options: &Options, item: ext::cli::Occurrence) -> bool {
+    if (item.id == 10) { options.help = true; return true; }
+    let argument: ext::cli::Argument = core::option::unwrap(item.value); let bytes: core::slice::View<u8> = argument.bytes;
+    if (item.id == 8 || item.id == 9) {
+        if (!header_name(bytes)) { return false; } options.diff_flags = true;
+        if (item.id == 8) { options.old_name = bytes; } else { options.new_name = bytes; } return true;
+    }
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(bytes.values,bytes.start,bytes.len());
+    if (core::result::is_err(parsed)) { return false; } let value: u64 = core::result::unwrap(parsed);
+    if (item.id == 4) { options.limits.max_work = value; return true; }
+    if (value > 67108864 as u64) { return false; }
+    if (item.id == 1) { options.input = value as i32; }
+    if (item.id == 2) { options.limits.max_output = value as i32; }
+    if (item.id == 3) { if (value > 1000000 as u64) { return false; } options.limits.max_lines = value as i32; }
+    if (item.id == 5) { options.limits.max_trace = value as i32; options.diff_flags = true; }
+    if (item.id == 6) { if (value > 2000000 as u64) { return false; } options.limits.max_edits = value as i32; options.diff_flags = true; }
+    if (item.id == 7) { options.context = value as i32; options.diff_flags = true; } return true;
+}
+fn operand(options: &Options, argument: ext::cli::Argument) -> bool {
+    if (options.mode == 0) {
+        if (equal(argument.bytes,literal("diff",4))) { options.mode = 1; return true; }
+        if (equal(argument.bytes,literal("apply",5))) { options.mode = 2; return true; }
+        if (equal(argument.bytes,literal("check",5))) { options.mode = 3; return true; } return false;
+    }
+    let checked: core::result::Result<core::path::Path,core::path::Error> = core::path::from_view(argument.bytes);
+    if (core::result::is_err(checked)) { return false; }
+    if (core::option::is_none(options.first)) { options.first = core::option::Some(core::result::unwrap(checked)); return true; }
+    if (options.mode == 1 && core::option::is_none(options.second)) { options.second = core::option::Some(core::result::unwrap(checked)); return true; } return false;
+}
+fn input_error(error: core::io::Error, stage: i32, detail: &Diagnostic) -> i32 {
+    let status: i32 = match (error) { core::io::Error::LimitExceeded -> 2, core::io::Error::AllocationFailed -> 4, _ -> 3 };
+    let reason: i32 = 2; if (status == 2) { reason = 1; } if (status == 4) { reason = 3; } return fail(detail,status,stage,reason);
+}
+fn read_file(path: core::path::Path, output: &alloc::io::Buffer, stage: i32, detail: &Diagnostic) -> i32 {
+    let opened: core::result::Result<std::file::File,core::io::Error> = std::file::open(path,std::file::OpenMode::Read);
+    if (core::result::is_err(opened)) { return input_error(core::result::unwrap_err(opened),stage,detail); }
+    let file: std::file::File = core::result::unwrap(opened);
+    let copied: core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(file.borrow(),output);
+    let closed: core::result::Result<i32,core::io::Error> = file.close();
+    if (core::result::is_err(copied)) { let failure: core::io::CopyFailure = core::result::unwrap_err(copied); return input_error(failure.cause,stage,detail); }
+    if (core::result::is_err(closed)) { return input_error(core::result::unwrap_err(closed),stage,detail); } return 0;
+}
+fn diff_error(error: ext::diff::Error, detail: &Diagnostic) -> i32 {
+    let reason: i32 = match (error) { ext::diff::Error::AllocationFailed -> 3, ext::diff::Error::LineLimit -> 1, ext::diff::Error::WorkLimit -> 1, ext::diff::Error::TraceLimit -> 1, ext::diff::Error::EditLimit -> 1, ext::diff::Error::OutputLimit -> 1, _ -> 4 };
+    let status: i32 = 2; if (reason == 3) { status = 4; } return fail(detail,status,4,reason);
+}
+fn patch_error(error: ext::patch::Error, parsing: bool, detail: &Diagnostic) -> i32 {
+    let reason: i32 = match (error.kind) { ext::patch::ErrorKind::AllocationFailed -> 3, ext::patch::ErrorKind::LineLimit -> 1, ext::patch::ErrorKind::WorkLimit -> 1, ext::patch::ErrorKind::OutputLimit -> 1, ext::patch::ErrorKind::Conflict -> 6, _ -> 5 };
+    let status: i32 = 2; if (reason == 3) { status = 4; } detail.location = -1;
+    if (parsing || reason == 6) { detail.location = error.offset; }
+    let stage: i32 = 8; if (parsing) { stage = 5; } return fail(detail,status,stage,reason);
+}
+fn write(bytes: core::slice::View<u8>, detail: &Diagnostic) -> i32 {
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    if (core::result::is_err(core::io::write_all(sink.borrow(),bytes.values,bytes.start,bytes.len()))) { return fail(detail,3,6,2); } return 0;
+}
+fn make_diff(before: &alloc::io::Buffer, after: &alloc::io::Buffer, options: Options, detail: &Diagnostic) -> i32 {
+    let compared: core::result::Result<ext::diff::Script,ext::diff::Error> = ext::diff::compare_bytes(buffer_view(before),buffer_view(after),options.limits);
+    if (core::result::is_err(compared)) { return diff_error(core::result::unwrap_err(compared),detail); }
+    let script: ext::diff::Script = core::result::unwrap(compared);
+    if (script.distance() == 0) { script.destroy(); return 0; }
+    let encoded: core::result::Result<alloc::vec::Vec<u8>,ext::diff::Error> = ext::diff::encode_unified(script.borrow(),options.old_name,options.new_name,options.context,options.limits); script.destroy();
+    if (core::result::is_err(encoded)) { return diff_error(core::result::unwrap_err(encoded),detail); }
+    let bytes: alloc::vec::Vec<u8> = core::result::unwrap(encoded); let status: i32 = write(bytes.as_view(),detail); bytes.destroy();
+    if (status != 0) { return status; } return 1;
+}
+fn apply_patch(source: &alloc::io::Buffer, options: Options, detail: &Diagnostic) -> i32 {
+    let parsed: core::result::Result<ext::patch::Patch,ext::patch::Error> = ext::patch::parse(buffer_view(source),options.limits);
+    if (core::result::is_err(parsed)) { return patch_error(core::result::unwrap_err(parsed),true,detail); }
+    let patch: ext::patch::Patch = core::result::unwrap(parsed);
+    let base: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(options.input)); let stdin: std::stream::Descriptor = std::stream::stdin();
+    let copied: core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(stdin.borrow(),base.borrow());
+    if (core::result::is_err(copied)) { let failure: core::io::CopyFailure = core::result::unwrap_err(copied); base.destroy(); patch.destroy(); return input_error(failure.cause,3,detail); }
+    let applied: core::result::Result<alloc::vec::Vec<u8>,ext::patch::Error> = ext::patch::apply(buffer_view(base.borrow()),patch.borrow(),options.limits); base.destroy(); patch.destroy();
+    if (core::result::is_err(applied)) { return patch_error(core::result::unwrap_err(applied),false,detail); }
+    let bytes: alloc::vec::Vec<u8> = core::result::unwrap(applied); let status: i32 = 0;
+    if (options.mode == 2) { status = write(bytes.as_view(),detail); } bytes.destroy(); return status;
+}
+fn execute(options: Options, detail: &Diagnostic) -> i32 {
+    let first: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(options.input));
+    let stage: i32 = 7; if (options.mode == 1) { stage = 1; }
+    let status: i32 = read_file(core::option::unwrap(options.first),first.borrow(),stage,detail);
+    if (status == 0) {
+        if (options.mode == 1) {
+            let second: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(options.input));
+            status = read_file(core::option::unwrap(options.second),second.borrow(),2,detail);
+            if (status == 0) { status = make_diff(first.borrow(),second.borrow(),options,detail); } second.destroy();
+        } else { status = apply_patch(first.borrow(),options,detail); }
+    }
+    first.destroy(); return status;
+}
+fn process(arguments: std::args::Arguments, detail: &Diagnostic) -> i32 {
+    let specs: [ext::cli::Spec;10] = [
+        ext::cli::Spec { id: 1, long: literal("max-input-bytes",15), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 2, long: literal("max-output-bytes",16), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 3, long: literal("max-lines",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 4, long: literal("max-work",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 5, long: literal("max-trace-cells",15), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: literal("max-edits",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 7, long: literal("context",7), short: 85, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 8, long: literal("old-name",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 9, long: literal("new-name",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 10, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,10));
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),schema,ext::cli::Ordering::Intermixed));
+    let limits: ext::diff::Limits = ext::diff::Limits { max_lines: 65536, max_work: 100000000, max_trace: 1048576, max_edits: 131072, max_output: 16777216 };
+    let options: Options = Options { mode: 0, first: core::option::None(), second: core::option::None(), input: 4194304, limits: limits, context: 3, old_name: literal("before",6), new_name: literal("after",5), diff_flags: false, help: false };
+    while (true) {
+        let event: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next();
+        if (core::result::is_err(event)) { return fail(detail,2,0,0); }
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(event); if (core::option::is_none(next)) { break; }
+        let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> option(options.borrow(),item), ext::cli::Event::Operand(item) -> operand(options.borrow(),item) };
+        if (!valid) { return fail(detail,2,0,0); }
+    }
+    if (options.mode > 1 && options.diff_flags) { return fail(detail,2,0,0); }
+    if (options.help) { return write(literal("Usage: text-patch diff [OPTIONS] OLD NEW\n       text-patch apply|check [OPTIONS] PATCH_FILE <BASE\n",98),detail); }
+    if (options.mode == 0 || core::option::is_none(options.first) || (options.mode == 1 && core::option::is_none(options.second))) { return fail(detail,2,0,0); }
+    return execute(options,detail);
+}
+fn diagnostic(detail: Diagnostic) -> bool {
+    let storage: [i32;64] = [0;64]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),256);
+    let output: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,256)); output.write_text(text("text-patch: ",12));
+    if (detail.reason == 0) { output.write_text(text("invalid-arguments",17)); }
+    if (detail.reason == 1) { output.write_text(text("resource-limit",14)); }
+    if (detail.reason == 2) { output.write_text(text("io-failure",10)); }
+    if (detail.reason == 3) { output.write_text(text("allocation-failure",18)); }
+    if (detail.reason == 4) { output.write_text(text("invalid-diff",12)); }
+    if (detail.reason == 5) { output.write_text(text("invalid-patch",13)); }
+    if (detail.reason == 6) { output.write_text(text("conflict",8)); }
+    output.write_text(text(" stage=",7));
+    if (detail.stage == 0) { output.write_text(text("arguments",9)); }
+    if (detail.stage == 1) { output.write_text(text("old-file",8)); }
+    if (detail.stage == 2) { output.write_text(text("new-file",8)); }
+    if (detail.stage == 3) { output.write_text(text("base-input",10)); }
+    if (detail.stage == 4) { output.write_text(text("diff",4)); }
+    if (detail.stage == 5) { output.write_text(text("patch-parse",11)); }
+    if (detail.stage == 6) { output.write_text(text("output",6)); }
+    if (detail.stage == 7) { output.write_text(text("patch-file",10)); }
+    if (detail.stage == 8) { output.write_text(text("patch-apply",11)); }
+    if (detail.location >= 0) { if (detail.reason == 6) { output.write_text(text(" base-line=",11)); } else { output.write_text(text(" patch-byte=",12)); } output.write_signed(detail.location as i64,core::fmt::decimal()); }
+    output.write_text(text("\n",1)); let count: core::result::Result<i32,core::fmt::Error> = output.finish(); if (core::result::is_err(count)) { return false; }
+    let sink: std::stream::Descriptor = std::stream::stderr(); return core::result::is_ok(core::io::write_all(sink.borrow(),bytes,0,core::result::unwrap(count)));
+}
+fn main() -> i32 {
+    let detail: Diagnostic = Diagnostic { reason: 0, stage: 0, location: -1 }; let status: i32 = 0;
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,32,8192);
+    if (core::result::is_err(captured)) { status = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> fail(detail.borrow(),4,0,3), std::args::Error::HostRead(index) -> fail(detail.borrow(),3,0,2), _ -> fail(detail.borrow(),2,0,0) }; }
+    else { let arguments: std::args::Arguments = core::result::unwrap(captured); status = process(arguments,detail.borrow()); arguments.destroy(); }
+    if (status >= 2 && !diagnostic(detail)) { return 3; } return status;
+}

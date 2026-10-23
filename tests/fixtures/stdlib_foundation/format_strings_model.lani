@@ -1,0 +1,88 @@
+module app::main;
+import core::decimal;
+import core::f32;
+import core::f64;
+import core::format;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import std::io;
+import std::process;
+fn main() -> i32 {
+    let pattern_words:[i32; 256] =[0; 256];
+    let pattern_pointer: ptr = core::mem::i32_array_data_ptr(pattern_words);
+    let pattern_bytes:[u8] = core::mem::typed_slice_from_raw_parts(pattern_pointer, 1024);
+    let input_words:[i32; 256] =[0; 256];
+    let input_pointer: ptr = core::mem::i32_array_data_ptr(input_words);
+    let input:[u8] = core::mem::typed_slice_from_raw_parts(input_pointer, 1024);
+    let output_words:[i32; 4096] =[0; 4096];
+    let output_pointer: ptr = core::mem::i32_array_data_ptr(output_words);
+    let output_bytes:[u8] = core::mem::typed_slice_from_raw_parts(output_pointer, 16384);
+    let output: core::slice::View<u8> = core::result::unwrap(core::slice::view(output_bytes, 16384));
+    assert(std::process::argc() >= 4 && std::process::arg_read(1, input_pointer, 1) == 1);
+    let mode: u8 = input[0];
+    let count: i32 = std::process::arg_len(2);
+    assert(count <= 1024 && std::process::arg_read(2, pattern_pointer, count as usize) == count);
+    let pattern: core::text::Text = core::result::unwrap(core::text::from_utf8(pattern_bytes, count));
+    let label:[u8; 5] =[118, 97, 108, 117, 101];
+    let name: core::text::Text = core::text::from_utf8_unchecked(label, 0, 5);
+    let args:[core::format::Argument; 1] =[core::format::Argument::Bool(false)];
+    let names:[core::format::Named; 1] =[core::format::Named {
+        name: name, value: core::format::Argument::Bool(false)
+    }
+    ];
+    let positional: core::slice::View<core::format::Argument> = core::result::unwrap(core::slice::view(args, 1));
+    let named: core::slice::View<core::format::Named> = core::result::unwrap(core::slice::view(names, 1));
+    let index: i32 = 3;
+    while (index<std::process::argc()) {
+        let size: i32 = std::process::arg_len(index);
+        assert(size <= 1024 && std::process::arg_read(index, input_pointer, size as usize) == size);
+        let argument: core::format::Argument = core::format::Argument::Bool(false);
+        if (mode == 115) {
+            argument = core::format::Argument::Signed(core::result::unwrap(core::decimal::parse_i64_range(input, 0, size)));
+        }
+        if (mode == 117) {
+            argument = core::format::Argument::Unsigned(core::result::unwrap(core::decimal::parse_u64_range(input, 0, size)));
+        }
+        if (mode == 100) {
+            argument = core::format::Argument::F64(core::f64::from_bits(core::result::unwrap(core::decimal::parse_u64_range(input, 0, size))));
+        }
+        if (mode == 102) {
+            argument = core::format::Argument::F32(core::f32::from_bits(core::result::unwrap(core::decimal::parse_u32_range(input, 0, size))));
+        }
+        if (mode == 116) {
+            argument = core::format::Argument::Text(core::result::unwrap(core::text::from_utf8(input, size)));
+        }
+        if (mode == 98) {
+            argument = core::format::Argument::Bool(input[0] == 49);
+        }
+        if (mode == 99) {
+            let code: u32 = core::result::unwrap(core::decimal::parse_u32_range(input, 0, size));
+            argument = core::format::Argument::Char('A');
+            if (code == 0) {
+                argument = core::format::Argument::Char('\0');
+            }
+            if (code == 233) {
+                argument = core::format::Argument::Char('é');
+            }
+            if (code == 128578) {
+                argument = core::format::Argument::Char('🙂');
+            }
+            if (code == 1114111) {
+                argument = core::format::Argument::Char('􏿿');
+            }
+        }
+        args[0] = argument;
+        names[0] = core::format::Named {
+            name: name,
+            value: argument
+        };
+        let measured: i32 = core::result::unwrap(core::format::measure(pattern, positional, named, core::format::default_limits()));
+        let actual: i32 = core::result::unwrap(core::format::format_into(pattern, positional, named, output, core::format::default_limits()));
+        assert(measured == actual && std::io::write_stdout(output_pointer, actual as usize) == actual && std::io::write_byte(1, 10) == 1);
+        index += 1;
+    }
+    return 0;
+}

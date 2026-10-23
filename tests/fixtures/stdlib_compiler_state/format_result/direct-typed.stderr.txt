@@ -1,0 +1,6 @@
+error[LNC0047]: type-check execution failed
+ --> /tmp/lanius-state-root-direct-typed/core/byte.lani:2:1
+  |
+2 | module core::byte;
+  | ^^^^^^ generic type instantiation reached a compiler boundary
+     = note: a replay argument has no complete GPU native layout; its defining nominal payloads or a retained checked width witness are required

@@ -1,6 +1,31 @@
 # Standard library execution audit and portable foundation
 
-**Current collections/mathematics checkpoint (2026-10-23):**
+**Current formatting/parsing checkpoint (2026-10-23):**
+[Float precision conversion](stdlib-float-precision.md),
+[runtime format strings and owned formatting](stdlib-format-strings.md),
+[inline generic collections](stdlib-fixed-capacity.md),
+[text parsing cursors](extended-parse.md), [shortest edit scripts](extended-diff.md)
+and [strict unified patches](extended-patch.md) execute in Lanius. The
+[expression calculator](extended-expr-calc.md) and
+[file comparison/patch program](extended-text-patch.md) provide real native
+consumers. Container failures are explicit and set equality uses complete
+values. Symbolic-capacity free APIs execute; imported method lookup and
+[generic owned set wrappers](stdlib-owned-sets.md) retain reduced compiler
+dependencies with passing controls. No compiler/runtime, IR, ABI, shader,
+extractor or proof implementation changed. The [full roadmap](library-roadmap.md)
+remains open.
+
+The final integration gate passes 39 focused checks: 35 groups across the eight
+new library/application targets, three existing generic-container checks and
+one existing formatter composition regression. One generic-container check
+audits public call-site coverage; the others execute emitted native programs.
+Precision formatting alone has roughly 112,000 independent reference
+comparisons. Supported execution is x86_64 Linux output from GPU compilation;
+user GPU execution and other targets are unverified. A generic owned Display
+helper is excluded from production after a minimal compiler failure, with
+[source contexts and passing controls preserved](library-dependencies.md).
+
+**Preceding collections/mathematics checkpoint (2026-10-23):**
 [Owned bitsets](stdlib-bitset-owned.md) provide checked operations and explicit
 allocation failures; calendar comparison/hash traits integrate with ranges and
 collections. [Finite decimal arithmetic](extended-decimal.md),
@@ -356,8 +381,8 @@ require further compiler work.
 | `core::hash` twelve public free functions and two FNV-1a constants | Executable on x86_64 | The runtime fixture checks stable 32-bit bit-pattern hashes for six integer widths, both Boolean values, and ASCII and Unicode characters. The i32, u32, bool, and char functions call local `Hash<T>` implementations; narrow integers widen explicitly. `hash_wide_u64` and `hash_wide_i64` apply FNV-1a to eight little-endian bytes of the two-word representation and check zero, high-bit, maximum, and signed boundary values against exact outputs. The byte extraction masks each shifted word before narrowing it. The fixture also checks both constants, a one-byte step, known byte-sequence hashes, empty input, binary bytes, and a negative-length fallback. A separate native fixture confirms that overstating the physical byte view traps. The stdin fingerprint sample combines hashing with byte input and hexadecimal output. Direct imported `Hash<T>` calls remain outside the claim. |
 | `core::crc32` all 3 public functions and 3 constants | Executable on x86_64 for caller-backed `[u8]` views | The native fixtures check CRC-32/ISO-HDLC on `123456789`, empty input, a one-byte prefix, binary bytes, and every byte value through the streaming interface. Negative logical lengths return the fallback without reading storage; an overstated physical view traps. A source scan requires a runtime call for every public function. |
 | `core::option` generic `Option<T>`, all 12 public functions and 9 methods; `core::result` generic `Result<T, E>`, all 10 public functions and 10 methods | Executable on x86_64 | `tests/fixtures/stdlib_foundation/core_option_result.lani` runs every function and method through one generic checker per enum for every integer width, bool, char, f32, ptr, both wide integers and a user record; `tests/stdlib_foundation_execution.rs` checks that it calls each one. `contains` and `contains_err` use `core::cmp::PartialEq`; `unwrap` and `unwrap_err` panic on the other variant. Replaces the 22 per-type option and result modules. See [the Option guide](stdlib-option.md) and [the Result guide](stdlib-result.md). |
-| `core::vec` generic `Vec<T, const N: usize>`, all 19 public functions | Executable on x86_64 for i32, char and `core::pair::Pair<char, i32>` items | A fixed-capacity vector stored inline in a caller-supplied `[T; N]` array, with value semantics: each change returns a new vector, and a failed push, insert, set, remove or swap returns it unchanged. `tests/fixtures/stdlib_foundation/generic_containers.lani` calls every function over all three item types and checks order, bounds, capacity and Option results; a source scan requires a call for every public function. There is no `contains` or `sort`, because bounds on the imported `core::cmp` traits do not dispatch yet (see `tests/fixtures/generics_backlog/README.md`). |
-| `core::set` generic `Set<T, const N: usize>`, the `Key` trait with i32, u32, char and bool implementations, and all 12 public functions | Executable on x86_64 for i32 and char items | A fixed-capacity insertion-ordered set over a caller-supplied `[T; N]` array. Equality is equality of `Key::key`, which is exact for the four implemented types. The consumer fixture inserts duplicates, removes items, checks `position_or`, `get`, `at_or`, `clear` and `is_subset` across two capacities, and builds a set of i32 digits. `Key` stands in for `core::cmp::Eq`: a bound dispatches only to a trait in the same module, without arguments, through a `self` member, so user types in other modules cannot implement it yet. |
+| `core::vec` generic `Vec<T, const N: usize>`, 28 public free functions and `borrow` | Executable on x86_64 Linux for tested primitive, record, array, slice, nested variant and zero-size payloads | [Borrowed mutation](stdlib-fixed-capacity.md) reports Full/Bounds errors and returns removed/replaced elements. Inline copies are independent while nested resources remain shallow. Views/cursors, lawful Eq lookup and Ord sorting/search execute. Symbolic T/N user helpers forward borrowed owners through the canonical free APIs. The former unchanged-owner failure API is removed and its three consumers migrated; method lookup with symbolic N remains a separate compiler dependency. |
+| `core::set` generic `Set<T, const N: usize>`, 17 public free functions and `borrow` | Executable on x86_64 Linux for wide integers, user Eq records and tested nested payloads | [Insertion-ordered inline sets](stdlib-fixed-capacity.md) compare full lawful `core::cmp::Eq<T>` values, including different wide values whose old u32 projections collided. Duplicate and Full insertion outcomes are distinct; removal returns the stored representative. Cross-capacity predicates, cursors, independent inline copies and explicit resource ownership execute. The projected `Key` contract is removed. |
 | `core::pair` generic `Pair<A, B>`, all 5 public functions | Executable on x86_64 for i32 and char fields | Construction, both accessors, `swap`, and `zip` of two Options, including a None side. Pairs are stored in a `core::vec::Vec` in the consumer fixture. |
 | `core::i8` all 28 public functions and 4 constants | Executable on x86_64 | The imported module fixture calls every function and reads every constant. It checks signed byte limits, wrapping and saturating overflow, checked results through `Option<i8>`, ordinary comparisons and predicates, reversed bounds, and power-of-two overflow. |
 | `core::i16` all 28 public functions and 4 constants | Executable on x86_64 | The imported module fixture calls every function and reads every constant. It checks `MIN` and `MAX`, ordinary and overflowing arithmetic, checked results through `Option<i16>`, signed predicates, reversed bounds, comparison, and power-of-two overflow. |

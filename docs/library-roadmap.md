@@ -26,12 +26,12 @@ package distribution is a separate deliverable.
 | Family | Required contents | Executable state and remaining work |
 | --- | --- | --- |
 | Fundamental values | Option, Result, ordering, comparison, hashing, cloning, explicit errors | Generic Option/Result execute; partial equality/order are distinct from total equality/order, with explicit total float keys. Some generic forwarding and record extraction compositions remain compiler dependencies; clone and ownership consolidation remain |
-| Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Integer implementations and matching binary32/binary64 value utilities execute, including exact bits, rounding and square root; exact decimal parsing/shortest formatting also execute. Native floats use partial comparison; bit-preserving total wrappers supply lawful ordering/hashing. Duplicate paths and further mathematical operations remain |
+| Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Integer implementations and matching binary32/binary64 value utilities execute, including exact bits, rounding and square root; exact decimal parsing, shortest formatting and nearest-even fixed/scientific/general precision formatting execute. Native floats use partial comparison; bit-preserving total wrappers supply lawful ordering/hashing. Duplicate paths and further mathematical operations remain |
 | Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic algorithms and counted View values execute, including subviews, checked mutations and cursors; initial physical counts still require compiler length projection |
 | Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | Inherent slice/text/hash-map cursors execute; shared protocol dispatch hits an imported-generic compiler dependency; adapters and collection integration remain |
-| Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat, integer/float conversion, caller-buffer Display and selected complete Unicode 17 property/scalar-mapping tables execute. Optional extended modules provide full casing, normalization and default word/grapheme boundaries; format strings, alignment/precision policies and owned formatting conveniences remain |
+| Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat, integer/float conversion, caller-buffer Display, runtime format strings and owned formatting execute. Alignment counts scalars and numeric precision rounds exact binary values. Optional extended modules provide Unicode 17 full casing, normalization and default word/grapheme boundaries; richer format controls, terminal display width and collation remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings, raw views and stable chunked arenas with generic typed allocations execute; layout and ownership consolidation remain |
-| Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec, deque and bitset with explicit errors, linear maps/sets, alloc hash maps, ordered tree maps and min/max heaps execute; generic hash sets, ordered sets, fixed-capacity containers and legacy migration remain |
+| Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec, deque and bitset with explicit errors, inline generic Vec/Eq Set, linear maps/sets, alloc hash maps, ordered tree maps and min/max heaps execute; generic owned hash/tree sets and legacy migration remain |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks, native descriptor adapters and owned files execute; buffered adapters remain |
 | Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files, borrowed Unix byte paths, components, names, prefixes, owned buffers, explicit lexical normalization and checked directory/file mutations execute; metadata, directory enumeration, walking and further host operations remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Owned raw-byte argument snapshots and argument/environment helpers execute; subprocess management remains |
@@ -162,7 +162,30 @@ using ordered Pike matching, with captures, greedy/lazy repetition, scalar
 classes and Unicode 17 properties. Unsupported syntax fails explicitly. A
 [streaming search program](extended-text-grep.md) compiles once and processes
 bounded UTF-8 records with counts, numbering and inversion. Wider regex syntax,
-replacement/split conveniences, lexers, parser utilities and diff/patch remain.
+replacement/split conveniences and lexers remain. [Text parsing cursors](extended-parse.md)
+provide checked locations, spans, checkpoints and atomic bounded scanners.
+The [integer expression calculator](extended-expr-calc.md) combines them with
+inline stacks, checked arithmetic and runtime formatting.
+
+[Shortest line edit scripts](extended-diff.md) and
+[strict unified patches](extended-patch.md) compare arbitrary bytes and apply
+changes exactly in memory, with explicit trace/work limits, conflicts and owner
+cleanup. The [file comparison and patch program](extended-text-patch.md) emits,
+applies and checks single-file patches through real files and stdin/stdout.
+Filesystem patch orchestration and additional diff granularities remain.
+
+[Runtime format strings and owned formatting](stdlib-format-strings.md) add
+typed positional/named arguments, scalar fill/alignment/truncation, signed radix
+controls and exact [float precision formatting](stdlib-float-precision.md).
+Unsupported syntax fails explicitly. [Inline collections](stdlib-fixed-capacity.md)
+now use explicit Full/Bounds/absence outcomes, return displaced elements and
+use lawful full equality for sets. Borrowed free functions preserve symbolic
+element and capacity parameters. Imported method lookup with symbolic capacity
+and [generic owned set wrappers](stdlib-owned-sets.md) have reduced compiler
+dependencies and successful controls; they are excluded from passing claims.
+A general Display-to-owned-String helper also remains excluded after a minimal
+compiler failure; typed owned formatting executes independently. The
+[dependency record](library-dependencies.md) preserves the exact contexts.
 
 [TOML 1.1.0](extended-toml.md) supplies owned typed documents and deterministic
 encoding, with the complete versioned official valid/invalid corpus and resource
@@ -226,7 +249,16 @@ API list; unrelated library work can continue.
 ## Current work
 
 - Branch: `codex/stdlib`, based on `441e66f9`.
-- Current collections/mathematics milestone: owned/counted bitsets with a
+- Current formatting/parsing milestone: exact float precision, typed runtime
+  format strings and owned String/byte results, inline Vec/Eq Set with explicit
+  outcomes and symbolic-capacity borrowed APIs, checked parsing cursors,
+  shortest line scripts and strict unified patches. The expression calculator
+  and file comparison/patch application exercise these modules with reference,
+  resource, allocation and I/O failure evidence. Generic owned set wrappers
+  remain blocked with current reduced reproductions and map controls. A generic
+  owned Display convenience also remains outside production: primitive-only
+  callers expose a context-sensitive native-layout compiler failure.
+- Preceding collections/mathematics milestone: owned/counted bitsets with a
   prime sieve, calendar comparison/hash and collection integration, arbitrary
   precision finite decimals with a CSV ledger, statistics and matrix algorithms
   with a numerical CSV analysis/regression program. Independent models,

@@ -1,0 +1,53 @@
+module app::main;
+import alloc::format;
+import alloc::string;
+import alloc::vec;
+import core::fmt;
+import core::format;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+struct Point {
+    x: i64,
+    y: i64
+}
+pub impl core::fmt::Display<Point>for Point {
+    pub fn format(value: Point, output: &core::fmt::Formatter) -> core::result::Result<i32,
+    core::fmt::Error> {
+        output.write_scalar(40);
+        output.write_signed(value.x, core::fmt::decimal());
+        output.write_scalar(44);
+        output.write_signed(value.y, core::fmt::decimal());
+        output.write_scalar(41);
+        return output.finish();
+    }
+}
+fn text(value: str, length: i32) -> core::text::Text {
+    let bytes:[u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), length);
+    return core::text::from_utf8_unchecked(bytes, 0, length);
+}
+fn main() -> i32 {
+    let args:[core::format::Argument; 1] =[core::format::Argument::Signed(-42)];
+    let names:[core::format::Named; 0] =[];
+    let positional: core::slice::View<core::format::Argument> = core::result::unwrap(core::slice::view(args, 1));
+    let named: core::slice::View<core::format::Named> = core::result::unwrap(core::slice::view(names, 0));
+    let result: alloc::string::String = core::result::unwrap(alloc::format::format(text("value={:+06d}", 13), positional, named, core::format::default_limits()));
+    assert(result.as_text().equals(text("value=-00042", 12)));
+    result.destroy();
+    let bytes: alloc::vec::Vec<u8> = core::result::unwrap(alloc::format::format_bytes(text("{}", 2), positional, named, core::format::default_limits()));
+    assert(bytes.len() == 3);
+    bytes.destroy(); // A custom Display composes into caller-backed storage. Its valid Text
+    // can then participate in typed runtime formatting and owned output.
+    let storage:[u8; 100] =[0; 100];
+    let output: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(storage, 0, 100));
+    core::result::unwrap(core::fmt::display(Point {
+        x: -42, y: 7
+    }, output.borrow()));
+    let rendered: core::text::Text = core::text::from_utf8_unchecked(storage, 0, core::result::unwrap(output.finish()));
+    let custom:[core::format::Argument; 1] =[core::format::Argument::Text(rendered)];
+    let point: alloc::string::String = core::result::unwrap(alloc::format::format(text("point={}", 8), core::result::unwrap(core::slice::view(custom, 1)), named, core::format::default_limits()));
+    assert(point.as_text().equals(text("point=(-42,7)", 13)));
+    point.destroy();
+    return 0;
+}

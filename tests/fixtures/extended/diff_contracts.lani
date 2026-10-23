@@ -1,0 +1,39 @@
+module app::main;
+import core::mem;
+import core::slice;
+import core::result;
+import core::option;
+import ext::diff;
+import ext::patch;
+import alloc::vec;
+fn bytes(text:str,count:i32) -> core::slice::View<u8> { let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn same(a:core::slice::View<u8>,b:core::slice::View<u8>) -> bool { if(a.len()!=b.len()) { return false; } let i:i32=0; while(i<a.len()) { if(core::option::unwrap(a.get(i))!=core::option::unwrap(b.get(i))) { return false; } i+=1; } return true; }
+fn code(error:ext::diff::Error) -> i32 { return match(error) { ext::diff::Error::Bounds -> 1,ext::diff::Error::InvalidLimits -> 2,ext::diff::Error::LineLimit -> 3,ext::diff::Error::WorkLimit -> 4,ext::diff::Error::TraceLimit -> 5,ext::diff::Error::EditLimit -> 6,ext::diff::Error::OutputLimit -> 7,ext::diff::Error::InvalidLine -> 8,ext::diff::Error::InvalidHeader -> 9,_ -> 10 }; }
+fn roundtrip(a:core::slice::View<u8>,b:core::slice::View<u8>,distance:i32) {
+ let limits:ext::diff::Limits=ext::diff::default_limits(); let script:ext::diff::Script=core::result::unwrap(ext::diff::compare_bytes(a,b,limits)); assert(script.distance()==distance);
+ let output:alloc::vec::Vec<u8> = core::result::unwrap(ext::diff::encode_unified(script.borrow(),bytes("before",6),bytes("after",5),2,limits));
+ let patch:ext::patch::Patch=core::result::unwrap(ext::patch::parse(output.as_view(),limits));
+ let after:alloc::vec::Vec<u8> = core::result::unwrap(ext::patch::apply(a,patch.borrow(),limits)); assert(same(after.as_view(),b));
+ after.destroy(); patch.destroy(); output.destroy(); script.destroy();
+}
+fn main() -> i32 {
+ let limits:ext::diff::Limits=ext::diff::default_limits();
+ roundtrip(bytes("",0),bytes("",0),0); roundtrip(bytes("a",1),bytes("a",1),0);
+ roundtrip(bytes("",0),bytes("a",1),1); roundtrip(bytes("a",1),bytes("",0),1);
+ roundtrip(bytes("a\nb\nc\n",6),bytes("a\nx\nc",5),4);
+ roundtrip(bytes("a\r\nb\r\n",6),bytes("a\nb\r\n",5),2);
+ let raw:[u8;5]=[0,255,10,128,0]; let raw_view:core::slice::View<u8> = core::result::unwrap(core::slice::view(raw,5)); roundtrip(raw_view,raw_view,0);
+ let split:ext::diff::Lines=core::result::unwrap(ext::diff::split(bytes("a\n\nlast",7),limits)); assert(split.len()==3); assert(core::result::unwrap(split.line(1)).len()==1); assert(core::result::is_err(split.line(3))); split.destroy(); split.destroy();
+ // Sequence API compares arbitrary elements, including empty and embedded LF.
+ let old:[core::slice::View<u8>;3]=[bytes("",0),bytes("a\nb",3),bytes("x",1)]; let new:[core::slice::View<u8>;3]=[bytes("",0),bytes("a\nb",3),bytes("y",1)];
+ let old_view:core::slice::View<core::slice::View<u8>> = core::result::unwrap(core::slice::view(old,3)); let new_view:core::slice::View<core::slice::View<u8>> = core::result::unwrap(core::slice::view(new,3));
+ let general:ext::diff::Script=core::result::unwrap(ext::diff::compare_lines(old_view,new_view,limits)); assert(general.distance()==2); assert(code(core::result::unwrap_err(ext::diff::encode_unified(general.borrow(),bytes("a",1),bytes("b",1),0,limits)))==8); general.destroy();
+ let bad:core::slice::View<u8> = bytes("a",1); bad.length=-1; assert(code(core::result::unwrap_err(ext::diff::split(bad,limits)))==1); bad.length=1; bad.start=-1; assert(code(core::result::unwrap_err(ext::diff::compare_bytes(bad,bytes("",0),limits)))==1); bad.start=2147483647; assert(code(core::result::unwrap_err(ext::diff::split(bad,limits)))==1);
+ limits.max_lines=0; assert(code(core::result::unwrap_err(ext::diff::split(bytes("a",1),limits)))==3); limits=ext::diff::default_limits();
+ limits.max_work=0; assert(code(core::result::unwrap_err(ext::diff::compare_bytes(bytes("a",1),bytes("b",1),limits)))==4); limits=ext::diff::default_limits();
+ limits.max_trace=0; assert(code(core::result::unwrap_err(ext::diff::compare_bytes(bytes("",0),bytes("",0),limits)))==5); limits=ext::diff::default_limits();
+ limits.max_trace=2; let exact_trace:ext::diff::Script=core::result::unwrap(ext::diff::compare_bytes(bytes("",0),bytes("a",1),limits)); assert(exact_trace.distance()==1); exact_trace.destroy(); limits.max_trace=1; assert(code(core::result::unwrap_err(ext::diff::compare_bytes(bytes("",0),bytes("a",1),limits)))==5); limits=ext::diff::default_limits();
+ limits.max_edits=1; assert(code(core::result::unwrap_err(ext::diff::compare_bytes(bytes("a",1),bytes("b",1),limits)))==6); limits=ext::diff::default_limits();
+ let s:ext::diff::Script=core::result::unwrap(ext::diff::compare_bytes(bytes("a",1),bytes("b",1),limits)); limits.max_output=0; assert(code(core::result::unwrap_err(ext::diff::encode_unified(s.borrow(),bytes("a",1),bytes("b",1),0,limits)))==7); limits=ext::diff::default_limits();
+ assert(code(core::result::unwrap_err(ext::diff::encode_unified(s.borrow(),bytes("a\n",2),bytes("b",1),0,limits)))==9); s.destroy(); s.destroy(); return 0;
+}

@@ -1,5 +1,11 @@
 # Generic set-to-map composition
 
+Current revalidation at `8cb1af7b` still fails for both `HashMap<T, Unit>` and
+`TreeMap<T, Unit>` generic set wrappers. Direct controls for both maps compile
+and execute. See [the current minimized evidence](../../stdlib_compiler_state/owned_sets/README.md)
+for exact diagnostics, source/compiler hashes, and bounded commands. The
+prototype below remains unverified.
+
 Expected: compile `main.lani` and exit zero. With the compiler built from
 `441e66f9`, it reports LNC0047: a replay argument has no complete GPU native
 layout. The diagnostic points at `alloc::allocator`; the direct map APIs execute.

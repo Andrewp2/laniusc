@@ -1,0 +1,211 @@
+module app::main;
+import core::format;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+fn text(value: str, length: i32) -> core::text::Text {
+    let bytes:[u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), length);
+    return core::text::from_utf8_unchecked(bytes, 0, length);
+}
+fn error_kind(error: core::format::Error) -> i32 {
+    return match (error) {
+        core::format::Error::Bounds -> 0,
+        core::format::Error::Syntax(_) -> 1,
+        core::format::Error::MissingArgument(_) -> 2,
+        core::format::Error::InvalidArgument(_) -> 3,
+        core::format::Error::DuplicateName(_) -> 4,
+        core::format::Error::InvalidSpec(_) -> 5,
+        core::format::Error::TypeMismatch(_) -> 6,
+        core::format::Error::WorkLimit(_) -> 7,
+        core::format::Error::OutputLimit(_) -> 8,
+        core::format::Error::BufferTooSmall(_) -> 9,
+        core::format::Error::Float(_, detail) -> 10
+    };
+}
+fn error_offset(error: core::format::Error) -> i32 {
+    return match (error) {
+        core::format::Error::Bounds -> -1,
+        core::format::Error::Syntax(at) -> at,
+        core::format::Error::MissingArgument(at) -> at,
+        core::format::Error::InvalidArgument(at) -> at,
+        core::format::Error::DuplicateName(at) -> at,
+        core::format::Error::InvalidSpec(at) -> at,
+        core::format::Error::TypeMismatch(at) -> at,
+        core::format::Error::WorkLimit(at) -> at,
+        core::format::Error::OutputLimit(at) -> at,
+        core::format::Error::BufferTooSmall(at) -> at,
+        core::format::Error::Float(at, _) -> at
+    };
+}
+fn rejected(pattern: core::text::Text, kind: i32, offset: i32, positional: core::slice::View<core::format::Argument>, named: core::slice::View<core::format::Named>, limits: core::format::Limits) {
+    let bytes:[u8; 100] =[88; 100];
+    let staging:[u8; 100] =[89; 100];
+    let output: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(bytes, 2, 90));
+    let stage: core::slice::View<u8> = core::result::unwrap(core::slice::view(staging, 100));
+    let measured: core::format::Error = core::result::unwrap_err(core::format::measure(pattern, positional, named, limits));
+    assert(error_kind(measured) == kind && error_offset(measured) == offset);
+    let direct: core::format::Error = core::result::unwrap_err(core::format::format_into(pattern, positional, named, output, limits));
+    assert(error_kind(direct) == kind && error_offset(direct) == offset);
+    let staged: core::format::Error = core::result::unwrap_err(core::format::format_into_staged(pattern, positional, named, output, stage, limits));
+    assert(error_kind(staged) == kind && error_offset(staged) == offset);
+    let at: i32 = 0;
+    while (at<100) {
+        assert(bytes[at] == 88 && staging[at] == 89);
+        at += 1;
+    }
+}
+fn main() -> i32 {
+    let args:[core::format::Argument; 3] =[core::format::Argument::Signed(-42), core::format::Argument::Unsigned(255), core::format::Argument::Text(text("é🙂ab", 8))];
+    let positional: core::slice::View<core::format::Argument> = core::result::unwrap(core::slice::view(args, 3));
+    let names:[core::format::Named; 0] =[];
+    let named: core::slice::View<core::format::Named> = core::result::unwrap(core::slice::view(names, 0));
+    let pattern: core::text::Text = text("{{{0:+06d}}}|{1:#08x}|{2:🙂^6.2s}", 35);
+    let bytes:[u8; 100] =[88; 100];
+    let output: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(bytes, 2, 90));
+    let length: i32 = core::result::unwrap(core::format::format_into(pattern, positional, named, output, core::format::default_limits()));
+    assert(core::text::from_utf8_unchecked(bytes, 2, length).equals(text("{-00042}|0x0000ff|🙂🙂é🙂🙂🙂", 40)));
+    assert(bytes[1] == 88 && bytes[2 + length] == 88);
+    rejected(text("{", 1), 1, 0, positional, named, core::format::default_limits());
+    rejected(text("}", 1), 1, 0, positional, named, core::format::default_limits());
+    rejected(text("{0", 2), 1, 0, positional, named, core::format::default_limits());
+    rejected(text("{{}", 3), 1, 2, positional, named, core::format::default_limits());
+    rejected(text("{0!r}", 5), 1, 2, positional, named, core::format::default_limits());
+    rejected(text("{0:{1}}", 7), 1, 3, positional, named, core::format::default_limits());
+    rejected(text("{9}", 3), 2, 0, positional, named, core::format::default_limits());
+    rejected(text("{missing}", 9), 2, 0, positional, named, core::format::default_limits());
+    rejected(text("{0:.}", 5), 5, 4, positional, named, core::format::default_limits());
+    rejected(text("{0:>0}", 6), 5, 3, positional, named, core::format::default_limits());
+    rejected(text("{0:.1d}", 7), 6, 0, positional, named, core::format::default_limits());
+    rejected(text("{0:#d}", 6), 6, 0, positional, named, core::format::default_limits());
+    rejected(text("{0:q}", 5), 6, 0, positional, named, core::format::default_limits());
+    rejected(text("{0:+s}", 6), 6, 0, positional, named, core::format::default_limits());
+    rejected(text("head {0} tail {", 15), 1, 14, positional, named, core::format::default_limits());
+    rejected(text("{0:2147483648}", 14), 5, 12, positional, named, core::format::default_limits());
+    rejected(text("{0:.2147483648}", 15), 5, 13, positional, named, core::format::default_limits());
+    rejected(text("{é}", 4), 1, 1, positional, named, core::format::default_limits());
+    rejected(text("{0:8,d}", 7), 5, 5, positional, named, core::format::default_limits());
+    rejected(text("{0:=8}", 6), 5, 4, positional, named, core::format::default_limits());
+    rejected(text("{0:10}", 6), 8, 0, positional, named, core::format::Limits {
+        max_work: 10000, max_output: 9
+    }
+    );
+    rejected(text("{0}", 3), 7, 0, positional, named, core::format::Limits {
+        max_work: 11, max_output: 100
+    }
+    );
+    rejected(text("", 0), 0, -1, positional, named, core::format::Limits {
+        max_work: 100, max_output: -1
+    }
+    );
+    assert(core::result::unwrap(core::format::measure(text("{0}", 3), positional, named, core::format::Limits {
+        max_work: 12, max_output: 3
+    }
+    )) == 3);
+    let tiny: core::slice::View<u8> = core::result::unwrap(output.subview(0, 2));
+    let capacity: core::format::Error = core::result::unwrap_err(core::format::format_into(text("{0}", 3), positional, named, tiny, core::format::default_limits()));
+    assert(error_kind(capacity) == 9 && error_offset(capacity) == 3);
+    let duplicate:[core::format::Named; 2] =[core::format::Named {
+        name: text("same", 4), value: args[0]
+    }, core::format::Named {
+        name: text("same", 4), value: args[1]
+    }
+    ];
+    rejected(text("", 0), 4, 1, positional, core::result::unwrap(core::slice::view(duplicate, 2)), core::format::default_limits());
+    let invalid:[core::format::Named; 1] =[core::format::Named {
+        name: text("9name", 5), value: args[0]
+    }
+    ];
+    rejected(text("", 0), 3, 0, positional, core::result::unwrap(core::slice::view(invalid, 1)), core::format::default_limits()); // Both the pattern and repeated argument text may alias the destination
+    // when the caller supplies independent staging.
+    let aliased:[u8; 24] =[88; 24];
+    aliased[0] = 123;
+    aliased[1] = 48;
+    aliased[2] = 125;
+    aliased[3] = 123;
+    aliased[4] = 48;
+    aliased[5] = 125;
+    aliased[6] = 195;
+    aliased[7] = 169;
+    let overlap:[core::format::Argument; 1] =[core::format::Argument::Text(core::text::from_utf8_unchecked(aliased, 6, 2))];
+    let alias_stage:[u8; 24] =[89; 24];
+    let staged: i32 = core::result::unwrap(core::format::format_into_staged(core::text::from_utf8_unchecked(aliased, 0, 6), core::result::unwrap(core::slice::view(overlap, 1)), named, core::result::unwrap(core::slice::view(aliased, 24)), core::result::unwrap(core::slice::view(alias_stage, 24)), core::format::default_limits()));
+    assert(staged == 4 && core::text::from_utf8_unchecked(aliased, 0, 4).equals(text("éé", 4)) && aliased[4] == 48); // No universal short output ceiling; measurement can reserve large widths
+    // without iterating over padding, and returns an exact byte requirement.
+    assert(core::result::unwrap(core::format::measure(text("{0:100000}", 10), positional, named, core::format::default_limits())) == 100000);
+    let bad_output: core::slice::View<u8> = core::result::unwrap(core::slice::view(bytes, 100));
+    bad_output.start = -1;
+    assert(error_kind(core::result::unwrap_err(core::format::format_into(text("x", 1), positional, named, bad_output, core::format::default_limits()))) == 0);
+    bad_output.start = 2147483647;
+    bad_output.length = 1;
+    assert(error_kind(core::result::unwrap_err(core::format::format_into(text("x", 1), positional, named, bad_output, core::format::default_limits()))) == 0);
+    let bad_positional: core::slice::View<core::format::Argument> = core::result::unwrap(core::slice::view(args, 3));
+    bad_positional.length = -1;
+    rejected(text("", 0), 0, -1, bad_positional, named, core::format::default_limits());
+    let bad_named: core::slice::View<core::format::Named> = core::result::unwrap(core::slice::view(names, 0));
+    bad_named.start = -1;
+    rejected(text("", 0), 0, -1, positional, bad_named, core::format::default_limits());
+    let nul_args:[core::format::Argument; 1] =[core::format::Argument::Text(text("A\0é", 4))];
+    let nul_count: i32 = core::result::unwrap(core::format::format_into(text("{0:🌍>4.2s}", 13), core::result::unwrap(core::slice::view(nul_args, 1)), named, output, core::format::default_limits()));
+    assert(nul_count == 10 && core::text::from_utf8_unchecked(bytes, 2, nul_count).equals(text("🌍🌍A\0", 10)));
+    let mixed: i32 = core::result::unwrap(core::format::format_into(text("{1} {} {0} {}", 13), positional, named, output, core::format::default_limits()));
+    assert(core::text::from_utf8_unchecked(bytes, 2, mixed).equals(text("255 -42 -42 255", 15)));
+    let guarded:[u8; 20] =[87; 20];
+    let guarded_stage:[u8; 20] =[86; 20];
+    let guard_view: core::slice::View<u8> = core::result::unwrap(core::slice::view(guarded, 20));
+    let stage_view: core::slice::View<u8> = core::result::unwrap(core::slice::view(guarded_stage, 20));
+    let broken: core::slice::View<u8> = guard_view;
+    let variant: i32 = 0;
+    while (variant<3) {
+        broken.start = 0;
+        broken.length = 20;
+        if (variant == 0) {
+            broken.start = -1;
+        }
+        if (variant == 1) {
+            broken.length = -1;
+        }
+        if (variant == 2) {
+            broken.start = 2147483647;
+            broken.length = 1;
+        }
+        assert(error_kind(core::result::unwrap_err(core::format::format_into(text("x", 1), positional, named, broken, core::format::Limits {
+            max_work: 0, max_output: 20
+        }
+        ))) == 0);
+        assert(error_kind(core::result::unwrap_err(core::format::format_into_staged(text("x", 1), positional, named, broken, stage_view, core::format::Limits {
+            max_work: 0, max_output: 20
+        }
+        ))) == 0);
+        let index: i32 = 0;
+        while (index<20) {
+            assert(guarded[index] == 87 && guarded_stage[index] == 86);
+            index += 1;
+        }
+        variant += 1;
+    }
+    let broken_stage: core::slice::View<u8> = stage_view;
+    broken_stage.length = -1;
+    assert(error_kind(core::result::unwrap_err(core::format::format_into_staged(text("x", 1), positional, named, guard_view, broken_stage, core::format::default_limits()))) == 0);
+    assert(error_kind(core::result::unwrap_err(core::format::format_into_staged(text("{0}", 3), positional, named, guard_view, stage_view, core::format::Limits {
+        max_work: 12, max_output: 20
+    }
+    ))) == 7);
+    assert(error_kind(core::result::unwrap_err(core::format::format_into_staged(text("{0}", 3), positional, named, guard_view, core::result::unwrap(stage_view.subview(0, 2)), core::format::default_limits()))) == 9);
+    let guard_index: i32 = 0;
+    while (guard_index<20) {
+        assert(guarded[guard_index] == 87 && guarded_stage[guard_index] == 86);
+        guard_index += 1;
+    }
+    let floats:[core::format::Argument; 1] =[core::format::Argument::F64(1.25)];
+    let float_args: core::slice::View<core::format::Argument> = core::result::unwrap(core::slice::view(floats, 1));
+    rejected(text("{0:.769f}", 9), 5, 0, float_args, named, core::format::default_limits());
+    rejected(text("{0:#}", 5), 6, 0, float_args, named, core::format::default_limits());
+    rejected(text("{0:x}", 5), 6, 0, float_args, named, core::format::default_limits());
+    rejected(text("{0:.2f}", 7), 7, 0, float_args, named, core::format::Limits {
+        max_work: 2000000, max_output: 100
+    }
+    );
+    return 0;
+}

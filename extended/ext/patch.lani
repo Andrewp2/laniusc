@@ -1,0 +1,183 @@
+// Strict single-file unified patches, applied exactly in memory.
+module ext::patch;
+import alloc::vec;
+import core::slice;
+import core::option;
+import core::result;
+import core::mem;
+import ext::diff;
+pub enum ErrorKind { Bounds, InvalidLimits, Malformed, Unsupported, Conflict, LineLimit, WorkLimit, OutputLimit, AllocationFailed }
+pub struct Error { kind: ErrorKind, offset: i32 }
+pub struct Hunk { before: i32, before_count: i32, after: i32, after_count: i32, first: i32, count: i32 }
+struct Line { kind: u8, bytes: core::slice::View<u8> }
+pub struct Patch { hunks: alloc::vec::Vec<Hunk>, lines: alloc::vec::Vec<Line> }
+struct Reader { input: core::slice::View<u8>, at: i32, work: u64, limit: u64, failed: bool, error: Error }
+struct NumberReader { line: core::slice::View<u8>, at: i32, valid: bool }
+fn patch_error(kind:ErrorKind,offset:i32) -> Error { return Error {kind:kind,offset:offset}; }
+fn patch_view_valid(value:core::slice::View<u8>) -> bool { return value.start>=0 && value.length>=0 && value.start<=2147483647-value.length; }
+fn patch_valid(limits:ext::diff::Limits) -> bool { return limits.max_lines>=0 && limits.max_trace>=0 && limits.max_edits>=0 && limits.max_output>=0; }
+fn patch_empty() -> Patch { return Patch {hunks:alloc::vec::new(),lines:alloc::vec::new()}; }
+pub impl Patch {
+ pub fn borrow(&self) -> &Patch { return self; }
+ pub fn hunk_count(&self) -> i32 { return self.hunks.len(); }
+ pub fn line_count(&self) -> i32 { return self.lines.len(); }
+ pub fn hunk(&self,index:i32) -> core::result::Result<Hunk,Error> { if(index<0 || index>=self.hunks.len()) { return core::result::Err(patch_error(ErrorKind::Malformed,index)); } return core::result::Ok(self.hunks.at(index)); }
+ pub fn destroy(&self) { self.hunks.destroy(); self.lines.destroy(); self.hunks=alloc::vec::new(); self.lines=alloc::vec::new(); }
+}
+fn patch_fail(value:Patch,kind:ErrorKind,offset:i32) -> core::result::Result<Patch,Error> { value.destroy(); return core::result::Err(patch_error(kind,offset)); }
+fn patch_read(reader:&Reader) -> core::slice::View<u8> {
+ let start:i32=reader.at;
+ while(reader.at<reader.input.len()) {
+  if(reader.work>=reader.limit) { reader.failed=true; reader.error=patch_error(ErrorKind::WorkLimit,reader.at); return core::result::unwrap(reader.input.subview(start,start)); }
+  reader.work+=1; let b:u8=core::option::unwrap(reader.input.get(reader.at)); reader.at+=1;
+  if(b==10) { return core::result::unwrap(reader.input.subview(start,reader.at)); }
+ }
+ reader.failed=true; reader.error=patch_error(ErrorKind::Malformed,start); return core::result::unwrap(reader.input.subview(start,start));
+}
+fn patch_literal(line:core::slice::View<u8>,text:str,count:i32) -> bool { if(line.len()!=count) { return false; } let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text),count); let i:i32=0; while(i<count) { if(core::option::unwrap(line.get(i))!=raw[i]) { return false; } i+=1; } return true; }
+fn patch_head(line:core::slice::View<u8>,tag:u8) -> bool {
+ if(line.len()<6) { return false; } if(core::option::unwrap(line.get(0))!=tag || core::option::unwrap(line.get(1))!=tag || core::option::unwrap(line.get(2))!=tag || core::option::unwrap(line.get(3))!=32) { return false; }
+ let i:i32=4; while(i+1<line.len()) { let b:u8=core::option::unwrap(line.get(i)); if(b==0 || b==13) { return false; } i+=1; } return true;
+}
+fn patch_expect(reader:&NumberReader,byte:u8) -> bool { if(reader.at>=reader.line.len() || core::option::unwrap(reader.line.get(reader.at))!=byte) { reader.valid=false; return false; } reader.at+=1; return true; }
+fn patch_number(reader:&NumberReader) -> i32 {
+ let result:i32=0; let start:i32=reader.at;
+ while(reader.at<reader.line.len()) { let b:u8=core::option::unwrap(reader.line.get(reader.at)); if(b<48 || b>57) { break; }
+  let digit:i32=(b-48) as i32; if(result>(2147483647-digit)/10) { reader.valid=false; return 0; } result=result*10+digit; reader.at+=1;
+ }
+ if(reader.at==start) { reader.valid=false; } return result;
+}
+fn patch_hunk_header(line:core::slice::View<u8>) -> core::result::Result<Hunk,Error> {
+ let r:NumberReader=NumberReader {line:line,at:0,valid:true};
+ if(!patch_expect(r.borrow(),64) || !patch_expect(r.borrow(),64) || !patch_expect(r.borrow(),32) || !patch_expect(r.borrow(),45)) { return core::result::Err(patch_error(ErrorKind::Malformed,0)); }
+ let old:i32=patch_number(r.borrow()); let old_count:i32=1;
+ if(r.at<line.len() && core::option::unwrap(line.get(r.at))==44) { r.at+=1; old_count=patch_number(r.borrow()); }
+ if(!patch_expect(r.borrow(),32) || !patch_expect(r.borrow(),43)) { return core::result::Err(patch_error(ErrorKind::Malformed,0)); }
+ let new:i32=patch_number(r.borrow()); let new_count:i32=1;
+ if(r.at<line.len() && core::option::unwrap(line.get(r.at))==44) { r.at+=1; new_count=patch_number(r.borrow()); }
+ if(!patch_expect(r.borrow(),32) || !patch_expect(r.borrow(),64) || !patch_expect(r.borrow(),64) || !patch_expect(r.borrow(),10) || r.at!=line.len() || !r.valid || (old_count>0 && old==0) || (new_count>0 && new==0) || (old_count==0 && new_count==0)) { return core::result::Err(patch_error(ErrorKind::Malformed,0)); }
+ if(old_count>0) { old-=1; } if(new_count>0) { new-=1; }
+ if(old_count>2147483647-old || new_count>2147483647-new) { return core::result::Err(patch_error(ErrorKind::Malformed,0)); }
+ return core::result::Ok(Hunk {before:old,before_count:old_count,after:new,after_count:new_count,first:0,count:0});
+}
+pub fn parse(input:core::slice::View<u8>,limits:ext::diff::Limits) -> core::result::Result<Patch,Error> {
+ if(!patch_valid(limits)) { return core::result::Err(patch_error(ErrorKind::InvalidLimits,0)); }
+ if(!patch_view_valid(input)) { return core::result::Err(patch_error(ErrorKind::Bounds,0)); }
+ let value:Patch=patch_empty(); if(input.len()==0) { return core::result::Ok(value); }
+ let r:Reader=Reader {input:input,at:0,work:0,limit:limits.max_work,failed:false,error:patch_error(ErrorKind::Malformed,0)};
+ let old_header:core::slice::View<u8> = patch_read(r.borrow()); if(r.failed) { value.destroy(); return core::result::Err(r.error); }
+ if(!patch_head(old_header,45)) { return patch_fail(value,ErrorKind::Unsupported,0); }
+ let at:i32=r.at; let new_header:core::slice::View<u8> = patch_read(r.borrow()); if(r.failed) { value.destroy(); return core::result::Err(r.error); }
+ if(!patch_head(new_header,43)) { return patch_fail(value,ErrorKind::Malformed,at); }
+ let previous_old:i32=0; let previous_new:i32=0; let old_done:bool=false; let new_done:bool=false;
+ while(r.at<input.len()) {
+  let at:i32=r.at; let header:core::slice::View<u8> = patch_read(r.borrow()); if(r.failed) { value.destroy(); return core::result::Err(r.error); }
+  let parsed:core::result::Result<Hunk,Error> = patch_hunk_header(header); if(core::result::is_err(parsed)) { return patch_fail(value,ErrorKind::Malformed,at); }
+  let h:Hunk=core::result::unwrap(parsed);
+  if(h.before<previous_old || h.after<previous_new || h.before-previous_old!=h.after-previous_new || (old_done && (h.before_count>0 || h.before>previous_old)) || (new_done && (h.after_count>0 || h.after>previous_new))) { return patch_fail(value,ErrorKind::Malformed,at); }
+  if(value.hunks.len()>=limits.max_lines || h.before_count>limits.max_lines || h.after_count>limits.max_lines) { return patch_fail(value,ErrorKind::LineLimit,at); }
+  h.first=value.lines.len(); let old_count:i32=0; let new_count:i32=0; let changes:i32=0;
+  while(old_count<h.before_count || new_count<h.after_count) {
+   let at:i32=r.at; let line:core::slice::View<u8> = patch_read(r.borrow()); if(r.failed) { value.destroy(); return core::result::Err(r.error); }
+   let tag:u8=core::option::unwrap(line.get(0)); if(tag!=32 && tag!=43 && tag!=45) { return patch_fail(value,ErrorKind::Malformed,at); }
+   if(tag!=43) { if(old_done || old_count>=h.before_count) { return patch_fail(value,ErrorKind::Malformed,at); } old_count+=1; }
+   if(tag!=45) { if(new_done || new_count>=h.after_count) { return patch_fail(value,ErrorKind::Malformed,at); } new_count+=1; }
+   if(tag!=32) { changes+=1; }
+   let data:core::slice::View<u8> = core::result::unwrap(line.subview(1,line.len()));
+   if(r.at<input.len() && core::option::unwrap(input.get(r.at))==92) {
+    let marker_at:i32=r.at; let marker:core::slice::View<u8> = patch_read(r.borrow()); if(r.failed) { value.destroy(); return core::result::Err(r.error); }
+    if(!patch_literal(marker,"\\ No newline at end of file\n",28) || data.len()<=1) { return patch_fail(value,ErrorKind::Malformed,marker_at); }
+    data=core::result::unwrap(data.subview(0,data.len()-1));
+    if(tag!=43) { old_done=true; } if(tag!=45) { new_done=true; }
+   }
+   if(value.lines.len()>=limits.max_edits) { return patch_fail(value,ErrorKind::LineLimit,at); }
+   if(core::result::is_err(value.lines.try_push(Line {kind:tag,bytes:data}))) { return patch_fail(value,ErrorKind::AllocationFailed,at); }
+  }
+  if(changes==0) { return patch_fail(value,ErrorKind::Malformed,at); }
+  h.count=value.lines.len()-h.first;
+  if(core::result::is_err(value.hunks.try_push(h))) { return patch_fail(value,ErrorKind::AllocationFailed,at); }
+  previous_old=h.before+h.before_count; previous_new=h.after+h.after_count;
+ }
+ if(value.hunks.len()==0) { return patch_fail(value,ErrorKind::Malformed,r.at); } return core::result::Ok(value);
+}
+
+impl Reader { fn borrow(&self) -> &Reader { return self; } }
+
+impl NumberReader { fn borrow(&self) -> &NumberReader { return self; } }
+
+struct ApplyState { work:u64, limits:ext::diff::Limits, size:i32, count:i32, full:bool, error:Error }
+impl ApplyState { fn borrow(&self) -> &ApplyState { return self; } }
+fn patch_charge(state:&ApplyState,amount:u64,at:i32) -> bool { if(amount>state.limits.max_work-state.work) { state.error=patch_error(ErrorKind::WorkLimit,at); return false; } state.work+=amount; return true; }
+fn patch_plan(state:&ApplyState,line:core::slice::View<u8>,at:i32) -> bool {
+ if(!patch_charge(state,1,at)) { return false; }
+ if(!state.full || line.len()==0) { state.error=patch_error(ErrorKind::Malformed,at); return false; }
+ if(state.count>=state.limits.max_lines) { state.error=patch_error(ErrorKind::LineLimit,at); return false; }
+ if(line.len()>state.limits.max_output-state.size) { state.error=patch_error(ErrorKind::OutputLimit,at); return false; }
+ state.count+=1; state.size+=line.len(); state.full=core::option::unwrap(line.get(line.len()-1))==10; return true;
+}
+fn patch_equal(state:&ApplyState,a:core::slice::View<u8>,b:core::slice::View<u8>,at:i32) -> bool {
+ if(!patch_charge(state,1,at)) { return false; }
+ if(a.len()!=b.len()) { state.error=patch_error(ErrorKind::Conflict,at); return false; }
+ let i:i32=0; while(i<a.len()) { if(!patch_charge(state,1,at)) { return false; } if(core::option::unwrap(a.get(i))!=core::option::unwrap(b.get(i))) { state.error=patch_error(ErrorKind::Conflict,at); return false; } i+=1; } return true;
+}
+fn patch_diff_error(error:ext::diff::Error) -> Error { return match(error) { ext::diff::Error::Bounds -> patch_error(ErrorKind::Bounds,0), ext::diff::Error::InvalidLimits -> patch_error(ErrorKind::InvalidLimits,0), ext::diff::Error::WorkLimit -> patch_error(ErrorKind::WorkLimit,0), ext::diff::Error::LineLimit -> patch_error(ErrorKind::LineLimit,0), _ -> patch_error(ErrorKind::AllocationFailed,0) }; }
+// Validate all old text and the complete result before allocating output.
+fn patch_validate(base:ext::diff::Lines,value:&Patch,state:&ApplyState) -> bool {
+ let cursor:i32=0; let hindex:i32=0; let line_cursor:i32=0;
+ while(hindex<value.hunks.len()) {
+  if(!patch_charge(state,1,cursor)) { return false; } let h:Hunk=value.hunks.at(hindex);
+  if(h.before<cursor || h.before>base.len() || h.before_count<0 || h.before_count>base.len()-h.before || h.after<0 || h.after_count<0 || h.first!=line_cursor || h.count<1 || h.first<0 || h.count>value.lines.len()-h.first) { state.error=patch_error(ErrorKind::Conflict,cursor); return false; }
+  let gap:i32=h.before-cursor;
+  if(gap>2147483647-state.count) { state.error=patch_error(ErrorKind::LineLimit,cursor); return false; }
+  if(h.after!=state.count+gap) { state.error=patch_error(ErrorKind::Malformed,cursor); return false; }
+  while(cursor<h.before) { if(!patch_plan(state,core::result::unwrap(base.line(cursor)),cursor)) { return false; } cursor+=1; }
+  let old_count:i32=0; let new_count:i32=0; let i:i32=h.first;
+  while(i<h.first+h.count) {
+   let line:Line=value.lines.at(i); if(line.kind!=32 && line.kind!=43 && line.kind!=45) { state.error=patch_error(ErrorKind::Malformed,cursor); return false; }
+   if(line.kind!=43) {
+    if(cursor>=base.len() || old_count>=h.before_count) { state.error=patch_error(ErrorKind::Conflict,cursor); return false; }
+    if(!patch_equal(state,core::result::unwrap(base.line(cursor)),line.bytes,cursor)) { return false; } old_count+=1; cursor+=1;
+   }
+   if(line.kind!=45) { if(!patch_plan(state,line.bytes,cursor)) { return false; } new_count+=1; }
+   i+=1;
+  }
+  if(old_count!=h.before_count || new_count!=h.after_count) { state.error=patch_error(ErrorKind::Malformed,cursor); return false; }
+  line_cursor+=h.count; hindex+=1;
+ }
+ if(line_cursor!=value.lines.len()) { state.error=patch_error(ErrorKind::Malformed,cursor); return false; }
+ while(cursor<base.len()) { if(!patch_plan(state,core::result::unwrap(base.line(cursor)),cursor)) { return false; } cursor+=1; }
+ return patch_charge(state,state.size as u64,cursor);
+}
+// Capacity was reserved after the complete validation pass. Keep the checked
+// append even here so a future change cannot silently publish truncated output.
+fn patch_append(output:&alloc::vec::Vec<u8>,line:core::slice::View<u8>) -> bool {
+ let i:i32=0; while(i<line.len()) {
+  if(core::result::is_err(output.try_push(core::option::unwrap(line.get(i))))) { return false; }
+  i+=1;
+ } return true;
+}
+fn patch_output_fail(output:alloc::vec::Vec<u8>,lines:ext::diff::Lines) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+ output.destroy(); lines.destroy(); return core::result::Err(patch_error(ErrorKind::AllocationFailed,0));
+}
+pub fn apply(base:core::slice::View<u8>,value:&Patch,limits:ext::diff::Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+ if(!patch_valid(limits)) { return core::result::Err(patch_error(ErrorKind::InvalidLimits,0)); }
+ if(!patch_view_valid(base)) { return core::result::Err(patch_error(ErrorKind::Bounds,0)); }
+ let split:core::result::Result<ext::diff::Lines,ext::diff::Error> = ext::diff::split(base,limits);
+ if(core::result::is_err(split)) { return core::result::Err(patch_diff_error(core::result::unwrap_err(split))); }
+ let lines:ext::diff::Lines=core::result::unwrap(split);
+ let state:ApplyState=ApplyState {work:base.len() as u64,limits:limits,size:0,count:0,full:true,error:patch_error(ErrorKind::Malformed,0)};
+ if(!patch_validate(lines,value,state.borrow())) { lines.destroy(); return core::result::Err(state.error); }
+ let allocated:core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity(state.size);
+ if(core::result::is_err(allocated)) { lines.destroy(); return core::result::Err(patch_error(ErrorKind::AllocationFailed,0)); }
+ let output:alloc::vec::Vec<u8> = core::result::unwrap(allocated); let cursor:i32=0; let hi:i32=0;
+ while(hi<value.hunks.len()) { let h:Hunk=value.hunks.at(hi);
+  while(cursor<h.before) { if(!patch_append(output.borrow(),core::result::unwrap(lines.line(cursor)))) { return patch_output_fail(output,lines); } cursor+=1; }
+  let i:i32=h.first; while(i<h.first+h.count) { let line:Line=value.lines.at(i); if(line.kind!=43) { cursor+=1; } if(line.kind!=45) { if(!patch_append(output.borrow(),line.bytes)) { return patch_output_fail(output,lines); } } i+=1; } hi+=1;
+ }
+ while(cursor<lines.len()) { if(!patch_append(output.borrow(),core::result::unwrap(lines.line(cursor)))) { return patch_output_fail(output,lines); } cursor+=1; }
+ lines.destroy(); return core::result::Ok(output);
+}
+pub fn apply_unified(base:core::slice::View<u8>,input:core::slice::View<u8>,limits:ext::diff::Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+ let parsed:core::result::Result<Patch,Error> = parse(input,limits); if(core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); }
+ let value:Patch=core::result::unwrap(parsed); let output:core::result::Result<alloc::vec::Vec<u8>,Error> = apply(base,value.borrow(),limits); value.destroy(); return output;
+}

@@ -254,3 +254,114 @@ pub fn format_f32_len(value: f32, scratch: core::slice::View<u32>, max_work: u64
 pub fn format_f64_len(value: f64, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error> { return format_bits_len(core::f64::to_bits(value),config(false),scratch,max_work); }
 pub fn format_f32_into(value: f32, output: core::slice::View<u8>, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error> { return format_bits_into(core::f32::to_bits(value) as u64,config(true),output,scratch,max_work); }
 pub fn format_f64_into(value: f64, output: core::slice::View<u8>, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error> { return format_bits_into(core::f64::to_bits(value),config(false),output,scratch,max_work); }
+
+// Explicit decimal precision uses the exact IEEE value, never shortest text.
+pub const MAX_PRECISION: i32 = 768;
+pub enum PrecisionStyle { Fixed, Scientific, General }
+pub struct PrecisionOptions { style: PrecisionStyle, precision: i32, alternate: bool, uppercase: bool }
+struct Precise { values: core::slice::View<u32>, count: i32, order: i32, negative: bool, special: i32, scientific: bool, fraction: i32, point: bool, uppercase: bool }
+fn precision_style(style: PrecisionStyle) -> i32 { let code: i32 = match (style) { PrecisionStyle::Fixed -> 0, PrecisionStyle::Scientific -> 1, PrecisionStyle::General -> 2 }; return code; }
+fn precise_digit(value: Precise, index: i32) -> u8 {
+    if (index < 0 || index >= value.count) { return 48; }
+    return (48+value.values.values[value.values.start+index]) as u8;
+}
+fn precise_len(value: Precise) -> i32 {
+    let size: i32 = 0; if (value.negative) { size = 1; } if (value.special != 0) { return size+3; }
+    let integral: i32 = value.order+1; if (integral < 1 || value.scientific) { integral = 1; }
+    size += integral+value.fraction; if (value.point) { size += 1; }
+    if (value.scientific) { let exponent: i32 = value.order; if (exponent < 0) { exponent = 0-exponent; } let width: i32 = digits(exponent as u64); if (width < 2) { width = 2; } size += 2+width; }
+    return size;
+}
+fn prepare_precision(bits: u64, cfg: Config, options: PrecisionOptions, scratch: core::slice::View<u32>, work: u64) -> core::result::Result<Precise,Error> {
+    if (options.precision < 0 || options.precision > MAX_PRECISION) { return core::result::Err(Error::Bounds); }
+    let checked: core::result::Result<i32,Error> = storage(scratch); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+    let budget: Budget = Budget { left: work, failed: false }; budget.pay(1); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+    let output_digits: core::slice::View<u32> = core::result::unwrap(scratch.subview(0,768));
+    let negative: bool = (bits & cfg.sign) != 0; let absolute: u64 = bits & (cfg.sign-1); let special_kind: i32 = 0;
+    let count: i32 = 1; let order: i32 = 0;
+    if (absolute >= cfg.infinity) { special_kind = 1; if (absolute > cfg.infinity) { special_kind = 2; negative = false; } }
+    else {
+        if (absolute == 0) { output_digits.values[output_digits.start] = 0; }
+        else {
+            // m*2^e = (m*5^-e)*10^e for e<0. The largest exact
+            // binary64 coefficient has 767 digits (<4096 bits).
+            let exact: Big = big(scratch,0); let value: Dyadic = dyadic(absolute,cfg); let scale: i32 = 0;
+            exact.set(value.mantissa,budget.borrow());
+            if (value.exponent < 0) { scale = 0-value.exponent; exact.power(5,scale,budget.borrow()); } else { exact.shift(value.exponent,budget.borrow()); }
+            if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+            let groups: core::slice::View<u32> = core::result::unwrap(scratch.subview(768,864)); let group_count: i32 = 0;
+            while (exact.length > 0) { assert(group_count < 96); groups.values[groups.start+group_count] = exact.divide(1000000000,budget.borrow()); group_count += 1; if (budget.failed) { return core::result::Err(Error::WorkLimit); } }
+            let first: i32 = digits(groups.values[groups.start+group_count-1] as u64); count = (group_count-1)*9+first; assert(count <= 768); order = count-scale-1;
+            budget.pay(count as u64); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+            // The integer is dead before its storage becomes decimal digits.
+            let i: i32 = 0; while (i < count) { output_digits.values[output_digits.start+i] = decimal_digit(groups,group_count,first,i) as u32; i += 1; }
+            let style: i32 = precision_style(options.style); let precision: i32 = options.precision; if (style == 2 && precision == 0) { precision = 1; }
+            let keep: i32 = precision; if (style == 0) { keep = order+1+precision; } if (style == 1) { keep += 1; }
+            if (keep < count) {
+                let up: bool = false;
+                if (keep >= 0) {
+                    let next: u32 = output_digits.values[output_digits.start+keep]; let tail: bool = false; i = keep+1;
+                    while (i < count) { budget.pay(1); if (output_digits.values[output_digits.start+i] != 0) { tail = true; } i += 1; }
+                    let odd: bool = false; if (keep > 0) { odd = (output_digits.values[output_digits.start+keep-1] & 1) != 0; }
+                    up = next > 5 || (next == 5 && (tail || odd));
+                }
+                if (keep <= 0) {
+                    output_digits.values[output_digits.start] = 0; count = 1; order = 0;
+                    if (up) { output_digits.values[output_digits.start] = 1; order = 0-options.precision; }
+                } else {
+                    count = keep;
+                    if (up) {
+                        i = keep-1;
+                        while (i >= 0 && output_digits.values[output_digits.start+i] == 9) { budget.pay(1); output_digits.values[output_digits.start+i] = 0; i -= 1; }
+                        if (i < 0) { output_digits.values[output_digits.start] = 1; count = 1; order += 1; }
+                        else { output_digits.values[output_digits.start+i] += 1; }
+                    }
+                }
+            }
+            while (count > 1 && output_digits.values[output_digits.start+count-1] == 0) { budget.pay(1); count -= 1; }
+        }
+    }
+    let style: i32 = precision_style(options.style); let scientific_form: bool = style == 1; let fraction: i32 = options.precision;
+    if (style == 2) {
+        let precision: i32 = options.precision; if (precision == 0) { precision = 1; }
+        scientific_form = order < -4 || order >= precision; fraction = precision-1; if (!scientific_form) { fraction -= order; }
+        if (!options.alternate) { let meaningful: i32 = count-1; if (!scientific_form) { meaningful -= order; } if (meaningful < 0) { meaningful = 0; } if (fraction > meaningful) { fraction = meaningful; } }
+    }
+    let converted: Precise = Precise { values: output_digits, count: count, order: order, negative: negative, special: special_kind, scientific: scientific_form, fraction: fraction, point: fraction > 0 || options.alternate, uppercase: options.uppercase };
+    // Reserve rendering work before any caller output can be written.
+    budget.pay(precise_len(converted) as u64); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+    return core::result::Ok(converted);
+}
+fn render_precision(value: Precise, output: core::slice::View<u8>) {
+    let at: i32 = output.start; if (value.negative) { output.values[at] = 45; at += 1; }
+    if (value.special != 0) {
+        let first: u8 = 105; let second: u8 = 110; let third: u8 = 102;
+        if (value.special == 2) { first = 110; second = 97; third = 110; }
+        if (value.uppercase) { first -= 32; second -= 32; third -= 32; }
+        output.values[at] = first; output.values[at+1] = second; output.values[at+2] = third; return;
+    }
+    let integral: i32 = value.order+1; if (integral < 1 || value.scientific) { integral = 1; }
+    let index: i32 = 0;
+    while (index < integral) { let digit_index: i32 = index; if (value.order < 0 && !value.scientific) { digit_index = -1; } output.values[at] = precise_digit(value,digit_index); at += 1; index += 1; }
+    if (value.point) { output.values[at] = 46; at += 1; }
+    index = 0; while (index < value.fraction) { let digit_index: i32 = value.order+1+index; if (value.scientific) { digit_index = 1+index; } output.values[at] = precise_digit(value,digit_index); at += 1; index += 1; }
+    if (value.scientific) {
+        let marker: u8 = 101; if (value.uppercase) { marker = 69; } output.values[at] = marker; at += 1;
+        let exponent: i32 = value.order; let sign: u8 = 43; if (exponent < 0) { sign = 45; exponent = 0-exponent; } output.values[at] = sign; at += 1;
+        let width: i32 = digits(exponent as u64); if (width < 2) { output.values[at] = 48; at += 1; } index = 0;
+        while (index < width) { output.values[at] = digit(exponent as u64,width,index); at += 1; index += 1; }
+    }
+}
+fn precision_bits_len(bits: u64, cfg: Config, options: PrecisionOptions, scratch: core::slice::View<u32>, work: u64) -> core::result::Result<i32,Error> {
+    let converted: core::result::Result<Precise,Error> = prepare_precision(bits,cfg,options,scratch,work); if (core::result::is_err(converted)) { return core::result::Err(core::result::unwrap_err(converted)); } return core::result::Ok(precise_len(core::result::unwrap(converted)));
+}
+fn precision_bits_into(bits: u64, cfg: Config, output: core::slice::View<u8>, options: PrecisionOptions, scratch: core::slice::View<u32>, work: u64) -> core::result::Result<i32,Error> {
+    if (!valid(output)) { return core::result::Err(Error::Bounds); }
+    let converted: core::result::Result<Precise,Error> = prepare_precision(bits,cfg,options,scratch,work); if (core::result::is_err(converted)) { return core::result::Err(core::result::unwrap_err(converted)); }
+    let value: Precise = core::result::unwrap(converted); let size: i32 = precise_len(value); if (output.length < size) { return core::result::Err(Error::Capacity(size)); }
+    render_precision(value,output); return core::result::Ok(size);
+}
+pub fn format_f32_precision_len(value: f32, options: PrecisionOptions, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error> { return precision_bits_len(core::f32::to_bits(value) as u64,config(true),options,scratch,max_work); }
+pub fn format_f64_precision_len(value: f64, options: PrecisionOptions, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error> { return precision_bits_len(core::f64::to_bits(value),config(false),options,scratch,max_work); }
+pub fn format_f32_precision_into(value: f32, output: core::slice::View<u8>, options: PrecisionOptions, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error> { return precision_bits_into(core::f32::to_bits(value) as u64,config(true),output,options,scratch,max_work); }
+pub fn format_f64_precision_into(value: f64, output: core::slice::View<u8>, options: PrecisionOptions, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error> { return precision_bits_into(core::f64::to_bits(value),config(false),output,options,scratch,max_work); }

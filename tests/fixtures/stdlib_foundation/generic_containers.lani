@@ -5,126 +5,181 @@ module app::main;
 import core::option;
 import core::pair;
 import core::set;
+import core::result;
 import core::vec;
-
-// Decimal digits of a nonnegative value, most significant first.
+import core::slice; // Decimal digits of a nonnegative value, most significant first.
 fn digits_of(value: i32) -> core::vec::Vec<i32, 10> {
-    let out: core::vec::Vec<i32, 10> = core::vec::from_storage([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let out: core::vec::Vec<i32,
+    10> = core::vec::from_storage([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     let rest: i32 = value;
     while (true) {
-        out = core::vec::try_insert(out, 0, rest % 10);
+        core::result::unwrap(core::vec::try_insert(out.borrow(), 0, rest % 10));
         rest = rest / 10;
-        if (rest == 0) { break; }
-    }
-    return out;
-}
-
-// Insertion sort through the generic accessors. core::vec has no sort until a
-// bound on core::cmp::Ord dispatches.
-fn sorted(values: core::vec::Vec<i32, 10>) -> core::vec::Vec<i32, 10> {
-    let out: core::vec::Vec<i32, 10> = values;
-    let index: i32 = 1;
-    while (index < core::vec::len(out)) {
-        let cursor: i32 = index;
-        while (cursor > 0 && core::vec::get_or(out, cursor - 1, 0) > core::vec::get_or(out, cursor, 0)) {
-            out = core::vec::try_swap(out, cursor - 1, cursor);
-            cursor -= 1;
+        if (rest == 0) {
+            break;
         }
-        index += 1;
     }
     return out;
 }
-
+// Sort an independent inline copy through the borrowed method.
+fn sorted(values: core::vec::Vec<i32, 10>) -> core::vec::Vec<i32, 10> {
+    let out: core::vec::Vec<i32,
+    10> = values;
+    core::vec::sort(out.borrow());
+    return out;
+}
 // Count each distinct character in first-seen order.
 fn tally(text: core::vec::Vec<char, 8>) -> core::vec::Vec<core::pair::Pair<char, i32>, 8> {
-    let blank: core::pair::Pair<char, i32> = core::pair::new(' ', 0);
-    let counts: core::vec::Vec<core::pair::Pair<char, i32>, 8> =
-        core::vec::from_storage([blank, blank, blank, blank, blank, blank, blank, blank]);
-    let seen: core::set::Set<char, 8> = core::set::from_storage([' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ']);
+    let blank: core::pair::Pair<char,
+    i32> = core::pair::new(' ', 0);
+    let counts: core::vec::Vec<core::pair::Pair<char,
+    i32>,
+    8> = core::vec::from_storage([blank, blank, blank, blank, blank, blank, blank, blank]);
+    let seen: core::set::Set<char,
+    8> = core::set::from_storage([' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ']);
     let index: i32 = 0;
-    while (index < core::vec::len(text)) {
-        let letter: char = core::vec::get_or(text, index, '?');
-        let slot: i32 = core::set::position_or(seen, letter, -1);
-        if (slot < 0) {
-            seen = core::set::try_insert(seen, letter);
-            counts = core::vec::try_push(counts, core::pair::new(letter, 1));
+    while (index<core::vec::len(text.borrow())) {
+        let letter: char = core::vec::get_or(text.borrow(), index, '?');
+        let slot: i32 = core::set::position_or(seen.borrow(), letter, -1);
+        if (slot<0) {
+            core::result::unwrap(core::set::try_insert(seen.borrow(), letter));
+            core::result::unwrap(core::vec::try_push(counts.borrow(), core::pair::new(letter, 1)));
         } else {
-            let prior: core::pair::Pair<char, i32> = core::vec::get_or(counts, slot, blank);
-            let bumped: core::pair::Pair<char, i32> =
-                core::pair::new(core::pair::first(prior), core::pair::second(prior) + 1);
-            counts = core::vec::try_set(counts, slot, bumped);
+            let prior: core::pair::Pair<char,
+            i32> = core::vec::get_or(counts.borrow(), slot, blank);
+            let bumped: core::pair::Pair<char,
+            i32> = core::pair::new(core::pair::first(prior), core::pair::second(prior) + 1);
+            core::result::unwrap(core::vec::try_set(counts.borrow(), slot, bumped));
         }
         index += 1;
     }
     return counts;
 }
-
 fn main() -> i32 {
-    let digits: core::vec::Vec<i32, 10> = digits_of(90210);
-    if (core::vec::len(digits) != 5 || core::vec::get_or(digits, 0, -1) != 9 ||
-        core::vec::get_or(digits, 4, -1) != 0) { return 1; }
-    let ordered: core::vec::Vec<i32, 10> = sorted(digits);
-    if (core::vec::get_or(ordered, 0, -1) != 0 || core::vec::get_or(ordered, 2, -1) != 1 ||
-        core::vec::get_or(ordered, 4, -1) != 9 || core::vec::get_or(digits, 0, -1) != 9) { return 2; }
-    let distinct: core::set::Set<i32, 10> = core::set::from_storage([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let digits: core::vec::Vec<i32,
+    10> = digits_of(90210);
+    if (core::vec::len(digits.borrow()) != 5 || core::vec::get_or(digits.borrow(), 0, -1) != 9 || core::vec::get_or(digits.borrow(), 4, -1) != 0) {
+        return 1;
+    }
+    let ordered: core::vec::Vec<i32,
+    10> = sorted(digits);
+    if (core::vec::get_or(ordered.borrow(), 0, -1) != 0 || core::vec::get_or(ordered.borrow(), 2, -1) != 1 || core::vec::get_or(ordered.borrow(), 4, -1) != 9 || core::vec::get_or(digits.borrow(), 0, -1) != 9) {
+        return 2;
+    }
+    let distinct: core::set::Set<i32,
+    10> = core::set::from_storage([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     let index: i32 = 0;
-    while (index < core::vec::len(digits)) {
-        distinct = core::set::try_insert(distinct, core::vec::get_or(digits, index, -1));
+    while (index<core::vec::len(digits.borrow())) {
+        core::result::unwrap(core::set::try_insert(distinct.borrow(), core::vec::get_or(digits.borrow(), index, -1)));
         index += 1;
     }
-    if (core::set::len(distinct) != 4 || !core::set::contains(distinct, 2) ||
-        core::set::contains(distinct, 7) || core::set::position_or(distinct, 1, -1) != 3) { return 3; }
-    let trimmed: core::vec::Vec<i32, 10> = core::vec::truncate(core::vec::reverse(digits), 2);
-    if (core::vec::len(trimmed) != 2 || core::vec::get_or(trimmed, 1, -1) != 1) { return 4; }
-
-    let text: core::vec::Vec<char, 8> = core::vec::from_storage(['-', '-', '-', '-', '-', '-', '-', '-']);
-    text = core::vec::try_push(text, 'h');
-    text = core::vec::try_push(text, 'e');
-    text = core::vec::try_push(text, 'l');
-    text = core::vec::try_push(text, 'l');
-    text = core::vec::try_push(text, 'ö');
-    if (core::vec::len(text) != 5 || core::vec::capacity(text) != 8) { return 5; }
-    let counts: core::vec::Vec<core::pair::Pair<char, i32>, 8> = tally(text);
-    if (core::vec::len(counts) != 4) { return 6; }
-    let blank: core::pair::Pair<char, i32> = core::pair::new(' ', 0);
-    let third: core::pair::Pair<char, i32> = core::vec::get_or(counts, 2, blank);
-    if (core::pair::first(third) != 'l' || core::pair::second(third) != 2) { return 7; }
-    let last: core::pair::Pair<char, i32> = core::option::unwrap_or(core::vec::last(counts), blank);
-    if (core::pair::first(last) != 'ö' || core::pair::second(last) != 1) { return 8; }
-
-    let first_digit: core::option::Option<i32> = core::vec::first(digits);
-    let missing: core::option::Option<i32> = core::vec::get(digits, 9);
-    if (core::option::unwrap_or(first_digit, -1) != 9 || core::option::is_some(missing) ||
-        !core::option::is_none(core::vec::get(digits, -1))) { return 9; }
-    let first_letter: core::option::Option<char> = core::vec::first(text);
-    let both: core::option::Option<core::pair::Pair<i32, char>> = core::pair::zip(first_digit, first_letter);
-    let joined: core::pair::Pair<i32, char> = core::option::unwrap_or(both, core::pair::new(0, '?'));
-    if (core::pair::first(joined) != 9 || core::pair::second(joined) != 'h') { return 10; }
-    if (core::option::is_some(core::pair::zip(missing, first_letter))) { return 11; }
-
-    let triple: core::vec::Vec<i32, 3> = core::vec::from_array([7, 8, 9]);
-    if (!core::vec::is_full(triple) || core::vec::is_empty(triple)) { return 12; }
-    let popped: core::vec::Vec<i32, 3> = core::vec::try_pop(triple);
-    let swapped: core::vec::Vec<i32, 3> = core::vec::try_swap(popped, 0, 1);
-    if (core::vec::len(popped) != 2 || core::vec::get_or(swapped, 0, -1) != 8 ||
-        core::vec::get_or(popped, 0, -1) != 7) { return 13; }
-    let removed: core::vec::Vec<i32, 3> = core::vec::try_remove(triple, 1);
-    if (core::vec::get_or(removed, 1, -1) != 9 ||
-        !core::vec::is_empty(core::vec::clear(removed))) { return 14; }
-
-    let letters: core::set::Set<char, 4> = core::set::from_storage(['.', '.', '.', '.']);
-    if (!core::set::is_empty(letters) || core::set::capacity(letters) != 4) { return 15; }
-    letters = core::set::try_insert(core::set::try_insert(letters, 'x'), 'y');
-    let fewer: core::set::Set<char, 4> = core::set::try_remove(letters, 'x');
-    if (core::set::len(fewer) != 1 || !core::set::contains(letters, 'x') ||
-        core::set::contains(fewer, 'x') || core::set::at_or(fewer, 0, '?') != 'y' ||
-        !core::set::is_subset(fewer, letters) || core::set::is_subset(letters, fewer)) { return 16; }
-    if (core::option::unwrap_or(core::set::get(letters, 1), '?') != 'y' ||
-        core::set::len(core::set::clear(letters)) != 0) { return 17; }
-
-    let flipped: core::pair::Pair<char, i32> = core::pair::swap(joined);
-    if (core::pair::first(flipped) != 'h' || core::pair::second(flipped) != 9) { return 18; }
-    let nested: core::option::Option<core::option::Option<i32>> = core::option::Some(first_digit);
-    if (core::option::unwrap_or(core::option::flatten(nested), -1) != 9) { return 19; }
+    if (core::set::len(distinct.borrow()) != 4 || !core::set::contains(distinct.borrow(), 2) || core::set::contains(distinct.borrow(), 7) || core::set::position_or(distinct.borrow(), 1, -1) != 3) {
+        return 3;
+    }
+    let trimmed: core::vec::Vec<i32,
+    10> = digits;
+    core::vec::reverse(trimmed.borrow());
+    core::result::unwrap(core::vec::truncate(trimmed.borrow(), 2));
+    if (core::vec::len(trimmed.borrow()) != 2 || core::vec::get_or(trimmed.borrow(), 1, -1) != 1) {
+        return 4;
+    }
+    let text: core::vec::Vec<char,
+    8> = core::vec::from_storage(['-', '-', '-', '-', '-', '-', '-', '-']);
+    core::result::unwrap(core::vec::try_push(text.borrow(), 'h'));
+    core::result::unwrap(core::vec::try_push(text.borrow(), 'e'));
+    core::result::unwrap(core::vec::try_push(text.borrow(), 'l'));
+    core::result::unwrap(core::vec::try_push(text.borrow(), 'l'));
+    core::result::unwrap(core::vec::try_push(text.borrow(), 'ö'));
+    if (core::vec::len(text.borrow()) != 5 || core::vec::capacity(text.borrow()) != 8) {
+        return 5;
+    }
+    let counts: core::vec::Vec<core::pair::Pair<char,
+    i32>,
+    8> = tally(text);
+    if (core::vec::len(counts.borrow()) != 4) {
+        return 6;
+    }
+    let blank: core::pair::Pair<char,
+    i32> = core::pair::new(' ', 0);
+    let third: core::pair::Pair<char,
+    i32> = core::vec::get_or(counts.borrow(), 2, blank);
+    if (core::pair::first(third) != 'l' || core::pair::second(third) != 2) {
+        return 7;
+    }
+    let last: core::pair::Pair<char,
+    i32> = core::option::unwrap_or(core::vec::last(counts.borrow()), blank);
+    if (core::pair::first(last) != 'ö' || core::pair::second(last) != 1) {
+        return 8;
+    }
+    let first_digit: core::option::Option<i32> = core::vec::first(digits.borrow());
+    let missing: core::option::Option<i32> = core::vec::get(digits.borrow(), 9);
+    if (core::option::unwrap_or(first_digit, -1) != 9 || core::option::is_some(missing) || !core::option::is_none(core::vec::get(digits.borrow(), -1))) {
+        return 9;
+    }
+    let first_letter: core::option::Option<char> = core::vec::first(text.borrow());
+    let both: core::option::Option<core::pair::Pair<i32,
+    char >> = core::pair::zip(first_digit, first_letter);
+    let joined: core::pair::Pair<i32,
+    char> = core::option::unwrap_or(both, core::pair::new(0, '?'));
+    if (core::pair::first(joined) != 9 || core::pair::second(joined) != 'h') {
+        return 10;
+    }
+    if (core::option::is_some(core::pair::zip(missing, first_letter))) {
+        return 11;
+    }
+    let triple: core::vec::Vec<i32,
+    3> = core::vec::from_array([7, 8, 9]);
+    if (!core::vec::is_full(triple.borrow()) || core::vec::is_empty(triple.borrow())) {
+        return 12;
+    }
+    let popped: core::vec::Vec<i32,
+    3> = triple;
+    core::option::unwrap(core::vec::pop(popped.borrow()));
+    let swapped: core::vec::Vec<i32,
+    3> = popped;
+    core::result::unwrap(core::vec::try_swap(swapped.borrow(), 0, 1));
+    if (core::vec::len(popped.borrow()) != 2 || core::vec::get_or(swapped.borrow(), 0, -1) != 8 || core::vec::get_or(popped.borrow(), 0, -1) != 7) {
+        return 13;
+    }
+    let removed: core::vec::Vec<i32,
+    3> = triple;
+    core::result::unwrap(core::vec::try_remove(removed.borrow(), 1));
+    if (core::vec::get_or(removed.borrow(), 1, -1) != 9 || core::vec::clear(removed.borrow()) != 2 || !core::vec::is_empty(removed.borrow())) {
+        return 14;
+    }
+    let letters: core::set::Set<char,
+    4> = core::set::from_storage(['.', '.', '.', '.']);
+    if (!core::set::is_empty(letters.borrow()) || core::set::capacity(letters.borrow()) != 4) {
+        return 15;
+    }
+    core::result::unwrap(core::set::try_insert(letters.borrow(), 'x'));
+    core::result::unwrap(core::set::try_insert(letters.borrow(), 'y'));
+    let fewer: core::set::Set<char,
+    4> = letters;
+    core::option::unwrap(core::set::remove(fewer.borrow(), 'x'));
+    if (core::set::len(fewer.borrow()) != 1 || !core::set::contains(letters.borrow(), 'x') || core::set::contains(fewer.borrow(), 'x') || core::set::at_or(fewer.borrow(), 0, '?') != 'y' || !core::set::is_subset(fewer.borrow(), letters.borrow()) || core::set::is_subset(letters.borrow(), fewer.borrow())) {
+        return 16;
+    }
+    if (core::option::unwrap_or(core::set::get(letters.borrow(), 1), '?') != 'y' || core::set::clear(letters.borrow()) != 2 || core::set::len(letters.borrow()) != 0) {
+        return 17;
+    }
+    let flipped: core::pair::Pair<char,
+    i32> = core::pair::swap(joined);
+    if (core::pair::first(flipped) != 'h' || core::pair::second(flipped) != 9) {
+        return 18;
+    }
+    let nested: core::option::Option<core::option::Option<i32 >> = core::option::Some(first_digit);
+    if (core::option::unwrap_or(core::option::flatten(nested), -1) != 9) {
+        return 19;
+    }
+    let view: core::slice::View<i32> = core::vec::as_view(ordered.borrow());
+    let cursor: core::slice::Iter<i32> = core::vec::iter(ordered.borrow());
+    if (view.len() != 5 || core::option::unwrap(cursor.next()) != 0 || !core::vec::contains(ordered.borrow(), 2) || core::option::unwrap(core::vec::position(ordered.borrow(), 2)) != 3 || !core::vec::is_sorted(ordered.borrow()) || core::vec::lower_bound(ordered.borrow(), 0) != 0 || core::vec::upper_bound(ordered.borrow(), 0) != 2 || core::option::unwrap(core::vec::binary_search(ordered.borrow(), 9)) != 4) {
+        return 20;
+    }
+    let distinct_cursor: core::slice::Iter<i32> = core::set::iter(distinct.borrow());
+    if (core::set::is_full(distinct.borrow()) || core::option::unwrap(core::set::position(distinct.borrow(), 9)) != 0 || core::option::unwrap(distinct_cursor.next()) != 9 || core::set::is_disjoint(distinct.borrow(), distinct.borrow()) || !core::set::equals(distinct.borrow(), distinct.borrow())) {
+        return 21;
+    }
     return 0;
 }

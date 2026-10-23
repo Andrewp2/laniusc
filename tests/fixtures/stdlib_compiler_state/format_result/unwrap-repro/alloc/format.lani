@@ -1,0 +1,128 @@
+// Owned formatting. Returned owners must be destroyed exactly once.
+module alloc::format;
+import alloc::string;
+import alloc::vec;
+import core::fmt;
+import core::format;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+pub enum Error {
+    Format(core::format::Error),
+    Display(core::fmt::Error),
+    AllocationFailed,
+    InvalidUtf8
+}
+fn string_error(error: alloc::string::Error) -> Error {
+    return match (error) {
+        alloc::string::Error::AllocationFailed -> Error::AllocationFailed,
+        alloc::string::Error::InvalidUtf8(_) -> Error::InvalidUtf8,
+        alloc::string::Error::InvalidScalar -> Error::InvalidUtf8,
+        alloc::string::Error::Bounds -> Error::InvalidUtf8,
+        alloc::string::Error::NotCharBoundary -> Error::InvalidUtf8,
+        alloc::string::Error::CapacityOverflow -> Error::AllocationFailed
+    };
+}
+// Reserve six complete passes: three renders plus byte initialization,
+// UTF-8 validation, and owned copying (a conservative bound for Vec too).
+fn owned_limits(limits: core::format::Limits) -> core::format::Limits {
+    return core::format::Limits {
+        max_work:(limits.max_work / 6) * 2,
+        max_output: limits.max_output
+    };
+}
+pub fn format_bytes(pattern: core::text::Text, positional: core::slice::View<core::format::Argument>, named: core::slice::View<core::format::Named>, limits: core::format::Limits) -> core::result::Result<alloc::vec::Vec<u8>, Error> {
+    let budget: core::format::Limits = owned_limits(limits);
+    let measured: core::result::Result<i32,
+    core::format::Error> = core::format::measure(pattern, positional, named, budget);
+    if (core::result::is_err(measured)) {
+        return core::result::Err(Error::Format(core::result::unwrap_err(measured)));
+    }
+    let count: i32 = core::result::unwrap(measured);
+    let allocated: core::result::Result<alloc::vec::Vec<u8>,
+    alloc::vec::Error> = alloc::vec::with_capacity(count);
+    if (core::result::is_err(allocated)) {
+        return core::result::Err(Error::AllocationFailed);
+    }
+    let bytes: alloc::vec::Vec<u8> = core::result::unwrap(allocated);
+    let resized: core::result::Result<i32,
+    alloc::vec::Error> = bytes.try_resize(count, 0);
+    if (core::result::is_err(resized)) {
+        bytes.destroy();
+        return core::result::Err(Error::AllocationFailed);
+    }
+    let formatted: core::result::Result<i32,
+    core::format::Error> = core::format::format_into(pattern, positional, named, bytes.as_view(), budget);
+    if (core::result::is_err(formatted)) {
+        bytes.destroy();
+        return core::result::Err(Error::Format(core::result::unwrap_err(formatted)));
+    }
+    return core::result::Ok(bytes);
+}
+pub fn format(pattern: core::text::Text, positional: core::slice::View<core::format::Argument>, named: core::slice::View<core::format::Named>, limits: core::format::Limits) -> core::result::Result<alloc::string::String, Error> {
+    let formatted: core::result::Result<alloc::vec::Vec<u8>,
+    Error> = format_bytes(pattern, positional, named, limits);
+    if (core::result::is_err(formatted)) {
+        return core::result::Err(core::result::unwrap_err(formatted));
+    }
+    let bytes: alloc::vec::Vec<u8> = core::result::unwrap(formatted);
+    let copied: core::result::Result<alloc::string::String,
+    alloc::string::Error> = alloc::string::from_utf8(bytes.as_slice(), bytes.len());
+    bytes.destroy();
+    if (core::result::is_err(copied)) {
+        return core::result::Err(Error::AllocationFailed);
+    }
+    return core::result::Ok(core::result::unwrap(copied));
+}
+// Display is called twice. Implementations must be deterministic, retain no
+// borrowed formatter, and obey the Display contract (append valid UTF-8).
+pub fn display<T>(value: T, max_output: i32) -> core::result::Result<alloc::string::String, Error>
+where
+    T: core::fmt::Display<T>
+{
+    let measured: core::fmt::Formatter = core::fmt::measure();
+    let status: core::result::Result<i32,
+    core::fmt::Error> = core::fmt::display(value, measured.borrow());
+    if (core::result::is_err(status)) {
+        return core::result::Err(Error::Display(core::result::unwrap_err(status)));
+    }
+    let count: i32 = core::result::unwrap(measured.finish());
+    if (max_output<0) {
+        return core::result::Err(Error::Format(core::format::Error::Bounds));
+    }
+    if (count>max_output) {
+        return core::result::Err(Error::Format(core::format::Error::OutputLimit(0)));
+    }
+    let allocated: core::result::Result<alloc::vec::Vec<u8>,
+    alloc::vec::Error> = alloc::vec::with_capacity(count);
+    if (core::result::is_err(allocated)) {
+        return core::result::Err(Error::AllocationFailed);
+    }
+    let bytes: alloc::vec::Vec<u8> = core::result::unwrap(allocated);
+    if (core::result::is_err(bytes.try_resize(count, 0))) {
+        bytes.destroy();
+        return core::result::Err(Error::AllocationFailed);
+    }
+    let output: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes.as_slice(), 0, count));
+    let written: core::result::Result<i32,
+    core::fmt::Error> = core::fmt::display(value, output.borrow());
+    if (core::result::is_err(written)) {
+        bytes.destroy();
+        return core::result::Err(Error::Display(core::result::unwrap_err(written)));
+    }
+    let finished: core::result::Result<i32,
+    core::fmt::Error> = output.finish();
+    if (core::result::is_err(finished)) {
+        bytes.destroy();
+        return core::result::Err(Error::Display(core::result::unwrap_err(finished)));
+    }
+    let copied: core::result::Result<alloc::string::String,
+    alloc::string::Error> = alloc::string::from_utf8(bytes.as_slice(), core::result::unwrap(finished));
+    bytes.destroy();
+    if (core::result::is_err(copied)) {
+        let failure: Error = string_error(core::result::unwrap_err(copied));
+        return core::result::Err(failure);
+    }
+    return core::result::Ok(core::result::unwrap(copied));
+}

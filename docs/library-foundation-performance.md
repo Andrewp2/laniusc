@@ -241,3 +241,76 @@ process setup and I/O. Numerical conformance, failure and ownership checks are
 recorded per module. All target claims remain native x86_64 Linux output from
 GPU compilation, without user GPU execution evidence.
 Selective imports, distribution and the broader library completion audit remain.
+
+## Inline collections, precision formatting, parsers and patches
+
+On 2026-10-23 the same existing harness measured one warmup and three private
+entry rebuilds for each final entry below. `LANIUS_PERF_REBUILD_ENTRY=1` forces
+entry cache misses; unchanged imports and the process/device stay warm. Every
+emitted ELF executed with exit 0 and the expected empty stdout/stderr. Counts
+include the entry and recursive imported sources.
+
+| Entry | Import closure | Emitted ELF | Median | Range |
+| --- | --- | --- | --- | --- |
+| `tests/fixtures/stdlib_foundation/fixed_capacity_vec.lani` | 9 files, 81,256 bytes | 51,165 bytes | 164.778 ms | 162.882–194.986 ms |
+| `tests/fixtures/stdlib_foundation/float_precision_contracts.lani` | 11 files, 131,016 bytes | 212,855 bytes | 187.002 ms | 170.530–214.904 ms |
+| `tests/fixtures/stdlib_foundation/format_strings_contracts.lani` | 20 files, 259,248 bytes | 440,745 bytes | 226.385 ms | 204.295–256.585 ms |
+| `tests/fixtures/extended/parse_contracts.lani` | 17 files, 183,333 bytes | 241,325 bytes | 222.081 ms | 220.576–300.681 ms |
+| `tests/fixtures/extended/diff_contracts.lani` | 12 files, 123,272 bytes | 223,411 bytes | 301.131 ms | 292.451–323.794 ms |
+| `sample_programs/library/expr_calc.lani` | 32 files, 364,230 bytes | 665,485 bytes | 349.964 ms | 340.921–382.544 ms |
+
+The first three entries use only `stdlib`; the rest also use `extended`.
+The calculator entry's output check covers empty stdin. Its nonempty workload
+is measured separately by the execution tests. Measurements ran sequentially;
+other desktop activity was uncontrolled. Workload and import-cache differences
+prevent attributing relative row timings to individual library algorithms.
+No compiler, shader, runtime, IR, ABI, extractor or proof implementation changed.
+
+```sh
+timeout --kill-after=2s 100s env LANIUS_PERF_REBUILD_ENTRY=1 \
+  target/stdlib-build/debug/examples/stdlib_gpu_perf \
+  tests/fixtures/stdlib_foundation/format_strings_contracts.lani stdlib - 1 3
+timeout --kill-after=2s 100s env LANIUS_PERF_REBUILD_ENTRY=1 \
+  target/stdlib-build/debug/examples/stdlib_gpu_perf \
+  tests/fixtures/extended/diff_contracts.lani stdlib - 1 3 extended
+```
+
+### Existing formatter import cost
+
+The identical `format_import_contracts.lani` entry was compiled against the
+`8cb1af7b` stdlib and the new precision-enabled stdlib using the same compiler
+and harness binary. Each source tree used one warmup and five measured private
+entry rebuilds. Both emitted programs passed their exact output/exit contract.
+
+| Library source | Import closure | Emitted ELF | Median | Range |
+| --- | --- | --- | --- | --- |
+| `8cb1af7b` | 20 files, 220,103 bytes | 277,544 bytes | 221.701 ms | 207.800–275.060 ms |
+| Precision-enabled | 20 files, 230,577 bytes | 310,473 bytes | 178.348 ms | 165.429–229.232 ms |
+
+The emitted program grows by 32,929 bytes (11.9%) even though this entry formats
+only an integer and a boolean. Additional imported precision functions have an
+observable code-size cost. Selective imports and distribution remain completion
+work. Timing ranges overlap; process/import-cache histories and desktop activity
+were uncontrolled, so this comparison establishes no compiler speedup or
+repeatable latency regression.
+
+The earlier source tree was extracted with `git archive 8cb1af7b stdlib` into
+`target/stdlib-work/precision-baseline`. Reproduction:
+
+```sh
+timeout --kill-after=2s 100s env LANIUS_PERF_REBUILD_ENTRY=1 \
+  target/stdlib-build/debug/examples/stdlib_gpu_perf \
+  tests/fixtures/stdlib_foundation/format_import_contracts.lani \
+  target/stdlib-work/precision-baseline/stdlib - 1 5
+timeout --kill-after=2s 100s env LANIUS_PERF_REBUILD_ENTRY=1 \
+  target/stdlib-build/debug/examples/stdlib_gpu_perf \
+  tests/fixtures/stdlib_foundation/format_import_contracts.lani stdlib - 1 5
+```
+
+Separate native observations cover [5,000 integer expressions](extended-expr-calc.md)
+and [20,000-line sparse diff/application](extended-text-patch.md), including
+process setup and I/O while excluding compilation. Float precision conformance
+covers roughly 112,000 independent reference comparisons; parser and collection
+tests cover modeled operations, errors, copies and ownership. These are native
+x86_64 Linux observations, without a user GPU kernel or cross-compiler speed
+ratio claim.

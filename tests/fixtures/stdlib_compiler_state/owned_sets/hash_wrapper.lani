@@ -1,0 +1,10 @@
+module app::main;
+import alloc::probe_hash_set;
+fn main() -> i32 {
+    let set: alloc::probe_hash_set::Set<i16> = alloc::probe_hash_set::new();
+    let value: i16 = 7;
+    let success: bool = set.add(value);
+    set.destroy();
+    if (success) { return 0; }
+    return 1;
+}

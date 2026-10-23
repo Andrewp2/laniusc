@@ -25,6 +25,8 @@ sample runner's fixed argument and text-output fixture.
 | `primes.lani` | `tests/stdlib_primes_execution.rs`, x86_64 Linux; owned bitsets, independent small listings, twenty-million bound and allocation/write failures | [Prime sieve](../../docs/stdlib-primes.md) |
 | `decimal_ledger.lani` | `tests/extended_decimal_ledger_execution.rs`, x86_64 Linux; exact decimal CSV calculations, rounding, limits and allocation/I/O failures | [Decimal ledger](../../docs/extended-decimal-ledger.md) |
 | `data_analyze.lani` | `tests/extended_data_analyze_execution.rs`, x86_64 Linux; numerical CSV summaries, QR regression and allocation/I/O failures | [CSV analysis and regression](../../docs/extended-data-analyze.md) |
+| `expr_calc.lani` | `tests/extended_expr_calc_execution.rs`, x86_64 Linux; parser cursors, inline stacks, checked arithmetic, format strings and allocation/I/O failures | [Integer expression calculator](../../docs/extended-expr-calc.md) |
+| `text_patch.lani` | `tests/extended_text_patch_execution.rs`, x86_64 Linux; minimal unified diffs, exact apply/check, byte preservation and allocation/file/I/O failures | [File comparison and patch application](../../docs/extended-text-patch.md) |
 
 Compile these applications with both `--stdlib-root stdlib` and `--source-root extended`.
 The library implementations are Lanius; the Rust test harness supplies inputs and

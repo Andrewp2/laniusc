@@ -1,0 +1,8 @@
+module app::main;
+import alloc::format;
+import alloc::string;
+import core::result;
+fn main() -> i32 {
+    let owner: alloc::string::String = core::result::unwrap(alloc::format::display(42 as i64,100));
+    owner.destroy(); return 0;
+}

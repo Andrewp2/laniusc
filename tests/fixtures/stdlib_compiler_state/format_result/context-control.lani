@@ -1,0 +1,82 @@
+module app::main;
+import alloc::format;
+import alloc::string;
+import alloc::vec;
+import core::format;
+import core::fmt;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+import std::process;
+struct Payload { number: i64 }
+pub impl core::fmt::Display<Payload> for Payload {
+    pub fn format(value: Payload, output: &core::fmt::Formatter) -> core::result::Result<i32,core::fmt::Error> { return output.write_signed(value.number,core::fmt::decimal()); }
+}
+fn failed(error: alloc::format::Error) -> bool {
+    return match (error) {
+        alloc::format::Error::Format(_) -> false,
+        alloc::format::Error::Display(_) -> false,
+        alloc::format::Error::AllocationFailed -> true,
+        alloc::format::Error::InvalidUtf8 -> false
+    };
+}
+fn text(value: str, length: i32) -> core::text::Text {
+    let bytes:[u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), length);
+    return core::text::from_utf8_unchecked(bytes, 0, length);
+}
+fn main() -> i32 {
+    let words:[i32; 1] =[0];
+    let pointer: ptr = core::mem::i32_array_data_ptr(words);
+    let mode:[u8] = core::mem::typed_slice_from_raw_parts(pointer, 4);
+    assert(std::process::arg_read(1, pointer, 1) == 1);
+    let args:[core::format::Argument; 1] =[core::format::Argument::Signed(42)];
+    let names:[core::format::Named; 0] =[];
+    let positional: core::slice::View<core::format::Argument> = core::result::unwrap(core::slice::view(args, 1));
+    let named: core::slice::View<core::format::Named> = core::result::unwrap(core::slice::view(names, 0));
+    if (mode[0] == 101) {
+        let result: alloc::vec::Vec<u8> = core::result::unwrap(alloc::format::format_bytes(text("", 0), positional, named, core::format::default_limits()));
+        assert(result.len() == 0 && result.capacity() == 0);
+        result.destroy();
+        return 0;
+    }
+    if (mode[0] == 120) {
+        let invalid: core::result::Result<alloc::vec::Vec<u8>,alloc::format::Error> = alloc::format::format_bytes(text("{", 1), positional, named, core::format::default_limits()); let rejected: bool = match (invalid) {Ok(_) -> false, Err(_) -> true}; assert(rejected);
+        return 0;
+    }
+    if (mode[0] == 98) {
+        let result: core::result::Result<alloc::vec::Vec<u8>,
+        alloc::format::Error> = alloc::format::format_bytes(text("{}", 2), positional, named, core::format::default_limits());
+        let success: bool = match (result) { Ok(_) -> true, Err(_) -> false };
+        if (success) {
+            let owner: alloc::vec::Vec<u8> = core::result::unwrap(result);
+            owner.destroy();
+            return 1;
+        }
+        let allocation_error: bool = match (result) {
+            Ok(_) -> false,
+            Err(error) -> failed(error)
+        };
+        assert(allocation_error);
+        return 0;
+    }
+    let result: core::result::Result<alloc::string::String,
+    alloc::format::Error> = core::result::Err(alloc::format::Error::AllocationFailed);
+    if (mode[0] == 100) {
+        result = alloc::format::display(Payload{number:42}, 100);
+    } else {
+        result = alloc::format::format(text("{}", 2), positional, named, core::format::default_limits());
+    }
+    let success: bool = match (result) { Ok(_) -> true, Err(_) -> false };
+        if (success) {
+        let owner: alloc::string::String = core::result::unwrap(result);
+        owner.destroy();
+        return 1;
+    }
+    let allocation_error: bool = match (result) {
+        Ok(_) -> false,
+        Err(error) -> failed(error)
+    };
+    assert(allocation_error);
+    return 0;
+}

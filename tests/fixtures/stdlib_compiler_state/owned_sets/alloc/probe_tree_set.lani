@@ -1,0 +1,20 @@
+module alloc::probe_tree_set;
+import alloc::tree_map;
+import core::cmp;
+import core::option;
+import core::result;
+struct Unit {}
+pub struct Set<T> { map: alloc::tree_map::TreeMap<T, Unit> }
+pub fn new<T>() -> Set<T> {
+    let map: alloc::tree_map::TreeMap<T, Unit> = alloc::tree_map::new();
+    return Set { map: map };
+}
+pub impl<T> Set<T> {
+    pub fn add(&self, value: T) -> bool where T: core::cmp::Ord<T> {
+        let unit: Unit = Unit {};
+        let result: core::result::Result<core::option::Option<alloc::tree_map::Entry<T, Unit>>, alloc::tree_map::Error> =
+            self.map.try_insert(value, unit);
+        return core::result::is_ok(result);
+    }
+    pub fn destroy(&self) { self.map.destroy(); }
+}

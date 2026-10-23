@@ -1,0 +1,86 @@
+module app::main;
+import core::vec;
+import core::slice;
+import core::mem;
+import core::result;
+import core::option;
+fn error_is(value: core::result::Result<i32, core::vec::Error>, full: bool) -> bool {
+    return match (value) {
+        core::result::Ok(_) -> false,
+        core::result::Err(error) -> match (error) {
+            core::vec::Error::Full -> full,
+            core::vec::Error::Bounds -> !full
+        }
+    };
+}
+fn main() -> i32 {
+    let v: core::vec::Vec<i32,
+    4> = core::vec::from_storage([91, 92, 93, 94]);
+    if (core::vec::len(v.borrow()) != 0 || core::vec::capacity(v.borrow()) != 4 || core::vec::is_full(v.borrow()) || !core::vec::is_empty(v.borrow()) || core::option::is_some(core::vec::pop(v.borrow())) || core::option::is_some(core::vec::first(v.borrow())) || core::option::is_some(core::vec::last(v.borrow()))) {
+        return 1;
+    }
+    if (!error_is(core::vec::try_insert(v.borrow(), -1, 5), false) || !error_is(core::vec::try_set(v.borrow(), 0, 5), false) || !error_is(core::vec::try_remove(v.borrow(), 0), false) || !error_is(core::vec::try_swap(v.borrow(), 0, 0), false) || !error_is(core::vec::truncate(v.borrow(), 1), false) || !error_is(core::vec::truncate(v.borrow(), -1), false)) {
+        return 2;
+    }
+    if (core::result::unwrap(core::vec::try_push(v.borrow(), 4)) != 1 || core::result::unwrap(core::vec::try_insert(v.borrow(), 0, 2)) != 2 || core::result::unwrap(core::vec::try_insert(v.borrow(), 1, 3)) != 3 || core::result::unwrap(core::vec::try_push(v.borrow(), 4)) != 4 || !core::vec::is_full(v.borrow())) {
+        return 3;
+    }
+    if (!error_is(core::vec::try_push(v.borrow(), 8), true) || !error_is(core::vec::try_insert(v.borrow(), 4, 8), true) || !error_is(core::vec::try_insert(v.borrow(), 5, 8), false) || !error_is(core::vec::try_set(v.borrow(), -1, 8), false) || !error_is(core::vec::try_swap(v.borrow(), 0, 4), false) || !error_is(core::vec::try_remove(v.borrow(), 4), false)) {
+        return 4;
+    }
+    if (core::vec::len(v.borrow()) != 4 || core::vec::get_or(v.borrow(), 0, 0) != 2 || core::vec::get_or(v.borrow(), 1, 0) != 3 || core::vec::get_or(v.borrow(), 2, 0) != 4 || core::vec::get_or(v.borrow(), 3, 0) != 4 || core::vec::get_or(v.borrow(), -1, 88) != 88 || core::option::is_some(core::vec::get(v.borrow(), 4))) {
+        return 5;
+    }
+    let copy: core::vec::Vec<i32,
+    4> = v;
+    if (core::result::unwrap(core::vec::try_set(copy.borrow(), 0, 9)) != 2 || core::vec::get_or(v.borrow(), 0, 0) != 2) {
+        return 6;
+    }
+    let owner: &core::vec::Vec<i32,
+    4> = v.borrow();
+    if (core::result::unwrap(core::vec::try_set(owner, 1, 1)) != 3 || core::vec::get_or(v.borrow(), 1, 0) != 1) {
+        return 7;
+    }
+    if (core::vec::reverse(v.borrow()) != 4 || core::vec::get_or(v.borrow(), 0, 0) != 4 || core::result::unwrap(core::vec::try_swap(v.borrow(), 0, 3)) != 4 || core::vec::get_or(v.borrow(), 0, 0) != 2) {
+        return 8;
+    }
+    if (core::vec::is_sorted(v.borrow()) || core::vec::sort(v.borrow()) != 4 || !core::vec::is_sorted(v.borrow()) || core::vec::get_or(v.borrow(), 0, 0) != 1 || core::vec::get_or(v.borrow(), 1, 0) != 2 || core::vec::get_or(v.borrow(), 2, 0) != 4 || core::vec::get_or(v.borrow(), 3, 0) != 4) {
+        return 9;
+    }
+    if (!core::vec::contains(v.borrow(), 2) || core::vec::contains(v.borrow(), 7) || core::option::unwrap(core::vec::position(v.borrow(), 4)) != 2 || core::option::is_some(core::vec::position(v.borrow(), 7)) || core::vec::lower_bound(v.borrow(), 4) != 2 || core::vec::upper_bound(v.borrow(), 4) != 4 || core::vec::lower_bound(v.borrow(), 0) != 0 || core::vec::upper_bound(v.borrow(), 8) != 4 || core::option::unwrap(core::vec::binary_search(v.borrow(), 4)) != 2 || core::option::is_some(core::vec::binary_search(v.borrow(), 3))) {
+        return 10;
+    }
+    let view: core::slice::View<i32> = core::vec::as_view(v.borrow());
+    if (core::mem::slice_stride(view.values) != core::mem::slice_stride(v.items) || view.len() != 4 || core::option::unwrap(view.get(1)) != 2 || core::option::is_some(view.get(4)) || core::result::unwrap(view.try_set(1, 3)) != 2 || core::vec::get_or(v.borrow(), 1, 0) != 3) {
+        return 11;
+    }
+    let cursor: core::slice::Iter<i32> = core::vec::iter(v.borrow());
+    let fork: core::slice::Iter<i32> = cursor;
+    if (cursor.remaining() != 4 || core::option::unwrap(cursor.next()) != 1 || core::option::unwrap(cursor.next_back()) != 4 || core::result::unwrap(cursor.advance(9)) != 2 || core::option::is_some(cursor.next()) || core::option::is_some(cursor.next_back()) || fork.remaining() != 4 || core::option::unwrap(fork.next()) != 1) {
+        return 12;
+    }
+    if (core::result::unwrap(core::vec::try_remove(v.borrow(), 1)) != 3 || core::vec::len(v.borrow()) != 3 || core::vec::get_or(v.borrow(), 1, 0) != 4 || core::option::unwrap(core::vec::pop(v.borrow())) != 4 || core::vec::len(v.borrow()) != 2) {
+        return 13;
+    }
+    if (core::result::unwrap(core::vec::truncate(v.borrow(), 2)) != 0 || core::result::unwrap(core::vec::truncate(v.borrow(), 1)) != 1 || core::vec::clear(v.borrow()) != 1 || core::vec::clear(v.borrow()) != 0 || core::vec::sort(v.borrow()) != 0 || !core::vec::is_sorted(v.borrow()) || core::vec::lower_bound(v.borrow(), 4) != 0 || core::vec::upper_bound(v.borrow(), 4) != 0 || core::option::is_some(core::vec::binary_search(v.borrow(), 4))) {
+        return 14;
+    }
+    let z: core::vec::Vec<i32,
+    0> = core::vec::from_storage([]);
+    if (!core::vec::is_full(z.borrow()) || !core::vec::is_empty(z.borrow()) || core::vec::capacity(z.borrow()) != 0 || !error_is(core::vec::try_push(z.borrow(), 1), true) || !error_is(core::vec::try_insert(z.borrow(), 0, 1), true) || !error_is(core::vec::try_insert(z.borrow(), 1, 1), false) || core::option::is_some(core::vec::pop(z.borrow())) || core::result::unwrap(core::vec::truncate(z.borrow(), 0)) != 0 || core::vec::reverse(z.borrow()) != 0) {
+        return 15;
+    }
+    let zv: core::slice::View<i32> = core::vec::as_view(z.borrow());
+    let zi: core::slice::Iter<i32> = core::vec::iter(z.borrow());
+    if (zv.len() != 0 || core::option::is_some(zi.next())) {
+        return 16;
+    }
+    let small: core::vec::Vec<u8,
+    2> = core::vec::from_array([255, 1]);
+    core::vec::sort(small.borrow());
+    let small_view: core::slice::View<u8> = core::vec::as_view(small.borrow());
+    if (core::option::unwrap(small_view.get(0)) != 1 || core::option::unwrap(small_view.get(1)) != 255) {
+        return 17;
+    }
+    return 0;
+}

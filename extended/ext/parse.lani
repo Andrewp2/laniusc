@@ -1,0 +1,243 @@
+// Allocation-free checked text cursor. Keep the counted backing alive and
+// unchanged; copies fork a cursor, while marks belong to the exact source view.
+module ext::parse;
+import core::decimal;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::utf8;
+
+pub enum ErrorKind { Bounds, InvalidUtf8, UnexpectedEnd, Expected, InvalidNumber, Overflow, ScanLimit, WorkLimit, ForeignCheckpoint }
+pub struct Location { offset: i32, line: i32, column: i32 }
+pub struct Error { kind: ErrorKind, location: Location }
+pub struct Limits { max_scan_bytes: i32, max_work: u64 }
+pub struct Span { start: Location, end: Location, text: core::text::Text }
+pub struct Checkpoint { data: ptr, stride: isize, source_start: i32, source_length: i32, at: Location, after_cr: bool }
+pub struct Cursor { source: core::text::Text, at: Location, after_cr: bool, limits: Limits, work_left: u64 }
+
+pub fn default_limits() -> Limits { return Limits { max_scan_bytes: 1048576, max_work: 16777216 }; }
+fn origin() -> Location { return Location { offset: 0, line: 1, column: 1 }; }
+fn error(kind: ErrorKind, at: Location) -> Error { return Error { kind: kind, location: at }; }
+fn valid_text(text: core::text::Text) -> bool { return text.start >= 0 && text.length >= 0 && text.start <= 2147483647-text.length; }
+fn digit(value: u32) -> bool { return value >= 48 && value <= 57; }
+pub fn is_identifier_start(value: u32) -> bool { return (value >= 65 && value <= 90) || (value >= 97 && value <= 122) || value == 95; }
+pub fn is_identifier_continue(value: u32) -> bool { return is_identifier_start(value) || digit(value); }
+pub fn is_whitespace(value: u32) -> bool { return value == 32 || (value >= 9 && value <= 13); }
+
+pub fn new(input: core::text::Text, limits: Limits) -> core::result::Result<Cursor, Error> {
+    if (!valid_text(input) || input.length == 2147483647 || limits.max_scan_bytes < 0) { return core::result::Err(error(ErrorKind::Bounds,origin())); }
+    let cursor: Cursor = Cursor { source: input, at: origin(), after_cr: false, limits: limits, work_left: limits.max_work };
+    // Validate even Text made using the unchecked constructor or a record literal.
+    // Validation is charged to the same lifetime work budget as token operations.
+    while (cursor.at.offset < input.length) {
+        let decoded: core::result::Result<core::option::Option<u32>,Error> = cursor.read_scalar();
+        if (core::result::is_err(decoded)) { return core::result::Err(core::result::unwrap_err(decoded)); }
+        cursor.advance(core::option::unwrap(core::result::unwrap(decoded)));
+    }
+    cursor.at = origin(); cursor.after_cr = false;
+    return core::result::Ok(cursor);
+}
+
+pub fn from_utf8_range(bytes: [u8], offset: i32, count: i32, limits: Limits) -> core::result::Result<Cursor,Error> {
+    return new(core::text::Text { bytes: bytes, start: offset, length: count },limits);
+}
+
+pub impl Span {
+    pub fn byte_len(&self) -> i32 { return self.end.offset-self.start.offset; }
+    pub fn bytes(&self) -> core::slice::View<u8> { return core::slice::View { values: self.text.bytes, start: self.text.start, length: self.text.length }; }
+}
+
+pub impl Cursor {
+    pub fn borrow(&self) -> &Cursor { return self; }
+    pub fn location(&self) -> Location { return self.at; }
+    pub fn position(&self) -> i32 { return self.at.offset; }
+    pub fn is_eof(&self) -> bool { return self.at.offset == self.source.length; }
+    pub fn remaining(&self) -> i32 { return self.source.length-self.at.offset; }
+    pub fn remaining_work(&self) -> u64 { return self.work_left; }
+    fn fork(&self) -> Cursor { return Cursor { source: self.source, at: self.at, after_cr: self.after_cr, limits: self.limits, work_left: self.work_left }; }
+    fn finish(&self, candidate: Cursor, success: bool) {
+        self.work_left = candidate.work_left;
+        if (success) { self.at = candidate.at; self.after_cr = candidate.after_cr; }
+    }
+    fn pay(&self, amount: u64) -> bool {
+        if (amount > self.work_left) { self.work_left = 0; return false; }
+        self.work_left -= amount; return true;
+    }
+    fn read_scalar(&self) -> core::result::Result<core::option::Option<u32>,Error> {
+        if (self.is_eof()) { return core::result::Ok(core::option::None()); }
+        if (!self.pay(1)) { return core::result::Err(error(ErrorKind::WorkLimit,self.at)); }
+        let first: u8 = core::option::unwrap(self.source.byte_at(self.at.offset));
+        let width: u32 = core::utf8::sequence_len_or(first,0);
+        if (width == 0 || (width as i32) > self.remaining()) { return core::result::Err(error(ErrorKind::InvalidUtf8,self.at)); }
+        if (!self.pay((width-1) as u64)) { return core::result::Err(error(ErrorKind::WorkLimit,self.at)); }
+        let second: u8 = 0; let third: u8 = 0; let fourth: u8 = 0;
+        if (width > 1) { second = core::option::unwrap(self.source.byte_at(self.at.offset+1)); }
+        if (width > 2) { third = core::option::unwrap(self.source.byte_at(self.at.offset+2)); }
+        if (width > 3) { fourth = core::option::unwrap(self.source.byte_at(self.at.offset+3)); }
+        let value: u32 = core::utf8::decode_or(first,second,third,fourth,width,4294967295);
+        if (value == 4294967295) { return core::result::Err(error(ErrorKind::InvalidUtf8,self.at)); }
+        return core::result::Ok(core::option::Some(value));
+    }
+    fn advance(&self, value: u32) {
+        self.at.offset += core::utf8::encoded_len_or(value,0) as i32;
+        if (value == 13) { self.at.line += 1; self.at.column = 1; }
+        else { if (value == 10) { if (!self.after_cr) { self.at.line += 1; } self.at.column = 1; } else { self.at.column += 1; } }
+        self.after_cr = value == 13;
+    }
+    fn span(&self, start: Location) -> Span {
+        return Span { start: start, end: self.at, text: core::text::Text { bytes: self.source.bytes, start: self.source.start+start.offset, length: self.at.offset-start.offset } };
+    }
+    fn within_scan(&self, start: Location, value: u32) -> bool {
+        return (core::utf8::encoded_len_or(value,0) as i32) <= self.limits.max_scan_bytes-(self.at.offset-start.offset);
+    }
+    pub fn checkpoint(&self) -> Checkpoint {
+        return Checkpoint { data: core::mem::i32_slice_data_ptr(self.source.bytes), stride: core::mem::slice_stride(self.source.bytes), source_start: self.source.start, source_length: self.source.length, at: self.at, after_cr: self.after_cr };
+    }
+    pub fn restore(&self, mark: Checkpoint) -> core::result::Result<i32,Error> {
+        if (mark.data != core::mem::i32_slice_data_ptr(self.source.bytes) || mark.stride != core::mem::slice_stride(self.source.bytes) || mark.source_start != self.source.start || mark.source_length != self.source.length) {
+            return core::result::Err(error(ErrorKind::ForeignCheckpoint,self.at));
+        }
+        if (mark.at.offset < 0 || mark.at.offset > self.source.length || mark.at.line < 1 || mark.at.column < 1 || !self.source.is_char_boundary(mark.at.offset)) { return core::result::Err(error(ErrorKind::Bounds,self.at)); }
+        self.at = mark.at; self.after_cr = mark.after_cr; return core::result::Ok(self.at.offset);
+    }
+    // Byte lookahead exposes the first UTF-8 byte at a scalar boundary.
+    // It never consumes work or input. Byte consumption requires ASCII.
+    pub fn peek_byte(&self) -> core::option::Option<u8> { return self.source.byte_at(self.at.offset); }
+    pub fn peek_scalar(&self) -> core::result::Result<core::option::Option<u32>,Error> { return self.read_scalar(); }
+    pub fn take_scalar(&self) -> core::result::Result<core::option::Option<u32>,Error> {
+        let result: core::result::Result<core::option::Option<u32>,Error> = self.read_scalar();
+        if (core::result::is_err(result)) { return result; }
+        let value: core::option::Option<u32> = core::result::unwrap(result);
+        if (core::option::is_some(value)) {
+            let scalar: u32 = core::option::unwrap(value);
+            if (!self.within_scan(self.at,scalar)) { return core::result::Err(error(ErrorKind::ScanLimit,self.at)); }
+            self.advance(scalar);
+        }
+        return result;
+    }
+    pub fn take_byte(&self, expected: u8) -> core::result::Result<Span,Error> {
+        if (expected > 127) { return core::result::Err(error(ErrorKind::Bounds,self.at)); }
+        let candidate: Cursor = self.fork(); let start: Location = self.at;
+        let result: core::result::Result<core::option::Option<u32>,Error> = candidate.take_scalar();
+        self.finish(candidate,false);
+        if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+        let value: core::option::Option<u32> = core::result::unwrap(result);
+        if (core::option::is_none(value)) { return core::result::Err(error(ErrorKind::UnexpectedEnd,start)); }
+        if (core::option::unwrap(value) != (expected as u32)) { return core::result::Err(error(ErrorKind::Expected,start)); }
+        self.finish(candidate,true); return core::result::Ok(candidate.span(start));
+    }
+    // Exact tag; empty tags succeed. Failure points at the first differing
+    // source scalar (or EOF) and leaves position unchanged.
+    pub fn tag(&self, expected: core::text::Text) -> core::result::Result<Span,Error> {
+        if (!valid_text(expected)) { return core::result::Err(error(ErrorKind::Bounds,self.at)); }
+        let candidate: Cursor = self.fork(); let start: Location = self.at; let index: i32 = 0;
+        while (index < expected.length) {
+            let at: Location = candidate.at;
+            let read: core::result::Result<core::option::Option<u32>,Error> = candidate.read_scalar();
+            self.finish(candidate,false);
+            if (core::result::is_err(read)) { return core::result::Err(core::result::unwrap_err(read)); }
+            let value: core::option::Option<u32> = core::result::unwrap(read);
+            if (core::option::is_none(value)) { return core::result::Err(error(ErrorKind::UnexpectedEnd,at)); }
+            let scalar: u32 = core::option::unwrap(value); let width: i32 = core::utf8::encoded_len_or(scalar,0) as i32;
+            if (!candidate.within_scan(start,scalar)) { return core::result::Err(error(ErrorKind::ScanLimit,at)); }
+            if (width > expected.length-index) { return core::result::Err(error(ErrorKind::Expected,at)); }
+            let part: i32 = 0;
+            while (part < width) {
+                if (!candidate.pay(1)) { self.finish(candidate,false); return core::result::Err(error(ErrorKind::WorkLimit,at)); }
+                if (core::option::unwrap(expected.byte_at(index+part)) != core::utf8::encoded_byte_or(scalar,part as u32,0)) { self.finish(candidate,false); return core::result::Err(error(ErrorKind::Expected,at)); }
+                part += 1;
+            }
+            candidate.advance(scalar); index += width;
+        }
+        self.finish(candidate,true); return core::result::Ok(candidate.span(start));
+    }
+    // Exactly count bytes, requiring the end to fall on a scalar boundary.
+    pub fn take_text(&self, count: i32) -> core::result::Result<Span,Error> {
+        if (count < 0) { return core::result::Err(error(ErrorKind::Bounds,self.at)); }
+        let candidate: Cursor = self.fork(); let start: Location = self.at;
+        while (candidate.at.offset-start.offset < count) {
+            let at: Location = candidate.at;
+            let read: core::result::Result<core::option::Option<u32>,Error> = candidate.read_scalar(); self.finish(candidate,false);
+            if (core::result::is_err(read)) { return core::result::Err(core::result::unwrap_err(read)); }
+            let value: core::option::Option<u32> = core::result::unwrap(read);
+            if (core::option::is_none(value)) { return core::result::Err(error(ErrorKind::UnexpectedEnd,at)); }
+            let scalar: u32 = core::option::unwrap(value); let width: i32 = core::utf8::encoded_len_or(scalar,0) as i32;
+            if (!candidate.within_scan(start,scalar)) { return core::result::Err(error(ErrorKind::ScanLimit,at)); }
+            if (width > count-(candidate.at.offset-start.offset)) { return core::result::Err(error(ErrorKind::Bounds,at)); }
+            candidate.advance(scalar);
+        }
+        self.finish(candidate,true); return core::result::Ok(candidate.span(start));
+    }
+    // Shared bounded maximal scanner. Modes are concrete public primitives,
+    // avoiding unsupported first-class predicates and parser closures.
+    fn scan(&self, mode: i32, delimiter: u32) -> core::result::Result<Span,Error> {
+        let candidate: Cursor = self.fork(); let start: Location = self.at;
+        while (!candidate.is_eof()) {
+            let at: Location = candidate.at;
+            let read: core::result::Result<core::option::Option<u32>,Error> = candidate.read_scalar(); self.finish(candidate,false);
+            if (core::result::is_err(read)) { return core::result::Err(core::result::unwrap_err(read)); }
+            let scalar: u32 = core::option::unwrap(core::result::unwrap(read)); let accept: bool = false;
+            if (mode == 0) { accept = is_whitespace(scalar); }
+            if (mode == 1) { if (at.offset == start.offset) { accept = is_identifier_start(scalar); } else { accept = is_identifier_continue(scalar); } }
+            if (mode == 2) { accept = digit(scalar); }
+            if (mode == 3) { accept = scalar != delimiter; }
+            if (!accept) { break; }
+            if (!candidate.within_scan(start,scalar)) { return core::result::Err(error(ErrorKind::ScanLimit,at)); }
+            candidate.advance(scalar);
+        }
+        if ((mode == 1 || mode == 2) && candidate.at.offset == start.offset) { if (candidate.is_eof()) { return core::result::Err(error(ErrorKind::UnexpectedEnd,start)); } return core::result::Err(error(ErrorKind::Expected,start)); }
+        self.finish(candidate,true); return core::result::Ok(candidate.span(start));
+    }
+    pub fn whitespace(&self) -> core::result::Result<Span,Error> { return self.scan(0,0); }
+    pub fn identifier(&self) -> core::result::Result<Span,Error> { return self.scan(1,0); }
+    pub fn digits(&self) -> core::result::Result<Span,Error> { return self.scan(2,0); }
+    // Stops before delimiter; EOF succeeds with the remaining text.
+    pub fn scan_until(&self, delimiter: u32) -> core::result::Result<Span,Error> {
+        if (!core::utf8::is_scalar(delimiter)) { return core::result::Err(error(ErrorKind::Bounds,self.at)); }
+        return self.scan(3,delimiter);
+    }
+    pub fn integer(&self) -> core::result::Result<Span,Error> { return self.number(false); }
+    pub fn decimal(&self) -> core::result::Result<Span,Error> { return self.number(true); }
+    fn number(&self, decimal: bool) -> core::result::Result<Span,Error> {
+        let candidate: Cursor = self.fork(); let start: Location = self.at;
+        let phase: i32 = 0; let count: i32 = 0; let allow_sign: bool = true;
+        while (!candidate.is_eof()) {
+            let at: Location = candidate.at;
+            let read: core::result::Result<core::option::Option<u32>,Error> = candidate.read_scalar(); self.finish(candidate,false);
+            if (core::result::is_err(read)) { return core::result::Err(core::result::unwrap_err(read)); }
+            let scalar: u32 = core::option::unwrap(core::result::unwrap(read)); let accepted: bool = false;
+            if (digit(scalar)) { accepted = true; count += 1; allow_sign = false; }
+            else {
+                if (allow_sign && (scalar == 43 || scalar == 45)) { accepted = true; allow_sign = false; }
+                else {
+                    if (decimal && phase == 0 && count > 0 && scalar == 46) { accepted = true; phase = 1; count = 0; }
+                    else { if (decimal && phase < 2 && count > 0 && (scalar == 101 || scalar == 69)) { accepted = true; phase = 2; count = 0; allow_sign = true; } }
+                }
+            }
+            if (!accepted) { break; }
+            if (!candidate.within_scan(start,scalar)) { return core::result::Err(error(ErrorKind::ScanLimit,at)); }
+            candidate.advance(scalar);
+        }
+        if (count == 0) { return core::result::Err(error(ErrorKind::InvalidNumber,candidate.at)); }
+        self.finish(candidate,true); return core::result::Ok(candidate.span(start));
+    }
+    // Exact checked conversion of the maximal integer lexeme. The core parser
+    // supplies the offset of its first overflowing digit; no floating rounding.
+    pub fn integer_i64(&self) -> core::result::Result<i64,Error> {
+        let candidate: Cursor = self.fork(); let start: Location = self.at;
+        let token: core::result::Result<Span,Error> = candidate.integer(); self.finish(candidate,false);
+        if (core::result::is_err(token)) { return core::result::Err(core::result::unwrap_err(token)); }
+        let span: Span = core::result::unwrap(token);
+        if (!candidate.pay(span.byte_len() as u64)) { self.finish(candidate,false); return core::result::Err(error(ErrorKind::WorkLimit,start)); }
+        let converted: core::result::Result<i64,core::decimal::ParseError> = span.text.parse_i64();
+        self.finish(candidate,false);
+        if (core::result::is_err(converted)) {
+            let failure: core::decimal::ParseError = core::result::unwrap_err(converted);
+            let at: Location = Location { offset: start.offset+failure.offset, line: start.line, column: start.column+failure.offset };
+            return core::result::Err(error(ErrorKind::Overflow,at));
+        }
+        self.finish(candidate,true); return core::result::Ok(core::result::unwrap(converted));
+    }
+}
