@@ -1,0 +1,9 @@
+module app::main;
+import alloc::binary_heap;
+import core::result;
+fn main() -> i32 {
+    let heap: alloc::binary_heap::BinaryHeap<i32> = alloc::binary_heap::new(alloc::binary_heap::Order::Min);
+    core::result::unwrap(heap.try_push(7));
+    let length: i32 = heap.len(); heap.destroy();
+    if (length != 1) { return 1; } return 0;
+}

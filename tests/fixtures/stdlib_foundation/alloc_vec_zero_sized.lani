@@ -1,0 +1,23 @@
+module app::main;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::slice;
+struct Unit {}
+fn main() -> i32 {
+    let values: alloc::vec::Vec<Unit> = alloc::vec::new();
+    if (core::result::unwrap(values.try_reserve(2147483647)) != 2147483647) { return 1; }
+    core::result::unwrap(values.try_resize(65, Unit {}));
+    if (core::result::is_ok(values.try_reserve(2147483647))) { return 2; }
+    let before: core::slice::View<Unit> = values.as_view(); core::result::unwrap(values.try_extend(before));
+    core::result::unwrap(values.set(1, Unit {})); core::result::unwrap(values.try_insert(0, Unit {}));
+    core::result::unwrap(values.remove(1)); core::result::unwrap(values.swap_remove(0));
+    if (values.len() != 129 || core::result::unwrap(values.try_shrink_to_fit()) != 2147483647) { return 3; }
+    let copied: core::result::Result<alloc::vec::Vec<Unit>, alloc::vec::Error> = values.try_clone();
+    let copy: alloc::vec::Vec<Unit> = core::result::unwrap(copied);
+    if (copy.len() != 129) { return 4; } copy.destroy();
+    let index: i32 = 0;
+    while (index < 129) { if (core::option::is_none(values.pop())) { return 5; } index += 1; }
+    if (core::option::is_some(values.pop())) { return 6; }
+    values.clear(); values.destroy(); values.destroy(); return 0;
+}

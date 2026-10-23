@@ -1,0 +1,20 @@
+module app::main;
+import alloc::vec;
+import core::result;
+import core::slice;
+pub struct Wrapper<T> { items: alloc::vec::Vec<T> }
+pub impl<T> Wrapper<T> {
+    pub fn extend(&self, values: core::slice::View<T>) -> core::result::Result<i32, alloc::vec::Error> {
+        return self.items.try_extend(values);
+    }
+}
+fn main() -> i32 {
+    let items: alloc::vec::Vec<i32> = alloc::vec::new();
+    core::result::unwrap(items.try_push(7));
+    let wrapper: Wrapper<i32> = Wrapper { items: items };
+    let view: core::slice::View<i32> = items.as_view();
+    core::result::unwrap(wrapper.extend(view));
+    let correct: bool = wrapper.items.len() == 2 && wrapper.items.at(0) == 7 && wrapper.items.at(1) == 7;
+    wrapper.items.destroy();
+    if (!correct) { return 1; } return 0;
+}

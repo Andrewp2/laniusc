@@ -8,7 +8,7 @@ import core::option;
 import core::result;
 import core::utf8;
 import core::text;
-import std::vec;
+import alloc::vec;
 
 pub struct Options {
     allow_lf: bool,
@@ -32,8 +32,8 @@ pub enum Error {
     Bounds, NoRecord, Finished,
 }
 struct Span { start: i32, length: i32 }
-pub struct Record { bytes: std::vec::Vec<u8>, fields: std::vec::Vec<Span> }
-pub struct Table { rows: std::vec::Vec<Record> }
+pub struct Record { bytes: alloc::vec::Vec<u8>, fields: alloc::vec::Vec<Span> }
+pub struct Table { rows: alloc::vec::Vec<Record> }
 pub struct Progress { consumed: i32, record: bool }
 pub struct Decoder {
     current: Record, options: Options, failure: core::option::Option<Error>,
@@ -44,8 +44,8 @@ pub struct Decoder {
     first: u8, second: u8, third: u8,
 }
 fn empty_record() -> Record {
-    let bytes: std::vec::Vec<u8> = std::vec::new();
-    let fields: std::vec::Vec<Span> = std::vec::new();
+    let bytes: alloc::vec::Vec<u8> = alloc::vec::new();
+    let fields: alloc::vec::Vec<Span> = alloc::vec::new();
     return Record { bytes: bytes, fields: fields };
 }
 fn string_error(error: alloc::string::Error) -> Error {
@@ -59,14 +59,14 @@ fn string_error(error: alloc::string::Error) -> Error {
     return converted;
 }
 pub impl Record {
-    pub fn field_count(&self) -> i32 { return std::vec::len(self.fields); }
-    pub fn byte_len(&self) -> i32 { return std::vec::len(self.bytes); }
-    pub fn byte_capacity(&self) -> i32 { return std::vec::capacity(self.bytes); }
-    pub fn field_capacity(&self) -> i32 { return std::vec::capacity(self.fields); }
+    pub fn field_count(&self) -> i32 { return self.fields.len(); }
+    pub fn byte_len(&self) -> i32 { return self.bytes.len(); }
+    pub fn byte_capacity(&self) -> i32 { return self.bytes.capacity(); }
+    pub fn field_capacity(&self) -> i32 { return self.fields.capacity(); }
     pub fn field(&self, index: i32) -> core::result::Result<core::text::Text, Error> {
-        if (index < 0 || index >= std::vec::len(self.fields)) { return core::result::Err(Error::Bounds); }
-        let span: Span = std::vec::at(self.fields, index);
-        return core::result::Ok(core::text::from_utf8_unchecked(std::vec::as_slice(self.bytes), span.start, span.length));
+        if (index < 0 || index >= self.fields.len()) { return core::result::Err(Error::Bounds); }
+        let span: Span = self.fields.at(index);
+        return core::result::Ok(core::text::from_utf8_unchecked(self.bytes.as_slice(), span.start, span.length));
     }
     pub fn try_field(&self, index: i32) -> core::result::Result<alloc::string::String, Error> {
         let view: core::result::Result<core::text::Text, Error> = self.field(index);
@@ -76,12 +76,12 @@ pub impl Record {
         return core::result::Ok(core::result::unwrap(copied));
     }
     pub fn clear(&self) {
-        self.bytes = std::vec::clear(self.bytes);
-        self.fields = std::vec::clear(self.fields);
+        self.bytes.clear();
+        self.fields.clear();
     }
     pub fn destroy(&self) {
-        std::vec::destroy(self.bytes); std::vec::destroy(self.fields);
-        self.bytes = std::vec::new(); self.fields = std::vec::new();
+        self.bytes.destroy(); self.fields.destroy();
+        self.bytes = alloc::vec::new(); self.fields = alloc::vec::new();
     }
 }
 
@@ -124,26 +124,24 @@ pub impl Decoder {
         return false;
     }
     fn push_byte(&self, byte: u8) -> bool {
-        let before: i32 = std::vec::len(self.current.bytes);
+        let before: i32 = self.current.bytes.len();
         if (before - self.field_start >= self.options.max_field_bytes || before >= self.options.max_record_bytes) {
             return self.fail(Error::LimitExceeded(self.offset));
         }
-        self.current.bytes = std::vec::try_push(self.current.bytes, byte);
-        if (std::vec::len(self.current.bytes) == before) { return self.fail(Error::AllocationFailed); }
+        if (core::result::is_err(self.current.bytes.try_push(byte))) { return self.fail(Error::AllocationFailed); }
         return true;
     }
     fn finish_field(&self, at: u64) -> bool {
-        let before: i32 = std::vec::len(self.current.fields);
+        let before: i32 = self.current.fields.len();
         if (before >= self.options.max_fields) { return self.fail(Error::LimitExceeded(at)); }
-        let end: i32 = std::vec::len(self.current.bytes);
+        let end: i32 = self.current.bytes.len();
         let span: Span = Span { start: self.field_start, length: end - self.field_start };
-        self.current.fields = std::vec::try_push(self.current.fields, span);
-        if (std::vec::len(self.current.fields) == before) { return self.fail(Error::AllocationFailed); }
+        if (core::result::is_err(self.current.fields.try_push(span))) { return self.fail(Error::AllocationFailed); }
         self.field_start = end;
         return true;
     }
     fn finish_row(&self, at: u64) -> bool {
-        let count: i32 = std::vec::len(self.current.fields);
+        let count: i32 = self.current.fields.len();
         if (self.records >= self.options.max_records) { return self.fail(Error::LimitExceeded(at)); }
         if (self.records > 0 && self.options.require_same_width && count != self.width) {
             return self.fail(Error::UnequalFields(self.records));
@@ -266,35 +264,33 @@ pub impl Decoder {
 }
 
 pub impl Table {
-    pub fn row_count(&self) -> i32 { return std::vec::len(self.rows); }
+    pub fn row_count(&self) -> i32 { return self.rows.len(); }
     pub fn field_count(&self, index: i32) -> core::option::Option<i32> {
-        if (index < 0 || index >= std::vec::len(self.rows)) { return core::option::None(); }
-        let row: Record = std::vec::at(self.rows, index);
+        if (index < 0 || index >= self.rows.len()) { return core::option::None(); }
+        let row: Record = self.rows.at(index);
         return core::option::Some(row.field_count());
     }
     pub fn field(&self, row_index: i32, field_index: i32) -> core::result::Result<core::text::Text, Error> {
-        if (row_index < 0 || row_index >= std::vec::len(self.rows)) { return core::result::Err(Error::Bounds); }
-        let row: Record = std::vec::at(self.rows, row_index);
+        if (row_index < 0 || row_index >= self.rows.len()) { return core::result::Err(Error::Bounds); }
+        let row: Record = self.rows.at(row_index);
         return row.field(field_index);
     }
     pub fn try_field(&self, row_index: i32, field_index: i32) -> core::result::Result<alloc::string::String, Error> {
-        if (row_index < 0 || row_index >= std::vec::len(self.rows)) { return core::result::Err(Error::Bounds); }
-        let row: Record = std::vec::at(self.rows, row_index);
+        if (row_index < 0 || row_index >= self.rows.len()) { return core::result::Err(Error::Bounds); }
+        let row: Record = self.rows.at(row_index);
         return row.try_field(field_index);
     }
     fn collect(&self, decoder: &Decoder) -> bool {
         let row: Record = core::option::unwrap(decoder.take_record());
-        let before: i32 = std::vec::len(self.rows);
-        self.rows = std::vec::try_push(self.rows, row);
-        if (std::vec::len(self.rows) == before) { row.destroy(); return false; }
+        if (core::result::is_err(self.rows.try_push(row))) { row.destroy(); return false; }
         return true;
     }
     pub fn destroy(&self) {
         let index: i32 = 0;
-        while (index < std::vec::len(self.rows)) {
-            let row: Record = std::vec::at(self.rows, index); row.destroy(); index += 1;
+        while (index < self.rows.len()) {
+            let row: Record = self.rows.at(index); row.destroy(); index += 1;
         }
-        std::vec::destroy(self.rows); self.rows = std::vec::new();
+        self.rows.destroy(); self.rows = alloc::vec::new();
     }
 }
 fn parse_failed(table: Table, decoder: Decoder, error: Error) -> core::result::Result<Table, Error> {
@@ -307,7 +303,7 @@ pub fn parse_bytes(source: [u8], offset: i32, count: i32, options: Options) -> c
     let made: core::result::Result<Decoder, Error> = decoder(options);
     if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
     let parser: Decoder = core::result::unwrap(made);
-    let rows: std::vec::Vec<Record> = std::vec::new();
+    let rows: alloc::vec::Vec<Record> = alloc::vec::new();
     let table: Table = Table { rows: rows };
     let index: i32 = 0;
     while (index < count) {
@@ -362,8 +358,8 @@ pub fn encode_record(record: Record) -> core::result::Result<alloc::string::Stri
 pub fn encode(table: Table) -> core::result::Result<alloc::string::String, Error> {
     let writer: Encoder = Encoder { output: alloc::string::new(), error: Error::AllocationFailed };
     let index: i32 = 0;
-    while (index < std::vec::len(table.rows)) {
-        if (!writer.record(std::vec::at(table.rows, index))) { writer.output.destroy(); return core::result::Err(writer.error); }
+    while (index < table.rows.len()) {
+        if (!writer.record(table.rows.at(index))) { writer.output.destroy(); return core::result::Err(writer.error); }
         index += 1;
     }
     return core::result::Ok(writer.output);

@@ -11,7 +11,7 @@ import core::text;
 import std::io;
 import std::io_decimal;
 import std::stream;
-import std::vec;
+import alloc::vec;
 
 fn report(view: core::slice::View<i32>, width: i32) -> i32 {
     if (std::io::write_text(1, "start,min,max,sum\n") != 18) { return 3; }
@@ -48,21 +48,19 @@ fn analyze(text: core::text::Text) -> i32 {
     if (core::result::is_err(parsed_width)) { return 2; }
     let width: i32 = core::result::unwrap(parsed_width);
     if (width <= 0 || width > 4096) { return 2; }
-    let samples: std::vec::Vec<i32> = std::vec::new();
+    let samples: alloc::vec::Vec<i32> = alloc::vec::new();
     let next: core::option::Option<core::text::Text> = lines.next();
     while (core::option::is_some(next)) {
         let line: core::text::Text = core::option::unwrap(next);
         next = lines.next();
         if (line.is_empty() && core::option::is_none(next)) { break; }
         let parsed: core::result::Result<i32, core::decimal::ParseError> = line.trim_ascii().parse_i32();
-        if (core::result::is_err(parsed) || std::vec::len(samples) == 4096) { std::vec::destroy(samples); return 2; }
-        let before: i32 = std::vec::len(samples);
-        samples = std::vec::try_push(samples, core::result::unwrap(parsed));
-        if (std::vec::len(samples) == before) { std::vec::destroy(samples); return 4; }
+        if (core::result::is_err(parsed) || samples.len() == 4096) { samples.destroy(); return 2; }
+        if (core::result::is_err(samples.try_push(core::result::unwrap(parsed)))) { samples.destroy(); return 4; }
     }
-    let view: core::slice::View<i32> = core::result::unwrap(core::slice::view(std::vec::as_slice(samples), std::vec::len(samples)));
+    let view: core::slice::View<i32> = core::result::unwrap(core::slice::view(samples.as_slice(), samples.len()));
     let status: i32 = report(view, width);
-    std::vec::destroy(samples); return status;
+    samples.destroy(); return status;
 }
 fn run() -> i32 {
     let input: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(1048576));

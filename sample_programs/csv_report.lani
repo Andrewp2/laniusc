@@ -16,16 +16,16 @@ import ext::json;
 import std::io;
 import std::io_decimal;
 import std::stream;
-import std::vec;
+import alloc::vec;
 
 struct Group { name: alloc::string::String, total: i32, count: i32 }
 struct Report {
-    groups: std::vec::Vec<Group>,
+    groups: alloc::vec::Vec<Group>,
     // Keys borrow the independently allocated names owned by groups.
     index: alloc::hash_map::HashMap<core::text::Text, i32>,
 }
 fn new_report() -> Report {
-    let groups: std::vec::Vec<Group> = std::vec::new();
+    let groups: alloc::vec::Vec<Group> = alloc::vec::new();
     let index: alloc::hash_map::HashMap<core::text::Text, i32> = alloc::hash_map::new();
     return Report { groups: groups, index: index };
 }
@@ -56,26 +56,25 @@ impl Report {
     fn add(&self, name: core::text::Text, value: i32) -> i32 {
         let ordinal: i32 = core::option::unwrap_or(self.index.get(name), -1);
         if (ordinal >= 0) {
-            let group: Group = std::vec::at(self.groups, ordinal);
+            let group: Group = self.groups.at(ordinal);
             let total: core::option::Option<i32> = core::i32::checked_add(group.total, value);
             let count: core::option::Option<i32> = core::i32::checked_add(group.count, 1);
             if (core::option::is_none(total) || core::option::is_none(count)) { return 2; }
             group.total = core::option::unwrap_or(total, 0);
             group.count = core::option::unwrap_or(count, 0);
-            self.groups = std::vec::try_set(self.groups, ordinal, group);
+            core::result::unwrap(self.groups.set(ordinal, group));
             return 0;
         }
         let copied: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_text(name);
         if (core::result::is_err(copied)) { return string_error(core::result::unwrap_err(copied)); }
         let owned: alloc::string::String = core::result::unwrap(copied);
-        let before: i32 = std::vec::len(self.groups);
+        let before: i32 = self.groups.len();
         let group: Group = Group { name: owned, total: value, count: 1 };
-        self.groups = std::vec::try_push(self.groups, group);
-        if (std::vec::len(self.groups) == before) { owned.destroy(); return 4; }
+        if (core::result::is_err(self.groups.try_push(group))) { owned.destroy(); return 4; }
         let inserted: core::result::Result<core::option::Option<alloc::hash_map::Entry<core::text::Text, i32>>, alloc::hash_map::Error> =
             self.index.try_insert(owned.as_text(), before);
         if (core::result::is_err(inserted)) {
-            self.groups = std::vec::try_pop(self.groups);
+            self.groups.pop();
             owned.destroy();
             return 4;
         }
@@ -101,13 +100,13 @@ impl Report {
     fn destroy(&self) {
         self.index.destroy();
         let ordinal: i32 = 0;
-        while (ordinal < std::vec::len(self.groups)) {
-            let group: Group = std::vec::at(self.groups, ordinal);
+        while (ordinal < self.groups.len()) {
+            let group: Group = self.groups.at(ordinal);
             group.name.destroy();
             ordinal += 1;
         }
-        std::vec::destroy(self.groups);
-        self.groups = std::vec::new();
+        self.groups.destroy();
+        self.groups = alloc::vec::new();
     }
 }
 
@@ -121,11 +120,11 @@ fn check_header(parser: &ext::csv::Decoder) -> i32 {
     return 0;
 }
 
-fn append_groups(document: &ext::json::Document, root: i32, groups: std::vec::Vec<Group>,
+fn append_groups(document: &ext::json::Document, root: i32, groups: alloc::vec::Vec<Group>,
     group_key: alloc::string::String, total_key: alloc::string::String, count_key: alloc::string::String) -> i32 {
     let ordinal: i32 = 0;
-    while (ordinal < std::vec::len(groups)) {
-        let group: Group = std::vec::at(groups, ordinal);
+    while (ordinal < groups.len()) {
+        let group: Group = groups.at(ordinal);
         let added: core::result::Result<i32, ext::json::Error> = document.add_object(ext::json::At::Element(root));
         if (core::result::is_err(added)) { return json_error(core::result::unwrap_err(added)); }
         let object: i32 = core::result::unwrap(added);
@@ -139,7 +138,7 @@ fn append_groups(document: &ext::json::Document, root: i32, groups: std::vec::Ve
     }
     return 0;
 }
-fn document_for(groups: std::vec::Vec<Group>, group_key: alloc::string::String,
+fn document_for(groups: alloc::vec::Vec<Group>, group_key: alloc::string::String,
     total_key: alloc::string::String, count_key: alloc::string::String) -> core::result::Result<alloc::string::String, i32> {
     let document: ext::json::Document = ext::json::new();
     let root: core::result::Result<i32, ext::json::Error> = document.add_array(ext::json::At::Root);
@@ -151,7 +150,7 @@ fn document_for(groups: std::vec::Vec<Group>, group_key: alloc::string::String,
     if (core::result::is_err(encoded)) { return core::result::Err(json_error(core::result::unwrap_err(encoded))); }
     return core::result::Ok(core::result::unwrap(encoded));
 }
-fn encode(groups: std::vec::Vec<Group>) -> core::result::Result<alloc::string::String, i32> {
+fn encode(groups: alloc::vec::Vec<Group>) -> core::result::Result<alloc::string::String, i32> {
     let a: [u8; 5] = [103, 114, 111, 117, 112];
     let b: [u8; 5] = [116, 111, 116, 97, 108];
     let c: [u8; 5] = [99, 111, 117, 110, 116];

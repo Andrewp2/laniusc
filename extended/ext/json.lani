@@ -6,7 +6,7 @@ import core::decimal;
 import core::option;
 import core::result;
 import core::utf8;
-import std::vec;
+import alloc::vec;
 
 pub type NodeId = i32;
 pub enum Kind { Null, Boolean, Number, Text, Array, Object }
@@ -44,15 +44,15 @@ struct Node {
     kind: Kind, flag: bool, text: alloc::string::String, key: alloc::string::String,
     parent: NodeId, first: NodeId, last: NodeId, next: NodeId, count: i32, depth: i32,
 }
-pub struct Document { nodes: std::vec::Vec<Node>, options: Options }
+pub struct Document { nodes: alloc::vec::Vec<Node>, options: Options }
 
 pub fn new() -> Document {
-    let nodes: std::vec::Vec<Node> = std::vec::new();
+    let nodes: alloc::vec::Vec<Node> = alloc::vec::new();
     return Document { nodes: nodes, options: default_options() };
 }
 pub fn with_options(options: Options) -> core::result::Result<Document, Error> {
     if (!valid_options(options)) { return core::result::Err(error(ErrorKind::InvalidOptions, -1)); }
-    let nodes: std::vec::Vec<Node> = std::vec::new();
+    let nodes: alloc::vec::Vec<Node> = alloc::vec::new();
     return core::result::Ok(Document { nodes: nodes, options: options });
 }
 
@@ -70,55 +70,55 @@ fn destination(at: At) -> Destination {
 pub impl Document {
     // Pass the actual owner to a helper that may add nodes and grow storage.
     pub fn borrow(&self) -> &Document { return self; }
-    pub fn node_count(&self) -> i32 { return std::vec::len(self.nodes); }
+    pub fn node_count(&self) -> i32 { return self.nodes.len(); }
     pub fn root(&self) -> core::option::Option<NodeId> {
-        if (std::vec::is_empty(self.nodes)) { return core::option::None(); }
+        if (self.nodes.is_empty()) { return core::option::None(); }
         return core::option::Some(0);
     }
-    fn valid(&self, id: NodeId) -> bool { return id >= 0 && id < std::vec::len(self.nodes); }
+    fn valid(&self, id: NodeId) -> bool { return id >= 0 && id < self.nodes.len(); }
     pub fn kind(&self, id: NodeId) -> core::result::Result<Kind, Error> {
         if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds, -1)); }
-        let node: Node = std::vec::at(self.nodes, id);
+        let node: Node = self.nodes.at(id);
         return core::result::Ok(node.kind);
     }
     pub fn child_count(&self, id: NodeId) -> core::result::Result<i32, Error> {
         if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds, -1)); }
-        let node: Node = std::vec::at(self.nodes, id);
+        let node: Node = self.nodes.at(id);
         if (tag(node.kind) < 4) { return core::result::Err(error(ErrorKind::WrongKind, -1)); }
         return core::result::Ok(node.count);
     }
     pub fn first_child(&self, id: NodeId) -> core::result::Result<core::option::Option<NodeId>, Error> {
         if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds, -1)); }
-        let node: Node = std::vec::at(self.nodes, id);
+        let node: Node = self.nodes.at(id);
         if (tag(node.kind) < 4) { return core::result::Err(error(ErrorKind::WrongKind, -1)); }
         if (node.first < 0) { return core::result::Ok(core::option::None()); }
         return core::result::Ok(core::option::Some(node.first));
     }
     pub fn next_sibling(&self, id: NodeId) -> core::result::Result<core::option::Option<NodeId>, Error> {
         if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds, -1)); }
-        let node: Node = std::vec::at(self.nodes, id);
+        let node: Node = self.nodes.at(id);
         if (node.next < 0) { return core::result::Ok(core::option::None()); }
         return core::result::Ok(core::option::Some(node.next));
     }
     pub fn element(&self, id: NodeId, index: i32) -> core::result::Result<core::option::Option<NodeId>, Error> {
         if (!self.valid(id) || index < 0) { return core::result::Err(error(ErrorKind::Bounds, -1)); }
-        let node: Node = std::vec::at(self.nodes, id);
+        let node: Node = self.nodes.at(id);
         if (tag(node.kind) != 4) { return core::result::Err(error(ErrorKind::WrongKind, -1)); }
         if (index >= node.count) { return core::result::Ok(core::option::None()); }
         let child: NodeId = node.first;
         let ordinal: i32 = 0;
-        while (ordinal < index) { let current: Node = std::vec::at(self.nodes, child); child = current.next; ordinal += 1; }
+        while (ordinal < index) { let current: Node = self.nodes.at(child); child = current.next; ordinal += 1; }
         return core::result::Ok(core::option::Some(child));
     }
     // Last matching member wins for lookup; ordered traversal retains all keys.
     pub fn member(&self, id: NodeId, key: alloc::string::String) -> core::result::Result<core::option::Option<NodeId>, Error> {
         if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds, -1)); }
-        let node: Node = std::vec::at(self.nodes, id);
+        let node: Node = self.nodes.at(id);
         if (tag(node.kind) != 5) { return core::result::Err(error(ErrorKind::WrongKind, -1)); }
         let found: NodeId = -1;
         let child: NodeId = node.first;
         while (child >= 0) {
-            let current: Node = std::vec::at(self.nodes, child);
+            let current: Node = self.nodes.at(child);
             if (current.key.equals(key)) { found = child; }
             child = current.next;
         }
@@ -127,13 +127,13 @@ pub impl Document {
     }
     pub fn boolean(&self, id: NodeId) -> core::result::Result<bool, Error> {
         if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds, -1)); }
-        let node: Node = std::vec::at(self.nodes, id);
+        let node: Node = self.nodes.at(id);
         if (tag(node.kind) != 1) { return core::result::Err(error(ErrorKind::WrongKind, -1)); }
         return core::result::Ok(node.flag);
     }
     fn copied_text(&self, id: NodeId, wanted: i32) -> core::result::Result<alloc::string::String, Error> {
         if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds, -1)); }
-        let node: Node = std::vec::at(self.nodes, id);
+        let node: Node = self.nodes.at(id);
         if (tag(node.kind) != wanted) { return core::result::Err(error(ErrorKind::WrongKind, -1)); }
         let cloned: core::result::Result<alloc::string::String, alloc::string::Error> = node.text.try_clone();
         if (core::result::is_err(cloned)) { return core::result::Err(error(ErrorKind::AllocationFailed, -1)); }
@@ -143,9 +143,9 @@ pub impl Document {
     pub fn copy_number(&self, id: NodeId) -> core::result::Result<alloc::string::String, Error> { return self.copied_text(id, 2); }
     pub fn copy_key(&self, id: NodeId) -> core::result::Result<alloc::string::String, Error> {
         if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds, -1)); }
-        let node: Node = std::vec::at(self.nodes, id);
+        let node: Node = self.nodes.at(id);
         if (node.parent < 0) { return core::result::Err(error(ErrorKind::WrongKind, -1)); }
-        let parent: Node = std::vec::at(self.nodes, node.parent);
+        let parent: Node = self.nodes.at(node.parent);
         if (tag(parent.kind) != 5) { return core::result::Err(error(ErrorKind::WrongKind, -1)); }
         let cloned: core::result::Result<alloc::string::String, alloc::string::Error> = node.key.try_clone();
         if (core::result::is_err(cloned)) { return core::result::Err(error(ErrorKind::AllocationFailed, -1)); }
@@ -155,10 +155,10 @@ pub impl Document {
     fn validate_destination(&self, at: Destination, kind: Kind, offset: i32) -> core::result::Result<i32, Error> {
         let depth: i32 = 0;
         if (at.root) {
-            if (at.member || !std::vec::is_empty(self.nodes)) { return core::result::Err(error(ErrorKind::InvalidPlacement, offset)); }
+            if (at.member || !self.nodes.is_empty()) { return core::result::Err(error(ErrorKind::InvalidPlacement, offset)); }
         } else {
             if (!self.valid(at.parent)) { return core::result::Err(error(ErrorKind::Bounds, offset)); }
-            let parent: Node = std::vec::at(self.nodes, at.parent);
+            let parent: Node = self.nodes.at(at.parent);
             if (at.member) {
                 if (tag(parent.kind) != 5) { return core::result::Err(error(ErrorKind::InvalidPlacement, offset)); }
                 if (at.key.byte_len() > self.options.max_string_bytes) { return core::result::Err(error(ErrorKind::StringLimit, offset)); }
@@ -175,7 +175,7 @@ pub impl Document {
             if (depth >= self.options.max_depth) { return core::result::Err(error(ErrorKind::DepthLimit, offset)); }
             depth += 1;
         }
-        if (std::vec::len(self.nodes) >= self.options.max_nodes) { return core::result::Err(error(ErrorKind::NodeLimit, offset)); }
+        if (self.nodes.len() >= self.options.max_nodes) { return core::result::Err(error(ErrorKind::NodeLimit, offset)); }
         return core::result::Ok(depth);
     }
 
@@ -187,26 +187,25 @@ pub impl Document {
             at.key.destroy(); text.destroy();
             return core::result::Err(core::result::unwrap_err(checked));
         }
-        let id: NodeId = std::vec::len(self.nodes);
+        let id: NodeId = self.nodes.len();
         let node: Node = Node {
             kind: kind, flag: flag, text: text, key: at.key, parent: at.parent,
             first: -1, last: -1, next: -1, count: 0, depth: core::result::unwrap(checked),
         };
-        self.nodes = std::vec::try_push(self.nodes, node);
-        if (std::vec::len(self.nodes) == id) {
+        if (core::result::is_err(self.nodes.try_push(node))) {
             at.key.destroy(); text.destroy();
             return core::result::Err(error(ErrorKind::AllocationFailed, offset));
         }
         if (at.parent >= 0) {
-            let parent: Node = std::vec::at(self.nodes, at.parent);
+            let parent: Node = self.nodes.at(at.parent);
             if (parent.last >= 0) {
-                let last: Node = std::vec::at(self.nodes, parent.last);
+                let last: Node = self.nodes.at(parent.last);
                 last.next = id;
-                self.nodes = std::vec::try_set(self.nodes, parent.last, last);
+                core::result::unwrap(self.nodes.set(parent.last, last));
             } else { parent.first = id; }
             parent.last = id;
             parent.count += 1;
-            self.nodes = std::vec::try_set(self.nodes, at.parent, parent);
+            core::result::unwrap(self.nodes.set(at.parent, parent));
         }
         return core::result::Ok(id);
     }
@@ -254,12 +253,12 @@ pub impl Document {
     }
     pub fn destroy(&self) {
         let index: i32 = 0;
-        while (index < std::vec::len(self.nodes)) {
-            let node: Node = std::vec::at(self.nodes, index);
+        while (index < self.nodes.len()) {
+            let node: Node = self.nodes.at(index);
             node.key.destroy(); node.text.destroy(); index += 1;
         }
-        std::vec::destroy(self.nodes);
-        self.nodes = std::vec::new();
+        self.nodes.destroy();
+        self.nodes = alloc::vec::new();
     }
 }
 
@@ -298,7 +297,7 @@ fn number_end(bytes: [u8], length: i32, start: i32) -> i32 {
 
 struct Frame { node: NodeId, phase: i32 }
 struct Parser {
-    input: alloc::string::String, document: Document, frames: std::vec::Vec<Frame>,
+    input: alloc::string::String, document: Document, frames: alloc::vec::Vec<Frame>,
     position: i32, failure: Error,
 }
 
@@ -454,10 +453,8 @@ impl Parser {
         let added: core::result::Result<NodeId, Error> = self.document.insert_owned(at, kind, flag, text, start);
         if (core::result::is_err(added)) { self.failure = core::result::unwrap_err(added); return false; }
         if (tag(kind) >= 4) {
-            let before: i32 = std::vec::len(self.frames);
             let frame: Frame = Frame { node: core::result::unwrap(added), phase: 0 };
-            self.frames = std::vec::try_push(self.frames, frame);
-            if (std::vec::len(self.frames) == before) { return self.fail(ErrorKind::AllocationFailed, start); }
+            if (core::result::is_err(self.frames.try_push(frame))) { return self.fail(ErrorKind::AllocationFailed, start); }
         }
         return true;
     }
@@ -465,26 +462,26 @@ impl Parser {
         self.whitespace();
         if (!self.value(-1, false, alloc::string::new())) { return false; }
         let bytes: [u8] = self.input.as_bytes();
-        while (!std::vec::is_empty(self.frames)) {
+        while (!self.frames.is_empty()) {
             self.whitespace();
             if (self.position >= self.input.byte_len()) { return self.fail(ErrorKind::UnexpectedEnd, self.position); }
-            let top: i32 = std::vec::len(self.frames) - 1;
-            let frame: Frame = std::vec::at(self.frames, top);
-            let node: Node = std::vec::at(self.document.nodes, frame.node);
+            let top: i32 = self.frames.len() - 1;
+            let frame: Frame = self.frames.at(top);
+            let node: Node = self.document.nodes.at(frame.node);
             let object: bool = tag(node.kind) == 5;
             let closing: u8 = 93;
             if (object) { closing = 125; }
             let byte: u8 = bytes[self.position];
             if (byte == closing) {
                 if (frame.phase == 2) { return self.fail(ErrorKind::UnexpectedByte, self.position); }
-                self.frames = std::vec::try_pop(self.frames);
+                self.frames.pop();
                 self.position += 1;
                 continue;
             }
             if (frame.phase == 1) {
                 if (byte != 44) { return self.fail(ErrorKind::UnexpectedByte, self.position); }
                 frame.phase = 2;
-                self.frames = std::vec::try_set(self.frames, top, frame);
+                core::result::unwrap(self.frames.set(top, frame));
                 self.position += 1;
                 continue;
             }
@@ -501,7 +498,7 @@ impl Parser {
                 self.whitespace();
             }
             frame.phase = 1;
-            self.frames = std::vec::try_set(self.frames, top, frame);
+            core::result::unwrap(self.frames.set(top, frame));
             if (!self.value(frame.node, object, key)) { return false; }
         }
         self.whitespace();
@@ -513,13 +510,13 @@ impl Parser {
 pub fn parse(input: alloc::string::String, options: Options) -> core::result::Result<Document, Error> {
     let document: core::result::Result<Document, Error> = with_options(options);
     if (core::result::is_err(document)) { return core::result::Err(core::result::unwrap_err(document)); }
-    let frames: std::vec::Vec<Frame> = std::vec::new();
+    let frames: alloc::vec::Vec<Frame> = alloc::vec::new();
     let parser: Parser = Parser {
         input: input, document: core::result::unwrap(document), frames: frames,
         position: 0, failure: error(ErrorKind::UnexpectedEnd, 0),
     };
     let complete: bool = parser.run();
-    std::vec::destroy(parser.frames);
+    parser.frames.destroy();
     if (!complete) { parser.document.destroy(); return core::result::Err(parser.failure); }
     return core::result::Ok(parser.document);
 }
@@ -581,9 +578,9 @@ impl Encoder {
     fn run(&self, document: Document) -> bool {
         let current: NodeId = 0;
         while (current >= 0) {
-            let node: Node = std::vec::at(document.nodes, current);
+            let node: Node = document.nodes.at(current);
             if (node.parent >= 0) {
-                let parent: Node = std::vec::at(document.nodes, node.parent);
+                let parent: Node = document.nodes.at(node.parent);
                 if (tag(parent.kind) == 5 && (!self.quoted(node.key) || !self.push(58))) { return false; }
             }
             if (!self.value(node)) { return false; }
@@ -598,7 +595,7 @@ impl Encoder {
                     break;
                 }
                 if (node.parent < 0) { current = -1; break; }
-                node = std::vec::at(document.nodes, node.parent);
+                node = document.nodes.at(node.parent);
                 if (!self.close(node.kind)) { return false; }
             }
         }
@@ -608,7 +605,7 @@ impl Encoder {
 fn hex_digit(value: u32) -> u32 { if (value < 10) { return 48 + value; } return 87 + value; }
 
 pub fn encode(document: Document) -> core::result::Result<alloc::string::String, Error> {
-    if (std::vec::is_empty(document.nodes)) { return core::result::Err(error(ErrorKind::NoRoot, -1)); }
+    if (document.nodes.is_empty()) { return core::result::Err(error(ErrorKind::NoRoot, -1)); }
     let encoder: Encoder = Encoder { output: alloc::string::new(), maximum: document.options.max_output_bytes, failure: error(ErrorKind::AllocationFailed, -1) };
     if (!encoder.run(document)) { encoder.output.destroy(); return core::result::Err(encoder.failure); }
     return core::result::Ok(encoder.output);

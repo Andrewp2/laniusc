@@ -12,7 +12,7 @@ import core::result;
 import core::slice;
 import core::utf8;
 import core::text;
-import std::vec;
+import alloc::vec;
 
 pub enum Error {
     InvalidUtf8(i32),
@@ -24,11 +24,11 @@ pub enum Error {
 }
 
 pub struct String {
-    bytes: std::vec::Vec<u8>,
+    bytes: alloc::vec::Vec<u8>,
 }
 
 pub fn new() -> String {
-    let bytes: std::vec::Vec<u8> = std::vec::new();
+    let bytes: alloc::vec::Vec<u8> = alloc::vec::new();
     return String { bytes: bytes };
 }
 
@@ -86,11 +86,11 @@ fn joined_length(parts: core::slice::View<core::text::Text>, separator: core::te
 }
 
 // Caller reserved sufficient capacity. Text is already valid UTF-8.
-fn append_reserved(bytes: std::vec::Vec<u8>, text: core::text::Text) -> std::vec::Vec<u8> {
-    let result: std::vec::Vec<u8> = bytes;
+fn append_reserved(bytes: alloc::vec::Vec<u8>, text: core::text::Text) -> alloc::vec::Vec<u8> {
+    let result: alloc::vec::Vec<u8> = bytes;
     let index: i32 = 0;
     while (index < text.byte_len()) {
-        result = std::vec::try_push(result, core::option::unwrap(text.byte_at(index)));
+        core::result::unwrap(result.try_push(core::option::unwrap(text.byte_at(index))));
         index += 1;
     }
     return result;
@@ -131,54 +131,55 @@ fn growth_capacity(current: i32, needed: i32) -> i32 {
 pub impl String {
     // If growth is needed, keep the original allocation live until every
     // aliased input has been copied. Only commit_append releases that owner.
-    fn prepare_append(&self, count: i32) -> core::result::Result<std::vec::Vec<u8>, Error> {
-        let length: i32 = std::vec::len(self.bytes);
+    fn prepare_append(&self, count: i32) -> core::result::Result<alloc::vec::Vec<u8>, Error> {
+        let length: i32 = self.bytes.len();
         if (count > 2147483647 - length) { return core::result::Err(Error::CapacityOverflow); }
         let needed: i32 = length + count;
-        if (needed <= std::vec::capacity(self.bytes)) { return core::result::Ok(self.bytes); }
-        let grown: std::vec::Vec<u8> = std::vec::try_with_capacity(growth_capacity(std::vec::capacity(self.bytes), needed));
-        if (std::vec::capacity(grown) < needed) { return core::result::Err(Error::AllocationFailed); }
-        grown = std::vec::try_extend_from_slice(grown, std::vec::as_slice(self.bytes), length);
+        if (needed <= self.bytes.capacity()) { return core::result::Ok(self.bytes); }
+        let allocated: core::result::Result<alloc::vec::Vec<u8>, alloc::vec::Error> = alloc::vec::with_capacity(growth_capacity(self.bytes.capacity(), needed));
+        if (core::result::is_err(allocated)) { return core::result::Err(Error::AllocationFailed); }
+        let grown: alloc::vec::Vec<u8> = core::result::unwrap(allocated);
+        core::result::unwrap(grown.try_extend(self.bytes.as_view()));
         return core::result::Ok(grown);
     }
 
-    fn commit_append(&self, bytes: std::vec::Vec<u8>) -> i32 {
+    fn commit_append(&self, bytes: alloc::vec::Vec<u8>) -> i32 {
         // prepare_append returns either our existing storage or a strictly
         // larger allocation; appending within that reservation keeps capacity.
-        if (std::vec::capacity(bytes) != std::vec::capacity(self.bytes)) { std::vec::destroy(self.bytes); }
+        if (bytes.capacity() != self.bytes.capacity()) { self.bytes.destroy(); }
         self.bytes = bytes;
-        return std::vec::len(bytes);
+        return bytes.len();
     }
 
-    pub fn byte_len(&self) -> i32 { return std::vec::len(self.bytes); }
-    pub fn capacity(&self) -> i32 { return std::vec::capacity(self.bytes); }
-    pub fn is_empty(&self) -> bool { return std::vec::is_empty(self.bytes); }
+    pub fn byte_len(&self) -> i32 { return self.bytes.len(); }
+    pub fn capacity(&self) -> i32 { return self.bytes.capacity(); }
+    pub fn is_empty(&self) -> bool { return self.bytes.is_empty(); }
 
     // Borrow initialized bytes. Treat this view as read-only: writing it can
     // violate UTF-8 validity. Lanius does not yet enforce immutable views.
-    pub fn as_bytes(&self) -> [u8] { return std::vec::as_slice(self.bytes); }
+    pub fn as_bytes(&self) -> [u8] { return self.bytes.as_slice(); }
 
     // O(1) borrowed view: this owner already maintains UTF-8 validity.
     // Mutation or destruction invalidates it, including mutation via as_bytes.
     pub fn as_text(&self) -> core::text::Text {
-        return core::text::from_utf8_unchecked(std::vec::as_slice(self.bytes), 0, std::vec::len(self.bytes));
+        return core::text::from_utf8_unchecked(self.bytes.as_slice(), 0, self.bytes.len());
     }
 
     pub fn byte_at(&self, index: i32) -> core::option::Option<u8> {
-        return std::vec::get(self.bytes, index);
+        return self.bytes.get(index);
     }
 
     pub fn is_char_boundary(&self, index: i32) -> bool {
-        let length: i32 = std::vec::len(self.bytes);
+        let length: i32 = self.bytes.len();
         if (index < 0 || index > length) { return false; }
         if (index == length) { return true; }
-        let bytes: [u8] = std::vec::as_slice(self.bytes);
+        let bytes: [u8] = self.bytes.as_slice();
         return !core::utf8::is_continuation_byte(bytes[index]);
     }
 
     pub fn scalar_count(&self) -> i32 {
-        let bytes: [u8] = std::vec::as_slice(self.bytes);
-        let length: i32 = std::vec::len(self.bytes);
+        let bytes: [u8] = self.bytes.as_slice();
+        let length: i32 = self.bytes.len();
         let index: i32 = 0;
         let count: i32 = 0;
         while (index < length) {
@@ -191,11 +192,11 @@ pub impl String {
     // Decode the scalar starting at byte_index. Out-of-bounds and interior
     // byte positions have no scalar. byte_len() is also past the last scalar.
     pub fn scalar_at_byte(&self, byte_index: i32) -> core::option::Option<u32> {
-        let length: i32 = std::vec::len(self.bytes);
+        let length: i32 = self.bytes.len();
         if (byte_index < 0 || byte_index >= length || !self.is_char_boundary(byte_index)) {
             return core::option::None();
         }
-        let bytes: [u8] = std::vec::as_slice(self.bytes);
+        let bytes: [u8] = self.bytes.as_slice();
         let first: u8 = bytes[byte_index];
         let width: u32 = core::utf8::sequence_len_or(first, 0);
         let second: u8 = 0;
@@ -210,29 +211,28 @@ pub impl String {
     // Reserve at least minimum bytes in total; return the resulting capacity.
     pub fn try_reserve(&self, minimum: i32) -> core::result::Result<i32, Error> {
         if (minimum < 0) { return core::result::Err(Error::Bounds); }
-        let grown: std::vec::Vec<u8> = std::vec::try_reserve(self.bytes, minimum);
-        if (std::vec::capacity(grown) < minimum) { return core::result::Err(Error::AllocationFailed); }
-        self.bytes = grown;
-        return core::result::Ok(std::vec::capacity(grown));
+        if (minimum <= self.bytes.capacity()) { return core::result::Ok(self.bytes.capacity()); }
+        let reserved: core::result::Result<i32, alloc::vec::Error> = self.bytes.try_reserve(minimum - self.bytes.len());
+        if (core::result::is_err(reserved)) { return core::result::Err(Error::AllocationFailed); }
+        return core::result::Ok(self.bytes.capacity());
     }
 
     // Append one Unicode scalar; return the new byte length.
     pub fn try_push_scalar(&self, scalar: u32) -> core::result::Result<i32, Error> {
         let width: u32 = core::utf8::encoded_len_or(scalar, 0);
         if (width == 0) { return core::result::Err(Error::InvalidScalar); }
-        let length: i32 = std::vec::len(self.bytes);
+        let length: i32 = self.bytes.len();
         let count: i32 = width as i32;
         if (count > 2147483647 - length) { return core::result::Err(Error::CapacityOverflow); }
-        let grown: std::vec::Vec<u8> = self.bytes;
+        let grown: alloc::vec::Vec<u8> = self.bytes;
         let needed: i32 = length + count;
-        if (std::vec::capacity(grown) < needed) {
-            let target: i32 = growth_capacity(std::vec::capacity(grown), needed);
-            grown = std::vec::try_reserve(grown, target);
-            if (std::vec::capacity(grown) < needed) { return core::result::Err(Error::AllocationFailed); }
+        if (grown.capacity() < needed) {
+            let target: i32 = growth_capacity(grown.capacity(), needed);
+            if (core::result::is_err(grown.try_reserve(target - length))) { return core::result::Err(Error::AllocationFailed); }
         }
         let index: u32 = 0;
         while (index < width) {
-            grown = std::vec::try_push(grown, core::utf8::encoded_byte_or(scalar, index, 0));
+            core::result::unwrap(grown.try_push(core::utf8::encoded_byte_or(scalar, index, 0)));
             index += 1;
         }
         self.bytes = grown;
@@ -244,7 +244,7 @@ pub impl String {
     // into this owner remains readable. Source bytes must be initialized.
     pub fn try_append_utf8(&self, source: [u8], count: i32) -> core::result::Result<i32, Error> {
         if (count < 0) { return core::result::Err(Error::Bounds); }
-        if (count > 2147483647 - std::vec::len(self.bytes)) { return core::result::Err(Error::CapacityOverflow); }
+        if (count > 2147483647 - self.bytes.len()) { return core::result::Err(Error::CapacityOverflow); }
         let checked: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8(source, count);
         if (core::result::is_err(checked)) { return core::result::Err(text_error(core::result::unwrap_err(checked))); }
         return self.try_append_text(core::result::unwrap(checked));
@@ -255,9 +255,9 @@ pub impl String {
     pub fn try_append_text(&self, source: core::text::Text) -> core::result::Result<i32, Error> {
         let count: i32 = source.byte_len();
         if (count == 0) { return core::result::Ok(self.byte_len()); }
-        let prepared: core::result::Result<std::vec::Vec<u8>, Error> = self.prepare_append(count);
+        let prepared: core::result::Result<alloc::vec::Vec<u8>, Error> = self.prepare_append(count);
         if (core::result::is_err(prepared)) { return core::result::Err(core::result::unwrap_err(prepared)); }
-        let grown: std::vec::Vec<u8> = append_reserved(core::result::unwrap(prepared), source);
+        let grown: alloc::vec::Vec<u8> = append_reserved(core::result::unwrap(prepared), source);
         return core::result::Ok(self.commit_append(grown));
     }
 
@@ -268,9 +268,9 @@ pub impl String {
         if (core::result::is_err(total)) { return core::result::Err(core::result::unwrap_err(total)); }
         let count: i32 = core::result::unwrap(total);
         if (count == 0) { return core::result::Ok(self.byte_len()); }
-        let prepared: core::result::Result<std::vec::Vec<u8>, Error> = self.prepare_append(count);
+        let prepared: core::result::Result<alloc::vec::Vec<u8>, Error> = self.prepare_append(count);
         if (core::result::is_err(prepared)) { return core::result::Err(core::result::unwrap_err(prepared)); }
-        let grown: std::vec::Vec<u8> = core::result::unwrap(prepared);
+        let grown: alloc::vec::Vec<u8> = core::result::unwrap(prepared);
         let index: i32 = 0;
         while (index < parts.len()) {
             if (index > 0) { grown = append_reserved(grown, separator); }
@@ -286,9 +286,9 @@ pub impl String {
         let width: i32 = source.byte_len();
         if (width == 0 || count == 0) { return core::result::Ok(self.byte_len()); }
         if (count > 2147483647 / width) { return core::result::Err(Error::CapacityOverflow); }
-        let prepared: core::result::Result<std::vec::Vec<u8>, Error> = self.prepare_append(count * width);
+        let prepared: core::result::Result<alloc::vec::Vec<u8>, Error> = self.prepare_append(count * width);
         if (core::result::is_err(prepared)) { return core::result::Err(core::result::unwrap_err(prepared)); }
-        let grown: std::vec::Vec<u8> = core::result::unwrap(prepared);
+        let grown: alloc::vec::Vec<u8> = core::result::unwrap(prepared);
         let index: i32 = 0;
         while (index < count) { grown = append_reserved(grown, source); index += 1; }
         return core::result::Ok(self.commit_append(grown));
@@ -313,36 +313,37 @@ pub impl String {
 
     // Truncate at a byte boundary. Requests beyond the length are errors.
     pub fn try_truncate(&self, length: i32) -> core::result::Result<i32, Error> {
-        if (length < 0 || length > std::vec::len(self.bytes)) { return core::result::Err(Error::Bounds); }
+        if (length < 0 || length > self.bytes.len()) { return core::result::Err(Error::Bounds); }
         if (!self.is_char_boundary(length)) { return core::result::Err(Error::NotCharBoundary); }
-        self.bytes = std::vec::truncate(self.bytes, length);
+        core::result::unwrap(self.bytes.truncate(length));
         return core::result::Ok(length);
     }
 
     pub fn pop_scalar(&self) -> core::option::Option<u32> {
-        let length: i32 = std::vec::len(self.bytes);
+        let length: i32 = self.bytes.len();
         if (length == 0) { return core::option::None(); }
-        let bytes: [u8] = std::vec::as_slice(self.bytes);
+        let bytes: [u8] = self.bytes.as_slice();
         let start: i32 = length - 1;
         while (start > 0 && core::utf8::is_continuation_byte(bytes[start])) { start -= 1; }
         let scalar: core::option::Option<u32> = self.scalar_at_byte(start);
-        self.bytes = std::vec::truncate(self.bytes, start);
+        core::result::unwrap(self.bytes.truncate(start));
         return scalar;
     }
 
-    pub fn clear(&self) { self.bytes = std::vec::clear(self.bytes); }
+    pub fn clear(&self) { self.bytes.clear(); }
 
     pub fn try_clone(&self) -> core::result::Result<String, Error> {
-        let copy: std::vec::Vec<u8> = std::vec::try_clone(self.bytes);
-        if (std::vec::len(copy) != std::vec::len(self.bytes)) { return core::result::Err(Error::AllocationFailed); }
+        let cloned: core::result::Result<alloc::vec::Vec<u8>, alloc::vec::Error> = self.bytes.try_clone();
+        if (core::result::is_err(cloned)) { return core::result::Err(Error::AllocationFailed); }
+        let copy: alloc::vec::Vec<u8> = core::result::unwrap(cloned);
         return core::result::Ok(String { bytes: copy });
     }
 
     pub fn equals(&self, other: String) -> bool {
-        let length: i32 = std::vec::len(self.bytes);
-        if (length != std::vec::len(other.bytes)) { return false; }
-        let left: [u8] = std::vec::as_slice(self.bytes);
-        let right: [u8] = std::vec::as_slice(other.bytes);
+        let length: i32 = self.bytes.len();
+        if (length != other.bytes.len()) { return false; }
+        let left: [u8] = self.bytes.as_slice();
+        let right: [u8] = other.bytes.as_slice();
         let index: i32 = 0;
         while (index < length) {
             if (left[index] != right[index]) { return false; }
@@ -353,10 +354,10 @@ pub impl String {
 
     // Total lexicographic order of UTF-8 bytes (also Unicode scalar order).
     pub fn compare(&self, other: String) -> i32 {
-        let left: [u8] = std::vec::as_slice(self.bytes);
-        let right: [u8] = std::vec::as_slice(other.bytes);
-        let left_len: i32 = std::vec::len(self.bytes);
-        let right_len: i32 = std::vec::len(other.bytes);
+        let left: [u8] = self.bytes.as_slice();
+        let right: [u8] = other.bytes.as_slice();
+        let left_len: i32 = self.bytes.len();
+        let right_len: i32 = other.bytes.len();
         let common: i32 = left_len;
         if (right_len < common) { common = right_len; }
         let index: i32 = 0;
@@ -371,10 +372,10 @@ pub impl String {
     }
 
     pub fn starts_with(&self, prefix: String) -> bool {
-        let count: i32 = std::vec::len(prefix.bytes);
-        if (count > std::vec::len(self.bytes)) { return false; }
-        let bytes: [u8] = std::vec::as_slice(self.bytes);
-        let pattern: [u8] = std::vec::as_slice(prefix.bytes);
+        let count: i32 = prefix.bytes.len();
+        if (count > self.bytes.len()) { return false; }
+        let bytes: [u8] = self.bytes.as_slice();
+        let pattern: [u8] = prefix.bytes.as_slice();
         let index: i32 = 0;
         while (index < count) {
             if (bytes[index] != pattern[index]) { return false; }
@@ -384,11 +385,11 @@ pub impl String {
     }
 
     pub fn ends_with(&self, suffix: String) -> bool {
-        let count: i32 = std::vec::len(suffix.bytes);
-        let length: i32 = std::vec::len(self.bytes);
+        let count: i32 = suffix.bytes.len();
+        let length: i32 = self.bytes.len();
         if (count > length) { return false; }
-        let bytes: [u8] = std::vec::as_slice(self.bytes);
-        let pattern: [u8] = std::vec::as_slice(suffix.bytes);
+        let bytes: [u8] = self.bytes.as_slice();
+        let pattern: [u8] = suffix.bytes.as_slice();
         let index: i32 = 0;
         while (index < count) {
             if (bytes[length - count + index] != pattern[index]) { return false; }
@@ -400,19 +401,20 @@ pub impl String {
     // An independent copy of the half-open byte range. Both endpoints must
     // be scalar boundaries. An empty range produces an unallocated String.
     pub fn try_substring(&self, start: i32, end: i32) -> core::result::Result<String, Error> {
-        if (start < 0 || end < start || end > std::vec::len(self.bytes)) {
+        if (start < 0 || end < start || end > self.bytes.len()) {
             return core::result::Err(Error::Bounds);
         }
         if (!self.is_char_boundary(start) || !self.is_char_boundary(end)) {
             return core::result::Err(Error::NotCharBoundary);
         }
         let count: i32 = end - start;
-        let copy: std::vec::Vec<u8> = std::vec::try_with_capacity(count);
-        if (std::vec::capacity(copy) < count) { return core::result::Err(Error::AllocationFailed); }
-        let bytes: [u8] = std::vec::as_slice(self.bytes);
+        let allocated: core::result::Result<alloc::vec::Vec<u8>, alloc::vec::Error> = alloc::vec::with_capacity(count);
+        if (core::result::is_err(allocated)) { return core::result::Err(Error::AllocationFailed); }
+        let copy: alloc::vec::Vec<u8> = core::result::unwrap(allocated);
+        let bytes: [u8] = self.bytes.as_slice();
         let index: i32 = start;
         while (index < end) {
-            copy = std::vec::try_push(copy, bytes[index]);
+            core::result::unwrap(copy.try_push(bytes[index]));
             index += 1;
         }
         return core::result::Ok(String { bytes: copy });
@@ -422,36 +424,36 @@ pub impl String {
     // buffer before releasing the old one, including when replacement aliases
     // this owner. Empty replacement removes in place without allocating.
     pub fn try_replace_range(&self, start: i32, end: i32, replacement: String) -> core::result::Result<i32, Error> {
-        let length: i32 = std::vec::len(self.bytes);
+        let length: i32 = self.bytes.len();
         if (start < 0 || end < start || end > length) { return core::result::Err(Error::Bounds); }
         if (!self.is_char_boundary(start) || !self.is_char_boundary(end)) {
             return core::result::Err(Error::NotCharBoundary);
         }
         let retained: i32 = length - (end - start);
-        let count: i32 = std::vec::len(replacement.bytes);
+        let count: i32 = replacement.bytes.len();
         if (count > 2147483647 - retained) { return core::result::Err(Error::CapacityOverflow); }
         let needed: i32 = retained + count;
-        let old: [u8] = std::vec::as_slice(self.bytes);
+        let old: [u8] = self.bytes.as_slice();
         if (count == 0) {
             let index: i32 = end;
             while (index < length) {
                 old[start + (index - end)] = old[index];
                 index += 1;
             }
-            self.bytes = std::vec::truncate(self.bytes, needed);
+            core::result::unwrap(self.bytes.truncate(needed));
             return core::result::Ok(needed);
         }
-        let capacity: i32 = std::vec::capacity(self.bytes);
+        let capacity: i32 = self.bytes.capacity();
         if (capacity < needed) { capacity = growth_capacity(capacity, needed); }
-        let fresh: std::vec::Vec<u8> = std::vec::try_with_capacity(capacity);
-        if (std::vec::capacity(fresh) < needed) { return core::result::Err(Error::AllocationFailed); }
+        let allocated: core::result::Result<alloc::vec::Vec<u8>, alloc::vec::Error> = alloc::vec::with_capacity(capacity);
+        if (core::result::is_err(allocated)) { return core::result::Err(Error::AllocationFailed); }
+        let fresh: alloc::vec::Vec<u8> = core::result::unwrap(allocated);
         let index: i32 = 0;
-        while (index < start) { fresh = std::vec::try_push(fresh, old[index]); index += 1; }
-        let source: [u8] = std::vec::as_slice(replacement.bytes);
-        fresh = std::vec::try_extend_from_slice(fresh, source, count);
+        while (index < start) { core::result::unwrap(fresh.try_push(old[index])); index += 1; }
+        core::result::unwrap(fresh.try_extend(replacement.bytes.as_view()));
         index = end;
-        while (index < length) { fresh = std::vec::try_push(fresh, old[index]); index += 1; }
-        std::vec::destroy(self.bytes);
+        while (index < length) { core::result::unwrap(fresh.try_push(old[index])); index += 1; }
+        self.bytes.destroy();
         self.bytes = fresh;
         return core::result::Ok(needed);
     }
@@ -468,25 +470,25 @@ pub impl String {
     // Remove leading/trailing ASCII whitespace in place, retaining capacity.
     // Unicode whitespace outside ASCII is left untouched.
     pub fn trim_ascii(&self) -> i32 {
-        let bytes: [u8] = std::vec::as_slice(self.bytes);
-        let end: i32 = std::vec::len(self.bytes);
+        let bytes: [u8] = self.bytes.as_slice();
+        let end: i32 = self.bytes.len();
         let start: i32 = 0;
         while (start < end && core::byte::is_ascii_whitespace(bytes[start])) { start += 1; }
         while (end > start && core::byte::is_ascii_whitespace(bytes[end - 1])) { end -= 1; }
         let count: i32 = end - start;
         let index: i32 = 0;
         while (index < count) { bytes[index] = bytes[start + index]; index += 1; }
-        self.bytes = std::vec::truncate(self.bytes, count);
+        core::result::unwrap(self.bytes.truncate(count));
         return count;
     }
 
     // First matching byte offset. The empty needle matches at zero.
     pub fn find(&self, needle: String) -> core::option::Option<i32> {
-        let length: i32 = std::vec::len(self.bytes);
-        let count: i32 = std::vec::len(needle.bytes);
+        let length: i32 = self.bytes.len();
+        let count: i32 = needle.bytes.len();
         if (count > length) { return core::option::None(); }
-        let bytes: [u8] = std::vec::as_slice(self.bytes);
-        let pattern: [u8] = std::vec::as_slice(needle.bytes);
+        let bytes: [u8] = self.bytes.as_slice();
+        let pattern: [u8] = needle.bytes.as_slice();
         let start: i32 = 0;
         while (start <= length - count) {
             let index: i32 = 0;
@@ -500,8 +502,8 @@ pub impl String {
     // Release this owner's storage and reset it to an empty String. Copies
     // of the previous owner and all borrowed views must no longer be used.
     pub fn destroy(&self) {
-        std::vec::destroy(self.bytes);
-        self.bytes = std::vec::new();
+        self.bytes.destroy();
+        self.bytes = alloc::vec::new();
     }
 }
 

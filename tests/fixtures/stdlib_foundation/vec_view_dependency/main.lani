@@ -1,0 +1,15 @@
+module app::main;
+import alloc::extend_wrapper;
+import alloc::vec;
+import core::result;
+import core::slice;
+fn main() -> i32 {
+    let items: alloc::vec::Vec<i32> = alloc::vec::new();
+    core::result::unwrap(items.try_push(7));
+    let wrapper: alloc::extend_wrapper::Wrapper<i32> = alloc::extend_wrapper::Wrapper { items: items };
+    let view: core::slice::View<i32> = items.as_view();
+    core::result::unwrap(wrapper.extend(view));
+    let correct: bool = wrapper.items.len() == 2 && wrapper.items.at(0) == 7 && wrapper.items.at(1) == 7;
+    wrapper.items.destroy();
+    if (!correct) { return 1; } return 0;
+}

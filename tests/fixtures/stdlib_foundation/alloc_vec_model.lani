@@ -1,0 +1,66 @@
+// Binary input: 9-byte records (opcode, LE i32 index, LE i32 value).
+// Output: result-tag result-value length followed by every vector entry.
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::fs;
+import std::io;
+import std::io_decimal;
+fn number(value: i32) { assert(std::io_decimal::write_i32(1, value) >= 0); assert(std::io::write_byte(1, 32) == 1); }
+fn integer(input: [u8], offset: i32) -> i32 {
+    let bits: u32 = (input[offset] as u32) | ((input[offset + 1] as u32) << 8) | ((input[offset + 2] as u32) << 16) | ((input[offset + 3] as u32) << 24);
+    return bits as i32;
+}
+fn error_tag(error: alloc::vec::Error) -> i32 {
+    let tag: i32 = match (error) { alloc::vec::Error::Bounds -> 2, alloc::vec::Error::InvalidCapacity -> 3, alloc::vec::Error::CapacityOverflow -> 4, _ -> 5 }; return tag;
+}
+fn main() -> i32 {
+    let storage: [i32; 16384] = [0; 16384];
+    let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let size: i32 = std::fs::read(0, pointer, 65536);
+    if (size < 0 || size % 9 != 0) { return 1; }
+    let input: [u8] = core::mem::typed_slice_from_raw_parts(pointer, size);
+    let values: alloc::vec::Vec<i32> = alloc::vec::new(); let offset: i32 = 0;
+    while (offset < size) {
+        let opcode: u8 = input[offset]; let index: i32 = integer(input, offset + 1); let value: i32 = integer(input, offset + 5); offset += 9;
+        let result: core::result::Result<i32, alloc::vec::Error> = core::result::Ok(0);
+        let removed: core::option::Option<i32> = core::option::None();
+        let returns_value: bool = false;
+        if (opcode == 0) { result = values.try_push(value); }
+        if (opcode == 1) { removed = values.pop(); }
+        if (opcode == 2) { result = values.set(index, value); returns_value = true; }
+        if (opcode == 3) { result = values.try_insert(index, value); }
+        if (opcode == 4) { result = values.remove(index); returns_value = true; }
+        if (opcode == 5) { result = values.swap_remove(index); returns_value = true; }
+        if (opcode == 6) { result = values.try_resize(index, value); }
+        if (opcode == 7) { result = values.truncate(index); }
+        if (opcode == 8) { result = values.try_reserve(index); if (core::result::is_ok(result)) { assert(values.capacity() >= values.len() + index); } }
+        if (opcode == 9) { result = values.try_shrink_to_fit(); assert(values.capacity() == values.len()); }
+        if (opcode == 10) { values.reverse(); }
+        if (opcode == 11) { values.sort(); assert(values.is_sorted()); }
+        if (opcode == 12) { values.clear(); }
+        if (opcode == 13) { let items: [i32; 3] = [value, 0, value / 2]; let view: core::slice::View<i32> = core::result::unwrap(core::slice::view(items, 3)); result = values.try_extend(view); }
+        if (opcode == 14) { let view: core::slice::View<i32> = values.as_view(); result = values.try_extend(view); }
+        if (opcode == 15) {
+            let cloned: core::result::Result<alloc::vec::Vec<i32>, alloc::vec::Error> = values.try_clone();
+            let copy: alloc::vec::Vec<i32> = core::result::unwrap(cloned);
+            removed = copy.pop(); copy.clear(); copy.destroy();
+        }
+        if (opcode == 16) { removed = values.get(index); }
+        if (opcode == 17) { values.sort(); removed = core::option::Some(values.binary_search(value)); }
+        if (opcode == 18) { values.destroy(); assert(values.capacity() == 0 && values.is_empty()); }
+        if (opcode > 18) { return 2; }
+        let tag: i32 = 0; let answer: i32 = 0;
+        if (core::result::is_err(result)) { tag = error_tag(core::result::unwrap_err(result)); }
+        else { if (returns_value) { tag = 1; answer = core::result::unwrap(result); }
+        else { if (opcode == 0 || opcode == 3 || opcode == 6 || opcode == 7 || opcode == 13 || opcode == 14) { assert(core::result::unwrap(result) == values.len()); } } }
+        if (core::option::is_some(removed)) { tag = 1; answer = core::option::unwrap(removed); }
+        number(tag); number(answer); number(values.len());
+        let at: i32 = 0; while (at < values.len()) { number(values.at(at)); at += 1; }
+        assert(std::io::write_byte(1, 10) == 1);
+    }
+    values.destroy(); return 0;
+}

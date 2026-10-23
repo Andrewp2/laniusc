@@ -13,11 +13,12 @@ milestone does not complete the goal.
 | `std` | Application interfaces and host services | `core`, `alloc`, explicit host bindings |
 | `ext` | Larger optional libraries | The layers above and declared extended-library dependencies |
 
-Allocation-backed collections currently live under `std`. Move them to `alloc`
-with their consumers when their APIs are revised; do not add forwarding modules
-solely to preserve internal paths. The first string implementation belongs to
-`alloc`. Its temporary dependency on `std::vec` must disappear when that vector
-moves. Extended modules can use an additional source root in this repository;
+Allocation-backed collections are moving from `std` to `alloc` with their
+consumers and revised failure contracts. String and owned byte streams now use
+`alloc::vec`. The heap migration has a compiler dependency; the old vector path
+also remains part of the verified compiler's extraction contract. Do not add
+forwarding modules solely to preserve internal paths. Extended modules can use
+an additional source root in this repository;
 package distribution is a separate deliverable.
 
 ## Standard library scope
@@ -30,7 +31,7 @@ package distribution is a separate deliverable.
 | Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | Inherent slice/text/hash-map cursors execute; shared protocol dispatch hits an imported-generic compiler dependency; adapters and collection integration remain |
 | Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat and integer conversion execute; general formatting and further Unicode operations remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings and raw views exist; ownership conventions need consolidation |
-| Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Generic vectors/deques, linear maps/sets, alloc hash maps and min/max binary heaps execute; hash-set composition is a compiler dependency |
+| Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec with explicit errors, generic deques, linear maps/sets, alloc hash maps and min/max heaps execute; legacy collection migration and ordered collections remain |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks, native descriptor adapters and owned files execute; buffered adapters remain |
 | Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and borrowed byte paths execute with explicit close/error contracts; metadata, directories and complete lexical paths remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Argument/environment helpers exist; subprocess management remains |
@@ -115,6 +116,13 @@ API list; unrelated library work can continue.
   text-processing program. See [stdlib-string.md](stdlib-string.md) for exact
   coverage and remaining String operations.
 - Compiler and runtime prerequisites: [library-dependencies.md](library-dependencies.md).
+- Owned vector: [`alloc::vec`](stdlib-vec.md) provides explicit allocation and
+  bounds errors, removed-value transfer, atomic self-extension, shallow clone,
+  resizing, sorting and counted views. Four execution groups include 6,000
+  modeled edits, generic payloads, zero-sized entries, allocation failures and
+  checked-index panics. String, streams, CSV/JSON and three reporting/text
+  programs use it. The old vector remains for the verified compiler, legacy
+  consumers and the heap migration's separate compiler dependency.
 - Extended CSV: parsing, independent field copies and canonical encoding execute
   on x86_64 Linux, including generated tables, borrowed field views and allocation fault injection.
   See [extended-csv.md](extended-csv.md). Incremental decoding now shares the same parser; row construction remains.
@@ -175,8 +183,9 @@ API list; unrelated library work can continue.
 - Next foundation work: resolve shared iterator and HashSet compiler dependencies;
   continue text operations, buffered I/O and
   remaining streaming format interfaces; complete HashSet when its compiler
-  dependency is resolved. Consolidate Vec and deque under alloc with explicit
-  fallible APIs and migrate their consumers; ordered collections remain.
+  dependency is resolved. Complete the remaining Vec consumer migrations and
+  consolidate deque and legacy collections under alloc with explicit fallible
+  APIs; ordered collections remain.
   Completing the integration application does not complete the first phase.
 - Text composition: [join, repeat and word splitting](stdlib-text-composition.md)
   execute with atomic, alias-safe appends, checked sizes and one-allocation

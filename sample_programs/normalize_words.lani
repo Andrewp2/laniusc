@@ -14,7 +14,7 @@ import core::slice;
 import core::text;
 import std::args_checked;
 import std::stream;
-import std::vec;
+import alloc::vec;
 
 fn input_status(error: core::io::Error) -> i32 {
     let code: i32 = match (error) { core::io::Error::LimitExceeded -> 2, core::io::Error::AllocationFailed -> 4, _ -> 3 };
@@ -48,26 +48,24 @@ fn main() -> i32 {
     if (core::result::is_err(checked)) { input.destroy(); return 2; }
     let text: core::text::Text = core::result::unwrap(checked);
     let cursor: core::text::SplitAsciiWhitespace = text.split_ascii_whitespace();
-    let words: std::vec::Vec<core::text::Text> = std::vec::new();
+    let words: alloc::vec::Vec<core::text::Text> = alloc::vec::new();
     while (true) {
         let word: core::option::Option<core::text::Text> = cursor.next();
         if (core::option::is_none(word)) { break; }
-        let length: i32 = std::vec::len(words);
-        if (length == 65536) { std::vec::destroy(words); input.destroy(); return 2; }
-        let grown: std::vec::Vec<core::text::Text> = std::vec::try_push(words, core::option::unwrap(word));
-        if (std::vec::len(grown) == length) { std::vec::destroy(words); input.destroy(); return 4; }
-        words = grown;
+        let length: i32 = words.len();
+        if (length == 65536) { words.destroy(); input.destroy(); return 2; }
+        if (core::result::is_err(words.try_push(core::option::unwrap(word)))) { words.destroy(); input.destroy(); return 4; }
     }
-    let count: i32 = std::vec::len(words);
-    if (count == 0) { std::vec::destroy(words); input.destroy(); return 0; }
+    let count: i32 = words.len();
+    if (count == 0) { words.destroy(); input.destroy(); return 0; }
     let space_bytes: [u8; 1] = [32];
     let space: core::text::Text = core::result::unwrap(core::text::from_utf8(space_bytes, 1));
     let built: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::repeat(space, indent);
-    if (core::result::is_err(built)) { std::vec::destroy(words); input.destroy(); return 4; }
+    if (core::result::is_err(built)) { words.destroy(); input.destroy(); return 4; }
     let output: alloc::string::String = core::result::unwrap(built);
-    let view: core::slice::View<core::text::Text> = core::result::unwrap(core::slice::view(std::vec::as_slice(words), count));
+    let view: core::slice::View<core::text::Text> = core::result::unwrap(core::slice::view(words.as_slice(), count));
     let joined: core::result::Result<i32, alloc::string::Error> = output.try_append_joined(view, space);
-    std::vec::destroy(words); input.destroy();
+    words.destroy(); input.destroy();
     if (core::result::is_err(joined)) { output.destroy(); return 4; }
     if (core::result::is_err(output.try_push_scalar(10))) { output.destroy(); return 4; }
     let sink: std::stream::Descriptor = std::stream::stdout();

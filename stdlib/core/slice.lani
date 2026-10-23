@@ -616,7 +616,7 @@ pub fn is_sorted<T>(values: [T], len: i32) -> bool where T: core::cmp::Ord<T> {
 
 fn sift_down<T>(values: [T], heap_len: i32, start: i32) where T: core::cmp::Ord<T> {
     let root: i32 = start;
-    while (root * 2 + 1 < heap_len) {
+    while (root < heap_len / 2) {
         let child: i32 = root * 2 + 1;
         let largest: i32 = root;
         if (T::lt(values[largest], values[child])) {
