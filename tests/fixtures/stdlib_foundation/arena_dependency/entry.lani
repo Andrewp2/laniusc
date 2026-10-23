@@ -1,0 +1,13 @@
+module app::main;
+import alloc::arena;
+import core::result;
+import core::slice;
+fn main() -> i32 {
+ let created: core::result::Result<alloc::arena::Arena,alloc::arena::Error> = alloc::arena::new(alloc::arena::default_config());
+ let arena: alloc::arena::Arena = core::result::unwrap(created);
+ let bytes: [u8;3] = [1,2,3];
+ let input: core::slice::View<u8> = core::result::unwrap(core::slice::view(bytes,3));
+ let copied: core::result::Result<core::slice::View<u8>,alloc::arena::Error> = alloc::arena::copy_slice<u8>(arena.borrow(),input);
+ let output: core::slice::View<u8> = core::result::unwrap(copied);
+ assert(output.values[1] == 2); arena.destroy(); return 0;
+}

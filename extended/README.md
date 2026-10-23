@@ -30,6 +30,7 @@ repository root. An application imports the CSV module with `import ext::csv;`.
 | [`ext::compression`](ext/compression.lani) | Owned raw/zlib/gzip encoding and checked decoding, concatenated gzip, output limits and allocation cleanup | x86_64 Linux; [contracts and tests](../docs/extended-compression.md), [binary application](../docs/extended-compress-bytes.md) |
 | [`ext::tar`](ext/tar.lani) | Borrowed POSIX ustar metadata/data and atomic caller-buffer multi-member writing, checked headers/padding/footer and raw byte paths | x86_64 Linux; [contracts and tests](../docs/extended-tar.md), [TAR/gzip application](../docs/extended-tar-bytes.md) |
 | [`ext::zip`](ext/zip.lani) | Bounded classic single-disk ZIP metadata, checked stored/DEFLATE member extraction and deterministic owned multi-member writing | x86_64 Linux; [contracts and tests](../docs/extended-zip.md), [binary application](../docs/extended-zip-bytes.md) |
+| [`ext::cbor`](ext/cbor.lani) | Allocation-free iterative CBOR wire events, full-width integers and float bits, definite/indefinite structures, strict text, caller scratch and atomic encoding | x86_64 Linux; [contracts and tests](../docs/extended-cbor.md), [checked ZIP manifest](../docs/extended-zip-manifest.md) |
 
 The complete scope and dependency order are
 tracked in the [library roadmap](../docs/library-roadmap.md). Package publishing,

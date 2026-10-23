@@ -1,0 +1,31 @@
+module app::main;
+import alloc::arena;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+fn code(error: alloc::arena::Error) -> i32 { let value: i32 = match (error) { alloc::arena::Error::InvalidConfig -> 1, alloc::arena::Error::InvalidAlignment -> 2, alloc::arena::Error::Bounds -> 3, alloc::arena::Error::SizeOverflow -> 4, alloc::arena::Error::RetainedLimit -> 5, alloc::arena::Error::ChunkLimit -> 6, alloc::arena::Error::AllocationFailed -> 7, alloc::arena::Error::Destroyed -> 8, alloc::arena::Error::UnsupportedAlignment -> 9 }; return value; }
+fn same(a: alloc::arena::Stats, b: alloc::arena::Stats) -> bool { return a.retained == b.retained && a.chunks == b.chunks && a.used == b.used && a.requested == b.requested && a.allocations == b.allocations; }
+fn main() -> i32 {
+    let config: alloc::arena::Config = alloc::arena::Config { chunk_size: 64, max_retained: 4096, max_chunks: 16 };
+    let arena: alloc::arena::Arena = core::result::unwrap(alloc::arena::new(config)); assert(arena.is_live() && arena.stats().retained == 0);
+    let first: alloc::arena::Block = core::result::unwrap(arena.allocate(5,1)); let data: [u8] = core::mem::typed_slice_from_raw_parts(first.data,5); data[0] = 23; data[4] = 77;
+    let aligned: alloc::arena::Block = core::result::unwrap(arena.allocate(8,8)); assert(aligned.data == first.data+8 && aligned.length == 8);
+    let number: core::slice::View<i32> = core::result::unwrap(alloc::arena::alloc<i32>(arena.borrow(),123)); assert(core::option::unwrap(number.get(0)) == 123);
+    assert(data[0] == 23 && data[4] == 77);
+    let before: alloc::arena::Stats = arena.stats();
+    assert(code(core::result::unwrap_err(arena.allocate(3,0))) == 2); assert(code(core::result::unwrap_err(arena.allocate(3,3))) == 2);
+    assert(code(core::result::unwrap_err(arena.allocate(3,16))) == 9);
+    assert(code(core::result::unwrap_err(arena.allocate(2147483647,1))) == 4); assert(same(before,arena.stats()));
+    let zero: alloc::arena::Block = core::result::unwrap(arena.allocate(0,8)); assert(zero.length == 0 && zero.data != 0);
+    assert(arena.stats().retained == before.retained && arena.stats().used == before.used && arena.stats().allocations == before.allocations+1);
+    let retained: usize = arena.stats().retained; core::result::unwrap(arena.reset()); assert(arena.stats().retained == retained && arena.stats().requested == 0 && arena.stats().allocations == 0);
+    let reused: alloc::arena::Block = core::result::unwrap(arena.allocate(5,1)); assert(reused.data == first.data); let old_bytes: [u8] = core::mem::typed_slice_from_raw_parts(reused.data,5); assert(old_bytes[0] == 23 && old_bytes[4] == 77);
+    core::result::unwrap(arena.clear()); assert(arena.stats().retained == 0 && arena.stats().chunks == 0 && arena.is_live());
+    core::result::unwrap(arena.allocate(32,8)); arena.destroy(); arena.destroy(); assert(!arena.is_live() && arena.stats().retained == 0);
+    assert(code(core::result::unwrap_err(arena.allocate(0,1))) == 8); assert(code(core::result::unwrap_err(arena.reset())) == 8); assert(code(core::result::unwrap_err(arena.clear())) == 8);
+    let invalid: alloc::arena::Config = config; invalid.chunk_size = 0; assert(code(core::result::unwrap_err(alloc::arena::new(invalid))) == 1);
+    invalid = config; invalid.max_chunks = -1; assert(code(core::result::unwrap_err(alloc::arena::new(invalid))) == 1);
+    invalid = config; invalid.chunk_size = 2147483647; assert(code(core::result::unwrap_err(alloc::arena::new(invalid))) == 1);
+    return 0;
+}

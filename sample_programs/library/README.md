@@ -12,6 +12,9 @@ sample runner's fixed argument and text-output fixture.
 | `compress_bytes.lani` | `tests/extended_compress_bytes_execution.rs`, x86_64 Linux; raw/zlib/gzip interoperability, exact limits, checksums, diagnostics and allocation/I/O failures | [Binary compression application](../../docs/extended-compress-bytes.md) |
 | `tar_bytes.lani` | `tests/extended_tar_bytes_execution.rs`, x86_64 Linux; ustar/gzip creation, binary members, NUL listings, complete archive validation and allocation/I/O failures | [Binary TAR application](../../docs/extended-tar-bytes.md) |
 | `zip_bytes.lani` | `tests/extended_zip_bytes_execution.rs`, x86_64 Linux; stored/DEFLATE creation, NUL listings, selected reads, payload verification and allocation/I/O failures | [Binary ZIP application](../../docs/extended-zip-bytes.md) |
+| `zip_manifest.lani` | `tests/extended_zip_manifest_execution.rs`, x86_64 Linux; all-payload ZIP checks, exact binary names, CBOR manifests, limits and allocation/I/O failures | [Checked ZIP manifest in CBOR](../../docs/extended-zip-manifest.md) |
+| `arena_words.lani` | `tests/stdlib_arena_words_execution.rs`, x86_64 Linux; streamed binary word counts, stable typed arena keys, ordered maps, exact limits and allocation/I/O failures | [Arena-backed word counting](../../docs/stdlib-arena-words.md) |
+| `address_filter.lani` | `tests/stdlib_address_filter_execution.rs`, x86_64 Linux; numeric addresses/sockets/CIDRs, canonical output, prefix selection and allocation/I/O failures | [Address filter](../../docs/stdlib-address-filter.md) |
 
 Compile these applications with both `--stdlib-root stdlib` and `--source-root extended`.
 The library implementations are Lanius; the Rust test harness supplies inputs and

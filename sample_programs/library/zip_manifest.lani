@@ -1,0 +1,142 @@
+// Validate every ZIP payload, then emit a CBOR manifest with exact raw names.
+// Exit 2: arguments/format/limits; 3: I/O; 4: allocation. Diagnostics best effort.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::cbor;
+import ext::cli;
+import ext::zip;
+import std::args;
+import std::stream;
+struct Options { max_input: i32, max_output: i32, limits: ext::zip::Limits, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+enum Error { Archive(ext::zip::Error), Cbor(ext::cbor::Error), AllocationFailed }
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn report(status: i32, message: core::slice::View<u8>) -> i32 {
+    let sink: std::stream::Descriptor = std::stream::stderr(); core::io::write_all(sink.borrow(),message.values,message.start,message.len()); return status;
+}
+fn archive_error(error: ext::zip::Error) -> i32 {
+    let status: i32 = match (error) { ext::zip::Error::AllocationFailed -> 4, _ -> 2 };
+    let message: core::slice::View<u8> = match (error) {
+        ext::zip::Error::AllocationFailed -> literal("zip-manifest: allocation failed\n",32),
+        ext::zip::Error::ArchiveLimit -> literal("zip-manifest: input limit exceeded\n",35),
+        ext::zip::Error::EntryLimit -> literal("zip-manifest: entry limit exceeded\n",35),
+        ext::zip::Error::TotalLimit -> literal("zip-manifest: total size limit exceeded\n",40),
+        ext::zip::Error::WorkLimit -> literal("zip-manifest: work limit exceeded\n",34),
+        ext::zip::Error::Checksum -> literal("zip-manifest: checksum mismatch\n",32),
+        ext::zip::Error::SizeMismatch -> literal("zip-manifest: member size mismatch\n",35),
+        ext::zip::Error::Deflate(detail) -> literal("zip-manifest: invalid DEFLATE payload\n",38),
+        _ -> literal("zip-manifest: invalid or unsupported ZIP archive\n",49)
+    }; return report(status,message);
+}
+fn cbor_error(error: ext::cbor::Error) -> i32 {
+    let message: core::slice::View<u8> = match (error.kind) {
+        ext::cbor::ErrorKind::OutputLimit -> literal("zip-manifest: output limit exceeded\n",36),
+        _ -> literal("zip-manifest: CBOR encoding failed\n",35)
+    }; return report(2,message);
+}
+fn failed(error: Error) -> i32 {
+    let status: i32 = match (error) {
+        Error::Archive(detail) -> archive_error(detail), Error::Cbor(detail) -> cbor_error(detail),
+        Error::AllocationFailed -> report(4,literal("zip-manifest: allocation failed\n",32))
+    }; return status;
+}
+fn input_error(error: core::io::Error) -> i32 {
+    let limited: bool = match (error) { core::io::Error::LimitExceeded -> true, _ -> false };
+    if (limited) { return report(2,literal("zip-manifest: input limit exceeded\n",35)); }
+    let allocation: bool = match (error) { core::io::Error::AllocationFailed -> true, _ -> false };
+    if (allocation) { return failed(Error::AllocationFailed); } return report(3,literal("zip-manifest: input I/O failed\n",31));
+}
+fn apply(options: &Options, item: ext::cli::Occurrence) -> bool {
+    if (item.id == 7) { options.help = true; return true; }
+    let bytes: core::slice::View<u8> = core::option::unwrap(item.value).bytes;
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(bytes.values,bytes.start,bytes.len());
+    if (core::result::is_err(parsed)) { return false; } let value: u64 = core::result::unwrap(parsed);
+    if (item.id == 5) { options.limits.max_total = value; return true; }
+    if (item.id == 6) { options.limits.max_work = value; return true; }
+    if (value > 2147483647 as u64) { return false; }
+    if (item.id == 1) { options.max_input = value as i32; options.limits.max_archive = value as i32; }
+    if (item.id == 2) { options.max_output = value as i32; }
+    if (item.id == 3) { options.limits.max_entries = value as i32; }
+    if (item.id == 4) { options.limits.max_entry = value as i32; } return true;
+}
+fn push(events: &alloc::vec::Vec<ext::cbor::Event>, event: ext::cbor::Event) { core::result::unwrap(events.try_push(event)); }
+fn prepare(options: Options, input: core::slice::View<u8>) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    let parsed: core::result::Result<ext::zip::Archive,ext::zip::Error> = ext::zip::parse(input,options.limits);
+    if (core::result::is_err(parsed)) { return core::result::Err(Error::Archive(core::result::unwrap_err(parsed))); } let archive: ext::zip::Archive = core::result::unwrap(parsed);
+    // The classic ZIP profile permits at most 65,534 entries, so this fits i32.
+    let allocated: core::result::Result<alloc::vec::Vec<ext::cbor::Event>,alloc::vec::Error> = alloc::vec::with_capacity(7+14*archive.len());
+    if (core::result::is_err(allocated)) { return core::result::Err(Error::AllocationFailed); } let events: alloc::vec::Vec<ext::cbor::Event> = core::result::unwrap(allocated);
+    push(events.borrow(),ext::cbor::Event::Map(2)); push(events.borrow(),ext::cbor::Event::Text(literal("format",6))); push(events.borrow(),ext::cbor::Event::Text(literal("zip",3)));
+    push(events.borrow(),ext::cbor::Event::Text(literal("entries",7))); push(events.borrow(),ext::cbor::Event::Array(archive.len() as u64)); let cursor: ext::zip::Cursor = archive.cursor();
+    while (true) {
+        let next: core::option::Option<ext::zip::Entry> = cursor.next(); if (core::option::is_none(next)) { break; } let entry: ext::zip::Entry = core::option::unwrap(next);
+        let verified: core::result::Result<alloc::vec::Vec<u8>,ext::zip::Error> = ext::zip::extract(entry,options.limits.max_entry);
+        if (core::result::is_err(verified)) { events.destroy(); return core::result::Err(Error::Archive(core::result::unwrap_err(verified))); } let payload: alloc::vec::Vec<u8> = core::result::unwrap(verified); payload.destroy();
+        push(events.borrow(),ext::cbor::Event::Map(6));
+        push(events.borrow(),ext::cbor::Event::Text(literal("name",4))); push(events.borrow(),ext::cbor::Event::Bytes(entry.name));
+        push(events.borrow(),ext::cbor::Event::Text(literal("compressed_size",15))); push(events.borrow(),ext::cbor::Event::Unsigned(entry.compressed_size as u64));
+        push(events.borrow(),ext::cbor::Event::Text(literal("size",4))); push(events.borrow(),ext::cbor::Event::Unsigned(entry.uncompressed_size as u64));
+        push(events.borrow(),ext::cbor::Event::Text(literal("crc32",5))); push(events.borrow(),ext::cbor::Event::Unsigned(entry.crc32 as u64));
+        let method: u64 = match (entry.method) { ext::zip::Method::Stored -> 0, ext::zip::Method::Deflate -> 8 };
+        push(events.borrow(),ext::cbor::Event::Text(literal("method",6))); push(events.borrow(),ext::cbor::Event::Unsigned(method));
+        let flag: u8 = 20; if (entry.utf8) { flag = 21; } push(events.borrow(),ext::cbor::Event::Text(literal("utf8",4))); push(events.borrow(),ext::cbor::Event::Simple(flag)); push(events.borrow(),ext::cbor::Event::End);
+    }
+    push(events.borrow(),ext::cbor::Event::End); push(events.borrow(),ext::cbor::Event::End);
+    let frames: alloc::vec::Vec<ext::cbor::Frame> = alloc::vec::new();
+    if (core::result::is_err(frames.try_resize(8,ext::cbor::empty_frame()))) { events.destroy(); frames.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let limits: ext::cbor::Limits = ext::cbor::default_limits(); limits.max_depth = 8; limits.max_output = options.max_output;
+    let measured: core::result::Result<i32,ext::cbor::Error> = ext::cbor::encoded_len(events.as_view(),frames.as_view(),limits);
+    if (core::result::is_err(measured)) { events.destroy(); frames.destroy(); return core::result::Err(Error::Cbor(core::result::unwrap_err(measured))); }
+    let output: alloc::vec::Vec<u8> = alloc::vec::new();
+    if (core::result::is_err(output.try_resize(core::result::unwrap(measured),0))) { events.destroy(); frames.destroy(); output.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let encoded: core::result::Result<i32,ext::cbor::Error> = ext::cbor::encode_into(events.as_view(),output.as_view(),frames.as_view(),limits); events.destroy(); frames.destroy();
+    if (core::result::is_err(encoded)) { output.destroy(); return core::result::Err(Error::Cbor(core::result::unwrap_err(encoded))); } return core::result::Ok(output);
+}
+fn process(options: Options) -> i32 {
+    let input: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(options.max_input)); let source: std::stream::Descriptor = std::stream::stdin();
+    let copied: core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(source.borrow(),input.borrow());
+    if (core::result::is_err(copied)) { let failure: core::io::CopyFailure = core::result::unwrap_err(copied); input.destroy(); return input_error(failure.cause); }
+    let bytes: core::slice::View<u8> = core::result::unwrap(core::slice::view(input.as_bytes(),input.len())); let prepared: core::result::Result<alloc::vec::Vec<u8>,Error> = prepare(options,bytes); input.destroy();
+    if (core::result::is_err(prepared)) { return failed(core::result::unwrap_err(prepared)); } let output: alloc::vec::Vec<u8> = core::result::unwrap(prepared); let sink: std::stream::Descriptor = std::stream::stdout();
+    let written: core::result::Result<i32,core::io::Failure> = core::io::write_all(sink.borrow(),output.as_slice(),0,output.len()); output.destroy();
+    if (core::result::is_err(written)) { return report(3,literal("zip-manifest: output I/O failed\n",32)); } return 0;
+}
+fn arguments(values: std::args::Arguments) -> i32 {
+    let specs: [ext::cli::Spec;7] = [
+        ext::cli::Spec { id: 1, long: literal("max-input",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 2, long: literal("max-output",10), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 3, long: literal("max-entries",11), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 4, long: literal("max-entry",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 5, long: literal("max-total",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: literal("max-work",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 7, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,7)); let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(values.as_view(),schema,ext::cli::Ordering::Intermixed));
+    let limits: ext::zip::Limits = ext::zip::default_limits(); limits.max_archive = 16777216; let options: Options = Options { max_input: 16777216, max_output: 67108864, limits: limits, help: false };
+    while (true) {
+        let parsed: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next(); if (core::result::is_err(parsed)) { return report(2,literal("zip-manifest: invalid arguments\n",32)); }
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(parsed); if (core::option::is_none(next)) { break; }
+        let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> apply(options.borrow(),item), ext::cli::Event::Operand(item) -> false };
+        if (!valid) { return report(2,literal("zip-manifest: invalid arguments\n",32)); }
+    }
+    if (options.help) {
+        let usage: core::slice::View<u8> = literal("Usage: zip-manifest [--max-input N] [--max-output N] [--max-entries N] [--max-entry N] [--max-total N] [--max-work N]\n",118); let sink: std::stream::Descriptor = std::stream::stdout();
+        if (core::result::is_err(core::io::write_all(sink.borrow(),usage.values,0,usage.len()))) { return report(3,literal("zip-manifest: output I/O failed\n",32)); } return 0;
+    } return process(options);
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,32,4096);
+    if (core::result::is_err(captured)) {
+        let error: std::args::Error = core::result::unwrap_err(captured); let status: i32 = match (error) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 };
+        return report(status,literal("zip-manifest: cannot capture arguments\n",39));
+    } let values: std::args::Arguments = core::result::unwrap(captured); let status: i32 = arguments(values); values.destroy(); return status;
+}

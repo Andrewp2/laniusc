@@ -1,0 +1,26 @@
+module app::main;
+import alloc::arena;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::io_decimal;
+struct Value { number: u64, flag: bool }
+struct Held { view: core::slice::View<Value>, count: i32, serial: i32 }
+fn same(a: alloc::arena::Stats, b: alloc::arena::Stats) -> bool { return a.retained == b.retained && a.chunks == b.chunks && a.used == b.used && a.requested == b.requested && a.allocations == b.allocations; }
+fn main() -> i32 {
+    let arena: alloc::arena::Arena = core::result::unwrap(alloc::arena::new(alloc::arena::Config { chunk_size: 64, max_retained: 65536, max_chunks: 64 }));
+    let empty_values: [Value] = core::mem::typed_slice_from_raw_parts(0,0); let empty: core::slice::View<Value> = core::result::unwrap(core::slice::view(empty_values,0));
+    let held: [Held;24] = [Held { view: empty, count: 0, serial: 0 };24]; let live: i32 = 0; let serial: i32 = 0; let failures: i32 = 0;
+    while (serial < 24) {
+        let before: alloc::arena::Stats = arena.stats(); let count: i32 = 1+serial%9;
+        let value: Value = Value { number: 4294967296+(serial as u64), flag: serial%2 == 0 };
+        let allocated: core::result::Result<core::slice::View<Value>,alloc::arena::Error> = alloc::arena::alloc_slice<Value>(arena.borrow(),count,value);
+        if (core::result::is_err(allocated)) { let error: alloc::arena::Error = core::result::unwrap_err(allocated); let allocation: bool = match (error) { alloc::arena::Error::AllocationFailed -> true, _ -> false }; assert(allocation && same(before,arena.stats())); failures += 1; }
+        else { held[live] = Held { view: core::result::unwrap(allocated), count: count, serial: serial }; live += 1; }
+        let index: i32 = 0;
+        while (index < live) { let stored: Held = held[index]; let item: i32 = 0; while (item < stored.count) { let actual: Value = core::option::unwrap(stored.view.get(item)); assert(actual.number == 4294967296+(stored.serial as u64) && actual.flag == (stored.serial%2 == 0)); item += 1; } index += 1; }
+        serial += 1;
+    }
+    arena.destroy(); assert(std::io_decimal::write_i32(1,failures) > 0); return 0;
+}

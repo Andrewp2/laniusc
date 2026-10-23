@@ -1,0 +1,31 @@
+module app::main;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+fn main() -> i32 {
+    let a4: core::net::Ipv4Addr = core::net::ipv4(197,123,211,165); let prefix: i32 = 0;
+    while (prefix <= 32) {
+        let net: core::net::Ipv4Net = core::result::unwrap(core::net::ipv4_net_truncate(a4,prefix)); assert(net.contains(a4) && net.contains(net.network()) && net.contains(net.last())); assert(core::result::is_ok(core::net::ipv4_net(net.network(),prefix)));
+        let whole: core::net::IpNet = core::net::IpNet::V4(net); assert(whole.contains(core::net::IpAddr::V4(a4)) && !whole.contains(core::net::IpAddr::V6(core::net::ipv6(0,0,0,0,0,0,0,0))));
+        if (prefix < 32) { let child: core::net::Ipv4Net = core::result::unwrap(core::net::ipv4_net_truncate(a4,prefix+1)); assert(net.contains_network(child) && !child.contains_network(net) && net.overlaps(child) && child.overlaps(net)); assert(whole.contains_network(core::net::IpNet::V4(child))); }
+        if (prefix > 0) { let outside: core::net::Ipv4Addr = core::net::Ipv4Addr { bits: net.network().bits ^ (1 << (32-prefix)) }; let other: core::net::Ipv4Net = core::result::unwrap(core::net::ipv4_net_truncate(outside,prefix)); assert(!net.contains(outside) && !net.overlaps(other) && !other.overlaps(net)); }
+        prefix += 1;
+    }
+    let a6: core::net::Ipv6Addr = core::net::ipv6(65000,12345,54321,60000,40000,30000,20000,10001); prefix = 0;
+    while (prefix <= 128) {
+        let net: core::net::Ipv6Net = core::result::unwrap(core::net::ipv6_net_truncate(a6,prefix)); assert(net.contains(a6) && net.contains(net.network()) && net.contains(net.last())); assert(core::result::is_ok(core::net::ipv6_net(net.network(),prefix)));
+        let whole: core::net::IpNet = core::net::IpNet::V6(net); assert(whole.contains(core::net::IpAddr::V6(a6)) && !whole.contains(core::net::IpAddr::V4(core::net::ipv4(0,0,0,0))));
+        if (prefix < 128) { let child: core::net::Ipv6Net = core::result::unwrap(core::net::ipv6_net_truncate(a6,prefix+1)); assert(net.contains_network(child) && !child.contains_network(net) && net.overlaps(child) && child.overlaps(net)); assert(whole.contains_network(core::net::IpNet::V6(child))); }
+        if (prefix > 0) {
+            let outside: core::net::Ipv6Addr = net.network(); let one: u64 = 1;
+            if (prefix <= 64) { outside.high = outside.high ^ (one << (64-prefix)); } else { outside.low = outside.low ^ (one << (128-prefix)); }
+            let other: core::net::Ipv6Net = core::result::unwrap(core::net::ipv6_net_truncate(outside,prefix)); assert(!net.contains(outside) && !net.overlaps(other) && !other.overlaps(net));
+        }
+        prefix += 1;
+    }
+    assert(core::result::is_err(core::net::ipv4_net_truncate(a4,-1)) && core::result::is_err(core::net::ipv4_net_truncate(a4,33)) && core::result::is_err(core::net::ipv6_net_truncate(a6,-1)) && core::result::is_err(core::net::ipv6_net_truncate(a6,129)));
+    let source: [u8;18] = [77,255,238,221,204,187,170,153,136,119,102,85,68,51,34,17,0,77]; let input: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(source,1,16)); let addr: core::net::Ipv6Addr = core::result::unwrap(core::net::ipv6_from_octets(input)); let output: [u8;18] = [77;18]; let destination: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(output,1,16)); assert(core::result::unwrap(addr.write_octets(destination)) == 16); let index: i32 = 0; while (index < 18) { assert(source[index] == output[index]); index += 1; }
+    assert(core::option::is_none(addr.octet(-1)) && core::option::is_none(addr.octet(16)) && core::option::is_none(addr.segment(8))); assert(core::result::is_err(core::net::ipv4_from_octets(input)));
+    return 0;
+}

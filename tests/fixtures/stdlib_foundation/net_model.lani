@@ -1,0 +1,51 @@
+module app::main;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import std::io;
+enum Value { Ip(core::net::IpAddr), Scoped(core::net::ScopedIpv6Addr), Socket(core::net::SocketAddr), Net(core::net::IpNet) }
+fn parse(mode: i32, input: core::slice::View<u8>) -> core::result::Result<Value,core::net::Error> {
+    if (mode == 0) { let value: core::result::Result<core::net::IpAddr,core::net::Error> = core::net::parse_ip(input); if (core::result::is_err(value)) { return core::result::Err(core::result::unwrap_err(value)); } return core::result::Ok(Value::Ip(core::result::unwrap(value))); }
+    if (mode == 1) { let value: core::result::Result<core::net::Ipv4Addr,core::net::Error> = core::net::parse_ipv4(input); if (core::result::is_err(value)) { return core::result::Err(core::result::unwrap_err(value)); } return core::result::Ok(Value::Ip(core::net::IpAddr::V4(core::result::unwrap(value)))); }
+    if (mode == 2) { let value: core::result::Result<core::net::Ipv6Addr,core::net::Error> = core::net::parse_ipv6(input); if (core::result::is_err(value)) { return core::result::Err(core::result::unwrap_err(value)); } return core::result::Ok(Value::Ip(core::net::IpAddr::V6(core::result::unwrap(value)))); }
+    if (mode == 3) { let value: core::result::Result<core::net::ScopedIpv6Addr,core::net::Error> = core::net::parse_scoped_ipv6(input); if (core::result::is_err(value)) { return core::result::Err(core::result::unwrap_err(value)); } return core::result::Ok(Value::Scoped(core::result::unwrap(value))); }
+    if (mode == 4) { let value: core::result::Result<core::net::SocketAddr,core::net::Error> = core::net::parse_socket(input); if (core::result::is_err(value)) { return core::result::Err(core::result::unwrap_err(value)); } return core::result::Ok(Value::Socket(core::result::unwrap(value))); }
+    let value: core::result::Result<core::net::IpNet,core::net::Error> = core::net::parse_prefix(input); if (mode == 6) { value = core::net::parse_prefix_truncate(input); } if (core::result::is_err(value)) { return core::result::Err(core::result::unwrap_err(value)); } return core::result::Ok(Value::Net(core::result::unwrap(value)));
+}
+fn address(value: Value) -> core::net::IpAddr { return match (value) { Value::Ip(item) -> item, Value::Scoped(item) -> core::net::IpAddr::V6(item.address), Value::Socket(item) -> item.address(), Value::Net(item) -> item.network() }; }
+fn format(value: Value, output: core::slice::View<u8>) -> core::result::Result<i32,core::net::Error> { return match (value) { Value::Ip(item) -> item.format_into(output), Value::Scoped(item) -> item.format_into(output), Value::Socket(item) -> item.format_into(output), Value::Net(item) -> item.format_into(output) }; }
+fn scope(value: Value) -> u32 { return match (value) { Value::Ip(item) -> 0, Value::Scoped(item) -> item.scope, Value::Socket(item) -> item.scope_id(), Value::Net(item) -> 0 }; }
+fn port(value: Value) -> u16 { return match (value) { Value::Ip(item) -> 0, Value::Scoped(item) -> 0, Value::Socket(item) -> item.port(), Value::Net(item) -> 0 }; }
+fn prefix(value: Value) -> i32 { return match (value) { Value::Ip(item) -> -1, Value::Scoped(item) -> -1, Value::Socket(item) -> -1, Value::Net(item) -> item.prefix_len() }; }
+fn hash(value: Value) -> u32 { return match (value) { Value::Ip(item) -> core::net::IpAddr::hash(item), Value::Scoped(item) -> core::net::ScopedIpv6Addr::hash(item), Value::Socket(item) -> core::net::SocketAddr::hash(item), Value::Net(item) -> core::net::IpNet::hash(item) }; }
+fn endpoint(value: Value, which: i32) -> core::net::IpAddr { let net: core::net::IpNet = match (value) { Value::Net(item) -> item, _ -> core::net::IpNet::V4(core::result::unwrap(core::net::ipv4_net(core::net::ipv4(0,0,0,0),0))) }; if (which == 1) { return net.last(); } if (which == 2) { return net.netmask(); } return net.hostmask(); }
+fn flags4(value: core::net::Ipv4Addr) -> i32 { let n: i32 = 0; if (value.is_unspecified()) { n |= 1; } if (value.is_loopback()) { n |= 2; } if (value.is_multicast()) { n |= 4; } if (value.is_link_local()) { n |= 8; } if (value.is_private()) { n |= 16; } if (value.is_broadcast()) { n |= 32; } return n; }
+fn flags6(value: core::net::Ipv6Addr) -> i32 { let n: i32 = 0; if (value.is_unspecified()) { n |= 1; } if (value.is_loopback()) { n |= 2; } if (value.is_multicast()) { n |= 4; } if (value.is_link_local()) { n |= 8; } if (value.is_private()) { n |= 16; } return n; }
+fn flags(value: core::net::IpAddr) -> i32 { return match (value) { core::net::IpAddr::V4(item) -> flags4(item), core::net::IpAddr::V6(item) -> flags6(item) }; }
+fn code(error: core::net::Error) -> i32 { return match (error) { core::net::Error::Bounds -> 1, core::net::Error::InvalidLength -> 2, core::net::Error::InvalidIpv4 -> 3, core::net::Error::InvalidIpv6 -> 4, core::net::Error::InvalidScope -> 5, core::net::Error::InvalidPort -> 6, core::net::Error::InvalidSocket -> 7, core::net::Error::InvalidPrefix -> 8, core::net::Error::HostBitsSet -> 9, core::net::Error::OutputTooSmall -> 10 }; }
+fn read(pointer: ptr, count: i32) -> i32 { let done: i32 = 0; while (done < count) { let got: i32 = std::io::read_stdin(pointer+(done as usize),(count-done) as usize); assert(got >= 0); if (got == 0) { return done; } done += got; } return done; }
+fn write(pointer: ptr, count: i32) { let done: i32 = 0; while (done < count) { let got: i32 = std::io::write_stdout(pointer+(done as usize),(count-done) as usize); assert(got > 0); done += got; } }
+fn get(bytes: [u8], index: i32) -> i32 { return (bytes[index] as i32) | ((bytes[index+1] as i32) << 8) | ((bytes[index+2] as i32) << 16) | ((bytes[index+3] as i32) << 24); }
+fn number(bytes: [u8], index: i32, value: i32) { bytes[index] = (value & 255) as u8; bytes[index+1] = ((value >> 8) & 255) as u8; bytes[index+2] = ((value >> 16) & 255) as u8; bytes[index+3] = ((value >> 24) & 255) as u8; }
+fn main() -> i32 {
+    let input_words: [i32;32] = [0;32]; let input_pointer: ptr = core::mem::i32_array_data_ptr(input_words); let input: [u8] = core::mem::typed_slice_from_raw_parts(input_pointer,128);
+    let output_words: [i32;22] = [0;22]; let output_pointer: ptr = core::mem::i32_array_data_ptr(output_words); let output: [u8] = core::mem::typed_slice_from_raw_parts(output_pointer,88);
+    let wire_words: [i32;16] = [0;16]; let wire_pointer: ptr = core::mem::i32_array_data_ptr(wire_words); let wire: [u8] = core::mem::typed_slice_from_raw_parts(wire_pointer,64);
+    let header_words: [i32;10] = [0;10]; let header_pointer: ptr = core::mem::i32_array_data_ptr(header_words); let header: [u8] = core::mem::typed_slice_from_raw_parts(header_pointer,40);
+    while (true) {
+        let got: i32 = read(header_pointer,12); if (got == 0) { break; } assert(got == 12); let mode: i32 = get(header,0); let length: i32 = get(header,4); let capacity: i32 = get(header,8); assert(mode >= 0 && mode <= 6 && length >= 0 && length <= 128 && capacity >= 0 && capacity <= 80); assert(read(input_pointer,length) == length);
+        let index: i32 = 0; while (index < 88) { output[index] = 77; index += 1; } index = 0; while (index < 40) { header[index] = 0; index += 1; }
+        let source: core::slice::View<u8> = core::result::unwrap(core::slice::view(input,length)); let destination: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(output,4,capacity)); let result: core::result::Result<Value,core::net::Error> = parse(mode,source); let written: i32 = 0; let wire_count: i32 = 0; let parts: i32 = 0; let error: i32 = 0;
+        if (core::result::is_err(result)) { error = code(core::result::unwrap_err(result)); }
+        else {
+            let value: Value = core::result::unwrap(result); let ip: core::net::IpAddr = address(value); let wires: core::slice::View<u8> = core::result::unwrap(core::slice::view(wire,64)); wire_count = core::result::unwrap(ip.write_octets(wires)); parts = 1;
+            if (mode >= 5) { parts = 4; let part: i32 = 1; while (part < 4) { let section: core::slice::View<u8> = core::result::unwrap(wires.subview(part*wire_count,(part+1)*wire_count)); assert(core::result::unwrap(endpoint(value,part).write_octets(section)) == wire_count); part += 1; } }
+            number(header,12,ip.version()); number(header,16,prefix(value)); number(header,20,scope(value) as i32); number(header,24,port(value) as i32); number(header,28,hash(value) as i32); number(header,36,flags(ip));
+            let formatted: core::result::Result<i32,core::net::Error> = format(value,destination); if (core::result::is_err(formatted)) { error = code(core::result::unwrap_err(formatted)); } else { written = core::result::unwrap(formatted); }
+        }
+        index = 0; while (index < 88) { if (index < 4 || index >= written+4) { assert(output[index] == 77); } index += 1; }
+        number(header,0,error); number(header,4,written); number(header,8,wire_count); number(header,32,parts); write(header_pointer,40); write(output_pointer+4,written); write(wire_pointer,wire_count*parts);
+    } return 0;
+}

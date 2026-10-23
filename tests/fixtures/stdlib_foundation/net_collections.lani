@@ -1,0 +1,17 @@
+module app::main;
+import alloc::hash_map;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+fn key(index: i32) -> core::net::IpAddr { if (index % 2 == 0) { return core::net::IpAddr::V4(core::net::Ipv4Addr { bits: index as u32 }); } return core::net::IpAddr::V6(core::net::Ipv6Addr { high: (index as u64) << 48 | 4294967296, low: (index as u64) << 32 | 123 }); }
+fn main() -> i32 {
+    let map: alloc::hash_map::HashMap<core::net::IpAddr,i32> = alloc::hash_map::new(); let index: i32 = 0;
+    while (index < 4096) { assert(core::option::is_none(core::result::unwrap(map.try_insert(key(index),index)))); index += 1; }
+    index = 0; while (index < 4096) { assert(core::option::unwrap(map.get(key(index))) == index); index += 1; } assert(map.len() == 4096);
+    index = 0; while (index < 4096) { assert(core::option::unwrap(map.remove(key(index))).value == index); index += 2; } assert(map.len() == 2048); map.destroy();
+    let a: core::net::Ipv6Addr = core::net::Ipv6Addr { high: 1, low: 0 }; let b: core::net::Ipv6Addr = core::net::Ipv6Addr { high: 0, low: 18446744073709551615 }; assert(core::net::Ipv6Addr::gt(a,b)); assert(!core::net::Ipv6Addr::eq(a,b)); assert(core::net::Ipv6Addr::hash(a) != core::net::Ipv6Addr::hash(b));
+    let values: [core::net::IpAddr;4] = [key(3),key(2),key(1),key(0)]; core::slice::sort(values,4); assert(core::net::IpAddr::eq(values[0],key(0)) && core::net::IpAddr::eq(values[1],key(2)) && core::net::IpAddr::eq(values[2],key(1)) && core::net::IpAddr::eq(values[3],key(3)));
+    let s1: core::net::SocketAddrV6 = core::net::SocketAddrV6 { address: a, port: 65535, scope: 1 }; let s2: core::net::SocketAddrV6 = s1; s2.scope = 4294967295; assert(core::net::SocketAddrV6::lt(s1,s2) && core::net::SocketAddrV6::hash(s1) != core::net::SocketAddrV6::hash(s2));
+    return 0;
+}

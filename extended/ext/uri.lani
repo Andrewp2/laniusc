@@ -1,6 +1,7 @@
 // Strict RFC 3986 generic URI-reference syntax. Components retain their encoded
 // spelling and borrow the selected source view. No allocation or resolution.
 module ext::uri;
+import core::net;
 import core::option;
 import core::result;
 import core::slice;
@@ -53,45 +54,12 @@ fn component(view: core::slice::View<u8>, start: i32, end: i32, mode: i32) -> co
     return core::result::Ok(true);
 }
 fn ipv4(view: core::slice::View<u8>, start: i32, end: i32) -> bool {
-    let index: i32 = start; let parts: i32 = 0;
-    while (index < end) {
-        let begin: i32 = index; let value: i32 = 0;
-        while (index < end && digit(byte(view,index))) {
-            if (index-begin == 3) { return false; }
-            value = value*10 + (byte(view,index)-48) as i32; index += 1;
-        }
-        if (index == begin || value > 255 || (index-begin > 1 && byte(view,begin) == 48)) { return false; }
-        parts += 1;
-        if (index == end) { return parts == 4; }
-        if (parts == 4 || byte(view,index) != 46) { return false; } index += 1;
-    }
-    return false;
+    let parsed: core::result::Result<core::net::Ipv4Addr,core::net::Error> = core::net::parse_ipv4(window(view,start,end));
+    return core::result::is_ok(parsed);
 }
 fn ipv6(view: core::slice::View<u8>, start: i32, end: i32) -> bool {
-    if (start == end) { return false; }
-    let index: i32 = start; let pieces: i32 = 0; let compressed: bool = false;
-    if (byte(view,index) == 58) {
-        if (end-index < 2 || byte(view,index+1) != 58) { return false; }
-        index += 2; compressed = true;
-        if (index == end) { return true; }
-    }
-    while (index < end) {
-        let begin: i32 = index; let dotted: bool = false;
-        while (index < end && byte(view,index) != 58) { if (byte(view,index) == 46) { dotted = true; } index += 1; }
-        if (dotted) { if (index != end || !ipv4(view,begin,end)) { return false; } pieces += 2; }
-        else {
-            if (index == begin || index-begin > 4) { return false; }
-            let cursor: i32 = begin; while (cursor < index) { if (!hex(byte(view,cursor))) { return false; } cursor += 1; } pieces += 1;
-        }
-        if (pieces > 8) { return false; }
-        if (index == end) { break; }
-        index += 1;
-        if (index < end && byte(view,index) == 58) {
-            if (compressed) { return false; } compressed = true; index += 1;
-            if (index == end) { break; }
-        } else { if (index == end) { return false; } }
-    }
-    if (compressed) { return pieces < 8; } return pieces == 8;
+    let parsed: core::result::Result<core::net::Ipv6Addr,core::net::Error> = core::net::parse_ipv6(window(view,start,end));
+    return core::result::is_ok(parsed);
 }
 fn ipv_future(view: core::slice::View<u8>, start: i32, end: i32) -> bool {
     let index: i32 = start+1; let begin: i32 = index;

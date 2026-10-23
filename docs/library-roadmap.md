@@ -30,13 +30,13 @@ package distribution is a separate deliverable.
 | Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic algorithms and counted View values execute, including subviews, checked mutations and cursors; initial physical counts still require compiler length projection |
 | Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | Inherent slice/text/hash-map cursors execute; shared protocol dispatch hits an imported-generic compiler dependency; adapters and collection integration remain |
 | Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat, integer conversion and caller-buffer Display formatting execute; float formatting, format strings and further Unicode operations remain |
-| Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings and raw views exist; ownership conventions need consolidation |
+| Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings, raw views and stable chunked arenas with generic typed allocations execute; layout and ownership consolidation remain |
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec and deque with explicit errors, linear maps/sets, alloc hash maps, ordered tree maps and min/max heaps execute; legacy migration and ordered sets remain |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks, native descriptor adapters and owned files execute; buffered adapters remain |
 | Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files, borrowed Unix byte paths, components, names, prefixes, owned buffers, explicit lexical normalization and checked directory/file mutations execute; metadata, directory enumeration, walking and further host operations remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Owned raw-byte argument snapshots and argument/environment helpers execute; subprocess management remains |
 | Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, native clocks, generic deadline waits, deterministic generators, sampling/shuffle and explicit OS entropy errors execute; legacy consolidation, additional clocks and distributions remain |
-| Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Current network module is contract-only |
+| Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6, scopes, socket addresses and CIDR prefixes execute; host socket services remain contract-only |
 | Concurrency | Threads, joining, synchronization, atomics, channels, cancellation | Current thread module is contract-only; runtime prerequisites remain |
 | Development | Assertions, test runner, property helpers, benchmarks, diagnostics, API docs | Existing compiler-driven fixtures; a complete Lanius-facing workflow remains |
 
@@ -95,6 +95,15 @@ payload verification. They do not perform filesystem extraction. GNU/PAX TAR
 extensions, ZIP64, encrypted and multi-disk ZIP remain unsupported and report
 explicit errors. [Archive compilation evidence](extended-archive-performance.md)
 and the application docs record target support and scale measurements.
+
+[CBOR wire events](extended-cbor.md) provide binary serialization for all major
+types, full-width integer arguments, exact float bits, tags, arbitrary map keys
+and definite/indefinite structures. The iterative codec uses caller scratch,
+strict UTF-8 and explicit resource bounds. A [ZIP manifest program](extended-zip-manifest.md)
+checks all archive payloads, then emits CBOR with exact raw byte names.
+Application schema validation and tag-specific semantics remain separate work.
+The [foundation compilation measurements](library-foundation-performance.md)
+record executable import workloads for arenas, network values and CBOR.
 
 For external formats and algorithms, use their primary specifications and
 published conformance vectors. Choose exact versions and formats when starting
@@ -156,6 +165,21 @@ API list; unrelated library work can continue.
   text-processing program. See [stdlib-string.md](stdlib-string.md) for exact
   coverage and remaining String operations.
 - Compiler and runtime prerequisites: [library-dependencies.md](library-dependencies.md).
+- Arenas: [`alloc::arena`](stdlib-arena.md) provides stable chunked storage,
+  explicit retained/chunk limits, reset/reuse, clear, destruction and generic
+  typed value/slice copies using the existing native layout contract. Tests
+  exercise all primitive widths, nested records/enums, zero-sized values,
+  modeled allocation sequences, allocation failures and large reuse batches.
+  The [streaming word-count application](stdlib-arena-words.md) stores each
+  distinct byte key once and retains stable views in a generic ordered map.
+  Current supported alignment is 1, 2, 4 or 8; over-aligned layouts need a
+  pointer/alignment operation recorded in the dependency inventory.
+- Network values: [`core::net`](stdlib-net.md) executes strict address/socket
+  parsing, RFC 5952 formatting, wire octets, full-width comparison/hashing and
+  every CIDR prefix width. The [address filter](stdlib-address-filter.md) uses
+  these values with native streams and explicit resource limits. URI parsing
+  now reuses these IP parsers; all six existing URI runtime groups pass.
+  Host sockets and name/interface resolution remain runtime prerequisites.
 - Paths: [`core::path` and `alloc::path`](stdlib-paths.md) separate borrowed Unix
   paths and owned buffers from host filesystem services. Component cursors,
   names/extensions, ancestors, prefixes, comparison/hash, joins, atomic edits

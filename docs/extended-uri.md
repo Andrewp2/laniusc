@@ -4,6 +4,11 @@
 its encoded components. The implementation is Lanius and uses constant local
 storage. Parsing neither allocates nor changes the input.
 
+IPv4/IPv6 host validation uses the shared [`core::net`](stdlib-net.md) parsers.
+URI-specific registered-name fallback, IPvFuture, brackets, percent spelling
+and port grammar remain in this module. All six existing URI runtime groups
+passed after that integration, including the native address-parser corpus.
+
 The grammar is [RFC 3986 sections 3–4 and Appendix A](https://www.rfc-editor.org/rfc/rfc3986.html#appendix-A),
 including empty and relative references, authority subcomponents, IPv4, IPv6
 and IPvFuture literals. The verified errata

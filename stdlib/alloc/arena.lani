@@ -1,0 +1,126 @@
+// Stable chunked storage. Keep one active owner; copies alias ownership.
+// No per-object release, automatic destruction or enforced borrowing lifetime.
+module alloc::arena;
+import alloc::allocator;
+import core::mem;
+import core::result;
+import core::slice;
+
+pub const MAX_CHUNK_BYTES: usize = 2147483647;
+pub const MAX_ALIGNMENT: usize = 8;
+const MAX_COUNT: usize = 18446744073709551615;
+pub struct Config { chunk_size: usize, max_retained: usize, max_chunks: i32 }
+pub struct Stats { retained: usize, chunks: i32, used: usize, requested: usize, allocations: usize }
+pub struct Block { data: ptr, length: usize }
+pub enum Error { InvalidConfig, InvalidAlignment, UnsupportedAlignment, Bounds, SizeOverflow, RetainedLimit, ChunkLimit, AllocationFailed, Destroyed }
+struct Chunk { next: ptr, capacity: usize, used: usize, allocated: usize }
+pub struct Arena { config: Config, head: ptr, tail: ptr, current: ptr, retained: usize, chunks: i32, used: usize, requested: usize, allocations: usize, live: bool }
+
+pub fn default_config() -> Config { return Config { chunk_size: 4096, max_retained: 67108864, max_chunks: 16384 }; }
+fn header_size() -> usize { return core::mem::size_of<Chunk>(); }
+fn read(chunk: ptr) -> Chunk { let slots: [Chunk] = core::mem::typed_slice_from_storage(chunk,1); return slots[0]; }
+fn write(chunk: ptr, value: Chunk) { let slots: [Chunk] = core::mem::typed_slice_from_storage(chunk,1); slots[0] = value; }
+fn aligned_offset(value: Chunk, alignment: usize) -> usize {
+    // The allocator and header establish an 8-aligned payload. All current
+    // native T need at most 8, so offset alignment is sufficient and portable.
+    let remainder: usize = value.used % alignment;
+    if (remainder == 0) { return 0; } return alignment-remainder;
+}
+pub fn new(config: Config) -> core::result::Result<Arena,Error> {
+    if (config.chunk_size == 0 || config.chunk_size > MAX_CHUNK_BYTES-header_size() || config.max_chunks < 0) { return core::result::Err(Error::InvalidConfig); }
+    let empty: ptr = 0;
+    return core::result::Ok(Arena { config: config, head: empty, tail: empty, current: empty, retained: 0, chunks: 0, used: 0, requested: 0, allocations: 0, live: true });
+}
+pub impl Arena {
+    pub fn borrow(&self) -> &Arena { return self; }
+    pub fn is_live(&self) -> bool { return self.live; }
+    pub fn stats(&self) -> Stats { return Stats { retained: self.retained, chunks: self.chunks, used: self.used, requested: self.requested, allocations: self.allocations }; }
+    pub fn allocate(&self, size: usize, alignment: usize) -> core::result::Result<Block,Error> {
+        let allocated: core::result::Result<ptr,Error> = self.allocate_pointer(size,alignment);
+        if (core::result::is_err(allocated)) { return core::result::Err(core::result::unwrap_err(allocated)); }
+        return core::result::Ok(Block { data: core::result::unwrap(allocated), length: size });
+    }
+    fn allocate_pointer(&self, size: usize, alignment: usize) -> core::result::Result<ptr,Error> {
+        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        if (alignment == 0 || (alignment & (alignment-1)) != 0) { return core::result::Err(Error::InvalidAlignment); }
+        if (alignment > MAX_ALIGNMENT) { return core::result::Err(Error::UnsupportedAlignment); }
+        if (self.allocations == MAX_COUNT || size > MAX_COUNT-self.requested) { return core::result::Err(Error::SizeOverflow); }
+        if (size == 0) {
+            let nowhere: ptr = 0; self.allocations += 1;
+            return core::result::Ok(nowhere+alignment);
+        }
+        if (size > MAX_CHUNK_BYTES-header_size()) { return core::result::Err(Error::SizeOverflow); }
+        let candidate: ptr = self.current;
+        while (candidate != 0) {
+            let chunk: Chunk = read(candidate); let padding: usize = aligned_offset(chunk,alignment);
+            if (padding <= chunk.capacity-chunk.used && size <= chunk.capacity-chunk.used-padding) {
+                let pointer: ptr = candidate+header_size()+chunk.used+padding;
+                chunk.used += padding+size; write(candidate,chunk); self.current = candidate;
+                self.used += padding+size; self.requested += size; self.allocations += 1;
+                return core::result::Ok(pointer);
+            }
+            candidate = chunk.next;
+        }
+        let needed: usize = size;
+        if (self.chunks == self.config.max_chunks) { return core::result::Err(Error::ChunkLimit); }
+        let available: usize = self.config.max_retained-self.retained;
+        if (available < header_size() || needed > available-header_size()) { return core::result::Err(Error::RetainedLimit); }
+        let capacity: usize = self.config.chunk_size;
+        if (capacity < needed) { capacity = needed; }
+        if (capacity > available-header_size()) { capacity = available-header_size(); }
+        let allocated: usize = header_size()+capacity;
+        let storage: ptr = alloc::allocator::alloc(allocated,8);
+        if (storage == 0) { return core::result::Err(Error::AllocationFailed); }
+        let empty: ptr = 0; let chunk: Chunk = Chunk { next: empty, capacity: capacity, used: 0, allocated: allocated };
+        let padding: usize = aligned_offset(chunk,alignment); chunk.used = padding+size; write(storage,chunk);
+        if (self.tail != 0) { let last: Chunk = read(self.tail); last.next = storage; write(self.tail,last); }
+        else { self.head = storage; }
+        self.tail = storage; self.current = storage; self.retained += allocated; self.chunks += 1;
+        self.used += padding+size; self.requested += size; self.allocations += 1;
+        return core::result::Ok(storage+header_size()+padding);
+    }
+    // Invalidates every old block, typed view and pointer, without zeroing or
+    // releasing retained chunks. Subsequent requests may reuse their bytes.
+    pub fn reset(&self) -> core::result::Result<bool,Error> {
+        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        let position: ptr = self.head;
+        while (position != 0) { let chunk: Chunk = read(position); chunk.used = 0; write(position,chunk); position = chunk.next; }
+        self.current = self.head; self.used = 0; self.requested = 0; self.allocations = 0; return core::result::Ok(true);
+    }
+    // Invalidates all old references and releases all retained chunks. The
+    // same live owner can allocate again with its original configuration.
+    pub fn clear(&self) -> core::result::Result<bool,Error> {
+        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        let position: ptr = self.head;
+        while (position != 0) { let chunk: Chunk = read(position); alloc::allocator::dealloc(position,chunk.allocated,8); position = chunk.next; }
+        let empty: ptr = 0; self.head = empty; self.tail = empty; self.current = empty;
+        self.retained = 0; self.chunks = 0; self.used = 0; self.requested = 0; self.allocations = 0; return core::result::Ok(true);
+    }
+    pub fn destroy(&self) { if (self.live) { self.clear(); self.live = false; } }
+}
+
+// Each returned view has one fixed physical extent. Descending native types
+// must use that complete extent for every later access to its raw storage.
+pub fn alloc_slice<T>(arena: &Arena, count: i32, fill: T) -> core::result::Result<core::slice::View<T>,Error> {
+    if (count < 0) { return core::result::Err(Error::Bounds); }
+    let size: usize = core::mem::size_of<T>();
+    if (size > 0 && (count as usize) > MAX_CHUNK_BYTES/size) { return core::result::Err(Error::SizeOverflow); }
+    let allocated: core::result::Result<ptr,Error> = arena.allocate_pointer(size*(count as usize),8);
+    if (core::result::is_err(allocated)) { return core::result::Err(core::result::unwrap_err(allocated)); }
+    let pointer: ptr = core::result::unwrap(allocated); let values: [T] = core::mem::typed_slice_from_storage<T>(pointer,count);
+    let index: i32 = 0; if (size > 0) { while (index < count) { values[index] = fill; index += 1; } }
+    let view: core::slice::View<T> = core::slice::View { values: values, start: 0, length: count };
+    let result: core::result::Result<core::slice::View<T>,Error> = core::result::Ok(view); return result;
+}
+pub fn alloc<T>(arena: &Arena, value: T) -> core::result::Result<core::slice::View<T>,Error> { return alloc_slice<T>(arena,1,value); }
+pub fn copy_slice<T>(arena: &Arena, input: core::slice::View<T>) -> core::result::Result<core::slice::View<T>,Error> {
+    if (input.start < 0 || input.length < 0 || input.start > 2147483647-input.length) { return core::result::Err(Error::Bounds); }
+    let size: usize = core::mem::size_of<T>();
+    if (size > 0 && (input.length as usize) > MAX_CHUNK_BYTES/size) { return core::result::Err(Error::SizeOverflow); }
+    let allocated: core::result::Result<ptr,Error> = arena.allocate_pointer(size*(input.length as usize),8);
+    if (core::result::is_err(allocated)) { return core::result::Err(core::result::unwrap_err(allocated)); }
+    let pointer: ptr = core::result::unwrap(allocated); let values: [T] = core::mem::typed_slice_from_storage<T>(pointer,input.length);
+    let index: i32 = 0; if (size > 0) { while (index < input.length) { values[index] = input.values[input.start+index]; index += 1; } }
+    let view: core::slice::View<T> = core::slice::View { values: values, start: 0, length: input.length };
+    let result: core::result::Result<core::slice::View<T>,Error> = core::result::Ok(view); return result;
+}
