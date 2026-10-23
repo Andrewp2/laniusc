@@ -1,0 +1,116 @@
+// expect: 0
+module app::main;
+import alloc::hash_map;
+import core::cmp;
+import core::hash;
+import core::option;
+import core::result;
+
+struct Key { value: i32, tag: i32 }
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(left: Key, right: Key) -> bool { return left.value == right.value; }
+    pub fn ne(left: Key, right: Key) -> bool { return left.value != right.value; }
+}
+pub impl core::hash::Hash<Key> for Key {
+    // Every key collides; its initial bucket is the last slot in small tables.
+    pub fn hash(value: Key) -> u32 { return 65535; }
+}
+struct Payload { number: u64, optional: core::option::Option<bool>, words: [i32; 3] }
+fn payload(value: i32) -> Payload {
+    let optional: core::option::Option<bool> = core::option::None();
+    if (value % 3 != 0) { optional = core::option::Some(value % 2 == 0); }
+    let words: [i32; 3] = [value, -value, value + 7];
+    return Payload { number: 4294967296 + (value as u64), optional: optional, words: words };
+}
+fn correct(actual: Payload, value: i32) -> bool {
+    if (actual.number != 4294967296 + (value as u64) ||
+        actual.words[0] != value || actual.words[1] != -value || actual.words[2] != value + 7) { return false; }
+    if (value % 3 == 0) { return core::option::is_none(actual.optional); }
+    return core::option::is_some(actual.optional) && core::option::unwrap(actual.optional) == (value % 2 == 0);
+}
+fn verify(map: &alloc::hash_map::HashMap<Key, Payload>, present: [bool], tags: [i32], values: [i32], count: i32) -> bool {
+    if (map.len() != count || map.is_empty() != (count == 0) || map.capacity() < count) { return false; }
+    let index: i32 = 0;
+    while (index < 47) {
+        let key: Key = Key { value: index, tag: -1 };
+        let found: core::option::Option<Payload> = map.get(key);
+        if (core::option::is_some(found) != present[index] || map.contains_key(key) != present[index]) { return false; }
+        if (present[index]) {
+            if (!correct(core::option::unwrap(found), values[index])) { return false; }
+            let item: alloc::hash_map::Entry<Key, Payload> = core::option::unwrap(map.get_entry(key));
+            if (item.key.tag != tags[index] || !correct(item.value, values[index])) { return false; }
+        }
+        index += 1;
+    }
+    let seen: [bool; 47] = [false; 47];
+    let iterator: alloc::hash_map::Iter<Key, Payload> = map.iter();
+    let scanned: i32 = 0;
+    while (true) {
+        let found: core::option::Option<alloc::hash_map::Entry<Key, Payload>> = iterator.next();
+        if (core::option::is_none(found)) { break; }
+        let item: alloc::hash_map::Entry<Key, Payload> = core::option::unwrap(found);
+        let key: i32 = item.key.value;
+        if (key < 0 || key >= 47 || !present[key] || seen[key] || item.key.tag != tags[key] ||
+            !correct(item.value, values[key])) { return false; }
+        seen[key] = true; scanned += 1;
+    }
+    return scanned == count && core::option::is_none(iterator.next());
+}
+fn main() -> i32 {
+    let map: alloc::hash_map::HashMap<Key, Payload> = alloc::hash_map::new();
+    let present: [bool; 47] = [false; 47];
+    let tags: [i32; 47] = [0; 47];
+    let values: [i32; 47] = [0; 47];
+    let count: i32 = 0;
+    let seed: u32 = 305419896;
+    let step: i32 = 0;
+    while (step < 1024) {
+        seed = seed * 1664525 + 1013904223;
+        let index: i32 = ((seed >> 16) % 47) as i32;
+        let key: Key = Key { value: index, tag: step };
+        let value: i32 = ((seed >> 8) % 30001) as i32;
+        let operation: u32 = seed % 7;
+        if (operation <= 3) {
+            let result: core::result::Result<core::option::Option<alloc::hash_map::Entry<Key, Payload>>, alloc::hash_map::Error> =
+                map.try_insert(key, payload(value));
+            if (core::result::is_err(result)) { return 1; }
+            let previous: core::option::Option<alloc::hash_map::Entry<Key, Payload>> = core::result::unwrap(result);
+            if (core::option::is_some(previous) != present[index]) { return 2; }
+            if (present[index]) {
+                let item: alloc::hash_map::Entry<Key, Payload> = core::option::unwrap(previous);
+                if (item.key.tag != tags[index] || !correct(item.value, values[index])) { return 3; }
+            } else { count += 1; }
+            present[index] = true; tags[index] = step; values[index] = value;
+        } else {
+            if (operation == 4) {
+                let removed: core::option::Option<alloc::hash_map::Entry<Key, Payload>> = map.remove(key);
+                if (core::option::is_some(removed) != present[index]) { return 4; }
+                if (present[index]) {
+                    let item: alloc::hash_map::Entry<Key, Payload> = core::option::unwrap(removed);
+                    if (item.key.tag != tags[index] || !correct(item.value, values[index])) { return 5; }
+                    present[index] = false; count -= 1;
+                }
+            } else {
+                if (operation == 5) {
+                    let copy: alloc::hash_map::HashMap<Key, Payload> = core::result::unwrap(map.try_clone());
+                    if (!verify(copy.borrow(), present, tags, values, count)) { return 6; }
+                    copy.destroy();
+                } else {
+                    if (step % 2 == 0) { if (core::result::is_err(map.try_reserve(20))) { return 7; } }
+                    else { if (core::result::is_err(map.try_shrink_to_fit())) { return 8; } }
+                }
+            }
+        }
+        if (!verify(map.borrow(), present, tags, values, count)) { return 9; }
+        if (step % 113 == 112) {
+            map.clear();
+            let index: i32 = 0;
+            while (index < 47) { present[index] = false; index += 1; }
+            count = 0;
+            if (!verify(map.borrow(), present, tags, values, count)) { return 10; }
+        }
+        step += 1;
+    }
+    map.destroy();
+    return 0;
+}

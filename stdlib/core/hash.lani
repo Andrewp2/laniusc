@@ -42,8 +42,7 @@ pub fn hash_u32(value: u32) -> u32 { return u32::hash(value); }
 pub fn hash_bool(value: bool) -> u32 { return bool::hash(value); }
 pub fn hash_char(value: char) -> u32 { return char::hash(value); }
 
-// Narrow integer trait keys collide with the corresponding 32-bit key, so
-// these entry points widen explicitly and return the 32-bit bit pattern.
+// Narrow integers widen explicitly and return the 32-bit bit pattern.
 pub fn hash_i8(value: i8) -> u32 {
     let widened: i32 = value as i32;
     return widened as u32;
@@ -62,6 +61,34 @@ pub fn hash_u8(value: u8) -> u32 {
 pub fn hash_u16(value: u16) -> u32 {
     let widened: u32 = value as u32;
     return widened;
+}
+
+pub impl Hash<i8> for i8 {
+    pub fn hash(value: i8) -> u32 { return hash_i8(value); }
+}
+pub impl Hash<i16> for i16 {
+    pub fn hash(value: i16) -> u32 { return hash_i16(value); }
+}
+pub impl Hash<u8> for u8 {
+    pub fn hash(value: u8) -> u32 { return hash_u8(value); }
+}
+pub impl Hash<u16> for u16 {
+    pub fn hash(value: u16) -> u32 { return hash_u16(value); }
+}
+pub impl Hash<u64> for u64 {
+    pub fn hash(value: u64) -> u32 {
+        let state: u32 = fnv1a_word_le(FNV1A_OFFSET_BASIS, value as u32);
+        return fnv1a_word_le(state, (value >> 32) as u32);
+    }
+}
+pub impl Hash<i64> for i64 {
+    pub fn hash(value: i64) -> u32 { return u64::hash(value as u64); }
+}
+pub impl Hash<usize> for usize {
+    pub fn hash(value: usize) -> u32 { return u64::hash(value as u64); }
+}
+pub impl Hash<isize> for isize {
+    pub fn hash(value: isize) -> u32 { return u64::hash(value as u64); }
 }
 
 pub fn fnv1a_step(state: u32, value: u8) -> u32 {

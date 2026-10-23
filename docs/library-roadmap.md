@@ -30,7 +30,7 @@ package distribution is a separate deliverable.
 | Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | Shared protocol and collection integration remain |
 | Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed owned String, byte codecs and scalar operations execute; split/join, formatting and borrowed text integration remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings and raw views exist; ownership conventions need consolidation |
-| Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Generic vectors/deques and linear maps/sets exist; other structures remain |
+| Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Generic vectors/deques, linear maps/sets and an executable alloc hash map exist; hash-set composition is a compiler dependency |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks and native descriptor adapters execute; buffered adapters and owned files remain |
 | Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Basic bindings exist; complete path and directory interfaces remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Argument/environment helpers exist; subprocess management remains |
@@ -128,13 +128,19 @@ API list; unrelated library work can continue.
 - Decimal parsing: packed byte parsers for all signed/unsigned 8-, 16- and
   32-bit widths return explicit errors and execute across normal, boundary and
   malformed cases. See [stdlib-decimal.md](stdlib-decimal.md).
+- Hash map: [`alloc::hash_map`](stdlib-hash-collections.md) executes generic
+  lookup, replacement/removal, reserve, shrink, clone and iteration, including
+  collision models and allocation failures. String and all integer widths
+  implement hashing. The HashSet wrapper is retained as a compiler reproduction,
+  outside the production source root.
 - CSV-to-JSON integration: the [report application](csv-report.md) validates
   schemas and integers, groups records, checks totals and emits JSON. Native
   tests cover generated records, all allocation failures and partial I/O.
-  Initial runtime measurements identify the current linear-map and full-table
-  allocation design as work still to improve.
-- Next foundation work: hash-based collections with explicit failure results,
-  iterators and text operations, buffered I/O and streaming format interfaces.
+  It now uses the hash map; paired measurements improve the 1,024-group case
+  from about 694 ms to 307 ms. Full-table allocation remains work to improve.
+- Next foundation work: iterators and text operations, buffered I/O and
+  streaming format interfaces; complete HashSet when its compiler dependency
+  is resolved.
   Completing the integration application does not complete the first phase.
 - The older [execution audit](stdlib-foundation.md) remains historical evidence;
   its top-level checkpoints do not establish this branch's current behavior.

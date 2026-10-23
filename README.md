@@ -43,6 +43,8 @@ full scope and delivery requirements. New APIs follow the
 allocation-failure tests.
 The [byte stream APIs](docs/stdlib-streams.md) provide shared reader/writer
 contracts, owned byte buffers and native descriptor adapters.
+The [generic hash map](docs/stdlib-hash-collections.md) provides hashed lookup,
+explicit allocation errors and returned displaced keys/values.
 
 Optional modules use the [`extended` source root](extended/README.md).
 [`ext::csv`](docs/extended-csv.md) and [`ext::json`](docs/extended-json.md)

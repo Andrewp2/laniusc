@@ -3,6 +3,7 @@
 // See docs/csv-report.md for limits, errors and ownership.
 module app::main;
 import alloc::io;
+import alloc::hash_map;
 import alloc::string;
 import core::decimal;
 import core::i32;
@@ -13,7 +14,6 @@ import ext::csv;
 import ext::json;
 import std::io;
 import std::io_decimal;
-import std::map;
 import std::stream;
 import std::vec;
 
@@ -21,11 +21,11 @@ struct Group { name: alloc::string::String, total: i32, count: i32 }
 struct Report {
     groups: std::vec::Vec<Group>,
     // Keys borrow the independently allocated names owned by groups.
-    index: std::map::Map<alloc::string::String, i32>,
+    index: alloc::hash_map::HashMap<alloc::string::String, i32>,
 }
 fn new_report() -> Report {
     let groups: std::vec::Vec<Group> = std::vec::new();
-    let index: std::map::Map<alloc::string::String, i32> = std::map::new();
+    let index: alloc::hash_map::HashMap<alloc::string::String, i32> = alloc::hash_map::new();
     return Report { groups: groups, index: index };
 }
 fn string_error(error: alloc::string::Error) -> i32 {
@@ -52,7 +52,7 @@ fn record_error(row: i32, message: str) {
 impl Report {
     // Consumes name on every path. Failed insertion rolls back the new group.
     fn add(&self, name: alloc::string::String, value: i32) -> i32 {
-        let ordinal: i32 = std::map::get_or(self.index, name, -1);
+        let ordinal: i32 = core::option::unwrap_or(self.index.get(name), -1);
         if (ordinal >= 0) {
             name.destroy();
             let group: Group = std::vec::at(self.groups, ordinal);
@@ -68,8 +68,9 @@ impl Report {
         let group: Group = Group { name: name, total: value, count: 1 };
         self.groups = std::vec::try_push(self.groups, group);
         if (std::vec::len(self.groups) == before) { name.destroy(); return 4; }
-        self.index = std::map::try_insert(self.index, name, before);
-        if (std::map::len(self.index) != before + 1) {
+        let inserted: core::result::Result<core::option::Option<alloc::hash_map::Entry<alloc::string::String, i32>>, alloc::hash_map::Error> =
+            self.index.try_insert(name, before);
+        if (core::result::is_err(inserted)) {
             self.groups = std::vec::try_pop(self.groups);
             name.destroy();
             return 4;
@@ -100,7 +101,7 @@ impl Report {
         return 0;
     }
     fn destroy(&self) {
-        std::map::destroy(self.index);
+        self.index.destroy();
         let ordinal: i32 = 0;
         while (ordinal < std::vec::len(self.groups)) {
             let group: Group = std::vec::at(self.groups, ordinal);
@@ -109,7 +110,6 @@ impl Report {
         }
         std::vec::destroy(self.groups);
         self.groups = std::vec::new();
-        self.index = std::map::new();
     }
 }
 

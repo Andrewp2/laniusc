@@ -1,0 +1,21 @@
+module alloc::probe_set;
+import alloc::hash_map;
+import core::cmp;
+import core::hash;
+import core::option;
+import core::result;
+struct Unit {}
+pub struct Set<T> { map: alloc::hash_map::HashMap<T, Unit> }
+pub fn new<T>() -> Set<T> {
+    let map: alloc::hash_map::HashMap<T, Unit> = alloc::hash_map::new();
+    return Set { map: map };
+}
+pub impl<T> Set<T> {
+    pub fn add(&self, value: T) -> bool where T: core::hash::Hash<T>, T: core::cmp::Eq<T> {
+        let unit: Unit = Unit {};
+        let result: core::result::Result<core::option::Option<alloc::hash_map::Entry<T, Unit>>, alloc::hash_map::Error> =
+            self.map.try_insert(value, unit);
+        return core::result::is_ok(result);
+    }
+    pub fn destroy(&self) { self.map.destroy(); }
+}

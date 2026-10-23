@@ -1,0 +1,71 @@
+// expect: 1
+// Every allocation is failed in turn. Failure must preserve source containers,
+// return AllocationFailed, release partial destinations, and allow destruction.
+module app::main;
+import alloc::hash_map;
+import core::option;
+import core::result;
+
+fn failure_code(error: alloc::hash_map::Error) -> i32 {
+    let code: i32 = match (error) { alloc::hash_map::Error::AllocationFailed -> 0, _ -> 2 };
+    return code;
+}
+fn valid_map(map: &alloc::hash_map::HashMap<i32, i32>, present: [bool]) -> bool {
+    let key: i32 = 0;
+    let count: i32 = 0;
+    while (key < 128) {
+        let found: core::option::Option<i32> = map.get(key);
+        if (core::option::is_some(found) != present[key]) { return false; }
+        if (present[key]) {
+            if (core::option::unwrap(found) != key * 3 + 1) { return false; }
+            count += 1;
+        }
+        key += 1;
+    }
+    return map.len() == count;
+}
+fn failed_map(map: &alloc::hash_map::HashMap<i32, i32>, present: [bool], capacity: i32, error: alloc::hash_map::Error) -> i32 {
+    let valid: bool = map.capacity() == capacity && valid_map(map, present);
+    map.destroy();
+    if (!valid) { return 3; }
+    return failure_code(error);
+}
+fn map_work() -> i32 {
+    let map: alloc::hash_map::HashMap<i32, i32> = alloc::hash_map::new();
+    let present: [bool; 128] = [false; 128];
+    let key: i32 = 0;
+    while (key < 64) {
+        let capacity: i32 = map.capacity();
+        let inserted: core::result::Result<core::option::Option<alloc::hash_map::Entry<i32, i32>>, alloc::hash_map::Error> =
+            map.try_insert(key, key * 3 + 1);
+        if (core::result::is_err(inserted)) { return failed_map(map.borrow(), present, capacity, core::result::unwrap_err(inserted)); }
+        present[key] = true; key += 1;
+    }
+    // A full-capacity replacement must succeed even when the next allocation
+    // is being failed by the harness.
+    let replacement: core::result::Result<core::option::Option<alloc::hash_map::Entry<i32, i32>>, alloc::hash_map::Error> =
+        map.try_insert(0, 1);
+    if (core::result::is_err(replacement) || core::option::is_none(core::result::unwrap(replacement))) { return 6; }
+    key = 1;
+    while (key < 64) { map.remove(key); present[key] = false; key += 2; }
+    let capacity: i32 = map.capacity();
+    let inserted: core::result::Result<core::option::Option<alloc::hash_map::Entry<i32, i32>>, alloc::hash_map::Error> =
+        map.try_insert(64, 193);
+    if (core::result::is_err(inserted)) { return failed_map(map.borrow(), present, capacity, core::result::unwrap_err(inserted)); }
+    present[64] = true;
+    let cloned: core::result::Result<alloc::hash_map::HashMap<i32, i32>, alloc::hash_map::Error> = map.try_clone();
+    if (core::result::is_err(cloned)) { return failed_map(map.borrow(), present, map.capacity(), core::result::unwrap_err(cloned)); }
+    let copy: alloc::hash_map::HashMap<i32, i32> = core::result::unwrap(cloned);
+    if (!valid_map(copy.borrow(), present)) { return 4; }
+    copy.destroy();
+    capacity = map.capacity();
+    let reserved: core::result::Result<i32, alloc::hash_map::Error> = map.try_reserve(100);
+    if (core::result::is_err(reserved)) { return failed_map(map.borrow(), present, capacity, core::result::unwrap_err(reserved)); }
+    capacity = map.capacity();
+    let shrunk: core::result::Result<i32, alloc::hash_map::Error> = map.try_shrink_to_fit();
+    if (core::result::is_err(shrunk)) { return failed_map(map.borrow(), present, capacity, core::result::unwrap_err(shrunk)); }
+    if (!valid_map(map.borrow(), present)) { return 5; }
+    map.destroy();
+    return 1;
+}
+fn main() -> i32 { return map_work(); }

@@ -1,0 +1,73 @@
+// expect: 0
+module app::main;
+import alloc::hash_map;
+import alloc::string;
+import core::cmp;
+import core::hash;
+import core::option;
+import core::result;
+
+struct Unit {}
+
+fn checks<T>(first: T, second: T) -> bool where T: core::hash::Hash<T>, T: core::cmp::Eq<T> {
+    let map: alloc::hash_map::HashMap<T, bool> = alloc::hash_map::new();
+    map.try_insert(first, false);
+    map.try_insert(second, true);
+    let valid: bool = map.len() == 2 && !core::option::unwrap_or(map.get(first), true) &&
+        core::option::unwrap_or(map.get(second), false);
+    let old: alloc::hash_map::Entry<T, bool> = core::option::unwrap(core::result::unwrap(map.try_insert(first, true)));
+    valid = valid && T::eq(old.key, first) && !old.value;
+    let removed: alloc::hash_map::Entry<T, bool> = core::option::unwrap(map.remove(second));
+    valid = valid && T::eq(removed.key, second) && removed.value && map.len() == 1;
+    map.destroy();
+    return valid;
+}
+fn main() -> i32 {
+    if (!checks(-128 as i8, 127 as i8)) { return 1; }
+    if (!checks(-32768 as i16, 32767 as i16)) { return 2; }
+    if (!checks(0 as u8, 255 as u8)) { return 3; }
+    if (!checks(0 as u16, 65535 as u16)) { return 4; }
+    let unsigned: u32 = 4294967295;
+    let positive: i64 = 4294967297;
+    let negative: i64 = -4294967297;
+    let wide: u64 = 18446744073709551615;
+    let size: usize = 4294967297;
+    if (!checks(0 as u32, unsigned)) { return 5; }
+    if (!checks(negative, positive)) { return 6; }
+    if (!checks(1 as u64, wide)) { return 7; }
+    if (!checks(-1 as isize, 17 as isize)) { return 8; }
+    if (!checks(1 as usize, size)) { return 9; }
+    if (!checks(false, true)) { return 10; }
+    let signed_byte_hash: u32 = 4294967168;
+    let signed_short_hash: u32 = 4294934528;
+    let unsigned_byte_hash: u32 = 255;
+    let unsigned_short_hash: u32 = 65535;
+    let all_ones_hash: u32 = 1823345245;
+    let positive_hash: u32 = 2393657685;
+    let negative_hash: u32 = 3847648588;
+    if (i8::hash(-128) != signed_byte_hash || u8::hash(255) != unsigned_byte_hash ||
+        i16::hash(-32768) != signed_short_hash || u16::hash(65535) != unsigned_short_hash) { return 14; }
+    if (u64::hash(wide) != all_ones_hash || i64::hash(positive) != positive_hash ||
+        i64::hash(negative) != negative_hash || usize::hash(size) != positive_hash ||
+        isize::hash(-1) != all_ones_hash) { return 15; }
+    let bytes: [u8; 5] = [104, 101, 108, 108, 111];
+    let first: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(bytes, 5));
+    let equal: alloc::string::String = core::result::unwrap(first.try_clone());
+    if (alloc::string::String::hash(first) != 1335831723 || alloc::string::String::hash(first) != alloc::string::String::hash(equal)) { return 11; }
+    let map: alloc::hash_map::HashMap<alloc::string::String, alloc::string::String> = alloc::hash_map::new();
+    let value: alloc::string::String = core::result::unwrap(first.try_clone());
+    let replacement: alloc::string::String = core::result::unwrap(first.try_clone());
+    map.try_insert(first, value);
+    let old: alloc::hash_map::Entry<alloc::string::String, alloc::string::String> =
+        core::option::unwrap(core::result::unwrap(map.try_insert(equal, replacement)));
+    old.key.destroy(); old.value.destroy();
+    let current: alloc::hash_map::Entry<alloc::string::String, alloc::string::String> = core::option::unwrap(map.remove(equal));
+    map.destroy();
+    if (!current.key.equals(current.value) || current.key.byte_len() != 5) { return 12; }
+    current.key.destroy(); current.value.destroy();
+    let empty_values: alloc::hash_map::HashMap<i32, Unit> = alloc::hash_map::new();
+    let unit: Unit = Unit {};
+    if (core::result::is_err(empty_values.try_insert(7, unit)) || !empty_values.contains_key(7)) { return 13; }
+    empty_values.destroy();
+    return 0;
+}

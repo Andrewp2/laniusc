@@ -1,0 +1,251 @@
+// Generic open-addressed map. Values are copied, not deeply cloned/destroyed.
+// Keep one owner of the backing allocation. See docs/stdlib-hash-collections.md.
+module alloc::hash_map;
+import alloc::allocator;
+import core::cmp;
+import core::hash;
+import core::mem;
+import core::option;
+import core::result;
+
+pub enum Error { InvalidCapacity, CapacityOverflow, AllocationFailed }
+pub struct Entry<K, V> { key: K, value: V }
+enum Slot<K, V> { Empty, Deleted, Full(u32, Entry<K, V>) }
+pub struct HashMap<K, V> { storage: ptr, buckets: i32, length: i32, occupied: i32 }
+pub struct Iter<K, V> { storage: ptr, buckets: i32, position: i32 }
+const MAX_BYTES: usize = 2147483647;
+const MAX_BUCKETS: i32 = 1073741824;
+
+pub fn new<K, V>() -> HashMap<K, V> {
+    let storage: ptr = 0;
+    return HashMap { storage: storage, buckets: 0, length: 0, occupied: 0 };
+}
+fn state<K, V>(slot: Slot<K, V>) -> i32 {
+    let result: i32 = match (slot) { Empty -> 0, Deleted -> 1, Full(hash, item) -> 2 };
+    return result;
+}
+fn matches<K, V>(slot: Slot<K, V>, hash: u32, key: K) -> bool
+    where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
+    let result: bool = match (slot) {
+        Full(stored, item) -> stored == hash && K::eq(item.key, key), _ -> false,
+    };
+    return result;
+}
+fn entry<K, V>(slot: Slot<K, V>) -> core::option::Option<Entry<K, V>> {
+    let result: core::option::Option<Entry<K, V>> = match (slot) {
+        Full(hash, item) -> core::option::Some(item), _ -> core::option::None(),
+    };
+    return result;
+}
+fn advance(index: i32, buckets: i32) -> i32 {
+    if (index + 1 == buckets) { return 0; }
+    return index + 1;
+}
+fn bucket(hash: u32, buckets: i32) -> i32 {
+    // Fold high bits into the low bits used by a power-of-two table.
+    let folded: u32 = hash ^ (hash >> 16);
+    return (folded & ((buckets - 1) as u32)) as i32;
+}
+fn required_buckets<K, V>(entries: i32) -> core::result::Result<i32, Error> {
+    if (entries < 0) { return core::result::Err(Error::InvalidCapacity); }
+    if (entries == 0) { return core::result::Ok(0); }
+    if (entries > MAX_BUCKETS / 2) { return core::result::Err(Error::CapacityOverflow); }
+    let target: i32 = 8;
+    while (target / 2 < entries) { target *= 2; }
+    let size: usize = core::mem::size_of<Slot<K, V>>();
+    if ((target as usize) > MAX_BYTES / size) { return core::result::Err(Error::CapacityOverflow); }
+    return core::result::Ok(target);
+}
+// Place an entry known absent. Called only with free capacity; no allocation.
+fn place<K, V>(slots: [Slot<K, V>], buckets: i32, hash: u32, item: Entry<K, V>) -> bool {
+    let index: i32 = bucket(hash, buckets);
+    let visited: i32 = 0;
+    while (visited < buckets) {
+        if (state(slots[index]) != 2) { slots[index] = Slot::Full(hash, item); return true; }
+        index = advance(index, buckets);
+        visited += 1;
+    }
+    return false;
+}
+pub impl<K, V> HashMap<K, V> {
+    pub fn borrow(&self) -> &HashMap<K, V> { return self; }
+    pub fn len(&self) -> i32 { return self.length; }
+    pub fn is_empty(&self) -> bool { return self.length == 0; }
+    // Number of live entries permitted before growth, excluding tombstones.
+    pub fn capacity(&self) -> i32 { return self.buckets / 2; }
+    fn slots(&self) -> [Slot<K, V>] { return core::mem::typed_slice_from_storage(self.storage, self.buckets); }
+    fn find(&self, key: K, hash: u32) -> i32
+        where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
+        if (self.length == 0) { return -1; }
+        let slots: [Slot<K, V>] = self.slots();
+        let index: i32 = bucket(hash, self.buckets);
+        let visited: i32 = 0;
+        while (visited < self.buckets) {
+            let slot: Slot<K, V> = slots[index];
+            if (state(slot) == 0) { return -1; }
+            if (matches(slot, hash, key)) { return index; }
+            index = advance(index, self.buckets);
+            visited += 1;
+        }
+        return -1;
+    }
+    pub fn contains_key(&self, key: K) -> bool where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
+        return self.find(key, K::hash(key)) >= 0;
+    }
+    // Returned copies borrow any nested resources owned by stored values.
+    pub fn get_entry(&self, key: K) -> core::option::Option<Entry<K, V>>
+        where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
+        let index: i32 = self.find(key, K::hash(key));
+        if (index < 0) { return core::option::None(); }
+        let slots: [Slot<K, V>] = self.slots();
+        return entry(slots[index]);
+    }
+    pub fn get(&self, key: K) -> core::option::Option<V>
+        where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
+        let found: core::option::Option<Entry<K, V>> = self.get_entry(key);
+        let result: core::option::Option<V> = match (found) {
+            Some(item) -> core::option::Some(item.value), None -> core::option::None(),
+        };
+        return result;
+    }
+    // Construct a replacement in full before changing or freeing this owner.
+    fn rehash(&self, buckets: i32) -> core::result::Result<i32, Error> {
+        if (buckets == 0) { self.destroy(); return core::result::Ok(0); }
+        let size: usize = core::mem::size_of<Slot<K, V>>();
+        let storage: ptr = alloc::allocator::alloc(size * (buckets as usize), 8);
+        if (storage == 0) { return core::result::Err(Error::AllocationFailed); }
+        let target: [Slot<K, V>] = core::mem::typed_slice_from_storage(storage, buckets);
+        let empty: Slot<K, V> = Slot::Empty();
+        let index: i32 = 0;
+        while (index < buckets) { target[index] = empty; index += 1; }
+        let old: [Slot<K, V>] = self.slots();
+        index = 0;
+        while (index < self.buckets) {
+            let moved: bool = match (old[index]) {
+                Full(hash, item) -> place(target, buckets, hash, item), _ -> true,
+            };
+            assert(moved);
+            index += 1;
+        }
+        if (self.buckets > 0) { alloc::allocator::dealloc(self.storage, size * (self.buckets as usize), 8); }
+        self.storage = storage;
+        self.buckets = buckets;
+        self.occupied = self.length;
+        return core::result::Ok(self.capacity());
+    }
+    // Reserve for this many additional distinct keys, reclaiming tombstones.
+    // Failure preserves every entry, capacity and the original allocation.
+    pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, Error> {
+        if (additional < 0) { return core::result::Err(Error::InvalidCapacity); }
+        if (additional == 0) { return core::result::Ok(self.capacity()); }
+        if (additional > 2147483647 - self.length) { return core::result::Err(Error::CapacityOverflow); }
+        let needed: i32 = self.length + additional;
+        let checked: core::result::Result<i32, Error> = required_buckets<K, V>(needed);
+        if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+        let buckets: i32 = core::result::unwrap(checked);
+        if (buckets <= self.buckets) {
+            if (additional <= self.capacity() - self.occupied) { return core::result::Ok(self.capacity()); }
+            buckets = self.buckets;
+        }
+        return self.rehash(buckets);
+    }
+    // On success the map stores the new key/value. A displaced entry is
+    // returned intact, including its old key. On Err the caller retains inputs.
+    pub fn try_insert(&self, key: K, value: V) -> core::result::Result<core::option::Option<Entry<K, V>>, Error>
+        where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
+        let hash: u32 = K::hash(key);
+        let index: i32 = self.find(key, hash);
+        let item: Entry<K, V> = Entry { key: key, value: value };
+        if (index >= 0) {
+            let slots: [Slot<K, V>] = self.slots();
+            let previous: core::option::Option<Entry<K, V>> = entry(slots[index]);
+            slots[index] = Slot::Full(hash, item);
+            return core::result::Ok(previous);
+        }
+        let reserved: core::result::Result<i32, Error> = self.try_reserve(1);
+        if (core::result::is_err(reserved)) { return core::result::Err(core::result::unwrap_err(reserved)); }
+        let slots: [Slot<K, V>] = self.slots();
+        index = bucket(hash, self.buckets);
+        let visited: i32 = 0;
+        while (visited < self.buckets) {
+            let kind: i32 = state(slots[index]);
+            if (kind != 2) {
+                if (kind == 0) { self.occupied += 1; }
+                slots[index] = Slot::Full(hash, item);
+                self.length += 1;
+                return core::result::Ok(core::option::None());
+            }
+            index = advance(index, self.buckets);
+            visited += 1;
+        }
+        // The load invariant guarantees a free slot after successful reserve.
+        assert(false);
+        return core::result::Err(Error::CapacityOverflow);
+    }
+    pub fn remove(&self, key: K) -> core::option::Option<Entry<K, V>>
+        where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
+        let index: i32 = self.find(key, K::hash(key));
+        if (index < 0) { return core::option::None(); }
+        let slots: [Slot<K, V>] = self.slots();
+        let removed: core::option::Option<Entry<K, V>> = entry(slots[index]);
+        slots[index] = Slot::Deleted();
+        self.length -= 1;
+        if (self.length == 0) { self.clear(); }
+        return removed;
+    }
+    pub fn iter(&self) -> Iter<K, V> {
+        return Iter { storage: self.storage, buckets: self.buckets, position: 0 };
+    }
+    // Clears entries without destroying resources nested in keys/values.
+    pub fn clear(&self) {
+        let slots: [Slot<K, V>] = self.slots();
+        let empty: Slot<K, V> = Slot::Empty();
+        let index: i32 = 0;
+        while (index < self.buckets) { slots[index] = empty; index += 1; }
+        self.length = 0; self.occupied = 0;
+    }
+    pub fn try_shrink_to_fit(&self) -> core::result::Result<i32, Error> {
+        let checked: core::result::Result<i32, Error> = required_buckets<K, V>(self.length);
+        if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+        let buckets: i32 = core::result::unwrap(checked);
+        if (buckets == self.buckets && self.occupied == self.length) { return core::result::Ok(self.capacity()); }
+        return self.rehash(buckets);
+    }
+    // Independent table storage; keys and values are shallow copies.
+    pub fn try_clone(&self) -> core::result::Result<HashMap<K, V>, Error> {
+        let copy: HashMap<K, V> = new();
+        let reserved: core::result::Result<i32, Error> = copy.try_reserve(self.length);
+        if (core::result::is_err(reserved)) { return core::result::Err(core::result::unwrap_err(reserved)); }
+        let target: [Slot<K, V>] = copy.slots();
+        let source: [Slot<K, V>] = self.slots();
+        let index: i32 = 0;
+        while (index < self.buckets) {
+            let moved: bool = match (source[index]) {
+                Full(hash, item) -> place(target, copy.buckets, hash, item), _ -> true,
+            };
+            assert(moved); index += 1;
+        }
+        copy.length = self.length; copy.occupied = self.length;
+        return core::result::Ok(copy);
+    }
+    // Free table storage only, then reset the handle for reuse.
+    pub fn destroy(&self) {
+        if (self.buckets > 0) {
+            let size: usize = core::mem::size_of<Slot<K, V>>();
+            alloc::allocator::dealloc(self.storage, size * (self.buckets as usize), 8);
+        }
+        self.storage = 0; self.buckets = 0; self.length = 0; self.occupied = 0;
+    }
+}
+pub impl<K, V> Iter<K, V> {
+    // Invalidated by any map mutation or destruction. Order is unspecified.
+    pub fn next(&self) -> core::option::Option<Entry<K, V>> {
+        let slots: [Slot<K, V>] = core::mem::typed_slice_from_storage(self.storage, self.buckets);
+        while (self.position < self.buckets) {
+            let found: core::option::Option<Entry<K, V>> = entry(slots[self.position]);
+            self.position += 1;
+            if (core::option::is_some(found)) { return found; }
+        }
+        return core::option::None();
+    }
+}

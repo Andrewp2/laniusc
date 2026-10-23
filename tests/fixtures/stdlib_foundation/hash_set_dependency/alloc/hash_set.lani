@@ -1,0 +1,134 @@
+// Unverified prototype: see ../README.md for the compiler dependency.
+// Hash set using alloc::hash_map. Table storage is owned; elements are copied.
+module alloc::hash_set;
+import alloc::hash_map;
+import core::cmp;
+import core::hash;
+import core::option;
+import core::result;
+
+struct Unit {}
+pub struct HashSet<T> { map: alloc::hash_map::HashMap<T, Unit> }
+pub struct Iter<T> { entries: alloc::hash_map::Iter<T, Unit> }
+
+pub fn new<T>() -> HashSet<T> {
+    let map: alloc::hash_map::HashMap<T, Unit> = alloc::hash_map::new();
+    return HashSet { map: map };
+}
+pub impl<T> HashSet<T> {
+    pub fn borrow(&self) -> &HashSet<T> { return self; }
+    pub fn len(&self) -> i32 { return self.map.len(); }
+    pub fn is_empty(&self) -> bool { return self.map.is_empty(); }
+    pub fn capacity(&self) -> i32 { return self.map.capacity(); }
+    pub fn contains(&self, value: T) -> bool where T: core::hash::Hash<T>, T: core::cmp::Eq<T> {
+        return self.map.contains_key(value);
+    }
+    pub fn get(&self, value: T) -> core::option::Option<T> where T: core::hash::Hash<T>, T: core::cmp::Eq<T> {
+        let entry: core::option::Option<alloc::hash_map::Entry<T, Unit>> = self.map.get_entry(value);
+        let result: core::option::Option<T> = match (entry) {
+            Some(item) -> core::option::Some(item.key), None -> core::option::None(),
+        };
+        return result;
+    }
+    // true stores value. false preserves the existing equal element and leaves
+    // ownership of the supplied value with the caller. Err also retains input.
+    pub fn try_insert(&self, value: T) -> core::result::Result<bool, alloc::hash_map::Error>
+        where T: core::hash::Hash<T>, T: core::cmp::Eq<T> {
+        if (self.contains(value)) { return core::result::Ok(false); }
+        let unit: Unit = Unit {};
+        let added: core::result::Result<core::option::Option<alloc::hash_map::Entry<T, Unit>>, alloc::hash_map::Error> =
+            self.map.try_insert(value, unit);
+        if (core::result::is_err(added)) { return core::result::Err(core::result::unwrap_err(added)); }
+        assert(core::option::is_none(core::result::unwrap(added)));
+        return core::result::Ok(true);
+    }
+    // Return the stored element so its resources can be reclaimed by its owner.
+    pub fn remove(&self, value: T) -> core::option::Option<T> where T: core::hash::Hash<T>, T: core::cmp::Eq<T> {
+        let removed: core::option::Option<alloc::hash_map::Entry<T, Unit>> = self.map.remove(value);
+        let result: core::option::Option<T> = match (removed) {
+            Some(item) -> core::option::Some(item.key), None -> core::option::None(),
+        };
+        return result;
+    }
+    pub fn iter(&self) -> Iter<T> { return Iter { entries: self.map.iter() }; }
+    pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, alloc::hash_map::Error> {
+        return self.map.try_reserve(additional);
+    }
+    pub fn try_shrink_to_fit(&self) -> core::result::Result<i32, alloc::hash_map::Error> {
+        return self.map.try_shrink_to_fit();
+    }
+    pub fn try_clone(&self) -> core::result::Result<HashSet<T>, alloc::hash_map::Error> {
+        let copied: core::result::Result<alloc::hash_map::HashMap<T, Unit>, alloc::hash_map::Error> = self.map.try_clone();
+        if (core::result::is_err(copied)) { return core::result::Err(core::result::unwrap_err(copied)); }
+        return core::result::Ok(HashSet { map: core::result::unwrap(copied) });
+    }
+    pub fn clear(&self) { self.map.clear(); }
+    pub fn destroy(&self) { self.map.destroy(); }
+    pub fn is_subset(&self, other: &HashSet<T>) -> bool where T: core::hash::Hash<T>, T: core::cmp::Eq<T> {
+        if (self.len() > other.len()) { return false; }
+        let iterator: Iter<T> = self.iter();
+        while (true) {
+            let item: core::option::Option<T> = iterator.next();
+            if (core::option::is_none(item)) { return true; }
+            if (!other.contains(core::option::unwrap(item))) { return false; }
+        }
+        return true;
+    }
+    pub fn is_disjoint(&self, other: &HashSet<T>) -> bool where T: core::hash::Hash<T>, T: core::cmp::Eq<T> {
+        let iterator: Iter<T> = self.iter();
+        while (true) {
+            let item: core::option::Option<T> = iterator.next();
+            if (core::option::is_none(item)) { return true; }
+            if (other.contains(core::option::unwrap(item))) { return false; }
+        }
+        return true;
+    }
+    // Produces independent table storage with shallow element copies.
+    fn combine(&self, other: &HashSet<T>, mode: i32) -> core::result::Result<HashSet<T>, alloc::hash_map::Error>
+        where T: core::hash::Hash<T>, T: core::cmp::Eq<T> {
+        let output: HashSet<T> = new();
+        let iterator: Iter<T> = self.iter();
+        while (true) {
+            let found: core::option::Option<T> = iterator.next();
+            if (core::option::is_none(found)) { break; }
+            let value: T = core::option::unwrap(found);
+            let include: bool = mode == 1;
+            if (mode == 2) { include = other.contains(value); }
+            if (mode == 3 || mode == 4) { include = !other.contains(value); }
+            if (include) {
+                let added: core::result::Result<bool, alloc::hash_map::Error> = output.try_insert(value);
+                if (core::result::is_err(added)) { output.destroy(); return core::result::Err(core::result::unwrap_err(added)); }
+            }
+        }
+        if (mode == 1 || mode == 4) {
+            iterator = other.iter();
+            while (true) {
+                let found: core::option::Option<T> = iterator.next();
+                if (core::option::is_none(found)) { break; }
+                let value: T = core::option::unwrap(found);
+                if (mode == 1 || !self.contains(value)) {
+                    let added: core::result::Result<bool, alloc::hash_map::Error> = output.try_insert(value);
+                    if (core::result::is_err(added)) { output.destroy(); return core::result::Err(core::result::unwrap_err(added)); }
+                }
+            }
+        }
+        return core::result::Ok(output);
+    }
+    pub fn try_union(&self, other: &HashSet<T>) -> core::result::Result<HashSet<T>, alloc::hash_map::Error>
+        where T: core::hash::Hash<T>, T: core::cmp::Eq<T> { return self.combine(other, 1); }
+    pub fn try_intersection(&self, other: &HashSet<T>) -> core::result::Result<HashSet<T>, alloc::hash_map::Error>
+        where T: core::hash::Hash<T>, T: core::cmp::Eq<T> { return self.combine(other, 2); }
+    pub fn try_difference(&self, other: &HashSet<T>) -> core::result::Result<HashSet<T>, alloc::hash_map::Error>
+        where T: core::hash::Hash<T>, T: core::cmp::Eq<T> { return self.combine(other, 3); }
+    pub fn try_symmetric_difference(&self, other: &HashSet<T>) -> core::result::Result<HashSet<T>, alloc::hash_map::Error>
+        where T: core::hash::Hash<T>, T: core::cmp::Eq<T> { return self.combine(other, 4); }
+}
+pub impl<T> Iter<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        let found: core::option::Option<alloc::hash_map::Entry<T, Unit>> = self.entries.next();
+        let result: core::option::Option<T> = match (found) {
+            Some(item) -> core::option::Some(item.key), None -> core::option::None(),
+        };
+        return result;
+    }
+}

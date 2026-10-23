@@ -5,6 +5,7 @@
 module alloc::string;
 import core::byte;
 import core::cmp;
+import core::hash;
 import core::option;
 import core::result;
 import core::utf8;
@@ -383,6 +384,12 @@ pub impl String {
 pub impl core::cmp::Eq<String> for String {
     pub fn eq(left: String, right: String) -> bool { return left.equals(right); }
     pub fn ne(left: String, right: String) -> bool { return !left.equals(right); }
+}
+
+pub impl core::hash::Hash<String> for String {
+    pub fn hash(value: String) -> u32 {
+        return core::hash::fnv1a_bytes_or(value.as_bytes(), value.byte_len(), 0);
+    }
 }
 
 pub impl core::cmp::Ord<String> for String {

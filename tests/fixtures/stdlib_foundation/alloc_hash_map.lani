@@ -1,0 +1,27 @@
+// expect: 0
+module app::main;
+import alloc::hash_map;
+import core::option;
+import core::result;
+
+fn main() -> i32 {
+    let map: alloc::hash_map::HashMap<i32, bool> = alloc::hash_map::new();
+    if (!map.is_empty() || map.capacity() != 0 || core::option::is_some(map.get(7))) { return 1; }
+    let added: core::result::Result<core::option::Option<alloc::hash_map::Entry<i32, bool>>, alloc::hash_map::Error> = map.try_insert(7, false);
+    if (core::result::is_err(added) || core::option::is_some(core::result::unwrap(added))) { return 2; }
+    if (map.len() != 1 || !map.contains_key(7) || core::option::unwrap_or(map.get(7), true)) { return 3; }
+    let replacement: alloc::hash_map::Entry<i32, bool> = core::option::unwrap(core::result::unwrap(map.try_insert(7, true)));
+    if (replacement.key != 7 || replacement.value || !core::option::unwrap_or(map.get(7), false)) { return 4; }
+    let copied: alloc::hash_map::HashMap<i32, bool> = core::result::unwrap(map.try_clone());
+    map.remove(7);
+    if (!map.is_empty() || copied.len() != 1 || !copied.contains_key(7)) { return 5; }
+    let iterator: alloc::hash_map::Iter<i32, bool> = copied.iter();
+    let item: alloc::hash_map::Entry<i32, bool> = core::option::unwrap(iterator.next());
+    if (item.key != 7 || !item.value || core::option::is_some(iterator.next()) || core::option::is_some(iterator.next())) { return 6; }
+    if (core::result::is_ok(map.try_reserve(-1)) || core::result::is_ok(map.try_reserve(2147483647))) { return 7; }
+    map.try_reserve(32);
+    if (map.capacity() < 32) { return 8; }
+    if (core::result::unwrap(map.try_shrink_to_fit()) != 0 || map.capacity() != 0) { return 9; }
+    copied.destroy(); map.destroy(); map.destroy();
+    return 0;
+}

@@ -61,7 +61,7 @@ This is a record number, not a physical line number when quoted text spans lines
 | `alloc::string` | Valid UTF-8 ownership and independent field/key copies |
 | `ext::csv` | Table parsing, limits and field access |
 | `core::decimal`, `core::i32` | Explicit numeric parsing errors and checked addition |
-| `std::vec`, `std::map` | Owned group records and generic String-to-index lookup |
+| `std::vec`, `alloc::hash_map` | Owned group records and hashed String-to-index lookup |
 | `ext::json` | Document building, borrowed mutation and encoding |
 | `core::option`, `core::result` | Absence and failure propagation |
 
@@ -97,7 +97,7 @@ timeout --kill-after=2s 100s env \
   cargo test --locked --test library_csv_report_execution -- --nocapture
 ```
 
-## Initial runtime measurements
+## Runtime measurements
 
 On an AMD Ryzen 9 5950X, the emitted native program gave these elapsed times.
 Each measurement includes process startup and pipe I/O, excludes compilation,
@@ -115,9 +115,25 @@ The workload has header `group,value\n`, followed by records
 The individual samples are recorded in
 `target/stdlib-work/csv-report-runtime.tsv` in the development checkout.
 
-The current map uses linear lookup, so grouping is O(records × distinct groups).
-CSV owns the complete table and separately allocates fields. A true hash map,
-streaming CSV and lower allocation overhead remain library work. This application
+Those initial measurements used the linear map. After migration to
+`alloc::hash_map`, a paired comparison on the same machine gave:
+
+| Records | Distinct groups | Linear-map median | Hash-map median |
+| ---: | ---: | ---: | ---: |
+| 4,096 | 64 | 235.60 ms | 217.46 ms |
+| 32,768 | 64 | 1,353.39 ms | 1,231.30 ms |
+| 4,096 | 1,024 | 694.17 ms | 306.82 ms |
+
+Each case used one warm-up pair, then four measured pairs with alternating
+execution order. Both binaries' complete outputs were verified against the
+same expected groups. Samples are in
+`target/stdlib-work/csv-report-hash-runtime.tsv`. Compiler sources did not
+change between these two binaries. The reporter's two integration test groups
+passed again after migration, including the complete allocation-failure sweep.
+
+The new lookup is expected constant time with distributed hashes, with linear
+worst-case probes. CSV still owns the complete table and separately allocates
+fields. Streaming CSV and lower allocation overhead remain work. This application
 establishes module composition and failure behavior; it does not complete the
 text/data foundation or the broader library roadmap. GPU user-program execution
 and other host targets are unverified.
