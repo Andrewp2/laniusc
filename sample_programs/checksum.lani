@@ -1,0 +1,104 @@
+// CRC-32/ISO-HDLC per file, or stdin with no operands / a '-' operand.
+// -d/--decimal selects decimal output; -n/--limit BYTES bounds each input.
+// Default output is eight lowercase hex digits and LF, in operand order.
+// Exit 2: arguments/input limit, 3: I/O, 4: argument-snapshot allocation.
+module app::main;
+import ext::cli;
+import core::byte;
+import core::crc32;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::args;
+import std::file;
+import std::io_checked;
+import std::path;
+import std::stream;
+
+struct Config { decimal: bool, limit: u64, help: bool }
+impl Config { fn borrow(&self) -> &Config { return self; } }
+fn apply(config: &Config, option: ext::cli::Occurrence) -> bool {
+    if (option.id == 0) { config.decimal = true; return true; }
+    if (option.id == 2) { config.help = true; return true; }
+    let value: ext::cli::Argument = core::option::unwrap(option.value); let bytes: core::slice::View<u8> = value.bytes;
+    let parsed: core::result::Result<u64, core::decimal::ParseError> = core::decimal::parse_u64_range(bytes.values, bytes.start, bytes.len());
+    if (core::result::is_err(parsed)) { return false; } config.limit = core::result::unwrap(parsed); return true;
+}
+fn digest<R>(source: &R, limit: u64) -> core::result::Result<u32, core::io::Error> where R: core::io::Read {
+    let storage: [i32; 1024] = [0; 1024]; let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let scratch: [u8] = core::mem::typed_slice_from_raw_parts(pointer, 4096); let total: u64 = 0; let state: u32 = core::crc32::INITIAL;
+    while (true) {
+        let request: i32 = 4096;
+        if (limit - total < 4096) { request = (limit - total) as i32 + 1; }
+        let read: core::result::Result<i32, core::io::Error> = source.read(scratch, 0, request);
+        if (core::result::is_err(read)) { let error: core::io::Error = core::result::unwrap_err(read); if (core::io::is_interrupted(error)) { continue; } return core::result::Err(error); }
+        let count: i32 = core::result::unwrap(read); if (count == 0) { return core::result::Ok(core::crc32::finish(state)); }
+        if (count < 0 || count > request) { return core::result::Err(core::io::Error::InvalidCount); }
+        if ((count as u64) > limit - total) { return core::result::Err(core::io::Error::LimitExceeded); }
+        total += count as u64; let index: i32 = 0;
+        while (index < count) { state = core::crc32::update_byte(state, scratch[index]); index += 1; }
+    }
+    return core::result::Ok(core::crc32::finish(state));
+}
+fn input_error(error: core::io::Error) -> i32 { let status: i32 = match (error) { core::io::Error::LimitExceeded -> 2, _ -> 3 }; return status; }
+fn emit(value: u32, decimal: bool) -> i32 {
+    let output: [u8; 11] = [0; 11]; let length: i32 = 8;
+    if (decimal) { length = core::result::unwrap(core::decimal::format_u32(output, 0, 10, value)); }
+    else { let index: i32 = 0; while (index < 8) { let nibble: u8 = ((value >> ((7 - index) * 4)) & 15) as u8; output[index] = core::byte::ascii_lower_hex_digit_or(nibble, 48); index += 1; } }
+    output[length] = 10; let sink: std::stream::Descriptor = std::stream::stdout();
+    if (core::result::is_err(core::io::write_all(sink.borrow(), output, 0, length + 1))) { return 3; } return 0;
+}
+fn stdin_digest(config: Config) -> i32 {
+    let source: std::stream::Descriptor = std::stream::stdin(); let result: core::result::Result<u32, core::io::Error> = digest(source.borrow(), config.limit);
+    if (core::result::is_err(result)) { return input_error(core::result::unwrap_err(result)); } return emit(core::result::unwrap(result), config.decimal);
+}
+fn file_digest(argument: ext::cli::Argument, config: Config) -> i32 {
+    let bytes: core::slice::View<u8> = argument.bytes;
+    if (bytes.len() == 1 && core::option::unwrap(bytes.get(0)) == 45) { return stdin_digest(config); }
+    let path: core::result::Result<std::path::Path, std::path::Error> = std::path::from_view(bytes);
+    if (core::result::is_err(path)) { return 2; }
+    let opened: core::result::Result<std::file::File, core::io::Error> = std::file::open(core::result::unwrap(path), std::file::OpenMode::Read);
+    if (core::result::is_err(opened)) { return 3; }
+    let file: std::file::File = core::result::unwrap(opened); let result: core::result::Result<u32, core::io::Error> = digest(file.borrow(), config.limit);
+    let closed: core::result::Result<i32, core::io::Error> = file.close();
+    if (core::result::is_err(result)) { return input_error(core::result::unwrap_err(result)); }
+    if (core::result::is_err(closed)) { return 3; } return emit(core::result::unwrap(result), config.decimal);
+}
+fn snapshot_error(error: std::args::Error) -> i32 { let status: i32 = match (error) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }; return status; }
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 4096, 1048576);
+    if (core::result::is_err(captured)) { return snapshot_error(core::result::unwrap_err(captured)); }
+    let arguments: std::args::Arguments = core::result::unwrap(captured);
+    let decimal: [u8; 7] = [100, 101, 99, 105, 109, 97, 108]; let limit: [u8; 5] = [108, 105, 109, 105, 116]; let help: [u8; 4] = [104, 101, 108, 112];
+    let d: ext::cli::Spec = ext::cli::Spec { id: 0, long: core::result::unwrap(core::slice::view(decimal, 7)), short: 100, arity: ext::cli::Arity::Flag };
+    let n: ext::cli::Spec = ext::cli::Spec { id: 1, long: core::result::unwrap(core::slice::view(limit, 5)), short: 110, arity: ext::cli::Arity::Required };
+    let h: ext::cli::Spec = ext::cli::Spec { id: 2, long: core::result::unwrap(core::slice::view(help, 4)), short: 104, arity: ext::cli::Arity::Flag };
+    let specs: [ext::cli::Spec; 3] = [d, n, h];
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(), core::result::unwrap(core::slice::view(specs, 3)), ext::cli::Ordering::Intermixed));
+    let inputs: ext::cli::Parser = parser;
+    let maximum: u64 = 18446744073709551615; let config: Config = Config { decimal: false, limit: maximum, help: false }; let operands: i32 = 0;
+    // Validate the complete command line before opening inputs or emitting data.
+    while (true) {
+        let next: core::result::Result<core::option::Option<ext::cli::Event>, ext::cli::Error> = parser.next();
+        if (core::result::is_err(next)) { arguments.destroy(); return 2; }
+        let event: core::option::Option<ext::cli::Event> = core::result::unwrap(next); if (core::option::is_none(event)) { break; }
+        let option_ok: bool = match (core::option::unwrap(event)) { ext::cli::Event::Option(item) -> apply(config.borrow(), item), ext::cli::Event::Operand(item) -> true };
+        if (!option_ok) { arguments.destroy(); return 2; }
+        let operand: bool = match (core::option::unwrap(event)) { ext::cli::Event::Operand(item) -> true, _ -> false }; if (operand) { operands += 1; }
+    }
+    if (config.help) {
+        arguments.destroy();
+        let usage: str = "Usage: checksum [-d] [-n BYTES] [--] [FILE ...]\n";
+        if (!std::io_checked::write_all_stdout(core::mem::string_data_ptr(usage), 48)) { return 3; } return 0;
+    }
+    if (operands == 0) { let status: i32 = stdin_digest(config); arguments.destroy(); return status; }
+    while (true) {
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(inputs.next()); if (core::option::is_none(next)) { break; }
+        let status: i32 = match (core::option::unwrap(next)) { ext::cli::Event::Operand(item) -> file_digest(item, config), _ -> 0 };
+        if (status != 0) { arguments.destroy(); return status; }
+    }
+    arguments.destroy(); return 0;
+}

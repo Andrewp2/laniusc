@@ -1,0 +1,58 @@
+module app::main;
+import ext::cli;
+import core::option;
+import core::result;
+import core::slice;
+import std::args;
+import std::io;
+import std::io_decimal;
+fn number(value: i32) { assert(std::io_decimal::write_i32(1, value) > 0 && std::io::write_byte(1, 32) == 1); }
+fn newline() { assert(std::io::write_byte(1, 10) == 1); }
+fn bytes(value: core::slice::View<u8>) { number(value.len()); let index: i32 = 0; while (index < value.len()) { number(core::option::unwrap(value.get(index)) as i32); index += 1; } }
+fn option(item: ext::cli::Occurrence) -> i32 {
+    number(1); number(item.id); number(item.at.argument); number(item.at.byte);
+    if (core::option::is_some(item.value)) { let value: ext::cli::Argument = core::option::unwrap(item.value); number(1); number(value.at.argument); number(value.at.byte); bytes(value.bytes); }
+    else { number(0); } return 0;
+}
+fn operand(item: ext::cli::Argument) -> i32 { number(2); number(item.at.argument); number(item.at.byte); bytes(item.bytes); return 0; }
+fn error_kind(error: ext::cli::Error) -> i32 {
+    let tag: i32 = match (error) { ext::cli::Error::InvalidSpec(i) -> 1, ext::cli::Error::DuplicateSpec(i) -> 2, ext::cli::Error::UnknownOption(at) -> 3, ext::cli::Error::MissingValue(at) -> 4, ext::cli::Error::UnexpectedValue(at) -> 5 }; return tag;
+}
+fn error_at(error: ext::cli::Error) -> ext::cli::Location {
+    let at: ext::cli::Location = match (error) { ext::cli::Error::InvalidSpec(i) -> ext::cli::Location { argument: i, byte: -1 }, ext::cli::Error::DuplicateSpec(i) -> ext::cli::Location { argument: i, byte: -1 }, ext::cli::Error::UnknownOption(at) -> at, ext::cli::Error::MissingValue(at) -> at, ext::cli::Error::UnexpectedValue(at) -> at }; return at;
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 65536, 1048576);
+    if (core::result::is_err(captured)) { return 4; }
+    let arguments: std::args::Arguments = core::result::unwrap(captured);
+    let all: core::slice::View<core::slice::View<u8>> = arguments.as_view();
+    let mode: core::slice::View<u8> = core::option::unwrap(all.get(0));
+    let ordering: ext::cli::Ordering = ext::cli::Ordering::Intermixed;
+    if (core::option::unwrap(mode.get(0)) == 102) { ordering = ext::cli::Ordering::OptionsFirst; }
+    let alpha: [u8; 5] = [97, 108, 112, 104, 97]; let beta: [u8; 4] = [98, 101, 116, 97];
+    let output: [u8; 6] = [111, 117, 116, 112, 117, 116]; let color: [u8; 5] = [99, 111, 108, 111, 114];
+    let longs: [u8; 9] = [108, 111, 110, 103, 45, 111, 110, 108, 121];
+    let a: ext::cli::Spec = ext::cli::Spec { id: 10, long: core::result::unwrap(core::slice::view(alpha, 5)), short: 97, arity: ext::cli::Arity::Flag };
+    let b: ext::cli::Spec = ext::cli::Spec { id: 20, long: core::result::unwrap(core::slice::view(beta, 4)), short: 98, arity: ext::cli::Arity::Flag };
+    let o: ext::cli::Spec = ext::cli::Spec { id: 30, long: core::result::unwrap(core::slice::view(output, 6)), short: 111, arity: ext::cli::Arity::Required };
+    let c: ext::cli::Spec = ext::cli::Spec { id: 40, long: core::result::unwrap(core::slice::view(color, 5)), short: 99, arity: ext::cli::Arity::Optional };
+    let l: ext::cli::Spec = ext::cli::Spec { id: 50, long: core::result::unwrap(core::slice::view(longs, 9)), short: 0, arity: ext::cli::Arity::Required };
+    let s: ext::cli::Spec = ext::cli::Spec { id: 60, long: core::result::unwrap(core::slice::view(alpha, 0)), short: 115, arity: ext::cli::Arity::Flag };
+    let specs: [ext::cli::Spec; 6] = [a, b, o, c, l, s];
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(core::result::unwrap(all.subview(1, all.len())), core::result::unwrap(core::slice::view(specs, 6)), ordering));
+    while (true) {
+        let next: core::result::Result<core::option::Option<ext::cli::Event>, ext::cli::Error> = parser.next();
+        if (core::result::is_err(next)) {
+            let error: ext::cli::Error = core::result::unwrap_err(next); let at: ext::cli::Location = error_at(error);
+            let again: ext::cli::Error = core::result::unwrap_err(parser.next()); let other: ext::cli::Location = error_at(again);
+            assert(error_kind(error) == error_kind(again) && at.argument == other.argument && at.byte == other.byte);
+            number(0); number(error_kind(error)); number(at.argument); number(at.byte); newline(); break;
+        }
+        let event: core::option::Option<ext::cli::Event> = core::result::unwrap(next);
+        if (core::option::is_none(event)) { assert(core::option::is_none(core::result::unwrap(parser.next()))); break; }
+        let emitted: i32 = match (core::option::unwrap(event)) { ext::cli::Event::Option(item) -> option(item), ext::cli::Event::Operand(item) -> operand(item) };
+        assert(emitted == 0);
+        newline();
+    }
+    arguments.destroy(); arguments.destroy(); assert(arguments.is_empty() && arguments.byte_len() == 0); return 0;
+}

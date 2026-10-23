@@ -1,0 +1,20 @@
+module app::main;
+import core::option;
+import core::result;
+import core::slice;
+import std::args;
+import std::process;
+fn allocated(error: std::args::Error) -> bool { let result: bool = match (error) { std::args::Error::AllocationFailed -> true, _ -> false }; return result; }
+fn main() -> i32 {
+    let count: i32 = std::process::argc(); assert(count == 3);
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 2, 0);
+    if (core::result::is_err(captured)) { assert(allocated(core::result::unwrap_err(captured))); return 0; }
+    let empty: std::args::Arguments = core::result::unwrap(captured); assert(empty.len() == 2 && empty.byte_len() == 0);
+    let first: core::slice::View<u8> = core::option::unwrap(empty.get(0)); let second: core::slice::View<u8> = core::option::unwrap(empty.get(1)); assert(first.is_empty() && second.is_empty());
+    let length: i32 = std::process::arg_len(0); assert(length > 0);
+    let full: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(0, 3, length);
+    if (core::result::is_err(full)) { assert(allocated(core::result::unwrap_err(full))); empty.destroy(); return 0; }
+    let all: std::args::Arguments = core::result::unwrap(full); empty.destroy(); assert(all.len() == 3 && all.byte_len() == length);
+    let executable: core::slice::View<u8> = core::option::unwrap(all.get(0)); let last: core::slice::View<u8> = core::option::unwrap(all.get(2));
+    assert(executable.len() == length && core::option::unwrap(executable.get(0)) != 0 && last.is_empty()); all.destroy(); all.destroy(); assert(all.byte_len() == 0); return 0;
+}

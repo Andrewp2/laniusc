@@ -1,0 +1,25 @@
+module app::main;
+import core::option;
+import core::result;
+import core::slice;
+import std::args;
+import std::process;
+fn tag(error: std::args::Error) -> i32 { let value: i32 = match (error) { std::args::Error::Bounds -> 1, std::args::Error::CountLimit -> 2, std::args::Error::ByteLimit -> 3, std::args::Error::AllocationFailed -> 4, _ -> 5 }; return value; }
+fn main() -> i32 {
+    let count: i32 = std::process::argc(); assert(count == 4);
+    assert(tag(core::result::unwrap_err(std::args::snapshot(-1, 3, 3))) == 1);
+    assert(tag(core::result::unwrap_err(std::args::snapshot(5, 3, 3))) == 1);
+    assert(tag(core::result::unwrap_err(std::args::snapshot(1, -1, 3))) == 1);
+    assert(tag(core::result::unwrap_err(std::args::snapshot(1, 3, -1))) == 1);
+    assert(tag(core::result::unwrap_err(std::args::snapshot(1, 2, 3))) == 2);
+    assert(tag(core::result::unwrap_err(std::args::snapshot(1, 3, 2))) == 3);
+    let empty: std::args::Arguments = core::result::unwrap(std::args::snapshot(count, 0, 0));
+    assert(empty.is_empty() && empty.len() == 0 && empty.byte_len() == 0 && core::option::is_none(empty.get(-1)) && core::option::is_none(empty.get(0))); empty.destroy();
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 3, 3);
+    if (core::result::is_err(captured)) { assert(tag(core::result::unwrap_err(captured)) == 4); return 0; }
+    let owner: std::args::Arguments = core::result::unwrap(captured); assert(owner.len() == 3 && owner.byte_len() == 3);
+    let first: core::slice::View<u8> = core::option::unwrap(owner.get(0)); let second: core::slice::View<u8> = core::option::unwrap(owner.get(1)); let third: core::slice::View<u8> = core::option::unwrap(owner.get(2));
+    assert(first.len() == 2 && core::option::unwrap(first.get(0)) == 255 && core::option::unwrap(first.get(1)) == 97 && second.is_empty() && third.len() == 1 && core::option::unwrap(third.get(0)) == 98);
+    assert(core::option::is_none(owner.get(3)) && core::option::is_none(owner.get(-1)));
+    let all: core::slice::View<core::slice::View<u8>> = owner.as_view(); assert(all.len() == 3); owner.destroy(); owner.destroy(); assert(owner.is_empty()); return 0;
+}

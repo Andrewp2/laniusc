@@ -1,0 +1,26 @@
+module app::main;
+import ext::cli;
+import core::option;
+import core::result;
+import core::slice;
+import std::args;
+import std::io;
+import std::io_decimal;
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 65536, 1048576);
+    let arguments: std::args::Arguments = core::result::unwrap(captured);
+    let alpha: [u8; 5] = [97,108,112,104,97]; let beta: [u8; 4] = [98,101,116,97];
+    let a: ext::cli::Spec = ext::cli::Spec { id: 1, long: core::result::unwrap(core::slice::view(alpha, 5)), short: 97, arity: ext::cli::Arity::Flag };
+    let b: ext::cli::Spec = ext::cli::Spec { id: 2, long: core::result::unwrap(core::slice::view(beta, 4)), short: 98, arity: ext::cli::Arity::Flag };
+    let specs: [ext::cli::Spec; 2] = [a,b];
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(), core::result::unwrap(core::slice::view(specs, 2)), ext::cli::Ordering::Intermixed));
+    let events: i32 = 0; let sum: i32 = 0;
+    while (true) {
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(parser.next()); if (core::option::is_none(next)) { break; }
+        let value: i32 = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> item.id, _ -> -1 };
+        assert(value == 1 || value == 2); events += 1; sum += value;
+    }
+    assert(events == arguments.len() * 2 && sum == arguments.len() * 3 && arguments.byte_len() == sum);
+    assert(core::option::is_none(core::result::unwrap(parser.next()))); arguments.destroy();
+    assert(std::io_decimal::write_i32(1, events) > 0 && std::io::write_byte(1, 10) == 1); return 0;
+}

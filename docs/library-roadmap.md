@@ -34,7 +34,7 @@ package distribution is a separate deliverable.
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec and deque with explicit errors, linear maps/sets, alloc hash maps, ordered tree maps and min/max heaps execute; legacy migration and ordered sets remain |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks, native descriptor adapters and owned files execute; buffered adapters remain |
 | Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and borrowed byte paths execute with explicit close/error contracts; metadata, directories and complete lexical paths remain |
-| Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Argument/environment helpers exist; subprocess management remains |
+| Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Owned raw-byte argument snapshots and argument/environment helpers execute; subprocess management remains |
 | Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Clock and entropy helpers exist; coherent types and generators remain |
 | Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Current network module is contract-only |
 | Concurrency | Threads, joining, synchronization, atomics, channels, cancellation | Current thread module is contract-only; runtime prerequisites remain |
@@ -138,6 +138,13 @@ API list; unrelated library work can continue.
   versus 1,966,082 comparisons and 312 ms for repeated insertion. The old
   insertion-ordered linear map remains a separate migration; ordered sets
   remain to be implemented.
+- CLI and host arguments: [`ext::cli` and `std::args`](extended-cli.md) execute
+  borrowed option parsing and owned raw-byte argument snapshots. Eight test
+  groups cover schema errors, 96 generated command lines, allocation failures,
+  32,768-argument lists and a streaming file-checksum application with injected
+  I/O errors. Parsing makes no allocations after capture; two snapshot
+  allocations suffice at both 4,096 and 32,768 arguments. Higher-level CLI help,
+  subcommands, configuration and logging remain.
 - Extended CSV: parsing, independent field copies and canonical encoding execute
   on x86_64 Linux, including generated tables, borrowed field views and allocation fault injection.
   See [extended-csv.md](extended-csv.md). Incremental decoding now shares the same parser; row construction remains.
