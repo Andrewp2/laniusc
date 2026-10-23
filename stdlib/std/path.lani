@@ -4,6 +4,48 @@
 
 module std::path;
 import core::utf8;
+import core::option;
+import core::result;
+import core::slice;
+
+// Borrowed Linux path bytes, without a terminating NUL. No UTF-8 requirement,
+// normalization, allocation, or filesystem lookup. Empty paths are valid
+// values; opening one reports the host error. Keep storage alive and unchanged.
+pub enum Error { Bounds, Nul(i32) }
+pub struct Path { bytes: core::slice::View<u8> }
+
+pub fn from_view(bytes: core::slice::View<u8>) -> core::result::Result<Path, Error> {
+    let index: i32 = 0;
+    while (index < bytes.len()) {
+        if (core::option::unwrap(bytes.get(index)) == 0) { return core::result::Err(Error::Nul(index)); }
+        index += 1;
+    }
+    return core::result::Ok(Path { bytes: bytes });
+}
+
+// The caller must supply physically backed elements, as for core::slice::view.
+pub fn from_bytes_range(bytes: [u8], start: i32, count: i32) -> core::result::Result<Path, Error> {
+    let view: core::result::Result<core::slice::View<u8>, core::slice::ViewError> = core::slice::view_range(bytes, start, count);
+    if (core::result::is_err(view)) { return core::result::Err(Error::Bounds); }
+    return from_view(core::result::unwrap(view));
+}
+
+pub fn from_bytes(bytes: [u8], count: i32) -> core::result::Result<Path, Error> {
+    return from_bytes_range(bytes, 0, count);
+}
+
+pub impl Path {
+    pub fn byte_len(&self) -> i32 { return self.bytes.len(); }
+    pub fn is_empty(&self) -> bool { return self.bytes.is_empty(); }
+    pub fn byte_at(&self, index: i32) -> core::option::Option<u8> { return self.bytes.get(index); }
+    // Read-only by contract: writable slices are not yet compiler restricted.
+    pub fn as_bytes(&self) -> core::slice::View<u8> { return self.bytes; }
+    pub fn is_absolute(&self) -> bool {
+        if (self.bytes.is_empty()) { return false; }
+        return core::option::unwrap(self.bytes.first()) == 47;
+    }
+    pub fn is_relative(&self) -> bool { return !self.is_absolute(); }
+}
 
 pub type PathCapability = bool;
 pub type PathByte = u8;

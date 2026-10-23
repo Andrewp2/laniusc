@@ -31,8 +31,8 @@ package distribution is a separate deliverable.
 | Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed owned String, byte codecs and scalar operations execute; borrowed Text, splitting and scalar iteration now execute; join and formatting remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings and raw views exist; ownership conventions need consolidation |
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Generic vectors/deques, linear maps/sets and an executable alloc hash map exist; hash-set composition is a compiler dependency |
-| I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks and native descriptor adapters execute; buffered adapters and owned files remain |
-| Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Basic bindings exist; complete path and directory interfaces remain |
+| I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks, native descriptor adapters and owned files execute; buffered adapters remain |
+| Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and borrowed byte paths execute with explicit close/error contracts; metadata, directories and complete lexical paths remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Argument/environment helpers exist; subprocess management remains |
 | Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Clock and entropy helpers exist; coherent types and generators remain |
 | Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Current network module is contract-only |
@@ -169,5 +169,11 @@ API list; unrelated library work can continue.
   remaining streaming format interfaces; complete HashSet when its compiler
   dependency is resolved.
   Completing the integration application does not complete the first phase.
+- Owned files: [File and Path](stdlib-files.md) execute read/create/append,
+  generic stream operations, explicit close and ownership transfer on x86_64
+  Linux. Tests check binary and non-UTF-8 data, descriptor reuse, path bounds,
+  all acquisition/transfer/close failure paths and absence of heap allocation.
+  The file-concatenation application closes inputs on errors and preserves bytes.
+  Buffered I/O, complete paths and filesystem runtime extensions remain.
 - The older [execution audit](stdlib-foundation.md) remains historical evidence;
   its top-level checkpoints do not establish this branch's current behavior.

@@ -5,6 +5,10 @@ storage (`alloc::io`) and native file descriptors (`std::stream`). All library
 behavior is implemented in Lanius; descriptor operations call existing host
 bindings.
 
+[`std::file::File`](stdlib-files.md) owns descriptors, implements the same
+Read/Write contracts, and provides explicit close and ownership transfer.
+Descriptor adapters below continue to borrow handles.
+
 ## Portable contracts
 
 `Read.read(destination, offset, count)` and `Write.write(source, offset, count)`

@@ -1,0 +1,93 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::file;
+import std::fs;
+import std::path;
+
+fn host_code(result: core::result::Result<i32, core::io::Error>) -> i32 {
+    if (core::result::is_ok(result)) { return 0; }
+    let error: core::io::Error = core::result::unwrap_err(result);
+    let code: i32 = match (error) { core::io::Error::Host(value) -> value, _ -> -1 };
+    return code;
+}
+
+fn main() -> i32 {
+    let name: [u8; 10] = [0, 100, 97, 116, 97, 46, 98, 105, 110, 0];
+    let view: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(name, 1, 8));
+    let path: std::path::Path = core::result::unwrap(std::path::from_view(view));
+    if (path.byte_len() != 8 || path.is_empty() || path.is_absolute() || !path.is_relative()) { return 1; }
+    if (core::option::unwrap(path.byte_at(0)) != 100 || !core::option::is_none(path.byte_at(-1)) || !core::option::is_none(path.byte_at(8))) { return 2; }
+    let path_view: core::slice::View<u8> = path.as_bytes();
+    if (path_view.len() != 8 || core::option::unwrap(path_view.last()) != 110) { return 3; }
+    if (core::result::is_ok(std::path::from_bytes_range(name, -1, 1)) || core::result::is_ok(std::path::from_bytes_range(name, 0, -1)) || core::result::is_ok(std::path::from_bytes_range(name, 2147483647, 1))) { return 4; }
+    let nul: std::path::Error = core::result::unwrap_err(std::path::from_bytes_range(name, 1, 9));
+    let nul_index: i32 = match (nul) { std::path::Error::Nul(index) -> index, _ -> -1 };
+    if (nul_index != 8) { return 5; }
+    let empty: std::path::Path = core::result::unwrap(std::path::from_bytes(name, 0));
+    if (!empty.is_empty() || !empty.is_relative()) { return 6; }
+    let empty_open: core::result::Result<std::file::File, core::io::Error> = std::file::open(empty, std::file::OpenMode::Read);
+    let empty_error: core::io::Error = core::result::unwrap_err(empty_open);
+    let empty_code: i32 = match (empty_error) { core::io::Error::Host(value) -> value, _ -> -1 };
+    if (empty_code != 2) { return 7; }
+    let absolute_bytes: [u8; 2] = [47, 255];
+    let absolute: std::path::Path = core::result::unwrap(std::path::from_bytes(absolute_bytes, 2));
+    if (!absolute.is_absolute() || absolute.is_relative()) { return 8; }
+
+    let output: std::file::File = core::result::unwrap(std::file::open(path, std::file::OpenMode::Create));
+    let handle: i32 = core::option::unwrap(output.raw_handle());
+    if (!output.is_open()) { return 9; }
+    let data: [u8; 6] = [99, 0, 128, 255, 42, 99];
+    if (core::result::unwrap(core::io::write_all(output.borrow(), data, 1, 4)) != 4) { return 10; }
+    if (core::result::unwrap(output.flush()) != 0 || core::result::unwrap(output.close()) != 0) { return 11; }
+    if (output.is_open() || !core::option::is_none(output.raw_handle()) || !core::option::is_none(output.take_handle())) { return 12; }
+    if (host_code(output.write(data, 0, 1)) != 9 || host_code(output.read(data, 0, 1)) != 9 || host_code(output.flush()) != 9) { return 13; }
+    if (core::result::unwrap(output.read(data, 0, 0)) != 0 || core::result::unwrap(output.write(data, 0, 0)) != 0) { return 14; }
+    if (core::result::is_ok(output.read(data, -1, 0)) || core::result::is_ok(output.write(data, 2147483647, 1))) { return 15; }
+
+    let appended: std::file::File = core::result::unwrap(std::file::open(path, std::file::OpenMode::Append));
+    if (core::option::unwrap(appended.raw_handle()) != handle) { return 16; }
+    // Repeated close must not close a newly reused descriptor.
+    if (core::result::unwrap(output.close()) != 0) { return 17; }
+    let tail: [u8; 2] = [1, 2];
+    if (core::result::unwrap(core::io::write_all(appended.borrow(), tail, 0, 2)) != 2) { return 18; }
+    let transferred: i32 = core::option::unwrap(appended.take_handle());
+    if (appended.is_open() || core::result::unwrap(appended.close()) != 0) { return 19; }
+    let adopted: std::file::File = core::result::unwrap(std::file::from_owned_handle(transferred));
+    if (core::result::unwrap(adopted.close()) != 0 || core::result::is_ok(std::file::from_owned_handle(-1))) { return 20; }
+
+    let input: std::file::File = core::result::unwrap(std::file::open(path, std::file::OpenMode::Read));
+    let received: [u8; 8] = [77; 8];
+    if (core::result::unwrap(core::io::read_exact(input.borrow(), received, 1, 6)) != 6) { return 21; }
+    if (received[0] != 77 || received[1] != 0 || received[2] != 128 || received[3] != 255 || received[4] != 42 || received[5] != 1 || received[6] != 2 || received[7] != 77) { return 22; }
+    if (core::result::unwrap(input.read(received, 0, 1)) != 0 || host_code(input.write(data, 0, 1)) != 9) { return 23; }
+    if (core::result::unwrap(input.close()) != 0) { return 24; }
+
+    // Non-UTF-8 filenames and append-created files are valid on Linux.
+    let other_name: [u8; 2] = [110, 255];
+    let other_path: std::path::Path = core::result::unwrap(std::path::from_bytes(other_name, 2));
+    let other: std::file::File = core::result::unwrap(std::file::open(other_path, std::file::OpenMode::Append));
+    if (core::result::unwrap(other.write(tail, 0, 2)) != 2 || core::result::unwrap(other.close()) != 0) { return 25; }
+    let truncated: std::file::File = core::result::unwrap(std::file::open(other_path, std::file::OpenMode::Create));
+    if (core::result::unwrap(truncated.close()) != 0) { return 26; }
+
+    // Mutation cannot smuggle a NUL-truncated path across the host boundary.
+    name[5] = 0;
+    let invalid: core::result::Result<std::file::File, core::io::Error> = std::file::open(path, std::file::OpenMode::Create);
+    let invalid_error: core::io::Error = core::result::unwrap_err(invalid);
+    let invalid_input: bool = match (invalid_error) { core::io::Error::InvalidInput -> true, _ -> false };
+    if (!invalid_input) { return 27; }
+
+    // A real EBADF close still retires the owner exactly once.
+    let raw: i32 = std::fs::open_read_path("data.bin");
+    let stale: std::file::File = core::result::unwrap(std::file::from_owned_handle(raw));
+    if (std::fs::close(raw) != 0 || host_code(stale.close()) != 9 || stale.is_open() || core::result::unwrap(stale.close()) != 0) { return 28; }
+    // Descriptor zero is a valid owned handle, not an absent value.
+    if (std::fs::close(0) != 0) { return 29; }
+    let zero: std::file::File = core::result::unwrap(std::file::open(other_path, std::file::OpenMode::Read));
+    if (!zero.is_open() || core::option::unwrap(zero.raw_handle()) != 0 || core::result::unwrap(zero.close()) != 0) { return 30; }
+    return 0;
+}

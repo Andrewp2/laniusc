@@ -1,0 +1,36 @@
+// Concatenate one or more files to stdout. Filenames retain their original
+// bytes, including non-UTF-8. Every opened file is closed on success or failure.
+// Exit 2: missing/invalid argument; 3: open/read/write/close failure.
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+import std::args_checked;
+import std::file;
+import std::path;
+import std::stream;
+
+fn main() -> i32 {
+    let count: i32 = std::args_checked::argument_count_or(0);
+    if (count < 2) { return 2; }
+    let storage: [i32; 1024] = [0; 1024];
+    let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer, 4096);
+    let output: std::stream::Descriptor = std::stream::stdout();
+    let index: i32 = 1;
+    while (index < count) {
+        let length: i32 = std::args_checked::argument_len_or(index, -1);
+        if (length < 0 || length > 4095) { return 2; }
+        if (!std::args_checked::read_exact_into(index, pointer, 4096)) { return 2; }
+        let path_result: core::result::Result<std::path::Path, std::path::Error> = std::path::from_bytes(bytes, length);
+        if (core::result::is_err(path_result)) { return 2; }
+        let opened: core::result::Result<std::file::File, core::io::Error> = std::file::open(core::result::unwrap(path_result), std::file::OpenMode::Read);
+        if (core::result::is_err(opened)) { return 3; }
+        let input: std::file::File = core::result::unwrap(opened);
+        let copied: core::result::Result<u64, core::io::CopyFailure> = std::stream::copy(input.borrow(), output.borrow());
+        let closed: core::result::Result<i32, core::io::Error> = input.close();
+        if (core::result::is_err(copied) || core::result::is_err(closed)) { return 3; }
+        index += 1;
+    }
+    return 0;
+}

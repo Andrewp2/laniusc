@@ -1,0 +1,48 @@
+// Failure exits encode the stage and positive errno for fault-injection tests.
+module app::main;
+import core::io;
+import core::result;
+import std::file;
+import std::path;
+import std::stream;
+
+fn error_code(error: core::io::Error) -> i32 {
+    let code: i32 = match (error) {
+        core::io::Error::Host(value) -> value,
+        core::io::Error::Interrupted -> 4,
+        core::io::Error::WouldBlock -> 11,
+        core::io::Error::WriteZero -> 100,
+        _ -> 127,
+    };
+    return code;
+}
+
+fn main() -> i32 {
+    let input_name: [u8; 9] = [105, 110, 112, 117, 116, 46, 98, 105, 110];
+    let output_name: [u8; 10] = [111, 117, 116, 112, 117, 116, 46, 98, 105, 110];
+    let input_path: std::path::Path = core::result::unwrap(std::path::from_bytes(input_name, 9));
+    let output_path: std::path::Path = core::result::unwrap(std::path::from_bytes(output_name, 10));
+    let input_result: core::result::Result<std::file::File, core::io::Error> = std::file::open(input_path, std::file::OpenMode::Read);
+    if (core::result::is_err(input_result)) { return 40 + error_code(core::result::unwrap_err(input_result)); }
+    let input: std::file::File = core::result::unwrap(input_result);
+    let output_result: core::result::Result<std::file::File, core::io::Error> = std::file::open(output_path, std::file::OpenMode::Create);
+    if (core::result::is_err(output_result)) {
+        let closed: core::result::Result<i32, core::io::Error> = input.close();
+        if (input.is_open() || core::result::is_err(closed)) { return 210; }
+        return 60 + error_code(core::result::unwrap_err(output_result));
+    }
+    let output: std::file::File = core::result::unwrap(output_result);
+    let copied: core::result::Result<u64, core::io::CopyFailure> = std::stream::copy(input.borrow(), output.borrow());
+    let input_closed: core::result::Result<i32, core::io::Error> = input.close();
+    let output_closed: core::result::Result<i32, core::io::Error> = output.close();
+    if (input.is_open() || output.is_open()) { return 211; }
+    if (core::result::unwrap(input.close()) != 0 || core::result::unwrap(output.close()) != 0) { return 212; }
+    if (core::result::is_err(copied)) {
+        let failure: core::io::CopyFailure = core::result::unwrap_err(copied);
+        if (failure.written > failure.read) { return 213; }
+        return 80 + error_code(failure.cause);
+    }
+    if (core::result::is_err(input_closed)) { return 100 + error_code(core::result::unwrap_err(input_closed)); }
+    if (core::result::is_err(output_closed)) { return 120 + error_code(core::result::unwrap_err(output_closed)); }
+    return 0;
+}

@@ -6,13 +6,111 @@
 // the write fails.
 module std::file;
 import core::decimal;
+import core::io;
 import core::mem;
+import core::option;
+import core::result;
 import core::wide_i64;
 import core::wide_u64;
 import std::fs;
 import std::io;
 import std::io_checked;
 import std::io_decimal;
+import std::path;
+import std::stream;
+
+// Explicit, single-owner x86_64 Linux file handles. Copying this record does
+// not duplicate the descriptor. There is no automatic destructor: close every
+// owner, or transfer its handle with take_handle. See docs/stdlib-files.md.
+pub struct File { handle: i32 }
+pub enum OpenMode { Read, Create, Append }
+
+fn file_error(result: i32) -> core::io::Error {
+    if (result == -4) { return core::io::Error::Interrupted; }
+    if (result == -11) { return core::io::Error::WouldBlock; }
+    return core::io::Error::Host(0 - result);
+}
+
+// Read: existing read-only file. Create: write-only, creates or truncates.
+// Append: write-only, creates or appends. New files use 0666 filtered by umask.
+// Existing bindings do not set close-on-exec. Open makes one host attempt.
+pub fn open(path: std::path::Path, mode: OpenMode) -> core::result::Result<File, core::io::Error> {
+    let count: i32 = path.byte_len();
+    if (count > 4095) { return core::result::Err(core::io::Error::Host(36)); }
+    let storage: [i32; 1024] = [0; 1024];
+    let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts(pointer, count);
+    let index: i32 = 0;
+    while (index < count) {
+        let byte: u8 = core::option::unwrap(path.byte_at(index));
+        // Recheck at the host boundary even if borrowed storage was mutated.
+        if (byte == 0) { return core::result::Err(core::io::Error::InvalidInput); }
+        packed[index] = byte;
+        index += 1;
+    }
+    let handle: i32 = match (mode) {
+        OpenMode::Read -> std::fs::open_read(pointer, count as usize),
+        OpenMode::Create -> std::fs::open_write(pointer, count as usize),
+        OpenMode::Append -> std::fs::open_append(pointer, count as usize),
+    };
+    if (handle < 0) { return core::result::Err(file_error(handle)); }
+    return core::result::Ok(File { handle: handle });
+}
+
+// Low-level ownership transfer. The caller must exclusively own a live
+// descriptor and stop using it independently. Only negative values are checked.
+pub fn from_owned_handle(handle: i32) -> core::result::Result<File, core::io::Error> {
+    if (handle < 0) { return core::result::Err(core::io::Error::InvalidInput); }
+    return core::result::Ok(File { handle: handle });
+}
+
+pub impl File {
+    pub fn borrow(&self) -> &File { return self; }
+    pub fn is_open(&self) -> bool { return self.handle >= 0; }
+    // Borrowed identifier; do not close it, retain it past close, or adopt it.
+    pub fn raw_handle(&self) -> core::option::Option<i32> {
+        if (self.handle < 0) { return core::option::None(); }
+        return core::option::Some(self.handle);
+    }
+    // Caller becomes the sole owner. This File becomes closed without a syscall.
+    pub fn take_handle(&self) -> core::option::Option<i32> {
+        if (self.handle < 0) { return core::option::None(); }
+        let handle: i32 = self.handle;
+        self.handle = -1;
+        return core::option::Some(handle);
+    }
+    // Linux releases the descriptor even when close reports EINTR or a delayed
+    // I/O error. Invalidate first, attempt once, and never retry that descriptor.
+    // A second close is Ok(0). An error still leaves this owner closed.
+    pub fn close(&self) -> core::result::Result<i32, core::io::Error> {
+        if (self.handle < 0) { return core::result::Ok(0); }
+        let handle: i32 = self.handle;
+        self.handle = -1;
+        let result: i32 = std::fs::close(handle);
+        if (result < 0) { return core::result::Err(file_error(result)); }
+        return core::result::Ok(0);
+    }
+}
+
+pub impl core::io::Read for File {
+    pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> {
+        let descriptor: std::stream::Descriptor = std::stream::from_handle(self.handle);
+        return descriptor.read(destination, offset, count);
+    }
+}
+
+pub impl core::io::Write for File {
+    pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> {
+        let descriptor: std::stream::Descriptor = std::stream::from_handle(self.handle);
+        return descriptor.write(source, offset, count);
+    }
+    pub fn flush(&self) -> core::result::Result<i32, core::io::Error> {
+        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
+        // No library buffer remains. This does not promise fsync or durability.
+        return core::result::Ok(0);
+    }
+}
+
 pub fn write_text_once(path: str, text: str) -> i32 {
     let handle: std::fs::FileHandle = std::fs::open_write_path(path);
     if (handle<0) {
