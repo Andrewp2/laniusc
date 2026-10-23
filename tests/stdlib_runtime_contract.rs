@@ -5423,27 +5423,27 @@ fn main() {
 }
 
 #[test]
-fn std_path_contract_type_checks_byte_classifiers_through_stdlib_root() {
+fn path_rules_contract_type_checks_byte_classifiers_through_stdlib_root() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry = common::TempArtifact::new("laniusc_stdlib_runtime", "path", Some("lani"));
     entry.write_str(
         r#"
 module app::main;
 
-import std::path;
+import core::path_rules;
 
 fn main() {
     let slash: PathByte = PATH_SEPARATOR_UNIX;
     let backslash: PathByte = PATH_SEPARATOR_WINDOWS;
     let dot: PathByte = PATH_EXTENSION_SEPARATOR;
-    let colon: PathByte = std::path::PATH_DRIVE_SEPARATOR;
-    let nul: PathByte = std::path::PATH_NUL;
+    let colon: PathByte = core::path_rules::PATH_DRIVE_SEPARATOR;
+    let nul: PathByte = core::path_rules::PATH_NUL;
     let drive_letter: PathByte = 67;
     let letter: PathByte = 97;
     let digit: PathByte = 55;
-    let one_byte_component: std::path::PathComponentLength = 1;
+    let one_byte_component: core::path_rules::PathComponentLength = 1;
     let two_byte_component: PathComponentLength = 2;
-    let three_byte_component: std::path::PathComponentLength = 3;
+    let three_byte_component: core::path_rules::PathComponentLength = 3;
     let slash_is_separator: PathCapability =
         path_byte_is_separator(slash);
     let backslash_is_separator: PathCapability =
@@ -5451,21 +5451,21 @@ fn main() {
     let dot_is_separator: PathCapability =
         path_byte_is_separator(dot);
     let dot_is_extension: PathCapability =
-        std::path::path_byte_is_extension_separator(dot);
+        core::path_rules::path_byte_is_extension_separator(dot);
     let colon_is_drive_separator: PathCapability =
         path_byte_is_drive_separator(colon);
     let drive_letter_is_windows_drive_letter: PathCapability =
-        std::path::path_byte_is_windows_drive_letter(drive_letter);
+        core::path_rules::path_byte_is_windows_drive_letter(drive_letter);
     let letter_is_windows_drive_letter: PathCapability =
         path_byte_is_windows_drive_letter(letter);
     let digit_is_windows_drive_letter: PathCapability =
         path_byte_is_windows_drive_letter(digit);
     let digit_is_ascii_digit: PathCapability =
-        std::path::path_byte_is_ascii_digit(digit);
+        core::path_rules::path_byte_is_ascii_digit(digit);
     let letter_is_ascii_digit: PathCapability =
         path_byte_is_ascii_digit(letter);
     let nul_is_nul: PathCapability =
-        std::path::path_byte_is_nul(nul);
+        core::path_rules::path_byte_is_nul(nul);
     let slash_is_component_boundary: PathCapability =
         path_byte_is_component_boundary(slash);
     let nul_is_component_boundary: PathCapability =
@@ -5473,35 +5473,35 @@ fn main() {
     let letter_is_component_boundary: PathCapability =
         path_byte_is_component_boundary(letter);
     let current_dir_component: PathCapability =
-        std::path::path_component_is_current_dir(dot, one_byte_component);
+        core::path_rules::path_component_is_current_dir(dot, one_byte_component);
     let current_dir_rejects_name: PathCapability =
         path_component_is_current_dir(letter, one_byte_component);
     let current_dir_rejects_longer_component: PathCapability =
         path_component_is_current_dir(dot, two_byte_component);
     let parent_dir_component: PathCapability =
-        std::path::path_component_is_parent_dir(dot, dot, two_byte_component);
+        core::path_rules::path_component_is_parent_dir(dot, dot, two_byte_component);
     let parent_dir_rejects_single_dot: PathCapability =
         path_component_is_parent_dir(dot, dot, one_byte_component);
     let parent_dir_rejects_named_component: PathCapability =
-        std::path::path_component_is_parent_dir(dot, letter, two_byte_component);
+        core::path_rules::path_component_is_parent_dir(dot, letter, two_byte_component);
     let special_current_dir_component: PathCapability =
         path_component_is_current_or_parent_dir(dot, letter, one_byte_component);
     let special_parent_dir_component: PathCapability =
-        std::path::path_component_is_current_or_parent_dir(dot, dot, two_byte_component);
+        core::path_rules::path_component_is_current_or_parent_dir(dot, dot, two_byte_component);
     let special_rejects_longer_component: PathCapability =
         path_component_is_current_or_parent_dir(dot, dot, three_byte_component);
     let root_separator_component: PathCapability =
-        std::path::path_component_is_root_separator(slash, one_byte_component);
+        core::path_rules::path_component_is_root_separator(slash, one_byte_component);
     let windows_root_separator_component: PathCapability =
         path_component_is_root_separator(backslash, one_byte_component);
     let root_separator_rejects_dot: PathCapability =
         path_component_is_root_separator(dot, one_byte_component);
     let root_separator_rejects_longer_component: PathCapability =
-        std::path::path_component_is_root_separator(slash, two_byte_component);
+        core::path_rules::path_component_is_root_separator(slash, two_byte_component);
     let windows_drive_prefix_component: PathCapability =
         path_component_is_windows_drive_prefix(drive_letter, colon, two_byte_component);
     let windows_drive_prefix_rejects_digit: PathCapability =
-        std::path::path_component_is_windows_drive_prefix(digit, colon, two_byte_component);
+        core::path_rules::path_component_is_windows_drive_prefix(digit, colon, two_byte_component);
     let windows_drive_prefix_rejects_separator: PathCapability =
         path_component_is_windows_drive_prefix(drive_letter, slash, two_byte_component);
     let windows_drive_prefix_rejects_longer_component: PathCapability =
@@ -5567,33 +5567,33 @@ fn main() {
     );
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
-        .expect("stdlib-root path manifest should load std::path import");
+        .expect("stdlib-root path manifest should load core::path_rules import");
     assert!(
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/path.lani")),
-        "path manifest should include std::path from the stdlib root"
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/path_rules.lani")),
+        "path manifest should include core::path_rules from the stdlib root"
     );
     assert!(manifest.files.iter().any(|file| {
         file.library_id == 0 && file.path == stdlib_root.join("core/utf8.lani")
     }));
     assert!(
-        runtime_bound_api_diagnostic_info("std::path::path_byte_is_ascii_digit").is_none(),
-        "std::path::path_byte_is_ascii_digit is a source-level helper and must not claim a runtime binding"
+        runtime_bound_api_diagnostic_info("core::path_rules::path_byte_is_ascii_digit").is_none(),
+        "core::path_rules::path_byte_is_ascii_digit is a source-level helper and must not claim a runtime binding"
     );
 
     common::block_on_gpu_with_timeout(
-        "GPU type check stdlib-root std::path byte classifier contract",
+        "GPU type check stdlib-root core::path_rules byte classifier contract",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
     .expect(
-        "std::path byte classifier helpers should type check while allocation and host normalization remain blocked",
+        "core::path_rules byte classifier helpers should type check while allocation and host normalization remain blocked",
     );
 }
 
 #[test]
-fn std_path_unix_hidden_component_helper_type_checks_through_stdlib_root() {
+fn path_rules_unix_hidden_component_helper_type_checks_through_stdlib_root() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry =
         common::TempArtifact::new("laniusc_stdlib_runtime", "path_unix_hidden", Some("lani"));
@@ -5601,26 +5601,26 @@ fn std_path_unix_hidden_component_helper_type_checks_through_stdlib_root() {
         r#"
 module app::main;
 
-import std::path;
+import core::path_rules;
 
 fn main() {
-    let dot: std::path::PathByte = std::path::PATH_EXTENSION_SEPARATOR;
+    let dot: core::path_rules::PathByte = core::path_rules::PATH_EXTENSION_SEPARATOR;
     let letter: PathByte = 97;
-    let slash: std::path::PathByte = std::path::PATH_SEPARATOR_UNIX;
+    let slash: core::path_rules::PathByte = core::path_rules::PATH_SEPARATOR_UNIX;
     let one: PathComponentLength = 1;
-    let two: std::path::PathComponentLength = 2;
+    let two: core::path_rules::PathComponentLength = 2;
     let three: PathComponentLength = 3;
     let dotfile: PathCapability =
-        std::path::path_component_is_unix_hidden(dot, letter, two);
-    let current_dir: std::path::PathCapability =
+        core::path_rules::path_component_is_unix_hidden(dot, letter, two);
+    let current_dir: core::path_rules::PathCapability =
         path_component_is_unix_hidden(dot, letter, one);
     let parent_dir: PathCapability =
-        std::path::path_component_is_unix_hidden(dot, dot, two);
-    let dotted_name: std::path::PathCapability =
+        core::path_rules::path_component_is_unix_hidden(dot, dot, two);
+    let dotted_name: core::path_rules::PathCapability =
         path_component_is_unix_hidden(dot, dot, three);
     let ordinary_name: PathCapability =
-        std::path::path_component_is_unix_hidden(letter, dot, two);
-    let root_separator: std::path::PathCapability =
+        core::path_rules::path_component_is_unix_hidden(letter, dot, two);
+    let root_separator: core::path_rules::PathCapability =
         path_component_is_unix_hidden(slash, dot, one);
     if (!dotfile || current_dir || parent_dir || !dotted_name || ordinary_name || root_separator) {
         return 1;
@@ -5631,23 +5631,23 @@ fn main() {
     );
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
-        .expect("stdlib-root path manifest should load std::path import");
+        .expect("stdlib-root path manifest should load core::path_rules import");
     assert!(
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/path.lani")),
-        "path manifest should include std::path from the stdlib root"
+            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/path_rules.lani")),
+        "path manifest should include core::path_rules from the stdlib root"
     );
     assert!(manifest.files.iter().any(|file| {
         file.library_id == 0 && file.path == stdlib_root.join("core/utf8.lani")
     }));
 
     common::block_on_gpu_with_timeout(
-        "GPU type check stdlib-root std::path Unix hidden-component helper",
+        "GPU type check stdlib-root core::path_rules Unix hidden-component helper",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
-    .expect("std::path Unix hidden-component helper should type check through --stdlib-root");
+    .expect("core::path_rules Unix hidden-component helper should type check through --stdlib-root");
 }
 
 #[test]

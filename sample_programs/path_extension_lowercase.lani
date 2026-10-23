@@ -3,7 +3,7 @@ module app::main;
 import core::byte;
 import core::slice;
 import std::io_byte;
-import std::path;
+import core::path_rules;
 
 fn main() -> i32 {
     let d: u8 = 100;
@@ -20,9 +20,9 @@ fn main() -> i32 {
     let capital_x: u8 = 88;
     let path: [u8; 15] = [d, i, r, slash, capital_r, e, p, o, r, t, dot,
                           capital_t, capital_x, capital_t, slash];
-    let start: i32 = std::path::path_last_component_start_or(path, 15, -1);
-    let end: i32 = std::path::path_last_component_end_or(path, 15, -1);
-    let extension: i32 = std::path::path_extension_start_or(path, 15, -1);
+    let start: i32 = core::path_rules::path_last_component_start_or(path, 15, -1);
+    let end: i32 = core::path_rules::path_last_component_end_or(path, 15, -1);
+    let extension: i32 = core::path_rules::path_extension_start_or(path, 15, -1);
     if (start < 0 || extension <= start || extension >= end) {
         return 1;
     }

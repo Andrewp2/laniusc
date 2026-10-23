@@ -11,7 +11,7 @@ import core::slice;
 import core::text;
 import ext::json;
 import std::file;
-import std::path;
+import core::path;
 import std::stream;
 
 pub enum Error { Json(ext::json::Error), Text(alloc::string::Error), RootNotObject, InvalidLimit, InputLimit, AllocationFailed, Io(core::io::Error) }
@@ -35,7 +35,7 @@ pub fn parse(text: alloc::string::String, options: ext::json::Options) -> core::
 
 // Reads through the byte limit and closes the acquired File on every path.
 // A read failure takes priority over a simultaneous close failure.
-pub fn load(path: std::path::Path, maximum_bytes: i32, options: ext::json::Options) -> core::result::Result<Config, Error> {
+pub fn load(path: core::path::Path, maximum_bytes: i32, options: ext::json::Options) -> core::result::Result<Config, Error> {
     if (maximum_bytes < 0) { return core::result::Err(Error::InvalidLimit); }
     // Validate options before acquiring a host handle.
     let checked: core::result::Result<ext::json::Document, ext::json::Error> = ext::json::with_options(options);

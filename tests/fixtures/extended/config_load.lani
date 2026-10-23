@@ -8,7 +8,7 @@ import ext::json;
 import std::args;
 import std::io;
 import std::io_decimal;
-import std::path;
+import core::path;
 fn json_status(error: ext::json::Error) -> i32 {
     let result: i32 = match (error.kind) { ext::json::ErrorKind::DuplicateKey -> 10, ext::json::ErrorKind::InvalidOptions -> 12, ext::json::ErrorKind::NodeLimit -> 13, ext::json::ErrorKind::DepthLimit -> 14, ext::json::ErrorKind::StringLimit -> 15, ext::json::ErrorKind::NumberLimit -> 16, _ -> 11 }; return result;
 }
@@ -19,7 +19,7 @@ fn status(error: ext::config::Error) -> i32 {
 fn main() -> i32 {
     let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 3, 65536); if (core::result::is_err(captured)) { return 4; }
     let arguments: std::args::Arguments = core::result::unwrap(captured); assert(arguments.len() == 3);
-    let path: std::path::Path = core::result::unwrap(std::path::from_view(core::option::unwrap(arguments.get(0))));
+    let path: core::path::Path = core::result::unwrap(core::path::from_view(core::option::unwrap(arguments.get(0))));
     let bound_bytes: core::slice::View<u8> = core::option::unwrap(arguments.get(1)); let bound: core::text::Text = core::result::unwrap(core::text::from_utf8_range(bound_bytes.values, bound_bytes.start, bound_bytes.len()));
     let maximum: i32 = core::result::unwrap(bound.parse_i32()); let modes: core::slice::View<u8> = core::option::unwrap(arguments.get(2)); let mode: u8 = core::option::unwrap(modes.get(0));
     let options: ext::json::Options = ext::json::default_options();

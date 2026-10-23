@@ -1,0 +1,175 @@
+// Owned Unix byte paths. One owner, explicit destroy; copies alias ownership.
+// Fallible edits preserve contents and capacity on error, including aliased
+// inputs. Views are read-only by contract and invalidated by successful edits.
+module alloc::path;
+import alloc::vec;
+import core::cmp;
+import core::hash;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+
+pub enum Error { Bounds, Nul(i32), InvalidName, NoFileName, CapacityOverflow, AllocationFailed }
+pub struct PathBuf { bytes: alloc::vec::Vec<u8> }
+
+fn allocation_error(error: alloc::vec::Error) -> Error {
+    let mapped: Error = match (error) {
+        alloc::vec::Error::Bounds -> Error::Bounds,
+        alloc::vec::Error::InvalidCapacity -> Error::Bounds,
+        alloc::vec::Error::CapacityOverflow -> Error::CapacityOverflow,
+        alloc::vec::Error::AllocationFailed -> Error::AllocationFailed
+    }; return mapped;
+}
+fn path_error(error: core::path::Error) -> Error {
+    let mapped: Error = match (error) { core::path::Error::Bounds -> Error::Bounds, core::path::Error::Nul(index) -> Error::Nul(index) }; return mapped;
+}
+fn checked_name(bytes: core::slice::View<u8>, extension: bool) -> core::result::Result<i32, Error> {
+    let checked: core::result::Result<core::path::Path, core::path::Error> = core::path::from_view(bytes);
+    if (core::result::is_err(checked)) { return core::result::Err(path_error(core::result::unwrap_err(checked))); }
+    let index: i32 = 0;
+    while (index < bytes.len()) { if (core::option::unwrap(bytes.get(index)) == 47) { return core::result::Err(Error::InvalidName); } index += 1; }
+    if (!extension) {
+        if (bytes.is_empty()) { return core::result::Err(Error::InvalidName); }
+        if (core::option::unwrap(bytes.get(0)) == 46) {
+            if (bytes.len() == 1) { return core::result::Err(Error::InvalidName); }
+            if (bytes.len() == 2 && core::option::unwrap(bytes.get(1)) == 46) { return core::result::Err(Error::InvalidName); }
+        }
+    }
+    return core::result::Ok(bytes.len());
+}
+pub fn new() -> PathBuf { let bytes: alloc::vec::Vec<u8> = alloc::vec::new(); return PathBuf { bytes: bytes }; }
+pub fn with_capacity(capacity: i32) -> core::result::Result<PathBuf, Error> {
+    let bytes: core::result::Result<alloc::vec::Vec<u8>, alloc::vec::Error> = alloc::vec::with_capacity<u8>(capacity);
+    if (core::result::is_err(bytes)) { return core::result::Err(allocation_error(core::result::unwrap_err(bytes))); }
+    return core::result::Ok(PathBuf { bytes: core::result::unwrap(bytes) });
+}
+pub fn from_path(path: core::path::Path) -> core::result::Result<PathBuf, Error> {
+    let bytes: core::result::Result<alloc::vec::Vec<u8>, alloc::vec::Error> = alloc::vec::from_view(path.as_bytes());
+    if (core::result::is_err(bytes)) { return core::result::Err(allocation_error(core::result::unwrap_err(bytes))); }
+    return core::result::Ok(PathBuf { bytes: core::result::unwrap(bytes) });
+}
+pub fn join(base: core::path::Path, child: core::path::Path) -> core::result::Result<PathBuf, Error> {
+    if (child.is_absolute()) { return from_path(child); }
+    let owned: core::result::Result<PathBuf, Error> = from_path(base);
+    if (core::result::is_err(owned)) { return owned; }
+    let value: PathBuf = core::result::unwrap(owned); let appended: core::result::Result<i32, Error> = value.try_push(child);
+    if (core::result::is_err(appended)) { value.destroy(); return core::result::Err(core::result::unwrap_err(appended)); }
+    return core::result::Ok(value);
+}
+pub impl PathBuf {
+    pub fn borrow(&self) -> &PathBuf { return self; }
+    pub fn as_path(&self) -> core::path::Path { return core::path::Path { bytes: self.bytes.as_view() }; }
+    pub fn byte_len(&self) -> i32 { return self.bytes.len(); }
+    pub fn capacity(&self) -> i32 { return self.bytes.capacity(); }
+    pub fn is_empty(&self) -> bool { return self.bytes.is_empty(); }
+    pub fn clear(&self) { self.bytes.clear(); }
+    pub fn destroy(&self) { self.bytes.destroy(); }
+    pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, Error> {
+        let result: core::result::Result<i32, alloc::vec::Error> = self.bytes.try_reserve(additional);
+        if (core::result::is_err(result)) { return core::result::Err(allocation_error(core::result::unwrap_err(result))); } return core::result::Ok(core::result::unwrap(result));
+    }
+    pub fn try_shrink_to_fit(&self) -> core::result::Result<i32, Error> {
+        let result: core::result::Result<i32, alloc::vec::Error> = self.bytes.try_shrink_to_fit();
+        if (core::result::is_err(result)) { return core::result::Err(allocation_error(core::result::unwrap_err(result))); } return core::result::Ok(core::result::unwrap(result));
+    }
+    pub fn try_clone(&self) -> core::result::Result<PathBuf, Error> { return from_path(self.as_path()); }
+
+    // Build before releasing the old owner so replacement sources may alias it.
+    fn replace(&self, prefix: i32, separator: u8, suffix: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+        let middle: i32 = 0; if (separator != 0) { middle = 1; }
+        if (prefix > 2147483647 - middle || suffix.len() > 2147483647 - prefix - middle) { return core::result::Err(Error::CapacityOverflow); }
+        let needed: i32 = prefix + middle + suffix.len(); let capacity: i32 = self.capacity();
+        if (needed > capacity) {
+            if (capacity <= 1073741823) { capacity *= 2; } else { capacity = 2147483647; }
+            if (capacity < 4) { capacity = 4; } if (capacity < needed) { capacity = needed; }
+        }
+        let allocated: core::result::Result<alloc::vec::Vec<u8>, alloc::vec::Error> = alloc::vec::with_capacity<u8>(capacity);
+        if (core::result::is_err(allocated)) { return core::result::Err(allocation_error(core::result::unwrap_err(allocated))); }
+        let target: alloc::vec::Vec<u8> = core::result::unwrap(allocated); let index: i32 = 0;
+        while (index < prefix) { core::result::unwrap(target.try_push(self.bytes.at(index))); index += 1; }
+        if (middle != 0) { core::result::unwrap(target.try_push(separator)); }
+        core::result::unwrap(target.try_extend(suffix)); self.bytes.destroy(); self.bytes = target;
+        return core::result::Ok(needed);
+    }
+    // Absolute children replace the base. Relative children are appended;
+    // an empty child adds a trailing slash to a nonempty base when needed.
+    pub fn try_push(&self, child: core::path::Path) -> core::result::Result<i32, Error> {
+        if (child.is_absolute()) { return self.replace(0,0,child.as_bytes()); }
+        let separator: i32 = 0; if (!self.is_empty() && self.bytes.at(self.byte_len()-1) != 47) { separator = 1; }
+        if (self.byte_len() > 2147483647 - separator || child.byte_len() > 2147483647 - self.byte_len() - separator) { return core::result::Err(Error::CapacityOverflow); }
+        let needed: i32 = self.byte_len() + separator + child.byte_len();
+        if (needed > self.capacity()) { let middle: u8 = 0; if (separator != 0) { middle = 47; } return self.replace(self.byte_len(),middle,child.as_bytes()); }
+        if (separator != 0) { core::result::unwrap(self.bytes.try_push(47)); }
+        core::result::unwrap(self.bytes.try_extend(child.as_bytes())); return core::result::Ok(needed);
+    }
+    pub fn pop(&self) -> bool {
+        let path: core::path::Path = self.as_path(); let parent: core::option::Option<core::path::Path> = path.parent();
+        if (core::option::is_none(parent)) { return false; }
+        let value: core::path::Path = core::option::unwrap(parent);
+        core::result::unwrap(self.bytes.truncate(value.byte_len())); return true;
+    }
+    // Accept one normal filename: no slash, NUL, empty, dot or parent component.
+    pub fn try_set_file_name(&self, name: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+        let checked: core::result::Result<i32, Error> = checked_name(name,false); if (core::result::is_err(checked)) { return checked; }
+        let path: core::path::Path = self.as_path(); let found: core::option::Option<core::slice::View<u8>> = path.file_name();
+        if (core::option::is_none(found)) { return self.try_push(core::path::Path { bytes: name }); }
+        let current: core::slice::View<u8> = core::option::unwrap(found); return self.replace(current.start,0,name);
+    }
+    // Empty removes the extension (and its dot). Otherwise dots in the supplied
+    // extension are literal bytes. Trailing separators/dots after the name drop.
+    pub fn try_set_extension(&self, extension: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+        let checked: core::result::Result<i32, Error> = checked_name(extension,true); if (core::result::is_err(checked)) { return checked; }
+        let path: core::path::Path = self.as_path(); let found: core::option::Option<core::slice::View<u8>> = path.file_stem();
+        if (core::option::is_none(found)) { return core::result::Err(Error::NoFileName); }
+        let stem: core::slice::View<u8> = core::option::unwrap(found); let prefix: i32 = stem.start + stem.len();
+        if (extension.is_empty()) { core::result::unwrap(self.bytes.truncate(prefix)); return core::result::Ok(prefix); }
+        return self.replace(prefix,46,extension);
+    }
+}
+
+// Explicit lexical simplification, never filesystem canonicalization. Resolve
+// normal/.. pairs, retain unresolved relative parents, clamp absolute parents
+// at root, collapse all leading slashes, and use . for an empty relative result.
+// This can change filesystem meaning when symbolic links are involved.
+pub fn normalize_lexically(path: core::path::Path) -> core::result::Result<PathBuf, Error> {
+    let capacity: i32 = path.byte_len(); if (capacity == 0) { capacity = 1; }
+    let allocated: core::result::Result<PathBuf, Error> = with_capacity(capacity);
+    if (core::result::is_err(allocated)) { return allocated; }
+    let output: PathBuf = core::result::unwrap(allocated); let cursor: core::path::Components = path.components();
+    let absolute: bool = path.is_absolute();
+    while (true) {
+        let next: core::option::Option<core::path::Component> = cursor.next(); if (core::option::is_none(next)) { break; }
+        let part: core::path::Component = core::option::unwrap(next);
+        if (part.is_current()) { continue; }
+        if (part.is_root()) { core::result::unwrap(output.bytes.try_push(47)); continue; }
+        if (part.is_parent()) {
+            let end: i32 = output.byte_len(); let start: i32 = end;
+            while (start > 0 && output.bytes.at(start-1) != 47) { start -= 1; }
+            let parent: bool = false;
+            if (end - start == 2) { parent = output.bytes.at(start) == 46 && output.bytes.at(start+1) == 46; }
+            if (end > start && !parent) {
+                if (start > 1 || (!absolute && start == 1)) { start -= 1; }
+                core::result::unwrap(output.bytes.truncate(start)); continue;
+            }
+            if (absolute) { continue; }
+        }
+        if (!output.is_empty() && output.bytes.at(output.byte_len()-1) != 47) { core::result::unwrap(output.bytes.try_push(47)); }
+        core::result::unwrap(output.bytes.try_extend(part.bytes));
+    }
+    if (output.is_empty()) { core::result::unwrap(output.bytes.try_push(46)); }
+    return core::result::Ok(output);
+}
+pub impl core::cmp::Eq<PathBuf> for PathBuf {
+    pub fn eq(a: PathBuf,b: PathBuf) -> bool { let path: core::path::Path = a.as_path(); return path.equals(b.as_path()); }
+    pub fn ne(a: PathBuf,b: PathBuf) -> bool { return !PathBuf::eq(a,b); }
+}
+pub impl core::cmp::Ord<PathBuf> for PathBuf {
+    pub fn lt(a: PathBuf,b: PathBuf) -> bool { let path: core::path::Path = a.as_path(); return path.compare(b.as_path()) < 0; }
+    pub fn le(a: PathBuf,b: PathBuf) -> bool { let path: core::path::Path = a.as_path(); return path.compare(b.as_path()) <= 0; }
+    pub fn gt(a: PathBuf,b: PathBuf) -> bool { let path: core::path::Path = a.as_path(); return path.compare(b.as_path()) > 0; }
+    pub fn ge(a: PathBuf,b: PathBuf) -> bool { let path: core::path::Path = a.as_path(); return path.compare(b.as_path()) >= 0; }
+}
+pub impl core::hash::Hash<PathBuf> for PathBuf {
+    pub fn hash(value: PathBuf) -> u32 { return core::path::Path::hash(value.as_path()); }
+}

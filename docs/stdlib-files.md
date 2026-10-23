@@ -1,6 +1,6 @@
 # Owned files and borrowed paths
 
-`std::file::File` owns one native file descriptor. `std::path::Path` borrows
+`std::file::File` owns one native file descriptor. `core::path::Path` borrows
 length-bearing path bytes. Both implementations are Lanius. File operations use
 the existing filesystem bindings and `std::stream` byte adapters.
 
@@ -11,7 +11,7 @@ inside GPU kernels or on another operating system.
 ## Path bytes
 
 `from_bytes(bytes, count)`, `from_bytes_range(bytes, start, count)` and
-`from_view(View<u8>)` return `Result<Path, std::path::Error>`. Constructors accept
+`from_view(View<u8>)` return `Result<Path, core::path::Error>`. Constructors accept
 arbitrary non-NUL bytes, including invalid UTF-8. `Bounds` rejects negative or
 overflowing ranges; `Nul(index)` identifies the first NUL relative to the selected
 range. Empty paths are valid values; an open attempt reports the Linux error.
@@ -19,8 +19,10 @@ Paths are not normalized, canonicalized or checked for existence. Linux treats
 `/` as a separator and accepts non-UTF-8 names; see
 [pathname(7)](https://man7.org/linux/man-pages/man7/pathname.7.html).
 
-Queries are `byte_len`, `is_empty`, `byte_at`, `as_bytes`, `is_absolute` and
-`is_relative`. `byte_at` returns `None` outside the logical range. Absolute means
+Basic queries are `byte_len`, `is_empty`, `byte_at`, `as_bytes`, `is_absolute` and
+`is_relative`. [Byte paths and owned buffers](stdlib-paths.md) also documents
+components, names, prefixes, parent traversal, comparison, joins and edits.
+`byte_at` returns `None` outside the logical range. Absolute means
 the first byte is `/`; empty paths are relative. Backslashes have no special
 meaning. `as_bytes` returns the same borrowed `View<u8>`, including its offset
 and native byte stride.

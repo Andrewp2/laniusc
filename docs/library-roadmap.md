@@ -33,7 +33,7 @@ package distribution is a separate deliverable.
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings and raw views exist; ownership conventions need consolidation |
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec and deque with explicit errors, linear maps/sets, alloc hash maps, ordered tree maps and min/max heaps execute; legacy migration and ordered sets remain |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks, native descriptor adapters and owned files execute; buffered adapters remain |
-| Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and borrowed byte paths execute with explicit close/error contracts; metadata, directories and complete lexical paths remain |
+| Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files, borrowed Unix byte paths, components, names, prefixes, owned buffers and explicit lexical normalization execute; metadata, directories, walking and further host operations remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Owned raw-byte argument snapshots and argument/environment helpers execute; subprocess management remains |
 | Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, native clocks, generic deadline waits, deterministic generators, sampling/shuffle and explicit OS entropy errors execute; legacy consolidation, additional clocks and distributions remain |
 | Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Current network module is contract-only |
@@ -116,6 +116,15 @@ API list; unrelated library work can continue.
   text-processing program. See [stdlib-string.md](stdlib-string.md) for exact
   coverage and remaining String operations.
 - Compiler and runtime prerequisites: [library-dependencies.md](library-dependencies.md).
+- Paths: [`core::path` and `alloc::path`](stdlib-paths.md) separate borrowed Unix
+  paths and owned buffers from host filesystem services. Component cursors,
+  names/extensions, ancestors, prefixes, comparison/hash, joins, atomic edits
+  and explicit lexical normalization execute. Tests cover 633 reference pairs,
+  4,014 modeled edits, aliased inputs, allocation/write failures, large batches
+  and a raw-byte path-joining program. Existing mixed-separator/Windows byte
+  rules moved to `core::path_rules` with callers. Direct malformed View-record
+  construction has a compiler reproduction and an executable control. Host
+  metadata and directory enumeration still block the directory-report application.
 - Time: [`core::time` and `std::clock`](stdlib-time.md) execute normalized
   durations, full-width signed Unix timestamps, monotonic instants, deadlines
   and generic waits with injected or native clocks. Five test groups cover 400

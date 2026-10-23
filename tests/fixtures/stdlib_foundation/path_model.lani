@@ -1,0 +1,57 @@
+module app::main;
+import alloc::path;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import std::io;
+import std::io_decimal;
+import std::process;
+fn number(value: i32) { assert(std::io_decimal::write_i32(1,value) > 0 && std::io::write_byte(1,10) == 1); }
+fn view(value: core::slice::View<u8>) {
+    number(value.len()); let index: i32 = 0;
+    while (index < value.len()) { number(core::option::unwrap(value.get(index)) as i32); index += 1; }
+}
+fn optional(value: core::option::Option<core::slice::View<u8>>) {
+    if (core::option::is_none(value)) { number(-1); } else { view(core::option::unwrap(value)); }
+}
+fn component(part: core::path::Component) {
+    let kind: i32 = match (part.kind) { core::path::Kind::Root -> 0, core::path::Kind::Current -> 1, core::path::Kind::Parent -> 2, core::path::Kind::Normal -> 3 };
+    number(kind); view(part.bytes);
+}
+fn argument(index: i32, pointer: ptr, bytes: [u8]) -> core::path::Path {
+    let count: i32 = std::process::arg_len(index); assert(count >= 0 && count <= 4096);
+    assert(std::process::arg_read(index,pointer,count as usize) == count);
+    return core::result::unwrap(core::path::from_bytes(bytes,count));
+}
+fn main() -> i32 {
+    let storage: [i32; 1024] = [0;1024]; let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,4096);
+    let other_storage: [i32; 1024] = [0;1024]; let other_pointer: ptr = core::mem::i32_array_data_ptr(other_storage);
+    let other_bytes: [u8] = core::mem::typed_slice_from_raw_parts(other_pointer,4096);
+    let path: core::path::Path = argument(1,pointer,bytes); let other: core::path::Path = argument(2,other_pointer,other_bytes);
+    number(path.byte_len()); if (path.is_absolute()) { number(1); } else { number(0); }
+    if (core::result::is_ok(path.as_text())) { number(1); } else { number(0); }
+    optional(path.file_name()); optional(path.file_stem()); optional(path.extension());
+    let mode: i32 = 0;
+    while (mode < 3) {
+        let cursor: core::path::Components = path.components(); let index: i32 = 0;
+        while (true) {
+            view(cursor.remaining().as_bytes()); let next: core::option::Option<core::path::Component> = core::option::None();
+            if (mode == 0 || (mode == 2 && index % 2 == 0)) { next = cursor.next(); } else { next = cursor.next_back(); }
+            if (core::option::is_none(next)) { number(4); break; }
+            component(core::option::unwrap(next)); index += 1;
+        }
+        assert(core::option::is_none(cursor.next()) && core::option::is_none(cursor.next_back())); mode += 1;
+    }
+    let ancestors: core::path::Ancestors = path.ancestors();
+    while (true) { let next: core::option::Option<core::path::Path> = ancestors.next(); if (core::option::is_none(next)) { number(-1); break; } view(core::option::unwrap(next).as_bytes()); }
+    let prefix: core::option::Option<core::path::Path> = path.strip_prefix(other);
+    if (core::option::is_none(prefix)) { number(-1); } else { view(core::option::unwrap(prefix).as_bytes()); }
+    if (path.starts_with(other)) { number(1); } else { number(0); }
+    if (path.ends_with(other)) { number(1); } else { number(0); }
+    number(path.compare(other));
+    let normalized: alloc::path::PathBuf = core::result::unwrap(alloc::path::normalize_lexically(path)); view(normalized.as_path().as_bytes()); normalized.destroy();
+    return 0;
+}

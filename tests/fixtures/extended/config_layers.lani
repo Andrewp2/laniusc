@@ -9,7 +9,7 @@ import ext::json;
 import std::args;
 import std::io;
 import std::io_decimal;
-import std::path;
+import core::path;
 fn number(value: i32) { assert(std::io_decimal::write_i32(1, value) > 0 && std::io::write_byte(1, 32) == 1); }
 fn text(value: core::text::Text) { number(value.byte_len()); let index: i32 = 0; while (index < value.byte_len()) { number(core::option::unwrap(value.byte_at(index)) as i32); index += 1; } }
 fn render(value: ext::config::Value) {
@@ -27,7 +27,7 @@ fn main() -> i32 {
     let arguments: std::args::Arguments = core::result::unwrap(std::args::snapshot(1, 16, 65536)); assert(arguments.len() >= 1);
     let sources: alloc::vec::Vec<ext::config::Config> = alloc::vec::new(); let index: i32 = 0;
     while (index < arguments.len() - 1) {
-        let path: std::path::Path = core::result::unwrap(std::path::from_view(core::option::unwrap(arguments.get(index))));
+        let path: core::path::Path = core::result::unwrap(core::path::from_view(core::option::unwrap(arguments.get(index))));
         let source: ext::config::Config = core::result::unwrap(ext::config::load(path, 1048576, ext::json::default_options())); core::result::unwrap(sources.try_push(source)); index += 1;
     }
     let query: core::slice::View<u8> = core::option::unwrap(arguments.get(index)); let key: core::text::Text = core::result::unwrap(core::text::from_utf8_range(query.values, query.start, query.len()));

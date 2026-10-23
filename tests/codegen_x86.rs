@@ -10847,20 +10847,20 @@ fn x86_executes_source_pack_bool_helper_call_in_branch_condition() {
 }
 
 #[test]
-fn x86_executes_source_pack_std_path_separator_helper() {
+fn x86_executes_source_pack_path_rules_separator_helper() {
     let sources = [
         include_str!("../stdlib/core/utf8.lani"),
-        include_str!("../stdlib/std/path.lani"),
+        include_str!("../stdlib/core/path_rules.lani"),
         r#"
 module app::main;
 
-import std::path;
+import core::path_rules;
 
 fn main() {
-    let slash: std::path::PathByte = std::path::PATH_SEPARATOR_UNIX;
-    let letter: std::path::PathByte = 65;
-    if (std::path::path_byte_is_separator(slash)) {
-        if (!std::path::path_byte_is_separator(letter)) {
+    let slash: core::path_rules::PathByte = core::path_rules::PATH_SEPARATOR_UNIX;
+    let letter: core::path_rules::PathByte = 65;
+    if (core::path_rules::path_byte_is_separator(slash)) {
+        if (!core::path_rules::path_byte_is_separator(letter)) {
             return 0;
         }
     }
@@ -10869,16 +10869,16 @@ fn main() {
 "#,
     ];
     let bytes = common::run_gpu_codegen_with_timeout(
-        "x86 source pack std::path separator helper",
+        "x86 source pack core::path_rules separator helper",
         move || pollster::block_on(compile_source_pack_to_x86_64_with_gpu_codegen(&sources)),
     )
-    .expect("source-pack std::path separator helper should compile to x86_64");
+    .expect("source-pack core::path_rules separator helper should compile to x86_64");
 
     assert_x86_64_elf_header(&bytes);
     #[cfg(all(unix, target_arch = "x86_64"))]
     assert_x86_exit_code(
-        "x86 source pack std::path separator helper",
-        "x86_source_pack_std_path_separator_helper",
+        "x86 source pack core::path_rules separator helper",
+        "x86_source_pack_path_rules_separator_helper",
         &bytes,
         0,
     );

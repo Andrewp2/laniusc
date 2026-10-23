@@ -1,0 +1,28 @@
+module app::main;
+import alloc::path;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::text;
+import std::io_decimal;
+import std::process;
+fn argument(index: i32, pointer: ptr, bytes: [u8]) -> i32 {
+    let count: i32 = std::process::arg_len(index); assert(count >= 1 && count <= 32);
+    assert(std::process::arg_read(index,pointer,count as usize) == count);
+    let text: core::text::Text = core::result::unwrap(core::text::from_utf8(bytes,count)); return core::result::unwrap(text.parse_i32());
+}
+fn main() -> i32 {
+    let storage: [i32; 8] = [0;8]; let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,32);
+    let count: i32 = argument(1,pointer,bytes); let mode: i32 = argument(2,pointer,bytes); assert(count > 0 && count <= 1048576 && mode >= 0 && mode <= 1);
+    let simple_bytes: [u8; 1] = [97]; let paired_bytes: [u8; 4] = [97,47,46,46];
+    let part: core::path::Path = core::result::unwrap(core::path::from_bytes(simple_bytes,1));
+    if (mode == 1) { part = core::result::unwrap(core::path::from_bytes(paired_bytes,4)); }
+    let built: alloc::path::PathBuf = alloc::path::new(); let index: i32 = 0;
+    while (index < count) { core::result::unwrap(built.try_push(part)); index += 1; }
+    let normalized: alloc::path::PathBuf = core::result::unwrap(alloc::path::normalize_lexically(built.as_path()));
+    if (mode == 0) { assert(normalized.byte_len() == count * 2 - 1 && normalized.as_path().equals(built.as_path())); }
+    else { assert(normalized.byte_len() == 1 && core::option::unwrap(normalized.as_path().byte_at(0)) == 46); }
+    assert(std::io_decimal::write_i32(1,normalized.byte_len()) > 0); normalized.destroy(); built.destroy(); return 0;
+}

@@ -1,0 +1,47 @@
+module app::main;
+import core::cmp;
+import core::hash;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+fn path(bytes: [u8], count: i32) -> core::path::Path { return core::result::unwrap(core::path::from_bytes(bytes,count)); }
+fn main() -> i32 {
+    let raw: [u8; 12] = [120,47,97,47,47,46,47,98,46,99,47,121];
+    let value: core::path::Path = core::result::unwrap(core::path::from_bytes_range(raw,1,10));
+    assert(value.byte_len() == 10 && value.is_absolute() && !value.is_relative() && value.has_trailing_separator());
+    assert(core::option::is_none(value.byte_at(-1)) && core::option::is_none(value.byte_at(10)));
+    assert(core::result::is_ok(value.as_text()));
+    let same: core::path::Path = path([47,97,47,98,46,99],6);
+    assert(value.equals(same) && core::path::Path::eq(value,same) && core::path::Path::hash(value) == core::path::Path::hash(same));
+    assert(core::path::Path::le(value,same) && core::path::Path::ge(value,same) && !core::path::Path::ne(value,same));
+    let root: core::path::Path = path([47],1);
+    assert(core::path::Path::lt(root,value) && core::path::Path::gt(value,root));
+    assert(!value.starts_with(path([47,97,98],3)) && value.starts_with(path([47,97],2)));
+    assert(value.ends_with(path([98,46,99],3)) && !value.ends_with(path([46,99],2)));
+    let stripped: core::path::Path = core::option::unwrap(value.strip_prefix(path([47,97],2)));
+    assert(stripped.byte_len() == 3 && core::option::unwrap(stripped.byte_at(0)) == 98);
+    let cursor: core::path::Components = value.components();
+    assert(core::option::unwrap(cursor.next()).is_root());
+    let last: core::path::Component = core::option::unwrap(cursor.next_back()); assert(last.as_path().equals(path([98,46,99],3)));
+    assert(cursor.remaining().equals(path([97],1))); assert(core::option::unwrap(cursor.next()).is_normal());
+    assert(core::option::is_none(cursor.next_back()) && core::option::is_none(cursor.next()) && cursor.remaining().is_empty());
+    let dot: core::path::Path = path([46],1); assert(!dot.is_empty() && dot.is_relative() && !dot.has_trailing_separator());
+    assert(core::option::unwrap(dot.parent()).is_empty()); assert(core::option::is_none(dot.file_name()));
+    let parents: core::path::Ancestors = dot.ancestors();
+    assert(core::option::unwrap(parents.next()).equals(dot)); assert(core::option::unwrap(parents.next()).is_empty());
+    assert(core::option::is_none(parents.next()) && core::option::is_none(parents.next()));
+    assert(core::option::is_none(root.parent()) && core::option::is_none(root.file_name()));
+    let hidden: core::path::Path = path([46,97],2); assert(core::option::is_none(hidden.extension())); assert(core::option::unwrap(hidden.file_stem()).len() == 2);
+    let trailing: core::path::Path = path([97,46],2); assert(core::option::unwrap(trailing.extension()).is_empty());
+    let backslash: core::path::Path = path([97,92,98],3); assert(core::option::unwrap(backslash.file_name()).len() == 3);
+    let invalid: core::path::Path = path([255],1); assert(core::result::is_err(invalid.as_text()));
+    let nul: core::result::Result<core::path::Path, core::path::Error> = core::path::from_bytes([97,0,98],3);
+    let error: core::path::Error = core::result::unwrap_err(nul);
+    let index: i32 = match (error) { core::path::Error::Nul(offset) -> offset, core::path::Error::Bounds -> -1 }; assert(index == 1);
+    assert(core::result::is_err(core::path::from_bytes(raw,-1)));
+    assert(core::result::is_err(core::path::from_bytes_range(raw,2147483647,1)));
+    let bad: core::slice::View<u8> = core::result::unwrap(core::slice::view(raw,12)); bad.start = -1;
+    assert(core::result::is_err(core::path::from_view(bad)));
+    return 0;
+}

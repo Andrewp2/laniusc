@@ -1,0 +1,26 @@
+module app::main;
+import alloc::hash_map;
+import alloc::path;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+fn path(value: str, count: i32) -> core::path::Path {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::path::from_bytes(bytes,count));
+}
+fn main() -> i32 {
+    let a: core::path::Path = path("/a//b",5); let b: core::path::Path = path("/a/./b",6); let c: core::path::Path = path("/a/../b",7);
+    let map: alloc::hash_map::HashMap<core::path::Path,i32> = alloc::hash_map::new();
+    assert(core::option::is_none(core::result::unwrap(map.try_insert(a,1))));
+    let previous: alloc::hash_map::Entry<core::path::Path,i32> = core::option::unwrap(core::result::unwrap(map.try_insert(b,2))); assert(previous.value == 1);
+    assert(core::option::unwrap(map.get(a)) == 2 && core::option::is_none(map.get(c))); map.destroy();
+    let owners: alloc::hash_map::HashMap<alloc::path::PathBuf,i32> = alloc::hash_map::new();
+    let owned_a: alloc::path::PathBuf = core::result::unwrap(alloc::path::from_path(a));
+    let owned_b: alloc::path::PathBuf = core::result::unwrap(alloc::path::from_path(b));
+    core::result::unwrap(owners.try_insert(owned_a,3));
+    let displaced: alloc::hash_map::Entry<alloc::path::PathBuf,i32> = core::option::unwrap(core::result::unwrap(owners.try_insert(owned_b,4)));
+    assert(displaced.value == 3); displaced.key.destroy();
+    let removed: alloc::hash_map::Entry<alloc::path::PathBuf,i32> = core::option::unwrap(owners.remove(owned_b)); assert(removed.value == 4);
+    removed.key.destroy(); owners.destroy(); return 0;
+}

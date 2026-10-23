@@ -16,7 +16,7 @@ import std::fs;
 import std::io;
 import std::io_checked;
 import std::io_decimal;
-import std::path;
+import core::path;
 import std::stream;
 
 // Explicit, single-owner x86_64 Linux file handles. Copying this record does
@@ -34,7 +34,7 @@ fn file_error(result: i32) -> core::io::Error {
 // Read: existing read-only file. Create: write-only, creates or truncates.
 // Append: write-only, creates or appends. New files use 0666 filtered by umask.
 // Existing bindings do not set close-on-exec. Open makes one host attempt.
-pub fn open(path: std::path::Path, mode: OpenMode) -> core::result::Result<File, core::io::Error> {
+pub fn open(path: core::path::Path, mode: OpenMode) -> core::result::Result<File, core::io::Error> {
     let count: i32 = path.byte_len();
     if (count > 4095) { return core::result::Err(core::io::Error::Host(36)); }
     let storage: [i32; 1024] = [0; 1024];

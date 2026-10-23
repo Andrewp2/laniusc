@@ -3,7 +3,7 @@ module app::main;
 import core::io;
 import core::result;
 import std::file;
-import std::path;
+import core::path;
 import std::stream;
 
 fn error_code(error: core::io::Error) -> i32 {
@@ -20,8 +20,8 @@ fn error_code(error: core::io::Error) -> i32 {
 fn main() -> i32 {
     let input_name: [u8; 9] = [105, 110, 112, 117, 116, 46, 98, 105, 110];
     let output_name: [u8; 10] = [111, 117, 116, 112, 117, 116, 46, 98, 105, 110];
-    let input_path: std::path::Path = core::result::unwrap(std::path::from_bytes(input_name, 9));
-    let output_path: std::path::Path = core::result::unwrap(std::path::from_bytes(output_name, 10));
+    let input_path: core::path::Path = core::result::unwrap(core::path::from_bytes(input_name, 9));
+    let output_path: core::path::Path = core::result::unwrap(core::path::from_bytes(output_name, 10));
     let input_result: core::result::Result<std::file::File, core::io::Error> = std::file::open(input_path, std::file::OpenMode::Read);
     if (core::result::is_err(input_result)) { return 40 + error_code(core::result::unwrap_err(input_result)); }
     let input: std::file::File = core::result::unwrap(input_result);

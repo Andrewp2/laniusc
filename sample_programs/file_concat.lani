@@ -7,7 +7,7 @@ import core::mem;
 import core::result;
 import std::args_checked;
 import std::file;
-import std::path;
+import core::path;
 import std::stream;
 
 fn main() -> i32 {
@@ -22,7 +22,7 @@ fn main() -> i32 {
         let length: i32 = std::args_checked::argument_len_or(index, -1);
         if (length < 0 || length > 4095) { return 2; }
         if (!std::args_checked::read_exact_into(index, pointer, 4096)) { return 2; }
-        let path_result: core::result::Result<std::path::Path, std::path::Error> = std::path::from_bytes(bytes, length);
+        let path_result: core::result::Result<core::path::Path, core::path::Error> = core::path::from_bytes(bytes, length);
         if (core::result::is_err(path_result)) { return 2; }
         let opened: core::result::Result<std::file::File, core::io::Error> = std::file::open(core::result::unwrap(path_result), std::file::OpenMode::Read);
         if (core::result::is_err(opened)) { return 3; }

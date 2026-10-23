@@ -22,7 +22,7 @@ import core::text;
 import std::args;
 import std::file;
 import std::io_checked;
-import std::path;
+import core::path;
 import std::stream;
 
 struct Config { decimal: bool, limit: u64, help: bool, logging: ext::log::Filter }
@@ -86,7 +86,7 @@ fn stdin_digest(config: Config) -> i32 {
 fn file_digest(argument: ext::cli::Argument, config: Config) -> i32 {
     let bytes: core::slice::View<u8> = argument.bytes;
     if (bytes.len() == 1 && core::option::unwrap(bytes.get(0)) == 45) { return stdin_digest(config); }
-    let path: core::result::Result<std::path::Path, std::path::Error> = std::path::from_view(bytes);
+    let path: core::result::Result<core::path::Path, core::path::Error> = core::path::from_view(bytes);
     if (core::result::is_err(path)) { return 2; }
     let opened: core::result::Result<std::file::File, core::io::Error> = std::file::open(core::result::unwrap(path), std::file::OpenMode::Read);
     if (core::result::is_err(opened)) { return 3; }
@@ -119,7 +119,7 @@ fn validate_source(source: ext::config::Config) -> bool {
 fn load_option(sources: &alloc::vec::Vec<ext::config::Config>, option: ext::cli::Occurrence) -> i32 {
     if (option.id != 3) { return 0; }
     let argument: ext::cli::Argument = core::option::unwrap(option.value);
-    let path: core::result::Result<std::path::Path, std::path::Error> = std::path::from_view(argument.bytes); if (core::result::is_err(path)) { return 2; }
+    let path: core::result::Result<core::path::Path, core::path::Error> = core::path::from_view(argument.bytes); if (core::result::is_err(path)) { return 2; }
     let options: ext::json::Options = ext::json::default_options(); options.max_depth = 32; options.max_nodes = 4096; options.max_string_bytes = 65536; options.max_number_bytes = 4096;
     let loaded: core::result::Result<ext::config::Config, ext::config::Error> = ext::config::load(core::result::unwrap(path), 1048576, options);
     if (core::result::is_err(loaded)) {

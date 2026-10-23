@@ -1,8 +1,8 @@
 // A false physical backing claim must trap, rather than read adjacent storage.
 module app::main;
-import std::path;
+import core::path;
 fn main() -> i32 {
     let bytes: [u8; 1] = [97];
-    std::path::from_bytes(bytes, 2);
+    core::path::from_bytes(bytes, 2);
     return 0;
 }

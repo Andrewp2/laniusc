@@ -1,5 +1,5 @@
 module app::main;
-import std::path;
+import core::path_rules;
 
 fn main() -> i32 {
     let a: u8 = 97;
@@ -22,46 +22,46 @@ fn main() -> i32 {
     let capital_n: u8 = 78;
     let ordinary: [u8; 5] = [a, l, p, h, a];
     let lone: [u8; 1] = [x];
-    if (!std::path::path_component_is_normal_relative_bytes(ordinary, 5) ||
-        !std::path::path_component_matches_windows_relative_byte_rules(ordinary, 5) ||
-        !std::path::path_component_is_normal_relative_bytes(lone, 1) ||
-        !std::path::path_component_matches_windows_relative_byte_rules(lone, 1)) { return 1; }
-    if (std::path::path_component_is_normal_relative_bytes(ordinary, 0) ||
-        std::path::path_component_is_normal_relative_bytes(ordinary, -1) ||
-        std::path::path_component_matches_windows_relative_byte_rules(ordinary, 0) ||
-        std::path::path_component_matches_windows_relative_byte_rules(ordinary, -1)) { return 2; }
+    if (!core::path_rules::path_component_is_normal_relative_bytes(ordinary, 5) ||
+        !core::path_rules::path_component_matches_windows_relative_byte_rules(ordinary, 5) ||
+        !core::path_rules::path_component_is_normal_relative_bytes(lone, 1) ||
+        !core::path_rules::path_component_matches_windows_relative_byte_rules(lone, 1)) { return 1; }
+    if (core::path_rules::path_component_is_normal_relative_bytes(ordinary, 0) ||
+        core::path_rules::path_component_is_normal_relative_bytes(ordinary, -1) ||
+        core::path_rules::path_component_matches_windows_relative_byte_rules(ordinary, 0) ||
+        core::path_rules::path_component_matches_windows_relative_byte_rules(ordinary, -1)) { return 2; }
     let dot: [u8; 1] = [period];
     let parent: [u8; 2] = [period, period];
     let drive: [u8; 2] = [capital_c, colon];
-    if (std::path::path_component_is_normal_relative_bytes(dot, 1) ||
-        std::path::path_component_is_normal_relative_bytes(parent, 2) ||
-        std::path::path_component_is_normal_relative_bytes(drive, 2) ||
-        std::path::path_component_matches_windows_relative_byte_rules(dot, 1) ||
-        std::path::path_component_matches_windows_relative_byte_rules(parent, 2) ||
-        std::path::path_component_matches_windows_relative_byte_rules(drive, 2)) { return 3; }
+    if (core::path_rules::path_component_is_normal_relative_bytes(dot, 1) ||
+        core::path_rules::path_component_is_normal_relative_bytes(parent, 2) ||
+        core::path_rules::path_component_is_normal_relative_bytes(drive, 2) ||
+        core::path_rules::path_component_matches_windows_relative_byte_rules(dot, 1) ||
+        core::path_rules::path_component_matches_windows_relative_byte_rules(parent, 2) ||
+        core::path_rules::path_component_matches_windows_relative_byte_rules(drive, 2)) { return 3; }
     let late_slash: [u8; 4] = [a, b, slash, c];
     let late_backslash: [u8; 4] = [a, b, backslash, c];
     let late_nul: [u8; 4] = [a, b, nul, c];
-    if (std::path::path_component_is_normal_relative_bytes(late_slash, 4) ||
-        std::path::path_component_is_normal_relative_bytes(late_backslash, 4) ||
-        std::path::path_component_is_normal_relative_bytes(late_nul, 4) ||
-        std::path::path_component_matches_windows_relative_byte_rules(late_slash, 4) ||
-        std::path::path_component_matches_windows_relative_byte_rules(late_backslash, 4) ||
-        std::path::path_component_matches_windows_relative_byte_rules(late_nul, 4)) { return 4; }
+    if (core::path_rules::path_component_is_normal_relative_bytes(late_slash, 4) ||
+        core::path_rules::path_component_is_normal_relative_bytes(late_backslash, 4) ||
+        core::path_rules::path_component_is_normal_relative_bytes(late_nul, 4) ||
+        core::path_rules::path_component_matches_windows_relative_byte_rules(late_slash, 4) ||
+        core::path_rules::path_component_matches_windows_relative_byte_rules(late_backslash, 4) ||
+        core::path_rules::path_component_matches_windows_relative_byte_rules(late_nul, 4)) { return 4; }
     let late_colon: [u8; 4] = [a, b, colon, c];
     let late_question: [u8; 4] = [a, b, question, c];
     let late_control: [u8; 4] = [a, b, control, c];
-    if (!std::path::path_component_is_normal_relative_bytes(late_colon, 4) ||
-        !std::path::path_component_is_normal_relative_bytes(late_question, 4) ||
-        !std::path::path_component_is_normal_relative_bytes(late_control, 4) ||
-        std::path::path_component_matches_windows_relative_byte_rules(late_colon, 4) ||
-        std::path::path_component_matches_windows_relative_byte_rules(late_question, 4) ||
-        std::path::path_component_matches_windows_relative_byte_rules(late_control, 4)) { return 5; }
+    if (!core::path_rules::path_component_is_normal_relative_bytes(late_colon, 4) ||
+        !core::path_rules::path_component_is_normal_relative_bytes(late_question, 4) ||
+        !core::path_rules::path_component_is_normal_relative_bytes(late_control, 4) ||
+        core::path_rules::path_component_matches_windows_relative_byte_rules(late_colon, 4) ||
+        core::path_rules::path_component_matches_windows_relative_byte_rules(late_question, 4) ||
+        core::path_rules::path_component_matches_windows_relative_byte_rules(late_control, 4)) { return 5; }
     let reserved_name: [u8; 3] = [capital_c, capital_o, capital_n];
     let trailing_dot: [u8; 2] = [a, period];
     let trailing_space: [u8; 2] = [a, space];
-    if (!std::path::path_component_matches_windows_relative_byte_rules(reserved_name, 3) ||
-        !std::path::path_component_matches_windows_relative_byte_rules(trailing_dot, 2) ||
-        !std::path::path_component_matches_windows_relative_byte_rules(trailing_space, 2)) { return 6; }
+    if (!core::path_rules::path_component_matches_windows_relative_byte_rules(reserved_name, 3) ||
+        !core::path_rules::path_component_matches_windows_relative_byte_rules(trailing_dot, 2) ||
+        !core::path_rules::path_component_matches_windows_relative_byte_rules(trailing_space, 2)) { return 6; }
     return 0;
 }

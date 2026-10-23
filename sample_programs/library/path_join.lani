@@ -1,0 +1,69 @@
+// Join BASE with each CHILD and write NUL-delimited raw byte paths.
+// --lexical explicitly resolves dot/parent components without filesystem lookup.
+// Exit 2: arguments/limits, 3: host I/O, 4: allocation. Earlier output may exist.
+module app::main;
+import alloc::path;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import ext::cli;
+import std::args;
+import std::stream;
+struct Options { lexical: bool, help: bool, base: core::option::Option<core::path::Path>, children: i32 }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn option(options: &Options, item: ext::cli::Occurrence) -> i32 {
+    if (item.id == 1) { options.lexical = true; } else { options.help = true; } return 0;
+}
+fn operand(options: &Options, argument: ext::cli::Argument, emit: bool) -> i32 {
+    let path: core::path::Path = core::result::unwrap(core::path::from_view(argument.bytes));
+    if (core::option::is_none(options.base)) { options.base = core::option::Some(path); return 0; }
+    options.children += 1; if (!emit) { return 0; }
+    let joined: core::result::Result<alloc::path::PathBuf, alloc::path::Error> = alloc::path::join(core::option::unwrap(options.base),path);
+    if (core::result::is_err(joined)) { return 4; } let output: alloc::path::PathBuf = core::result::unwrap(joined);
+    if (options.lexical) {
+        let normalized: core::result::Result<alloc::path::PathBuf, alloc::path::Error> = alloc::path::normalize_lexically(output.as_path());
+        output.destroy(); if (core::result::is_err(normalized)) { return 4; } output = core::result::unwrap(normalized);
+    }
+    let sink: std::stream::Descriptor = std::stream::stdout(); let bytes: core::slice::View<u8> = output.as_path().as_bytes();
+    let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(sink.borrow(),bytes.values,bytes.start,bytes.len());
+    output.destroy(); if (core::result::is_err(written)) { return 3; }
+    let zero: [u8; 1] = [0]; if (core::result::is_err(core::io::write_all(sink.borrow(),zero,0,1))) { return 3; } return 0;
+}
+fn process(arguments: std::args::Arguments) -> i32 {
+    let specs: [ext::cli::Spec; 2] = [
+        ext::cli::Spec { id: 1, long: literal("lexical",7), short: 108, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 2, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,2));
+    let lexical: bool = false; let pass: i32 = 0;
+    while (pass < 2) {
+        let options: Options = Options { lexical: lexical, help: false, base: core::option::None(), children: 0 };
+        let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),schema,ext::cli::Ordering::Intermixed));
+        while (true) {
+            let result: core::result::Result<core::option::Option<ext::cli::Event>, ext::cli::Error> = parser.next();
+            if (core::result::is_err(result)) { return 2; } let next: core::option::Option<ext::cli::Event> = core::result::unwrap(result);
+            if (core::option::is_none(next)) { break; }
+            let status: i32 = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> option(options.borrow(),item), ext::cli::Event::Operand(item) -> operand(options.borrow(),item,pass == 1) };
+            if (status != 0) { return status; }
+        }
+        if (options.help) {
+            let usage: core::slice::View<u8> = literal("Usage: path-join [--lexical] [--] BASE CHILD... (NUL-delimited output)\n",71);
+            let sink: std::stream::Descriptor = std::stream::stdout();
+            if (core::result::is_err(core::io::write_all(sink.borrow(),usage.values,0,usage.len()))) { return 3; } return 0;
+        }
+        if (options.children == 0) { return 2; } lexical = options.lexical; pass += 1;
+    }
+    return 0;
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1,1026,1048576);
+    if (core::result::is_err(captured)) { let status: i32 = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }; return status; }
+    let arguments: std::args::Arguments = core::result::unwrap(captured); let status: i32 = process(arguments); arguments.destroy(); return status;
+}

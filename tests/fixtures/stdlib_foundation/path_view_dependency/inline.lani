@@ -1,0 +1,9 @@
+module app::main;
+import core::path;
+import core::slice;
+import core::result;
+fn main() -> i32 {
+    let raw: [u8; 1] = [97];
+    assert(core::result::is_err(core::path::from_view(core::slice::View { values: raw, start: -1, length: 1 })));
+    return 0;
+}
