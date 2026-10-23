@@ -1,0 +1,67 @@
+module app::main;
+import core::i64;
+import core::u64;
+import core::isize;
+import core::usize;
+import core::mem;
+import std::io_checked;
+fn main() -> i32 {
+    let words: [i32;2] = [0;2]; let pointer: ptr = core::mem::i32_array_data_ptr(words);
+    if (!std::io_checked::read_exact_stdin(pointer,8)) { return 1; }
+    let kind: i32 = words[0]; let operation: i32 = words[1];
+    if (kind == 0 && operation == 0) { let unused: i64 = core::i64::clamp(0,1,0); return 0; }
+    if (kind == 0 && operation == 1) { let unused: i64 = core::i64::div(1,0); return 0; }
+    if (kind == 0 && operation == 2) { let unused: i64 = core::i64::rem(1,0); return 0; }
+    if (kind == 0 && operation == 3) { let unused: i64 = core::i64::wrapping_div(1,0); return 0; }
+    if (kind == 0 && operation == 4) { let unused: i64 = core::i64::wrapping_rem(1,0); return 0; }
+    if (kind == 0 && operation == 5) { let unused: i64 = core::i64::saturating_div(1,0); return 0; }
+    if (kind == 0 && operation == 6) { let unused: i64 = core::i64::shl(1,64); return 0; }
+    if (kind == 0 && operation == 7) { let unused: i64 = core::i64::shr(1,64); return 0; }
+    if (kind == 0 && operation == 8) { let unused: i64 = core::i64::next_power_of_two(core::i64::MAX); return 0; }
+    if (kind == 0 && operation == 9) { let unused: i64 = core::i64::abs(core::i64::MIN); return 0; }
+    if (kind == 0 && operation == 10) { let unused: i64 = core::i64::div(core::i64::MIN,-1); return 0; }
+    if (kind == 0 && operation == 11) { let unused: i64 = core::i64::rem(core::i64::MIN,-1); return 0; }
+    if (kind == 0 && operation == 12) { let unused: i64 = core::i64::div_euclid(core::i64::MIN,-1); return 0; }
+    if (kind == 0 && operation == 13) { let unused: i64 = core::i64::rem_euclid(core::i64::MIN,-1); return 0; }
+    if (kind == 1 && operation == 0) { let unused: u64 = core::u64::clamp(0,1,0); return 0; }
+    if (kind == 1 && operation == 1) { let unused: u64 = core::u64::div(1,0); return 0; }
+    if (kind == 1 && operation == 2) { let unused: u64 = core::u64::rem(1,0); return 0; }
+    if (kind == 1 && operation == 3) { let unused: u64 = core::u64::wrapping_div(1,0); return 0; }
+    if (kind == 1 && operation == 4) { let unused: u64 = core::u64::wrapping_rem(1,0); return 0; }
+    if (kind == 1 && operation == 5) { let unused: u64 = core::u64::saturating_div(1,0); return 0; }
+    if (kind == 1 && operation == 6) { let unused: u64 = core::u64::shl(1,64); return 0; }
+    if (kind == 1 && operation == 7) { let unused: u64 = core::u64::shr(1,64); return 0; }
+    if (kind == 1 && operation == 8) { let unused: u64 = core::u64::next_power_of_two(core::u64::MAX); return 0; }
+    if (kind == 2 && operation == 0) { let unused: isize = core::isize::clamp(0,1,0); return 0; }
+    if (kind == 2 && operation == 1) { let unused: isize = core::isize::div(1,0); return 0; }
+    if (kind == 2 && operation == 2) { let unused: isize = core::isize::rem(1,0); return 0; }
+    if (kind == 2 && operation == 3) { let unused: isize = core::isize::wrapping_div(1,0); return 0; }
+    if (kind == 2 && operation == 4) { let unused: isize = core::isize::wrapping_rem(1,0); return 0; }
+    if (kind == 2 && operation == 5) { let unused: isize = core::isize::saturating_div(1,0); return 0; }
+    if (kind == 2 && operation == 6) { let unused: isize = core::isize::shl(1,64); return 0; }
+    if (kind == 2 && operation == 7) { let unused: isize = core::isize::shr(1,64); return 0; }
+    if (kind == 2 && operation == 8) { let unused: isize = core::isize::next_power_of_two(core::isize::MAX); return 0; }
+    if (kind == 2 && operation == 9) { let unused: isize = core::isize::abs(core::isize::MIN); return 0; }
+    if (kind == 2 && operation == 10) { let unused: isize = core::isize::div(core::isize::MIN,-1); return 0; }
+    if (kind == 2 && operation == 11) { let unused: isize = core::isize::rem(core::isize::MIN,-1); return 0; }
+    if (kind == 2 && operation == 12) { let unused: isize = core::isize::div_euclid(core::isize::MIN,-1); return 0; }
+    if (kind == 2 && operation == 13) { let unused: isize = core::isize::rem_euclid(core::isize::MIN,-1); return 0; }
+    if (kind == 3 && operation == 0) { let unused: usize = core::usize::clamp(0,1,0); return 0; }
+    if (kind == 3 && operation == 1) { let unused: usize = core::usize::div(1,0); return 0; }
+    if (kind == 3 && operation == 2) { let unused: usize = core::usize::rem(1,0); return 0; }
+    if (kind == 3 && operation == 3) { let unused: usize = core::usize::wrapping_div(1,0); return 0; }
+    if (kind == 3 && operation == 4) { let unused: usize = core::usize::wrapping_rem(1,0); return 0; }
+    if (kind == 3 && operation == 5) { let unused: usize = core::usize::saturating_div(1,0); return 0; }
+    if (kind == 3 && operation == 6) { let unused: usize = core::usize::shl(1,64); return 0; }
+    if (kind == 3 && operation == 7) { let unused: usize = core::usize::shr(1,64); return 0; }
+    if (kind == 3 && operation == 8) { let unused: usize = core::usize::next_power_of_two(core::usize::MAX); return 0; }
+    if (kind == 0 && operation == 14) { let unused: i64 = core::i64::div_euclid(1,0); return 0; }
+    if (kind == 0 && operation == 15) { let unused: i64 = core::i64::rem_euclid(1,0); return 0; }
+    if (kind == 1 && operation == 14) { let unused: u64 = core::u64::div_euclid(1,0); return 0; }
+    if (kind == 1 && operation == 15) { let unused: u64 = core::u64::rem_euclid(1,0); return 0; }
+    if (kind == 2 && operation == 14) { let unused: isize = core::isize::div_euclid(1,0); return 0; }
+    if (kind == 2 && operation == 15) { let unused: isize = core::isize::rem_euclid(1,0); return 0; }
+    if (kind == 3 && operation == 14) { let unused: usize = core::usize::div_euclid(1,0); return 0; }
+    if (kind == 3 && operation == 15) { let unused: usize = core::usize::rem_euclid(1,0); return 0; }
+    return 2;
+}

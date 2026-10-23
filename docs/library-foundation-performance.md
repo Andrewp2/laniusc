@@ -314,3 +314,85 @@ covers roughly 112,000 independent reference comparisons; parser and collection
 tests cover modeled operations, errors, copies and ownership. These are native
 x86_64 Linux observations, without a user GPU kernel or cross-compiler speed
 ratio claim.
+
+## Native integers, portable media, geometry, HTTP and tables
+
+On 2026-10-23 the existing `stdlib_gpu_perf` harness measured the final library
+sources with one warmup and three measured private entry rebuilds per row.
+`LANIUS_PERF_REBUILD_ENTRY=1` invalidates the entry cache. The process/device and
+unchanged imports remain warm. Counts include the entry and recursive imports.
+Every emitted x86_64 Linux ELF exited 0 with empty stdout/stderr for these six
+contract entries.
+
+| Entry | Import closure | Emitted ELF | Median | Range |
+| --- | --- | --- | --- | --- |
+| `tests/fixtures/stdlib_foundation/native_integer_contracts.lani` | 9 files, 102,765 bytes | 90,132 bytes | 157.176 ms | 151.403–165.226 ms |
+| `tests/fixtures/extended/png_contracts.lani` | 17 files, 153,183 bytes | 260,831 bytes | 167.066 ms | 146.123–199.805 ms |
+| `tests/fixtures/extended/audio_contracts.lani` | 14 files, 137,834 bytes | 191,020 bytes | 177.002 ms | 164.167–182.290 ms |
+| `tests/fixtures/extended/geometry_contracts.lani` | 12 files, 119,723 bytes | 128,895 bytes | 259.977 ms | 255.024–332.641 ms |
+| `tests/fixtures/extended/http_contracts.lani` | 21 files, 288,608 bytes | 766,828 bytes | 404.922 ms | 381.100–426.568 ms |
+| `tests/fixtures/extended/table_contracts.lani` | 23 files, 226,817 bytes | 268,740 bytes | 311.078 ms | 292.928–326.660 ms |
+
+For example, each command is bounded separately:
+
+```sh
+timeout --kill-after=2s 100s env LANIUS_PERF_REBUILD_ENTRY=1 \
+  target/stdlib-build/debug/examples/stdlib_gpu_perf \
+  tests/fixtures/stdlib_foundation/native_integer_contracts.lani stdlib - 1 3
+timeout --kill-after=2s 100s env LANIUS_PERF_REBUILD_ENTRY=1 \
+  target/stdlib-build/debug/examples/stdlib_gpu_perf \
+  tests/fixtures/extended/png_contracts.lani stdlib - 1 3 extended
+```
+
+### Generated 1 MB imported-library workload
+
+`tools/generate_stdlib_workload.py` now calls the current borrowed inline
+Vec/Set APIs, checks explicit mutation failures and uses complete record
+equality. Its independent model and generated native checks cover all 23
+operation kinds, including out-of-range operations and records sharing a key
+but differing in another field. `--record-generics` selects the record-focused
+operation set; it replaces the obsolete internal `--backlog` option.
+
+The measured default workload has an exact 1,000,000-byte entry, 631 leaves,
+56 record declarations, a four-record type pool and 12,274 qualified stdlib
+calls. Its import closure is 10 files and 1,073,989 bytes. The generator's
+106 generic-body statistic estimates its own helper shapes; it does not count
+all transitive compiler instantiations.
+
+With one warmup and three private entry rebuilds, compilation took 999.836,
+1,147.183 and 1,084.105 ms: median **1,084.105 ms**. Each emitted 2,171,687-byte
+ELF exited 0 and matched the model's 15 output lines with empty stderr.
+
+```sh
+timeout --kill-after=2s 100s env PYTHONPATH=tools \
+  python3 tools/generate_stdlib_workload.py \
+  --out target/stdlib-work/workload-current --target-bytes 1000000 \
+  --seed 20 --type-pool 4
+timeout --kill-after=2s 10s python3 - <<'PY'
+import json
+from pathlib import Path
+root = Path('target/stdlib-work/workload-current')
+manifest = json.loads((root / 'manifest.json').read_text())
+(root / 'expected.stdout').write_text(manifest['expected_stdout'])
+PY
+timeout --kill-after=2s 100s env LANIUS_PERF_REBUILD_ENTRY=1 \
+  target/stdlib-build/debug/examples/stdlib_gpu_perf \
+  target/stdlib-work/workload-current/stdlib_generic.lani stdlib \
+  target/stdlib-work/workload-current/expected.stdout 1 3
+```
+
+This is the imported-library workload measured through the repository's
+existing harness. The current `lanius_perf.py` generic presets use
+`generate_generic_workload.py` and locally defined types; this change does not
+switch those workload identities or establish the canonical synthetic speed
+ratio. These sequential observations under uncontrolled desktop activity are
+neither cold-compilation measurements nor a cross-compiler comparison.
+
+The module/application guides separately record native scale checks for
+[786,687-pixel image transforms](extended-image-tool.md),
+[400,000-frame WAVE data](extended-wave.md),
+[12,004-point convex hull input](extended-shape-hull.md) and
+[65,536-cell CSV tables](extended-csv-table.md), alongside model and failure
+coverage. No compiler, runtime, shader, IR, ABI, extractor or proof implementation
+changed. User GPU execution, selective distribution and the full library
+completion audit remain unverified or unfinished.

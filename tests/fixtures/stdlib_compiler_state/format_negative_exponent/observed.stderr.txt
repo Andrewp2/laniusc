@@ -1,0 +1,7 @@
+error[LNC0046]: source tokenization failed
+ --> target/stdlib-work/negative-exponent-format/formatted.lani:3:20
+  |
+3 |     let x: f64 = 1e - 15;
+  |                    ^ tokenization fails at this byte
+     = note: source file count: 1
+     = note: first lexical failure at source-pack byte 56

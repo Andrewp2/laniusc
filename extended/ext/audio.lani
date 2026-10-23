@@ -1,0 +1,179 @@
+// Finite interleaved audio with explicit manual ownership. No host playback.
+module ext::audio;
+import alloc::vec;
+import core::f64;
+import core::result;
+import core::slice;
+
+pub enum Error { InvalidMetadata, Bounds, Shape, NonFinite, Overflow, AllocationFailed, Limit, Empty, UnsupportedBits }
+pub struct View { samples: core::slice::View<f64>, channels: i32, sample_rate: u32 }
+pub struct Buffer { samples: alloc::vec::Vec<f64>, channels: i32, sample_rate: u32 }
+pub struct Metrics { peak: f64, rms: f64, dc: f64, frames: i32 }
+pub const MAX_SAMPLES: i32 = 268435455;
+
+pub fn validate(value: View) -> core::result::Result<i32,Error> {
+    let data: core::slice::View<f64> = value.samples;
+    if (value.channels < 1 || value.channels > 65535 || value.sample_rate == 0 || data.start < 0 || data.length < 0 || data.start > 2147483647-data.length || data.length % value.channels != 0) { return core::result::Err(Error::InvalidMetadata); }
+    if (data.length > MAX_SAMPLES) { return core::result::Err(Error::Limit); }
+    return core::result::Ok(data.length/value.channels);
+}
+pub fn view(samples: core::slice::View<f64>, channels: i32, sample_rate: u32) -> core::result::Result<View,Error> {
+    let value: View = View { samples: samples, channels: channels, sample_rate: sample_rate };
+    let valid: core::result::Result<i32,Error> = validate(value); if (valid.is_err()) { return core::result::Err(valid.unwrap_err()); } return core::result::Ok(value);
+}
+fn at(value: View, index: i32) -> f64 { let data: [f64] = value.samples.values; return data[value.samples.start+index]; }
+fn put(value: View, index: i32, sample: f64) { let data: [f64] = value.samples.values; data[value.samples.start+index] = sample; }
+pub fn check_finite(value: View) -> core::result::Result<i32,Error> {
+    let valid: core::result::Result<i32,Error> = validate(value); if (valid.is_err()) { return valid; }
+    let i: i32 = 0; while (i < value.samples.length) { if (!core::f64::is_finite(at(value,i))) { return core::result::Err(Error::NonFinite); } i += 1; } return valid;
+}
+pub fn zeros(frames: i32, channels: i32, sample_rate: u32, max_samples: i32) -> core::result::Result<Buffer,Error> {
+    if (frames < 0 || channels < 1 || channels > 65535 || sample_rate == 0 || max_samples < 0) { return core::result::Err(Error::InvalidMetadata); }
+    if (frames > MAX_SAMPLES/channels || frames > max_samples/channels) { return core::result::Err(Error::Limit); }
+    let count: i32 = frames*channels; let allocated: core::result::Result<alloc::vec::Vec<f64>,alloc::vec::Error> = alloc::vec::with_capacity<f64>(count);
+    if (allocated.is_err()) { return core::result::Err(Error::AllocationFailed); }
+    let samples: alloc::vec::Vec<f64> = allocated.unwrap(); core::result::unwrap(samples.try_resize(count,0.0));
+    return core::result::Ok(Buffer { samples: samples, channels: channels, sample_rate: sample_rate });
+}
+pub fn from_view(value: View, max_samples: i32) -> core::result::Result<Buffer,Error> {
+    let valid: core::result::Result<i32,Error> = check_finite(value); if (valid.is_err()) { return core::result::Err(valid.unwrap_err()); }
+    let created: core::result::Result<Buffer,Error> = zeros(valid.unwrap(),value.channels,value.sample_rate,max_samples); if (created.is_err()) { return created; }
+    let output: Buffer = created.unwrap(); let i: i32 = 0; while (i < value.samples.length) { core::result::unwrap(output.samples.set(i,at(value,i))); i += 1; } return core::result::Ok(output);
+}
+pub impl Buffer {
+    pub fn borrow(&self) -> &Buffer { return self; }
+    pub fn as_view(&self) -> View { return View { samples: self.samples.as_view(), channels: self.channels, sample_rate: self.sample_rate }; }
+    pub fn frames(&self) -> core::result::Result<i32,Error> { return validate(self.as_view()); }
+    pub fn destroy(&self) { self.samples.destroy(); self.channels = 0; self.sample_rate = 0; }
+    pub fn try_clone(&self, max_samples: i32) -> core::result::Result<Buffer,Error> { return from_view(self.as_view(),max_samples); }
+}
+pub fn sample(value: View, frame: i32, channel: i32) -> core::result::Result<f64,Error> {
+    let valid: core::result::Result<i32,Error> = validate(value); if (valid.is_err()) { return core::result::Err(valid.unwrap_err()); }
+    if (frame < 0 || frame >= valid.unwrap() || channel < 0 || channel >= value.channels) { return core::result::Err(Error::Bounds); } return core::result::Ok(at(value,frame*value.channels+channel));
+}
+pub fn set_sample(value: View, frame: i32, channel: i32, sample_value: f64) -> core::result::Result<bool,Error> {
+    let previous: core::result::Result<f64,Error> = sample(value,frame,channel); if (previous.is_err()) { return core::result::Err(previous.unwrap_err()); }
+    if (!core::f64::is_finite(sample_value)) { return core::result::Err(Error::NonFinite); } put(value,frame*value.channels+channel,sample_value); return core::result::Ok(true);
+}
+// Preflight every result before the first write. Finite overflow is an error.
+pub fn gain(value: View, factor: f64) -> core::result::Result<bool,Error> {
+    let valid: core::result::Result<i32,Error> = check_finite(value); if (valid.is_err()) { return core::result::Err(valid.unwrap_err()); }
+    if (!core::f64::is_finite(factor)) { return core::result::Err(Error::NonFinite); }
+    let i: i32 = 0; while (i < value.samples.length) { if (!core::f64::is_finite(at(value,i)*factor)) { return core::result::Err(Error::Overflow); } i += 1; }
+    i = 0; while (i < value.samples.length) { put(value,i,at(value,i)*factor); i += 1; } return core::result::Ok(true);
+}
+pub fn clip(value: View, low: f64, high: f64) -> core::result::Result<bool,Error> {
+    let valid: core::result::Result<i32,Error> = check_finite(value); if (valid.is_err()) { return core::result::Err(valid.unwrap_err()); }
+    if (!core::f64::is_finite(low) || !core::f64::is_finite(high)) { return core::result::Err(Error::NonFinite); }
+    if (low > high) { return core::result::Err(Error::Bounds); }
+    let i: i32 = 0; while (i < value.samples.length) { let x: f64 = at(value,i); if (x < low) { x = low; } if (x > high) { x = high; } put(value,i,x); i += 1; } return core::result::Ok(true);
+}
+// Allocate an independent output, allowing exact or partial input aliases.
+pub fn mix(left: View, right: View, right_gain: f64, max_samples: i32) -> core::result::Result<Buffer,Error> {
+    let a: core::result::Result<i32,Error> = check_finite(left); if (a.is_err()) { return core::result::Err(a.unwrap_err()); }
+    let b: core::result::Result<i32,Error> = check_finite(right); if (b.is_err()) { return core::result::Err(b.unwrap_err()); }
+    if (left.channels != right.channels || left.sample_rate != right.sample_rate || a.unwrap() != b.unwrap()) { return core::result::Err(Error::Shape); }
+    if (!core::f64::is_finite(right_gain)) { return core::result::Err(Error::NonFinite); }
+    let i: i32 = 0; while (i < left.samples.length) { let product: f64 = at(right,i)*right_gain; if (!core::f64::is_finite(product) || !core::f64::is_finite(at(left,i)+product)) { return core::result::Err(Error::Overflow); } i += 1; }
+    let created: core::result::Result<Buffer,Error> = zeros(a.unwrap(),left.channels,left.sample_rate,max_samples); if (created.is_err()) { return created; }
+    let output: Buffer = created.unwrap(); i = 0; while (i < left.samples.length) { core::result::unwrap(output.samples.set(i,at(left,i)+at(right,i)*right_gain)); i += 1; } return core::result::Ok(output);
+}
+// Exact finite means. A binary64 is an integer in 2^-1074 units. Separate
+// positive/negative 2176-bit magnitudes cover 2098 value bits +31 count bits.
+// See docs/extended-audio.md for the quotient/remainder rounding invariant.
+fn add_word(words: [u64], index: i32, amount: u64) {
+    let i: i32 = index; let carry: u64 = amount;
+    while (carry != 0) { assert(i < 34); let old: u64 = words[i]; let next: u64 = old+carry; words[i] = next; carry = 0; if (next < old) { carry = 1; } i += 1; }
+}
+fn add_sample(words: [u64], bits: u64) {
+    let mantissa: u64 = bits & core::f64::FRACTION_MASK; let exponent: i32 = ((bits & core::f64::EXPONENT_MASK) >> 52) as i32;
+    let shift: i32 = 0; if (exponent != 0) { mantissa = mantissa | 4503599627370496; shift = exponent-1; }
+    let index: i32 = shift/64; let offset: i32 = shift%64;
+    add_word(words,index,mantissa << offset); if (offset != 0) { add_word(words,index+1,mantissa >> (64-offset)); }
+}
+fn compare_words(left: [u64], right: [u64]) -> i32 {
+    let i: i32 = 33; while (i >= 0) { if (left[i] > right[i]) { return 1; } if (left[i] < right[i]) { return -1; } i -= 1; } return 0;
+}
+fn subtract_words(larger: [u64], smaller: [u64]) {
+    let borrow: u64 = 0; let i: i32 = 0;
+    while (i < 34) { let a: u64 = larger[i]; let b: u64 = smaller[i]; let first: u64 = a-b; let next: u64 = first-borrow;
+        let underflow: bool = a < b || first < borrow; larger[i] = next; borrow = 0; if (underflow) { borrow = 1; } i += 1; }
+    assert(borrow == 0);
+}
+fn top_bit(words: [u64]) -> i32 {
+    let i: i32 = 33; while (i >= 0) { let word: u64 = words[i]; if (word != 0) { let bit: i32 = 63; while (((word >> bit) & 1) == 0) { bit -= 1; } return i*64+bit; } i -= 1; } return -1;
+}
+fn bit_at(words: [u64], bit: i32) -> u64 { if (bit < 0) { return 0; } return (words[bit/64] >> (bit%64)) & 1; }
+// Whether any bit at indices [0,limit) is set. Negative/zero limits are empty.
+fn below(words: [u64], limit: i32) -> bool {
+    if (limit <= 0) { return false; } let full: i32 = limit/64; let i: i32 = 0;
+    while (i < full) { if (words[i] != 0) { return true; } i += 1; }
+    let remaining: i32 = limit%64; return remaining != 0 && (words[full] & (((1 as u64) << remaining)-1)) != 0;
+}
+fn round_mean(words: [u64], count: i32, sign: u64) -> f64 {
+    let top: i32 = top_bit(words); assert(top >= 0 && count > 0);
+    let divisor: u64 = count as u64; let divisor_top: i32 = 0; let rest: u64 = divisor;
+    while (rest > 1) { rest = rest >> 1; divisor_top += 1; }
+    // The full integer quotient's top bit is top-divisor_top or one below.
+    // With positive shift retain 53 or 54 quotient bits; shift zero can retain
+    // fewer, including zero. All lower data remains
+    // exact in words. Each division step has remainder < divisor <= i32::MAX.
+    let shift: i32 = top-divisor_top-53; if (shift < 0) { shift = 0; }
+    let quotient: u64 = 0; let remainder: u64 = 0; let bit: i32 = top;
+    while (bit >= shift) { remainder = (remainder << 1) | bit_at(words,bit); quotient = quotient << 1; if (remainder >= divisor) { remainder -= divisor; quotient = quotient | 1; } bit -= 1; }
+    let guard: bool = false; let sticky: bool = false;
+    if (quotient >= 9007199254740992) {
+        guard = (quotient & 1) != 0; sticky = remainder != 0 || below(words,shift); quotient = quotient >> 1; shift += 1;
+    } else {
+        remainder = (remainder << 1) | bit_at(words,shift-1); if (remainder >= divisor) { remainder -= divisor; guard = true; }
+        sticky = remainder != 0 || below(words,shift-1);
+    }
+    if (guard && (sticky || (quotient & 1) != 0)) { quotient += 1; }
+    if (quotient < 4503599627370496) { assert(shift == 0); return core::f64::from_bits(sign | quotient); }
+    if (quotient == 9007199254740992) { quotient = quotient >> 1; shift += 1; }
+    // Mean magnitude cannot exceed the largest finite input magnitude.
+    assert(shift <= 2045); return core::f64::from_bits(sign | (((shift+1) as u64) << 52) | (quotient & core::f64::FRACTION_MASK));
+}
+fn exact_mean(value: View, first: i32, step: i32, count: i32) -> f64 {
+    assert(count > 0); if (count == 1) { let sample_value: f64 = at(value,first); if (core::f64::is_zero(sample_value)) { return 0.0; } return sample_value; }
+    let positive: [u64;34] = [0;34]; let negative: [u64;34] = [0;34]; let i: i32 = 0;
+    while (i < count) { let bits: u64 = core::f64::to_bits(at(value,first+i*step)); if ((bits & core::f64::SIGN_MASK) == 0) { add_sample(positive,bits); } else { add_sample(negative,bits); } i += 1; }
+    let order: i32 = compare_words(positive,negative); if (order == 0) { return 0.0; }
+    if (order > 0) { subtract_words(positive,negative); return round_mean(positive,count,0); }
+    subtract_words(negative,positive); return round_mean(negative,count,core::f64::SIGN_MASK);
+}
+pub fn metrics(value: View, channel: i32) -> core::result::Result<Metrics,Error> {
+    let valid: core::result::Result<i32,Error> = validate(value); if (valid.is_err()) { return core::result::Err(valid.unwrap_err()); }
+    if (channel < 0 || channel >= value.channels) { return core::result::Err(Error::Bounds); } let frames: i32 = valid.unwrap(); if (frames == 0) { return core::result::Err(Error::Empty); }
+    let peak: f64 = 0.0; let squares: f64 = 0.0; let i: i32 = 0;
+    while (i < frames) {
+        let x: f64 = at(value,i*value.channels+channel); if (!core::f64::is_finite(x)) { return core::result::Err(Error::NonFinite); } let magnitude: f64 = core::f64::abs(x);
+        if (magnitude != 0.0) { if (magnitude > peak) { let ratio: f64 = peak/magnitude; squares = 1.0+squares*ratio*ratio; peak = magnitude; } else { let ratio: f64 = magnitude/peak; squares += ratio*ratio; } }
+        i += 1;
+    }
+    let dc: f64 = exact_mean(value,channel,value.channels,frames);
+    let rms: f64 = peak*core::f64::sqrt(core::f64::min(1.0,squares/(frames as f64)));
+    if (!core::f64::is_finite(dc) || !core::f64::is_finite(rms)) { return core::result::Err(Error::Overflow); }
+    return core::result::Ok(Metrics { peak: peak, rms: rms, dc: dc, frames: frames });
+}
+// Equal-weight channel average; no speaker-position assumptions.
+pub fn mono(value: View, max_samples: i32) -> core::result::Result<Buffer,Error> {
+    let valid: core::result::Result<i32,Error> = check_finite(value); if (valid.is_err()) { return core::result::Err(valid.unwrap_err()); }
+    let created: core::result::Result<Buffer,Error> = zeros(valid.unwrap(),1,value.sample_rate,max_samples); if (created.is_err()) { return created; }
+    let output: Buffer = created.unwrap(); let frame: i32 = 0;
+    while (frame < valid.unwrap()) { let total: f64 = exact_mean(value,frame*value.channels,1,value.channels); core::result::unwrap(output.samples.set(frame,total)); frame += 1; }
+    return core::result::Ok(output);
+}
+fn scale(bits: i32) -> core::result::Result<f64,Error> { if (bits != 8 && bits != 16 && bits != 24 && bits != 32) { return core::result::Err(Error::UnsupportedBits); } let value: u64 = (1 as u64) << (bits-1); return core::result::Ok(value as f64); }
+// Signed PCM integer representation; unsigned PCM8 callers subtract 128.
+pub fn from_pcm(value: i64, bits: i32) -> core::result::Result<f64,Error> {
+    let scaled: core::result::Result<f64,Error> = scale(bits); if (scaled.is_err()) { return scaled; } let unit: f64 = scaled.unwrap();
+    if (value < -(unit as i64) || value >= unit as i64) { return core::result::Err(Error::Bounds); } return core::result::Ok((value as f64)/unit);
+}
+// Nearest ties-even after saturation. Every supported PCM code round-trips.
+pub fn to_pcm(value: f64, bits: i32) -> core::result::Result<i64,Error> {
+    let scaled: core::result::Result<f64,Error> = scale(bits); if (scaled.is_err()) { return core::result::Err(scaled.unwrap_err()); }
+    if (!core::f64::is_finite(value)) { return core::result::Err(Error::NonFinite); }
+    let unit: f64 = scaled.unwrap(); if (value <= -1.0) { return core::result::Ok(-(unit as i64)); } if (value >= 1.0) { return core::result::Ok((unit as i64)-1); }
+    let rounded: f64 = core::f64::round_ties_even(value*unit); if (rounded >= unit) { return core::result::Ok((unit as i64)-1); } return core::result::Ok(rounded as i64);
+}

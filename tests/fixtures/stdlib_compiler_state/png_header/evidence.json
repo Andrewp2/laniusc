@@ -1,0 +1,119 @@
+{
+  "compiler": "target/stdlib-build/debug/laniusc",
+  "backend": "GPU-compiled x86_64 Linux",
+  "cause": "unestablished",
+  "results": [
+    {
+      "case": "borrow11",
+      "command": "timeout --kill-after=2s 35s target/stdlib-build/debug/laniusc --stdlib-root stdlib --source-root tests/fixtures/stdlib_compiler_state/png_header/borrow11 tests/fixtures/stdlib_compiler_state/png_header/borrow11/main.lani -o target/stdlib-work/png-header-borrow11",
+      "compile_exit": 0,
+      "diagnostic": "",
+      "sources": {
+        "tests/fixtures/stdlib_compiler_state/png_header/borrow11/main.lani": "6a0b4626476c3e59d6d3efbc3841958524f734120aa4ef86a1390719da6923c8",
+        "tests/fixtures/stdlib_compiler_state/png_header/borrow11/probe/model.lani": "be0f9537174e9eec92e6c415a9c54751ee5f01934c2829f222f9423242dc2f1b"
+      },
+      "execution_exit": 0
+    },
+    {
+      "case": "result11",
+      "command": "timeout --kill-after=2s 35s target/stdlib-build/debug/laniusc --stdlib-root stdlib --source-root tests/fixtures/stdlib_compiler_state/png_header/result11 tests/fixtures/stdlib_compiler_state/png_header/result11/main.lani -o target/stdlib-work/png-header-result11",
+      "compile_exit": 0,
+      "diagnostic": "",
+      "sources": {
+        "tests/fixtures/stdlib_compiler_state/png_header/result11/main.lani": "6a0b4626476c3e59d6d3efbc3841958524f734120aa4ef86a1390719da6923c8",
+        "tests/fixtures/stdlib_compiler_state/png_header/result11/probe/model.lani": "a18833ad5208ae07cbf68ee1862eb2e99662bc18532cc121834372bb96be2593"
+      },
+      "execution_exit": 0
+    },
+    {
+      "case": "result4",
+      "command": "timeout --kill-after=2s 35s target/stdlib-build/debug/laniusc --stdlib-root stdlib --source-root tests/fixtures/stdlib_compiler_state/png_header/result4 tests/fixtures/stdlib_compiler_state/png_header/result4/main.lani -o target/stdlib-work/png-header-result4",
+      "compile_exit": 0,
+      "diagnostic": "",
+      "sources": {
+        "tests/fixtures/stdlib_compiler_state/png_header/result4/main.lani": "c287898ae89b028fee4c86f6e4909574a34d19cf5d321bbb51b77e7c061b5808",
+        "tests/fixtures/stdlib_compiler_state/png_header/result4/probe/model.lani": "37026114f43ed34901447f4b44ea0339ba85008284765354072dd063028be0b2"
+      },
+      "execution_exit": 0
+    },
+    {
+      "case": "result8",
+      "command": "timeout --kill-after=2s 35s target/stdlib-build/debug/laniusc --stdlib-root stdlib --source-root tests/fixtures/stdlib_compiler_state/png_header/result8 tests/fixtures/stdlib_compiler_state/png_header/result8/main.lani -o target/stdlib-work/png-header-result8",
+      "compile_exit": 0,
+      "diagnostic": "",
+      "sources": {
+        "tests/fixtures/stdlib_compiler_state/png_header/result8/main.lani": "0da71f222ff9114e9623141f698efb9b8cd08888808a8aff5795394cc8cfda4b",
+        "tests/fixtures/stdlib_compiler_state/png_header/result8/probe/model.lani": "b7b830cbb9a3e26c86518e15d080a7ba56d829b2f3f5146c45f51954c68dee69"
+      },
+      "execution_exit": 0
+    },
+    {
+      "case": "value11",
+      "command": "timeout --kill-after=2s 35s target/stdlib-build/debug/laniusc --stdlib-root stdlib --source-root tests/fixtures/stdlib_compiler_state/png_header/value11 tests/fixtures/stdlib_compiler_state/png_header/value11/main.lani -o target/stdlib-work/png-header-value11",
+      "compile_exit": 0,
+      "diagnostic": "",
+      "sources": {
+        "tests/fixtures/stdlib_compiler_state/png_header/value11/main.lani": "6a0b4626476c3e59d6d3efbc3841958524f734120aa4ef86a1390719da6923c8",
+        "tests/fixtures/stdlib_compiler_state/png_header/value11/probe/model.lani": "7b5fb9423768ea84679b5167115c009a777bf4d7bbb55d8b4db3cc83f0f5e5a2"
+      },
+      "execution_exit": 0
+    },
+    {
+      "case": "value4",
+      "command": "timeout --kill-after=2s 35s target/stdlib-build/debug/laniusc --stdlib-root stdlib --source-root tests/fixtures/stdlib_compiler_state/png_header/value4 tests/fixtures/stdlib_compiler_state/png_header/value4/main.lani -o target/stdlib-work/png-header-value4",
+      "compile_exit": 0,
+      "diagnostic": "",
+      "sources": {
+        "tests/fixtures/stdlib_compiler_state/png_header/value4/main.lani": "c287898ae89b028fee4c86f6e4909574a34d19cf5d321bbb51b77e7c061b5808",
+        "tests/fixtures/stdlib_compiler_state/png_header/value4/probe/model.lani": "c0aab86151a525445b353bbb68cb9ba116a67f325cfe8b79e75a7fe5df461941"
+      },
+      "execution_exit": 0
+    },
+    {
+      "case": "value8",
+      "command": "timeout --kill-after=2s 35s target/stdlib-build/debug/laniusc --stdlib-root stdlib --source-root tests/fixtures/stdlib_compiler_state/png_header/value8 tests/fixtures/stdlib_compiler_state/png_header/value8/main.lani -o target/stdlib-work/png-header-value8",
+      "compile_exit": 0,
+      "diagnostic": "",
+      "sources": {
+        "tests/fixtures/stdlib_compiler_state/png_header/value8/main.lani": "0da71f222ff9114e9623141f698efb9b8cd08888808a8aff5795394cc8cfda4b",
+        "tests/fixtures/stdlib_compiler_state/png_header/value8/probe/model.lani": "55bdc07327950f09ea0531becad28c9e4eb21380976d9ab0cdb934478b1f6e31"
+      },
+      "execution_exit": 0
+    },
+    {
+      "case": "borrowed_png_control",
+      "command": "timeout --kill-after=2s 30s target/stdlib-build/debug/laniusc --stdlib-root stdlib --source-root extended tests/fixtures/stdlib_compiler_state/png_header/borrowed_png_control.lani -o target/stdlib-work/png-header-borrowed_png_control",
+      "compile_exit": 0,
+      "diagnostic": "",
+      "sources": {
+        "tests/fixtures/stdlib_compiler_state/png_header/borrowed_png_control.lani": "3f11317b23effd7182aa998a4478a85279855e828126d5baffa61d89de6c5880",
+        "extended/ext/png.lani": "ba2922235e0479ff385723bb4b0de11f81cd02146be9fc18fe90a97b66072c81"
+      },
+      "execution_exit": 0,
+      "preserved_production_snapshot": "tests/fixtures/stdlib_compiler_state/png_header/borrowed_control_at_observation.lani"
+    },
+    {
+      "case": "original_result",
+      "command": "timeout --kill-after=2s 35s target/stdlib-build/debug/laniusc --stdlib-root stdlib --source-root tests/fixtures/stdlib_compiler_state/png_header/original_result --source-root extended tests/fixtures/stdlib_compiler_state/png_header/original_result/main.lani -o target/stdlib-work/png-header-original_result",
+      "compile_exit": 1,
+      "diagnostic": "error[LNC0006]: type mismatch\n --> /home/andrew-peterson/code/laniusc/tests/fixtures/stdlib_compiler_state/png_header/original_result/probe/png.lani:200:26\n    |\n200 |     let header: Header = core::result::unwrap(parsed);\n    |                          ^^^^ value type does not match this context\n     = note: change the expression or the annotation so both sides have the same type\n",
+      "sources": {
+        "tests/fixtures/stdlib_compiler_state/png_header/original_result/main.lani": "0cf276e730502cd35ad23a19249227b3760a95d82823124a2b328d259a23fb6b",
+        "tests/fixtures/stdlib_compiler_state/png_header/original_result/probe/png.lani": "81e7f0c092e9c47933d663598fd46d4a76321e69a40be10db8d9c84a07cb60b8"
+      }
+    },
+    {
+      "case": "original_value",
+      "command": "timeout --kill-after=2s 35s target/stdlib-build/debug/laniusc --stdlib-root stdlib --source-root tests/fixtures/stdlib_compiler_state/png_header/original_value --source-root extended tests/fixtures/stdlib_compiler_state/png_header/original_value/main.lani -o target/stdlib-work/png-header-original_value",
+      "compile_exit": 0,
+      "diagnostic": "",
+      "sources": {
+        "tests/fixtures/stdlib_compiler_state/png_header/original_value/main.lani": "0cf276e730502cd35ad23a19249227b3760a95d82823124a2b328d259a23fb6b",
+        "tests/fixtures/stdlib_compiler_state/png_header/original_value/probe/png.lani": "88a7186ffe731d4d3f2d439413d53f811858cefaaf5924f2d8bbe5927294aa92"
+      },
+      "execution_exit": 1
+    }
+  ],
+  "note": "Diagnostic snapshots retain the reserved-third-bit rejection that was later corrected independently in production. The grayscale tRNS probe contains no unknown chunk and is unaffected by that correction. Production now treats reserved-bit chunk types as unknown per PNG3 decoder rules.",
+  "final_production_source_sha256": "301dde45a69bef14aeeeb3bf04b4e58a4819ee607de5059a1c9014aa1e5a2cba"
+}

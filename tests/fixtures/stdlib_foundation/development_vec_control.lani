@@ -1,0 +1,11 @@
+// Passing control for development_vec_callback: same Vec path, direct call.
+module app::main;
+import alloc::vec;
+import core::result;
+import test::check;
+fn vector() -> test::check::Outcome {
+    let values: alloc::vec::Vec<u32> = alloc::vec::new();
+    let ok: bool = core::result::is_ok(values.try_push(7)); values.destroy();
+    return test::check::truth(ok,test::check::literal("Vec push",8));
+}
+fn main() -> i32 { let result: test::check::Outcome = vector(); if (test::check::is_pass(result)) { return 0; } return 1; }

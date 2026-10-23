@@ -1,39 +1,25 @@
-// Count distinct Unicode scalars in UTF-8 stdin, preserving no input text.
-// Return 2 for malformed UTF-8, 3 for input failure, 4 for allocation or
-// capacity failure, and 5 for output failure.
+// Count distinct Unicode scalars in UTF-8 stdin without retaining the text.
+// The hash map stores membership; allocation failure is an explicit Result.
 module app::main;
+import alloc::hash_map;
 import core::char;
+import core::result;
 import std::io_byte;
 import std::io_decimal;
 import std::io_utf8;
-import std::set;
 
 fn main() -> i32 {
-    let seen: std::set::Set<char> = std::set::new();
+    let seen: alloc::hash_map::HashMap<char, bool> = alloc::hash_map::new();
     while (true) {
         let code: u32 = std::io_utf8::read_stdin_scalar_or(1114112, 1114113, 1114114);
         if (code == 1114112) { break; }
-        if (code == 1114113) {
-            std::set::destroy(seen);
-            return 2;
-        }
-        if (code == 1114114) {
-            std::set::destroy(seen);
-            return 3;
-        }
-        // The reader returns only scalar values below its sentinels.
+        if (code == 1114113) { seen.destroy(); return 2; }
+        if (code == 1114114) { seen.destroy(); return 3; }
         let scalar: char = core::char::from_u32_or(code, '\0');
-        let existed: bool = std::set::contains(seen, scalar);
-        let before: i32 = std::set::len(seen);
-        seen = std::set::try_insert(seen, scalar);
-        if (!existed && std::set::len(seen) != before + 1) {
-            std::set::destroy(seen);
-            return 4;
-        }
+        if (core::result::is_err(seen.try_insert(scalar, true))) { seen.destroy(); return 4; }
     }
-    let count: i32 = std::set::len(seen);
-    std::set::destroy(seen);
-    if (std::io_decimal::write_i32(1, count) < 0) { return 5; }
-    if (!std::io_byte::write_stdout_byte(10)) { return 5; }
+    let count: i32 = seen.len();
+    seen.destroy();
+    if (std::io_decimal::write_i32(1, count) < 0 || !std::io_byte::write_stdout_byte(10)) { return 5; }
     return 0;
 }

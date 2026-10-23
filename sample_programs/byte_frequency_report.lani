@@ -1,58 +1,32 @@
-// Report the smallest byte with the highest input frequency, then its count.
-// Empty input prints -1 and 0. An overflowing count or I/O error fails.
+// Report the smallest byte with the highest frequency, then its count.
+// A caller-owned table covers all 256 values. Read, overflow and output errors fail.
 module app::main;
 import std::io;
 import std::io_byte;
 import std::io_decimal;
-import std::map_u8_u32;
 
 fn main() -> i32 {
-    let zero: u32 = 0;
-    let maximum: u32 = 4294967295;
-    let keys: [u32; 8] = [zero, zero, zero, zero, zero, zero, zero, zero];
-    let values: [u32; 256] = [
-        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
-        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
-        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
-        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
-        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
-        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
-        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
-        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
-        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
-        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
-        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
-        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
-        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
-        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
-        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
-        zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero
-    ];
-    std::map_u8_u32::clear(keys, values);
+    let values: [u32; 256] = [0; 256];
+    let distinct: u32 = 0;
     while (true) {
         let code: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
         if (code == -1) { break; }
         if (code == -2) { return 2; }
-        let key: u8 = code as u8;
-        let old: u32 = std::map_u8_u32::get_or(keys, values, key, 0);
-        if (old == maximum) { return 3; }
-        std::map_u8_u32::put(keys, values, key, old + 1);
+        let key: i32 = code;
+        let old: u32 = values[key];
+        if (old == 4294967295) { return 3; }
+        if (old == 0) { distinct += 1; }
+        values[key] = old + 1;
     }
     let best_key: i32 = -1;
     let best_count: u32 = 0;
-    let ordinal: i32 = 0;
-    while (ordinal < std::map_u8_u32::len(keys)) {
-        let key: u8 = std::map_u8_u32::key_at_or(keys, ordinal, 0);
-        let count: u32 = std::map_u8_u32::value_at_or(keys, values, ordinal, 0);
-        if (count > best_count) {
-            best_key = key as i32;
-            best_count = count;
-        }
-        ordinal += 1;
+    let key: i32 = 0;
+    while (key < 256) {
+        let count: u32 = values[key];
+        if (count > best_count) { best_key = key; best_count = count; }
+        key += 1;
     }
-    if (std::io_decimal::write_i32(1, best_key) < 0 ||
-        std::io::write_byte(1, 10) != 1 ||
-        std::io_decimal::write_u32(1, best_count) < 0 ||
-        std::io::write_byte(1, 10) != 1) { return 4; }
+    if (std::io_decimal::write_i32(1, best_key) < 0 || std::io::write_byte(1, 10) != 1 ||
+        std::io_decimal::write_u32(1, best_count) < 0 || std::io::write_byte(1, 10) != 1) { return 4; }
     return 0;
 }

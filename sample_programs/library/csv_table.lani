@@ -1,0 +1,90 @@
+// Bounded stdin CSV -> Unicode-aware terminal table. See extended-csv-table.md.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::cli;
+import ext::csv;
+import ext::progress;
+import ext::table;
+import std::args;
+import std::stream;
+
+struct Options { progress: bool, bare: bool, right: bool, wide: bool, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+fn literal(value: str, count: i32) -> core::slice::View<u8> { let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(bytes,count)); }
+fn write(value: core::slice::View<u8>, error: bool) -> bool { let sink: std::stream::Descriptor = std::stream::stdout(); if (error) { sink = std::stream::stderr(); } return core::result::is_ok(core::io::write_all(sink.borrow(),value.values,value.start,value.length)); }
+fn diagnostic(status: i32) -> i32 {
+    let okay: bool = true;
+    if (status == 2) { okay = write(literal("csv-table: invalid input or resource limit\n",43),true); }
+    if (status == 3) { okay = write(literal("csv-table: I/O failure\n",23),true); }
+    if (status == 4) { okay = write(literal("csv-table: allocation failed\n",29),true); }
+    if (!okay) { return 3; } return status;
+}
+fn arguments(arguments: std::args::Arguments, options: &Options) -> bool {
+    let specs: [ext::cli::Spec;5] = [
+        ext::cli::Spec { id: 1,long: literal("progress",8),short: 0,arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 2,long: literal("bare",4),short: 0,arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 3,long: literal("right",5),short: 0,arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 4,long: literal("wide",4),short: 0,arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 5,long: literal("help",4),short: 104,arity: ext::cli::Arity::Flag }
+    ];
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),core::result::unwrap(core::slice::view(specs,5)),ext::cli::Ordering::Intermixed));
+    while (true) {
+        let event: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next();
+        if (core::result::is_err(event)) { return false; }
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(event); if (core::option::is_none(next)) { break; }
+        let id: i32 = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> item.id, _ -> 0 };
+        if (id == 0) { return false; }
+        if (id == 1) { options.progress = true; } if (id == 2) { options.bare = true; } if (id == 3) { options.right = true; } if (id == 4) { options.wide = true; } if (id == 5) { options.help = true; }
+    }
+    return true;
+}
+fn render(table: ext::csv::Table, options: Options) -> core::result::Result<alloc::vec::Vec<u8>,i32> {
+    let count: i32 = table.row_count(); let columns: i32 = 0; if (count > 0) { columns = core::option::unwrap(table.field_count(0)); }
+    if (columns > 64 || (columns > 0 && count > 65536/columns)) { return core::result::Err(2); }
+    let texts: alloc::vec::Vec<core::text::Text> = alloc::vec::new();
+    let rows: alloc::vec::Vec<ext::table::Row> = alloc::vec::new();
+    let alignments: alloc::vec::Vec<ext::table::Alignment> = alloc::vec::new();
+    if (core::result::is_err(texts.try_reserve(count*columns)) || core::result::is_err(rows.try_reserve(count)) || core::result::is_err(alignments.try_reserve(columns))) { texts.destroy(); rows.destroy(); alignments.destroy(); return core::result::Err(4); }
+    let row: i32 = 0; while (row < count) { let column: i32 = 0; while (column < columns) { core::result::unwrap(texts.try_push(core::result::unwrap(table.field(row,column)))); column += 1; } row += 1; }
+    row = 0; while (row < count) { let cells: core::slice::View<core::text::Text> = core::result::unwrap(texts.as_view().subview(row*columns,(row+1)*columns)); core::result::unwrap(rows.try_push(ext::table::Row { cells: cells })); row += 1; }
+    let column: i32 = 0; while (column < columns) { let alignment: ext::table::Alignment = ext::table::Alignment::Left; if (options.right) { alignment = ext::table::Alignment::Right; } core::result::unwrap(alignments.try_push(alignment)); column += 1; }
+    let policy: ext::table::Options = ext::table::options(); policy.borders = !options.bare; policy.width.ambiguous_wide = options.wide; policy.max_work = 33554432;
+    let rendered: core::result::Result<alloc::vec::Vec<u8>,ext::table::Error> = ext::table::render(rows.as_view(),alignments.as_view(),policy);
+    rows.destroy(); texts.destroy(); alignments.destroy();
+    if (core::result::is_err(rendered)) { let status: i32 = match (core::result::unwrap_err(rendered)) { ext::table::Error::AllocationFailed -> 4, _ -> 2 }; return core::result::Err(status); }
+    return core::result::Ok(core::result::unwrap(rendered));
+}
+fn process(options: Options) -> i32 {
+    let input: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(1048576));
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let received: core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(source.borrow(),input.borrow());
+    if (core::result::is_err(received)) { let status: i32 = match (core::result::unwrap_err(received).cause) { core::io::Error::AllocationFailed -> 4, core::io::Error::LimitExceeded -> 2, _ -> 3 }; input.destroy(); return status; }
+    let dialect: ext::csv::Options = ext::csv::default_options(); dialect.max_records = 1024; dialect.max_fields = 64; dialect.max_field_bytes = 4096; dialect.max_record_bytes = 65536;
+    let parsed: core::result::Result<ext::csv::Table,ext::csv::Error> = ext::csv::parse_bytes(input.as_bytes(),0,input.len(),dialect); input.destroy();
+    if (core::result::is_err(parsed)) { return match (core::result::unwrap_err(parsed)) { ext::csv::Error::AllocationFailed -> 4, _ -> 2 }; }
+    let table: ext::csv::Table = core::result::unwrap(parsed); let count: u64 = table.row_count() as u64;
+    let rendered: core::result::Result<alloc::vec::Vec<u8>,i32> = render(table,options); table.destroy();
+    if (core::result::is_err(rendered)) { return core::result::unwrap_err(rendered); }
+    let bytes: alloc::vec::Vec<u8> = core::result::unwrap(rendered); let okay: bool = write(bytes.as_view(),false); bytes.destroy(); if (!okay) { return 3; }
+    if (options.progress) {
+        let buffer: [u8;128] = [0;128]; let view: core::slice::View<u8> = core::result::unwrap(core::slice::view(buffer,128));
+        let length: i32 = core::result::unwrap(ext::progress::render_into(ext::progress::State { current: count,total: core::option::Some(count) },view,ext::progress::options()));
+        if (!write(core::result::unwrap(view.subview(0,length)),true)) { return 3; }
+    }
+    return 0;
+}
+fn main() -> i32 {
+    let options: Options = Options { progress: false,bare: false,right: false,wide: false,help: false };
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,16,256);
+    if (core::result::is_err(captured)) { let status: i32 = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(at) -> 3, _ -> 2 }; return diagnostic(status); }
+    let args: std::args::Arguments = core::result::unwrap(captured); let valid: bool = arguments(args,options.borrow()); args.destroy(); if (!valid) { return diagnostic(2); }
+    if (options.help) { if (!write(literal("Usage: csv-table [--bare] [--right] [--wide] [--progress]\n",58),false)) { return 3; } return 0; }
+    let status: i32 = process(options); if (status != 0) { return diagnostic(status); } return 0;
+}

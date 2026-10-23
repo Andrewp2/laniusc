@@ -1,0 +1,15 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+import ext::table;
+fn main() -> i32 {
+ let bytes: [u8;1] = [65]; let value: core::text::Text = core::result::unwrap(core::text::from_utf8(bytes,1));
+ let cells: [core::text::Text;1] = [value]; let row: [ext::table::Row;1] = [ext::table::Row { cells: core::result::unwrap(core::slice::view(cells,1)) }]; let columns: [ext::table::Alignment;1] = [ext::table::Alignment::Left];
+ let result: core::result::Result<alloc::vec::Vec<u8>,ext::table::Error> = ext::table::render(core::result::unwrap(core::slice::view(row,1)),core::result::unwrap(core::slice::view(columns,1)),ext::table::options());
+ assert(bytes[0] == 65);
+ if (core::result::is_err(result)) { let allocation: bool = match (core::result::unwrap_err(result)) { ext::table::Error::AllocationFailed -> true, _ -> false }; assert(allocation); return 0; }
+ let output: alloc::vec::Vec<u8> = core::result::unwrap(result); output.destroy(); return 1;
+}

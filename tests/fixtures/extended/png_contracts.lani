@@ -1,0 +1,26 @@
+module app::main;
+import alloc::vec;
+import core::result;
+import core::slice;
+import ext::image;
+import ext::png;
+fn main() -> i32 {
+    let image: ext::image::Image = core::result::unwrap(ext::image::new(3,2,ext::image::Rgba { r: 10, g: 20, b: 30, a: 128 }));
+    let encoded: alloc::vec::Vec<u8> = core::result::unwrap(ext::png::encode(image.view(),1024));
+    let decoded: ext::image::Image = core::result::unwrap(ext::png::decode(encoded.as_view(),ext::png::default_limits()));
+    assert(decoded.width() == 3 && decoded.height() == 2); let i: i32 = 0;
+    while (i < 24) { assert(decoded.rgba().values[i] == image.rgba().values[i]); i += 1; }
+    let native: [u8;200] = [199;200]; i = 0; while (i < encoded.len()) { native[7+i] = encoded.at(i); i += 1; }
+    let selected: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(native,7,encoded.len()));
+    let again: ext::image::Image = core::result::unwrap(ext::png::decode(selected,ext::png::default_limits()));
+    i = 0; while (i < 24) { assert(again.rgba().values[i] == decoded.rgba().values[i]); i += 1; } again.destroy();
+    let padded: [u8;60] = [199;60];
+    let raster: ext::image::View = core::result::unwrap(ext::image::view(core::result::unwrap(core::slice::view_range(padded,3,50)),3,2,20));
+    core::result::unwrap(ext::image::fill(raster,ext::image::Rgba {r:10,g:20,b:30,a:128}));
+    let padded_png: alloc::vec::Vec<u8> = core::result::unwrap(ext::png::encode(raster,1024));
+    assert(padded_png.len() == encoded.len()); i = 0; while (i < encoded.len()) { assert(padded_png.at(i) == encoded.at(i)); i += 1; } padded_png.destroy();
+    let invalid: core::slice::View<u8> = selected; invalid.start = -1; assert(core::result::is_err(ext::png::decode(invalid,ext::png::default_limits())));
+    invalid = selected; invalid.length = -1; assert(core::result::is_err(ext::png::decode(invalid,ext::png::default_limits())));
+    invalid = selected; invalid.start = 2147483647; assert(core::result::is_err(ext::png::decode(invalid,ext::png::default_limits())));
+    decoded.destroy(); encoded.destroy(); image.destroy(); return 0;
+}

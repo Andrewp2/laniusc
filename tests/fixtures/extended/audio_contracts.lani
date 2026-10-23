@@ -1,0 +1,45 @@
+module app::main;
+import core::f64;
+import core::result;
+import core::slice;
+import ext::audio;
+import ext::wave;
+fn main() -> i32 {
+ let samples:[f64;6]=[-1.0;6]; samples[1]=0.5; samples[2]=0.0; samples[3]=-0.5; samples[4]=1.0; samples[5]=0.0;
+ let v:ext::audio::View=ext::audio::view(core::slice::view(samples,6).unwrap(),2,48000).unwrap();
+ let b:ext::audio::Buffer=ext::audio::from_view(v,6).unwrap(); assert(b.frames().unwrap()==3); assert(ext::audio::sample(b.as_view(),0,1).unwrap()==0.5);
+ assert(ext::audio::sample(b.as_view(),-1,0).is_err()); assert(ext::audio::sample(b.as_view(),0,2).is_err());
+ assert(ext::audio::gain(b.as_view(),2.0).is_ok()); assert(ext::audio::sample(b.as_view(),0,0).unwrap()==-2.0);
+ assert(ext::audio::clip(b.as_view(),-1.0,1.0).is_ok());
+ let m:ext::audio::Metrics=ext::audio::metrics(b.as_view(),0).unwrap(); assert(m.peak==1.0); assert(core::f64::abs(m.dc)<1e-15);
+ let bytes=ext::wave::encode(b.as_view(),ext::wave::Format::Pcm24,ext::wave::default_limits()).unwrap();
+ let decoded:ext::audio::Buffer=ext::wave::decode(bytes.as_view(),ext::wave::default_limits()).unwrap(); assert(decoded.frames().unwrap()==3);
+ decoded.destroy(); bytes.destroy();
+ assert(ext::audio::zeros(-1,2,48000,4).is_err()); assert(ext::audio::zeros(2147483647,65535,48000,2147483647).is_err());
+ let corrupt:core::slice::View<f64> = core::slice::view(samples,6).unwrap();corrupt.start=2147483647;corrupt.length=1;
+ assert(ext::audio::view(corrupt,1,48000).is_err());corrupt.start=-1;
+ assert(ext::audio::view(corrupt,1,48000).is_err());
+ assert(ext::audio::view(core::slice::view(samples,5).unwrap(),2,48000).is_err());
+ let before:f64=ext::audio::sample(b.as_view(),0,0).unwrap();
+ assert(ext::audio::gain(b.as_view(),core::f64::nan()).is_err()); assert(ext::audio::sample(b.as_view(),0,0).unwrap()==before);
+ assert(ext::audio::set_sample(b.as_view(),0,0,core::f64::infinity()).is_err());
+ ext::audio::set_sample(b.as_view(),2,1,core::f64::MAX).unwrap(); assert(ext::audio::gain(b.as_view(),2.0).is_err()); assert(ext::audio::sample(b.as_view(),0,0).unwrap()==before);
+ assert(ext::audio::clip(b.as_view(),1.0,-1.0).is_err()); assert(ext::audio::sample(b.as_view(),0,0).unwrap()==before);
+ let small:[f64;4]=[0.0;4]; let tiny:f64=core::f64::from_bits(1); small[0]=tiny;small[1]=tiny;small[2]=tiny;small[3]=tiny;
+ let sv:ext::audio::View=ext::audio::view(core::slice::view(small,4).unwrap(),2,1).unwrap(); let sm:ext::audio::Metrics=ext::audio::metrics(sv,1).unwrap(); assert(sm.dc==tiny && sm.rms==tiny);
+ let mono:ext::audio::Buffer=ext::audio::mono(sv,2).unwrap();assert(ext::audio::sample(mono.as_view(),0,0).unwrap()==tiny);mono.destroy();
+ small[0]=core::f64::MAX;small[1]=core::f64::MAX;small[2]=core::f64::MAX;small[3]=core::f64::MAX;
+ let large:ext::audio::Metrics=ext::audio::metrics(sv,0).unwrap();assert(large.rms==core::f64::MAX && large.dc==core::f64::MAX);
+ let full:ext::audio::Buffer=ext::audio::mono(sv,2).unwrap(); assert(ext::audio::sample(full.as_view(),0,0).unwrap()==core::f64::MAX);full.destroy();
+ let pcm:i64=-32768;while(pcm<32768){let value:f64=ext::audio::from_pcm(pcm,16).unwrap();assert(ext::audio::to_pcm(value,16).unwrap()==pcm);pcm+=1;}
+ assert(ext::audio::to_pcm(0.5/32768.0,16).unwrap()==0);assert(ext::audio::to_pcm(1.5/32768.0,16).unwrap()==2); assert(ext::audio::to_pcm(-1.5/32768.0,16).unwrap()==-2);
+ assert(ext::audio::to_pcm(core::f64::nan(),16).is_err()); assert(ext::audio::from_pcm(128,8).is_err()); assert(ext::audio::from_pcm(0,12).is_err());
+ let cancellation:[f64;3]=[0.0;3];cancellation[0]=core::f64::MAX;cancellation[1]=1e-300;cancellation[2]=-core::f64::MAX;
+ let cv:ext::audio::View=ext::audio::view(core::slice::view(cancellation,3).unwrap(),1,1).unwrap();assert(ext::audio::metrics(cv,0).unwrap().dc==1e-300/3.0);
+ cv.channels=3;let cm:ext::audio::Buffer=ext::audio::mono(cv,1).unwrap();assert(cm.samples.at(0)==1e-300/3.0);cm.destroy();
+ let rounding:[f64;4]=[0.0;4];rounding[0]=1.0;rounding[1]=core::f64::next_up(1.0);rounding[3]=tiny;
+ let rv:ext::audio::View=ext::audio::view(core::slice::view(rounding,4).unwrap(),1,1).unwrap();assert(ext::audio::metrics(rv,0).unwrap().dc==core::f64::next_up(0.5));rounding[3]=-tiny;assert(ext::audio::metrics(rv,0).unwrap().dc==0.5);
+ let signs:[f64;2]=[0.0;2];signs[0]=-tiny;let zv:ext::audio::View=ext::audio::view(core::slice::view(signs,2).unwrap(),1,1).unwrap();assert(core::f64::to_bits(ext::audio::metrics(zv,0).unwrap().dc)==core::f64::SIGN_MASK);
+ signs[0]=core::f64::from_bits(core::f64::SIGN_MASK);signs[1]=signs[0];assert(core::f64::to_bits(ext::audio::metrics(zv,0).unwrap().dc)==0);
+ b.destroy();b.destroy();assert(b.frames().is_err()); return 0;
+}

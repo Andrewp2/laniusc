@@ -1,0 +1,87 @@
+// Run with tools/lanius-test sample_programs/library/library_tests.lani.
+// Copies of Vec alias one manual owner. Destroy each owner after its last use.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::fmt;
+import core::option;
+import core::result;
+import test::bench;
+import test::check;
+import test::property;
+import test::suite;
+
+pub struct RoundTrip {}
+impl RoundTrip { fn borrow(&self) -> &RoundTrip { return self; } }
+pub impl test::property::Property for RoundTrip {
+    pub fn check(&self, input: u32, case_id: u32) -> test::check::Outcome {
+        let bytes: [u8;10] = [0;10];
+        let formatted: core::result::Result<i32,core::decimal::FormatError> = core::decimal::format_u32(bytes,0,10,input);
+        if (core::result::is_err(formatted)) { return test::check::fail(test::check::literal("decimal formatting failed",25)); }
+        let parsed: core::result::Result<u32,core::decimal::ParseError> = core::decimal::parse_u32(bytes,core::result::unwrap(formatted));
+        if (core::result::is_err(parsed)) { return test::check::fail(test::check::literal("formatted decimal rejected",26)); }
+        return test::check::equal_i64(core::result::unwrap(parsed) as i64,input as i64,test::check::literal("decimal round trip",18));
+    }
+}
+fn vec_stack() -> test::check::Outcome {
+    let values: alloc::vec::Vec<u32> = alloc::vec::new();
+    let input: u32 = 123456789; let length: u32 = 33; let index: u32 = 0;
+    while (index < length) {
+        if (core::result::is_err(values.try_push(input ^ index))) { values.destroy(); return test::check::fail(test::check::literal("Vec allocation failed",21)); }
+        index += 1;
+    }
+    while (index > 0) {
+        index -= 1; let actual: core::option::Option<u32> = values.pop();
+        if (core::option::is_none(actual) || core::option::unwrap_or(actual,0) != (input ^ index)) {
+            values.destroy(); return test::check::fail(test::check::literal("Vec differs from stack model",28));
+        }
+    }
+    let empty: bool = values.is_empty() && core::option::is_none(values.pop()); values.destroy();
+    return test::check::truth(empty,test::check::literal("Vec did not become empty",24));
+}
+pub struct ArithmeticWork { checksum: u32, calls: u32 }
+impl ArithmeticWork { fn borrow(&self) -> &ArithmeticWork { return self; } }
+pub impl test::bench::Work for ArithmeticWork {
+    pub fn iteration(&self, index: u32) -> u64 {
+        self.checksum = test::property::next(self.checksum ^ index); self.calls += 1; return 1;
+    }
+}
+fn option_result() -> test::check::Outcome {
+    let present: core::option::Option<i32> = core::option::Some(-7);
+    let absent: core::option::Option<i32> = core::option::None();
+    let success: core::result::Result<i32,i32> = core::result::Ok(41);
+    let failure: core::result::Result<i32,i32> = core::result::Err(19);
+    return test::check::truth(core::option::unwrap_or(present,99) == -7 && core::option::unwrap_or(absent,99) == 99 &&
+        core::result::unwrap_or(success,9) == 41 && core::result::unwrap_or(failure,9) == 9 && core::result::is_err(failure),
+        test::check::literal("Option/Result fallback contract",31));
+}
+fn format_parse() -> test::check::Outcome {
+    let bytes: [u8;32] = [0;32];
+    let output: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,32));
+    let rendered: core::result::Result<i32,core::fmt::Error> = output.write_signed(-2147483648,core::fmt::decimal());
+    if (core::result::is_err(rendered)) { return test::check::fail(test::check::literal("integer formatting failed",25)); }
+    let parsed: core::result::Result<i32,core::decimal::ParseError> = core::decimal::parse_i32(bytes,core::result::unwrap(rendered));
+    if (core::result::is_err(parsed)) { return test::check::fail(test::check::literal("formatted integer rejected",26)); }
+    return test::check::equal_i64(core::result::unwrap(parsed) as i64,-2147483648,test::check::literal("signed format/parse",19));
+}
+fn main() -> i32 {
+    let runner: test::suite::Runner = test::suite::begin_args();
+    if (runner.select(test::check::literal("option_result.fallback",22))) { runner.record(option_result()); }
+    if (runner.select(test::check::literal("format.signed_parse",19))) { runner.record(format_parse()); }
+    if (runner.select(test::check::literal("property.decimal_roundtrip",26))) {
+        let property: RoundTrip = RoundTrip {}; runner.record(test::property::run(property.borrow(),runner.seed,runner.cases));
+    }
+    if (runner.select(test::check::literal("vec.stack_model",15))) { runner.record(vec_stack()); }
+    if (runner.select(test::check::literal("bench.arithmetic",16))) {
+        let work: ArithmeticWork = ArithmeticWork { checksum: 1, calls: 0 };
+        let measured: core::result::Result<test::bench::Measurement,test::bench::Error> = test::bench::native(work.borrow(),10000);
+        if (core::result::is_err(measured)) {
+            runner.record(test::check::fail(test::check::literal("native benchmark failed",23))); return runner.finish();
+        }
+        let value: test::bench::Measurement = core::result::unwrap(measured);
+        if (!test::bench::report(value)) { runner.record(test::check::fail(test::check::literal("benchmark report failed",23))); return runner.finish(); }
+        runner.record(test::check::truth(value.work == 10000 && value.iterations == 10000 && work.calls == 10000 && work.checksum != 1,
+            test::check::literal("benchmark work count",20)));
+    }
+    return runner.finish();
+}

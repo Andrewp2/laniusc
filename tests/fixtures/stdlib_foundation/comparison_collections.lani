@@ -9,38 +9,34 @@ import core::f64;
 import core::float_order;
 import core::option;
 import core::result;
-import std::set;
 
 fn collections<T>(keys: [T], count: i32) -> bool
     where T: core::cmp::Eq<T>, T: core::cmp::Ord<T>, T: core::cmp::PartialEq<T>, T: core::hash::Hash<T> {
     let vector: alloc::vec::Vec<T> = alloc::vec::new();
     let ordered: alloc::tree_map::TreeMap<T,i32> = alloc::tree_map::new();
     let hashed: alloc::hash_map::HashMap<T,i32> = alloc::hash_map::new();
-    let set: std::set::Set<T> = std::set::new();
     let index: i32 = count;
     while (index > 0) {
         index -= 1; let key: T = keys[index];
         core::result::unwrap(vector.try_push(key));
         assert(core::option::is_none(core::result::unwrap(ordered.try_insert(key,index))));
         assert(core::option::is_none(core::result::unwrap(hashed.try_insert(key,index))));
-        set = std::set::try_insert(set,key);
     }
-    assert(ordered.len() == count && hashed.len() == count && std::set::len(set) == count);
+    assert(ordered.len() == count && hashed.len() == count);
     vector.sort(); assert(vector.is_sorted()); index = 0;
     while (index < count) {
         let key: T = keys[index];
         let sorted: [T] = vector.as_slice(); let found: T = sorted[index];
         assert(T::eq(found,key) && vector.binary_search(key) == index && vector.contains(key));
         assert(core::option::unwrap(ordered.get(key)) == index && core::option::unwrap(hashed.get(key)) == index);
-        assert(std::set::contains(set,key));
         // Reinsert each exact encoding: identity remains stable, including NaNs.
         let old: alloc::tree_map::Entry<T,i32> = core::option::unwrap(core::result::unwrap(ordered.try_insert(key,index+100)));
         assert(old.value == index && T::eq(old.key,key));
         let hash_old: alloc::hash_map::Entry<T,i32> = core::option::unwrap(core::result::unwrap(hashed.try_insert(key,index+100)));
         assert(hash_old.value == index && T::eq(hash_old.key,key));
-        set = std::set::try_insert(set,key); index += 1;
+        index += 1;
     }
-    assert(ordered.len() == count && hashed.len() == count && std::set::len(set) == count);
+    assert(ordered.len() == count && hashed.len() == count);
     index = 0;
     while (index < count) {
         let item: alloc::tree_map::Entry<T,i32> = core::option::unwrap(ordered.pop_first());
@@ -49,7 +45,7 @@ fn collections<T>(keys: [T], count: i32) -> bool
         index += 1;
     }
     assert(ordered.is_empty() && hashed.is_empty());
-    vector.destroy(); ordered.destroy(); hashed.destroy(); std::set::destroy(set); return true;
+    vector.destroy(); ordered.destroy(); hashed.destroy(); return true;
 }
 fn main() -> i32 {
     let keys32: [core::float_order::TotalF32; 11] = [

@@ -103,9 +103,11 @@ replacement before releasing the original allocation.
 | Sorted construction, clone, nonempty shrink | O(n) |
 | Clear | O(1), without element destruction |
 
-The old `std::map` remains an insertion-ordered linear map with an unfinished
-failure-contract migration. It is not an alias for TreeMap. Ordered sets,
-entry APIs and lookup through a distinct borrowed key type remain future work.
+The old `std::map` was removed after its repository callers migrated to checked
+`alloc::hash_map` owners and explicit order vectors where their output needs
+first-seen order. See [collection migration](stdlib-legacy-collections.md).
+Ordered sets, entry APIs and lookup through a distinct borrowed key type remain
+future work.
 
 ## Executable evidence
 

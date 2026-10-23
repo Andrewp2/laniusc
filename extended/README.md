@@ -31,6 +31,34 @@ repository root. An application imports the CSV module with `import ext::csv;`.
 | [`ext::tar`](ext/tar.lani) | Borrowed POSIX ustar metadata/data and atomic caller-buffer multi-member writing, checked headers/padding/footer and raw byte paths | x86_64 Linux; [contracts and tests](../docs/extended-tar.md), [TAR/gzip application](../docs/extended-tar-bytes.md) |
 | [`ext::zip`](ext/zip.lani) | Bounded classic single-disk ZIP metadata, checked stored/DEFLATE member extraction and deterministic owned multi-member writing | x86_64 Linux; [contracts and tests](../docs/extended-zip.md), [binary application](../docs/extended-zip-bytes.md) |
 | [`ext::cbor`](ext/cbor.lani) | Allocation-free iterative CBOR wire events, full-width integers and float bits, definite/indefinite structures, strict text, caller scratch and atomic encoding | x86_64 Linux; [contracts and tests](../docs/extended-cbor.md), [checked ZIP manifest](../docs/extended-zip-manifest.md) |
+| [`ext::schema`](ext/schema.lani) | Explicit JSON Schema 2020-12 profile, exact decimal comparisons, local references, combinators and structural checks | x86_64 Linux; [profile, limits and tests](../docs/extended-schema.md) |
+| [`ext::toml`](ext/toml.lani) | Typed TOML 1.1 parsing, queries and deterministic encoding | x86_64 Linux; [official corpus and contracts](../docs/extended-toml.md) |
+| [`ext::big_uint`](ext/big_uint.lani), [`ext::big_int`](ext/big_int.lani) | Owned arbitrary precision integer arithmetic, division, radix conversion, shifts and bit operations | x86_64 Linux; [unsigned](../docs/extended-big-uint.md), [signed](../docs/extended-big-int.md) |
+| [`ext::decimal`](ext/decimal.lani) | Finite arbitrary precision decimal arithmetic, explicit rounding and lawful numeric keys | x86_64 Linux; [contracts and tests](../docs/extended-decimal.md) |
+| [`ext::statistics`](ext/statistics.lani) | Streaming moments, covariance, linear fits, compensated sums, norms and quantiles | x86_64 Linux; [numerical contracts and tests](../docs/extended-statistics.md) |
+| [`ext::linalg`](ext/linalg.lani) | Strided and owned matrices, products, pivoted LU and Householder QR least squares | x86_64 Linux; [numerical contracts and tests](../docs/extended-linalg.md) |
+| [`ext::geometry`](ext/geometry.lani) | Exact full-i32 planar predicates, segments, rings and convex hulls; finite floating vectors and affine transforms | x86_64 Linux; [contracts and reference tests](../docs/extended-geometry.md), [CSV hull program](../docs/extended-shape-hull.md) |
+| [`ext::regex`](ext/regex.lani) | Bounded ordered Pike matching, captures, greedy/lazy repetition and Unicode properties | x86_64 Linux; [supported syntax and tests](../docs/extended-regex.md) |
+| [`ext::parse`](ext/parse.lani) | Borrowed UTF-8 parsing cursors, locations, spans, checkpoints and atomic scanners | x86_64 Linux; [contracts and models](../docs/extended-parse.md) |
+| [`ext::diff`](ext/diff.lani), [`ext::patch`](ext/patch.lani) | Shortest byte-line scripts, unified encoding, strict parsing and exact staged application | x86_64 Linux; [diff](../docs/extended-diff.md), [patch](../docs/extended-patch.md) |
+| [`ext::unicode_normalize`](ext/unicode_normalize.lani) | NFC/NFD/NFKC/NFKD with Unicode 17 tables | x86_64 Linux; [official conformance tests](../docs/extended-unicode-normalize.md) |
+| [`ext::unicode_graphemes`](ext/unicode_graphemes.lani) | Unicode 17 default extended grapheme segmentation | x86_64 Linux; [official conformance tests](../docs/extended-unicode-graphemes.md) |
+| [`ext::unicode_words`](ext/unicode_words.lani) | Unicode 17 default word boundaries | x86_64 Linux; [official conformance tests](../docs/extended-unicode-words.md) |
+| [`ext::unicode_case`](ext/unicode_case.lani) | Full root, Turkic and Lithuanian casing and folding with contextual rules | x86_64 Linux; [contracts and tests](../docs/extended-unicode-case.md) |
+| [`ext::terminal`](ext/terminal.lani) | Explicit Unicode 17 scalar/grapheme display-width policy, ambiguous-width settings and control rejection | x86_64 Linux; [policy and source vectors](../docs/extended-terminal.md) |
+| [`ext::table`](ext/table.lani) | Bounded rectangular UTF-8 tables with alignment, borders and checked owned output | x86_64 Linux; [contracts and models](../docs/extended-table.md) |
+| [`ext::progress`](ext/progress.lani) | Allocation-free atomic rendering for known, unknown, zero and exceeded totals | x86_64 Linux; [contracts and tests](../docs/extended-progress.md) |
+| [`ext::http`](ext/http.lani) | HTTP/1 heads, framing, chunk extensions/trailers, exact message boundaries and checked encoding | x86_64 Linux wire processing; [profile and tests](../docs/extended-http.md). Socket client/server bindings remain unavailable. |
+| [`ext::image`](ext/image.lani) | Owned straight RGBA8 pixels, strided views, crop, rotation, flips, blit and source-over | x86_64 Linux; [pixel and ownership contracts](../docs/extended-image.md) |
+| [`ext::png`](ext/png.lani) | All standard PNG color/depth inputs, Adam7, filters and checked RGBA8 output/encoding | x86_64 Linux; [PNG profile and interoperability tests](../docs/extended-png.md) |
+| [`ext::audio`](ext/audio.lani) | Owned interleaved finite samples, checked edits, gain/mix/clip, metrics and mono conversion | x86_64 Linux; [numeric and ownership contracts](../docs/extended-audio.md) |
+| [`ext::wave`](ext/wave.lani) | PCM8/16/24/32, IEEE float and ordinary extensible WAVE decoding; checked canonical encoding | x86_64 Linux; [format and conversion contracts](../docs/extended-wave.md) |
+
+Generated Unicode table modules are implementation data rather than separate
+APIs. Their source versions and regeneration commands are recorded by the
+corresponding module guides. All execution evidence above concerns native
+x86_64 Linux programs produced by the GPU compiler; user GPU kernels and other
+targets have not been verified.
 
 The complete scope and dependency order are
 tracked in the [library roadmap](../docs/library-roadmap.md). Package publishing,

@@ -133,5 +133,30 @@ fn main() -> i32 {
         !core::runtime::runtime_bound_api_requires_runtime_binding(network)) {
         return 7;
     }
+    // Every known service produces a structurally valid row for its actual
+    // status, including the bound allocator/stdio/files/clock services.
+    // Structural validity is deliberately separate from availability.
+    let id: u32 = 0;
+    while (id <= 14) {
+        let abi: u32 = 0;
+        while (abi <= 2) {
+            let recorded: u32 = 0;
+            while (recorded <= 3) {
+                let known: bool = id >= 1 && id <= 13;
+                let valid: bool = known && abi == 1 && (recorded == 1 || recorded == 2);
+                let unbound: bool = known && abi == 1 && recorded == 1;
+                if (core::runtime::runtime_service_requirement_row_is_valid(id,abi,recorded) != valid ||
+                    core::runtime::runtime_service_requirement_row_is_fail_closed(id,abi,recorded) == valid ||
+                    core::runtime::runtime_service_requirement_row_is_known_unbound(id,abi,recorded) != unbound ||
+                    core::runtime::runtime_service_requirement_row_is_contract_only(id,abi,recorded) != unbound) { return 11; }
+                recorded += 1;
+            } abi += 1;
+        }
+        if (id >= 1 && id <= 13) {
+            let active: u32 = core::runtime::service_status(id);
+            if (!core::runtime::runtime_service_requirement_row_is_valid(id,1,active)) { return 12; }
+            if (core::runtime::has_service(id) != (active == 2)) { return 13; }
+        } id += 1;
+    }
     return 0;
 }

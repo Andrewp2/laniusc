@@ -1,0 +1,53 @@
+// Pure deterministic records. No clocks, TTY calls, cursor moves or I/O.
+module ext::progress;
+import core::option;
+import core::result;
+import core::slice;
+
+pub struct State { current: u64, total: core::option::Option<u64> }
+pub struct Options { bar_width: i32, max_output: i32, max_work: i32 }
+pub enum Error { InvalidOptions, Bounds, OutputLimit, WorkLimit, Capacity }
+pub fn options() -> Options { return Options { bar_width: 20, max_output: 4096, max_work: 16384 }; }
+fn digits(value: u64) -> i32 { let number: u64 = value; let count: i32 = 1; while (number >= 10) { number /= 10; count += 1; } return count; }
+fn number(bytes: [u8], at: i32, value: u64) -> i32 {
+    let count: i32 = digits(value); let position: i32 = at+count; let remaining: u64 = value;
+    while (position > at) { position -= 1; bytes[position] = (remaining%10) as u8+48; remaining /= 10; }
+    return at+count;
+}
+// The entire request is checked before writing. Keep destination physically
+// backed for its claimed range. A failed call leaves every byte unchanged.
+pub fn render_into(state: State, destination: core::slice::View<u8>, policy: Options) -> core::result::Result<i32,Error> {
+    if (policy.bar_width < 0 || policy.bar_width > 4096 || policy.max_output < 0 || policy.max_work < 0) { return core::result::Err(Error::InvalidOptions); }
+    if (destination.start < 0 || destination.length < 0 || destination.length > 2147483647-destination.start) { return core::result::Err(Error::Bounds); }
+    if (policy.max_work < policy.bar_width*3+128) { return core::result::Err(Error::WorkLimit); }
+    let total: u64 = core::option::unwrap_or(state.total,0);
+    let known: bool = core::option::is_some(state.total);
+    let overrun: bool = known && state.current > total;
+    let count: i32 = policy.bar_width+digits(state.current)+6;
+    if (known) { count += digits(total)-1; }
+    if (overrun) { count += 2; }
+    if (count > policy.max_output) { return core::result::Err(Error::OutputLimit); }
+    if (count > destination.len()) { return core::result::Err(Error::Capacity); }
+    let filled: i32 = 0;
+    if (known) {
+        if (total == 0 || state.current >= total) { filled = policy.bar_width; }
+        else {
+            // floor(current*bar_width/total) without overflowing u64, even at
+            // u64::MAX: each step adds current modulo total by subtraction.
+            let remainder: u64 = 0; let step: i32 = 0;
+            while (step < policy.bar_width) {
+                if (remainder >= total-state.current) { remainder -= total-state.current; filled += 1; }
+                else { remainder += state.current; } step += 1;
+            }
+        }
+    }
+    let bytes: [u8] = destination.values; let position: i32 = destination.start;
+    bytes[position] = 91; position += 1; let index: i32 = 0;
+    while (index < policy.bar_width) { let value: u8 = 63; if (known) { value = 45; if (index < filled) { value = 35; } } bytes[position] = value; position += 1; index += 1; }
+    bytes[position] = 93; bytes[position+1] = 32; position += 2;
+    position = number(bytes,position,state.current); bytes[position] = 47; position += 1;
+    if (known) { position = number(bytes,position,total); } else { bytes[position] = 63; position += 1; }
+    if (overrun) { bytes[position] = 32; bytes[position+1] = 33; position += 2; }
+    bytes[position] = 10; position += 1; assert(position-destination.start == count);
+    return core::result::Ok(count);
+}

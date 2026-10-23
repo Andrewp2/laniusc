@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Compile a source-defined suite, then run its native executable.
+set -u
+
+usage() {
+    printf '%s\n' 'Usage: tools/lanius-test SOURCE.lani [--] [--filter BYTES] [--seed U32] [--cases N] [--list]' >&2
+}
+if [[ $# -eq 0 ]]; then usage; exit 2; fi
+if [[ $1 == --help || $1 == -h ]]; then usage; exit 0; fi
+source_file=$1
+shift
+if [[ ${1-} == -- ]]; then shift; fi
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P) || exit 2
+repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd -P) || exit 2
+compiler=${LANIUSC:-$repo_root/target/debug/laniusc}
+stdlib_root=${LANIUS_STDLIB_ROOT:-$repo_root/stdlib}
+source_root=${LANIUS_SOURCE_ROOT:-$repo_root/extended}
+compile_seconds=${LANIUS_TEST_COMPILE_SECONDS:-80}
+run_seconds=${LANIUS_TEST_RUN_SECONDS:-30}
+for seconds in "$compile_seconds" "$run_seconds"; do
+    if [[ ! $seconds =~ ^([1-9]|[1-9][0-9]|100)$ ]]; then
+        printf '%s\n' 'lanius-test: phase limits must be integer seconds in 1..100' >&2
+        exit 2
+    fi
+done
+if (( compile_seconds + run_seconds > 110 )); then
+    printf '%s\n' 'lanius-test: combined compile and run limits must be at most 110 seconds' >&2
+    exit 2
+fi
+if [[ ! -f $source_file ]]; then printf 'lanius-test: source not found: %s\n' "$source_file" >&2; exit 2; fi
+source_dir=$(CDPATH= cd -- "$(dirname -- "$source_file")" && pwd -P) || exit 2
+source_file=$source_dir/$(basename -- "$source_file")
+if ! command -v -- "$compiler" >/dev/null 2>&1; then
+    printf 'lanius-test: compiler not found: %s (set LANIUSC)\n' "$compiler" >&2
+    exit 2
+fi
+if ! command -v timeout >/dev/null 2>&1; then printf '%s\n' 'lanius-test: GNU timeout is required' >&2; exit 2; fi
+build_dir=$(mktemp -d "${TMPDIR:-/tmp}/lanius-test.XXXXXXXXXX") || exit 2
+trap 'rm -rf -- "$build_dir"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+timeout --kill-after=2s "$compile_seconds" "$compiler" --emit x86_64 --stdlib-root "$stdlib_root" --source-root "$source_root" "$source_file" -o "$build_dir/suite" >&2
+compile_status=$?
+if [[ $compile_status -ne 0 ]]; then
+    if [[ $compile_status -eq 124 || $compile_status -eq 137 ]]; then exit "$compile_status"; fi
+    printf 'lanius-test: compilation failed (compiler status %s)\n' "$compile_status" >&2
+    exit 4
+fi
+timeout --kill-after=2s "$run_seconds" "$build_dir/suite" "$@"
+exit $?

@@ -1,46 +1,29 @@
-// Read one bounded UTF-8 line into caller storage, copy it into owned text,
+// Read a bounded UTF-8 line into caller storage, copy to packed owned text,
 // append a smiley, and print the text and Unicode scalar count.
 module app::main;
-import core::mem;
+import alloc::string;
+import core::result;
 import core::utf8;
 import std::io_byte;
 import std::io_decimal;
 import std::io_line;
 import std::io_utf8;
-import std::utf8_vec;
-import std::vec_u8;
 
 fn main() -> i32 {
-    let backing: [i32; 12] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    let line: [i32] = core::mem::i32_slice_from_raw_parts(
-        core::mem::i32_array_data_ptr(backing), 12);
+    let line: [i32; 12] = [0; 12];
     let length: i32 = std::io_line::read_stdin_lf_line_into_i32(line, 12);
     if (length < 0) { return 2; }
     if (!core::utf8::codes_are_valid(line, length)) { return 3; }
-
-    let text: std::vec_u8::VecU8 = std::utf8_vec::new();
-    text = std::utf8_vec::try_append_codes(text, line, length);
-    if (std::utf8_vec::byte_len(text) != length) {
-        std::utf8_vec::destroy(text);
-        return 4;
-    }
-    text = std::utf8_vec::try_append_scalar(text, 128578);
-    if (std::utf8_vec::byte_len(text) != length + 4) {
-        std::utf8_vec::destroy(text);
-        return 5;
-    }
-    let count: i32 = std::utf8_vec::scalar_count_or(text, -1);
-    if (count < 0) {
-        std::utf8_vec::destroy(text);
-        return 6;
-    }
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(
-        std::vec_u8::data_ptr(text), std::utf8_vec::byte_len(text));
-    if (!std::io_utf8::write_stdout_codes(cells, std::utf8_vec::byte_len(text))) {
-        std::utf8_vec::destroy(text);
-        return 7;
-    }
-    std::utf8_vec::destroy(text);
+    let bytes: [u8; 12] = [0; 12];
+    let index: i32 = 0;
+    while (index < length) { bytes[index] = line[index] as u8; index += 1; }
+    let copied: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_utf8(bytes, length);
+    if (core::result::is_err(copied)) { return 4; }
+    let text: alloc::string::String = core::result::unwrap(copied);
+    if (core::result::is_err(text.try_push_scalar(128578))) { text.destroy(); return 5; }
+    let count: i32 = text.scalar_count();
+    if (!std::io_utf8::write_stdout_bytes(text.as_bytes(), text.byte_len())) { text.destroy(); return 7; }
+    text.destroy();
     if (!std::io_byte::write_stdout_byte(32)) { return 8; }
     if (std::io_decimal::write_i32(1, count) <= 0) { return 9; }
     if (!std::io_byte::write_stdout_byte(10)) { return 10; }

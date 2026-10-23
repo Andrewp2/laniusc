@@ -1,0 +1,21 @@
+module app::main;
+import core::f64;
+import core::result;
+import core::slice;
+import ext::audio;
+import ext::wave;
+fn main()->i32{
+ let bytes:[u8;4]=[0;4];let limits:ext::wave::Limits=ext::wave::default_limits();
+ let corrupt:core::slice::View<u8> = core::slice::view(bytes,4).unwrap();corrupt.start=-1;corrupt.length=1;
+ let first:ext::wave::Error=ext::wave::inspect(corrupt,limits).unwrap_err();assert(match(first){ext::wave::Error::InvalidView->true,_ ->false});
+ corrupt.start=2147483647;let second:ext::wave::Error=ext::wave::inspect(corrupt,limits).unwrap_err();assert(match(second){ext::wave::Error::InvalidView->true,_ ->false});
+ limits.max_samples=-1;assert(ext::wave::inspect(core::slice::view(bytes,4).unwrap(),limits).is_err());limits=ext::wave::default_limits();
+ let samples:[f64;2]=[0.0;2];samples[0]=core::f64::MAX;samples[1]=-core::f64::MAX;
+ let v:ext::audio::View=ext::audio::view(core::slice::view(samples,2).unwrap(),1,48000).unwrap();
+ assert(ext::wave::encode(v,ext::wave::Format::Float32,limits).is_err());
+ let finite=ext::wave::encode(v,ext::wave::Format::Float64,limits).unwrap();let b=ext::wave::decode(finite.as_view(),limits).unwrap();assert(b.samples.at(0)==core::f64::MAX);assert(b.samples.at(1)==-core::f64::MAX);b.destroy();finite.destroy();
+ samples[1]=core::f64::nan();assert(ext::wave::encode(v,ext::wave::Format::Pcm16,limits).is_err());samples[1]=core::f64::infinity();assert(ext::wave::encode(v,ext::wave::Format::Float64,limits).is_err());samples[1]=0.0;
+ let invalid:ext::audio::View=v;invalid.channels=65535;assert(ext::wave::encode(invalid,ext::wave::Format::Float64,limits).is_err());
+ let badrate:ext::audio::View=v;badrate.sample_rate=4294967295;assert(ext::wave::encode(badrate,ext::wave::Format::Pcm16,limits).is_err());
+ limits.max_bytes=1;assert(ext::wave::encode(v,ext::wave::Format::Pcm16,limits).is_err());return 0;
+}

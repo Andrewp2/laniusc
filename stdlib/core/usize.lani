@@ -1,0 +1,133 @@
+// Pointer-width usize arithmetic for the verified x86_64 Linux target only.
+// This target has 64-bit pointers and native integer values. Each typed boundary
+// preserves the canonical core::u64 operation and checked failure behavior.
+// These are numeric values, not allocation lengths or pointer validity checks.
+module core::usize;
+import core::u64;
+import core::option;
+pub const MIN: usize = 0;
+pub const MAX: usize = 18446744073709551615;
+pub const BITS: u32 = 64;
+pub const BYTES: u32 = 8;
+pub fn min(left: usize, right: usize) -> usize { return core::u64::min(left as u64,right as u64) as usize; }
+pub fn max(left: usize, right: usize) -> usize { return core::u64::max(left as u64,right as u64) as usize; }
+pub fn checked_clamp(value: usize, low: usize, high: usize) -> core::option::Option<usize> { let result: core::option::Option<u64> = core::u64::checked_clamp(value as u64,low as u64,high as u64); if (core::option::is_none(result)) { return core::option::None(); } return core::option::Some(core::option::unwrap(result) as usize); }
+pub fn clamp(value: usize, low: usize, high: usize) -> usize { return core::u64::clamp(value as u64,low as u64,high as u64) as usize; }
+pub fn clamp_or(value: usize, low: usize, high: usize, fallback: usize) -> usize { return core::u64::clamp_or(value as u64,low as u64,high as u64,fallback as u64) as usize; }
+pub fn is_zero(value: usize) -> bool { return core::u64::is_zero(value as u64); }
+pub fn is_nonzero(value: usize) -> bool { return core::u64::is_nonzero(value as u64); }
+pub fn is_even(value: usize) -> bool { return core::u64::is_even(value as u64); }
+pub fn is_odd(value: usize) -> bool { return core::u64::is_odd(value as u64); }
+pub fn between_inclusive(value: usize, low: usize, high: usize) -> bool { return core::u64::between_inclusive(value as u64,low as u64,high as u64); }
+pub fn between_exclusive(value: usize, low: usize, high: usize) -> bool { return core::u64::between_exclusive(value as u64,low as u64,high as u64); }
+pub fn is_multiple_of(value: usize, divisor: usize) -> bool { return core::u64::is_multiple_of(value as u64,divisor as u64); }
+pub fn wrapping_add(left: usize, right: usize) -> usize { return core::u64::wrapping_add(left as u64,right as u64) as usize; }
+pub fn wrapping_sub(left: usize, right: usize) -> usize { return core::u64::wrapping_sub(left as u64,right as u64) as usize; }
+pub fn wrapping_mul(left: usize, right: usize) -> usize { return core::u64::wrapping_mul(left as u64,right as u64) as usize; }
+pub fn checked_add(left: usize, right: usize) -> core::option::Option<usize> { let result: core::option::Option<u64> = core::u64::checked_add(left as u64,right as u64); if (core::option::is_none(result)) { return core::option::None(); } return core::option::Some(core::option::unwrap(result) as usize); }
+pub fn saturating_add(left: usize, right: usize) -> usize { return core::u64::saturating_add(left as u64,right as u64) as usize; }
+pub fn checked_sub(left: usize, right: usize) -> core::option::Option<usize> { let result: core::option::Option<u64> = core::u64::checked_sub(left as u64,right as u64); if (core::option::is_none(result)) { return core::option::None(); } return core::option::Some(core::option::unwrap(result) as usize); }
+pub fn saturating_sub(left: usize, right: usize) -> usize { return core::u64::saturating_sub(left as u64,right as u64) as usize; }
+pub fn checked_mul(left: usize, right: usize) -> core::option::Option<usize> { let result: core::option::Option<u64> = core::u64::checked_mul(left as u64,right as u64); if (core::option::is_none(result)) { return core::option::None(); } return core::option::Some(core::option::unwrap(result) as usize); }
+pub fn saturating_mul(left: usize, right: usize) -> usize { return core::u64::saturating_mul(left as u64,right as u64) as usize; }
+pub fn checked_neg(value: usize) -> core::option::Option<usize> { let result: core::option::Option<u64> = core::u64::checked_neg(value as u64); if (core::option::is_none(result)) { return core::option::None(); } return core::option::Some(core::option::unwrap(result) as usize); }
+pub fn wrapping_neg(value: usize) -> usize { return core::u64::wrapping_neg(value as u64) as usize; }
+pub fn abs_diff(left: usize, right: usize) -> usize { return core::u64::abs_diff(left as u64,right as u64) as usize; }
+pub fn checked_div(left: usize, right: usize) -> core::option::Option<usize> { let result: core::option::Option<u64> = core::u64::checked_div(left as u64,right as u64); if (core::option::is_none(result)) { return core::option::None(); } return core::option::Some(core::option::unwrap(result) as usize); }
+pub fn div(left: usize, right: usize) -> usize { return core::u64::div(left as u64,right as u64) as usize; }
+pub fn wrapping_div(left: usize, right: usize) -> usize { return core::u64::wrapping_div(left as u64,right as u64) as usize; }
+pub fn checked_rem(left: usize, right: usize) -> core::option::Option<usize> { let result: core::option::Option<u64> = core::u64::checked_rem(left as u64,right as u64); if (core::option::is_none(result)) { return core::option::None(); } return core::option::Some(core::option::unwrap(result) as usize); }
+pub fn rem(left: usize, right: usize) -> usize { return core::u64::rem(left as u64,right as u64) as usize; }
+pub fn wrapping_rem(left: usize, right: usize) -> usize { return core::u64::wrapping_rem(left as u64,right as u64) as usize; }
+pub fn saturating_div(left: usize, right: usize) -> usize { return core::u64::saturating_div(left as u64,right as u64) as usize; }
+pub fn div_euclid(left: usize, right: usize) -> usize { return core::u64::div_euclid(left as u64,right as u64) as usize; }
+pub fn checked_div_euclid(left: usize, right: usize) -> core::option::Option<usize> { let result: core::option::Option<u64> = core::u64::checked_div_euclid(left as u64,right as u64); if (core::option::is_none(result)) { return core::option::None(); } return core::option::Some(core::option::unwrap(result) as usize); }
+pub fn rem_euclid(left: usize, right: usize) -> usize { return core::u64::rem_euclid(left as u64,right as u64) as usize; }
+pub fn checked_rem_euclid(left: usize, right: usize) -> core::option::Option<usize> { let result: core::option::Option<u64> = core::u64::checked_rem_euclid(left as u64,right as u64); if (core::option::is_none(result)) { return core::option::None(); } return core::option::Some(core::option::unwrap(result) as usize); }
+pub fn checked_shl(value: usize, amount: u32) -> core::option::Option<usize> { let result: core::option::Option<u64> = core::u64::checked_shl(value as u64,amount); if (core::option::is_none(result)) { return core::option::None(); } return core::option::Some(core::option::unwrap(result) as usize); }
+pub fn wrapping_shl(value: usize, amount: u32) -> usize { return core::u64::wrapping_shl(value as u64,amount) as usize; }
+pub fn shl(value: usize, amount: u32) -> usize { return core::u64::shl(value as u64,amount) as usize; }
+pub fn checked_shr(value: usize, amount: u32) -> core::option::Option<usize> { let result: core::option::Option<u64> = core::u64::checked_shr(value as u64,amount); if (core::option::is_none(result)) { return core::option::None(); } return core::option::Some(core::option::unwrap(result) as usize); }
+pub fn wrapping_shr(value: usize, amount: u32) -> usize { return core::u64::wrapping_shr(value as u64,amount) as usize; }
+pub fn shr(value: usize, amount: u32) -> usize { return core::u64::shr(value as u64,amount) as usize; }
+pub fn checked_pow(base: usize, exponent: u32) -> core::option::Option<usize> { let result: core::option::Option<u64> = core::u64::checked_pow(base as u64,exponent); if (core::option::is_none(result)) { return core::option::None(); } return core::option::Some(core::option::unwrap(result) as usize); }
+pub fn wrapping_pow(base: usize, exponent: u32) -> usize { return core::u64::wrapping_pow(base as u64,exponent) as usize; }
+pub fn saturating_pow(base: usize, exponent: u32) -> usize { return core::u64::saturating_pow(base as u64,exponent) as usize; }
+pub fn count_ones(value: usize) -> u32 { return core::u64::count_ones(value as u64); }
+pub fn count_zeros(value: usize) -> u32 { return core::u64::count_zeros(value as u64); }
+pub fn leading_zeros(value: usize) -> u32 { return core::u64::leading_zeros(value as u64); }
+pub fn trailing_zeros(value: usize) -> u32 { return core::u64::trailing_zeros(value as u64); }
+pub fn leading_ones(value: usize) -> u32 { return core::u64::leading_ones(value as u64); }
+pub fn trailing_ones(value: usize) -> u32 { return core::u64::trailing_ones(value as u64); }
+pub fn rotate_left(value: usize, amount: u32) -> usize { return core::u64::rotate_left(value as u64,amount) as usize; }
+pub fn rotate_right(value: usize, amount: u32) -> usize { return core::u64::rotate_right(value as u64,amount) as usize; }
+pub fn reverse_bits(value: usize) -> usize { return core::u64::reverse_bits(value as u64) as usize; }
+pub fn swap_bytes(value: usize) -> usize { return core::u64::swap_bytes(value as u64) as usize; }
+pub fn is_power_of_two(value: usize) -> bool { return core::u64::is_power_of_two(value as u64); }
+pub fn checked_next_power_of_two(value: usize) -> core::option::Option<usize> { let result: core::option::Option<u64> = core::u64::checked_next_power_of_two(value as u64); if (core::option::is_none(result)) { return core::option::None(); } return core::option::Some(core::option::unwrap(result) as usize); }
+pub fn next_power_of_two(value: usize) -> usize { return core::u64::next_power_of_two(value as u64) as usize; }
+
+// Integer conversions: checked means numeric range, wrapping keeps low bits.
+pub fn from_u8(value: u8) -> usize { return value as usize; }
+pub fn from_u16(value: u16) -> usize { return value as usize; }
+pub fn from_u32(value: u32) -> usize { return value as usize; }
+pub fn checked_from_i8(value: i8) -> core::option::Option<usize> { if (value < 0) { return core::option::None(); } return core::option::Some(value as usize); }
+pub fn saturating_from_i8(value: i8) -> usize { if (value < 0) { return MIN; } return value as usize; }
+pub fn wrapping_from_i8(value: i8) -> usize { return value as usize; }
+pub fn checked_from_u8(value: u8) -> core::option::Option<usize> { return core::option::Some(value as usize); }
+pub fn saturating_from_u8(value: u8) -> usize { return value as usize; }
+pub fn wrapping_from_u8(value: u8) -> usize { return value as usize; }
+pub fn checked_from_i16(value: i16) -> core::option::Option<usize> { if (value < 0) { return core::option::None(); } return core::option::Some(value as usize); }
+pub fn saturating_from_i16(value: i16) -> usize { if (value < 0) { return MIN; } return value as usize; }
+pub fn wrapping_from_i16(value: i16) -> usize { return value as usize; }
+pub fn checked_from_u16(value: u16) -> core::option::Option<usize> { return core::option::Some(value as usize); }
+pub fn saturating_from_u16(value: u16) -> usize { return value as usize; }
+pub fn wrapping_from_u16(value: u16) -> usize { return value as usize; }
+pub fn checked_from_i32(value: i32) -> core::option::Option<usize> { if (value < 0) { return core::option::None(); } return core::option::Some(value as usize); }
+pub fn saturating_from_i32(value: i32) -> usize { if (value < 0) { return MIN; } return value as usize; }
+pub fn wrapping_from_i32(value: i32) -> usize { return value as usize; }
+pub fn checked_from_u32(value: u32) -> core::option::Option<usize> { return core::option::Some(value as usize); }
+pub fn saturating_from_u32(value: u32) -> usize { return value as usize; }
+pub fn wrapping_from_u32(value: u32) -> usize { return value as usize; }
+pub fn checked_from_i64(value: i64) -> core::option::Option<usize> { if (value < 0) { return core::option::None(); } return core::option::Some(value as usize); }
+pub fn saturating_from_i64(value: i64) -> usize { if (value < 0) { return MIN; } return value as usize; }
+pub fn wrapping_from_i64(value: i64) -> usize { return value as usize; }
+pub fn checked_from_u64(value: u64) -> core::option::Option<usize> { return core::option::Some(value as usize); }
+pub fn saturating_from_u64(value: u64) -> usize { return value as usize; }
+pub fn wrapping_from_u64(value: u64) -> usize { return value as usize; }
+pub fn checked_from_isize(value: isize) -> core::option::Option<usize> { if (value < 0) { return core::option::None(); } return core::option::Some(value as usize); }
+pub fn saturating_from_isize(value: isize) -> usize { if (value < 0) { return MIN; } return value as usize; }
+pub fn wrapping_from_isize(value: isize) -> usize { return value as usize; }
+pub fn checked_from_usize(value: usize) -> core::option::Option<usize> { return core::option::Some(value as usize); }
+pub fn saturating_from_usize(value: usize) -> usize { return value as usize; }
+pub fn wrapping_from_usize(value: usize) -> usize { return value as usize; }
+pub fn checked_to_i8(value: usize) -> core::option::Option<i8> { if (value > 127) { return core::option::None(); } return core::option::Some(value as i8); }
+pub fn saturating_to_i8(value: usize) -> i8 { if (value > 127) { return 127; } return value as i8; }
+pub fn wrapping_to_i8(value: usize) -> i8 { return value as i8; }
+pub fn checked_to_u8(value: usize) -> core::option::Option<u8> { if (value > 255) { return core::option::None(); } return core::option::Some(value as u8); }
+pub fn saturating_to_u8(value: usize) -> u8 { if (value > 255) { return 255; } return value as u8; }
+pub fn wrapping_to_u8(value: usize) -> u8 { return value as u8; }
+pub fn checked_to_i16(value: usize) -> core::option::Option<i16> { if (value > 32767) { return core::option::None(); } return core::option::Some(value as i16); }
+pub fn saturating_to_i16(value: usize) -> i16 { if (value > 32767) { return 32767; } return value as i16; }
+pub fn wrapping_to_i16(value: usize) -> i16 { return value as i16; }
+pub fn checked_to_u16(value: usize) -> core::option::Option<u16> { if (value > 65535) { return core::option::None(); } return core::option::Some(value as u16); }
+pub fn saturating_to_u16(value: usize) -> u16 { if (value > 65535) { return 65535; } return value as u16; }
+pub fn wrapping_to_u16(value: usize) -> u16 { return value as u16; }
+pub fn checked_to_i32(value: usize) -> core::option::Option<i32> { if (value > 2147483647) { return core::option::None(); } return core::option::Some(value as i32); }
+pub fn saturating_to_i32(value: usize) -> i32 { if (value > 2147483647) { return 2147483647; } return value as i32; }
+pub fn wrapping_to_i32(value: usize) -> i32 { return value as i32; }
+pub fn checked_to_u32(value: usize) -> core::option::Option<u32> { if (value > 4294967295) { return core::option::None(); } return core::option::Some(value as u32); }
+pub fn saturating_to_u32(value: usize) -> u32 { if (value > 4294967295) { return 4294967295; } return value as u32; }
+pub fn wrapping_to_u32(value: usize) -> u32 { return value as u32; }
+pub fn checked_to_i64(value: usize) -> core::option::Option<i64> { if (value > 9223372036854775807) { return core::option::None(); } return core::option::Some(value as i64); }
+pub fn saturating_to_i64(value: usize) -> i64 { if (value > 9223372036854775807) { return 9223372036854775807; } return value as i64; }
+pub fn wrapping_to_i64(value: usize) -> i64 { return value as i64; }
+pub fn checked_to_u64(value: usize) -> core::option::Option<u64> { return core::option::Some(value as u64); }
+pub fn saturating_to_u64(value: usize) -> u64 { return value as u64; }
+pub fn wrapping_to_u64(value: usize) -> u64 { return value as u64; }
+pub fn checked_to_isize(value: usize) -> core::option::Option<isize> { if (value > 9223372036854775807) { return core::option::None(); } return core::option::Some(value as isize); }
+pub fn saturating_to_isize(value: usize) -> isize { if (value > 9223372036854775807) { return 9223372036854775807; } return value as isize; }
+pub fn wrapping_to_isize(value: usize) -> isize { return value as isize; }
+pub fn checked_to_usize(value: usize) -> core::option::Option<usize> { return core::option::Some(value as usize); }
+pub fn saturating_to_usize(value: usize) -> usize { return value as usize; }
+pub fn wrapping_to_usize(value: usize) -> usize { return value as usize; }

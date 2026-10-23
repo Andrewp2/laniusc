@@ -1,0 +1,19 @@
+// Compiler boundary probe: suite callback reaching an imported Vec method.
+module app::main;
+import alloc::vec;
+import core::result;
+import test::check;
+import test::suite;
+pub struct Tests {}
+impl Tests { fn borrow(&self) -> &Tests { return self; } }
+fn vector() -> test::check::Outcome {
+    let values: alloc::vec::Vec<u32> = alloc::vec::new();
+    let ok: bool = core::result::is_ok(values.try_push(7)); values.destroy();
+    return test::check::truth(ok,test::check::literal("Vec push",8));
+}
+pub impl test::suite::Cases for Tests {
+    pub fn count(&self) -> i32 { return 1; }
+    pub fn name(&self, index: i32) -> test::check::Label { return test::check::literal("Vec",3); }
+    pub fn run(&self, index: i32, seed: u32, cases: u32) -> test::check::Outcome { return vector(); }
+}
+fn main() -> i32 { let tests: Tests = Tests {}; return test::suite::run_args(tests.borrow()); }

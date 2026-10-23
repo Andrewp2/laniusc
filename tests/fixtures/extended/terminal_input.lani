@@ -1,0 +1,34 @@
+// Binary batch: u32LE length + bytes; four widths: grapheme/scalar x narrow/wide.
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+import core::text;
+import ext::terminal;
+import std::io;
+import std::io_decimal;
+import std::stream;
+fn result(text: core::text::Text, policy: ext::terminal::Options) -> i32 {
+ let measured: core::result::Result<i32,ext::terminal::Error> = ext::terminal::width(text,policy);
+ if (core::result::is_ok(measured)) { return core::result::unwrap(measured); }
+ return match (core::result::unwrap_err(measured)) { ext::terminal::Error::Control(at) -> -1000000-at, ext::terminal::Error::InvalidUtf8(at) -> -2000000-at, _ -> -3000000 };
+}
+fn main() -> i32 {
+ let reader: std::stream::Descriptor = std::stream::stdin(); let words: [i32;32770] = [0;32770];
+ let storage: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),131080);
+ while (true) {
+  let received: i32 = core::result::unwrap(reader.read(storage,0,1)); if (received == 0) { return 0; }
+  core::result::unwrap(core::io::read_exact(reader.borrow(),storage,1,3));
+  let length: u32 = (storage[0] as u32)|((storage[1] as u32)<<8)|((storage[2] as u32)<<16)|((storage[3] as u32)<<24); if (length > 131072) { return 1; }
+  core::result::unwrap(core::io::read_exact(reader.borrow(),storage,3,length as i32));
+  storage[0] = 255; storage[1] = 255; storage[2] = 255; storage[3+length as i32] = 255;
+  let text: core::text::Text = core::text::Text { bytes: storage,start: 3,length: length as i32 };
+  let policy: ext::terminal::Options = ext::terminal::options(); let mode: i32 = 0;
+  while (mode < 4) {
+   policy.ambiguous_wide = mode%2 == 1; if (mode >= 2) { policy.mode = ext::terminal::Mode::Scalars; }
+   std::io_decimal::write_i32(1,result(text,policy)); std::io::write_byte(1,44); mode += 1;
+  }
+  std::io::write_byte(1,10);
+ }
+ return 0;
+}

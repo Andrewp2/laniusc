@@ -1,0 +1,33 @@
+// Count distinct bytes and print a saturating weighted histogram sum.
+module app::main;
+import alloc::hash_map;
+import core::number_i32;
+import core::option;
+import core::result;
+import std::io_byte;
+import std::io_decimal;
+
+fn main() -> i32 {
+    let counts: alloc::hash_map::HashMap<i32, i32> = alloc::hash_map::new();
+    while (true) {
+        let code: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
+        if (code == -1) { break; }
+        if (code == -2) { counts.destroy(); return 2; }
+        let previous: i32 = core::option::unwrap_or(counts.get(code), 0);
+        let next: i32 = core::number_i32::saturating_add(previous, 1);
+        if (core::result::is_err(counts.try_insert(code, next))) { counts.destroy(); return 3; }
+    }
+    let weighted: i32 = 0;
+    let iterator: alloc::hash_map::Iter<i32, i32> = counts.iter();
+    while (true) {
+        let next: core::option::Option<alloc::hash_map::Entry<i32, i32>> = iterator.next();
+        if (core::option::is_none(next)) { break; }
+        let item: alloc::hash_map::Entry<i32, i32> = core::option::unwrap(next);
+        weighted = core::number_i32::saturating_add(weighted, core::number_i32::saturating_mul(item.key, item.value));
+    }
+    let distinct: i32 = counts.len();
+    counts.destroy();
+    if (std::io_decimal::write_i32(1, distinct) < 0 || !std::io_byte::write_stdout_byte(32) ||
+        std::io_decimal::write_i32(1, weighted) < 0 || !std::io_byte::write_stdout_byte(10)) { return 5; }
+    return 0;
+}

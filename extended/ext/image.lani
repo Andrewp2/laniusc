@@ -1,0 +1,136 @@
+// Packed straight-alpha RGBA8 images. Copies alias ownership; destroy one owner.
+module ext::image;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::slice;
+
+pub struct Rgba { r: u8, g: u8, b: u8, a: u8 }
+pub struct Image { w: i32, h: i32, storage: alloc::vec::Vec<u8> }
+pub struct View { bytes: core::slice::View<u8>, width: i32, height: i32, stride: i32 }
+pub enum Error { Dimensions, SizeOverflow, Bounds, AllocationFailed }
+
+pub fn byte_len(width: i32, height: i32) -> core::result::Result<i32,Error> {
+    if (width <= 0 || height <= 0) { return core::result::Err(Error::Dimensions); }
+    if (width > 536870911 || height > 536870911 / width) { return core::result::Err(Error::SizeOverflow); }
+    return core::result::Ok(width * height * 4);
+}
+pub fn valid(view: View) -> bool {
+    let n: core::result::Result<i32,Error> = byte_len(view.width,view.height);
+    if (core::result::is_err(n)) { return false; }
+    if (view.bytes.start < 0 || view.bytes.length < 0 || view.bytes.start > 2147483647-view.bytes.length) { return false; }
+    let row: i32 = view.width*4;
+    if (view.stride < row || view.bytes.length < row) { return false; }
+    return view.height-1 <= (view.bytes.length-row)/view.stride;
+}
+pub fn view(bytes: core::slice::View<u8>, width: i32, height: i32, stride: i32) -> core::result::Result<View,Error> {
+    let result: View = View { bytes: bytes, width: width, height: height, stride: stride };
+    if (!valid(result)) { return core::result::Err(Error::Bounds); }
+    return core::result::Ok(result);
+}
+fn offset(source: View, x: i32, y: i32) -> i32 { return source.bytes.start+y*source.stride+x*4; }
+fn read(source: View, x: i32, y: i32) -> Rgba {
+    let i: i32 = offset(source,x,y);
+    return Rgba { r: source.bytes.values[i], g: source.bytes.values[i+1], b: source.bytes.values[i+2], a: source.bytes.values[i+3] };
+}
+fn write(target: View, x: i32, y: i32, pixel: Rgba) {
+    let i: i32 = offset(target,x,y);
+    target.bytes.values[i] = pixel.r; target.bytes.values[i+1] = pixel.g;
+    target.bytes.values[i+2] = pixel.b; target.bytes.values[i+3] = pixel.a;
+}
+pub fn get(source: View, x: i32, y: i32) -> core::option::Option<Rgba> {
+    if (!valid(source) || x < 0 || y < 0 || x >= source.width || y >= source.height) { return core::option::None(); }
+    return core::option::Some(read(source,x,y));
+}
+pub fn set(target: View, x: i32, y: i32, pixel: Rgba) -> bool {
+    if (!valid(target) || x < 0 || y < 0 || x >= target.width || y >= target.height) { return false; }
+    write(target,x,y,pixel); return true;
+}
+pub fn fill(target: View, pixel: Rgba) -> core::result::Result<i32,Error> {
+    if (!valid(target)) { return core::result::Err(Error::Bounds); }
+    let y: i32 = 0; while (y < target.height) { let x: i32 = 0; while (x < target.width) { write(target,x,y,pixel); x += 1; } y += 1; }
+    return core::result::Ok(target.width*target.height);
+}
+pub fn new(width: i32, height: i32, pixel: Rgba) -> core::result::Result<Image,Error> {
+    let size: core::result::Result<i32,Error> = byte_len(width,height);
+    if (core::result::is_err(size)) { return core::result::Err(core::result::unwrap_err(size)); }
+    let storage: alloc::vec::Vec<u8> = alloc::vec::new();
+    let resized: core::result::Result<i32,alloc::vec::Error> = storage.try_resize(core::result::unwrap(size),0);
+    if (core::result::is_err(resized)) { storage.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let result: Image = Image { w: width, h: height, storage: storage };
+    fill(result.view(),pixel); return core::result::Ok(result);
+}
+pub fn from_rgba(width: i32, height: i32, bytes: core::slice::View<u8>) -> core::result::Result<Image,Error> {
+    let size: core::result::Result<i32,Error> = byte_len(width,height);
+    if (core::result::is_err(size)) { return core::result::Err(core::result::unwrap_err(size)); }
+    if (bytes.length != core::result::unwrap(size)) { return core::result::Err(Error::Bounds); }
+    let source: core::result::Result<View,Error> = view(bytes,width,height,width*4);
+    if (core::result::is_err(source)) { return core::result::Err(Error::Bounds); }
+    return crop(core::result::unwrap(source),0,0,width,height);
+}
+pub impl Image {
+    pub fn borrow(&self) -> &Image { return self; }
+    pub fn width(&self) -> i32 { return self.w; }
+    pub fn height(&self) -> i32 { return self.h; }
+    pub fn rgba(&self) -> core::slice::View<u8> { return self.storage.as_view(); }
+    pub fn view(&self) -> View { return View { bytes: self.storage.as_view(), width: self.w, height: self.h, stride: self.w*4 }; }
+    pub fn try_clone(&self) -> core::result::Result<Image,Error> { return crop(self.view(),0,0,self.w,self.h); }
+    pub fn destroy(&self) { self.storage.destroy(); self.w = 0; self.h = 0; }
+}
+fn region(source: View, x: i32, y: i32, width: i32, height: i32) -> bool {
+    return valid(source) && x >= 0 && y >= 0 && width > 0 && height > 0 && x <= source.width && y <= source.height && width <= source.width-x && height <= source.height-y;
+}
+pub fn subview(source: View, x: i32, y: i32, width: i32, height: i32) -> core::result::Result<View,Error> {
+    if (!region(source,x,y,width,height)) { return core::result::Err(Error::Bounds); }
+    let start: i32 = y*source.stride+x*4; let count: i32 = (height-1)*source.stride+width*4;
+    let selected: core::slice::View<u8> = core::result::unwrap(source.bytes.subview(start,start+count));
+    return core::result::Ok(View { bytes: selected, width: width, height: height, stride: source.stride });
+}
+pub fn crop(source: View, x: i32, y: i32, width: i32, height: i32) -> core::result::Result<Image,Error> {
+    if (!region(source,x,y,width,height)) { return core::result::Err(Error::Bounds); }
+    let made: core::result::Result<Image,Error> = new(width,height,Rgba { r: 0, g: 0, b: 0, a: 0 });
+    if (core::result::is_err(made)) { return made; }
+    let result: Image = core::result::unwrap(made); let target: View = result.view();
+    let row: i32 = 0; while (row < height) { let col: i32 = 0; while (col < width) { write(target,col,row,read(source,x+col,y+row)); col += 1; } row += 1; }
+    return core::result::Ok(result);
+}
+pub fn flip_horizontal(target: View) -> core::result::Result<i32,Error> {
+    if (!valid(target)) { return core::result::Err(Error::Bounds); }
+    let y: i32 = 0; while (y < target.height) { let x: i32 = 0; while (x < target.width/2) {
+        let held: Rgba = read(target,x,y); write(target,x,y,read(target,target.width-1-x,y)); write(target,target.width-1-x,y,held); x += 1;
+    } y += 1; } return core::result::Ok(target.width*target.height);
+}
+pub fn flip_vertical(target: View) -> core::result::Result<i32,Error> {
+    if (!valid(target)) { return core::result::Err(Error::Bounds); }
+    let y: i32 = 0; while (y < target.height/2) { let x: i32 = 0; while (x < target.width) {
+        let held: Rgba = read(target,x,y); write(target,x,y,read(target,x,target.height-1-y)); write(target,x,target.height-1-y,held); x += 1;
+    } y += 1; } return core::result::Ok(target.width*target.height);
+}
+pub fn rotate90(source: View) -> core::result::Result<Image,Error> {
+    if (!valid(source)) { return core::result::Err(Error::Bounds); }
+    let made: core::result::Result<Image,Error> = new(source.height,source.width,Rgba { r: 0, g: 0, b: 0, a: 0 });
+    if (core::result::is_err(made)) { return made; }
+    let result: Image = core::result::unwrap(made); let target: View = result.view();
+    let y: i32 = 0; while (y < source.height) { let x: i32 = 0; while (x < source.width) { write(target,source.height-1-y,x,read(source,x,y)); x += 1; } y += 1; }
+    return core::result::Ok(result);
+}
+fn blend_channel(src: u8, dst: u8, sa: i32, da: i32, alpha: i32) -> u8 {
+    return (((src as i32)*sa*255+(dst as i32)*da*(255-sa)+alpha/2)/alpha) as u8;
+}
+pub fn over(src: Rgba, dst: Rgba) -> Rgba {
+    let sa: i32 = src.a as i32; let da: i32 = dst.a as i32; let alpha: i32 = sa*255+da*(255-sa);
+    if (alpha == 0) { return Rgba { r: 0, g: 0, b: 0, a: 0 }; }
+    return Rgba { r: blend_channel(src.r,dst.r,sa,da,alpha), g: blend_channel(src.g,dst.g,sa,da,alpha), b: blend_channel(src.b,dst.b,sa,da,alpha), a: ((alpha+127)/255) as u8 };
+}
+// Snapshot source before any write, including aliases. Failure is atomic.
+fn copy(target: View, x: i32, y: i32, source: View, composite: bool) -> core::result::Result<i32,Error> {
+    if (!valid(source) || !region(target,x,y,source.width,source.height)) { return core::result::Err(Error::Bounds); }
+    let cloned: core::result::Result<Image,Error> = crop(source,0,0,source.width,source.height);
+    if (core::result::is_err(cloned)) { return core::result::Err(core::result::unwrap_err(cloned)); }
+    let snapshot: Image = core::result::unwrap(cloned); let input: View = snapshot.view();
+    let row: i32 = 0; while (row < source.height) { let col: i32 = 0; while (col < source.width) {
+        let pixel: Rgba = read(input,col,row); if (composite) { pixel = over(pixel,read(target,x+col,y+row)); } write(target,x+col,y+row,pixel); col += 1;
+    } row += 1; } snapshot.destroy(); return core::result::Ok(source.width*source.height);
+}
+pub fn blit(target: View, x: i32, y: i32, source: View) -> core::result::Result<i32,Error> { return copy(target,x,y,source,false); }
+pub fn source_over(target: View, x: i32, y: i32, source: View) -> core::result::Result<i32,Error> { return copy(target,x,y,source,true); }

@@ -1,0 +1,96 @@
+// Bounded WAVE transform. Complete input and output are staged before stdout.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::decimal;
+import core::f64;
+import core::float_decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::audio;
+import ext::cli;
+import ext::wave;
+import std::args;
+import std::stream;
+
+struct Options { gain: f64, mono: bool, stats: bool, help: bool, pcm_bits: i32, seen: u32, limits: ext::wave::Limits, max_output: i32 }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::slice::view(raw,count).unwrap(); }
+fn text(value: str, count: i32) -> core::text::Text { let raw: core::slice::View<u8> = bytes(value,count); return core::text::from_utf8_unchecked(raw.values,raw.start,count); }
+fn write(value: core::slice::View<u8>) -> i32 { let sink: std::stream::Descriptor = std::stream::stdout(); if (core::io::write_all(sink.borrow(),value.values,value.start,value.length).is_err()) { return 3; } return 0; }
+fn option(options: &Options, item: ext::cli::Occurrence) -> bool {
+    let flag: u32 = (1 as u32) << item.id; if ((options.seen & flag) != 0) { return false; } options.seen = options.seen | flag;
+    if (item.id == 1) { options.mono = true; return true; } if (item.id == 2) { options.stats = true; return true; } if (item.id == 3) { options.help = true; return true; }
+    let argument: ext::cli::Argument = core::option::unwrap(item.value);
+    if (item.id == 4) {
+        if (argument.bytes.length > 64) { return false; }
+        let storage: [u32;864] = [0;864]; let scratch: core::slice::View<u32> = core::slice::view(storage,864).unwrap();
+        let limits: core::float_decimal::Limits = core::float_decimal::default_limits(); limits.max_input = 64;
+        let parsed: core::result::Result<f64,core::float_decimal::Error> = core::float_decimal::parse_f64(argument.bytes,scratch,limits);
+        if (parsed.is_err()) { return false; } let factor: f64 = parsed.unwrap(); if (!core::f64::is_finite(factor)) { return false; } options.gain = factor; return true;
+    }
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(argument.bytes.values,argument.bytes.start,argument.bytes.length);
+    if (parsed.is_err()) { return false; } let count: u64 = parsed.unwrap();
+    if (item.id == 5) { if (count != 8 && count != 16 && count != 24 && count != 32) { return false; } options.pcm_bits = count as i32; return true; }
+    if (count > 67108864) { return false; }
+    if (item.id == 6) { options.limits.max_bytes = count as i32; } if (item.id == 7) { if (count > 8000000) { return false; } options.limits.max_samples = count as i32; } if (item.id == 8) { options.max_output = count as i32; } return true;
+}
+fn wave_error(error: ext::wave::Error) -> i32 { return match (error) { ext::wave::Error::AllocationFailed -> 4, _ -> 2 }; }
+fn summary(value: ext::audio::View, maximum: i32) -> i32 {
+    // Per-channel decimal output is bounded independently of input duration.
+    let capacity: i32 = value.channels*160+40; if (capacity > maximum) { return 2; }
+    let allocated: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity<u8>(capacity); if (allocated.is_err()) { return 4; }
+    let output: alloc::vec::Vec<u8> = allocated.unwrap(); output.try_resize(capacity,0).unwrap(); let formatter: core::fmt::Formatter = core::fmt::buffer(output.as_slice(),0,capacity).unwrap();
+    formatter.write_text(text("channel,frames,sample_rate,peak,rms,dc\n",39)); let channel: i32 = 0; let status: i32 = 0;
+    while (channel < value.channels) {
+        let measured: core::result::Result<ext::audio::Metrics,ext::audio::Error> = ext::audio::metrics(value,channel); if (measured.is_err()) { status = 2; break; } let m: ext::audio::Metrics = measured.unwrap();
+        formatter.write_signed(channel as i64,core::fmt::decimal()); formatter.write_text(text(",",1)); formatter.write_signed(m.frames as i64,core::fmt::decimal()); formatter.write_text(text(",",1)); formatter.write_unsigned(value.sample_rate as u64,core::fmt::decimal()); formatter.write_text(text(",",1)); formatter.write_f64(m.peak); formatter.write_text(text(",",1)); formatter.write_f64(m.rms); formatter.write_text(text(",",1)); formatter.write_f64(m.dc); formatter.write_text(text("\n",1)); channel += 1;
+    }
+    if (status == 0) { let done: core::result::Result<i32,core::fmt::Error> = formatter.finish(); if (done.is_err()) { status = 2; } else { status = write(core::slice::view(output.as_slice(),done.unwrap()).unwrap()); } } output.destroy(); return status;
+}
+fn transform(input: core::slice::View<u8>, options: Options) -> i32 {
+    let inspected: core::result::Result<ext::wave::Info,ext::wave::Error> = ext::wave::inspect(input,options.limits); if (inspected.is_err()) { return wave_error(inspected.unwrap_err()); }
+    let format: ext::wave::Format = inspected.unwrap().format;
+    if (options.pcm_bits == 8) { format = ext::wave::Format::Pcm8; } if (options.pcm_bits == 16) { format = ext::wave::Format::Pcm16; } if (options.pcm_bits == 24) { format = ext::wave::Format::Pcm24; } if (options.pcm_bits == 32) { format = ext::wave::Format::Pcm32; }
+    let decoded: core::result::Result<ext::audio::Buffer,ext::wave::Error> = ext::wave::decode(input,options.limits); if (decoded.is_err()) { return wave_error(decoded.unwrap_err()); }
+    let audio: ext::audio::Buffer = decoded.unwrap(); let status: i32 = 0;
+    if (ext::audio::gain(audio.as_view(),options.gain).is_err()) { status = 2; }
+    if (status == 0 && options.mono) { let converted: core::result::Result<ext::audio::Buffer,ext::audio::Error> = ext::audio::mono(audio.as_view(),options.limits.max_samples); if (converted.is_err()) { status = match (converted.unwrap_err()) { ext::audio::Error::AllocationFailed -> 4, _ -> 2 }; } else { audio.destroy(); audio = converted.unwrap(); } }
+    if (status == 0) {
+        if (options.stats) { status = summary(audio.as_view(),options.max_output); }
+        else { let limits: ext::wave::Limits = options.limits; limits.max_bytes = options.max_output; let encoded: core::result::Result<alloc::vec::Vec<u8>,ext::wave::Error> = ext::wave::encode(audio.as_view(),format,limits);
+            if (encoded.is_err()) { status = wave_error(encoded.unwrap_err()); } else { let output: alloc::vec::Vec<u8> = encoded.unwrap(); status = write(output.as_view()); output.destroy(); } }
+    } audio.destroy(); return status;
+}
+fn process(arguments: std::args::Arguments) -> i32 {
+    let specs: [ext::cli::Spec;8] = [
+        ext::cli::Spec { id: 1, long: bytes("mono",4), short: 109, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 2, long: bytes("stats",5), short: 115, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 3, long: bytes("help",4), short: 104, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 4, long: bytes("gain",4), short: 103, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 5, long: bytes("pcm-bits",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: bytes("max-input-bytes",15), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 7, long: bytes("max-samples",11), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 8, long: bytes("max-output-bytes",16), short: 0, arity: ext::cli::Arity::Required }
+    ];
+    let options: Options = Options { gain: 1.0, mono: false, stats: false, help: false, pcm_bits: 0, seen: 0, limits: ext::wave::default_limits(), max_output: 67108864 };
+    let parser: ext::cli::Parser = ext::cli::parser(arguments.as_view(),core::slice::view(specs,8).unwrap(),ext::cli::Ordering::Intermixed).unwrap();
+    while (true) { let event: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next(); if (event.is_err()) { return 2; } let next: core::option::Option<ext::cli::Event> = event.unwrap(); if (core::option::is_none(next)) { break; } let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> option(options.borrow(),item), _ -> false }; if (!valid) { return 2; } }
+    if (options.help) { if (arguments.len() != 1) { return 2; } return write(bytes("Usage: wave-tool [--gain FACTOR] [--mono] [--pcm-bits 8|16|24|32] [--stats] [--max-input-bytes N] [--max-samples N] [--max-output-bytes N]\n",139)); }
+    if (options.stats && options.pcm_bits != 0) { return 2; }
+    let input: alloc::io::Buffer = alloc::io::with_limit(options.limits.max_bytes).unwrap(); let storage: [i32;1024] = [0;1024]; let chunk: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),4096); let source: std::stream::Descriptor = std::stream::stdin();
+    let copied: core::result::Result<u64,core::io::CopyFailure> = core::io::copy(source.borrow(),input.borrow(),chunk,4096); let status: i32 = 0;
+    if (copied.is_err()) { let failure: core::io::CopyFailure = copied.unwrap_err(); status = match (failure.cause) { core::io::Error::AllocationFailed -> 4, core::io::Error::LimitExceeded -> 2, _ -> 3 }; }
+    else { status = transform(core::slice::view(input.as_bytes(),input.len()).unwrap(),options); } input.destroy(); return status;
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,24,4096); let status: i32 = 0;
+    if (captured.is_err()) { status = match (captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }; }
+    else { let arguments: std::args::Arguments = captured.unwrap(); status = process(arguments); arguments.destroy(); }
+    if (status != 0) { let message: core::slice::View<u8> = bytes("wave-tool: invalid arguments, WAVE, signal or limit\n",52); if (status == 3) { message = bytes("wave-tool: I/O failure\n",23); } if (status == 4) { message = bytes("wave-tool: allocation failure\n",30); } let sink: std::stream::Descriptor = std::stream::stderr(); if (core::io::write_all(sink.borrow(),message.values,message.start,message.length).is_err()) { return 3; } } return status;
+}

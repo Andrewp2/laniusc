@@ -1,0 +1,18 @@
+module app::main;
+import core::option;
+import core::result;
+import core::slice;
+import ext::progress;
+fn main() -> i32 {
+ let storage: [u8;64] = [165;64]; let view: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(storage,2,60));
+ let state: ext::progress::State = ext::progress::State { current: 1,total: core::option::Some(2) }; let options: ext::progress::Options = ext::progress::options(); options.bar_width = 4;
+ let short: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(storage,2,10)); assert(core::result::is_err(ext::progress::render_into(state,short,options)));
+ let index: i32 = 0; while (index < 64) { assert(storage[index] == 165); index += 1; }
+ options.max_output = 10; assert(core::result::is_err(ext::progress::render_into(state,view,options))); options.max_output = 11;
+ options.max_work = 139; assert(core::result::is_err(ext::progress::render_into(state,view,options))); options.max_work = 140;
+ index = 0; while (index < 64) { assert(storage[index] == 165); index += 1; }
+ assert(core::result::unwrap(ext::progress::render_into(state,view,options)) == 11);
+ assert(storage[0] == 165 && storage[1] == 165 && storage[13] == 165 && storage[63] == 165); assert(storage[2] == 91 && storage[3] == 35 && storage[4] == 35 && storage[5] == 45 && storage[6] == 45 && storage[12] == 10);
+ options.bar_width = -1; assert(core::result::is_err(ext::progress::render_into(state,view,options)));
+ return 0;
+}

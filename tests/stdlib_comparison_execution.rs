@@ -167,16 +167,13 @@ fn generic_partial_membership_and_total_float_collections_execute() {
 fn native_floats_cannot_satisfy_lawful_key_or_sort_contracts() {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for width in ["f32", "f64"] {
-        for operation in ["sort", "tree", "set", "hash"] {
+        for operation in ["sort", "tree", "hash"] {
             let statement = match operation {
                 "sort" => {
                     format!("let values: [{width};2] = [zero,one]; core::slice::sort(values,2);")
                 }
                 "tree" => format!(
                     "let map: alloc::tree_map::TreeMap<{width},i32> = alloc::tree_map::new(); map.try_insert(zero,1);"
-                ),
-                "set" => format!(
-                    "let set: std::set::Set<{width}> = std::set::new(); std::set::try_insert(set,zero);"
                 ),
                 "hash" => format!(
                     "let map: alloc::hash_map::HashMap<{width},i32> = alloc::hash_map::new(); map.try_insert(zero,1);"
@@ -185,7 +182,7 @@ fn native_floats_cannot_satisfy_lawful_key_or_sort_contracts() {
             };
             let entry = common::TempArtifact::new("laniusc_comparison", "reject", Some("lani"));
             entry.write_str(&format!(
-                "module app::main; import core::slice; import alloc::tree_map; import alloc::hash_map; import std::set; fn main() -> i32 {{ let zero: {width} = 0.0; let one: {width} = 1.0; {statement} return 0; }}"
+                "module app::main; import core::slice; import alloc::tree_map; import alloc::hash_map; fn main() -> i32 {{ let zero: {width} = 0.0; let one: {width} = 1.0; {statement} return 0; }}"
             ));
             let path = entry.path().to_path_buf();
             let stdlib = root.join("stdlib");
@@ -225,8 +222,7 @@ fn migrated_generic_range_slice_option_and_float_program_execute() {
 #[test]
 fn migrated_owned_collection_callers_execute() {
     for name in [
-        "std_map",
-        "std_set",
+        "alloc_hash_types",
         "std_vec_order",
         "alloc_vec_types",
         "alloc_deque_types",

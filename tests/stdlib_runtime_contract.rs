@@ -1964,120 +1964,6 @@ fn main() {
 }
 
 #[test]
-fn core_runtime_requirement_row_guard_type_checks_through_stdlib_root() {
-    let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
-    let entry = common::TempArtifact::new(
-        "laniusc_stdlib_runtime",
-        "requirement_row_guard",
-        Some("lani"),
-    );
-    entry.write_str(
-        r#"
-module app::main;
-
-import core::runtime;
-
-fn main() {
-    let stdio_service_id: core::runtime::RuntimeServiceId =
-        core::runtime::SERVICE_STDIO_ID;
-    let unknown_service_id: core::runtime::RuntimeServiceId = 99;
-    let active_abi: RuntimeAbiVersion = core::runtime::RUNTIME_ABI_VERSION;
-    let unknown_abi: core::runtime::RuntimeAbiVersion =
-        core::runtime::UNKNOWN_RUNTIME_ABI_VERSION;
-    let unavailable_status: RuntimeServiceStatus =
-        core::runtime::SERVICE_STATUS_UNAVAILABLE;
-    let available_status: core::runtime::RuntimeServiceStatus =
-        core::runtime::SERVICE_STATUS_AVAILABLE;
-    let unknown_status: RuntimeServiceStatus = SERVICE_STATUS_UNKNOWN;
-    let stdio_service_known: Capability =
-        runtime_service_requirement_service_is_known(stdio_service_id);
-    let unknown_service_known: core::runtime::Capability =
-        core::runtime::runtime_service_requirement_service_is_known(unknown_service_id);
-    let active_abi_supported: Capability =
-        core::runtime::runtime_service_requirement_abi_is_supported(active_abi);
-    let unknown_abi_supported: core::runtime::Capability =
-        runtime_service_requirement_abi_is_supported(unknown_abi);
-    let unavailable_contract_status: Capability =
-        core::runtime::runtime_service_requirement_status_is_contract_only(unavailable_status);
-    let available_contract_status: core::runtime::Capability =
-        runtime_service_requirement_status_is_contract_only(available_status);
-    let unknown_contract_status: Capability =
-        core::runtime::runtime_service_requirement_status_is_contract_only(unknown_status);
-    let invalid_status: core::runtime::RuntimeServiceStatus = 99;
-    let unavailable_status_declared: Capability =
-        runtime_service_requirement_status_is_declared(unavailable_status);
-    let unknown_status_declared: core::runtime::Capability =
-        core::runtime::runtime_service_requirement_status_is_declared(unknown_status);
-    let available_status_declared: Capability =
-        runtime_service_requirement_status_is_declared(available_status);
-    let invalid_status_declared: core::runtime::Capability =
-        core::runtime::runtime_service_requirement_status_is_declared(invalid_status);
-    let unavailable_status_fail_closed: Capability =
-        runtime_service_requirement_status_is_fail_closed(unavailable_status);
-    let unknown_status_fail_closed: core::runtime::Capability =
-        core::runtime::runtime_service_requirement_status_is_fail_closed(unknown_status);
-    let invalid_status_fail_closed: Capability =
-        runtime_service_requirement_status_is_fail_closed(invalid_status);
-    let available_status_fail_closed: core::runtime::Capability =
-        core::runtime::runtime_service_requirement_status_is_fail_closed(available_status);
-    let stdio_row_valid: Capability =
-        runtime_service_requirement_row_is_valid(stdio_service_id, active_abi, unavailable_status);
-    let stdio_row_known_unbound: core::runtime::Capability =
-        core::runtime::runtime_service_requirement_row_is_known_unbound(stdio_service_id, active_abi, unavailable_status);
-    let unknown_service_row: Capability =
-        runtime_service_requirement_row_is_valid(unknown_service_id, active_abi, unavailable_status);
-    let unknown_abi_row: core::runtime::Capability =
-        core::runtime::runtime_service_requirement_row_is_valid(stdio_service_id, unknown_abi, unavailable_status);
-    let available_status_row: Capability =
-        runtime_service_requirement_row_is_valid(stdio_service_id, active_abi, available_status);
-    let unknown_status_row: core::runtime::Capability =
-        core::runtime::runtime_service_requirement_row_is_valid(stdio_service_id, active_abi, unknown_status);
-    if (!stdio_service_known
-        || unknown_service_known
-        || !active_abi_supported
-        || unknown_abi_supported
-        || !unavailable_contract_status
-        || available_contract_status
-        || unknown_contract_status
-        || !unavailable_status_declared
-        || !unknown_status_declared
-        || !available_status_declared
-        || invalid_status_declared
-        || !unavailable_status_fail_closed
-        || !unknown_status_fail_closed
-        || !invalid_status_fail_closed
-        || available_status_fail_closed
-        || !stdio_row_valid
-        || !stdio_row_known_unbound
-        || unknown_service_row
-        || unknown_abi_row
-        || available_status_row
-        || unknown_status_row)
-    {
-        return 1;
-    }
-    return 0;
-}
-"#,
-    );
-
-    let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
-        .expect("stdlib-root path manifest should load core::runtime import");
-    assert!(
-        manifest.files.iter().any(|file| {
-            file.library_id == 0 && file.path == stdlib_root.join("core/runtime.lani")
-        }),
-        "path manifest should include core::runtime from the stdlib root"
-    );
-
-    common::block_on_gpu_with_timeout(
-        "GPU type check stdlib-root runtime service requirement row guard",
-        type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
-    )
-    .expect("runtime service requirement row guard should type check through --stdlib-root");
-}
-
-#[test]
 fn core_runtime_raw_status_helpers_type_check_through_stdlib_root() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry =
@@ -2221,77 +2107,6 @@ fn main() {
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
     .expect("runtime service requirement row contract-only alias should type check through --stdlib-root");
-}
-
-#[test]
-fn core_runtime_requirement_row_fail_closed_guard_type_checks_through_stdlib_root() {
-    let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
-    let entry = common::TempArtifact::new(
-        "laniusc_stdlib_runtime",
-        "requirement_row_fail_closed",
-        Some("lani"),
-    );
-    entry.write_str(
-        r#"
-module app::main;
-
-import core::runtime;
-
-fn main() {
-    let stdio_service_id: core::runtime::RuntimeServiceId =
-        core::runtime::SERVICE_STDIO_ID;
-    let unknown_service_id: core::runtime::RuntimeServiceId = 99;
-    let active_abi: RuntimeAbiVersion = core::runtime::RUNTIME_ABI_VERSION;
-    let unknown_abi: core::runtime::RuntimeAbiVersion =
-        core::runtime::UNKNOWN_RUNTIME_ABI_VERSION;
-    let unavailable_status: RuntimeServiceStatus =
-        core::runtime::SERVICE_STATUS_UNAVAILABLE;
-    let available_status: core::runtime::RuntimeServiceStatus =
-        core::runtime::SERVICE_STATUS_AVAILABLE;
-    let unknown_status: RuntimeServiceStatus = SERVICE_STATUS_UNKNOWN;
-    let valid_row: core::runtime::Capability =
-        core::runtime::runtime_service_requirement_row_is_valid(stdio_service_id, active_abi, unavailable_status);
-    let valid_row_fail_closed: Capability =
-        runtime_service_requirement_row_is_fail_closed(stdio_service_id, active_abi, unavailable_status);
-    let unknown_service_fail_closed: core::runtime::Capability =
-        runtime_service_requirement_row_is_fail_closed(unknown_service_id, active_abi, unavailable_status);
-    let unknown_abi_fail_closed: Capability =
-        core::runtime::runtime_service_requirement_row_is_fail_closed(stdio_service_id, unknown_abi, unavailable_status);
-    let available_status_fail_closed: core::runtime::Capability =
-        runtime_service_requirement_row_is_fail_closed(stdio_service_id, active_abi, available_status);
-    let unknown_status_fail_closed: Capability =
-        core::runtime::runtime_service_requirement_row_is_fail_closed(stdio_service_id, active_abi, unknown_status);
-    if (!valid_row || valid_row_fail_closed) {
-        return 1;
-    }
-    if (!unknown_service_fail_closed
-        || !unknown_abi_fail_closed
-        || !available_status_fail_closed
-        || !unknown_status_fail_closed)
-    {
-        return 1;
-    }
-    return 0;
-}
-"#,
-    );
-
-    let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
-        .expect("stdlib-root path manifest should load core::runtime import");
-    assert!(
-        manifest.files.iter().any(|file| {
-            file.library_id == 0 && file.path == stdlib_root.join("core/runtime.lani")
-        }),
-        "path manifest should include core::runtime from the stdlib root"
-    );
-
-    common::block_on_gpu_with_timeout(
-        "GPU type check stdlib-root runtime service requirement row fail-closed guard",
-        type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
-    )
-    .expect(
-        "runtime service requirement row fail-closed guard should type check through --stdlib-root",
-    );
 }
 
 #[test]
@@ -2455,9 +2270,8 @@ fn main() {
     .expect("core::bool stdlib-root helpers should compile to x86");
     #[cfg(all(unix, target_arch = "x86_64"))]
     {
-        let output = common::run_x86_64_elf_output(
-            "core::bool stdlib helpers", "core_bool", &bytes,
-        );
+        let output =
+            common::run_x86_64_elf_output("core::bool stdlib helpers", "core_bool", &bytes);
         assert_eq!(output.status.code(), Some(0), "{output:?}");
     }
     #[cfg(not(all(unix, target_arch = "x86_64")))]
@@ -5571,12 +5385,15 @@ fn main() {
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/path_rules.lani")),
+            .any(|file| file.library_id == 0
+                && file.path == stdlib_root.join("core/path_rules.lani")),
         "path manifest should include core::path_rules from the stdlib root"
     );
-    assert!(manifest.files.iter().any(|file| {
-        file.library_id == 0 && file.path == stdlib_root.join("core/utf8.lani")
-    }));
+    assert!(
+        manifest.files.iter().any(|file| {
+            file.library_id == 0 && file.path == stdlib_root.join("core/utf8.lani")
+        })
+    );
     assert!(
         runtime_bound_api_diagnostic_info("core::path_rules::path_byte_is_ascii_digit").is_none(),
         "core::path_rules::path_byte_is_ascii_digit is a source-level helper and must not claim a runtime binding"
@@ -5635,18 +5452,23 @@ fn main() {
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/path_rules.lani")),
+            .any(|file| file.library_id == 0
+                && file.path == stdlib_root.join("core/path_rules.lani")),
         "path manifest should include core::path_rules from the stdlib root"
     );
-    assert!(manifest.files.iter().any(|file| {
-        file.library_id == 0 && file.path == stdlib_root.join("core/utf8.lani")
-    }));
+    assert!(
+        manifest.files.iter().any(|file| {
+            file.library_id == 0 && file.path == stdlib_root.join("core/utf8.lani")
+        })
+    );
 
     common::block_on_gpu_with_timeout(
         "GPU type check stdlib-root core::path_rules Unix hidden-component helper",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
-    .expect("core::path_rules Unix hidden-component helper should type check through --stdlib-root");
+    .expect(
+        "core::path_rules Unix hidden-component helper should type check through --stdlib-root",
+    );
 }
 
 #[test]

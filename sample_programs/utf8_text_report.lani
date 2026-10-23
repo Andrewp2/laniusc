@@ -1,39 +1,23 @@
 module app::main;
-import std::utf8_vec;
-import std::vec_u8;
-import std::io_utf8;
+import alloc::string;
+import core::result;
 import core::utf8;
-import core::mem;
+import std::io_utf8;
+import std::io_byte;
+import std::io_decimal;
 
 fn main() -> i32 {
-    let a: u8 = 65;
-    let c2: u8 = 194;
-    let a2: u8 = 162;
-    let b: u8 = 66;
-    let bytes: [u8; 7] = [a, c2, a2, a, c2, a2, b];
-    if (!core::utf8::bytes_are_valid(bytes, 7) ||
-        core::utf8::byte_scalar_count_or(bytes, 7, -1) != 5 ||
-        core::utf8::byte_view_scalar_at_or(bytes, 7, 1, 4294967295) != 162 ||
-        core::utf8::byte_view_offset_of_scalar_or(bytes, 7, 4, -1) != 6) {
-        return 1;
-    }
-    let text: std::vec_u8::VecU8 = std::utf8_vec::new();
-    text = std::utf8_vec::try_append_bytes(text, bytes, 7);
-    if (std::utf8_vec::byte_len(text) != 7 ||
-        std::utf8_vec::index_of_scalar_or(text, 162, -1) != 1 ||
-        std::utf8_vec::last_index_of_scalar_or(text, 162, -1) != 3) {
-        std::utf8_vec::destroy(text);
-        return 1;
-    }
-    let count: i32 = std::utf8_vec::scalar_count_or(text, -1);
-    let cells: [i32] = core::mem::i32_slice_from_raw_parts(
-        std::vec_u8::data_ptr(text), std::utf8_vec::byte_len(text));
-    if (!core::utf8::codes_are_valid(cells, 7) ||
-        !std::io_utf8::write_stdout_codes(cells, 7)) {
-        std::utf8_vec::destroy(text);
-        return 2;
-    }
-    std::utf8_vec::destroy(text);
-    print(count);
+    let bytes: [u8; 7] = [65, 194, 162, 65, 194, 162, 66];
+    let copied: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_utf8(bytes, 7);
+    if (core::result::is_err(copied)) { return 1; }
+    let text: alloc::string::String = core::result::unwrap(copied);
+    let owned: [u8] = text.as_bytes();
+    if (text.byte_len() != 7 || text.scalar_count() != 5 ||
+        core::utf8::byte_view_scalar_at_or(owned, 7, 1, 4294967295) != 162 ||
+        core::utf8::byte_view_offset_of_scalar_or(owned, 7, 4, -1) != 6) { text.destroy(); return 1; }
+    let count: i32 = text.scalar_count();
+    if (!std::io_utf8::write_stdout_bytes(owned, text.byte_len())) { text.destroy(); return 2; }
+    text.destroy();
+    if (std::io_decimal::write_i32(1, count) < 0 || !std::io_byte::write_stdout_byte(10)) { return 2; }
     return 0;
 }

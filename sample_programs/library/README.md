@@ -27,6 +27,12 @@ sample runner's fixed argument and text-output fixture.
 | `data_analyze.lani` | `tests/extended_data_analyze_execution.rs`, x86_64 Linux; numerical CSV summaries, QR regression and allocation/I/O failures | [CSV analysis and regression](../../docs/extended-data-analyze.md) |
 | `expr_calc.lani` | `tests/extended_expr_calc_execution.rs`, x86_64 Linux; parser cursors, inline stacks, checked arithmetic, format strings and allocation/I/O failures | [Integer expression calculator](../../docs/extended-expr-calc.md) |
 | `text_patch.lani` | `tests/extended_text_patch_execution.rs`, x86_64 Linux; minimal unified diffs, exact apply/check, byte preservation and allocation/file/I/O failures | [File comparison and patch application](../../docs/extended-text-patch.md) |
+| `image_tool.lani` | `tests/extended_image_tool_execution.rs`, x86_64 Linux; PNG pixel models, crop/rotate/flip order, caps, staged output and allocation/I/O failures | [PNG inspection and transformation](../../docs/extended-image-tool.md) |
+| `wave_tool.lani` | `tests/extended_wave_tool_execution.rs`, x86_64 Linux; WAVE conversion, gain, mono, metrics and allocation/I/O failures | [WAVE processing](../../docs/extended-wave-tool.md) |
+| `shape_hull.lani` | `tests/extended_shape_hull_execution.rs`, x86_64 Linux; CSV coordinates, exact hull/area, limits and allocation/I/O failures | [CSV convex hull](../../docs/extended-shape-hull.md) |
+| `http_message.lani` | `tests/extended_http_message_execution.rs`, x86_64 Linux; offline HTTP framing/body inspection, chunking, limits and allocation/file/I/O failures | [HTTP message processing](../../docs/extended-http-message.md) |
+| `csv_table.lani` | `tests/extended_csv_table_execution.rs`, x86_64 Linux; Unicode cells, alignment, width policy, progress, limits and allocation/I/O failures | [CSV tables](../../docs/extended-csv-table.md) |
+| `library_tests.lani` | `tests/stdlib_development_execution.rs`, x86_64 Linux; explicit suites, checks, properties and native measurement | [Lanius test workflow](../../docs/stdlib-development.md) |
 
 Compile these applications with both `--stdlib-root stdlib` and `--source-root extended`.
 The library implementations are Lanius; the Rust test harness supplies inputs and

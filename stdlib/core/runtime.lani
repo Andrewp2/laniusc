@@ -237,10 +237,17 @@ pub fn runtime_service_requirement_row_is_contract_only(service_id: RuntimeServi
     return runtime_service_requirement_row_is_known_unbound(service_id, required_abi_version, service_status);
 }
 
+// Structural validation accepts both bound and unbound known-service rows.
+// It does not assert that the recorded status matches this process or grant
+// permission to call a service. Use has_service for the current binding.
 pub fn runtime_service_requirement_row_is_valid(service_id: RuntimeServiceId, required_abi_version: RuntimeAbiVersion, service_status: RuntimeServiceStatus) -> Capability {
-    return runtime_service_requirement_row_is_known_unbound(service_id, required_abi_version, service_status);
+    return runtime_service_requirement_service_is_known(service_id)
+        && runtime_service_requirement_abi_is_supported(required_abi_version)
+        && (runtime_service_status_is_unavailable(service_status)
+            || runtime_service_status_is_available(service_status));
 }
 
+// Invalid descriptor rows fail validation, independently of runtime binding.
 pub fn runtime_service_requirement_row_is_fail_closed(service_id: RuntimeServiceId, required_abi_version: RuntimeAbiVersion, service_status: RuntimeServiceStatus) -> Capability {
     return !runtime_service_requirement_row_is_valid(service_id, required_abi_version, service_status);
 }

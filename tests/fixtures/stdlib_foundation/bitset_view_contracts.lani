@@ -10,6 +10,15 @@ fn main() -> i32 {
     let data: [u32; 5] = [guard, zero, padding, guard, guard];
     let words: core::slice::View<u32> = core::result::unwrap(core::slice::view_range(data, 1, 2));
     let bits: core::bitset::BitView = core::result::unwrap(core::bitset::BitView::from_words(words, 33));
+    assert(bits.len() == 33 && !bits.is_empty());
+    assert(core::option::unwrap(bits.word(0)) == 0 && core::option::unwrap(bits.word(1)) == 0);
+    assert(core::option::is_none(bits.word(-1)) && core::option::is_none(bits.word(2)));
+    assert(!core::result::unwrap(bits.assign(0,true)) && core::result::unwrap(bits.assign(0,false)));
+    assert(!core::result::unwrap(bits.set(1)) && core::result::unwrap(bits.clear(1)));
+    assert(!core::result::unwrap(bits.toggle(2)) && core::result::unwrap(bits.toggle(2)));
+    assert(core::result::unwrap(bits.assign_range(0,33,true)) == 33);
+    assert(core::result::unwrap(bits.assign_range(0,33,false)) == 33);
+    assert(core::result::is_err(bits.assign_range(-1,1,true)));
     assert(bits.count_ones() == 0 && !bits.any() && !bits.all());
     assert(core::option::is_none(bits.get(-1)) && core::option::is_none(bits.get(33)));
     assert(core::result::is_err(bits.set(-1)) && core::result::is_err(bits.toggle(33)));
@@ -54,6 +63,7 @@ fn main() -> i32 {
     alloc::allocator::dealloc(storage, core::mem::size_of<u32>() * 3, 8);
     let empty_words: core::slice::View<u32> = core::result::unwrap(core::slice::view(data, 0));
     let empty: core::bitset::BitView = core::result::unwrap(core::bitset::BitView::from_words(empty_words, 0));
+    assert(empty.len() == 0 && empty.is_empty() && core::option::is_none(empty.word(0)));
     assert(empty.all() && !empty.any() && empty.fill(true) == 0 && core::option::is_none(empty.first_set()) && core::option::is_none(empty.last_set()));
     return 0;
 }

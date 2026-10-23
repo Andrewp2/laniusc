@@ -3,8 +3,9 @@ module app::main;
 import alloc::string;
 import core::cmp;
 import core::result;
-import std::map;
-import std::vec;
+import alloc::hash_map;
+import core::option;
+import alloc::vec;
 
 fn size(result: core::result::Result<i32, alloc::string::Error>) -> i32 {
     return match (result) { Ok(value) -> value, Err(_) -> -1 };
@@ -65,24 +66,25 @@ fn main() -> i32 {
 
     let b: alloc::string::String = one(66);
     if (!ordered(a, b) || !ordered(b, accent) || !ordered(empty, a)) { return 25; }
-    let sorted: std::vec::Vec<alloc::string::String> = std::vec::new();
-    sorted = std::vec::push(sorted, accent);
-    sorted = std::vec::push(sorted, b);
-    sorted = std::vec::push(sorted, a);
-    sorted = std::vec::sort(sorted);
-    let first: alloc::string::String = std::vec::at(sorted, 0);
-    let last: alloc::string::String = std::vec::at(sorted, 2);
+    let sorted: alloc::vec::Vec<alloc::string::String> = alloc::vec::new();
+    core::result::unwrap(sorted.try_push(accent));
+    core::result::unwrap(sorted.try_push(b));
+    core::result::unwrap(sorted.try_push(a));
+    sorted.sort();
+    let first: alloc::string::String = sorted.at(0);
+    let last: alloc::string::String = sorted.at(2);
     if (!first.equals(a) || !last.equals(accent)) { return 26; }
     // Containers copy handles. The original owners below keep these keys alive.
-    let counts: std::map::Map<alloc::string::String, i32> = std::map::new();
-    counts = std::map::try_insert(counts, a, 10);
-    counts = std::map::try_insert(counts, accent, 20);
+    let counts: alloc::hash_map::HashMap<alloc::string::String, i32> = alloc::hash_map::new();
+    core::result::unwrap(counts.try_insert(a, 10));
+    core::result::unwrap(counts.try_insert(accent, 20));
     let lookup: alloc::string::String = one(65);
-    if (std::map::get_or(counts, lookup, -1) != 10) { return 27; }
-    counts = std::map::try_insert(counts, lookup, 30);
-    if (std::map::len(counts) != 2 || std::map::get_or(counts, lookup, -1) != 10) { return 28; }
-    std::map::destroy(counts);
-    std::vec::destroy(sorted);
+    if (core::option::unwrap_or(counts.get(lookup), -1) != 10) { return 27; }
+    let replaced: alloc::hash_map::Entry<alloc::string::String, i32> = core::option::unwrap(core::result::unwrap(counts.try_insert(lookup, 30)));
+    if (replaced.value != 10 || !replaced.key.equals(a)) { return 28; }
+    if (counts.len() != 2 || core::option::unwrap_or(counts.get(lookup), -1) != 30) { return 28; }
+    counts.destroy();
+    sorted.destroy();
     lookup.destroy();
     text.destroy();
     empty.destroy();

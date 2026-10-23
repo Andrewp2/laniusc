@@ -1,0 +1,28 @@
+module app::main;
+import test::check;
+import test::suite;
+fn main() -> i32 {
+    let invalid: test::suite::Runner = test::suite::begin(test::check::literal("",0),0,0,false);
+    if (invalid.finish() != 2) { return 1; }
+    let runner: test::suite::Runner = test::suite::begin(test::check::literal("",0),7,1,false);
+    if (!runner.select(test::check::literal("escaped\ncase",12))) { return 2; }
+    runner.record(test::check::truth(true,test::check::literal("",0)));
+    if (runner.finish() != 0 || runner.finish() != 2) { return 3; }
+    runner.record(test::check::pass());
+    if (runner.finish() != 2 || runner.select(test::check::literal("closed",6))) { return 10; }
+    let pending: test::suite::Runner = test::suite::begin(test::check::literal("",0),7,1,false);
+    if (!pending.select(test::check::literal("pending",7)) || pending.finish() != 2) { return 4; }
+    pending.record(test::check::pass());
+    if (pending.finish() != 2 || pending.select(test::check::literal("reopened",8))) { return 11; }
+    pending.record(test::check::pass()); if (pending.finish() != 2) { return 12; }
+    let orphan: test::suite::Runner = test::suite::begin(test::check::literal("",0),7,1,false);
+    orphan.record(test::check::pass()); if (orphan.finish() != 2) { return 5; }
+    let double: test::suite::Runner = test::suite::begin(test::check::literal("",0),7,1,false);
+    if (!double.select(test::check::literal("first",5))) { return 6; }
+    if (double.select(test::check::literal("second",6)) || double.finish() != 2) { return 7; }
+    let status: test::suite::Runner = test::suite::begin(test::check::literal("",0),7,1,false);
+    if (!status.select(test::check::literal("unknown",7))) { return 8; }
+    let unknown: test::check::Outcome = test::check::pass(); unknown.status = 99;
+    status.record(unknown); if (status.finish() != 2) { return 9; }
+    return 0;
+}

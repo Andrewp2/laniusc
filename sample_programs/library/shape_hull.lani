@@ -1,0 +1,399 @@
+// Read exact i32 x,y CSV from stdin and publish a deterministic hull CSV.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::cli;
+import ext::csv;
+import ext::geometry;
+import std::args;
+import std::stream;
+struct Options {
+    help: bool,
+    seen: u32,
+    max_input: i32,
+    max_points: i32,
+    max_output: i32,
+    max_work: u64
+}
+impl Options {
+    fn borrow(&self) -> &Options {
+        return self;
+    }
+}
+struct Diagnostic {
+    stage: i32,
+    reason: i32,
+    row: i32
+}
+impl Diagnostic {
+    fn borrow(&self) -> &Diagnostic {
+        return self;
+    }
+}
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes:[u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count);
+    return core::slice::view(bytes, count).unwrap();
+}
+fn text(value: str, count: i32) -> core::text::Text {
+    let bytes: core::slice::View<u8> = literal(value, count);
+    return core::text::from_utf8_unchecked(bytes.values, 0, count);
+}
+fn fail(d: &Diagnostic, status: i32, stage: i32, reason: i32) -> i32 {
+    d.stage = stage;
+    d.reason = reason;
+    return status;
+}
+fn csv_error(e: ext::csv::Error, d: &Diagnostic) -> i32 {
+    return match (e) {
+        ext::csv::Error::AllocationFailed -> fail(d, 4, 3, 7),
+        ext::csv::Error::LimitExceeded(at) -> fail(d, 2, 3, 5),
+        _ -> fail(d, 2, 3, 3)
+    };
+}
+fn geometry_error(e: ext::geometry::Error, d: &Diagnostic, stage: i32) -> i32 {
+    return match (e) {
+        ext::geometry::Error::AllocationFailed -> fail(d, 4, stage, 7),
+        ext::geometry::Error::Overflow -> fail(d, 2, stage, 6),
+        _ -> fail(d, 2, stage, 5)
+    };
+}
+fn apply(options: &Options, item: ext::cli::Occurrence) -> bool {
+    let mask: u32 = 1 << item.id;
+    if ((options.seen&mask) != 0) {
+        return false;
+    }
+    options.seen = options.seen|mask;
+    if (item.id == 0) {
+        options.help = true;
+        return true;
+    }
+    let a: ext::cli::Argument = item.value.unwrap();
+    let parsed: core::result::Result<u64,
+    core::decimal::ParseError> = core::decimal::parse_u64_range(a.bytes.values, a.bytes.start, a.bytes.len());
+    if (parsed.is_err()) {
+        return false;
+    }
+    let n: u64 = parsed.unwrap();
+    if (item.id == 4) {
+        options.max_work = n;
+        return true;
+    }
+    if (n>2147483647) {
+        return false;
+    }
+    if (item.id == 1) {
+        options.max_points = n as i32;
+    }
+    if (item.id == 2) {
+        options.max_input = n as i32;
+    }
+    if (item.id == 3) {
+        options.max_output = n as i32;
+    }
+    return true;
+}
+fn record(decoder: &ext::csv::Decoder, points: &alloc::vec::Vec<ext::geometry::Point>, d: &Diagnostic) -> i32 {
+    d.row = decoder.records_read() - 1;
+    if (decoder.field_count().unwrap() != 2) {
+        return fail(d, 2, 3, 3);
+    }
+    let x: core::text::Text = decoder.field(0).unwrap();
+    let y: core::text::Text = decoder.field(1).unwrap();
+    let px: core::result::Result<i32,
+    core::decimal::ParseError> = core::decimal::parse_i32_range(x.bytes, x.start, x.byte_len());
+    let py: core::result::Result<i32,
+    core::decimal::ParseError> = core::decimal::parse_i32_range(y.bytes, y.start, y.byte_len());
+    if (px.is_err() || py.is_err()) {
+        return fail(d, 2, 4, 4);
+    }
+    if (points.try_push(ext::geometry::Point {
+        x: px.unwrap(), y: py.unwrap()
+    }
+    ).is_err()) {
+        return fail(d, 4, 4, 7);
+    }
+    return 0;
+}
+fn read_points(points: &alloc::vec::Vec<ext::geometry::Point>, options: Options, used: &Options, d: &Diagnostic) -> i32 {
+    let settings: ext::csv::Options = ext::csv::Options {
+        allow_lf: true,
+        require_same_width: true,
+        max_records: options.max_points,
+        max_fields: 2,
+        max_field_bytes: 32,
+        max_record_bytes: 64
+    };
+    let made: core::result::Result<ext::csv::Decoder,
+    ext::csv::Error> = ext::csv::decoder(settings);
+    if (made.is_err()) {
+        return csv_error(made.unwrap_err(), d);
+    }
+    let decoder: ext::csv::Decoder = made.unwrap();
+    let storage:[i32; 1024] =[0; 1024];
+    let bytes:[u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage), 4096);
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let status: i32 = 0;
+    while (status == 0) {
+        let read: core::result::Result<i32,
+        core::io::Error> = source.read(bytes, 0, 4096);
+        if (read.is_err()) {
+            if (core::io::is_interrupted(read.unwrap_err())) {
+                continue;
+            }
+            status = fail(d, 3, 2, 2);
+            break;
+        }
+        let count: i32 = read.unwrap();
+        if (count == 0) {
+            let final: core::result::Result<bool,
+            ext::csv::Error> = decoder.finish();
+            if (final.is_err()) {
+                status = csv_error(final.unwrap_err(), d);
+            } else {
+                if (final.unwrap()) {
+                    status = record(decoder.borrow(), points, d);
+                }
+            }
+            break;
+        }
+        if (count>options.max_input - used.max_input ||(count as u64)>options.max_work - used.max_work) {
+            status = fail(d, 2, 2, 5);
+            break;
+        }
+        used.max_input += count;
+        used.max_work += count as u64;
+        let at: i32 = 0;
+        while (at<count && status == 0) {
+            let progress: core::result::Result<ext::csv::Progress,
+            ext::csv::Error> = decoder.feed(bytes, at, count - at);
+            if (progress.is_err()) {
+                status = csv_error(progress.unwrap_err(), d);
+                break;
+            }
+            let step: ext::csv::Progress = progress.unwrap();
+            at += step.consumed;
+            if (step.record) {
+                status = record(decoder.borrow(), points, d);
+            }
+        }
+    }
+    decoder.destroy();
+    return status;
+}
+fn point_row(out: &core::fmt::Formatter, label: core::text::Text, p: ext::geometry::Point) {
+    out.write_text(label);
+    out.write_signed(p.x as i64, core::fmt::decimal());
+    out.write_text(text(",", 1));
+    out.write_signed(p.y as i64, core::fmt::decimal());
+    out.write_text(text(",\n", 2));
+}
+fn render(out: &core::fmt::Formatter, hull: &ext::geometry::Hull, box: core::option::Option<ext::geometry::Bounds>, area: i64) {
+    out.write_text(text("kind,x,y,value\n", 15));
+    if (box.is_some()) {
+        let b: ext::geometry::Bounds = core::option::unwrap(box);
+        point_row(out, text("minimum,", 8), b.min);
+        point_row(out, text("maximum,", 8), b.max);
+    }
+    out.write_text(text("area2,,,", 8));
+    out.write_signed(area, core::fmt::decimal());
+    out.write_text(text("\n", 1));
+    let i: i32 = 0;
+    while (i<hull.len()) {
+        point_row(out, text("vertex,", 7), hull.get(i).unwrap());
+        i += 1;
+    }
+}
+fn publish(hull: &ext::geometry::Hull, limits: ext::geometry::Limits, options: Options, d: &Diagnostic) -> i32 {
+    let area: core::result::Result<i64,
+    ext::geometry::Error> = ext::geometry::signed_area2(hull.view(), limits);
+    if (area.is_err()) {
+        return geometry_error(area.unwrap_err(), d, 6);
+    }
+    let box: core::option::Option<ext::geometry::Bounds> = ext::geometry::bounding_box(hull.view(), limits).unwrap();
+    let measure: core::fmt::Formatter = core::fmt::measure();
+    render(measure.borrow(), hull, box, area.unwrap());
+    let measured: core::result::Result<i32,
+    core::fmt::Error> = measure.finish();
+    if (measured.is_err()) {
+        return fail(d, 2, 7, 5);
+    }
+    let count: i32 = measured.unwrap();
+    if (count>options.max_output) {
+        return fail(d, 2, 7, 5);
+    }
+    let made: core::result::Result<alloc::vec::Vec<u8>,
+    alloc::vec::Error> = alloc::vec::with_capacity<u8>(count);
+    if (made.is_err()) {
+        return fail(d, 4, 7, 7);
+    }
+    let bytes: alloc::vec::Vec<u8> = made.unwrap();
+    if (bytes.try_resize(count, 0).is_err()) {
+        bytes.destroy();
+        return fail(d, 4, 7, 7);
+    }
+    let out: core::fmt::Formatter = core::fmt::buffer(bytes.as_slice(), 0, count).unwrap();
+    render(out.borrow(), hull, box, area.unwrap());
+    if (out.finish().is_err()) {
+        bytes.destroy();
+        return fail(d, 2, 7, 5);
+    }
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    let written: core::result::Result<i32,
+    core::io::Failure> = core::io::write_all(sink.borrow(), bytes.as_slice(), 0, count);
+    bytes.destroy();
+    if (written.is_err()) {
+        return fail(d, 3, 7, 2);
+    }
+    return 0;
+}
+fn calculate(options: Options, d: &Diagnostic) -> i32 {
+    let points: alloc::vec::Vec<ext::geometry::Point> = alloc::vec::new();
+    let used: Options = Options {
+        help: false,
+        seen: 0,
+        max_input: 0,
+        max_points: 0,
+        max_output: 0,
+        max_work: 0
+    };
+    let status: i32 = read_points(points.borrow(), options, used.borrow(), d);
+    if (status != 0) {
+        points.destroy();
+        return status;
+    }
+    d.row = -1;
+    let cost: u64 = ext::geometry::hull_work_bound(points.len()).unwrap() +(points.len() as u64) * 4;
+    if (cost>options.max_work - used.max_work) {
+        points.destroy();
+        return fail(d, 2, 5, 5);
+    }
+    let limits: ext::geometry::Limits = ext::geometry::Limits {
+        max_points: options.max_points,
+        max_work: options.max_work - used.max_work
+    };
+    let result: core::result::Result<ext::geometry::Hull,
+    ext::geometry::Error> = ext::geometry::convex_hull(points.as_view(), limits);
+    points.destroy();
+    if (result.is_err()) {
+        return geometry_error(result.unwrap_err(), d, 5);
+    }
+    let hull: ext::geometry::Hull = result.unwrap();
+    status = publish(hull.borrow(), limits, options, d);
+    hull.destroy();
+    return status;
+}
+fn process(arguments: std::args::Arguments, d: &Diagnostic) -> i32 {
+    let specs:[ext::cli::Spec; 5] =[ext::cli::Spec {
+        id: 0, long: literal("help", 4), short: 104, arity: ext::cli::Arity::Flag
+    }, ext::cli::Spec {
+        id: 1, long: literal("max-points", 10), short: 0, arity: ext::cli::Arity::Required
+    }, ext::cli::Spec {
+        id: 2, long: literal("max-input-bytes", 15), short: 0, arity: ext::cli::Arity::Required
+    }, ext::cli::Spec {
+        id: 3, long: literal("max-output-bytes", 16), short: 0, arity: ext::cli::Arity::Required
+    }, ext::cli::Spec {
+        id: 4, long: literal("max-work", 8), short: 0, arity: ext::cli::Arity::Required
+    }
+    ];
+    let parser: ext::cli::Parser = ext::cli::parser(arguments.as_view(), core::slice::view(specs, 5).unwrap(), ext::cli::Ordering::Intermixed).unwrap();
+    let options: Options = Options {
+        help: false,
+        seen: 0,
+        max_input: 16777216,
+        max_points: 1048576,
+        max_output: 16777216,
+        max_work: 100000000
+    };
+    while (true) {
+        let next: core::result::Result<core::option::Option<ext::cli::Event>,
+        ext::cli::Error> = parser.next();
+        if (next.is_err()) {
+            return fail(d, 2, 1, 1);
+        }
+        if (next.unwrap().is_none()) {
+            break;
+        }
+        let ok: bool = match (next.unwrap().unwrap()) {
+            ext::cli::Event::Option(item) -> apply(options.borrow(), item),
+            _ -> false
+        };
+        if (!ok) {
+            return fail(d, 2, 1, 1);
+        }
+    }
+    if (options.help) {
+        let usage: core::slice::View<u8> = literal("Usage: shape-hull [--max-points N] [--max-input-bytes N] [--max-output-bytes N] [--max-work N]\nRead i32 x,y CSV from stdin; emit bounds, signed twice-area and CCW hull CSV.\n", 173);
+        let sink: std::stream::Descriptor = std::stream::stdout();
+        if (core::io::write_all(sink.borrow(), usage.values, 0, usage.len()).is_err()) {
+            return fail(d, 3, 7, 2);
+        }
+        return 0;
+    }
+    return calculate(options, d);
+}
+fn report(d: Diagnostic) {
+    let storage:[i32; 64] =[0; 64];
+    let bytes:[u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage), 256);
+    let out: core::fmt::Formatter = core::fmt::buffer(bytes, 0, 256).unwrap();
+    out.write_text(text("shape-hull: ", 12));
+    let reason: core::text::Text = match (d.reason) {
+        1 -> text("invalid-arguments", 17),
+        2 -> text("io-failure", 10),
+        3 -> text("invalid-csv", 11),
+        4 -> text("invalid-coordinate", 18),
+        5 -> text("resource-limit", 14),
+        6 -> text("area-overflow", 13),
+        _ -> text("allocation-failure", 18)
+    };
+    out.write_text(reason);
+    out.write_text(text(" stage=", 7));
+    let stage: core::text::Text = match (d.stage) {
+        1 -> text("arguments", 9),
+        2 -> text("input", 5),
+        3 -> text("csv", 3),
+        4 -> text("coordinate", 10),
+        5 -> text("hull", 4),
+        6 -> text("area", 4),
+        _ -> text("output", 6)
+    };
+    out.write_text(stage);
+    if (d.row >= 0) {
+        out.write_text(text(" row=", 5));
+        out.write_signed(d.row as i64, core::fmt::decimal());
+    }
+    out.write_text(text("\n", 1));
+    let sink: std::stream::Descriptor = std::stream::stderr();
+    core::io::write_all(sink.borrow(), bytes, 0, out.len());
+}
+fn main() -> i32 {
+    let d: Diagnostic = Diagnostic {
+        stage: 1,
+        reason: 1,
+        row: -1
+    };
+    let snapshot: core::result::Result<std::args::Arguments,
+    std::args::Error> = std::args::snapshot(1, 32, 65536);
+    if (snapshot.is_err()) {
+        let status: i32 = match (snapshot.unwrap_err()) {
+            std::args::Error::AllocationFailed -> fail(d.borrow(), 4, 1, 7),
+            std::args::Error::HostRead(at) -> fail(d.borrow(), 3, 1, 2),
+            _ -> 2
+        };
+        report(d);
+        return status;
+    }
+    let arguments: std::args::Arguments = snapshot.unwrap();
+    let status: i32 = process(arguments, d.borrow());
+    arguments.destroy();
+    if (status != 0) {
+        report(d);
+    }
+    return status;
+}

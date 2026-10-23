@@ -1,0 +1,30 @@
+module app::main;
+import test::check;
+import test::property;
+import test::suite;
+
+pub struct Tests {}
+impl Tests { fn borrow(&self) -> &Tests { return self; } }
+pub struct Counterexample {}
+impl Counterexample { fn borrow(&self) -> &Counterexample { return self; } }
+pub impl test::property::Property for Counterexample {
+    pub fn check(&self, input: u32, case_id: u32) -> test::check::Outcome {
+        return test::check::truth(case_id < 3,test::check::literal("generated counterexample",24));
+    }
+}
+pub impl test::suite::Cases for Tests {
+    pub fn count(&self) -> i32 { return 4; }
+    pub fn name(&self, index: i32) -> test::check::Label {
+        if (index == 0) { return test::check::literal("passing",7); }
+        if (index == 1) { return test::check::literal("failing",7); }
+        if (index == 2) { return test::check::literal("skipped",7); }
+        return test::check::literal("property",8);
+    }
+    pub fn run(&self, index: i32, seed: u32, cases: u32) -> test::check::Outcome {
+        if (index == 0) { return test::check::truth(2 + 2 == 4,test::check::literal("arithmetic",10)); }
+        if (index == 1) { return test::check::equal_i64(-8,9,test::check::literal("deliberate failure\nline",23)); }
+        if (index == 2) { return test::check::skip(test::check::literal("optional capability",19)); }
+        let property: Counterexample = Counterexample {}; return test::property::run(property.borrow(),seed,cases);
+    }
+}
+fn main() -> i32 { let tests: Tests = Tests {}; return test::suite::run_args(tests.borrow()); }

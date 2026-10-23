@@ -1,0 +1,107 @@
+module app::main;
+import core::f64;
+import core::option;
+import core::result;
+import core::slice;
+import ext::geometry;
+fn p(x: i32, y: i32) -> ext::geometry::Point {
+    return ext::geometry::Point {
+        x: x,
+        y: y
+    };
+}
+fn main() -> i32 {
+    let lo: i32 = -2147483648;
+    let hi: i32 = 2147483647;
+    assert(ext::geometry::orientation(p(lo, lo), p(hi, lo), p(lo, hi)) == 1);
+    assert(ext::geometry::orientation(p(lo, lo), p(lo, hi), p(hi, lo)) == -1);
+    let data:[ext::geometry::Point; 7] =[p(1, 1), p(0, 0), p(4, 0), p(4, 4), p(0, 4), p(4, 0), p(0, 0)];
+    let limits: ext::geometry::Limits = ext::geometry::default_limits();
+    let input: core::slice::View<ext::geometry::Point> = core::slice::view(data, 7).unwrap();
+    let hull: ext::geometry::Hull = ext::geometry::convex_hull(input, limits).unwrap();
+    assert(hull.len() == 4);
+    assert(ext::geometry::equal(core::option::unwrap(hull.get(0)), p(0, 0)));
+    assert(ext::geometry::signed_area2(hull.view(), limits).unwrap() == 32);
+    assert(match (ext::geometry::locate_in_ring(hull.view(), p(2, 2), limits).unwrap()) {
+        ext::geometry::Location::Inside -> true, _ -> false
+    }
+    );
+    assert(match (ext::geometry::locate_in_ring(hull.view(), p(0, 2), limits).unwrap()) {
+        ext::geometry::Location::Boundary -> true, _ -> false
+    }
+    );
+    hull.destroy();
+    // The declared work bound is inclusive; one unit less rejects the hull.
+    let exact: ext::geometry::Limits = ext::geometry::Limits {
+        max_points: 7,
+        max_work: ext::geometry::hull_work_bound(7).unwrap()
+    };
+    let bounded: ext::geometry::Hull = ext::geometry::convex_hull(input, exact).unwrap();
+    assert(bounded.len() == 4);
+    bounded.destroy();
+    exact.max_work -= 1;
+    assert(match (ext::geometry::convex_hull(input, exact).unwrap_err()) {
+        ext::geometry::Error::WorkLimit -> true, _ -> false
+    });
+    // This deliberately overstates logical length to verify that the capacity
+    // preflight rejects before indexing or allocating from the borrowed input.
+    let too_many: core::slice::View<ext::geometry::Point> = input;
+    too_many.length = 134217728;
+    let large_limits: ext::geometry::Limits = ext::geometry::Limits {
+        max_points: 134217728,
+        max_work: ext::geometry::hull_work_bound(134217728).unwrap()
+    };
+    assert(match (ext::geometry::convex_hull(too_many, large_limits).unwrap_err()) {
+        ext::geometry::Error::Overflow -> true, _ -> false
+    });
+    assert(ext::geometry::convex_hull(input, ext::geometry::Limits {
+        max_points: -1, max_work: 1000
+    }
+    ).is_err());
+    assert(ext::geometry::convex_hull(input, ext::geometry::Limits {
+        max_points: 6, max_work: 1000
+    }
+    ).is_err());
+    assert(ext::geometry::convex_hull(input, ext::geometry::Limits {
+        max_points: 7, max_work: 0
+    }
+    ).is_err());
+    let invalid: core::slice::View<ext::geometry::Point> = input;
+    invalid.start = -1;
+    invalid.length = 0;
+    assert(ext::geometry::bounding_box(invalid, limits).is_err());
+    let invalid2: core::slice::View<ext::geometry::Point> = input;
+    invalid2.start = 2147483647;
+    invalid2.length = 1;
+    assert(ext::geometry::signed_area2(invalid2, limits).is_err());
+    let v: ext::geometry::Vec2 = ext::geometry::Vec2 {
+        x: 3e300,
+        y: 4e300
+    };
+    let unit: ext::geometry::Vec2 = ext::geometry::normalize2(v).unwrap();
+    assert(core::f64::abs(unit.x - 0.6)<0.000000000000001);
+    assert(core::f64::abs(unit.y - 0.8)<0.000000000000001);
+    let tiny: ext::geometry::Vec2 = ext::geometry::Vec2 {
+        x: core::f64::from_bits(1),
+        y: 0.0
+    };
+    let tiny_unit: ext::geometry::Vec2 = ext::geometry::normalize2(tiny).unwrap();
+    assert(tiny_unit.x == 1.0);
+    assert(ext::geometry::normalize2(ext::geometry::Vec2 {
+        x: 0.0, y: -0.0
+    }
+    ).is_err());
+    let bad: ext::geometry::Vec2 = ext::geometry::Vec2 {
+        x: core::f64::from_bits(9218868437227405312),
+        y: 0.0
+    };
+    assert(ext::geometry::add2(bad, v).is_err());
+    let big: ext::geometry::Vec2 = ext::geometry::Vec2 {
+        x: 1.7e308,
+        y: 1.7e308
+    };
+    assert(ext::geometry::length2(big).is_err());
+    assert(ext::geometry::add2(big, big).is_err());
+    assert(ext::geometry::normalize2(big).is_ok());
+    return 0;
+}

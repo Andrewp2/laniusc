@@ -13,10 +13,11 @@ milestone does not complete the goal.
 | `std` | Application interfaces and host services | `core`, `alloc`, explicit host bindings |
 | `ext` | Larger optional libraries | The layers above and declared extended-library dependencies |
 
-Allocation-backed collections are moving from `std` to `alloc` with their
-consumers and revised failure contracts. String and owned byte streams now use
-`alloc::vec`. The heap migration has a compiler dependency; the old vector path
-also remains part of the verified compiler's extraction contract. Do not add
+Allocation-backed collections use `alloc` with explicit failure contracts.
+The earlier map, set, byte-vector and UTF-8 owners have been removed after
+migrating their consumers. The heap migration has a compiler dependency; the
+old `std::vec` path also remains part of the verified compiler's extraction
+contract. Do not add
 forwarding modules solely to preserve internal paths. Extended modules can use
 an additional source root in this repository;
 package distribution is a separate deliverable.
@@ -26,19 +27,19 @@ package distribution is a separate deliverable.
 | Family | Required contents | Executable state and remaining work |
 | --- | --- | --- |
 | Fundamental values | Option, Result, ordering, comparison, hashing, cloning, explicit errors | Generic Option/Result execute; partial equality/order are distinct from total equality/order, with explicit total float keys. Some generic forwarding and record extraction compositions remain compiler dependencies; clone and ownership consolidation remain |
-| Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Integer implementations and matching binary32/binary64 value utilities execute, including exact bits, rounding and square root; exact decimal parsing, shortest formatting and nearest-even fixed/scientific/general precision formatting execute. Native floats use partial comparison; bit-preserving total wrappers supply lawful ordering/hashing. Duplicate paths and further mathematical operations remain |
+| Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Native i64/u64/isize/usize arithmetic, division, bits and integer conversions now execute alongside narrower integers; pointer widths explicitly describe x86_64. Binary32/binary64 value utilities include exact bits, rounding and square root; decimal parsing and shortest/precision formatting execute. Native floats use partial comparison with explicit total key wrappers. Cross-width API consolidation, represented two-word paths and further mathematical operations remain |
 | Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic algorithms and counted View values execute, including subviews, checked mutations and cursors; initial physical counts still require compiler length projection |
 | Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | Inherent slice/text/hash-map cursors execute; shared protocol dispatch hits an imported-generic compiler dependency; adapters and collection integration remain |
 | Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat, integer/float conversion, caller-buffer Display, runtime format strings and owned formatting execute. Alignment counts scalars and numeric precision rounds exact binary values. Optional extended modules provide Unicode 17 full casing, normalization and default word/grapheme boundaries; richer format controls, terminal display width and collation remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings, raw views and stable chunked arenas with generic typed allocations execute; layout and ownership consolidation remain |
-| Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec, deque and bitset with explicit errors, inline generic Vec/Eq Set, linear maps/sets, alloc hash maps, ordered tree maps and min/max heaps execute; generic owned hash/tree sets and legacy migration remain |
+| Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec, deque and bitset with explicit errors, inline generic Vec/Eq Set, hash maps, ordered tree maps and min/max heaps execute. Silent-failure legacy map/set/text owners are retired. Generic owned hash/tree sets and the protected std::vec/heap migration remain |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks, native descriptor adapters and owned files execute; buffered adapters remain |
 | Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files, borrowed Unix byte paths, components, names, prefixes, owned buffers, explicit lexical normalization and checked directory/file mutations execute; metadata, directory enumeration, walking and further host operations remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Owned raw-byte argument snapshots and argument/environment helpers execute; subprocess management remains |
 | Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, Gregorian calendar/ISO weeks/RFC 3339 values, native clocks, generic deadline waits, deterministic generators, sampling/shuffle and explicit OS entropy errors execute; time zones, legacy consolidation, additional clocks and distributions remain |
 | Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6, scopes, socket addresses and CIDR prefixes execute; host socket services remain contract-only |
 | Concurrency | Threads, joining, synchronization, atomics, channels, cancellation | Current thread module is contract-only; runtime prerequisites remain |
-| Development | Assertions, test runner, property helpers, benchmarks, diagnostics, API docs | Existing compiler-driven fixtures; a complete Lanius-facing workflow remains |
+| Development | Assertions, test runner, property helpers, benchmarks, diagnostics, API docs | Nontrapping checks, explicit source suites, filters, seeded properties, injected/native-clock benchmarks and a bounded native compiler/run driver execute. Automatic compiler discovery/runtime registration remains unavailable; distribution and complete API reference work remain |
 
 ## Extended library scope
 
@@ -187,6 +188,45 @@ A general Display-to-owned-String helper also remains excluded after a minimal
 compiler failure; typed owned formatting executes independently. The
 [dependency record](library-dependencies.md) preserves the exact contexts.
 
+[Native 64-bit and pointer-sized integers](stdlib-native-integers.md) provide
+checked, wrapping and saturating arithmetic, division, shifts, bits and all
+integer-width conversion policies. Native tests compare 84,100 cases with each
+independent Rust/i128 and Python bigint reference and check 54 strict traps.
+The [source test workflow](stdlib-development.md) adds explicit suites,
+nontrapping checks, deterministic properties and actual benchmark measurement.
+It does not claim compiler discovery or trap recovery. The repository's
+stdlib-heavy workload generator now uses the same borrowed collection APIs;
+default, string-heavy and directed record mixes execute against its model.
+
+[Collection consumer migration](stdlib-legacy-collections.md) removes ten
+silent-failure owner/specialization modules and moves fifteen programs to
+checked alloc owners or bounded storage. The [standard library entry guide](../stdlib/README.md)
+and [extended module index](../extended/README.md) expose current module paths.
+
+[Exact planar geometry](extended-geometry.md) handles full-i32 predicates,
+segments, rings and hulls, with finite floating vector/affine utilities. A
+[CSV hull program](extended-shape-hull.md) exercises exact topology and area.
+[Terminal width policy](extended-terminal.md), [tables](extended-table.md) and
+[progress rendering](extended-progress.md) supply bounded Unicode-aware output;
+a [CSV table program](extended-csv-table.md) integrates them. Width is an explicit
+policy rather than a universal terminal measurement.
+
+[Image buffers](extended-image.md) and [PNG codecs](extended-png.md) provide
+checked RGBA operations, all standard input color/depth combinations, Adam7,
+filters, CRC/order validation and RGBA8 encoding. A
+[PNG transformation program](extended-image-tool.md) exercises crop, rotation
+and flips. [Finite audio](extended-audio.md) and [WAVE codecs](extended-wave.md)
+provide PCM/IEEE/extensible conversion, exact mean/DC/mono behavior, scaled RMS
+and checked signal operations through a [WAVE program](extended-wave-tool.md).
+Color management, other image/audio formats, playback and wider signal
+processing remain work.
+
+[HTTP/1 wire processing](extended-http.md) implements requests/responses,
+framing, chunk extensions/trailers, exact boundaries and checked writers. Its
+[offline message program](extended-http-message.md) validates and decodes real
+wire bytes. It provides no socket client/server, TLS or HTTP/2 implementation;
+those protocol and binding requirements remain on the full roadmap.
+
 [TOML 1.1.0](extended-toml.md) supplies owned typed documents and deterministic
 encoding, with the complete versioned official valid/invalid corpus and resource
 failure evidence. A [normalizer/checker](extended-toml-normalize.md) preserves
@@ -249,7 +289,15 @@ API list; unrelated library work can continue.
 ## Current work
 
 - Branch: `codex/stdlib`, based on `441e66f9`.
-- Current formatting/parsing milestone: exact float precision, typed runtime
+- Current milestone: native 64-bit/pointer integers; Lanius source test/property/
+  benchmark workflow; legacy collection/text consumer migration; exact geometry;
+  terminal tables/progress; PNG/image and WAVE/audio utilities; HTTP/1 wire codec.
+  Six real applications integrate these families. Independent reviews found
+  and corrected PNG unknown-chunk handling, HTTP 205/CONNECT rules, exact audio
+  cancellation and Runner failure-state latching. All target claims remain
+  native x86_64 Linux; the whole roadmap, host/database services and distribution
+  are still incomplete.
+- Preceding formatting/parsing milestone: exact float precision, typed runtime
   format strings and owned String/byte results, inline Vec/Eq Set with explicit
   outcomes and symbolic-capacity borrowed APIs, checked parsing cursors,
   shortest line scripts and strict unified patches. The expression calculator

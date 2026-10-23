@@ -1,0 +1,14 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::text;
+import ext::terminal;
+fn main() -> i32 {
+ let bytes: [u8;3] = [65,255,66]; let policy: ext::terminal::Options = ext::terminal::options();
+ let good: core::text::Text = core::result::unwrap(core::text::from_utf8_range(bytes,0,1));
+ assert(core::result::unwrap(ext::terminal::width(good,policy)) == 1);
+ policy.max_work = 5; assert(core::result::is_err(ext::terminal::width(good,policy))); policy.max_work = 6; assert(core::result::unwrap(ext::terminal::width(good,policy)) == 1);
+ let malformed: core::text::Text = core::text::Text { bytes: bytes,start: 0,length: -1 }; assert(core::result::is_err(ext::terminal::width(malformed,policy)));
+ malformed.start = 2147483647; malformed.length = 1; assert(core::result::is_err(ext::terminal::width(malformed,policy)));
+ return 0;
+}

@@ -1,0 +1,40 @@
+// Retained original benchmark shape, before work/finish factoring.
+module test::bench;
+import core::result;
+import core::time;
+import core::decimal;
+import std::clock;
+import std::io;
+import std::io_decimal;
+pub const MAX_ITERATIONS: u32 = 1000000;
+pub enum Error { InvalidIterations, Clock(std::clock::Error), ClockReversed, WorkOverflow }
+pub struct Measurement { iterations: u32, work: u64, elapsed: core::time::Duration }
+pub trait Work { pub fn iteration(&self, index: u32) -> u64; }
+pub fn measure<C,W>(clock: &C, work: &W, iterations: u32) -> core::result::Result<Measurement, Error>
+    where C: std::clock::Monotonic, W: Work {
+    if (iterations == 0 || iterations > MAX_ITERATIONS) { return core::result::Err(Error::InvalidIterations); }
+    let started: core::result::Result<core::time::Instant,std::clock::Error> = clock.now();
+    if (core::result::is_err(started)) { return core::result::Err(Error::Clock(core::result::unwrap_err(started))); }
+    let start: core::time::Instant = core::result::unwrap(started);
+    let index: u32 = 0; let completed: u64 = 0;
+    while (index < iterations) {
+        let amount: u64 = work.iteration(index);
+        if (amount > 18446744073709551615 - completed) { return core::result::Err(Error::WorkOverflow); }
+        completed += amount; index += 1;
+    }
+    let stopped: core::result::Result<core::time::Instant,std::clock::Error> = clock.now();
+    if (core::result::is_err(stopped)) { return core::result::Err(Error::Clock(core::result::unwrap_err(stopped))); }
+    let stop: core::time::Instant = core::result::unwrap(stopped);
+    let elapsed: core::result::Result<core::time::Duration,core::time::Error> = stop.duration_since(start);
+    if (core::result::is_err(elapsed)) { return core::result::Err(Error::ClockReversed); }
+    return core::result::Ok(Measurement { iterations: iterations, work: completed, elapsed: core::result::unwrap(elapsed) });
+}
+pub fn native<W>(work: &W, iterations: u32) -> core::result::Result<Measurement, Error> where W: Work {
+    let clock: std::clock::NativeClock = std::clock::native(); return measure(clock.borrow(),work,iterations);
+}
+fn text(value: str, length: i32) -> bool { return std::io::write_text(1,value) == length; }
+fn number(value: u64) -> bool { return std::io_decimal::write_u64(1,value) == (core::decimal::len_u64(value) as i32); }
+pub fn report(value: Measurement) -> bool {
+    return text("bench iterations=",17) && number(value.iterations as u64) && text(" work=",6) && number(value.work) &&
+        text(" elapsed_seconds=",17) && number(value.elapsed.seconds) && text(" elapsed_nanos=",15) && number(value.elapsed.nanos as u64) && std::io::write_newline(1) == 1;
+}

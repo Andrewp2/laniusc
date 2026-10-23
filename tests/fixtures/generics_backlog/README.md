@@ -38,8 +38,9 @@ Not probes here:
 - An imported call's record result passed straight to another call, e.g.
   `try_reserve(new(), 1)` or `try_push(try_push(v, 30), 12)`, fails with
   LNC0006 at the inner call when the program is compiled (P10 group A, owned
-  by P4). It blocked the per-type set and map allocation-failure fixtures that the
-  generic std::set and std::map replaced.
+  by P4). It blocked older set/map allocation-failure fixtures. Those owner-returning
+  std::set/std::map families were subsequently retired; current sample consumers
+  use checked alloc::hash_map/alloc::tree_map owners (docs/stdlib-legacy-collections.md).
 - A local type that shadows an imported variant's owner, `import
   core::choices; enum Choice<T> { Local(T) }` then `Choice::Imported(42)` or
   `Choice<i32>::Imported(42)`, is rejected with LNC0027 "call resolution

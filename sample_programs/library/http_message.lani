@@ -1,0 +1,76 @@
+// Offline HTTP wire inspector. No network transport is used.
+module app::main;
+import alloc::vec;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::http;
+import std::args;
+import std::fs;
+import std::stream;
+
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn text(value: str, count: i32) -> core::text::Text { let v: core::slice::View<u8> = bytes(value,count); return core::text::from_utf8_unchecked(v.values,v.start,v.len()); }
+fn equal(value: core::slice::View<u8>, literal: str, count: i32) -> bool { let other: core::slice::View<u8> = bytes(literal,count); if (value.len() != count) { return false; } let i: i32 = 0; while (i < count) { if (core::option::unwrap(value.get(i)) != core::option::unwrap(other.get(i))) { return false; } i += 1; } return true; }
+fn write(value: core::slice::View<u8>, handle: i32) -> bool { let sink: std::stream::Descriptor = std::stream::from_handle(handle); return core::result::is_ok(core::io::write_all(sink.borrow(),value.values,value.start,value.len())); }
+fn error(failure: ext::http::Error) -> i32 {
+    let storage: [u8;128] = [0;128]; let format: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(storage,0,128)); format.write_text(text("http-message: ",14));
+    let code: i32 = match (failure) { ext::http::Error::Incomplete(at) -> 1, ext::http::Error::Malformed(at) -> 2, ext::http::Error::Limit(at) -> 3, ext::http::Error::Unsupported(at) -> 4, _ -> 5 };
+    let at: i32 = match (failure) { ext::http::Error::Incomplete(at) -> at, ext::http::Error::Malformed(at) -> at, ext::http::Error::Limit(at) -> at, ext::http::Error::Unsupported(at) -> at, _ -> -1 };
+    if (code == 1) { format.write_text(text("incomplete",10)); } if (code == 2) { format.write_text(text("malformed",9)); } if (code == 3) { format.write_text(text("limit",5)); } if (code == 4) { format.write_text(text("unsupported",11)); } if (code == 5) { format.write_text(text("invalid-state",13)); }
+    format.write_text(text(" byte=",6)); format.write_signed(at as i64,core::fmt::decimal()); format.write_text(text("\n",1)); let n: i32 = core::result::unwrap(format.finish());
+    if (!write(core::result::unwrap(core::slice::view(storage,n)),2)) { return 3; } return 2;
+}
+fn read(source: std::stream::Descriptor, input: &alloc::vec::Vec<u8>, maximum: i32) -> i32 {
+    let storage: [i32;256] = [0;256]; let scratch: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024);
+    while (true) { let received: core::result::Result<i32,core::io::Error> = source.read(scratch,0,1024);
+        if (core::result::is_err(received)) { if (core::io::is_interrupted(core::result::unwrap_err(received))) { continue; } return 3; }
+        let n: i32 = core::result::unwrap(received); if (n == 0) { return 0; }
+        if (n > maximum-input.len()) { return 2; }
+        if (core::result::is_err(input.try_extend(core::result::unwrap(core::slice::view(scratch,n))))) { return 4; }
+    }
+    return 0;
+}
+fn report(value: ext::http::Message, input_length: i32, output: &alloc::vec::Vec<u8>) -> bool {
+    let storage: [i32;64] = [0;64]; let scratch: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),256); let f: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(scratch,0,256));
+    f.write_text(text("version=",8)); f.write_signed(value.head.version as i64,core::fmt::decimal()); f.write_text(text(" status=",8)); f.write_signed(value.head.status as i64,core::fmt::decimal());
+    f.write_text(text(" headers=",9)); f.write_signed(value.head.field_count as i64,core::fmt::decimal());
+    f.write_text(text(" framing=",9)); let kind: i32 = match (value.head.kind) { ext::http::BodyKind::Empty -> 0, ext::http::BodyKind::Fixed -> 1, ext::http::BodyKind::Chunked -> 2, ext::http::BodyKind::Close -> 3, ext::http::BodyKind::Tunnel -> 4 }; f.write_signed(kind as i64,core::fmt::decimal());
+    f.write_text(text(" body=",6)); f.write_signed(value.decoded_length as i64,core::fmt::decimal()); f.write_text(text(" trailers=",10)); f.write_signed(value.trailer_count as i64,core::fmt::decimal());
+    f.write_text(text(" consumed=",10)); f.write_signed(value.consumed as i64,core::fmt::decimal()); f.write_text(text(" remaining=",11)); f.write_signed((input_length-value.consumed) as i64,core::fmt::decimal()); f.write_text(text("\n",1));
+    let n: i32 = core::result::unwrap(f.finish()); return core::result::is_ok(output.try_extend(core::result::unwrap(core::slice::view(scratch,n))));
+}
+fn process(args: std::args::Arguments) -> i32 {
+    let method: core::slice::View<u8> = bytes("",0); let path: core::slice::View<u8> = bytes("-",1); let path_set: bool = false; let eof: bool = false; let mode: i32 = 0; let max_input: i32 = 18874368; let i: i32 = 0; let options: bool = true;
+    while (i < args.len()) { let arg: core::slice::View<u8> = core::option::unwrap(args.get(i));
+        if (options && equal(arg,"--",2)) { options = false; }
+        else { if (options && equal(arg,"--help",6)) { if (!write(bytes("Usage: http-message [--response METHOD] [--decode|--validate] [--eof] [--max-input N] [--] [FILE|-]\n",100),1)) { return 3; } return 0; }
+        else { if (options && equal(arg,"--response",10)) { i += 1; if (i == args.len() || !method.is_empty()) { return 2; } method = core::option::unwrap(args.get(i)); if (method.is_empty()) { return 2; } }
+        else { if (options && equal(arg,"--max-input",11)) { i += 1; if (i == args.len()) { return 2; } let n: core::slice::View<u8> = core::option::unwrap(args.get(i)); let parsed = core::text::from_utf8_range(n.values,n.start,n.len()); if (core::result::is_err(parsed)) { return 2; } let count = core::result::unwrap(parsed).parse_i32(); if (core::result::is_err(count)) { return 2; } max_input = core::result::unwrap(count); if (max_input < 0 || max_input > 67108864) { return 2; } }
+        else { if (options && equal(arg,"--eof",5)) { eof = true; }
+        else { if (options && equal(arg,"--decode",8)) { if (mode != 0) { return 2; } mode = 1; }
+        else { if (options && equal(arg,"--validate",10)) { if (mode != 0) { return 2; } mode = 2; }
+        else { if (path_set || (options && arg.len() > 1 && core::option::unwrap(arg.get(0)) == 45)) { return 2; } path = arg; path_set = true; } } } } } } }
+        i += 1;
+    }
+    let handle: i32 = 0; let opened: bool = false;
+    if (!equal(path,"-",1)) { let j: i32 = 0; while (j < path.len()) { if (core::option::unwrap(path.get(j)) == 0) { return 2; } j += 1; }
+        let packed = alloc::vec::from_view(path); if (core::result::is_err(packed)) { return 4; } let owner: alloc::vec::Vec<u8> = core::result::unwrap(packed); handle = std::fs::open_read(owner.storage,owner.len() as usize); owner.destroy(); if (handle < 0) { return 3; } opened = true;
+    }
+    let input: alloc::vec::Vec<u8> = alloc::vec::new(); let status: i32 = read(std::stream::from_handle(handle),input.borrow(),max_input);
+    if (opened && std::fs::close(handle) < 0 && status == 0) { status = 3; }
+    if (status != 0) { input.destroy(); return status; }
+    let limits: ext::http::Limits = ext::http::default_limits(); let parsed: core::result::Result<ext::http::Message,ext::http::Error> = ext::http::parse_request(input.as_view(),eof,limits);
+    if (!method.is_empty()) { parsed = ext::http::parse_response(input.as_view(),method,eof,limits); }
+    if (core::result::is_err(parsed)) { let failure: ext::http::Error = core::result::unwrap_err(parsed); input.destroy(); return error(failure); }
+    let value: ext::http::Message = core::result::unwrap(parsed); let output: alloc::vec::Vec<u8> = alloc::vec::new();
+    if (mode == 1) { if (core::result::is_err(output.try_resize(value.decoded_length,0))) { status = 4; } else { if (core::result::is_err(ext::http::decode_into(value,output.as_view()))) { status = 2; } } }
+    if (mode == 0 && !report(value,input.len(),output.borrow())) { status = 4; }
+    if (status == 0 && !write(output.as_view(),1)) { status = 3; }
+    output.destroy(); input.destroy(); return status;
+}
+fn main() -> i32 { let snapshot = std::args::snapshot(1,32,65536); if (core::result::is_err(snapshot)) { return match (core::result::unwrap_err(snapshot)) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(at) -> 3, _ -> 2 }; } let args: std::args::Arguments = core::result::unwrap(snapshot); let status: i32 = process(args); args.destroy(); return status; }

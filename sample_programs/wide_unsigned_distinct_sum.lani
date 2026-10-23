@@ -1,47 +1,29 @@
-// Sum distinct unsigned decimal lines modulo 2^64 using an owned two-word set.
-// Each line must contain one unsigned integer without surrounding whitespace.
+// Sum distinct unsigned decimal lines modulo 2^64.
+// Each line contains one integer without surrounding whitespace.
 module app::main;
+import alloc::tree_map;
 import core::wide_u64;
+import core::result;
 import std::io_byte;
 import std::io_decimal;
 import std::io_line;
-import std::set;
+
 fn main() -> i32 {
-    let data:[i32; 20] =[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    let values: std::set::Set<core::wide_u64::WideU64> = std::set::new();
+    let data: [i32; 20] = [0; 20];
+    let values: alloc::tree_map::TreeMap<core::wide_u64::WideU64, bool> = alloc::tree_map::new();
+    let total: core::wide_u64::WideU64 = core::wide_u64::zero();
     while (true) {
         let length: i32 = std::io_line::read_stdin_lf_line_into_i32(data, 20);
-        if (length == -1) {
-            break;
-        }
-        if (length <= 0) {
-            std::set::destroy(values);
-            return 2;
-        }
-        if (!core::wide_u64::can_parse_ascii_decimal(data, length)) {
-            std::set::destroy(values);
-            return 3;
-        }
+        if (length == -1) { break; }
+        if (length <= 0) { values.destroy(); return 2; }
+        if (!core::wide_u64::can_parse_ascii_decimal(data, length)) { values.destroy(); return 3; }
         let value: core::wide_u64::WideU64 = core::wide_u64::parse_ascii_decimal_or(data, length, core::wide_u64::zero());
-        if (!std::set::contains(values, value)) {
-            let old_length: i32 = std::set::len(values);
-            values = std::set::try_insert(values, value);
-            if (std::set::len(values) != old_length + 1) {
-                std::set::destroy(values);
-                return 4;
-            }
+        if (!values.contains_key(value)) {
+            if (core::result::is_err(values.try_insert(value, true))) { values.destroy(); return 4; }
+            total = core::wide_u64::wrapping_add(total, value);
         }
     }
-    let total: core::wide_u64::WideU64 = core::wide_u64::zero();
-    let index: i32 = 0;
-    while (index<std::set::len(values)) {
-        let value: core::wide_u64::WideU64 = std::set::at_or(values, index, core::wide_u64::zero());
-        total = core::wide_u64::wrapping_add(total, value);
-        index += 1;
-    }
-    std::set::destroy(values);
-    if (std::io_decimal::write_wide_u64(1, total) <= 0 || !std::io_byte::write_stdout_byte(10)) {
-        return 5;
-    }
+    values.destroy();
+    if (std::io_decimal::write_wide_u64(1, total) <= 0 || !std::io_byte::write_stdout_byte(10)) { return 5; }
     return 0;
 }

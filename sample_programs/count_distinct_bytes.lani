@@ -1,30 +1,25 @@
-// Print the counts of distinct input bytes and distinct ASCII digit bytes.
+// Print counts of distinct input bytes and distinct ASCII digit bytes.
+// The byte domain is bounded, so membership uses a caller-owned table.
 module app::main;
 import core::byte;
 import std::io;
 import std::io_byte;
 import std::io_decimal;
-import std::set_u8;
 
 fn main() -> i32 {
-    let zero: u32 = 0;
-    let all: [u32; 8] = [zero, zero, zero, zero, zero, zero, zero, zero];
-    let digits: [u32; 8] = [zero, zero, zero, zero, zero, zero, zero, zero];
+    let seen: [bool; 256] = [false; 256];
+    let count: u32 = 0;
+    let digits: u32 = 0;
     while (true) {
         let code: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
         if (code == -1) { break; }
         if (code == -2) { return 2; }
-        let item: u8 = code as u8;
-        std::set_u8::insert(all, item);
-        if (core::byte::is_ascii_digit(item)) {
-            std::set_u8::insert(digits, item);
+        if (!seen[code]) {
+            seen[code] = true; count += 1;
+            if (core::byte::is_ascii_digit(code as u8)) { digits += 1; }
         }
     }
-    let count: u32 = std::set_u8::len(all) as u32;
-    let digit_count: u32 = std::set_u8::len(digits) as u32;
-    if (std::io_decimal::write_u32(1, count) < 0 ||
-        std::io::write_byte(1, 10) != 1 ||
-        std::io_decimal::write_u32(1, digit_count) < 0 ||
-        std::io::write_byte(1, 10) != 1) { return 4; }
+    if (std::io_decimal::write_u32(1, count) < 0 || std::io::write_byte(1, 10) != 1 ||
+        std::io_decimal::write_u32(1, digits) < 0 || std::io::write_byte(1, 10) != 1) { return 4; }
     return 0;
 }

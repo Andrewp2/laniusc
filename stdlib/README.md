@@ -1,0 +1,83 @@
+# Standard library
+
+The standard library is implemented in Lanius. Use `--stdlib-root stdlib` when
+compiling a program from this checkout. The [extended library](../extended/README.md)
+contains optional codecs, protocols, mathematics and application utilities.
+
+## Layers
+
+| Layer | Contents | Dependencies |
+| --- | --- | --- |
+| `core` | Values, arithmetic, counted views, text, algorithms and codecs | Language operations and explicit target contracts |
+| `alloc` | Owned buffers, strings, collections and arenas | `core` and allocator bindings |
+| `std` | Process arguments, environment, files, streams, clocks and entropy | `core`, `alloc` and available native host bindings |
+| `test` | Nontrapping checks, explicit suites, seeded properties and benchmarks | The layers needed by each operation; native clock/I/O only when requested |
+
+## Find an API
+
+| Need | Main modules | Contracts and examples |
+| --- | --- | --- |
+| Optional values and failures | `core::option`, `core::result`, `core::pair` | [Option](../docs/stdlib-option.md), [Result](../docs/stdlib-result.md) |
+| Equality, ordering and hashing | `core::cmp`, `core::ordering`, `core::hash`, `core::float_order` | [Lawful comparison and float keys](../docs/stdlib-comparison.md) |
+| Integer arithmetic | `core::{i8,i16,i32,i64,u8,u16,u32,u64,isize,usize}`, byte/bit/conversion helpers | [Native 64-bit and pointer-sized contracts](../docs/stdlib-native-integers.md); each operation names its checked, wrapping or saturating policy |
+| Floating values and conversion | `core::f32`, `core::f64`, `core::float_decimal` | [Exact precision formatting](../docs/stdlib-float-precision.md) |
+| Borrowed data and algorithms | `core::slice`, `core::range`, array helpers | [Counted views](../docs/stdlib-slice-views.md), [slice algorithms](../docs/stdlib-slice.md) |
+| UTF-8 and Unicode | `core::text`, `core::char`, `core::utf8`, `core::utf16`, `core::transcode`, `core::unicode` | [Unicode properties](../docs/stdlib-unicode.md); normalization and full casing are optional extended modules |
+| Owned strings | `alloc::string` | [String ownership, edits and failures](../docs/stdlib-string.md) |
+| Formatting | `core::fmt`, `core::format`, `alloc::format` | [Runtime format strings and owned results](../docs/stdlib-format-strings.md) |
+| Inline collections | `core::vec`, `core::set` | [Borrowed free APIs, capacities, equality and returned values](../docs/stdlib-fixed-capacity.md) |
+| Owned collections | `alloc::vec`, `alloc::deque`, `alloc::hash_map`, `alloc::tree_map`, `alloc::binary_heap`, `alloc::bitset` | [Owned bitsets](../docs/stdlib-bitset-owned.md), [ordered maps](../docs/stdlib-tree-map.md); generic owned sets remain a [compiler dependency](../docs/stdlib-owned-sets.md) |
+| Memory | `core::mem`, `alloc::allocator`, `alloc::arena` | [Arena layouts and ownership](../docs/stdlib-arena.md) |
+| Streams and files | `core::io`, `alloc::io`, `std::stream`, `std::file`, `std::filesystem` | [Files](../docs/stdlib-files.md), [filesystem operations](../docs/stdlib-filesystem.md) |
+| Paths | `core::path`, `alloc::path` | [Unix byte paths](../docs/stdlib-paths.md) |
+| Arguments and environment | `std::args`, `std::args_checked`, `std::env_checked` | Raw-byte process snapshots and checked host wrappers |
+| Time and randomness | `core::time`, `core::calendar`, `std::clock`, `core::random`, `std::entropy` | [Time](../docs/stdlib-time.md), [calendar](../docs/stdlib-calendar.md), [randomness](../docs/stdlib-randomness.md) |
+| Numeric network values | `core::net` | [Address values](../docs/stdlib-net.md); socket services remain unavailable |
+| Tests and benchmarks | `test::assert`, `test::check`, `test::suite`, `test::property`, `test::bench` | [Development workflow](../docs/stdlib-development.md), `tools/lanius-test` |
+
+The older `std::vec` remains for the verified compiler's extraction contract and
+one heap dependency. New programs should use `alloc::vec`. Silent-failure map,
+set, byte-vector and UTF-8 owners have been removed with their repository
+consumers [migrated to checked APIs](../docs/stdlib-legacy-collections.md).
+
+## Ownership and errors
+
+Owners are shallow values. Keep one active owner and call `destroy()` when
+finished. A copy of an owner aliases its allocation; it does not clone it.
+Views borrow live initialized storage, and their initial physical backing count
+remains a caller precondition. These rules are documented conventions rather
+than compiler-enforced lifetime safety.
+
+Fallible operations return explicit `Result` errors. Ordinary absence uses
+`Option`. Mutations state whether an error preserves the owner; streams can
+already have transferred a prefix when I/O fails. Panicking conveniences state
+their preconditions. See the [API conventions](../docs/library-api-conventions.md).
+
+## Build and run
+
+With the compiler already built, from the repository root:
+
+```sh
+mkdir -p target/stdlib-work
+timeout --kill-after=2s 100s target/stdlib-build/debug/laniusc \
+  --stdlib-root stdlib --source-root extended \
+  sample_programs/library/expr_calc.lani -o target/stdlib-work/expr-calc
+printf '1+2*3\n-(5+6)\n' | target/stdlib-work/expr-calc
+```
+
+Expected output is `7` and `-11`, each on its own line. The
+[application index](../sample_programs/library/README.md) links executable
+programs, commands, resource limits and failure tests.
+
+## Supported target and remaining work
+
+Verified execution is x86_64 Linux output from GPU compilation. Compiling on the
+GPU does not establish execution of user GPU kernels. Other targets have no
+current execution claim.
+
+`core::target` and `core::runtime` describe available bindings. In particular,
+sockets, threads, directory enumeration and database integration still need
+host support. Metadata declarations do not implement these services. Generic
+composition limits have [reproductions and controls](../docs/library-dependencies.md).
+The [full library roadmap](../docs/library-roadmap.md) remains open, including
+distribution, selective dependencies and the final completion audit.
