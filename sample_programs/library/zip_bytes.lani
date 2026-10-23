@@ -1,0 +1,183 @@
+// Bounded ZIP creation, NUL-delimited listing, exact member reads and verification.
+// Validate complete metadata before stdout; selected/all payloads are checked
+// for get/verify. No filesystem extraction. Diagnostics are best effort.
+// Exit 2: arguments/format/limits; 3: I/O; 4: allocation.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::cli;
+import ext::zip;
+import std::args;
+import std::stream;
+
+struct Options { mode: i32, mode_set: bool, name: core::slice::View<u8>, stored: bool, utf8: bool, max_input: i32, max_output: i32, limits: ext::zip::Limits, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+enum Error { Archive(ext::zip::Error), OutputLimit, NotFound, Duplicate, NulName }
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn equal(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len() != right.len()) { return false; } let index: i32 = 0;
+    while (index < left.len()) { if (left.values[left.start+index] != right.values[right.start+index]) { return false; } index += 1; } return true;
+}
+fn report(status: i32, message: core::slice::View<u8>) -> i32 {
+    let sink: std::stream::Descriptor = std::stream::stderr(); core::io::write_all(sink.borrow(),message.values,message.start,message.len()); return status;
+}
+fn archive_error(error: ext::zip::Error) -> i32 {
+    let status: i32 = match (error) { ext::zip::Error::AllocationFailed -> 4, _ -> 2 };
+    let message: core::slice::View<u8> = match (error) {
+        ext::zip::Error::ArchiveLimit -> literal("zip-bytes: archive limit exceeded\n",34),
+        ext::zip::Error::EntryLimit -> literal("zip-bytes: entry limit exceeded\n",32),
+        ext::zip::Error::TotalLimit -> literal("zip-bytes: total size limit exceeded\n",37),
+        ext::zip::Error::WorkLimit -> literal("zip-bytes: work limit exceeded\n",31),
+        ext::zip::Error::OutputLimit -> literal("zip-bytes: output limit exceeded\n",33),
+        ext::zip::Error::AllocationFailed -> literal("zip-bytes: allocation failed\n",29),
+        ext::zip::Error::Checksum -> literal("zip-bytes: checksum mismatch\n",29),
+        ext::zip::Error::SizeMismatch -> literal("zip-bytes: member size mismatch\n",32),
+        ext::zip::Error::Name -> literal("zip-bytes: invalid creation name\n",33),
+        ext::zip::Error::Encoding -> literal("zip-bytes: invalid UTF-8 metadata\n",34),
+        ext::zip::Error::Encryption -> literal("zip-bytes: encrypted archives are unsupported\n",46),
+        ext::zip::Error::Zip64 -> literal("zip-bytes: ZIP64 archives are unsupported\n",42),
+        ext::zip::Error::MultiDisk -> literal("zip-bytes: multi-disk archives are unsupported\n",47),
+        ext::zip::Error::UnsupportedMethod -> literal("zip-bytes: unsupported compression method\n",42),
+        ext::zip::Error::Deflate(detail) -> literal("zip-bytes: invalid DEFLATE payload\n",35),
+        _ -> literal("zip-bytes: invalid or unsupported ZIP archive\n",46)
+    }; return report(status,message);
+}
+fn failed(error: Error) -> i32 {
+    let status: i32 = match (error) {
+        Error::Archive(detail) -> archive_error(detail),
+        Error::OutputLimit -> report(2,literal("zip-bytes: output limit exceeded\n",33)),
+        Error::NotFound -> report(2,literal("zip-bytes: member not found\n",28)),
+        Error::Duplicate -> report(2,literal("zip-bytes: duplicate member name\n",33)),
+        Error::NulName -> report(2,literal("zip-bytes: member name contains NUL\n",36))
+    }; return status;
+}
+fn input_error(error: core::io::Error) -> i32 {
+    let limited: bool = match (error) { core::io::Error::LimitExceeded -> true, _ -> false };
+    if (limited) { return report(2,literal("zip-bytes: input limit exceeded\n",32)); }
+    let allocation: bool = match (error) { core::io::Error::AllocationFailed -> true, _ -> false };
+    if (allocation) { return archive_error(ext::zip::Error::AllocationFailed); }
+    return report(3,literal("zip-bytes: input I/O failed\n",28));
+}
+fn apply(options: &Options, item: ext::cli::Occurrence) -> bool {
+    if (item.id >= 1 && item.id <= 4) {
+        if (options.mode_set) { return false; } options.mode_set = true; options.mode = item.id-1;
+        if (item.id == 2 || item.id == 3) { options.name = core::option::unwrap(item.value).bytes; if (options.name.is_empty()) { return false; } } return true;
+    }
+    if (item.id == 5) { options.stored = true; return true; }
+    if (item.id == 6) { options.utf8 = true; return true; }
+    if (item.id == 13) { options.help = true; return true; }
+    let bytes: core::slice::View<u8> = core::option::unwrap(item.value).bytes;
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(bytes.values,bytes.start,bytes.len());
+    if (core::result::is_err(parsed)) { return false; } let value: u64 = core::result::unwrap(parsed);
+    if (item.id == 11) { options.limits.max_total = value; return true; }
+    if (item.id == 12) { options.limits.max_work = value; return true; }
+    if (value > 2147483647 as u64) { return false; }
+    if (item.id == 7) { options.max_input = value as i32; }
+    if (item.id == 8) { options.max_output = value as i32; }
+    if (item.id == 9) { options.limits.max_entries = value as i32; }
+    if (item.id == 10) { options.limits.max_entry = value as i32; }
+    if (item.id == 14) { options.limits.max_archive = value as i32; } return true;
+}
+fn read_zip(options: Options, input: core::slice::View<u8>) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    let parsed: core::result::Result<ext::zip::Archive,ext::zip::Error> = ext::zip::parse(input,options.limits);
+    if (core::result::is_err(parsed)) { return core::result::Err(Error::Archive(core::result::unwrap_err(parsed))); }
+    let archive: ext::zip::Archive = core::result::unwrap(parsed); let cursor: ext::zip::Cursor = archive.cursor();
+    let selected: core::option::Option<ext::zip::Entry> = core::option::None(); let size: i32 = 0;
+    while (true) {
+        let next: core::option::Option<ext::zip::Entry> = cursor.next(); if (core::option::is_none(next)) { break; }
+        let entry: ext::zip::Entry = core::option::unwrap(next);
+        if (options.mode == 0) {
+            let index: i32 = 0; while (index < entry.name.len()) { if (entry.name.values[entry.name.start+index] == 0) { return core::result::Err(Error::NulName); } index += 1; }
+            if (entry.name.len() >= options.max_output-size) { return core::result::Err(Error::OutputLimit); } size += entry.name.len()+1;
+        }
+        if (options.mode == 1 && equal(entry.name,options.name)) {
+            if (core::option::is_some(selected)) { return core::result::Err(Error::Duplicate); } selected = core::option::Some(entry);
+        }
+        if (options.mode == 3) {
+            let checked: core::result::Result<alloc::vec::Vec<u8>,ext::zip::Error> = ext::zip::extract(entry,options.limits.max_entry);
+            if (core::result::is_err(checked)) { return core::result::Err(Error::Archive(core::result::unwrap_err(checked))); }
+            let payload: alloc::vec::Vec<u8> = core::result::unwrap(checked); payload.destroy();
+        }
+    }
+    if (options.mode == 1) {
+        if (core::option::is_none(selected)) { return core::result::Err(Error::NotFound); }
+        let extracted: core::result::Result<alloc::vec::Vec<u8>,ext::zip::Error> = ext::zip::extract(core::option::unwrap(selected),options.max_output);
+        if (core::result::is_err(extracted)) { return core::result::Err(Error::Archive(core::result::unwrap_err(extracted))); } return core::result::Ok(core::result::unwrap(extracted));
+    }
+    if (options.mode == 3) { let empty: alloc::vec::Vec<u8> = alloc::vec::new(); return core::result::Ok(empty); }
+    let allocated: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity(size);
+    if (core::result::is_err(allocated)) { return core::result::Err(Error::Archive(ext::zip::Error::AllocationFailed)); }
+    let output: alloc::vec::Vec<u8> = core::result::unwrap(allocated); let again: ext::zip::Cursor = archive.cursor();
+    while (true) {
+        let next: core::option::Option<ext::zip::Entry> = again.next(); if (core::option::is_none(next)) { break; }
+        let entry: ext::zip::Entry = core::option::unwrap(next); core::result::unwrap(output.try_extend(entry.name)); core::result::unwrap(output.try_push(0));
+    } return core::result::Ok(output);
+}
+fn convert(options: Options, input: core::slice::View<u8>) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    if (options.mode != 2) { return read_zip(options,input); }
+    let method: ext::zip::Method = ext::zip::Method::Deflate; if (options.stored) { method = ext::zip::Method::Stored; }
+    let source: [ext::zip::Source;1] = [ext::zip::Source { name: options.name, data: input, method: method, utf8: options.utf8 }];
+    let limits: ext::zip::Limits = options.limits; let output_limited: bool = options.max_output < limits.max_archive;
+    if (output_limited) { limits.max_archive = options.max_output; }
+    let encoded: core::result::Result<alloc::vec::Vec<u8>,ext::zip::Error> = ext::zip::encode(core::result::unwrap(core::slice::view(source,1)),literal("",0),limits);
+    if (core::result::is_err(encoded)) {
+        let error: ext::zip::Error = core::result::unwrap_err(encoded); let archive_limit: bool = match (error) { ext::zip::Error::ArchiveLimit -> true, _ -> false };
+        if (output_limited && archive_limit) { return core::result::Err(Error::OutputLimit); } return core::result::Err(Error::Archive(error));
+    } return core::result::Ok(core::result::unwrap(encoded));
+}
+fn process(options: Options) -> i32 {
+    let input: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(options.max_input)); let source: std::stream::Descriptor = std::stream::stdin();
+    let copied: core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(source.borrow(),input.borrow());
+    if (core::result::is_err(copied)) { let failure: core::io::CopyFailure = core::result::unwrap_err(copied); input.destroy(); return input_error(failure.cause); }
+    let bytes: core::slice::View<u8> = core::result::unwrap(core::slice::view(input.as_bytes(),input.len())); let converted: core::result::Result<alloc::vec::Vec<u8>,Error> = convert(options,bytes); input.destroy();
+    if (core::result::is_err(converted)) { return failed(core::result::unwrap_err(converted)); }
+    let output: alloc::vec::Vec<u8> = core::result::unwrap(converted); let sink: std::stream::Descriptor = std::stream::stdout();
+    let written: core::result::Result<i32,core::io::Failure> = core::io::write_all(sink.borrow(),output.as_slice(),0,output.len()); output.destroy();
+    if (core::result::is_err(written)) { return report(3,literal("zip-bytes: output I/O failed\n",29)); } return 0;
+}
+fn arguments(values: std::args::Arguments) -> i32 {
+    let specs: [ext::cli::Spec;14] = [
+        ext::cli::Spec { id: 1, long: literal("list",4), short: 116, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 2, long: literal("get",3), short: 103, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 3, long: literal("create",6), short: 99, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 4, long: literal("verify",6), short: 118, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 5, long: literal("store",5), short: 115, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 6, long: literal("utf8",4), short: 0, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 7, long: literal("max-input",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 8, long: literal("max-output",10), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 9, long: literal("max-entries",11), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 10, long: literal("max-entry",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 11, long: literal("max-total",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 12, long: literal("max-work",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 13, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 14, long: literal("max-archive",11), short: 0, arity: ext::cli::Arity::Required }
+    ];
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,14)); let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(values.as_view(),schema,ext::cli::Ordering::Intermixed));
+    let options: Options = Options { mode: 0, mode_set: false, name: literal("",0), stored: false, utf8: false, max_input: 16777216, max_output: 67108864, limits: ext::zip::default_limits(), help: false };
+    while (true) {
+        let parsed: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next(); if (core::result::is_err(parsed)) { return report(2,literal("zip-bytes: invalid arguments\n",29)); }
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(parsed); if (core::option::is_none(next)) { break; }
+        let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> apply(options.borrow(),item), ext::cli::Event::Operand(item) -> false };
+        if (!valid) { return report(2,literal("zip-bytes: invalid arguments\n",29)); }
+    }
+    if ((options.stored || options.utf8) && options.mode != 2) { return report(2,literal("zip-bytes: creation option requires --create\n",45)); }
+    if (options.help) {
+        let usage: core::slice::View<u8> = literal("Usage: zip-bytes [--list|--get NAME|--create NAME|--verify] [--store] [--utf8] [--max-input N] [--max-output N] [--max-archive N] [--max-entries N] [--max-entry N] [--max-total N] [--max-work N]\n",195); let sink: std::stream::Descriptor = std::stream::stdout();
+        if (core::result::is_err(core::io::write_all(sink.borrow(),usage.values,0,usage.len()))) { return report(3,literal("zip-bytes: output I/O failed\n",29)); } return 0;
+    } return process(options);
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,64,131072);
+    if (core::result::is_err(captured)) {
+        let error: std::args::Error = core::result::unwrap_err(captured); let status: i32 = match (error) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 };
+        return report(status,literal("zip-bytes: cannot capture arguments\n",36));
+    } let values: std::args::Arguments = core::result::unwrap(captured); let status: i32 = arguments(values); values.destroy(); return status;
+}

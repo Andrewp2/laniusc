@@ -1,0 +1,40 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::zip;
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn main() -> i32 {
+    let first: [u8;8] = [255,0,255,97,98,97,98,255]; let source: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(first,1,6));
+    let entries: [ext::zip::Source;3] = [
+        ext::zip::Source { name: bytes("a.bin",5), data: source, method: ext::zip::Method::Stored, utf8: true },
+        ext::zip::Source { name: bytes("other/data",10), data: source, method: ext::zip::Method::Deflate, utf8: false },
+        ext::zip::Source { name: bytes("empty",5), data: bytes("",0), method: ext::zip::Method::Deflate, utf8: true }
+    ];
+    let input: core::slice::View<ext::zip::Source> = core::result::unwrap(core::slice::view(entries,3)); let limits: ext::zip::Limits = ext::zip::default_limits();
+    let output: alloc::vec::Vec<u8> = core::result::unwrap(ext::zip::encode(input,bytes("comment",7),limits));
+    let parsed: ext::zip::Archive = core::result::unwrap(ext::zip::parse(output.as_view(),limits)); assert(parsed.len() == 3 && !parsed.is_empty()); assert(parsed.comment.length == 7);
+    let cursor: ext::zip::Cursor = parsed.cursor(); assert(cursor.remaining() == 3); let index: i32 = 0;
+    while (index < 3) {
+        let entry: ext::zip::Entry = core::option::unwrap(cursor.next()); assert(entry.name.length == entries[index].name.length);
+        let extracted: alloc::vec::Vec<u8> = core::result::unwrap(ext::zip::extract(entry,6));
+        assert(extracted.len() == entries[index].data.length); let offset: i32 = 0;
+        while (offset < extracted.len()) { assert(extracted.at(offset) == core::option::unwrap(source.get(offset))); offset += 1; }
+        extracted.destroy(); index += 1;
+    }
+    assert(core::option::is_none(cursor.next()) && core::option::is_none(cursor.next()) && cursor.remaining() == 0);
+    output.destroy();
+    let one: alloc::vec::Vec<u8> = core::result::unwrap(ext::zip::encode(core::result::unwrap(input.subview(0,1)),bytes("",0),limits));
+    let native_archive: [u8;200] = [255;200]; index = 0; while (index < one.len()) { native_archive[5+index] = one.at(index); index += 1; }
+    let window: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(native_archive,5,one.len()));
+    let borrowed: ext::zip::Archive = core::result::unwrap(ext::zip::parse(window,limits)); let native_cursor: ext::zip::Cursor = borrowed.cursor();
+    let entry: ext::zip::Entry = core::option::unwrap(native_cursor.next()); let copy: alloc::vec::Vec<u8> = core::result::unwrap(ext::zip::extract(entry,6)); assert(copy.len() == 6 && copy.at(0) == 0); copy.destroy();
+    let invalid: core::slice::View<u8> = window; invalid.start = -1; assert(core::result::is_err(ext::zip::parse(invalid,limits)));
+    invalid = window; invalid.start = 2147483647; invalid.length = 1; assert(core::result::is_err(ext::zip::parse(invalid,limits)));
+    let malformed: ext::zip::Entry = entry; malformed.data.start = -1; assert(core::result::is_err(ext::zip::extract(malformed,6)));
+    assert(core::result::is_err(ext::zip::extract(entry,-1)));
+    let invalid_sources: core::slice::View<ext::zip::Source> = input; invalid_sources.length = -1; assert(core::result::is_err(ext::zip::encode(invalid_sources,bytes("",0),limits)));
+    one.destroy(); return 0;
+}

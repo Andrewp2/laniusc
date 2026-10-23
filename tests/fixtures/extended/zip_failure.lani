@@ -1,0 +1,28 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::zip;
+import std::io_decimal;
+import std::process;
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn main() -> i32 {
+    let mode_bytes: [i32;1] = [0]; let pointer: ptr = core::mem::i32_array_data_ptr(mode_bytes); assert(std::process::arg_read(1,pointer,1) == 1); let arguments: [u8] = core::mem::typed_slice_from_raw_parts(pointer,1); let mode: u8 = arguments[0];
+    let limits: ext::zip::Limits = ext::zip::default_limits(); let code: i32 = 0;
+    let result: core::result::Result<alloc::vec::Vec<u8>,ext::zip::Error> = core::result::Err(ext::zip::Error::Bounds);
+    if (mode == 48) {
+        let words: [i32;2048] = [0;2048]; let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words),8192); let payload: core::slice::View<u8> = core::result::unwrap(core::slice::view(raw,8192));
+        let sources: [ext::zip::Source;2] = [ext::zip::Source { name: bytes("stored",6), data: payload, method: ext::zip::Method::Stored, utf8: false },ext::zip::Source { name: bytes("deflated",8), data: payload, method: ext::zip::Method::Deflate, utf8: false }];
+        result = ext::zip::encode(core::result::unwrap(core::slice::view(sources,2)),bytes("",0),limits);
+    } else {
+        let archive_bytes: [u8;131] = [80,75,3,4,20,0,0,0,8,0,0,0,33,0,148,153,244,216,25,0,0,0,0,32,0,0,4,0,0,0,100,97,116,97,237,193,1,13,0,0,0,194,160,247,79,109,14,55,160,0,0,0,0,0,0,0,128,119,3,80,75,1,2,20,3,20,0,0,0,8,0,0,0,33,0,148,153,244,216,25,0,0,0,0,32,0,0,4,0,0,0,0,0,0,0,0,0,0,0,128,1,0,0,0,0,100,97,116,97,80,75,5,6,0,0,0,0,1,0,1,0,50,0,0,0,59,0,0,0,0,0];
+        let archive: ext::zip::Archive = core::result::unwrap(ext::zip::parse(core::result::unwrap(core::slice::view(archive_bytes,131)),limits));
+        if (mode == 51) { let cursor: ext::zip::Cursor = archive.cursor(); let entry: ext::zip::Entry = core::option::unwrap(cursor.next()); assert(entry.uncompressed_size == 8192 && core::option::is_none(cursor.next())); assert(std::io_decimal::write_i32(1,0) == 1); return 0; }
+        let cursor: ext::zip::Cursor = archive.cursor(); let entry: ext::zip::Entry = core::option::unwrap(cursor.next()); if (mode == 50) { entry.crc32 = entry.crc32 ^ 1; } result = ext::zip::extract(entry,8192);
+    }
+    if (core::result::is_ok(result)) { let output: alloc::vec::Vec<u8> = core::result::unwrap(result); output.destroy(); }
+    else { code = match (core::result::unwrap_err(result)) { ext::zip::Error::AllocationFailed -> 25, ext::zip::Error::Checksum -> 21, _ -> 99 }; }
+    assert(std::io_decimal::write_i32(1,code) > 0); return 0;
+}

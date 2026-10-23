@@ -1,0 +1,67 @@
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::zip;
+import std::io;
+import std::stream;
+fn code(error: ext::zip::Error) -> i32 {
+    let value: i32 = match (error) {
+        ext::zip::Error::Bounds -> 1, ext::zip::Error::ArchiveLimit -> 2, ext::zip::Error::EntryLimit -> 3, ext::zip::Error::TotalLimit -> 4, ext::zip::Error::WorkLimit -> 5,
+        ext::zip::Error::SizeOverflow -> 6, ext::zip::Error::Truncated -> 7, ext::zip::Error::Signature -> 8, ext::zip::Error::HeaderMismatch -> 9, ext::zip::Error::Descriptor -> 10,
+        ext::zip::Error::Overlap -> 11, ext::zip::Error::Zip64 -> 12, ext::zip::Error::MultiDisk -> 13, ext::zip::Error::Encryption -> 14, ext::zip::Error::UnsupportedMethod -> 15,
+        ext::zip::Error::UnsupportedFlags -> 16, ext::zip::Error::UnsupportedVersion -> 17, ext::zip::Error::UnsupportedExtra -> 18, ext::zip::Error::Encoding -> 19,
+        ext::zip::Error::Name -> 20, ext::zip::Error::Checksum -> 21, ext::zip::Error::SizeMismatch -> 22, ext::zip::Error::TrailingData -> 23, ext::zip::Error::OutputLimit -> 24,
+        ext::zip::Error::AllocationFailed -> 25, ext::zip::Error::Deflate(value) -> 26, ext::zip::Error::Encode(value) -> 27
+    }; return value;
+}
+fn get32(view: core::slice::View<u8>, at: i32) -> i32 { return ((view.values[view.start+at] as u32) | ((view.values[view.start+at+1] as u32) << 8) | ((view.values[view.start+at+2] as u32) << 16) | ((view.values[view.start+at+3] as u32) << 24)) as i32; }
+fn get64(view: core::slice::View<u8>, at: i32) -> u64 { return ((get32(view,at) as u32) as u64) | (((get32(view,at+4) as u32) as u64) << 32); }
+fn number(value: i32) { let words: [i32;1] = [value]; assert(std::io::write_stdout(core::mem::i32_array_data_ptr(words),4) == 4); }
+fn write(view: core::slice::View<u8>) { let sink: std::stream::Descriptor = std::stream::stdout(); assert(core::result::is_ok(core::io::write_all(sink.borrow(),view.values,view.start,view.length))); }
+fn parse(data: core::slice::View<u8>, limits: ext::zip::Limits, max_output: i32) {
+    let result: core::result::Result<ext::zip::Archive,ext::zip::Error> = ext::zip::parse(data,limits);
+    if (core::result::is_err(result)) { number(code(core::result::unwrap_err(result))); return; }
+    let archive: ext::zip::Archive = core::result::unwrap(result); number(0); number(archive.len()); number(archive.comment.length); write(archive.comment);
+    let cursor: ext::zip::Cursor = archive.cursor();
+    while (cursor.remaining() > 0) {
+        let entry: ext::zip::Entry = core::option::unwrap(cursor.next());
+        let extracted: core::result::Result<alloc::vec::Vec<u8>,ext::zip::Error> = ext::zip::extract(entry,max_output);
+        let method: i32 = match (entry.method) { ext::zip::Method::Stored -> 0, ext::zip::Method::Deflate -> 8 }; let utf8: i32 = 0; if (entry.utf8) { utf8 = 1; }
+        number(entry.name.length); number(entry.comment.length); number(method); number(utf8); number(entry.crc32 as i32);
+        if (core::result::is_err(extracted)) { number(code(core::result::unwrap_err(extracted))); number(0); write(entry.name); write(entry.comment); }
+        else { let output: alloc::vec::Vec<u8> = core::result::unwrap(extracted); number(0); number(output.len()); write(entry.name); write(entry.comment); write(output.as_view()); output.destroy(); }
+    }
+    assert(core::option::is_none(cursor.next()));
+}
+fn encode(data: core::slice::View<u8>, limits: ext::zip::Limits) {
+    assert(data.length >= 8); let count: i32 = get32(data,0); let comments: i32 = get32(data,4); assert(count >= 0 && comments >= 0 && comments <= data.length-8);
+    let comment: core::slice::View<u8> = core::result::unwrap(data.subview(8,8+comments)); let sources: alloc::vec::Vec<ext::zip::Source> = alloc::vec::new(); let position: i32 = 8+comments; let index: i32 = 0;
+    while (index < count) {
+        assert(data.length-position >= 10); let method: ext::zip::Method = ext::zip::Method::Stored; if (data.values[data.start+position] == 8) { method = ext::zip::Method::Deflate; }
+        let utf8: bool = data.values[data.start+position+1] == 1; let names: i32 = get32(data,position+2); let size: i32 = get32(data,position+6); position += 10;
+        assert(names >= 0 && size >= 0 && names <= data.length-position && size <= data.length-position-names);
+        let name: core::slice::View<u8> = core::result::unwrap(data.subview(position,position+names)); position += names;
+        let contents: core::slice::View<u8> = core::result::unwrap(data.subview(position,position+size)); position += size;
+        assert(core::result::is_ok(sources.try_push(ext::zip::Source { name: name, data: contents, method: method, utf8: utf8 }))); index += 1;
+    }
+    assert(position == data.length);
+    let result: core::result::Result<alloc::vec::Vec<u8>,ext::zip::Error> = ext::zip::encode(sources.as_view(),comment,limits); sources.destroy();
+    if (core::result::is_err(result)) { number(code(core::result::unwrap_err(result))); return; }
+    let output: alloc::vec::Vec<u8> = core::result::unwrap(result); number(0); number(output.len()); write(output.as_view()); output.destroy();
+}
+fn main() -> i32 {
+    let words: [i32;131072] = [0;131072]; let pointer: ptr = core::mem::i32_array_data_ptr(words); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,524288); let count: i32 = 0;
+    while (count < 524288) { let got: i32 = std::io::read_stdin(pointer+(count as usize),(524288-count) as usize); assert(got >= 0); if (got == 0) { break; } count += got; } assert(count < 524288);
+    let view: core::slice::View<u8> = core::result::unwrap(core::slice::view(bytes,count)); let position: i32 = 0;
+    while (position < count) {
+        assert(count-position >= 37); let action: u8 = bytes[position];
+        let limits: ext::zip::Limits = ext::zip::Limits { max_archive: get32(view,position+1), max_entries: get32(view,position+5), max_entry: get32(view,position+9), max_total: get64(view,position+13), max_work: get64(view,position+21) };
+        let max_output: i32 = get32(view,position+29); let length: i32 = get32(view,position+33); position += 37; assert(length >= 0 && length <= count-position);
+        let data: core::slice::View<u8> = core::result::unwrap(view.subview(position,position+length)); if (action == 1) { encode(data,limits); } else { parse(data,limits,max_output); } position += length;
+    }
+    return 0;
+}

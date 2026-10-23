@@ -81,9 +81,20 @@ and [owned zlib/gzip containers](extended-compression.md) execute with a
 accepts stored, fixed and dynamic trees; the fast encoder selects fixed Huffman
 LZ77 or smaller stored blocks. Gzip headers, concatenation and checksums are
 validated. [Adler-32](stdlib-adler32.md) provides the portable zlib checksum.
-Preset dictionaries, resumable codec state and archives remain separate work.
+Preset dictionaries and resumable codec state remain separate work.
 Native and compiler performance is recorded in
 [compression performance](extended-compression-performance.md).
+
+[POSIX ustar archives](extended-tar.md) and
+[classic single-disk ZIP archives](extended-zip.md) provide executable archive
+profiles: metadata, member data, multi-member writing and explicit format,
+capacity, checksum and resource failures. Binary
+[TAR/gzip](extended-tar-bytes.md) and [ZIP](extended-zip-bytes.md) applications
+exercise creation, listing and exact member reads; ZIP also exposes complete
+payload verification. They do not perform filesystem extraction. GNU/PAX TAR
+extensions, ZIP64, encrypted and multi-disk ZIP remain unsupported and report
+explicit errors. [Archive compilation evidence](extended-archive-performance.md)
+and the application docs record target support and scale measurements.
 
 For external formats and algorithms, use their primary specifications and
 published conformance vectors. Choose exact versions and formats when starting

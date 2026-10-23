@@ -28,6 +28,8 @@ repository root. An application imports the CSV module with `import ext::csv;`.
 | [`ext::deflate`](ext/deflate.lani) | Allocation-free raw DEFLATE encoding with fixed Huffman LZ77, stored-block fallback, caller scratch and atomic output failures | x86_64 Linux; [contracts, tests and measurements](../docs/extended-deflate.md) |
 | [`ext::inflate`](ext/inflate.lani) | Allocation-free raw DEFLATE decoding with stored/fixed/dynamic blocks, history limits and explicit prefix progress | x86_64 Linux; [contracts and tests](../docs/extended-inflate.md) |
 | [`ext::compression`](ext/compression.lani) | Owned raw/zlib/gzip encoding and checked decoding, concatenated gzip, output limits and allocation cleanup | x86_64 Linux; [contracts and tests](../docs/extended-compression.md), [binary application](../docs/extended-compress-bytes.md) |
+| [`ext::tar`](ext/tar.lani) | Borrowed POSIX ustar metadata/data and atomic caller-buffer multi-member writing, checked headers/padding/footer and raw byte paths | x86_64 Linux; [contracts and tests](../docs/extended-tar.md), [TAR/gzip application](../docs/extended-tar-bytes.md) |
+| [`ext::zip`](ext/zip.lani) | Bounded classic single-disk ZIP metadata, checked stored/DEFLATE member extraction and deterministic owned multi-member writing | x86_64 Linux; [contracts and tests](../docs/extended-zip.md), [binary application](../docs/extended-zip-bytes.md) |
 
 The complete scope and dependency order are
 tracked in the [library roadmap](../docs/library-roadmap.md). Package publishing,

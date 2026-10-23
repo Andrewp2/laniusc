@@ -1,0 +1,200 @@
+// Borrowed POSIX ustar byte archives, with checked caller-buffer writing.
+// This module reads metadata and data; it never extracts filesystem objects.
+module ext::tar;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+
+pub enum Error { Bounds, UnexpectedEof, MissingFooter, InvalidChecksum, UnsupportedFormat, InvalidNumber, NumberOverflow, InvalidName, UnsupportedType, InvalidSize, InvalidPadding, TrailingData, PathTooLong, LinkTooLong, NameTooLong, CapacityOverflow, OutputTooSmall, Finished, InvalidState }
+pub enum Kind { Regular, HardLink, SymbolicLink, CharacterDevice, BlockDevice, Directory, Fifo, Contiguous }
+pub struct Metadata { path: core::slice::View<u8>, link_name: core::slice::View<u8>, uname: core::slice::View<u8>, gname: core::slice::View<u8>, kind: Kind, mode: u32, uid: u64, gid: u64, mtime: u64, dev_major: u64, dev_minor: u64 }
+pub struct Entry { name: core::slice::View<u8>, prefix: core::slice::View<u8>, link_name: core::slice::View<u8>, uname: core::slice::View<u8>, gname: core::slice::View<u8>, data: core::slice::View<u8>, kind: Kind, mode: u32, uid: u64, gid: u64, size: u64, mtime: u64, dev_major: u64, dev_minor: u64, offset: i32 }
+pub struct Reader { input: core::slice::View<u8>, cursor: i32, ended: bool }
+pub struct Writer { output: core::slice::View<u8>, cursor: i32, ended: bool }
+
+fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length; }
+fn byte(view: core::slice::View<u8>, index: i32) -> u8 { return view.values[view.start+index]; }
+fn put(view: core::slice::View<u8>, index: i32, value: u8) { view.values[view.start+index] = value; }
+fn window(view: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return core::result::unwrap(view.subview(start,end)); }
+fn zeros(view: core::slice::View<u8>, start: i32, end: i32) -> bool { let index: i32 = start; while (index < end) { if (byte(view,index) != 0) { return false; } index += 1; } return true; }
+fn copy(source: core::slice::View<u8>, output: core::slice::View<u8>, start: i32) { let index: i32 = 0; while (index < source.length) { put(output,start+index,byte(source,index)); index += 1; } }
+fn kind_byte(kind: Kind) -> u8 { return match (kind) { Kind::Regular -> 48, Kind::HardLink -> 49, Kind::SymbolicLink -> 50, Kind::CharacterDevice -> 51, Kind::BlockDevice -> 52, Kind::Directory -> 53, Kind::Fifo -> 54, Kind::Contiguous -> 55 }; }
+fn parse_kind(value: u8) -> core::result::Result<Kind,Error> {
+    if (value == 0 || value == 48) { return core::result::Ok(Kind::Regular); }
+    if (value == 49) { return core::result::Ok(Kind::HardLink); }
+    if (value == 50) { return core::result::Ok(Kind::SymbolicLink); }
+    if (value == 51) { return core::result::Ok(Kind::CharacterDevice); }
+    if (value == 52) { return core::result::Ok(Kind::BlockDevice); }
+    if (value == 53) { return core::result::Ok(Kind::Directory); }
+    if (value == 54) { return core::result::Ok(Kind::Fifo); }
+    if (value == 55) { return core::result::Ok(Kind::Contiguous); }
+    return core::result::Err(Error::UnsupportedType);
+}
+fn string_field(header: core::slice::View<u8>, start: i32, width: i32, require_nul: bool) -> core::result::Result<core::slice::View<u8>,Error> {
+    let end: i32 = start; while (end < start+width && byte(header,end) != 0) { end += 1; }
+    if ((require_nul && end == start+width) || !zeros(header,end,start+width)) { return core::result::Err(Error::InvalidName); }
+    return core::result::Ok(window(header,start,end));
+}
+fn number(header: core::slice::View<u8>, start: i32, width: i32, maximum: u64) -> core::result::Result<u64,Error> {
+    if ((byte(header,start) & 128) != 0) { return core::result::Err(Error::UnsupportedFormat); }
+    let position: i32 = start; let value: u64 = 0; let digits: bool = false;
+    while (position < start+width && byte(header,position) == 32) { position += 1; }
+    while (position < start+width && byte(header,position) >= 48 && byte(header,position) <= 55) {
+        let digit: u64 = (byte(header,position)-48) as u64;
+        if (value > (maximum-digit)/8) { return core::result::Err(Error::NumberOverflow); }
+        value = value*8+digit; digits = true; position += 1;
+    }
+    if (position == start+width && digits) { return core::result::Err(Error::InvalidNumber); }
+    while (position < start+width) { let value: u8 = byte(header,position); if (value != 0 && value != 32) { return core::result::Err(Error::InvalidNumber); } position += 1; }
+    return core::result::Ok(value);
+}
+fn checksum(header: core::slice::View<u8>) -> u64 {
+    let total: u64 = 0; let index: i32 = 0;
+    while (index < 512) { if (index >= 148 && index < 156) { total += 32; } else { total += byte(header,index) as u64; } index += 1; } return total;
+}
+
+pub fn metadata(path: core::slice::View<u8>, kind: Kind) -> Metadata {
+    let empty: core::slice::View<u8> = path; empty.length = 0;
+    let mode: u32 = 420; if (kind_byte(kind) == 53) { mode = 493; }
+    return Metadata { path: path, link_name: empty, uname: empty, gname: empty, kind: kind, mode: mode, uid: 0, gid: 0, mtime: 0, dev_major: 0, dev_minor: 0 };
+}
+pub fn reader(input: core::slice::View<u8>) -> core::result::Result<Reader,Error> {
+    if (!valid(input)) { return core::result::Err(Error::Bounds); } return core::result::Ok(Reader { input: input, cursor: 0, ended: false });
+}
+pub impl Entry {
+    pub fn path_len(&self) -> i32 { if (self.prefix.length == 0) { return self.name.length; } return self.prefix.length+1+self.name.length; }
+    pub fn copy_path(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (!valid(self.name) || !valid(self.prefix) || !valid(output)) { return core::result::Err(Error::Bounds); }
+        if (self.name.length > 100 || self.prefix.length > 155) { return core::result::Err(Error::InvalidName); }
+        let count: i32 = self.path_len(); if (output.length < count) { return core::result::Err(Error::OutputTooSmall); }
+        let start: i32 = 0;
+        if (self.prefix.length > 0) { copy(self.prefix,output,0); put(output,self.prefix.length,47); start = self.prefix.length+1; }
+        copy(self.name,output,start); return core::result::Ok(count);
+    }
+}
+pub impl Reader {
+    pub fn position(&self) -> i32 { return self.cursor; }
+    pub fn is_finished(&self) -> bool { return self.ended; }
+    // Errors preserve this cursor. None certifies footer and trailing padding.
+    pub fn next(&self) -> core::result::Result<core::option::Option<Entry>,Error> {
+        if (!valid(self.input) || self.cursor < 0 || self.cursor > self.input.length || self.cursor % 512 != 0) { return core::result::Err(Error::Bounds); }
+        if (self.ended) { return core::result::Ok(core::option::None()); }
+        let remaining: i32 = self.input.length-self.cursor;
+        if (remaining == 0) { return core::result::Err(Error::MissingFooter); }
+        if (remaining < 512) { return core::result::Err(Error::UnexpectedEof); }
+        let header: core::slice::View<u8> = window(self.input,self.cursor,self.cursor+512);
+        if (zeros(header,0,512)) {
+            if (remaining < 1024) { return core::result::Err(Error::MissingFooter); }
+            if (!zeros(self.input,self.cursor+512,self.cursor+1024)) { return core::result::Err(Error::MissingFooter); }
+            if (remaining % 512 != 0) { return core::result::Err(Error::UnexpectedEof); }
+            if (!zeros(self.input,self.cursor+1024,self.input.length)) { return core::result::Err(Error::TrailingData); }
+            self.cursor = self.input.length; self.ended = true; return core::result::Ok(core::option::None());
+        }
+        let stored: core::result::Result<u64,Error> = number(header,148,8,262143);
+        if (core::result::is_err(stored)) { return core::result::Err(core::result::unwrap_err(stored)); }
+        if (core::result::unwrap(stored) != checksum(header)) { return core::result::Err(Error::InvalidChecksum); }
+        if (byte(header,257) != 117 || byte(header,258) != 115 || byte(header,259) != 116 || byte(header,260) != 97 || byte(header,261) != 114 || byte(header,262) != 0 || byte(header,263) != 48 || byte(header,264) != 48 || !zeros(header,500,512)) { return core::result::Err(Error::UnsupportedFormat); }
+        let parsed_kind: core::result::Result<Kind,Error> = parse_kind(byte(header,156));
+        if (core::result::is_err(parsed_kind)) { return core::result::Err(core::result::unwrap_err(parsed_kind)); }
+        let kind: Kind = core::result::unwrap(parsed_kind);
+        let name: core::result::Result<core::slice::View<u8>,Error> = string_field(header,0,100,false);
+        let prefix: core::result::Result<core::slice::View<u8>,Error> = string_field(header,345,155,false);
+        let link: core::result::Result<core::slice::View<u8>,Error> = string_field(header,157,100,false);
+        let uname: core::result::Result<core::slice::View<u8>,Error> = string_field(header,265,32,true);
+        let gname: core::result::Result<core::slice::View<u8>,Error> = string_field(header,297,32,true);
+        if (core::result::is_err(name)) { return core::result::Err(core::result::unwrap_err(name)); }
+        if (core::result::is_err(prefix)) { return core::result::Err(core::result::unwrap_err(prefix)); }
+        if (core::result::is_err(link)) { return core::result::Err(core::result::unwrap_err(link)); }
+        if (core::result::is_err(uname)) { return core::result::Err(core::result::unwrap_err(uname)); }
+        if (core::result::is_err(gname)) { return core::result::Err(core::result::unwrap_err(gname)); }
+        let size: core::result::Result<u64,Error> = number(header,124,12,8589934591);
+        let mode: core::result::Result<u64,Error> = number(header,100,8,4095);
+        let uid: core::result::Result<u64,Error> = number(header,108,8,2097151);
+        let gid: core::result::Result<u64,Error> = number(header,116,8,2097151);
+        let mtime: core::result::Result<u64,Error> = number(header,136,12,8589934591);
+        let major: core::result::Result<u64,Error> = number(header,329,8,2097151);
+        let minor: core::result::Result<u64,Error> = number(header,337,8,2097151);
+        if (core::result::is_err(size)) { return core::result::Err(core::result::unwrap_err(size)); }
+        if (core::result::is_err(mode)) { return core::result::Err(core::result::unwrap_err(mode)); }
+        if (core::result::is_err(uid)) { return core::result::Err(core::result::unwrap_err(uid)); }
+        if (core::result::is_err(gid)) { return core::result::Err(core::result::unwrap_err(gid)); }
+        if (core::result::is_err(mtime)) { return core::result::Err(core::result::unwrap_err(mtime)); }
+        if (core::result::is_err(major)) { return core::result::Err(core::result::unwrap_err(major)); }
+        if (core::result::is_err(minor)) { return core::result::Err(core::result::unwrap_err(minor)); }
+        let name_view: core::slice::View<u8> = core::result::unwrap(name); let prefix_view: core::slice::View<u8> = core::result::unwrap(prefix);
+        if (name_view.length == 0 && prefix_view.length == 0) { return core::result::Err(Error::InvalidName); }
+        let file_size: u64 = core::result::unwrap(size); let data_size: u64 = 0; let code: u8 = kind_byte(kind);
+        let link_view: core::slice::View<u8> = core::result::unwrap(link);
+        if ((code == 49 || code == 50) && link_view.length == 0) { return core::result::Err(Error::InvalidName); }
+        if (code != 49 && code != 50 && link_view.length != 0) { return core::result::Err(Error::InvalidName); }
+        if (code == 48 || code == 55) { data_size = file_size; }
+        if ((code == 49 || code == 50) && file_size != 0) { return core::result::Err(Error::InvalidSize); }
+        if (data_size > 2147483647) { return core::result::Err(Error::CapacityOverflow); }
+        let count: i32 = data_size as i32; let padding: i32 = (512-count%512)%512;
+        if (count > remaining-512 || padding > remaining-512-count) { return core::result::Err(Error::UnexpectedEof); }
+        let data_start: i32 = self.cursor+512; let next: i32 = data_start+count+padding;
+        if (!zeros(self.input,data_start+count,next)) { return core::result::Err(Error::InvalidPadding); }
+        let entry: Entry = Entry { name: name_view, prefix: prefix_view, link_name: core::result::unwrap(link), uname: core::result::unwrap(uname), gname: core::result::unwrap(gname), data: window(self.input,data_start,data_start+count), kind: kind, mode: core::result::unwrap(mode) as u32, uid: core::result::unwrap(uid), gid: core::result::unwrap(gid), size: file_size, mtime: core::result::unwrap(mtime), dev_major: core::result::unwrap(major), dev_minor: core::result::unwrap(minor), offset: self.cursor };
+        self.cursor = next; return core::result::Ok(core::option::Some(entry));
+    }
+}
+
+fn no_nul(view: core::slice::View<u8>) -> bool { let index: i32 = 0; while (index < view.length) { if (byte(view,index) == 0) { return false; } index += 1; } return true; }
+fn octal(output: core::slice::View<u8>, start: i32, width: i32, value: u64) {
+    let rest: u64 = value; let index: i32 = start+width-2; put(output,start+width-1,0);
+    while (index >= start) { put(output,index,48+(rest & 7) as u8); rest = rest >> 3; index -= 1; }
+}
+pub fn writer(output: core::slice::View<u8>) -> core::result::Result<Writer,Error> {
+    if (!valid(output)) { return core::result::Err(Error::Bounds); } return core::result::Ok(Writer { output: output, cursor: 0, ended: false });
+}
+pub impl Writer {
+    pub fn position(&self) -> i32 { return self.cursor; }
+    pub fn is_finished(&self) -> bool { return self.ended; }
+    // Rebind a grown/copy-preserved buffer to retry an unchanged operation.
+    pub fn rebind(&self, output: core::slice::View<u8>) -> core::result::Result<bool,Error> {
+        if (!valid(self.output) || !valid(output) || self.cursor < 0 || self.cursor > self.output.length || self.cursor > output.length || self.cursor % 512 != 0) { return core::result::Err(Error::Bounds); }
+        let index: i32 = 0; while (index < self.cursor) { if (byte(self.output,index) != byte(output,index)) { return core::result::Err(Error::InvalidState); } index += 1; }
+        self.output = output; return core::result::Ok(true);
+    }
+    pub fn add(&self, meta: Metadata, data: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (!valid(self.output) || self.cursor < 0 || self.cursor > self.output.length || self.cursor % 512 != 0 || !valid(meta.path) || !valid(meta.link_name) || !valid(meta.uname) || !valid(meta.gname) || !valid(data)) { return core::result::Err(Error::Bounds); }
+        if (self.ended) { return core::result::Err(Error::Finished); }
+        if (meta.path.length > 256) { return core::result::Err(Error::PathTooLong); }
+        if (meta.link_name.length > 100) { return core::result::Err(Error::LinkTooLong); }
+        if (meta.uname.length > 31 || meta.gname.length > 31) { return core::result::Err(Error::NameTooLong); }
+        if (meta.path.length == 0 || !no_nul(meta.path) || !no_nul(meta.link_name) || !no_nul(meta.uname) || !no_nul(meta.gname)) { return core::result::Err(Error::InvalidName); }
+        if (meta.mode > 4095 || meta.uid > 2097151 || meta.gid > 2097151 || meta.mtime > 8589934591 || meta.dev_major > 2097151 || meta.dev_minor > 2097151) { return core::result::Err(Error::NumberOverflow); }
+        let code: u8 = kind_byte(meta.kind);
+        if (code != 48 && code != 55 && data.length != 0) { return core::result::Err(Error::InvalidSize); }
+        if ((code == 49 || code == 50) && meta.link_name.length == 0) { return core::result::Err(Error::InvalidName); }
+        if (code != 49 && code != 50 && meta.link_name.length != 0) { return core::result::Err(Error::InvalidName); }
+        let split: i32 = -1;
+        if (meta.path.length > 100) {
+            let position: i32 = meta.path.length-1; while (position > 0) { if (byte(meta.path,position) == 47 && position <= 155 && meta.path.length-position-1 <= 100) { split = position; break; } position -= 1; }
+            if (split < 0) { return core::result::Err(Error::PathTooLong); }
+        }
+        let padding: i32 = (512-data.length%512)%512;
+        if (data.length > 2147483135-padding) { return core::result::Err(Error::CapacityOverflow); }
+        let required: i32 = 512+data.length+padding;
+        if (required > self.output.length-self.cursor) { return core::result::Err(Error::OutputTooSmall); }
+        let words: [i32;128] = [0;128]; let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words),512);
+        let header: core::slice::View<u8> = core::result::unwrap(core::slice::view(raw,512)); header.fill(0);
+        if (split < 0) { copy(meta.path,header,0); }
+        else { copy(window(meta.path,split+1,meta.path.length),header,0); copy(window(meta.path,0,split),header,345); }
+        octal(header,100,8,meta.mode as u64); octal(header,108,8,meta.uid); octal(header,116,8,meta.gid); octal(header,124,12,data.length as u64); octal(header,136,12,meta.mtime);
+        put(header,156,code); copy(meta.link_name,header,157); put(header,257,117); put(header,258,115); put(header,259,116); put(header,260,97); put(header,261,114); put(header,263,48); put(header,264,48);
+        copy(meta.uname,header,265); copy(meta.gname,header,297); octal(header,329,8,meta.dev_major); octal(header,337,8,meta.dev_minor);
+        octal(header,148,7,checksum(header)); put(header,155,32);
+        copy(header,self.output,self.cursor); copy(data,self.output,self.cursor+512);
+        let next: i32 = self.cursor+required; let position: i32 = self.cursor+512+data.length; while (position < next) { put(self.output,position,0); position += 1; }
+        self.cursor = next; return core::result::Ok(next);
+    }
+    pub fn finish(&self) -> core::result::Result<i32,Error> {
+        if (!valid(self.output) || self.cursor < 0 || self.cursor > self.output.length || self.cursor % 512 != 0) { return core::result::Err(Error::Bounds); }
+        if (self.ended) { return core::result::Ok(self.cursor); }
+        if (self.output.length-self.cursor < 1024) { return core::result::Err(Error::OutputTooSmall); }
+        let next: i32 = self.cursor+1024; let index: i32 = self.cursor; while (index < next) { put(self.output,index,0); index += 1; }
+        self.cursor = next; self.ended = true; return core::result::Ok(next);
+    }
+}

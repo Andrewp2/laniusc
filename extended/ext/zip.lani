@@ -1,0 +1,263 @@
+// Classic single-disk ZIP metadata and owned payloads. No filesystem actions.
+module ext::zip;
+import alloc::vec;
+import core::crc32;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::deflate;
+import ext::inflate;
+
+pub enum Method { Stored, Deflate }
+pub struct Limits { max_archive: i32, max_entries: i32, max_entry: i32, max_total: u64, max_work: u64 }
+pub enum Error { Bounds, ArchiveLimit, EntryLimit, TotalLimit, WorkLimit, SizeOverflow, Truncated, Signature, HeaderMismatch, Descriptor, Overlap, Zip64, MultiDisk, Encryption, UnsupportedMethod, UnsupportedFlags, UnsupportedVersion, UnsupportedExtra, Encoding, Name, Checksum, SizeMismatch, TrailingData, OutputLimit, AllocationFailed, Deflate(ext::inflate::Error), Encode(ext::deflate::Error) }
+pub struct Entry { name: core::slice::View<u8>, comment: core::slice::View<u8>, extra: core::slice::View<u8>, local_extra: core::slice::View<u8>, data: core::slice::View<u8>, method: Method, utf8: bool, flags: i32, crc32: u32, compressed_size: i32, uncompressed_size: i32, modified_time: i32, modified_date: i32, external_attributes: u32, local_offset: i32, local_end: i32 }
+pub struct Archive { source: core::slice::View<u8>, comment: core::slice::View<u8>, entries: i32, directory_start: i32, directory_end: i32 }
+pub struct Cursor { archive: Archive, position: i32, remaining_entries: i32 }
+pub struct Source { name: core::slice::View<u8>, data: core::slice::View<u8>, method: Method, utf8: bool }
+struct Parsed { entry: Entry, next: i32 }
+struct Budget { remaining: u64 }
+impl Budget {
+    fn borrow(&self) -> &Budget { return self; }
+    fn spend(&self, count: u64) -> bool { if (count > self.remaining) { return false; } self.remaining -= count; return true; }
+}
+pub fn default_limits() -> Limits { return Limits { max_archive: 67108864, max_entries: 4096, max_entry: 67108864, max_total: 134217728, max_work: 16777216 }; }
+fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length; }
+fn valid_limits(limits: Limits) -> bool { return limits.max_archive >= 0 && limits.max_entries >= 0 && limits.max_entry >= 0; }
+fn byte(view: core::slice::View<u8>, index: i32) -> u8 { return view.values[view.start+index]; }
+fn part(view: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return core::result::unwrap(view.subview(start,end)); }
+fn u16(view: core::slice::View<u8>, start: i32) -> i32 { return (byte(view,start) as i32) | ((byte(view,start+1) as i32) << 8); }
+fn u32(view: core::slice::View<u8>, start: i32) -> u32 { return (byte(view,start) as u32) | ((byte(view,start+1) as u32) << 8) | ((byte(view,start+2) as u32) << 16) | ((byte(view,start+3) as u32) << 24); }
+fn put16(view: core::slice::View<u8>, start: i32, value: i32) { view.values[view.start+start] = (value & 255) as u8; view.values[view.start+start+1] = ((value >> 8) & 255) as u8; }
+fn put32(view: core::slice::View<u8>, start: i32, value: u32) { view.values[view.start+start] = (value & 255) as u8; view.values[view.start+start+1] = ((value >> 8) & 255) as u8; view.values[view.start+start+2] = ((value >> 16) & 255) as u8; view.values[view.start+start+3] = ((value >> 24) & 255) as u8; }
+fn crc(view: core::slice::View<u8>) -> u32 { let state: u32 = core::crc32::INITIAL; let index: i32 = 0; while (index < view.length) { state = core::crc32::update_byte(state,byte(view,index)); index += 1; } return core::crc32::finish(state); }
+fn equal(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.length != b.length) { return false; } let index: i32 = 0; while (index < a.length) { if (byte(a,index) != byte(b,index)) { return false; } index += 1; } return true; }
+fn encoding(view: core::slice::View<u8>) -> bool { return core::result::is_ok(core::text::from_utf8_range(view.values,view.start,view.length)); }
+fn extra(view: core::slice::View<u8>) -> core::result::Result<bool,Error> {
+    let position: i32 = 0;
+    while (position < view.length) {
+        if (view.length-position < 4) { return core::result::Err(Error::Truncated); }
+        let kind: i32 = u16(view,position); let length: i32 = u16(view,position+2); position += 4;
+        if (length > view.length-position) { return core::result::Err(Error::Truncated); }
+        if (kind == 1) { return core::result::Err(Error::Zip64); }
+        if (kind == 39169 || kind == 23) { return core::result::Err(Error::Encryption); }
+        if (kind == 15) { return core::result::Err(Error::UnsupportedExtra); }
+        position += length;
+    }
+    return core::result::Ok(true);
+}
+fn size(value: u32) -> core::result::Result<i32,Error> {
+    if (value == 4294967295) { return core::result::Err(Error::Zip64); }
+    if (value > 2147483647) { return core::result::Err(Error::SizeOverflow); } return core::result::Ok(value as i32);
+}
+fn descriptor(view: core::slice::View<u8>, start: i32, limit: i32, checksum: u32, compressed: i32, unpacked: i32) -> core::result::Result<i32,Error> {
+    // Try the signed shape first, then the unsigned shape. This also accepts
+    // an unsigned descriptor whose actual CRC equals the optional signature.
+    if (limit-start >= 16 && u32(view,start) == 134695760 && u32(view,start+4) == checksum && u32(view,start+8) == compressed as u32 && u32(view,start+12) == unpacked as u32) { return core::result::Ok(start+16); }
+    if (limit-start >= 12 && u32(view,start) == checksum && u32(view,start+4) == compressed as u32 && u32(view,start+8) == unpacked as u32) { return core::result::Ok(start+12); }
+    if (limit-start < 12) { return core::result::Err(Error::Truncated); } return core::result::Err(Error::Descriptor);
+}
+fn read_entry(view: core::slice::View<u8>, position: i32, end: i32, locals_end: i32, budget: &Budget) -> core::result::Result<Parsed,Error> {
+    if (end-position < 46) { return core::result::Err(Error::Truncated); }
+    if (u32(view,position) != 33639248) { return core::result::Err(Error::Signature); }
+    let flags: i32 = u16(view,position+8); let method: i32 = u16(view,position+10); let needed: i32 = u16(view,position+6);
+    if ((flags & 8257) != 0) { return core::result::Err(Error::Encryption); }
+    if (method != 0 && method != 8) { return core::result::Err(Error::UnsupportedMethod); }
+    let allowed: i32 = 2056; if (method == 8) { allowed = 2062; }
+    if ((flags & (65535 ^ allowed)) != 0) { return core::result::Err(Error::UnsupportedFlags); }
+    if (u16(view,position+34) == 65535) { return core::result::Err(Error::Zip64); }
+    if (u16(view,position+34) != 0) { return core::result::Err(Error::MultiDisk); }
+    let csize: core::result::Result<i32,Error> = size(u32(view,position+20)); if (core::result::is_err(csize)) { return core::result::Err(core::result::unwrap_err(csize)); }
+    let usize: core::result::Result<i32,Error> = size(u32(view,position+24)); if (core::result::is_err(usize)) { return core::result::Err(core::result::unwrap_err(usize)); }
+    let offset: core::result::Result<i32,Error> = size(u32(view,position+42)); if (core::result::is_err(offset)) { return core::result::Err(core::result::unwrap_err(offset)); }
+    let compressed: i32 = core::result::unwrap(csize); let unpacked: i32 = core::result::unwrap(usize); let local: i32 = core::result::unwrap(offset);
+    if (method == 0 && compressed != unpacked) { return core::result::Err(Error::SizeMismatch); }
+    let names: i32 = u16(view,position+28); let extras: i32 = u16(view,position+30); let comments: i32 = u16(view,position+32);
+    let length: i32 = 46+names+extras+comments;
+    if (length > end-position) { return core::result::Err(Error::Truncated); }
+    if (!budget.spend((length as u64)+1)) { return core::result::Err(Error::WorkLimit); }
+    let name: core::slice::View<u8> = part(view,position+46,position+46+names);
+    let fields: core::slice::View<u8> = part(view,position+46+names,position+46+names+extras);
+    let comment: core::slice::View<u8> = part(view,position+46+names+extras,position+length);
+    let checked: core::result::Result<bool,Error> = extra(fields); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+    if ((flags & 2048) != 0 && (!encoding(name) || !encoding(comment))) { return core::result::Err(Error::Encoding); }
+    if (needed < 10 || needed > 20 || (method == 8 && needed < 20)) { return core::result::Err(Error::UnsupportedVersion); }
+    if (local > locals_end || locals_end-local < 30) { return core::result::Err(Error::Truncated); }
+    if (u32(view,local) != 67324752) { return core::result::Err(Error::Signature); }
+    if (u16(view,local+4) != needed || u16(view,local+6) != flags || u16(view,local+8) != method || u16(view,local+10) != u16(view,position+12) || u16(view,local+12) != u16(view,position+14)) { return core::result::Err(Error::HeaderMismatch); }
+    let local_names: i32 = u16(view,local+26); let local_extras: i32 = u16(view,local+28);
+    let header_length: i32 = 30+local_names+local_extras;
+    if (header_length > locals_end-local || compressed > locals_end-local-header_length) { return core::result::Err(Error::Truncated); }
+    if (!budget.spend(header_length as u64)) { return core::result::Err(Error::WorkLimit); }
+    if (!equal(name,part(view,local+30,local+30+local_names))) { return core::result::Err(Error::HeaderMismatch); }
+    let local_fields: core::slice::View<u8> = part(view,local+30+local_names,local+header_length);
+    checked = extra(local_fields); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+    let checksum: u32 = u32(view,position+16); let local_checksum: u32 = u32(view,local+14); let local_csize: u32 = u32(view,local+18); let local_usize: u32 = u32(view,local+22);
+    let data_start: i32 = local+header_length; let data_end: i32 = data_start+compressed; let local_end: i32 = data_end;
+    if ((flags & 8) == 0) {
+        if (local_checksum != checksum || local_csize != compressed as u32 || local_usize != unpacked as u32) { return core::result::Err(Error::HeaderMismatch); }
+    } else {
+        if ((local_checksum != 0 && local_checksum != checksum) || (local_csize != 0 && local_csize != compressed as u32) || (local_usize != 0 && local_usize != unpacked as u32)) { return core::result::Err(Error::HeaderMismatch); }
+        let described: core::result::Result<i32,Error> = descriptor(view,data_end,locals_end,checksum,compressed,unpacked);
+        if (core::result::is_err(described)) { return core::result::Err(core::result::unwrap_err(described)); } local_end = core::result::unwrap(described);
+    }
+    let kind: Method = Method::Stored; if (method == 8) { kind = Method::Deflate; }
+    return core::result::Ok(Parsed { entry: Entry { name: name, comment: comment, extra: fields, local_extra: local_fields, data: part(view,data_start,data_end), method: kind, utf8: (flags & 2048) != 0, flags: flags, crc32: checksum, compressed_size: compressed, uncompressed_size: unpacked, modified_time: u16(view,position+12), modified_date: u16(view,position+14), external_attributes: u32(view,position+38), local_offset: local, local_end: local_end }, next: position+length });
+}
+// Called only for a previously validated directory entry.
+fn previous_end(view: core::slice::View<u8>, position: i32) -> i32 {
+    let local: i32 = u32(view,position+42) as i32; let compressed: i32 = u32(view,position+20) as i32;
+    let end: i32 = local+30+u16(view,local+26)+u16(view,local+28)+compressed;
+    if ((u16(view,position+8) & 8) != 0) { return core::result::unwrap(descriptor(view,end,view.length,u32(view,position+16),compressed,u32(view,position+24) as i32)); } return end;
+}
+fn at_end(view: core::slice::View<u8>, eocd: i32, limits: Limits, budget: &Budget) -> core::result::Result<Archive,Error> {
+    let count: i32 = u16(view,eocd+10);
+    if (count == 65535 || u16(view,eocd+8) == 65535 || u16(view,eocd+4) == 65535 || u16(view,eocd+6) == 65535) { return core::result::Err(Error::Zip64); }
+    if (u16(view,eocd+4) != 0 || u16(view,eocd+6) != 0 || u16(view,eocd+8) != count) { return core::result::Err(Error::MultiDisk); }
+    if (count > limits.max_entries) { return core::result::Err(Error::EntryLimit); }
+    let measured: core::result::Result<i32,Error> = size(u32(view,eocd+12)); if (core::result::is_err(measured)) { return core::result::Err(core::result::unwrap_err(measured)); }
+    let offset: core::result::Result<i32,Error> = size(u32(view,eocd+16)); if (core::result::is_err(offset)) { return core::result::Err(core::result::unwrap_err(offset)); }
+    let length: i32 = core::result::unwrap(measured); let start: i32 = core::result::unwrap(offset);
+    if (start > eocd || length != eocd-start) { return core::result::Err(Error::HeaderMismatch); }
+    let position: i32 = start; let index: i32 = 0; let total: u64 = 0;
+    while (index < count) {
+        let parsed: core::result::Result<Parsed,Error> = read_entry(view,position,eocd,start,budget);
+        if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); }
+        let item: Parsed = core::result::unwrap(parsed); let entry: Entry = item.entry;
+        if (entry.uncompressed_size > limits.max_entry) { return core::result::Err(Error::EntryLimit); }
+        if ((entry.uncompressed_size as u64) > limits.max_total-total) { return core::result::Err(Error::TotalLimit); } total += entry.uncompressed_size as u64;
+        let previous: i32 = start;
+        while (previous < position) {
+            if (!budget.spend(1)) { return core::result::Err(Error::WorkLimit); }
+            let local: i32 = u32(view,previous+42) as i32;
+            if (entry.local_offset < previous_end(view,previous) && local < entry.local_end) { return core::result::Err(Error::Overlap); }
+            previous += 46+u16(view,previous+28)+u16(view,previous+30)+u16(view,previous+32);
+        }
+        position = item.next; index += 1;
+    }
+    if (position != eocd) { return core::result::Err(Error::TrailingData); }
+    return core::result::Ok(Archive { source: view, comment: part(view,eocd+22,view.length), entries: count, directory_start: start, directory_end: eocd });
+}
+pub fn parse(input: core::slice::View<u8>, limits: Limits) -> core::result::Result<Archive,Error> {
+    if (!valid(input) || !valid_limits(limits)) { return core::result::Err(Error::Bounds); }
+    if (input.length > limits.max_archive) { return core::result::Err(Error::ArchiveLimit); }
+    if (input.length < 22) { return core::result::Err(Error::Truncated); }
+    let budget: Budget = Budget { remaining: limits.max_work }; let position: i32 = input.length-22; let minimum: i32 = 0;
+    if (position > 65535) { minimum = position-65535; }
+    let failure: Error = Error::Signature;
+    while (position >= minimum) {
+        if (!budget.spend(1)) { return core::result::Err(Error::WorkLimit); }
+        if (u32(input,position) == 101010256 && u16(input,position+20) == input.length-position-22) {
+            let result: core::result::Result<Archive,Error> = at_end(input,position,limits,budget.borrow());
+            if (core::result::is_ok(result)) { return result; } failure = core::result::unwrap_err(result);
+            let exhausted: bool = match (failure) { Error::WorkLimit -> true, _ -> false }; if (exhausted) { return core::result::Err(failure); }
+        }
+        position -= 1;
+    }
+    return core::result::Err(failure);
+}
+pub impl Archive {
+    pub fn len(&self) -> i32 { return self.entries; }
+    pub fn is_empty(&self) -> bool { return self.entries == 0; }
+    pub fn cursor(&self) -> Cursor {
+        let archive: Archive = Archive { source: self.source, comment: self.comment, entries: self.entries, directory_start: self.directory_start, directory_end: self.directory_end };
+        return Cursor { archive: archive, position: self.directory_start, remaining_entries: self.entries };
+    }
+}
+pub impl Cursor {
+    pub fn remaining(&self) -> i32 { return self.remaining_entries; }
+    pub fn next(&self) -> core::option::Option<Entry> {
+        if (self.remaining_entries == 0) { return core::option::None(); }
+        let budget: Budget = Budget { remaining: 18446744073709551615 };
+        let item: Parsed = core::result::unwrap(read_entry(self.archive.source,self.position,self.archive.directory_end,self.archive.directory_start,budget.borrow()));
+        self.position = item.next; self.remaining_entries -= 1; return core::option::Some(item.entry);
+    }
+}
+fn vector_error(error: alloc::vec::Error) -> Error { let mapped: Error = match (error) { alloc::vec::Error::AllocationFailed -> Error::AllocationFailed, alloc::vec::Error::CapacityOverflow -> Error::SizeOverflow, _ -> Error::Bounds }; return mapped; }
+pub fn extract(entry: Entry, max_output: i32) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    if (!valid(entry.data) || entry.compressed_size < 0 || entry.uncompressed_size < 0 || entry.data.length != entry.compressed_size || max_output < 0) { return core::result::Err(Error::Bounds); }
+    if (entry.uncompressed_size > max_output) { return core::result::Err(Error::OutputLimit); }
+    let output: alloc::vec::Vec<u8> = alloc::vec::new(); let grown: core::result::Result<i32,alloc::vec::Error> = output.try_resize(entry.uncompressed_size,0);
+    if (core::result::is_err(grown)) { output.destroy(); return core::result::Err(vector_error(core::result::unwrap_err(grown))); }
+    let kind: i32 = match (entry.method) { Method::Stored -> 0, Method::Deflate -> 8 };
+    if (kind == 0) {
+        if (entry.compressed_size != entry.uncompressed_size) { output.destroy(); return core::result::Err(Error::SizeMismatch); }
+        let values: [u8] = output.as_slice(); let index: i32 = 0; while (index < entry.uncompressed_size) { values[index] = byte(entry.data,index); index += 1; }
+    } else {
+        let result: core::result::Result<ext::inflate::Progress,ext::inflate::Failure> = ext::inflate::decode_into(entry.data,output.as_view());
+        if (core::result::is_err(result)) {
+            let failure: ext::inflate::Failure = core::result::unwrap_err(result); output.destroy();
+            let full: bool = match (failure.error) { ext::inflate::Error::OutputTooSmall -> true, _ -> false }; if (full) { return core::result::Err(Error::SizeMismatch); } return core::result::Err(Error::Deflate(failure.error));
+        }
+        let progress: ext::inflate::Progress = core::result::unwrap(result);
+        if (progress.written != entry.uncompressed_size) { output.destroy(); return core::result::Err(Error::SizeMismatch); }
+        if (progress.read != entry.compressed_size) { output.destroy(); return core::result::Err(Error::TrailingData); }
+    }
+    if (crc(output.as_view()) != entry.crc32) { output.destroy(); return core::result::Err(Error::Checksum); } return core::result::Ok(output);
+}
+
+struct Written { offset: i32, compressed: i32, checksum: u32 }
+fn copy(source: core::slice::View<u8>, target: core::slice::View<u8>, start: i32) { let index: i32 = 0; while (index < source.length) { target.values[target.start+start+index] = byte(source,index); index += 1; } }
+fn name_valid(name: core::slice::View<u8>) -> bool {
+    if (name.length > 65535) { return false; }
+    if (name.length > 0 && byte(name,0) == 47) { return false; }
+    if (name.length > 1 && byte(name,1) == 58) { return false; }
+    let index: i32 = 0; while (index < name.length) { if (byte(name,index) == 0 || byte(name,index) == 92) { return false; } index += 1; } return true;
+}
+pub fn encode(entries: core::slice::View<Source>, comment: core::slice::View<u8>, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    if (entries.start < 0 || entries.length < 0 || entries.start > 2147483647-entries.length || !valid(comment) || !valid_limits(limits)) { return core::result::Err(Error::Bounds); }
+    if (entries.length >= 65535 || entries.length > limits.max_entries) { return core::result::Err(Error::EntryLimit); }
+    if (comment.length > 65535) { return core::result::Err(Error::SizeOverflow); }
+    if (limits.max_archive < 22+comment.length) { return core::result::Err(Error::ArchiveLimit); }
+    let budget: Budget = Budget { remaining: limits.max_work };
+    if (!budget.spend((comment.length as u64)+1)) { return core::result::Err(Error::WorkLimit); }
+    let index: i32 = 0; let total: u64 = 0; let overhead: u64 = 22+(comment.length as u64); let compressed_any: bool = false;
+    // Preflight every borrowed input before allocating or reading payload bytes.
+    while (index < entries.length) {
+        let source: Source = entries.values[entries.start+index];
+        if (!valid(source.name) || !valid(source.data)) { return core::result::Err(Error::Bounds); }
+        if (source.data.length > limits.max_entry) { return core::result::Err(Error::EntryLimit); }
+        if ((source.data.length as u64) > limits.max_total-total) { return core::result::Err(Error::TotalLimit); } total += source.data.length as u64;
+        if (!budget.spend((source.data.length as u64)+(source.name.length as u64)+100)) { return core::result::Err(Error::WorkLimit); }
+        if (!name_valid(source.name)) { return core::result::Err(Error::Name); }
+        if (source.name.length > 0 && byte(source.name,source.name.length-1) == 47 && source.data.length != 0) { return core::result::Err(Error::Name); }
+        if (source.utf8 && !encoding(source.name)) { return core::result::Err(Error::Encoding); }
+        overhead += 76+2*(source.name.length as u64); if (overhead > limits.max_archive as u64) { return core::result::Err(Error::ArchiveLimit); }
+        let compressed: bool = match (source.method) { Method::Stored -> false, Method::Deflate -> true }; if (compressed) { compressed_any = true; }
+        index += 1;
+    }
+    let scratch: alloc::vec::Vec<i32> = alloc::vec::new(); let metadata: alloc::vec::Vec<Written> = alloc::vec::new(); let output: alloc::vec::Vec<u8> = alloc::vec::new();
+    let allocated: core::result::Result<i32,alloc::vec::Error> = metadata.try_reserve(entries.length);
+    if (compressed_any) { if (core::result::is_ok(allocated)) { allocated = scratch.try_resize(ext::deflate::scratch_len(),0); } }
+    if (core::result::is_err(allocated)) { scratch.destroy(); metadata.destroy(); return core::result::Err(vector_error(core::result::unwrap_err(allocated))); }
+    let local_size: i32 = 0; let complete: u64 = overhead; index = 0;
+    while (index < entries.length) {
+        let source: Source = entries.values[entries.start+index]; let compressed: i32 = source.data.length;
+        let method: i32 = match (source.method) { Method::Stored -> 0, Method::Deflate -> 8 };
+        if (method == 8) {
+            let measured: core::result::Result<i32,ext::deflate::Error> = ext::deflate::encoded_len(source.data,scratch.as_view());
+            if (core::result::is_err(measured)) { scratch.destroy(); metadata.destroy(); return core::result::Err(Error::Encode(core::result::unwrap_err(measured))); } compressed = core::result::unwrap(measured);
+        }
+        complete += compressed as u64;
+        if (complete > limits.max_archive as u64) { scratch.destroy(); metadata.destroy(); return core::result::Err(Error::ArchiveLimit); }
+        let saved: Written = Written { offset: local_size, compressed: compressed, checksum: crc(source.data) };
+        metadata.try_push(saved); local_size += 30+source.name.length+compressed; index += 1;
+    }
+    allocated = output.try_resize(complete as i32,0);
+    if (core::result::is_err(allocated)) { scratch.destroy(); metadata.destroy(); output.destroy(); return core::result::Err(vector_error(core::result::unwrap_err(allocated))); }
+    let bytes: core::slice::View<u8> = output.as_view(); let directory: i32 = local_size; index = 0;
+    while (index < entries.length) {
+        let source: Source = entries.values[entries.start+index]; let saved: Written = metadata.at(index); let local: i32 = saved.offset; let method: i32 = match (source.method) { Method::Stored -> 0, Method::Deflate -> 8 }; let flags: i32 = 0; if (source.utf8) { flags = 2048; }
+        put32(bytes,local,67324752); put16(bytes,local+4,20); put16(bytes,local+6,flags); put16(bytes,local+8,method); put16(bytes,local+12,33); put32(bytes,local+14,saved.checksum); put32(bytes,local+18,saved.compressed as u32); put32(bytes,local+22,source.data.length as u32); put16(bytes,local+26,source.name.length); copy(source.name,bytes,local+30);
+        let data: i32 = local+30+source.name.length;
+        if (method == 0) { copy(source.data,bytes,data); }
+        else {
+            let encoded: core::result::Result<i32,ext::deflate::Error> = ext::deflate::encode_into(source.data,part(bytes,data,data+saved.compressed),scratch.as_view());
+            if (core::result::is_err(encoded)) { scratch.destroy(); metadata.destroy(); output.destroy(); return core::result::Err(Error::Encode(core::result::unwrap_err(encoded))); }
+        }
+        put32(bytes,directory,33639248); put16(bytes,directory+4,20); put16(bytes,directory+6,20); put16(bytes,directory+8,flags); put16(bytes,directory+10,method); put16(bytes,directory+14,33); put32(bytes,directory+16,saved.checksum); put32(bytes,directory+20,saved.compressed as u32); put32(bytes,directory+24,source.data.length as u32); put16(bytes,directory+28,source.name.length); put32(bytes,directory+42,local as u32); copy(source.name,bytes,directory+46); directory += 46+source.name.length; index += 1;
+    }
+    put32(bytes,directory,101010256); put16(bytes,directory+8,entries.length); put16(bytes,directory+10,entries.length); put32(bytes,directory+12,(directory-local_size) as u32); put32(bytes,directory+16,local_size as u32); put16(bytes,directory+20,comment.length); copy(comment,bytes,directory+22);
+    scratch.destroy(); metadata.destroy(); return core::result::Ok(output);
+}
