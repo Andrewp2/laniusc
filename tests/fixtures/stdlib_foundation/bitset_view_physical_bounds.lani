@@ -1,0 +1,10 @@
+module app::main;
+import core::bitset;
+import core::result;
+import core::slice;
+fn main() -> i32 {
+    let zero: u32 = 0; let words: [u32; 1] = [zero];
+    let claimed: core::slice::View<u32> = core::result::unwrap(core::slice::view(words, 2));
+    let bits: core::bitset::BitView = core::result::unwrap(core::bitset::BitView::from_words(claimed, 33));
+    bits.set(32); return 0;
+}

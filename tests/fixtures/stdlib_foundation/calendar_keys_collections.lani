@@ -1,0 +1,101 @@
+module app::main;
+import alloc::hash_map;
+import alloc::tree_map;
+import alloc::vec;
+import core::calendar;
+import core::cmp;
+import core::hash;
+import core::option;
+import core::range;
+import core::result;
+import core::slice;
+
+// One consumer compiled separately for each civil calendar type. Read Vec
+// elements through an explicitly typed slice, preserving nominal key layouts.
+fn ordered<T>(expected: core::slice::View<T>, recreated: T) where T: core::cmp::Eq<T>, T: core::cmp::Ord<T>, T: core::cmp::PartialEq<T>, T: core::cmp::PartialOrd<T>, T: core::hash::Hash<T> {
+    let count: i32 = expected.len();assert(count >= 3);
+    let values: alloc::vec::Vec<T> = alloc::vec::new();
+    let tree: alloc::tree_map::TreeMap<T,i32> = alloc::tree_map::new();
+    let hashed: alloc::hash_map::HashMap<T,i32> = alloc::hash_map::new();
+    let i: i32 = count;
+    while (i > 0) {
+        i -= 1;let key: T = core::option::unwrap(expected.get(i));
+        core::result::unwrap(values.try_push(key));
+        assert(core::option::is_none(core::result::unwrap(tree.try_insert(key,i))));
+        assert(core::option::is_none(core::result::unwrap(hashed.try_insert(key,i))));
+    }
+    values.sort();assert(values.is_sorted() && values.len() == count);
+    let sorted: [T] = values.as_slice();i = 0;
+    while (i < count) {
+        let key: T = core::option::unwrap(expected.get(i));
+        assert(T::eq(sorted[i],key) && core::option::unwrap(tree.get(key)) == i && core::option::unwrap(hashed.get(key)) == i);
+        assert(values.binary_search(key) == i && values.lower_bound(key) == i);
+        i += 1;
+    }
+    assert(values.contains(recreated));
+    let previous: alloc::hash_map::Entry<T,i32> = core::option::unwrap(core::result::unwrap(hashed.try_insert(recreated,99)));
+    assert(previous.value == 1 && T::eq(previous.key,recreated) && hashed.len() == count);
+    let displaced: alloc::tree_map::Entry<T,i32> = core::option::unwrap(core::result::unwrap(tree.try_insert(recreated,99)));
+    assert(displaced.value == 1 && tree.len() == count && core::option::unwrap(tree.get(recreated)) == 99);
+    assert(core::option::unwrap(hashed.get(recreated)) == 99);
+    let first: T = sorted[0];let last: T = sorted[count-1];
+    let span: core::range::Range<T> = core::range::range(first,last);
+    assert(span.contains(first) && span.contains(recreated) && !span.contains(last) && !span.is_empty());
+    assert(core::range::contains_inclusive(core::range::range_inclusive(first,last),last));
+    assert(core::range::is_empty(core::range::range(last,first)) && core::range::is_empty(core::range::range(first,first)));
+    assert(core::range::contains_from(core::range::range_from(recreated),last));
+    assert(!core::range::contains_to(core::range::range_to(recreated),recreated));
+    let cursor: alloc::tree_map::Cursor<T,i32> = tree.iter();i = 0;
+    while (i < count) {
+        let item: alloc::tree_map::Entry<T,i32> = core::option::unwrap(cursor.next());
+        assert(T::eq(item.key,sorted[i]));let value: i32 = i;if (i == 1) { value = 99; }assert(item.value == value);i += 1;
+    }
+    assert(core::option::is_none(cursor.next()));
+    let segment: alloc::tree_map::Cursor<T,i32> = core::result::unwrap(tree.range(recreated,last));i = 1;
+    while (i < count-1) { let item: alloc::tree_map::Entry<T,i32> = core::option::unwrap(segment.next());assert(T::eq(item.key,sorted[i]));i += 1; }
+    assert(core::option::is_none(segment.next()));
+    assert(T::eq(core::option::unwrap(tree.lower_bound(recreated)).key,recreated));
+    assert(T::eq(core::option::unwrap(tree.upper_bound(recreated)).key,sorted[2]));
+    assert(core::option::unwrap(hashed.remove(recreated)).value == 99 && !hashed.contains_key(recreated));
+    assert(core::option::is_none(core::result::unwrap(hashed.try_insert(recreated,101))) && core::option::unwrap(hashed.get(recreated)) == 101);
+    hashed.destroy();tree.destroy();values.destroy();
+}
+fn date(year: i32, month: i32, day: i32) -> core::calendar::Date { return core::result::unwrap(core::calendar::date(year,month,day)); }
+fn time(hour: i32, minute: i32, second: i32, nanos: u32) -> core::calendar::TimeOfDay { return core::result::unwrap(core::calendar::time_of_day(hour,minute,second,nanos)); }
+fn local(date: core::calendar::Date, time: core::calendar::TimeOfDay) -> core::calendar::LocalDateTime { return core::result::unwrap(core::calendar::local_date_time(date,time)); }
+fn value(local: core::calendar::LocalDateTime, offset: core::calendar::UtcOffset) -> core::calendar::OffsetDateTime { return core::result::unwrap(core::calendar::offset_date_time(local,offset)); }
+fn main() -> i32 {
+    let days: [core::calendar::Date;9] = [core::calendar::minimum_date(),date(-400,2,29),date(-1,12,31),date(0,1,1),date(0,2,29),date(1970,1,1),date(2000,2,29),date(2147483647,1,1),core::calendar::maximum_date()];
+    ordered(core::result::unwrap(core::slice::view(days,9)),date(-400,2,29));
+    let times: [core::calendar::TimeOfDay;8] = [time(0,0,0,0),time(0,0,0,1),time(0,0,59,999999999),time(0,0,60,0),time(0,0,60,999999999),time(0,1,0,0),time(12,30,0,0),time(23,59,60,999999999)];
+    ordered(core::result::unwrap(core::slice::view(times,8)),time(0,0,0,1));
+    let locals: [core::calendar::LocalDateTime;8] = [local(core::calendar::minimum_date(),times[0]),local(date(-1,12,31),times[7]),local(date(0,1,1),times[0]),local(date(0,1,1),times[1]),local(date(0,1,1),times[3]),local(date(0,1,1),times[5]),local(date(2000,2,29),times[6]),local(core::calendar::maximum_date(),times[7])];
+    ordered(core::result::unwrap(core::slice::view(locals,8)),local(date(-1,12,31),time(23,59,60,999999999)));
+
+    let offsets: alloc::hash_map::HashMap<core::calendar::UtcOffset,i32> = alloc::hash_map::new();
+    let offset_keys: [core::calendar::UtcOffset;5] = [core::calendar::utc(),core::calendar::unknown_offset(),core::result::unwrap(core::calendar::utc_offset(-1439)),core::result::unwrap(core::calendar::utc_offset(1439)),core::result::unwrap(core::calendar::utc_offset(60))];
+    let i: i32 = 0;while (i < 5) { assert(core::option::is_none(core::result::unwrap(offsets.try_insert(offset_keys[i],i))));i += 1; }
+    assert(offsets.len() == 5 && core::option::unwrap(offsets.get(core::calendar::utc())) == 0 && core::option::unwrap(offsets.get(core::calendar::unknown_offset())) == 1);
+    let prior: alloc::hash_map::Entry<core::calendar::UtcOffset,i32> = core::option::unwrap(core::result::unwrap(offsets.try_insert(core::result::unwrap(core::calendar::utc_offset(0)),10)));
+    assert(prior.value == 0 && offsets.len() == 5 && core::option::unwrap(offsets.get(core::calendar::unknown_offset())) == 1);offsets.destroy();
+
+    let midnight: core::calendar::LocalDateTime = local(date(1970,1,1),time(0,0,0,0));
+    let utc: core::calendar::OffsetDateTime = value(midnight,core::calendar::utc());
+    let unknown: core::calendar::OffsetDateTime = value(midnight,core::calendar::unknown_offset());
+    let east: core::calendar::OffsetDateTime = core::result::unwrap(utc.to_offset(core::result::unwrap(core::calendar::utc_offset(60))));
+    let west: core::calendar::OffsetDateTime = core::result::unwrap(utc.to_offset(core::result::unwrap(core::calendar::utc_offset(-60))));
+    let midnight_east: core::calendar::OffsetDateTime = value(midnight,core::result::unwrap(core::calendar::utc_offset(60)));
+    assert(core::result::unwrap(utc.to_system_time()).compare(core::result::unwrap(east.to_system_time())) == 0);
+    assert(core::result::unwrap(utc.to_system_time()).compare(core::result::unwrap(west.to_system_time())) == 0);
+    assert(core::calendar::OffsetDateTime::ne(utc,east) && core::calendar::OffsetDateTime::ne(utc,west) && core::calendar::OffsetDateTime::ne(utc,unknown) && core::calendar::OffsetDateTime::ne(east,midnight_east));
+    let stamps: alloc::hash_map::HashMap<core::calendar::OffsetDateTime,i32> = alloc::hash_map::new();
+    let stamp_keys: [core::calendar::OffsetDateTime;8] = [utc,unknown,east,west,midnight_east,value(local(date(1969,12,31),time(23,59,59,999999999)),core::calendar::utc()),value(local(date(1969,12,31),time(23,59,60,0)),core::calendar::utc()),value(local(date(1969,12,31),time(23,59,60,1)),core::calendar::utc())];
+    i = 0;while (i < 8) { assert(core::option::is_none(core::result::unwrap(stamps.try_insert(stamp_keys[i],i))));i += 1; }
+    assert(stamps.len() == 8);i = 0;while (i < 8) { assert(core::option::unwrap(stamps.get(stamp_keys[i])) == i);i += 1; }
+    let recreated: core::calendar::OffsetDateTime = value(local(date(1970,1,1),time(0,0,0,0)),core::result::unwrap(core::calendar::utc_offset(0)));
+    let old: alloc::hash_map::Entry<core::calendar::OffsetDateTime,i32> = core::option::unwrap(core::result::unwrap(stamps.try_insert(recreated,99)));
+    assert(old.value == 0 && stamps.len() == 8 && core::option::unwrap(stamps.get(unknown)) == 1 && core::option::unwrap(stamps.get(east)) == 2);
+    assert(core::option::unwrap(stamps.remove(east)).value == 2 && stamps.len() == 7 && !stamps.contains_key(east));
+    assert(core::option::unwrap(stamps.get(utc)) == 99 && core::option::unwrap(stamps.get(west)) == 3);stamps.destroy();
+    return 0;
+}

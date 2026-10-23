@@ -1,6 +1,27 @@
 # Standard library execution audit and portable foundation
 
-**Current configuration/text checkpoint (2026-10-23):**
+**Current collections/mathematics checkpoint (2026-10-23):**
+[Owned bitsets](stdlib-bitset-owned.md) provide checked operations and explicit
+allocation failures; calendar comparison/hash traits integrate with ranges and
+collections. [Finite decimal arithmetic](extended-decimal.md),
+[statistics](extended-statistics.md) and [linear algebra](extended-linalg.md)
+execute in Lanius with explicit ownership, bounds, rounding/numerical and
+resource contracts. The [prime sieve](stdlib-primes.md),
+[decimal CSV ledger](extended-decimal-ledger.md) and
+[numerical CSV analyzer](extended-data-analyze.md) exercise these libraries
+through real programs. Native reference, boundary and failure checks are
+recorded per guide; [import compilation measurements](library-foundation-performance.md)
+use the repository's existing harness. This checkpoint changes no compiler,
+runtime, shader, IR, ABI, extractor or proof implementation. The
+[whole library roadmap](library-roadmap.md) remains incomplete.
+
+The final combined native gate passes 25 runtime test groups across the eight
+new bitset, calendar-key, decimal, statistics, matrix and application test
+targets. Six adjacent regression groups also pass: the original bitset API,
+calendar/RFC 3339 behavior and TOML typed import/encoding composition. These are
+focused execution gates, not a rerun of every historical compiler/library test.
+
+**Preceding configuration/text checkpoint (2026-10-23):**
 [TOML 1.1](extended-toml.md), [UTF-8 regex matching](extended-regex.md),
 [calendar values](stdlib-calendar.md), [Unicode word boundaries](extended-unicode-words.md)
 and [full string casing](extended-unicode-case.md) execute in Lanius. The

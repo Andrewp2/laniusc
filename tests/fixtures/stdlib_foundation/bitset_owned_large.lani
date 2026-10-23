@@ -1,0 +1,23 @@
+module app::main;
+import alloc::bitset;
+import core::bitset;
+import core::option;
+import core::result;
+fn main() -> i32 {
+    let length: i32 = 1048577;
+    let bits: alloc::bitset::BitSet = core::result::unwrap(alloc::bitset::with_len(length, false));
+    bits.set(0); bits.set(length / 2); bits.set(length - 1);
+    let round: i32 = 0;
+    while (round < 64) {
+        bits.shift_left(65); bits.shift_right(65); assert(bits.count_ones() == 2);
+        assert(core::option::unwrap(bits.first_set()) == 0 && core::option::unwrap(bits.last_set()) == length / 2);
+        round += 1;
+    }
+    bits.fill(true); assert(bits.count_ones() == length);
+    let ones: core::bitset::Ones = bits.iter_ones(); let index: i32 = 0;
+    while (index < length) { assert(core::option::unwrap(ones.next()) == index); index += 1; }
+    assert(core::option::is_none(ones.next()));
+    let clone: alloc::bitset::BitSet = core::result::unwrap(bits.try_clone()); assert(bits.equal(clone.as_view()));
+    core::result::unwrap(bits.try_xor(bits.as_view())); assert(bits.count_ones() == 0 && clone.count_ones() == length);
+    clone.destroy(); bits.destroy(); return 0;
+}

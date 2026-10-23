@@ -2,6 +2,8 @@
 // or host calls. Construct values with the checked functions and preserve their
 // fields. Year 0 is 1 BCE; negative years use astronomical numbering.
 module core::calendar;
+import core::cmp;
+import core::hash;
 import core::result;
 import core::slice;
 import core::time;
@@ -87,7 +89,11 @@ pub impl Date {
         else { let next: i64 = iso_start(year+1); if (days >= next) { year += 1; start = next; } }
         return IsoWeek { year: year, week: ((days-start)/7+1) as i32, weekday: self.weekday() };
     }
-    pub fn compare(&self, other: Date) -> i32 { let a: i64 = self.day_number();let b: i64 = other.day_number();if (a < b) { return -1; }if (a > b) { return 1; }return 0; }
+    pub fn compare(&self, other: Date) -> i32 {
+        if (self.year < other.year) { return -1; }if (self.year > other.year) { return 1; }
+        if (self.month < other.month) { return -1; }if (self.month > other.month) { return 1; }
+        if (self.day < other.day) { return -1; }if (self.day > other.day) { return 1; }return 0;
+    }
     // Positive means self occurs after earlier; native year range fits i64.
     pub fn days_since(&self, earlier: Date) -> i64 { return self.day_number() - earlier.day_number(); }
     pub fn checked_add_days(&self, days: i64) -> core::result::Result<Date, Error> {
@@ -122,7 +128,22 @@ pub fn time_of_day(hour: i32, minute: i32, second: i32, nanos: u32) -> core::res
     if (nanos >= 1000000000) { return core::result::Err(Error::InvalidNanoseconds); }
     return core::result::Ok(TimeOfDay { hour: hour, minute: minute, second: second, nanos: nanos });
 }
-pub impl TimeOfDay { pub fn is_leap_second(&self) -> bool { return self.second == 60; } }
+pub impl TimeOfDay {
+    pub fn is_leap_second(&self) -> bool { return self.second == 60; }
+    // Civil field order. Represented second 60 follows second 59 within a minute.
+    pub fn compare(&self, other: TimeOfDay) -> i32 {
+        if (self.hour < other.hour) { return -1; }if (self.hour > other.hour) { return 1; }
+        if (self.minute < other.minute) { return -1; }if (self.minute > other.minute) { return 1; }
+        if (self.second < other.second) { return -1; }if (self.second > other.second) { return 1; }
+        if (self.nanos < other.nanos) { return -1; }if (self.nanos > other.nanos) { return 1; }return 0;
+    }
+}
+pub impl LocalDateTime {
+    pub fn compare(&self, other: LocalDateTime) -> i32 {
+        let date_order: i32 = self.date.compare(other.date);if (date_order != 0) { return date_order; }
+        return self.time.compare(other.time);
+    }
+}
 pub fn local_date_time(day: Date, time: TimeOfDay) -> core::result::Result<LocalDateTime, Error> {
     let d: core::result::Result<Date, Error> = date(day.year,day.month,day.day);
     if (core::result::is_err(d)) { return core::result::Err(core::result::unwrap_err(d)); }
@@ -271,3 +292,112 @@ pub fn format_rfc3339(value: OffsetDateTime, fraction_digits: i32, output: core:
     }
     return core::result::Ok(count);
 }
+
+// Civil ordering and representational equality. Use constructor-valid values
+// and preserve fields. Offset types deliberately expose no total instant order:
+// leap-second syntax and unknown offsets cannot be converted implicitly.
+pub impl core::cmp::Eq<Date> for Date {
+    pub fn eq(left: Date, right: Date) -> bool { return left.compare(right) == 0; }
+    pub fn ne(left: Date, right: Date) -> bool { return left.compare(right) != 0; }
+}
+pub impl core::cmp::Ord<Date> for Date {
+    pub fn lt(left: Date, right: Date) -> bool { return left.compare(right) < 0; }
+    pub fn le(left: Date, right: Date) -> bool { return left.compare(right) <= 0; }
+    pub fn gt(left: Date, right: Date) -> bool { return left.compare(right) > 0; }
+    pub fn ge(left: Date, right: Date) -> bool { return left.compare(right) >= 0; }
+}
+pub impl core::cmp::PartialEq<Date> for Date {
+    pub fn partial_eq(left: Date, right: Date) -> bool { return Date::eq(left,right); }
+    pub fn partial_ne(left: Date, right: Date) -> bool { return Date::ne(left,right); }
+}
+pub impl core::cmp::PartialOrd<Date> for Date {
+    pub fn partial_lt(left: Date, right: Date) -> bool { return Date::lt(left,right); }
+    pub fn partial_le(left: Date, right: Date) -> bool { return Date::le(left,right); }
+    pub fn partial_gt(left: Date, right: Date) -> bool { return Date::gt(left,right); }
+    pub fn partial_ge(left: Date, right: Date) -> bool { return Date::ge(left,right); }
+    pub fn partial_cmp(left: Date, right: Date) -> core::cmp::PartialOrdering { return ordering(left.compare(right)); }
+}
+pub impl core::hash::Hash<Date> for Date {
+    pub fn hash(value: Date) -> u32 { return hash_date(core::hash::FNV1A_OFFSET_BASIS,value); }
+}
+pub impl core::cmp::Eq<TimeOfDay> for TimeOfDay {
+    pub fn eq(left: TimeOfDay, right: TimeOfDay) -> bool { return left.compare(right) == 0; }
+    pub fn ne(left: TimeOfDay, right: TimeOfDay) -> bool { return left.compare(right) != 0; }
+}
+pub impl core::cmp::Ord<TimeOfDay> for TimeOfDay {
+    pub fn lt(left: TimeOfDay, right: TimeOfDay) -> bool { return left.compare(right) < 0; }
+    pub fn le(left: TimeOfDay, right: TimeOfDay) -> bool { return left.compare(right) <= 0; }
+    pub fn gt(left: TimeOfDay, right: TimeOfDay) -> bool { return left.compare(right) > 0; }
+    pub fn ge(left: TimeOfDay, right: TimeOfDay) -> bool { return left.compare(right) >= 0; }
+}
+pub impl core::cmp::PartialEq<TimeOfDay> for TimeOfDay {
+    pub fn partial_eq(left: TimeOfDay, right: TimeOfDay) -> bool { return TimeOfDay::eq(left,right); }
+    pub fn partial_ne(left: TimeOfDay, right: TimeOfDay) -> bool { return TimeOfDay::ne(left,right); }
+}
+pub impl core::cmp::PartialOrd<TimeOfDay> for TimeOfDay {
+    pub fn partial_lt(left: TimeOfDay, right: TimeOfDay) -> bool { return TimeOfDay::lt(left,right); }
+    pub fn partial_le(left: TimeOfDay, right: TimeOfDay) -> bool { return TimeOfDay::le(left,right); }
+    pub fn partial_gt(left: TimeOfDay, right: TimeOfDay) -> bool { return TimeOfDay::gt(left,right); }
+    pub fn partial_ge(left: TimeOfDay, right: TimeOfDay) -> bool { return TimeOfDay::ge(left,right); }
+    pub fn partial_cmp(left: TimeOfDay, right: TimeOfDay) -> core::cmp::PartialOrdering { return ordering(left.compare(right)); }
+}
+pub impl core::hash::Hash<TimeOfDay> for TimeOfDay {
+    pub fn hash(value: TimeOfDay) -> u32 { return hash_time(core::hash::FNV1A_OFFSET_BASIS,value); }
+}
+pub impl core::cmp::Eq<LocalDateTime> for LocalDateTime {
+    pub fn eq(left: LocalDateTime, right: LocalDateTime) -> bool { return left.compare(right) == 0; }
+    pub fn ne(left: LocalDateTime, right: LocalDateTime) -> bool { return left.compare(right) != 0; }
+}
+pub impl core::cmp::Ord<LocalDateTime> for LocalDateTime {
+    pub fn lt(left: LocalDateTime, right: LocalDateTime) -> bool { return left.compare(right) < 0; }
+    pub fn le(left: LocalDateTime, right: LocalDateTime) -> bool { return left.compare(right) <= 0; }
+    pub fn gt(left: LocalDateTime, right: LocalDateTime) -> bool { return left.compare(right) > 0; }
+    pub fn ge(left: LocalDateTime, right: LocalDateTime) -> bool { return left.compare(right) >= 0; }
+}
+pub impl core::cmp::PartialEq<LocalDateTime> for LocalDateTime {
+    pub fn partial_eq(left: LocalDateTime, right: LocalDateTime) -> bool { return LocalDateTime::eq(left,right); }
+    pub fn partial_ne(left: LocalDateTime, right: LocalDateTime) -> bool { return LocalDateTime::ne(left,right); }
+}
+pub impl core::cmp::PartialOrd<LocalDateTime> for LocalDateTime {
+    pub fn partial_lt(left: LocalDateTime, right: LocalDateTime) -> bool { return LocalDateTime::lt(left,right); }
+    pub fn partial_le(left: LocalDateTime, right: LocalDateTime) -> bool { return LocalDateTime::le(left,right); }
+    pub fn partial_gt(left: LocalDateTime, right: LocalDateTime) -> bool { return LocalDateTime::gt(left,right); }
+    pub fn partial_ge(left: LocalDateTime, right: LocalDateTime) -> bool { return LocalDateTime::ge(left,right); }
+    pub fn partial_cmp(left: LocalDateTime, right: LocalDateTime) -> core::cmp::PartialOrdering { return ordering(left.compare(right)); }
+}
+pub impl core::hash::Hash<LocalDateTime> for LocalDateTime {
+    pub fn hash(value: LocalDateTime) -> u32 { return hash_time(hash_date(core::hash::FNV1A_OFFSET_BASIS,value.date),value.time); }
+}
+pub impl core::cmp::Eq<UtcOffset> for UtcOffset {
+    pub fn eq(left: UtcOffset, right: UtcOffset) -> bool { return left.minutes == right.minutes && left.known == right.known; }
+    pub fn ne(left: UtcOffset, right: UtcOffset) -> bool { return !UtcOffset::eq(left,right); }
+}
+pub impl core::cmp::PartialEq<UtcOffset> for UtcOffset {
+    pub fn partial_eq(left: UtcOffset, right: UtcOffset) -> bool { return UtcOffset::eq(left,right); }
+    pub fn partial_ne(left: UtcOffset, right: UtcOffset) -> bool { return UtcOffset::ne(left,right); }
+}
+pub impl core::hash::Hash<UtcOffset> for UtcOffset {
+    pub fn hash(value: UtcOffset) -> u32 { return hash_offset(core::hash::FNV1A_OFFSET_BASIS,value); }
+}
+pub impl core::cmp::Eq<OffsetDateTime> for OffsetDateTime {
+    pub fn eq(left: OffsetDateTime, right: OffsetDateTime) -> bool { return LocalDateTime::eq(left.local,right.local) && UtcOffset::eq(left.offset,right.offset); }
+    pub fn ne(left: OffsetDateTime, right: OffsetDateTime) -> bool { return !OffsetDateTime::eq(left,right); }
+}
+pub impl core::cmp::PartialEq<OffsetDateTime> for OffsetDateTime {
+    pub fn partial_eq(left: OffsetDateTime, right: OffsetDateTime) -> bool { return OffsetDateTime::eq(left,right); }
+    pub fn partial_ne(left: OffsetDateTime, right: OffsetDateTime) -> bool { return OffsetDateTime::ne(left,right); }
+}
+pub impl core::hash::Hash<OffsetDateTime> for OffsetDateTime {
+    pub fn hash(value: OffsetDateTime) -> u32 { return hash_offset(hash_time(hash_date(core::hash::FNV1A_OFFSET_BASIS,value.local.date),value.local.time),value.offset); }
+}
+fn ordering(value: i32) -> core::cmp::PartialOrdering {
+    if (value < 0) { return core::cmp::Less; }if (value > 0) { return core::cmp::Greater; }return core::cmp::Equal;
+}
+fn hash_word(state: u32, word: u32) -> u32 {
+    let result: u32 = state;let rest: u32 = word;let i: i32 = 0;
+    while (i < 4) { result = core::hash::fnv1a_step(result,(rest&255) as u8);rest >>= 8;i += 1; }
+    return result;
+}
+fn hash_date(state: u32, value: Date) -> u32 { return hash_word(hash_word(hash_word(state,value.year as u32),value.month as u32),value.day as u32); }
+fn hash_time(state: u32, value: TimeOfDay) -> u32 { return hash_word(hash_word(hash_word(hash_word(state,value.hour as u32),value.minute as u32),value.second as u32),value.nanos); }
+fn hash_offset(state: u32, value: UtcOffset) -> u32 { return core::hash::fnv1a_step(hash_word(state,value.minutes as u32),value.known as u8); }

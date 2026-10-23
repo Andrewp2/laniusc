@@ -1,0 +1,9 @@
+module app::main;
+import core::result;
+import core::slice;
+import ext::statistics;
+fn main() -> i32 {
+ let m: ext::statistics::Moments = ext::statistics::moments(); assert(m.push(1.0).is_ok()); assert(m.push(3.0).is_ok()); assert(m.mean().unwrap() == 2.0); assert(m.sample_variance().unwrap() == 2.0);
+ let p: ext::statistics::PairedMoments = ext::statistics::paired_moments(); p.push(1.0,3.0).unwrap(); p.push(2.0,5.0).unwrap(); assert(p.linear_fit().unwrap().slope == 2.0);
+ let a: [f64;4] = [7.0,1.0,9.0,3.0]; let scratch: [f64;4] = [0.0;4]; let v: core::slice::View<f64> = core::slice::view(a,4).unwrap(); let w: core::slice::View<f64> = core::slice::view(scratch,4).unwrap(); let sorted: ext::statistics::SortedSample = ext::statistics::sorted_copy(v,w,1000).unwrap(); assert(sorted.median().unwrap() == 5.0); return 0;
+}

@@ -1,0 +1,52 @@
+module app::main;
+import alloc::bitset;
+import core::bitset;
+import core::option;
+import core::result;
+fn allocation(error: alloc::bitset::Error) -> bool { return match (error) { alloc::bitset::Error::AllocationFailed -> true, _ -> false }; }
+fn main() -> i32 {
+    let made: core::result::Result<alloc::bitset::BitSet, alloc::bitset::Error> = alloc::bitset::with_len(33, true);
+    if (core::result::is_err(made)) { assert(allocation(core::result::unwrap_err(made))); return 0; }
+    let bits: alloc::bitset::BitSet = core::result::unwrap(made); let operation: i32 = 0;
+    while (operation < 12) {
+        let before: core::bitset::BitView = bits.as_view(); let length: i32 = bits.len(); let capacity: i32 = bits.capacity(); let hash: u32 = bits.hash();
+        let snapshot: [u32; 64] = [0; 64]; let index: i32 = 0;
+        while (index < core::bitset::word_count_or(length, -1)) { snapshot[index] = core::option::unwrap(before.word(index)); index += 1; }
+        let status: core::result::Result<i32, alloc::bitset::Error> = core::result::Ok(0);
+        if (operation == 0) { status = bits.try_resize(97, false); }
+        if (operation == 1) { status = bits.try_reserve(2048); }
+        if (operation == 2) { status = bits.try_shrink_to_fit(); }
+        if (operation == 3) {
+            let cloned: core::result::Result<alloc::bitset::BitSet, alloc::bitset::Error> = bits.try_clone();
+            if (core::result::is_err(cloned)) { status = core::result::Err(core::result::unwrap_err(cloned)); }
+            else { let copy: alloc::bitset::BitSet = core::result::unwrap(cloned); assert(copy.equal(before)); copy.destroy(); }
+        }
+        if (operation >= 4 && operation <= 7) {
+            let made_right: core::result::Result<alloc::bitset::BitSet, alloc::bitset::Error> = alloc::bitset::with_len(length, true);
+            if (core::result::is_err(made_right)) { status = core::result::Err(core::result::unwrap_err(made_right)); }
+            else {
+                let right: alloc::bitset::BitSet = core::result::unwrap(made_right); let right_hash: u32 = right.hash();
+                if (operation == 4) { status = bits.try_union(right.as_view()); }
+                if (operation == 5) { status = bits.try_intersection(right.as_view()); }
+                if (operation == 6) { status = bits.try_difference(right.as_view()); }
+                if (operation == 7) { status = bits.try_xor(right.as_view()); }
+                assert(right.hash() == right_hash && right.len() == length && right.count_ones() == length); right.destroy();
+            }
+        }
+        if (operation == 8) { status = bits.try_resize(32, true); }
+        if (operation == 9) { status = bits.try_shrink_to_fit(); }
+        if (operation == 10) { status = bits.try_push(true); }
+        if (operation == 11) {
+            let reserved: core::result::Result<alloc::bitset::BitSet, alloc::bitset::Error> = alloc::bitset::with_capacity(4096);
+            if (core::result::is_err(reserved)) { status = core::result::Err(core::result::unwrap_err(reserved)); }
+            else { let empty: alloc::bitset::BitSet = core::result::unwrap(reserved); empty.destroy(); }
+        }
+        if (core::result::is_err(status)) {
+            assert(allocation(core::result::unwrap_err(status)) && bits.len() == length && bits.capacity() == capacity && bits.hash() == hash);
+            index = 0;
+            while (index < core::bitset::word_count_or(length, -1)) { assert(core::option::unwrap(before.word(index)) == snapshot[index]); index += 1; }
+        }
+        operation += 1;
+    }
+    bits.destroy(); return 0;
+}

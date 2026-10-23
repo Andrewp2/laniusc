@@ -31,7 +31,7 @@ package distribution is a separate deliverable.
 | Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | Inherent slice/text/hash-map cursors execute; shared protocol dispatch hits an imported-generic compiler dependency; adapters and collection integration remain |
 | Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat, integer/float conversion, caller-buffer Display and selected complete Unicode 17 property/scalar-mapping tables execute. Optional extended modules provide full casing, normalization and default word/grapheme boundaries; format strings, alignment/precision policies and owned formatting conveniences remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings, raw views and stable chunked arenas with generic typed allocations execute; layout and ownership consolidation remain |
-| Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec and deque with explicit errors, linear maps/sets, alloc hash maps, ordered tree maps and min/max heaps execute; legacy migration and ordered sets remain |
+| Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec, deque and bitset with explicit errors, linear maps/sets, alloc hash maps, ordered tree maps and min/max heaps execute; generic hash sets, ordered sets, fixed-capacity containers and legacy migration remain |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks, native descriptor adapters and owned files execute; buffered adapters remain |
 | Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files, borrowed Unix byte paths, components, names, prefixes, owned buffers, explicit lexical normalization and checked directory/file mutations execute; metadata, directory enumeration, walking and further host operations remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Owned raw-byte argument snapshots and argument/environment helpers execute; subprocess management remains |
@@ -119,8 +119,30 @@ and exponent precision for comparison/integer/divisibility behavior.
 radix conversion, division, shifts, bitwise operations, powers and GCD, with
 explicit limits, ownership and allocation failures. A
 [streaming calculator](extended-bigcalc.md) executes twenty operations across
-multiple radices. General decimal arithmetic, additional number-theory
+multiple radices. [Owned finite decimals](extended-decimal.md) add arbitrary
+precision coefficients, quantum-preserving exact arithmetic, explicit rounding,
+precision-limited division, conversions and lawful numeric keys. A
+[CSV ledger](extended-decimal-ledger.md) calculates rounded line subtotals,
+taxes and running totals without binary floating point. Signed decimal zeros,
+NaNs/infinities, transcendental decimal functions, additional number-theory
 algorithms and cryptographic uses remain separate work.
+
+[Statistics](extended-statistics.md) provides checked streaming moments,
+covariance/correlation, simple linear fits, compensated sums, scaled norms and
+all nine standard sample-quantile formulas. [Linear algebra](extended-linalg.md)
+provides counted strided matrices, owned matrices, products, pivoted LU and
+Householder QR least squares, with explicit numerical and resource limits.
+The [numerical CSV analyzer](extended-data-analyze.md) combines both libraries
+for summaries and optional multiple regression. These are binary64 APIs;
+distributions, weighted/higher moments, advanced decompositions, sparse matrices,
+geometry and wider mathematical functions remain work.
+
+[Owned bitsets and counted views](stdlib-bitset-owned.md) add checked bit/range
+edits, searches, shifts, set algebra, cursors and explicit allocation failures.
+The [prime sieve](stdlib-primes.md) exercises them through twenty million
+candidates. Calendar values also supply lawful comparison/hash traits for
+generic ranges, sorting and collection keys; civil ordering and offset
+representation equality have separate documented contracts.
 
 [Unicode 17.0.0 properties](stdlib-unicode.md) cover the full code point range
 for the documented property set and simple/default/Turkic scalar mappings.
@@ -204,7 +226,13 @@ API list; unrelated library work can continue.
 ## Current work
 
 - Branch: `codex/stdlib`, based on `441e66f9`.
-- Current configuration/text milestone: TOML 1.1 documents and normalization,
+- Current collections/mathematics milestone: owned/counted bitsets with a
+  prime sieve, calendar comparison/hash and collection integration, arbitrary
+  precision finite decimals with a CSV ledger, statistics and matrix algorithms
+  with a numerical CSV analysis/regression program. Independent models,
+  numerical edge cases, aliasing, allocation/I/O failures and measured native
+  workloads are recorded in the guides above. The whole scope remains open.
+- Preceding configuration/text milestone: TOML 1.1 documents and normalization,
   UTF-8 regular-expression search and a streaming grep program, Gregorian/RFC
   3339 calendar values, and complete Unicode 17 default word boundaries and
   full casing with a command-line converter. Each module/application guide
@@ -280,7 +308,7 @@ API list; unrelated library work can continue.
   deadline, round up to milliseconds and split requests at the native i32 limit.
   A generic Deadline-factory composition has a reduced compiler reproduction
   and two successful controls; shipped APIs retain their generic interface.
-  Other clocks, cancellation, calendar support and legacy migration remain.
+  Other clocks, cancellation, time zones and legacy migration remain.
 - Randomness: [`core::random` and `std::entropy`](stdlib-randomness.md) execute
   xoshiro256++ generation, seed/state restoration, jumps, unbiased integer
   sampling, fixed-grid floats, byte filling, generic choice/shuffle and checked

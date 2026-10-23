@@ -1,0 +1,24 @@
+module app::main;
+import alloc::bitset;
+import core::bitset;
+import core::option;
+import core::result;
+fn append_borrowed(bits: &alloc::bitset::BitSet) { core::result::unwrap(bits.try_push(true)); }
+fn main() -> i32 {
+    let bits: alloc::bitset::BitSet = core::result::unwrap(alloc::bitset::with_len(33, true));
+    assert(bits.len() == 33 && bits.count_ones() == 33 && bits.capacity() == 64);
+    assert(core::result::unwrap(bits.clear(32)));
+    assert(bits.count_ones() == 32);
+    core::result::unwrap(bits.try_push(true));
+    assert(bits.len() == 34 && core::option::unwrap(bits.get(33)));
+    let copy: alloc::bitset::BitSet = core::result::unwrap(bits.try_clone());
+    assert(copy.equal(bits.as_view()) && copy.hash() == bits.hash());
+    core::result::unwrap(bits.try_xor(bits.as_view())); assert(!bits.any());
+    assert(copy.count_ones() == 33);
+    let ones: core::bitset::Ones = copy.iter_ones(); let count: i32 = 0;
+    while (core::option::is_some(ones.next())) { count += 1; }
+    assert(count == 33 && core::option::is_none(ones.next()));
+    copy.destroy(); bits.destroy();
+    append_borrowed(bits.borrow()); assert(bits.len() == 1 && core::option::unwrap(bits.get(0)));
+    bits.destroy(); return 0;
+}

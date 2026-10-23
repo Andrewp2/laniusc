@@ -1,0 +1,82 @@
+// 13-byte commands: opcode, LE i32 a, b, c. Emit complete logical words.
+module app::main;
+import alloc::bitset;
+import core::bitset;
+import core::mem;
+import core::option;
+import core::result;
+import std::fs;
+import std::io;
+import std::io_decimal;
+fn number(value: i32) { assert(std::io_decimal::write_i32(1, value) >= 0); assert(std::io::write_byte(1, 32) == 1); }
+fn integer(input: [u8], offset: i32) -> i32 {
+    let bits: u32 = (input[offset] as u32) | ((input[offset + 1] as u32) << 8) | ((input[offset + 2] as u32) << 16) | ((input[offset + 3] as u32) << 24); return bits as i32;
+}
+fn main() -> i32 {
+    let storage: [i32; 16384] = [0; 16384]; let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let size: i32 = std::fs::read(0, pointer, 65536); if (size < 0 || size % 13 != 0) { return 1; }
+    let input: [u8] = core::mem::typed_slice_from_raw_parts(pointer, size);
+    let bits: alloc::bitset::BitSet = alloc::bitset::new(); let offset: i32 = 0;
+    while (offset < size) {
+        let op: u8 = input[offset]; let a: i32 = integer(input, offset + 1); let b: i32 = integer(input, offset + 5); let c: i32 = integer(input, offset + 9); offset += 13;
+        let tag: i32 = 0; let answer: i32 = 0; let status: core::result::Result<i32, core::bitset::ViewError> = core::result::Ok(0);
+        if (op == 0) { if (core::result::is_err(bits.try_resize(a, b != 0))) { tag = 2; } }
+        if (op == 1) { core::result::unwrap(bits.try_push(b != 0)); }
+        if (op == 2) { let removed: core::option::Option<bool> = bits.pop(); if (core::option::is_some(removed)) { tag = 1; if (core::option::unwrap(removed)) { answer = 1; } } }
+        if (op == 3 || op == 4) {
+            let changed: core::result::Result<bool, core::bitset::ViewError> = core::result::Err(core::bitset::ViewError::Bounds);
+            if (op == 3) { changed = bits.assign(a, b != 0); } else { changed = bits.toggle(a); }
+            if (core::result::is_err(changed)) { tag = 2; } else { tag = 1; if (core::result::unwrap(changed)) { answer = 1; } }
+        }
+        if (op == 5) { bits.fill(b != 0); }
+        if (op == 6) { status = bits.set_range(a, b); }
+        if (op == 7) { status = bits.clear_range(a, b); }
+        if (op == 8) { status = bits.toggle_range(a, b); }
+        if (op == 9) { status = bits.shift_left(a); }
+        if (op == 10) { status = bits.shift_right(a); }
+        if (op == 11) { status = bits.copy_within(a, b, c); }
+        if (op == 12) {
+            let reserved: core::result::Result<i32, alloc::bitset::Error> = bits.try_reserve(a);
+            if (core::result::is_err(reserved)) { tag = 2; } else { assert(bits.capacity() >= bits.len() + a); }
+        }
+        if (op == 13) { core::result::unwrap(bits.try_shrink_to_fit()); assert(bits.capacity() >= bits.len() && bits.capacity() - bits.len() < 32); }
+        if (op == 14) {
+            let copy: alloc::bitset::BitSet = core::result::unwrap(bits.try_clone()); assert(copy.equal(bits.as_view()) && copy.hash() == bits.hash());
+            if (!copy.is_empty()) { copy.toggle(0); assert(!copy.equal(bits.as_view())); } copy.destroy();
+        }
+        if (op == 15 || op == 19) {
+            let other: alloc::bitset::BitSet = core::result::unwrap(alloc::bitset::with_len(a, false)); let at: i32 = 0;
+            while (at < a) { if ((at * 13 + b) % 7 < 3) { other.set(at); } at += 1; }
+            if (op == 15) {
+                let edited: core::result::Result<i32, alloc::bitset::Error> = core::result::Ok(0);
+                if (c == 0) { edited = bits.try_union(other.as_view()); } if (c == 1) { edited = bits.try_intersection(other.as_view()); }
+                if (c == 2) { edited = bits.try_difference(other.as_view()); } if (c == 3) { edited = bits.try_xor(other.as_view()); }
+                if (core::result::is_err(edited)) { tag = 2; }
+            } else {
+                let subset: core::result::Result<bool, core::bitset::ViewError> = bits.is_subset(other.as_view());
+                let disjoint: core::result::Result<bool, core::bitset::ViewError> = bits.is_disjoint(other.as_view());
+                if (core::result::is_err(subset)) { tag = 2; assert(core::result::is_err(disjoint)); }
+                else { tag = 1; if (core::result::unwrap(subset)) { answer += 1; } if (core::result::unwrap(disjoint)) { answer += 2; } }
+            }
+            other.destroy();
+        }
+        if (op == 16) { let got: core::option::Option<bool> = bits.get(a); if (core::option::is_some(got)) { tag = 1; if (core::option::unwrap(got)) { answer = 1; } } }
+        if (op == 17) { bits.destroy(); assert(bits.capacity() == 0 && bits.len() == 0); }
+        if (op == 18) {
+            let ones: core::bitset::Ones = bits.iter_ones(); let at: i32 = 0; let total: i32 = 0;
+            while (at < bits.len()) { if (core::option::unwrap(bits.get(at))) { assert(core::option::unwrap(ones.next()) == at); total += 1; } at += 1; }
+            assert(total == bits.count_ones() && core::option::is_none(ones.next()) && core::option::is_none(ones.next()));
+            let next_set: core::result::Result<core::option::Option<i32>, core::bitset::ViewError> = bits.next_set(a);
+            let next_clear: core::result::Result<core::option::Option<i32>, core::bitset::ViewError> = bits.next_clear(a);
+            if (core::result::is_err(next_set)) { tag = 2; assert(core::result::is_err(next_clear)); }
+            else { tag = 1; answer = core::option::unwrap_or(core::result::unwrap(next_set), -1) * 10000 + core::option::unwrap_or(core::result::unwrap(next_clear), -1); }
+        }
+        if (core::result::is_err(status)) { tag = 2; }
+        if (op > 19) { return 2; }
+        number(tag); number(answer); number(bits.len()); number(bits.count_ones()); number(core::option::unwrap_or(bits.first_set(), -1)); number(core::option::unwrap_or(bits.last_set(), -1));
+        let view: core::bitset::BitView = bits.as_view(); let index: i32 = 0;
+        while (index < core::bitset::word_count_or(bits.len(), -1)) { number(core::option::unwrap(view.word(index)) as i32); index += 1; }
+        assert(std::io::write_byte(1, 10) == 1);
+    }
+    bits.destroy(); return 0;
+}

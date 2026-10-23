@@ -1,0 +1,578 @@
+// Finite, owned arbitrary precision decimal values. Value = coefficient * 10^exponent.
+// One active owner; record copies alias storage. Inputs survive all failures.
+module ext::decimal;
+import alloc::vec;
+import core::cmp;
+import core::hash;
+import core::result;
+import core::slice;
+import core::text;
+import ext::big_int;
+import ext::big_uint;
+
+pub enum Error { Bounds, InvalidSyntax, NonFinite, DigitLimit, ScaleLimit, LimbLimit, WorkLimit, OutputLimit, AllocationFailed, DivisionByZero, Inexact, Overflow }
+pub enum Rounding { Down, Up, Floor, Ceiling, HalfUp, HalfDown, HalfEven, Unnecessary }
+pub struct Limits { max_limbs: i32, max_digits: i32, max_scale: i32, max_work: u64, max_output: i32 }
+pub struct Context { precision: i32, rounding: Rounding }
+pub struct Decimal { coefficient: ext::big_int::BigInt, digits: alloc::vec::Vec<u8>, power: i32 }
+struct Budget { limits: Limits, remaining: u64 }
+
+pub fn default_limits() -> Limits { return Limits { max_limbs: 1048576, max_digits: 100000, max_scale: 100000, max_work: 100000000, max_output: 1048576 }; }
+pub fn default_context() -> Context { return Context { precision: 34, rounding: Rounding::HalfEven }; }
+pub fn zero() -> Decimal { return owned(ext::big_int::zero(), alloc::vec::new(), 0); }
+fn owned(coefficient: ext::big_int::BigInt, digits: alloc::vec::Vec<u8>, exponent: i32) -> Decimal { return Decimal { coefficient: coefficient, digits: digits, power: exponent }; }
+fn budget(limits: Limits) -> Budget { return Budget { limits: limits, remaining: limits.max_work }; }
+fn valid(limits: Limits) -> bool { return limits.max_limbs >= 0 && limits.max_limbs <= 536870911 && limits.max_digits >= 1 && limits.max_digits <= 1000000000 && limits.max_scale >= 0 && limits.max_scale <= 1000000000 && limits.max_output >= 0; }
+fn scale_ok(exponent: i64, limits: Limits) -> bool { return exponent >= -(limits.max_scale as i64) && exponent <= limits.max_scale as i64; }
+fn mapped(error: ext::big_uint::Error) -> Error {
+    if (error == ext::big_uint::Error::AllocationFailed) { return Error::AllocationFailed; }
+    if (error == ext::big_uint::Error::LimbLimit) { return Error::LimbLimit; }
+    if (error == ext::big_uint::Error::WorkLimit) { return Error::WorkLimit; }
+    if (error == ext::big_uint::Error::OutputLimit) { return Error::DigitLimit; }
+    if (error == ext::big_uint::Error::DivisionByZero) { return Error::DivisionByZero; }
+    if (error == ext::big_uint::Error::Overflow) { return Error::Overflow; }
+    return Error::Bounds;
+}
+impl Budget {
+    fn spend(&self, amount: u64) -> core::result::Result<i32, Error> {
+        if (amount > self.remaining) { return core::result::Err(Error::WorkLimit); }
+        self.remaining -= amount; return core::result::Ok(0);
+    }
+    fn backend(&self, amount: u64) -> core::result::Result<ext::big_uint::Limits, Error> {
+        let paid: core::result::Result<i32, Error> = self.spend(amount);
+        if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); }
+        return core::result::Ok(ext::big_uint::Limits { max_limbs: self.limits.max_limbs, max_work: amount, max_output: self.limits.max_digits + 1 });
+    }
+}
+fn limbs(value: &ext::big_int::BigInt) -> u64 { return (value.bit_length() + 31) / 32; }
+fn checked(value: &Decimal, work: &Budget) -> core::result::Result<i32, Error> {
+    if (!valid(work.limits)) { return core::result::Err(Error::Bounds); }
+    if (!scale_ok(value.power as i64, work.limits)) { return core::result::Err(Error::ScaleLimit); }
+    if (value.precision() > work.limits.max_digits) { return core::result::Err(Error::DigitLimit); }
+    if (limbs(value.coefficient.borrow()) > work.limits.max_limbs as u64) { return core::result::Err(Error::LimbLimit); }
+    return core::result::Ok(0);
+}
+fn context_ok(context: Context, limits: Limits) -> core::result::Result<i32, Error> {
+    if (!valid(limits) || context.precision < 1) { return core::result::Err(Error::Bounds); }
+    if (context.precision > limits.max_digits) { return core::result::Err(Error::DigitLimit); }
+    return core::result::Ok(0);
+}
+// Consumes a coefficient and prepares its immutable comparison cache.
+fn finish(coefficient: ext::big_int::BigInt, exponent: i64, work: &Budget) -> core::result::Result<Decimal, Error> {
+    if (!scale_ok(exponent, work.limits)) { coefficient.destroy(); return core::result::Err(Error::ScaleLimit); }
+    if (coefficient.is_zero()) { coefficient.destroy(); return core::result::Ok(owned(ext::big_int::zero(), alloc::vec::new(), exponent as i32)); }
+    let length_bound: u64 = coefficient.bit_length() / 3 + 2;
+    let cost: u64 = (length_bound + 2) * (limbs(coefficient.borrow()) + 3);
+    let backend: core::result::Result<ext::big_uint::Limits, Error> = work.backend(cost);
+    if (backend.is_err()) { coefficient.destroy(); return core::result::Err(backend.unwrap_err()); }
+    let formatted: core::result::Result<alloc::vec::Vec<u8>, ext::big_uint::Error> = coefficient.format_radix(10, backend.unwrap());
+    if (formatted.is_err()) { coefficient.destroy(); return core::result::Err(mapped(formatted.unwrap_err())); }
+    let digits: alloc::vec::Vec<u8> = formatted.unwrap();
+    if (coefficient.sign() < 0) { digits.remove(0); }
+    if (digits.len() > work.limits.max_digits) { digits.destroy(); coefficient.destroy(); return core::result::Err(Error::DigitLimit); }
+    return core::result::Ok(owned(coefficient, digits, exponent as i32));
+}
+fn lower(byte: u8) -> u8 { if (byte >= 65 && byte <= 90) { return byte + 32; } return byte; }
+fn special(input: core::slice::View<u8>, start: i32) -> bool {
+    let count: i32 = input.length - start; let at: i32 = input.start + start;
+    if (count >= 3 && lower(input.values[at]) == 105 && lower(input.values[at + 1]) == 110 && lower(input.values[at + 2]) == 102) {
+        if (count == 3) { return true; }
+        return count == 8 && lower(input.values[at + 3]) == 105 && lower(input.values[at + 4]) == 110 && lower(input.values[at + 5]) == 105 && lower(input.values[at + 6]) == 116 && lower(input.values[at + 7]) == 121;
+    }
+    let offset: i32 = 0; if (count > 0 && lower(input.values[at]) == 115) { offset = 1; }
+    if (count < offset + 3 || lower(input.values[at + offset]) != 110 || lower(input.values[at + offset + 1]) != 97 || lower(input.values[at + offset + 2]) != 110) { return false; }
+    let index: i32 = offset + 3; while(index < count) { let byte: u8 = input.values[at + index]; if (byte < 48 || byte > 57) { return false; } index += 1; } return true;
+}
+// Strict finite GDA string grammar. No whitespace, separators, binary floats,
+// NUL termination, or implicit precision rounding.
+pub fn parse(input: core::slice::View<u8>, limits: Limits) -> core::result::Result<Decimal, Error> {
+    let work: Budget = budget(limits); return parse_with(input, work.borrow());
+}
+pub fn parse_text(input: core::text::Text, limits: Limits) -> core::result::Result<Decimal, Error> {
+    return parse(core::slice::View { values: input.bytes, start: input.start, length: input.length }, limits);
+}
+fn parse_with(input: core::slice::View<u8>, work: &Budget) -> core::result::Result<Decimal, Error> {
+    if (!valid(work.limits) || input.start < 0 || input.length < 0 || input.start > 2147483647 - input.length) { return core::result::Err(Error::Bounds); }
+    let paid: core::result::Result<i32, Error> = work.spend((input.length as u64) * 3);
+    if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); }
+    if (input.length == 0) { return core::result::Err(Error::InvalidSyntax); }
+    let position: i32 = 0; let negative: bool = false;
+    if (input.values[input.start] == 43 || input.values[input.start] == 45) { negative = input.values[input.start] == 45; position += 1; }
+    if (position == input.length) { return core::result::Err(Error::InvalidSyntax); }
+    let first: u8 = input.values[input.start + position];
+    if (first == 73 || first == 105 || first == 78 || first == 110 || first == 83 || first == 115) { if (special(input, position)) { return core::result::Err(Error::NonFinite); } return core::result::Err(Error::InvalidSyntax); }
+    let start: i32 = position; let dot: bool = false; let count: i32 = 0; let fractional: i32 = 0; let leading: i32 = 0; let significant: bool = false;
+    while (position < input.length) {
+        let byte: u8 = input.values[input.start + position];
+        if (byte == 101 || byte == 69) { break; }
+        if (byte == 46) { if (dot) { return core::result::Err(Error::InvalidSyntax); } dot = true; }
+        else {
+            if (byte < 48 || byte > 57) { return core::result::Err(Error::InvalidSyntax); }
+            count += 1; if (dot) { fractional += 1; }
+            if (!significant && byte == 48) { leading += 1; } else { significant = true; }
+        }
+        position += 1;
+    }
+    if (count == 0) { return core::result::Err(Error::InvalidSyntax); }
+    let end: i32 = position; let exponent: i64 = 0;
+    if (position < input.length) {
+        position += 1; let exponent_negative: bool = false;
+        if (position < input.length && (input.values[input.start + position] == 43 || input.values[input.start + position] == 45)) { exponent_negative = input.values[input.start + position] == 45; position += 1; }
+        if (position == input.length) { return core::result::Err(Error::InvalidSyntax); }
+        while (position < input.length) {
+            let byte: u8 = input.values[input.start + position];
+            if (byte < 48 || byte > 57) { return core::result::Err(Error::InvalidSyntax); }
+            // Saturation permits syntax validation without integer overflow.
+            if (exponent < 4000000000) { exponent = exponent * 10 + ((byte - 48) as i64); }
+            position += 1;
+        }
+        if (exponent_negative) { exponent = -exponent; }
+    }
+    exponent -= fractional as i64;
+    if (!scale_ok(exponent, work.limits)) { return core::result::Err(Error::ScaleLimit); }
+    let length: i32 = count - leading;
+    if (length > work.limits.max_digits) { return core::result::Err(Error::DigitLimit); }
+    if (length == 0) { return core::result::Ok(owned(ext::big_int::zero(), alloc::vec::new(), exponent as i32)); }
+    let reserve: core::result::Result<alloc::vec::Vec<u8>, alloc::vec::Error> = alloc::vec::with_capacity(length + 1);
+    if (reserve.is_err()) { return core::result::Err(Error::AllocationFailed); }
+    let digits: alloc::vec::Vec<u8> = reserve.unwrap(); if (negative) { digits.try_push(45); }
+    position = start; let skipped: i32 = 0;
+    while (position < end) {
+        let byte: u8 = input.values[input.start + position];
+        if (byte != 46) { if (skipped < leading) { skipped += 1; } else { digits.try_push(byte); } }
+        position += 1;
+    }
+    let backend: core::result::Result<ext::big_uint::Limits, Error> = work.backend(((length as u64) + 2) * (((length as u64) / 9) + 3));
+    if (backend.is_err()) { digits.destroy(); return core::result::Err(backend.unwrap_err()); }
+    let parsed: core::result::Result<ext::big_int::BigInt, ext::big_uint::Error> = ext::big_int::parse(digits.as_view(), 10, backend.unwrap());
+    if (parsed.is_err()) { digits.destroy(); return core::result::Err(mapped(parsed.unwrap_err())); }
+    if (negative) { digits.remove(0); }
+    return core::result::Ok(owned(parsed.unwrap(), digits, exponent as i32));
+}
+impl Budget { fn borrow(&self) -> &Budget { return self; } }
+pub fn from_i64(value: i64, limits: Limits) -> core::result::Result<Decimal, Error> {
+    if (!valid(limits)) { return core::result::Err(Error::Bounds); }
+    let work: Budget = budget(limits); let back: core::result::Result<ext::big_uint::Limits, Error> = work.backend(2);
+    if (back.is_err()) { return core::result::Err(back.unwrap_err()); }
+    let made: core::result::Result<ext::big_int::BigInt, ext::big_uint::Error> = ext::big_int::from_i64(value, back.unwrap());
+    if (made.is_err()) { return core::result::Err(mapped(made.unwrap_err())); }
+    return finish(made.unwrap(), 0, work.borrow());
+}
+pub fn from_u64(value: u64, limits: Limits) -> core::result::Result<Decimal, Error> {
+    if (!valid(limits)) { return core::result::Err(Error::Bounds); }
+    let work: Budget = budget(limits); let back: core::result::Result<ext::big_uint::Limits, Error> = work.backend(2);
+    if (back.is_err()) { return core::result::Err(back.unwrap_err()); }
+    let made: core::result::Result<ext::big_int::BigInt, ext::big_uint::Error> = ext::big_int::from_u64(value, back.unwrap());
+    if (made.is_err()) { return core::result::Err(mapped(made.unwrap_err())); }
+    return finish(made.unwrap(), 0, work.borrow());
+}
+// Copies or scales an operand coefficient with decimal zeros. The caller owns
+// the returned integer; no decimal arithmetic is implemented in host code.
+fn scaled(value: &Decimal, zeros: i64, work: &Budget, positive: bool) -> core::result::Result<ext::big_int::BigInt, Error> {
+    if (zeros < 0) { return core::result::Err(Error::Bounds); }
+    if (value.is_zero()) { return core::result::Ok(ext::big_int::zero()); }
+    if (zeros > (work.limits.max_digits - value.precision()) as i64) { return core::result::Err(Error::DigitLimit); }
+    if (zeros == 0) {
+        let backend: core::result::Result<ext::big_uint::Limits, Error> = work.backend(limbs(value.coefficient.borrow()));
+        if (backend.is_err()) { return core::result::Err(backend.unwrap_err()); }
+        let copy: core::result::Result<ext::big_int::BigInt, ext::big_uint::Error> = core::result::Err(ext::big_uint::Error::Bounds);
+        if (positive) { copy = value.coefficient.abs(backend.unwrap()); } else { copy = value.coefficient.try_clone(backend.unwrap()); }
+        if (copy.is_err()) { return core::result::Err(mapped(copy.unwrap_err())); } return core::result::Ok(copy.unwrap());
+    }
+    let length: i32 = value.precision() + zeros as i32; let negative: bool = !positive && value.sign() < 0;
+    let paid: core::result::Result<i32, Error> = work.spend(length as u64);
+    if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); }
+    let reserve: core::result::Result<alloc::vec::Vec<u8>, alloc::vec::Error> = alloc::vec::with_capacity(length + 1);
+    if (reserve.is_err()) { return core::result::Err(Error::AllocationFailed); }
+    let bytes: alloc::vec::Vec<u8> = reserve.unwrap(); if (negative) { bytes.try_push(45); }
+    let index: i32 = 0; while (index < value.precision()) { bytes.try_push(value.digits.at(index)); index += 1; }
+    while (index < length) { bytes.try_push(48); index += 1; }
+    let backend: core::result::Result<ext::big_uint::Limits, Error> = work.backend(((length as u64) + 2) * (((length as u64) / 9) + 3));
+    if (backend.is_err()) { bytes.destroy(); return core::result::Err(backend.unwrap_err()); }
+    let parsed: core::result::Result<ext::big_int::BigInt, ext::big_uint::Error> = ext::big_int::parse(bytes.as_view(), 10, backend.unwrap()); bytes.destroy();
+    if (parsed.is_err()) { return core::result::Err(mapped(parsed.unwrap_err())); } return core::result::Ok(parsed.unwrap());
+}
+// Compare significant coefficient digits with implicit zeros to the right.
+fn significands(left: &Decimal, right: &Decimal) -> i32 {
+    let count: i32 = left.digits.len(); if (right.digits.len() > count) { count = right.digits.len(); }
+    let index: i32 = 0; while (index < count) {
+        let a: u8 = 48; let b: u8 = 48;
+        if (index < left.digits.len()) { a = left.digits.at(index); }
+        if (index < right.digits.len()) { b = right.digits.at(index); }
+        if (a < b) { return -1; } if (a > b) { return 1; } index += 1;
+    } return 0;
+}
+fn binary(left: &Decimal, right: &Decimal, operation: i32, work: &Budget) -> core::result::Result<Decimal, Error> {
+    let check: core::result::Result<i32, Error> = checked(left, work); if (check.is_err()) { return core::result::Err(check.unwrap_err()); }
+    check = checked(right, work); if (check.is_err()) { return core::result::Err(check.unwrap_err()); }
+    let exponent: i64 = left.power as i64; let a_zeros: i64 = 0; let b_zeros: i64 = 0;
+    if (operation == 2) { exponent += right.power as i64; }
+    else { if (right.power < left.power) { exponent = right.power as i64; } a_zeros = (left.power as i64) - exponent; b_zeros = (right.power as i64) - exponent; }
+    if (!scale_ok(exponent, work.limits)) { return core::result::Err(Error::ScaleLimit); }
+    let a_result: core::result::Result<ext::big_int::BigInt, Error> = scaled(left, a_zeros, work, false);
+    if (a_result.is_err()) { return core::result::Err(a_result.unwrap_err()); } let a: ext::big_int::BigInt = a_result.unwrap();
+    let b_result: core::result::Result<ext::big_int::BigInt, Error> = scaled(right, b_zeros, work, false);
+    if (b_result.is_err()) { a.destroy(); return core::result::Err(b_result.unwrap_err()); } let b: ext::big_int::BigInt = b_result.unwrap();
+    let n: u64 = limbs(a.borrow()); let m: u64 = limbs(b.borrow()); let cost: u64 = n + m + 1; if (operation == 2) { cost += n * m; }
+    let backend: core::result::Result<ext::big_uint::Limits, Error> = work.backend(cost);
+    if (backend.is_err()) { a.destroy(); b.destroy(); return core::result::Err(backend.unwrap_err()); }
+    let computed: core::result::Result<ext::big_int::BigInt, ext::big_uint::Error> = core::result::Err(ext::big_uint::Error::Bounds);
+    if (operation == 0) { computed = a.add(b.borrow(), backend.unwrap()); }
+    if (operation == 1) { computed = a.sub(b.borrow(), backend.unwrap()); }
+    if (operation == 2) { computed = a.mul(b.borrow(), backend.unwrap()); }
+    a.destroy(); b.destroy();
+    if (computed.is_err()) { return core::result::Err(mapped(computed.unwrap_err())); }
+    return finish(computed.unwrap(), exponent, work);
+}
+fn increment(coefficient: ext::big_int::BigInt, direction: i32, work: &Budget) -> core::result::Result<ext::big_int::BigInt, Error> {
+    let back: core::result::Result<ext::big_uint::Limits, Error> = work.backend(1);
+    if (back.is_err()) { coefficient.destroy(); return core::result::Err(back.unwrap_err()); }
+    let unit_result: core::result::Result<ext::big_int::BigInt, ext::big_uint::Error> = ext::big_int::from_i64(direction as i64, back.unwrap());
+    if (unit_result.is_err()) { coefficient.destroy(); return core::result::Err(mapped(unit_result.unwrap_err())); }
+    let unit: ext::big_int::BigInt = unit_result.unwrap();
+    back = work.backend(limbs(coefficient.borrow()) + 2);
+    if (back.is_err()) { unit.destroy(); coefficient.destroy(); return core::result::Err(back.unwrap_err()); }
+    let result: core::result::Result<ext::big_int::BigInt, ext::big_uint::Error> = coefficient.add(unit.borrow(), back.unwrap()); unit.destroy(); coefficient.destroy();
+    if (result.is_err()) { return core::result::Err(mapped(result.unwrap_err())); } return core::result::Ok(result.unwrap());
+}
+fn round_up(mode: Rounding, negative: bool, inexact: bool, half: i32, odd: bool) -> core::result::Result<bool, Error> {
+    if (!inexact) { return core::result::Ok(false); }
+    if (mode == Rounding::Unnecessary) { return core::result::Err(Error::Inexact); }
+    if (mode == Rounding::Up) { return core::result::Ok(true); }
+    if (mode == Rounding::Floor) { return core::result::Ok(negative); }
+    if (mode == Rounding::Ceiling) { return core::result::Ok(!negative); }
+    if (mode == Rounding::HalfUp) { return core::result::Ok(half >= 0); }
+    if (mode == Rounding::HalfDown) { return core::result::Ok(half > 0); }
+    if (mode == Rounding::HalfEven) { return core::result::Ok(half > 0 || (half == 0 && odd)); }
+    return core::result::Ok(false);
+}
+fn rescaled(value: &Decimal, target: i32, mode: Rounding, work: &Budget) -> core::result::Result<Decimal, Error> {
+    if (!scale_ok(target as i64, work.limits)) { return core::result::Err(Error::ScaleLimit); }
+    if (value.is_zero()) { return core::result::Ok(owned(ext::big_int::zero(), alloc::vec::new(), target)); }
+    if (target <= value.power) {
+        let coefficient: core::result::Result<ext::big_int::BigInt, Error> = scaled(value, (value.power as i64) - (target as i64), work, false);
+        if (coefficient.is_err()) { return core::result::Err(coefficient.unwrap_err()); } return finish(coefficient.unwrap(), target as i64, work);
+    }
+    let discard: i64 = (target as i64) - (value.power as i64); let length: i32 = value.precision();
+    let kept: i32 = 0; if (discard < length as i64) { kept = length - discard as i32; }
+    let paid: core::result::Result<i32, Error> = work.spend((length as u64) * 2);
+    if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); }
+    let inexact: bool = false; let index: i32 = kept;
+    while (index < length) { if (value.digits.at(index) != 48) { inexact = true; } index += 1; }
+    let half: i32 = -1;
+    if (discard <= length as i64) {
+        let first: u8 = value.digits.at(kept); if (first > 53) { half = 1; }
+        if (first == 53) { half = 0; index = kept + 1; while (index < length) { if (value.digits.at(index) != 48) { half = 1; } index += 1; } }
+    }
+    let odd: bool = kept > 0 && ((value.digits.at(kept - 1) - 48) & 1) != 0;
+    let rounding: core::result::Result<bool, Error> = round_up(mode, value.sign() < 0, inexact, half, odd);
+    if (rounding.is_err()) { return core::result::Err(rounding.unwrap_err()); }
+    let coefficient: ext::big_int::BigInt = ext::big_int::zero();
+    if (kept > 0) {
+        let backend: core::result::Result<ext::big_uint::Limits, Error> = work.backend(((kept as u64) + 2) * (((kept as u64) / 9) + 3));
+        if (backend.is_err()) { return core::result::Err(backend.unwrap_err()); }
+        let digits: core::slice::View<u8> = value.digits.as_view(); digits.length = kept;
+        let parsed: core::result::Result<ext::big_int::BigInt, ext::big_uint::Error> = ext::big_int::parse(digits, 10, backend.unwrap());
+        if (parsed.is_err()) { return core::result::Err(mapped(parsed.unwrap_err())); } coefficient = parsed.unwrap();
+        if (value.sign() < 0) {
+            backend = work.backend(limbs(coefficient.borrow()));
+            if (backend.is_err()) { coefficient.destroy(); return core::result::Err(backend.unwrap_err()); }
+            let negated: core::result::Result<ext::big_int::BigInt, ext::big_uint::Error> = coefficient.neg(backend.unwrap()); coefficient.destroy();
+            if (negated.is_err()) { return core::result::Err(mapped(negated.unwrap_err())); } coefficient = negated.unwrap();
+        }
+    }
+    if (rounding.unwrap()) {
+        let adjusted: core::result::Result<ext::big_int::BigInt, Error> = increment(coefficient, value.sign(), work);
+        if (adjusted.is_err()) { return core::result::Err(adjusted.unwrap_err()); } coefficient = adjusted.unwrap();
+    }
+    return finish(coefficient, target as i64, work);
+}
+fn rounded(value: &Decimal, context: Context, work: &Budget) -> core::result::Result<Decimal, Error> {
+    let target: i64 = value.power as i64;
+    if (value.precision() > context.precision) { target += (value.precision() - context.precision) as i64; }
+    if (!scale_ok(target, work.limits)) { return core::result::Err(Error::ScaleLimit); }
+    let result: core::result::Result<Decimal, Error> = rescaled(value, target as i32, context.rounding, work);
+    if (result.is_err()) { return result; } let output: Decimal = result.unwrap();
+    if (output.precision() > context.precision) {
+        let repaired: core::result::Result<Decimal, Error> = rescaled(output.borrow(), output.power + 1, Rounding::Unnecessary, work); output.destroy(); return repaired;
+    } return core::result::Ok(output);
+}
+
+pub impl Decimal {
+    pub fn borrow(&self) -> &Decimal { return self; }
+    pub fn destroy(&self) { self.coefficient.destroy(); self.digits.destroy(); self.power = 0; }
+    pub fn is_zero(&self) -> bool { return self.coefficient.is_zero(); }
+    pub fn sign(&self) -> i32 { return self.coefficient.sign(); }
+    pub fn exponent(&self) -> i32 { return self.power; }
+    pub fn scale(&self) -> i32 { return -self.power; }
+    pub fn precision(&self) -> i32 { if (self.is_zero()) { return 1; } return self.digits.len(); }
+    pub fn compare(&self, other: &Decimal) -> i32 {
+        let left: i32 = self.sign(); let right: i32 = other.sign();
+        if (left < right) { return -1; } if (left > right) { return 1; } if (left == 0) { return 0; }
+        let a: i64 = (self.power as i64) + (self.digits.len() as i64); let b: i64 = (other.power as i64) + (other.digits.len() as i64);
+        if (a < b) { return -left; } if (a > b) { return left; } return left * significands(self, other);
+    }
+    pub fn value_hash(&self) -> u32 {
+        if (self.is_zero()) { return 2166136261; }
+        let count: i32 = self.digits.len(); while (count > 1 && self.digits.at(count - 1) == 48) { count -= 1; }
+        let exponent: i64 = (self.power as i64) + ((self.digits.len() - count) as i64);
+        let hash: u32 = 2166136261; if (self.sign() < 0) { hash = (hash ^ 45) * 16777619; }
+        let index: i32 = 0; while (index < count) { hash = (hash ^ (self.digits.at(index) as u32)) * 16777619; index += 1; }
+        let bits: u64 = exponent as u64; index = 0; while (index < 8) { hash = (hash ^ ((bits & 255) as u32)) * 16777619; bits = bits >> 8; index += 1; }
+        return hash;
+    }
+    pub fn try_clone(&self, limits: Limits) -> core::result::Result<Decimal, Error> {
+        let work: Budget = budget(limits); let check: core::result::Result<i32, Error> = checked(self, work.borrow());
+        if (check.is_err()) { return core::result::Err(check.unwrap_err()); }
+        let coefficient: core::result::Result<ext::big_int::BigInt, Error> = scaled(self, 0, work.borrow(), false);
+        if (coefficient.is_err()) { return core::result::Err(coefficient.unwrap_err()); } return finish(coefficient.unwrap(), self.power as i64, work.borrow());
+    }
+    pub fn neg(&self, limits: Limits) -> core::result::Result<Decimal, Error> {
+        let work: Budget = budget(limits); let check: core::result::Result<i32, Error> = checked(self, work.borrow());
+        if (check.is_err()) { return core::result::Err(check.unwrap_err()); }
+        let back: core::result::Result<ext::big_uint::Limits, Error> = work.backend(limbs(self.coefficient.borrow()));
+        if (back.is_err()) { return core::result::Err(back.unwrap_err()); }
+        let coefficient: core::result::Result<ext::big_int::BigInt, ext::big_uint::Error> = self.coefficient.neg(back.unwrap());
+        if (coefficient.is_err()) { return core::result::Err(mapped(coefficient.unwrap_err())); } return finish(coefficient.unwrap(), self.power as i64, work.borrow());
+    }
+    pub fn abs(&self, limits: Limits) -> core::result::Result<Decimal, Error> { if (self.sign() < 0) { return self.neg(limits); } return self.try_clone(limits); }
+    pub fn add(&self, other: &Decimal, limits: Limits) -> core::result::Result<Decimal, Error> { let work: Budget = budget(limits); return binary(self, other, 0, work.borrow()); }
+    pub fn sub(&self, other: &Decimal, limits: Limits) -> core::result::Result<Decimal, Error> { let work: Budget = budget(limits); return binary(self, other, 1, work.borrow()); }
+    pub fn mul(&self, other: &Decimal, limits: Limits) -> core::result::Result<Decimal, Error> { let work: Budget = budget(limits); return binary(self, other, 2, work.borrow()); }
+    pub fn rescale(&self, target_exponent: i32, rounding: Rounding, limits: Limits) -> core::result::Result<Decimal, Error> {
+        let work: Budget = budget(limits); let check: core::result::Result<i32, Error> = checked(self, work.borrow());
+        if (check.is_err()) { return core::result::Err(check.unwrap_err()); } return rescaled(self, target_exponent, rounding, work.borrow());
+    }
+    pub fn round(&self, context: Context, limits: Limits) -> core::result::Result<Decimal, Error> {
+        let work: Budget = budget(limits); let check: core::result::Result<i32, Error> = context_ok(context, limits);
+        if (check.is_err()) { return core::result::Err(check.unwrap_err()); } check = checked(self, work.borrow());
+        if (check.is_err()) { return core::result::Err(check.unwrap_err()); } return rounded(self, context, work.borrow());
+    }
+    pub fn quantize(&self, quantum: &Decimal, context: Context, limits: Limits) -> core::result::Result<Decimal, Error> {
+        let work: Budget = budget(limits); let check: core::result::Result<i32, Error> = context_ok(context, limits);
+        if (check.is_err()) { return core::result::Err(check.unwrap_err()); } check = checked(self, work.borrow());
+        if (check.is_err()) { return core::result::Err(check.unwrap_err()); } check = checked(quantum, work.borrow());
+        if (check.is_err()) { return core::result::Err(check.unwrap_err()); }
+        if (!self.is_zero() && (self.precision() as i64) + (self.power as i64) - (quantum.power as i64) > context.precision as i64) { return core::result::Err(Error::DigitLimit); }
+        let computed: core::result::Result<Decimal, Error> = rescaled(self, quantum.power, context.rounding, work.borrow());
+        if (computed.is_err()) { return computed; } let output: Decimal = computed.unwrap();
+        if (output.precision() > context.precision) { output.destroy(); return core::result::Err(Error::DigitLimit); } return core::result::Ok(output);
+    }
+    pub fn pow(&self, exponent: u32, limits: Limits) -> core::result::Result<Decimal, Error> {
+        let work: Budget = budget(limits); let check: core::result::Result<i32, Error> = checked(self, work.borrow());
+        if (check.is_err()) { return core::result::Err(check.unwrap_err()); }
+        if (exponent == 0) { return from_i64(1, limits); }
+        if (!scale_ok((self.power as i64) * (exponent as i64), limits)) { return core::result::Err(Error::ScaleLimit); }
+        let cloned: core::result::Result<ext::big_int::BigInt, Error> = scaled(self, 0, work.borrow(), false);
+        if (cloned.is_err()) { return core::result::Err(cloned.unwrap_err()); }
+        let prepared: core::result::Result<Decimal, Error> = finish(cloned.unwrap(), self.power as i64, work.borrow());
+        if (prepared.is_err()) { return prepared; } let base: Decimal = prepared.unwrap();
+        let out_result: core::result::Result<ext::big_uint::Limits, Error> = work.backend(1);
+        if (out_result.is_err()) { base.destroy(); return core::result::Err(out_result.unwrap_err()); }
+        let one: core::result::Result<ext::big_int::BigInt, ext::big_uint::Error> = ext::big_int::from_i64(1, out_result.unwrap());
+        if (one.is_err()) { base.destroy(); return core::result::Err(mapped(one.unwrap_err())); }
+        let first: core::result::Result<Decimal, Error> = finish(one.unwrap(), 0, work.borrow());
+        if (first.is_err()) { base.destroy(); return first; } let output: Decimal = first.unwrap(); let remaining: u32 = exponent;
+        while (remaining != 0) {
+            if ((remaining & 1) != 0) { let next: core::result::Result<Decimal, Error> = binary(output.borrow(), base.borrow(), 2, work.borrow()); output.destroy(); if (next.is_err()) { base.destroy(); return next; } output = next.unwrap(); }
+            remaining = remaining >> 1;
+            if (remaining != 0) { let next: core::result::Result<Decimal, Error> = binary(base.borrow(), base.borrow(), 2, work.borrow()); base.destroy(); if (next.is_err()) { output.destroy(); return next; } base = next.unwrap(); }
+        } base.destroy(); return core::result::Ok(output);
+    }
+}
+pub fn from_coefficient(coefficient: &ext::big_int::BigInt, exponent: i32, limits: Limits) -> core::result::Result<Decimal, Error> {
+    if (!valid(limits)) { return core::result::Err(Error::Bounds); }
+    if (!scale_ok(exponent as i64, limits)) { return core::result::Err(Error::ScaleLimit); }
+    let work: Budget = budget(limits); let back: core::result::Result<ext::big_uint::Limits, Error> = work.backend(limbs(coefficient));
+    if (back.is_err()) { return core::result::Err(back.unwrap_err()); }
+    let cloned: core::result::Result<ext::big_int::BigInt, ext::big_uint::Error> = coefficient.try_clone(back.unwrap());
+    if (cloned.is_err()) { return core::result::Err(mapped(cloned.unwrap_err())); } return finish(cloned.unwrap(), exponent as i64, work.borrow());
+}
+fn divided(left: &Decimal, right: &Decimal, context: Context, work: &Budget) -> core::result::Result<Decimal, Error> {
+    let check: core::result::Result<i32, Error> = context_ok(context, work.limits);
+    if (check.is_err()) { return core::result::Err(check.unwrap_err()); }
+    check = checked(left, work); if (check.is_err()) { return core::result::Err(check.unwrap_err()); }
+    check = checked(right, work); if (check.is_err()) { return core::result::Err(check.unwrap_err()); }
+    if (right.is_zero()) { return core::result::Err(Error::DivisionByZero); }
+    let ideal: i64 = (left.power as i64) - (right.power as i64);
+    if (left.is_zero()) { if (!scale_ok(ideal, work.limits)) { return core::result::Err(Error::ScaleLimit); } return core::result::Ok(owned(ext::big_int::zero(), alloc::vec::new(), ideal as i32)); }
+    let paid: core::result::Result<i32, Error> = work.spend((left.precision() as u64) + (right.precision() as u64));
+    if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); }
+    let adjust: i64 = (left.precision() as i64) - (right.precision() as i64);
+    if (significands(left, right) < 0) { adjust -= 1; }
+    let target: i64 = ideal + adjust - (context.precision as i64) + 1;
+    let shift: i64 = ideal - target; let a_zeros: i64 = 0; let b_zeros: i64 = 0;
+    if (shift >= 0) { a_zeros = shift; } else { b_zeros = -shift; }
+    let a_result: core::result::Result<ext::big_int::BigInt, Error> = scaled(left, a_zeros, work, true);
+    if (a_result.is_err()) { return core::result::Err(a_result.unwrap_err()); } let a: ext::big_int::BigInt = a_result.unwrap();
+    let b_result: core::result::Result<ext::big_int::BigInt, Error> = scaled(right, b_zeros, work, true);
+    if (b_result.is_err()) { a.destroy(); return core::result::Err(b_result.unwrap_err()); } let b: ext::big_int::BigInt = b_result.unwrap();
+    let n: u64 = limbs(a.borrow()); let m: u64 = limbs(b.borrow()); let cost: u64 = n + 1;
+    if (n >= m) { cost = 8 * (n + m + 1) + 4 * (n - m + 1) * m; }
+    let back: core::result::Result<ext::big_uint::Limits, Error> = work.backend(cost);
+    if (back.is_err()) { a.destroy(); b.destroy(); return core::result::Err(back.unwrap_err()); }
+    let raw: core::result::Result<ext::big_int::DivRem, ext::big_uint::Error> = a.div_rem(b.borrow(), back.unwrap()); a.destroy();
+    if (raw.is_err()) { b.destroy(); return core::result::Err(mapped(raw.unwrap_err())); }
+    let pair: ext::big_int::DivRem = raw.unwrap(); let quotient: ext::big_int::BigInt = pair.quotient; let remainder: ext::big_int::BigInt = pair.remainder;
+    let inexact: bool = !remainder.is_zero(); let half: i32 = -1;
+    if (inexact) {
+        back = work.backend(limbs(remainder.borrow()) + 1);
+        if (back.is_err()) { quotient.destroy(); remainder.destroy(); b.destroy(); return core::result::Err(back.unwrap_err()); }
+        let doubled: core::result::Result<ext::big_int::BigInt, ext::big_uint::Error> = remainder.add(remainder.borrow(), back.unwrap());
+        if (doubled.is_err()) { quotient.destroy(); remainder.destroy(); b.destroy(); return core::result::Err(mapped(doubled.unwrap_err())); }
+        let twice: ext::big_int::BigInt = doubled.unwrap(); half = twice.compare(b.borrow()); twice.destroy();
+    }
+    remainder.destroy(); b.destroy();
+    // Binary low bit equals decimal last digit parity. Conversion is not needed.
+    let odd: bool = quotient.magnitude.bit(0);
+    let negative: bool = left.sign() != right.sign();
+    let decision: core::result::Result<bool, Error> = round_up(context.rounding, negative, inexact, half, odd);
+    if (decision.is_err()) { quotient.destroy(); return core::result::Err(decision.unwrap_err()); }
+    if (decision.unwrap()) { let increased: core::result::Result<ext::big_int::BigInt, Error> = increment(quotient, 1, work); if (increased.is_err()) { return core::result::Err(increased.unwrap_err()); } quotient = increased.unwrap(); }
+    if (negative) {
+        back = work.backend(limbs(quotient.borrow())); if (back.is_err()) { quotient.destroy(); return core::result::Err(back.unwrap_err()); }
+        let negated: core::result::Result<ext::big_int::BigInt, ext::big_uint::Error> = quotient.neg(back.unwrap()); quotient.destroy();
+        if (negated.is_err()) { return core::result::Err(mapped(negated.unwrap_err())); } quotient = negated.unwrap();
+    }
+    let prepared: core::result::Result<Decimal, Error> = finish(quotient, 0, work);
+    if (prepared.is_err()) { return prepared; } let output: Decimal = prepared.unwrap();
+    // Compute the final quantum before exposing the owner. Exact division removes
+    // only trailing zeros which move toward the preferred (ideal) exponent.
+    let final_target: i64 = target; let remove: i32 = 0;
+    if (output.precision() > context.precision) { remove = 1; final_target += 1; }
+    if (!inexact) { while (remove < output.digits.len() - 1 && final_target < ideal && output.digits.at(output.digits.len() - remove - 1) == 48) { remove += 1; final_target += 1; } }
+    if (!scale_ok(final_target, work.limits)) { output.destroy(); return core::result::Err(Error::ScaleLimit); }
+    if (remove > 0) {
+        // Discard the proved zero suffix directly. Scratch coefficient division
+        // must not consume the caller's exponent range.
+        let kept: i32 = output.digits.len() - remove;
+        let suffix_paid: core::result::Result<i32, Error> = work.spend(output.digits.len() as u64);
+        if (suffix_paid.is_err()) { output.destroy(); return core::result::Err(suffix_paid.unwrap_err()); }
+        let digit_view: core::slice::View<u8> = output.digits.as_view(); digit_view.length = kept;
+        back = work.backend(((kept as u64) + 2) * (((kept as u64) / 9) + 3));
+        if (back.is_err()) { output.destroy(); return core::result::Err(back.unwrap_err()); }
+        let trimmed: core::result::Result<ext::big_int::BigInt, ext::big_uint::Error> = ext::big_int::parse(digit_view, 10, back.unwrap());
+        if (trimmed.is_err()) { output.destroy(); return core::result::Err(mapped(trimmed.unwrap_err())); }
+        let trimmed_coefficient: ext::big_int::BigInt = trimmed.unwrap();
+        if (negative) {
+            back = work.backend(limbs(trimmed_coefficient.borrow()));
+            if (back.is_err()) { trimmed_coefficient.destroy(); output.destroy(); return core::result::Err(back.unwrap_err()); }
+            let sign_restored: core::result::Result<ext::big_int::BigInt, ext::big_uint::Error> = trimmed_coefficient.neg(back.unwrap()); trimmed_coefficient.destroy();
+            if (sign_restored.is_err()) { output.destroy(); return core::result::Err(mapped(sign_restored.unwrap_err())); } trimmed_coefficient = sign_restored.unwrap();
+        }
+        output.destroy();
+        let reduced: core::result::Result<Decimal, Error> = finish(trimmed_coefficient, final_target, work);
+        if (reduced.is_err()) { return reduced; } output = reduced.unwrap();
+    }
+    output.power = final_target as i32; return core::result::Ok(output);
+}
+fn plain_length(value: &Decimal) -> i64 {
+    let length: i64 = value.precision() as i64;
+    if (value.is_zero()) { length = 1; }
+    if (value.power >= 0) { if (!value.is_zero()) { length += value.power as i64; } }
+    else { let point: i64 = length + (value.power as i64); if (point > 0) { length += 1; } else { length = 2 - (value.power as i64); } }
+    if (value.sign() < 0) { length += 1; } return length;
+}
+fn measured(value: &Decimal, limits: Limits) -> core::result::Result<i32, Error> {
+    let work: Budget = budget(limits); let check: core::result::Result<i32, Error> = checked(value, work.borrow());
+    if (check.is_err()) { return core::result::Err(check.unwrap_err()); }
+    let count: i64 = plain_length(value); if (count > limits.max_output as i64) { return core::result::Err(Error::OutputLimit); }
+    if (count as u64 > limits.max_work) { return core::result::Err(Error::WorkLimit); }
+    return core::result::Ok(count as i32);
+}
+pub impl Decimal {
+    pub fn div(&self, other: &Decimal, context: Context, limits: Limits) -> core::result::Result<Decimal, Error> { let work: Budget = budget(limits); return divided(self, other, context, work.borrow()); }
+    pub fn reduce(&self, limits: Limits) -> core::result::Result<Decimal, Error> {
+        let work: Budget = budget(limits); let check: core::result::Result<i32, Error> = checked(self, work.borrow());
+        if (check.is_err()) { return core::result::Err(check.unwrap_err()); } if (self.is_zero()) { return core::result::Ok(zero()); }
+        let paid: core::result::Result<i32, Error> = work.spend(self.precision() as u64); if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); }
+        let count: i32 = self.precision(); while (count > 1 && self.digits.at(count - 1) == 48) { count -= 1; }
+        let target: i64 = (self.power as i64) + ((self.precision() - count) as i64);
+        if (!scale_ok(target, limits)) { return core::result::Err(Error::ScaleLimit); } return rescaled(self, target as i32, Rounding::Unnecessary, work.borrow());
+    }
+    pub fn to_big_int(&self, rounding: Rounding, limits: Limits) -> core::result::Result<ext::big_int::BigInt, Error> {
+        let result: core::result::Result<Decimal, Error> = self.rescale(0, rounding, limits);
+        if (result.is_err()) { return core::result::Err(result.unwrap_err()); } let value: Decimal = result.unwrap(); value.digits.destroy(); return core::result::Ok(value.coefficient);
+    }
+    pub fn to_i64(&self, limits: Limits) -> core::result::Result<i64, Error> {
+        let integer: core::result::Result<ext::big_int::BigInt, Error> = self.to_big_int(Rounding::Unnecessary, limits);
+        if (integer.is_err()) { return core::result::Err(integer.unwrap_err()); } let value: ext::big_int::BigInt = integer.unwrap();
+        let result: core::result::Result<i64, ext::big_uint::Error> = value.to_i64(); value.destroy();
+        if (result.is_err()) { return core::result::Err(mapped(result.unwrap_err())); } return core::result::Ok(result.unwrap());
+    }
+    pub fn to_u64(&self, limits: Limits) -> core::result::Result<u64, Error> {
+        let integer: core::result::Result<ext::big_int::BigInt, Error> = self.to_big_int(Rounding::Unnecessary, limits);
+        if (integer.is_err()) { return core::result::Err(integer.unwrap_err()); } let value: ext::big_int::BigInt = integer.unwrap();
+        let result: core::result::Result<u64, ext::big_uint::Error> = value.to_u64(); value.destroy();
+        if (result.is_err()) { return core::result::Err(mapped(result.unwrap_err())); } return core::result::Ok(result.unwrap());
+    }
+    pub fn measure(&self, limits: Limits) -> core::result::Result<i32, Error> { return measured(self, limits); }
+    pub fn format(&self, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>, Error> {
+        let measure: core::result::Result<i32, Error> = measured(self, limits);
+        if (measure.is_err()) { return core::result::Err(measure.unwrap_err()); } let count: i32 = measure.unwrap();
+        let reserve: core::result::Result<alloc::vec::Vec<u8>, alloc::vec::Error> = alloc::vec::with_capacity(count);
+        if (reserve.is_err()) { return core::result::Err(Error::AllocationFailed); } let output: alloc::vec::Vec<u8> = reserve.unwrap();
+        if (self.sign() < 0) { output.try_push(45); }
+        let length: i32 = self.precision(); let point: i64 = (length as i64) + (self.power as i64); let index: i32 = 0;
+        if (self.is_zero()) { output.try_push(48); if (self.power < 0) { output.try_push(46); while (index < -self.power) { output.try_push(48); index += 1; } } }
+        else { if (point <= 0) {
+            output.try_push(48); output.try_push(46); while ((index as i64) < -point) { output.try_push(48); index += 1; }
+            index = 0; while (index < length) { output.try_push(self.digits.at(index)); index += 1; }
+        } else {
+            while (index < length) { if ((index as i64) == point) { output.try_push(46); } output.try_push(self.digits.at(index)); index += 1; }
+            while ((index as i64) < point) { output.try_push(48); index += 1; }
+        } }
+        return core::result::Ok(output);
+    }
+    pub fn format_into(&self, output: core::slice::View<u8>, limits: Limits) -> core::result::Result<i32, Error> {
+        if (output.start < 0 || output.length < 0 || output.start > 2147483647 - output.length) { return core::result::Err(Error::Bounds); }
+        let measured_output: core::result::Result<i32, Error> = measured(self, limits);
+        if (measured_output.is_err()) { return core::result::Err(measured_output.unwrap_err()); }
+        if ((measured_output.unwrap() as u64) > limits.max_work / 2) { return core::result::Err(Error::WorkLimit); }
+        let formatted: core::result::Result<alloc::vec::Vec<u8>, Error> = self.format(limits);
+        if (formatted.is_err()) { return core::result::Err(formatted.unwrap_err()); } let bytes: alloc::vec::Vec<u8> = formatted.unwrap();
+        let count: i32 = bytes.len(); if (count > output.length) { bytes.destroy(); return core::result::Err(Error::OutputLimit); }
+        let index: i32 = 0; while (index < count) { output.values[output.start + index] = bytes.at(index); index += 1; } bytes.destroy(); return core::result::Ok(count);
+    }
+    pub fn format_scientific(&self, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>, Error> {
+        let work: Budget = budget(limits); let check: core::result::Result<i32, Error> = checked(self, work.borrow());
+        if (check.is_err()) { return core::result::Err(check.unwrap_err()); }
+        let exponent: i64 = (self.power as i64) + (self.precision() as i64) - 1;
+        let magnitude: u64 = exponent as u64; if (exponent < 0) { magnitude = (-exponent) as u64; }
+        let exp_digits: i32 = 1; let divisor: u64 = 1; while (magnitude / divisor >= 10) { exp_digits += 1; divisor *= 10; }
+        let count: i32 = self.precision() + 2 + exp_digits; if (self.precision() > 1) { count += 1; } if (self.sign() < 0) { count += 1; }
+        if (count > limits.max_output) { return core::result::Err(Error::OutputLimit); }
+        let paid: core::result::Result<i32, Error> = work.spend(count as u64); if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); }
+        let reserve: core::result::Result<alloc::vec::Vec<u8>, alloc::vec::Error> = alloc::vec::with_capacity(count);
+        if (reserve.is_err()) { return core::result::Err(Error::AllocationFailed); } let output: alloc::vec::Vec<u8> = reserve.unwrap();
+        if (self.sign() < 0) { output.try_push(45); }
+        if (self.is_zero()) { output.try_push(48); } else { let index: i32 = 0; while (index < self.precision()) { if (index == 1) { output.try_push(46); } output.try_push(self.digits.at(index)); index += 1; } }
+        output.try_push(69); if (exponent < 0) { output.try_push(45); } else { output.try_push(43); }
+        while (divisor > 0) { output.try_push((48 + magnitude / divisor) as u8); magnitude = magnitude % divisor; divisor /= 10; }
+        return core::result::Ok(output);
+    }
+}
+pub impl core::cmp::Eq<Decimal> for Decimal {
+    pub fn eq(left: Decimal, right: Decimal) -> bool { return left.compare(right.borrow()) == 0; }
+    pub fn ne(left: Decimal, right: Decimal) -> bool { return left.compare(right.borrow()) != 0; }
+}
+pub impl core::cmp::Ord<Decimal> for Decimal {
+    pub fn lt(left: Decimal, right: Decimal) -> bool { return left.compare(right.borrow()) < 0; }
+    pub fn le(left: Decimal, right: Decimal) -> bool { return left.compare(right.borrow()) <= 0; }
+    pub fn gt(left: Decimal, right: Decimal) -> bool { return left.compare(right.borrow()) > 0; }
+    pub fn ge(left: Decimal, right: Decimal) -> bool { return left.compare(right.borrow()) >= 0; }
+}
+pub impl core::cmp::PartialEq<Decimal> for Decimal {
+    pub fn partial_eq(left: Decimal, right: Decimal) -> bool { return left.compare(right.borrow()) == 0; }
+    pub fn partial_ne(left: Decimal, right: Decimal) -> bool { return left.compare(right.borrow()) != 0; }
+}
+pub impl core::cmp::PartialOrd<Decimal> for Decimal {
+    pub fn partial_lt(left: Decimal, right: Decimal) -> bool { return left.compare(right.borrow()) < 0; }
+    pub fn partial_le(left: Decimal, right: Decimal) -> bool { return left.compare(right.borrow()) <= 0; }
+    pub fn partial_gt(left: Decimal, right: Decimal) -> bool { return left.compare(right.borrow()) > 0; }
+    pub fn partial_ge(left: Decimal, right: Decimal) -> bool { return left.compare(right.borrow()) >= 0; }
+    pub fn partial_cmp(left: Decimal, right: Decimal) -> core::cmp::PartialOrdering {
+        let order: i32 = left.compare(right.borrow()); if (order < 0) { return core::cmp::PartialOrdering::Less; } if (order > 0) { return core::cmp::PartialOrdering::Greater; } return core::cmp::PartialOrdering::Equal;
+    }
+}
+pub impl core::hash::Hash<Decimal> for Decimal { pub fn hash(value: Decimal) -> u32 { return value.value_hash(); } }

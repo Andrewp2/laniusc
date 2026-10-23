@@ -1,0 +1,40 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::decimal;
+import std::io;
+fn read_exact(pointer: ptr, count: i32, allow_end: bool) -> bool { let done: i32 = 0; while (done < count) { let got: i32 = std::io::read_stdin(pointer + (done as usize),(count-done) as usize); assert(got >= 0); if (got == 0) { assert(allow_end && done == 0); return false; } done += got; } return true; }
+fn write_all(pointer: ptr, count: i32) { let done: i32 = 0; while (done < count) { let got: i32 = std::io::write_stdout(pointer + (done as usize),(count-done) as usize); assert(got > 0); done += got; } }
+fn word(value: i32) { let words: [i32;1] = [value]; write_all(core::mem::i32_array_data_ptr(words),4); }
+fn frame(bytes: &alloc::vec::Vec<u8>) { word(bytes.len()); write_all(bytes.storage,bytes.len()); }
+fn emit(value: &ext::decimal::Decimal, limits: ext::decimal::Limits) {
+    let sci: alloc::vec::Vec<u8> = value.format_scientific(limits).unwrap(); frame(sci.borrow()); sci.destroy();
+    let plain: alloc::vec::Vec<u8> = value.format(limits).unwrap(); frame(plain.borrow()); plain.destroy();
+}
+fn mode(index: i32) -> ext::decimal::Rounding {
+    if (index == 1) { return ext::decimal::Rounding::Up; } if (index == 2) { return ext::decimal::Rounding::Floor; } if (index == 3) { return ext::decimal::Rounding::Ceiling; }
+    if (index == 4) { return ext::decimal::Rounding::HalfUp; } if (index == 5) { return ext::decimal::Rounding::HalfDown; } if (index == 6) { return ext::decimal::Rounding::HalfEven; }
+    if (index == 7) { return ext::decimal::Rounding::Unnecessary; } return ext::decimal::Rounding::Down;
+}
+fn code(error: ext::decimal::Error) -> i32 { return match(error) { ext::decimal::Error::Bounds -> 1, ext::decimal::Error::InvalidSyntax -> 2, ext::decimal::Error::NonFinite -> 3, ext::decimal::Error::DigitLimit -> 4, ext::decimal::Error::ScaleLimit -> 5, ext::decimal::Error::LimbLimit -> 6, ext::decimal::Error::WorkLimit -> 7, ext::decimal::Error::OutputLimit -> 8, ext::decimal::Error::AllocationFailed -> 9, ext::decimal::Error::DivisionByZero -> 10, ext::decimal::Error::Inexact -> 11, ext::decimal::Error::Overflow -> 12 }; }
+fn main() -> i32 {
+    let limits: ext::decimal::Limits = ext::decimal::default_limits();
+    let words: [i32;8192] = [0;8192]; let pointer: ptr = core::mem::i32_array_data_ptr(words); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,32768);
+    while (read_exact(pointer,16,true)) {
+        let op: i32 = bytes[0] as i32; let rounding: ext::decimal::Rounding = mode(bytes[1] as i32); let precision: i32 = (bytes[2] as i32) | ((bytes[3] as i32)<<8);
+        let argument: i32 = words[1]; let a_len: i32 = words[2]; let b_len: i32 = words[3]; assert(a_len >= 0 && b_len >= 0 && a_len + b_len <= 32752); assert(read_exact(pointer+16,a_len+b_len,false));
+        let a_view: core::slice::View<u8> = core::slice::view_range(bytes,16,a_len).unwrap(); let b_view: core::slice::View<u8> = core::slice::view_range(bytes,16+a_len,b_len).unwrap();
+        let a: ext::decimal::Decimal = ext::decimal::parse(a_view,limits).unwrap(); let b: ext::decimal::Decimal = ext::decimal::parse(b_view,limits).unwrap();
+        let context: ext::decimal::Context = ext::decimal::Context { precision: precision, rounding: rounding };
+        let computed: core::result::Result<ext::decimal::Decimal,ext::decimal::Error> = core::result::Err(ext::decimal::Error::Bounds);
+        if (op == 0) { computed = a.add(b.borrow(),limits); } if (op == 1) { computed = a.sub(b.borrow(),limits); } if (op == 2) { computed = a.mul(b.borrow(),limits); }
+        if (op == 3) { computed = a.div(b.borrow(),context,limits); } if (op == 4) { computed = a.rescale(argument,rounding,limits); } if (op == 5) { computed = a.round(context,limits); }
+        if (op == 6) { computed = a.pow(argument as u32,limits); } if (op == 7) { computed = a.neg(limits); } if (op == 8) { computed = a.abs(limits); } if (op == 9) { computed = a.reduce(limits); }
+        if (op == 10) { computed = a.quantize(b.borrow(),context,limits); } if (op == 11) { computed = a.try_clone(limits); } if (op == 12) { computed = ext::decimal::from_i64(a.compare(b.borrow()) as i64,limits); }
+        if (op == 13) { computed = a.add(a.borrow(),limits); } if (op == 14) { computed = a.sub(a.borrow(),limits); } if (op == 15) { computed = a.mul(a.borrow(),limits); }
+        if (computed.is_err()) { word(code(computed.unwrap_err())); } else { word(0); let value: ext::decimal::Decimal = computed.unwrap(); emit(value.borrow(),limits); value.destroy(); }
+        emit(a.borrow(),limits); emit(b.borrow(),limits); a.destroy(); b.destroy();
+    } return 0;
+}

@@ -15,6 +15,16 @@ sample runner's fixed argument and text-output fixture.
 | `zip_manifest.lani` | `tests/extended_zip_manifest_execution.rs`, x86_64 Linux; all-payload ZIP checks, exact binary names, CBOR manifests, limits and allocation/I/O failures | [Checked ZIP manifest in CBOR](../../docs/extended-zip-manifest.md) |
 | `arena_words.lani` | `tests/stdlib_arena_words_execution.rs`, x86_64 Linux; streamed binary word counts, stable typed arena keys, ordered maps, exact limits and allocation/I/O failures | [Arena-backed word counting](../../docs/stdlib-arena-words.md) |
 | `address_filter.lani` | `tests/stdlib_address_filter_execution.rs`, x86_64 Linux; numeric addresses/sockets/CIDRs, canonical output, prefix selection and allocation/I/O failures | [Address filter](../../docs/stdlib-address-filter.md) |
+| `bigcalc.lani` | `tests/extended_bigcalc_execution.rs`, x86_64 Linux; arbitrary precision arithmetic, radices, limits and allocation/I/O failures | [Integer calculator](../../docs/extended-bigcalc.md) |
+| `json_check.lani` | `tests/extended_json_check_execution.rs`, x86_64 Linux; schema validation, exact numbers, limits and allocation/I/O failures | [JSON validation program](../../docs/extended-json-check.md) |
+| `float_normalize.lani` | `tests/stdlib_float_format_execution.rs`, x86_64 Linux; conversion, rounding, limits and stream failure checks | [Floating number normalizer](../../docs/stdlib-float-normalize.md) |
+| `text_normalize.lani` | `tests/extended_text_normalize_execution.rs`, x86_64 Linux; Unicode normalization, scalar/grapheme counts and allocation/I/O failures | [Unicode normalization program](../../docs/extended-text-normalize.md) |
+| `text_case.lani` | `tests/extended_text_case_execution.rs`, x86_64 Linux; contextual casing, locales, limits and allocation/I/O failures | [Unicode casing program](../../docs/extended-text-case.md) |
+| `text_grep.lani` | `tests/extended_text_grep_execution.rs`, x86_64 Linux; streamed UTF-8 regex matching, counts, numbering and allocation/I/O failures | [Regex search program](../../docs/extended-text-grep.md) |
+| `toml_normalize.lani` | `tests/extended_toml_normalize_execution.rs`, x86_64 Linux; typed TOML normalization, quiet checking and allocation/I/O failures | [TOML normalizer](../../docs/extended-toml-normalize.md) |
+| `primes.lani` | `tests/stdlib_primes_execution.rs`, x86_64 Linux; owned bitsets, independent small listings, twenty-million bound and allocation/write failures | [Prime sieve](../../docs/stdlib-primes.md) |
+| `decimal_ledger.lani` | `tests/extended_decimal_ledger_execution.rs`, x86_64 Linux; exact decimal CSV calculations, rounding, limits and allocation/I/O failures | [Decimal ledger](../../docs/extended-decimal-ledger.md) |
+| `data_analyze.lani` | `tests/extended_data_analyze_execution.rs`, x86_64 Linux; numerical CSV summaries, QR regression and allocation/I/O failures | [CSV analysis and regression](../../docs/extended-data-analyze.md) |
 
 Compile these applications with both `--stdlib-root stdlib` and `--source-root extended`.
 The library implementations are Lanius; the Rust test harness supplies inputs and

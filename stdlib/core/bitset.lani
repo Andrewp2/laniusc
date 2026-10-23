@@ -4,6 +4,10 @@
 // an overstated physical view may trap when an element is indexed.
 module core::bitset;
 import core::bits;
+import core::hash;
+import core::option;
+import core::result;
+import core::slice;
 
 fn words_for(bit_len: i32) -> i32 {
     let count: i32 = bit_len / 32;
@@ -38,153 +42,59 @@ pub fn word_count_or(bit_len: i32, fallback: i32) -> i32 {
     return words_for(bit_len);
 }
 
-// Invalid indices return fallback without touching storage.
+// The explicit free functions retain their fallback/Boolean contracts and
+// delegate to the same counted backend. Their physical backing precondition
+// remains the caller's responsibility.
+fn legacy_view(words: [u32], bit_len: i32) -> BitView {
+    let counted: core::slice::View<u32> = core::slice::View { values: words, start: 0, length: words_for(bit_len) };
+    return BitView { words: counted, length: bit_len };
+}
+
 pub fn get_or(words: [u32], bit_len: i32, index: i32, fallback: bool) -> bool {
-    if (bit_len < 0 || index < 0 || index >= bit_len) {
-        return fallback;
-    }
-    return (words[index / 32] & bit_mask(index)) != 0;
+    if (bit_len < 0) { return fallback; }
+    let view: BitView = legacy_view(words, bit_len); return core::option::unwrap_or(view.get(index), fallback);
 }
-
-// Return false without writing for an invalid index; true means one bit was
-// written. The unused high bits in the final word are untouched.
 pub fn set(words: [u32], bit_len: i32, index: i32) -> bool {
-    if (bit_len < 0 || index < 0 || index >= bit_len) {
-        return false;
-    }
-    let word: i32 = index / 32;
-    words[word] = words[word] | bit_mask(index);
-    return true;
+    if (bit_len < 0) { return false; }
+    let view: BitView = legacy_view(words, bit_len); return core::result::is_ok(view.set(index));
 }
-
 pub fn clear(words: [u32], bit_len: i32, index: i32) -> bool {
-    if (bit_len < 0 || index < 0 || index >= bit_len) {
-        return false;
-    }
-    let word: i32 = index / 32;
-    let keep: u32 = bit_mask(index) ^ 4294967295;
-    words[word] = words[word] & keep;
-    return true;
+    if (bit_len < 0) { return false; }
+    let view: BitView = legacy_view(words, bit_len); return core::result::is_ok(view.clear(index));
 }
-
 pub fn toggle(words: [u32], bit_len: i32, index: i32) -> bool {
-    if (bit_len < 0 || index < 0 || index >= bit_len) {
-        return false;
-    }
-    let word: i32 = index / 32;
-    words[word] = words[word] ^ bit_mask(index);
-    return true;
+    if (bit_len < 0) { return false; }
+    let view: BitView = legacy_view(words, bit_len); return core::result::is_ok(view.toggle(index));
 }
-
-// Set every logical bit to value. An empty bitset succeeds without touching
-// storage; a negative length returns false. Padding bits are preserved.
+// All legacy mutations preserve unused final-word bits and extra words.
 pub fn fill(words: [u32], bit_len: i32, value: bool) -> bool {
-    if (bit_len < 0) {
-        return false;
-    }
-    let count: i32 = words_for(bit_len);
-    let index: i32 = 0;
-    while (index < count) {
-        let mask: u32 = mask_for(bit_len, index);
-        if (value) {
-            words[index] = words[index] | mask;
-        } else {
-            words[index] = words[index] & (mask ^ 4294967295);
-        }
-        index += 1;
-    }
-    return true;
+    if (bit_len < 0) { return false; }
+    let view: BitView = legacy_view(words, bit_len); view.fill(value); return true;
 }
-
-// Count only logical bits, ignoring padding in the last word. A negative
-// length returns fallback; a valid count can equal the fallback.
 pub fn count_ones_or(words: [u32], bit_len: i32, fallback: i32) -> i32 {
-    if (bit_len < 0) {
-        return fallback;
-    }
-    let count: i32 = words_for(bit_len);
-    let total: i32 = 0;
-    let index: i32 = 0;
-    while (index < count) {
-        let set_bits: u32 = core::bits::count_ones_u32(words[index] & mask_for(bit_len, index));
-        let set_count: i32 = set_bits as i32;
-        total += set_count;
-        index += 1;
-    }
-    return total;
+    if (bit_len < 0) { return fallback; }
+    let view: BitView = legacy_view(words, bit_len); return view.count_ones();
 }
-
-// Empty bitsets have no set bits and have all their bits set, respectively.
-// Invalid logical lengths return the caller's Boolean fallback.
 pub fn any_or(words: [u32], bit_len: i32, fallback: bool) -> bool {
-    let count: i32 = count_ones_or(words, bit_len, -1);
-    if (count < 0) {
-        return fallback;
-    }
-    return count != 0;
+    if (bit_len < 0) { return fallback; }
+    let view: BitView = legacy_view(words, bit_len); return view.any();
 }
-
 pub fn all_or(words: [u32], bit_len: i32, fallback: bool) -> bool {
-    let count: i32 = count_ones_or(words, bit_len, -1);
-    if (count < 0) {
-        return fallback;
-    }
-    return count == bit_len;
+    if (bit_len < 0) { return fallback; }
+    let view: BitView = legacy_view(words, bit_len); return view.all();
 }
-
-// Return the first or last set bit index. Empty, negative-length, and empty-
-// of-set-bits views return fallback. Padding bits never count as set.
 pub fn first_set_or(words: [u32], bit_len: i32, fallback: i32) -> i32 {
-    if (bit_len < 0) {
-        return fallback;
-    }
-    let count: i32 = words_for(bit_len);
-    let index: i32 = 0;
-    while (index < count) {
-        let value: u32 = words[index] & mask_for(bit_len, index);
-        if (value != 0) {
-            let offset: u32 = core::bits::trailing_zeros_u32(value);
-            let offset_i32: i32 = offset as i32;
-            return index * 32 + offset_i32;
-        }
-        index += 1;
-    }
-    return fallback;
+    if (bit_len < 0) { return fallback; }
+    let view: BitView = legacy_view(words, bit_len); return core::option::unwrap_or(view.first_set(), fallback);
 }
-
 pub fn last_set_or(words: [u32], bit_len: i32, fallback: i32) -> i32 {
-    if (bit_len < 0) {
-        return fallback;
-    }
-    let remaining: i32 = words_for(bit_len);
-    while (remaining > 0) {
-        remaining -= 1;
-        let value: u32 = words[remaining] & mask_for(bit_len, remaining);
-        if (value != 0) {
-            let leading: u32 = core::bits::leading_zeros_u32(value);
-            let leading_i32: i32 = leading as i32;
-            return remaining * 32 + 31 - leading_i32;
-        }
-    }
-    return fallback;
+    if (bit_len < 0) { return fallback; }
+    let view: BitView = legacy_view(words, bit_len); return core::option::unwrap_or(view.last_set(), fallback);
 }
-
-// Compare only logical bits. A negative length is invalid; two empty views
-// are equal. Padding may differ without affecting equality.
+// Logical lengths must agree by construction; padding never affects equality.
 pub fn equal(left: [u32], right: [u32], bit_len: i32) -> bool {
-    if (bit_len < 0) {
-        return false;
-    }
-    let count: i32 = words_for(bit_len);
-    let index: i32 = 0;
-    while (index < count) {
-        let mask: u32 = mask_for(bit_len, index);
-        if ((left[index] & mask) != (right[index] & mask)) {
-            return false;
-        }
-        index += 1;
-    }
-    return true;
+    if (bit_len < 0) { return false; }
+    let l: BitView = legacy_view(left, bit_len); let r: BitView = legacy_view(right, bit_len); return l.equal(r);
 }
 
 // Write union or intersection into caller-backed destination storage. The
@@ -219,4 +129,195 @@ pub fn intersect_into(destination: [u32], left: [u32], right: [u32], bit_len: i3
         index += 1;
     }
     return true;
+}
+
+// Counted views validate logical metadata at construction. The supplied slice
+// must physically back start + length words. Copies borrow the same storage.
+// Keep its owner alive and unmoved. Use constructors; do not forge records.
+pub enum ViewError { Bounds, InvalidLength, InsufficientWords, SizeMismatch }
+pub struct BitView { words: core::slice::View<u32>, length: i32 }
+pub struct Ones { view: BitView, position: i32 }
+
+pub impl BitView {
+    pub fn from_words(words: core::slice::View<u32>, bit_len: i32) -> core::result::Result<BitView, ViewError> {
+        if (bit_len < 0) { return core::result::Err(ViewError::InvalidLength); }
+        if (words.start < 0 || words.length < 0 || words.start > 2147483647 - words.length) {
+            return core::result::Err(ViewError::Bounds);
+        }
+        if (words_for(bit_len) > words.length) { return core::result::Err(ViewError::InsufficientWords); }
+        return core::result::Ok(BitView { words: words, length: bit_len });
+    }
+    pub fn len(&self) -> i32 { return self.length; }
+    pub fn is_empty(&self) -> bool { return self.length == 0; }
+    // Read a logical word, with padding removed. No writable word exposure.
+    pub fn word(&self, index: i32) -> core::option::Option<u32> {
+        if (index < 0 || index >= words_for(self.length)) { return core::option::None(); }
+        return core::option::Some(self.words.values[self.words.start + index] & mask_for(self.length, index));
+    }
+    pub fn get(&self, index: i32) -> core::option::Option<bool> {
+        if (index < 0 || index >= self.length) { return core::option::None(); }
+        return core::option::Some((self.words.values[self.words.start + index / 32] & bit_mask(index)) != 0);
+    }
+    // Mutations return the displaced bit. Bounds errors never write.
+    pub fn set(&self, index: i32) -> core::result::Result<bool, ViewError> { return self.assign(index, true); }
+    pub fn clear(&self, index: i32) -> core::result::Result<bool, ViewError> { return self.assign(index, false); }
+    pub fn assign(&self, index: i32, value: bool) -> core::result::Result<bool, ViewError> {
+        if (index < 0 || index >= self.length) { return core::result::Err(ViewError::Bounds); }
+        let at: i32 = self.words.start + index / 32; let mask: u32 = bit_mask(index);
+        let previous: bool = (self.words.values[at] & mask) != 0;
+        if (value) { self.words.values[at] = self.words.values[at] | mask; }
+        else { self.words.values[at] = self.words.values[at] & (mask ^ 4294967295); }
+        return core::result::Ok(previous);
+    }
+    pub fn toggle(&self, index: i32) -> core::result::Result<bool, ViewError> {
+        if (index < 0 || index >= self.length) { return core::result::Err(ViewError::Bounds); }
+        let at: i32 = self.words.start + index / 32; let mask: u32 = bit_mask(index);
+        let previous: bool = (self.words.values[at] & mask) != 0;
+        self.words.values[at] = self.words.values[at] ^ mask;
+        return core::result::Ok(previous);
+    }
+    // Half-open ranges; empty ranges succeed, invalid ranges are atomic.
+    pub fn assign_range(&self, start: i32, end: i32, value: bool) -> core::result::Result<i32, ViewError> {
+        if (start < 0 || end < start || end > self.length) { return core::result::Err(ViewError::Bounds); }
+        let position: i32 = start;
+        while (position != end) {
+            let word: i32 = position / 32; let after: i32 = end;
+            if (word < 67108863) { if (after > (word + 1) * 32) { after = (word + 1) * 32; } }
+            let low: u32 = bit_mask(position) - 1;
+            let high: u32 = 4294967295;
+            if (after % 32 != 0) { high = bit_mask(after) - 1; }
+            let mask: u32 = high & (low ^ 4294967295);
+            let at: i32 = self.words.start + word;
+            if (value) { self.words.values[at] = self.words.values[at] | mask; }
+            else { self.words.values[at] = self.words.values[at] & (mask ^ 4294967295); }
+            position = after;
+        }
+        return core::result::Ok(end - start);
+    }
+    pub fn set_range(&self, start: i32, end: i32) -> core::result::Result<i32, ViewError> { return self.assign_range(start, end, true); }
+    pub fn clear_range(&self, start: i32, end: i32) -> core::result::Result<i32, ViewError> { return self.assign_range(start, end, false); }
+    pub fn toggle_range(&self, start: i32, end: i32) -> core::result::Result<i32, ViewError> {
+        if (start < 0 || end < start || end > self.length) { return core::result::Err(ViewError::Bounds); }
+        let index: i32 = start; while (index < end) { self.toggle(index); index += 1; }
+        return core::result::Ok(end - start);
+    }
+    pub fn fill(&self, value: bool) -> i32 { self.assign_range(0, self.length, value); return self.length; }
+    pub fn count_ones(&self) -> i32 {
+        let total: i32 = 0; let index: i32 = 0;
+        while (index < words_for(self.length)) { total += core::bits::count_ones_u32(core::option::unwrap(self.word(index))) as i32; index += 1; }
+        return total;
+    }
+    pub fn any(&self) -> bool { return core::option::is_some(self.first_set()); }
+    pub fn all(&self) -> bool { return self.count_ones() == self.length; }
+    // Inclusive search. start == len has no match; other invalid starts are
+    // Bounds rather than ordinary absence.
+    pub fn next_set(&self, start: i32) -> core::result::Result<core::option::Option<i32>, ViewError> { return self.next_bit(start, true); }
+    pub fn next_clear(&self, start: i32) -> core::result::Result<core::option::Option<i32>, ViewError> { return self.next_bit(start, false); }
+    fn next_bit(&self, start: i32, set: bool) -> core::result::Result<core::option::Option<i32>, ViewError> {
+        if (start < 0 || start > self.length) { return core::result::Err(ViewError::Bounds); }
+        let absent: core::option::Option<i32> = core::option::None();
+        if (start == self.length) { return core::result::Ok(absent); }
+        let index: i32 = start / 32;
+        while (index < words_for(self.length)) {
+            let value: u32 = self.words.values[self.words.start + index];
+            if (!set) { value = value ^ 4294967295; }
+            value = value & mask_for(self.length, index);
+            if (index == start / 32) { value = value & ((bit_mask(start) - 1) ^ 4294967295); }
+            if (value != 0) { return core::result::Ok(core::option::Some(index * 32 + core::bits::trailing_zeros_u32(value) as i32)); }
+            index += 1;
+        }
+        return core::result::Ok(absent);
+    }
+    pub fn first_set(&self) -> core::option::Option<i32> { return core::result::unwrap(self.next_set(0)); }
+    pub fn last_set(&self) -> core::option::Option<i32> {
+        let index: i32 = words_for(self.length);
+        while (index > 0) { index -= 1; let value: u32 = core::option::unwrap(self.word(index));
+            if (value != 0) { return core::option::Some(index * 32 + 31 - core::bits::leading_zeros_u32(value) as i32); }
+        }
+        return core::option::None();
+    }
+    pub fn iter_ones(&self) -> Ones { return Ones { view: BitView { words: self.words, length: self.length }, position: 0 }; }
+    pub fn equal(&self, other: BitView) -> bool {
+        if (self.length != other.length) { return false; }
+        let index: i32 = 0; while (index < words_for(self.length)) {
+            if (core::option::unwrap(self.word(index)) != core::option::unwrap(other.word(index))) { return false; } index += 1;
+        }
+        return true;
+    }
+    // Set relations require equal logical lengths.
+    pub fn is_subset(&self, other: BitView) -> core::result::Result<bool, ViewError> {
+        if (self.length != other.length) { return core::result::Err(ViewError::SizeMismatch); }
+        let index: i32 = 0; while (index < words_for(self.length)) {
+            if ((core::option::unwrap(self.word(index)) & (core::option::unwrap(other.word(index)) ^ 4294967295)) != 0) { return core::result::Ok(false); } index += 1;
+        }
+        return core::result::Ok(true);
+    }
+    pub fn is_disjoint(&self, other: BitView) -> core::result::Result<bool, ViewError> {
+        if (self.length != other.length) { return core::result::Err(ViewError::SizeMismatch); }
+        let index: i32 = 0; while (index < words_for(self.length)) {
+            if ((core::option::unwrap(self.word(index)) & core::option::unwrap(other.word(index))) != 0) { return core::result::Ok(false); } index += 1;
+        }
+        return core::result::Ok(true);
+    }
+    // Stable FNV-1a of length then logical u32 words, little endian.
+    pub fn hash(&self) -> u32 {
+        let state: u32 = hash_word(core::hash::FNV1A_OFFSET_BASIS, self.length as u32);
+        let index: i32 = 0; while (index < words_for(self.length)) { state = hash_word(state, core::option::unwrap(self.word(index))); index += 1; }
+        return state;
+    }
+    pub fn copy_within(&self, start: i32, end: i32, destination: i32) -> core::result::Result<i32, ViewError> {
+        if (start < 0 || end < start || end > self.length || destination < 0) { return core::result::Err(ViewError::Bounds); }
+        let count: i32 = end - start;
+        if (destination > self.length - count) { return core::result::Err(ViewError::Bounds); }
+        let offset: i32 = 0;
+        if (destination > start) {
+            offset = count; while (offset > 0) { offset -= 1; self.assign(destination + offset, core::option::unwrap(self.get(start + offset))); }
+        } else { while (offset < count) { self.assign(destination + offset, core::option::unwrap(self.get(start + offset))); offset += 1; } }
+        return core::result::Ok(count);
+    }
+    // Shifts keep length, discard shifted-out bits, and zero newly vacated
+    // bits. All counts >= len clear the view; negative counts are Bounds.
+    fn write_word(&self, index: i32, value: u32) {
+        let at: i32 = self.words.start + index; let mask: u32 = mask_for(self.length, index);
+        self.words.values[at] = (self.words.values[at] & (mask ^ 4294967295)) | (value & mask);
+    }
+    pub fn shift_left(&self, count: i32) -> core::result::Result<i32, ViewError> {
+        if (count < 0) { return core::result::Err(ViewError::Bounds); }
+        if (count >= self.length) { self.fill(false); return core::result::Ok(self.length); }
+        let whole: i32 = count / 32; let part: u32 = (count % 32) as u32; let index: i32 = words_for(self.length);
+        while (index > 0) {
+            index -= 1; let source: i32 = index - whole; let value: u32 = 0;
+            if (source >= 0) { value = core::option::unwrap_or(self.word(source), 0) << part; }
+            if (part != 0) { if (source > 0) { value = value | (core::option::unwrap_or(self.word(source - 1), 0) >> (32 - part)); } }
+            self.write_word(index, value);
+        }
+        return core::result::Ok(self.length);
+    }
+    pub fn shift_right(&self, count: i32) -> core::result::Result<i32, ViewError> {
+        if (count < 0) { return core::result::Err(ViewError::Bounds); }
+        if (count >= self.length) { self.fill(false); return core::result::Ok(self.length); }
+        let whole: i32 = count / 32; let part: u32 = (count % 32) as u32; let index: i32 = 0;
+        while (index < words_for(self.length)) {
+            let source: i32 = index + whole; let value: u32 = core::option::unwrap_or(self.word(source), 0) >> part;
+            if (part != 0) { value = value | (core::option::unwrap_or(self.word(source + 1), 0) << (32 - part)); }
+            self.write_word(index, value); index += 1;
+        }
+        return core::result::Ok(self.length);
+    }
+}
+pub impl Ones {
+    // Fused even if backing bits are changed after exhaustion. Before that,
+    // iteration observes current words; copies fork the cursor position.
+    pub fn next(&self) -> core::option::Option<i32> {
+        if (self.position >= self.view.length) { return core::option::None(); }
+        let found: core::option::Option<i32> = core::result::unwrap(self.view.next_set(self.position));
+        self.position = self.view.length;
+        if (core::option::is_some(found)) { self.position = core::option::unwrap(found) + 1; }
+        return found;
+    }
+}
+fn hash_word(state: u32, word: u32) -> u32 {
+    let next: u32 = state; let shift: u32 = 0;
+    while (shift < 32) { next = core::hash::fnv1a_step(next, ((word >> shift) & 255) as u8); shift += 8; }
+    return next;
 }

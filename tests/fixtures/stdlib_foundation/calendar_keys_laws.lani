@@ -1,0 +1,79 @@
+module app::main;
+import core::calendar;
+import core::cmp;
+import core::hash;
+import core::result;
+
+fn equality<T>(left: T, right: T) where T: core::cmp::Eq<T>, T: core::cmp::PartialEq<T>, T: core::hash::Hash<T> {
+    assert(T::eq(left,left) && T::eq(right,right));
+    assert(T::eq(left,right) == T::eq(right,left));assert(T::ne(left,right) == !T::eq(left,right));
+    assert(T::partial_eq(left,right) == T::eq(left,right) && T::partial_ne(left,right) == T::ne(left,right));
+    if (T::eq(left,right)) { assert(T::hash(left) == T::hash(right)); }
+}
+fn pair<T>(left: T, right: T, order: i32) where T: core::cmp::Eq<T>, T: core::cmp::Ord<T>, T: core::cmp::PartialEq<T>, T: core::cmp::PartialOrd<T>, T: core::hash::Hash<T> {
+    equality(left,right);
+    assert(T::eq(left,right) == (order == 0));
+    assert(T::lt(left,right) == (order < 0) && T::le(left,right) == (order <= 0));
+    assert(T::gt(left,right) == (order > 0) && T::ge(left,right) == (order >= 0));
+    assert(T::lt(left,right) == T::gt(right,left) && T::le(left,right) == T::ge(right,left));
+    assert(T::partial_lt(left,right) == T::lt(left,right) && T::partial_le(left,right) == T::le(left,right));
+    assert(T::partial_gt(left,right) == T::gt(left,right) && T::partial_ge(left,right) == T::ge(left,right));
+    let relation: core::cmp::PartialOrdering = T::partial_cmp(left,right);
+    let actual: i32 = match (relation) { core::cmp::Less -> -1,core::cmp::Equal -> 0,core::cmp::Greater -> 1,core::cmp::Unordered -> 2 };
+    assert(actual == order);
+}
+fn transitive<T>(first: T, second: T, third: T) where T: core::cmp::Eq<T>, T: core::cmp::Ord<T> {
+    if (T::lt(first,second) && T::lt(second,third)) { assert(T::lt(first,third)); }
+    if (T::le(first,second) && T::le(second,third)) { assert(T::le(first,third)); }
+    if (T::eq(first,second) && T::eq(second,third)) { assert(T::eq(first,third)); }
+}
+fn sign(left: i64, right: i64) -> i32 { if (left < right) { return -1; }if (left > right) { return 1; }return 0; }
+// A syntax rank with 61 second slots keeps represented second60 distinct from
+// the following minute. This is an order oracle, not elapsed civil seconds.
+fn rank(value: core::calendar::TimeOfDay) -> i64 { return (((value.hour as i64)*60+(value.minute as i64))*61+(value.second as i64))*1000000000+(value.nanos as i64); }
+fn local_order(left: core::calendar::LocalDateTime, right: core::calendar::LocalDateTime) -> i32 {
+    let order: i32 = sign(left.date.day_number(),right.date.day_number());if (order != 0) { return order; }return sign(rank(left.time),rank(right.time));
+}
+fn next(state: u64) -> u64 { return (state*1664525+1013904223)&4294967295; }
+fn day(state: u64) -> core::calendar::Date {
+    let year: i32 = state as i32;let month: i32 = (next(state)%12+1) as i32;
+    let last: i32 = core::result::unwrap(core::calendar::days_in_month(year,month));
+    return core::result::unwrap(core::calendar::date(year,month,(next(next(state))%(last as u64)+1) as i32));
+}
+fn time(state: u64) -> core::calendar::TimeOfDay {
+    return core::result::unwrap(core::calendar::time_of_day((state%24) as i32,(next(state)%60) as i32,(next(next(state))%61) as i32,(next(next(next(state)))%1000000000) as u32));
+}
+fn stamp(day: core::calendar::Date, time: core::calendar::TimeOfDay) -> core::calendar::LocalDateTime { return core::result::unwrap(core::calendar::local_date_time(day,time)); }
+fn main() -> i32 {
+    let state: u64 = 3196857341;let i: i32 = 0;
+    while (i < 5000) {
+        state = next(state);let a: core::calendar::Date = day(state);state = next(state);let b: core::calendar::Date = day(state);state = next(state);let c: core::calendar::Date = day(state);
+        let copy: core::calendar::Date = core::result::unwrap(core::calendar::date_from_day_number(a.day_number()));
+        pair(a,copy,0);pair(a,b,sign(a.day_number(),b.day_number()));pair(b,c,sign(b.day_number(),c.day_number()));transitive(a,b,c);
+        assert(a.compare(b) == sign(a.day_number(),b.day_number()));
+        let ta: core::calendar::TimeOfDay = time(state);state = next(state);let tb: core::calendar::TimeOfDay = time(state);state = next(state);let tc: core::calendar::TimeOfDay = time(state);
+        let tcopy: core::calendar::TimeOfDay = core::result::unwrap(core::calendar::time_of_day(ta.hour,ta.minute,ta.second,ta.nanos));
+        pair(ta,tcopy,0);pair(ta,tb,sign(rank(ta),rank(tb)));pair(tb,tc,sign(rank(tb),rank(tc)));transitive(ta,tb,tc);assert(ta.compare(tb) == sign(rank(ta),rank(tb)));
+        let la: core::calendar::LocalDateTime = stamp(a,ta);let lb: core::calendar::LocalDateTime = stamp(b,tb);let lc: core::calendar::LocalDateTime = stamp(c,tc);let lcopy: core::calendar::LocalDateTime = stamp(copy,tcopy);
+        pair(la,lcopy,0);pair(la,lb,local_order(la,lb));pair(lb,lc,local_order(lb,lc));transitive(la,lb,lc);
+        // Same-day time ordering is reached explicitly on every iteration.
+        let same_day: core::calendar::LocalDateTime = stamp(a,tb);pair(la,same_day,sign(rank(ta),rank(tb)));assert(la.compare(same_day) == sign(rank(ta),rank(tb)));
+        let minutes: i32 = ((state%2879) as i32)-1439;
+        let offset: core::calendar::UtcOffset = core::result::unwrap(core::calendar::utc_offset(minutes));let offset_copy: core::calendar::UtcOffset = core::result::unwrap(core::calendar::utc_offset(minutes));
+        equality(offset,offset_copy);equality(offset,core::calendar::unknown_offset());
+        let value: core::calendar::OffsetDateTime = core::result::unwrap(core::calendar::offset_date_time(la,offset));
+        let value_copy: core::calendar::OffsetDateTime = core::result::unwrap(core::calendar::offset_date_time(lcopy,offset_copy));equality(value,value_copy);
+        let unknown: core::calendar::OffsetDateTime = core::result::unwrap(core::calendar::offset_date_time(la,core::calendar::unknown_offset()));equality(value,unknown);
+        i += 1;
+    }
+    let zero: core::calendar::TimeOfDay = core::result::unwrap(core::calendar::time_of_day(0,0,0,0));
+    let last: core::calendar::TimeOfDay = core::result::unwrap(core::calendar::time_of_day(23,59,60,999999999));
+    pair(core::calendar::minimum_date(),core::calendar::maximum_date(),-1);pair(zero,last,-1);
+    let d: core::calendar::Date = core::result::unwrap(core::calendar::date(0,1,1));
+    let seconds: [core::calendar::TimeOfDay;7] = [zero,core::result::unwrap(core::calendar::time_of_day(0,0,0,1)),core::result::unwrap(core::calendar::time_of_day(0,0,59,999999999)),core::result::unwrap(core::calendar::time_of_day(0,0,60,0)),core::result::unwrap(core::calendar::time_of_day(0,0,60,999999999)),core::result::unwrap(core::calendar::time_of_day(0,1,0,0)),last];
+    let j: i32 = 0;while (j < 7) { let k: i32 = 0;while (k < 7) { pair(seconds[j],seconds[k],sign(j as i64,k as i64));pair(stamp(d,seconds[j]),stamp(d,seconds[k]),sign(j as i64,k as i64));k += 1; }j += 1; }
+    let midnight: core::calendar::LocalDateTime = stamp(d,zero);let end: core::calendar::LocalDateTime = stamp(core::result::unwrap(d.checked_sub_days(1)),last);pair(end,midnight,-1);
+    assert(!core::calendar::UtcOffset::eq(core::calendar::utc(),core::calendar::unknown_offset()));
+    equality(core::calendar::unknown_offset(),core::calendar::unknown_offset());
+    return 0;
+}

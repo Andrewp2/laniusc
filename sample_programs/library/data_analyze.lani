@@ -1,0 +1,314 @@
+// Analyze finite numerical CSV and optionally fit QR least squares.
+// Complete input and analysis are validated before any stdout is written.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::f64;
+import core::float_decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::cli;
+import ext::csv;
+import ext::linalg;
+import ext::statistics;
+import std::args;
+import std::stream;
+
+struct Options { header: bool, fit: bool, no_intercept: bool, help: bool, seen: u32, max_input: i32, max_rows: i32, max_columns: i32, max_elements: i32, max_output: i32, max_work: u64 }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Diagnostic { stage: i32, reason: i32, byte: i64, row: i32, column: i32 }
+impl Diagnostic { fn borrow(&self) -> &Diagnostic { return self; } }
+struct Budget { left: u64 }
+impl Budget {
+    fn borrow(&self) -> &Budget { return self; }
+    fn pay(&self, amount: u64, detail: &Diagnostic) -> bool { if (amount > self.left) { fail(detail,2,detail.stage,2); return false; } self.left -= amount; return true; }
+}
+struct Data { numbers: alloc::vec::Vec<f64>, header: core::option::Option<ext::csv::Record>, rows: i32, columns: i32 }
+impl Data {
+    fn borrow(&self) -> &Data { return self; }
+    fn destroy(&self) { self.numbers.destroy(); if (core::option::is_some(self.header)) { let owner: ext::csv::Record = core::option::unwrap(self.header); owner.destroy(); } self.header = core::option::None(); }
+}
+fn literal(value: str, count: i32) -> core::slice::View<u8> { let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(bytes,count)); }
+fn text(value: str, count: i32) -> core::text::Text { let value_bytes: core::slice::View<u8> = literal(value,count); return core::text::from_utf8_unchecked(value_bytes.values,value_bytes.start,count); }
+fn fail(detail: &Diagnostic, status: i32, stage: i32, reason: i32) -> i32 { detail.stage = stage; detail.reason = reason; return status; }
+fn csv_error(error: ext::csv::Error, detail: &Diagnostic) -> i32 {
+    detail.row = -1; detail.column = -1;
+    detail.byte = match (error) {
+        ext::csv::Error::UnexpectedQuote(at) -> at as i64,
+        ext::csv::Error::UnclosedQuote(at) -> at as i64,
+        ext::csv::Error::TrailingText(at) -> at as i64,
+        ext::csv::Error::InvalidLineEnding(at) -> at as i64,
+        ext::csv::Error::InvalidCharacter(at) -> at as i64,
+        ext::csv::Error::InvalidUtf8(at) -> at as i64,
+        ext::csv::Error::LimitExceeded(at) -> at as i64,
+        _ -> -1,
+    };
+    detail.row = match (error) { ext::csv::Error::UnequalFields(row) -> row, _ -> detail.row };
+    let reason: i32 = match (error) {
+        ext::csv::Error::InvalidUtf8(at) -> 1,
+        ext::csv::Error::UnequalFields(row) -> 7,
+        ext::csv::Error::LimitExceeded(at) -> 2,
+        ext::csv::Error::AllocationFailed -> 4,
+        _ -> 5,
+    };
+    let status: i32 = match (error) { ext::csv::Error::AllocationFailed -> 4, _ -> 2 };
+    return fail(detail,status,1,reason);
+}
+fn linalg_error(error: ext::linalg::Error, detail: &Diagnostic) -> i32 {
+    return match (error) {
+        ext::linalg::Error::AllocationFailed -> fail(detail,4,4,4),
+        ext::linalg::Error::RankDeficient -> fail(detail,2,4,8),
+        ext::linalg::Error::UnderDetermined -> fail(detail,2,4,7),
+        ext::linalg::Error::ElementLimit -> fail(detail,2,4,2),
+        ext::linalg::Error::WorkLimit -> fail(detail,2,4,2),
+        _ -> fail(detail,2,4,6),
+    };
+}
+fn option(options: &Options, item: ext::cli::Occurrence) -> bool {
+    let mask: u32 = (1 as u32) << item.id;
+    if ((options.seen & mask) != 0) { return false; } options.seen = options.seen | mask;
+    if (item.id == 1) { options.header = true; return true; }
+    if (item.id == 2) { options.fit = true; return true; }
+    if (item.id == 3) { options.no_intercept = true; return true; }
+    if (item.id == 4) { options.help = true; return true; }
+    let argument: ext::cli::Argument = core::option::unwrap(item.value); let bytes: core::slice::View<u8> = argument.bytes;
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(bytes.values,bytes.start,bytes.len());
+    if (core::result::is_err(parsed)) { return false; } let value: u64 = core::result::unwrap(parsed);
+    if (item.id == 9) { options.max_work = value; return true; }
+    if (value > 67108864 as u64) { return false; }
+    if (item.id == 5) { options.max_input = value as i32; }
+    if (item.id == 6) { if (value > 1000000 as u64) { return false; } options.max_rows = value as i32; }
+    if (item.id == 7) { if (value == 0 || value > 256 as u64) { return false; } options.max_columns = value as i32; }
+    if (item.id == 8) { if (value > 8000000 as u64) { return false; } options.max_elements = value as i32; }
+    if (item.id == 10) { if (value > 16777216 as u64) { return false; } options.max_output = value as i32; }
+    return true;
+}
+fn read_record(data: &Data, parser: &ext::csv::Decoder, options: Options, budget: &Budget, scratch: core::slice::View<u32>, detail: &Diagnostic) -> i32 {
+    detail.stage = 2; detail.row = parser.records_read()-1; detail.column = -1;
+    let width: i32 = core::option::unwrap(parser.field_count());
+    if (data.columns == 0) { data.columns = width; }
+    if (detail.row == 0 && options.header) { data.header = parser.take_record(); return 0; }
+    if (data.rows >= options.max_rows || width > options.max_elements-data.numbers.len()) { return fail(detail,2,1,2); }
+    let column: i32 = 0;
+    while (column < width) {
+        detail.column = column;
+        if (!budget.pay(1000000,detail)) { return 2; }
+        let field: core::text::Text = core::result::unwrap(parser.field(column));
+        let view: core::slice::View<u8> = core::slice::View { values: field.bytes, start: field.start, length: field.length };
+        let parsed: core::result::Result<f64,core::float_decimal::Error> = core::float_decimal::parse_f64(view,scratch,core::float_decimal::default_limits());
+        if (core::result::is_err(parsed)) {
+            let reason: i32 = match (core::result::unwrap_err(parsed)) {
+                core::float_decimal::Error::InputLimit -> 2,
+                core::float_decimal::Error::DigitLimit -> 2,
+                core::float_decimal::Error::WorkLimit -> 2,
+                _ -> 9,
+            }; return fail(detail,2,2,reason);
+        }
+        let value: f64 = core::result::unwrap(parsed);
+        if (!core::f64::is_finite(value)) { return fail(detail,2,2,10); }
+        if (core::result::is_err(data.numbers.try_push(value))) { return fail(detail,4,2,4); }
+        column += 1;
+    }
+    data.rows += 1; return 0;
+}
+fn read_input(data: &Data, options: Options, budget: &Budget, detail: &Diagnostic) -> i32 {
+    let csv_options: ext::csv::Options = ext::csv::default_options();
+    csv_options.max_records = options.max_rows+1; csv_options.max_fields = options.max_columns;
+    csv_options.max_field_bytes = 1024; csv_options.max_record_bytes = options.max_input;
+    let parser: ext::csv::Decoder = core::result::unwrap(ext::csv::decoder(csv_options));
+    let storage: [i32;256] = [0;256]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024);
+    let words: [u32;864] = [0;864]; let scratch: core::slice::View<u32> = core::result::unwrap(core::slice::view(words,864));
+    let source: std::stream::Descriptor = std::stream::stdin(); let total: i32 = 0; let status: i32 = 0;
+    while (status == 0) {
+        let read: core::result::Result<i32,core::io::Error> = source.read(bytes,0,1024);
+        if (core::result::is_err(read)) { if (core::io::is_interrupted(core::result::unwrap_err(read))) { continue; } detail.byte = total as i64; detail.row = -1; detail.column = -1; status = fail(detail,3,1,3); break; }
+        let count: i32 = core::result::unwrap(read);
+        if (count == 0) {
+            let done: core::result::Result<bool,ext::csv::Error> = parser.finish();
+            if (core::result::is_err(done)) { status = csv_error(core::result::unwrap_err(done),detail); }
+            else { if (core::result::unwrap(done)) { status = read_record(data,parser.borrow(),options,budget,scratch,detail); } } break;
+        }
+        if (count > options.max_input-total) { detail.byte = options.max_input as i64; detail.row = -1; detail.column = -1; status = fail(detail,2,1,2); break; } total += count;
+        let offset: i32 = 0;
+        while (offset < count && status == 0) {
+            let fed: core::result::Result<ext::csv::Progress,ext::csv::Error> = parser.feed(bytes,offset,count-offset);
+            if (core::result::is_err(fed)) { status = csv_error(core::result::unwrap_err(fed),detail); }
+            else { let progress: ext::csv::Progress = core::result::unwrap(fed); offset += progress.consumed; if (progress.record) { status = read_record(data,parser.borrow(),options,budget,scratch,detail); } }
+        }
+    }
+    parser.destroy(); if (status != 0) { return status; }
+    detail.byte = -1; detail.row = -1; detail.column = -1;
+    if (data.rows == 0) { return fail(detail,2,1,11); } return 0;
+}
+fn csv_name(output: &core::fmt::Formatter, data: Data, column: i32) {
+    output.write_text(text("\"",1));
+    if (column == -1) { output.write_text(text("intercept",9)); }
+    else { if (column >= 0 && core::option::is_some(data.header)) {
+        let owner: ext::csv::Record = core::option::unwrap(data.header); let name: core::text::Text = core::result::unwrap(owner.field(column)); let at: i32 = 0;
+        let start: i32 = 0;
+        while (at < name.byte_len()) { if (core::option::unwrap(name.byte_at(at)) == 34) { output.write_text(core::result::unwrap(name.slice(start,at))); output.write_text(text("\"\"",2)); start = at+1; } at += 1; }
+        output.write_text(core::result::unwrap(name.slice(start,name.byte_len())));
+    } }
+    output.write_text(text("\"",1));
+}
+fn metric(output: &core::fmt::Formatter, data: Data, kind: core::text::Text, column: i32, name: core::text::Text, value: f64, budget: &Budget, detail: &Diagnostic) -> i32 {
+    if (!core::f64::is_finite(value)) { return fail(detail,2,detail.stage,6); }
+    if (!budget.pay(1000000,detail)) { return 2; }
+    output.write_text(kind); output.write_text(text(",",1));
+    if (column >= -1) { output.write_signed(column as i64,core::fmt::decimal()); }
+    output.write_text(text(",",1)); csv_name(output,data,column); output.write_text(text(",",1)); output.write_text(name); output.write_text(text(",",1)); output.write_f64(value); output.write_text(text("\r\n",2));
+    return 0;
+}
+fn summaries(data: Data, output: &core::fmt::Formatter, budget: &Budget, detail: &Diagnostic) -> i32 {
+    detail.stage = 3;
+    let first: core::result::Result<alloc::vec::Vec<f64>,alloc::vec::Error> = alloc::vec::with_capacity<f64>(data.rows);
+    if (core::result::is_err(first)) { return fail(detail,4,3,4); } let column_values: alloc::vec::Vec<f64> = core::result::unwrap(first); core::result::unwrap(column_values.try_resize(data.rows,0.0));
+    let second: core::result::Result<alloc::vec::Vec<f64>,alloc::vec::Error> = alloc::vec::with_capacity<f64>(data.rows);
+    if (core::result::is_err(second)) { column_values.destroy(); return fail(detail,4,3,4); } let sorted_values: alloc::vec::Vec<f64> = core::result::unwrap(second); core::result::unwrap(sorted_values.try_resize(data.rows,0.0));
+    let numeric: [f64] = data.numbers.as_slice(); let values: [f64] = column_values.as_slice(); let status: i32 = 0; let column: i32 = 0;
+    while (column < data.columns && status == 0) {
+        detail.column = column;
+        let work: u64 = core::result::unwrap(ext::statistics::sorted_work_bound(data.rows));
+        if (!budget.pay(work+(data.rows as u64)*8,detail)) { status = 2; break; }
+        let moments: ext::statistics::Moments = ext::statistics::moments(); let row: i32 = 0;
+        while (row < data.rows) { values[row] = numeric[row*data.columns+column]; if (core::result::is_err(moments.push(values[row]))) { status = fail(detail,2,3,6); break; } row += 1; }
+        if (status != 0) { break; }
+        let sorted: core::result::Result<ext::statistics::SortedSample,ext::statistics::Error> = ext::statistics::sorted_copy(column_values.as_view(),sorted_values.as_view(),work);
+        if (core::result::is_err(sorted)) { status = fail(detail,2,3,6); break; }
+        let sample: ext::statistics::SortedSample = core::result::unwrap(sorted);
+        let mean: core::result::Result<f64,ext::statistics::Error> = moments.mean(); let sd: core::result::Result<f64,ext::statistics::Error> = moments.sample_stddev();
+        let median: core::result::Result<f64,ext::statistics::Error> = sample.median();
+        if (core::result::is_err(mean) || core::result::is_err(median) || (data.rows > 1 && core::result::is_err(sd))) { status = fail(detail,2,3,6); break; }
+        status = metric(output,data,text("column",6),column,text("count",5),data.rows as f64,budget,detail);
+        if (status == 0) { status = metric(output,data,text("column",6),column,text("mean",4),core::result::unwrap(mean),budget,detail); }
+        if (status == 0 && data.rows > 1) { status = metric(output,data,text("column",6),column,text("sample_sd",9),core::result::unwrap(sd),budget,detail); }
+        if (status == 0) { status = metric(output,data,text("column",6),column,text("min",3),core::result::unwrap(moments.minimum()),budget,detail); }
+        if (status == 0) { status = metric(output,data,text("column",6),column,text("max",3),core::result::unwrap(moments.maximum()),budget,detail); }
+        if (status == 0) { status = metric(output,data,text("column",6),column,text("median",6),core::result::unwrap(median),budget,detail); }
+        column += 1;
+    }
+    column_values.destroy(); sorted_values.destroy(); if (status == 0) { detail.column = -1; } return status;
+}
+fn fit_result(data: Data, options: Options, output: &core::fmt::Formatter, a: ext::linalg::Matrix, budget: &Budget, detail: &Diagnostic) -> i32 {
+    let limits: ext::linalg::Limits = ext::linalg::Limits { max_elements: options.max_elements, max_work: budget.left };
+    let numeric: [f64] = data.numbers.as_slice(); let view: ext::linalg::MatrixView = core::result::unwrap(ext::linalg::strided(numeric,data.numbers.len(),data.columns-1,data.rows,1,data.columns,1));
+    let m: u64 = data.rows as u64; let n: u64 = a.view().cols as u64;
+    let work: u64 = 8*m*(n+2)*(n+1)+4*m+n;
+    if (!budget.pay(work,detail)) { return 2; }
+    let solved: core::result::Result<ext::linalg::Matrix,ext::linalg::Error> = ext::linalg::least_squares(a.view(),view,ext::linalg::default_tolerance(),limits);
+    if (core::result::is_err(solved)) { return linalg_error(core::result::unwrap_err(solved),detail); }
+    let coefficients: ext::linalg::Matrix = core::result::unwrap(solved); let status: i32 = fit_metrics(data,options,output,a,coefficients,budget,detail); coefficients.destroy(); return status;
+}
+fn fit_metrics(data: Data, options: Options, output: &core::fmt::Formatter, a: ext::linalg::Matrix, coefficients: ext::linalg::Matrix, budget: &Budget, detail: &Diagnostic) -> i32 {
+    let numeric: [f64] = data.numbers.as_slice(); let residual: alloc::vec::Vec<f64> = alloc::vec::new(); let parameters: i32 = a.view().cols; let row: i32 = 0; let status: i32 = 0;
+    if (!budget.pay((data.rows as u64)*(parameters as u64)*8+(data.rows as u64)*9,detail)) { return 2; }
+    while (row < data.rows) {
+        let total: ext::statistics::CompensatedSum = ext::statistics::sum(); let column: i32 = 0;
+        while (column < parameters) { let term: f64 = core::result::unwrap(a.get(row,column))*core::result::unwrap(coefficients.get(column,0)); if (core::result::is_err(total.push(term))) { status = fail(detail,2,4,6); break; } column += 1; }
+        if (status != 0) { break; }
+        let predicted: core::result::Result<f64,ext::statistics::Error> = total.value();
+        if (core::result::is_err(predicted)) { status = fail(detail,2,4,6); break; }
+        let error: f64 = numeric[row*data.columns+data.columns-1]-core::result::unwrap(predicted);
+        if (!core::f64::is_finite(error)) { status = fail(detail,2,4,6); break; }
+        if (core::result::is_err(residual.try_push(error))) { status = fail(detail,4,4,4); break; } row += 1;
+    }
+    if (status != 0) { residual.destroy(); return status; }
+    let residual_view: ext::linalg::MatrixView = core::result::unwrap(ext::linalg::row_major(residual.as_slice(),residual.len(),data.rows,1));
+    let norm: core::result::Result<f64,ext::linalg::Error> = ext::linalg::norm(residual_view,ext::linalg::Limits { max_elements: options.max_elements, max_work: data.rows as u64 }); residual.destroy();
+    if (core::result::is_err(norm)) { return linalg_error(core::result::unwrap_err(norm),detail); }
+    let length: f64 = core::result::unwrap(norm); let rss: f64 = length*length; let rmse: f64 = length/core::f64::sqrt(data.rows as f64);
+    if (!core::f64::is_finite(rss)) { return fail(detail,2,4,6); }
+    let column: i32 = 0;
+    while (column < parameters && status == 0) { let source_column: i32 = column; if (!options.no_intercept) { source_column -= 1; } status = metric(output,data,text("coefficient",11),source_column,text("estimate",8),core::result::unwrap(coefficients.get(column,0)),budget,detail); column += 1; }
+    if (status == 0) { status = metric(output,data,text("fit",3),-2,text("observations",12),data.rows as f64,budget,detail); }
+    if (status == 0) { status = metric(output,data,text("fit",3),-2,text("parameters",10),parameters as f64,budget,detail); }
+    if (status == 0) { status = metric(output,data,text("fit",3),-2,text("residual_dof",12),(data.rows-parameters) as f64,budget,detail); }
+    if (status == 0) { status = metric(output,data,text("fit",3),-2,text("residual_norm",13),length,budget,detail); }
+    if (status == 0) { status = metric(output,data,text("fit",3),-2,text("residual_sum_squares",20),rss,budget,detail); }
+    if (status == 0) { status = metric(output,data,text("fit",3),-2,text("rmse",4),rmse,budget,detail); } return status;
+}
+fn fit(data: Data, options: Options, output: &core::fmt::Formatter, budget: &Budget, detail: &Diagnostic) -> i32 {
+    detail.stage = 4; let parameters: i32 = data.columns; if (options.no_intercept) { parameters -= 1; }
+    if (data.columns < 2 || data.rows < parameters) { return fail(detail,2,4,7); }
+    if (parameters > 0 && data.rows > options.max_elements/parameters) { return fail(detail,2,4,2); }
+    if (!budget.pay((data.rows as u64)*(parameters as u64)*2,detail)) { return 2; }
+    let allocated: core::result::Result<ext::linalg::Matrix,ext::linalg::Error> = ext::linalg::zeros(data.rows,parameters,ext::linalg::Limits { max_elements: options.max_elements, max_work: budget.left });
+    if (core::result::is_err(allocated)) { return linalg_error(core::result::unwrap_err(allocated),detail); }
+    let a: ext::linalg::Matrix = core::result::unwrap(allocated); let numeric: [f64] = data.numbers.as_slice(); let row: i32 = 0;
+    while (row < data.rows) { let column: i32 = 0; if (!options.no_intercept) { core::result::unwrap(a.set(row,0,1.0)); column = 1; }
+        while (column < parameters) { let source: i32 = column; if (!options.no_intercept) { source -= 1; } core::result::unwrap(a.set(row,column,numeric[row*data.columns+source])); column += 1; } row += 1; }
+    let status: i32 = fit_result(data,options,output,a,budget,detail); a.destroy(); return status;
+}
+fn analyze(data: Data, options: Options, budget: &Budget, detail: &Diagnostic) -> i32 {
+    let allocated: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity<u8>(options.max_output);
+    if (core::result::is_err(allocated)) { return fail(detail,4,3,4); }
+    let bytes: alloc::vec::Vec<u8> = core::result::unwrap(allocated); core::result::unwrap(bytes.try_resize(options.max_output,0));
+    let output: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes.as_slice(),0,bytes.len())); output.write_text(text("record,column,name,metric,value\r\n",33));
+    let status: i32 = summaries(data,output.borrow(),budget,detail);
+    if (status == 0 && options.fit) { status = fit(data,options,output.borrow(),budget,detail); }
+    if (status == 0) { let finished: core::result::Result<i32,core::fmt::Error> = output.finish(); if (core::result::is_err(finished)) { status = fail(detail,2,5,2); }
+        else { let sink: std::stream::Descriptor = std::stream::stdout(); if (core::result::is_err(core::io::write_all(sink.borrow(),bytes.as_slice(),0,core::result::unwrap(finished)))) { status = fail(detail,3,5,3); } } }
+    bytes.destroy(); return status;
+}
+fn process(arguments: std::args::Arguments, detail: &Diagnostic) -> i32 {
+    let specs: [ext::cli::Spec;10] = [
+        ext::cli::Spec { id: 1, long: literal("header",6), short: 0, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 2, long: literal("fit",3), short: 0, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 3, long: literal("no-intercept",12), short: 0, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 4, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 5, long: literal("max-input-bytes",15), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: literal("max-rows",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 7, long: literal("max-columns",11), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 8, long: literal("max-elements",12), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 9, long: literal("max-work",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 10, long: literal("max-output-bytes",16), short: 0, arity: ext::cli::Arity::Required }
+    ];
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),core::result::unwrap(core::slice::view(specs,10)),ext::cli::Ordering::Intermixed));
+    let options: Options = Options { header: false, fit: false, no_intercept: false, help: false, seen: 0, max_input: 16777216, max_rows: 100000, max_columns: 64, max_elements: 1000000, max_output: 1048576, max_work: 1000000000000 };
+    while (true) { let event: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next(); if (core::result::is_err(event)) { return fail(detail,2,0,0); }
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(event); if (core::option::is_none(next)) { break; }
+        let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> option(options.borrow(),item), _ -> false }; if (!valid) { return fail(detail,2,0,0); } }
+    if (options.no_intercept && !options.fit) { return fail(detail,2,0,0); }
+    if (options.help) { if (arguments.len() != 1) { return fail(detail,2,0,0); } let usage: core::slice::View<u8> = literal("Usage: data-analyze [--header] [--fit [--no-intercept]] [--max-input-bytes N] [--max-rows N] [--max-columns N] [--max-elements N] [--max-work N] [--max-output-bytes N]\n",168); let sink: std::stream::Descriptor = std::stream::stdout(); if (core::result::is_err(core::io::write_all(sink.borrow(),usage.values,usage.start,usage.len()))) { return fail(detail,3,5,3); } return 0; }
+    let data: Data = Data { numbers: alloc::vec::new<f64>(), header: core::option::None(), rows: 0, columns: 0 }; let budget: Budget = Budget { left: options.max_work };
+    let status: i32 = read_input(data.borrow(),options,budget.borrow(),detail); if (status == 0) { status = analyze(data,options,budget.borrow(),detail); } data.destroy(); return status;
+}
+fn diagnostic(detail: Diagnostic) -> bool {
+    let storage: [i32;64] = [0;64]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),256); let output: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,256));
+    output.write_text(text("data-analyze: ",14));
+    if (detail.reason == 0) { output.write_text(text("invalid-arguments",17)); }
+    if (detail.reason == 1) { output.write_text(text("invalid-utf8",12)); }
+    if (detail.reason == 2) { output.write_text(text("resource-limit",14)); }
+    if (detail.reason == 3) { output.write_text(text("io-failure",10)); }
+    if (detail.reason == 4) { output.write_text(text("allocation-failure",18)); }
+    if (detail.reason == 5) { output.write_text(text("csv-error",9)); }
+    if (detail.reason == 6) { output.write_text(text("numerical-failure",17)); }
+    if (detail.reason == 7) { output.write_text(text("shape-error",11)); }
+    if (detail.reason == 8) { output.write_text(text("rank-deficient",14)); }
+    if (detail.reason == 9) { output.write_text(text("invalid-number",14)); }
+    if (detail.reason == 10) { output.write_text(text("nonfinite-number",16)); }
+    if (detail.reason == 11) { output.write_text(text("empty-data",10)); }
+    output.write_text(text(" stage=",7));
+    if (detail.stage == 0) { output.write_text(text("arguments",9)); }
+    if (detail.stage == 1) { output.write_text(text("input",5)); }
+    if (detail.stage == 2) { output.write_text(text("number",6)); }
+    if (detail.stage == 3) { output.write_text(text("summary",7)); }
+    if (detail.stage == 4) { output.write_text(text("fit",3)); }
+    if (detail.stage == 5) { output.write_text(text("output",6)); }
+    if (detail.byte >= 0) { output.write_text(text(" byte=",6)); output.write_signed(detail.byte,core::fmt::decimal()); }
+    if (detail.row >= 0) { output.write_text(text(" row=",5)); output.write_signed(detail.row as i64,core::fmt::decimal()); }
+    if (detail.column >= 0) { output.write_text(text(" column=",8)); output.write_signed(detail.column as i64,core::fmt::decimal()); }
+    output.write_text(text("\n",1)); let count: i32 = core::result::unwrap(output.finish()); let sink: std::stream::Descriptor = std::stream::stderr(); return core::result::is_ok(core::io::write_all(sink.borrow(),bytes,0,count));
+}
+fn main() -> i32 {
+    let detail: Diagnostic = Diagnostic { stage: 0, reason: 0, byte: -1, row: -1, column: -1 }; let status: i32 = 0;
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,32,8192);
+    if (core::result::is_err(captured)) { status = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> fail(detail.borrow(),4,0,4), std::args::Error::HostRead(index) -> fail(detail.borrow(),3,0,3), _ -> fail(detail.borrow(),2,0,0) }; }
+    else { let arguments: std::args::Arguments = core::result::unwrap(captured); status = process(arguments,detail.borrow()); arguments.destroy(); }
+    if (status != 0 && !diagnostic(detail)) { return 3; } return status;
+}

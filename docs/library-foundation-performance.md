@@ -158,7 +158,7 @@ claim.
 
 ## TOML, regular expressions, calendars and full casing
 
-On 2026-10-23 the same repository harness measured one warmup and three private
+At source snapshot `8568e938` on 2026-10-23, the same repository harness measured one warmup and three private
 entry rebuilds for each entry below, with `LANIUS_PERF_REBUILD_ENTRY=1`. Imported
 sources remained unchanged within each process. All emitted executables exited
 0 with expected empty stdout/stderr. Counts include the entry and its recursive
@@ -198,4 +198,46 @@ full scalar and official boundary conformance.
 No compiler, shader, runtime, IR, ABI, extractor or proof implementation changed.
 These measurements concern native x86_64 Linux output of GPU compilation, not
 user-kernel execution, cold compilation or the canonical synthetic speed ratio.
+
+## Collections, finite decimals and numerical algorithms
+
+On 2026-10-23 the existing harness measured the final collections/mathematics
+sources with one warmup and three measured private entry rebuilds per row.
+`LANIUS_PERF_REBUILD_ENTRY=1` invalidates the entry cache; the process/device and
+unchanged imports remain warm. Every emitted ELF exited 0 with empty expected
+stdout/stderr. Counts include the entry and its recursive imports.
+
+| Entry | Import closure | Emitted ELF | Median | Range |
+| --- | --- | --- | --- | --- |
+| `tests/fixtures/stdlib_foundation/bitset_owned_smoke.lani` | 17 files, 155,215 bytes | 124,138 bytes | 191.782 ms | 186.497–217.774 ms |
+| `tests/fixtures/stdlib_foundation/calendar_keys_collections.lani` | 19 files, 205,445 bytes | 560,766 bytes | 633.514 ms | 607.629–646.398 ms |
+| `tests/fixtures/extended_library/decimal_arithmetic_contracts.lani` | 21 files, 281,465 bytes | 527,438 bytes | 234.573 ms | 224.446–368.130 ms |
+| `tests/fixtures/extended_library/statistics_contracts.lani` | 10 files, 110,423 bytes | 149,092 bytes | 173.401 ms | 168.499–177.914 ms |
+| `tests/fixtures/extended_library/linalg_contracts.lani` | 12 files, 139,005 bytes | 252,988 bytes | 194.198 ms | 193.625–278.643 ms |
+
+The calendar entry executes generic ranges, vector sorting and hash/tree maps;
+its workload differs from the preceding calendar table. These sequential
+observations under uncontrolled desktop activity do not isolate a compiler
+regression or compare module compilation speeds. The library import closure
+and emitted code size remain material costs; selective imports/distribution
+still need completion work. No compiler or shader implementation changed.
+
+```sh
+timeout --kill-after=2s 100s env LANIUS_PERF_REBUILD_ENTRY=1 \
+  target/stdlib-build/debug/examples/stdlib_gpu_perf \
+  tests/fixtures/stdlib_foundation/bitset_owned_smoke.lani stdlib - 1 3
+timeout --kill-after=2s 100s env LANIUS_PERF_REBUILD_ENTRY=1 \
+  target/stdlib-build/debug/examples/stdlib_gpu_perf \
+  tests/fixtures/extended_library/decimal_arithmetic_contracts.lani stdlib - 1 3 extended
+```
+
+Calendar uses only `stdlib`; decimal, statistics and linear algebra also use
+the `extended` source root. The [bitset guide](stdlib-bitset-owned.md) records
+the million-bit stateful workload. Separate compile-excluded native process
+observations cover the [twenty-million-candidate prime sieve](stdlib-primes.md),
+[512-row exact ledger](extended-decimal-ledger.md) and
+[4,096-row multiple regression](extended-data-analyze.md). Their timing includes
+process setup and I/O. Numerical conformance, failure and ownership checks are
+recorded per module. All target claims remain native x86_64 Linux output from
+GPU compilation, without user GPU execution evidence.
 Selective imports, distribution and the broader library completion audit remain.

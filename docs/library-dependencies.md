@@ -3,6 +3,14 @@
 This list records boundaries encountered while building the libraries. A row
 does not mean unrelated library work is blocked.
 
+The 2026-10-23 bitset/calendar integration, finite decimal, statistics and matrix
+milestone executes over the existing interfaces without additional compiler or
+host bindings. Its numerical limits and ownership preconditions are documented
+in the module guides linked from the [roadmap](library-roadmap.md). Physical
+slice counts and manual ownership below still apply; socket/thread services,
+directory enumeration and the listed generic compositions remain dependencies
+for other parts of the full library scope.
+
 | Dependency | Evidence | Affected APIs | Status |
 | --- | --- | --- | --- |
 | Nested match with a wildcard arm | `tests/fixtures/stdlib_foundation/repro_nested_error_match.lani`: x86 compilation reports LNC0005 at `false` inside the inner wildcard arm on base `441e66f9` | Direct nested matching of `Result<_, Error>` | Reproduced 2026-10-22. A separately typed error-matching helper compiles and executes; String tests use helpers. |

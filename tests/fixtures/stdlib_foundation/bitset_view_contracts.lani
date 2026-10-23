@@ -1,0 +1,59 @@
+module app::main;
+import core::bitset;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import alloc::allocator;
+fn main() -> i32 {
+    let zero: u32 = 0; let padding: u32 = 4294967294; let guard: u32 = 123;
+    let data: [u32; 5] = [guard, zero, padding, guard, guard];
+    let words: core::slice::View<u32> = core::result::unwrap(core::slice::view_range(data, 1, 2));
+    let bits: core::bitset::BitView = core::result::unwrap(core::bitset::BitView::from_words(words, 33));
+    assert(bits.count_ones() == 0 && !bits.any() && !bits.all());
+    assert(core::option::is_none(bits.get(-1)) && core::option::is_none(bits.get(33)));
+    assert(core::result::is_err(bits.set(-1)) && core::result::is_err(bits.toggle(33)));
+    assert(core::result::is_err(bits.set_range(-1, 2)) && core::result::is_err(bits.clear_range(2, 34)));
+    assert(core::result::is_err(bits.toggle_range(2, 1)) && core::result::is_err(bits.next_set(-1)) && core::result::is_err(bits.next_clear(34)));
+    assert(core::result::is_err(bits.copy_within(0, 3, 32)) && core::result::is_err(bits.shift_left(-1)));
+    assert(bits.count_ones() == 0 && data[0] == guard && data[2] == padding && data[3] == guard);
+    assert(core::result::unwrap(bits.set_range(30, 33)) == 3 && bits.count_ones() == 3);
+    assert(core::option::unwrap(core::result::unwrap(bits.next_set(31))) == 31 && core::option::is_none(core::result::unwrap(bits.next_clear(30))));
+    assert(core::option::unwrap(bits.first_set()) == 30 && core::option::unwrap(bits.last_set()) == 32);
+    assert(data[2] == 4294967295);
+    core::result::unwrap(bits.shift_right(31)); assert(bits.count_ones() == 2 && core::option::unwrap(bits.get(0)) && core::option::unwrap(bits.get(1)));
+    core::result::unwrap(bits.shift_left(32)); assert(bits.count_ones() == 1 && core::option::unwrap(bits.get(32)));
+    core::result::unwrap(bits.copy_within(30, 33, 29)); assert(core::option::unwrap(bits.get(31)));
+    core::result::unwrap(bits.copy_within(29, 32, 30)); assert(core::option::unwrap(bits.get(32)));
+    bits.fill(true); assert(bits.all() && bits.count_ones() == 33 && data[2] == 4294967295);
+    let ones: core::bitset::Ones = bits.iter_ones(); let at: i32 = 0;
+    while (at < 33) { assert(core::option::unwrap(ones.next()) == at); at += 1; }
+    assert(core::option::is_none(ones.next())); bits.fill(false); bits.set(0); assert(core::option::is_none(ones.next()));
+    assert(data[2] == padding && data[0] == guard && data[3] == guard);
+    let other_data: [u32; 2] = [1, 0];
+    let other_words: core::slice::View<u32> = core::result::unwrap(core::slice::view(other_data, 2));
+    let other: core::bitset::BitView = core::result::unwrap(core::bitset::BitView::from_words(other_words, 33));
+    assert(bits.equal(other) && bits.hash() == other.hash() && core::result::unwrap(bits.is_subset(other)));
+    assert(!core::result::unwrap(bits.is_disjoint(other)));
+    let short: core::bitset::BitView = core::result::unwrap(core::bitset::BitView::from_words(other_words, 32));
+    assert(!bits.equal(short) && core::result::is_err(bits.is_subset(short)) && core::result::is_err(bits.is_disjoint(short)));
+    assert(core::result::is_err(core::bitset::BitView::from_words(words, -1)) && core::result::is_err(core::bitset::BitView::from_words(words, 65)));
+    let invalid: core::slice::View<u32> = core::slice::View { values: other_words.values, start: -1, length: 2 };
+    assert(core::result::is_err(core::bitset::BitView::from_words(invalid, 0)));
+    invalid.start = 2147483647; assert(core::result::is_err(core::bitset::BitView::from_words(invalid, 0)));
+    invalid.start = 0; invalid.length = -1; assert(core::result::is_err(core::bitset::BitView::from_words(invalid, 0)));
+    // Raw u32 uses descending eight-byte cells; native arrays retain their
+    // native stride. Both are indexed as typed slices throughout the API.
+    let storage: ptr = alloc::allocator::alloc(core::mem::size_of<u32>() * 3, 8);
+    if (storage == 0) { return 9; }
+    let raw: [u32] = core::mem::typed_slice_from_storage(storage, 3); raw[0] = guard; raw[1] = 0; raw[2] = padding;
+    let raw_words: core::slice::View<u32> = core::result::unwrap(core::slice::view_range(raw, 1, 2));
+    let raw_bits: core::bitset::BitView = core::result::unwrap(core::bitset::BitView::from_words(raw_words, 33));
+    raw_bits.fill(true); raw_bits.shift_right(32);
+    assert(raw_bits.count_ones() == 1 && core::option::unwrap(raw_bits.get(0)) && raw[0] == guard && raw[2] == padding);
+    alloc::allocator::dealloc(storage, core::mem::size_of<u32>() * 3, 8);
+    let empty_words: core::slice::View<u32> = core::result::unwrap(core::slice::view(data, 0));
+    let empty: core::bitset::BitView = core::result::unwrap(core::bitset::BitView::from_words(empty_words, 0));
+    assert(empty.all() && !empty.any() && empty.fill(true) == 0 && core::option::is_none(empty.first_set()) && core::option::is_none(empty.last_set()));
+    return 0;
+}

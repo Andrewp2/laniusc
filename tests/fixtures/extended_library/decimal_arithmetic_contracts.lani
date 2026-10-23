@@ -1,0 +1,75 @@
+module app::main;
+import alloc::vec;
+import core::result;
+import core::slice;
+import core::text;
+import core::cmp;
+import ext::decimal;
+fn parsed(text: core::text::Text) -> ext::decimal::Decimal { return ext::decimal::parse_text(text,ext::decimal::default_limits()).unwrap(); }
+fn formatted(value: &ext::decimal::Decimal, expected: core::text::Text) {
+    let bytes: alloc::vec::Vec<u8> = value.format(ext::decimal::default_limits()).unwrap();
+    assert(bytes.len() == expected.length); let i: i32 = 0; while (i < bytes.len()) { assert(bytes.at(i) == expected.bytes[expected.start+i]); i += 1; } bytes.destroy();
+}
+fn bad(text: core::text::Text, expected: ext::decimal::Error) { let result: core::result::Result<ext::decimal::Decimal,ext::decimal::Error> = ext::decimal::parse_text(text,ext::decimal::default_limits()); assert(result.is_err() && result.unwrap_err() == expected); }
+fn main() -> i32 {
+    let limits: ext::decimal::Limits = ext::decimal::default_limits();
+    let a: ext::decimal::Decimal = parsed(core::text::from_utf8_unchecked([49,46,50,48],0,4)); let b: ext::decimal::Decimal = parsed(core::text::from_utf8_unchecked([49,46,50],0,3));
+    assert(a.compare(b.borrow()) == 0); assert(a.value_hash() == b.value_hash());
+    assert(ext::decimal::Decimal::eq(a,b)); assert(ext::decimal::Decimal::partial_eq(a,b)); assert(!ext::decimal::Decimal::lt(a,b));
+    assert(match(ext::decimal::Decimal::partial_cmp(a,b)) { core::cmp::PartialOrdering::Equal -> true, _ -> false });
+    let sum: ext::decimal::Decimal = a.add(b.borrow(),limits).unwrap(); formatted(sum.borrow(),core::text::from_utf8_unchecked([50,46,52,48],0,4)); sum.destroy();
+    let product: ext::decimal::Decimal = a.mul(b.borrow(),limits).unwrap(); formatted(product.borrow(),core::text::from_utf8_unchecked([49,46,52,52,48],0,5)); product.destroy();
+    let third: ext::decimal::Decimal = parsed(core::text::from_utf8_unchecked([51],0,1)); let context: ext::decimal::Context = ext::decimal::Context { precision: 5, rounding: ext::decimal::Rounding::HalfEven };
+    let result: ext::decimal::Decimal = b.div(third.borrow(),context,limits).unwrap(); formatted(result.borrow(),core::text::from_utf8_unchecked([48,46,52],0,3)); result.destroy();
+    let z: ext::decimal::Decimal = parsed(core::text::from_utf8_unchecked([45,48,46,48,48,48],0,6)); assert(z.sign() == 0 && z.exponent() == -3 && z.precision() == 1); let empty: ext::decimal::Decimal = ext::decimal::zero(); assert(z.compare(empty.borrow()) == 0 && z.value_hash() == empty.value_hash()); empty.destroy(); z.destroy();
+    let low: ext::decimal::Decimal = ext::decimal::from_i64(-9223372036854775807 - 1,limits).unwrap(); assert(low.to_i64(limits).unwrap() == -9223372036854775807 - 1); assert(low.to_u64(limits).unwrap_err() == ext::decimal::Error::Overflow); low.destroy();
+    let high: ext::decimal::Decimal = ext::decimal::from_u64(18446744073709551615,limits).unwrap(); assert(high.to_u64(limits).unwrap() == 18446744073709551615); assert(high.to_i64(limits).unwrap_err() == ext::decimal::Error::Overflow); high.destroy();
+    assert(a.to_i64(limits).unwrap_err() == ext::decimal::Error::Inexact);
+    let integer: ext::decimal::Decimal = parsed(core::text::from_utf8_unchecked([49,50,46,48,48],0,5)); assert(integer.to_i64(limits).unwrap() == 12); integer.destroy();
+    let canonical: ext::decimal::Decimal = a.reduce(limits).unwrap(); assert(canonical.exponent() == -1); formatted(canonical.borrow(),core::text::from_utf8_unchecked([49,46,50],0,3)); canonical.destroy();
+    let nines: ext::decimal::Decimal = parsed(core::text::from_utf8_unchecked([57,46,57,57,53],0,5)); let precision: ext::decimal::Context = ext::decimal::Context { precision: 3, rounding: ext::decimal::Rounding::HalfEven };
+    let carried: ext::decimal::Decimal = nines.round(precision,limits).unwrap(); assert(carried.precision() == 3); formatted(carried.borrow(),core::text::from_utf8_unchecked([49,48,46,48],0,4)); carried.destroy();
+    let coarse: ext::decimal::Decimal = nines.rescale(2,ext::decimal::Rounding::HalfEven,limits).unwrap(); assert(coarse.is_zero() && coarse.exponent() == 2); coarse.destroy();
+    let upward: ext::decimal::Decimal = nines.rescale(2,ext::decimal::Rounding::Up,limits).unwrap(); formatted(upward.borrow(),core::text::from_utf8_unchecked([49,48,48],0,3)); upward.destroy();
+    assert(nines.rescale(-2,ext::decimal::Rounding::Unnecessary,limits).unwrap_err() == ext::decimal::Error::Inexact);
+    let zero: ext::decimal::Decimal = ext::decimal::zero(); assert(a.div(zero.borrow(),context,limits).unwrap_err() == ext::decimal::Error::DivisionByZero); zero.destroy();
+    bad(core::text::from_utf8_unchecked([],0,0),ext::decimal::Error::InvalidSyntax); bad(core::text::from_utf8_unchecked([43],0,1),ext::decimal::Error::InvalidSyntax); bad(core::text::from_utf8_unchecked([46],0,1),ext::decimal::Error::InvalidSyntax); bad(core::text::from_utf8_unchecked([45,46],0,2),ext::decimal::Error::InvalidSyntax);
+    bad(core::text::from_utf8_unchecked([49,46,46,48],0,4),ext::decimal::Error::InvalidSyntax); bad(core::text::from_utf8_unchecked([49,101],0,2),ext::decimal::Error::InvalidSyntax); bad(core::text::from_utf8_unchecked([49,101,43],0,3),ext::decimal::Error::InvalidSyntax); bad(core::text::from_utf8_unchecked([49,101,49,46,50],0,5),ext::decimal::Error::InvalidSyntax);
+    bad(core::text::from_utf8_unchecked([32,49],0,2),ext::decimal::Error::InvalidSyntax); bad(core::text::from_utf8_unchecked([49,32],0,2),ext::decimal::Error::InvalidSyntax); bad(core::text::from_utf8_unchecked([49,95,48],0,3),ext::decimal::Error::InvalidSyntax); bad(core::text::from_utf8_unchecked([48,120,49,48],0,4),ext::decimal::Error::InvalidSyntax);
+    bad(core::text::from_utf8_unchecked([78,97,78],0,3),ext::decimal::Error::NonFinite); bad(core::text::from_utf8_unchecked([45,73,110,102,105,110,105,116,121],0,9),ext::decimal::Error::NonFinite); bad(core::text::from_utf8_unchecked([115,78,97,78,57,57],0,6),ext::decimal::Error::NonFinite);
+    bad(core::text::from_utf8_unchecked([49,101,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57],0,37),ext::decimal::Error::ScaleLimit);
+    let input: [u8;7] = [88,43,46,53,69,49,88]; let selected: core::slice::View<u8> = core::slice::view_range(input,1,5).unwrap(); let selected_value: ext::decimal::Decimal = ext::decimal::parse(selected,limits).unwrap(); formatted(selected_value.borrow(),core::text::from_utf8_unchecked([53],0,1)); selected_value.destroy();
+    let invalid: core::slice::View<u8> = selected; invalid.start = -1; assert(ext::decimal::parse(invalid,limits).unwrap_err() == ext::decimal::Error::Bounds); invalid.start = 2147483647; assert(ext::decimal::parse(invalid,limits).unwrap_err() == ext::decimal::Error::Bounds);
+    let tight: ext::decimal::Limits = limits; tight.max_work = 0;
+    assert(a.add(b.borrow(),tight).unwrap_err() == ext::decimal::Error::WorkLimit); assert(a.mul(b.borrow(),tight).unwrap_err() == ext::decimal::Error::WorkLimit); assert(a.pow(3,tight).unwrap_err() == ext::decimal::Error::WorkLimit); assert(a.format(tight).unwrap_err() == ext::decimal::Error::WorkLimit);
+    tight = limits; tight.max_digits = 2; assert(a.try_clone(tight).unwrap_err() == ext::decimal::Error::DigitLimit);
+    tight = limits; tight.max_scale = 1; assert(a.try_clone(tight).unwrap_err() == ext::decimal::Error::ScaleLimit);
+    tight = limits; tight.max_limbs = 0; assert(a.try_clone(tight).unwrap_err() == ext::decimal::Error::LimbLimit);
+    tight = limits; tight.max_limbs = -1; assert(a.try_clone(tight).unwrap_err() == ext::decimal::Error::Bounds);
+    tight = limits; tight.max_digits = 0; assert(a.round(context,tight).unwrap_err() == ext::decimal::Error::Bounds);
+    tight = limits; tight.max_output = -1; assert(a.format(tight).unwrap_err() == ext::decimal::Error::Bounds);
+    tight = limits; tight.max_scale = 3; assert(a.rescale(-4,ext::decimal::Rounding::Down,tight).unwrap_err() == ext::decimal::Error::ScaleLimit); assert(nines.pow(2,tight).unwrap_err() == ext::decimal::Error::ScaleLimit);
+    tight = limits; tight.max_output = 3; assert(a.format(tight).unwrap_err() == ext::decimal::Error::OutputLimit);
+    let out: [u8;9] = [91;9]; let short: core::slice::View<u8> = core::slice::view_range(out,2,3).unwrap();
+    assert(a.format_into(short,limits).unwrap_err() == ext::decimal::Error::OutputLimit); let i: i32 = 0; while(i<9) { assert(out[i] == 91); i += 1; }
+    let enough: core::slice::View<u8> = core::slice::view_range(out,2,4).unwrap(); assert(a.format_into(enough,limits).unwrap() == 4); assert(a.measure(limits).unwrap() == 4); assert(out[0] == 91 && out[1] == 91 && out[2] == 49 && out[3] == 46 && out[4] == 50 && out[5] == 48 && out[6] == 91 && out[8] == 91);
+    // Exact division removes scratch zeros without charging semantic exponent range.
+    let one: ext::decimal::Decimal = ext::decimal::from_i64(1,limits).unwrap(); tight = limits; tight.max_scale = 0;
+    let exact_one: ext::decimal::Decimal = one.div(one.borrow(),context,tight).unwrap(); assert(exact_one.exponent() == 0 && exact_one.to_i64(tight).unwrap() == 1); exact_one.destroy();
+    tight = limits; tight.max_scale = 1; assert(one.div(third.borrow(),context,tight).unwrap_err() == ext::decimal::Error::ScaleLimit);
+    tight = limits; tight.max_digits = 5; assert(one.div(third.borrow(),context,tight).unwrap_err() == ext::decimal::Error::DigitLimit);
+    one.destroy();
+    // Work is per whole call, including formatting's stage and atomic copy.
+    tight = limits; tight.max_work = 7; assert(a.format_into(enough,tight).unwrap_err() == ext::decimal::Error::WorkLimit);
+    let work_limit: u64 = 0; while (work_limit < 300) {
+        tight = limits; tight.max_work = work_limit;
+        let trial: core::result::Result<ext::decimal::Decimal,ext::decimal::Error> = a.add(b.borrow(),tight);
+        if (trial.is_err()) { assert(trial.unwrap_err() == ext::decimal::Error::WorkLimit); } else { let value: ext::decimal::Decimal = trial.unwrap(); formatted(value.borrow(),core::text::from_utf8_unchecked([50,46,52,48],0,4)); value.destroy(); }
+        work_limit += 7;
+    }
+    assert(a.compare(b.borrow()) == 0); formatted(a.borrow(),core::text::from_utf8_unchecked([49,46,50,48],0,4));
+    // One owner moves through repeated exact updates; operands are still borrowed.
+    let state: ext::decimal::Decimal = parsed(core::text::from_utf8_unchecked([48,46,48,48],0,4)); let step: i32 = 0;
+    while(step < 80) { let next: ext::decimal::Decimal = state.add(a.borrow(),limits).unwrap(); state.destroy(); state = next; step += 1; }
+    formatted(state.borrow(),core::text::from_utf8_unchecked([57,54,46,48,48],0,5)); state.destroy(); nines.destroy(); third.destroy(); a.destroy(); b.destroy(); return 0;
+}

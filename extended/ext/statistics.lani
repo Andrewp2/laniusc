@@ -1,0 +1,233 @@
+// Portable finite binary64 descriptive statistics. No allocation or host math.
+// Centered streaming/merge formulas: Pébay SAND2008-6212, §§1 and 3.
+// Quantiles: Hyndman–Fan types 1–9. See docs/extended-statistics.md.
+module ext::statistics;
+import core::f64;
+import core::result;
+import core::slice;
+
+pub const MAX_COUNT: u64 = 9007199254740992;
+pub enum ErrorKind { Empty, InsufficientData, NonFiniteInput, Overflow, CountLimit, Bounds, InvalidProbability, InvalidQuantileType, NotSorted, ScratchTooSmall, WorkLimit, Degenerate }
+pub struct Error { kind: ErrorKind, index: i32 }
+pub enum QuantileType { Type1, Type2, Type3, Type4, Type5, Type6, Type7, Type8, Type9 }
+pub struct LinearFit { slope: f64, intercept: f64, r_squared: f64 }
+// Treat fields as implementation state; construct through the named factories.
+pub struct CompensatedSum { total: f64, correction: f64, n: u64 }
+pub struct Moments { n: u64, origin: f64, offset: f64, offset_error: f64, square: f64, square_error: f64, low: f64, high: f64 }
+pub struct PairedMoments { x: Moments, y: Moments, cross: f64, cross_error: f64 }
+pub struct ScaledNorm { n: u64, scale: f64, squares: f64 }
+pub struct SortedSample { data: core::slice::View<f64> }
+struct TwoSum { total: f64, correction: f64 }
+fn error(kind: ErrorKind, index: i32) -> Error { return Error { kind: kind, index: index }; }
+fn checked(value: f64) -> core::result::Result<f64,Error> {
+    if (!core::f64::is_finite(value)) { return core::result::Err(error(ErrorKind::Overflow,-1)); }
+    return core::result::Ok(value);
+}
+fn valid_view(values: core::slice::View<f64>) -> bool { return values.start >= 0 && values.length >= 0 && values.start <= 2147483647-values.length; }
+fn at(values: core::slice::View<f64>, index: i32) -> f64 { let data: [f64] = values.values; return data[values.start+index]; }
+fn put(values: core::slice::View<f64>, index: i32, value: f64) { let data: [f64] = values.values; data[values.start+index] = value; }
+// Neumaier compensation. Every intermediate is checked before publishing state.
+fn compensated(a: f64, correction: f64, b: f64) -> core::result::Result<TwoSum,Error> {
+    let total: f64 = a+b;
+    if (!core::f64::is_finite(total)) { return core::result::Err(error(ErrorKind::Overflow,-1)); }
+    let tail: f64 = (b-total)+a;
+    if (core::f64::abs(a) >= core::f64::abs(b)) { tail = (a-total)+b; }
+    let next: f64 = correction+tail;
+    if (!core::f64::is_finite(next) || !core::f64::is_finite(total+next)) { return core::result::Err(error(ErrorKind::Overflow,-1)); }
+    return core::result::Ok(TwoSum { total: total, correction: next });
+}
+pub fn sum() -> CompensatedSum { return CompensatedSum { total: 0.0, correction: 0.0, n: 0 }; }
+pub impl CompensatedSum {
+    pub fn count(&self) -> u64 { return self.n; }
+    pub fn value(&self) -> core::result::Result<f64,Error> { return checked(self.total+self.correction); }
+    pub fn push(&self, value: f64) -> core::result::Result<bool,Error> {
+        if (!core::f64::is_finite(value)) { return core::result::Err(error(ErrorKind::NonFiniteInput,-1)); }
+        if (self.n >= MAX_COUNT) { return core::result::Err(error(ErrorKind::CountLimit,-1)); }
+        let result: core::result::Result<TwoSum,Error> = compensated(self.total,self.correction,value);
+        if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+        let next: TwoSum = result.unwrap(); self.total = next.total; self.correction = next.correction; self.n += 1; return core::result::Ok(true);
+    }
+    pub fn merge(&self, other: CompensatedSum) -> core::result::Result<bool,Error> {
+        if (other.n > MAX_COUNT || self.n > MAX_COUNT-other.n) { return core::result::Err(error(ErrorKind::CountLimit,-1)); }
+        let first: core::result::Result<TwoSum,Error> = compensated(self.total,self.correction,other.total);
+        if (first.is_err()) { return core::result::Err(first.unwrap_err()); } let a: TwoSum = first.unwrap();
+        let second: core::result::Result<TwoSum,Error> = compensated(a.total,a.correction,other.correction);
+        if (second.is_err()) { return core::result::Err(second.unwrap_err()); } let b: TwoSum = second.unwrap();
+        self.total = b.total; self.correction = b.correction; self.n += other.n; return core::result::Ok(true);
+    }
+}
+pub fn moments() -> Moments { return Moments { n: 0, origin: 0.0, offset: 0.0, offset_error: 0.0, square: 0.0, square_error: 0.0, low: 0.0, high: 0.0 }; }
+fn difference(a: Moments, b: Moments) -> f64 { return ((b.origin-a.origin)+(b.offset-a.offset))+(b.offset_error-a.offset_error); }
+fn product3(a: f64, b: f64, factor: f64) -> f64 { if (core::f64::abs(a) < core::f64::abs(b)) { return (a*factor)*b; } return a*(b*factor); }
+pub impl Moments {
+    pub fn count(&self) -> u64 { return self.n; }
+    pub fn mean(&self) -> core::result::Result<f64,Error> { if (self.n == 0) { return core::result::Err(error(ErrorKind::Empty,-1)); } return checked(self.origin+(self.offset+self.offset_error)); }
+    pub fn minimum(&self) -> core::result::Result<f64,Error> { if (self.n == 0) { return core::result::Err(error(ErrorKind::Empty,-1)); } return core::result::Ok(self.low); }
+    pub fn maximum(&self) -> core::result::Result<f64,Error> { if (self.n == 0) { return core::result::Err(error(ErrorKind::Empty,-1)); } return core::result::Ok(self.high); }
+    pub fn m2(&self) -> core::result::Result<f64,Error> { if (self.n == 0) { return core::result::Err(error(ErrorKind::Empty,-1)); } return checked(self.square+self.square_error); }
+    pub fn population_variance(&self) -> core::result::Result<f64,Error> { if (self.n == 0) { return core::result::Err(error(ErrorKind::Empty,-1)); } return checked((self.square+self.square_error)/(self.n as f64)); }
+    pub fn sample_variance(&self) -> core::result::Result<f64,Error> { if (self.n < 2) { return core::result::Err(error(ErrorKind::InsufficientData,-1)); } return checked((self.square+self.square_error)/((self.n-1) as f64)); }
+    pub fn population_stddev(&self) -> core::result::Result<f64,Error> { let v: core::result::Result<f64,Error> = self.population_variance(); if (v.is_err()) { return v; } return checked(core::f64::sqrt(v.unwrap())); }
+    pub fn sample_stddev(&self) -> core::result::Result<f64,Error> { let v: core::result::Result<f64,Error> = self.sample_variance(); if (v.is_err()) { return v; } return checked(core::f64::sqrt(v.unwrap())); }
+    fn assign(&self, other: Moments) { self.n = other.n; self.origin = other.origin; self.offset = other.offset; self.offset_error = other.offset_error; self.square = other.square; self.square_error = other.square_error; self.low = other.low; self.high = other.high; }
+    pub fn push(&self, value: f64) -> core::result::Result<bool,Error> {
+        if (!core::f64::is_finite(value)) { return core::result::Err(error(ErrorKind::NonFiniteInput,-1)); }
+        if (self.n >= MAX_COUNT) { return core::result::Err(error(ErrorKind::CountLimit,-1)); }
+        if (self.n == 0) { self.origin = value; self.low = value; self.high = value; self.n = 1; return core::result::Ok(true); }
+        let shifted: f64 = value-self.origin; let delta: f64 = (shifted-self.offset)-self.offset_error;
+        if (!core::f64::is_finite(shifted) || !core::f64::is_finite(delta)) { return core::result::Err(error(ErrorKind::Overflow,-1)); }
+        let mean_result: core::result::Result<TwoSum,Error> = compensated(self.offset,self.offset_error,delta/((self.n+1) as f64));
+        if (mean_result.is_err()) { return core::result::Err(mean_result.unwrap_err()); } let next: TwoSum = mean_result.unwrap();
+        let increment: f64 = delta*((shifted-next.total)-next.correction);
+        let square_result: core::result::Result<TwoSum,Error> = compensated(self.square,self.square_error,increment);
+        if (square_result.is_err() || !core::f64::is_finite(self.origin+(next.total+next.correction))) { return core::result::Err(error(ErrorKind::Overflow,-1)); }
+        let sq: TwoSum = square_result.unwrap();
+        self.offset = next.total; self.offset_error = next.correction; self.square = sq.total; self.square_error = sq.correction; self.low = core::f64::min(self.low,value); self.high = core::f64::max(self.high,value); self.n += 1;
+        return core::result::Ok(true);
+    }
+    pub fn merge(&self, other: Moments) -> core::result::Result<bool,Error> {
+        if (other.n > MAX_COUNT || self.n > MAX_COUNT-other.n) { return core::result::Err(error(ErrorKind::CountLimit,-1)); }
+        if (other.n == 0) { return core::result::Ok(true); } if (self.n == 0) { self.assign(other); return core::result::Ok(true); }
+        let old: Moments = Moments { n: self.n, origin: self.origin, offset: self.offset, offset_error: self.offset_error, square: self.square, square_error: self.square_error, low: self.low, high: self.high };
+        let delta: f64 = difference(old,other); let n: u64 = self.n+other.n; let ratio: f64 = (other.n as f64)/(n as f64);
+        if (!core::f64::is_finite(delta)) { return core::result::Err(error(ErrorKind::Overflow,-1)); }
+        let mean_result: core::result::Result<TwoSum,Error> = compensated(self.offset,self.offset_error,delta*ratio);
+        if (mean_result.is_err()) { return core::result::Err(mean_result.unwrap_err()); } let next: TwoSum = mean_result.unwrap();
+        let first: core::result::Result<TwoSum,Error> = compensated(self.square,self.square_error,other.square);
+        if (first.is_err()) { return core::result::Err(first.unwrap_err()); } let a: TwoSum = first.unwrap();
+        let second: core::result::Result<TwoSum,Error> = compensated(a.total,a.correction,other.square_error);
+        if (second.is_err()) { return core::result::Err(second.unwrap_err()); } let b: TwoSum = second.unwrap();
+        let third: core::result::Result<TwoSum,Error> = compensated(b.total,b.correction,product3(delta,delta,ratio*(self.n as f64)));
+        if (third.is_err() || !core::f64::is_finite(self.origin+(next.total+next.correction))) { return core::result::Err(error(ErrorKind::Overflow,-1)); } let sq: TwoSum = third.unwrap();
+        self.n = n; self.offset = next.total; self.offset_error = next.correction; self.square = sq.total; self.square_error = sq.correction; self.low = core::f64::min(self.low,other.low); self.high = core::f64::max(self.high,other.high); return core::result::Ok(true);
+    }
+    // One transaction over the entire logical view; an error preserves self.
+    pub fn push_view(&self, values: core::slice::View<f64>) -> core::result::Result<bool,Error> {
+        if (!valid_view(values)) { return core::result::Err(error(ErrorKind::Bounds,-1)); }
+        let next: Moments = Moments { n: self.n, origin: self.origin, offset: self.offset, offset_error: self.offset_error, square: self.square, square_error: self.square_error, low: self.low, high: self.high }; let i: i32 = 0;
+        while (i < values.length) { let result: core::result::Result<bool,Error> = next.push(at(values,i)); if (result.is_err()) { let e: Error = result.unwrap_err(); return core::result::Err(error(e.kind,i)); } i += 1; }
+        self.assign(next); return core::result::Ok(true);
+    }
+}
+pub fn summarize(values: core::slice::View<f64>) -> core::result::Result<Moments,Error> { let out: Moments = moments(); let r: core::result::Result<bool,Error> = out.push_view(values); if (r.is_err()) { return core::result::Err(r.unwrap_err()); } return core::result::Ok(out); }
+pub fn paired_moments() -> PairedMoments { return PairedMoments { x: moments(), y: moments(), cross: 0.0, cross_error: 0.0 }; }
+pub impl PairedMoments {
+    pub fn count(&self) -> u64 { return self.x.count(); }
+    pub fn mean_x(&self) -> core::result::Result<f64,Error> { return self.x.mean(); }
+    pub fn mean_y(&self) -> core::result::Result<f64,Error> { return self.y.mean(); }
+    pub fn population_covariance(&self) -> core::result::Result<f64,Error> { if (self.x.n == 0) { return core::result::Err(error(ErrorKind::Empty,-1)); } return checked((self.cross+self.cross_error)/(self.x.n as f64)); }
+    pub fn sample_covariance(&self) -> core::result::Result<f64,Error> { if (self.x.n < 2) { return core::result::Err(error(ErrorKind::InsufficientData,-1)); } return checked((self.cross+self.cross_error)/((self.x.n-1) as f64)); }
+    pub fn push(&self, x: f64, y: f64) -> core::result::Result<bool,Error> {
+        if (!core::f64::is_finite(x) || !core::f64::is_finite(y)) { return core::result::Err(error(ErrorKind::NonFiniteInput,-1)); }
+        let next_x: Moments = self.x; let next_y: Moments = self.y;
+        let xr: core::result::Result<bool,Error> = next_x.push(x); if (xr.is_err()) { return xr; }
+        let yr: core::result::Result<bool,Error> = next_y.push(y); if (yr.is_err()) { return yr; }
+        let increment: f64 = 0.0;
+        if (self.x.n > 0) { increment = ((x-self.x.origin-self.x.offset)-self.x.offset_error)*((y-next_y.origin-next_y.offset)-next_y.offset_error); }
+        let r: core::result::Result<TwoSum,Error> = compensated(self.cross,self.cross_error,increment); if (r.is_err()) { return core::result::Err(r.unwrap_err()); } let cross: TwoSum = r.unwrap();
+        self.x = next_x; self.y = next_y; self.cross = cross.total; self.cross_error = cross.correction; return core::result::Ok(true);
+    }
+    pub fn merge(&self, other: PairedMoments) -> core::result::Result<bool,Error> {
+        let next_x: Moments = self.x; let next_y: Moments = self.y;
+        let xr: core::result::Result<bool,Error> = next_x.merge(other.x); if (xr.is_err()) { return xr; }
+        let yr: core::result::Result<bool,Error> = next_y.merge(other.y); if (yr.is_err()) { return yr; }
+        let increment: f64 = 0.0; if (self.x.n > 0 && other.x.n > 0) { increment = product3(difference(self.x,other.x),difference(self.y,other.y),((other.x.n as f64)/(next_x.n as f64))*(self.x.n as f64)); }
+        let a: core::result::Result<TwoSum,Error> = compensated(self.cross,self.cross_error,other.cross); if (a.is_err()) { return core::result::Err(a.unwrap_err()); } let aa: TwoSum = a.unwrap();
+        let b: core::result::Result<TwoSum,Error> = compensated(aa.total,aa.correction,other.cross_error); if (b.is_err()) { return core::result::Err(b.unwrap_err()); } let bb: TwoSum = b.unwrap();
+        let c: core::result::Result<TwoSum,Error> = compensated(bb.total,bb.correction,increment); if (c.is_err()) { return core::result::Err(c.unwrap_err()); } let cc: TwoSum = c.unwrap();
+        self.x = next_x; self.y = next_y; self.cross = cc.total; self.cross_error = cc.correction; return core::result::Ok(true);
+    }
+    pub fn correlation(&self) -> core::result::Result<f64,Error> {
+        if (self.x.n < 2) { return core::result::Err(error(ErrorKind::InsufficientData,-1)); }
+        let xx: f64 = self.x.square+self.x.square_error; let yy: f64 = self.y.square+self.y.square_error;
+        if (xx <= 0.0 || yy <= 0.0) { return core::result::Err(error(ErrorKind::Degenerate,-1)); }
+        let value: f64 = ((self.cross+self.cross_error)/core::f64::sqrt(xx))/core::f64::sqrt(yy);
+        if (!core::f64::is_finite(value)) { return core::result::Err(error(ErrorKind::Overflow,-1)); } return core::result::Ok(core::f64::min(1.0,core::f64::max(-1.0,value)));
+    }
+    pub fn linear_fit(&self) -> core::result::Result<LinearFit,Error> {
+        if (self.x.n < 2) { return core::result::Err(error(ErrorKind::InsufficientData,-1)); }
+        let xx: f64 = self.x.square+self.x.square_error; if (xx <= 0.0) { return core::result::Err(error(ErrorKind::Degenerate,-1)); }
+        let slope: f64 = (self.cross+self.cross_error)/xx; let intercept: f64 = self.y.mean().unwrap()-slope*self.x.mean().unwrap();
+        if (!core::f64::is_finite(slope) || !core::f64::is_finite(intercept)) { return core::result::Err(error(ErrorKind::Overflow,-1)); }
+        let rsq: f64 = 1.0; if (self.y.square+self.y.square_error > 0.0) { let r: core::result::Result<f64,Error> = self.correlation(); if (r.is_err()) { return core::result::Err(r.unwrap_err()); } let corr: f64 = r.unwrap(); rsq = corr*corr; }
+        return core::result::Ok(LinearFit { slope: slope, intercept: intercept, r_squared: rsq });
+    }
+}
+// Scaled sum of squares, avoiding unnecessary intermediate square overflow.
+pub fn scaled_norm() -> ScaledNorm { return ScaledNorm { n: 0, scale: 0.0, squares: 1.0 }; }
+pub impl ScaledNorm {
+    pub fn count(&self) -> u64 { return self.n; }
+    pub fn value(&self) -> core::result::Result<f64,Error> { return checked(self.scale*core::f64::sqrt(self.squares)); }
+    pub fn push(&self, value: f64) -> core::result::Result<bool,Error> {
+        if (!core::f64::is_finite(value)) { return core::result::Err(error(ErrorKind::NonFiniteInput,-1)); } if (self.n >= MAX_COUNT) { return core::result::Err(error(ErrorKind::CountLimit,-1)); }
+        let magnitude: f64 = core::f64::abs(value); let scale: f64 = self.scale; let sq: f64 = self.squares;
+        if (magnitude != 0.0) { if (scale < magnitude) { let ratio: f64 = scale/magnitude; sq = 1.0+sq*ratio*ratio; scale = magnitude; } else { let ratio: f64 = magnitude/scale; sq += ratio*ratio; } }
+        if (!core::f64::is_finite(scale*core::f64::sqrt(sq))) { return core::result::Err(error(ErrorKind::Overflow,-1)); }
+        self.scale = scale; self.squares = sq; self.n += 1; return core::result::Ok(true);
+    }
+    pub fn merge(&self, other: ScaledNorm) -> core::result::Result<bool,Error> {
+        if (other.n > MAX_COUNT || self.n > MAX_COUNT-other.n) { return core::result::Err(error(ErrorKind::CountLimit,-1)); }
+        let scale: f64 = self.scale; let sq: f64 = self.squares;
+        if (other.scale != 0.0) { if (scale < other.scale) { let ratio: f64 = scale/other.scale; sq = other.squares+sq*ratio*ratio; scale = other.scale; } else { let ratio: f64 = other.scale/scale; sq += other.squares*ratio*ratio; } }
+        if (!core::f64::is_finite(scale*core::f64::sqrt(sq))) { return core::result::Err(error(ErrorKind::Overflow,-1)); } self.scale = scale; self.squares = sq; self.n += other.n; return core::result::Ok(true);
+    }
+}
+pub fn hypot(x: f64, y: f64) -> core::result::Result<f64,Error> { let value: ScaledNorm = scaled_norm(); let a: core::result::Result<bool,Error> = value.push(x); if (a.is_err()) { return core::result::Err(a.unwrap_err()); } let b: core::result::Result<bool,Error> = value.push(y); if (b.is_err()) { return core::result::Err(b.unwrap_err()); } return value.value(); }
+
+pub fn quantile_type(number: i32) -> core::result::Result<QuantileType,Error> { return match (number) { 1 -> core::result::Ok(QuantileType::Type1), 2 -> core::result::Ok(QuantileType::Type2), 3 -> core::result::Ok(QuantileType::Type3), 4 -> core::result::Ok(QuantileType::Type4), 5 -> core::result::Ok(QuantileType::Type5), 6 -> core::result::Ok(QuantileType::Type6), 7 -> core::result::Ok(QuantileType::Type7), 8 -> core::result::Ok(QuantileType::Type8), 9 -> core::result::Ok(QuantileType::Type9), _ -> core::result::Err(error(ErrorKind::InvalidQuantileType,-1)) }; }
+fn validate_sorted(values: core::slice::View<f64>) -> core::result::Result<bool,Error> {
+    if (!valid_view(values)) { return core::result::Err(error(ErrorKind::Bounds,-1)); }
+    let i: i32 = 0; while (i < values.length) { if (!core::f64::is_finite(at(values,i))) { return core::result::Err(error(ErrorKind::NonFiniteInput,i)); } if (i > 0 && core::f64::total_cmp(at(values,i-1),at(values,i)) > 0) { return core::result::Err(error(ErrorKind::NotSorted,i)); } i += 1; } return core::result::Ok(true);
+}
+// Convex interpolation avoids overflow in b-a for opposite extreme signs.
+fn interpolate(a: f64, b: f64, fraction: f64) -> f64 {
+    if (fraction <= 0.0) { return a; } if (fraction >= 1.0) { return b; } if (a == b) { return a; }
+    if (core::f64::is_sign_negative(a) != core::f64::is_sign_negative(b)) {
+        // Recenter near the midpoint: opposite extreme endpoints can cancel
+        // almost completely, so separately rounded weighted terms lose bits.
+        if (fraction <= 0.5) { return a*(1.0-2.0*fraction)+(a+b)*fraction; }
+        return b*(2.0*fraction-1.0)+(a+b)*(1.0-fraction);
+    }
+    return a+fraction*(b-a);
+}
+fn quantile_unchecked(values: core::slice::View<f64>, probability: f64, kind: QuantileType) -> core::result::Result<f64,Error> {
+    if (!core::f64::is_finite(probability) || probability < 0.0 || probability > 1.0) { return core::result::Err(error(ErrorKind::InvalidProbability,-1)); }
+    if (values.length == 0) { return core::result::Err(error(ErrorKind::Empty,-1)); }
+    if (probability == 0.0 || values.length == 1) { return core::result::Ok(at(values,0)); } if (probability == 1.0) { return core::result::Ok(at(values,values.length-1)); }
+    let m: f64 = match (kind) { Type1 -> 0.0, Type2 -> 0.0, Type3 -> -0.5, Type4 -> 0.0, Type5 -> 0.5, Type6 -> probability, Type7 -> 1.0-probability, Type8 -> (probability+1.0)/3.0, Type9 -> probability/4.0+0.375 };
+    let h: f64 = (values.length as f64)*probability+m;
+    // Clamp before the signed rank conversion, including maximal i32 lengths.
+    if (h < 1.0) { return core::result::Ok(at(values,0)); } if (h >= (values.length as f64)) { return core::result::Ok(at(values,values.length-1)); }
+    let base: f64 = core::f64::floor(h); let j: i32 = base as i32; let g: f64 = h-base; let fraction: f64 = g;
+    let discontinuous: i32 = match (kind) { Type1 -> 1, Type2 -> 2, Type3 -> 3, _ -> 0 };
+    if (discontinuous > 0) { fraction = 1.0; if (g == 0.0) { if (discontinuous == 1 || (discontinuous == 3 && j%2 == 0)) { fraction = 0.0; } if (discontinuous == 2) { fraction = 0.5; } } }
+    let left: i32 = j-1; let right: i32 = j; if (left < 0) { left = 0; } if (right < 0) { right = 0; } if (left >= values.length) { left = values.length-1; } if (right >= values.length) { right = values.length-1; }
+    return checked(interpolate(at(values,left),at(values,right),fraction));
+}
+pub fn quantile_sorted(values: core::slice::View<f64>, probability: f64, kind: QuantileType) -> core::result::Result<f64,Error> { let valid: core::result::Result<bool,Error> = validate_sorted(values); if (valid.is_err()) { return core::result::Err(valid.unwrap_err()); } return quantile_unchecked(values,probability,kind); }
+pub fn median_sorted(values: core::slice::View<f64>) -> core::result::Result<f64,Error> { return quantile_sorted(values,0.5,QuantileType::Type7); }
+pub fn sorted_work_bound(count: i32) -> core::result::Result<u64,Error> {
+    if (count < 0) { return core::result::Err(error(ErrorKind::Bounds,-1)); } let levels: u64 = 0; let span: u64 = 1; while (span < (count as u64)) { span *= 2; levels += 1; } return core::result::Ok(8*(count as u64)*(levels+1));
+}
+fn swap(values: core::slice::View<f64>, a: i32, b: i32) { let value: f64 = at(values,a); put(values,a,at(values,b)); put(values,b,value); }
+fn sift(values: core::slice::View<f64>, root: i32, end: i32) {
+    let current: i32 = root; while (current < end/2) { let child: i32 = current*2+1; if (child+1 < end && core::f64::total_cmp(at(values,child),at(values,child+1)) < 0) { child += 1; } if (core::f64::total_cmp(at(values,current),at(values,child)) >= 0) { return; } swap(values,current,child); current = child; }
+}
+// Scratch is disjoint from input or exactly the same logical view. Partial
+// overlap is a caller precondition. All recoverable errors precede all writes.
+pub fn sorted_copy(values: core::slice::View<f64>, scratch: core::slice::View<f64>, max_work: u64) -> core::result::Result<SortedSample,Error> {
+    if (!valid_view(values) || !valid_view(scratch)) { return core::result::Err(error(ErrorKind::Bounds,-1)); }
+    if (scratch.length < values.length) { return core::result::Err(error(ErrorKind::ScratchTooSmall,-1)); }
+    if (sorted_work_bound(values.length).unwrap() > max_work) { return core::result::Err(error(ErrorKind::WorkLimit,-1)); }
+    let i: i32 = 0; while (i < values.length) { if (!core::f64::is_finite(at(values,i))) { return core::result::Err(error(ErrorKind::NonFiniteInput,i)); } i += 1; }
+    let out: core::slice::View<f64> = core::slice::View { values: scratch.values, start: scratch.start, length: values.length }; i = 0; while (i < values.length) { put(out,i,at(values,i)); i += 1; }
+    let root: i32 = out.length/2; while (root > 0) { root -= 1; sift(out,root,out.length); } let end: i32 = out.length; while (end > 1) { end -= 1; swap(out,0,end); sift(out,0,end); }
+    return core::result::Ok(SortedSample { data: out });
+}
+pub impl SortedSample {
+    pub fn len(&self) -> i32 { return self.data.length; }
+    pub fn view(&self) -> core::slice::View<f64> { return self.data; }
+    // Borrowed backing must remain live and unmodified after sorted_copy.
+    pub fn quantile(&self, probability: f64, kind: QuantileType) -> core::result::Result<f64,Error> { return quantile_unchecked(self.data,probability,kind); }
+    pub fn median(&self) -> core::result::Result<f64,Error> { return quantile_unchecked(self.data,0.5,QuantileType::Type7); }
+}

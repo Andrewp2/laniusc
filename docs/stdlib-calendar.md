@@ -74,6 +74,47 @@ Month and year addition never clamp. January 31 plus one month returns
 also returns `InvalidDay`; adding 400 years succeeds when the native range
 allows it. Day arithmetic returns `Overflow` when the result exceeds that range.
 
+## Comparison and collection keys
+
+`Date`, `TimeOfDay`, and `LocalDateTime` implement `core::cmp::Eq`, `Ord`,
+`PartialEq`, `PartialOrd`, and `core::hash::Hash`. Each exposes
+`compare(other)`, returning -1, 0, or 1. The civil ordering is lexicographic:
+
+- `Date`: year, month, day.
+- `TimeOfDay`: hour, minute, second, nanoseconds.
+- `LocalDateTime`: date, then time.
+
+This orders all native years without narrowing a difference to `i32` or
+flattening a date and time into overflowing nanoseconds. `partial_cmp` always
+returns `Less`, `Equal`, or `Greater` for these types and agrees with the total
+order. Equality compares every represented civil field, and equal values hash
+equally. Hashes use noncryptographic 32-bit FNV-1a over component values.
+
+Represented second 60 sorts after second 59 in its minute and before the next
+minute. Thus `00:00:59.999999999 < 00:00:60 < 00:01:00`. This is the order of
+civil syntax; it does not certify leap-second placement or elapsed duration.
+The first instant of the next civil date sorts after every time on the prior
+date, including represented `23:59:60.999999999`.
+
+`UtcOffset` and `OffsetDateTime` implement `Eq`, `PartialEq`, and `Hash` with
+**representation equality**. Unknown `-00:00` differs from known UTC. An offset
+timestamp's identity contains its local date, all time fields, and both offset
+fields. For example, `1970-01-01T00:00:00Z` and
+`1970-01-01T01:00:00+01:00` are different hash-map keys, although their successful
+`to_system_time()` conversions compare equal. Separately constructed known
+zero offsets, including parsed `+00:00`, equal `utc()`.
+
+Offset types expose no `Ord`, `PartialOrd`, or civil `compare` method. For
+chronological comparison of known ordinary timestamps, explicitly convert both
+with `to_system_time()` and compare the results, handling `UnknownOffset` and
+`LeapSecond` errors. Representation equality remains useful for retaining the
+supplied offset or preserving unknown-offset records.
+
+These comparison and key contracts require constructor-valid values with their
+fields preserved. The language does not enforce that precondition. Calendar
+values own no resources, so storing them in a collection adds no separate key
+destruction duty; release the collection's own allocation normally.
+
 ## Unix time conversion
 
 `to_system_time(value)` and `value.to_system_time()` return
@@ -174,8 +215,24 @@ ordinary absence or truncated output to report failure.
   and packed argument bytes. When `strace` is available, the contract fixture
   must execute without `brk`, `mmap`, or `mremap` calls.
 
+`tests/stdlib_calendar_keys_execution.rs` separately executes:
+
+- 5,000 generated triples across native years: equality, hash consistency,
+  complement/reversal predicates, total/partial ordering agreement, and
+  transitivity through generic trait consumers. Same-day time comparisons,
+  nanosecond boundaries, represented second 60, year 0, and native endpoints
+  have explicit cases.
+- 656 boundary/generated pairs compared with Rust tuple ordering and equality.
+  Seed: `0xCA1E0ADE20261023`.
+- Generic `Vec` sorting and search, civil range membership, `TreeMap` iteration
+  and bounded traversal, and `HashMap` lookup/replacement/removal with all three
+  civil types. Offset maps retain unknown versus known zero offsets, different
+  representations of the same instant, leap-second syntax, and nanoseconds as
+  distinct keys.
+
 Run from the repository root:
 
 ```sh
 timeout --kill-after=2s 100s env CARGO_TARGET_DIR="$PWD/target/stdlib-build" CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=90000 cargo test --test stdlib_calendar_execution -- --test-threads=1
+timeout --kill-after=2s 100s env CARGO_TARGET_DIR="$PWD/target/stdlib-build" CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=90000 cargo test --test stdlib_calendar_keys_execution -- --test-threads=1
 ```

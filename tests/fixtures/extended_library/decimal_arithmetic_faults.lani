@@ -1,0 +1,41 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+import ext::big_int;
+import ext::decimal;
+import std::io;
+fn check(result: core::result::Result<ext::decimal::Decimal,ext::decimal::Error>) { if (result.is_err()) { assert(result.unwrap_err() == ext::decimal::Error::AllocationFailed); } else { let value: ext::decimal::Decimal = result.unwrap(); value.destroy(); } }
+fn check_bytes(result: core::result::Result<alloc::vec::Vec<u8>,ext::decimal::Error>) { if (result.is_err()) { assert(result.unwrap_err() == ext::decimal::Error::AllocationFailed); } else { let value: alloc::vec::Vec<u8> = result.unwrap(); value.destroy(); } }
+fn main() -> i32 {
+    let words: [i32;1] = [0]; let pointer: ptr = core::mem::i32_array_data_ptr(words); assert(std::io::read_stdin(pointer,1) == 1); let op: i32 = words[0];
+    let limits: ext::decimal::Limits = ext::decimal::default_limits();
+    let a_bytes: [u8;10] = [45,49,50,57,57,46,57,53,48,48]; let b_bytes: [u8;5] = [55,46,48,48,48];
+    let a_result: core::result::Result<ext::decimal::Decimal,ext::decimal::Error> = ext::decimal::parse_text(core::text::from_utf8_unchecked(a_bytes,0,10),limits);
+    if (a_result.is_err()) { assert(a_result.unwrap_err() == ext::decimal::Error::AllocationFailed); return 0; } let a: ext::decimal::Decimal = a_result.unwrap();
+    let b_result: core::result::Result<ext::decimal::Decimal,ext::decimal::Error> = ext::decimal::parse(core::slice::view(b_bytes,5).unwrap(),limits);
+    if (b_result.is_err()) { assert(b_result.unwrap_err() == ext::decimal::Error::AllocationFailed); a.destroy(); return 0; } let b: ext::decimal::Decimal = b_result.unwrap();
+    let context: ext::decimal::Context = ext::decimal::Context { precision: 15, rounding: ext::decimal::Rounding::HalfEven };
+    if (op == 0) { check(ext::decimal::parse_text(core::text::from_utf8_unchecked(a_bytes,0,10),limits)); }
+    if (op == 1) { check(a.try_clone(limits)); } if (op == 2) { check(a.add(b.borrow(),limits)); } if (op == 3) { check(a.sub(b.borrow(),limits)); }
+    if (op == 4) { check(a.mul(b.borrow(),limits)); } if (op == 5) { check(a.div(b.borrow(),context,limits)); }
+    if (op == 6) { check(a.div(a.borrow(),context,limits)); }
+    if (op == 7) { check(a.rescale(-1,ext::decimal::Rounding::HalfEven,limits)); } if (op == 8) { check(a.rescale(-8,ext::decimal::Rounding::Unnecessary,limits)); }
+    if (op == 9) { let short: ext::decimal::Context = context; short.precision = 2; check(a.round(short,limits)); }
+    if (op == 10) { check(a.quantize(b.borrow(),context,limits)); } if (op == 11) { check(a.pow(5,limits)); }
+    if (op == 12) { check(a.neg(limits)); } if (op == 13) { check(a.abs(limits)); } if (op == 14) { check(a.reduce(limits)); }
+    if (op == 15) { check(ext::decimal::from_i64(-9223372036854775807 - 1,limits)); } if (op == 16) { check(ext::decimal::from_u64(18446744073709551615,limits)); }
+    if (op == 17) { check(ext::decimal::from_coefficient(a.coefficient.borrow(),-4,limits)); }
+    if (op == 18) { let result: core::result::Result<ext::big_int::BigInt,ext::decimal::Error> = a.to_big_int(ext::decimal::Rounding::Floor,limits); if (result.is_err()) { assert(result.unwrap_err() == ext::decimal::Error::AllocationFailed); } else { let value: ext::big_int::BigInt = result.unwrap(); value.destroy(); } }
+    if (op == 19) { let result: core::result::Result<i64,ext::decimal::Error> = b.to_i64(limits); if (result.is_err()) { assert(result.unwrap_err() == ext::decimal::Error::AllocationFailed); } else { assert(result.unwrap() == 7); } }
+    if (op == 20) { check_bytes(a.format(limits)); }
+    if (op == 21) { let output: [u8;32] = [91;32]; let view: core::slice::View<u8> = core::slice::view_range(output,3,20).unwrap(); let result: core::result::Result<i32,ext::decimal::Error> = a.format_into(view,limits); if (result.is_err()) { assert(result.unwrap_err() == ext::decimal::Error::AllocationFailed); let i: i32 = 0; while(i<32) { assert(output[i] == 91); i += 1; } } else { assert(result.unwrap() == 10 && output[2] == 91 && output[13] == 91); } }
+    if (op == 22) { check_bytes(a.format_scientific(limits)); }
+    // Cached comparison and hashing inspect surviving owners without allocation.
+    assert(a.sign() == -1 && a.exponent() == -4 && a.precision() == 8); assert(b.sign() == 1 && b.exponent() == -3 && b.precision() == 4);
+    assert(a.compare(a.borrow()) == 0 && a.compare(b.borrow()) < 0 && a.value_hash() == a.value_hash());
+    assert(a.digits.at(0) == 49 && a.digits.at(7) == 48 && b.digits.at(0) == 55 && b.digits.at(3) == 48);
+    a.destroy(); b.destroy(); return 0;
+}
