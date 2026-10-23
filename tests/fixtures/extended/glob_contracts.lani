@@ -1,0 +1,107 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import ext::glob;
+fn bytes(value: str, count: i32) -> core::slice::View<u8> {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(raw,count));
+}
+fn path(value: str, count: i32) -> core::path::Path { return core::result::unwrap(core::path::from_view(bytes(value,count))); }
+fn error_code(error: ext::glob::Error) -> i32 {
+    let code: i32 = match (error) {
+        ext::glob::Error::Bounds -> 1, ext::glob::Error::PatternLimit -> 2, ext::glob::Error::TokenLimit -> 3, ext::glob::Error::Nul(index) -> 100+index,
+        ext::glob::Error::InvalidEscape(index) -> 200+index, ext::glob::Error::UnclosedClass(index) -> 300+index, ext::glob::Error::InvalidRange(index) -> 400+index,
+        ext::glob::Error::UnknownClass(index) -> 500+index, ext::glob::Error::UnsupportedClass(index) -> 600+index, ext::glob::Error::CapacityOverflow -> 7,
+        ext::glob::Error::AllocationFailed -> 8, ext::glob::Error::ScratchTooSmall(count) -> 9, ext::glob::Error::WorkLimit -> 10, ext::glob::Error::Destroyed -> 11
+    }; return code;
+}
+fn invalid(pattern: str, length: i32, code: i32) {
+    let parsed: core::result::Result<ext::glob::Pattern, ext::glob::Error> = ext::glob::compile(bytes(pattern,length),ext::glob::default_options(),ext::glob::default_limits());
+    assert(core::result::is_err(parsed)); assert(error_code(core::result::unwrap_err(parsed)) == code);
+}
+fn selected_views_and_rejected_requests() {
+    // Native byte arrays have a different storage stride from packed strings.
+    // Only the selected logical windows participate in compilation/matching.
+    let source: [u8; 9] = [0,97,47,42,42,47,98,0,0];
+    let selected: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(source,1,6));
+    let pattern: ext::glob::Pattern = core::result::unwrap(ext::glob::compile(selected,ext::glob::default_options(),ext::glob::default_limits()));
+    source[1] = 120; source[3] = 63;
+    let candidate_bytes: [u8; 7] = [0,97,47,113,47,98,0];
+    let candidate: core::path::Path = core::result::unwrap(core::path::from_view(core::result::unwrap(core::slice::view_range(candidate_bytes,1,5))));
+    let storage: [u8; 16] = [77;16];
+    let scratch: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(storage,2,pattern.scratch_len()));
+    assert(core::result::unwrap(pattern.matches(candidate,scratch,ext::glob::DEFAULT_WORK_LIMIT)));
+    assert(core::result::unwrap(pattern.matches(path("a/b",3),scratch,ext::glob::DEFAULT_WORK_LIMIT)));
+    assert(!core::result::unwrap(pattern.matches(path("x/b",3),scratch,ext::glob::DEFAULT_WORK_LIMIT)));
+    assert(storage[0] == 77 && storage[1] == 77 && storage[12] == 77 && storage[15] == 77);
+    scratch.fill(77);
+    let bound: u64 = core::result::unwrap(pattern.work_bound(5));
+    assert(error_code(core::result::unwrap_err(pattern.matches(candidate,scratch,bound-1))) == 10);
+    let index: i32 = 0; while (index < 16) { assert(storage[index] == 77); index += 1; }
+    let short: core::slice::View<u8> = core::result::unwrap(scratch.subview(0,scratch.len()-1));
+    assert(error_code(core::result::unwrap_err(pattern.matches(candidate,short,bound))) == 9);
+    index = 0; while (index < 16) { assert(storage[index] == 77); index += 1; }
+    pattern.destroy();
+    let broken_class: [u8; 4] = [0,97,91,0];
+    let class_view: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(broken_class,1,2));
+    assert(error_code(core::result::unwrap_err(ext::glob::compile(class_view,ext::glob::default_options(),ext::glob::default_limits()))) == 301);
+    let broken_escape: [u8; 4] = [0,97,92,0];
+    let escape_view: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(broken_escape,1,2));
+    assert(error_code(core::result::unwrap_err(ext::glob::compile(escape_view,ext::glob::default_options(),ext::glob::default_limits()))) == 201);
+    let nul_bytes: [u8; 5] = [0,97,0,98,0];
+    let nul_view: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(nul_bytes,1,3));
+    assert(error_code(core::result::unwrap_err(ext::glob::compile(nul_view,ext::glob::default_options(),ext::glob::default_limits()))) == 101);
+    let limits: ext::glob::Limits = ext::glob::default_limits(); limits.max_tokens = 1073741823;
+    assert(error_code(core::result::unwrap_err(ext::glob::compile(bytes("",0),ext::glob::default_options(),limits))) == 1);
+    limits = ext::glob::default_limits(); limits.max_pattern_bytes = -1;
+    assert(error_code(core::result::unwrap_err(ext::glob::compile(bytes("",0),ext::glob::default_options(),limits))) == 1);
+    limits.max_pattern_bytes = 5; limits.max_tokens = 1;
+    let collapsed: ext::glob::Pattern = core::result::unwrap(ext::glob::compile(bytes("*****",5),ext::glob::default_options(),limits));
+    assert(collapsed.token_count() == 1); collapsed.destroy();
+}
+fn main() -> i32 {
+    selected_views_and_rejected_requests();
+    invalid("[",1,300); invalid("[!",2,300); invalid("[]",2,300); invalid("[[:",3,300);
+    invalid("[z-a]",5,402); invalid("[[:mystery:]]",13,501); invalid("[[.ch.]]",8,601); invalid("[[=a=]]",7,601);
+    invalid("a\\",2,201); invalid("[a-[:digit:]]",13,402); invalid("[[:digit:]-a]",13,410);
+    let options: ext::glob::Options = ext::glob::default_options(); let limits: ext::glob::Limits = ext::glob::default_limits();
+    let input: core::slice::View<u8> = bytes("**/*.txt",8);
+    let compiled: ext::glob::Pattern = core::result::unwrap(ext::glob::compile(input,options,limits));
+    assert(compiled.is_live() && compiled.token_count() == 6 && compiled.scratch_len() == 14);
+    let scratch: alloc::vec::Vec<u8> = core::result::unwrap(compiled.new_scratch());
+    assert(core::result::unwrap(compiled.matches(path("a/b.txt",7),scratch.as_view(),ext::glob::DEFAULT_WORK_LIMIT)));
+    assert(core::result::unwrap(compiled.matches(path("b.txt",5),scratch.as_view(),ext::glob::DEFAULT_WORK_LIMIT)));
+    assert(!core::result::unwrap(compiled.matches(path(".hidden/b.txt",13),scratch.as_view(),ext::glob::DEFAULT_WORK_LIMIT)));
+    assert(!core::result::unwrap(compiled.matches(path("a/b.rs",6),scratch.as_view(),ext::glob::DEFAULT_WORK_LIMIT)));
+    let bound: u64 = core::result::unwrap(compiled.work_bound(7));
+    assert(core::result::unwrap(compiled.matches(path("a/b.txt",7),scratch.as_view(),bound)));
+    assert(error_code(core::result::unwrap_err(compiled.matches(path("a/b.txt",7),scratch.as_view(),bound-1))) == 10);
+    let short: core::slice::View<u8> = core::result::unwrap(scratch.as_view().subview(0,13));
+    assert(error_code(core::result::unwrap_err(compiled.matches(path("",0),short,ext::glob::DEFAULT_WORK_LIMIT))) == 9);
+    let bad: core::slice::View<u8> = scratch.as_view(); bad.start = -1;
+    assert(error_code(core::result::unwrap_err(compiled.matches(path("",0),bad,ext::glob::DEFAULT_WORK_LIMIT))) == 1);
+    assert(error_code(core::result::unwrap_err(compiled.work_bound(-1))) == 1);
+    let clone: ext::glob::Pattern = core::result::unwrap(compiled.try_clone()); compiled.destroy(); compiled.destroy();
+    assert(!compiled.is_live() && compiled.token_count() == 0);
+    assert(error_code(core::result::unwrap_err(compiled.matches(path("",0),scratch.as_view(),0))) == 11);
+    assert(error_code(core::result::unwrap_err(compiled.try_clone())) == 11 && error_code(core::result::unwrap_err(compiled.new_scratch())) == 11);
+    assert(error_code(core::result::unwrap_err(compiled.work_bound(0))) == 11);
+    assert(core::result::unwrap(clone.matches(path("x.txt",5),scratch.as_view(),ext::glob::DEFAULT_WORK_LIMIT))); clone.destroy(); scratch.destroy();
+    limits.max_pattern_bytes = 0;
+    assert(error_code(core::result::unwrap_err(ext::glob::compile(input,options,limits))) == 2);
+    limits.max_pattern_bytes = 100; limits.max_tokens = 0;
+    assert(error_code(core::result::unwrap_err(ext::glob::compile(input,options,limits))) == 3);
+    let empty: ext::glob::Pattern = core::result::unwrap(ext::glob::compile(bytes("",0),options,limits));
+    let stack: [u8; 4] = [99;4]; let middle: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(stack,1,2));
+    assert(core::result::unwrap(empty.matches(path("",0),middle,4))); assert(stack[0] == 99 && stack[3] == 99);
+    assert(!core::result::unwrap(empty.matches(path("x",1),middle,5))); empty.destroy();
+    limits.max_tokens = -1; assert(error_code(core::result::unwrap_err(ext::glob::compile(input,options,limits))) == 1);
+    limits = ext::glob::default_limits(); let malformed: core::slice::View<u8> = input; malformed.length = -1;
+    assert(error_code(core::result::unwrap_err(ext::glob::compile(malformed,options,limits))) == 1);
+    let nul_bytes: [u8; 3] = [97,0,98]; let nul: core::slice::View<u8> = core::result::unwrap(core::slice::view(nul_bytes,3));
+    assert(error_code(core::result::unwrap_err(ext::glob::compile(nul,options,limits))) == 101);
+    return 0;
+}

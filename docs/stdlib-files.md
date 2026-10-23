@@ -154,7 +154,8 @@ test were removed; executable path fixtures remain the behavior gate.
 The filesystem family remains incomplete. Seek/position, metadata, directory
 enumeration, durability synchronization, descriptor duplication, configurable
 open flags (including close-on-exec and exclusive creation), and descriptor-
-relative operations require additional runtime bindings. Owned path buffers and
-complete lexical path operations remain library work. No placeholder methods
-for these operations are exposed on File. See
+relative operations require additional runtime bindings.
+[Borrowed paths and owned buffers](stdlib-paths.md) now provide lexical operations,
+and [checked filesystem mutations](stdlib-filesystem.md) execute over existing
+bindings. No placeholder methods for missing operations are exposed on File. See
 [library-dependencies.md](library-dependencies.md).

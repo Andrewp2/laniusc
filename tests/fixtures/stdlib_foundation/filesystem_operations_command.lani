@@ -1,0 +1,49 @@
+// Test driver: mkdir/rmdir/unlink/rename (m/d/u/r), paths as raw argv bytes.
+// Exit 0 on success, positive errno on host failure, 200 on InvalidInput.
+module app::main;
+import core::io;
+import core::mem;
+import core::path;
+import core::result;
+import std::filesystem;
+import std::process;
+
+fn code(result: core::result::Result<i32, core::io::Error>) -> i32 {
+    if (core::result::is_ok(result)) { assert(core::result::unwrap(result) == 0); return 0; }
+    let error: core::io::Error = core::result::unwrap_err(result);
+    let value: i32 = match (error) {
+        core::io::Error::Host(number) -> number,
+        core::io::Error::Interrupted -> 4,
+        core::io::Error::WouldBlock -> 11,
+        core::io::Error::InvalidInput -> 200,
+        _ -> 201,
+    };
+    return value;
+}
+
+fn main() -> i32 {
+    if (std::process::argc() < 3 || std::process::argc() > 4 || std::process::arg_len(1) != 1) { return 202; }
+    let operation: [i32; 1] = [0];
+    let op_pointer: ptr = core::mem::i32_array_data_ptr(operation);
+    assert(std::process::arg_read(1, op_pointer, 1) == 1);
+    let op: [u8] = core::mem::typed_slice_from_raw_parts(op_pointer,1);
+    let storage: [i32; 1280] = [0;1280];
+    let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let count: i32 = std::process::arg_len(2);
+    if (count < 0 || count > 5120) { return 203; }
+    assert(std::process::arg_read(2,pointer,count as usize) == count);
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,count);
+    let path: core::path::Path = core::result::unwrap(core::path::from_bytes(bytes,count));
+    if (op[0] == 109) { return code(std::filesystem::create_dir(path)); }
+    if (op[0] == 100) { return code(std::filesystem::remove_dir(path)); }
+    if (op[0] == 117) { return code(std::filesystem::remove_file(path)); }
+    if (op[0] != 114 || std::process::argc() != 4) { return 204; }
+    let other_storage: [i32;1280] = [0;1280];
+    let other_pointer: ptr = core::mem::i32_array_data_ptr(other_storage);
+    let other_count: i32 = std::process::arg_len(3);
+    if (other_count < 0 || other_count > 5120) { return 205; }
+    assert(std::process::arg_read(3,other_pointer,other_count as usize) == other_count);
+    let other_bytes: [u8] = core::mem::typed_slice_from_raw_parts(other_pointer,other_count);
+    let other: core::path::Path = core::result::unwrap(core::path::from_bytes(other_bytes,other_count));
+    return code(std::filesystem::rename(path,other));
+}

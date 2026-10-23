@@ -1,0 +1,35 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::path;
+import core::result;
+import core::slice;
+import ext::glob;
+fn bytes(value: str, count: i32) -> core::slice::View<u8> {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(raw,count));
+}
+fn allocation(error: ext::glob::Error) -> bool { let value: bool = match (error) { ext::glob::Error::AllocationFailed -> true, _ -> false }; return value; }
+fn main() -> i32 {
+    let created: core::result::Result<ext::glob::Pattern, ext::glob::Error> = ext::glob::compile(bytes("src/**/[a-z]*.lani",18),ext::glob::default_options(),ext::glob::default_limits());
+    if (core::result::is_err(created)) { assert(allocation(core::result::unwrap_err(created))); return 4; }
+    let pattern: ext::glob::Pattern = core::result::unwrap(created);
+    let stack: [u8; 128] = [99;128]; let workspace: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(stack,1,126));
+    let path: core::path::Path = core::result::unwrap(core::path::from_view(bytes("src/lib/file.lani",17)));
+    let cloned: core::result::Result<ext::glob::Pattern, ext::glob::Error> = pattern.try_clone();
+    if (core::result::is_err(cloned)) {
+        assert(allocation(core::result::unwrap_err(cloned))); assert(pattern.is_live() && core::result::unwrap(pattern.matches(path,workspace,ext::glob::DEFAULT_WORK_LIMIT)));
+        pattern.destroy(); return 4;
+    }
+    let copy: ext::glob::Pattern = core::result::unwrap(cloned); pattern.destroy();
+    let allocated: core::result::Result<alloc::vec::Vec<u8>, ext::glob::Error> = copy.new_scratch();
+    if (core::result::is_err(allocated)) {
+        assert(allocation(core::result::unwrap_err(allocated))); assert(core::result::unwrap(copy.matches(path,workspace,ext::glob::DEFAULT_WORK_LIMIT)));
+        copy.destroy(); return 4;
+    }
+    let scratch: alloc::vec::Vec<u8> = core::result::unwrap(allocated);
+    assert(core::result::unwrap(copy.matches(path,scratch.as_view(),ext::glob::DEFAULT_WORK_LIMIT)));
+    assert(core::result::unwrap(copy.matches(path,workspace,ext::glob::DEFAULT_WORK_LIMIT))); assert(stack[0] == 99 && stack[127] == 99);
+    let bad: core::result::Result<ext::glob::Pattern, ext::glob::Error> = ext::glob::compile(bytes("a*[z-a]",7),ext::glob::default_options(),ext::glob::default_limits());
+    assert(core::result::is_err(bad)); let failed_allocation: bool = allocation(core::result::unwrap_err(bad));
+    scratch.destroy(); copy.destroy(); if (failed_allocation) { return 4; } return 0;
+}

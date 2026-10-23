@@ -1,0 +1,48 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import core::text;
+import ext::glob;
+import std::io;
+import std::io_decimal;
+import std::process;
+fn number(value: i32) { assert(std::io_decimal::write_i32(1,value) > 0 && std::io::write_byte(1,10) == 1); }
+fn code(error: ext::glob::Error) -> i32 {
+    let value: i32 = match (error) {
+        ext::glob::Error::Bounds -> 1, ext::glob::Error::PatternLimit -> 2, ext::glob::Error::TokenLimit -> 3, ext::glob::Error::Nul(index) -> 4,
+        ext::glob::Error::InvalidEscape(index) -> 5, ext::glob::Error::UnclosedClass(index) -> 6, ext::glob::Error::InvalidRange(index) -> 7,
+        ext::glob::Error::UnknownClass(index) -> 8, ext::glob::Error::UnsupportedClass(index) -> 9, ext::glob::Error::CapacityOverflow -> 10,
+        ext::glob::Error::AllocationFailed -> 11, ext::glob::Error::ScratchTooSmall(count) -> 12, ext::glob::Error::WorkLimit -> 13, ext::glob::Error::Destroyed -> 14
+    }; return value;
+}
+fn location(error: ext::glob::Error) -> i32 {
+    let value: i32 = match (error) { ext::glob::Error::Nul(index) -> index, ext::glob::Error::InvalidEscape(index) -> index, ext::glob::Error::UnclosedClass(index) -> index, ext::glob::Error::InvalidRange(index) -> index, ext::glob::Error::UnknownClass(index) -> index, ext::glob::Error::UnsupportedClass(index) -> index, _ -> -1 }; return value;
+}
+fn argument(index: i32, pointer: ptr, bytes: [u8]) -> core::slice::View<u8> {
+    let count: i32 = std::process::arg_len(index); assert(count >= 0 && count <= 16384);
+    assert(std::process::arg_read(index,pointer,count as usize) == count); return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn main() -> i32 {
+    let storage: [i32; 4096] = [0;4096]; let pointer: ptr = core::mem::i32_array_data_ptr(storage); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,16384);
+    let flag_bytes: core::slice::View<u8> = argument(1,pointer,bytes);
+    let flag_text: core::text::Text = core::result::unwrap(core::text::from_utf8(bytes,flag_bytes.len())); let flags: i32 = core::result::unwrap(flag_text.parse_i32());
+    let options: ext::glob::Options = ext::glob::Options { pathname: (flags & 1) != 0, literal_leading_dot: (flags & 4) != 0, escape: (flags & 2) == 0, ascii_case_insensitive: (flags & 16) != 0, globstar: (flags & 256) != 0 };
+    let parsed: core::result::Result<ext::glob::Pattern, ext::glob::Error> = ext::glob::compile(argument(2,pointer,bytes),options,ext::glob::default_limits());
+    if (core::result::is_err(parsed)) { let error: ext::glob::Error = core::result::unwrap_err(parsed); number(code(error)); number(location(error)); return 0; }
+    let pattern: ext::glob::Pattern = core::result::unwrap(parsed); number(0); number(pattern.token_count());
+    let allocated: core::result::Result<alloc::vec::Vec<u8>, ext::glob::Error> = pattern.new_scratch();
+    if (core::result::is_err(allocated)) { pattern.destroy(); return 4; } let scratch: alloc::vec::Vec<u8> = core::result::unwrap(allocated);
+    let index: i32 = 3;
+    while (index < std::process::argc()) {
+        let candidate: core::path::Path = core::result::unwrap(core::path::from_view(argument(index,pointer,bytes)));
+        let result: core::result::Result<bool, ext::glob::Error> = pattern.matches(candidate,scratch.as_view(),ext::glob::DEFAULT_WORK_LIMIT);
+        if (core::result::is_err(result)) { number(0-code(core::result::unwrap_err(result))); }
+        else { if (core::result::unwrap(result)) { number(1); } else { number(0); } }
+        index += 1;
+    }
+    scratch.destroy(); pattern.destroy(); return 0;
+}

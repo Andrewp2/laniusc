@@ -23,7 +23,7 @@ package distribution is a separate deliverable.
 
 ## Standard library scope
 
-| Family | Required contents | Starting state, 2026-10-22 |
+| Family | Required contents | Executable state and remaining work |
 | --- | --- | --- |
 | Fundamental values | Option, Result, ordering, comparison, hashing, cloning, explicit errors | Generic Option/Result and comparison exist; contracts and composition need review |
 | Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Many implementations and runtime fixtures exist; consolidate duplicate paths |
@@ -33,7 +33,7 @@ package distribution is a separate deliverable.
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings and raw views exist; ownership conventions need consolidation |
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec and deque with explicit errors, linear maps/sets, alloc hash maps, ordered tree maps and min/max heaps execute; legacy migration and ordered sets remain |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks, native descriptor adapters and owned files execute; buffered adapters remain |
-| Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files, borrowed Unix byte paths, components, names, prefixes, owned buffers and explicit lexical normalization execute; metadata, directories, walking and further host operations remain |
+| Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files, borrowed Unix byte paths, components, names, prefixes, owned buffers, explicit lexical normalization and checked directory/file mutations execute; metadata, directory enumeration, walking and further host operations remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Owned raw-byte argument snapshots and argument/environment helpers execute; subprocess management remains |
 | Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, native clocks, generic deadline waits, deterministic generators, sampling/shuffle and explicit OS entropy errors execute; legacy consolidation, additional clocks and distributions remain |
 | Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Current network module is contract-only |
@@ -55,6 +55,17 @@ tests, target support, and relevant performance evidence.
 | Mathematics | Big integers, decimal arithmetic, statistics, linear algebra, geometry |
 | Application utilities | CLI parsing, logging, configuration, tables, progress reporting |
 | Media | Image codecs, pixel operations, audio codecs and signal utilities |
+
+The [compiled byte-glob module](extended-glob.md) and its streaming path-filter
+application execute on x86_64 Linux, including recursive components, explicit
+work limits, raw byte paths and allocation/I/O failure cases. Filesystem walking
+still needs directory-enumeration and metadata host bindings; glob matching
+does not depend on them.
+
+[Checked filesystem mutations](stdlib-filesystem.md) provide allocation-free
+creation/removal of one directory, file unlinking and renaming over existing
+host bindings. These operations retain Linux errors and do not recursively
+traverse paths.
 
 For external formats and algorithms, use their primary specifications and
 published conformance vectors. Choose exact versions and formats when starting
