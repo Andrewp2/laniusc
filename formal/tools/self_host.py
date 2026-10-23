@@ -142,7 +142,8 @@ fn oracle_nums(data: [i32], base: usize, i: usize, count: usize) -> {S}List<usiz
     if (i == count) {{
         return {S}empty();
     }}
-    return {S}cons(data[base + i] as usize, oracle_nums(data, base, i + 1, count));
+    // As u32 first: a parse tree's root has parent 2^32 - 1.
+    return {S}cons((data[base + i] as u32) as usize, oracle_nums(data, base, i + 1, count));
 }}
 '''
 
@@ -162,16 +163,16 @@ fn oracle_read32() -> i32 {
     return a | (b << 8) | (c << 16) | (d << 24);
 }
 
-fn oracle_put(value: i32) -> i32 {
+fn oracle_out(value: i32) -> i32 {
     let written: bool = std::io_byte::write_stdout_byte(value & 255);
     return 0;
 }
 
 fn oracle_put32(value: i32) -> i32 {
-    oracle_put(value);
-    oracle_put(value >> 8);
-    oracle_put(value >> 16);
-    oracle_put(value >> 24);
+    oracle_out(value);
+    oracle_out(value >> 8);
+    oracle_out(value >> 16);
+    oracle_out(value >> 24);
     return 0;
 }
 
@@ -330,6 +331,8 @@ def main():
     parser.add_argument('--laniusc', default='target/release/laniusc')
     parser.add_argument('--heap-log2', type=int, default=32)
     parser.add_argument('--timeout', type=int, default=600)
+    parser.add_argument('--fixpoint', action='store_true',
+                        help='also give the self-built compiler its own source, which must give its own image')
     args = parser.parse_args()
     workdir = os.path.abspath(args.workdir)
     os.makedirs(workdir, exist_ok=True)
@@ -394,6 +397,8 @@ def main():
             if bases is not None:
                 tests.append(dict(name=f'{case}/{kind}', bases=bases))
 
+    if args.fixpoint:
+        tests.append(dict(name='the verified compiler itself', bases=self_bases))
     manifest = [f'compile self {" ".join(self_bases)}']
     for k, t in enumerate(tests):
         manifest += [f'compile t{k} {" ".join(t["bases"])}', f'dump in{k} {" ".join(t["bases"])}']
