@@ -103,8 +103,7 @@ failure. Output errors may leave a CSV prefix. Input `Interrupted` is retried;
 other unrecovered I/O errors are reported. Every exit path releases owners.
 The sample computes each window independently, O(samples × width), within the
 stated limits. It is an integration example, not an optimized rolling aggregate.
-The existing two-word decimal writer formats its native i64 sums; direct native
-64-bit text APIs remain library work.
+Native i64 sums use the [decimal writer](stdlib-decimal.md) directly.
 
 ## Evidence and targets
 

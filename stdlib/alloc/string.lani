@@ -5,6 +5,7 @@
 module alloc::string;
 import core::byte;
 import core::cmp;
+import core::decimal;
 import core::hash;
 import core::option;
 import core::result;
@@ -47,6 +48,19 @@ pub fn from_text(text: core::text::Text) -> core::result::Result<String, Error> 
     let status: core::result::Result<i32, Error> = value.try_append_text(text);
     if (core::result::is_err(status)) { return core::result::Err(core::result::unwrap_err(status)); }
     return core::result::Ok(value);
+}
+
+// Exact base-ten integers, without padding or a leading plus. Smaller integer
+// types can widen to these signed/unsigned entry points without losing values.
+pub fn from_i64(number: i64) -> core::result::Result<String, Error> {
+    let bytes: [u8; 20] = [0; 20];
+    let count: i32 = core::result::unwrap(core::decimal::format_i64(bytes, 0, 20, number));
+    return from_utf8(bytes, count);
+}
+pub fn from_u64(number: u64) -> core::result::Result<String, Error> {
+    let bytes: [u8; 20] = [0; 20];
+    let count: i32 = core::result::unwrap(core::decimal::format_u64(bytes, 0, 20, number));
+    return from_utf8(bytes, count);
 }
 
 fn text_error(error: core::text::Error) -> Error {
@@ -196,6 +210,19 @@ pub impl String {
 
     pub fn try_append(&self, other: String) -> core::result::Result<i32, Error> {
         return self.try_append_text(other.as_text());
+    }
+
+    // Return the new byte length; allocation/capacity failure preserves the
+    // original string and its borrowed views, as for other fallible edits.
+    pub fn try_append_i64(&self, number: i64) -> core::result::Result<i32, Error> {
+        let bytes: [u8; 20] = [0; 20];
+        let count: i32 = core::result::unwrap(core::decimal::format_i64(bytes, 0, 20, number));
+        return self.try_append_utf8(bytes, count);
+    }
+    pub fn try_append_u64(&self, number: u64) -> core::result::Result<i32, Error> {
+        let bytes: [u8; 20] = [0; 20];
+        let count: i32 = core::result::unwrap(core::decimal::format_u64(bytes, 0, 20, number));
+        return self.try_append_utf8(bytes, count);
     }
 
     // Truncate at a byte boundary. Requests beyond the length are errors.

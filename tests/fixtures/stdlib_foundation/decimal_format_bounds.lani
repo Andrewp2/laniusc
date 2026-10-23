@@ -1,0 +1,9 @@
+module app::main;
+import core::decimal;
+import core::result;
+fn main() -> i32 {
+    let bytes: [u8; 19] = [0; 19];
+    let maximum: u64 = 18446744073709551615;
+    // Logical capacity is overstated. The native physical check must trap.
+    return core::result::unwrap(core::decimal::format_u64(bytes, 0, 20, maximum));
+}

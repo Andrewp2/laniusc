@@ -8,17 +8,11 @@ import core::option;
 import core::result;
 import core::slice;
 import core::text;
-import core::wide_i64;
 import std::io;
 import std::io_decimal;
 import std::stream;
 import std::vec;
 
-fn write_sum(value: i64) -> i32 {
-    // The existing decimal writer accepts the explicit two-word representation.
-    let bits: u64 = value as u64;
-    return std::io_decimal::write_wide_i64(1, core::wide_i64::from_words((bits >> 32) as u32, bits as u32));
-}
 fn report(view: core::slice::View<i32>, width: i32) -> i32 {
     if (std::io::write_text(1, "start,min,max,sum\n") != 18) { return 3; }
     let windows: core::slice::Windows<i32> = core::result::unwrap(view.windows(width));
@@ -40,7 +34,7 @@ fn report(view: core::slice::View<i32>, width: i32) -> i32 {
         if (std::io_decimal::write_i32(1, start) < 0 || std::io::write_byte(1, 44) != 1 ||
             std::io_decimal::write_i32(1, minimum) < 0 || std::io::write_byte(1, 44) != 1 ||
             std::io_decimal::write_i32(1, maximum) < 0 || std::io::write_byte(1, 44) != 1 ||
-            write_sum(sum) < 0 || std::io::write_byte(1, 10) != 1) { return 3; }
+            std::io_decimal::write_i64(1, sum) < 0 || std::io::write_byte(1, 10) != 1) { return 3; }
         start += 1; next = windows.next();
     }
     return 0;

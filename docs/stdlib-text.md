@@ -43,7 +43,7 @@ unchanged until their entries are removed or the map is destroyed.
 | `trim_ascii()` | Borrowed subview trimming HT, LF, VT, FF, CR and space |
 | `scalars()` | Iterator of `Scalar { byte_index, value: u32 }`, relative to this view |
 | `split(separator)` | Iterator of borrowed fields, preserving empty fields |
-| `parse_u8/u16/u32/i8/i16/i32()` | Checked decimal parsing with errors relative to this view |
+| `parse_u8/u16/u32/u64/usize/i8/i16/i32/i64/isize()` | Checked decimal parsing with errors relative to this view |
 
 `Scalars.next()` and `Split.next()` return Option and remain exhausted after
 returning None. Copies of an iterator have independent cursor positions and

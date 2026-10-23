@@ -125,9 +125,14 @@ API list; unrelated library work can continue.
   queries and independent string copies execute on x86_64 Linux, including
   generated trees, limits and allocation fault injection. See
   [extended-json.md](extended-json.md).
-- Decimal parsing: packed byte parsers for all signed/unsigned 8-, 16- and
-  32-bit widths return explicit errors and execute across normal, boundary and
-  malformed cases. See [stdlib-decimal.md](stdlib-decimal.md).
+- Integer text conversion: [decimal](stdlib-decimal.md) parsing, indexed digit
+  access and checked buffer formatting execute for all ten native integer types,
+  including i64/u64/isize/usize. Bounds, overflow and insufficient capacity have
+  explicit errors. Text methods, owned String construction/appends and native
+  output use these conversions; the window-report example now writes i64 sums
+  directly. Reference cases and allocation/I/O faults pass on x86_64 Linux.
+  With 4,096 samples and width 64, paired native application runtime falls from
+  2,539 to 131 ms versus the previous two-word sum output.
 - Hash map: [`alloc::hash_map`](stdlib-hash-collections.md) executes generic
   lookup, replacement/removal, reserve, shrink, clone and iteration, including
   collision models and allocation failures. String and all integer widths

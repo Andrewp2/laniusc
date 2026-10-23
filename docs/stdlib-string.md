@@ -11,6 +11,8 @@ do not operate on grapheme clusters.
 returning `Result<String, Error>`. The slice must physically back `count` bytes;
 negative counts return `Bounds`, while an overclaimed physical view traps.
 `alloc::string::from_text(view)` copies a borrowed Text into independent storage.
+`from_i64(number)` and `from_u64(number)` create canonical decimal text for the
+full signed/unsigned native domains. Smaller integer types can widen explicitly.
 Construction from native `str` awaits the length projection listed in
 [library-dependencies.md](library-dependencies.md).
 
@@ -38,6 +40,7 @@ allocate nothing.
 | `try_reserve` | Reserve a total byte capacity; return the resulting capacity |
 | `try_push_scalar` | Append a Unicode scalar; return the new byte length |
 | `try_append_utf8`, `try_append`, `try_append_text` | Append bytes, a String or borrowed Text; return the new byte length |
+| `try_append_i64`, `try_append_u64` | Append canonical decimal integer text atomically; return the new byte length |
 | `try_truncate` | Truncate at a scalar boundary; return the resulting byte length |
 | `pop_scalar` | Remove and return the last scalar; empty gives None |
 | `clear` | Empty the string while retaining capacity |
@@ -71,6 +74,11 @@ cloning or destroying nested String allocations; keep each key's owner alive
 until the container is destroyed, or manage transferred owners explicitly.
 
 ## Execution evidence
+
+The native integer constructors and append methods also pass
+`tests/stdlib_integer_text_execution.rs`, including signed minima, unsigned
+maxima, reuse of reserved capacity and every observed allocation failure.
+Failed growth preserves existing borrowed views; syscall traces check cleanup.
 
 On 2026-10-22, all three tests in `tests/stdlib_string_execution.rs` passed
 against compiler source `441e66f9` plus this library work, on x86_64 Linux with

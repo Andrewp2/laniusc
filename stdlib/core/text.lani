@@ -191,6 +191,18 @@ pub impl Text {
     pub fn parse_i32(&self) -> core::result::Result<i32, core::decimal::ParseError> {
         return core::decimal::parse_i32_range(self.bytes, self.start, self.length);
     }
+    pub fn parse_u64(&self) -> core::result::Result<u64, core::decimal::ParseError> {
+        return core::decimal::parse_u64_range(self.bytes, self.start, self.length);
+    }
+    pub fn parse_i64(&self) -> core::result::Result<i64, core::decimal::ParseError> {
+        return core::decimal::parse_i64_range(self.bytes, self.start, self.length);
+    }
+    pub fn parse_usize(&self) -> core::result::Result<usize, core::decimal::ParseError> {
+        return core::decimal::parse_usize_range(self.bytes, self.start, self.length);
+    }
+    pub fn parse_isize(&self) -> core::result::Result<isize, core::decimal::ParseError> {
+        return core::decimal::parse_isize_range(self.bytes, self.start, self.length);
+    }
 }
 
 pub impl Scalars {

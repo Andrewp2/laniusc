@@ -1,0 +1,122 @@
+// Binary input: type selector, eight little-endian value bytes, offset+1,
+// capacity+1. Output: status/required/length, indexed digits, two fallbacks,
+// then all 32 destination bytes. The Rust oracle supplies independent values.
+module app::main;
+import alloc::io;
+import core::decimal;
+import core::result;
+import std::io;
+import std::stream;
+fn emit(value: i32) { assert(std::io::write_byte(1, value) == 1); }
+fn result_bytes(result: core::result::Result<i32, core::decimal::FormatError>) {
+ if (core::result::is_ok(result)) { emit(0); emit(core::result::unwrap(result)); return; }
+ let error: core::decimal::FormatError = core::result::unwrap_err(result);
+ let required: i32 = match (error) { core::decimal::FormatError::Bounds -> -1, core::decimal::FormatError::BufferTooSmall(count) -> count };
+ if (required == -1) { emit(1); emit(0); } else { emit(2); emit(required); }
+}
+fn inspect(kind: u8, bits: u64, offset: i32, capacity: i32) {
+ let destination: [u8;32] = [211;32];
+ if (kind == 0) {
+  let value: u8 = bits as u8;
+  result_bytes(core::decimal::format_u8(destination, offset, capacity, value));
+  let length: u32 = core::decimal::len_u8(value); emit(length as i32);
+  let index: u32 = 0;
+  while (index < length) { emit(core::decimal::byte_at_or_u8(value, index, 201) as i32); index += 1; }
+  emit(core::decimal::byte_at_or_u8(value, length, 201) as i32);
+  emit(core::decimal::byte_at_or_u8(value, 4294967295, 202) as i32);
+ }
+ if (kind == 1) {
+  let value: u16 = bits as u16;
+  result_bytes(core::decimal::format_u16(destination, offset, capacity, value));
+  let length: u32 = core::decimal::len_u16(value); emit(length as i32);
+  let index: u32 = 0;
+  while (index < length) { emit(core::decimal::byte_at_or_u16(value, index, 201) as i32); index += 1; }
+  emit(core::decimal::byte_at_or_u16(value, length, 201) as i32);
+  emit(core::decimal::byte_at_or_u16(value, 4294967295, 202) as i32);
+ }
+ if (kind == 2) {
+  let value: u32 = bits as u32;
+  result_bytes(core::decimal::format_u32(destination, offset, capacity, value));
+  let length: u32 = core::decimal::len_u32(value); emit(length as i32);
+  let index: u32 = 0;
+  while (index < length) { emit(core::decimal::byte_at_or_u32(value, index, 201) as i32); index += 1; }
+  emit(core::decimal::byte_at_or_u32(value, length, 201) as i32);
+  emit(core::decimal::byte_at_or_u32(value, 4294967295, 202) as i32);
+ }
+ if (kind == 3) {
+  let value: i8 = bits as i8;
+  result_bytes(core::decimal::format_i8(destination, offset, capacity, value));
+  let length: u32 = core::decimal::len_i8(value); emit(length as i32);
+  let index: u32 = 0;
+  while (index < length) { emit(core::decimal::byte_at_or_i8(value, index, 201) as i32); index += 1; }
+  emit(core::decimal::byte_at_or_i8(value, length, 201) as i32);
+  emit(core::decimal::byte_at_or_i8(value, 4294967295, 202) as i32);
+ }
+ if (kind == 4) {
+  let value: i16 = bits as i16;
+  result_bytes(core::decimal::format_i16(destination, offset, capacity, value));
+  let length: u32 = core::decimal::len_i16(value); emit(length as i32);
+  let index: u32 = 0;
+  while (index < length) { emit(core::decimal::byte_at_or_i16(value, index, 201) as i32); index += 1; }
+  emit(core::decimal::byte_at_or_i16(value, length, 201) as i32);
+  emit(core::decimal::byte_at_or_i16(value, 4294967295, 202) as i32);
+ }
+ if (kind == 5) {
+  let value: i32 = bits as i32;
+  result_bytes(core::decimal::format_i32(destination, offset, capacity, value));
+  let length: u32 = core::decimal::len_i32(value); emit(length as i32);
+  let index: u32 = 0;
+  while (index < length) { emit(core::decimal::byte_at_or_i32(value, index, 201) as i32); index += 1; }
+  emit(core::decimal::byte_at_or_i32(value, length, 201) as i32);
+  emit(core::decimal::byte_at_or_i32(value, 4294967295, 202) as i32);
+ }
+ if (kind == 6) {
+  let value: u64 = bits as u64;
+  result_bytes(core::decimal::format_u64(destination, offset, capacity, value));
+  let length: u32 = core::decimal::len_u64(value); emit(length as i32);
+  let index: u32 = 0;
+  while (index < length) { emit(core::decimal::byte_at_or_u64(value, index, 201) as i32); index += 1; }
+  emit(core::decimal::byte_at_or_u64(value, length, 201) as i32);
+  emit(core::decimal::byte_at_or_u64(value, 4294967295, 202) as i32);
+ }
+ if (kind == 7) {
+  let value: i64 = bits as i64;
+  result_bytes(core::decimal::format_i64(destination, offset, capacity, value));
+  let length: u32 = core::decimal::len_i64(value); emit(length as i32);
+  let index: u32 = 0;
+  while (index < length) { emit(core::decimal::byte_at_or_i64(value, index, 201) as i32); index += 1; }
+  emit(core::decimal::byte_at_or_i64(value, length, 201) as i32);
+  emit(core::decimal::byte_at_or_i64(value, 4294967295, 202) as i32);
+ }
+ if (kind == 8) {
+  let value: usize = bits as usize;
+  result_bytes(core::decimal::format_usize(destination, offset, capacity, value));
+  let length: u32 = core::decimal::len_usize(value); emit(length as i32);
+  let index: u32 = 0;
+  while (index < length) { emit(core::decimal::byte_at_or_usize(value, index, 201) as i32); index += 1; }
+  emit(core::decimal::byte_at_or_usize(value, length, 201) as i32);
+  emit(core::decimal::byte_at_or_usize(value, 4294967295, 202) as i32);
+ }
+ if (kind == 9) {
+  let value: isize = bits as isize;
+  result_bytes(core::decimal::format_isize(destination, offset, capacity, value));
+  let length: u32 = core::decimal::len_isize(value); emit(length as i32);
+  let index: u32 = 0;
+  while (index < length) { emit(core::decimal::byte_at_or_isize(value, index, 201) as i32); index += 1; }
+  emit(core::decimal::byte_at_or_isize(value, length, 201) as i32);
+  emit(core::decimal::byte_at_or_isize(value, 4294967295, 202) as i32);
+ }
+ let index: i32 = 0; while (index < 32) { emit(destination[index] as i32); index += 1; }
+}
+fn main() -> i32 {
+ let input: alloc::io::Buffer = alloc::io::new();
+ let source: std::stream::Descriptor = std::stream::stdin();
+ core::result::unwrap(std::stream::copy(source.borrow(),input.borrow()));
+ if (input.len() != 11) { input.destroy(); return 1; }
+ let bytes: [u8] = input.as_bytes();
+ if (bytes[0] > 9) { input.destroy(); return 2; }
+ let bits: u64 = 0; let index: i32 = 7;
+ while (index >= 0) { bits = (bits << 8) | (bytes[1 + index] as u64); index -= 1; }
+ inspect(bytes[0], bits, (bytes[9] as i32)-1, (bytes[10] as i32)-1);
+ input.destroy(); return 0;
+}

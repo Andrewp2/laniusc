@@ -5,47 +5,51 @@
 module std::io_decimal;
 import core::decimal;
 import core::mem;
+import core::result;
 import core::wide_i64;
 import core::wide_u64;
 import std::io;
-pub fn write_u32(handle: i32, value: u32) -> i32 {
-    let length: u32 = core::decimal::len_u32(value);
-    let position: u32 = 0;
+fn write_number(handle: i32, bytes: [u8], length: i32) -> i32 {
+    let position: i32 = 0;
     while (position<length) {
-        let byte: u8 = core::decimal::byte_at_or_u32(value, position, 0);
-        let byte_i32: i32 = byte as i32;
-        let written: i32 = std::io::write_byte(handle, byte_i32);
-        if (written<0) {
-            return written;
-        }
-        if (written != 1) {
-            return -1;
-        }
+        let written: i32 = std::io::write_byte(handle, bytes[position] as i32);
+        if (written < 0) { return written; }
+        if (written != 1) { return -1; }
         position += 1;
     }
-    return length as i32;
+    return length;
+}
+
+pub fn write_u32(handle: i32, value: u32) -> i32 {
+    let bytes: [u8; 20] = [0; 20];
+    let length: i32 = core::result::unwrap(core::decimal::format_u32(bytes, 0, 20, value));
+    return write_number(handle, bytes, length);
 }
 
 // Writes a signed decimal value, including the sign for negatives. Returns
 // the complete byte count (1..11), the first negative host error, or -1 if a
 // byte write does not report exactly one byte. A failure can leave a prefix.
 pub fn write_i32(handle: i32, value: i32) -> i32 {
-    let length: u32 = core::decimal::len_i32(value);
-    let position: u32 = 0;
-    while (position<length) {
-        let byte: u8 = core::decimal::byte_at_or_i32(value, position, 0);
-        let byte_i32: i32 = byte as i32;
-        let written: i32 = std::io::write_byte(handle, byte_i32);
-        if (written<0) {
-            return written;
-        }
-        if (written != 1) {
-            return -1;
-        }
-        position += 1;
-    }
-    return length as i32;
+    let bytes: [u8; 20] = [0; 20];
+    let length: i32 = core::result::unwrap(core::decimal::format_i32(bytes, 0, 20, value));
+    return write_number(handle, bytes, length);
 }
+
+// Native 64-bit and pointer-sized writers share the checked byte formatter.
+// Return the complete byte count, the first negative host error, or -1 for a
+// short write. Errors may leave a decimal prefix; Interrupted is an error here.
+pub fn write_u64(handle: i32, value: u64) -> i32 {
+    let bytes: [u8; 20] = [0; 20];
+    let length: i32 = core::result::unwrap(core::decimal::format_u64(bytes, 0, 20, value));
+    return write_number(handle, bytes, length);
+}
+pub fn write_i64(handle: i32, value: i64) -> i32 {
+    let bytes: [u8; 20] = [0; 20];
+    let length: i32 = core::result::unwrap(core::decimal::format_i64(bytes, 0, 20, value));
+    return write_number(handle, bytes, length);
+}
+pub fn write_usize(handle: i32, value: usize) -> i32 { return write_u64(handle, value as u64); }
+pub fn write_isize(handle: i32, value: isize) -> i32 { return write_i64(handle, value as i64); }
 
 // Write a full-width two-word unsigned value. Return the byte count (1..20),
 // the first negative host error, or -1 for a short write. A failure may leave

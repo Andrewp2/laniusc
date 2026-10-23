@@ -1,4 +1,5 @@
-// Input: one type selector (0=u8, 1=u16, 2=u32, 3=i8, 4=i16, 5=i32),
+// Input: one type selector (0=u8, 1=u16, 2=u32, 3=i8, 4=i16, 5=i32,
+// 6=u64, 7=i64, 8=usize, 9=isize),
 // followed by the exact decimal text. Success prints the value. Failure prints
 // its byte offset and returns the error kind's code.
 module app::main;
@@ -11,7 +12,11 @@ import std::io_decimal;
 fn failure(error: core::decimal::ParseError) -> i32 {
     std::io_decimal::write_i32(1, error.offset);
     let code: i32 = match (error.kind) {
-        Bounds -> 1, Empty -> 2, MissingDigits -> 3, InvalidDigit -> 4, Overflow -> 5,
+        core::decimal::ParseErrorKind::Bounds -> 1,
+        core::decimal::ParseErrorKind::Empty -> 2,
+        core::decimal::ParseErrorKind::MissingDigits -> 3,
+        core::decimal::ParseErrorKind::InvalidDigit -> 4,
+        core::decimal::ParseErrorKind::Overflow -> 5,
     };
     return code;
 }
@@ -51,6 +56,26 @@ fn parse(bytes: [u8], count: i32, kind: u8) -> i32 {
         if (core::result::is_err(parsed)) { return failure(core::result::unwrap_err(parsed)); }
         std::io_decimal::write_i32(1, core::result::unwrap(parsed));
         return 0;
+    }
+    if (kind == 54) {
+        let parsed: core::result::Result<u64, core::decimal::ParseError> = core::decimal::parse_u64_range(bytes, 1, count);
+        if (core::result::is_err(parsed)) { return failure(core::result::unwrap_err(parsed)); }
+        std::io_decimal::write_u64(1, core::result::unwrap(parsed)); return 0;
+    }
+    if (kind == 55) {
+        let parsed: core::result::Result<i64, core::decimal::ParseError> = core::decimal::parse_i64_range(bytes, 1, count);
+        if (core::result::is_err(parsed)) { return failure(core::result::unwrap_err(parsed)); }
+        std::io_decimal::write_i64(1, core::result::unwrap(parsed)); return 0;
+    }
+    if (kind == 56) {
+        let parsed: core::result::Result<usize, core::decimal::ParseError> = core::decimal::parse_usize_range(bytes, 1, count);
+        if (core::result::is_err(parsed)) { return failure(core::result::unwrap_err(parsed)); }
+        std::io_decimal::write_usize(1, core::result::unwrap(parsed)); return 0;
+    }
+    if (kind == 57) {
+        let parsed: core::result::Result<isize, core::decimal::ParseError> = core::decimal::parse_isize_range(bytes, 1, count);
+        if (core::result::is_err(parsed)) { return failure(core::result::unwrap_err(parsed)); }
+        std::io_decimal::write_isize(1, core::result::unwrap(parsed)); return 0;
     }
     return 6;
 }

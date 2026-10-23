@@ -1,0 +1,14 @@
+module app::main;
+import std::io;
+import std::io_decimal;
+fn main() -> i32 {
+    let minimum: i64 = -9223372036854775808;
+    let maximum: u64 = 18446744073709551615;
+    let result: i32 = std::io_decimal::write_i64(1, minimum);
+    if (result < 0) { return -result; }
+    if (result != 20 || std::io::write_byte(1, 10) != 1) { return 99; }
+    result = std::io_decimal::write_u64(1, maximum);
+    if (result < 0) { return -result; }
+    if (result != 20 || std::io::write_byte(1, 10) != 1) { return 99; }
+    return 0;
+}

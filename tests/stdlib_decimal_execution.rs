@@ -58,22 +58,28 @@ fn packed_decimal_parsers_cover_widths_signs_overflow_and_exact_errors() {
         );
         assert!(output.stderr.is_empty(), "{output:?}");
     };
-    let ranges: [(i64, i64); 6] = [
+    let ranges: [(i128, i128); 10] = [
         (0, 255),
         (0, 65535),
         (0, 4294967295),
         (-128, 127),
         (-32768, 32767),
         (-2147483648, 2147483647),
+        (0, u64::MAX as i128),
+        (i64::MIN as i128, i64::MAX as i128),
+        (0, u64::MAX as i128),
+        (i64::MIN as i128, i64::MAX as i128),
     ];
-    let mut seed = 0xdec1_a132_u32;
+    let mut seed = 0xdec1_a132_64ff_2026_u64;
     for (kind, (minimum, maximum)) in ranges.into_iter().enumerate() {
         let kind = kind as u8;
-        let signed = kind >= 3;
+        let signed = minimum < 0;
         let mut values = vec![minimum, minimum + 1, 0, 1, maximum - 1, maximum];
         for _ in 0..32 {
-            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
-            values.push(minimum + i64::from(seed) % (maximum - minimum + 1));
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            values.push(minimum + i128::from(seed) % (maximum - minimum + 1));
         }
         for value in values {
             let normalized = value.to_string();
@@ -89,6 +95,18 @@ fn packed_decimal_parsers_cover_widths_signs_overflow_and_exact_errors() {
         }
         let over = (maximum + 1).to_string();
         check(kind, over.as_bytes(), 5, (over.len() - 1).to_string());
+        check(
+            kind,
+            format!("{over}x").as_bytes(),
+            5,
+            (over.len() - 1).to_string(),
+        );
+        check(
+            kind,
+            format!("000{over}").as_bytes(),
+            5,
+            (over.len() + 2).to_string(),
+        );
         if signed {
             let under = (minimum - 1).to_string();
             check(kind, under.as_bytes(), 5, (under.len() - 1).to_string());
