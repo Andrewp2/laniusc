@@ -1,0 +1,82 @@
+// Four bytes per command: operation, a+1, b+1, c+1. Initial elements are 0..15.
+// Replies include status/value/length, all backing elements, mixed-end cursor
+// values, then chunks and windows using c as their width. Rust owns the model.
+module app::main;
+import alloc::io;
+import core::option;
+import core::result;
+import core::slice;
+import std::io;
+import std::stream;
+
+fn byte(value: i32) { assert(std::io::write_byte(1, value) == 1); }
+fn emit(view: core::slice::View<i32>) {
+    byte(view.len());
+    let cursor: core::slice::Iter<i32> = view.iter();
+    let value: core::option::Option<i32> = cursor.next();
+    while (core::option::is_some(value)) { byte(core::option::unwrap(value)); value = cursor.next(); }
+}
+fn main() -> i32 {
+    let input: alloc::io::Buffer = alloc::io::new();
+    let descriptor: std::stream::Descriptor = std::stream::stdin();
+    core::result::unwrap(std::stream::copy(descriptor.borrow(), input.borrow()));
+    if (input.len() % 4 != 0) { input.destroy(); return 2; }
+    let commands: [u8] = input.as_bytes();
+    let values: [i32; 16] = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15];
+    let whole: core::slice::View<i32> = core::result::unwrap(core::slice::view(values, 16));
+    let current: core::slice::View<i32> = whole;
+    let offset: i32 = 0;
+    while (offset < input.len()) {
+        let operation: i32 = commands[offset] as i32;
+        let a: i32 = (commands[offset + 1] as i32) - 1;
+        let b: i32 = (commands[offset + 2] as i32) - 1;
+        let c: i32 = (commands[offset + 3] as i32) - 1;
+        let status: i32 = 1; let value: i32 = 0;
+        if (operation == 0 || operation == 1) {
+            let result: core::result::Result<core::slice::View<i32>, core::slice::ViewError> = current.subview(a, b);
+            if (operation == 0) { result = whole.subview(a, b); }
+            if (core::result::is_err(result)) { status = 0; value = 255; }
+            else { current = core::result::unwrap(result); value = current.len(); }
+        } else { if (operation == 2) {
+            let result: core::result::Result<i32, core::slice::ViewError> = current.try_set(a, b + 1);
+            if (core::result::is_err(result)) { status = 0; value = 255; } else { value = core::result::unwrap(result); }
+        } else { if (operation == 3) {
+            let result: core::result::Result<i32, core::slice::ViewError> = current.copy_within(a, b, c);
+            if (core::result::is_err(result)) { status = 0; value = 255; } else { value = core::result::unwrap(result); }
+        } else { if (operation == 4) { value = current.reverse();
+        } else { if (operation == 5) { value = current.fill(b + 1);
+        } else { if (operation == 6) {
+            let result: core::option::Option<i32> = current.get(a);
+            if (core::option::is_none(result)) { status = 0; value = 255; } else { value = core::option::unwrap(result); }
+        } else { input.destroy(); return 3; } } } } } }
+        byte(status); byte(value); byte(current.len());
+        let index: i32 = 0; while (index < 16) { byte(values[index]); index += 1; }
+        let cursor: core::slice::Iter<i32> = current.iter();
+        let back: bool = false;
+        while (cursor.remaining() > 0) {
+            let before: i32 = cursor.remaining();
+            if (back) { byte(core::option::unwrap(cursor.next_back())); } else { byte(core::option::unwrap(cursor.next())); }
+            assert(cursor.remaining() == before - 1); back = !back;
+        }
+        assert(core::option::is_none(cursor.next()) && core::option::is_none(cursor.next_back()));
+        if (c <= 0) {
+            assert(core::result::is_err(current.chunks(c)) && core::result::is_err(current.windows(c)));
+            byte(255);
+        } else {
+            let chunks: core::slice::Chunks<i32> = core::result::unwrap(current.chunks(c));
+            byte(chunks.remaining());
+            while (chunks.remaining() > 0) {
+                let before: i32 = chunks.remaining(); emit(core::option::unwrap(chunks.next())); assert(chunks.remaining() == before - 1);
+            }
+            assert(core::option::is_none(chunks.next()) && core::option::is_none(chunks.next()));
+            let windows: core::slice::Windows<i32> = core::result::unwrap(current.windows(c));
+            byte(windows.remaining());
+            while (windows.remaining() > 0) {
+                let before: i32 = windows.remaining(); emit(core::option::unwrap(windows.next())); assert(windows.remaining() == before - 1);
+            }
+            assert(core::option::is_none(windows.next()) && core::option::is_none(windows.next()));
+        }
+        offset += 4;
+    }
+    input.destroy(); return 0;
+}

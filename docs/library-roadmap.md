@@ -26,8 +26,8 @@ package distribution is a separate deliverable.
 | --- | --- | --- |
 | Fundamental values | Option, Result, ordering, comparison, hashing, cloning, explicit errors | Generic Option/Result and comparison exist; contracts and composition need review |
 | Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Many implementations and runtime fixtures exist; consolidate duplicate paths |
-| Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic operations exist; length-bearing APIs and uniform bounds errors remain |
-| Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | Shared protocol and collection integration remain |
+| Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic algorithms and counted View values execute, including subviews, checked mutations and cursors; initial physical counts still require compiler length projection |
+| Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | Inherent slice/text/hash-map cursors execute; shared protocol dispatch hits an imported-generic compiler dependency; adapters and collection integration remain |
 | Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed owned String, byte codecs and scalar operations execute; borrowed Text, splitting and scalar iteration now execute; join and formatting remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings and raw views exist; ownership conventions need consolidation |
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Generic vectors/deques, linear maps/sets and an executable alloc hash map exist; hash-set composition is a compiler dependency |
@@ -152,7 +152,15 @@ API list; unrelated library work can continue.
   and group data during input. Paired native runtime falls from 173 to 26 ms
   for 4,096 records/64 groups; peak live allocation request sizes fall from
   779 KB to 99 KB. See [extended-csv.md](extended-csv.md) and [csv-report.md](csv-report.md).
-- Next foundation work: iterators and text operations, buffered I/O and
+- Borrowed slices: [View and cursors](stdlib-slice-views.md) execute with checked
+  logical bounds, overlapping copies, chunks/windows and iteration from either
+  end. A 6,388-command model checks stateful behavior. The window-report example
+  combines parsing and owned vectors with borrowed windows and exact statistics,
+  including allocation and I/O failure coverage. Initial counts still require
+  valid physical backing; shared generic iterator dispatch remains a compiler
+  dependency with a minimal reproduction and executable controls.
+- Next foundation work: resolve shared iterator and HashSet compiler dependencies;
+  continue text operations, buffered I/O and
   remaining streaming format interfaces; complete HashSet when its compiler
   dependency is resolved.
   Completing the integration application does not complete the first phase.

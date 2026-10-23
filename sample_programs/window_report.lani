@@ -1,0 +1,97 @@
+// First stdin line: window width (1..4096). Remaining lines: i32 samples.
+// Emit CSV statistics for every complete window. See docs/stdlib-slice-views.md.
+module app::main;
+import alloc::io;
+import core::decimal;
+import core::io;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::wide_i64;
+import std::io;
+import std::io_decimal;
+import std::stream;
+import std::vec;
+
+fn write_sum(value: i64) -> i32 {
+    // The existing decimal writer accepts the explicit two-word representation.
+    let bits: u64 = value as u64;
+    return std::io_decimal::write_wide_i64(1, core::wide_i64::from_words((bits >> 32) as u32, bits as u32));
+}
+fn report(view: core::slice::View<i32>, width: i32) -> i32 {
+    if (std::io::write_text(1, "start,min,max,sum\n") != 18) { return 3; }
+    let windows: core::slice::Windows<i32> = core::result::unwrap(view.windows(width));
+    let start: i32 = 0;
+    let next: core::option::Option<core::slice::View<i32>> = windows.next();
+    while (core::option::is_some(next)) {
+        let window: core::slice::View<i32> = core::option::unwrap(next);
+        let cursor: core::slice::Iter<i32> = window.iter();
+        let first: i32 = core::option::unwrap(cursor.next());
+        let minimum: i32 = first; let maximum: i32 = first; let sum: i64 = first as i64;
+        let item: core::option::Option<i32> = cursor.next();
+        while (core::option::is_some(item)) {
+            let value: i32 = core::option::unwrap(item);
+            if (value < minimum) { minimum = value; }
+            if (value > maximum) { maximum = value; }
+            // At most 4096 i32 values; the exact sum fits i64.
+            sum += value as i64; item = cursor.next();
+        }
+        if (std::io_decimal::write_i32(1, start) < 0 || std::io::write_byte(1, 44) != 1 ||
+            std::io_decimal::write_i32(1, minimum) < 0 || std::io::write_byte(1, 44) != 1 ||
+            std::io_decimal::write_i32(1, maximum) < 0 || std::io::write_byte(1, 44) != 1 ||
+            write_sum(sum) < 0 || std::io::write_byte(1, 10) != 1) { return 3; }
+        start += 1; next = windows.next();
+    }
+    return 0;
+}
+fn analyze(text: core::text::Text) -> i32 {
+    let newline: [u8; 1] = [10];
+    let separator: core::text::Text = core::result::unwrap(core::text::from_utf8(newline, 1));
+    let lines: core::text::Split = text.split(separator);
+    let header: core::text::Text = core::option::unwrap(lines.next());
+    let parsed_width: core::result::Result<i32, core::decimal::ParseError> = header.trim_ascii().parse_i32();
+    if (core::result::is_err(parsed_width)) { return 2; }
+    let width: i32 = core::result::unwrap(parsed_width);
+    if (width <= 0 || width > 4096) { return 2; }
+    let samples: std::vec::Vec<i32> = std::vec::new();
+    let next: core::option::Option<core::text::Text> = lines.next();
+    while (core::option::is_some(next)) {
+        let line: core::text::Text = core::option::unwrap(next);
+        next = lines.next();
+        if (line.is_empty() && core::option::is_none(next)) { break; }
+        let parsed: core::result::Result<i32, core::decimal::ParseError> = line.trim_ascii().parse_i32();
+        if (core::result::is_err(parsed) || std::vec::len(samples) == 4096) { std::vec::destroy(samples); return 2; }
+        let before: i32 = std::vec::len(samples);
+        samples = std::vec::try_push(samples, core::result::unwrap(parsed));
+        if (std::vec::len(samples) == before) { std::vec::destroy(samples); return 4; }
+    }
+    let view: core::slice::View<i32> = core::result::unwrap(core::slice::view(std::vec::as_slice(samples), std::vec::len(samples)));
+    let status: i32 = report(view, width);
+    std::vec::destroy(samples); return status;
+}
+fn run() -> i32 {
+    let input: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(1048576));
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let copied: core::result::Result<u64, core::io::CopyFailure> = std::stream::copy(source.borrow(), input.borrow());
+    if (core::result::is_err(copied)) {
+        let failure: core::io::CopyFailure = core::result::unwrap_err(copied);
+        let status: i32 = match (failure.cause) {
+            core::io::Error::AllocationFailed -> 4,
+            core::io::Error::LimitExceeded -> 2,
+            _ -> 3,
+        };
+        input.destroy(); return status;
+    }
+    let checked: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8(input.as_bytes(), input.len());
+    if (core::result::is_err(checked)) { input.destroy(); return 2; }
+    let status: i32 = analyze(core::result::unwrap(checked));
+    input.destroy(); return status;
+}
+fn main() -> i32 {
+    let status: i32 = run();
+    if (status == 2) { std::io::eprintln("expected a width in 1..4096 and at most 4096 signed 32-bit sample lines (input limit 1 MiB)"); }
+    if (status == 3) { std::io::eprintln("input/output failed"); }
+    if (status == 4) { std::io::eprintln("allocation failed"); }
+    return status;
+}

@@ -1,0 +1,26 @@
+module app::main;
+import core::iter;
+import core::option;
+import core::result;
+struct Payload { wide: u64, flags: core::option::Option<bool>, cells: [i32; 2] }
+fn sum<I>(source: &I) -> i32 where I: core::iter::Iterator<i32> {
+    let result: i32 = 0;
+    let item: core::option::Option<i32> = source.next();
+    while (core::option::is_some(item)) { result += core::option::unwrap(item); item = source.next(); }
+    return result;
+}
+fn main() -> i32 {
+    let values: [i32; 4] = [3, 5, 7, 9];
+    let source: core::iter::SliceIter<i32> = core::result::unwrap(core::iter::from_slice(values, 4));
+    let first: core::iter::Take<core::iter::SliceIter<i32>, i32> = core::iter::take(source.borrow(), 3);
+    let second: core::iter::Take<core::iter::Take<core::iter::SliceIter<i32>, i32>, i32> = core::iter::take(first.borrow(), 2);
+    if (sum(second.borrow()) != 8 || source.remaining() != 2 || sum(first.borrow()) != 7) { return 1; }
+    let maximum: u64 = 18446744073709551615;
+    let one: Payload = Payload { wide: maximum, flags: core::option::Some(false), cells: [19,23] };
+    let data: [Payload; 1] = [one];
+    let nested: core::iter::SliceIter<Payload> = core::result::unwrap(core::iter::from_slice(data, 1));
+    let picked: core::iter::Take<core::iter::SliceIter<Payload>, Payload> = core::iter::take(nested.borrow(), 1);
+    let found: Payload = core::option::unwrap(picked.next());
+    if (found.wide != maximum || core::option::unwrap(found.flags) || found.cells[1] != 23) { return 2; }
+    return 0;
+}

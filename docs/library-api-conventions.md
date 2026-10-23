@@ -53,10 +53,12 @@ an index beyond the length, and a byte index inside a scalar have explicit
 failure behavior. Empty text is valid. No normalization or locale-sensitive
 comparison happens implicitly.
 
-Use length-bearing slices when the compiler exposes their lengths. Existing
-slice APIs still take a separate `i32` count; a caller must back that many
-elements. This is a compiler/API prerequisite to remove, not a reason to read
-beyond a slice. Raw pointers and lengths remain explicit low-level interfaces.
+Use `core::slice::View<T>` to retain logical lengths across subviews and cursor
+operations. Its initial constructor still needs a separate `i32` count because
+the compiler cannot expose slice lengths; the caller must back the selected
+range. Legacy free slice functions also require counts. Removing this physical
+backing precondition needs compiler support. Raw pointers and lengths remain
+explicit low-level interfaces.
 
 Owned UTF-8 storage should use packed bytes. Encoding validation belongs at
 construction and mutation boundaries; repeated queries should not revalidate

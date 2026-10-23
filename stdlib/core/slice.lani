@@ -12,6 +12,136 @@ module core::slice;
 
 import core::cmp;
 import core::ops;
+import core::option;
+import core::result;
+
+// Length-bearing borrowed views. Construction checks logical bounds; until
+// slice length projection exists, the caller must supply backed elements.
+// Copies alias the same elements. No allocation, cloning or destruction occurs.
+// See docs/stdlib-slice-views.md for contracts, lifetime rules and evidence.
+pub enum ViewError { Bounds, InvalidSize }
+pub struct View<T> { values: [T], start: i32, length: i32 }
+pub struct Iter<T> { values: [T], front: i32, back: i32 }
+pub struct Chunks<T> { values: [T], position: i32, end: i32, width: i32 }
+pub struct Windows<T> { values: [T], position: i32, end: i32, width: i32 }
+
+pub fn view<T>(values: [T], count: i32) -> core::result::Result<View<T>, ViewError> {
+    return view_range(values, 0, count);
+}
+
+pub fn view_range<T>(values: [T], start: i32, count: i32) -> core::result::Result<View<T>, ViewError> {
+    if (start < 0 || count < 0 || start > 2147483647 - count) {
+        return core::result::Err(ViewError::Bounds);
+    }
+    return core::result::Ok(View { values: values, start: start, length: count });
+}
+
+pub impl<T> View<T> {
+    pub fn len(&self) -> i32 { return self.length; }
+    pub fn is_empty(&self) -> bool { return self.length == 0; }
+    pub fn get(&self, index: i32) -> core::option::Option<T> {
+        if (index < 0 || index >= self.length) { return core::option::None(); }
+        return core::option::Some(self.values[self.start + index]);
+    }
+    pub fn first(&self) -> core::option::Option<T> { return self.get(0); }
+    pub fn last(&self) -> core::option::Option<T> { return self.get(self.length - 1); }
+    // Half-open indices relative to this view. Empty subviews are valid.
+    pub fn subview(&self, start: i32, end: i32) -> core::result::Result<View<T>, ViewError> {
+        if (start < 0 || end < start || end > self.length) { return core::result::Err(ViewError::Bounds); }
+        return core::result::Ok(View { values: self.values, start: self.start + start, length: end - start });
+    }
+    // Return the displaced shallow value. Invalid indices leave storage intact.
+    pub fn try_set(&self, index: i32, value: T) -> core::result::Result<T, ViewError> {
+        if (index < 0 || index >= self.length) { return core::result::Err(ViewError::Bounds); }
+        let previous: T = self.values[self.start + index];
+        self.values[self.start + index] = value;
+        return core::result::Ok(previous);
+    }
+    // Copy within this view, including overlap. Return the number copied.
+    pub fn copy_within(&self, start: i32, end: i32, destination: i32) -> core::result::Result<i32, ViewError> {
+        if (start < 0 || end < start || end > self.length || destination < 0) {
+            return core::result::Err(ViewError::Bounds);
+        }
+        let count: i32 = end - start;
+        if (destination > self.length - count) { return core::result::Err(ViewError::Bounds); }
+        copy_within(self.values, self.start + self.length, self.start + start, self.start + end, self.start + destination);
+        return core::result::Ok(count);
+    }
+    // Returns the number of swaps. Only this view's elements are modified.
+    pub fn reverse(&self) -> i32 { return reverse_segment(self.values, self.start, self.start + self.length); }
+    pub fn fill(&self, value: T) -> i32 {
+        let index: i32 = 0;
+        while (index < self.length) { self.values[self.start + index] = value; index += 1; }
+        return self.length;
+    }
+    pub fn iter(&self) -> Iter<T> { return Iter { values: self.values, front: self.start, back: self.start + self.length }; }
+    // Consecutive nonoverlapping chunks; a final short chunk is included.
+    pub fn chunks(&self, width: i32) -> core::result::Result<Chunks<T>, ViewError> {
+        if (width <= 0) { return core::result::Err(ViewError::InvalidSize); }
+        return core::result::Ok(Chunks { values: self.values, position: self.start, end: self.start + self.length, width: width });
+    }
+    // All overlapping windows of exactly width elements, advancing by one.
+    pub fn windows(&self, width: i32) -> core::result::Result<Windows<T>, ViewError> {
+        if (width <= 0) { return core::result::Err(ViewError::InvalidSize); }
+        return core::result::Ok(Windows { values: self.values, position: self.start, end: self.start + self.length, width: width });
+    }
+}
+
+// Inherent cursors are fused and can be copied to fork their positions.
+// next/next_back read current backing values, not a snapshot of the elements.
+pub impl<T> Iter<T> {
+    pub fn remaining(&self) -> i32 { return self.back - self.front; }
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.front == self.back) { return core::option::None(); }
+        let value: T = self.values[self.front]; self.front += 1;
+        return core::option::Some(value);
+    }
+    pub fn next_back(&self) -> core::option::Option<T> {
+        if (self.front == self.back) { return core::option::None(); }
+        self.back -= 1; return core::option::Some(self.values[self.back]);
+    }
+    // Discard up to count elements without reading them; return actual progress.
+    // Negative counts fail without changing the cursor.
+    pub fn advance(&self, count: i32) -> core::result::Result<i32, ViewError> {
+        if (count < 0) { return core::result::Err(ViewError::Bounds); }
+        let skipped: i32 = count;
+        if (skipped > self.back - self.front) { skipped = self.back - self.front; }
+        self.front += skipped; return core::result::Ok(skipped);
+    }
+    pub fn advance_back(&self, count: i32) -> core::result::Result<i32, ViewError> {
+        if (count < 0) { return core::result::Err(ViewError::Bounds); }
+        let skipped: i32 = count;
+        if (skipped > self.back - self.front) { skipped = self.back - self.front; }
+        self.back -= skipped; return core::result::Ok(skipped);
+    }
+}
+pub impl<T> Chunks<T> {
+    pub fn remaining(&self) -> i32 {
+        let count: i32 = self.end - self.position;
+        let full: i32 = count / self.width;
+        if (count % self.width != 0) { full += 1; }
+        return full;
+    }
+    pub fn next(&self) -> core::option::Option<View<T>> {
+        if (self.position == self.end) { return core::option::None(); }
+        let count: i32 = self.end - self.position;
+        if (count > self.width) { count = self.width; }
+        let result: View<T> = View { values: self.values, start: self.position, length: count };
+        self.position += count; return core::option::Some(result);
+    }
+}
+pub impl<T> Windows<T> {
+    pub fn remaining(&self) -> i32 {
+        let count: i32 = self.end - self.position;
+        if (count < self.width) { return 0; }
+        return count - self.width + 1;
+    }
+    pub fn next(&self) -> core::option::Option<View<T>> {
+        if (self.end - self.position < self.width) { return core::option::None(); }
+        let result: View<T> = View { values: self.values, start: self.position, length: self.width };
+        self.position += 1; return core::option::Some(result);
+    }
+}
 
 fn nonnegative_len(len: i32) -> i32 {
     if (len <= 0) {
