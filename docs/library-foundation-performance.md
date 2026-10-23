@@ -107,3 +107,51 @@ Separate native measurements cover [2,048 exact float conversions](stdlib-float-
 and [1,024 streaming decimal records](stdlib-float-normalize.md#executable-evidence).
 They include process I/O and exclude compilation; they do not compare with
 optimized Ryu or claim GPU execution of library programs.
+
+## Arbitrary precision integers and Unicode 17
+
+The same existing harness measured the following entries on 2026-10-23, using
+one warmup and three measured private entry rebuilds with
+`LANIUS_PERF_REBUILD_ENTRY=1`. Imported files remained unchanged during each
+run. Each emitted ELF executed with exit 0 and empty stdout/stderr. These are
+warm imported-library observations; other desktop processes were uncontrolled.
+They establish neither cold compilation nor a cross-compiler speed ratio.
+
+| Entry | Import closure | Emitted ELF | Median | Range |
+| --- | --- | --- | --- | --- |
+| `tests/fixtures/extended_library/big_uint_contracts.lani` | 15 files, 146,762 bytes | 176,435 bytes | 326.882 ms | 266.474–382.767 ms |
+| `tests/fixtures/extended_library/big_int_contracts.lani` | 16 files, 165,610 bytes | 229,597 bytes | 223.419 ms | 215.799–256.737 ms |
+| `tests/fixtures/stdlib_foundation/unicode_contracts.lani` | 14 files, 294,487 bytes | 263,058 bytes | 164.888 ms | 151.872–169.778 ms |
+| `tests/fixtures/extended_library/unicode_normalize_contracts.lani` | 24 files, 609,420 bytes | 638,066 bytes | 190.090 ms | 185.852–191.902 ms |
+| `tests/fixtures/extended_library/unicode_graphemes_contracts.lani` | 21 files, 226,741 bytes | 257,153 bytes | 216.319 ms | 194.275–232.467 ms |
+| `sample_programs/library/text_normalize.lani` | 39 files, approximately 761 KB | 926,938 bytes | 327.759 ms | 311.604–376.309 ms |
+
+Counts describe the measured source snapshot; later copyright comments add a
+few hundred bytes to two generated tables without changing generated data or
+behavior. Results are sequential observations, not a paired comparison between
+entries with different import/cache histories. The normalizer entry executes
+with empty stdin and no options, verifying its empty-text stdout/stderr/exit
+contract; large-input native runtime is measured separately. In particular, a lower observed
+BigInt median does not establish that importing more code makes compilation
+faster. All entries except `unicode_contracts` require the `extended` source root.
+For example:
+
+```sh
+timeout --kill-after=2s 100s env LANIUS_PERF_REBUILD_ENTRY=1 \
+  target/stdlib-build/debug/examples/stdlib_gpu_perf \
+  tests/fixtures/extended_library/unicode_normalize_contracts.lani stdlib - 1 3 extended
+```
+
+Unicode tables use printable static hexadecimal data without startup allocation
+or local giant arrays. Normalization's complete import closure still includes
+all scalar casing/property tables because it imports `core::unicode` for CCC;
+this increases emitted code/data even when an application only needs combining
+classes. Import granularity and selective distribution remain open completion
+work. No compiler, shader, runtime or ABI implementation changed.
+
+Separate native process measurements cover the
+[4,000-digit calculator](extended-bigcalc.md) and
+[293,745-byte normalization workload](extended-text-normalize.md). Their timing
+includes native process I/O and excludes compilation. All target claims here
+concern x86_64 Linux output from GPU compilation, with no user-kernel execution
+claim.

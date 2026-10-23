@@ -378,11 +378,11 @@ pub fn destroy<T>(value: Vec<T>) {
 }
 
 // The index of the first element equal to item, or -1.
-pub fn index_of<T>(value: Vec<T>, item: T) -> i32 where T: core::cmp::Eq<T> {
+pub fn index_of<T>(value: Vec<T>, item: T) -> i32 where T: core::cmp::PartialEq<T> {
     let items: [T] = slots(value);
     let index: i32 = 0;
     while (index < value.length) {
-        if (T::eq(items[index], item)) {
+        if (T::partial_eq(items[index], item)) {
             return index;
         }
         index += 1;
@@ -390,7 +390,7 @@ pub fn index_of<T>(value: Vec<T>, item: T) -> i32 where T: core::cmp::Eq<T> {
     return -1;
 }
 
-pub fn contains<T>(value: Vec<T>, item: T) -> bool where T: core::cmp::Eq<T> {
+pub fn contains<T>(value: Vec<T>, item: T) -> bool where T: core::cmp::PartialEq<T> {
     return index_of(value, item) >= 0;
 }
 

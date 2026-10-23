@@ -173,3 +173,20 @@ pub impl core::cmp::Ord<PathBuf> for PathBuf {
 pub impl core::hash::Hash<PathBuf> for PathBuf {
     pub fn hash(value: PathBuf) -> u32 { return core::path::Path::hash(value.as_path()); }
 }
+
+pub impl core::cmp::PartialEq<PathBuf> for PathBuf {
+    pub fn partial_eq(left: PathBuf, right: PathBuf) -> bool { return PathBuf::eq(left, right); }
+    pub fn partial_ne(left: PathBuf, right: PathBuf) -> bool { return PathBuf::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<PathBuf> for PathBuf {
+    pub fn partial_lt(left: PathBuf, right: PathBuf) -> bool { return PathBuf::lt(left, right); }
+    pub fn partial_le(left: PathBuf, right: PathBuf) -> bool { return PathBuf::le(left, right); }
+    pub fn partial_gt(left: PathBuf, right: PathBuf) -> bool { return PathBuf::gt(left, right); }
+    pub fn partial_ge(left: PathBuf, right: PathBuf) -> bool { return PathBuf::ge(left, right); }
+    pub fn partial_cmp(left: PathBuf, right: PathBuf) -> core::cmp::PartialOrdering {
+        if (PathBuf::lt(left, right)) { return core::cmp::Less; }
+        if (PathBuf::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}

@@ -29,7 +29,7 @@ free functions only.
 | --- | --- |
 | `Some(value)`, `None()` | Construct an option. `None()` takes its payload type from context: a typed `let`, a parameter or a return type. |
 | `is_some`, `is_none` | Inspect the tag only. |
-| `contains(value, expected)` | True when present and equal to `expected`. Needs `T: core::cmp::Eq<T>`. |
+| `contains(value, expected)` | True when present and equal to `expected`. Needs `T: core::cmp::PartialEq<T>`. |
 | `unwrap(value)` | The payload; panics (SIGILL) on `None`. |
 | `unwrap_or(value, fallback)` | The payload, or `fallback` on `None`. Never panics. |
 | `or(value, fallback)` | `value` when present, otherwise `fallback`. |
@@ -39,9 +39,9 @@ free functions only.
 | `ok_or(value, error)` | `Ok(payload)`, or `Err(error)` on `None`, as a `core::result::Result<T, E>`. |
 | `ok(result)`, `err(result)` | The success value or the error of a `Result<T, E>` as an option. |
 
-`core::cmp` implements `Eq` for every integer width, `bool`, `char`, `f32`,
+`core::cmp` implements `PartialEq` for every integer width, `bool`, `char`, `f32`, `f64`,
 `ptr`, and the wide integers in `core::wide_i64` and `core::wide_u64`. A user
-type gets `contains` by implementing `core::cmp::Eq` for itself. `f32`
+type gets `contains` by implementing `core::cmp::PartialEq` for itself. `f32`
 equality is IEEE: `Some(NaN)` contains nothing, and `0.0` matches `-0.0`.
 
 ## Targets and limits

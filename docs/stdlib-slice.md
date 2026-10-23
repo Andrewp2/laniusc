@@ -12,7 +12,7 @@ import core::slice;
 
 struct Version { major: i32, minor: i32 }
 
-// With Eq and Ord impls for Version, every search and sort works on it.
+// With PartialEq and Ord impls, searches and sorts work on Version.
 fn newest(versions: [Version], len: i32, fallback: Version) -> Version {
     return core::slice::max_or(versions, len, fallback);
 }
@@ -20,11 +20,12 @@ fn newest(versions: [Version], len: i32, fallback: Version) -> Version {
 
 ## Bounds
 
-The functions need nothing from T, `core::cmp::Eq<T>` (searching),
+The functions need nothing from T, `core::cmp::PartialEq<T>` (searching),
 `core::cmp::Ord<T>` (ordering) or `core::ops::SaturatingAdd<T>` (`sum`).
-`core::cmp` implements `Eq` and `Ord` for every integer width, `bool`, `char`
-and `f32`. `core::ops` implements `SaturatingAdd` for every integer width and
-`f32`. The wide integers implement all three in `core::wide_i64` and
+`core::cmp` implements lawful total and partial comparisons for every integer
+width, `bool` and `char`. Native `f32` and `f64` implement partial comparisons.
+`core::ops` implements `SaturatingAdd` for every integer width and `f32`.
+The wide integers implement the required traits in `core::wide_i64` and
 `core::wide_u64`. A user type implements the traits it needs for itself.
 
 ## Operations
@@ -32,7 +33,7 @@ and `f32`. `core::ops` implements `SaturatingAdd` for every integer width and
 | Needs | Functions |
 | --- | --- |
 | nothing | `first`, `first_or`, `last_or`, `get_or`, `set`, `swap`, `fill`, `reverse_in_place`, `rotate_left`, `rotate_right`, `copy_within`, `copy_nonoverlapping_prefix`, `copy_nonoverlapping_range`, `insert`, `push`, `remove_at` |
-| `Eq` | `contains`, `count`, `index_of_or`, `last_index_of_or`, `starts_with`, `ends_with`, `equals`, `index_of_subslice`, `last_index_of_subslice`, `dedup_adjacent`, `retain_not_equal` |
+| `PartialEq` | `contains`, `count`, `index_of_or`, `last_index_of_or`, `starts_with`, `ends_with`, `equals`, `index_of_subslice`, `last_index_of_subslice`, `dedup_adjacent`, `retain_not_equal` |
 | `Ord` | `compare_lexicographic`, `min_or`, `max_or`, `is_sorted`, `sort`, `lower_bound`, `upper_bound`, `binary_search_first_or`, `binary_search_last_or`, `partition_lt` |
 | `SaturatingAdd` | `sum(values, len, initial)` |
 
@@ -60,11 +61,13 @@ and `f32`. `core::ops` implements `SaturatingAdd` for every integer width and
 
 ## Floating point
 
-Searching uses IEEE equality: NaN matches nothing, not even itself, and
-`0.0` matches `-0.0`. Ordering only calls `lt` and `le`, so NaN is never
-below or above anything: `min_or` and `max_or` skip a NaN unless it comes
-first, and sorting or searching a view that holds NaN gives an unspecified
-order. `sum` of `f32` adds with IEEE rules, so overflow gives an infinity.
+Searching native floats uses IEEE equality: NaN matches nothing, including
+itself, and `0.0` matches `-0.0`. Ordering operations require `Ord`, so native
+floats cannot be sorted or used for ordered searches. Wrap values in
+`core::float_order::TotalF32` or `TotalF64` to sort every encoding, including
+NaNs. Those keys distinguish signed zeros and preserve NaN signs and payloads.
+See [comparison contracts](stdlib-comparison.md). `sum` of `f32` adds with IEEE
+rules, so overflow gives an infinity.
 
 ## Targets
 
@@ -75,7 +78,7 @@ compile generic stdlib code yet.
 
 - `tests/fixtures/stdlib_foundation/core_slice.lani` runs every function
   through one generic checker for i8, i16, i32, i64, isize, u8, u16, u32,
-  u64, usize, char, f32, both wide integers and a user record, then bool
+  u64, usize, char, total float keys, both wide integers and a user record, then bool
   views, f32 NaN and signed zero, and `sum` past each type's limit.
   `tests/stdlib_foundation_execution.rs` runs it and checks that it calls
   every public function.

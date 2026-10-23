@@ -260,3 +260,20 @@ pub impl core::ops::SaturatingAdd<WideU64> for WideU64 {
         return total;
     }
 }
+
+pub impl core::cmp::PartialEq<WideU64> for WideU64 {
+    pub fn partial_eq(left: WideU64, right: WideU64) -> bool { return WideU64::eq(left, right); }
+    pub fn partial_ne(left: WideU64, right: WideU64) -> bool { return WideU64::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<WideU64> for WideU64 {
+    pub fn partial_lt(left: WideU64, right: WideU64) -> bool { return WideU64::lt(left, right); }
+    pub fn partial_le(left: WideU64, right: WideU64) -> bool { return WideU64::le(left, right); }
+    pub fn partial_gt(left: WideU64, right: WideU64) -> bool { return WideU64::gt(left, right); }
+    pub fn partial_ge(left: WideU64, right: WideU64) -> bool { return WideU64::ge(left, right); }
+    pub fn partial_cmp(left: WideU64, right: WideU64) -> core::cmp::PartialOrdering {
+        if (WideU64::lt(left, right)) { return core::cmp::Less; }
+        if (WideU64::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}

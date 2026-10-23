@@ -79,7 +79,7 @@ queue.destroy();
 | `try_make_contiguous()` | Return one counted view; wrapped nonzero-sized storage may allocate |
 | `try_clone()` | Independent storage containing shallow entry copies |
 | `try_split_off(index)` | Transfer suffix `index..len` into independent storage; retain the prefix and original capacity |
-| `index_of(item)`, `contains(item)` | Equality lookup; absent index is -1; requires Eq |
+| `index_of(item)`, `contains(item)` | Equality lookup; absent index is -1; requires PartialEq |
 | `destroy()` | Release storage and reset the owner to empty |
 
 Errors are `Bounds`, `InvalidCapacity`, `CapacityOverflow` and

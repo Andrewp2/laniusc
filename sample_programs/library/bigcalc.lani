@@ -1,0 +1,236 @@
+// Bounded streaming arbitrary-precision calculator. See docs/extended-bigcalc.md.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::big_int;
+import ext::big_uint;
+import ext::cli;
+import std::args;
+import std::stream;
+
+struct Options { radix: i32, max_line: i32, limits: ext::big_uint::Limits, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Diagnostic { status: i32, reason: i32, line: u64, offset: i32, operand: i32, argument: i32 }
+impl Diagnostic { fn borrow(&self) -> &Diagnostic { return self; } }
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn text(value: str, count: i32) -> core::text::Text { let bytes: core::slice::View<u8> = literal(value,count); return core::text::from_utf8_unchecked(bytes.values,bytes.start,count); }
+fn byte(value: core::slice::View<u8>, at: i32) -> u8 { return value.values[value.start+at]; }
+fn equal(value: core::slice::View<u8>, name: str, length: i32) -> bool {
+    if (value.len() != length) { return false; } let expected: core::slice::View<u8> = literal(name,length); let index: i32 = 0;
+    while (index < length) { if (byte(value,index) != byte(expected,index)) { return false; } index += 1; } return true;
+}
+fn fail(diagnostic: &Diagnostic, status: i32, reason: i32) -> i32 { diagnostic.status = status; diagnostic.reason = reason; return status; }
+fn big_error(error: ext::big_uint::Error, diagnostic: &Diagnostic) -> i32 {
+    let reason: i32 = match (error) { ext::big_uint::Error::LimbLimit -> 5, ext::big_uint::Error::WorkLimit -> 7, ext::big_uint::Error::OutputLimit -> 6, ext::big_uint::Error::AllocationFailed -> 8, ext::big_uint::Error::DivisionByZero -> 10, ext::big_uint::Error::Overflow -> 11, _ -> 3 };
+    let status: i32 = 2; if (reason == 5 || reason == 6) { status = 3; } if (reason == 7) { status = 4; } if (reason == 8) { status = 5; } if (reason == 10 || reason == 11) { status = 7; }
+    return fail(diagnostic,status,reason);
+}
+fn vec_error(error: alloc::vec::Error, diagnostic: &Diagnostic) -> i32 {
+    let allocation: bool = match (error) { alloc::vec::Error::AllocationFailed -> true, _ -> false };
+    if (allocation) { return fail(diagnostic,5,8); } return fail(diagnostic,3,4);
+}
+fn operation(name: core::slice::View<u8>) -> i32 {
+    if (equal(name,"add",3)) { return 1; } if (equal(name,"sub",3)) { return 2; } if (equal(name,"mul",3)) { return 3; }
+    if (equal(name,"div",3)) { return 4; } if (equal(name,"rem",3)) { return 5; } if (equal(name,"divmod",6)) { return 6; }
+    if (equal(name,"ediv",4)) { return 7; } if (equal(name,"erem",4)) { return 8; } if (equal(name,"edivmod",7)) { return 9; }
+    if (equal(name,"cmp",3)) { return 10; } if (equal(name,"shl",3)) { return 11; } if (equal(name,"shr",3)) { return 12; }
+    if (equal(name,"and",3)) { return 13; } if (equal(name,"or",2)) { return 14; } if (equal(name,"xor",3)) { return 15; }
+    if (equal(name,"abs",3)) { return 16; } if (equal(name,"neg",3)) { return 17; } if (equal(name,"not",3)) { return 18; }
+    if (equal(name,"gcd",3)) { return 19; } if (equal(name,"pow",3)) { return 20; } return 0;
+}
+fn valid_operand(value: core::slice::View<u8>, radix: i32, at: i32, diagnostic: &Diagnostic) -> bool {
+    let index: i32 = 0; if (value.len() > 0 && (byte(value,0) == 43 || byte(value,0) == 45)) { index = 1; }
+    if (index == value.len()) { diagnostic.offset = at+index; fail(diagnostic,2,3); return false; }
+    while (index < value.len()) {
+        let current: u8 = byte(value,index); let digit: i32 = -1;
+        if (current >= 48 && current <= 57) { digit = (current-48) as i32; }
+        if (current >= 65 && current <= 90) { digit = (current-65) as i32+10; }
+        if (current >= 97 && current <= 122) { digit = (current-97) as i32+10; }
+        if (digit < 0 || digit >= radix) { diagnostic.offset = at+index; fail(diagnostic,2,3); return false; } index += 1;
+    } return true;
+}
+fn write_part(value: core::slice::View<u8>) -> bool {
+    let sink: std::stream::Descriptor = std::stream::stdout(); return core::result::is_ok(core::io::write_all(sink.borrow(),value.values,value.start,value.len()));
+}
+fn write_record(first: core::slice::View<u8>, second: core::slice::View<u8>, paired: bool, options: Options, diagnostic: &Diagnostic) -> i32 {
+    let count: i64 = (first.len() as i64)+1; if (paired) { count += (second.len() as i64)+1; }
+    if (count > options.limits.max_output as i64) { return fail(diagnostic,3,6); }
+    if (!write_part(first)) { return fail(diagnostic,6,9); }
+    if (paired) { if (!write_part(literal(" ",1)) || !write_part(second)) { return fail(diagnostic,6,9); } }
+    if (!write_part(literal("\n",1))) { return fail(diagnostic,6,9); } return 0;
+}
+fn emit_one(value: &ext::big_int::BigInt, options: Options, diagnostic: &Diagnostic) -> i32 {
+    let formatted: core::result::Result<alloc::vec::Vec<u8>,ext::big_uint::Error> = value.format_radix(options.radix,options.limits);
+    if (core::result::is_err(formatted)) { return big_error(core::result::unwrap_err(formatted),diagnostic); }
+    let bytes: alloc::vec::Vec<u8> = core::result::unwrap(formatted);
+    let status: i32 = write_record(bytes.as_view(),literal("",0),false,options,diagnostic); bytes.destroy(); return status;
+}
+fn emit_pair(value: ext::big_int::DivRem, options: Options, diagnostic: &Diagnostic) -> i32 {
+    let formatted: core::result::Result<alloc::vec::Vec<u8>,ext::big_uint::Error> = value.quotient.format_radix(options.radix,options.limits);
+    if (core::result::is_err(formatted)) { return big_error(core::result::unwrap_err(formatted),diagnostic); }
+    let first: alloc::vec::Vec<u8> = core::result::unwrap(formatted);
+    let formatted_second: core::result::Result<alloc::vec::Vec<u8>,ext::big_uint::Error> = value.remainder.format_radix(options.radix,options.limits);
+    if (core::result::is_err(formatted_second)) { first.destroy(); return big_error(core::result::unwrap_err(formatted_second),diagnostic); }
+    let second: alloc::vec::Vec<u8> = core::result::unwrap(formatted_second);
+    let status: i32 = write_record(first.as_view(),second.as_view(),true,options,diagnostic); second.destroy(); first.destroy(); return status;
+}
+fn evaluate(op: i32, right_at: i32, left: &ext::big_int::BigInt, right: &ext::big_int::BigInt, options: Options, diagnostic: &Diagnostic) -> i32 {
+    diagnostic.operand = 0;
+    if (op >= 4 && op <= 9) {
+        let divided: core::result::Result<ext::big_int::DivRem,ext::big_uint::Error> = core::result::Err(ext::big_uint::Error::Bounds);
+        if (op <= 6) { divided = left.div_rem(right,options.limits); } else { divided = left.div_rem_euclid(right,options.limits); }
+        if (core::result::is_err(divided)) {
+            let error: ext::big_uint::Error = core::result::unwrap_err(divided);
+            let zero_divisor: bool = match (error) { ext::big_uint::Error::DivisionByZero -> true, _ -> false };
+            if (zero_divisor) { diagnostic.offset = right_at; diagnostic.operand = 2; } return big_error(error,diagnostic);
+        }
+        let pair: ext::big_int::DivRem = core::result::unwrap(divided); let status: i32 = 0;
+        if (op == 4 || op == 7) { status = emit_one(pair.quotient.borrow(),options,diagnostic); }
+        if (op == 5 || op == 8) { status = emit_one(pair.remainder.borrow(),options,diagnostic); }
+        if (op == 6 || op == 9) { status = emit_pair(pair,options,diagnostic); } pair.destroy(); return status;
+    }
+    let computed: core::result::Result<ext::big_int::BigInt,ext::big_uint::Error> = core::result::Err(ext::big_uint::Error::Bounds);
+    if (op == 1) { computed = left.add(right,options.limits); } if (op == 2) { computed = left.sub(right,options.limits); } if (op == 3) { computed = left.mul(right,options.limits); }
+    if (op == 10) { computed = ext::big_int::from_i64(left.compare(right) as i64,options.limits); }
+    if (op == 11 || op == 12) {
+        let shifted: core::result::Result<u64,ext::big_uint::Error> = right.to_u64();
+        if (core::result::is_err(shifted)) { diagnostic.operand = 2; diagnostic.offset = right_at; return fail(diagnostic,7,11); }
+        let count: u64 = core::result::unwrap(shifted);
+        if (op == 11) { computed = left.shl(count,options.limits); } else { computed = left.shr(count,options.limits); }
+    }
+    if (op == 13) { computed = left.bit_and(right,options.limits); } if (op == 14) { computed = left.bit_or(right,options.limits); } if (op == 15) { computed = left.bit_xor(right,options.limits); }
+    if (op == 16) { computed = left.abs(options.limits); } if (op == 17) { computed = left.neg(options.limits); } if (op == 18) { computed = left.bit_not(options.limits); }
+    if (op == 19) { computed = left.gcd(right,options.limits); }
+    if (op == 20) {
+        let exponent: core::result::Result<u64,ext::big_uint::Error> = right.to_u64();
+        if (core::result::is_err(exponent)) { diagnostic.operand = 2; diagnostic.offset = right_at; return fail(diagnostic,7,12); }
+        let count: u64 = core::result::unwrap(exponent);
+        if (count > 4294967295) { diagnostic.operand = 2; diagnostic.offset = right_at; return fail(diagnostic,7,12); }
+        computed = left.pow(count as u32,options.limits);
+    }
+    if (core::result::is_err(computed)) { return big_error(core::result::unwrap_err(computed),diagnostic); }
+    let value: ext::big_int::BigInt = core::result::unwrap(computed); let status: i32 = emit_one(value.borrow(),options,diagnostic); value.destroy(); return status;
+}
+fn whitespace(value: u8) -> bool { return value == 32 || value == 9 || value == 13; }
+fn record(line: core::slice::View<u8>, options: Options, diagnostic: &Diagnostic) -> i32 {
+    let starts: [i32;3] = [0;3]; let ends: [i32;3] = [0;3]; let count: i32 = 0; let index: i32 = 0;
+    while (index < line.len()) {
+        if (whitespace(byte(line,index))) { index += 1; continue; }
+        if (count == 3) { diagnostic.offset = index; return fail(diagnostic,2,2); }
+        starts[count] = index; while (index < line.len() && !whitespace(byte(line,index))) { index += 1; } ends[count] = index; count += 1;
+    }
+    if (count == 0) { return 0; }
+    diagnostic.offset = starts[0]; diagnostic.operand = 0;
+    let name: core::slice::View<u8> = core::result::unwrap(line.subview(starts[0],ends[0])); let op: i32 = operation(name);
+    if (op == 0) { return fail(diagnostic,2,1); }
+    let expected: i32 = 3; if (op >= 16 && op <= 18) { expected = 2; }
+    if (count != expected) { diagnostic.offset = line.len(); if (count > expected) { diagnostic.offset = starts[expected]; } return fail(diagnostic,2,2); }
+    let lhs: core::slice::View<u8> = core::result::unwrap(line.subview(starts[1],ends[1])); diagnostic.operand = 1; diagnostic.offset = starts[1];
+    if (!valid_operand(lhs,options.radix,starts[1],diagnostic)) { return diagnostic.status; }
+    let parsed_left: core::result::Result<ext::big_int::BigInt,ext::big_uint::Error> = ext::big_int::parse(lhs,options.radix,options.limits);
+    if (core::result::is_err(parsed_left)) { return big_error(core::result::unwrap_err(parsed_left),diagnostic); }
+    let left: ext::big_int::BigInt = core::result::unwrap(parsed_left); let right: ext::big_int::BigInt = ext::big_int::zero();
+    if (expected == 3) {
+        let rhs: core::slice::View<u8> = core::result::unwrap(line.subview(starts[2],ends[2])); diagnostic.operand = 2; diagnostic.offset = starts[2];
+        if (!valid_operand(rhs,options.radix,starts[2],diagnostic)) { left.destroy(); return diagnostic.status; }
+        let parsed_right: core::result::Result<ext::big_int::BigInt,ext::big_uint::Error> = ext::big_int::parse(rhs,options.radix,options.limits);
+        if (core::result::is_err(parsed_right)) { left.destroy(); return big_error(core::result::unwrap_err(parsed_right),diagnostic); } right = core::result::unwrap(parsed_right);
+    }
+    diagnostic.offset = starts[0]; let status: i32 = evaluate(op,starts[2],left.borrow(),right.borrow(),options,diagnostic); right.destroy(); left.destroy(); return status;
+}
+fn calculate(options: Options, diagnostic: &Diagnostic) -> i32 {
+    let line: alloc::vec::Vec<u8> = alloc::vec::new(); let storage: [i32;256] = [0;256];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024); let source: std::stream::Descriptor = std::stream::stdin(); diagnostic.line = 1;
+    while (true) {
+        let received: core::result::Result<i32,core::io::Error> = source.read(bytes,0,1024);
+        if (core::result::is_err(received)) { let error: core::io::Error = core::result::unwrap_err(received); if (core::io::is_interrupted(error)) { continue; } line.destroy(); diagnostic.offset = -1; return fail(diagnostic,6,9); }
+        let count: i32 = core::result::unwrap(received); if (count == 0) { break; } let index: i32 = 0;
+        while (index < count) {
+            let current: u8 = bytes[index];
+            if (current == 10) {
+                let status: i32 = record(line.as_view(),options,diagnostic); if (status != 0) { line.destroy(); return status; } line.clear();
+                if (diagnostic.line == 18446744073709551615) { line.destroy(); return fail(diagnostic,3,4); } diagnostic.line += 1;
+            } else {
+                diagnostic.offset = line.len(); diagnostic.operand = 0;
+                if (line.len() == options.max_line) { line.destroy(); return fail(diagnostic,3,4); }
+                let pushed: core::result::Result<i32,alloc::vec::Error> = line.try_push(current);
+                if (core::result::is_err(pushed)) { line.destroy(); return vec_error(core::result::unwrap_err(pushed),diagnostic); }
+            } index += 1;
+        }
+    }
+    let status: i32 = record(line.as_view(),options,diagnostic); line.destroy(); return status;
+}
+fn option(options: &Options, item: ext::cli::Occurrence, diagnostic: &Diagnostic) -> bool {
+    if (item.id == 6) { options.help = true; return true; }
+    let value: ext::cli::Argument = core::option::unwrap(item.value); diagnostic.offset = value.at.byte; diagnostic.argument = value.at.argument;
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(value.bytes.values,value.bytes.start,value.bytes.len());
+    if (core::result::is_err(parsed)) { return false; } let number: u64 = core::result::unwrap(parsed);
+    if (item.id == 3) { options.limits.max_work = number; return true; }
+    if (number > 2147483647 as u64) { return false; }
+    if (item.id == 1) { if (number < 2 || number > 36) { return false; } options.radix = number as i32; }
+    if (item.id == 2) { if (number > 536870911 as u64) { return false; } options.limits.max_limbs = number as i32; }
+    if (item.id == 4) { options.limits.max_output = number as i32; } if (item.id == 5) { options.max_line = number as i32; } return true;
+}
+fn unexpected_operand(item: ext::cli::Argument, diagnostic: &Diagnostic) -> bool { diagnostic.argument = item.at.argument; diagnostic.offset = item.at.byte; return false; }
+fn process(arguments: std::args::Arguments, diagnostic: &Diagnostic) -> i32 {
+    let specs: [ext::cli::Spec;6] = [
+        ext::cli::Spec { id: 1, long: literal("radix",5), short: 114, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 2, long: literal("max-limbs",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 3, long: literal("max-work",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 4, long: literal("max-output",10), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 5, long: literal("max-line",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,6));
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),schema,ext::cli::Ordering::Intermixed));
+    let options: Options = Options { radix: 10, max_line: 1048576, limits: ext::big_uint::Limits { max_limbs: 32768, max_work: 100000000, max_output: 1048576 }, help: false };
+    while (true) {
+        let event: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next();
+        if (core::result::is_err(event)) {
+            let at: ext::cli::Location = match (core::result::unwrap_err(event)) { ext::cli::Error::UnknownOption(at) -> at, ext::cli::Error::MissingValue(at) -> at, ext::cli::Error::UnexpectedValue(at) -> at, _ -> ext::cli::Location { argument: -1, byte: -1 } };
+            diagnostic.argument = at.argument; diagnostic.offset = at.byte; return fail(diagnostic,2,0);
+        }
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(event); if (core::option::is_none(next)) { break; }
+        let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> option(options.borrow(),item,diagnostic), ext::cli::Event::Operand(item) -> unexpected_operand(item,diagnostic) };
+        if (!valid) { return fail(diagnostic,2,0); }
+    }
+    if (options.help) {
+        let usage: core::slice::View<u8> = literal("Usage: bigcalc [--radix N] [--max-limbs N] [--max-work N] [--max-output N] [--max-line N]\nstdin: OP LEFT RIGHT; unary abs/neg/not take LEFT only.\nops: add sub mul div rem divmod ediv erem edivmod cmp shl shr and or xor abs neg not gcd pow\n",239);
+        if (!write_part(usage)) { return fail(diagnostic,6,9); } return 0;
+    } diagnostic.argument = -1; return calculate(options,diagnostic);
+}
+fn write_diagnostic(diagnostic: Diagnostic) -> bool {
+    let storage: [i32;64] = [0;64]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),256);
+    let format: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,256)); format.write_text(text("bigcalc: ",9));
+    if (diagnostic.reason == 0) { format.write_text(text("invalid-arguments",17)); } if (diagnostic.reason == 1) { format.write_text(text("unknown-operation",17)); }
+    if (diagnostic.reason == 2) { format.write_text(text("invalid-arity",13)); } if (diagnostic.reason == 3) { format.write_text(text("invalid-operand",15)); }
+    if (diagnostic.reason == 4) { format.write_text(text("line-limit",10)); } if (diagnostic.reason == 5) { format.write_text(text("limb-limit",10)); }
+    if (diagnostic.reason == 6) { format.write_text(text("output-limit",12)); } if (diagnostic.reason == 7) { format.write_text(text("work-limit",10)); }
+    if (diagnostic.reason == 8) { format.write_text(text("allocation-failure",18)); } if (diagnostic.reason == 9) { format.write_text(text("io-failure",10)); }
+    if (diagnostic.reason == 10) { format.write_text(text("division-by-zero",16)); } if (diagnostic.reason == 11) { format.write_text(text("invalid-shift",13)); }
+    if (diagnostic.reason == 12) { format.write_text(text("invalid-exponent",16)); }
+    if (diagnostic.line != 0) { format.write_text(text(" line=",6)); format.write_unsigned(diagnostic.line,core::fmt::decimal()); }
+    if (diagnostic.argument >= 0) { format.write_text(text(" argument=",10)); format.write_signed(diagnostic.argument as i64,core::fmt::decimal()); }
+    if (diagnostic.offset >= 0) { format.write_text(text(" byte=",6)); format.write_signed(diagnostic.offset as i64,core::fmt::decimal()); }
+    if (diagnostic.operand != 0) { format.write_text(text(" operand=",9)); format.write_signed(diagnostic.operand as i64,core::fmt::decimal()); }
+    format.write_text(text("\n",1)); let size: core::result::Result<i32,core::fmt::Error> = format.finish(); if (core::result::is_err(size)) { return false; }
+    let sink: std::stream::Descriptor = std::stream::stderr(); return core::result::is_ok(core::io::write_all(sink.borrow(),bytes,0,core::result::unwrap(size)));
+}
+fn main() -> i32 {
+    let diagnostic: Diagnostic = Diagnostic { status: 0, reason: 0, line: 0, offset: -1, operand: 0, argument: -1 };
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,32,8192); let status: i32 = 0;
+    if (core::result::is_err(captured)) {
+        status = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> fail(diagnostic.borrow(),5,8), std::args::Error::HostRead(index) -> fail(diagnostic.borrow(),6,9), _ -> fail(diagnostic.borrow(),2,0) };
+    } else { let arguments: std::args::Arguments = core::result::unwrap(captured); status = process(arguments,diagnostic.borrow()); arguments.destroy(); }
+    if (status != 0 && !write_diagnostic(diagnostic)) { return 6; } return status;
+}

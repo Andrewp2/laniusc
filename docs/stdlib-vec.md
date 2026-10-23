@@ -86,9 +86,11 @@ Destroying a stale copied handle is invalid. Checked indexing uses the native
 panic contract, currently SIGILL on x86_64 Linux, rather than a recoverable error.
 Use `get` for ordinary absence.
 
-Equality operations require Eq; sorting and ordered searches require Ord with
-a consistent ordering relation. Searches require sorted input. Finite f32 values
-are covered; NaNs need an explicit ordering policy. Comparisons do not allocate.
+Equality lookup requires PartialEq; sorting and ordered searches require lawful
+Ord and sorted input. Native floats support IEEE membership. Float sorting uses
+`core::float_order::TotalF32` or `TotalF64`, whose bit equality distinguishes
+signed zero and NaN payloads. Comparisons do not allocate. See
+[comparison contracts](stdlib-comparison.md).
 
 ## Storage and complexity
 

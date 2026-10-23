@@ -1,0 +1,235 @@
+// Signed, owned arbitrary precision integers. Copies alias storage: keep one
+// owner and explicitly clone. Every fallible operation preserves its inputs.
+module ext::big_int;
+import alloc::vec;
+import core::cmp;
+import core::result;
+import core::slice;
+import ext::big_uint;
+
+pub struct BigInt { negative: bool, magnitude: ext::big_uint::BigUint }
+pub struct DivRem { quotient: BigInt, remainder: BigInt }
+
+pub fn zero() -> BigInt { return owned(false, ext::big_uint::zero()); }
+fn owned(negative: bool, magnitude: ext::big_uint::BigUint) -> BigInt {
+    return BigInt { negative: negative && !magnitude.is_zero(), magnitude: magnitude };
+}
+fn signed(value: core::result::Result<ext::big_uint::BigUint, ext::big_uint::Error>, negative: bool) -> core::result::Result<BigInt, ext::big_uint::Error> {
+    if (core::result::is_err(value)) { return core::result::Err(core::result::unwrap_err(value)); }
+    return core::result::Ok(owned(negative, core::result::unwrap(value)));
+}
+pub fn from_u64(value: u64, limits: ext::big_uint::Limits) -> core::result::Result<BigInt, ext::big_uint::Error> {
+    return signed(ext::big_uint::from_u64(value, limits), false);
+}
+pub fn from_i64(value: i64, limits: ext::big_uint::Limits) -> core::result::Result<BigInt, ext::big_uint::Error> {
+    let magnitude: u64 = value as u64;
+    if (value < 0) { magnitude = ((-(value + 1)) as u64) + 1; }
+    return signed(ext::big_uint::from_u64(magnitude, limits), value < 0);
+}
+// Exactly [+-]?[0-9a-zA-Z]+, with each digit below radix. No prefixes,
+// whitespace or separators. A lone sign is Empty; signed zero normalizes.
+pub fn parse(input: core::slice::View<u8>, radix: i32, limits: ext::big_uint::Limits) -> core::result::Result<BigInt, ext::big_uint::Error> {
+    if (radix < 2 || radix > 36) { return core::result::Err(ext::big_uint::Error::InvalidRadix); }
+    if (input.start < 0 || input.length < 0 || input.start > 2147483647 - input.length) { return core::result::Err(ext::big_uint::Error::Bounds); }
+    if (input.length == 0) { return core::result::Err(ext::big_uint::Error::Empty); }
+    let first: u8 = input.values[input.start];
+    let start: i32 = 0;
+    if (first == 43 || first == 45) { start = 1; }
+    let digits: core::slice::View<u8> = core::result::unwrap(input.subview(start, input.length));
+    return signed(ext::big_uint::parse(digits, radix, limits), first == 45);
+}
+
+pub impl DivRem {
+    pub fn destroy(&self) { self.quotient.destroy(); self.remainder.destroy(); }
+}
+
+pub impl BigInt {
+    pub fn borrow(&self) -> &BigInt { return self; }
+    pub fn destroy(&self) { self.magnitude.destroy(); self.negative = false; }
+    pub fn is_zero(&self) -> bool { return self.magnitude.is_zero(); }
+    pub fn sign(&self) -> i32 { if (self.is_zero()) { return 0; } if (self.negative) { return -1; } return 1; }
+    pub fn bit_length(&self) -> u64 { return self.magnitude.bit_length(); }
+    pub fn compare(&self, other: &BigInt) -> i32 {
+        if (self.negative != other.negative) { if (self.negative) { return -1; } return 1; }
+        let order: i32 = self.magnitude.compare(other.magnitude.borrow());
+        if (self.negative) { return -order; } return order;
+    }
+    pub fn to_u64(&self) -> core::result::Result<u64, ext::big_uint::Error> {
+        if (self.negative) { return core::result::Err(ext::big_uint::Error::Overflow); }
+        return self.magnitude.to_u64();
+    }
+    pub fn to_i64(&self) -> core::result::Result<i64, ext::big_uint::Error> {
+        let converted: core::result::Result<u64, ext::big_uint::Error> = self.magnitude.to_u64();
+        if (core::result::is_err(converted)) { return core::result::Err(core::result::unwrap_err(converted)); }
+        let value: u64 = core::result::unwrap(converted);
+        if (self.negative) {
+            if (value > 9223372036854775808) { return core::result::Err(ext::big_uint::Error::Overflow); }
+            if (value == 9223372036854775808) { return core::result::Ok(-9223372036854775807 - 1); }
+            return core::result::Ok(-(value as i64));
+        }
+        if (value > 9223372036854775807) { return core::result::Err(ext::big_uint::Error::Overflow); }
+        return core::result::Ok(value as i64);
+    }
+    pub fn try_clone(&self, limits: ext::big_uint::Limits) -> core::result::Result<BigInt, ext::big_uint::Error> { return signed(self.magnitude.try_clone(limits), self.negative); }
+    pub fn abs(&self, limits: ext::big_uint::Limits) -> core::result::Result<BigInt, ext::big_uint::Error> { return signed(self.magnitude.try_clone(limits), false); }
+    pub fn neg(&self, limits: ext::big_uint::Limits) -> core::result::Result<BigInt, ext::big_uint::Error> { return signed(self.magnitude.try_clone(limits), !self.negative); }
+    pub fn add(&self, other: &BigInt, limits: ext::big_uint::Limits) -> core::result::Result<BigInt, ext::big_uint::Error> {
+        if (self.negative == other.negative) { return signed(self.magnitude.add(other.magnitude.borrow(), limits), self.negative); }
+        if (self.magnitude.compare(other.magnitude.borrow()) >= 0) { return signed(self.magnitude.sub(other.magnitude.borrow(), limits), self.negative); }
+        return signed(other.magnitude.sub(self.magnitude.borrow(), limits), other.negative);
+    }
+    pub fn sub(&self, other: &BigInt, limits: ext::big_uint::Limits) -> core::result::Result<BigInt, ext::big_uint::Error> {
+        if (self.negative != other.negative) { return signed(self.magnitude.add(other.magnitude.borrow(), limits), self.negative); }
+        if (self.magnitude.compare(other.magnitude.borrow()) >= 0) { return signed(self.magnitude.sub(other.magnitude.borrow(), limits), self.negative); }
+        return signed(other.magnitude.sub(self.magnitude.borrow(), limits), !self.negative);
+    }
+    pub fn mul(&self, other: &BigInt, limits: ext::big_uint::Limits) -> core::result::Result<BigInt, ext::big_uint::Error> { return signed(self.magnitude.mul(other.magnitude.borrow(), limits), self.negative != other.negative); }
+    pub fn pow(&self, exponent: u32, limits: ext::big_uint::Limits) -> core::result::Result<BigInt, ext::big_uint::Error> { return signed(self.magnitude.pow(exponent, limits), self.negative && (exponent & 1) != 0); }
+    pub fn gcd(&self, other: &BigInt, limits: ext::big_uint::Limits) -> core::result::Result<BigInt, ext::big_uint::Error> { return signed(self.magnitude.gcd(other.magnitude.borrow(), limits), false); }
+    // Truncation toward zero: a=q*b+r, abs(r)<abs(b), nonzero r has sign(a).
+    // The result owns both fields. Transfer each once, or destroy the result.
+    pub fn div_rem(&self, other: &BigInt, limits: ext::big_uint::Limits) -> core::result::Result<DivRem, ext::big_uint::Error> {
+        let divided: core::result::Result<ext::big_uint::DivRem, ext::big_uint::Error> = self.magnitude.div_rem(other.magnitude.borrow(), limits);
+        if (core::result::is_err(divided)) { return core::result::Err(core::result::unwrap_err(divided)); }
+        let pair: ext::big_uint::DivRem = core::result::unwrap(divided);
+        return core::result::Ok(DivRem { quotient: owned(self.negative != other.negative, pair.quotient), remainder: owned(self.negative, pair.remainder) });
+    }
+    // Euclidean division: a=q*b+r with 0<=r<abs(b), for either divisor sign.
+    pub fn div_rem_euclid(&self, other: &BigInt, limits: ext::big_uint::Limits) -> core::result::Result<DivRem, ext::big_uint::Error> {
+        let divided: core::result::Result<DivRem, ext::big_uint::Error> = self.div_rem(other, limits);
+        if (core::result::is_err(divided)) { return divided; }
+        let pair: DivRem = core::result::unwrap(divided);
+        if (pair.remainder.sign() >= 0) { return core::result::Ok(pair); }
+        let adjusted: core::result::Result<ext::big_uint::BigUint, ext::big_uint::Error> = other.magnitude.sub(pair.remainder.magnitude.borrow(), limits);
+        if (core::result::is_err(adjusted)) { pair.destroy(); return core::result::Err(core::result::unwrap_err(adjusted)); }
+        let remainder: ext::big_uint::BigUint = core::result::unwrap(adjusted);
+        let one_result: core::result::Result<ext::big_uint::BigUint, ext::big_uint::Error> = ext::big_uint::from_u64(1, limits);
+        if (core::result::is_err(one_result)) { remainder.destroy(); pair.destroy(); return core::result::Err(core::result::unwrap_err(one_result)); }
+        let one: ext::big_uint::BigUint = core::result::unwrap(one_result);
+        let increased: core::result::Result<ext::big_uint::BigUint, ext::big_uint::Error> = pair.quotient.magnitude.add(one.borrow(), limits);
+        one.destroy();
+        if (core::result::is_err(increased)) { remainder.destroy(); pair.destroy(); return core::result::Err(core::result::unwrap_err(increased)); }
+        let quotient: ext::big_uint::BigUint = core::result::unwrap(increased);
+        pair.destroy();
+        return core::result::Ok(DivRem { quotient: owned(!other.negative, quotient), remainder: owned(false, remainder) });
+    }
+    pub fn shl(&self, bits: u64, limits: ext::big_uint::Limits) -> core::result::Result<BigInt, ext::big_uint::Error> { return signed(self.magnitude.shl(bits, limits), self.negative); }
+    // Infinite two's complement arithmetic right shift, rounding toward -inf.
+    pub fn shr(&self, bits: u64, limits: ext::big_uint::Limits) -> core::result::Result<BigInt, ext::big_uint::Error> {
+        if (!self.negative) { return signed(self.magnitude.shr(bits, limits), false); }
+        let base_result: core::result::Result<ext::big_uint::BigUint, ext::big_uint::Error> = complement_base(self, limits);
+        if (core::result::is_err(base_result)) { return core::result::Err(core::result::unwrap_err(base_result)); }
+        let base: ext::big_uint::BigUint = core::result::unwrap(base_result);
+        let shifted: core::result::Result<ext::big_uint::BigUint, ext::big_uint::Error> = base.shr(bits, limits); base.destroy();
+        if (core::result::is_err(shifted)) { return core::result::Err(core::result::unwrap_err(shifted)); }
+        return from_complement(core::result::unwrap(shifted), true, limits);
+    }
+    pub fn bit_not(&self, limits: ext::big_uint::Limits) -> core::result::Result<BigInt, ext::big_uint::Error> {
+        if (self.negative) { return signed(complement_base(self, limits), false); }
+        let copied: core::result::Result<ext::big_uint::BigUint, ext::big_uint::Error> = self.magnitude.try_clone(limits);
+        if (core::result::is_err(copied)) { return core::result::Err(core::result::unwrap_err(copied)); }
+        return from_complement(core::result::unwrap(copied), true, limits);
+    }
+    pub fn bit_and(&self, other: &BigInt, limits: ext::big_uint::Limits) -> core::result::Result<BigInt, ext::big_uint::Error> { return logical(self, other, 0, limits); }
+    pub fn bit_or(&self, other: &BigInt, limits: ext::big_uint::Limits) -> core::result::Result<BigInt, ext::big_uint::Error> { return logical(self, other, 1, limits); }
+    pub fn bit_xor(&self, other: &BigInt, limits: ext::big_uint::Limits) -> core::result::Result<BigInt, ext::big_uint::Error> { return logical(self, other, 2, limits); }
+    pub fn format_radix(&self, radix: i32, limits: ext::big_uint::Limits) -> core::result::Result<alloc::vec::Vec<u8>, ext::big_uint::Error> {
+        let effective: ext::big_uint::Limits = limits;
+        if (self.negative && effective.max_output > 0) { effective.max_output -= 1; }
+        let formatted: core::result::Result<alloc::vec::Vec<u8>, ext::big_uint::Error> = self.magnitude.format_radix(radix, effective);
+        if (core::result::is_err(formatted)) { return formatted; }
+        let output: alloc::vec::Vec<u8> = core::result::unwrap(formatted);
+        if (self.negative) {
+            let inserted: core::result::Result<i32, alloc::vec::Error> = output.try_insert(0, 45);
+            if (core::result::is_err(inserted)) { output.destroy(); return core::result::Err(ext::big_uint::Error::AllocationFailed); }
+        }
+        return core::result::Ok(output);
+    }
+    pub fn format_into(&self, output: core::slice::View<u8>, radix: i32, limits: ext::big_uint::Limits) -> core::result::Result<i32, ext::big_uint::Error> {
+        if (output.start < 0 || output.length < 0 || output.start > 2147483647 - output.length) { return core::result::Err(ext::big_uint::Error::Bounds); }
+        let formatted: core::result::Result<alloc::vec::Vec<u8>, ext::big_uint::Error> = self.format_radix(radix, limits);
+        if (core::result::is_err(formatted)) { return core::result::Err(core::result::unwrap_err(formatted)); }
+        let bytes: alloc::vec::Vec<u8> = core::result::unwrap(formatted);
+        if (bytes.len() > output.length) { bytes.destroy(); return core::result::Err(ext::big_uint::Error::OutputLimit); }
+        let index: i32 = 0; let count: i32 = bytes.len();
+        while (index < count) { output.values[output.start + index] = bytes.at(index); index += 1; }
+        bytes.destroy(); return core::result::Ok(count);
+    }
+}
+
+// -m = ~(m-1). Only unsigned provider operations touch magnitude storage.
+fn complement_base(value: &BigInt, limits: ext::big_uint::Limits) -> core::result::Result<ext::big_uint::BigUint, ext::big_uint::Error> {
+    if (!value.negative) { return value.magnitude.try_clone(limits); }
+    let one_result: core::result::Result<ext::big_uint::BigUint, ext::big_uint::Error> = ext::big_uint::from_u64(1, limits);
+    if (core::result::is_err(one_result)) { return one_result; }
+    let one: ext::big_uint::BigUint = core::result::unwrap(one_result);
+    let reduced: core::result::Result<ext::big_uint::BigUint, ext::big_uint::Error> = value.magnitude.sub(one.borrow(), limits); one.destroy(); return reduced;
+}
+fn from_complement(base: ext::big_uint::BigUint, negative: bool, limits: ext::big_uint::Limits) -> core::result::Result<BigInt, ext::big_uint::Error> {
+    if (!negative) { return core::result::Ok(owned(false, base)); }
+    let one_result: core::result::Result<ext::big_uint::BigUint, ext::big_uint::Error> = ext::big_uint::from_u64(1, limits);
+    if (core::result::is_err(one_result)) { base.destroy(); return core::result::Err(core::result::unwrap_err(one_result)); }
+    let one: ext::big_uint::BigUint = core::result::unwrap(one_result);
+    let increased: core::result::Result<ext::big_uint::BigUint, ext::big_uint::Error> = base.add(one.borrow(), limits);
+    one.destroy(); base.destroy(); return signed(increased, true);
+}
+fn and_not(left: &ext::big_uint::BigUint, right: &ext::big_uint::BigUint, limits: ext::big_uint::Limits) -> core::result::Result<ext::big_uint::BigUint, ext::big_uint::Error> {
+    let common_result: core::result::Result<ext::big_uint::BigUint, ext::big_uint::Error> = left.bit_and(right, limits);
+    if (core::result::is_err(common_result)) { return common_result; }
+    let common: ext::big_uint::BigUint = core::result::unwrap(common_result);
+    let result: core::result::Result<ext::big_uint::BigUint, ext::big_uint::Error> = left.bit_xor(common.borrow(), limits); common.destroy(); return result;
+}
+fn logical(left: &BigInt, right: &BigInt, operation: i32, limits: ext::big_uint::Limits) -> core::result::Result<BigInt, ext::big_uint::Error> {
+    let a_result: core::result::Result<ext::big_uint::BigUint, ext::big_uint::Error> = complement_base(left, limits);
+    if (core::result::is_err(a_result)) { return core::result::Err(core::result::unwrap_err(a_result)); }
+    let a: ext::big_uint::BigUint = core::result::unwrap(a_result);
+    let b_result: core::result::Result<ext::big_uint::BigUint, ext::big_uint::Error> = complement_base(right, limits);
+    if (core::result::is_err(b_result)) { a.destroy(); return core::result::Err(core::result::unwrap_err(b_result)); }
+    let b: ext::big_uint::BigUint = core::result::unwrap(b_result);
+    let negative: bool = false;
+    let result: core::result::Result<ext::big_uint::BigUint, ext::big_uint::Error> = core::result::Err(ext::big_uint::Error::Bounds);
+    if (operation == 2) { negative = left.negative != right.negative; result = a.bit_xor(b.borrow(), limits); }
+    else { if (operation == 0) {
+        negative = left.negative && right.negative;
+        if (negative) { result = a.bit_or(b.borrow(), limits); }
+        else { if (left.negative) { result = and_not(b.borrow(), a.borrow(), limits); }
+        else { if (right.negative) { result = and_not(a.borrow(), b.borrow(), limits); }
+        else { result = a.bit_and(b.borrow(), limits); } } }
+    } else {
+        negative = left.negative || right.negative;
+        if (left.negative && right.negative) { result = a.bit_and(b.borrow(), limits); }
+        else { if (left.negative) { result = and_not(a.borrow(), b.borrow(), limits); }
+        else { if (right.negative) { result = and_not(b.borrow(), a.borrow(), limits); }
+        else { result = a.bit_or(b.borrow(), limits); } } }
+    } }
+    a.destroy(); b.destroy();
+    if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+    return from_complement(core::result::unwrap(result), negative, limits);
+}
+
+pub impl core::cmp::Eq<BigInt> for BigInt {
+    pub fn eq(left: BigInt, right: BigInt) -> bool { return left.compare(right.borrow()) == 0; }
+    pub fn ne(left: BigInt, right: BigInt) -> bool { return left.compare(right.borrow()) != 0; }
+}
+pub impl core::cmp::Ord<BigInt> for BigInt {
+    pub fn lt(left: BigInt, right: BigInt) -> bool { return left.compare(right.borrow()) < 0; }
+    pub fn le(left: BigInt, right: BigInt) -> bool { return left.compare(right.borrow()) <= 0; }
+    pub fn gt(left: BigInt, right: BigInt) -> bool { return left.compare(right.borrow()) > 0; }
+    pub fn ge(left: BigInt, right: BigInt) -> bool { return left.compare(right.borrow()) >= 0; }
+}
+pub impl core::cmp::PartialEq<BigInt> for BigInt {
+    pub fn partial_eq(left: BigInt, right: BigInt) -> bool { return left.compare(right.borrow()) == 0; }
+    pub fn partial_ne(left: BigInt, right: BigInt) -> bool { return left.compare(right.borrow()) != 0; }
+}
+pub impl core::cmp::PartialOrd<BigInt> for BigInt {
+    pub fn partial_lt(left: BigInt, right: BigInt) -> bool { return left.compare(right.borrow()) < 0; }
+    pub fn partial_le(left: BigInt, right: BigInt) -> bool { return left.compare(right.borrow()) <= 0; }
+    pub fn partial_gt(left: BigInt, right: BigInt) -> bool { return left.compare(right.borrow()) > 0; }
+    pub fn partial_ge(left: BigInt, right: BigInt) -> bool { return left.compare(right.borrow()) >= 0; }
+    pub fn partial_cmp(left: BigInt, right: BigInt) -> core::cmp::PartialOrdering {
+        let order: i32 = left.compare(right.borrow());
+        if (order < 0) { return core::cmp::PartialOrdering::Less; }
+        if (order > 0) { return core::cmp::PartialOrdering::Greater; }
+        return core::cmp::PartialOrdering::Equal;
+    }
+}

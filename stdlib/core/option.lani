@@ -1,6 +1,6 @@
 // Optional values. A stored false is Some(false), not None. Every operation
 // takes the option by value and leaves the caller's copy unchanged. Each one
-// exists as a free function and as a method. contains needs Eq on the
+// exists as a free function and as a method. contains needs PartialEq on the
 // payload. unwrap panics on None; unwrap_or takes an explicit fallback and
 // never panics. See docs/stdlib-option.md.
 module core::option;
@@ -22,8 +22,8 @@ pub fn is_none<T>(value: Option<T>) -> bool {
     return match (value) { Some(_) -> false, None -> true };
 }
 
-pub fn contains<T>(value: Option<T>, expected: T) -> bool where T: core::cmp::Eq<T> {
-    return match (value) { Some(inner) -> T::eq(inner, expected), None -> false };
+pub fn contains<T>(value: Option<T>, expected: T) -> bool where T: core::cmp::PartialEq<T> {
+    return match (value) { Some(inner) -> T::partial_eq(inner, expected), None -> false };
 }
 
 pub fn unwrap<T>(value: Option<T>) -> T {
@@ -90,8 +90,8 @@ pub impl<T> Option<T> {
         return match (self) { Some(_) -> false, None -> true };
     }
 
-    pub fn contains(self, expected: T) -> bool where T: core::cmp::Eq<T> {
-        return match (self) { Some(inner) -> T::eq(inner, expected), None -> false };
+    pub fn contains(self, expected: T) -> bool where T: core::cmp::PartialEq<T> {
+        return match (self) { Some(inner) -> T::partial_eq(inner, expected), None -> false };
     }
 
     pub fn unwrap(self) -> T {

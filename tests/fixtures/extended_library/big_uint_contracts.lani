@@ -1,0 +1,53 @@
+module app::main;
+import alloc::vec;
+import core::cmp;
+import core::hash;
+import core::result;
+import core::slice;
+import ext::big_uint;
+fn equal<T>(left: T, right: T) -> bool where T: core::cmp::Eq<T> { return T::eq(left,right) && !T::ne(left,right); }
+fn below<T>(left: T, right: T) -> bool where T: core::cmp::Ord<T> { return T::lt(left,right) && T::le(left,right) && !T::gt(left,right) && !T::ge(left,right); }
+fn hashed<T>(value: T) -> u32 where T: core::hash::Hash<T> { return T::hash(value); }
+fn partial_equal<T>(left: T, right: T) -> bool where T: core::cmp::PartialEq<T>, T: core::cmp::PartialOrd<T> {
+    let order: core::cmp::PartialOrdering = T::partial_cmp(left,right);
+    return T::partial_eq(left,right) && !T::partial_ne(left,right) && T::partial_le(left,right) && T::partial_ge(left,right) && !T::partial_lt(left,right) && !T::partial_gt(left,right) && match (order) { core::cmp::Equal -> true, _ -> false };
+}
+fn is_kind(error: ext::big_uint::Error, kind: i32) -> bool {
+    return match (error) { ext::big_uint::Error::Bounds -> kind == 1, ext::big_uint::Error::LimbLimit -> kind == 2, ext::big_uint::Error::WorkLimit -> kind == 3, ext::big_uint::Error::OutputLimit -> kind == 4, ext::big_uint::Error::Overflow -> kind == 5, ext::big_uint::Error::Underflow -> kind == 6, ext::big_uint::Error::DivisionByZero -> kind == 7, _ -> false };
+}
+fn main() -> i32 {
+    let limits: ext::big_uint::Limits = ext::big_uint::default_limits();
+    let zero: ext::big_uint::BigUint = ext::big_uint::zero(); assert(zero.is_zero() && zero.limb_len() == 0 && zero.bit_length() == 0 && !zero.bit(18446744073709551615));
+    let none: ext::big_uint::Limits = limits; none.max_limbs = 0;
+    let z: ext::big_uint::BigUint = ext::big_uint::from_u64(0,none).unwrap(); z.destroy();
+    assert(is_kind(ext::big_uint::from_u64(1,none).unwrap_err(),2));
+    let a: ext::big_uint::BigUint = ext::big_uint::from_u64(18446744073709551615,limits).unwrap();
+    let b: ext::big_uint::BigUint = ext::big_uint::from_u64(1,limits).unwrap();
+    assert(a.to_u64().unwrap() == 18446744073709551615 && a.limb_len() == 2 && a.bit_length() == 64 && a.bit(63));
+    let bound: ext::big_uint::Limits = limits; bound.max_limbs = 2;
+    assert(is_kind(a.add(b.borrow(),bound).unwrap_err(),2));
+    let sum: ext::big_uint::BigUint = a.add(b.borrow(),limits).unwrap(); assert(sum.limb_len() == 3 && sum.bit_length() == 65 && is_kind(sum.to_u64().unwrap_err(),5));
+    assert(is_kind(b.sub(a.borrow(),limits).unwrap_err(),6)); assert(is_kind(a.div_rem(zero.borrow(),limits).unwrap_err(),7));
+    let exhausted: ext::big_uint::Limits = limits; exhausted.max_work = 0;
+    assert(is_kind(a.add(b.borrow(),exhausted).unwrap_err(),3)); assert(is_kind(a.mul(a.borrow(),exhausted).unwrap_err(),3));
+    assert(is_kind(a.div_rem(b.borrow(),exhausted).unwrap_err(),3)); assert(is_kind(a.format_radix(10,exhausted).unwrap_err(),3));
+    assert(is_kind(a.pow(9,exhausted).unwrap_err(),3)); assert(is_kind(a.gcd(b.borrow(),exhausted).unwrap_err(),3));
+    let huge: ext::big_uint::BigUint = b.shl(16384,limits).unwrap(); assert(huge.bit_length() == 16385 && huge.bit(16384));
+    let back: ext::big_uint::BigUint = huge.shr(16384,limits).unwrap(); assert(back.compare(b.borrow()) == 0); back.destroy();
+    let gone: ext::big_uint::BigUint = huge.shr(18446744073709551615,limits).unwrap(); assert(gone.is_zero()); gone.destroy();
+    assert(is_kind(b.shl(18446744073709551615,limits).unwrap_err(),2));
+    let copy: ext::big_uint::BigUint = a.try_clone(limits).unwrap(); assert(equal(a,copy) && partial_equal(a,copy) && below(b,a)); assert(hashed(a) == hashed(copy) && hashed(a) == a.value_hash()); copy.destroy(); assert(a.to_u64().unwrap() == 18446744073709551615);
+    let storage: [u8;32] = [127;32]; let output: core::slice::View<u8> = core::slice::view_range(storage,3,20).unwrap();
+    assert(a.format_into(output,10,limits).unwrap() == 20 && storage[3] == 49 && storage[22] == 53 && storage[2] == 127 && storage[23] == 127);
+    let short: core::slice::View<u8> = core::slice::view_range(storage,24,3).unwrap();
+    assert(is_kind(a.format_into(short,10,limits).unwrap_err(),4)); assert(storage[24] == 127 && storage[25] == 127 && storage[26] == 127);
+    let small_output: ext::big_uint::Limits = limits; small_output.max_output = 19;
+    assert(is_kind(a.format_into(short,10,small_output).unwrap_err(),4)); assert(storage[24] == 127);
+    let bad: core::slice::View<u8> = core::slice::View { values: output.values, start: 2147483647, length: 1 };
+    assert(is_kind(ext::big_uint::parse(bad,10,limits).unwrap_err(),1)); assert(is_kind(a.format_into(bad,10,limits).unwrap_err(),1));
+    let bad_limits: ext::big_uint::Limits = limits; bad_limits.max_limbs = -1;
+    assert(is_kind(a.try_clone(bad_limits).unwrap_err(),1)); assert(is_kind(a.shl(0,bad_limits).unwrap_err(),1));
+    let one_limb: ext::big_uint::Limits = limits; one_limb.max_limbs = 1;
+    let low: ext::big_uint::BigUint = ext::big_uint::from_u64(7,one_limb).unwrap(); let square: ext::big_uint::BigUint = low.mul(low.borrow(),one_limb).unwrap(); assert(square.to_u64().unwrap() == 49); square.destroy(); low.destroy();
+    huge.destroy(); sum.destroy(); a.destroy(); b.destroy(); zero.destroy(); zero.destroy(); return 0;
+}

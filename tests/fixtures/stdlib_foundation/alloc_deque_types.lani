@@ -5,15 +5,15 @@ import core::cmp;
 import core::option;
 import core::result;
 
-fn extremes<T>(low: T, high: T) -> bool where T: core::cmp::Eq<T> {
+fn extremes<T>(low: T, high: T) -> bool where T: core::cmp::PartialEq<T> {
     let queue: alloc::deque::Deque<T> = alloc::deque::new();
     core::result::unwrap(queue.try_push_back(high)); core::result::unwrap(queue.try_push_back(low));
     core::result::unwrap(queue.try_push_back(high)); core::result::unwrap(queue.try_push_back(low));
     core::result::unwrap(queue.rotate_left(1));
     core::option::unwrap(queue.pop_front()); core::result::unwrap(queue.try_push_back(low));
     queue.reverse();
-    let correct: bool = T::eq(core::option::unwrap(queue.pop_back()), high) && T::eq(core::option::unwrap(queue.pop_back()), low) &&
-        T::eq(core::option::unwrap(queue.pop_back()), high) && T::eq(core::option::unwrap(queue.pop_back()), low);
+    let correct: bool = T::partial_eq(core::option::unwrap(queue.pop_back()), high) && T::partial_eq(core::option::unwrap(queue.pop_back()), low) &&
+        T::partial_eq(core::option::unwrap(queue.pop_back()), high) && T::partial_eq(core::option::unwrap(queue.pop_back()), low);
     queue.destroy(); return correct;
 }
 

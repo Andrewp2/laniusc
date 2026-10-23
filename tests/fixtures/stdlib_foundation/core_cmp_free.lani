@@ -6,7 +6,15 @@ import core::wide_u64;
 import core::wide_i64;
 
 // low < high: all ten relations must agree.
-fn ordered<T>(low: T, high: T) -> bool where T: core::cmp::Eq<T>, T: core::cmp::Ord<T> {
+fn ordered<T>(low: T, high: T) -> bool where T: core::cmp::Eq<T>, T: core::cmp::Ord<T>, T: core::cmp::PartialEq<T>, T: core::cmp::PartialOrd<T> {
+    let relation: core::cmp::PartialOrdering = T::partial_cmp(low, high);
+    let correct: bool = match (relation) { core::cmp::Less -> true, _ -> false };
+    if (!correct || T::partial_eq(low, high) || !T::partial_eq(low, low) ||
+        !T::partial_ne(low, high) || T::partial_ne(low, low) ||
+        !T::partial_lt(low, high) || T::partial_lt(high, low) ||
+        !T::partial_le(low, low) || T::partial_le(high, low) ||
+        !T::partial_gt(high, low) || T::partial_gt(low, high) ||
+        !T::partial_ge(high, high) || T::partial_ge(low, high)) { return false; }
     return T::eq(low, low) && !T::eq(low, high) && T::ne(low, high) && !T::ne(high, high) &&
         T::lt(low, high) && !T::lt(high, low) && !T::lt(low, low) &&
         T::le(low, high) && T::le(high, high) && !T::le(high, low) &&

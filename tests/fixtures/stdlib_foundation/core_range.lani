@@ -39,14 +39,14 @@ pub impl core::cmp::Ord<Version> for Version {
 
 // low < mid < high.
 fn range_checks<T>(low: T, mid: T, high: T) -> i32
-    where T: core::cmp::Ord<T>, T: core::cmp::Eq<T> {
+    where T: core::cmp::PartialOrd<T>, T: core::cmp::PartialEq<T> {
     let span: core::range::Range<T> = core::range::range(low, high);
     let upper: core::range::Range<T> = core::range::range(mid, high);
     let lower: core::range::Range<T> = core::range::range(low, mid);
     let point: core::range::Range<T> = core::range::range(mid, mid);
     let reversed: core::range::Range<T> = core::range::range(high, low);
 
-    if (!T::eq(core::range::start(span), low) || !T::eq(core::range::end(span), high)) { return 1; }
+    if (!T::partial_eq(core::range::start(span), low) || !T::partial_eq(core::range::end(span), high)) { return 1; }
     // The start and end methods run from main: from a generic body with a
     // record T they crash (tests/fixtures/generics_backlog/b17).
     if (core::range::is_empty(span) || !core::range::is_empty(point)) { return 3; }
@@ -64,8 +64,8 @@ fn range_checks<T>(low: T, mid: T, high: T) -> i32
     let touching: core::range::RangeInclusive<T> = core::range::range_inclusive(mid, high);
     let single: core::range::RangeInclusive<T> = core::range::range_inclusive(high, high);
     let backwards: core::range::RangeInclusive<T> = core::range::range_inclusive(high, mid);
-    if (!T::eq(core::range::start_inclusive(closed), low)) { return 13; }
-    if (!T::eq(core::range::end_inclusive(closed), mid)) { return 14; }
+    if (!T::partial_eq(core::range::start_inclusive(closed), low)) { return 13; }
+    if (!T::partial_eq(core::range::end_inclusive(closed), mid)) { return 14; }
     if (core::range::is_empty_inclusive(single) || !core::range::is_empty_inclusive(backwards)) {
         return 16;
     }
@@ -87,10 +87,10 @@ fn range_checks<T>(low: T, mid: T, high: T) -> i32
 
     let from: core::range::RangeFrom<T> = core::range::range_from(mid);
     let to: core::range::RangeTo<T> = core::range::range_to(mid);
-    if (!T::eq(core::range::start_from(from), mid)) { return 24; }
+    if (!T::partial_eq(core::range::start_from(from), mid)) { return 24; }
     if (!core::range::contains_from(from, mid) || !core::range::contains_from(from, high)) { return 25; }
     if (core::range::contains_from(from, low) || !from.contains(high) || from.contains(low)) { return 26; }
-    if (!T::eq(core::range::end_to(to), mid)) { return 27; }
+    if (!T::partial_eq(core::range::end_to(to), mid)) { return 27; }
     if (!core::range::contains_to(to, low) || core::range::contains_to(to, mid)) { return 28; }
     if (!to.contains(low) || to.contains(mid) || to.contains(high)) { return 29; }
 
@@ -203,4 +203,21 @@ fn main() -> i32 {
         index += 1;
     }
     return 0;
+}
+
+pub impl core::cmp::PartialEq<Version> for Version {
+    pub fn partial_eq(left: Version, right: Version) -> bool { return Version::eq(left, right); }
+    pub fn partial_ne(left: Version, right: Version) -> bool { return Version::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<Version> for Version {
+    pub fn partial_lt(left: Version, right: Version) -> bool { return Version::lt(left, right); }
+    pub fn partial_le(left: Version, right: Version) -> bool { return Version::le(left, right); }
+    pub fn partial_gt(left: Version, right: Version) -> bool { return Version::gt(left, right); }
+    pub fn partial_ge(left: Version, right: Version) -> bool { return Version::ge(left, right); }
+    pub fn partial_cmp(left: Version, right: Version) -> core::cmp::PartialOrdering {
+        if (Version::lt(left, right)) { return core::cmp::Less; }
+        if (Version::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
 }

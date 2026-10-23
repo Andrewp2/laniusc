@@ -1,0 +1,36 @@
+// Native binary protocol: 17 little-endian u32 fields for each code point.
+// The reference test parses official UCD files independently.
+module app::main;
+import core::unicode;
+import core::mem;
+import std::io;
+import std::process;
+import core::decimal;
+import core::result;
+fn argument(index: i32) -> u32 {
+    let cells: [i32;4] = [0;4]; let pointer: ptr = core::mem::i32_array_data_ptr(cells);
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(pointer,16);
+    let count: i32 = std::process::arg_len(index); assert(count > 0 && count <= 16);
+    assert(std::process::arg_read(index,pointer,count as usize) == count);
+    return core::result::unwrap(core::decimal::parse_u32_range(raw,0,count));
+}
+fn main() -> i32 {
+    assert(std::process::argc() == 3);
+    let cp: u32 = argument(1); let limit: u32 = argument(2); assert(cp <= limit && limit <= 1114112);
+    let cells: [i32;1088] = [0;1088]; let pointer: ptr = core::mem::i32_array_data_ptr(cells);
+    let at: i32 = 0;
+    while (cp < limit) {
+        let p: core::unicode::Properties = core::unicode::properties(cp);
+        let s: core::unicode::SimpleMappings = core::result::unwrap_or(core::unicode::simple_mappings(cp), core::unicode::SimpleMappings { lowercase: 0, uppercase: 0, titlecase: 0, case_fold: 0 });
+        let f: core::unicode::CaseFolding = core::result::unwrap_or(core::unicode::case_folding(cp,false), core::unicode::CaseFolding { length: 0, first: 0, second: 0, third: 0 });
+        let t: core::unicode::CaseFolding = core::result::unwrap_or(core::unicode::case_folding(cp,true), core::unicode::CaseFolding { length: 0, first: 0, second: 0, third: 0 });
+        cells[at] = p.category as i32; cells[at+1] = p.combining_class as i32; cells[at+2] = p.flags as i32; cells[at+3] = p.decimal_digit as i32;
+        cells[at+4] = s.lowercase as i32; cells[at+5] = s.uppercase as i32; cells[at+6] = s.titlecase as i32; cells[at+7] = s.case_fold as i32;
+        cells[at+8] = f.length as i32; cells[at+9] = f.first as i32; cells[at+10] = f.second as i32; cells[at+11] = f.third as i32;
+        cells[at+12] = t.length as i32; cells[at+13] = t.first as i32; cells[at+14] = t.second as i32; cells[at+15] = t.third as i32;
+        cells[at+16] = core::result::unwrap_or(core::unicode::simple_case_fold(cp,true),0) as i32;
+        at += 17; cp += 1;
+        if (at == 1088 || cp == limit) { assert(std::io::write_stdout(pointer,(at*4) as usize) == at*4); at = 0; }
+    }
+    return 0;
+}

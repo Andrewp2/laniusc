@@ -292,12 +292,12 @@ pub impl<T> Deque<T> {
         while (index < count) { target[index] = source[self.index(ordinal + index)]; index += 1; }
         tail.length = count; self.truncate(ordinal); return core::result::Ok(tail);
     }
-    pub fn index_of(&self, item: T) -> i32 where T: core::cmp::Eq<T> {
+    pub fn index_of(&self, item: T) -> i32 where T: core::cmp::PartialEq<T> {
         let values: [T] = self.slots(); let index: i32 = 0;
-        while (index < self.length) { if (T::eq(values[self.index(index)], item)) { return index; } index += 1; }
+        while (index < self.length) { if (T::partial_eq(values[self.index(index)], item)) { return index; } index += 1; }
         return -1;
     }
-    pub fn contains(&self, item: T) -> bool where T: core::cmp::Eq<T> { return self.index_of(item) >= 0; }
+    pub fn contains(&self, item: T) -> bool where T: core::cmp::PartialEq<T> { return self.index_of(item) >= 0; }
     pub fn destroy(&self) {
         let size: usize = core::mem::size_of<T>();
         if (self.reserved > 0 && size > 0) { alloc::allocator::dealloc(self.storage, size * (self.reserved as usize), ALIGN); }

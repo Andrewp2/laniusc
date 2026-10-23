@@ -1,0 +1,86 @@
+{
+  "unicode_version": "17.0.0",
+  "source": "Unicode Consortium official archived UCD",
+  "compression": "gzip level9, mtime0; checksums cover original bytes and checked-in compressed bytes",
+  "license_url": "https://www.unicode.org/license.txt",
+  "license_sha256": "e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96",
+  "files": [
+    {
+      "file": "UnicodeData.txt.gz",
+      "url": "https://www.unicode.org/Public/17.0.0/ucd/UnicodeData.txt",
+      "bytes": 2198209,
+      "sha256": "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c",
+      "gzip_sha256": "047d4e85bdb81ac1234ddc2a3977cf167a15e3ea75030f854c0e0861d0213fd7"
+    },
+    {
+      "file": "DerivedCoreProperties.txt.gz",
+      "url": "https://www.unicode.org/Public/17.0.0/ucd/DerivedCoreProperties.txt",
+      "bytes": 1134783,
+      "sha256": "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08",
+      "gzip_sha256": "d83942e89d576a4ba1ea96a412f7aa82effd96cf9a00613bab639c40b0842bf4"
+    },
+    {
+      "file": "PropList.txt.gz",
+      "url": "https://www.unicode.org/Public/17.0.0/ucd/PropList.txt",
+      "bytes": 145465,
+      "sha256": "130dcddcaadaf071008bdfce1e7743e04fdfbc910886f017d9f9ac931d8c64dd",
+      "gzip_sha256": "169fcf2abb7238eb6a26eb07dfa678ce6f2aaff33ba34847d485202dc8219bd8"
+    },
+    {
+      "file": "CaseFolding.txt.gz",
+      "url": "https://www.unicode.org/Public/17.0.0/ucd/CaseFolding.txt",
+      "bytes": 87539,
+      "sha256": "ff8d8fefbf123574205085d6714c36149eb946d717a0c585c27f0f4ef58c4183",
+      "gzip_sha256": "6e5ed1e44c140916c2c754ed26da6f566a50421fa158004b150623094ee1de88"
+    },
+    {
+      "file": "SpecialCasing.txt.gz",
+      "url": "https://www.unicode.org/Public/17.0.0/ucd/SpecialCasing.txt",
+      "bytes": 17049,
+      "sha256": "efc25faf19de21b92c1194c111c932e03d2a5eaf18194e33f1156e96de4c9588",
+      "gzip_sha256": "e85dd26b887dec086498511bb8bfcfc06b7a8cf680a89c788c15e71a4eba716e"
+    },
+    {
+      "file": "DerivedNormalizationProps.txt.gz",
+      "url": "https://www.unicode.org/Public/17.0.0/ucd/DerivedNormalizationProps.txt",
+      "bytes": 1377582,
+      "sha256": "71fd6a206a2c0cdd41feb6b7f656aa31091db45e9cedc926985d718397f9e488",
+      "gzip_sha256": "b077a249bcdcd66ecc8f45d4790beea6e22190a3140b586d688f6df073aca8e7"
+    },
+    {
+      "file": "CompositionExclusions.txt.gz",
+      "url": "https://www.unicode.org/Public/17.0.0/ucd/CompositionExclusions.txt",
+      "bytes": 9007,
+      "sha256": "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f",
+      "gzip_sha256": "b375fa69ef7da9396fca7896a85ee45d50f8d7d031c6476dce26da8eb51cd9b2"
+    },
+    {
+      "file": "NormalizationTest.txt.gz",
+      "url": "https://www.unicode.org/Public/17.0.0/ucd/NormalizationTest.txt",
+      "bytes": 2827429,
+      "sha256": "5019ffd530751a741900c849c0e010332f142a3612234639bd200b82138a87db",
+      "gzip_sha256": "6d932a647c213be894e64fcfe46d54b3b8b2220e352356733dcb06039154f365"
+    },
+    {
+      "file": "auxiliary/GraphemeBreakProperty.txt.gz",
+      "url": "https://www.unicode.org/Public/17.0.0/ucd/auxiliary/GraphemeBreakProperty.txt",
+      "bytes": 99377,
+      "sha256": "d6b51d1d2ae5c33b451b7ed994b48f1f4dc62b2272a5831e7fd418514a6bae89",
+      "gzip_sha256": "24a38e626e8b07a29d1b2e04188ab6ebe56d9d5e43e0145d844f9d69df77b305"
+    },
+    {
+      "file": "auxiliary/GraphemeBreakTest.txt.gz",
+      "url": "https://www.unicode.org/Public/17.0.0/ucd/auxiliary/GraphemeBreakTest.txt",
+      "bytes": 126570,
+      "sha256": "e2d134d2c52919bace503ebb6a551c1855fe1a1faec18478c78fff254a1793ec",
+      "gzip_sha256": "90700b5b5e8421d337b6d4aae71d3e961f93d2c70a36d1d79a1030f14475a8c7"
+    },
+    {
+      "file": "emoji/emoji-data.txt.gz",
+      "url": "https://www.unicode.org/Public/17.0.0/ucd/emoji/emoji-data.txt",
+      "bytes": 107324,
+      "sha256": "2cb2bb9455cda83e8481541ecf5b6dfda66a3bb89efa3fa7c5297eccf607b72b",
+      "gzip_sha256": "0a8e9e587114aa9b900b921544a4c09f7d476e91180fd932cd1ac8fc912008c5"
+    }
+  ]
+}

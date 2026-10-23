@@ -1,0 +1,282 @@
+// Independent owned nonnegative integers, base 2^32, least significant limb first.
+// Keep one active owner per allocation. All operands are borrowed; destroy each
+// successful owned result exactly once. Zero has no limbs and needs no allocation.
+module ext::big_uint;
+import alloc::vec;
+import core::cmp;
+import core::hash;
+import core::mem;
+import core::result;
+import core::slice;
+
+pub enum Error { Bounds, LimbLimit, WorkLimit, OutputLimit, AllocationFailed, InvalidRadix, InvalidDigit, Empty, Underflow, DivisionByZero, Overflow }
+pub struct Limits { max_limbs: i32, max_work: u64, max_output: i32 }
+pub struct BigUint { limbs: alloc::vec::Vec<u32> }
+pub struct DivRem { quotient: BigUint, remainder: BigUint }
+const BASE: u64 = 4294967296;
+const MASK: u64 = 4294967295;
+pub fn default_limits() -> Limits { return Limits { max_limbs: 1048576, max_work: 100000000, max_output: 1048576 }; }
+pub fn zero() -> BigUint { return BigUint { limbs: alloc::vec::new() }; }
+fn valid(limits: Limits) -> bool { return limits.max_limbs >= 0 && limits.max_limbs <= 536870911 && limits.max_output >= 0; }
+fn limb_capacity() -> i32 { return (2147483647/core::mem::size_of<u32>()) as i32; }
+fn guard(limits: Limits, count: i32, work: u64) -> core::result::Result<i32,Error> {
+    if (!valid(limits) || count < 0) { return core::result::Err(Error::Bounds); }
+    if (count > limits.max_limbs || count > limb_capacity()) { return core::result::Err(Error::LimbLimit); }
+    if (work > limits.max_work) { return core::result::Err(Error::WorkLimit); }
+    return core::result::Ok(count);
+}
+fn fresh(count: i32, limits: Limits) -> core::result::Result<BigUint,Error> {
+    let checked: core::result::Result<i32,Error> = guard(limits,count,count as u64);
+    if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    let value: BigUint = zero();
+    if (value.limbs.try_resize(count,0).is_err()) { return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(value);
+}
+pub fn from_u64(value: u64, limits: Limits) -> core::result::Result<BigUint,Error> {
+    let count: i32 = 0; if (value != 0) { count = 1; } if (value > MASK) { count = 2; }
+    let made: core::result::Result<BigUint,Error> = fresh(count,limits); if (made.is_err()) { return made; }
+    let out: BigUint = made.unwrap(); if (count > 0) { out.put(0,value as u32); } if (count == 2) { out.put(1,(value >> 32) as u32); }
+    return core::result::Ok(out);
+}
+impl BigUint {
+    fn get(&self, index: i32) -> u32 { return self.limbs.get_or(index,0); }
+    fn put(&self, index: i32, value: u32) { core::result::unwrap(self.limbs.set(index,value)); }
+    fn normalize(&self) { while (self.limbs.len() > 0 && self.get(self.limbs.len()-1) == 0) { self.limbs.pop(); } }
+    fn append(&self, value: u32, limits: Limits) -> core::result::Result<i32,Error> {
+        if (self.limbs.len() >= limits.max_limbs || self.limbs.len() >= limb_capacity()) { return core::result::Err(Error::LimbLimit); }
+        // Reserve exactly; vector geometric growth must not escape the limb budget.
+        if (self.limbs.try_reserve(1).is_err()) { return core::result::Err(Error::AllocationFailed); }
+        if (self.limbs.try_push(value).is_err()) { return core::result::Err(Error::AllocationFailed); }
+        return core::result::Ok(self.limbs.len());
+    }
+    fn mul_add_small(&self, radix: u32, digit: u32, limits: Limits) -> core::result::Result<i32,Error> {
+        let carry: u64 = digit as u64; let index: i32 = 0;
+        while (index < self.limbs.len()) { let wide: u64 = (self.get(index) as u64)*(radix as u64)+carry; self.put(index,wide as u32); carry = wide >> 32; index += 1; }
+        if (carry != 0) { return self.append(carry as u32,limits); } return core::result::Ok(self.limbs.len());
+    }
+    fn div_small(&self, divisor: u32) -> u32 {
+        let rem: u64 = 0; let index: i32 = self.limbs.len();
+        while (index > 0) { index -= 1; let wide: u64 = (rem << 32)|(self.get(index) as u64); self.put(index,(wide/(divisor as u64)) as u32); rem = wide%(divisor as u64); }
+        self.normalize(); return rem as u32;
+    }
+}
+pub impl DivRem { pub fn destroy(&self) { self.quotient.destroy(); self.remainder.destroy(); } }
+pub impl BigUint {
+    pub fn borrow(&self) -> &BigUint { return self; }
+    pub fn destroy(&self) { self.limbs.destroy(); }
+    pub fn limb_len(&self) -> i32 { return self.limbs.len(); }
+    pub fn is_zero(&self) -> bool { return self.limbs.is_empty(); }
+    pub fn bit_length(&self) -> u64 {
+        if (self.is_zero()) { return 0; } let high: u32 = self.get(self.limbs.len()-1); let bits: u64 = 0;
+        while (high != 0) { bits += 1; high = high >> 1; } return ((self.limbs.len()-1) as u64)*32+bits;
+    }
+    pub fn bit(&self, index: u64) -> bool { if (index/32 >= self.limbs.len() as u64) { return false; } return ((self.get((index/32) as i32) >> ((index%32) as i32)) & 1) != 0; }
+    pub fn compare(&self, other: &BigUint) -> i32 {
+        if (self.limbs.len() < other.limbs.len()) { return -1; } if (self.limbs.len() > other.limbs.len()) { return 1; }
+        let index: i32 = self.limbs.len(); while (index > 0) { index -= 1; if (self.get(index) < other.get(index)) { return -1; } if (self.get(index) > other.get(index)) { return 1; } } return 0;
+    }
+    pub fn to_u64(&self) -> core::result::Result<u64,Error> { if (self.limbs.len() > 2) { return core::result::Err(Error::Overflow); } return core::result::Ok((self.get(0) as u64)|((self.get(1) as u64) << 32)); }
+    pub fn try_clone(&self, limits: Limits) -> core::result::Result<BigUint,Error> {
+        let made: core::result::Result<BigUint,Error> = fresh(self.limbs.len(),limits); if (made.is_err()) { return made; } let out: BigUint = made.unwrap(); let index: i32 = 0;
+        while (index < self.limbs.len()) { out.put(index,self.get(index)); index += 1; } return core::result::Ok(out);
+    }
+    pub fn add(&self, other: &BigUint, limits: Limits) -> core::result::Result<BigUint,Error> {
+        let count: i32 = self.limbs.len(); if (other.limbs.len() > count) { count = other.limbs.len(); }
+        let made: core::result::Result<BigUint,Error> = fresh(count,limits); if (made.is_err()) { return made; } let out: BigUint = made.unwrap(); let carry: u64 = 0; let index: i32 = 0;
+        while (index < count) { let wide: u64 = (self.get(index) as u64)+(other.get(index) as u64)+carry; out.put(index,wide as u32); carry = wide >> 32; index += 1; }
+        if (carry != 0) { let grown: core::result::Result<i32,Error> = out.append(carry as u32,limits); if (grown.is_err()) { out.destroy(); return core::result::Err(grown.unwrap_err()); } }
+        return core::result::Ok(out);
+    }
+    pub fn sub(&self, other: &BigUint, limits: Limits) -> core::result::Result<BigUint,Error> {
+        if (self.compare(other) < 0) { return core::result::Err(Error::Underflow); }
+        let made: core::result::Result<BigUint,Error> = fresh(self.limbs.len(),limits); if (made.is_err()) { return made; } let out: BigUint = made.unwrap(); let borrow: u64 = 0; let index: i32 = 0;
+        while (index < self.limbs.len()) { let left: u64 = self.get(index) as u64; let right: u64 = (other.get(index) as u64)+borrow; out.put(index,(left+BASE-right) as u32); borrow = 0; if (left < right) { borrow = 1; } index += 1; }
+        out.normalize(); return core::result::Ok(out);
+    }
+    pub fn mul(&self, other: &BigUint, limits: Limits) -> core::result::Result<BigUint,Error> {
+        if (!valid(limits)) { return core::result::Err(Error::Bounds); }
+        let work: u64 = (self.limbs.len() as u64)*(other.limbs.len() as u64); if (work > limits.max_work) { return core::result::Err(Error::WorkLimit); }
+        if (self.is_zero() || other.is_zero()) { return core::result::Ok(zero()); }
+        let count: i32 = self.limbs.len()+other.limbs.len(); if (count-1 > limits.max_limbs) { return core::result::Err(Error::LimbLimit); } if (count > limits.max_limbs) { count = limits.max_limbs; }
+        let made: core::result::Result<BigUint,Error> = fresh(count,limits); if (made.is_err()) { return made; } let out: BigUint = made.unwrap(); let i: i32 = 0;
+        while (i < self.limbs.len()) {
+            let carry: u64 = 0; let j: i32 = 0;
+            // (B-1)^2 + (B-1) + (B-1) = B^2-1, exactly u64::MAX.
+            while (j < other.limbs.len()) { let wide: u64 = (self.get(i) as u64)*(other.get(j) as u64)+(out.get(i+j) as u64)+carry; out.put(i+j,wide as u32); carry = wide >> 32; j += 1; }
+            if (i+j < count) { out.put(i+j,carry as u32); } else { if (carry != 0) { out.destroy(); return core::result::Err(Error::LimbLimit); } } i += 1;
+        }
+        out.normalize(); return core::result::Ok(out);
+    }
+    pub fn shl(&self, bits: u64, limits: Limits) -> core::result::Result<BigUint,Error> {
+        if (!valid(limits)) { return core::result::Err(Error::Bounds); } if (self.is_zero()) { return core::result::Ok(zero()); }
+        let whole: u64 = bits/32; let shift: i32 = (bits%32) as i32;
+        let extra: i32 = 0; if (shift != 0 && ((self.get(self.limbs.len()-1) as u64) >> (32-shift)) != 0) { extra = 1; }
+        if (whole > limits.max_limbs as u64 || (self.limbs.len() as u64)+whole+(extra as u64) > limits.max_limbs as u64) { return core::result::Err(Error::LimbLimit); }
+        let made: core::result::Result<BigUint,Error> = fresh(self.limbs.len()+(whole as i32)+extra,limits); if (made.is_err()) { return made; } let out: BigUint = made.unwrap(); let carry: u64 = 0; let i: i32 = 0;
+        while (i < self.limbs.len()) { let wide: u64 = ((self.get(i) as u64) << shift)|carry; out.put(i+(whole as i32),wide as u32); carry = wide >> 32; i += 1; } if (extra != 0) { out.put(i+(whole as i32),carry as u32); } return core::result::Ok(out);
+    }
+    pub fn shr(&self, bits: u64, limits: Limits) -> core::result::Result<BigUint,Error> {
+        if (!valid(limits)) { return core::result::Err(Error::Bounds); } if (bits/32 >= self.limbs.len() as u64) { return core::result::Ok(zero()); }
+        let whole: i32 = (bits/32) as i32; let shift: i32 = (bits%32) as i32; let count: i32 = self.limbs.len()-whole;
+        let made: core::result::Result<BigUint,Error> = fresh(count,limits); if (made.is_err()) { return made; } let out: BigUint = made.unwrap(); let i: i32 = 0;
+        while (i < count) { let wide: u64 = (self.get(i+whole) as u64)|((self.get(i+whole+1) as u64) << 32); out.put(i,(wide >> shift) as u32); i += 1; } out.normalize(); return core::result::Ok(out);
+    }
+}
+fn digit(byte: u8) -> i32 { if (byte >= 48 && byte <= 57) { return (byte-48) as i32; } if (byte >= 65 && byte <= 90) { return (byte-65) as i32+10; } if (byte >= 97 && byte <= 122) { return (byte-97) as i32+10; } return 36; }
+pub fn parse(input: core::slice::View<u8>, radix: i32, limits: Limits) -> core::result::Result<BigUint,Error> {
+    if (!valid(limits) || input.start < 0 || input.length < 0 || input.start > 2147483647-input.length) { return core::result::Err(Error::Bounds); }
+    if (radix < 2 || radix > 36) { return core::result::Err(Error::InvalidRadix); } if (input.length == 0) { return core::result::Err(Error::Empty); }
+    if ((input.length as u64) > limits.max_work) { return core::result::Err(Error::WorkLimit); }
+    let index: i32 = 0; while (index < input.length) { if (digit(input.values[input.start+index]) >= radix) { return core::result::Err(Error::InvalidDigit); } index += 1; }
+    let value: BigUint = zero(); let work: u64 = input.length as u64; index = 0;
+    while (index < input.length) {
+        let cost: u64 = (value.limbs.len() as u64)+1; if (cost > limits.max_work-work) { value.destroy(); return core::result::Err(Error::WorkLimit); } work += cost;
+        let added: core::result::Result<i32,Error> = value.mul_add_small(radix as u32,digit(input.values[input.start+index]) as u32,limits);
+        if (added.is_err()) { value.destroy(); return core::result::Err(added.unwrap_err()); } index += 1;
+    } return core::result::Ok(value);
+}
+fn bitwise(left: &BigUint, right: &BigUint, kind: i32, limits: Limits) -> core::result::Result<BigUint,Error> {
+    let count: i32 = left.limbs.len(); if (kind == 0) { if (right.limbs.len() < count) { count = right.limbs.len(); } } else { if (right.limbs.len() > count) { count = right.limbs.len(); } }
+    let made: core::result::Result<BigUint,Error> = fresh(count,limits); if (made.is_err()) { return made; } let out: BigUint = made.unwrap(); let i: i32 = 0;
+    while (i < count) { let value: u32 = left.get(i)&right.get(i); if (kind == 1) { value = left.get(i)|right.get(i); } if (kind == 2) { value = left.get(i)^right.get(i); } out.put(i,value); i += 1; } out.normalize(); return core::result::Ok(out);
+}
+pub impl BigUint {
+    pub fn bit_and(&self, other: &BigUint, limits: Limits) -> core::result::Result<BigUint,Error> { return bitwise(self,other,0,limits); }
+    pub fn bit_or(&self, other: &BigUint, limits: Limits) -> core::result::Result<BigUint,Error> { return bitwise(self,other,1,limits); }
+    pub fn bit_xor(&self, other: &BigUint, limits: Limits) -> core::result::Result<BigUint,Error> { return bitwise(self,other,2,limits); }
+}
+
+// Normalized Knuth long division: the top divisor limb is >= B/2. At each
+// position the current remainder is < divisor, hence the next quotient is < B.
+// A 2/1 estimate is at most two high; the 3/2 test reduces that to at most one.
+// Subtraction detects the remaining overestimate, then one addback corrects it.
+fn division_work(left: i32, right: i32) -> u64 {
+    if (left < right) { return left as u64; }
+    return 8*((left as u64)+(right as u64)+1)+4*(((left-right+1) as u64)*(right as u64));
+}
+pub impl BigUint {
+    pub fn div_rem(&self, other: &BigUint, limits: Limits) -> core::result::Result<DivRem,Error> {
+        if (!valid(limits)) { return core::result::Err(Error::Bounds); } if (other.is_zero()) { return core::result::Err(Error::DivisionByZero); }
+        let checked: core::result::Result<i32,Error> = guard(limits,self.limbs.len(),division_work(self.limbs.len(),other.limbs.len())); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        if (other.limbs.len() > limits.max_limbs) { return core::result::Err(Error::LimbLimit); }
+        if (self.compare(other) < 0) { let copy: core::result::Result<BigUint,Error> = self.try_clone(limits); if (copy.is_err()) { return core::result::Err(copy.unwrap_err()); } return core::result::Ok(DivRem { quotient: zero(), remainder: copy.unwrap() }); }
+        if (other.limbs.len() == 1) {
+            let copy: core::result::Result<BigUint,Error> = self.try_clone(limits); if (copy.is_err()) { return core::result::Err(copy.unwrap_err()); } let quotient: BigUint = copy.unwrap(); let small: u32 = quotient.div_small(other.get(0));
+            let rem: core::result::Result<BigUint,Error> = from_u64(small as u64,limits); if (rem.is_err()) { quotient.destroy(); return core::result::Err(rem.unwrap_err()); }
+            return core::result::Ok(DivRem { quotient: quotient, remainder: rem.unwrap() });
+        }
+        let n: i32 = other.limbs.len(); let m: i32 = self.limbs.len()-n;
+        let shift: i32 = 0; let high: u32 = other.get(n-1); while (high < 2147483648) { high = high << 1; shift += 1; }
+        let vn: core::result::Result<BigUint,Error> = other.shl(shift as u64,limits); if (vn.is_err()) { return core::result::Err(vn.unwrap_err()); } let divisor: BigUint = vn.unwrap();
+        // One guard limb is the sole storage allowance beyond max_limbs.
+        let scratch_limits: Limits = limits; if (scratch_limits.max_limbs < 536870911) { scratch_limits.max_limbs += 1; }
+        let un: core::result::Result<BigUint,Error> = fresh(self.limbs.len()+1,scratch_limits);
+        if (un.is_err()) { divisor.destroy(); return core::result::Err(un.unwrap_err()); } let dividend: BigUint = un.unwrap();
+        let carry: u64 = 0; let index: i32 = 0;
+        while (index < self.limbs.len()) { let wide: u64 = ((self.get(index) as u64) << shift)|carry; dividend.put(index,wide as u32); carry = wide >> 32; index += 1; } dividend.put(index,carry as u32);
+        let qn: core::result::Result<BigUint,Error> = fresh(m+1,limits); if (qn.is_err()) { dividend.destroy(); divisor.destroy(); return core::result::Err(qn.unwrap_err()); } let quotient: BigUint = qn.unwrap();
+        let j: i32 = m;
+        while (j >= 0) {
+            let top: u64 = dividend.get(j+n) as u64; let next: u64 = dividend.get(j+n-1) as u64; let vtop: u64 = divisor.get(n-1) as u64;
+            let qhat: u64 = MASK; let rhat: u64 = next+vtop;
+            // top == vtop would produce B or B+1; cap first to one limb.
+            if (top < vtop) { let pair: u64 = (top << 32)|next; qhat = pair/vtop; rhat = pair%vtop; }
+            // Only form rhat*B while rhat < B, avoiding u64 overflow.
+            while ((rhat < BASE) && qhat*(divisor.get(n-2) as u64) > (rhat << 32)+(dividend.get(j+n-2) as u64)) { qhat -= 1; rhat += vtop; }
+            let borrow: u64 = 0; index = 0;
+            while (index < n) {
+                // qhat*v_i + prior borrow <= (B-1)^2+B-1 < B^2.
+                let product: u64 = qhat*(divisor.get(index) as u64)+borrow; let low: u64 = product&MASK; let current: u64 = dividend.get(j+index) as u64;
+                dividend.put(j+index,(current+BASE-low) as u32); borrow = product >> 32; if (current < low) { borrow += 1; } index += 1;
+            }
+            let current: u64 = dividend.get(j+n) as u64; dividend.put(j+n,(current+BASE-borrow) as u32);
+            if (current < borrow) {
+                qhat -= 1; carry = 0; index = 0;
+                while (index < n) { let wide: u64 = (dividend.get(j+index) as u64)+(divisor.get(index) as u64)+carry; dividend.put(j+index,wide as u32); carry = wide >> 32; index += 1; }
+                dividend.put(j+n,((dividend.get(j+n) as u64)+carry) as u32);
+            }
+            quotient.put(j,qhat as u32); j -= 1;
+        }
+        quotient.normalize(); core::result::unwrap(dividend.limbs.truncate(n)); dividend.normalize();
+        let remainder_result: core::result::Result<BigUint,Error> = dividend.shr(shift as u64,limits); dividend.destroy(); divisor.destroy();
+        if (remainder_result.is_err()) { quotient.destroy(); return core::result::Err(remainder_result.unwrap_err()); }
+        return core::result::Ok(DivRem { quotient: quotient, remainder: remainder_result.unwrap() });
+    }
+    pub fn format_radix(&self, radix: i32, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+        if (!valid(limits)) { return core::result::Err(Error::Bounds); } if (radix < 2 || radix > 36) { return core::result::Err(Error::InvalidRadix); }
+        if (limits.max_output == 0) { return core::result::Err(Error::OutputLimit); }
+        let cloned: core::result::Result<BigUint,Error> = self.try_clone(limits); if (cloned.is_err()) { return core::result::Err(cloned.unwrap_err()); } let copy: BigUint = cloned.unwrap(); let output: alloc::vec::Vec<u8> = alloc::vec::new(); let work: u64 = self.limbs.len() as u64;
+        let digit_bits: u64 = 0; let radix_power: i32 = radix; while (radix_power > 1) { digit_bits += 1; radix_power = radix_power >> 1; }
+        let reserve: u64 = self.bit_length()/digit_bits+1; if (reserve > limits.max_output as u64) { reserve = limits.max_output as u64; }
+        if (output.try_reserve(reserve as i32).is_err()) { copy.destroy(); return core::result::Err(Error::AllocationFailed); }
+        while (true) {
+            let cost: u64 = (copy.limbs.len() as u64)+1; if (cost > limits.max_work-work) { copy.destroy(); output.destroy(); return core::result::Err(Error::WorkLimit); } work += cost;
+            if (output.len() >= limits.max_output) { copy.destroy(); output.destroy(); return core::result::Err(Error::OutputLimit); }
+            let rem: u32 = copy.div_small(radix as u32); let byte: u8 = (rem+48) as u8; if (rem >= 10) { byte = (rem+87) as u8; }
+            if (output.try_push(byte).is_err()) { copy.destroy(); output.destroy(); return core::result::Err(Error::AllocationFailed); }
+            if (copy.is_zero()) { break; }
+        }
+        copy.destroy(); output.reverse(); return core::result::Ok(output);
+    }
+    pub fn format_into(&self, output: core::slice::View<u8>, radix: i32, limits: Limits) -> core::result::Result<i32,Error> {
+        if (output.start < 0 || output.length < 0 || output.start > 2147483647-output.length) { return core::result::Err(Error::Bounds); }
+        let formatted: core::result::Result<alloc::vec::Vec<u8>,Error> = self.format_radix(radix,limits); if (formatted.is_err()) { return core::result::Err(formatted.unwrap_err()); } let bytes: alloc::vec::Vec<u8> = formatted.unwrap();
+        let count: i32 = bytes.len(); if (count > output.length) { bytes.destroy(); return core::result::Err(Error::OutputLimit); }
+        let index: i32 = 0; while (index < count) { output.values[output.start+index] = bytes.at(index); index += 1; } bytes.destroy(); return core::result::Ok(count);
+    }
+    pub fn pow(&self, exponent: u32, limits: Limits) -> core::result::Result<BigUint,Error> {
+        let one: core::result::Result<BigUint,Error> = from_u64(1,limits); if (one.is_err()) { return one; } let out: BigUint = one.unwrap();
+        if (exponent == 0) { return core::result::Ok(out); }
+        let cloned: core::result::Result<BigUint,Error> = self.try_clone(limits); if (cloned.is_err()) { out.destroy(); return cloned; } let base: BigUint = cloned.unwrap(); let left: u32 = exponent; let budget: Limits = limits;
+        while (left != 0) {
+            if ((left & 1) != 0) {
+                let cost: u64 = (out.limbs.len() as u64)*(base.limbs.len() as u64)+(out.limbs.len() as u64)+(base.limbs.len() as u64);
+                if (cost > budget.max_work) { out.destroy(); base.destroy(); return core::result::Err(Error::WorkLimit); }
+                let multiplied: core::result::Result<BigUint,Error> = out.mul(base.borrow(),budget); if (multiplied.is_err()) { out.destroy(); base.destroy(); return multiplied; } budget.max_work -= cost; out.destroy(); out = multiplied.unwrap();
+            }
+            left = left >> 1; if (left != 0) {
+                let cost: u64 = (base.limbs.len() as u64)*(base.limbs.len() as u64)+2*(base.limbs.len() as u64);
+                if (cost > budget.max_work) { out.destroy(); base.destroy(); return core::result::Err(Error::WorkLimit); }
+                let squared: core::result::Result<BigUint,Error> = base.mul(base.borrow(),budget); if (squared.is_err()) { out.destroy(); base.destroy(); return squared; } budget.max_work -= cost; base.destroy(); base = squared.unwrap();
+            }
+        } base.destroy(); return core::result::Ok(out);
+    }
+    pub fn gcd(&self, other: &BigUint, limits: Limits) -> core::result::Result<BigUint,Error> {
+        let ac: core::result::Result<BigUint,Error> = self.try_clone(limits); if (ac.is_err()) { return ac; } let a: BigUint = ac.unwrap();
+        let bc: core::result::Result<BigUint,Error> = other.try_clone(limits); if (bc.is_err()) { a.destroy(); return bc; } let b: BigUint = bc.unwrap(); let budget: Limits = limits;
+        while (!b.is_zero()) {
+            let cost: u64 = division_work(a.limbs.len(),b.limbs.len());
+            let divided: core::result::Result<DivRem,Error> = a.div_rem(b.borrow(),budget); if (divided.is_err()) { a.destroy(); b.destroy(); return core::result::Err(divided.unwrap_err()); } budget.max_work -= cost;
+            let pair: DivRem = divided.unwrap(); pair.quotient.destroy(); a.destroy(); a = b; b = pair.remainder;
+        } b.destroy(); return core::result::Ok(a);
+    }
+    pub fn value_hash(&self) -> u32 {
+        let state: u32 = core::hash::FNV1A_OFFSET_BASIS; let index: i32 = 0;
+        while (index < self.limbs.len()) { let word: u32 = self.get(index); let byte: i32 = 0; while (byte < 4) { state = core::hash::fnv1a_step(state,((word >> (byte*8)) & 255) as u8); byte += 1; } index += 1; } return state;
+    }
+}
+
+// Trait arguments are temporary read handles. Their unique owners must stay
+// live and frozen for every collection/sort operation retaining these handles.
+pub impl core::cmp::Eq<BigUint> for BigUint {
+    pub fn eq(left: BigUint, right: BigUint) -> bool { return left.compare(right.borrow()) == 0; }
+    pub fn ne(left: BigUint, right: BigUint) -> bool { return left.compare(right.borrow()) != 0; }
+}
+pub impl core::cmp::Ord<BigUint> for BigUint {
+    pub fn lt(left: BigUint, right: BigUint) -> bool { return left.compare(right.borrow()) < 0; }
+    pub fn le(left: BigUint, right: BigUint) -> bool { return left.compare(right.borrow()) <= 0; }
+    pub fn gt(left: BigUint, right: BigUint) -> bool { return left.compare(right.borrow()) > 0; }
+    pub fn ge(left: BigUint, right: BigUint) -> bool { return left.compare(right.borrow()) >= 0; }
+}
+pub impl core::cmp::PartialEq<BigUint> for BigUint {
+    pub fn partial_eq(left: BigUint, right: BigUint) -> bool { return left.compare(right.borrow()) == 0; }
+    pub fn partial_ne(left: BigUint, right: BigUint) -> bool { return left.compare(right.borrow()) != 0; }
+}
+pub impl core::cmp::PartialOrd<BigUint> for BigUint {
+    pub fn partial_lt(left: BigUint, right: BigUint) -> bool { return left.compare(right.borrow()) < 0; }
+    pub fn partial_le(left: BigUint, right: BigUint) -> bool { return left.compare(right.borrow()) <= 0; }
+    pub fn partial_gt(left: BigUint, right: BigUint) -> bool { return left.compare(right.borrow()) > 0; }
+    pub fn partial_ge(left: BigUint, right: BigUint) -> bool { return left.compare(right.borrow()) >= 0; }
+    pub fn partial_cmp(left: BigUint, right: BigUint) -> core::cmp::PartialOrdering { let order: i32 = left.compare(right.borrow()); if (order < 0) { return core::cmp::Less; } if (order > 0) { return core::cmp::Greater; } return core::cmp::Equal; }
+}
+pub impl core::hash::Hash<BigUint> for BigUint { pub fn hash(value: BigUint) -> u32 { return value.value_hash(); } }

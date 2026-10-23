@@ -1,0 +1,7 @@
+module core::cmp;
+pub trait Eq<T> { pub fn eq(a: T,b: T) -> bool; }
+pub trait Forwarded<T> { pub fn forwarded_eq(a: T,b: T) -> bool; }
+pub impl Eq<i32> for i32 { pub fn eq(a: i32,b: i32) -> bool { return a == b; } }
+pub impl<T> Forwarded<T> for T where T: Eq<T> {
+    pub fn forwarded_eq(a: T,b: T) -> bool { return T::eq(a,b); }
+}

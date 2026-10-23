@@ -3,6 +3,7 @@ import alloc::tree_map;
 import alloc::string;
 import alloc::vec;
 import core::cmp;
+import core::float_order;
 import core::option;
 import core::result;
 fn keys<T>(low: T, high: T) -> bool where T: core::cmp::Ord<T> {
@@ -49,7 +50,7 @@ fn main() -> i32 {
     if (!both(-2147483648 as i32, 2147483647 as i32) || !both(0 as u32, u32max)) { return 3; }
     let low: i64 = -9223372036854775808; let high: i64 = 9223372036854775807; let unsigned: u64 = 18446744073709551615;
     if (!both(low, high) || !both(0 as u64, unsigned) || !both(low as isize, high as isize) || !both(0 as usize, unsigned as usize)) { return 4; }
-    let fl: f32 = -1.5; let fh: f32 = 3.25;
+    let fl: core::float_order::TotalF32 = core::float_order::from_f32(-1.5); let fh: core::float_order::TotalF32 = core::float_order::from_f32(3.25);
     if (!both(false, true) || !both('a', '😀') || !both(fl, fh)) { return 5; }
     let ab: [u8; 1] = [97]; let bb: [u8; 2] = [195, 169];
     let a: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(ab, 1));

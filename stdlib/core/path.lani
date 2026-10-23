@@ -229,3 +229,20 @@ pub impl core::hash::Hash<Path> for Path {
         return state;
     }
 }
+
+pub impl core::cmp::PartialEq<Path> for Path {
+    pub fn partial_eq(left: Path, right: Path) -> bool { return Path::eq(left, right); }
+    pub fn partial_ne(left: Path, right: Path) -> bool { return Path::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<Path> for Path {
+    pub fn partial_lt(left: Path, right: Path) -> bool { return Path::lt(left, right); }
+    pub fn partial_le(left: Path, right: Path) -> bool { return Path::le(left, right); }
+    pub fn partial_gt(left: Path, right: Path) -> bool { return Path::gt(left, right); }
+    pub fn partial_ge(left: Path, right: Path) -> bool { return Path::ge(left, right); }
+    pub fn partial_cmp(left: Path, right: Path) -> core::cmp::PartialOrdering {
+        if (Path::lt(left, right)) { return core::cmp::Less; }
+        if (Path::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}

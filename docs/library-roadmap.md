@@ -25,11 +25,11 @@ package distribution is a separate deliverable.
 
 | Family | Required contents | Executable state and remaining work |
 | --- | --- | --- |
-| Fundamental values | Option, Result, ordering, comparison, hashing, cloning, explicit errors | Generic Option/Result and comparison exist; contracts and composition need review |
-| Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Integer implementations and matching binary32/binary64 value utilities execute, including exact bits, rounding and square root; exact decimal parsing/shortest formatting also execute. Duplicate paths, generic floating comparison/hash policies and further mathematical operations remain |
+| Fundamental values | Option, Result, ordering, comparison, hashing, cloning, explicit errors | Generic Option/Result execute; partial equality/order are distinct from total equality/order, with explicit total float keys. Some generic forwarding and record extraction compositions remain compiler dependencies; clone and ownership consolidation remain |
+| Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Integer implementations and matching binary32/binary64 value utilities execute, including exact bits, rounding and square root; exact decimal parsing/shortest formatting also execute. Native floats use partial comparison; bit-preserving total wrappers supply lawful ordering/hashing. Duplicate paths and further mathematical operations remain |
 | Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic algorithms and counted View values execute, including subviews, checked mutations and cursors; initial physical counts still require compiler length projection |
 | Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | Inherent slice/text/hash-map cursors execute; shared protocol dispatch hits an imported-generic compiler dependency; adapters and collection integration remain |
-| Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat, integer/float conversion and caller-buffer Display formatting execute; format strings, alignment/precision policies, owned formatting conveniences and further Unicode operations remain |
+| Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat, integer/float conversion, caller-buffer Display and selected complete Unicode 17 property/scalar-mapping tables execute; format strings, alignment/precision policies, owned formatting conveniences and contextual string casing remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings, raw views and stable chunked arenas with generic typed allocations execute; layout and ownership consolidation remain |
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec and deque with explicit errors, linear maps/sets, alloc hash maps, ordered tree maps and min/max heaps execute; legacy migration and ordered sets remain |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks, native descriptor adapters and owned files execute; buffered adapters remain |
@@ -113,8 +113,24 @@ dialects and reference forms fail explicitly. The
 [json-check program](extended-json-check.md) validates a file-supplied schema
 against stdin, with resource, allocation and I/O failure evidence.
 [Borrowed decimal numbers](stdlib-decimal-number.md) retain arbitrary coefficient
-and exponent precision; this supplies comparison/integer/divisibility behavior,
-not a complete owned big-integer or decimal-arithmetic library.
+and exponent precision for comparison/integer/divisibility behavior.
+[Owned unsigned integers](extended-big-uint.md) and
+[signed integers](extended-big-int.md) supply arbitrary precision arithmetic,
+radix conversion, division, shifts, bitwise operations, powers and GCD, with
+explicit limits, ownership and allocation failures. A
+[streaming calculator](extended-bigcalc.md) executes twenty operations across
+multiple radices. General decimal arithmetic, additional number-theory
+algorithms and cryptographic uses remain separate work.
+
+[Unicode 17.0.0 properties](stdlib-unicode.md) cover the full code point range
+for the documented property set and simple/default/Turkic scalar mappings.
+[NFC/NFD/NFKC/NFKD normalization](extended-unicode-normalize.md) and
+[default extended grapheme segmentation](extended-unicode-graphemes.md)
+execute with static generated tables and official conformance corpora. A
+[text-normalization program](extended-text-normalize.md) handles bounded UTF-8
+stdin and optional scalar/grapheme statistics, including binary NUL and
+allocation/I/O failures. Full contextual string casing, word/sentence
+segmentation, locale-sensitive collation and regex remain open.
 
 For external formats and algorithms, use their primary specifications and
 published conformance vectors. Choose exact versions and formats when starting
@@ -169,6 +185,14 @@ API list; unrelated library work can continue.
 ## Current work
 
 - Branch: `codex/stdlib`, based on `441e66f9`.
+- Current numeric/text milestone: complete basic BigUint/BigInt arithmetic and
+  a calculator; Unicode 17 property/scalar mappings, all four normalization
+  forms, default extended grapheme clusters and a normalization program.
+  [Comparison contracts](stdlib-comparison.md) reject native float keys/sorts
+  and provide bit-preserving total wrappers. New source and data generators
+  are committed with executable model/conformance/failure evidence; no compiler,
+  runtime, ABI, shader, extractor or proof implementation changed. This is
+  progress toward the full scope above, not whole-library completion.
 - Scope and API conventions: recorded in this document and
   [library-api-conventions.md](library-api-conventions.md).
 - Packed owned UTF-8 string: the first implementation and three executable

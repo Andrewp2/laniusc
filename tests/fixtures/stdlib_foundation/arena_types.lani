@@ -9,12 +9,12 @@ struct Unit {}
 struct Inner { number: u64, mark: core::option::Option<bool> }
 struct Payload { item: Inner, bytes: [u8;3], integers: [i32;2], view: [u8], text: str }
 enum Variant<T> { Empty, Item(T), Pair(T,T) }
-fn same<T>(arena: &alloc::arena::Arena, low: T, high: T) -> bool where T: core::cmp::Eq<T> {
+fn same<T>(arena: &alloc::arena::Arena, low: T, high: T) -> bool where T: core::cmp::PartialEq<T> {
     let one: core::slice::View<T> = core::result::unwrap(alloc::arena::alloc<T>(arena,low));
     let many: core::slice::View<T> = core::result::unwrap(alloc::arena::alloc_slice<T>(arena,17,high));
     let copied: core::slice::View<T> = core::result::unwrap(alloc::arena::copy_slice<T>(arena,many));
-    let index: i32 = 0; while (index < 17) { if (!T::eq(core::option::unwrap(many.get(index)),high) || !T::eq(core::option::unwrap(copied.get(index)),high)) { return false; } index += 1; }
-    return T::eq(core::option::unwrap(one.get(0)),low);
+    let index: i32 = 0; while (index < 17) { if (!T::partial_eq(core::option::unwrap(many.get(index)),high) || !T::partial_eq(core::option::unwrap(copied.get(index)),high)) { return false; } index += 1; }
+    return T::partial_eq(core::option::unwrap(one.get(0)),low);
 }
 fn main() -> i32 {
     let arena: alloc::arena::Arena = core::result::unwrap(alloc::arena::new(alloc::arena::default_config()));

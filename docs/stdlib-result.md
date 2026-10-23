@@ -15,8 +15,8 @@ a method, `value.is_ok()`.
 | --- | --- |
 | `Ok(value)`, `Err(error)` | Construct a result. The other payload type comes from context: a typed `let`, a parameter or a return type. |
 | `is_ok`, `is_err` | Inspect the tag only. |
-| `contains(value, expected)` | True for `Ok` equal to `expected`. Needs `T: core::cmp::Eq<T>`. |
-| `contains_err(value, expected)` | True for `Err` equal to `expected`. Needs `E: core::cmp::Eq<E>`. |
+| `contains(value, expected)` | True for `Ok` equal to `expected`. Needs `T: core::cmp::PartialEq<T>`. |
+| `contains_err(value, expected)` | True for `Err` equal to `expected`. Needs `E: core::cmp::PartialEq<E>`. |
 | `unwrap(value)`, `unwrap_err(value)` | The success value or the error; each panics (SIGILL) on the other variant. |
 | `unwrap_or(value, fallback)` | The success value, or `fallback` for an error. Never panics. |
 | `unwrap_err_or(value, fallback)` | The error, or `fallback` for a success. Never panics. |
@@ -26,9 +26,9 @@ a method, `value.is_ok()`.
 Conversions to and from `Option` are in `core::option`: `ok_or`, `ok` and
 `err`. `core::result` does not import `core::option`.
 
-The `Eq` impls in `core::cmp` cover every integer width, `bool`, `char`,
-`f32` (IEEE equality), `ptr` and the wide integers; a user type implements
-`core::cmp::Eq` for itself.
+The `PartialEq` impls in `core::cmp` cover every integer width, `bool`, `char`,
+`f32` and `f64` (IEEE equality), `ptr` and the wide integers; a user type implements
+`core::cmp::PartialEq` for itself.
 
 ## Targets and limits
 

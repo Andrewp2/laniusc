@@ -1,0 +1,17 @@
+// Control for generic-record-vec-at.lani: extract through a typed view.
+module app::main;
+import alloc::vec;
+import core::float_order;
+import core::cmp;
+import core::result;
+fn inspect<T>(item: T) -> bool where T: core::cmp::Eq<T> {
+    let vector: alloc::vec::Vec<T> = alloc::vec::new();
+    core::result::unwrap(vector.try_push(item));
+    let values: [T] = vector.as_slice(); let found: T = values[0];
+    let correct: bool = T::eq(found,item);
+    vector.destroy(); return correct;
+}
+fn main() -> i32 {
+    if (!inspect(core::float_order::from_f32(1.0))) { return 1; }
+    return 0;
+}

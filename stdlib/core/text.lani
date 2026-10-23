@@ -283,3 +283,20 @@ pub impl core::hash::Hash<Text> for Text {
         return state;
     }
 }
+
+pub impl core::cmp::PartialEq<Text> for Text {
+    pub fn partial_eq(left: Text, right: Text) -> bool { return Text::eq(left, right); }
+    pub fn partial_ne(left: Text, right: Text) -> bool { return Text::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<Text> for Text {
+    pub fn partial_lt(left: Text, right: Text) -> bool { return Text::lt(left, right); }
+    pub fn partial_le(left: Text, right: Text) -> bool { return Text::le(left, right); }
+    pub fn partial_gt(left: Text, right: Text) -> bool { return Text::gt(left, right); }
+    pub fn partial_ge(left: Text, right: Text) -> bool { return Text::ge(left, right); }
+    pub fn partial_cmp(left: Text, right: Text) -> core::cmp::PartialOrdering {
+        if (Text::lt(left, right)) { return core::cmp::Less; }
+        if (Text::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}

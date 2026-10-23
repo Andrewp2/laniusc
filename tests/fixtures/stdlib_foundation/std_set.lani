@@ -2,11 +2,12 @@
 // Every std::set function through one generic checker over four distinct
 // values: duplicates, order-preserving removal, reserve, shrink, clone, and
 // the set algebra in left-then-right order. It runs for every integer width,
-// char, f32, both wide integers and a record. Exits 0. On a failure it
+// char, total float keys, both wide integers and a record. Exits 0. On a failure it
 // prints 100 * row + the failing check and exits with the row.
 module app::main;
 
 import core::cmp;
+import core::float_order;
 import core::wide_i64;
 import core::wide_u64;
 import std::set;
@@ -153,7 +154,7 @@ fn main() -> i32 {
         row(7, set_checks(u32_a, u32_b, u32_c, u32_d)),
         row(8, set_checks(u64_a, u64_b, u64_c, u64_d)),
         row(9, set_checks('\0', 'A', 'é', '😀')),
-        row(10, set_checks(-2.5, -0.5, 1.0, 3.5)),
+        row(10, set_checks(core::float_order::from_f32(-2.5), core::float_order::from_f32(-0.5), core::float_order::from_f32(1.0), core::float_order::from_f32(3.5))),
         row(11, set_checks(core::wide_i64::min_value(), core::wide_i64::from_i32(-1),
             core::wide_i64::from_words(1, 0), core::wide_i64::max_value())),
         row(12, set_checks(core::wide_u64::zero(), core::wide_u64::from_u32(7),

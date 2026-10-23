@@ -524,3 +524,20 @@ pub impl core::cmp::Ord<String> for String {
     pub fn gt(left: String, right: String) -> bool { return left.compare(right) > 0; }
     pub fn ge(left: String, right: String) -> bool { return left.compare(right) >= 0; }
 }
+
+pub impl core::cmp::PartialEq<String> for String {
+    pub fn partial_eq(left: String, right: String) -> bool { return String::eq(left, right); }
+    pub fn partial_ne(left: String, right: String) -> bool { return String::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<String> for String {
+    pub fn partial_lt(left: String, right: String) -> bool { return String::lt(left, right); }
+    pub fn partial_le(left: String, right: String) -> bool { return String::le(left, right); }
+    pub fn partial_gt(left: String, right: String) -> bool { return String::gt(left, right); }
+    pub fn partial_ge(left: String, right: String) -> bool { return String::ge(left, right); }
+    pub fn partial_cmp(left: String, right: String) -> core::cmp::PartialOrdering {
+        if (String::lt(left, right)) { return core::cmp::Less; }
+        if (String::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}

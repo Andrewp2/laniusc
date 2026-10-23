@@ -1,0 +1,227 @@
+// Unicode 17.0.0 normalization, UAX #15 revision 57 and Unicode 17 chapter 3.
+// No allocation. Caller scratch may change on failure; output never does.
+// All selected storage must be physically backed, alive, and disjoint. Input
+// stays immutable for the whole call. See docs/extended-unicode-normalize.md.
+module ext::unicode_normalize;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::unicode;
+import core::utf8;
+import ext::unicode_normalize_data;
+
+pub enum Form { Nfc, Nfd, Nfkc, Nfkd }
+pub enum Error { Bounds, InvalidUtf8(i32), SizeOverflow, ScratchCapacity(i32), OutputCapacity(i32), WorkLimit(u64) }
+pub struct Normalized { bytes: i32, scalars: i32, scratch: i32, work: u64 }
+struct Budget { used: u64, limit: u64 }
+impl Budget {
+    fn borrow(&self) -> &Budget { return self; }
+    fn charge(&self, amount: u64) -> bool {
+        if (amount > self.limit - self.used) { return false; }
+        self.used += amount; return true;
+    }
+}
+
+fn compatibility(form: Form) -> bool {
+    return match (form) { Form::Nfkc -> true, Form::Nfkd -> true, _ -> false };
+}
+fn composed(form: Form) -> bool {
+    return match (form) { Form::Nfc -> true, Form::Nfkc -> true, _ -> false };
+}
+pub fn maximum_decomposition_length(form: Form) -> i32 {
+    if (compatibility(form)) { return ext::unicode_normalize_data::MAX_COMPATIBILITY_LENGTH; }
+    return ext::unicode_normalize_data::MAX_CANONICAL_LENGTH;
+}
+pub fn maximum_decomposition_depth(form: Form) -> i32 {
+    if (compatibility(form)) { return ext::unicode_normalize_data::MAX_COMPATIBILITY_DEPTH; }
+    return ext::unicode_normalize_data::MAX_CANONICAL_DEPTH;
+}
+
+fn valid(start: i32, length: i32) -> bool {
+    return start >= 0 && length >= 0 && start <= 2147483647 - length;
+}
+fn mapping(value: u32, compat: bool) -> ext::unicode_normalize_data::Mapping {
+    if (compat) { return ext::unicode_normalize_data::compatibility(value); }
+    return ext::unicode_normalize_data::canonical(value);
+}
+fn expansion_length(value: u32, mapped: ext::unicode_normalize_data::Mapping) -> i32 {
+    if (value >= 44032 && value < 55204) {
+        if ((value - 44032) % 28 == 0) { return 2; }
+        return 3;
+    }
+    if (mapped.length == 0) { return 1; }
+    return mapped.length;
+}
+fn expansion_scalar(value: u32, mapped: ext::unicode_normalize_data::Mapping, compat: bool, index: i32) -> u32 {
+    if (value >= 44032 && value < 55204) {
+        let offset: u32 = value - 44032;
+        if (index == 0) { return 4352 + offset / 588; }
+        if (index == 1) { return 4449 + (offset % 588) / 28; }
+        return 4519 + offset % 28;
+    }
+    if (mapped.length == 0) { return value; }
+    if (compat) { return ext::unicode_normalize_data::compatibility_scalar(mapped.offset + index); }
+    return ext::unicode_normalize_data::canonical_scalar(mapped.offset + index);
+}
+
+// Revalidate the Text boundary, including fabricated records. InvalidUtf8 is
+// relative to the selected input. The count pass never touches scratch.
+fn count_expanded(input: core::text::Text, compat: bool, budget: &Budget) -> core::result::Result<i32, Error> {
+    let required: i32 = 0; let index: i32 = 0;
+    while (index < input.length) {
+        if (!budget.charge(1)) { return core::result::Err(Error::WorkLimit(budget.used)); }
+        let at: i32 = input.start + index;
+        let first: u8 = input.bytes[at];
+        let width: u32 = core::utf8::sequence_len_or(first, 0);
+        if (width == 0 || (width as i32) > input.length - index) { return core::result::Err(Error::InvalidUtf8(index)); }
+        let second: u8 = 0; let third: u8 = 0; let fourth: u8 = 0;
+        if (width > 1) { second = input.bytes[at + 1]; }
+        if (width > 2) { third = input.bytes[at + 2]; }
+        if (width > 3) { fourth = input.bytes[at + 3]; }
+        let value: u32 = core::utf8::decode_or(first, second, third, fourth, width, 4294967295);
+        if (value == 4294967295) { return core::result::Err(Error::InvalidUtf8(index)); }
+        let count: i32 = expansion_length(value, mapping(value, compat));
+        if (required > 2147483647 - count) { return core::result::Err(Error::SizeOverflow); }
+        required += count; index += width as i32;
+    }
+    return core::result::Ok(required);
+}
+
+// Exact scalar scratch count for the full decomposition, before composition.
+pub fn scratch_len(input: core::text::Text, form: Form, work_limit: u64) -> core::result::Result<i32, Error> {
+    if (!valid(input.start, input.length)) { return core::result::Err(Error::Bounds); }
+    let budget: Budget = Budget { used: 0, limit: work_limit };
+    return count_expanded(input, compatibility(form), budget.borrow());
+}
+
+fn primary_composite(left: u32, right: u32) -> u32 {
+    if (left >= 4352 && left < 4371 && right >= 4449 && right < 4470) {
+        return 44032 + ((left - 4352) * 21 + right - 4449) * 28;
+    }
+    if (left >= 44032 && left < 55204 && (left - 44032) % 28 == 0 && right > 4519 && right < 4547) {
+        return left + right - 4519;
+    }
+    return ext::unicode_normalize_data::compose(left, right);
+}
+
+fn prepare(input: core::text::Text, form: Form, scratch: core::slice::View<u32>, budget: &Budget) -> core::result::Result<Normalized, Error> {
+    if (!valid(input.start, input.length) || !valid(scratch.start, scratch.length)) { return core::result::Err(Error::Bounds); }
+    let compat: bool = compatibility(form);
+    let counted: core::result::Result<i32, Error> = count_expanded(input, compat, budget);
+    if (core::result::is_err(counted)) { return core::result::Err(core::result::unwrap_err(counted)); }
+    let required: i32 = core::result::unwrap(counted);
+    if (scratch.length < required) { return core::result::Err(Error::ScratchCapacity(required)); }
+    let byte_index: i32 = 0; let length: i32 = 0;
+    while (byte_index < input.length) {
+        if (!budget.charge(1)) { return core::result::Err(Error::WorkLimit(budget.used)); }
+        let value: u32 = core::option::unwrap(input.scalar_at_byte(byte_index));
+        byte_index += core::utf8::encoded_len_or(value, 0) as i32;
+        let mapped: ext::unicode_normalize_data::Mapping = mapping(value, compat);
+        let count: i32 = expansion_length(value, mapped); let part: i32 = 0;
+        while (part < count) {
+            if (!budget.charge(1)) { return core::result::Err(Error::WorkLimit(budget.used)); }
+            scratch.values[scratch.start + length] = expansion_scalar(value, mapped, compat, part);
+            length += 1; part += 1;
+        }
+    }
+    // Stable insertion sorting implements D109's adjacent exchanges exactly:
+    // a nonstarter only crosses a strictly greater CCC; starters stay fixed.
+    let index: i32 = 1;
+    while (index < length) {
+        if (!budget.charge(1)) { return core::result::Err(Error::WorkLimit(budget.used)); }
+        let value: u32 = scratch.values[scratch.start + index];
+        let ccc: u32 = core::unicode::canonical_combining_class(value);
+        if (ccc != 0) {
+            let position: i32 = index;
+            while (position > 0) {
+                if (!budget.charge(1)) { return core::result::Err(Error::WorkLimit(budget.used)); }
+                let previous: u32 = scratch.values[scratch.start + position - 1];
+                if (core::unicode::canonical_combining_class(previous) <= ccc) { break; }
+                scratch.values[scratch.start + position] = previous; position -= 1;
+            }
+            scratch.values[scratch.start + position] = value;
+        }
+        index += 1;
+    }
+    if (composed(form)) {
+        let starter: i32 = -1; let previous_ccc: u32 = 0;
+        let source: i32 = 0; let target: i32 = 0;
+        while (source < length) {
+            if (!budget.charge(1)) { return core::result::Err(Error::WorkLimit(budget.used)); }
+            let value: u32 = scratch.values[scratch.start + source];
+            let ccc: u32 = core::unicode::canonical_combining_class(value);
+            let composite: u32 = 4294967295;
+            if (starter >= 0 && (previous_ccc == 0 || previous_ccc < ccc)) {
+                composite = primary_composite(scratch.values[scratch.start + starter], value);
+            }
+            if (composite != 4294967295) { scratch.values[scratch.start + starter] = composite; }
+            else {
+                scratch.values[scratch.start + target] = value;
+                if (ccc == 0) { starter = target; }
+                previous_ccc = ccc; target += 1;
+            }
+            source += 1;
+        }
+        length = target;
+    }
+    let bytes: i32 = 0; index = 0;
+    while (index < length) {
+        let width: i32 = core::utf8::encoded_len_or(scratch.values[scratch.start + index], 0) as i32;
+        // Reserve encoding work here, so the output commit cannot fail.
+        if (!budget.charge(1 + (width as u64))) { return core::result::Err(Error::WorkLimit(budget.used)); }
+        if (bytes > 2147483647 - width) { return core::result::Err(Error::SizeOverflow); }
+        bytes += width; index += 1;
+    }
+    return core::result::Ok(Normalized { bytes: bytes, scalars: length, scratch: required, work: budget.used });
+}
+
+// Compute the exact normalized size; the normalized scalars occupy scratch's
+// prefix. Both size APIs have independent work budgets for each call.
+pub fn measure(input: core::text::Text, form: Form, scratch: core::slice::View<u32>, work_limit: u64) -> core::result::Result<Normalized, Error> {
+    let budget: Budget = Budget { used: 0, limit: work_limit };
+    return prepare(input, form, scratch, budget.borrow());
+}
+
+// Output is committed only after every possible returned error. No NUL byte
+// is appended. Bytes past Normalized.bytes and outside the view stay intact.
+pub fn normalize_into(input: core::text::Text, form: Form, output: core::slice::View<u8>, scratch: core::slice::View<u32>, work_limit: u64) -> core::result::Result<Normalized, Error> {
+    if (!valid(output.start, output.length)) { return core::result::Err(Error::Bounds); }
+    let budget: Budget = Budget { used: 0, limit: work_limit };
+    let prepared: core::result::Result<Normalized, Error> = prepare(input, form, scratch, budget.borrow());
+    if (core::result::is_err(prepared)) { return core::result::Err(core::result::unwrap_err(prepared)); }
+    let result: Normalized = core::result::unwrap(prepared);
+    if (output.length < result.bytes) { return core::result::Err(Error::OutputCapacity(result.bytes)); }
+    let index: i32 = 0; let target: i32 = 0;
+    while (index < result.scalars) {
+        let value: u32 = scratch.values[scratch.start + index];
+        let width: u32 = core::utf8::encoded_len_or(value, 0); let part: u32 = 0;
+        while (part < width) {
+            output.values[output.start + target] = core::utf8::encoded_byte_or(value, part, 0);
+            target += 1; part += 1;
+        }
+        index += 1;
+    }
+    return core::result::Ok(result);
+}
+
+// Full normalization and exact comparison. Quick_Check=Maybe never implies
+// normalized: composition and blocking are resolved by the same engine.
+pub fn is_normalized(input: core::text::Text, form: Form, scratch: core::slice::View<u32>, work_limit: u64) -> core::result::Result<bool, Error> {
+    let budget: Budget = Budget { used: 0, limit: work_limit };
+    let prepared: core::result::Result<Normalized, Error> = prepare(input, form, scratch, budget.borrow());
+    if (core::result::is_err(prepared)) { return core::result::Err(core::result::unwrap_err(prepared)); }
+    let result: Normalized = core::result::unwrap(prepared);
+    if (result.bytes != input.length) { return core::result::Ok(false); }
+    let index: i32 = 0; let target: i32 = 0;
+    while (index < result.scalars) {
+        let value: u32 = scratch.values[scratch.start + index];
+        let width: u32 = core::utf8::encoded_len_or(value, 0); let part: u32 = 0;
+        while (part < width) {
+            if (input.bytes[input.start + target] != core::utf8::encoded_byte_or(value, part, 0)) { return core::result::Ok(false); }
+            target += 1; part += 1;
+        }
+        index += 1;
+    }
+    return core::result::Ok(true);
+}

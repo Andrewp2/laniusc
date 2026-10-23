@@ -394,3 +394,173 @@ pub impl core::cmp::Ord<IpNet> for IpNet {
 pub impl core::hash::Hash<IpNet> for IpNet {
     pub fn hash(value: IpNet) -> u32 { return hash_prefix(value); }
 }
+
+pub impl core::cmp::PartialEq<Ipv4Addr> for Ipv4Addr {
+    pub fn partial_eq(left: Ipv4Addr, right: Ipv4Addr) -> bool { return Ipv4Addr::eq(left, right); }
+    pub fn partial_ne(left: Ipv4Addr, right: Ipv4Addr) -> bool { return Ipv4Addr::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<Ipv4Addr> for Ipv4Addr {
+    pub fn partial_lt(left: Ipv4Addr, right: Ipv4Addr) -> bool { return Ipv4Addr::lt(left, right); }
+    pub fn partial_le(left: Ipv4Addr, right: Ipv4Addr) -> bool { return Ipv4Addr::le(left, right); }
+    pub fn partial_gt(left: Ipv4Addr, right: Ipv4Addr) -> bool { return Ipv4Addr::gt(left, right); }
+    pub fn partial_ge(left: Ipv4Addr, right: Ipv4Addr) -> bool { return Ipv4Addr::ge(left, right); }
+    pub fn partial_cmp(left: Ipv4Addr, right: Ipv4Addr) -> core::cmp::PartialOrdering {
+        if (Ipv4Addr::lt(left, right)) { return core::cmp::Less; }
+        if (Ipv4Addr::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
+
+pub impl core::cmp::PartialEq<Ipv6Addr> for Ipv6Addr {
+    pub fn partial_eq(left: Ipv6Addr, right: Ipv6Addr) -> bool { return Ipv6Addr::eq(left, right); }
+    pub fn partial_ne(left: Ipv6Addr, right: Ipv6Addr) -> bool { return Ipv6Addr::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<Ipv6Addr> for Ipv6Addr {
+    pub fn partial_lt(left: Ipv6Addr, right: Ipv6Addr) -> bool { return Ipv6Addr::lt(left, right); }
+    pub fn partial_le(left: Ipv6Addr, right: Ipv6Addr) -> bool { return Ipv6Addr::le(left, right); }
+    pub fn partial_gt(left: Ipv6Addr, right: Ipv6Addr) -> bool { return Ipv6Addr::gt(left, right); }
+    pub fn partial_ge(left: Ipv6Addr, right: Ipv6Addr) -> bool { return Ipv6Addr::ge(left, right); }
+    pub fn partial_cmp(left: Ipv6Addr, right: Ipv6Addr) -> core::cmp::PartialOrdering {
+        if (Ipv6Addr::lt(left, right)) { return core::cmp::Less; }
+        if (Ipv6Addr::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
+
+pub impl core::cmp::PartialEq<IpAddr> for IpAddr {
+    pub fn partial_eq(left: IpAddr, right: IpAddr) -> bool { return IpAddr::eq(left, right); }
+    pub fn partial_ne(left: IpAddr, right: IpAddr) -> bool { return IpAddr::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<IpAddr> for IpAddr {
+    pub fn partial_lt(left: IpAddr, right: IpAddr) -> bool { return IpAddr::lt(left, right); }
+    pub fn partial_le(left: IpAddr, right: IpAddr) -> bool { return IpAddr::le(left, right); }
+    pub fn partial_gt(left: IpAddr, right: IpAddr) -> bool { return IpAddr::gt(left, right); }
+    pub fn partial_ge(left: IpAddr, right: IpAddr) -> bool { return IpAddr::ge(left, right); }
+    pub fn partial_cmp(left: IpAddr, right: IpAddr) -> core::cmp::PartialOrdering {
+        if (IpAddr::lt(left, right)) { return core::cmp::Less; }
+        if (IpAddr::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
+
+pub impl core::cmp::PartialEq<ScopedIpv6Addr> for ScopedIpv6Addr {
+    pub fn partial_eq(left: ScopedIpv6Addr, right: ScopedIpv6Addr) -> bool { return ScopedIpv6Addr::eq(left, right); }
+    pub fn partial_ne(left: ScopedIpv6Addr, right: ScopedIpv6Addr) -> bool { return ScopedIpv6Addr::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<ScopedIpv6Addr> for ScopedIpv6Addr {
+    pub fn partial_lt(left: ScopedIpv6Addr, right: ScopedIpv6Addr) -> bool { return ScopedIpv6Addr::lt(left, right); }
+    pub fn partial_le(left: ScopedIpv6Addr, right: ScopedIpv6Addr) -> bool { return ScopedIpv6Addr::le(left, right); }
+    pub fn partial_gt(left: ScopedIpv6Addr, right: ScopedIpv6Addr) -> bool { return ScopedIpv6Addr::gt(left, right); }
+    pub fn partial_ge(left: ScopedIpv6Addr, right: ScopedIpv6Addr) -> bool { return ScopedIpv6Addr::ge(left, right); }
+    pub fn partial_cmp(left: ScopedIpv6Addr, right: ScopedIpv6Addr) -> core::cmp::PartialOrdering {
+        if (ScopedIpv6Addr::lt(left, right)) { return core::cmp::Less; }
+        if (ScopedIpv6Addr::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
+
+pub impl core::cmp::PartialEq<SocketAddrV4> for SocketAddrV4 {
+    pub fn partial_eq(left: SocketAddrV4, right: SocketAddrV4) -> bool { return SocketAddrV4::eq(left, right); }
+    pub fn partial_ne(left: SocketAddrV4, right: SocketAddrV4) -> bool { return SocketAddrV4::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<SocketAddrV4> for SocketAddrV4 {
+    pub fn partial_lt(left: SocketAddrV4, right: SocketAddrV4) -> bool { return SocketAddrV4::lt(left, right); }
+    pub fn partial_le(left: SocketAddrV4, right: SocketAddrV4) -> bool { return SocketAddrV4::le(left, right); }
+    pub fn partial_gt(left: SocketAddrV4, right: SocketAddrV4) -> bool { return SocketAddrV4::gt(left, right); }
+    pub fn partial_ge(left: SocketAddrV4, right: SocketAddrV4) -> bool { return SocketAddrV4::ge(left, right); }
+    pub fn partial_cmp(left: SocketAddrV4, right: SocketAddrV4) -> core::cmp::PartialOrdering {
+        if (SocketAddrV4::lt(left, right)) { return core::cmp::Less; }
+        if (SocketAddrV4::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
+
+pub impl core::cmp::PartialEq<SocketAddrV6> for SocketAddrV6 {
+    pub fn partial_eq(left: SocketAddrV6, right: SocketAddrV6) -> bool { return SocketAddrV6::eq(left, right); }
+    pub fn partial_ne(left: SocketAddrV6, right: SocketAddrV6) -> bool { return SocketAddrV6::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<SocketAddrV6> for SocketAddrV6 {
+    pub fn partial_lt(left: SocketAddrV6, right: SocketAddrV6) -> bool { return SocketAddrV6::lt(left, right); }
+    pub fn partial_le(left: SocketAddrV6, right: SocketAddrV6) -> bool { return SocketAddrV6::le(left, right); }
+    pub fn partial_gt(left: SocketAddrV6, right: SocketAddrV6) -> bool { return SocketAddrV6::gt(left, right); }
+    pub fn partial_ge(left: SocketAddrV6, right: SocketAddrV6) -> bool { return SocketAddrV6::ge(left, right); }
+    pub fn partial_cmp(left: SocketAddrV6, right: SocketAddrV6) -> core::cmp::PartialOrdering {
+        if (SocketAddrV6::lt(left, right)) { return core::cmp::Less; }
+        if (SocketAddrV6::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
+
+pub impl core::cmp::PartialEq<SocketAddr> for SocketAddr {
+    pub fn partial_eq(left: SocketAddr, right: SocketAddr) -> bool { return SocketAddr::eq(left, right); }
+    pub fn partial_ne(left: SocketAddr, right: SocketAddr) -> bool { return SocketAddr::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<SocketAddr> for SocketAddr {
+    pub fn partial_lt(left: SocketAddr, right: SocketAddr) -> bool { return SocketAddr::lt(left, right); }
+    pub fn partial_le(left: SocketAddr, right: SocketAddr) -> bool { return SocketAddr::le(left, right); }
+    pub fn partial_gt(left: SocketAddr, right: SocketAddr) -> bool { return SocketAddr::gt(left, right); }
+    pub fn partial_ge(left: SocketAddr, right: SocketAddr) -> bool { return SocketAddr::ge(left, right); }
+    pub fn partial_cmp(left: SocketAddr, right: SocketAddr) -> core::cmp::PartialOrdering {
+        if (SocketAddr::lt(left, right)) { return core::cmp::Less; }
+        if (SocketAddr::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
+
+pub impl core::cmp::PartialEq<Ipv4Net> for Ipv4Net {
+    pub fn partial_eq(left: Ipv4Net, right: Ipv4Net) -> bool { return Ipv4Net::eq(left, right); }
+    pub fn partial_ne(left: Ipv4Net, right: Ipv4Net) -> bool { return Ipv4Net::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<Ipv4Net> for Ipv4Net {
+    pub fn partial_lt(left: Ipv4Net, right: Ipv4Net) -> bool { return Ipv4Net::lt(left, right); }
+    pub fn partial_le(left: Ipv4Net, right: Ipv4Net) -> bool { return Ipv4Net::le(left, right); }
+    pub fn partial_gt(left: Ipv4Net, right: Ipv4Net) -> bool { return Ipv4Net::gt(left, right); }
+    pub fn partial_ge(left: Ipv4Net, right: Ipv4Net) -> bool { return Ipv4Net::ge(left, right); }
+    pub fn partial_cmp(left: Ipv4Net, right: Ipv4Net) -> core::cmp::PartialOrdering {
+        if (Ipv4Net::lt(left, right)) { return core::cmp::Less; }
+        if (Ipv4Net::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
+
+pub impl core::cmp::PartialEq<Ipv6Net> for Ipv6Net {
+    pub fn partial_eq(left: Ipv6Net, right: Ipv6Net) -> bool { return Ipv6Net::eq(left, right); }
+    pub fn partial_ne(left: Ipv6Net, right: Ipv6Net) -> bool { return Ipv6Net::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<Ipv6Net> for Ipv6Net {
+    pub fn partial_lt(left: Ipv6Net, right: Ipv6Net) -> bool { return Ipv6Net::lt(left, right); }
+    pub fn partial_le(left: Ipv6Net, right: Ipv6Net) -> bool { return Ipv6Net::le(left, right); }
+    pub fn partial_gt(left: Ipv6Net, right: Ipv6Net) -> bool { return Ipv6Net::gt(left, right); }
+    pub fn partial_ge(left: Ipv6Net, right: Ipv6Net) -> bool { return Ipv6Net::ge(left, right); }
+    pub fn partial_cmp(left: Ipv6Net, right: Ipv6Net) -> core::cmp::PartialOrdering {
+        if (Ipv6Net::lt(left, right)) { return core::cmp::Less; }
+        if (Ipv6Net::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
+
+pub impl core::cmp::PartialEq<IpNet> for IpNet {
+    pub fn partial_eq(left: IpNet, right: IpNet) -> bool { return IpNet::eq(left, right); }
+    pub fn partial_ne(left: IpNet, right: IpNet) -> bool { return IpNet::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<IpNet> for IpNet {
+    pub fn partial_lt(left: IpNet, right: IpNet) -> bool { return IpNet::lt(left, right); }
+    pub fn partial_le(left: IpNet, right: IpNet) -> bool { return IpNet::le(left, right); }
+    pub fn partial_gt(left: IpNet, right: IpNet) -> bool { return IpNet::gt(left, right); }
+    pub fn partial_ge(left: IpNet, right: IpNet) -> bool { return IpNet::ge(left, right); }
+    pub fn partial_cmp(left: IpNet, right: IpNet) -> core::cmp::PartialOrdering {
+        if (IpNet::lt(left, right)) { return core::cmp::Less; }
+        if (IpNet::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}

@@ -2,12 +2,13 @@
 // Every std::map function through one generic checker over three distinct
 // keys and three distinct values: existing-key insert, in-place set,
 // order-preserving removal, reserve, shrink and clone. Keys and values of
-// different types run for every integer width, char, f32, both wide integers
+// different types run for every integer width, char, total float keys, both wide integers
 // and a record. Exits 0. On a failure it prints 100 * row + the failing check
 // and exits with the row.
 module app::main;
 
 import core::cmp;
+import core::float_order;
 import core::wide_i64;
 import core::wide_u64;
 import std::map;
@@ -116,7 +117,7 @@ fn main() -> i32 {
         row(2, map_checks(i8_a, i8_b, i8_c, i16_a, i16_b, i16_c)),
         row(3, map_checks(i64_a, i64_b, i64_c, u64_a, u64_b, u64_c)),
         row(4, map_checks(u16_a, u16_b, u16_c, u32_a, u32_b, u32_c)),
-        row(5, map_checks('\0', 'é', '😀', -2.5, 0.0, 3.5)),
+        row(5, map_checks('\0', 'é', '😀', core::float_order::from_f32(-2.5), core::float_order::from_f32(0.0), core::float_order::from_f32(3.5))),
         row(6, map_checks(core::wide_i64::min_value(), core::wide_i64::zero(),
             core::wide_i64::max_value(), core::wide_u64::zero(), core::wide_u64::from_words(1, 0),
             core::wide_u64::max_value())),

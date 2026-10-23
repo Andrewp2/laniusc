@@ -32,8 +32,18 @@ pub fn is_empty<T>(value: Set<T>) -> bool {
     return std::vec::is_empty(value.items);
 }
 
+fn position<T>(value: Set<T>, item: T) -> i32 where T: core::cmp::Eq<T> {
+    let items: [T] = std::vec::as_slice(value.items);
+    let index: i32 = 0;
+    while (index < std::vec::len(value.items)) {
+        if (T::eq(items[index], item)) { return index; }
+        index += 1;
+    }
+    return -1;
+}
+
 pub fn contains<T>(value: Set<T>, item: T) -> bool where T: core::cmp::Eq<T> {
-    return std::vec::contains(value.items, item);
+    return position(value, item) >= 0;
 }
 
 // Items keep insertion order. An ordinal outside the set returns fallback;
@@ -60,7 +70,7 @@ pub fn try_insert<T>(value: Set<T>, item: T) -> Set<T> where T: core::cmp::Eq<T>
 // Remove an item, keeping the order of the rest. A missing item leaves the
 // set unchanged; success decrements len.
 pub fn try_remove<T>(value: Set<T>, item: T) -> Set<T> where T: core::cmp::Eq<T> {
-    let index: i32 = std::vec::index_of(value.items, item);
+    let index: i32 = position(value, item);
     if (index < 0) {
         return value;
     }

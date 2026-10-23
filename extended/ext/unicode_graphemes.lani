@@ -1,0 +1,106 @@
+// Unicode 17.0.0 default extended grapheme clusters (UAX #29 revision 47).
+// No tailoring, normalization, allocation, or ownership transfer.
+module ext::unicode_graphemes;
+import core::option;
+import core::result;
+import core::text;
+import core::utf8;
+import ext::unicode_graphemes_data;
+
+pub enum Error { Bounds }
+pub struct Cluster { start: i32, end: i32, text: core::text::Text }
+// State is an implementation detail. Obtain cursors through cursor(); copying
+// a cursor forks its position. Do not forge or mutate its fields.
+pub struct Cursor { text: core::text::Text, position: i32, previous: u32, ri_odd: bool, emoji: u32, indic: u32 }
+
+// Text must be valid UTF-8 with physically backed metadata, as established by
+// core::text::from_utf8[_range]. Only logical integer bounds are checked here.
+// Keep the backing owner alive and unchanged through all cursor/cluster uses.
+pub fn cursor(text: core::text::Text) -> core::result::Result<Cursor, Error> {
+    if (text.start < 0 || text.length < 0 || text.length > 2147483647 - text.start) {
+        return core::result::Err(Error::Bounds);
+    }
+    return core::result::Ok(Cursor { text: text, position: 0, previous: 0, ri_odd: false, emoji: 0, indic: 0 });
+}
+
+pub impl Cursor {
+    // Flags: low four bits GCB; next two bits InCB; bit 6 Extended_Pictographic.
+    // GCB: Other=0 CR=1 LF=2 Control=3 Extend=4 ZWJ=5 RI=6 Prepend=7
+    //      SpacingMark=8 L=9 V=10 T=11 LV=12 LVT=13.
+    // InCB: None=0 Consonant=1 Extend=2 Linker=3.
+    fn breaks_before(&self, flags: u32) -> bool {
+        let current: u32 = flags & 15;
+        if (self.previous == 1 && current == 2) { return false; } // GB3
+        if ((self.previous >= 1 && self.previous <= 3) || (current >= 1 && current <= 3)) { return true; } // GB4/5
+        if (self.previous == 9 && (current == 9 || current == 10 || current == 12 || current == 13)) { return false; } // GB6
+        if ((self.previous == 12 || self.previous == 10) && (current == 10 || current == 11)) { return false; } // GB7
+        if ((self.previous == 13 || self.previous == 11) && current == 11) { return false; } // GB8
+        if (current == 4 || current == 5 || current == 8 || self.previous == 7) { return false; } // GB9/9a/9b
+        if (self.indic == 2 && ((flags >> 4) & 3) == 1) { return false; } // GB9c
+        if (self.emoji == 2 && (flags & 64) != 0) { return false; } // GB11
+        if (self.previous == 6 && current == 6 && self.ri_odd) { return false; } // GB12/13
+        return true; // GB999
+    }
+
+    fn consume(&self, flags: u32, width: i32) {
+        let current: u32 = flags & 15;
+        if (current == 6) { self.ri_odd = !self.ri_odd; } else { self.ri_odd = false; }
+        // Suffix recognized by GB11: EP Extend* (state 1), or EP Extend* ZWJ
+        // (state 2). Extend following that ZWJ must clear the second state.
+        if ((flags & 64) != 0) { self.emoji = 1; }
+        else {
+            if (current == 5 && self.emoji == 1) { self.emoji = 2; }
+            else { if (current != 4 || self.emoji != 1) { self.emoji = 0; } }
+        }
+        let incb: u32 = (flags >> 4) & 3;
+        if (incb == 1) { self.indic = 1; }
+        else {
+            if (incb == 3 && self.indic != 0) { self.indic = 2; }
+            else { if (incb != 2) { self.indic = 0; } }
+        }
+        self.previous = current;
+        self.position += width;
+    }
+
+    // Return each nonempty cluster once; empty input and all calls following
+    // exhaustion return None. Byte spans are relative to the original Text.
+    // Each scalar is decoded at most twice and no prefix is rescanned.
+    pub fn next(&self) -> core::option::Option<Cluster> {
+        if (self.position == self.text.length) { return core::option::None(); }
+        let start: i32 = self.position;
+        let scalar: u32 = core::option::unwrap(self.text.scalar_at_byte(self.position));
+        self.consume(ext::unicode_graphemes_data::flags(scalar), core::utf8::encoded_len_or(scalar, 0) as i32);
+        while (self.position < self.text.length) {
+            let scalar: u32 = core::option::unwrap(self.text.scalar_at_byte(self.position));
+            let flags: u32 = ext::unicode_graphemes_data::flags(scalar);
+            if (self.breaks_before(flags)) { break; }
+            self.consume(flags, core::utf8::encoded_len_or(scalar, 0) as i32);
+        }
+        let part: core::text::Text = core::text::from_utf8_unchecked(self.text.bytes, self.text.start + start, self.position - start);
+        return core::option::Some(Cluster { start: start, end: self.position, text: part });
+    }
+}
+
+pub fn count(text: core::text::Text) -> core::result::Result<i32, Error> {
+    let checked: core::result::Result<Cursor, Error> = cursor(text);
+    if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+    let scan: Cursor = core::result::unwrap(checked);
+    let total: i32 = 0;
+    while (core::option::is_some(scan.next())) { total += 1; }
+    return core::result::Ok(total);
+}
+
+// Scan from the start so every context-sensitive rule sees its full prefix.
+// Interior UTF-8 bytes are false; positions outside 0..=byte_len are Bounds.
+// Both endpoints of an empty Text are represented by its single offset 0.
+pub fn is_boundary(text: core::text::Text, index: i32) -> core::result::Result<bool, Error> {
+    let checked: core::result::Result<Cursor, Error> = cursor(text);
+    if (core::result::is_err(checked) || index < 0 || index > text.length) { return core::result::Err(Error::Bounds); }
+    if (index == 0 || index == text.length) { return core::result::Ok(true); }
+    let scan: Cursor = core::result::unwrap(checked);
+    while (true) {
+        let cluster: Cluster = core::option::unwrap(scan.next());
+        if (cluster.end >= index) { return core::result::Ok(cluster.end == index); }
+    }
+    return core::result::Ok(false);
+}

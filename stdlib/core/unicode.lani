@@ -1,0 +1,204 @@
+// Unicode 17.0.0 character properties and scalar mappings. Pure, allocation-free.
+// See docs/stdlib-unicode.md for data sources, invalid-input and casing contracts.
+module core::unicode;
+import core::unicode_properties_data;
+import core::unicode_case_data;
+import core::unicode_fold_data;
+import core::unicode_turkic_data;
+import core::result;
+import core::slice;
+
+pub const VERSION_MAJOR: u32 = 17;
+pub const VERSION_MINOR: u32 = 0;
+pub const VERSION_UPDATE: u32 = 0;
+
+pub const GC_CN: u32 = 0;
+pub const GC_LU: u32 = 1;
+pub const GC_LL: u32 = 2;
+pub const GC_LT: u32 = 3;
+pub const GC_LM: u32 = 4;
+pub const GC_LO: u32 = 5;
+pub const GC_MN: u32 = 6;
+pub const GC_MC: u32 = 7;
+pub const GC_ME: u32 = 8;
+pub const GC_ND: u32 = 9;
+pub const GC_NL: u32 = 10;
+pub const GC_NO: u32 = 11;
+pub const GC_PC: u32 = 12;
+pub const GC_PD: u32 = 13;
+pub const GC_PS: u32 = 14;
+pub const GC_PE: u32 = 15;
+pub const GC_PI: u32 = 16;
+pub const GC_PF: u32 = 17;
+pub const GC_PO: u32 = 18;
+pub const GC_SM: u32 = 19;
+pub const GC_SC: u32 = 20;
+pub const GC_SK: u32 = 21;
+pub const GC_SO: u32 = 22;
+pub const GC_ZS: u32 = 23;
+pub const GC_ZL: u32 = 24;
+pub const GC_ZP: u32 = 25;
+pub const GC_CC: u32 = 26;
+pub const GC_CF: u32 = 27;
+pub const GC_CS: u32 = 28;
+pub const GC_CO: u32 = 29;
+// Explicit sentinel for integers above the Unicode code point range.
+pub const GC_INVALID: u32 = 30;
+
+// Binary property bits in Properties.flags; these are independent of gc.
+pub const ALPHABETIC: u32 = 1;
+pub const LOWERCASE: u32 = 2;
+pub const UPPERCASE: u32 = 4;
+pub const CASED: u32 = 8;
+pub const CASE_IGNORABLE: u32 = 16;
+pub const WHITE_SPACE: u32 = 32;
+pub const XID_START: u32 = 64;
+pub const XID_CONTINUE: u32 = 128;
+pub const DEFAULT_IGNORABLE: u32 = 256;
+
+// decimal_digit is 0..9 for Nd, and 10 when no decimal digit value exists.
+pub struct Properties { category: u32, combining_class: u32, flags: u32, decimal_digit: u32 }
+
+pub fn is_code_point(value: u32) -> bool { return value <= 1114111; }
+pub fn is_scalar(value: u32) -> bool {
+    return value <= 1114111 && (value < 55296 || value > 57343);
+}
+fn packed(value: u32) -> u32 {
+    if (!is_code_point(value)) { return 41943070; }
+    let index: i32 = core::unicode_properties_data::find(value);
+    return core::unicode_properties_data::read(index, 6, 7);
+}
+// Code point queries include surrogates (category Cs) and unassigned values
+// (Cn). Above U+10FFFF: GC_INVALID, ccc=0, flags=0, decimal_digit=10.
+pub fn properties(value: u32) -> Properties {
+    let bits: u32 = packed(value);
+    return Properties { category: bits & 31, combining_class: (bits >> 5) & 255, flags: (bits >> 13) & 511, decimal_digit: (bits >> 22) & 15 };
+}
+pub fn general_category(value: u32) -> u32 { return packed(value) & 31; }
+pub fn canonical_combining_class(value: u32) -> u32 { return (packed(value) >> 5) & 255; }
+pub fn has_property(value: u32, mask: u32) -> bool { return ((packed(value) >> 13) & mask & 511) != 0; }
+pub fn is_alphabetic(value: u32) -> bool { return has_property(value, ALPHABETIC); }
+pub fn is_lowercase(value: u32) -> bool { return has_property(value, LOWERCASE); }
+pub fn is_uppercase(value: u32) -> bool { return has_property(value, UPPERCASE); }
+pub fn is_cased(value: u32) -> bool { return has_property(value, CASED); }
+pub fn is_case_ignorable(value: u32) -> bool { return has_property(value, CASE_IGNORABLE); }
+pub fn is_white_space(value: u32) -> bool { return has_property(value, WHITE_SPACE); }
+pub fn is_xid_start(value: u32) -> bool { return has_property(value, XID_START); }
+pub fn is_xid_continue(value: u32) -> bool { return has_property(value, XID_CONTINUE); }
+pub fn is_default_ignorable(value: u32) -> bool { return has_property(value, DEFAULT_IGNORABLE); }
+pub fn decimal_digit_value_or(value: u32, fallback: u32) -> u32 {
+    let digit: u32 = (packed(value) >> 22) & 15;
+    if (digit < 10) { return digit; }
+    return fallback;
+}
+
+// Recoverable mapping failures. Capacity carries the required output length.
+pub enum Error { InvalidScalar, Bounds, Capacity(i32) }
+
+// Query all simple scalar mappings with one table search. case_fold uses
+// the default C+S mapping. Every ordinary mapping API rejects non-scalars.
+pub struct SimpleMappings { lowercase: u32, uppercase: u32, titlecase: u32, case_fold: u32 }
+pub fn simple_mappings(value: u32) -> core::result::Result<SimpleMappings, Error> {
+    if (!is_scalar(value)) { return core::result::Err(Error::InvalidScalar); }
+    let mapped: SimpleMappings = SimpleMappings { lowercase: value, uppercase: value, titlecase: value, case_fold: value };
+    let index: i32 = core::unicode_case_data::find(value);
+    if (index < 0) { return core::result::Ok(mapped); }
+    mapped.lowercase = core::unicode_case_data::read(index, 6, 6);
+    mapped.uppercase = core::unicode_case_data::read(index, 12, 6);
+    mapped.titlecase = core::unicode_case_data::read(index, 18, 6);
+    mapped.case_fold = core::unicode_case_data::read(index, 24, 6);
+    return core::result::Ok(mapped);
+}
+
+// The first length fields are meaningful; unused fields are zero. This is
+// full folding of one scalar, with up to three output scalars. It never
+// performs context-sensitive full string case conversion.
+pub struct CaseFolding { length: u32, first: u32, second: u32, third: u32 }
+pub fn case_folding(value: u32, turkic: bool) -> core::result::Result<CaseFolding, Error> {
+    if (!is_scalar(value)) { return core::result::Err(Error::InvalidScalar); }
+    let folded: CaseFolding = CaseFolding { length: 0, first: 0, second: 0, third: 0 };
+    if (turkic) {
+        let found: i32 = core::unicode_turkic_data::find(value);
+        if (found >= 0) {
+            folded.length = core::unicode_turkic_data::read(found, 6, 1);
+            folded.first = core::unicode_turkic_data::read(found, 7, 6);
+            folded.second = core::unicode_turkic_data::read(found, 13, 6);
+            folded.third = core::unicode_turkic_data::read(found, 19, 6);
+            return core::result::Ok(folded);
+        }
+    }
+    let found: i32 = core::unicode_fold_data::find(value);
+    if (found < 0) { folded.length = 1; folded.first = value; return core::result::Ok(folded); }
+    folded.length = core::unicode_fold_data::read(found, 6, 1);
+    folded.first = core::unicode_fold_data::read(found, 7, 6);
+    folded.second = core::unicode_fold_data::read(found, 13, 6);
+    folded.third = core::unicode_fold_data::read(found, 19, 6);
+    return core::result::Ok(folded);
+}
+
+fn simple_mapping(value: u32, offset: i32) -> core::result::Result<u32, Error> {
+    if (!is_scalar(value)) { return core::result::Err(Error::InvalidScalar); }
+    let index: i32 = core::unicode_case_data::find(value);
+    if (index < 0) { return core::result::Ok(value); }
+    return core::result::Ok(core::unicode_case_data::read(index, offset, 6));
+}
+// Simple UnicodeData scalar mappings, each producing exactly one scalar.
+// They do not implement context-sensitive full string case conversion.
+pub fn simple_lowercase(value: u32) -> core::result::Result<u32, Error> { return simple_mapping(value, 6); }
+pub fn simple_uppercase(value: u32) -> core::result::Result<u32, Error> { return simple_mapping(value, 12); }
+pub fn simple_titlecase(value: u32) -> core::result::Result<u32, Error> { return simple_mapping(value, 18); }
+// C+S CaseFolding mappings; optional T mappings tailor Turkish/Azerbaijani I.
+pub fn simple_case_fold(value: u32, turkic: bool) -> core::result::Result<u32, Error> {
+    if (!is_scalar(value)) { return core::result::Err(Error::InvalidScalar); }
+    if (turkic) {
+        let index: i32 = core::unicode_turkic_data::find(value);
+        if (index >= 0) { return core::result::Ok(core::unicode_turkic_data::read(index, 7, 6)); }
+    }
+    return simple_mapping(value, 24);
+}
+// Full default case folding uses C+F; turkic additionally overrides with T.
+// Unicode 17.0.0 maximum scalar expansion is 3. Invalid scalars are errors.
+pub fn case_fold_len(value: u32, turkic: bool) -> core::result::Result<u32, Error> {
+    if (!is_scalar(value)) { return core::result::Err(Error::InvalidScalar); }
+    if (turkic) {
+        let index: i32 = core::unicode_turkic_data::find(value);
+        if (index >= 0) { return core::result::Ok(core::unicode_turkic_data::read(index, 6, 1)); }
+    }
+    let index: i32 = core::unicode_fold_data::find(value);
+    if (index < 0) { return core::result::Ok(1); }
+    return core::result::Ok(core::unicode_fold_data::read(index, 6, 1));
+}
+// Index zero is the first output scalar. Invalid scalar or index returns
+// fallback unchanged; unchanged valid scalars have a one-element folding.
+pub fn case_fold_at_or(value: u32, index: u32, turkic: bool, fallback: u32) -> u32 {
+    if (!is_scalar(value) || index >= 3) { return fallback; }
+    if (turkic) {
+        let found: i32 = core::unicode_turkic_data::find(value);
+        if (found >= 0) {
+            if (index >= core::unicode_turkic_data::read(found, 6, 1)) { return fallback; }
+            return core::unicode_turkic_data::read(found, 7 + (index as i32) * 6, 6);
+        }
+    }
+    let found: i32 = core::unicode_fold_data::find(value);
+    if (found < 0) {
+        if (index == 0) { return value; }
+        return fallback;
+    }
+    if (index >= core::unicode_fold_data::read(found, 6, 1)) { return fallback; }
+    return core::unicode_fold_data::read(found, 7 + (index as i32) * 6, 6);
+}
+// Write one scalar's full folding to caller-owned output. Validate the
+// logical view bounds, scalar and capacity before any mutation. The caller
+// must back the logical view with real storage; an overstated backing traps.
+// Native and raw strided views work; allocation is never performed.
+pub fn case_fold_into(value: u32, turkic: bool, output: core::slice::View<u32>) -> core::result::Result<i32, Error> {
+    if (output.start < 0 || output.length < 0 || output.start > 2147483647 - output.length) { return core::result::Err(Error::Bounds); }
+    if (!is_scalar(value)) { return core::result::Err(Error::InvalidScalar); }
+    let folded: CaseFolding = core::result::unwrap(case_folding(value, turkic));
+    let count: i32 = folded.length as i32;
+    if (output.length < count) { return core::result::Err(Error::Capacity(count)); }
+    output.values[output.start] = folded.first;
+    if (count > 1) { output.values[output.start + 1] = folded.second; }
+    if (count > 2) { output.values[output.start + 2] = folded.third; }
+    return core::result::Ok(count);
+}

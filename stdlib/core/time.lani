@@ -178,3 +178,54 @@ fn hash_parts(seconds: u64, nanos: u32) -> u32 {
     while (i < 4) { state = core::hash::fnv1a_step(state,(word & 255) as u8); word >>= 8; i += 1; }
     return state;
 }
+
+pub impl core::cmp::PartialEq<Duration> for Duration {
+    pub fn partial_eq(left: Duration, right: Duration) -> bool { return Duration::eq(left, right); }
+    pub fn partial_ne(left: Duration, right: Duration) -> bool { return Duration::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<Duration> for Duration {
+    pub fn partial_lt(left: Duration, right: Duration) -> bool { return Duration::lt(left, right); }
+    pub fn partial_le(left: Duration, right: Duration) -> bool { return Duration::le(left, right); }
+    pub fn partial_gt(left: Duration, right: Duration) -> bool { return Duration::gt(left, right); }
+    pub fn partial_ge(left: Duration, right: Duration) -> bool { return Duration::ge(left, right); }
+    pub fn partial_cmp(left: Duration, right: Duration) -> core::cmp::PartialOrdering {
+        if (Duration::lt(left, right)) { return core::cmp::Less; }
+        if (Duration::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
+
+pub impl core::cmp::PartialEq<Instant> for Instant {
+    pub fn partial_eq(left: Instant, right: Instant) -> bool { return Instant::eq(left, right); }
+    pub fn partial_ne(left: Instant, right: Instant) -> bool { return Instant::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<Instant> for Instant {
+    pub fn partial_lt(left: Instant, right: Instant) -> bool { return Instant::lt(left, right); }
+    pub fn partial_le(left: Instant, right: Instant) -> bool { return Instant::le(left, right); }
+    pub fn partial_gt(left: Instant, right: Instant) -> bool { return Instant::gt(left, right); }
+    pub fn partial_ge(left: Instant, right: Instant) -> bool { return Instant::ge(left, right); }
+    pub fn partial_cmp(left: Instant, right: Instant) -> core::cmp::PartialOrdering {
+        if (Instant::lt(left, right)) { return core::cmp::Less; }
+        if (Instant::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
+
+pub impl core::cmp::PartialEq<SystemTime> for SystemTime {
+    pub fn partial_eq(left: SystemTime, right: SystemTime) -> bool { return SystemTime::eq(left, right); }
+    pub fn partial_ne(left: SystemTime, right: SystemTime) -> bool { return SystemTime::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<SystemTime> for SystemTime {
+    pub fn partial_lt(left: SystemTime, right: SystemTime) -> bool { return SystemTime::lt(left, right); }
+    pub fn partial_le(left: SystemTime, right: SystemTime) -> bool { return SystemTime::le(left, right); }
+    pub fn partial_gt(left: SystemTime, right: SystemTime) -> bool { return SystemTime::gt(left, right); }
+    pub fn partial_ge(left: SystemTime, right: SystemTime) -> bool { return SystemTime::ge(left, right); }
+    pub fn partial_cmp(left: SystemTime, right: SystemTime) -> core::cmp::PartialOrdering {
+        if (SystemTime::lt(left, right)) { return core::cmp::Less; }
+        if (SystemTime::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
