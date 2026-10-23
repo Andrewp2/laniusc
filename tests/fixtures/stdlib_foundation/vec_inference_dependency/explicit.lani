@@ -1,0 +1,9 @@
+module app::main;
+import alloc::vec;
+import core::result;
+fn main() -> i32 {
+    let values: alloc::vec::Vec<u64> = core::result::unwrap(alloc::vec::with_capacity<u64>(1));
+    core::result::unwrap(values.try_push(42));
+    assert(values.at(0) == 42 as u64);
+    values.destroy(); return 0;
+}

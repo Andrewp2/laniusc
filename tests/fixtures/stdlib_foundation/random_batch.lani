@@ -1,0 +1,54 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::random;
+import core::result;
+import core::text;
+import std::io;
+import std::io_decimal;
+import std::process;
+
+fn argument(index: i32, pointer: ptr, bytes: [u8]) -> u64 {
+    let count: i32 = std::process::arg_len(index);
+    assert(count >= 1 && count <= 32);
+    assert(std::process::arg_read(index,pointer,count as usize) == count);
+    let text: core::text::Text = core::result::unwrap(core::text::from_utf8(bytes,count));
+    return core::result::unwrap(text.parse_u64());
+}
+fn output(value: u64) {
+    assert(std::io_decimal::write_u64(1,value) > 0 && std::io::write_byte(1,10) == 1);
+}
+fn main() -> i32 {
+    let storage: [i32; 8] = [0;8];
+    let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,32);
+    let seed: u64 = argument(1,pointer,bytes);
+    let mode: u64 = argument(2,pointer,bytes);
+    let requested: u64 = argument(3,pointer,bytes);
+    assert(requested <= 2097152 as u64 && mode <= 2 as u64);
+    let count: i32 = requested as i32;
+    let rng: core::random::Xoshiro256PlusPlus = core::random::from_seed(seed);
+    let hash: u64 = 0xcbf29ce484222325;
+    let index: i32 = 0;
+    if (mode == 2) {
+        let reserved: core::result::Result<alloc::vec::Vec<u64>, alloc::vec::Error> = alloc::vec::with_capacity(count);
+        let values: alloc::vec::Vec<u64> = core::result::unwrap(reserved);
+        while (index < count) { core::result::unwrap(values.try_push(index as u64)); index += 1; }
+        let completed: i32 = core::result::unwrap(core::random::shuffle(rng.borrow(),values.as_view()));
+        if (count > 0) { assert(completed == count - 1); } else { assert(completed == 0); }
+        index = 0;
+        while (index < count) { hash = (hash ^ values.at(index)) * 0x100000001b3; index += 1; }
+        values.destroy();
+    } else {
+        while (index < count) {
+            let word: u64 = 0;
+            if (mode == 0) { word = rng.next_u64(); }
+            else { word = core::result::unwrap(core::random::below(rng.borrow(),9223372036854775809)); }
+            hash = (hash ^ word) * 0x100000001b3; index += 1;
+        }
+    }
+    output(hash);
+    let state: core::random::State = rng.snapshot();
+    output(state.s0); output(state.s1); output(state.s2); output(state.s3);
+    return 0;
+}

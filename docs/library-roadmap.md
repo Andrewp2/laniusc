@@ -35,7 +35,7 @@ package distribution is a separate deliverable.
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks, native descriptor adapters and owned files execute; buffered adapters remain |
 | Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and borrowed byte paths execute with explicit close/error contracts; metadata, directories and complete lexical paths remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Owned raw-byte argument snapshots and argument/environment helpers execute; subprocess management remains |
-| Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Clock and entropy helpers exist; coherent types and generators remain |
+| Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Deterministic native-width generators, generic sampling/shuffle and explicit OS entropy errors execute; coherent clock types and further distributions remain |
 | Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Current network module is contract-only |
 | Concurrency | Threads, joining, synchronization, atomics, channels, cancellation | Current thread module is contract-only; runtime prerequisites remain |
 | Development | Assertions, test runner, property helpers, benchmarks, diagnostics, API docs | Existing compiler-driven fixtures; a complete Lanius-facing workflow remains |
@@ -116,6 +116,17 @@ API list; unrelated library work can continue.
   text-processing program. See [stdlib-string.md](stdlib-string.md) for exact
   coverage and remaining String operations.
 - Compiler and runtime prerequisites: [library-dependencies.md](library-dependencies.md).
+- Randomness: [`core::random` and `std::entropy`](stdlib-randomness.md) execute
+  xoshiro256++ generation, seed/state restoration, jumps, unbiased integer
+  sampling, fixed-grid floats, byte filling, generic choice/shuffle and checked
+  host entropy. Six focused groups compare author-derived vectors, modeled
+  sequences, generic payloads, large batches, injected host/allocation failures
+  and a binary-safe line-shuffling program. Generation and sampling allocate
+  nothing; shuffle uses the caller's storage. Native timing for 1,048,576 raw
+  draws is about 46 ms, including a checksum. A nested allocation factory needs
+  an explicit type, with failing reproduction and two executable controls.
+  Clock types, additional distributions and legacy randomness consolidation
+  remain; this milestone does not complete the time/randomness family.
 - Owned vector: [`alloc::vec`](stdlib-vec.md) provides explicit allocation and
   bounds errors, removed-value transfer, atomic self-extension, shallow clone,
   resizing, sorting and counted views. Four execution groups include 6,000
