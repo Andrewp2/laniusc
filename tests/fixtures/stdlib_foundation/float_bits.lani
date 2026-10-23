@@ -1,0 +1,16 @@
+module app::main;
+import core::f32;
+import core::f64;
+fn main() -> i32 {
+    assert(core::f32::to_bits(1.0) == 1065353216); assert(core::f64::to_bits(1.0) == 4607182418800017408);
+    let single: [u32;12] = [0,2147483648,1,8388607,8388608,2139095039,2139095040,4286578688,2139095041,2143289345,4294967295,1065353217];
+    let double: [u64;12] = [0,9223372036854775808,1,4503599627370495,4503599627370496,9218868437227405311,9218868437227405312,18442240474082181120,9218868437227405313,9221120237041090561,18446744073709551615,4607182418800017409];
+    let index: i32 = 0; while (index < 12) { assert(core::f32::to_bits(core::f32::from_bits(single[index])) == single[index]); assert(core::f64::to_bits(core::f64::from_bits(double[index])) == double[index]); index += 1; }
+    // Strict convenience wrappers also execute their successful Result payload
+    // path at both widths, including an unchanged signaling NaN value.
+    assert(core::f32::clamp(2.0,0.0,1.0) == 1.0);
+    assert(core::f64::clamp(-2.0,0.0,1.0) == 0.0);
+    assert(core::f32::to_bits(core::f32::clamp(core::f32::from_bits(2139095041),0.0,1.0)) == 2139095041);
+    assert(core::f64::to_bits(core::f64::clamp(core::f64::from_bits(9218868437227405313),0.0,1.0)) == 9218868437227405313);
+    return 0;
+}

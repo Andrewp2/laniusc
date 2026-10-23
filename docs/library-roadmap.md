@@ -26,10 +26,10 @@ package distribution is a separate deliverable.
 | Family | Required contents | Executable state and remaining work |
 | --- | --- | --- |
 | Fundamental values | Option, Result, ordering, comparison, hashing, cloning, explicit errors | Generic Option/Result and comparison exist; contracts and composition need review |
-| Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Many implementations and runtime fixtures exist; consolidate duplicate paths |
+| Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Integer implementations and matching binary32/binary64 value utilities execute, including exact bits, rounding and square root; exact decimal parsing/shortest formatting also execute. Duplicate paths, generic floating comparison/hash policies and further mathematical operations remain |
 | Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic algorithms and counted View values execute, including subviews, checked mutations and cursors; initial physical counts still require compiler length projection |
 | Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | Inherent slice/text/hash-map cursors execute; shared protocol dispatch hits an imported-generic compiler dependency; adapters and collection integration remain |
-| Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat, integer conversion and caller-buffer Display formatting execute; float formatting, format strings and further Unicode operations remain |
+| Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat, integer/float conversion and caller-buffer Display formatting execute; format strings, alignment/precision policies, owned formatting conveniences and further Unicode operations remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings, raw views and stable chunked arenas with generic typed allocations execute; layout and ownership consolidation remain |
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec and deque with explicit errors, linear maps/sets, alloc hash maps, ordered tree maps and min/max heaps execute; legacy migration and ordered sets remain |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks, native descriptor adapters and owned files execute; buffered adapters remain |
@@ -101,9 +101,20 @@ types, full-width integer arguments, exact float bits, tags, arbitrary map keys
 and definite/indefinite structures. The iterative codec uses caller scratch,
 strict UTF-8 and explicit resource bounds. A [ZIP manifest program](extended-zip-manifest.md)
 checks all archive payloads, then emits CBOR with exact raw byte names.
-Application schema validation and tag-specific semantics remain separate work.
+CBOR application schemas and tag-specific semantics remain separate work.
 The [foundation compilation measurements](library-foundation-performance.md)
-record executable import workloads for arenas, network values and CBOR.
+record executable import workloads for arenas, network values, CBOR, floating
+conversion, exact decimal numbers and JSON validation.
+
+[JSON validation](extended-schema.md) implements a documented JSON Schema
+2020-12 profile with exact numbers, structural equality, local references,
+combinators, objects, arrays and Unicode scalar lengths. Unsupported keywords,
+dialects and reference forms fail explicitly. The
+[json-check program](extended-json-check.md) validates a file-supplied schema
+against stdin, with resource, allocation and I/O failure evidence.
+[Borrowed decimal numbers](stdlib-decimal-number.md) retain arbitrary coefficient
+and exponent precision; this supplies comparison/integer/divisibility behavior,
+not a complete owned big-integer or decimal-arithmetic library.
 
 For external formats and algorithms, use their primary specifications and
 published conformance vectors. Choose exact versions and formats when starting
@@ -165,6 +176,27 @@ API list; unrelated library work can continue.
   text-processing program. See [stdlib-string.md](stdlib-string.md) for exact
   coverage and remaining String operations.
 - Compiler and runtime prerequisites: [library-dependencies.md](library-dependencies.md).
+- Floating values: [`core::f32` and `core::f64`](stdlib-floats.md) execute exact
+  encoding transfer, classification, signs, neighboring values, total comparison,
+  integral rounding and correctly rounded square root. Strict clamping traps
+  for invalid bounds; checked and explicit-fallback forms are available.
+  [`core::float_decimal`](stdlib-float-decimal.md) parses both widths with exact
+  nearest-even rounding and formats shortest round-trip decimal using caller
+  scratch. `core::fmt` exposes both widths through Display and atomic appends.
+  The [streaming normalizer](stdlib-float-normalize.md) exercises conversion,
+  square root, generic formatting, bounded byte records and native streams.
+  Native bitwise, halfway, exponent, allocation and I/O tests pass. Transcendental
+  functions, generic floating comparison/hash consolidation and owned formatting
+  conveniences remain; these modules do not complete the numeric family.
+- Exact decimal validation: [`core::decimal_number`](stdlib-decimal-number.md)
+  implements strict JSON-number parsing, exact comparisons/integer queries and
+  divisibility with counted work. Two runtime groups compare 2,525 reference
+  pairs, including 8,192-digit inputs; independent review checked 832 additional
+  native pairs. [`ext::schema`](extended-schema.md) compiles a supported
+  JSON Schema profile into indexes borrowing the immutable JSON owner, then
+  validates with caller scratch and no allocation. Its broader vocabulary,
+  external schema registries and standard output formats remain explicit future
+  work. The full standard/extended library goal remains open.
 - Arenas: [`alloc::arena`](stdlib-arena.md) provides stable chunked storage,
   explicit retained/chunk limits, reset/reuse, clear, destruction and generic
   typed value/slice copies using the existing native layout contract. Tests

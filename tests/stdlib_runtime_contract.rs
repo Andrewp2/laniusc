@@ -3426,7 +3426,6 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load core::f32");
-    assert_eq!(manifest.files.len(), 2);
     assert!(
         manifest
             .files

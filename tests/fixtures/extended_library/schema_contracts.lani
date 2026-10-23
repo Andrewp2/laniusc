@@ -1,0 +1,87 @@
+module app::main;
+import alloc::string;
+import core::mem;
+import core::option;
+import core::text;
+import std::io;
+import core::result;
+import core::slice;
+import ext::json;
+import ext::schema;
+fn parse(value: str, count: i32) -> ext::json::Document { let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count); let source: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(bytes,count)); let document: ext::json::Document = core::result::unwrap(ext::json::parse(source,ext::json::default_options())); source.destroy(); return document; }
+fn status(error: ext::schema::ErrorKind) -> i32 { return match (error) { ext::schema::ErrorKind::Bounds -> 1, ext::schema::ErrorKind::ScratchTooSmall -> 2, ext::schema::ErrorKind::Destroyed -> 3, ext::schema::ErrorKind::ChangedDocument -> 4, _ -> 0 }; }
+fn metadata(value: ext::schema::Keyword) {
+ let count: i32 = ext::schema::keyword_name_len(value); let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(ext::schema::keyword_name(value)),count); let counted: core::text::Text = core::text::from_utf8_unchecked(raw,0,count); assert(counted.equals(ext::schema::keyword_text(value)));
+}
+fn main() -> i32 {
+ metadata(ext::schema::Keyword::FalseSchema);
+ metadata(ext::schema::Keyword::Type);
+ metadata(ext::schema::Keyword::Const);
+ metadata(ext::schema::Keyword::Enum);
+ metadata(ext::schema::Keyword::Minimum);
+ metadata(ext::schema::Keyword::Maximum);
+ metadata(ext::schema::Keyword::ExclusiveMinimum);
+ metadata(ext::schema::Keyword::ExclusiveMaximum);
+ metadata(ext::schema::Keyword::MultipleOf);
+ metadata(ext::schema::Keyword::MinLength);
+ metadata(ext::schema::Keyword::MaxLength);
+ metadata(ext::schema::Keyword::MinItems);
+ metadata(ext::schema::Keyword::MaxItems);
+ metadata(ext::schema::Keyword::UniqueItems);
+ metadata(ext::schema::Keyword::Contains);
+ metadata(ext::schema::Keyword::MinContains);
+ metadata(ext::schema::Keyword::MaxContains);
+ metadata(ext::schema::Keyword::Required);
+ metadata(ext::schema::Keyword::DependentRequired);
+ metadata(ext::schema::Keyword::MinProperties);
+ metadata(ext::schema::Keyword::MaxProperties);
+ metadata(ext::schema::Keyword::AdditionalProperties);
+ metadata(ext::schema::Keyword::PropertyNames);
+ metadata(ext::schema::Keyword::AllOf);
+ metadata(ext::schema::Keyword::AnyOf);
+ metadata(ext::schema::Keyword::OneOf);
+ metadata(ext::schema::Keyword::Not);
+ metadata(ext::schema::Keyword::Items);
+ metadata(ext::schema::Keyword::PrefixItems);
+ metadata(ext::schema::Keyword::Properties);
+ metadata(ext::schema::Keyword::DependentSchemas);
+ metadata(ext::schema::Keyword::Ref);
+ metadata(ext::schema::Keyword::If);
+ metadata(ext::schema::Keyword::Then);
+ metadata(ext::schema::Keyword::Else);
+
+    let document: ext::json::Document = parse("{\"type\":\"integer\",\"multipleOf\":3}",33);
+    let good: ext::json::Document = parse("6",1); let bad: ext::json::Document = parse("7",1); let irrelevant: ext::json::Document = parse("\"x\"",3); let empty: ext::json::Document = ext::json::new();
+    assert(std::io::write_byte(2,65) == 1);
+    let schema: ext::schema::Schema = core::result::unwrap(ext::schema::compile(document.borrow(),ext::schema::default_options())); assert(schema.scratch_len() == 2);
+    assert(std::io::write_byte(2,66) == 1);
+    // Native byte arrays have the platform's signed stride. This selected view
+    // proves that scratch is indexed logically rather than cast to packed bytes.
+    let storage: [u8;8] = [77;8]; let scratch: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(storage,3,2));
+    let index: i32 = 0;
+    while (index < 1000) {
+        let report: ext::schema::Report = core::result::unwrap(schema.validate(good.borrow(),scratch)); assert(report.valid && core::option::is_none(report.issue));
+        let failure: ext::schema::Report = core::result::unwrap(schema.validate(bad.borrow(),scratch)); assert(!failure.valid && core::option::is_some(failure.issue));
+        let issue: ext::schema::Issue = core::option::unwrap(failure.issue); assert(issue.schema_node == 2 && issue.instance_node == 0 && !issue.property_name); assert(ext::schema::keyword_text(issue.keyword).equals(ext::schema::keyword_text(ext::schema::Keyword::MultipleOf)));
+        index += 1;
+    }
+    assert(storage[0] == 77 && storage[1] == 77 && storage[2] == 77 && storage[5] == 77 && storage[6] == 77 && storage[7] == 77);
+    let invalid: core::slice::View<u8> = core::result::unwrap(core::slice::view(storage,2)); invalid.start = -1;
+    assert(status(core::result::unwrap_err(schema.validate(good.borrow(),invalid)).kind) == 1);
+    invalid.start = 2147483647; assert(status(core::result::unwrap_err(schema.validate(good.borrow(),invalid)).kind) == 1);
+    invalid.start = 0; invalid.length = -1; assert(status(core::result::unwrap_err(schema.validate(good.borrow(),invalid)).kind) == 1);
+    let short: core::slice::View<u8> = core::result::unwrap(core::slice::view(storage,1));
+    assert(status(core::result::unwrap_err(schema.validate(good.borrow(),short)).kind) == 2);
+    // Required scratch is a plan-wide precondition, even when this instance's
+    // type would cause every multipleOf rule to be inapplicable.
+    assert(status(core::result::unwrap_err(schema.validate(irrelevant.borrow(),short)).kind) == 2);
+    assert(status(core::result::unwrap_err(schema.validate(empty.borrow(),scratch)).kind) == 1);
+    assert(std::io::write_byte(2,67) == 1);
+    schema.destroy(); schema.destroy(); assert(schema.scratch_len() == 0);
+    assert(status(core::result::unwrap_err(schema.validate(good.borrow(),scratch)).kind) == 3);
+    let plan: ext::schema::Schema = core::result::unwrap(ext::schema::compile(document.borrow(),ext::schema::default_options()));
+    // Direct mutation is outside the borrow contract; the cheap node-count
+    // guard still diagnoses the common append/destroy cases before dereference.
+    document.destroy(); assert(status(core::result::unwrap_err(plan.validate(good.borrow(),scratch)).kind) == 4); plan.destroy();
+    good.destroy(); bad.destroy(); irrelevant.destroy(); empty.destroy(); assert(std::io::write_byte(2,68) == 1); return 0;
+}

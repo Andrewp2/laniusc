@@ -285,7 +285,9 @@ require further compiler work.
 | `core::binary` all 11 public functions | Executable on x86_64 | Runtime fixture checks shortest unsigned binary representations across `u8`, `u16`, and `u32`, zero and high-bit values, invalid-index fallbacks, bounded digit accumulation, optional prefixes, malformed and overflowing input, and format/parse round trips for all 256 byte values. The helpers allocate no storage and use no host calls. |
 | `core::binary_wide_u64` all 6 public two-word functions | Executable on x86_64 | Runtime fixtures call every function and check zero, the 32-bit word boundary, a sparse high-bit pattern, and the maximum; every digit of a full-width pattern; invalid-index fallbacks; bounded appends and overflow; optional prefixes, leading zeros, malformed input, and full-width parse overflow. An overstated physical input view traps. The module uses `WideU64`, not native `u64`. |
 | `core::binary_wide_i64` all 4 public signed two-word functions | Executable on x86_64 | Runtime fixtures call every function and check shortest sign-and-magnitude formatting at zero, ordinary negative values, the word boundary, and both signed extrema; every digit of a negative boundary, invalid-index fallbacks, optional signs and prefixes, leading zeros, negative zero, malformed input, and signed overflow in either direction. An overstated physical input view traps. The module uses `WideI64`, not native `i64`. |
-| `core::f32` both public constants and all 17 public functions | Executable on x86_64 for tested finite, infinite, and NaN inputs | Runtime fixtures check `ZERO` and imported `ONE`, classification, sign, comparison, valid and reversed clamp bounds, fallback behavior, and square root for zero, negative, small, ordinary, large, infinite, and NaN inputs. Direct and materialized NaN comparisons follow unordered semantics. |
+| `core::f32` and `core::f64`, each with 12 public constants and 37 public functions | Executable on x86_64 Linux | Seven native groups compare about 684,000 cases bitwise with primitive references: all encoding classes, NaN payloads, signed zero, neighbors, total ordering, integral rounding, correctly rounded square root, checked/fallback clamping and strict-clamp traps. [Float contracts](stdlib-floats.md) define every policy and the native bit-transfer layout. |
+| `core::float_decimal` | Executable on x86_64 Linux with caller scratch | Exact nearest-even binary32/binary64 parsing, shortest interval-based formatting, explicit grammar and byte/digit/work/capacity errors. Seven native groups cover every exponent class, 26,624 format patterns, 4,096 generated decimal tokens and exact long halfway cases. [Contracts and evidence](stdlib-float-decimal.md). |
+| `core::decimal_number` | Executable on x86_64 Linux with borrowed number text | Arbitrary coefficient/exponent precision, exact comparison, integer classification and bounded divisibility. 2,525 reference pairs plus 832 independently reviewed native pairs cover huge exponents, factor bounds, views and exact work thresholds. [Contracts and evidence](stdlib-decimal-number.md). |
 | `core::array_i32` both public borrowed-view functions | Executable on x86_64 | Fixed arrays of lengths 1, 4, and 7 pass through `[i32]` parameters and execute `first` and `get_unchecked`, including signed extrema. Native bounds checks exit 101 for an empty view, a negative index, or an index past the end. The former const-generic signatures could not emit native indexing; the remaining compiler limitation is recorded in dependency 12. |
 | `core::array_i32_4` all 14 public functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, saturating sum, and caller-backed copy, fill, and reverse. Invalid destination lengths return false without writing; reverse supports shared source/destination backing. Fixed-array-returning predecessors were removed because they misexecute; see dependency 7. |
 | `core::array_u8_4` all 17 public functions | Executable on x86_64 | Runtime fixtures check access, search, extrema, full-range sum, equality, endian conversion, invalid-index fallback, and caller-backed copy, fill, and reverse of four-byte arrays. Reversal works with shared source and destination backing. Short destination lengths return false without writing; an overstated backing view traps on native indexing. |
@@ -759,19 +761,18 @@ Lanius logic. No declaration is promoted solely because it type-checks.
   optional `0b` or `0B` prefix followed by at least one digit, and reject
   empty, sign-containing, whitespace-containing, malformed, and overflowing
   input. An overstated physical view length can trap on native indexing.
-- `core::f32::clamp_or` returns its caller fallback when bounds are reversed
-  or either bound is NaN; `clamp` returns its input unchanged for those invalid
-  bounds. Valid bounds clamp inclusively, and a NaN value propagates.
-  `min` and `max` return the non-NaN argument when exactly one is NaN; two
-  NaNs yield NaN. `signum` and `sqrt` propagate NaN. Predicates treat NaN as
-  unordered: it is nonzero, neither positive nor negative, and outside every
-  finite interval. `sqrt` returns zero for nonpositive inputs and scales finite
-  positive inputs before Newton iteration, including values far above or below
-  one. `sqrt_or` returns its caller fallback for negative or NaN inputs and
-  otherwise uses `sqrt`, including positive infinity. `is_nan`, `is_infinite`,
-  and `is_finite` classify NaN, both infinities, ordinary finite values, and
-  signed zero. Imported `core::f32::ONE` has a native runtime case; the constant
-  lowering repair is described in dependency 5.
+- `core::f32` and `core::f64` have matching [IEEE value contracts](stdlib-floats.md).
+  Exact bit transfer preserves every encoding; `abs` clears the sign, including
+  negative zero. `min`/`max` ignore one NaN and select signed-zero ties
+  deterministically. `signum` returns the sign's unit value even for zero.
+  Integral rounding and square root use exact integer algorithms. Square root
+  preserves signed zero, quiets NaNs and returns NaN for negative nonzero
+  inputs. `try_clamp` reports invalid bounds, `clamp_or` uses an explicit
+  fallback, and strict `clamp` traps for invalid bounds. Numeric comparisons
+  retain unordered NaN behavior; `total_cmp` distinguishes all bit patterns.
+  [Decimal conversion](stdlib-float-decimal.md) and
+  [compositional float formatting](stdlib-formatting.md#floating-point-composition)
+  execute separately, with explicit caller-buffer and work contracts.
 - `core::array_i32_4::sum` folds with saturating addition; overflowing sums
   clamp to the corresponding i32 endpoint at each element. `get_or` and
   `index_of_or` return the caller's fallback for out-of-range or absent values.

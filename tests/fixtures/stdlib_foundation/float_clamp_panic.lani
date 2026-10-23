@@ -1,0 +1,13 @@
+module app::main;
+import core::f32;
+import core::f64;
+import core::mem;
+import std::process;
+fn main() -> i32 {
+    let words: [i32;1] = [0]; let pointer: ptr = core::mem::i32_array_data_ptr(words); let input: [u8] = core::mem::typed_slice_from_raw_parts(pointer,2);
+    assert(std::process::arg_read(1,pointer,2) == 2); let wide: bool = input[0] == 54;
+    assert(std::process::arg_read(2,pointer,1) == 1); let mode: u8 = input[0];
+    if (wide) { let low: f64 = 2.0; let high: f64 = 1.0; if (mode == 49) { low = core::f64::nan(); } if (mode == 50) { low = 0.0; high = core::f64::nan(); } let value: f64 = core::f64::clamp(0.5,low,high); if (value == 0.5) { return 1; } }
+    else { let low: f32 = 2.0; let high: f32 = 1.0; if (mode == 49) { low = core::f32::nan(); } if (mode == 50) { low = 0.0; high = core::f32::nan(); } let value: f32 = core::f32::clamp(0.5,low,high); if (value == 0.5) { return 1; } }
+    return 2;
+}

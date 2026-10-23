@@ -1,0 +1,67 @@
+module app::main;
+import core::f32;
+import core::f64;
+import core::fmt;
+import core::mem;
+import core::option;
+import core::result;
+import core::text;
+
+struct Reading { value: f64, accepted: bool }
+pub impl core::fmt::Display<Reading> for Reading {
+    pub fn format(value: Reading, output: &core::fmt::Formatter) -> core::result::Result<i32,core::fmt::Error> {
+        output.write_scalar(40); core::fmt::display(value.value,output);
+        output.write_scalar(44); core::fmt::display(value.accepted,output);
+        output.write_scalar(41); return output.finish();
+    }
+}
+fn text(value: str, count: i32) -> core::text::Text {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::text::from_utf8_unchecked(bytes,0,count);
+}
+fn required(error: core::fmt::Error) -> i32 { return match(error) { core::fmt::Error::BufferTooSmall(value) -> value, _ -> -1 }; }
+fn one(value: f64, expected: core::text::Text) {
+    let bytes: [u8;40] = [88;40];
+    let output: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,3,32));
+    core::result::unwrap(core::fmt::display(value,output.borrow()));
+    assert(core::text::from_utf8_unchecked(bytes,3,output.len()).equals(expected));
+    assert(bytes[0] == 88 && bytes[2] == 88 && bytes[3+output.len()] == 88);
+    let measured: core::fmt::Formatter = core::fmt::measure();
+    assert(core::result::unwrap(core::fmt::display(value,measured.borrow())) == expected.byte_len());
+    let exact: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,expected.byte_len()));
+    assert(core::result::unwrap(exact.write_f64(value)) == expected.byte_len());
+    let empty: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,0));
+    assert(required(core::result::unwrap_err(empty.write_f64(value))) == expected.byte_len());
+    assert(empty.len() == 0);
+}
+fn main() -> i32 {
+    one(0.0,text("0",1)); one(core::f64::from_bits(9223372036854775808),text("-0",2));
+    one(1.5,text("1.5",3)); one(1.0000000000000002,text("1.0000000000000002",18));
+    one(1e20,text("1e20",4)); one(core::f64::from_bits(1),text("5e-324",6));
+    one(core::f64::infinity(),text("inf",3)); one(core::f64::neg_infinity(),text("-inf",4));
+    one(core::f64::from_bits(18442240474082181121),text("NaN",3));
+    let words: [i32;32] = [0;32];
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words),128);
+    let output: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(packed,7,100));
+    core::fmt::display(Reading { value: -0.25, accepted: true },output.borrow()); output.write_scalar(32);
+    let narrow: f32 = core::f32::from_bits(1036831949); core::fmt::display(narrow,output.borrow()); output.write_scalar(32);
+    core::fmt::display(42,output.borrow());
+    assert(core::text::from_utf8_unchecked(packed,7,core::result::unwrap(output.finish())).equals(text("(-0.25,true) 0.1 42",19)));
+    // A failed append leaves all of that append unwritten and latches its
+    // original total requirement, including after a different type is tried.
+    let bytes: [u8;16] = [88;16]; let tiny: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,2,4));
+    core::result::unwrap(tiny.write_scalar(65));
+    assert(required(core::result::unwrap_err(tiny.write_f64(123.5))) == 6);
+    assert(tiny.len() == 1 && bytes[2] == 65 && bytes[3] == 88 && bytes[7] == 88);
+    assert(required(core::result::unwrap_err(tiny.write_f32(1.0))) == 6);
+    assert(required(core::result::unwrap_err(tiny.write_scalar(32))) == 6);
+    assert(tiny.len() == 1 && bytes[3] == 88);
+    // Both widths preserve negative zero through Display, not only the raw
+    // decimal functions. Infinity and NaN use the same spelling policy.
+    let special: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(packed,0,128));
+    special.write_f32(core::f32::from_bits(2147483648)); special.write_scalar(32);
+    special.write_f32(core::f32::infinity()); special.write_scalar(32);
+    special.write_f32(core::f32::nan());
+    assert(core::text::from_utf8_unchecked(packed,0,core::result::unwrap(special.finish())).equals(text("-0 inf NaN",10)));
+    return 0;
+}

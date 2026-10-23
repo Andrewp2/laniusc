@@ -13,7 +13,7 @@ pub impl core::fmt::Display<Point> for Point {
 }
 fn text(value: str, length: i32) -> core::text::Text { let pointer: ptr = core::mem::string_data_ptr(value); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer, length); return core::text::from_utf8_unchecked(bytes, 0, length); }
 fn small(error: core::fmt::Error) -> i32 { return match (error) { core::fmt::Error::BufferTooSmall(count) -> count, _ -> -1 }; }
-fn kind(error: core::fmt::Error) -> i32 { return match (error) { core::fmt::Error::Bounds -> 0, core::fmt::Error::BufferTooSmall(count) -> 1, core::fmt::Error::SizeOverflow -> 2, core::fmt::Error::InvalidRadix -> 3, core::fmt::Error::InvalidWidth -> 4, core::fmt::Error::InvalidScalar -> 5 }; }
+fn kind(error: core::fmt::Error) -> i32 { return match (error) { core::fmt::Error::Bounds -> 0, core::fmt::Error::BufferTooSmall(count) -> 1, core::fmt::Error::SizeOverflow -> 2, core::fmt::Error::InvalidRadix -> 3, core::fmt::Error::InvalidWidth -> 4, core::fmt::Error::InvalidScalar -> 5, core::fmt::Error::Float(detail) -> 6 }; }
 fn main() -> i32 {
     let bytes: [u8; 240] = [88; 240]; let output: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes, 3, 230));
     let minimum: i64 = -9223372036854775807 - 1; let maximum: u64 = 18446744073709551615;

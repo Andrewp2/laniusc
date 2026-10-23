@@ -1,0 +1,45 @@
+module app::main;
+import core::decimal_number;
+import core::mem;
+import core::result;
+import core::slice;
+import std::io;
+import std::io_decimal;
+import std::process;
+fn number(value: i32) { assert(std::io_decimal::write_i32(1,value) > 0 && std::io::write_byte(1,10) == 1); }
+fn flag(value: bool) { if (value) { number(1); } else { number(0); } }
+fn argument(index: i32, pointer: ptr, bytes: [u8]) -> core::decimal_number::Decimal {
+    let count: i32 = std::process::arg_len(index); assert(count > 0 && count <= 16384);
+    assert(std::process::arg_read(index,pointer,count as usize) == count);
+    return core::result::unwrap(core::decimal_number::parse(core::result::unwrap(core::slice::view(bytes,count))));
+}
+fn main() -> i32 {
+    let a_storage: [i32;4096] = [0;4096]; let a_pointer: ptr = core::mem::i32_array_data_ptr(a_storage);
+    let a_bytes: [u8] = core::mem::typed_slice_from_raw_parts(a_pointer,16384);
+    let b_storage: [i32;4096] = [0;4096]; let b_pointer: ptr = core::mem::i32_array_data_ptr(b_storage);
+    let b_bytes: [u8] = core::mem::typed_slice_from_raw_parts(b_pointer,16384);
+    let scratch_storage: [i32;4097] = [0;4097];
+    let scratch_bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(scratch_storage),16388);
+    scratch_bytes[0] = 77; scratch_bytes[16387] = 99;
+    let scratch: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(scratch_bytes,1,16386));
+    let index: i32 = 1;
+    while (index + 1 < std::process::argc()) {
+        let a: core::decimal_number::Decimal = argument(index,a_pointer,a_bytes);
+        let b: core::decimal_number::Decimal = argument(index+1,b_pointer,b_bytes);
+        flag(a.is_zero()); flag(a.is_negative()); flag(a.is_integer());
+        flag(b.is_zero()); flag(b.is_negative()); flag(b.is_integer());
+        let order: i32 = a.compare(b); number(order); assert(order == 0 - b.compare(a)); flag(a.equal(b));
+        let result: core::result::Result<core::decimal_number::Multiple,core::decimal_number::Error> = core::decimal_number::is_multiple_of_counted(a,b,scratch,100000000);
+        if (core::result::is_err(result)) {
+            let error: core::decimal_number::Error = core::result::unwrap_err(result);
+            let zero: bool = match (error.kind) { core::decimal_number::ErrorKind::ZeroDivisor -> true, _ -> false };
+            assert(zero && b.is_zero()); number(-2);
+        } else {
+            let value: core::decimal_number::Multiple = core::result::unwrap(result); assert(value.work > 0 && value.work <= 100000000); flag(value.value);
+        }
+        assert(scratch_bytes[0] == 77 && scratch_bytes[16387] == 99);
+        // Matching scratch must never change the borrowed number bytes.
+        assert(a.compare(b) == order); index += 2;
+    }
+    return 0;
+}

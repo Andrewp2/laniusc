@@ -826,6 +826,26 @@ fn legacy_i32x4_functions_execute_on_x86() {
 // unexercised. The fixtures themselves still provide the behavior assertions.
 #[test]
 fn executable_core_function_surface_has_runtime_cases() {
+    let decimal_fixtures = format!(
+        "{}\n{}\n{}\n{}",
+        include_str!("fixtures/stdlib_foundation/core_decimal.lani"),
+        include_str!("fixtures/stdlib_foundation/core_decimal_native.lani"),
+        include_str!("fixtures/stdlib_foundation/decimal_parse_input.lani"),
+        include_str!("fixtures/stdlib_foundation/decimal_format_input.lani"),
+    );
+    let float_fixtures = format!(
+        "{}\n{}\n{}\n{}",
+        include_str!("fixtures/stdlib_foundation/core_f32.lani"),
+        include_str!("fixtures/stdlib_foundation/float_model.lani"),
+        include_str!("fixtures/stdlib_foundation/float_clamp_panic.lani"),
+        include_str!("fixtures/stdlib_foundation/float_bits.lani"),
+    );
+    let slice_fixtures = format!(
+        "{}\n{}\n{}",
+        include_str!("fixtures/stdlib_foundation/core_slice.lani"),
+        include_str!("fixtures/stdlib_foundation/core_slice_view.lani"),
+        include_str!("fixtures/stdlib_foundation/slice_view_model.lani"),
+    );
     let modules = [
         (
             "i32",
@@ -910,7 +930,12 @@ fn executable_core_function_surface_has_runtime_cases() {
         (
             "f32",
             include_str!("../stdlib/core/f32.lani"),
-            include_str!("fixtures/stdlib_foundation/core_f32.lani"),
+            float_fixtures.as_str(),
+        ),
+        (
+            "f64",
+            include_str!("../stdlib/core/f64.lani"),
+            float_fixtures.as_str(),
         ),
         (
             "byte",
@@ -945,7 +970,7 @@ fn executable_core_function_surface_has_runtime_cases() {
         (
             "decimal",
             include_str!("../stdlib/core/decimal.lani"),
-            include_str!("fixtures/stdlib_foundation/core_decimal.lani"),
+            decimal_fixtures.as_str(),
         ),
         (
             "hex",
@@ -960,7 +985,7 @@ fn executable_core_function_surface_has_runtime_cases() {
         (
             "slice",
             include_str!("../stdlib/core/slice.lani"),
-            include_str!("fixtures/stdlib_foundation/core_slice.lani"),
+            slice_fixtures.as_str(),
         ),
     ];
 
@@ -974,7 +999,11 @@ fn executable_core_function_surface_has_runtime_cases() {
                 .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
                 .next()
                 .expect("public function has a name");
-            let call = format!("core::{module}::{name}(");
+            let call = if line.starts_with("pub fn ") {
+                format!("core::{module}::{name}(")
+            } else {
+                format!(".{name}(")
+            };
             let covered = fixture.contains(&call)
                 || module == "utf8"
                     && include_str!("fixtures/stdlib_foundation/core_utf8_bytes.lani")

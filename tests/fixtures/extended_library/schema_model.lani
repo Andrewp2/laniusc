@@ -1,0 +1,48 @@
+module app::main;
+import alloc::string;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::json;
+import ext::schema;
+import std::io;
+fn read(pointer: ptr, count: i32) -> i32 { let done: i32 = 0; while (done < count) { let got: i32 = std::io::read_stdin(pointer+(done as usize),(count-done) as usize); assert(got >= 0); if (got == 0) { return done; } done += got; } return done; }
+fn write(pointer: ptr, count: i32) { let done: i32 = 0; while (done < count) { let got: i32 = std::io::write_stdout(pointer+(done as usize),(count-done) as usize); assert(got > 0); done += got; } }
+fn get(bytes: [u8], index: i32) -> i32 { return (bytes[index] as i32) | ((bytes[index+1] as i32) << 8) | ((bytes[index+2] as i32) << 16) | ((bytes[index+3] as i32) << 24); }
+fn put(bytes: [u8], index: i32, value: i32) { bytes[index] = (value & 255) as u8; bytes[index+1] = ((value >> 8) & 255) as u8; bytes[index+2] = ((value >> 16) & 255) as u8; bytes[index+3] = ((value >> 24) & 255) as u8; }
+fn parse(bytes: [u8], length: i32) -> ext::json::Document {
+    let source: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(bytes,length)); let options: ext::json::Options = ext::json::default_options(); options.max_depth = 256;
+    let document: ext::json::Document = core::result::unwrap(ext::json::parse(source,options)); source.destroy(); return document;
+}
+fn error_code(value: ext::schema::ErrorKind) -> i32 { return match (value) { ext::schema::ErrorKind::Bounds -> 1, ext::schema::ErrorKind::InvalidOptions -> 2, ext::schema::ErrorKind::InvalidSchema -> 3, ext::schema::ErrorKind::UnsupportedKeyword -> 4, ext::schema::ErrorKind::UnsupportedDialect -> 5, ext::schema::ErrorKind::InvalidReference -> 6, ext::schema::ErrorKind::DuplicateKey -> 7, ext::schema::ErrorKind::SchemaNodeLimit -> 8, ext::schema::ErrorKind::DepthLimit -> 9, ext::schema::ErrorKind::WorkLimit -> 10, ext::schema::ErrorKind::Cycle -> 11, ext::schema::ErrorKind::ScratchTooSmall -> 12, ext::schema::ErrorKind::CapacityOverflow -> 13, ext::schema::ErrorKind::AllocationFailed -> 14, ext::schema::ErrorKind::Destroyed -> 15, ext::schema::ErrorKind::ChangedDocument -> 16 }; }
+fn keyword_code(value: ext::schema::Keyword) -> i32 { return match (value) { ext::schema::Keyword::FalseSchema -> 0, ext::schema::Keyword::Type -> 1, ext::schema::Keyword::Const -> 2, ext::schema::Keyword::Enum -> 3, ext::schema::Keyword::Minimum -> 4, ext::schema::Keyword::Maximum -> 5, ext::schema::Keyword::ExclusiveMinimum -> 6, ext::schema::Keyword::ExclusiveMaximum -> 7, ext::schema::Keyword::MultipleOf -> 8, ext::schema::Keyword::MinLength -> 9, ext::schema::Keyword::MaxLength -> 10, ext::schema::Keyword::MinItems -> 11, ext::schema::Keyword::MaxItems -> 12, ext::schema::Keyword::UniqueItems -> 13, ext::schema::Keyword::Contains -> 14, ext::schema::Keyword::MinContains -> 15, ext::schema::Keyword::MaxContains -> 16, ext::schema::Keyword::Required -> 17, ext::schema::Keyword::DependentRequired -> 18, ext::schema::Keyword::MinProperties -> 19, ext::schema::Keyword::MaxProperties -> 20, ext::schema::Keyword::AdditionalProperties -> 21, ext::schema::Keyword::PropertyNames -> 22, ext::schema::Keyword::AllOf -> 23, ext::schema::Keyword::AnyOf -> 24, ext::schema::Keyword::OneOf -> 25, ext::schema::Keyword::Not -> 26, ext::schema::Keyword::Items -> 27, ext::schema::Keyword::PrefixItems -> 28, ext::schema::Keyword::Properties -> 29, ext::schema::Keyword::DependentSchemas -> 30, ext::schema::Keyword::Ref -> 31, ext::schema::Keyword::If -> 32, ext::schema::Keyword::Then -> 33, ext::schema::Keyword::Else -> 34 }; }
+fn failure(header: [u8], stage: i32, error: ext::schema::Error) { put(header,0,stage); put(header,4,error_code(error.kind)); put(header,8,error.schema_node); put(header,12,error.instance_node); }
+fn main() -> i32 {
+    let data_words: [i32;65536] = [0;65536]; let data_pointer: ptr = core::mem::i32_array_data_ptr(data_words); let data: [u8] = core::mem::typed_slice_from_raw_parts(data_pointer,262144);
+    let header_words: [i32;8] = [0;8]; let header_pointer: ptr = core::mem::i32_array_data_ptr(header_words); let header: [u8] = core::mem::typed_slice_from_raw_parts(header_pointer,32);
+    let scratch_words: [i32;8194] = [0;8194]; let scratch_bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(scratch_words),32776);
+    while (true) {
+        let got: i32 = read(header_pointer,32); if (got == 0) { break; } assert(got == 32);
+        let slen: i32 = get(header,0); let ilen: i32 = get(header,4); assert(slen > 0 && slen <= 262144 && ilen > 0 && ilen <= 262144);
+        let options: ext::schema::Options = ext::schema::Options { max_schema_nodes: get(header,16), max_schema_depth: get(header,20), max_validation_depth: get(header,24), max_work: ((get(header,8) as u32) as u64) | (((get(header,12) as u32) as u64) << 32) };
+        let capacity: i32 = get(header,28); assert(capacity >= 0 && capacity <= 32768); scratch_bytes[3] = 77; scratch_bytes[capacity+4] = 99;
+        let scratch: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(scratch_bytes,4,capacity));
+        assert(read(data_pointer,slen) == slen); let document: ext::json::Document = parse(data,slen);
+        assert(read(data_pointer,ilen) == ilen); let instance: ext::json::Document = parse(data,ilen);
+        let index: i32 = 0; while (index < 32) { header[index] = 0; index += 1; }
+        let compiled: core::result::Result<ext::schema::Schema,ext::schema::Error> = ext::schema::compile(document.borrow(),options);
+        if (core::result::is_err(compiled)) { failure(header,2,core::result::unwrap_err(compiled)); }
+        else {
+            let schema: ext::schema::Schema = core::result::unwrap(compiled); let needed: i32 = schema.scratch_len(); put(header,28,needed);
+            let checked: core::result::Result<ext::schema::Report,ext::schema::Error> = schema.validate(instance.borrow(),scratch);
+            if (core::result::is_err(checked)) { failure(header,3,core::result::unwrap_err(checked)); }
+            else {
+                let report: ext::schema::Report = core::result::unwrap(checked); put(header,20,report.work as i32); put(header,24,(report.work >> 32) as i32);
+                if (!report.valid) { let issue: ext::schema::Issue = core::option::unwrap(report.issue); put(header,0,1); put(header,4,keyword_code(issue.keyword)); put(header,8,issue.schema_node); put(header,12,issue.instance_node); if (issue.property_name) { put(header,16,1); } }
+                else { assert(core::option::is_none(report.issue)); }
+            } schema.destroy(); schema.destroy(); assert(schema.scratch_len() == 0);
+        }
+        assert(scratch_bytes[3] == 77 && scratch_bytes[capacity+4] == 99); document.destroy(); instance.destroy(); write(header_pointer,32);
+    } return 0;
+}

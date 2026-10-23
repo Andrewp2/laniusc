@@ -1,0 +1,256 @@
+// Exact binary32/binary64 decimal conversion with bounded caller scratch.
+// Shortest significant decimal inside the exact nearest-even rounding interval.
+// No heap allocation or host float parser/formatter. See stdlib-float-decimal.md.
+module core::float_decimal;
+import core::f32;
+import core::f64;
+import core::result;
+import core::slice;
+
+// Six 128-limb integers and 96 base-10^9 groups. Units are u32 elements.
+// The 768-digit input ceiling bounds every intermediate below 4096 bits.
+pub const SCRATCH_LEN: i32 = 864;
+pub enum Error { Bounds, ScratchTooSmall(i32), InputLimit, DigitLimit, WorkLimit, Invalid(i32), Capacity(i32) }
+pub struct Limits { max_input: i32, max_digits: i32, max_work: u64 }
+pub fn scratch_len() -> i32 { return SCRATCH_LEN; }
+pub fn default_format_work() -> u64 { return 1000000; }
+pub fn default_limits() -> Limits { return Limits { max_input: 1024, max_digits: 768, max_work: 1000000 }; }
+fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length; }
+fn storage(scratch: core::slice::View<u32>) -> core::result::Result<i32,Error> {
+    if (scratch.start < 0 || scratch.length < 0 || scratch.start > 2147483647-scratch.length) { return core::result::Err(Error::Bounds); }
+    if (scratch.length < SCRATCH_LEN) { return core::result::Err(Error::ScratchTooSmall(SCRATCH_LEN)); } return core::result::Ok(0);
+}
+struct Budget { left: u64, failed: bool }
+impl Budget {
+    fn borrow(&self) -> &Budget { return self; }
+    fn pay(&self, amount: u64) { if (amount > self.left) { self.failed = true; self.left = 0; } else { self.left -= amount; } }
+}
+struct Big { words: core::slice::View<u32>, length: i32 }
+fn big(scratch: core::slice::View<u32>, slot: i32) -> Big { return Big { words: core::result::unwrap(scratch.subview(slot*128,(slot+1)*128)), length: 0 }; }
+impl Big {
+    fn borrow(&self) -> &Big { return self; }
+    fn get(&self, index: i32) -> u32 { return self.words.values[self.words.start+index]; }
+    fn put(&self, index: i32, value: u32) { self.words.values[self.words.start+index] = value; }
+    fn trim(&self) { while (self.length > 0 && self.get(self.length-1) == 0) { self.length -= 1; } }
+    fn set(&self, value: u64, budget: &Budget) {
+        budget.pay(2); self.length = 0;
+        if (value != 0) { self.put(0,(value & 4294967295) as u32); self.length = 1; let high: u32 = (value >> 32) as u32; if (high != 0) { self.put(1,high); self.length = 2; } }
+    }
+    fn copy(&self, source: Big, budget: &Budget) { budget.pay(source.length as u64); let i: i32 = 0; while (i < source.length) { self.put(i,source.get(i)); i += 1; } self.length = source.length; }
+    fn compare(&self, other: Big, budget: &Budget) -> i32 {
+        budget.pay(1); if (self.length < other.length) { return -1; } if (self.length > other.length) { return 1; }
+        let i: i32 = self.length; while (i > 0) { i -= 1; budget.pay(1); if (self.get(i) < other.get(i)) { return -1; } if (self.get(i) > other.get(i)) { return 1; } } return 0;
+    }
+    fn bits(&self, budget: &Budget) -> i32 {
+        budget.pay(32); if (self.length == 0) { return 0; } let value: u32 = self.get(self.length-1); let count: i32 = 0;
+        while (value > 0) { count += 1; value = value >> 1; } return (self.length-1)*32+count;
+    }
+    fn multiply_small(&self, factor: u32, budget: &Budget) {
+        budget.pay((self.length as u64)+1); let carry: u64 = 0; let i: i32 = 0;
+        while (i < self.length) { let value: u64 = (self.get(i) as u64)*(factor as u64)+carry; self.put(i,(value & 4294967295) as u32); carry = value >> 32; i += 1; }
+        if (carry != 0) { assert(self.length < 128); self.put(self.length,carry as u32); self.length += 1; } self.trim();
+    }
+    fn add_small(&self, value: u32, budget: &Budget) {
+        let carry: u64 = value as u64; let i: i32 = 0;
+        while (carry != 0) { budget.pay(1); if (i == self.length) { assert(i < 128); self.put(i,0); self.length += 1; } let sum: u64 = (self.get(i) as u64)+carry; self.put(i,(sum & 4294967295) as u32); carry = sum >> 32; i += 1; }
+    }
+    fn add(&self, other: Big, budget: &Budget) {
+        let count: i32 = self.length; if (other.length > count) { count = other.length; } budget.pay((count as u64)+1);
+        let carry: u64 = 0; let i: i32 = 0;
+        while (i < count) { let left: u64 = 0; let right: u64 = 0; if (i < self.length) { left = self.get(i) as u64; } if (i < other.length) { right = other.get(i) as u64; } let sum: u64 = left+right+carry; self.put(i,(sum & 4294967295) as u32); carry = sum >> 32; i += 1; }
+        self.length = count; if (carry != 0) { assert(count < 128); self.put(count,carry as u32); self.length += 1; }
+    }
+    fn subtract(&self, other: Big, budget: &Budget) {
+        budget.pay(self.length as u64); let borrow: u64 = 0; let i: i32 = 0;
+        while (i < self.length) { let right: u64 = borrow; if (i < other.length) { right += other.get(i) as u64; } let left: u64 = self.get(i) as u64; borrow = 0; if (left < right) { self.put(i,((4294967296+left)-right) as u32); borrow = 1; } else { self.put(i,(left-right) as u32); } i += 1; } assert(borrow == 0); self.trim();
+    }
+    fn shift(&self, count: i32, budget: &Budget) {
+        assert(count >= 0); if (self.length == 0 || count == 0) { return; }
+        let words: i32 = count/32; let bits: i32 = count%32; let old: i32 = self.length; assert(old+words+1 <= 128); budget.pay((old+words+1) as u64);
+        let i: i32 = old; while (i > 0) { i -= 1; self.put(i+words,self.get(i)); } i = 0; while (i < words) { self.put(i,0); i += 1; } self.length = old+words;
+        if (bits != 0) { let carry: u64 = 0; i = words; while (i < self.length) { let value: u64 = ((self.get(i) as u64) << bits) | carry; self.put(i,(value & 4294967295) as u32); carry = value >> 32; i += 1; } if (carry != 0) { self.put(self.length,carry as u32); self.length += 1; } }
+    }
+    fn product(&self, source: Big, factor: u64, budget: &Budget) {
+        assert(source.length+2 <= 128); budget.pay((source.length as u64)*3+4);
+        let i: i32 = 0; while (i < source.length+2) { self.put(i,0); i += 1; }
+        let part: i32 = 0; while (part < 2) { let word: u64 = (factor >> (part*32)) & 4294967295; let carry: u64 = 0; i = 0;
+            while (i < source.length) { let value: u64 = (source.get(i) as u64)*word+(self.get(i+part) as u64)+carry; self.put(i+part,(value & 4294967295) as u32); carry = value >> 32; i += 1; }
+            self.put(source.length+part,carry as u32); part += 1;
+        } self.length = source.length+2; self.trim();
+    }
+    fn divide(&self, divisor: u32, budget: &Budget) -> u32 {
+        budget.pay(self.length as u64); let carry: u64 = 0; let i: i32 = self.length;
+        while (i > 0) { i -= 1; let value: u64 = (carry << 32) | (self.get(i) as u64); self.put(i,(value/(divisor as u64)) as u32); carry = value%(divisor as u64); } self.trim(); return carry as u32;
+    }
+    fn power(&self, factor: u32, exponent: i32, budget: &Budget) {
+        let i: i32 = 0; while (i < exponent && !budget.failed) { self.multiply_small(factor,budget); i += 1; }
+    }
+}
+struct Config { fraction_bits: i32, bias: i32, fraction_mask: u64, sign: u64, infinity: u64, nan: u64, max_finite: u64, digits: i32, max_order: i32, min_order: i32 }
+fn config(single: bool) -> Config {
+    if (single) { return Config { fraction_bits: 23, bias: 127, fraction_mask: 8388607, sign: 2147483648, infinity: 2139095040, nan: 2143289344, max_finite: 2139095039, digits: 9, max_order: 39, min_order: -46 }; }
+    return Config { fraction_bits: 52, bias: 1023, fraction_mask: 4503599627370495, sign: 9223372036854775808, infinity: 9218868437227405312, nan: 9221120237041090560, max_finite: 9218868437227405311, digits: 17, max_order: 309, min_order: -325 };
+}
+struct Dyadic { mantissa: u64, exponent: i32 }
+fn dyadic(bits: u64, cfg: Config) -> Dyadic {
+    let fraction: u64 = bits & cfg.fraction_mask; let biased: i32 = (bits >> cfg.fraction_bits) as i32;
+    if (biased == 0) { return Dyadic { mantissa: fraction, exponent: 1-cfg.bias-cfg.fraction_bits }; }
+    let hidden: u64 = 1; hidden = hidden << cfg.fraction_bits; return Dyadic { mantissa: hidden | fraction, exponent: biased-cfg.bias-cfg.fraction_bits };
+}
+// Compare N/D with m*2^e exactly. Check bit lengths before constructing shifts;
+// temporary descriptors are local copies over disjoint caller scratch slots.
+fn compare_dyadic(numerator: Big, denominator: Big, value: Dyadic, temporary: Big, shifted: Big, budget: &Budget) -> i32 {
+    temporary.product(denominator,value.mantissa,budget); let left_bits: i32 = numerator.bits(budget); let right_bits: i32 = temporary.bits(budget);
+    if (value.exponent >= 0) { right_bits += value.exponent; if (left_bits < right_bits) { return -1; } if (left_bits > right_bits) { return 1; } temporary.shift(value.exponent,budget); return numerator.compare(temporary,budget); }
+    left_bits -= value.exponent; if (left_bits < right_bits) { return -1; } if (left_bits > right_bits) { return 1; } shifted.copy(numerator,budget); shifted.shift(0-value.exponent,budget); return shifted.compare(temporary,budget);
+}
+fn lower_ascii(byte: u8) -> u8 { if (byte >= 65 && byte <= 90) { return byte+32; } return byte; }
+fn special(input: core::slice::View<u8>, start: i32) -> i32 {
+    let n: i32 = input.length-start;
+    if (n == 3 && lower_ascii(input.values[input.start+start]) == 110 && lower_ascii(input.values[input.start+start+1]) == 97 && lower_ascii(input.values[input.start+start+2]) == 110) { return 2; }
+    if ((n == 3 || n == 8) && lower_ascii(input.values[input.start+start]) == 105 && lower_ascii(input.values[input.start+start+1]) == 110 && lower_ascii(input.values[input.start+start+2]) == 102) {
+        if (n == 3) { return 1; }
+        if (lower_ascii(input.values[input.start+start+3]) == 105 && lower_ascii(input.values[input.start+start+4]) == 110 && lower_ascii(input.values[input.start+start+5]) == 105 && lower_ascii(input.values[input.start+start+6]) == 116 && lower_ascii(input.values[input.start+start+7]) == 121) { return 1; }
+    } return 0;
+}
+fn parse_bits(input: core::slice::View<u8>, scratch: core::slice::View<u32>, limits: Limits, cfg: Config) -> core::result::Result<u64,Error> {
+    if (!valid(input) || limits.max_input < 0 || limits.max_digits < 0 || limits.max_digits > 768) { return core::result::Err(Error::Bounds); }
+    let checked: core::result::Result<i32,Error> = storage(scratch); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+    if (input.length > limits.max_input) { return core::result::Err(Error::InputLimit); }
+    let budget: Budget = Budget { left: limits.max_work, failed: false }; budget.pay(input.length as u64); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+    let at: i32 = 0; let sign: u64 = 0;
+    if (at < input.length && (input.values[input.start+at] == 43 || input.values[input.start+at] == 45)) { if (input.values[input.start+at] == 45) { sign = cfg.sign; } at += 1; }
+    let known: i32 = special(input,at); if (known == 1) { return core::result::Ok(sign | cfg.infinity); } if (known == 2) { return core::result::Ok(sign | cfg.nan); }
+    let numerator: Big = big(scratch,0); numerator.set(0,budget.borrow()); let denominator: Big = big(scratch,1); let temporary: Big = big(scratch,2); let shifted: Big = big(scratch,3);
+    let digits: i32 = 0; let significant: i32 = 0; let fraction: i32 = 0; let dot: bool = false; let nonzero: bool = false;
+    while (at < input.length) {
+        let byte: u8 = input.values[input.start+at];
+        if (byte >= 48 && byte <= 57) {
+            if (digits == limits.max_digits) { return core::result::Err(Error::DigitLimit); } digits += 1; if (dot) { fraction += 1; }
+            if (byte != 48) { nonzero = true; } if (nonzero) { significant += 1; }
+            numerator.multiply_small(10,budget.borrow()); numerator.add_small((byte-48) as u32,budget.borrow()); if (budget.failed) { return core::result::Err(Error::WorkLimit); } at += 1;
+        } else { if (byte == 46 && !dot) { dot = true; at += 1; } else { break; } }
+    }
+    if (digits == 0) { return core::result::Err(Error::Invalid(at)); }
+    let exponent: i32 = 0;
+    if (at < input.length && (input.values[input.start+at] == 101 || input.values[input.start+at] == 69)) {
+        at += 1; let negative: bool = false;
+        if (at < input.length && (input.values[input.start+at] == 43 || input.values[input.start+at] == 45)) { negative = input.values[input.start+at] == 45; at += 1; }
+        let start: i32 = at; while (at < input.length && input.values[input.start+at] >= 48 && input.values[input.start+at] <= 57) { if (exponent < 1000000) { exponent = exponent*10+((input.values[input.start+at]-48) as i32); if (exponent > 1000000) { exponent = 1000000; } } at += 1; }
+        if (at == start) { return core::result::Err(Error::Invalid(at)); } if (negative) { exponent = 0-exponent; }
+    }
+    if (at != input.length) { return core::result::Err(Error::Invalid(at)); } if (!nonzero) { return core::result::Ok(sign); }
+    exponent -= fraction; let order: i32 = exponent+significant-1;
+    if (order > cfg.max_order) { return core::result::Ok(sign | cfg.infinity); } if (order < cfg.min_order) { return core::result::Ok(sign); }
+    denominator.set(1,budget.borrow()); if (exponent >= 0) { numerator.power(10,exponent,budget.borrow()); } else { denominator.power(10,0-exponent,budget.borrow()); }
+    if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+    // Positive IEEE encodings are ordered by value. Find the floor, then compare
+    // its upper midpoint; adding one also handles the max-finite/inf threshold.
+    let low: u64 = 0; let high: u64 = cfg.max_finite;
+    while (low < high) {
+        let middle: u64 = low+(high-low+1)/2; let comparison: i32 = compare_dyadic(numerator,denominator,dyadic(middle,cfg),temporary,shifted,budget.borrow());
+        if (budget.failed) { return core::result::Err(Error::WorkLimit); } if (comparison >= 0) { low = middle; } else { high = middle-1; }
+    }
+    let value: Dyadic = dyadic(low,cfg); value.mantissa = value.mantissa*4+2; value.exponent -= 2;
+    let comparison: i32 = compare_dyadic(numerator,denominator,value,temporary,shifted,budget.borrow()); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+    if (comparison > 0 || (comparison == 0 && (low & 1) != 0)) { low += 1; }
+    return core::result::Ok(sign | low);
+}
+pub fn parse_f32(input: core::slice::View<u8>, scratch: core::slice::View<u32>, limits: Limits) -> core::result::Result<f32,Error> {
+    let parsed: core::result::Result<u64,Error> = parse_bits(input,scratch,limits,config(true)); if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); } return core::result::Ok(core::f32::from_bits(core::result::unwrap(parsed) as u32));
+}
+pub fn parse_f64(input: core::slice::View<u8>, scratch: core::slice::View<u32>, limits: Limits) -> core::result::Result<f64,Error> {
+    let parsed: core::result::Result<u64,Error> = parse_bits(input,scratch,limits,config(false)); if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); } return core::result::Ok(core::f64::from_bits(core::result::unwrap(parsed)));
+}
+
+struct Decimal { coefficient: u64, exponent: i32, negative: bool, special: i32 }
+fn digits(value: u64) -> i32 { let rest: u64 = value; let count: i32 = 1; while (rest >= 10) { rest /= 10; count += 1; } return count; }
+fn power10(exponent: i32) -> u64 { let value: u64 = 1; let i: i32 = 0; while (i < exponent) { value *= 10; i += 1; } return value; }
+fn decimal_digit(groups: core::slice::View<u32>, count: i32, first: i32, index: i32) -> u64 {
+    let group: i32 = count-1; let position: i32 = index; let width: i32 = first;
+    if (index >= first) { group = count-2-(index-first)/9; position = (index-first)%9; width = 9; }
+    return ((groups.values[groups.start+group] as u64)/power10(width-position-1))%10;
+}
+fn inside(value: Big, lower: Big, upper: Big, inclusive: bool, budget: &Budget) -> bool {
+    let low: i32 = value.compare(lower,budget); let high: i32 = value.compare(upper,budget); return (low > 0 || (inclusive && low == 0)) && (high < 0 || (inclusive && high == 0));
+}
+fn prepare(bits: u64, cfg: Config, scratch: core::slice::View<u32>, work: u64) -> core::result::Result<Decimal,Error> {
+    let checked: core::result::Result<i32,Error> = storage(scratch); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+    let budget: Budget = Budget { left: work, failed: false }; budget.pay(1); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+    let negative: bool = (bits & cfg.sign) != 0; let absolute: u64 = bits & (cfg.sign-1);
+    if (absolute >= cfg.infinity) { let kind: i32 = 1; if (absolute > cfg.infinity) { kind = 2; negative = false; } return core::result::Ok(Decimal { coefficient: 0, exponent: 0, negative: negative, special: kind }); }
+    if (absolute == 0) { return core::result::Ok(Decimal { coefficient: 0, exponent: 0, negative: negative, special: 0 }); }
+    // Normal powers of two (except the min-normal transition) have a lower
+    // half-width interval. Midpoints belong to this value iff m2 is even.
+    let value: Dyadic = dyadic(absolute,cfg); let central: u64 = value.mantissa*4; let mm_shift: u64 = 1;
+    if ((absolute & cfg.fraction_mask) == 0 && (absolute >> cfg.fraction_bits) > 1) { mm_shift = 0; }
+    let exponent: i32 = value.exponent-2; let scale: i32 = 0;
+    let unit: Big = big(scratch,0); let exact: Big = big(scratch,1); let lower: Big = big(scratch,2); let upper: Big = big(scratch,3); let temporary: Big = big(scratch,4); let candidate: Big = big(scratch,5);
+    unit.set(1,budget.borrow()); if (exponent < 0) { scale = 0-exponent; unit.power(5,scale,budget.borrow()); } else { unit.shift(exponent,budget.borrow()); }
+    if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+    exact.product(unit,central,budget.borrow()); lower.product(unit,central-1-mm_shift,budget.borrow()); upper.product(unit,central+2,budget.borrow()); temporary.copy(exact,budget.borrow());
+    let groups: core::slice::View<u32> = core::result::unwrap(scratch.subview(768,864)); let count: i32 = 0;
+    while (temporary.length > 0) { assert(count < 96); groups.values[groups.start+count] = temporary.divide(1000000000,budget.borrow()); count += 1; if (budget.failed) { return core::result::Err(Error::WorkLimit); } }
+    let first: i32 = digits(groups.values[groups.start+count-1] as u64); let total: i32 = (count-1)*9+first;
+    unit.set(1,budget.borrow()); unit.power(10,total-1,budget.borrow()); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+    let prefix: u64 = 0; let precision: i32 = 1; let inclusive: bool = (value.mantissa & 1) == 0;
+    while (precision <= cfg.digits && precision <= total) {
+        prefix = prefix*10+decimal_digit(groups,count,first,precision-1); temporary.product(unit,prefix,budget.borrow()); candidate.copy(temporary,budget.borrow()); candidate.add(unit,budget.borrow());
+        // Both neighbors matter: the nearest decimal candidate can lie outside
+        // an asymmetric interval while the other remains inside it.
+        let floor_ok: bool = inside(temporary,lower,upper,inclusive,budget.borrow()); let ceil_ok: bool = inside(candidate,lower,upper,inclusive,budget.borrow());
+        if (budget.failed) { return core::result::Err(Error::WorkLimit); }
+        if (floor_ok || ceil_ok) {
+            let coefficient: u64 = prefix;
+            if (!floor_ok) { coefficient += 1; }
+            else { if (ceil_ok) { candidate.copy(exact,budget.borrow()); candidate.subtract(temporary,budget.borrow()); candidate.multiply_small(2,budget.borrow()); let side: i32 = candidate.compare(unit,budget.borrow()); if (side > 0 || (side == 0 && (prefix & 1) != 0)) { coefficient += 1; } } }
+            let decimal_exponent: i32 = total-precision-scale; while (coefficient%10 == 0) { coefficient /= 10; decimal_exponent += 1; }
+            if (budget.failed) { return core::result::Err(Error::WorkLimit); } return core::result::Ok(Decimal { coefficient: coefficient, exponent: decimal_exponent, negative: negative, special: 0 });
+        }
+        unit.divide(10,budget.borrow()); precision += 1;
+    }
+    assert(false); return core::result::Err(Error::Bounds);
+}
+fn scientific(value: Decimal) -> bool {
+    if (value.coefficient == 0 || value.special != 0) { return false; }
+    let count: i32 = digits(value.coefficient); let exponent: i32 = value.exponent+count-1; let absolute: i32 = exponent; if (absolute < 0) { absolute = 0-absolute; }
+    let sci: i32 = count+1+digits(absolute as u64); if (count > 1) { sci += 1; } if (exponent < 0) { sci += 1; }
+    let fixed: i32 = count+value.exponent; if (value.exponent < 0) { if (count+value.exponent > 0) { fixed = count+1; } else { fixed = 2-value.exponent; } }
+    return sci < fixed;
+}
+fn length(value: Decimal) -> i32 {
+    let sign: i32 = 0; if (value.negative) { sign = 1; } if (value.special != 0) { return sign+3; } if (value.coefficient == 0) { return sign+1; }
+    let count: i32 = digits(value.coefficient);
+    if (scientific(value)) { let exponent: i32 = value.exponent+count-1; let negative: i32 = 0; if (exponent < 0) { negative = 1; exponent = 0-exponent; } let point: i32 = 0; if (count > 1) { point = 1; } return sign+count+point+1+negative+digits(exponent as u64); }
+    if (value.exponent >= 0) { return sign+count+value.exponent; } if (count+value.exponent > 0) { return sign+count+1; } return sign+2-value.exponent;
+}
+fn digit(value: u64, count: i32, index: i32) -> u8 { return (48+(value/power10(count-index-1))%10) as u8; }
+fn render(value: Decimal, output: core::slice::View<u8>) {
+    let at: i32 = output.start; if (value.negative) { output.values[at] = 45; at += 1; }
+    if (value.special == 1) { output.values[at] = 105; output.values[at+1] = 110; output.values[at+2] = 102; return; }
+    if (value.special == 2) { output.values[at] = 78; output.values[at+1] = 97; output.values[at+2] = 78; return; }
+    if (value.coefficient == 0) { output.values[at] = 48; return; }
+    let count: i32 = digits(value.coefficient); let index: i32 = 0;
+    if (scientific(value)) {
+        output.values[at] = digit(value.coefficient,count,0); at += 1; index = 1;
+        if (count > 1) { output.values[at] = 46; at += 1; while (index < count) { output.values[at] = digit(value.coefficient,count,index); at += 1; index += 1; } }
+        output.values[at] = 101; at += 1; let exponent: i32 = value.exponent+count-1; if (exponent < 0) { output.values[at] = 45; at += 1; exponent = 0-exponent; }
+        let width: i32 = digits(exponent as u64); index = 0; while (index < width) { output.values[at] = digit(exponent as u64,width,index); at += 1; index += 1; } return;
+    }
+    let point: i32 = count+value.exponent;
+    if (point <= 0) { output.values[at] = 48; output.values[at+1] = 46; at += 2; let zeros: i32 = 0-point; while (zeros > 0) { output.values[at] = 48; at += 1; zeros -= 1; } }
+    while (index < count) { if (index == point && index > 0) { output.values[at] = 46; at += 1; } output.values[at] = digit(value.coefficient,count,index); at += 1; index += 1; }
+    let zeros: i32 = value.exponent; while (zeros > 0) { output.values[at] = 48; at += 1; zeros -= 1; }
+}
+fn format_bits_len(bits: u64, cfg: Config, scratch: core::slice::View<u32>, work: u64) -> core::result::Result<i32,Error> {
+    let converted: core::result::Result<Decimal,Error> = prepare(bits,cfg,scratch,work); if (core::result::is_err(converted)) { return core::result::Err(core::result::unwrap_err(converted)); } return core::result::Ok(length(core::result::unwrap(converted)));
+}
+fn format_bits_into(bits: u64, cfg: Config, output: core::slice::View<u8>, scratch: core::slice::View<u32>, work: u64) -> core::result::Result<i32,Error> {
+    // Conversion and all fallible checks precede the first output write.
+    if (!valid(output)) { return core::result::Err(Error::Bounds); } let converted: core::result::Result<Decimal,Error> = prepare(bits,cfg,scratch,work); if (core::result::is_err(converted)) { return core::result::Err(core::result::unwrap_err(converted)); }
+    let value: Decimal = core::result::unwrap(converted); let size: i32 = length(value); if (output.length < size) { return core::result::Err(Error::Capacity(size)); } render(value,output); return core::result::Ok(size);
+}
+pub fn format_f32_len(value: f32, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error> { return format_bits_len(core::f32::to_bits(value) as u64,config(true),scratch,max_work); }
+pub fn format_f64_len(value: f64, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error> { return format_bits_len(core::f64::to_bits(value),config(false),scratch,max_work); }
+pub fn format_f32_into(value: f32, output: core::slice::View<u8>, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error> { return format_bits_into(core::f32::to_bits(value) as u64,config(true),output,scratch,max_work); }
+pub fn format_f64_into(value: f64, output: core::slice::View<u8>, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error> { return format_bits_into(core::f64::to_bits(value),config(false),output,scratch,max_work); }

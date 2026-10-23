@@ -1,0 +1,204 @@
+// Validate stdin JSON against a bounded schema read from a raw-byte file path.
+// Quiet success. Exit 1: schema violation; 2: arguments/input/schema/limits;
+// 3: host I/O; 4: allocation. Every failure attempts a stderr diagnostic.
+module app::main;
+import alloc::io;
+import alloc::string;
+import alloc::vec;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import core::text;
+import ext::cli;
+import ext::json;
+import ext::schema;
+import std::args;
+import std::file;
+import std::stream;
+
+struct Options { path: core::option::Option<core::path::Path>, schema_bytes: i32, input_bytes: i32, depth: i32, nodes: i32, work: u64, scratch_bytes: i32, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Diagnostic { status: i32, stage: i32, reason: i32, offset: i32, schema_node: i32, instance_node: i32, property_name: bool, keyword: core::option::Option<ext::schema::Keyword>, json: core::option::Option<ext::json::ErrorKind>, schema: core::option::Option<ext::schema::ErrorKind> }
+impl Diagnostic { fn borrow(&self) -> &Diagnostic { return self; } }
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn text(value: str, count: i32) -> core::text::Text {
+    let bytes: core::slice::View<u8> = literal(value,count);
+    return core::text::from_utf8_unchecked(bytes.values,bytes.start,count);
+}
+fn fail(diagnostic: &Diagnostic, status: i32, stage: i32, reason: i32) -> i32 {
+    diagnostic.status = status; diagnostic.stage = stage; diagnostic.reason = reason; return status;
+}
+fn option(options: &Options, item: ext::cli::Occurrence) -> bool {
+    if (item.id == 7) { options.help = true; return true; }
+    let argument: ext::cli::Argument = core::option::unwrap(item.value); let bytes: core::slice::View<u8> = argument.bytes;
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(bytes.values,bytes.start,bytes.len());
+    if (core::result::is_err(parsed)) { return false; } let value: u64 = core::result::unwrap(parsed);
+    if (item.id == 5) { if (value > 1000000000 as u64) { return false; } options.work = value; return true; }
+    if (value > 67108864 as u64) { return false; }
+    if (item.id == 1) { options.schema_bytes = value as i32; }
+    if (item.id == 2) { options.input_bytes = value as i32; }
+    if (item.id == 3) { if (value > 128 as u64) { return false; } options.depth = value as i32; }
+    if (item.id == 4) { if (value > 1000000 as u64) { return false; } options.nodes = value as i32; }
+    if (item.id == 6) { options.scratch_bytes = value as i32; } return true;
+}
+fn operand(options: &Options, argument: ext::cli::Argument) -> bool {
+    if (core::option::is_some(options.path)) { return false; }
+    let checked: core::result::Result<core::path::Path,core::path::Error> = core::path::from_view(argument.bytes);
+    if (core::result::is_err(checked)) { return false; } options.path = core::option::Some(core::result::unwrap(checked)); return true;
+}
+fn input_error(error: core::io::Error, stage: i32, diagnostic: &Diagnostic) -> i32 {
+    let status: i32 = match (error) { core::io::Error::LimitExceeded -> 2, core::io::Error::AllocationFailed -> 4, _ -> 3 };
+    let reason: i32 = 5; if (status == 2) { reason = 6; } if (status == 4) { reason = 7; }
+    return fail(diagnostic,status,stage,reason);
+}
+fn read_schema(path: core::path::Path, output: &alloc::io::Buffer, diagnostic: &Diagnostic) -> i32 {
+    let opened: core::result::Result<std::file::File,core::io::Error> = std::file::open(path,std::file::OpenMode::Read);
+    if (core::result::is_err(opened)) { return fail(diagnostic,3,1,5); }
+    let file: std::file::File = core::result::unwrap(opened);
+    let copied: core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(file.borrow(),output);
+    let closed: core::result::Result<i32,core::io::Error> = file.close();
+    if (core::result::is_err(copied)) { let failure: core::io::CopyFailure = core::result::unwrap_err(copied); return input_error(failure.cause,1,diagnostic); }
+    if (core::result::is_err(closed)) { return fail(diagnostic,3,1,5); } return 0;
+}
+fn parse(buffer: &alloc::io::Buffer, options: ext::json::Options, stage: i32, diagnostic: &Diagnostic) -> core::result::Result<ext::json::Document,i32> {
+    let decoded: core::result::Result<alloc::string::String,alloc::string::Error> = alloc::string::from_utf8(buffer.as_bytes(),buffer.len());
+    if (core::result::is_err(decoded)) {
+        let error: alloc::string::Error = core::result::unwrap_err(decoded);
+        let status: i32 = match (error) { alloc::string::Error::AllocationFailed -> 4, _ -> 2 };
+        diagnostic.offset = match (error) { alloc::string::Error::InvalidUtf8(index) -> index, _ -> -1 };
+        let reason: i32 = 1; if (status == 4) { reason = 7; }
+        fail(diagnostic,status,stage,reason); return core::result::Err(status);
+    }
+    let source: alloc::string::String = core::result::unwrap(decoded);
+    let parsed: core::result::Result<ext::json::Document,ext::json::Error> = ext::json::parse(source,options); source.destroy();
+    if (core::result::is_err(parsed)) {
+        let error: ext::json::Error = core::result::unwrap_err(parsed); diagnostic.offset = error.offset; diagnostic.json = core::option::Some(error.kind);
+        let status: i32 = match (error.kind) { ext::json::ErrorKind::AllocationFailed -> 4, _ -> 2 };
+        let reason: i32 = match (error.kind) { ext::json::ErrorKind::DepthLimit -> 6, ext::json::ErrorKind::NodeLimit -> 6, ext::json::ErrorKind::StringLimit -> 6, ext::json::ErrorKind::NumberLimit -> 6, ext::json::ErrorKind::OutputLimit -> 6, _ -> 2 };
+        if (status == 4) { reason = 7; }
+        fail(diagnostic,status,stage,reason); return core::result::Err(status);
+    }
+    return core::result::Ok(core::result::unwrap(parsed));
+}
+fn schema_error(error: ext::schema::Error, diagnostic: &Diagnostic) -> i32 {
+    diagnostic.schema = core::option::Some(error.kind); diagnostic.schema_node = error.schema_node; diagnostic.instance_node = error.instance_node;
+    let status: i32 = match (error.kind) { ext::schema::ErrorKind::AllocationFailed -> 4, _ -> 2 };
+    let reason: i32 = match (error.kind) { ext::schema::ErrorKind::SchemaNodeLimit -> 6, ext::schema::ErrorKind::DepthLimit -> 6, ext::schema::ErrorKind::WorkLimit -> 6, ext::schema::ErrorKind::ScratchTooSmall -> 6, ext::schema::ErrorKind::CapacityOverflow -> 6, _ -> 3 };
+    if (status == 4) { reason = 7; }
+    return fail(diagnostic,status,3,reason);
+}
+fn instance(schema: &ext::schema::Schema, scratch: core::slice::View<u8>, options: Options, json: ext::json::Options, diagnostic: &Diagnostic) -> i32 {
+    let buffer: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(options.input_bytes));
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let copied: core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(source.borrow(),buffer.borrow());
+    if (core::result::is_err(copied)) { let failure: core::io::CopyFailure = core::result::unwrap_err(copied); buffer.destroy(); return input_error(failure.cause,2,diagnostic); }
+    let parsed: core::result::Result<ext::json::Document,i32> = parse(buffer.borrow(),json,2,diagnostic); buffer.destroy();
+    if (core::result::is_err(parsed)) { return core::result::unwrap_err(parsed); }
+    let document: ext::json::Document = core::result::unwrap(parsed);
+    let checked: core::result::Result<ext::schema::Report,ext::schema::Error> = schema.validate(document.borrow(),scratch);
+    document.destroy();
+    if (core::result::is_err(checked)) { return schema_error(core::result::unwrap_err(checked),diagnostic); }
+    let report: ext::schema::Report = core::result::unwrap(checked);
+    if (report.valid) { return 0; }
+    let issue: ext::schema::Issue = core::option::unwrap(report.issue);
+    diagnostic.keyword = core::option::Some(issue.keyword); diagnostic.schema_node = issue.schema_node; diagnostic.instance_node = issue.instance_node;
+    diagnostic.property_name = issue.property_name;
+    return fail(diagnostic,1,3,4);
+}
+fn check(options: Options, diagnostic: &Diagnostic) -> i32 {
+    let json: ext::json::Options = ext::json::default_options(); json.reject_duplicate_keys = true;
+    json.max_depth = options.depth; json.max_nodes = options.nodes; json.max_string_bytes = 67108864; json.max_number_bytes = 1048576;
+    let buffer: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(options.schema_bytes));
+    let received: i32 = read_schema(core::option::unwrap(options.path),buffer.borrow(),diagnostic);
+    if (received != 0) { buffer.destroy(); return received; }
+    let parsed: core::result::Result<ext::json::Document,i32> = parse(buffer.borrow(),json,1,diagnostic); buffer.destroy();
+    if (core::result::is_err(parsed)) { return core::result::unwrap_err(parsed); }
+    let document: ext::json::Document = core::result::unwrap(parsed);
+    let limits: ext::schema::Options = ext::schema::default_options();
+    limits.max_schema_nodes = options.nodes; limits.max_schema_depth = options.depth; limits.max_validation_depth = options.depth; limits.max_work = options.work;
+    let compiled: core::result::Result<ext::schema::Schema,ext::schema::Error> = ext::schema::compile(document.borrow(),limits);
+    if (core::result::is_err(compiled)) { document.destroy(); return schema_error(core::result::unwrap_err(compiled),diagnostic); }
+    let schema: ext::schema::Schema = core::result::unwrap(compiled);
+    if (schema.scratch_len() > options.scratch_bytes) { schema.destroy(); document.destroy(); return fail(diagnostic,2,3,6); }
+    let allocated: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity<u8>(schema.scratch_len());
+    if (core::result::is_err(allocated)) { schema.destroy(); document.destroy(); return fail(diagnostic,4,3,7); }
+    let scratch: alloc::vec::Vec<u8> = core::result::unwrap(allocated); let index: i32 = 0;
+    while (index < schema.scratch_len()) { core::result::unwrap(scratch.try_push(0)); index += 1; }
+    let status: i32 = instance(schema.borrow(),scratch.as_view(),options,json,diagnostic);
+    scratch.destroy(); schema.destroy(); document.destroy(); return status;
+}
+fn process(arguments: std::args::Arguments, diagnostic: &Diagnostic) -> i32 {
+    let specs: [ext::cli::Spec;7] = [
+        ext::cli::Spec { id: 1, long: literal("max-schema-bytes",16), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 2, long: literal("max-input-bytes",15), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 3, long: literal("max-depth",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 4, long: literal("max-nodes",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 5, long: literal("max-work",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: literal("max-scratch-bytes",17), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 7, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,7));
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),schema,ext::cli::Ordering::Intermixed));
+    let options: Options = Options { path: core::option::None(), schema_bytes: 1048576, input_bytes: 16777216, depth: 128, nodes: 100000, work: 10000000, scratch_bytes: 8388608, help: false };
+    while (true) {
+        let event: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next();
+        if (core::result::is_err(event)) { return fail(diagnostic,2,0,0); }
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(event); if (core::option::is_none(next)) { break; }
+        let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> option(options.borrow(),item), ext::cli::Event::Operand(item) -> operand(options.borrow(),item) };
+        if (!valid) { return fail(diagnostic,2,0,0); }
+    }
+    if (options.help) {
+        let usage: core::slice::View<u8> = literal("Usage: json-check [--max-schema-bytes N] [--max-input-bytes N] [--max-depth N] [--max-nodes N] [--max-work N] [--max-scratch-bytes N] [--] SCHEMA_FILE\n",151);
+        let sink: std::stream::Descriptor = std::stream::stdout();
+        if (core::result::is_err(core::io::write_all(sink.borrow(),usage.values,usage.start,usage.len()))) { return fail(diagnostic,3,0,5); } return 0;
+    }
+    if (core::option::is_none(options.path)) { return fail(diagnostic,2,0,0); } return check(options,diagnostic);
+}
+fn write_diagnostic(diagnostic: Diagnostic) -> bool {
+    let storage: [i32;64] = [0;64]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),256);
+    let format: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,256));
+    format.write_text(text("json-check: ",12));
+    if (diagnostic.reason == 0) { format.write_text(text("invalid-arguments",17)); }
+    if (diagnostic.reason == 1) { format.write_text(text("invalid-utf8",12)); }
+    if (diagnostic.reason == 2) { format.write_text(text("invalid-json",12)); }
+    if (diagnostic.reason == 3) { format.write_text(text("invalid-schema",14)); }
+    if (diagnostic.reason == 4) { format.write_text(text("schema-violation",16)); }
+    if (diagnostic.reason == 5) { format.write_text(text("io-failure",10)); }
+    if (diagnostic.reason == 6) { format.write_text(text("resource-limit",14)); }
+    if (diagnostic.reason == 7) { format.write_text(text("allocation-failure",18)); }
+    format.write_text(text(" stage=",7));
+    if (diagnostic.stage == 0) { format.write_text(text("arguments",9)); }
+    if (diagnostic.stage == 1) { format.write_text(text("schema",6)); }
+    if (diagnostic.stage == 2) { format.write_text(text("instance",8)); }
+    if (diagnostic.stage == 3) { format.write_text(text("validation",10)); }
+    if (core::option::is_some(diagnostic.json)) {
+        let duplicate: bool = match (core::option::unwrap(diagnostic.json)) { ext::json::ErrorKind::DuplicateKey -> true, _ -> false };
+        if (duplicate) { format.write_text(text(" duplicate-key",14)); }
+    }
+    if (core::option::is_some(diagnostic.schema)) { format.write_text(text(" kind=",6)); format.write_text(ext::schema::error_kind_text(core::option::unwrap(diagnostic.schema))); }
+    if (diagnostic.offset >= 0) { format.write_text(text(" byte=",6)); format.write_signed(diagnostic.offset as i64,core::fmt::decimal()); }
+    if (core::option::is_some(diagnostic.keyword)) { format.write_text(text(" keyword=",9)); format.write_text(ext::schema::keyword_text(core::option::unwrap(diagnostic.keyword))); }
+    if (diagnostic.schema_node >= 0) { format.write_text(text(" schema-node=",13)); format.write_signed(diagnostic.schema_node as i64,core::fmt::decimal()); }
+    if (diagnostic.instance_node >= 0) { format.write_text(text(" instance-node=",15)); format.write_signed(diagnostic.instance_node as i64,core::fmt::decimal()); }
+    if (diagnostic.property_name) { format.write_text(text(" property-name=true",19)); }
+    format.write_text(text("\n",1));
+    let size: core::result::Result<i32,core::fmt::Error> = format.finish(); if (core::result::is_err(size)) { return false; }
+    let sink: std::stream::Descriptor = std::stream::stderr(); return core::result::is_ok(core::io::write_all(sink.borrow(),bytes,0,core::result::unwrap(size)));
+}
+fn main() -> i32 {
+    let diagnostic: Diagnostic = Diagnostic { status: 0, stage: 0, reason: 0, offset: -1, schema_node: -1, instance_node: -1, property_name: false, keyword: core::option::None(), json: core::option::None(), schema: core::option::None() };
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,32,8192);
+    let status: i32 = 0;
+    if (core::result::is_err(captured)) {
+        status = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> fail(diagnostic.borrow(),4,0,7), std::args::Error::HostRead(index) -> fail(diagnostic.borrow(),3,0,5), _ -> fail(diagnostic.borrow(),2,0,0) };
+    } else { let arguments: std::args::Arguments = core::result::unwrap(captured); status = process(arguments,diagnostic.borrow()); arguments.destroy(); }
+    if (status != 0 && !write_diagnostic(diagnostic)) { return 3; } return status;
+}

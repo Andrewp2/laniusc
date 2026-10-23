@@ -1,0 +1,41 @@
+module app::main;
+import core::f32;
+import core::f64;
+import core::float_decimal;
+import core::mem;
+import core::result;
+import core::slice;
+fn bytes(text: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn same(output: core::slice::View<u8>, length: i32, text: str) {
+    let expected: core::slice::View<u8> = bytes(text,length); let i: i32 = 0; while (i < length) { assert(output.values[output.start+i] == expected.values[expected.start+i]); i += 1; }
+}
+fn kind(error: core::float_decimal::Error) -> i32 { let code: i32 = match (error) { core::float_decimal::Error::Bounds -> 1, core::float_decimal::Error::ScratchTooSmall(count) -> 2, core::float_decimal::Error::InputLimit -> 3, core::float_decimal::Error::DigitLimit -> 4, core::float_decimal::Error::WorkLimit -> 5, core::float_decimal::Error::Invalid(at) -> 100+at, core::float_decimal::Error::Capacity(count) -> 1000+count }; return code; }
+fn main() -> i32 {
+    assert(core::float_decimal::SCRATCH_LEN == 864 && core::float_decimal::scratch_len() == 864);
+    let storage: [u32;868] = [777;868]; let scratch: core::slice::View<u32> = core::result::unwrap(core::slice::view_range(storage,2,864));
+    let target: [u8;64] = [211;64]; let output: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(target,2,60)); let limits: core::float_decimal::Limits = core::float_decimal::default_limits();
+    assert(core::f64::to_bits(core::result::unwrap(core::float_decimal::parse_f64(bytes("0.1",3),scratch,limits))) == 4591870180066957722);
+    assert(core::f32::to_bits(core::result::unwrap(core::float_decimal::parse_f32(bytes("0.1",3),scratch,limits))) == 1036831949);
+    let selected_bytes: [u8;5] = [99,48,46,49,88]; let selected: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(selected_bytes,1,3));
+    assert(core::f64::to_bits(core::result::unwrap(core::float_decimal::parse_f64(selected,scratch,limits))) == 4591870180066957722);
+    let value: f64 = core::f64::from_bits(4591870180066957722); assert(core::result::unwrap(core::float_decimal::format_f64_len(value,scratch,1000000)) == 3);
+    assert(core::result::unwrap(core::float_decimal::format_f64_into(value,output,scratch,1000000)) == 3); same(output,3,"0.1");
+    assert(core::result::unwrap(core::float_decimal::format_f64_into(core::f64::from_bits(1),output,scratch,1000000)) == 6); same(output,6,"5e-324");
+    assert(core::result::unwrap(core::float_decimal::format_f32_into(core::f32::from_bits(1),output,scratch,1000000)) == 5); same(output,5,"1e-45");
+    let exact: core::slice::View<u8> = core::result::unwrap(output.subview(0,3)); assert(core::result::unwrap(core::float_decimal::format_f64_into(value,exact,scratch,1000000)) == 3);
+    output.fill(211); let short: core::slice::View<u8> = core::result::unwrap(output.subview(0,2)); assert(kind(core::result::unwrap_err(core::float_decimal::format_f64_into(value,short,scratch,1000000))) == 1003);
+    assert(kind(core::result::unwrap_err(core::float_decimal::format_f64_into(value,output,scratch,0))) == 5);
+    assert(kind(core::result::unwrap_err(core::float_decimal::format_f64_into(core::f64::from_bits(1),output,scratch,20))) == 5);
+    let too_small: core::slice::View<u32> = core::result::unwrap(scratch.subview(0,863)); assert(kind(core::result::unwrap_err(core::float_decimal::format_f64_into(value,output,too_small,1000000))) == 2);
+    let bad: core::slice::View<u8> = output; bad.start = -1; assert(kind(core::result::unwrap_err(core::float_decimal::format_f64_into(value,bad,scratch,1000000))) == 1);
+    limits.max_digits = 0; assert(kind(core::result::unwrap_err(core::float_decimal::parse_f64(bytes("1",1),scratch,limits))) == 4); limits.max_digits = 768;
+    limits.max_input = 0; assert(kind(core::result::unwrap_err(core::float_decimal::parse_f64(bytes("1",1),scratch,limits))) == 3); limits.max_input = 1024;
+    limits.max_work = 1; assert(kind(core::result::unwrap_err(core::float_decimal::parse_f64(bytes("1",1),scratch,limits))) == 5); limits.max_work = 1000000;
+    let bad_input: core::slice::View<u8> = selected; bad_input.start = -1; assert(kind(core::result::unwrap_err(core::float_decimal::parse_f64(bad_input,scratch,limits))) == 1);
+    let bad_scratch: core::slice::View<u32> = scratch; bad_scratch.start = 2147483647; assert(kind(core::result::unwrap_err(core::float_decimal::parse_f32(selected,bad_scratch,limits))) == 1);
+    limits.max_digits = 769; assert(kind(core::result::unwrap_err(core::float_decimal::parse_f64(selected,scratch,limits))) == 1); limits.max_digits = 768;
+    assert(kind(core::result::unwrap_err(core::float_decimal::parse_f64(bytes("1e+",3),scratch,limits))) == 103);
+    assert(kind(core::result::unwrap_err(core::float_decimal::parse_f64(bytes("1 0",3),scratch,limits))) == 101);
+    let i: i32 = 0; while (i < 64) { assert(target[i] == 211); i += 1; } assert(storage[0] == 777 && storage[1] == 777 && storage[866] == 777 && storage[867] == 777);
+    return 0;
+}

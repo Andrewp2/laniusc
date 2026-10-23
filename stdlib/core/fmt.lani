@@ -1,11 +1,13 @@
 // Caller-backed formatting. See docs/stdlib-formatting.md for contracts.
 module core::fmt;
+import core::float_decimal;
 import core::option;
 import core::result;
+import core::slice;
 import core::text;
 import core::utf8;
 
-pub enum Error { Bounds, BufferTooSmall(i32), SizeOverflow, InvalidRadix, InvalidWidth, InvalidScalar }
+pub enum Error { Bounds, BufferTooSmall(i32), SizeOverflow, InvalidRadix, InvalidWidth, InvalidScalar, Float(core::float_decimal::Error) }
 pub struct Integer { radix: u32, uppercase: bool, min_digits: i32 }
 pub struct Formatter { data: [u8], start: i32, capacity: i32, length: i32, measuring: bool, failure: core::option::Option<Error> }
 
@@ -117,6 +119,31 @@ pub impl Formatter {
     }
     pub fn write_unsigned(&self, value: u64, options: Integer) -> core::result::Result<i32, Error> { return self.integer(value, false, options); }
     pub fn write_signed(&self, value: i64, options: Integer) -> core::result::Result<i32, Error> { return self.integer(magnitude(value), value < 0, options); }
+    // Shortest round-trip decimal. Conversion uses bounded local scratch and
+    // stages a complete append before reserve(), including when measuring.
+    pub fn write_f32(&self, value: f32) -> core::result::Result<i32, Error> {
+        if (core::option::is_some(self.failure)) { return self.finish(); }
+        // Array repeat counts currently require literals; see the named-count
+        // reproduction in docs/library-dependencies.md. Conversion checks the
+        // supplied extent against its own scratch requirement.
+        let storage: [u32; 864] = [0; 864];
+        let scratch: core::slice::View<u32> = core::result::unwrap(core::slice::view(storage, 864));
+        let bytes: [u8; 32] = [0; 32];
+        let destination: core::slice::View<u8> = core::result::unwrap(core::slice::view(bytes, 32));
+        let converted: core::result::Result<i32, core::float_decimal::Error> = core::float_decimal::format_f32_into(value, destination, scratch, core::float_decimal::default_format_work());
+        if (core::result::is_err(converted)) { return self.fail(Error::Float(core::result::unwrap_err(converted))); }
+        return self.write_text(core::text::from_utf8_unchecked(bytes, 0, core::result::unwrap(converted)));
+    }
+    pub fn write_f64(&self, value: f64) -> core::result::Result<i32, Error> {
+        if (core::option::is_some(self.failure)) { return self.finish(); }
+        let storage: [u32; 864] = [0; 864];
+        let scratch: core::slice::View<u32> = core::result::unwrap(core::slice::view(storage, 864));
+        let bytes: [u8; 32] = [0; 32];
+        let destination: core::slice::View<u8> = core::result::unwrap(core::slice::view(bytes, 32));
+        let converted: core::result::Result<i32, core::float_decimal::Error> = core::float_decimal::format_f64_into(value, destination, scratch, core::float_decimal::default_format_work());
+        if (core::result::is_err(converted)) { return self.fail(Error::Float(core::result::unwrap_err(converted))); }
+        return self.write_text(core::text::from_utf8_unchecked(bytes, 0, core::result::unwrap(converted)));
+    }
     pub fn write_bool(&self, value: bool) -> core::result::Result<i32, Error> {
         let yes: [u8; 4] = [116,114,117,101]; let no: [u8; 5] = [102,97,108,115,101];
         if (value) { return self.write_text(core::text::from_utf8_unchecked(yes, 0, 4)); }
@@ -132,6 +159,12 @@ pub impl Display<bool> for bool {
 }
 pub impl Display<char> for char {
     pub fn format(value: char, output: &Formatter) -> core::result::Result<i32, Error> { return output.write_scalar(value as u32); }
+}
+pub impl Display<f32> for f32 {
+    pub fn format(value: f32, output: &Formatter) -> core::result::Result<i32, Error> { return output.write_f32(value); }
+}
+pub impl Display<f64> for f64 {
+    pub fn format(value: f64, output: &Formatter) -> core::result::Result<i32, Error> { return output.write_f64(value); }
 }
 pub impl Display<i8> for i8 {
     pub fn format(value: i8, output: &Formatter) -> core::result::Result<i32, Error> { return output.write_signed(value as i64, decimal()); }

@@ -1,6 +1,6 @@
 # Caller-backed formatting
 
-`core::fmt` composes UTF-8 text, booleans, Unicode scalars, integers and
+`core::fmt` composes UTF-8 text, booleans, Unicode scalars, integers, floats and
 user-defined values into a caller's buffer. It can also measure the same output
 without storing bytes. It makes no allocations and performs no I/O.
 
@@ -29,6 +29,7 @@ Do not change its internal fields directly.
 | `write_bool(bool)` | Append lowercase `true` or `false` |
 | `write_signed(i64, Integer)` | Append sign and magnitude using selected radix/padding |
 | `write_unsigned(u64, Integer)` | Append magnitude using selected radix/padding |
+| `write_f32(f32)`, `write_f64(f64)` | Append shortest round-trip decimal using [float conversion](stdlib-float-decimal.md) |
 | `len()` | Bytes successfully appended/measured before the first error |
 | `finish()` | Return the current total length or the first error |
 
@@ -40,7 +41,7 @@ append and finish returns it without writing. Inspect each result or check finis
 after a sequence; ignoring both discards error information.
 
 The errors are Bounds, BufferTooSmall(required_total), SizeOverflow, InvalidRadix,
-InvalidWidth and InvalidScalar. BufferTooSmall identifies the total required at
+InvalidWidth, InvalidScalar and Float(float_decimal::Error). BufferTooSmall identifies the total required at
 the first failed append; it does not predict later appends. SizeOverflow means
 the length cannot fit i32. A measured result can therefore be at most i32::MAX.
 Invalid arguments to a buffer constructor do not construct a failed formatter.
@@ -75,7 +76,7 @@ code points and values above U+10FFFF.
 `Display<T>` defines `format(value: T, output: &Formatter) -> Result<i32, Error>`.
 Implementations append their representation and return the formatter's finish
 result. `display(value, output)` dispatches through that trait. Implementations
-are supplied for all ten integer widths, bool, char and borrowed Text.
+are supplied for all ten integer widths, f32, f64, bool, char and borrowed Text.
 
 ```lanius
 pub impl core::fmt::Display<Point> for Point {
@@ -118,7 +119,8 @@ coverage includes:
   rejected by the checked Text construction boundary.
 - Invalid scalars, representable measured lengths up to i32::MAX and overflow.
 
-On 2026-10-23 all seven formatting/logging groups passed in 13.93 seconds.
+On 2026-10-23 all seven formatting/logging groups passed in 14.97 seconds
+with float support integrated.
 The four existing checksum application groups in the CLI and configuration
 targets also passed. To run the focused suite from the repository root:
 
@@ -126,7 +128,32 @@ targets also passed. To run the focused suite from the repository root:
 timeout --kill-after=2s 100s env CARGO_TARGET_DIR="$PWD/target/stdlib-build" CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=90000 cargo test --locked --test format_log_execution -- --nocapture
 ```
 
-Floating-point formatting, format-string syntax, alignment/precision policies,
-owned String conveniences and general user-type streaming adapters remain future
-work. No declarations or silent implementations of these operations are included.
+## Floating-point composition
+
+Float appends stage a complete result in 32 local byte elements, then reserve
+and append it using the same sticky error contract as other methods. The
+converter uses 864 local `u32` scratch elements and its default logical work
+budget of 1,000,000. On the verified native layout those scratch elements occupy
+6,912 bytes; the current compiler stores native `u32` array elements in word
+slots. The repeated array size is a literal because named repeat counts remain
+a [compiler limitation](library-dependencies.md).
+
+Finite output uses the shortest significant decimal that rounds to the same
+binary value. The shorter of fixed and scientific spelling is used, with fixed
+spelling winning ties. Zero retains its sign; nonfinite spellings are `NaN`,
+`inf` and `-inf`. These spellings are ordinary float text, **not JSON number
+tokens**. Measuring runs the same bounded conversion; it does not approximate
+the output length. An internal conversion error is returned and latched as
+`Float(detail)` before destination bytes or formatter length change.
+
+`tests/stdlib_float_format_execution.rs` adds five native groups: both widths
+through Display and custom records, measured/exact/short capacities, native and
+packed destinations, sticky append failures, streaming parsing/rounding with
+primitive references, line/resource errors and injected I/O failures. All five
+passed in 6.34 seconds. Heap allocation is denied in both the formatter and the
+[float normalization program](stdlib-float-normalize.md).
+
+Format-string syntax, alignment/precision policies, owned String conveniences
+and general user-type streaming adapters remain future work. No declarations or
+silent implementations of these operations are included.
 The generic combined logging facade has a separate [compiler reproduction](library-dependencies.md).
