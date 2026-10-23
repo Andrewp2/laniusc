@@ -9,7 +9,7 @@ use std::{
     time::{Instant, SystemTime},
 };
 
-use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
+use laniusc_compiler::compiler::{EntrySourceRoots, compile_entry_to_x86_64_with_source_roots};
 
 fn main() {
     if let Err(error) = pollster::block_on(run()) {
@@ -20,14 +20,18 @@ fn main() {
 
 async fn run() -> Result<(), String> {
     let args: Vec<String> = env::args().skip(1).collect();
-    if args.len() != 5 {
+    if !(5..=6).contains(&args.len()) {
         return Err(
-            "usage: stdlib_gpu_perf ENTRY STDLIB_ROOT EXPECTED_STDOUT_FILE_OR_DASH WARMUPS ITERS"
+            "usage: stdlib_gpu_perf ENTRY STDLIB_ROOT EXPECTED_STDOUT_FILE_OR_DASH WARMUPS ITERS [SOURCE_ROOT]"
                 .into(),
         );
     }
     let mut entry = PathBuf::from(&args[0]);
     let root = PathBuf::from(&args[1]);
+    let roots = EntrySourceRoots {
+        stdlib_root: Some(root),
+        user_roots: args.get(5).map(PathBuf::from).into_iter().collect(),
+    };
     let expected = if args[2] == "-" {
         Vec::new()
     } else {
@@ -62,7 +66,7 @@ async fn run() -> Result<(), String> {
                 .map_err(|error| error.to_string())?;
         }
         let start = Instant::now();
-        output = compile_entry_to_x86_64_with_stdlib(&entry, &root)
+        output = compile_entry_to_x86_64_with_source_roots(&entry, &roots)
             .await
             .map_err(|error| format!("{}: {error}", entry.display()))?;
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
@@ -81,8 +85,9 @@ async fn run() -> Result<(), String> {
     };
     let mean = samples.iter().sum::<f64>() / samples.len() as f64;
     println!(
-        "entry={} rebuild_entry={rebuild_entry} warmups={warmups} iters={iters} output_bytes={} min_ms={:.3} median_ms={median:.3} avg_ms={mean:.3} max_ms={:.3} output_verified=true",
+        "entry={} source_roots={} rebuild_entry={rebuild_entry} warmups={warmups} iters={iters} output_bytes={} min_ms={:.3} median_ms={median:.3} avg_ms={mean:.3} max_ms={:.3} output_verified=true",
         args[0],
+        roots.user_roots.len(),
         output.len(),
         samples[0],
         samples[samples.len() - 1]

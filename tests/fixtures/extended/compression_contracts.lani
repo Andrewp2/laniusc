@@ -1,0 +1,54 @@
+module app::main;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::slice;
+import ext::compression;
+
+fn code(error: ext::compression::Error) -> i32 {
+    let value: i32 = match (error) { ext::compression::Error::Bounds -> 1, ext::compression::Error::InputLimit -> 2, ext::compression::Error::OutputLimit -> 3, ext::compression::Error::MemberLimit -> 4, _ -> 9 }; return value;
+}
+fn main() -> i32 {
+    let native: [u8;11] = [255,0,1,2,3,255,97,97,97,97,255];
+    let input: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(native,1,9));
+    let limits: ext::compression::Limits = ext::compression::Limits { max_input: 1024, max_output: 9, max_members: 1 };
+    let mode: i32 = 0;
+    while (mode < 3) {
+        let format: ext::compression::Format = ext::compression::Format::RawDeflate;
+        if (mode == 1) { format = ext::compression::Format::Zlib; } if (mode == 2) { format = ext::compression::Format::Gzip; }
+        let encoded: alloc::vec::Vec<u8> = core::result::unwrap(ext::compression::encode(input,format,1024));
+        let selected: core::slice::View<u8> = encoded.as_view();
+        let decoded: alloc::vec::Vec<u8> = core::result::unwrap(ext::compression::decode(selected,format,limits));
+        assert(decoded.len() == 9);
+        let index: i32 = 0; while (index < 9) { assert(decoded.at(index) == core::option::unwrap(input.get(index))); index += 1; }
+        // Returned ownership is independent of caller storage.
+        native[1] = 42; assert(decoded.at(0) == 0); native[1] = 0;
+        let native_encoded: [u8;200] = [255;200]; let cursor: i32 = 0;
+        while (cursor < encoded.len()) { native_encoded[7+cursor] = encoded.at(cursor); cursor += 1; }
+        let offset: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(native_encoded,7,encoded.len()));
+        let offset_decoded: alloc::vec::Vec<u8> = core::result::unwrap(ext::compression::decode(offset,format,limits));
+        cursor = 0; while (cursor < 9) { assert(offset_decoded.at(cursor) == decoded.at(cursor)); cursor += 1; }
+        offset_decoded.destroy();
+        let invalid: core::slice::View<u8> = selected; invalid.start = -1;
+        assert(code(core::result::unwrap_err(ext::compression::decode(invalid,format,limits))) == 1);
+        invalid = input; invalid.length = -1;
+        assert(code(core::result::unwrap_err(ext::compression::encode(invalid,format,1024))) == 1);
+        invalid = input; invalid.start = 2147483647; invalid.length = 1;
+        assert(code(core::result::unwrap_err(ext::compression::encode(invalid,format,1024))) == 1);
+        let changed: ext::compression::Limits = limits; changed.max_input = selected.length-1;
+        assert(code(core::result::unwrap_err(ext::compression::decode(selected,format,changed))) == 2);
+        changed = limits; changed.max_output = 8;
+        assert(code(core::result::unwrap_err(ext::compression::decode(selected,format,changed))) == 3);
+        changed = limits; changed.max_members = 0;
+        assert(code(core::result::unwrap_err(ext::compression::decode(selected,format,changed))) == 4);
+        changed = limits; changed.max_input = -1;
+        assert(code(core::result::unwrap_err(ext::compression::decode(selected,format,changed))) == 1);
+        changed = limits; changed.max_output = -1;
+        assert(code(core::result::unwrap_err(ext::compression::decode(selected,format,changed))) == 1);
+        changed = limits; changed.max_members = -1;
+        assert(code(core::result::unwrap_err(ext::compression::decode(selected,format,changed))) == 1);
+        assert(code(core::result::unwrap_err(ext::compression::encode(input,format,-1))) == 1);
+        decoded.destroy(); encoded.destroy(); mode += 1;
+    }
+    return 0;
+}

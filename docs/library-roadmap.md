@@ -75,6 +75,16 @@ spelling; decoding is an explicit later operation.
 RFC dot-segment removal, execute with a [command-line resolver](extended-uri-resolve-program.md).
 Scheme-specific URL handling and network protocols remain separate work.
 
+[Raw DEFLATE encoding](extended-deflate.md), [raw decoding](extended-inflate.md)
+and [owned zlib/gzip containers](extended-compression.md) execute with a
+[binary stdin/stdout application](extended-compress-bytes.md). The decoder
+accepts stored, fixed and dynamic trees; the fast encoder selects fixed Huffman
+LZ77 or smaller stored blocks. Gzip headers, concatenation and checksums are
+validated. [Adler-32](stdlib-adler32.md) provides the portable zlib checksum.
+Preset dictionaries, resumable codec state and archives remain separate work.
+Native and compiler performance is recorded in
+[compression performance](extended-compression-performance.md).
+
 For external formats and algorithms, use their primary specifications and
 published conformance vectors. Choose exact versions and formats when starting
 each family. Host and third-party integrations need explicit dependency and

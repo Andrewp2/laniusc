@@ -1,0 +1,31 @@
+module app::main;
+import alloc::io;
+import core::adler32;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import std::args;
+import std::io;
+import std::io_decimal;
+import std::stream;
+fn main() -> i32 {
+    let arguments: std::args::Arguments = core::result::unwrap(std::args::snapshot(1,2,64)); assert(arguments.len() == 2);
+    let seed: core::slice::View<u8> = core::option::unwrap(arguments.get(0));
+    let first: core::text::Text = core::text::from_utf8_unchecked(seed.values,seed.start,seed.len()); let state: u32 = core::result::unwrap(first.parse_u32());
+    let split_bytes: core::slice::View<u8> = core::option::unwrap(arguments.get(1));
+    let second: core::text::Text = core::text::from_utf8_unchecked(split_bytes.values,split_bytes.start,split_bytes.len()); let split: i32 = core::result::unwrap(second.parse_i32()); arguments.destroy();
+    let input: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(4194304)); let source: std::stream::Descriptor = std::stream::stdin();
+    core::result::unwrap(std::stream::copy(source.borrow(),input.borrow()));
+    let bytes: core::slice::View<u8> = core::result::unwrap(core::slice::view(input.as_bytes(),input.len())); assert(split >= 0 && split <= bytes.len());
+    let checksum: u32 = core::result::unwrap(core::adler32::checksum(bytes));
+    let updated: u32 = core::result::unwrap(core::adler32::update(state,bytes));
+    let left: core::slice::View<u8> = core::result::unwrap(bytes.subview(0,split)); let right: core::slice::View<u8> = core::result::unwrap(bytes.subview(split,bytes.len()));
+    let part: u32 = core::result::unwrap(core::adler32::update(state,left)); let streamed: u32 = core::result::unwrap(core::adler32::update(part,right));
+    assert(std::io_decimal::write_u32(1,checksum) > 0); assert(std::io::write_stdout(core::mem::string_data_ptr(" "),1) == 1);
+    assert(std::io_decimal::write_u32(1,updated) > 0); assert(std::io::write_stdout(core::mem::string_data_ptr(" "),1) == 1);
+    assert(std::io_decimal::write_u32(1,streamed) > 0); assert(std::io::write_stdout(core::mem::string_data_ptr("\n"),1) == 1);
+    input.destroy(); return 0;
+}

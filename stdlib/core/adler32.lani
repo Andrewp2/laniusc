@@ -1,0 +1,31 @@
+// Adler-32 byte checksums from RFC 1950. Initial state is 1; no final XOR.
+// Update/checksum allocate nothing and retain no view. See docs/stdlib-adler32.md.
+module core::adler32;
+import core::result;
+import core::slice;
+
+pub const INITIAL: u32 = 1;
+pub const MODULUS: u32 = 65521;
+pub enum Error { Bounds, InvalidState }
+
+pub fn valid_state(state: u32) -> bool { return (state & 65535) < MODULUS && (state >> 16) < MODULUS; }
+pub fn update_byte(state: u32, value: u8) -> core::result::Result<u32, Error> {
+    if (!valid_state(state)) { return core::result::Err(Error::InvalidState); }
+    let first: u32 = ((state & 65535) + (value as u32)) % MODULUS;
+    let second: u32 = ((state >> 16) + first) % MODULUS;
+    return core::result::Ok((second << 16) | first);
+}
+pub fn update(state: u32, bytes: core::slice::View<u8>) -> core::result::Result<u32, Error> {
+    if (bytes.start < 0 || bytes.length < 0 || bytes.start > 2147483647 - bytes.length) { return core::result::Err(Error::Bounds); }
+    if (!valid_state(state)) { return core::result::Err(Error::InvalidState); }
+    let first: u32 = state & 65535; let second: u32 = state >> 16; let index: i32 = 0;
+    while (index < bytes.len()) {
+        let count: i32 = bytes.len()-index; if (count > 5552) { count = 5552; } let end: i32 = index+count;
+        // With both sums initially below 65521, even 5552 bytes of 255 keep
+        // the unreduced second sum <=4294690200, inside u32. Reduce per block.
+        while (index < end) { first += bytes.values[bytes.start+index] as u32; second += first; index += 1; }
+        first %= MODULUS; second %= MODULUS;
+    }
+    return core::result::Ok((second << 16) | first);
+}
+pub fn checksum(bytes: core::slice::View<u8>) -> core::result::Result<u32, Error> { return update(INITIAL,bytes); }

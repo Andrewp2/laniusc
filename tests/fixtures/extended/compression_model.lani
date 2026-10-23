@@ -1,0 +1,50 @@
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::compression;
+import std::io;
+import std::stream;
+
+fn code(error: ext::compression::Error) -> i32 {
+    let value: i32 = match (error) {
+        ext::compression::Error::Bounds -> 1, ext::compression::Error::InputLimit -> 2,
+        ext::compression::Error::OutputLimit -> 3, ext::compression::Error::MemberLimit -> 4,
+        ext::compression::Error::AllocationFailed -> 5, ext::compression::Error::CapacityOverflow -> 6,
+        ext::compression::Error::Truncated -> 7, ext::compression::Error::Header -> 8,
+        ext::compression::Error::UnsupportedMethod -> 9, ext::compression::Error::UnsupportedWindow -> 10,
+        ext::compression::Error::UnsupportedDictionary -> 11, ext::compression::Error::Checksum -> 12,
+        ext::compression::Error::SizeMismatch -> 13, ext::compression::Error::TrailingData -> 14,
+        ext::compression::Error::Deflate(value) -> 15, ext::compression::Error::Encode(value) -> 16
+    }; return value;
+}
+fn get32(bytes: [u8], start: i32) -> i32 { return ((bytes[start] as u32) | ((bytes[start+1] as u32) << 8) | ((bytes[start+2] as u32) << 16) | ((bytes[start+3] as u32) << 24)) as i32; }
+fn put32(bytes: [u8], start: i32, value: i32) {
+    let word: u32 = value as u32; bytes[start] = (word & 255) as u8; bytes[start+1] = ((word >> 8) & 255) as u8; bytes[start+2] = ((word >> 16) & 255) as u8; bytes[start+3] = ((word >> 24) & 255) as u8;
+}
+fn main() -> i32 {
+    let storage: [i32;65536] = [0;65536]; let pointer: ptr = core::mem::i32_array_data_ptr(storage); let input: [u8] = core::mem::typed_slice_from_raw_parts(pointer,262144);
+    let count: i32 = 0;
+    while (count < 262144) { let got: i32 = std::io::read_stdin(pointer+(count as usize),(262144-count) as usize); assert(got >= 0); if (got == 0) { break; } count += got; }
+    assert(count < 262144);
+    let header_words: [i32;2] = [0;2]; let header_pointer: ptr = core::mem::i32_array_data_ptr(header_words); let header: [u8] = core::mem::typed_slice_from_raw_parts(header_pointer,8);
+    let sink: std::stream::Descriptor = std::stream::stdout(); let position: i32 = 0;
+    while (position < count) {
+        assert(count-position >= 18); let mode: u8 = input[position]; let format: ext::compression::Format = ext::compression::Format::RawDeflate;
+        if (input[position+1] == 1) { format = ext::compression::Format::Zlib; } if (input[position+1] == 2) { format = ext::compression::Format::Gzip; }
+        let limits: ext::compression::Limits = ext::compression::Limits { max_input: get32(input,position+2), max_output: get32(input,position+6), max_members: get32(input,position+10) };
+        let length: i32 = get32(input,position+14); position += 18; assert(length >= 0 && length <= count-position);
+        let source: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(input,position,length));
+        let result: core::result::Result<alloc::vec::Vec<u8>,ext::compression::Error> = core::result::Err(ext::compression::Error::Bounds);
+        if (mode == 1) { result = ext::compression::encode(source,format,limits.max_output); } else { result = ext::compression::decode(source,format,limits); }
+        if (core::result::is_err(result)) { put32(header,0,code(core::result::unwrap_err(result))); put32(header,4,0); assert(std::io::write_stdout(header_pointer,8) == 8); }
+        else {
+            let output: alloc::vec::Vec<u8> = core::result::unwrap(result); put32(header,0,0); put32(header,4,output.len()); assert(std::io::write_stdout(header_pointer,8) == 8);
+            assert(core::result::is_ok(core::io::write_all(sink.borrow(),output.as_slice(),0,output.len()))); output.destroy();
+        }
+        position += length;
+    }
+    return 0;
+}

@@ -1,0 +1,54 @@
+// Test transport: little-endian u32 size followed by that many raw bytes.
+// Respond with an identical frame containing raw RFC 1951 bytes.
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::deflate;
+import std::io;
+import std::process;
+fn read_exact(pointer: ptr, count: i32, allow_end: bool) -> bool {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::read_stdin(pointer+(done as usize),(count-done) as usize);
+        assert(got >= 0);
+        if (got == 0) { assert(allow_end && done == 0); return false; }
+        done += got;
+    }
+    return true;
+}
+fn write_all(pointer: ptr, count: i32) {
+    let done: i32 = 0;
+    while (done < count) { let wrote: i32 = std::io::write_stdout(pointer+(done as usize),(count-done) as usize); assert(wrote > 0); done += wrote; }
+}
+fn main() -> i32 {
+    let encode_only: bool = std::process::argc() == 2;
+    let input_storage: [i32;131073] = [0;131073];
+    let input_ptr: ptr = core::mem::i32_array_data_ptr(input_storage);
+    let input_bytes: [u8] = core::mem::typed_slice_from_raw_parts(input_ptr,524292);
+    let output_storage: [i32;131096] = [0;131096];
+    let output_ptr: ptr = core::mem::i32_array_data_ptr(output_storage);
+    let output_bytes: [u8] = core::mem::typed_slice_from_raw_parts(output_ptr,524384);
+    let table: [i32;32770] = [777;32770];
+    let scratch: core::slice::View<i32> = core::result::unwrap(core::slice::view_range(table,1,32768));
+    let output: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(output_bytes,4,524376));
+    while (read_exact(input_ptr,4,true)) {
+        let count: i32 = (input_bytes[0] as i32)+(input_bytes[1] as i32)*256+(input_bytes[2] as i32)*65536+(input_bytes[3] as i32)*16777216;
+        assert(count >= 0 && count <= 524288); assert(read_exact(input_ptr+4,count,false));
+        let input: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(input_bytes,4,count));
+        let size: i32 = 0;
+        if (encode_only) { size = core::result::unwrap(ext::deflate::encode_into(input,output,scratch)); }
+        else {
+            size = core::result::unwrap(ext::deflate::encoded_len(input,scratch));
+            output_bytes[3] = 199; output_bytes[4+size] = 211;
+            let exact: core::slice::View<u8> = core::result::unwrap(output.subview(0,size));
+            assert(core::result::unwrap(ext::deflate::encode_into(input,exact,scratch)) == size);
+            assert(output_bytes[3] == 199 && output_bytes[4+size] == 211);
+        }
+        assert(size <= count+5*((count+65534)/65535)+5 && table[0] == 777 && table[32769] == 777);
+        output_bytes[0] = (size & 255) as u8; output_bytes[1] = ((size >> 8) & 255) as u8; output_bytes[2] = ((size >> 16) & 255) as u8; output_bytes[3] = (size >> 24) as u8;
+        write_all(output_ptr,size+4);
+    }
+    return 0;
+}
