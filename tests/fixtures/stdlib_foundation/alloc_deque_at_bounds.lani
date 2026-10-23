@@ -1,0 +1,12 @@
+module app::main;
+import alloc::deque;
+import core::result;
+import std::args_checked;
+fn main() -> i32 {
+    let values: alloc::deque::Deque<i32> = alloc::deque::new();
+    let mode: i32 = std::args_checked::argument_count_or(0);
+    if (mode == 1) { return values.at(0); }
+    core::result::unwrap(values.try_push_back(7));
+    if (mode == 2) { return values.at(-1); }
+    return values.at(1);
+}

@@ -2,37 +2,37 @@
 module app::main;
 import core::byte;
 import core::option;
-import std::deque;
+import alloc::deque;
+import core::result;
 import std::io_byte;
 
 fn main() -> i32 {
-    let recent: std::deque::Deque<u8> = std::deque::new();
+    let recent: alloc::deque::Deque<u8> = alloc::deque::new();
     let next: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
     while (next >= 0) {
-        let before: i32 = std::deque::len(recent);
         let next_byte: u8 = next as u8;
-        recent = std::deque::try_push_back(recent, next_byte);
-        if (std::deque::len(recent) != before + 1) {
-            std::deque::destroy(recent);
+        let added: core::result::Result<i32, alloc::deque::Error> = recent.try_push_back(next_byte);
+        if (core::result::is_err(added)) {
+            recent.destroy();
             return 2;
         }
-        if (std::deque::len(recent) > 3) {
-            recent = std::deque::try_pop_front(recent);
+        if (recent.len() > 3) {
+            recent.pop_front();
         }
         next = std::io_byte::read_stdin_byte_or(-1, -2);
     }
     if (next != -1) {
-        std::deque::destroy(recent);
+        recent.destroy();
         return 3;
     }
     let checksum: u8 = 0;
     let index: i32 = 0;
-    while (index < std::deque::len(recent)) {
+    while (index < recent.len()) {
         checksum = core::byte::wrapping_add(
-            checksum, std::deque::at_or(recent, index, 0));
+            checksum, recent.get_or(index, 0));
         index += 1;
     }
-    std::deque::destroy(recent);
+    recent.destroy();
     let wrapped: core::option::Option<u8> = core::option::Some(checksum);
     let result: u8 = core::option::unwrap_or(wrapped, 0);
     let printable: i32 = result as i32;

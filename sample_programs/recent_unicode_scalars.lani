@@ -3,46 +3,47 @@
 // output failure 4. Empty input writes one newline.
 module app::main;
 import core::char;
-import std::deque;
+import alloc::deque;
+import core::result;
 import std::io_utf8;
 
 fn main() -> i32 {
-    let recent: std::deque::Deque<char> = std::deque::try_with_capacity(3);
-    if (std::deque::capacity(recent) != 3) { return 4; }
+    let made: core::result::Result<alloc::deque::Deque<char>, alloc::deque::Error> = alloc::deque::with_capacity(3);
+    if (core::result::is_err(made)) { return 4; }
+    let recent: alloc::deque::Deque<char> = core::result::unwrap(made);
     while (true) {
         let code: u32 = std::io_utf8::read_stdin_scalar_or(1114112, 1114113, 1114114);
         if (code == 1114112) { break; }
         if (code == 1114113) {
-            std::deque::destroy(recent);
+            recent.destroy();
             return 2;
         }
         if (code == 1114114) {
-            std::deque::destroy(recent);
+            recent.destroy();
             return 3;
         }
-        if (std::deque::len(recent) == 3) {
-            recent = std::deque::try_pop_front(recent);
+        if (recent.len() == 3) {
+            recent.pop_front();
         }
         // The reader returns only scalar values below its sentinels.
         let scalar: char = core::char::from_u32_or(code, '\0');
-        let before: i32 = std::deque::len(recent);
-        recent = std::deque::try_push_back(recent, scalar);
-        if (std::deque::len(recent) != before + 1) {
-            std::deque::destroy(recent);
+        let added: core::result::Result<i32, alloc::deque::Error> = recent.try_push_back(scalar);
+        if (core::result::is_err(added)) {
+            recent.destroy();
             return 4;
         }
     }
     let index: i32 = 0;
-    while (index < std::deque::len(recent)) {
-        let scalar: char = std::deque::at_or(recent, index, '\0');
+    while (index < recent.len()) {
+        let scalar: char = recent.get_or(index, '\0');
         let code: u32 = scalar as u32;
         if (!std::io_utf8::write_stdout_scalar(code)) {
-            std::deque::destroy(recent);
+            recent.destroy();
             return 4;
         }
         index += 1;
     }
-    std::deque::destroy(recent);
+    recent.destroy();
     if (!std::io_utf8::write_stdout_scalar(10)) { return 4; }
     return 0;
 }

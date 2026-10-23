@@ -127,8 +127,8 @@ bounds and reserved capacity make them infallible.
   layout error. Its reproduction is separate from production code; the heap
   retains its previously tested backing vector.
 - Legacy linear maps/sets, older vector examples and compiler regression
-  fixtures still use the old API. Deque and specialized byte collections also
-  need consolidation. These are unfinished migrations, not forwarding aliases.
+  fixtures still use the old API. Specialized byte collections also need consolidation;
+  the deque now has its own fallible alloc API. These are unfinished migrations, not forwarding aliases.
 
 The new vector's counted view is constructed directly from its valid owner
 state. An alternative nested Result factory triggers a separate compiler
