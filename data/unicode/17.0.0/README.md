@@ -25,6 +25,8 @@ license bytes without accessing the network. The official source directory is
 | `NormalizationTest` | Official normalization conformance corpus |
 | `auxiliary/GraphemeBreakProperty`, `emoji/emoji-data`, `DerivedCoreProperties` | Extended grapheme boundary properties, pictographs and Indic conjunct classes |
 | `auxiliary/GraphemeBreakTest` | Official extended grapheme conformance corpus |
+| `auxiliary/WordBreakProperty`, `emoji/emoji-data` | Default word boundary properties and pictographs |
+| `auxiliary/WordBreakTest` | Official default word boundary conformance corpus |
 
 Scripts in `tools/unicode17` generate committed Lanius data tables from these
 sources. Python is used for data generation and tests. Library lookups,

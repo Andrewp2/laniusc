@@ -1,0 +1,43 @@
+module app::main;
+import core::calendar;
+import core::result;
+import core::time;
+fn check(value: core::calendar::Date) {
+    let days: i64 = value.day_number();let back: core::calendar::Date = core::result::unwrap(core::calendar::date_from_day_number(days));
+    assert(back.year == value.year && back.month == value.month && back.day == value.day);
+    let ordinal: core::calendar::Date = core::result::unwrap(core::calendar::date_from_ordinal(value.year,value.ordinal()));assert(ordinal.compare(value) == 0);
+    let iso: core::calendar::IsoWeek = value.iso_week();
+    assert(core::result::unwrap(core::calendar::date_from_iso_week(iso.year,iso.week,iso.weekday)).compare(value) == 0);
+    let time: core::calendar::TimeOfDay = core::result::unwrap(core::calendar::time_of_day(13,47,29,999999999));
+    let local: core::calendar::LocalDateTime = core::result::unwrap(core::calendar::local_date_time(value,time));
+    let offset: core::calendar::UtcOffset = core::result::unwrap(core::calendar::utc_offset(-1439));
+    let stamp: core::time::SystemTime = core::result::unwrap(core::result::unwrap(core::calendar::offset_date_time(local,offset)).to_system_time());
+    let converted: core::calendar::OffsetDateTime = core::result::unwrap(core::calendar::from_system_time(stamp,offset));
+    assert(converted.local.date.compare(value) == 0 && converted.local.time.hour == 13 && converted.local.time.minute == 47 && converted.local.time.second == 29 && converted.local.time.nanos == 999999999);
+}
+fn main() -> i32 {
+    let start: core::calendar::Date = core::result::unwrap(core::calendar::date(-400,3,1));let i: i64 = 0;
+    while (i < 146097) {
+        let value: core::calendar::Date = core::result::unwrap(start.checked_add_days(i));check(value);
+        let shifted: core::calendar::Date = core::result::unwrap(value.checked_add_years(400));
+        assert(shifted.days_since(value) == 146097 && shifted.weekday() == value.weekday());
+        let tomorrow: core::calendar::Date = core::result::unwrap(value.checked_add_days(1));
+        assert(tomorrow.weekday() == value.weekday()%7+1 && core::result::unwrap(tomorrow.checked_sub_days(1)).compare(value) == 0);
+        i += 1;
+    }
+    let state: u64 = 2349871321;let j: i32 = 0;
+    while (j < 10000) {
+        state = (state*1664525+1013904223)&4294967295;let year: i32 = state as i32;
+        state = (state*1664525+1013904223)&4294967295;let month: i32 = (state%12+1) as i32;
+        state = (state*1664525+1013904223)&4294967295;
+        let last: i32 = core::result::unwrap(core::calendar::days_in_month(year,month));let day: i32 = (state%(last as u64)+1) as i32;
+        let value: core::calendar::Date = core::result::unwrap(core::calendar::date(year,month,day));check(value);
+        let plus: core::calendar::Date = core::result::unwrap(value.checked_add_days(367));
+        assert(plus.days_since(value) == 367 && core::result::unwrap(plus.checked_sub_days(367)).compare(value) == 0);
+        j += 1;
+    }
+    check(core::calendar::minimum_date());check(core::calendar::maximum_date());
+    assert(core::result::unwrap(core::calendar::date(0,1,1)).day_number() == -719528);
+    assert(core::result::unwrap(core::calendar::date(-1,12,31)).day_number() == -719529);
+    return 0;
+}

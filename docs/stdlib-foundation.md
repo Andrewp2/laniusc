@@ -1,6 +1,17 @@
 # Standard library execution audit and portable foundation
 
-**Current library checkpoint (2026-10-23):** the `codex/stdlib` branch adds
+**Current configuration/text checkpoint (2026-10-23):**
+[TOML 1.1](extended-toml.md), [UTF-8 regex matching](extended-regex.md),
+[calendar values](stdlib-calendar.md), [Unicode word boundaries](extended-unicode-words.md)
+and [full string casing](extended-unicode-case.md) execute in Lanius. The
+[TOML normalizer](extended-toml-normalize.md), [streaming search](extended-text-grep.md)
+and [casing converter](extended-text-case.md) provide real native programs with
+allocation/I/O failure evidence. Official TOML/Unicode corpora, independent
+models and reviewed regex priority regressions are recorded in their guides.
+No compiler/runtime, shader, IR, ABI, extraction or proof implementation changed.
+The [full library roadmap](library-roadmap.md) remains incomplete.
+
+**Preceding numeric/text checkpoint (2026-10-23):** the `codex/stdlib` branch adds
 [lawful comparison contracts](stdlib-comparison.md),
 [unsigned](extended-big-uint.md) and [signed](extended-big-int.md) arbitrary
 precision arithmetic, [Unicode 17 properties and scalar mappings](stdlib-unicode.md),

@@ -1,0 +1,557 @@
+// Ordered Thompson/Pike UTF-8 regular expressions; see docs/extended-regex.md.
+module ext::regex;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::text;
+import core::unicode;
+import core::utf8;
+
+pub enum Error { Syntax(i32), Unsupported(i32), Limit(i32), AllocationFailed, Bounds, InvalidUtf8(i32), WorkLimit }
+pub struct Options { multiline: bool, dot_matches_newline: bool, max_pattern_bytes: i32, max_states: i32, max_depth: i32, max_captures: i32, max_repeat: i32, max_work: i32 }
+pub struct Span { start: i32, end: i32 }
+pub struct Match { captures: alloc::vec::Vec<i32> }
+// Internal storage is public only because the language has no opaque fields.
+// Do not forge/mutate these records. Copies alias a single explicit owner.
+pub struct Regex { code: alloc::vec::Vec<Inst>, terms: alloc::vec::Vec<Term>, entry: i32, groups: i32, config: Options }
+pub struct Matches { regex: Regex, text: core::text::Text, position: i32, done: bool }
+pub struct Inst { op: i32, x: i32, y: i32, a: i32, b: i32, flag: bool }
+pub struct Term { low: u32, high: u32, property: i32, negated: bool }
+struct Node { op: i32, left: i32, right: i32, a: i32, b: i32, flag: bool }
+struct Parser { text: core::text::Text, position: i32, nodes: alloc::vec::Vec<Node>, terms: alloc::vec::Vec<Term>, config: Options, groups: i32, depth: i32, failed: bool, error: Error }
+// Leaf ops: 0 empty, 1 scalar, 2 class, 3 dot, 4 ^, 5 $, 6 \A,
+// 7 \z, 8 \b, 9 \B. AST: 10 concat,11 alternate,12 repeat,13 group.
+// VM: 10 jump,11 split,12 save,13 accept.
+pub fn options() -> Options {
+    return Options { multiline: false, dot_matches_newline: false, max_pattern_bytes: 65536, max_states: 4096, max_depth: 64, max_captures: 16, max_repeat: 1000, max_work: 10000000 };
+}
+fn valid_options(value: Options) -> bool {
+    return value.max_pattern_bytes >= 0 && value.max_pattern_bytes <= 65536 && value.max_states >= 4 && value.max_states <= 65536 &&
+        value.max_depth >= 1 && value.max_depth <= 256 && value.max_captures >= 0 && value.max_captures <= 128 &&
+        value.max_repeat >= 0 && value.max_repeat <= 1000000 && value.max_work > 0;
+}
+fn validate(text: core::text::Text) -> core::result::Result<core::text::Text, Error> {
+    let result: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8_range(text.bytes, text.start, text.length);
+    return match (result) { core::result::Ok(value) -> core::result::Ok(value), core::result::Err(error) -> match (error) {
+        core::text::Error::InvalidUtf8(at) -> core::result::Err(Error::InvalidUtf8(at)), _ -> core::result::Err(Error::Bounds)
+    } };
+}
+fn literal_node(value: u32) -> Node { return Node { op: 1, left: 0, right: 0, a: value as i32, b: 0, flag: false }; }
+fn simple_node(op: i32) -> Node { return Node { op: op, left: 0, right: 0, a: 0, b: 0, flag: false }; }
+fn ascii_word(value: u32) -> bool { return (value >= 48 && value <= 57) || (value >= 65 && value <= 90) || (value >= 97 && value <= 122) || value == 95; }
+fn hex(value: u32) -> i32 {
+    if (value >= 48 && value <= 57) { return (value - 48) as i32; }
+    if (value >= 65 && value <= 70) { return (value - 55) as i32; }
+    if (value >= 97 && value <= 102) { return (value - 87) as i32; }
+    return -1;
+}
+// Property IDs 1..30 are exact general categories (gc+1), 101..107
+// aggregates L M N P S Z C; 201..204 binary properties; 301..303 ASCII.
+fn property_name(name: core::text::Text) -> i32 {
+    if (name.length == 1) {
+        let c: u8 = core::option::unwrap(name.byte_at(0));
+        if (c == 76) { return 101; } if (c == 77) { return 102; } if (c == 78) { return 103; }
+        if (c == 80) { return 104; } if (c == 83) { return 105; } if (c == 90) { return 106; } if (c == 67) { return 107; }
+    }
+    // Compare ASCII property identifiers without allocating a string.
+    let names: str = "CnLuLlLtLmLoMnMcMeNdNlNoPcPdPsPePiPfPoSmScSkSoZsZlZpCcCfCsCo";
+    let name_bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(names), 60);
+    let i: i32 = 0;
+    if (name.length == 2) {
+        while (i < 30) {
+            if (core::option::unwrap(name.byte_at(0)) == name_bytes[i * 2] && core::option::unwrap(name.byte_at(1)) == name_bytes[i * 2 + 1]) { return i + 1; }
+            i += 1;
+        }
+    }
+    if (name_equal(name, "Alphabetic", 10)) { return 201; }
+    if (name_equal(name, "White_Space", 11)) { return 202; }
+    if (name_equal(name, "XID_Start", 9)) { return 203; }
+    if (name_equal(name, "XID_Continue", 12)) { return 204; }
+    return 0;
+}
+fn name_equal(value: core::text::Text, name: str, count: i32) -> bool {
+    if (value.length != count) { return false; }
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(name), count);
+    let index: i32 = 0;
+    while (index < count) { if (core::option::unwrap(value.byte_at(index)) != bytes[index]) { return false; } index += 1; }
+    return true;
+}
+fn property_matches(property: i32, value: u32) -> bool {
+    if (property == 201) { return core::unicode::is_alphabetic(value); }
+    if (property == 202) { return core::unicode::is_white_space(value); }
+    if (property == 203) { return core::unicode::is_xid_start(value); }
+    if (property == 204) { return core::unicode::is_xid_continue(value); }
+    if (property == 301) { return value >= 48 && value <= 57; }
+    if (property == 302) { return value == 9 || value == 10 || value == 12 || value == 13 || value == 32; }
+    if (property == 303) { return ascii_word(value); }
+    let gc: i32 = core::unicode::general_category(value) as i32;
+    if (property >= 1 && property <= 30) { return gc == property - 1; }
+    if (property == 101) { return gc >= 1 && gc <= 5; }
+    if (property == 102) { return gc >= 6 && gc <= 8; }
+    if (property == 103) { return gc >= 9 && gc <= 11; }
+    if (property == 104) { return gc >= 12 && gc <= 18; }
+    if (property == 105) { return gc >= 19 && gc <= 22; }
+    if (property == 106) { return gc >= 23 && gc <= 25; }
+    return gc == 0 || (gc >= 26 && gc <= 29);
+}
+pub impl Parser {
+    fn fail(&self, error: Error) { if (!self.failed) { self.failed = true; self.error = error; } }
+    fn peek(&self) -> u32 { return core::option::unwrap_or(self.text.scalar_at_byte(self.position), 4294967295); }
+    fn take(&self) -> u32 { let value: u32 = self.peek(); if (value != 4294967295) { self.position += core::utf8::encoded_len_or(value, 0) as i32; } return value; }
+    fn add(&self, node: Node) -> i32 {
+        if (self.failed) { return 0; }
+        if (self.nodes.len() >= self.config.max_states) { self.fail(Error::Limit(self.position)); return 0; }
+        let index: i32 = self.nodes.len();
+        if (core::result::is_err(self.nodes.try_push(node))) { self.fail(Error::AllocationFailed); }
+        return index;
+    }
+    fn term(&self, term: Term) {
+        if (self.terms.len() >= self.config.max_pattern_bytes) { self.fail(Error::Limit(self.position)); return; }
+        if (core::result::is_err(self.terms.try_push(term))) { self.fail(Error::AllocationFailed); }
+    }
+    fn escaped(&self, in_class: bool) -> Node {
+        let offset: i32 = self.position - 1;
+        let value: u32 = self.take();
+        if (value == 4294967295) { self.fail(Error::Syntax(offset)); return simple_node(0); }
+        if (value == 100 || value == 68 || value == 115 || value == 83 || value == 119 || value == 87 || value == 112 || value == 80) {
+            let property: i32 = 301;
+            if (value == 115 || value == 83) { property = 302; }
+            if (value == 119 || value == 87) { property = 303; }
+            if (value == 112 || value == 80) {
+                let start: i32 = self.position;
+                let end: i32 = start;
+                if (self.peek() == 123) {
+                    self.take(); start = self.position;
+                    while (self.peek() != 125 && self.peek() != 4294967295) { self.take(); }
+                    end = self.position;
+                    if (self.take() != 125 || end == start) { self.fail(Error::Syntax(offset)); }
+                } else { self.take(); end = self.position; }
+                property = property_name(core::result::unwrap(self.text.slice(start, end)));
+                if (property == 0) { self.fail(Error::Unsupported(offset)); }
+            }
+            let index: i32 = self.terms.len();
+            self.term(Term { low: 0, high: 0, property: property, negated: value == 68 || value == 83 || value == 87 || value == 80 });
+            return Node { op: 2, left: 0, right: 0, a: index, b: index + 1, flag: false };
+        }
+        if (!in_class) {
+            if (value == 65) { return simple_node(6); } if (value == 122) { return simple_node(7); }
+            if (value == 98) { return simple_node(8); } if (value == 66) { return simple_node(9); }
+        }
+        if (value == 110) { return literal_node(10); } if (value == 114) { return literal_node(13); }
+        if (value == 116) { return literal_node(9); } if (value == 102) { return literal_node(12); }
+        if (value == 118) { return literal_node(11); } if (value == 97) { return literal_node(7); }
+        if (value == 120) {
+            let scalar: u32 = 0; let count: i32 = 0; let braced: bool = self.peek() == 123;
+            if (braced) { self.take(); }
+            while ((braced && self.peek() != 125 && self.peek() != 4294967295) || (!braced && count < 2)) {
+                let digit: i32 = hex(self.take());
+                if (digit < 0 || count >= 6) { self.fail(Error::Syntax(offset)); return simple_node(0); }
+                scalar = scalar * 16 + digit as u32; count += 1;
+            }
+            if ((braced && self.take() != 125) || count == 0 || !core::unicode::is_scalar(scalar)) { self.fail(Error::Syntax(offset)); }
+            return literal_node(scalar);
+        }
+        if (value >= 48 && value <= 57) { self.fail(Error::Unsupported(offset)); return simple_node(0); }
+        if ((value >= 65 && value <= 90) || (value >= 97 && value <= 122) || value > 127) { self.fail(Error::Unsupported(offset)); return simple_node(0); }
+        return literal_node(value);
+    }
+    fn class_atom(&self) -> Node {
+        if (self.peek() == 92) { self.take(); return self.escaped(true); }
+        if (self.peek() == 91) { self.fail(Error::Unsupported(self.position)); }
+        return literal_node(self.take());
+    }
+    fn character_class(&self) -> Node {
+        let offset: i32 = self.position - 1; let negative: bool = false;
+        if (self.peek() == 94) { self.take(); negative = true; }
+        let start: i32 = self.terms.len(); let count: i32 = 0;
+        while (self.peek() != 93 && self.peek() != 4294967295 && !self.failed) {
+            let atom: Node = self.class_atom();
+            if (atom.op == 1) {
+                let high: u32 = atom.a as u32;
+                if (self.peek() == 45) {
+                    self.take();
+                    if (self.peek() == 93) { self.term(Term { low: high, high: high, property: 0, negated: false }); high = 45; }
+                    else {
+                        let last: Node = self.class_atom();
+                        if (last.op != 1 || last.a < atom.a) { self.fail(Error::Syntax(self.position)); }
+                        high = last.a as u32;
+                    }
+                }
+                if (high == 45 && atom.a != 45) { self.term(Term { low: 45, high: 45, property: 0, negated: false }); }
+                else { self.term(Term { low: atom.a as u32, high: high, property: 0, negated: false }); }
+            }
+            count += 1;
+        }
+        if (self.take() != 93 || count == 0) { self.fail(Error::Syntax(offset)); }
+        return Node { op: 2, left: 0, right: 0, a: start, b: self.terms.len(), flag: negative };
+    }
+    fn atom(&self) -> i32 {
+        let at: i32 = self.position; let value: u32 = self.take();
+        if (value == 40) {
+            self.depth += 1;
+            if (self.depth > self.config.max_depth) { self.fail(Error::Limit(at)); return 0; }
+            let group: i32 = 0;
+            if (self.peek() == 63) {
+                self.take();
+                if (self.take() != 58) { self.fail(Error::Unsupported(at)); return 0; }
+            } else {
+                if (self.groups >= self.config.max_captures) { self.fail(Error::Limit(at)); return 0; }
+                self.groups += 1; group = self.groups;
+            }
+            let inside: i32 = self.expression();
+            if (self.take() != 41) { self.fail(Error::Syntax(at)); }
+            self.depth -= 1;
+            if (group == 0) { return inside; }
+            return self.add(Node { op: 13, left: inside, right: 0, a: group, b: 0, flag: false });
+        }
+        if (value == 91) { return self.add(self.character_class()); }
+        if (value == 92) { return self.add(self.escaped(false)); }
+        if (value == 46) { return self.add(simple_node(3)); }
+        if (value == 94) { return self.add(simple_node(4)); }
+        if (value == 36) { return self.add(simple_node(5)); }
+        if (value == 42 || value == 43 || value == 63 || value == 123 || value == 125 || value == 93 || value == 4294967295) { self.fail(Error::Syntax(at)); return 0; }
+        return self.add(literal_node(value));
+    }
+    fn number(&self) -> i32 {
+        let count: i32 = 0; let digits: i32 = 0;
+        while (self.peek() >= 48 && self.peek() <= 57 && !self.failed) {
+            let digit: i32 = self.take() as i32 - 48;
+            if (count > (self.config.max_repeat - digit) / 10 || digit > self.config.max_repeat) { self.fail(Error::Limit(self.position - 1)); return 0; }
+            count = count * 10 + digit; digits += 1;
+        }
+        if (digits == 0) { self.fail(Error::Syntax(self.position)); }
+        return count;
+    }
+    fn piece(&self) -> i32 {
+        let node: i32 = self.atom(); let value: u32 = self.peek();
+        if (self.failed || (value != 42 && value != 43 && value != 63 && value != 123)) { return node; }
+        let at: i32 = self.position; self.take(); let min: i32 = 0; let max: i32 = -1;
+        if (value == 43) { min = 1; } if (value == 63) { max = 1; }
+        if (value == 123) {
+            min = self.number(); max = min;
+            if (self.peek() == 44) { self.take(); max = -1; if (self.peek() != 125) { max = self.number(); } }
+            if (self.take() != 125 || (max >= 0 && max < min)) { self.fail(Error::Syntax(at)); }
+        }
+        let lazy: bool = false;
+        if (self.peek() == 63) { self.take(); lazy = true; }
+        if (self.peek() == 43) { self.fail(Error::Unsupported(self.position)); }
+        if (self.peek() == 42 || self.peek() == 63 || self.peek() == 123) { self.fail(Error::Syntax(self.position)); }
+        return self.add(Node { op: 12, left: node, right: 0, a: min, b: max, flag: lazy });
+    }
+    fn concatenation(&self) -> i32 {
+        let node: i32 = -1;
+        while (self.peek() != 41 && self.peek() != 124 && self.peek() != 4294967295 && !self.failed) {
+            let right: i32 = self.piece();
+            if (node < 0) { node = right; } else { node = self.add(Node { op: 10, left: node, right: right, a: 0, b: 0, flag: false }); }
+        }
+        if (node < 0) { node = self.add(simple_node(0)); }
+        return node;
+    }
+    fn expression(&self) -> i32 {
+        let node: i32 = self.concatenation();
+        while (self.peek() == 124 && !self.failed) {
+            self.take(); let right: i32 = self.concatenation();
+            node = self.add(Node { op: 11, left: node, right: right, a: 0, b: 0, flag: false });
+        }
+        return node;
+    }
+}
+// Explicit compilation frames avoid recursion proportional to concatenation or
+// repeat expansion. Only parser group nesting uses the bounded native stack.
+struct Frame { node: i32, next: i32, phase: i32, saved: i32, remaining: i32 }
+struct Builder { nodes: alloc::vec::Vec<Node>, code: alloc::vec::Vec<Inst>, frames: alloc::vec::Vec<Frame>, nullable: alloc::vec::Vec<i32>, limit: i32, failed: bool, error: Error }
+fn instruction(op: i32, x: i32, y: i32, a: i32, b: i32, flag: bool) -> Inst { return Inst { op: op, x: x, y: y, a: a, b: b, flag: flag }; }
+fn frame(node: i32, next: i32) -> Frame { return Frame { node: node, next: next, phase: 0, saved: 0, remaining: 0 }; }
+pub impl Builder {
+    fn emit(&self, inst: Inst) -> i32 {
+        if (self.failed) { return 0; }
+        if (self.code.len() >= self.limit) { self.failed = true; self.error = Error::Limit(0); return 0; }
+        let index: i32 = self.code.len();
+        if (core::result::is_err(self.code.try_push(inst))) { self.failed = true; self.error = Error::AllocationFailed; }
+        return index;
+    }
+    fn push(&self, value: Frame) {
+        if (self.frames.len() >= self.limit) { self.failed = true; self.error = Error::Limit(0); return; }
+        if (core::result::is_err(self.frames.try_push(value))) { self.failed = true; self.error = Error::AllocationFailed; }
+    }
+    fn build(&self, root: i32, next: i32) -> i32 {
+        self.push(frame(root, next)); let result: i32 = next; let steps: i32 = 0;
+        while (!self.frames.is_empty() && !self.failed) {
+            if (steps >= self.limit * 32) { self.failed = true; self.error = Error::Limit(0); break; }
+            steps += 1;
+            let f: Frame = core::option::unwrap(self.frames.pop());
+            let nodes: [Node] = self.nodes.as_slice(); let n: Node = nodes[f.node];
+            if (n.op < 10) {
+                result = f.next;
+                if (n.op != 0) { result = self.emit(instruction(n.op, f.next, 0, n.a, n.b, n.flag)); }
+            } else {
+                if (n.op == 10) {
+                    if (f.phase == 0) { f.phase = 1; self.push(f); self.push(frame(n.right, f.next)); }
+                    else { self.push(frame(n.left, result)); }
+                }
+                if (n.op == 11) {
+                    if (f.phase == 0) { f.phase = 1; self.push(f); self.push(frame(n.right, f.next)); }
+                    else {
+                        if (f.phase == 1) { f.saved = result; f.phase = 2; self.push(f); self.push(frame(n.left, f.next)); }
+                        else { result = self.emit(instruction(11, result, f.saved, 0, 0, false)); }
+                    }
+                }
+                if (n.op == 13) {
+                    if (f.phase == 0) { f.phase = 1; let end: i32 = self.emit(instruction(12, f.next, 0, n.a * 2 + 1, 0, false)); self.push(f); self.push(frame(n.left, end)); }
+                    else { result = self.emit(instruction(12, result, 0, n.a * 2, 0, false)); }
+                }
+                if (n.op == 12) {
+                    if (f.phase == 0) {
+                        result = f.next;
+                        if (n.b < 0) {
+                            let split: i32 = self.emit(instruction(11, 0, f.next, 0, 0, false));
+                            f.phase = 1; f.saved = split; self.push(f); self.push(frame(n.left, split));
+                        } else { f.phase = 2; f.remaining = n.b - n.a; self.push(f); }
+                    } else {
+                        if (f.phase == 1) {
+                            let inst: Inst = instruction(11, result, f.next, 0, 0, false);
+                            if (n.flag) { inst.x = f.next; inst.y = result; }
+                            core::result::unwrap(self.code.set(f.saved, inst));
+                            let nullable: [i32] = self.nullable.as_slice();
+                            if (n.a > 0) { f.remaining = n.a - 1; }
+                            else {
+                                f.remaining = 0;
+                                if (nullable[n.left] != 0) {
+                                    if (n.flag) { result = self.emit(instruction(11, f.next, result, 0, 0, false)); }
+                                    else { result = self.emit(instruction(11, result, f.next, 0, 0, false)); }
+                                } else { result = f.saved; }
+                            }
+                            f.phase = 4; self.push(f);
+                        } else {
+                            if (f.phase == 2) {
+                                if (f.remaining > 0) { f.phase = 3; f.saved = result; self.push(f); self.push(frame(n.left, result)); }
+                                else { f.phase = 4; f.remaining = n.a; self.push(f); }
+                            } else {
+                                if (f.phase == 3) {
+                                    if (n.flag) { result = self.emit(instruction(11, f.saved, result, 0, 0, false)); }
+                                    else { result = self.emit(instruction(11, result, f.saved, 0, 0, false)); }
+                                    f.remaining -= 1; f.phase = 2; self.push(f);
+                                } else {
+                                    if (f.remaining > 0) { f.remaining -= 1; self.push(f); self.push(frame(n.left, result)); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return result;
+    }
+}
+pub fn compile(pattern: core::text::Text, config: Options) -> core::result::Result<Regex, Error> {
+    if (!valid_options(config)) { return core::result::Err(Error::Limit(0)); }
+    if (pattern.length > config.max_pattern_bytes) { return core::result::Err(Error::Limit(0)); }
+    let checked: core::result::Result<core::text::Text, Error> = validate(pattern);
+    if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+    let nodes: alloc::vec::Vec<Node> = alloc::vec::new(); let terms: alloc::vec::Vec<Term> = alloc::vec::new();
+    let parser: Parser = Parser { text: core::result::unwrap(checked), position: 0, nodes: nodes, terms: terms, config: config, groups: 0, depth: 0, failed: false, error: Error::Bounds };
+    let root: i32 = parser.expression();
+    if (parser.position != pattern.length) { parser.fail(Error::Syntax(parser.position)); }
+    if (parser.failed) { parser.nodes.destroy(); parser.terms.destroy(); return core::result::Err(parser.error); }
+    let code: alloc::vec::Vec<Inst> = alloc::vec::new(); let frames: alloc::vec::Vec<Frame> = alloc::vec::new();
+    // Children precede parents in the flat AST, allowing one bounded pass.
+    let nullable: alloc::vec::Vec<i32> = alloc::vec::new();
+    let all_nodes: [Node] = parser.nodes.as_slice(); let ni: i32 = 0; let allocation_failed: bool = false;
+    while (ni < parser.nodes.len() && !allocation_failed) {
+        let n: Node = all_nodes[ni]; let prior: [i32] = nullable.as_slice();
+        let yes: bool = n.op == 0 || (n.op >= 4 && n.op <= 9);
+        if (n.op == 10) { yes = prior[n.left] != 0 && prior[n.right] != 0; }
+        if (n.op == 11) { yes = prior[n.left] != 0 || prior[n.right] != 0; }
+        if (n.op == 12) { yes = n.a == 0 || prior[n.left] != 0; }
+        if (n.op == 13) { yes = prior[n.left] != 0; }
+        let bit: i32 = 0; if (yes) { bit = 1; }
+        if (core::result::is_err(nullable.try_push(bit))) { allocation_failed = true; }
+        ni += 1;
+    }
+    if (allocation_failed) { nullable.destroy(); parser.nodes.destroy(); parser.terms.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let builder: Builder = Builder { nodes: parser.nodes, code: code, frames: frames, nullable: nullable, limit: config.max_states, failed: false, error: Error::Bounds };
+    let accept: i32 = builder.emit(instruction(13, 0, 0, 0, 0, false));
+    let finish: i32 = builder.emit(instruction(12, accept, 0, 1, 0, false));
+    let entry: i32 = builder.build(root, finish);
+    entry = builder.emit(instruction(12, entry, 0, 0, 0, false));
+    builder.frames.destroy(); builder.nullable.destroy(); parser.nodes.destroy();
+    if (builder.failed) { builder.code.destroy(); parser.terms.destroy(); return core::result::Err(builder.error); }
+    return core::result::Ok(Regex { code: builder.code, terms: parser.terms, entry: entry, groups: parser.groups + 1, config: config });
+}
+struct Scratch { current: alloc::vec::Vec<i32>, next: alloc::vec::Vec<i32>, current_caps: alloc::vec::Vec<i32>, next_caps: alloc::vec::Vec<i32>, stack: alloc::vec::Vec<i32>, stack_caps: alloc::vec::Vec<i32>, seen: alloc::vec::Vec<i32>, temporary: alloc::vec::Vec<i32>, candidate: alloc::vec::Vec<i32>, slots: i32, work: i32, max_work: i32, failed: bool }
+fn sized(value: &alloc::vec::Vec<i32>, count: i32, fill: i32) -> bool { return core::result::is_ok(value.try_resize(count, fill)); }
+fn scratch(states: i32, slots: i32, limit: i32) -> core::result::Result<Scratch, Error> {
+    let current: alloc::vec::Vec<i32> = alloc::vec::new(); let next: alloc::vec::Vec<i32> = alloc::vec::new();
+    let current_caps: alloc::vec::Vec<i32> = alloc::vec::new(); let next_caps: alloc::vec::Vec<i32> = alloc::vec::new();
+    let stack: alloc::vec::Vec<i32> = alloc::vec::new(); let stack_caps: alloc::vec::Vec<i32> = alloc::vec::new();
+    let seen: alloc::vec::Vec<i32> = alloc::vec::new(); let temporary: alloc::vec::Vec<i32> = alloc::vec::new(); let candidate: alloc::vec::Vec<i32> = alloc::vec::new();
+    let value: Scratch = Scratch { current: current, next: next, current_caps: current_caps, next_caps: next_caps, stack: stack, stack_caps: stack_caps, seen: seen, temporary: temporary, candidate: candidate, slots: slots, work: 0, max_work: limit, failed: false };
+    if (!sized(value.current.borrow(), states, 0) || !sized(value.next.borrow(), states, 0) ||
+        !sized(value.current_caps.borrow(), states * slots, -1) || !sized(value.next_caps.borrow(), states * slots, -1) ||
+        !sized(value.stack.borrow(), states, 0) || !sized(value.stack_caps.borrow(), states * slots, -1) ||
+        !sized(value.seen.borrow(), states, 0) || !sized(value.temporary.borrow(), slots, -1) || !sized(value.candidate.borrow(), slots, -1)) {
+        value.destroy(); return core::result::Err(Error::AllocationFailed);
+    }
+    return core::result::Ok(value);
+}
+fn copy_slots(source: [i32], source_at: i32, target: [i32], target_at: i32, slots: i32) {
+    let i: i32 = 0; while (i < slots) { target[target_at + i] = source[source_at + i]; i += 1; }
+}
+pub impl Scratch {
+    fn destroy(&self) { self.current.destroy(); self.next.destroy(); self.current_caps.destroy(); self.next_caps.destroy(); self.stack.destroy(); self.stack_caps.destroy(); self.seen.destroy(); self.temporary.destroy(); self.candidate.destroy(); }
+    fn tick(&self) -> bool { if (self.work >= self.max_work) { self.failed = true; return false; } self.work += 1; return true; }
+    fn clear_seen(&self) { let seen: [i32] = self.seen.as_slice(); let i: i32 = 0; while (i < self.seen.len()) { seen[i] = 0; i += 1; } }
+    fn swap_lists(&self) {
+        let pcs: alloc::vec::Vec<i32> = self.current; self.current = self.next; self.next = pcs;
+        let caps: alloc::vec::Vec<i32> = self.current_caps; self.current_caps = self.next_caps; self.next_caps = caps;
+    }
+}
+fn previous_scalar(text: core::text::Text, position: i32) -> u32 {
+    if (position <= 0) { return 4294967295; }
+    let at: i32 = position - 1;
+    while (!text.is_char_boundary(at)) { at -= 1; }
+    return core::option::unwrap(text.scalar_at_byte(at));
+}
+fn assertion(op: i32, text: core::text::Text, position: i32, multiline: bool) -> bool {
+    if (op == 6) { return position == 0; } if (op == 7) { return position == text.length; }
+    if (op == 4) { return position == 0 || (multiline && previous_scalar(text, position) == 10); }
+    if (op == 5) { return position == text.length || (multiline && core::option::unwrap_or(text.scalar_at_byte(position), 4294967295) == 10); }
+    let left: bool = ascii_word(previous_scalar(text, position));
+    let right: bool = ascii_word(core::option::unwrap_or(text.scalar_at_byte(position), 4294967295));
+    if (op == 8) { return left != right; }
+    return left == right;
+}
+pub impl Regex {
+    pub fn borrow(&self) -> &Regex { return self; }
+    pub fn group_count(&self) -> i32 { return self.groups; }
+    pub fn state_count(&self) -> i32 { return self.code.len(); }
+    pub fn destroy(&self) { self.code.destroy(); self.terms.destroy(); }
+    // Expand epsilon instructions in DFS priority order, retaining only the
+    // first thread at each PC. Pending branches use explicit bounded storage.
+    fn closure(&self, scratch: &Scratch, pc: i32, caps: [i32], caps_at: i32, output: [i32], output_caps: [i32], count: i32, text: core::text::Text, position: i32) -> i32 {
+        let code: [Inst] = self.code.as_slice(); let seen: [i32] = scratch.seen.as_slice();
+        let stack: [i32] = scratch.stack.as_slice(); let stack_caps: [i32] = scratch.stack_caps.as_slice(); let temp: [i32] = scratch.temporary.as_slice();
+        copy_slots(caps, caps_at, temp, 0, scratch.slots);
+        let pending: i32 = 0; let cursor: i32 = pc; let total: i32 = count;
+        while (!scratch.failed) {
+            if (seen[cursor] == 0) {
+                seen[cursor] = 1;
+                if (!scratch.tick()) { break; }
+                let inst: Inst = code[cursor];
+                if (inst.op == 10) { cursor = inst.x; continue; }
+                if (inst.op == 11) {
+                    stack[pending] = inst.y; copy_slots(temp, 0, stack_caps, pending * scratch.slots, scratch.slots); pending += 1;
+                    cursor = inst.x; continue;
+                }
+                if (inst.op == 12) { temp[inst.a] = position; cursor = inst.x; continue; }
+                if (inst.op >= 4 && inst.op <= 9) {
+                    if (assertion(inst.op, text, position, self.config.multiline)) { cursor = inst.x; continue; }
+                } else {
+                    output[total] = cursor; copy_slots(temp, 0, output_caps, total * scratch.slots, scratch.slots); total += 1;
+                }
+            }
+            if (pending == 0) { break; }
+            pending -= 1; cursor = stack[pending]; copy_slots(stack_caps, pending * scratch.slots, temp, 0, scratch.slots);
+        }
+        return total;
+    }
+    fn consumes(&self, inst: Inst, scalar: u32, scratch: &Scratch) -> bool {
+        if (inst.op == 1) { return scalar == inst.a as u32; }
+        if (inst.op == 3) { return scalar != 10 || self.config.dot_matches_newline; }
+        let terms: [Term] = self.terms.as_slice(); let i: i32 = inst.a; let found: bool = false;
+        while (i < inst.b && !found) {
+            if (!scratch.tick()) { return false; }
+            let term: Term = terms[i]; let matches: bool = scalar >= term.low && scalar <= term.high;
+            if (term.property != 0) { matches = property_matches(term.property, scalar); }
+            if (term.negated) { matches = !matches; }
+            found = matches; i += 1;
+        }
+        if (inst.flag) { return !found; }
+        return found;
+    }
+    fn search(&self, text: core::text::Text, start: i32) -> core::result::Result<core::option::Option<Match>, Error> {
+        let allocated: core::result::Result<Scratch, Error> = scratch(self.code.len(), self.groups * 2, self.config.max_work);
+        if (core::result::is_err(allocated)) { return core::result::Err(core::result::unwrap_err(allocated)); }
+        let scratch: Scratch = core::result::unwrap(allocated); let current_count: i32 = 0; let position: i32 = start; let matched: bool = false;
+        let code: [Inst] = self.code.as_slice();
+        while (true) {
+            let current: [i32] = scratch.current.as_slice(); let current_caps: [i32] = scratch.current_caps.as_slice();
+            let next: [i32] = scratch.next.as_slice(); let next_caps: [i32] = scratch.next_caps.as_slice();
+            let temp: [i32] = scratch.temporary.as_slice(); let candidate: [i32] = scratch.candidate.as_slice();
+            if (!matched) {
+                let i: i32 = 0; while (i < scratch.slots) { temp[i] = -1; i += 1; }
+                current_count = self.closure(scratch.borrow(), self.entry, temp, 0, current, current_caps, current_count, text, position);
+            }
+            // Current closure is complete before reusing seen for next position.
+            scratch.clear_seen(); let next_count: i32 = 0; let i: i32 = 0;
+            let scalar: u32 = core::option::unwrap_or(text.scalar_at_byte(position), 4294967295);
+            let following: i32 = position;
+            if (position < text.length) { following += core::utf8::encoded_len_or(scalar, 0) as i32; }
+            while (i < current_count && !scratch.failed) {
+                let inst: Inst = code[current[i]];
+                if (inst.op == 13) { copy_slots(current_caps, i * scratch.slots, candidate, 0, scratch.slots); matched = true; break; }
+                if (!scratch.tick()) { break; }
+                if (position < text.length && self.consumes(inst, scalar, scratch.borrow())) {
+                    next_count = self.closure(scratch.borrow(), inst.x, current_caps, i * scratch.slots, next, next_caps, next_count, text, following);
+                }
+                i += 1;
+            }
+            if (scratch.failed) { scratch.destroy(); return core::result::Err(Error::WorkLimit); }
+            if ((matched && next_count == 0) || position == text.length) { break; }
+            scratch.swap_lists(); current_count = next_count; position = following;
+        }
+        if (!matched) { scratch.destroy(); return core::result::Ok(core::option::None()); }
+        // Transfer the candidate allocation, then release every scratch owner.
+        let captures: alloc::vec::Vec<i32> = scratch.candidate; scratch.candidate = alloc::vec::new(); scratch.destroy();
+        return core::result::Ok(core::option::Some(Match { captures: captures }));
+    }
+    pub fn find_from(&self, text: core::text::Text, start: i32) -> core::result::Result<core::option::Option<Match>, Error> {
+        let checked: core::result::Result<core::text::Text, Error> = validate(text);
+        if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+        if (start < 0 || start > text.length || !text.is_char_boundary(start)) { return core::result::Err(Error::Bounds); }
+        return self.search(text, start);
+    }
+    pub fn find(&self, text: core::text::Text) -> core::result::Result<core::option::Option<Match>, Error> { return self.find_from(text, 0); }
+    pub fn is_match(&self, text: core::text::Text) -> core::result::Result<bool, Error> {
+        let found: core::result::Result<core::option::Option<Match>, Error> = self.find(text);
+        if (core::result::is_err(found)) { return core::result::Err(core::result::unwrap_err(found)); }
+        let item: core::option::Option<Match> = core::result::unwrap(found);
+        if (core::option::is_none(item)) { return core::result::Ok(false); }
+        core::option::unwrap(item).destroy(); return core::result::Ok(true);
+    }
+    pub fn find_iter(&self, text: core::text::Text) -> core::result::Result<Matches, Error> {
+        let checked: core::result::Result<core::text::Text, Error> = validate(text);
+        if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+        return core::result::Ok(Matches { regex: Regex { code: self.code, terms: self.terms, entry: self.entry, groups: self.groups, config: self.config }, text: text, position: 0, done: false });
+    }
+}
+pub impl Scratch { fn borrow(&self) -> &Scratch { return self; } }
+pub impl Match {
+    pub fn group_count(&self) -> i32 { return self.captures.len() / 2; }
+    pub fn span(&self, group: i32) -> core::option::Option<Span> {
+        if (group < 0 || group >= self.group_count()) { return core::option::None(); }
+        let caps: [i32] = self.captures.as_slice();
+        if (caps[group * 2] < 0 || caps[group * 2 + 1] < 0) { return core::option::None(); }
+        return core::option::Some(Span { start: caps[group * 2], end: caps[group * 2 + 1] });
+    }
+    pub fn destroy(&self) { self.captures.destroy(); }
+}
+pub impl Matches {
+    pub fn next(&self) -> core::result::Result<core::option::Option<Match>, Error> {
+        if (self.done) { return core::result::Ok(core::option::None()); }
+        let result: core::result::Result<core::option::Option<Match>, Error> = self.regex.search(self.text, self.position);
+        if (core::result::is_err(result)) { self.done = true; return result; }
+        let found: core::option::Option<Match> = core::result::unwrap(result);
+        if (core::option::is_none(found)) { self.done = true; return result; }
+        let span: Span = core::option::unwrap(core::option::unwrap(found).span(0));
+        self.position = span.end;
+        if (span.start == span.end) {
+            if (self.position == self.text.length) { self.done = true; }
+            else { self.position += core::utf8::encoded_len_or(core::option::unwrap(self.text.scalar_at_byte(self.position)), 0) as i32; }
+        }
+        return result;
+    }
+    // No allocation is retained between calls; this only fuses the cursor.
+    pub fn destroy(&self) { self.done = true; }
+}

@@ -155,3 +155,47 @@ Separate native process measurements cover the
 includes native process I/O and excludes compilation. All target claims here
 concern x86_64 Linux output from GPU compilation, with no user-kernel execution
 claim.
+
+## TOML, regular expressions, calendars and full casing
+
+On 2026-10-23 the same repository harness measured one warmup and three private
+entry rebuilds for each entry below, with `LANIUS_PERF_REBUILD_ENTRY=1`. Imported
+sources remained unchanged within each process. All emitted executables exited
+0 with expected empty stdout/stderr. Counts include the entry and its recursive
+imports. Desktop activity was uncontrolled; results are observations across
+different workloads/cache histories, not a paired compiler regression test.
+
+| Entry | Import closure | Emitted ELF | Median | Range |
+| --- | --- | --- | --- | --- |
+| `tests/fixtures/stdlib_foundation/calendar_contracts.lani` | 13 files, 136,173 bytes | 204,239 bytes | 197.722 ms | 176.457–204.930 ms |
+| `tests/fixtures/extended_library/toml_smoke.lani` | 25 files, 340,113 bytes | 635,112 bytes | 389.009 ms | 384.094–433.276 ms |
+| `tests/fixtures/extended_library/regex_contracts.lani` | 26 files, 467,082 bytes | 608,041 bytes | 317.291 ms | 309.521–342.764 ms |
+| `tests/fixtures/extended_library/unicode_case_contracts.lani` | 26 files, 435,094 bytes | 463,549 bytes | 160.525 ms | 159.712–167.898 ms |
+| `sample_programs/library/toml_normalize.lani` | 33 files, 410,033 bytes | 791,769 bytes | 328.063 ms | 323.420–359.827 ms |
+
+The application row executes with empty stdin and no options, exercising its
+empty-document path. Large nonempty workloads are measured in the application
+execution tests. Every row except calendar needs the additional `extended`
+source root. For example:
+
+```sh
+timeout --kill-after=2s 100s env LANIUS_PERF_REBUILD_ENTRY=1 \
+  target/stdlib-build/debug/examples/stdlib_gpu_perf \
+  tests/fixtures/extended_library/regex_contracts.lani stdlib - 1 3 extended
+timeout --kill-after=2s 100s env LANIUS_PERF_REBUILD_ENTRY=1 \
+  target/stdlib-build/debug/examples/stdlib_gpu_perf \
+  sample_programs/library/toml_normalize.lani stdlib - 1 3 extended
+```
+
+Native, compile-excluded observations cover
+[100,299 bytes of nested TOML configuration](extended-toml-normalize.md),
+[12,000 streamed regex-search records](extended-text-grep.md), and
+[198,450 bytes of full casing](extended-text-case.md). These exercise the real
+Lanius libraries and process I/O. The calendar guide separately records full
+native-year-range differential/algebra checks; Unicode case/word guides record
+full scalar and official boundary conformance.
+
+No compiler, shader, runtime, IR, ABI, extractor or proof implementation changed.
+These measurements concern native x86_64 Linux output of GPU compilation, not
+user-kernel execution, cold compilation or the canonical synthetic speed ratio.
+Selective imports, distribution and the broader library completion audit remain.

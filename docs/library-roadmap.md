@@ -29,13 +29,13 @@ package distribution is a separate deliverable.
 | Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Integer implementations and matching binary32/binary64 value utilities execute, including exact bits, rounding and square root; exact decimal parsing/shortest formatting also execute. Native floats use partial comparison; bit-preserving total wrappers supply lawful ordering/hashing. Duplicate paths and further mathematical operations remain |
 | Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic algorithms and counted View values execute, including subviews, checked mutations and cursors; initial physical counts still require compiler length projection |
 | Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | Inherent slice/text/hash-map cursors execute; shared protocol dispatch hits an imported-generic compiler dependency; adapters and collection integration remain |
-| Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat, integer/float conversion, caller-buffer Display and selected complete Unicode 17 property/scalar-mapping tables execute; format strings, alignment/precision policies, owned formatting conveniences and contextual string casing remain |
+| Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat, integer/float conversion, caller-buffer Display and selected complete Unicode 17 property/scalar-mapping tables execute. Optional extended modules provide full casing, normalization and default word/grapheme boundaries; format strings, alignment/precision policies and owned formatting conveniences remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings, raw views and stable chunked arenas with generic typed allocations execute; layout and ownership consolidation remain |
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec and deque with explicit errors, linear maps/sets, alloc hash maps, ordered tree maps and min/max heaps execute; legacy migration and ordered sets remain |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks, native descriptor adapters and owned files execute; buffered adapters remain |
 | Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files, borrowed Unix byte paths, components, names, prefixes, owned buffers, explicit lexical normalization and checked directory/file mutations execute; metadata, directory enumeration, walking and further host operations remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Owned raw-byte argument snapshots and argument/environment helpers execute; subprocess management remains |
-| Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, native clocks, generic deadline waits, deterministic generators, sampling/shuffle and explicit OS entropy errors execute; legacy consolidation, additional clocks and distributions remain |
+| Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, Gregorian calendar/ISO weeks/RFC 3339 values, native clocks, generic deadline waits, deterministic generators, sampling/shuffle and explicit OS entropy errors execute; time zones, legacy consolidation, additional clocks and distributions remain |
 | Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6, scopes, socket addresses and CIDR prefixes execute; host socket services remain contract-only |
 | Concurrency | Threads, joining, synchronization, atomics, channels, cancellation | Current thread module is contract-only; runtime prerequisites remain |
 | Development | Assertions, test runner, property helpers, benchmarks, diagnostics, API docs | Existing compiler-driven fixtures; a complete Lanius-facing workflow remains |
@@ -129,8 +129,27 @@ for the documented property set and simple/default/Turkic scalar mappings.
 execute with static generated tables and official conformance corpora. A
 [text-normalization program](extended-text-normalize.md) handles bounded UTF-8
 stdin and optional scalar/grapheme statistics, including binary NUL and
-allocation/I/O failures. Full contextual string casing, word/sentence
-segmentation, locale-sensitive collation and regex remain open.
+allocation/I/O failures. [Default word boundaries](extended-unicode-words.md)
+and [full root/Turkic/Lithuanian casing](extended-unicode-case.md) now execute,
+including original-input context and default title boundaries. A
+[casing program](extended-text-case.md) exposes lower/upper/title/fold over
+bounded UTF-8. Sentence/line segmentation and locale-sensitive collation remain.
+
+[Regular expressions](extended-regex.md) execute a documented UTF-8 dialect
+using ordered Pike matching, with captures, greedy/lazy repetition, scalar
+classes and Unicode 17 properties. Unsupported syntax fails explicitly. A
+[streaming search program](extended-text-grep.md) compiles once and processes
+bounded UTF-8 records with counts, numbering and inversion. Wider regex syntax,
+replacement/split conveniences, lexers, parser utilities and diff/patch remain.
+
+[TOML 1.1.0](extended-toml.md) supplies owned typed documents and deterministic
+encoding, with the complete versioned official valid/invalid corpus and resource
+failure evidence. A [normalizer/checker](extended-toml-normalize.md) preserves
+types, exact temporal fractions, negative zero and unknown offsets. Configuration
+overlays currently use JSON; a common typed configuration layer remains work.
+[Calendar values](stdlib-calendar.md) provide checked Gregorian day/ordinal/ISO
+week arithmetic, RFC 3339 parsing/formatting and explicit SystemTime conversion.
+Time zones and certified leap-second placement need separate data/services.
 
 For external formats and algorithms, use their primary specifications and
 published conformance vectors. Choose exact versions and formats when starting
@@ -185,7 +204,14 @@ API list; unrelated library work can continue.
 ## Current work
 
 - Branch: `codex/stdlib`, based on `441e66f9`.
-- Current numeric/text milestone: complete basic BigUint/BigInt arithmetic and
+- Current configuration/text milestone: TOML 1.1 documents and normalization,
+  UTF-8 regular-expression search and a streaming grep program, Gregorian/RFC
+  3339 calendar values, and complete Unicode 17 default word boundaries and
+  full casing with a command-line converter. Each module/application guide
+  names its executable target, contracts, limits and tests. These additions do
+  not complete the whole scope above; no compiler/runtime implementation is
+  supplied as a library substitute.
+- Preceding numeric/text milestone: complete basic BigUint/BigInt arithmetic and
   a calculator; Unicode 17 property/scalar mappings, all four normalization
   forms, default extended grapheme clusters and a normalization program.
   [Comparison contracts](stdlib-comparison.md) reject native float keys/sorts

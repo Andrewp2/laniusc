@@ -1,0 +1,79 @@
+// Test-only binary transport: nine little-endian u32 header words, then pattern
+// and input. Each response is N, E<kind>:<offset>, or M<capture spans>;... .
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::text;
+import ext::regex;
+import std::io;
+import std::io_decimal;
+import std::stream;
+fn word(bytes: [u8], at: i32) -> i32 {
+    return ((bytes[at] as u32) | ((bytes[at + 1] as u32) << 8) | ((bytes[at + 2] as u32) << 16) | ((bytes[at + 3] as u32) << 24)) as i32;
+}
+fn error(error: ext::regex::Error) {
+    std::io::write_byte(1, 69);
+    let kind: i32 = match (error) {
+        ext::regex::Error::Syntax(_) -> 1, ext::regex::Error::Unsupported(_) -> 2,
+        ext::regex::Error::Limit(_) -> 3, ext::regex::Error::AllocationFailed -> 4,
+        ext::regex::Error::Bounds -> 5, ext::regex::Error::InvalidUtf8(_) -> 6,
+        ext::regex::Error::WorkLimit -> 7
+    };
+    let offset: i32 = match (error) {
+        ext::regex::Error::Syntax(at) -> at, ext::regex::Error::Unsupported(at) -> at,
+        ext::regex::Error::Limit(at) -> at, ext::regex::Error::InvalidUtf8(at) -> at,
+        ext::regex::Error::AllocationFailed -> 0, ext::regex::Error::Bounds -> 0, ext::regex::Error::WorkLimit -> 0
+    };
+    std::io_decimal::write_i32(1, kind); std::io::write_byte(1, 58); std::io_decimal::write_i32(1, offset);
+}
+fn main() -> i32 {
+    let reader: std::stream::Descriptor = std::stream::stdin();
+    let words: [i32; 49161] = [0; 49161];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words), 196644);
+    while (true) {
+        let count: i32 = core::result::unwrap(reader.read(bytes, 0, 1)); if (count == 0) { return 0; }
+        core::result::unwrap(core::io::read_exact(reader.borrow(), bytes, 1, 35));
+        let pattern_length: i32 = word(bytes, 0); let text_length: i32 = word(bytes, 4); let flags: i32 = word(bytes, 8);
+        if (pattern_length < 0 || pattern_length > 65536 || text_length < 0 || text_length > 131072) { return 1; }
+        let config: ext::regex::Options = ext::regex::options();
+        config.multiline = (flags & 1) != 0; config.dot_matches_newline = (flags & 2) != 0;
+        config.max_states = word(bytes, 12); config.max_captures = word(bytes, 16); config.max_work = word(bytes, 20);
+        config.max_depth = word(bytes, 24); config.max_repeat = word(bytes, 28); config.max_pattern_bytes = word(bytes, 32);
+        core::result::unwrap(core::io::read_exact(reader.borrow(), bytes, 36, pattern_length + text_length));
+        let pattern: core::text::Text = core::text::from_utf8_unchecked(bytes, 36, pattern_length);
+        let text: core::text::Text = core::text::from_utf8_unchecked(bytes, 36 + pattern_length, text_length);
+        let compiled: core::result::Result<ext::regex::Regex, ext::regex::Error> = ext::regex::compile(pattern, config);
+        if (core::result::is_err(compiled)) { error(core::result::unwrap_err(compiled)); }
+        else {
+            let regex: ext::regex::Regex = core::result::unwrap(compiled);
+            let cursor_result: core::result::Result<ext::regex::Matches, ext::regex::Error> = regex.find_iter(text);
+            if (core::result::is_err(cursor_result)) { error(core::result::unwrap_err(cursor_result)); }
+            else {
+                let cursor: ext::regex::Matches = core::result::unwrap(cursor_result); let any: bool = false;
+                while (true) {
+                    let found: core::result::Result<core::option::Option<ext::regex::Match>, ext::regex::Error> = cursor.next();
+                    if (core::result::is_err(found)) { error(core::result::unwrap_err(found)); break; }
+                    let optional: core::option::Option<ext::regex::Match> = core::result::unwrap(found);
+                    if (core::option::is_none(optional)) { if (!any) { std::io::write_byte(1, 78); } break; }
+                    let value: ext::regex::Match = core::option::unwrap(optional); std::io::write_byte(1, 77); any = true;
+                    let group: i32 = 0;
+                    while (group < value.group_count()) {
+                        if (group > 0) { std::io::write_byte(1, 47); }
+                        let span: core::option::Option<ext::regex::Span> = value.span(group);
+                        if (core::option::is_none(span)) { std::io::write_byte(1, 45); }
+                        else { let item: ext::regex::Span = core::option::unwrap(span); std::io_decimal::write_i32(1, item.start); std::io::write_byte(1, 44); std::io_decimal::write_i32(1, item.end); }
+                        group += 1;
+                    }
+                    std::io::write_byte(1, 59); value.destroy();
+                }
+                if (core::option::is_some(core::result::unwrap(cursor.next())) || core::option::is_some(core::result::unwrap(cursor.next()))) { return 2; }
+                cursor.destroy();
+            }
+            regex.destroy();
+        }
+        std::io::write_byte(1, 10);
+    }
+    return 0;
+}

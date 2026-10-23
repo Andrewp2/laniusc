@@ -1,0 +1,67 @@
+// Baseline returns 1. Every individual mmap denial must return 0 and release
+// every successful mapping, including partial parser/encoder/copy owners.
+module app::main;
+import alloc::string;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::toml;
+
+fn failure(error: ext::toml::Error) -> i32 {
+    if (match (error.kind) { ext::toml::ErrorKind::AllocationFailed -> true, _ -> false }) { return 0; }
+    return 2;
+}
+fn exercise(document: ext::toml::Document) -> i32 {
+    let encoded: core::result::Result<alloc::string::String, ext::toml::Error> = ext::toml::encode(document);
+    if (core::result::is_err(encoded)) { return failure(core::result::unwrap_err(encoded)); }
+    let output: alloc::string::String = core::result::unwrap(encoded); assert(output.byte_len() > 0); output.destroy();
+    let words: [i32; 512] = [0; 512];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words), 2048);
+    let index: i32 = 0; while (index < 2048) { bytes[index] = 77; index += 1; }
+    let target: core::slice::View<u8> = core::result::unwrap(core::slice::view(bytes, 2048));
+    let written: core::result::Result<i32, ext::toml::Error> = ext::toml::encode_into(document, target);
+    if (core::result::is_err(written)) {
+        index = 0; while (index < 2048) { assert(bytes[index] == 77); index += 1; }
+        return failure(core::result::unwrap_err(written));
+    }
+    let id: i32 = 1;
+    while (id < document.node_count()) {
+        let kind: ext::toml::Kind = core::result::unwrap(document.kind(id));
+        let mode: i32 = match (kind) { ext::toml::Kind::String -> 0, ext::toml::Kind::Integer -> 1, ext::toml::Kind::Float -> 1, ext::toml::Kind::OffsetDateTime -> 2, _ -> -1 };
+        if (mode >= 0) {
+            let copied: core::result::Result<alloc::string::String, ext::toml::Error> = document.copy_string(id);
+            if (mode == 1) { copied = document.copy_number(id); }
+            if (mode == 2) { copied = document.copy_temporal(id); }
+            if (core::result::is_err(copied)) { return failure(core::result::unwrap_err(copied)); }
+            let text: alloc::string::String = core::result::unwrap(copied); assert(text.byte_len() > 0); text.destroy();
+        }
+        let key: core::result::Result<alloc::string::String, ext::toml::Error> = document.copy_key(id);
+        if (core::result::is_ok(key)) { let text: alloc::string::String = core::result::unwrap(key); text.destroy(); }
+        else {
+            let error: ext::toml::Error = core::result::unwrap_err(key);
+            let wrong: bool = match (error.kind) { ext::toml::ErrorKind::WrongKind -> true, _ -> false };
+            if (!wrong) { return failure(error); }
+        }
+        id += 1;
+    }
+    return 1;
+}
+fn run(input: alloc::string::String) -> i32 {
+    let parsed: core::result::Result<ext::toml::Document, ext::toml::Error> = ext::toml::parse_text(input.as_text(), ext::toml::default_options());
+    if (core::result::is_err(parsed)) { return failure(core::result::unwrap_err(parsed)); }
+    let document: ext::toml::Document = core::result::unwrap(parsed);
+    let status: i32 = exercise(document);
+    document.destroy();
+    return status;
+}
+fn main() -> i32 {
+    let bytes: [u8; 94] = [97, 61, 39, 104, 101, 108, 108, 111, 39, 10, 98, 61, 91, 49, 44, 34, 92, 117, 50, 54, 48, 51, 34, 44, 123, 110, 101, 115, 116, 101, 100, 61, 91, 91, 91, 45, 48, 46, 48, 93, 93, 93, 125, 93, 10, 99, 61, 49, 57, 55, 57, 45, 48, 53, 45, 50, 55, 84, 48, 55, 58, 51, 50, 58, 48, 48, 46, 49, 50, 51, 90, 10, 91, 116, 97, 98, 108, 101, 93, 10, 108, 97, 98, 101, 108, 61, 39, 119, 111, 114, 108, 100, 39, 10];
+    let made: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_utf8(bytes, 94);
+    if (core::result::is_err(made)) {
+        let allocation: bool = match (core::result::unwrap_err(made)) { alloc::string::Error::AllocationFailed -> true, _ -> false };
+        if (allocation) { return 0; } return 3;
+    }
+    let input: alloc::string::String = core::result::unwrap(made);
+    let status: i32 = run(input); input.destroy(); return status;
+}

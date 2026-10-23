@@ -81,6 +81,20 @@
       "bytes": 107324,
       "sha256": "2cb2bb9455cda83e8481541ecf5b6dfda66a3bb89efa3fa7c5297eccf607b72b",
       "gzip_sha256": "0a8e9e587114aa9b900b921544a4c09f7d476e91180fd932cd1ac8fc912008c5"
+    },
+    {
+      "file": "auxiliary/WordBreakProperty.txt.gz",
+      "url": "https://www.unicode.org/Public/17.0.0/ucd/auxiliary/WordBreakProperty.txt",
+      "bytes": 114445,
+      "sha256": "72274cac1e6b919507db35655c3e175aa27274668a1ece95c28d2069f2ad9852",
+      "gzip_sha256": "7ff4a1622a9d6dba9dc43d674b09401d96d65736063fde57ca4ab73710105bcf"
+    },
+    {
+      "file": "auxiliary/WordBreakTest.txt.gz",
+      "url": "https://www.unicode.org/Public/17.0.0/ucd/auxiliary/WordBreakTest.txt",
+      "bytes": 322136,
+      "sha256": "1de23a75f37904abc7d206239ee8d34f8fdf0fb4ab32a7174dfbabbde25419b2",
+      "gzip_sha256": "71b57c51695eb478b21039d0e3be3404e72cfc111111ba1fdba2dd248577f26c"
     }
   ]
 }

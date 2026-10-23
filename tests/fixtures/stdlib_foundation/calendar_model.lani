@@ -1,0 +1,31 @@
+module app::main;
+import core::calendar;
+import core::mem;
+import core::result;
+import core::text;
+import core::time;
+import std::io;
+import std::io_decimal;
+import std::process;
+fn argument(index: i32, pointer: ptr, bytes: [u8]) -> i64 {
+    let count: i32 = std::process::arg_len(index);assert(count >= 1 && count <= 32);
+    assert(std::process::arg_read(index,pointer,count as usize) == count);
+    return core::result::unwrap(core::result::unwrap(core::text::from_utf8(bytes,count)).parse_i64());
+}
+fn output(value: i64) { assert(std::io_decimal::write_i64(1,value) > 0 && std::io::write_byte(1,10) == 1); }
+fn main() -> i32 {
+    let storage: [i32;8] = [0;8];let pointer: ptr = core::mem::i32_array_data_ptr(storage);let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,32);
+    let year: i32 = argument(1,pointer,bytes) as i32;let month: i32 = argument(2,pointer,bytes) as i32;let day: i32 = argument(3,pointer,bytes) as i32;
+    let hour: i32 = argument(4,pointer,bytes) as i32;let minute: i32 = argument(5,pointer,bytes) as i32;let second: i32 = argument(6,pointer,bytes) as i32;
+    let nanos: u32 = argument(7,pointer,bytes) as u32;let minutes: i32 = argument(8,pointer,bytes) as i32;
+    let d: core::calendar::Date = core::result::unwrap(core::calendar::date(year,month,day));let iso: core::calendar::IsoWeek = d.iso_week();
+    output(d.day_number());output(d.weekday() as i64);output(d.ordinal() as i64);output(iso.year);output(iso.week as i64);output(iso.weekday as i64);
+    let t: core::calendar::TimeOfDay = core::result::unwrap(core::calendar::time_of_day(hour,minute,second,nanos));
+    let local: core::calendar::LocalDateTime = core::result::unwrap(core::calendar::local_date_time(d,t));
+    let offset: core::calendar::UtcOffset = core::result::unwrap(core::calendar::utc_offset(minutes));
+    let value: core::calendar::OffsetDateTime = core::result::unwrap(core::calendar::offset_date_time(local,offset));
+    let stamp: core::time::SystemTime = core::result::unwrap(value.to_system_time());output(stamp.unix_seconds());output(stamp.subsec_nanos() as i64);
+    let back: core::calendar::OffsetDateTime = core::result::unwrap(core::calendar::from_system_time(stamp,offset));
+    assert(back.local.date.compare(d) == 0 && back.local.time.hour == hour && back.local.time.minute == minute && back.local.time.second == second && back.local.time.nanos == nanos);
+    return 0;
+}

@@ -1,0 +1,157 @@
+// Unicode 17 full string casing over bounded UTF-8 stdin.
+// Exit 2: arguments/input/limits; 3: host I/O; 4: allocation.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::cli;
+import ext::unicode_case;
+import std::args;
+import std::stream;
+
+struct Options { kind: ext::unicode_case::Kind, locale: ext::unicode_case::Locale, input: i32, output: i32, work: u64, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Diagnostic { stage: i32, reason: i32, offset: i32 }
+impl Diagnostic { fn borrow(&self) -> &Diagnostic { return self; } }
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn text(value: str, count: i32) -> core::text::Text {
+    let bytes: core::slice::View<u8> = literal(value,count);
+    return core::text::from_utf8_unchecked(bytes.values,bytes.start,count);
+}
+fn equal(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len() != right.len()) { return false; }
+    let index: i32 = 0;
+    while (index < left.len()) { if (left.values[left.start+index] != right.values[right.start+index]) { return false; } index += 1; }
+    return true;
+}
+fn fail(diagnostic: &Diagnostic, status: i32, stage: i32, reason: i32) -> i32 {
+    diagnostic.stage = stage; diagnostic.reason = reason; return status;
+}
+fn input_error(error: core::io::Error, diagnostic: &Diagnostic) -> i32 {
+    return match (error) {
+        core::io::Error::LimitExceeded -> fail(diagnostic,2,1,2),
+        core::io::Error::AllocationFailed -> fail(diagnostic,4,1,4),
+        _ -> fail(diagnostic,3,1,3)
+    };
+}
+fn case_error(error: ext::unicode_case::Error, diagnostic: &Diagnostic) -> i32 {
+    diagnostic.offset = match (error) { ext::unicode_case::Error::InvalidUtf8(offset) -> offset, _ -> -1 };
+    let reason: i32 = 2; if (diagnostic.offset >= 0) { reason = 1; }
+    return fail(diagnostic,2,2,reason);
+}
+fn option(options: &Options, item: ext::cli::Occurrence) -> bool {
+    if (item.id == 6) { options.help = true; return true; }
+    let argument: ext::cli::Argument = core::option::unwrap(item.value);
+    let bytes: core::slice::View<u8> = argument.bytes;
+    if (item.id == 1) {
+        if (equal(bytes,literal("lower",5))) { options.kind = ext::unicode_case::Kind::Lower; return true; }
+        if (equal(bytes,literal("upper",5))) { options.kind = ext::unicode_case::Kind::Upper; return true; }
+        if (equal(bytes,literal("title",5))) { options.kind = ext::unicode_case::Kind::Title; return true; }
+        if (equal(bytes,literal("fold",4))) { options.kind = ext::unicode_case::Kind::Fold; return true; }
+        return false;
+    }
+    if (item.id == 2) {
+        if (equal(bytes,literal("root",4))) { options.locale = ext::unicode_case::Locale::Root; return true; }
+        if (equal(bytes,literal("turkic",6))) { options.locale = ext::unicode_case::Locale::Turkic; return true; }
+        if (equal(bytes,literal("lithuanian",10))) { options.locale = ext::unicode_case::Locale::Lithuanian; return true; }
+        return false;
+    }
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(bytes.values,bytes.start,bytes.len());
+    if (core::result::is_err(parsed)) { return false; }
+    let value: u64 = core::result::unwrap(parsed);
+    if (item.id == 5) { if (value > 1000000000 as u64) { return false; } options.work = value; return true; }
+    if (value > 67108864 as u64) { return false; }
+    if (item.id == 3) { options.input = value as i32; }
+    if (item.id == 4) { options.output = value as i32; }
+    return true;
+}
+fn convert(buffer: &alloc::io::Buffer, options: Options, diagnostic: &Diagnostic) -> i32 {
+    let checked: core::result::Result<core::text::Text,core::text::Error> = core::text::from_utf8(buffer.as_bytes(),buffer.len());
+    if (core::result::is_err(checked)) {
+        let error: core::text::Error = core::result::unwrap_err(checked);
+        diagnostic.offset = match (error) { core::text::Error::InvalidUtf8(offset) -> offset, _ -> -1 };
+        return fail(diagnostic,2,1,1);
+    }
+    let input: core::text::Text = core::result::unwrap(checked);
+    let measured: core::result::Result<ext::unicode_case::Report,ext::unicode_case::Error> = ext::unicode_case::measure(input,options.kind,options.locale,options.work);
+    if (core::result::is_err(measured)) { return case_error(core::result::unwrap_err(measured),diagnostic); }
+    let expected: ext::unicode_case::Report = core::result::unwrap(measured);
+    if (expected.bytes > options.output) { return fail(diagnostic,2,2,2); }
+    let allocated: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity<u8>(expected.bytes);
+    if (core::result::is_err(allocated)) { return fail(diagnostic,4,2,4); }
+    let bytes: alloc::vec::Vec<u8> = core::result::unwrap(allocated); core::result::unwrap(bytes.try_resize(expected.bytes,0));
+    let transformed: core::result::Result<ext::unicode_case::Report,ext::unicode_case::Error> = ext::unicode_case::transform_into(input,options.kind,options.locale,bytes.as_view(),options.work);
+    if (core::result::is_err(transformed)) { bytes.destroy(); return case_error(core::result::unwrap_err(transformed),diagnostic); }
+    let report: ext::unicode_case::Report = core::result::unwrap(transformed);
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    let written: core::result::Result<i32,core::io::Failure> = core::io::write_all(sink.borrow(),bytes.as_slice(),0,report.bytes);
+    bytes.destroy(); if (core::result::is_err(written)) { return fail(diagnostic,3,3,3); } return 0;
+}
+fn process(arguments: std::args::Arguments, diagnostic: &Diagnostic) -> i32 {
+    let specs: [ext::cli::Spec;6] = [
+        ext::cli::Spec { id: 1, long: literal("kind",4), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 2, long: literal("locale",6), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 3, long: literal("max-input-bytes",15), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 4, long: literal("max-output-bytes",16), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 5, long: literal("max-work",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let specification: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,6));
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),specification,ext::cli::Ordering::Intermixed));
+    let options: Options = Options { kind: ext::unicode_case::Kind::Lower, locale: ext::unicode_case::Locale::Root, input: 4194304, output: 16777216, work: 100000000, help: false };
+    while (true) {
+        let event: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next();
+        if (core::result::is_err(event)) { return fail(diagnostic,2,0,0); }
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(event); if (core::option::is_none(next)) { break; }
+        let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> option(options.borrow(),item), _ -> false };
+        if (!valid) { return fail(diagnostic,2,0,0); }
+    }
+    if (options.help) {
+        let usage: core::slice::View<u8> = literal("Usage: text-case [--kind lower|upper|title|fold] [--locale root|turkic|lithuanian] [--max-input-bytes N] [--max-output-bytes N] [--max-work N]\n",143);
+        let sink: std::stream::Descriptor = std::stream::stdout();
+        if (core::result::is_err(core::io::write_all(sink.borrow(),usage.values,usage.start,usage.len()))) { return fail(diagnostic,3,0,3); } return 0;
+    }
+    let buffer: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(options.input));
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let copied: core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(source.borrow(),buffer.borrow());
+    if (core::result::is_err(copied)) { let failure: core::io::CopyFailure = core::result::unwrap_err(copied); buffer.destroy(); return input_error(failure.cause,diagnostic); }
+    let status: i32 = convert(buffer.borrow(),options,diagnostic); buffer.destroy(); return status;
+}
+fn diagnostic(value: Diagnostic) -> bool {
+    let storage: [i32;32] = [0;32]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),128);
+    let format: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,128));
+    format.write_text(text("text-case: ",11));
+    if (value.reason == 0) { format.write_text(text("invalid-arguments",17)); }
+    if (value.reason == 1) { format.write_text(text("invalid-utf8",12)); }
+    if (value.reason == 2) { format.write_text(text("resource-limit",14)); }
+    if (value.reason == 3) { format.write_text(text("io-failure",10)); }
+    if (value.reason == 4) { format.write_text(text("allocation-failure",18)); }
+    format.write_text(text(" stage=",7));
+    if (value.stage == 0) { format.write_text(text("arguments",9)); }
+    if (value.stage == 1) { format.write_text(text("input",5)); }
+    if (value.stage == 2) { format.write_text(text("casing",6)); }
+    if (value.stage == 3) { format.write_text(text("output",6)); }
+    if (value.offset >= 0) { format.write_text(text(" byte=",6)); format.write_signed(value.offset as i64,core::fmt::decimal()); }
+    format.write_text(text("\n",1));
+    let size: i32 = core::result::unwrap(format.finish()); let sink: std::stream::Descriptor = std::stream::stderr();
+    return core::result::is_ok(core::io::write_all(sink.borrow(),bytes,0,size));
+}
+fn main() -> i32 {
+    let detail: Diagnostic = Diagnostic { stage: 0, reason: 0, offset: -1 };
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,32,8192);
+    let status: i32 = 0;
+    if (core::result::is_err(captured)) {
+        status = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> fail(detail.borrow(),4,0,4), std::args::Error::HostRead(index) -> fail(detail.borrow(),3,0,3), _ -> fail(detail.borrow(),2,0,0) };
+    } else { let arguments: std::args::Arguments = core::result::unwrap(captured); status = process(arguments,detail.borrow()); arguments.destroy(); }
+    if (status != 0 && !diagnostic(detail)) { return 3; } return status;
+}
