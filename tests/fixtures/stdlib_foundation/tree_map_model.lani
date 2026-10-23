@@ -1,0 +1,98 @@
+// Binary commands: opcode, LE i32 key, LE i32 value. Print query and full map.
+module app::main;
+import alloc::tree_map;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::fs;
+import std::io;
+import std::io_decimal;
+fn number(value: i32) { assert(std::io_decimal::write_i32(1, value) >= 0); assert(std::io::write_byte(1, 32) == 1); }
+fn integer(input: [u8], offset: i32) -> i32 {
+    let bits: u32 = (input[offset] as u32) | ((input[offset + 1] as u32) << 8) | ((input[offset + 2] as u32) << 16) | ((input[offset + 3] as u32) << 24); return bits as i32;
+}
+fn error_tag(error: alloc::tree_map::Error) -> i32 {
+    let tag: i32 = match (error) { alloc::tree_map::Error::InvalidCapacity -> 3, alloc::tree_map::Error::CapacityOverflow -> 4, alloc::tree_map::Error::AllocationFailed -> 5, alloc::tree_map::Error::InvalidOrder -> 6, _ -> 7 }; return tag;
+}
+fn main() -> i32 {
+    let storage: [i32; 16384] = [0; 16384]; let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let size: i32 = std::fs::read(0, pointer, 65536); if (size < 0 || size % 9 != 0) { return 1; }
+    let input: [u8] = core::mem::typed_slice_from_raw_parts(pointer, size);
+    let map: alloc::tree_map::TreeMap<i32, i32> = alloc::tree_map::new(); let offset: i32 = 0;
+    while (offset < size) {
+        let op: u8 = input[offset]; let key: i32 = integer(input, offset + 1); let value: i32 = integer(input, offset + 5); offset += 9;
+        let tag: i32 = 0; let answer: i32 = 0; let found: core::option::Option<alloc::tree_map::Entry<i32, i32>> = core::option::None();
+        let range_keys: [i32; 128] = [0; 128]; let range_values: [i32; 128] = [0; 128]; let range_count: i32 = 0;
+        if (op == 0 || op == 1) {
+            let added: core::result::Result<core::option::Option<alloc::tree_map::Entry<i32, i32>>, alloc::tree_map::Error> = map.try_insert(key, value);
+            if (core::result::is_err(added)) { tag = error_tag(core::result::unwrap_err(added)); } else { found = core::result::unwrap(added); }
+        }
+        if (op == 2) { found = map.remove(key); }
+        if (op == 3) { found = map.get_entry(key); let item: core::option::Option<i32> = map.get(key); assert(core::option::is_some(item) == core::option::is_some(found)); if (core::option::is_some(found)) { assert(core::option::unwrap(found).value == core::option::unwrap(item)); } }
+        if (op == 4) { tag = 2; if (map.contains_key(key)) { answer = 1; } }
+        if (op == 5) { found = map.pop_first(); }
+        if (op == 6) { found = map.pop_last(); }
+        if (op == 7) { map.clear(); }
+        if (op == 8 || op == 9) {
+            let changed: core::result::Result<i32, alloc::tree_map::Error> = core::result::Ok(0);
+            if (op == 8) { changed = map.try_reserve(key); } else { changed = map.try_shrink_to_fit(); }
+            if (core::result::is_err(changed)) { tag = error_tag(core::result::unwrap_err(changed)); }
+            else { if (op == 8) { assert(map.capacity() >= map.len() + key); } else { assert(map.capacity() == map.len()); } }
+        }
+        if (op == 10) {
+            let copied: core::result::Result<alloc::tree_map::TreeMap<i32, i32>, alloc::tree_map::Error> = map.try_clone();
+            let copy: alloc::tree_map::TreeMap<i32, i32> = core::result::unwrap(copied);
+            found = copy.pop_first(); core::result::unwrap(copy.try_insert(key, value)); copy.destroy();
+        }
+        if (op == 11) {
+            let checked: core::result::Result<alloc::tree_map::Cursor<i32, i32>, alloc::tree_map::Error> = map.range(key, value);
+            if (core::result::is_err(checked)) { tag = error_tag(core::result::unwrap_err(checked)); }
+            else {
+                let cursor: alloc::tree_map::Cursor<i32, i32> = core::result::unwrap(checked);
+                while (!cursor.is_empty()) {
+                    let item: alloc::tree_map::Entry<i32, i32> = core::option::unwrap(cursor.next()); assert(range_count < 128);
+                    range_keys[range_count] = item.key; range_values[range_count] = item.value; range_count += 1;
+                }
+                assert(core::option::is_none(cursor.next_back()));
+            }
+        }
+        if (op == 12) { found = map.lower_bound(key); }
+        if (op == 13) { found = map.upper_bound(key); }
+        if (op == 14) { map.destroy(); assert(map.capacity() == 0); }
+        if (op == 15 || op == 16) {
+            let a: alloc::tree_map::Entry<i32, i32> = alloc::tree_map::Entry { key: key, value: value };
+            let b: alloc::tree_map::Entry<i32, i32> = alloc::tree_map::Entry { key: key + 1, value: value / 2 };
+            let c: alloc::tree_map::Entry<i32, i32> = alloc::tree_map::Entry { key: key + 2, value: 0 };
+            if (op == 16) { b = a; }
+            let source: [alloc::tree_map::Entry<i32, i32>; 3] = [a, b, c];
+            let view: core::slice::View<alloc::tree_map::Entry<i32, i32>> = core::result::unwrap(core::slice::view(source, 3));
+            let built: core::result::Result<alloc::tree_map::TreeMap<i32, i32>, alloc::tree_map::Error> = alloc::tree_map::from_sorted(view);
+            if (core::result::is_err(built)) { tag = error_tag(core::result::unwrap_err(built)); }
+            else { map.destroy(); map = core::result::unwrap(built); }
+        }
+        if (op == 18) { found = map.first(); }
+        if (op == 19) { found = map.last(); }
+        if (op > 19) { return 2; }
+        let returned_key: i32 = 0;
+        if (core::option::is_some(found)) { let item: alloc::tree_map::Entry<i32, i32> = core::option::unwrap(found); tag = 1; returned_key = item.key; answer = item.value; }
+        number(tag); number(returned_key); number(answer); number(range_count);
+        let index: i32 = 0; while (index < range_count) { number(range_keys[index]); number(range_values[index]); index += 1; }
+        number(map.len()); assert(map.len() <= map.capacity() && map.is_empty() == (map.len() == 0));
+        let ordered: alloc::tree_map::Cursor<i32, i32> = map.iter(); let mixed: alloc::tree_map::Cursor<i32, i32> = map.iter();
+        let keys: [i32; 128] = [0; 128]; let values: [i32; 128] = [0; 128]; index = 0;
+        while (!ordered.is_empty()) {
+            let item: alloc::tree_map::Entry<i32, i32> = core::option::unwrap(ordered.next()); assert(index < 128);
+            keys[index] = item.key; values[index] = item.value; number(item.key); number(item.value); index += 1;
+        }
+        assert(index == map.len() && core::option::is_none(ordered.next()) && core::option::is_none(ordered.next_back()));
+        let low: i32 = 0; let high: i32 = map.len() - 1;
+        while (low <= high) {
+            let item: alloc::tree_map::Entry<i32, i32> = core::option::unwrap(mixed.next()); assert(item.key == keys[low] && item.value == values[low]); low += 1;
+            if (low <= high) { item = core::option::unwrap(mixed.next_back()); assert(item.key == keys[high] && item.value == values[high]); high -= 1; }
+        }
+        assert(mixed.is_empty() && core::option::is_none(mixed.next()) && core::option::is_none(mixed.next_back()));
+        assert(std::io::write_byte(1, 10) == 1);
+    }
+    map.destroy(); return 0;
+}

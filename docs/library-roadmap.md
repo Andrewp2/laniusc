@@ -31,7 +31,7 @@ package distribution is a separate deliverable.
 | Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | Inherent slice/text/hash-map cursors execute; shared protocol dispatch hits an imported-generic compiler dependency; adapters and collection integration remain |
 | Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat and integer conversion execute; general formatting and further Unicode operations remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings and raw views exist; ownership conventions need consolidation |
-| Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec and deque with explicit errors, linear maps/sets, alloc hash maps and min/max heaps execute; legacy collection migration and ordered collections remain |
+| Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec and deque with explicit errors, linear maps/sets, alloc hash maps, ordered tree maps and min/max heaps execute; legacy migration and ordered sets remain |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks, native descriptor adapters and owned files execute; buffered adapters remain |
 | Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and borrowed byte paths execute with explicit close/error contracts; metadata, directories and complete lexical paths remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Argument/environment helpers exist; subprocess management remains |
@@ -129,6 +129,15 @@ API list; unrelated library work can continue.
   model, generic payloads, allocation denial and ten migrated programs pass on
   x86_64 Linux. Large FIFO workloads perform 262,144 pop/push pairs at 4,096 and
   65,536 entries with one allocation each and no further allocation attempts.
+- Ordered map: [`alloc::tree_map`](stdlib-tree-map.md) executes generic lookup,
+  replacement/removal, bounds, ranges, both-ended cursors, clone and linear
+  construction from sorted entries. Eight test groups cover a 6,000-command
+  reference model, allocation failures, generic payloads, 32,768-key adversarial
+  insertion orders and a sorted word-count program. Building from 65,536 sorted
+  entries uses 65,535 key comparisons and about 32 ms whole-program CPU time,
+  versus 1,966,082 comparisons and 312 ms for repeated insertion. The old
+  insertion-ordered linear map remains a separate migration; ordered sets
+  remain to be implemented.
 - Extended CSV: parsing, independent field copies and canonical encoding execute
   on x86_64 Linux, including generated tables, borrowed field views and allocation fault injection.
   See [extended-csv.md](extended-csv.md). Incremental decoding now shares the same parser; row construction remains.
@@ -191,7 +200,7 @@ API list; unrelated library work can continue.
   remaining streaming format interfaces; complete HashSet when its compiler
   dependency is resolved. Complete the remaining Vec consumer migrations and
   consolidate legacy maps/sets and specialized collections under alloc with
-  explicit fallible APIs; ordered collections remain.
+  explicit fallible APIs; ordered sets remain.
   Completing the integration application does not complete the first phase.
 - Text composition: [join, repeat and word splitting](stdlib-text-composition.md)
   execute with atomic, alias-safe appends, checked sizes and one-allocation

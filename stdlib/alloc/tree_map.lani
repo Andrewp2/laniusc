@@ -1,0 +1,319 @@
+// Ordered map with AVL balancing and reusable indexed node storage.
+// Copies borrow nested resources; keep one active owner of the allocation.
+module alloc::tree_map;
+import alloc::allocator;
+import core::cmp;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+
+pub enum Error { InvalidCapacity, CapacityOverflow, AllocationFailed, InvalidOrder, InvalidRange }
+pub struct Entry<K, V> { key: K, value: V }
+struct Node<K, V> { item: Entry<K, V>, left: i32, right: i32, parent: i32, height: i32, next_free: i32 }
+pub struct TreeMap<K, V> { storage: ptr, reserved: i32, used: i32, length: i32, root: i32, free: i32 }
+pub struct Cursor<K, V> { storage: ptr, reserved: i32, front: i32, back: i32 }
+const ALIGN: usize = 8;
+
+pub fn new<K, V>() -> TreeMap<K, V> {
+    let empty: ptr = 0;
+    return TreeMap { storage: empty, reserved: 0, used: 0, length: 0, root: -1, free: -1 };
+}
+pub fn with_capacity<K, V>(capacity: i32) -> core::result::Result<TreeMap<K, V>, Error> {
+    let value: TreeMap<K, V> = new();
+    let reserved: core::result::Result<i32, Error> = value.try_reserve(capacity);
+    if (core::result::is_err(reserved)) { return core::result::Err(core::result::unwrap_err(reserved)); }
+    return core::result::Ok(value);
+}
+fn capacity_limit<K, V>() -> i32 {
+    return (2147483647 / core::mem::size_of<Node<K, V>>()) as i32;
+}
+fn height<K, V>(nodes: [Node<K, V>], index: i32) -> i32 {
+    if (index < 0) { return 0; } let node: Node<K, V> = nodes[index]; return node.height;
+}
+fn endpoint<K, V>(nodes: [Node<K, V>], root: i32, last: bool) -> i32 {
+    let index: i32 = root;
+    while (index >= 0) {
+        let node: Node<K, V> = nodes[index]; let next: i32 = node.left;
+        if (last) { next = node.right; }
+        if (next < 0) { return index; } index = next;
+    }
+    return -1;
+}
+fn adjacent<K, V>(nodes: [Node<K, V>], index: i32, previous: bool) -> i32 {
+    let node: Node<K, V> = nodes[index]; let child: i32 = node.right;
+    if (previous) { child = node.left; }
+    if (child >= 0) { return endpoint(nodes, child, previous); }
+    let current: i32 = index; let parent: i32 = node.parent;
+    while (parent >= 0) {
+        let upper: Node<K, V> = nodes[parent]; let side: i32 = upper.left;
+        if (previous) { side = upper.right; }
+        if (side == current) { return parent; }
+        current = parent; parent = upper.parent;
+    }
+    return -1;
+}
+
+// Strictly increasing input: equivalent or descending adjacent keys are errors.
+pub fn from_sorted<K, V>(input: core::slice::View<Entry<K, V>>) -> core::result::Result<TreeMap<K, V>, Error>
+    where K: core::cmp::Ord<K> {
+    let count: i32 = input.len();
+    if (count > capacity_limit<K, V>()) { return core::result::Err(Error::CapacityOverflow); }
+    let index: i32 = 1;
+    while (index < count) {
+        let left: Entry<K, V> = core::option::unwrap(input.get(index - 1));
+        let right: Entry<K, V> = core::option::unwrap(input.get(index));
+        if (!K::lt(left.key, right.key)) { return core::result::Err(Error::InvalidOrder); }
+        index += 1;
+    }
+    let value: TreeMap<K, V> = new();
+    let reserved: core::result::Result<i32, Error> = value.try_reserve(count);
+    if (core::result::is_err(reserved)) { return core::result::Err(core::result::unwrap_err(reserved)); }
+    let target: [Node<K, V>] = value.nodes(); index = 0;
+    while (index < count) {
+        let item: Entry<K, V> = core::option::unwrap(input.get(index));
+        target[index] = Node { item: item, left: -1, right: -1, parent: -1, height: 1, next_free: -1 }; index += 1;
+    }
+    value.length = count; value.link_sorted(); return core::result::Ok(value);
+}
+
+pub impl<K, V> TreeMap<K, V> {
+    pub fn borrow(&self) -> &TreeMap<K, V> { return self; }
+    pub fn len(&self) -> i32 { return self.length; }
+    pub fn capacity(&self) -> i32 { return self.reserved; }
+    pub fn is_empty(&self) -> bool { return self.length == 0; }
+    fn nodes(&self) -> [Node<K, V>] { return core::mem::typed_slice_from_storage(self.storage, self.reserved); }
+    fn find(&self, key: K) -> i32 where K: core::cmp::Ord<K> {
+        let nodes: [Node<K, V>] = self.nodes(); let index: i32 = self.root;
+        while (index >= 0) {
+            let node: Node<K, V> = nodes[index];
+            if (K::lt(key, node.item.key)) { index = node.left; }
+            else { if (K::lt(node.item.key, key)) { index = node.right; } else { return index; } }
+        }
+        return -1;
+    }
+    pub fn contains_key(&self, key: K) -> bool where K: core::cmp::Ord<K> { return self.find(key) >= 0; }
+    pub fn get_entry(&self, key: K) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K> {
+        let index: i32 = self.find(key); if (index < 0) { return core::option::None(); }
+        let nodes: [Node<K, V>] = self.nodes(); let node: Node<K, V> = nodes[index]; return core::option::Some(node.item);
+    }
+    pub fn get(&self, key: K) -> core::option::Option<V> where K: core::cmp::Ord<K> {
+        let found: core::option::Option<Entry<K, V>> = self.get_entry(key);
+        let result: core::option::Option<V> = match (found) { Some(item) -> core::option::Some(item.value), None -> core::option::None() }; return result;
+    }
+    pub fn first(&self) -> core::option::Option<Entry<K, V>> {
+        let nodes: [Node<K, V>] = self.nodes(); let index: i32 = endpoint(nodes, self.root, false);
+        if (index < 0) { return core::option::None(); } let node: Node<K, V> = nodes[index]; return core::option::Some(node.item);
+    }
+    pub fn last(&self) -> core::option::Option<Entry<K, V>> {
+        let nodes: [Node<K, V>] = self.nodes(); let index: i32 = endpoint(nodes, self.root, true);
+        if (index < 0) { return core::option::None(); } let node: Node<K, V> = nodes[index]; return core::option::Some(node.item);
+    }
+    fn bound(&self, key: K, strict: bool) -> i32 where K: core::cmp::Ord<K> {
+        let nodes: [Node<K, V>] = self.nodes(); let index: i32 = self.root; let candidate: i32 = -1;
+        while (index >= 0) {
+            let node: Node<K, V> = nodes[index]; let acceptable: bool = false;
+            if (strict) { acceptable = K::lt(key, node.item.key); }
+            else { acceptable = !K::lt(node.item.key, key); }
+            if (acceptable) { candidate = index; index = node.left; } else { index = node.right; }
+        }
+        return candidate;
+    }
+    pub fn lower_bound(&self, key: K) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K> {
+        let index: i32 = self.bound(key, false); if (index < 0) { return core::option::None(); }
+        let nodes: [Node<K, V>] = self.nodes(); let node: Node<K, V> = nodes[index]; return core::option::Some(node.item);
+    }
+    pub fn upper_bound(&self, key: K) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K> {
+        let index: i32 = self.bound(key, true); if (index < 0) { return core::option::None(); }
+        let nodes: [Node<K, V>] = self.nodes(); let node: Node<K, V> = nodes[index]; return core::option::Some(node.item);
+    }
+    pub fn iter(&self) -> Cursor<K, V> {
+        let nodes: [Node<K, V>] = self.nodes();
+        return Cursor { storage: self.storage, reserved: self.reserved, front: endpoint(nodes, self.root, false), back: endpoint(nodes, self.root, true) };
+    }
+    // Half-open key interval [lower, upper); equivalent bounds yield empty.
+    pub fn range(&self, lower: K, upper: K) -> core::result::Result<Cursor<K, V>, Error> where K: core::cmp::Ord<K> {
+        if (K::lt(upper, lower)) { return core::result::Err(Error::InvalidRange); }
+        let nodes: [Node<K, V>] = self.nodes(); let front: i32 = self.bound(lower, false); let back: i32 = -1;
+        if (front >= 0) {
+            let first: Node<K, V> = nodes[front];
+            if (K::lt(first.item.key, upper)) {
+                let end: i32 = self.bound(upper, false);
+                if (end < 0) { back = endpoint(nodes, self.root, true); } else { back = adjacent(nodes, end, true); }
+            } else { front = -1; }
+        }
+        return core::result::Ok(Cursor { storage: self.storage, reserved: self.reserved, front: front, back: back });
+    }
+    pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, Error> {
+        if (additional < 0) { return core::result::Err(Error::InvalidCapacity); }
+        if (additional > capacity_limit<K, V>() - self.length) { return core::result::Err(Error::CapacityOverflow); }
+        let capacity: i32 = self.length + additional;
+        if (capacity <= self.reserved) { return core::result::Ok(self.reserved); }
+        let size: usize = core::mem::size_of<Node<K, V>>();
+        let storage: ptr = alloc::allocator::alloc(size * (capacity as usize), ALIGN);
+        if (storage == 0) { return core::result::Err(Error::AllocationFailed); }
+        let source: [Node<K, V>] = self.nodes(); let target: [Node<K, V>] = core::mem::typed_slice_from_storage(storage, capacity);
+        let index: i32 = 0; while (index < self.used) { target[index] = source[index]; index += 1; }
+        if (self.reserved > 0) { alloc::allocator::dealloc(self.storage, size * (self.reserved as usize), ALIGN); }
+        self.storage = storage; self.reserved = capacity; return core::result::Ok(capacity);
+    }
+    fn refresh(&self, index: i32) {
+        let nodes: [Node<K, V>] = self.nodes(); let node: Node<K, V> = nodes[index];
+        let maximum: i32 = height(nodes, node.left); let right: i32 = height(nodes, node.right);
+        if (right > maximum) { maximum = right; } node.height = maximum + 1; nodes[index] = node;
+    }
+    fn attach(&self, parent: i32, old: i32, replacement: i32) {
+        let nodes: [Node<K, V>] = self.nodes();
+        if (parent < 0) { self.root = replacement; }
+        else {
+            let upper: Node<K, V> = nodes[parent];
+            if (upper.left == old) { upper.left = replacement; } else { assert(upper.right == old); upper.right = replacement; }
+            nodes[parent] = upper;
+        }
+        if (replacement >= 0) { let child: Node<K, V> = nodes[replacement]; child.parent = parent; nodes[replacement] = child; }
+    }
+    // Rotate while repairing all changed parent links, then refresh bottom-up.
+    fn rotate(&self, index: i32, left: bool) -> i32 {
+        let nodes: [Node<K, V>] = self.nodes(); let node: Node<K, V> = nodes[index];
+        let pivot_index: i32 = node.left; if (left) { pivot_index = node.right; }
+        let pivot: Node<K, V> = nodes[pivot_index]; let middle: i32 = pivot.right;
+        if (left) { middle = pivot.left; node.right = middle; pivot.left = index; }
+        else { node.left = middle; pivot.right = index; }
+        let parent: i32 = node.parent; node.parent = pivot_index; pivot.parent = parent;
+        nodes[index] = node; nodes[pivot_index] = pivot;
+        if (middle >= 0) { let moved: Node<K, V> = nodes[middle]; moved.parent = index; nodes[middle] = moved; }
+        self.attach(parent, index, pivot_index); self.refresh(index); self.refresh(pivot_index); return pivot_index;
+    }
+    fn rebalance(&self, start: i32) {
+        let nodes: [Node<K, V>] = self.nodes(); let index: i32 = start;
+        while (index >= 0) {
+            self.refresh(index); let node: Node<K, V> = nodes[index];
+            let balance: i32 = height(nodes, node.left) - height(nodes, node.right); let root: i32 = index;
+            if (balance > 1) {
+                let child: Node<K, V> = nodes[node.left];
+                if (height(nodes, child.right) > height(nodes, child.left)) { self.rotate(node.left, true); }
+                root = self.rotate(index, false);
+            } else { if (balance < -1) {
+                let child: Node<K, V> = nodes[node.right];
+                if (height(nodes, child.left) > height(nodes, child.right)) { self.rotate(node.right, false); }
+                root = self.rotate(index, true);
+            } }
+            let top: Node<K, V> = nodes[root]; index = top.parent;
+        }
+    }
+    // An equivalent key replaces both stored key and value, returning the old
+    // pair. Replacements never allocate. Failure retains caller-owned inputs.
+    pub fn try_insert(&self, key: K, value: V) -> core::result::Result<core::option::Option<Entry<K, V>>, Error> where K: core::cmp::Ord<K> {
+        let nodes: [Node<K, V>] = self.nodes(); let index: i32 = self.root; let parent: i32 = -1; let left: bool = false;
+        let item: Entry<K, V> = Entry { key: key, value: value };
+        while (index >= 0) {
+            let node: Node<K, V> = nodes[index]; parent = index;
+            if (K::lt(key, node.item.key)) { left = true; index = node.left; }
+            else { if (K::lt(node.item.key, key)) { left = false; index = node.right; }
+            else { let old: Entry<K, V> = node.item; node.item = item; nodes[index] = node; return core::result::Ok(core::option::Some(old)); } }
+        }
+        if (self.length == self.reserved) {
+            let limit: i32 = capacity_limit<K, V>();
+            if (self.length == limit) { return core::result::Err(Error::CapacityOverflow); }
+            let target: i32 = limit; if (self.reserved <= limit / 2) { target = self.reserved * 2; }
+            if (target < 4 && limit >= 4) { target = 4; }
+            if (target <= self.length) { target = self.length + 1; }
+            let grown: core::result::Result<i32, Error> = self.try_reserve(target - self.length);
+            if (core::result::is_err(grown)) { return core::result::Err(core::result::unwrap_err(grown)); }
+        }
+        let target: [Node<K, V>] = self.nodes(); index = self.free;
+        if (index >= 0) { let unused: Node<K, V> = target[index]; self.free = unused.next_free; }
+        else { index = self.used; assert(index < self.reserved); self.used += 1; }
+        target[index] = Node { item: item, left: -1, right: -1, parent: parent, height: 1, next_free: -1 };
+        if (parent < 0) { self.root = index; }
+        else { let upper: Node<K, V> = target[parent]; if (left) { upper.left = index; } else { upper.right = index; } target[parent] = upper; }
+        self.length += 1; self.rebalance(parent); return core::result::Ok(core::option::None());
+    }
+    fn remove_at(&self, index: i32) -> core::option::Option<Entry<K, V>> {
+        if (index < 0) { return core::option::None(); }
+        let nodes: [Node<K, V>] = self.nodes(); let node: Node<K, V> = nodes[index]; let removed: Entry<K, V> = node.item;
+        let discard: i32 = index;
+        if (node.left >= 0 && node.right >= 0) {
+            discard = endpoint(nodes, node.right, false); let successor: Node<K, V> = nodes[discard];
+            node.item = successor.item; nodes[index] = node;
+        }
+        let old: Node<K, V> = nodes[discard]; let child: i32 = old.left; if (child < 0) { child = old.right; }
+        let parent: i32 = old.parent; self.attach(parent, discard, child);
+        old.left = -1; old.right = -1; old.parent = -1; old.height = 0; old.next_free = self.free; nodes[discard] = old;
+        self.free = discard; self.length -= 1;
+        if (self.length == 0) { self.clear(); } else { self.rebalance(parent); }
+        return core::option::Some(removed);
+    }
+    pub fn remove(&self, key: K) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K> { return self.remove_at(self.find(key)); }
+    pub fn pop_first(&self) -> core::option::Option<Entry<K, V>> { return self.remove_at(endpoint(self.nodes(), self.root, false)); }
+    pub fn pop_last(&self) -> core::option::Option<Entry<K, V>> { return self.remove_at(endpoint(self.nodes(), self.root, true)); }
+    pub fn clear(&self) { self.used = 0; self.length = 0; self.root = -1; self.free = -1; }
+    // Entries at [0,length) are already sorted. Build midpoint subtrees using
+    // a bounded interval stack. A count fits i32, so depth is at most 31.
+    fn link_sorted(&self) {
+        self.used = self.length; self.free = -1;
+        if (self.length == 0) { self.root = -1; return; }
+        self.root = self.length / 2;
+        let lows: [i32; 32] = [0; 32]; let highs: [i32; 32] = [0; 32]; let parents: [i32; 32] = [0; 32];
+        lows[0] = 0; highs[0] = self.length; parents[0] = -1; let pending: i32 = 1;
+        let nodes: [Node<K, V>] = self.nodes();
+        while (pending > 0) {
+            pending -= 1; let low: i32 = lows[pending]; let high: i32 = highs[pending]; let parent: i32 = parents[pending];
+            let middle: i32 = low + (high - low) / 2; let node: Node<K, V> = nodes[middle];
+            node.left = -1; node.right = -1; node.parent = parent; node.height = 0; node.next_free = -1;
+            let width: i32 = high - low; while (width > 0) { node.height += 1; width /= 2; }
+            if (low < middle) {
+                node.left = low + (middle - low) / 2; assert(pending < 32);
+                lows[pending] = low; highs[pending] = middle; parents[pending] = middle; pending += 1;
+            }
+            if (middle + 1 < high) {
+                node.right = middle + 1 + (high - middle - 1) / 2; assert(pending < 32);
+                lows[pending] = middle + 1; highs[pending] = high; parents[pending] = middle; pending += 1;
+            }
+            nodes[middle] = node;
+        }
+    }
+    pub fn try_clone(&self) -> core::result::Result<TreeMap<K, V>, Error> {
+        let copy: TreeMap<K, V> = new(); let reserved: core::result::Result<i32, Error> = copy.try_reserve(self.length);
+        if (core::result::is_err(reserved)) { return core::result::Err(core::result::unwrap_err(reserved)); }
+        let target: [Node<K, V>] = copy.nodes(); let cursor: Cursor<K, V> = self.iter(); let index: i32 = 0;
+        while (index < self.length) {
+            let item: Entry<K, V> = core::option::unwrap(cursor.next());
+            target[index] = Node { item: item, left: -1, right: -1, parent: -1, height: 1, next_free: -1 }; index += 1;
+        }
+        copy.length = self.length; copy.link_sorted(); return core::result::Ok(copy);
+    }
+    pub fn try_shrink_to_fit(&self) -> core::result::Result<i32, Error> {
+        if (self.length == self.reserved) { return core::result::Ok(self.reserved); }
+        if (self.length == 0) { self.destroy(); return core::result::Ok(0); }
+        let cloned: core::result::Result<TreeMap<K, V>, Error> = self.try_clone();
+        if (core::result::is_err(cloned)) { return core::result::Err(core::result::unwrap_err(cloned)); }
+        let compact: TreeMap<K, V> = core::result::unwrap(cloned); self.destroy();
+        self.storage = compact.storage; self.reserved = compact.reserved; self.used = compact.used;
+        self.length = compact.length; self.root = compact.root; self.free = compact.free; return core::result::Ok(self.reserved);
+    }
+    pub fn destroy(&self) {
+        if (self.reserved > 0) { alloc::allocator::dealloc(self.storage, core::mem::size_of<Node<K, V>>() * (self.reserved as usize), ALIGN); }
+        let empty: ptr = 0; self.storage = empty; self.reserved = 0; self.clear();
+    }
+}
+
+pub impl<K, V> Cursor<K, V> {
+    pub fn is_empty(&self) -> bool { return self.front < 0; }
+    pub fn next(&self) -> core::option::Option<Entry<K, V>> {
+        if (self.front < 0) { return core::option::None(); }
+        let nodes: [Node<K, V>] = core::mem::typed_slice_from_storage(self.storage, self.reserved);
+        let node: Node<K, V> = nodes[self.front];
+        if (self.front == self.back) { self.front = -1; self.back = -1; }
+        else { self.front = adjacent(nodes, self.front, false); }
+        return core::option::Some(node.item);
+    }
+    pub fn next_back(&self) -> core::option::Option<Entry<K, V>> {
+        if (self.back < 0) { return core::option::None(); }
+        let nodes: [Node<K, V>] = core::mem::typed_slice_from_storage(self.storage, self.reserved);
+        let node: Node<K, V> = nodes[self.back];
+        if (self.front == self.back) { self.front = -1; self.back = -1; }
+        else { self.back = adjacent(nodes, self.back, true); }
+        return core::option::Some(node.item);
+    }
+}

@@ -1,0 +1,47 @@
+module app::main;
+import alloc::tree_map;
+import core::option;
+import core::result;
+import core::slice;
+fn main() -> i32 {
+    let map: alloc::tree_map::TreeMap<i32, i64> = alloc::tree_map::new();
+    if (!map.is_empty() || map.capacity() != 0 || core::option::is_some(map.pop_first()) || core::option::is_some(map.pop_last())) { return 1; }
+    let index: i32 = 0;
+    while (index < 256) {
+        let added: core::result::Result<core::option::Option<alloc::tree_map::Entry<i32, i64>>, alloc::tree_map::Error> = map.try_insert(index, (index as i64) * 4294967297);
+        if (core::option::is_some(core::result::unwrap(added))) { return 2; } index += 1;
+    }
+    if (map.len() != 256 || core::option::unwrap(map.first()).key != 0 || core::option::unwrap(map.last()).key != 255) { return 3; }
+    index = 0;
+    while (index < 256) {
+        let removed: alloc::tree_map::Entry<i32, i64> = core::option::unwrap(map.remove(index));
+        if (removed.key != index || removed.value != (index as i64) * 4294967297 || map.contains_key(index)) { return 4; }
+        index += 3;
+    }
+    let cursor: alloc::tree_map::Cursor<i32, i64> = map.iter(); index = 0;
+    while (index < 256) {
+        if (index % 3 != 0) { let item: alloc::tree_map::Entry<i32, i64> = core::option::unwrap(cursor.next()); if (item.key != index || item.value != (index as i64) * 4294967297) { return 5; } }
+        index += 1;
+    }
+    if (!cursor.is_empty() || core::option::is_some(cursor.next_back())) { return 6; }
+    let ranged: core::result::Result<alloc::tree_map::Cursor<i32, i64>, alloc::tree_map::Error> = map.range(10, 15);
+    let range: alloc::tree_map::Cursor<i32, i64> = core::result::unwrap(ranged);
+    if (core::option::unwrap(range.next()).key != 10 || core::option::unwrap(range.next_back()).key != 14 || core::option::unwrap(range.next()).key != 11 || core::option::unwrap(range.next_back()).key != 13 || !range.is_empty()) { return 7; }
+    if (core::option::unwrap(map.lower_bound(12)).key != 13 || core::option::unwrap(map.upper_bound(13)).key != 14) { return 8; }
+    let copy_result: core::result::Result<alloc::tree_map::TreeMap<i32, i64>, alloc::tree_map::Error> = map.try_clone();
+    let copy: alloc::tree_map::TreeMap<i32, i64> = core::result::unwrap(copy_result);
+    core::result::unwrap(copy.try_insert(10, 7 as i64));
+    let expected: i64 = 42949672970; if (core::option::unwrap(map.get(10)) != expected) { return 9; }
+    core::result::unwrap(map.try_shrink_to_fit()); if (map.capacity() != map.len()) { return 10; }
+    while (!map.is_empty()) { map.pop_first(); if (!map.is_empty()) { map.pop_last(); } }
+    copy.destroy(); map.destroy(); map.destroy();
+    let a: alloc::tree_map::Entry<i32, i32> = alloc::tree_map::Entry { key: 2, value: 20 };
+    let b: alloc::tree_map::Entry<i32, i32> = alloc::tree_map::Entry { key: 4, value: 40 };
+    let c: alloc::tree_map::Entry<i32, i32> = alloc::tree_map::Entry { key: 6, value: 60 };
+    let entries: [alloc::tree_map::Entry<i32, i32>; 3] = [a, b, c];
+    let view: core::slice::View<alloc::tree_map::Entry<i32, i32>> = core::result::unwrap(core::slice::view(entries, 3));
+    let built: core::result::Result<alloc::tree_map::TreeMap<i32, i32>, alloc::tree_map::Error> = alloc::tree_map::from_sorted(view);
+    let ordered: alloc::tree_map::TreeMap<i32, i32> = core::result::unwrap(built);
+    if (ordered.len() != 3 || core::option::unwrap(ordered.get(4)) != 40) { return 11; }
+    ordered.destroy(); return 0;
+}
