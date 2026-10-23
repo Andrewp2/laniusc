@@ -1,0 +1,54 @@
+module app::main;
+import alloc::binary_heap;
+import core::option;
+import core::result;
+import core::slice;
+
+fn allocation(error: alloc::binary_heap::Error) -> bool {
+    let yes: bool = match (error) { alloc::binary_heap::Error::AllocationFailed -> true, _ -> false }; return yes;
+}
+fn main() -> i32 {
+    let data: [i32; 4] = [1, 4, 2, 3];
+    let view: core::slice::View<i32> = core::result::unwrap(core::slice::view(data, 4));
+    let built: core::result::Result<alloc::binary_heap::BinaryHeap<i32>, alloc::binary_heap::Error> = alloc::binary_heap::from_view(view, alloc::binary_heap::Order::Max);
+    if (core::result::is_err(built)) { if (!allocation(core::result::unwrap_err(built))) { return 1; } return 0; }
+    let heap: alloc::binary_heap::BinaryHeap<i32> = core::result::unwrap(built);
+    let operation: i32 = 0;
+    while (operation < 6) {
+        let before: core::slice::View<i32> = heap.as_view();
+        let length: i32 = heap.len(); let capacity: i32 = heap.capacity();
+        let snapshot: [i32; 64] = [0; 64];
+        let index: i32 = 0;
+        while (index < length) { snapshot[index] = core::option::unwrap(before.get(index)); index += 1; }
+        let edited: core::result::Result<i32, alloc::binary_heap::Error> = core::result::Ok(0);
+        if (operation == 0) { edited = heap.try_push(9); }
+        else { if (operation == 1) { edited = heap.try_reserve(32); }
+        else { if (operation == 2) { edited = heap.try_shrink_to_fit(); }
+        else { if (operation == 3) { edited = heap.try_extend(before); }
+        else { if (operation == 4) {
+            let cloned: core::result::Result<alloc::binary_heap::BinaryHeap<i32>, alloc::binary_heap::Error> = heap.try_clone();
+            if (core::result::is_err(cloned)) { edited = core::result::Err(core::result::unwrap_err(cloned)); }
+            else { let copy: alloc::binary_heap::BinaryHeap<i32> = core::result::unwrap(cloned); copy.destroy(); }
+        } else { edited = heap.try_reserve(128); } } } } }
+        if (core::result::is_err(edited)) {
+            if (!allocation(core::result::unwrap_err(edited)) || heap.len() != length || heap.capacity() != capacity) { return 2; }
+            let after: core::slice::View<i32> = heap.as_view(); index = 0;
+            while (index < length) {
+                if (core::option::unwrap(before.get(index)) != snapshot[index] || core::option::unwrap(after.get(index)) != snapshot[index]) { return 3; }
+                index += 1;
+            }
+        }
+        let current: core::slice::View<i32> = heap.as_view(); index = 1;
+        while (index < heap.len()) {
+            if (core::option::unwrap(current.get((index - 1) / 2)) < core::option::unwrap(current.get(index))) { return 4; }
+            index += 1;
+        }
+        operation += 1;
+    }
+    let previous: i32 = 2147483647;
+    while (!heap.is_empty()) {
+        let value: i32 = core::option::unwrap(heap.pop());
+        if (value > previous) { return 5; } previous = value;
+    }
+    heap.destroy(); return 0;
+}

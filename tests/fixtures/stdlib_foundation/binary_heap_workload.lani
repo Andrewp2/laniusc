@@ -1,0 +1,55 @@
+// Complexity/performance workload. No argument: bottom-up heap construction.
+// Extra argument: repeated pushes. Both reserve one vector before insertion.
+module app::main;
+import alloc::binary_heap;
+import core::cmp;
+import core::option;
+import core::result;
+import core::slice;
+import std::args_checked;
+import std::io;
+import std::io_decimal;
+import std::vec;
+
+struct Counter { comparisons: i32 }
+impl Counter { fn borrow(&self) -> &Counter { return self; } }
+struct Item { key: i32, counter: &Counter }
+pub impl core::cmp::Ord<Item> for Item {
+    pub fn lt(left: Item, right: Item) -> bool {
+        let counter: &Counter = left.counter; counter.comparisons += 1;
+        return left.key < right.key;
+    }
+    pub fn le(left: Item, right: Item) -> bool { return left.key <= right.key; }
+    pub fn gt(left: Item, right: Item) -> bool { return left.key > right.key; }
+    pub fn ge(left: Item, right: Item) -> bool { return left.key >= right.key; }
+}
+fn main() -> i32 {
+    let counter: Counter = Counter { comparisons: 0 };
+    let count: i32 = 65536;
+    let heap: alloc::binary_heap::BinaryHeap<Item> = alloc::binary_heap::new(alloc::binary_heap::Order::Max);
+    let index: i32 = 0;
+    if (std::args_checked::argument_count_or(0) == 1) {
+        let values: std::vec::Vec<Item> = std::vec::try_with_capacity(count);
+        if (std::vec::capacity(values) != count) { return 4; }
+        while (index < count) { values = std::vec::push(values, Item { key: index, counter: counter.borrow() }); index += 1; }
+        heap = alloc::binary_heap::from_vec(values, alloc::binary_heap::Order::Max);
+        if (counter.comparisons > 2 * count) { return 1; }
+    } else {
+        if (core::result::is_err(heap.try_reserve(count))) { return 4; }
+        while (index < count) { core::result::unwrap(heap.try_push(Item { key: index, counter: counter.borrow() })); index += 1; }
+        if (counter.comparisons > count * 16) { return 2; }
+    }
+    if (heap.len() != count || core::option::unwrap(heap.peek()).key != count - 1) { return 3; }
+    let view: core::slice::View<Item> = heap.as_view();
+    let sum: i64 = 0; let squares: i64 = 0; index = 0;
+    while (index < count) {
+        let item: Item = core::option::unwrap(view.get(index));
+        if (item.key < 0 || item.key >= count) { return 5; }
+        if (index > 0 && item.key > core::option::unwrap(view.get((index - 1) / 2)).key) { return 6; }
+        let key: i64 = item.key as i64; sum += key; squares += key * key; index += 1;
+    }
+    if (sum != 2147450880 || squares != 93822844764160) { return 7; }
+    let comparisons: i32 = counter.comparisons; heap.destroy();
+    if (std::io_decimal::write_i32(1, comparisons) < 0 || std::io::write_byte(1, 10) != 1) { return 8; }
+    return 0;
+}

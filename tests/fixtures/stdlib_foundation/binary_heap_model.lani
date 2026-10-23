@@ -1,0 +1,79 @@
+// Test input: order byte (0 Min, 1 Max), then 5-byte operations (opcode, LE i32).
+// Output: result-tag result-value length peek-tag peek-value, plus drained values
+// for sorted-transfer operations. Each operation also checks the heap invariant.
+module app::main;
+import alloc::binary_heap;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::fs;
+import std::io;
+import std::io_decimal;
+import std::vec;
+
+fn number(value: i32) { assert(std::io_decimal::write_i32(1, value) >= 0); assert(std::io::write_byte(1, 32) == 1); }
+fn error_tag(error: alloc::binary_heap::Error) -> i32 {
+    let tag: i32 = match (error) { alloc::binary_heap::Error::InvalidCapacity -> 2, alloc::binary_heap::Error::CapacityOverflow -> 3, _ -> 4 }; return tag;
+}
+fn main() -> i32 {
+    let storage: [i32; 16384] = [0; 16384];
+    let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let size: i32 = std::fs::read(0, pointer, 65536);
+    if (size < 1 || (size - 1) % 5 != 0) { return 1; }
+    let input: [u8] = core::mem::typed_slice_from_raw_parts(pointer, size);
+    let order: alloc::binary_heap::Order = alloc::binary_heap::Order::Min;
+    if (input[0] == 1) { order = alloc::binary_heap::Order::Max; }
+    let heap: alloc::binary_heap::BinaryHeap<i32> = alloc::binary_heap::new(order);
+    let offset: i32 = 1;
+    while (offset < size) {
+        let opcode: u8 = input[offset];
+        let bits: u32 = (input[offset + 1] as u32) | ((input[offset + 2] as u32) << 8) | ((input[offset + 3] as u32) << 16) | ((input[offset + 4] as u32) << 24);
+        let value: i32 = bits as i32; offset += 5;
+        let tag: i32 = 0; let answer: i32 = 0;
+        let option: core::option::Option<i32> = core::option::None();
+        let result: core::result::Result<i32, alloc::binary_heap::Error> = core::result::Ok(0);
+        let sorted: std::vec::Vec<i32> = std::vec::new();
+        if (opcode == 0) { result = heap.try_push(value); }
+        else { if (opcode == 1) { option = heap.pop(); }
+        else { if (opcode == 2) { option = heap.replace_top(value); }
+        else { if (opcode == 3) { option = core::option::Some(heap.push_pop(value)); }
+        else { if (opcode == 4) {
+            result = heap.try_reserve(value);
+            if (core::result::is_ok(result)) { assert(heap.capacity() >= heap.len() + value); }
+        } else { if (opcode == 5) { result = heap.try_shrink_to_fit(); assert(heap.capacity() == heap.len()); }
+        else { if (opcode == 6) { heap.clear(); }
+        else { if (opcode == 7) {
+            let values: [i32; 3] = [value, 0, value / 2];
+            let view: core::slice::View<i32> = core::result::unwrap(core::slice::view(values, 3));
+            result = heap.try_extend(view);
+        } else { if (opcode == 8) { let view: core::slice::View<i32> = heap.as_view(); result = heap.try_extend(view); }
+        else { if (opcode == 9) {
+            let copy: alloc::binary_heap::BinaryHeap<i32> = core::result::unwrap(heap.try_clone());
+            option = copy.pop(); copy.clear(); copy.destroy();
+        } else { if (opcode == 10) { sorted = heap.take_sorted_vec(); tag = 5; answer = std::vec::len(sorted); }
+        else { if (opcode == 11) {
+            let raw: std::vec::Vec<i32> = heap.take_vec(); assert(heap.len() == 0 && heap.capacity() == 0);
+            heap = alloc::binary_heap::from_vec(raw, order);
+        } else { if (opcode == 12) { heap.destroy(); assert(heap.is_empty() && heap.capacity() == 0); }
+        else { return 2; } } } } } } } } } } } } }
+        if (core::result::is_err(result)) { tag = error_tag(core::result::unwrap_err(result)); }
+        if (core::option::is_some(option)) { tag = 1; answer = core::option::unwrap(option); }
+        number(tag); number(answer); number(heap.len());
+        let peek: core::option::Option<i32> = heap.peek();
+        if (core::option::is_some(peek)) { number(1); number(core::option::unwrap(peek)); }
+        else { number(0); number(0); }
+        let i: i32 = 0;
+        while (i < std::vec::len(sorted)) { number(std::vec::at(sorted, i)); i += 1; }
+        std::vec::destroy(sorted);
+        assert(std::io::write_byte(1, 10) == 1);
+        let view: core::slice::View<i32> = heap.as_view(); i = 1;
+        while (i < heap.len()) {
+            let parent: i32 = core::option::unwrap(view.get((i - 1) / 2));
+            let child: i32 = core::option::unwrap(view.get(i));
+            if (input[0] == 0) { assert(parent <= child); } else { assert(parent >= child); }
+            i += 1;
+        }
+    }
+    heap.destroy(); return 0;
+}

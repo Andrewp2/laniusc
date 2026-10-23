@@ -30,7 +30,7 @@ package distribution is a separate deliverable.
 | Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | Inherent slice/text/hash-map cursors execute; shared protocol dispatch hits an imported-generic compiler dependency; adapters and collection integration remain |
 | Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat and integer conversion execute; general formatting and further Unicode operations remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings and raw views exist; ownership conventions need consolidation |
-| Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Generic vectors/deques, linear maps/sets and an executable alloc hash map exist; hash-set composition is a compiler dependency |
+| Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Generic vectors/deques, linear maps/sets, alloc hash maps and min/max binary heaps execute; hash-set composition is a compiler dependency |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks, native descriptor adapters and owned files execute; buffered adapters remain |
 | Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and borrowed byte paths execute with explicit close/error contracts; metadata, directories and complete lexical paths remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Argument/environment helpers exist; subprocess management remains |
@@ -138,6 +138,14 @@ API list; unrelated library work can continue.
   collision models and allocation failures. String and all integer widths
   implement hashing. The HashSet wrapper is retained as a compiler reproduction,
   outside the production source root.
+- Binary heap: [`alloc::binary_heap`](stdlib-binary-heap.md) executes min/max
+  queues, linear bulk construction, root replacement, allocation-safe reserve,
+  shrink, clone, aliased extension and sorted ownership transfer. Five test
+  groups cover generic payloads, 12,000 modeled operations, zero-sized values,
+  allocation failures and a top-scores program. For 65,536 records, bulk
+  construction uses 131,040 comparisons and about 24 ms native runtime versus
+  917,522 comparisons and 117 ms for repeated insertion, with one allocation
+  in each path. This does not establish GPU user-program execution.
 - CSV-to-JSON integration: the [report application](csv-report.md) validates
   schemas and integers, groups records, checks totals and emits JSON. Native
   tests cover generated records, all allocation failures and partial I/O.
@@ -167,7 +175,8 @@ API list; unrelated library work can continue.
 - Next foundation work: resolve shared iterator and HashSet compiler dependencies;
   continue text operations, buffered I/O and
   remaining streaming format interfaces; complete HashSet when its compiler
-  dependency is resolved.
+  dependency is resolved. Consolidate Vec and deque under alloc with explicit
+  fallible APIs and migrate their consumers; ordered collections remain.
   Completing the integration application does not complete the first phase.
 - Text composition: [join, repeat and word splitting](stdlib-text-composition.md)
   execute with atomic, alias-safe appends, checked sizes and one-allocation

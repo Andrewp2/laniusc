@@ -1,0 +1,72 @@
+module app::main;
+import alloc::binary_heap;
+import core::option;
+import core::result;
+import core::slice;
+import std::vec;
+
+fn is_min(order: alloc::binary_heap::Order) -> bool {
+    let result: bool = match (order) { alloc::binary_heap::Order::Min -> true, _ -> false }; return result;
+}
+fn error_kind(error: alloc::binary_heap::Error) -> i32 {
+    let result: i32 = match (error) { alloc::binary_heap::Error::InvalidCapacity -> 1, alloc::binary_heap::Error::CapacityOverflow -> 2, _ -> 3 }; return result;
+}
+
+fn main() -> i32 {
+    let empty: alloc::binary_heap::BinaryHeap<i32> = alloc::binary_heap::new(alloc::binary_heap::Order::Min);
+    if (!empty.is_empty() || empty.len() != 0 || empty.capacity() != 0 || !is_min(empty.order())) { return 1; }
+    if (!core::option::is_none(empty.peek()) || !core::option::is_none(empty.pop()) || !core::option::is_none(empty.replace_top(7)) || empty.push_pop(9) != 9 || !empty.is_empty()) { return 2; }
+    if (error_kind(core::result::unwrap_err(empty.try_reserve(-1))) != 1 || error_kind(core::result::unwrap_err(empty.try_reserve(2147483647))) != 2) { return 3; }
+    if (core::result::unwrap(empty.try_reserve(0)) != 0 || core::result::unwrap(empty.try_shrink_to_fit()) != 0) { return 4; }
+    let empty_copy: alloc::binary_heap::BinaryHeap<i32> = core::result::unwrap(empty.try_clone());
+    if (!empty_copy.is_empty() || empty_copy.capacity() != 0 || !is_min(empty_copy.order())) { return 5; }
+    empty_copy.destroy(); empty.destroy(); empty.destroy();
+    let invalid: core::result::Result<alloc::binary_heap::BinaryHeap<i32>, alloc::binary_heap::Error> = alloc::binary_heap::with_capacity(-1, alloc::binary_heap::Order::Max);
+    if (error_kind(core::result::unwrap_err(invalid)) != 1) { return 6; }
+
+    let data: [i32; 10] = [99, 4, -7, 4, 2147483647, 0, -2147483648, 12, -1, 99];
+    let values: core::slice::View<i32> = core::result::unwrap(core::slice::view_range(data, 1, 8));
+    let heap: alloc::binary_heap::BinaryHeap<i32> = core::result::unwrap(alloc::binary_heap::from_view(values, alloc::binary_heap::Order::Max));
+    if (heap.len() != 8 || core::option::unwrap(heap.peek()) != 2147483647 || is_min(heap.order())) { return 7; }
+    let original_capacity: i32 = heap.capacity();
+    if (core::option::unwrap(heap.replace_top(-8)) != 2147483647 || heap.len() != 8 || heap.capacity() != original_capacity || core::option::unwrap(heap.peek()) != 12) { return 8; }
+    if (heap.push_pop(20) != 20 || heap.push_pop(-9) != 12 || core::option::unwrap(heap.peek()) != 4) { return 9; }
+    let copy: alloc::binary_heap::BinaryHeap<i32> = core::result::unwrap(heap.try_clone());
+    heap.clear();
+    if (!heap.is_empty() || heap.capacity() != original_capacity || copy.len() != 8) { return 10; }
+    if (core::result::unwrap(heap.try_shrink_to_fit()) != 0 || core::result::unwrap(heap.try_push(22)) != 1) { return 11; }
+    let sorted: std::vec::Vec<i32> = copy.take_sorted_vec();
+    let expected: [i32; 8] = [4, 4, 0, -1, -7, -8, -9, -2147483648];
+    let index: i32 = 0;
+    while (index < 8) { if (std::vec::at(sorted, index) != expected[index]) { return 12; } index += 1; }
+    if (!copy.is_empty() || copy.capacity() != 0 || is_min(copy.order())) { return 13; }
+    let adopted: alloc::binary_heap::BinaryHeap<i32> = alloc::binary_heap::from_vec(sorted, alloc::binary_heap::Order::Min);
+    index = 7;
+    while (index >= 0) { if (core::option::unwrap(adopted.pop()) != expected[index]) { return 14; } index -= 1; }
+    if (!core::option::is_none(adopted.pop())) { return 15; }
+    adopted.destroy(); copy.destroy(); heap.destroy();
+
+    // Self-extension copies the full original selection before any reordering.
+    let aliases: alloc::binary_heap::BinaryHeap<i32> = core::result::unwrap(alloc::binary_heap::from_view(values, alloc::binary_heap::Order::Min));
+    let before: core::slice::View<i32> = aliases.as_view();
+    if (core::result::unwrap(aliases.try_extend(before)) != 16) { return 16; }
+    if (core::result::unwrap(aliases.try_reserve(32)) < 48) { return 17; }
+    let again: core::slice::View<i32> = aliases.as_view();
+    if (core::result::unwrap(aliases.try_extend(again)) != 32) { return 18; }
+    if (core::result::unwrap(aliases.try_shrink_to_fit()) != 32) { return 19; }
+    let minimum: [i32; 8] = [-2147483648, -7, -1, 0, 4, 4, 12, 2147483647];
+    index = 0;
+    while (index < 32) {
+        if (core::option::unwrap(aliases.pop()) != minimum[index / 4]) { return 20; }
+        index += 1;
+    }
+    aliases.destroy();
+    let transfer: alloc::binary_heap::BinaryHeap<i32> = core::result::unwrap(alloc::binary_heap::with_capacity<i32>(4, alloc::binary_heap::Order::Max));
+    core::result::unwrap(transfer.try_push(3)); core::result::unwrap(transfer.try_push(7));
+    let raw: std::vec::Vec<i32> = transfer.take_vec();
+    if (std::vec::len(raw) != 2 || !transfer.is_empty() || transfer.capacity() != 0) { return 21; }
+    let rebuilt: alloc::binary_heap::BinaryHeap<i32> = alloc::binary_heap::from_vec(raw, alloc::binary_heap::Order::Min);
+    if (core::option::unwrap(rebuilt.pop()) != 3 || core::option::unwrap(rebuilt.pop()) != 7) { return 22; }
+    rebuilt.destroy(); transfer.destroy();
+    return 0;
+}
