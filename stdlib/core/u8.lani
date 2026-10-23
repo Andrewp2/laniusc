@@ -235,8 +235,10 @@ pub fn ascii_hexdigit_value_or(value: u8, fallback: u8) -> u8 {
     }
 }
 
+// The six ASCII whitespace characters: HT, LF, VT, FF, CR and space.
+// This is independent of locale; format-specific whitespace may be narrower.
 pub fn is_ascii_whitespace(value: u8) -> bool {
-    return value == 32 || value == 9 || value == 10 || value == 13;
+    return value == 32 || value >= 9 && value <= 13;
 }
 
 pub fn is_ascii_control(value: u8) -> bool {

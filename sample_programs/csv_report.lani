@@ -5,6 +5,7 @@ module app::main;
 import alloc::io;
 import alloc::hash_map;
 import alloc::string;
+import core::text;
 import core::decimal;
 import core::i32;
 import core::io;
@@ -21,11 +22,11 @@ struct Group { name: alloc::string::String, total: i32, count: i32 }
 struct Report {
     groups: std::vec::Vec<Group>,
     // Keys borrow the independently allocated names owned by groups.
-    index: alloc::hash_map::HashMap<alloc::string::String, i32>,
+    index: alloc::hash_map::HashMap<core::text::Text, i32>,
 }
 fn new_report() -> Report {
     let groups: std::vec::Vec<Group> = std::vec::new();
-    let index: alloc::hash_map::HashMap<alloc::string::String, i32> = alloc::hash_map::new();
+    let index: alloc::hash_map::HashMap<core::text::Text, i32> = alloc::hash_map::new();
     return Report { groups: groups, index: index };
 }
 fn string_error(error: alloc::string::Error) -> i32 {
@@ -50,11 +51,10 @@ fn record_error(row: i32, message: str) {
     std::io::eprintln(message);
 }
 impl Report {
-    // Consumes name on every path. Failed insertion rolls back the new group.
-    fn add(&self, name: alloc::string::String, value: i32) -> i32 {
+    // Copy a name only when adding a new group. Existing names are borrowed.
+    fn add(&self, name: core::text::Text, value: i32) -> i32 {
         let ordinal: i32 = core::option::unwrap_or(self.index.get(name), -1);
         if (ordinal >= 0) {
-            name.destroy();
             let group: Group = std::vec::at(self.groups, ordinal);
             let total: core::option::Option<i32> = core::i32::checked_add(group.total, value);
             let count: core::option::Option<i32> = core::i32::checked_add(group.count, 1);
@@ -64,15 +64,18 @@ impl Report {
             self.groups = std::vec::try_set(self.groups, ordinal, group);
             return 0;
         }
+        let copied: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_text(name);
+        if (core::result::is_err(copied)) { return string_error(core::result::unwrap_err(copied)); }
+        let owned: alloc::string::String = core::result::unwrap(copied);
         let before: i32 = std::vec::len(self.groups);
-        let group: Group = Group { name: name, total: value, count: 1 };
+        let group: Group = Group { name: owned, total: value, count: 1 };
         self.groups = std::vec::try_push(self.groups, group);
-        if (std::vec::len(self.groups) == before) { name.destroy(); return 4; }
-        let inserted: core::result::Result<core::option::Option<alloc::hash_map::Entry<alloc::string::String, i32>>, alloc::hash_map::Error> =
-            self.index.try_insert(name, before);
+        if (std::vec::len(self.groups) == before) { owned.destroy(); return 4; }
+        let inserted: core::result::Result<core::option::Option<alloc::hash_map::Entry<core::text::Text, i32>>, alloc::hash_map::Error> =
+            self.index.try_insert(owned.as_text(), before);
         if (core::result::is_err(inserted)) {
             self.groups = std::vec::try_pop(self.groups);
-            name.destroy();
+            owned.destroy();
             return 4;
         }
         return 0;
@@ -80,18 +83,17 @@ impl Report {
     fn read_rows(&self, table: ext::csv::Table) -> i32 {
         let row: i32 = 1;
         while (row < table.row_count()) {
-            let field: core::result::Result<alloc::string::String, ext::csv::Error> = table.try_field(row, 1);
+            let field: core::result::Result<core::text::Text, ext::csv::Error> = table.field(row, 1);
             if (core::result::is_err(field)) { return csv_error(core::result::unwrap_err(field)); }
-            let number: alloc::string::String = core::result::unwrap(field);
-            let parsed: core::result::Result<i32, core::decimal::ParseError> = core::decimal::parse_i32(number.as_bytes(), number.byte_len());
-            number.destroy();
+            let number: core::text::Text = core::result::unwrap(field);
+            let parsed: core::result::Result<i32, core::decimal::ParseError> = number.parse_i32();
             if (core::result::is_err(parsed)) {
                 record_error(row, "value must be a signed 32-bit decimal integer");
                 return 2;
             }
-            let copied: core::result::Result<alloc::string::String, ext::csv::Error> = table.try_field(row, 0);
-            if (core::result::is_err(copied)) { return csv_error(core::result::unwrap_err(copied)); }
-            let status: i32 = self.add(core::result::unwrap(copied), core::result::unwrap(parsed));
+            let name: core::result::Result<core::text::Text, ext::csv::Error> = table.field(row, 0);
+            if (core::result::is_err(name)) { return csv_error(core::result::unwrap_err(name)); }
+            let status: i32 = self.add(core::result::unwrap(name), core::result::unwrap(parsed));
             if (status != 0) {
                 if (status == 2) { record_error(row, "group total or count exceeds signed 32-bit range"); }
                 return status;
@@ -113,29 +115,13 @@ impl Report {
     }
 }
 
-fn matches(text: alloc::string::String, bytes: [u8], count: i32) -> bool {
-    if (text.byte_len() != count) { return false; }
-    let actual: [u8] = text.as_bytes();
-    let index: i32 = 0;
-    while (index < count) { if (actual[index] != bytes[index]) { return false; } index += 1; }
-    return true;
-}
 fn check_header(table: ext::csv::Table) -> i32 {
     if (table.row_count() == 0 || core::option::unwrap_or(table.field_count(0), 0) != 2) { return 2; }
-    let first: core::result::Result<alloc::string::String, ext::csv::Error> = table.try_field(0, 0);
-    if (core::result::is_err(first)) { return csv_error(core::result::unwrap_err(first)); }
-    let group: alloc::string::String = core::result::unwrap(first);
     let group_bytes: [u8; 5] = [103, 114, 111, 117, 112];
-    let valid: bool = matches(group, group_bytes, 5);
-    group.destroy();
-    if (!valid) { return 2; }
-    let second: core::result::Result<alloc::string::String, ext::csv::Error> = table.try_field(0, 1);
-    if (core::result::is_err(second)) { return csv_error(core::result::unwrap_err(second)); }
-    let value: alloc::string::String = core::result::unwrap(second);
     let value_bytes: [u8; 5] = [118, 97, 108, 117, 101];
-    valid = matches(value, value_bytes, 5);
-    value.destroy();
-    if (!valid) { return 2; }
+    let group: core::text::Text = core::result::unwrap(core::text::from_utf8(group_bytes, 5));
+    let value: core::text::Text = core::result::unwrap(core::text::from_utf8(value_bytes, 5));
+    if (!core::result::unwrap(table.field(0, 0)).equals(group) || !core::result::unwrap(table.field(0, 1)).equals(value)) { return 2; }
     return 0;
 }
 

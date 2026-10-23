@@ -17,37 +17,37 @@ fn failure(error: core::decimal::ParseError) -> i32 {
 }
 fn parse(bytes: [u8], count: i32, kind: u8) -> i32 {
     if (kind == 48) {
-        let parsed: core::result::Result<u8, core::decimal::ParseError> = core::decimal::parse_u8(bytes, count);
+        let parsed: core::result::Result<u8, core::decimal::ParseError> = core::decimal::parse_u8_range(bytes, 1, count);
         if (core::result::is_err(parsed)) { return failure(core::result::unwrap_err(parsed)); }
         std::io_decimal::write_u8(1, core::result::unwrap(parsed));
         return 0;
     }
     if (kind == 49) {
-        let parsed: core::result::Result<u16, core::decimal::ParseError> = core::decimal::parse_u16(bytes, count);
+        let parsed: core::result::Result<u16, core::decimal::ParseError> = core::decimal::parse_u16_range(bytes, 1, count);
         if (core::result::is_err(parsed)) { return failure(core::result::unwrap_err(parsed)); }
         std::io_decimal::write_u16(1, core::result::unwrap(parsed));
         return 0;
     }
     if (kind == 50) {
-        let parsed: core::result::Result<u32, core::decimal::ParseError> = core::decimal::parse_u32(bytes, count);
+        let parsed: core::result::Result<u32, core::decimal::ParseError> = core::decimal::parse_u32_range(bytes, 1, count);
         if (core::result::is_err(parsed)) { return failure(core::result::unwrap_err(parsed)); }
         std::io_decimal::write_u32(1, core::result::unwrap(parsed));
         return 0;
     }
     if (kind == 51) {
-        let parsed: core::result::Result<i8, core::decimal::ParseError> = core::decimal::parse_i8(bytes, count);
+        let parsed: core::result::Result<i8, core::decimal::ParseError> = core::decimal::parse_i8_range(bytes, 1, count);
         if (core::result::is_err(parsed)) { return failure(core::result::unwrap_err(parsed)); }
         std::io_decimal::write_i8(1, core::result::unwrap(parsed));
         return 0;
     }
     if (kind == 52) {
-        let parsed: core::result::Result<i16, core::decimal::ParseError> = core::decimal::parse_i16(bytes, count);
+        let parsed: core::result::Result<i16, core::decimal::ParseError> = core::decimal::parse_i16_range(bytes, 1, count);
         if (core::result::is_err(parsed)) { return failure(core::result::unwrap_err(parsed)); }
         std::io_decimal::write_i16(1, core::result::unwrap(parsed));
         return 0;
     }
     if (kind == 53) {
-        let parsed: core::result::Result<i32, core::decimal::ParseError> = core::decimal::parse_i32(bytes, count);
+        let parsed: core::result::Result<i32, core::decimal::ParseError> = core::decimal::parse_i32_range(bytes, 1, count);
         if (core::result::is_err(parsed)) { return failure(core::result::unwrap_err(parsed)); }
         std::io_decimal::write_i32(1, core::result::unwrap(parsed));
         return 0;
@@ -60,8 +60,6 @@ fn main() -> i32 {
     if (core::result::is_err(std::stream::copy(source.borrow(), buffer.borrow())) || buffer.len() == 0) { buffer.destroy(); return 6; }
     let bytes: [u8] = buffer.as_bytes();
     let kind: u8 = bytes[0];
-    let index: i32 = 1;
-    while (index < buffer.len()) { bytes[index - 1] = bytes[index]; index += 1; }
     let status: i32 = parse(bytes, buffer.len() - 1, kind);
     buffer.destroy();
     return status;

@@ -6,6 +6,7 @@ import alloc::string;
 import core::option;
 import core::result;
 import core::utf8;
+import core::text;
 import std::vec;
 
 pub struct Options {
@@ -67,6 +68,16 @@ pub impl Table {
         if (row_index < 0 || row_index >= std::vec::len(self.rows)) { return core::option::None(); }
         let row: Row = std::vec::at(self.rows, row_index);
         return core::option::Some(std::vec::len(row.fields));
+    }
+
+    // Borrow a field without allocating. The table must remain alive and
+    // unchanged for the lifetime of the view and any subviews/iterators.
+    pub fn field(&self, row_index: i32, field_index: i32) -> core::result::Result<core::text::Text, Error> {
+        if (row_index < 0 || row_index >= std::vec::len(self.rows)) { return core::result::Err(Error::Bounds); }
+        let row: Row = std::vec::at(self.rows, row_index);
+        if (field_index < 0 || field_index >= std::vec::len(row.fields)) { return core::result::Err(Error::Bounds); }
+        let field: alloc::string::String = std::vec::at(row.fields, field_index);
+        return core::result::Ok(field.as_text());
     }
 
     // An independent owned copy. Destroy it separately from the table.

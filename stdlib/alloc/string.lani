@@ -9,6 +9,7 @@ import core::hash;
 import core::option;
 import core::result;
 import core::utf8;
+import core::text;
 import std::vec;
 
 pub enum Error {
@@ -40,25 +41,21 @@ pub fn from_utf8(bytes: [u8], count: i32) -> core::result::Result<String, Error>
     };
 }
 
-// The first malformed sequence's starting byte; -1 for complete valid text.
-fn invalid_offset(bytes: [u8], count: i32) -> i32 {
-    let index: i32 = 0;
-    while (index < count) {
-        let first: u8 = bytes[index];
-        let width: u32 = core::utf8::sequence_len_or(first, 0);
-        if (width == 0 || (width as i32) > count - index) { return index; }
-        let second: u8 = 0;
-        let third: u8 = 0;
-        let fourth: u8 = 0;
-        if (width > 1) { second = bytes[index + 1]; }
-        if (width > 2) { third = bytes[index + 2]; }
-        if (width > 3) { fourth = bytes[index + 3]; }
-        if (core::utf8::decode_or(first, second, third, fourth, width, 4294967295) == 4294967295) {
-            return index;
-        }
-        index += width as i32;
-    }
-    return -1;
+// Copy a borrowed view into independent owned storage.
+pub fn from_text(text: core::text::Text) -> core::result::Result<String, Error> {
+    let value: String = new();
+    let status: core::result::Result<i32, Error> = value.try_append_text(text);
+    if (core::result::is_err(status)) { return core::result::Err(core::result::unwrap_err(status)); }
+    return core::result::Ok(value);
+}
+
+fn text_error(error: core::text::Error) -> Error {
+    let converted: Error = match (error) {
+        core::text::Error::Bounds -> Error::Bounds,
+        core::text::Error::NotCharBoundary -> Error::NotCharBoundary,
+        core::text::Error::InvalidUtf8(offset) -> Error::InvalidUtf8(offset),
+    };
+    return converted;
 }
 
 fn growth_capacity(current: i32, needed: i32) -> i32 {
@@ -79,6 +76,12 @@ pub impl String {
     // Borrow initialized bytes. Treat this view as read-only: writing it can
     // violate UTF-8 validity. Lanius does not yet enforce immutable views.
     pub fn as_bytes(&self) -> [u8] { return std::vec::as_slice(self.bytes); }
+
+    // O(1) borrowed view: this owner already maintains UTF-8 validity.
+    // Mutation or destruction invalidates it, including mutation via as_bytes.
+    pub fn as_text(&self) -> core::text::Text {
+        return core::text::from_utf8_unchecked(std::vec::as_slice(self.bytes), 0, std::vec::len(self.bytes));
+    }
 
     pub fn byte_at(&self, index: i32) -> core::option::Option<u8> {
         return std::vec::get(self.bytes, index);
@@ -160,31 +163,39 @@ pub impl String {
     // into this owner remains readable. Source bytes must be initialized.
     pub fn try_append_utf8(&self, source: [u8], count: i32) -> core::result::Result<i32, Error> {
         if (count < 0) { return core::result::Err(Error::Bounds); }
+        if (count > 2147483647 - std::vec::len(self.bytes)) { return core::result::Err(Error::CapacityOverflow); }
+        let checked: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8(source, count);
+        if (core::result::is_err(checked)) { return core::result::Err(text_error(core::result::unwrap_err(checked))); }
+        return self.try_append_text(core::result::unwrap(checked));
+    }
+
+    // Append a valid borrowed view, including a subview of this String.
+    // Reserve before editing; retain old storage until an aliased copy finishes.
+    pub fn try_append_text(&self, source: core::text::Text) -> core::result::Result<i32, Error> {
+        let count: i32 = source.byte_len();
         let length: i32 = std::vec::len(self.bytes);
         if (count > 2147483647 - length) { return core::result::Err(Error::CapacityOverflow); }
-        let invalid: i32 = invalid_offset(source, count);
-        if (invalid >= 0) { return core::result::Err(Error::InvalidUtf8(invalid)); }
         if (count == 0) { return core::result::Ok(length); }
         let needed: i32 = length + count;
         let current_capacity: i32 = std::vec::capacity(self.bytes);
-        if (needed <= current_capacity) {
-            self.bytes = std::vec::try_extend_from_slice(self.bytes, source, count);
-            return core::result::Ok(needed);
+        let grown: std::vec::Vec<u8> = self.bytes;
+        if (needed > current_capacity) {
+            grown = std::vec::try_with_capacity(growth_capacity(current_capacity, needed));
+            if (std::vec::capacity(grown) < needed) { return core::result::Err(Error::AllocationFailed); }
+            grown = std::vec::try_extend_from_slice(grown, std::vec::as_slice(self.bytes), length);
         }
-        let target: i32 = growth_capacity(current_capacity, needed);
-        let grown: std::vec::Vec<u8> = std::vec::try_with_capacity(target);
-        if (std::vec::capacity(grown) < needed) { return core::result::Err(Error::AllocationFailed); }
-        let old: [u8] = std::vec::as_slice(self.bytes);
-        grown = std::vec::try_extend_from_slice(grown, old, length);
-        grown = std::vec::try_extend_from_slice(grown, source, count);
-        std::vec::destroy(self.bytes);
+        let index: i32 = 0;
+        while (index < count) {
+            grown = std::vec::try_push(grown, core::option::unwrap(source.byte_at(index)));
+            index += 1;
+        }
+        if (needed > current_capacity) { std::vec::destroy(self.bytes); }
         self.bytes = grown;
         return core::result::Ok(needed);
     }
 
     pub fn try_append(&self, other: String) -> core::result::Result<i32, Error> {
-        let source: [u8] = std::vec::as_slice(other.bytes);
-        return self.try_append_utf8(source, std::vec::len(other.bytes));
+        return self.try_append_text(other.as_text());
     }
 
     // Truncate at a byte boundary. Requests beyond the length are errors.

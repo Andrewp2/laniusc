@@ -246,14 +246,14 @@ pub struct ParseError { kind: ParseErrorKind, offset: i32 }
 fn parse_error(kind: ParseErrorKind, offset: i32) -> ParseError {
     return ParseError { kind: kind, offset: offset };
 }
-fn parse_magnitude(bytes: [u8], count: i32, start: i32, limit: u32) -> core::result::Result<u32, ParseError> {
-    if (count < 0) { return core::result::Err(parse_error(ParseErrorKind::Bounds, -1)); }
+fn parse_magnitude(bytes: [u8], offset: i32, count: i32, start: i32, limit: u32) -> core::result::Result<u32, ParseError> {
+    if (offset < 0 || count < 0 || count > 2147483647 - offset) { return core::result::Err(parse_error(ParseErrorKind::Bounds, -1)); }
     if (count == 0) { return core::result::Err(parse_error(ParseErrorKind::Empty, 0)); }
     if (start == count) { return core::result::Err(parse_error(ParseErrorKind::MissingDigits, count)); }
     let value: u32 = 0;
     let index: i32 = start;
     while (index < count) {
-        let byte: u8 = bytes[index];
+        let byte: u8 = bytes[offset + index];
         if (byte < 48 || byte > 57) { return core::result::Err(parse_error(ParseErrorKind::InvalidDigit, index)); }
         if (!can_append_ascii_digit_u32(value, byte, limit)) {
             return core::result::Err(parse_error(ParseErrorKind::Overflow, index));
@@ -263,16 +263,16 @@ fn parse_magnitude(bytes: [u8], count: i32, start: i32, limit: u32) -> core::res
     }
     return core::result::Ok(value);
 }
-fn parse_signed(bytes: [u8], count: i32, positive_limit: u32, negative_limit: u32)
+fn parse_signed(bytes: [u8], offset: i32, count: i32, positive_limit: u32, negative_limit: u32)
     -> core::result::Result<i32, ParseError> {
-    if (count < 0) { return core::result::Err(parse_error(ParseErrorKind::Bounds, -1)); }
+    if (offset < 0 || count < 0 || count > 2147483647 - offset) { return core::result::Err(parse_error(ParseErrorKind::Bounds, -1)); }
     if (count == 0) { return core::result::Err(parse_error(ParseErrorKind::Empty, 0)); }
-    let negative: bool = bytes[0] == 45;
+    let negative: bool = bytes[offset] == 45;
     let start: i32 = 0;
-    if (negative || bytes[0] == 43) { start = 1; }
+    if (negative || bytes[offset] == 43) { start = 1; }
     let limit: u32 = positive_limit;
     if (negative) { limit = negative_limit; }
-    let parsed: core::result::Result<u32, ParseError> = parse_magnitude(bytes, count, start, limit);
+    let parsed: core::result::Result<u32, ParseError> = parse_magnitude(bytes, offset, count, start, limit);
     if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); }
     let magnitude: u32 = core::result::unwrap(parsed);
     if (negative) {
@@ -283,38 +283,64 @@ fn parse_signed(bytes: [u8], count: i32, positive_limit: u32, negative_limit: u3
     return core::result::Ok(magnitude as i32);
 }
 
-pub fn parse_u8(bytes: [u8], count: i32) -> core::result::Result<u8, ParseError> {
-    let parsed: core::result::Result<u32, ParseError> = parse_magnitude(bytes, count, 0, 255);
+// Range parsers report errors relative to offset. Negative/overflowing
+// integer ranges are Bounds before indexing; physical overclaims still trap.
+pub fn parse_u8_range(bytes: [u8], offset: i32, count: i32) -> core::result::Result<u8, ParseError> {
+    let parsed: core::result::Result<u32, ParseError> = parse_magnitude(bytes, offset, count, 0, 255);
     if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); }
     return core::result::Ok(core::result::unwrap(parsed) as u8);
 }
 
-pub fn parse_u16(bytes: [u8], count: i32) -> core::result::Result<u16, ParseError> {
-    let parsed: core::result::Result<u32, ParseError> = parse_magnitude(bytes, count, 0, 65535);
+pub fn parse_u16_range(bytes: [u8], offset: i32, count: i32) -> core::result::Result<u16, ParseError> {
+    let parsed: core::result::Result<u32, ParseError> = parse_magnitude(bytes, offset, count, 0, 65535);
     if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); }
     return core::result::Ok(core::result::unwrap(parsed) as u16);
 }
 
-pub fn parse_u32(bytes: [u8], count: i32) -> core::result::Result<u32, ParseError> {
-    let parsed: core::result::Result<u32, ParseError> = parse_magnitude(bytes, count, 0, 4294967295);
+pub fn parse_u32_range(bytes: [u8], offset: i32, count: i32) -> core::result::Result<u32, ParseError> {
+    let parsed: core::result::Result<u32, ParseError> = parse_magnitude(bytes, offset, count, 0, 4294967295);
     if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); }
     return core::result::Ok(core::result::unwrap(parsed) as u32);
 }
 
-pub fn parse_i8(bytes: [u8], count: i32) -> core::result::Result<i8, ParseError> {
-    let parsed: core::result::Result<i32, ParseError> = parse_signed(bytes, count, 127, 128);
+pub fn parse_i8_range(bytes: [u8], offset: i32, count: i32) -> core::result::Result<i8, ParseError> {
+    let parsed: core::result::Result<i32, ParseError> = parse_signed(bytes, offset, count, 127, 128);
     if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); }
     return core::result::Ok(core::result::unwrap(parsed) as i8);
 }
 
-pub fn parse_i16(bytes: [u8], count: i32) -> core::result::Result<i16, ParseError> {
-    let parsed: core::result::Result<i32, ParseError> = parse_signed(bytes, count, 32767, 32768);
+pub fn parse_i16_range(bytes: [u8], offset: i32, count: i32) -> core::result::Result<i16, ParseError> {
+    let parsed: core::result::Result<i32, ParseError> = parse_signed(bytes, offset, count, 32767, 32768);
     if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); }
     return core::result::Ok(core::result::unwrap(parsed) as i16);
 }
 
-pub fn parse_i32(bytes: [u8], count: i32) -> core::result::Result<i32, ParseError> {
-    let parsed: core::result::Result<i32, ParseError> = parse_signed(bytes, count, 2147483647, 2147483648);
+pub fn parse_i32_range(bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32, ParseError> {
+    let parsed: core::result::Result<i32, ParseError> = parse_signed(bytes, offset, count, 2147483647, 2147483648);
     if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); }
     return core::result::Ok(core::result::unwrap(parsed) as i32);
+}
+
+pub fn parse_u8(bytes: [u8], count: i32) -> core::result::Result<u8, ParseError> {
+    return parse_u8_range(bytes, 0, count);
+}
+
+pub fn parse_u16(bytes: [u8], count: i32) -> core::result::Result<u16, ParseError> {
+    return parse_u16_range(bytes, 0, count);
+}
+
+pub fn parse_u32(bytes: [u8], count: i32) -> core::result::Result<u32, ParseError> {
+    return parse_u32_range(bytes, 0, count);
+}
+
+pub fn parse_i8(bytes: [u8], count: i32) -> core::result::Result<i8, ParseError> {
+    return parse_i8_range(bytes, 0, count);
+}
+
+pub fn parse_i16(bytes: [u8], count: i32) -> core::result::Result<i16, ParseError> {
+    return parse_i16_range(bytes, 0, count);
+}
+
+pub fn parse_i32(bytes: [u8], count: i32) -> core::result::Result<i32, ParseError> {
+    return parse_i32_range(bytes, 0, count);
 }

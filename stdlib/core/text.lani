@@ -1,0 +1,253 @@
+// Borrowed, valid UTF-8. No allocation, ownership transfer or implicit NUL scan.
+// Keep the backing storage alive and unchanged while a Text or iterator exists.
+// Lanius does not yet enforce immutable borrows or these lifetime rules.
+module core::text;
+import core::byte;
+import core::cmp;
+import core::decimal;
+import core::hash;
+import core::option;
+import core::result;
+import core::utf8;
+
+pub enum Error { Bounds, NotCharBoundary, InvalidUtf8(i32) }
+pub struct Text { bytes: [u8], start: i32, length: i32 }
+pub struct Scalar { byte_index: i32, value: u32 }
+pub struct Scalars { text: Text, position: i32 }
+pub struct Split { text: Text, separator: Text, position: i32, empty_head: bool, done: bool }
+
+// Validate only this range. InvalidUtf8 identifies the malformed sequence's
+// start relative to the requested range, including truncated sequences.
+// Physical backing must cover offset + count elements; an overclaim traps.
+pub fn from_utf8_range(bytes: [u8], offset: i32, count: i32) -> core::result::Result<Text, Error> {
+    if (offset < 0 || count < 0 || count > 2147483647 - offset) {
+        return core::result::Err(Error::Bounds);
+    }
+    let index: i32 = 0;
+    while (index < count) {
+        let first: u8 = bytes[offset + index];
+        let width: u32 = core::utf8::sequence_len_or(first, 0);
+        if (width == 0 || (width as i32) > count - index) {
+            return core::result::Err(Error::InvalidUtf8(index));
+        }
+        let second: u8 = 0;
+        let third: u8 = 0;
+        let fourth: u8 = 0;
+        if (width > 1) { second = bytes[offset + index + 1]; }
+        if (width > 2) { third = bytes[offset + index + 2]; }
+        if (width > 3) { fourth = bytes[offset + index + 3]; }
+        if (core::utf8::decode_or(first, second, third, fourth, width, 4294967295) == 4294967295) {
+            return core::result::Err(Error::InvalidUtf8(index));
+        }
+        index += width as i32;
+    }
+    return core::result::Ok(Text { bytes: bytes, start: offset, length: count });
+}
+
+pub fn from_utf8(bytes: [u8], count: i32) -> core::result::Result<Text, Error> {
+    return from_utf8_range(bytes, 0, count);
+}
+
+// Low-level constructor for owners that already maintain UTF-8 validity.
+// PRECONDITION: the selected, physically backed range contains valid UTF-8.
+// Only integer bounds are checked (and trap on violation). Encoding validity
+// is NOT checked. Prefer from_utf8_range for input from an untrusted source.
+pub fn from_utf8_unchecked(bytes: [u8], offset: i32, count: i32) -> Text {
+    assert(offset >= 0 && count >= 0 && count <= 2147483647 - offset);
+    return Text { bytes: bytes, start: offset, length: count };
+}
+
+pub impl Text {
+    fn part(&self, start: i32, end: i32) -> Text {
+        return Text { bytes: self.bytes, start: self.start + start, length: end - start };
+    }
+
+    fn matches_at(&self, needle: Text, start: i32) -> bool {
+        let index: i32 = 0;
+        while (index < needle.length) {
+            if (self.bytes[self.start + start + index] != needle.bytes[needle.start + index]) { return false; }
+            index += 1;
+        }
+        return true;
+    }
+
+    fn find_from(&self, needle: Text, start: i32) -> core::option::Option<i32> {
+        if (needle.length > self.length - start) { return core::option::None(); }
+        if (needle.length == 0) { return core::option::Some(start); }
+        let index: i32 = start;
+        while (index <= self.length - needle.length) {
+            if (self.matches_at(needle, index)) { return core::option::Some(index); }
+            index += 1;
+        }
+        return core::option::None();
+    }
+
+
+    pub fn byte_len(&self) -> i32 { return self.length; }
+    pub fn is_empty(&self) -> bool { return self.length == 0; }
+    pub fn byte_at(&self, index: i32) -> core::option::Option<u8> {
+        if (index < 0 || index >= self.length) { return core::option::None(); }
+        return core::option::Some(self.bytes[self.start + index]);
+    }
+    pub fn is_char_boundary(&self, index: i32) -> bool {
+        if (index < 0 || index > self.length) { return false; }
+        if (index == self.length) { return true; }
+        return !core::utf8::is_continuation_byte(self.bytes[self.start + index]);
+    }
+    pub fn slice(&self, start: i32, end: i32) -> core::result::Result<Text, Error> {
+        if (start < 0 || end < start || end > self.length) { return core::result::Err(Error::Bounds); }
+        if (!self.is_char_boundary(start) || !self.is_char_boundary(end)) {
+            return core::result::Err(Error::NotCharBoundary);
+        }
+        return core::result::Ok(self.part(start, end));
+    }
+    pub fn scalar_at_byte(&self, index: i32) -> core::option::Option<u32> {
+        if (index < 0 || index >= self.length || !self.is_char_boundary(index)) { return core::option::None(); }
+        let at: i32 = self.start + index;
+        let first: u8 = self.bytes[at];
+        let width: u32 = core::utf8::sequence_len_or(first, 0);
+        let second: u8 = 0;
+        let third: u8 = 0;
+        let fourth: u8 = 0;
+        if (width > 1) { second = self.bytes[at + 1]; }
+        if (width > 2) { third = self.bytes[at + 2]; }
+        if (width > 3) { fourth = self.bytes[at + 3]; }
+        return core::option::Some(core::utf8::decode_or(first, second, third, fourth, width, 4294967295));
+    }
+    pub fn scalar_count(&self) -> i32 {
+        let index: i32 = 0;
+        let count: i32 = 0;
+        while (index < self.length) {
+            index += core::utf8::sequence_len_or(self.bytes[self.start + index], 0) as i32;
+            count += 1;
+        }
+        return count;
+    }
+    pub fn equals(&self, other: Text) -> bool {
+        return self.length == other.length && self.matches_at(other, 0);
+    }
+    // Byte/scalar lexicographic order, without locale or normalization.
+    pub fn compare(&self, other: Text) -> i32 {
+        let common: i32 = self.length;
+        if (other.length < common) { common = other.length; }
+        let index: i32 = 0;
+        while (index < common) {
+            let left: u8 = self.bytes[self.start + index];
+            let right: u8 = other.bytes[other.start + index];
+            if (left < right) { return -1; }
+            if (left > right) { return 1; }
+            index += 1;
+        }
+        if (self.length < other.length) { return -1; }
+        if (self.length > other.length) { return 1; }
+        return 0;
+    }
+    pub fn starts_with(&self, prefix: Text) -> bool {
+        return prefix.length <= self.length && self.matches_at(prefix, 0);
+    }
+    pub fn ends_with(&self, suffix: Text) -> bool {
+        return suffix.length <= self.length && self.matches_at(suffix, self.length - suffix.length);
+    }
+    // Nonempty valid UTF-8 cannot match inside a scalar. Empty needles match
+    // at 0 for find and byte_len for rfind. Search is O(n*m), no allocation.
+    pub fn find(&self, needle: Text) -> core::option::Option<i32> { return self.find_from(needle, 0); }
+    pub fn rfind(&self, needle: Text) -> core::option::Option<i32> {
+        if (needle.length > self.length) { return core::option::None(); }
+        let index: i32 = self.length - needle.length;
+        while (index >= 0) {
+            if (self.matches_at(needle, index)) { return core::option::Some(index); }
+            index -= 1;
+        }
+        return core::option::None();
+    }
+    pub fn trim_ascii(&self) -> Text {
+        let start: i32 = 0;
+        let end: i32 = self.length;
+        while (start < end && core::byte::is_ascii_whitespace(self.bytes[self.start + start])) { start += 1; }
+        while (end > start && core::byte::is_ascii_whitespace(self.bytes[self.start + end - 1])) { end -= 1; }
+        return self.part(start, end);
+    }
+    pub fn scalars(&self) -> Scalars { return Scalars { text: self.part(0, self.length), position: 0 }; }
+    // Nonoverlapping separators; retain leading, interior and trailing empty
+    // fields. Empty separator yields empty, each scalar, then empty.
+    pub fn split(&self, separator: Text) -> Split {
+        return Split { text: self.part(0, self.length), separator: separator, position: 0, empty_head: true, done: false };
+    }
+    pub fn parse_u8(&self) -> core::result::Result<u8, core::decimal::ParseError> {
+        return core::decimal::parse_u8_range(self.bytes, self.start, self.length);
+    }
+    pub fn parse_u16(&self) -> core::result::Result<u16, core::decimal::ParseError> {
+        return core::decimal::parse_u16_range(self.bytes, self.start, self.length);
+    }
+    pub fn parse_u32(&self) -> core::result::Result<u32, core::decimal::ParseError> {
+        return core::decimal::parse_u32_range(self.bytes, self.start, self.length);
+    }
+    pub fn parse_i8(&self) -> core::result::Result<i8, core::decimal::ParseError> {
+        return core::decimal::parse_i8_range(self.bytes, self.start, self.length);
+    }
+    pub fn parse_i16(&self) -> core::result::Result<i16, core::decimal::ParseError> {
+        return core::decimal::parse_i16_range(self.bytes, self.start, self.length);
+    }
+    pub fn parse_i32(&self) -> core::result::Result<i32, core::decimal::ParseError> {
+        return core::decimal::parse_i32_range(self.bytes, self.start, self.length);
+    }
+}
+
+pub impl Scalars {
+    pub fn next(&self) -> core::option::Option<Scalar> {
+        if (self.position == self.text.byte_len()) { return core::option::None(); }
+        let index: i32 = self.position;
+        let value: u32 = core::option::unwrap(self.text.scalar_at_byte(index));
+        self.position += core::utf8::encoded_len_or(value, 0) as i32;
+        return core::option::Some(Scalar { byte_index: index, value: value });
+    }
+}
+
+pub impl Split {
+    pub fn next(&self) -> core::option::Option<Text> {
+        if (self.done) { return core::option::None(); }
+        let length: i32 = self.text.byte_len();
+        if (self.separator.is_empty()) {
+            if (self.empty_head) {
+                self.empty_head = false;
+                return core::option::Some(self.text.part(0, 0));
+            }
+            if (self.position < length) {
+                let start: i32 = self.position;
+                let scalar: u32 = core::option::unwrap(self.text.scalar_at_byte(start));
+                self.position += core::utf8::encoded_len_or(scalar, 0) as i32;
+                return core::option::Some(self.text.part(start, self.position));
+            }
+            self.done = true;
+            return core::option::Some(self.text.part(length, length));
+        }
+        let found: core::option::Option<i32> = self.text.find_from(self.separator, self.position);
+        let end: i32 = core::option::unwrap_or(found, length);
+        let value: Text = self.text.part(self.position, end);
+        if (core::option::is_some(found)) { self.position = end + self.separator.byte_len(); }
+        else { self.done = true; }
+        return core::option::Some(value);
+    }
+}
+
+pub impl core::cmp::Eq<Text> for Text {
+    pub fn eq(left: Text, right: Text) -> bool { return left.equals(right); }
+    pub fn ne(left: Text, right: Text) -> bool { return !left.equals(right); }
+}
+pub impl core::cmp::Ord<Text> for Text {
+    pub fn lt(left: Text, right: Text) -> bool { return left.compare(right) < 0; }
+    pub fn le(left: Text, right: Text) -> bool { return left.compare(right) <= 0; }
+    pub fn gt(left: Text, right: Text) -> bool { return left.compare(right) > 0; }
+    pub fn ge(left: Text, right: Text) -> bool { return left.compare(right) >= 0; }
+}
+pub impl core::hash::Hash<Text> for Text {
+    pub fn hash(value: Text) -> u32 {
+        let state: u32 = core::hash::FNV1A_OFFSET_BASIS;
+        let index: i32 = 0;
+        while (index < value.length) {
+            state = core::hash::fnv1a_step(state, value.bytes[value.start + index]);
+            index += 1;
+        }
+        return state;
+    }
+}

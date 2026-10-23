@@ -1,0 +1,46 @@
+// Success without injection exits 1. Every failed allocation exits 0 after
+// checking that source views and previously owned contents remain valid.
+module app::main;
+import alloc::string;
+import core::option;
+import core::result;
+import core::text;
+
+fn allocation(error: alloc::string::Error) -> bool {
+    let correct: bool = match (error) { alloc::string::Error::AllocationFailed -> true, _ -> false };
+    return correct;
+}
+fn main() -> i32 {
+    let bytes: [u8; 6] = [255, 65, 195, 169, 66, 255];
+    let source: core::text::Text = core::result::unwrap(core::text::from_utf8_range(bytes, 1, 4));
+    let copied: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_text(source);
+    if (core::result::is_err(copied)) {
+        if (!allocation(core::result::unwrap_err(copied)) || source.scalar_count() != 3) { return 10; }
+        return 0;
+    }
+    let owner: alloc::string::String = core::result::unwrap(copied);
+    let before: i32 = owner.capacity();
+    let view: core::text::Text = core::result::unwrap(owner.as_text().slice(1, 3));
+    let appended: core::result::Result<i32, alloc::string::Error> = owner.try_append_text(view);
+    if (core::result::is_err(appended)) {
+        let correct: bool = allocation(core::result::unwrap_err(appended)) && owner.as_text().equals(source) &&
+            owner.capacity() == before && view.scalar_count() == 1 && core::option::unwrap(view.scalar_at_byte(0)) == 233;
+        owner.destroy();
+        if (!correct) { return 11; }
+        return 0;
+    }
+    let tail: core::text::Text = core::result::unwrap(owner.as_text().slice(4, 6));
+    let copy: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_text(tail);
+    if (core::result::is_err(copy)) {
+        let correct: bool = allocation(core::result::unwrap_err(copy)) && owner.byte_len() == 6 && tail.scalar_count() == 1;
+        owner.destroy();
+        if (!correct) { return 12; }
+        return 0;
+    }
+    let independent: alloc::string::String = core::result::unwrap(copy);
+    owner.destroy();
+    let correct: bool = independent.byte_len() == 2 && core::option::unwrap(independent.scalar_at_byte(0)) == 233;
+    independent.destroy();
+    if (!correct) { return 13; }
+    return 1;
+}

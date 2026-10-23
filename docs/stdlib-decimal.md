@@ -3,7 +3,10 @@
 `core::decimal` provides allocation-free integer formatting and parsing.
 The packed-byte parsers are `parse_u8`, `parse_u16`, `parse_u32`, `parse_i8`,
 `parse_i16` and `parse_i32`. Each takes `(bytes: [u8], count: i32)` and returns
-`Result<integer, ParseError>`.
+`Result<integer, ParseError>`. Each also has a `parse_TYPE_range(bytes, offset,
+count)` form that avoids copying or shifting a substring. Error offsets are
+relative to the selected range. Borrowed `core::text::Text` exposes matching
+`parse_TYPE()` methods.
 
 ## Input contract
 
@@ -15,7 +18,7 @@ The packed-byte parsers are `parse_u8`, `parse_u16`, `parse_u32`, `parse_i8`,
   are invalid. The function does not trim input.
 - Arithmetic is checked before multiplication/addition. Overflow never wraps;
   signed minima are handled without negating an unrepresentable value.
-- The slice must physically back `count` bytes. A negative count is an error.
+- The slice must physically back `count` bytes. Negative offsets/counts or an overflowing offset + count are errors.
   An overstated positive count can trap on indexing because the compiler still
   lacks a slice-length projection. No data is written and no storage is allocated.
 
@@ -23,7 +26,7 @@ The packed-byte parsers are `parse_u8`, `parse_u16`, `parse_u32`, `parse_i8`,
 
 | Kind | Offset |
 | --- | --- |
-| Bounds | -1 for a negative count |
+| Bounds | -1 for a negative or overflowing integer range |
 | Empty | 0 for zero count |
 | MissingDigits | End of input after a sign |
 | InvalidDigit | First non-digit byte |
@@ -49,11 +52,12 @@ Result APIs above.
 ## Evidence and remaining work
 
 Both groups in `tests/stdlib_decimal_execution.rs` passed on 2026-10-22 in
-10.46 seconds using the GPU compiler and native x86_64 Linux execution.
+9.21 seconds after adding range parsers using the GPU compiler and native x86_64 Linux execution.
 
 - The existing formatting and cell-input fixture also executes all six packed
   parsers, signed/unsigned 32-bit extremes and negative/zero counts.
-- A native stdin fixture tests every target width against independently
+- A native stdin fixture parses after a selector byte without shifting storage
+  and tests every target width against independently
   generated values, leading zeroes, signs, exact range boundaries, malformed
   bytes and the expected error kind/offset.
 

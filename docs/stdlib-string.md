@@ -10,6 +10,7 @@ do not operate on grapheme clusters.
 `alloc::string::from_utf8(bytes, count)` validates and copies a byte slice,
 returning `Result<String, Error>`. The slice must physically back `count` bytes;
 negative counts return `Bounds`, while an overclaimed physical view traps.
+`alloc::string::from_text(view)` copies a borrowed Text into independent storage.
 Construction from native `str` awaits the length projection listed in
 [library-dependencies.md](library-dependencies.md).
 
@@ -20,12 +21,15 @@ copies of the previous owner and borrowed views become invalid.
 
 `as_bytes()` borrows initialized bytes. Treat them as read-only. The language
 does not enforce immutable slices; writing this view can violate String's UTF-8
-invariant. Mutating methods may invalidate borrowed views.
+invariant. Mutating methods may invalidate borrowed views. `as_text()` borrows a validated,
+length-bearing [Text](stdlib-text.md) in constant time; its subviews and iterators
+allocate nothing.
 
 ## Operations
 
 | Operation | Behavior |
 | --- | --- |
+| `as_text` | Borrow a length-bearing Text view without copying or validation |
 | `byte_len`, `capacity`, `is_empty` | Query initialized bytes and reserved storage |
 | `byte_at` | Optional byte; negative/outside indices give None |
 | `is_char_boundary` | Whether an offset is a scalar boundary; the end is a boundary |
@@ -33,7 +37,7 @@ invariant. Mutating methods may invalidate borrowed views.
 | `scalar_at_byte` | Decode at an offset; interior/outside offsets give None |
 | `try_reserve` | Reserve a total byte capacity; return the resulting capacity |
 | `try_push_scalar` | Append a Unicode scalar; return the new byte length |
-| `try_append_utf8`, `try_append` | Append bytes or a String; return the new byte length |
+| `try_append_utf8`, `try_append`, `try_append_text` | Append bytes, a String or borrowed Text; return the new byte length |
 | `try_truncate` | Truncate at a scalar boundary; return the resulting byte length |
 | `pop_scalar` | Remove and return the last scalar; empty gives None |
 | `clear` | Empty the string while retaining capacity |
@@ -42,7 +46,7 @@ invariant. Mutating methods may invalidate borrowed views.
 | `compare`, `starts_with`, `ends_with` | Total lexicographic byte order and prefix/suffix tests |
 | `try_substring` | Independent copy of a range with scalar-boundary endpoints |
 | `try_replace_range`, `try_insert`, `try_remove_range` | Checked byte-range edits; return the new length |
-| `trim_ascii` | Remove leading/trailing ASCII whitespace in place and return the length |
+| `trim_ascii` | Remove leading/trailing HT, LF, VT, FF, CR and space in place and return the length |
 | `destroy` | Release the allocation and reset this owner |
 
 Fallible edits return `Result`. Invalid UTF-8 records the first malformed or
@@ -99,6 +103,9 @@ timeout --kill-after=2s 100s env \
   cargo test --locked --test stdlib_string_execution -- --nocapture
 ```
 
-Wasm and user-program GPU execution are not established. Splitting/joining,
-formatting, native `str` interoperation and immutable views
+The borrowed-text integration passed this suite again in 12.56 seconds, and
+`stdlib_text_execution` tests subview appends and copies under allocation failure.
+
+Wasm and user-program GPU execution are not established. Joining,
+formatting, native `str` interoperation and enforced immutable views
 remain on the full [library roadmap](library-roadmap.md).

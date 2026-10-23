@@ -44,6 +44,10 @@ enforce unique ownership or automatic destruction.
 Bytes are arbitrary `u8` values. Text is valid UTF-8 and can contain NUL. String
 length means bytes unless the API explicitly names scalars or graphemes.
 
+Borrowed Text values carry their byte length and support subviews without
+copying. ASCII whitespace helpers recognize HT, LF, VT, FF, CR and space;
+format parsers must apply their own specified whitespace grammar.
+
 Text edits and text slices require Unicode scalar boundaries. A negative index,
 an index beyond the length, and a byte index inside a scalar have explicit
 failure behavior. Empty text is valid. No normalization or locale-sensitive

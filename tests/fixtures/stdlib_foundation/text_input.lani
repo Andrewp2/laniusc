@@ -1,0 +1,72 @@
+// Test input: one separator byte length, then separator bytes, then text.
+// Binary fields in the output are length-prefixed; no sentinel is assumed.
+module app::main;
+import alloc::io;
+import core::hash;
+import core::option;
+import core::result;
+import core::text;
+import std::io;
+import std::io_decimal;
+import std::stream;
+
+fn error_offset(error: core::text::Error) {
+    let offset: i32 = match (error) { core::text::Error::InvalidUtf8(at) -> at, _ -> -1 };
+    std::io_decimal::write_i32(1, offset);
+}
+fn field(text: core::text::Text) {
+    std::io_decimal::write_i32(1, text.byte_len());
+    std::io::write_byte(1, 58);
+    let index: i32 = 0;
+    while (index < text.byte_len()) {
+        std::io::write_byte(1, core::option::unwrap(text.byte_at(index)) as i32);
+        index += 1;
+    }
+    std::io::write_byte(1, 10);
+}
+fn inspect(text: core::text::Text, separator: core::text::Text) {
+    std::io_decimal::write_i32(1, text.byte_len()); std::io::write_byte(1, 32);
+    std::io_decimal::write_i32(1, text.scalar_count()); std::io::write_byte(1, 32);
+    std::io_decimal::write_u32(1, core::text::Text::hash(text)); std::io::write_byte(1, 10);
+    let scalars: core::text::Scalars = text.scalars();
+    let current: core::option::Option<core::text::Scalar> = scalars.next();
+    while (core::option::is_some(current)) {
+        let scalar: core::text::Scalar = core::option::unwrap(current);
+        std::io_decimal::write_i32(1, scalar.byte_index); std::io::write_byte(1, 58);
+        std::io_decimal::write_u32(1, scalar.value); std::io::write_byte(1, 10);
+        current = scalars.next();
+    }
+    std::io::write_text(1, "|\n");
+    let split: core::text::Split = text.split(separator);
+    let part: core::option::Option<core::text::Text> = split.next();
+    while (core::option::is_some(part)) { field(core::option::unwrap(part)); part = split.next(); }
+    std::io::write_text(1, "|\n");
+    field(text.trim_ascii());
+    std::io_decimal::write_i32(1, core::option::unwrap_or(text.find(separator), -1)); std::io::write_byte(1, 32);
+    std::io_decimal::write_i32(1, core::option::unwrap_or(text.rfind(separator), -1)); std::io::write_byte(1, 10);
+    let index: i32 = 0;
+    while (index <= text.byte_len()) {
+        let value: i32 = 48;
+        if (text.is_char_boundary(index)) { value = 49; }
+        std::io::write_byte(1, value);
+        index += 1;
+    }
+    std::io::write_byte(1, 10);
+}
+fn main() -> i32 {
+    let buffer: alloc::io::Buffer = alloc::io::new();
+    let input: std::stream::Descriptor = std::stream::stdin();
+    if (core::result::is_err(std::stream::copy(input.borrow(), buffer.borrow())) || buffer.len() == 0) {
+        buffer.destroy(); return 1;
+    }
+    let bytes: [u8] = buffer.as_bytes();
+    let count: i32 = bytes[0] as i32;
+    if (count > buffer.len() - 1) { buffer.destroy(); return 1; }
+    let checked: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8_range(bytes, count + 1, buffer.len() - count - 1);
+    if (core::result::is_err(checked)) { error_offset(core::result::unwrap_err(checked)); buffer.destroy(); return 2; }
+    let separator: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8_range(bytes, 1, count);
+    if (core::result::is_err(separator)) { error_offset(core::result::unwrap_err(separator)); buffer.destroy(); return 3; }
+    inspect(core::result::unwrap(checked), core::result::unwrap(separator));
+    buffer.destroy();
+    return 0;
+}

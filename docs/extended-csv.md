@@ -35,10 +35,13 @@ preserved.
 | `parse(input, options)` | `Result<Table, Error>`; borrows input and copies its fields |
 | `Table.row_count()` | Number of records |
 | `Table.field_count(row)` | `Option<i32>`; None for a negative or missing row |
+| `Table.field(row, column)` | `Result<Text, Error>`; borrowed field without copying |
 | `Table.try_field(row, column)` | `Result<String, Error>`; independent owned copy |
 | `Table.destroy()` | Deeply frees fields and rows, resetting this owner to an empty table |
 | `encode(table)` | `Result<String, Error>`; independent owned output, preserving table |
 
+Borrowed fields remain valid while the table is alive and unchanged. They use
+[core::text::Text](stdlib-text.md); no field allocation or revalidation occurs.
 Destroy returned Strings separately. `parse` never destroys or mutates its
 input. A plain Table copy aliases the same allocation tree; maintain one active
 owner. Destruction invalidates copies of the old handle. Destroying the same
@@ -117,3 +120,7 @@ output. Streaming parsing/writing, constructing or editing rows, header-based
 access, and table transformations remain future work. Wasm and user-program
 GPU execution have not been established. The GPU is used to compile the tested
 native programs.
+
+The borrowed-field integration passed all three CSV test groups in 11.64
+seconds on 2026-10-22, including negative/missing rows and columns and independent
+owned copies. Streaming CSV remains unfinished.

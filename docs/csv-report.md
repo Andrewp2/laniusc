@@ -58,15 +58,18 @@ This is a record number, not a physical line number when quoted text spans lines
 | Module | Role |
 | --- | --- |
 | `alloc::io`, `core::io`, `std::stream` | Bounded input buffering, partial reads/writes and native descriptors |
-| `alloc::string` | Valid UTF-8 ownership and independent field/key copies |
+| `alloc::string` | Valid UTF-8 ownership; one independent name per group |
+| `core::text` | Borrowed fields, decimal parsing and text-key lookup |
 | `ext::csv` | Table parsing, limits and field access |
 | `core::decimal`, `core::i32` | Explicit numeric parsing errors and checked addition |
-| `std::vec`, `alloc::hash_map` | Owned group records and hashed String-to-index lookup |
+| `std::vec`, `alloc::hash_map` | Owned group records and hashed Text-to-index lookup |
 | `ext::json` | Document building, borrowed mutation and encoding |
 | `core::option`, `core::result` | Absence and failure propagation |
 
 The group vector owns each name. The lookup map borrows those names and is
-destroyed before them. A failed insertion rolls back the new group. JSON copies
+destroyed before them. CSV fields are borrowed while reading rows; numeric
+fields and repeated group names are not copied. A failed insertion rolls back
+the new group. JSON copies
 its keys and values; helper functions borrow the actual document owner while
 growing its storage. Every application error path releases owned resources.
 
@@ -130,6 +133,25 @@ same expected groups. Samples are in
 `target/stdlib-work/csv-report-hash-runtime.tsv`. Compiler sources did not
 change between these two binaries. The reporter's two integration test groups
 passed again after migration, including the complete allocation-failure sweep.
+
+After replacing field copies with borrowed Text, another paired comparison
+against commit `bab810ce` gave:
+
+| Records | Distinct groups | Owned-field median | Borrowed-field median |
+| ---: | ---: | ---: | ---: |
+| 4,096 | 64 | 232.36 ms | 175.24 ms |
+| 32,768 | 64 | 1,755.69 ms | 1,233.25 ms |
+| 4,096 | 1,024 | 302.83 ms | 268.91 ms |
+
+The baseline was rebuilt from that commit's archived library/application
+sources using the same compiler as the new program. Each case used one warm-up
+pair and four measured pairs with alternating order, process startup and pipe
+I/O included, compilation excluded. Every output byte matched the expected
+JSON. Samples are in `target/stdlib-work/csv-report-text-runtime.tsv`. These
+local measurements describe the combined String/Text/application change; they
+are not measurements of compiler throughput or GPU user-program execution.
+Both report test groups passed again in 13.32 seconds, including the allocation
+and I/O fault sweep.
 
 The new lookup is expected constant time with distributed hashes, with linear
 worst-case probes. CSV still owns the complete table and separately allocates

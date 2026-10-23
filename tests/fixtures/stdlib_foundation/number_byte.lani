@@ -165,7 +165,7 @@ fn main() -> i32 {
     if (!core::byte::eq_ignore_ascii_case(65, 97) || !core::byte::eq_ignore_ascii_case(90, 122) || core::byte::eq_ignore_ascii_case(65, 98)) {
         return 19;
     }
-    if (!core::byte::is_ascii_whitespace(32) || !core::byte::is_ascii_whitespace(9) || core::byte::is_ascii_whitespace(11) || !core::byte::is_ascii_control(0) || !core::byte::is_ascii_control(127) || core::byte::is_ascii_control(32) || core::byte::is_ascii_control(128)) {
+    if (!core::byte::is_ascii_whitespace(32) || !core::byte::is_ascii_whitespace(9) || !core::byte::is_ascii_whitespace(11) || !core::byte::is_ascii_whitespace(12) || !core::byte::is_ascii_control(0) || !core::byte::is_ascii_control(127) || core::byte::is_ascii_control(32) || core::byte::is_ascii_control(128)) {
         return 20;
     }
     if (!core::byte::is_ascii_graphic(33) || !core::byte::is_ascii_graphic(126) || core::byte::is_ascii_graphic(32) || !core::byte::is_ascii_printable(32) || core::byte::is_ascii_printable(127) || !core::byte::is_ascii_punctuation(95) || core::byte::is_ascii_punctuation(65) || core::byte::is_ascii_punctuation(32)) {

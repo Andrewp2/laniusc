@@ -41,6 +41,8 @@ full scope and delivery requirements. New APIs follow the
 [library conventions](docs/library-api-conventions.md); the first
 [owned UTF-8 String](docs/stdlib-string.md) has executable native examples and
 allocation-failure tests.
+[Borrowed UTF-8 text](docs/stdlib-text.md) provides subviews, splitting, scalar
+iteration and hashing without copying.
 The [byte stream APIs](docs/stdlib-streams.md) provide shared reader/writer
 contracts, owned byte buffers and native descriptor adapters.
 The [generic hash map](docs/stdlib-hash-collections.md) provides hashed lookup,

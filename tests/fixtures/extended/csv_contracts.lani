@@ -3,6 +3,7 @@ module app::main;
 import alloc::string;
 import core::option;
 import core::result;
+import core::text;
 import ext::csv;
 
 fn decode(bytes: [u8], count: i32) -> alloc::string::String {
@@ -30,6 +31,10 @@ fn main() -> i32 {
     if (core::option::is_some(table.field_count(-1)) || core::option::is_some(table.field_count(2))) { return 2; }
     if (!core::result::is_err(table.try_field(-1, 0)) || !core::result::is_err(table.try_field(2, 0))) { return 3; }
     if (!core::result::is_err(table.try_field(0, -1)) || !core::result::is_err(table.try_field(0, 2))) { return 4; }
+    if (core::result::is_ok(table.field(-1, 0)) || core::result::is_ok(table.field(2, 0)) ||
+        core::result::is_ok(table.field(0, -1)) || core::result::is_ok(table.field(0, 2))) { return 15; }
+    let borrowed: core::text::Text = core::result::unwrap(table.field(1, 1));
+    if (borrowed.byte_len() != 1 || core::option::unwrap(borrowed.byte_at(0)) != 100) { return 16; }
     let copied: core::result::Result<alloc::string::String, ext::csv::Error> = table.try_field(1, 1);
     let field: alloc::string::String = core::result::unwrap(copied);
     if (core::option::unwrap_or(field.byte_at(0), 0) != 100) { return 5; }
@@ -37,7 +42,7 @@ fn main() -> i32 {
     field.destroy();
     let again: core::result::Result<alloc::string::String, ext::csv::Error> = table.try_field(1, 1);
     let unchanged: alloc::string::String = core::result::unwrap(again);
-    if (unchanged.byte_len() != 1) { return 6; }
+    if (unchanged.byte_len() != 1 || !borrowed.equals(unchanged.as_text())) { return 6; }
     unchanged.destroy();
     table.destroy();
     if (table.row_count() != 0) { return 7; }

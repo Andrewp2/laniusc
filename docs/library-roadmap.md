@@ -28,7 +28,7 @@ package distribution is a separate deliverable.
 | Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Many implementations and runtime fixtures exist; consolidate duplicate paths |
 | Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic operations exist; length-bearing APIs and uniform bounds errors remain |
 | Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | Shared protocol and collection integration remain |
-| Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed owned String, byte codecs and scalar operations execute; split/join, formatting and borrowed text integration remain |
+| Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed owned String, byte codecs and scalar operations execute; borrowed Text, splitting and scalar iteration now execute; join and formatting remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings and raw views exist; ownership conventions need consolidation |
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Generic vectors/deques, linear maps/sets and an executable alloc hash map exist; hash-set composition is a compiler dependency |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks and native descriptor adapters execute; buffered adapters and owned files remain |
@@ -116,7 +116,7 @@ API list; unrelated library work can continue.
   coverage and remaining String operations.
 - Compiler and runtime prerequisites: [library-dependencies.md](library-dependencies.md).
 - Extended CSV: parsing, independent field copies and canonical encoding execute
-  on x86_64 Linux, including generated tables and allocation fault injection.
+  on x86_64 Linux, including generated tables, borrowed field views and allocation fault injection.
   See [extended-csv.md](extended-csv.md). Streaming and row construction remain.
 - Shared I/O: portable Read/Write traits, exact/all/copy operations, slice
   cursors, owned byte buffers and native descriptor adapters have execution
@@ -138,6 +138,12 @@ API list; unrelated library work can continue.
   tests cover generated records, all allocation failures and partial I/O.
   It now uses the hash map; paired measurements improve the 1,024-group case
   from about 694 ms to 307 ms. Full-table allocation remains work to improve.
+- Borrowed text: [core::text::Text](stdlib-text.md) executes validation, checked
+  subviews, comparison/search, scalar and split iteration, hashing and decimal
+  parsing without copying. String and CSV expose borrowed views. The report
+  copies each distinct group name once, and reads other fields directly. Paired
+  native measurements show 232→175 ms for 4,096 records/64 groups and
+  303→269 ms for 4,096 records/1,024 groups; the complete table is still retained.
 - Next foundation work: iterators and text operations, buffered I/O and
   streaming format interfaces; complete HashSet when its compiler dependency
   is resolved.
