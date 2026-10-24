@@ -1,0 +1,246 @@
+// One checked HTTP/1 exchange over an explicit numeric endpoint.
+module ext::http_client;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http;
+import std::clock;
+import std::socket;
+
+pub struct Request { method: core::slice::View<u8>, target: core::slice::View<u8>, authority: core::slice::View<u8>, headers: core::slice::View<ext::http::Field>, body: core::slice::View<u8> }
+pub struct Options { wire: ext::http::Limits, request_bytes: i32, response_bytes: i32, interim_count: i32, interim_bytes: i32, io_calls: u64, work: u64 }
+pub enum Stage { Prepare, Open, Connect, Send, Receive, Shutdown, Validate, Decode, Close, Publish }
+pub enum Cause { InvalidOptions, UnsupportedRequest, UnsupportedHeader(i32), UnsupportedUpgrade, AllocationFailed, Timeout, Clock(std::clock::Error), Io(core::io::Error), Http(ext::http::Error), RequestLimit, ResponseLimit, BodyLimit, InterimLimit, IoLimit, WorkLimit, BoundaryMismatch }
+pub struct Stats { request_bytes: i32, request_sent: i32, response_received: u64, interim_count: i32, discarded_bytes: i32, io_calls: u64, work: u64, upload_stopped: bool, write_shutdown: bool }
+pub struct Failure { cause: Cause, stage: Stage, message_offset: i32, stats: Stats, cleanup: core::option::Option<core::io::Error> }
+pub struct Response { wire: alloc::vec::Vec<u8>, method: alloc::vec::Vec<u8>, decoded: alloc::vec::Vec<u8>, interim: alloc::vec::Vec<ext::http::Head>, validated: ext::http::Message, final_offset: i32, stats: Stats }
+struct Span { offset: i32, length: i32 }
+struct Owners { request: alloc::vec::Vec<u8>, method: alloc::vec::Vec<u8>, wire: alloc::vec::Vec<u8>, decoded: alloc::vec::Vec<u8>, spans: alloc::vec::Vec<Span>, heads: alloc::vec::Vec<ext::http::Head> }
+impl Owners {
+    fn borrow(&self) -> &Owners { return self; }
+    fn destroy(&self) { self.request.destroy(); self.method.destroy(); self.wire.destroy(); self.decoded.destroy(); self.spans.destroy(); self.heads.destroy(); }
+}
+struct State { options: Options, deadline: core::time::Deadline, last: core::time::Instant, stage: Stage, message_offset: i32, stats: Stats }
+impl State { fn borrow(&self) -> &State { return self; } }
+pub fn default_options() -> Options { return Options { wire:ext::http::default_limits(),request_bytes:17825792,response_bytes:18874368,interim_count:8,interim_bytes:65536,io_calls:1048576,work:268435456 }; }
+pub impl Response {
+    pub fn as_view(&self) -> core::slice::View<u8> { return self.wire.as_view().subview(self.final_offset,self.final_offset+self.validated.consumed).unwrap(); }
+    pub fn message(&self) -> ext::http::Message { return self.validated; }
+    pub fn body(&self) -> core::slice::View<u8> { return self.decoded.as_view(); }
+    pub fn informational(&self) -> core::slice::View<ext::http::Head> { return self.interim.as_view(); }
+    pub fn destroy(&self) { self.interim.destroy(); self.decoded.destroy(); self.wire.destroy(); self.method.destroy(); }
+}
+fn literal(value: str, count: i32) -> core::slice::View<u8> { let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::slice::view(bytes,count).unwrap(); }
+fn valid<T>(v: core::slice::View<T>) -> bool { return v.start >= 0 && v.length >= 0 && v.start <= 2147483647-v.length; }
+fn eq(v: core::slice::View<u8>, value: str, count: i32) -> bool { let other: core::slice::View<u8> = literal(value,count); if (v.len() != count) { return false; } let i: i32 = 0; while (i < count) { if (v.get(i).unwrap() != other.get(i).unwrap()) { return false; } i += 1; } return true; }
+fn named(v: core::slice::View<u8>, value: str, count: i32) -> bool { return ext::http::equal_name(v,literal(value,count)); }
+fn field(name: core::slice::View<u8>, value: core::slice::View<u8>) -> ext::http::Field { return ext::http::Field { raw:literal("",0),name:name,value:value,offset:0 }; }
+fn family(endpoint: core::net::SocketAddr) -> std::socket::Family { return match(endpoint) { core::net::SocketAddr::V4(v) -> std::socket::Family::Ipv4, core::net::SocketAddr::V6(v) -> std::socket::Family::Ipv6 }; }
+fn checked(o: Options) -> bool { let l: ext::http::Limits = o.wire; return o.request_bytes >= 0 && o.response_bytes >= 0 && o.interim_count >= 0 && o.interim_bytes >= 0 && o.io_calls > 0 && l.head_bytes >= 0 && l.line_bytes >= 0 && l.headers >= 0 && l.body_bytes >= 0 && l.trailer_bytes >= 0 && l.trailers >= 0 && l.chunks >= 0; }
+fn charge(s: &State, amount: u64) -> core::result::Result<bool,Cause> { if (amount > s.options.work-s.stats.work) { return core::result::Err(Cause::WorkLimit); } s.stats.work += amount; return core::result::Ok(true); }
+fn active(s: &State) -> core::result::Result<bool,Cause> {
+    let read: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now(); if (read.is_err()) { return core::result::Err(Cause::Clock(read.unwrap_err())); }
+    let value: core::time::Instant = read.unwrap(); if (value.compare(s.last) < 0) { return core::result::Err(Cause::Clock(std::clock::Error::ClockReversed)); } s.last = value;
+    if (s.deadline.is_expired(value)) { return core::result::Err(Cause::Timeout); } return core::result::Ok(true);
+}
+fn call(s: &State) -> core::result::Result<bool,Cause> { let before = active(s); if (before.is_err()) { return before; } if (s.stats.io_calls == s.options.io_calls) { return core::result::Err(Cause::IoLimit); } s.stats.io_calls += 1; return core::result::Ok(true); }
+fn transient(error: core::io::Error) -> bool { return match(error) { core::io::Error::Interrupted -> true, core::io::Error::WouldBlock -> true, _ -> false }; }
+fn fail(s: &State, cause: Cause, cleanup: core::option::Option<core::io::Error>) -> Failure { return Failure { cause:cause,stage:s.stage,message_offset:s.message_offset,stats:s.stats,cleanup:cleanup }; }
+fn digits(value: i32) -> i32 { let n: i32 = value; let count: i32 = 1; while (n >= 10) { n /= 10; count += 1; } return count; }
+fn prepare(s: &State, q: Request, owner: &Owners) -> core::result::Result<bool,Cause> {
+    let before = active(s); if (before.is_err()) { return before; }
+    if (!valid(q.method) || !valid(q.target) || !valid(q.authority) || !valid(q.headers) || !valid(q.body)) { return core::result::Err(Cause::Http(ext::http::Error::Bounds)); }
+    if (q.method.is_empty() || q.target.is_empty() || eq(q.method,"CONNECT",7) || (q.target.get(0).unwrap() != 47 && !(eq(q.method,"OPTIONS",7) && eq(q.target,"*",1))) || (eq(q.method,"TRACE",5) && !q.body.is_empty())) { return core::result::Err(Cause::UnsupportedRequest); }
+    let start_size: u64 = (q.method.len() as u64)+(q.target.len() as u64)+10;
+    let head_size: u64 = start_size+49+(q.authority.len() as u64)+(digits(q.body.len()) as u64);
+    if (start_size > s.options.wire.line_bytes as u64 || head_size > s.options.wire.head_bytes as u64 || q.headers.len() > s.options.wire.headers-3 || q.body.len() > s.options.wire.body_bytes || head_size+(q.body.len() as u64) > s.options.request_bytes as u64) { return core::result::Err(Cause::RequestLimit); }
+    let header_work = charge(s,q.headers.len() as u64); if (header_work.is_err()) { return header_work; }
+    let i: i32 = 0;
+    while (i < q.headers.len()) {
+        let observed = active(s); if (observed.is_err()) { return observed; }
+        let item: ext::http::Field = q.headers.get(i).unwrap(); if (!valid(item.name) || !valid(item.value)) { return core::result::Err(Cause::Http(ext::http::Error::Bounds)); }
+        if (named(item.name,"host",4) || named(item.name,"connection",10) || named(item.name,"content-length",14) || named(item.name,"transfer-encoding",17) || named(item.name,"expect",6) || named(item.name,"upgrade",7) || named(item.name,"te",2) || named(item.name,"trailer",7) || (item.name.len() >= 6 && named(item.name.subview(0,6).unwrap(),"proxy-",6))) { return core::result::Err(Cause::UnsupportedHeader(i)); }
+        head_size += (item.name.len() as u64)+(item.value.len() as u64)+4; if (head_size > s.options.wire.head_bytes as u64 || head_size+(q.body.len() as u64) > s.options.request_bytes as u64) { return core::result::Err(Cause::RequestLimit); } i += 1;
+    }
+    if (start_size > s.options.wire.line_bytes as u64 || head_size > s.options.wire.head_bytes as u64 || q.headers.len() > s.options.wire.headers-3 || q.body.len() > s.options.wire.body_bytes || head_size+(q.body.len() as u64) > s.options.request_bytes as u64) { return core::result::Err(Cause::RequestLimit); }
+    let paid = charge(s,4*(head_size+(q.body.len() as u64))+(q.method.len() as u64)); if (paid.is_err()) { return paid; }
+    let copied = alloc::vec::from_view(q.method); if (copied.is_err()) { return core::result::Err(Cause::AllocationFailed); } owner.method = copied.unwrap();
+    let line: alloc::vec::Vec<u8> = alloc::vec::new();
+    if (line.try_extend(q.method).is_err() || line.try_extend(literal(" ",1)).is_err() || line.try_extend(q.target).is_err() || line.try_extend(literal(" HTTP/1.1",9)).is_err()) { line.destroy(); return core::result::Err(Cause::AllocationFailed); }
+    let fields: alloc::vec::Vec<ext::http::Field> = alloc::vec::new();
+    if (fields.try_extend(q.headers).is_err() || fields.try_push(field(literal("Host",4),q.authority)).is_err() || fields.try_push(field(literal("Connection",10),literal("close",5))).is_err()) { line.destroy(); fields.destroy(); return core::result::Err(Cause::AllocationFailed); }
+    let encoded = ext::http::encode_request(line.as_view(),fields.as_view(),q.body,s.options.wire); line.destroy(); fields.destroy();
+    if (encoded.is_err()) { return core::result::Err(Cause::Http(encoded.unwrap_err())); }
+    owner.request = encoded.unwrap(); s.stats.request_bytes = owner.request.len();
+    return active(s);
+}
+fn canonical(s: &State, bytes: core::slice::View<u8>, method: core::slice::View<u8>, decoded: i32, final: bool, eof: bool) -> core::result::Result<ext::http::Message,Cause> {
+    s.stage = Stage::Validate;
+    let allowance: u64 = 4*(bytes.len() as u64); if (final) { allowance += 4*(s.options.wire.head_bytes as u64)*((s.options.wire.trailers as u64)+1); }
+    let paid = charge(s,allowance); if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); }
+    let parsed = ext::http::parse_response(bytes,method,eof,s.options.wire); if (parsed.is_err()) { return core::result::Err(Cause::Http(parsed.unwrap_err())); }
+    let message: ext::http::Message = parsed.unwrap(); if (message.consumed != bytes.len() || message.decoded_length != decoded) { return core::result::Err(Cause::BoundaryMismatch); }
+    let after = active(s); if (after.is_err()) { return core::result::Err(after.unwrap_err()); } return core::result::Ok(message);
+}
+fn shutdown_write(s: &State, socket: &std::socket::Socket) -> core::result::Result<bool,Cause> {
+    s.stage = Stage::Shutdown; let before = call(s); if (before.is_err()) { return before; }
+    let stopped = socket.shutdown(std::socket::Shutdown::Write); if (stopped.is_ok()) { s.stats.write_shutdown = true; }
+    let after = active(s); if (after.is_err()) { return after; }
+    if (stopped.is_err()) { return core::result::Err(Cause::Io(stopped.unwrap_err())); } return core::result::Ok(true);
+}
+fn finish(s: &State, socket: &std::socket::Socket, outcome: core::result::Result<bool,Cause>) -> core::result::Result<bool,Failure> {
+    let status: core::result::Result<bool,Cause> = outcome;
+    if (status.is_ok()) { s.stage = Stage::Close; status = active(s); }
+    let closed = socket.close();
+    if (status.is_err()) { let cleanup: core::option::Option<core::io::Error> = core::option::None(); if (closed.is_err()) { cleanup = core::option::Some(closed.unwrap_err()); } return core::result::Err(fail(s,status.unwrap_err(),cleanup)); }
+    s.stage = Stage::Close; if (closed.is_err()) { return core::result::Err(fail(s,Cause::Io(closed.unwrap_err()),core::option::None())); }
+    let after = active(s); if (after.is_err()) { return core::result::Err(fail(s,after.unwrap_err(),core::option::None())); } return core::result::Ok(true);
+}
+
+struct Track { cursor: ext::http::Cursor, charged: u64, close: bool, eof: bool, status: i32, head_end: i32, validated: core::option::Option<ext::http::Message> }
+impl Track { fn borrow(&self) -> &Track { return self; } }
+fn scan(s: &State, owner: &Owners, track: &Track, socket: &std::socket::Socket) -> core::result::Result<bool,Cause> {
+    while (true) {
+        s.stage = Stage::Receive; let before = active(s); if (before.is_err()) { return before; }
+        let bytes: core::slice::View<u8> = owner.wire.as_view().subview(s.message_offset,owner.wire.len()).unwrap();
+        let got = track.cursor.advance(bytes,owner.method.as_view(),track.eof);
+        let spent: u64 = track.cursor.work(); let paid = charge(s,spent-track.charged); track.charged = spent;
+        if (paid.is_err()) { return paid; } if (got.is_err()) { return core::result::Err(Cause::Http(got.unwrap_err())); }
+        let after = active(s); if (after.is_err()) { return after; }
+        let event: ext::http::Scan = got.unwrap();
+        let pending: bool = match(event) { ext::http::Scan::NeedMore -> true, _ -> false }; if (pending) { return core::result::Ok(false); }
+        let ready: bool = match(event) { ext::http::Scan::HeadReady(v) -> true, _ -> false };
+        if (ready) {
+            let info: ext::http::HeadInfo = match(event) { ext::http::Scan::HeadReady(v) -> v, _ -> ext::http::HeadInfo { status:0,version:0,kind:ext::http::BodyKind::Empty,content_length:0,head_end:0 } };
+            track.status = info.status; track.head_end = info.head_end;
+            if (info.status == 101) { return core::result::Err(Cause::UnsupportedUpgrade); }
+            if (info.status >= 200) {
+                track.close = match(info.kind) { ext::http::BodyKind::Close -> true, _ -> false };
+                if (s.stats.request_sent < s.stats.request_bytes) { s.stats.upload_stopped = true; let stopped = shutdown_write(s,socket); if (stopped.is_err()) { return stopped; } }
+            }
+            continue;
+        }
+        let boundary: ext::http::FrameBoundary = match(event) { ext::http::Scan::Boundary(v) -> v, _ -> ext::http::FrameBoundary { consumed:0,decoded_length:0 } };
+        if (boundary.consumed < 0 || boundary.consumed > bytes.len()) { return core::result::Err(Cause::BoundaryMismatch); }
+        let end: i32 = s.message_offset+boundary.consumed;
+        let selected: core::slice::View<u8> = owner.wire.as_view().subview(s.message_offset,end).unwrap();
+        if (track.status < 200) {
+            if (s.stats.interim_count == s.options.interim_count || end > s.options.interim_bytes) { return core::result::Err(Cause::InterimLimit); }
+            let parsed = canonical(s,selected,owner.method.as_view(),boundary.decoded_length,false,track.eof); if (parsed.is_err()) { return core::result::Err(parsed.unwrap_err()); }
+            if (owner.spans.try_push(Span { offset:s.message_offset,length:boundary.consumed }).is_err()) { return core::result::Err(Cause::AllocationFailed); }
+            s.stats.interim_count += 1; s.message_offset = end;
+            let next = ext::http::cursor(ext::http::CursorMode::Response,s.options.wire,s.options.response_bytes-end,s.options.work-s.stats.work);
+            if (next.is_err()) { return core::result::Err(Cause::Http(next.unwrap_err())); }
+            track.cursor = next.unwrap(); track.charged = 0; track.close = false; track.status = 0; track.head_end = 0; continue;
+        }
+        s.stats.discarded_bytes = owner.wire.len()-end; owner.wire.try_resize(end,0 as u8).unwrap();
+        let exact: core::slice::View<u8> = owner.wire.as_view().subview(s.message_offset,end).unwrap();
+        let parsed = canonical(s,exact,owner.method.as_view(),boundary.decoded_length,true,track.eof);
+        if (parsed.is_err()) { return core::result::Err(parsed.unwrap_err()); }
+        track.validated = core::option::Some(parsed.unwrap()); return core::result::Ok(true);
+    }
+    return core::result::Err(Cause::BoundaryMismatch);
+}
+fn wait_ready(s: &State, socket: &std::socket::Socket, readable: bool, writable: bool) -> core::result::Result<bool,Cause> {
+    while (true) {
+        let before = call(s); if (before.is_err()) { return before; }
+        let remaining: core::time::Duration = s.deadline.remaining(s.last); let milliseconds: i32 = 2147483647;
+        if (remaining.seconds <= 2147483 as u64) { let rounded: u64 = remaining.seconds*1000+((remaining.nanos as u64)+999999)/1000000; if (rounded < 2147483647 as u64) { milliseconds = rounded as i32; } }
+        let waited = socket.wait_ms(readable,writable,milliseconds); let after = active(s); if (after.is_err()) { return after; }
+        if (waited.is_err()) { if (core::io::is_interrupted(waited.unwrap_err())) { continue; } return core::result::Err(Cause::Io(waited.unwrap_err())); }
+        if (!waited.unwrap().timed_out) { return core::result::Ok(true); }
+    }
+    return core::result::Err(Cause::Timeout);
+}
+fn connect(s: &State, socket: &std::socket::Socket, endpoint: core::net::SocketAddr) -> core::result::Result<bool,Cause> {
+    s.stage = Stage::Connect; let before = call(s); if (before.is_err()) { return before; }
+    let started = socket.connect(endpoint); let after = active(s); if (after.is_err()) { return after; }
+    if (started.is_err()) { return core::result::Err(Cause::Io(started.unwrap_err())); }
+    let done: bool = match(started.unwrap()) { std::socket::Connection::Connected -> true, _ -> false }; if (done) { return core::result::Ok(true); }
+    let ready = wait_ready(s,socket,false,true); if (ready.is_err()) { return ready; }
+    let before = call(s); if (before.is_err()) { return before; }
+    let error = socket.take_error(); let after = active(s); if (after.is_err()) { return after; }
+    if (error.is_err()) { return core::result::Err(Cause::Io(error.unwrap_err())); }
+    let pending: core::option::Option<i32> = error.unwrap(); if (pending.is_some()) { return core::result::Err(Cause::Io(core::io::Error::Host(pending.unwrap()))); }
+    let before = call(s); if (before.is_err()) { return before; }
+    let peer = socket.peer_addr(); let after = active(s); if (after.is_err()) { return after; }
+    if (peer.is_err()) { return core::result::Err(Cause::Io(peer.unwrap_err())); } return core::result::Ok(true);
+}
+fn transfer(s: &State, owner: &Owners, track: &Track, socket: &std::socket::Socket) -> core::result::Result<bool,Cause> {
+    let storage: [i32;256] = [0;256]; let scratch: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024);
+    while (true) {
+        let framed = scan(s,owner,track,socket); if (framed.is_err()) { return framed; } if (framed.unwrap()) { return core::result::Ok(true); }
+        let raw_capacity: i32 = s.options.response_bytes-owner.wire.len(); let capacity: i32 = raw_capacity;
+        if (track.close) { let body_capacity: i32 = s.options.wire.body_bytes-(owner.wire.len()-s.message_offset-track.head_end); if (body_capacity < capacity) { capacity = body_capacity; } }
+        let probe: bool = capacity == 0;
+        if (capacity < 0 || (probe && !track.close)) { return core::result::Err(Cause::ResponseLimit); }
+        let count: i32 = capacity; if (count > 1024) { count = 1024; } if (probe) { count = 1; }
+        s.stage = Stage::Receive; let before = call(s); if (before.is_err()) { return before; }
+        let result = socket.receive(core::slice::view(scratch,count).unwrap());
+        // Preserve successful byte progress even if its later clock observation
+        // fails or has crossed the absolute deadline.
+        if (result.is_ok()) { let got: i32 = result.unwrap(); if (got < 0 || got > count) { return core::result::Err(Cause::Io(core::io::Error::InvalidCount)); } s.stats.response_received += got as u64; }
+        let after = active(s); if (after.is_err()) { return after; }
+        let progress: bool = false;
+        if (result.is_ok()) {
+            let got: i32 = result.unwrap();
+            if (got == 0) { track.eof = true; continue; }
+            if (probe) { if (raw_capacity == 0) { return core::result::Err(Cause::ResponseLimit); } return core::result::Err(Cause::BodyLimit); }
+            if (owner.wire.try_extend(core::slice::view(scratch,got).unwrap()).is_err()) { return core::result::Err(Cause::AllocationFailed); }
+            progress = true;
+            // Drain HeadReady before attempting any more upload bytes.
+            let framed = scan(s,owner,track,socket); if (framed.is_err()) { return framed; } if (framed.unwrap()) { return core::result::Ok(true); }
+        } else { if (!transient(result.unwrap_err())) { return core::result::Err(Cause::Io(result.unwrap_err())); } }
+        if (!s.stats.upload_stopped && s.stats.request_sent < owner.request.len()) {
+            s.stage = Stage::Send; let before = call(s); if (before.is_err()) { return before; }
+            let sent = socket.send(owner.request.as_view().subview(s.stats.request_sent,owner.request.len()).unwrap());
+            if (sent.is_ok()) { let got: i32 = sent.unwrap(); if (got <= 0 || got > owner.request.len()-s.stats.request_sent) { return core::result::Err(Cause::Io(core::io::Error::WriteZero)); } s.stats.request_sent += got; progress = true; }
+            let after = active(s); if (after.is_err()) { return after; }
+            if (sent.is_err() && !transient(sent.unwrap_err())) { return core::result::Err(Cause::Io(sent.unwrap_err())); }
+        }
+        if (!progress) {
+            s.stage = Stage::Receive;
+            let writable: bool = !s.stats.upload_stopped && s.stats.request_sent < owner.request.len();
+            let waited = wait_ready(s,socket,true,writable); if (waited.is_err()) { return waited; }
+        }
+    }
+    return core::result::Err(Cause::BoundaryMismatch);
+}
+fn decode(s: &State, owner: &Owners, message: ext::http::Message) -> core::result::Result<bool,Cause> {
+    s.stage = Stage::Decode; let paid = charge(s,2*(message.decoded_length as u64)); if (paid.is_err()) { return paid; }
+    if (owner.decoded.try_resize(message.decoded_length,0 as u8).is_err()) { return core::result::Err(Cause::AllocationFailed); }
+    let decoded = ext::http::decode_into(message,owner.decoded.as_view()); if (decoded.is_err()) { return core::result::Err(Cause::Http(decoded.unwrap_err())); }
+    if (decoded.unwrap() != message.decoded_length) { return core::result::Err(Cause::BoundaryMismatch); }
+    let i: i32 = 0; while (i < owner.spans.len()) {
+        let span: Span = owner.spans.get(i).unwrap(); let paid = charge(s,4*(span.length as u64)); if (paid.is_err()) { return paid; }
+        let raw: core::slice::View<u8> = owner.wire.as_view().subview(span.offset,span.offset+span.length).unwrap();
+        let head = ext::http::parse_response_head(raw,owner.method.as_view(),s.options.wire); if (head.is_err()) { return core::result::Err(Cause::Http(head.unwrap_err())); }
+        if (owner.heads.try_push(head.unwrap()).is_err()) { return core::result::Err(Cause::AllocationFailed); } i += 1;
+    }
+    return active(s);
+}
+pub fn exchange_until(endpoint: core::net::SocketAddr, request: Request, options: Options, deadline: core::time::Deadline) -> core::result::Result<Response,Failure> {
+    let state: State = State { options:options,deadline:deadline,last:core::time::instant(core::time::zero()),stage:Stage::Prepare,message_offset:0,stats:Stats { request_bytes:0,request_sent:0,response_received:0,interim_count:0,discarded_bytes:0,io_calls:0,work:0,upload_stopped:false,write_shutdown:false } };
+    if (!checked(options)) { return core::result::Err(fail(state.borrow(),Cause::InvalidOptions,core::option::None())); }
+    let owner: Owners = Owners { request:alloc::vec::new(),method:alloc::vec::new(),wire:alloc::vec::new(),decoded:alloc::vec::new(),spans:alloc::vec::new(),heads:alloc::vec::new() };
+    let prepared = prepare(state.borrow(),request,owner.borrow()); if (prepared.is_err()) { owner.destroy(); return core::result::Err(fail(state.borrow(),prepared.unwrap_err(),core::option::None())); }
+    let made = ext::http::cursor(ext::http::CursorMode::Response,options.wire,options.response_bytes,options.work-state.stats.work);
+    if (made.is_err()) { owner.destroy(); return core::result::Err(fail(state.borrow(),Cause::Http(made.unwrap_err()),core::option::None())); }
+    let track: Track = Track { cursor:made.unwrap(),charged:0,close:false,eof:false,status:0,head_end:0,validated:core::option::None() };
+    state.stage = Stage::Open; let before = call(state.borrow()); if (before.is_err()) { owner.destroy(); return core::result::Err(fail(state.borrow(),before.unwrap_err(),core::option::None())); }
+    let opened = std::socket::create(family(endpoint),std::socket::Kind::Tcp,true);
+    if (opened.is_err()) { owner.destroy(); return core::result::Err(fail(state.borrow(),Cause::Io(opened.unwrap_err()),core::option::None())); }
+    let socket: std::socket::Socket = opened.unwrap(); state.stage = Stage::Connect;
+    let outcome: core::result::Result<bool,Cause> = connect(state.borrow(),socket.borrow(),endpoint);
+    if (outcome.is_ok()) { outcome = transfer(state.borrow(),owner.borrow(),track.borrow(),socket.borrow()); }
+    if (outcome.is_ok()) { outcome = decode(state.borrow(),owner.borrow(),track.validated.unwrap()); }
+    let finished = finish(state.borrow(),socket.borrow(),outcome); if (finished.is_err()) { owner.destroy(); return core::result::Err(finished.unwrap_err()); }
+    owner.request.destroy(); owner.spans.destroy(); state.stage = Stage::Publish;
+    let final_check = active(state.borrow()); if (final_check.is_err()) { owner.method.destroy(); owner.wire.destroy(); owner.decoded.destroy(); owner.heads.destroy(); return core::result::Err(fail(state.borrow(),final_check.unwrap_err(),core::option::None())); }
+    return core::result::Ok(Response { wire:owner.wire,method:owner.method,decoded:owner.decoded,interim:owner.heads,validated:track.validated.unwrap(),final_offset:state.message_offset,stats:state.stats });
+}

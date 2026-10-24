@@ -1,6 +1,6 @@
 # HTTP/1 wire messages
 
-`ext::http` is a portable Lanius HTTP/1.0 and HTTP/1.1 wire library. It parses borrowed request/response heads, determines framing, validates complete messages, decodes chunked bodies, and writes checked messages. It performs no I/O and opens no sockets. The offline [`http-message`](extended-http-message.md) program supplies file/stdin I/O. A network client or server is not provided.
+`ext::http` is a portable Lanius HTTP/1.0 and HTTP/1.1 wire library. It parses borrowed request/response heads, determines framing, validates complete messages, decodes chunked bodies, and writes checked messages. It performs no I/O and opens no sockets. The offline [`http-message`](extended-http-message.md) program supplies file/stdin I/O. The separate [connected client](extended-http-client.md) owns socket transport; a server remains separate work.
 
 The behavior follows [RFC 9112 sections 2–7 and 11.2](https://www.rfc-editor.org/rfc/rfc9112.html) and [RFC 9110 sections 4–7 and 8.6](https://www.rfc-editor.org/rfc/rfc9110.html). The representation was compared with [h11's ordered headers and framing implementation](https://github.com/python-hyper/h11/tree/master/h11). Tests compare supported valid framing with h11 and response bodies with Python `http.client`; these independent implementations are test oracles only.
 
@@ -27,6 +27,14 @@ A start line passed to an encoder excludes CRLF. Encoder fields are a view of `F
 
 `Message` contains its head, borrowed `encoded_body`, separate raw `trailers`, `trailer_count`, exact `consumed`, and `decoded_length`. The encoded body includes chunk framing and trailers when chunked. `fields(message.trailers, message.trailers.start-message.head.raw.start)` iterates validated trailers. Never merge trailers into headers automatically.
 
+## Incremental framing
+
+The [offset-only framing cursor](extended-http-cursor.md) scans cumulative input
+without retaining views into growable storage. It reports head readiness and an
+exact framing candidate. Freeze that prefix and use the canonical complete
+parser before publishing a validated Message. Incremental scan work and the
+existing final trailer-validation cost have separate documented bounds.
+
 ## Framing and supported profile
 
 The parser requires CRLF and exact request-line spaces, accepts token methods, validates status lines and opaque field bytes, and rejects obsolete folding, whitespace before a colon, bare LF/CR, NUL, DEL, and other controls except allowed HTAB. Field values and reason phrases can contain opaque bytes 128–255. Bodies accept all 256 byte values.
@@ -49,7 +57,7 @@ Defaults are 65,536 head bytes, 8,192 bytes per line excluding CRLF, 100 header 
 
 `Error` distinguishes `Bounds`, `Incomplete(offset)`, `Malformed(offset)`, `Limit(offset)`, `Unsupported(offset)`, `Capacity`, and `AllocationFailed`. Parser offsets count logical bytes from the selected source view, never physical storage addresses. Encoder field validation errors identify the zero-based field index; start-line errors identify its byte index, and final head validation errors identify the staged wire offset. Incomplete identifies the current end of input; malformed and limit offsets identify the offending byte or the start of the relevant bounded construct. No partially parsed head/message is returned on error. The caller can append input and retry after `Incomplete`.
 
-Views carry caller-supplied logical metadata. The library rejects negative/overflowing metadata but cannot discover physical slice length; backing storage must cover `start + length`. Source bytes must stay alive and unchanged while heads, messages or cursors are used. Cursors must be constructed from validated head/trailer ranges; forged records are outside their contract. `decode_into` requires a Message returned by a parser, unchanged source, and a destination disjoint from the source. Its destination may use a nonzero start and native byte stride. Writer destinations likewise must be disjoint from source. The library does not enforce lifetimes or unique ownership at the type level.
+Views carry caller-supplied logical metadata. The library rejects negative/overflowing metadata but cannot discover physical slice length; backing storage must cover `start + length`. Source bytes must stay alive and unchanged while heads, messages or Fields cursors are used. Fields cursors must be constructed from validated head/trailer ranges; forged records are outside their contract. `decode_into` requires a Message returned by a parser, unchanged source, and a destination disjoint from the source. Its destination may use a nonzero start and native byte stride. Writer destinations likewise must be disjoint from source. The library does not enforce lifetimes or unique ownership at the type level.
 
 ## Executable evidence
 
