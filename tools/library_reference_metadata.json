@@ -202,6 +202,11 @@
         "docs/stdlib-math.md"
       ]
     },
+    "core::mem": {
+      "guides": [
+        "docs/stdlib-memory.md"
+      ]
+    },
     "core::net": {
       "guides": [
         "docs/stdlib-net.md"
@@ -491,6 +496,11 @@
         "docs/extended-http-client.md"
       ]
     },
+    "ext::http_server": {
+      "guides": [
+        "docs/extended-http-server.md"
+      ]
+    },
     "ext::image": {
       "guides": [
         "docs/extended-image.md"
@@ -710,6 +720,16 @@
         "docs/extended-zip.md"
       ]
     },
+    "std::args": {
+      "guides": [
+        "docs/stdlib-process-context.md"
+      ]
+    },
+    "std::args_checked": {
+      "guides": [
+        "docs/stdlib-process-context.md"
+      ]
+    },
     "std::clock": {
       "guides": [
         "docs/stdlib-time.md"
@@ -740,6 +760,16 @@
     "std::entropy": {
       "guides": [
         "docs/stdlib-randomness.md"
+      ]
+    },
+    "std::env": {
+      "guides": [
+        "docs/stdlib-process-context.md"
+      ]
+    },
+    "std::env_checked": {
+      "guides": [
+        "docs/stdlib-process-context.md"
       ]
     },
     "std::file": {
@@ -800,6 +830,11 @@
     "std::poll": {
       "guides": [
         "docs/stdlib-poll.md"
+      ]
+    },
+    "std::process": {
+      "guides": [
+        "docs/stdlib-process-context.md"
       ]
     },
     "std::random": {
