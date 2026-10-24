@@ -1,0 +1,16 @@
+module app::main;
+import core::iter;
+import core::range;
+
+struct IntegerPredicate {}
+impl IntegerPredicate { fn borrow(&self) -> &IntegerPredicate { return self; } }
+pub impl core::iter::Mapper<i32, i32> for IntegerPredicate {
+    pub fn apply(&self, value: i32) -> i32 { return value; }
+}
+fn main() -> i32 {
+    let bounds: core::range::Range<i32> = core::range::range<i32>(0, 1);
+    let source: core::iter::RangeI32 = core::iter::range_i32(bounds);
+    let predicate: IntegerPredicate = IntegerPredicate {};
+    let rejected: core::iter::Filter<core::iter::RangeI32, IntegerPredicate, i32> = core::iter::filter<core::iter::RangeI32, IntegerPredicate, i32>(source.borrow(), predicate.borrow());
+    return 0;
+}

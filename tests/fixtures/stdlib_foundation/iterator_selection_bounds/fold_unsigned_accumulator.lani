@@ -1,0 +1,20 @@
+module app::main;
+import core::iter;
+import core::range;
+
+struct UnsignedFolder {}
+impl UnsignedFolder { fn borrow(&self) -> &UnsignedFolder { return self; } }
+pub impl core::iter::Folder<u64, i32> for UnsignedFolder {
+    pub fn apply(&self, accumulator: u64, value: i32) -> u64 {
+        let widened: u64 = value as u64;
+        return accumulator + widened;
+    }
+}
+fn main() -> i32 {
+    let bounds: core::range::Range<i32> = core::range::range<i32>(0, 1);
+    let source: core::iter::RangeI32 = core::iter::range_i32(bounds);
+    let folder: UnsignedFolder = UnsignedFolder {};
+    let initial: i64 = 0;
+    let rejected: i64 = core::iter::fold<core::iter::RangeI32, UnsignedFolder, i32, i64>(source.borrow(), initial, folder.borrow());
+    return 0;
+}

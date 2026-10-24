@@ -13,7 +13,11 @@ bool assignment_expression_context<TGraph : IScopedTypeGraph>(uint node,
     static const uint ABSENT = 0xffffffffu;
     reference = uint2(0u, ABSENT);
     if (node >= hir_count) return false;
-    uint root = ABSENT; uint current = node; uint candidate = statement;
+    // Calls retain the parser's statement-kind flag in payload.d. Separate
+    // that flag from the dense HIR ID before checking the assignment owner;
+    // the parent walk can encounter a member callee before its assignment.
+    uint candidate = statement == ABSENT ? ABSENT : statement & 0x7fffffffu;
+    uint root = ABSENT; uint current = node;
     for (uint depth = 0u; depth < 32u; depth++)
     {
         if (candidate < hir_count)

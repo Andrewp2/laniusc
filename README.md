@@ -54,6 +54,9 @@ and enumeration, including arithmetic and output failures.
 [Canonical slice cursors](docs/stdlib-cursor-integration.md),
 [text splits](docs/stdlib-text-split-iterators.md) and
 [heap iteration](docs/stdlib-heap-iterators.md) use that same protocol.
+[Selection, searches and folds](docs/stdlib-iterator-selection.md) add lazy
+filtering and typed short circuits. The [column-sum program](docs/stdlib-column-sum.md)
+combines text splitting, filtering, Result items and checked reduction.
 
 Optional modules use the [`extended` source root](extended/README.md).
 [`ext::csv`](docs/extended-csv.md) and [`ext::json`](docs/extended-json.md)

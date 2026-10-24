@@ -243,7 +243,9 @@
         "docs/stdlib-iterators.md",
         "docs/stdlib-collection-iterators.md",
         "docs/stdlib-iterator-adapters.md",
-        "docs/stdlib-cursor-integration.md"
+        "docs/stdlib-cursor-integration.md",
+        "docs/stdlib-iterator-selection.md",
+        "docs/compiler-iterator-assignment-context.md"
       ]
     },
     "core::math": {

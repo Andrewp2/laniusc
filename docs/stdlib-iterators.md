@@ -3,6 +3,8 @@
 `stdlib/core/iter.lani` executes on **x86_64 Linux**, with native CPU programs
 compiled by the GPU compiler. Five focused test groups cover its shared generic
 protocol, borrowed adapters, state models, owner aliases and bound rejections.
+Additional [selection and fold gates](stdlib-iterator-selection.md) cover lazy
+predicates, searches, accumulation and typed early failure.
 This is native CPU execution evidence; it does not establish user-program GPU
 execution or other targets.
 
@@ -58,6 +60,9 @@ Copy semantics depend on the cursor:
 | `Map<I,M,T,U>` | Independent done flag; same borrowed source and mapper/context |
 | `Zip<A,B,T,U>` | Independent done flag; same borrowed source cursors |
 | `Enumerate<I,T>` | Independent index/done flags; same borrowed source cursor |
+| `Filter<I,P,T>` / `FilterMap<I,M,T,U>` | Independent done flags; same borrowed source and callback |
+| `Skip<I,T>` | Independent skip budget/done flag; same borrowed source |
+| `TakeWhile<I,P,T>` / `SkipWhile<I,P,T>` | Independent boundary/phase/done flags; same borrowed source and predicate |
 
 Adapters contain borrowed references. The source cursor object itself must
 outlive the adapter, and a nested adapter must outlive every adapter borrowing

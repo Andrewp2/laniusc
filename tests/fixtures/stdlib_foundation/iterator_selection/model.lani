@@ -1,0 +1,114 @@
+// Five-u64 commands: adapter, source length, pulls, copy schedule, mask/count.
+// Emit every item, source/callback state and ordered successful/EOF event.
+module app::main;
+import core::io;
+import core::iter;
+import core::option;
+import core::result;
+import std::stream;
+
+struct Log { events: [i32], length: i32 }
+impl Log {
+    fn borrow(&self) -> &Log { return self; }
+    fn add(&self, event: i32) { assert(self.length < 32); self.events[self.length] = event; self.length += 1; }
+}
+struct Probe { length: i32, position: i32, calls: i32, log: &Log }
+impl Probe { fn borrow(&self) -> &Probe { return self; } }
+pub impl core::iter::Iterator<i64> for Probe {
+    pub fn next(&self) -> core::option::Option<i64> {
+        self.calls += 1; let log: &Log = self.log;
+        if (self.position == self.length) { log.add(199); return core::option::None(); }
+        let value: i32 = self.position; log.add(100 + value); self.position += 1;
+        return core::option::Some(value as i64);
+    }
+}
+struct Context { mask: u64, calls: i32, sum: i64, log: &Log }
+impl Context {
+    fn borrow(&self) -> &Context { return self; }
+    fn test(&self, value: i64, tag: i32) -> bool {
+        assert(value >= 0 && value < 4); self.calls += 1; self.sum += value;
+        let log: &Log = self.log; log.add(tag + (value as i32));
+        return ((self.mask >> (value as i32)) & 1) != 0;
+    }
+}
+struct Predicate { state: &Context }
+impl Predicate { fn borrow(&self) -> &Predicate { return self; } }
+pub impl core::iter::Mapper<i64, bool> for Predicate {
+    pub fn apply(&self, value: i64) -> bool { let state: &Context = self.state; return state.test(value, 200); }
+}
+struct SelectMap { state: &Context }
+impl SelectMap { fn borrow(&self) -> &SelectMap { return self; } }
+pub impl core::iter::Mapper<i64, core::option::Option<i64>> for SelectMap {
+    pub fn apply(&self, value: i64) -> core::option::Option<i64> {
+        let state: &Context = self.state;
+        if (!state.test(value, 300)) { return core::option::None(); }
+        return core::option::Some(value * 3 + 11);
+    }
+}
+fn decode(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0; let index: i32 = 0;
+    while (index < 8) { value |= (bytes[offset + index] as u64) << (index * 8); index += 1; }
+    return value;
+}
+fn word(value: u64) {
+    let bytes: [u8; 8] = [0; 8]; let index: i32 = 0;
+    while (index < 8) { bytes[index] = ((value >> (index * 8)) & 255) as u8; index += 1; }
+    let output: std::stream::Descriptor = std::stream::stdout();
+    let result: core::result::Result<i32, core::io::Failure> = core::io::write_all(output.borrow(), bytes, 0, 8);
+    assert(core::result::is_ok(result));
+}
+fn observe<I>(first: I, source: &Probe, state: &Context, calls: i32, schedule: u64)
+    where I: core::iter::Iterator<i64> {
+    let second: I = first;
+    assert(source.position == 0 && source.calls == 0 && state.calls == 0 && state.sum == 0);
+    let call: i32 = 0;
+    while (call < calls) {
+        let item: core::option::Option<i64> = core::option::None();
+        if (((schedule >> call) & 1) == 0) { item = first.next(); } else { item = second.next(); }
+        if (core::option::is_none(item)) { word(0); word(0); }
+        else { word(1); word(core::option::unwrap(item) as u64); }
+        word(source.position as u64); word(source.calls as u64); word(state.calls as u64); word(state.sum as u64);
+        call += 1;
+    }
+    let log: &Log = source.log; word(log.length as u64); let index: i32 = 0;
+    while (index < log.length) { word(log.events[index] as u64); index += 1; }
+}
+fn run_case(op: i32, length: i32, calls: i32, schedule: u64, argument: u64) {
+    let events: [i32; 32] = [0; 32]; let log: Log = Log { events: events, length: 0 };
+    let source: Probe = Probe { length: length, position: 0, calls: 0, log: log.borrow() };
+    let state: Context = Context { mask: argument, calls: 0, sum: 0, log: log.borrow() };
+    let predicate: Predicate = Predicate { state: state.borrow() }; let mapper: SelectMap = SelectMap { state: state.borrow() };
+    if (op == 0) {
+        let selected: core::iter::Filter<Probe, Predicate, i64> = core::iter::filter<Probe, Predicate, i64>(source.borrow(), predicate.borrow());
+        observe<core::iter::Filter<Probe, Predicate, i64>>(selected, source.borrow(), state.borrow(), calls, schedule);
+    } else { if (op == 1) {
+        let selected: core::iter::FilterMap<Probe, SelectMap, i64, i64> = core::iter::filter_map<Probe, SelectMap, i64, i64>(source.borrow(), mapper.borrow());
+        observe<core::iter::FilterMap<Probe, SelectMap, i64, i64>>(selected, source.borrow(), state.borrow(), calls, schedule);
+    } else { if (op == 2) {
+        let selected: core::iter::Skip<Probe, i64> = core::iter::skip<Probe, i64>(source.borrow(), argument);
+        observe<core::iter::Skip<Probe, i64>>(selected, source.borrow(), state.borrow(), calls, schedule);
+    } else { if (op == 3) {
+        let selected: core::iter::TakeWhile<Probe, Predicate, i64> = core::iter::take_while<Probe, Predicate, i64>(source.borrow(), predicate.borrow());
+        observe<core::iter::TakeWhile<Probe, Predicate, i64>>(selected, source.borrow(), state.borrow(), calls, schedule);
+    } else {
+        let selected: core::iter::SkipWhile<Probe, Predicate, i64> = core::iter::skip_while<Probe, Predicate, i64>(source.borrow(), predicate.borrow());
+        observe<core::iter::SkipWhile<Probe, Predicate, i64>>(selected, source.borrow(), state.borrow(), calls, schedule);
+    } } } }
+}
+fn main() -> i32 {
+    let input: std::stream::Descriptor = std::stream::stdin(); let record: [u8; 40] = [0; 40];
+    while (true) {
+        let received: core::result::Result<i32, core::io::Error> = input.read(record, 0, 40);
+        if (core::result::is_err(received)) { return 1; }
+        let count: i32 = core::result::unwrap(received); if (count == 0) { return 0; }
+        if (count < 40) {
+            let rest: core::result::Result<i32, core::io::Failure> = core::io::read_exact(input.borrow(), record, count, 40 - count);
+            if (core::result::is_err(rest)) { return 2; }
+        }
+        let op: u64 = decode(record, 0); let length: u64 = decode(record, 8); let calls: u64 = decode(record, 16);
+        let schedule: u64 = decode(record, 24); let argument: u64 = decode(record, 32);
+        assert(op <= 4 && length <= 4 && calls <= 6);
+        run_case(op as i32, length as i32, calls as i32, schedule, argument);
+    }
+    return 0;
+}

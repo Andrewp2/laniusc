@@ -1,0 +1,17 @@
+
+running 1 test
+
+thread 'iterator_filter_option_assignment_matches_direct_binding' (123762) panicked at tests/stdlib_iterator_selection_assignment.rs:27:5:
+assertion `left == right` failed: markers: A/direct empty, B/first-branch empty, C/second-branch empty, D/Some(0); source calls(first, second, some); callback calls(first, second, some)
+  left: [65, 1, 66, 0, 67, 0, 68, 0, 2, 1, 1, 0, 0, 1]
+ right: [65, 1, 66, 1, 67, 1, 68, 0, 2, 1, 1, 0, 0, 1]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test iterator_filter_option_assignment_matches_direct_binding ... FAILED
+
+failures:
+
+failures:
+    iterator_filter_option_assignment_matches_direct_binding
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.78s
+

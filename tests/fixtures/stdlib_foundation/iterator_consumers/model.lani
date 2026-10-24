@@ -1,0 +1,128 @@
+// Five u64 words per command: op, length, target, polarity, initial.
+// Observe the result and exact effects, pull once, then fold the remaining source.
+module app::main;
+import core::io;
+import core::iter;
+import core::option;
+import core::result;
+import std::stream;
+
+struct Log { events: [i32], length: i32 }
+impl Log {
+    fn borrow(&self) -> &Log { return self; }
+    fn add(&self, event: i32) { assert(self.length < 64); self.events[self.length] = event; self.length += 1; }
+}
+struct Probe { length: i32, position: i32, calls: i32, log: &Log }
+impl Probe { fn borrow(&self) -> &Probe { return self; } }
+pub impl core::iter::Iterator<i32> for Probe {
+    pub fn next(&self) -> core::option::Option<i32> {
+        let log: &Log = self.log; log.add(1); self.calls += 1;
+        if (self.position == self.length) { return core::option::None(); }
+        let value: i32 = self.position; self.position += 1; return core::option::Some(value);
+    }
+}
+struct Select { target: i32, polarity: bool, calls: i32, log: &Log }
+impl Select { fn borrow(&self) -> &Select { return self; } }
+pub impl core::iter::Mapper<i32, bool> for Select {
+    pub fn apply(&self, value: i32) -> bool {
+        let log: &Log = self.log; log.add(2); self.calls += 1;
+        return (value == self.target) == self.polarity;
+    }
+}
+struct Convert { target: i32, polarity: bool, calls: i32, log: &Log }
+impl Convert { fn borrow(&self) -> &Convert { return self; } }
+pub impl core::iter::Mapper<i32, core::option::Option<i64>> for Convert {
+    pub fn apply(&self, value: i32) -> core::option::Option<i64> {
+        let log: &Log = self.log; log.add(2); self.calls += 1;
+        if ((value == self.target) == self.polarity) { return core::option::Some((value as i64) * 3 + 17); }
+        return core::option::None();
+    }
+}
+struct Digits { calls: i32, log: &Log }
+impl Digits { fn borrow(&self) -> &Digits { return self; } }
+pub impl core::iter::Folder<i64, i32> for Digits {
+    pub fn apply(&self, acc: i64, value: i32) -> i64 {
+        let log: &Log = self.log; log.add(3); self.calls += 1;
+        return acc * 11 + (value as i64) + 1;
+    }
+}
+struct Failure { item: i32, before: i64, stamp: u64 }
+struct Stop { target: i32, polarity: bool, calls: i32, log: &Log }
+impl Stop { fn borrow(&self) -> &Stop { return self; } }
+pub impl core::iter::TryFolder<i64, i32, Failure> for Stop {
+    pub fn try_apply(&self, acc: i64, value: i32) -> core::result::Result<i64, Failure> {
+        let log: &Log = self.log; log.add(4); self.calls += 1;
+        if ((value == self.target) == self.polarity) {
+            return core::result::Err(Failure { item: value, before: acc, stamp: 18446744073709551615 - (value as u64) });
+        }
+        return core::result::Ok(acc * 11 + (value as i64) + 1);
+    }
+}
+fn word(value: u64) {
+    let bytes: [u8; 8] = [0; 8]; let index: i32 = 0;
+    while (index < 8) { bytes[index] = ((value >> (index * 8)) & 255) as u8; index += 1; }
+    let output: std::stream::Descriptor = std::stream::stdout();
+    let sent: core::result::Result<i32, core::io::Failure> = core::io::write_all(output.borrow(), bytes, 0, 8);
+    assert(core::result::is_ok(sent));
+}
+fn decode(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0; let index: i32 = 0;
+    while (index < 8) { value |= (bytes[offset + index] as u64) << (index * 8); index += 1; }
+    return value;
+}
+fn run(op: u64, length: i32, target: i32, polarity: bool, initial: i64) {
+    let events: [i32; 64] = [0; 64]; let log: Log = Log { events: events, length: 0 };
+    let source: Probe = Probe { length: length, position: 0, calls: 0, log: log.borrow() };
+    let predicate: Select = Select { target: target, polarity: polarity, calls: 0, log: log.borrow() };
+    let mapper: Convert = Convert { target: target, polarity: polarity, calls: 0, log: log.borrow() };
+    let folder: Digits = Digits { calls: 0, log: log.borrow() };
+    let fallible: Stop = Stop { target: target, polarity: polarity, calls: 0, log: log.borrow() };
+    let tag: u64 = 0; let a: u64 = 0; let b: u64 = 0; let c: u64 = 0; let callbacks: i32 = 0;
+    if (op == 0) {
+        let result: core::option::Option<i32> = core::iter::find<Probe, Select, i32>(source.borrow(), predicate.borrow());
+        if (core::option::is_some(result)) { tag = 1; a = core::option::unwrap(result) as u64; }
+        callbacks = predicate.calls;
+    } else { if (op == 1) {
+        let result: core::option::Option<i64> = core::iter::find_map<Probe, Convert, i32, i64>(source.borrow(), mapper.borrow());
+        if (core::option::is_some(result)) { tag = 1; a = core::option::unwrap(result) as u64; }
+        callbacks = mapper.calls;
+    } else { if (op == 2 || op == 3) {
+        let result: bool = false;
+        if (op == 2) { result = core::iter::any<Probe, Select, i32>(source.borrow(), predicate.borrow()); }
+        else { result = core::iter::all<Probe, Select, i32>(source.borrow(), predicate.borrow()); }
+        tag = 2; if (result) { a = 1; } callbacks = predicate.calls;
+    } else { if (op == 4) {
+        let result: i64 = core::iter::fold<Probe, Digits, i32, i64>(source.borrow(), initial, folder.borrow());
+        tag = 3; a = result as u64; callbacks = folder.calls;
+    } else {
+        let result: core::result::Result<i64, Failure> = core::iter::try_fold<Probe, Stop, i32, i64, Failure>(source.borrow(), initial, fallible.borrow());
+        if (core::result::is_ok(result)) { tag = 4; a = core::result::unwrap(result) as u64; }
+        else { let error: Failure = core::result::unwrap_err(result); tag = 5; a = error.item as u64; b = error.before as u64; c = error.stamp; }
+        callbacks = fallible.calls;
+    } } } }
+    word(tag); word(a); word(b); word(c);
+    word(source.position as u64); word(source.calls as u64); word(callbacks as u64);
+    let resumed: core::option::Option<i32> = source.next();
+    if (core::option::is_some(resumed)) { word(1); word(core::option::unwrap(resumed) as u64); }
+    else { word(0); word(0); }
+    word(source.position as u64); word(source.calls as u64);
+    let remainder_folder: Digits = Digits { calls: 0, log: log.borrow() };
+    let remainder: i64 = core::iter::fold<Probe, Digits, i32, i64>(source.borrow(), initial + 13, remainder_folder.borrow());
+    word(remainder as u64); word(remainder_folder.calls as u64); word(source.position as u64); word(source.calls as u64);
+    word(log.length as u64); let index: i32 = 0;
+    while (index < log.length) { word(events[index] as u64); index += 1; }
+}
+fn main() -> i32 {
+    let input: std::stream::Descriptor = std::stream::stdin(); let record: [u8; 40] = [0; 40];
+    while (true) {
+        let first: core::result::Result<i32, core::io::Error> = input.read(record, 0, 40);
+        assert(core::result::is_ok(first)); let received: i32 = core::result::unwrap(first);
+        if (received == 0) { return 0; }
+        if (received < 40) { assert(core::result::is_ok(core::io::read_exact(input.borrow(), record, received, 40 - received))); }
+        let op: u64 = decode(record, 0); let length: u64 = decode(record, 8); let target: u64 = decode(record, 16);
+        let polarity: u64 = decode(record, 24); let initial: u64 = decode(record, 32);
+        assert(op <= 5 && length <= 6 && target <= 8 && polarity <= 1 && initial <= 7);
+        run(op, length as i32, target as i32, polarity == 1, initial as i64);
+    }
+    return 0;
+}

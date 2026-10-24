@@ -200,6 +200,16 @@ add two native executions covering 42 multiset/adapter cases, unconstrained
 empty heaps and exact shallow String cleanup. The existing window-report
 application passes 30 native cases after its protocol import migration.
 
+[Selection and reduction](stdlib-iterator-selection.md) add five lazy adapters,
+short-circuit searches/boolean consumers and ordinary/fallible left folds.
+The shared callback types retain compound item, accumulator and error identity;
+skipping and failure perform no implicit owner cleanup. The
+[column-sum program](stdlib-column-sum.md) combines text splitting, filtering,
+Result items and checked prefix arithmetic with bounded input and explicit
+allocation/I/O failure paths. Executable admission and the narrowly scoped
+[assignment context repair](compiler-iterator-assignment-context.md) are
+recorded in those guides.
+
 [Checked file lengths](stdlib-file-resize.md) execute shrink, zero extension,
 sparse lengths above 4 GiB and unchanged duplicated offsets, with explicit
 one-attempt failures. [Bounded regular-file copying](stdlib-file-copy.md) checks
