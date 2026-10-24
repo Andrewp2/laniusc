@@ -102,8 +102,22 @@ socket transport, strict canonical validation, owned method/wire/body storage,
 informational responses and early final replies under one deadline. Limits
 cover bytes, parsing/copying work and actual leaf I/O attempts. Failure models
 exercise allocation, late results, interruptions, half-close and publication
-cleanup. Six focused client groups pass 188 driver cases. TLS, automatic
-resolution/redirects, pooling and a server remain work.
+cleanup. Six focused client groups pass 188 driver cases. The
+[staged HTTP/1 server and local health/echo service](extended-http-server.md),
+accepted at `493d4e87`, handle one request and one closing final response per
+connection, with stable request views, explicit 100 Continue, checked Date and
+response staging, one deadline and bounded half-close/drain cleanup. Independent
+peers and resource/host faults cover binary bodies, early rejection, sequential
+accepts and owner retirement. TLS, automatic resolution/redirects, pooling,
+server keepalive/concurrent scheduling and upgrades/tunnels remain work.
+
+The [required trait-result repair](compiler-trait-result-contract.md) at
+`972f0564` preserves bound argument identity and accepted compound results in
+caller scope. Its focused driver covers symbolic errors, reversed parameter
+order, nested results, incompatible receiving annotations and compiler reuse.
+The historical admission notes are retained at `f96b73c1`; this result does not
+close generic implementation forwarding, automatic ownership or the separate
+production clone gate.
 
 Verified execution is x86_64 Linux output from GPU compilation; user GPU kernels
 and other targets are unverified. Threads, native FFI/TLS/SQLite, generic
@@ -118,6 +132,12 @@ documentation extraction, not runtime verification; semantic guide gaps remain
 listed explicitly. The [strict UTF codec guide](stdlib-utf-codecs.md) now maps
 83 existing functions to their indexing, malformed-input, mutation, progress,
 aliasing and native-test contracts; that source audit adds no new target claim.
+The [memory guide](stdlib-memory.md) distinguishes value helpers, compiler
+intrinsics, native strides and caller-owned backing. The
+[process-context guide](stdlib-process-context.md) records raw startup bytes,
+snapshot ownership, checked copies, live cwd reads and exit/status metadata.
+Both map existing source/native evidence without adding a target or runtime
+verification claim.
 
 **Preceding numeric, owned-set and portable extended-library checkpoint (2026-10-23):**
 [Canonical narrow integers](stdlib-narrow-integers.md),

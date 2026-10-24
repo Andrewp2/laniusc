@@ -9,6 +9,9 @@ of [socket ownership and TCP/UDP](stdlib-sockets.md),
 [file options/metadata/seek/sync/duplication](stdlib-file-operations.md),
 [directory iteration/walking](stdlib-directory.md) and
 [Default/Ignore signal dispositions](stdlib-signals.md) execute over that boundary.
+The [staged HTTP/1 server and local service](extended-http-server.md), accepted
+at `493d4e87`, compose these operations with explicit deadlines, quotas and
+manual connection ownership.
 This does not bind the older `std::net` service declarations or supply threads,
 callbacks, general native FFI, TLS or SQLite. The
 [native integration prerequisite proposal](library-native-integration-prerequisites.md)
@@ -17,6 +20,9 @@ ABI support; thread local storage is conditional on the chosen
 worker/foreign-library profile. Network TLS remains a separate integration.
 The [host prerequisite audit](library-host-prerequisites.md) distinguishes the
 historical missing operations from the remaining code-entry/memory-model work.
+Current [memory/view contracts](stdlib-memory.md) and
+[process-context contracts](stdlib-process-context.md) document raw backing,
+startup bytes, checked copies and manual owner lifetimes over these interfaces.
 
 The 2026-10-23 bitset/calendar integration, finite decimal, statistics and matrix
 milestone executes over the existing interfaces without additional compiler or
@@ -56,6 +62,7 @@ distribution uses the compiler's existing package resolver.
 | Raw native arguments lost high `usize` bits | [Assembly/table oracle, full-width probes and bounded native controls](stdlib-raw-host-width.md); `raw_host_width_admission.lani` | Allocation sizes, raw stdio counts, startup-copy bounds, environment key identity and clock/cwd capacities | Repaired in the native thunks. Six focused tests verify full-word transport with injected errors, finite guarded copies, supported/rejected alignment and owner preservation. Large successful backing allocation is not claimed; initial allocation retains MAP_32BIT. Declared i32 indices/results and wrapper error policies retain their domains. |
 | Runtime emission stopped at 2,048 bytes | [Runtime tail contract and per-ELF byte oracle](stdlib-raw-host-width.md); `x86_runtime_dispatch_tests.rs` | Relocated assertion and Linux syscall bridge after runtime growth to 2,095 bytes | Repaired with a private GPU dispatch-argument producer over the final checked runtime length. Fresh native ELFs match all 2,095 literal bytes and execute both formerly missing tail entries; the retained old ELF fails at byte 2,048. Invalid status/range resets indirect work rather than retaining an earlier dispatch. No public IR, ABI record or proof change. |
 | Formatter split a negative exponent | [Retained input, corrupted output, diagnostic and current lexical closeout](../tests/fixtures/stdlib_compiler_state/format_negative_exponent/README.md) | Formatting source containing signed decimal exponents | Repaired by retaining the complete decimal mantissa/exponent lexeme. Seventeen formatter and seventeen CLI CPU checks cover independent token-kind/spelling preservation, adjacent subtraction/radix/range controls, comments/strings, idempotence and file/stdin checks. The original native input already executes; no GPU rerun was needed. `fmt --check` remains a canonical-format comparison, not syntax validation or repair of previously corrupted text. |
+| Required trait-bound result identity and caller scope | [Repair contract, focused evidence and historical admission notes](compiler-trait-result-contract.md), recorded at `f96b73c1` | Required members returning symbolic/nested compound results such as `Result<T,E>` | Resolved by `972f0564`: receiving annotations cannot replace the selected bound's arguments, and accepted compound results retain caller scope through projection. Seven serial compilation jobs include three native executions, incompatible-result rejections and ordinary-call/compiler-reuse controls. This closes the selected local-source-pack contract, not general imported implementation forwarding, iterator/stream composition or automatic ownership. Production clone acceptance is separate. |
 | Nested match with a wildcard arm | `tests/fixtures/stdlib_foundation/repro_nested_error_match.lani`: x86 compilation reports LNC0005 at `false` inside the inner wildcard arm on base `441e66f9` | Direct nested matching of `Result<_, Error>` | Reproduced 2026-10-22. A separately typed error-matching helper compiles and executes; String tests use helpers. |
 | Payload wildcard followed by a fallback arm | `tests/fixtures/stdlib_foundation/repro_payload_wildcard.lani`: `return match (error) { LimitExceeded(_) -> true, _ -> false };` reports LNC0005 even without nesting | Matching payload-bearing error variants | Reproduced 2026-10-22. Binding the payload and assigning the match to a typed local executes in the CSV contract fixture. |
 | Array repeat count typing and syntax | `repro_byte_repeat_count.lani` reports LNC0069 for `[0; 256]` in a byte array; `repro_named_repeat_count.lani` records the named-count syntax limitation | Large initialized byte buffers and array extents derived from public scratch constants | Reproduced while building streams; qualified `core::float_decimal::SCRATCH_LEN` in a formatter array reports LNC0016 as well. Native stream/line buffers use packed i32 stack storage through the existing memory API. Float formatting uses literal 864-element u32 scratch; the converter validates the supplied View against its own requirement. Portable algorithms still index ordinary views. |
