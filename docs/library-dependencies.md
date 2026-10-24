@@ -11,7 +11,10 @@ of [socket ownership and TCP/UDP](stdlib-sockets.md),
 [Default/Ignore signal dispositions](stdlib-signals.md) execute over that boundary.
 This does not bind the older `std::net` service declarations or supply threads,
 callbacks, general native FFI, TLS or SQLite. The
-[host prerequisite audit](library-host-prerequisites.md) distinguishes the
+[native integration prerequisite proposal](library-native-integration-prerequisites.md)
+separates checked entries, concurrent memory ordering and static/dynamic foreign
+ABI support; TLS is conditional on the chosen worker/foreign-library profile.
+The [host prerequisite audit](library-host-prerequisites.md) distinguishes the
 historical missing operations from the remaining code-entry/memory-model work.
 
 The 2026-10-23 bitset/calendar integration, finite decimal, statistics and matrix

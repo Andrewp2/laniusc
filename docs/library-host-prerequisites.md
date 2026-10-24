@@ -16,8 +16,12 @@ its old network family 5 remains unavailable. Working sockets depend on family
 14, not on the unbound `std::net` declarations. The aggregate runtime-services
 flag remains false.
 
-Thread creation still needs callable entry, a new-stack trampoline, TLS, atomic
-memory ordering and ownership/join contracts. The syscall thunk requires the
+Thread creation still needs checked entry, a new-stack trampoline, atomic
+memory ordering and ownership/join contracts. TLS can be absent from an initial
+Lanius/raw-syscall profile; libc/TLS-dependent integrations need it separately.
+The [native integration proposal](library-native-integration-prerequisites.md)
+records the existing code-entry, linker, allocator and process-context evidence.
+The syscall thunk requires the
 same returning stack and continuation; it cannot implement clone/vfork/new-stack
 entry by itself. TLS/SQLite and general native FFI remain separate dependencies.
 [Subprocess support](stdlib-command.md) now executes over same-stack
