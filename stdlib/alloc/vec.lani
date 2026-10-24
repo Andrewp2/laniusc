@@ -12,7 +12,11 @@ import core::result;
 import core::slice;
 
 pub enum Error { Bounds, InvalidCapacity, CapacityOverflow, AllocationFailed }
+pub enum IntoIterError { Remaining(i32) }
 pub struct Vec<T> { storage: ptr, length: i32, reserved: i32 }
+// One active owner of the backing allocation and unconsumed item cleanup.
+// Copies alias that owner; they cannot fork its cleanup authority.
+pub struct IntoIter<T> { storage: ptr, reserved: i32, front: i32, back: i32 }
 pub const MAX_CAPACITY: i32 = 2147483647;
 const ALIGN: usize = 8;
 
@@ -53,6 +57,13 @@ pub impl<T> Vec<T> {
     pub fn iter(&self) -> core::slice::Iter<T> {
         let view: core::slice::View<T> = self.as_view();
         return view.iter();
+    }
+    // Transfer storage and item cleanup authority, leaving this owner reusable.
+    // End source views/cursors first; by-value owner aliases must stay inactive.
+    pub fn take_iter(&self) -> IntoIter<T> {
+        let cursor: IntoIter<T> = IntoIter { storage: self.storage, reserved: self.reserved, front: 0, back: self.length };
+        let empty: ptr = 0; self.storage = empty; self.length = 0; self.reserved = 0;
+        return cursor;
     }
     pub fn get(&self, index: i32) -> core::option::Option<T> {
         if (index < 0 || index >= self.length) { return core::option::None(); }
@@ -221,6 +232,56 @@ pub impl<T> Vec<T> {
     pub fn lower_bound(&self, item: T) -> i32 where T: core::cmp::Ord<T> { return core::slice::lower_bound(self.as_slice(), self.length, item); }
     pub fn upper_bound(&self, item: T) -> i32 where T: core::cmp::Ord<T> { return core::slice::upper_bound(self.as_slice(), self.length, item); }
     pub fn binary_search(&self, item: T) -> i32 where T: core::cmp::Ord<T> { return core::slice::binary_search_first_or(self.as_slice(), self.length, item, -1); }
+}
+
+pub impl<T> IntoIter<T> {
+    pub fn borrow(&self) -> &IntoIter<T> { return self; }
+    pub fn remaining(&self) -> i32 { return self.back - self.front; }
+    pub fn capacity(&self) -> i32 { return self.reserved; }
+    pub fn is_empty(&self) -> bool { return self.front == self.back; }
+    fn slots(&self) -> [T] { return core::mem::typed_slice_from_storage(self.storage, self.reserved); }
+    fn disarm(&self) {
+        let empty: ptr = 0; self.storage = empty; self.reserved = 0; self.front = 0; self.back = 0;
+    }
+    // Borrow only initialized remainder. End views before consuming, recovering
+    // or successfully finishing; rejected finish preserves existing views.
+    pub fn as_view(&self) -> core::slice::View<T> {
+        return core::slice::View { values: self.slots(), start: self.front, length: self.remaining() };
+    }
+    // Each successful pull transfers that item's cleanup authority to caller.
+    pub fn next_back(&self) -> core::option::Option<T> {
+        if (self.front == self.back) { return core::option::None(); }
+        self.back -= 1; let slots: [T] = self.slots();
+        return core::option::Some(slots[self.back]);
+    }
+    // Refuse to release unconsumed owners. Exhaustion alone never frees storage.
+    pub fn try_finish(&self) -> core::option::Option<IntoIterError> {
+        let count: i32 = self.remaining();
+        if (count > 0) { return core::option::Some(IntoIterError::Remaining(count)); }
+        let size: usize = core::mem::size_of<T>();
+        if (self.reserved > 0 && size > 0) { alloc::allocator::dealloc(self.storage, size * (self.reserved as usize), ALIGN); }
+        self.disarm(); return core::option::None();
+    }
+    // Transfer remainder and allocation, compacting typed entries forward in
+    // place. Spare slots own no items. No allocation or nested destruction.
+    pub fn take_remaining(&self) -> Vec<T> {
+        let count: i32 = self.remaining();
+        if (self.front > 0) {
+            let slots: [T] = self.slots(); let index: i32 = 0;
+            while (index < count) { slots[index] = slots[self.front + index]; index += 1; }
+        }
+        let value: Vec<T> = Vec { storage: self.storage, length: count, reserved: self.reserved };
+        self.disarm(); return value;
+    }
+}
+
+pub impl<T> core::iter::Iterator<T> for IntoIter<T> {
+    // Remove the front item before handing its cleanup authority to caller.
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.front == self.back) { return core::option::None(); }
+        let slots: [T] = self.slots(); let item: T = slots[self.front]; self.front += 1;
+        return core::option::Some(item);
+    }
 }
 
 // Acceptance has try_push's shallow ownership and view invalidation rules.

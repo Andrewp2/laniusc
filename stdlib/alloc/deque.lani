@@ -11,7 +11,11 @@ import core::result;
 import core::slice;
 
 pub enum Error { Bounds, InvalidCapacity, CapacityOverflow, AllocationFailed }
+pub enum IntoIterError { Remaining(i32) }
 pub struct Deque<T> { storage: ptr, length: i32, reserved: i32, head: i32 }
+// One active owner of the backing allocation and unconsumed item cleanup.
+// Copies alias that owner; they cannot fork its cleanup authority.
+pub struct IntoIter<T> { storage: ptr, reserved: i32, head: i32, front: i32, back: i32 }
 pub struct Views<T> { first: core::slice::View<T>, second: core::slice::View<T> }
 pub struct Cursor<T> { first: core::slice::View<T>, second: core::slice::View<T>, front: i32, back: i32 }
 pub const MAX_CAPACITY: i32 = 2147483647;
@@ -75,6 +79,13 @@ pub impl<T> Deque<T> {
     pub fn iter(&self) -> Cursor<T> {
         let views: Views<T> = self.as_views();
         return Cursor { first: views.first, second: views.second, front: 0, back: self.length };
+    }
+    // Transfer storage and item cleanup authority, leaving this owner reusable.
+    // End source views/cursors first; by-value owner aliases must stay inactive.
+    pub fn take_iter(&self) -> IntoIter<T> {
+        let cursor: IntoIter<T> = IntoIter { storage: self.storage, reserved: self.reserved, head: self.head, front: 0, back: self.length };
+        let empty: ptr = 0; self.storage = empty; self.length = 0; self.reserved = 0; self.head = 0;
+        return cursor;
     }
     // Capacity affects physical layout; copy typed entries in logical order.
     fn relocate(&self, capacity: i32) -> core::result::Result<i32, Error> {
@@ -303,6 +314,60 @@ pub impl<T> Deque<T> {
         let size: usize = core::mem::size_of<T>();
         if (self.reserved > 0 && size > 0) { alloc::allocator::dealloc(self.storage, size * (self.reserved as usize), ALIGN); }
         let empty: ptr = 0; self.storage = empty; self.length = 0; self.reserved = 0; self.head = 0;
+    }
+}
+
+pub impl<T> IntoIter<T> {
+    pub fn borrow(&self) -> &IntoIter<T> { return self; }
+    pub fn remaining(&self) -> i32 { return self.back - self.front; }
+    pub fn capacity(&self) -> i32 { return self.reserved; }
+    pub fn is_empty(&self) -> bool { return self.front == self.back; }
+    fn slots(&self) -> [T] { return core::mem::typed_slice_from_storage(self.storage, self.reserved); }
+    fn disarm(&self) {
+        let empty: ptr = 0; self.storage = empty; self.reserved = 0; self.head = 0; self.front = 0; self.back = 0;
+    }
+    // Borrow only initialized remainder. End views before consuming, recovering
+    // or successfully finishing; rejected finish preserves existing views.
+    pub fn as_views(&self) -> Views<T> {
+        let count: i32 = self.remaining(); let start: i32 = 0;
+        if (count > 0) { start = physical(self.head, self.reserved, self.front); }
+        let first_len: i32 = count;
+        if (first_len > self.reserved - start) { first_len = self.reserved - start; }
+        let slots: [T] = self.slots();
+        let first: core::slice::View<T> = core::slice::View { values: slots, start: start, length: first_len };
+        let second: core::slice::View<T> = core::slice::View { values: slots, start: 0, length: count - first_len };
+        return Views { first: first, second: second };
+    }
+    // Each successful pull transfers that item's cleanup authority to caller.
+    pub fn next_back(&self) -> core::option::Option<T> {
+        if (self.front == self.back) { return core::option::None(); }
+        self.back -= 1; let slots: [T] = self.slots();
+        return core::option::Some(slots[physical(self.head, self.reserved, self.back)]);
+    }
+    // Refuse to release unconsumed owners. Exhaustion alone never frees storage.
+    pub fn try_finish(&self) -> core::option::Option<IntoIterError> {
+        let count: i32 = self.remaining();
+        if (count > 0) { return core::option::Some(IntoIterError::Remaining(count)); }
+        let size: usize = core::mem::size_of<T>();
+        if (self.reserved > 0 && size > 0) { alloc::allocator::dealloc(self.storage, size * (self.reserved as usize), ALIGN); }
+        self.disarm(); return core::option::None();
+    }
+    // Transfer remainder and allocation in O(1), retaining the ring's capacity.
+    // Empty recovered owners normalize their head. No nested destruction.
+    pub fn take_remaining(&self) -> Deque<T> {
+        let count: i32 = self.remaining(); let head: i32 = 0;
+        if (count > 0) { head = physical(self.head, self.reserved, self.front); }
+        let value: Deque<T> = Deque { storage: self.storage, length: count, reserved: self.reserved, head: head };
+        self.disarm(); return value;
+    }
+}
+
+pub impl<T> core::iter::Iterator<T> for IntoIter<T> {
+    // Remove the front item before handing its cleanup authority to caller.
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.front == self.back) { return core::option::None(); }
+        let slots: [T] = self.slots(); let item: T = slots[physical(self.head, self.reserved, self.front)]; self.front += 1;
+        return core::option::Some(item);
     }
 }
 

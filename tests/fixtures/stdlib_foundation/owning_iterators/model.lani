@@ -1,0 +1,229 @@
+// Six u64 words: kind (Vec/Deque), length, spare reserve, ring head mode,
+// bounded-operation quota and sink rejection key. Three restore/reopen rounds.
+module app::main;
+import alloc::vec;
+import alloc::deque;
+import core::io;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+import std::stream;
+
+struct Payload { id: i32, wide: u64, pair: [u64; 2], flag: core::option::Option<bool> }
+fn payload(id: i32) -> Payload {
+    let flag: core::option::Option<bool> = core::option::None();
+    if (id % 3 != 0) { flag = core::option::Some(id % 2 == 0); }
+    return Payload { id: id, wide: 18446744073709551615 - (id as u64),
+        pair: [4294967296 + (id as u64), (id as u64) * 17 + 3], flag: flag };
+}
+struct Output { bytes: [u8], used: i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) {
+        let stdout: std::stream::Descriptor = std::stream::stdout();
+        assert(core::result::is_ok(core::io::write_all(stdout.borrow(), self.bytes, 0, self.used))); self.used = 0;
+    }
+    fn word(&self, value: u64) {
+        if (self.used == 1024) { self.flush(); }
+        let index: i32 = 0;
+        while (index < 8) { self.bytes[self.used + index] = ((value >> (index * 8)) & 255) as u8; index += 1; }
+        self.used += 8;
+    }
+    fn item(&self, item: Payload) {
+        self.word(item.id as u64); self.word(item.wide); self.word(item.pair[0]); self.word(item.pair[1]);
+        if (core::option::is_none(item.flag)) { self.word(0); }
+        else { if (core::option::unwrap(item.flag)) { self.word(2); } else { self.word(1); } }
+    }
+    fn optional(&self, item: core::option::Option<Payload>) {
+        if (core::option::is_none(item)) { self.word(0); }
+        else { self.word(1); self.item(core::option::unwrap(item)); }
+    }
+    fn view(&self, view: core::slice::View<Payload>) {
+        let index: i32 = 0;
+        while (index < view.len()) { self.item(core::option::unwrap(view.get(index))); index += 1; }
+    }
+}
+struct Log { consumed: [Payload], length: i32, front_calls: i32, back_calls: i32 }
+impl Log {
+    fn borrow(&self) -> &Log { return self; }
+    fn observe(&self, item: core::option::Option<Payload>) {
+        if (core::option::is_some(item)) { assert(self.length < 16); self.consumed[self.length] = core::option::unwrap(item); self.length += 1; }
+    }
+}
+struct Forward<C> { cursor: &C, log: &Log }
+impl<C> Forward<C> { fn borrow(&self) -> &Forward<C> { return self; } }
+pub impl<C> core::iter::Iterator<Payload> for Forward<C> where C: core::iter::Iterator<Payload> {
+    pub fn next(&self) -> core::option::Option<Payload> {
+        let cursor: &C = self.cursor; let log: &Log = self.log; log.front_calls += 1;
+        let item: core::option::Option<Payload> = cursor.next(); log.observe(item); return item;
+    }
+}
+struct Fault { pending: Payload, attempt: i32 }
+struct Sink { values: [Payload], length: i32, calls: i32, reject: i32 }
+impl Sink { fn borrow(&self) -> &Sink { return self; } }
+pub impl core::iter::TrySink<Payload, Fault> for Sink {
+    pub fn try_accept(&self, item: Payload) -> core::option::Option<Fault> {
+        self.calls += 1;
+        if (item.id == self.reject) { return core::option::Some(Fault { pending: item, attempt: self.calls }); }
+        assert(self.length < 16); self.values[self.length] = item; self.length += 1; return core::option::None();
+    }
+}
+// Observation and ownership handoff stay private to this fixture. Cursors are
+// never copied to fork an owner: each recursive frame borrows one live owner.
+trait Cursor {
+    fn left(&self) -> i32;
+    fn bound(&self) -> i32;
+    fn empty(&self) -> bool;
+    fn inspect(&self, output: &Output);
+    fn back(&self) -> core::option::Option<Payload>;
+    fn close(&self) -> i32;
+    fn reopen(&self, log: &Log, sink: &Sink, quota: u64, reject: i32, round: i32, output: &Output);
+}
+impl Cursor for alloc::vec::IntoIter<Payload> {
+    fn left(&self) -> i32 { return self.remaining(); }
+    fn bound(&self) -> i32 { return self.capacity(); }
+    fn empty(&self) -> bool { return self.is_empty(); }
+    fn inspect(&self, output: &Output) { let view: core::slice::View<Payload> = self.as_view(); assert(view.len() == self.remaining()); output.view(view); }
+    fn back(&self) -> core::option::Option<Payload> { return self.next_back(); }
+    fn close(&self) -> i32 {
+        let error: core::option::Option<alloc::vec::IntoIterError> = self.try_finish();
+        if (core::option::is_none(error)) { return -1; }
+        return match (core::option::unwrap(error)) { alloc::vec::IntoIterError::Remaining(count) -> count };
+    }
+    fn reopen(&self, log: &Log, sink: &Sink, quota: u64, reject: i32, round: i32, output: &Output) {
+        let storage: ptr = self.storage; let capacity: i32 = self.capacity(); let count: i32 = self.remaining();
+        let restored: alloc::vec::Vec<Payload> = self.take_remaining();
+        assert(restored.storage == storage && restored.capacity() == capacity && restored.len() == count);
+        assert(self.storage == 0 && self.remaining() == 0 && self.capacity() == 0 && self.is_empty());
+        output.word(restored.len() as u64); output.word(restored.capacity() as u64); output.view(restored.as_view());
+        let cursor: alloc::vec::IntoIter<Payload> = restored.take_iter();
+        assert(restored.storage == 0 && restored.len() == 0 && restored.capacity() == 0); restored.destroy();
+        if (round < 3) { cycle<alloc::vec::IntoIter<Payload>>(cursor.borrow(), log, sink, quota, reject, round, output); }
+        else { assert(core::option::is_none(cursor.try_finish()) && core::option::is_none(cursor.try_finish())); }
+        assert(self.close() == -1);
+    }
+}
+impl Cursor for alloc::deque::IntoIter<Payload> {
+    fn left(&self) -> i32 { return self.remaining(); }
+    fn bound(&self) -> i32 { return self.capacity(); }
+    fn empty(&self) -> bool { return self.is_empty(); }
+    fn inspect(&self, output: &Output) {
+        let views: alloc::deque::Views<Payload> = self.as_views();
+        assert(views.first.len() + views.second.len() == self.remaining()); output.view(views.first); output.view(views.second);
+    }
+    fn back(&self) -> core::option::Option<Payload> { return self.next_back(); }
+    fn close(&self) -> i32 {
+        let error: core::option::Option<alloc::deque::IntoIterError> = self.try_finish();
+        if (core::option::is_none(error)) { return -1; }
+        return match (core::option::unwrap(error)) { alloc::deque::IntoIterError::Remaining(count) -> count };
+    }
+    fn reopen(&self, log: &Log, sink: &Sink, quota: u64, reject: i32, round: i32, output: &Output) {
+        let storage: ptr = self.storage; let capacity: i32 = self.capacity(); let count: i32 = self.remaining();
+        let restored: alloc::deque::Deque<Payload> = self.take_remaining();
+        assert(restored.storage == storage && restored.capacity() == capacity && restored.len() == count);
+        assert(self.storage == 0 && self.remaining() == 0 && self.capacity() == 0 && self.is_empty());
+        output.word(restored.len() as u64); output.word(restored.capacity() as u64);
+        let views: alloc::deque::Views<Payload> = restored.as_views(); output.view(views.first); output.view(views.second);
+        let cursor: alloc::deque::IntoIter<Payload> = restored.take_iter();
+        assert(restored.storage == 0 && restored.len() == 0 && restored.capacity() == 0 && restored.head == 0); restored.destroy();
+        if (round < 3) { cycle<alloc::deque::IntoIter<Payload>>(cursor.borrow(), log, sink, quota, reject, round, output); }
+        else { assert(core::option::is_none(cursor.try_finish()) && core::option::is_none(cursor.try_finish())); }
+        assert(self.close() == -1);
+    }
+}
+fn state<C>(cursor: &C, log: &Log, sink: &Sink, output: &Output) where C: Cursor {
+    output.word(cursor.left() as u64); output.word(cursor.bound() as u64); if (cursor.empty()) { output.word(1); } else { output.word(0); }
+    cursor.inspect(output); output.word(log.front_calls as u64); output.word(log.back_calls as u64);
+    output.word(log.length as u64); let index: i32 = 0;
+    while (index < log.length) { output.item(log.consumed[index]); index += 1; }
+    output.word(sink.calls as u64); output.word(sink.length as u64); index = 0;
+    while (index < sink.length) { output.item(sink.values[index]); index += 1; }
+}
+fn finish<C>(cursor: &C, log: &Log, sink: &Sink, output: &Output) where C: Cursor {
+    let result: i32 = cursor.close(); if (result < 0) { output.word(0); } else { output.word(1); output.word(result as u64); }
+    state<C>(cursor, log, sink, output);
+}
+fn transfer<C>(cursor: &C, log: &Log, sink: &Sink, quota: u64, output: &Output)
+    where C: core::iter::Iterator<Payload> {
+    let forward: Forward<C> = Forward { cursor: cursor, log: log };
+    let result: core::result::Result<core::iter::Transfer, core::iter::TransferError<Payload, Fault>> =
+        core::iter::try_transfer_up_to<Forward<C>, Sink, Payload, Fault>(forward.borrow(), sink, quota);
+    if (core::result::is_ok(result)) {
+        let progress: core::iter::Transfer = core::result::unwrap(result); output.word(0); output.word(progress.accepted);
+        if (progress.exhausted) { output.word(1); } else { output.word(0); }
+    } else {
+        let error: core::iter::TransferError<Payload, Fault> = core::result::unwrap_err(result);
+        output.word(1); output.word(error.accepted); output.item(error.rejected); output.item(error.error.pending); output.word(error.error.attempt as u64);
+        sink.reject = -1; assert(core::option::is_none(sink.try_accept(error.rejected)));
+    }
+}
+fn cycle<C>(cursor: &C, log: &Log, sink: &Sink, quota: u64, reject: i32, round: i32, output: &Output)
+    where C: core::iter::Iterator<Payload>, C: Cursor {
+    state<C>(cursor, log, sink, output); finish<C>(cursor, log, sink, output);
+    let forward: Forward<C> = Forward { cursor: cursor, log: log };
+    let zero: core::iter::Advance = core::iter::advance_up_to<Forward<C>, Payload>(forward.borrow(), 0);
+    output.word(zero.advanced); if (zero.exhausted) { output.word(1); } else { output.word(0); } state<C>(cursor, log, sink, output);
+    output.optional(forward.next()); state<C>(cursor, log, sink, output);
+    log.back_calls += 1; let back: core::option::Option<Payload> = cursor.back(); log.observe(back); output.optional(back); state<C>(cursor, log, sink, output);
+    let advanced: core::iter::Advance = core::iter::advance_up_to<Forward<C>, Payload>(forward.borrow(), quota);
+    output.word(advanced.advanced); if (advanced.exhausted) { output.word(1); } else { output.word(0); } state<C>(cursor, log, sink, output);
+    sink.reject = reject; transfer<C>(cursor, log, sink, quota, output); state<C>(cursor, log, sink, output);
+    if (round < 2) { cursor.reopen(log, sink, quota, reject, round + 1, output); }
+    else {
+        sink.reject = -1; transfer<C>(cursor, log, sink, 18446744073709551615, output); state<C>(cursor, log, sink, output);
+        output.optional(forward.next()); log.back_calls += 1; let back: core::option::Option<Payload> = cursor.back(); log.observe(back); output.optional(back);
+        state<C>(cursor, log, sink, output); finish<C>(cursor, log, sink, output); finish<C>(cursor, log, sink, output);
+        cursor.reopen(log, sink, quota, reject, 3, output);
+    }
+    assert(cursor.left() == 0 && cursor.bound() == 0 && cursor.empty());
+}
+fn run(kind: i32, length: i32, spare: i32, head_mode: i32, quota: u64, reject: i32, output: &Output) {
+    let consumed: [Payload; 16] = [payload(999); 16]; let accepted: [Payload; 16] = [payload(999); 16];
+    let log: Log = Log { consumed: consumed, length: 0, front_calls: 0, back_calls: 0 };
+    let sink: Sink = Sink { values: accepted, length: 0, calls: 0, reject: reject };
+    if (kind == 0) {
+        let original: alloc::vec::Vec<Payload> = core::result::unwrap(alloc::vec::with_capacity<Payload>(length + spare));
+        let index: i32 = 0; while (index < length) { core::result::unwrap(original.try_push(payload(index))); index += 1; }
+        let capacity: i32 = original.capacity(); output.word(capacity as u64); assert(capacity >= length + spare && capacity < 32);
+        let storage: ptr = original.storage; let cursor: alloc::vec::IntoIter<Payload> = original.take_iter();
+        assert(original.storage == 0 && original.len() == 0 && original.capacity() == 0 && cursor.storage == storage);
+        core::result::unwrap(original.try_reserve(2)); core::result::unwrap(original.try_push(payload(100))); core::result::unwrap(original.try_push(payload(101)));
+        output.word(original.capacity() as u64); assert(original.storage != cursor.storage);
+        cycle<alloc::vec::IntoIter<Payload>>(cursor.borrow(), log.borrow(), sink.borrow(), quota, reject, 0, output);
+        output.word(original.len() as u64); output.view(original.as_view()); original.destroy(); original.destroy();
+    } else {
+        let original: alloc::deque::Deque<Payload> = core::result::unwrap(alloc::deque::with_capacity<Payload>(length + spare));
+        let capacity: i32 = original.capacity(); output.word(capacity as u64); assert(capacity >= length + spare && capacity < 32);
+        let index: i32 = 0; while (index < capacity) { core::result::unwrap(original.try_push_back(payload(500 + index))); index += 1; }
+        let shifts: i32 = 0; if (head_mode == 1 && capacity > 0) { shifts = 1; } if (head_mode == 2 && capacity > 0) { shifts = capacity - 1; }
+        index = 0; while (index < shifts) { let item: Payload = core::option::unwrap(original.pop_front()); core::result::unwrap(original.try_push_back(item)); index += 1; }
+        while (original.len() > length) { original.pop_back(); }
+        index = 0; while (index < length) { core::result::unwrap(original.set(index, payload(index))); index += 1; }
+        let storage: ptr = original.storage; let cursor: alloc::deque::IntoIter<Payload> = original.take_iter();
+        assert(original.storage == 0 && original.len() == 0 && original.capacity() == 0 && original.head == 0 && cursor.storage == storage);
+        core::result::unwrap(original.try_reserve(2)); core::result::unwrap(original.try_push_back(payload(100))); core::result::unwrap(original.try_push_front(payload(101)));
+        output.word(original.capacity() as u64); assert(original.storage != cursor.storage);
+        cycle<alloc::deque::IntoIter<Payload>>(cursor.borrow(), log.borrow(), sink.borrow(), quota, reject, 0, output);
+        output.word(original.len() as u64); let views: alloc::deque::Views<Payload> = original.as_views(); output.view(views.first); output.view(views.second); original.destroy(); original.destroy();
+    }
+    assert(log.length == length);
+}
+fn decode(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0; let index: i32 = 0;
+    while (index < 8) { value |= (bytes[offset + index] as u64) << (index * 8); index += 1; } return value;
+}
+fn main() -> i32 {
+    let bytes: [u8; 1024] = [0; 1024]; let output: Output = Output { bytes: bytes, used: 0 };
+    let stdin: std::stream::Descriptor = std::stream::stdin(); let record: [u8; 48] = [0; 48];
+    while (true) {
+        let first: core::result::Result<i32, core::io::Error> = stdin.read(record, 0, 48);
+        assert(core::result::is_ok(first)); let received: i32 = core::result::unwrap(first);
+        if (received == 0) { output.flush(); return 0; }
+        if (received < 48) { assert(core::result::is_ok(core::io::read_exact(stdin.borrow(), record, received, 48 - received))); }
+        let kind: u64 = decode(record, 0); let length: u64 = decode(record, 8); let spare: u64 = decode(record, 16); let head: u64 = decode(record, 24); let reject: u64 = decode(record, 40);
+        assert(kind <= 1 && length <= 9 && spare <= 3 && head <= 2 && reject <= 9);
+        run(kind as i32, length as i32, spare as i32, head as i32, decode(record, 32), reject as i32, output.borrow());
+    }
+    return 0;
+}

@@ -1,0 +1,109 @@
+// Complete setup precedes all cursor operations: two backing allocations and
+// twelve independent String owners. Everything after setup is allocation-free.
+module app::main;
+import alloc::clone;
+import alloc::deque;
+import alloc::string;
+import alloc::vec;
+import core::clone;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+
+struct Log { ids: [i32], count: i32 }
+impl Log { fn borrow(&self) -> &Log { return self; } }
+struct Owned { id: i32, text: alloc::string::String, log: &Log }
+pub impl core::clone::Destroy<Owned> for Owned {
+    pub fn destroy_value(value: Owned) {
+        let log: &Log = value.log; assert(log.count < 12);
+        log.ids[log.count] = value.id; log.count += 1; value.text.destroy();
+    }
+}
+fn owned(id: i32, log: &Log) -> Owned {
+    let bytes: [u8; 3] = [(65 + id) as u8, 194, 162];
+    let text: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(bytes, 3));
+    return Owned { id: id, text: text, log: log };
+}
+fn check(value: Owned, id: i32) {
+    assert(value.id == id && value.text.byte_len() == 3);
+    assert(core::option::unwrap(value.text.byte_at(0)) == (65 + id) as u8 && core::option::unwrap(value.text.byte_at(2)) == 162);
+}
+fn release(value: Owned, id: i32) { check(value, id); Owned::destroy_value(value); }
+fn from_views(views: alloc::deque::Views<Owned>, index: i32) -> Owned {
+    if (index < views.first.len()) { return core::option::unwrap(views.first.get(index)); }
+    return core::option::unwrap(views.second.get(index - views.first.len()));
+}
+fn vector(source: &alloc::vec::Vec<Owned>) {
+    let capacity: i32 = source.capacity();
+    let cursor: alloc::vec::IntoIter<Owned> = source.take_iter();
+    assert(source.len() == 0 && source.capacity() == 0 && cursor.remaining() == 6 && cursor.capacity() == capacity);
+    let before: core::slice::View<Owned> = cursor.as_view();
+    let refused: core::option::Option<alloc::vec::IntoIterError> = cursor.try_finish();
+    assert(match (core::option::unwrap(refused)) { alloc::vec::IntoIterError::Remaining(count) -> count == 6 });
+    assert(cursor.remaining() == 6 && cursor.capacity() == capacity);
+    check(core::option::unwrap(before.get(0)), 0); check(core::option::unwrap(before.get(5)), 5);
+    release(core::option::unwrap(cursor.next()), 0);
+    release(core::option::unwrap(cursor.next_back()), 5);
+    release(core::option::unwrap(cursor.next()), 1);
+    let remainder: core::slice::View<Owned> = cursor.as_view();
+    let refused_again: core::option::Option<alloc::vec::IntoIterError> = cursor.try_finish();
+    assert(match (core::option::unwrap(refused_again)) { alloc::vec::IntoIterError::Remaining(count) -> count == 3 });
+    let index: i32 = 0;
+    while (index < 3) { check(core::option::unwrap(remainder.get(index)), index + 2); index += 1; }
+    let restored: alloc::vec::Vec<Owned> = cursor.take_remaining();
+    assert(cursor.remaining() == 0 && cursor.capacity() == 0 && core::option::is_none(cursor.next()) && core::option::is_none(cursor.try_finish()));
+    assert(restored.len() == 3 && restored.capacity() == capacity);
+    index = 0; while (index < 3) { check(restored.at(index), index + 2); index += 1; }
+    let reopened: alloc::vec::IntoIter<Owned> = restored.take_iter();
+    assert(restored.len() == 0 && restored.capacity() == 0 && reopened.capacity() == capacity);
+    release(core::option::unwrap(reopened.next_back()), 4);
+    alloc::clone::destroy_vec_iter<Owned>(reopened.borrow());
+    assert(reopened.remaining() == 0 && reopened.capacity() == 0 && core::option::is_none(reopened.next_back()));
+    alloc::clone::destroy_vec_iter<Owned>(reopened.borrow());
+    assert(core::option::is_none(reopened.try_finish())); source.destroy(); restored.destroy();
+}
+fn deque(source: &alloc::deque::Deque<Owned>) {
+    let capacity: i32 = source.capacity();
+    let cursor: alloc::deque::IntoIter<Owned> = source.take_iter();
+    assert(source.len() == 0 && source.capacity() == 0 && cursor.remaining() == 6 && cursor.capacity() == capacity);
+    let before: alloc::deque::Views<Owned> = cursor.as_views();
+    let refused: core::option::Option<alloc::deque::IntoIterError> = cursor.try_finish();
+    assert(match (core::option::unwrap(refused)) { alloc::deque::IntoIterError::Remaining(count) -> count == 6 });
+    assert(cursor.remaining() == 6 && cursor.capacity() == capacity);
+    let index: i32 = 0;
+    while (index < 6) { let id: i32 = index + 12; if (index >= 4) { id = index + 6; } check(from_views(before, index), id); index += 1; }
+    release(core::option::unwrap(cursor.next()), 12);
+    release(core::option::unwrap(cursor.next_back()), 11);
+    release(core::option::unwrap(cursor.next()), 13);
+    let before_restore: alloc::deque::Views<Owned> = cursor.as_views();
+    let refused_again: core::option::Option<alloc::deque::IntoIterError> = cursor.try_finish();
+    assert(match (core::option::unwrap(refused_again)) { alloc::deque::IntoIterError::Remaining(count) -> count == 3 });
+    assert(before_restore.first.len() + before_restore.second.len() == 3);
+    check(from_views(before_restore, 0), 14); check(from_views(before_restore, 1), 15); check(from_views(before_restore, 2), 10);
+    let restored: alloc::deque::Deque<Owned> = cursor.take_remaining();
+    assert(cursor.remaining() == 0 && cursor.capacity() == 0 && core::option::is_none(cursor.next_back()) && core::option::is_none(cursor.try_finish()));
+    assert(restored.len() == 3 && restored.capacity() == capacity);
+    check(restored.at(0), 14); check(restored.at(1), 15); check(restored.at(2), 10);
+    let reopened: alloc::deque::IntoIter<Owned> = restored.take_iter();
+    assert(restored.len() == 0 && restored.capacity() == 0 && reopened.capacity() == capacity);
+    release(core::option::unwrap(reopened.next_back()), 10);
+    alloc::clone::destroy_deque_iter<Owned>(reopened.borrow());
+    assert(reopened.remaining() == 0 && reopened.capacity() == 0 && core::option::is_none(reopened.next()));
+    alloc::clone::destroy_deque_iter<Owned>(reopened.borrow());
+    assert(core::option::is_none(reopened.try_finish())); source.destroy(); restored.destroy();
+}
+fn main() -> i32 {
+    let ids: [i32; 12] = [0; 12]; let log: Log = Log { ids: ids, count: 0 };
+    let values: alloc::vec::Vec<Owned> = core::result::unwrap(alloc::vec::with_capacity<Owned>(6));
+    let queue: alloc::deque::Deque<Owned> = core::result::unwrap(alloc::deque::with_capacity<Owned>(6));
+    let index: i32 = 0;
+    while (index < 6) { core::result::unwrap(values.try_push(owned(index, log.borrow()))); core::result::unwrap(queue.try_push_back(owned(index + 10, log.borrow()))); index += 1; }
+    let first: Owned = core::option::unwrap(queue.pop_front()); core::result::unwrap(queue.try_push_back(first));
+    let second: Owned = core::option::unwrap(queue.pop_front()); core::result::unwrap(queue.try_push_back(second));
+    vector(values.borrow()); deque(queue.borrow());
+    let expected: [i32; 12] = [0, 5, 1, 4, 2, 3, 12, 11, 13, 10, 14, 15];
+    assert(log.count == 12); index = 0;
+    while (index < 12) { assert(ids[index] == expected[index]); index += 1; }
+    return 0;
+}

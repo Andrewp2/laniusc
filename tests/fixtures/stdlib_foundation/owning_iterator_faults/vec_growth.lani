@@ -1,0 +1,83 @@
+// Eighteen source owners are set up before take_iter: source backing and
+// seventeen distinct Strings. Growth mode adds one initial sink allocation.
+// Destination growth failures return one real String owner for explicit retry.
+module app::main;
+import alloc::clone;
+import alloc::vec;
+import alloc::string;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+import std::args_checked;
+import std::io;
+fn make(id: i32) -> alloc::string::String {
+    let bytes: [u8; 4] = [(65 + id) as u8, 0, 194, 162];
+    return core::result::unwrap(alloc::string::from_utf8(bytes, 4));
+}
+fn check(value: alloc::string::String, id: i32) {
+    assert(value.byte_len() == 4 && core::option::unwrap(value.byte_at(0)) == (65 + id) as u8);
+    assert(core::option::unwrap(value.byte_at(1)) == 0 && core::option::unwrap(value.byte_at(2)) == 194 && core::option::unwrap(value.byte_at(3)) == 162);
+}
+fn expected(index: i32) -> i32 { return index; }
+fn setup() -> alloc::vec::Vec<alloc::string::String> {
+    let source: alloc::vec::Vec<alloc::string::String> = core::result::unwrap(alloc::vec::with_capacity<alloc::string::String>(17));
+    let index: i32 = 0;
+    while (index < 17) { core::result::unwrap(source.try_push(make(index))); index += 1; }
+    return source;
+}
+fn reuse_source(source: &alloc::vec::Vec<alloc::string::String>) -> i32 {
+    let capacity: i32 = source.capacity(); let cursor: alloc::vec::IntoIter<alloc::string::String> = source.take_iter();
+    assert(source.len() == 0 && source.capacity() == 0 && cursor.capacity() == capacity && cursor.remaining() == 17);
+    let view: core::slice::View<alloc::string::String> = cursor.as_view();
+    let reserved: core::result::Result<i32, alloc::vec::Error> = source.try_reserve(1);
+    let failures: i32 = 0;
+    if (core::result::is_err(reserved)) {
+        failures = 1; assert(match (core::result::unwrap_err(reserved)) { alloc::vec::Error::AllocationFailed -> true, _ -> false });
+        assert(source.len() == 0 && source.capacity() == 0);
+    } else { assert(source.len() == 0 && source.capacity() == core::result::unwrap(reserved)); }
+    assert(cursor.capacity() == capacity && cursor.remaining() == 17);
+    let index: i32 = 0;
+    while (index < 17) { check(core::option::unwrap(view.get(index)), expected(index)); index += 1; }
+    alloc::clone::destroy_vec_iter<alloc::string::String>(cursor.borrow());
+    assert(cursor.capacity() == 0 && cursor.remaining() == 0); source.destroy(); return failures;
+}
+fn growth(source: &alloc::vec::Vec<alloc::string::String>) -> i32 {
+    let capacity: i32 = source.capacity(); let cursor: alloc::vec::IntoIter<alloc::string::String> = source.take_iter();
+    let sink: alloc::vec::Vec<alloc::string::String> = core::result::unwrap(alloc::vec::with_capacity<alloc::string::String>(2));
+    assert(source.len() == 0 && source.capacity() == 0 && cursor.capacity() == capacity);
+    let index: i32 = 0; let failures: i32 = 0;
+    while (index < 17) {
+        let old_capacity: i32 = sink.capacity();
+        let result: core::result::Result<core::iter::Transfer, core::iter::TransferError<alloc::string::String, alloc::vec::Error>> = core::iter::try_transfer_up_to<alloc::vec::IntoIter<alloc::string::String>, alloc::vec::Vec<alloc::string::String>, alloc::string::String, alloc::vec::Error>(cursor.borrow(), sink.borrow(), 1);
+        assert(cursor.remaining() == 16 - index && cursor.capacity() == capacity);
+        if (core::result::is_err(result)) {
+            failures += 1;
+            let pending: core::iter::TransferError<alloc::string::String, alloc::vec::Error> = core::result::unwrap_err(result);
+            assert(pending.accepted == 0 && sink.len() == index && sink.capacity() == old_capacity);
+            assert(match (pending.error) { alloc::vec::Error::AllocationFailed -> true, _ -> false });
+            check(pending.rejected, expected(index));
+            let previous: i32 = 0; while (previous < index) { check(sink.at(previous), expected(previous)); previous += 1; }
+            // This is the sole owning descriptor for the rejected String.
+            // Retry transfers it to the sink before the next source call.
+            let retried: core::option::Option<alloc::vec::Error> = sink.try_accept(pending.rejected); assert(core::option::is_none(retried));
+        } else {
+            let progress: core::iter::Transfer = core::result::unwrap(result); assert(progress.accepted == 1 && !progress.exhausted);
+        }
+        assert(sink.len() == index + 1);
+        let previous: i32 = 0; while (previous <= index) { check(sink.at(previous), expected(previous)); previous += 1; }
+        index += 1;
+    }
+    let eof: core::iter::Transfer = core::result::unwrap(core::iter::try_transfer_up_to<alloc::vec::IntoIter<alloc::string::String>, alloc::vec::Vec<alloc::string::String>, alloc::string::String, alloc::vec::Error>(cursor.borrow(), sink.borrow(), 2));
+    assert(eof.accepted == 0 && eof.exhausted && cursor.remaining() == 0 && cursor.capacity() == capacity);
+    assert(core::option::is_none(cursor.try_finish()) && cursor.capacity() == 0);
+    let destination: alloc::vec::IntoIter<alloc::string::String> = sink.take_iter();
+    alloc::clone::destroy_vec_iter<alloc::string::String>(destination.borrow());
+    assert(destination.capacity() == 0 && sink.len() == 0 && sink.capacity() == 0); source.destroy(); return failures;
+}
+fn main() -> i32 {
+    let source: alloc::vec::Vec<alloc::string::String> = setup(); let result: i32 = 0;
+    if (std::args_checked::argument_count_or(0) == 1) { result = growth(source.borrow()); }
+    else { result = reuse_source(source.borrow()); }
+    assert(std::io::write_byte(1, result) == 1); return 0;
+}

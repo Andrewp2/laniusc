@@ -1,0 +1,15 @@
+module app::main;
+import alloc::clone;
+import alloc::deque;
+import alloc::string;
+import alloc::vec;
+import core::clone;
+import core::iter;
+import core::result;
+struct Item {}
+fn main() -> i32 {
+    let source: alloc::vec::Vec<Item> = alloc::vec::new<Item>();
+    let owner: alloc::vec::IntoIter<Item> = source.take_iter();
+    alloc::clone::destroy_vec_iter<Item>(owner.borrow());
+    return 0;
+}
