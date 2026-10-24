@@ -38,8 +38,13 @@ Focused positive/native and negative tests pass. The existing
 emitted ELF outside the compilation timer. Its pinned alternating 1 MB workload
 comparison did not reproduce an initial chronological slowdown; uncontrolled
 desktop measurements do not establish a causal speedup. No extractor or formal
-proof source changed. The syscall extension and this expression-row correction
-are the compiler/runtime changes in this checkpoint.
+proof source changed. A further [array-to-slice field repair](../tests/fixtures/stdlib_compiler_state/settings_array_view/README.md)
+retains the already accepted descriptor adjustment when building imported/local
+records, keeping following fields and aliases intact. The unchanged four-way
+Text case now prints 6/6/6/6; focused native layout and rejection controls pass.
+It adds no target/IR/ABI representation. The syscall extension, expression-row
+guard and field-adjustment repair are the compiler/runtime changes in this
+checkpoint.
 
 The [subprocess API and command runner](stdlib-command.md) now execute real
 fork/exec/wait, raw argv/environment/cwd, redirection, pipes and signaling, with

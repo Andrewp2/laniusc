@@ -1,0 +1,7 @@
+module app::main;
+import app::fields;
+fn main() -> i32 {
+    let values: [u64; 1] = [7];
+    let invalid: app::fields::Borrowed<i8> = app::fields::Borrowed<i8> { before: 0, values: values, after: 0 };
+    return 0;
+}

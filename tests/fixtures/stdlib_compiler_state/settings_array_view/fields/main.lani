@@ -1,0 +1,86 @@
+module app::main;
+import app::fields;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+
+struct Local<T> { before: u64, values: [T], after: u64 }
+struct Record { wide: u64, small: i8, tail: i32 }
+struct Empty {}
+
+fn main() -> i32 {
+    let high: u64 = 9223372036854775813;
+    let ints: [i32; 3] = [7, 8, 19];
+    let local: Local<i32> = Local<i32> { after: high, values: ints, before: 42 };
+    let ints_control: core::slice::View<i32> = core::result::unwrap(core::slice::view(ints, 3));
+    if (local.before != 42 || local.after != high || local.values[2] != 19 ||
+        core::mem::slice_stride(local.values) != 4 ||
+        core::mem::slice_stride(local.values) != core::mem::slice_stride(ints_control.values)) { return 1; }
+    ints[1] = -73;
+    if (local.values[1] != -73 || core::option::unwrap(ints_control.get(1)) != -73) { return 2; }
+    local.values[0] = 29;
+    if (ints[0] != 29 || core::option::unwrap(ints_control.get(0)) != 29) { return 3; }
+
+    let small: [i8; 2] = [-7, 101];
+    let imported: app::fields::Borrowed<i8> = app::fields::Borrowed<i8> { values: small, after: high, before: 91 };
+    let small_control: core::slice::View<i8> = core::result::unwrap(core::slice::view(small, 2));
+    if (imported.before != 91 || imported.after != high || imported.values[0] != -7 || imported.values[1] != 101 ||
+        core::mem::slice_stride(imported.values) != -8 ||
+        core::mem::slice_stride(imported.values) != core::mem::slice_stride(small_control.values)) { return 4; }
+
+    let wide: [u64; 2] = [high, 18446744073709551615];
+    let wide_local: Local<u64> = Local<u64> { values: wide, before: high, after: 37 };
+    let wide_imported: app::fields::Borrowed<u64> = app::fields::Borrowed<u64> { after: 37, before: high, values: wide };
+    let wide_control: core::slice::View<u64> = core::result::unwrap(core::slice::view(wide, 2));
+    if (wide_local.before != high || wide_local.after != 37 || wide_imported.before != high || wide_imported.after != 37 ||
+        wide_local.values[0] != high || wide_imported.values[1] != 18446744073709551615 ||
+        core::mem::slice_stride(wide_imported.values) != -8 ||
+        core::mem::slice_stride(wide_local.values) != core::mem::slice_stride(wide_control.values)) { return 5; }
+    wide[1] = high;
+    if (wide_local.values[1] != high || wide_imported.values[1] != high || core::option::unwrap(wide_control.get(1)) != high) { return 6; }
+
+    let records: [Record; 2] = [Record { wide: high, small: -7, tail: 41 }, Record { wide: 19, small: 101, tail: -83 }];
+    let record_local: Local<Record> = Local<Record> { after: high, values: records, before: 17 };
+    let record_imported: app::fields::Borrowed<Record> = app::fields::Borrowed<Record> { before: 17, after: high, values: records };
+    let record_control: core::slice::View<Record> = core::result::unwrap(core::slice::view(records, 2));
+    let record: Record = core::option::unwrap(record_control.get(1));
+    if (record_local.before != 17 || record_local.after != high || record_imported.before != 17 || record_imported.after != high ||
+        record_local.values[0].wide != high || record_local.values[0].small != -7 || record_imported.values[1].tail != -83 ||
+        record.tail != -83 || core::mem::slice_stride(record_imported.values) != -24 ||
+        core::mem::slice_stride(record_local.values) != core::mem::slice_stride(record_control.values)) { return 7; }
+
+    let nested: [[i32; 2]; 2] = [[11, -12], [31, -32]];
+    let nested_local: Local<[i32; 2]> = Local<[i32; 2]> { before: 71, values: nested, after: high };
+    let nested_imported: app::fields::Borrowed<[i32; 2]> = app::fields::Borrowed<[i32; 2]> { values: nested, after: high, before: 71 };
+    let nested_control: core::slice::View<[i32; 2]> = core::result::unwrap(core::slice::view(nested, 2));
+    let child: [i32; 2] = core::option::unwrap(nested_control.get(1));
+    if (nested_local.before != 71 || nested_local.after != high || nested_imported.before != 71 || nested_imported.after != high ||
+        nested_local.values[0][1] != -12 || nested_imported.values[1][0] != 31 || child[1] != -32 ||
+        core::mem::slice_stride(nested_imported.values) != -16 ||
+        core::mem::slice_stride(nested_local.values) != core::mem::slice_stride(nested_control.values)) { return 8; }
+
+    let empty: [u64; 0] = [];
+    let empty_local: Local<u64> = Local<u64> { before: high, after: 57, values: empty };
+    let empty_imported: app::fields::Borrowed<u64> = app::fields::Borrowed<u64> { values: empty, before: high, after: 57 };
+    let empty_control: core::slice::View<u64> = core::result::unwrap(core::slice::view(empty, 0));
+    let empty_view: core::slice::View<u64> = core::result::unwrap(core::slice::view(empty_imported.values, 0));
+    if (empty_local.before != high || empty_local.after != 57 || empty_imported.before != high || empty_imported.after != 57 ||
+        empty_view.length != 0 || core::option::is_some(empty_view.get(0)) || core::option::is_some(empty_control.get(0)) ||
+        core::mem::slice_stride(empty_local.values) != core::mem::slice_stride(empty_control.values)) { return 9; }
+
+    let zero: [Empty; 3] = [Empty {}, Empty {}, Empty {}];
+    let zero_imported: app::fields::Borrowed<Empty> = app::fields::Borrowed<Empty> { after: high, before: 63, values: zero };
+    let zero_control: core::slice::View<Empty> = core::result::unwrap(core::slice::view(zero, 3));
+    let zero_view: core::slice::View<Empty> = core::result::unwrap(core::slice::view(zero_imported.values, 3));
+    if (zero_imported.before != 63 || zero_imported.after != high || zero_view.length != 3 ||
+        core::mem::slice_stride(zero_imported.values) != 0 || core::mem::slice_stride(zero_control.values) != 0 ||
+        !core::option::is_some(zero_view.get(2)) || core::option::is_some(zero_view.get(3)) || core::option::is_some(zero_control.get(3))) { return 10; }
+
+    let bounded: core::slice::View<i8> = core::result::unwrap(core::slice::view_range(imported.values, 1, 1));
+    let bounded_control: core::slice::View<i8> = core::result::unwrap(core::slice::view_range(small, 1, 1));
+    if (core::option::unwrap(bounded.get(0)) != core::option::unwrap(bounded_control.get(0)) ||
+        core::option::is_some(bounded.get(-1)) || core::option::is_some(bounded.get(1)) ||
+        core::option::is_some(bounded_control.get(-1)) || core::option::is_some(bounded_control.get(1))) { return 11; }
+    return 0;
+}

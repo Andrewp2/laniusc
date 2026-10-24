@@ -1,0 +1,7 @@
+module app::main;
+import app::fields;
+fn main() -> i32 {
+    let values: [[i32; 3]; 1] = [[1, 2, 3]];
+    let invalid: app::fields::Borrowed<[i32; 2]> = app::fields::Borrowed<[i32; 2]> { before: 0, values: values, after: 0 };
+    return 0;
+}

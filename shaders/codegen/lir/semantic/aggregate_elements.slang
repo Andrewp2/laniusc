@@ -111,6 +111,18 @@ uint aggregate_decl_token_for_hir(uint node, uint hir_count)
 uint aggregate_word_count_for_hir(uint node, uint hir_count)
 {
     if (node >= hir_count) return 1u;
+    uint instruction = lir_for_hir(node, hir_count);
+    if (semantic_argument_mode_by_hir[node] == 4u && instruction != LIR_INVALID)
+    {
+        // The checked source remains an array, but an accepted outer-boundary
+        // borrow stores the captured slice descriptor in its destination.
+        // Keep the original row's width for the backing storage and stride.
+        SemanticLirCore value = semantic_lir_core[instruction];
+        uint view_flags = SEMANTIC_LIR_FLAG_ARRAY_PAIR | SEMANTIC_LIR_FLAG_PLACE_VIEW;
+        if (semantic_lir_op(value) == SEMANTIC_LIR_OP_AGGREGATE_COPY &&
+            (value.flags & view_flags) == view_flags)
+            return value.value_word_count;
+    }
     // Native str values contain a pointer and length even though their
     // checked type is classified as a concrete scalar reference.
     if (semantic_lir_type(semantic_expr_type[node]) == SEMANTIC_LIR_TY_STRING ||
@@ -128,7 +140,6 @@ uint aggregate_word_count_for_hir(uint node, uint hir_count)
         if (token != LIR_INVALID)
             return semantic_struct_word_count_by_hir[semantic_aggregate_hir_by_name_token[token]];
     }
-    uint instruction = lir_for_hir(node, hir_count);
     if (instruction != LIR_INVALID)
     {
         uint materialized = semantic_lir_core[instruction].value_word_count;
