@@ -1,0 +1,147 @@
+// Read-only cursor composition over small heaps. Output order is observed,
+// never prescribed: the host checks complete item multisets independently.
+module app::main;
+import alloc::binary_heap;
+import core::cmp;
+import core::io;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+import std::stream;
+
+struct Payload { priority: i64, wide: u64, identity: i32, bytes: [u8; 3], flag: core::option::Option<bool> }
+struct Stamp { identity: i32, wide: u64 }
+struct Project { calls: i32 }
+impl Project { fn borrow(&self) -> &Project { return self; } }
+pub impl core::iter::Mapper<Payload, Stamp> for Project {
+    pub fn apply(&self, item: Payload) -> Stamp {
+        self.calls += 1;
+        return Stamp { identity: item.identity, wide: item.wide };
+    }
+}
+pub impl core::cmp::Ord<Payload> for Payload {
+    pub fn lt(left: Payload, right: Payload) -> bool { return left.priority < right.priority; }
+    pub fn le(left: Payload, right: Payload) -> bool { return left.priority <= right.priority; }
+    pub fn gt(left: Payload, right: Payload) -> bool { return left.priority > right.priority; }
+    pub fn ge(left: Payload, right: Payload) -> bool { return left.priority >= right.priority; }
+}
+
+// Reading a heap and forwarding its cursor impose no ordering bound on T.
+fn cursor<T>(owner: &alloc::binary_heap::BinaryHeap<T>) -> core::slice::Iter<T> {
+    return owner.iter();
+}
+fn pull<I, T>(source: &I) -> core::option::Option<T> where I: core::iter::Iterator<T> {
+    let item: core::option::Option<T> = source.next(); return item;
+}
+struct Unordered { value: u64 }
+fn unordered_empty(order: alloc::binary_heap::Order) {
+    let owner: alloc::binary_heap::BinaryHeap<Unordered> = alloc::binary_heap::new(order);
+    let source: core::slice::Iter<Unordered> = cursor<Unordered>(owner.borrow());
+    let first: core::option::Option<Unordered> = pull<core::slice::Iter<Unordered>, Unordered>(source.borrow());
+    let second: core::option::Option<Unordered> = source.next_back();
+    assert(core::option::is_none(first) && core::option::is_none(second) && source.remaining() == 0);
+    owner.destroy();
+}
+fn word(value: u64) {
+    let bytes: [u8; 8] = [0; 8];
+    let index: i32 = 0;
+    while (index < 8) { bytes[index] = ((value >> (index * 8)) & 255) as u8; index += 1; }
+    let output: std::stream::Descriptor = std::stream::stdout();
+    let result: core::result::Result<i32, core::io::Failure> = core::io::write_all(output.borrow(), bytes, 0, 8);
+    assert(core::result::is_ok(result));
+}
+fn order_code(order: alloc::binary_heap::Order) -> u64 {
+    return match (order) { alloc::binary_heap::Order::Min -> 0, alloc::binary_heap::Order::Max -> 1 };
+}
+fn payload(index: i32) -> Payload {
+    // The last two complete entries are equal, so multiplicity matters.
+    let identity: i32 = index;
+    if (identity == 5) { identity = 4; }
+    let priority: i64 = 7;
+    if (identity == 0 || identity == 2) { priority = -4294967299; }
+    if (identity == 3) { priority = 4294967297; }
+    let flag: core::option::Option<bool> = core::option::Some(identity % 2 == 0);
+    if (identity == 2) { flag = core::option::None(); }
+    return Payload {
+        priority: priority, wide: 18446744073709551615 - (identity as u64), identity: identity,
+        bytes: [(128 + identity) as u8, 0, (255 - identity) as u8], flag: flag
+    };
+}
+fn emit(item: core::option::Option<Payload>) {
+    if (core::option::is_none(item)) { word(0); return; }
+    let value: Payload = core::option::unwrap(item);
+    word(1); word(value.priority as u64); word(value.wide); word(value.identity as u64);
+    word(value.bytes[0] as u64); word(value.bytes[1] as u64); word(value.bytes[2] as u64);
+    if (core::option::is_none(value.flag)) { word(0); }
+    else {
+        if (core::option::unwrap(value.flag)) { word(2); }
+        else { word(1); }
+    }
+}
+fn run_case(order: alloc::binary_heap::Order, length: i32, quota: u64) {
+    let owner: alloc::binary_heap::BinaryHeap<Payload> = core::result::unwrap(alloc::binary_heap::with_capacity<Payload>(length, order));
+    let index: i32 = 0;
+    while (index < length) {
+        let added: core::result::Result<i32, alloc::binary_heap::Error> = owner.try_push(payload(index));
+        assert(core::result::is_ok(added)); index += 1;
+    }
+    let capacity: i32 = owner.capacity();
+    word(order_code(owner.order())); word(owner.len() as u64); word(quota); emit(owner.peek());
+
+    let whole: core::slice::Iter<Payload> = cursor<Payload>(owner.borrow());
+    let item: core::option::Option<Payload> = pull<core::slice::Iter<Payload>, Payload>(whole.borrow());
+    while (core::option::is_some(item)) { emit(item); item = pull<core::slice::Iter<Payload>, Payload>(whole.borrow()); }
+    emit(item);
+    let ended: core::option::Option<Payload> = whole.next();
+    assert(core::option::is_none(ended) && whole.remaining() == 0);
+
+    let source: core::slice::Iter<Payload> = owner.iter();
+    let fork: core::slice::Iter<Payload> = source;
+    emit(source.next_back());
+    emit(pull<core::slice::Iter<Payload>, Payload>(source.borrow()));
+    let selected: core::iter::Take<core::slice::Iter<Payload>, Payload> =
+        core::iter::take<core::slice::Iter<Payload>, Payload>(source.borrow(), quota);
+    item = pull<core::iter::Take<core::slice::Iter<Payload>, Payload>, Payload>(selected.borrow());
+    while (core::option::is_some(item)) { emit(item); item = selected.next(); }
+    emit(item);
+    let selected_end: core::option::Option<Payload> = selected.next();
+    assert(core::option::is_none(selected_end));
+
+    let project: Project = Project { calls: 0 };
+    let remaining: i32 = source.remaining();
+    let mapped: core::iter::Map<core::slice::Iter<Payload>, Project, Payload, Stamp> =
+        core::iter::map<core::slice::Iter<Payload>, Project, Payload, Stamp>(source.borrow(), project.borrow());
+    assert(project.calls == 0 && source.remaining() == remaining);
+    let projected: core::option::Option<Stamp> = mapped.next();
+    while (core::option::is_some(projected)) {
+        let value: Stamp = core::option::unwrap(projected);
+        word(1); word(value.identity as u64); word(value.wide); projected = mapped.next();
+    }
+    word(0);
+    let mapped_end: core::option::Option<Stamp> = mapped.next();
+    let source_end: core::option::Option<Payload> = source.next_back();
+    assert(core::option::is_none(mapped_end) && core::option::is_none(source_end));
+    assert(project.calls == remaining && source.remaining() == 0 && fork.remaining() == length);
+    word(project.calls as u64); emit(pull<core::slice::Iter<Payload>, Payload>(fork.borrow()));
+    word(fork.remaining() as u64);
+
+    assert(owner.len() == length && owner.capacity() == capacity);
+    word(order_code(owner.order())); word(owner.len() as u64); emit(owner.peek());
+    owner.destroy();
+}
+fn main() -> i32 {
+    unordered_empty(alloc::binary_heap::Order::Min); unordered_empty(alloc::binary_heap::Order::Max);
+    let direction: i32 = 0;
+    while (direction < 2) {
+        let order: alloc::binary_heap::Order = alloc::binary_heap::Order::Min;
+        if (direction == 1) { order = alloc::binary_heap::Order::Max; }
+        let length: i32 = 0;
+        while (length <= 6) {
+            run_case(order, length, 0); run_case(order, length, 2); run_case(order, length, 8);
+            length += 1;
+        }
+        direction += 1;
+    }
+    return 0;
+}

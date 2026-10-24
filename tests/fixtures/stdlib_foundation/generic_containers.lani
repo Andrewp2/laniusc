@@ -2,6 +2,7 @@
 // i32, char and Pair<char, i32> values. Exit 0 on success; each failed check
 // returns its own code.
 module app::main;
+import core::iter;
 import core::option;
 import core::pair;
 import core::set;

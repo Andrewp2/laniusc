@@ -1,6 +1,7 @@
 // First stdin line: window width (1..4096). Remaining lines: i32 samples.
 // Emit CSV statistics for every complete window. See docs/stdlib-slice-views.md.
 module app::main;
+import core::iter;
 import alloc::io;
 import core::decimal;
 import core::io;

@@ -1,0 +1,152 @@
+// Raw slice cursors through the shared protocol; no allocation or destruction.
+module app::main;
+import core::cmp;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import core::set;
+import core::slice;
+import core::vec;
+
+struct Ends<T> { length: i32, first: core::option::Option<T>, last: core::option::Option<T> }
+struct Describe<T> { calls: i32 }
+impl<T> Describe<T> { fn borrow(&self) -> &Describe<T> { return self; } }
+pub impl<T> core::iter::Mapper<core::slice::View<T>, Ends<T>> for Describe<T> {
+    pub fn apply(&self, view: core::slice::View<T>) -> Ends<T> {
+        self.calls += 1;
+        let first: core::option::Option<T> = view.first();
+        let last: core::option::Option<T> = view.last();
+        return Ends { length: view.len(), first: first, last: last };
+    }
+}
+struct Payload { key: i32, wide: u64, cells: [i32; 2], flag: core::option::Option<bool> }
+pub impl core::cmp::Eq<Payload> for Payload {
+    pub fn eq(left: Payload, right: Payload) -> bool { return left.key == right.key; }
+    pub fn ne(left: Payload, right: Payload) -> bool { return left.key != right.key; }
+}
+struct Unit {}
+pub impl core::cmp::Eq<Unit> for Unit {
+    pub fn eq(left: Unit, right: Unit) -> bool { return true; }
+    pub fn ne(left: Unit, right: Unit) -> bool { return false; }
+}
+fn pull<I, T>(source: &I) -> core::option::Option<T> where I: core::iter::Iterator<T> {
+    let item: core::option::Option<T> = source.next(); return item;
+}
+fn describe_first<I, T>(source: &I, mapper: &Describe<T>) -> Ends<T>
+    where I: core::iter::Iterator<core::slice::View<T>> {
+    let mapped: core::iter::Map<I, Describe<T>, core::slice::View<T>, Ends<T>> =
+        core::iter::map<I, Describe<T>, core::slice::View<T>, Ends<T>>(source, mapper);
+    let item: core::option::Option<Ends<T>> = pull<core::iter::Map<I, Describe<T>, core::slice::View<T>, Ends<T>>, Ends<T>>(mapped.borrow());
+    return core::option::unwrap(item);
+}
+fn fixed_first<T, const N: usize>(value: &core::vec::Vec<T, N>) -> core::option::Option<T> {
+    let source: core::slice::Iter<T> = core::vec::iter<T, N>(value);
+    let picked: core::iter::Take<core::slice::Iter<T>, T> = core::iter::take<core::slice::Iter<T>, T>(source.borrow(), 1);
+    return pull<core::iter::Take<core::slice::Iter<T>, T>, T>(picked.borrow());
+}
+fn fixed_set_first<T, const N: usize>(value: &core::set::Set<T, N>) -> core::option::Option<T> {
+    let source: core::slice::Iter<T> = core::set::iter<T, N>(value);
+    return pull<core::slice::Iter<T>, T>(source.borrow());
+}
+fn fixed_views<T, const N: usize>(value: &core::vec::Vec<T, N>) -> core::iter::Advance {
+    let view: core::slice::View<T> = core::vec::as_view<T, N>(value);
+    let chunk_result: core::result::Result<core::slice::Chunks<T>, core::slice::ViewError> = view.chunks(2);
+    let chunks: core::slice::Chunks<T> = core::result::unwrap(chunk_result);
+    let window_result: core::result::Result<core::slice::Windows<T>, core::slice::ViewError> = view.windows(1);
+    let windows: core::slice::Windows<T> = core::result::unwrap(window_result);
+    let joined: core::iter::Chain<core::slice::Chunks<T>, core::slice::Windows<T>, core::slice::View<T>> =
+        core::iter::chain<core::slice::Chunks<T>, core::slice::Windows<T>, core::slice::View<T>>(chunks.borrow(), windows.borrow());
+    return core::iter::advance_up_to<core::iter::Chain<core::slice::Chunks<T>, core::slice::Windows<T>, core::slice::View<T>>, core::slice::View<T>>(joined.borrow(), 16);
+}
+fn byte_views(values: [u8]) {
+    let view: core::slice::View<u8> = core::slice::View { values: values, start: 1, length: 4 };
+    let chunks: core::slice::Chunks<u8> = core::result::unwrap(view.chunks(2));
+    let windows: core::slice::Windows<u8> = core::result::unwrap(view.windows(2));
+    let mapper: Describe<u8> = Describe { calls: 0 };
+    let chunk: Ends<u8> = describe_first<core::slice::Chunks<u8>, u8>(chunks.borrow(), mapper.borrow());
+    assert(chunk.length == 2 && core::option::unwrap(chunk.first) == 128 && core::option::unwrap(chunk.last) == 255);
+    let first: Ends<u8> = describe_first<core::slice::Windows<u8>, u8>(windows.borrow(), mapper.borrow());
+    let second: Ends<u8> = describe_first<core::slice::Windows<u8>, u8>(windows.borrow(), mapper.borrow());
+    let third: Ends<u8> = describe_first<core::slice::Windows<u8>, u8>(windows.borrow(), mapper.borrow());
+    assert(core::option::unwrap(first.first) == 128 && core::option::unwrap(first.last) == 255 && core::option::unwrap(second.first) == 255 && core::option::unwrap(second.last) == 0 && core::option::unwrap(third.first) == 0 && core::option::unwrap(third.last) == 7);
+    let end: core::option::Option<core::slice::View<u8>> = pull<core::slice::Windows<u8>, core::slice::View<u8>>(windows.borrow());
+    let again: core::option::Option<core::slice::View<u8>> = windows.next();
+    assert(core::option::is_none(end) && core::option::is_none(again) && windows.remaining() == 0 && mapper.calls == 4);
+    let rest: core::iter::Advance = core::iter::advance_up_to<core::slice::Chunks<u8>, core::slice::View<u8>>(chunks.borrow(), 4);
+    assert(rest.advanced == 1 && rest.exhausted);
+}
+fn cursors_and_live_views() {
+    let values: [i32; 7] = [99, 2, 3, 4, 5, 6, 88];
+    let view: core::slice::View<i32> = core::slice::View { values: values, start: 1, length: 5 };
+    let source: core::slice::Iter<i32> = core::result::unwrap(core::iter::from_view<i32>(view));
+    let back: core::option::Option<i32> = source.next_back(); assert(core::option::unwrap(back) == 6);
+    let picked: core::iter::Take<core::slice::Iter<i32>, i32> = core::iter::take<core::slice::Iter<i32>, i32>(source.borrow(), 2);
+    let advanced: core::iter::Advance = core::iter::advance_up_to<core::iter::Take<core::slice::Iter<i32>, i32>, i32>(picked.borrow(), 2);
+    assert(advanced.advanced == 2 && !advanced.exhausted && source.remaining() == 2);
+    let skipped: core::result::Result<i32, core::slice::ViewError> = source.advance_back(1); assert(core::result::unwrap(skipped) == 1);
+    let last: core::option::Option<i32> = pull<core::slice::Iter<i32>, i32>(source.borrow()); assert(core::option::unwrap(last) == 4);
+    let back_end: core::option::Option<i32> = source.next_back(); let end: core::option::Option<i32> = source.next();
+    assert(core::option::is_none(back_end) && core::option::is_none(end) && source.remaining() == 0);
+
+    let chunks: core::slice::Chunks<i32> = core::result::unwrap(view.chunks(2));
+    let fork: core::slice::Chunks<i32> = chunks;
+    let first: core::option::Option<core::slice::View<i32>> = pull<core::slice::Chunks<i32>, core::slice::View<i32>>(chunks.borrow());
+    let first_view: core::slice::View<i32> = core::option::unwrap(first);
+    let changed: core::result::Result<i32, core::slice::ViewError> = first_view.try_set(1, 30); assert(core::result::unwrap(changed) == 3);
+    let mapper: Describe<i32> = Describe { calls: 0 };
+    let copied: Ends<i32> = describe_first<core::slice::Chunks<i32>, i32>(fork.borrow(), mapper.borrow());
+    assert(copied.length == 2 && core::option::unwrap(copied.first) == 2 && core::option::unwrap(copied.last) == 30 && chunks.remaining() == 2 && fork.remaining() == 2);
+    let windows: core::slice::Windows<i32> = core::result::unwrap(view.windows(3));
+    let window_fork: core::slice::Windows<i32> = windows;
+    let zero: core::iter::Take<core::slice::Chunks<i32>, core::slice::View<i32>> = core::iter::take<core::slice::Chunks<i32>, core::slice::View<i32>>(chunks.borrow(), 0);
+    let zero_item: core::option::Option<core::slice::View<i32>> = zero.next(); assert(core::option::is_none(zero_item) && chunks.remaining() == 2);
+    let joined: core::iter::Chain<core::slice::Chunks<i32>, core::slice::Windows<i32>, core::slice::View<i32>> =
+        core::iter::chain<core::slice::Chunks<i32>, core::slice::Windows<i32>, core::slice::View<i32>>(chunks.borrow(), windows.borrow());
+    let mapped: core::iter::Map<core::iter::Chain<core::slice::Chunks<i32>, core::slice::Windows<i32>, core::slice::View<i32>>, Describe<i32>, core::slice::View<i32>, Ends<i32>> =
+        core::iter::map<core::iter::Chain<core::slice::Chunks<i32>, core::slice::Windows<i32>, core::slice::View<i32>>, Describe<i32>, core::slice::View<i32>, Ends<i32>>(joined.borrow(), mapper.borrow());
+    let drained: core::iter::Advance = core::iter::advance_up_to<core::iter::Map<core::iter::Chain<core::slice::Chunks<i32>, core::slice::Windows<i32>, core::slice::View<i32>>, Describe<i32>, core::slice::View<i32>, Ends<i32>>, Ends<i32>>(mapped.borrow(), 16);
+    assert(drained.advanced == 5 && drained.exhausted && chunks.remaining() == 0 && windows.remaining() == 0 && window_fork.remaining() == 3 && mapper.calls == 6);
+    let still_live: Ends<i32> = describe_first<core::slice::Windows<i32>, i32>(window_fork.borrow(), mapper.borrow());
+    assert(still_live.length == 3 && core::option::unwrap(still_live.first) == 2 && core::option::unwrap(still_live.last) == 4);
+    let strided: [u8; 6] = [254, 128, 255, 0, 7, 253]; byte_views(strided);
+    let storage: [i32; 2] = [0, 0]; let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts<u8>(pointer, 8);
+    let i: i32 = 0; while (i < 6) { packed[i] = strided[i]; i += 1; } byte_views(packed);
+}
+fn compounds_and_fixed_containers() {
+    let a: Payload = Payload { key: 1, wide: 18446744073709551615, cells: [-7, 42], flag: core::option::Some(false) };
+    let b: Payload = Payload { key: 2, wide: 4294967297, cells: [19, 23], flag: core::option::Some(true) };
+    let records: [Payload; 2] = [a, b];
+    let vector: core::vec::Vec<Payload, 2> = core::vec::from_array<Payload, 2>(records);
+    let first: core::option::Option<Payload> = fixed_first<Payload, 2>(vector.borrow());
+    let found: Payload = core::option::unwrap(first);
+    assert(found.wide == 18446744073709551615 && found.cells[0] == -7 && !core::option::unwrap(found.flag));
+    let described: core::iter::Advance = fixed_views<Payload, 2>(vector.borrow()); assert(described.advanced == 3 && described.exhausted);
+    let view: core::slice::View<Payload> = core::vec::as_view<Payload, 2>(vector.borrow());
+    let windows: core::slice::Windows<Payload> = core::result::unwrap(view.windows(2));
+    let mapper: Describe<Payload> = Describe { calls: 0 };
+    let ends: Ends<Payload> = describe_first<core::slice::Windows<Payload>, Payload>(windows.borrow(), mapper.borrow());
+    let tail: Payload = core::option::unwrap(ends.last); assert(tail.key == 2 && tail.wide == 4294967297 && tail.cells[1] == 23 && core::option::unwrap(tail.flag));
+    let distinct: core::set::Set<Payload, 2> = core::set::from_storage<Payload, 2>(records);
+    let inserted: core::result::Result<bool, core::set::Error> = core::set::try_insert<Payload, 2>(distinct.borrow(), b); assert(core::result::unwrap(inserted));
+    let representative: core::option::Option<Payload> = fixed_set_first<Payload, 2>(distinct.borrow());
+    let stored: Payload = core::option::unwrap(representative); assert(stored.wide == 4294967297 && stored.cells[0] == 19);
+
+    let units: [Unit; 3] = [Unit {}, Unit {}, Unit {}];
+    let unit_vector: core::vec::Vec<Unit, 3> = core::vec::from_array<Unit, 3>(units);
+    let unit_first: core::option::Option<Unit> = fixed_first<Unit, 3>(unit_vector.borrow()); assert(core::option::is_some(unit_first));
+    let unit_views: core::iter::Advance = fixed_views<Unit, 3>(unit_vector.borrow()); assert(unit_views.advanced == 5 && unit_views.exhausted);
+    let unit_view: core::slice::View<Unit> = core::vec::as_view<Unit, 3>(unit_vector.borrow());
+    let unit_chunks: core::slice::Chunks<Unit> = core::result::unwrap(unit_view.chunks(2));
+    let unit_mapper: Describe<Unit> = Describe { calls: 0 };
+    let unit_ends: Ends<Unit> = describe_first<core::slice::Chunks<Unit>, Unit>(unit_chunks.borrow(), unit_mapper.borrow());
+    assert(unit_ends.length == 2 && core::option::is_some(unit_ends.first) && core::option::is_some(unit_ends.last));
+    let no_units: [Unit; 0] = [];
+    let empty: core::vec::Vec<Unit, 0> = core::vec::from_array<Unit, 0>(no_units);
+    let empty_first: core::option::Option<Unit> = fixed_first<Unit, 0>(empty.borrow()); assert(core::option::is_none(empty_first));
+    let empty_views: core::iter::Advance = fixed_views<Unit, 0>(empty.borrow()); assert(empty_views.advanced == 0 && empty_views.exhausted);
+    let empty_set: core::set::Set<Unit, 0> = core::set::from_storage<Unit, 0>(no_units);
+    let empty_key: core::option::Option<Unit> = fixed_set_first<Unit, 0>(empty_set.borrow()); assert(core::option::is_none(empty_key));
+}
+fn main() -> i32 { cursors_and_live_views(); compounds_and_fixed_containers(); return 0; }

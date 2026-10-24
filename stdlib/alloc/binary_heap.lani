@@ -3,6 +3,7 @@
 // must define a consistent order that cannot change while values are stored.
 module alloc::binary_heap;
 import core::cmp;
+import core::iter;
 import core::mem;
 import core::option;
 import core::result;
@@ -90,6 +91,12 @@ pub impl<T> BinaryHeap<T> {
     pub fn as_view(&self) -> core::slice::View<T> {
         // The owner already establishes the initialized count and backing.
         return core::slice::View { values: std::vec::as_slice(self.items), start: 0, length: self.len() };
+    }
+    // Borrow initialized entries in unspecified heap order. Keep the owner
+    // and priority-relevant nested state unchanged until this cursor is done.
+    pub fn iter(&self) -> core::slice::Iter<T> {
+        let view: core::slice::View<T> = self.as_view();
+        return view.iter();
     }
     pub fn peek(&self) -> core::option::Option<T> { return std::vec::first(self.items); }
 

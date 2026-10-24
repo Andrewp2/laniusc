@@ -86,15 +86,12 @@ pub impl<T> View<T> {
     }
 }
 
-// Inherent cursors are fused and can be copied to fork their positions.
+// Cursors are fused and can be copied to fork their positions. Forward next
+// implements core::iter::Iterator in core::iter; import that module to use it.
 // next/next_back read current backing values, not a snapshot of the elements.
 pub impl<T> Iter<T> {
+    pub fn borrow(&self) -> &Iter<T> { return self; }
     pub fn remaining(&self) -> i32 { return self.back - self.front; }
-    pub fn next(&self) -> core::option::Option<T> {
-        if (self.front == self.back) { return core::option::None(); }
-        let value: T = self.values[self.front]; self.front += 1;
-        return core::option::Some(value);
-    }
     pub fn next_back(&self) -> core::option::Option<T> {
         if (self.front == self.back) { return core::option::None(); }
         self.back -= 1; return core::option::Some(self.values[self.back]);
@@ -115,30 +112,20 @@ pub impl<T> Iter<T> {
     }
 }
 pub impl<T> Chunks<T> {
+    pub fn borrow(&self) -> &Chunks<T> { return self; }
     pub fn remaining(&self) -> i32 {
         let count: i32 = self.end - self.position;
         let full: i32 = count / self.width;
         if (count % self.width != 0) { full += 1; }
         return full;
     }
-    pub fn next(&self) -> core::option::Option<View<T>> {
-        if (self.position == self.end) { return core::option::None(); }
-        let count: i32 = self.end - self.position;
-        if (count > self.width) { count = self.width; }
-        let result: View<T> = View { values: self.values, start: self.position, length: count };
-        self.position += count; return core::option::Some(result);
-    }
 }
 pub impl<T> Windows<T> {
+    pub fn borrow(&self) -> &Windows<T> { return self; }
     pub fn remaining(&self) -> i32 {
         let count: i32 = self.end - self.position;
         if (count < self.width) { return 0; }
         return count - self.width + 1;
-    }
-    pub fn next(&self) -> core::option::Option<View<T>> {
-        if (self.end - self.position < self.width) { return core::option::None(); }
-        let result: View<T> = View { values: self.values, start: self.position, length: self.width };
-        self.position += 1; return core::option::Some(result);
     }
 }
 

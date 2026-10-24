@@ -60,14 +60,14 @@ fn main() -> i32 {
             let end: i32 = e as i32;
             assert(end >= -2 && end <= 4);
             let view: core::slice::View<i32> = core::result::unwrap(core::slice::view_range<i32>(backing, a as i32, (b - a) as i32));
-            let source: core::iter::SliceIter<i32> = core::result::unwrap(core::iter::from_view<i32>(view));
-            let left: core::iter::Take<core::iter::SliceIter<i32>, i32> = core::iter::take<core::iter::SliceIter<i32>, i32>(source.borrow(), c);
+            let source: core::slice::Iter<i32> = core::result::unwrap(core::iter::from_view<i32>(view));
+            let left: core::iter::Take<core::slice::Iter<i32>, i32> = core::iter::take<core::slice::Iter<i32>, i32>(source.borrow(), c);
             let bounds: core::range::Range<i32> = core::range::range<i32>(-2, end);
             let right: core::iter::RangeI32 = core::iter::range_i32(bounds);
-            let joined: core::iter::Chain<core::iter::Take<core::iter::SliceIter<i32>, i32>, core::iter::RangeI32, i32> =
-                core::iter::chain<core::iter::Take<core::iter::SliceIter<i32>, i32>, core::iter::RangeI32, i32>(left.borrow(), right.borrow());
-            let picked: core::iter::Take<core::iter::Chain<core::iter::Take<core::iter::SliceIter<i32>, i32>, core::iter::RangeI32, i32>, i32> =
-                core::iter::take<core::iter::Chain<core::iter::Take<core::iter::SliceIter<i32>, i32>, core::iter::RangeI32, i32>, i32>(joined.borrow(), d);
+            let joined: core::iter::Chain<core::iter::Take<core::slice::Iter<i32>, i32>, core::iter::RangeI32, i32> =
+                core::iter::chain<core::iter::Take<core::slice::Iter<i32>, i32>, core::iter::RangeI32, i32>(left.borrow(), right.borrow());
+            let picked: core::iter::Take<core::iter::Chain<core::iter::Take<core::slice::Iter<i32>, i32>, core::iter::RangeI32, i32>, i32> =
+                core::iter::take<core::iter::Chain<core::iter::Take<core::slice::Iter<i32>, i32>, core::iter::RangeI32, i32>, i32>(joined.borrow(), d);
             let saved: [i32; 16] = [0; 16];
             let length: i32 = 0;
             let value: core::option::Option<i32> = picked.next();
@@ -82,9 +82,9 @@ fn main() -> i32 {
             word(source.remaining() as u64); word(left.remaining_limit()); word(right.remaining()); word(picked.remaining_limit());
         } else { if (op == 1) {
             assert(a <= 10 && b <= 32);
-            let source: core::iter::SliceIter<i32> = core::result::unwrap(core::iter::from_slice<i32>(backing, a as i32));
-            let first: core::iter::Take<core::iter::SliceIter<i32>, i32> = core::iter::take<core::iter::SliceIter<i32>, i32>(source.borrow(), c);
-            let second: core::iter::Take<core::iter::SliceIter<i32>, i32> = first;
+            let source: core::slice::Iter<i32> = core::result::unwrap(core::iter::from_slice<i32>(backing, a as i32));
+            let first: core::iter::Take<core::slice::Iter<i32>, i32> = core::iter::take<core::slice::Iter<i32>, i32>(source.borrow(), c);
+            let second: core::iter::Take<core::slice::Iter<i32>, i32> = first;
             word(b);
             let index: i32 = 0;
             while (index < (b as i32)) {

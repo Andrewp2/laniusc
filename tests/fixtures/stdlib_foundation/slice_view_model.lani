@@ -2,6 +2,7 @@
 // Replies include status/value/length, all backing elements, mixed-end cursor
 // values, then chunks and windows using c as their width. Rust owns the model.
 module app::main;
+import core::iter;
 import alloc::io;
 import core::option;
 import core::result;

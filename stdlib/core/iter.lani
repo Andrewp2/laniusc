@@ -25,9 +25,6 @@ pub trait Mapper<T, U> {
     pub fn apply(&self, value: T) -> U;
 }
 
-// Delegate indexing and native-stride handling to the existing slice cursor.
-// Construct through from_slice/from_view; preserve the cursor's invariants.
-pub struct SliceIter<T> { cursor: core::slice::Iter<T> }
 pub struct RangeI32 { position: i64, end: i64 }
 pub struct Take<I, T> { source: &I, remaining: u64, done: bool }
 pub struct Chain<A, B, T> { left: &A, right: &B, in_right: bool, done: bool }
@@ -38,7 +35,7 @@ pub struct Advance { advanced: u64, exhausted: bool }
 
 // Check logical metadata only. values must physically back count elements.
 pub fn from_slice<T>(values: [T], count: i32)
-    -> core::result::Result<SliceIter<T>, core::slice::ViewError> {
+    -> core::result::Result<core::slice::Iter<T>, core::slice::ViewError> {
     let view: core::slice::View<T> = core::slice::View { values: values, start: 0, length: count };
     return from_view<T>(view);
 }
@@ -46,12 +43,12 @@ pub fn from_slice<T>(values: [T], count: i32)
 // Public View fields can be forged, so recheck their integer invariants before
 // constructing a cursor. This neither reads elements nor proves physical bounds.
 pub fn from_view<T>(view: core::slice::View<T>)
-    -> core::result::Result<SliceIter<T>, core::slice::ViewError> {
+    -> core::result::Result<core::slice::Iter<T>, core::slice::ViewError> {
     if (view.start < 0 || view.length < 0 || view.start > 2147483647 - view.length) {
         return core::result::Err(core::slice::ViewError::Bounds);
     }
     let cursor: core::slice::Iter<T> = view.iter();
-    return core::result::Ok(SliceIter { cursor: cursor });
+    return core::result::Ok(cursor);
 }
 
 // Capture finite ascending unit-step bounds; reversed bounds are empty.
@@ -120,15 +117,31 @@ pub fn advance_up_to<I, T>(source: &I, limit: u64) -> Advance where I: Iterator<
     return Advance { advanced: advanced, exhausted: false };
 }
 
-pub impl<T> SliceIter<T> {
-    pub fn borrow(&self) -> &SliceIter<T> { return self; }
-    pub fn remaining(&self) -> i32 { return self.cursor.remaining(); }
+// Forward slice cursor bodies retain native descriptors, stride and bounds.
+// Keeping these impls here avoids a core::slice -> core::iter import cycle.
+pub impl<T> Iterator<T> for core::slice::Iter<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.front == self.back) { return core::option::None(); }
+        let value: T = self.values[self.front]; self.front += 1;
+        return core::option::Some(value);
+    }
 }
 
-pub impl<T> Iterator<T> for SliceIter<T> {
-    pub fn next(&self) -> core::option::Option<T> {
-        let item: core::option::Option<T> = self.cursor.next();
-        return item;
+pub impl<T> Iterator<core::slice::View<T>> for core::slice::Chunks<T> {
+    pub fn next(&self) -> core::option::Option<core::slice::View<T>> {
+        if (self.position == self.end) { return core::option::None(); }
+        let count: i32 = self.end - self.position;
+        if (count > self.width) { count = self.width; }
+        let result: core::slice::View<T> = core::slice::View { values: self.values, start: self.position, length: count };
+        self.position += count; return core::option::Some(result);
+    }
+}
+
+pub impl<T> Iterator<core::slice::View<T>> for core::slice::Windows<T> {
+    pub fn next(&self) -> core::option::Option<core::slice::View<T>> {
+        if (self.end - self.position < self.width) { return core::option::None(); }
+        let result: core::slice::View<T> = core::slice::View { values: self.values, start: self.position, length: self.width };
+        self.position += 1; return core::option::Some(result);
     }
 }
 

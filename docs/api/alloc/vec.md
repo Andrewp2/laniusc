@@ -12,6 +12,7 @@ Layer: `alloc`. Role: module. Profile: **Source inventory**.
 
 - [stdlib-vec](../../stdlib-vec.md)
 - [stdlib-collection-iterators](../../stdlib-collection-iterators.md)
+- [stdlib-cursor-integration](../../stdlib-cursor-integration.md)
 
 Declaration counts: constant: 1; enum: 1; field: 3; function: 3; impl: 1; method: 34; struct: 1; variant: 4.
 
@@ -203,7 +204,7 @@ pub fn as_view(&self) -> core::slice::View<T>
 [Source line 53](../../../stdlib/alloc/vec.lani#L53)
 
 ```lanius
-pub fn iter(&self) -> core::iter::SliceIter<T>
+pub fn iter(&self) -> core::slice::Iter<T>
 ```
 
 #### method: get

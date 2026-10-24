@@ -17,13 +17,13 @@ fn check_text(text: core::text::Text) {
     let expected_bytes: [u8; 10] = [65, 194, 162, 226, 130, 172, 240, 144, 141, 136];
     let values: [u32; 4] = [65, 162, 8364, 66376];
     let offsets: [i32; 4] = [0, 1, 3, 6];
-    let bytes: core::iter::SliceIter<u8> = text.iter_bytes();
-    let byte_fork: core::iter::SliceIter<u8> = bytes;
-    let first_byte: core::option::Option<u8> = pull<core::iter::SliceIter<u8>, u8>(bytes.borrow());
+    let bytes: core::slice::Iter<u8> = text.iter_bytes();
+    let byte_fork: core::slice::Iter<u8> = bytes;
+    let first_byte: core::option::Option<u8> = pull<core::slice::Iter<u8>, u8>(bytes.borrow());
     assert(core::option::unwrap(first_byte) == 65 && bytes.remaining() == 9 && byte_fork.remaining() == 10);
-    let byte_rest: core::iter::Advance = core::iter::advance_up_to<core::iter::SliceIter<u8>, u8>(bytes.borrow(), 16);
+    let byte_rest: core::iter::Advance = core::iter::advance_up_to<core::slice::Iter<u8>, u8>(bytes.borrow(), 16);
     assert(byte_rest.advanced == 9 && byte_rest.exhausted);
-    let byte_prefix: core::iter::Take<core::iter::SliceIter<u8>, u8> = core::iter::take<core::iter::SliceIter<u8>, u8>(byte_fork.borrow(), 12);
+    let byte_prefix: core::iter::Take<core::slice::Iter<u8>, u8> = core::iter::take<core::slice::Iter<u8>, u8>(byte_fork.borrow(), 12);
     let index: i32 = 0;
     let byte: core::option::Option<u8> = byte_prefix.next();
     while (core::option::is_some(byte)) {
@@ -73,13 +73,13 @@ fn main() -> i32 {
     let suffix_first: core::option::Option<core::text::Scalar> = pull<core::text::Scalars, core::text::Scalar>(suffix_scalars.borrow());
     let relative: core::text::Scalar = core::option::unwrap(suffix_first);
     assert(relative.byte_index == 0 && relative.value == 8364);
-    let suffix_bytes: core::iter::SliceIter<u8> = suffix.iter_bytes();
-    let suffix_byte: core::option::Option<u8> = pull<core::iter::SliceIter<u8>, u8>(suffix_bytes.borrow());
+    let suffix_bytes: core::slice::Iter<u8> = suffix.iter_bytes();
+    let suffix_byte: core::option::Option<u8> = pull<core::slice::Iter<u8>, u8>(suffix_bytes.borrow());
     assert(core::option::unwrap(suffix_byte) == 226 && suffix_bytes.remaining() == 6);
     let empty: core::text::Text = core::result::unwrap(whole.slice(10, 10));
-    let empty_bytes: core::iter::SliceIter<u8> = empty.iter_bytes();
+    let empty_bytes: core::slice::Iter<u8> = empty.iter_bytes();
     let empty_scalars: core::text::Scalars = empty.scalars();
-    let no_bytes: core::iter::Advance = core::iter::advance_up_to<core::iter::SliceIter<u8>, u8>(empty_bytes.borrow(), 1);
+    let no_bytes: core::iter::Advance = core::iter::advance_up_to<core::slice::Iter<u8>, u8>(empty_bytes.borrow(), 1);
     let no_scalars: core::iter::Advance = core::iter::advance_up_to<core::text::Scalars, core::text::Scalar>(empty_scalars.borrow(), 1);
     assert(no_bytes.advanced == 0 && no_bytes.exhausted && no_scalars.advanced == 0 && no_scalars.exhausted);
 

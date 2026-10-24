@@ -3,6 +3,7 @@ module app::main;
 import alloc::string;
 import alloc::vec;
 import core::iter;
+import core::slice;
 import core::option;
 import core::result;
 import core::text;
@@ -19,15 +20,15 @@ fn main() -> i32 {
         let added: core::result::Result<i32, alloc::vec::Error> = aliases.try_push(owner);
         assert(core::result::is_ok(added)); index += 1;
     }
-    let source: core::iter::SliceIter<alloc::string::String> = aliases.iter();
-    let fork: core::iter::SliceIter<alloc::string::String> = source;
-    let selected: core::iter::Take<core::iter::SliceIter<alloc::string::String>, alloc::string::String> =
-        core::iter::take<core::iter::SliceIter<alloc::string::String>, alloc::string::String>(source.borrow(), 1);
-    let picked: core::option::Option<alloc::string::String> = pull<core::iter::Take<core::iter::SliceIter<alloc::string::String>, alloc::string::String>, alloc::string::String>(selected.borrow());
+    let source: core::slice::Iter<alloc::string::String> = aliases.iter();
+    let fork: core::slice::Iter<alloc::string::String> = source;
+    let selected: core::iter::Take<core::slice::Iter<alloc::string::String>, alloc::string::String> =
+        core::iter::take<core::slice::Iter<alloc::string::String>, alloc::string::String>(source.borrow(), 1);
+    let picked: core::option::Option<alloc::string::String> = pull<core::iter::Take<core::slice::Iter<alloc::string::String>, alloc::string::String>, alloc::string::String>(selected.borrow());
     let borrowed: alloc::string::String = core::option::unwrap(picked);
-    let skipped: core::iter::Advance = core::iter::advance_up_to<core::iter::SliceIter<alloc::string::String>, alloc::string::String>(source.borrow(), 8);
+    let skipped: core::iter::Advance = core::iter::advance_up_to<core::slice::Iter<alloc::string::String>, alloc::string::String>(source.borrow(), 8);
     assert(skipped.advanced == 2 && skipped.exhausted && source.remaining() == 0 && fork.remaining() == 3);
-    let forked: core::option::Option<alloc::string::String> = pull<core::iter::SliceIter<alloc::string::String>, alloc::string::String>(fork.borrow());
+    let forked: core::option::Option<alloc::string::String> = pull<core::slice::Iter<alloc::string::String>, alloc::string::String>(fork.borrow());
     let alias: alloc::string::String = core::option::unwrap(forked);
     assert(owner.byte_len() == 4 && borrowed.byte_len() == 4 && alias.byte_len() == 4);
     let text: core::text::Text = borrowed.as_text();
@@ -43,8 +44,8 @@ fn main() -> i32 {
     assert(counted.advanced == 3 && counted.exhausted && owner.byte_len() == 4);
     owner.destroy();
     let empty: alloc::vec::Vec<i32> = alloc::vec::new();
-    let empty_cursor: core::iter::SliceIter<i32> = empty.iter();
-    let empty_result: core::iter::Advance = core::iter::advance_up_to<core::iter::SliceIter<i32>, i32>(empty_cursor.borrow(), 1);
+    let empty_cursor: core::slice::Iter<i32> = empty.iter();
+    let empty_result: core::iter::Advance = core::iter::advance_up_to<core::slice::Iter<i32>, i32>(empty_cursor.borrow(), 1);
     assert(empty_result.advanced == 0 && empty_result.exhausted);
     empty.destroy();
     return 0;

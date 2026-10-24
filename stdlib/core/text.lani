@@ -171,9 +171,9 @@ pub impl Text {
         return self.part(start, end);
     }
     // Text construction establishes the range; preserve its native byte stride.
-    pub fn iter_bytes(&self) -> core::iter::SliceIter<u8> {
+    pub fn iter_bytes(&self) -> core::slice::Iter<u8> {
         let view: core::slice::View<u8> = core::slice::View { values: self.bytes, start: self.start, length: self.length };
-        return core::iter::SliceIter { cursor: view.iter() };
+        return view.iter();
     }
     pub fn scalars(&self) -> Scalars { return Scalars { text: self.part(0, self.length), position: 0 }; }
     // Nonoverlapping separators; retain leading, interior and trailing empty
@@ -219,6 +219,10 @@ pub impl Text {
 }
 
 pub impl SplitAsciiWhitespace {
+    pub fn borrow(&self) -> &SplitAsciiWhitespace { return self; }
+}
+
+pub impl core::iter::Iterator<Text> for SplitAsciiWhitespace {
     pub fn next(&self) -> core::option::Option<Text> {
         while (self.position < self.text.length && core::u8::is_ascii_whitespace(self.text.bytes[self.text.start + self.position])) {
             self.position += 1;
@@ -247,6 +251,10 @@ pub impl core::iter::Iterator<Scalar> for Scalars {
 }
 
 pub impl Split {
+    pub fn borrow(&self) -> &Split { return self; }
+}
+
+pub impl core::iter::Iterator<Text> for Split {
     pub fn next(&self) -> core::option::Option<Text> {
         if (self.done) { return core::option::None(); }
         let length: i32 = self.text.byte_len();

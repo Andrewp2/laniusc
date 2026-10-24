@@ -1,0 +1,124 @@
+// Records: op/layout/quota/text-length/separator-length, then UTF-8 payloads.
+// Output: Take fields, one source field, mapped remaining lengths/call count,
+// then every field from an independent copied leaf cursor.
+module app::main;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import core::text;
+import std::stream;
+
+struct ByteCount { calls: u64 }
+impl ByteCount { fn borrow(&self) -> &ByteCount { return self; } }
+pub impl core::iter::Mapper<core::text::Text, i32> for ByteCount {
+    pub fn apply(&self, value: core::text::Text) -> i32 {
+        self.calls += 1;
+        return value.byte_len();
+    }
+}
+fn pull<I, T>(source: &I) -> core::option::Option<T> where I: core::iter::Iterator<T> {
+    let item: core::option::Option<T> = source.next();
+    return item;
+}
+fn write(bytes: [u8], start: i32, length: i32) {
+    let output: std::stream::Descriptor = std::stream::stdout();
+    let sent: core::result::Result<i32, core::io::Failure> = core::io::write_all(output.borrow(), bytes, start, length);
+    assert(core::result::is_ok(sent));
+}
+fn word(value: u64) {
+    let bytes: [u8; 8] = [0; 8];
+    let index: i32 = 0;
+    while (index < 8) { bytes[index] = ((value >> (index * 8)) & 255) as u8; index += 1; }
+    write(bytes, 0, 8);
+}
+fn item(value: core::option::Option<core::text::Text>) {
+    let header: [u8; 9] = [0; 9];
+    if (core::option::is_none(value)) { write(header, 0, 1); return; }
+    let field: core::text::Text = core::option::unwrap(value);
+    header[0] = 1;
+    let length: u64 = field.byte_len() as u64;
+    let index: i32 = 0;
+    while (index < 8) { header[index + 1] = ((length >> (index * 8)) & 255) as u8; index += 1; }
+    write(header, 0, 9);
+    write(field.bytes, field.start, field.byte_len());
+}
+fn drain<I>(source: &I) where I: core::iter::Iterator<core::text::Text> {
+    let count: i32 = 0;
+    while (true) {
+        let next: core::option::Option<core::text::Text> = pull<I, core::text::Text>(source);
+        item(next);
+        if (core::option::is_none(next)) { return; }
+        count += 1; assert(count <= 194);
+    }
+}
+fn exercise<I>(source: &I, fork: &I, quota: u64) where I: core::iter::Iterator<core::text::Text> {
+    let selected: core::iter::Take<I, core::text::Text> = core::iter::take<I, core::text::Text>(source, quota);
+    drain<core::iter::Take<I, core::text::Text>>(selected.borrow());
+    let repeated: core::option::Option<core::text::Text> = selected.next();
+    assert(core::option::is_none(repeated));
+    let direct: core::option::Option<core::text::Text> = pull<I, core::text::Text>(source);
+    item(direct);
+    let mapper: ByteCount = ByteCount { calls: 0 };
+    let mapped: core::iter::Map<I, ByteCount, core::text::Text, i32> =
+        core::iter::map<I, ByteCount, core::text::Text, i32>(source, mapper.borrow());
+    let count: i32 = 0;
+    while (true) {
+        let next: core::option::Option<i32> = pull<core::iter::Map<I, ByteCount, core::text::Text, i32>, i32>(mapped.borrow());
+        if (core::option::is_none(next)) { word(0); break; }
+        word((core::option::unwrap(next) as u64) + 1);
+        count += 1; assert(count <= 194);
+    }
+    let map_end: core::option::Option<i32> = mapped.next();
+    let source_end: core::option::Option<core::text::Text> = source.next();
+    assert(core::option::is_none(map_end) && core::option::is_none(source_end));
+    assert(mapper.calls == (count as u64));
+    word(mapper.calls);
+    drain<I>(fork);
+    let fork_end: core::option::Option<core::text::Text> = fork.next();
+    assert(core::option::is_none(fork_end));
+}
+fn evaluate(bytes: [u8], length: i32, pattern: [u8], pattern_length: i32, op: u8, quota: u64) {
+    let text: core::text::Text = core::result::unwrap(core::text::from_utf8_range(bytes, 3, length));
+    let separator: core::text::Text = core::result::unwrap(core::text::from_utf8_range(pattern, 2, pattern_length));
+    if (op == 0) {
+        let source: core::text::Split = text.split(separator);
+        let fork: core::text::Split = source;
+        exercise<core::text::Split>(source.borrow(), fork.borrow(), quota);
+    } else {
+        let source: core::text::SplitAsciiWhitespace = text.split_ascii_whitespace();
+        let fork: core::text::SplitAsciiWhitespace = source;
+        exercise<core::text::SplitAsciiWhitespace>(source.borrow(), fork.borrow(), quota);
+    }
+}
+fn main() -> i32 {
+    let input: std::stream::Descriptor = std::stream::stdin();
+    let header: [u8; 5] = [0; 5];
+    while (true) {
+        let first: core::result::Result<i32, core::io::Error> = input.read(header, 0, 5);
+        assert(core::result::is_ok(first));
+        let received: i32 = core::result::unwrap(first);
+        if (received == 0) { return 0; }
+        if (received < 5) { assert(core::result::is_ok(core::io::read_exact(input.borrow(), header, received, 5 - received))); }
+        let op: u8 = header[0]; let layout: u8 = header[1]; let quota: u64 = header[2] as u64;
+        let length: i32 = header[3] as i32; let pattern_length: i32 = header[4] as i32;
+        assert(op <= 1 && layout <= 1 && length <= 192 && pattern_length <= 16);
+        let bytes: [u8; 200] = [255; 200]; let pattern: [u8; 20] = [255; 20];
+        assert(core::result::is_ok(core::io::read_exact(input.borrow(), bytes, 3, length)));
+        assert(core::result::is_ok(core::io::read_exact(input.borrow(), pattern, 2, pattern_length)));
+        if (layout == 0) { evaluate(bytes, length, pattern, pattern_length, op, quota); }
+        else {
+            let raw_bytes: [i32; 50] = [0; 50]; let raw_pattern: [i32; 5] = [0; 5];
+            let packed: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(raw_bytes), 200);
+            let separator: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(raw_pattern), 20);
+            let index: i32 = 0;
+            while (index < 200) { packed[index] = bytes[index]; index += 1; }
+            index = 0; while (index < 20) { separator[index] = pattern[index]; index += 1; }
+            evaluate(packed, length, separator, pattern_length, op, quota);
+            assert(packed[0] == 255 && packed[199] == 255 && separator[0] == 255 && separator[19] == 255);
+        }
+        assert(bytes[0] == 255 && bytes[199] == 255 && pattern[0] == 255 && pattern[19] == 255);
+    }
+    return 0;
+}

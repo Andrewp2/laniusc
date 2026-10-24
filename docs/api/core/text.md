@@ -13,8 +13,10 @@ Layer: `core`. Role: module. Profile: **Source inventory**.
 - [stdlib-text](../../stdlib-text.md)
 - [stdlib-text-composition](../../stdlib-text-composition.md)
 - [stdlib-collection-iterators](../../stdlib-collection-iterators.md)
+- [stdlib-cursor-integration](../../stdlib-cursor-integration.md)
+- [stdlib-text-split-iterators](../../stdlib-text-split-iterators.md)
 
-Declaration counts: enum: 1; field: 14; function: 3; impl: 10; method: 46; struct: 5; variant: 3.
+Declaration counts: enum: 1; field: 14; function: 3; impl: 12; method: 48; struct: 5; variant: 3.
 
 ## Declared imports
 
@@ -371,7 +373,7 @@ pub fn trim_ascii(&self) -> Text
 [Source line 174](../../../stdlib/core/text.lani#L174)
 
 ```lanius
-pub fn iter_bytes(&self) -> core::iter::SliceIter<u8>
+pub fn iter_bytes(&self) -> core::slice::Iter<u8>
 ```
 
 #### method: scalars
@@ -486,28 +488,28 @@ pub fn parse_isize(&self) -> core::result::Result<isize, core::decimal::ParseErr
 pub impl SplitAsciiWhitespace
 ```
 
-#### method: next
+#### method: borrow
 
 [Source line 222](../../../stdlib/core/text.lani#L222)
 
 ```lanius
+pub fn borrow(&self) -> &SplitAsciiWhitespace
+```
+
+### impl at line 225
+
+[Source line 225](../../../stdlib/core/text.lani#L225)
+
+```lanius
+pub impl core::iter::Iterator<Text> for SplitAsciiWhitespace
+```
+
+#### method: next
+
+[Source line 226](../../../stdlib/core/text.lani#L226)
+
+```lanius
 pub fn next(&self) -> core::option::Option<Text>
-```
-
-### impl at line 235
-
-[Source line 235](../../../stdlib/core/text.lani#L235)
-
-```lanius
-pub impl Scalars
-```
-
-#### method: borrow
-
-[Source line 236](../../../stdlib/core/text.lani#L236)
-
-```lanius
-pub fn borrow(&self) -> &Scalars
 ```
 
 ### impl at line 239
@@ -515,36 +517,68 @@ pub fn borrow(&self) -> &Scalars
 [Source line 239](../../../stdlib/core/text.lani#L239)
 
 ```lanius
+pub impl Scalars
+```
+
+#### method: borrow
+
+[Source line 240](../../../stdlib/core/text.lani#L240)
+
+```lanius
+pub fn borrow(&self) -> &Scalars
+```
+
+### impl at line 243
+
+[Source line 243](../../../stdlib/core/text.lani#L243)
+
+```lanius
 pub impl core::iter::Iterator<Scalar> for Scalars
 ```
 
 #### method: next
 
-[Source line 240](../../../stdlib/core/text.lani#L240)
+[Source line 244](../../../stdlib/core/text.lani#L244)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<Scalar>
 ```
 
-### impl at line 249
+### impl at line 253
 
-[Source line 249](../../../stdlib/core/text.lani#L249)
+[Source line 253](../../../stdlib/core/text.lani#L253)
 
 ```lanius
 pub impl Split
 ```
 
+#### method: borrow
+
+[Source line 254](../../../stdlib/core/text.lani#L254)
+
+```lanius
+pub fn borrow(&self) -> &Split
+```
+
+### impl at line 257
+
+[Source line 257](../../../stdlib/core/text.lani#L257)
+
+```lanius
+pub impl core::iter::Iterator<Text> for Split
+```
+
 #### method: next
 
-[Source line 250](../../../stdlib/core/text.lani#L250)
+[Source line 258](../../../stdlib/core/text.lani#L258)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<Text>
 ```
 
-### impl at line 276
+### impl at line 284
 
-[Source line 276](../../../stdlib/core/text.lani#L276)
+[Source line 284](../../../stdlib/core/text.lani#L284)
 
 ```lanius
 pub impl core::cmp::Eq<Text> for Text
@@ -552,7 +586,7 @@ pub impl core::cmp::Eq<Text> for Text
 
 #### method: eq
 
-[Source line 277](../../../stdlib/core/text.lani#L277)
+[Source line 285](../../../stdlib/core/text.lani#L285)
 
 ```lanius
 pub fn eq(left: Text, right: Text) -> bool
@@ -560,15 +594,15 @@ pub fn eq(left: Text, right: Text) -> bool
 
 #### method: ne
 
-[Source line 278](../../../stdlib/core/text.lani#L278)
+[Source line 286](../../../stdlib/core/text.lani#L286)
 
 ```lanius
 pub fn ne(left: Text, right: Text) -> bool
 ```
 
-### impl at line 280
+### impl at line 288
 
-[Source line 280](../../../stdlib/core/text.lani#L280)
+[Source line 288](../../../stdlib/core/text.lani#L288)
 
 ```lanius
 pub impl core::cmp::Ord<Text> for Text
@@ -576,7 +610,7 @@ pub impl core::cmp::Ord<Text> for Text
 
 #### method: lt
 
-[Source line 281](../../../stdlib/core/text.lani#L281)
+[Source line 289](../../../stdlib/core/text.lani#L289)
 
 ```lanius
 pub fn lt(left: Text, right: Text) -> bool
@@ -584,7 +618,7 @@ pub fn lt(left: Text, right: Text) -> bool
 
 #### method: le
 
-[Source line 282](../../../stdlib/core/text.lani#L282)
+[Source line 290](../../../stdlib/core/text.lani#L290)
 
 ```lanius
 pub fn le(left: Text, right: Text) -> bool
@@ -592,7 +626,7 @@ pub fn le(left: Text, right: Text) -> bool
 
 #### method: gt
 
-[Source line 283](../../../stdlib/core/text.lani#L283)
+[Source line 291](../../../stdlib/core/text.lani#L291)
 
 ```lanius
 pub fn gt(left: Text, right: Text) -> bool
@@ -600,15 +634,15 @@ pub fn gt(left: Text, right: Text) -> bool
 
 #### method: ge
 
-[Source line 284](../../../stdlib/core/text.lani#L284)
+[Source line 292](../../../stdlib/core/text.lani#L292)
 
 ```lanius
 pub fn ge(left: Text, right: Text) -> bool
 ```
 
-### impl at line 286
+### impl at line 294
 
-[Source line 286](../../../stdlib/core/text.lani#L286)
+[Source line 294](../../../stdlib/core/text.lani#L294)
 
 ```lanius
 pub impl core::hash::Hash<Text> for Text
@@ -616,15 +650,15 @@ pub impl core::hash::Hash<Text> for Text
 
 #### method: hash
 
-[Source line 287](../../../stdlib/core/text.lani#L287)
+[Source line 295](../../../stdlib/core/text.lani#L295)
 
 ```lanius
 pub fn hash(value: Text) -> u32
 ```
 
-### impl at line 298
+### impl at line 306
 
-[Source line 298](../../../stdlib/core/text.lani#L298)
+[Source line 306](../../../stdlib/core/text.lani#L306)
 
 ```lanius
 pub impl core::cmp::PartialEq<Text> for Text
@@ -632,7 +666,7 @@ pub impl core::cmp::PartialEq<Text> for Text
 
 #### method: partial_eq
 
-[Source line 299](../../../stdlib/core/text.lani#L299)
+[Source line 307](../../../stdlib/core/text.lani#L307)
 
 ```lanius
 pub fn partial_eq(left: Text, right: Text) -> bool
@@ -640,15 +674,15 @@ pub fn partial_eq(left: Text, right: Text) -> bool
 
 #### method: partial_ne
 
-[Source line 300](../../../stdlib/core/text.lani#L300)
+[Source line 308](../../../stdlib/core/text.lani#L308)
 
 ```lanius
 pub fn partial_ne(left: Text, right: Text) -> bool
 ```
 
-### impl at line 303
+### impl at line 311
 
-[Source line 303](../../../stdlib/core/text.lani#L303)
+[Source line 311](../../../stdlib/core/text.lani#L311)
 
 ```lanius
 pub impl core::cmp::PartialOrd<Text> for Text
@@ -656,7 +690,7 @@ pub impl core::cmp::PartialOrd<Text> for Text
 
 #### method: partial_lt
 
-[Source line 304](../../../stdlib/core/text.lani#L304)
+[Source line 312](../../../stdlib/core/text.lani#L312)
 
 ```lanius
 pub fn partial_lt(left: Text, right: Text) -> bool
@@ -664,7 +698,7 @@ pub fn partial_lt(left: Text, right: Text) -> bool
 
 #### method: partial_le
 
-[Source line 305](../../../stdlib/core/text.lani#L305)
+[Source line 313](../../../stdlib/core/text.lani#L313)
 
 ```lanius
 pub fn partial_le(left: Text, right: Text) -> bool
@@ -672,7 +706,7 @@ pub fn partial_le(left: Text, right: Text) -> bool
 
 #### method: partial_gt
 
-[Source line 306](../../../stdlib/core/text.lani#L306)
+[Source line 314](../../../stdlib/core/text.lani#L314)
 
 ```lanius
 pub fn partial_gt(left: Text, right: Text) -> bool
@@ -680,7 +714,7 @@ pub fn partial_gt(left: Text, right: Text) -> bool
 
 #### method: partial_ge
 
-[Source line 307](../../../stdlib/core/text.lani#L307)
+[Source line 315](../../../stdlib/core/text.lani#L315)
 
 ```lanius
 pub fn partial_ge(left: Text, right: Text) -> bool
@@ -688,7 +722,7 @@ pub fn partial_ge(left: Text, right: Text) -> bool
 
 #### method: partial_cmp
 
-[Source line 308](../../../stdlib/core/text.lani#L308)
+[Source line 316](../../../stdlib/core/text.lani#L316)
 
 ```lanius
 pub fn partial_cmp(left: Text, right: Text) -> core::cmp::PartialOrdering

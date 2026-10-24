@@ -49,6 +49,10 @@ All entries below take a borrowed vector as their first argument. Reads return s
 | `lower_bound(item)`, `upper_bound(item)` | Sorted input required; return the first index at least / strictly greater than item, or length. |
 | `binary_search(item)` | Sorted input required; return the first equivalent index as `Option<i32>`. |
 
+Import `core::iter` to use this cursor's forward `next` method or shared generic
+adapters/consumers. [Canonical cursor integration](stdlib-cursor-integration.md)
+retains the existing factory signatures and symbolic `T,N` free functions.
+
 Sort is stable insertion sort, with `O(len²)` comparisons and constant extra storage. An empty vector is sorted, its bounds are zero, and its searches return `None`. Binary search equality is the equivalence induced by the lawful total order. Native floats need a lawful order wrapper such as `core::float_order`; their ordinary partial comparisons do not satisfy `Ord`.
 
 Every rejected vector mutation checks all logical preconditions before writing. It preserves length, contents, spare slots, and existing views. There is no allocation-failure branch because these operations do not allocate. Successful insert/remove shifts cost `O(len)`; push/pop and indexed reads/replacement are constant time.

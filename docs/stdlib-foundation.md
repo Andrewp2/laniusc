@@ -187,6 +187,19 @@ adds one compilation and 67 native cases, including million-pair inputs,
 positive/negative prefix overflow, cancellation witnesses and allocation/output
 failures. These additions require no compiler, runtime or ABI change.
 
+[Canonical cursor integration](stdlib-cursor-integration.md) removes the extra
+slice wrapper and uses `core::slice::Iter<T>` for checked factories, Vec and
+Text bytes. Raw chunk/window forward methods now implement the same protocol;
+backward traversal and metadata retain one shared cursor state. Current
+slice, ownership and physical-bounds gates pass with freshly built drivers.
+Two additional native gates check generic slice/fixed-capacity composition and
+126 independent chunk/window model commands through the shared adapters.
+[Text splits](stdlib-text-split-iterators.md) add two native executions with
+1,042 model records and an empty allocation trace. [Heap cursors](stdlib-heap-iterators.md)
+add two native executions covering 42 multiset/adapter cases, unconstrained
+empty heaps and exact shallow String cleanup. The existing window-report
+application passes 30 native cases after its protocol import migration.
+
 [Checked file lengths](stdlib-file-resize.md) execute shrink, zero extension,
 sparse lengths above 4 GiB and unchanged duplicated offsets, with explicit
 one-attempt failures. [Bounded regular-file copying](stdlib-file-copy.md) checks

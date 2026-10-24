@@ -37,12 +37,12 @@ fn main() -> i32 {
     if (core::result::is_ok(core::iter::from_view<i32>(invalid))) { return 2; }
     invalid.start = 2147483647; invalid.length = 1;
     if (core::result::is_ok(core::iter::from_view<i32>(invalid)) || core::result::is_ok(core::iter::from_slice<i32>(absent, -1))) { return 3; }
-    let empty: core::iter::SliceIter<i32> = core::result::unwrap(core::iter::from_slice<i32>(absent, 0));
+    let empty: core::slice::Iter<i32> = core::result::unwrap(core::iter::from_slice<i32>(absent, 0));
     let empty_value: core::option::Option<i32> = empty.next();
     if (empty.remaining() != 0 || core::option::is_some(empty_value)) { return 25; }
     let view: core::slice::View<i32> = core::result::unwrap(core::slice::view_range<i32>(cells, 1, 4));
-    let source: core::iter::SliceIter<i32> = core::result::unwrap(core::iter::from_view<i32>(view));
-    let fork: core::iter::SliceIter<i32> = source;
+    let source: core::slice::Iter<i32> = core::result::unwrap(core::iter::from_view<i32>(view));
+    let fork: core::slice::Iter<i32> = source;
     let first: core::option::Option<i32> = source.next();
     if (core::option::unwrap(first) != 2 || source.remaining() != 3 || fork.remaining() != 4) { return 4; }
     cells[2] = 33;
@@ -50,7 +50,7 @@ fn main() -> i32 {
     let fork_first: core::option::Option<i32> = fork.next();
     let fork_second: core::option::Option<i32> = fork.next();
     if (core::option::unwrap(second) != 33 || core::option::unwrap(fork_first) != 2 || core::option::unwrap(fork_second) != 33) { return 5; }
-    let exhausted: core::iter::Advance = core::iter::advance_up_to<core::iter::SliceIter<i32>, i32>(source.borrow(), 18446744073709551615);
+    let exhausted: core::iter::Advance = core::iter::advance_up_to<core::slice::Iter<i32>, i32>(source.borrow(), 18446744073709551615);
     if (exhausted.advanced != 2 || !exhausted.exhausted || source.remaining() != 0) { return 6; }
     let ended1: core::option::Option<i32> = source.next();
     let ended2: core::option::Option<i32> = source.next();
@@ -109,20 +109,20 @@ fn main() -> i32 {
     let pointer: ptr = core::mem::i32_array_data_ptr(storage);
     let packed: [u8] = core::mem::typed_slice_from_raw_parts<u8>(pointer, 8);
     packed[0] = 128; packed[1] = 255; packed[2] = 3;
-    let packed_iter: core::iter::SliceIter<u8> = core::result::unwrap(core::iter::from_slice<u8>(packed, 3));
+    let packed_iter: core::slice::Iter<u8> = core::result::unwrap(core::iter::from_slice<u8>(packed, 3));
     let p0: core::option::Option<u8> = packed_iter.next();
     let p1: core::option::Option<u8> = packed_iter.next();
     let p2: core::option::Option<u8> = packed_iter.next();
     if (core::option::unwrap(p0) != 128 || core::option::unwrap(p1) != 255 || core::option::unwrap(p2) != 3) { return 16; }
     let strided: [u8; 3] = [128, 255, 3];
-    let strided_iter: core::iter::SliceIter<u8> = core::result::unwrap(core::iter::from_slice<u8>(strided, 3));
+    let strided_iter: core::slice::Iter<u8> = core::result::unwrap(core::iter::from_slice<u8>(strided, 3));
     let s0: core::option::Option<u8> = strided_iter.next();
     let s1: core::option::Option<u8> = strided_iter.next();
     let s2: core::option::Option<u8> = strided_iter.next();
     if (core::option::unwrap(s0) != 128 || core::option::unwrap(s1) != 255 || core::option::unwrap(s2) != 3) { return 17; }
     let units: [Unit; 3] = [Unit {}, Unit {}, Unit {}];
-    let unit_iter: core::iter::SliceIter<Unit> = core::result::unwrap(core::iter::from_slice<Unit>(units, 3));
-    let unit_done: core::iter::Advance = core::iter::advance_up_to<core::iter::SliceIter<Unit>, Unit>(unit_iter.borrow(), 18446744073709551615);
+    let unit_iter: core::slice::Iter<Unit> = core::result::unwrap(core::iter::from_slice<Unit>(units, 3));
+    let unit_done: core::iter::Advance = core::iter::advance_up_to<core::slice::Iter<Unit>, Unit>(unit_iter.borrow(), 18446744073709551615);
     if (unit_done.advanced != 3 || !unit_done.exhausted) { return 18; }
 
     let full_bounds: core::range::RangeInclusive<i32> = core::range::range_inclusive<i32>(-2147483648, 2147483647);

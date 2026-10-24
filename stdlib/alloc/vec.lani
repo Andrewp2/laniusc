@@ -50,9 +50,9 @@ pub impl<T> Vec<T> {
         return core::slice::View { values: self.as_slice(), start: 0, length: self.length };
     }
     // The owner already guarantees this initialized, physically backed view.
-    pub fn iter(&self) -> core::iter::SliceIter<T> {
+    pub fn iter(&self) -> core::slice::Iter<T> {
         let view: core::slice::View<T> = self.as_view();
-        return core::iter::SliceIter { cursor: view.iter() };
+        return view.iter();
     }
     pub fn get(&self, index: i32) -> core::option::Option<T> {
         if (index < 0 || index >= self.length) { return core::option::None(); }

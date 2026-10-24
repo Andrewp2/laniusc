@@ -13,7 +13,9 @@
     },
     "alloc::binary_heap": {
       "guides": [
-        "docs/stdlib-binary-heap.md"
+        "docs/stdlib-binary-heap.md",
+        "docs/stdlib-cursor-integration.md",
+        "docs/stdlib-heap-iterators.md"
       ]
     },
     "alloc::bitset": {
@@ -90,7 +92,8 @@
     "alloc::vec": {
       "guides": [
         "docs/stdlib-vec.md",
-        "docs/stdlib-collection-iterators.md"
+        "docs/stdlib-collection-iterators.md",
+        "docs/stdlib-cursor-integration.md"
       ]
     },
     "core::adler32": {
@@ -239,7 +242,8 @@
       "guides": [
         "docs/stdlib-iterators.md",
         "docs/stdlib-collection-iterators.md",
-        "docs/stdlib-iterator-adapters.md"
+        "docs/stdlib-iterator-adapters.md",
+        "docs/stdlib-cursor-integration.md"
       ]
     },
     "core::math": {
@@ -307,13 +311,15 @@
     },
     "core::set": {
       "guides": [
-        "docs/stdlib-fixed-capacity.md"
+        "docs/stdlib-fixed-capacity.md",
+        "docs/stdlib-cursor-integration.md"
       ]
     },
     "core::slice": {
       "guides": [
         "docs/stdlib-slice-views.md",
-        "docs/stdlib-slice.md"
+        "docs/stdlib-slice.md",
+        "docs/stdlib-cursor-integration.md"
       ]
     },
     "core::target": {
@@ -326,7 +332,9 @@
       "guides": [
         "docs/stdlib-text.md",
         "docs/stdlib-text-composition.md",
-        "docs/stdlib-collection-iterators.md"
+        "docs/stdlib-collection-iterators.md",
+        "docs/stdlib-cursor-integration.md",
+        "docs/stdlib-text-split-iterators.md"
       ]
     },
     "core::time": {
@@ -436,7 +444,8 @@
     },
     "core::vec": {
       "guides": [
-        "docs/stdlib-fixed-capacity.md"
+        "docs/stdlib-fixed-capacity.md",
+        "docs/stdlib-cursor-integration.md"
       ]
     },
     "ext::audio": {

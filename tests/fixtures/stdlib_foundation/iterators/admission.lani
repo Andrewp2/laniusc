@@ -1,6 +1,7 @@
 // Native imported generic admission: nested adapters, consumer and payloads.
 module app::main;
 import core::iter;
+import core::slice;
 import core::option;
 import core::range;
 import core::result;
@@ -21,17 +22,17 @@ fn pull<I, T>(source: &I) -> core::option::Option<T> where I: core::iter::Iterat
 }
 fn main() -> i32 {
     let values: [i32; 4] = [3, 5, 7, 9];
-    let source: core::iter::SliceIter<i32> = core::result::unwrap(core::iter::from_slice<i32>(values, 4));
-    let first: core::iter::Take<core::iter::SliceIter<i32>, i32> =
-        core::iter::take<core::iter::SliceIter<i32>, i32>(source.borrow(), 3);
-    let second: core::iter::Take<core::iter::Take<core::iter::SliceIter<i32>, i32>, i32> =
-        core::iter::take<core::iter::Take<core::iter::SliceIter<i32>, i32>, i32>(first.borrow(), 2);
+    let source: core::slice::Iter<i32> = core::result::unwrap(core::iter::from_slice<i32>(values, 4));
+    let first: core::iter::Take<core::slice::Iter<i32>, i32> =
+        core::iter::take<core::slice::Iter<i32>, i32>(source.borrow(), 3);
+    let second: core::iter::Take<core::iter::Take<core::slice::Iter<i32>, i32>, i32> =
+        core::iter::take<core::iter::Take<core::slice::Iter<i32>, i32>, i32>(first.borrow(), 2);
     let local: Local = Local { value: 40, ended: false };
-    let joined: core::iter::Chain<core::iter::Take<core::iter::Take<core::iter::SliceIter<i32>, i32>, i32>, Local, i32> =
-        core::iter::chain<core::iter::Take<core::iter::Take<core::iter::SliceIter<i32>, i32>, i32>, Local, i32>(second.borrow(), local.borrow());
-    let picked: core::option::Option<i32> = pull<core::iter::Chain<core::iter::Take<core::iter::Take<core::iter::SliceIter<i32>, i32>, i32>, Local, i32>, i32>(joined.borrow());
+    let joined: core::iter::Chain<core::iter::Take<core::iter::Take<core::slice::Iter<i32>, i32>, i32>, Local, i32> =
+        core::iter::chain<core::iter::Take<core::iter::Take<core::slice::Iter<i32>, i32>, i32>, Local, i32>(second.borrow(), local.borrow());
+    let picked: core::option::Option<i32> = pull<core::iter::Chain<core::iter::Take<core::iter::Take<core::slice::Iter<i32>, i32>, i32>, Local, i32>, i32>(joined.borrow());
     if (core::option::unwrap(picked) != 3) { return 1; }
-    let progress: core::iter::Advance = core::iter::advance_up_to<core::iter::Chain<core::iter::Take<core::iter::Take<core::iter::SliceIter<i32>, i32>, i32>, Local, i32>, i32>(joined.borrow(), 2);
+    let progress: core::iter::Advance = core::iter::advance_up_to<core::iter::Chain<core::iter::Take<core::iter::Take<core::slice::Iter<i32>, i32>, i32>, Local, i32>, i32>(joined.borrow(), 2);
     if (progress.advanced != 2 || progress.exhausted || source.remaining() != 2) { return 2; }
     let ended: core::option::Option<i32> = joined.next();
     if (core::option::is_some(ended) || !local.ended) { return 3; }
@@ -40,10 +41,10 @@ fn main() -> i32 {
 
     let one: Payload = Payload { wide: 18446744073709551615, flags: core::option::Some(false), cells: [19, 23] };
     let data: [Payload; 1] = [one];
-    let nested: core::iter::SliceIter<Payload> = core::result::unwrap(core::iter::from_slice<Payload>(data, 1));
-    let take_payload: core::iter::Take<core::iter::SliceIter<Payload>, Payload> =
-        core::iter::take<core::iter::SliceIter<Payload>, Payload>(nested.borrow(), 1);
-    let found_option: core::option::Option<Payload> = pull<core::iter::Take<core::iter::SliceIter<Payload>, Payload>, Payload>(take_payload.borrow());
+    let nested: core::slice::Iter<Payload> = core::result::unwrap(core::iter::from_slice<Payload>(data, 1));
+    let take_payload: core::iter::Take<core::slice::Iter<Payload>, Payload> =
+        core::iter::take<core::slice::Iter<Payload>, Payload>(nested.borrow(), 1);
+    let found_option: core::option::Option<Payload> = pull<core::iter::Take<core::slice::Iter<Payload>, Payload>, Payload>(take_payload.borrow());
     let found: Payload = core::option::unwrap(found_option);
     if (found.wide != 18446744073709551615 || core::option::unwrap(found.flags) || found.cells[1] != 23) { return 5; }
 

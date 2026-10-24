@@ -7,7 +7,7 @@ existing `.next()` calls also work through generic consumers, `take` and
 
 | Constructor | Cursor | Item |
 | --- | --- | --- |
-| `alloc::vec::Vec<T>::iter()` | `core::iter::SliceIter<T>` | `T` |
+| `alloc::vec::Vec<T>::iter()` | `core::slice::Iter<T>` | `T` |
 | `alloc::deque::Deque<T>::iter()` | `alloc::deque::Cursor<T>` | `T` |
 | `alloc::hash_map::HashMap<K,V>::iter()` | `alloc::hash_map::Iter<K,V>` | `alloc::hash_map::Entry<K,V>` |
 | `alloc::tree_map::TreeMap<K,V>::iter()` or `range(lower,upper)` | `alloc::tree_map::Cursor<K,V>` | `alloc::tree_map::Entry<K,V>` |
@@ -15,7 +15,7 @@ existing `.next()` calls also work through generic consumers, `take` and
 | `alloc::tree_set::TreeSet<T>::iter()` or `range(lower,upper)` | `alloc::tree_set::Cursor<T>` | `T` |
 | `core::bitset::BitView::iter_ones()` or `alloc::bitset::BitSet::iter_ones()` | `core::bitset::Ones` | `i32` bit index |
 | `core::text::Text::scalars()` | `core::text::Scalars` | `core::text::Scalar { byte_index, value }` |
-| `core::text::Text::iter_bytes()` | `core::iter::SliceIter<u8>` | `u8` |
+| `core::text::Text::iter_bytes()` | `core::slice::Iter<u8>` | `u8` |
 
 Each cursor offers `borrow()` for adapters and consumers. Deque cursors retain
 `remaining()` and `next_back()`. Ordered map and set cursors retain `is_empty()`
@@ -28,19 +28,20 @@ the map engines through their existing typed facade and storage boundary.
 let values: alloc::vec::Vec<i32> = alloc::vec::new();
 let added: core::result::Result<i32, alloc::vec::Error> = values.try_push(7);
 assert(core::result::is_ok(added));
-let cursor: core::iter::SliceIter<i32> = values.iter();
-let selected: core::iter::Take<core::iter::SliceIter<i32>, i32> =
-    core::iter::take<core::iter::SliceIter<i32>, i32>(cursor.borrow(), 1);
+let cursor: core::slice::Iter<i32> = values.iter();
+let selected: core::iter::Take<core::slice::Iter<i32>, i32> =
+    core::iter::take<core::slice::Iter<i32>, i32>(cursor.borrow(), 1);
 let progress: core::iter::Advance =
-    core::iter::advance_up_to<core::iter::Take<core::iter::SliceIter<i32>, i32>, i32>(selected.borrow(), 2);
+    core::iter::advance_up_to<core::iter::Take<core::slice::Iter<i32>, i32>, i32>(selected.borrow(), 2);
 // progress == { advanced: 1, exhausted: true }.
 values.destroy();
 ```
 
-All these cursor constructors and adapters allocate nothing. `Vec.iter()`
+These cursor constructors and adapter bookkeeping allocate nothing; sources
+and mapping callbacks retain their own behavior. `Vec.iter()`
 captures the owner's initialized prefix. `Text.iter_bytes()` captures its byte
 range, including a nonzero start. Both retain the existing native slice
-descriptor and stride through `SliceIter`; byte values in packed storage and
+descriptor and stride through `core::slice::Iter`; byte values in packed storage and
 strided stack arrays have the same logical sequence.
 
 `Scalar.byte_index` is relative to the selected Text, including for a Text
@@ -89,6 +90,11 @@ and Ones can scan backing words. Generic `advance_up_to` bounds direct `next`
 calls; it does not bound each source call's internal work.
 
 ## Native verification
+
+The original gates below used the earlier `core::iter::SliceIter<T>` wrapper
+for Vec/Text bytes. [Canonical cursor integration](stdlib-cursor-integration.md)
+replaces that wrapper with `core::slice::Iter<T>` and records current execution
+of the shared forward protocol and its backward operations.
 
 All three focused groups in the
 [`stdlib_collection_iterator_execution` driver](../tests/stdlib_collection_iterator_execution.rs)

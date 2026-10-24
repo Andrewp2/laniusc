@@ -51,6 +51,9 @@ The [shared iterator protocol](docs/stdlib-iterators.md) connects ranges, views,
 collections and text with borrowed adapters. A checked
 [range dot-product program](docs/stdlib-range-dot.md) composes zip, take, map
 and enumeration, including arithmetic and output failures.
+[Canonical slice cursors](docs/stdlib-cursor-integration.md),
+[text splits](docs/stdlib-text-split-iterators.md) and
+[heap iteration](docs/stdlib-heap-iterators.md) use that same protocol.
 
 Optional modules use the [`extended` source root](extended/README.md).
 [`ext::csv`](docs/extended-csv.md) and [`ext::json`](docs/extended-json.md)

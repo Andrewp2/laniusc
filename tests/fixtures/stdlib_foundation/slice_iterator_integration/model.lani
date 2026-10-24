@@ -1,0 +1,87 @@
+// Three-u64 commands: length, positive width, chunk quota. Return each mapped
+// view summary, terminal None, remaining cursor/quota state and callback count.
+module app::main;
+import core::io;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+import std::stream;
+
+struct Summary { length: i32, first: i32, last: i32, sum: i64 }
+struct Describe { calls: i32 }
+impl Describe { fn borrow(&self) -> &Describe { return self; } }
+pub impl core::iter::Mapper<core::slice::View<i32>, Summary> for Describe {
+    pub fn apply(&self, view: core::slice::View<i32>) -> Summary {
+        self.calls += 1;
+        let length: i32 = view.len(); assert(length > 0 && length <= 6);
+        let first: core::option::Option<i32> = view.first();
+        let last: core::option::Option<i32> = view.last();
+        let sum: i64 = 0; let index: i32 = 0;
+        while (index < length) {
+            let item: core::option::Option<i32> = view.get(index);
+            sum += core::option::unwrap(item) as i64; index += 1;
+        }
+        return Summary { length: length, first: core::option::unwrap(first), last: core::option::unwrap(last), sum: sum };
+    }
+}
+fn decode(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0; let index: i32 = 0;
+    while (index < 8) { value |= (bytes[offset + index] as u64) << (index * 8); index += 1; }
+    return value;
+}
+fn word(value: u64) {
+    let bytes: [u8; 8] = [0; 8]; let index: i32 = 0;
+    while (index < 8) { bytes[index] = ((value >> (index * 8)) & 255) as u8; index += 1; }
+    let output: std::stream::Descriptor = std::stream::stdout();
+    let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(output.borrow(), bytes, 0, 8);
+    assert(core::result::is_ok(written));
+}
+fn run_case(length: i32, width: i32, quota: u64) {
+    let values: [i32; 9] = [-99, 10, 11, 12, 13, 14, 15, 16, 99];
+    let view: core::slice::View<i32> = core::slice::View { values: values, start: 1, length: length };
+    let chunk_result: core::result::Result<core::slice::Chunks<i32>, core::slice::ViewError> = view.chunks(width);
+    let chunks: core::slice::Chunks<i32> = core::result::unwrap(chunk_result);
+    let window_result: core::result::Result<core::slice::Windows<i32>, core::slice::ViewError> = view.windows(width);
+    let windows: core::slice::Windows<i32> = core::result::unwrap(window_result);
+    let chunk_count: i32 = chunks.remaining(); let window_count: i32 = windows.remaining();
+    let picked: core::iter::Take<core::slice::Chunks<i32>, core::slice::View<i32>> =
+        core::iter::take<core::slice::Chunks<i32>, core::slice::View<i32>>(chunks.borrow(), quota);
+    let joined: core::iter::Chain<core::iter::Take<core::slice::Chunks<i32>, core::slice::View<i32>>, core::slice::Windows<i32>, core::slice::View<i32>> =
+        core::iter::chain<core::iter::Take<core::slice::Chunks<i32>, core::slice::View<i32>>, core::slice::Windows<i32>, core::slice::View<i32>>(picked.borrow(), windows.borrow());
+    let mapper: Describe = Describe { calls: 0 };
+    let mapped: core::iter::Map<core::iter::Chain<core::iter::Take<core::slice::Chunks<i32>, core::slice::View<i32>>, core::slice::Windows<i32>, core::slice::View<i32>>, Describe, core::slice::View<i32>, Summary> =
+        core::iter::map<core::iter::Chain<core::iter::Take<core::slice::Chunks<i32>, core::slice::View<i32>>, core::slice::Windows<i32>, core::slice::View<i32>>, Describe, core::slice::View<i32>, Summary>(joined.borrow(), mapper.borrow());
+    assert(chunks.remaining() == chunk_count && windows.remaining() == window_count && picked.remaining_limit() == quota && mapper.calls == 0);
+    let done: bool = false;
+    while (!done) {
+        let item: core::option::Option<Summary> = mapped.next();
+        if (core::option::is_none(item)) { word(0); done = true; }
+        else {
+            let summary: Summary = core::option::unwrap(item);
+            word(1); word(summary.length as u64); word(summary.first as u64); word(summary.last as u64); word(summary.sum as u64);
+        }
+    }
+    let remaining_chunks: i32 = chunks.remaining(); let remaining_windows: i32 = windows.remaining();
+    let remaining_quota: u64 = picked.remaining_limit(); let calls: i32 = mapper.calls;
+    let end: core::option::Option<Summary> = mapped.next(); let again: core::option::Option<Summary> = mapped.next();
+    assert(core::option::is_none(end) && core::option::is_none(again));
+    assert(chunks.remaining() == remaining_chunks && windows.remaining() == remaining_windows && picked.remaining_limit() == remaining_quota && mapper.calls == calls);
+    word(remaining_chunks as u64); word(remaining_windows as u64); word(remaining_quota); word(calls as u64);
+}
+fn main() -> i32 {
+    let input: std::stream::Descriptor = std::stream::stdin(); let record: [u8; 24] = [0; 24];
+    while (true) {
+        let received: core::result::Result<i32, core::io::Error> = input.read(record, 0, 24);
+        if (core::result::is_err(received)) { return 1; }
+        let count: i32 = core::result::unwrap(received); if (count == 0) { return 0; }
+        if (count < 24) {
+            let rest: core::result::Result<i32, core::io::Failure> = core::io::read_exact(input.borrow(), record, count, 24 - count);
+            if (core::result::is_err(rest)) { return 2; }
+        }
+        let length: u64 = decode(record, 0); let width: u64 = decode(record, 8); let quota: u64 = decode(record, 16);
+        assert(length <= 6 && width > 0 && width <= 2147483647 && quota <= 5);
+        run_case(length as i32, width as i32, quota);
+    }
+    return 0;
+}

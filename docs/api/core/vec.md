@@ -11,6 +11,7 @@ Layer: `core`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [stdlib-fixed-capacity](../../stdlib-fixed-capacity.md)
+- [stdlib-cursor-integration](../../stdlib-cursor-integration.md)
 
 Declaration counts: enum: 1; field: 2; function: 28; impl: 1; method: 1; struct: 1; variant: 2.
 

@@ -41,7 +41,7 @@ alias the original owner. Keep one release authority and destroy that owner
 once, after all uses of borrowed aliases. This API does not make an owning
 collection drain or automatically release elements skipped by a consumer.
 
-`SliceIter<T>` contains a copied slice descriptor and cursor state. The original
+`core::slice::Iter<T>` contains a copied slice descriptor and cursor state. The original
 View record can go out of scope, but its physical backing must remain alive,
 initialized and valid. Destroying or reallocating the backing owner invalidates
 the cursor. Valid alias mutations are observed by later reads; elements are not
@@ -51,7 +51,7 @@ Copy semantics depend on the cursor:
 
 | Copied value | State after copying |
 | --- | --- |
-| `SliceIter<T>` | Independent positions; same backing elements |
+| `core::slice::Iter<T>` | Independent positions; same backing elements |
 | `RangeI32` | Independent positions over captured numeric bounds |
 | `Take<I,T>` | Independent quota/done flags; same borrowed source cursor |
 | `Chain<A,B,T>` | Independent phase/done flags; same borrowed source cursors |
@@ -79,11 +79,11 @@ state can invalidate arithmetic, indexing and exhaustion guarantees.
 
 | API | Contract |
 | --- | --- |
-| `from_slice<T>(values:[T], count:i32)` | `Result<SliceIter<T>,slice::ViewError>`; select a prefix |
+| `from_slice<T>(values:[T], count:i32)` | `Result<core::slice::Iter<T>,slice::ViewError>`; select a prefix |
 | `from_view<T>(view:slice::View<T>)` | Same result; retain this view's start/count and native stride |
-| `SliceIter<T>::borrow(&self)` | Borrow this cursor for adapters or consumers |
-| `SliceIter<T>::remaining(&self)` | Exact remaining logical count, i32 |
-| `SliceIter<T>::next(&self)` | Shallow current element, then advance; fused at zero remaining |
+| `core::slice::Iter<T>::borrow(&self)` | Borrow this cursor for adapters or consumers |
+| `core::slice::Iter<T>::remaining(&self)` | Exact remaining logical count, i32 |
+| `core::slice::Iter<T>::next(&self)` | Shallow current element, then advance; fused at zero remaining |
 
 Both constructors reject negative count metadata. `from_view` also rejects a
 negative start or an end beyond `i32::MAX`. It checks those conditions before
@@ -102,19 +102,24 @@ slice-length projection here. A logical overclaim can pass construction and
 then trap at ordinary native indexing. Neither `remaining` nor a successful
 constructor certifies an allocation size.
 
-Actual element access delegates to `core::slice::Iter<T>`, preserving its
-native descriptor, stride and physical bounds. Packed bytes, strided stack
-values, compound records and zero-sized items follow that existing contract.
+The checked factories and owner-proven Vec/Text factories return the same
+canonical `core::slice::Iter<T>` as `View.iter()`. Its forward trait method
+lives in `core::iter`; backward access, skipping and metadata methods live in
+`core::slice`. Import `core::iter` where the shared protocol is used. This
+keeps one cursor state and one forward transition without an import cycle.
+Access preserves the native descriptor, stride and physical bounds. Packed
+bytes, strided stack values, compound records and zero-sized items follow
+the existing indexing contract. See [cursor integration](stdlib-cursor-integration.md).
 
 ```lani
 let values: [i32; 4] = [2, 3, 5, 7];
-let source: core::iter::SliceIter<i32> =
+let source: core::slice::Iter<i32> =
     core::result::unwrap(core::iter::from_slice<i32>(values, 4));
-let prefix: core::iter::Take<core::iter::SliceIter<i32>, i32> =
-    core::iter::take<core::iter::SliceIter<i32>, i32>(source.borrow(), 2);
+let prefix: core::iter::Take<core::slice::Iter<i32>, i32> =
+    core::iter::take<core::slice::Iter<i32>, i32>(source.borrow(), 2);
 let first: core::option::Option<i32> = prefix.next(); // Some(2)
 let skipped: core::iter::Advance =
-    core::iter::advance_up_to<core::iter::Take<core::iter::SliceIter<i32>, i32>, i32>(prefix.borrow(), 2);
+    core::iter::advance_up_to<core::iter::Take<core::slice::Iter<i32>, i32>, i32>(prefix.borrow(), 2);
 // skipped == { advanced: 1, exhausted: true }; source.remaining() == 2.
 ```
 
@@ -239,6 +244,10 @@ output/signal-policy failures. Argument snapshots are released on each path.
 This is separate evidence from the five module groups below.
 
 ## Native acceptance
+
+The original groups below used the earlier `SliceIter<T>` wrapper. Current
+[canonical cursor integration](stdlib-cursor-integration.md) returns
+`core::slice::Iter<T>` directly and records its separate execution evidence.
 
 `tests/stdlib_iterator_execution.rs` and its seven fixtures under
 `tests/fixtures/stdlib_foundation/iterators/` passed all five focused groups on

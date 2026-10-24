@@ -1,4 +1,5 @@
 module app::main;
+import core::iter;
 import core::vec;
 import core::slice;
 import core::mem;

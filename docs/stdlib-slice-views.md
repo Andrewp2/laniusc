@@ -51,22 +51,26 @@ only a descriptor, not its elements.
 
 ## Cursor behavior
 
-`Iter<T>` supports `next`, `next_back`, `remaining`, `advance` and `advance_back`.
+`Iter<T>` supports `borrow`, `next`, `next_back`, `remaining`, `advance` and `advance_back`.
 The two ends share one remaining range, so an element is never yielded twice
 by one cursor. `advance` and `advance_back` skip up to the requested number
 without reading storage and return the actual count skipped. Negative requests
 return `Bounds` without advancing; larger requests exhaust the cursor.
 
-`Chunks<T>` and `Windows<T>` expose `next` and `remaining`. All three cursors
+`Chunks<T>` and `Windows<T>` expose `borrow`, `next` and `remaining`. All three cursors
 stay exhausted once they return `None`. Copying a cursor forks its position;
 backing elements remain shared. Mutations through a valid alias are visible
 when a cursor later reads those elements. Overlapping windows also alias.
 
-These are inherent cursor methods. The separate
-[shared iteration module](stdlib-iterators.md) now exposes a checked
-`SliceIter<T>` constructor, the fused `Iterator<T>` protocol, borrowed take/chain
-adapters and bounded consumption. Its own execution gates cover generic
-dispatch and preserve these native stride, backing and shallow-copy contracts.
+Forward `next` methods implement the [shared iteration protocol](stdlib-iterators.md)
+in `core::iter`. Import that module to use forward iteration or generic
+adapters/consumers. The inherent methods retain backward access, skipping,
+metadata and borrowing; `core::slice` does not import `core::iter` back.
+Iter yields `T`; Chunks and Windows yield `View<T>` without copying elements.
+The checked factories `core::iter::from_slice/from_view` return the same
+`core::slice::Iter<T>`, with logical metadata validation before cursor creation.
+[Cursor integration](stdlib-cursor-integration.md) describes the single state
+representation, caller migration and focused protocol execution evidence.
 
 ## Executable example
 
