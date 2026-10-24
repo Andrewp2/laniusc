@@ -1,0 +1,4 @@
+fn main() -> i32 {
+    let bytes: [u8; 256] = [-1; 256];
+    return 0;
+}

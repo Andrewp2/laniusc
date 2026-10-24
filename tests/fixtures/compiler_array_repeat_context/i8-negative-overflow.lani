@@ -1,0 +1,4 @@
+fn main() -> i32 {
+    let values: [i8; 128] = [-129; 128];
+    return 0;
+}

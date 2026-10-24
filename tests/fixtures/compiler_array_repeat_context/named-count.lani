@@ -1,0 +1,5 @@
+const COUNT: usize = 256;
+fn main() -> i32 {
+    let bytes: [u8; 256] = [0; COUNT];
+    return 0;
+}
