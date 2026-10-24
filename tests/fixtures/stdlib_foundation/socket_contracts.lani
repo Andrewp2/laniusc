@@ -26,7 +26,10 @@ fn main() -> i32 {
     assert(listener.set_option(std::socket::Setting::Ipv6Only,1).is_err());
     listener.bind(loopback(0)).unwrap(); listener.listen(4).unwrap();
     let endpoint: core::net::SocketAddr = listener.local_addr().unwrap();
-    assert(endpoint.port() > 0 && listener.accept(false).is_err());
+    assert(endpoint.port() > 0);
+    let pending: std::socket::AcceptFailure = listener.accept(false).unwrap_err();
+    assert(match(pending.cause) { core::io::Error::WouldBlock -> true, _ -> false });
+    assert(!pending.cleanup_attempted && pending.cleanup_error.is_none());
     assert(listener.wait_ms(true,false,0).unwrap().timed_out);
     assert(listener.wait_ms(true,false,-2).is_err());
     let client: std::socket::Socket = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true).unwrap();
@@ -74,6 +77,9 @@ fn main() -> i32 {
     assert(client.flush().is_err() && client.send(selected).is_err()); client.close().unwrap();
     let adopted: std::socket::Socket = std::socket::from_owned_handle(taken,std::socket::Family::Ipv4,std::socket::Kind::Tcp).unwrap();
     adopted.close().unwrap(); server.shutdown(std::socket::Shutdown::Both).unwrap(); server.close().unwrap(); listener.close().unwrap(); listener.close().unwrap();
+    let closed_accept: std::socket::AcceptFailure = listener.accept(false).unwrap_err();
+    assert(match(closed_accept.cause) { core::io::Error::Host(code) -> code == 9, _ -> false });
+    assert(!closed_accept.cleanup_attempted && closed_accept.cleanup_error.is_none());
     assert(std::socket::from_owned_handle(-1,std::socket::Family::Ipv4,std::socket::Kind::Tcp).is_err());
 
     let sender: std::socket::Socket = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Udp,false).unwrap();
@@ -82,7 +88,10 @@ fn main() -> i32 {
     let peer: core::net::SocketAddr = receiver.local_addr().unwrap();
     assert(receiver.receive_from(destination).is_err());
     assert(receiver.send(selected).is_err() && receiver.receive(destination).is_err());
-    assert(receiver.listen(1).is_err() && receiver.accept(false).is_err());
+    assert(receiver.listen(1).is_err());
+    let datagram_accept: std::socket::AcceptFailure = receiver.accept(false).unwrap_err();
+    assert(match(datagram_accept.cause) { core::io::Error::InvalidInput -> true, _ -> false });
+    assert(!datagram_accept.cleanup_attempted && datagram_accept.cleanup_error.is_none());
     assert(receiver.set_option(std::socket::Setting::NoDelay,1).is_err());
     assert(sender.send_to(selected,peer).unwrap() == 6);
     let small: core::slice::View<u8> = destination.subview(1,3).unwrap();

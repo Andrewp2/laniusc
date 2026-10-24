@@ -19,8 +19,13 @@ fn executable(name: &str) -> common::TempArtifact {
 }
 
 fn owned_descriptors_close(trace: &str) -> usize {
+    owned_descriptors_retired(trace, None)
+}
+
+fn owned_descriptors_retired(trace: &str, failed_close: Option<i32>) -> usize {
     let mut live = BTreeSet::new();
     let mut opened = 0;
+    let mut failed = 0;
     for line in trace.lines() {
         assert!(
             !line.starts_with("mmap(") && !line.starts_with("munmap("),
@@ -36,24 +41,32 @@ fn owned_descriptors_close(trace: &str) -> usize {
         let Ok(result) = result.parse::<i32>() else {
             continue;
         };
-        if result < 0 {
-            continue;
-        }
-        if line.starts_with("socket(")
-            || line.starts_with("accept4(")
-            || (line.starts_with("fcntl(") && line.contains("F_DUPFD_CLOEXEC"))
+        if let Some(tail) = line.strip_prefix("close(") {
+            let fd: i32 = tail.split(')').next().unwrap().parse().unwrap();
+            if result < 0 {
+                assert_eq!(failed_close, Some(fd), "unexpected close error: {trace}");
+                assert_eq!(result, -1, "{trace}");
+                failed += 1;
+            } else {
+                assert_eq!(result, 0, "{trace}");
+            }
+            assert!(
+                live.remove(&fd),
+                "closing unowned or retired fd {fd}: {trace}"
+            );
+        } else if result >= 0
+            && (line.starts_with("socket(")
+                || line.starts_with("accept4(")
+                || (line.starts_with("fcntl(") && line.contains("F_DUPFD_CLOEXEC")))
         {
             assert!(live.insert(result), "duplicate owner: {trace}");
             opened += 1;
-        } else if let Some(tail) = line.strip_prefix("close(") {
-            let fd: i32 = tail.split(')').next().unwrap().parse().unwrap();
-            assert_eq!(result, 0, "{trace}");
-            assert!(live.remove(&fd), "closing unowned fd {fd}: {trace}");
         }
     }
+    assert_eq!(failed, usize::from(failed_close.is_some()), "{trace}");
     assert!(
         live.is_empty(),
-        "leaked socket descriptors {live:?}: {trace}"
+        "unretired socket owners {live:?}: {trace}"
     );
     opened
 }
@@ -157,29 +170,74 @@ fn absolute_deadlines_end_repeated_ready_eagain_and_continuous_interrupts() {
 }
 
 #[test]
-fn malformed_accept_reply_closes_the_real_new_descriptor_before_returning_error() {
+fn malformed_accept_reply_preserves_primary_error_and_single_cleanup_outcome() {
     let exe = executable("socket_accept_error");
-    let trace = common::TempArtifact::new("laniusc_socket", "accept_reply", None);
-    let output = common::process_output_with_timeout(
-        "malformed accepted peer",
-        Command::new("strace")
-            .args(["-qq", "-o"])
-            .arg(trace.path())
-            .args([
-                "-e",
-                "trace=socket,accept4,close,mmap,munmap",
-                "-e",
-                "inject=accept4:poke_exit=@arg3=ffffffff:when=1",
-            ])
-            .arg(exe.path()),
-        Duration::from_secs(5),
-    );
-    let events = std::fs::read_to_string(trace.path()).unwrap();
-    assert_eq!(output.status.code(), Some(0), "{output:?}\n{events}");
-    assert!(
-        output.stdout.is_empty() && output.stderr.is_empty(),
-        "{output:?}"
-    );
-    assert!(events.contains("accept4("), "{events}");
-    assert_eq!(owned_descriptors_close(&events), 3);
+    for (error, args) in [
+        (None, vec![]),
+        (Some("EIO"), vec!["cleanup"]),
+        (Some("EINTR"), vec!["cleanup", "interrupted"]),
+    ] {
+        let trace = common::TempArtifact::new("laniusc_socket", "accept_reply", None);
+        let mut command = Command::new("strace");
+        command.args(["-qq", "-o"]).arg(trace.path()).args([
+            "-e",
+            "trace=socket,accept4,close,mmap,munmap",
+            "-e",
+            "inject=accept4:poke_exit=@arg3=ffffffff:when=1",
+        ]);
+        if let Some(error) = error {
+            command.args(["-e", &format!("inject=close:error={error}:when=1")]);
+        }
+        command.arg(exe.path()).args(args);
+        let output = common::process_output_with_timeout(
+            "malformed accepted peer and cleanup outcome",
+            &mut command,
+            Duration::from_secs(5),
+        );
+        let events = std::fs::read_to_string(trace.path()).unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{error:?}: {output:?}\n{events}"
+        );
+        assert!(
+            output.stdout.is_empty() && output.stderr.is_empty(),
+            "{output:?}"
+        );
+        let accepted = events
+            .lines()
+            .find(|line| line.starts_with("accept4("))
+            .unwrap();
+        let fd: i32 = accepted
+            .rsplit(" = ")
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(
+            fd >= 0,
+            "accept did not allocate a real descriptor: {events}"
+        );
+        let cleanup: Vec<_> = events
+            .lines()
+            .filter(|line| line.starts_with(&format!("close({fd})")))
+            .collect();
+        assert_eq!(
+            cleanup.len(),
+            1,
+            "accepted descriptor cleanup retried: {events}"
+        );
+        if let Some(error) = error {
+            assert!(
+                cleanup[0].contains(&format!("= -1 {error}")) && cleanup[0].contains("INJECTED"),
+                "{events}"
+            );
+        } else {
+            assert!(cleanup[0].ends_with(" = 0"), "{events}");
+        }
+        assert_eq!(owned_descriptors_retired(&events, error.map(|_| fd)), 3);
+    }
 }

@@ -19,6 +19,9 @@ pub enum Shutdown { Read, Write, Both }
 pub enum Setting { ReuseAddress, KeepAlive, NoDelay, ReceiveBuffer, SendBuffer, Ipv6Only }
 pub struct Socket { handle: i32, domain: i32, datagram: bool }
 pub struct Accepted { socket: Socket, peer: core::net::SocketAddr }
+// Peer decoding can fail after accept allocated an owner. Its one cleanup
+// attempt is separate from the original error and never returns that owner.
+pub struct AcceptFailure { cause: core::io::Error, cleanup_attempted: bool, cleanup_error: core::option::Option<core::io::Error> }
 pub struct Datagram { peer: core::net::SocketAddr, copied: i32, full_length: i32 }
 pub struct Ready { readable: bool, writable: bool, hangup: bool, error: bool, timed_out: bool }
 pub const MAX_DATAGRAM: i32 = 65507;
@@ -401,17 +404,21 @@ pub impl Socket {
         let args: [std::linux::Argument;6] = [word(self.handle as i64),word(backlog as i64),word(0),word(0),word(0),word(0)];
         return status(invoke(50,args));
     }
-    pub fn accept(&self, nonblocking: bool) -> core::result::Result<Accepted,core::io::Error> {
-        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
-        if (self.datagram) { return core::result::Err(core::io::Error::InvalidInput); }
+    pub fn accept(&self, nonblocking: bool) -> core::result::Result<Accepted,AcceptFailure> {
+        if (self.handle < 0) { return core::result::Err(AcceptFailure { cause:core::io::Error::Host(9),cleanup_attempted:false,cleanup_error:core::option::None() }); }
+        if (self.datagram) { return core::result::Err(AcceptFailure { cause:core::io::Error::InvalidInput,cleanup_attempted:false,cleanup_error:core::option::None() }); }
         let storage: [i32;9] = [0;9]; let pointer: ptr = core::mem::i32_array_data_ptr(storage); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,32);
         let length: [i32] = core::mem::typed_slice_from_raw_parts(pointer+32,1); length[0] = 32;
         let flags: i64 = 524288; if (nonblocking) { flags = flags | 2048; }
         let args: [std::linux::Argument;6] = [word(self.handle as i64),address(pointer),address(pointer+32),word(flags),word(0),word(0)];
         let accepted: core::result::Result<Socket,core::io::Error> = socket_result(invoke(288,args),self.domain,false);
-        if (accepted.is_err()) { return core::result::Err(accepted.unwrap_err()); }
+        if (accepted.is_err()) { return core::result::Err(AcceptFailure { cause:accepted.unwrap_err(),cleanup_attempted:false,cleanup_error:core::option::None() }); }
         let socket: Socket = accepted.unwrap(); let peer: core::result::Result<core::net::SocketAddr,core::io::Error> = decode(bytes,length[0],self.domain);
-        if (peer.is_err()) { socket.close(); return core::result::Err(peer.unwrap_err()); }
+        if (peer.is_err()) {
+            let closed: core::result::Result<i32,core::io::Error> = socket.close();
+            let cleanup: core::option::Option<core::io::Error> = core::option::None(); if (closed.is_err()) { cleanup = core::option::Some(closed.unwrap_err()); }
+            return core::result::Err(AcceptFailure { cause:peer.unwrap_err(),cleanup_attempted:true,cleanup_error:cleanup });
+        }
         return core::result::Ok(Accepted { socket: socket, peer: peer.unwrap() });
     }
     fn endpoint(&self, peer: bool) -> core::result::Result<core::net::SocketAddr,core::io::Error> {

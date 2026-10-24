@@ -38,11 +38,20 @@ live. There is no automatic destructor or thread-safety guarantee.
 | `bind(address)` | One host bind; port zero requests an assigned port. |
 | `local_addr()`, `peer_addr()` | Validate returned family/length and decode address, port and IPv6 scope. IPv6 flow information is not represented by `core::net`. |
 | `listen(backlog)` | TCP only; nonnegative backlog, with kernel queue limits. |
-| `accept(nonblocking)` | TCP only; returns `Accepted { socket, peer }`. The new descriptor's nonblocking policy is explicit. Malformed peer metadata closes the new descriptor before returning an error. |
+| `accept(nonblocking)` | TCP only; returns `Result<Accepted,AcceptFailure>`, with `Accepted { socket, peer }`. The new descriptor's nonblocking policy is explicit. |
 | `connect(address)` | `Connected` or `InProgress` for EINPROGRESS/EALREADY. Internet EAGAIN remains `WouldBlock`; it is not fabricated progress. |
 | `connect_until(address, deadline)` | Requires nonblocking mode, waits for completion, consumes SO_ERROR and checks the peer endpoint. Timeout is `Host(110)`. |
 | `shutdown(Read\|Write\|Both)` | Requests the corresponding host half/full shutdown without closing the owner. |
 | `take_error()` | Consumes/reset SO_ERROR and returns `Option<positive errno>`. Reading it through another duplicate affects this socket too. |
+
+`AcceptFailure` contains `cause: core::io::Error`, `cleanup_attempted: bool`,
+and `cleanup_error: Option<core::io::Error>`. Validation or accept-syscall
+failure returns `cleanup_attempted = false` and no cleanup error. A malformed
+peer address can fail after the host has allocated a new accepted descriptor.
+That path invalidates the temporary owner and attempts its close exactly once,
+then returns the original decode error with `cleanup_attempted = true` and
+any close error separately. Even EINTR does not cause a close retry. No accepted
+owner is returned on failure; the listening socket remains owned by its caller.
 
 After a failed or timed-out connection attempt, close the owner before starting
 a new connection; a timeout does not cancel a pending connect. Do not change
@@ -107,7 +116,8 @@ An already expired deadline returns timed_out without polling. Clock reversal
 or malformed host results return `InvalidCount`; host scheduling can overshoot
 a requested timeout, so this is not a real-time scheduling guarantee.
 
-Errors use `core::io::Error`: malformed view/options/kind/family are
+Operations use `core::io::Error` (inside `AcceptFailure.cause` for accept):
+malformed view/options/kind/family are
 `InvalidInput`, closed owners use `Host(9)`, EINTR/EAGAIN become
 `Interrupted`/`WouldBlock`, other native errno remains `Host(code)`, and deadline
 expiry is `Host(110)`. Logical view bounds are checked before access. Initial
@@ -130,9 +140,12 @@ recovery. Low-level operations do not retry host errors implicitly.
   with every send interrupted, and continuously interrupted poll. All stop
   at their original deadline and close every owner.
 - A real accepted descriptor followed by corrupted output address length:
-  the new descriptor is closed before the decode error is returned.
+  successful cleanup, injected EIO, and injected EINTR each preserve the decode
+  cause, report the cleanup outcome, and retire the new owner after one close
+  attempt. Ordinary accept controls check that closed, wrong-kind, and
+  WouldBlock errors report no cleanup attempt.
 
-Syscall traces track every socket/accept/duplicate descriptor through one close
+Syscall traces track every socket/accept/duplicate descriptor through one close attempt
 and deny claims of heap-free behavior if mmap/munmap occurs. The
 [TCP exchange application](stdlib-tcp-exchange.md) adds independent loopback
 peers, fragmented/large traffic and real application failure/cleanup evidence.

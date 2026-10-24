@@ -2,17 +2,28 @@
 module app::main;
 import core::io;
 import core::net;
+import core::option;
 import core::result;
+import std::process;
 import std::socket;
 fn main() -> i32 {
+    // No arguments expects successful cleanup; one expects EIO; two EINTR.
+    let mode: i32 = std::process::argc()-1;
+    if (mode < 0 || mode > 2) { return 3; }
     let listener: std::socket::Socket = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,false).unwrap();
     let endpoint: core::net::SocketAddr = core::net::SocketAddr::V4(core::net::SocketAddrV4 { address: core::net::ipv4(127,0,0,1), port: 0 });
     listener.bind(endpoint).unwrap(); listener.listen(1).unwrap();
     let client: std::socket::Socket = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,false).unwrap();
     client.connect(listener.local_addr().unwrap()).unwrap();
-    let result: core::result::Result<std::socket::Accepted,core::io::Error> = listener.accept(false);
+    let result: core::result::Result<std::socket::Accepted,std::socket::AcceptFailure> = listener.accept(false);
     client.close().unwrap(); listener.close().unwrap();
     if (result.is_ok()) { let accepted: std::socket::Accepted = result.unwrap(); accepted.socket.close().unwrap(); return 1; }
-    let expected: bool = match (result.unwrap_err()) { core::io::Error::InvalidCount -> true, _ -> false };
-    if (!expected) { return 2; } return 0;
+    let failure: std::socket::AcceptFailure = result.unwrap_err();
+    let expected: bool = match (failure.cause) { core::io::Error::InvalidCount -> true, _ -> false };
+    if (!expected || !failure.cleanup_attempted) { return 2; }
+    if (mode == 0) { if (failure.cleanup_error.is_some()) { return 4; } return 0; }
+    if (failure.cleanup_error.is_none()) { return 5; }
+    let cleanup: core::io::Error = failure.cleanup_error.unwrap();
+    let correct: bool = match (cleanup) { core::io::Error::Host(code) -> mode == 1 && code == 5, core::io::Error::Interrupted -> mode == 2, _ -> false };
+    if (!correct) { return 6; } return 0;
 }
