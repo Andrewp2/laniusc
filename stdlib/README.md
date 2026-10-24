@@ -39,7 +39,7 @@ runtime behavior, failure rules and supported targets.
 | Streams and files | `core::io`, `alloc::io`, `std::stream`, `std::file`, `std::filesystem` | [Files](../docs/stdlib-files.md), [filesystem operations](../docs/stdlib-filesystem.md) |
 | File options and directories | `std::file_ops`, `std::directory` | [Seek, metadata, sync and duplication](../docs/stdlib-file-operations.md), [raw names and bounded walks](../docs/stdlib-directory.md) |
 | Paths | `core::path`, `alloc::path` | [Unix byte paths](../docs/stdlib-paths.md) |
-| Arguments and environment | `std::args`, `std::args_checked`, `std::env_checked` | Raw-byte process snapshots and checked host wrappers |
+| Arguments and environment | `std::args`, `std::args_checked`, `std::env`, `std::env_checked`, `std::process` | [Raw startup bytes, owned snapshots, checked copies, cwd and immediate exit](../docs/stdlib-process-context.md) |
 | Child processes | `std::command`, `std::command_capture` | [Raw argv/environment, redirects, startup certainty and reaping](../docs/stdlib-command.md), [bounded concurrent pipe capture](../docs/stdlib-command-capture.md); native Linux single-threaded profile |
 | Time and randomness | `core::time`, `core::calendar`, `std::clock`, `core::random`, `std::entropy` | [Time](../docs/stdlib-time.md), [calendar](../docs/stdlib-calendar.md), [randomness](../docs/stdlib-randomness.md); optional [TZif time zones](../docs/extended-timezone.md) |
 | Network values and sockets | `core::net`, `std::socket` | [Address values](../docs/stdlib-net.md), [owned TCP/UDP and deadlines](../docs/stdlib-sockets.md), [binary TCP exchange](../docs/stdlib-tcp-exchange.md) |
