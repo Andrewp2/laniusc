@@ -56,7 +56,11 @@ fn freed(events: &str) -> usize {
 
 #[test]
 fn heap_contracts_execute_ordering_aliases_generic_payloads_and_zero_sized_values() {
-    for name in ["binary_heap_contracts", "binary_heap_types"] {
+    for name in [
+        "binary_heap_contracts",
+        "binary_heap_types",
+        "binary_heap_views",
+    ] {
         let exe = fixture(name);
         let output = run(&mut Command::new(exe.path()));
         checked(&output, 0);
@@ -392,13 +396,14 @@ fn top_scores_program_executes_large_inputs_limits_and_resource_failures() {
     for when in 1..=allocations {
         traced(Some(format!("mmap:error=ENOMEM:when={when}+")), 4, 0);
     }
+    let first_line = expected.iter().position(|byte| *byte == b'\n').unwrap() + 1;
     for (injection, status, prefix) in [
         ("read:error=EINTR:when=1", 0, expected.len()),
         ("read:error=EIO:when=2", 3, 0),
         ("read:error=EAGAIN:when=1", 3, 0),
-        ("write:error=EIO:when=2", 3, 1),
-        ("write:error=EINTR:when=2", 3, 1),
-        ("write:retval=0:when=2", 3, 1),
+        ("write:error=EIO:when=2", 3, first_line),
+        ("write:error=EINTR:when=2", 0, expected.len()),
+        ("write:retval=0:when=2", 3, first_line),
     ] {
         traced(Some(injection.to_owned()), status, prefix);
     }

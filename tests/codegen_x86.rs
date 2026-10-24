@@ -11386,7 +11386,7 @@ fn x86_executes_stdlib_helper_from_source_pack() {
         include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/core/result.lani"),
         include_str!("../stdlib/core/option.lani"),
-        include_str!("../stdlib/core/byte.lani"),
+        include_str!("../stdlib/core/u64.lani"),
         include_str!("../stdlib/core/u8.lani"),
         "module app::main;\nimport core::u8;\nfn main() -> bool {\n    return core::u8::is_ascii_digit(53);\n}\n",
     ];

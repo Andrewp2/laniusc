@@ -48,7 +48,7 @@ storage preparation and commit functions.
 
 The whitespace cursor skips runs of HT, LF, VT, FF, CR and space and yields
 maximal nonempty borrowed words. This is the existing six-character definition
-used by `core::byte` and text trimming. NUL, nonbreaking space and other Unicode
+used by `core::u8` and text trimming. NUL, nonbreaking space and other Unicode
 whitespace are retained within words. Empty and whitespace-only text yield no
 words. The cursor stays exhausted after returning `None`. Copies have independent
 positions and share backing storage. Iteration takes O(input bytes) and allocates

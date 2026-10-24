@@ -1,6 +1,6 @@
 module app::main;
 import core::endian;
-import core::number_u32;
+import core::u32;
 
 fn main() -> i32 {
     // Network-order magic and payload length, then a little-endian message ID.
@@ -27,7 +27,7 @@ fn main() -> i32 {
     while (index < payload_count) {
         let byte: u8 = packet[8 + index];
         let widened: u32 = byte as u32;
-        total = core::number_u32::saturating_add(total, widened);
+        total = core::u32::saturating_add(total, widened);
         index += 1;
     }
     let printable: i32 = total as i32;

@@ -1,7 +1,7 @@
 // Count repeated unsigned readings, including values above i32::MAX.
 module app::main;
 import alloc::hash_map;
-import core::number_u32;
+import core::u32;
 import core::option;
 import core::result;
 import std::io;
@@ -17,7 +17,7 @@ fn main() -> i32 {
     while (index < 6) {
         let key: u32 = readings[index];
         let prior: u32 = core::option::unwrap_or(counts.get(key), 0);
-        let next: u32 = core::number_u32::wrapping_add(prior, 1);
+        let next: u32 = core::u32::wrapping_add(prior, 1);
         if (core::result::is_err(counts.try_insert(key, next))) {
             counts.destroy(); return 2;
         }

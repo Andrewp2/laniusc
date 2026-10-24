@@ -1,6 +1,6 @@
 module app::main;
 import alloc::vec;
-import core::byte;
+import core::u8;
 import core::option;
 import core::result;
 import std::io_byte;
@@ -13,7 +13,7 @@ fn main() -> i32 {
     let checksum: u8 = 0;
     let index: i32 = 0;
     while (index < values.len()) {
-        checksum = core::byte::wrapping_add(checksum, values.at(index));
+        checksum = core::u8::wrapping_add(checksum, values.at(index));
         index += 1;
     }
     values.destroy();

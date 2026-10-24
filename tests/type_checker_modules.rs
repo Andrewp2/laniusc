@@ -4251,7 +4251,11 @@ fn type_checker_enforces_stdlib_trait_where_obligations_from_source_pack() {
     assert_gpu_type_check_pack_accepts(&[
         include_str!("../stdlib/core/cmp.lani"),
         include_str!("../stdlib/core/hash.lani"),
-        include_str!("../stdlib/core/number_u32.lani"),
+        include_str!("../stdlib/core/u32.lani"),
+        include_str!("../stdlib/core/u64.lani"),
+        include_str!("../stdlib/core/option.lani"),
+        include_str!("../stdlib/core/result.lani"),
+        include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/core/ops.lani"),
         include_str!("../stdlib/core/wide_u64.lani"),
         include_str!("../stdlib/core/wide_i64.lani"),
@@ -4284,7 +4288,11 @@ fn main() {
     let error = common::type_check_source_pack_with_timeout(&[
         include_str!("../stdlib/core/cmp.lani"),
         include_str!("../stdlib/core/hash.lani"),
-        include_str!("../stdlib/core/number_u32.lani"),
+        include_str!("../stdlib/core/u32.lani"),
+        include_str!("../stdlib/core/u64.lani"),
+        include_str!("../stdlib/core/option.lani"),
+        include_str!("../stdlib/core/result.lani"),
+        include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/core/ops.lani"),
         include_str!("../stdlib/core/wide_u64.lani"),
         include_str!("../stdlib/core/wide_i64.lani"),
@@ -4341,6 +4349,7 @@ fn main() {
                 include_str!("../stdlib/core/panic.lani"),
                 include_str!("../stdlib/core/result.lani"),
                 include_str!("../stdlib/core/option.lani"),
+                include_str!("../stdlib/core/u64.lani"),
                 include_str!("../stdlib/core/i32.lani"),
             ][..],
             r#"
@@ -4365,7 +4374,7 @@ fn main() {
             &[
                 include_str!("../stdlib/core/cmp.lani"),
                 include_str!("../stdlib/core/panic.lani"),
-                include_str!("../stdlib/core/number_u32.lani"),
+                include_str!("../stdlib/core/u64.lani"),
                 include_str!("../stdlib/core/result.lani"),
                 include_str!("../stdlib/core/option.lani"),
                 include_str!("../stdlib/core/mem.lani"),
@@ -4397,7 +4406,7 @@ fn main() {
                 include_str!("../stdlib/core/panic.lani"),
                 include_str!("../stdlib/core/result.lani"),
                 include_str!("../stdlib/core/option.lani"),
-                include_str!("../stdlib/core/byte.lani"),
+                include_str!("../stdlib/core/u64.lani"),
                 include_str!("../stdlib/core/u8.lani"),
                 include_str!("../stdlib/core/i64.lani"),
             ][..],
@@ -4421,7 +4430,14 @@ fn main() {
         ),
         (
             "core::f32",
-            &[include_str!("../stdlib/core/f32.lani")][..],
+            &[
+                include_str!("../stdlib/core/cmp.lani"),
+                include_str!("../stdlib/core/panic.lani"),
+                include_str!("../stdlib/core/result.lani"),
+                include_str!("../stdlib/core/option.lani"),
+                include_str!("../stdlib/core/mem.lani"),
+                include_str!("../stdlib/core/f32.lani"),
+            ][..],
             r#"
 module app::main;
 
@@ -4680,7 +4696,11 @@ fn type_checker_accepts_core_ordering_module_calls() {
     // which implement core::cmp's traits.
     assert_gpu_type_check_pack_accepts(&[
         include_str!("../stdlib/core/cmp.lani"),
-        include_str!("../stdlib/core/number_u32.lani"),
+        include_str!("../stdlib/core/u32.lani"),
+        include_str!("../stdlib/core/u64.lani"),
+        include_str!("../stdlib/core/option.lani"),
+        include_str!("../stdlib/core/result.lani"),
+        include_str!("../stdlib/core/panic.lani"),
         include_str!("../stdlib/core/ops.lani"),
         include_str!("../stdlib/core/wide_u64.lani"),
         include_str!("../stdlib/core/wide_i64.lani"),

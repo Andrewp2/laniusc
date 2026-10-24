@@ -2,7 +2,7 @@
 // Keep the backing storage alive and unchanged while a Text or iterator exists.
 // Lanius does not yet enforce immutable borrows or these lifetime rules.
 module core::text;
-import core::byte;
+import core::u8;
 import core::cmp;
 import core::decimal;
 import core::hash;
@@ -164,8 +164,8 @@ pub impl Text {
     pub fn trim_ascii(&self) -> Text {
         let start: i32 = 0;
         let end: i32 = self.length;
-        while (start < end && core::byte::is_ascii_whitespace(self.bytes[self.start + start])) { start += 1; }
-        while (end > start && core::byte::is_ascii_whitespace(self.bytes[self.start + end - 1])) { end -= 1; }
+        while (start < end && core::u8::is_ascii_whitespace(self.bytes[self.start + start])) { start += 1; }
+        while (end > start && core::u8::is_ascii_whitespace(self.bytes[self.start + end - 1])) { end -= 1; }
         return self.part(start, end);
     }
     pub fn scalars(&self) -> Scalars { return Scalars { text: self.part(0, self.length), position: 0 }; }
@@ -213,11 +213,11 @@ pub impl Text {
 
 pub impl SplitAsciiWhitespace {
     pub fn next(&self) -> core::option::Option<Text> {
-        while (self.position < self.text.length && core::byte::is_ascii_whitespace(self.text.bytes[self.text.start + self.position])) {
+        while (self.position < self.text.length && core::u8::is_ascii_whitespace(self.text.bytes[self.text.start + self.position])) {
             self.position += 1;
         }
         let start: i32 = self.position;
-        while (self.position < self.text.length && !core::byte::is_ascii_whitespace(self.text.bytes[self.text.start + self.position])) {
+        while (self.position < self.text.length && !core::u8::is_ascii_whitespace(self.text.bytes[self.text.start + self.position])) {
             self.position += 1;
         }
         if (start == self.position) { return core::option::None(); }

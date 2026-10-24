@@ -3,7 +3,7 @@ module app::main;
 import core::mem;
 import core::option;
 import core::range;
-import core::number_i32;
+import core::i32;
 
 fn valid_window(values: [i32]) -> core::option::Option<[i32]> {
     let absent: core::option::Option<[i32]> = core::option::None();
@@ -39,7 +39,7 @@ fn main() -> i32 {
     let total: i32 = 0;
     for value in selected {
         count = count + 1;
-        total = core::number_i32::saturating_add(total, value);
+        total = core::i32::saturating_add(total, value);
     }
     if (count != 4 || total != 20) { return 2; }
     selected[0] = 101;

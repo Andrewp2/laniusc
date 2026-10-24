@@ -56,7 +56,7 @@ part of the roadmap.
 
 NUL, BOM and noncharacters are retained. There is no implicit normalization,
 locale ordering, case folding or Unicode whitespace trimming. The six-character
-ASCII whitespace definition is shared by `core::byte`, `core::u8`, `core::char`
+ASCII whitespace definition is shared by `core::u8`, `core::char`
 and String trimming. This expands the earlier four-character helper to include
 vertical tab and form feed; format parsers keep their own whitespace grammar.
 

@@ -1,6 +1,6 @@
 // Read zeroes and ones, then print how many of the last five are one.
 module app::main;
-import core::byte;
+import core::u8;
 import alloc::deque;
 import core::result;
 import std::io_byte;
@@ -10,7 +10,7 @@ fn main() -> i32 {
     let next: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
     while (next >= 0) {
         let character: u8 = next as u8;
-        if (!core::byte::is_ascii_whitespace(character)) {
+        if (!core::u8::is_ascii_whitespace(character)) {
             if (character != 48 && character != 49) {
                 recent.destroy();
                 return 3;

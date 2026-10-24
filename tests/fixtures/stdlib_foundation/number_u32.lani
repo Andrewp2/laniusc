@@ -1,59 +1,60 @@
 module app::main;
-import core::number_u32;
+import core::option;
+import core::u32;
 fn main() -> i32 {
-    let maximum: u32 = core::number_u32::MAX;
-    if (core::number_u32::MIN != 0 || maximum != 4294967295) {
+    let maximum: u32 = core::u32::MAX;
+    if (core::u32::MIN != 0 || maximum != 4294967295) {
         return 1;
     }
-    if (core::number_u32::min(maximum, 1) != 1 || core::number_u32::max(maximum, 1) != maximum) {
+    if (core::u32::min(maximum, 1) != 1 || core::u32::max(maximum, 1) != maximum) {
         return 2;
     }
-    if (core::number_u32::clamp_or(2, 4, 9, 99) != 4 || core::number_u32::clamp_or(12, 4, 9, 99) != 9 || core::number_u32::clamp_or(7, 4, 9, 99) != 7 || core::number_u32::clamp_or(7, 9, 4, 99) != 99) {
+    if (core::u32::clamp_or(2, 4, 9, 99) != 4 || core::u32::clamp_or(12, 4, 9, 99) != 9 || core::u32::clamp_or(7, 4, 9, 99) != 7 || core::u32::clamp_or(7, 9, 4, 99) != 99) {
         return 3;
     }
-    if (core::number_u32::saturating_add(maximum, 1) != maximum || core::number_u32::saturating_add(2, 3) != 5 || core::number_u32::saturating_sub(0, 1) != 0 || core::number_u32::saturating_sub(7, 3) != 4) {
+    if (core::u32::saturating_add(maximum, 1) != maximum || core::u32::saturating_add(2, 3) != 5 || core::u32::saturating_sub(0, 1) != 0 || core::u32::saturating_sub(7, 3) != 4) {
         return 4;
     }
-    if (core::number_u32::saturating_mul(maximum, 2) != maximum || core::number_u32::saturating_mul(65536, 65536) != maximum || core::number_u32::saturating_mul(65535, 65535) != 4294836225 || core::number_u32::saturating_mul(maximum, 0) != 0) {
+    if (core::u32::saturating_mul(maximum, 2) != maximum || core::u32::saturating_mul(65536, 65536) != maximum || core::u32::saturating_mul(65535, 65535) != 4294836225 || core::u32::saturating_mul(maximum, 0) != 0) {
         return 5;
     }
-    if (core::number_u32::wrapping_add(maximum, 1) != 0 || core::number_u32::wrapping_sub(0, 1) != maximum || core::number_u32::wrapping_mul(maximum, 2) != 4294967294 || core::number_u32::wrapping_mul(3, 7) != 21) {
+    if (core::u32::wrapping_add(maximum, 1) != 0 || core::u32::wrapping_sub(0, 1) != maximum || core::u32::wrapping_mul(maximum, 2) != 4294967294 || core::u32::wrapping_mul(3, 7) != 21) {
         return 6;
     }
-    if (core::number_u32::abs_diff(0, maximum) != maximum || core::number_u32::abs_diff(9, 4) != 5) {
+    if (core::u32::abs_diff(0, maximum) != maximum || core::u32::abs_diff(9, 4) != 5) {
         return 7;
     }
-    if (core::number_u32::gcd(54, 24) != 6 || core::number_u32::gcd(24, 54) != 6 || core::number_u32::gcd(0, maximum) != maximum || core::number_u32::gcd(0, 0) != 0 || core::number_u32::gcd(maximum, 2) != 1) {
+    if (core::u32::gcd(54, 24) != 6 || core::u32::gcd(24, 54) != 6 || core::u32::gcd(0, maximum) != maximum || core::u32::gcd(0, 0) != 0 || core::u32::gcd(maximum, 2) != 1) {
         return 14;
     }
-    if (core::number_u32::lcm_or(6, 8, 99) != 24 || core::number_u32::lcm_or(8, 6, 99) != 24 || core::number_u32::lcm_or(0, maximum, 99) != 0 || core::number_u32::lcm_or(maximum, maximum, 99) != maximum || core::number_u32::lcm_or(maximum, 2, 99) != 99 || core::number_u32::lcm_or(2, maximum, 99) != 99 || core::number_u32::lcm_or(65536, 65536, 99) != 65536) {
+    if (core::option::unwrap_or(core::u32::checked_lcm(6, 8), 99) != 24 || core::option::unwrap_or(core::u32::checked_lcm(8, 6), 99) != 24 || core::option::unwrap_or(core::u32::checked_lcm(0, maximum), 99) != 0 || core::option::unwrap_or(core::u32::checked_lcm(maximum, maximum), 99) != maximum || core::option::unwrap_or(core::u32::checked_lcm(maximum, 2), 99) != 99 || core::option::unwrap_or(core::u32::checked_lcm(2, maximum), 99) != 99 || core::option::unwrap_or(core::u32::checked_lcm(65536, 65536), 99) != 65536) {
         return 15;
     }
-    if (core::number_u32::pow_or(0, 0, 99) != 1 || core::number_u32::pow_or(0, 99, 99) != 0 || core::number_u32::pow_or(3, 5, 99) != 243 || core::number_u32::pow_or(2, 31, 99) != 2147483648 || core::number_u32::pow_or(2, 32, 99) != 99 || core::number_u32::pow_or(maximum, 1, 99) != maximum || core::number_u32::pow_or(maximum, 2, 99) != 99 || core::number_u32::pow_or(1, maximum, 99) != 1) {
+    if (core::option::unwrap_or(core::u32::checked_pow(0, 0), 99) != 1 || core::option::unwrap_or(core::u32::checked_pow(0, 99), 99) != 0 || core::option::unwrap_or(core::u32::checked_pow(3, 5), 99) != 243 || core::option::unwrap_or(core::u32::checked_pow(2, 31), 99) != 2147483648 || core::option::unwrap_or(core::u32::checked_pow(2, 32), 99) != 99 || core::option::unwrap_or(core::u32::checked_pow(maximum, 1), 99) != maximum || core::option::unwrap_or(core::u32::checked_pow(maximum, 2), 99) != 99 || core::option::unwrap_or(core::u32::checked_pow(1, maximum), 99) != 1) {
         return 16;
     }
-    if (!core::number_u32::is_zero(0) || core::number_u32::is_zero(1) || !core::number_u32::is_nonzero(maximum) || core::number_u32::is_nonzero(0) || !core::number_u32::is_even(4) || core::number_u32::is_even(3) || !core::number_u32::is_odd(3) || core::number_u32::is_odd(4)) {
+    if (!core::u32::is_zero(0) || core::u32::is_zero(1) || !core::u32::is_nonzero(maximum) || core::u32::is_nonzero(0) || !core::u32::is_even(4) || core::u32::is_even(3) || !core::u32::is_odd(3) || core::u32::is_odd(4)) {
         return 8;
     }
-    if (!core::number_u32::is_multiple_of(12, 3) || core::number_u32::is_multiple_of(13, 3) || core::number_u32::is_multiple_of(0, 0)) {
+    if (!core::u32::is_multiple_of(12, 3) || core::u32::is_multiple_of(13, 3) || core::u32::is_multiple_of(0, 0)) {
         return 9;
     }
-    if (core::number_u32::div_or(7, 3, 99) != 2 || core::number_u32::div_or(0, 1, 99) != 0 || core::number_u32::div_or(maximum, 2, 99) != 2147483647 || core::number_u32::div_or(7, 0, 99) != 99) {
+    if (core::option::unwrap_or(core::u32::checked_div(7, 3), 99) != 2 || core::option::unwrap_or(core::u32::checked_div(0, 1), 99) != 0 || core::option::unwrap_or(core::u32::checked_div(maximum, 2), 99) != 2147483647 || core::option::unwrap_or(core::u32::checked_div(7, 0), 99) != 99) {
         return 17;
     }
-    if (core::number_u32::rem_or(7, 3, 99) != 1 || core::number_u32::rem_or(0, 1, 99) != 0 || core::number_u32::rem_or(maximum, 2, 99) != 1 || core::number_u32::rem_or(7, 0, 99) != 99) {
+    if (core::option::unwrap_or(core::u32::checked_rem(7, 3), 99) != 1 || core::option::unwrap_or(core::u32::checked_rem(0, 1), 99) != 0 || core::option::unwrap_or(core::u32::checked_rem(maximum, 2), 99) != 1 || core::option::unwrap_or(core::u32::checked_rem(7, 0), 99) != 99) {
         return 18;
     }
-    if (!core::number_u32::is_power_of_two(2147483648) || core::number_u32::is_power_of_two(0) || core::number_u32::is_power_of_two(maximum) || core::number_u32::next_power_of_two(0) != 1 || core::number_u32::next_power_of_two(7) != 8 || core::number_u32::next_power_of_two(2147483648) != 2147483648 || core::number_u32::next_power_of_two(2147483649) != 0) {
+    if (!core::u32::is_power_of_two(2147483648) || core::u32::is_power_of_two(0) || core::u32::is_power_of_two(maximum) || core::option::unwrap_or(core::u32::checked_next_power_of_two(0), 0) != 1 || core::option::unwrap_or(core::u32::checked_next_power_of_two(7), 0) != 8 || core::option::unwrap_or(core::u32::checked_next_power_of_two(2147483648), 0) != 2147483648 || core::option::unwrap_or(core::u32::checked_next_power_of_two(2147483649), 0) != 0) {
         return 10;
     }
-    if (!core::number_u32::is_aligned(12, 4) || core::number_u32::is_aligned(14, 4) || core::number_u32::is_aligned(0, 0) || !core::number_u32::is_aligned(maximum, 1)) {
+    if (!core::u32::is_aligned(12, 4) || core::u32::is_aligned(14, 4) || core::u32::is_aligned(0, 0) || !core::u32::is_aligned(maximum, 1)) {
         return 11;
     }
-    if (core::number_u32::align_up_or(10, 4, 99) != 12 || core::number_u32::align_up_or(12, 4, 99) != 12 || core::number_u32::align_up_or(maximum, 4, 99) != 99 || core::number_u32::align_up_or(10, 0, 99) != 99 || core::number_u32::align_up_or(maximum, 1, 99) != maximum) {
+    if (core::option::unwrap_or(core::u32::checked_align_up(10, 4), 99) != 12 || core::option::unwrap_or(core::u32::checked_align_up(12, 4), 99) != 12 || core::option::unwrap_or(core::u32::checked_align_up(maximum, 4), 99) != 99 || core::option::unwrap_or(core::u32::checked_align_up(10, 0), 99) != 99 || core::option::unwrap_or(core::u32::checked_align_up(maximum, 1), 99) != maximum) {
         return 12;
     }
-    if (core::number_u32::align_down_or(10, 4, 99) != 8 || core::number_u32::align_down_or(maximum, 4, 99) != 4294967292 || core::number_u32::align_down_or(10, 0, 99) != 99) {
+    if (core::option::unwrap_or(core::u32::checked_align_down(10, 4), 99) != 8 || core::option::unwrap_or(core::u32::checked_align_down(maximum, 4), 99) != 4294967292 || core::option::unwrap_or(core::u32::checked_align_down(10, 0), 99) != 99) {
         return 13;
     }
     return 0;

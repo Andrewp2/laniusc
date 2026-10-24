@@ -3,27 +3,32 @@
 module app::main;
 import alloc::tree_map;
 import alloc::vec;
-import core::wide_u64;
+import core::u64;
+import core::decimal;
 import core::option;
 import core::result;
 import std::io_byte;
 import std::io_decimal;
 import std::io_line;
+import std::signal;
 
 fn main() -> i32 {
-    let data: [i32; 20] = [0; 20];
-    let counts: alloc::tree_map::TreeMap<core::wide_u64::WideU64, core::wide_u64::WideU64> = alloc::tree_map::new();
-    let order: alloc::vec::Vec<core::wide_u64::WideU64> = alloc::vec::new();
-    let zero: core::wide_u64::WideU64 = core::wide_u64::zero();
-    let one: core::wide_u64::WideU64 = core::wide_u64::from_u32(1);
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let data: [i32; 20] = [0; 20]; let packed: [u8;20] = [0;20];
+    let counts: alloc::tree_map::TreeMap<u64, u64> = alloc::tree_map::new();
+    let order: alloc::vec::Vec<u64> = alloc::vec::new();
+    let zero: u64 = 0;
+    let one: u64 = 1;
     while (true) {
         let length: i32 = std::io_line::read_stdin_lf_line_into_i32(data, 20);
         if (length == -1) { break; }
         if (length <= 0) { counts.destroy(); order.destroy(); return 2; }
-        if (!core::wide_u64::can_parse_ascii_decimal(data, length)) { counts.destroy(); order.destroy(); return 3; }
-        let key: core::wide_u64::WideU64 = core::wide_u64::parse_ascii_decimal_or(data, length, zero);
-        let previous: core::wide_u64::WideU64 = core::option::unwrap_or(counts.get(key), zero);
-        let next: core::wide_u64::WideU64 = core::wide_u64::wrapping_add(previous, one);
+        let index: i32 = 0; while (index < length) { packed[index] = data[index] as u8; index += 1; }
+        let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64(packed,length);
+        if (core::result::is_err(parsed)) { counts.destroy(); order.destroy(); return 3; }
+        let key: u64 = core::result::unwrap(parsed);
+        let previous: u64 = core::option::unwrap_or(counts.get(key), zero);
+        let next: u64 = core::u64::wrapping_add(previous, one);
         if (!counts.contains_key(key)) {
             if (core::result::is_err(order.try_push(key))) { counts.destroy(); order.destroy(); return 4; }
         }
@@ -31,10 +36,10 @@ fn main() -> i32 {
     }
     let index: i32 = 0;
     while (index < order.len()) {
-        let key: core::wide_u64::WideU64 = order.at(index);
-        let amount: core::wide_u64::WideU64 = core::option::unwrap(counts.get(key));
-        if (std::io_decimal::write_wide_u64(1, key) <= 0 || !std::io_byte::write_stdout_byte(32) ||
-            std::io_decimal::write_wide_u64(1, amount) <= 0 || !std::io_byte::write_stdout_byte(10)) {
+        let key: u64 = order.at(index);
+        let amount: u64 = core::option::unwrap(counts.get(key));
+        if (std::io_decimal::write_u64(1, key) <= 0 || !std::io_byte::write_stdout_byte(32) ||
+            std::io_decimal::write_u64(1, amount) <= 0 || !std::io_byte::write_stdout_byte(10)) {
             counts.destroy(); order.destroy(); return 5;
         }
         index += 1;

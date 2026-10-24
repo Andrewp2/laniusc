@@ -1,62 +1,35 @@
 // Read decimal u32 lines and print the three most recent values in input order.
 // Exit 2 for empty/overlong input, 3 for malformed/out-of-range input,
-// 4 for allocation failure, and 5 for output failure.
+// 4 for allocation failure, and 5 for signal setup/output failure.
 module app::main;
-import core::wide_u64;
 import alloc::deque;
+import core::decimal;
 import core::result;
 import std::io_byte;
 import std::io_decimal;
 import std::io_line;
+import std::signal;
 
 fn main() -> i32 {
-    let line: [i32; 20] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let line: [i32;20] = [0;20]; let packed: [u8;20] = [0;20];
     let recent: alloc::deque::Deque<u32> = alloc::deque::new();
-    let upper: core::wide_u64::WideU64 = core::wide_u64::from_u32(4294967295);
-    let zero: core::wide_u64::WideU64 = core::wide_u64::zero();
     while (true) {
-        let length: i32 = std::io_line::read_stdin_lf_line_into_i32(line, 20);
+        let length: i32 = std::io_line::read_stdin_lf_line_into_i32(line,20);
         if (length == -1) { break; }
-        if (length <= 0) {
-            recent.destroy();
-            return 2;
-        }
-        if (!core::wide_u64::can_parse_ascii_decimal(line, length)) {
-            recent.destroy();
-            return 3;
-        }
-        let parsed: core::wide_u64::WideU64 = core::wide_u64::parse_ascii_decimal_or(line, length, zero);
-        if (core::wide_u64::compare(parsed, upper) > 0) {
-            recent.destroy();
-            return 3;
-        }
-        let number: u32 = core::wide_u64::low_word(parsed);
-        if (recent.len() == 3) {
-            recent.pop_front();
-        }
-        let added: core::result::Result<i32, alloc::deque::Error> = recent.try_push_back(number);
-        if (core::result::is_err(added)) {
-            recent.destroy();
-            return 4;
-        }
+        if (length <= 0) { recent.destroy(); return 2; }
+        let index: i32 = 0; while (index < length) { packed[index] = line[index] as u8; index += 1; }
+        let parsed: core::result::Result<u32,core::decimal::ParseError> = core::decimal::parse_u32(packed,length);
+        if (core::result::is_err(parsed)) { recent.destroy(); return 3; }
+        if (recent.len() == 3) { recent.pop_front(); }
+        if (core::result::is_err(recent.try_push_back(core::result::unwrap(parsed)))) { recent.destroy(); return 4; }
     }
     let index: i32 = 0;
     while (index < recent.len()) {
-        if (index > 0 && !std::io_byte::write_stdout_byte(32)) {
-            recent.destroy();
-            return 5;
-        }
-        let number: u32 = recent.get_or(index, 0);
-        if (std::io_decimal::write_u32(1, number) <= 0) {
-            recent.destroy();
-            return 5;
-        }
+        if (index > 0 && !std::io_byte::write_stdout_byte(32)) { recent.destroy(); return 5; }
+        if (std::io_decimal::write_u64(1,recent.get_or(index,0) as u64) <= 0) { recent.destroy(); return 5; }
         index += 1;
     }
-    if (!std::io_byte::write_stdout_byte(10)) {
-        recent.destroy();
-        return 5;
-    }
-    recent.destroy();
-    return 0;
+    if (!std::io_byte::write_stdout_byte(10)) { recent.destroy(); return 5; }
+    recent.destroy(); return 0;
 }

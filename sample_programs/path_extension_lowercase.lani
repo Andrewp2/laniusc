@@ -1,6 +1,6 @@
 // Extract a file extension from a byte path, then print it in ASCII lowercase.
 module app::main;
-import core::byte;
+import core::u8;
 import core::slice;
 import std::io_byte;
 import core::path_rules;
@@ -29,7 +29,7 @@ fn main() -> i32 {
     let index: i32 = extension;
     while (index < end) {
         let value: u8 = core::slice::get_or(path, 15, index, 0);
-        let lowercase: u8 = core::byte::to_ascii_lowercase(value);
+        let lowercase: u8 = core::u8::to_ascii_lowercase(value);
         if (!std::io_byte::write_stdout_byte(lowercase as i32)) {
             return 2;
         }

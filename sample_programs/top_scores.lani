@@ -4,15 +4,21 @@
 module app::main;
 import alloc::binary_heap;
 import alloc::io;
+import alloc::vec;
 import core::decimal;
 import core::io;
 import core::option;
 import core::result;
 import core::text;
-import std::io;
-import std::io_decimal;
+import std::signal;
 import std::stream;
-import std::vec;
+
+fn write_score(value: i64) -> bool {
+    let bytes: [u8; 21] = [0;21]; let formatted = core::decimal::format_i64(bytes,0,20,value);
+    if (formatted.is_err()) { return false; }
+    let length: i32 = formatted.unwrap(); bytes[length] = 10;
+    let sink = std::stream::stdout(); return core::io::write_all(sink.borrow(),bytes,0,length+1).is_ok();
+}
 
 fn select(text: core::text::Text) -> i32 {
     let newline: [u8; 1] = [10];
@@ -34,20 +40,30 @@ fn select(text: core::text::Text) -> i32 {
         let value: i64 = core::result::unwrap(parsed);
         if (heap.len() < k) {
             if (core::result::is_err(heap.try_push(value))) { heap.destroy(); return 4; }
-        } else { heap.push_pop(value); }
+        } else {
+            // Scores are plain integers; the displaced/rejected value has no
+            // nested resource to release. Duplicate scores remain in the heap.
+            let discarded: i64 = heap.push_pop(value);
+        }
         count += 1;
     }
-    // Min-heap transfer is ascending; traverse it backwards for the report.
-    let scores: std::vec::Vec<i64> = heap.take_sorted_vec(); heap.destroy();
-    let index: i32 = std::vec::len(scores);
-    let status: i32 = 0;
+    // Reserve the entire destination before transferring any retained score.
+    // The min-heap's existing pop operation yields ascending scores.
+    let scores: alloc::vec::Vec<i64> = alloc::vec::new();
+    if (scores.try_reserve(heap.len()).is_err()) { scores.destroy(); heap.destroy(); return 4; }
+    while (!heap.is_empty()) {
+        let value: i64 = core::option::unwrap(heap.pop());
+        if (scores.try_push(value).is_err()) { scores.destroy(); heap.destroy(); return 4; }
+    }
+    heap.destroy(); let index: i32 = scores.len(); let status: i32 = 0;
     while (index > 0) {
         index -= 1;
-        if (std::io_decimal::write_i64(1, std::vec::at(scores, index)) < 0 || std::io::write_byte(1, 10) != 1) { status = 3; break; }
+        if (!write_score(scores.at(index))) { status = 3; break; }
     }
-    std::vec::destroy(scores); return status;
+    scores.destroy(); return status;
 }
 fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
     let buffer: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(1048576));
     let input: std::stream::Descriptor = std::stream::stdin();
     let read: core::result::Result<u64, core::io::CopyFailure> = std::stream::copy(input.borrow(), buffer.borrow());

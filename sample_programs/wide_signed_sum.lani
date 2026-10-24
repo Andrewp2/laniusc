@@ -1,45 +1,47 @@
 // Sum signed decimal lines modulo 2^64 using an owned two-word vector.
 // Each line must contain one signed integer without surrounding whitespace.
 module app::main;
+import alloc::vec;
+import core::io;
 import core::wide_i64;
-import std::io_byte;
-import std::io_decimal;
 import std::io_line;
-import std::vec;
+import std::signal;
+import std::stream;
 fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
     let data:[i32; 20] =[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    let values: std::vec::Vec<core::wide_i64::WideI64> = std::vec::new();
+    let values: alloc::vec::Vec<core::wide_i64::WideI64> = alloc::vec::new();
     while (true) {
         let length: i32 = std::io_line::read_stdin_lf_line_into_i32(data, 20);
         if (length == -1) {
             break;
         }
         if (length <= 0) {
-            std::vec::destroy(values);
+            values.destroy();
             return 2;
         }
         if (!core::wide_i64::can_parse_ascii_decimal(data, length)) {
-            std::vec::destroy(values);
+            values.destroy();
             return 3;
         }
         let value: core::wide_i64::WideI64 = core::wide_i64::parse_ascii_decimal_or(data, length, core::wide_i64::zero());
-        let old_length: i32 = std::vec::len(values);
-        values = std::vec::try_push(values, value);
-        if (std::vec::len(values) != old_length + 1) {
-            std::vec::destroy(values);
+        if (values.try_push(value).is_err()) {
+            values.destroy();
             return 4;
         }
     }
     let total: core::wide_i64::WideI64 = core::wide_i64::zero();
     let index: i32 = 0;
-    while (index<std::vec::len(values)) {
-        let value: core::wide_i64::WideI64 = std::vec::get_or(values, index, core::wide_i64::zero());
+    while (index<values.len()) {
+        let value: core::wide_i64::WideI64 = values.at(index);
         total = core::wide_i64::wrapping_add(total, value);
         index += 1;
     }
-    std::vec::destroy(values);
-    if (std::io_decimal::write_wide_i64(1, total) <= 0 || !std::io_byte::write_stdout_byte(10)) {
-        return 5;
-    }
+    values.destroy();
+    let bytes: [u8; 21] = [0;21];
+    let length: u32 = core::wide_i64::decimal_len(total); let at: u32 = 0;
+    while (at < length) { bytes[at as i32] = core::wide_i64::decimal_byte_at_or(total,at,0); at += 1; }
+    bytes[length as i32] = 10; let sink = std::stream::stdout();
+    if (core::io::write_all(sink.borrow(),bytes,0,(length as i32)+1).is_err()) { return 5; }
     return 0;
 }

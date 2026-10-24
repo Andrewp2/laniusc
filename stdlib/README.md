@@ -19,7 +19,7 @@ contains optional codecs, protocols, mathematics and application utilities.
 | --- | --- | --- |
 | Optional values and failures | `core::option`, `core::result`, `core::pair` | [Option](../docs/stdlib-option.md), [Result](../docs/stdlib-result.md) |
 | Equality, ordering and hashing | `core::cmp`, `core::ordering`, `core::hash`, `core::float_order` | [Lawful comparison and float keys](../docs/stdlib-comparison.md) |
-| Integer arithmetic | `core::{i8,i16,i32,i64,u8,u16,u32,u64,isize,usize}`, byte/bit/conversion helpers | [8/16/32-bit contracts](../docs/stdlib-narrow-integers.md), [64-bit and pointer-sized contracts](../docs/stdlib-native-integers.md); each operation names its checked, wrapping or saturating policy |
+| Integer arithmetic | `core::{i8,i16,i32,i64,u8,u16,u32,u64,isize,usize}`, bit/conversion helpers | [8/16/32-bit contracts](../docs/stdlib-narrow-integers.md), [64-bit and pointer-sized contracts](../docs/stdlib-native-integers.md), [consumer consolidation](../docs/stdlib-numeric-migration.md); each operation names its checked, wrapping or saturating policy |
 | Floating values and conversion | `core::f32`, `core::f64`, `core::float_decimal` | [Exact precision formatting](../docs/stdlib-float-precision.md) |
 | Elementary mathematics | `core::math` | [Full-range binary64 functions and accuracy evidence](../docs/stdlib-math.md) |
 | Wire coding and checksums | `core::base64`, `core::hex`, `core::binary`, `core::varint`, `core::crc32`, `core::adler32`, `core::sha1` | SHA-1 is supplied for the [WebSocket handshake](../docs/extended-websocket.md), with its collision-resistance limitation explicit |
@@ -31,10 +31,13 @@ contains optional codecs, protocols, mathematics and application utilities.
 | Owned collections | `alloc::vec`, `alloc::deque`, `alloc::hash_map`, `alloc::hash_set`, `alloc::tree_map`, `alloc::tree_set`, `alloc::binary_heap`, `alloc::bitset` | [Owned bitsets](../docs/stdlib-bitset-owned.md), [ordered maps](../docs/stdlib-tree-map.md), [generic sets, representatives and algebra](../docs/stdlib-owned-sets.md) |
 | Memory | `core::mem`, `alloc::allocator`, `alloc::arena` | [Arena layouts and ownership](../docs/stdlib-arena.md) |
 | Streams and files | `core::io`, `alloc::io`, `std::stream`, `std::file`, `std::filesystem` | [Files](../docs/stdlib-files.md), [filesystem operations](../docs/stdlib-filesystem.md) |
+| File options and directories | `std::file_ops`, `std::directory` | [Seek, metadata, sync and duplication](../docs/stdlib-file-operations.md), [raw names and bounded walks](../docs/stdlib-directory.md) |
 | Paths | `core::path`, `alloc::path` | [Unix byte paths](../docs/stdlib-paths.md) |
 | Arguments and environment | `std::args`, `std::args_checked`, `std::env_checked` | Raw-byte process snapshots and checked host wrappers |
 | Time and randomness | `core::time`, `core::calendar`, `std::clock`, `core::random`, `std::entropy` | [Time](../docs/stdlib-time.md), [calendar](../docs/stdlib-calendar.md), [randomness](../docs/stdlib-randomness.md); optional [TZif time zones](../docs/extended-timezone.md) |
-| Numeric network values | `core::net` | [Address values](../docs/stdlib-net.md); socket services remain unavailable |
+| Network values and sockets | `core::net`, `std::socket` | [Address values](../docs/stdlib-net.md), [owned TCP/UDP and deadlines](../docs/stdlib-sockets.md), [binary TCP exchange](../docs/stdlib-tcp-exchange.md) |
+| Signal dispositions | `std::signal` | [Explicit native Default/Ignore policies](../docs/stdlib-signals.md); source callbacks and signal trampolines remain unavailable |
+| Native operating-system boundary | `std::linux` | [Unsafe Linux x86-64 syscall contract](../docs/stdlib-linux.md); higher-level modules validate their own operations |
 | Tests and benchmarks | `test::assert`, `test::check`, `test::suite`, `test::property`, `test::bench` | [Development workflow](../docs/stdlib-development.md), `tools/lanius-test` |
 
 The older `std::vec` remains for the verified compiler's extraction contract and
@@ -82,9 +85,15 @@ Verified execution is x86_64 Linux output from GPU compilation. Compiling on the
 GPU does not establish execution of user GPU kernels. Other targets have no
 current execution claim.
 
-`core::target` and `core::runtime` describe available bindings. In particular,
-sockets, threads, directory enumeration and database integration still need
-host support. Metadata declarations do not implement these services. Generic
+`core::target` describes executable library families; `core::runtime` inventories
+direct host bindings. For example, the library network capability is true for
+`std::socket`, implemented over Linux service 14, while the old direct network
+service 5 remains unavailable. Neither inventory claims all host services work.
+In particular,
+threads and database integration still need host support. The older `std::net`
+declarations remain unbound; executable numeric socket ownership is in
+`std::socket`. [The remaining API audit](../docs/library-remaining-api-audit.md)
+distinguishes unavailable services and legacy interfaces. Generic
 composition limits have [reproductions and controls](../docs/library-dependencies.md).
 The [full library roadmap](../docs/library-roadmap.md) remains open, including
 binary SDK installation, complete API references and the final completion audit.

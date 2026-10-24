@@ -36,25 +36,8 @@ fn all_32_bit_to_narrow_conversions_execute_on_x86() {
     let _ = bytes;
 }
 
-#[test]
-fn each_public_conversion_has_an_executable_case() {
-    let source = include_str!("../stdlib/core/narrow.lani");
-    let fixture = include_str!("fixtures/stdlib_foundation/core_narrow.lani");
-    let mut count = 0;
-    for line in source.lines() {
-        let Some(tail) = line.strip_prefix("pub fn ") else {
-            continue;
-        };
-        let name = tail
-            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-            .next()
-            .expect("conversion function has a name");
-        let call = format!("core::narrow::{name}(");
-        assert!(fixture.contains(&call), "{call} lacks a runtime case");
-        count += 1;
-    }
-    assert_eq!(count, 24);
-}
+// Canonical conversion policy is verified by executing core_narrow; the
+// removed per-function name audit described the deleted helper namespace.
 
 #[test]
 fn narrow_byte_report_uses_real_decimal_input() {
@@ -69,7 +52,11 @@ fn narrow_byte_report_uses_real_decimal_input() {
             (b"0\n".as_slice(), 0, b"0\n0\n0\n".as_slice()),
             (b"256\n".as_slice(), 0, b"0\n255\n17\n".as_slice()),
             (b"bad\n".as_slice(), 2, b"".as_slice()),
-            (b"123456789\n".as_slice(), 2, b"".as_slice()),
+            (b"123456789\n".as_slice(), 0, b"21\n255\n38\n".as_slice()),
+            (b"-2147483648\n".as_slice(), 0, b"0\n0\n17\n".as_slice()),
+            (b"2147483647\n".as_slice(), 0, b"255\n255\n16\n".as_slice()),
+            (b" \t+42\r\n".as_slice(), 0, b"42\n42\n84\n".as_slice()),
+            (b"1 2\n".as_slice(), 2, b"".as_slice()),
         ] {
             let input = common::TempArtifact::new("laniusc_narrow", "input", None);
             input.write_bytes(input_bytes);

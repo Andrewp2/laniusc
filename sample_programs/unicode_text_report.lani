@@ -2,56 +2,66 @@
 // scalars in reverse order. Reversal is by scalar, not by grapheme cluster.
 module app::main;
 import alloc::string;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::mem;
 import core::option;
 import core::result;
-import std::io;
 import std::io_byte;
-import std::io_decimal;
-import std::vec;
+import std::signal;
+import std::stream;
+
+fn write_counts(byte_count: i32, scalar_count: i32) -> bool {
+    let bytes: [u8; 24] = [0;24];
+    let first = core::decimal::format_i32(bytes,0,11,byte_count);
+    if (first.is_err()) { return false; } let a: i32 = first.unwrap(); bytes[a] = 32;
+    let second = core::decimal::format_i32(bytes,a+1,11,scalar_count);
+    if (second.is_err()) { return false; } let b: i32 = second.unwrap(); bytes[a+b+1] = 10;
+    let sink = std::stream::stdout();
+    return core::io::write_all(sink.borrow(),bytes,0,a+b+2).is_ok();
+}
+
+fn write_error(message: str, length: i32) -> bool {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(message),length);
+    let sink = std::stream::stderr();
+    return core::io::write_all(sink.borrow(),bytes,0,length).is_ok();
+}
 
 fn report(text: alloc::string::String) -> i32 {
-    if (std::io_decimal::write_i32(1, text.byte_len()) < 0) { return 3; }
-    if (!std::io_byte::write_stdout_byte(32)) { return 3; }
-    if (std::io_decimal::write_i32(1, text.scalar_count()) < 0) { return 3; }
-    if (!std::io_byte::write_stdout_byte(10)) { return 3; }
+    if (!write_counts(text.byte_len(),text.scalar_count())) { return 3; }
     let reversed: alloc::string::String = alloc::string::new();
     while (!text.is_empty()) {
-        let scalar: u32 = core::option::unwrap_or(text.pop_scalar(), 0);
+        let scalar: u32 = core::option::unwrap(text.pop_scalar());
         if (core::result::is_err(reversed.try_push_scalar(scalar))) {
             reversed.destroy();
             return 4;
         }
     }
     let bytes: [u8] = reversed.as_bytes();
-    let index: i32 = 0;
-    while (index < reversed.byte_len()) {
-        if (!std::io_byte::write_stdout_byte(bytes[index] as i32)) {
-            reversed.destroy();
-            return 3;
-        }
-        index += 1;
-    }
+    let sink = std::stream::stdout();
+    let written = core::io::write_all(sink.borrow(),bytes,0,reversed.byte_len());
     reversed.destroy();
+    if (written.is_err()) { return 3; }
     return 0;
 }
 
 fn main() -> i32 {
-    let input: std::vec::Vec<u8> = std::vec::new();
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let input: alloc::vec::Vec<u8> = alloc::vec::new();
     let byte: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
     while (byte >= 0) {
-        let previous: i32 = std::vec::len(input);
-        input = std::vec::try_push(input, byte as u8);
-        if (std::vec::len(input) == previous) { std::vec::destroy(input); return 4; }
+        if (input.try_push(byte as u8).is_err()) { input.destroy(); return 4; }
         byte = std::io_byte::read_stdin_byte_or(-1, -2);
     }
-    if (byte == -2) { std::vec::destroy(input); return 3; }
-    let bytes: [u8] = std::vec::as_slice(input);
+    if (byte == -2) { input.destroy(); return 3; }
+    let bytes: [u8] = input.as_slice();
     let decoded: core::result::Result<alloc::string::String, alloc::string::Error> =
-        alloc::string::from_utf8(bytes, std::vec::len(input));
-    std::vec::destroy(input);
+        alloc::string::from_utf8(bytes, input.len());
+    input.destroy();
     return match (decoded) {
-        Ok(text) -> finish(text),
-        Err(error) -> invalid_input(error),
+        core::result::Ok(text) -> finish(text),
+        core::result::Err(error) -> invalid_input(error),
     };
 }
 
@@ -62,8 +72,8 @@ fn finish(text: alloc::string::String) -> i32 {
 }
 
 fn invalid_input(error: alloc::string::Error) -> i32 {
-    let allocation: bool = match (error) { AllocationFailed -> true, _ -> false };
-    if (allocation) { std::io::eprintln("allocation failed"); return 4; }
-    std::io::eprintln("invalid UTF-8 input");
+    let allocation: bool = match (error) { alloc::string::Error::AllocationFailed -> true, _ -> false };
+    if (allocation) { if (!write_error("allocation failed\n",18)) { return 3; } return 4; }
+    if (!write_error("invalid UTF-8 input\n",20)) { return 3; }
     return 2;
 }

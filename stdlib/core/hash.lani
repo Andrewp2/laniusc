@@ -2,7 +2,7 @@
 
 module core::hash;
 
-import core::number_u32;
+import core::u32;
 import core::wide_u64;
 import core::wide_i64;
 
@@ -93,7 +93,7 @@ pub impl Hash<isize> for isize {
 
 pub fn fnv1a_step(state: u32, value: u8) -> u32 {
     let byte: u32 = value as u32;
-    return core::number_u32::wrapping_mul(state ^ byte, FNV1A_PRIME);
+    return core::u32::wrapping_mul(state ^ byte, FNV1A_PRIME);
 }
 
 fn fnv1a_word_le(state: u32, word: u32) -> u32 {

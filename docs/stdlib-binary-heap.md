@@ -35,6 +35,15 @@ ordering-relevant nested state as read-only. Mutations invalidate previous
 views; failed fallible edits preserve them. The owner must outlive every view.
 An input `View<T>` must satisfy its physical backing and lifetime preconditions.
 
+The current `as_view` constructs its view directly from the owner's proven
+initialized count. An earlier nested `unwrap(slice::view(...))` source shape
+failed LNC0047 for a minimal i64 consumer. The
+[original source and controls](../tests/fixtures/stdlib_compiler_state/checked_sample_heap/README.md)
+are retained; the corrected method executes empty, full-width i64 and mixed
+record views, plus the existing self-extension and generic-value contracts.
+This source correction changes no backing storage or public signature and does
+not establish that every unrelated generic layout composition works.
+
 ## API
 
 ```lanius

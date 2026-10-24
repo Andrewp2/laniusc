@@ -1,7 +1,7 @@
 // Count distinct bytes and print a saturating weighted histogram sum.
 module app::main;
 import alloc::hash_map;
-import core::number_i32;
+import core::i32;
 import core::option;
 import core::result;
 import std::io_byte;
@@ -14,7 +14,7 @@ fn main() -> i32 {
         if (code == -1) { break; }
         if (code == -2) { counts.destroy(); return 2; }
         let previous: i32 = core::option::unwrap_or(counts.get(code), 0);
-        let next: i32 = core::number_i32::saturating_add(previous, 1);
+        let next: i32 = core::i32::saturating_add(previous, 1);
         if (core::result::is_err(counts.try_insert(code, next))) { counts.destroy(); return 3; }
     }
     let weighted: i32 = 0;
@@ -23,7 +23,7 @@ fn main() -> i32 {
         let next: core::option::Option<alloc::hash_map::Entry<i32, i32>> = iterator.next();
         if (core::option::is_none(next)) { break; }
         let item: alloc::hash_map::Entry<i32, i32> = core::option::unwrap(next);
-        weighted = core::number_i32::saturating_add(weighted, core::number_i32::saturating_mul(item.key, item.value));
+        weighted = core::i32::saturating_add(weighted, core::i32::saturating_mul(item.key, item.value));
     }
     let distinct: i32 = counts.len();
     counts.destroy();

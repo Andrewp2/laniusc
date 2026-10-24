@@ -11,8 +11,6 @@ import core::result;
 import core::slice;
 import core::text;
 import core::vec;
-import core::wide_i64;
-import core::wide_i64_checked;
 import ext::cli;
 import ext::parse;
 import std::args;
@@ -52,8 +50,6 @@ fn push_operator(evaluation: &Evaluation, kind: i32, at: i32, options: Options, 
     core::result::unwrap(core::vec::try_push(evaluation.positions.borrow(),at)); return true;
 }
 fn precedence(kind: i32) -> i32 { if (kind >= 6) { return 3; } if (kind >= 3) { return 2; } if (kind > 0) { return 1; } return 0; }
-fn wide(value: i64) -> core::wide_i64::WideI64 { let bits: u64 = value as u64; return core::wide_i64::from_words((bits >> 32) as u32,bits as u32); }
-fn narrow(value: core::wide_i64::WideI64) -> i64 { return (((core::wide_i64::high_word(value) as u64) << 32) | (core::wide_i64::low_word(value) as u64)) as i64; }
 fn reduce(evaluation: &Evaluation, options: Options, diagnostic: &Diagnostic) -> bool {
     let kind: i32 = core::option::unwrap(core::vec::pop(evaluation.operators.borrow())); diagnostic.byte = core::option::unwrap(core::vec::pop(evaluation.positions.borrow()));
     if (!spend(evaluation,options,diagnostic)) { return false; }
@@ -65,8 +61,7 @@ fn reduce(evaluation: &Evaluation, options: Options, diagnostic: &Diagnostic) ->
         if (kind == 1) { result = core::i64::checked_add(left,right); }
         if (kind == 2) { result = core::i64::checked_sub(left,right); }
         if (kind == 3) {
-            let product: core::option::Option<core::wide_i64::WideI64> = core::wide_i64_checked::checked_mul(wide(left),wide(right));
-            if (core::option::is_some(product)) { result = core::option::Some(narrow(core::option::unwrap(product))); }
+            result = core::i64::checked_mul(left,right);
         }
         if (kind == 4 || kind == 5) {
             if (right == 0) { fail(diagnostic,7,9); return false; }

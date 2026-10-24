@@ -55,9 +55,8 @@ multiplication, and unary minus reject overflow. Unary plus preserves its value.
 
 The parser uses iterative operator and value stacks; nesting and unary chains
 do not recurse. Each operator records its original byte offset for diagnostics.
-Stack push errors are handled explicitly. Checked addition/subtraction come from
-`core::i64`; multiplication uses `core::wide_i64_checked` and exact word
-conversions. Division and remainder check exceptional operands before native
+Stack push errors are handled explicitly. Checked addition, subtraction and
+multiplication come from `core::i64`. Division and remainder check exceptional operands before native
 integer operations.
 
 ## Options and limits

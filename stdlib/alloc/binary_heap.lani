@@ -88,7 +88,8 @@ pub impl<T> BinaryHeap<T> {
     // Shallow borrowed copies, in unspecified heap order. Treat the view and
     // ordering-relevant nested state as read-only. Mutation invalidates views.
     pub fn as_view(&self) -> core::slice::View<T> {
-        return core::result::unwrap(core::slice::view(std::vec::as_slice(self.items), self.len()));
+        // The owner already establishes the initialized count and backing.
+        return core::slice::View { values: std::vec::as_slice(self.items), start: 0, length: self.len() };
     }
     pub fn peek(&self) -> core::option::Option<T> { return std::vec::first(self.items); }
 

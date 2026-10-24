@@ -1,28 +1,40 @@
 module app::main;
+import alloc::vec;
 import core::bool;
+import core::decimal;
+import core::io;
 import core::option;
-import std::vec;
+import std::signal;
+import std::stream;
+
+// Format into caller storage, then deliver digits and LF through the shared
+// complete-write loop. Errors may leave a prefix; Interrupted is retried.
+fn write_i32_line(value: i32) -> bool {
+    let bytes: [u8; 12] = [0;12];
+    let formatted = core::decimal::format_i32(bytes,0,11,value);
+    if (formatted.is_err()) { return false; }
+    let length: i32 = formatted.unwrap(); bytes[length] = 10;
+    let sink = std::stream::stdout();
+    return core::io::write_all(sink.borrow(),bytes,0,length+1).is_ok();
+}
 
 fn main() -> i32 {
-    let values: std::vec::Vec<bool> = std::vec::new();
-    values = std::vec::try_push(values, true);
-    values = std::vec::try_push(values, false);
-    values = std::vec::try_push(values, true);
-    if (std::vec::len(values) != 3) {
-        std::vec::destroy(values);
-        return 1;
-    }
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let values: alloc::vec::Vec<bool> = alloc::vec::new();
+    if (values.try_push(true).is_err()) { values.destroy(); return 1; }
+    if (values.try_push(false).is_err()) { values.destroy(); return 1; }
+    if (values.try_push(true).is_err()) { values.destroy(); return 1; }
 
     let count: i32 = 0;
     let index: i32 = 0;
-    while (index < std::vec::len(values)) {
-        let value: bool = std::vec::get_or(values, index, false);
+    while (index < values.len()) {
+        let value: bool = values.at(index);
         count += core::bool::to_i32(value);
         index += 1;
     }
-    std::vec::destroy(values);
+    values.destroy();
     let result: core::option::Option<bool> = core::option::Some(count == 2);
     if (!result.unwrap_or(false)) { return 2; }
-    print(count);
+    if (!write_i32_line(count)) { return 3; }
     return 0;
 }

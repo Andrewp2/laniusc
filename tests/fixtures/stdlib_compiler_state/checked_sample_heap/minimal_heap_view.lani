@@ -1,0 +1,11 @@
+module app::main;
+import alloc::binary_heap;
+import core::option;
+import core::slice;
+fn main() -> i32 {
+    let heap: alloc::binary_heap::BinaryHeap<i64> = alloc::binary_heap::new(alloc::binary_heap::Order::Min);
+    if (heap.try_push(3).is_err()) { heap.destroy(); return 1; }
+    let view: core::slice::View<i64> = heap.as_view();
+    let correct: bool = view.len() == 1 && core::option::unwrap(view.get(0)) == 3;
+    heap.destroy(); if (!correct) { return 2; } return 0;
+}

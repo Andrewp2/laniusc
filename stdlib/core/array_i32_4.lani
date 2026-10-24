@@ -1,6 +1,6 @@
 // Module-form helpers for fixed-size [i32; 4] arrays.
 module core::array_i32_4;
-import core::number_i32;
+import core::i32;
 pub fn len() -> i32 {
     return 4;
 }
@@ -60,7 +60,7 @@ pub fn sum(values:[i32; 4]) -> i32 {
     let index: i32 = 0;
     let total: i32 = 0;
     while (index<4) {
-        total = core::number_i32::saturating_add(total, values[index]);
+        total = core::i32::saturating_add(total, values[index]);
         index += 1;
     }
     return total;

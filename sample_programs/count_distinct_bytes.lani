@@ -1,7 +1,7 @@
 // Print counts of distinct input bytes and distinct ASCII digit bytes.
 // The byte domain is bounded, so membership uses a caller-owned table.
 module app::main;
-import core::byte;
+import core::u8;
 import std::io;
 import std::io_byte;
 import std::io_decimal;
@@ -16,7 +16,7 @@ fn main() -> i32 {
         if (code == -2) { return 2; }
         if (!seen[code]) {
             seen[code] = true; count += 1;
-            if (core::byte::is_ascii_digit(code as u8)) { digits += 1; }
+            if (core::u8::is_ascii_digit(code as u8)) { digits += 1; }
         }
     }
     if (std::io_decimal::write_u32(1, count) < 0 || std::io::write_byte(1, 10) != 1 ||

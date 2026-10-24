@@ -1,9 +1,23 @@
 module app::main;
+import core::decimal;
+import core::io;
+import std::signal;
+import std::stream;
 
-import std::io;
+
+// Format into caller storage, then deliver digits and LF through the shared
+// complete-write loop. Errors may leave a prefix; Interrupted is retried.
+fn write_i32_line(value: i32) -> bool {
+    let bytes: [u8; 12] = [0;12];
+    let formatted = core::decimal::format_i32(bytes,0,11,value);
+    if (formatted.is_err()) { return false; }
+    let length: i32 = formatted.unwrap(); bytes[length] = 10;
+    let sink = std::stream::stdout();
+    return core::io::write_all(sink.borrow(),bytes,0,length+1).is_ok();
+}
 
 fn main() -> i32 {
-    std::io::print_i32(34);
-    print_i32(55);
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 1; }
+    if (!write_i32_line(34) || !write_i32_line(55)) { return 1; }
     return 0;
 }

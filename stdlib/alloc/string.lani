@@ -3,7 +3,7 @@
 // All fallible edits preserve the owner and contents on Err. Successful
 // edits may invalidate borrowed byte views. NUL is an ordinary text scalar.
 module alloc::string;
-import core::byte;
+import core::u8;
 import core::cmp;
 import core::decimal;
 import core::hash;
@@ -473,8 +473,8 @@ pub impl String {
         let bytes: [u8] = self.bytes.as_slice();
         let end: i32 = self.bytes.len();
         let start: i32 = 0;
-        while (start < end && core::byte::is_ascii_whitespace(bytes[start])) { start += 1; }
-        while (end > start && core::byte::is_ascii_whitespace(bytes[end - 1])) { end -= 1; }
+        while (start < end && core::u8::is_ascii_whitespace(bytes[start])) { start += 1; }
+        while (end > start && core::u8::is_ascii_whitespace(bytes[end - 1])) { end -= 1; }
         let count: i32 = end - start;
         let index: i32 = 0;
         while (index < count) { bytes[index] = bytes[start + index]; index += 1; }

@@ -1,6 +1,6 @@
 module app::main;
 import core::bitset;
-import core::number_i32;
+import core::i32;
 
 fn main() -> i32 {
     // Mark composite numbers through 100 in four caller-owned words.
@@ -23,8 +23,8 @@ fn main() -> i32 {
     candidate = 2;
     while (candidate <= 100) {
         if (!core::bitset::get_or(composite, 101, candidate, false)) {
-            count = core::number_i32::saturating_add(count, 1);
-            sum = core::number_i32::saturating_add(sum, candidate);
+            count = core::i32::saturating_add(count, 1);
+            sum = core::i32::saturating_add(sum, candidate);
         }
         candidate += 1;
     }

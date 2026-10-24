@@ -1,5 +1,12 @@
 # Collection consumer migration
 
+[The subsequent checked-sample migration](stdlib-checked-sample-migration.md)
+moves the remaining seventeen ordinary vector/output programs to checked owners
+and complete writes, including actual closed-pipe cleanup. The
+[numeric consumer migration](stdlib-numeric-migration.md) separately moves
+ordinary primitive arithmetic and removes seven redundant helper modules.
+The earlier removal recorded below remains historical evidence.
+
 The repository now uses `alloc::hash_map`, `alloc::tree_map`, `alloc::hash_set`,
 `alloc::tree_set`, `alloc::vec`, and `alloc::string` for the consumers of the removed `std::map`, `std::set`, `std::vec_u8`, and
 `std::utf8_vec` modules. Their fallible edits return explicit `Result` errors.

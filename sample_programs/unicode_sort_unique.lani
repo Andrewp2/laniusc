@@ -2,46 +2,59 @@
 // Input must be valid UTF-8. Return 2 for malformed input, 3 for I/O failure,
 // 4 for too many scalars, and 5 if vector growth or output fails.
 module app::main;
+import alloc::vec;
 import core::char;
+import core::io;
+import core::option;
+import core::utf8;
 import std::io_utf8;
-import std::vec;
+import std::signal;
+import std::stream;
+
+fn write_scalar(code: u32) -> bool {
+    let length: u32 = core::utf8::encoded_len_or(code,0);
+    if (length == 0) { return false; }
+    let bytes: [u8; 4] = [0;4]; let index: u32 = 0;
+    while (index < length) { bytes[index as i32] = core::utf8::encoded_byte_or(code,index,0); index += 1; }
+    let sink = std::stream::stdout();
+    return core::io::write_all(sink.borrow(),bytes,0,length as i32).is_ok();
+}
 
 fn main() -> i32 {
-    let values: std::vec::Vec<char> = std::vec::new();
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let values: alloc::vec::Vec<char> = alloc::vec::new();
     while (true) {
         let code: u32 = std::io_utf8::read_stdin_scalar_or(1114112, 1114113, 1114114);
         if (code == 1114112) { break; }
         if (code == 1114113) {
-            std::vec::destroy(values);
+            values.destroy();
             return 2;
         }
         if (code == 1114114) {
-            std::vec::destroy(values);
+            values.destroy();
             return 3;
         }
-        if (std::vec::len(values) == 4096) {
-            std::vec::destroy(values);
+        if (values.len() == 4096) {
+            values.destroy();
             return 4;
         }
         // The reader returns only scalar values below its sentinels.
-        let scalar: char = core::char::from_u32_or(code, '\0');
-        let before: i32 = std::vec::len(values);
-        values = std::vec::try_push(values, scalar);
-        if (std::vec::len(values) != before + 1) {
-            std::vec::destroy(values);
+        let scalar: char = core::option::unwrap(core::char::from_u32(code));
+        if (values.try_push(scalar).is_err()) {
+            values.destroy();
             return 5;
         }
     }
-    values = std::vec::sort(values);
+    values.sort();
     let previous: char = '\0';
     let has_previous: bool = false;
     let index: i32 = 0;
-    while (index < std::vec::len(values)) {
-        let item: char = std::vec::get_or(values, index, '\0');
+    while (index < values.len()) {
+        let item: char = values.at(index);
         if (!has_previous || item != previous) {
             let code: u32 = item as u32;
-            if (!std::io_utf8::write_stdout_scalar(code)) {
-                std::vec::destroy(values);
+            if (!write_scalar(code)) {
+                values.destroy();
                 return 5;
             }
             previous = item;
@@ -49,7 +62,7 @@ fn main() -> i32 {
         }
         index += 1;
     }
-    std::vec::destroy(values);
-    if (!std::io_utf8::write_stdout_scalar(10)) { return 5; }
+    values.destroy();
+    if (!write_scalar(10)) { return 5; }
     return 0;
 }

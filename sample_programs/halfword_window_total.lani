@@ -1,7 +1,7 @@
 module app::main;
 import core::slice;
 import core::range;
-import core::number_u16;
+import core::u16;
 import core::option;
 import core::result;
 
@@ -36,7 +36,7 @@ fn main() -> i32 {
     while (index < 6) {
         let value: u16 = core::slice::get_or(readings, 6, index, 0);
         if (core::range::contains_inclusive(band, value)) {
-            total = core::number_u16::saturating_add(total, value);
+            total = core::u16::saturating_add(total, value);
         }
         index += 1;
     }

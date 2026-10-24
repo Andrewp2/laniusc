@@ -47,7 +47,8 @@ fn cli_wasm_stdlib_root_sample_build_command_runs_stdio_print_i32() {
     common::require_node();
 
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let sample = repo_root.join("sample_programs/stdio_print_i32.lani");
+    let sample = repo_root
+        .join("tests/fixtures/stdlib_compiler_state/wasm_primitive_output/stdio_print_i32.lani");
     let expected_stdout =
         fs::read_to_string(repo_root.join("sample_programs/stdio_print_i32.stdout"))
             .expect("read stdio_print_i32 expected stdout");

@@ -1,6 +1,6 @@
 // Read arbitrary bytes and print the wrapping sum of the last three.
 module app::main;
-import core::byte;
+import core::u8;
 import core::option;
 import alloc::deque;
 import core::result;
@@ -28,7 +28,7 @@ fn main() -> i32 {
     let checksum: u8 = 0;
     let index: i32 = 0;
     while (index < recent.len()) {
-        checksum = core::byte::wrapping_add(
+        checksum = core::u8::wrapping_add(
             checksum, recent.get_or(index, 0));
         index += 1;
     }

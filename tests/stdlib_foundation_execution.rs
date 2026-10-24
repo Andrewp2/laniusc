@@ -779,36 +779,6 @@ fn executable_core_function_surface_has_runtime_cases() {
             float_fixtures.as_str(),
         ),
         (
-            "byte",
-            include_str!("../stdlib/core/byte.lani"),
-            include_str!("fixtures/stdlib_foundation/number_byte.lani"),
-        ),
-        (
-            "number_i32",
-            include_str!("../stdlib/core/number_i32.lani"),
-            include_str!("fixtures/stdlib_foundation/number_byte.lani"),
-        ),
-        (
-            "number_i8",
-            include_str!("../stdlib/core/number_i8.lani"),
-            include_str!("fixtures/stdlib_foundation/number_i8.lani"),
-        ),
-        (
-            "number_i16",
-            include_str!("../stdlib/core/number_i16.lani"),
-            include_str!("fixtures/stdlib_foundation/number_i16.lani"),
-        ),
-        (
-            "number_u16",
-            include_str!("../stdlib/core/number_u16.lani"),
-            include_str!("fixtures/stdlib_foundation/number_u16.lani"),
-        ),
-        (
-            "number_u32",
-            include_str!("../stdlib/core/number_u32.lani"),
-            include_str!("fixtures/stdlib_foundation/number_u32.lani"),
-        ),
-        (
             "decimal",
             include_str!("../stdlib/core/decimal.lani"),
             decimal_fixtures.as_str(),
@@ -891,23 +861,6 @@ fn executable_core_function_surface_has_runtime_cases() {
     }
     assert_eq!((range_functions, range_methods), (20, 15));
 
-    let number_byte = include_str!("fixtures/stdlib_foundation/number_byte.lani");
-    for module in ["byte", "number_i32"] {
-        for name in ["MIN", "MAX"] {
-            let reference = format!("core::{module}::{name}");
-            assert!(
-                number_byte.contains(&reference),
-                "{reference} lacks a runtime case"
-            );
-        }
-    }
-    for name in ["MIN", "MAX"] {
-        let reference = format!("core::number_u32::{name}");
-        assert!(
-            include_str!("fixtures/stdlib_foundation/number_u32.lani").contains(&reference),
-            "{reference} lacks a runtime case"
-        );
-    }
     assert!(
         include_str!("fixtures/stdlib_foundation/core_f32.lani").contains("core::f32::ZERO"),
         "core::f32::ZERO lacks a runtime case"

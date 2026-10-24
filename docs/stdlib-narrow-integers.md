@@ -57,8 +57,11 @@ stdout/stderr. This verifies the existing callers without rerunning the unrelate
 cases in the historical foundation loop. Independent source review found no
 arithmetic, conversion, shift, GCD/LCM or alignment defect.
 
-## Remaining internal migration
+## Internal migration
 
-The older `core::number_i8`, `number_i16`, `number_i32`, `number_u16`, `number_u32`, `byte` and `narrow` modules still have real consumers and remain separate pending migration. The canonical modules do not delegate to them, and no compatibility aliases were added.
-
-Current consumers include signed byte/halfword vector samples; `core::array_i32_4` and integer samples; `core::hash` and represented `core::wide_u64`; and `core::text`, `core::hex`, `core::hex_wide_u64`, `alloc::string` and byte samples. `core::narrow` has explicit conversion samples and execution coverage. Migrate those callers to the canonical checked, wrapping, saturating or fallback contracts before removing the redundant implementations. Represented wide integer modules are outside this change.
+The redundant `core::number_i8`, `number_i16`, `number_i32`, `number_u16`,
+`number_u32`, `byte` and `narrow` implementations have now been removed after
+[consumer migration](stdlib-numeric-migration.md). Callers select canonical
+checked, wrapping, saturating or explicit fallback behavior. No compatibility
+aliases were added. Dedicated represented-wide algorithms remain independently
+supported; ordinary full-width collection programs now use native primitives.

@@ -2,7 +2,7 @@
 module app::main;
 import core::option;
 import core::range;
-import core::number_i32;
+import core::i32;
 
 fn first_valid(values: [i32]) -> core::option::Option<i32> {
     let allowed: core::range::Range<i32> = core::range::range(-100, 101);
@@ -29,7 +29,7 @@ fn main() -> i32 {
     let zero: core::option::Option<i32> = core::option::Some(0);
     if (chosen != -2 || fallback_choice != 9 || default_choice != 0) { return 1; }
     if (zero.or(backup).unwrap_or(7) != 0) { return 2; }
-    let calibrated: i32 = core::number_i32::saturating_add(chosen, 7);
+    let calibrated: i32 = core::i32::saturating_add(chosen, 7);
     print(chosen);
     print(calibrated);
     return 0;
