@@ -1,0 +1,45 @@
+module app::main;
+import alloc::allocator;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::env;
+import std::fs;
+import std::io;
+import std::linux;
+import std::process;
+import std::random;
+import std::time;
+fn main() -> i32 {
+    if(std::process::argc()==2) {
+        let mode:[i32;1]=[0]; let p:ptr=core::mem::i32_array_data_ptr(mode); assert(std::process::arg_read(1,p,1)==1);
+        let value:[u8]=core::mem::typed_slice_from_raw_parts(p,1);
+        if(value[0]==49) { alloc::allocator::alloc_failed(1,1); return 99; }
+        if(value[0]==50) { assert(false); return 98; }
+    }
+    let alignments:[usize;4]=[1,2,4,8]; let index:i32=0; let null:ptr=0;
+    while(index<4) {
+        let p:ptr=alloc::allocator::alloc(16,alignments[index]); assert(p!=0);
+        let bytes:[u8]=core::mem::typed_slice_from_raw_parts(p,16); bytes[0]=255; bytes[15]=128;
+        let invalid:[usize;5]=[0,3,16,4294967300,18446744073709551615]; let j:i32=0;
+        while(j<5) { assert(alloc::allocator::alloc(16,invalid[j])==0 && alloc::allocator::realloc(p,16,32,invalid[j])==0); assert(bytes[0]==255 && bytes[15]==128); j+=1; }
+        assert(alloc::allocator::alloc(0,alignments[index])==0 && alloc::allocator::realloc(p,16,0,alignments[index])==0);
+        assert(alloc::allocator::realloc(p,0,32,alignments[index])==0 && alloc::allocator::realloc(null,16,32,alignments[index])==0);
+        assert(bytes[0]==255 && bytes[15]==128);
+        let grown:ptr=alloc::allocator::realloc(p,16,32,alignments[index]); assert(grown!=0);
+        let result:[u8]=core::mem::typed_slice_from_raw_parts(grown,32); assert(result[0]==255 && result[15]==128);
+        alloc::allocator::dealloc(grown,32,alignments[index]); index+=1;
+    }
+    let storage:[i32;4]=[0;4]; let p:ptr=core::mem::i32_array_data_ptr(storage);
+    assert(std::time::monotonic_read(p,16)==0 && std::time::system_read(p,16)==0);
+    let bytes:[u8]=core::mem::typed_slice_from_raw_parts(p,16); bytes[0]=0; bytes[1]=128; bytes[2]=255;
+    assert(std::io::write_stdout(p,3)==3 && std::io::write_stderr(p,3)==3);
+    assert(std::io::read_stdin(p,3)==3 && bytes[0]==255 && bytes[1]==0 && bytes[2]==128);
+    assert(std::env::current_dir_read(p,16)>0); assert(std::time::unix_seconds()>0); assert(std::time::sleep_ms_i32(0)==0);
+    assert(std::random::fill_secure_bytes(p,4)==4); let random:u32=std::random::secure_u32();
+    let path:[i32;3]=[0;3]; let raw:ptr=core::mem::i32_array_data_ptr(path); let name:[u8]=core::mem::typed_slice_from_raw_parts(raw,9); let value:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr("/dev/null"),9); let i:i32=0; while(i<9) { name[i]=value[i]; i+=1; }
+    let fd:i32=std::fs::open_write(raw,9); assert(fd>=0); assert(std::io::write_i32(fd,-2147483647-1)==0 && std::io::write_byte(fd,65)==1 && std::io::write_newline(fd)==1 && std::io::write_text(fd,"abc")==3); assert(std::fs::close(fd)==0);
+    let args:[std::linux::Argument;1]=[std::linux::Argument::Word(0)]; let pid:i64=core::result::unwrap(std::linux::call(39,core::result::unwrap(core::slice::view(args,0)))); assert(pid>0);
+    assert(true); return 0;
+}

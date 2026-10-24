@@ -76,10 +76,12 @@ that every kernel operation is usable from arbitrary Lanius code.
 ## Runtime integration
 
 The raw binding appends language/HostService slot 74. Slots 63..73 remain
-language names, types, or intrinsics and are not host services. Existing service
-IDs and thunk offsets stay unchanged. The 32-byte bridge is appended at runtime
-offset 1981, increasing the runtime block from 1981 to 2013 bytes. Its assembly
-source is `shaders/codegen/lir/x86/runtime_linux_syscall.s`.
+language names, types, or intrinsics and are not host services. Service IDs stay
+unchanged. After the [raw host-width repair](stdlib-raw-host-width.md), the
+32-byte bridge starts at runtime offset 2,063 in a 2,095-byte block. Its assembly
+source is `shaders/codegen/lir/x86/runtime_linux_syscall.s`; the table oracle
+checks its relocated offset and every byte. Runtime emission derives its GPU
+dispatch from the checked block length rather than a fixed byte limit.
 
 Native Linux syscalls use runtime inventory family 14. Families 1..13 retain
 their IDs; aggregate host-services family 7 remains unbound. The ABI metadata

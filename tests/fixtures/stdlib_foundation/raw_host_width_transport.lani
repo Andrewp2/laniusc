@@ -1,0 +1,38 @@
+// Synthetic failure-only transport: the test forces errors before kernel
+// access to sentinel buffers or any large allocation/remapping/unmapping.
+module app::main;
+import alloc::allocator;
+import core::mem;
+import std::env;
+import std::fs;
+import std::io;
+import std::process;
+import std::random;
+import std::time;
+fn argument(index:i32) -> i32 {
+    let storage:[i32;1]=[0]; let p:ptr=core::mem::i32_array_data_ptr(storage);
+    if(std::process::arg_len(index)!=1 || std::process::arg_read(index,p,1)!=1) { return -1; }
+    let bytes:[u8]=core::mem::typed_slice_from_raw_parts(p,1); return (bytes[0] as i32)-48;
+}
+fn main() -> i32 {
+    let mode:i32=argument(1); let index:i32=argument(2); if(mode<0 || mode>9 || index<0 || index>5) { return 2; }
+    let sizes:[usize;6]=[4096,2147483648,4294967296,4294971392,9223372036854775808,18446744073709551615];
+    let size:usize=sizes[index]; let storage:[i32;4]=[0;4]; let sentinel:ptr=core::mem::i32_array_data_ptr(storage);
+    if(mode==0) { let p:ptr=alloc::allocator::alloc(size,8); if(p!=0) { return 3; } return 0; }
+    if(mode==1) {
+        let p:ptr=alloc::allocator::alloc(16,8); if(p==0) { return 4; }
+        let bytes:[u8]=core::mem::typed_slice_from_raw_parts(p,16); bytes[0]=173; bytes[15]=241;
+        let changed:ptr=alloc::allocator::realloc(p,16,size,8); if(changed!=0) { alloc::allocator::dealloc(changed,size,8); return 5; }
+        let valid:bool=bytes[0]==173 && bytes[15]==241; alloc::allocator::dealloc(p,16,8); if(!valid) { return 6; } return 0;
+    }
+    if(mode==2) { if(alloc::allocator::realloc(sentinel,size,size,8)!=0) { return 7; } return 0; }
+    if(mode==9) { alloc::allocator::dealloc(sentinel,size,8); return 0; }
+    let status:i32=0;
+    if(mode==3) { status=std::io::write_stdout(sentinel,size); }
+    if(mode==4) { status=std::io::write_stderr(sentinel,size); }
+    if(mode==5) { status=std::io::read_stdin(sentinel,size); }
+    if(mode==6) { status=std::fs::write(1,sentinel,size); }
+    if(mode==7) { status=std::fs::read(0,sentinel,size); }
+    if(mode==8) { status=std::random::fill_secure_bytes(sentinel,size); }
+    if(status!=-5) { return 8; } return 0;
+}

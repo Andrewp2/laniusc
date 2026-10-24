@@ -1,0 +1,21 @@
+// Synthetic capacity validation only. EIO prevents every kernel output write.
+module app::main;
+import core::mem;
+import std::env;
+import std::process;
+import std::time;
+fn argument(index:i32) -> i32 {
+    let storage:[i32;1]=[0]; let p:ptr=core::mem::i32_array_data_ptr(storage);
+    if(std::process::arg_len(index)!=1 || std::process::arg_read(index,p,1)!=1) { return -1; }
+    let bytes:[u8]=core::mem::typed_slice_from_raw_parts(p,1); return (bytes[0] as i32)-48;
+}
+fn main() -> i32 {
+    let mode:i32=argument(1); let index:i32=argument(2); if(mode<0 || mode>2 || index<0 || index>7) { return 2; }
+    let sizes:[usize;8]=[0,15,16,4294967296,4294967297,4294967311,4294967312,18446744073709551615];
+    let size:usize=sizes[index]; let storage:[i32;4]=[0;4]; let sentinel:ptr=core::mem::i32_array_data_ptr(storage); let status:i32=0;
+    if(mode==0) { status=std::time::monotonic_read(sentinel,size); }
+    if(mode==1) { status=std::time::system_read(sentinel,size); }
+    if(mode==2) { status=std::env::current_dir_read(sentinel,size); }
+    let expected:i32=-5; if(mode==2 || size<16) { expected=-1; }
+    if(status!=expected) { return 3; } return 0;
+}

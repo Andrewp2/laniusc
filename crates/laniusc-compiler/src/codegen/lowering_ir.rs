@@ -349,6 +349,7 @@ struct X86ArtifactGraphResources {
     body_length: ResourceId,
     entrypoint_state: ResourceId,
     layout: ResourceId,
+    runtime_dispatch_args: ResourceId,
     artifact_length: ResourceId,
     artifact_bytes: ResourceId,
     artifact_length_readback: Option<ResourceId>,
@@ -5213,6 +5214,12 @@ fn lowering_compiler_graph_builder(
                 ResourceDomain::ArtifactBytes,
                 LoweringCapacities::bytes::<X86ArtifactLayout>(1),
             ))?,
+            runtime_dispatch_args: graph.add_indirect_storage(
+                "lir.x86.runtime_dispatch_args",
+                ResourceDomain::DispatchArguments,
+                ResourceClass::Workspace,
+                LoweringCapacities::bytes::<u32>(3),
+            )?,
             artifact_length: graph.add_resource(ResourceDesc {
                 name: "artifact.x86.length",
                 domain: ResourceDomain::ArtifactBytes,
@@ -9893,12 +9900,22 @@ fn lowering_compiler_graph_builder(
         })?;
         graph.repeat_pass_range(target_page_count, "lir.x86.scatter.replay", "lir.x86.emit")?;
         graph.add_pass(PassDesc {
+            name: "lir.x86.runtime.dispatch_args",
+            phase: CompilerPhase::Artifact,
+            dispatch_domain: ResourceDomain::ArtifactBytes,
+            accesses: vec![
+                PassAccess::read("x86_artifact_layout", x86.layout),
+                PassAccess::write("x86_runtime_dispatch_args", x86.runtime_dispatch_args),
+            ],
+        })?;
+        graph.add_pass(PassDesc {
             name: "lir.x86.runtime.emit",
             phase: CompilerPhase::Artifact,
             dispatch_domain: ResourceDomain::ArtifactBytes,
             accesses: vec![
                 PassAccess::read("x86_artifact_layout", x86.layout),
                 PassAccess::write("artifact_bytes", x86.artifact_bytes),
+                PassAccess::indirect(INDIRECT_DISPATCH_BINDING, x86.runtime_dispatch_args),
             ],
         })?;
     } else {
@@ -12411,6 +12428,10 @@ mod tests {
             ("lir.x86.artifact.layout", "codegen/lir/x86/artifact_layout"),
             ("lir.x86.artifact.clear", "codegen/lir/x86/artifact_clear"),
             ("lir.x86.emit", "codegen/lir/x86/emit"),
+            (
+                "lir.x86.runtime.dispatch_args",
+                "codegen/lir/x86/runtime_dispatch_args",
+            ),
             ("lir.x86.runtime.emit", "codegen/lir/x86/runtime_emit"),
             (
                 "artifact.x86.object.normalize_status",

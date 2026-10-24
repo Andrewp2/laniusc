@@ -5,7 +5,9 @@ operation metadata correction described below. This is an operation inventory
 for native x86_64 Linux ELF programs. It traces implementations and existing
 native execution tests; it does not certify another target, a running host's
 permissions, every raw argument combination, or composable-artifact linking.
-No new GPU execution was needed for this audit.
+The original inventory required no new GPU execution. The later
+[raw host-width repair](stdlib-raw-host-width.md) adds focused native evidence
+for the size, count, capacity and alignment contracts below.
 
 ## Read the two capability inventories separately
 
@@ -32,7 +34,7 @@ and the [diagnostic catalog](../crates/laniusc-compiler/src/compiler/diagnostics
 
 | Family | Operations that work | Narrower contract / unavailable operations | Native tests |
 | --- | --- | --- | --- |
-| 1: allocator | `alloc`, `realloc`, `dealloc`, terminating `alloc_failed` | Low-level matching-pointer/size ownership; no automatic destruction. Allocation denial returns null; failed reallocation preserves the old mapping. The current `alloc` thunk copies EDI into ESI before mmap, so it does not establish support for allocation sizes above `u32::MAX` despite the source `usize` parameter. `alloc::vec` caps backing allocations at `i32::MAX` bytes. Alignment remains subject to the actual page-aligned implementation. | `stdlib_allocator_metadata_execution`, `stdlib_allocator_failure_execution`, `stdlib_alloc_vec_execution` |
+| 1: allocator | `alloc`, `realloc`, `dealloc`, terminating `alloc_failed` | Low-level sole-owner/matching-layout contract; no automatic destruction. Sizes retain all native `usize` bits. Allocation/reallocation reject zero sizes and alignments outside 1/2/4/8 before the syscall; null reports failure and failed reallocation preserves the old owner. Initial `MAP_32BIT` placement may deny large requests; full-width transport is not a large-allocation success guarantee. Deallocation is void and cannot report kernel failure. `alloc::vec` retains its `i32::MAX` backing limit. | `stdlib_raw_host_width_execution`, `stdlib_allocator_metadata_execution`, `stdlib_allocator_failure_execution`, `stdlib_alloc_vec_execution` |
 | 2: descriptor I/O and paths | Fixed read/write/create-append opens, read, write, close; remove file, create/remove directory, rename. Legacy text/integer helpers also have real native slots. | Counted paths reject NUL and lengths over 4,095. One-call I/O may be short. These fixed opens do not imply configurable flags, seeking, metadata, synchronization or enumeration; those execute through service 14 below. `File` supplies manual ownership, not automatic close. | `stdlib_owned_file_execution`, `filesystem_operations_execution`, `stdlib_stream_execution`, `stdlib_file_execution` |
 | 3: stdio | Raw stdout/stderr writes and stdin reads; descriptor text/integer/byte/LF output; `print_i32` | `print_i32` executes one unchecked write and exposes no delivery status. Full-delivery callers use checked writers. `flush_stdout`/`flush_stderr` are executable source bodies with no pending userspace buffer; they do not synchronize storage. | `stdlib_host_execution`, `stdlib_stream_execution` |
 | 4: clock, bound subset | `unix_seconds` (i32), `monotonic_read`, `system_read`, `sleep_ms_i32`; typed `std::clock` results/deadlines over those calls | `monotonic_now_ns() -> i64`, `system_now_unix_ms() -> i64`, and `sleep_ms(i64)` remain unbound. The explicit `CLOCK_I64_*` flags and their catalog rows correctly remain false. Native i64 arithmetic does not supply these bindings. | `time_execution::native_clocks_preserve_timespecs_errors_and_deadline_waits` |
@@ -66,6 +68,14 @@ these operations. Their own guides/tests establish protocol/format and resource
 contracts; their existence does not bind libc resolver/TLS/SQLite or old
 catalog APIs. This inventory makes no new completion claim for a consumer still
 under implementation.
+
+Raw descriptor/stdio byte counts, startup argument/environment copy capacities,
+environment key lengths, clock output capacities and current-directory capacity
+also retain their full native `usize` width. The focused raw-width gate checks
+high-word transport with injected errors and bounded real buffers; it does not
+access huge sentinel buffers. Declared `i32` indices/results and each wrapper's
+existing short-I/O/errno policy remain explicit. See the
+[raw boundary guide](stdlib-raw-host-width.md) for ownership and backing rules.
 
 ## Binding authority and metadata corrections
 
