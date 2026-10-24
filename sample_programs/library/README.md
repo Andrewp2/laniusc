@@ -6,6 +6,7 @@ sample runner's fixed argument and text-output fixture.
 | Application | Execution evidence | Commands and contracts |
 | --- | --- | --- |
 | `buffered_copy.lani` | `tests/stdlib_buffered_execution.rs`, x86_64 Linux; binary stdin/stdout through imported buffered adapters, fixed memory, allocation failures and actual closed-pipe errors during copying and final flush | [Buffered binary copy](../../docs/stdlib-buffered.md#binary-copy-sample) |
+| `range_stats.lani` | `tests/stdlib_range_stats_execution.rs`, x86_64 Linux; inclusive range/take statistics, full i32 endpoints, million-item quotas, strict arguments and exact allocation/output-failure cleanup | [Bounded range statistics](../../docs/stdlib-range-stats.md) |
 | `path_join.lani` | `tests/path_execution.rs`, x86_64 Linux; raw-byte/NUL output, options, allocation and write failures | [Byte paths and owned buffers](../../docs/stdlib-paths.md#application) |
 | `path_filter.lani` | `tests/extended_path_filter_execution.rs`, x86_64 Linux; byte/NUL records, recursive globs, limits, buffer reuse and allocation/I/O failures | [Byte-glob filtering commands and contracts](../../docs/extended-glob.md#path-filter-application) |
 | `uri_component.lani` | `tests/extended_uri_component_execution.rs`, x86_64 Linux; borrowed components, raw percent-decoded bytes, absence, limits and allocation/output failures | [URI component extraction](../../docs/extended-uri-component.md) |

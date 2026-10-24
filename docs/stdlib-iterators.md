@@ -210,6 +210,20 @@ Construction and metadata methods are O(1), as are leaf `next` calls. Adapter
 work is O(number of direct upstream calls), and `advance_up_to` is
 O(number of calls made), in addition to the upstream method's work.
 
+## Range-statistics application
+
+The [range-statistics program](stdlib-range-stats.md) parses i32 endpoints and a
+quota, walks an inclusive RangeI32 through borrowed Take, then writes a CSV
+count and i64 sum through checked formatting and complete output. The quota is
+at most one million. It accepts the full i32 endpoint domain, with reversed
+bounds and zero quota producing an empty selection.
+
+A separate compilation supplies 41 native cases, including million-item
+positive/negative sums, exact stdout comparisons against an i128 arithmetic
+reference, malformed arguments, both argument-allocation failures and checked
+output/signal-policy failures. Argument snapshots are released on each path.
+This is separate evidence from the five module groups below.
+
 ## Native acceptance
 
 `tests/stdlib_iterator_execution.rs` and its seven fixtures under

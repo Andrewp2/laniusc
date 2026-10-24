@@ -159,6 +159,9 @@ sequence/state cases, zero-allocation contracts, shallow owner aliases and an
 expected physical-bounds trap. A nested View-result layout dependency is
 preserved; the module centralizes validation through direct View metadata and
 its checked `from_view` constructor.
+The [range-statistics application](stdlib-range-stats.md) adds one compilation
+and 41 native cases for inclusive range/take composition, million-item quotas,
+strict arguments and exact allocation/output-failure cleanup.
 
 Verified execution is x86_64 Linux output from GPU compilation; user GPU kernels
 and other targets are unverified. Threads, native FFI/TLS/SQLite, generic

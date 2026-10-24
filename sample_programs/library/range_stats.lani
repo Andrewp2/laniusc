@@ -1,0 +1,78 @@
+// Inclusive ascending range statistics through the real borrowed Take adapter.
+// Admitted x86_64 Linux ELF through the GPU compiler; see docs/stdlib-range-stats.md.
+module app::main;
+import core::decimal;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::range;
+import core::result;
+import core::slice;
+import std::args;
+import std::signal;
+import std::stream;
+
+fn output(count: u64, sum: i64) -> i32 {
+    // 64 logical packed bytes. Integer decimal output needs at most 52 bytes
+    // including the header, delimiters, and newline, even without this app's
+    // tighter count/sum bounds. Check every formatter before publication.
+    let storage: [i32;16] = [0;16];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),64);
+    bytes[0] = 99; bytes[1] = 111; bytes[2] = 117; bytes[3] = 110; bytes[4] = 116;
+    bytes[5] = 44; bytes[6] = 115; bytes[7] = 117; bytes[8] = 109; bytes[9] = 10;
+    let formatted_count: core::result::Result<i32,core::decimal::FormatError> = core::decimal::format_u64(bytes,10,54,count);
+    if (formatted_count.is_err()) { return 3; }
+    let count_bytes: i32 = formatted_count.unwrap(); let comma: i32 = 10 + count_bytes;
+    bytes[comma] = 44; let start: i32 = comma + 1;
+    let formatted_sum: core::result::Result<i32,core::decimal::FormatError> = core::decimal::format_i64(bytes,start,63-start,sum);
+    if (formatted_sum.is_err()) { return 3; }
+    let sum_bytes: i32 = formatted_sum.unwrap(); let newline: i32 = start + sum_bytes;
+    bytes[newline] = 10;
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    let written: core::result::Result<i32,core::io::Failure> = core::io::write_all(sink.borrow(),bytes,0,newline+1);
+    if (written.is_err()) { return 3; }
+    return 0;
+}
+
+// Read-only borrowed shallow argument handle. Main keeps the only active
+// allocation owner and destroys it after this returns on every branch.
+fn process(arguments: std::args::Arguments) -> i32 {
+    if (arguments.len() != 3) { return 2; }
+    let first: core::option::Option<core::slice::View<u8>> = arguments.get(0);
+    let second: core::option::Option<core::slice::View<u8>> = arguments.get(1);
+    let third: core::option::Option<core::slice::View<u8>> = arguments.get(2);
+    let start_text: core::slice::View<u8> = first.unwrap();
+    let end_text: core::slice::View<u8> = second.unwrap();
+    let limit_text: core::slice::View<u8> = third.unwrap();
+    let parsed_start: core::result::Result<i32,core::decimal::ParseError> = core::decimal::parse_i32_range(start_text.values,start_text.start,start_text.length);
+    let parsed_end: core::result::Result<i32,core::decimal::ParseError> = core::decimal::parse_i32_range(end_text.values,end_text.start,end_text.length);
+    let parsed_limit: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(limit_text.values,limit_text.start,limit_text.length);
+    if (parsed_start.is_err() || parsed_end.is_err() || parsed_limit.is_err()) { return 2; }
+    let start: i32 = parsed_start.unwrap(); let end: i32 = parsed_end.unwrap();
+    let limit: u64 = parsed_limit.unwrap(); if (limit > 1000000) { return 2; }
+    let bounds: core::range::RangeInclusive<i32> = core::range::range_inclusive(start,end);
+    let source: core::iter::RangeI32 = core::iter::range_i32_inclusive(bounds);
+    let selected: core::iter::Take<core::iter::RangeI32,i32> = core::iter::take<core::iter::RangeI32,i32>(source.borrow(),limit);
+    let count: u64 = 0; let sum: i64 = 0;
+    while (true) {
+        let next: core::option::Option<i32> = selected.next();
+        if (next.is_none()) { break; }
+        let value: i32 = next.unwrap(); count += 1; sum += value as i64;
+    }
+    // count <= 1_000_000 and each magnitude <= 2^31, so every intermediate
+    // sum has magnitude <= 2_147_483_648_000_000, safely within i64.
+    return output(count,sum);
+}
+
+fn main() -> i32 {
+    // Explicit process-wide policy before allocation: a closed output pipe
+    // becomes a checked error and the argument owner can be released.
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,3,96);
+    if (captured.is_err()) {
+        return match (captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 };
+    }
+    let arguments: std::args::Arguments = captured.unwrap();
+    let status: i32 = process(arguments); arguments.destroy(); return status;
+}

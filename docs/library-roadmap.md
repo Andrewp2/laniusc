@@ -632,6 +632,10 @@ API list; unrelated library work can continue.
   copy/interleaving semantics and full-domain range skips without enumerating
   billions of items. A nested View-result layout failure remains captured;
   the library uses one direct metadata construction and checked validation path.
+  The [range-statistics application](stdlib-range-stats.md) walks the real range
+  and take implementations, with one compilation serving 41 native cases:
+  full endpoints, million-item quotas, strict arguments and exact cleanup on
+  allocation, signal-policy and output errors.
 - Next foundation work: additional iterator/collection integration, remaining
   streaming format interfaces, protected Vec/heap migration and numeric/manual
   ownership consolidation. Owned hash/tree sets now execute, and silent-failure
