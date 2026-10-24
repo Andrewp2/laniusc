@@ -120,17 +120,20 @@ normalizer and window report now use this vector. Their errors are checked
 directly. Pre-reserved internal copies unwrap operations only where validated
 bounds and reserved capacity make them infallible.
 
-`std::vec` remains for two recorded boundaries and unmigrated consumers:
+`std::vec` remains for two recorded boundaries and compiler regression fixtures:
 
 - The verified compiler and its extractor explicitly identify
   `std::vec::Vec`. Removing it requires changing that separate proof/extraction
   contract, which this stdlib work does not modify.
-- The attempted binary-heap migration still encounters a GPU compiler replay
-  layout error. Its reproduction is separate from production code; the heap
-  retains its previously tested backing vector.
-- Legacy linear maps/sets, older vector examples and compiler regression
-  fixtures still use the old API. Specialized byte collections also need consolidation;
-  the deque now has its own fallible alloc API. These are unfinished migrations, not forwarding aliases.
+- The attempted binary-heap migration captured a GPU compiler replay layout
+  error. Its reproduction is separate from production code and has not been
+  revalidated after the latest compiler changes; the heap retains its tested
+  backing vector.
+
+Ordinary vector examples now use `alloc::vec`. The legacy linear maps/sets and
+specialized byte/text owners were removed after their consumers
+[migrated to checked APIs](stdlib-legacy-collections.md). The deque has its own
+fallible alloc API.
 
 The new vector's counted view is constructed directly from its valid owner
 state. An alternative nested Result factory triggers a separate compiler
