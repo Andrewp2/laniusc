@@ -39,7 +39,7 @@ package distribution is a separate deliverable.
 | Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, calendars, native clocks, deadline waits, deterministic generators, sampling/shuffle and checked OS entropy execute. Optional TZif/POSIX zones provide conversion and ambiguity candidates; four continuous and four discrete distributions have bounded generic sampling and explicit numerical domains. Additional clocks and distribution families remain |
 | Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6 and CIDR values, owned TCP/UDP, polling, deadlines, options and half-close execute via the Linux boundary. Optional DNS transport queries explicit numeric servers with correlated UDP/TCP fallback. Real TCP/DNS programs exercise transfers. Old std::net declarations remain unbound; system resolver/NSS/interface policy, TLS and higher-level clients/servers remain |
 | Concurrency | Threads, joining, synchronization, atomics, channels, cancellation | Current thread module is contract-only; runtime prerequisites remain |
-| Development | Assertions, test runner, property helpers, benchmarks, diagnostics, API docs | Nontrapping checks, explicit source suites, filters, seeded properties, injected/native-clock benchmarks and a bounded native compiler/run driver execute. Selective, relocatable source bundles use the existing package resolver and verify inventory hashes. Automatic compiler discovery/runtime registration, binary SDK distribution and complete API reference work remain |
+| Development | Assertions, test runner, property helpers, benchmarks, diagnostics, API docs | Nontrapping checks, explicit source suites, filters, seeded properties, injected/native-clock benchmarks and a bounded native compiler/run driver execute. Selective, relocatable source bundles use the existing package resolver and verify inventory hashes. A generated declaration reference links signatures, bounds, source locations and reviewed contract guides. Automatic compiler discovery/runtime registration, binary SDK distribution and complete semantic API documentation remain |
 
 ## Extended library scope
 
@@ -289,7 +289,11 @@ fail explicitly; certified leap-second placement needs separate data/services.
 resolver's reachable closure, retains notices and verifies a sorted hash
 inventory. Relocation tests delete the original source package and execute the
 bundled calculator. Binary SDK installation, registry publishing and complete
-API references remain open.
+semantic API documentation remain open. The
+[generated declaration reference](library-api-reference.md) now inventories all
+standard/extended source modules with deterministic source links and reviewed
+guide mappings. Its unregistered-guide list makes documentation gaps visible;
+it performs no compilation or execution verification.
 
 For external formats and algorithms, use their primary specifications and
 published conformance vectors. Choose exact versions and formats when starting

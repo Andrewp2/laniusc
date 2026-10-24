@@ -13,6 +13,9 @@ timeout --kill-after=2s 100s target/stdlib-build/debug/laniusc \
 
 The compiler binary must already be built. Paths above are relative to the
 repository root. An application imports the CSV module with `import ext::csv;`.
+The [generated declaration index](../docs/api/README.md#ext) lists public
+signatures and source locations; the guides below describe runtime contracts.
+Declaration inventory does not establish execution or complete semantic docs.
 
 | Module | Working surface | Execution evidence |
 | --- | --- | --- |

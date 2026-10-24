@@ -15,6 +15,12 @@ contains optional codecs, protocols, mathematics and application utilities.
 
 ## Find an API
 
+The [generated declaration index](../docs/api/README.md) lists signatures,
+generic bounds, fields and source locations across all library modules.
+[Its guide](../docs/library-api-reference.md) explains generation and the
+remaining semantic documentation gaps. Use the contract guides below for
+runtime behavior, failure rules and supported targets.
+
 | Need | Main modules | Contracts and examples |
 | --- | --- | --- |
 | Optional values and failures | `core::option`, `core::result`, `core::pair` | [Option](../docs/stdlib-option.md), [Result](../docs/stdlib-result.md) |

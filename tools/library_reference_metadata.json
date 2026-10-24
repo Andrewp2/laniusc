@@ -1,0 +1,828 @@
+{
+  "modules": {
+    "alloc::arena": {
+      "guides": [
+        "docs/stdlib-arena.md"
+      ]
+    },
+    "alloc::binary_heap": {
+      "guides": [
+        "docs/stdlib-binary-heap.md"
+      ]
+    },
+    "alloc::bitset": {
+      "guides": [
+        "docs/stdlib-bitset-owned.md"
+      ]
+    },
+    "alloc::deque": {
+      "guides": [
+        "docs/stdlib-deque.md"
+      ]
+    },
+    "alloc::format": {
+      "guides": [
+        "docs/stdlib-format-strings.md"
+      ]
+    },
+    "alloc::hash_map": {
+      "guides": [
+        "docs/stdlib-hash-collections.md"
+      ]
+    },
+    "alloc::hash_set": {
+      "guides": [
+        "docs/stdlib-owned-sets.md"
+      ]
+    },
+    "alloc::io": {
+      "guides": [
+        "docs/stdlib-streams.md"
+      ]
+    },
+    "alloc::path": {
+      "guides": [
+        "docs/stdlib-paths.md"
+      ]
+    },
+    "alloc::string": {
+      "guides": [
+        "docs/stdlib-string.md"
+      ]
+    },
+    "alloc::tree_map": {
+      "guides": [
+        "docs/stdlib-tree-map.md"
+      ]
+    },
+    "alloc::tree_set": {
+      "guides": [
+        "docs/stdlib-owned-sets.md"
+      ]
+    },
+    "alloc::vec": {
+      "guides": [
+        "docs/stdlib-vec.md"
+      ]
+    },
+    "core::adler32": {
+      "guides": [
+        "docs/stdlib-adler32.md"
+      ]
+    },
+    "core::bitset": {
+      "guides": [
+        "docs/stdlib-bitset-owned.md"
+      ]
+    },
+    "core::calendar": {
+      "guides": [
+        "docs/stdlib-calendar.md"
+      ]
+    },
+    "core::char": {
+      "guides": [
+        "docs/stdlib-unicode.md"
+      ]
+    },
+    "core::cmp": {
+      "guides": [
+        "docs/stdlib-comparison.md"
+      ]
+    },
+    "core::decimal": {
+      "guides": [
+        "docs/stdlib-decimal.md"
+      ]
+    },
+    "core::decimal_number": {
+      "guides": [
+        "docs/stdlib-decimal-number.md"
+      ]
+    },
+    "core::f32": {
+      "guides": [
+        "docs/stdlib-floats.md"
+      ]
+    },
+    "core::f64": {
+      "guides": [
+        "docs/stdlib-floats.md"
+      ]
+    },
+    "core::float_decimal": {
+      "guides": [
+        "docs/stdlib-float-decimal.md",
+        "docs/stdlib-float-precision.md"
+      ]
+    },
+    "core::float_order": {
+      "guides": [
+        "docs/stdlib-comparison.md"
+      ]
+    },
+    "core::fmt": {
+      "guides": [
+        "docs/stdlib-formatting.md"
+      ]
+    },
+    "core::format": {
+      "guides": [
+        "docs/stdlib-format-strings.md"
+      ]
+    },
+    "core::hash": {
+      "guides": [
+        "docs/stdlib-comparison.md"
+      ]
+    },
+    "core::i16": {
+      "guides": [
+        "docs/stdlib-narrow-integers.md"
+      ]
+    },
+    "core::i32": {
+      "guides": [
+        "docs/stdlib-narrow-integers.md"
+      ]
+    },
+    "core::i64": {
+      "guides": [
+        "docs/stdlib-native-integers.md"
+      ]
+    },
+    "core::i8": {
+      "guides": [
+        "docs/stdlib-narrow-integers.md"
+      ]
+    },
+    "core::io": {
+      "guides": [
+        "docs/stdlib-streams.md"
+      ]
+    },
+    "core::isize": {
+      "guides": [
+        "docs/stdlib-native-integers.md"
+      ]
+    },
+    "core::math": {
+      "guides": [
+        "docs/stdlib-math.md"
+      ]
+    },
+    "core::net": {
+      "guides": [
+        "docs/stdlib-net.md"
+      ]
+    },
+    "core::option": {
+      "guides": [
+        "docs/stdlib-option.md"
+      ]
+    },
+    "core::ordering": {
+      "guides": [
+        "docs/stdlib-comparison.md"
+      ]
+    },
+    "core::panic": {
+      "guides": [
+        "docs/library-remaining-api-audit.md",
+        "docs/library-host-prerequisites.md"
+      ],
+      "note": "panic and unreachable execute traps. The panic-hook capability/status helpers describe an unavailable hook service; they do not install a hook."
+    },
+    "core::path": {
+      "guides": [
+        "docs/stdlib-paths.md"
+      ]
+    },
+    "core::path_rules": {
+      "guides": [
+        "docs/stdlib-paths.md"
+      ]
+    },
+    "core::random": {
+      "guides": [
+        "docs/stdlib-randomness.md"
+      ]
+    },
+    "core::result": {
+      "guides": [
+        "docs/stdlib-result.md"
+      ]
+    },
+    "core::runtime": {
+      "guides": [
+        "docs/library-host-prerequisites.md"
+      ]
+    },
+    "core::set": {
+      "guides": [
+        "docs/stdlib-fixed-capacity.md"
+      ]
+    },
+    "core::slice": {
+      "guides": [
+        "docs/stdlib-slice-views.md",
+        "docs/stdlib-slice.md"
+      ]
+    },
+    "core::target": {
+      "guides": [
+        "docs/library-host-prerequisites.md"
+      ]
+    },
+    "core::text": {
+      "guides": [
+        "docs/stdlib-text.md",
+        "docs/stdlib-text-composition.md"
+      ]
+    },
+    "core::time": {
+      "guides": [
+        "docs/stdlib-time.md"
+      ]
+    },
+    "core::u16": {
+      "guides": [
+        "docs/stdlib-narrow-integers.md"
+      ]
+    },
+    "core::u32": {
+      "guides": [
+        "docs/stdlib-narrow-integers.md"
+      ]
+    },
+    "core::u64": {
+      "guides": [
+        "docs/stdlib-native-integers.md"
+      ]
+    },
+    "core::u8": {
+      "guides": [
+        "docs/stdlib-narrow-integers.md"
+      ]
+    },
+    "core::unicode": {
+      "guides": [
+        "docs/stdlib-unicode.md"
+      ]
+    },
+    "core::unicode_case_data": {
+      "guides": [
+        "docs/stdlib-unicode.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "core::unicode_fold_data": {
+      "guides": [
+        "docs/stdlib-unicode.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "core::unicode_properties_data": {
+      "guides": [
+        "docs/stdlib-unicode.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "core::unicode_table": {
+      "guides": [
+        "docs/stdlib-unicode.md"
+      ],
+      "role": "support",
+      "note": "Private static-table decoder shared by the Unicode data modules; caller-backed bounds and generated uppercase-hex data are its source preconditions."
+    },
+    "core::unicode_turkic_data": {
+      "guides": [
+        "docs/stdlib-unicode.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "core::usize": {
+      "guides": [
+        "docs/stdlib-native-integers.md"
+      ]
+    },
+    "core::vec": {
+      "guides": [
+        "docs/stdlib-fixed-capacity.md"
+      ]
+    },
+    "ext::audio": {
+      "guides": [
+        "docs/extended-audio.md"
+      ]
+    },
+    "ext::big_int": {
+      "guides": [
+        "docs/extended-big-int.md"
+      ]
+    },
+    "ext::big_uint": {
+      "guides": [
+        "docs/extended-big-uint.md"
+      ]
+    },
+    "ext::cbor": {
+      "guides": [
+        "docs/extended-cbor.md"
+      ]
+    },
+    "ext::cli": {
+      "guides": [
+        "docs/extended-cli.md"
+      ]
+    },
+    "ext::compression": {
+      "guides": [
+        "docs/extended-compression.md"
+      ]
+    },
+    "ext::config": {
+      "guides": [
+        "docs/extended-config.md"
+      ]
+    },
+    "ext::csv": {
+      "guides": [
+        "docs/extended-csv.md"
+      ]
+    },
+    "ext::decimal": {
+      "guides": [
+        "docs/extended-decimal.md"
+      ]
+    },
+    "ext::deflate": {
+      "guides": [
+        "docs/extended-deflate.md"
+      ]
+    },
+    "ext::diff": {
+      "guides": [
+        "docs/extended-diff.md"
+      ]
+    },
+    "ext::discrete_distributions": {
+      "guides": [
+        "docs/extended-discrete-distributions.md"
+      ]
+    },
+    "ext::distributions": {
+      "guides": [
+        "docs/extended-distributions.md"
+      ]
+    },
+    "ext::distributions_erfc": {
+      "guides": [
+        "docs/extended-distributions.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::dns": {
+      "guides": [
+        "docs/extended-dns.md"
+      ]
+    },
+    "ext::dns_client": {
+      "guides": [
+        "docs/extended-dns-client.md"
+      ]
+    },
+    "ext::geometry": {
+      "guides": [
+        "docs/extended-geometry.md"
+      ]
+    },
+    "ext::glob": {
+      "guides": [
+        "docs/extended-glob.md"
+      ]
+    },
+    "ext::http": {
+      "guides": [
+        "docs/extended-http.md"
+      ]
+    },
+    "ext::image": {
+      "guides": [
+        "docs/extended-image.md"
+      ]
+    },
+    "ext::inflate": {
+      "guides": [
+        "docs/extended-inflate.md"
+      ]
+    },
+    "ext::json": {
+      "guides": [
+        "docs/extended-json.md"
+      ]
+    },
+    "ext::kv": {
+      "guides": [
+        "docs/extended-kv.md"
+      ]
+    },
+    "ext::linalg": {
+      "guides": [
+        "docs/extended-linalg.md"
+      ]
+    },
+    "ext::log": {
+      "guides": [
+        "docs/extended-log.md"
+      ]
+    },
+    "ext::parse": {
+      "guides": [
+        "docs/extended-parse.md"
+      ]
+    },
+    "ext::patch": {
+      "guides": [
+        "docs/extended-patch.md"
+      ]
+    },
+    "ext::percent": {
+      "guides": [
+        "docs/extended-percent.md"
+      ]
+    },
+    "ext::png": {
+      "guides": [
+        "docs/extended-png.md"
+      ]
+    },
+    "ext::progress": {
+      "guides": [
+        "docs/extended-progress.md"
+      ]
+    },
+    "ext::regex": {
+      "guides": [
+        "docs/extended-regex.md"
+      ]
+    },
+    "ext::schema": {
+      "guides": [
+        "docs/extended-schema.md"
+      ]
+    },
+    "ext::settings": {
+      "guides": [
+        "docs/extended-settings.md"
+      ]
+    },
+    "ext::settings_env": {
+      "guides": [
+        "docs/extended-settings.md"
+      ]
+    },
+    "ext::signal": {
+      "guides": [
+        "docs/extended-signal.md"
+      ]
+    },
+    "ext::statistics": {
+      "guides": [
+        "docs/extended-statistics.md"
+      ]
+    },
+    "ext::table": {
+      "guides": [
+        "docs/extended-table.md"
+      ]
+    },
+    "ext::tar": {
+      "guides": [
+        "docs/extended-tar.md"
+      ]
+    },
+    "ext::terminal": {
+      "guides": [
+        "docs/extended-terminal.md"
+      ]
+    },
+    "ext::terminal_data": {
+      "guides": [
+        "docs/extended-terminal.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::timezone": {
+      "guides": [
+        "docs/extended-timezone.md"
+      ]
+    },
+    "ext::toml": {
+      "guides": [
+        "docs/extended-toml.md"
+      ]
+    },
+    "ext::unicode_case": {
+      "guides": [
+        "docs/extended-unicode-case.md"
+      ]
+    },
+    "ext::unicode_case_data": {
+      "guides": [
+        "docs/extended-unicode-case.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::unicode_graphemes": {
+      "guides": [
+        "docs/extended-unicode-graphemes.md"
+      ]
+    },
+    "ext::unicode_graphemes_data": {
+      "guides": [
+        "docs/extended-unicode-graphemes.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::unicode_lines": {
+      "guides": [
+        "docs/extended-unicode-lines.md"
+      ]
+    },
+    "ext::unicode_lines_data": {
+      "guides": [
+        "docs/extended-unicode-lines.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::unicode_lines_wrap": {
+      "guides": [
+        "docs/extended-text-wrap.md"
+      ]
+    },
+    "ext::unicode_normalize": {
+      "guides": [
+        "docs/extended-unicode-normalize.md"
+      ]
+    },
+    "ext::unicode_normalize_data": {
+      "guides": [
+        "docs/extended-unicode-normalize.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::unicode_sentences": {
+      "guides": [
+        "docs/extended-unicode-sentences.md"
+      ]
+    },
+    "ext::unicode_sentences_data": {
+      "guides": [
+        "docs/extended-unicode-sentences.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::unicode_words": {
+      "guides": [
+        "docs/extended-unicode-words.md"
+      ]
+    },
+    "ext::unicode_words_data": {
+      "guides": [
+        "docs/extended-unicode-words.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::uri": {
+      "guides": [
+        "docs/extended-uri.md"
+      ]
+    },
+    "ext::uri_resolve": {
+      "guides": [
+        "docs/extended-uri-resolve.md"
+      ]
+    },
+    "ext::wave": {
+      "guides": [
+        "docs/extended-wave.md"
+      ]
+    },
+    "ext::websocket": {
+      "guides": [
+        "docs/extended-websocket.md"
+      ]
+    },
+    "ext::zip": {
+      "guides": [
+        "docs/extended-zip.md"
+      ]
+    },
+    "std::clock": {
+      "guides": [
+        "docs/stdlib-time.md"
+      ]
+    },
+    "std::command": {
+      "guides": [
+        "docs/stdlib-command.md"
+      ]
+    },
+    "std::command_capture": {
+      "guides": [
+        "docs/stdlib-command-capture.md"
+      ]
+    },
+    "std::command_raw": {
+      "guides": [
+        "docs/stdlib-command.md"
+      ],
+      "role": "support",
+      "note": "Internal syscall support for std::command. Use the checked command API and its ownership contract for ordinary programs; this inventory does not make the raw helpers a separate support promise."
+    },
+    "std::directory": {
+      "guides": [
+        "docs/stdlib-directory.md"
+      ]
+    },
+    "std::entropy": {
+      "guides": [
+        "docs/stdlib-randomness.md"
+      ]
+    },
+    "std::file": {
+      "guides": [
+        "docs/stdlib-files.md"
+      ]
+    },
+    "std::file_ops": {
+      "guides": [
+        "docs/stdlib-file-operations.md"
+      ]
+    },
+    "std::filesystem": {
+      "guides": [
+        "docs/stdlib-filesystem.md"
+      ]
+    },
+    "std::fs": {
+      "guides": [
+        "docs/stdlib-filesystem.md"
+      ]
+    },
+    "std::gpu": {
+      "guides": [
+        "docs/library-remaining-api-audit.md",
+        "docs/library-host-prerequisites.md"
+      ],
+      "profile": "Unbound host declarations",
+      "note": "User buffer/dispatch extern declarations have no runtime binding. Compiler use of a GPU does not establish user GPU execution."
+    },
+    "std::host": {
+      "guides": [
+        "docs/library-remaining-api-audit.md",
+        "docs/library-host-prerequisites.md"
+      ],
+      "profile": "Metadata only",
+      "note": "Descriptor/status helpers describe an unavailable host service; this module supplies no host operation."
+    },
+    "std::io": {
+      "guides": [
+        "docs/stdlib-checked-sample-migration.md",
+        "docs/library-remaining-api-audit.md"
+      ]
+    },
+    "std::linux": {
+      "guides": [
+        "docs/stdlib-linux.md"
+      ]
+    },
+    "std::net": {
+      "guides": [
+        "docs/library-remaining-api-audit.md",
+        "docs/library-host-prerequisites.md"
+      ],
+      "profile": "Unbound host declarations",
+      "note": "The direct legacy network service declarations are unbound. Metadata helpers describe that unavailable service; executable owned sockets use std::socket over std::linux separately."
+    },
+    "std::poll": {
+      "guides": [
+        "docs/stdlib-poll.md"
+      ]
+    },
+    "std::random": {
+      "guides": [
+        "docs/stdlib-randomness.md"
+      ]
+    },
+    "std::random_checked": {
+      "guides": [
+        "docs/stdlib-randomness.md"
+      ]
+    },
+    "std::random_wide": {
+      "guides": [
+        "docs/stdlib-randomness.md"
+      ]
+    },
+    "std::signal": {
+      "guides": [
+        "docs/stdlib-signals.md"
+      ]
+    },
+    "std::socket": {
+      "guides": [
+        "docs/stdlib-sockets.md"
+      ]
+    },
+    "std::stream": {
+      "guides": [
+        "docs/stdlib-streams.md"
+      ]
+    },
+    "std::thread": {
+      "guides": [
+        "docs/library-remaining-api-audit.md",
+        "docs/library-host-prerequisites.md"
+      ],
+      "profile": "Unbound host declarations",
+      "note": "Thread spawn/join/yield/current-ID extern declarations have no runtime binding. Source metadata helpers do not implement threads."
+    },
+    "std::time": {
+      "guides": [
+        "docs/stdlib-time.md"
+      ],
+      "profile": "Mixed host bindings",
+      "note": "Counted monotonic/system clock reads, unix_seconds and i32 sleep use native bindings. The three i64-return/read or i64-sleep extern declarations noted below remain unbound; their presence does not establish executable clock support.",
+      "declarations": {
+        "monotonic_now_ns": "Unbound legacy i64 host declaration. Use the checked std::clock/std::time_checked API and its linked target contract.",
+        "system_now_unix_ms": "Unbound legacy i64 host declaration. Use the checked std::clock/std::time_checked API and its linked target contract.",
+        "sleep_ms": "Unbound legacy i64 host declaration. Use the checked std::clock/std::time_checked API and its linked target contract."
+      }
+    },
+    "std::time_checked": {
+      "guides": [
+        "docs/stdlib-time.md"
+      ]
+    },
+    "std::time_wide": {
+      "guides": [
+        "docs/stdlib-time.md"
+      ]
+    },
+    "std::vec": {
+      "guides": [
+        "docs/stdlib-legacy-collections.md",
+        "docs/stdlib-checked-sample-migration.md"
+      ],
+      "profile": "Protected legacy",
+      "note": "Protected extraction identity and a remaining binary-heap backing dependency. Legacy failure/owner policies differ from alloc::vec; ordinary programs use alloc::vec. This source inventory creates no compatibility alias or new support promise."
+    },
+    "test::assert": {
+      "guides": [
+        "docs/stdlib-development.md"
+      ]
+    },
+    "test::bench": {
+      "guides": [
+        "docs/stdlib-development.md"
+      ]
+    },
+    "test::check": {
+      "guides": [
+        "docs/stdlib-development.md"
+      ]
+    },
+    "test::harness": {
+      "guides": [
+        "docs/library-remaining-api-audit.md",
+        "docs/library-host-prerequisites.md"
+      ],
+      "profile": "Metadata only",
+      "note": "Descriptor/status metadata supplies no registration, discovery or runner. Explicit source testing is implemented separately by test::suite, test::check, test::property and test::bench."
+    },
+    "test::property": {
+      "guides": [
+        "docs/stdlib-development.md"
+      ]
+    },
+    "test::suite": {
+      "guides": [
+        "docs/stdlib-development.md"
+      ]
+    }
+  }
+}

@@ -76,6 +76,12 @@ iterator/stream composition and distribution/reference completion remain on the
 [full roadmap](library-roadmap.md). Compiler failures retain
 [reproductions and successful controls](library-dependencies.md).
 
+The [generated declaration reference](library-api-reference.md) inventories
+211 source modules with signatures, bounds, fields and exact source links.
+Twenty focused CPU tests and a fresh generated-output check pass. This is
+documentation extraction, not runtime verification; semantic guide gaps remain
+listed explicitly.
+
 **Preceding numeric, owned-set and portable extended-library checkpoint (2026-10-23):**
 [Canonical narrow integers](stdlib-narrow-integers.md),
 [binary64 elementary mathematics](stdlib-math.md),
