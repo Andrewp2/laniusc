@@ -1,0 +1,12 @@
+module app::main;
+import core::clone;
+import core::result;
+struct Local { value: i32 }
+enum Fault { Never }
+pub impl core::clone::TryClone<Local,Fault> for Local { pub fn try_clone_value(source: Local) -> core::result::Result<Local,Fault> { return core::result::Ok(source); } }
+pub impl core::clone::Destroy<Local> for Local { pub fn destroy_value(owned: Local) {} }
+fn main() -> i32 {
+    let source: Local = Local { value:17 };
+    let result: core::result::Result<Local,Fault> = Local::try_clone_value(source);
+    let copy = result.unwrap(); assert(copy.value == 17); Local::destroy_value(copy); return 0;
+}

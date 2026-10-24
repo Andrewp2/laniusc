@@ -21,6 +21,11 @@
         "docs/stdlib-bitset-owned.md"
       ]
     },
+    "alloc::clone": {
+      "guides": [
+        "docs/stdlib-clone.md"
+      ]
+    },
     "alloc::deque": {
       "guides": [
         "docs/stdlib-deque.md"
@@ -53,7 +58,8 @@
     },
     "alloc::string": {
       "guides": [
-        "docs/stdlib-string.md"
+        "docs/stdlib-string.md",
+        "docs/stdlib-clone.md"
       ]
     },
     "alloc::tree_map": {
@@ -99,6 +105,11 @@
     "core::char": {
       "guides": [
         "docs/stdlib-unicode.md"
+      ]
+    },
+    "core::clone": {
+      "guides": [
+        "docs/stdlib-clone.md"
       ]
     },
     "core::cmp": {

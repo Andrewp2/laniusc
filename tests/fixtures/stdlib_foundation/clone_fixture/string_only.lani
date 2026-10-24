@@ -1,0 +1,15 @@
+module app::main;
+import alloc::clone;
+import alloc::string;
+import alloc::vec;
+import core::mem;
+import core::result;
+import core::slice;
+fn main() -> i32 {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr("data"),4);
+    let source = alloc::string::from_utf8(raw,4).unwrap();
+    let input: [alloc::string::String;2] = [source,source];
+    let result: core::result::Result<alloc::vec::Vec<alloc::string::String>,alloc::clone::Error<alloc::string::Error>> = alloc::clone::from_view<alloc::string::String,alloc::string::Error>(core::slice::view(input,2).unwrap());
+    let copy = result.unwrap(); source.destroy(); assert(copy.at(0).byte_at(0).unwrap() == 100 && copy.at(1).byte_at(3).unwrap() == 97);
+    alloc::clone::destroy_vec<alloc::string::String>(copy.borrow()); return 0;
+}

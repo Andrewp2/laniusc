@@ -3,6 +3,7 @@
 // All fallible edits preserve the owner and contents on Err. Successful
 // edits may invalidate borrowed byte views. NUL is an ordinary text scalar.
 module alloc::string;
+import core::clone;
 import core::u8;
 import core::cmp;
 import core::decimal;
@@ -540,4 +541,11 @@ pub impl core::cmp::PartialOrd<String> for String {
         if (String::gt(left, right)) { return core::cmp::Greater; }
         return core::cmp::Equal;
     }
+}
+
+pub impl core::clone::TryClone<String,Error> for String {
+    pub fn try_clone_value(source: String) -> core::result::Result<String,Error> { return source.try_clone(); }
+}
+pub impl core::clone::Destroy<String> for String {
+    pub fn destroy_value(owned: String) { owned.destroy(); }
 }
