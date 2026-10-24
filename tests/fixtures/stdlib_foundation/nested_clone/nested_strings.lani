@@ -1,0 +1,60 @@
+// Accepted native Linux x86-64: corrected owner transfers and balanced trace.
+module app::main;
+import alloc::clone;
+import alloc::string;
+import alloc::vec;
+import core::result;
+import core::slice;
+import fixture::consumer;
+import alloc::clone_vec;
+
+fn main() -> i32 {
+    let bytes: [u8;4] = [65,0,195,169];
+    let made = alloc::string::from_utf8(bytes,4);
+    if (made.is_err()) { return 4; }
+    let text: alloc::string::String = made.unwrap();
+    let row: alloc::vec::Vec<alloc::string::String> = alloc::vec::new();
+    let added = row.try_push(text);
+    if (added.is_err()) { text.destroy(); row.destroy(); return 4; }
+    // Transfer text ownership into row. Never separately destroy text now.
+    let empty: alloc::vec::Vec<alloc::string::String> = alloc::vec::new();
+    let rows: [alloc::vec::Vec<alloc::string::String>;3] = [row,empty,row];
+    let packed = alloc::vec::from_view(core::slice::view(rows,3).unwrap());
+    if (packed.is_err()) {
+        alloc::clone::destroy_vec<alloc::string::String>(row.borrow());
+        empty.destroy(); return 4;
+    }
+    // source owns only outer storage: its repeated row entries BORROW row.
+    // It is eligible for read-only cloning, not for recursive destruction.
+    let source: alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>> = packed.unwrap();
+    let cloned: core::result::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>,alloc::clone::Error<alloc::clone::Error<alloc::string::Error>>> =
+        fixture::consumer::duplicate<alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>,alloc::clone::Error<alloc::clone::Error<alloc::string::Error>>>(source);
+    source.destroy();
+    alloc::clone::destroy_vec<alloc::string::String>(row.borrow());
+    empty.destroy();
+    if (cloned.is_err()) { return 4; } // These error types own no memory.
+    let copy: alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>> = cloned.unwrap();
+    // Transfer the actual row, then its String. No growing mutation is made
+    // through a copied descriptor left in a parent container.
+    let first_row: alloc::vec::Vec<alloc::string::String> = copy.remove(0).unwrap();
+    let middle_row: alloc::vec::Vec<alloc::string::String> = copy.at(0);
+    let last_row: alloc::vec::Vec<alloc::string::String> = copy.at(1);
+    let first: alloc::string::String = first_row.pop().unwrap();
+    let last: alloc::string::String = last_row.at(0);
+    let valid: bool = copy.len()==2 && middle_row.is_empty()
+        && first.byte_len()==4 && last.byte_len()==4 && first.byte_at(1).unwrap()==0;
+    let edited = first.try_push_scalar(88);
+    let independent: bool = edited.is_ok() && first.byte_len()==5 && last.byte_len()==4;
+    // Both restorations fit the capacity vacated by remove/pop, so neither
+    // allocates. On edit Err, first still owns its unchanged String and is
+    // reinstalled too, before any recursive cleanup.
+    first_row.try_push(first).unwrap();
+    copy.try_insert(0,first_row).unwrap();
+    assert(copy.len()==3);
+    alloc::clone::destroy_vec<alloc::vec::Vec<alloc::string::String>>(copy.borrow());
+    if (edited.is_err()) { return 4; }
+    // Active owner reset is repeatable, even with recursively owned entries.
+    alloc::clone::destroy_vec<alloc::vec::Vec<alloc::string::String>>(copy.borrow());
+    if (!valid || !independent) { return 1; }
+    return 0;
+}

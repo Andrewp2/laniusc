@@ -1,0 +1,31 @@
+// Two bounded failure stages: before cloning, or after one partial String.
+module fixture::matrix_leaf;
+import alloc::string;
+import core::clone;
+import core::result;
+pub struct Leaf { text: alloc::string::String, tag: i32, fail: i32 }
+pub enum Fault { Allocation(alloc::string::Error), Injected(i32,i32,alloc::string::String) }
+
+fn failure(tag: i32, stage: i32) -> Fault {
+    let bytes: [u8;5] = [69,0,(48+tag) as u8,(48+stage) as u8,85];
+    let made = alloc::string::from_utf8(bytes,5);
+    if (made.is_err()) { return Fault::Allocation(made.unwrap_err()); }
+    return Fault::Injected(tag,stage,made.unwrap());
+}
+pub impl core::clone::TryClone<Leaf,Fault> for Leaf {
+    pub fn try_clone_value(source: Leaf) -> core::result::Result<Leaf,Fault> {
+        if (source.fail==0) { return core::result::Err(failure(source.tag,0)); }
+        let made = source.text.try_clone();
+        if (made.is_err()) { return core::result::Err(Fault::Allocation(made.unwrap_err())); }
+        let partial: alloc::string::String = made.unwrap();
+        if (source.fail==1) {
+            let error: Fault = failure(source.tag,1);
+            partial.destroy();
+            return core::result::Err(error);
+        }
+        return core::result::Ok(Leaf { text:partial,tag:source.tag,fail:-1 });
+    }
+}
+pub impl core::clone::Destroy<Leaf> for Leaf {
+    pub fn destroy_value(owned: Leaf) { owned.text.destroy(); }
+}

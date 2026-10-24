@@ -1,0 +1,13 @@
+// Accepted rejection: LNC0008 at the clone call despite empty runtime input.
+module app::main;
+import alloc::clone;
+import alloc::vec;
+import core::result;
+import fixture::prerequisites;
+import alloc::clone_vec;
+fn main() -> i32 {
+    let source: alloc::vec::Vec<fixture::prerequisites::ReleaseOnly> = alloc::vec::new();
+    let result: core::result::Result<alloc::vec::Vec<fixture::prerequisites::ReleaseOnly>,alloc::clone::Error<fixture::prerequisites::Never>> =
+        alloc::clone_vec::try_clone<fixture::prerequisites::ReleaseOnly,fixture::prerequisites::Never>(source.borrow());
+    return 0;
+}

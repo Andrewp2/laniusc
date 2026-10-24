@@ -1,0 +1,40 @@
+// Opt-in recursive Vec memory-owner cloning and explicit release.
+// Accepted native Linux x86-64 via GPU compiler checkpoint 59612b34.
+// Import this module in both the composition entry and generic consumers.
+// Ownership and typed error contracts: docs/stdlib-nested-clone.md.
+module alloc::clone_vec;
+import alloc::clone;
+import alloc::vec;
+import core::clone;
+import core::result;
+
+// Explicit E lets callers select the leaf's error contract. The source borrows
+// initialized entries and can contain duplicate borrowed leaf descriptors.
+// A successful result owns every cloned entry independently. On Err, the
+// existing from_view algorithm releases this call's completed destination.
+pub fn try_clone<T,E>(source: &alloc::vec::Vec<T>)
+    -> core::result::Result<alloc::vec::Vec<T>,alloc::clone::Error<E>>
+    where T: core::clone::TryClone<T,E>, T: core::clone::Destroy<T> {
+    return alloc::clone::from_view<T,E>(source.as_view());
+}
+
+// Own impl binders only. E is fixed by the selected trait's error argument,
+// not guessed from Vec<T>'s receiver or replaced by a receiving annotation.
+pub impl<T,E> core::clone::TryClone<alloc::vec::Vec<T>,alloc::clone::Error<E>>
+    for alloc::vec::Vec<T>
+    where T: core::clone::TryClone<T,E>, T: core::clone::Destroy<T> {
+    pub fn try_clone_value(source: alloc::vec::Vec<T>)
+        -> core::result::Result<alloc::vec::Vec<T>,alloc::clone::Error<E>> {
+        return try_clone<T,E>(source.borrow());
+    }
+}
+
+// Valid only when every initialized entry is one distinct active memory owner.
+// This consumes the passed descriptor. A stale copied Vec is not reset by it.
+// For the actual active borrowed owner use alloc::clone::destroy_vec directly.
+pub impl<T> core::clone::Destroy<alloc::vec::Vec<T>> for alloc::vec::Vec<T>
+    where T: core::clone::Destroy<T> {
+    pub fn destroy_value(owned: alloc::vec::Vec<T>) {
+        alloc::clone::destroy_vec<T>(owned.borrow());
+    }
+}

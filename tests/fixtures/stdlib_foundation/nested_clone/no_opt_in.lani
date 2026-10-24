@@ -1,0 +1,16 @@
+// Accepted negative control. Do not import alloc::clone_vec or consumer.
+// Compilation must reject the missing Vec TryClone/Destroy prerequisites;
+// empty runtime input must not let a missing protocol implementation escape.
+module app::main;
+import alloc::clone;
+import alloc::string;
+import alloc::vec;
+import core::result;
+import core::slice;
+
+fn main() -> i32 {
+    let rows: [alloc::vec::Vec<alloc::string::String>;0] = [];
+    let copied: core::result::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>,alloc::clone::Error<alloc::clone::Error<alloc::string::Error>>> =
+        alloc::clone::from_view<alloc::vec::Vec<alloc::string::String>,alloc::clone::Error<alloc::string::Error>>(core::slice::view(rows,0).unwrap());
+    return 0;
+}

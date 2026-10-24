@@ -1,0 +1,17 @@
+// Accepted LNC0006: an accepted E prerequisite cannot become receiving F.
+module app::main;
+import alloc::clone;
+import alloc::string;
+import alloc::vec;
+import core::clone;
+import core::result;
+import alloc::clone_vec;
+fn wrong<T,E,F>(source: &alloc::vec::Vec<T>) -> core::result::Result<alloc::vec::Vec<T>,alloc::clone::Error<F>>
+    where T: core::clone::TryClone<T,E>, T: core::clone::Destroy<T> {
+    return alloc::clone_vec::try_clone<T,E>(source);
+}
+fn main() -> i32 {
+    let source: alloc::vec::Vec<alloc::string::String> = alloc::vec::new();
+    let result: core::result::Result<alloc::vec::Vec<alloc::string::String>,alloc::clone::Error<i64>> = wrong<alloc::string::String,alloc::string::Error,i64>(source.borrow());
+    return 0;
+}

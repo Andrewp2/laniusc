@@ -133,6 +133,14 @@ allocation failures. Exact cleanup ledgers include errors owning a String.
 Existing collection clones still copy entries shallowly; automatic destruction
 and general deep-owned collection integration remain work.
 
+[Recursive Vec cloning](stdlib-nested-clone.md) now composes those explicit
+protocols through ordinary nested Vec types, with independent String owners,
+typed errors at each level and explicit recursive release. Ten compilation jobs
+include six native executables and four exact type/bound rejections; sixteen
+native processes cover three levels, empty/ZST paths, ten reached allocation
+failures and eight owned-error index/stage cases. Exact mapping ledgers check
+cleanup, and errors are inspected after destination and source release.
+
 [Imported generic implementation applications](compiler-implementation-applications.md)
 now retain proof-selected environments, receiver contracts and declaration
 arities through replay and exact cache validation. Eight focused compilation
@@ -171,7 +179,7 @@ Compiler failures retain
 [reproductions and successful controls](library-dependencies.md).
 
 The [generated declaration reference](library-api-reference.md) inventories
-217 source modules with signatures, bounds, fields and exact source links.
+218 source modules with signatures, bounds, fields and exact source links.
 Twenty focused CPU tests and a fresh generated-output check pass. This is
 documentation extraction, not runtime verification; semantic guide gaps remain
 listed explicitly. The [strict UTF codec guide](stdlib-utf-codecs.md) now maps

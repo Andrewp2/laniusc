@@ -34,7 +34,7 @@ runtime behavior, failure rules and supported targets.
 | Shared iteration | `core::iter` | [Fused slice/range cursors, borrowed take/chain, bounded consumption and shallow item ownership](../docs/stdlib-iterators.md), [range-statistics application](../docs/stdlib-range-stats.md) |
 | UTF-8 and Unicode | `core::text`, `core::char`, `core::utf8`, `core::utf16`, `core::transcode`, `core::unicode` | [UTF encoding, edits and transcoding](../docs/stdlib-utf-codecs.md), [Unicode properties](../docs/stdlib-unicode.md); normalization and full casing are optional extended modules |
 | Owned strings | `alloc::string` | [String ownership, edits and failures](../docs/stdlib-string.md) |
-| Explicit value cloning and memory release | `core::clone`, `alloc::clone`, `alloc::string` | [Fallible element cloning, typed errors and partial-owner cleanup](../docs/stdlib-clone.md) |
+| Explicit value cloning and memory release | `core::clone`, `alloc::clone`, `alloc::clone_vec`, `alloc::string` | [Fallible element cloning and partial-owner cleanup](../docs/stdlib-clone.md), [recursive Vec ownership and typed errors](../docs/stdlib-nested-clone.md) |
 | Formatting | `core::fmt`, `core::format`, `alloc::format` | [Runtime format strings and owned results](../docs/stdlib-format-strings.md) |
 | Inline collections | `core::vec`, `core::set` | [Borrowed free APIs, capacities, equality and returned values](../docs/stdlib-fixed-capacity.md) |
 | Owned collections | `alloc::vec`, `alloc::deque`, `alloc::hash_map`, `alloc::hash_set`, `alloc::tree_map`, `alloc::tree_set`, `alloc::binary_heap`, `alloc::bitset` | [Owned bitsets](../docs/stdlib-bitset-owned.md), [ordered maps](../docs/stdlib-tree-map.md), [generic sets, representatives and algebra](../docs/stdlib-owned-sets.md) |
@@ -58,8 +58,9 @@ consumers [migrated to checked APIs](../docs/stdlib-legacy-collections.md).
 
 ## Ownership and errors
 
-Owners are shallow values. Keep one active owner and call `destroy()` when
-finished. A copy of an owner aliases its allocation; it does not clone it.
+Owners are shallow values. Keep one active owner and use its explicit cleanup
+operation when finished. A copy of an owner aliases its allocation; it does not
+clone it.
 Views borrow live initialized storage, and their initial physical backing count
 remains a caller precondition. These rules are documented conventions rather
 than compiler-enforced lifetime safety.
@@ -69,7 +70,11 @@ Explicit `TryClone`/`Destroy` implementations let
 user-record owners, with cleanup on recoverable failure. Its `destroy_vec`
 releases those owned entries and the outer vector. Existing collection clones
 still copy entries shallowly; ordinary `Vec.destroy()` releases only outer
-storage. These protocols introduce no automatic moves or destruction.
+storage. The explicit `alloc::clone_vec` implementations let these protocols
+compose through nested Vec levels, preserving each typed error layer and
+releasing completed destinations on failure. A source containing borrowed
+aliases still needs its separate owners released once. These protocols introduce
+no automatic moves or destruction.
 
 Fallible operations return explicit `Result` errors. Ordinary absence uses
 `Option`. Mutations state whether an error preserves the owner; streams can

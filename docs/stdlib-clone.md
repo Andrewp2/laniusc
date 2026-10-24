@@ -6,6 +6,13 @@ independent `alloc::vec::Vec`. Allocation failures and element errors are
 reported, and completed destination elements are released on error. Production
 behavior is Lanius; the allocator supplies memory.
 
+The optional [nested Vec module](stdlib-nested-clone.md) supplies explicit
+TryClone/Destroy implementations for Vec when its entries satisfy the leaf
+protocols. It reuses this engine at every level, retaining nested error indexes
+and cleanup. Ordinary collection clone/destroy methods keep their shallow
+policies. Mutating a nested owner through a copied handle requires transferring
+it out and restoring its updated descriptor before recursive release.
+
 ## Protocols
 
 ```lanius

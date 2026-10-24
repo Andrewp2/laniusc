@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **217 modules**, **9458 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **218 modules**, **9463 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -106,6 +106,7 @@ Inventory: **217 modules**, **9458 declaration/member entries**. Counts include 
 | [alloc::bitset](alloc/bitset.md) | [source](../../stdlib/alloc/bitset.lani#L4) | 55 | Source inventory | [stdlib-bitset-owned](../stdlib-bitset-owned.md) |
 | [alloc::buffered](alloc/buffered.md) | [source](../../stdlib/alloc/buffered.lani#L4) | 49 | Source inventory | [stdlib-buffered](../stdlib-buffered.md) |
 | [alloc::clone](alloc/clone.md) | [source](../../stdlib/alloc/clone.lani#L2) | 6 | Source inventory | [stdlib-clone](../stdlib-clone.md) |
+| [alloc::clone_vec](alloc/clone_vec.md) | [source](../../stdlib/alloc/clone_vec.lani#L5) | 5 | Source inventory | [stdlib-nested-clone](../stdlib-nested-clone.md) |
 | [alloc::deque](alloc/deque.md) | [source](../../stdlib/alloc/deque.lani#L3) | 64 | Source inventory | [stdlib-deque](../stdlib-deque.md) |
 | [alloc::format](alloc/format.md) | [source](../../stdlib/alloc/format.lani#L2) | 5 | Source inventory | [stdlib-format-strings](../stdlib-format-strings.md) |
 | [alloc::hash_map](alloc/hash_map.md) | [source](../../stdlib/alloc/hash_map.lani#L3) | 62 | Source inventory | [stdlib-hash-collections](../stdlib-hash-collections.md) |

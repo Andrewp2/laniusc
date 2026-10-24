@@ -1,0 +1,14 @@
+// Accepted native Linux x86-64 leaf. Each logical Unit owns no storage.
+module fixture::zst;
+import core::clone;
+import core::result;
+pub struct Unit {}
+pub enum Never { Unreachable }
+pub impl core::clone::TryClone<Unit,Never> for Unit {
+    pub fn try_clone_value(source: Unit) -> core::result::Result<Unit,Never> {
+        return core::result::Ok(source);
+    }
+}
+pub impl core::clone::Destroy<Unit> for Unit {
+    pub fn destroy_value(owned: Unit) {}
+}

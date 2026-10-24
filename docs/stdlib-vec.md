@@ -135,6 +135,13 @@ specialized byte/text owners were removed after their consumers
 [migrated to checked APIs](stdlib-legacy-collections.md). The deque has its own
 fallible alloc API.
 
+For recursively owned Vec entries, the explicit
+[`alloc::clone_vec` protocols](stdlib-nested-clone.md) reuse the fallible clone
+engine at each level. This preserves the ordinary vector's shallow methods and
+keeps source aliases distinct from independently owned clone results. The guide
+also shows why a growing String or nested Vec must be transferred out and its
+updated descriptor restored before releasing its containing owner.
+
 The new vector's counted view is constructed directly from its valid owner
 state. An alternative nested Result factory triggers a separate compiler
 limitation in small programs; the reproduction and successful controls are in
