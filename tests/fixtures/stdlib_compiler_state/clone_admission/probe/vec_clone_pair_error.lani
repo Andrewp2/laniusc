@@ -1,0 +1,47 @@
+// Concrete-E smaller control only. Not a proposed specialization.
+module probe::vec_clone_pair_error;
+import probe::owners;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::slice;
+import probe::protocol;
+
+pub enum Failure<E> { Bounds, Storage(alloc::vec::Error), Element(i32,E) }
+
+pub fn destroy_vec<T>(owner: &alloc::vec::Vec<T>) where T: probe::protocol::Destroy<T> {
+    while (true) {
+        let next: core::option::Option<T> = owner.pop();
+        if (next.is_none()) { break; }
+        T::destroy_value(next.unwrap());
+    }
+    owner.destroy();
+}
+
+// Input metadata is checked; backing, immutability and lifetime are caller
+// preconditions. Duplicate borrowed source descriptors are allowed. No source
+// owner is transferred. E is transferred unchanged to the returned Element.
+pub fn from_view<T>(source: core::slice::View<T>) -> core::result::Result<alloc::vec::Vec<T>,Failure<probe::owners::OwnerFailure>> where T: probe::protocol::TryClone<T,probe::owners::OwnerFailure>, T: probe::protocol::Destroy<T> {
+    if (source.start < 0 || source.length < 0 || source.start > 2147483647-source.length) { return core::result::Err(Failure::Bounds()); }
+    let made: core::result::Result<alloc::vec::Vec<T>,alloc::vec::Error> = alloc::vec::with_capacity<T>(source.len());
+    if (made.is_err()) { return core::result::Err(Failure::Storage(made.unwrap_err())); }
+    let output: alloc::vec::Vec<T> = made.unwrap();
+    let index: i32 = 0;
+    while (index < source.len()) {
+        let borrowed: T = source.get(index).unwrap();
+        let cloned: core::result::Result<T,probe::owners::OwnerFailure> = T::try_clone_value(borrowed);
+        if (cloned.is_err()) {
+            let error: probe::owners::OwnerFailure = cloned.unwrap_err();
+            destroy_vec<T>(output.borrow());
+            return core::result::Err(Failure::Element(index,error));
+        }
+        let value: T = cloned.unwrap();
+        let added: core::result::Result<i32,alloc::vec::Error> = output.try_push(value);
+        if (added.is_err()) {
+            T::destroy_value(value); destroy_vec<T>(output.borrow());
+            return core::result::Err(Failure::Storage(added.unwrap_err()));
+        }
+        index += 1;
+    }
+    return core::result::Ok(output);
+}

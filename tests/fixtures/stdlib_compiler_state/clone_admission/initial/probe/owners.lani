@@ -1,0 +1,31 @@
+module probe::owners;
+import alloc::string;
+import core::result;
+import probe::protocol;
+
+pub enum OwnerFailure { Allocation(i32,i32,alloc::string::Error), Injected(i32,i32,u64) }
+pub struct Pair { left: alloc::string::String, right: alloc::string::String, tag: i32, fail: i32 }
+
+pub impl probe::protocol::TryClone<alloc::string::String,alloc::string::Error> for alloc::string::String {
+    pub fn try_clone_value(source: alloc::string::String) -> core::result::Result<alloc::string::String,alloc::string::Error> { return source.try_clone(); }
+}
+pub impl probe::protocol::Destroy<alloc::string::String> for alloc::string::String {
+    pub fn destroy_value(owned: alloc::string::String) { owned.destroy(); }
+}
+
+pub impl probe::protocol::TryClone<Pair,OwnerFailure> for Pair {
+    pub fn try_clone_value(source: Pair) -> core::result::Result<Pair,OwnerFailure> {
+        let first: core::result::Result<alloc::string::String,alloc::string::Error> = source.left.try_clone();
+        if (first.is_err()) { return core::result::Err(OwnerFailure::Allocation(source.tag,1,first.unwrap_err())); }
+        let left: alloc::string::String = first.unwrap();
+        if (source.fail == 1) { left.destroy(); return core::result::Err(OwnerFailure::Injected(source.tag,1,18446744073709551610)); }
+        let second: core::result::Result<alloc::string::String,alloc::string::Error> = source.right.try_clone();
+        if (second.is_err()) { left.destroy(); return core::result::Err(OwnerFailure::Allocation(source.tag,2,second.unwrap_err())); }
+        let right: alloc::string::String = second.unwrap();
+        if (source.fail == 2) { right.destroy(); left.destroy(); return core::result::Err(OwnerFailure::Injected(source.tag,2,18446744073709551610)); }
+        return core::result::Ok(Pair { left:left,right:right,tag:source.tag,fail:0 });
+    }
+}
+pub impl probe::protocol::Destroy<Pair> for Pair {
+    pub fn destroy_value(owned: Pair) { owned.right.destroy(); owned.left.destroy(); }
+}
