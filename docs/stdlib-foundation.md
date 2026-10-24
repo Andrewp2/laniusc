@@ -152,6 +152,10 @@ intrinsics, native strides and caller-owned backing. The
 snapshot ownership, checked copies, live cwd reads and exit/status metadata.
 Both map existing source/native evidence without adding a target or runtime
 verification claim.
+The [Boolean and fixed-width bit guide](stdlib-boolean-bits.md) now maps all 52
+helpers to eager evaluation, representation widths, modulo rotations, fallback
+indices and existing native evidence. Its documented coverage gaps remain
+distinct from source-derived contracts.
 
 **Preceding numeric, owned-set and portable extended-library checkpoint (2026-10-23):**
 [Canonical narrow integers](stdlib-narrow-integers.md),

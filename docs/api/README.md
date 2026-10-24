@@ -24,9 +24,9 @@ Inventory: **215 modules**, **9363 declaration/member entries**. Counts include 
 | [core::binary](core/binary.md) | [source](../../stdlib/core/binary.lani#L2) | 11 | Source inventory | [stdlib-byte-codecs](../stdlib-byte-codecs.md) |
 | [core::binary_wide_i64](core/binary_wide_i64.md) | [source](../../stdlib/core/binary_wide_i64.lani#L2) | 4 | Source inventory | **Unregistered** |
 | [core::binary_wide_u64](core/binary_wide_u64.md) | [source](../../stdlib/core/binary_wide_u64.lani#L2) | 6 | Source inventory | **Unregistered** |
-| [core::bits](core/bits.md) | [source](../../stdlib/core/bits.lani#L2) | 42 | Source inventory | **Unregistered** |
+| [core::bits](core/bits.md) | [source](../../stdlib/core/bits.lani#L2) | 42 | Source inventory | [stdlib-boolean-bits](../stdlib-boolean-bits.md) |
 | [core::bitset](core/bitset.md) | [source](../../stdlib/core/bitset.lani#L5) | 57 | Source inventory | [stdlib-bitset-owned](../stdlib-bitset-owned.md) |
-| [core::bool](core/bool.md) | [source](../../stdlib/core/bool.lani#L3) | 10 | Source inventory | **Unregistered** |
+| [core::bool](core/bool.md) | [source](../../stdlib/core/bool.lani#L3) | 10 | Source inventory | [stdlib-boolean-bits](../stdlib-boolean-bits.md) |
 | [core::calendar](core/calendar.md) | [source](../../stdlib/core/calendar.lani#L4) | 158 | Source inventory | [stdlib-calendar](../stdlib-calendar.md) |
 | [core::char](core/char.md) | [source](../../stdlib/core/char.lani#L2) | 19 | Source inventory | [stdlib-unicode](../stdlib-unicode.md) |
 | [core::clone](core/clone.md) | [source](../../stdlib/core/clone.lani#L3) | 4 | Source inventory | [stdlib-clone](../stdlib-clone.md) |
@@ -278,8 +278,6 @@ These are discovery/contract-link gaps, not claims that their code is missing or
 - [core::array_u8_4](core/array_u8_4.md)
 - [core::binary_wide_i64](core/binary_wide_i64.md)
 - [core::binary_wide_u64](core/binary_wide_u64.md)
-- [core::bits](core/bits.md)
-- [core::bool](core/bool.md)
 - [core::hex_wide_i64](core/hex_wide_i64.md)
 - [core::hex_wide_u64](core/hex_wide_u64.md)
 - [core::ops](core/ops.md)
