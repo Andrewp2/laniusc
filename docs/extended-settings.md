@@ -128,8 +128,8 @@ physical allocation is outside the view contract. These lifetime rules are
 manual in the current language. The [preserved compiler-state fixture](../tests/fixtures/stdlib_compiler_state/settings_array_view/README.md)
 records an implicit array-to-slice field-conversion defect and its current
 descriptor-adjustment repair. Its unchanged four-way native control now returns
-the same correct value for every construction. Settings does not redefine the
-view contract to conceal that defect.
+the same correct value for every construction. Settings accepts valid counted
+views from any supported constructor.
 
 ## Explicit environment snapshot
 

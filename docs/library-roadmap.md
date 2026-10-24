@@ -37,7 +37,7 @@ package distribution is a separate deliverable.
 | Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and paths, lexical operations, checked mutations, configurable/relative opens, seek, metadata, sync, duplication, raw directory iteration and bounded anchored walking execute on native Linux. The directory report exercises filters, metadata and staged output. Automatic owner destruction and broader platform support remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Raw-byte snapshots, explicit argv/environment/PATH/cwd, fork/exec, redirected files, owned pipes, cached waits and child signaling execute on the documented single-threaded Linux profile. Startup certainty is explicit. Multi-pipe communication, deadlines, process groups and concurrent spawn policy remain |
 | Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, calendars, native clocks, deadline waits, deterministic generators, sampling/shuffle and checked OS entropy execute. Optional TZif/POSIX zones provide conversion and ambiguity candidates; four extended continuous distributions have bounded generic sampling. Additional clocks and discrete distributions remain |
-| Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6 and CIDR values, owned TCP/UDP sockets, polling, deadlines, options and half-close execute via the explicit Linux syscall boundary. A bounded TCP exchange program exercises complete transfers. Old std::net catalog declarations remain unbound; host name/interface resolution, TLS and higher-level clients/servers remain |
+| Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6 and CIDR values, owned TCP/UDP, polling, deadlines, options and half-close execute via the Linux boundary. Optional DNS transport queries explicit numeric servers with correlated UDP/TCP fallback. Real TCP/DNS programs exercise transfers. Old std::net declarations remain unbound; system resolver/NSS/interface policy, TLS and higher-level clients/servers remain |
 | Concurrency | Threads, joining, synchronization, atomics, channels, cancellation | Current thread module is contract-only; runtime prerequisites remain |
 | Development | Assertions, test runner, property helpers, benchmarks, diagnostics, API docs | Nontrapping checks, explicit source suites, filters, seeded properties, injected/native-clock benchmarks and a bounded native compiler/run driver execute. Selective, relocatable source bundles use the existing package resolver and verify inventory hashes. Automatic compiler discovery/runtime registration, binary SDK distribution and complete API reference work remain |
 
@@ -248,6 +248,11 @@ Both have real offline programs and independent interoperability/failure tests;
 host resolution, TLS and protocol transport orchestration remain separate work.
 The [owned socket API](stdlib-sockets.md) and [TCP exchange program](stdlib-tcp-exchange.md)
 provide executable numeric-address TCP/UDP transport independently.
+[DNS transport](extended-dns-client.md) now adds explicit-server queries, fresh
+connected UDP attempts, fixed retry windows, full-question correlation and one
+framed TCP fallback, with a real DNS query program. Independent loopback peers,
+late-success deadline tests and allocation/host faults verify the implemented
+profile. This supplies neither system resolver/NSS policy nor DNS authentication.
 
 [Byte key/value storage](extended-kv.md) provides atomic owned mutations and
 canonical CRC-checked snapshots. Its file program stages replacements through
