@@ -58,6 +58,16 @@ pub fn seek(file:&std::file::File,offset:i64,origin:Origin) -> core::result::Res
     if(core::result::is_ok(result) && core::result::unwrap(result)<0) { return core::result::Err(core::io::Error::InvalidCount); } return result;
 }
 pub fn position(file:&std::file::File) -> core::result::Result<i64,core::io::Error> { return seek(file,0,Origin::Current); }
+// One ftruncate attempt, without retry or allocation. Borrow the live owner;
+// the host validates write access and filesystem support. No offset change.
+pub fn set_len(file:&std::file::File,length:u64) -> core::result::Result<i32,core::io::Error> {
+    if(length>9223372036854775807) { return core::result::Err(core::io::Error::InvalidInput); }
+    let got:core::result::Result<i64,core::io::Error> =descriptor(file);
+    if(core::result::is_err(got)) { return core::result::Err(core::result::unwrap_err(got)); }
+    let args:[std::linux::Argument;2]=[std::linux::Argument::Word(core::result::unwrap(got)),std::linux::Argument::Word(length as i64)];
+    let arguments:core::slice::View<std::linux::Argument> =core::slice::View { values:args,start:0,length:2 };
+    return zero(call(77,arguments));
+}
 fn sync(file:&std::file::File,number:i64) -> core::result::Result<i32,core::io::Error> { let got=descriptor(file); if(core::result::is_err(got)) { return core::result::Err(core::result::unwrap_err(got)); } let args:[std::linux::Argument;1]=[std::linux::Argument::Word(core::result::unwrap(got))]; return zero(call(number,core::result::unwrap(core::slice::view(args,1)))); }
 pub fn sync_all(file:&std::file::File) -> core::result::Result<i32,core::io::Error> { return sync(file,74); }
 pub fn sync_data(file:&std::file::File) -> core::result::Result<i32,core::io::Error> { return sync(file,75); }

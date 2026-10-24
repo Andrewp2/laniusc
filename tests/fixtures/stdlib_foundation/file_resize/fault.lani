@@ -1,0 +1,37 @@
+// Native admission pending. One set_len(2), then exactly one close attempt.
+module app::main;
+import core::io;
+import core::mem;
+import core::path;
+import core::result;
+import core::slice;
+import std::file;
+import std::file_ops;
+
+fn bytes(value:str,count:i32) -> core::slice::View<u8> {
+    let raw:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::slice::view<u8>(raw,count));
+}
+fn status(error:core::io::Error) -> i32 {
+    return match(error) {
+        core::io::Error::Interrupted->104,
+        core::io::Error::WouldBlock->111,
+        core::io::Error::Host(value)->100+value,
+        core::io::Error::InvalidCount->196,
+        _->2,
+    };
+}
+fn main() -> i32 {
+    let path:core::path::Path=core::result::unwrap(core::path::from_view(bytes("input",5)));
+    let options:std::file_ops::OpenOptions=std::file_ops::options();
+    options.access=std::file_ops::Access::ReadWrite;
+    let opened:core::result::Result<std::file::File,core::io::Error> =std::file_ops::open(path,options);
+    if(core::result::is_err(opened)) { return status(core::result::unwrap_err(opened)); }
+    let file:std::file::File=core::result::unwrap(opened);
+    let changed:core::result::Result<i32,core::io::Error> =std::file_ops::set_len(file.borrow(),2);
+    let failed:i32=0;
+    if(core::result::is_err(changed)) { failed=status(core::result::unwrap_err(changed)); }
+    let closed:core::result::Result<i32,core::io::Error> =file.close();
+    if(failed==0 && core::result::is_err(closed)) { failed=status(core::result::unwrap_err(closed)); }
+    return failed;
+}

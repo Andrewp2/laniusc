@@ -1,0 +1,121 @@
+// Native admission pending. Driver supplies input bytes [0,128,255,97,98,99].
+// Eight ftruncate attempts, three descriptor closes; final input is [0,0,0].
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import std::file;
+import std::file_ops;
+
+fn bytes(value:str,count:i32) -> core::slice::View<u8> {
+    let raw:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::slice::view<u8>(raw,count));
+}
+fn path(value:str,count:i32) -> core::path::Path {
+    return core::result::unwrap(core::path::from_view(bytes(value,count)));
+}
+fn host(error:core::io::Error,number:i32) -> bool {
+    return match(error) { core::io::Error::Host(value)->value==number, _->false };
+}
+fn invalid(error:core::io::Error) -> bool {
+    return match(error) { core::io::Error::InvalidInput->true, _->false };
+}
+fn length(file:&std::file::File) -> u64 {
+    let metadata:std::file_ops::Metadata=std::file_ops::empty_metadata();
+    let queried:core::result::Result<i32,core::io::Error> =std::file_ops::metadata_file_into(file,metadata.borrow());
+    assert(core::result::is_ok(queried) && metadata.has(512));
+    return metadata.length.bytes;
+}
+fn positions(file:&std::file::File,duplicate:&std::file::File,expected:i64) {
+    let a:core::result::Result<i64,core::io::Error> =std::file_ops::position(file);
+    let b:core::result::Result<i64,core::io::Error> =std::file_ops::position(duplicate);
+    assert(core::result::unwrap(a)==expected && core::result::unwrap(b)==expected);
+}
+fn resize(file:&std::file::File,count:u64) {
+    let changed:core::result::Result<i32,core::io::Error> =std::file_ops::set_len(file,count);
+    assert(core::result::unwrap(changed)==0 && length(file)==count);
+}
+fn main() -> i32 {
+    let input:core::path::Path=path("input",5);
+    let options:std::file_ops::OpenOptions=std::file_ops::options();
+    options.access=std::file_ops::Access::ReadWrite;
+    let opened:core::result::Result<std::file::File,core::io::Error> =std::file_ops::open(input,options);
+    let file:std::file::File=core::result::unwrap(opened);
+    let initial:[u8;6]=[255;6];
+    let read_initial:core::result::Result<i32,core::io::Failure> =core::io::read_exact(file.borrow(),initial,0,6);
+    assert(core::result::unwrap(read_initial)==6 && length(file.borrow())==6);
+    assert(initial[0]==0 && initial[1]==128 && initial[2]==255 && initial[3]==97 && initial[4]==98 && initial[5]==99);
+    let duplicated:core::result::Result<std::file::File,core::io::Error> =std::file_ops::duplicate(file.borrow(),40,true);
+    let duplicate:std::file::File=core::result::unwrap(duplicated);
+    assert(core::option::unwrap(duplicate.raw_handle())>=40);
+    let moved:core::result::Result<i64,core::io::Error> =std::file_ops::seek(file.borrow(),4,std::file_ops::Origin::Start);
+    assert(core::result::unwrap(moved)==4);
+
+    resize(file.borrow(),3); // 1: truncate without clamping offset 4 to EOF 3.
+    positions(file.borrow(),duplicate.borrow(),4);
+    let one:[u8;1]=[255];
+    let eof:core::result::Result<i32,core::io::Error> =file.read(one,0,1);
+    assert(core::result::unwrap(eof)==0); positions(file.borrow(),duplicate.borrow(),4);
+    let rewind:core::result::Result<i64,core::io::Error> =std::file_ops::seek(duplicate.borrow(),0,std::file_ops::Origin::Start);
+    assert(core::result::unwrap(rewind)==0);
+    let prefix:[u8;3]=[0;3];
+    let read_prefix:core::result::Result<i32,core::io::Failure> =core::io::read_exact(file.borrow(),prefix,0,3);
+    assert(core::result::unwrap(read_prefix)==3 && prefix[0]==0 && prefix[1]==128 && prefix[2]==255);
+    resize(file.borrow(),3); // 2: same size is still one host attempt.
+    positions(file.borrow(),duplicate.borrow(),3);
+
+    resize(duplicate.borrow(),8); // 3: extension through the duplicate.
+    positions(file.borrow(),duplicate.borrow(),3);
+    let zeros:[u8;5]=[255;5];
+    let read_zeros:core::result::Result<i32,core::io::Failure> =core::io::read_exact(file.borrow(),zeros,0,5);
+    assert(core::result::unwrap(read_zeros)==5);
+    let index:i32=0; while(index<5) { assert(zeros[index]==0); index+=1; }
+    positions(file.borrow(),duplicate.borrow(),8);
+    resize(file.borrow(),0); // 4: zero while the shared offset stays at 8.
+    positions(file.borrow(),duplicate.borrow(),8);
+
+    let large:u64=4294967313;
+    resize(file.borrow(),large); // 5: sparse size above 4 GiB, without huge I/O.
+    positions(file.borrow(),duplicate.borrow(),8);
+    let near_end:i64=(large-2) as i64;
+    let seek_large:core::result::Result<i64,core::io::Error> =std::file_ops::seek(duplicate.borrow(),near_end,std::file_ops::Origin::Start);
+    assert(core::result::unwrap(seek_large)==near_end);
+    let tail:[u8;2]=[255;2];
+    let read_tail:core::result::Result<i32,core::io::Failure> =core::io::read_exact(file.borrow(),tail,0,2);
+    assert(core::result::unwrap(read_tail)==2 && tail[0]==0 && tail[1]==0);
+    positions(file.borrow(),duplicate.borrow(),large as i64);
+    resize(file.borrow(),0); // 6: release the sparse extent.
+    positions(file.borrow(),duplicate.borrow(),large as i64);
+    resize(file.borrow(),3); // 7: deterministic final three zero bytes.
+    positions(file.borrow(),duplicate.borrow(),large as i64);
+    let seek_final:core::result::Result<i64,core::io::Error> =std::file_ops::seek(file.borrow(),0,std::file_ops::Origin::Start);
+    assert(core::result::unwrap(seek_final)==0);
+    let final_bytes:[u8;3]=[255;3];
+    let read_final:core::result::Result<i32,core::io::Failure> =core::io::read_exact(duplicate.borrow(),final_bytes,0,3);
+    assert(core::result::unwrap(read_final)==3 && final_bytes[0]==0 && final_bytes[1]==0 && final_bytes[2]==0);
+    positions(file.borrow(),duplicate.borrow(),3);
+
+    let too_large:core::result::Result<i32,core::io::Error> =std::file_ops::set_len(file.borrow(),9223372036854775808);
+    let maximum:core::result::Result<i32,core::io::Error> =std::file_ops::set_len(file.borrow(),18446744073709551615);
+    assert(invalid(core::result::unwrap_err(too_large)) && invalid(core::result::unwrap_err(maximum)));
+    positions(file.borrow(),duplicate.borrow(),3); assert(length(file.borrow())==3);
+    let read_options:std::file_ops::OpenOptions=std::file_ops::options();
+    let read_opened:core::result::Result<std::file::File,core::io::Error> =std::file_ops::open(input,read_options);
+    let read_only:std::file::File=core::result::unwrap(read_opened);
+    let rejected:core::result::Result<i32,core::io::Error> =std::file_ops::set_len(read_only.borrow(),1); // 8: host rejects access.
+    let cause:core::io::Error=core::result::unwrap_err(rejected);
+    assert(host(cause,9) || host(cause,22));
+    assert(read_only.is_open() && length(file.borrow())==3);
+    let read_position:core::result::Result<i64,core::io::Error> =std::file_ops::position(read_only.borrow());
+    assert(core::result::unwrap(read_position)==0);
+    core::result::unwrap(read_only.close());
+    let inactive:core::result::Result<i32,core::io::Error> =std::file_ops::set_len(read_only.borrow(),0);
+    let inactive_large:core::result::Result<i32,core::io::Error> =std::file_ops::set_len(read_only.borrow(),9223372036854775808);
+    assert(host(core::result::unwrap_err(inactive),9) && invalid(core::result::unwrap_err(inactive_large)));
+    positions(file.borrow(),duplicate.borrow(),3); assert(length(file.borrow())==3);
+    core::result::unwrap(duplicate.close()); core::result::unwrap(file.close());
+    return 0;
+}
