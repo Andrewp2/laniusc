@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **215 modules**, **9363 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **216 modules**, **9412 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -103,6 +103,7 @@ Inventory: **215 modules**, **9363 declaration/member entries**. Counts include 
 | [alloc::arena](alloc/arena.md) | [source](../../stdlib/alloc/arena.lani#L3) | 49 | Source inventory | [stdlib-arena](../stdlib-arena.md) |
 | [alloc::binary_heap](alloc/binary_heap.md) | [source](../../stdlib/alloc/binary_heap.lani#L4) | 34 | Source inventory | [stdlib-binary-heap](../stdlib-binary-heap.md) |
 | [alloc::bitset](alloc/bitset.md) | [source](../../stdlib/alloc/bitset.lani#L4) | 55 | Source inventory | [stdlib-bitset-owned](../stdlib-bitset-owned.md) |
+| [alloc::buffered](alloc/buffered.md) | [source](../../stdlib/alloc/buffered.lani#L4) | 49 | Source inventory | [stdlib-buffered](../stdlib-buffered.md) |
 | [alloc::clone](alloc/clone.md) | [source](../../stdlib/alloc/clone.lani#L2) | 6 | Source inventory | [stdlib-clone](../stdlib-clone.md) |
 | [alloc::deque](alloc/deque.md) | [source](../../stdlib/alloc/deque.lani#L3) | 64 | Source inventory | [stdlib-deque](../stdlib-deque.md) |
 | [alloc::format](alloc/format.md) | [source](../../stdlib/alloc/format.lani#L2) | 5 | Source inventory | [stdlib-format-strings](../stdlib-format-strings.md) |

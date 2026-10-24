@@ -33,7 +33,7 @@ package distribution is a separate deliverable.
 | Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat, integer/float conversion, caller-buffer Display, runtime format strings and owned formatting execute. Alignment counts scalars and numeric precision rounds exact binary values. Optional extended modules provide Unicode 17 full casing, normalization, default word/grapheme boundaries and an explicit terminal width policy. Richer format controls and collation remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings, raw views and stable chunked arenas with generic typed allocations execute. [Fallible View cloning](stdlib-clone.md) constructs independent String/user-record memory owners and releases completed destination elements on error. Layout consolidation, compiler-enforced lifetimes and automatic destruction remain |
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec, deque and bitset, inline generic Vec/Eq Set, hash/tree maps and sets, and min/max heaps execute. Owned sets include representative ownership and all four fallible algebra operations through shared map engines. Opt-in TryClone/Destroy View cloning and explicit nested Vec release execute; existing collection clone APIs retain shallow entry/key/value copies. Silent-failure legacy map/set/text owners are retired. The protected std::vec/heap migration, broader deep-owned collection integration and automatic ownership remain |
-| I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, cursors, owned sinks, descriptor/file adapters and reusable multi-descriptor readiness execute. Polling preserves old publication on errors and uses explicit observed deadlines. Imported/nested generic Read/Write implementation transport now passes native contracts and checked cache reuse; buffered adapters await separate runtime admission |
+| I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, cursors, owned sinks, descriptor/file adapters and reusable multi-descriptor readiness execute. Polling preserves old publication on errors and uses explicit observed deadlines. Imported/nested generic Read/Write transport passes native contracts and checked cache reuse. Fixed-capacity buffered adapters execute with read-ahead/pending handoff, explicit finish/discard, partial-I/O and allocation failures, nested composition and a binary-copy application |
 | Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and paths, lexical operations, checked mutations, configurable/relative opens, seek, metadata, sync, duplication, raw directory iteration and bounded anchored walking execute on native Linux. The directory report exercises filters, metadata and staged output. Automatic owner destruction and broader platform support remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Raw-byte snapshots, explicit argv/environment/PATH/cwd, fork/exec, redirected files, owned pipes, cached waits and child signaling execute on the documented single-threaded Linux profile. Bounded concurrent stdin/stdout/stderr capture preserves partial progress, startup certainty and child ownership across errors. Process groups and concurrent spawn policy remain |
 | Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, calendars, native clocks, deadline waits, deterministic generators, sampling/shuffle and checked OS entropy execute. Optional TZif/POSIX zones provide conversion and ambiguity candidates; four continuous and four discrete distributions have bounded generic sampling and explicit numerical domains. Additional clocks and distribution families remain |
@@ -619,7 +619,13 @@ API list; unrelated library work can continue.
   including allocation and I/O failure coverage. Initial counts still require
   valid physical backing; shared generic iterator dispatch remains a compiler
   dependency with a minimal reproduction and executable controls.
-- Next foundation work: shared iterator and buffered I/O composition, remaining
+- [Buffered I/O composition](stdlib-buffered.md) now has its own runtime
+  admission: five compiled programs and eighteen native executions cover
+  nested readers/writers, confirmed partial progress, every constructor
+  allocation failure and actual EPIPE failures during copying and final flush.
+  The fixed-capacity buffers require explicit cleanup and preserve their
+  confirmed unread/pending ranges on errors; no automatic ownership is implied.
+- Next foundation work: shared iterator composition, remaining
   streaming format interfaces, protected Vec/heap migration and numeric/manual
   ownership consolidation. Owned hash/tree sets now execute, and silent-failure
   legacy map/set owners have been removed with their consumers migrated.
@@ -631,14 +637,16 @@ API list; unrelated library work can continue.
   capacity overflow and every observed allocation failure are covered.
   For 65,536 parts, paired native runtime is 75.73 ms for join versus 116.36 ms
   for repeated appends; whole-program allocation calls fall from 19 to 2.
-  Generic buffered stream adapters hit the same module-context implementation
-  routing limitation as iterator consumers; the minimal Write reproduction and
-  successful controls are recorded in the compiler dependency list.
+  The earlier generic buffered-stream routing failure remains preserved in the
+  compiler dependency list. Implementation-application transport and buffered
+  adapters now pass separate native gates; iterator integration still needs
+  its own admission.
 - Owned files: [File and Path](stdlib-files.md) execute read/create/append,
   generic stream operations, explicit close and ownership transfer on x86_64
   Linux. Tests check binary and non-UTF-8 data, descriptor reuse, path bounds,
   all acquisition/transfer/close failure paths and absence of heap allocation.
   The file-concatenation application closes inputs on errors and preserves bytes.
-  Buffered I/O, complete paths and filesystem runtime extensions remain.
+  Buffered I/O, owned paths and filesystem extensions have since advanced as
+  recorded above; automatic owner destruction and other target bindings remain.
 - The older [execution audit](stdlib-foundation.md) remains historical evidence;
   its top-level checkpoints do not establish this branch's current behavior.

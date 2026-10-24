@@ -1,0 +1,82 @@
+// Deterministic allocation-free peers for admitted buffered native fixtures.
+module fixture::streams;
+import core::io;
+import core::result;
+
+pub struct Reader {
+    data: [u8], length: i32, cursor: i32, chunk: i32, calls: i32,
+    fail_call: i32, error: i32, empty_call: i32, bad_call: i32, bad_count: i32
+}
+pub struct Writer {
+    data: [u8], capacity: i32, filled: i32, chunk: i32, calls: i32, flushes: i32,
+    fail_call: i32, error: i32, zero_call: i32, bad_call: i32, bad_count: i32,
+    flush_fail_call: i32, flush_error: i32, flush_bad_call: i32
+}
+
+pub fn reader(data: [u8], length: i32, chunk: i32) -> Reader {
+    assert(length >= 0 && chunk > 0);
+    return Reader { data: data, length: length, cursor: 0, chunk: chunk, calls: 0, fail_call: 0, error: 0, empty_call: 0, bad_call: 0, bad_count: -1 };
+}
+pub fn writer(data: [u8], capacity: i32, chunk: i32) -> Writer {
+    assert(capacity >= 0 && chunk > 0);
+    return Writer { data: data, capacity: capacity, filled: 0, chunk: chunk, calls: 0, flushes: 0, fail_call: 0, error: 0, zero_call: 0, bad_call: 0, bad_count: -1, flush_fail_call: 0, flush_error: 0, flush_bad_call: 0 };
+}
+fn error(code: i32) -> core::io::Error {
+    if (code == 1) { return core::io::Error::Interrupted; }
+    if (code == 2) { return core::io::Error::WouldBlock; }
+    return core::io::Error::Host(77);
+}
+pub fn invalid_input(value: core::io::Error) -> bool { return match(value) { InvalidInput -> true, _ -> false }; }
+pub fn invalid_count(value: core::io::Error) -> bool { return match(value) { InvalidCount -> true, _ -> false }; }
+pub fn interrupted(value: core::io::Error) -> bool { return match(value) { Interrupted -> true, _ -> false }; }
+pub fn would_block(value: core::io::Error) -> bool { return match(value) { WouldBlock -> true, _ -> false }; }
+pub fn write_zero(value: core::io::Error) -> bool { return match(value) { WriteZero -> true, _ -> false }; }
+pub fn host77(value: core::io::Error) -> bool { return match(value) { Host(n) -> n == 77, _ -> false }; }
+pub fn allocation_failed(value: core::io::Error) -> bool { return match(value) { AllocationFailed -> true, _ -> false }; }
+
+pub impl Reader { pub fn borrow(&self) -> &Reader { return self; } }
+pub impl Writer { pub fn borrow(&self) -> &Writer { return self; } }
+
+pub impl core::io::Read for Reader {
+    pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> {
+        if (!core::io::valid_range(offset, count)) { return core::result::Err(core::io::Error::InvalidInput); }
+        self.calls += 1;
+        if (count == 0) { return core::result::Ok(0); }
+        if (self.calls == self.fail_call) { return core::result::Err(error(self.error)); }
+        if (self.calls == self.empty_call) { return core::result::Ok(0); }
+        // Deliberately invalid returned count, but no out-of-bounds write.
+        if (self.calls == self.bad_call) { return core::result::Ok(self.bad_count); }
+        let amount: i32 = self.length - self.cursor;
+        if (amount > count) { amount = count; }
+        if (amount > self.chunk) { amount = self.chunk; }
+        let index: i32 = 0;
+        while (index < amount) { destination[offset + index] = self.data[self.cursor + index]; index += 1; }
+        self.cursor += amount;
+        return core::result::Ok(amount);
+    }
+}
+
+pub impl core::io::Write for Writer {
+    pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> {
+        if (!core::io::valid_range(offset, count)) { return core::result::Err(core::io::Error::InvalidInput); }
+        self.calls += 1;
+        if (count == 0) { return core::result::Ok(0); }
+        if (self.calls == self.fail_call) { return core::result::Err(error(self.error)); }
+        if (self.calls == self.zero_call) { return core::result::Ok(0); }
+        // This fixture breaks only count reporting, not physical bounds.
+        if (self.calls == self.bad_call) { return core::result::Ok(self.bad_count); }
+        let amount: i32 = self.capacity - self.filled;
+        if (amount > count) { amount = count; }
+        if (amount > self.chunk) { amount = self.chunk; }
+        let index: i32 = 0;
+        while (index < amount) { self.data[self.filled + index] = source[offset + index]; index += 1; }
+        self.filled += amount;
+        return core::result::Ok(amount);
+    }
+    pub fn flush(&self) -> core::result::Result<i32, core::io::Error> {
+        self.flushes += 1;
+        if (self.flushes == self.flush_fail_call) { return core::result::Err(error(self.flush_error)); }
+        if (self.flushes == self.flush_bad_call) { return core::result::Ok(1); }
+        return core::result::Ok(0);
+    }
+}

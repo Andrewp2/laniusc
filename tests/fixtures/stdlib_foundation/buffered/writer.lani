@@ -1,0 +1,123 @@
+// Admitted native x86_64 Linux writer model fixture.
+module app::main;
+import alloc::buffered;
+import core::io;
+import core::result;
+import fixture::streams;
+
+fn old_pending_failure_and_retry() {
+    let bytes: [u8;16] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    let peer = fixture::streams::writer(bytes,16,2); peer.fail_call = 2;
+    peer.flush_fail_call = 1; peer.flush_error = 2;
+    assert(fixture::streams::invalid_input(alloc::buffered::writer(peer.borrow(),0).unwrap_err()));
+    assert(peer.calls == 0 && peer.flushes == 0);
+    let output = alloc::buffered::writer(peer.borrow(),4).unwrap();
+    let first: [u8;2] = [1,2]; let next: [u8;3] = [3,4,99]; let current: [u8;2] = [5,6];
+    assert(output.write(first,0,0).unwrap() == 0 && peer.calls == 0);
+    assert(fixture::streams::invalid_input(output.write(first,-1,0).unwrap_err()));
+    assert(fixture::streams::invalid_input(output.write(first,2147483647,1).unwrap_err()));
+    assert(output.write(first,0,2).unwrap() == 2 && peer.calls == 0);
+    // Accepted bytes are copied, not a retained borrow of caller input.
+    first[0] = 201; first[1] = 202;
+    // Fits only the tail prefix; do not start an I/O operation after acceptance.
+    assert(output.write(next,0,3).unwrap() == 2 && peer.calls == 0 && output.pending().len() == 4);
+    assert(fixture::streams::host77(output.write(current,0,2).unwrap_err()));
+    assert(peer.calls == 2 && peer.filled == 2 && bytes[0] == 1 && bytes[1] == 2);
+    assert(!output.is_faulted() && output.is_active());
+    assert(output.pending().start == 2 && output.pending().len() == 2);
+    assert(output.pending().get(0).unwrap() == 3 && output.pending().get(1).unwrap() == 4);
+    // No current-source byte was accepted on the previous Err. Retrying it is
+    // safe: finish all old pending bytes, then accept current and return.
+    assert(output.write(current,0,0).unwrap() == 0 && peer.calls == 2);
+    assert(output.write(current,0,2).unwrap() == 2 && peer.calls == 3 && peer.filled == 4);
+    assert(bytes[2] == 3 && bytes[3] == 4 && output.pending().get(0).unwrap() == 5);
+    let last: [u8;2] = [7,8];
+    assert(output.write(last,0,2).unwrap() == 2 && peer.calls == 3);
+    assert(fixture::streams::would_block(output.flush().unwrap_err()));
+    assert(peer.calls == 5 && peer.filled == 8 && peer.flushes == 1);
+    assert(output.pending().len() == 0 && output.is_active() && !output.is_faulted());
+    let index: i32 = 0;
+    while (index < 8) { assert(bytes[index] == (index + 1) as u8); index += 1; }
+    // Empty pending bytes are insufficient for success: retry inner.flush.
+    assert(output.finish().unwrap() == 0 && peer.flushes == 2);
+    assert(!output.is_active() && !output.is_faulted() && output.capacity() == 0 && output.pending().len() == 0);
+    assert(fixture::streams::invalid_input(output.write(first,0,0).unwrap_err()));
+    assert(fixture::streams::invalid_input(output.flush().unwrap_err()));
+    assert(fixture::streams::invalid_input(output.finish().unwrap_err()));
+    assert(output.discard() == 0 && peer.flushes == 2);
+}
+
+fn interruptions_and_zero_do_not_retry() {
+    let bytes: [u8;4] = [0,0,0,0]; let old: [u8;1] = [42]; let current: [u8;1] = [99];
+    let peer = fixture::streams::writer(bytes,4,1); peer.fail_call = 1; peer.error = 1;
+    let output = alloc::buffered::writer(peer.borrow(),1).unwrap();
+    assert(output.write(old,0,1).unwrap() == 1);
+    assert(fixture::streams::interrupted(output.write(current,0,1).unwrap_err()));
+    assert(peer.calls == 1 && peer.filled == 0 && output.pending().get(0).unwrap() == 42);
+    assert(output.flush().unwrap() == 0 && peer.calls == 2 && peer.filled == 1 && bytes[0] == 42);
+    assert(output.finish().unwrap() == 0);
+
+    let zero_peer = fixture::streams::writer(bytes,4,1); zero_peer.zero_call = 1;
+    let zero = alloc::buffered::writer(zero_peer.borrow(),1).unwrap();
+    assert(zero.write(old,0,1).unwrap() == 1);
+    assert(fixture::streams::write_zero(zero.write(current,0,1).unwrap_err()));
+    assert(zero_peer.calls == 1 && zero_peer.filled == 0 && !zero.is_faulted());
+    let parts = zero.take_parts().unwrap();
+    assert(!parts.faulted && parts.start == 0 && parts.length == 1 && parts.bytes().get(0).unwrap() == 42);
+    assert(parts.discard() == 1 && zero.discard() == 0 && zero_peer.calls == 1);
+}
+
+fn finish_keeps_owner_on_inner_flush_error() {
+    let bytes: [u8;2] = [0,0]; let source: [u8;1] = [17];
+    let peer = fixture::streams::writer(bytes,2,2); peer.flush_fail_call = 1;
+    let output = alloc::buffered::writer(peer.borrow(),2).unwrap();
+    assert(output.write(source,0,1).unwrap() == 1);
+    assert(fixture::streams::host77(output.finish().unwrap_err()));
+    assert(output.is_active() && output.capacity() == 2 && output.pending().len() == 0);
+    assert(peer.calls == 1 && peer.flushes == 1 && bytes[0] == 17);
+    assert(output.finish().unwrap() == 0 && !output.is_active() && peer.flushes == 2);
+}
+
+fn faulted_handoff_is_explicit(count: i32) {
+    let bytes: [u8;4] = [0,0,0,0]; let old: [u8;2] = [41,42]; let current: [u8;1] = [99];
+    let peer = fixture::streams::writer(bytes,4,1); peer.bad_call = 2; peer.bad_count = count;
+    let output = alloc::buffered::writer(peer.borrow(),2).unwrap();
+    assert(output.write(old,0,2).unwrap() == 2);
+    assert(fixture::streams::invalid_count(output.write(current,0,1).unwrap_err()));
+    assert(output.is_faulted() && output.is_active() && output.pending().len() == 1 && peer.calls == 2);
+    assert(peer.filled == 1 && bytes[0] == 41 && output.pending().start == 1);
+    assert(fixture::streams::invalid_count(output.write(current,0,0).unwrap_err()));
+    assert(fixture::streams::invalid_count(output.write(current,-1,0).unwrap_err()));
+    assert(fixture::streams::invalid_count(output.flush().unwrap_err()));
+    assert(fixture::streams::invalid_count(output.finish().unwrap_err()));
+    assert(peer.calls == 2 && peer.flushes == 0);
+    let parts = output.take_parts().unwrap();
+    // These are the bytes not CONFIRMED sent, not a promise about a writer
+    // that violated the Write return-count contract.
+    assert(parts.faulted && parts.start == 1 && parts.length == 1 && parts.bytes().get(0).unwrap() == 42);
+    assert(parts.discard() == 1 && output.discard() == 0);
+
+    let flush_peer = fixture::streams::writer(bytes,4,2); flush_peer.flush_bad_call = 1;
+    let bad_flush = alloc::buffered::writer(flush_peer.borrow(),2).unwrap();
+    assert(bad_flush.write(old,0,2).unwrap() == 2);
+    assert(fixture::streams::invalid_count(bad_flush.flush().unwrap_err()));
+    assert(bad_flush.is_faulted() && bad_flush.pending().len() == 0 && flush_peer.filled == 2);
+    let empty = bad_flush.take_parts().unwrap();
+    assert(empty.faulted && empty.length == 0 && empty.discard() == 0);
+}
+
+fn explicit_discard_does_not_flush() {
+    let bytes: [u8;2] = [0,0]; let source: [u8;2] = [9,8];
+    let peer = fixture::streams::writer(bytes,2,2);
+    let output = alloc::buffered::writer(peer.borrow(),2).unwrap();
+    assert(output.write(source,0,2).unwrap() == 2);
+    assert(output.discard() == 2 && output.discard() == 0);
+    assert(peer.calls == 0 && peer.flushes == 0 && peer.filled == 0);
+}
+
+fn main() -> i32 {
+    old_pending_failure_and_retry(); interruptions_and_zero_do_not_retry();
+    finish_keeps_owner_on_inner_flush_error();
+    faulted_handoff_is_explicit(-1); faulted_handoff_is_explicit(3); explicit_discard_does_not_flush();
+    return 0;
+}

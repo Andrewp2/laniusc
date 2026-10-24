@@ -1,0 +1,44 @@
+// Admitted native x86_64 Linux allocation-failure probe.
+// Accepted profile: baseline0; each of four reached allocation failures2;
+// exact buffer allocation/release ledger, no inner I/O in either profile.
+module app::main;
+import alloc::buffered;
+import core::io;
+import core::result;
+import fixture::streams;
+
+fn main() -> i32 {
+    let source: [u8;2] = [1,2]; let target: [u8;2] = [0,0];
+    let input = fixture::streams::reader(source,2,2);
+    let output = fixture::streams::writer(target,2,2);
+    let r1 = alloc::buffered::reader(input.borrow(),2);
+    if (r1.is_err()) {
+        assert(fixture::streams::allocation_failed(r1.unwrap_err()));
+        assert(input.calls == 0 && output.calls == 0 && output.flushes == 0); return 2;
+    }
+    let reader = r1.unwrap();
+    let w1 = alloc::buffered::writer(output.borrow(),3);
+    if (w1.is_err()) {
+        assert(fixture::streams::allocation_failed(w1.unwrap_err())); assert(reader.discard() == 0);
+        assert(input.calls == 0 && output.calls == 0 && output.flushes == 0); return 2;
+    }
+    let writer = w1.unwrap();
+    let r2 = alloc::buffered::reader(reader.borrow(),4);
+    if (r2.is_err()) {
+        assert(fixture::streams::allocation_failed(r2.unwrap_err()));
+        assert(writer.discard() == 0 && reader.discard() == 0);
+        assert(input.calls == 0 && output.calls == 0 && output.flushes == 0); return 2;
+    }
+    let outer_reader = r2.unwrap();
+    let w2 = alloc::buffered::writer(writer.borrow(),5);
+    if (w2.is_err()) {
+        assert(fixture::streams::allocation_failed(w2.unwrap_err()));
+        assert(outer_reader.discard() == 0 && writer.discard() == 0 && reader.discard() == 0);
+        assert(input.calls == 0 && output.calls == 0 && output.flushes == 0); return 2;
+    }
+    let outer_writer = w2.unwrap();
+    assert(outer_writer.discard() == 0 && outer_reader.discard() == 0);
+    assert(writer.discard() == 0 && reader.discard() == 0);
+    assert(input.calls == 0 && output.calls == 0 && output.flushes == 0);
+    return 0;
+}

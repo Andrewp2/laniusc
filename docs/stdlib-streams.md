@@ -9,10 +9,14 @@ bindings.
 Read/Write contracts, and provides explicit close and ownership transfer.
 Descriptor adapters below continue to borrow handles.
 
-Generic buffered adapters remain pending the module-context implementation
-routing issue reproduced in `tests/fixtures/stdlib_foundation/buffered_io_dependency`.
-The existing concrete streams execute through these shared traits; that evidence
-does not establish support for a generic wrapper such as `BufferedWriter<W>`.
+[Fixed-capacity buffered adapters](stdlib-buffered.md) now execute through these
+same traits. `alloc::buffered::Reader<R>` and `Writer<W>` borrow their inner
+streams and own explicit byte buffers; they support nested wrappers, unread or
+pending-byte handoff, checked counts, explicit finish and manual cleanup.
+Five focused groups include eighteen native executions covering partial I/O,
+allocation failures and a binary-copy application. The historical implementation
+routing failure remains preserved; current generic transport and these adapters
+have separate executable evidence.
 
 ## Portable contracts
 

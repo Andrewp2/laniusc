@@ -141,17 +141,24 @@ interrupted progress, errors, aliases, flush, source-local bound rejection,
 full-u64 constants and different generic record layouts. An observed cache hit
 matches fresh replay. Forty-five CPU checks, the GPU lineage gate and a focused
 scratch reuse gate pass under normal shader budgets. A separate nested static
-result-expression failure remains captured; buffered library adapters still
-need their own executable admission.
+result-expression failure remains captured.
+
+[Buffered readers and writers](stdlib-buffered.md) now pass their own executable
+admission: five compilations and eighteen native executions cover read-ahead,
+partial writes and retained suffixes, nested imported adapters, every constructor
+allocation failure, exact owner cleanup and binary stdin/stdout copying with
+real closed-pipe failures. The implementation allocates only at construction
+and requires explicit finish, discard or owner handoff. A chained Vec constructor
+inference failure is retained beside its accepted typed-result control.
 
 Verified execution is x86_64 Linux output from GPU compilation; user GPU kernels
 and other targets are unverified. Threads, native FFI/TLS/SQLite, generic
-iterator/stream composition and distribution/reference completion remain on the
-[full roadmap](library-roadmap.md). Compiler failures retain
+iterator integration, additional stream interfaces and distribution/reference
+completion remain on the [full roadmap](library-roadmap.md). Compiler failures retain
 [reproductions and successful controls](library-dependencies.md).
 
 The [generated declaration reference](library-api-reference.md) inventories
-215 source modules with signatures, bounds, fields and exact source links.
+216 source modules with signatures, bounds, fields and exact source links.
 Twenty focused CPU tests and a fresh generated-output check pass. This is
 documentation extraction, not runtime verification; semantic guide gaps remain
 listed explicitly. The [strict UTF codec guide](stdlib-utf-codecs.md) now maps

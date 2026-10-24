@@ -1,0 +1,30 @@
+// Runtime admission pending: prepared generic-composition fixture.
+module app::main;
+import alloc::buffered;
+import alloc::vec;
+import core::io;
+import core::result;
+
+fn main() -> i32 {
+    let source: [u8;7] = [9,0,1,2,255,195,169];
+    let target: alloc::vec::Vec<u8> = alloc::vec::with_capacity(7).unwrap(); target.try_resize(7,0).unwrap();
+    let input = core::io::slice_reader(source,7).unwrap();
+    let output = core::io::slice_writer(target.as_slice(),7).unwrap();
+    let first_read = alloc::buffered::reader(input.borrow(),3).unwrap();
+    let second_read = alloc::buffered::reader(first_read.borrow(),2).unwrap();
+    let first_write = alloc::buffered::writer(output.borrow(),3).unwrap();
+    let second_write = alloc::buffered::writer(first_write.borrow(),2).unwrap();
+    let scratch: [u8;2] = [0,0];
+    // This is the intended imported generic-impl composition boundary, not a
+    // direct-concrete substitute for Reader<Reader<_>> / Writer<Writer<_>>.
+    assert(core::io::copy(second_read.borrow(),second_write.borrow(),scratch,2).unwrap() == 7);
+    assert(second_write.finish().unwrap() == 0);
+    assert(first_write.is_active() && first_write.pending().len() == 0);
+    assert(first_write.finish().unwrap() == 0);
+    assert(output.position() == 7);
+    let index: i32 = 0;
+    while (index < 7) { assert(target.at(index) == source[index]); index += 1; }
+    assert(second_read.discard() == 0 && first_read.discard() == 0);
+    target.destroy();
+    return 0;
+}

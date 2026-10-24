@@ -21,6 +21,11 @@
         "docs/stdlib-bitset-owned.md"
       ]
     },
+    "alloc::buffered": {
+      "guides": [
+        "docs/stdlib-buffered.md"
+      ]
+    },
     "alloc::clone": {
       "guides": [
         "docs/stdlib-clone.md"

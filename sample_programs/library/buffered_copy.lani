@@ -1,0 +1,47 @@
+// Binary stdin-to-stdout copy through fixed-capacity buffered stream adapters.
+// Native admission: x86_64 Linux ELF. See docs/stdlib-buffered.md.
+module app::main;
+import alloc::buffered;
+import core::io;
+import core::mem;
+import core::result;
+import std::process;
+import std::signal;
+import std::stream;
+
+fn construction_status(error: core::io::Error) -> i32 {
+    return match (error) { AllocationFailed -> 4, _ -> 3 };
+}
+
+fn main() -> i32 {
+    if (std::process::argc() != 1) { return 2; }
+    // This example explicitly changes process-wide SIGPIPE policy before
+    // allocating. A closed stdout pipe is then a checked write error, so both
+    // owned buffers can be released. The library itself never changes signals.
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let source = std::stream::stdin(); let sink = std::stream::stdout();
+    let made_input = alloc::buffered::reader(source.borrow(),4096);
+    if (made_input.is_err()) { return construction_status(made_input.unwrap_err()); }
+    let input = made_input.unwrap();
+    let made_output = alloc::buffered::writer(sink.borrow(),4096);
+    if (made_output.is_err()) {
+        let status: i32 = construction_status(made_output.unwrap_err());
+        input.discard(); return status;
+    }
+    let output = made_output.unwrap();
+    // Existing std::stream scratch idiom: 256 logical packed bytes backed by
+    // an i32 array. Do not assume a repeated integer literal makes u8 storage.
+    let storage: [i32;64] = [0;64];
+    let scratch: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),256);
+    let copied = core::io::copy(input.borrow(),output.borrow(),scratch,256);
+    if (copied.is_err()) {
+        // Output may already contain a prefix, and input may have read ahead.
+        // This abort policy explicitly abandons the remaining buffered bytes.
+        output.discard(); input.discard(); return 3;
+    }
+    if (output.finish().is_err()) {
+        // Failed finish retains its owner; release it explicitly on abort.
+        output.discard(); input.discard(); return 3;
+    }
+    input.discard(); return 0;
+}
