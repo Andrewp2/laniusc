@@ -1,0 +1,21 @@
+{
+  "unicode_version": "17.0.0",
+  "uax29_revision": 47,
+  "compression": "gzip level9, mtime0",
+  "files": [
+    {
+      "file": "sentences-SentenceBreakProperty.txt.gz",
+      "url": "https://www.unicode.org/Public/17.0.0/ucd/auxiliary/SentenceBreakProperty.txt",
+      "bytes": 221233,
+      "sha256": "871c0c985ad95125e25b302414065a10839d068970bceb383ecec138f22a0a18",
+      "gzip_sha256": "64ca2a2258ab910d35e513f8fca16e65f2b08f33d6b18211a3a7bfba4ea9fb70"
+    },
+    {
+      "file": "sentences-SentenceBreakTest.txt.gz",
+      "url": "https://www.unicode.org/Public/17.0.0/ucd/auxiliary/SentenceBreakTest.txt",
+      "bytes": 87946,
+      "sha256": "12cb47d028ded0c1cb8a28558f95479cbcd24559c46977015c82f3b50a1cc6e4",
+      "gzip_sha256": "ee01f7df506917c2083a182c317e37144d6e4c069dd75554e1d017391b648a31"
+    }
+  ]
+}

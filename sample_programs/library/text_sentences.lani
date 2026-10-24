@@ -1,0 +1,108 @@
+// Unicode 17 default sentence segmentation of bounded UTF-8 stdin.
+// Measure and stage complete CSV or length-prefixed frames before stdout.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::cli;
+import ext::unicode_sentences;
+import std::args;
+import std::signal;
+import std::stream;
+struct Options { frames: bool, input: i32, output: i32, segments: i32, work: u64, seen: u32, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Diagnostic { stage: i32, reason: i32, offset: i32 }
+impl Diagnostic { fn borrow(&self) -> &Diagnostic { return self; } }
+struct Measured { bytes: i32, segments: i32 }
+fn bytes(value: str, length: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),length); return core::slice::view(raw,length).unwrap(); }
+fn text(value: str, length: i32) -> core::text::Text { let raw = bytes(value,length); return core::text::from_utf8_unchecked(raw.values,raw.start,raw.length); }
+fn equal(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.length != b.length) { return false; } let i: i32 = 0; while (i < a.length) { if (a.values[a.start+i] != b.values[b.start+i]) { return false; } i += 1; } return true; }
+fn fail(detail: &Diagnostic, status: i32, stage: i32, reason: i32) -> i32 { detail.stage = stage; detail.reason = reason; return status; }
+fn option(options: &Options, item: ext::cli::Occurrence) -> bool {
+    let bit: u32 = (1 as u32) << item.id; if ((options.seen & bit) != 0) { return false; } options.seen = options.seen | bit;
+    if (item.id == 6) { options.help = true; return true; }
+    let argument: core::slice::View<u8> = core::option::unwrap(item.value).bytes;
+    if (item.id == 1) { if (equal(argument,bytes("csv",3))) { options.frames = false; return true; } if (equal(argument,bytes("frames",6))) { options.frames = true; return true; } return false; }
+    let value: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(argument.values,argument.start,argument.length); if (value.is_err()) { return false; } let n: u64 = value.unwrap();
+    if (item.id == 5) { if (n > 1000000000) { return false; } options.work = n; return true; }
+    if (n > 67108864) { return false; }
+    if (item.id == 2) { options.input = n as i32; } if (item.id == 3) { options.output = n as i32; }
+    if (item.id == 4) { if (n > 16777216) { return false; } options.segments = n as i32; } return true;
+}
+fn digits(value: i32) -> u64 { let n: i32 = value; let count: u64 = 1; while (n >= 10) { n /= 10; count += 1; } return count; }
+fn measure(input: core::text::Text, options: Options) -> core::result::Result<Measured,i32> {
+    let scan = ext::unicode_sentences::cursor(input).unwrap(); let size: u64 = 15; if (options.frames) { size = 0; } let count: i32 = 0;
+    while (true) { let next = scan.next(); if (core::option::is_none(next)) { break; } let part = core::option::unwrap(next);
+        if (count >= options.segments) { return core::result::Err(2); } count += 1;
+        size += part.text.length as u64;
+        if (options.frames) { size += 4; }
+        else { size += digits(part.start)+digits(part.end)+5; let i: i32 = 0; while (i < part.text.length) { if (part.text.bytes[part.text.start+i] == 34) { size += 1; } i += 1; } }
+        if (size > options.output as u64) { return core::result::Err(2); }
+    }
+    if (size > options.output as u64) { return core::result::Err(2); } return core::result::Ok(Measured { bytes: size as i32, segments: count });
+}
+fn csv_text(output: &core::fmt::Formatter, input: core::text::Text) {
+    output.write_text(text("\"",1)); let start: i32 = 0; let at: i32 = 0;
+    while (at < input.length) { if (input.bytes[input.start+at] == 34) { output.write_text(input.slice(start,at).unwrap()); output.write_text(text("\"\"",2)); start = at+1; } at += 1; }
+    output.write_text(input.slice(start,input.length).unwrap()); output.write_text(text("\"\n",2));
+}
+fn output(input: core::text::Text, options: Options, detail: &Diagnostic) -> i32 {
+    let measured = measure(input,options); if (measured.is_err()) { return fail(detail,2,2,2); } let expected = measured.unwrap();
+    let allocated: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity<u8>(expected.bytes); if (allocated.is_err()) { return fail(detail,4,2,4); } let owned = allocated.unwrap(); owned.try_resize(expected.bytes,0).unwrap();
+    let raw: [u8] = owned.as_slice(); let scan = ext::unicode_sentences::cursor(input).unwrap();
+    if (options.frames) { let at: i32 = 0; while (true) { let next = scan.next(); if (core::option::is_none(next)) { break; } let part = core::option::unwrap(next); let n: u32 = part.text.length as u32;
+            raw[at] = n as u8; raw[at+1] = (n >> 8) as u8; raw[at+2] = (n >> 16) as u8; raw[at+3] = (n >> 24) as u8; at += 4;
+            let i: i32 = 0; while (i < part.text.length) { raw[at+i] = part.text.bytes[part.text.start+i]; i += 1; } at += part.text.length;
+        } assert(at == expected.bytes); }
+    else { let formatter = core::fmt::buffer(raw,0,expected.bytes).unwrap(); formatter.write_text(text("start,end,text\n",15));
+        while (true) { let next = scan.next(); if (core::option::is_none(next)) { break; } let part = core::option::unwrap(next); formatter.write_signed(part.start as i64,core::fmt::decimal()); formatter.write_text(text(",",1)); formatter.write_signed(part.end as i64,core::fmt::decimal()); formatter.write_text(text(",",1)); csv_text(formatter.borrow(),part.text); }
+        assert(formatter.finish().unwrap() == expected.bytes);
+    }
+    let sink: std::stream::Descriptor = std::stream::stdout(); let written = core::io::write_all(sink.borrow(),raw,0,expected.bytes); owned.destroy(); if (written.is_err()) { return fail(detail,3,3,3); } return 0;
+}
+fn convert(input: &alloc::io::Buffer, options: Options, detail: &Diagnostic) -> i32 {
+    // One validation pass plus two cursor scans. Formatting byte copies and
+    // quote scans are separately bounded by input/output/segment limits.
+    if ((input.len() as u64)*7 > options.work) { return fail(detail,2,2,2); }
+    let valid: core::result::Result<core::text::Text,core::text::Error> = core::text::from_utf8(input.as_bytes(),input.len());
+    if (valid.is_err()) { detail.offset = match(valid.unwrap_err()) { core::text::Error::InvalidUtf8(at) -> at, _ -> -1 }; return fail(detail,2,1,1); }
+    return output(valid.unwrap(),options,detail);
+}
+fn process(arguments: std::args::Arguments, detail: &Diagnostic) -> i32 {
+    let specs: [ext::cli::Spec;6] = [
+        ext::cli::Spec { id: 1, long: bytes("format",6), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 2, long: bytes("max-input-bytes",15), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 3, long: bytes("max-output-bytes",16), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 4, long: bytes("max-segments",12), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 5, long: bytes("max-work",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: bytes("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let parser = ext::cli::parser(arguments.as_view(),core::slice::view(specs,6).unwrap(),ext::cli::Ordering::Intermixed).unwrap(); let options: Options = Options { frames: false, input: 4194304, output: 16777216, segments: 1048576, work: 33554432, seen: 0, help: false };
+    while (true) { let event = parser.next(); if (event.is_err()) { return fail(detail,2,0,0); } let next = event.unwrap(); if (core::option::is_none(next)) { break; }
+        let valid: bool = match(core::option::unwrap(next)) { ext::cli::Event::Option(item) -> option(options.borrow(),item), _ -> false }; if (!valid) { return fail(detail,2,0,0); }
+    }
+    if (options.help) { if (arguments.len() != 1) { return fail(detail,2,0,0); } let usage = bytes("Usage: text-sentences [--format csv|frames] [--max-input-bytes N] [--max-output-bytes N] [--max-segments N] [--max-work N]\n",123); let sink = std::stream::stdout(); if (core::io::write_all(sink.borrow(),usage.values,usage.start,usage.length).is_err()) { return fail(detail,3,3,3); } return 0; }
+    let input = alloc::io::with_limit(options.input).unwrap(); let source = std::stream::stdin(); let copied = std::stream::copy(source.borrow(),input.borrow());
+    if (copied.is_err()) { let cause = copied.unwrap_err().cause; input.destroy(); return match(cause) { core::io::Error::AllocationFailed -> fail(detail,4,1,4), core::io::Error::LimitExceeded -> fail(detail,2,1,2), _ -> fail(detail,3,1,3) }; }
+    let status = convert(input.borrow(),options,detail); input.destroy(); return status;
+}
+fn diagnostic(detail: Diagnostic) -> bool {
+    let raw: [u8;128] = [0;128]; let formatter = core::fmt::buffer(raw,0,128).unwrap(); formatter.write_text(text("text-sentences: ",16));
+    if (detail.reason == 0) { formatter.write_text(text("invalid-arguments",17)); } if (detail.reason == 1) { formatter.write_text(text("invalid-utf8",12)); } if (detail.reason == 2) { formatter.write_text(text("resource-limit",14)); } if (detail.reason == 3) { formatter.write_text(text("io-failure",10)); } if (detail.reason == 4) { formatter.write_text(text("allocation-failure",18)); }
+    formatter.write_text(text(" stage=",7)); formatter.write_signed(detail.stage as i64,core::fmt::decimal()); if (detail.offset >= 0) { formatter.write_text(text(" byte=",6)); formatter.write_signed(detail.offset as i64,core::fmt::decimal()); } formatter.write_text(text("\n",1));
+    let sink = std::stream::stderr(); return core::io::write_all(sink.borrow(),raw,0,formatter.finish().unwrap()).is_ok();
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let detail: Diagnostic = Diagnostic { stage: 0, reason: 0, offset: -1 }; let captured = std::args::snapshot(1,32,8192); let status: i32 = 0;
+    if (captured.is_err()) { status = match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> fail(detail.borrow(),4,0,4), std::args::Error::HostRead(at) -> fail(detail.borrow(),3,0,3), _ -> fail(detail.borrow(),2,0,0) }; }
+    else { let arguments = captured.unwrap(); status = process(arguments,detail.borrow()); arguments.destroy(); }
+    if (status != 0 && !diagnostic(detail)) { return 3; } return status;
+}

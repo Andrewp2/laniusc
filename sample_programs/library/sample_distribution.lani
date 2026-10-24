@@ -1,0 +1,94 @@
+// Seeded sampling jobs from real CSV; publish only after complete success.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::decimal;
+import core::float_decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::random;
+import core::result;
+import core::slice;
+import core::text;
+import ext::cli;
+import ext::csv;
+import ext::distributions;
+import ext::statistics;
+import std::args;
+import std::signal;
+import std::stream;
+struct Options { seed: u64, max_input: i32, max_jobs: i32, max_samples: i32, max_output: i32, max_draws: u64, max_work: u64, seen: u32, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Diagnostic { stage: i32, row: i32 }
+impl Diagnostic { fn borrow(&self) -> &Diagnostic { return self; } }
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::slice::view(raw,count).unwrap(); }
+fn text(value: str, count: i32) -> core::text::Text { let raw: core::slice::View<u8> = bytes(value,count); return core::text::from_utf8_unchecked(raw.values,raw.start,raw.length); }
+fn view(value: core::text::Text) -> core::slice::View<u8> { return core::slice::View { values: value.bytes, start: value.start, length: value.length }; }
+fn same(value: core::text::Text, literal: str, count: i32) -> bool { if (value.length != count) { return false; } let other: core::slice::View<u8> = bytes(literal,count); let i: i32 = 0; while (i < count) { if (value.bytes[value.start+i] != other.values[i]) { return false; } i += 1; } return true; }
+fn option(options: &Options, item: ext::cli::Occurrence) -> bool {
+ let mask: u32 = (1 as u32) << item.id; if ((options.seen & mask) != 0) { return false; } options.seen = options.seen | mask;
+ if (item.id == 2) { options.help = true; return true; }
+ let value: core::slice::View<u8> = core::option::unwrap(item.value).bytes; let number: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(value.values,value.start,value.length); if (number.is_err()) { return false; } let n: u64 = number.unwrap();
+ if (item.id == 1) { options.seed = n; return true; } if (item.id == 7) { options.max_draws = n; return true; } if (item.id == 8) { options.max_work = n; return true; }
+ if (n > 67108864) { return false; } if (item.id == 3) { options.max_input = n as i32; } if (item.id == 4) { if (n > 4096) { return false; } options.max_jobs = n as i32; } if (item.id == 5) { if (n > 1000000) { return false; } options.max_samples = n as i32; } if (item.id == 6) { options.max_output = n as i32; } return true;
+}
+fn integer(out: &core::fmt::Formatter, value: u64) { out.write_unsigned(value,core::fmt::decimal()); }
+fn error(error: ext::distributions::Error) -> i32 { return match (error) { ext::distributions::Error::WorkLimit -> 3, ext::distributions::Error::DrawLimit -> 3, _ -> 2 }; }
+fn generate(table: ext::csv::Table, options: Options, output: &core::fmt::Formatter, detail: &Diagnostic) -> i32 {
+ detail.stage = 2; if (table.row_count() < 2) { return 2; }
+ if (!same(table.field(0,0).unwrap(),"family",6) || !same(table.field(0,1).unwrap(),"first",5) || !same(table.field(0,2).unwrap(),"second",6) || !same(table.field(0,3).unwrap(),"count",5)) { return 2; }
+ let source: core::random::Xoshiro256PlusPlus = core::random::from_seed(options.seed); let limit: ext::distributions::Budget = ext::distributions::budget(options.max_draws,options.max_work);
+ let scratch: [u32;864] = [0;864]; let workspace: core::slice::View<u32> = core::slice::view(scratch,864).unwrap(); let parsed_limits: core::float_decimal::Limits = core::float_decimal::default_limits(); parsed_limits.max_input = 128; parsed_limits.max_digits = 128;
+ output.write_text(text("kind,job,index,value,count,mean,variance,draws,work\n",52)); let total: i32 = 0; let row: i32 = 1;
+ while (row < table.row_count()) {
+  detail.row = row; if (!limit.charge(2000000)) { return 3; }
+  let first: core::result::Result<f64,core::float_decimal::Error> = core::float_decimal::parse_f64(view(table.field(row,1).unwrap()),workspace,parsed_limits);
+  let second: core::result::Result<f64,core::float_decimal::Error> = core::float_decimal::parse_f64(view(table.field(row,2).unwrap()),workspace,parsed_limits);
+  if (first.is_err() || second.is_err()) { return 2; }
+  let family: core::text::Text = table.field(row,0).unwrap(); let distribution: core::result::Result<ext::distributions::Distribution,ext::distributions::Error> = ext::distributions::normal(first.unwrap(),second.unwrap());
+  if (same(family,"exponential",11)) { if (second.unwrap() != 0.0) { return 2; } distribution = ext::distributions::exponential(first.unwrap()); }
+  else { if (same(family,"gamma",5)) { distribution = ext::distributions::gamma(first.unwrap(),second.unwrap()); }
+   else { if (same(family,"beta",4)) { distribution = ext::distributions::beta(first.unwrap(),second.unwrap()); } else { if (!same(family,"normal",6)) { return 2; } } }
+  }
+  if (distribution.is_err()) { return 2; } let value: ext::distributions::Distribution = distribution.unwrap();
+  let count_text: core::text::Text = table.field(row,3).unwrap(); let count: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(count_text.bytes,count_text.start,count_text.length);
+  if (count.is_err()) { return 2; } if (count.unwrap() == 0) { return 2; } if (count.unwrap() > (options.max_samples-total) as u64) { return 3; } let n: i32 = count.unwrap() as i32; total += n;
+  detail.stage = 3; let moments: ext::statistics::Moments = ext::statistics::moments(); let i: i32 = 0;
+  while (i < n) {
+   if (!limit.charge(512)) { return 3; } let draw: core::result::Result<f64,ext::distributions::Error> = ext::distributions::sample(source.borrow(),value,limit.borrow()); if (draw.is_err()) { return error(draw.unwrap_err()); } let sample: f64 = draw.unwrap(); if (moments.push(sample).is_err()) { return 2; }
+   output.write_text(text("sample,",7)); integer(output,row as u64); output.write_text(text(",",1)); integer(output,i as u64); output.write_text(text(",",1)); output.write_f64(sample); output.write_text(text(",,,,,\n",6)); i += 1;
+  }
+  let mean: core::result::Result<f64,ext::statistics::Error> = moments.mean(); let variance: core::result::Result<f64,ext::statistics::Error> = moments.population_variance(); if (mean.is_err() || variance.is_err()) { return 2; }
+  if (!limit.charge(1024)) { return 3; }
+  output.write_text(text("summary,",8)); integer(output,row as u64); output.write_text(text(",,,",3)); integer(output,n as u64); output.write_text(text(",",1)); output.write_f64(mean.unwrap()); output.write_text(text(",",1)); output.write_f64(variance.unwrap()); output.write_text(text(",",1)); integer(output,limit.draws()); output.write_text(text(",",1)); integer(output,limit.work()); output.write_text(text("\n",1));
+  row += 1; detail.stage = 2;
+ }
+ return 0;
+}
+fn process_input(input: core::slice::View<u8>, options: Options, detail: &Diagnostic) -> i32 {
+ detail.stage = 1; let csv: ext::csv::Options = ext::csv::default_options(); csv.max_records = options.max_jobs+1; csv.max_fields = 4; csv.max_field_bytes = 128; csv.max_record_bytes = 512;
+ let parsed: core::result::Result<ext::csv::Table,ext::csv::Error> = ext::csv::parse_bytes(input.values,input.start,input.length,csv);
+ if (parsed.is_err()) { return match (parsed.unwrap_err()) { ext::csv::Error::AllocationFailed -> 4, ext::csv::Error::LimitExceeded(at) -> 3, _ -> 2 }; }
+ let table: ext::csv::Table = parsed.unwrap(); if (table.row_count() == 0 || core::option::unwrap(table.field_count(0)) != 4) { table.destroy(); return 2; }
+ let made: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity<u8>(options.max_output); if (made.is_err()) { table.destroy(); return 4; } let output: alloc::vec::Vec<u8> = made.unwrap(); output.try_resize(options.max_output,0).unwrap(); let formatter: core::fmt::Formatter = core::fmt::buffer(output.as_slice(),0,output.len()).unwrap();
+ let status: i32 = generate(table,options,formatter.borrow(),detail); table.destroy();
+ if (status == 0) { detail.stage = 4; let formatted: core::result::Result<i32,core::fmt::Error> = formatter.finish(); if (formatted.is_err()) { status = 3; } else { let sink: std::stream::Descriptor = std::stream::stdout(); if (core::io::write_all(sink.borrow(),output.as_slice(),0,formatted.unwrap()).is_err()) { status = 5; } } }
+ output.destroy(); return status;
+}
+fn process(arguments: std::args::Arguments, detail: &Diagnostic) -> i32 {
+ let specs: [ext::cli::Spec;8] = [ext::cli::Spec { id: 1,long: bytes("seed",4),short: 115,arity: ext::cli::Arity::Required },ext::cli::Spec { id: 2,long: bytes("help",4),short: 104,arity: ext::cli::Arity::Flag },ext::cli::Spec { id: 3,long: bytes("max-input-bytes",15),short: 0,arity: ext::cli::Arity::Required },ext::cli::Spec { id: 4,long: bytes("max-jobs",8),short: 0,arity: ext::cli::Arity::Required },ext::cli::Spec { id: 5,long: bytes("max-samples",11),short: 0,arity: ext::cli::Arity::Required },ext::cli::Spec { id: 6,long: bytes("max-output-bytes",16),short: 0,arity: ext::cli::Arity::Required },ext::cli::Spec { id: 7,long: bytes("max-draws",9),short: 0,arity: ext::cli::Arity::Required },ext::cli::Spec { id: 8,long: bytes("max-work",8),short: 0,arity: ext::cli::Arity::Required }];
+ let options: Options = Options { seed: 0,max_input: 1048576,max_jobs: 128,max_samples: 100000,max_output: 8388608,max_draws: 10000000,max_work: 268435456,seen: 0,help: false };
+ let parser: ext::cli::Parser = ext::cli::parser(arguments.as_view(),core::slice::view(specs,8).unwrap(),ext::cli::Ordering::Intermixed).unwrap();
+ while (true) { let result: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next(); if (result.is_err()) { return 2; } let item: core::option::Option<ext::cli::Event> = result.unwrap(); if (core::option::is_none(item)) { break; } let okay: bool = match (core::option::unwrap(item)) { ext::cli::Event::Option(item) -> option(options.borrow(),item), _ -> false }; if (!okay) { return 2; } }
+ if (options.help) { if (arguments.len() != 1) { return 2; } let usage: core::slice::View<u8> = bytes("Usage: sample-distribution [--seed N] [--max-input-bytes N] [--max-jobs N] [--max-samples N] [--max-output-bytes N] [--max-draws N] [--max-work N] < jobs.csv\n",158); let sink: std::stream::Descriptor = std::stream::stdout(); if (core::io::write_all(sink.borrow(),usage.values,usage.start,usage.length).is_err()) { return 5; } return 0; }
+ detail.stage = 1; let input: alloc::io::Buffer = alloc::io::with_limit(options.max_input).unwrap(); let source: std::stream::Descriptor = std::stream::stdin(); let copied: core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(source.borrow(),input.borrow()); let status: i32 = 0;
+ if (copied.is_err()) { status = match (copied.unwrap_err().cause) { core::io::Error::AllocationFailed -> 4, core::io::Error::LimitExceeded -> 3, _ -> 5 }; } else { status = process_input(core::slice::view(input.as_bytes(),input.len()).unwrap(),options,detail); } input.destroy(); return status;
+}
+fn main() -> i32 {
+ if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+ let detail: Diagnostic = Diagnostic { stage: 0,row: -1 }; let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,32,4096); let status: i32 = 0;
+ if (captured.is_err()) { status = match (captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(at) -> 5, _ -> 2 }; } else { let arguments: std::args::Arguments = captured.unwrap(); status = process(arguments,detail.borrow()); arguments.destroy(); }
+ if (status != 0) { let raw: [u8;128] = [0;128]; let out: core::fmt::Formatter = core::fmt::buffer(raw,0,128).unwrap(); out.write_text(text("sample-distribution: error=",27)); integer(out.borrow(),status as u64); out.write_text(text(" stage=",7)); integer(out.borrow(),detail.stage as u64); out.write_text(text(" row=",5)); out.write_signed(detail.row as i64,core::fmt::decimal()); out.write_text(text("\n",1)); let count: i32 = out.finish().unwrap(); let sink: std::stream::Descriptor = std::stream::stderr(); if (core::io::write_all(sink.borrow(),raw,0,count).is_err()) { return 5; } } return status;
+}

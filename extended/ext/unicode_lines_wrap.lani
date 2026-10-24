@@ -1,0 +1,87 @@
+// Greedy fitting of Unicode line opportunities to the terminal cell policy.
+// This is a distinct higher-level policy; no default line rules are changed.
+module ext::unicode_lines_wrap;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::text;
+import ext::terminal;
+import ext::unicode_graphemes;
+import ext::unicode_lines;
+
+pub enum Overlong { Overflow, Reject }
+pub struct Options { columns: i32, mode: ext::terminal::Mode, ambiguous_wide: bool, overlong: Overlong }
+pub struct Limits { max_bytes: i32, max_scalars: i32, max_lines: i32, max_output_bytes: i32, max_work: u64 }
+pub enum Error { Bounds, InvalidOptions, InvalidLimits, ByteLimit, ScalarLimit, LineLimit, OutputLimit, WorkLimit, InvalidUtf8(i32), Control(i32), Overlong(i32), AllocationFailed, Overflow }
+pub fn options() -> Options { return Options { columns: 80, mode: ext::terminal::Mode::Graphemes, ambiguous_wide: false, overlong: Overlong::Overflow }; }
+pub fn default_limits() -> Limits { return Limits { max_bytes: 4194304, max_scalars: 1048576, max_lines: 1048576, max_output_bytes: 8388608, max_work: 268435457 }; }
+pub fn work(bytes: i32) -> core::result::Result<u64,Error> { if (bytes < 0 || bytes > ext::unicode_lines::MAX_BYTES) { return core::result::Err(Error::Bounds); } return core::result::Ok((bytes as u64)*64+1); }
+fn line_error(error: ext::unicode_lines::Error) -> Error {
+    let mapped: Error = match (error) { ext::unicode_lines::Error::Bounds -> Error::Bounds, ext::unicode_lines::Error::InvalidLimits -> Error::InvalidLimits, ext::unicode_lines::Error::ByteLimit -> Error::ByteLimit, ext::unicode_lines::Error::ScalarLimit -> Error::ScalarLimit, ext::unicode_lines::Error::WorkLimit -> Error::WorkLimit, ext::unicode_lines::Error::InvalidUtf8(at) -> Error::InvalidUtf8(at) }; return mapped;
+}
+fn hard(scalar: u32) -> bool { return scalar == 10 || scalar == 13 || scalar == 11 || scalar == 12 || scalar == 133 || scalar == 8232 || scalar == 8233; }
+struct Builder { output: alloc::vec::Vec<u8>, lines: i32, max_lines: i32, max_bytes: i32 }
+impl Builder {
+    fn append(&self, text: core::text::Text, start: i32, end: i32, newline: bool) -> core::result::Result<bool,Error> {
+        if (self.lines == self.max_lines) { return core::result::Err(Error::LineLimit); }
+        let count: i32 = end-start; if (newline) { count += 1; }
+        if (count > self.max_bytes-self.output.len()) { return core::result::Err(Error::OutputLimit); }
+        // Vec::try_reserve reserves exactly. Grow geometrically across lines
+        // so repeated short lines cannot cause quadratic prefix copying.
+        let needed: i32 = self.output.len()+count;
+        if (needed > self.output.capacity()) {
+            let target: i32 = self.max_bytes;
+            if (self.output.capacity() <= self.max_bytes/2) { target = self.output.capacity()*2; }
+            if (target < 4) { target = 4; if (target > self.max_bytes) { target = self.max_bytes; } }
+            if (target < needed) { target = needed; }
+            if (self.output.try_reserve(target-self.output.len()).is_err()) { return core::result::Err(Error::AllocationFailed); }
+        }
+        let at: i32 = start; while (at < end) { self.output.try_push(text.bytes[text.start+at]).unwrap(); at += 1; }
+        if (newline) { self.output.try_push(10).unwrap(); } self.lines += 1; return core::result::Ok(true);
+    }
+    fn borrow(&self) -> &Builder { return self; }
+}
+fn reject_long(policy: Options) -> bool { return match (policy.overlong) { Overlong::Reject -> true, _ -> false }; }
+fn render(text: core::text::Text, scan: &ext::unicode_lines::Cursor, policy: Options, builder: &Builder) -> core::result::Result<bool,Error> {
+    let clusters: ext::unicode_graphemes::Cursor = ext::unicode_graphemes::cursor(text).unwrap(); let next_point: core::option::Option<ext::unicode_lines::Opportunity> = scan.next();
+    let start: i32 = 0; let columns: i32 = 0; let fit: i32 = 0; let fit_columns: i32 = 0;
+    while (true) {
+        let next: core::option::Option<ext::unicode_graphemes::Cluster> = clusters.next(); if (core::option::is_none(next)) { break; } let cluster: ext::unicode_graphemes::Cluster = core::option::unwrap(next);
+        let allowed: bool = false;
+        while (core::option::is_some(next_point)) { let point: ext::unicode_lines::Opportunity = core::option::unwrap(next_point); if (point.offset > cluster.end) { break; } if (point.offset == cluster.end) { allowed = true; } next_point = scan.next(); }
+        let scalar: u32 = core::option::unwrap(cluster.text.scalar_at_byte(0));
+        if (hard(scalar)) {
+            if (columns > policy.columns && reject_long(policy)) { return core::result::Err(Error::Overlong(start)); }
+            let added: core::result::Result<bool,Error> = builder.append(text,start,cluster.start,true); if (added.is_err()) { return added; }
+            start = cluster.end; columns = 0; fit = start; fit_columns = 0;
+        } else {
+            let width_options: ext::terminal::Options = ext::terminal::options(); width_options.mode = policy.mode; width_options.ambiguous_wide = policy.ambiguous_wide; width_options.max_work = cluster.text.length*6;
+            let measured: core::result::Result<i32,ext::terminal::Error> = ext::terminal::width(cluster.text,width_options);
+            if (measured.is_err()) { return core::result::Err(match (measured.unwrap_err()) { ext::terminal::Error::Control(at) -> Error::Control(cluster.start+at), ext::terminal::Error::InvalidUtf8(at) -> Error::InvalidUtf8(cluster.start+at), ext::terminal::Error::Overflow -> Error::Overflow, ext::terminal::Error::WorkLimit -> Error::WorkLimit, _ -> Error::Bounds }); }
+            let width: i32 = measured.unwrap(); if (width > 2147483647-columns) { return core::result::Err(Error::Overflow); } columns += width;
+            if (columns > policy.columns && fit > start) {
+                let added: core::result::Result<bool,Error> = builder.append(text,start,fit,true); if (added.is_err()) { return added; } start = fit; columns -= fit_columns; fit = start; fit_columns = 0;
+            }
+            if (allowed) {
+                if (columns <= policy.columns) { fit = cluster.end; fit_columns = columns; }
+                else {
+                    if (reject_long(policy)) { return core::result::Err(Error::Overlong(start)); }
+                    let added: core::result::Result<bool,Error> = builder.append(text,start,cluster.end,cluster.end < text.length); if (added.is_err()) { return added; } start = cluster.end; columns = 0; fit = start; fit_columns = 0;
+                }
+            }
+        }
+    }
+    if (start < text.length) { if (columns > policy.columns && reject_long(policy)) { return core::result::Err(Error::Overlong(start)); } return builder.append(text,start,text.length,false); }
+    return core::result::Ok(true);
+}
+// Spaces are preserved. Explicit hard separators become LF. The final EOT
+// opportunity is not an instruction to append LF; empty input stays empty.
+pub fn wrap(text: core::text::Text, policy: Options, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    if (policy.columns < 1) { return core::result::Err(Error::InvalidOptions); }
+    if (limits.max_bytes < 0 || limits.max_bytes > ext::unicode_lines::MAX_BYTES || limits.max_scalars < 0 || limits.max_scalars > ext::unicode_lines::MAX_BYTES || limits.max_lines < 0 || limits.max_output_bytes < 0) { return core::result::Err(Error::InvalidLimits); }
+    if (text.start < 0 || text.length < 0 || text.length > 2147483647-text.start) { return core::result::Err(Error::Bounds); }
+    if (text.length > limits.max_bytes) { return core::result::Err(Error::ByteLimit); } if (work(text.length).unwrap() > limits.max_work) { return core::result::Err(Error::WorkLimit); }
+    let checked: core::result::Result<ext::unicode_lines::Cursor,ext::unicode_lines::Error> = ext::unicode_lines::cursor(text,ext::unicode_lines::Limits { max_bytes: limits.max_bytes, max_scalars: limits.max_scalars, max_work: ext::unicode_lines::work(text.length).unwrap() }); if (checked.is_err()) { return core::result::Err(line_error(checked.unwrap_err())); }
+    let scan: ext::unicode_lines::Cursor = checked.unwrap(); let builder: Builder = Builder { output: alloc::vec::new<u8>(), lines: 0, max_lines: limits.max_lines, max_bytes: limits.max_output_bytes };
+    let result: core::result::Result<bool,Error> = render(text,scan.borrow(),policy,builder.borrow()); if (result.is_err()) { builder.output.destroy(); return core::result::Err(result.unwrap_err()); } return core::result::Ok(builder.output);
+}

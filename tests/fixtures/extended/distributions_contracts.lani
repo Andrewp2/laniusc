@@ -1,0 +1,41 @@
+module app::main;
+import core::f64;
+import core::random;
+import core::result;
+import ext::distributions;
+struct Script { word: u64, calls: i32, fail_at: i32 }
+impl Script { fn borrow(&self) -> &Script { return self; } }
+pub impl core::random::Source64 for Script {
+ pub fn draw(&self) -> core::result::Result<u64,core::random::Error> { self.calls += 1; if (self.calls == self.fail_at) { return core::result::Err(core::random::Error::Host(77)); } return core::result::Ok(self.word); }
+}
+struct Sequence { calls: i32 }
+impl Sequence { fn borrow(&self) -> &Sequence { return self; } }
+pub impl core::random::Source64 for Sequence {
+ pub fn draw(&self) -> core::result::Result<u64,core::random::Error> { let words: [u64;8] = [9223372036854775808,0,2305843009213693952,9223372036854775808,9223372036854775808,9223372036854775808,2305843009213693952,9223372036854775808]; assert(self.calls < 8); let value: u64 = words[self.calls]; self.calls += 1; return core::result::Ok(value); }
+}
+fn main() -> i32 {
+ let source: Script = Script { word: 9223372036854775808,calls: 0,fail_at: -1 }; let policy: ext::distributions::Budget = ext::distributions::budget(100,1000);
+ let normal = ext::distributions::normal(0.0,1.0).unwrap(); let exponential = ext::distributions::exponential(1.0).unwrap(); let gamma = ext::distributions::gamma(0.5,2.0).unwrap(); let beta = ext::distributions::beta(1.0,1.0).unwrap();
+ let x: f64 = ext::distributions::sample(source.borrow(),normal,policy.borrow()).unwrap(); assert(x < -1.17 && x > -1.18 && source.calls == 2 && policy.draws() == 2 && policy.work() == 2);
+ let e: f64 = ext::distributions::sample(source.borrow(),exponential,policy.borrow()).unwrap(); assert(e > 0.693 && e < 0.694 && policy.draws() == 3);
+ assert(ext::distributions::sample(source.borrow(),beta,policy.borrow()).unwrap() == 0.5);
+ let calls: i32 = source.calls; let invalid: ext::distributions::Distribution = normal; invalid.second = 0.0; assert(match (ext::distributions::sample(source.borrow(),invalid,policy.borrow()).unwrap_err()) { ext::distributions::Error::InvalidParameter -> true, _ -> false }); assert(source.calls == calls);
+ let before_work: u64 = policy.work(); assert(ext::distributions::tails(normal,core::f64::nan(),policy.borrow()).is_err()); assert(policy.work() == before_work && source.calls == calls);
+ let failing: Script = Script { word: 9223372036854775808,calls: 0,fail_at: 2 }; let fail_budget = ext::distributions::budget(10,10);
+ assert(match (ext::distributions::sample(failing.borrow(),normal,fail_budget.borrow()).unwrap_err()) { ext::distributions::Error::Random(cause) -> match (cause) { core::random::Error::Host(code) -> code == 77, _ -> false }, _ -> false }); assert(failing.calls == 2 && fail_budget.draws() == 2 && fail_budget.work() == 2);
+ let zeros: Script = Script { word: 0,calls: 0,fail_at: -1 }; let zero_budget = ext::distributions::budget(3,100);
+ assert(match (ext::distributions::sample(zeros.borrow(),normal,zero_budget.borrow()).unwrap_err()) { ext::distributions::Error::DrawLimit -> true, _ -> false }); assert(zeros.calls == 3 && zero_budget.draws() == 3 && zero_budget.work() == 4);
+ let no_work = ext::distributions::budget(10,0); assert(match (ext::distributions::sample(source.borrow(),gamma,no_work.borrow()).unwrap_err()) { ext::distributions::Error::WorkLimit -> true, _ -> false }); assert(source.calls == calls);
+ let tiny = ext::distributions::gamma(core::f64::from_bits(1),1.0).unwrap(); assert(ext::distributions::sample(source.borrow(),tiny,policy.borrow()).unwrap() == 0.0);
+ let tiny_beta = ext::distributions::beta(core::f64::from_bits(1),core::f64::from_bits(1)).unwrap(); assert(ext::distributions::sample(source.borrow(),tiny_beta,policy.borrow()).unwrap() == 0.5);
+ // The two shape<1 boosts are exactly identical and cancel algebraically.
+ // The remaining gamma-base ratio must survive even with minsub shapes.
+ let sequence: Sequence = Sequence { calls: 0 }; let sequence_budget = ext::distributions::budget(8,10);
+ let conditional = ext::distributions::sample(sequence.borrow(),ext::distributions::beta(1e-20,1e-20).unwrap(),sequence_budget.borrow()).unwrap(); assert(conditional > 0.95863896439043 && conditional < 0.95863896439046); assert(sequence.calls == 8 && sequence_budget.work() == 10);
+ sequence.calls = 0; let subnormal_budget = ext::distributions::budget(8,10); let subnormal_conditional = ext::distributions::sample(sequence.borrow(),tiny_beta,subnormal_budget.borrow()).unwrap(); assert(subnormal_conditional == conditional);
+ assert(ext::distributions::pdf(gamma,0.0).unwrap() == core::f64::infinity()); assert(ext::distributions::log_pdf(ext::distributions::beta(1.0,5.0).unwrap(),0.0).unwrap() > 1.6);
+ let heavy = ext::distributions::gamma(1000000000000000.0,1.0).unwrap(); let large_budget = ext::distributions::budget(0,2000000);
+ assert(match (ext::distributions::tails(heavy,1000000000000000.0,large_budget.borrow()).unwrap_err()) { ext::distributions::Error::NoConvergence -> true, _ -> false }); assert(large_budget.work() == 1000001);
+ assert(!large_budget.charge(2000000) && large_budget.work() == 1000001);
+ return 0;
+}

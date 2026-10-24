@@ -1,0 +1,22 @@
+// Reduced control for forged Text metadata, separate from segmentation rules.
+module app::main;
+import core::text;
+import core::result;
+import ext::unicode_sentences;
+import std::io_decimal;
+import std::io;
+fn forged(raw: [u8], start: i32, length: i32) -> core::text::Text { return core::text::Text { bytes: raw, start: start, length: length }; }
+fn report(value: core::text::Text) {
+    std::io_decimal::write_i32(1,value.start); std::io::write_byte(1,44); std::io_decimal::write_i32(1,value.length); std::io::write_byte(1,44);
+    let direct: i32 = 0; if (ext::unicode_sentences::cursor_with_limits(value,ext::unicode_sentences::default_limits()).is_err()) { direct = 1; }
+    let wrapper: i32 = 0; if (ext::unicode_sentences::cursor(value).is_err()) { wrapper = 1; }
+    std::io_decimal::write_i32(1,direct); std::io::write_byte(1,44); std::io_decimal::write_i32(1,wrapper); std::io::write_byte(1,10);
+}
+fn main() -> i32 {
+    let raw: [u8;1] = [0];
+    let inferred = core::text::Text { bytes: raw, start: -1, length: 0 }; report(inferred);
+    let typed: core::text::Text = core::text::Text { bytes: raw, start: -1, length: 0 }; report(typed);
+    report(forged(raw,-1,0));
+    let assigned: core::text::Text = core::text::Text { bytes: raw, start: 0, length: 0 }; assigned.start = -1; report(assigned);
+    return 0;
+}

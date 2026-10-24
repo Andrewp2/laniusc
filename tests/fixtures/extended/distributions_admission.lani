@@ -1,0 +1,5 @@
+module app::main;
+import core::random;
+import core::result;
+fn draw<R>(source: &R) -> core::result::Result<f64,core::random::Error> where R: core::random::Source64 { return core::random::unit_f64(source); }
+fn main() -> i32 { let source: core::random::Xoshiro256PlusPlus = core::random::from_seed(17); let value: f64 = draw(source.borrow()).unwrap(); assert(value >= 0.0 && value < 1.0); return 0; }

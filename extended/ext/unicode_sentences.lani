@@ -1,0 +1,102 @@
+// Unicode 17.0.0 default sentence boundaries: UAX #29 revision 47 SB1–SB998.
+// Borrowed UTF-8 views; no tailoring, normalization or runtime allocation.
+module ext::unicode_sentences;
+import core::option;
+import core::result;
+import core::text;
+import core::utf8;
+import ext::unicode_sentences_data;
+
+pub enum Error { Bounds, InputLimit, WorkLimit }
+pub struct Limits { max_bytes: i32, max_work: u64 }
+pub struct Segment { start: i32, end: i32, text: core::text::Text }
+// Obtain through cursor[_with_limits]. Fields are implementation state.
+// Copies fork both the consumed position and the retained lookahead cache.
+pub struct Cursor { text: core::text::Text, position: i32, raw: u32, previous: u32, before: u32, term: u32, spaces: bool, look_end: i32, look_lower: bool }
+
+pub fn default_limits() -> Limits { return Limits { max_bytes: 2147483647, max_work: 6442450941 }; }
+pub fn cursor_with_limits(text: core::text::Text, limits: Limits) -> core::result::Result<Cursor,Error> {
+    if (text.start < 0 || text.length < 0 || text.length > 2147483647-text.start || limits.max_bytes < 0) { return core::result::Err(Error::Bounds); }
+    if (text.length > limits.max_bytes) { return core::result::Err(Error::InputLimit); }
+    // Conservative preflight units: one UTF-8 scalar classification, including
+    // its property lookup. This is not a count of machine reads/instructions.
+    if ((text.length as u64)*3 > limits.max_work) { return core::result::Err(Error::WorkLimit); }
+    return core::result::Ok(Cursor { text: text, position: 0, raw: 0, previous: 0, before: 0, term: 0, spaces: false, look_end: -1, look_lower: false });
+}
+pub fn cursor(text: core::text::Text) -> core::result::Result<Cursor,Error> { return cursor_with_limits(text,default_limits()); }
+// Other=0 CR=1 LF=2 Extend=3 Format=4 Sep=5 Sp=6 Lower=7 Upper=8
+// OLetter=9 Numeric=10 ATerm=11 STerm=12 Close=13 SContinue=14.
+fn ignored(value: u32) -> bool { return value == 3 || value == 4; }
+fn paragraph(value: u32) -> bool { return value == 1 || value == 2 || value == 5; }
+fn letter(value: u32) -> bool { return value == 7 || value == 8; }
+fn stops_lower(value: u32) -> bool { return paragraph(value) || (value >= 7 && value <= 9) || value == 11 || value == 12; }
+
+pub impl Cursor {
+    // SB8's right expression is an arbitrary run excluding letters,
+    // paragraph separators and sentence terminators, followed by Lower.
+    // All positions up to the cached stopping scalar share the same answer.
+    // The next search starts strictly after that scalar: no suffix rescans.
+    fn lower_ahead(&self) -> bool {
+        if (self.position > self.look_end) {
+            let at: i32 = self.position; self.look_lower = false;
+            while (at < self.text.length) {
+                let scalar: u32 = core::option::unwrap(self.text.scalar_at_byte(at));
+                let value: u32 = ext::unicode_sentences_data::flags(scalar);
+                if (stops_lower(value)) { self.look_lower = value == 7; break; }
+                at += core::utf8::encoded_len_or(scalar,0) as i32;
+            }
+            self.look_end = at;
+        }
+        return self.look_lower;
+    }
+    fn breaks_before(&self, current: u32) -> bool {
+        if (self.raw == 1 && current == 2) { return false; } // SB3
+        if (paragraph(self.raw)) { return true; } // SB4 precedes ignore
+        if (ignored(current)) { return false; } // SB5
+        if (self.previous == 11 && current == 10) { return false; } // SB6
+        if (letter(self.before) && self.previous == 11 && current == 8) { return false; } // SB7
+        if (self.term == 1 && self.lower_ahead()) { return false; } // SB8
+        if (self.term != 0 && (current == 14 || current == 11 || current == 12)) { return false; } // SB8a
+        if (self.term != 0 && !self.spaces && (current == 13 || current == 6 || paragraph(current))) { return false; } // SB9
+        if (self.term != 0 && (current == 6 || paragraph(current))) { return false; } // SB10
+        if (self.term != 0) { return true; } // SB11; ParaSep suffix is SB4
+        return false; // SB998
+    }
+    fn consume(&self, current: u32, width: i32) {
+        if (!ignored(current)) {
+            self.before = self.previous; self.previous = current;
+            if (current == 11 || current == 12) { self.term = 2; if (current == 11) { self.term = 1; } self.spaces = false; }
+            else { if (self.term != 0 && current == 6) { self.spaces = true; }
+                else { if (!(self.term != 0 && !self.spaces && current == 13)) { self.term = 0; self.spaces = false; } }
+            }
+        }
+        self.raw = current; self.position += width;
+    }
+    // Nonempty contiguous spans with input-relative byte offsets. Each scalar
+    // is classified at most twice here and once in monotone SB8 lookahead.
+    pub fn next(&self) -> core::option::Option<Segment> {
+        if (self.position == self.text.length) { return core::option::None(); }
+        let start: i32 = self.position;
+        let scalar: u32 = core::option::unwrap(self.text.scalar_at_byte(self.position));
+        self.consume(ext::unicode_sentences_data::flags(scalar),core::utf8::encoded_len_or(scalar,0) as i32);
+        while (self.position < self.text.length) {
+            let scalar: u32 = core::option::unwrap(self.text.scalar_at_byte(self.position));
+            let current: u32 = ext::unicode_sentences_data::flags(scalar);
+            if (self.breaks_before(current)) { break; }
+            self.consume(current,core::utf8::encoded_len_or(scalar,0) as i32);
+        }
+        let part: core::text::Text = core::text::from_utf8_unchecked(self.text.bytes,self.text.start+start,self.position-start);
+        return core::option::Some(Segment { start: start, end: self.position, text: part });
+    }
+}
+pub fn count(text: core::text::Text) -> core::result::Result<i32,Error> {
+    let checked: core::result::Result<Cursor,Error> = cursor(text); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); } let scan: Cursor = checked.unwrap(); let total: i32 = 0;
+    while (core::option::is_some(scan.next())) { total += 1; } return core::result::Ok(total);
+}
+// Full-prefix context. Interior UTF-8 bytes are false; invalid offsets Bounds.
+pub fn is_boundary(text: core::text::Text, index: i32) -> core::result::Result<bool,Error> {
+    let checked: core::result::Result<Cursor,Error> = cursor(text); if (checked.is_err() || index < 0 || index > text.length) { return core::result::Err(Error::Bounds); }
+    if (index == 0 || index == text.length) { return core::result::Ok(true); } let scan: Cursor = checked.unwrap();
+    while (true) { let segment: Segment = core::option::unwrap(scan.next()); if (segment.end >= index) { return core::result::Ok(segment.end == index); } }
+    return core::result::Ok(false);
+}

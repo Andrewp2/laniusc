@@ -38,6 +38,12 @@ sample runner's fixed argument and text-output fixture.
 | `kv_tool.lani` | `tests/extended_kv_execution.rs`, x86_64 Linux; checked snapshot storage, model/corruption cases and native replacement/fault cleanup | [Key-value snapshots and file replacement](../../docs/extended-kv.md) |
 | `wave_spectrum.lani` | `tests/extended_wave_spectrum_execution.rs`, x86_64 Linux; WAVE/FIR/window/FFT CSV, numerical models and allocation/I/O faults | [WAVE spectrum](../../docs/extended-wave-spectrum.md) |
 | `timezone_tool.lani` | `tests/extended_timezone_tool_execution.rs`, x86_64 Linux; TZif inspection, instant/local conversion, ambiguity, limits and allocation/I/O faults | [Time-zone queries](../../docs/extended-timezone.md) |
+| `text_sentences.lani` | `tests/extended_text_sentences_execution.rs`, x86_64 Linux; official sentence vectors, exact CSV/framed output, limits and allocation/I/O faults | [Sentence segmentation](../../docs/extended-text-sentences.md) |
+| `text_wrap.lani` | `tests/extended_text_wrap_execution.rs`, x86_64 Linux; Unicode boundaries, independent cell-fitting models, limits and allocation/I/O faults | [Text wrapping](../../docs/extended-text-wrap.md) |
+| `tcp_exchange.lani` | `tests/stdlib_tcp_exchange_execution.rs`, x86_64 Linux; independent IPv4/IPv6 peers, empty/binary/1 MiB data, deadlines and allocation/I/O faults | [Binary TCP exchange](../../docs/stdlib-tcp-exchange.md) |
+| `directory_report.lani` | `tests/stdlib_directory_execution.rs`, x86_64 Linux; raw byte names, OS metadata model, depth/filter/resource limits and descriptor/allocation/I/O cleanup | [Directory reporting](../../docs/stdlib-directory.md) |
+| `settings_inspect.lani` | `tests/extended_settings_execution.rs`, x86_64 Linux; JSON/TOML/environment overlays, exact typed values, provenance, limits and allocation/I/O cleanup | [Settings inspection](../../docs/extended-settings.md) |
+| `sample_distribution.lani` | `tests/extended_sample_distribution_execution.rs`, x86_64 Linux; seeded continuous samples, CSV models, resource and allocation/I/O failures | [Distribution sampling](../../docs/extended-sample-distribution.md) |
 
 Compile these applications with both `--stdlib-root stdlib` and `--source-root extended`.
 The library implementations are Lanius; the Rust test harness supplies inputs and

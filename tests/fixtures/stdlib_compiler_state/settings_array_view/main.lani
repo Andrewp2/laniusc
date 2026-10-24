@@ -1,0 +1,12 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import std::io_decimal;
+import std::io;
+fn lit(value: str, count: i32) -> core::text::Text { return core::text::from_utf8_unchecked(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),0,count); }
+fn length(path: core::slice::View<core::text::Text>) -> i32 { let value: core::text::Text = core::option::unwrap(path.get(0)); return value.byte_len(); }
+fn main() -> i32 { let path: [core::text::Text;3] = [lit("ignored",7),lit("nested",6),lit("old",3)]; let view: core::slice::View<core::text::Text> = core::slice::View<core::text::Text> { values:path,start:1,length:2 }; std::io_decimal::write_i32(1,path[1].byte_len()); std::io::write_byte(1,10); std::io_decimal::write_i32(1,length(view)); std::io::write_byte(1,10); let items: alloc::vec::Vec<core::text::Text> = alloc::vec::new(); core::result::unwrap(items.try_push(lit("nested",6))); std::io_decimal::write_i32(1,length(items.as_view())); std::io::write_byte(1,10); items.destroy(); let checked: core::slice::View<core::text::Text> = core::result::unwrap(core::slice::view_range(path,1,2)); std::io_decimal::write_i32(1,length(checked)); std::io::write_byte(1,10); return 0; }

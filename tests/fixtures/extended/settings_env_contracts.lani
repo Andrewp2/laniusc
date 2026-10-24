@@ -1,0 +1,29 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::settings;
+import ext::settings_env;
+import std::io;
+fn lit(value: str, count: i32) -> core::text::Text { return core::text::from_utf8_unchecked(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),0,count); }
+fn spec(name: core::text::Text, key: core::text::Text, parse: ext::settings_env::Parse) -> ext::settings_env::Spec { return ext::settings_env::Spec { environment:name,setting:key,parse:parse }; }
+fn tag(value: ext::settings_env::Error) -> i32 { return match(value) { ext::settings_env::Error::InvalidSpec(at) -> 1, ext::settings_env::Error::DuplicateSetting(at) -> 2, ext::settings_env::Error::InvalidLimit -> 3, ext::settings_env::Error::ValueLimit(at) -> 4, ext::settings_env::Error::Value(at,cause) -> 5, _ -> 99 }; }
+fn get(layers: ext::settings::Layers, key: core::text::Text, work: &ext::settings::Budget) -> ext::settings::Value { return core::option::unwrap(core::result::unwrap(layers.get(key,work))).value; }
+fn main() -> i32 {
+    let work: ext::settings::Budget = ext::settings::budget(100000);
+    let specs: [ext::settings_env::Spec;5] = [spec(lit("SETTINGS_TEST_TEXT",18),lit("text",4),ext::settings_env::Parse::Text),spec(lit("SETTINGS_TEST_DECIMAL",21),lit("decimal",7),ext::settings_env::Parse::ExactDecimal),spec(lit("SETTINGS_TEST_INTEGER",21),lit("integer",7),ext::settings_env::Parse::Integer),spec(lit("SETTINGS_TEST_BOOLEAN",21),lit("boolean",7),ext::settings_env::Parse::Boolean),spec(lit("SETTINGS_TEST_ABSENT",20),lit("absent",6),ext::settings_env::Parse::Text)];
+    let view: core::slice::View<ext::settings_env::Spec> = core::result::unwrap(core::slice::view(specs,5));
+    let snapshot: ext::settings_env::Snapshot = core::result::unwrap(ext::settings_env::snapshot(view,5,128,512,work.borrow())); assert(snapshot.len() == 4);
+    let sources: [ext::settings::Source;1] = [snapshot.as_source()]; let layers: ext::settings::Layers = core::result::unwrap(ext::settings::layers(core::result::unwrap(core::slice::view(sources,1)),ext::settings::default_limits(),work.borrow()));
+    assert(core::result::unwrap(get(layers,lit("text",4),work.borrow()).text()).is_empty()); assert(core::result::unwrap(get(layers,lit("integer",7),work.borrow()).integer_i64(work.borrow())) == -12); assert(!core::result::unwrap(get(layers,lit("boolean",7),work.borrow()).boolean()));
+    let decimal: ext::settings::Value = get(layers,lit("decimal",7),work.borrow()); assert(core::result::unwrap(decimal.decimal_text()).equals(lit("1.2300e4",8))); assert(core::result::unwrap(decimal.integer_i64(work.borrow())) == 12300); assert(core::option::is_none(core::result::unwrap(layers.get(lit("absent",6),work.borrow()))));
+    snapshot.destroy();
+    assert(tag(core::result::unwrap_err(ext::settings_env::snapshot(view,4,128,512,work.borrow()))) == 3); assert(tag(core::result::unwrap_err(ext::settings_env::snapshot(view,5,-1,512,work.borrow()))) == 3); assert(tag(core::result::unwrap_err(ext::settings_env::snapshot(view,5,128,1,work.borrow()))) == 1);
+    assert(tag(core::result::unwrap_err(ext::settings_env::snapshot(view,5,2,512,work.borrow()))) == 4);
+    let bad: [ext::settings_env::Spec;1] = [spec(lit("A=B",3),lit("key",3),ext::settings_env::Parse::Text)]; assert(tag(core::result::unwrap_err(ext::settings_env::snapshot(core::result::unwrap(core::slice::view(bad,1)),1,10,128,work.borrow()))) == 1);
+    let duplicate: [ext::settings_env::Spec;2] = [specs[0],specs[0]]; assert(tag(core::result::unwrap_err(ext::settings_env::snapshot(core::result::unwrap(core::slice::view(duplicate,2)),2,128,512,work.borrow()))) == 2);
+    let none: ext::settings::Budget = ext::settings::budget(0); assert(tag(core::result::unwrap_err(ext::settings_env::snapshot(view,5,128,1,none.borrow()))) == 1); assert(tag(core::result::unwrap_err(ext::settings_env::snapshot(view,5,128,512,none.borrow()))) == 5);
+    assert(std::io::write_byte(1,69) == 1); return 0;
+}

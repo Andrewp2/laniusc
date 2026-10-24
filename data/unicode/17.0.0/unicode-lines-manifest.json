@@ -1,0 +1,44 @@
+{
+  "DerivedGeneralCategory.txt": {
+    "bytes": 277514,
+    "path": "unicode-lines-DerivedGeneralCategory.txt.gz",
+    "sha256": "d62e5bab70ca74f099343f71224fa051cb1fdd61a1ab45c0488c44cfc0b6102e",
+    "url": "https://www.unicode.org/Public/17.0.0/ucd/extracted/DerivedGeneralCategory.txt"
+  },
+  "DerivedLineBreak.txt": {
+    "bytes": 251808,
+    "path": "unicode-lines-DerivedLineBreak.txt.gz",
+    "sha256": "dad3ef492d198d6f1dde4922b175f7371a27dfe62fce489f3e04807015a4c682",
+    "url": "https://www.unicode.org/Public/17.0.0/ucd/extracted/DerivedLineBreak.txt"
+  },
+  "EastAsianWidth.txt": {
+    "bytes": 201595,
+    "path": "unicode-lines-EastAsianWidth.txt.gz",
+    "sha256": "ea7ce50f3444a050333448dffef1cadd9325af55cbb764b4a2280faf52170a33",
+    "url": "https://www.unicode.org/Public/17.0.0/ucd/EastAsianWidth.txt"
+  },
+  "LineBreakTest.html": {
+    "bytes": 798560,
+    "path": "unicode-lines-LineBreakTest.html.gz",
+    "sha256": "ac2bea1af7141c4ce85d8a7d92c5ba038d58787721b9a8566cc4b2c849e2ce11",
+    "url": "https://www.unicode.org/Public/17.0.0/ucd/auxiliary/LineBreakTest.html"
+  },
+  "LineBreakTest.txt": {
+    "bytes": 3166819,
+    "path": "unicode-lines-LineBreakTest.txt.gz",
+    "sha256": "e69884e0dde6a8724873f885d68c52dc14518abf9ae4ca9e2283b8773db3b752",
+    "url": "https://www.unicode.org/Public/17.0.0/ucd/auxiliary/LineBreakTest.txt"
+  },
+  "emoji-data.txt": {
+    "bytes": 107324,
+    "path": "unicode-lines-emoji-data.txt.gz",
+    "sha256": "2cb2bb9455cda83e8481541ecf5b6dfda66a3bb89efa3fa7c5297eccf607b72b",
+    "url": "https://www.unicode.org/Public/17.0.0/ucd/emoji/emoji-data.txt"
+  },
+  "tr14-55.html": {
+    "bytes": 226953,
+    "path": "unicode-lines-tr14-55.html.gz",
+    "sha256": "dfa75adac235aaaf49320c955fbf48ef96acb16823ed4fb7ee8079b15b058582",
+    "url": "https://www.unicode.org/reports/tr14/tr14-55.html"
+  }
+}

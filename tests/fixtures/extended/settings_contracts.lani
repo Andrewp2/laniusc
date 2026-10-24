@@ -1,0 +1,82 @@
+module app::main;
+import alloc::string;
+import alloc::vec;
+import core::f64;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::config;
+import ext::json;
+import ext::toml;
+import ext::settings;
+import ext::settings_env;
+import std::io;
+import std::io_decimal;
+fn lit(value: str, count: i32) -> core::text::Text { return core::text::from_utf8_unchecked(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),0,count); }
+fn json(value: core::text::Text) -> ext::config::Config { let text: alloc::string::String = core::result::unwrap(alloc::string::from_text(value)); let result = ext::config::parse(text,ext::json::default_options()); text.destroy(); return core::result::unwrap(result); }
+fn get(layers: ext::settings::Layers, key: core::text::Text, work: &ext::settings::Budget) -> ext::settings::Resolved { let r = layers.get(key,work); if (core::result::is_err(r)) { std::io_decimal::write_i32(2,error_tag(core::result::unwrap_err(r))); } let o: core::option::Option<ext::settings::Resolved> = core::result::unwrap(r); if (core::option::is_none(o)) { std::io::write_byte(2,78); } return core::option::unwrap(o); }
+fn member(value: ext::settings::Value, key: core::text::Text, work: &ext::settings::Budget) -> ext::settings::Value { return core::option::unwrap(core::result::unwrap(value.member(key,work))); }
+fn error_tag(value: ext::settings::Error) -> i32 { return match(value) { ext::settings::Error::InvalidLimits -> 1, ext::settings::Error::Bounds -> 2, ext::settings::Error::SourceLimit -> 3, ext::settings::Error::BindingLimit -> 4, ext::settings::Error::NodeLimit -> 5, ext::settings::Error::DepthLimit -> 6, ext::settings::Error::KeyLimit -> 7, ext::settings::Error::TextLimit -> 8, ext::settings::Error::PathLimit -> 9, ext::settings::Error::WorkLimit -> 10, ext::settings::Error::DuplicateKey(at) -> 11, ext::settings::Error::WrongKind -> 12, ext::settings::Error::NumberOutOfRange -> 13, ext::settings::Error::NotInteger -> 14, ext::settings::Error::InvalidScalar -> 15, _ -> 99 }; }
+fn check(value: bool, line: i32) { if (!value) { std::io_decimal::write_i32(2,line); } assert(value); }
+fn main() -> i32 {
+    let first: ext::config::Config = json(lit("{\"host\":\"old\",\"port\":8.1e1,\"enabled\":true,\"nested\":{\"old\":1,\"keep\":2},\"nullish\":3,\"numbers\":[18446744073709551615,-9223372036854775808,1e999999999999999999999,0e-99999999999999999999,1.1],\"text\":\"é\\u0000😀\",\"a.b\":9,\"x\\u0000y\":4,\"é\":5}",238));
+    let second: ext::toml::Document = core::result::unwrap(ext::toml::parse_text(lit("host=\"new\"\nport=82\nenabled=false\nnullish=2.5\n[nested]\nkeep=3\n[types]\nint=0xff\nfloat=-0.0\nnan=nan\ninf=inf\noffset=1979-05-27T07:32:00.123456789123Z\nlocal=1979-05-27 07:32:00\ndate=1979-05-27\ntime=07:32:00.123456789123\narray=[\"x\",1,true]\n",234),ext::toml::default_options()));
+
+    check(core::result::is_err(ext::settings::toml(second,-1)),87);
+    let work: ext::settings::Budget = ext::settings::budget(1000000);
+    let overlay: [ext::settings::Binding;3] = [ext::settings::Binding { key:lit("port",4),value:ext::settings::scalar(ext::settings::Scalar::Integer(83)) }, ext::settings::Binding { key:lit("nullish",7),value:ext::settings::scalar(ext::settings::Scalar::Null) }, ext::settings::Binding { key:lit("structured",10),value:ext::settings::json(first.root()) }];
+    let sources: [ext::settings::Source;3] = [ext::settings::Source::Json(first),ext::settings::Source::Toml(second),ext::settings::Source::Bindings(core::result::unwrap(core::slice::view(overlay,3)))];
+    let view: core::slice::View<ext::settings::Source> = core::result::unwrap(core::slice::view(sources,3));
+    let admission = ext::settings::layers(view,ext::settings::default_limits(),work.borrow()); if (core::result::is_err(admission)) { std::io_decimal::write_i32(2,error_tag(core::result::unwrap_err(admission))); } let layers: ext::settings::Layers = core::result::unwrap(admission);
+    check(layers.len() == 3,29); let port: ext::settings::Resolved = get(layers,lit("port",4),work.borrow()); check(port.source_index == 2 && core::result::unwrap(port.value.integer_i64(work.borrow())) == 83,29);
+    let host: ext::settings::Resolved = get(layers,lit("host",4),work.borrow()); check(host.source_index == 1 && core::result::unwrap(host.value.text()).equals(lit("new",3)),30);
+    check(!core::result::unwrap(get(layers,lit("enabled",7),work.borrow()).value.boolean()),31);
+    check(get(layers,lit("nullish",7),work.borrow()).value.is_null(),32); check(core::option::is_none(core::result::unwrap(layers.get(lit("missing",7),work.borrow()))),32);
+    let path: alloc::vec::Vec<core::text::Text> = alloc::vec::new(); core::result::unwrap(path.try_push(lit("ignored",7))); core::result::unwrap(path.try_push(lit("nested",6))); core::result::unwrap(path.try_push(lit("old",3)));
+    let found_path = layers.lookup(core::slice::View<core::text::Text> { values:path.as_slice(),start:1,length:2 },work.borrow()); if (core::result::is_err(found_path)) { std::io_decimal::write_i32(2,error_tag(core::result::unwrap_err(found_path))); } check(core::option::is_none(core::result::unwrap(found_path)),34);
+    let native_path: [core::text::Text;2] = [lit("nested",6),lit("keep",4)]; let native_found: ext::settings::Resolved = core::option::unwrap(core::result::unwrap(layers.lookup(core::result::unwrap(core::slice::view(native_path,2)),work.borrow()))); check(core::result::unwrap(native_found.value.integer_i64(work.borrow())) == 3,83);
+    let nested: ext::settings::Resolved = get(layers,lit("nested",6),work.borrow()); check(nested.source_index == 1 && core::result::unwrap(nested.value.len()) == 1,35);
+    check(core::result::unwrap(member(nested.value,lit("keep",4),work.borrow()).integer_i64(work.borrow())) == 3,36);
+    check(core::result::unwrap(get(layers,lit("a.b",3),work.borrow()).value.integer_i64(work.borrow())) == 9,37);
+    let nul_bytes: [u8;3] = [120,0,121]; let nul_key: core::text::Text = core::result::unwrap(core::text::from_utf8(nul_bytes,3)); check(core::result::unwrap(get(layers,nul_key,work.borrow()).value.integer_i64(work.borrow())) == 4,84); check(core::result::unwrap(get(layers,lit("é",2),work.borrow()).value.integer_i64(work.borrow())) == 5,85); let structured: ext::settings::Resolved = get(layers,lit("structured",10),work.borrow()); check(structured.source_index == 2 && core::result::unwrap(member(structured.value,lit("port",4),work.borrow()).integer_i64(work.borrow())) == 81,86);
+    let numbers: ext::settings::Value = get(layers,lit("numbers",7),work.borrow()).value; check(core::result::unwrap(numbers.len()) == 5,38);
+    let children: ext::settings::Children = core::result::unwrap(numbers.children());
+    let maximum: ext::settings::Value = core::option::unwrap(core::result::unwrap(children.next(work.borrow()))); check(core::result::unwrap(maximum.integer_u64(work.borrow())) == 18446744073709551615,40);
+    check(error_tag(core::result::unwrap_err(maximum.integer_i64(work.borrow()))) == 13,41);
+    check(core::result::unwrap(core::option::unwrap(core::result::unwrap(children.next(work.borrow()))).integer_i64(work.borrow())) == -9223372036854775808,42);
+    let enormous: ext::settings::Value = core::option::unwrap(core::result::unwrap(children.next(work.borrow()))); check(core::result::unwrap(enormous.decimal_text()).equals(lit("1e999999999999999999999",23)),43); check(error_tag(core::result::unwrap_err(enormous.integer_i64(work.borrow()))) == 13,43); check(error_tag(core::result::unwrap_err(enormous.float64())) == 12,43);
+    check(core::result::unwrap(core::option::unwrap(core::result::unwrap(children.next(work.borrow()))).integer_i64(work.borrow())) == 0,44);
+    check(error_tag(core::result::unwrap_err(core::option::unwrap(core::result::unwrap(children.next(work.borrow()))).integer_i64(work.borrow()))) == 14,45);
+    check(core::option::is_none(core::result::unwrap(children.next(work.borrow()))) && core::option::is_none(core::result::unwrap(children.next(work.borrow()))),46);
+    check(error_tag(core::result::unwrap_err(numbers.element(-1,work.borrow()))) == 2,47); check(core::option::is_none(core::result::unwrap(numbers.element(5,work.borrow()))),47);
+    let types: ext::settings::Value = get(layers,lit("types",5),work.borrow()).value;
+    check(core::result::unwrap(member(types,lit("int",3),work.borrow()).integer_i64(work.borrow())) == 255,49);
+    let negative_zero: f64 = core::result::unwrap(member(types,lit("float",5),work.borrow()).float64()); check(negative_zero == 0.0 && core::f64::is_sign_negative(negative_zero),50);
+    check(core::f64::is_nan(core::result::unwrap(member(types,lit("nan",3),work.borrow()).float64())),51); check(core::f64::is_infinite(core::result::unwrap(member(types,lit("inf",3),work.borrow()).float64())),51);
+    let offset: ext::settings::Value = member(types,lit("offset",6),work.borrow()); let temporal: ext::toml::Temporal = core::result::unwrap(offset.temporal(work.borrow())); check(temporal.fraction.equals(lit("123456789123",12)),52); check(core::option::is_some(temporal.offset),52);
+    check(core::result::unwrap(member(types,lit("local",5),work.borrow()).temporal_text()).equals(lit("1979-05-27 07:32:00",19)),53);
+    check(core::option::is_none(core::result::unwrap(member(types,lit("date",4),work.borrow()).temporal(work.borrow())).time),54); check(core::option::is_none(core::result::unwrap(member(types,lit("time",4),work.borrow()).temporal(work.borrow())).date),54);
+    check(core::result::unwrap(member(types,lit("array",5),work.borrow()).len()) == 3,55);
+    let exact: ext::settings::Value = core::result::unwrap(ext::settings::exact_decimal(lit("-1000.00e-2",11),20,work.borrow())); check(core::result::unwrap(exact.integer_i64(work.borrow())) == -10,56);
+    check(error_tag(core::result::unwrap_err(ext::settings::exact_decimal(lit("01",2),20,work.borrow()))) == 15,57);
+    check(core::result::unwrap(core::result::unwrap(ext::settings::parse_integer(lit("-9223372036854775808",20),work.borrow())).integer_i64(work.borrow())) == -9223372036854775808,58);
+    check(error_tag(core::result::unwrap_err(ext::settings::parse_integer(lit("9223372036854775808",19),work.borrow()))) == 13,59);
+    check(core::result::unwrap(core::result::unwrap(ext::settings::parse_boolean(lit("false",5),work.borrow())).boolean()) == false,60);
+    check(error_tag(core::result::unwrap_err(ext::settings::parse_boolean(lit("TRUE",4),work.borrow()))) == 15,61);
+    let high: ext::settings::Value = ext::settings::scalar(ext::settings::Scalar::UnsignedInteger(18446744073709551615)); check(error_tag(core::result::unwrap_err(high.integer_i64(work.borrow()))) == 13,62);
+    check(core::result::unwrap(ext::settings::scalar(ext::settings::Scalar::Float64(1.25)).float64()) == 1.25,63);
+    let no_work: ext::settings::Budget = ext::settings::budget(0); check(error_tag(core::result::unwrap_err(offset.temporal(no_work.borrow()))) == 10,80); check(error_tag(core::result::unwrap_err(ext::settings::scalar(ext::settings::Scalar::ExactDecimal(lit("",0))).integer_i64(work.borrow()))) == 15,81); check(core::result::unwrap(core::result::unwrap(ext::settings::parse_integer(lit("+0012",5),work.borrow())).integer_i64(work.borrow())) == 12,82);
+    let tiny: ext::settings::Budget = ext::settings::budget(20); let empty: [ext::settings::Source;0] = []; let empty_layers: ext::settings::Layers = core::result::unwrap(ext::settings::layers(core::result::unwrap(core::slice::view(empty,0)),ext::settings::default_limits(),tiny.borrow()));
+    let rounds: i32 = 0; while (core::result::is_ok(empty_layers.get(lit("x",1),tiny.borrow()))) { rounds += 1; } check(rounds == 10 && tiny.remaining_work() == 0,65); check(error_tag(core::result::unwrap_err(empty_layers.get(lit("x",1),tiny.borrow()))) == 10,65);
+    let limits: ext::settings::Limits = ext::settings::default_limits(); limits.max_sources = 2; check(error_tag(core::result::unwrap_err(ext::settings::layers(view,limits,work.borrow()))) == 3,66); limits = ext::settings::default_limits(); limits.max_nodes = 1; check(error_tag(core::result::unwrap_err(ext::settings::layers(view,limits,work.borrow()))) == 5,66); limits = ext::settings::default_limits(); limits.max_depth = 0; check(error_tag(core::result::unwrap_err(ext::settings::layers(view,limits,work.borrow()))) == 6,66); limits = ext::settings::default_limits(); limits.max_key_bytes = 1; check(error_tag(core::result::unwrap_err(ext::settings::layers(view,limits,work.borrow()))) == 7,66); limits = ext::settings::default_limits(); limits.max_text_bytes = 1; check(error_tag(core::result::unwrap_err(ext::settings::layers(view,limits,work.borrow()))) == 8,66); limits = ext::settings::default_limits(); limits.max_bindings = 1; check(error_tag(core::result::unwrap_err(ext::settings::layers(view,limits,work.borrow()))) == 4,66);
+    limits = ext::settings::default_limits(); limits.max_path = 1; let limited: ext::settings::Layers = core::result::unwrap(ext::settings::layers(view,limits,work.borrow())); check(error_tag(core::result::unwrap_err(limited.lookup(core::slice::View<core::text::Text> { values:path.as_slice(),start:1,length:2 },work.borrow()))) == 9,67);
+    let duplicate: [ext::settings::Binding;2] = [overlay[0],overlay[0]]; let bad: [ext::settings::Source;1] = [ext::settings::Source::Bindings(core::result::unwrap(core::slice::view(duplicate,2)))]; check(error_tag(core::result::unwrap_err(ext::settings::layers(core::result::unwrap(core::slice::view(bad,1)),ext::settings::default_limits(),work.borrow()))) == 11,68);
+    let wrong_path: alloc::vec::Vec<core::text::Text> = alloc::vec::new(); core::result::unwrap(wrong_path.try_push(lit("port",4))); core::result::unwrap(wrong_path.try_push(lit("child",5))); check(error_tag(core::result::unwrap_err(layers.lookup(wrong_path.as_view(),work.borrow()))) == 12,69);
+    let malformed: core::slice::View<ext::settings::Source> = view; malformed.start = -1; let bad_view = ext::settings::layers(malformed,ext::settings::default_limits(),work.borrow()); let actual: i32 = error_tag(core::result::unwrap_err(bad_view)); if (actual != 2) { std::io_decimal::write_i32(2,actual); } check(actual == 2,70);
+    limits = ext::settings::default_limits(); limits.max_depth = 257; check(error_tag(core::result::unwrap_err(ext::settings::layers(view,limits,work.borrow()))) == 1,71);
+    // Marker brackets operations which must never allocate or destroy sources.
+    check(std::io::write_byte(1,81) == 1,73); let before: u64 = work.remaining_work(); check(get(layers,lit("port",4),work.borrow()).source_index == 2,73); check(work.remaining_work() < before,73); check(std::io::write_byte(1,81) == 1,73);
+    path.destroy(); wrong_path.destroy(); first.destroy(); second.destroy(); return 0;
+}
