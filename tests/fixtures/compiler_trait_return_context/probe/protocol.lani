@@ -1,0 +1,12 @@
+// Test-only contracts. E occurs only in the required method's return type.
+module probe::protocol;
+import core::option;
+import core::result;
+
+pub trait Produce<T,E> {
+    pub fn produce(source: T, fail: bool) -> core::result::Result<T,E>;
+}
+
+pub trait Nested<T,E> {
+    pub fn nested(source: T, mode: i32) -> core::result::Result<core::option::Option<T>,E>;
+}

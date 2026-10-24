@@ -1,0 +1,22 @@
+module app::main;
+import core::option;
+import core::result;
+
+struct Item { word: u64, signed: i32 }
+enum Fault { Rejected(i32,u64), Other(i32) }
+fn absent<T>() -> core::option::Option<T> { return core::option::None(); }
+fn error_only<E,T>(error: E) -> core::result::Result<T,E> { return core::result::Err(error); }
+fn identity<T>(source: T) -> T { return source; }
+
+fn main() -> i32 {
+    let empty: core::option::Option<Item> = absent();
+    assert(empty.is_none());
+    let inferred: core::result::Result<Item,Fault> = error_only(Fault::Rejected(-53,18446744073709551604));
+    assert(match (inferred.unwrap_err()) {
+        Fault::Rejected(code,word) -> code == -53 && word == 18446744073709551604,
+        _ -> false
+    });
+    let item: Item = identity(Item { word:9223372036854775827,signed:-59 });
+    assert(item.word == 9223372036854775827 && item.signed == -59);
+    return 0;
+}

@@ -77,6 +77,7 @@ StructuredBuffer<uint> method_call_receiver_ref_payload;
 StructuredBuffer<uint> method_lookup_head;
 StructuredBuffer<uint> method_lookup_next;
 StructuredBuffer<uint> method_decl_method_row;
+StructuredBuffer<uint> method_decl_name_token;
 StructuredBuffer<uint> method_decl_receiver_ref_tag;
 StructuredBuffer<uint> method_decl_receiver_ref_payload;
 StructuredBuffer<uint> method_decl_name_id;
@@ -142,16 +143,7 @@ uint active_hir_node_count() { return active_hir_count(); }
 #include "../type/instances/body_specialization_owner.slang"
 #include "../type/instances/body_impl_bindings.slang"
 
-// Required members publish signature metadata without a lookup row (02_collect).
-uint required_member_trait(uint target)
-{
-    if (target >= gParams.n_tokens || method_decl_method_row[target] != INVALID) return INVALID;
-    uint member = fn_hir_by_decl_token[target];
-    if (!valid_hir(member)) return INVALID;
-    uint trait = predicate_method_contract_owner_hir[member];
-    return valid_hir(trait) && compact_hir_core[trait].kind == HIR_ITEM &&
-        compact_hir_payload[trait].a == HIR_ITEM_KIND_TRAIT ? trait : INVALID;
-}
+#include "local_required_member.slang"
 
 // The required member of call token `token`: (REQUIRED_LOCAL, its trait's
 // HIR item), or (REQUIRED_IMPORTED, the trait's library and unit, the

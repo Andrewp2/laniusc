@@ -285,7 +285,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
             // declaration's reference is the trait's or a routed impl's
             // symbolic T. The accepted result, which replay specializes, is
             // the call-site fact.
-            if (call.return_ref_tag == 2u && inferred_tag == 3u && inferred_payload < instance_capacity)
+            // The accepted relation owns compound results too. A provisional
+            // instance cache may still contain declaration-side parameters;
+            // it cannot override the complete checked caller-side result.
+            if (inferred_tag == 3u && inferred_payload < instance_capacity)
             {
                 call.return_ref_tag = 3u;
                 call.return_ref_payload = inferred_payload;

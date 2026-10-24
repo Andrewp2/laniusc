@@ -1,0 +1,59 @@
+module app::main;
+import core::option;
+import core::result;
+import probe::protocol;
+import probe::values;
+
+// Reverse the trait's lexical T,E ordering. These results are already in the
+// helper's caller scope; substituting them as trait-local slots swaps them.
+fn produce<E,T>(source: T, fail: bool) -> core::result::Result<T,E>
+    where T: probe::protocol::Produce<T,E> {
+    return T::produce(source,fail);
+}
+fn nested<E,T>(source: T, mode: i32) -> core::result::Result<core::option::Option<T>,E>
+    where T: probe::protocol::Nested<T,E> {
+    return T::nested(source,mode);
+}
+
+// Receiving context must still infer genuinely unconstrained ordinary call
+// parameters. It cannot replace E fixed by an admitted trait bound.
+fn absent<T>() -> core::option::Option<T> { return core::option::None(); }
+fn error_only<E,T>(error: E) -> core::result::Result<T,E> { return core::result::Err(error); }
+
+fn main() -> i32 {
+    let source: probe::values::Item = probe::values::Item { word:9223372036854775825,signed:-37 };
+    let good: core::result::Result<probe::values::Item,probe::values::Fault> =
+        produce<probe::values::Fault,probe::values::Item>(source,false);
+    let item: probe::values::Item = good.unwrap();
+    assert(item.word == 9223372036854775825 && item.signed == -37);
+    let bad: core::result::Result<probe::values::Item,probe::values::Fault> =
+        produce<probe::values::Fault,probe::values::Item>(source,true);
+    assert(match (bad.unwrap_err()) {
+        probe::values::Fault::Rejected(code,word) -> code == -41 && word == 18446744073709551610,
+        _ -> false
+    });
+
+    let nested_good: core::result::Result<core::option::Option<probe::values::Item>,probe::values::Fault> =
+        nested<probe::values::Fault,probe::values::Item>(source,0);
+    let nested_item: probe::values::Item = nested_good.unwrap().unwrap();
+    assert(nested_item.word == 9223372036854775825 && nested_item.signed == -37);
+    let nested_none: core::result::Result<core::option::Option<probe::values::Item>,probe::values::Fault> =
+        nested<probe::values::Fault,probe::values::Item>(source,1);
+    assert(nested_none.unwrap().is_none());
+    let nested_bad: core::result::Result<core::option::Option<probe::values::Item>,probe::values::Fault> =
+        nested<probe::values::Fault,probe::values::Item>(source,2);
+    assert(match (nested_bad.unwrap_err()) {
+        probe::values::Fault::Rejected(code,word) -> code == -43 && word == 18446744073709551608,
+        _ -> false
+    });
+
+    let empty: core::option::Option<probe::values::Item> = absent();
+    assert(empty.is_none());
+    let inferred: core::result::Result<probe::values::Item,probe::values::Fault> =
+        error_only(probe::values::Fault::Rejected(-47,18446744073709551606));
+    assert(match (inferred.unwrap_err()) {
+        probe::values::Fault::Rejected(code,word) -> code == -47 && word == 18446744073709551606,
+        _ -> false
+    });
+    return 0;
+}

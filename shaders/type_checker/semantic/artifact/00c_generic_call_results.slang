@@ -23,6 +23,8 @@ StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint> call_return_generic_slot;
+StructuredBuffer<uint> call_inference_result_tag;
+StructuredBuffer<uint> call_inference_result_payload;
 StructuredBuffer<uint> call_generic_claim_count_out;
 StructuredBuffer<uint> call_generic_claim_callee;
 StructuredBuffer<uint> call_generic_claim_slot;
@@ -207,6 +209,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         call.symbolic_type_environment = symbolic;
         semantic_calls_by_hir[row] = call;
+    }
+    // A complete accepted compound result is already in caller scope.
+    // Applying callee slots to its children again can capture a different
+    // caller parameter (for example helper<E,T> returning Result<T,E>).
+    uint accepted = call_inference_result_payload[row];
+    uint capacity; uint stride;
+    type_instance_kind.GetDimensions(capacity, stride);
+    if (call_inference_result_tag[row] == 3u && accepted < capacity)
+    {
+        call.return_ref_tag = 3u;
+        call.return_ref_payload = accepted;
+        semantic_calls_by_hir[row] = call;
+        return;
     }
     // Imported calls were checked against the caller's symbolic T before
     // replay. Resolve that accepted reference after the caller environment is
