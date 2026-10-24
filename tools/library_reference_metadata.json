@@ -238,7 +238,8 @@
     "core::iter": {
       "guides": [
         "docs/stdlib-iterators.md",
-        "docs/stdlib-collection-iterators.md"
+        "docs/stdlib-collection-iterators.md",
+        "docs/stdlib-iterator-adapters.md"
       ]
     },
     "core::math": {

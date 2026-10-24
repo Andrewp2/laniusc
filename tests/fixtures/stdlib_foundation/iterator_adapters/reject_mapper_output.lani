@@ -1,0 +1,15 @@
+module app::main;
+import core::iter;
+import core::range;
+struct Convert {}
+impl Convert { fn borrow(&self) -> &Convert { return self; } }
+pub impl core::iter::Mapper<i32, bool> for Convert {
+    pub fn apply(&self, value: i32) -> bool { return value == 0; }
+}
+fn main() -> i32 {
+    let bounds: core::range::Range<i32> = core::range::range<i32>(0, 1);
+    let source: core::iter::RangeI32 = core::iter::range_i32(bounds);
+    let mapper: Convert = Convert {};
+    let rejected: core::iter::Map<core::iter::RangeI32, Convert, i32, u64> = core::iter::map<core::iter::RangeI32, Convert, i32, u64>(source.borrow(), mapper.borrow());
+    return 0;
+}

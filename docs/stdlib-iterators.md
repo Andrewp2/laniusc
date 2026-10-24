@@ -26,8 +26,9 @@ does not promise that repeated calls have no other effects. There is no error
 variant in this protocol. A fallible source needs a separately chosen error
 contract; it must not silently turn a failure into successful exhaustion.
 
-This module allocates nothing. It invokes no host services or callbacks. Source
-implementations supply their own per-call behavior, cost and termination.
+The adapters themselves allocate nothing and invoke no host services. Sources
+and [mapping callbacks](stdlib-iterator-adapters.md) supply their own per-call
+behavior, allocation, cost and termination.
 Lanius `for` syntax retains its existing compiler lowering; declaring this trait
 does not automatically extend `for` to custom iterator types.
 
@@ -54,9 +55,13 @@ Copy semantics depend on the cursor:
 | `RangeI32` | Independent positions over captured numeric bounds |
 | `Take<I,T>` | Independent quota/done flags; same borrowed source cursor |
 | `Chain<A,B,T>` | Independent phase/done flags; same borrowed source cursors |
+| `Map<I,M,T,U>` | Independent done flag; same borrowed source and mapper/context |
+| `Zip<A,B,T,U>` | Independent done flag; same borrowed source cursors |
+| `Enumerate<I,T>` | Independent index/done flags; same borrowed source cursor |
 
-Adapters contain `&I` references. The source cursor object itself must outlive
-the adapter, and a nested adapter must outlive every adapter borrowing it.
+Adapters contain borrowed references. The source cursor object itself must
+outlive the adapter, and a nested adapter must outlive every adapter borrowing
+it. A Map's mapper and any context it borrows must also remain alive.
 Lanius does not enforce these lifetimes. Returning an adapter that refers to a
 local cursor is invalid even when the underlying array remains alive.
 
@@ -155,6 +160,11 @@ This module defines no float, arbitrary-record, descending or custom-step
 iteration policy.
 
 ## Borrowed adapters
+
+[Map, Zip and checked Enumerate](stdlib-iterator-adapters.md) extend the same
+protocol with source-defined transformation, left-first pairing and u64 index
+labels. Their guide specifies callback, unmatched-item, copy and overflow
+behavior. All adapters retain the shallow ownership rules above.
 
 ### Take
 

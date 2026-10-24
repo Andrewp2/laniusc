@@ -1,0 +1,29 @@
+// The source writes a/b before returning each Some. Caller writes ! after MAX
+// was yielded. Expected stdout a!b then SIGILL; ? would mean next returned.
+module app::main;
+import core::iter;
+import core::option;
+import core::pair;
+import std::io;
+struct Source { position: i32 }
+impl Source { fn borrow(&self) -> &Source { return self; } }
+pub impl core::iter::Iterator<i32> for Source {
+    pub fn next(&self) -> core::option::Option<i32> {
+        if (self.position == 2) { return core::option::None(); }
+        let item: i32 = self.position; self.position += 1;
+        let marker: i32 = 97 + item;
+        let written: i32 = std::io::write_byte(1, marker); assert(written == 1);
+        return core::option::Some(item);
+    }
+}
+fn main() -> i32 {
+    let source: Source = Source { position: 0 };
+    let numbered: core::iter::Enumerate<Source, i32> = core::iter::enumerate_from<Source, i32>(source.borrow(), 18446744073709551615);
+    let first: core::option::Option<core::pair::Pair<u64, i32>> = numbered.next();
+    let value: core::pair::Pair<u64, i32> = core::option::unwrap(first);
+    assert(value.first == 18446744073709551615 && value.second == 0 && source.position == 1);
+    let marked: i32 = std::io::write_byte(1, 33); assert(marked == 1);
+    let second: core::option::Option<core::pair::Pair<u64, i32>> = numbered.next();
+    std::io::write_byte(1, 63);
+    return 9;
+}

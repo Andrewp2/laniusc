@@ -177,6 +177,16 @@ commands, while the others check allocation-free views and exact shallow String
 owner lifetimes. Existing cursor algorithms now implement the shared protocol;
 Vec and Text byte factories preserve their original storage views.
 
+[Map, Zip and checked Enumerate](stdlib-iterator-adapters.md) add borrowed
+transformation, pairing and index labels without implicit ownership changes.
+Three checked native executables cover generic records/arrays/Option/Result,
+1,008 sequence/call-order model commands, shallow String cleanup and the
+intentional index-overflow trap. Three source-local bound rejections preserve
+exact input/output item types. The [range-dot application](stdlib-range-dot.md)
+adds one compilation and 67 native cases, including million-pair inputs,
+positive/negative prefix overflow, cancellation witnesses and allocation/output
+failures. These additions require no compiler, runtime or ABI change.
+
 [Checked file lengths](stdlib-file-resize.md) execute shrink, zero extension,
 sparse lengths above 4 GiB and unchanged duplicated offsets, with explicit
 one-attempt failures. [Bounded regular-file copying](stdlib-file-copy.md) checks
@@ -187,9 +197,10 @@ paths and allocation/descriptor cleanup. These counts exclude the two earlier
 fixture compilation failures retained in the byte-array count capture.
 
 Verified execution is x86_64 Linux output from GPU compilation; user GPU kernels
-and other targets are unverified. Threads, native FFI/TLS/SQLite, generic
-iterator adapters and further cursor integrations, additional stream interfaces and
-distribution/reference completion remain on the [full roadmap](library-roadmap.md).
+and other targets are unverified. Threads, native FFI/TLS/SQLite, further
+iterator adapters/consumers and cursor integrations, additional stream
+interfaces and distribution/reference completion remain on the
+[full roadmap](library-roadmap.md).
 Compiler failures retain
 [reproductions and successful controls](library-dependencies.md).
 

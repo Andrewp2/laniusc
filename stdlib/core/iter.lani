@@ -8,6 +8,8 @@
 // leaf forks its position; copying an adapter shares its upstream references.
 module core::iter;
 import core::option;
+import core::pair;
+import core::panic;
 import core::range;
 import core::result;
 import core::slice;
@@ -16,12 +18,22 @@ pub trait Iterator<T> {
     pub fn next(&self) -> core::option::Option<T>;
 }
 
+// A source-defined callback, with ordinary shallow input/output values. The
+// caller keeps the mapper and any borrowed mutable context alive. Output
+// cleanup authority remains with the application; no Destroy is implied.
+pub trait Mapper<T, U> {
+    pub fn apply(&self, value: T) -> U;
+}
+
 // Delegate indexing and native-stride handling to the existing slice cursor.
 // Construct through from_slice/from_view; preserve the cursor's invariants.
 pub struct SliceIter<T> { cursor: core::slice::Iter<T> }
 pub struct RangeI32 { position: i64, end: i64 }
 pub struct Take<I, T> { source: &I, remaining: u64, done: bool }
 pub struct Chain<A, B, T> { left: &A, right: &B, in_right: bool, done: bool }
+pub struct Map<I, M, T, U> { source: &I, mapper: &M, done: bool }
+pub struct Zip<A, B, T, U> { left: &A, right: &B, done: bool }
+pub struct Enumerate<I, T> { source: &I, next_index: u64, max_used: bool, done: bool }
 pub struct Advance { advanced: u64, exhausted: bool }
 
 // Check logical metadata only. values must physically back count elements.
@@ -66,6 +78,31 @@ pub fn take<I, T>(source: &I, count: u64) -> Take<I, T> where I: Iterator<T> {
 pub fn chain<A, B, T>(left: &A, right: &B) -> Chain<A, B, T>
     where A: Iterator<T>, B: Iterator<T> {
     return Chain { left: left, right: right, in_right: false, done: false };
+}
+
+pub fn map<I, M, T, U>(source: &I, mapper: &M) -> Map<I, M, T, U>
+    where I: Iterator<T>, M: Mapper<T, U> {
+    return Map { source: source, mapper: mapper, done: false };
+}
+
+// Pull left before right. If right ends, the successful left value has already
+// been consumed and receives no implicit destruction. Keep an application
+// cleanup authority for owner handles that can pass through either source.
+pub fn zip<A, B, T, U>(left: &A, right: &B) -> Zip<A, B, T, U>
+    where A: Iterator<T>, B: Iterator<U> {
+    return Zip { left: left, right: right, done: false };
+}
+
+pub fn enumerate<I, T>(source: &I) -> Enumerate<I, T> where I: Iterator<T> {
+    return enumerate_from<I, T>(source, 0);
+}
+
+// first_index labels the first item; it does not skip source items. MAX is a
+// valid last index. A later Some is consumed and then panics; a later None is
+// ordinary exhaustion. The extra flag avoids forming MAX + 1.
+pub fn enumerate_from<I, T>(source: &I, first_index: u64) -> Enumerate<I, T>
+    where I: Iterator<T> {
+    return Enumerate { source: source, next_index: first_index, max_used: false, done: false };
 }
 
 // At most limit next calls; no probe when the quota is reached. exhausted says
@@ -152,5 +189,64 @@ pub impl<A, B, T> Iterator<T> for Chain<A, B, T>
         let item: core::option::Option<T> = right.next();
         if (core::option::is_none(item)) { self.done = true; }
         return item;
+    }
+}
+
+pub impl<I, M, T, U> Map<I, M, T, U> {
+    pub fn borrow(&self) -> &Map<I, M, T, U> { return self; }
+}
+
+pub impl<I, M, T, U> Iterator<U> for Map<I, M, T, U>
+    where I: Iterator<T>, M: Mapper<T, U> {
+    pub fn next(&self) -> core::option::Option<U> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let item: core::option::Option<T> = source.next();
+        if (core::option::is_none(item)) { self.done = true; return core::option::None(); }
+        let value: T = core::option::unwrap(item);
+        let mapper: &M = self.mapper;
+        let mapped: U = mapper.apply(value);
+        return core::option::Some(mapped);
+    }
+}
+
+pub impl<A, B, T, U> Zip<A, B, T, U> {
+    pub fn borrow(&self) -> &Zip<A, B, T, U> { return self; }
+}
+
+pub impl<A, B, T, U> Iterator<core::pair::Pair<T, U>> for Zip<A, B, T, U>
+    where A: Iterator<T>, B: Iterator<U> {
+    pub fn next(&self) -> core::option::Option<core::pair::Pair<T, U>> {
+        if (self.done) { return core::option::None(); }
+        let left: &A = self.left;
+        let first: core::option::Option<T> = left.next();
+        if (core::option::is_none(first)) { self.done = true; return core::option::None(); }
+        let right: &B = self.right;
+        let second: core::option::Option<U> = right.next();
+        if (core::option::is_none(second)) { self.done = true; return core::option::None(); }
+        let a: T = core::option::unwrap(first);
+        let b: U = core::option::unwrap(second);
+        let item: core::pair::Pair<T, U> = core::pair::Pair { first: a, second: b };
+        return core::option::Some(item);
+    }
+}
+
+pub impl<I, T> Enumerate<I, T> {
+    pub fn borrow(&self) -> &Enumerate<I, T> { return self; }
+}
+
+pub impl<I, T> Iterator<core::pair::Pair<u64, T>> for Enumerate<I, T>
+    where I: Iterator<T> {
+    pub fn next(&self) -> core::option::Option<core::pair::Pair<u64, T>> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let value: core::option::Option<T> = source.next();
+        if (core::option::is_none(value)) { self.done = true; return core::option::None(); }
+        if (self.max_used) { core::panic::panic(); }
+        let item: T = core::option::unwrap(value);
+        let indexed: core::pair::Pair<u64, T> = core::pair::Pair { first: self.next_index, second: item };
+        if (self.next_index == 18446744073709551615) { self.max_used = true; }
+        else { self.next_index += 1; }
+        return core::option::Some(indexed);
     }
 }

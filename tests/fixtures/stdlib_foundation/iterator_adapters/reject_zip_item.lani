@@ -1,0 +1,10 @@
+module app::main;
+import core::iter;
+import core::range;
+fn main() -> i32 {
+    let bounds: core::range::Range<i32> = core::range::range<i32>(0, 1);
+    let left: core::iter::RangeI32 = core::iter::range_i32(bounds);
+    let right: core::iter::RangeI32 = core::iter::range_i32(bounds);
+    let rejected: core::iter::Zip<core::iter::RangeI32, core::iter::RangeI32, bool, i32> = core::iter::zip<core::iter::RangeI32, core::iter::RangeI32, bool, i32>(left.borrow(), right.borrow());
+    return 0;
+}

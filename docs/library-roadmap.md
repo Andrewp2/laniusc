@@ -29,7 +29,7 @@ package distribution is a separate deliverable.
 | Fundamental values | Option, Result, ordering, comparison, hashing, cloning, explicit errors | Generic Option/Result execute; partial equality/order are distinct from total equality/order, with explicit total float keys. Explicit TryClone/Destroy protocols and String implementations execute with typed errors and manual memory-owner release. Some generic forwarding and record extraction compositions remain compiler dependencies; automatic ownership and implicit derive/move/drop remain |
 | Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Canonical primitive-width arithmetic, bits and conversion policies execute; seven obsolete number/byte helper modules are removed and their ordinary consumers migrated. Pointer widths explicitly describe x86_64. Binary32/binary64 bit, rounding, square-root, decimal and precision-formatting APIs execute, as do full-range binary64 elementary functions with documented accuracy evidence. Native floats use partial comparison with explicit total keys. Represented two-word values remain an explicit separate API |
 | Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic algorithms and counted View values execute, including subviews, checked mutations and cursors; initial physical counts still require compiler length projection |
-| Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | The shared fused Iterator<T> protocol executes for slices, full-domain i32 ranges, Vec/deque/hash/tree map/set cursors, bitset set-bit cursors and Text bytes/scalars, with borrowed take/chain and bounded consumption. The original 6,602 sequence/state cases and new 408 collection model commands check traversal, bounds and shallow ownership; view and owner traces check allocation behavior. Further adapters, consumers, split cursors, heap/inline collection conveniences and language for-loop integration remain |
+| Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | The shared fused Iterator<T> protocol executes for slices, full-domain i32 ranges, Vec/deque/hash/tree map/set cursors, bitset set-bit cursors and Text bytes/scalars, with borrowed take/chain/map/zip, checked u64 enumeration and bounded consumption. Separate native models cover 6,602 original sequence/state cases, 408 collection commands and 1,008 new adapter call-order commands; owner traces check allocation behavior. The range-dot program covers checked arithmetic and failure cleanup. Further adapters/consumers, split cursors, heap/inline collection conveniences and language for-loop integration remain |
 | Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat, integer/float conversion, caller-buffer Display, runtime format strings and owned formatting execute. Alignment counts scalars and numeric precision rounds exact binary values. Optional extended modules provide Unicode 17 full casing, normalization, default word/grapheme boundaries and an explicit terminal width policy. Richer format controls and collation remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings, raw views and stable chunked arenas with generic typed allocations execute. [Fallible View cloning](stdlib-clone.md) constructs independent String/user-record memory owners and releases completed destination elements on error. Layout consolidation, compiler-enforced lifetimes and automatic destruction remain |
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec, deque and bitset, inline generic Vec/Eq Set, hash/tree maps and sets, and min/max heaps execute. Owned sets include representative ownership and all four fallible algebra operations through shared map engines. Explicit TryClone/Destroy View cloning now composes through nested Vec types with independent owners, typed error layers and recursive cleanup. Existing collection clone methods retain shallow entry/key/value copies. Silent-failure legacy map/set/text owners are retired. The protected std::vec/heap migration, deep ownership in other collections and automatic ownership remain |
@@ -636,6 +636,17 @@ API list; unrelated library work can continue.
   and take implementations, with one compilation serving 41 native cases:
   full endpoints, million-item quotas, strict arguments and exact cleanup on
   allocation, signal-policy and output errors.
+- [Collection, Text and bitset cursors](stdlib-collection-iterators.md) now
+  implement that protocol. Three native executables check 408 collection model
+  commands, allocation-free byte/scalar/bit views and shallow String ownership.
+  Vec and Text byte factories retain their original native-stride views.
+- [Mapping, pairing and checked enumeration](stdlib-iterator-adapters.md) now
+  compose through the same protocol. Three checked native executables cover
+  compound callback results, 1,008 call-order model commands, explicit shallow
+  cleanup and an index-overflow trap; three intended rejections check exact
+  item bounds. The [range-dot application](stdlib-range-dot.md) adds 67 native
+  cases for real zip/take/map/enumerate composition, million-pair inputs,
+  checked prefix arithmetic and allocation/output failures.
 - Next foundation work: additional iterator/collection integration, remaining
   streaming format interfaces, protected Vec/heap migration and numeric/manual
   ownership consolidation. Owned hash/tree sets now execute, and silent-failure
@@ -658,7 +669,8 @@ API list; unrelated library work can continue.
   The earlier generic buffered-stream routing failure remains preserved in the
   compiler dependency list. Implementation-application transport and buffered
   adapters now pass separate native gates. Shared slice/range iteration has
-  since passed its own admission; collection/text integration remains.
+  since passed its own admission, followed by collection, Text scalar/byte and
+  bitset integration. Split cursors and further adapters/consumers remain.
 - Owned files: [File and Path](stdlib-files.md) execute read/create/append,
   generic stream operations, explicit close and ownership transfer on x86_64
   Linux. Tests check binary and non-UTF-8 data, descriptor reuse, path bounds,
