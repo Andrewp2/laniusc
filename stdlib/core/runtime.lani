@@ -5,6 +5,9 @@
 // Artifact descriptors use the numeric ids as required_runtime_service_ids plus
 // flat required_runtime_services rows and a runtime_abi inventory metadata row,
 // and must remain contract-only while those services are unbound.
+// This source inventory describes the native Linux profile. A direct native
+// binding does not establish composable-artifact runtime linking; descriptor
+// target-byte validation remains contract-only for all service requirements.
 
 module core::runtime;
 
@@ -20,9 +23,9 @@ pub type RuntimeServiceStatus = u32;
 pub const RUNTIME_ABI_METADATA_VERSION: RuntimeAbiMetadataVersion = 1;
 pub const UNKNOWN_RUNTIME_ABI_VERSION: RuntimeAbiVersion = 0;
 pub const RUNTIME_ABI_VERSION: RuntimeAbiVersion = 1;
-pub const RUNTIME_SERVICE_COUNT: RuntimeServiceCount = 13;
+pub const RUNTIME_SERVICE_COUNT: RuntimeServiceCount = 14;
 pub const FIRST_RUNTIME_SERVICE_ID: RuntimeServiceId = 1;
-pub const LAST_RUNTIME_SERVICE_ID: RuntimeServiceId = 13;
+pub const LAST_RUNTIME_SERVICE_ID: RuntimeServiceId = 14;
 pub const RUNTIME_SERVICE_REQUIREMENT_FIELD_COUNT: RuntimeServiceRequirementFieldCount = 3;
 pub const RUNTIME_SERVICE_REQUIREMENT_SERVICE_ID_FIELD: RuntimeServiceRequirementFieldIndex = 0;
 pub const RUNTIME_SERVICE_REQUIREMENT_ABI_VERSION_FIELD: RuntimeServiceRequirementFieldIndex = 1;
@@ -45,6 +48,7 @@ pub const SERVICE_GPU_ID: RuntimeServiceId = 10;
 pub const SERVICE_PROCESS_ID: RuntimeServiceId = 11;
 pub const SERVICE_ENV_ID: RuntimeServiceId = 12;
 pub const SERVICE_TEST_HARNESS_ID: RuntimeServiceId = 13;
+pub const SERVICE_LINUX_SYSCALL_ID: RuntimeServiceId = 14;
 
 pub const HAS_ALLOCATOR: Capability = true;
 pub const HAS_FILESYSTEM: Capability = true;
@@ -59,6 +63,7 @@ pub const HAS_GPU: Capability = false;
 pub const HAS_PROCESS: Capability = true;
 pub const HAS_ENV: Capability = true;
 pub const HAS_TEST_HARNESS: Capability = false;
+pub const HAS_LINUX_SYSCALLS: Capability = true;
 pub const HAS_RUNTIME_SERVICES: Capability = false;
 
 pub fn has_allocator() -> Capability {
@@ -112,6 +117,8 @@ pub fn has_env() -> Capability {
 pub fn has_test_harness() -> Capability {
     return HAS_TEST_HARNESS;
 }
+
+pub fn has_linux_syscalls() -> Capability { return HAS_LINUX_SYSCALLS; }
 
 pub fn has_runtime_services() -> Capability {
     return HAS_RUNTIME_SERVICES;
@@ -174,7 +181,8 @@ pub fn is_known_service(service_id: RuntimeServiceId) -> Capability {
         || service_id == SERVICE_GPU_ID
         || service_id == SERVICE_PROCESS_ID
         || service_id == SERVICE_ENV_ID
-        || service_id == SERVICE_TEST_HARNESS_ID;
+        || service_id == SERVICE_TEST_HARNESS_ID
+        || service_id == SERVICE_LINUX_SYSCALL_ID;
 }
 
 pub fn service_descriptor_is_known(service_id: RuntimeServiceId) -> Capability {
@@ -265,7 +273,8 @@ pub fn has_service(service_id: RuntimeServiceId) -> Capability {
         || (service_id == SERVICE_GPU_ID && HAS_GPU)
         || (service_id == SERVICE_PROCESS_ID && HAS_PROCESS)
         || (service_id == SERVICE_ENV_ID && HAS_ENV)
-        || (service_id == SERVICE_TEST_HARNESS_ID && HAS_TEST_HARNESS);
+        || (service_id == SERVICE_TEST_HARNESS_ID && HAS_TEST_HARNESS)
+        || (service_id == SERVICE_LINUX_SYSCALL_ID && HAS_LINUX_SYSCALLS);
 }
 
 pub fn service_has_runtime_binding(service_id: RuntimeServiceId) -> Capability {

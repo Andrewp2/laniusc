@@ -49,7 +49,8 @@ static const uint X86_RUNTIME_PATH_CREATE_DIR_OFFSET = 1801u;
 static const uint X86_RUNTIME_PATH_REMOVE_DIR_OFFSET = 1843u;
 static const uint X86_RUNTIME_PATH_RENAME_OFFSET = 1880u;
 static const uint X86_RUNTIME_ASSERT_OFFSET = 1974u;
-static const uint X86_RUNTIME_LENGTH = 1981u;
+static const uint X86_RUNTIME_LINUX_SYSCALL6_OFFSET = 1981u;
+static const uint X86_RUNTIME_LENGTH = 2013u;
 
 uint x86_runtime_service_offset(uint service)
 {
@@ -93,6 +94,7 @@ uint x86_runtime_service_offset(uint service)
     if (service == HOST_SERVICE_SECURE_U32) return X86_RUNTIME_SECURE_U32_OFFSET;
     if (service == HOST_SERVICE_FILL_SECURE_BYTES) return X86_RUNTIME_FILL_SECURE_BYTES_OFFSET;
     if (service == HOST_SERVICE_ARG_LEN) return X86_RUNTIME_ARG_LEN_OFFSET;
+    if (service == HOST_SERVICE_LINUX_SYSCALL6) return X86_RUNTIME_LINUX_SYSCALL6_OFFSET;
     return X86_RUNTIME_INVALID;
 }
 
@@ -623,12 +625,23 @@ uint x86_runtime_byte(uint pos)
     }
     // Called with the asserted bool in EDI. A false value raises SIGILL;
     // a true value returns to the caller without changing its state.
-    if (pos >= X86_RUNTIME_ASSERT_OFFSET && pos < X86_RUNTIME_LENGTH)
+    if (pos >= X86_RUNTIME_ASSERT_OFFSET && pos < X86_RUNTIME_LINUX_SYSCALL6_OFFSET)
     {
         static const uint assert_bytes[7] = {
             0x85u, 0xffu, 0x75u, 0x02u, 0x0fu, 0x0bu, 0xc3u
         };
         return assert_bytes[pos - X86_RUNTIME_ASSERT_OFFSET];
+    }
+    // Raw Linux x86-64 syscall bridge; see runtime_linux_syscall.s.
+    if (pos >= X86_RUNTIME_LINUX_SYSCALL6_OFFSET && pos < X86_RUNTIME_LENGTH)
+    {
+        static const uint linux_syscall6_bytes[32] = {
+            0x48u, 0x89u, 0xf8u, 0x49u, 0x89u, 0xf3u, 0x49u, 0x8bu,
+            0x3bu, 0x49u, 0x8bu, 0x73u, 0x08u, 0x49u, 0x8bu, 0x53u,
+            0x10u, 0x4du, 0x8bu, 0x53u, 0x18u, 0x4du, 0x8bu, 0x43u,
+            0x20u, 0x4du, 0x8bu, 0x4bu, 0x28u, 0x0fu, 0x05u, 0xc3u,
+        };
+        return linux_syscall6_bytes[pos - X86_RUNTIME_LINUX_SYSCALL6_OFFSET];
     }
     return pos < X86_RUNTIME_LENGTH
         ? print_i32_bytes[pos - X86_RUNTIME_PRINT_I32_OFFSET] : 0u;

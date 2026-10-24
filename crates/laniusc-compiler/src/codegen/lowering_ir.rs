@@ -99,6 +99,7 @@ pub enum HostService {
     SleepMsI32 = opcode::HOST_SERVICE_SLEEP_MS_I32,
     Realloc = opcode::HOST_SERVICE_REALLOC,
     AllocFailed = opcode::HOST_SERVICE_ALLOC_FAILED,
+    LinuxSyscall6 = opcode::HOST_SERVICE_LINUX_SYSCALL6,
 }
 
 impl HostService {
@@ -150,6 +151,7 @@ impl HostService {
             opcode::HOST_SERVICE_SLEEP_MS_I32 => Self::SleepMsI32,
             opcode::HOST_SERVICE_REALLOC => Self::Realloc,
             opcode::HOST_SERVICE_ALLOC_FAILED => Self::AllocFailed,
+            opcode::HOST_SERVICE_LINUX_SYSCALL6 => Self::LinuxSyscall6,
             _ => return None,
         })
     }
@@ -10698,7 +10700,7 @@ mod tests {
     #[test]
     fn host_service_namespace_round_trips_canonical_symbol_slots() {
         for slot in opcode::HOST_SERVICE_FIRST..opcode::HOST_SERVICE_END {
-            if slot == 52 {
+            if slot == 52 || (63..74).contains(&slot) {
                 assert_eq!(HostService::from_symbol_slot(slot), None);
             } else {
                 assert_eq!(

@@ -1,0 +1,27 @@
+module app::main;
+import std::linux;
+import core::result;
+import core::slice;
+fn bounds(result: core::result::Result<i64, std::linux::Error>) -> bool {
+    if (!core::result::is_err(result)) { return false; }
+    let yes: bool = match (core::result::unwrap_err(result)) { std::linux::Error::Bounds -> true, _ -> false }; return yes;
+}
+fn main() -> i32 {
+    let values: [std::linux::Argument; 1] = [std::linux::Argument::Word(0)];
+    let view: core::slice::View<std::linux::Argument> = core::result::unwrap(core::slice::view(values, 0));
+    view.start = -1;
+    if (!bounds(std::linux::call(-1, view))) { return 1; }
+    view.start = 0; view.length = -1; if (!bounds(std::linux::call(-1, view))) { return 2; }
+    view.start = 2147483647; view.length = 1; if (!bounds(std::linux::call(-1, view))) { return 3; }
+    view.start = 0; view.length = 7;
+    let too_many: core::result::Result<i64, std::linux::Error> = std::linux::call(-1, view);
+    if (!core::result::is_err(too_many)) { return 4; }
+    let count: bool = match (core::result::unwrap_err(too_many)) { std::linux::Error::ArgumentCount -> true, _ -> false }; if (!count) { return 5; }
+    view.length = 0;
+    let native: core::result::Result<i64, std::linux::Error> = std::linux::call(39, view);
+    if (core::result::is_err(native)) {
+        let code: i32 = match (core::result::unwrap_err(native)) { std::linux::Error::System(number) -> number, _ -> 0 };
+        if (code == 4) { return 4; } if (code == 5) { return 5; } return 6;
+    }
+    if (core::result::unwrap(native) <= 0) { return 7; } return 0;
+}

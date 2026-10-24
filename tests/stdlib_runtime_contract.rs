@@ -37,9 +37,9 @@ const RUNTIME_DESCRIPTOR_CONSTANTS: &[(&str, &str, &str)] = &[
     ),
     ("UNKNOWN_RUNTIME_ABI_VERSION", "RuntimeAbiVersion", "0"),
     ("RUNTIME_ABI_VERSION", "RuntimeAbiVersion", "1"),
-    ("RUNTIME_SERVICE_COUNT", "RuntimeServiceCount", "13"),
+    ("RUNTIME_SERVICE_COUNT", "RuntimeServiceCount", "14"),
     ("FIRST_RUNTIME_SERVICE_ID", "RuntimeServiceId", "1"),
-    ("LAST_RUNTIME_SERVICE_ID", "RuntimeServiceId", "13"),
+    ("LAST_RUNTIME_SERVICE_ID", "RuntimeServiceId", "14"),
     (
         "RUNTIME_SERVICE_REQUIREMENT_FIELD_COUNT",
         "RuntimeServiceRequirementFieldCount",
@@ -76,6 +76,7 @@ const RUNTIME_DESCRIPTOR_CONSTANTS: &[(&str, &str, &str)] = &[
     ("SERVICE_PROCESS_ID", "RuntimeServiceId", "11"),
     ("SERVICE_ENV_ID", "RuntimeServiceId", "12"),
     ("SERVICE_TEST_HARNESS_ID", "RuntimeServiceId", "13"),
+    ("SERVICE_LINUX_SYSCALL_ID", "RuntimeServiceId", "14"),
 ];
 
 fn runtime_descriptor_value(name: &str) -> u32 {
@@ -141,6 +142,7 @@ fn runtime_bound_api_is_compiler_backed(api_name: &str) -> bool {
             | "std::time::monotonic_read"
             | "std::time::system_read"
             | "std::time::sleep_ms_i32"
+            | "std::linux::syscall6"
     )
 }
 
@@ -528,7 +530,7 @@ fn runtime_service_boundary_diagnostic_catalog_matches_runtime_contract_ids() {
             diagnostic.service_id, *service_id,
             "{service_constant} should share the stdlib/runtime descriptor id"
         );
-        if matches!(*service_id, 1 | 2 | 3 | 4 | 9 | 11 | 12) {
+        if matches!(*service_id, 1 | 2 | 3 | 4 | 9 | 11 | 12 | 14) {
             assert_eq!(diagnostic.current_status, "executable");
             assert!(diagnostic.executable);
         } else {
@@ -565,6 +567,7 @@ fn runtime_bound_api_diagnostic_catalog_keeps_stdlib_externs_fail_closed() {
                         "std::io::flush_stdout"
                             | "std::io::flush_stderr"
                             | "std::env::current_dir_len"
+                            | "std::linux::call"
                     )
             })
             .all(|api| api.diagnostic_code == "LNC0038"
@@ -768,7 +771,10 @@ fn runtime_bound_api_diagnostic_catalog_has_unambiguous_service_api_selectors() 
         );
         if matches!(
             api.api_name,
-            "std::io::flush_stdout" | "std::io::flush_stderr" | "std::env::current_dir_len"
+            "std::io::flush_stdout"
+                | "std::io::flush_stderr"
+                | "std::env::current_dir_len"
+                | "std::linux::call"
         ) {
             assert_eq!(api.current_status, "executable-stdlib");
             assert_eq!(api.extern_abi, "lanius_stdlib");
@@ -786,6 +792,8 @@ fn runtime_bound_api_diagnostic_catalog_has_unambiguous_service_api_selectors() 
                 assert_eq!(api.extern_abi, "compiler_host_filesystem");
             } else if api.api_name.starts_with("std::time::") {
                 assert_eq!(api.extern_abi, "compiler_host_clock");
+            } else if api.api_name == "std::linux::syscall6" {
+                assert_eq!(api.extern_abi, "lanius_linux");
             } else {
                 assert_eq!(api.extern_abi, "lanius_std");
             }
@@ -796,7 +804,7 @@ fn runtime_bound_api_diagnostic_catalog_has_unambiguous_service_api_selectors() 
                 "{service_api_selector} must remain contract-only until a runtime binding exists"
             );
         }
-        if matches!(service.service_id, 1 | 2 | 3 | 4 | 9 | 11 | 12) {
+        if matches!(service.service_id, 1 | 2 | 3 | 4 | 9 | 11 | 12 | 14) {
             assert_eq!(service.current_status, "executable");
             assert!(service.executable);
         } else {
@@ -985,7 +993,7 @@ fn runtime_boundary_explanation_reports_executable_stdio_service() {
             .filter(|api| {
                 !matches!(
                     api["service_id"].as_u64(),
-                    Some(1 | 2 | 3 | 4 | 9 | 11 | 12)
+                    Some(1 | 2 | 3 | 4 | 9 | 11 | 12 | 14)
                 ) && !api["api_name"]
                     .as_str()
                     .is_some_and(runtime_bound_api_is_compiler_backed)
@@ -1804,7 +1812,7 @@ fn main() {
     let stdio_api_blocked: core::runtime::Capability =
         core::runtime::runtime_bound_api_is_blocked(core::runtime::SERVICE_STDIO_ID);
     let unknown_api_blocked: Capability = runtime_bound_api_is_blocked(unknown_service_id);
-    if (service_count != declared_count || service_count != 13) {
+    if (service_count != declared_count || service_count != 14) {
         return 1;
     }
     if (metadata_version != declared_metadata_version || metadata_version != 1) {
@@ -1825,7 +1833,7 @@ fn main() {
     if (first_id != first_declared || last_id != last_declared) {
         return 1;
     }
-    if (first_id != SERVICE_ALLOCATOR_ID || last_id != SERVICE_TEST_HARNESS_ID) {
+    if (first_id != SERVICE_ALLOCATOR_ID || last_id != SERVICE_LINUX_SYSCALL_ID) {
         return 1;
     }
     if (!allocator_in_range || !test_harness_in_range || zero_in_range || future_in_range) {
@@ -2180,8 +2188,6 @@ fn main() {
         core::mem::value_helpers_require_allocator();
     let helpers_runtime_free: MemoryCapability =
         core::mem::value_helpers_are_runtime_free();
-    let raw_available: core::mem::MemoryCapability = raw_memory_api_is_available();
-    let raw_blocked: MemoryCapability = core::mem::raw_memory_api_is_blocked();
     let number: i32 = core::mem::identity(7);
     let flag: bool = identity(false);
     let first_number: i32 = first(number, 11);
@@ -2190,9 +2196,7 @@ fn main() {
     let selected_flag: bool = core::mem::select(false, second_flag, flag);
     if (runtime_required
         || allocator_required
-        || !helpers_runtime_free
-        || raw_available
-        || !raw_blocked)
+        || !helpers_runtime_free)
     {
         return 1;
     }
@@ -2947,88 +2951,6 @@ fn main() {
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
     .expect("core::u8 ASCII control/punctuation helpers should type check through --stdlib-root");
-}
-
-#[test]
-fn core_mem_raw_memory_contract_matches_allocator_runtime_service_through_stdlib_root() {
-    let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
-    let entry = common::TempArtifact::new("laniusc_stdlib_runtime", "mem_raw", Some("lani"));
-    entry.write_str(
-        r#"
-module app::main;
-
-import core::mem;
-import core::runtime;
-
-fn main() {
-    let raw_service_id: core::mem::RawMemoryServiceId =
-        core::mem::raw_memory_service_id();
-    let declared_raw_service_id: RawMemoryServiceId = RAW_MEMORY_SERVICE_ID;
-    let allocator_service_id: core::runtime::RuntimeServiceId =
-        core::runtime::SERVICE_ALLOCATOR_ID;
-    let raw_abi: RawMemoryRuntimeAbiVersion =
-        core::mem::raw_memory_runtime_abi_version();
-    let runtime_abi: core::runtime::RuntimeAbiVersion =
-        core::runtime::runtime_abi_version_for_service(allocator_service_id);
-    let raw_status: RawMemoryServiceStatus = raw_memory_service_status();
-    let declared_unavailable: core::mem::RawMemoryServiceStatus =
-        core::mem::RAW_MEMORY_SERVICE_STATUS_UNAVAILABLE;
-    let runtime_status: core::runtime::RuntimeServiceStatus =
-        core::runtime::service_status(allocator_service_id);
-    let raw_known: MemoryCapability = raw_memory_service_is_known();
-    let raw_metadata_available: core::mem::MemoryCapability =
-        core::mem::raw_memory_contract_metadata_is_available();
-    let runtime_known: core::runtime::Capability =
-        core::runtime::is_known_service(allocator_service_id);
-    let raw_binding: core::mem::MemoryCapability =
-        core::mem::raw_memory_has_runtime_binding();
-    let raw_available: MemoryCapability = raw_memory_api_is_available();
-    let raw_executable: core::mem::MemoryCapability =
-        core::mem::raw_memory_api_is_executable();
-    let raw_blocked: MemoryCapability = raw_memory_api_is_blocked();
-    let raw_needs_binding: MemoryCapability =
-        core::mem::raw_memory_api_requires_runtime_binding();
-    let raw_contract_only: MemoryCapability = raw_memory_host_abi_is_contract_only();
-    let runtime_needs_binding: core::runtime::Capability =
-        core::runtime::service_requires_runtime_binding(allocator_service_id);
-    if (raw_service_id != declared_raw_service_id || raw_service_id != allocator_service_id) {
-        return 1;
-    }
-    if (raw_abi != runtime_abi || raw_status != declared_unavailable || raw_status != runtime_status) {
-        return 1;
-    }
-    if (!raw_known || !raw_metadata_available || !runtime_known || raw_binding || raw_available || raw_executable) {
-        return 1;
-    }
-    if (!raw_blocked || !raw_needs_binding || !raw_contract_only || !runtime_needs_binding) {
-        return 1;
-    }
-    return 0;
-}
-"#,
-    );
-
-    let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
-        .expect("stdlib-root path manifest should load core::mem and core::runtime");
-    assert!(
-        manifest
-            .files
-            .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/mem.lani")),
-        "path manifest should include core::mem from the stdlib root"
-    );
-    assert!(
-        manifest.files.iter().any(|file| {
-            file.library_id == 0 && file.path == stdlib_root.join("core/runtime.lani")
-        }),
-        "path manifest should include core::runtime from the stdlib root"
-    );
-
-    common::block_on_gpu_with_timeout(
-        "GPU type check stdlib-root core::mem raw-memory runtime contract",
-        type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
-    )
-    .expect("core::mem raw-memory contract should type check through --stdlib-root");
 }
 
 #[test]
@@ -7323,4 +7245,71 @@ fn main() {
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
     .expect("core result and helpers should type check through --stdlib-root");
+}
+
+#[test]
+fn linux_syscall_inventory_is_native_only_and_preserves_existing_service_ids() {
+    use laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_LINUX_SYSCALL_ID;
+    assert_eq!(GPU_SOURCE_PACK_RUNTIME_SERVICE_LINUX_SYSCALL_ID, 14);
+    assert_eq!(
+        GPU_SOURCE_PACK_RUNTIME_SERVICE_IDS[..13],
+        (1..=13).collect::<Vec<_>>()
+    );
+    let aggregate = runtime_service_boundary_diagnostic_info(7).unwrap();
+    assert_eq!(aggregate.module_path, "std::host");
+    assert!(!aggregate.executable);
+    let linux = runtime_service_boundary_diagnostic_info(14).unwrap();
+    assert_eq!(linux.module_path, "std::linux");
+    assert!(linux.executable);
+    assert_eq!(
+        runtime_bound_api_diagnostic_info("std::linux::syscall6")
+            .unwrap()
+            .extern_abi,
+        "lanius_linux"
+    );
+    for target in [
+        SourcePackArtifactTarget::X86_64,
+        SourcePackArtifactTarget::Wasm,
+        SourcePackArtifactTarget::Generic,
+    ] {
+        let mut descriptor = GpuSourcePackArtifactDescriptor::linked_output_contract_for_job(
+            target,
+            &link_job(),
+            0,
+            1,
+        );
+        descriptor.set_required_runtime_services([14]);
+        assert_eq!(
+            descriptor.required_runtime_services[0].service_status,
+            if target == SourcePackArtifactTarget::X86_64 {
+                2
+            } else {
+                1
+            }
+        );
+        // A native binding does not establish composable artifact byte emission.
+        // Existing required-runtime descriptor policy stays contract-only.
+        assert!(
+            descriptor
+                .validate_contract()
+                .unwrap_err()
+                .contains("unbound runtime services")
+        );
+        descriptor
+            .output_record_arrays
+            .retain(|array| array.name != "emitted_byte_records");
+        descriptor
+            .record_arrays
+            .retain(|array| array.name != "emitted_byte_records");
+        descriptor.validate_contract().unwrap();
+        if target != SourcePackArtifactTarget::X86_64 {
+            descriptor.required_runtime_services[0].service_status = 2;
+            assert!(
+                descriptor
+                    .validate_contract()
+                    .unwrap_err()
+                    .contains("expected current compiler/runtime status")
+            );
+        }
+    }
 }

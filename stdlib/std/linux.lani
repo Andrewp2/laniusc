@@ -1,0 +1,58 @@
+// Explicitly unsafe Linux x86-64 boundary. This language has no unsafe block:
+// callers must uphold every syscall's buffer/layout/lifetime/ownership contract.
+// See docs/stdlib-linux.md. The helper validates packing, not kernel arguments.
+module std::linux;
+import core::mem;
+import core::result;
+import core::slice;
+
+pub enum Argument { Word(i64), Address(ptr) }
+pub enum Error { Bounds, ArgumentCount, System(i32) }
+
+pub const LINUX_SYSCALL_RUNTIME_ABI_VERSION: u32 = 1;
+pub const LINUX_SYSCALL_SERVICE_ID: u32 = 14;
+pub const LINUX_SYSCALL_HAS_RUNTIME_BINDING: bool = true;
+
+pub fn linux_syscall_is_executable() -> bool { return LINUX_SYSCALL_HAS_RUNTIME_BINDING; }
+
+pub fn linux_syscall_service_status() -> u32 { return 2; }
+pub fn linux_syscall_requires_runtime_binding() -> bool { return false; }
+
+// args must point at 48 readable bytes containing six ascending little-endian
+// 64-bit words. All six are read, regardless of the syscall's arity. Return the
+// kernel RAX unchanged: no errno conversion or retry. Invalid memory may trap.
+// Calls that return must preserve this thunk's continuation and current stack;
+// clone/clone3 with a new stack, vfork and rt_sigreturn are not supported here.
+pub extern "lanius_linux" fn syscall6(number: i64, args: ptr) -> i64;
+
+fn store_word(slot: ptr, value: i64) -> i32 {
+    let word: [i64] = core::mem::typed_slice_from_raw_parts<i64>(slot, 1); word[0] = value; return 0;
+}
+fn store_address(slot: ptr, value: ptr) -> i32 {
+    let address: [ptr] = core::mem::typed_slice_from_raw_parts<ptr>(slot, 1); address[0] = value; return 0;
+}
+
+// Allocation-free packing. Word and Address preserve all 64 bits without
+// pointer/integer casts. Unused words are zero. Views must physically back the
+// declared range; malformed backing can still trap. This is not a safe sandbox.
+// Kernel errors -4095..-1 become System(positive errno); other bits stay intact.
+pub fn call(number: i64, arguments: core::slice::View<Argument>) -> core::result::Result<i64, Error> {
+    if (arguments.start < 0 || arguments.length < 0 || arguments.start > 2147483647 - arguments.length) {
+        return core::result::Err(Error::Bounds);
+    }
+    if (arguments.length > 6) { return core::result::Err(Error::ArgumentCount); }
+    let storage: [i32; 12] = [0; 12];
+    let base: ptr = core::mem::i32_array_data_ptr(storage);
+    let index: i32 = 0;
+    while (index < arguments.length) {
+        let slot: ptr = base + (index as usize) * 8;
+        let argument: Argument = arguments.values[arguments.start + index];
+        let stored: i32 = match (argument) {
+            Word(value) -> store_word(slot, value), Address(value) -> store_address(slot, value),
+        };
+        index += 1;
+    }
+    let raw: i64 = syscall6(number, base);
+    if (raw < 0 && raw >= -4095) { return core::result::Err(Error::System((0 - raw) as i32)); }
+    return core::result::Ok(raw);
+}

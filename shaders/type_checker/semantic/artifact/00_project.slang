@@ -126,7 +126,8 @@ static const uint HIR_EXPR_NAME = 2u;
 static const uint DISPATCH_X_STRIDE = 16776960u;
 static const uint HIR_ITEM_KIND_EXTERN_FN = 5u;
 static const uint HOST_SERVICE_FIRST = 20u;
-static const uint HOST_SERVICE_END = 63u;
+static const uint HOST_SERVICE_END = 75u;
+static const uint HOST_SERVICE_LINUX_SYSCALL6 = 74u;
 static const uint LANGUAGE_SYMBOL_I32_ARRAY_DATA_PTR = 52u;
 static const uint LANGUAGE_SYMBOL_I32_SLICE_FROM_RAW_PARTS = 68u;
 static const uint LANGUAGE_SYMBOL_I32_SLICE_DATA_PTR = 69u;
@@ -176,10 +177,10 @@ uint host_service_for_function(HirPayload payload)
     uint name_id = name_id_by_token[payload.b];
     for (uint service = HOST_SERVICE_FIRST; service < HOST_SERVICE_END; ++service)
     {
-        if (service == LANGUAGE_SYMBOL_I32_ARRAY_DATA_PTR ||
-            service == LANGUAGE_SYMBOL_I32_SLICE_FROM_RAW_PARTS ||
-            service == LANGUAGE_SYMBOL_I32_SLICE_DATA_PTR ||
-            service == LANGUAGE_SYMBOL_STRING_DATA_PTR) continue;
+        // Host-service ids retain their canonical symbol slots. The names at
+        // 63..73 are types/paths/intrinsics and must not bind ordinary externs.
+        if (!((service <= 62u && service != LANGUAGE_SYMBOL_I32_ARRAY_DATA_PTR) ||
+              service == HOST_SERVICE_LINUX_SYSCALL6)) continue;
         if (language_name_id[service] == name_id) return service;
     }
     return INVALID;
