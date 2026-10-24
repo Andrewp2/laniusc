@@ -15,6 +15,9 @@ true for `std::socket`. `core::runtime` describes direct service-catalog binding
 its old network family 5 remains unavailable. Working sockets depend on family
 14, not on the unbound `std::net` declarations. The aggregate runtime-services
 flag remains false.
+The [operation-level inventory](library-host-operation-support.md) records
+the bound subset, source wrappers and retained native test evidence for all
+fourteen families, including executable traps beside unavailable panic hooks.
 
 Thread creation still needs checked entry, a new-stack trampoline, atomic
 memory ordering and ownership/join contracts. Thread local storage can be absent
@@ -26,11 +29,14 @@ The syscall thunk requires the
 same returning stack and continuation; it cannot implement clone/vfork/new-stack
 entry by itself. TLS/SQLite and general native FFI remain separate dependencies.
 [Subprocess support](stdlib-command.md) now executes over same-stack
-fork/exec/wait, with explicit startup uncertainty, manual pipe draining and a
+fork/exec/wait, with explicit startup uncertainty, owned pipes and a
 single-threaded/no-outside-reaping contract. The command runner and 78-case
 independent oracle exercise real child lifecycle and fault cleanup. This uses
 service 14; the older process service 11 still supplies its original argument
 and exit operations.
+[Concurrent pipe capture](stdlib-command-capture.md) now composes these
+operations with explicit byte/work/deadline limits and retained child ownership
+on failure.
 
 ## Historical baseline
 

@@ -27,6 +27,10 @@ execute over Linux service 14. The broad library network capability is true;
 the old direct catalog service 5 remains unavailable. `core::target` reports
 library families and `core::runtime` reports direct bindings, with native
 metadata execution checking their documented difference.
+The [operation-level host inventory](library-host-operation-support.md) now
+traces all fourteen catalog families and the working Linux-backed libraries.
+It also corrects panic/unreachable operation metadata: both source traps
+execute even though panic-hook registration remains unavailable.
 
 ## Corrections completed in this audit
 

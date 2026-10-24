@@ -97,6 +97,8 @@ current execution claim.
 direct host bindings. For example, the library network capability is true for
 `std::socket`, implemented over Linux service 14, while the old direct network
 service 5 remains unavailable. Neither inventory claims all host services work.
+The [operation-level host inventory](../docs/library-host-operation-support.md)
+records the supported subsets and their implementation/test evidence.
 In particular,
 threads and database integration still need host support. The older `std::net`
 declarations remain unbound; executable numeric socket ownership is in

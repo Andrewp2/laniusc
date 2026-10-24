@@ -1301,23 +1301,6 @@ const fn runtime_service_extern_abi(service_id: u32) -> &'static str {
 /// Stdlib APIs that cross runtime-service boundaries or compiler-host primitives.
 pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
     executable_runtime_api(
-        14,
-        "Linux syscalls",
-        "std::linux",
-        "std::linux::syscall6",
-        "lanius_linux",
-        "linux_syscall_is_executable()",
-        "linux_syscall_requires_runtime_binding()",
-    ),
-    executable_stdlib_api(
-        14,
-        "Linux syscalls",
-        "std::linux",
-        "std::linux::call",
-        "linux_syscall_is_executable()",
-        "linux_syscall_requires_runtime_binding()",
-    ),
-    executable_runtime_api(
         1,
         "allocator",
         "alloc::allocator",
@@ -1635,7 +1618,7 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
         "udp_api_is_executable()",
         "udp_api_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_stdlib_api(
         6,
         "panic hook",
         "core::panic",
@@ -1643,7 +1626,7 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
         "panic_is_executable()",
         "panic_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_stdlib_api(
         6,
         "panic hook",
         "core::panic",
@@ -1838,6 +1821,23 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
         "lanius_std",
         "current_dir_read_is_executable()",
         "current_dir_read_requires_runtime_binding()",
+    ),
+    executable_runtime_api(
+        14,
+        "Linux syscalls",
+        "std::linux",
+        "std::linux::syscall6",
+        "lanius_linux",
+        "linux_syscall_is_executable()",
+        "linux_syscall_requires_runtime_binding()",
+    ),
+    executable_stdlib_api(
+        14,
+        "Linux syscalls",
+        "std::linux",
+        "std::linux::call",
+        "linux_syscall_is_executable()",
+        "linux_syscall_requires_runtime_binding()",
     ),
 ];
 
@@ -4362,6 +4362,8 @@ mod tests {
                 | "std::io::flush_stderr"
                 | "std::env::current_dir_len"
                 | "std::linux::call"
+                | "core::panic::panic"
+                | "core::panic::unreachable"
         ) {
             return api.extern_abi == "lanius_stdlib"
                 && api.current_status == "executable-stdlib"
@@ -4429,6 +4431,8 @@ mod tests {
                     | "std::io::flush_stderr"
                     | "std::env::current_dir_len"
                     | "std::linux::call"
+                    | "core::panic::panic"
+                    | "core::panic::unreachable"
             )
         ) {
             return api["extern_abi"] == "lanius_stdlib"
@@ -4852,7 +4856,7 @@ mod tests {
                 entry.accepted_selector_kinds,
                 RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS
             );
-            if matches!(entry.service_id, 1 | 2 | 3 | 4 | 9 | 11 | 12) {
+            if matches!(entry.service_id, 1 | 2 | 3 | 4 | 9 | 11 | 12 | 14) {
                 assert_eq!(entry.current_status, "executable");
                 assert!(entry.executable);
             } else {
@@ -5085,7 +5089,7 @@ mod tests {
                     == serde_json::json!(RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS)
                 && if matches!(
                     service["service_id"].as_u64(),
-                    Some(1 | 2 | 3 | 4 | 9 | 11 | 12)
+                    Some(1 | 2 | 3 | 4 | 9 | 11 | 12 | 14)
                 ) {
                     service["current_status"] == "executable" && service["executable"] == true
                 } else {

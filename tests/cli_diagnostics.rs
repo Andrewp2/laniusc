@@ -52,13 +52,21 @@ fn runtime_api_json_has_expected_status(api: &serde_json::Value) -> bool {
     let api_name = api["api_name"].as_str();
     if matches!(
         api_name,
-        Some("std::io::flush_stdout" | "std::io::flush_stderr" | "std::env::current_dir_len")
+        Some(
+            "std::io::flush_stdout"
+                | "std::io::flush_stderr"
+                | "std::env::current_dir_len"
+                | "std::linux::call"
+                | "core::panic::panic"
+                | "core::panic::unreachable"
+        )
     ) {
         api["extern_abi"] == "lanius_stdlib"
             && api["current_status"] == "executable-stdlib"
             && api["executable"] == true
     } else if let Some(extern_abi) = match api_name {
         Some("std::io::print_i32") => Some("compiler_print_i32"),
+        Some("std::linux::syscall6") => Some("lanius_linux"),
         Some("std::io::write_stdout" | "std::io::write_stderr" | "std::io::read_stdin") => {
             Some("compiler_host_stdio")
         }
@@ -487,7 +495,7 @@ fn diagnostic_explain_describes_runtime_service_boundary_recovery() {
         service["diagnostic_code"] == "LNC0038"
             && if matches!(
                 service["service_id"].as_u64(),
-                Some(1 | 2 | 3 | 4 | 9 | 11 | 12)
+                Some(1 | 2 | 3 | 4 | 9 | 11 | 12 | 14)
             ) {
                 service["current_status"] == "executable" && service["executable"] == true
             } else {
@@ -540,6 +548,18 @@ fn diagnostic_explain_describes_runtime_service_boundary_recovery() {
                     && api["service_executable"] == service.executable
             })
     }));
+    for name in ["core::panic::panic", "core::panic::unreachable"] {
+        let api = runtime_apis
+            .iter()
+            .find(|api| api["api_name"] == name)
+            .unwrap();
+        assert_eq!(api["extern_abi"], "lanius_stdlib");
+        assert_eq!(api["current_status"], "executable-stdlib");
+        assert_eq!(api["executable"], true);
+        assert_eq!(api["service_id"], 6);
+        assert_eq!(api["service_current_status"], "known-unbound");
+        assert_eq!(api["service_executable"], false);
+    }
 }
 
 #[test]
@@ -3566,7 +3586,7 @@ fn cli_diagnostics_explain_runtime_boundary_lists_fail_closed_services() {
             )
             && if matches!(
                 service["service_id"].as_u64(),
-                Some(1 | 2 | 3 | 4 | 9 | 11 | 12)
+                Some(1 | 2 | 3 | 4 | 9 | 11 | 12 | 14)
             ) {
                 service["current_status"] == "executable" && service["executable"] == true
             } else {
@@ -3990,7 +4010,7 @@ fn cli_diagnostics_runtime_apis_prints_stdlib_runtime_api_index_without_source_s
             )
             && if matches!(
                 api["service_id"].as_u64(),
-                Some(1 | 2 | 3 | 4 | 9 | 11 | 12)
+                Some(1 | 2 | 3 | 4 | 9 | 11 | 12 | 14)
             ) {
                 api["service_current_status"] == "executable" && api["service_executable"] == true
             } else {
@@ -4117,7 +4137,7 @@ fn cli_diagnostics_runtime_services_prints_stdlib_runtime_service_index_without_
             )
             && if matches!(
                 service["service_id"].as_u64(),
-                Some(1 | 2 | 3 | 4 | 9 | 11 | 12)
+                Some(1 | 2 | 3 | 4 | 9 | 11 | 12 | 14)
             ) {
                 service["current_status"] == "executable" && service["executable"] == true
             } else {

@@ -568,6 +568,8 @@ fn runtime_bound_api_diagnostic_catalog_keeps_stdlib_externs_fail_closed() {
                             | "std::io::flush_stderr"
                             | "std::env::current_dir_len"
                             | "std::linux::call"
+                            | "core::panic::panic"
+                            | "core::panic::unreachable"
                     )
             })
             .all(|api| api.diagnostic_code == "LNC0038"
@@ -717,14 +719,35 @@ fn runtime_bound_api_diagnostic_catalog_exposes_extern_abi_namespaces() {
         (
             "core::panic::panic",
             6,
-            "lanius_panic",
-            "known-unbound",
-            false,
+            "lanius_stdlib",
+            "executable-stdlib",
+            true,
+        ),
+        (
+            "core::panic::unreachable",
+            6,
+            "lanius_stdlib",
+            "executable-stdlib",
+            true,
         ),
     ] {
         let api = runtime_bound_api_diagnostic_info(api_name)
             .unwrap_or_else(|| panic!("{api_name} should have a runtime-bound API row"));
         assert_eq!(api.extern_abi, extern_abi);
+        if service_id == 6 {
+            // Trapping source operations execute independently of hook support.
+            assert_eq!(api.service_current_status, "known-unbound");
+            assert!(!api.service_executable);
+            assert!(api.executable);
+            assert_eq!(
+                api.executable_probe,
+                if api_name.ends_with("::panic") {
+                    "panic_is_executable()"
+                } else {
+                    "unreachable_is_executable()"
+                }
+            );
+        }
         assert!(apis.iter().any(|row| {
             row["api_name"] == api_name
                 && row["service_id"] == service_id
@@ -997,6 +1020,10 @@ fn runtime_boundary_explanation_reports_executable_stdio_service() {
                 ) && !api["api_name"]
                     .as_str()
                     .is_some_and(runtime_bound_api_is_compiler_backed)
+                    && !matches!(
+                        api["api_name"].as_str(),
+                        Some("core::panic::panic" | "core::panic::unreachable")
+                    )
             })
             .all(|api| {
                 api["diagnostic_code"] == "LNC0038"
