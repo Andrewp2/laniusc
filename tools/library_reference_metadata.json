@@ -31,7 +31,8 @@
     },
     "alloc::clone": {
       "guides": [
-        "docs/stdlib-clone.md"
+        "docs/stdlib-clone.md",
+        "docs/stdlib-owning-iterators.md"
       ]
     },
     "alloc::clone_vec": {
@@ -43,7 +44,8 @@
       "guides": [
         "docs/stdlib-deque.md",
         "docs/stdlib-collection-iterators.md",
-        "docs/stdlib-iterator-transfer.md"
+        "docs/stdlib-iterator-transfer.md",
+        "docs/stdlib-owning-iterators.md"
       ]
     },
     "alloc::format": {
@@ -100,7 +102,8 @@
         "docs/stdlib-vec.md",
         "docs/stdlib-collection-iterators.md",
         "docs/stdlib-cursor-integration.md",
-        "docs/stdlib-iterator-transfer.md"
+        "docs/stdlib-iterator-transfer.md",
+        "docs/stdlib-owning-iterators.md"
       ]
     },
     "core::adler32": {
@@ -254,7 +257,8 @@
         "docs/stdlib-iterator-selection.md",
         "docs/compiler-iterator-assignment-context.md",
         "docs/stdlib-iterator-transfer.md",
-        "docs/stdlib-iterator-collection-sinks.md"
+        "docs/stdlib-iterator-collection-sinks.md",
+        "docs/stdlib-owning-iterators.md"
       ]
     },
     "core::math": {

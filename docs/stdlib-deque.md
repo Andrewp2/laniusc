@@ -68,6 +68,7 @@ queue.destroy();
 | `at(index)` | Shallow copy; invalid indices invoke core panic |
 | `front()`, `back()` | Optional shallow copies of the endpoints |
 | `as_views()`, `iter()` | Borrow the complete logical sequence |
+| `take_iter()` | Transfer ring storage and initialized entries into an owning `IntoIter<T>`; reset this owner |
 | `try_reserve(additional)` | Reserve for `len + additional`; return resulting capacity |
 | `try_push_front(item)`, `try_push_back(item)` | Insert at an endpoint; return new length |
 | `pop_front()`, `pop_back()` | Transfer an endpoint, or None when empty |
@@ -106,6 +107,30 @@ entry count therefore depends on `size_of<T>()`. Zero-sized entries allocate
 nothing; a positive reservation establishes capacity `i32::MAX`, and shrink
 retains it. Destroy resets any owner to zero capacity and permits reuse;
 repeated destruction of that same reset owner is harmless.
+
+## Owning iteration
+
+[`take_iter()`](stdlib-owning-iterators.md) transfers ring storage, its head and
+source item cleanup authority into `alloc::deque::IntoIter<T>` without
+allocating. It resets the actual deque to empty with zero capacity and head,
+permitting independent reuse. End old views/cursors first and keep only one
+active owning cursor handle. Front/back pulls share one remaining interval and
+transfer each yielded item's cleanup duty to their caller.
+
+Exhaustion retains backing. `try_finish()` returns
+`Some(IntoIterError::Remaining(count))` with all state and views unchanged until
+empty; success releases backing, resets every cursor field and returns `None`.
+Repeated finish is harmless. `take_remaining()` returns a deque owning the
+remainder and original capacity, adjusts its head in O(1), and disarms the
+cursor. Empty recovered deques normalize the head to zero.
+
+The optional `alloc::clone::destroy_deque_iter<T>` releases only unconsumed
+entries under `T:Destroy<T>`, recovers the drained empty deque to disarm the
+cursor, and calls that owner's canonical `destroy()`. Yielded or rejected items
+remain
+caller responsibilities. Skipping, filtering and other discarding consumers
+can leak handed-off owners; a remainder helper cannot recover them. Existing
+borrowed aliases do not acquire independent ownership through `take_iter()`.
 
 ## Storage and complexity
 

@@ -3,9 +3,12 @@
 // tests/fixtures/stdlib_foundation/iterator_dependency/prototype/core/iter.lani.
 //
 // Iterator implementations are fused: after None, every later next is None.
-// Items are shallow copies, with no implicit clone, move or destruction.
-// Cursors and backing storage must outlive all borrowed adapters. Copying a
-// leaf forks its position; copying an adapter shares its upstream references.
+// Items are shallow copies; source APIs can explicitly transfer cleanup
+// authority, but the protocol never clones or destroys them automatically.
+// Cursors and backing storage must outlive borrowed adapters. Borrowed leaf
+// copies fork position; owning cursors require one active handle. Adapter
+// copies share upstream references. Discarded transferred owners can leak;
+// owning-cursor Destroy helpers cannot recover items no longer in the source.
 module core::iter;
 import core::option;
 import core::pair;
@@ -277,6 +280,8 @@ pub fn try_transfer_up_to<I, S, T, E>(source: &I, sink: &S, limit: u64)
 // At most limit next calls; no probe when the quota is reached. exhausted says
 // a None was observed, rather than claiming the next item is definitely Some.
 // Each successful item is discarded as a shallow value; no Destroy is called.
+// An owning source has already transferred that item's cleanup authority;
+// retaining or destroying only its remainder cannot recover discarded owners.
 pub fn advance_up_to<I, T>(source: &I, limit: u64) -> Advance where I: Iterator<T> {
     let advanced: u64 = 0;
     while (advanced < limit) {

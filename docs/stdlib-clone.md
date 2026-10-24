@@ -130,6 +130,37 @@ mutation or ownership. Release that transferred entry once, and use
 `Vec.destroy()` alone releases only outer storage; it does not release nested
 String allocations.
 
+## Release an owning cursor's remainder
+
+```lanius
+alloc::clone::destroy_vec_iter<T>(owner: &alloc::vec::IntoIter<T>)
+    where T: core::clone::Destroy<T>
+alloc::clone::destroy_deque_iter<T>(owner: &alloc::deque::IntoIter<T>)
+    where T: core::clone::Destroy<T>
+```
+
+These helpers explicitly consume remaining items front-to-back and call
+`T::destroy_value` once for each. They recover the drained empty collection with
+`take_remaining()`, which disarms the cursor, then call the canonical owner's
+`destroy()` to release backing. They require no TryClone or Clone bound,
+allocate nothing and support empty or already finished cursors. Every remaining
+entry must be one valid owner under
+Destroy; ordinary borrowed aliases are not eligible solely because their type
+implements the trait. End remainder views before calling either helper.
+
+[`take_iter()`](stdlib-owning-iterators.md) resets the actual source collection
+and transfers its storage and source item cleanup authority to one active
+cursor. Successful pulls transfer individual cleanup duties to their caller.
+The helper releases only items still unconsumed; yielded and rejected items
+must be handled separately. Skipping, filtering, unmatched Zip and other
+discarding operations can lose transferred owners. A later Destroy helper
+cannot recover them, even if the exhausted cursor finishes successfully.
+
+The canonical empty-owner release avoids the helper-only finish-result replay
+dependency documented in the
+[owning-cursor guide](stdlib-owning-iterators.md#remaining-compiler-dependency).
+It does not claim a compiler fix or require caller-side error projections.
+
 ## Existing collection clones
 
 Existing `Vec.try_clone`, Deque, map, set and heap clones continue to allocate

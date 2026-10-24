@@ -185,26 +185,32 @@ fn run(kind: i32, length: i32, spare: i32, head_mode: i32, quota: u64, reject: i
     if (kind == 0) {
         let original: alloc::vec::Vec<Payload> = core::result::unwrap(alloc::vec::with_capacity<Payload>(length + spare));
         let index: i32 = 0; while (index < length) { core::result::unwrap(original.try_push(payload(index))); index += 1; }
-        let capacity: i32 = original.capacity(); output.word(capacity as u64); assert(capacity >= length + spare && capacity < 32);
+        let capacity: i32 = original.capacity(); output.word(capacity as u64); assert(capacity >= length + spare);
         let storage: ptr = original.storage; let cursor: alloc::vec::IntoIter<Payload> = original.take_iter();
         assert(original.storage == 0 && original.len() == 0 && original.capacity() == 0 && cursor.storage == storage);
         core::result::unwrap(original.try_reserve(2)); core::result::unwrap(original.try_push(payload(100))); core::result::unwrap(original.try_push(payload(101)));
-        output.word(original.capacity() as u64); assert(original.storage != cursor.storage);
+        let reused_storage: ptr = original.storage; let reused_capacity: i32 = original.capacity();
+        output.word(reused_capacity as u64); assert(original.storage != cursor.storage);
         cycle<alloc::vec::IntoIter<Payload>>(cursor.borrow(), log.borrow(), sink.borrow(), quota, reject, 0, output);
+        assert(original.storage == reused_storage && original.capacity() == reused_capacity);
         output.word(original.len() as u64); output.view(original.as_view()); original.destroy(); original.destroy();
     } else {
         let original: alloc::deque::Deque<Payload> = core::result::unwrap(alloc::deque::with_capacity<Payload>(length + spare));
-        let capacity: i32 = original.capacity(); output.word(capacity as u64); assert(capacity >= length + spare && capacity < 32);
-        let index: i32 = 0; while (index < capacity) { core::result::unwrap(original.try_push_back(payload(500 + index))); index += 1; }
-        let shifts: i32 = 0; if (head_mode == 1 && capacity > 0) { shifts = 1; } if (head_mode == 2 && capacity > 0) { shifts = capacity - 1; }
-        index = 0; while (index < shifts) { let item: Payload = core::option::unwrap(original.pop_front()); core::result::unwrap(original.try_push_back(item)); index += 1; }
-        while (original.len() > length) { original.pop_back(); }
-        index = 0; while (index < length) { core::result::unwrap(original.set(index, payload(index))); index += 1; }
+        let capacity: i32 = original.capacity(); output.word(capacity as u64); assert(capacity >= length + spare);
+        // Seed up to two elements from the front, then append the rest. This
+        // creates heads at zero/end-1/end-2 and wrapped states without filling
+        // or iterating over a capacity whose rounding is intentionally unknown.
+        let front: i32 = head_mode; if (front > length) { front = length; }
+        let index: i32 = front;
+        while (index > 0) { index -= 1; core::result::unwrap(original.try_push_front(payload(index))); }
+        index = front; while (index < length) { core::result::unwrap(original.try_push_back(payload(index))); index += 1; }
         let storage: ptr = original.storage; let cursor: alloc::deque::IntoIter<Payload> = original.take_iter();
         assert(original.storage == 0 && original.len() == 0 && original.capacity() == 0 && original.head == 0 && cursor.storage == storage);
         core::result::unwrap(original.try_reserve(2)); core::result::unwrap(original.try_push_back(payload(100))); core::result::unwrap(original.try_push_front(payload(101)));
-        output.word(original.capacity() as u64); assert(original.storage != cursor.storage);
+        let reused_storage: ptr = original.storage; let reused_capacity: i32 = original.capacity();
+        output.word(reused_capacity as u64); assert(original.storage != cursor.storage);
         cycle<alloc::deque::IntoIter<Payload>>(cursor.borrow(), log.borrow(), sink.borrow(), quota, reject, 0, output);
+        assert(original.storage == reused_storage && original.capacity() == reused_capacity);
         output.word(original.len() as u64); let views: alloc::deque::Views<Payload> = original.as_views(); output.view(views.first); output.view(views.second); original.destroy(); original.destroy();
     }
     assert(log.length == length);

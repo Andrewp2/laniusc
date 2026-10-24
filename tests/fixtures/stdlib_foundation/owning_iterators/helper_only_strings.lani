@@ -1,0 +1,38 @@
+// Imported String owners are cleaned only through the cursor helpers. Keep
+// this caller free of explicit finish-result projections: its type graph is
+// the regression surface, independently of the richer contracts fixture.
+module app::main;
+import alloc::clone;
+import alloc::deque;
+import alloc::string;
+import alloc::vec;
+import core::iter;
+import core::option;
+import core::result;
+
+fn text(byte: u8) -> alloc::string::String {
+    let bytes: [u8; 1] = [byte]; return alloc::string::from_utf8(bytes, 1).unwrap();
+}
+fn vector() {
+    let owner: alloc::vec::Vec<alloc::string::String> = alloc::vec::with_capacity<alloc::string::String>(3).unwrap();
+    owner.try_push(text(65)).unwrap(); owner.try_push(text(66)).unwrap(); owner.try_push(text(67)).unwrap();
+    assert(owner.at(0).bytes.storage != owner.at(1).bytes.storage && owner.at(1).bytes.storage != owner.at(2).bytes.storage && owner.at(0).bytes.storage != owner.at(2).bytes.storage);
+    let capacity: i32 = owner.capacity(); let cursor: alloc::vec::IntoIter<alloc::string::String> = owner.take_iter();
+    assert(owner.is_empty() && owner.capacity() == 0 && cursor.remaining() == 3 && cursor.capacity() == capacity);
+    alloc::clone::destroy_vec_iter<alloc::string::String>(cursor.borrow());
+    assert(cursor.is_empty() && cursor.remaining() == 0 && cursor.capacity() == 0 && cursor.next().is_none() && cursor.next_back().is_none());
+    alloc::clone::destroy_vec_iter<alloc::string::String>(cursor.borrow()); owner.destroy();
+}
+fn ring() {
+    let owner: alloc::deque::Deque<alloc::string::String> = alloc::deque::with_capacity<alloc::string::String>(3).unwrap();
+    // Independent allocations enter in D,E,F order; logical cleanup is E,D,F.
+    owner.try_push_front(text(68)).unwrap(); owner.try_push_front(text(69)).unwrap(); owner.try_push_back(text(70)).unwrap();
+    assert(owner.at(0).bytes.storage != owner.at(1).bytes.storage && owner.at(1).bytes.storage != owner.at(2).bytes.storage && owner.at(0).bytes.storage != owner.at(2).bytes.storage);
+    assert(owner.at(0).byte_at(0).unwrap() == 69 && owner.at(1).byte_at(0).unwrap() == 68 && owner.at(2).byte_at(0).unwrap() == 70);
+    let capacity: i32 = owner.capacity(); let cursor: alloc::deque::IntoIter<alloc::string::String> = owner.take_iter();
+    assert(owner.is_empty() && owner.capacity() == 0 && cursor.remaining() == 3 && cursor.capacity() == capacity);
+    alloc::clone::destroy_deque_iter<alloc::string::String>(cursor.borrow());
+    assert(cursor.is_empty() && cursor.remaining() == 0 && cursor.capacity() == 0 && cursor.next().is_none() && cursor.next_back().is_none());
+    alloc::clone::destroy_deque_iter<alloc::string::String>(cursor.borrow()); owner.destroy();
+}
+fn main() -> i32 { vector(); ring(); return 0; }

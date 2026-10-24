@@ -102,6 +102,21 @@ but this API does not infer which policy applies. No successful or rejected
 item invokes `Destroy` automatically. Destroying an outer Vec or deque releases
 its storage only, so nested owners still require explicit cleanup.
 
+[`Vec.take_iter()` and `Deque.take_iter()`](stdlib-owning-iterators.md) provide
+explicitly owning sources. After transfer, accepted item cleanup belongs to the
+destination and `TransferError.rejected` belongs to the caller. The source owns
+only its unconsumed remainder and retained backing. Recover the remainder or
+release it with an explicit Destroy helper. Otherwise finish the empty cursor:
+exhaustion alone does not free its storage. The reset source can be reused as a
+destination; its new storage is separate from the cursor's retained allocation.
+Existing views into a mutated destination still follow the invalidation rule
+below.
+
+Resolve rejected owners exactly once before resuming. If an upstream adapter
+discarded another transferred item, neither `TransferError` nor a cursor Destroy
+helper can recover it. All discarding adapters and consumers require explicit
+cleanup or tracking when fed owning items.
+
 The source, destination and any borrowed backing must remain valid throughout
 the call. In particular, do not transfer from a cursor borrowing the destination
 into that same destination: a successful insertion can invalidate its cursor or

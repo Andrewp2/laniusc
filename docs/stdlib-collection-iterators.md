@@ -51,12 +51,21 @@ encoded bytes individually.
 
 ## Ownership and state
 
-Items are shallow copies. Map entries copy both key and value shallowly; set
-items copy their key shallowly. Yielding, skipping or discarding an owner handle
-does not clone it, transfer unique ownership or call `Destroy`. A yielded
+These borrowed cursors return shallow copies. Map entries copy both key and
+value shallowly; set items copy their key shallowly. Yielding, skipping or
+discarding a borrowed owner handle does not clone it, transfer its cleanup
+authority or call `Destroy`. A yielded
 `String` can share the allocation owned by an element or another handle. Keep
 one release authority for each allocation and release nested owners once,
 after all borrowed uses.
+
+Vec and deque also provide separate
+[`take_iter()` owning cursors](stdlib-owning-iterators.md). They transfer storage,
+reset the actual source and hand off each consumed item's source cleanup
+authority. Their copied handles must not fork traversal or cleanup. Exhaustion
+retains backing until explicit finish or recovery. Discarding such a yielded
+owner can leak it; a remainder Destroy helper cannot recover it. The borrowed
+cursor copy and lifetime rules below apply to the table above.
 
 Copying a leaf cursor forks its position while keeping the same backing
 storage. Copying an adapter copies its quota and terminal state while sharing

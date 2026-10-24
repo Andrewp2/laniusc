@@ -87,6 +87,20 @@ each changed container as well. On mutation Err, retain and reinstall the
 unchanged owner or release it separately. A popped/replaced child is owned by
 the caller until explicitly transferred back.
 
+An [owning Vec or deque cursor](stdlib-owning-iterators.md) offers another
+explicit transfer boundary. For a source that owns its children, `take_iter()`
+resets the actual source and a yielded child Vec belongs to the caller. That
+child may be mutated as the active owner. Its
+updated descriptor need not be reinstalled in the emptied source. The cursor
+still owns its unconsumed children and outer backing until recovery or finish.
+`alloc::clone::destroy_vec_iter<T>` and `destroy_deque_iter<T>` release those
+remaining children using the same opt-in recursive Destroy implementation.
+They recover the drained empty collection and release its backing through the
+canonical owner `destroy()`, disarming the cursor without a finish-result call.
+They cannot release already yielded or rejected children, or recover child
+owners discarded by adapters. Copying an owning cursor does not create a
+second cleanup authority.
+
 There are no implicit moves, derive, automatic cloning, automatic Drop,
 compiler-enforced uniqueness or cleanup during panic/trap. This memory-owner
 Destroy contract is infallible and allocation-free; files, sockets and other

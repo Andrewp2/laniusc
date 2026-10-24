@@ -77,6 +77,13 @@ releasing completed destinations on failure. A source containing borrowed
 aliases still needs its separate owners released once. These protocols introduce
 no automatic moves or destruction.
 
+[`Vec.take_iter` and `Deque.take_iter`](../docs/stdlib-owning-iterators.md)
+explicitly transfer storage and remaining item cleanup authority to an owning
+cursor, resetting the source for reuse. Rejected finish preserves the cursor;
+remainder recovery returns its original allocation. Explicit cursor cleanup
+helpers destroy only the items still owned by that cursor. Generic discarding
+adapters do not destroy items they consume from an owning source.
+
 Fallible operations return explicit `Result` errors. Ordinary absence uses
 `Option`. Mutations state whether an error preserves the owner; streams can
 already have transferred a prefix when I/O fails. Panicking conveniences state

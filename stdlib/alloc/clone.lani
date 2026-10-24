@@ -32,7 +32,9 @@ pub fn destroy_vec_iter<T>(owner: &alloc::vec::IntoIter<T>) where T: core::clone
         if (next.is_none()) { break; }
         T::destroy_value(next.unwrap());
     }
-    assert(owner.try_finish().is_none());
+    let empty: alloc::vec::Vec<T> = owner.take_remaining();
+    assert(empty.is_empty());
+    empty.destroy();
 }
 
 // The deque cursor owns its remaining logical interval, including wrapped
@@ -43,7 +45,9 @@ pub fn destroy_deque_iter<T>(owner: &alloc::deque::IntoIter<T>) where T: core::c
         if (next.is_none()) { break; }
         T::destroy_value(next.unwrap());
     }
-    assert(owner.try_finish().is_none());
+    let empty: alloc::deque::Deque<T> = owner.take_remaining();
+    assert(empty.is_empty());
+    empty.destroy();
 }
 
 // Metadata is checked before allocation or leaf calls. Input storage must

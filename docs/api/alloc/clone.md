@@ -11,18 +11,21 @@ Layer: `alloc`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [stdlib-clone](../../stdlib-clone.md)
+- [stdlib-owning-iterators](../../stdlib-owning-iterators.md)
 
-Declaration counts: enum: 1; function: 2; variant: 3.
+Declaration counts: enum: 1; function: 4; variant: 3.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec](vec.md) · [source](../../../stdlib/alloc/clone.lani#L3)
-- [core::clone](../core/clone.md) · [source](../../../stdlib/alloc/clone.lani#L4)
-- [core::option](../core/option.md) · [source](../../../stdlib/alloc/clone.lani#L5)
-- [core::result](../core/result.md) · [source](../../../stdlib/alloc/clone.lani#L6)
-- [core::slice](../core/slice.md) · [source](../../../stdlib/alloc/clone.lani#L7)
+- [alloc::deque](deque.md) · [source](../../../stdlib/alloc/clone.lani#L3)
+- [alloc::vec](vec.md) · [source](../../../stdlib/alloc/clone.lani#L4)
+- [core::clone](../core/clone.md) · [source](../../../stdlib/alloc/clone.lani#L5)
+- [core::iter](../core/iter.md) · [source](../../../stdlib/alloc/clone.lani#L6)
+- [core::option](../core/option.md) · [source](../../../stdlib/alloc/clone.lani#L7)
+- [core::result](../core/result.md) · [source](../../../stdlib/alloc/clone.lani#L8)
+- [core::slice](../core/slice.md) · [source](../../../stdlib/alloc/clone.lani#L9)
 
 ## Types, fields and variants
 
@@ -30,7 +33,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 9](../../../stdlib/alloc/clone.lani#L9)
+[Source line 11](../../../stdlib/alloc/clone.lani#L11)
 
 ```lanius
 pub enum Error<E>
@@ -38,7 +41,7 @@ pub enum Error<E>
 
 #### variant: Bounds
 
-[Source line 9](../../../stdlib/alloc/clone.lani#L9)
+[Source line 11](../../../stdlib/alloc/clone.lani#L11)
 
 ```lanius
 Bounds
@@ -46,7 +49,7 @@ Bounds
 
 #### variant: Storage
 
-[Source line 9](../../../stdlib/alloc/clone.lani#L9)
+[Source line 11](../../../stdlib/alloc/clone.lani#L11)
 
 ```lanius
 Storage(alloc::vec::Error)
@@ -54,7 +57,7 @@ Storage(alloc::vec::Error)
 
 #### variant: Element
 
-[Source line 9](../../../stdlib/alloc/clone.lani#L9)
+[Source line 11](../../../stdlib/alloc/clone.lani#L11)
 
 ```lanius
 Element(i32,E)
@@ -64,15 +67,31 @@ Element(i32,E)
 
 ### function: destroy_vec
 
-[Source line 14](../../../stdlib/alloc/clone.lani#L14)
+[Source line 16](../../../stdlib/alloc/clone.lani#L16)
 
 ```lanius
 pub fn destroy_vec<T>(owner: &alloc::vec::Vec<T>) where T: core::clone::Destroy<T>
 ```
 
+### function: destroy_vec_iter
+
+[Source line 29](../../../stdlib/alloc/clone.lani#L29)
+
+```lanius
+pub fn destroy_vec_iter<T>(owner: &alloc::vec::IntoIter<T>) where T: core::clone::Destroy<T>
+```
+
+### function: destroy_deque_iter
+
+[Source line 42](../../../stdlib/alloc/clone.lani#L42)
+
+```lanius
+pub fn destroy_deque_iter<T>(owner: &alloc::deque::IntoIter<T>) where T: core::clone::Destroy<T>
+```
+
 ### function: from_view
 
-[Source line 27](../../../stdlib/alloc/clone.lani#L27)
+[Source line 57](../../../stdlib/alloc/clone.lani#L57)
 
 ```lanius
 pub fn from_view<T,E>(source: core::slice::View<T>) -> core::result::Result<alloc::vec::Vec<T>,Error<E>> where T: core::clone::TryClone<T,E>, T: core::clone::Destroy<T>

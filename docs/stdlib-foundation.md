@@ -1,6 +1,6 @@
 # Standard library execution audit and portable foundation
 
-**Current native host and extended-library checkpoint (2026-10-23):**
+**Current native host and extended-library checkpoint (2026-10-24):**
 [The Linux syscall boundary](stdlib-linux.md),
 [owned TCP/UDP sockets](stdlib-sockets.md),
 [explicit signal dispositions](stdlib-signals.md),
@@ -225,6 +225,18 @@ Independent native models cover 640 scenarios and 5,760 bounded transfers,
 with typed owner checks, all 18 observed growth-failure positions and six exact
 bound rejections. The [identifier index](stdlib-index-words.md) combines text,
 enumeration, mapping and ordered collection across 65 native cases.
+
+[Owning Vec and Deque cursors](stdlib-owning-iterators.md) transfer backing and
+item cleanup authority, reject an early finish without mutation and recover
+the unconsumed remainder with its original allocation. Native models cover
+352 scenarios and 1,056 recovery rounds; resource and allocation-failure gates
+check unique String owners, nested Vec values and zero-sized destruction.
+The [streaming word deduplicator](stdlib-unique-words.md) reuses owned batches
+and passes 126 native cases, including all 79 observed representative allocation
+failures. A reduced imported finish-result replay failure remains recorded
+as a [compiler dependency](../tests/fixtures/stdlib_compiler_state/owning_string_application/README.md).
+Cleanup helpers drain first, then recover and release an empty canonical
+collection owner. This milestone changes no compiler implementation or ABI.
 
 [Checked file lengths](stdlib-file-resize.md) execute shrink, zero extension,
 sparse lengths above 4 GiB and unchanged duplicated offsets, with explicit

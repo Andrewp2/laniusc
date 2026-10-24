@@ -268,6 +268,15 @@ fn checked(run: &Run, status: i32, stdout: &[u8], signal_ok: bool) {
     for write in calls(&run.events, "write") {
         assert!(write.starts_with("write(1,"), "{}", run.events);
     }
+    if status == 0 || !calls(&run.events, "write").is_empty() {
+        let reads = calls(&run.events, "read");
+        assert_eq!(
+            result(reads.last().unwrap(), "read").1,
+            "0",
+            "success/publication requires actual EOF: {}",
+            run.events
+        );
+    }
     if let Some(first_write) = run
         .events
         .lines()
@@ -348,10 +357,11 @@ fn assert_eof_probe(run: &Run, exceeded: bool) {
 fn unique_words_streaming_owners_reuse_and_exact_failure_cleanup() {
     let executable = executable(); // One production-root compile/strict ELF.
     let mut native_cases = 0usize;
+    let mut single_copy_maps = None;
     let cases: &[&[u8]] = &[
         b"",
         b" \t\n\x0b\x0c\r ",
-        b"single",
+        b"same ",
         b"b a b A a",
         b"z\ta\nb\x0bc\x0cd\re",
         b"a\0b a\0a a a\0b",
@@ -373,6 +383,9 @@ fn unique_words_streaming_owners_reuse_and_exact_failure_cleanup() {
         let observed = run(&executable, input, &[], &[], false);
         native_cases += 1;
         checked(&observed, status, &expected, true);
+        if input == b"same " {
+            single_copy_maps = Some(observed.memory.attempts);
+        }
         if input.iter().all(|&byte| ascii_space(byte)) {
             profile(&observed, 1, None);
         }
@@ -404,9 +417,10 @@ fn unique_words_streaming_owners_reuse_and_exact_failure_cleanup() {
         }
     }
 
-    // One successful batch versus three batches with the identical token:
-    // the extra 128 copies are the only extra allocation attempts. This does
-    // not assume String layout, set node size, or a physical Vec capacity.
+    // Calibrate the allocation cost of an independent copy using one token
+    // versus 64 identical tokens. The next 128 copies must cost proportionally
+    // the same, with no per-batch backing allocation. This assumes neither
+    // String layout nor an allocation count inside String construction.
     let once = b"same ".repeat(64);
     let repeated = b"same ".repeat(192);
     let one_batch = run(&executable, &once, &[], &[], false);
@@ -415,10 +429,10 @@ fn unique_words_streaming_owners_reuse_and_exact_failure_cleanup() {
     let three_batches = run(&executable, &repeated, &[], &[], false);
     native_cases += 1;
     checked(&three_batches, 0, b"same\n", true);
-    assert_eq!(
-        three_batches.memory.attempts,
-        one_batch.memory.attempts + 128
-    );
+    let first_copies = one_batch.memory.attempts - single_copy_maps.unwrap();
+    assert!(first_copies > 0);
+    let later_copies = three_batches.memory.attempts - one_batch.memory.attempts;
+    assert_eq!(later_copies * 63, first_copies * 128);
     assert_eq!(
         three_batches.memory.batch_length,
         one_batch.memory.batch_length

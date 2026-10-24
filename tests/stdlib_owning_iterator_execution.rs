@@ -32,10 +32,16 @@ fn successful(output: &Output) {
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     assert!(output.stderr.is_empty(), "{output:?}");
 }
-fn memory_ledger(events: &str) -> (Vec<String>, Vec<String>) {
+struct MemoryLedger {
+    allocations: usize,
+    releases: Vec<usize>,
+    events: Vec<(bool, usize)>,
+}
+fn memory_ledger(events: &str) -> MemoryLedger {
     let mut live = BTreeMap::new();
-    let mut allocations = Vec::new();
+    let mut allocations = 0;
     let mut releases = Vec::new();
+    let mut order = Vec::new();
     for line in events.lines() {
         if let Some(arguments) = line.strip_prefix("mmap(") {
             let length: usize = arguments.split(',').nth(1).unwrap().trim().parse().unwrap();
@@ -44,24 +50,36 @@ fn memory_ledger(events: &str) -> (Vec<String>, Vec<String>) {
                 address.starts_with("0x"),
                 "successful source allocation: {events}"
             );
-            assert!(live.insert(address.clone(), length).is_none(), "{events}");
-            allocations.push(address);
+            allocations += 1;
+            assert!(
+                live.insert(address, (length, allocations)).is_none(),
+                "{events}"
+            );
+            order.push((true, allocations));
         } else if let Some(arguments) = line.strip_prefix("munmap(") {
             let (arguments, result) = arguments.split_once(')').unwrap();
             let (address, length) = arguments.split_once(',').unwrap();
             assert_eq!(result.trim(), "= 0", "{events}");
+            let (allocated_length, identity) = live
+                .remove(address.trim())
+                .unwrap_or_else(|| panic!("one live owner for release: {events}"));
             assert_eq!(
-                live.remove(address.trim()),
-                Some(length.trim().parse::<usize>().unwrap()),
+                allocated_length,
+                length.trim().parse::<usize>().unwrap(),
                 "matching address and size: {events}"
             );
-            releases.push(address.trim().to_owned());
+            releases.push(identity);
+            order.push((false, identity));
         } else {
             panic!("unexpected owning iterator memory call: {events}");
         }
     }
     assert!(live.is_empty(), "all owners released: {events}");
-    (allocations, releases)
+    MemoryLedger {
+        allocations,
+        releases,
+        events: order,
+    }
 }
 fn traced(
     name: &str,
@@ -90,9 +108,62 @@ fn typed_owning_cursor_resource_handoffs_execute() {
     let executable = executable("contracts.lani");
     let (output, trace) = traced("typed owning iterators", &executable, None, 5);
     assert!(output.stdout.is_empty(), "{output:?}");
-    let (_allocations, _releases) = memory_ledger(&trace);
-    // The typed fixture's author supplies the exact resource ledger before
-    // source freeze; the balance check above independently verifies identity.
+    let ledger = memory_ledger(&trace);
+    // Each make() allocates String then nested Vec. Vector setup allocates
+    // backing #1, five pairs #2..11, reused backing #12, and id9's #13/14.
+    // Deque setup allocates backing #1, id12/id11/id13/id14 pairs #2..9,
+    // reused backing #10, and id19's #11/12. Transfer setup allocates source
+    // backing #1, id21/id22/id23 pairs #2..7, then sink backing #8.
+    let phases: &[(usize, &[usize])] = &[
+        (14, &[13, 14, 12, 2, 3, 10, 11, 8, 9, 4, 5, 6, 7, 1]),
+        (12, &[11, 12, 10, 8, 9, 4, 5, 2, 3, 6, 7, 1]),
+        (8, &[4, 5, 1, 2, 3, 6, 7, 8]),
+    ];
+    let mut expected = Vec::new();
+    let mut offset = 0;
+    for &(count, releases) in phases {
+        expected.extend((1..=count).map(|id| (true, offset + id)));
+        expected.extend(releases.iter().map(|id| (false, offset + id)));
+        offset += count;
+    }
+    // The final two non-ZST empty reserved owners allocate/release separately;
+    // all Unit cases allocate zero. Repeated finish/destruction adds no event.
+    expected.extend([(true, 35), (false, 35), (true, 36), (false, 36)]);
+    assert_eq!(
+        ledger.allocations, 36,
+        "only explicit typed owners allocate: {trace}"
+    );
+    assert_eq!(ledger.releases.len(), 36, "{trace}");
+    assert_eq!(
+        ledger.events, expected,
+        "typed owner allocation/release identities and order: {trace}"
+    );
+}
+
+#[test]
+fn imported_string_cursor_helpers_cleanup_without_caller_finish_result_projection() {
+    let executable = executable("helper_only_strings.lani");
+    let (output, trace) = traced("helper-only String owners", &executable, None, 5);
+    assert!(output.stdout.is_empty(), "{output:?}");
+    let ledger = memory_ledger(&trace);
+    // Vec backing #1, then three unique Strings #2..4. Deque backing #5,
+    // then three unique Strings #6..8, logically ordered #7/#6/#8 by pushes.
+    // Only the two helpers destroy items and release their cursor backing.
+    let expected: Vec<_> = (1..=4)
+        .map(|id| (true, id))
+        .chain([2, 3, 4, 1].into_iter().map(|id| (false, id)))
+        .chain((5..=8).map(|id| (true, id)))
+        .chain([7, 6, 8, 5].into_iter().map(|id| (false, id)))
+        .collect();
+    assert_eq!(
+        ledger.allocations, 8,
+        "six unique Strings and two backing owners only: {trace}"
+    );
+    assert_eq!(ledger.releases.len(), 8, "{trace}");
+    assert_eq!(
+        ledger.events, expected,
+        "helper-only cleanup identities/order: {trace}"
+    );
 }
 
 fn item(output: &mut Vec<u64>, id: u64) {
@@ -311,17 +382,16 @@ fn owning_cursor_sequences_match_independent_models_without_lifecycle_allocation
         Some(&input),
         15,
     );
-    let (allocations, releases) = memory_ledger(&trace);
+    let ledger = memory_ledger(&trace);
     let owners: usize = commands
         .iter()
         .map(|command| 1 + usize::from(command[1] + command[2] > 0))
         .sum();
     assert_eq!(
-        allocations.len(),
-        owners,
+        ledger.allocations, owners,
         "only initial reservation and independent reused source may allocate: {trace}"
     );
-    assert_eq!(releases.len(), owners, "{trace}");
+    assert_eq!(ledger.releases.len(), owners, "{trace}");
     assert_eq!(output.stdout.len() % 8, 0, "complete response words");
     let words: Vec<_> = output
         .stdout
@@ -334,11 +404,11 @@ fn owning_cursor_sequences_match_independent_models_without_lifecycle_allocation
         let capacity = *words.get(start).expect("initial capacity record");
         let reuse_capacity = *words.get(start + 1).expect("reused-source capacity record");
         assert!(
-            capacity >= length + spare && capacity < 32,
+            capacity >= length + spare && capacity <= i32::MAX as u64,
             "actual capacity for {command:?}"
         );
         assert!(
-            reuse_capacity >= 2,
+            reuse_capacity >= 2 && reuse_capacity <= i32::MAX as u64,
             "reused-source capacity for {command:?}"
         );
         let mut expected = vec![capacity, reuse_capacity];

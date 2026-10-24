@@ -1,5 +1,5 @@
 // Streaming UTF-8 words, owned batch cursors, and a sorted unique String set.
-// Runtime admission is pending; see docs/stdlib-unique-words.md.
+// Accepted on x86_64 Linux native ELF via the GPU compiler; see docs/stdlib-unique-words.md.
 module app::main;
 import alloc::clone;
 import alloc::io;
@@ -70,7 +70,7 @@ fn finish_token(words: &Words) -> i32 {
     // after the whole token is present, then copy it to independent storage.
     let made: core::result::Result<alloc::string::String,alloc::string::Error> = alloc::string::from_utf8(words.token.as_bytes(),words.token.len());
     if (made.is_err()) {
-        return match (made.unwrap_err()) { alloc::string::Error::InvalidUtf8(_) -> 6, alloc::string::Error::AllocationFailed -> 4, _ -> 7 };
+        return match (made.unwrap_err()) { alloc::string::Error::InvalidUtf8(offset) -> 6, alloc::string::Error::AllocationFailed -> 4, _ -> 7 };
     }
     let word: alloc::string::String = made.unwrap();
     let added: core::result::Result<i32,alloc::vec::Error> = words.batch.try_push(word);

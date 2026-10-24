@@ -40,12 +40,20 @@ does not automatically extend `for` to custom iterator types.
 
 ## Items, copies and lifetime
 
-Every returned item is an ordinary shallow Lanius value copy. Returning or
-discarding it does not deep-clone, transfer unique ownership, or invoke
-`core::clone::Destroy`. For a String or other owner handle, a yielded handle can
-alias the original owner. Keep one release authority and destroy that owner
-once, after all uses of borrowed aliases. This API does not make an owning
-collection drain or automatically release elements skipped by a consumer.
+Every returned item is an ordinary shallow Lanius value copy. The protocol does
+not deep-clone it, infer cleanup authority or invoke `core::clone::Destroy`.
+Each source states whether an item borrows resources or transfers cleanup
+authority. Borrowed collection cursors can yield a String alias while its
+original owner retains the sole release duty.
+
+[Vec and deque owning cursors](stdlib-owning-iterators.md) explicitly transfer
+their source's item cleanup authority on each successful pull. Keep one active
+owning handle. Yielded items, including ones later discarded by an adapter,
+are no longer in that cursor's cleanup range. Skipping, filtering, unmatched
+Zip items, searches, folds and bounded consumption never insert Destroy calls.
+They can leak transferred owners unless the caller or callback releases or
+tracks them. The owning-cursor Destroy helpers only release the remainder;
+they cannot recover previously discarded items.
 
 `core::slice::Iter<T>` contains a copied slice descriptor and cursor state. The original
 View record can go out of scope, but its physical backing must remain alive,
@@ -59,6 +67,7 @@ Copy semantics depend on the cursor:
 | --- | --- |
 | `core::slice::Iter<T>` | Independent positions; same backing elements |
 | `RangeI32` | Independent positions over captured numeric bounds |
+| `alloc::vec::IntoIter<T>` / `alloc::deque::IntoIter<T>` | Aliased storage and cleanup authority; only one active handle is permitted |
 | `Take<I,T>` | Independent quota/done flags; same borrowed source cursor |
 | `Chain<A,B,T>` | Independent phase/done flags; same borrowed source cursors |
 | `Map<I,M,T,U>` | Independent done flag; same borrowed source and mapper/context |

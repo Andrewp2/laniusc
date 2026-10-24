@@ -44,6 +44,7 @@ values.destroy();
 | `borrow()` | Reference to the owner |
 | `len()`, `capacity()`, `is_empty()` | Initialized count and storage capacity |
 | `as_slice()`, `as_view()` | Borrow initialized storage; the View retains its logical count |
+| `take_iter()` | Transfer storage and initialized entries into an owning `IntoIter<T>`; reset this owner |
 | `get(index)`, `get_or(index, fallback)` | Optional shallow copy or explicit fallback |
 | `at(index)` | Shallow copy; invalid indices invoke `core::panic` |
 | `first()`, `last()` | Optional shallow copies; None when empty |
@@ -91,6 +92,29 @@ Ord and sorted input. Native floats support IEEE membership. Float sorting uses
 `core::float_order::TotalF32` or `TotalF64`, whose bit equality distinguishes
 signed zero and NaN payloads. Comparisons do not allocate. See
 [comparison contracts](stdlib-comparison.md).
+
+## Owning iteration
+
+[`take_iter()`](stdlib-owning-iterators.md) transfers the allocation and source
+item cleanup authority into `alloc::vec::IntoIter<T>` without allocating. It
+resets the actual Vec to empty with zero capacity, permitting independent reuse.
+End old views/cursors first and keep only one active owning cursor handle.
+Successful front/back pulls transfer each item's cleanup duty to their caller.
+
+Exhaustion retains backing. `try_finish()` returns
+`Some(IntoIterError::Remaining(count))` without changing state or views while
+entries remain; otherwise it releases backing, resets the cursor and returns
+`None`. Repeated finish is harmless. `take_remaining()` instead returns a Vec
+owning the remainder and original capacity, compacts typed entries forward
+safely within the same allocation in O(n), and disarms the cursor.
+
+The optional `alloc::clone::destroy_vec_iter<T>` releases only unconsumed entries
+under `T:Destroy<T>`, recovers the drained empty Vec to disarm the cursor, and
+calls that owner's canonical `destroy()`. Yielded or rejected items belong to
+callers.
+Items discarded by selection, skipping or other consumers can leak; the helper
+cannot recover them. Borrowed aliases do not become distinct owners merely by
+entering an owning cursor.
 
 ## Storage and complexity
 
