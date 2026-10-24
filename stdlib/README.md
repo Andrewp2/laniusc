@@ -35,7 +35,7 @@ runtime behavior, failure rules and supported targets.
 | Formatting | `core::fmt`, `core::format`, `alloc::format` | [Runtime format strings and owned results](../docs/stdlib-format-strings.md) |
 | Inline collections | `core::vec`, `core::set` | [Borrowed free APIs, capacities, equality and returned values](../docs/stdlib-fixed-capacity.md) |
 | Owned collections | `alloc::vec`, `alloc::deque`, `alloc::hash_map`, `alloc::hash_set`, `alloc::tree_map`, `alloc::tree_set`, `alloc::binary_heap`, `alloc::bitset` | [Owned bitsets](../docs/stdlib-bitset-owned.md), [ordered maps](../docs/stdlib-tree-map.md), [generic sets, representatives and algebra](../docs/stdlib-owned-sets.md) |
-| Memory | `core::mem`, `alloc::allocator`, `alloc::arena` | [Arena layouts and ownership](../docs/stdlib-arena.md) |
+| Memory | `core::mem`, `alloc::allocator`, `alloc::arena` | [Value copying, raw storage and view layouts](../docs/stdlib-memory.md), [arena layouts and ownership](../docs/stdlib-arena.md) |
 | Streams and files | `core::io`, `alloc::io`, `std::stream`, `std::file`, `std::filesystem` | [Files](../docs/stdlib-files.md), [filesystem operations](../docs/stdlib-filesystem.md) |
 | File options and directories | `std::file_ops`, `std::directory` | [Seek, metadata, sync and duplication](../docs/stdlib-file-operations.md), [raw names and bounded walks](../docs/stdlib-directory.md) |
 | Paths | `core::path`, `alloc::path` | [Unix byte paths](../docs/stdlib-paths.md) |
