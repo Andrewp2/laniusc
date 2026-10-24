@@ -1,0 +1,188 @@
+// Ranges over T with core::cmp::PartialOrd. Operations take ranges by value,
+// exist as free functions and methods, and allocate nothing.
+// Half-open Range is [start, end): equal or reversed bounds are empty.
+// RangeInclusive is [start, end]: equal bounds hold one value. RangeFrom is
+// [start, ...), RangeTo is (..., end), and RangeFull holds every value.
+// Membership uses partial_lt and partial_le. Unordered bounds (f32/f64 NaN)
+// make bounded ranges empty, and unordered values are never members.
+module core::range;
+
+import core::cmp;
+
+pub struct Range<T> {
+    start: T,
+    end: T,
+}
+
+pub struct RangeInclusive<T> {
+    start: T,
+    end: T,
+}
+
+pub struct RangeFrom<T> {
+    start: T,
+}
+
+pub struct RangeTo<T> {
+    end: T,
+}
+
+pub struct RangeFull {
+}
+
+pub fn range<T>(start: T, end: T) -> Range<T> {
+    return Range { start: start, end: end };
+}
+
+pub fn start<T>(value: Range<T>) -> T {
+    return value.start;
+}
+
+pub fn end<T>(value: Range<T>) -> T {
+    return value.end;
+}
+
+pub fn is_empty<T>(value: Range<T>) -> bool where T: core::cmp::PartialOrd<T> {
+    return !T::partial_lt(value.start, value.end);
+}
+
+pub fn contains<T>(value: Range<T>, item: T) -> bool where T: core::cmp::PartialOrd<T> {
+    return T::partial_le(value.start, item) && T::partial_lt(item, value.end);
+}
+
+pub fn overlaps<T>(left: Range<T>, right: Range<T>) -> bool where T: core::cmp::PartialOrd<T> {
+    return T::partial_lt(left.start, left.end) && T::partial_lt(right.start, right.end) &&
+        T::partial_lt(left.start, right.end) && T::partial_lt(right.start, left.end);
+}
+
+pub fn range_inclusive<T>(start: T, end: T) -> RangeInclusive<T> {
+    return RangeInclusive { start: start, end: end };
+}
+
+pub fn start_inclusive<T>(value: RangeInclusive<T>) -> T {
+    return value.start;
+}
+
+pub fn end_inclusive<T>(value: RangeInclusive<T>) -> T {
+    return value.end;
+}
+
+pub fn is_empty_inclusive<T>(value: RangeInclusive<T>) -> bool where T: core::cmp::PartialOrd<T> {
+    return !T::partial_le(value.start, value.end);
+}
+
+pub fn contains_inclusive<T>(value: RangeInclusive<T>, item: T) -> bool
+    where T: core::cmp::PartialOrd<T> {
+    return T::partial_le(value.start, item) && T::partial_le(item, value.end);
+}
+
+pub fn overlaps_inclusive<T>(left: RangeInclusive<T>, right: RangeInclusive<T>) -> bool
+    where T: core::cmp::PartialOrd<T> {
+    return T::partial_le(left.start, left.end) && T::partial_le(right.start, right.end) &&
+        T::partial_le(left.start, right.end) && T::partial_le(right.start, left.end);
+}
+
+pub fn range_from<T>(start: T) -> RangeFrom<T> {
+    return RangeFrom { start: start };
+}
+
+pub fn start_from<T>(value: RangeFrom<T>) -> T {
+    return value.start;
+}
+
+pub fn contains_from<T>(value: RangeFrom<T>, item: T) -> bool where T: core::cmp::PartialOrd<T> {
+    return T::partial_le(value.start, item);
+}
+
+pub fn range_to<T>(end: T) -> RangeTo<T> {
+    return RangeTo { end: end };
+}
+
+pub fn end_to<T>(value: RangeTo<T>) -> T {
+    return value.end;
+}
+
+pub fn contains_to<T>(value: RangeTo<T>, item: T) -> bool where T: core::cmp::PartialOrd<T> {
+    return T::partial_lt(item, value.end);
+}
+
+pub fn range_full() -> RangeFull {
+    return RangeFull {};
+}
+
+// Every value, NaN included, is in the full range.
+pub fn contains_full<T>(value: RangeFull, item: T) -> bool {
+    return true;
+}
+
+pub impl<T> Range<T> {
+    pub fn start(self) -> T {
+        return self.start;
+    }
+
+    pub fn end(self) -> T {
+        return self.end;
+    }
+
+    pub fn is_empty(self) -> bool where T: core::cmp::PartialOrd<T> {
+        return !T::partial_lt(self.start, self.end);
+    }
+
+    pub fn contains(self, item: T) -> bool where T: core::cmp::PartialOrd<T> {
+        return T::partial_le(self.start, item) && T::partial_lt(item, self.end);
+    }
+
+    pub fn overlaps(self, other: Range<T>) -> bool where T: core::cmp::PartialOrd<T> {
+        return T::partial_lt(self.start, self.end) && T::partial_lt(other.start, other.end) &&
+            T::partial_lt(self.start, other.end) && T::partial_lt(other.start, self.end);
+    }
+}
+
+pub impl<T> RangeInclusive<T> {
+    pub fn start(self) -> T {
+        return self.start;
+    }
+
+    pub fn end(self) -> T {
+        return self.end;
+    }
+
+    pub fn is_empty(self) -> bool where T: core::cmp::PartialOrd<T> {
+        return !T::partial_le(self.start, self.end);
+    }
+
+    pub fn contains(self, item: T) -> bool where T: core::cmp::PartialOrd<T> {
+        return T::partial_le(self.start, item) && T::partial_le(item, self.end);
+    }
+
+    pub fn overlaps(self, other: RangeInclusive<T>) -> bool where T: core::cmp::PartialOrd<T> {
+        return T::partial_le(self.start, self.end) && T::partial_le(other.start, other.end) &&
+            T::partial_le(self.start, other.end) && T::partial_le(other.start, self.end);
+    }
+}
+
+pub impl<T> RangeFrom<T> {
+    pub fn start(self) -> T {
+        return self.start;
+    }
+
+    pub fn contains(self, item: T) -> bool where T: core::cmp::PartialOrd<T> {
+        return T::partial_le(self.start, item);
+    }
+}
+
+pub impl<T> RangeTo<T> {
+    pub fn end(self) -> T {
+        return self.end;
+    }
+
+    pub fn contains(self, item: T) -> bool where T: core::cmp::PartialOrd<T> {
+        return T::partial_lt(item, self.end);
+    }
+}
+
+pub impl RangeFull {
+    pub fn contains<T>(self, item: T) -> bool {
+        return true;
+    }
+}

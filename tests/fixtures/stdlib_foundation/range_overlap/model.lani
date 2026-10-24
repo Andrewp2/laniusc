@@ -1,0 +1,75 @@
+// Fixed binary records carry only test inputs; overlap is production Lanius.
+module app::main;
+import core::cmp;
+import core::range;
+import core::float_order;
+import core::f32;
+import core::f64;
+import core::mem;
+import std::io;
+
+// Ord alone suffices for overlap. This record deliberately has no PartialOrd.
+struct Rank { value: i32 }
+pub impl core::cmp::Eq<Rank> for Rank {
+    pub fn eq(a: Rank,b: Rank) -> bool { return a.value == b.value; }
+    pub fn ne(a: Rank,b: Rank) -> bool { return a.value != b.value; }
+}
+pub impl core::cmp::Ord<Rank> for Rank {
+    pub fn lt(a: Rank,b: Rank) -> bool { return a.value < b.value; }
+    pub fn le(a: Rank,b: Rank) -> bool { return a.value <= b.value; }
+    pub fn gt(a: Rank,b: Rank) -> bool { return a.value > b.value; }
+    pub fn ge(a: Rank,b: Rank) -> bool { return a.value >= b.value; }
+}
+fn flags<T>(a: T,b: T,c: T,d: T) -> i32 where T: core::cmp::Ord<T> {
+    let left: core::range::Range<T> = core::range::range(a,b);
+    let right: core::range::Range<T> = core::range::range(c,d);
+    let closed_left: core::range::RangeInclusive<T> = core::range::range_inclusive(a,b);
+    let closed_right: core::range::RangeInclusive<T> = core::range::range_inclusive(c,d);
+    let result: i32 = 0;
+    if (core::range::overlaps(left,right)) { result |= 1; }
+    if (left.overlaps(right)) { result |= 2; }
+    if (core::range::overlaps_inclusive(closed_left,closed_right)) { result |= 4; }
+    if (closed_left.overlaps(closed_right)) { result |= 8; }
+    return result;
+}
+fn get64(input: [u8],start: i32) -> u64 {
+    let result: u64 = 0; let index: i32 = 0;
+    while (index < 8) { result |= (input[start+index] as u64) << ((index*8) as u64); index += 1; }
+    return result;
+}
+fn main() -> i32 {
+    let backing: [i32; 65536] = [0; 65536]; let pointer: ptr = core::mem::i32_array_data_ptr(backing);
+    let input: [u8] = core::mem::typed_slice_from_raw_parts(pointer,262144); let length: i32 = 0;
+    while (length < 262144) {
+        let count: i32 = std::io::read_stdin(pointer+(length as usize),(262144-length) as usize);
+        assert(count >= 0); if (count == 0) { break; } length += count;
+    }
+    assert(length < 262144 && length%36 == 0);
+    let output: [i32; 1] = [0]; let address: ptr = core::mem::i32_array_data_ptr(output);
+    let index: i32 = 0;
+    while (index < length) {
+        let a: u64 = get64(input,index+4); let b: u64 = get64(input,index+12);
+        let c: u64 = get64(input,index+20); let d: u64 = get64(input,index+28);
+        assert(input[index] <= 4);
+        if (input[index] == 0) { output[0] = flags(a as i32,b as i32,c as i32,d as i32); }
+        if (input[index] == 1) { output[0] = flags(a,b,c,d); }
+        if (input[index] == 2) {
+            output[0] = flags(core::float_order::from_f32(core::f32::from_bits(a as u32)),
+                core::float_order::from_f32(core::f32::from_bits(b as u32)),
+                core::float_order::from_f32(core::f32::from_bits(c as u32)),
+                core::float_order::from_f32(core::f32::from_bits(d as u32)));
+        }
+        if (input[index] == 3) {
+            output[0] = flags(core::float_order::from_f64(core::f64::from_bits(a)),
+                core::float_order::from_f64(core::f64::from_bits(b)),
+                core::float_order::from_f64(core::f64::from_bits(c)),
+                core::float_order::from_f64(core::f64::from_bits(d)));
+        }
+        if (input[index] == 4) {
+            output[0] = flags(Rank { value: a as i32 },Rank { value: b as i32 },
+                Rank { value: c as i32 },Rank { value: d as i32 });
+        }
+        assert(std::io::write_stdout(address,4) == 4); index += 36;
+    }
+    return 0;
+}

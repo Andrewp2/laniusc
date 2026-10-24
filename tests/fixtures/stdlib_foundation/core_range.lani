@@ -1,6 +1,6 @@
 // expect: 0
 // Every core::range function, free and as a method, through one generic
-// checker over three ordered values, for every integer width, char, f32,
+// checker over three ordered values, for every integer width, char, TotalF32,
 // both wide integers and a user record with its own Ord. f32 then checks
 // NaN bounds and members, infinities and signed zero. Exits 0. On a failure
 // it prints 100 * row + the failing check and exits with the row.
@@ -8,6 +8,7 @@ module app::main;
 
 import core::cmp;
 import core::range;
+import core::float_order;
 import core::wide_i64;
 import core::wide_u64;
 
@@ -39,7 +40,7 @@ pub impl core::cmp::Ord<Version> for Version {
 
 // low < mid < high.
 fn range_checks<T>(low: T, mid: T, high: T) -> i32
-    where T: core::cmp::PartialOrd<T>, T: core::cmp::PartialEq<T> {
+    where T: core::cmp::PartialOrd<T>, T: core::cmp::PartialEq<T>, T: core::cmp::Ord<T> {
     let span: core::range::Range<T> = core::range::range(low, high);
     let upper: core::range::Range<T> = core::range::range(mid, high);
     let lower: core::range::Range<T> = core::range::range(low, mid);
@@ -116,9 +117,8 @@ fn float_checks() -> i32 {
     if (!core::range::range_inclusive(nan, nan).is_empty() || core::range::range_inclusive(-1.0, 2.0).contains(nan)) {
         return 3;
     }
-    if (core::range::range(nan, 2.0).overlaps(finite) || finite.overlaps(core::range::range(1.0, nan))) {
-        return 4;
-    }
+    // Raw float overlap is rejected: callers must choose an explicit total order.
+    if (!core::range::range_inclusive(-1.0, nan).is_empty()) { return 4; }
     if (core::range::range_from(1.0).contains(nan) || core::range::range_from(nan).contains(1.0)) { return 5; }
     if (core::range::range_to(1.0).contains(nan) || core::range::range_to(nan).contains(0.0)) { return 6; }
     if (!core::range::range_full().contains(nan)) { return 7; }
@@ -187,7 +187,8 @@ fn main() -> i32 {
         row(9, range_checks(u64_low, u64_mid, u64_high)),
         row(10, range_checks(usize_low, usize_mid, usize_high)),
         row(11, range_checks('\0', 'é', '😀')),
-        row(12, range_checks(-2.5, 0.0, 3.5)),
+        row(12, range_checks(core::float_order::from_f32(-2.5),
+            core::float_order::from_f32(0.0), core::float_order::from_f32(3.5))),
         row(13, range_checks(core::wide_i64::from_i32(-1), core::wide_i64::from_i32(0),
             core::wide_i64::from_words(1, 0))),
         row(14, range_checks(core::wide_u64::from_u32(7), core::wide_u64::from_words(1, 0),

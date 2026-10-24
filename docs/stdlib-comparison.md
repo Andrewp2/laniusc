@@ -31,8 +31,11 @@ operators: signed zeros compare equal; NaN equals nothing, including itself;
 and any ordering predicate with NaN is false. `partial_cmp` returns `Unordered`
 when either operand is NaN. Infinity and ordinary values compare normally.
 
-Ranges require `PartialOrd`. A NaN bound makes a bounded range empty, and
-NaN never belongs to a bounded range. The full range contains every value.
+Range membership and emptiness require `PartialOrd`. A NaN bound makes a
+bounded range empty, and NaN never belongs to a bounded range. The full range
+contains every value. [Overlap operations](stdlib-ranges.md) require `Ord`:
+endpoint comparisons cannot decide set intersection for a general partial
+order. Native float overlap needs an explicit total-key policy.
 Option/result membership, slice equality searches and compaction, and vector
 and deque equality lookup require `PartialEq`. They can therefore search native
 floats, with NaN absent and either signed zero matching the other.

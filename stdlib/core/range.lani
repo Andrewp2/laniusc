@@ -1,4 +1,5 @@
-// Ranges over T with core::cmp::PartialOrd. Operations take ranges by value,
+// Membership/emptiness use PartialOrd; overlap requires a lawful total Ord.
+// Operations take ranges by value,
 // exist as free functions and methods, and allocate nothing.
 // Half-open Range is [start, end): equal or reversed bounds are empty.
 // RangeInclusive is [start, end]: equal bounds hold one value. RangeFrom is
@@ -50,9 +51,9 @@ pub fn contains<T>(value: Range<T>, item: T) -> bool where T: core::cmp::Partial
     return T::partial_le(value.start, item) && T::partial_lt(item, value.end);
 }
 
-pub fn overlaps<T>(left: Range<T>, right: Range<T>) -> bool where T: core::cmp::PartialOrd<T> {
-    return T::partial_lt(left.start, left.end) && T::partial_lt(right.start, right.end) &&
-        T::partial_lt(left.start, right.end) && T::partial_lt(right.start, left.end);
+pub fn overlaps<T>(left: Range<T>, right: Range<T>) -> bool where T: core::cmp::Ord<T> {
+    return T::lt(left.start, left.end) && T::lt(right.start, right.end) &&
+        T::lt(left.start, right.end) && T::lt(right.start, left.end);
 }
 
 pub fn range_inclusive<T>(start: T, end: T) -> RangeInclusive<T> {
@@ -77,9 +78,9 @@ pub fn contains_inclusive<T>(value: RangeInclusive<T>, item: T) -> bool
 }
 
 pub fn overlaps_inclusive<T>(left: RangeInclusive<T>, right: RangeInclusive<T>) -> bool
-    where T: core::cmp::PartialOrd<T> {
-    return T::partial_le(left.start, left.end) && T::partial_le(right.start, right.end) &&
-        T::partial_le(left.start, right.end) && T::partial_le(right.start, left.end);
+    where T: core::cmp::Ord<T> {
+    return T::le(left.start, left.end) && T::le(right.start, right.end) &&
+        T::le(left.start, right.end) && T::le(right.start, left.end);
 }
 
 pub fn range_from<T>(start: T) -> RangeFrom<T> {
@@ -132,9 +133,9 @@ pub impl<T> Range<T> {
         return T::partial_le(self.start, item) && T::partial_lt(item, self.end);
     }
 
-    pub fn overlaps(self, other: Range<T>) -> bool where T: core::cmp::PartialOrd<T> {
-        return T::partial_lt(self.start, self.end) && T::partial_lt(other.start, other.end) &&
-            T::partial_lt(self.start, other.end) && T::partial_lt(other.start, self.end);
+    pub fn overlaps(self, other: Range<T>) -> bool where T: core::cmp::Ord<T> {
+        return T::lt(self.start, self.end) && T::lt(other.start, other.end) &&
+            T::lt(self.start, other.end) && T::lt(other.start, self.end);
     }
 }
 
@@ -155,9 +156,9 @@ pub impl<T> RangeInclusive<T> {
         return T::partial_le(self.start, item) && T::partial_le(item, self.end);
     }
 
-    pub fn overlaps(self, other: RangeInclusive<T>) -> bool where T: core::cmp::PartialOrd<T> {
-        return T::partial_le(self.start, self.end) && T::partial_le(other.start, other.end) &&
-            T::partial_le(self.start, other.end) && T::partial_le(other.start, self.end);
+    pub fn overlaps(self, other: RangeInclusive<T>) -> bool where T: core::cmp::Ord<T> {
+        return T::le(self.start, self.end) && T::le(other.start, other.end) &&
+            T::le(self.start, other.end) && T::le(other.start, self.end);
     }
 }
 
