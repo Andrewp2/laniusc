@@ -8,7 +8,9 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `core`. Role: module. Profile: **Source inventory**.
 
-**No contract guide registered.** This page makes no runtime support claim.
+## Contract and evidence guides
+
+- [stdlib-utf-codecs](../../stdlib-utf-codecs.md)
 
 Declaration counts: field: 3; function: 10; struct: 1.
 

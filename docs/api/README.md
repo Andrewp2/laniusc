@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **211 modules**, **9101 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **212 modules**, **9217 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -20,8 +20,8 @@ Inventory: **211 modules**, **9101 declaration/member entries**. Counts include 
 | [core::array_i32](core/array_i32.md) | [source](../../stdlib/core/array_i32.lani#L4) | 2 | Source inventory | **Unregistered** |
 | [core::array_i32_4](core/array_i32_4.md) | [source](../../stdlib/core/array_i32_4.lani#L2) | 14 | Source inventory | **Unregistered** |
 | [core::array_u8_4](core/array_u8_4.md) | [source](../../stdlib/core/array_u8_4.lani#L4) | 17 | Source inventory | **Unregistered** |
-| [core::base64](core/base64.md) | [source](../../stdlib/core/base64.lani#L3) | 4 | Source inventory | **Unregistered** |
-| [core::binary](core/binary.md) | [source](../../stdlib/core/binary.lani#L2) | 11 | Source inventory | **Unregistered** |
+| [core::base64](core/base64.md) | [source](../../stdlib/core/base64.lani#L3) | 4 | Source inventory | [stdlib-byte-codecs](../stdlib-byte-codecs.md) |
+| [core::binary](core/binary.md) | [source](../../stdlib/core/binary.lani#L2) | 11 | Source inventory | [stdlib-byte-codecs](../stdlib-byte-codecs.md) |
 | [core::binary_wide_i64](core/binary_wide_i64.md) | [source](../../stdlib/core/binary_wide_i64.lani#L2) | 4 | Source inventory | **Unregistered** |
 | [core::binary_wide_u64](core/binary_wide_u64.md) | [source](../../stdlib/core/binary_wide_u64.lani#L2) | 6 | Source inventory | **Unregistered** |
 | [core::bits](core/bits.md) | [source](../../stdlib/core/bits.lani#L2) | 42 | Source inventory | **Unregistered** |
@@ -30,10 +30,10 @@ Inventory: **211 modules**, **9101 declaration/member entries**. Counts include 
 | [core::calendar](core/calendar.md) | [source](../../stdlib/core/calendar.lani#L4) | 158 | Source inventory | [stdlib-calendar](../stdlib-calendar.md) |
 | [core::char](core/char.md) | [source](../../stdlib/core/char.lani#L2) | 19 | Source inventory | [stdlib-unicode](../stdlib-unicode.md) |
 | [core::cmp](core/cmp.md) | [source](../../stdlib/core/cmp.lani#L5) | 250 | Source inventory | [stdlib-comparison](../stdlib-comparison.md) |
-| [core::crc32](core/crc32.md) | [source](../../stdlib/core/crc32.lani#L3) | 6 | Source inventory | **Unregistered** |
+| [core::crc32](core/crc32.md) | [source](../../stdlib/core/crc32.lani#L3) | 6 | Source inventory | [stdlib-byte-codecs](../stdlib-byte-codecs.md) |
 | [core::decimal](core/decimal.md) | [source](../../stdlib/core/decimal.lani#L3) | 70 | Source inventory | [stdlib-decimal](../stdlib-decimal.md) |
 | [core::decimal_number](core/decimal_number.md) | [source](../../stdlib/core/decimal_number.lani#L4) | 36 | Source inventory | [stdlib-decimal-number](../stdlib-decimal-number.md) |
-| [core::endian](core/endian.md) | [source](../../stdlib/core/endian.lani#L2) | 12 | Source inventory | **Unregistered** |
+| [core::endian](core/endian.md) | [source](../../stdlib/core/endian.lani#L2) | 12 | Source inventory | [stdlib-byte-codecs](../stdlib-byte-codecs.md) |
 | [core::f32](core/f32.md) | [source](../../stdlib/core/f32.lani#L3) | 57 | Source inventory | [stdlib-floats](../stdlib-floats.md) |
 | [core::f64](core/f64.md) | [source](../../stdlib/core/f64.lani#L3) | 57 | Source inventory | [stdlib-floats](../stdlib-floats.md) |
 | [core::float_decimal](core/float_decimal.md) | [source](../../stdlib/core/float_decimal.lani#L4) | 36 | Source inventory | [stdlib-float-decimal](../stdlib-float-decimal.md), [stdlib-float-precision](../stdlib-float-precision.md) |
@@ -41,7 +41,7 @@ Inventory: **211 modules**, **9101 declaration/member entries**. Counts include 
 | [core::fmt](core/fmt.md) | [source](../../stdlib/core/fmt.lani#L2) | 67 | Source inventory | [stdlib-formatting](../stdlib-formatting.md) |
 | [core::format](core/format.md) | [source](../../stdlib/core/format.lani#L3) | 31 | Source inventory | [stdlib-format-strings](../stdlib-format-strings.md) |
 | [core::hash](core/hash.md) | [source](../../stdlib/core/hash.lani#L3) | 40 | Source inventory | [stdlib-comparison](../stdlib-comparison.md) |
-| [core::hex](core/hex.md) | [source](../../stdlib/core/hex.lani#L2) | 14 | Source inventory | **Unregistered** |
+| [core::hex](core/hex.md) | [source](../../stdlib/core/hex.lani#L2) | 14 | Source inventory | [stdlib-byte-codecs](../stdlib-byte-codecs.md) |
 | [core::hex_wide_i64](core/hex_wide_i64.md) | [source](../../stdlib/core/hex_wide_i64.lani#L2) | 5 | Source inventory | **Unregistered** |
 | [core::hex_wide_u64](core/hex_wide_u64.md) | [source](../../stdlib/core/hex_wide_u64.lani#L2) | 7 | Source inventory | **Unregistered** |
 | [core::i16](core/i16.md) | [source](../../stdlib/core/i16.lani#L5) | 139 | Source inventory | [stdlib-narrow-integers](../stdlib-narrow-integers.md) |
@@ -61,16 +61,16 @@ Inventory: **211 modules**, **9101 declaration/member entries**. Counts include 
 | [core::path](core/path.md) | [source](../../stdlib/core/path.lani#L5) | 78 | Source inventory | [stdlib-paths](../stdlib-paths.md) |
 | [core::path_rules](core/path_rules.md) | [source](../../stdlib/core/path_rules.lani#L3) | 59 | Source inventory | [stdlib-paths](../stdlib-paths.md) |
 | [core::random](core/random.md) | [source](../../stdlib/core/random.lani#L5) | 40 | Source inventory | [stdlib-randomness](../stdlib-randomness.md) |
-| [core::range](core/range.md) | [source](../../stdlib/core/range.lani#L8) | 51 | Source inventory | **Unregistered** |
+| [core::range](core/range.md) | [source](../../stdlib/core/range.lani#L9) | 51 | Source inventory | [stdlib-ranges](../stdlib-ranges.md) |
 | [core::result](core/result.md) | [source](../../stdlib/core/result.lani#L7) | 24 | Source inventory | [stdlib-result](../stdlib-result.md) |
-| [core::runtime](core/runtime.md) | [source](../../stdlib/core/runtime.lani#L15) | 113 | Source inventory | [library-host-prerequisites](../library-host-prerequisites.md) |
+| [core::runtime](core/runtime.md) | [source](../../stdlib/core/runtime.lani#L15) | 113 | Source inventory | [library-host-prerequisites](../library-host-prerequisites.md), [library-host-operation-support](../library-host-operation-support.md) |
 | [core::set](core/set.md) | [source](../../stdlib/core/set.lani#L4) | 24 | Source inventory | [stdlib-fixed-capacity](../stdlib-fixed-capacity.md) |
 | [core::sha1](core/sha1.md) | [source](../../stdlib/core/sha1.lani#L3) | 22 | Source inventory | **Unregistered** |
 | [core::slice](core/slice.md) | [source](../../stdlib/core/slice.lani#L10) | 87 | Source inventory | [stdlib-slice-views](../stdlib-slice-views.md), [stdlib-slice](../stdlib-slice.md) |
-| [core::target](core/target.md) | [source](../../stdlib/core/target.lani#L6) | 37 | Source inventory | [library-host-prerequisites](../library-host-prerequisites.md) |
+| [core::target](core/target.md) | [source](../../stdlib/core/target.lani#L6) | 37 | Source inventory | [library-host-prerequisites](../library-host-prerequisites.md), [library-host-operation-support](../library-host-operation-support.md) |
 | [core::text](core/text.md) | [source](../../stdlib/core/text.lani#L4) | 79 | Source inventory | [stdlib-text](../stdlib-text.md), [stdlib-text-composition](../stdlib-text-composition.md) |
 | [core::time](core/time.md) | [source](../../stdlib/core/time.lani#L4) | 118 | Source inventory | [stdlib-time](../stdlib-time.md) |
-| [core::transcode](core/transcode.md) | [source](../../stdlib/core/transcode.lani#L4) | 14 | Source inventory | **Unregistered** |
+| [core::transcode](core/transcode.md) | [source](../../stdlib/core/transcode.lani#L4) | 14 | Source inventory | [stdlib-utf-codecs](../stdlib-utf-codecs.md) |
 | [core::u16](core/u16.md) | [source](../../stdlib/core/u16.lani#L5) | 130 | Source inventory | [stdlib-narrow-integers](../stdlib-narrow-integers.md) |
 | [core::u32](core/u32.md) | [source](../../stdlib/core/u32.lani#L5) | 131 | Source inventory | [stdlib-narrow-integers](../stdlib-narrow-integers.md) |
 | [core::u32_cells](core/u32_cells.md) | [source](../../stdlib/core/u32_cells.lani#L4) | 4 | Source inventory | **Unregistered** |
@@ -78,12 +78,12 @@ Inventory: **211 modules**, **9101 declaration/member entries**. Counts include 
 | [core::u8](core/u8.md) | [source](../../stdlib/core/u8.lani#L5) | 151 | Source inventory | [stdlib-narrow-integers](../stdlib-narrow-integers.md) |
 | [core::unicode](core/unicode.md) | [source](../../stdlib/core/unicode.lani#L3) | 87 | Source inventory | [stdlib-unicode](../stdlib-unicode.md) |
 | [core::usize](core/usize.md) | [source](../../stdlib/core/usize.lani#L5) | 124 | Source inventory | [stdlib-native-integers](../stdlib-native-integers.md) |
-| [core::utf16](core/utf16.md) | [source](../../stdlib/core/utf16.lani#L4) | 29 | Source inventory | **Unregistered** |
-| [core::utf16_bytes](core/utf16_bytes.md) | [source](../../stdlib/core/utf16_bytes.lani#L5) | 26 | Source inventory | **Unregistered** |
-| [core::utf8](core/utf8.md) | [source](../../stdlib/core/utf8.lani#L3) | 25 | Source inventory | **Unregistered** |
-| [core::utf8_view](core/utf8_view.md) | [source](../../stdlib/core/utf8_view.lani#L2) | 12 | Source inventory | **Unregistered** |
-| [core::varint](core/varint.md) | [source](../../stdlib/core/varint.lani#L2) | 15 | Source inventory | **Unregistered** |
-| [core::varint_i32](core/varint_i32.md) | [source](../../stdlib/core/varint_i32.lani#L2) | 6 | Source inventory | **Unregistered** |
+| [core::utf16](core/utf16.md) | [source](../../stdlib/core/utf16.lani#L4) | 29 | Source inventory | [stdlib-utf-codecs](../stdlib-utf-codecs.md) |
+| [core::utf16_bytes](core/utf16_bytes.md) | [source](../../stdlib/core/utf16_bytes.lani#L5) | 26 | Source inventory | [stdlib-utf-codecs](../stdlib-utf-codecs.md) |
+| [core::utf8](core/utf8.md) | [source](../../stdlib/core/utf8.lani#L3) | 25 | Source inventory | [stdlib-utf-codecs](../stdlib-utf-codecs.md) |
+| [core::utf8_view](core/utf8_view.md) | [source](../../stdlib/core/utf8_view.lani#L2) | 12 | Source inventory | [stdlib-utf-codecs](../stdlib-utf-codecs.md) |
+| [core::varint](core/varint.md) | [source](../../stdlib/core/varint.lani#L2) | 15 | Source inventory | [stdlib-byte-codecs](../stdlib-byte-codecs.md) |
+| [core::varint_i32](core/varint_i32.md) | [source](../../stdlib/core/varint_i32.lani#L2) | 6 | Source inventory | [stdlib-byte-codecs](../stdlib-byte-codecs.md) |
 | [core::varint_wide_i64](core/varint_wide_i64.md) | [source](../../stdlib/core/varint_wide_i64.lani#L2) | 6 | Source inventory | **Unregistered** |
 | [core::varint_wide_u64](core/varint_wide_u64.md) | [source](../../stdlib/core/varint_wide_u64.lani#L2) | 10 | Source inventory | **Unregistered** |
 | [core::vec](core/vec.md) | [source](../../stdlib/core/vec.lani#L4) | 36 | Source inventory | [stdlib-fixed-capacity](../stdlib-fixed-capacity.md) |
@@ -98,7 +98,7 @@ Inventory: **211 modules**, **9101 declaration/member entries**. Counts include 
 
 | Module | Source | Entries | Profile | Contract guides |
 | --- | --- | ---: | --- | --- |
-| [alloc::allocator](alloc/allocator.md) | [source](../../stdlib/alloc/allocator.lani#L3) | 51 | Source inventory | **Unregistered** |
+| [alloc::allocator](alloc/allocator.md) | [source](../../stdlib/alloc/allocator.lani#L3) | 51 | Source inventory | [stdlib-raw-host-width](../stdlib-raw-host-width.md), [library-host-operation-support](../library-host-operation-support.md) |
 | [alloc::arena](alloc/arena.md) | [source](../../stdlib/alloc/arena.lani#L3) | 49 | Source inventory | [stdlib-arena](../stdlib-arena.md) |
 | [alloc::binary_heap](alloc/binary_heap.md) | [source](../../stdlib/alloc/binary_heap.lani#L4) | 34 | Source inventory | [stdlib-binary-heap](../stdlib-binary-heap.md) |
 | [alloc::bitset](alloc/bitset.md) | [source](../../stdlib/alloc/bitset.lani#L4) | 55 | Source inventory | [stdlib-bitset-owned](../stdlib-bitset-owned.md) |
@@ -198,7 +198,8 @@ Inventory: **211 modules**, **9101 declaration/member entries**. Counts include 
 | [ext::dns_client](ext/dns_client.md) | [source](../../extended/ext/dns_client.lani#L2) | 77 | Source inventory | [extended-dns-client](../extended-dns-client.md) |
 | [ext::geometry](ext/geometry.md) | [source](../../extended/ext/geometry.lani#L3) | 81 | Source inventory | [extended-geometry](../extended-geometry.md) |
 | [ext::glob](ext/glob.md) | [source](../../extended/ext/glob.lani#L3) | 42 | Source inventory | [extended-glob](../extended-glob.md) |
-| [ext::http](ext/http.md) | [source](../../extended/ext/http.lani#L2) | 66 | Source inventory | [extended-http](../extended-http.md) |
+| [ext::http](ext/http.md) | [source](../../extended/ext/http.lani#L2) | 108 | Source inventory | [extended-http](../extended-http.md), [extended-http-cursor](../extended-http-cursor.md) |
+| [ext::http_client](ext/http_client.md) | [source](../../extended/ext/http_client.lani#L2) | 74 | Source inventory | [extended-http-client](../extended-http-client.md) |
 | [ext::image](ext/image.md) | [source](../../extended/ext/image.lani#L2) | 43 | Source inventory | [extended-image](../extended-image.md) |
 | [ext::inflate](ext/inflate.md) | [source](../../extended/ext/inflate.lani#L4) | 18 | Source inventory | [extended-inflate](../extended-inflate.md) |
 | [ext::json](ext/json.md) | [source](../../extended/ext/json.lani#L3) | 79 | Source inventory | [extended-json](../extended-json.md) |
@@ -272,30 +273,17 @@ These are discovery/contract-link gaps, not claims that their code is missing or
 - [core::array_i32](core/array_i32.md)
 - [core::array_i32_4](core/array_i32_4.md)
 - [core::array_u8_4](core/array_u8_4.md)
-- [core::base64](core/base64.md)
-- [core::binary](core/binary.md)
 - [core::binary_wide_i64](core/binary_wide_i64.md)
 - [core::binary_wide_u64](core/binary_wide_u64.md)
 - [core::bits](core/bits.md)
 - [core::bool](core/bool.md)
-- [core::crc32](core/crc32.md)
-- [core::endian](core/endian.md)
-- [core::hex](core/hex.md)
 - [core::hex_wide_i64](core/hex_wide_i64.md)
 - [core::hex_wide_u64](core/hex_wide_u64.md)
 - [core::mem](core/mem.md)
 - [core::ops](core/ops.md)
 - [core::pair](core/pair.md)
-- [core::range](core/range.md)
 - [core::sha1](core/sha1.md)
-- [core::transcode](core/transcode.md)
 - [core::u32_cells](core/u32_cells.md)
-- [core::utf16](core/utf16.md)
-- [core::utf16_bytes](core/utf16_bytes.md)
-- [core::utf8](core/utf8.md)
-- [core::utf8_view](core/utf8_view.md)
-- [core::varint](core/varint.md)
-- [core::varint_i32](core/varint_i32.md)
 - [core::varint_wide_i64](core/varint_wide_i64.md)
 - [core::varint_wide_u64](core/varint_wide_u64.md)
 - [core::wide_i64](core/wide_i64.md)
@@ -304,7 +292,6 @@ These are discovery/contract-link gaps, not claims that their code is missing or
 - [core::wide_u64](core/wide_u64.md)
 - [core::wide_u64_bits](core/wide_u64_bits.md)
 - [core::wide_u64_checked](core/wide_u64_checked.md)
-- [alloc::allocator](alloc/allocator.md)
 - [std::args](std/args.md)
 - [std::args_checked](std/args_checked.md)
 - [std::env](std/env.md)

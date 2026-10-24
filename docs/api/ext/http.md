@@ -11,8 +11,9 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [extended-http](../../extended-http.md)
+- [extended-http-cursor](../../extended-http-cursor.md)
 
-Declaration counts: enum: 2; field: 31; function: 11; impl: 2; method: 3; struct: 5; variant: 12.
+Declaration counts: enum: 4; field: 58; function: 12; impl: 3; method: 6; struct: 8; variant: 17.
 
 ## Declared imports
 
@@ -431,6 +432,302 @@ consumed: i32
 decoded_length: i32
 ```
 
+### enum: CursorMode
+
+[Source line 224](../../../extended/ext/http.lani#L224)
+
+```lanius
+pub enum CursorMode
+```
+
+#### variant: Request
+
+[Source line 224](../../../extended/ext/http.lani#L224)
+
+```lanius
+Request
+```
+
+#### variant: Response
+
+[Source line 224](../../../extended/ext/http.lani#L224)
+
+```lanius
+Response
+```
+
+### struct: HeadInfo
+
+[Source line 225](../../../extended/ext/http.lani#L225)
+
+```lanius
+pub struct HeadInfo
+```
+
+#### field: status
+
+[Source line 225](../../../extended/ext/http.lani#L225)
+
+```lanius
+status: i32
+```
+
+#### field: version
+
+[Source line 225](../../../extended/ext/http.lani#L225)
+
+```lanius
+version: i32
+```
+
+#### field: kind
+
+[Source line 225](../../../extended/ext/http.lani#L225)
+
+```lanius
+kind: BodyKind
+```
+
+#### field: content_length
+
+[Source line 225](../../../extended/ext/http.lani#L225)
+
+```lanius
+content_length: i32
+```
+
+#### field: head_end
+
+[Source line 225](../../../extended/ext/http.lani#L225)
+
+```lanius
+head_end: i32
+```
+
+### struct: FrameBoundary
+
+[Source line 226](../../../extended/ext/http.lani#L226)
+
+```lanius
+pub struct FrameBoundary
+```
+
+#### field: consumed
+
+[Source line 226](../../../extended/ext/http.lani#L226)
+
+```lanius
+consumed: i32
+```
+
+#### field: decoded_length
+
+[Source line 226](../../../extended/ext/http.lani#L226)
+
+```lanius
+decoded_length: i32
+```
+
+### enum: Scan
+
+[Source line 227](../../../extended/ext/http.lani#L227)
+
+```lanius
+pub enum Scan
+```
+
+#### variant: NeedMore
+
+[Source line 227](../../../extended/ext/http.lani#L227)
+
+```lanius
+NeedMore
+```
+
+#### variant: HeadReady
+
+[Source line 227](../../../extended/ext/http.lani#L227)
+
+```lanius
+HeadReady(HeadInfo)
+```
+
+#### variant: Boundary
+
+[Source line 227](../../../extended/ext/http.lani#L227)
+
+```lanius
+Boundary(FrameBoundary)
+```
+
+### struct: Cursor
+
+[Source line 229](../../../extended/ext/http.lani#L229)
+
+```lanius
+pub struct Cursor
+```
+
+#### field: mode
+
+[Source line 230](../../../extended/ext/http.lani#L230)
+
+```lanius
+mode: CursorMode
+```
+
+#### field: limits
+
+[Source line 230](../../../extended/ext/http.lani#L230)
+
+```lanius
+limits: Limits
+```
+
+#### field: rawcap
+
+[Source line 230](../../../extended/ext/http.lani#L230)
+
+```lanius
+rawcap: i32
+```
+
+#### field: maximum_work
+
+[Source line 230](../../../extended/ext/http.lani#L230)
+
+```lanius
+maximum_work: u64
+```
+
+#### field: work_used
+
+[Source line 230](../../../extended/ext/http.lani#L230)
+
+```lanius
+work_used: u64
+```
+
+#### field: phase
+
+[Source line 231](../../../extended/ext/http.lani#L231)
+
+```lanius
+phase: i32
+```
+
+#### field: pos
+
+[Source line 231](../../../extended/ext/http.lani#L231)
+
+```lanius
+pos: i32
+```
+
+#### field: line_start
+
+[Source line 231](../../../extended/ext/http.lani#L231)
+
+```lanius
+line_start: i32
+```
+
+#### field: pending_cr
+
+[Source line 231](../../../extended/ext/http.lani#L231)
+
+```lanius
+pending_cr: bool
+```
+
+#### field: first_line
+
+[Source line 231](../../../extended/ext/http.lani#L231)
+
+```lanius
+first_line: bool
+```
+
+#### field: head_fields
+
+[Source line 232](../../../extended/ext/http.lani#L232)
+
+```lanius
+head_fields: i32
+```
+
+#### field: previous_length
+
+[Source line 232](../../../extended/ext/http.lani#L232)
+
+```lanius
+previous_length: i32
+```
+
+#### field: ended
+
+[Source line 232](../../../extended/ext/http.lani#L232)
+
+```lanius
+ended: bool
+```
+
+#### field: head_end
+
+[Source line 232](../../../extended/ext/http.lani#L232)
+
+```lanius
+head_end: i32
+```
+
+#### field: decoded
+
+[Source line 233](../../../extended/ext/http.lani#L233)
+
+```lanius
+decoded: i32
+```
+
+#### field: remaining
+
+[Source line 233](../../../extended/ext/http.lani#L233)
+
+```lanius
+remaining: i32
+```
+
+#### field: chunks
+
+[Source line 233](../../../extended/ext/http.lani#L233)
+
+```lanius
+chunks: i32
+```
+
+#### field: trailer_start
+
+[Source line 233](../../../extended/ext/http.lani#L233)
+
+```lanius
+trailer_start: i32
+```
+
+#### field: trailer_count
+
+[Source line 233](../../../extended/ext/http.lani#L233)
+
+```lanius
+trailer_count: i32
+```
+
+#### field: failure
+
+[Source line 234](../../../extended/ext/http.lani#L234)
+
+```lanius
+failure: Error
+```
+
 ## Free functions and extern declarations
 
 ### function: default_limits
@@ -489,9 +786,17 @@ pub fn parse_request(bytes: core::slice::View<u8>, eof: bool, limits: Limits) ->
 pub fn parse_response(bytes: core::slice::View<u8>, method: core::slice::View<u8>, eof: bool, limits: Limits) -> core::result::Result<Message,Error>
 ```
 
+### function: cursor
+
+[Source line 236](../../../extended/ext/http.lani#L236)
+
+```lanius
+pub fn cursor(mode: CursorMode, limits: Limits, rawcap: i32, maximum_work: u64) -> core::result::Result<Cursor,Error>
+```
+
 ### function: decode_into
 
-[Source line 223](../../../extended/ext/http.lani#L223)
+[Source line 370](../../../extended/ext/http.lani#L370)
 
 ```lanius
 pub fn decode_into(value: Message, destination: core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -499,7 +804,7 @@ pub fn decode_into(value: Message, destination: core::slice::View<u8>) -> core::
 
 ### function: write_head_into
 
-[Source line 232](../../../extended/ext/http.lani#L232)
+[Source line 379](../../../extended/ext/http.lani#L379)
 
 ```lanius
 pub fn write_head_into(value: Head, destination: core::slice::View<u8>, limits: Limits) -> core::result::Result<i32,Error>
@@ -507,7 +812,7 @@ pub fn write_head_into(value: Head, destination: core::slice::View<u8>, limits: 
 
 ### function: encode_request
 
-[Source line 270](../../../extended/ext/http.lani#L270)
+[Source line 417](../../../extended/ext/http.lani#L417)
 
 ```lanius
 pub fn encode_request(start_line: core::slice::View<u8>, fields: core::slice::View<Field>, body: core::slice::View<u8>, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error>
@@ -515,7 +820,7 @@ pub fn encode_request(start_line: core::slice::View<u8>, fields: core::slice::Vi
 
 ### function: encode_response
 
-[Source line 271](../../../extended/ext/http.lani#L271)
+[Source line 418](../../../extended/ext/http.lani#L418)
 
 ```lanius
 pub fn encode_response(start_line: core::slice::View<u8>, method: core::slice::View<u8>, fields: core::slice::View<Field>, body: core::slice::View<u8>, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error>
@@ -561,4 +866,36 @@ pub fn headers(&self) -> Fields
 
 ```lanius
 pub fn lookup(&self, name: core::slice::View<u8>) -> core::option::Option<Field>
+```
+
+### impl at line 242
+
+[Source line 242](../../../extended/ext/http.lani#L242)
+
+```lanius
+pub impl Cursor
+```
+
+#### method: borrow
+
+[Source line 243](../../../extended/ext/http.lani#L243)
+
+```lanius
+pub fn borrow(&self) -> &Cursor
+```
+
+#### method: work
+
+[Source line 244](../../../extended/ext/http.lani#L244)
+
+```lanius
+pub fn work(&self) -> u64
+```
+
+#### method: advance
+
+[Source line 280](../../../extended/ext/http.lani#L280)
+
+```lanius
+pub fn advance(&self, bytes: core::slice::View<u8>, method: core::slice::View<u8>, eof: bool) -> core::result::Result<Scan,Error>
 ```

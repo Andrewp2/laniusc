@@ -37,7 +37,7 @@ package distribution is a separate deliverable.
 | Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and paths, lexical operations, checked mutations, configurable/relative opens, seek, metadata, sync, duplication, raw directory iteration and bounded anchored walking execute on native Linux. The directory report exercises filters, metadata and staged output. Automatic owner destruction and broader platform support remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Raw-byte snapshots, explicit argv/environment/PATH/cwd, fork/exec, redirected files, owned pipes, cached waits and child signaling execute on the documented single-threaded Linux profile. Bounded concurrent stdin/stdout/stderr capture preserves partial progress, startup certainty and child ownership across errors. Process groups and concurrent spawn policy remain |
 | Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, calendars, native clocks, deadline waits, deterministic generators, sampling/shuffle and checked OS entropy execute. Optional TZif/POSIX zones provide conversion and ambiguity candidates; four continuous and four discrete distributions have bounded generic sampling and explicit numerical domains. Additional clocks and distribution families remain |
-| Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6 and CIDR values, owned TCP/UDP, polling, deadlines, options and half-close execute via the Linux boundary. Optional DNS transport queries explicit numeric servers with correlated UDP/TCP fallback. Real TCP/DNS programs exercise transfers. Old std::net declarations remain unbound; system resolver/NSS/interface policy, TLS and higher-level clients/servers remain |
+| Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6 and CIDR values, owned TCP/UDP, polling, deadlines, options and half-close execute via the Linux boundary. Optional DNS transport queries explicit numeric servers with correlated UDP/TCP fallback; a bounded HTTP/1.1 client uses an explicit endpoint and separate Host authority. Real TCP/DNS/HTTP programs exercise transfers. Old std::net declarations remain unbound; system resolver/NSS/interface policy, TLS, servers and broader client policies remain |
 | Concurrency | Threads, joining, synchronization, atomics, channels, cancellation | Current thread module is contract-only; runtime prerequisites remain |
 | Development | Assertions, test runner, property helpers, benchmarks, diagnostics, API docs | Nontrapping checks, explicit source suites, filters, seeded properties, injected/native-clock benchmarks and a bounded native compiler/run driver execute. Selective, relocatable source bundles use the existing package resolver and verify inventory hashes. A generated declaration reference links signatures, bounds, source locations and reviewed contract guides. Automatic compiler discovery/runtime registration, binary SDK distribution and complete semantic API documentation remain |
 
@@ -242,8 +242,14 @@ formats, playback and additional signal algorithms remain work.
 [HTTP/1 wire processing](extended-http.md) implements requests/responses,
 framing, chunk extensions/trailers, exact boundaries and checked writers. Its
 [offline message program](extended-http-message.md) validates and decodes real
-wire bytes. It provides no socket client/server, TLS or HTTP/2 implementation;
-those protocol and binding requirements remain on the full roadmap.
+wire bytes. An [allocation-free incremental cursor](extended-http-cursor.md)
+finds boundaries without retaining views into growing storage. The
+[connected HTTP/1.1 client and fetch program](extended-http-client.md) compose
+it with numeric-address sockets, owned responses, one deadline and explicit
+byte/work/I/O limits. Canonical parsing validates each selected response;
+informational responses and early final replies retain exact association and
+progress. Server support, TLS, automatic resolution/redirects, connection
+pooling and HTTP/2 remain work.
 
 [DNS wire processing](extended-dns.md) validates binary names, compression,
 QUERY sections, common RDATA and EDNS, with bounded complete message writing.
@@ -360,6 +366,12 @@ API list; unrelated library work can continue.
   fault gates; startup EOF is explicitly Unconfirmed and ambiguous outcomes
   retain a child owner. Concurrent pipe capture adds byte/work/deadline limits
   and retained failure progress; nonblocking waits make one host attempt.
+  Incremental HTTP framing and a connected cleartext client now compose owned
+  socket transport, strict final parsing and checked binary body publication.
+  Range overlap requires total ordering, with partial-order membership retained.
+  Raw host thunks preserve native-width sizes/counts/capacities and validate
+  allocator alignments. A private length-derived GPU dispatch emits every
+  runtime byte, including the relocated syscall and assertion tail.
   Seventeen ordinary collection/output samples now use
   checked APIs and real closed-pipe cleanup. The heap view boundary constructs
   directly from initialized owner state; original failed source is preserved.

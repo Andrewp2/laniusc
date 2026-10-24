@@ -4,11 +4,13 @@
 
 Generated source inventory. Linked guides own runtime and semantic contracts; a listed declaration does not establish executable behavior.
 
-[All modules](../README.md) · [Source](../../../stdlib/core/range.lani#L8)
+[All modules](../README.md) · [Source](../../../stdlib/core/range.lani#L9)
 
 Layer: `core`. Role: module. Profile: **Source inventory**.
 
-**No contract guide registered.** This page makes no runtime support claim.
+## Contract and evidence guides
+
+- [stdlib-ranges](../../stdlib-ranges.md)
 
 Declaration counts: field: 6; function: 20; impl: 5; method: 15; struct: 5.
 
@@ -16,7 +18,7 @@ Declaration counts: field: 6; function: 20; impl: 5; method: 15; struct: 5.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::cmp](cmp.md) · [source](../../../stdlib/core/range.lani#L10)
+- [core::cmp](cmp.md) · [source](../../../stdlib/core/range.lani#L11)
 
 ## Types, fields and variants
 
@@ -24,7 +26,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Range
 
-[Source line 12](../../../stdlib/core/range.lani#L12)
+[Source line 13](../../../stdlib/core/range.lani#L13)
 
 ```lanius
 pub struct Range<T>
@@ -32,7 +34,7 @@ pub struct Range<T>
 
 #### field: start
 
-[Source line 13](../../../stdlib/core/range.lani#L13)
+[Source line 14](../../../stdlib/core/range.lani#L14)
 
 ```lanius
 start: T
@@ -40,7 +42,7 @@ start: T
 
 #### field: end
 
-[Source line 14](../../../stdlib/core/range.lani#L14)
+[Source line 15](../../../stdlib/core/range.lani#L15)
 
 ```lanius
 end: T
@@ -48,7 +50,7 @@ end: T
 
 ### struct: RangeInclusive
 
-[Source line 17](../../../stdlib/core/range.lani#L17)
+[Source line 18](../../../stdlib/core/range.lani#L18)
 
 ```lanius
 pub struct RangeInclusive<T>
@@ -56,7 +58,7 @@ pub struct RangeInclusive<T>
 
 #### field: start
 
-[Source line 18](../../../stdlib/core/range.lani#L18)
+[Source line 19](../../../stdlib/core/range.lani#L19)
 
 ```lanius
 start: T
@@ -64,7 +66,7 @@ start: T
 
 #### field: end
 
-[Source line 19](../../../stdlib/core/range.lani#L19)
+[Source line 20](../../../stdlib/core/range.lani#L20)
 
 ```lanius
 end: T
@@ -72,7 +74,7 @@ end: T
 
 ### struct: RangeFrom
 
-[Source line 22](../../../stdlib/core/range.lani#L22)
+[Source line 23](../../../stdlib/core/range.lani#L23)
 
 ```lanius
 pub struct RangeFrom<T>
@@ -80,7 +82,7 @@ pub struct RangeFrom<T>
 
 #### field: start
 
-[Source line 23](../../../stdlib/core/range.lani#L23)
+[Source line 24](../../../stdlib/core/range.lani#L24)
 
 ```lanius
 start: T
@@ -88,7 +90,7 @@ start: T
 
 ### struct: RangeTo
 
-[Source line 26](../../../stdlib/core/range.lani#L26)
+[Source line 27](../../../stdlib/core/range.lani#L27)
 
 ```lanius
 pub struct RangeTo<T>
@@ -96,7 +98,7 @@ pub struct RangeTo<T>
 
 #### field: end
 
-[Source line 27](../../../stdlib/core/range.lani#L27)
+[Source line 28](../../../stdlib/core/range.lani#L28)
 
 ```lanius
 end: T
@@ -104,7 +106,7 @@ end: T
 
 ### struct: RangeFull
 
-[Source line 30](../../../stdlib/core/range.lani#L30)
+[Source line 31](../../../stdlib/core/range.lani#L31)
 
 ```lanius
 pub struct RangeFull
@@ -114,7 +116,7 @@ pub struct RangeFull
 
 ### function: range
 
-[Source line 33](../../../stdlib/core/range.lani#L33)
+[Source line 34](../../../stdlib/core/range.lani#L34)
 
 ```lanius
 pub fn range<T>(start: T, end: T) -> Range<T>
@@ -122,7 +124,7 @@ pub fn range<T>(start: T, end: T) -> Range<T>
 
 ### function: start
 
-[Source line 37](../../../stdlib/core/range.lani#L37)
+[Source line 38](../../../stdlib/core/range.lani#L38)
 
 ```lanius
 pub fn start<T>(value: Range<T>) -> T
@@ -130,7 +132,7 @@ pub fn start<T>(value: Range<T>) -> T
 
 ### function: end
 
-[Source line 41](../../../stdlib/core/range.lani#L41)
+[Source line 42](../../../stdlib/core/range.lani#L42)
 
 ```lanius
 pub fn end<T>(value: Range<T>) -> T
@@ -138,7 +140,7 @@ pub fn end<T>(value: Range<T>) -> T
 
 ### function: is_empty
 
-[Source line 45](../../../stdlib/core/range.lani#L45)
+[Source line 46](../../../stdlib/core/range.lani#L46)
 
 ```lanius
 pub fn is_empty<T>(value: Range<T>) -> bool where T: core::cmp::PartialOrd<T>
@@ -146,7 +148,7 @@ pub fn is_empty<T>(value: Range<T>) -> bool where T: core::cmp::PartialOrd<T>
 
 ### function: contains
 
-[Source line 49](../../../stdlib/core/range.lani#L49)
+[Source line 50](../../../stdlib/core/range.lani#L50)
 
 ```lanius
 pub fn contains<T>(value: Range<T>, item: T) -> bool where T: core::cmp::PartialOrd<T>
@@ -154,15 +156,15 @@ pub fn contains<T>(value: Range<T>, item: T) -> bool where T: core::cmp::Partial
 
 ### function: overlaps
 
-[Source line 53](../../../stdlib/core/range.lani#L53)
+[Source line 54](../../../stdlib/core/range.lani#L54)
 
 ```lanius
-pub fn overlaps<T>(left: Range<T>, right: Range<T>) -> bool where T: core::cmp::PartialOrd<T>
+pub fn overlaps<T>(left: Range<T>, right: Range<T>) -> bool where T: core::cmp::Ord<T>
 ```
 
 ### function: range_inclusive
 
-[Source line 58](../../../stdlib/core/range.lani#L58)
+[Source line 59](../../../stdlib/core/range.lani#L59)
 
 ```lanius
 pub fn range_inclusive<T>(start: T, end: T) -> RangeInclusive<T>
@@ -170,7 +172,7 @@ pub fn range_inclusive<T>(start: T, end: T) -> RangeInclusive<T>
 
 ### function: start_inclusive
 
-[Source line 62](../../../stdlib/core/range.lani#L62)
+[Source line 63](../../../stdlib/core/range.lani#L63)
 
 ```lanius
 pub fn start_inclusive<T>(value: RangeInclusive<T>) -> T
@@ -178,7 +180,7 @@ pub fn start_inclusive<T>(value: RangeInclusive<T>) -> T
 
 ### function: end_inclusive
 
-[Source line 66](../../../stdlib/core/range.lani#L66)
+[Source line 67](../../../stdlib/core/range.lani#L67)
 
 ```lanius
 pub fn end_inclusive<T>(value: RangeInclusive<T>) -> T
@@ -186,7 +188,7 @@ pub fn end_inclusive<T>(value: RangeInclusive<T>) -> T
 
 ### function: is_empty_inclusive
 
-[Source line 70](../../../stdlib/core/range.lani#L70)
+[Source line 71](../../../stdlib/core/range.lani#L71)
 
 ```lanius
 pub fn is_empty_inclusive<T>(value: RangeInclusive<T>) -> bool where T: core::cmp::PartialOrd<T>
@@ -194,7 +196,7 @@ pub fn is_empty_inclusive<T>(value: RangeInclusive<T>) -> bool where T: core::cm
 
 ### function: contains_inclusive
 
-[Source line 74](../../../stdlib/core/range.lani#L74)
+[Source line 75](../../../stdlib/core/range.lani#L75)
 
 ```lanius
 pub fn contains_inclusive<T>(value: RangeInclusive<T>, item: T) -> bool
@@ -203,16 +205,16 @@ pub fn contains_inclusive<T>(value: RangeInclusive<T>, item: T) -> bool
 
 ### function: overlaps_inclusive
 
-[Source line 79](../../../stdlib/core/range.lani#L79)
+[Source line 80](../../../stdlib/core/range.lani#L80)
 
 ```lanius
 pub fn overlaps_inclusive<T>(left: RangeInclusive<T>, right: RangeInclusive<T>) -> bool
-    where T: core::cmp::PartialOrd<T>
+    where T: core::cmp::Ord<T>
 ```
 
 ### function: range_from
 
-[Source line 85](../../../stdlib/core/range.lani#L85)
+[Source line 86](../../../stdlib/core/range.lani#L86)
 
 ```lanius
 pub fn range_from<T>(start: T) -> RangeFrom<T>
@@ -220,7 +222,7 @@ pub fn range_from<T>(start: T) -> RangeFrom<T>
 
 ### function: start_from
 
-[Source line 89](../../../stdlib/core/range.lani#L89)
+[Source line 90](../../../stdlib/core/range.lani#L90)
 
 ```lanius
 pub fn start_from<T>(value: RangeFrom<T>) -> T
@@ -228,7 +230,7 @@ pub fn start_from<T>(value: RangeFrom<T>) -> T
 
 ### function: contains_from
 
-[Source line 93](../../../stdlib/core/range.lani#L93)
+[Source line 94](../../../stdlib/core/range.lani#L94)
 
 ```lanius
 pub fn contains_from<T>(value: RangeFrom<T>, item: T) -> bool where T: core::cmp::PartialOrd<T>
@@ -236,7 +238,7 @@ pub fn contains_from<T>(value: RangeFrom<T>, item: T) -> bool where T: core::cmp
 
 ### function: range_to
 
-[Source line 97](../../../stdlib/core/range.lani#L97)
+[Source line 98](../../../stdlib/core/range.lani#L98)
 
 ```lanius
 pub fn range_to<T>(end: T) -> RangeTo<T>
@@ -244,7 +246,7 @@ pub fn range_to<T>(end: T) -> RangeTo<T>
 
 ### function: end_to
 
-[Source line 101](../../../stdlib/core/range.lani#L101)
+[Source line 102](../../../stdlib/core/range.lani#L102)
 
 ```lanius
 pub fn end_to<T>(value: RangeTo<T>) -> T
@@ -252,7 +254,7 @@ pub fn end_to<T>(value: RangeTo<T>) -> T
 
 ### function: contains_to
 
-[Source line 105](../../../stdlib/core/range.lani#L105)
+[Source line 106](../../../stdlib/core/range.lani#L106)
 
 ```lanius
 pub fn contains_to<T>(value: RangeTo<T>, item: T) -> bool where T: core::cmp::PartialOrd<T>
@@ -260,7 +262,7 @@ pub fn contains_to<T>(value: RangeTo<T>, item: T) -> bool where T: core::cmp::Pa
 
 ### function: range_full
 
-[Source line 109](../../../stdlib/core/range.lani#L109)
+[Source line 110](../../../stdlib/core/range.lani#L110)
 
 ```lanius
 pub fn range_full() -> RangeFull
@@ -268,7 +270,7 @@ pub fn range_full() -> RangeFull
 
 ### function: contains_full
 
-[Source line 114](../../../stdlib/core/range.lani#L114)
+[Source line 115](../../../stdlib/core/range.lani#L115)
 
 ```lanius
 pub fn contains_full<T>(value: RangeFull, item: T) -> bool
@@ -276,9 +278,9 @@ pub fn contains_full<T>(value: RangeFull, item: T) -> bool
 
 ## Implementation blocks and public methods
 
-### impl at line 118
+### impl at line 119
 
-[Source line 118](../../../stdlib/core/range.lani#L118)
+[Source line 119](../../../stdlib/core/range.lani#L119)
 
 ```lanius
 pub impl<T> Range<T>
@@ -286,7 +288,7 @@ pub impl<T> Range<T>
 
 #### method: start
 
-[Source line 119](../../../stdlib/core/range.lani#L119)
+[Source line 120](../../../stdlib/core/range.lani#L120)
 
 ```lanius
 pub fn start(self) -> T
@@ -294,7 +296,7 @@ pub fn start(self) -> T
 
 #### method: end
 
-[Source line 123](../../../stdlib/core/range.lani#L123)
+[Source line 124](../../../stdlib/core/range.lani#L124)
 
 ```lanius
 pub fn end(self) -> T
@@ -302,7 +304,7 @@ pub fn end(self) -> T
 
 #### method: is_empty
 
-[Source line 127](../../../stdlib/core/range.lani#L127)
+[Source line 128](../../../stdlib/core/range.lani#L128)
 
 ```lanius
 pub fn is_empty(self) -> bool where T: core::cmp::PartialOrd<T>
@@ -310,7 +312,7 @@ pub fn is_empty(self) -> bool where T: core::cmp::PartialOrd<T>
 
 #### method: contains
 
-[Source line 131](../../../stdlib/core/range.lani#L131)
+[Source line 132](../../../stdlib/core/range.lani#L132)
 
 ```lanius
 pub fn contains(self, item: T) -> bool where T: core::cmp::PartialOrd<T>
@@ -318,15 +320,15 @@ pub fn contains(self, item: T) -> bool where T: core::cmp::PartialOrd<T>
 
 #### method: overlaps
 
-[Source line 135](../../../stdlib/core/range.lani#L135)
+[Source line 136](../../../stdlib/core/range.lani#L136)
 
 ```lanius
-pub fn overlaps(self, other: Range<T>) -> bool where T: core::cmp::PartialOrd<T>
+pub fn overlaps(self, other: Range<T>) -> bool where T: core::cmp::Ord<T>
 ```
 
-### impl at line 141
+### impl at line 142
 
-[Source line 141](../../../stdlib/core/range.lani#L141)
+[Source line 142](../../../stdlib/core/range.lani#L142)
 
 ```lanius
 pub impl<T> RangeInclusive<T>
@@ -334,7 +336,7 @@ pub impl<T> RangeInclusive<T>
 
 #### method: start
 
-[Source line 142](../../../stdlib/core/range.lani#L142)
+[Source line 143](../../../stdlib/core/range.lani#L143)
 
 ```lanius
 pub fn start(self) -> T
@@ -342,7 +344,7 @@ pub fn start(self) -> T
 
 #### method: end
 
-[Source line 146](../../../stdlib/core/range.lani#L146)
+[Source line 147](../../../stdlib/core/range.lani#L147)
 
 ```lanius
 pub fn end(self) -> T
@@ -350,7 +352,7 @@ pub fn end(self) -> T
 
 #### method: is_empty
 
-[Source line 150](../../../stdlib/core/range.lani#L150)
+[Source line 151](../../../stdlib/core/range.lani#L151)
 
 ```lanius
 pub fn is_empty(self) -> bool where T: core::cmp::PartialOrd<T>
@@ -358,7 +360,7 @@ pub fn is_empty(self) -> bool where T: core::cmp::PartialOrd<T>
 
 #### method: contains
 
-[Source line 154](../../../stdlib/core/range.lani#L154)
+[Source line 155](../../../stdlib/core/range.lani#L155)
 
 ```lanius
 pub fn contains(self, item: T) -> bool where T: core::cmp::PartialOrd<T>
@@ -366,15 +368,15 @@ pub fn contains(self, item: T) -> bool where T: core::cmp::PartialOrd<T>
 
 #### method: overlaps
 
-[Source line 158](../../../stdlib/core/range.lani#L158)
+[Source line 159](../../../stdlib/core/range.lani#L159)
 
 ```lanius
-pub fn overlaps(self, other: RangeInclusive<T>) -> bool where T: core::cmp::PartialOrd<T>
+pub fn overlaps(self, other: RangeInclusive<T>) -> bool where T: core::cmp::Ord<T>
 ```
 
-### impl at line 164
+### impl at line 165
 
-[Source line 164](../../../stdlib/core/range.lani#L164)
+[Source line 165](../../../stdlib/core/range.lani#L165)
 
 ```lanius
 pub impl<T> RangeFrom<T>
@@ -382,7 +384,7 @@ pub impl<T> RangeFrom<T>
 
 #### method: start
 
-[Source line 165](../../../stdlib/core/range.lani#L165)
+[Source line 166](../../../stdlib/core/range.lani#L166)
 
 ```lanius
 pub fn start(self) -> T
@@ -390,15 +392,15 @@ pub fn start(self) -> T
 
 #### method: contains
 
-[Source line 169](../../../stdlib/core/range.lani#L169)
+[Source line 170](../../../stdlib/core/range.lani#L170)
 
 ```lanius
 pub fn contains(self, item: T) -> bool where T: core::cmp::PartialOrd<T>
 ```
 
-### impl at line 174
+### impl at line 175
 
-[Source line 174](../../../stdlib/core/range.lani#L174)
+[Source line 175](../../../stdlib/core/range.lani#L175)
 
 ```lanius
 pub impl<T> RangeTo<T>
@@ -406,7 +408,7 @@ pub impl<T> RangeTo<T>
 
 #### method: end
 
-[Source line 175](../../../stdlib/core/range.lani#L175)
+[Source line 176](../../../stdlib/core/range.lani#L176)
 
 ```lanius
 pub fn end(self) -> T
@@ -414,15 +416,15 @@ pub fn end(self) -> T
 
 #### method: contains
 
-[Source line 179](../../../stdlib/core/range.lani#L179)
+[Source line 180](../../../stdlib/core/range.lani#L180)
 
 ```lanius
 pub fn contains(self, item: T) -> bool where T: core::cmp::PartialOrd<T>
 ```
 
-### impl at line 184
+### impl at line 185
 
-[Source line 184](../../../stdlib/core/range.lani#L184)
+[Source line 185](../../../stdlib/core/range.lani#L185)
 
 ```lanius
 pub impl RangeFull
@@ -430,7 +432,7 @@ pub impl RangeFull
 
 #### method: contains
 
-[Source line 185](../../../stdlib/core/range.lani#L185)
+[Source line 186](../../../stdlib/core/range.lani#L186)
 
 ```lanius
 pub fn contains<T>(self, item: T) -> bool

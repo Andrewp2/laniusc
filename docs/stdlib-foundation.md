@@ -56,9 +56,9 @@ proof source changed. A further [array-to-slice field repair](../tests/fixtures/
 retains the already accepted descriptor adjustment when building imported/local
 records, keeping following fields and aliases intact. The unchanged four-way
 Text case now prints 6/6/6/6; focused native layout and rejection controls pass.
-It adds no target/IR/ABI representation. The syscall extension, expression-row
-guard and field-adjustment repair are the compiler/runtime changes in this
-checkpoint.
+It adds no target/IR/ABI representation. The compiler/runtime changes in this
+checkpoint also include the raw host-width and runtime-emission repairs
+described below.
 
 The [subprocess API and command runner](stdlib-command.md) now execute real
 fork/exec/wait, raw argv/environment/cwd, redirection, pipes and signaling, with
@@ -76,6 +76,35 @@ owners and complete output, with 316 result models and 421 injected failures.
 The source-only heap view correction passes empty/i64/record and existing
 generic/self-extension controls. Its original failure is preserved separately.
 
+[Raw native host arguments](stdlib-raw-host-width.md) now preserve full-width
+sizes, byte counts, output capacities and environment key lengths. Allocator
+validation rejects zero sizes and unsupported alignment without disturbing an
+existing owner. Six focused tests cover injected high-word transport, bounded
+startup copies, guarded key storage and real neighboring runtime operations.
+The enlarged runtime exposed a fixed 2,048-byte emission dispatch: its last 47
+bytes were zero. A private GPU pass now derives dispatch from the final checked
+layout. Every emitted runtime byte is checked before native execution; the
+relocated syscall bridge and assertion trap execute correctly.
+
+[Range overlap](stdlib-ranges.md) now requires a lawful total `Ord`, because
+endpoint crossing can falsely report an intersection for a partial order.
+Membership and emptiness retain `PartialOrd`. The native independent model
+passes 88,114 endpoint quadruples through all four overlap APIs and executes
+the migrated comprehensive caller; twelve isolated partial-only/raw-float
+overlap calls reject with `LNC0008`.
+
+[Incremental HTTP framing](extended-http-cursor.md) scans growing and relocated
+input without retaining source views. Both focused native groups pass, including
+byte-at-a-time delivery, exact caps/EOF, fused outcomes and 57,923 bytes of
+fragmented chunk framing with partition-invariant scan work. The separate
+[connected client and fetch program](extended-http-client.md) compose numeric
+socket transport, strict canonical validation, owned method/wire/body storage,
+informational responses and early final replies under one deadline. Limits
+cover bytes, parsing/copying work and actual leaf I/O attempts. Failure models
+exercise allocation, late results, interruptions, half-close and publication
+cleanup. Six focused client groups pass 188 driver cases. TLS, automatic
+resolution/redirects, pooling and a server remain work.
+
 Verified execution is x86_64 Linux output from GPU compilation; user GPU kernels
 and other targets are unverified. Threads, native FFI/TLS/SQLite, generic
 iterator/stream composition and distribution/reference completion remain on the
@@ -83,10 +112,12 @@ iterator/stream composition and distribution/reference completion remain on the
 [reproductions and successful controls](library-dependencies.md).
 
 The [generated declaration reference](library-api-reference.md) inventories
-211 source modules with signatures, bounds, fields and exact source links.
+212 source modules with signatures, bounds, fields and exact source links.
 Twenty focused CPU tests and a fresh generated-output check pass. This is
 documentation extraction, not runtime verification; semantic guide gaps remain
-listed explicitly.
+listed explicitly. The [strict UTF codec guide](stdlib-utf-codecs.md) now maps
+83 existing functions to their indexing, malformed-input, mutation, progress,
+aliasing and native-test contracts; that source audit adds no new target claim.
 
 **Preceding numeric, owned-set and portable extended-library checkpoint (2026-10-23):**
 [Canonical narrow integers](stdlib-narrow-integers.md),
@@ -532,7 +563,7 @@ require further compiler work.
 | `core::array_i32` both public borrowed-view functions | Executable on x86_64 | Fixed arrays of lengths 1, 4, and 7 pass through `[i32]` parameters and execute `first` and `get_unchecked`, including signed extrema. Native bounds checks exit 101 for an empty view, a negative index, or an index past the end. The former const-generic signatures could not emit native indexing; the remaining compiler limitation is recorded in dependency 12. |
 | `core::array_i32_4` all 14 public functions | Executable on x86_64 | Runtime fixture checks access, search, fallback indices, extrema, saturating sum, and caller-backed copy, fill, and reverse. Invalid destination lengths return false without writing; reverse supports shared source/destination backing. Fixed-array-returning predecessors were removed because they misexecute; see dependency 7. |
 | `core::array_u8_4` all 17 public functions | Executable on x86_64 | Runtime fixtures check access, search, extrema, full-range sum, equality, endian conversion, invalid-index fallback, and caller-backed copy, fill, and reverse of four-byte arrays. Reversal works with shared source and destination backing. Short destination lengths return false without writing; an overstated backing view traps on native indexing. |
-| `core::range` generic `Range<T>`, `RangeInclusive<T>`, `RangeFrom<T>`, `RangeTo<T>` and `RangeFull`, all 20 public functions and 15 methods | Executable on x86_64 | `tests/fixtures/stdlib_foundation/core_range.lani` runs every function and method through one generic checker for every integer width, char, f32, both wide integers and a user record with its own `Ord`, then checks f32 NaN bounds and members, infinities and signed zero; `tests/stdlib_foundation_execution.rs` checks that it calls each one. Membership needs `core::cmp::PartialOrd`. Replaces `core::range_{u8,i8,u16,i16,char,f32}` and `core::wide_{u64,i64}_range`. |
+| `core::range` generic `Range<T>`, `RangeInclusive<T>`, `RangeFrom<T>`, `RangeTo<T>` and `RangeFull`, all 20 public functions and 15 methods | Executable on x86_64 | `tests/fixtures/stdlib_foundation/core_range.lani` runs every function and method through a generic checker for every integer width, char, TotalF32, both wide integers and a user record, then checks raw f32 NaN membership/emptiness, infinities and signed zero. Membership/emptiness require `PartialOrd`; overlap requires `Ord`. The [range guide](stdlib-ranges.md) documents the partial-order counterexample, total-order overlap model and exact target evidence. Replaces `core::range_{u8,i8,u16,i16,char,f32}` and `core::wide_{u64,i64}_range`. |
 | `core::slice` all 40 public functions, generic over the element type | Executable on x86_64 for fixed-array-backed and raw views | `tests/fixtures/stdlib_foundation/core_slice.lani` runs every function through one generic checker for every integer width, char, total float keys, both wide integers and a user record with its own `Eq` and `Ord`, then bool views, f32 NaN and signed zero, and `sum` for every `SaturatingAdd` impl; `tests/stdlib_foundation_execution.rs` checks that it calls each one. `core_slice_record_bounds.lani` checks that an overclaimed record view exits 101. Searching needs `core::cmp::PartialEq`, ordering needs `core::cmp::Ord`, `sum` needs `core::ops::SaturatingAdd`. Replaces `core::slice_{u8,i8,i16,u16,u32,bool,char,f32,wide_u64,wide_i64}`. |
 | `core::ops` `SaturatingAdd<T>` impls for every integer width and f32; `core::wide_i64` and `core::wide_u64` implement it for their records | Executable on x86_64 | `core_slice.lani` sums each type past its limit: integers clamp, f32 overflows to infinity. |
 | `core::u32_cells` all 4 public functions | Executable on x86_64 for caller-backed i32 cells that hold u32 bit patterns | The unsigned vector sort fixture directly calls sort, reverse, lower bound, and upper bound on cells containing zero, one, the unsigned high bit, and the maximum word, and checks all 243 five-cell sequences over three representative unsigned values against independent input counts. The helper also runs through the owned `VecU32` APIs. Search requires nondecreasing unsigned order; invalid physical length claims can trap on native indexing. |
@@ -1175,12 +1206,14 @@ have been [removed after consumer migration](stdlib-legacy-collections.md).
   cells. A view built from it must not outlive the owner or survive growth or
   destruction. This is an x86_64 Linux allocation-backed API, separate from
   the allocation-free `core::utf8` codec and from host I/O.
-- `core::range` is generic over any T with `core::cmp::PartialOrd`, which
+- `core::range` membership and emptiness are generic over T with `core::cmp::PartialOrd`, which
   `core::cmp` implements for every integer width, char, f32, and the wide
   integers implement in their own modules. Half-open `Range` excludes `end`
   and is empty for equal or reversed bounds; `RangeInclusive` includes `end`,
-  so equal bounds hold one value. Touching half-open ranges do not overlap;
-  inclusive ranges sharing an endpoint do. `RangeFrom` includes its start,
+  so equal bounds hold one value. Overlap requires `core::cmp::Ord`: endpoint
+  crossing alone does not establish intersection for a general partial order.
+  Touching half-open ranges do not overlap; inclusive ranges sharing an
+  endpoint do. `RangeFrom` includes its start,
   `RangeTo` excludes its end (so `range_to(MIN)` is empty), and `RangeFull`
   contains every value of any type. Membership uses `partial_lt` and
   `partial_le`, so with f32/f64 a NaN bound makes a bounded range empty and NaN is never a member

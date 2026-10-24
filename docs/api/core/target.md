@@ -11,6 +11,7 @@ Layer: `core`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [library-host-prerequisites](../../library-host-prerequisites.md)
+- [library-host-operation-support](../../library-host-operation-support.md)
 
 Declaration counts: constant: 17; function: 19; type alias: 1.
 

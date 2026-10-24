@@ -8,7 +8,10 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `alloc`. Role: module. Profile: **Source inventory**.
 
-**No contract guide registered.** This page makes no runtime support claim.
+## Contract and evidence guides
+
+- [stdlib-raw-host-width](../../stdlib-raw-host-width.md)
+- [library-host-operation-support](../../library-host-operation-support.md)
 
 Declaration counts: constant: 10; extern function: 4; function: 32; type alias: 5.
 

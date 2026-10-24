@@ -306,7 +306,7 @@ network nameserver/service.
 The accepted native gates execute 188 cases across six tests. The two
 allocation paths reach 13 and 22 mappings; each reached allocation is failed
 individually and checked for cleanup. The 1 MiB response scale case completed
-in 0.128 seconds of process time, including startup and loopback transfer but
+in 0.128 seconds of client-process wall time, including startup and transfer but
 excluding compilation. The late-shutdown control verifies a successful
 shutdown syscall and its recorded progress before the delayed return causes
 the original deadline to expire.
