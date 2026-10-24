@@ -1,0 +1,21 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import std::linux;
+
+fn main() -> i32 {
+    let storage: [i32; 4] = [0; 4];
+    let address: ptr = core::mem::i32_array_data_ptr(storage);
+    let cells: [i32] = core::mem::typed_slice_from_raw_parts(address, 4);
+    cells[0] = 1; cells[1] = 4; cells[2] = 2147483647; cells[3] = 1;
+    let args: [std::linux::Argument; 3] = [std::linux::Argument::Address(address), std::linux::Argument::Word(2), std::linux::Argument::Word(0)];
+    let count: i64 = core::result::unwrap(std::linux::call(7, core::result::unwrap(core::slice::view(args, 3))));
+    assert(count == 2); assert(cells[0] == 1 && (cells[1] & 65535) == 4);
+    assert(((cells[1] as u32) >> 16) == 4); assert(cells[2] == 2147483647 && (cells[3] & 65535) == 1);
+    assert(((cells[3] as u32) >> 16) == 32);
+    cells[1] = 4; cells[2] = -2147483647 - 1; cells[3] = 65535;
+    let second: i64 = core::result::unwrap(std::linux::call(7, core::result::unwrap(core::slice::view(args, 3))));
+    assert(second == 1 && ((cells[1] as u32) >> 16) == 4 && cells[3] == 65535);
+    return 0;
+}

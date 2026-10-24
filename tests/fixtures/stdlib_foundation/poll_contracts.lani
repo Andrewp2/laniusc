@@ -1,0 +1,82 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import std::clock;
+import std::file;
+import std::linux;
+import std::poll;
+
+fn pair(socket: bool) -> [i32;2] {
+    let cells: [i32;2] = [0;2]; let address: ptr = core::mem::i32_array_data_ptr(cells);
+    if (socket) {
+        let args: [std::linux::Argument;4] = [std::linux::Argument::Word(1),std::linux::Argument::Word(526337),std::linux::Argument::Word(0),std::linux::Argument::Address(address)];
+        assert(core::result::unwrap(std::linux::call(53,core::result::unwrap(core::slice::view(args,4)))) == 0);
+    } else {
+        let args: [std::linux::Argument;2] = [std::linux::Argument::Address(address),std::linux::Argument::Word(526336)];
+        assert(core::result::unwrap(std::linux::call(293,core::result::unwrap(core::slice::view(args,2)))) == 0);
+    }
+    let packed: [i32] = core::mem::typed_slice_from_raw_parts(address,2);
+    return [packed[0],packed[1]];
+}
+fn bits(set: &std::poll::PollSet,index:i32) -> u32 { return core::option::unwrap(set.readiness(index)).bits; }
+fn main() -> i32 {
+    let empty: std::poll::PollSet = core::result::unwrap(std::poll::new(0));
+    let ignored: [std::poll::Request;1] = [std::poll::Request { handle: -1, events: 0 }];
+    let none: core::slice::View<std::poll::Request> = core::result::unwrap(core::slice::view(ignored,0));
+    assert(empty.requested_bytes() == 0 && empty.capacity() == 0 && empty.len() == 0);
+    assert(core::result::unwrap(empty.poll_ms(none,0)) == 0); empty.destroy();
+    assert(core::result::is_err(std::poll::new(-1)) && core::result::is_err(std::poll::new(1048577)));
+    let pipes: [i32;2] = pair(false);
+    let reader: std::file::File = core::result::unwrap(std::file::from_owned_handle(pipes[0]));
+    let writer: std::file::File = core::result::unwrap(std::file::from_owned_handle(pipes[1]));
+    let set: std::poll::PollSet = core::result::unwrap(std::poll::new(8));
+    assert(set.requested_bytes() == 8 * (2 * core::mem::size_of<i32>() + core::mem::size_of<std::poll::Readiness>()));
+    let requests: [std::poll::Request;6] = [std::poll::Request { handle: pipes[1], events: 4 },std::poll::Request { handle: pipes[0], events: 1 },std::poll::Request { handle: pipes[0], events: 0 },std::poll::Request { handle: 2147483647, events: 0 },std::poll::Request { handle: -2147483647 - 1, events: 8199 },std::poll::Request { handle: pipes[1], events: 4 }];
+    let view: core::slice::View<std::poll::Request> = core::result::unwrap(core::slice::view(requests,6));
+    assert(core::result::unwrap(set.poll_ms(view,0)) == 3 && set.len() == 6);
+    assert(bits(set.borrow(),0) == 4 && bits(set.borrow(),1) == 0 && bits(set.borrow(),2) == 0 && bits(set.borrow(),3) == 32 && bits(set.borrow(),4) == 0 && bits(set.borrow(),5) == 4);
+    let previous: core::slice::View<std::poll::Readiness> = set.as_view();
+    assert(core::result::is_err(set.poll_ms(view,-2)) && set.len() == 6 && previous.values[previous.start].bits == 4);
+    let bad: core::slice::View<std::poll::Request> = view; bad.start = 2147483647; bad.length = 1;
+    assert(core::result::is_err(set.poll_ms(bad,0)) && bits(set.borrow(),3) == 32);
+    bad = view; bad.length = 9; assert(core::result::is_err(set.poll_ms(bad,0)) && set.len() == 6);
+    let unsupported: [std::poll::Request;1] = [std::poll::Request { handle: pipes[0], events: 8 }];
+    assert(core::result::is_err(set.poll_ms(core::result::unwrap(core::slice::view(unsupported,1)),0)));
+    let byte: [u8;1] = [255]; assert(core::result::unwrap(core::io::write_all(writer.borrow(),byte,0,1)) == 1);
+    assert(core::result::unwrap(set.poll_ms(view,-1)) == 4 && bits(set.borrow(),1) == 1 && bits(set.borrow(),2) == 0);
+    core::result::unwrap(writer.close());
+    assert(core::result::unwrap(set.poll_ms(view,0)) == 5 && bits(set.borrow(),1) == 17 && bits(set.borrow(),2) == 16);
+    let read: [u8;1] = [0]; assert(core::result::unwrap(core::io::read_exact(reader.borrow(),read,0,1)) == 1 && read[0] == 255);
+    let only: [std::poll::Request;1] = [std::poll::Request { handle: pipes[0], events: 1 }];
+    let single: core::slice::View<std::poll::Request> = core::result::unwrap(core::slice::view(only,1));
+    assert(core::result::unwrap(set.poll_ms(single,0)) == 1 && bits(set.borrow(),0) == 16 && set.len() == 1);
+    assert(core::option::unwrap(set.readiness(0)).hangup() && !core::option::unwrap(set.readiness(0)).readable());
+    assert(core::option::is_none(set.readiness(-1)) && core::option::is_none(set.readiness(1)));
+    let now: core::time::Instant = core::result::unwrap(std::clock::monotonic_now());
+    assert(core::result::unwrap(set.poll_until(single,core::time::deadline_at(now),0)) == 0 && bits(set.borrow(),0) == 0);
+    let future: core::time::Deadline = core::result::unwrap(core::time::deadline_after(now,core::time::from_secs(60)));
+    assert(match(core::result::unwrap_err(set.poll_until(single,future,0))) { std::poll::Error::Limit -> true, _ -> false });
+    assert(set.len() == 1 && bits(set.borrow(),0) == 0);
+    let malformed: core::time::Deadline = future; malformed.instant.ticks.nanos = 1000000000;
+    assert(match(core::result::unwrap_err(set.poll_until(single,malformed,2))) { std::poll::Error::Bounds -> true, _ -> false });
+    set.destroy(); assert(core::result::unwrap(reader.read(read,0,1)) == 0); core::result::unwrap(reader.close());
+    let sockets: [i32;2] = pair(true);
+    let left: std::file::File = core::result::unwrap(std::file::from_owned_handle(sockets[0]));
+    let right: std::file::File = core::result::unwrap(std::file::from_owned_handle(sockets[1]));
+    assert(core::result::unwrap(core::io::write_all(right.borrow(),byte,0,1)) == 1);
+    let shutdown: [std::linux::Argument;2] = [std::linux::Argument::Word(sockets[1] as i64),std::linux::Argument::Word(1)];
+    assert(core::result::unwrap(std::linux::call(48,core::result::unwrap(core::slice::view(shutdown,2)))) == 0);
+    let socket_set: std::poll::PollSet = core::result::unwrap(std::poll::new(1));
+    let socket_requests: [std::poll::Request;1] = [std::poll::Request { handle: sockets[0], events: 8193 }];
+    let socket_view: core::slice::View<std::poll::Request> = core::result::unwrap(core::slice::view(socket_requests,1));
+    let end: core::time::Deadline = core::result::unwrap(core::time::deadline_after(core::result::unwrap(std::clock::monotonic_now()),core::time::from_secs(1)));
+    assert(core::result::unwrap(socket_set.poll_until(socket_view,end,2)) == 1);
+    assert(core::option::unwrap(socket_set.readiness(0)).readable() && core::option::unwrap(socket_set.readiness(0)).read_closed());
+    socket_set.destroy(); assert(core::result::unwrap(core::io::read_exact(left.borrow(),read,0,1)) == 1 && read[0] == 255);
+    assert(core::result::unwrap(left.read(read,0,1)) == 0); core::result::unwrap(left.close()); core::result::unwrap(right.close());
+    return 0;
+}

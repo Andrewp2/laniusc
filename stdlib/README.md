@@ -37,6 +37,7 @@ contains optional codecs, protocols, mathematics and application utilities.
 | Child processes | `std::command` | [Raw argv/environment, redirects, owned pipes, startup certainty and reaping](../docs/stdlib-command.md); native Linux single-threaded profile |
 | Time and randomness | `core::time`, `core::calendar`, `std::clock`, `core::random`, `std::entropy` | [Time](../docs/stdlib-time.md), [calendar](../docs/stdlib-calendar.md), [randomness](../docs/stdlib-randomness.md); optional [TZif time zones](../docs/extended-timezone.md) |
 | Network values and sockets | `core::net`, `std::socket` | [Address values](../docs/stdlib-net.md), [owned TCP/UDP and deadlines](../docs/stdlib-sockets.md), [binary TCP exchange](../docs/stdlib-tcp-exchange.md) |
+| Descriptor readiness | `std::poll` | [Reusable borrowed-FD sets, flags, atomic publication and observed deadlines](../docs/stdlib-poll.md) |
 | Signal dispositions | `std::signal` | [Explicit native Default/Ignore policies](../docs/stdlib-signals.md); source callbacks and signal trampolines remain unavailable |
 | Native operating-system boundary | `std::linux` | [Unsafe Linux x86-64 syscall contract](../docs/stdlib-linux.md); higher-level modules validate their own operations |
 | Tests and benchmarks | `test::assert`, `test::check`, `test::suite`, `test::property`, `test::bench` | [Development workflow](../docs/stdlib-development.md), `tools/lanius-test` |
