@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **218 modules**, **9463 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **219 modules**, **9481 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -25,7 +25,7 @@ Inventory: **218 modules**, **9463 declaration/member entries**. Counts include 
 | [core::binary_wide_i64](core/binary_wide_i64.md) | [source](../../stdlib/core/binary_wide_i64.lani#L2) | 4 | Source inventory | **Unregistered** |
 | [core::binary_wide_u64](core/binary_wide_u64.md) | [source](../../stdlib/core/binary_wide_u64.lani#L2) | 6 | Source inventory | **Unregistered** |
 | [core::bits](core/bits.md) | [source](../../stdlib/core/bits.lani#L2) | 42 | Source inventory | [stdlib-boolean-bits](../stdlib-boolean-bits.md) |
-| [core::bitset](core/bitset.md) | [source](../../stdlib/core/bitset.lani#L5) | 57 | Source inventory | [stdlib-bitset-owned](../stdlib-bitset-owned.md) |
+| [core::bitset](core/bitset.md) | [source](../../stdlib/core/bitset.lani#L5) | 59 | Source inventory | [stdlib-bitset-owned](../stdlib-bitset-owned.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md) |
 | [core::bool](core/bool.md) | [source](../../stdlib/core/bool.lani#L3) | 10 | Source inventory | [stdlib-boolean-bits](../stdlib-boolean-bits.md) |
 | [core::calendar](core/calendar.md) | [source](../../stdlib/core/calendar.lani#L4) | 158 | Source inventory | [stdlib-calendar](../stdlib-calendar.md) |
 | [core::char](core/char.md) | [source](../../stdlib/core/char.lani#L2) | 19 | Source inventory | [stdlib-unicode](../stdlib-unicode.md) |
@@ -51,7 +51,7 @@ Inventory: **218 modules**, **9463 declaration/member entries**. Counts include 
 | [core::i8](core/i8.md) | [source](../../stdlib/core/i8.lani#L5) | 137 | Source inventory | [stdlib-narrow-integers](../stdlib-narrow-integers.md) |
 | [core::io](core/io.md) | [source](../../stdlib/core/io.lani#L2) | 53 | Source inventory | [stdlib-streams](../stdlib-streams.md) |
 | [core::isize](core/isize.md) | [source](../../stdlib/core/isize.lani#L5) | 137 | Source inventory | [stdlib-native-integers](../stdlib-native-integers.md) |
-| [core::iter](core/iter.md) | [source](../../stdlib/core/iter.lani#L9) | 46 | Source inventory | [stdlib-iterators](../stdlib-iterators.md) |
+| [core::iter](core/iter.md) | [source](../../stdlib/core/iter.lani#L9) | 46 | Source inventory | [stdlib-iterators](../stdlib-iterators.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md) |
 | [core::math](core/math.md) | [source](../../stdlib/core/math.lani#L27) | 18 | Source inventory | [stdlib-math](../stdlib-math.md) |
 | [core::mem](core/mem.md) | [source](../../stdlib/core/mem.lani#L5) | 14 | Source inventory | [stdlib-memory](../stdlib-memory.md) |
 | [core::net](core/net.md) | [source](../../stdlib/core/net.lani#L2) | 334 | Source inventory | [stdlib-net](../stdlib-net.md) |
@@ -70,7 +70,7 @@ Inventory: **218 modules**, **9463 declaration/member entries**. Counts include 
 | [core::sha1](core/sha1.md) | [source](../../stdlib/core/sha1.lani#L3) | 22 | Source inventory | **Unregistered** |
 | [core::slice](core/slice.md) | [source](../../stdlib/core/slice.lani#L10) | 87 | Source inventory | [stdlib-slice-views](../stdlib-slice-views.md), [stdlib-slice](../stdlib-slice.md) |
 | [core::target](core/target.md) | [source](../../stdlib/core/target.lani#L6) | 37 | Source inventory | [library-host-prerequisites](../library-host-prerequisites.md), [library-host-operation-support](../library-host-operation-support.md) |
-| [core::text](core/text.md) | [source](../../stdlib/core/text.lani#L4) | 79 | Source inventory | [stdlib-text](../stdlib-text.md), [stdlib-text-composition](../stdlib-text-composition.md) |
+| [core::text](core/text.md) | [source](../../stdlib/core/text.lani#L4) | 82 | Source inventory | [stdlib-text](../stdlib-text.md), [stdlib-text-composition](../stdlib-text-composition.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md) |
 | [core::time](core/time.md) | [source](../../stdlib/core/time.lani#L4) | 118 | Source inventory | [stdlib-time](../stdlib-time.md) |
 | [core::transcode](core/transcode.md) | [source](../../stdlib/core/transcode.lani#L4) | 14 | Source inventory | [stdlib-utf-codecs](../stdlib-utf-codecs.md) |
 | [core::u16](core/u16.md) | [source](../../stdlib/core/u16.lani#L5) | 130 | Source inventory | [stdlib-narrow-integers](../stdlib-narrow-integers.md) |
@@ -107,16 +107,16 @@ Inventory: **218 modules**, **9463 declaration/member entries**. Counts include 
 | [alloc::buffered](alloc/buffered.md) | [source](../../stdlib/alloc/buffered.lani#L4) | 49 | Source inventory | [stdlib-buffered](../stdlib-buffered.md) |
 | [alloc::clone](alloc/clone.md) | [source](../../stdlib/alloc/clone.lani#L2) | 6 | Source inventory | [stdlib-clone](../stdlib-clone.md) |
 | [alloc::clone_vec](alloc/clone_vec.md) | [source](../../stdlib/alloc/clone_vec.lani#L5) | 5 | Source inventory | [stdlib-nested-clone](../stdlib-nested-clone.md) |
-| [alloc::deque](alloc/deque.md) | [source](../../stdlib/alloc/deque.lani#L3) | 64 | Source inventory | [stdlib-deque](../stdlib-deque.md) |
+| [alloc::deque](alloc/deque.md) | [source](../../stdlib/alloc/deque.lani#L3) | 66 | Source inventory | [stdlib-deque](../stdlib-deque.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md) |
 | [alloc::format](alloc/format.md) | [source](../../stdlib/alloc/format.lani#L2) | 5 | Source inventory | [stdlib-format-strings](../stdlib-format-strings.md) |
-| [alloc::hash_map](alloc/hash_map.md) | [source](../../stdlib/alloc/hash_map.lani#L3) | 62 | Source inventory | [stdlib-hash-collections](../stdlib-hash-collections.md) |
-| [alloc::hash_set](alloc/hash_set.md) | [source](../../stdlib/alloc/hash_set.lani#L3) | 31 | Source inventory | [stdlib-owned-sets](../stdlib-owned-sets.md) |
+| [alloc::hash_map](alloc/hash_map.md) | [source](../../stdlib/alloc/hash_map.lani#L3) | 64 | Source inventory | [stdlib-hash-collections](../stdlib-hash-collections.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md) |
+| [alloc::hash_set](alloc/hash_set.md) | [source](../../stdlib/alloc/hash_set.lani#L3) | 33 | Source inventory | [stdlib-owned-sets](../stdlib-owned-sets.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md) |
 | [alloc::io](alloc/io.md) | [source](../../stdlib/alloc/io.lani#L3) | 18 | Source inventory | [stdlib-streams](../stdlib-streams.md) |
 | [alloc::path](alloc/path.md) | [source](../../stdlib/alloc/path.lani#L4) | 48 | Source inventory | [stdlib-paths](../stdlib-paths.md) |
 | [alloc::string](alloc/string.md) | [source](../../stdlib/alloc/string.lani#L5) | 73 | Source inventory | [stdlib-string](../stdlib-string.md), [stdlib-clone](../stdlib-clone.md) |
-| [alloc::tree_map](alloc/tree_map.md) | [source](../../stdlib/alloc/tree_map.lani#L3) | 86 | Source inventory | [stdlib-tree-map](../stdlib-tree-map.md) |
-| [alloc::tree_set](alloc/tree_set.md) | [source](../../stdlib/alloc/tree_set.lani#L3) | 40 | Source inventory | [stdlib-owned-sets](../stdlib-owned-sets.md) |
-| [alloc::vec](alloc/vec.md) | [source](../../stdlib/alloc/vec.lani#L4) | 47 | Source inventory | [stdlib-vec](../stdlib-vec.md) |
+| [alloc::tree_map](alloc/tree_map.md) | [source](../../stdlib/alloc/tree_map.lani#L3) | 88 | Source inventory | [stdlib-tree-map](../stdlib-tree-map.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md) |
+| [alloc::tree_set](alloc/tree_set.md) | [source](../../stdlib/alloc/tree_set.lani#L3) | 42 | Source inventory | [stdlib-owned-sets](../stdlib-owned-sets.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md) |
+| [alloc::vec](alloc/vec.md) | [source](../../stdlib/alloc/vec.lani#L4) | 48 | Source inventory | [stdlib-vec](../stdlib-vec.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md) |
 
 ### `std`
 
@@ -135,10 +135,11 @@ Inventory: **218 modules**, **9463 declaration/member entries**. Counts include 
 | [std::file_binary](std/file_binary.md) | [source](../../stdlib/std/file_binary.lani#L4) | 6 | Source inventory | **Unregistered** |
 | [std::file_binary_wide_i64](std/file_binary_wide_i64.md) | [source](../../stdlib/std/file_binary_wide_i64.lani#L2) | 2 | Source inventory | **Unregistered** |
 | [std::file_binary_wide_u64](std/file_binary_wide_u64.md) | [source](../../stdlib/std/file_binary_wide_u64.lani#L2) | 2 | Source inventory | **Unregistered** |
+| [std::file_copy](std/file_copy.md) | [source](../../stdlib/std/file_copy.lani#L4) | 1 | Source inventory | [stdlib-file-copy](../stdlib-file-copy.md), [stdlib-copy-file](../stdlib-copy-file.md) |
 | [std::file_hex](std/file_hex.md) | [source](../../stdlib/std/file_hex.lani#L4) | 9 | Source inventory | **Unregistered** |
 | [std::file_hex_wide_i64](std/file_hex_wide_i64.md) | [source](../../stdlib/std/file_hex_wide_i64.lani#L2) | 3 | Source inventory | **Unregistered** |
 | [std::file_hex_wide_u64](std/file_hex_wide_u64.md) | [source](../../stdlib/std/file_hex_wide_u64.lani#L2) | 3 | Source inventory | **Unregistered** |
-| [std::file_ops](std/file_ops.md) | [source](../../stdlib/std/file_ops.lani#L2) | 89 | Source inventory | [stdlib-file-operations](../stdlib-file-operations.md) |
+| [std::file_ops](std/file_ops.md) | [source](../../stdlib/std/file_ops.lani#L2) | 90 | Source inventory | [stdlib-file-operations](../stdlib-file-operations.md), [stdlib-file-resize](../stdlib-file-resize.md) |
 | [std::filesystem](std/filesystem.md) | [source](../../stdlib/std/filesystem.lani#L4) | 5 | Source inventory | [stdlib-filesystem](../stdlib-filesystem.md) |
 | [std::fs](std/fs.md) | [source](../../stdlib/std/fs.lani#L5) | 105 | Source inventory | [stdlib-filesystem](../stdlib-filesystem.md) |
 | [std::gpu](std/gpu.md) | [source](../../stdlib/std/gpu.lani#L6) | 60 | Unbound host declarations | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |

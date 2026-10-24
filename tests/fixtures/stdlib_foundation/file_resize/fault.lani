@@ -1,4 +1,4 @@
-// Native admission pending. One set_len(2), then exactly one close attempt.
+// Native admission passed 2026-10-24. One set_len(2), then one close attempt.
 module app::main;
 import core::io;
 import core::mem;

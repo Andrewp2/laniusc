@@ -6,8 +6,10 @@ import core::u8;
 import core::cmp;
 import core::decimal;
 import core::hash;
+import core::iter;
 import core::option;
 import core::result;
+import core::slice;
 import core::utf8;
 
 pub enum Error { Bounds, NotCharBoundary, InvalidUtf8(i32) }
@@ -168,6 +170,11 @@ pub impl Text {
         while (end > start && core::u8::is_ascii_whitespace(self.bytes[self.start + end - 1])) { end -= 1; }
         return self.part(start, end);
     }
+    // Text construction establishes the range; preserve its native byte stride.
+    pub fn iter_bytes(&self) -> core::iter::SliceIter<u8> {
+        let view: core::slice::View<u8> = core::slice::View { values: self.bytes, start: self.start, length: self.length };
+        return core::iter::SliceIter { cursor: view.iter() };
+    }
     pub fn scalars(&self) -> Scalars { return Scalars { text: self.part(0, self.length), position: 0 }; }
     // Nonoverlapping separators; retain leading, interior and trailing empty
     // fields. Empty separator yields empty, each scalar, then empty.
@@ -226,6 +233,10 @@ pub impl SplitAsciiWhitespace {
 }
 
 pub impl Scalars {
+    pub fn borrow(&self) -> &Scalars { return self; }
+}
+
+pub impl core::iter::Iterator<Scalar> for Scalars {
     pub fn next(&self) -> core::option::Option<Scalar> {
         if (self.position == self.text.byte_len()) { return core::option::None(); }
         let index: i32 = self.position;

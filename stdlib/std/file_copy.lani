@@ -1,0 +1,116 @@
+// Bounded replacement of one regular file's bytes from another descriptor.
+// No allocation, retries, flag changes, synchronization or ownership transfer.
+// See docs/stdlib-file-copy.md for preparation effects and caller obligations.
+module std::file_copy;
+import core::io;
+import core::result;
+import core::slice;
+import std::file;
+import std::file_ops;
+
+fn failed(cause: core::io::Error, read: u64, written: u64)
+    -> core::result::Result<u64, core::io::CopyFailure> {
+    return core::result::Err(core::io::CopyFailure { cause: cause, read: read, written: written });
+}
+
+// O_ACCMODE is 3. O_PATH (2097152) and O_DIRECT (16384) are outside
+// this operation's buffered descriptor contract. O_APPEND is rejected below
+// only for the destination: a source's append flag does not affect reads.
+fn readable(flags: i32) -> bool {
+    let access: i32 = flags & 3;
+    return (access == 0 || access == 2) && (flags & 2113536) == 0;
+}
+
+fn writable(flags: i32) -> bool {
+    let access: i32 = flags & 3;
+    return (access == 1 || access == 2) && (flags & 2113536) == 0 && (flags & 1024) == 0;
+}
+
+pub fn copy_regular(source: &std::file::File, destination: &std::file::File,
+    scratch: core::slice::View<u8>, max_bytes: u64)
+    -> core::result::Result<u64, core::io::CopyFailure> {
+    // Check logical arguments before any syscall, including for a zero quota.
+    if (scratch.length <= 0 || !core::io::valid_range(scratch.start, scratch.length)
+        || max_bytes > 9223372036854775807) {
+        return failed(core::io::Error::InvalidInput, 0, 0);
+    }
+    if (!source.is_open() || !destination.is_open()) {
+        return failed(core::io::Error::Host(9), 0, 0);
+    }
+    let source_flags: core::result::Result<i32, core::io::Error> = std::file_ops::status_flags(source);
+    if (core::result::is_err(source_flags)) { return failed(core::result::unwrap_err(source_flags), 0, 0); }
+    if (!readable(core::result::unwrap(source_flags))) { return failed(core::io::Error::InvalidInput, 0, 0); }
+    let destination_flags: core::result::Result<i32, core::io::Error> = std::file_ops::status_flags(destination);
+    if (core::result::is_err(destination_flags)) { return failed(core::result::unwrap_err(destination_flags), 0, 0); }
+    if (!writable(core::result::unwrap(destination_flags))) { return failed(core::io::Error::InvalidInput, 0, 0); }
+
+    let source_metadata: std::file_ops::Metadata = std::file_ops::empty_metadata();
+    let source_queried: core::result::Result<i32, core::io::Error> = std::file_ops::metadata_file_into(source, source_metadata.borrow());
+    if (core::result::is_err(source_queried)) { return failed(core::result::unwrap_err(source_queried), 0, 0); }
+    let destination_metadata: std::file_ops::Metadata = std::file_ops::empty_metadata();
+    let destination_queried: core::result::Result<i32, core::io::Error> = std::file_ops::metadata_file_into(destination, destination_metadata.borrow());
+    if (core::result::is_err(destination_queried)) { return failed(core::result::unwrap_err(destination_queried), 0, 0); }
+    // Require STATX_TYPE | STATX_INO; statx device fields have no mask bits.
+    if (!source_metadata.has(257) || !destination_metadata.has(257)) {
+        return failed(core::io::Error::InvalidInput, 0, 0);
+    }
+    let source_regular: bool = match (std::file_ops::kind(source_metadata.mode)) {
+        std::file_ops::Kind::Regular -> true, _ -> false,
+    };
+    let destination_regular: bool = match (std::file_ops::kind(destination_metadata.mode)) {
+        std::file_ops::Kind::Regular -> true, _ -> false,
+    };
+    if (!source_regular || !destination_regular) { return failed(core::io::Error::InvalidInput, 0, 0); }
+    if (source_metadata.identity.device_major == destination_metadata.identity.device_major
+        && source_metadata.identity.device_minor == destination_metadata.identity.device_minor
+        && source_metadata.identity.inode == destination_metadata.identity.inode) {
+        return failed(core::io::Error::InvalidInput, 0, 0);
+    }
+
+    // Preparation changes shared descriptor offsets, then discards the old
+    // destination contents. Failures from this point are not rolled back.
+    let source_seek: core::result::Result<i64, core::io::Error> = std::file_ops::seek(source, 0, std::file_ops::Origin::Start);
+    if (core::result::is_err(source_seek)) { return failed(core::result::unwrap_err(source_seek), 0, 0); }
+    if (core::result::unwrap(source_seek) != 0) { return failed(core::io::Error::InvalidCount, 0, 0); }
+    let destination_seek: core::result::Result<i64, core::io::Error> = std::file_ops::seek(destination, 0, std::file_ops::Origin::Start);
+    if (core::result::is_err(destination_seek)) { return failed(core::result::unwrap_err(destination_seek), 0, 0); }
+    if (core::result::unwrap(destination_seek) != 0) { return failed(core::io::Error::InvalidCount, 0, 0); }
+    let truncated: core::result::Result<i32, core::io::Error> = std::file_ops::set_len(destination, 0);
+    if (core::result::is_err(truncated)) { return failed(core::result::unwrap_err(truncated), 0, 0); }
+
+    let total: u64 = 0;
+    while (total < max_bytes) {
+        let amount: i32 = scratch.length;
+        let remaining: u64 = max_bytes - total;
+        if (remaining < (amount as u64)) { amount = remaining as i32; }
+        let received_result: core::result::Result<i32, core::io::Error> = source.read(scratch.values, scratch.start, amount);
+        if (core::result::is_err(received_result)) { return failed(core::result::unwrap_err(received_result), total, total); }
+        let received: i32 = core::result::unwrap(received_result);
+        if (received < 0 || received > amount) { return failed(core::io::Error::InvalidCount, total, total); }
+        if (received == 0) { return core::result::Ok(total); }
+        let completed: i32 = 0;
+        while (completed < received) {
+            let sent_result: core::result::Result<i32, core::io::Error> = destination.write(scratch.values, scratch.start + completed, received - completed);
+            if (core::result::is_err(sent_result)) {
+                return failed(core::result::unwrap_err(sent_result), total + (received as u64), total + (completed as u64));
+            }
+            let sent: i32 = core::result::unwrap(sent_result);
+            if (sent < 0 || sent > received - completed) {
+                return failed(core::io::Error::InvalidCount, total + (received as u64), total + (completed as u64));
+            }
+            if (sent == 0) { return failed(core::io::Error::WriteZero, total + (received as u64), total + (completed as u64)); }
+            completed += sent;
+        }
+        // Every read is bounded by the remaining quota, so this cannot
+        // overflow. The extra EOF probe also fits u64 at the accepted limit.
+        total += received as u64;
+    }
+    // A size from metadata cannot establish EOF. At the exact quota, consume
+    // at most one further byte, and never write that probe to the destination.
+    let probe_result: core::result::Result<i32, core::io::Error> = source.read(scratch.values, scratch.start, 1);
+    if (core::result::is_err(probe_result)) { return failed(core::result::unwrap_err(probe_result), total, total); }
+    let probe: i32 = core::result::unwrap(probe_result);
+    if (probe < 0 || probe > 1) { return failed(core::io::Error::InvalidCount, total, total); }
+    if (probe == 0) { return core::result::Ok(total); }
+    return failed(core::io::Error::LimitExceeded, total + 1, total);
+}

@@ -4,6 +4,7 @@
 module alloc::vec;
 import alloc::allocator;
 import core::cmp;
+import core::iter;
 import core::mem;
 import core::option;
 import core::panic;
@@ -47,6 +48,11 @@ pub impl<T> Vec<T> {
     pub fn as_view(&self) -> core::slice::View<T> {
         // Owned storage already establishes the initialized count.
         return core::slice::View { values: self.as_slice(), start: 0, length: self.length };
+    }
+    // The owner already guarantees this initialized, physically backed view.
+    pub fn iter(&self) -> core::iter::SliceIter<T> {
+        let view: core::slice::View<T> = self.as_view();
+        return core::iter::SliceIter { cursor: view.iter() };
     }
     pub fn get(&self, index: i32) -> core::option::Option<T> {
         if (index < 0 || index >= self.length) { return core::option::None(); }

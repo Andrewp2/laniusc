@@ -3,6 +3,7 @@
 module alloc::hash_set;
 import alloc::hash_map;
 import core::cmp;
+import core::iter;
 import core::hash;
 import core::option;
 import core::result;
@@ -109,5 +110,9 @@ pub impl<T> HashSet<T> {
     pub fn try_symmetric_difference(&self, other: &HashSet<T>) -> core::result::Result<HashSet<T>, alloc::hash_map::Error> where T: core::hash::Hash<T>, T: core::cmp::Eq<T> { return self.combine(other, 4); }
 }
 pub impl<T> Iter<T> {
+    pub fn borrow(&self) -> &Iter<T> { return self; }
+}
+
+pub impl<T> core::iter::Iterator<T> for Iter<T> {
     pub fn next(&self) -> core::option::Option<T> { return alloc::hash_map::key_next<T>(self.state.borrow()); }
 }

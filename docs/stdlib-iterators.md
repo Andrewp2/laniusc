@@ -6,6 +6,10 @@ protocol, borrowed adapters, state models, owner aliases and bound rejections.
 This is native CPU execution evidence; it does not establish user-program GPU
 execution or other targets.
 
+[Collection, Text and bitset cursors](stdlib-collection-iterators.md) implement
+the same protocol. Their separate native gates check mixed traversal,
+compound map entries, borrowed String aliases and byte/scalar view behavior.
+
 `core::iter` connects borrowed slice cursors, finite i32 range cursors, borrowed
 adapters and bounded consumers through one explicit protocol:
 

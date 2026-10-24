@@ -1,0 +1,51 @@
+// One String owner and one Vec allocation. Items borrow nested storage.
+module app::main;
+import alloc::string;
+import alloc::vec;
+import core::iter;
+import core::option;
+import core::result;
+import core::text;
+
+fn pull<I, T>(source: &I) -> core::option::Option<T> where I: core::iter::Iterator<T> {
+    let item: core::option::Option<T> = source.next(); return item;
+}
+fn main() -> i32 {
+    let bytes: [u8; 4] = [97, 194, 162, 100];
+    let owner: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(bytes, 4));
+    let aliases: alloc::vec::Vec<alloc::string::String> = core::result::unwrap(alloc::vec::with_capacity<alloc::string::String>(3));
+    let index: i32 = 0;
+    while (index < 3) {
+        let added: core::result::Result<i32, alloc::vec::Error> = aliases.try_push(owner);
+        assert(core::result::is_ok(added)); index += 1;
+    }
+    let source: core::iter::SliceIter<alloc::string::String> = aliases.iter();
+    let fork: core::iter::SliceIter<alloc::string::String> = source;
+    let selected: core::iter::Take<core::iter::SliceIter<alloc::string::String>, alloc::string::String> =
+        core::iter::take<core::iter::SliceIter<alloc::string::String>, alloc::string::String>(source.borrow(), 1);
+    let picked: core::option::Option<alloc::string::String> = pull<core::iter::Take<core::iter::SliceIter<alloc::string::String>, alloc::string::String>, alloc::string::String>(selected.borrow());
+    let borrowed: alloc::string::String = core::option::unwrap(picked);
+    let skipped: core::iter::Advance = core::iter::advance_up_to<core::iter::SliceIter<alloc::string::String>, alloc::string::String>(source.borrow(), 8);
+    assert(skipped.advanced == 2 && skipped.exhausted && source.remaining() == 0 && fork.remaining() == 3);
+    let forked: core::option::Option<alloc::string::String> = pull<core::iter::SliceIter<alloc::string::String>, alloc::string::String>(fork.borrow());
+    let alias: alloc::string::String = core::option::unwrap(forked);
+    assert(owner.byte_len() == 4 && borrowed.byte_len() == 4 && alias.byte_len() == 4);
+    let text: core::text::Text = borrowed.as_text();
+    let first: core::option::Option<u8> = text.byte_at(0);
+    let last: core::option::Option<u8> = text.byte_at(3);
+    assert(core::option::unwrap(first) == 97 && core::option::unwrap(last) == 100);
+    // Releasing the Vec releases its storage, while the separate String owner
+    // still backs the yielded aliases. Never access either cursor afterwards.
+    aliases.destroy();
+    let still_live: core::text::Text = alias.as_text();
+    let scalars: core::text::Scalars = still_live.scalars();
+    let counted: core::iter::Advance = core::iter::advance_up_to<core::text::Scalars, core::text::Scalar>(scalars.borrow(), 8);
+    assert(counted.advanced == 3 && counted.exhausted && owner.byte_len() == 4);
+    owner.destroy();
+    let empty: alloc::vec::Vec<i32> = alloc::vec::new();
+    let empty_cursor: core::iter::SliceIter<i32> = empty.iter();
+    let empty_result: core::iter::Advance = core::iter::advance_up_to<core::iter::SliceIter<i32>, i32>(empty_cursor.borrow(), 1);
+    assert(empty_result.advanced == 0 && empty_result.exhausted);
+    empty.destroy();
+    return 0;
+}

@@ -3,6 +3,7 @@
 module alloc::tree_map;
 import alloc::allocator;
 import core::cmp;
+import core::iter;
 import core::mem;
 import core::option;
 import core::result;
@@ -299,21 +300,25 @@ pub impl<K, V> TreeMap<K, V> {
 }
 
 pub impl<K, V> Cursor<K, V> {
+    pub fn borrow(&self) -> &Cursor<K, V> { return self; }
     pub fn is_empty(&self) -> bool { return self.front < 0; }
-    pub fn next(&self) -> core::option::Option<Entry<K, V>> {
-        if (self.front < 0) { return core::option::None(); }
-        let nodes: [Node<K, V>] = core::mem::typed_slice_from_storage(self.storage, self.reserved);
-        let node: Node<K, V> = nodes[self.front];
-        if (self.front == self.back) { self.front = -1; self.back = -1; }
-        else { self.front = adjacent(nodes, self.front, false); }
-        return core::option::Some(node.item);
-    }
     pub fn next_back(&self) -> core::option::Option<Entry<K, V>> {
         if (self.back < 0) { return core::option::None(); }
         let nodes: [Node<K, V>] = core::mem::typed_slice_from_storage(self.storage, self.reserved);
         let node: Node<K, V> = nodes[self.back];
         if (self.front == self.back) { self.front = -1; self.back = -1; }
         else { self.back = adjacent(nodes, self.back, true); }
+        return core::option::Some(node.item);
+    }
+}
+
+pub impl<K, V> core::iter::Iterator<Entry<K, V>> for Cursor<K, V> {
+    pub fn next(&self) -> core::option::Option<Entry<K, V>> {
+        if (self.front < 0) { return core::option::None(); }
+        let nodes: [Node<K, V>] = core::mem::typed_slice_from_storage(self.storage, self.reserved);
+        let node: Node<K, V> = nodes[self.front];
+        if (self.front == self.back) { self.front = -1; self.back = -1; }
+        else { self.front = adjacent(nodes, self.front, false); }
         return core::option::Some(node.item);
     }
 }

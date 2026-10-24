@@ -1,0 +1,19 @@
+
+running 1 test
+test regular_file_copy_preserves_bounds_identity_and_acknowledged_progress ... 
+thread 'regular_file_copy_preserves_bounds_identity_and_acknowledged_progress' (72772) panicked at tests/stdlib_file_copy_execution.rs:49:29:
+regular-file copy: error[LNC0069]: integer literal is outside its checked type range
+ --> /home/andrew-peterson/code/laniusc/tests/fixtures/stdlib_foundation/file_copy/descriptor.lani:102:35
+    |
+102 |     let storage: [u8; 4100] = [0; 4100];
+    |                                   ^^^^ this magnitude cannot be represented by the expected integer type
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    regular_file_copy_preserves_bounds_identity_and_acknowledged_progress
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.03s
+

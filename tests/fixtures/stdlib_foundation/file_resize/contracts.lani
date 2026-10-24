@@ -1,4 +1,4 @@
-// Native admission pending. Driver supplies input bytes [0,128,255,97,98,99].
+// Native admission passed 2026-10-24. Driver supplies [0,128,255,97,98,99].
 // Eight ftruncate attempts, three descriptor closes; final input is [0,0,0].
 module app::main;
 import core::io;

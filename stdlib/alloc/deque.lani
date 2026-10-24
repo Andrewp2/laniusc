@@ -3,6 +3,7 @@
 module alloc::deque;
 import alloc::allocator;
 import core::cmp;
+import core::iter;
 import core::mem;
 import core::option;
 import core::panic;
@@ -306,17 +307,21 @@ pub impl<T> Deque<T> {
 }
 
 pub impl<T> Cursor<T> {
+    pub fn borrow(&self) -> &Cursor<T> { return self; }
     pub fn remaining(&self) -> i32 { return self.back - self.front; }
     fn get(&self, ordinal: i32) -> core::option::Option<T> {
         if (ordinal < self.first.len()) { return self.first.get(ordinal); }
         return self.second.get(ordinal - self.first.len());
     }
-    pub fn next(&self) -> core::option::Option<T> {
-        if (self.front == self.back) { return core::option::None(); }
-        let ordinal: i32 = self.front; self.front += 1; return self.get(ordinal);
-    }
     pub fn next_back(&self) -> core::option::Option<T> {
         if (self.front == self.back) { return core::option::None(); }
         self.back -= 1; return self.get(self.back);
+    }
+}
+
+pub impl<T> core::iter::Iterator<T> for Cursor<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.front == self.back) { return core::option::None(); }
+        let ordinal: i32 = self.front; self.front += 1; return self.get(ordinal);
     }
 }

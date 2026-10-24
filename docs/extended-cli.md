@@ -196,9 +196,11 @@ timing threshold is used as a test gate.
 timeout --kill-after=2s 100s env CARGO_TARGET_DIR="$PWD/target/stdlib-build" CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=90000 cargo test --locked --test extended_cli_execution -- --nocapture
 ```
 
-The suite requires the GPU compiler's Vulkan environment and `strace`. No
-compiler or runtime implementation changed. The checksum scratch storage uses
-the documented packed-i32 workaround for large byte-array repeat initialization.
+The suite requires the GPU compiler's Vulkan environment and `strace`. The
+original CLI milestone changed no compiler or runtime implementation. Its
+checksum uses packed i32 scratch storage. The earlier large-byte-repeat
+checker error was subsequently [fixed in `e59a9183`](compiler-array-repeat-context.md);
+the CLI measurements above retain their original checkpoint.
 Configuration loading now has its own [contracts and execution suite](extended-config.md).
 Logging and complete directory/runtime support remain on the
 [library roadmap](library-roadmap.md).

@@ -11,6 +11,7 @@ Layer: `core`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [stdlib-iterators](../../stdlib-iterators.md)
+- [stdlib-collection-iterators](../../stdlib-collection-iterators.md)
 
 Declaration counts: field: 12; function: 7; impl: 8; method: 12; struct: 5; trait: 1; trait member: 1.
 

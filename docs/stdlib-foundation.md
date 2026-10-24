@@ -171,16 +171,32 @@ The [range-statistics application](stdlib-range-stats.md) adds one compilation
 and 41 native cases for inclusive range/take composition, million-item quotas,
 strict arguments and exact allocation/output-failure cleanup.
 
+[Collection, Text and bitset iterator integration](stdlib-collection-iterators.md)
+adds three native executables: one processes 408 independent collection model
+commands, while the others check allocation-free views and exact shallow String
+owner lifetimes. Existing cursor algorithms now implement the shared protocol;
+Vec and Text byte factories preserve their original storage views.
+
+[Checked file lengths](stdlib-file-resize.md) execute shrink, zero extension,
+sparse lengths above 4 GiB and unchanged duplicated offsets, with explicit
+one-attempt failures. [Bounded regular-file copying](stdlib-file-copy.md) checks
+descriptor access, required metadata and inode aliases before truncation, then
+uses actual EOF and explicit quota probes. Its descriptor gate runs 84 native
+cases; the [copy-file application](stdlib-copy-file.md) runs 59 more with raw
+paths and allocation/descriptor cleanup. These counts exclude the two earlier
+fixture compilation failures retained in the byte-array count capture.
+
 Verified execution is x86_64 Linux output from GPU compilation; user GPU kernels
 and other targets are unverified. Threads, native FFI/TLS/SQLite, generic
-collection/text iterator integration, additional stream interfaces and
+iterator adapters and further cursor integrations, additional stream interfaces and
 distribution/reference completion remain on the [full roadmap](library-roadmap.md).
 Compiler failures retain
 [reproductions and successful controls](library-dependencies.md).
 
 The [generated declaration reference](library-api-reference.md) inventories
-218 source modules with signatures, bounds, fields and exact source links.
-Twenty focused CPU tests and a fresh generated-output check pass. This is
+219 source modules with signatures, bounds, fields and exact source links.
+The original twenty focused CPU tests passed; the current regenerated-output
+check also passes without changes to the generator. This is
 documentation extraction, not runtime verification; semantic guide gaps remain
 listed explicitly. The [strict UTF codec guide](stdlib-utf-codecs.md) now maps
 83 existing functions to their indexing, malformed-input, mutation, progress,

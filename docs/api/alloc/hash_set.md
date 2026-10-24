@@ -11,8 +11,9 @@ Layer: `alloc`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [stdlib-owned-sets](../../stdlib-owned-sets.md)
+- [stdlib-collection-iterators](../../stdlib-collection-iterators.md)
 
-Declaration counts: field: 2; function: 2; impl: 2; method: 23; struct: 2.
+Declaration counts: field: 2; function: 2; impl: 3; method: 24; struct: 2.
 
 ## Declared imports
 
@@ -20,9 +21,10 @@ Direct source imports; this is not a package-resolution or transitive dependency
 
 - [alloc::hash_map](hash_map.md) · [source](../../../stdlib/alloc/hash_set.lani#L4)
 - [core::cmp](../core/cmp.md) · [source](../../../stdlib/alloc/hash_set.lani#L5)
-- [core::hash](../core/hash.md) · [source](../../../stdlib/alloc/hash_set.lani#L6)
-- [core::option](../core/option.md) · [source](../../../stdlib/alloc/hash_set.lani#L7)
-- [core::result](../core/result.md) · [source](../../../stdlib/alloc/hash_set.lani#L8)
+- [core::iter](../core/iter.md) · [source](../../../stdlib/alloc/hash_set.lani#L6)
+- [core::hash](../core/hash.md) · [source](../../../stdlib/alloc/hash_set.lani#L7)
+- [core::option](../core/option.md) · [source](../../../stdlib/alloc/hash_set.lani#L8)
+- [core::result](../core/result.md) · [source](../../../stdlib/alloc/hash_set.lani#L9)
 
 ## Types, fields and variants
 
@@ -30,7 +32,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: HashSet
 
-[Source line 10](../../../stdlib/alloc/hash_set.lani#L10)
+[Source line 11](../../../stdlib/alloc/hash_set.lani#L11)
 
 ```lanius
 pub struct HashSet<T>
@@ -38,7 +40,7 @@ pub struct HashSet<T>
 
 #### field: state
 
-[Source line 10](../../../stdlib/alloc/hash_set.lani#L10)
+[Source line 11](../../../stdlib/alloc/hash_set.lani#L11)
 
 ```lanius
 state: alloc::hash_map::KeyStorage
@@ -46,7 +48,7 @@ state: alloc::hash_map::KeyStorage
 
 ### struct: Iter
 
-[Source line 11](../../../stdlib/alloc/hash_set.lani#L11)
+[Source line 12](../../../stdlib/alloc/hash_set.lani#L12)
 
 ```lanius
 pub struct Iter<T>
@@ -54,7 +56,7 @@ pub struct Iter<T>
 
 #### field: state
 
-[Source line 11](../../../stdlib/alloc/hash_set.lani#L11)
+[Source line 12](../../../stdlib/alloc/hash_set.lani#L12)
 
 ```lanius
 state: alloc::hash_map::KeyCursor
@@ -64,7 +66,7 @@ state: alloc::hash_map::KeyCursor
 
 ### function: new
 
-[Source line 13](../../../stdlib/alloc/hash_set.lani#L13)
+[Source line 14](../../../stdlib/alloc/hash_set.lani#L14)
 
 ```lanius
 pub fn new<T>() -> HashSet<T>
@@ -72,7 +74,7 @@ pub fn new<T>() -> HashSet<T>
 
 ### function: with_capacity
 
-[Source line 14](../../../stdlib/alloc/hash_set.lani#L14)
+[Source line 15](../../../stdlib/alloc/hash_set.lani#L15)
 
 ```lanius
 pub fn with_capacity<T>(capacity: i32) -> core::result::Result<HashSet<T>, alloc::hash_map::Error>
@@ -80,9 +82,9 @@ pub fn with_capacity<T>(capacity: i32) -> core::result::Result<HashSet<T>, alloc
 
 ## Implementation blocks and public methods
 
-### impl at line 20
+### impl at line 21
 
-[Source line 20](../../../stdlib/alloc/hash_set.lani#L20)
+[Source line 21](../../../stdlib/alloc/hash_set.lani#L21)
 
 ```lanius
 pub impl<T> HashSet<T>
@@ -90,7 +92,7 @@ pub impl<T> HashSet<T>
 
 #### method: borrow
 
-[Source line 21](../../../stdlib/alloc/hash_set.lani#L21)
+[Source line 22](../../../stdlib/alloc/hash_set.lani#L22)
 
 ```lanius
 pub fn borrow(&self) -> &HashSet<T>
@@ -98,7 +100,7 @@ pub fn borrow(&self) -> &HashSet<T>
 
 #### method: len
 
-[Source line 22](../../../stdlib/alloc/hash_set.lani#L22)
+[Source line 23](../../../stdlib/alloc/hash_set.lani#L23)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -106,7 +108,7 @@ pub fn len(&self) -> i32
 
 #### method: is_empty
 
-[Source line 23](../../../stdlib/alloc/hash_set.lani#L23)
+[Source line 24](../../../stdlib/alloc/hash_set.lani#L24)
 
 ```lanius
 pub fn is_empty(&self) -> bool
@@ -114,7 +116,7 @@ pub fn is_empty(&self) -> bool
 
 #### method: capacity
 
-[Source line 24](../../../stdlib/alloc/hash_set.lani#L24)
+[Source line 25](../../../stdlib/alloc/hash_set.lani#L25)
 
 ```lanius
 pub fn capacity(&self) -> i32
@@ -122,7 +124,7 @@ pub fn capacity(&self) -> i32
 
 #### method: contains
 
-[Source line 25](../../../stdlib/alloc/hash_set.lani#L25)
+[Source line 26](../../../stdlib/alloc/hash_set.lani#L26)
 
 ```lanius
 pub fn contains(&self, key: T) -> bool where T: core::hash::Hash<T>, T: core::cmp::Eq<T>
@@ -130,7 +132,7 @@ pub fn contains(&self, key: T) -> bool where T: core::hash::Hash<T>, T: core::cm
 
 #### method: get
 
-[Source line 27](../../../stdlib/alloc/hash_set.lani#L27)
+[Source line 28](../../../stdlib/alloc/hash_set.lani#L28)
 
 ```lanius
 pub fn get(&self, key: T) -> core::option::Option<T> where T: core::hash::Hash<T>, T: core::cmp::Eq<T>
@@ -138,7 +140,7 @@ pub fn get(&self, key: T) -> core::option::Option<T> where T: core::hash::Hash<T
 
 #### method: try_insert
 
-[Source line 30](../../../stdlib/alloc/hash_set.lani#L30)
+[Source line 31](../../../stdlib/alloc/hash_set.lani#L31)
 
 ```lanius
 pub fn try_insert(&self, key: T) -> core::result::Result<core::option::Option<T>, alloc::hash_map::Error> where T: core::hash::Hash<T>, T: core::cmp::Eq<T>
@@ -146,7 +148,7 @@ pub fn try_insert(&self, key: T) -> core::result::Result<core::option::Option<T>
 
 #### method: try_replace
 
-[Source line 36](../../../stdlib/alloc/hash_set.lani#L36)
+[Source line 37](../../../stdlib/alloc/hash_set.lani#L37)
 
 ```lanius
 pub fn try_replace(&self, key: T) -> core::result::Result<core::option::Option<T>, alloc::hash_map::Error> where T: core::hash::Hash<T>, T: core::cmp::Eq<T>
@@ -154,7 +156,7 @@ pub fn try_replace(&self, key: T) -> core::result::Result<core::option::Option<T
 
 #### method: remove
 
-[Source line 40](../../../stdlib/alloc/hash_set.lani#L40)
+[Source line 41](../../../stdlib/alloc/hash_set.lani#L41)
 
 ```lanius
 pub fn remove(&self, key: T) -> core::option::Option<T> where T: core::hash::Hash<T>, T: core::cmp::Eq<T>
@@ -162,7 +164,7 @@ pub fn remove(&self, key: T) -> core::option::Option<T> where T: core::hash::Has
 
 #### method: iter
 
-[Source line 42](../../../stdlib/alloc/hash_set.lani#L42)
+[Source line 43](../../../stdlib/alloc/hash_set.lani#L43)
 
 ```lanius
 pub fn iter(&self) -> Iter<T>
@@ -170,7 +172,7 @@ pub fn iter(&self) -> Iter<T>
 
 #### method: try_reserve
 
-[Source line 43](../../../stdlib/alloc/hash_set.lani#L43)
+[Source line 44](../../../stdlib/alloc/hash_set.lani#L44)
 
 ```lanius
 pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, alloc::hash_map::Error>
@@ -178,7 +180,7 @@ pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, alloc::h
 
 #### method: try_shrink_to_fit
 
-[Source line 44](../../../stdlib/alloc/hash_set.lani#L44)
+[Source line 45](../../../stdlib/alloc/hash_set.lani#L45)
 
 ```lanius
 pub fn try_shrink_to_fit(&self) -> core::result::Result<i32, alloc::hash_map::Error>
@@ -186,7 +188,7 @@ pub fn try_shrink_to_fit(&self) -> core::result::Result<i32, alloc::hash_map::Er
 
 #### method: try_clone
 
-[Source line 46](../../../stdlib/alloc/hash_set.lani#L46)
+[Source line 47](../../../stdlib/alloc/hash_set.lani#L47)
 
 ```lanius
 pub fn try_clone(&self) -> core::result::Result<HashSet<T>, alloc::hash_map::Error>
@@ -194,7 +196,7 @@ pub fn try_clone(&self) -> core::result::Result<HashSet<T>, alloc::hash_map::Err
 
 #### method: clear
 
-[Source line 53](../../../stdlib/alloc/hash_set.lani#L53)
+[Source line 54](../../../stdlib/alloc/hash_set.lani#L54)
 
 ```lanius
 pub fn clear(&self)
@@ -202,7 +204,7 @@ pub fn clear(&self)
 
 #### method: destroy
 
-[Source line 54](../../../stdlib/alloc/hash_set.lani#L54)
+[Source line 55](../../../stdlib/alloc/hash_set.lani#L55)
 
 ```lanius
 pub fn destroy(&self)
@@ -210,7 +212,7 @@ pub fn destroy(&self)
 
 #### method: is_subset
 
-[Source line 55](../../../stdlib/alloc/hash_set.lani#L55)
+[Source line 56](../../../stdlib/alloc/hash_set.lani#L56)
 
 ```lanius
 pub fn is_subset(&self, other: &HashSet<T>) -> bool where T: core::hash::Hash<T>, T: core::cmp::Eq<T>
@@ -218,7 +220,7 @@ pub fn is_subset(&self, other: &HashSet<T>) -> bool where T: core::hash::Hash<T>
 
 #### method: is_disjoint
 
-[Source line 65](../../../stdlib/alloc/hash_set.lani#L65)
+[Source line 66](../../../stdlib/alloc/hash_set.lani#L66)
 
 ```lanius
 pub fn is_disjoint(&self, other: &HashSet<T>) -> bool where T: core::hash::Hash<T>, T: core::cmp::Eq<T>
@@ -226,7 +228,7 @@ pub fn is_disjoint(&self, other: &HashSet<T>) -> bool where T: core::hash::Hash<
 
 #### method: equals
 
-[Source line 74](../../../stdlib/alloc/hash_set.lani#L74)
+[Source line 75](../../../stdlib/alloc/hash_set.lani#L75)
 
 ```lanius
 pub fn equals(&self, other: &HashSet<T>) -> bool where T: core::hash::Hash<T>, T: core::cmp::Eq<T>
@@ -234,7 +236,7 @@ pub fn equals(&self, other: &HashSet<T>) -> bool where T: core::hash::Hash<T>, T
 
 #### method: try_union
 
-[Source line 106](../../../stdlib/alloc/hash_set.lani#L106)
+[Source line 107](../../../stdlib/alloc/hash_set.lani#L107)
 
 ```lanius
 pub fn try_union(&self, other: &HashSet<T>) -> core::result::Result<HashSet<T>, alloc::hash_map::Error> where T: core::hash::Hash<T>, T: core::cmp::Eq<T>
@@ -242,7 +244,7 @@ pub fn try_union(&self, other: &HashSet<T>) -> core::result::Result<HashSet<T>, 
 
 #### method: try_intersection
 
-[Source line 107](../../../stdlib/alloc/hash_set.lani#L107)
+[Source line 108](../../../stdlib/alloc/hash_set.lani#L108)
 
 ```lanius
 pub fn try_intersection(&self, other: &HashSet<T>) -> core::result::Result<HashSet<T>, alloc::hash_map::Error> where T: core::hash::Hash<T>, T: core::cmp::Eq<T>
@@ -250,7 +252,7 @@ pub fn try_intersection(&self, other: &HashSet<T>) -> core::result::Result<HashS
 
 #### method: try_difference
 
-[Source line 108](../../../stdlib/alloc/hash_set.lani#L108)
+[Source line 109](../../../stdlib/alloc/hash_set.lani#L109)
 
 ```lanius
 pub fn try_difference(&self, other: &HashSet<T>) -> core::result::Result<HashSet<T>, alloc::hash_map::Error> where T: core::hash::Hash<T>, T: core::cmp::Eq<T>
@@ -258,23 +260,39 @@ pub fn try_difference(&self, other: &HashSet<T>) -> core::result::Result<HashSet
 
 #### method: try_symmetric_difference
 
-[Source line 109](../../../stdlib/alloc/hash_set.lani#L109)
+[Source line 110](../../../stdlib/alloc/hash_set.lani#L110)
 
 ```lanius
 pub fn try_symmetric_difference(&self, other: &HashSet<T>) -> core::result::Result<HashSet<T>, alloc::hash_map::Error> where T: core::hash::Hash<T>, T: core::cmp::Eq<T>
 ```
 
-### impl at line 111
+### impl at line 112
 
-[Source line 111](../../../stdlib/alloc/hash_set.lani#L111)
+[Source line 112](../../../stdlib/alloc/hash_set.lani#L112)
 
 ```lanius
 pub impl<T> Iter<T>
 ```
 
+#### method: borrow
+
+[Source line 113](../../../stdlib/alloc/hash_set.lani#L113)
+
+```lanius
+pub fn borrow(&self) -> &Iter<T>
+```
+
+### impl at line 116
+
+[Source line 116](../../../stdlib/alloc/hash_set.lani#L116)
+
+```lanius
+pub impl<T> core::iter::Iterator<T> for Iter<T>
+```
+
 #### method: next
 
-[Source line 112](../../../stdlib/alloc/hash_set.lani#L112)
+[Source line 117](../../../stdlib/alloc/hash_set.lani#L117)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>

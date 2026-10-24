@@ -11,8 +11,9 @@ Layer: `alloc`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [stdlib-deque](../../stdlib-deque.md)
+- [stdlib-collection-iterators](../../stdlib-collection-iterators.md)
 
-Declaration counts: constant: 1; enum: 1; field: 10; function: 3; impl: 2; method: 40; struct: 3; variant: 4.
+Declaration counts: constant: 1; enum: 1; field: 10; function: 3; impl: 3; method: 41; struct: 3; variant: 4.
 
 ## Declared imports
 
@@ -20,11 +21,12 @@ Direct source imports; this is not a package-resolution or transitive dependency
 
 - [alloc::allocator](allocator.md) · [source](../../../stdlib/alloc/deque.lani#L4)
 - [core::cmp](../core/cmp.md) · [source](../../../stdlib/alloc/deque.lani#L5)
-- [core::mem](../core/mem.md) · [source](../../../stdlib/alloc/deque.lani#L6)
-- [core::option](../core/option.md) · [source](../../../stdlib/alloc/deque.lani#L7)
-- [core::panic](../core/panic.md) · [source](../../../stdlib/alloc/deque.lani#L8)
-- [core::result](../core/result.md) · [source](../../../stdlib/alloc/deque.lani#L9)
-- [core::slice](../core/slice.md) · [source](../../../stdlib/alloc/deque.lani#L10)
+- [core::iter](../core/iter.md) · [source](../../../stdlib/alloc/deque.lani#L6)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/alloc/deque.lani#L7)
+- [core::option](../core/option.md) · [source](../../../stdlib/alloc/deque.lani#L8)
+- [core::panic](../core/panic.md) · [source](../../../stdlib/alloc/deque.lani#L9)
+- [core::result](../core/result.md) · [source](../../../stdlib/alloc/deque.lani#L10)
+- [core::slice](../core/slice.md) · [source](../../../stdlib/alloc/deque.lani#L11)
 
 ## Types, fields and variants
 
@@ -32,7 +34,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 12](../../../stdlib/alloc/deque.lani#L12)
+[Source line 13](../../../stdlib/alloc/deque.lani#L13)
 
 ```lanius
 pub enum Error
@@ -40,7 +42,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 12](../../../stdlib/alloc/deque.lani#L12)
+[Source line 13](../../../stdlib/alloc/deque.lani#L13)
 
 ```lanius
 Bounds
@@ -48,7 +50,7 @@ Bounds
 
 #### variant: InvalidCapacity
 
-[Source line 12](../../../stdlib/alloc/deque.lani#L12)
+[Source line 13](../../../stdlib/alloc/deque.lani#L13)
 
 ```lanius
 InvalidCapacity
@@ -56,7 +58,7 @@ InvalidCapacity
 
 #### variant: CapacityOverflow
 
-[Source line 12](../../../stdlib/alloc/deque.lani#L12)
+[Source line 13](../../../stdlib/alloc/deque.lani#L13)
 
 ```lanius
 CapacityOverflow
@@ -64,7 +66,7 @@ CapacityOverflow
 
 #### variant: AllocationFailed
 
-[Source line 12](../../../stdlib/alloc/deque.lani#L12)
+[Source line 13](../../../stdlib/alloc/deque.lani#L13)
 
 ```lanius
 AllocationFailed
@@ -72,7 +74,7 @@ AllocationFailed
 
 ### struct: Deque
 
-[Source line 13](../../../stdlib/alloc/deque.lani#L13)
+[Source line 14](../../../stdlib/alloc/deque.lani#L14)
 
 ```lanius
 pub struct Deque<T>
@@ -80,7 +82,7 @@ pub struct Deque<T>
 
 #### field: storage
 
-[Source line 13](../../../stdlib/alloc/deque.lani#L13)
+[Source line 14](../../../stdlib/alloc/deque.lani#L14)
 
 ```lanius
 storage: ptr
@@ -88,7 +90,7 @@ storage: ptr
 
 #### field: length
 
-[Source line 13](../../../stdlib/alloc/deque.lani#L13)
+[Source line 14](../../../stdlib/alloc/deque.lani#L14)
 
 ```lanius
 length: i32
@@ -96,7 +98,7 @@ length: i32
 
 #### field: reserved
 
-[Source line 13](../../../stdlib/alloc/deque.lani#L13)
+[Source line 14](../../../stdlib/alloc/deque.lani#L14)
 
 ```lanius
 reserved: i32
@@ -104,7 +106,7 @@ reserved: i32
 
 #### field: head
 
-[Source line 13](../../../stdlib/alloc/deque.lani#L13)
+[Source line 14](../../../stdlib/alloc/deque.lani#L14)
 
 ```lanius
 head: i32
@@ -112,7 +114,7 @@ head: i32
 
 ### struct: Views
 
-[Source line 14](../../../stdlib/alloc/deque.lani#L14)
+[Source line 15](../../../stdlib/alloc/deque.lani#L15)
 
 ```lanius
 pub struct Views<T>
@@ -120,7 +122,7 @@ pub struct Views<T>
 
 #### field: first
 
-[Source line 14](../../../stdlib/alloc/deque.lani#L14)
+[Source line 15](../../../stdlib/alloc/deque.lani#L15)
 
 ```lanius
 first: core::slice::View<T>
@@ -128,7 +130,7 @@ first: core::slice::View<T>
 
 #### field: second
 
-[Source line 14](../../../stdlib/alloc/deque.lani#L14)
+[Source line 15](../../../stdlib/alloc/deque.lani#L15)
 
 ```lanius
 second: core::slice::View<T>
@@ -136,7 +138,7 @@ second: core::slice::View<T>
 
 ### struct: Cursor
 
-[Source line 15](../../../stdlib/alloc/deque.lani#L15)
+[Source line 16](../../../stdlib/alloc/deque.lani#L16)
 
 ```lanius
 pub struct Cursor<T>
@@ -144,7 +146,7 @@ pub struct Cursor<T>
 
 #### field: first
 
-[Source line 15](../../../stdlib/alloc/deque.lani#L15)
+[Source line 16](../../../stdlib/alloc/deque.lani#L16)
 
 ```lanius
 first: core::slice::View<T>
@@ -152,7 +154,7 @@ first: core::slice::View<T>
 
 #### field: second
 
-[Source line 15](../../../stdlib/alloc/deque.lani#L15)
+[Source line 16](../../../stdlib/alloc/deque.lani#L16)
 
 ```lanius
 second: core::slice::View<T>
@@ -160,7 +162,7 @@ second: core::slice::View<T>
 
 #### field: front
 
-[Source line 15](../../../stdlib/alloc/deque.lani#L15)
+[Source line 16](../../../stdlib/alloc/deque.lani#L16)
 
 ```lanius
 front: i32
@@ -168,7 +170,7 @@ front: i32
 
 #### field: back
 
-[Source line 15](../../../stdlib/alloc/deque.lani#L15)
+[Source line 16](../../../stdlib/alloc/deque.lani#L16)
 
 ```lanius
 back: i32
@@ -178,7 +180,7 @@ back: i32
 
 ### constant: MAX_CAPACITY
 
-[Source line 16](../../../stdlib/alloc/deque.lani#L16)
+[Source line 17](../../../stdlib/alloc/deque.lani#L17)
 
 ```lanius
 pub const MAX_CAPACITY: i32 = 2147483647;
@@ -188,7 +190,7 @@ pub const MAX_CAPACITY: i32 = 2147483647;
 
 ### function: new
 
-[Source line 19](../../../stdlib/alloc/deque.lani#L19)
+[Source line 20](../../../stdlib/alloc/deque.lani#L20)
 
 ```lanius
 pub fn new<T>() -> Deque<T>
@@ -196,7 +198,7 @@ pub fn new<T>() -> Deque<T>
 
 ### function: with_capacity
 
-[Source line 23](../../../stdlib/alloc/deque.lani#L23)
+[Source line 24](../../../stdlib/alloc/deque.lani#L24)
 
 ```lanius
 pub fn with_capacity<T>(capacity: i32) -> core::result::Result<Deque<T>, Error>
@@ -204,7 +206,7 @@ pub fn with_capacity<T>(capacity: i32) -> core::result::Result<Deque<T>, Error>
 
 ### function: from_view
 
-[Source line 29](../../../stdlib/alloc/deque.lani#L29)
+[Source line 30](../../../stdlib/alloc/deque.lani#L30)
 
 ```lanius
 pub fn from_view<T>(values: core::slice::View<T>) -> core::result::Result<Deque<T>, Error>
@@ -212,9 +214,9 @@ pub fn from_view<T>(values: core::slice::View<T>) -> core::result::Result<Deque<
 
 ## Implementation blocks and public methods
 
-### impl at line 48
+### impl at line 49
 
-[Source line 48](../../../stdlib/alloc/deque.lani#L48)
+[Source line 49](../../../stdlib/alloc/deque.lani#L49)
 
 ```lanius
 pub impl<T> Deque<T>
@@ -222,7 +224,7 @@ pub impl<T> Deque<T>
 
 #### method: borrow
 
-[Source line 49](../../../stdlib/alloc/deque.lani#L49)
+[Source line 50](../../../stdlib/alloc/deque.lani#L50)
 
 ```lanius
 pub fn borrow(&self) -> &Deque<T>
@@ -230,7 +232,7 @@ pub fn borrow(&self) -> &Deque<T>
 
 #### method: len
 
-[Source line 50](../../../stdlib/alloc/deque.lani#L50)
+[Source line 51](../../../stdlib/alloc/deque.lani#L51)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -238,7 +240,7 @@ pub fn len(&self) -> i32
 
 #### method: capacity
 
-[Source line 51](../../../stdlib/alloc/deque.lani#L51)
+[Source line 52](../../../stdlib/alloc/deque.lani#L52)
 
 ```lanius
 pub fn capacity(&self) -> i32
@@ -246,7 +248,7 @@ pub fn capacity(&self) -> i32
 
 #### method: is_empty
 
-[Source line 52](../../../stdlib/alloc/deque.lani#L52)
+[Source line 53](../../../stdlib/alloc/deque.lani#L53)
 
 ```lanius
 pub fn is_empty(&self) -> bool
@@ -254,7 +256,7 @@ pub fn is_empty(&self) -> bool
 
 #### method: get
 
-[Source line 55](../../../stdlib/alloc/deque.lani#L55)
+[Source line 56](../../../stdlib/alloc/deque.lani#L56)
 
 ```lanius
 pub fn get(&self, ordinal: i32) -> core::option::Option<T>
@@ -262,7 +264,7 @@ pub fn get(&self, ordinal: i32) -> core::option::Option<T>
 
 #### method: get_or
 
-[Source line 59](../../../stdlib/alloc/deque.lani#L59)
+[Source line 60](../../../stdlib/alloc/deque.lani#L60)
 
 ```lanius
 pub fn get_or(&self, ordinal: i32, fallback: T) -> T
@@ -270,7 +272,7 @@ pub fn get_or(&self, ordinal: i32, fallback: T) -> T
 
 #### method: at
 
-[Source line 60](../../../stdlib/alloc/deque.lani#L60)
+[Source line 61](../../../stdlib/alloc/deque.lani#L61)
 
 ```lanius
 pub fn at(&self, ordinal: i32) -> T
@@ -278,7 +280,7 @@ pub fn at(&self, ordinal: i32) -> T
 
 #### method: front
 
-[Source line 64](../../../stdlib/alloc/deque.lani#L64)
+[Source line 65](../../../stdlib/alloc/deque.lani#L65)
 
 ```lanius
 pub fn front(&self) -> core::option::Option<T>
@@ -286,7 +288,7 @@ pub fn front(&self) -> core::option::Option<T>
 
 #### method: back
 
-[Source line 65](../../../stdlib/alloc/deque.lani#L65)
+[Source line 66](../../../stdlib/alloc/deque.lani#L66)
 
 ```lanius
 pub fn back(&self) -> core::option::Option<T>
@@ -294,7 +296,7 @@ pub fn back(&self) -> core::option::Option<T>
 
 #### method: as_views
 
-[Source line 66](../../../stdlib/alloc/deque.lani#L66)
+[Source line 67](../../../stdlib/alloc/deque.lani#L67)
 
 ```lanius
 pub fn as_views(&self) -> Views<T>
@@ -302,7 +304,7 @@ pub fn as_views(&self) -> Views<T>
 
 #### method: iter
 
-[Source line 74](../../../stdlib/alloc/deque.lani#L74)
+[Source line 75](../../../stdlib/alloc/deque.lani#L75)
 
 ```lanius
 pub fn iter(&self) -> Cursor<T>
@@ -310,7 +312,7 @@ pub fn iter(&self) -> Cursor<T>
 
 #### method: try_reserve
 
-[Source line 92](../../../stdlib/alloc/deque.lani#L92)
+[Source line 93](../../../stdlib/alloc/deque.lani#L93)
 
 ```lanius
 pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, Error>
@@ -318,7 +320,7 @@ pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, Error>
 
 #### method: try_push_back
 
-[Source line 111](../../../stdlib/alloc/deque.lani#L111)
+[Source line 112](../../../stdlib/alloc/deque.lani#L112)
 
 ```lanius
 pub fn try_push_back(&self, item: T) -> core::result::Result<i32, Error>
@@ -326,7 +328,7 @@ pub fn try_push_back(&self, item: T) -> core::result::Result<i32, Error>
 
 #### method: try_push_front
 
-[Source line 117](../../../stdlib/alloc/deque.lani#L117)
+[Source line 118](../../../stdlib/alloc/deque.lani#L118)
 
 ```lanius
 pub fn try_push_front(&self, item: T) -> core::result::Result<i32, Error>
@@ -334,7 +336,7 @@ pub fn try_push_front(&self, item: T) -> core::result::Result<i32, Error>
 
 #### method: pop_front
 
-[Source line 125](../../../stdlib/alloc/deque.lani#L125)
+[Source line 126](../../../stdlib/alloc/deque.lani#L126)
 
 ```lanius
 pub fn pop_front(&self) -> core::option::Option<T>
@@ -342,7 +344,7 @@ pub fn pop_front(&self) -> core::option::Option<T>
 
 #### method: pop_back
 
-[Source line 132](../../../stdlib/alloc/deque.lani#L132)
+[Source line 133](../../../stdlib/alloc/deque.lani#L133)
 
 ```lanius
 pub fn pop_back(&self) -> core::option::Option<T>
@@ -350,7 +352,7 @@ pub fn pop_back(&self) -> core::option::Option<T>
 
 #### method: set
 
-[Source line 139](../../../stdlib/alloc/deque.lani#L139)
+[Source line 140](../../../stdlib/alloc/deque.lani#L140)
 
 ```lanius
 pub fn set(&self, ordinal: i32, item: T) -> core::result::Result<T, Error>
@@ -358,7 +360,7 @@ pub fn set(&self, ordinal: i32, item: T) -> core::result::Result<T, Error>
 
 #### method: swap
 
-[Source line 144](../../../stdlib/alloc/deque.lani#L144)
+[Source line 145](../../../stdlib/alloc/deque.lani#L145)
 
 ```lanius
 pub fn swap(&self, left: i32, right: i32) -> core::result::Result<bool, Error>
@@ -366,7 +368,7 @@ pub fn swap(&self, left: i32, right: i32) -> core::result::Result<bool, Error>
 
 #### method: try_insert
 
-[Source line 149](../../../stdlib/alloc/deque.lani#L149)
+[Source line 150](../../../stdlib/alloc/deque.lani#L150)
 
 ```lanius
 pub fn try_insert(&self, ordinal: i32, item: T) -> core::result::Result<i32, Error>
@@ -374,7 +376,7 @@ pub fn try_insert(&self, ordinal: i32, item: T) -> core::result::Result<i32, Err
 
 #### method: remove
 
-[Source line 165](../../../stdlib/alloc/deque.lani#L165)
+[Source line 166](../../../stdlib/alloc/deque.lani#L166)
 
 ```lanius
 pub fn remove(&self, ordinal: i32) -> core::result::Result<T, Error>
@@ -382,7 +384,7 @@ pub fn remove(&self, ordinal: i32) -> core::result::Result<T, Error>
 
 #### method: swap_remove_front
 
-[Source line 179](../../../stdlib/alloc/deque.lani#L179)
+[Source line 180](../../../stdlib/alloc/deque.lani#L180)
 
 ```lanius
 pub fn swap_remove_front(&self, ordinal: i32) -> core::result::Result<T, Error>
@@ -390,7 +392,7 @@ pub fn swap_remove_front(&self, ordinal: i32) -> core::result::Result<T, Error>
 
 #### method: swap_remove_back
 
-[Source line 184](../../../stdlib/alloc/deque.lani#L184)
+[Source line 185](../../../stdlib/alloc/deque.lani#L185)
 
 ```lanius
 pub fn swap_remove_back(&self, ordinal: i32) -> core::result::Result<T, Error>
@@ -398,7 +400,7 @@ pub fn swap_remove_back(&self, ordinal: i32) -> core::result::Result<T, Error>
 
 #### method: try_extend_back
 
-[Source line 225](../../../stdlib/alloc/deque.lani#L225)
+[Source line 226](../../../stdlib/alloc/deque.lani#L226)
 
 ```lanius
 pub fn try_extend_back(&self, input: core::slice::View<T>) -> core::result::Result<i32, Error>
@@ -406,7 +408,7 @@ pub fn try_extend_back(&self, input: core::slice::View<T>) -> core::result::Resu
 
 #### method: try_extend_front
 
-[Source line 226](../../../stdlib/alloc/deque.lani#L226)
+[Source line 227](../../../stdlib/alloc/deque.lani#L227)
 
 ```lanius
 pub fn try_extend_front(&self, input: core::slice::View<T>) -> core::result::Result<i32, Error>
@@ -414,7 +416,7 @@ pub fn try_extend_front(&self, input: core::slice::View<T>) -> core::result::Res
 
 #### method: truncate
 
-[Source line 227](../../../stdlib/alloc/deque.lani#L227)
+[Source line 228](../../../stdlib/alloc/deque.lani#L228)
 
 ```lanius
 pub fn truncate(&self, length: i32) -> core::result::Result<i32, Error>
@@ -422,7 +424,7 @@ pub fn truncate(&self, length: i32) -> core::result::Result<i32, Error>
 
 #### method: clear
 
-[Source line 233](../../../stdlib/alloc/deque.lani#L233)
+[Source line 234](../../../stdlib/alloc/deque.lani#L234)
 
 ```lanius
 pub fn clear(&self)
@@ -430,7 +432,7 @@ pub fn clear(&self)
 
 #### method: try_resize
 
-[Source line 234](../../../stdlib/alloc/deque.lani#L234)
+[Source line 235](../../../stdlib/alloc/deque.lani#L235)
 
 ```lanius
 pub fn try_resize(&self, length: i32, fill: T) -> core::result::Result<i32, Error>
@@ -438,7 +440,7 @@ pub fn try_resize(&self, length: i32, fill: T) -> core::result::Result<i32, Erro
 
 #### method: rotate_left
 
-[Source line 243](../../../stdlib/alloc/deque.lani#L243)
+[Source line 244](../../../stdlib/alloc/deque.lani#L244)
 
 ```lanius
 pub fn rotate_left(&self, count: i32) -> core::result::Result<i32, Error>
@@ -446,7 +448,7 @@ pub fn rotate_left(&self, count: i32) -> core::result::Result<i32, Error>
 
 #### method: rotate_right
 
-[Source line 256](../../../stdlib/alloc/deque.lani#L256)
+[Source line 257](../../../stdlib/alloc/deque.lani#L257)
 
 ```lanius
 pub fn rotate_right(&self, count: i32) -> core::result::Result<i32, Error>
@@ -454,7 +456,7 @@ pub fn rotate_right(&self, count: i32) -> core::result::Result<i32, Error>
 
 #### method: reverse
 
-[Source line 260](../../../stdlib/alloc/deque.lani#L260)
+[Source line 261](../../../stdlib/alloc/deque.lani#L261)
 
 ```lanius
 pub fn reverse(&self)
@@ -462,7 +464,7 @@ pub fn reverse(&self)
 
 #### method: try_shrink_to_fit
 
-[Source line 264](../../../stdlib/alloc/deque.lani#L264)
+[Source line 265](../../../stdlib/alloc/deque.lani#L265)
 
 ```lanius
 pub fn try_shrink_to_fit(&self) -> core::result::Result<i32, Error>
@@ -470,7 +472,7 @@ pub fn try_shrink_to_fit(&self) -> core::result::Result<i32, Error>
 
 #### method: try_make_contiguous
 
-[Source line 270](../../../stdlib/alloc/deque.lani#L270)
+[Source line 271](../../../stdlib/alloc/deque.lani#L271)
 
 ```lanius
 pub fn try_make_contiguous(&self) -> core::result::Result<core::slice::View<T>, Error>
@@ -478,7 +480,7 @@ pub fn try_make_contiguous(&self) -> core::result::Result<core::slice::View<T>, 
 
 #### method: try_clone
 
-[Source line 278](../../../stdlib/alloc/deque.lani#L278)
+[Source line 279](../../../stdlib/alloc/deque.lani#L279)
 
 ```lanius
 pub fn try_clone(&self) -> core::result::Result<Deque<T>, Error>
@@ -486,7 +488,7 @@ pub fn try_clone(&self) -> core::result::Result<Deque<T>, Error>
 
 #### method: try_split_off
 
-[Source line 286](../../../stdlib/alloc/deque.lani#L286)
+[Source line 287](../../../stdlib/alloc/deque.lani#L287)
 
 ```lanius
 pub fn try_split_off(&self, ordinal: i32) -> core::result::Result<Deque<T>, Error>
@@ -494,7 +496,7 @@ pub fn try_split_off(&self, ordinal: i32) -> core::result::Result<Deque<T>, Erro
 
 #### method: index_of
 
-[Source line 295](../../../stdlib/alloc/deque.lani#L295)
+[Source line 296](../../../stdlib/alloc/deque.lani#L296)
 
 ```lanius
 pub fn index_of(&self, item: T) -> i32 where T: core::cmp::PartialEq<T>
@@ -502,7 +504,7 @@ pub fn index_of(&self, item: T) -> i32 where T: core::cmp::PartialEq<T>
 
 #### method: contains
 
-[Source line 300](../../../stdlib/alloc/deque.lani#L300)
+[Source line 301](../../../stdlib/alloc/deque.lani#L301)
 
 ```lanius
 pub fn contains(&self, item: T) -> bool where T: core::cmp::PartialEq<T>
@@ -510,40 +512,56 @@ pub fn contains(&self, item: T) -> bool where T: core::cmp::PartialEq<T>
 
 #### method: destroy
 
-[Source line 301](../../../stdlib/alloc/deque.lani#L301)
+[Source line 302](../../../stdlib/alloc/deque.lani#L302)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 308
+### impl at line 309
 
-[Source line 308](../../../stdlib/alloc/deque.lani#L308)
+[Source line 309](../../../stdlib/alloc/deque.lani#L309)
 
 ```lanius
 pub impl<T> Cursor<T>
 ```
 
+#### method: borrow
+
+[Source line 310](../../../stdlib/alloc/deque.lani#L310)
+
+```lanius
+pub fn borrow(&self) -> &Cursor<T>
+```
+
 #### method: remaining
 
-[Source line 309](../../../stdlib/alloc/deque.lani#L309)
+[Source line 311](../../../stdlib/alloc/deque.lani#L311)
 
 ```lanius
 pub fn remaining(&self) -> i32
 ```
 
-#### method: next
-
-[Source line 314](../../../stdlib/alloc/deque.lani#L314)
-
-```lanius
-pub fn next(&self) -> core::option::Option<T>
-```
-
 #### method: next_back
 
-[Source line 318](../../../stdlib/alloc/deque.lani#L318)
+[Source line 316](../../../stdlib/alloc/deque.lani#L316)
 
 ```lanius
 pub fn next_back(&self) -> core::option::Option<T>
+```
+
+### impl at line 322
+
+[Source line 322](../../../stdlib/alloc/deque.lani#L322)
+
+```lanius
+pub impl<T> core::iter::Iterator<T> for Cursor<T>
+```
+
+#### method: next
+
+[Source line 323](../../../stdlib/alloc/deque.lani#L323)
+
+```lanius
+pub fn next(&self) -> core::option::Option<T>
 ```

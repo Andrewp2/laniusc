@@ -3,6 +3,7 @@
 module alloc::tree_set;
 import alloc::tree_map;
 import core::cmp;
+import core::iter;
 import core::option;
 import core::result;
 
@@ -120,7 +121,11 @@ pub impl<T> TreeSet<T> {
     }
 }
 pub impl<T> Cursor<T> {
-    pub fn next(&self) -> core::option::Option<T> { return alloc::tree_map::key_next<T>(self.state.borrow()); }
+    pub fn borrow(&self) -> &Cursor<T> { return self; }
     pub fn next_back(&self) -> core::option::Option<T> { return alloc::tree_map::key_next_back<T>(self.state.borrow()); }
     pub fn is_empty(&self) -> bool { return self.state.front < 0; }
+}
+
+pub impl<T> core::iter::Iterator<T> for Cursor<T> {
+    pub fn next(&self) -> core::option::Option<T> { return alloc::tree_map::key_next<T>(self.state.borrow()); }
 }

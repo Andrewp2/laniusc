@@ -11,8 +11,9 @@ Layer: `std`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [stdlib-file-operations](../../stdlib-file-operations.md)
+- [stdlib-file-resize](../../stdlib-file-resize.md)
 
-Declaration counts: constant: 2; enum: 4; field: 36; function: 19; impl: 1; method: 2; struct: 6; variant: 19.
+Declaration counts: constant: 2; enum: 4; field: 36; function: 20; impl: 1; method: 2; struct: 6; variant: 19.
 
 ## Declared imports
 
@@ -627,9 +628,17 @@ pub fn seek(file:&std::file::File,offset:i64,origin:Origin) -> core::result::Res
 pub fn position(file:&std::file::File) -> core::result::Result<i64,core::io::Error>
 ```
 
+### function: set_len
+
+[Source line 63](../../../stdlib/std/file_ops.lani#L63)
+
+```lanius
+pub fn set_len(file:&std::file::File,length:u64) -> core::result::Result<i32,core::io::Error>
+```
+
 ### function: sync_all
 
-[Source line 62](../../../stdlib/std/file_ops.lani#L62)
+[Source line 72](../../../stdlib/std/file_ops.lani#L72)
 
 ```lanius
 pub fn sync_all(file:&std::file::File) -> core::result::Result<i32,core::io::Error>
@@ -637,7 +646,7 @@ pub fn sync_all(file:&std::file::File) -> core::result::Result<i32,core::io::Err
 
 ### function: sync_data
 
-[Source line 63](../../../stdlib/std/file_ops.lani#L63)
+[Source line 73](../../../stdlib/std/file_ops.lani#L73)
 
 ```lanius
 pub fn sync_data(file:&std::file::File) -> core::result::Result<i32,core::io::Error>
@@ -645,7 +654,7 @@ pub fn sync_data(file:&std::file::File) -> core::result::Result<i32,core::io::Er
 
 ### function: duplicate
 
-[Source line 64](../../../stdlib/std/file_ops.lani#L64)
+[Source line 74](../../../stdlib/std/file_ops.lani#L74)
 
 ```lanius
 pub fn duplicate(file:&std::file::File,minimum_fd:i32,close_on_exec:bool) -> core::result::Result<std::file::File,core::io::Error>
@@ -653,7 +662,7 @@ pub fn duplicate(file:&std::file::File,minimum_fd:i32,close_on_exec:bool) -> cor
 
 ### function: duplicate_to
 
-[Source line 65](../../../stdlib/std/file_ops.lani#L65)
+[Source line 75](../../../stdlib/std/file_ops.lani#L75)
 
 ```lanius
 pub fn duplicate_to(source:&std::file::File,target:&std::file::File,close_on_exec:bool) -> core::result::Result<i32,core::io::Error>
@@ -661,7 +670,7 @@ pub fn duplicate_to(source:&std::file::File,target:&std::file::File,close_on_exe
 
 ### function: close_on_exec
 
-[Source line 69](../../../stdlib/std/file_ops.lani#L69)
+[Source line 79](../../../stdlib/std/file_ops.lani#L79)
 
 ```lanius
 pub fn close_on_exec(file:&std::file::File) -> core::result::Result<bool,core::io::Error>
@@ -669,7 +678,7 @@ pub fn close_on_exec(file:&std::file::File) -> core::result::Result<bool,core::i
 
 ### function: set_close_on_exec
 
-[Source line 70](../../../stdlib/std/file_ops.lani#L70)
+[Source line 80](../../../stdlib/std/file_ops.lani#L80)
 
 ```lanius
 pub fn set_close_on_exec(file:&std::file::File,enabled:bool) -> core::result::Result<i32,core::io::Error>
@@ -677,7 +686,7 @@ pub fn set_close_on_exec(file:&std::file::File,enabled:bool) -> core::result::Re
 
 ### function: status_flags
 
-[Source line 71](../../../stdlib/std/file_ops.lani#L71)
+[Source line 81](../../../stdlib/std/file_ops.lani#L81)
 
 ```lanius
 pub fn status_flags(file:&std::file::File) -> core::result::Result<i32,core::io::Error>
@@ -685,7 +694,7 @@ pub fn status_flags(file:&std::file::File) -> core::result::Result<i32,core::io:
 
 ### function: set_status
 
-[Source line 72](../../../stdlib/std/file_ops.lani#L72)
+[Source line 82](../../../stdlib/std/file_ops.lani#L82)
 
 ```lanius
 pub fn set_status(file:&std::file::File,append:bool,nonblocking:bool) -> core::result::Result<i32,core::io::Error>
@@ -693,7 +702,7 @@ pub fn set_status(file:&std::file::File,append:bool,nonblocking:bool) -> core::r
 
 ### function: decode_statx_into
 
-[Source line 75](../../../stdlib/std/file_ops.lani#L75)
+[Source line 85](../../../stdlib/std/file_ops.lani#L85)
 
 ```lanius
 pub fn decode_statx_into(input:core::slice::View<u8>,output:&Metadata) -> core::result::Result<i32,core::io::Error>
@@ -701,7 +710,7 @@ pub fn decode_statx_into(input:core::slice::View<u8>,output:&Metadata) -> core::
 
 ### function: metadata_into
 
-[Source line 91](../../../stdlib/std/file_ops.lani#L91)
+[Source line 101](../../../stdlib/std/file_ops.lani#L101)
 
 ```lanius
 pub fn metadata_into(path:core::path::Path,follow:bool,output:&Metadata) -> core::result::Result<i32,core::io::Error>
@@ -709,7 +718,7 @@ pub fn metadata_into(path:core::path::Path,follow:bool,output:&Metadata) -> core
 
 ### function: metadata_at_into
 
-[Source line 92](../../../stdlib/std/file_ops.lani#L92)
+[Source line 102](../../../stdlib/std/file_ops.lani#L102)
 
 ```lanius
 pub fn metadata_at_into(directory_fd:i32,path:core::path::Path,follow:bool,output:&Metadata) -> core::result::Result<i32,core::io::Error>
@@ -717,7 +726,7 @@ pub fn metadata_at_into(directory_fd:i32,path:core::path::Path,follow:bool,outpu
 
 ### function: metadata_file_into
 
-[Source line 93](../../../stdlib/std/file_ops.lani#L93)
+[Source line 103](../../../stdlib/std/file_ops.lani#L103)
 
 ```lanius
 pub fn metadata_file_into(file:&std::file::File,output:&Metadata) -> core::result::Result<i32,core::io::Error>

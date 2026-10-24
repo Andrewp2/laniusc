@@ -1,0 +1,196 @@
+// Small sequence models. Input: (op, length, rotation/lower, quota), four u64s.
+// Output uses tagged items (1,payload), terminated by 0, then progress words.
+module app::main;
+import alloc::deque;
+import alloc::hash_map;
+import alloc::hash_set;
+import alloc::tree_map;
+import alloc::tree_set;
+import core::io;
+import core::iter;
+import core::option;
+import core::result;
+import std::stream;
+
+struct Payload { wide: u64, cells: [i32; 2], flag: core::option::Option<bool> }
+
+fn decode(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0;
+    let index: i32 = 0;
+    while (index < 8) { value |= (bytes[offset + index] as u64) << (index * 8); index += 1; }
+    return value;
+}
+fn word(value: u64) {
+    let bytes: [u8; 8] = [0; 8];
+    let index: i32 = 0;
+    while (index < 8) { bytes[index] = ((value >> (index * 8)) & 255) as u8; index += 1; }
+    let output: std::stream::Descriptor = std::stream::stdout();
+    let result: core::result::Result<i32, core::io::Failure> = core::io::write_all(output.borrow(), bytes, 0, 8);
+    assert(core::result::is_ok(result));
+}
+fn optional(value: core::option::Option<i32>) {
+    if (core::option::is_none(value)) { word(0); }
+    else { word(1); word(core::option::unwrap(value) as u64); }
+}
+fn progress(value: core::iter::Advance) {
+    word(value.advanced);
+    if (value.exhausted) { word(1); } else { word(0); }
+}
+fn prefix<I>(source: &I, quota: u64) where I: core::iter::Iterator<i32> {
+    let selected: core::iter::Take<I, i32> = core::iter::take<I, i32>(source, quota);
+    let item: core::option::Option<i32> = selected.next();
+    while (core::option::is_some(item)) {
+        word(1); word(core::option::unwrap(item) as u64); item = selected.next();
+    }
+    word(0);
+    let repeated: core::option::Option<i32> = selected.next();
+    assert(core::option::is_none(repeated));
+}
+fn terminal<I, T>(source: &I) where I: core::iter::Iterator<T> {
+    let first: core::option::Option<T> = source.next();
+    let second: core::option::Option<T> = source.next();
+    assert(core::option::is_none(first) && core::option::is_none(second));
+}
+fn deque_case(length: i32, rotation: i32, quota: u64) {
+    let owner: alloc::deque::Deque<i32> = core::result::unwrap(alloc::deque::with_capacity<i32>(length));
+    let index: i32 = 0;
+    while (index < length) {
+        let added: core::result::Result<i32, alloc::deque::Error> = owner.try_push_back(index);
+        assert(core::result::is_ok(added)); index += 1;
+    }
+    index = 0;
+    while (index < rotation) {
+        let removed: core::option::Option<i32> = owner.pop_front();
+        let added: core::result::Result<i32, alloc::deque::Error> = owner.try_push_back(core::option::unwrap(removed));
+        assert(core::result::is_ok(added)); index += 1;
+    }
+    let source: alloc::deque::Cursor<i32> = owner.iter();
+    let fork: alloc::deque::Cursor<i32> = source;
+    let forked: core::iter::Advance = core::iter::advance_up_to<alloc::deque::Cursor<i32>, i32>(fork.borrow(), 16);
+    assert(forked.advanced == (length as u64) && forked.exhausted && source.remaining() == length);
+    let back: core::option::Option<i32> = source.next_back(); optional(back);
+    prefix<alloc::deque::Cursor<i32>>(source.borrow(), quota);
+    let other_back: core::option::Option<i32> = source.next_back(); optional(other_back);
+    let rest: core::iter::Advance = core::iter::advance_up_to<alloc::deque::Cursor<i32>, i32>(source.borrow(), 16);
+    progress(rest); word(source.remaining() as u64);
+    terminal<alloc::deque::Cursor<i32>, i32>(source.borrow());
+    let back_end: core::option::Option<i32> = source.next_back(); assert(core::option::is_none(back_end));
+    owner.destroy();
+}
+fn tree_item(value: core::option::Option<alloc::tree_map::Entry<i32, u64>>) {
+    if (core::option::is_none(value)) { word(0); }
+    else {
+        let item: alloc::tree_map::Entry<i32, u64> = core::option::unwrap(value);
+        word(1); word(item.key as u64); word(item.value);
+    }
+}
+fn tree_case(length: i32, lower: i32, quota: u64) {
+    let owner: alloc::tree_map::TreeMap<i32, u64> = core::result::unwrap(alloc::tree_map::with_capacity<i32, u64>(length));
+    let index: i32 = length;
+    while (index > 0) {
+        index -= 1;
+        let added: core::result::Result<core::option::Option<alloc::tree_map::Entry<i32, u64>>, alloc::tree_map::Error> = owner.try_insert(index, 18446744073709551615 - (index as u64));
+        assert(core::result::is_ok(added));
+    }
+    let whole: alloc::tree_map::Cursor<i32, u64> = owner.iter();
+    let all: core::iter::Advance = core::iter::advance_up_to<alloc::tree_map::Cursor<i32, u64>, alloc::tree_map::Entry<i32, u64>>(whole.borrow(), 16);
+    assert(all.advanced == (length as u64) && all.exhausted);
+    let source: alloc::tree_map::Cursor<i32, u64> = core::result::unwrap(owner.range(lower, length));
+    let back: core::option::Option<alloc::tree_map::Entry<i32, u64>> = source.next_back(); tree_item(back);
+    let selected: core::iter::Take<alloc::tree_map::Cursor<i32, u64>, alloc::tree_map::Entry<i32, u64>> =
+        core::iter::take<alloc::tree_map::Cursor<i32, u64>, alloc::tree_map::Entry<i32, u64>>(source.borrow(), quota);
+    let item: core::option::Option<alloc::tree_map::Entry<i32, u64>> = selected.next();
+    while (core::option::is_some(item)) { tree_item(item); item = selected.next(); }
+    word(0);
+    let other_back: core::option::Option<alloc::tree_map::Entry<i32, u64>> = source.next_back(); tree_item(other_back);
+    let rest: core::iter::Advance = core::iter::advance_up_to<alloc::tree_map::Cursor<i32, u64>, alloc::tree_map::Entry<i32, u64>>(source.borrow(), 16);
+    progress(rest); word(source.is_empty() as u64);
+    terminal<alloc::tree_map::Cursor<i32, u64>, alloc::tree_map::Entry<i32, u64>>(source.borrow());
+    let back_end: core::option::Option<alloc::tree_map::Entry<i32, u64>> = source.next_back(); assert(core::option::is_none(back_end));
+    owner.destroy();
+}
+fn hash_case(length: i32, quota: u64) {
+    let owner: alloc::hash_map::HashMap<u64, Payload> = alloc::hash_map::new();
+    let reserved: core::result::Result<i32, alloc::hash_map::Error> = owner.try_reserve(length);
+    assert(core::result::is_ok(reserved));
+    let index: i32 = 0;
+    while (index < length) {
+        let value: Payload = Payload { wide: 18446744073709551615 - (index as u64), cells: [index, index * 7], flag: core::option::Some(index % 4 == 0) };
+        let added: core::result::Result<core::option::Option<alloc::hash_map::Entry<u64, Payload>>, alloc::hash_map::Error> = owner.try_insert(4294967296 + (index as u64), value);
+        assert(core::result::is_ok(added)); index += 1;
+    }
+    index = 1;
+    while (index < length) {
+        let removed: core::option::Option<alloc::hash_map::Entry<u64, Payload>> = owner.remove(4294967296 + (index as u64));
+        assert(core::option::is_some(removed)); index += 2;
+    }
+    let source: alloc::hash_map::Iter<u64, Payload> = owner.iter();
+    let selected: core::iter::Take<alloc::hash_map::Iter<u64, Payload>, alloc::hash_map::Entry<u64, Payload>> =
+        core::iter::take<alloc::hash_map::Iter<u64, Payload>, alloc::hash_map::Entry<u64, Payload>>(source.borrow(), quota);
+    let item: core::option::Option<alloc::hash_map::Entry<u64, Payload>> = selected.next();
+    while (core::option::is_some(item)) {
+        let entry: alloc::hash_map::Entry<u64, Payload> = core::option::unwrap(item);
+        word(1); word(entry.key); word(entry.value.wide); word(entry.value.cells[0] as u64); word(entry.value.cells[1] as u64);
+        word(core::option::unwrap(entry.value.flag) as u64); item = selected.next();
+    }
+    word(0);
+    let rest: core::iter::Advance = core::iter::advance_up_to<alloc::hash_map::Iter<u64, Payload>, alloc::hash_map::Entry<u64, Payload>>(source.borrow(), 16);
+    progress(rest);
+    terminal<alloc::hash_map::Iter<u64, Payload>, alloc::hash_map::Entry<u64, Payload>>(source.borrow());
+    owner.destroy();
+}
+fn hash_set_case(length: i32, quota: u64) {
+    let owner: alloc::hash_set::HashSet<i32> = core::result::unwrap(alloc::hash_set::with_capacity<i32>(length));
+    let index: i32 = 0;
+    while (index < length) {
+        let added: core::result::Result<core::option::Option<i32>, alloc::hash_map::Error> = owner.try_insert(index);
+        assert(core::result::is_ok(added)); index += 1;
+    }
+    index = 1;
+    while (index < length) { let removed: core::option::Option<i32> = owner.remove(index); assert(core::option::is_some(removed)); index += 2; }
+    let source: alloc::hash_set::Iter<i32> = owner.iter();
+    prefix<alloc::hash_set::Iter<i32>>(source.borrow(), quota);
+    let rest: core::iter::Advance = core::iter::advance_up_to<alloc::hash_set::Iter<i32>, i32>(source.borrow(), 16);
+    progress(rest); terminal<alloc::hash_set::Iter<i32>, i32>(source.borrow()); owner.destroy();
+}
+fn tree_set_case(length: i32, quota: u64) {
+    let owner: alloc::tree_set::TreeSet<i32> = core::result::unwrap(alloc::tree_set::with_capacity<i32>(length));
+    let index: i32 = length;
+    while (index > 0) {
+        index -= 1;
+        let added: core::result::Result<core::option::Option<i32>, alloc::tree_map::Error> = owner.try_insert(index);
+        assert(core::result::is_ok(added));
+    }
+    index = 1;
+    while (index < length) { let removed: core::option::Option<i32> = owner.remove(index); assert(core::option::is_some(removed)); index += 2; }
+    let source: alloc::tree_set::Cursor<i32> = owner.iter();
+    prefix<alloc::tree_set::Cursor<i32>>(source.borrow(), quota);
+    let rest: core::iter::Advance = core::iter::advance_up_to<alloc::tree_set::Cursor<i32>, i32>(source.borrow(), 16);
+    progress(rest); terminal<alloc::tree_set::Cursor<i32>, i32>(source.borrow()); owner.destroy();
+}
+fn main() -> i32 {
+    let input: std::stream::Descriptor = std::stream::stdin();
+    let record: [u8; 32] = [0; 32];
+    while (true) {
+        let received: core::result::Result<i32, core::io::Error> = input.read(record, 0, 32);
+        if (core::result::is_err(received)) { return 1; }
+        let count: i32 = core::result::unwrap(received);
+        if (count == 0) { return 0; }
+        if (count < 32) {
+            let rest: core::result::Result<i32, core::io::Failure> = core::io::read_exact(input.borrow(), record, count, 32 - count);
+            if (core::result::is_err(rest)) { return 2; }
+        }
+        let op: u64 = decode(record, 0);
+        let length: i32 = decode(record, 8) as i32;
+        let rotation: i32 = decode(record, 16) as i32;
+        let quota: u64 = decode(record, 24);
+        assert(length >= 0 && length <= 6 && rotation >= 0 && rotation <= length && quota <= 8);
+        if (op == 0) { deque_case(length, rotation, quota); }
+        else { if (op == 1) { tree_case(length, rotation, quota); }
+        else { if (op == 2) { hash_case(length, quota); }
+        else { if (op == 3) { hash_set_case(length, quota); }
+        else { if (op == 4) { tree_set_case(length, quota); }
+        else { return 3; } } } } }
+    }
+    return 0;
+}

@@ -42,6 +42,12 @@ Current seek. Negative resulting positions, unseekable descriptors and
 filesystem-specific Data/Hole support are host errors. Seeking beyond EOF does
 not extend a file. Append writes still target EOF regardless of seek position.
 
+`set_len(file, length)` changes a writable file's length through one ftruncate
+attempt. Its unsigned input is limited to `i64::MAX`; shrinking discards the
+tail and supported extension exposes zero bytes, while the shared offset stays
+unchanged. See [checked file lengths](stdlib-file-resize.md) for validation
+order, failure behavior and executable sparse-file evidence.
+
 `sync_all(file)` invokes fsync; `sync_data(file)` invokes fdatasync. Their errors
 are returned. File/stream `flush` has a different buffering contract. Syncing a
 file alone does not sync a containing directory entry; callers implementing a

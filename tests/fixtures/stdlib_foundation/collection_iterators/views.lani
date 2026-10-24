@@ -1,0 +1,115 @@
+// Allocation-free Text/Ones integration, including native byte strides.
+module app::main;
+import core::bitset;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+
+fn pull<I, T>(source: &I) -> core::option::Option<T> where I: core::iter::Iterator<T> {
+    let item: core::option::Option<T> = source.next();
+    return item;
+}
+fn check_text(text: core::text::Text) {
+    // The selected text is A, U+00A2, U+20AC, U+10348: all four UTF-8 widths.
+    let expected_bytes: [u8; 10] = [65, 194, 162, 226, 130, 172, 240, 144, 141, 136];
+    let values: [u32; 4] = [65, 162, 8364, 66376];
+    let offsets: [i32; 4] = [0, 1, 3, 6];
+    let bytes: core::iter::SliceIter<u8> = text.iter_bytes();
+    let byte_fork: core::iter::SliceIter<u8> = bytes;
+    let first_byte: core::option::Option<u8> = pull<core::iter::SliceIter<u8>, u8>(bytes.borrow());
+    assert(core::option::unwrap(first_byte) == 65 && bytes.remaining() == 9 && byte_fork.remaining() == 10);
+    let byte_rest: core::iter::Advance = core::iter::advance_up_to<core::iter::SliceIter<u8>, u8>(bytes.borrow(), 16);
+    assert(byte_rest.advanced == 9 && byte_rest.exhausted);
+    let byte_prefix: core::iter::Take<core::iter::SliceIter<u8>, u8> = core::iter::take<core::iter::SliceIter<u8>, u8>(byte_fork.borrow(), 12);
+    let index: i32 = 0;
+    let byte: core::option::Option<u8> = byte_prefix.next();
+    while (core::option::is_some(byte)) {
+        assert(index < 10 && core::option::unwrap(byte) == expected_bytes[index]); index += 1; byte = byte_prefix.next();
+    }
+    assert(index == 10);
+    let bytes_end: core::option::Option<u8> = bytes.next();
+    let fork_end: core::option::Option<u8> = byte_fork.next();
+    assert(core::option::is_none(bytes_end) && core::option::is_none(fork_end));
+
+    let scalars: core::text::Scalars = text.scalars();
+    let scalar_fork: core::text::Scalars = scalars;
+    let first_scalar: core::option::Option<core::text::Scalar> = pull<core::text::Scalars, core::text::Scalar>(scalars.borrow());
+    let first: core::text::Scalar = core::option::unwrap(first_scalar);
+    assert(first.byte_index == 0 && first.value == 65);
+    let scalar_rest: core::iter::Advance = core::iter::advance_up_to<core::text::Scalars, core::text::Scalar>(scalars.borrow(), 8);
+    assert(scalar_rest.advanced == 3 && scalar_rest.exhausted);
+    let selected: core::iter::Take<core::text::Scalars, core::text::Scalar> = core::iter::take<core::text::Scalars, core::text::Scalar>(scalar_fork.borrow(), 8);
+    index = 0;
+    let scalar: core::option::Option<core::text::Scalar> = selected.next();
+    while (core::option::is_some(scalar)) {
+        let item: core::text::Scalar = core::option::unwrap(scalar);
+        assert(index < 4 && item.value == values[index] && item.byte_index == offsets[index]);
+        index += 1; scalar = selected.next();
+    }
+    assert(index == 4);
+    let scalar_end: core::option::Option<core::text::Scalar> = scalars.next();
+    let selected_end: core::option::Option<core::text::Scalar> = selected.next();
+    assert(core::option::is_none(scalar_end) && core::option::is_none(selected_end));
+}
+fn main() -> i32 {
+    // Invalid sentinel bytes sit outside both selected subviews.
+    let strided: [u8; 12] = [255, 65, 194, 162, 226, 130, 172, 240, 144, 141, 136, 255];
+    let stack_text: core::text::Text = core::result::unwrap(core::text::from_utf8_range(strided, 1, 10));
+    check_text(stack_text);
+    let raw: [i32; 4] = [0; 4];
+    let pointer: ptr = core::mem::i32_array_data_ptr(raw);
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts<u8>(pointer, 16);
+    let index: i32 = 0;
+    while (index < 12) { packed[index + 2] = strided[index]; index += 1; }
+    let packed_text: core::text::Text = core::result::unwrap(core::text::from_utf8_range(packed, 3, 10));
+    check_text(packed_text);
+    // A Text slice adds another nonzero offset before the cursor is captured.
+    let whole: core::text::Text = core::result::unwrap(core::text::from_utf8_range(packed, 3, 10));
+    let suffix: core::text::Text = core::result::unwrap(whole.slice(3, 10));
+    let suffix_scalars: core::text::Scalars = suffix.scalars();
+    let suffix_first: core::option::Option<core::text::Scalar> = pull<core::text::Scalars, core::text::Scalar>(suffix_scalars.borrow());
+    let relative: core::text::Scalar = core::option::unwrap(suffix_first);
+    assert(relative.byte_index == 0 && relative.value == 8364);
+    let suffix_bytes: core::iter::SliceIter<u8> = suffix.iter_bytes();
+    let suffix_byte: core::option::Option<u8> = pull<core::iter::SliceIter<u8>, u8>(suffix_bytes.borrow());
+    assert(core::option::unwrap(suffix_byte) == 226 && suffix_bytes.remaining() == 6);
+    let empty: core::text::Text = core::result::unwrap(whole.slice(10, 10));
+    let empty_bytes: core::iter::SliceIter<u8> = empty.iter_bytes();
+    let empty_scalars: core::text::Scalars = empty.scalars();
+    let no_bytes: core::iter::Advance = core::iter::advance_up_to<core::iter::SliceIter<u8>, u8>(empty_bytes.borrow(), 1);
+    let no_scalars: core::iter::Advance = core::iter::advance_up_to<core::text::Scalars, core::text::Scalar>(empty_scalars.borrow(), 1);
+    assert(no_bytes.advanced == 0 && no_bytes.exhausted && no_scalars.advanced == 0 && no_scalars.exhausted);
+
+    let backing: [u32; 4] = [4294967295, 0, 0, 4294967295];
+    let words: core::slice::View<u32> = core::slice::View { values: backing, start: 1, length: 2 };
+    let view: core::bitset::BitView = core::result::unwrap(core::bitset::BitView::from_words(words, 35));
+    assert(core::result::is_ok(view.set(0)) && core::result::is_ok(view.set(2)) && core::result::is_ok(view.set(31)) && core::result::is_ok(view.set(34)));
+    let original: core::bitset::BitView = view;
+    let source: core::bitset::Ones = view.iter_ones();
+    let first: core::option::Option<i32> = pull<core::bitset::Ones, i32>(source.borrow());
+    assert(core::option::unwrap(first) == 0);
+    let fork: core::bitset::Ones = source;
+    assert(core::result::is_ok(view.clear(2)) && core::result::is_ok(view.set(3)));
+    view = core::result::unwrap(core::bitset::BitView::from_words(words, 1));
+    let selected: core::iter::Take<core::bitset::Ones, i32> = core::iter::take<core::bitset::Ones, i32>(source.borrow(), 2);
+    let second: core::option::Option<i32> = selected.next();
+    let third: core::option::Option<i32> = selected.next();
+    assert(core::option::unwrap(second) == 3 && core::option::unwrap(third) == 31 && view.len() == 1);
+    let rest: core::iter::Advance = core::iter::advance_up_to<core::bitset::Ones, i32>(source.borrow(), 8);
+    assert(rest.advanced == 1 && rest.exhausted);
+    let fork_first: core::option::Option<i32> = fork.next(); assert(core::option::unwrap(fork_first) == 3);
+    let fork_rest: core::iter::Advance = core::iter::advance_up_to<core::bitset::Ones, i32>(fork.borrow(), 8);
+    assert(fork_rest.advanced == 2 && fork_rest.exhausted);
+    assert(core::result::is_ok(original.set(10)));
+    let source_end: core::option::Option<i32> = source.next();
+    let fork_end: core::option::Option<i32> = fork.next();
+    assert(core::option::is_none(source_end) && core::option::is_none(fork_end));
+    let fresh: core::bitset::Ones = original.iter_ones();
+    let fresh_count: core::iter::Advance = core::iter::advance_up_to<core::bitset::Ones, i32>(fresh.borrow(), 8);
+    assert(fresh_count.advanced == 5 && fresh_count.exhausted);
+    assert(backing[0] == 4294967295 && backing[3] == 4294967295);
+    return 0;
+}

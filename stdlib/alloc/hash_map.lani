@@ -3,6 +3,7 @@
 module alloc::hash_map;
 import alloc::allocator;
 import core::cmp;
+import core::iter;
 import core::hash;
 import core::mem;
 import core::option;
@@ -238,6 +239,10 @@ pub impl<K, V> HashMap<K, V> {
     }
 }
 pub impl<K, V> Iter<K, V> {
+    pub fn borrow(&self) -> &Iter<K, V> { return self; }
+}
+
+pub impl<K, V> core::iter::Iterator<Entry<K, V>> for Iter<K, V> {
     // Invalidated by any map mutation or destruction. Order is unspecified.
     pub fn next(&self) -> core::option::Option<Entry<K, V>> {
         let slots: [Slot<K, V>] = core::mem::typed_slice_from_storage(self.storage, self.buckets);

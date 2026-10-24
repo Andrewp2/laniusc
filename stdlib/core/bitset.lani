@@ -5,6 +5,7 @@
 module core::bitset;
 import core::bits;
 import core::hash;
+import core::iter;
 import core::option;
 import core::result;
 import core::slice;
@@ -306,6 +307,10 @@ pub impl BitView {
     }
 }
 pub impl Ones {
+    pub fn borrow(&self) -> &Ones { return self; }
+}
+
+pub impl core::iter::Iterator<i32> for Ones {
     // Fused even if backing bits are changed after exhaustion. Before that,
     // iteration observes current words; copies fork the cursor position.
     pub fn next(&self) -> core::option::Option<i32> {

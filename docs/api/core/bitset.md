@@ -11,8 +11,9 @@ Layer: `core`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [stdlib-bitset-owned](../../stdlib-bitset-owned.md)
+- [stdlib-collection-iterators](../../stdlib-collection-iterators.md)
 
-Declaration counts: enum: 1; field: 4; function: 14; impl: 2; method: 30; struct: 2; variant: 4.
+Declaration counts: enum: 1; field: 4; function: 14; impl: 3; method: 31; struct: 2; variant: 4.
 
 ## Declared imports
 
@@ -20,9 +21,10 @@ Direct source imports; this is not a package-resolution or transitive dependency
 
 - [core::bits](bits.md) · [source](../../../stdlib/core/bitset.lani#L6)
 - [core::hash](hash.md) · [source](../../../stdlib/core/bitset.lani#L7)
-- [core::option](option.md) · [source](../../../stdlib/core/bitset.lani#L8)
-- [core::result](result.md) · [source](../../../stdlib/core/bitset.lani#L9)
-- [core::slice](slice.md) · [source](../../../stdlib/core/bitset.lani#L10)
+- [core::iter](iter.md) · [source](../../../stdlib/core/bitset.lani#L8)
+- [core::option](option.md) · [source](../../../stdlib/core/bitset.lani#L9)
+- [core::result](result.md) · [source](../../../stdlib/core/bitset.lani#L10)
+- [core::slice](slice.md) · [source](../../../stdlib/core/bitset.lani#L11)
 
 ## Types, fields and variants
 
@@ -30,7 +32,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: ViewError
 
-[Source line 137](../../../stdlib/core/bitset.lani#L137)
+[Source line 138](../../../stdlib/core/bitset.lani#L138)
 
 ```lanius
 pub enum ViewError
@@ -38,7 +40,7 @@ pub enum ViewError
 
 #### variant: Bounds
 
-[Source line 137](../../../stdlib/core/bitset.lani#L137)
+[Source line 138](../../../stdlib/core/bitset.lani#L138)
 
 ```lanius
 Bounds
@@ -46,7 +48,7 @@ Bounds
 
 #### variant: InvalidLength
 
-[Source line 137](../../../stdlib/core/bitset.lani#L137)
+[Source line 138](../../../stdlib/core/bitset.lani#L138)
 
 ```lanius
 InvalidLength
@@ -54,7 +56,7 @@ InvalidLength
 
 #### variant: InsufficientWords
 
-[Source line 137](../../../stdlib/core/bitset.lani#L137)
+[Source line 138](../../../stdlib/core/bitset.lani#L138)
 
 ```lanius
 InsufficientWords
@@ -62,7 +64,7 @@ InsufficientWords
 
 #### variant: SizeMismatch
 
-[Source line 137](../../../stdlib/core/bitset.lani#L137)
+[Source line 138](../../../stdlib/core/bitset.lani#L138)
 
 ```lanius
 SizeMismatch
@@ -70,7 +72,7 @@ SizeMismatch
 
 ### struct: BitView
 
-[Source line 138](../../../stdlib/core/bitset.lani#L138)
+[Source line 139](../../../stdlib/core/bitset.lani#L139)
 
 ```lanius
 pub struct BitView
@@ -78,7 +80,7 @@ pub struct BitView
 
 #### field: words
 
-[Source line 138](../../../stdlib/core/bitset.lani#L138)
+[Source line 139](../../../stdlib/core/bitset.lani#L139)
 
 ```lanius
 words: core::slice::View<u32>
@@ -86,7 +88,7 @@ words: core::slice::View<u32>
 
 #### field: length
 
-[Source line 138](../../../stdlib/core/bitset.lani#L138)
+[Source line 139](../../../stdlib/core/bitset.lani#L139)
 
 ```lanius
 length: i32
@@ -94,7 +96,7 @@ length: i32
 
 ### struct: Ones
 
-[Source line 139](../../../stdlib/core/bitset.lani#L139)
+[Source line 140](../../../stdlib/core/bitset.lani#L140)
 
 ```lanius
 pub struct Ones
@@ -102,7 +104,7 @@ pub struct Ones
 
 #### field: view
 
-[Source line 139](../../../stdlib/core/bitset.lani#L139)
+[Source line 140](../../../stdlib/core/bitset.lani#L140)
 
 ```lanius
 view: BitView
@@ -110,7 +112,7 @@ view: BitView
 
 #### field: position
 
-[Source line 139](../../../stdlib/core/bitset.lani#L139)
+[Source line 140](../../../stdlib/core/bitset.lani#L140)
 
 ```lanius
 position: i32
@@ -120,7 +122,7 @@ position: i32
 
 ### function: word_count_or
 
-[Source line 38](../../../stdlib/core/bitset.lani#L38)
+[Source line 39](../../../stdlib/core/bitset.lani#L39)
 
 ```lanius
 pub fn word_count_or(bit_len: i32, fallback: i32) -> i32
@@ -128,7 +130,7 @@ pub fn word_count_or(bit_len: i32, fallback: i32) -> i32
 
 ### function: get_or
 
-[Source line 53](../../../stdlib/core/bitset.lani#L53)
+[Source line 54](../../../stdlib/core/bitset.lani#L54)
 
 ```lanius
 pub fn get_or(words: [u32], bit_len: i32, index: i32, fallback: bool) -> bool
@@ -136,7 +138,7 @@ pub fn get_or(words: [u32], bit_len: i32, index: i32, fallback: bool) -> bool
 
 ### function: set
 
-[Source line 57](../../../stdlib/core/bitset.lani#L57)
+[Source line 58](../../../stdlib/core/bitset.lani#L58)
 
 ```lanius
 pub fn set(words: [u32], bit_len: i32, index: i32) -> bool
@@ -144,7 +146,7 @@ pub fn set(words: [u32], bit_len: i32, index: i32) -> bool
 
 ### function: clear
 
-[Source line 61](../../../stdlib/core/bitset.lani#L61)
+[Source line 62](../../../stdlib/core/bitset.lani#L62)
 
 ```lanius
 pub fn clear(words: [u32], bit_len: i32, index: i32) -> bool
@@ -152,7 +154,7 @@ pub fn clear(words: [u32], bit_len: i32, index: i32) -> bool
 
 ### function: toggle
 
-[Source line 65](../../../stdlib/core/bitset.lani#L65)
+[Source line 66](../../../stdlib/core/bitset.lani#L66)
 
 ```lanius
 pub fn toggle(words: [u32], bit_len: i32, index: i32) -> bool
@@ -160,7 +162,7 @@ pub fn toggle(words: [u32], bit_len: i32, index: i32) -> bool
 
 ### function: fill
 
-[Source line 70](../../../stdlib/core/bitset.lani#L70)
+[Source line 71](../../../stdlib/core/bitset.lani#L71)
 
 ```lanius
 pub fn fill(words: [u32], bit_len: i32, value: bool) -> bool
@@ -168,7 +170,7 @@ pub fn fill(words: [u32], bit_len: i32, value: bool) -> bool
 
 ### function: count_ones_or
 
-[Source line 74](../../../stdlib/core/bitset.lani#L74)
+[Source line 75](../../../stdlib/core/bitset.lani#L75)
 
 ```lanius
 pub fn count_ones_or(words: [u32], bit_len: i32, fallback: i32) -> i32
@@ -176,7 +178,7 @@ pub fn count_ones_or(words: [u32], bit_len: i32, fallback: i32) -> i32
 
 ### function: any_or
 
-[Source line 78](../../../stdlib/core/bitset.lani#L78)
+[Source line 79](../../../stdlib/core/bitset.lani#L79)
 
 ```lanius
 pub fn any_or(words: [u32], bit_len: i32, fallback: bool) -> bool
@@ -184,7 +186,7 @@ pub fn any_or(words: [u32], bit_len: i32, fallback: bool) -> bool
 
 ### function: all_or
 
-[Source line 82](../../../stdlib/core/bitset.lani#L82)
+[Source line 83](../../../stdlib/core/bitset.lani#L83)
 
 ```lanius
 pub fn all_or(words: [u32], bit_len: i32, fallback: bool) -> bool
@@ -192,7 +194,7 @@ pub fn all_or(words: [u32], bit_len: i32, fallback: bool) -> bool
 
 ### function: first_set_or
 
-[Source line 86](../../../stdlib/core/bitset.lani#L86)
+[Source line 87](../../../stdlib/core/bitset.lani#L87)
 
 ```lanius
 pub fn first_set_or(words: [u32], bit_len: i32, fallback: i32) -> i32
@@ -200,7 +202,7 @@ pub fn first_set_or(words: [u32], bit_len: i32, fallback: i32) -> i32
 
 ### function: last_set_or
 
-[Source line 90](../../../stdlib/core/bitset.lani#L90)
+[Source line 91](../../../stdlib/core/bitset.lani#L91)
 
 ```lanius
 pub fn last_set_or(words: [u32], bit_len: i32, fallback: i32) -> i32
@@ -208,7 +210,7 @@ pub fn last_set_or(words: [u32], bit_len: i32, fallback: i32) -> i32
 
 ### function: equal
 
-[Source line 95](../../../stdlib/core/bitset.lani#L95)
+[Source line 96](../../../stdlib/core/bitset.lani#L96)
 
 ```lanius
 pub fn equal(left: [u32], right: [u32], bit_len: i32) -> bool
@@ -216,7 +218,7 @@ pub fn equal(left: [u32], right: [u32], bit_len: i32) -> bool
 
 ### function: union_into
 
-[Source line 104](../../../stdlib/core/bitset.lani#L104)
+[Source line 105](../../../stdlib/core/bitset.lani#L105)
 
 ```lanius
 pub fn union_into(destination: [u32], left: [u32], right: [u32], bit_len: i32) -> bool
@@ -224,7 +226,7 @@ pub fn union_into(destination: [u32], left: [u32], right: [u32], bit_len: i32) -
 
 ### function: intersect_into
 
-[Source line 119](../../../stdlib/core/bitset.lani#L119)
+[Source line 120](../../../stdlib/core/bitset.lani#L120)
 
 ```lanius
 pub fn intersect_into(destination: [u32], left: [u32], right: [u32], bit_len: i32) -> bool
@@ -232,9 +234,9 @@ pub fn intersect_into(destination: [u32], left: [u32], right: [u32], bit_len: i3
 
 ## Implementation blocks and public methods
 
-### impl at line 141
+### impl at line 142
 
-[Source line 141](../../../stdlib/core/bitset.lani#L141)
+[Source line 142](../../../stdlib/core/bitset.lani#L142)
 
 ```lanius
 pub impl BitView
@@ -242,7 +244,7 @@ pub impl BitView
 
 #### method: from_words
 
-[Source line 142](../../../stdlib/core/bitset.lani#L142)
+[Source line 143](../../../stdlib/core/bitset.lani#L143)
 
 ```lanius
 pub fn from_words(words: core::slice::View<u32>, bit_len: i32) -> core::result::Result<BitView, ViewError>
@@ -250,7 +252,7 @@ pub fn from_words(words: core::slice::View<u32>, bit_len: i32) -> core::result::
 
 #### method: len
 
-[Source line 150](../../../stdlib/core/bitset.lani#L150)
+[Source line 151](../../../stdlib/core/bitset.lani#L151)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -258,7 +260,7 @@ pub fn len(&self) -> i32
 
 #### method: is_empty
 
-[Source line 151](../../../stdlib/core/bitset.lani#L151)
+[Source line 152](../../../stdlib/core/bitset.lani#L152)
 
 ```lanius
 pub fn is_empty(&self) -> bool
@@ -266,7 +268,7 @@ pub fn is_empty(&self) -> bool
 
 #### method: word
 
-[Source line 153](../../../stdlib/core/bitset.lani#L153)
+[Source line 154](../../../stdlib/core/bitset.lani#L154)
 
 ```lanius
 pub fn word(&self, index: i32) -> core::option::Option<u32>
@@ -274,7 +276,7 @@ pub fn word(&self, index: i32) -> core::option::Option<u32>
 
 #### method: get
 
-[Source line 157](../../../stdlib/core/bitset.lani#L157)
+[Source line 158](../../../stdlib/core/bitset.lani#L158)
 
 ```lanius
 pub fn get(&self, index: i32) -> core::option::Option<bool>
@@ -282,7 +284,7 @@ pub fn get(&self, index: i32) -> core::option::Option<bool>
 
 #### method: set
 
-[Source line 162](../../../stdlib/core/bitset.lani#L162)
+[Source line 163](../../../stdlib/core/bitset.lani#L163)
 
 ```lanius
 pub fn set(&self, index: i32) -> core::result::Result<bool, ViewError>
@@ -290,7 +292,7 @@ pub fn set(&self, index: i32) -> core::result::Result<bool, ViewError>
 
 #### method: clear
 
-[Source line 163](../../../stdlib/core/bitset.lani#L163)
+[Source line 164](../../../stdlib/core/bitset.lani#L164)
 
 ```lanius
 pub fn clear(&self, index: i32) -> core::result::Result<bool, ViewError>
@@ -298,7 +300,7 @@ pub fn clear(&self, index: i32) -> core::result::Result<bool, ViewError>
 
 #### method: assign
 
-[Source line 164](../../../stdlib/core/bitset.lani#L164)
+[Source line 165](../../../stdlib/core/bitset.lani#L165)
 
 ```lanius
 pub fn assign(&self, index: i32, value: bool) -> core::result::Result<bool, ViewError>
@@ -306,7 +308,7 @@ pub fn assign(&self, index: i32, value: bool) -> core::result::Result<bool, View
 
 #### method: toggle
 
-[Source line 172](../../../stdlib/core/bitset.lani#L172)
+[Source line 173](../../../stdlib/core/bitset.lani#L173)
 
 ```lanius
 pub fn toggle(&self, index: i32) -> core::result::Result<bool, ViewError>
@@ -314,7 +316,7 @@ pub fn toggle(&self, index: i32) -> core::result::Result<bool, ViewError>
 
 #### method: assign_range
 
-[Source line 180](../../../stdlib/core/bitset.lani#L180)
+[Source line 181](../../../stdlib/core/bitset.lani#L181)
 
 ```lanius
 pub fn assign_range(&self, start: i32, end: i32, value: bool) -> core::result::Result<i32, ViewError>
@@ -322,7 +324,7 @@ pub fn assign_range(&self, start: i32, end: i32, value: bool) -> core::result::R
 
 #### method: set_range
 
-[Source line 197](../../../stdlib/core/bitset.lani#L197)
+[Source line 198](../../../stdlib/core/bitset.lani#L198)
 
 ```lanius
 pub fn set_range(&self, start: i32, end: i32) -> core::result::Result<i32, ViewError>
@@ -330,7 +332,7 @@ pub fn set_range(&self, start: i32, end: i32) -> core::result::Result<i32, ViewE
 
 #### method: clear_range
 
-[Source line 198](../../../stdlib/core/bitset.lani#L198)
+[Source line 199](../../../stdlib/core/bitset.lani#L199)
 
 ```lanius
 pub fn clear_range(&self, start: i32, end: i32) -> core::result::Result<i32, ViewError>
@@ -338,7 +340,7 @@ pub fn clear_range(&self, start: i32, end: i32) -> core::result::Result<i32, Vie
 
 #### method: toggle_range
 
-[Source line 199](../../../stdlib/core/bitset.lani#L199)
+[Source line 200](../../../stdlib/core/bitset.lani#L200)
 
 ```lanius
 pub fn toggle_range(&self, start: i32, end: i32) -> core::result::Result<i32, ViewError>
@@ -346,7 +348,7 @@ pub fn toggle_range(&self, start: i32, end: i32) -> core::result::Result<i32, Vi
 
 #### method: fill
 
-[Source line 204](../../../stdlib/core/bitset.lani#L204)
+[Source line 205](../../../stdlib/core/bitset.lani#L205)
 
 ```lanius
 pub fn fill(&self, value: bool) -> i32
@@ -354,7 +356,7 @@ pub fn fill(&self, value: bool) -> i32
 
 #### method: count_ones
 
-[Source line 205](../../../stdlib/core/bitset.lani#L205)
+[Source line 206](../../../stdlib/core/bitset.lani#L206)
 
 ```lanius
 pub fn count_ones(&self) -> i32
@@ -362,7 +364,7 @@ pub fn count_ones(&self) -> i32
 
 #### method: any
 
-[Source line 210](../../../stdlib/core/bitset.lani#L210)
+[Source line 211](../../../stdlib/core/bitset.lani#L211)
 
 ```lanius
 pub fn any(&self) -> bool
@@ -370,7 +372,7 @@ pub fn any(&self) -> bool
 
 #### method: all
 
-[Source line 211](../../../stdlib/core/bitset.lani#L211)
+[Source line 212](../../../stdlib/core/bitset.lani#L212)
 
 ```lanius
 pub fn all(&self) -> bool
@@ -378,7 +380,7 @@ pub fn all(&self) -> bool
 
 #### method: next_set
 
-[Source line 214](../../../stdlib/core/bitset.lani#L214)
+[Source line 215](../../../stdlib/core/bitset.lani#L215)
 
 ```lanius
 pub fn next_set(&self, start: i32) -> core::result::Result<core::option::Option<i32>, ViewError>
@@ -386,7 +388,7 @@ pub fn next_set(&self, start: i32) -> core::result::Result<core::option::Option<
 
 #### method: next_clear
 
-[Source line 215](../../../stdlib/core/bitset.lani#L215)
+[Source line 216](../../../stdlib/core/bitset.lani#L216)
 
 ```lanius
 pub fn next_clear(&self, start: i32) -> core::result::Result<core::option::Option<i32>, ViewError>
@@ -394,7 +396,7 @@ pub fn next_clear(&self, start: i32) -> core::result::Result<core::option::Optio
 
 #### method: first_set
 
-[Source line 231](../../../stdlib/core/bitset.lani#L231)
+[Source line 232](../../../stdlib/core/bitset.lani#L232)
 
 ```lanius
 pub fn first_set(&self) -> core::option::Option<i32>
@@ -402,7 +404,7 @@ pub fn first_set(&self) -> core::option::Option<i32>
 
 #### method: last_set
 
-[Source line 232](../../../stdlib/core/bitset.lani#L232)
+[Source line 233](../../../stdlib/core/bitset.lani#L233)
 
 ```lanius
 pub fn last_set(&self) -> core::option::Option<i32>
@@ -410,7 +412,7 @@ pub fn last_set(&self) -> core::option::Option<i32>
 
 #### method: iter_ones
 
-[Source line 239](../../../stdlib/core/bitset.lani#L239)
+[Source line 240](../../../stdlib/core/bitset.lani#L240)
 
 ```lanius
 pub fn iter_ones(&self) -> Ones
@@ -418,7 +420,7 @@ pub fn iter_ones(&self) -> Ones
 
 #### method: equal
 
-[Source line 240](../../../stdlib/core/bitset.lani#L240)
+[Source line 241](../../../stdlib/core/bitset.lani#L241)
 
 ```lanius
 pub fn equal(&self, other: BitView) -> bool
@@ -426,7 +428,7 @@ pub fn equal(&self, other: BitView) -> bool
 
 #### method: is_subset
 
-[Source line 248](../../../stdlib/core/bitset.lani#L248)
+[Source line 249](../../../stdlib/core/bitset.lani#L249)
 
 ```lanius
 pub fn is_subset(&self, other: BitView) -> core::result::Result<bool, ViewError>
@@ -434,7 +436,7 @@ pub fn is_subset(&self, other: BitView) -> core::result::Result<bool, ViewError>
 
 #### method: is_disjoint
 
-[Source line 255](../../../stdlib/core/bitset.lani#L255)
+[Source line 256](../../../stdlib/core/bitset.lani#L256)
 
 ```lanius
 pub fn is_disjoint(&self, other: BitView) -> core::result::Result<bool, ViewError>
@@ -442,7 +444,7 @@ pub fn is_disjoint(&self, other: BitView) -> core::result::Result<bool, ViewErro
 
 #### method: hash
 
-[Source line 263](../../../stdlib/core/bitset.lani#L263)
+[Source line 264](../../../stdlib/core/bitset.lani#L264)
 
 ```lanius
 pub fn hash(&self) -> u32
@@ -450,7 +452,7 @@ pub fn hash(&self) -> u32
 
 #### method: copy_within
 
-[Source line 268](../../../stdlib/core/bitset.lani#L268)
+[Source line 269](../../../stdlib/core/bitset.lani#L269)
 
 ```lanius
 pub fn copy_within(&self, start: i32, end: i32, destination: i32) -> core::result::Result<i32, ViewError>
@@ -458,7 +460,7 @@ pub fn copy_within(&self, start: i32, end: i32, destination: i32) -> core::resul
 
 #### method: shift_left
 
-[Source line 284](../../../stdlib/core/bitset.lani#L284)
+[Source line 285](../../../stdlib/core/bitset.lani#L285)
 
 ```lanius
 pub fn shift_left(&self, count: i32) -> core::result::Result<i32, ViewError>
@@ -466,23 +468,39 @@ pub fn shift_left(&self, count: i32) -> core::result::Result<i32, ViewError>
 
 #### method: shift_right
 
-[Source line 296](../../../stdlib/core/bitset.lani#L296)
+[Source line 297](../../../stdlib/core/bitset.lani#L297)
 
 ```lanius
 pub fn shift_right(&self, count: i32) -> core::result::Result<i32, ViewError>
 ```
 
-### impl at line 308
+### impl at line 309
 
-[Source line 308](../../../stdlib/core/bitset.lani#L308)
+[Source line 309](../../../stdlib/core/bitset.lani#L309)
 
 ```lanius
 pub impl Ones
 ```
 
+#### method: borrow
+
+[Source line 310](../../../stdlib/core/bitset.lani#L310)
+
+```lanius
+pub fn borrow(&self) -> &Ones
+```
+
+### impl at line 313
+
+[Source line 313](../../../stdlib/core/bitset.lani#L313)
+
+```lanius
+pub impl core::iter::Iterator<i32> for Ones
+```
+
 #### method: next
 
-[Source line 311](../../../stdlib/core/bitset.lani#L311)
+[Source line 316](../../../stdlib/core/bitset.lani#L316)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<i32>
