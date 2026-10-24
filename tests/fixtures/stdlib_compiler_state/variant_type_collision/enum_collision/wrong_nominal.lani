@@ -1,0 +1,4 @@
+module app::main;
+import app::a;
+import app::b;
+fn main() -> i32 { let error:app::b::Error=app::a::bad(); return 0; }

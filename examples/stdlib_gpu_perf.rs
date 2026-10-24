@@ -70,12 +70,13 @@ async fn run() -> Result<(), String> {
             .await
             .map_err(|error| format!("{}: {error}", entry.display()))?;
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+        // Verify every emitted program outside the measured compiler span.
+        validate_output(&output, &expected)?;
         if index >= warmups {
             samples.push(elapsed);
             println!("sample={} ms={elapsed:.3}", index - warmups);
         }
     }
-    validate_output(&output, &expected)?;
     samples.sort_by(f64::total_cmp);
     let middle = samples.len() / 2;
     let median = if samples.len() % 2 == 0 {

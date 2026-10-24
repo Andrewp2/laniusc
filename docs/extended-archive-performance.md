@@ -11,7 +11,7 @@ Other desktop work was not controlled.
 | `tests/fixtures/extended/tar_contracts.lani` | 9 files, approximately 77 KB | 201,342 bytes | 156.211 ms | 128.925–167.702 ms |
 | `tests/fixtures/extended/zip_contracts.lani` | 22 files, approximately 214 KB | 403,933 bytes | 284.848 ms | 242.101–318.113 ms |
 
-Every emitted executable exited 0 with the expected empty stdout/stderr.
+The final emitted executable for each row exited 0 with the expected empty stdout/stderr.
 The fixtures exercise real imported library behavior, including buffer edits
 and archive ownership. These figures measure GPU compilation to native x86_64
 Linux executables, not user-program execution on a GPU. They do not establish

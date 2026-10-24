@@ -1,0 +1,1 @@
+module app::a; pub enum Error { Bounds, InvalidUtf8(i32) } pub fn bad() -> Error { return Error::InvalidUtf8(3); }

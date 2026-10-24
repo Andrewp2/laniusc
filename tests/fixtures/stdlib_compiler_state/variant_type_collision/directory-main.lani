@@ -1,0 +1,3 @@
+module app::main;
+import std::directory;
+fn main() -> i32 { let owner:std::directory::Directory=std::directory::empty_directory(); let closed=owner.close(); return 0; }

@@ -1,0 +1,6 @@
+module app::directory;
+import app::kind;
+pub struct Directory { value: i32 }
+pub fn empty() -> Directory { return Directory { value: 7 }; }
+pub fn kind() -> app::kind::Kind { return app::kind::Kind::Folder; }
+pub fn roundtrip() -> i32 { let directory:Directory=empty(); return directory.value; }

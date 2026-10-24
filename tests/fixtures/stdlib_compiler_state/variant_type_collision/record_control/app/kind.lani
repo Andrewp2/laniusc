@@ -1,0 +1,2 @@
+module app::kind;
+pub enum Kind { Folder, Regular }

@@ -1,0 +1,8 @@
+module app::main;
+import app::directory;
+fn main() -> i32 {
+    let direct: app::directory::Directory = app::directory::empty();
+    if (direct.value != 7) { return 1; }
+    if (app::directory::roundtrip() != 7) { return 2; }
+    return 0;
+}

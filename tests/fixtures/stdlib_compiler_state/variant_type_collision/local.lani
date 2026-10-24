@@ -1,0 +1,23 @@
+module app::main;
+import core::result;
+enum Overlong { Overflow, Error }
+enum Error { Bounds, InvalidUtf8(i32) }
+fn map(value:Error) -> Error {
+    let mapped:Error=match(value) { Bounds->Error::Bounds, InvalidUtf8(at)->Error::InvalidUtf8(at+1) };
+    return mapped;
+}
+fn main() -> i32 {
+    let qualified:Overlong=Overlong::Error;
+    let unqualified:Overlong=Error;
+    let overflow:Overlong=Overflow;
+    let a:bool=match(qualified) { Overlong::Error->true, _->false };
+    let b:bool=match(unqualified) { Overlong::Error->true, _->false };
+    let c:bool=match(overflow) { Overlong::Overflow->true, _->false };
+    if (!a || !b || !c) { return 1; }
+    let error:Error=map(Error::InvalidUtf8(8));
+    let result:core::result::Result<i32,Error> =core::result::Err(error);
+    let roundtrip:Error=core::result::unwrap_err(result);
+    let at:i32=match(roundtrip) { Error::InvalidUtf8(value)->value, _->0 };
+    if (at != 9) { return 2; }
+    return 0;
+}

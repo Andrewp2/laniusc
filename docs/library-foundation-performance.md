@@ -4,6 +4,12 @@ Tables below are chronological source snapshots. Current selective source
 bundling is documented in [distribution](library-distribution.md); it does not
 change the compiler's emitted-code granularity or make earlier timings current.
 
+For the measurements below, the harness validated the final emitted ELF in
+each process, after all warmups and measured compilations. Earlier wording
+incorrectly described validation of every iteration. The timings are unchanged.
+The subsequent harness correction validates each emitted program outside the
+measured compiler span; new measurements must identify that stronger check.
+
 On 2026-10-23, the existing `examples/stdlib_gpu_perf.rs` harness compiled and
 executed these real imported-library contract programs. Each row used one
 warmup and three measured entry rebuilds, with `LANIUS_PERF_REBUILD_ENTRY=1`.
@@ -16,7 +22,7 @@ desktop activity was not controlled.
 | `tests/fixtures/stdlib_foundation/arena_contracts.lani` | 10 files, approximately 72 KB | 47,226 bytes | 133.323 ms | 129.215–148.302 ms |
 | `tests/fixtures/extended/cbor_contracts.lani` | 17 files, approximately 167 KB | 229,273 bytes | 281.598 ms | 270.909–301.194 ms |
 
-Every emitted native executable exited 0 with the expected empty stdout/stderr.
+The final emitted native executable for each row exited 0 with the expected empty stdout/stderr.
 The CBOR entry used `extended` as an additional source root; the other entries
 used only `stdlib`. These measurements use GPU compilation to x86_64 Linux,
 without establishing user-program GPU execution, fully cold library builds,
@@ -46,8 +52,8 @@ Each description records its input, validation, timing scope and observed range.
 
 The same harness measured the following additional imported entries on
 2026-10-23. Each row used one warmup and three measured private entry rebuilds,
-with imported files unchanged and `LANIUS_PERF_REBUILD_ENTRY=1`. Every emitted
-ELF executed with exit 0 and empty stdout/stderr. Source closure counts include
+with imported files unchanged and `LANIUS_PERF_REBUILD_ENTRY=1`. The final emitted
+ELF for each row executed with exit 0 and empty stdout/stderr. Source closure counts include
 the entry and recursively imported source files.
 
 | Entry | Import closure | Emitted ELF | Median | Range |
@@ -117,7 +123,7 @@ optimized Ryu or claim GPU execution of library programs.
 The same existing harness measured the following entries on 2026-10-23, using
 one warmup and three measured private entry rebuilds with
 `LANIUS_PERF_REBUILD_ENTRY=1`. Imported files remained unchanged during each
-run. Each emitted ELF executed with exit 0 and empty stdout/stderr. These are
+run. The final emitted ELF for each row executed with exit 0 and empty stdout/stderr. These are
 warm imported-library observations; other desktop processes were uncontrolled.
 They establish neither cold compilation nor a cross-compiler speed ratio.
 
@@ -164,7 +170,7 @@ claim.
 
 At source snapshot `8568e938` on 2026-10-23, the same repository harness measured one warmup and three private
 entry rebuilds for each entry below, with `LANIUS_PERF_REBUILD_ENTRY=1`. Imported
-sources remained unchanged within each process. All emitted executables exited
+sources remained unchanged within each process. The final emitted executable for each row exited
 0 with expected empty stdout/stderr. Counts include the entry and its recursive
 imports. Desktop activity was uncontrolled; results are observations across
 different workloads/cache histories, not a paired compiler regression test.
@@ -208,7 +214,7 @@ user-kernel execution, cold compilation or the canonical synthetic speed ratio.
 On 2026-10-23 the existing harness measured the final collections/mathematics
 sources with one warmup and three measured private entry rebuilds per row.
 `LANIUS_PERF_REBUILD_ENTRY=1` invalidates the entry cache; the process/device and
-unchanged imports remain warm. Every emitted ELF exited 0 with empty expected
+unchanged imports remain warm. The final emitted ELF for each row exited 0 with empty expected
 stdout/stderr. Counts include the entry and its recursive imports.
 
 | Entry | Import closure | Emitted ELF | Median | Range |
@@ -325,7 +331,7 @@ On 2026-10-23 the existing `stdlib_gpu_perf` harness measured the final library
 sources with one warmup and three measured private entry rebuilds per row.
 `LANIUS_PERF_REBUILD_ENTRY=1` invalidates the entry cache. The process/device and
 unchanged imports remain warm. Counts include the entry and recursive imports.
-Every emitted x86_64 Linux ELF exited 0 with empty stdout/stderr for these six
+The final emitted x86_64 Linux ELF for each row exited 0 with empty stdout/stderr for these six
 contract entries.
 
 | Entry | Import closure | Emitted ELF | Median | Range |
@@ -364,7 +370,7 @@ calls. Its import closure is 10 files and 1,073,989 bytes. The generator's
 all transitive compiler instantiations.
 
 With one warmup and three private entry rebuilds, compilation took 999.836,
-1,147.183 and 1,084.105 ms: median **1,084.105 ms**. Each emitted 2,171,687-byte
+1,147.183 and 1,084.105 ms: median **1,084.105 ms**. The final emitted 2,171,687-byte
 ELF exited 0 and matched the model's 15 output lines with empty stderr.
 
 ```sh
@@ -407,7 +413,7 @@ completion audit remain unverified or unfinished.
 On 2026-10-23, the existing `stdlib_gpu_perf` harness measured the sources in
 this checkpoint with one warmup and three private entry rebuilds per row.
 `LANIUS_PERF_REBUILD_ENTRY=1` invalidates the entry cache; the process/device and
-unchanged imports remain warm. Every emitted ELF executed with exit 0 and the
+unchanged imports remain warm. The final emitted ELF for each row executed with exit 0 and the
 expected empty stdout/stderr. Counts include the entry and recursive imports.
 
 | Entry | Import closure | Emitted ELF | Median | Range |
@@ -455,3 +461,36 @@ Verified execution remains x86_64 Linux output from GPU compilation; user GPU
 execution and other targets remain unverified. Source bundling is executable,
 while binary SDK installation, complete API reference and final completion
 audit remain open.
+
+## Type/value namespace guard and per-iteration output verification
+
+The unit-variant consumer now checks that a row is a value expression before
+writing its checked reference. The retained [collision cases and paired
+measurement](../tests/fixtures/stdlib_compiler_state/variant_type_collision/README.md)
+record the exact baseline (`3fa72ac2`), reconstruction flags, frozen stdlib and
+workload hashes, pinned shader manifests and functional rejection controls.
+The existing harness now executes **every emitted ELF**, including warmups,
+after stopping that iteration's compiler timer. Earlier rows on this page
+verified only the final ELF of each process; their original timings remain valid
+observations, with that narrower correctness check.
+
+The unchanged 1,000,000-byte imported-library workload has 12,274 stdlib call
+sites and emits 2,171,815 ELF bytes. An initial chronological before/after run
+showed +24.18%, but did not preserve separate shader directories and is not a
+reproducible regression conclusion. The corrected comparison pins complete
+shader sets with `LANIUS_SHADER_ARTIFACT_ROOT` and runs before/after/after/before,
+each with one warmup and three private entry rebuilds. All sixteen executables
+exit 0 and match the expected output.
+
+| Shader set | Six measured samples, median | Observed range |
+| --- | --- | --- |
+| Before | 1323.2275 ms | 1212.939–1334.753 ms |
+| After | 1243.462 ms | 1130.256–1307.283 ms |
+
+The observed median difference is -6.03%; the initial slowdown did not repeat.
+Desktop load, clocks and temperature were uncontrolled, so this does not
+establish a causal speedup or fixed performance bound. The changed consumer
+adds eight fully inlined instructions (37,187 to 37,195) and 188 SPIR-V bytes
+(193,168 to 193,356), measured with the existing size analyzer. This is a
+focused compiler correction with functional and scale evidence, not a new
+cross-compiler comparison or a claim about user GPU execution.

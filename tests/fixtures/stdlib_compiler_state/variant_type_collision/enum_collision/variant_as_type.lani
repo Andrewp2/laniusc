@@ -1,0 +1,4 @@
+module app::main;
+import app::b;
+fn bad(value:app::b::Overlong::Error) -> i32 { return 0; }
+fn main() -> i32 { return 0; }
