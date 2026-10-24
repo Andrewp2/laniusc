@@ -8,7 +8,9 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `std`. Role: module. Profile: **Source inventory**.
 
-**No contract guide registered.** This page makes no runtime support claim.
+## Contract and evidence guides
+
+- [stdlib-process-context](../../stdlib-process-context.md)
 
 Declaration counts: constant: 12; extern function: 4; function: 44; type alias: 6.
 

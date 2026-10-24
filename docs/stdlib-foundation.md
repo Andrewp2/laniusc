@@ -115,9 +115,23 @@ The [required trait-result repair](compiler-trait-result-contract.md) at
 `972f0564` preserves bound argument identity and accepted compound results in
 caller scope. Its focused driver covers symbolic errors, reversed parameter
 order, nested results, incompatible receiving annotations and compiler reuse.
-The historical admission notes are retained at `f96b73c1`; this result does not
-close generic implementation forwarding, automatic ownership or the separate
-production clone gate.
+The historical admission notes are retained at `f96b73c1`; generic implementation
+forwarding and automatic ownership remain separate work.
+
+[Unit-body and template admission](compiler-unit-body-contract.md), repaired in
+`45561975`, give real unit definitions an executable fallthrough and defer
+generic helpers whose static trait targets still need implementation selection.
+The focused driver passes six compilation jobs and four native executions,
+including missing-implementation rejections. No required declaration receives
+a fabricated native body.
+
+[Fallible element cloning](stdlib-clone.md), accepted in `359602d2`, now composes
+explicit TryClone/Destroy protocols with independent String and user-record
+owners. Native gates cover aliases, packed strides, malformed metadata, empty
+and zero-sized values, twelve partial-field failures and all 83 reached
+allocation failures. Exact cleanup ledgers include errors owning a String.
+Existing collection clones still copy entries shallowly; automatic destruction
+and general deep-owned collection integration remain work.
 
 Verified execution is x86_64 Linux output from GPU compilation; user GPU kernels
 and other targets are unverified. Threads, native FFI/TLS/SQLite, generic
@@ -126,7 +140,7 @@ iterator/stream composition and distribution/reference completion remain on the
 [reproductions and successful controls](library-dependencies.md).
 
 The [generated declaration reference](library-api-reference.md) inventories
-212 source modules with signatures, bounds, fields and exact source links.
+215 source modules with signatures, bounds, fields and exact source links.
 Twenty focused CPU tests and a fresh generated-output check pass. This is
 documentation extraction, not runtime verification; semantic guide gaps remain
 listed explicitly. The [strict UTF codec guide](stdlib-utf-codecs.md) now maps
