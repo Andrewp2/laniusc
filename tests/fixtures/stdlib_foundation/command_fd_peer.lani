@@ -1,0 +1,7 @@
+module app::main;
+import std::command_raw;
+import std::io;
+fn main() -> i32 {
+    if (std::command_raw::word(72,0,1,0) != -9) { return 1; } let fd: i32 = 3; while (fd <= 220) { if (std::command_raw::word(72,fd as i64,1,0) != -9) { return 2; } fd += 1; }
+    if (std::io::write_text(1,"OUT") != 3 || std::io::write_text(2,"ERR") != 3) { return 3; } return 0;
+}

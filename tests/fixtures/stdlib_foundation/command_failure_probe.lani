@@ -1,0 +1,13 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::slice;
+import std::command;
+import std::command_raw;
+fn bytes(value: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),n); return core::slice::view(raw,n).unwrap(); }
+fn finish(status: i32) -> i32 { let raw: [i32;1] = [0;1]; assert(std::command_raw::wait(-1,core::mem::i32_array_data_ptr(raw),true) == -10); return status; }
+fn child(value: std::command::Child) -> i32 { let status = value.wait(); assert(status.is_ok()); value.close_pipes(); let exit = status.unwrap(); if (core::option::is_some(exit.signal)) { assert(core::option::unwrap(exit.signal) == 9); return finish(45); } assert(core::option::unwrap(exit.code) == 127); return finish(43); }
+fn failed(value: std::command::FailedStart) -> i32 { assert(value.failure.errno > 0); assert(core::option::unwrap(value.status.code) == 127); return finish(42); }
+fn unknown(value: std::command::UnknownStart) -> i32 { value.child.cancel_and_wait().unwrap(); value.child.close_pipes(); return finish(44); }
+fn main() -> i32 { let name = bytes("/no/such/command",16); let args: [core::slice::View<u8>;1] = [name]; let env: [core::slice::View<u8>;0] = []; let request = std::command::request(name,core::slice::view(args,1).unwrap(),core::slice::view(env,0).unwrap()); request.stdin = std::command::Stdio::Null; request.stdout = std::command::Stdio::Null; request.stderr = std::command::Stdio::Null;
+    let result = std::command::spawn(request); if (result.is_err()) { return finish(46); } return match(result.unwrap()) { std::command::Spawn::Child(value) -> child(value), std::command::Spawn::Failed(value) -> failed(value), std::command::Spawn::Unknown(value) -> unknown(value) }; }

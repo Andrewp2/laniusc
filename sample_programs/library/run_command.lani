@@ -1,0 +1,111 @@
+// A bounded raw-byte command runner. Child output streams directly to its FDs.
+module app::main;
+import alloc::vec;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import core::text;
+import std::args;
+import std::command;
+import std::file;
+import std::signal;
+import std::stream;
+struct Options { first: i32, clear: bool, append: bool, status: bool, help: bool, sigpipe: std::command::ChildSigpipe, cwd: core::option::Option<core::slice::View<u8>>, input: core::option::Option<core::slice::View<u8>>, output: core::option::Option<core::slice::View<u8>>, error: core::option::Option<core::slice::View<u8>>, entries: alloc::vec::Vec<core::slice::View<u8>> }
+impl Options { fn borrow(&self) -> &Options { return self; } fn destroy(&self) { self.entries.destroy(); } }
+struct Detail { stage: i32, errno: i32, reported: bool }
+impl Detail { fn borrow(&self) -> &Detail { return self; } }
+fn bytes(value: str, length: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),length); return core::slice::view(raw,length).unwrap(); }
+fn text(value: str, length: i32) -> core::text::Text { let raw = bytes(value,length); return core::text::from_utf8_unchecked(raw.values,raw.start,raw.length); }
+fn equal(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.length != b.length) { return false; } let i: i32 = 0; while (i < a.length) { if (a.values[a.start+i] != b.values[b.start+i]) { return false; } i += 1; } return true; }
+fn key_length(a: core::slice::View<u8>) -> i32 { let i: i32 = 0; while (i < a.length && a.values[a.start+i] != 61) { i += 1; } return i; }
+fn same_key(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { let n: i32 = key_length(a); if (n != key_length(b)) { return false; } let i: i32 = 0; while (i < n) { if (a.values[a.start+i] != b.values[b.start+i]) { return false; } i += 1; } return true; }
+fn stage(value: std::command::Stage) -> i32 { return match(value) { std::command::Stage::Validate -> 1, std::command::Stage::Allocate -> 2, std::command::Stage::Descriptors -> 3, std::command::Stage::Fork -> 4, std::command::Stage::CloseRange -> 5, std::command::Stage::Redirect -> 6, std::command::Stage::Directory -> 7, std::command::Stage::Exec -> 8, std::command::Stage::StartupRead -> 9, std::command::Stage::StartupProtocol -> 10, std::command::Stage::Wait -> 11, std::command::Stage::Signal -> 12, std::command::Stage::Close -> 13, std::command::Stage::Environment -> 14 }; }
+fn failed(detail: &Detail, error: std::command::Failure) -> i32 { detail.stage = stage(error.stage); detail.errno = error.errno; return 125; }
+fn parse(arguments: std::args::Arguments, options: &Options) -> bool {
+    let at: i32 = 0;
+    while (at < arguments.len()) { let value = core::option::unwrap(arguments.get(at));
+        if (equal(value,bytes("--",2))) { at += 1; break; }
+        if (value.length == 0 || value.values[value.start] != 45 || equal(value,bytes("-",1))) { break; }
+        if (equal(value,bytes("--help",6))) { options.help = true; at += 1; continue; }
+        if (equal(value,bytes("--clear-env",11))) { if (options.clear) { return false; } options.clear = true; at += 1; continue; }
+        if (equal(value,bytes("--append",8))) { if (options.append) { return false; } options.append = true; at += 1; continue; }
+        if (equal(value,bytes("--status",8))) { if (options.status) { return false; } options.status = true; at += 1; continue; }
+        if (at+1 >= arguments.len()) { return false; } let argument = core::option::unwrap(arguments.get(at+1));
+        if (equal(value,bytes("--env",5))) { let n: i32 = key_length(argument); if (n == 0 || n == argument.length || options.entries.len() >= 128) { return false; } if (options.entries.try_push(argument).is_err()) { return false; } }
+        else { if (equal(value,bytes("--cwd",5))) { if (core::option::is_some(options.cwd) || argument.length == 0) { return false; } options.cwd = core::option::Some(argument); }
+        else { if (equal(value,bytes("--stdin",7))) { if (core::option::is_some(options.input) || argument.length == 0) { return false; } options.input = core::option::Some(argument); }
+        else { if (equal(value,bytes("--stdout",8))) { if (core::option::is_some(options.output) || argument.length == 0) { return false; } options.output = core::option::Some(argument); }
+        else { if (equal(value,bytes("--stderr",8))) { if (core::option::is_some(options.error) || argument.length == 0) { return false; } options.error = core::option::Some(argument); }
+        else { if (equal(value,bytes("--sigpipe",9))) { if (equal(argument,bytes("default",7))) { options.sigpipe = std::command::ChildSigpipe::Default; } else { if (!equal(argument,bytes("inherit",7))) { return false; } options.sigpipe = std::command::ChildSigpipe::Inherit; } }
+        else { return false; } } } } } }
+        at += 2;
+    }
+    options.first = at; if (options.help) { return arguments.len() == 1; } return at < arguments.len();
+}
+fn overridden(entry: core::slice::View<u8>, entries: alloc::vec::Vec<core::slice::View<u8>>, after: i32) -> bool { let i: i32 = after; while (i < entries.len()) { if (same_key(entry,entries.at(i))) { return true; } i += 1; } return false; }
+fn merge(base: core::slice::View<core::slice::View<u8>>, overrides: alloc::vec::Vec<core::slice::View<u8>>, output: &alloc::vec::Vec<core::slice::View<u8>>) -> bool {
+    let i: i32 = 0; while (i < base.length) { let entry = base.values[base.start+i]; if (!overridden(entry,overrides,0)) { if (output.try_push(entry).is_err()) { return false; } } i += 1; }
+    i = 0; while (i < overrides.len()) { let entry = overrides.at(i); if (!overridden(entry,overrides,i+1)) { if (output.try_push(entry).is_err()) { return false; } } i += 1; } return true;
+}
+fn open_file(name: core::option::Option<core::slice::View<u8>>, mode: std::file::OpenMode) -> core::result::Result<core::option::Option<std::file::File>,i32> {
+    if (core::option::is_none(name)) { return core::result::Ok(core::option::None()); } let path = core::path::from_view(core::option::unwrap(name)); if (path.is_err()) { return core::result::Err(22); }
+    let opened = std::file::open(path.unwrap(),mode); if (opened.is_err()) { return core::result::Err(match(opened.unwrap_err()) { core::io::Error::Host(n) -> n, _ -> 5 }); } return core::result::Ok(core::option::Some(opened.unwrap()));
+}
+fn setting(owner: core::option::Option<std::file::File>) -> std::command::Stdio { if (core::option::is_none(owner)) { return std::command::Stdio::Inherit; } return std::command::Stdio::Borrowed(core::option::unwrap(core::option::unwrap(owner).raw_handle())); }
+fn close(owner: core::option::Option<std::file::File>) -> i32 { if (core::option::is_none(owner)) { return 0; } let closed = core::option::unwrap(owner).close(); if (closed.is_ok()) { return 0; } return match(closed.unwrap_err()) { core::io::Error::Host(n) -> n, core::io::Error::Interrupted -> 4, core::io::Error::WouldBlock -> 11, _ -> 5 }; }
+fn close_all(input: core::option::Option<std::file::File>, output: core::option::Option<std::file::File>, error: core::option::Option<std::file::File>) -> i32 { let first: i32 = close(input); let n: i32 = close(output); if (first == 0) { first = n; } n = close(error); if (first == 0) { first = n; } return first; }
+fn exit_code(status: std::command::ExitStatus) -> i32 { if (core::option::is_some(status.code)) { return core::option::unwrap(status.code); } return 128+core::option::unwrap(status.signal); }
+fn report_status(status: std::command::ExitStatus) -> bool {
+    let raw: [u8;128] = [0;128]; let formatter = core::fmt::buffer(raw,0,128).unwrap(); formatter.write_text(text("run-command: startup=unconfirmed ",33));
+    if (core::option::is_some(status.code)) { formatter.write_text(text("exit=",5)); formatter.write_signed(core::option::unwrap(status.code) as i64,core::fmt::decimal()); }
+    else { formatter.write_text(text("signal=",7)); formatter.write_signed(core::option::unwrap(status.signal) as i64,core::fmt::decimal()); }
+    formatter.write_text(text("\n",1)); let sink = std::stream::stderr(); return core::io::write_all(sink.borrow(),raw,0,formatter.finish().unwrap()).is_ok();
+}
+// Do not discard an owned live PID after a transient wait failure. If killing
+// is denied, waiting can still reap a child that exits on its own.
+fn settle(child: std::command::Child) {
+    let canceled = child.cancel_and_wait(); if (canceled.is_ok()) { return; }
+    while (core::option::is_some(child.id())) { let waited = child.wait(); if (waited.is_ok()) { return; } }
+}
+fn ordinary(child: std::command::Child, status: bool, detail: &Detail) -> i32 {
+    let waited = child.wait(); if (waited.is_err()) { let error = waited.unwrap_err(); settle(child); child.close_pipes(); return failed(detail,error); } let value = waited.unwrap(); child.close_pipes();
+    if (status && !report_status(value)) { detail.stage = 15; detail.errno = 5; return 125; } return exit_code(value);
+}
+fn ordinary_closed(child: std::command::Child, status: bool, close_errno: i32, detail: &Detail) -> i32 { let result: i32 = ordinary(child,status,detail); if (close_errno != 0) { detail.stage = 13; detail.errno = close_errno; return 125; } return result; }
+fn known(value: std::command::FailedStart, detail: &Detail) -> i32 { failed(detail,value.failure); detail.reported = true; if (detail.stage == 8 && (detail.errno == 2 || detail.errno == 20)) { return 127; } return 126; }
+fn unknown(value: std::command::UnknownStart, detail: &Detail) -> i32 { settle(value.child); value.child.close_pipes(); return failed(detail,value.failure); }
+fn launch(arguments: std::args::Arguments, options: Options, environment: core::slice::View<core::slice::View<u8>>, detail: &Detail) -> i32 {
+    let input = open_file(options.input,std::file::OpenMode::Read); if (input.is_err()) { detail.stage = 16; detail.errno = input.unwrap_err(); return 125; } let input_owner = input.unwrap();
+    let mode: std::file::OpenMode = std::file::OpenMode::Create; if (options.append) { mode = std::file::OpenMode::Append; }
+    let output = open_file(options.output,mode); if (output.is_err()) { close(input_owner); detail.stage = 16; detail.errno = output.unwrap_err(); return 125; } let output_owner = output.unwrap();
+    let error = open_file(options.error,mode); if (error.is_err()) { close(input_owner); close(output_owner); detail.stage = 16; detail.errno = error.unwrap_err(); return 125; } let error_owner = error.unwrap();
+    let all = arguments.as_view(); let tail: core::slice::View<core::slice::View<u8>> = core::slice::View { values: all.values, start: all.start+options.first, length: all.length-options.first };
+    let request = std::command::request(core::option::unwrap(arguments.get(options.first)),tail,environment); request.cwd = options.cwd; request.search = std::command::Search::EnvironmentPath; request.sigpipe = options.sigpipe;
+    request.stdin = setting(input_owner); request.stdout = setting(output_owner); request.stderr = setting(error_owner); let spawned = std::command::spawn(request); let close_errno: i32 = close_all(input_owner,output_owner,error_owner);
+    if (spawned.is_err()) { return failed(detail,spawned.unwrap_err()); } return match(spawned.unwrap()) { std::command::Spawn::Child(child) -> ordinary_closed(child,options.status,close_errno,detail), std::command::Spawn::Failed(value) -> known(value,detail), std::command::Spawn::Unknown(value) -> unknown(value,detail) };
+}
+fn process(arguments: std::args::Arguments, detail: &Detail) -> i32 {
+    let entries: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new(); let options = Options { first: 0, clear: false, append: false, status: false, help: false, sigpipe: std::command::ChildSigpipe::Default, cwd: core::option::None(), input: core::option::None(), output: core::option::None(), error: core::option::None(), entries: entries };
+    if (!parse(arguments,options.borrow())) { options.destroy(); detail.stage = 1; return 125; }
+    if (options.help) { options.destroy(); let usage = bytes("Usage: run-command [--clear-env] [--env KEY=VALUE] [--cwd DIR] [--stdin FILE] [--stdout FILE] [--stderr FILE] [--append] [--sigpipe default|inherit] [--status] -- PROGRAM [ARG...]\n",180); let sink = std::stream::stdout(); if (core::io::write_all(sink.borrow(),usage.values,usage.start,usage.length).is_err()) { detail.stage = 15; return 125; } return 0; }
+    let snapshot: core::option::Option<std::command::Environment> = core::option::None(); let base_values: [core::slice::View<u8>;0] = []; let base: core::slice::View<core::slice::View<u8>> = core::slice::view(base_values,0).unwrap();
+    if (!options.clear) { let captured = std::command::snapshot_environment(std::command::default_limits()); if (captured.is_err()) { options.destroy(); return failed(detail,captured.unwrap_err()); } snapshot = core::option::Some(captured.unwrap()); base = core::option::unwrap(snapshot).as_view(); }
+    let merged: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new(); let status: i32 = 125;
+    if (merge(base,options.entries,merged.borrow())) { status = launch(arguments,options,merged.as_view(),detail); } else { detail.stage = 2; }
+    merged.destroy(); if (core::option::is_some(snapshot)) { core::option::unwrap(snapshot).destroy(); } options.destroy(); return status;
+}
+fn diagnostic(detail: Detail) -> bool {
+    let raw: [u8;160] = [0;160]; let formatter = core::fmt::buffer(raw,0,160).unwrap(); formatter.write_text(text("run-command: ",13)); if (detail.reported) { formatter.write_text(text("reported-child-failure",22)); } else { formatter.write_text(text("runner-failure",14)); }
+    formatter.write_text(text(" stage=",7)); formatter.write_signed(detail.stage as i64,core::fmt::decimal()); formatter.write_text(text(" errno=",7)); formatter.write_signed(detail.errno as i64,core::fmt::decimal()); formatter.write_text(text("\n",1)); let sink = std::stream::stderr(); return core::io::write_all(sink.borrow(),raw,0,formatter.finish().unwrap()).is_ok();
+}
+fn main() -> i32 {
+    let detail = Detail { stage: 0, errno: 0, reported: false }; let ignored = std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore); if (ignored.is_err()) { return 125; }
+    let captured = std::args::snapshot(1,4352,1048576); let status: i32 = 125;
+    if (captured.is_ok()) { let arguments = captured.unwrap(); status = process(arguments,detail.borrow()); arguments.destroy(); }
+    // A child's ordinary nonzero status is not a runner diagnostic.
+    if (detail.stage != 0 && !diagnostic(detail)) { return 125; } return status;
+}
