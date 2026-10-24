@@ -1,4 +1,103 @@
-use laniusc_compiler::formatter::format_source;
+use laniusc_compiler::{
+    formatter::format_source,
+    lexer::{tables::tokens::TokenKind, test_cpu::lex_raw_on_test_cpu},
+};
+
+fn lexical_spellings(source: &str) -> Vec<(TokenKind, &str)> {
+    lex_raw_on_test_cpu(source)
+        .unwrap_or_else(|error| panic!("independent lexer rejected {source:?}: {error}"))
+        .into_iter()
+        .filter(|token| token.kind != TokenKind::White)
+        .map(|token| (token.kind, &source[token.start..token.start + token.len]))
+        .collect()
+}
+
+#[test]
+fn formatter_preserves_decimal_exponent_tokens_and_roundtrips() {
+    for literal in [
+        "1e-15",
+        "1e+15",
+        "1e15",
+        "1E-15",
+        "1E+15",
+        "1E15",
+        "0e-0",
+        "0E+0",
+        "1.25e-15",
+        "12.e+3",
+        ".5E-2",
+        "1_2.3_4e-5_6",
+    ] {
+        let source = format!("fn value()->f64{{return {literal};}}");
+        let formatted = format_source(&source);
+        assert_eq!(
+            lexical_spellings(&formatted),
+            lexical_spellings(&source),
+            "formatting must preserve the Float token and spelling for {literal}"
+        );
+        assert_eq!(format_source(&formatted), formatted, "{literal}");
+    }
+}
+
+#[test]
+fn formatter_keeps_subtraction_separate_from_exponent_signs() {
+    for expression in [
+        "1e-15-2e+3",
+        "1E+15+2E-3",
+        "1.5e-2- -2.5E+3",
+        "-1e-15",
+        "10-3",
+        "value-15",
+        "value_e-15",
+        "0x1e-3",
+        "0b10-1",
+        "0o17-2",
+        "1.0-2.0",
+    ] {
+        let source = format!("fn value()->f64{{return {expression};}}");
+        let formatted = format_source(&source);
+        assert_eq!(
+            lexical_spellings(&formatted),
+            lexical_spellings(&source),
+            "{expression}"
+        );
+        assert_eq!(format_source(&formatted), formatted, "{expression}");
+    }
+    let formatted = format_source("fn value()->f64{return 1e-15-2e+3;}");
+    assert!(formatted.contains("return 1e-15 - 2e+3;"), "{formatted}");
+}
+
+#[test]
+fn formatter_preserves_exponent_text_in_comments_and_quoted_literals() {
+    let source = r#"// 1e-15 and 1E+15 are comment text.
+fn value()->f64{let text:str="1e-15 \\\" 2E+3";let letter:char='e';/* .5e-2 { } */return 1e-15;}
+"#;
+    let formatted = format_source(source);
+    assert_eq!(lexical_spellings(&formatted), lexical_spellings(source));
+    assert_eq!(format_source(&formatted), formatted);
+}
+
+#[test]
+fn formatter_keeps_range_dots_outside_decimal_exponent_tokens() {
+    for source in [
+        "fn value(){for index in 1..3{return 1e-15;}}",
+        "fn value(){for index in 1..=3{return 2E+3;}}",
+    ] {
+        let formatted = format_source(source);
+        assert_eq!(lexical_spellings(&formatted), lexical_spellings(source));
+        assert_eq!(format_source(&formatted), formatted);
+    }
+}
+
+#[test]
+fn formatter_preserves_historical_negative_exponent_source_tokens() {
+    let source = include_str!("fixtures/stdlib_compiler_state/format_negative_exponent/input.lani");
+    let formatted = format_source(source);
+    assert_eq!(lexical_spellings(&formatted), lexical_spellings(source));
+    assert!(formatted.contains("1e-15"));
+    assert!(!formatted.contains("1e - 15"));
+    assert_eq!(format_source(&formatted), formatted);
+}
 
 #[test]
 fn formatter_formats_small_alpha_sample() {

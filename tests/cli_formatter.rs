@@ -19,6 +19,84 @@ fn laniusc_bin() -> PathBuf {
 }
 
 #[test]
+fn cli_fmt_exponent_rewrite_is_token_preserving_and_check_detects_changes() {
+    use laniusc_compiler::lexer::{tables::tokens::TokenKind, test_cpu::lex_raw_on_test_cpu};
+
+    let original =
+        include_str!("fixtures/stdlib_compiler_state/format_negative_exponent/input.lani");
+    let source = common::TempArtifact::new("laniusc_cli_formatter", "exponents", Some("lani"));
+    source.write_str(original);
+
+    let mut check = Command::new(laniusc_bin());
+    check.arg("fmt").arg("--check").arg(source.path());
+    let output = common::command_output_with_timeout("check unformatted exponent file", &mut check);
+    assert!(!output.status.success(), "{output:?}");
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("LNC0019"));
+    assert_eq!(fs::read_to_string(source.path()).unwrap(), original);
+
+    let mut stdin_check = Command::new(laniusc_bin());
+    stdin_check.args(["fmt", "--stdin", "--check"]);
+    let output = command_output_with_stdin(
+        "check unformatted exponent stdin",
+        &mut stdin_check,
+        original.as_bytes(),
+    );
+    assert!(!output.status.success(), "{output:?}");
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("LNC0019"));
+
+    let mut format = Command::new(laniusc_bin());
+    format.args(["fmt", "--stdin"]);
+    let output =
+        command_output_with_stdin("format exponent stdin", &mut format, original.as_bytes());
+    common::assert_command_success("format exponent stdin", &output);
+    assert!(output.stderr.is_empty());
+    let formatted = String::from_utf8(output.stdout).unwrap();
+    assert_ne!(formatted, original);
+    assert!(formatted.contains("1e-15"));
+    let spelling = |text: &str| {
+        lex_raw_on_test_cpu(text)
+            .unwrap()
+            .into_iter()
+            .filter(|token| token.kind != TokenKind::White)
+            .map(|token| {
+                (
+                    token.kind,
+                    text[token.start..token.start + token.len].to_owned(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(spelling(&formatted), spelling(original));
+
+    source.write_str(&formatted);
+    let mut check = Command::new(laniusc_bin());
+    check.arg("fmt").arg("--check").arg(source.path());
+    let output = common::command_output_with_timeout("check preserved exponent file", &mut check);
+    common::assert_command_success("check preserved exponent file", &output);
+    assert!(output.stdout.is_empty() && output.stderr.is_empty());
+    assert_eq!(fs::read_to_string(source.path()).unwrap(), formatted);
+
+    let mut check = Command::new(laniusc_bin());
+    check.args(["fmt", "--stdin", "--check"]);
+    let output = command_output_with_stdin(
+        "check preserved exponent stdin",
+        &mut check,
+        formatted.as_bytes(),
+    );
+    common::assert_command_success("check preserved exponent stdin", &output);
+    assert!(output.stdout.is_empty() && output.stderr.is_empty());
+
+    let mut second_format = Command::new(laniusc_bin());
+    second_format.arg("fmt").arg(source.path());
+    let output =
+        common::command_output_with_timeout("second exponent formatting pass", &mut second_format);
+    common::assert_command_success("second exponent formatting pass", &output);
+    assert_eq!(fs::read_to_string(source.path()).unwrap(), formatted);
+}
+
+#[test]
 fn cli_fmt_formats_source_file_in_place() {
     let source = common::TempArtifact::new("laniusc_cli_formatter", "format", Some("lani"));
     source.write_str("fn main(){return 1;}");

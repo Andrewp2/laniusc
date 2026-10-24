@@ -378,6 +378,15 @@ fn tokenize(source: &str) -> Vec<Token<'_>> {
             continue;
         }
 
+        if let Some(end) = decimal_number_end(source, i) {
+            tokens.push(Token {
+                kind: TokenKind::Word,
+                text: &source[i..end],
+            });
+            i = end;
+            continue;
+        }
+
         if is_word_start(ch) {
             let end = word_end(source, i);
             tokens.push(Token {
@@ -397,6 +406,61 @@ fn tokenize(source: &str) -> Vec<Token<'_>> {
     }
 
     tokens
+}
+
+// Keep a decimal float's mantissa and exponent in one lexical unit. An
+// exponent sign is part of that unit only when followed immediately by digits;
+// ordinary signs, radix integers and range dots keep their existing boundaries.
+fn decimal_number_end(source: &str, start: usize) -> Option<usize> {
+    let bytes = source.as_bytes();
+    let first = *bytes.get(start)?;
+    let leading_dot = first == b'.' && bytes.get(start + 1).is_some_and(u8::is_ascii_digit);
+    if !first.is_ascii_digit() && !leading_dot {
+        return None;
+    }
+    if first == b'0'
+        && matches!(
+            bytes.get(start + 1),
+            Some(b'x' | b'X' | b'b' | b'B' | b'o' | b'O')
+        )
+    {
+        return None;
+    }
+    let mut end = start + usize::from(leading_dot);
+    while bytes
+        .get(end)
+        .is_some_and(|byte| byte.is_ascii_digit() || *byte == b'_')
+    {
+        end += 1;
+    }
+    let fraction =
+        !leading_dot && bytes.get(end) == Some(&b'.') && bytes.get(end + 1) != Some(&b'.');
+    if fraction {
+        end += 1;
+        while bytes
+            .get(end)
+            .is_some_and(|byte| byte.is_ascii_digit() || *byte == b'_')
+        {
+            end += 1;
+        }
+    }
+    let exponent = matches!(bytes.get(end), Some(b'e' | b'E'));
+    if exponent {
+        end += 1;
+        if matches!(bytes.get(end), Some(b'+' | b'-')) {
+            end += 1;
+        }
+        if !bytes.get(end).is_some_and(u8::is_ascii_digit) {
+            return None;
+        }
+        while bytes
+            .get(end)
+            .is_some_and(|byte| byte.is_ascii_digit() || *byte == b'_')
+        {
+            end += 1;
+        }
+    }
+    (leading_dot || fraction || exponent).then_some(end)
 }
 
 fn quoted_literal_end(source: &str, start: usize, quote: char) -> usize {
