@@ -1,0 +1,6 @@
+module app::main;
+import alloc::vec;
+import std::file;
+struct CursorOwner { file:std::file::File, buffer:alloc::vec::Vec<u8>, position:i32, filled:i32, eof:bool, failed:bool, work:u64 }
+fn make() -> CursorOwner { return CursorOwner { file:std::file::File { handle:-1 },buffer:alloc::vec::new(),position:0,filled:0,eof:false,failed:false,work:0 }; }
+fn main() -> i32 { let owner:CursorOwner=make(); assert(owner.position==0 && owner.filled==0 && !owner.eof && !owner.failed && owner.work==0); let buffer:alloc::vec::Vec<u8> =owner.buffer; buffer.destroy(); return 0; }

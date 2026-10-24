@@ -149,13 +149,16 @@ also pass. Five path loader/type-check checks pass separately; they are not
 runtime evidence. Stale exact dependency counts and a source-substring coverage
 test were removed; executable path fixtures remain the behavior gate.
 
-## Remaining filesystem work
+## Additional filesystem APIs
 
-The filesystem family remains incomplete. Seek/position, metadata, directory
-enumeration, durability synchronization, descriptor duplication, configurable
-open flags (including close-on-exec and exclusive creation), and descriptor-
-relative operations require additional runtime bindings.
+[File options and operations](stdlib-file-operations.md) now supply configurable
+and descriptor-relative opens, seek/position, metadata, synchronization,
+duplication and descriptor flags over the explicit Linux boundary. Configurable
+opens default to close-on-exec; the three original modes above retain their
+documented flags. [Directory iteration and walking](stdlib-directory.md) provide
+raw names, bounded traversal and a real directory-report program.
 [Borrowed paths and owned buffers](stdlib-paths.md) now provide lexical operations,
 and [checked filesystem mutations](stdlib-filesystem.md) execute over existing
-bindings. No placeholder methods for missing operations are exposed on File. See
+bindings. Lifetime enforcement, other targets and further filesystem operations
+remain work. See
 [library-dependencies.md](library-dependencies.md).

@@ -1,0 +1,19 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::directory;
+import std::stream;
+fn main() -> i32 {
+    let storage:[i32;16385]=[0;16385]; let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),65540);
+    let source:std::stream::Descriptor=std::stream::stdin(); let output:std::stream::Descriptor=std::stream::stdout(); let count:i32=0;
+    while(count<65536) { let got=source.read(raw,count+3,65536-count); if(core::result::is_err(got)) { if(core::io::is_interrupted(core::result::unwrap_err(got))) { continue; } return 3; } let n:i32=core::result::unwrap(got); if(n==0) { break; } count+=n; }
+    if(count==65536) { let probe=source.read(raw,65539,1); if(core::result::is_err(probe)) { return 3; } if(core::result::unwrap(probe)!=0) { return 2; } }
+    let input:core::slice::View<u8> =core::result::unwrap(core::slice::view_range(raw,3,count)); let at:i32=0;
+    // Validate the entire supplied batch before exposing even the first name.
+    while(at<count) { let parsed=std::directory::decode_entry(input,at); if(core::result::is_err(parsed)) { return 2; } at+=core::result::unwrap(parsed).consumed; }
+    at=0; let zero:[u8;1]=[0]; while(at<count) { let entry:std::directory::Entry=core::result::unwrap(std::directory::decode_entry(input,at)); if(core::result::is_err(core::io::write_all(output.borrow(),entry.name.values,entry.name.start,entry.name.len())) || core::result::is_err(core::io::write_all(output.borrow(),zero,0,1))) { return 3; } at+=entry.consumed; }
+    return 0;
+}

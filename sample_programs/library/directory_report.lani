@@ -1,0 +1,111 @@
+// Raw-byte directory report. The complete result is staged before stdout.
+module app::main;
+import alloc::vec;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import core::text;
+import std::args;
+import std::directory;
+import std::file_ops;
+import std::signal;
+import std::stream;
+struct Config { path:core::slice::View<u8>, prefix:core::slice::View<u8>, suffix:core::slice::View<u8>, kind:i32, depth:i32, max_entries:i32, max_bytes:i32, max_path:i32, max_work:u64, max_output:i32 }
+struct Index { path:core::slice::View<u8>, row:i32 }
+struct Budget { remaining:u64 }
+impl Budget { fn borrow(&self) -> &Budget { return self; } fn spend(&self,amount:u64) -> bool { if(amount>self.remaining) { return false; } self.remaining-=amount; return true; } }
+fn bytes(value:str,count:i32) -> core::slice::View<u8> { let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn text(value:str,count:i32) -> core::text::Text { let raw:core::slice::View<u8> =bytes(value,count); return core::text::from_utf8_unchecked(raw.values,raw.start,raw.len()); }
+fn byte(value:core::slice::View<u8>,at:i32) -> u8 { return core::option::unwrap(value.get(at)); }
+fn equal(value:core::slice::View<u8>,literal:str,count:i32) -> bool { if(value.len()!=count) { return false; } let expected:core::slice::View<u8> =bytes(literal,count); let i:i32=0; while(i<count) { if(byte(value,i)!=byte(expected,i)) { return false; } i+=1; } return true; }
+fn write(value:core::slice::View<u8>,fd:i32) -> bool { let output:std::stream::Descriptor=std::stream::from_handle(fd); return core::result::is_ok(core::io::write_all(output.borrow(),value.values,value.start,value.len())); }
+fn config() -> Config { return Config { path:bytes(".",1),prefix:bytes("",0),suffix:bytes("",0),kind:-1,depth:64,max_entries:65536,max_bytes:16777216,max_path:4095,max_work:134217728,max_output:33554432 }; }
+impl Config { fn borrow(&self) -> &Config { return self; } }
+fn number(value:core::slice::View<u8>) -> core::result::Result<u64,i32> { let parsed=core::text::from_utf8_range(value.values,value.start,value.len()); if(core::result::is_err(parsed)) { return core::result::Err(2); } let result=core::result::unwrap(parsed).parse_u64(); if(core::result::is_err(result)) { return core::result::Err(2); } return core::result::Ok(core::result::unwrap(result)); }
+fn nibble(c:u8) -> i32 { if(c>=48 && c<=57) { return (c-48) as i32; } if(c>=97 && c<=102) { return (c-87) as i32; } if(c>=65 && c<=70) { return (c-55) as i32; } return -1; }
+fn hex_valid(value:core::slice::View<u8>) -> bool { if(value.len()%2!=0) { return false; } let i:i32=0; while(i<value.len()) { if(nibble(byte(value,i))<0) { return false; } i+=1; } return true; }
+fn kind_number(kind:std::file_ops::Kind) -> i32 { return match(kind) { std::file_ops::Kind::Unknown->0,std::file_ops::Kind::Regular->1,std::file_ops::Kind::Directory->2,std::file_ops::Kind::Symlink->3,std::file_ops::Kind::Fifo->4,std::file_ops::Kind::Socket->5,std::file_ops::Kind::Character->6,std::file_ops::Kind::Block->7 }; }
+fn kind_name(kind:i32) -> core::slice::View<u8> { if(kind==1) { return bytes("file",4); } if(kind==2) { return bytes("directory",9); } if(kind==3) { return bytes("symlink",7); } if(kind==4) { return bytes("fifo",4); } if(kind==5) { return bytes("socket",6); } if(kind==6) { return bytes("character",9); } if(kind==7) { return bytes("block",5); } return bytes("unknown",7); }
+fn selected_kind(value:core::slice::View<u8>) -> i32 { if(equal(value,"all",3)) { return -1; } let i:i32=0; while(i<8) { let name:core::slice::View<u8> =kind_name(i); let same:bool=value.len()==name.len(); let j:i32=0; while(same && j<name.len()) { if(byte(value,j)!=byte(name,j)) { same=false; } j+=1; } if(same) { return i; } i+=1; } return -2; }
+fn parse(args:std::args::Arguments,output:&Config) -> i32 {
+    let i:i32=0; let options:bool=true; let path_set:bool=false;
+    while(i<args.len()) { let arg:core::slice::View<u8> =core::option::unwrap(args.get(i));
+        if(options && equal(arg,"--",2)) { options=false; }
+        else { if(options && equal(arg,"--help",6)) { return 1; }
+        else { if(options && (equal(arg,"--depth",7) || equal(arg,"--kind",6) || equal(arg,"--prefix-hex",12) || equal(arg,"--suffix-hex",12) || equal(arg,"--max-entries",13) || equal(arg,"--max-bytes",11) || equal(arg,"--max-path-bytes",16) || equal(arg,"--max-work",10) || equal(arg,"--max-output",12))) {
+            i+=1; if(i==args.len()) { return 2; } let value:core::slice::View<u8> =core::option::unwrap(args.get(i));
+            if(equal(arg,"--kind",6)) { output.kind=selected_kind(value); if(output.kind==-2) { return 2; } }
+            else { if(equal(arg,"--prefix-hex",12) || equal(arg,"--suffix-hex",12)) { if(!hex_valid(value)) { return 2; } if(equal(arg,"--prefix-hex",12)) { output.prefix=value; } else { output.suffix=value; } }
+            else { let parsed=number(value); if(core::result::is_err(parsed)) { return 2; } let n:u64=core::result::unwrap(parsed);
+                if(equal(arg,"--depth",7)) { if(n>128) { return 2; } output.depth=n as i32; }
+                if(equal(arg,"--max-entries",13)) { if(n>1048576) { return 2; } output.max_entries=n as i32; }
+                if(equal(arg,"--max-path-bytes",16)) { if(n>1048576) { return 2; } output.max_path=n as i32; }
+                if(equal(arg,"--max-bytes",11)) { if(n>67108864) { return 2; } output.max_bytes=n as i32; }
+                if(equal(arg,"--max-output",12)) { if(n>67108864) { return 2; } output.max_output=n as i32; }
+                if(equal(arg,"--max-work",10)) { if(n>1073741824) { return 2; } output.max_work=n; }
+            } }
+        } else { if(path_set || arg.is_empty() || (options && byte(arg,0)==45)) { return 2; } output.path=arg; path_set=true; } } }
+        i+=1;
+    } return 0;
+}
+fn library_error(error:std::directory::Error) -> i32 {
+    let status:i32=match(error) { std::directory::Error::AllocationFailed->4,std::directory::Error::Io(cause)->3,std::directory::Error::Changed->3,_->2 };
+    let storage:[i32;32]=[0;32]; let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),128); let f:core::fmt::Formatter=core::result::unwrap(core::fmt::buffer(raw,0,128)); f.write_text(text("directory-report: ",18));
+    let errno:i32=match(error) { std::directory::Error::Io(cause)->match(cause) { core::io::Error::Host(value)->value,core::io::Error::Interrupted->4,core::io::Error::WouldBlock->11,_->-1 },_ -> -1 };
+    if(errno>=0) { f.write_text(text("errno=",6)); f.write_signed(errno as i64,core::fmt::decimal()); } else { f.write_text(text("operation failed, exit=",23)); f.write_signed(status as i64,core::fmt::decimal()); } f.write_text(text("\n",1));
+    let count:i32=core::result::unwrap(f.finish()); if(!write(core::result::unwrap(core::slice::view(raw,count)),2)) { return 3; } return status;
+}
+fn less(left:core::slice::View<u8>,right:core::slice::View<u8>,budget:&Budget) -> core::result::Result<bool,i32> {
+    if(!budget.spend(1)) { return core::result::Err(2); } let count:i32=left.len(); if(right.len()<count) { count=right.len(); } let i:i32=0;
+    while(i<count) { if(!budget.spend(1)) { return core::result::Err(2); } let a:u8=byte(left,i); let b:u8=byte(right,i); if(a!=b) { return core::result::Ok(a<b); } i+=1; } return core::result::Ok(left.len()<right.len());
+}
+fn sift(rows:&alloc::vec::Vec<Index>,length:i32,start:i32,budget:&Budget) -> i32 {
+    let root:i32=start;
+    while(root<length/2) { let child:i32=root*2+1; let largest:i32=root;
+        let comparison=less(rows.at(largest).path,rows.at(child).path,budget); if(core::result::is_err(comparison)) { return 2; } if(core::result::unwrap(comparison)) { largest=child; }
+        if(child+1<length) { let comparison=less(rows.at(largest).path,rows.at(child+1).path,budget); if(core::result::is_err(comparison)) { return 2; } if(core::result::unwrap(comparison)) { largest=child+1; } }
+        if(largest==root) { return 0; } if(!budget.spend(1)) { return 2; } let previous:Index=rows.at(root); core::result::unwrap(rows.set(root,rows.at(largest))); core::result::unwrap(rows.set(largest,previous)); root=largest;
+    } return 0;
+}
+fn sort(rows:&alloc::vec::Vec<Index>,budget:&Budget) -> i32 {
+    let start:i32=rows.len()/2; while(start>0) { start-=1; if(sift(rows,rows.len(),start,budget)!=0) { return 2; } }
+    let count:i32=rows.len(); while(count>1) { count-=1; if(!budget.spend(1)) { return 2; } let previous:Index=rows.at(0); core::result::unwrap(rows.set(0,rows.at(count))); core::result::unwrap(rows.set(count,previous)); if(sift(rows,count,0,budget)!=0) { return 2; } } return 0;
+}
+fn matches(path:core::slice::View<u8>,config:&Config,budget:&Budget) -> core::result::Result<bool,i32> {
+    let start:i32=path.len(); while(start>0) { if(!budget.spend(1)) { return core::result::Err(2); } if(byte(path,start-1)==47) { break; } start-=1; }
+    let length:i32=path.len()-start; let prefix:i32=config.prefix.len()/2; let suffix:i32=config.suffix.len()/2; if(prefix>length || suffix>length) { return core::result::Ok(false); }
+    let i:i32=0; while(i<prefix) { if(!budget.spend(1)) { return core::result::Err(2); } let value:u8=((nibble(byte(config.prefix,i*2))<<4)|nibble(byte(config.prefix,i*2+1))) as u8; if(byte(path,start+i)!=value) { return core::result::Ok(false); } i+=1; }
+    i=0; while(i<suffix) { if(!budget.spend(1)) { return core::result::Err(2); } let value:u8=((nibble(byte(config.suffix,i*2))<<4)|nibble(byte(config.suffix,i*2+1))) as u8; if(byte(path,path.len()-suffix+i)!=value) { return core::result::Ok(false); } i+=1; } return core::result::Ok(true);
+}
+fn append(output:&alloc::vec::Vec<u8>,value:core::slice::View<u8>,maximum:i32,budget:&Budget) -> i32 {
+    if(value.len()>maximum-output.len() || !budget.spend(value.len() as u64)) { return 2; } if(!reserve(output,output.len()+value.len(),maximum)) { return 4; } if(core::result::is_err(output.try_extend(value))) { return 4; } return 0;
+}
+fn reserve<T>(owner:&alloc::vec::Vec<T>,required:i32,maximum:i32) -> bool { if(required<=owner.capacity()) { return true; } let capacity:i32=maximum; if(owner.capacity()<=maximum/2) { capacity=owner.capacity()*2; } if(capacity<4 && maximum>=4) { capacity=4; } if(capacity<required) { capacity=required; } return core::result::is_ok(owner.try_reserve(capacity-owner.len())); }
+fn line(output:&alloc::vec::Vec<u8>,row:std::directory::WalkEntry,maximum:i32,budget:&Budget) -> i32 {
+    let metadata:std::file_ops::Metadata=row.metadata; if(!metadata.has(835)) { return 2; } if(!budget.spend(1)) { return 2; }
+    let hex:core::slice::View<u8> =bytes("0123456789abcdef",16); let pair:[u8;2]=[0;2]; let i:i32=0;
+    while(i<row.path.len()) { let c:u8=byte(row.path,i); pair[0]=byte(hex,(c>>4) as i32); pair[1]=byte(hex,(c&15) as i32); let status:i32=append(output,core::result::unwrap(core::slice::view(pair,2)),maximum,budget); if(status!=0) { return status; } i+=1; }
+    let storage:[i32;64]=[0;64]; let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),256); let f:core::fmt::Formatter=core::result::unwrap(core::fmt::buffer(raw,0,256)); let tab:core::text::Text=text("\t",1); let decimal:core::fmt::Integer=core::fmt::decimal();
+    f.write_text(tab); let name:core::slice::View<u8> =kind_name(kind_number(std::file_ops::kind(row.metadata.mode))); f.write_text(core::text::from_utf8_unchecked(name.values,name.start,name.len())); f.write_text(tab); f.write_signed(row.depth as i64,decimal); f.write_text(tab); f.write_unsigned(row.metadata.length.bytes,decimal); f.write_text(tab); f.write_unsigned(row.metadata.mode as u64,core::fmt::Integer { radix:8,uppercase:false,min_digits:1 }); f.write_text(tab); f.write_unsigned(row.metadata.identity.inode,decimal); f.write_text(tab); f.write_signed(row.metadata.times.modified.seconds,decimal); f.write_text(tab); f.write_unsigned(row.metadata.times.modified.nanoseconds as u64,decimal); f.write_text(text("\n",1));
+    let count:i32=core::result::unwrap(f.finish()); return append(output,core::result::unwrap(core::slice::view(raw,count)),maximum,budget);
+}
+fn process(args:std::args::Arguments) -> i32 {
+    let cfg:Config=config(); let parsed:i32=parse(args,cfg.borrow()); if(parsed==1) { if(write(bytes("Usage: directory-report [--depth N] [--kind all|file|directory|symlink|fifo|socket|character|block|unknown] [--prefix-hex HEX] [--suffix-hex HEX] [--max-entries N] [--max-bytes N] [--max-path-bytes N] [--max-work N] [--max-output N] [--] [DIRECTORY]\n",250),1)) { return 0; } return 3; } if(parsed!=0) { return parsed; }
+    let path=core::path::from_view(cfg.path); if(core::result::is_err(path)) { return 2; }
+    let limits:std::directory::Limits=std::directory::default_limits(); limits.max_depth=128; limits.max_entries=cfg.max_entries; limits.max_bytes=cfg.max_bytes; limits.max_path_bytes=cfg.max_path; limits.max_work=cfg.max_work;
+    let walked=std::directory::walk(core::result::unwrap(path),cfg.depth,limits); if(core::result::is_err(walked)) { return library_error(core::result::unwrap_err(walked)); }
+    let snapshot:std::directory::Snapshot=core::result::unwrap(walked); let budget:Budget=Budget { remaining:cfg.max_work-snapshot.work_done() }; let rows:alloc::vec::Vec<Index> =alloc::vec::new(); let output:alloc::vec::Vec<u8> =alloc::vec::new(); let status:i32=0; let i:i32=0;
+    let row:std::directory::WalkEntry=std::directory::empty_entry();
+    while(i<snapshot.len()) { if(!budget.spend(1)) { status=2; break; } core::result::unwrap(snapshot.entry_into(i,row.borrow())); let kind:i32=kind_number(std::file_ops::kind(row.metadata.mode));
+        if(cfg.kind==-1 || cfg.kind==kind) { let selected=matches(row.path,cfg.borrow(),budget.borrow()); if(core::result::is_err(selected)) { status=2; break; } if(core::result::unwrap(selected)) { if(!reserve(rows.borrow(),rows.len()+1,snapshot.len()) || core::result::is_err(rows.try_push(Index { path:row.path,row:i }))) { status=4; break; } } } i+=1;
+    }
+    if(status==0) { status=sort(rows.borrow(),budget.borrow()); }
+    if(status==0) { status=append(output.borrow(),bytes("path_hex\tkind\tdepth\tsize\tmode\tinode\tmtime_sec\tmtime_nsec\n",57),cfg.max_output,budget.borrow()); }
+    i=0; while(status==0 && i<rows.len()) { core::result::unwrap(snapshot.entry_into(rows.at(i).row,row.borrow())); status=line(output.borrow(),row,cfg.max_output,budget.borrow()); i+=1; }
+    rows.destroy(); snapshot.destroy(); if(status==0 && !write(output.as_view(),1)) { status=3; } output.destroy(); return status;
+}
+fn main() -> i32 { if(core::result::is_err(std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore))) { return 3; } let made=std::args::snapshot(1,32,65536); if(core::result::is_err(made)) { return match(core::result::unwrap_err(made)) { std::args::Error::AllocationFailed->4,std::args::Error::HostRead(at)->3,_ ->2 }; } let args:std::args::Arguments=core::result::unwrap(made); let status:i32=process(args); args.destroy(); return status; }

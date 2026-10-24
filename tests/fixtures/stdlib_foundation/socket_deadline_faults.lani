@@ -1,0 +1,35 @@
+// ready: retain unread data but inject EAGAIN in every receive; noargs: inject
+// EINTR in every poll; twoargs: writable socket with interrupted sends forever.
+// Every mode must reach its absolute deadline, close all owners and return0.
+module app::main;
+import core::io;
+import core::net;
+import core::result;
+import core::slice;
+import core::time;
+import std::clock;
+import std::process;
+import std::socket;
+fn main() -> i32 {
+    let listener: std::socket::Socket = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,false).unwrap();
+    let endpoint: core::net::SocketAddr = core::net::SocketAddr::V4(core::net::SocketAddrV4 { address: core::net::ipv4(127,0,0,1), port: 0 });
+    listener.bind(endpoint).unwrap(); listener.listen(1).unwrap();
+    let client: std::socket::Socket = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true).unwrap();
+    client.connect(listener.local_addr().unwrap()).unwrap();
+    let accepted: std::socket::Accepted = listener.accept(false).unwrap(); let server: std::socket::Socket = accepted.socket;
+    let bytes: [u8;1] = [65]; let view: core::slice::View<u8> = core::slice::view(bytes,1).unwrap();
+    let mode: i32 = std::process::argc();
+    if (mode == 2) { server.send(view).unwrap(); }
+    let start: core::time::Instant = std::clock::monotonic_now().unwrap();
+    let at: core::time::Instant = start.checked_add(core::time::duration(0,10000000).unwrap()).unwrap();
+    let deadline: core::time::Deadline = core::time::deadline_at(at);
+    let result: core::result::Result<i32,core::io::Error> = core::result::Ok(0);
+    if (mode > 2) { result = client.send_until(view,deadline); } else { result = client.receive_until(view,deadline); }
+    client.close().unwrap(); server.close().unwrap(); listener.close().unwrap();
+    if (result.is_ok()) { return 1; }
+    let expected: bool = match (result.unwrap_err()) { core::io::Error::Host(code) -> code == 110, _ -> false };
+    if (!expected) { return 2; }
+    let end: core::time::Instant = std::clock::monotonic_now().unwrap();
+    if (end.compare(at) < 0) { return 3; }
+    return 0;
+}

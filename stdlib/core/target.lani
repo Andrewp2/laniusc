@@ -1,5 +1,7 @@
-// Capabilities of the currently supported native x86_64 Linux target. These
-// constants must track the bound services listed by core::runtime.
+// Executable library capabilities of the native x86_64 Linux target. A family
+// can be implemented in Lanius over another bound service: std::socket uses the
+// Linux syscall boundary. core::runtime separately inventories direct service
+// bindings; its legacy network service remains unavailable.
 
 module core::target;
 
@@ -11,7 +13,7 @@ pub const HAS_ALLOCATOR: Capability = true;
 pub const HAS_FILESYSTEM: Capability = true;
 pub const HAS_STDIO: Capability = true;
 pub const HAS_THREADS: Capability = false;
-pub const HAS_NETWORK: Capability = false;
+pub const HAS_NETWORK: Capability = true;
 pub const HAS_CLOCK: Capability = true;
 pub const HAS_PANIC_HOOK: Capability = false;
 pub const HAS_HOST_SERVICES: Capability = false;

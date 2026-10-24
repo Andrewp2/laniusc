@@ -1,0 +1,38 @@
+module app::main;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import std::socket;
+fn endpoint(family: std::socket::Family) -> core::net::SocketAddr {
+    return match (family) {
+        std::socket::Family::Ipv4 -> core::net::SocketAddr::V4(core::net::SocketAddrV4 { address: core::net::ipv4(127,0,0,1), port: 0 }),
+        std::socket::Family::Ipv6 -> core::net::SocketAddr::V6(core::net::SocketAddrV6 { address: core::net::ipv6(0,0,0,0,0,0,0,1), port: 0, scope: 0 }),
+    };
+}
+fn check(family: std::socket::Family) {
+    let sender: std::socket::Socket = std::socket::create(family,std::socket::Kind::Udp,false).unwrap();
+    let receiver: std::socket::Socket = std::socket::create(family,std::socket::Kind::Udp,false).unwrap();
+    let ipv6: bool = match (family) { std::socket::Family::Ipv4 -> false, std::socket::Family::Ipv6 -> true };
+    if (ipv6) { sender.set_option(std::socket::Setting::Ipv6Only,1).unwrap(); receiver.set_option(std::socket::Setting::Ipv6Only,1).unwrap(); assert(receiver.option(std::socket::Setting::Ipv6Only).unwrap() == 1); }
+    sender.bind(endpoint(family)).unwrap(); receiver.bind(endpoint(family)).unwrap();
+    let peer: core::net::SocketAddr = receiver.local_addr().unwrap();
+    let source_storage: [i32;16384] = [0;16384]; let source: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(source_storage),65536);
+    let dest_storage: [i32;16384] = [0;16384]; let destination: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(dest_storage),65536);
+    let index: i32 = 0; while (index < 65536) { source[index] = (index*29+17) as u8; destination[index] = 99; index += 1; }
+    let full: core::slice::View<u8> = core::slice::view(source,65536).unwrap();
+    let output: core::slice::View<u8> = core::slice::view(destination,65536).unwrap();
+    let max: core::slice::View<u8> = full.subview(5,5+std::socket::MAX_DATAGRAM).unwrap();
+    assert(sender.send_to(max,peer).unwrap() == std::socket::MAX_DATAGRAM);
+    let packet: std::socket::Datagram = receiver.receive_from(output).unwrap();
+    assert(packet.full_length == std::socket::MAX_DATAGRAM && packet.copied == packet.full_length && !packet.is_truncated());
+    index = 0; while (index < packet.copied) { assert(destination[index] == source[index+5]); index += 1; }
+    assert(destination[65507] == 99);
+    assert(sender.send_to(full,peer).is_err());
+    let malformed: core::slice::View<u8> = full; malformed.start = -1; assert(sender.send_to(malformed,peer).is_err());
+    malformed = output; malformed.length = -1; assert(receiver.receive_from(malformed).is_err());
+    malformed = full; malformed.start = 2147483647; malformed.length = 1; assert(sender.send_to(malformed,peer).is_err());
+    sender.close().unwrap(); receiver.close().unwrap();
+}
+fn main() -> i32 { check(std::socket::Family::Ipv4); check(std::socket::Family::Ipv6); return 0; }

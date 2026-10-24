@@ -1,0 +1,100 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import std::clock;
+import std::socket;
+
+fn loopback(port: u16) -> core::net::SocketAddr {
+    return core::net::SocketAddr::V4(core::net::SocketAddrV4 { address: core::net::ipv4(127,0,0,1), port: port });
+}
+fn deadline() -> core::time::Deadline {
+    let start: core::time::Instant = std::clock::monotonic_now().unwrap();
+    let at: core::time::Instant = start.checked_add(core::time::duration(3,0).unwrap()).unwrap();
+    return core::time::deadline_at(at);
+}
+fn main() -> i32 {
+    let listener: std::socket::Socket = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true).unwrap();
+    assert(listener.is_open() && listener.is_nonblocking().unwrap());
+    listener.set_option(std::socket::Setting::ReuseAddress,1).unwrap();
+    assert(listener.option(std::socket::Setting::ReuseAddress).unwrap() == 1);
+    assert(listener.set_option(std::socket::Setting::KeepAlive,2).is_err());
+    assert(listener.set_option(std::socket::Setting::Ipv6Only,1).is_err());
+    listener.bind(loopback(0)).unwrap(); listener.listen(4).unwrap();
+    let endpoint: core::net::SocketAddr = listener.local_addr().unwrap();
+    assert(endpoint.port() > 0 && listener.accept(false).is_err());
+    assert(listener.wait_ms(true,false,0).unwrap().timed_out);
+    assert(listener.wait_ms(true,false,-2).is_err());
+    let client: std::socket::Socket = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true).unwrap();
+    client.connect_until(endpoint,deadline()).unwrap();
+    assert(listener.wait_until(true,false,deadline()).unwrap().readable);
+    let accepted: std::socket::Accepted = listener.accept(false).unwrap();
+    let server: std::socket::Socket = accepted.socket;
+    assert(!server.is_nonblocking().unwrap());
+    assert(accepted.peer.port() == client.local_addr().unwrap().port());
+    assert(server.peer_addr().unwrap().port() == client.local_addr().unwrap().port());
+    assert(client.peer_addr().unwrap().port() == endpoint.port());
+    client.set_option(std::socket::Setting::NoDelay,1).unwrap();
+    client.set_option(std::socket::Setting::KeepAlive,1).unwrap();
+    client.set_option(std::socket::Setting::SendBuffer,8192).unwrap();
+    client.set_option(std::socket::Setting::ReceiveBuffer,8192).unwrap();
+    assert(client.option(std::socket::Setting::NoDelay).unwrap() == 1);
+    assert(client.option(std::socket::Setting::SendBuffer).unwrap() >= 8192);
+    assert(client.option(std::socket::Setting::ReceiveBuffer).unwrap() >= 8192);
+    assert(client.take_error().unwrap().is_none());
+    let duplicate: std::socket::Socket = client.try_clone().unwrap();
+    duplicate.set_nonblocking(false).unwrap(); assert(!client.is_nonblocking().unwrap());
+    duplicate.set_nonblocking(true).unwrap(); duplicate.close().unwrap();
+    let input: [u8;8] = [99,0,255,1,2,3,4,100];
+    let full: core::slice::View<u8> = core::slice::view(input,8).unwrap();
+    let selected: core::slice::View<u8> = full.subview(1,7).unwrap();
+    assert(client.send_until(selected,deadline()).unwrap() == 6);
+    let output: [u8;10] = [77;10];
+    let destination: core::slice::View<u8> = core::slice::view(output,10).unwrap();
+    let part: core::slice::View<u8> = destination.subview(2,8).unwrap();
+    assert(server.receive_until(part,deadline()).unwrap() == 6);
+    let index: i32 = 0; while (index < 6) { assert(output[index+2] == input[index+1]); index += 1; }
+    assert(output[0] == 77 && output[1] == 77 && output[8] == 77 && output[9] == 77);
+    core::io::write_all(server.borrow(),input,1,6).unwrap();
+    client.set_nonblocking(false).unwrap();
+    core::io::read_exact(client.borrow(),output,1,6).unwrap();
+    client.set_nonblocking(true).unwrap();
+    index = 0; while (index < 6) { assert(output[index+1] == input[index+1]); index += 1; }
+    client.flush().unwrap();
+    let now: core::time::Instant = std::clock::monotonic_now().unwrap();
+    assert(client.receive_until(part,core::time::deadline_at(now)).is_err());
+    client.shutdown(std::socket::Shutdown::Write).unwrap();
+    assert(server.receive_until(part,deadline()).unwrap() == 0);
+    let taken: i32 = client.take_handle().unwrap();
+    assert(!client.is_open() && client.raw_handle().is_none() && client.take_handle().is_none());
+    assert(client.flush().is_err() && client.send(selected).is_err()); client.close().unwrap();
+    let adopted: std::socket::Socket = std::socket::from_owned_handle(taken,std::socket::Family::Ipv4,std::socket::Kind::Tcp).unwrap();
+    adopted.close().unwrap(); server.shutdown(std::socket::Shutdown::Both).unwrap(); server.close().unwrap(); listener.close().unwrap(); listener.close().unwrap();
+    assert(std::socket::from_owned_handle(-1,std::socket::Family::Ipv4,std::socket::Kind::Tcp).is_err());
+
+    let sender: std::socket::Socket = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Udp,false).unwrap();
+    let receiver: std::socket::Socket = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Udp,true).unwrap();
+    sender.bind(loopback(0)).unwrap(); receiver.bind(loopback(0)).unwrap();
+    let peer: core::net::SocketAddr = receiver.local_addr().unwrap();
+    assert(receiver.receive_from(destination).is_err());
+    assert(receiver.send(selected).is_err() && receiver.receive(destination).is_err());
+    assert(receiver.listen(1).is_err() && receiver.accept(false).is_err());
+    assert(receiver.set_option(std::socket::Setting::NoDelay,1).is_err());
+    assert(sender.send_to(selected,peer).unwrap() == 6);
+    let small: core::slice::View<u8> = destination.subview(1,3).unwrap();
+    let packet: std::socket::Datagram = receiver.receive_from(small).unwrap();
+    assert(packet.copied == 2 && packet.full_length == 6 && packet.is_truncated());
+    assert(packet.peer.port() == sender.local_addr().unwrap().port() && output[1] == 0 && output[2] == 255);
+    let empty: core::slice::View<u8> = destination.subview(0,0).unwrap();
+    assert(sender.send_to(empty,peer).unwrap() == 0);
+    let zero: std::socket::Datagram = receiver.receive_from(empty).unwrap();
+    assert(zero.copied == 0 && zero.full_length == 0 && !zero.is_truncated());
+    sender.send_to(selected,peer).unwrap(); let dropped: std::socket::Datagram = receiver.receive_from(empty).unwrap();
+    assert(dropped.copied == 0 && dropped.full_length == 6 && dropped.is_truncated());
+    sender.close().unwrap(); receiver.close().unwrap();
+    return 0;
+}

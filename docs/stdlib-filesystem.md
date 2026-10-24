@@ -75,8 +75,9 @@ promise persistence after a crash.
 
 Path-based operations can race with other filesystem users and follow symlinks
 in parent components. They do not confine access beneath a trusted directory.
-Descriptor-relative operations and configurable no-follow policies require new
-host bindings.
+The [file-options module](stdlib-file-operations.md) separately supplies
+descriptor-relative opens and configurable no-follow policies. These four
+pathname mutation wrappers retain the resolution rules above.
 
 Removing a filename does not close an already open `std::file::File`; its owner
 can continue I/O until it explicitly closes the handle. Rename likewise does not
@@ -116,30 +117,22 @@ timeout --kill-after=2s 100s env \
 
 ## Dependencies for metadata and directory enumeration
 
-The currently bound filesystem services are open/read/write/close and these four
-mutations. `stdlib/std/fs.lani`, the `HostService` list in
-`crates/laniusc-compiler/src/codegen/lowering_ir.rs`, and the x86 runtime mapping
-in `shaders/codegen/lir/x86/runtime_abi.slang` expose no metadata, directory-entry
-read or descriptor-relative operations.
-
-A minimal directory enumeration binding needs a directory descriptor open and
-a bounded entry-read operation with explicit record sizes, raw name bytes, EOF,
-short-buffer and errno behavior. Linux `getdents64` is one possible primitive;
-the library would validate records and own iteration state. A useful metadata
-binding needs a fixed result layout for file kind, sizes and timestamps, plus
-explicit follow/no-follow behavior. Linux `statx` or a documented `fstat`/
-`newfstatat` adapter could supply it. These are proposed dependencies, not APIs
-implemented or advertised by `std::filesystem`.
+These earlier prerequisites are now supplied by the explicit
+[Linux syscall boundary](stdlib-linux.md). [File operations](stdlib-file-operations.md)
+implement configurable opens, seek, metadata, synchronization, duplication and
+descriptor flags in Lanius. [Directory iteration and walking](stdlib-directory.md)
+validate `getdents64` records and raw names, own the descriptor/buffer and define
+borrowed entry lifetime and traversal limits. Their focused native suites and
+independent source review are recorded in those guides.
 
 `tests/fixtures/stdlib_foundation/filesystem_operations_directory_dependency.lani`
 is an intentionally unsupported minimal example. Merely declaring a new
 `extern "lanius_std"` directory operation fails native compilation with
 `LNC0017: unsupported x86 call ABI` (target LIR opcode 20), before producing an
-artifact. It is excluded from the passing runtime fixtures. Adding such a host
-operation requires compiler/runtime coordination; no compiler, runtime ABI or
-code generation source was changed for this library milestone.
+artifact. It is retained as historical compiler evidence, excluded from passing
+runtime fixtures. The working modules call the explicitly bound syscall API;
+writing an arbitrary new extern declaration still cannot add a native service.
 
-Seek/position, synchronization for durability, hard links, symlink creation and
-reading, descriptor duplication, configurable permissions/open flags, and
-descriptor-relative access likewise remain unavailable through these wrappers.
-No placeholder methods for them are exported.
+Hard links, symlink creation/reading, permission mutation and additional
+filesystem conveniences remain separate work. This module continues to expose
+only its four checked mutations; it has no placeholder methods for other effects.

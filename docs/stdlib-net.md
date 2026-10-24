@@ -8,7 +8,10 @@ buffer, string, pointer or mutable byte backing.
 
 This module does not resolve hostnames, interface names or services, open
 sockets, or define a native `sockaddr` layout. `std::net` host-service
-availability remains a separate contract.
+availability remains a separate contract. Executable socket ownership,
+TCP/UDP operations and deadline waits are in [std::socket](stdlib-sockets.md),
+implemented over the explicit Linux boundary rather than the older unbound
+`std::net` service declarations.
 
 ## Types and construction
 

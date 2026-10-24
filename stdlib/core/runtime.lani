@@ -8,6 +8,9 @@
 // This source inventory describes the native Linux profile. A direct native
 // binding does not establish composable-artifact runtime linking; descriptor
 // target-byte validation remains contract-only for all service requirements.
+// These flags describe direct catalog bindings, not all library operations.
+// std::socket executes over SERVICE_LINUX_SYSCALL_ID; it does not bind the old
+// SERVICE_NETWORK_ID declarations. core::target reports library capabilities.
 
 module core::runtime;
 

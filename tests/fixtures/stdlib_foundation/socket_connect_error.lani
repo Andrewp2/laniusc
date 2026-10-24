@@ -1,0 +1,15 @@
+// Run only with connect fault injection: Internet EAGAIN is not in-progress.
+module app::main;
+import core::io;
+import core::net;
+import core::result;
+import std::socket;
+fn main() -> i32 {
+    let socket: std::socket::Socket = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true).unwrap();
+    let endpoint: core::net::SocketAddr = core::net::SocketAddr::V4(core::net::SocketAddrV4 { address: core::net::ipv4(127,0,0,1), port: 9 });
+    let result: core::result::Result<std::socket::Connection,core::io::Error> = socket.connect(endpoint);
+    socket.close().unwrap();
+    if (result.is_ok()) { return 1; }
+    let expected: bool = match (result.unwrap_err()) { core::io::Error::WouldBlock -> true, _ -> false };
+    if (!expected) { return 2; } return 0;
+}

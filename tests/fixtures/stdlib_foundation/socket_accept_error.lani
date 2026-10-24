@@ -1,0 +1,18 @@
+// Poke only accept4's output length after the real syscall allocates its FD.
+module app::main;
+import core::io;
+import core::net;
+import core::result;
+import std::socket;
+fn main() -> i32 {
+    let listener: std::socket::Socket = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,false).unwrap();
+    let endpoint: core::net::SocketAddr = core::net::SocketAddr::V4(core::net::SocketAddrV4 { address: core::net::ipv4(127,0,0,1), port: 0 });
+    listener.bind(endpoint).unwrap(); listener.listen(1).unwrap();
+    let client: std::socket::Socket = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,false).unwrap();
+    client.connect(listener.local_addr().unwrap()).unwrap();
+    let result: core::result::Result<std::socket::Accepted,core::io::Error> = listener.accept(false);
+    client.close().unwrap(); listener.close().unwrap();
+    if (result.is_ok()) { let accepted: std::socket::Accepted = result.unwrap(); accepted.socket.close().unwrap(); return 1; }
+    let expected: bool = match (result.unwrap_err()) { core::io::Error::InvalidCount -> true, _ -> false };
+    if (!expected) { return 2; } return 0;
+}

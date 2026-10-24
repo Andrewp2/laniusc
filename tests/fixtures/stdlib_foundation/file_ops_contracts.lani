@@ -1,0 +1,47 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import std::file;
+import std::file_ops;
+
+fn bytes(value:str,count:i32) -> core::slice::View<u8> { let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn path(value:str,count:i32) -> core::path::Path { return core::result::unwrap(core::path::from_view(bytes(value,count))); }
+fn host(error:core::io::Error,number:i32) -> bool { return match(error) { core::io::Error::Host(value)->value==number, _->false }; }
+fn main() -> i32 {
+    let options:std::file_ops::OpenOptions=std::file_ops::options(); options.access=std::file_ops::Access::ReadWrite; options.create=true; options.exclusive=true; options.mode=384;
+    let file:std::file::File=core::result::unwrap(std::file_ops::open(path("data",4),options));
+    assert(core::result::unwrap(std::file_ops::close_on_exec(file.borrow())));
+    let data:[u8;6]=[0,128,255,97,98,99]; assert(core::result::unwrap(core::io::write_all(file.borrow(),data,0,6))==6);
+    assert(core::result::unwrap(std::file_ops::position(file.borrow()))==6);
+    assert(core::result::unwrap(std::file_ops::seek(file.borrow(),0,std::file_ops::Origin::Start))==0);
+    let copied:std::file::File=core::result::unwrap(std::file_ops::duplicate(file.borrow(),40,false));
+    assert(core::option::unwrap(copied.raw_handle())>=40 && !core::result::unwrap(std::file_ops::close_on_exec(copied.borrow())));
+    let result:[u8;6]=[0;6]; assert(core::result::unwrap(core::io::read_exact(file.borrow(),result,0,3))==3);
+    assert(core::result::unwrap(std::file_ops::position(copied.borrow()))==3);
+    assert(core::result::unwrap(core::io::read_exact(copied.borrow(),result,3,3))==3);
+    let i:i32=0; while(i<6) { assert(result[i]==data[i]); i+=1; }
+    core::result::unwrap(std::file_ops::set_close_on_exec(copied.borrow(),true)); assert(core::result::unwrap(std::file_ops::close_on_exec(copied.borrow())));
+    core::result::unwrap(std::file_ops::set_status(file.borrow(),true,true)); assert((core::result::unwrap(std::file_ops::status_flags(copied.borrow()))&3072)==3072);
+    core::result::unwrap(std::file_ops::set_status(file.borrow(),false,false));
+    let large:i64=4294967311; assert(core::result::unwrap(std::file_ops::seek(copied.borrow(),large,std::file_ops::Origin::Start))==large);
+    assert(core::result::unwrap(core::io::write_all(copied.borrow(),data,5,1))==1);
+    let metadata:std::file_ops::Metadata=std::file_ops::empty_metadata(); core::result::unwrap(std::file_ops::metadata_file_into(file.borrow(),metadata.borrow()));
+    assert(metadata.has(771) && metadata.length.bytes==(large+1) as u64 && metadata.identity.inode>0);
+    assert(match(std::file_ops::kind(metadata.mode)) { std::file_ops::Kind::Regular->true, _->false });
+    let observed:std::file_ops::Metadata=std::file_ops::empty_metadata(); core::result::unwrap(std::file_ops::metadata_into(path("data",4),false,observed.borrow())); assert(observed.identity.inode==metadata.identity.inode && observed.length.bytes==metadata.length.bytes);
+    let symlink:std::file_ops::Metadata=std::file_ops::empty_metadata(); core::result::unwrap(std::file_ops::metadata_into(path("link",4),false,symlink.borrow())); assert(match(std::file_ops::kind(symlink.mode)) { std::file_ops::Kind::Symlink->true, _->false });
+    core::result::unwrap(std::file_ops::metadata_into(path("link",4),true,symlink.borrow())); assert(symlink.identity.inode==metadata.identity.inode);
+    let read:std::file_ops::OpenOptions=std::file_ops::options(); read.no_follow=true; assert(core::result::is_err(std::file_ops::open(path("link",4),read)));
+    assert(host(core::result::unwrap_err(std::file_ops::open(path("data",4),options)),17));
+    options.exclusive=false; options.truncate=true; options.access=std::file_ops::Access::Read; assert(core::result::is_err(std::file_ops::open(path("data",4),options)));
+    let target:std::file::File=core::result::unwrap(std::file_ops::open(path("target",6),std::file_ops::options()));
+    core::result::unwrap(std::file_ops::duplicate_to(file.borrow(),target.borrow(),true)); assert(core::result::unwrap(std::file_ops::position(target.borrow()))==large+1);
+    assert(core::result::is_err(std::file_ops::duplicate_to(file.borrow(),file.borrow(),false)));
+    core::result::unwrap(std::file_ops::sync_all(file.borrow())); core::result::unwrap(std::file_ops::sync_data(file.borrow()));
+    core::result::unwrap(target.close()); core::result::unwrap(copied.close()); core::result::unwrap(file.close()); assert(core::result::is_ok(file.close()));
+    assert(host(core::result::unwrap_err(std::file_ops::position(file.borrow())),9)); return 0;
+}

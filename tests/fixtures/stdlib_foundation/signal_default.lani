@@ -1,0 +1,11 @@
+module app::main;
+import core::io;
+import core::result;
+import std::signal;
+import std::stream;
+fn main() -> i32 {
+    std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).unwrap();
+    std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Default).unwrap();
+    let byte: [u8;1] = [65]; let output: std::stream::Descriptor = std::stream::stdout();
+    output.write(byte,0,1); return 7;
+}
