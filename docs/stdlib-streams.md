@@ -121,7 +121,10 @@ a positive errno. See Linux's [read](https://man7.org/linux/man-pages/man2/read.
 and [write](https://man7.org/linux/man-pages/man2/write.2.html) contracts and
 [errno definitions](https://github.com/torvalds/linux/blob/master/include/uapi/asm-generic/errno-base.h).
 Process signals retain their normal behavior, including SIGPIPE for a broken
-pipe unless the application arranges signal handling.
+pipe. Applications requiring an EPIPE result and manual cleanup explicitly
+select [std::signal BrokenPipe Ignore](stdlib-signals.md) before I/O; setup
+failure is itself an error. The descriptor adapter does not change process-wide
+disposition.
 
 These implementations have no pending library output after a successful write.
 Their flush operation therefore succeeds immediately; it does not validate the

@@ -100,6 +100,12 @@ buffer capacity remains a caller precondition.
 transfers and retain partial-progress counts. They do not close File owners.
 Writes and creates can leave partial output after failure.
 
+Writes to pipe/socket descriptors retain the process's SIGPIPE policy. To get
+an EPIPE result and run owner cleanup on a closed reader, an application can
+explicitly select [BrokenPipe Ignore](stdlib-signals.md) before I/O. File and
+descriptor adapters leave that process-wide choice to the caller; the
+[socket API](stdlib-sockets.md) instead uses MSG_NOSIGNAL for its sends.
+
 `flush` returns `Ok(0)` for an open owner because this type retains no library
 output buffer. A reset owner returns `Host(9)`. Flush does not inspect raw
 descriptor validity, issue `fsync`, close the file or establish durability.

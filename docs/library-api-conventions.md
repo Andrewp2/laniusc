@@ -82,6 +82,13 @@ progress; `write_all` handles short writes. Buffering, flushing, closing and
 cancellation have separate meanings. Host bindings preserve errors needed by
 callers instead of converting every failure to a boolean.
 
+Descriptor writes retain the process's signal policy. Programs that require a
+closed pipe to return EPIPE and run manual cleanup explicitly select
+[`std::signal` BrokenPipe Ignore](stdlib-signals.md) before writing. This changes
+process-wide disposition; descriptor adapters do not select it implicitly.
+Socket sends suppress SIGPIPE for that call through their documented
+MSG_NOSIGNAL policy. Flush, close and signal disposition remain separate effects.
+
 Module documentation names supported targets and required services. Portable
 algorithms remain separate from allocation and operating-system bindings.
 
