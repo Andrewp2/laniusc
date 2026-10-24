@@ -125,10 +125,11 @@ bounds and reserved capacity make them infallible.
 - The verified compiler and its extractor explicitly identify
   `std::vec::Vec`. Removing it requires changing that separate proof/extraction
   contract, which this stdlib work does not modify.
-- The attempted binary-heap migration captured a GPU compiler replay layout
-  error. Its reproduction is separate from production code and has not been
-  revalidated after the latest compiler changes; the heap retains its tested
-  backing vector.
+- The attempted binary-heap migration still reaches a GPU compiler replay
+  layout error on compiler `59612b34`. The unchanged minimal candidate fails
+  with LNC0047; the same entry using the production heap passes the strict x86
+  checker and native assertions. The [fresh failure/control evidence](../tests/fixtures/stdlib_foundation/vec_heap_dependency/README.md)
+  preserves that boundary; the heap retains its tested backing vector.
 
 Ordinary vector examples now use `alloc::vec`. The legacy linear maps/sets and
 specialized byte/text owners were removed after their consumers
