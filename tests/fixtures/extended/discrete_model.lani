@@ -1,0 +1,39 @@
+module app::main;
+import core::f64;
+import core::mem;
+import core::random;
+import core::result;
+import ext::discrete_distributions;
+import std::io;
+struct Script { words: [u64;32],calls: i32,fail_at: i32 }
+impl Script { fn borrow(&self) -> &Script { return self; } }
+pub impl core::random::Source64 for Script {
+ pub fn draw(&self) -> core::result::Result<u64,core::random::Error> { self.calls += 1; if (self.calls == self.fail_at) { return core::result::Err(core::random::Error::Host(77)); } let index: i32 = self.calls-1; if (index > 31) { index = 31; } return core::result::Ok(self.words[index]); }
+}
+fn read(p: ptr,count: i32) -> bool { let done: i32 = 0; while (done < count) { let n: i32 = std::io::read_stdin(p+(done as usize),(count-done) as usize); assert(n >= 0); if (n == 0) { assert(done == 0); return false; } done += n; } return true; }
+fn write(p: ptr,count: i32) { let done: i32 = 0; while (done < count) { let n: i32 = std::io::write_stdout(p+(done as usize),(count-done) as usize); assert(n > 0); done += n; } }
+fn wide(raw: [u8],at: i32) -> u64 { let value: u64 = 0; let i: i32 = 0; while (i < 8) { value = value | ((raw[at+i] as u64) << (8*i)); i += 1; } return value; }
+fn integer(value: u64) { let raw: [i32;2] = [value as i32,(value >> 32) as i32]; write(core::mem::i32_array_data_ptr(raw),8); }
+fn number(value: f64) { integer(core::f64::to_bits(value)); }
+fn code(error: ext::discrete_distributions::Error) -> i32 { return match (error) { InvalidParameter -> 1, CountRange -> 2, NumericalFailure -> 3, Precision -> 4, NoConvergence -> 5, WorkLimit -> 6, DrawLimit -> 7, Random(cause) -> 8 }; }
+fn status(value: i32,limit: &ext::discrete_distributions::Budget) { let raw: [i32;1] = [value]; write(core::mem::i32_array_data_ptr(raw),4); integer(limit.draws()); integer(limit.work()); }
+// Packet56bytes: op,kind,repetitions,trials,seed,parameter,k,draws,work.
+fn main() -> i32 {
+ let words: [i32;14] = [0;14]; let pointer: ptr = core::mem::i32_array_data_ptr(words); let raw: [u8] = core::mem::typed_slice_from_raw_parts(pointer,56);
+ while (read(pointer,56)) {
+  let op: i32 = words[0]; let kind: i32 = words[1]; let count: i32 = words[2]; assert(op >= 0 && op <= 4 && kind >= 0 && kind < 4 && count >= 0 && count <= 200000);
+  let p: f64 = core::f64::from_bits(wide(raw,24)); let k: i64 = wide(raw,32) as i64;
+  let made: core::result::Result<ext::discrete_distributions::Distribution,ext::discrete_distributions::Error> = ext::discrete_distributions::bernoulli(p);
+  if (kind == 1) { made = ext::discrete_distributions::binomial(words[3] as u32,p); } if (kind == 2) { made = ext::discrete_distributions::geometric(p); } if (kind == 3) { made = ext::discrete_distributions::poisson(p); }
+  let limit = ext::discrete_distributions::budget(wide(raw,40),wide(raw,48)); let source: core::random::Xoshiro256PlusPlus = core::random::from_seed(wide(raw,16)); let i: i32 = 0;
+  let scripted: Script = Script { words: [0;32],calls: 0,fail_at: wide(raw,16) as i32 };
+  if (op == 4) { let script_raw: [i32;64] = [0;64]; let script_ptr: ptr = core::mem::i32_array_data_ptr(script_raw); assert(read(script_ptr,256)); let script_bytes: [u8] = core::mem::typed_slice_from_raw_parts(script_ptr,256); let j: i32 = 0; while (j < 32) { scripted.words[j] = wide(script_bytes,8*j); j += 1; } }
+  while (i < count) {
+   if (made.is_err()) { status(code(made.unwrap_err()),limit.borrow()); i += 1; continue; } let law: ext::discrete_distributions::Distribution = made.unwrap();
+   if (op == 2) { let result = ext::discrete_distributions::tails(law,k,limit.borrow()); if (result.is_err()) { status(code(result.unwrap_err()),limit.borrow()); } else { status(0,limit.borrow()); let t: ext::discrete_distributions::Tails = result.unwrap(); number(t.cdf); number(t.survival); number(t.log_cdf); number(t.log_survival); } }
+   else { if (op >= 3) { let result: core::result::Result<i64,ext::discrete_distributions::Error> = core::result::Err(ext::discrete_distributions::Error::NumericalFailure); if (op == 4) { result = ext::discrete_distributions::sample(scripted.borrow(),law,limit.borrow()); } else { result = ext::discrete_distributions::sample(source.borrow(),law,limit.borrow()); } if (result.is_err()) { status(code(result.unwrap_err()),limit.borrow()); } else { status(0,limit.borrow()); integer(result.unwrap() as u64); } }
+    else { let result = ext::discrete_distributions::log_pmf(law,k); if (op == 1) { result = ext::discrete_distributions::pmf(law,k); } if (result.is_err()) { status(code(result.unwrap_err()),limit.borrow()); } else { status(0,limit.borrow()); number(result.unwrap()); } }
+   } i += 1;
+  }
+ } return 0;
+}

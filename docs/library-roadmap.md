@@ -36,7 +36,7 @@ package distribution is a separate deliverable.
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, cursors, owned sinks, descriptor/file adapters and reusable multi-descriptor readiness execute. Polling preserves old publication on errors and uses explicit observed deadlines. Generic buffered adapters remain a compiler routing dependency |
 | Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and paths, lexical operations, checked mutations, configurable/relative opens, seek, metadata, sync, duplication, raw directory iteration and bounded anchored walking execute on native Linux. The directory report exercises filters, metadata and staged output. Automatic owner destruction and broader platform support remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Raw-byte snapshots, explicit argv/environment/PATH/cwd, fork/exec, redirected files, owned pipes, cached waits and child signaling execute on the documented single-threaded Linux profile. Bounded concurrent stdin/stdout/stderr capture preserves partial progress, startup certainty and child ownership across errors. Process groups and concurrent spawn policy remain |
-| Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, calendars, native clocks, deadline waits, deterministic generators, sampling/shuffle and checked OS entropy execute. Optional TZif/POSIX zones provide conversion and ambiguity candidates; four extended continuous distributions have bounded generic sampling. Additional clocks and discrete distributions remain |
+| Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, calendars, native clocks, deadline waits, deterministic generators, sampling/shuffle and checked OS entropy execute. Optional TZif/POSIX zones provide conversion and ambiguity candidates; four continuous and four discrete distributions have bounded generic sampling and explicit numerical domains. Additional clocks and distribution families remain |
 | Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6 and CIDR values, owned TCP/UDP, polling, deadlines, options and half-close execute via the Linux boundary. Optional DNS transport queries explicit numeric servers with correlated UDP/TCP fallback. Real TCP/DNS programs exercise transfers. Old std::net declarations remain unbound; system resolver/NSS/interface policy, TLS and higher-level clients/servers remain |
 | Concurrency | Threads, joining, synchronization, atomics, channels, cancellation | Current thread module is contract-only; runtime prerequisites remain |
 | Development | Assertions, test runner, property helpers, benchmarks, diagnostics, API docs | Nontrapping checks, explicit source suites, filters, seeded properties, injected/native-clock benchmarks and a bounded native compiler/run driver execute. Selective, relocatable source bundles use the existing package resolver and verify inventory hashes. Automatic compiler discovery/runtime registration, binary SDK distribution and complete API reference work remain |
@@ -139,7 +139,12 @@ weighted/higher moments, advanced decompositions and sparse matrices remain
 work. [Normal, exponential, gamma and beta distributions](extended-distributions.md)
 add densities, paired tails and bounded generic sampling, with a
 [CSV sampling program](extended-sample-distribution.md). Their ordinary and
-large-shape accuracy profiles are explicit; discrete laws remain work.
+large-shape accuracy profiles are explicit.
+[Bernoulli, binomial, geometric and Poisson laws](extended-discrete-distributions.md)
+add masses, paired/log tails and bounded generic sampling, with a
+[count simulation program](extended-sample-counts.md). Only Bernoulli claims
+an exact dyadic law; the other samplers have explicit finite-grid numerical
+contracts, and ordinary/large evaluator accuracy profiles remain separate.
 Geometry, elementary functions and signal algorithms
 are documented below.
 

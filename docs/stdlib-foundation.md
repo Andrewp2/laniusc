@@ -21,6 +21,14 @@ provenance. [Four continuous distributions](extended-distributions.md) provide
 densities, paired tails and bounded generic sampling, checked against independent
 high-precision references and 392,000 sampled values. Large-shape accuracy has a
 separate documented profile, not a uniform guarantee over all finite inputs.
+[Four discrete distributions](extended-discrete-distributions.md) now add
+masses, paired/log tails and bounded generic sampling. Numerical models cover
+2,572 ordinary and 195 large-count cases; sampling checks cover 304,000 values
+and scripted acceptance boundaries. The [count simulation CLI](extended-sample-counts.md)
+adds 12,000 samples, independent predictions/moments/exceedances, 22 allocation
+denials and real closed-pipe cleanup. Full-u32 binomial trials, bounded Poisson
+means and numerical count limits are explicit. Only Bernoulli claims the exact
+dyadic law; the remaining samplers use documented finite-grid numerical methods.
 
 [Numeric consolidation](stdlib-numeric-migration.md) removes seven redundant
 number/byte helper modules and migrates ordinary consumers to native primitives.

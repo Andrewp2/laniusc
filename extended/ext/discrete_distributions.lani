@@ -1,0 +1,226 @@
+// Discrete laws with explicit numerical count domains and cumulative budgets.
+// Evaluation identities: DLMF8.17.5 and8.4.10. Rejection envelopes: Hormann's
+// 1992/1993 BTRS and PTRS papers, with stable public continuous log-PMF
+// identities instead of subtracting large log-factorials. See the guide.
+module ext::discrete_distributions;
+import core::f64;
+import core::math;
+import core::random;
+import core::result;
+import ext::distributions;
+
+pub const MAX_COUNT: i64 = 9007199254740991;
+pub const MAX_POISSON_MEAN: f64 = 1000000000.0;
+pub const MAX_ITERATIONS: i32 = 1000000;
+pub enum Family { Bernoulli, Binomial, Geometric, Poisson }
+pub struct Distribution { family: Family, trials: u32, parameter: f64 }
+pub enum Error { InvalidParameter, CountRange, NumericalFailure, Precision, NoConvergence, WorkLimit, DrawLimit, Random(core::random::Error) }
+pub struct Tails { cdf: f64, survival: f64, log_cdf: f64, log_survival: f64 }
+// One work ledger, including delegated public continuous evaluations. Draws
+// count whole attempted Source64 calls, not floating uniforms or successes.
+pub struct Budget { numerical: ext::distributions::Budget, draws_left: u64, draws_used: u64 }
+pub fn budget(max_draws: u64, max_work: u64) -> Budget { return Budget { numerical: ext::distributions::budget(0,max_work),draws_left: max_draws,draws_used: 0 }; }
+pub impl Budget {
+ pub fn borrow(&self) -> &Budget { return self; }
+ pub fn remaining_work(&self) -> u64 { return self.numerical.remaining_work(); }
+ pub fn remaining_draws(&self) -> u64 { return self.draws_left; }
+ pub fn work(&self) -> u64 { return self.numerical.work(); }
+ pub fn draws(&self) -> u64 { return self.draws_used; }
+ pub fn charge(&self,amount: u64) -> bool { return self.numerical.charge(amount); }
+}
+fn valid(value: Distribution) -> bool {
+ let p: f64 = value.parameter; if (!core::f64::is_finite(p)) { return false; }
+ return match (value.family) { Family::Bernoulli -> value.trials == 1 && p >= 0.0 && p <= 1.0, Family::Binomial -> p >= 0.0 && p <= 1.0, Family::Geometric -> value.trials == 0 && p > 0.0 && p <= 1.0, Family::Poisson -> value.trials == 0 && p >= 0.0 && p <= MAX_POISSON_MEAN };
+}
+fn create(family: Family,trials: u32,parameter: f64) -> core::result::Result<Distribution,Error> { let value: Distribution = Distribution { family: family,trials: trials,parameter: parameter }; if (!valid(value)) { return core::result::Err(Error::InvalidParameter); } return core::result::Ok(value); }
+pub fn bernoulli(p: f64) -> core::result::Result<Distribution,Error> { return create(Family::Bernoulli,1,p); }
+pub fn binomial(trials: u32,p: f64) -> core::result::Result<Distribution,Error> { return create(Family::Binomial,trials,p); }
+// The count is failures before the first success, with support0,1,2,... .
+pub fn geometric(p: f64) -> core::result::Result<Distribution,Error> { return create(Family::Geometric,0,p); }
+pub fn poisson(mean: f64) -> core::result::Result<Distribution,Error> { return create(Family::Poisson,0,mean); }
+fn family(value: Distribution) -> i32 { return match (value.family) { Family::Bernoulli -> 0, Family::Binomial -> 1, Family::Geometric -> 2, Family::Poisson -> 3 }; }
+fn negative_infinity() -> f64 { return -core::f64::infinity(); }
+fn translated(error: ext::distributions::Error) -> Error { return match (error) { ext::distributions::Error::WorkLimit -> Error::WorkLimit, ext::distributions::Error::DrawLimit -> Error::DrawLimit, ext::distributions::Error::Precision -> Error::Precision, ext::distributions::Error::NoConvergence -> Error::NoConvergence, ext::distributions::Error::Random(cause) -> Error::Random(cause), _ -> Error::NumericalFailure }; }
+fn checked_log(value: f64) -> core::result::Result<f64,Error> { if (core::f64::is_nan(value) || value > 0.0) { return core::result::Err(Error::NumericalFailure); } return core::result::Ok(value); }
+fn logarithm(result: core::result::Result<f64,ext::distributions::Error>) -> core::result::Result<f64,Error> { if (result.is_err()) { return core::result::Err(translated(result.unwrap_err())); } return checked_log(result.unwrap()); }
+pub fn log_pmf(value: Distribution,k: i64) -> core::result::Result<f64,Error> {
+ if (!valid(value)) { return core::result::Err(Error::InvalidParameter); }
+ if (k < 0) { return core::result::Ok(negative_infinity()); } let tag: i32 = family(value); let p: f64 = value.parameter;
+ if (tag <= 1) {
+  let n: i64 = value.trials as i64; if (k > n) { return core::result::Ok(negative_infinity()); }
+  if (n == 0 || p == 0.0 || p == 1.0) { if ((p != 1.0 && k == 0) || (p == 1.0 && k == n)) { return core::result::Ok(0.0); } return core::result::Ok(negative_infinity()); }
+  if (k == 0) { return checked_log((n as f64)*core::math::log1p(-p)); } if (k == n) { return checked_log((n as f64)*core::math::log(p)); }
+  let small: i64 = k; if (n-k < small) { small = n-k; }
+  if (small <= 128) {
+   let combination: f64 = 0.0; let i: i64 = 1; while (i <= small) { combination += core::math::log(((n-small+i) as f64)/(i as f64)); i += 1; }
+   return checked_log(combination+(k as f64)*core::math::log(p)+((n-k) as f64)*core::math::log1p(-p));
+  }
+  let law = ext::distributions::beta((k+1) as f64,(n-k+1) as f64).unwrap(); let result = ext::distributions::log_pdf(law,p); if (result.is_err()) { return core::result::Err(translated(result.unwrap_err())); } return checked_log(result.unwrap()-core::math::log((n+1) as f64));
+ }
+ if (k > MAX_COUNT) { return core::result::Err(Error::CountRange); }
+ if (tag == 2) { if (p == 1.0) { if (k == 0) { return core::result::Ok(0.0); } return core::result::Ok(negative_infinity()); } return checked_log(core::math::log(p)+(k as f64)*core::math::log1p(-p)); }
+ if (p == 0.0) { if (k == 0) { return core::result::Ok(0.0); } return core::result::Ok(negative_infinity()); }
+ if (k == 0) { return core::result::Ok(-p); }
+ return logarithm(ext::distributions::log_pdf(ext::distributions::gamma((k+1) as f64,1.0).unwrap(),p));
+}
+pub fn pmf(value: Distribution,k: i64) -> core::result::Result<f64,Error> { let result = log_pmf(value,k); if (result.is_err()) { return result; } return core::result::Ok(core::math::exp(result.unwrap())); }
+fn fixed(lower: bool,limit: &Budget) -> core::result::Result<Tails,Error> {
+ if (!limit.charge(1)) { return core::result::Err(Error::WorkLimit); }
+ if (lower) { return core::result::Ok(Tails { cdf: 1.0,survival: 0.0,log_cdf: 0.0,log_survival: negative_infinity() }); }
+ return core::result::Ok(Tails { cdf: 0.0,survival: 1.0,log_cdf: negative_infinity(),log_survival: 0.0 });
+}
+fn probabilities(result: core::result::Result<ext::distributions::Tails,ext::distributions::Error>,swap: bool) -> core::result::Result<Tails,Error> {
+ if (result.is_err()) { return core::result::Err(translated(result.unwrap_err())); } let v: ext::distributions::Tails = result.unwrap();
+ if (swap) { return core::result::Ok(Tails { cdf: v.survival,survival: v.cdf,log_cdf: v.log_survival,log_survival: v.log_cdf }); }
+ return core::result::Ok(Tails { cdf: v.cdf,survival: v.survival,log_cdf: v.log_cdf,log_survival: v.log_survival });
+}
+fn from_log(logged: f64,lower: bool) -> core::result::Result<Tails,Error> {
+ if (core::f64::is_nan(logged) || logged > 0.0) { return core::result::Err(Error::NumericalFailure); }
+ let other: f64 = core::math::log(-core::math::expm1(logged)); if (logged < -core::math::LN_2) { other = core::math::log1p(-core::math::exp(logged)); }
+ let p: f64 = core::math::exp(logged); let q: f64 = -core::math::expm1(logged);
+ if (lower) { return core::result::Ok(Tails { cdf: p,survival: q,log_cdf: logged,log_survival: other }); }
+ return core::result::Ok(Tails { cdf: q,survival: p,log_cdf: other,log_survival: logged });
+}
+// Sum a positive smaller tail near either endpoint. Absolute normalization
+// comes from a bounded log-combination, not a near-canceling beta normalizer.
+fn binomial_edge(value: Distribution,k: i64,limit: &Budget) -> core::result::Result<Tails,Error> {
+ if (!limit.charge(1)) { return core::result::Err(Error::WorkLimit); }
+ let n: i64 = value.trials as i64; let p: f64 = value.parameter; let q: f64 = 1.0-p; let lower: bool = (k as f64) < (n as f64)*p;
+ let j: i64 = k; if (!lower) { j += 1; } let base = log_pmf(value,j); if (base.is_err()) { return core::result::Err(base.unwrap_err()); }
+ let term: f64 = 1.0; let sum: f64 = 1.0; let iteration: i32 = 0;
+ while (true) {
+  if ((lower && j == 0) || (!lower && j == n)) { break; }
+  if (iteration >= MAX_ITERATIONS) { return core::result::Err(Error::NoConvergence); } if (!limit.charge(1)) { return core::result::Err(Error::WorkLimit); }
+  if (lower) { term *= ((j as f64)*q)/(((n-j+1) as f64)*p); j -= 1; }
+  else { term *= (((n-j) as f64)*p)/(((j+1) as f64)*q); j += 1; }
+  sum += term; iteration += 1; if (!core::f64::is_finite(sum)) { return core::result::Err(Error::NumericalFailure); }
+  if (term <= sum*0.00000000000000011102230246251565) { break; }
+ } return from_log(base.unwrap()+core::math::log(sum),lower);
+}
+pub fn tails(value: Distribution,k: i64,limit: &Budget) -> core::result::Result<Tails,Error> {
+ if (!valid(value)) { return core::result::Err(Error::InvalidParameter); } if (k < 0) { return fixed(false,limit); }
+ let tag: i32 = family(value); let p: f64 = value.parameter;
+ if (tag <= 1) {
+  let n: i64 = value.trials as i64; if (k >= n || p == 0.0) { return fixed(true,limit); } if (p == 1.0) { return fixed(false,limit); }
+  if (tag == 0) { if (!limit.charge(1)) { return core::result::Err(Error::WorkLimit); } return core::result::Ok(Tails { cdf: 1.0-p,survival: p,log_cdf: core::math::log1p(-p),log_survival: core::math::log(p) }); }
+  if (k <= 64 || n-k <= 64) { return binomial_edge(value,k,limit); }
+  return probabilities(ext::distributions::tails(ext::distributions::beta((k+1) as f64,(n-k) as f64).unwrap(),p,limit.numerical.borrow()),true);
+ }
+ if (k > MAX_COUNT) { return core::result::Err(Error::CountRange); }
+ if (tag == 2) { if (p == 1.0) { return fixed(true,limit); } return probabilities(ext::distributions::tails(ext::distributions::beta(1.0,(k+1) as f64).unwrap(),p,limit.numerical.borrow()),false); }
+ if (p == 0.0) { return fixed(true,limit); }
+ if (k == 0) { return probabilities(ext::distributions::tails(ext::distributions::exponential(1.0).unwrap(),p,limit.numerical.borrow()),true); }
+ return probabilities(ext::distributions::tails(ext::distributions::gamma((k+1) as f64,1.0).unwrap(),p,limit.numerical.borrow()),true);
+}
+// Plain generic whole-word boundary; no imported generic trait adapter.
+fn word<R>(source: &R,limit: &Budget) -> core::result::Result<u64,Error> where R: core::random::Source64 {
+ if (!limit.charge(1)) { return core::result::Err(Error::WorkLimit); } if (limit.draws_left == 0) { return core::result::Err(Error::DrawLimit); }
+ limit.draws_left -= 1; limit.draws_used += 1; let result: core::result::Result<u64,core::random::Error> = source.draw(); if (result.is_err()) { return core::result::Err(Error::Random(result.unwrap_err())); } return core::result::Ok(result.unwrap());
+}
+fn unit<R>(source: &R,limit: &Budget,open: bool) -> core::result::Result<f64,Error> where R: core::random::Source64 {
+ let attempts: i32 = 0; while (true) {
+  if (attempts >= MAX_ITERATIONS) { return core::result::Err(Error::NoConvergence); }
+  let result = word(source,limit); if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+  let value: f64 = ((result.unwrap() >> 11) as f64)*0.00000000000000011102230246251565404236316680908203125;
+  if (!open || value != 0.0) { return core::result::Ok(value); } attempts += 1;
+ } return core::result::Err(Error::NoConvergence);
+}
+// A binary64 probability is a dyadic fraction with at most1074 fractional
+// bits. Compare its successive64-bit prefixes to independent uniform words.
+// No finite uniform grid rounds a tiny probability up to2^-53.
+fn binary_trial<R>(source: &R,p: f64,limit: &Budget) -> core::result::Result<i64,Error> where R: core::random::Source64 {
+ if (p == 0.0) { return core::result::Ok(0); } if (p == 1.0) { return core::result::Ok(1); }
+ let bits: u64 = core::f64::to_bits(p); let exponent: i32 = ((bits >> 52) & 2047) as i32; let mantissa: u64 = bits & 4503599627370495; let remaining: i32 = 1074;
+ if (exponent != 0) { mantissa = mantissa | 4503599627370496; remaining = 1075-exponent; }
+ while (true) {
+  let prefix: u64 = 0;
+  if (remaining <= 64) { prefix = mantissa << ((64-remaining) as u32); }
+  else { if (remaining < 117) { prefix = mantissa >> ((remaining-64) as u32); } }
+  let result = word(source,limit); if (result.is_err()) { return core::result::Err(result.unwrap_err()); } let drawn: u64 = result.unwrap();
+  if (drawn < prefix) { return core::result::Ok(1); } if (drawn > prefix || remaining <= 64) { return core::result::Ok(0); }
+  if (remaining < 117) { mantissa = mantissa & (((1 as u64) << ((remaining-64) as u32))-1); } remaining -= 64;
+ } return core::result::Err(Error::NumericalFailure);
+}
+// Zero-event gating keeps tiny means observable. Conditional inversion starts
+// at1 and uses successive exact-distribution PMF ratios, not a tail truncation.
+fn log_sinhc(x: f64) -> f64 {
+ if (x < 0.125) { let z: f64 = x*x; return z*(1.0/6.0+z*(-1.0/180.0+z*(1.0/2835.0+z*(-1.0/37800.0+z*(1.0/467775.0+z*(-691.0/3831077250.0+z*2.0/127702575.0)))))); }
+ return core::math::log(-core::math::expm1(-2.0*x))+x-core::math::log(2.0*x);
+}
+fn conditional_upper(value: Distribution,u: f64,nonzero: f64,limit: &Budget) -> core::result::Result<i64,Error> {
+ let target: f64 = core::math::log1p(-u)+core::math::log(nonzero);
+ let low: i64 = 1; let high: i64 = value.trials as i64;
+ if (family(value) == 3) {
+  high = 1;
+  while (true) {
+   let result = tails(value,high,limit); if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+   if (result.unwrap().log_survival <= target) { break; }
+   if (high == MAX_COUNT) { return core::result::Err(Error::CountRange); }
+   if (high > MAX_COUNT/2) { high = MAX_COUNT; } else { high *= 2; }
+  }
+ }
+ while (low < high) {
+  let middle: i64 = low+(high-low)/2; let result = tails(value,middle,limit); if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+  if (result.unwrap().log_survival <= target) { high = middle; } else { low = middle+1; }
+ } return core::result::Ok(low);
+}
+fn binomial_small<R>(source: &R,n: i64,p: f64,limit: &Budget) -> core::result::Result<i64,Error> where R: core::random::Source64 {
+ let t: f64 = -core::math::log1p(-p); let exponent: f64 = (n as f64)*t; let nonzero: f64 = -core::math::expm1(-exponent); let gate = binary_trial(source,nonzero,limit); if (gate.is_err() || gate.unwrap() == 0) { return gate; }
+ let uniform = unit(source,limit,false); if (uniform.is_err()) { return core::result::Err(uniform.unwrap_err()); } let u: f64 = uniform.unwrap();
+ if (u > 0.5) { return conditional_upper(binomial(n as u32,p).unwrap(),u,nonzero,limit); }
+ let k: i64 = 1; let mass: f64 = core::math::exp(-(((n-1) as f64)*t)*0.5+log_sinhc(t*0.5)-log_sinhc(exponent*0.5)); let iteration: i32 = 0;
+ if (!core::f64::is_finite(mass) || mass <= 0.0 || mass > 1.0) { return core::result::Err(Error::NumericalFailure); }
+ while (u > mass) {
+  if (iteration >= MAX_ITERATIONS) { return core::result::Err(Error::NoConvergence); } if (!limit.charge(1)) { return core::result::Err(Error::WorkLimit); }
+  if (k >= n) { return core::result::Err(Error::NumericalFailure); } u -= mass; k += 1; mass *= (((n-k+1) as f64)*p)/((k as f64)*(1.0-p));
+  if (!core::f64::is_finite(mass) || mass <= 0.0) { return core::result::Err(Error::NumericalFailure); } iteration += 1;
+ } return core::result::Ok(k);
+}
+fn binomial_rejection<R>(source: &R,n: i64,p: f64,limit: &Budget) -> core::result::Result<i64,Error> where R: core::random::Source64 {
+ let spread: f64 = core::f64::sqrt((n as f64)*p*(1.0-p)); let b: f64 = 1.15+2.53*spread; let a: f64 = -0.0873+0.0248*b+0.01*p; let c: f64 = (n as f64)*p+0.5; let vr: f64 = 0.92-4.2/b; let alpha: f64 = (2.83+5.1/b)*spread;
+ let mode: i64 = core::f64::floor(((n+1) as f64)*p) as i64; let law = binomial(n as u32,p).unwrap(); let modal = log_pmf(law,mode); if (modal.is_err()) { return core::result::Err(modal.unwrap_err()); }
+ let iteration: i32 = 0; while (true) {
+  if (iteration >= MAX_ITERATIONS) { return core::result::Err(Error::NoConvergence); }
+  if (!limit.charge(1)) { return core::result::Err(Error::WorkLimit); } let left: core::result::Result<f64,Error> = unit(source,limit,false); if (left.is_err()) { return core::result::Err(left.unwrap_err()); } let right: core::result::Result<f64,Error> = unit(source,limit,false); if (right.is_err()) { return core::result::Err(right.unwrap_err()); }
+  let u: f64 = left.unwrap()-0.5; let v: f64 = right.unwrap(); let us: f64 = 0.5-core::f64::abs(u); iteration += 1; if (us == 0.0) { continue; }
+  let candidate: f64 = core::f64::floor((2.0*a/us+b)*u+c); if (!core::f64::is_finite(candidate)) { return core::result::Err(Error::NumericalFailure); } if ((candidate < 0.0) || (candidate > (n as f64))) { continue; } let k: i64 = candidate as i64;
+  if (us >= 0.07 && v <= vr) { return core::result::Ok(k); }
+  let mass = log_pmf(law,k); if (mass.is_err()) { return core::result::Err(mass.unwrap_err()); }
+  if (core::math::log(v)+core::math::log(alpha)-core::math::log(a/(us*us)+b) <= mass.unwrap()-modal.unwrap()) { return core::result::Ok(k); }
+ } return core::result::Err(Error::NoConvergence);
+}
+fn poisson_small<R>(source: &R,mean: f64,limit: &Budget) -> core::result::Result<i64,Error> where R: core::random::Source64 {
+ let nonzero: f64 = -core::math::expm1(-mean); let gate = binary_trial(source,nonzero,limit); if (gate.is_err() || gate.unwrap() == 0) { return gate; }
+ let uniform = unit(source,limit,false); if (uniform.is_err()) { return core::result::Err(uniform.unwrap_err()); } let u: f64 = uniform.unwrap(); let k: i64 = 1; let mass: f64 = mean/core::math::expm1(mean); let iteration: i32 = 0;
+ if (u > 0.5) { return conditional_upper(poisson(mean).unwrap(),u,nonzero,limit); }
+ while (u > mass) {
+  if (iteration >= MAX_ITERATIONS) { return core::result::Err(Error::NoConvergence); } if (!limit.charge(1)) { return core::result::Err(Error::WorkLimit); }
+  u -= mass; k += 1; mass *= mean/(k as f64); if (!core::f64::is_finite(mass) || mass <= 0.0) { return core::result::Err(Error::NumericalFailure); } iteration += 1;
+ } return core::result::Ok(k);
+}
+fn poisson_rejection<R>(source: &R,mean: f64,limit: &Budget) -> core::result::Result<i64,Error> where R: core::random::Source64 {
+ let b: f64 = 0.931+2.53*core::f64::sqrt(mean); let a: f64 = -0.059+0.02483*b; let inverse_alpha: f64 = 1.1239+1.1328/(b-3.4); let vr: f64 = 0.9277-3.6224/(b-2.0); let law = poisson(mean).unwrap();
+ let iteration: i32 = 0; while (true) {
+  if (iteration >= MAX_ITERATIONS) { return core::result::Err(Error::NoConvergence); }
+  if (!limit.charge(1)) { return core::result::Err(Error::WorkLimit); } let left: core::result::Result<f64,Error> = unit(source,limit,false); if (left.is_err()) { return core::result::Err(left.unwrap_err()); } let right: core::result::Result<f64,Error> = unit(source,limit,false); if (right.is_err()) { return core::result::Err(right.unwrap_err()); }
+  let u: f64 = left.unwrap()-0.5; let v: f64 = right.unwrap(); let us: f64 = 0.5-core::f64::abs(u); iteration += 1; if (us == 0.0) { continue; }
+  let candidate: f64 = core::f64::floor((2.0*a/us+b)*u+mean+0.43); if (!core::f64::is_finite(candidate)) { return core::result::Err(Error::CountRange); } if ((candidate < 0.0) || ((us < 0.013) && (v > us))) { continue; } if (candidate > (MAX_COUNT as f64)) { return core::result::Err(Error::CountRange); } let k: i64 = candidate as i64;
+  if (us >= 0.07 && v <= vr) { return core::result::Ok(k); } let mass = log_pmf(law,k); if (mass.is_err()) { return core::result::Err(mass.unwrap_err()); }
+  if (core::math::log(v)+core::math::log(inverse_alpha)-core::math::log(a/(us*us)+b) <= mass.unwrap()) { return core::result::Ok(k); }
+ } return core::result::Err(Error::NoConvergence);
+}
+pub fn sample<R>(source: &R,value: Distribution,limit: &Budget) -> core::result::Result<i64,Error> where R: core::random::Source64 {
+ if (!valid(value)) { return core::result::Err(Error::InvalidParameter); } let tag: i32 = family(value); let p: f64 = value.parameter;
+ if (tag == 0) { return binary_trial(source,p,limit); }
+ if (tag == 1) {
+  let n: i64 = value.trials as i64; if (n == 0 || p == 0.0) { return core::result::Ok(0); } if (p == 1.0) { return core::result::Ok(n); } if (n == 1) { return binary_trial(source,p,limit); }
+  let reflect: bool = p > 0.5; let r: f64 = p; if (reflect) { r = 1.0-p; }
+  let result: core::result::Result<i64,Error> = core::result::Err(Error::NumericalFailure); if ((n as f64)*r < 10.0) { result = binomial_small(source,n,r,limit); } else { result = binomial_rejection(source,n,r,limit); }
+  if (result.is_err()) { return result; } if (reflect) { return core::result::Ok(n-result.unwrap()); } return result;
+ }
+ if (tag == 2) {
+  if (p == 1.0) { return core::result::Ok(0); } let drawn = unit(source,limit,true); if (drawn.is_err()) { return core::result::Err(drawn.unwrap_err()); }
+  let count: f64 = core::f64::floor(core::math::log(drawn.unwrap())/core::math::log1p(-p)); if (!core::f64::is_finite(count) || count > (MAX_COUNT as f64)) { return core::result::Err(Error::CountRange); } if (count < 0.0) { return core::result::Err(Error::NumericalFailure); } return core::result::Ok(count as i64);
+ }
+ if (p == 0.0) { return core::result::Ok(0); } if (p < 10.0) { return poisson_small(source,p,limit); } return poisson_rejection(source,p,limit);
+}

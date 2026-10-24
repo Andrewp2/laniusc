@@ -1,0 +1,34 @@
+module app::main;
+import core::random;
+import core::result;
+import ext::distributions;
+
+struct Budget { numerical: ext::distributions::Budget, draws_left: u64, draws_used: u64 }
+impl Budget { fn borrow(&self) -> &Budget { return self; } }
+struct Script { calls: i32 }
+impl Script { fn borrow(&self) -> &Script { return self; } }
+pub impl core::random::Source64 for Script {
+ pub fn draw(&self) -> core::result::Result<u64,core::random::Error> { self.calls += 1; if (self.calls == 2) { return core::result::Err(core::random::Error::Host(9)); } return core::result::Ok(9223372036854775808); }
+}
+fn word<R>(source: &R, limit: &Budget) -> core::result::Result<u64,core::random::Error> where R: core::random::Source64 {
+ if (!limit.numerical.charge(1) || limit.draws_left == 0) { return core::result::Err(core::random::Error::NoProgress); }
+ limit.draws_left -= 1; limit.draws_used += 1;
+ return source.draw();
+}
+fn unit<R>(source: &R, limit: &Budget) -> core::result::Result<f64,core::random::Error> where R: core::random::Source64 {
+ let result = word(source,limit); if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+ return core::result::Ok(((result.unwrap() >> 11) as f64)*0.00000000000000011102230246251565404236316680908203125);
+}
+fn main() -> i32 {
+ let source: core::random::Xoshiro256PlusPlus = core::random::from_seed(17);
+ let limit: Budget = Budget { numerical: ext::distributions::budget(0,100),draws_left: 3,draws_used: 0 };
+ let value: f64 = unit(source.borrow(),limit.borrow()).unwrap(); assert(value >= 0.0 && value < 1.0);
+ assert(limit.draws_left == 2 && limit.draws_used == 1 && limit.numerical.work() == 1);
+ let script: Script = Script { calls: 0 }; assert(unit(script.borrow(),limit.borrow()).unwrap() == 0.5);
+ assert(match (unit(script.borrow(),limit.borrow()).unwrap_err()) { core::random::Error::Host(code) -> code == 9, _ -> false });
+ assert(limit.draws_left == 0 && limit.draws_used == 3 && limit.numerical.work() == 3 && script.calls == 2);
+ assert(unit(script.borrow(),limit.borrow()).is_err()); assert(limit.numerical.work() == 4 && script.calls == 2);
+ let law = ext::distributions::beta(2.0,3.0).unwrap(); assert(ext::distributions::tails(law,0.5,limit.numerical.borrow()).is_ok());
+ assert(limit.numerical.work() > 4 && limit.draws_used == 3);
+ return 0;
+}

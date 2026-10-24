@@ -47,6 +47,7 @@ sample runner's fixed argument and text-output fixture.
 | `capture_command.lani` | `tests/stdlib_command_capture_execution.rs`, x86_64 Linux 5.11+; concurrent binary stdin/stdout/stderr, exact caps, child status, deadlines, persistent interruptions and allocation/FD/I/O cleanup | [Bounded command capture](../../docs/stdlib-command-capture.md) |
 | `settings_inspect.lani` | `tests/extended_settings_execution.rs`, x86_64 Linux; JSON/TOML/environment overlays, exact typed values, provenance, limits and allocation/I/O cleanup | [Settings inspection](../../docs/extended-settings.md) |
 | `sample_distribution.lani` | `tests/extended_sample_distribution_execution.rs`, x86_64 Linux; seeded continuous samples, CSV models, resource and allocation/I/O failures | [Distribution sampling](../../docs/extended-sample-distribution.md) |
+| `sample_counts.lani` | `tests/extended_sample_counts_execution.rs`, x86_64 Linux; seeded discrete counts, independent predictions/moments/exceedances, resource and allocation/I/O failures | [Count simulation](../../docs/extended-sample-counts.md) |
 
 Compile these applications with both `--stdlib-root stdlib` and `--source-root extended`.
 The library implementations are Lanius; the Rust test harness supplies inputs and
