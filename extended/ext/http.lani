@@ -218,6 +218,153 @@ fn message(bytes: core::slice::View<u8>, parsed: core::result::Result<Head,Error
 }
 pub fn parse_request(bytes: core::slice::View<u8>, eof: bool, limits: Limits) -> core::result::Result<Message,Error> { return message(bytes,parse_request_head(bytes,limits),eof,limits); }
 pub fn parse_response(bytes: core::slice::View<u8>, method: core::slice::View<u8>, eof: bool, limits: Limits) -> core::result::Result<Message,Error> { return message(bytes,parse_response_head(bytes,method,limits),eof,limits); }
+
+// Incremental framing candidate, not a validated Message. See
+// docs/extended-http-cursor.md. No borrowed source views or owners are retained.
+pub enum CursorMode { Request, Response }
+pub struct HeadInfo { status: i32, version: i32, kind: BodyKind, content_length: i32, head_end: i32 }
+pub struct FrameBoundary { consumed: i32, decoded_length: i32 }
+pub enum Scan { NeedMore, HeadReady(HeadInfo), Boundary(FrameBoundary) }
+// Library-maintained fields: construct with cursor(), never forge or mutate.
+pub struct Cursor {
+    mode: CursorMode, limits: Limits, rawcap: i32, maximum_work: u64, work_used: u64,
+    phase: i32, pos: i32, line_start: i32, pending_cr: bool, first_line: bool,
+    head_fields: i32, previous_length: i32, ended: bool, head_end: i32,
+    decoded: i32, remaining: i32, chunks: i32, trailer_start: i32, trailer_count: i32,
+    failure: Error
+}
+pub fn cursor(mode: CursorMode, limits: Limits, rawcap: i32, maximum_work: u64) -> core::result::Result<Cursor,Error> {
+    if (!limits_valid(limits) || rawcap < 0) { return core::result::Err(Error::Bounds); }
+    return core::result::Ok(Cursor { mode: mode, limits: limits, rawcap: rawcap, maximum_work: maximum_work, work_used: 0,
+        phase: 0, pos: 0, line_start: 0, pending_cr: false, first_line: true, head_fields: 0, previous_length: 0, ended: false,
+        head_end: 0, decoded: 0, remaining: 0, chunks: 0, trailer_start: 0, trailer_count: 0, failure: Error::Bounds });
+}
+pub impl Cursor {
+    pub fn borrow(&self) -> &Cursor { return self; }
+    pub fn work(&self) -> u64 { return self.work_used; }
+    fn charge(&self, amount: u64) -> bool {
+        if (amount > self.maximum_work-self.work_used) { return false; }
+        self.work_used += amount; return true;
+    }
+    fn failed(&self, failure: Error) -> core::result::Result<Scan,Error> { self.failure = failure; self.phase = 10; return core::result::Err(failure); }
+    fn boundary(&self) -> core::result::Result<Scan,Error> { self.phase = 9; return core::result::Ok(Scan::Boundary(FrameBoundary { consumed: self.pos, decoded_length: self.decoded })); }
+    fn need(&self, available: i32) -> core::result::Result<Scan,Error> {
+        // Close can finish at EOF without another byte. Other phases cannot.
+        if (available == self.rawcap && self.phase != 3) { return self.failed(Error::Limit(available)); }
+        if (self.ended) { return self.failed(Error::Incomplete(available)); }
+        return core::result::Ok(Scan::NeedMore);
+    }
+    // A saved CR is consumed once, including across a relocated input prefix.
+    // Only line mechanics live here; complete section grammar uses head(),
+    // chunk_size() and field(), the same authorities as the full parser.
+    fn scan_line(&self, bytes: core::slice::View<u8>, section_end: i32) -> core::result::Result<i32,Error> {
+        while (self.pos < bytes.len()) {
+            if (self.pending_cr) {
+                if (!self.charge(1)) { return core::result::Err(Error::Limit(self.pos)); }
+                if (byte(bytes,self.pos) != 10) { return core::result::Err(Error::Malformed(self.pos)); }
+                if (self.pos >= section_end) { return core::result::Err(Error::Limit(self.pos-1)); }
+                let end: i32 = self.pos-1; self.pos += 1; self.pending_cr = false; return core::result::Ok(end);
+            }
+            if (self.pos-self.line_start > self.limits.line_bytes || self.pos >= section_end) { return core::result::Err(Error::Limit(self.pos)); }
+            if (!self.charge(1)) { return core::result::Err(Error::Limit(self.pos)); }
+            let c: u8 = byte(bytes,self.pos);
+            if (c == 10 || c == 0 || (c < 32 && c != 9 && c != 13) || c == 127) { return core::result::Err(Error::Malformed(self.pos)); }
+            self.pos += 1; if (c == 13) { self.pending_cr = true; }
+        }
+        if (!self.pending_cr && (self.pos-self.line_start > self.limits.line_bytes || self.pos >= section_end)) { return core::result::Err(Error::Limit(self.pos)); }
+        return core::result::Ok(-1);
+    }
+    // bytes is a cumulative, immutable logical prefix. It may move or use a
+    // different physical stride. method must be the same original method on
+    // every response call. EOF is sticky; no appended bytes after EOF.
+    pub fn advance(&self, bytes: core::slice::View<u8>, method: core::slice::View<u8>, eof: bool) -> core::result::Result<Scan,Error> {
+        if (self.phase == 10) { return core::result::Err(self.failure); }
+        if (self.phase == 9) { return core::result::Ok(Scan::Boundary(FrameBoundary { consumed: self.pos, decoded_length: self.decoded })); }
+        if (!valid(bytes) || !valid(method) || bytes.len() < self.previous_length || (self.ended && bytes.len() != self.previous_length)) { return self.failed(Error::Bounds); }
+        self.previous_length = bytes.len(); self.ended = self.ended || eof;
+        let available: i32 = bytes.len(); if (available > self.rawcap) { available = self.rawcap; }
+        let input: core::slice::View<u8> = part(bytes,0,available);
+        while (true) {
+            if (self.phase == 0 || self.phase == 4 || self.phase == 8) {
+                let bound: i32 = 2147483647;
+                if (self.phase == 0) { bound = self.limits.head_bytes; }
+                if (self.phase == 8 && self.limits.trailer_bytes <= 2147483647-self.trailer_start) { bound = self.trailer_start+self.limits.trailer_bytes; }
+                let found: core::result::Result<i32,Error> = self.scan_line(input,bound);
+                if (core::result::is_err(found)) { return self.failed(core::result::unwrap_err(found)); }
+                let end: i32 = core::result::unwrap(found);
+                if (end < 0) { return self.need(available); }
+                let start: i32 = self.line_start;
+                self.line_start = self.pos;
+                if (self.phase == 0) {
+                    if (self.first_line) { self.first_line = false; }
+                    else {
+                        if (end != start) { if (self.head_fields == self.limits.headers) { return self.failed(Error::Limit(start)); } self.head_fields += 1; }
+                        else {
+                            let request: bool = match (self.mode) { CursorMode::Request -> true, CursorMode::Response -> false };
+                            let original: core::slice::View<u8> = literal("",0); if (!request) { original = method; }
+                            if (!self.charge((self.pos as u64)+(original.len() as u64))) { return self.failed(Error::Limit(self.pos)); }
+                            let parsed: core::result::Result<Head,Error> = head(part(input,0,self.pos),request,original,self.limits);
+                            if (core::result::is_err(parsed)) { return self.failed(core::result::unwrap_err(parsed)); }
+                            let h: Head = core::result::unwrap(parsed); self.head_end = self.pos;
+                            self.phase = match (h.kind) { BodyKind::Empty -> 1, BodyKind::Tunnel -> 1, BodyKind::Fixed -> 2, BodyKind::Close -> 3, BodyKind::Chunked -> 4 };
+                            self.remaining = h.content_length;
+                            return core::result::Ok(Scan::HeadReady(HeadInfo { status: h.status, version: h.version, kind: h.kind, content_length: h.content_length, head_end: self.pos }));
+                        }
+                    }
+                } else {
+                    if (self.phase == 4) {
+                        if (!self.charge((end-start) as u64)) { return self.failed(Error::Limit(start)); }
+                        let sized: core::result::Result<i32,Error> = chunk_size(input,start,end);
+                        if (core::result::is_err(sized)) { return self.failed(core::result::unwrap_err(sized)); }
+                        let amount: i32 = core::result::unwrap(sized);
+                        if (amount == 0) { self.phase = 8; self.trailer_start = self.pos; }
+                        else {
+                            if (self.chunks == self.limits.chunks || amount > self.limits.body_bytes-self.decoded) { return self.failed(Error::Limit(self.pos)); }
+                            self.chunks += 1; self.remaining = amount; self.phase = 5;
+                        }
+                    } else {
+                        if (end == start) { return self.boundary(); }
+                        if (self.trailer_count == self.limits.trailers) { return self.failed(Error::Limit(start)); }
+                        self.trailer_count += 1;
+                        if (!self.charge((end-start) as u64)) { return self.failed(Error::Limit(start)); }
+                        let parsed: core::result::Result<Field,Error> = field(input,start,end);
+                        if (core::result::is_err(parsed)) { return self.failed(core::result::unwrap_err(parsed)); }
+                        if (forbidden(core::result::unwrap(parsed).name)) { return self.failed(Error::Malformed(start)); }
+                        // Connection-nominated trailer fields are checked by the
+                        // final canonical parser, not this framing candidate.
+                    }
+                }
+            } else {
+                if (self.phase == 1) { return self.boundary(); }
+                if (self.phase == 2 || self.phase == 5) {
+                    if (self.phase == 2 && self.remaining > self.limits.body_bytes) { return self.failed(Error::Limit(self.head_end)); }
+                    let amount: i32 = self.remaining; if (amount > available-self.pos) { amount = available-self.pos; }
+                    if (!self.charge(amount as u64)) { return self.failed(Error::Limit(self.pos)); }
+                    self.pos += amount; self.decoded += amount; self.remaining -= amount;
+                    if (self.remaining != 0) { return self.need(available); }
+                    if (self.phase == 2) { return self.boundary(); } self.phase = 6;
+                } else {
+                    if (self.phase == 3) {
+                        if (bytes.len() > self.rawcap || bytes.len()-self.head_end > self.limits.body_bytes) { return self.failed(Error::Limit(self.head_end)); }
+                        let amount: i32 = available-self.pos;
+                        if (!self.charge(amount as u64)) { return self.failed(Error::Limit(self.pos)); }
+                        self.pos = available; self.decoded += amount;
+                        if (self.ended) { return self.boundary(); } return self.need(available);
+                    }
+                    // Separate CR / LF phases avoid rescanning a split delimiter.
+                    if (self.pos == available) { return self.need(available); }
+                    if (!self.charge(1)) { return self.failed(Error::Limit(self.pos)); }
+                    let expected: u8 = 13; if (self.phase == 7) { expected = 10; }
+                    if (byte(input,self.pos) != expected) { return self.failed(Error::Malformed(self.pos)); }
+                    self.pos += 1;
+                    if (self.phase == 6) { self.phase = 7; } else { self.phase = 4; self.line_start = self.pos; }
+                }
+            }
+        }
+        return self.failed(Error::Bounds);
+    }
+}
+
 // Message must come from parse_* and source must remain unchanged. Destination
 // must not overlap source. No mutation occurs for bounds/capacity errors.
 pub fn decode_into(value: Message, destination: core::slice::View<u8>) -> core::result::Result<i32,Error> {

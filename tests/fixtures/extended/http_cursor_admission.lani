@@ -1,0 +1,18 @@
+module http_cursor_admission;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::http;
+fn bytes(s: str, n: i32) -> core::slice::View<u8> { let data: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(s),n); return core::result::unwrap(core::slice::view(data,n)); }
+fn main() -> i32 {
+    let wire = bytes("HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nx",39);
+    let scan = core::result::unwrap(ext::http::cursor(ext::http::CursorMode::Response,ext::http::default_limits(),100,1000));
+    let head = scan.advance(wire,bytes("GET",3),false);
+    if (core::result::is_err(head)) { return 1; }
+    let h: bool = match (core::result::unwrap(head)) { ext::http::Scan::HeadReady(info) -> info.head_end == 38, _ -> false };
+    if (!h) { return 2; }
+    let body = scan.advance(wire,bytes("GET",3),false);
+    if (core::result::is_err(body)) { return 3; }
+    let ok: bool = match (core::result::unwrap(body)) { ext::http::Scan::Boundary(b) -> b.consumed == 39 && b.decoded_length == 1, _ -> false };
+    if (!ok) { return 4; } return 0;
+}

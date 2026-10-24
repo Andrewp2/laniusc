@@ -1,0 +1,43 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::http;
+fn bytes(s: str, n: i32) -> core::slice::View<u8> { let data: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(s),n); return core::slice::view(data,n).unwrap(); }
+fn boundary(c: &ext::http::Cursor, source: core::slice::View<u8>, method: core::slice::View<u8>) -> bool {
+    let event = c.advance(source,method,false).unwrap();
+    if (match(event) { ext::http::Scan::HeadReady(h) -> true, _ -> false }) { event = c.advance(source,method,false).unwrap(); }
+    let done: bool = match(event) { ext::http::Scan::Boundary(b) -> true, _ -> false };
+    if (done) { assert(match(event) { ext::http::Scan::Boundary(b) -> b.consumed == source.len() && b.decoded_length == 512, _ -> false }); }
+    return done;
+}
+fn main() -> i32 {
+    let wire: alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(70000).unwrap();
+    wire.try_extend(bytes("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n",47)).unwrap();
+    let n: i32 = 0;
+    while (n < 512) {
+        wire.try_extend(bytes("1;key=\"",7)).unwrap(); let i: i32 = 0;
+        while (i < 96) { wire.try_push(97+((n+i)%26) as u8).unwrap(); i += 1; }
+        wire.try_extend(bytes("\";b=t\r\n",7)).unwrap(); wire.try_push((n%256) as u8).unwrap(); wire.try_extend(bytes("\r\n",2)).unwrap(); n += 1;
+    }
+    wire.try_extend(bytes("0\r\nX-Result: yes\r\n\r\n",20)).unwrap();
+    let source = wire.as_view(); let method = bytes("GET",3); let limits = ext::http::default_limits();
+    let parsed = ext::http::parse_response(source,method,false,limits).unwrap(); assert(parsed.consumed == wire.len() && parsed.decoded_length == 512 && parsed.trailer_count == 1);
+    let whole = ext::http::cursor(ext::http::CursorMode::Response,limits,wire.len(),1000000).unwrap(); assert(boundary(whole.borrow(),source,method)); let work = whole.work(); assert(work <= (wire.len() as u64)*2+3);
+    // Independent accounting from the generated wire sections: all raw bytes,
+    // head+method, each108-byte size/extension line, zero size and13-byte trailer.
+    assert(work == (wire.len() as u64)+47+3+512*108+1+13);
+    let c = ext::http::cursor(ext::http::CursorMode::Response,limits,wire.len(),work).unwrap(); n = 0;
+    while (n < wire.len()) { let view = source.subview(0,n).unwrap(); assert(!boundary(c.borrow(),view,method)); let used = c.work(); assert(!boundary(c.borrow(),view,method)); assert(c.work() == used); n += 1; }
+    assert(boundary(c.borrow(),source,method)); assert(c.work() == work);
+    let c = ext::http::cursor(ext::http::CursorMode::Response,limits,wire.len(),work).unwrap(); n = 0;
+    while (n < wire.len()) { let end: i32 = n+137; if (end > wire.len()) { end = wire.len(); } let done = boundary(c.borrow(),source.subview(0,end).unwrap(),method); assert(done == (end == wire.len())); n = end; }
+    assert(c.work() == work);
+    let short = ext::http::cursor(ext::http::CursorMode::Response,limits,wire.len(),work-1).unwrap(); short.advance(source,method,false).unwrap();
+    let exhausted = short.advance(source,method,false); assert(exhausted.is_err()); assert(match(exhausted.unwrap_err()) { ext::http::Error::Limit(at) -> true, _ -> false }); assert(short.work() <= work-1);
+    // Decoding after the single final strict parse retains binary octets.
+    let decoded: alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(512).unwrap(); n = 0; while (n < 512) { decoded.try_push(0).unwrap(); n += 1; }
+    ext::http::decode_into(parsed,decoded.as_view()).unwrap(); n = 0; while (n < 512) { assert(decoded.as_view().get(n).unwrap() == (n%256) as u8); n += 1; }
+    decoded.destroy(); wire.destroy(); return 0;
+}
