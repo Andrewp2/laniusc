@@ -34,7 +34,7 @@ contains optional codecs, protocols, mathematics and application utilities.
 | File options and directories | `std::file_ops`, `std::directory` | [Seek, metadata, sync and duplication](../docs/stdlib-file-operations.md), [raw names and bounded walks](../docs/stdlib-directory.md) |
 | Paths | `core::path`, `alloc::path` | [Unix byte paths](../docs/stdlib-paths.md) |
 | Arguments and environment | `std::args`, `std::args_checked`, `std::env_checked` | Raw-byte process snapshots and checked host wrappers |
-| Child processes | `std::command` | [Raw argv/environment, redirects, owned pipes, startup certainty and reaping](../docs/stdlib-command.md); native Linux single-threaded profile |
+| Child processes | `std::command`, `std::command_capture` | [Raw argv/environment, redirects, startup certainty and reaping](../docs/stdlib-command.md), [bounded concurrent pipe capture](../docs/stdlib-command-capture.md); native Linux single-threaded profile |
 | Time and randomness | `core::time`, `core::calendar`, `std::clock`, `core::random`, `std::entropy` | [Time](../docs/stdlib-time.md), [calendar](../docs/stdlib-calendar.md), [randomness](../docs/stdlib-randomness.md); optional [TZif time zones](../docs/extended-timezone.md) |
 | Network values and sockets | `core::net`, `std::socket` | [Address values](../docs/stdlib-net.md), [owned TCP/UDP and deadlines](../docs/stdlib-sockets.md), [binary TCP exchange](../docs/stdlib-tcp-exchange.md) |
 | Descriptor readiness | `std::poll` | [Reusable borrowed-FD sets, flags, atomic publication and observed deadlines](../docs/stdlib-poll.md) |

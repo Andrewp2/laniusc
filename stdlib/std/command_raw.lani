@@ -28,7 +28,7 @@ pub fn null_fd(write: bool) -> i32 {
     if (n < 0) { return n as i32; } return normalize(n as i32);
 }
 pub fn fork() -> i64 { return word(57,0,0,0); }
-pub fn wait(pid: i32, status: ptr, nonblocking: bool) -> i64 { let flags: i64 = 0; if (nonblocking) { flags = 1; } let n: i64 = -4; while (n == -4) { n = pointer(61,pid as i64,status,flags); } return n; }
+pub fn wait(pid: i32, status: ptr, nonblocking: bool) -> i64 { if (nonblocking) { return pointer(61,pid as i64,status,1); } let n: i64 = -4; while (n == -4) { n = pointer(61,pid as i64,status,0); } return n; }
 pub fn change_dir(path: ptr) -> i64 { return invoke(80,std::linux::Argument::Address(path),std::linux::Argument::Word(0),std::linux::Argument::Word(0),std::linux::Argument::Word(0)); }
 pub fn execute(path: ptr, argv: ptr, env: ptr) -> i64 { return invoke(59,std::linux::Argument::Address(path),std::linux::Argument::Address(argv),std::linux::Argument::Address(env),std::linux::Argument::Word(0)); }
 pub fn store_pointer(slot: ptr, value: ptr) { let target: [ptr] = core::mem::typed_slice_from_raw_parts(slot,1); target[0] = value; }

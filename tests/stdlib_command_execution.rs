@@ -73,3 +73,40 @@ fn real_runner_and_independent_startup_resource_fault_models_execute() {
     );
     assert!(output.stderr.is_empty(), "{output:?}");
 }
+
+#[test]
+fn nonblocking_wait_returns_interruption_without_losing_pid_ownership() {
+    let child = fixture("command_try_wait_interrupt");
+    for (inject, expected) in [(false, 40), (true, 41)] {
+        let trace = common::TempArtifact::new("laniusc_command", "try_wait_trace", None);
+        let mut command = Command::new("timeout");
+        command.args(["--kill-after=1s", "5s"]);
+        if inject {
+            command
+                .args([
+                    "strace",
+                    "-qq",
+                    "-e",
+                    "trace=wait4",
+                    "-e",
+                    "signal=none",
+                    "-o",
+                ])
+                .arg(trace.path())
+                .args(["-e", "inject=wait4:error=EINTR:when=1"]);
+        }
+        let output = command.arg(child.path()).output().unwrap();
+        assert_eq!(output.status.code(), Some(expected), "{output:?}");
+        assert!(
+            output.stdout.is_empty() && output.stderr.is_empty(),
+            "{output:?}"
+        );
+        if inject {
+            assert!(
+                std::fs::read_to_string(trace.path())
+                    .unwrap()
+                    .contains("INJECTED")
+            );
+        }
+    }
+}

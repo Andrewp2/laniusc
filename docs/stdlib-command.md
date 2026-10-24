@@ -49,7 +49,7 @@ The child marks **all** descriptors ≥3 CLOEXEC with `close_range`; only its in
 
 `wait()` and `try_wait()` use wait4 for this positive PID only. `try_wait()` returns `None` while running. A terminal result is cached: subsequent waits return the same `ExitStatus`, `id()` becomes `None`, and `signal` is rejected. `ExitStatus` provides the raw Linux status, optional exit code, optional terminating signal, and core-dump bit.
 
-EINTR is retried. Observed ECHILD permanently invalidates PID ownership and returns `LostChild`; later signaling is rejected, preventing a reused PID from being signaled. Other wait failures retain the child for retry. Never discard a live `Child`: there is no automatic destructor, background reaper, or detached mode. There is no pidfd; the precondition against outside reaping is essential until a wait observes termination/ECHILD.
+Blocking `wait()` retries EINTR. Nonblocking `try_wait()` performs one wait4(WNOHANG) attempt and returns a host failure with errno 4 on EINTR, retaining PID/cache state so the caller can check its own deadline/budget before retrying. Observed ECHILD permanently invalidates PID ownership and returns `LostChild`; later signaling is rejected, preventing a reused PID from being signaled. Other wait failures retain the child for retry. Never discard a live `Child`: there is no automatic destructor, background reaper, or detached mode. There is no pidfd; the precondition against outside reaping is essential until a wait observes termination/ECHILD.
 
 `signal(0..64)` targets the owned positive child PID, including signal 0's permission/existence check. `cancel_and_wait()` closes all still-owned pipes, ignores their close errors, sends SIGKILL to the direct child, and waits; ESRCH still proceeds to wait. A different kill/wait error retains ownership for retry. Descendants/process groups are not canceled. SIGKILL cannot guarantee an immediate return from an uninterruptible kernel operation.
 
@@ -66,6 +66,9 @@ Preparation allocates exactly three owners: `4*ceil(packed_bytes/4)` string byte
 `snapshot_environment(limits)` returns an owned `Environment`; `as_view()` borrows it and `destroy()` frees it. It uses the raw variable map exposed by `std::env`, verifies lengths/read counts, and fails on detected inconsistencies; it cannot detect every same-length mutation. No environment mutation is allowed during capture. Explicit request environments preserve duplicate values exactly; this convenience snapshot resolves duplicate keys to the first visible value exposed by the host lookup API. Capture temporarily allocates key scratch, two lengths per entry, packed entry bytes (without NULs), and one View per entry. Its aggregate entry-byte limit excludes NULs; a later spawn counts its own NULs and copies.
 
 ## Executable runner
+
+For bounded simultaneous stdin/stdout/stderr and retained output, use
+[command capture](stdlib-command-capture.md) and its separate runner.
 
 `sample_programs/library/run_command.lani` is a real command runner:
 

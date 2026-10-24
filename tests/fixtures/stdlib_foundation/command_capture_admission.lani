@@ -1,0 +1,19 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::slice;
+import core::time;
+import std::clock;
+import std::command;
+import std::command_capture;
+import std::signal;
+fn bytes(value: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),n); return core::slice::view(raw,n).unwrap(); }
+fn taken(result: std::command::Spawn) -> std::command::Child { return match(result) { std::command::Spawn::Child(child) -> child, std::command::Spawn::Unknown(value) -> unexpected(value.child), _ -> impossible() }; }
+fn unexpected(child: std::command::Child) -> std::command::Child { child.cancel_and_wait(); assert(false); return child; }
+fn impossible() -> std::command::Child { assert(false); let args: [core::slice::View<u8>;1] = [bytes("/bin/true",9)]; return taken(std::command::spawn(std::command::request(args[0],core::slice::view(args,1).unwrap(),core::slice::view(args,0).unwrap())).unwrap()); }
+fn main() -> i32 {
+    std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).unwrap();
+    let args: [core::slice::View<u8>;3] = [bytes("/bin/sh",7),bytes("-c",2),bytes("cat; printf error >&2; exit 23",30)]; let spec = std::command::request(args[0],core::slice::view(args,3).unwrap(),core::slice::view(args,0).unwrap()); spec.stdin = std::command::Stdio::Pipe; spec.stdout = std::command::Stdio::Pipe; spec.stderr = std::command::Stdio::Pipe;
+    let child = taken(std::command::spawn(spec).unwrap()); let data: [u8;4] = [65,0,255,10]; let now: core::time::Instant = std::clock::monotonic_now().unwrap(); let deadline: core::time::Deadline = core::time::deadline_after(now,core::time::from_secs(3)).unwrap(); let limits = std::command_capture::default_limits(); limits.max_stdout_bytes = 4; limits.max_stderr_bytes = 5;
+    let captured = std::command_capture::communicate(child.borrow(),core::slice::view(data,4).unwrap(),limits,deadline); if (captured.is_err()) { let failed = captured.unwrap_err(); failed.destroy(); child.cancel_and_wait(); return 70; } let output = captured.unwrap(); assert(output.stdout.len() == 4 && output.stderr.len() == 5 && output.progress.input_written == 4); let i: i32 = 0; while (i < 4) { assert(output.stdout.at(i) == data[i]); i += 1; } let expected = bytes("error",5); i = 0; while (i < 5) { assert(output.stderr.at(i) == expected.values[expected.start+i]); i += 1; } assert(core::option::unwrap(output.status.code) == 23 && core::option::is_none(child.id())); output.destroy(); child.close_pipes().unwrap(); return 0;
+}

@@ -50,6 +50,13 @@ The [subprocess API and command runner](stdlib-command.md) now execute real
 fork/exec/wait, raw argv/environment/cwd, redirection, pipes and signaling, with
 three focused native groups and 78 independently modeled cases. Startup EOF
 is explicitly Unconfirmed; ambiguous outcomes retain child ownership.
+[Bounded concurrent capture](stdlib-command-capture.md) now advances stdin,
+stdout and stderr together, preserves captured prefixes and child ownership on
+error, and applies explicit byte/work/deadline limits. Its CLI passes 86 model
+cases, real closed-pipe failures and cleanup checks. Nonblocking `try_wait`
+makes one host attempt so persistent interruptions cannot bypass the caller's
+deadline; blocking wait retains its retry contract. The adjacent native
+interruption and original lifecycle controls pass.
 [Seventeen ordinary samples](stdlib-checked-sample-migration.md) now use checked
 owners and complete output, with 316 result models and 421 injected failures.
 The source-only heap view correction passes empty/i64/record and existing

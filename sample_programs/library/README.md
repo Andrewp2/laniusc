@@ -44,6 +44,7 @@ sample runner's fixed argument and text-output fixture.
 | `directory_report.lani` | `tests/stdlib_directory_execution.rs`, x86_64 Linux; raw byte names, OS metadata model, depth/filter/resource limits and descriptor/allocation/I/O cleanup | [Directory reporting](../../docs/stdlib-directory.md) |
 | `dns_query.lani` | `tests/extended_dns_client_execution.rs`, x86_64 Linux; IPv4/IPv6 peers, UDP/TCP correlation/fallback, exact framing, fixed deadlines and allocation/host-error cleanup | [DNS transport](../../docs/extended-dns-client.md) |
 | `run_command.lani` | `tests/stdlib_command_execution.rs`, x86_64 Linux 5.11+; argv/environment/cwd, redirected files, child status, startup ambiguity, syscall/allocation failures and reaping | [Command runner](../../docs/stdlib-command.md) |
+| `capture_command.lani` | `tests/stdlib_command_capture_execution.rs`, x86_64 Linux 5.11+; concurrent binary stdin/stdout/stderr, exact caps, child status, deadlines, persistent interruptions and allocation/FD/I/O cleanup | [Bounded command capture](../../docs/stdlib-command-capture.md) |
 | `settings_inspect.lani` | `tests/extended_settings_execution.rs`, x86_64 Linux; JSON/TOML/environment overlays, exact typed values, provenance, limits and allocation/I/O cleanup | [Settings inspection](../../docs/extended-settings.md) |
 | `sample_distribution.lani` | `tests/extended_sample_distribution_execution.rs`, x86_64 Linux; seeded continuous samples, CSV models, resource and allocation/I/O failures | [Distribution sampling](../../docs/extended-sample-distribution.md) |
 
