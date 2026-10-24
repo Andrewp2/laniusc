@@ -26,6 +26,7 @@ runtime behavior, failure rules and supported targets.
 | Optional values and failures | `core::option`, `core::result`, `core::pair` | [Option](../docs/stdlib-option.md), [Result](../docs/stdlib-result.md) |
 | Equality, ordering and hashing | `core::cmp`, `core::ordering`, `core::hash`, `core::float_order` | [Lawful comparison and float keys](../docs/stdlib-comparison.md) |
 | Integer arithmetic | `core::{i8,i16,i32,i64,u8,u16,u32,u64,isize,usize}`, bit/conversion helpers | [8/16/32-bit contracts](../docs/stdlib-narrow-integers.md), [64-bit and pointer-sized contracts](../docs/stdlib-native-integers.md), [consumer consolidation](../docs/stdlib-numeric-migration.md); each operation names its checked, wrapping or saturating policy |
+| Boolean values and bit operations | `core::bool`, `core::bits` | [Truth functions, widths, rotations and extraction](../docs/stdlib-boolean-bits.md) |
 | Floating values and conversion | `core::f32`, `core::f64`, `core::float_decimal` | [Exact precision formatting](../docs/stdlib-float-precision.md) |
 | Elementary mathematics | `core::math` | [Full-range binary64 functions and accuracy evidence](../docs/stdlib-math.md) |
 | Wire coding and checksums | `core::base64`, `core::hex`, `core::binary`, `core::endian`, `core::varint`, `core::varint_i32`, `core::crc32`, `core::adler32`, `core::sha1` | [Byte codecs, endian values, varint statuses and CRC contracts](../docs/stdlib-byte-codecs.md); SHA-1 is supplied for the [WebSocket handshake](../docs/extended-websocket.md), with its collision-resistance limitation explicit |

@@ -92,9 +92,19 @@
         "docs/stdlib-byte-codecs.md"
       ]
     },
+    "core::bits": {
+      "guides": [
+        "docs/stdlib-boolean-bits.md"
+      ]
+    },
     "core::bitset": {
       "guides": [
         "docs/stdlib-bitset-owned.md"
+      ]
+    },
+    "core::bool": {
+      "guides": [
+        "docs/stdlib-boolean-bits.md"
       ]
     },
     "core::calendar": {
