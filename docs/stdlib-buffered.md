@@ -15,6 +15,12 @@ in `stdlib/core/io.lani` and the manual ownership/storage rules in
 error accepts no source bytes from that call, and `flush` succeeds only with
 `Ok(0)`. Neither operation implies synchronization to storage or close.
 
+[Runtime writer formatting](stdlib-format-write.md) composes through this
+same interface with bounded scratch. Its counts describe acceptance by the
+immediate buffered writer; pending bytes still require explicit finish,
+recovery or discard. The [CSV report](stdlib-format-report.md) exercises
+prevalidated formatting and final publication failures.
+
 ## API
 
 ```lanius

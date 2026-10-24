@@ -1,0 +1,42 @@
+// One 1 MiB field, 256 bytes of packed scratch, and constant-space FNV-1a.
+// The independent Rust byte-sequence oracle supplies the expected hash in argv.
+module app::main;
+import core::decimal;
+import core::format;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+import core::u64;
+import std::process;
+fn text(value: str, count: i32) -> core::text::Text {
+    return core::text::from_utf8_unchecked(core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count), 0, count);
+}
+struct CountingWriter { hash: u64, total: u64, calls: u64, flushes: u64 }
+impl CountingWriter { fn borrow(&self) -> &CountingWriter { return self; } }
+pub impl core::io::Write for CountingWriter {
+    pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> {
+        assert(offset == 0 && count == 256 && self.total <= 1048576 - (count as u64));
+        let index: i32 = 0;
+        while (index < count) {
+            self.hash = core::u64::wrapping_mul(self.hash ^ (source[offset + index] as u64), 1099511628211); index += 1;
+        }
+        self.total += count as u64; self.calls += 1; return core::result::Ok(count);
+    }
+    pub fn flush(&self) -> core::result::Result<i32, core::io::Error> { self.flushes += 1; return core::result::Ok(0); }
+}
+fn main() -> i32 {
+    assert(std::process::argc() == 2); let size: i32 = std::process::arg_len(1); assert(size > 0 && size <= 20);
+    let argument_words: [i32; 5] = [0; 5]; let argument_pointer: ptr = core::mem::i32_array_data_ptr(argument_words);
+    let argument: [u8] = core::mem::typed_slice_from_raw_parts(argument_pointer, 20);
+    assert(std::process::arg_read(1, argument_pointer, size as usize) == size);
+    let expected: u64 = core::decimal::parse_u64_range(argument, 0, size).unwrap();
+    let scratch_words: [i32; 64] = [0; 64]; let scratch: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(scratch_words), 256);
+    let args: [core::format::Argument; 1] = [core::format::Argument::Text(text("x", 1))];
+    let names: [core::format::Named; 1] = [core::format::Named { name: text("unused", 6), value: core::format::Argument::Bool(false) }];
+    let writer: CountingWriter = CountingWriter { hash: 14695981039346656037, total: 0, calls: 0, flushes: 0 };
+    let completed: i32 = core::format::write<CountingWriter>(text("{0:1048576s}", 12), core::slice::view(args, 1).unwrap(), core::slice::view(names, 0).unwrap(), writer.borrow(),
+        core::slice::View { values: scratch, start: 0, length: 256 }, core::format::WriteLimits { format: core::format::default_limits(), max_io_calls: 4096 }).unwrap();
+    assert(completed == 1048576 && writer.total == 1048576 && writer.calls == 4096 && writer.flushes == 0 && writer.hash == expected); return 0;
+}

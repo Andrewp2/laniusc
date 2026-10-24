@@ -1,0 +1,131 @@
+// Five u64 words per command: format case, scratch capacity, packed flag,
+// writer script and I/O-call quota. Responses contain every offered byte.
+module app::main;
+import core::f32;
+import core::f64;
+import core::format;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import std::stream;
+fn text(value: str, count: i32) -> core::text::Text {
+    return core::text::from_utf8_unchecked(core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count), 0, count);
+}
+struct Output { bytes: [u8], used: i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { let stdout: std::stream::Descriptor = std::stream::stdout(); assert(core::io::write_all(stdout.borrow(), self.bytes, 0, self.used).is_ok()); self.used = 0; }
+    fn word(&self, value: u64) {
+        if (self.used == 1024) { self.flush(); }
+        let index: i32 = 0; while (index < 8) { self.bytes[self.used + index] = ((value >> (index * 8)) & 255) as u8; index += 1; } self.used += 8;
+    }
+}
+struct Writer { bytes: [u8], length: i32, calls: i32, flushes: i32, mode: i32, output: &Output }
+impl Writer { fn borrow(&self) -> &Writer { return self; } }
+pub impl core::io::Write for Writer {
+    pub fn write(&self, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> {
+        assert(core::io::valid_range(offset, count) && count > 0 && count <= 64 && self.calls < 1024);
+        let call: i32 = self.calls; self.calls += 1;
+        let interrupted: bool = self.mode == 3 && call % 2 == 0;
+        let sent: i32 = count;
+        if (self.mode == 1 && sent > 1) { sent = 1; }
+        if (self.mode == 2) { let sizes: [i32; 3] = [1, 3, 2]; if (sent > sizes[call % 3]) { sent = sizes[call % 3]; } }
+        if (self.mode == 3 && sent > 2) { sent = 2; }
+        let output: &Output = self.output; output.word(1); output.word(offset as u64); output.word(count as u64);
+        if (interrupted) { output.word(1); output.word(0); } else { output.word(0); output.word(sent as u64); }
+        let index: i32 = 0; while (index < count) { output.word(bytes[offset + index] as u64); index += 1; }
+        if (interrupted) { return core::result::Err(core::io::Error::Interrupted); }
+        assert(self.length + sent <= 1024); index = 0;
+        while (index < sent) { self.bytes[self.length + index] = bytes[offset + index]; index += 1; }
+        self.length += sent; return core::result::Ok(sent);
+    }
+    pub fn flush(&self) -> core::result::Result<i32, core::io::Error> { self.flushes += 1; return core::result::Ok(0); }
+}
+struct Setup { pattern: core::text::Text, value: core::format::Argument }
+fn setup(id: i32) -> Setup {
+    let pattern: core::text::Text = text("{0}", 3); let value: core::format::Argument = core::format::Argument::Signed(-9223372036854775808);
+    if (id == 0) { pattern = text("", 0); }
+    if (id == 2) { value = core::format::Argument::Signed(9223372036854775807); }
+    if (id == 3) { value = core::format::Argument::Unsigned(18446744073709551615); }
+    if (id == 4 || id == 5) { pattern = text("{0:+023d}", 9); if (id == 4) { value = core::format::Argument::Signed(0); } }
+    if (id >= 6 && id <= 9) {
+        value = core::format::Argument::Unsigned(18446744073709551615);
+        if (id == 6) { pattern = text("{0:#018x}", 9); } if (id == 7) { pattern = text("{0:#018X}", 9); }
+        if (id == 8) { pattern = text("{0:#070b}", 9); } if (id == 9) { pattern = text("{0:#024o}", 9); }
+    }
+    if (id == 10) { pattern = text("{0:🙂^9.3s}", 13); value = core::format::Argument::Text(text("éé漢🙂", 12)); }
+    if (id >= 11 && id <= 13) {
+        pattern = text("{0:🌍<4s}", 11); value = core::format::Argument::Char('\0');
+        if (id == 12) { value = core::format::Argument::Char('é'); } if (id == 13) { value = core::format::Argument::Char('🙂'); }
+    }
+    if (id == 14 || id == 15) { pattern = text("{0:🙂^9.4s}", 13); value = core::format::Argument::Bool(id == 14); }
+    if (id == 16) { pattern = text("{value}|{0}", 11); }
+    if (id == 17) { pattern = text("{0:>257s}", 9); value = core::format::Argument::Text(text("é", 2)); }
+    if (id >= 18 && id <= 21) {
+        pattern = text("{0:+014.2f}", 11); value = core::format::Argument::F64(core::f64::from_bits(4613205983301625446));
+        if (id == 19) { value = core::format::Argument::F64(core::f64::from_bits(9223372036854775808)); }
+        if (id == 20) { value = core::format::Argument::F64(core::f64::from_bits(9218868437227405311)); }
+        if (id == 21) { value = core::format::Argument::F32(core::f32::from_bits(1036831949)); }
+    }
+    if (id >= 22 && id <= 24) {
+        pattern = text("{0:.3e}", 7); value = core::format::Argument::F64(core::f64::from_bits(1));
+        if (id == 23) { value = core::format::Argument::F64(core::f64::from_bits(9218868437227405311)); }
+        if (id == 24) { value = core::format::Argument::F32(core::f32::from_bits(2139095039)); }
+    }
+    if (id == 25 || id == 26) { pattern = text("{0:.5g}", 7); value = core::format::Argument::F64(123456.0); if (id == 26) { value = core::format::Argument::F64(0.00001); } }
+    if (id == 27) { value = core::format::Argument::F64(core::f64::from_bits(1)); }
+    if (id == 28) { value = core::format::Argument::F32(core::f32::from_bits(1036831949)); }
+    if (id >= 29 && id <= 31) {
+        pattern = text("{0:+.2E}", 8); value = core::format::Argument::F64(core::f64::nan());
+        if (id == 30) { value = core::format::Argument::F64(core::f64::infinity()); } if (id == 31) { value = core::format::Argument::F64(core::f64::neg_infinity()); }
+    }
+    if (id == 32) { pattern = text("{{{value}}}:{0}:{value}", 23); value = core::format::Argument::Signed(-1); }
+    if (id == 33) { value = core::format::Argument::Text(text("A\0é🙂", 8)); }
+    if (id == 34) { value = core::format::Argument::F64(core::f64::from_bits(4607182418800017409)); }
+    if (id == 35) { value = core::format::Argument::Char('􏿿'); }
+    return Setup { pattern: pattern, value: value };
+}
+fn run(id: i32, capacity: i32, packed: bool, script: i32, quota: u64, output: &Output) {
+    let selected: Setup = setup(id); let source: [u8; 128] = [221; 128]; let index: i32 = 0;
+    while (index < selected.pattern.byte_len()) { source[3 + index] = selected.pattern.byte_at(index).unwrap(); index += 1; }
+    let pattern: core::text::Text = core::text::from_utf8_unchecked(source, 3, selected.pattern.byte_len());
+    let argument: core::format::Argument = selected.value; let name: core::text::Text = text("value", 5);
+    if (id == 16) { argument = core::format::Argument::Text(pattern); name = core::text::from_utf8_unchecked(source, 4, 5); }
+    let args: [core::format::Argument; 1] = [argument]; let names: [core::format::Named; 1] = [core::format::Named { name: name, value: argument }];
+    let strided: [u8; 68] = [165; 68]; let words: [i32; 17] = [0; 17];
+    let bytes: [u8] = strided;
+    if (packed) { bytes = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words), 68); }
+    index = 0; while (index < 68) { bytes[index] = 165; index += 1; }
+    let scratch: core::slice::View<u8> = core::slice::View { values: bytes, start: 3, length: capacity };
+    let stored: [u8; 1024] = [0; 1024]; let writer: Writer = Writer { bytes: stored, length: 0, calls: 0, flushes: 0, mode: script, output: output };
+    let result: core::result::Result<i32, core::format::WriteFailure> = core::format::write<Writer>(pattern,
+        core::slice::view(args, 1).unwrap(), core::slice::view(names, 1).unwrap(), writer.borrow(), scratch,
+        core::format::WriteLimits { format: core::format::default_limits(), max_io_calls: quota });
+    output.word(0);
+    if (result.is_ok()) { output.word(0); output.word(result.unwrap() as u64); }
+    else { let failure: core::format::WriteFailure = result.unwrap_err(); output.word(match (failure.cause) { core::format::WriteError::IoLimit -> 1, _ -> 90 }); output.word(failure.completed as u64); }
+    output.word(writer.calls as u64); output.word(writer.flushes as u64); output.word(writer.length as u64);
+    index = 0; while (index < writer.length) { output.word(stored[index] as u64); index += 1; }
+    index = 0; while (index < 68) { if (index < 3 || index >= 3 + capacity) { assert(bytes[index] == 165); } index += 1; }
+    index = 0; while (index < 128) {
+        if (index >= 3 && index < 3 + selected.pattern.byte_len()) { assert(source[index] == selected.pattern.byte_at(index - 3).unwrap()); }
+        else { assert(source[index] == 221); } index += 1;
+    }
+}
+fn decode(bytes: [u8], offset: i32) -> u64 { let value: u64 = 0; let index: i32 = 0; while (index < 8) { value |= (bytes[offset + index] as u64) << (index * 8); index += 1; } return value; }
+fn main() -> i32 {
+    let bytes: [u8; 1024] = [0; 1024]; let output: Output = Output { bytes: bytes, used: 0 };
+    let stdin: std::stream::Descriptor = std::stream::stdin(); let record: [u8; 40] = [0; 40];
+    while (true) {
+        let first: core::result::Result<i32, core::io::Error> = stdin.read(record, 0, 40); assert(first.is_ok()); let received: i32 = first.unwrap();
+        if (received == 0) { output.flush(); return 0; }
+        if (received < 40) { assert(core::io::read_exact(stdin.borrow(), record, received, 40 - received).is_ok()); }
+        let id: u64 = decode(record, 0); let capacity: u64 = decode(record, 8); let packed: u64 = decode(record, 16); let script: u64 = decode(record, 24);
+        assert(id <= 35 && capacity > 0 && capacity <= 64 && packed <= 1 && script <= 3);
+        run(id as i32, capacity as i32, packed == 1, script as i32, decode(record, 32), output.borrow());
+    }
+    return 0;
+}

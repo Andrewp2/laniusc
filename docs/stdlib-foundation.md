@@ -238,6 +238,16 @@ as a [compiler dependency](../tests/fixtures/stdlib_compiler_state/owning_string
 Cleanup helpers drain first, then recover and release an empty canonical
 collection owner. This milestone changes no compiler implementation or ABI.
 
+[Runtime formatting to byte writers](stdlib-format-write.md) now shares the
+existing grammar and renderer while using bounded scratch for output larger
+than that scratch. Full preflight precedes publication; errors retain the
+confirmed prefix and an explicit call budget bounds Interrupted retries.
+Independent native models cover 960 byte/chunk/progress cases, with separate
+preflight, failure, nested buffering and plain-consumer gates. The
+[CSV report application](stdlib-format-report.md) passes 81 native cases,
+including all 23 representative allocation denials and the exact output cap.
+Existing buffer atomicity and owned formatting retain their contracts.
+
 [Checked file lengths](stdlib-file-resize.md) execute shrink, zero extension,
 sparse lengths above 4 GiB and unchanged duplicated offsets, with explicit
 one-attempt failures. [Bounded regular-file copying](stdlib-file-copy.md) checks

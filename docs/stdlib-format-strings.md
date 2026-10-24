@@ -2,6 +2,11 @@
 
 `core::format` formats a runtime `core::text::Text` using a typed argument list. It allocates nothing. `alloc::format` returns an independent owned UTF-8 `String` or byte `Vec`. The existing `core::fmt::Formatter` and `Display<T>` remain the lower level compositional interface.
 
+[Writer formatting](stdlib-format-write.md) uses the same parser and renderer
+with caller-sized scratch. It validates before the first write and reports
+confirmed progress on I/O failure. The complete-output buffer APIs below retain
+their atomic error behavior.
+
 This is a documented subset of the [Python format specification](https://docs.python.org/3/library/string.html#format-specification-mini-language), with the [Rust implicit argument cursor](https://doc.rust-lang.org/std/fmt/#positional-parameters). It does not claim to accept every Rust or Python format string.
 
 ## Arguments and entry points

@@ -1,0 +1,26 @@
+// Matching inherent method names and a Read impl cannot satisfy Write.
+module app::main;
+import core::format;
+import core::io;
+import core::result;
+import core::slice;
+import core::text;
+struct ReadOnly {}
+impl ReadOnly {
+    fn borrow(&self) -> &ReadOnly { return self; }
+    fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> { return core::result::Ok(count); }
+    fn flush(&self) -> core::result::Result<i32, core::io::Error> { return core::result::Ok(0); }
+}
+pub impl core::io::Read for ReadOnly {
+    pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> { return core::result::Ok(0); }
+}
+fn main() -> i32 {
+    let empty: [u8; 0] = []; let pattern: core::text::Text = core::text::from_utf8_unchecked(empty, 0, 0);
+    let args: [core::format::Argument; 0] = []; let names: [core::format::Named; 0] = [];
+    let positional: core::slice::View<core::format::Argument> = core::result::unwrap(core::slice::view(args, 0));
+    let named: core::slice::View<core::format::Named> = core::result::unwrap(core::slice::view(names, 0));
+    let bytes: [u8; 1] = [0]; let scratch: core::slice::View<u8> = core::result::unwrap(core::slice::view(bytes, 1));
+    let writer: ReadOnly = ReadOnly {};
+    let rejected: core::result::Result<i32, core::format::WriteFailure> = core::format::write<ReadOnly>(pattern, positional, named, writer.borrow(), scratch, core::format::WriteLimits { format: core::format::default_limits(), max_io_calls: 0 });
+    return 0;
+}

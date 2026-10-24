@@ -11,6 +11,7 @@ Layer: `alloc`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [stdlib-buffered](../../stdlib-buffered.md)
+- [stdlib-format-write](../../stdlib-format-write.md)
 
 Declaration counts: field: 17; function: 2; impl: 5; method: 22; struct: 3.
 

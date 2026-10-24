@@ -1,0 +1,22 @@
+// Keep this ordinary consumer isolated from the diagnostic-rich model.
+module app::main;
+import core::format;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+fn text(value: str, count: i32) -> core::text::Text {
+    return core::text::from_utf8_unchecked(core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count), 0, count);
+}
+fn main() -> i32 {
+    let destination: [u8; 16] = [165; 16]; let writer: core::io::SliceWriter = core::io::slice_writer(destination, 16).unwrap();
+    let bytes: [u8; 5] = [221; 5]; let args: [core::format::Argument; 1] = [core::format::Argument::Signed(7)];
+    let names: [core::format::Named; 1] = [core::format::Named { name: text("unused", 6), value: core::format::Argument::Bool(false) }];
+    let count: i32 = core::format::write<core::io::SliceWriter>(text("left={0}", 8), core::slice::view(args, 1).unwrap(), core::slice::view(names, 0).unwrap(), writer.borrow(),
+        core::slice::View { values: bytes, start: 1, length: 3 }, core::format::WriteLimits { format: core::format::default_limits(), max_io_calls: 10 }).unwrap();
+    assert(count == 6 && writer.position() == 6);
+    assert(core::text::from_utf8_unchecked(destination, 0, count).equals(text("left=7", 6)));
+    let index: i32 = count; while (index < 16) { assert(destination[index] == 165); index += 1; }
+    assert(bytes[0] == 221 && bytes[4] == 221); return 0;
+}

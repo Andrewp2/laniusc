@@ -1,0 +1,143 @@
+// Every preflight rejection leaves the writer, caller scratch and all
+// independently backed mutable format sources untouched.
+module app::main;
+import core::format;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import std::args_checked;
+fn text(value: str, length: i32) -> core::text::Text {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), length);
+    return core::text::from_utf8_unchecked(bytes, 0, length);
+}
+struct Writer { calls: i32, flushes: i32 }
+impl Writer { fn borrow(&self) -> &Writer { return self; } }
+pub impl core::io::Write for Writer {
+    pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> { self.calls += 1; return core::result::Ok(count); }
+    pub fn flush(&self) -> core::result::Result<i32, core::io::Error> { self.flushes += 1; return core::result::Err(core::io::Error::Host(99)); }
+}
+struct Sources { argument: [u8], name: [u8], pattern: [u8] }
+impl Sources {
+    fn borrow(&self) -> &Sources { return self; }
+    fn unchanged(&self) {
+        let argument: [u8; 4] = [65, 0, 194, 162]; let name: [u8; 4] = [110, 97, 109, 101];
+        let pattern: [u8; 15] = [104, 101, 97, 100, 32, 123, 48, 125, 32, 116, 97, 105, 108, 32, 123];
+        let index: i32 = 0; while (index < 4) { assert(self.argument[index] == argument[index] && self.name[index] == name[index]); index += 1; }
+        index = 0; while (index < 15) { assert(self.pattern[index] == pattern[index]); index += 1; }
+    }
+}
+fn error_kind(error: core::format::Error) -> i32 {
+    return match (error) {
+        core::format::Error::Bounds -> 0,
+        core::format::Error::Syntax(_) -> 1,
+        core::format::Error::MissingArgument(_) -> 2,
+        core::format::Error::InvalidArgument(_) -> 3,
+        core::format::Error::DuplicateName(_) -> 4,
+        core::format::Error::InvalidSpec(_) -> 5,
+        core::format::Error::TypeMismatch(_) -> 6,
+        core::format::Error::WorkLimit(_) -> 7,
+        core::format::Error::OutputLimit(_) -> 8,
+        core::format::Error::BufferTooSmall(_) -> 9,
+        core::format::Error::Float(_, detail) -> 10
+    };
+}
+fn error_offset(error: core::format::Error) -> i32 {
+    return match (error) {
+        core::format::Error::Bounds -> -1,
+        core::format::Error::Syntax(at) -> at,
+        core::format::Error::MissingArgument(at) -> at,
+        core::format::Error::InvalidArgument(at) -> at,
+        core::format::Error::DuplicateName(at) -> at,
+        core::format::Error::InvalidSpec(at) -> at,
+        core::format::Error::TypeMismatch(at) -> at,
+        core::format::Error::WorkLimit(at) -> at,
+        core::format::Error::OutputLimit(at) -> at,
+        core::format::Error::BufferTooSmall(at) -> at,
+        core::format::Error::Float(at, _) -> at
+    };
+}
+fn rejected(pattern: core::text::Text, positional: core::slice::View<core::format::Argument>, named: core::slice::View<core::format::Named>, limits: core::format::Limits, scratch_case: i32, kind: i32, offset: i32, sources: &Sources) {
+    let storage: [u8; 16] = [165; 16];
+    let scratch: core::slice::View<u8> = core::slice::View { values: storage, start: 2, length: 8 };
+    if (scratch_case == 1) { scratch.length = 0; }
+    if (scratch_case == 2) { scratch.length = -1; }
+    if (scratch_case == 3) { scratch.start = -1; }
+    if (scratch_case == 4) { scratch.start = 2147483647; scratch.length = 1; }
+    let writer: Writer = Writer { calls: 0, flushes: 0 };
+    let result: core::result::Result<i32, core::format::WriteFailure> = core::format::write<Writer>(pattern, positional, named, writer.borrow(), scratch, core::format::WriteLimits { format: limits, max_io_calls: 0 });
+    let failure: core::format::WriteFailure = core::result::unwrap_err(result);
+    let error: core::format::Error = match (failure.cause) { core::format::WriteError::Format(value) -> value, _ -> core::format::Error::BufferTooSmall(-7) };
+    assert(error_kind(error) == kind && error_offset(error) == offset && failure.completed == 0);
+    assert(writer.calls == 0 && writer.flushes == 0);
+    let index: i32 = 0; while (index < 16) { assert(storage[index] == 165); index += 1; }
+    sources.unchanged();
+}
+fn bounded_abort() -> i32 {
+    let args: [core::format::Argument; 1] = [core::format::Argument::Signed(0)]; let names: [core::format::Named; 0] = [];
+    let positional: core::slice::View<core::format::Argument> = core::result::unwrap(core::slice::view(args, 1));
+    let named: core::slice::View<core::format::Named> = core::result::unwrap(core::slice::view(names, 0));
+    let budget: i32 = 0;
+    while (budget <= 1) {
+        let bytes: [u8; 1] = [165]; let scratch: core::slice::View<u8> = core::result::unwrap(core::slice::view(bytes, 1));
+        let writer: Writer = Writer { calls: 0, flushes: 0 };
+        let result: core::result::Result<i32, core::format::WriteFailure> = core::format::write<Writer>(text("{0:2147483647}", 14), positional, named, writer.borrow(), scratch, core::format::WriteLimits { format: core::format::Limits { max_work: 18446744073709551615, max_output: 2147483647 }, max_io_calls: budget as u64 });
+        let failure: core::format::WriteFailure = core::result::unwrap_err(result);
+        assert(match (failure.cause) { core::format::WriteError::IoLimit -> true, _ -> false });
+        assert(failure.completed == budget && writer.calls == budget && writer.flushes == 0); budget += 1;
+    }
+    return 0;
+}
+fn main() -> i32 {
+    if (std::args_checked::argument_count_or(0) > 1) { return bounded_abort(); }
+    let argument_bytes: [u8; 4] = [65, 0, 194, 162]; let name_bytes: [u8; 4] = [110, 97, 109, 101];
+    let pattern_bytes: [u8; 15] = [104, 101, 97, 100, 32, 123, 48, 125, 32, 116, 97, 105, 108, 32, 123];
+    let sources: Sources = Sources { argument: argument_bytes, name: name_bytes, pattern: pattern_bytes };
+    let args: [core::format::Argument; 2] = [core::format::Argument::Text(core::text::from_utf8_unchecked(argument_bytes, 0, 4)), core::format::Argument::Signed(-42)];
+    let names: [core::format::Named; 0] = [];
+    let positional: core::slice::View<core::format::Argument> = core::result::unwrap(core::slice::view(args, 2));
+    let named: core::slice::View<core::format::Named> = core::result::unwrap(core::slice::view(names, 0));
+    let normal: core::format::Limits = core::format::default_limits();
+    rejected(text("", 0), positional, named, normal, 1, 0, -1, sources.borrow());
+    rejected(text("", 0), positional, named, normal, 2, 0, -1, sources.borrow());
+    rejected(text("", 0), positional, named, normal, 3, 0, -1, sources.borrow());
+    rejected(text("", 0), positional, named, normal, 4, 0, -1, sources.borrow());
+    rejected(text("{", 1), positional, named, core::format::Limits { max_work: 0, max_output: 0 }, 1, 0, -1, sources.borrow());
+    rejected(core::text::from_utf8_unchecked(pattern_bytes, 0, 15), positional, named, normal, 0, 1, 14, sources.borrow());
+    rejected(text("{9}", 3), positional, named, normal, 0, 2, 0, sources.borrow());
+    rejected(text("{missing}", 9), positional, named, normal, 0, 2, 0, sources.borrow());
+    rejected(text("{0:.}", 5), positional, named, normal, 0, 5, 4, sources.borrow());
+    rejected(text("{0:d}", 5), positional, named, normal, 0, 6, 0, sources.borrow());
+    rejected(text("{1:2147483648}", 14), positional, named, normal, 0, 5, 12, sources.borrow());
+    rejected(text("x", 1), positional, named, core::format::Limits { max_work: 0, max_output: 99 }, 0, 7, 0, sources.borrow());
+    rejected(text("{1}", 3), positional, named, core::format::Limits { max_work: 11, max_output: 3 }, 0, 7, 0, sources.borrow());
+    rejected(text("{1}", 3), positional, named, core::format::Limits { max_work: 100, max_output: 2 }, 0, 8, 0, sources.borrow());
+    rejected(text("", 0), positional, named, core::format::Limits { max_work: 100, max_output: -1 }, 0, 0, -1, sources.borrow());
+    let duplicate: [core::format::Named; 2] = [core::format::Named { name: core::text::from_utf8_unchecked(name_bytes, 0, 4), value: args[0] }, core::format::Named { name: core::text::from_utf8_unchecked(name_bytes, 0, 4), value: args[1] }];
+    rejected(text("", 0), positional, core::result::unwrap(core::slice::view(duplicate, 2)), normal, 0, 4, 1, sources.borrow());
+    let bad_name: [core::format::Named; 1] = [core::format::Named { name: text("9bad", 4), value: args[0] }];
+    rejected(text("", 0), positional, core::result::unwrap(core::slice::view(bad_name, 1)), normal, 0, 3, 0, sources.borrow());
+    let bad_pattern: core::text::Text = core::text::from_utf8_unchecked(pattern_bytes, 0, 15); bad_pattern.start = -1;
+    rejected(bad_pattern, positional, named, normal, 0, 0, -1, sources.borrow());
+    let bad_positional: core::slice::View<core::format::Argument> = positional; bad_positional.length = -1;
+    rejected(text("", 0), bad_positional, named, normal, 0, 0, -1, sources.borrow());
+    let bad_named: core::slice::View<core::format::Named> = named; bad_named.start = 2147483647; bad_named.length = 1;
+    rejected(text("", 0), positional, bad_named, normal, 0, 0, -1, sources.borrow());
+    let bad_text: core::text::Text = core::text::from_utf8_unchecked(argument_bytes, 0, 4); bad_text.length = -1;
+    let invalid: [core::format::Argument; 1] = [core::format::Argument::Text(bad_text)];
+    rejected(text("{0}", 3), core::result::unwrap(core::slice::view(invalid, 1)), named, normal, 0, 0, -1, sources.borrow());
+    let invalid_named: [core::format::Named; 1] = [core::format::Named { name: bad_text, value: args[1] }];
+    rejected(text("", 0), positional, core::result::unwrap(core::slice::view(invalid_named, 1)), normal, 0, 0, -1, sources.borrow());
+    // Exact formatting limits succeed independently of I/O quota accounting.
+    let scratch_bytes: [u8; 16] = [165; 16]; let scratch: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(scratch_bytes, 2, 8));
+    let writer: Writer = Writer { calls: 0, flushes: 0 };
+    let exact: core::result::Result<i32, core::format::WriteFailure> = core::format::write<Writer>(text("{1}", 3), positional, named, writer.borrow(), scratch, core::format::WriteLimits { format: core::format::Limits { max_work: 12, max_output: 3 }, max_io_calls: 1 });
+    assert(core::result::unwrap(exact) == 3 && writer.calls == 1 && writer.flushes == 0);
+    let empty_writer: Writer = Writer { calls: 0, flushes: 0 };
+    let empty_scratch: [u8; 1] = [165]; let empty_view: core::slice::View<u8> = core::result::unwrap(core::slice::view(empty_scratch, 1));
+    let empty: core::result::Result<i32, core::format::WriteFailure> = core::format::write<Writer>(text("", 0), positional, named, empty_writer.borrow(), empty_view, core::format::WriteLimits { format: core::format::Limits { max_work: 0, max_output: 0 }, max_io_calls: 0 });
+    assert(core::result::unwrap(empty) == 0 && empty_writer.calls == 0 && empty_writer.flushes == 0 && empty_scratch[0] == 165);
+    sources.unchanged(); return 0;
+}

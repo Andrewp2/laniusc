@@ -2,6 +2,7 @@
 // resource accounting, alias rules and complete-output atomicity contract.
 module core::format;
 import core::float_decimal;
+import core::io;
 import core::mem;
 import core::option;
 import core::result;
@@ -25,6 +26,7 @@ pub struct Limits {
     max_work: u64,
     max_output: i32
 }
+pub struct WriteLimits { format: Limits, max_io_calls: u64 }
 pub enum Error {
     Bounds,
     Syntax(i32),
@@ -38,6 +40,9 @@ pub enum Error {
     BufferTooSmall(i32),
     Float(i32, core::float_decimal::Error)
 }
+pub enum WriteError { Format(Error), Io(core::io::Error), IoLimit }
+// Only valid successful writer counts contribute to the confirmed prefix.
+pub struct WriteFailure { cause: WriteError, completed: i32 }
 pub fn default_limits() -> Limits {
     return Limits {
         max_work: 64000000,
@@ -54,9 +59,16 @@ struct Spec {
     precision: i32,
     kind: u8
 }
-struct Output {
+struct Output<W> {
     bytes: core::slice::View<u8>,
     writing: bool,
+    writer: &W,
+    streaming: bool,
+    pending: i32,
+    written: i32,
+    io_calls: u64,
+    max_io_calls: u64,
+    io_failure: core::option::Option<WriteError>,
     length: i32,
     work: u64,
     limits: Limits,
@@ -93,17 +105,50 @@ fn spec() -> Spec {
         kind: 0
     };
 }
-pub impl Output {
-    fn borrow(&self) -> &Output {
+pub impl<W> Output<W> {
+    fn borrow(&self) -> &Output<W> {
         return self;
     }
+    fn failed(&self) -> bool {
+        return core::option::is_some(self.failure) || core::option::is_some(self.io_failure);
+    }
     fn fail(&self, error: Error) {
-        if (core::option::is_none(self.failure)) {
+        if (!self.failed()) {
             self.failure = core::option::Some(error);
         }
     }
+    fn fail_io(&self, error: WriteError) {
+        if (!self.failed()) { self.io_failure = core::option::Some(error); }
+    }
+    // Drain only pending scratch bytes. Retry Interrupted within the same
+    // actual-call budget; never flush or close the writer itself.
+    fn drain(&self) where W: core::io::Write {
+        if (!self.streaming || self.failed()) { return; }
+        let writer: &W = self.writer;
+        let at: i32 = 0;
+        while (at < self.pending) {
+            if (self.io_calls == self.max_io_calls) { self.fail_io(WriteError::IoLimit()); return; }
+            self.io_calls += 1;
+            let sent: core::result::Result<i32, core::io::Error> = writer.write(self.bytes.values, self.bytes.start + at, self.pending - at);
+            if (core::result::is_err(sent)) {
+                let error: core::io::Error = core::result::unwrap_err(sent);
+                if (core::io::is_interrupted(error)) { continue; }
+                self.fail_io(WriteError::Io(error)); return;
+            }
+            let count: i32 = core::result::unwrap(sent);
+            if (count < 0 || count > self.pending - at) { self.fail_io(WriteError::Io(core::io::Error::InvalidCount)); return; }
+            if (count == 0) { self.fail_io(WriteError::Io(core::io::Error::WriteZero)); return; }
+            at += count; self.written += count;
+        }
+        self.pending = 0;
+    }
+    fn emit(&self, value: u8) where W: core::io::Write {
+        if (self.failed()) { return; }
+        core::result::unwrap(self.bytes.try_set(self.pending, value)); self.pending += 1;
+        if (self.pending == self.bytes.len()) { self.drain(); }
+    }
     fn charge(&self, amount: u64, offset: i32) -> bool {
-        if (core::option::is_some(self.failure)) {
+        if (self.failed()) {
             return false;
         }
         if (amount>self.limits.max_work - self.work) {
@@ -114,27 +159,34 @@ pub impl Output {
         return true;
     }
     fn reserve(&self, count: i32, offset: i32) -> bool {
+        if (self.failed()) { return false; }
         if (count<0 || count>self.limits.max_output - self.length) {
             self.fail(Error::OutputLimit(offset));
             return false;
         }
         return self.charge(count as u64, offset);
     }
-    fn write(&self, value: core::text::Text, offset: i32) {
+    fn write(&self, value: core::text::Text, offset: i32) where W: core::io::Write {
         let count: i32 = value.byte_len();
         if (!self.reserve(count, offset)) {
             return;
         }
         if (self.writing) {
-            let at: i32 = 0;
-            while (at<count) {
-                core::result::unwrap(self.bytes.try_set(self.length + at, byte(value, at)));
-                at += 1;
+            if (self.streaming) {
+                let at: i32 = 0;
+                while (at < count && !self.failed()) { self.emit(byte(value, at)); at += 1; }
+                if (self.failed()) { return; }
+            } else {
+                let at: i32 = 0;
+                while (at<count) {
+                    core::result::unwrap(self.bytes.try_set(self.length + at, byte(value, at)));
+                    at += 1;
+                }
             }
         }
         self.length += count;
     }
-    fn scalar(&self, value: u32, offset: i32) {
+    fn scalar(&self, value: u32, offset: i32) where W: core::io::Write {
         let count: i32 = core::utf8::encoded_len_or(value, 0) as i32;
         if (count == 0) {
             self.fail(Error::InvalidArgument(offset));
@@ -144,15 +196,22 @@ pub impl Output {
             return;
         }
         if (self.writing) {
-            let at: i32 = 0;
-            while (at<count) {
-                core::result::unwrap(self.bytes.try_set(self.length + at, core::utf8::encoded_byte_or(value, at as u32, 0)));
-                at += 1;
+            if (self.streaming) {
+                let at: i32 = 0;
+                while (at < count && !self.failed()) { self.emit(core::utf8::encoded_byte_or(value, at as u32, 0)); at += 1; }
+                if (self.failed()) { return; }
+            } else {
+                let at: i32 = 0;
+                while (at<count) {
+                    core::result::unwrap(self.bytes.try_set(self.length + at, core::utf8::encoded_byte_or(value, at as u32, 0)));
+                    at += 1;
+                }
             }
         }
         self.length += count;
     }
-    fn padding(&self, scalar: u32, count: i32, offset: i32) {
+    fn padding(&self, scalar: u32, count: i32, offset: i32) where W: core::io::Write {
+        if (self.failed()) { return; }
         if (count <= 0) {
             return;
         }
@@ -165,14 +224,24 @@ pub impl Output {
             return;
         }
         if (self.writing) {
-            let at: i32 = 0;
-            while (at<count) {
-                let part: i32 = 0;
-                while (part<size) {
-                    core::result::unwrap(self.bytes.try_set(self.length + at * size + part, core::utf8::encoded_byte_or(scalar, part as u32, 0)));
-                    part += 1;
+            if (self.streaming) {
+                let at: i32 = 0;
+                while (at < count && !self.failed()) {
+                    let part: i32 = 0;
+                    while (part < size && !self.failed()) { self.emit(core::utf8::encoded_byte_or(scalar, part as u32, 0)); part += 1; }
+                    at += 1;
                 }
-                at += 1;
+                if (self.failed()) { return; }
+            } else {
+                let at: i32 = 0;
+                while (at<count) {
+                    let part: i32 = 0;
+                    while (part<size) {
+                        core::result::unwrap(self.bytes.try_set(self.length + at * size + part, core::utf8::encoded_byte_or(scalar, part as u32, 0)));
+                        part += 1;
+                    }
+                    at += 1;
+                }
             }
         }
         self.length += count * size;
@@ -241,7 +310,7 @@ fn parse_spec(pattern: core::text::Text, start: i32, end: i32) -> core::result::
     }
     return core::result::Ok(value);
 }
-fn padded(body: core::text::Text, count: i32, options: Spec, numeric: bool, prefix: i32, output: &Output, offset: i32) {
+fn padded<W>(body: core::text::Text, count: i32, options: Spec, numeric: bool, prefix: i32, output: &Output<W>, offset: i32) where W: core::io::Write {
     let padding: i32 = options.width - count;
     if (padding<0) {
         padding = 0;
@@ -270,7 +339,7 @@ fn padded(body: core::text::Text, count: i32, options: Spec, numeric: bool, pref
     output.write(body, offset);
     output.padding(options.fill, padding - left, offset);
 }
-fn text_field(value: core::text::Text, options: Spec, output: &Output, offset: i32) {
+fn text_field<W>(value: core::text::Text, options: Spec, output: &Output<W>, offset: i32) where W: core::io::Write {
     if (value.start<0 || value.length<0 || value.start>2147483647 - value.length) {
         output.fail(Error::Bounds);
         return;
@@ -289,9 +358,9 @@ fn text_field(value: core::text::Text, options: Spec, output: &Output, offset: i
         at += width;
         count += 1;
     }
-    padded(core::result::unwrap(value.slice(0, at)), count, options, false, 0, output, offset);
+    padded<W>(core::result::unwrap(value.slice(0, at)), count, options, false, 0, output, offset);
 }
-fn integer_field(value: u64, negative: bool, options: Spec, output: &Output, offset: i32) {
+fn integer_field<W>(value: u64, negative: bool, options: Spec, output: &Output<W>, offset: i32) where W: core::io::Write {
     let radix: u64 = 10;
     let upper: bool = options.kind == 88;
     if (options.kind == 120 || options.kind == 88) {
@@ -354,16 +423,16 @@ fn integer_field(value: u64, negative: bool, options: Spec, output: &Output, off
         bytes[at] = code;
         remaining /= radix;
     }
-    padded(core::text::from_utf8_unchecked(bytes, 0, end), end, options, true, prefix, output, offset);
+    padded<W>(core::text::from_utf8_unchecked(bytes, 0, end), end, options, true, prefix, output, offset);
 }
-fn signed_field(value: i64, options: Spec, output: &Output, offset: i32) {
+fn signed_field<W>(value: i64, options: Spec, output: &Output<W>, offset: i32) where W: core::io::Write {
     let magnitude: u64 = value as u64;
     if (value<0) {
         magnitude =(-(value + 1) as u64) + 1;
     }
-    integer_field(magnitude, value<0, options, output, offset);
+    integer_field<W>(magnitude, value<0, options, output, offset);
 }
-fn float_field(value: f64, narrow: bool, options: Spec, output: &Output, offset: i32) {
+fn float_field<W>(value: f64, narrow: bool, options: Spec, output: &Output<W>, offset: i32) where W: core::io::Write {
     let explicit: bool = options.kind != 0 || options.precision >= 0;
     if ((options.kind != 0 && options.kind != 102 && options.kind != 70 && options.kind != 101 && options.kind != 69 && options.kind != 103 && options.kind != 71) ||(!explicit && options.alternate)) {
         output.fail(Error::TypeMismatch(offset));
@@ -431,9 +500,9 @@ fn float_field(value: f64, narrow: bool, options: Spec, output: &Output, offset:
             prefix = 1;
         }
     }
-    padded(core::text::from_utf8_unchecked(bytes, start, count), count, options, true, prefix, output, offset);
+    padded<W>(core::text::from_utf8_unchecked(bytes, start, count), count, options, true, prefix, output, offset);
 }
-fn field(value: Argument, options: Spec, output: &Output, offset: i32) {
+fn field<W>(value: Argument, options: Spec, output: &Output<W>, offset: i32) where W: core::io::Write {
     let tag: i32 = match (value) {
         Argument::Text(_) -> 0,
         Argument::Signed(_) -> 1,
@@ -455,7 +524,7 @@ fn field(value: Argument, options: Spec, output: &Output, offset: i32) {
             Argument::F32(_) -> blank,
             Argument::F64(_) -> blank
         };
-        text_field(selected, options, output, offset);
+        text_field<W>(selected, options, output, offset);
         return;
     }
     if (tag == 1) {
@@ -468,7 +537,7 @@ fn field(value: Argument, options: Spec, output: &Output, offset: i32) {
             Argument::F32(_) -> 0,
             Argument::F64(_) -> 0
         };
-        signed_field(number, options, output, offset);
+        signed_field<W>(number, options, output, offset);
         return;
     }
     if (tag == 2) {
@@ -481,7 +550,7 @@ fn field(value: Argument, options: Spec, output: &Output, offset: i32) {
             Argument::F32(_) -> 0,
             Argument::F64(_) -> 0
         };
-        integer_field(number, false, options, output, offset);
+        integer_field<W>(number, false, options, output, offset);
         return;
     }
     if (tag == 3) {
@@ -503,7 +572,7 @@ fn field(value: Argument, options: Spec, output: &Output, offset: i32) {
             bytes[3] = 101;
             length = 4;
         }
-        text_field(core::text::from_utf8_unchecked(bytes, 0, length), options, output, offset);
+        text_field<W>(core::text::from_utf8_unchecked(bytes, 0, length), options, output, offset);
         return;
     }
     if (tag == 4) {
@@ -528,7 +597,7 @@ fn field(value: Argument, options: Spec, output: &Output, offset: i32) {
             bytes[at] = core::utf8::encoded_byte_or(scalar, at as u32, 0);
             at += 1;
         }
-        text_field(core::text::from_utf8_unchecked(bytes, 0, length), options, output, offset);
+        text_field<W>(core::text::from_utf8_unchecked(bytes, 0, length), options, output, offset);
         return;
     }
     if (tag == 5) {
@@ -541,7 +610,7 @@ fn field(value: Argument, options: Spec, output: &Output, offset: i32) {
             Argument::F32(number) -> number,
             Argument::F64(_) -> 0.0
         };
-        float_field(number as f64, true, options, output, offset);
+        float_field<W>(number as f64, true, options, output, offset);
         return;
     }
     let number: f64 = match (value) {
@@ -553,9 +622,9 @@ fn field(value: Argument, options: Spec, output: &Output, offset: i32) {
         Argument::F32(_) -> 0.0,
         Argument::F64(number) -> number
     };
-    float_field(number, false, options, output, offset);
+    float_field<W>(number, false, options, output, offset);
 }
-fn run(pattern: core::text::Text, positional: core::slice::View<Argument>, named: core::slice::View<Named>, output: &Output) {
+fn run<W>(pattern: core::text::Text, positional: core::slice::View<Argument>, named: core::slice::View<Named>, output: &Output<W>) where W: core::io::Write {
     if (!output.charge(pattern.byte_len() as u64, 0)) {
         return;
     }
@@ -597,7 +666,7 @@ fn run(pattern: core::text::Text, positional: core::slice::View<Argument>, named
     }
     let at: i32 = 0;
     let implicit: i32 = 0;
-    while (at<pattern.byte_len() && core::option::is_none(output.failure)) {
+    while (at<pattern.byte_len() && !output.failed()) {
         let code: u8 = byte(pattern, at);
         if (code == 123 || code == 125) {
             if (at + 1<pattern.byte_len() && byte(pattern, at + 1) == code) {
@@ -696,7 +765,7 @@ fn run(pattern: core::text::Text, positional: core::slice::View<Argument>, named
                         return;
                     }
                 }
-                field(argument, options, output, open);
+                field<W>(argument, options, output, open);
                 at = end + 1;
             }
         } else {
@@ -713,9 +782,12 @@ fn preflight(pattern: core::text::Text, positional: core::slice::View<Argument>,
         return core::result::Err(Error::Bounds);
     }
     let empty:[u8; 0] =[];
-    let output: Output = Output {
+    let idle: core::io::SliceWriter = core::io::SliceWriter { data: empty, length: 0, cursor: 0 };
+    let output: Output<core::io::SliceWriter> = Output {
         bytes: core::result::unwrap(core::slice::view(empty, 0)),
         writing: false,
+        writer: idle.borrow(), streaming: false, pending: 0, written: 0,
+        io_calls: 0, max_io_calls: 0, io_failure: core::option::None(),
         length: 0,
         work: 0,
         limits: Limits {
@@ -724,7 +796,7 @@ fn preflight(pattern: core::text::Text, positional: core::slice::View<Argument>,
         },
         failure: core::option::None()
     };
-    run(pattern, positional, named, output.borrow());
+    run<core::io::SliceWriter>(pattern, positional, named, output.borrow());
     if (core::option::is_some(output.failure)) {
         return core::result::Err(core::option::unwrap(output.failure));
     }
@@ -757,9 +829,13 @@ pub fn format_into(pattern: core::text::Text, positional: core::slice::View<Argu
     if (count>destination.len()) {
         return core::result::Err(Error::BufferTooSmall(count));
     }
-    let output: Output = Output {
+    let empty: [u8; 0] = [];
+    let idle: core::io::SliceWriter = core::io::SliceWriter { data: empty, length: 0, cursor: 0 };
+    let output: Output<core::io::SliceWriter> = Output {
         bytes: destination,
         writing: true,
+        writer: idle.borrow(), streaming: false, pending: 0, written: 0,
+        io_calls: 0, max_io_calls: 0, io_failure: core::option::None(),
         length: 0,
         work: 0,
         limits: Limits {
@@ -768,7 +844,7 @@ pub fn format_into(pattern: core::text::Text, positional: core::slice::View<Argu
         },
         failure: core::option::None()
     };
-    run(pattern, positional, named, output.borrow());
+    run<core::io::SliceWriter>(pattern, positional, named, output.borrow());
     return core::result::Ok(count);
 }
 // Staging must be disjoint from inputs and destination. Destination may alias
@@ -792,9 +868,13 @@ pub fn format_into_staged(pattern: core::text::Text, positional: core::slice::Vi
     if (count>destination.len() || count>staging.len()) {
         return core::result::Err(Error::BufferTooSmall(count));
     }
-    let output: Output = Output {
+    let empty: [u8; 0] = [];
+    let idle: core::io::SliceWriter = core::io::SliceWriter { data: empty, length: 0, cursor: 0 };
+    let output: Output<core::io::SliceWriter> = Output {
         bytes: staging,
         writing: true,
+        writer: idle.borrow(), streaming: false, pending: 0, written: 0,
+        io_calls: 0, max_io_calls: 0, io_failure: core::option::None(),
         length: 0,
         work: 0,
         limits: Limits {
@@ -803,11 +883,49 @@ pub fn format_into_staged(pattern: core::text::Text, positional: core::slice::Vi
         },
         failure: core::option::None()
     };
-    run(pattern, positional, named, output.borrow());
+    run<core::io::SliceWriter>(pattern, positional, named, output.borrow());
     let at: i32 = 0;
     while (at<count) {
         core::result::unwrap(destination.try_set(at, core::option::unwrap(staging.get(at))));
         at += 1;
     }
     return core::result::Ok(count);
+}
+
+// Validate the entire render before touching scratch or calling the writer.
+// Inputs stay immutable and disjoint from scratch and writer mutations. The
+// writer receives byte chunks, not necessarily complete UTF-8 scalar sequences.
+// Only its valid positive counts confirm output; no flush or close is implied.
+pub fn write<W>(pattern: core::text::Text, positional: core::slice::View<Argument>, named: core::slice::View<Named>, writer: &W, scratch: core::slice::View<u8>, limits: WriteLimits)
+    -> core::result::Result<i32, WriteFailure> where W: core::io::Write {
+    if (scratch.start < 0 || scratch.length <= 0 || scratch.start > 2147483647 - scratch.length) {
+        let error: WriteFailure = WriteFailure { cause: WriteError::Format(Error::Bounds), completed: 0 };
+        return core::result::Err(error);
+    }
+    let measured: core::result::Result<Measured, Error> = preflight(pattern, positional, named, limits.format);
+    if (core::result::is_err(measured)) {
+        let cause: Error = core::result::unwrap_err(measured);
+        let error: WriteFailure = WriteFailure { cause: WriteError::Format(cause), completed: 0 };
+        return core::result::Err(error);
+    }
+    let output: Output<W> = Output {
+        bytes: scratch, writing: true, writer: writer, streaming: true,
+        pending: 0, written: 0, io_calls: 0, max_io_calls: limits.max_io_calls,
+        io_failure: core::option::None(), length: 0, work: 0,
+        limits: Limits { max_work: limits.format.max_work / 2, max_output: limits.format.max_output },
+        failure: core::option::None()
+    };
+    run<W>(pattern, positional, named, output.borrow());
+    if (!output.failed()) { output.drain(); }
+    if (core::option::is_some(output.failure)) {
+        let cause: Error = core::option::unwrap(output.failure);
+        let error: WriteFailure = WriteFailure { cause: WriteError::Format(cause), completed: output.written };
+        return core::result::Err(error);
+    }
+    if (core::option::is_some(output.io_failure)) {
+        let cause: WriteError = core::option::unwrap(output.io_failure);
+        let error: WriteFailure = WriteFailure { cause: cause, completed: output.written };
+        return core::result::Err(error);
+    }
+    return core::result::Ok(output.written);
 }

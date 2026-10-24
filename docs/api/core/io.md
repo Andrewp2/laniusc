@@ -11,6 +11,7 @@ Layer: `core`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [stdlib-streams](../../stdlib-streams.md)
+- [stdlib-format-write](../../stdlib-format-write.md)
 
 Declaration counts: enum: 1; field: 11; function: 7; impl: 4; method: 11; struct: 4; trait: 2; trait member: 3; variant: 10.
 

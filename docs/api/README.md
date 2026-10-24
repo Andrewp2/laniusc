@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **219 modules**, **9645 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **219 modules**, **9656 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -40,7 +40,7 @@ Inventory: **219 modules**, **9645 declaration/member entries**. Counts include 
 | [core::float_decimal](core/float_decimal.md) | [source](../../stdlib/core/float_decimal.lani#L4) | 36 | Source inventory | [stdlib-float-decimal](../stdlib-float-decimal.md), [stdlib-float-precision](../stdlib-float-precision.md) |
 | [core::float_order](core/float_order.md) | [source](../../stdlib/core/float_order.lani#L4) | 50 | Source inventory | [stdlib-comparison](../stdlib-comparison.md) |
 | [core::fmt](core/fmt.md) | [source](../../stdlib/core/fmt.lani#L2) | 67 | Source inventory | [stdlib-formatting](../stdlib-formatting.md) |
-| [core::format](core/format.md) | [source](../../stdlib/core/format.lani#L3) | 31 | Source inventory | [stdlib-format-strings](../stdlib-format-strings.md) |
+| [core::format](core/format.md) | [source](../../stdlib/core/format.lani#L3) | 42 | Source inventory | [stdlib-format-strings](../stdlib-format-strings.md), [stdlib-format-write](../stdlib-format-write.md) |
 | [core::hash](core/hash.md) | [source](../../stdlib/core/hash.lani#L3) | 40 | Source inventory | [stdlib-comparison](../stdlib-comparison.md) |
 | [core::hex](core/hex.md) | [source](../../stdlib/core/hex.lani#L2) | 14 | Source inventory | [stdlib-byte-codecs](../stdlib-byte-codecs.md) |
 | [core::hex_wide_i64](core/hex_wide_i64.md) | [source](../../stdlib/core/hex_wide_i64.lani#L2) | 5 | Source inventory | **Unregistered** |
@@ -49,7 +49,7 @@ Inventory: **219 modules**, **9645 declaration/member entries**. Counts include 
 | [core::i32](core/i32.md) | [source](../../stdlib/core/i32.lani#L5) | 141 | Source inventory | [stdlib-narrow-integers](../stdlib-narrow-integers.md) |
 | [core::i64](core/i64.md) | [source](../../stdlib/core/i64.lani#L6) | 137 | Source inventory | [stdlib-native-integers](../stdlib-native-integers.md) |
 | [core::i8](core/i8.md) | [source](../../stdlib/core/i8.lani#L5) | 137 | Source inventory | [stdlib-narrow-integers](../stdlib-narrow-integers.md) |
-| [core::io](core/io.md) | [source](../../stdlib/core/io.lani#L2) | 53 | Source inventory | [stdlib-streams](../stdlib-streams.md) |
+| [core::io](core/io.md) | [source](../../stdlib/core/io.lani#L2) | 53 | Source inventory | [stdlib-streams](../stdlib-streams.md), [stdlib-format-write](../stdlib-format-write.md) |
 | [core::isize](core/isize.md) | [source](../../stdlib/core/isize.lani#L5) | 137 | Source inventory | [stdlib-native-integers](../stdlib-native-integers.md) |
 | [core::iter](core/iter.md) | [source](../../stdlib/core/iter.lani#L12) | 142 | Source inventory | [stdlib-iterators](../stdlib-iterators.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-adapters](../stdlib-iterator-adapters.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-iterator-selection](../stdlib-iterator-selection.md), [compiler-iterator-assignment-context](../compiler-iterator-assignment-context.md), [stdlib-iterator-transfer](../stdlib-iterator-transfer.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-iterators](../stdlib-owning-iterators.md) |
 | [core::math](core/math.md) | [source](../../stdlib/core/math.lani#L27) | 18 | Source inventory | [stdlib-math](../stdlib-math.md) |
@@ -104,7 +104,7 @@ Inventory: **219 modules**, **9645 declaration/member entries**. Counts include 
 | [alloc::arena](alloc/arena.md) | [source](../../stdlib/alloc/arena.lani#L3) | 49 | Source inventory | [stdlib-arena](../stdlib-arena.md) |
 | [alloc::binary_heap](alloc/binary_heap.md) | [source](../../stdlib/alloc/binary_heap.lani#L4) | 37 | Source inventory | [stdlib-binary-heap](../stdlib-binary-heap.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-heap-iterators](../stdlib-heap-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md) |
 | [alloc::bitset](alloc/bitset.md) | [source](../../stdlib/alloc/bitset.lani#L4) | 55 | Source inventory | [stdlib-bitset-owned](../stdlib-bitset-owned.md) |
-| [alloc::buffered](alloc/buffered.md) | [source](../../stdlib/alloc/buffered.lani#L4) | 49 | Source inventory | [stdlib-buffered](../stdlib-buffered.md) |
+| [alloc::buffered](alloc/buffered.md) | [source](../../stdlib/alloc/buffered.lani#L4) | 49 | Source inventory | [stdlib-buffered](../stdlib-buffered.md), [stdlib-format-write](../stdlib-format-write.md) |
 | [alloc::clone](alloc/clone.md) | [source](../../stdlib/alloc/clone.lani#L2) | 8 | Source inventory | [stdlib-clone](../stdlib-clone.md), [stdlib-owning-iterators](../stdlib-owning-iterators.md) |
 | [alloc::clone_vec](alloc/clone_vec.md) | [source](../../stdlib/alloc/clone_vec.lani#L5) | 5 | Source inventory | [stdlib-nested-clone](../stdlib-nested-clone.md) |
 | [alloc::deque](alloc/deque.md) | [source](../../stdlib/alloc/deque.lani#L3) | 88 | Source inventory | [stdlib-deque](../stdlib-deque.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-transfer](../stdlib-iterator-transfer.md), [stdlib-owning-iterators](../stdlib-owning-iterators.md) |

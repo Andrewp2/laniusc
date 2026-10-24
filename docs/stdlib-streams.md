@@ -18,6 +18,11 @@ allocation failures and a binary-copy application. The historical implementation
 routing failure remains preserved; current generic transport and these adapters
 have separate executable evidence.
 
+[Runtime formatting to writers](stdlib-format-write.md) validates the complete
+format before publication, emits through caller-sized scratch and reports the
+confirmed prefix on failure. It bounds direct writer attempts separately from
+format work and performs no implicit flush or close.
+
 ## Portable contracts
 
 `Read.read(destination, offset, count)` and `Write.write(source, offset, count)`

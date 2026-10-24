@@ -11,20 +11,22 @@ Layer: `core`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [stdlib-format-strings](../../stdlib-format-strings.md)
+- [stdlib-format-write](../../stdlib-format-write.md)
 
-Declaration counts: enum: 2; field: 4; function: 4; impl: 1; struct: 2; variant: 18.
+Declaration counts: enum: 3; field: 8; function: 5; impl: 1; struct: 4; variant: 21.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
 - [core::float_decimal](float_decimal.md) · [source](../../../stdlib/core/format.lani#L4)
-- [core::mem](mem.md) · [source](../../../stdlib/core/format.lani#L5)
-- [core::option](option.md) · [source](../../../stdlib/core/format.lani#L6)
-- [core::result](result.md) · [source](../../../stdlib/core/format.lani#L7)
-- [core::slice](slice.md) · [source](../../../stdlib/core/format.lani#L8)
-- [core::text](text.md) · [source](../../../stdlib/core/format.lani#L9)
-- [core::utf8](utf8.md) · [source](../../../stdlib/core/format.lani#L10)
+- [core::io](io.md) · [source](../../../stdlib/core/format.lani#L5)
+- [core::mem](mem.md) · [source](../../../stdlib/core/format.lani#L6)
+- [core::option](option.md) · [source](../../../stdlib/core/format.lani#L7)
+- [core::result](result.md) · [source](../../../stdlib/core/format.lani#L8)
+- [core::slice](slice.md) · [source](../../../stdlib/core/format.lani#L9)
+- [core::text](text.md) · [source](../../../stdlib/core/format.lani#L10)
+- [core::utf8](utf8.md) · [source](../../../stdlib/core/format.lani#L11)
 
 ## Types, fields and variants
 
@@ -32,7 +34,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Argument
 
-[Source line 11](../../../stdlib/core/format.lani#L11)
+[Source line 12](../../../stdlib/core/format.lani#L12)
 
 ```lanius
 pub enum Argument
@@ -40,7 +42,7 @@ pub enum Argument
 
 #### variant: Text
 
-[Source line 12](../../../stdlib/core/format.lani#L12)
+[Source line 13](../../../stdlib/core/format.lani#L13)
 
 ```lanius
 Text(core::text::Text)
@@ -48,7 +50,7 @@ Text(core::text::Text)
 
 #### variant: Signed
 
-[Source line 13](../../../stdlib/core/format.lani#L13)
+[Source line 14](../../../stdlib/core/format.lani#L14)
 
 ```lanius
 Signed(i64)
@@ -56,7 +58,7 @@ Signed(i64)
 
 #### variant: Unsigned
 
-[Source line 14](../../../stdlib/core/format.lani#L14)
+[Source line 15](../../../stdlib/core/format.lani#L15)
 
 ```lanius
 Unsigned(u64)
@@ -64,7 +66,7 @@ Unsigned(u64)
 
 #### variant: Bool
 
-[Source line 15](../../../stdlib/core/format.lani#L15)
+[Source line 16](../../../stdlib/core/format.lani#L16)
 
 ```lanius
 Bool(bool)
@@ -72,7 +74,7 @@ Bool(bool)
 
 #### variant: Char
 
-[Source line 16](../../../stdlib/core/format.lani#L16)
+[Source line 17](../../../stdlib/core/format.lani#L17)
 
 ```lanius
 Char(char)
@@ -80,7 +82,7 @@ Char(char)
 
 #### variant: F32
 
-[Source line 17](../../../stdlib/core/format.lani#L17)
+[Source line 18](../../../stdlib/core/format.lani#L18)
 
 ```lanius
 F32(f32)
@@ -88,7 +90,7 @@ F32(f32)
 
 #### variant: F64
 
-[Source line 18](../../../stdlib/core/format.lani#L18)
+[Source line 19](../../../stdlib/core/format.lani#L19)
 
 ```lanius
 F64(f64)
@@ -96,7 +98,7 @@ F64(f64)
 
 ### struct: Named
 
-[Source line 20](../../../stdlib/core/format.lani#L20)
+[Source line 21](../../../stdlib/core/format.lani#L21)
 
 ```lanius
 pub struct Named
@@ -104,7 +106,7 @@ pub struct Named
 
 #### field: name
 
-[Source line 21](../../../stdlib/core/format.lani#L21)
+[Source line 22](../../../stdlib/core/format.lani#L22)
 
 ```lanius
 name: core::text::Text
@@ -112,7 +114,7 @@ name: core::text::Text
 
 #### field: value
 
-[Source line 22](../../../stdlib/core/format.lani#L22)
+[Source line 23](../../../stdlib/core/format.lani#L23)
 
 ```lanius
 value: Argument
@@ -120,7 +122,7 @@ value: Argument
 
 ### struct: Limits
 
-[Source line 24](../../../stdlib/core/format.lani#L24)
+[Source line 25](../../../stdlib/core/format.lani#L25)
 
 ```lanius
 pub struct Limits
@@ -128,7 +130,7 @@ pub struct Limits
 
 #### field: max_work
 
-[Source line 25](../../../stdlib/core/format.lani#L25)
+[Source line 26](../../../stdlib/core/format.lani#L26)
 
 ```lanius
 max_work: u64
@@ -136,15 +138,39 @@ max_work: u64
 
 #### field: max_output
 
-[Source line 26](../../../stdlib/core/format.lani#L26)
+[Source line 27](../../../stdlib/core/format.lani#L27)
 
 ```lanius
 max_output: i32
 ```
 
+### struct: WriteLimits
+
+[Source line 29](../../../stdlib/core/format.lani#L29)
+
+```lanius
+pub struct WriteLimits
+```
+
+#### field: format
+
+[Source line 29](../../../stdlib/core/format.lani#L29)
+
+```lanius
+format: Limits
+```
+
+#### field: max_io_calls
+
+[Source line 29](../../../stdlib/core/format.lani#L29)
+
+```lanius
+max_io_calls: u64
+```
+
 ### enum: Error
 
-[Source line 28](../../../stdlib/core/format.lani#L28)
+[Source line 30](../../../stdlib/core/format.lani#L30)
 
 ```lanius
 pub enum Error
@@ -152,7 +178,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 29](../../../stdlib/core/format.lani#L29)
+[Source line 31](../../../stdlib/core/format.lani#L31)
 
 ```lanius
 Bounds
@@ -160,7 +186,7 @@ Bounds
 
 #### variant: Syntax
 
-[Source line 30](../../../stdlib/core/format.lani#L30)
+[Source line 32](../../../stdlib/core/format.lani#L32)
 
 ```lanius
 Syntax(i32)
@@ -168,7 +194,7 @@ Syntax(i32)
 
 #### variant: MissingArgument
 
-[Source line 31](../../../stdlib/core/format.lani#L31)
+[Source line 33](../../../stdlib/core/format.lani#L33)
 
 ```lanius
 MissingArgument(i32)
@@ -176,7 +202,7 @@ MissingArgument(i32)
 
 #### variant: InvalidArgument
 
-[Source line 32](../../../stdlib/core/format.lani#L32)
+[Source line 34](../../../stdlib/core/format.lani#L34)
 
 ```lanius
 InvalidArgument(i32)
@@ -184,7 +210,7 @@ InvalidArgument(i32)
 
 #### variant: DuplicateName
 
-[Source line 33](../../../stdlib/core/format.lani#L33)
+[Source line 35](../../../stdlib/core/format.lani#L35)
 
 ```lanius
 DuplicateName(i32)
@@ -192,7 +218,7 @@ DuplicateName(i32)
 
 #### variant: InvalidSpec
 
-[Source line 34](../../../stdlib/core/format.lani#L34)
+[Source line 36](../../../stdlib/core/format.lani#L36)
 
 ```lanius
 InvalidSpec(i32)
@@ -200,7 +226,7 @@ InvalidSpec(i32)
 
 #### variant: TypeMismatch
 
-[Source line 35](../../../stdlib/core/format.lani#L35)
+[Source line 37](../../../stdlib/core/format.lani#L37)
 
 ```lanius
 TypeMismatch(i32)
@@ -208,7 +234,7 @@ TypeMismatch(i32)
 
 #### variant: WorkLimit
 
-[Source line 36](../../../stdlib/core/format.lani#L36)
+[Source line 38](../../../stdlib/core/format.lani#L38)
 
 ```lanius
 WorkLimit(i32)
@@ -216,7 +242,7 @@ WorkLimit(i32)
 
 #### variant: OutputLimit
 
-[Source line 37](../../../stdlib/core/format.lani#L37)
+[Source line 39](../../../stdlib/core/format.lani#L39)
 
 ```lanius
 OutputLimit(i32)
@@ -224,7 +250,7 @@ OutputLimit(i32)
 
 #### variant: BufferTooSmall
 
-[Source line 38](../../../stdlib/core/format.lani#L38)
+[Source line 40](../../../stdlib/core/format.lani#L40)
 
 ```lanius
 BufferTooSmall(i32)
@@ -232,17 +258,73 @@ BufferTooSmall(i32)
 
 #### variant: Float
 
-[Source line 39](../../../stdlib/core/format.lani#L39)
+[Source line 41](../../../stdlib/core/format.lani#L41)
 
 ```lanius
 Float(i32, core::float_decimal::Error)
+```
+
+### enum: WriteError
+
+[Source line 43](../../../stdlib/core/format.lani#L43)
+
+```lanius
+pub enum WriteError
+```
+
+#### variant: Format
+
+[Source line 43](../../../stdlib/core/format.lani#L43)
+
+```lanius
+Format(Error)
+```
+
+#### variant: Io
+
+[Source line 43](../../../stdlib/core/format.lani#L43)
+
+```lanius
+Io(core::io::Error)
+```
+
+#### variant: IoLimit
+
+[Source line 43](../../../stdlib/core/format.lani#L43)
+
+```lanius
+IoLimit
+```
+
+### struct: WriteFailure
+
+[Source line 45](../../../stdlib/core/format.lani#L45)
+
+```lanius
+pub struct WriteFailure
+```
+
+#### field: cause
+
+[Source line 45](../../../stdlib/core/format.lani#L45)
+
+```lanius
+cause: WriteError
+```
+
+#### field: completed
+
+[Source line 45](../../../stdlib/core/format.lani#L45)
+
+```lanius
+completed: i32
 ```
 
 ## Free functions and extern declarations
 
 ### function: default_limits
 
-[Source line 41](../../../stdlib/core/format.lani#L41)
+[Source line 46](../../../stdlib/core/format.lani#L46)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -250,7 +332,7 @@ pub fn default_limits() -> Limits
 
 ### function: measure
 
-[Source line 737](../../../stdlib/core/format.lani#L737)
+[Source line 809](../../../stdlib/core/format.lani#L809)
 
 ```lanius
 pub fn measure(pattern: core::text::Text, positional: core::slice::View<Argument>, named: core::slice::View<Named>, limits: Limits) -> core::result::Result<i32, Error>
@@ -258,7 +340,7 @@ pub fn measure(pattern: core::text::Text, positional: core::slice::View<Argument
 
 ### function: format_into
 
-[Source line 747](../../../stdlib/core/format.lani#L747)
+[Source line 819](../../../stdlib/core/format.lani#L819)
 
 ```lanius
 pub fn format_into(pattern: core::text::Text, positional: core::slice::View<Argument>, named: core::slice::View<Named>, destination: core::slice::View<u8>, limits: Limits) -> core::result::Result<i32, Error>
@@ -266,18 +348,27 @@ pub fn format_into(pattern: core::text::Text, positional: core::slice::View<Argu
 
 ### function: format_into_staged
 
-[Source line 776](../../../stdlib/core/format.lani#L776)
+[Source line 852](../../../stdlib/core/format.lani#L852)
 
 ```lanius
 pub fn format_into_staged(pattern: core::text::Text, positional: core::slice::View<Argument>, named: core::slice::View<Named>, destination: core::slice::View<u8>, staging: core::slice::View<u8>, limits: Limits) -> core::result::Result<i32, Error>
 ```
 
-## Implementation blocks and public methods
+### function: write
 
-### impl at line 96
-
-[Source line 96](../../../stdlib/core/format.lani#L96)
+[Source line 899](../../../stdlib/core/format.lani#L899)
 
 ```lanius
-pub impl Output
+pub fn write<W>(pattern: core::text::Text, positional: core::slice::View<Argument>, named: core::slice::View<Named>, writer: &W, scratch: core::slice::View<u8>, limits: WriteLimits)
+    -> core::result::Result<i32, WriteFailure> where W: core::io::Write
+```
+
+## Implementation blocks and public methods
+
+### impl at line 108
+
+[Source line 108](../../../stdlib/core/format.lani#L108)
+
+```lanius
+pub impl<W> Output<W>
 ```

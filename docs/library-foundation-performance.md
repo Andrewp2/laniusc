@@ -542,3 +542,43 @@ native behavior/scale separately: complete official sentence/line corpora,
 settings reports through 2,000 entries, distribution references and sampled
 values, loopback sockets, filesystem traversal and child-process lifecycle.
 Supported execution remains x86_64 Linux output from GPU compilation.
+
+## Streaming runtime formatting
+
+On 2026-10-24 the existing `stdlib_gpu_perf` harness compiled the unchanged
+`tests/fixtures/stdlib_foundation/format_strings_contracts.lani` entry against
+the stdlib at `0b03990bfd7b658f0c419cf4ec2c32477ccb186e` and the streaming
+formatter source. The baseline stdlib was extracted with git archive. Both
+used the same compiler, shader set and harness binary; no compiler source
+changed. Each variant used one warmup and three private entry rebuilds with
+`LANIUS_PERF_REBUILD_ENTRY=1`. Every emitted ELF executed successfully outside
+the compilation timer with exact empty stdout/stderr and exit zero.
+
+| Stdlib | Three compiler samples (ms) | Median (ms) | ELF bytes |
+| --- | --- | ---: | ---: |
+| Baseline | 360.199, 340.444, 309.490 | 340.444 | 480,323 |
+| Streaming formatter | 350.073, 351.335, 344.633 | 350.073 | 493,167 |
+
+The observed median increased 2.83%, and executable size increased 12,844
+bytes (2.67%). Sample ranges overlap. These chronological baseline/current
+runs used warm imports and an uncontrolled desktop; they do not establish a
+causal regression, a cold build bound or a cross-compiler speed ratio.
+
+The serialized command for each stdlib root was:
+
+```sh
+RUST_MIN_STACK=16777216 LANIUS_PERF_REBUILD_ENTRY=1 \
+  timeout --kill-after=2s 100s \
+  flock -E75 -w35 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 60s \
+  target/stdlib-build/debug/examples/stdlib_gpu_perf \
+  tests/fixtures/stdlib_foundation/format_strings_contracts.lani STDLIB_ROOT - 1 3
+```
+
+The baseline root was
+`target/stdlib-work/format-write-admission/baseline/stdlib`; the current root
+was `stdlib`. Local logs are `perf-baseline-1.log` and `perf-current-1.log`
+under that admission directory. A separate [native scale gate](stdlib-format-write.md#verification)
+renders one MiB with 256-byte scratch and checks every output byte through an
+independent hash. Its timings include startup and hashing and measure a
+different workload from these compilation samples.

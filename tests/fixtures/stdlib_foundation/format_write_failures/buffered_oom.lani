@@ -1,0 +1,58 @@
+// One owned buffer allocation. Constructor OOM precedes all formatting/I/O.
+// A later explicit finish error retains that buffer for a successful retry.
+module app::main;
+import alloc::buffered;
+import core::format;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+struct Peer { bytes: [u8], filled: i32, calls: i32, flushes: i32 }
+impl Peer { fn borrow(&self) -> &Peer { return self; } }
+pub impl core::io::Write for Peer {
+    pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> {
+        self.calls += 1; let amount: i32 = count; if (amount > 2) { amount = 2; }
+        assert(amount > 0 && self.filled + amount <= 6);
+        let index: i32 = 0; while (index < amount) { self.bytes[self.filled + index] = source[offset + index]; index += 1; }
+        self.filled += amount; return core::result::Ok(amount);
+    }
+    pub fn flush(&self) -> core::result::Result<i32, core::io::Error> {
+        self.flushes += 1; if (self.flushes == 1) { return core::result::Err(core::io::Error::WouldBlock); }
+        return core::result::Ok(0);
+    }
+}
+fn text(value: str, length: i32) -> core::text::Text {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), length);
+    return core::text::from_utf8_unchecked(bytes, 0, length);
+}
+fn main() -> i32 {
+    let bytes: [u8; 8] = [166; 8]; let scratch: [u8; 7] = [167; 7];
+    let peer: Peer = Peer { bytes: bytes, filled: 0, calls: 0, flushes: 0 };
+    let made: core::result::Result<alloc::buffered::Writer<Peer>, core::io::Error> = alloc::buffered::writer<Peer>(peer.borrow(), 4);
+    if (core::result::is_err(made)) {
+        assert(match (core::result::unwrap_err(made)) { core::io::Error::AllocationFailed -> true, _ -> false });
+        assert(peer.calls == 0 && peer.flushes == 0 && peer.filled == 0);
+        let index: i32 = 0; while (index < 7) { assert(scratch[index] == 167 && bytes[index] == 166); index += 1; }
+        assert(bytes[7] == 166); return 2;
+    }
+    let writer: alloc::buffered::Writer<Peer> = core::result::unwrap(made); let capacity: i32 = writer.capacity();
+    let args: [core::format::Argument; 1] = [core::format::Argument::Text(text("EF", 2))];
+    let names: [core::format::Named; 0] = [];
+    let positional: core::slice::View<core::format::Argument> = core::result::unwrap(core::slice::view(args, 1));
+    let named: core::slice::View<core::format::Named> = core::result::unwrap(core::slice::view(names, 0));
+    let stage: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(scratch, 2, 3));
+    let result: core::result::Result<i32, core::format::WriteFailure> = core::format::write<alloc::buffered::Writer<Peer>>(text("abcd{0}", 7), positional, named, writer.borrow(), stage, core::format::WriteLimits { format: core::format::default_limits(), max_io_calls: 64 });
+    assert(core::result::unwrap(result) == 6 && peer.flushes == 0 && peer.filled == 4 && writer.pending().len() == 2);
+    assert(writer.is_active() && !writer.is_faulted() && writer.capacity() == capacity);
+    let stopped: core::result::Result<i32, core::io::Error> = writer.finish();
+    assert(match (core::result::unwrap_err(stopped)) { core::io::Error::WouldBlock -> true, _ -> false });
+    assert(peer.filled == 6 && peer.calls == 3 && peer.flushes == 1 && writer.pending().len() == 0);
+    assert(writer.is_active() && !writer.is_faulted() && writer.capacity() == capacity);
+    assert(core::result::unwrap(writer.finish()) == 0 && !writer.is_active() && writer.capacity() == 0 && peer.flushes == 2 && peer.calls == 3);
+    let expected: [u8; 6] = [97, 98, 99, 100, 69, 70];
+    let index: i32 = 0; while (index < 6) { assert(bytes[index] == expected[index]); index += 1; }
+    assert(bytes[6] == 166 && bytes[7] == 166 && scratch[0] == 167 && scratch[1] == 167 && scratch[5] == 167 && scratch[6] == 167);
+    assert(writer.discard() == 0 && peer.flushes == 2); return 0;
+}

@@ -1,0 +1,193 @@
+// Prevalidated CSV report streamed through bounded format scratch and buffering.
+// Accepted on x86_64 Linux native ELF via the GPU compiler; see docs/stdlib-format-report.md.
+module app::main;
+import alloc::buffered;
+import alloc::io;
+import alloc::vec;
+import core::decimal;
+import core::f64;
+import core::float_decimal;
+import core::format;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::csv;
+import std::process;
+import std::signal;
+import std::stream;
+
+const MAX_INPUT: i32 = 1048576;
+const MAX_OUTPUT: i32 = 65536;
+struct Row { name: core::text::Text, quantity: i64, price: f64, amount: f64 }
+
+fn text(value: str, count: i32) -> core::text::Text {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::text::from_utf8_unchecked(bytes,0,count);
+}
+fn view(value: core::text::Text) -> core::slice::View<u8> {
+    return core::slice::View { values: value.bytes, start: value.start, length: value.length };
+}
+fn row_pattern() -> core::text::Text { return text("{0:<16s}\t{1:>20d}\t{2:>12.2f}\t{3:>12.2f}\n",40); }
+fn limits() -> core::format::Limits { return core::format::Limits { max_work: 16777216, max_output: 1024 }; }
+fn io_status(error: core::io::Error) -> i32 {
+    return match (error) { core::io::Error::AllocationFailed -> 4, core::io::Error::LimitExceeded -> 7, _ -> 3 };
+}
+fn csv_status(error: ext::csv::Error) -> i32 {
+    return match (error) { ext::csv::Error::AllocationFailed -> 4, ext::csv::Error::LimitExceeded(at) -> 7, ext::csv::Error::CapacityOverflow -> 7, _ -> 2 };
+}
+fn float_status(error: core::float_decimal::Error) -> i32 {
+    return match (error) { core::float_decimal::Error::Invalid(at) -> 2, _ -> 7 };
+}
+fn valid_name(name: core::text::Text) -> bool {
+    if (name.byte_len() == 0 || name.byte_len() > 256) { return false; }
+    let index: i32 = 0;
+    while (index < name.byte_len()) {
+        let value: u8 = name.bytes[name.start+index];
+        if (value < 32 || value == 127) { return false; }
+        index += 1;
+    }
+    return true;
+}
+fn measure_row(row: Row) -> core::result::Result<i32,core::format::Error> {
+    let values: [core::format::Argument;4] = [core::format::Argument::Text(row.name),core::format::Argument::Signed(row.quantity),core::format::Argument::F64(row.price),core::format::Argument::F64(row.amount)];
+    let positional: core::slice::View<core::format::Argument> = core::slice::view(values,4).unwrap();
+    let names: [core::format::Named;0] = [];
+    let named: core::slice::View<core::format::Named> = core::slice::view(names,0).unwrap();
+    return core::format::measure(row_pattern(),positional,named,limits());
+}
+fn measure_footer(count: u64) -> core::result::Result<i32,core::format::Error> {
+    let values: [core::format::Argument;1] = [core::format::Argument::Unsigned(count)];
+    let positional: core::slice::View<core::format::Argument> = core::slice::view(values,1).unwrap();
+    let names: [core::format::Named;0] = [];
+    let named: core::slice::View<core::format::Named> = core::slice::view(names,0).unwrap();
+    return core::format::measure(text("rows={0}\n",9),positional,named,limits());
+}
+
+fn prepare(table: ext::csv::Table) -> core::result::Result<alloc::vec::Vec<Row>,i32> {
+    if (table.row_count() == 0) { return core::result::Err(2); }
+    if (table.field_count(0).unwrap() != 3) { return core::result::Err(2); }
+    if (!table.field(0,0).unwrap().equals(text("name",4)) || !table.field(0,1).unwrap().equals(text("quantity",8)) || !table.field(0,2).unwrap().equals(text("unit_price",10))) { return core::result::Err(2); }
+    let count: i32 = table.row_count()-1;
+    if (count > 256) { return core::result::Err(7); }
+    let made: core::result::Result<alloc::vec::Vec<Row>,alloc::vec::Error> = alloc::vec::with_capacity<Row>(count);
+    if (made.is_err()) { return core::result::Err(4); }
+    let rows: alloc::vec::Vec<Row> = made.unwrap();
+    let scratch: [u32;864] = [0;864];
+    let workspace: core::slice::View<u32> = core::slice::view(scratch,864).unwrap();
+    let float_limits: core::float_decimal::Limits = core::float_decimal::Limits { max_input: 128, max_digits: 128, max_work: 1000000 };
+    let footer: core::result::Result<i32,core::format::Error> = measure_footer(count as u64);
+    if (footer.is_err()) { rows.destroy(); return core::result::Err(7); }
+    let total: i32 = 32+footer.unwrap();
+    let index: i32 = 1;
+    while (index < table.row_count()) {
+        let name: core::text::Text = table.field(index,0).unwrap();
+        let quantity_text: core::text::Text = table.field(index,1).unwrap();
+        let price_text: core::text::Text = table.field(index,2).unwrap();
+        if (!valid_name(name)) { rows.destroy(); return core::result::Err(2); }
+        if (quantity_text.byte_len() > 128 || price_text.byte_len() > 128) { rows.destroy(); return core::result::Err(7); }
+        let quantity: core::result::Result<i64,core::decimal::ParseError> = core::decimal::parse_i64_range(quantity_text.bytes,quantity_text.start,quantity_text.length);
+        let price: core::result::Result<f64,core::float_decimal::Error> = core::float_decimal::parse_f64(view(price_text),workspace,float_limits);
+        if (quantity.is_err()) { rows.destroy(); return core::result::Err(2); }
+        if (price.is_err()) { let status: i32 = float_status(price.unwrap_err()); rows.destroy(); return core::result::Err(status); }
+        let unit: f64 = price.unwrap();
+        if (!core::f64::is_finite(unit)) { rows.destroy(); return core::result::Err(2); }
+        let amount: f64 = (quantity.unwrap() as f64)*unit;
+        if (!core::f64::is_finite(amount)) { rows.destroy(); return core::result::Err(5); }
+        let row: Row = Row { name: name, quantity: quantity.unwrap(), price: unit, amount: amount };
+        let measured: core::result::Result<i32,core::format::Error> = measure_row(row);
+        if (measured.is_err()) { rows.destroy(); return core::result::Err(7); }
+        let length: i32 = measured.unwrap();
+        if (length > MAX_OUTPUT-total) { rows.destroy(); return core::result::Err(7); }
+        total += length;
+        let pushed: core::result::Result<i32,alloc::vec::Error> = rows.try_push(row);
+        if (pushed.is_err()) { rows.destroy(); return core::result::Err(4); }
+        index += 1;
+    }
+    return core::result::Ok(rows);
+}
+
+fn write_status(failure: core::format::WriteFailure) -> i32 {
+    return match (failure.cause) { core::format::WriteError::Io(error) -> 3, core::format::WriteError::IoLimit -> 7, core::format::WriteError::Format(error) -> 7 };
+}
+fn publish(rows: &alloc::vec::Vec<Row>, writer: &alloc::buffered::Writer<std::stream::Descriptor>) -> i32 {
+    let storage: [i32;2] = [0;2];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),7);
+    let scratch: core::slice::View<u8> = core::slice::view(bytes,7).unwrap();
+    let names: [core::format::Named;0] = [];
+    let named: core::slice::View<core::format::Named> = core::slice::view(names,0).unwrap();
+    let policy: core::format::WriteLimits = core::format::WriteLimits { format: limits(), max_io_calls: 4096 };
+    let empty: [core::format::Argument;0] = [];
+    let no_values: core::slice::View<core::format::Argument> = core::slice::view(empty,0).unwrap();
+    let header: core::result::Result<i32,core::format::WriteFailure> = core::format::write<alloc::buffered::Writer<std::stream::Descriptor>>(text("name\tquantity\tunit_price\tamount\n",32),no_values,named,writer,scratch,policy);
+    if (header.is_err()) { return write_status(header.unwrap_err()); }
+    let index: i32 = 0;
+    while (index < rows.len()) {
+        let row: Row = rows.at(index);
+        let values: [core::format::Argument;4] = [core::format::Argument::Text(row.name),core::format::Argument::Signed(row.quantity),core::format::Argument::F64(row.price),core::format::Argument::F64(row.amount)];
+        let positional: core::slice::View<core::format::Argument> = core::slice::view(values,4).unwrap();
+        let written: core::result::Result<i32,core::format::WriteFailure> = core::format::write<alloc::buffered::Writer<std::stream::Descriptor>>(row_pattern(),positional,named,writer,scratch,policy);
+        if (written.is_err()) { return write_status(written.unwrap_err()); }
+        index += 1;
+    }
+    let values: [core::format::Argument;1] = [core::format::Argument::Unsigned(rows.len() as u64)];
+    let positional: core::slice::View<core::format::Argument> = core::slice::view(values,1).unwrap();
+    let footer: core::result::Result<i32,core::format::WriteFailure> = core::format::write<alloc::buffered::Writer<std::stream::Descriptor>>(text("rows={0}\n",9),positional,named,writer,scratch,policy);
+    if (footer.is_err()) { return write_status(footer.unwrap_err()); }
+    return 0;
+}
+fn finish(writer: &alloc::buffered::Writer<std::stream::Descriptor>) -> i32 {
+    let attempts: i32 = 0;
+    while (attempts < 64) {
+        attempts += 1;
+        let finished: core::result::Result<i32,core::io::Error> = writer.finish();
+        if (finished.is_ok()) { return 0; }
+        let error: core::io::Error = finished.unwrap_err();
+        if (!core::io::is_interrupted(error)) { return 3; }
+    }
+    return 7;
+}
+
+fn report(input: &alloc::io::Buffer) -> i32 {
+    let options: ext::csv::Options = ext::csv::default_options();
+    options.max_records = 257; options.max_fields = 3;
+    options.max_field_bytes = 256; options.max_record_bytes = 768;
+    let parsed: core::result::Result<ext::csv::Table,ext::csv::Error> = ext::csv::parse_bytes(input.as_bytes(),0,input.len(),options);
+    if (parsed.is_err()) { return csv_status(parsed.unwrap_err()); }
+    let table: ext::csv::Table = parsed.unwrap();
+    let prepared: core::result::Result<alloc::vec::Vec<Row>,i32> = prepare(table);
+    if (prepared.is_err()) { let status: i32 = prepared.unwrap_err(); table.destroy(); return status; }
+    let rows: alloc::vec::Vec<Row> = prepared.unwrap();
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    let made: core::result::Result<alloc::buffered::Writer<std::stream::Descriptor>,core::io::Error> = alloc::buffered::writer<std::stream::Descriptor>(sink.borrow(),17);
+    if (made.is_err()) { rows.destroy(); table.destroy(); return io_status(made.unwrap_err()); }
+    let writer: alloc::buffered::Writer<std::stream::Descriptor> = made.unwrap();
+    let status: i32 = publish(rows.borrow(),writer.borrow());
+    if (status == 0) { status = finish(writer.borrow()); }
+    // A failed drain retains pending bytes. Discard them and release the
+    // writer buffer; never replay an already accepted formatted prefix.
+    if (writer.is_active()) { writer.discard(); }
+    rows.destroy(); table.destroy();
+    return status;
+}
+
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let argc: i32 = std::process::argc();
+    if (argc < 0) { return 3; }
+    if (argc != 1) { return 2; }
+    let initialized: core::result::Result<alloc::io::Buffer,core::io::Error> = alloc::io::with_limit(MAX_INPUT);
+    if (initialized.is_err()) { return io_status(initialized.unwrap_err()); }
+    let input: alloc::io::Buffer = initialized.unwrap();
+    let reserved: core::result::Result<i32,core::io::Error> = input.try_reserve(MAX_INPUT);
+    if (reserved.is_err()) { let status: i32 = io_status(reserved.unwrap_err()); input.destroy(); return status; }
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let copied: core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(source.borrow(),input.borrow());
+    let status: i32 = 0;
+    if (copied.is_err()) { let failure: core::io::CopyFailure = copied.unwrap_err(); status = io_status(failure.cause); }
+    else { status = report(input.borrow()); }
+    input.destroy();
+    return status;
+}

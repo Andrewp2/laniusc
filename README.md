@@ -68,6 +68,10 @@ ordered identifiers with their original positions.
 recover unconsumed storage and provide explicit nested cleanup. The
 [streaming word deduplicator](docs/stdlib-unique-words.md) moves independent
 Strings into an ordered set while reusing its batch allocation.
+[Runtime formatting to byte writers](docs/stdlib-format-write.md) validates
+before publication and uses bounded scratch with explicit partial progress.
+The [CSV report program](docs/stdlib-format-report.md) composes it with numeric
+parsing and buffered output.
 
 Optional modules use the [`extended` source root](extended/README.md).
 [`ext::csv`](docs/extended-csv.md) and [`ext::json`](docs/extended-json.md)
