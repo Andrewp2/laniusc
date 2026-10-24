@@ -1,11 +1,40 @@
 # Host and generic composition prerequisites
 
-This audit describes compiler and source-library HEAD `5174a14d`. The proposed
-operations below are prerequisites for future work, not exported or executable
-APIs. No compiler, runtime, or formal implementation changes accompany this
-document.
+## Current support
 
-## The current native boundary
+The explicit [native Linux syscall boundary](stdlib-linux.md), added in
+`3fa72ac2`, now supports executable Lanius implementations of
+[TCP/UDP sockets](stdlib-sockets.md), [extended file operations](stdlib-file-operations.md),
+[directory enumeration and walking](stdlib-directory.md) and
+[signal dispositions](stdlib-signals.md). Their guides record exact host layouts,
+bounds, ownership, failure behavior and native tests. Direct source binding does
+not establish composable-artifact runtime linking or execution on other targets.
+
+`core::target` describes executable library capabilities; its network flag is
+true for `std::socket`. `core::runtime` describes direct service-catalog bindings;
+its old network family 5 remains unavailable. Working sockets depend on family
+14, not on the unbound `std::net` declarations. The aggregate runtime-services
+flag remains false.
+
+Thread creation still needs callable entry, a new-stack trampoline, TLS, atomic
+memory ordering and ownership/join contracts. The syscall thunk requires the
+same returning stack and continuation; it cannot implement clone/vfork/new-stack
+entry by itself. TLS/SQLite and general native FFI remain separate dependencies.
+[Subprocess support](stdlib-command.md) now executes over same-stack
+fork/exec/wait, with explicit startup uncertainty, manual pipe draining and a
+single-threaded/no-outside-reaping contract. The command runner and 78-case
+independent oracle exercise real child lifecycle and fault cleanup. This uses
+service 14; the older process service 11 still supplies its original argument
+and exit operations.
+
+## Historical baseline
+
+The audit below describes compiler and source-library HEAD `5174a14d`, before
+the Linux boundary existed. Its operation contracts guided the current source
+implementations; statements about missing socket/file bindings refer to that
+baseline. Its thread and generic-composition prerequisites remain relevant.
+
+### The native boundary at 5174a14d
 
 Native x86_64 Linux calls use a closed service catalog:
 
@@ -25,7 +54,7 @@ Native x86_64 Linux calls use a closed service catalog:
   extern arguments to six register slots.
 
 Consequently, declaring `extern "lanius_std" fn syscall(...)` cannot implement
-missing operations today. A source-root module also cannot supply machine code
+missing operations at that baseline. A source-root module also cannot supply machine code
 for such a declaration. The unsupported directory fixture at
 `tests/fixtures/stdlib_foundation/filesystem_operations_directory_dependency.lani`
 records the existing native-call ABI rejection.
@@ -44,7 +73,7 @@ duplicate a descriptor. A connected socket supplied by a launcher can therefore
 already carry source-library stream I/O, but socket creation and endpoint setup
 cannot be inferred from that success.
 
-## File operations requiring bindings
+### File operations that required bindings
 
 The existing open thunks use fixed flags and mode:
 `shaders/codegen/lir/x86/runtime_path_ops.s:36` through line 79 select read-only,
@@ -76,7 +105,7 @@ behavior. Opening `/proc/self/fd` paths is not a general duplication contract.
 No-op flush cannot stand in for synchronization. These shortcuts must not be
 published as completed capabilities.
 
-## Sockets, child processes, and threads
+### Sockets, child processes, and threads at the baseline
 
 The minimum useful numeric-address socket layer needs creation, connect, bind,
 listen, accept, datagram send/receive, shutdown, endpoint queries, options, and a
@@ -109,7 +138,7 @@ cannot establish thread safety or implement spawn/join.
 
 One possible future Linux boundary is an unsafe syscall primitive taking a
 number and a counted six-word argument block and returning a signed 64-bit host
-result. Such a primitive does not exist today. It would be an explicit compiler
+result. Such a primitive did not exist at this baseline. It required an explicit compiler
 and runtime design change; a scalar number plus six scalar arguments also
 exceeds the current extern register limit. Even an argument-block primitive
 would not supply a correct thread trampoline, code-entry ABI, memory model, or

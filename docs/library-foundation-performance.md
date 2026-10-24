@@ -494,3 +494,51 @@ adds eight fully inlined instructions (37,187 to 37,195) and 188 SPIR-V bytes
 (193,168 to 193,356), measured with the existing size analyzer. This is a
 focused compiler correction with functional and scale evidence, not a new
 cross-compiler comparison or a claim about user GPU execution.
+
+## Native host, Unicode, settings and distribution checkpoint
+
+The corrected existing harness measured the current source closures on
+2026-10-23 with one warmup and three private entry rebuilds per row. Every one
+of the twenty emitted executables passed exact stdout, empty stderr and exit-0
+checks outside its compilation timer. Processes/devices/imports were warm;
+entry timestamps changed to force private entry compilation. These sequential
+unpaired desktop observations are not cold-library rebuilds or baseline
+speedup/regression measurements.
+
+| Entry | Closure including entry | ELF bytes | Three compiler samples (ms) | Median (ms) |
+| --- | --- | ---: | --- | ---: |
+| `unicode_sentences_contracts.lani` | 22 files / 289,365 bytes | 324,957 | 277.694, 254.226, 275.408 | 275.408 |
+| `unicode_lines_contracts.lani` | 18 files / 210,127 bytes | 250,849 | 199.916, 198.918, 207.182 | 199.916 |
+| `settings_contracts.lani` | 41 files / 625,683 bytes | 1,424,655 | 674.392, 672.047, 660.225 | 672.047 |
+| `distributions_contracts.lani` | 13 files / 146,695 bytes | 198,080 | 434.011, 430.024, 416.958 | 430.024 |
+| Existing 1,000,000-byte imported-library workload | 10 files / 1,073,989 bytes | 2,171,815 | 1368.346, 1365.326, 1334.167 | 1365.326 |
+
+The four contract entries are under `tests/fixtures/extended/` and use the
+additional `extended` source root. Settings writes the exact two bytes `QQ`;
+the other three write nothing. The unchanged large workload uses its existing
+71-byte expected output. No fixture was rewritten to make a quiet measurement.
+The larger workload supplies scale evidence alongside the family import rows;
+neither establishes a tenfold cross-compiler ratio.
+
+Source closures were checked before and after measurement. Closure digests hash
+sorted lines `SHA256  BYTE_COUNT  REPOSITORY_RELATIVE_PATH` including the entry.
+All four emitted ELFs per row have identical contents:
+
+| Entry | Closure SHA-256 | ELF SHA-256 |
+| --- | --- | --- |
+| Sentences | `b98a83f4d23e58a58e2a5445003cc84975403bffb551b11507c41bdf08f79a52` | `8e0bdcfdf71589193323340b41da84e0d1a8fc67a75a83665515584468e8feac` |
+| Lines | `da1e6bd61ff46aaaa04f25a72c8e0e199844d0a25bafbea11c83af6c563f6fe2` | `ce111bcf18db3e3e5c2b93f625b8f199981248bdb96e49d186157a8c3f2498fb` |
+| Settings | `ec847881a534c2fbfeca89fbf5ade1a483642b6f5c0c0e3f4a7308a1e76a5e80` | `f3e3e3f47fa4934fbd158fda1933244134ccb2def82a4777fa2e1215329a88d9` |
+| Distributions | `09f6640e76c3a32f120bc5618c94737f62988e1220cd391dc4b0bc9bcc58e028` | `0709f47db9f36b3ce235af05fe92b18084d74613c86abbf58bb90ffc8aead043` |
+| 1 MB workload | `a6cac880e4b0580ff19346ccdaad389036861e6733b8eccbb588ff2546b9c46b` | `367c90a713e010df9a1dc8b456f7af67becb5f8ebea17f8493b344ed1613b3c3` |
+
+The harness source hash is
+`d8070c0c10fb5ff7eb7ce861256264de417558ae26c477814f2577a0ce5adbbf`;
+its driver hash is
+`eaf53a5a1a56e83742e87955f786011cd8b92178bb0849a991ba56d6f82e66e0`.
+Exact commands, per-source hashes and retained executable hashes are recorded
+under `target/stdlib-work/new-module-perf-20261023/`. The family guides record
+native behavior/scale separately: complete official sentence/line corpora,
+settings reports through 2,000 entries, distribution references and sampled
+values, loopback sockets, filesystem traversal and child-process lifecycle.
+Supported execution remains x86_64 Linux output from GPU compilation.

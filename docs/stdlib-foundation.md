@@ -1,6 +1,62 @@
 # Standard library execution audit and portable foundation
 
-**Current numeric, owned-set and portable extended-library checkpoint (2026-10-23):**
+**Current native host and extended-library checkpoint (2026-10-23):**
+[The Linux syscall boundary](stdlib-linux.md),
+[owned TCP/UDP sockets](stdlib-sockets.md),
+[explicit signal dispositions](stdlib-signals.md),
+[file options, metadata, seek, sync and duplication](stdlib-file-operations.md),
+and [raw directory iteration and bounded walking](stdlib-directory.md) execute
+in Lanius. The TCP exchange and directory-report programs use real loopback
+peers and OS metadata; fault tests check partial transfers, deadlines, descriptor
+and allocation cleanup. Independent review corrected receive-deadline checks
+at EOF and real closed-pipe output handling. The syscall thunk is an explicit
+native binding; its same-stack continuation contract does not supply threads.
+
+[Unicode sentence boundaries](extended-unicode-sentences.md) and
+[line opportunities](extended-unicode-lines.md) pass all 512 and 19,338 official
+Unicode 17 vectors, respectively. Real sentence-report and terminal-wrap
+programs exercise staged output and bounded ownership. [Typed settings](extended-settings.md)
+overlay existing JSON/TOML owners and environment bindings with exact values and
+provenance. [Four continuous distributions](extended-distributions.md) provide
+densities, paired tails and bounded generic sampling, checked against independent
+high-precision references and 392,000 sampled values. Large-shape accuracy has a
+separate documented profile, not a uniform guarantee over all finite inputs.
+
+[Numeric consolidation](stdlib-numeric-migration.md) removes seven redundant
+number/byte helper modules and migrates ordinary consumers to native primitives.
+The obsolete raw-memory service metadata was removed after an
+[implementation/caller audit](library-remaining-api-audit.md). Working pointer
+intrinsics and value helpers remain. `core::target` now describes executable
+library families; `core::runtime` describes direct service bindings. Sockets
+execute over service 14 while the older network service 5 remains unbound.
+The target metadata fixture executes and checks this distinction.
+
+The unit-variant consumer now ignores type-expression rows, fixing same-spelled
+nominal types and unit variants without changing lookup identity or layouts.
+Focused positive/native and negative tests pass. The existing
+[performance harness](library-foundation-performance.md) now verifies every
+emitted ELF outside the compilation timer. Its pinned alternating 1 MB workload
+comparison did not reproduce an initial chronological slowdown; uncontrolled
+desktop measurements do not establish a causal speedup. No extractor or formal
+proof source changed. The syscall extension and this expression-row correction
+are the compiler/runtime changes in this checkpoint.
+
+The [subprocess API and command runner](stdlib-command.md) now execute real
+fork/exec/wait, raw argv/environment/cwd, redirection, pipes and signaling, with
+three focused native groups and 78 independently modeled cases. Startup EOF
+is explicitly Unconfirmed; ambiguous outcomes retain child ownership.
+[Seventeen ordinary samples](stdlib-checked-sample-migration.md) now use checked
+owners and complete output, with 316 result models and 421 injected failures.
+The source-only heap view correction passes empty/i64/record and existing
+generic/self-extension controls. Its original failure is preserved separately.
+
+Verified execution is x86_64 Linux output from GPU compilation; user GPU kernels
+and other targets are unverified. Threads, native FFI/TLS/SQLite, generic
+iterator/stream composition and distribution/reference completion remain on the
+[full roadmap](library-roadmap.md). Compiler failures retain
+[reproductions and successful controls](library-dependencies.md).
+
+**Preceding numeric, owned-set and portable extended-library checkpoint (2026-10-23):**
 [Canonical narrow integers](stdlib-narrow-integers.md),
 [binary64 elementary mathematics](stdlib-math.md),
 [generic owned hash/tree sets](stdlib-owned-sets.md),
@@ -312,6 +368,13 @@ Cold-start performance was not measured under controlled caches.
 
 ## Public API inventory
 
+This inventory retains the earlier per-surface evidence and source counts.
+Current module guides and the checkpoints above supersede retired namespaces,
+older compiler restrictions and catalog counts below. The canonical integer
+modules replace the seven removed number/byte helpers; `core::mem` retains
+eleven public source helpers with its obsolete raw-service metadata removed.
+The native catalog now has fourteen families.
+
 The [current compiler generics checkpoint](compiler-generic-types.md) supersedes
 the older scalar-only and missing-local-body restrictions recorded below.
 The preceding callable-constant checkpoint reported 229 passes and two explicit
@@ -399,16 +462,16 @@ require further compiler work.
 
 | Public surface | Classification | Evidence and limit |
 | --- | --- | --- |
-| `core::number_i8` constants and all 26 public functions | Executable on x86_64 | Focused runtime fixture checks signed 8-bit limits, widened arithmetic, wrapping and saturation, multiplication and power overflow, GCD/LCM, division and Euclidean remainder, zero-divisor and `MIN/-1` fallbacks, parity, signs, and power-of-two boundaries. |
-| `core::number_i16` constants and all 26 public functions | Executable on x86_64 | Focused runtime fixture checks signed 16-bit limits, widened arithmetic, wrapping and saturation, multiplication and power overflow, GCD/LCM, division and Euclidean remainder, zero-divisor and `MIN/-1` fallbacks, parity, signs, and power-of-two boundaries. |
-| `core::number_u16` constants and all 25 public functions | Executable on x86_64 | Focused runtime fixture checks unsigned 16-bit limits, widened saturation and wrapping, multiplication and power overflow, GCD/LCM, zero-divisor fallbacks, parity, and power-of-two and alignment boundaries. |
-| `core::number_i32` constants and all 26 public functions | Executable on x86_64 | Focused runtime fixture checks ordinary values, integer extremes, wrapping arithmetic, multiplication and power overflow, signed GCD/LCM, truncating and Euclidean division, failure fallbacks, and power-of-two overflow. |
-| `core::number_u32` constants and all 25 public functions | Executable on x86_64 | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, GCD/LCM, power overflow, zero-divisor fallbacks, and alignment fallbacks. |
-| `core::narrow` all 24 public 32-bit-to-8/16-bit conversion functions | Executable on x86_64 | The imported fixture calls every signed and unsigned source/target combination in wrapping, checked-fallback, and saturating forms. It checks ordinary values, signed and unsigned boundaries, out-of-range values, negative values, and full-width i32/u32 extremes. The input-driven byte report combines narrowing, byte arithmetic, and decimal I/O. A bare `as` cast truncates; the helpers name the wrapping, checked, and saturating policies and narrow with `as` after normalizing or checking the value. |
+| `core::number_i8` constants and all 26 public functions | Retired after canonical migration | Focused runtime fixture checks signed 8-bit limits, widened arithmetic, wrapping and saturation, multiplication and power overflow, GCD/LCM, division and Euclidean remainder, zero-divisor and `MIN/-1` fallbacks, parity, signs, and power-of-two boundaries. |
+| `core::number_i16` constants and all 26 public functions | Retired after canonical migration | Focused runtime fixture checks signed 16-bit limits, widened arithmetic, wrapping and saturation, multiplication and power overflow, GCD/LCM, division and Euclidean remainder, zero-divisor and `MIN/-1` fallbacks, parity, signs, and power-of-two boundaries. |
+| `core::number_u16` constants and all 25 public functions | Retired after canonical migration | Focused runtime fixture checks unsigned 16-bit limits, widened saturation and wrapping, multiplication and power overflow, GCD/LCM, zero-divisor fallbacks, parity, and power-of-two and alignment boundaries. |
+| `core::number_i32` constants and all 26 public functions | Retired after canonical migration | Focused runtime fixture checks ordinary values, integer extremes, wrapping arithmetic, multiplication and power overflow, signed GCD/LCM, truncating and Euclidean division, failure fallbacks, and power-of-two overflow. |
+| `core::number_u32` constants and all 25 public functions | Retired after canonical migration | Runtime fixture checks unsigned extremes, wrapping and saturating arithmetic, GCD/LCM, power overflow, zero-divisor fallbacks, and alignment fallbacks. |
+| `core::narrow` all 24 public 32-bit-to-8/16-bit conversion functions | Retired after canonical migration | The imported fixture calls every signed and unsigned source/target combination in wrapping, checked-fallback, and saturating forms. It checks ordinary values, signed and unsigned boundaries, out-of-range values, negative values, and full-width i32/u32 extremes. The input-driven byte report combines narrowing, byte arithmetic, and decimal I/O. A bare `as` cast truncates; the helpers name the wrapping, checked, and saturating policies and narrow with `as` after normalizing or checking the value. |
 | `core::wide_u64` all 24 public two-word and decimal functions | Executable on x86_64 | The imported runtime fixture calls every function and checks high-bit construction, ordering, wrapping add/subtract/multiply, bitwise operations, shifts across word boundaries, division and remainder, zero-divisor fallbacks, full-width decimal digits and parsing, malformed input, and overflow. A generated native fixture compares arithmetic and shifts against Rust `u64` across eight operand pairs and four values at eight shift counts. The decimal-double program reads and prints full-width values. The representation is two `u32` words; this does not claim native `u64` correctness. |
 | `core::wide_i64` all 29 public two-word and decimal functions | Executable on x86_64 | The imported runtime fixture calls every function and checks sign extension, signed bounds, ordering, wrapping and saturating arithmetic, bitwise operations, arithmetic right shifts, signed quotient and remainder, zero-divisor and `MIN/-1` fallbacks, and full-width signed decimal parsing and output. A generated native fixture compares arithmetic and shifts against Rust `i64` across eight operand pairs and four values at eight shift counts. A decimal-double program exercises real input and output, including signed extrema and failure cases. It uses `core::wide_u64` internally and does not claim native `i64` correctness. |
 | `core::wide_u64_checked` all 9 public functions and `core::wide_i64_checked` all 11 public functions | Executable on x86_64 | Imported fixtures call every checked and saturating operation with ordinary values, zero, high-bit values, signed extrema, overflow, zero divisors, and `MIN / -1`. Generated native fixtures compare checked arithmetic, powers, and saturation with Rust `u64` and `i64` across eight operand pairs and boundary exponents. The checked-factorial program prints `20!` and rejects `21!` overflow through `Option<WideU64>`. These modules use explicit two-word arithmetic, not native 64-bit operators. |
-| `core::byte` constants and all 44 public functions | Executable on x86_64 | Focused runtime fixture checks arithmetic overflow, every wrapping-multiplication byte pair, division, GCD/LCM, power overflow, zero divisor, power-of-two overflow, all nibble round trips, ASCII classes, case conversion, and hex conversion fallbacks. |
+| `core::byte` constants and all 44 public functions | Retired after canonical migration | Focused runtime fixture checks arithmetic overflow, every wrapping-multiplication byte pair, division, GCD/LCM, power overflow, zero divisor, power-of-two overflow, all nibble round trips, ASCII classes, case conversion, and hex conversion fallbacks. |
 | `core::bits` all 42 public `i32`, `u32`, `u16`, and `u8` functions | Executable on x86_64 | Runtime fixture checks zero, highest bit, all bits, counts, rotates across word widths, bit reversal, byte swap, endian packing and extraction for every byte value, and out-of-range bit and byte fallbacks. Byte operations run all 256 inputs; halfword operations run boundary values and 256 evenly spaced inputs; signed operations check negative patterns and all 32 one-hot bits. |
 | `core::wide_u64_bits` all 12 public two-word bit functions | Executable on x86_64 | The imported runtime fixture calls every function and checks zero, one, high bit, maximum, and mixed byte patterns; zero and one counts; rotations at word and width boundaries and for all counts 0 through 127; bit reversal and byte swap; all eight byte positions in both orders; and caller fallbacks for invalid positions. It uses `WideU64` rather than native `u64`. |
 | `core::wide_i64_bits` all 12 public signed two-word bit functions | Executable on x86_64 | The imported runtime fixture calls every function on zero, one, negative one, the signed minimum, and a mixed negative pattern. It checks counts, sign-bit rotations and reversal, byte swapping, bit and byte fallbacks, and rotation round trips for all counts 0 through 127. The signed-bit-report program reads full-width decimal input and prints the population count and unsigned reversal for ordinary, extreme, malformed, and overflowing inputs. The functions operate on `WideI64` bit patterns and do not use native `i64` operations. |
@@ -444,7 +507,7 @@ require further compiler work.
 | `core::mem::{i32_array_data_ptr,i32_slice_data_ptr,string_data_ptr,i32_slice_from_raw_parts}` | Compiler-provided intrinsics; executable on x86_64 for tested backing storage | The source has no null or empty placeholder bodies. A native fixture checks array and slice pointers, view mutation, and a string literal's first byte; existing native tests check bounds trapping. A `[u8]` raw view over string data or packed i32 storage reads and writes single bytes; see dependency 16. |
 | `core::mem::typed_slice_from_raw_parts<T>` | Executable on x86_64 Linux for tested caller-backed `i32`, `u32`, and record slices | The imported runtime fixture checks access, mutation, aliasing, an empty view, and three element types. Separate imported fixtures check that a negative length traps with SIGILL and indexing at the length exits 101. The caller must provide storage in the target's layout, keep it alive, and supply a valid aligned pointer; the constructor cannot validate physical backing. The `u32` and record cases use separately allocated native element slots, not a reinterpretation of a packed `i32` array. |
 | `core::mem::{identity,first,second,select}` | Executable on x86_64 for tested scalar and string instantiations on the resident native path | Runtime fixture exercises each helper and both selector branches for `i32`, high-bit `u32`, Unicode `char`, and finite `f32`, plus `identity<bool>`. The new actual-root fixture executes every helper for bool, i32, u32, f32, char, and str, including both selector branches, NaN, negative zero, empty strings, and forwarding through another function. Record body specialization remains unavailable and deferred; dependency 62 records the earlier miscompile, while dependency 92 records the scalar repair. |
-| `core::mem` capability metadata, all 10 public functions | Executable on x86_64 Linux | The native metadata fixture calls every function and checks runtime-free value helpers and the unavailable raw-memory host API against `core::runtime`. The unavailable host API is distinct from the four executable compiler-provided intrinsics above. `tests/stdlib_mem_execution.rs` requires a runtime call for all 19 source-defined public functions across its fixtures. |
+| `core::mem` value-helper metadata and source wrappers | Executable on x86_64 Linux | The current memory fixture checks runtime-free value helpers and pointer/layout operations. Eleven public source helpers remain; the obsolete unavailable raw-memory service metadata was removed. See [remaining API audit](library-remaining-api-audit.md). |
 | `core::hash` twelve public free functions and two FNV-1a constants | Executable on x86_64 | The runtime fixture checks stable 32-bit bit-pattern hashes for six integer widths, both Boolean values, and ASCII and Unicode characters. The i32, u32, bool, and char functions call local `Hash<T>` implementations; narrow integers widen explicitly. `hash_wide_u64` and `hash_wide_i64` apply FNV-1a to eight little-endian bytes of the two-word representation and check zero, high-bit, maximum, and signed boundary values against exact outputs. The byte extraction masks each shifted word before narrowing it. The fixture also checks both constants, a one-byte step, known byte-sequence hashes, empty input, binary bytes, and a negative-length fallback. A separate native fixture confirms that overstating the physical byte view traps. The stdin fingerprint sample combines hashing with byte input and hexadecimal output. Direct imported `Hash<T>` calls remain outside the claim. |
 | `core::crc32` all 3 public functions and 3 constants | Executable on x86_64 for caller-backed `[u8]` views | The native fixtures check CRC-32/ISO-HDLC on `123456789`, empty input, a one-byte prefix, binary bytes, and every byte value through the streaming interface. Negative logical lengths return the fallback without reading storage; an overstated physical view traps. A source scan requires a runtime call for every public function. |
 | `core::option` generic `Option<T>`, all 12 public functions and 9 methods; `core::result` generic `Result<T, E>`, all 10 public functions and 10 methods | Executable on x86_64 | `tests/fixtures/stdlib_foundation/core_option_result.lani` runs every function and method through one generic checker per enum for every integer width, bool, char, f32, ptr, both wide integers and a user record; `tests/stdlib_foundation_execution.rs` checks that it calls each one. `contains` and `contains_err` use `core::cmp::PartialEq`; `unwrap` and `unwrap_err` panic on the other variant. Replaces the 22 per-type option and result modules. See [the Option guide](stdlib-option.md) and [the Result guide](stdlib-result.md). |
@@ -463,8 +526,8 @@ require further compiler work.
 | Native `core::{i64,u64,isize,usize}` | Executable on x86_64 Linux | [Native integer contracts](stdlib-native-integers.md) cover checked/wrapping/saturating arithmetic, division/remainder, bit operations, conversions and explicit strict preconditions. Two independent models each check 84,100 cases, with 54 native trap cases. Pointer-sized modules explicitly describe the verified 64-bit target. |
 | `core::cmp` lawful `Eq<T>` and `Ord<T>` plus explicit `PartialEq<T>` and `PartialOrd<T>` implementations for integer widths, `bool`, `char` and lawful stdlib comparison types; native `f32`/`f64` implement only partial IEEE comparisons; `core::float_order` provides total float keys | Executable on x86_64 | [Comparison contracts](stdlib-comparison.md) describe the laws, float key policy and compiler limits. Native pair tests cover 17,568 float pairs, generic partial membership and total keys in vectors, tree/hash maps and sets. `tests/fixtures/stdlib_foundation/core_cmp_free.lani` checks total and partial relations of each lawful primitive impl through one generic function bounded by `Eq<T>` and `Ord<T>`, with each type's extremes. The former per-type free functions (`core::cmp::lt_i32` and the rest) were removed; call `T::lt(a, b)` through a bound, or `i32::lt(a, b)` directly. |
 | `core::hash::Hash<T>` trait methods | Complete API coverage not refreshed | The public hashing functions execute. The later [compiler checkpoint](compiler-generic-types.md#direct-generic-trait-implementation-methods-2026-10-11) establishes focused direct imported generic trait impl methods, but does not rerun the complete trait API. Dependency 31 retains the original audit evidence. |
-| `core::target` all 18 public functions and 16 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant. It checks the available allocator, filesystem, stdio, clock, secure RNG, process, and environment bindings against `core::runtime`; unbound network, threads, GPU, host services, panic hooks, and test harness remain false. This is a target snapshot, not a live host probe. |
-| `core::runtime` all 62 public functions and 40 constants | Executable x86_64 Linux capability metadata | The native fixture executes every function and reads every constant, checking service IDs, ABI fields, available and unavailable services, unknown IDs, status classifiers, and requirement rows. Structural validation accepts both Available and Unavailable for a known service/current ABI; Unknown/invalid statuses reject. A native cross-product test separates row validity from actual binding. These helpers report bindings; they do not implement an unbound service operation. |
+| `core::target` library capabilities | Executable x86_64 Linux metadata | The native fixture executes the capability accessors and constants, including the Linux syscall boundary. Network is true for working `std::socket`; the distinct old direct network service remains unavailable in `core::runtime`. Threads, GPU user services, panic hooks and automatic harness registration remain false. This is a documented target profile, not a live host probe. |
+| `core::runtime` direct binding inventory | Executable x86_64 Linux metadata | Current native tests validate fourteen stable service families, ABI/status/requirement rows and unknown IDs. Family 14 supplies Linux syscalls; old network family 5 and aggregate host services remain unbound. Row validity does not imply binding availability or composable-artifact runtime linking. |
 | `core::panic` both trap functions, all 19 metadata functions, and 4 constants | Executable on x86_64 Linux for the trap functions and metadata | `tests/stdlib_panic_execution.rs` checks that `panic()` and `unreachable()` terminate with SIGILL, and a runtime fixture checks every metadata result. Panic hooks remain unbound; their availability flags stay false. |
 | `alloc::allocator` all 32 public metadata functions and 4 host calls | Executable x86_64 Linux host ABI for valid allocation arguments | The native metadata fixture calls every metadata function, checks available service flags and null/non-null pointer classification against `core::runtime`, and performs a real allocation and release. `tests/stdlib_allocator_metadata_execution.rs` requires a runtime call for each metadata function. Normal allocation, reallocation, and release have x86 tests; the `alloc_failed` host call is tested as terminating with exit status 1. `tests/stdlib_allocator_failure_execution.rs` injects `ENOMEM` into `mmap` and `mremap`: both return null, and failed reallocation leaves the old storage readable and releasable. The API is low-level; callers must pass a valid pointer and matching sizes to `realloc` and `dealloc`. |
 | `std::process` all 44 metadata functions, 12 constants, and 4 host calls | Executable on x86_64 Linux | The foundation runtime fixture checks every metadata function and constant, including successful and failed argument results, service availability, and exit status helpers. Native source-pack tests execute `argc`, `arg_len`, and `arg_read` with real process arguments; the process exit sample confirms that `exit(7)` terminates with status 7. An imported helper also executes `exit` through a transitive import and a directly declared host call. This module reports the Linux host binding; GPU device execution is not claimed. |

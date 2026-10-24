@@ -14,6 +14,20 @@ mathematical identity is not evidence of fabricated execution. Concurrent
 socket, numeric-consumer, Unicode, settings and distribution work has separate
 owners and is excluded from completion claims here.
 
+### Subsequent corrections
+
+The original tables below retain their audited baseline. Since that snapshot,
+[numeric consumer consolidation](stdlib-numeric-migration.md) removed seven
+redundant helper modules, and [checked sample migration](stdlib-checked-sample-migration.md)
+is moving ordinary vector/output callers off silent-failure and statusless
+operations. The protected `std::vec` identity and extractor are unchanged.
+[File options](stdlib-file-operations.md), [directory walking](stdlib-directory.md),
+[sockets](stdlib-sockets.md) and [signal dispositions](stdlib-signals.md) now
+execute over Linux service 14. The broad library network capability is true;
+the old direct catalog service 5 remains unavailable. `core::target` reports
+library families and `core::runtime` reports direct bindings, with native
+metadata execution checking their documented difference.
+
 ## Corrections completed in this audit
 
 | Correction | Evidence and scope |

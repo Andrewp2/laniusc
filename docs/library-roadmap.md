@@ -27,17 +27,17 @@ package distribution is a separate deliverable.
 | Family | Required contents | Executable state and remaining work |
 | --- | --- | --- |
 | Fundamental values | Option, Result, ordering, comparison, hashing, cloning, explicit errors | Generic Option/Result execute; partial equality/order are distinct from total equality/order, with explicit total float keys. Some generic forwarding and record extraction compositions remain compiler dependencies; clone and ownership consolidation remain |
-| Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Canonical primitive-width integer arithmetic, division, bits and conversion policies execute; pointer widths explicitly describe x86_64. Binary32/binary64 value utilities include exact bits, rounding and square root; decimal parsing and shortest/precision formatting execute. Full-range binary64 trigonometric, exponential, logarithmic and power functions have independent accuracy evidence. Native floats use partial comparison with explicit total key wrappers. Legacy number/byte helpers and represented two-word consumer paths still need consolidation |
+| Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Canonical primitive-width arithmetic, bits and conversion policies execute; seven obsolete number/byte helper modules are removed and their ordinary consumers migrated. Pointer widths explicitly describe x86_64. Binary32/binary64 bit, rounding, square-root, decimal and precision-formatting APIs execute, as do full-range binary64 elementary functions with documented accuracy evidence. Native floats use partial comparison with explicit total keys. Represented two-word values remain an explicit separate API |
 | Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic algorithms and counted View values execute, including subviews, checked mutations and cursors; initial physical counts still require compiler length projection |
 | Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | Inherent slice/text/hash-map cursors execute; shared protocol dispatch hits an imported-generic compiler dependency; adapters and collection integration remain |
 | Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat, integer/float conversion, caller-buffer Display, runtime format strings and owned formatting execute. Alignment counts scalars and numeric precision rounds exact binary values. Optional extended modules provide Unicode 17 full casing, normalization, default word/grapheme boundaries and an explicit terminal width policy. Richer format controls and collation remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings, raw views and stable chunked arenas with generic typed allocations execute; layout and ownership consolidation remain |
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec, deque and bitset, inline generic Vec/Eq Set, hash/tree maps and sets, and min/max heaps execute. Owned sets include representative ownership and all four fallible algebra operations through shared map engines. Silent-failure legacy map/set/text owners are retired. The protected std::vec/heap migration and deep ownership consolidation remain |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, slice cursors, owned byte sinks, native descriptor adapters and owned files execute; buffered adapters remain |
-| Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files, borrowed Unix byte paths, components, names, prefixes, owned buffers, explicit lexical normalization and checked directory/file mutations execute; metadata, directory enumeration, walking and further host operations remain |
-| Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Owned raw-byte argument snapshots and argument/environment helpers execute; subprocess management remains |
-| Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, Gregorian calendar/ISO weeks/RFC 3339 values, native clocks, generic deadline waits, deterministic generators, sampling/shuffle and explicit OS entropy errors execute. Optional TZif/POSIX time zones provide historical/future conversion and complete ambiguity candidates over a documented profile. Legacy consolidation, additional clocks and distributions remain |
-| Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6, scopes, socket addresses and CIDR prefixes execute; host socket services remain contract-only |
+| Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and paths, lexical operations, checked mutations, configurable/relative opens, seek, metadata, sync, duplication, raw directory iteration and bounded anchored walking execute on native Linux. The directory report exercises filters, metadata and staged output. Automatic owner destruction and broader platform support remain |
+| Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Raw-byte snapshots, explicit argv/environment/PATH/cwd, fork/exec, redirected files, owned pipes, cached waits and child signaling execute on the documented single-threaded Linux profile. Startup certainty is explicit. Multi-pipe communication, deadlines, process groups and concurrent spawn policy remain |
+| Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, calendars, native clocks, deadline waits, deterministic generators, sampling/shuffle and checked OS entropy execute. Optional TZif/POSIX zones provide conversion and ambiguity candidates; four extended continuous distributions have bounded generic sampling. Additional clocks and discrete distributions remain |
+| Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6 and CIDR values, owned TCP/UDP sockets, polling, deadlines, options and half-close execute via the explicit Linux syscall boundary. A bounded TCP exchange program exercises complete transfers. Old std::net catalog declarations remain unbound; host name/interface resolution, TLS and higher-level clients/servers remain |
 | Concurrency | Threads, joining, synchronization, atomics, channels, cancellation | Current thread module is contract-only; runtime prerequisites remain |
 | Development | Assertions, test runner, property helpers, benchmarks, diagnostics, API docs | Nontrapping checks, explicit source suites, filters, seeded properties, injected/native-clock benchmarks and a bounded native compiler/run driver execute. Selective, relocatable source bundles use the existing package resolver and verify inventory hashes. Automatic compiler discovery/runtime registration, binary SDK distribution and complete API reference work remain |
 
@@ -59,9 +59,9 @@ tests, target support, and relevant performance evidence.
 
 The [compiled byte-glob module](extended-glob.md) and its streaming path-filter
 application execute on x86_64 Linux, including recursive components, explicit
-work limits, raw byte paths and allocation/I/O failure cases. Filesystem walking
-still needs directory-enumeration and metadata host bindings; glob matching
-does not depend on them.
+work limits, raw byte paths and allocation/I/O failures. [Raw directory iteration
+and anchored walking](stdlib-directory.md) now execute separately, with a
+filtered directory-report program and explicit traversal budgets.
 
 [Checked filesystem mutations](stdlib-filesystem.md) provide allocation-free
 creation/removal of one directory, file unlinking and renaming over existing
@@ -135,8 +135,12 @@ provides counted strided matrices, owned matrices, products, pivoted LU and
 Householder QR least squares, with explicit numerical and resource limits.
 The [numerical CSV analyzer](extended-data-analyze.md) combines both libraries
 for summaries and optional multiple regression. These are binary64 APIs;
-distributions, weighted/higher moments, advanced decompositions and sparse
-matrices remain work. Geometry, elementary functions and signal algorithms
+weighted/higher moments, advanced decompositions and sparse matrices remain
+work. [Normal, exponential, gamma and beta distributions](extended-distributions.md)
+add densities, paired tails and bounded generic sampling, with a
+[CSV sampling program](extended-sample-distribution.md). Their ordinary and
+large-shape accuracy profiles are explicit; discrete laws remain work.
+Geometry, elementary functions and signal algorithms
 are documented below.
 
 [Owned bitsets and counted views](stdlib-bitset-owned.md) add checked bit/range
@@ -157,7 +161,11 @@ allocation/I/O failures. [Default word boundaries](extended-unicode-words.md)
 and [full root/Turkic/Lithuanian casing](extended-unicode-case.md) now execute,
 including original-input context and default title boundaries. A
 [casing program](extended-text-case.md) exposes lower/upper/title/fold over
-bounded UTF-8. Sentence/line segmentation and locale-sensitive collation remain.
+bounded UTF-8. [Default sentence boundaries](extended-unicode-sentences.md) and
+[default line opportunities](extended-unicode-lines.md) now pass the complete
+versioned official corpora. [Sentence reporting](extended-text-sentences.md) and
+[greedy terminal wrapping](extended-text-wrap.md) exercise them in real programs.
+Locale-sensitive collation, dictionary segmentation and shaping remain work.
 
 [Regular expressions](extended-regex.md) execute a documented UTF-8 dialect
 using ordered Pike matching, with captures, greedy/lazy repetition, scalar
@@ -237,7 +245,9 @@ QUERY sections, common RDATA and EDNS, with bounded complete message writing.
 [WebSocket processing](extended-websocket.md) provides RFC 6455 handshakes,
 role masking, fragmented UTF-8, control/close state and frame generation.
 Both have real offline programs and independent interoperability/failure tests;
-resolver, socket and TLS transport remain separate host work.
+host resolution, TLS and protocol transport orchestration remain separate work.
+The [owned socket API](stdlib-sockets.md) and [TCP exchange program](stdlib-tcp-exchange.md)
+provide executable numeric-address TCP/UDP transport independently.
 
 [Byte key/value storage](extended-kv.md) provides atomic owned mutations and
 canonical CRC-checked snapshots. Its file program stages replacements through
@@ -255,7 +265,9 @@ licensed algorithm provenance retained in source.
 encoding, with the complete versioned official valid/invalid corpus and resource
 failure evidence. A [normalizer/checker](extended-toml-normalize.md) preserves
 types, exact temporal fractions, negative zero and unknown offsets. Configuration
-overlays currently use JSON; a common typed configuration layer remains work.
+overlays include a [common typed settings facade](extended-settings.md) over
+JSON, TOML and explicit/environment bindings. It preserves exact JSON numbers,
+TOML types, shallow replacement and provenance without copying the input trees.
 [Calendar values](stdlib-calendar.md) provide checked Gregorian day/ordinal/ISO
 week arithmetic, RFC 3339 parsing/formatting and explicit SystemTime conversion.
 [TZif time zones](extended-timezone.md) add historical offsets, supported POSIX
@@ -322,7 +334,22 @@ API list; unrelated library work can continue.
 ## Current work
 
 - Branch: `codex/stdlib`, based on `441e66f9`.
-- Current milestone: canonical narrow integers, full-range binary64 elementary
+- Current milestone: the explicit native Linux syscall boundary, owned TCP/UDP
+  sockets and signal dispositions; configurable files, metadata, raw directory
+  iteration and bounded walking; complete default Unicode sentence/line
+  boundaries and terminal wrapping; typed settings and four continuous
+  distributions. Real programs, independent models/conformance corpora,
+  allocation/descriptor/I/O failure checks and source reviews are recorded per
+  guide. Numeric helper consolidation removes seven obsolete modules.
+  Subprocesses and a real command runner now pass focused native lifecycle and
+  fault gates; startup EOF is explicitly Unconfirmed and ambiguous outcomes
+  retain a child owner. Seventeen ordinary collection/output samples now use
+  checked APIs and real closed-pipe cleanup. The heap view boundary constructs
+  directly from initialized owner state; original failed source is preserved.
+  These APIs execute as x86_64 Linux programs produced by the GPU compiler;
+  user GPU kernels and other targets are unverified. Threads, TLS, SQLite,
+  generic adapter composition and final distribution/reference work remain.
+- Preceding milestone: canonical narrow integers, full-range binary64 elementary
   functions, generic owned hash/tree sets, TZif time zones, DNS and WebSocket
   wire processing, byte key/value snapshots, signal processing and selective
   source distribution. Five new native programs and four migrated set consumers
