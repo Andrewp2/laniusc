@@ -1,0 +1,19 @@
+module app::main;
+import core::io;
+import core::result;
+import probe::forward;
+
+struct ReadOnly { marker: i32 }
+pub impl ReadOnly { pub fn borrow(&self) -> &ReadOnly { return self; } }
+pub impl core::io::Read for ReadOnly {
+    pub fn read(&self, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        return core::result::Ok(0);
+    }
+}
+fn main() -> i32 {
+    let leaf: ReadOnly = ReadOnly { marker:17 };
+    let adapter: probe::forward::Forward<ReadOnly> = probe::forward::read_forward(leaf.borrow());
+    let source: [u8;3] = [0,128,255];
+    let rejected: core::result::Result<i32,core::io::Failure> = core::io::write_all(adapter.borrow(),source,0,3);
+    return 0;
+}

@@ -25,6 +25,7 @@ const UNUSED_BODY: u32 = 300;
 fn empty_unit(key: [u32; 2]) -> CompiledSourcePackUnit {
     CompiledSourcePackUnit {
         body_native_layouts: None,
+        body_binding_native_layouts: None,
         owner_spans: None,
         instance_closure: None,
         interface: GpuSemanticInterfaceArtifact {
@@ -583,6 +584,54 @@ fn admitted_call_handles_require_the_exact_arena_and_terminal_admission() {
         independent.replay_origin(&origin),
         "another catalog or arena",
     );
+}
+
+#[test]
+fn implementation_application_mint_requires_exact_obligation_and_current_projection() {
+    use super::super::dispatch::ImplProjectionLimits;
+    let mut unit = bound_unit();
+    let mut calls = unit.generic_calls.to_vec();
+    let mut sibling = calls[0].clone();
+    sibling.call_hir += 1;
+    calls.push(sibling);
+    unit.generic_calls = calls.into();
+    let mut owners = unit.checked_call_owners.to_vec();
+    owners.push(CheckedCallOwner { call_hir: 501, function_hir: CALLER });
+    unit.checked_call_owners = owners.into();
+    let mut fixture = new_gpu_packet(freeze(&[&unit]), &[&unit]);
+    let evidence = admitted(&mut fixture);
+    let origins = fixture.admitted_unit_calls(0, None).unwrap();
+    assert_eq!((origins.len(), evidence.len()), (2, 2));
+    assert_eq!(fixture.packet.uploaded_retained_evidence_rows(), 0,
+        "freshly accepted root evidence is not a GPU table-17 input yet");
+    assert_eq!(fixture.tables.count(17).unwrap(), 2,
+        "the CPU retained exact evidence rows after the accepted readback");
+    // Equal goals and selected implementations do not identify an occurrence.
+    rejected(fixture.request_implementation_application(&origins[0], &evidence[1]),
+        "exact origin obligation span");
+    let request = fixture.request_implementation_application(&origins[0], &evidence[0]).unwrap();
+    let projection = fixture.dispatcher.project_implementation_applications(
+        &fixture.packet, std::slice::from_ref(&request), ImplProjectionLimits::production(),
+    ).unwrap().remove(0);
+    admitted(&mut fixture);
+    // The old root is still accepted, but its old raw projection is not a new receipt.
+    rejected(fixture.admit_implementation_application(request, projection, vec![]),
+        "another submission");
+    let request = fixture.request_implementation_application(&origins[0], &evidence[0]).unwrap();
+    let projection = fixture.dispatcher.project_implementation_applications(
+        &fixture.packet, std::slice::from_ref(&request), ImplProjectionLimits::production(),
+    ).unwrap().remove(0);
+    let application = fixture.admit_implementation_application(request, projection, vec![]).unwrap();
+    admitted(&mut fixture);
+    application.validate_retained(&fixture).unwrap();
+    let foreign = new_packet(fixture.catalog.clone(), &[&unit]);
+    assert_eq!(foreign.tables.words[15], fixture.tables.words[15]);
+    assert_eq!(foreign.tables.words[16], fixture.tables.words[16]);
+    rejected(application.validate_retained(&foreign), "another catalog or arena");
+    let mut foreign_evidence = evidence[0].clone();
+    foreign_evidence.arena_id = foreign.arena_id;
+    rejected(fixture.request_implementation_application(&origins[0], &foreign_evidence),
+        "another catalog or arena");
 }
 
 #[test]

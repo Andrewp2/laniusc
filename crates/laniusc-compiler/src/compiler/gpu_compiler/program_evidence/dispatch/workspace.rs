@@ -249,6 +249,7 @@ pub(super) fn params_block_size() -> std::num::NonZeroU64 {
 /// A persistent physical role within a session. Arena growth replaces this
 /// slot's capacity while the arena keeps the old source handle for ordered
 /// prefix/relocation copies. It does not reserve a different role on growth.
+#[derive(Clone)]
 pub(super) struct WorkspaceSlot {
     lease: WorkspaceLease,
     key: String,

@@ -1648,6 +1648,24 @@ impl NativeLayoutKernel {
     }
 }
 
+/// Read-only accepted-proof projection. The exclusive temporary work arena
+/// shares the existing reflected work binding; native-layout recipes are not
+/// bound or consulted by this kernel.
+pub(super) struct ImplementationApplicationKernel { pass: PassData }
+impl ImplementationApplicationKernel {
+    pub fn load(device: &wgpu::Device) -> Result<Self> {
+        let key = "type_checker/program_evidence/implementation_application/entries/00_project";
+        Ok(Self { pass: passes_core::make_pass_data_from_shader_key_with_declared_dynamic_uniforms(
+            device, key, "main", key, &PARAMS_BLOCKS)? })
+    }
+    pub fn record(&self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder,
+        catalog: &Arena, input: &Arena, output: &Arena, proof: ProofResources<'_>, work: &Arena,
+    ) -> Result<()> {
+        record_phase_with_resources(device, encoder, &self.pass, 6, Span::new(0, 1)?, 1,
+            catalog, input, output, Some(proof), None, Some(work), None)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

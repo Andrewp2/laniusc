@@ -977,14 +977,24 @@ impl CheckedGenericCall {
 /// published its accepted substitution. Do not reconstruct bindings from a
 /// nominal receiver's positional arguments here.
 ///
-/// A replay's impl bindings name nongeneric implementation methods outside the
-/// template's imports (methods/09 routes bound members to them): a call to one
-/// has no requirements.
+/// Bindings may name methods outside the template's imports. Their retained
+/// target arities describe the selected declaration; they never supply a call
+/// environment here. The GPU route owns the exact per-entry environment.
 pub(crate) fn resolve_generic_requirements(
     calls: &mut Vec<CheckedGenericCall>,
     dependency_pages: &[Vec<GpuSemanticInterfaceArtifact>],
     impl_bindings: &[BodyImplBinding],
-) {
+) -> Result<()> {
+    let mut binding_arities = BTreeMap::new();
+    for binding in impl_bindings {
+        let counts = (binding.required_types, binding.required_constants);
+        ensure!(counts.0 <= 32 && counts.1 <= 32,
+            "implementation target {:?} has invalid parameter counts {counts:?}", binding.target);
+        if let Some(previous) = binding_arities.insert(binding.target, counts) {
+            ensure!(previous == counts,
+                "one implementation target {:?} has conflicting declaration arities", binding.target);
+        }
+    }
     // A call through a bound on an imported trait targets the trait's
     // required member, which body specialization routes to the selected
     // implementation per instance; it has no instance of its own.
@@ -996,15 +1006,11 @@ pub(crate) fn resolve_generic_requirements(
                 (library_id, unit_id, symbol),
             CheckedGenericTarget::Local { .. } => continue,
         };
-        if impl_bindings.iter().any(|binding| binding.target == [library_id, unit_id, symbol]) {
-            call.required_generic_parameters = Some(0);
-            call.required_constant_parameters = Some(0);
-            continue;
-        }
+        let binding_arity = binding_arities.get(&[library_id, unit_id, symbol]).copied();
         let interface = dependency_pages.iter().flatten()
             .find(|interface| interface.library_id == library_id && interface.unit_id == unit_id);
-        if let (Some(interface), CheckedGenericTarget::DependencyMethod { method_symbol, .. }) =
-            (interface, call.target)
+        if let (None, Some(interface), CheckedGenericTarget::DependencyMethod { method_symbol, .. }) =
+            (binding_arity, interface, call.target)
         {
             if interface.members.iter().any(|member| {
                 member.kind == GpuSemanticInterfaceMemberKind::TraitMethod as u32
@@ -1014,7 +1020,7 @@ pub(crate) fn resolve_generic_requirements(
                 continue;
             }
         }
-        let requirements = interface
+        let interface_arity = interface
             .and_then(|interface| match call.target {
                 CheckedGenericTarget::Dependency { declaration_index, .. } => {
                     let declaration = interface.declarations.get(declaration_index as usize)?;
@@ -1031,6 +1037,11 @@ pub(crate) fn resolve_generic_requirements(
                     dependency_method_requirements(interface, method_symbol),
                 CheckedGenericTarget::Local { .. } => unreachable!(),
             });
+        if let (Some(binding), Some(interface)) = (binding_arity, interface_arity) {
+            ensure!(binding == interface,
+                "implementation target {:?} arity differs from its frozen interface", [library_id, unit_id, symbol]);
+        }
+        let requirements = binding_arity.or(interface_arity);
         call.required_generic_parameters = requirements.map(|counts| counts.0);
         call.required_constant_parameters = requirements.map(|counts| counts.1);
     }
@@ -1041,6 +1052,7 @@ pub(crate) fn resolve_generic_requirements(
                 || call.required_generic_parameters != Some(0)
                 || call.required_constant_parameters != Some(0))
     });
+    Ok(())
 }
 
 /// Callable header counts include the exact impl and method domains, even for
@@ -3957,6 +3969,79 @@ mod tests {
             required_generic_parameters: Some(1),
             required_constant_parameters: Some(1),
         }
+    }
+
+    fn routed_binding(instance: u32, ty: CheckedGenericType) -> BodyImplBinding {
+        BodyImplBinding {
+            instance,
+            slot: 0,
+            required_symbol: 0x8000_0010,
+            trait_unit: [1, 2],
+            target: [5, 7, 0x8000_0021],
+            receiver_mode: 2,
+            required_types: 1,
+            required_constants: 1,
+            environment: super::super::generic_body::BodyImplEnvironment {
+                arguments: vec![CheckedGenericArgument { slot: 0, ty }],
+                constants: vec![CheckedGenericConstant::literal(0, instance + 9)],
+            },
+        }
+    }
+
+    #[test]
+    fn routed_implementation_arities_preserve_each_gpu_call_environment() {
+        let mut first = call(CheckedGenericType::Scalar(3),
+            CheckedGenericConstantValue::count_literal(7));
+        first.target = CheckedGenericTarget::DependencyMethod {
+            library_id: 5, unit_id: 7, method_symbol: 0x8000_0021,
+        };
+        let mut second = first.clone();
+        second.call_hir = 8;
+        second.arguments[0].ty = CheckedGenericType::Reference(Box::new(CheckedGenericType::Scalar(3)));
+        second.constants[0] = CheckedGenericConstant::literal(0, 19);
+        let expected = vec![first, second];
+        let mut calls = expected.clone();
+        // Two entries select the same declaration under different environments.
+        // Arity retention cannot copy either binding's environment onto a call.
+        let bindings = [routed_binding(0, CheckedGenericType::Scalar(8)),
+            routed_binding(1, CheckedGenericType::Slice(Box::new(CheckedGenericType::Scalar(8))))];
+        resolve_generic_requirements(&mut calls, &[], &bindings).unwrap();
+        assert_eq!(calls, expected);
+    }
+
+    #[test]
+    fn routed_implementation_arity_conflicts_fail_before_mutating_calls() {
+        let mut bindings = [routed_binding(0, CheckedGenericType::Scalar(3)),
+            routed_binding(1, CheckedGenericType::Scalar(3))];
+        bindings[1].required_constants = 0;
+        let expected = vec![call(CheckedGenericType::Scalar(3),
+            CheckedGenericConstantValue::count_literal(7))];
+        let mut calls = expected.clone();
+        assert!(resolve_generic_requirements(&mut calls, &[], &bindings).unwrap_err()
+            .to_string().contains("conflicting declaration arities"));
+        assert_eq!(calls, expected);
+        bindings[1].required_constants = 33;
+        assert!(resolve_generic_requirements(&mut calls, &[], &bindings).unwrap_err()
+            .to_string().contains("invalid parameter counts"));
+        assert_eq!(calls, expected);
+    }
+
+    #[test]
+    fn routed_nongeneric_targets_remain_ordinary_calls() {
+        let mut binding = routed_binding(0, CheckedGenericType::Scalar(3));
+        binding.required_types = 0;
+        binding.required_constants = 0;
+        binding.environment = Default::default();
+        let mut ordinary = call(CheckedGenericType::Scalar(3),
+            CheckedGenericConstantValue::count_literal(7));
+        ordinary.target = CheckedGenericTarget::DependencyMethod {
+            library_id: 5, unit_id: 7, method_symbol: 0x8000_0021,
+        };
+        ordinary.arguments.clear();
+        ordinary.constants.clear();
+        let mut calls = vec![ordinary];
+        resolve_generic_requirements(&mut calls, &[], &[binding]).unwrap();
+        assert!(calls.is_empty());
     }
 
     #[test]

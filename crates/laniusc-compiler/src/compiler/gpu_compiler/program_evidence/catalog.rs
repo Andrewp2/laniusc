@@ -57,6 +57,14 @@ pub(in crate::compiler::gpu_compiler) struct ImplementationMethodTarget {
     pub target: [u32; 3],
 }
 
+/// Definition metadata only. This cannot authorize an implementation application.
+pub(super) struct ImplementationApplicationContract {
+    pub owner: u32,
+    pub parameters: Vec<(u32, CheckedGenericParameter)>,
+    pub methods: Vec<(ImplementationMethodTarget, u32, u32)>,
+    pub prerequisites: Span,
+}
+
 impl FrozenSnapshot {
     fn interface_bytes(&self) -> Result<&[u8]> {
         if let Some(bytes) = self.interface_bytes.get() {
@@ -714,6 +722,11 @@ impl FrozenCatalog {
         let implementation = self.snapshots[snapshot as usize].contracts.implementations
             .get(local as usize)
             .ok_or_else(|| anyhow!("implementation row has no retained contract"))?;
+        self.implementation_prerequisite_span(owner)?;
+        for binding in &implementation.method_bindings {
+            ensure!(self.callable_requirements(binding.target)? == (0, 0),
+                "UNSUPPORTED: nongeneric implementation method has own generic parameters");
+        }
         let trait_unit = implementation.trait_identity.unit();
         ensure!(trait_unit.iter().all(|&word| word != INVALID),
             "implementation trait has an unscoped identity");
@@ -729,6 +742,93 @@ impl FrozenCatalog {
         }).collect::<Result<Vec<_>>>()?;
         targets.sort_by_key(|target| target.required_symbol);
         Ok(Some(targets))
+    }
+
+    /// Exact source-owned implementation/method headers. Bindings still come
+    /// only from the GPU-selected proof, never from these descriptive counts.
+    pub fn implementation_application_contract(&self, row: u32) -> Result<ImplementationApplicationContract> {
+        let &(snapshot, local) = self.implementation_sources.get(row as usize)
+            .ok_or_else(|| anyhow!("implementation row outside the frozen catalog"))?;
+        let definition = self.tables.row(9, row)?;
+        let owner = definition[1];
+        let prerequisites = self.implementation_prerequisite_span(owner)?;
+        let source = &self.snapshots[snapshot as usize];
+        let implementation = source.contracts.implementations.get(local as usize)
+            .ok_or_else(|| anyhow!("implementation contract absent"))?;
+        let binder = source.contracts.binders.get(implementation.owner as usize)
+            .ok_or_else(|| anyhow!("implementation binder absent"))?;
+        ensure!(self.owner(snapshot, binder.source_hir)? == owner,
+            "implementation contract has another owner");
+        let header = self.tables.row(2, owner)?;
+        ensure!(binder.parameters.len() == header[5] as usize,
+            "implementation parameter inventory differs");
+        let mut parameters = Vec::new();
+        let mut counts = [0u32; 2];
+        for (ordinal, parameter) in binder.parameters.iter().enumerate() {
+            let index = header[4].checked_add(u32::try_from(ordinal)?)
+                .ok_or_else(|| anyhow!("implementation parameter span overflow"))?;
+            let retained = self.tables.row(3, index)?;
+            let domain = match parameter.identity.domain {
+                CheckedParameterDomain::Type => 0usize,
+                CheckedParameterDomain::Constant => 1usize,
+            };
+            ensure!(retained[0] == owner && retained[2] == parameter.binding_slot
+                && retained[3] == domain as u32 && parameter.binding_slot == counts[domain]
+                && parameter.identity.source_ordinal == ordinal as u32,
+                "implementation parameter ordering differs from its accepted binder");
+            counts[domain] += 1;
+            ensure!(counts[domain] <= 32, "UNSUPPORTED: implementation domain exceeds 32 parameters");
+            parameters.push((index, *parameter));
+        }
+        let trait_unit = implementation.trait_identity.unit();
+        ensure!(trait_unit.iter().all(|&word| word != INVALID), "implementation trait is unscoped");
+        let mut methods = Vec::new();
+        for method in &implementation.method_bindings {
+            let method_owner = self.owner(snapshot, method.method_hir)?;
+            let method_header = self.tables.row(2, method_owner)?;
+            ensure!(method_header[5] == 0,
+                "UNSUPPORTED: implementation methods with own generic parameters");
+            ensure!(self.owner_chain(method_owner)?.contains(&owner),
+                "implementation method belongs to another implementation owner");
+            ensure!(method.target[..2] == source.unit && method.target.iter().all(|&word| word != INVALID),
+                "implementation method target has another source unit");
+            let requirements = self.callable_requirements(method.target)?;
+            ensure!(requirements == (counts[0], counts[1]),
+                "implementation method composed requirements differ from its own binder");
+            methods.push((ImplementationMethodTarget {
+                required_symbol: method.required_symbol, trait_unit,
+                receiver_mode: method.receiver_mode, target: method.target,
+            }, requirements.0, requirements.1));
+        }
+        methods.sort_by_key(|(method, _, _)| method.required_symbol);
+        ensure!(methods.windows(2).all(|pair| pair[0].0.required_symbol != pair[1].0.required_symbol),
+            "implementation has duplicate required-member bindings");
+        Ok(ImplementationApplicationContract { owner, parameters, methods, prerequisites })
+    }
+
+    /// Target arity is descriptive declaration metadata, not an environment.
+    pub fn callable_requirements(&self, target: [u32; 3]) -> Result<(u32, u32)> {
+        let snapshot = *self.snapshot_by_unit.get(&[target[0], target[1]])
+            .ok_or_else(|| anyhow!("callable target source is outside the frozen catalog"))?;
+        let callable = *self.callable_by_native.get(&(snapshot, target[2]))
+            .ok_or_else(|| anyhow!("target has no exact callable owner"))?;
+        let owner = self.tables.row(4, callable)?[1];
+        let mut counts = [0u32; 2];
+        let mut masks = [0u32; 2];
+        for parameter in self.composed_parameters(owner)? {
+            let domain = parameter[3] as usize;
+            ensure!(domain < 2 && parameter[2] < 32, "callable parameter domain is malformed");
+            let bit = 1u32 << parameter[2];
+            ensure!(masks[domain] & bit == 0, "callable parameter domain has a duplicate slot");
+            masks[domain] |= bit;
+            counts[domain] += 1;
+            ensure!(counts[domain] <= 32, "UNSUPPORTED: callable domain exceeds 32 parameters");
+        }
+        for domain in 0..2 {
+            let expected = if counts[domain] == 32 { u32::MAX } else { (1u32 << counts[domain]) - 1 };
+            ensure!(masks[domain] == expected, "callable parameter domain is incomplete");
+        }
+        Ok((counts[0], counts[1]))
     }
 
     /// The binding slot of a predicate (table-8 row) whose subject is a type

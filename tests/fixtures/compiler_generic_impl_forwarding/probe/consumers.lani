@@ -1,0 +1,20 @@
+module probe::consumers;
+import core::io;
+import core::result;
+import probe::forward;
+
+// Here the selected Forward<W> implementation depends on this retained
+// generic assumption, rather than a concrete leaf implementation in scope.
+pub fn write_through_forward<W>(writer: &W, source: [u8], offset: i32, count: i32)
+    -> core::result::Result<i32,core::io::Failure> where W: core::io::Write {
+    let adapter: probe::forward::Forward<W> = probe::forward::forward(writer);
+    return core::io::write_all(adapter.borrow(),source,offset,count);
+}
+pub fn read_through_forward<R>(reader: &R, destination: [u8], offset: i32, count: i32)
+    -> core::result::Result<i32,core::io::Failure> where R: core::io::Read {
+    let adapter: probe::forward::Forward<R> = probe::forward::read_forward(reader);
+    return core::io::read_exact(adapter.borrow(),destination,offset,count);
+}
+pub fn flush<W>(writer: &W) -> core::result::Result<i32,core::io::Error> where W: core::io::Write {
+    return writer.flush();
+}

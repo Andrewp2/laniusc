@@ -8,24 +8,40 @@
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    sync::Arc,
 };
 
 use super::{
     program_evidence::{
         AdmittedCall,
+        CheckedReplayCalls,
         NativeProgramSession,
         ReplayScope,
         instance_closure_enabled,
         native_program_error,
         unit_span,
     },
-    program_evidence::CheckedReplayCalls,
-    typecheck::{CompiledSourcePackObject, CompiledSourcePackUnit, NativeSymbolKind, OriginalUnitFacts, PendingOriginalUnit},
-    unit_cache::{CachedInstanceRun, CompiledUnitCacheKey, library_instance_cache_checked},
+    typecheck::{
+        CompiledSourcePackObject,
+        CompiledSourcePackUnit,
+        NativeSymbolKind,
+        OriginalUnitFacts,
+        PendingOriginalUnit,
+    },
+    unit_cache::{
+        CachedInstanceRun,
+        CachedReplayBindingContract,
+        CompiledUnitCacheKey,
+        library_instance_cache_checked,
+    },
     *,
 };
-use std::sync::Arc;
-use crate::type_checker::{BodyImplBinding, CheckedBodySpecialization, CheckedGenericCall, CheckedGenericTarget};
+use crate::type_checker::{
+    BodyImplBinding,
+    CheckedBodySpecialization,
+    CheckedGenericCall,
+    CheckedGenericTarget,
+};
 
 /// A concrete body instantiated from another concrete body is one level
 /// deeper. Finite programs stay far below this; reaching it means an
@@ -38,11 +54,19 @@ impl GpuCompiler<'_> {
         &self,
         units: &[&'a CompiledSourcePackUnit],
     ) -> Result<Vec<Cow<'a, x86::GpuX86RelocatableObject>>, CompileError> {
-        self.specialize_source_pack_objects(units).await?.into_iter().map(|object| match object {
-            Cow::Borrowed(CompiledSourcePackObject::X86_64(object)) => Ok(Cow::Borrowed(object)),
-            Cow::Owned(CompiledSourcePackObject::X86_64(object)) => Ok(Cow::Owned(object)),
-            _ => Err(CompileError::GpuCodegen("x86 specialization received a different target".into())),
-        }).collect()
+        self.specialize_source_pack_objects(units)
+            .await?
+            .into_iter()
+            .map(|object| match object {
+                Cow::Borrowed(CompiledSourcePackObject::X86_64(object)) => {
+                    Ok(Cow::Borrowed(object))
+                }
+                Cow::Owned(CompiledSourcePackObject::X86_64(object)) => Ok(Cow::Owned(object)),
+                _ => Err(CompileError::GpuCodegen(
+                    "x86 specialization received a different target".into(),
+                )),
+            })
+            .collect()
     }
 
     /// Specialize already released units of one target (x86 or Wasm).
@@ -53,19 +77,32 @@ impl GpuCompiler<'_> {
         // Repeated references to one compiled object retain one exact fact
         // identity. Independent objects with equal numeric IDs stay distinct.
         let mut by_object = BTreeMap::<*const CompiledSourcePackUnit, OriginalUnitFacts>::new();
-        let facts = units.iter().map(|unit| {
-            let key = *unit as *const CompiledSourcePackUnit;
-            if let Some(facts) = by_object.get(&key) { return Ok(facts.clone()); }
-            let facts = unit.original_facts()?;
-            by_object.insert(key, facts.clone());
-            Ok(facts)
-        }).collect::<anyhow::Result<Vec<_>>>().map_err(native_program_error)?;
-        let mut program = NativeProgramSession::admit(
-            &self.program_evidence_workspace, &facts).map_err(native_program_error)?;
-        let calls = facts.iter().map(|facts|
-            program.validated_original(facts)?.check_original_unit(facts))
-            .collect::<anyhow::Result<Vec<_>>>().map_err(native_program_error)?;
-        self.specialize_admitted_source_pack_objects(units, program, calls).await
+        let facts = units
+            .iter()
+            .map(|unit| {
+                let key = *unit as *const CompiledSourcePackUnit;
+                if let Some(facts) = by_object.get(&key) {
+                    return Ok(facts.clone());
+                }
+                let facts = unit.original_facts()?;
+                by_object.insert(key, facts.clone());
+                Ok(facts)
+            })
+            .collect::<anyhow::Result<Vec<_>>>()
+            .map_err(native_program_error)?;
+        let mut program = NativeProgramSession::admit(&self.program_evidence_workspace, &facts)
+            .map_err(native_program_error)?;
+        let calls = facts
+            .iter()
+            .map(|facts| {
+                program
+                    .validated_original(facts)?
+                    .check_original_unit(facts)
+            })
+            .collect::<anyhow::Result<Vec<_>>>()
+            .map_err(native_program_error)?;
+        self.specialize_admitted_source_pack_objects(units, program, calls)
+            .await
     }
 
     /// Pending originals expose only facts until this complete catalog and
@@ -74,11 +111,16 @@ impl GpuCompiler<'_> {
         &self,
         pending: Vec<PendingOriginalUnit>,
     ) -> Result<Vec<x86::GpuX86RelocatableObject>, CompileError> {
-        self.specialize_pending_source_pack_objects(pending).await?.into_iter().map(|object| match object {
-            CompiledSourcePackObject::X86_64(object) => Ok(object),
-            CompiledSourcePackObject::Wasm(_) => Err(CompileError::GpuCodegen(
-                "x86 specialization received a different target".into())),
-        }).collect()
+        self.specialize_pending_source_pack_objects(pending)
+            .await?
+            .into_iter()
+            .map(|object| match object {
+                CompiledSourcePackObject::X86_64(object) => Ok(object),
+                CompiledSourcePackObject::Wasm(_) => Err(CompileError::GpuCodegen(
+                    "x86 specialization received a different target".into(),
+                )),
+            })
+            .collect()
     }
 
     /// Admit pending originals of one target (x86 or Wasm) as one program and
@@ -87,19 +129,33 @@ impl GpuCompiler<'_> {
         &self,
         pending: Vec<PendingOriginalUnit>,
     ) -> Result<Vec<CompiledSourcePackObject>, CompileError> {
-        let facts = pending.iter().map(|unit| unit.facts().clone()).collect::<Vec<_>>();
-        let mut program = NativeProgramSession::admit(
-            &self.program_evidence_workspace, &facts).map_err(native_program_error)?;
-        let released = pending.into_iter().zip(&facts).map(|(unit, facts)| {
-            let started = std::time::Instant::now();
-            let released = unit.finish(program.validated_original(facts)?);
-            let interface = facts.interface();
-            unit_span("program_evidence.release_original", Some([interface.library_id, interface.unit_id]), started);
-            released
-        }).collect::<anyhow::Result<Vec<_>>>().map_err(native_program_error)?;
+        let facts = pending
+            .iter()
+            .map(|unit| unit.facts().clone())
+            .collect::<Vec<_>>();
+        let mut program = NativeProgramSession::admit(&self.program_evidence_workspace, &facts)
+            .map_err(native_program_error)?;
+        let released = pending
+            .into_iter()
+            .zip(&facts)
+            .map(|(unit, facts)| {
+                let started = std::time::Instant::now();
+                let released = unit.finish(program.validated_original(facts)?);
+                let interface = facts.interface();
+                unit_span(
+                    "program_evidence.release_original",
+                    Some([interface.library_id, interface.unit_id]),
+                    started,
+                );
+                released
+            })
+            .collect::<anyhow::Result<Vec<_>>>()
+            .map_err(native_program_error)?;
         let (units, calls): (Vec<_>, Vec<_>) = released.into_iter().unzip();
         let references = units.iter().collect::<Vec<_>>();
-        let objects = self.specialize_admitted_source_pack_objects(&references, program, calls).await?;
+        let objects = self
+            .specialize_admitted_source_pack_objects(&references, program, calls)
+            .await?;
         Ok(objects.into_iter().map(Cow::into_owned).collect())
     }
 
@@ -110,7 +166,9 @@ impl GpuCompiler<'_> {
         initial_calls: Vec<Vec<AdmittedCall>>,
     ) -> Result<Vec<Cow<'a, CompiledSourcePackObject>>, CompileError> {
         if units.len() != initial_calls.len() {
-            return Err(CompileError::GpuCodegen("admitted source inventory is incomplete".into()));
+            return Err(CompileError::GpuCodegen(
+                "admitted source inventory is incomplete".into(),
+            ));
         }
         let setup_started = std::time::Instant::now();
         let mut templates = BTreeMap::new();
@@ -149,15 +207,19 @@ impl GpuCompiler<'_> {
         let mut specializations = BTreeMap::<Vec<u8>, (Vec<u8>, Vec<u32>)>::new();
         let mut next_unit_by_library = BTreeMap::<u32, u32>::new();
         let mut specialized_text_bytes = 0usize;
-        let mut contexts = units.iter().zip(initial_calls).map(|(unit, calls)| ReplayContext {
-            library_id: unit.interface.library_id,
-            unit_id: unit.interface.unit_id,
-            calls,
-            call_hirs: unit.native_call_hirs.clone(),
-            call_owners: unit.native_call_function_hirs.clone(),
-            entries: BTreeMap::new(),
-            from_cache: false,
-        }).collect::<Vec<_>>();
+        let mut contexts = units
+            .iter()
+            .zip(initial_calls)
+            .map(|(unit, calls)| ReplayContext {
+                library_id: unit.interface.library_id,
+                unit_id: unit.interface.unit_id,
+                calls,
+                call_hirs: unit.native_call_hirs.clone(),
+                call_owners: unit.native_call_function_hirs.clone(),
+                entries: BTreeMap::new(),
+                from_cache: false,
+            })
+            .collect::<Vec<_>>();
         host_span("setup", setup_started);
         let mut trace = SpecializationTrace::new();
         let batch_limit = replay_batch_limit();
@@ -183,20 +245,30 @@ impl GpuCompiler<'_> {
                 // contexts share the round's remaining span.
                 let context_started = std::time::Instant::now();
                 let _context_span = ContextSpan {
-                    unit: (context_index < units.len())
-                        .then(|| [contexts[context_index].library_id, contexts[context_index].unit_id]),
+                    unit: (context_index < units.len()).then(|| {
+                        [
+                            contexts[context_index].library_id,
+                            contexts[context_index].unit_id,
+                        ]
+                    }),
                     started: context_started,
                 };
                 let context = &contexts[context_index];
                 let (owner_library, owner_unit) = (context.library_id, context.unit_id);
-                let calls_by_hir: BTreeMap<_, _> = context.calls
+                let calls_by_hir: BTreeMap<_, _> = context
+                    .calls
                     .iter()
                     .map(|call| (call.checked_call().call_hir, call))
                     .collect();
                 for (symbol_index, &call_hir) in context.call_hirs.iter().enumerate() {
                     let Some(&admitted) = calls_by_hir.get(&call_hir) else {
                         if context_index >= units.len() {
-                            trace.skipped(context_index, call_hir, "no admitted generic call", None);
+                            trace.skipped(
+                                context_index,
+                                call_hir,
+                                "no admitted generic call",
+                                None,
+                            );
                         }
                         continue;
                     };
@@ -215,7 +287,8 @@ impl GpuCompiler<'_> {
                         }
                         continue;
                     };
-                    let identity = declaration_identity_bytes(library_id, unit_id, declaration_index);
+                    let identity =
+                        declaration_identity_bytes(library_id, unit_id, declaration_index);
                     // A reusable native body does not waive the declaration's
                     // generic requirements. Validate unused parameters too, before
                     // accepting tag-only definitions or scheduling a replay.
@@ -228,28 +301,54 @@ impl GpuCompiler<'_> {
                     if defined.contains(identity.as_slice()) {
                         // Tag-only generic functions already have a valid body.
                         if context_index >= units.len() {
-                            trace.skipped(context_index, call_hir, "tag-only definition", Some(call));
+                            trace.skipped(
+                                context_index,
+                                call_hir,
+                                "tag-only definition",
+                                Some(call),
+                            );
                         }
                         continue;
                     }
                     let target = (library_id, unit_id, declaration_index);
-                    let caller = context.call_owners.get(symbol_index).copied().unwrap_or(u32::MAX);
-                    let memo_key = [owner_library, owner_unit, library_id, unit_id, declaration_index];
+                    let caller = context
+                        .call_owners
+                        .get(symbol_index)
+                        .copied()
+                        .unwrap_or(u32::MAX);
+                    let memo_key = [
+                        owner_library,
+                        owner_unit,
+                        library_id,
+                        unit_id,
+                        declaration_index,
+                    ];
                     let environment = match environments.get(memo_key, call) {
                         Some(environment) => environment,
                         None => {
-                            let environment = checked_replay_environment(call, owner_library, owner_unit)
-                                .map_err(|error| {
-                                    // An environment that outgrows the checked type graph
-                                    // while a body instantiates its own declaration again is
-                                    // polymorphic recursion, not a capacity problem.
-                                    if instantiates_ancestor(&contexts, context_index, caller, target) {
-                                        instantiation_depth_error(
-                                            call, templates.get(&(owner_library, owner_unit)).copied(), Some(error))
-                                    } else {
-                                        error
-                                    }
-                                })?;
+                            let environment =
+                                checked_replay_environment(call, owner_library, owner_unit)
+                                    .map_err(|error| {
+                                        // An environment that outgrows the checked type graph
+                                        // while a body instantiates its own declaration again is
+                                        // polymorphic recursion, not a capacity problem.
+                                        if instantiates_ancestor(
+                                            &contexts,
+                                            context_index,
+                                            caller,
+                                            target,
+                                        ) {
+                                            instantiation_depth_error(
+                                                call,
+                                                templates
+                                                    .get(&(owner_library, owner_unit))
+                                                    .copied(),
+                                                Some(error),
+                                            )
+                                        } else {
+                                            error
+                                        }
+                                    })?;
                             environments.insert(memo_key, call, &environment)?;
                             environment
                         }
@@ -258,13 +357,20 @@ impl GpuCompiler<'_> {
                         // A symbolic call belongs to an uninstantiated template.
                         // Its concrete replay will supply a new call environment.
                         if context_index >= units.len() {
-                            trace.skipped(context_index, call_hir, "symbolic environment", Some(call));
+                            trace.skipped(
+                                context_index,
+                                call_hir,
+                                "symbolic environment",
+                                Some(call),
+                            );
                         }
                         continue;
                     };
                     let caller_object = &objects[context_index];
                     if symbol_index >= caller_object.symbol_count() {
-                        return Err(CompileError::GpuCodegen("native call symbol is absent".into()));
+                        return Err(CompileError::GpuCodegen(
+                            "native call symbol is absent".into(),
+                        ));
                     }
                     if caller_object.symbol_kind(symbol_index) != NativeSymbolKind::Undefined
                         || caller_object.symbol_identity(symbol_index) != identity
@@ -275,8 +381,11 @@ impl GpuCompiler<'_> {
                         ));
                     }
                     if let Some((_, layouts)) = specializations.get_mut(&concrete_identity) {
-                        CheckedBodySpecialization::merge_layout_witnesses(layouts, &concrete_layouts)
-                            .map_err(|error| CompileError::GpuCodegen(error.to_string()))?;
+                        CheckedBodySpecialization::merge_layout_witnesses(
+                            layouts,
+                            &concrete_layouts,
+                        )
+                        .map_err(|error| CompileError::GpuCodegen(error.to_string()))?;
                         trace.reused += 1;
                     } else if let Some(body) = pending.get_mut(&concrete_identity) {
                         // An equal witness adds nothing to the union the
@@ -289,20 +398,31 @@ impl GpuCompiler<'_> {
                         let depth = context.entry_depth(caller);
                         if depth >= MAX_INSTANTIATION_DEPTH {
                             return Err(instantiation_depth_error(
-                                call, templates.get(&(owner_library, owner_unit)).copied(), None));
+                                call,
+                                templates.get(&(owner_library, owner_unit)).copied(),
+                                None,
+                            ));
                         }
-                        pending.insert(concrete_identity.clone(), PendingBody {
-                            admitted: admitted.clone(),
-                            target,
-                            recursive: instantiates_ancestor(&contexts, context_index, caller, target),
-                            cached_origin: context.from_cache,
-                            origin: EntryOrigin {
-                                depth: depth + 1,
-                                parent: Some((context_index, caller)),
+                        pending.insert(
+                            concrete_identity.clone(),
+                            PendingBody {
+                                admitted: admitted.clone(),
                                 target,
+                                recursive: instantiates_ancestor(
+                                    &contexts,
+                                    context_index,
+                                    caller,
+                                    target,
+                                ),
+                                cached_origin: context.from_cache,
+                                origin: EntryOrigin {
+                                    depth: depth + 1,
+                                    parent: Some((context_index, caller)),
+                                    target,
+                                },
+                                witnesses: vec![concrete_layouts],
                             },
-                            witnesses: vec![concrete_layouts],
-                        });
+                        );
                     }
                     patches.push((context_index, symbol_index, concrete_identity));
                 }
@@ -310,17 +430,29 @@ impl GpuCompiler<'_> {
             host_span("scan", scan_started);
             if round_start == 0 && instance_closure_enabled() {
                 let closure_started = std::time::Instant::now();
-                closure.schedule(units, &program, &defined_identities, &specializations, &mut pending);
+                closure.schedule(
+                    units,
+                    &program,
+                    &defined_identities,
+                    &specializations,
+                    &mut pending,
+                );
                 host_span("closure", closure_started);
             }
             if trace.enabled {
-                eprintln!("[specialization] round contexts={round_start}..{round_end} new_bodies={}", pending.len());
+                eprintln!(
+                    "[specialization] round contexts={round_start}..{round_end} new_bodies={}",
+                    pending.len()
+                );
             }
             // Group by template unit, then pack compatible scopes greedily in
             // key order (deterministic: keys are canonical environments).
             let mut by_unit = BTreeMap::<(u32, u32), Vec<Vec<u8>>>::new();
             for (key, body) in &pending {
-                by_unit.entry((body.target.0, body.target.1)).or_default().push(key.clone());
+                by_unit
+                    .entry((body.target.0, body.target.1))
+                    .or_default()
+                    .push(key.clone());
             }
             for keys in by_unit.into_values() {
                 let plan_started = std::time::Instant::now();
@@ -328,7 +460,12 @@ impl GpuCompiler<'_> {
                 // every body is pending here with a fresh origin and equal
                 // layout witnesses publish without a frontend run.
                 let library = self.library_instance_lookup(
-                    &mut program, &templates, &pending, keys, instance_copies)?;
+                    &mut program,
+                    &templates,
+                    &pending,
+                    keys,
+                    instance_copies,
+                )?;
                 let keys = library.misses;
                 let instance_of = library.instance_of;
                 // A body with a retained declaration span replays as a
@@ -346,14 +483,20 @@ impl GpuCompiler<'_> {
                 for key in keys {
                     let body = &pending[&key];
                     let rank = if instance_copies {
-                        program.instance_copy_rank(&body.admitted).map_err(native_program_error)?
+                        program
+                            .instance_copy_rank(&body.admitted)
+                            .map_err(native_program_error)?
                     } else {
                         None
                     };
                     if trace.enabled && rank.is_none() && instance_copies && !body.recursive {
-                        let why = program.instance_copy_miss(&body.admitted).map_err(native_program_error)?;
+                        let why = program
+                            .instance_copy_miss(&body.admitted)
+                            .map_err(native_program_error)?;
                         let (library, unit, declaration) = body.target;
-                        eprintln!("[specialization]   original unit={library}:{unit} decl={declaration}: {why}");
+                        eprintln!(
+                            "[specialization]   original unit={library}:{unit} decl={declaration}: {why}"
+                        );
                     }
                     ranked.push((rank, key));
                 }
@@ -361,67 +504,125 @@ impl GpuCompiler<'_> {
                 let mut runs = Vec::<ReplayRun>::new();
                 for (rank, key) in ranked {
                     let body = &pending[&key];
-                    let scope = program.replay_scope(&body.admitted).map_err(native_program_error)?;
+                    let scope = program
+                        .replay_scope(&body.admitted)
+                        .map_err(native_program_error)?;
                     let entry = replay_entry(body.admitted.checked_call(), body.target);
                     let copies = rank.is_some();
-                    // A run's impl bindings share one packet table, so a run
-                    // closes before it would overflow it.
-                    let bindings = program.instance_impl_bindings(&body.admitted)
-                        .map_err(native_program_error)?.len();
+                    // Plan with the exact environments, including their
+                    // binding-only graph nodes and V2 pool use.
+                    let incoming_bindings = program
+                        .instance_impl_bindings(&body.admitted)
+                        .map_err(native_program_error)?;
+                    let bindings = incoming_bindings.len();
                     if bindings > gpu_type_checker::MAX_BODY_IMPL_BINDINGS {
                         return Err(specialization_limit_error(&format!(
                             "one generic body needs {bindings} implementation bindings; a replay holds at most {}",
-                            gpu_type_checker::MAX_BODY_IMPL_BINDINGS)));
+                            gpu_type_checker::MAX_BODY_IMPL_BINDINGS
+                        )));
                     }
                     let mut capped = false;
-                    let placed = !body.recursive && runs.iter_mut().try_fold(false, |placed, run| {
-                        // Original-scope runs stay small: their scopes are found by a linear search.
-                        let limit = if run.copies {
-                            batch_limit
-                        } else {
-                            batch_limit.min(gpu_type_checker::MAX_ORIGINAL_REPLAY_ENTRIES)
-                        };
-                        if placed || run.solo || run.copies != copies || run.keys.len() >= limit {
-                            return Ok(placed);
-                        }
-                        if run.bindings + bindings > gpu_type_checker::MAX_BODY_IMPL_BINDINGS {
-                            capped = true;
-                            return Ok(false);
-                        }
-                        let added = run.try_add(&key, &scope, entry.clone())?;
-                        if added { run.bindings += bindings; }
-                        Ok(added)
-                    }).map_err(|error: anyhow::Error| CompileError::GpuCodegen(error.to_string()))?;
+                    let placed = !body.recursive
+                        && runs
+                            .iter_mut()
+                            .try_fold(false, |placed, run| {
+                                // Original-scope runs stay small: their scopes are found by a linear search.
+                                let limit = if run.copies {
+                                    batch_limit
+                                } else {
+                                    batch_limit.min(gpu_type_checker::MAX_ORIGINAL_REPLAY_ENTRIES)
+                                };
+                                if placed
+                                    || run.solo
+                                    || run.copies != copies
+                                    || run.keys.len() >= limit
+                                {
+                                    return Ok(placed);
+                                }
+                                if run.bindings + bindings
+                                    > gpu_type_checker::MAX_BODY_IMPL_BINDINGS
+                                {
+                                    capped = true;
+                                    return Ok(false);
+                                }
+                                let added =
+                                    run.try_add(&key, &scope, entry.clone(), &incoming_bindings)?;
+                                if added {
+                                    run.bindings += bindings;
+                                }
+                                Ok(added)
+                            })
+                            .map_err(|error: anyhow::Error| {
+                                CompileError::GpuCodegen(error.to_string())
+                            })?;
                     if !placed {
-                        let batch = gpu_type_checker::CheckedBodySpecializationBatch::single(entry)
-                            .map_err(|error| CompileError::Diagnostic(
-                                Diagnostic::error("LNC0017", "generic specialization cannot represent this environment")
-                                    .with_note(error.to_string())))?;
+                        let mut batch =
+                            gpu_type_checker::CheckedBodySpecializationBatch::single(entry)
+                                .map_err(|error| {
+                                    CompileError::Diagnostic(
+                                    Diagnostic::error(
+                                        "LNC0017",
+                                        "generic specialization cannot represent this environment",
+                                    )
+                                    .with_note(error.to_string()),
+                                )
+                                })?;
+                        if !batch
+                            .try_set_impl_bindings(incoming_bindings)
+                            .map_err(|error| CompileError::GpuCodegen(error.to_string()))?
+                        {
+                            return Err(specialization_limit_error(
+                                "one generic body's implementation environments exceed replay packet capacity",
+                            ));
+                        }
                         runs.push(ReplayRun {
-                            keys: vec![key], scopes: vec![scope], batch, solo: body.recursive, copies, bindings,
+                            keys: vec![key],
+                            scopes: vec![scope],
+                            batch,
+                            solo: body.recursive,
+                            copies,
+                            bindings,
                             split: capped.then_some("impl-binding cap"),
                         });
                     }
                 }
                 host_span("plan", plan_started);
-                let work = library.hits.into_iter().map(RunWork::Cached)
+                let work = library
+                    .hits
+                    .into_iter()
+                    .map(RunWork::Cached)
                     .chain(runs.into_iter().map(RunWork::Replay));
                 for work in work {
                     let started = std::time::Instant::now();
                     let (keys, copies, solo, bindings, split) = match &work {
-                        RunWork::Replay(run) => (run.keys.clone(), run.copies, run.solo, run.bindings, run.split),
+                        RunWork::Replay(run) => (
+                            run.keys.clone(),
+                            run.copies,
+                            run.solo,
+                            run.bindings,
+                            run.split,
+                        ),
                         RunWork::Cached(hit) => (hit.keys.clone(), true, false, 0, None),
                     };
-                    let origins = keys.iter().map(|key| &pending[key].admitted).collect::<Vec<_>>();
+                    let origins = keys
+                        .iter()
+                        .map(|key| &pending[key].admitted)
+                        .collect::<Vec<_>>();
                     // A recursively growing environment fails wherever it first
                     // outgrows a limit; report it as the recursion it is.
                     let recursion = |error: CompileError| {
                         let body = &pending[&keys[0]];
-                        if !solo || !is_capacity_failure(&error) { return error; }
-                        let owner = body.origin.parent.map(|(context, _)|
-                            (contexts[context].library_id, contexts[context].unit_id));
-                        instantiation_depth_error(body.admitted.checked_call(),
-                            owner.and_then(|owner| templates.get(&owner).copied()), Some(error))
+                        if !solo || !is_capacity_failure(&error) {
+                            return error;
+                        }
+                        let owner = body.origin.parent.map(|(context, _)| {
+                            (contexts[context].library_id, contexts[context].unit_id)
+                        });
+                        instantiation_depth_error(
+                            body.admitted.checked_call(),
+                            owner.and_then(|owner| templates.get(&owner).copied()),
+                            Some(error),
+                        )
                     };
                     let (output, times, from_cache) = match work {
                         RunWork::Replay(run) => {
@@ -438,40 +639,92 @@ impl GpuCompiler<'_> {
                                 .inspect_err(|_| trace.failed(&run.keys, &pending))
                                 .map_err(&recursion)?;
                             let compiled = std::time::Instant::now();
-                            let (replay, checked) = request.finish(pending_unit)
+                            let (replay, checked) = request
+                                .finish(pending_unit)
                                 .inspect_err(|_| trace.failed(&run.keys, &pending))
                                 .map_err(|error| recursion(native_program_error(error)))?;
                             let output = RunOutput::from_replay(replay, checked, run.keys.len())?;
                             let finished = std::time::Instant::now();
                             if run.copies && !run.solo {
-                                self.store_library_instance_run(&templates, &run.keys, &pending, &instance_of, &output);
+                                self.store_library_instance_run(
+                                    &templates,
+                                    &run.keys,
+                                    &pending,
+                                    &instance_of,
+                                    &output,
+                                );
                             }
                             (output, [started, prepared, compiled, finished], false)
                         }
                         RunWork::Cached(hit) => {
-                            let calls = program.admit_cached_instances(
-                                &origins, [hit.run_unit.0, hit.run_unit.1], &hit.run.entry_facts, &CompiledSourcePackObject::X86_64(hit.run.object.clone()))
+                            let calls = program
+                                .admit_cached_instances(
+                                    &origins,
+                                    [hit.run_unit.0, hit.run_unit.1],
+                                    &hit.run.entry_facts,
+                                    &CompiledSourcePackObject::X86_64(hit.run.object.clone()),
+                                    &hit.run.binding_contracts,
+                                    &hit.run.binding_layouts,
+                                )
                                 .map_err(native_program_error)?;
                             let admitted = std::time::Instant::now();
                             let output = RunOutput::from_cache(&hit.run, calls);
                             if library_instance_cache_checked() {
-                                self.check_library_instance_hit(&mut program, &origins, &hit, &output).await?;
+                                self.check_library_instance_hit(
+                                    &mut program,
+                                    &origins,
+                                    &hit,
+                                    &output,
+                                )
+                                .await?;
                             }
-                            self.library_instance_cache.lock()
-                                .expect("library instance cache mutex poisoned").record_hit(&hit.cache_key);
+                            self.library_instance_cache
+                                .lock()
+                                .expect("library instance cache mutex poisoned")
+                                .record_hit(&hit.cache_key);
                             let finished = std::time::Instant::now();
-                            crate::gpu::trace::record_host_span("specialization", "cache_hit", started, admitted);
+                            crate::gpu::trace::record_host_span(
+                                "specialization",
+                                "cache_hit",
+                                started,
+                                admitted,
+                            );
                             (output, [started, admitted, admitted, finished], true)
                         }
                     };
                     let [_, prepared, compiled, finished] = times;
                     if !from_cache {
-                        crate::gpu::trace::record_host_span("specialization", "prepare", started, prepared);
-                        crate::gpu::trace::record_host_span("specialization", "compile", prepared, compiled);
-                        crate::gpu::trace::record_host_span("specialization", "finish", compiled, finished);
+                        crate::gpu::trace::record_host_span(
+                            "specialization",
+                            "prepare",
+                            started,
+                            prepared,
+                        );
+                        crate::gpu::trace::record_host_span(
+                            "specialization",
+                            "compile",
+                            prepared,
+                            compiled,
+                        );
+                        crate::gpu::trace::record_host_span(
+                            "specialization",
+                            "finish",
+                            compiled,
+                            finished,
+                        );
                     }
-                    let RunOutput { mut object, call_hirs, call_owners, layouts: entry_layouts, copy_symbols,
-                        entry_hirs, calls: replay_calls, entry_facts: _ } = output;
+                    let RunOutput {
+                        mut object,
+                        call_hirs,
+                        call_owners,
+                        layouts: entry_layouts,
+                        copy_symbols,
+                        entry_hirs,
+                        calls: replay_calls,
+                        entry_facts: _,
+                        binding_contracts: _,
+                        binding_layouts: _,
+                    } = output;
                     let (library_id, unit_id, _) = pending[&keys[0]].target;
                     let candidate = next_unit_by_library.entry(library_id).or_default();
                     while used_units.contains(&(library_id, *candidate)) {
@@ -489,7 +742,8 @@ impl GpuCompiler<'_> {
                         Some(symbols) => symbols.clone(),
                         None => keys.iter().map(|key| pending[key].target.2).collect(),
                     };
-                    let identities = definition_symbols.iter()
+                    let identities = definition_symbols
+                        .iter()
                         .map(|&symbol| declaration_identity(library_id, unit_id, symbol))
                         .collect::<Vec<_>>();
                     specialized_text_bytes = specialized_text_bytes
@@ -510,7 +764,10 @@ impl GpuCompiler<'_> {
                     let mut definitions = HashMap::<Vec<u8>, Vec<usize>>::new();
                     for index in (0..object.symbol_count()).rev() {
                         if object.symbol_kind(index) == NativeSymbolKind::Function {
-                            definitions.entry(object.symbol_identity(index).to_vec()).or_default().push(index);
+                            definitions
+                                .entry(object.symbol_identity(index).to_vec())
+                                .or_default()
+                                .push(index);
                         }
                     }
                     let mut entries = BTreeMap::new();
@@ -526,13 +783,19 @@ impl GpuCompiler<'_> {
                                     call.target, call.arguments
                                 ))
                             })?;
-                        let native_identity =
-                            declaration_identity(library_id, specialized_unit, definition_symbols[position]);
+                        let native_identity = declaration_identity(
+                            library_id,
+                            specialized_unit,
+                            definition_symbols[position],
+                        );
                         replace_symbol_identity(&mut object, definition, &native_identity)?;
                         let mut admitted_layouts = entry_layouts[position].clone();
                         for witness in &body.witnesses {
-                            CheckedBodySpecialization::merge_layout_witnesses(&mut admitted_layouts, witness)
-                                .map_err(|error| CompileError::GpuCodegen(error.to_string()))?;
+                            CheckedBodySpecialization::merge_layout_witnesses(
+                                &mut admitted_layouts,
+                                witness,
+                            )
+                            .map_err(|error| CompileError::GpuCodegen(error.to_string()))?;
                         }
                         specializations.insert(key.clone(), (native_identity, admitted_layouts));
                         if entry_hirs[position] != u32::MAX {
@@ -545,10 +808,19 @@ impl GpuCompiler<'_> {
                         .map_err(|error| CompileError::GpuCodegen(error))?;
                     host_span("publish", finished);
                     trace.replay(
-                        &keys.iter().map(|key| (key.as_slice(), &pending[key])).collect::<Vec<_>>(),
-                        specializations.len(), times,
-                        object.code_len(), replay_calls.len(), run_kind(copies, solo),
-                        bindings, split, from_cache);
+                        &keys
+                            .iter()
+                            .map(|key| (key.as_slice(), &pending[key]))
+                            .collect::<Vec<_>>(),
+                        specializations.len(),
+                        times,
+                        object.code_len(),
+                        replay_calls.len(),
+                        run_kind(copies, solo),
+                        bindings,
+                        split,
+                        from_cache,
+                    );
                     contexts.push(ReplayContext {
                         library_id,
                         unit_id,
@@ -568,7 +840,9 @@ impl GpuCompiler<'_> {
                     symbol_index,
                     &specializations[&key].0,
                 )?;
-                if !closure.keys.is_empty() { patched_keys.insert(key); }
+                if !closure.keys.is_empty() {
+                    patched_keys.insert(key);
+                }
             }
             host_span("patch", patch_started);
             round_start = round_end;
@@ -609,7 +883,9 @@ impl ClosureIntake {
         let mut seen = BTreeSet::new();
         for unit in units {
             let (owner_library, owner_unit) = (unit.interface.library_id, unit.interface.unit_id);
-            if !seen.insert((owner_library, owner_unit)) { continue; }
+            if !seen.insert((owner_library, owner_unit)) {
+                continue;
+            }
             for (depth, admitted) in program.instance_closure_origins([owner_library, owner_unit]) {
                 let call = admitted.checked_call();
                 let Some(target) = native_target(call.target, owner_library, owner_unit) else {
@@ -617,14 +893,17 @@ impl ClosureIntake {
                     continue;
                 };
                 let identity = declaration_identity(target.0, target.1, target.2);
-                if defined_identities.get(&(target.0, target.1))
+                if defined_identities
+                    .get(&(target.0, target.1))
                     .is_none_or(|defined| defined.contains(identity.as_slice()))
                     || *depth >= MAX_INSTANTIATION_DEPTH
                 {
                     self.skipped += 1;
                     continue;
                 }
-                let Ok(Some((key, layouts))) = checked_replay_environment(call, owner_library, owner_unit) else {
+                let Ok(Some((key, layouts))) =
+                    checked_replay_environment(call, owner_library, owner_unit)
+                else {
                     self.skipped += 1;
                     continue;
                 };
@@ -633,14 +912,21 @@ impl ClosureIntake {
                     continue;
                 }
                 self.keys.insert(key.clone());
-                pending.insert(key, PendingBody {
-                    admitted: admitted.clone(),
-                    target,
-                    recursive: false,
-                    cached_origin: false,
-                    origin: EntryOrigin { depth: *depth, parent: None, target },
-                    witnesses: vec![layouts],
-                });
+                pending.insert(
+                    key,
+                    PendingBody {
+                        admitted: admitted.clone(),
+                        target,
+                        recursive: false,
+                        cached_origin: false,
+                        origin: EntryOrigin {
+                            depth: *depth,
+                            parent: None,
+                            target,
+                        },
+                        witnesses: vec![layouts],
+                    },
+                );
             }
         }
     }
@@ -653,46 +939,76 @@ impl ClosureIntake {
         patched_keys: &BTreeSet<Vec<u8>>,
         trace: bool,
     ) -> Result<(), CompileError> {
-        let unused = self.keys.iter().filter(|key| !patched_keys.contains(*key)).collect::<Vec<_>>();
+        let unused = self
+            .keys
+            .iter()
+            .filter(|key| !patched_keys.contains(*key))
+            .collect::<Vec<_>>();
         if trace {
             // found, edges, GPU-skipped edges, dropped; then flags and errors.
             let mut totals = [0u64; 4];
             let (mut flags, mut errors, mut dependency) = (0u32, 0usize, 0usize);
             let mut rejects = [0u32; 7];
             for unit in units {
-                let Some(closure) = &unit.instance_closure else { continue };
-                for (total, value) in totals.iter_mut()
-                    .zip([closure.found, closure.edges, closure.skipped, closure.dropped])
-                {
+                let Some(closure) = &unit.instance_closure else {
+                    continue;
+                };
+                for (total, value) in totals.iter_mut().zip([
+                    closure.found,
+                    closure.edges,
+                    closure.skipped,
+                    closure.dropped,
+                ]) {
                     *total += u64::from(value);
                 }
                 flags |= closure.flags;
-                for (total, value) in rejects.iter_mut().zip(closure.rejects) { *total += value; }
+                for (total, value) in rejects.iter_mut().zip(closure.rejects) {
+                    *total += value;
+                }
                 errors += usize::from(closure.error.is_some());
                 dependency += closure.dependency_instances.len();
             }
             eprintln!(
                 "[specialization] closure found={} edges={} gpu_skipped={} dropped={} flags={flags:#x} errors={errors} rejects={rejects:?} dependency={dependency} decoded/closed/appended/concrete={:?} scheduled={} known={} skipped={} unused={}",
-                totals[0], totals[1], totals[2], totals[3], self.stages,
-                self.keys.len(), self.known, self.skipped, unused.len(),
+                totals[0],
+                totals[1],
+                totals[2],
+                totals[3],
+                self.stages,
+                self.keys.len(),
+                self.known,
+                self.skipped,
+                unused.len(),
             );
             // Both fall back to the replay rounds (fail closed): a frontier
             // left at the level limit drops the unit's whole closure (it may be
             // polymorphic recursion); an export still busy after its retries
             // drops only that instance.
             if flags & 8 != 0 {
-                eprintln!("[specialization]   closure ignored: a frontier reached the level limit; the replay rounds find its instances");
+                eprintln!(
+                    "[specialization]   closure ignored: a frontier reached the level limit; the replay rounds find its instances"
+                );
             }
             if rejects[0] != 0 {
-                eprintln!("[specialization]   closure export failed for {} instances; the replay rounds find them", rejects[0]);
+                eprintln!(
+                    "[specialization]   closure export failed for {} instances; the replay rounds find them",
+                    rejects[0]
+                );
             }
             for key in &unused {
-                eprintln!("[specialization]   unused closure key={}", &blake3::hash(key).to_hex()[..12]);
+                eprintln!(
+                    "[specialization]   unused closure key={}",
+                    &blake3::hash(key).to_hex()[..12]
+                );
             }
         }
-        if !unused.is_empty() && crate::gpu::env::env_bool_truthy("LANIUS_CHECK_INSTANCE_CLOSURE", false) {
+        if !unused.is_empty()
+            && crate::gpu::env::env_bool_truthy("LANIUS_CHECK_INSTANCE_CLOSURE", false)
+        {
             return Err(CompileError::GpuCodegen(format!(
-                "instance closure scheduled {} bodies no call uses", unused.len())));
+                "instance closure scheduled {} bodies no call uses",
+                unused.len()
+            )));
         }
         Ok(())
     }
@@ -770,37 +1086,59 @@ impl ReplayRun {
         key: &[u8],
         scope: &ReplayScope,
         entry: CheckedBodySpecialization,
+        incoming_bindings: &[BodyImplBinding],
     ) -> anyhow::Result<bool> {
         if self.copies {
             // Copies own their enclosing impls too, so nothing is shared and
             // only the snapshot must agree (every scope has the first one's).
-            // `try_push` leaves the batch unchanged when the entry does not
-            // fit, so a run of thousands of copies never clones its batch.
-            if self.scopes.first().is_some_and(|first| first.snapshot != scope.snapshot)
-                || !self.batch.try_push(entry)?
+            if self
+                .scopes
+                .first()
+                .is_some_and(|first| first.snapshot != scope.snapshot)
             {
                 return Ok(false);
             }
         } else {
-            if self.scopes.iter().any(|other| other.snapshot != scope.snapshot
-                || other.selected_owner_hir == scope.selected_owner_hir)
-            {
+            if self.scopes.iter().any(|other| {
+                other.snapshot != scope.snapshot
+                    || other.selected_owner_hir == scope.selected_owner_hir
+            }) {
                 return Ok(false);
             }
-            // An original-scope run is small (MAX_ORIGINAL_REPLAY_ENTRIES);
-            // a trial copy undoes a push whose shared owners bind differently.
+        }
+        if self.copies && self.batch.impl_bindings().is_empty() && incoming_bindings.is_empty() {
+            // Keep the existing no-binding copy path linear: try_push itself
+            // rolls back capacity failures without cloning the growing run.
+            if !self.batch.try_push(entry)? {
+                return Ok(false);
+            }
+        } else {
+            // A staged aggregate preflights entry AND binding-only pools.
+            // Capacity closes this run; invalid environments remain errors.
             let mut batch = self.batch.clone();
+            let added = batch.entries().len();
             if !batch.try_push(entry)? {
                 return Ok(false);
             }
-            let added = batch.entries().len() - 1;
-            for (index, other) in self.scopes.iter().enumerate() {
-                for (owner, parameters) in &scope.owners {
-                    if !other.owners.iter().any(|(shared, _)| shared == owner) { continue; }
-                    if !parameters.iter().all(|&(slot, domain)|
-                        batch.binds_identically(index, added, slot, domain))
-                    {
-                        return Ok(false);
+            let mut bindings = self.batch.impl_bindings().to_vec();
+            bindings.extend(incoming_bindings.iter().cloned().map(|mut binding| {
+                binding.instance = added as u32;
+                binding
+            }));
+            if !batch.try_set_impl_bindings(bindings)? {
+                return Ok(false);
+            }
+            if !self.copies {
+                for (index, other) in self.scopes.iter().enumerate() {
+                    for (owner, parameters) in &scope.owners {
+                        if !other.owners.iter().any(|(shared, _)| shared == owner) {
+                            continue;
+                        }
+                        if !parameters.iter().all(|&(slot, domain)| {
+                            batch.binds_identically(index, added, slot, domain)
+                        }) {
+                            return Ok(false);
+                        }
                     }
                 }
             }
@@ -844,6 +1182,8 @@ struct RunOutput {
     call_owners: Arc<[u32]>,
     /// Per entry, the GPU's native seed layouts.
     layouts: Arc<[Vec<u32>]>,
+    binding_contracts: Arc<[CachedReplayBindingContract]>,
+    binding_layouts: Arc<[Vec<u32>]>,
     copy_symbols: Option<Vec<u32>>,
     entry_hirs: Vec<u32>,
     calls: Vec<AdmittedCall>,
@@ -857,14 +1197,24 @@ impl RunOutput {
         checked: CheckedReplayCalls,
         entries: usize,
     ) -> Result<Self, CompileError> {
-        let layouts = replay.body_native_layouts
+        let layouts = replay
+            .body_native_layouts
             .filter(|layouts| layouts.len() == entries)
-            .ok_or_else(|| CompileError::GpuCodegen("concrete replay omitted admitted native layouts".into()))?;
+            .ok_or_else(|| {
+                CompileError::GpuCodegen("concrete replay omitted admitted native layouts".into())
+            })?;
+        if checked.binding_contracts.len() != entries || checked.binding_layouts.len() != entries {
+            return Err(CompileError::GpuCodegen(
+                "concrete replay omitted checked binding entry contracts".into(),
+            ));
+        }
         Ok(Self {
             object: replay.object,
             call_hirs: replay.native_call_hirs,
             call_owners: replay.native_call_function_hirs,
             layouts,
+            binding_contracts: checked.binding_contracts,
+            binding_layouts: checked.binding_layouts,
             copy_symbols: checked.copy_symbols,
             entry_hirs: checked.entry_hirs,
             calls: checked.calls,
@@ -878,6 +1228,8 @@ impl RunOutput {
             call_hirs: run.call_hirs.clone(),
             call_owners: run.call_owners.clone(),
             layouts: run.layouts.clone(),
+            binding_contracts: run.binding_contracts.clone(),
+            binding_layouts: run.binding_layouts.clone(),
             copy_symbols: Some(run.copy_symbols.clone()),
             entry_hirs: run.entry_hirs.clone(),
             calls,
@@ -896,19 +1248,20 @@ fn is_x86(template: &CompiledSourcePackUnit) -> bool {
     matches!(template.object, CompiledSourcePackObject::X86_64(_))
 }
 
-fn library_instance_hash(template: blake3::Hash, key: &[u8], bindings: &[BodyImplBinding]) -> blake3::Hash {
+fn library_instance_hash(
+    template: blake3::Hash,
+    key: &[u8],
+    contract: &CachedReplayBindingContract,
+) -> blake3::Hash {
     let mut hasher = blake3::Hasher::new();
-    hasher.update(b"laniusc-library-instance-v1");
+    hasher.update(b"laniusc-library-instance-v2");
     hasher.update(template.as_bytes());
     hasher.update(&(key.len() as u64).to_le_bytes());
     hasher.update(key);
-    hasher.update(&(bindings.len() as u64).to_le_bytes());
-    for binding in bindings {
-        for word in [binding.instance, binding.slot, binding.required_symbol]
-            .into_iter().chain(binding.trait_unit).chain(binding.target)
-        {
-            hasher.update(&word.to_le_bytes());
-        }
+    hasher.update(&contract.source_owner_hir.to_le_bytes());
+    hasher.update(&(contract.members.len() as u64).to_le_bytes());
+    for word in &contract.members {
+        hasher.update(&word.to_le_bytes());
     }
     hasher.finalize()
 }
@@ -918,7 +1271,9 @@ fn library_instance_hash(template: blake3::Hash, key: &[u8], bindings: &[BodyImp
 /// cannot supply (u32::MAX) is a miss, not a match: an app nominal can
 /// change layout without changing identity.
 fn witnesses_match(witnesses: &[Vec<u32>], stored: &[u32]) -> bool {
-    let Some((first, rest)) = witnesses.split_first() else { return false };
+    let Some((first, rest)) = witnesses.split_first() else {
+        return false;
+    };
     let mut union = first.clone();
     for witness in rest {
         if CheckedBodySpecialization::merge_layout_witnesses(&mut union, witness).is_err() {
@@ -926,6 +1281,15 @@ fn witnesses_match(witnesses: &[Vec<u32>], stored: &[u32]) -> bool {
         }
     }
     union == stored
+}
+
+fn binding_contract_matches(
+    current: &CachedReplayBindingContract,
+    layouts: &[u32],
+    cached: &CachedReplayBindingContract,
+    cached_layouts: &[u32],
+) -> bool {
+    current == cached && layouts.iter().all(|&width| width != u32::MAX) && layouts == cached_layouts
 }
 
 impl GpuCompiler<'_> {
@@ -942,24 +1306,48 @@ impl GpuCompiler<'_> {
         keys: Vec<Vec<u8>>,
         instance_copies: bool,
     ) -> Result<LibraryLookup, CompileError> {
-        let mut lookup = LibraryLookup { hits: Vec::new(), misses: Vec::new(), instance_of: HashMap::new() };
+        let mut lookup = LibraryLookup {
+            hits: Vec::new(),
+            misses: Vec::new(),
+            instance_of: HashMap::new(),
+        };
         let template = keys.first().and_then(|key| {
             let (library_id, unit_id, _) = pending[key].target;
-            templates.get(&(library_id, unit_id)).map(|template| (library_id, unit_id, *template))
+            templates
+                .get(&(library_id, unit_id))
+                .map(|template| (library_id, unit_id, *template))
         });
-        let mut cache = self.library_instance_cache.lock().expect("library instance cache mutex poisoned");
-        let Some((library_id, unit_id, template)) = template
-            .filter(|&(.., template)| instance_copies && is_x86(template) && cache.cacheable_template(template))
-        else {
+        let origins = keys
+            .iter()
+            .map(|key| &pending[key].admitted)
+            .collect::<Vec<_>>();
+        program
+            .prepare_impl_applications(&origins)
+            .map_err(native_program_error)?;
+        let mut cache = self
+            .library_instance_cache
+            .lock()
+            .expect("library instance cache mutex poisoned");
+        let Some((library_id, unit_id, template)) = template.filter(|&(.., template)| {
+            instance_copies && is_x86(template) && cache.cacheable_template(template)
+        }) else {
             lookup.misses = keys;
             return Ok(lookup);
         };
-        let template_hash = cache.template_hash(template).map_err(CompileError::GpuCodegen)?;
+        let template_hash = cache
+            .template_hash(template)
+            .map_err(CompileError::GpuCodegen)?;
         let mut eligible = HashMap::<blake3::Hash, &Vec<u8>>::new();
+        let mut contracts = HashMap::new();
+        let mut binding_layouts = HashMap::new();
         for key in &keys {
             let body = &pending[key];
-            let bindings = program.instance_impl_bindings(&body.admitted).map_err(native_program_error)?;
-            let instance = library_instance_hash(template_hash, key, &bindings);
+            let (contract, layouts) = program
+                .instance_binding_contract(&body.admitted)
+                .map_err(native_program_error)?;
+            let instance = library_instance_hash(template_hash, key, &contract);
+            contracts.insert(key.clone(), contract);
+            binding_layouts.insert(key.clone(), layouts);
             lookup.instance_of.insert(key.clone(), instance);
             if !body.recursive && !body.cached_origin {
                 eligible.insert(instance, key);
@@ -969,26 +1357,59 @@ impl GpuCompiler<'_> {
         let mut tried = HashSet::<CompiledUnitCacheKey>::new();
         for key in &keys {
             let instance = lookup.instance_of[key];
-            if taken.contains(key) || !eligible.contains_key(&instance) { continue; }
-            let Some((cache_key, run)) = cache.run_of(library_id, unit_id, instance) else { continue };
-            if !tried.insert(cache_key.clone()) { continue; }
+            if taken.contains(key) || !eligible.contains_key(&instance) {
+                continue;
+            }
+            let Some((cache_key, run)) = cache.run_of(library_id, unit_id, instance) else {
+                continue;
+            };
+            if !tried.insert(cache_key.clone()) {
+                continue;
+            }
             let mut run_keys = Vec::with_capacity(run.instances.len());
             let covered = run.instances.len() == run.layouts.len()
-                && run.instances.iter().zip(run.layouts.iter()).all(|(instance, layouts)| {
-                    let Some(&key) = eligible.get(instance) else { return false };
-                    if taken.contains(key) || run_keys.contains(key)
-                        || !witnesses_match(&pending[key].witnesses, layouts)
+                && run.instances.len() == run.binding_contracts.len()
+                && run.instances.len() == run.binding_layouts.len()
+                && run.instances.iter().enumerate().all(|(index, instance)| {
+                    let Some(&key) = eligible.get(instance) else {
+                        return false;
+                    };
+                    let Some(contract) = contracts.get(key) else {
+                        return false;
+                    };
+                    let Some(current_layouts) = binding_layouts.get(key) else {
+                        return false;
+                    };
+                    if taken.contains(key)
+                        || run_keys.contains(key)
+                        || !witnesses_match(&pending[key].witnesses, &run.layouts[index])
+                        || !binding_contract_matches(
+                            contract,
+                            current_layouts,
+                            &run.binding_contracts[index],
+                            &run.binding_layouts[index],
+                        )
                     {
                         return false;
                     }
                     run_keys.push(key.clone());
                     true
                 });
-            if !covered { continue; }
+            if !covered {
+                continue;
+            }
             taken.extend(run_keys.iter().cloned());
-            lookup.hits.push(CachedHit { keys: run_keys, run, cache_key, run_unit: (library_id, unit_id) });
+            lookup.hits.push(CachedHit {
+                keys: run_keys,
+                run,
+                cache_key,
+                run_unit: (library_id, unit_id),
+            });
         }
-        lookup.misses = keys.into_iter().filter(|key| !taken.contains(key)).collect();
+        lookup.misses = keys
+            .into_iter()
+            .filter(|key| !taken.contains(key))
+            .collect();
         Ok(lookup)
     }
 
@@ -1004,25 +1425,45 @@ impl GpuCompiler<'_> {
     ) {
         let Some(first) = keys.first() else { return };
         let (library_id, unit_id, _) = pending[first].target;
-        let mut cache = self.library_instance_cache.lock().expect("library instance cache mutex poisoned");
-        if !templates.get(&(library_id, unit_id)).is_some_and(|template| is_x86(template) && cache.cacheable_template(template)) {
+        let mut cache = self
+            .library_instance_cache
+            .lock()
+            .expect("library instance cache mutex poisoned");
+        if !templates
+            .get(&(library_id, unit_id))
+            .is_some_and(|template| is_x86(template) && cache.cacheable_template(template))
+        {
             return;
         }
-        let Some(instances) = keys.iter().map(|key| instance_of.get(key).copied()).collect::<Option<Vec<_>>>()
-        else { return };
+        let Some(instances) = keys
+            .iter()
+            .map(|key| instance_of.get(key).copied())
+            .collect::<Option<Vec<_>>>()
+        else {
+            return;
+        };
         let (Some(copy_symbols), Some(entry_facts), CompiledSourcePackObject::X86_64(object)) =
-            (&output.copy_symbols, &output.entry_facts, &output.object) else { return };
+            (&output.copy_symbols, &output.entry_facts, &output.object)
+        else {
+            return;
+        };
         cache.record_miss();
-        cache.insert(library_id, unit_id, CachedInstanceRun {
-            instances,
-            layouts: output.layouts.clone(),
-            object: object.clone(),
-            call_hirs: output.call_hirs.clone(),
-            call_owners: output.call_owners.clone(),
-            copy_symbols: copy_symbols.clone(),
-            entry_hirs: output.entry_hirs.clone(),
-            entry_facts: entry_facts.clone(),
-        });
+        cache.insert(
+            library_id,
+            unit_id,
+            CachedInstanceRun {
+                instances,
+                layouts: output.layouts.clone(),
+                binding_contracts: output.binding_contracts.clone(),
+                binding_layouts: output.binding_layouts.clone(),
+                object: object.clone(),
+                call_hirs: output.call_hirs.clone(),
+                call_owners: output.call_owners.clone(),
+                copy_symbols: copy_symbols.clone(),
+                entry_hirs: output.entry_hirs.clone(),
+                entry_facts: entry_facts.clone(),
+            },
+        );
     }
 
     /// `LANIUS_CHECK_LIBRARY_INSTANCE_CACHE=1`: replay a hit run with the
@@ -1035,8 +1476,12 @@ impl GpuCompiler<'_> {
         hit: &CachedHit,
         cached: &RunOutput,
     ) -> Result<(), CompileError> {
-        let request = program.prepare_instance_batch(origins).map_err(native_program_error)?;
-        let pending_unit = self.compile_authorized_body_specialization(&request).await?;
+        let request = program
+            .prepare_instance_batch(origins)
+            .map_err(native_program_error)?;
+        let pending_unit = self
+            .compile_authorized_body_specialization(&request)
+            .await?;
         let (replay, checked) = request.finish(pending_unit).map_err(native_program_error)?;
         let fresh = RunOutput::from_replay(replay, checked, origins.len())?;
         let mut differences = Vec::new();
@@ -1044,11 +1489,18 @@ impl GpuCompiler<'_> {
         let (CompiledSourcePackObject::X86_64(a), CompiledSourcePackObject::X86_64(b)) =
             (&fresh.object, &cached.object)
         else {
-            return Err(CompileError::GpuCodegen("library instance cache holds a non-x86 run".into()));
+            return Err(CompileError::GpuCodegen(
+                "library instance cache holds a non-x86 run".into(),
+            ));
         };
         for (name, same) in [
-            ("object header", a.version == b.version && a.library_id == b.library_id
-                && a.unit_id == b.unit_id && a.entry_offset == b.entry_offset),
+            (
+                "object header",
+                a.version == b.version
+                    && a.library_id == b.library_id
+                    && a.unit_id == b.unit_id
+                    && a.entry_offset == b.entry_offset,
+            ),
             ("text", a.text == b.text),
             ("rodata", a.rodata == b.rodata),
             ("relocations", a.relocations == b.relocations),
@@ -1057,26 +1509,50 @@ impl GpuCompiler<'_> {
             ("call HIRs", fresh.call_hirs == cached.call_hirs),
             ("call owners", fresh.call_owners == cached.call_owners),
             ("native layouts", fresh.layouts == cached.layouts),
+            (
+                "binding contracts",
+                fresh.binding_contracts == cached.binding_contracts,
+            ),
+            (
+                "binding native layouts",
+                fresh.binding_layouts == cached.binding_layouts,
+            ),
             ("copy symbols", fresh.copy_symbols == cached.copy_symbols),
             ("entry HIRs", fresh.entry_hirs == cached.entry_hirs),
             ("entry facts", fresh.entry_facts == cached.entry_facts),
-            ("admitted calls", fresh.calls.len() == cached.calls.len()
-                && fresh.calls.iter().zip(&cached.calls).all(|(a, b)|
-                    a.checked_call() == b.checked_call() && a.source() == b.source()
-                        && a.is_concrete() == b.is_concrete() && a.is_refuted() == b.is_refuted())),
+            (
+                "admitted calls",
+                fresh.calls.len() == cached.calls.len()
+                    && fresh.calls.iter().zip(&cached.calls).all(|(a, b)| {
+                        a.checked_call() == b.checked_call()
+                            && a.source() == b.source()
+                            && a.is_concrete() == b.is_concrete()
+                            && a.is_refuted() == b.is_refuted()
+                    }),
+            ),
         ] {
-            if !same { differences.push(name); }
+            if !same {
+                differences.push(name);
+            }
         }
         let (library, unit) = hit.run_unit;
         if differences.is_empty() {
-            eprintln!("[library-instance-cache] check ok unit={library}:{unit} bodies={}", origins.len());
+            eprintln!(
+                "[library-instance-cache] check ok unit={library}:{unit} bodies={}",
+                origins.len()
+            );
             return Ok(());
         }
-        eprintln!("[library-instance-cache] MISMATCH unit={library}:{unit} bodies={}: {}",
-            origins.len(), differences.join(", "));
+        eprintln!(
+            "[library-instance-cache] MISMATCH unit={library}:{unit} bodies={}: {}",
+            origins.len(),
+            differences.join(", ")
+        );
         Err(CompileError::GpuCodegen(format!(
             "library instance cache check failed for unit {library}:{unit} ({} bodies): {} differ from a fresh replay",
-            origins.len(), differences.join(", "))))
+            origins.len(),
+            differences.join(", ")
+        )))
     }
 }
 
@@ -1125,10 +1601,13 @@ fn instance_copies_enabled() -> bool {
 /// `LANIUS_REPLAY_BATCH=N` caps the bodies per frontend run (1 replays each
 /// body alone, as before batching).
 fn replay_batch_limit() -> usize {
-    std::env::var("LANIUS_REPLAY_BATCH").ok()
+    std::env::var("LANIUS_REPLAY_BATCH")
+        .ok()
         .and_then(|value| value.trim().parse::<usize>().ok())
         .filter(|&limit| limit > 0)
-        .map_or(gpu_type_checker::MAX_BODY_ENTRIES, |limit| limit.min(gpu_type_checker::MAX_BODY_ENTRIES))
+        .map_or(gpu_type_checker::MAX_BODY_ENTRIES, |limit| {
+            limit.min(gpu_type_checker::MAX_BODY_ENTRIES)
+        })
 }
 
 /// `LANIUS_DEBUG_SPECIALIZATION=1` prints one line per frontend replay run
@@ -1150,7 +1629,13 @@ struct SpecializationTrace {
 /// Trace index of a run's kind: 0 copies, 1 original scope, 2 solo
 /// (polymorphic recursion, in its original scope).
 fn run_kind(copies: bool, solo: bool) -> usize {
-    if solo { 2 } else if copies { 0 } else { 1 }
+    if solo {
+        2
+    } else if copies {
+        0
+    } else {
+        1
+    }
 }
 
 const RUN_KINDS: [&str; 3] = ["copies", "original", "solo"];
@@ -1181,7 +1666,9 @@ impl SpecializationTrace {
         split: Option<&str>,
         cached: bool,
     ) {
-        let ms = |a: std::time::Instant, b: std::time::Instant| b.duration_since(a).as_secs_f64() * 1000.0;
+        let ms = |a: std::time::Instant, b: std::time::Instant| {
+            b.duration_since(a).as_secs_f64() * 1000.0
+        };
         let (library, unit, _) = bodies[0].1.target;
         if cached {
             self.cached_runs += 1;
@@ -1189,27 +1676,45 @@ impl SpecializationTrace {
             if self.enabled {
                 eprintln!(
                     "[specialization] cached run unit={library}:{unit} bodies={} total={total} admit={:.1}ms check={:.1}ms text={text_bytes} calls={replay_calls}",
-                    bodies.len(), ms(times[0], times[1]), ms(times[2], times[3]),
+                    bodies.len(),
+                    ms(times[0], times[1]),
+                    ms(times[2], times[3]),
                 );
             }
             return;
         }
         self.runs += 1;
         self.kinds[kind] += 1;
-        if !self.enabled { return; }
-        let phases = [ms(times[0], times[1]), ms(times[1], times[2]), ms(times[2], times[3])];
-        for (total, phase) in self.phases_ms.iter_mut().zip(phases) { *total += phase; }
+        if !self.enabled {
+            return;
+        }
+        let phases = [
+            ms(times[0], times[1]),
+            ms(times[1], times[2]),
+            ms(times[2], times[3]),
+        ];
+        for (total, phase) in self.phases_ms.iter_mut().zip(phases) {
+            *total += phase;
+        }
         eprintln!(
             "[specialization] run={} kind={} unit={library}:{unit} bodies={} total={total} prepare={:.1}ms compile={:.1}ms finish={:.1}ms text={text_bytes} calls={replay_calls} impl_bindings={bindings}{}",
-            self.runs, RUN_KINDS[kind], bodies.len(), phases[0], phases[1], phases[2],
+            self.runs,
+            RUN_KINDS[kind],
+            bodies.len(),
+            phases[0],
+            phases[1],
+            phases[2],
             split.map(|why| format!(" split={why}")).unwrap_or_default(),
         );
         for (key, body) in bodies {
             let call = body.admitted.checked_call();
             eprintln!(
                 "[specialization]   depth={} decl={} key={} args={:?} consts={:?}",
-                body.origin.depth, body.target.2, &blake3::hash(key).to_hex()[..12],
-                call.arguments, call.constants,
+                body.origin.depth,
+                body.target.2,
+                &blake3::hash(key).to_hex()[..12],
+                call.arguments,
+                call.constants,
             );
         }
     }
@@ -1217,36 +1722,56 @@ impl SpecializationTrace {
     /// The bodies of a run whose replay failed. A run that succeeds prints
     /// them in `replay`, after its compile.
     fn failed(&self, keys: &[Vec<u8>], pending: &BTreeMap<Vec<u8>, PendingBody>) {
-        if !self.enabled { return; }
+        if !self.enabled {
+            return;
+        }
         for key in keys {
             let body = &pending[key];
             let call = body.admitted.checked_call();
             eprintln!(
                 "[specialization] failed depth={} target={:?} key={} args={:?} consts={:?} witnesses={:?}",
-                body.origin.depth, body.target, &blake3::hash(key).to_hex()[..12],
-                call.arguments, call.constants, body.witnesses,
+                body.origin.depth,
+                body.target,
+                &blake3::hash(key).to_hex()[..12],
+                call.arguments,
+                call.constants,
+                body.witnesses,
             );
         }
     }
 
     /// A replay's native call that the scan leaves for the linker.
     fn skipped(&self, context: usize, call_hir: u32, why: &str, call: Option<&CheckedGenericCall>) {
-        if !self.enabled { return; }
+        if !self.enabled {
+            return;
+        }
         match call {
             Some(call) => eprintln!(
                 "[specialization]   skip context={context} call_hir={call_hir}: {why} target={:?} args={:?} consts={:?}",
                 call.target, call.arguments, call.constants,
             ),
-            None => eprintln!("[specialization]   skip context={context} call_hir={call_hir}: {why}"),
+            None => {
+                eprintln!("[specialization]   skip context={context} call_hir={call_hir}: {why}")
+            }
         }
     }
 
     fn finish(&self, bodies: usize, text_bytes: usize) {
-        if !self.enabled { return; }
+        if !self.enabled {
+            return;
+        }
         eprintln!(
             "[specialization] summary bodies={bodies} runs={} copy_runs={} original_runs={} solo_runs={} cached_runs={} cached_bodies={} reused_sites={} text={text_bytes} prepare={:.1}ms compile={:.1}ms finish={:.1}ms total={:.1}ms",
-            self.runs, self.kinds[0], self.kinds[1], self.kinds[2], self.cached_runs, self.cached_bodies, self.reused,
-            self.phases_ms[0], self.phases_ms[1], self.phases_ms[2],
+            self.runs,
+            self.kinds[0],
+            self.kinds[1],
+            self.kinds[2],
+            self.cached_runs,
+            self.cached_bodies,
+            self.reused,
+            self.phases_ms[0],
+            self.phases_ms[1],
+            self.phases_ms[2],
             self.start.elapsed().as_secs_f64() * 1000.0,
         );
     }
@@ -1284,8 +1809,12 @@ impl<'a> EnvironmentMemo<'a> {
     }
 
     fn get(&self, key: [u32; 5], call: &CheckedGenericCall) -> Option<Option<(Vec<u8>, Vec<u32>)>> {
-        if !self.enabled || self.checked { return None; }
-        self.by_target.get(&key)?.iter()
+        if !self.enabled || self.checked {
+            return None;
+        }
+        self.by_target
+            .get(&key)?
+            .iter()
             .find(|(known, _)| same_environment(known, call))
             .map(|(_, environment)| environment.clone())
     }
@@ -1296,15 +1825,24 @@ impl<'a> EnvironmentMemo<'a> {
         call: &'a CheckedGenericCall,
         environment: &Option<(Vec<u8>, Vec<u32>)>,
     ) -> Result<(), CompileError> {
-        if !self.enabled { return Ok(()); }
+        if !self.enabled {
+            return Ok(());
+        }
         let entries = self.by_target.entry(key).or_default();
-        if let Some((known, stored)) = entries.iter().find(|(known, _)| same_environment(known, call)) {
+        if let Some((known, stored)) = entries
+            .iter()
+            .find(|(known, _)| same_environment(known, call))
+        {
             // Check mode: every site was computed; a memo hit must agree.
             if stored != environment {
-                eprintln!("[scan-environment-memo] MISMATCH call_hir={} first_call_hir={} target={:?}",
-                    call.call_hir, known.call_hir, call.target);
+                eprintln!(
+                    "[scan-environment-memo] MISMATCH call_hir={} first_call_hir={} target={:?}",
+                    call.call_hir, known.call_hir, call.target
+                );
                 return Err(CompileError::GpuCodegen(format!(
-                    "scan environment memo mismatch at call HIR {}", call.call_hir)));
+                    "scan environment memo mismatch at call HIR {}",
+                    call.call_hir
+                )));
             }
             return Ok(());
         }
@@ -1415,9 +1953,15 @@ fn replace_symbol_identity(
     identity: &[u8],
 ) -> Result<(), CompileError> {
     let present = index < object.symbol_count();
-    object.replace_symbol_identity(index, identity).map_err(|error| {
-        if present { specialization_limit_error(&error) } else { CompileError::GpuCodegen(error) }
-    })
+    object
+        .replace_symbol_identity(index, identity)
+        .map_err(|error| {
+            if present {
+                specialization_limit_error(&error)
+            } else {
+                CompileError::GpuCodegen(error)
+            }
+        })
 }
 
 /// Whether the body owning a call (`caller` in `context`), or a body it was
@@ -1432,7 +1976,9 @@ fn instantiates_ancestor(
         if entry.target == target {
             return true;
         }
-        let Some((parent, parent_caller)) = entry.parent else { return false };
+        let Some((parent, parent_caller)) = entry.parent else {
+            return false;
+        };
         context = parent;
         caller = parent_caller;
     }
@@ -1451,18 +1997,25 @@ fn instantiation_depth_error(
         None => format!(
             "concrete generic bodies instantiate each other more than {MAX_INSTANTIATION_DEPTH} levels deep"
         ),
-        Some(_) => "a generic body instantiates its own declaration with type arguments that keep growing".to_owned(),
+        Some(_) => {
+            "a generic body instantiates its own declaration with type arguments that keep growing"
+                .to_owned()
+        }
     };
-    let mut diagnostic = Diagnostic::error("LNC0073", "generic instantiation depth exceeded")
-        .with_note(note);
+    let mut diagnostic =
+        Diagnostic::error("LNC0073", "generic instantiation depth exceeded").with_note(note);
     match &capacity {
         Some(CompileError::Diagnostic(inner)) => {
             for note in &inner.notes {
                 diagnostic = diagnostic.with_note(note.clone());
             }
         }
-        Some(CompileError::GpuFrontend(detail) | CompileError::GpuSyntax(detail)
-            | CompileError::GpuTypeCheck(detail) | CompileError::GpuCodegen(detail)) => {
+        Some(
+            CompileError::GpuFrontend(detail)
+            | CompileError::GpuSyntax(detail)
+            | CompileError::GpuTypeCheck(detail)
+            | CompileError::GpuCodegen(detail),
+        ) => {
             diagnostic = diagnostic.with_note(detail.clone());
         }
         None => {}
@@ -1474,16 +2027,25 @@ fn instantiation_depth_error(
     if let Some(unit) = owner {
         let [start, len] = call.source_span;
         let files = crate::compiler::source_pack_diagnostic_files(
-            unit.template_sources.as_ref(), Some(unit.template_source_paths.as_ref()));
-        if let Some(file) = crate::compiler::source_pack_file_for_global_span(&files, start as usize) {
-            if (start as usize).checked_add(len as usize).is_some_and(|end| end <= file.global_end) {
-                diagnostic = diagnostic.with_primary_label(crate::compiler::diagnostic_label_from_source_span(
-                    &file.path,
-                    &file.source,
-                    start as usize - file.global_start,
-                    len as usize,
-                    "this call needs another level of concrete bodies",
-                ));
+            unit.template_sources.as_ref(),
+            Some(unit.template_source_paths.as_ref()),
+        );
+        if let Some(file) =
+            crate::compiler::source_pack_file_for_global_span(&files, start as usize)
+        {
+            if (start as usize)
+                .checked_add(len as usize)
+                .is_some_and(|end| end <= file.global_end)
+            {
+                diagnostic = diagnostic.with_primary_label(
+                    crate::compiler::diagnostic_label_from_source_span(
+                        &file.path,
+                        &file.source,
+                        start as usize - file.global_start,
+                        len as usize,
+                        "this call needs another level of concrete bodies",
+                    ),
+                );
             }
         }
     }
@@ -1510,6 +2072,7 @@ fn specialization_limit_error(detail: &str) -> CompileError {
 mod tests {
     use super::*;
     use crate::type_checker::{
+        BodyImplEnvironment,
         CheckedBinderIdentity,
         CheckedGenericArgument,
         CheckedGenericConstantValue,
@@ -1547,10 +2110,17 @@ mod tests {
         let entry = |byte: u32, scalar: u32| CheckedBodySpecialization {
             target_symbol: crate::type_checker::BODY_COPY_TARGET | byte,
             source_unit: [0, 0],
-            arguments: vec![CheckedGenericArgument { slot: 0, ty: CheckedGenericType::Scalar(scalar) }],
+            arguments: vec![CheckedGenericArgument {
+                slot: 0,
+                ty: CheckedGenericType::Scalar(scalar),
+            }],
             constants: Vec::new(),
         };
-        let scope = |snapshot: u32| ReplayScope { snapshot, selected_owner_hir: 9, owners: vec![(4, vec![(0, 0)])] };
+        let scope = |snapshot: u32| ReplayScope {
+            snapshot,
+            selected_owner_hir: 9,
+            owners: vec![(4, vec![(0, 0)])],
+        };
         let run = |copies: bool| ReplayRun {
             keys: vec![vec![0]],
             scopes: vec![scope(1)],
@@ -1563,16 +2133,137 @@ mod tests {
         let mut copies = run(true);
         // Other environments of the same lexical body join a copy run.
         for (index, scalar) in [4u32, 5, 6].into_iter().enumerate() {
-            assert!(copies.try_add(&[index as u8 + 1], &scope(1), entry(200 + index as u32, scalar)).unwrap());
+            assert!(
+                copies
+                    .try_add(
+                        &[index as u8 + 1],
+                        &scope(1),
+                        entry(200 + index as u32, scalar),
+                        &[]
+                    )
+                    .unwrap()
+            );
         }
-        assert_eq!((copies.batch.entries().len(), copies.keys.len(), copies.scopes.len()), (4, 4, 4));
+        assert_eq!(
+            (
+                copies.batch.entries().len(),
+                copies.keys.len(),
+                copies.scopes.len()
+            ),
+            (4, 4, 4)
+        );
         // Another template snapshot does not, and leaves the run unchanged.
-        assert!(!copies.try_add(&[9], &scope(2), entry(300, 7)).unwrap());
-        assert_eq!((copies.batch.entries().len(), copies.keys.len(), copies.scopes.len()), (4, 4, 4));
+        assert!(!copies.try_add(&[9], &scope(2), entry(300, 7), &[]).unwrap());
+        assert_eq!(
+            (
+                copies.batch.entries().len(),
+                copies.keys.len(),
+                copies.scopes.len()
+            ),
+            (4, 4, 4)
+        );
         // An original-scope run never selects one lexical body twice.
         let mut original = run(false);
-        assert!(!original.try_add(&[1], &scope(1), entry(200, 4)).unwrap());
+        assert!(
+            !original
+                .try_add(&[1], &scope(1), entry(200, 4), &[])
+                .unwrap()
+        );
         assert_eq!(original.batch.entries().len(), 1);
+    }
+
+    #[test]
+    fn replay_planner_splits_binding_only_capacity_without_losing_or_renumbering_work() {
+        let entry = |symbol| CheckedBodySpecialization {
+            target_symbol: symbol,
+            source_unit: [0, 0],
+            arguments: vec![CheckedGenericArgument {
+                slot: 0,
+                ty: CheckedGenericType::Scalar(3),
+            }],
+            constants: Vec::new(),
+        };
+        let scope = |owner| ReplayScope {
+            snapshot: 0,
+            selected_owner_hir: owner,
+            owners: Vec::new(),
+        };
+        let binding = |symbol: u32, length: u32| BodyImplBinding {
+            instance: 0,
+            slot: 0,
+            required_symbol: 0x8000_0000 | symbol,
+            trait_unit: [u32::MAX; 2],
+            target: [0, 0, symbol],
+            receiver_mode: 3,
+            required_types: 1,
+            required_constants: 0,
+            environment: BodyImplEnvironment {
+                arguments: vec![CheckedGenericArgument {
+                    slot: 0,
+                    ty: CheckedGenericType::Array {
+                        element: Box::new(CheckedGenericType::Scalar(3)),
+                        length: CheckedGenericConstantValue::count_literal(length),
+                        words: Some(length),
+                    },
+                }],
+                constants: Vec::new(),
+            },
+        };
+        // The two origins together need 1,201 distinct graph nodes,
+        // beyond the shared 1,024-node profile; either needs only 601.
+        let count = 600;
+        let initial = (1..=count)
+            .map(|length| binding(length, length))
+            .collect::<Vec<_>>();
+        let incoming = (1..=count)
+            .map(|length| binding(length, count + length))
+            .collect::<Vec<_>>();
+        // Each origin fits alone; only their combined binding-only nodes fill
+        // the shared graph. This is a split, never an invalid-origin error.
+        let mut alone = gpu_type_checker::CheckedBodySpecializationBatch::single(entry(2)).unwrap();
+        assert!(alone.try_set_impl_bindings(incoming.clone()).unwrap());
+        for copies in [false, true] {
+            let mut batch =
+                gpu_type_checker::CheckedBodySpecializationBatch::single(entry(1)).unwrap();
+            batch.set_impl_bindings(initial.clone()).unwrap();
+            let before = batch.packet().unwrap();
+            let mut run = ReplayRun {
+                keys: vec![vec![1]],
+                scopes: vec![scope(1)],
+                batch,
+                solo: false,
+                copies,
+                bindings: initial.len(),
+                split: None,
+            };
+            assert!(!run.try_add(&[2], &scope(2), entry(2), &incoming).unwrap());
+            assert_eq!(run.keys, vec![vec![1]]);
+            assert_eq!(run.scopes.len(), 1);
+            assert_eq!(run.batch.packet().unwrap(), before);
+            assert_eq!(run.batch.impl_bindings(), initial);
+            // A smaller retry reuses existing nodes and owns entry1 exactly.
+            assert!(
+                run.try_add(&[3], &scope(3), entry(3), &initial[..1])
+                    .unwrap()
+            );
+            let added = run
+                .batch
+                .impl_bindings()
+                .iter()
+                .find(|binding| binding.instance == 1)
+                .unwrap();
+            assert_eq!(added.environment, initial[0].environment);
+            assert_eq!(run.batch.entries().len(), 2);
+            let stable = run.batch.packet().unwrap();
+            let mut invalid = binding(9, 9);
+            invalid.environment.arguments[0].ty = CheckedGenericType::Unresolved {
+                reference_tag: 0,
+                instance_kind: 0,
+            };
+            assert!(run.try_add(&[4], &scope(4), entry(4), &[invalid]).is_err());
+            assert_eq!(run.batch.packet().unwrap(), stable);
+            assert_eq!(run.keys, vec![vec![1], vec![3]]);
+        }
     }
 
     #[test]
@@ -1647,8 +2338,64 @@ mod tests {
             words: None,
         }]);
         let (_, layouts) = checked_replay_environment(&without_layout, 5, 6)
-            .expect("closed semantic seed").expect("concrete environment");
-        assert!(layouts.contains(&u32::MAX), "missing width remains explicit");
+            .expect("closed semantic seed")
+            .expect("concrete environment");
+        assert!(
+            layouts.contains(&u32::MAX),
+            "missing width remains explicit"
+        );
+    }
+
+    #[test]
+    fn instance_cache_requires_exact_entry_and_binding_contracts_beyond_lookup_hashes() {
+        let contract = CachedReplayBindingContract {
+            template_sources: vec!["module fixture::cache; fn body<T>() {}".to_owned()].into(),
+            template_unit: [5, 6],
+            source_owner_hir: 7,
+            entry_environment: vec![1, 2, 3],
+            members: vec![1, 4, 5, 6],
+        };
+        let layouts = [1, 8];
+        assert!(binding_contract_matches(
+            &contract, &layouts, &contract, &layouts
+        ));
+        for case in 0..5 {
+            let mut changed = contract.clone();
+            match case {
+                0 => {
+                    changed.template_sources =
+                        vec!["module fixture::cache; fn changed<T>() {}".to_owned()].into()
+                }
+                1 => changed.template_unit[1] += 1,
+                2 => changed.source_owner_hir += 1,
+                3 => changed.entry_environment[2] += 1,
+                _ => changed.members[3] += 1,
+            }
+            assert!(
+                !binding_contract_matches(&changed, &layouts, &contract, &layouts),
+                "case {case}"
+            );
+        }
+        // These widths belong only to a binding environment. Equal original
+        // entry layouts cannot make a changed or missing binding width a hit.
+        assert!(!binding_contract_matches(
+            &contract,
+            &[1, 16],
+            &contract,
+            &layouts
+        ));
+        assert!(!binding_contract_matches(
+            &contract,
+            &[1, u32::MAX],
+            &contract,
+            &layouts
+        ));
+        assert!(!binding_contract_matches(
+            &contract,
+            &[],
+            &contract,
+            &layouts
+        ));
     }
 
     #[test]

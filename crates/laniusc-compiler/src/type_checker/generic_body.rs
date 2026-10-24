@@ -47,11 +47,21 @@ pub(super) const BODY_BATCH_WORDS: usize =
     BODY_SPECIALIZATION_WORDS + BODY_GRAPH_EXT_ROWS * 4 + (MAX_BODY_ENTRIES - 1) * BODY_ENTRY_ROWS * 4;
 /// Impl bindings of one replay (see `BodyImplBinding`). They follow the whole
 /// entry capacity at a fixed row, BODY_IMPL_BINDING_ROW in
-/// shaders/type_checker/type/instances/body_impl_bindings.slang: a header row
-/// (binding count, 0, 0, 0), then two rows per binding.
+/// shaders/type_checker/type/instances/body_impl_bindings.slang. V2 has two
+/// header rows, three rows per binding and separately bounded environment and
+/// argument-reference pools. Only used prefixes of those pools are uploaded.
 pub(crate) const MAX_BODY_IMPL_BINDINGS: usize = 8192;
+pub(super) const BODY_IMPL_BINDING_MAGIC: u32 = 0x4249_4232;
+pub(super) const BODY_IMPL_BINDING_VERSION: u32 = 2;
+pub(super) const MAX_BODY_IMPL_ENVIRONMENTS: usize = 8192;
+pub(super) const MAX_BODY_IMPL_ARGUMENTS: usize = 32768;
 pub(super) const BODY_IMPL_BINDING_ROW: usize = BODY_BATCH_WORDS / 4;
-pub(super) const BODY_IMPL_BINDING_WORDS: usize = 4 + MAX_BODY_IMPL_BINDINGS * 8;
+pub(super) const BODY_IMPL_ENVIRONMENT_ROW: usize =
+    BODY_IMPL_BINDING_ROW + 2 + MAX_BODY_IMPL_BINDINGS * 3;
+pub(super) const BODY_IMPL_ARGUMENT_ROW: usize =
+    BODY_IMPL_ENVIRONMENT_ROW + MAX_BODY_IMPL_ENVIRONMENTS;
+pub(super) const BODY_IMPL_BINDING_WORDS: usize =
+    (2 + MAX_BODY_IMPL_BINDINGS * 3 + MAX_BODY_IMPL_ENVIRONMENTS + MAX_BODY_IMPL_ARGUMENTS) * 4;
 /// Continuation files of an instance-copy replay (InstanceSources). They
 /// follow the impl bindings at BODY_CONTINUATION_ROW in
 /// shaders/type_checker/modules/file_continuations.slang: a header row (file
@@ -64,6 +74,25 @@ pub(super) const BODY_CONTINUATION_WORDS: usize = 4 + MAX_BODY_CONTINUATION_FILE
 pub(super) const BODY_INPUT_WORDS: usize =
     BODY_BATCH_WORDS + BODY_IMPL_BINDING_WORDS + BODY_CONTINUATION_WORDS;
 
+/// Only bounded shared transport/graph pools use this error. Invalid checked
+/// identities, closure failures and contradictory layout witnesses must never
+/// be reclassified as a request to split a replay batch.
+#[derive(Debug)]
+struct BodyReplayCapacityError {
+    pool: &'static str,
+    required: usize,
+    limit: usize,
+}
+
+impl std::fmt::Display for BodyReplayCapacityError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "a replay needs {} {}; at most {} fit one packet",
+            self.required, self.pool, self.limit)
+    }
+}
+
+impl std::error::Error for BodyReplayCapacityError {}
+
 /// Selects an instance copy's declaration by the source byte of its `fn`
 /// keyword (`COPY_TARGET | byte`); 00d2 resolves it to the copy's HIR row.
 pub(crate) const BODY_COPY_TARGET: u32 = 0xc000_0000;
@@ -75,7 +104,7 @@ pub(crate) const BODY_COPY_TARGET: u32 = 0xc000_0000;
 /// no implementation in the replayed unit to it. Keyed by
 /// (instance, slot, required symbol, trait unit); the instance is the batch
 /// entry, or the instance row of a future in-compile instance table.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct BodyImplBinding {
     pub instance: u32,
     pub slot: u32,
@@ -87,11 +116,76 @@ pub(crate) struct BodyImplBinding {
     pub trait_unit: [u32; 2],
     /// (library, unit, native symbol) of the implementation method.
     pub target: [u32; 3],
+    /// Source declaration receiver: 0 static, 1 value self, 2 borrowed self,
+    /// 3 explicit typed first parameter. Checked call adjustment is separate.
+    pub receiver_mode: u32,
+    pub required_types: u32,
+    pub required_constants: u32,
+    /// The exact closed impl/method substitution selected by program evidence.
+    pub environment: BodyImplEnvironment,
 }
 
 impl BodyImplBinding {
     fn key(&self) -> (u32, u32, u32, [u32; 2]) {
         (self.instance, self.slot, self.required_symbol, self.trait_unit)
+    }
+
+    fn remapped(&self, map: &super::TemplateIdentityMap<'_>) -> Result<Self> {
+        let mut binding = self.clone();
+        // A trait of the replayed unit is named by its member symbol.
+        if binding.trait_unit == [u32::MAX; 2] {
+            binding.required_symbol = map.symbol(binding.required_symbol)?;
+        }
+        map.qualified_symbol(&mut binding.target)?;
+        for argument in &mut binding.environment.arguments {
+            map.ty(&mut argument.ty)?;
+        }
+        for constant in &mut binding.environment.constants {
+            map.constant(&mut constant.value)?;
+        }
+        Ok(binding)
+    }
+}
+
+/// Closed, declaration-owned arguments of one selected implementation.
+/// Native widths remain separate witnesses, never part of semantic identity.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct BodyImplEnvironment {
+    pub arguments: Vec<CheckedGenericArgument>,
+    pub constants: Vec<CheckedGenericConstant>,
+}
+
+impl BodyImplEnvironment {
+    fn is_empty(&self) -> bool {
+        self.arguments.is_empty() && self.constants.is_empty()
+    }
+
+    fn specialization(&self) -> CheckedBodySpecialization {
+        CheckedBodySpecialization {
+            target_symbol: 0,
+            // Scheduling identity does not include the replay source unit.
+            // Actual graph upload uses the batch's own source unit instead.
+            source_unit: [u32::MAX; 2],
+            arguments: self.arguments.clone(),
+            constants: self.constants.clone(),
+        }
+    }
+
+    /// Exact semantic identity and native input witnesses in canonical graph
+    /// order. A nongeneric implementation has two empty vectors.
+    pub(crate) fn scheduling_environment(&self) -> Result<(Vec<u32>, Vec<u32>)> {
+        if self.is_empty() {
+            return Ok((Vec::new(), Vec::new()));
+        }
+        self.specialization().scheduling_environment()
+    }
+
+    fn admitted_layouts(&self, native: &[u32]) -> Result<Vec<u32>> {
+        if self.is_empty() {
+            ensure!(native.is_empty(), "nongeneric implementation has native seed layouts");
+            return Ok(Vec::new());
+        }
+        self.specialization().admitted_layouts(native)
     }
 }
 
@@ -374,6 +468,12 @@ pub(crate) struct CheckedBodySpecializationBatch {
     shared_by_local: Vec<Vec<u32>>,
     /// Sorted by key, unique (set_impl_bindings).
     impl_bindings: Vec<BodyImplBinding>,
+    /// Per binding: its type graph's local ordinal -> shared ordinal. Direct
+    /// literal constants have shared roots but carry no native width witness.
+    impl_shared_by_local: Vec<Vec<u32>>,
+    /// Sparse V2 sections, relative to BODY_IMPL_BINDING_ROW. Built only after
+    /// every environment, graph and pool bound has been checked.
+    impl_binding_uploads: Vec<(usize, Vec<u32>)>,
     /// The file id of the first continuation file, and per continuation the
     /// template file it continues (set_continuation_files).
     continuation_first_file: u32,
@@ -397,6 +497,8 @@ impl CheckedBodySpecializationBatch {
             constant_nodes: Vec::new(),
             shared_by_local: Vec::new(),
             impl_bindings: Vec::new(),
+            impl_shared_by_local: Vec::new(),
+            impl_binding_uploads: empty_impl_binding_sections(),
             continuation_first_file: 0,
             continued_files: Vec::new(),
             declarations_only: None,
@@ -454,26 +556,65 @@ impl CheckedBodySpecializationBatch {
     }
 
     /// Install the replay's impl bindings (any order). Each names an entry of
-    /// this batch and a type slot; one key has one target. More than
-    /// MAX_BODY_IMPL_BINDINGS fails: the table is never truncated.
-    pub(crate) fn set_impl_bindings(&mut self, mut bindings: Vec<BodyImplBinding>) -> Result<()> {
-        bindings.sort_unstable();
+    /// this batch and a type slot; one key has one exact target, receiver and
+    /// environment. Validation and graph interning are atomic. Replacement
+    /// rebuilds the graph from entries so old binding-only nodes do not remain
+    /// reachable or spend later replays' graph capacity.
+    pub(crate) fn set_impl_bindings(&mut self, bindings: Vec<BodyImplBinding>) -> Result<()> {
+        self.install_impl_bindings(bindings)
+    }
+
+    /// Preflight and install the exact bindings. `false` means only that a
+    /// shared graph or V2 pool cannot represent this aggregate; callers may
+    /// split individually valid origins. Malformed environments and conflicting
+    /// witnesses are errors. Both failure outcomes leave the batch unchanged.
+    pub(crate) fn try_set_impl_bindings(&mut self, bindings: Vec<BodyImplBinding>) -> Result<bool> {
+        match self.install_impl_bindings(bindings) {
+            Ok(()) => Ok(true),
+            Err(error) if error.downcast_ref::<BodyReplayCapacityError>().is_some() => Ok(false),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn install_impl_bindings(&mut self, mut bindings: Vec<BodyImplBinding>) -> Result<()> {
+        bindings.sort_unstable_by_key(BodyImplBinding::key);
         bindings.dedup();
-        ensure!(bindings.len() <= MAX_BODY_IMPL_BINDINGS,
-            "a replay needs {} implementation bindings; at most {MAX_BODY_IMPL_BINDINGS} fit one packet",
-            bindings.len());
         for binding in &bindings {
             ensure!((binding.instance as usize) < self.entries.len()
-                && (binding.slot as usize) < MAX_BODY_TYPE_ARGUMENTS
+                && (binding.slot as usize) < self.entries[binding.instance as usize].arguments.len()
                 && binding.required_symbol != u32::MAX
                 && binding.target.iter().all(|&word| word != u32::MAX)
+                && binding.receiver_mode <= 3
+                && binding.required_types as usize == binding.environment.arguments.len()
+                && binding.required_constants as usize == binding.environment.constants.len()
+                && binding.environment.arguments.len() <= MAX_BODY_TYPE_ARGUMENTS
+                && binding.environment.constants.len() <= MAX_BODY_TYPE_ARGUMENTS
                 && (binding.trait_unit == [u32::MAX; 2]
                     || binding.trait_unit.iter().all(|&word| word != u32::MAX)),
                 "invalid implementation binding {binding:?}");
+            // Check every environment before an aggregate capacity outcome:
+            // a later symbolic or noncontiguous slot is an invalid request,
+            // never evidence that the planner should split otherwise valid work.
+            if !binding.environment.is_empty() {
+                binding.environment.specialization().graph()?;
+            }
         }
         ensure!(bindings.windows(2).all(|pair| pair[0].key() != pair[1].key()),
-            "one bound member of an instance has two implementation targets");
-        self.impl_bindings = bindings;
+            "one bound member of an instance has conflicting implementation contracts");
+        ensure!(bindings.len() <= MAX_BODY_IMPL_BINDINGS, BodyReplayCapacityError {
+            pool: "implementation bindings", required: bindings.len(), limit: MAX_BODY_IMPL_BINDINGS,
+        });
+        let mut staged = self.clone();
+        staged.rebuild_entry_graph()?;
+        let mut roots = Vec::with_capacity(bindings.len());
+        for binding in &bindings {
+            let (types, constants, shared) = staged.intern_impl_environment(&binding.environment)?;
+            roots.push((types, constants));
+            staged.impl_shared_by_local.push(shared);
+        }
+        staged.impl_binding_uploads = impl_binding_sections(&bindings, &roots)?;
+        staged.impl_bindings = bindings;
+        *self = staged;
         Ok(())
     }
 
@@ -481,12 +622,60 @@ impl CheckedBodySpecializationBatch {
         &self.impl_bindings
     }
 
-    /// The binding section: header (count, 0, 0, 0), then per binding
-    /// (instance, slot, required symbol, trait library) and (trait unit,
-    /// target library, target unit, target symbol). Uploaded at
-    /// BODY_IMPL_BINDING_ROW on every replay.
-    pub(crate) fn impl_binding_words(&self) -> Vec<u32> {
-        impl_binding_words(&self.impl_bindings)
+    /// Used V2 table prefixes as (relative uint4 row, words). The two header
+    /// rows are always written; unused fixed-capacity pools are never uploaded.
+    pub(crate) fn impl_binding_sections(&self) -> Vec<(usize, Vec<u32>)> {
+        self.impl_binding_uploads.clone()
+    }
+
+    /// Canonical environment semantics and retained input layout witnesses in
+    /// the same sorted order as `impl_bindings`, including empty nongeneric
+    /// environments. Native width or shared graph ordinals never enter identity.
+    pub(crate) fn binding_scheduling_environments(&self) -> Result<Vec<(Vec<u32>, Vec<u32>)>> {
+        self.impl_bindings.iter().map(|binding| binding.environment.scheduling_environment()).collect()
+    }
+
+    fn rebuild_entry_graph(&mut self) -> Result<()> {
+        let entries = std::mem::take(&mut self.entries);
+        self.nodes.clear();
+        self.edges.clear();
+        self.node_index.clear();
+        self.roots.clear();
+        self.constant_nodes.clear();
+        self.shared_by_local.clear();
+        self.impl_bindings.clear();
+        self.impl_shared_by_local.clear();
+        self.impl_binding_uploads = empty_impl_binding_sections();
+        for entry in entries {
+            ensure!(self.try_push(entry)?, "body entry graph exceeds the packet capacity");
+        }
+        Ok(())
+    }
+
+    fn intern_impl_environment(&mut self, environment: &BodyImplEnvironment)
+        -> Result<(Vec<u32>, Vec<u32>, Vec<u32>)> {
+        if environment.is_empty() {
+            return Ok((Vec::new(), Vec::new(), Vec::new()));
+        }
+        let (nodes, edges, roots) = environment.specialization().graph()?;
+        let mut shared = Vec::with_capacity(nodes.len());
+        let mut witnesses = Vec::new();
+        for mut node in nodes {
+            let mut children = Vec::new();
+            match node[0] {
+                2 | 3 | 4 => node[1] = shared[node[1] as usize],
+                9 => children.extend(edges[node[1] as usize..(node[1] + node[2]) as usize]
+                    .iter().map(|&child| shared[child as usize])),
+                _ => {}
+            }
+            shared.push(self.intern_shared(node, &children, &mut witnesses)?);
+        }
+        let mut constants = Vec::with_capacity(environment.constants.len());
+        for argument in &environment.constants {
+            let [scalar, lo, hi] = argument.value.literal().expect("graph validated literal constants").words();
+            constants.push(self.intern_shared([10, scalar, lo, 0, hi, 0, 0, 0], &[], &mut witnesses)?);
+        }
+        Ok((roots.iter().map(|&root| shared[root as usize]).collect(), constants, shared))
     }
 
     /// The template owner of each owner row of the instance copies, for a
@@ -559,18 +748,32 @@ impl CheckedBodySpecializationBatch {
         }).collect::<Result<Vec<_>>>()?;
         batch.set_instance_copies(first_copy_row, owners)?;
         batch.set_continuation_files(self.continuation_first_file, self.continued_files.clone())?;
-        let bindings = self.impl_bindings.iter().map(|&binding| {
-            let mut binding = binding;
-            // A trait of the replayed unit is named by its member symbol.
-            if binding.trait_unit == [u32::MAX; 2] {
-                binding.required_symbol = map.symbol(binding.required_symbol)?;
-            }
-            map.qualified_symbol(&mut binding.target)?;
-            Ok(binding)
-        }).collect::<Result<Vec<_>>>()?;
+        let bindings = self.impl_bindings.iter().map(|binding| binding.remapped(map))
+            .collect::<Result<Vec<_>>>()?;
         batch.set_impl_bindings(bindings)?;
         batch.declarations_only = Some(removed_tokens);
         Ok(batch)
+    }
+
+    /// Lift frontend binding identities with their native layout vectors, then
+    /// restore the expected binding order. Local symbols can cross imported
+    /// symbols during declarations-only remapping, so vector position alone
+    /// is not an identity. Type graph postorder remains unchanged by the
+    /// injective identity map; only whole binding vectors are permuted.
+    pub(crate) fn remap_binding_native_layouts(
+        &self,
+        map: &super::TemplateIdentityMap<'_>,
+        expected: &Self,
+        native: &[Vec<u32>],
+    ) -> Result<Vec<Vec<u32>>> {
+        ensure!(native.len() == self.impl_bindings.len(),
+            "frontend binding native layout count differs from its exact transport");
+        let mut lifted = self.impl_bindings.iter().zip(native).map(|(binding, widths)|
+            Ok((binding.remapped(map)?, widths))).collect::<Result<Vec<_>>>()?;
+        lifted.sort_unstable_by_key(|(binding, _)| binding.key());
+        ensure!(lifted.iter().map(|(binding, _)| binding).eq(expected.impl_bindings.iter()),
+            "remapped binding layout contracts differ from the original specialization");
+        Ok(lifted.into_iter().map(|(_, widths)| widths.clone()).collect())
     }
 
     pub(crate) fn is_declarations_only(&self) -> bool {
@@ -643,7 +846,7 @@ impl CheckedBodySpecializationBatch {
             }
             Ok::<(), anyhow::Error>(())
         })();
-        if interned.is_err() {
+        if let Err(error) = interned {
             for node in &self.nodes[mark.0..] {
                 self.node_index.remove(&node_key(node, &self.edges));
             }
@@ -653,7 +856,11 @@ impl CheckedBodySpecializationBatch {
             for (index, witness) in witnesses.into_iter().rev().filter(|&(index, _)| index < mark.0) {
                 self.nodes[index][3] = witness;
             }
-            return Ok(false);
+            return if error.downcast_ref::<BodyReplayCapacityError>().is_some() {
+                Ok(false)
+            } else {
+                Err(error)
+            };
         }
         self.roots.push(local_roots.iter().map(|&root| shared[root as usize]).collect());
         self.constant_nodes.push(constants);
@@ -676,11 +883,13 @@ impl CheckedBodySpecializationBatch {
             }
             return Ok(index);
         }
-        ensure!(self.nodes.len() < MAX_BODY_GRAPH_NODES,
-            "body specialization batch exceeds {MAX_BODY_GRAPH_NODES} checked type nodes");
+        ensure!(self.nodes.len() < MAX_BODY_GRAPH_NODES, BodyReplayCapacityError {
+            pool: "checked type nodes", required: self.nodes.len() + 1, limit: MAX_BODY_GRAPH_NODES,
+        });
         if node[0] == 9 {
-            ensure!(children.len() <= MAX_BODY_GRAPH_EDGES - self.edges.len(),
-                "body specialization batch exceeds {MAX_BODY_GRAPH_EDGES} checked type edges");
+            ensure!(children.len() <= MAX_BODY_GRAPH_EDGES - self.edges.len(), BodyReplayCapacityError {
+                pool: "checked type edges", required: self.edges.len() + children.len(), limit: MAX_BODY_GRAPH_EDGES,
+            });
             node[1] = self.edges.len() as u32;
             self.edges.extend_from_slice(children);
         }
@@ -744,6 +953,14 @@ impl CheckedBodySpecializationBatch {
             entry.admitted_layouts(&local)
         }).collect()
     }
+
+    fn admitted_binding_layouts(&self, native: &[u32]) -> Result<Vec<Vec<u32>>> {
+        ensure!(native.len() == self.nodes.len(), "native seed layout count differs from its graph");
+        self.impl_bindings.iter().zip(&self.impl_shared_by_local).map(|(binding, shared)| {
+            let local = shared.iter().map(|&ordinal| native[ordinal as usize]).collect::<Vec<_>>();
+            binding.environment.admitted_layouts(&local)
+        }).collect()
+    }
 }
 
 impl super::GpuTypeChecker {
@@ -756,9 +973,23 @@ impl super::GpuTypeChecker {
         queue: &wgpu::Queue,
         specialization: &CheckedBodySpecializationBatch,
     ) -> Result<Vec<Vec<u32>>> {
+        Ok(self.retained_body_native_layouts_with_bindings(device, queue, specialization)?.0)
+    }
+
+    /// Collect entry and sorted-binding environment witnesses in one shared
+    /// seed-node readback. Binding-only types need the same GPU layout
+    /// admission as the body entries before native cache reuse is possible.
+    pub(crate) fn retained_body_native_layouts_with_bindings(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        specialization: &CheckedBodySpecializationBatch,
+    ) -> Result<(Vec<Vec<u32>>, Vec<Vec<u32>>)> {
         use crate::gpu::readback::{PagedReadback, ReadbackRegion};
         let count = specialization.nodes.len();
-        if count == 0 { return specialization.admitted_layouts(&[]); }
+        if count == 0 {
+            return Ok((specialization.admitted_layouts(&[])?, specialization.admitted_binding_layouts(&[])?));
+        }
         let semantic = self.semantic_artifact()
             .ok_or_else(|| anyhow::anyhow!("body layout has no retained semantic artifact"))?;
         let source_bytes = semantic.type_generic_param_slot.byte_size as u64;
@@ -767,20 +998,67 @@ impl super::GpuTypeChecker {
             &semantic.type_instance_native_words, source_bytes, count * 4, "body native layouts",
         )?];
         let bytes = readback.read_regions(device, queue, &regions, "body native layouts")?;
-        specialization.admitted_layouts(&super::generic_calls::words(&bytes[0]))
+        let native = super::generic_calls::words(&bytes[0]);
+        Ok((specialization.admitted_layouts(&native)?, specialization.admitted_binding_layouts(&native)?))
     }
 }
 
-/// See `CheckedBodySpecializationBatch::impl_binding_words`. An empty table
-/// (every job without a replay) is the zero header.
-pub(crate) fn impl_binding_words(bindings: &[BodyImplBinding]) -> Vec<u32> {
-    let mut words = Vec::with_capacity(4 + bindings.len() * 8);
-    words.extend([bindings.len() as u32, 0, 0, 0]);
-    for binding in bindings {
+/// Every ordinary job overwrites both V2 headers, making old pool rows
+/// unreachable without uploading any unused fixed-capacity table.
+pub(crate) fn empty_impl_binding_sections() -> Vec<(usize, Vec<u32>)> {
+    vec![(0, vec![BODY_IMPL_BINDING_MAGIC, BODY_IMPL_BINDING_VERSION, 0, 0, 0, 0, 0, 0])]
+}
+
+/// Three used prefixes of fixed pools. Environment identity here is the exact
+/// ordered shared roots, including constant scalar/value identity; shared graph
+/// interning has already reconciled native layout witnesses.
+fn impl_binding_sections(
+    bindings: &[BodyImplBinding],
+    roots: &[(Vec<u32>, Vec<u32>)],
+) -> Result<Vec<(usize, Vec<u32>)>> {
+    ensure!(bindings.len() == roots.len(), "implementation environment count differs from bindings");
+    let mut words = vec![BODY_IMPL_BINDING_MAGIC, BODY_IMPL_BINDING_VERSION,
+        bindings.len() as u32, 0, 0, 0, 0, 0];
+    let mut environments = Vec::new();
+    let mut arguments = Vec::new();
+    let mut environment_index = BTreeMap::new();
+    for (binding, (types, constants)) in bindings.iter().zip(roots) {
+        let environment = if types.is_empty() && constants.is_empty() {
+            u32::MAX
+        } else if let Some(&index) = environment_index.get(&(types.clone(), constants.clone())) {
+            index
+        } else {
+            let index = environments.len() / 4;
+            ensure!(index < MAX_BODY_IMPL_ENVIRONMENTS, BodyReplayCapacityError {
+                pool: "implementation environments", required: index + 1, limit: MAX_BODY_IMPL_ENVIRONMENTS,
+            });
+            let first = arguments.len() / 4;
+            ensure!(types.len() + constants.len() <= MAX_BODY_IMPL_ARGUMENTS - first, BodyReplayCapacityError {
+                pool: "implementation argument references", required: first + types.len() + constants.len(), limit: MAX_BODY_IMPL_ARGUMENTS,
+            });
+            environments.extend([first as u32, types.len() as u32, constants.len() as u32, 0]);
+            for (domain, domain_roots) in [(0, types), (1, constants)] {
+                for (slot, &root) in domain_roots.iter().enumerate() {
+                    arguments.extend([domain, slot as u32, root, 0]);
+                }
+            }
+            environment_index.insert((types.clone(), constants.clone()), index as u32);
+            index as u32
+        };
         words.extend([binding.instance, binding.slot, binding.required_symbol, binding.trait_unit[0],
-            binding.trait_unit[1], binding.target[0], binding.target[1], binding.target[2]]);
+            binding.trait_unit[1], binding.target[0], binding.target[1], binding.target[2],
+            environment, binding.required_types, binding.required_constants, binding.receiver_mode]);
     }
-    words
+    words[3] = (environments.len() / 4) as u32;
+    words[4] = (arguments.len() / 4) as u32;
+    let mut sections = vec![(0, words)];
+    if !environments.is_empty() {
+        sections.push((BODY_IMPL_ENVIRONMENT_ROW - BODY_IMPL_BINDING_ROW, environments));
+    }
+    if !arguments.is_empty() {
+        sections.push((BODY_IMPL_ARGUMENT_ROW - BODY_IMPL_BINDING_ROW, arguments));
+    }
+    Ok(sections)
 }
 
 /// See `CheckedBodySpecializationBatch::continuation_words`: the header
@@ -1877,29 +2155,36 @@ mod tests {
             required_symbol: 0x8000_0000 | symbol,
             trait_unit: [u32::MAX; 2],
             target: [0, 1, 0x4000_0000 | target],
+            receiver_mode: 0,
+            required_types: 0,
+            required_constants: 0,
+            environment: BodyImplEnvironment::default(),
         }
     }
 
     #[test]
-    fn impl_bindings_are_sorted_by_key_and_laid_out_in_two_rows() {
+    fn impl_bindings_are_sorted_by_key_and_laid_out_in_three_v2_rows() {
         let scalar = CheckedGenericType::Scalar(3);
-        let mut batch = CheckedBodySpecializationBatch::single(entry(5, vec![scalar.clone()], vec![])).unwrap();
+        let mut batch = CheckedBodySpecializationBatch::single(entry(5, vec![scalar.clone(), scalar.clone()], vec![])).unwrap();
         assert!(batch.try_push(entry(6, vec![scalar], vec![])).unwrap());
         let imported = BodyImplBinding { trait_unit: [2, 4], ..binding(0, 0, 7, 21) };
-        batch.set_impl_bindings(vec![binding(1, 0, 7, 30), binding(0, 1, 7, 20), imported,
+        batch.set_impl_bindings(vec![binding(1, 0, 7, 30), binding(0, 1, 7, 20), imported.clone(),
             binding(0, 0, 7, 10), binding(0, 0, 7, 10)]).unwrap();
         // Duplicates collapse; the order is (instance, slot, symbol, trait
         // unit), with a local trait's (INVALID, INVALID) unit last.
         assert_eq!(batch.impl_bindings(), &[imported, binding(0, 0, 7, 10), binding(0, 1, 7, 20),
             binding(1, 0, 7, 30)]);
-        let words = batch.impl_binding_words();
-        assert_eq!(words.len(), 4 + 4 * 8);
-        assert_eq!(&words[..4], &[4, 0, 0, 0]);
-        assert_eq!(&words[4..12], &[0, 0, 0x8000_0007, 2, 4, 0, 1, 0x4000_0015]);
-        assert_eq!(&words[12..20], &[0, 0, 0x8000_0007, u32::MAX, u32::MAX, 0, 1, 0x4000_000a]);
+        let sections = batch.impl_binding_sections();
+        assert_eq!(sections.len(), 1, "nongeneric bindings do not upload fixed environment pools");
+        assert_eq!(sections[0].0, 0);
+        let words = &sections[0].1;
+        assert_eq!(words.len(), 8 + 4 * 12);
+        assert_eq!(&words[..8], &[BODY_IMPL_BINDING_MAGIC, 2, 4, 0, 0, 0, 0, 0]);
+        assert_eq!(&words[8..20], &[0, 0, 0x8000_0007, 2, 4, 0, 1, 0x4000_0015, u32::MAX, 0, 0, 0]);
+        assert_eq!(&words[20..32], &[0, 0, 0x8000_0007, u32::MAX, u32::MAX, 0, 1, 0x4000_000a, u32::MAX, 0, 0, 0]);
         assert!(words.len() <= BODY_IMPL_BINDING_WORDS);
-        // A plain job uploads the header alone.
-        assert_eq!(impl_binding_words(&[]), vec![0, 0, 0, 0]);
+        // A plain job uploads the two headers alone, never the unused pools.
+        assert_eq!(empty_impl_binding_sections(), vec![(0, vec![BODY_IMPL_BINDING_MAGIC, 2, 0, 0, 0, 0, 0, 0])]);
     }
 
     #[test]
@@ -1907,17 +2192,357 @@ mod tests {
         let mut batch = CheckedBodySpecializationBatch::single(
             entry(5, vec![CheckedGenericType::Scalar(3)], vec![])).unwrap();
         let err = batch.set_impl_bindings(vec![binding(0, 0, 7, 10), binding(0, 0, 7, 11)]).unwrap_err();
-        assert!(err.to_string().contains("two implementation targets"), "{err}");
+        assert!(err.to_string().contains("conflicting implementation contracts"), "{err}");
         assert!(batch.set_impl_bindings(vec![binding(1, 0, 7, 10)]).is_err(), "entry 1 does not exist");
+        assert!(batch.set_impl_bindings(vec![binding(0, 1, 7, 10)]).is_err(), "type slot 1 does not exist");
         assert!(batch.set_impl_bindings(vec![binding(0, MAX_BODY_TYPE_ARGUMENTS as u32, 7, 10)]).is_err());
         // One past the capacity is an error, never a truncated table.
-        let many = (0..=MAX_BODY_IMPL_BINDINGS as u32).map(|symbol| binding(0, 0, symbol, symbol)).collect();
+        let many = (0..=MAX_BODY_IMPL_BINDINGS as u32).map(|symbol| binding(0, 0, symbol, symbol)).collect::<Vec<_>>();
+        assert!(!batch.try_set_impl_bindings(many.clone()).unwrap());
         let err = batch.set_impl_bindings(many).unwrap_err();
         assert!(err.to_string().contains(&format!("needs {}", MAX_BODY_IMPL_BINDINGS + 1)), "{err}");
         assert!(batch.impl_bindings().is_empty(), "a failed install leaves no bindings");
         let full = (0..MAX_BODY_IMPL_BINDINGS as u32).map(|symbol| binding(0, 0, symbol, symbol)).collect();
         batch.set_impl_bindings(full).unwrap();
-        assert_eq!(batch.impl_binding_words().len(), BODY_IMPL_BINDING_WORDS);
+        assert_eq!(batch.impl_binding_sections()[0].1.len(), 8 + MAX_BODY_IMPL_BINDINGS * 12);
+    }
+
+    fn environment_binding(symbol: u32, types: Vec<CheckedGenericType>, constants: Vec<u32>) -> BodyImplBinding {
+        let entry = entry(0, types, constants);
+        BodyImplBinding {
+            required_types: entry.arguments.len() as u32,
+            required_constants: entry.constants.len() as u32,
+            environment: BodyImplEnvironment { arguments: entry.arguments, constants: entry.constants },
+            ..binding(0, 0, symbol, symbol)
+        }
+    }
+
+    fn assert_binding_install_unchanged(batch: &CheckedBodySpecializationBatch, before: &CheckedBodySpecializationBatch) {
+        assert_eq!(batch.packet().unwrap(), before.packet().unwrap());
+        assert_eq!(batch.impl_bindings(), before.impl_bindings());
+        assert_eq!(batch.impl_binding_sections(), before.impl_binding_sections());
+        assert_eq!(batch.nodes, before.nodes);
+        assert_eq!(batch.edges, before.edges);
+        assert_eq!(batch.node_index, before.node_index);
+        assert_eq!(batch.impl_shared_by_local, before.impl_shared_by_local);
+    }
+
+    #[test]
+    fn impl_capacity_preflight_does_not_hide_later_symbolic_or_unresolved_environments() {
+        let scalar = CheckedGenericType::Scalar(3);
+        let mut batch = CheckedBodySpecializationBatch::single(entry(5, vec![scalar.clone()], vec![])).unwrap();
+        assert!(batch.try_set_impl_bindings(vec![binding(0, 0, 1, 1)]).unwrap());
+        let before = batch.clone();
+        let mut too_many = (0..=MAX_BODY_IMPL_BINDINGS as u32)
+            .map(|symbol| binding(0, 0, symbol, symbol)).collect::<Vec<_>>();
+        let later = too_many.last_mut().unwrap();
+        later.required_constants = 1;
+        later.environment.constants.push(CheckedGenericConstant {
+            slot: 0, value: CheckedGenericConstantValue::Parameter(symbolic_parameter(0)),
+        });
+        assert!(batch.try_set_impl_bindings(too_many).is_err(), "binding capacity cannot hide a later symbolic constant");
+        assert_binding_install_unchanged(&batch, &before);
+
+        let mut too_many_nodes = (0..=MAX_BODY_GRAPH_NODES as u32)
+            .map(|symbol| environment_binding(symbol, vec![array_of(scalar.clone(), symbol + 1, None)], vec![]))
+            .collect::<Vec<_>>();
+        too_many_nodes.last_mut().unwrap().environment.arguments[0].ty =
+            CheckedGenericType::Unresolved { reference_tag: 0, instance_kind: 0 };
+        assert!(batch.try_set_impl_bindings(too_many_nodes).is_err(), "shared graph capacity cannot hide a later unresolved type");
+        assert_binding_install_unchanged(&batch, &before);
+    }
+
+    #[test]
+    fn body_entry_layout_conflicts_are_errors_and_rollback_before_planner_split() {
+        let scalar = CheckedGenericType::Scalar(3);
+        let mut batch = CheckedBodySpecializationBatch::single(entry(5,
+            vec![array_of(scalar.clone(), 2, Some(2))], vec![])).unwrap();
+        let before = batch.clone();
+        assert!(batch.try_push(entry(6, vec![array_of(scalar.clone(), 2, Some(3))], vec![])).is_err());
+        assert_binding_install_unchanged(&batch, &before);
+        assert_eq!(batch.entries.len(), before.entries.len());
+        assert!(batch.try_push(entry(6, vec![array_of(scalar, 2, Some(2))], vec![])).unwrap());
+    }
+
+    #[test]
+    fn impl_environments_use_shared_roots_and_sparse_deduplicated_v2_pools() {
+        let scalar = CheckedGenericType::Scalar(3);
+        let mut batch = CheckedBodySpecializationBatch::single(entry(5, vec![scalar.clone()], vec![])).unwrap();
+        let generic = environment_binding(2, vec![array_of(scalar.clone(), 2, None), scalar], vec![7]);
+        let duplicate_environment = BodyImplBinding {
+            required_symbol: 0x8000_0003,
+            receiver_mode: 3,
+            ..generic.clone()
+        };
+        batch.set_impl_bindings(vec![duplicate_environment, generic, binding(0, 0, 1, 1)]).unwrap();
+        let sections = batch.impl_binding_sections();
+        assert_eq!(sections.len(), 3);
+        assert_eq!(sections[0].0, 0);
+        assert_eq!(&sections[0].1[..8], &[BODY_IMPL_BINDING_MAGIC, 2, 3, 1, 3, 0, 0, 0]);
+        assert_eq!(&sections[0].1[16..20], &[u32::MAX, 0, 0, 0]);
+        assert_eq!(&sections[0].1[28..32], &[0, 2, 1, 0]);
+        assert_eq!(&sections[0].1[40..44], &[0, 2, 1, 3]);
+        assert_eq!(sections[1], (BODY_IMPL_ENVIRONMENT_ROW - BODY_IMPL_BINDING_ROW, vec![0, 2, 1, 0]));
+        assert_eq!(sections[2].0, BODY_IMPL_ARGUMENT_ROW - BODY_IMPL_BINDING_ROW);
+        let references = sections[2].1.chunks_exact(4).collect::<Vec<_>>();
+        assert_eq!(references.len(), 3);
+        assert_eq!(&references[0][..2], &[0, 0]);
+        assert_eq!(&references[1][..2], &[0, 1]);
+        assert_eq!(&references[2][..2], &[1, 0]);
+        assert!(references.iter().all(|row| row[3] == 0));
+        let array = batch.nodes[references[0][2] as usize];
+        assert_eq!(array[..4], [2, batch.roots[0][0], 2, u32::MAX]);
+        assert_eq!(references[1][2], batch.roots[0][0], "entry and impl environment share the scalar node");
+        assert_eq!(batch.nodes[references[2][2] as usize], [10, crate::primitive_types::SCALAR_U32, 7, 0, 0, 0, 0, 0]);
+        assert_eq!(batch.packet().unwrap()[2], 3, "binding-only array and constant are uploaded in the shared graph");
+        assert_eq!(batch.binding_scheduling_environments().unwrap()[0], (vec![], vec![]));
+        assert_eq!(batch.binding_scheduling_environments().unwrap()[1], batch.binding_scheduling_environments().unwrap()[2]);
+        assert!(sections.iter().all(|(row, words)| words.len() % 4 == 0
+            && row * 4 + words.len() <= BODY_IMPL_BINDING_WORDS));
+    }
+
+    #[test]
+    fn impl_binding_conflicts_and_invalid_environments_leave_all_graph_state_unchanged() {
+        let scalar = CheckedGenericType::Scalar(3);
+        let mut batch = CheckedBodySpecializationBatch::single(entry(5, vec![scalar.clone()], vec![])).unwrap();
+        let good = environment_binding(7, vec![array_of(scalar.clone(), 2, None)], vec![1]);
+        batch.set_impl_bindings(vec![good.clone(), good.clone()]).unwrap();
+        assert_eq!(batch.impl_bindings().len(), 1);
+        let before = batch.clone();
+        let mut conflicts = vec![
+            BodyImplBinding { target: [0, 1, 99], ..good.clone() },
+            BodyImplBinding { receiver_mode: 1, ..good.clone() },
+            environment_binding(7, vec![array_of(scalar.clone(), 3, None)], vec![1]),
+            environment_binding(7, vec![array_of(scalar.clone(), 2, Some(2))], vec![1]),
+            environment_binding(7, vec![array_of(scalar.clone(), 2, None)], vec![2]),
+        ];
+        for conflict in conflicts.drain(..) {
+            assert!(batch.try_set_impl_bindings(vec![good.clone(), conflict.clone()]).is_err());
+            assert_binding_install_unchanged(&batch, &before);
+            assert!(batch.set_impl_bindings(vec![good.clone(), conflict]).is_err());
+            assert_binding_install_unchanged(&batch, &before);
+        }
+        let mut wrong_type_slot = good.clone();
+        wrong_type_slot.environment.arguments[0].slot = 1;
+        let mut wrong_constant_slot = good.clone();
+        wrong_constant_slot.environment.constants[0].slot = 1;
+        let mut symbolic_constant = good.clone();
+        symbolic_constant.environment.constants[0].value = CheckedGenericConstantValue::Parameter(symbolic_parameter(0));
+        let invalid = vec![
+            wrong_type_slot,
+            wrong_constant_slot,
+            symbolic_constant,
+            BodyImplBinding { required_types: 0, ..good.clone() },
+            BodyImplBinding { required_constants: 0, ..good.clone() },
+            BodyImplBinding { receiver_mode: 4, ..good.clone() },
+            BodyImplBinding { trait_unit: [0, u32::MAX], ..good.clone() },
+            environment_binding(7, vec![CheckedGenericType::Unresolved { reference_tag: 0, instance_kind: 0 }], vec![]),
+            environment_binding(7, vec![CheckedGenericType::Parameter(symbolic_parameter(0))], vec![]),
+            environment_binding(7, vec![scalar.clone(); MAX_BODY_TYPE_ARGUMENTS + 1], vec![]),
+            environment_binding(7, vec![], vec![0; MAX_BODY_TYPE_ARGUMENTS + 1]),
+        ];
+        for invalid in invalid {
+            assert!(batch.try_set_impl_bindings(vec![invalid.clone()]).is_err());
+            assert_binding_install_unchanged(&batch, &before);
+            assert!(batch.set_impl_bindings(vec![invalid]).is_err());
+            assert_binding_install_unchanged(&batch, &before);
+        }
+        let refinement = environment_binding(1, vec![array_of(scalar.clone(), 2, Some(2))], vec![]);
+        let conflicting_refinement = environment_binding(2, vec![array_of(scalar.clone(), 2, Some(3))], vec![]);
+        assert!(batch.try_set_impl_bindings(vec![refinement.clone(), conflicting_refinement.clone()]).is_err());
+        assert_binding_install_unchanged(&batch, &before);
+        assert!(batch.set_impl_bindings(vec![refinement, conflicting_refinement]).is_err());
+        assert_binding_install_unchanged(&batch, &before);
+        assert!(batch.set_impl_bindings(vec![
+            environment_binding(1, vec![array_of(scalar, 3, None)], vec![]),
+            environment_binding(2, vec![CheckedGenericType::Unresolved { reference_tag: 0, instance_kind: 0 }], vec![]),
+        ]).is_err());
+        assert_binding_install_unchanged(&batch, &before);
+    }
+
+    #[test]
+    fn impl_binding_only_layouts_are_canonical_and_checked_against_gpu_witnesses() {
+        let scalar = CheckedGenericType::Scalar(3);
+        let mut batch = CheckedBodySpecializationBatch::single(entry(5, vec![scalar.clone()], vec![])).unwrap();
+        let missing = environment_binding(1, vec![array_of(scalar.clone(), 2, None)], vec![7]);
+        let known = environment_binding(2, vec![array_of(scalar, 2, Some(2))], vec![7]);
+        let (missing_semantic, missing_widths) = missing.environment.scheduling_environment().unwrap();
+        let (known_semantic, known_widths) = known.environment.scheduling_environment().unwrap();
+        assert_eq!(missing_semantic, known_semantic);
+        assert_ne!(missing_widths, known_widths);
+        batch.set_impl_bindings(vec![known, missing, binding(0, 0, 3, 3)]).unwrap();
+        let mut native = batch.nodes.iter().map(|node| node[3]).collect::<Vec<_>>();
+        assert_eq!(batch.admitted_layouts(&native).unwrap(), vec![vec![0]], "binding layouts do not change the existing entry API");
+        let binding_layouts = batch.admitted_binding_layouts(&native).unwrap();
+        assert_eq!(binding_layouts, vec![vec![0, 2], vec![0, 2], vec![]]);
+        let array = batch.nodes.iter().position(|node| node[0] == 2).unwrap();
+        native[array] = 3;
+        assert!(batch.admitted_binding_layouts(&native).is_err(), "known input witness must survive GPU admission");
+        assert!(batch.admitted_binding_layouts(&native[..native.len() - 1]).is_err());
+
+        let mut refinable = CheckedBodySpecializationBatch::single(entry(5,
+            vec![array_of(CheckedGenericType::Scalar(3), 2, None)], vec![])).unwrap();
+        for width in [2, 3] {
+            refinable.set_impl_bindings(vec![environment_binding(1,
+                vec![array_of(CheckedGenericType::Scalar(3), 2, Some(width))], vec![])]).unwrap();
+            assert_eq!(refinable.nodes[refinable.roots[0][0] as usize][3], width,
+                "replacing bindings discards the old binding-only refinement too");
+        }
+        refinable.set_impl_bindings(vec![]).unwrap();
+        assert_eq!(refinable.nodes[refinable.roots[0][0] as usize][3], u32::MAX);
+    }
+
+    #[test]
+    fn impl_argument_pool_accepts_exact_capacity_deduplicates_and_rejects_one_more_environment() {
+        let scalar = CheckedGenericType::Scalar(3);
+        let base = CheckedBodySpecializationBatch::single(entry(5, vec![scalar.clone()], vec![])).unwrap();
+        let make = |symbol: u32| environment_binding(symbol,
+            vec![scalar.clone(); MAX_BODY_TYPE_ARGUMENTS],
+            (0..MAX_BODY_TYPE_ARGUMENTS).map(|bit| if bit < 10 { (symbol >> bit) & 1 } else { 0 }).collect());
+        let count = MAX_BODY_IMPL_ARGUMENTS / (2 * MAX_BODY_TYPE_ARGUMENTS);
+        let mut batch = base.clone();
+        batch.set_impl_bindings((0..count as u32).map(make).collect()).unwrap();
+        let sections = batch.impl_binding_sections();
+        assert_eq!(sections[0].1[3..5], [count as u32, MAX_BODY_IMPL_ARGUMENTS as u32]);
+        assert_eq!(sections[2].1.len(), MAX_BODY_IMPL_ARGUMENTS * 4);
+        let before = batch.clone();
+        assert!(!batch.try_set_impl_bindings((0..=count as u32).map(make).collect()).unwrap());
+        assert_binding_install_unchanged(&batch, &before);
+        assert!(batch.set_impl_bindings((0..=count as u32).map(make).collect()).unwrap_err()
+            .to_string().contains("argument references"));
+        assert_binding_install_unchanged(&batch, &before);
+
+        let shared = make(0);
+        let all = (0..MAX_BODY_IMPL_BINDINGS as u32).map(|symbol| BodyImplBinding {
+            required_symbol: 0x8000_0000 | symbol, ..shared.clone()
+        }).collect();
+        let mut deduplicated = base;
+        deduplicated.set_impl_bindings(all).unwrap();
+        assert_eq!(deduplicated.impl_binding_sections()[0].1[3..5], [1, 64], "identical environments spend one argument span");
+    }
+
+    #[test]
+    fn impl_graph_capacity_failures_are_atomic_and_replacement_reclaims_binding_only_nodes() {
+        let scalar = CheckedGenericType::Scalar(3);
+        let mut batch = CheckedBodySpecializationBatch::single(entry(5, vec![scalar.clone()], vec![])).unwrap();
+        let make = |symbol| environment_binding(symbol, vec![array_of(scalar.clone(), symbol + 1, None)], vec![]);
+        batch.set_impl_bindings((0..MAX_BODY_GRAPH_NODES as u32 - 1).map(make).collect()).unwrap();
+        assert_eq!(batch.nodes.len(), MAX_BODY_GRAPH_NODES);
+        let before = batch.clone();
+        assert!(!batch.try_set_impl_bindings((0..MAX_BODY_GRAPH_NODES as u32).map(make).collect()).unwrap());
+        assert_binding_install_unchanged(&batch, &before);
+        assert!(batch.set_impl_bindings((0..MAX_BODY_GRAPH_NODES as u32).map(make).collect()).is_err());
+        assert_binding_install_unchanged(&batch, &before);
+        for generation in 0..=MAX_BODY_GRAPH_NODES as u32 {
+            batch.set_impl_bindings(vec![make(10_000 + generation)]).unwrap();
+            assert_eq!(batch.nodes.len(), 2, "old binding-only types cannot consume graph capacity");
+        }
+        batch.set_impl_bindings(vec![]).unwrap();
+        assert_eq!(batch.nodes.len(), 1);
+        assert_eq!(batch.impl_binding_sections(), empty_impl_binding_sections());
+        assert!(batch.impl_shared_by_local.is_empty());
+    }
+
+    #[test]
+    fn impl_graph_edge_capacity_failure_preserves_existing_bindings() {
+        let scalar = CheckedGenericType::Scalar(3);
+        let mut batch = CheckedBodySpecializationBatch::single(entry(5, vec![scalar.clone()], vec![])).unwrap();
+        let make = |symbol| environment_binding(symbol, vec![CheckedGenericType::Nominal {
+            identity: CheckedNominalIdentity::Public([1, 2, symbol]),
+            arguments: vec![CheckedGenericApplicationArgument::Type(scalar.clone()); MAX_BODY_TYPE_ARGUMENTS],
+            words: None,
+            local_replay: None,
+        }], vec![]);
+        let count = MAX_BODY_GRAPH_EDGES / MAX_BODY_TYPE_ARGUMENTS;
+        batch.set_impl_bindings((0..count as u32).map(make).collect()).unwrap();
+        assert_eq!(batch.edges.len(), MAX_BODY_GRAPH_EDGES);
+        let before = batch.clone();
+        assert!(!batch.try_set_impl_bindings((0..=count as u32).map(make).collect()).unwrap());
+        assert_binding_install_unchanged(&batch, &before);
+        assert!(batch.set_impl_bindings((0..=count as u32).map(make).collect()).is_err());
+        assert_binding_install_unchanged(&batch, &before);
+    }
+
+    #[test]
+    fn declarations_only_remaps_binding_targets_and_all_environment_types() {
+        use crate::type_checker::{BlankingDirection, CheckedBodySpan, TemplateBlanking};
+        let blanking = TemplateBlanking::new([7, 3], &[CheckedBodySpan {
+            function_hir: 4, block_hir: 5, subtree_end: 12,
+            open_token: 10, close_token: 20, open_byte: 100, close_byte: 200,
+        }], &super::super::checked_contracts::CheckedUnitContracts::default()).unwrap().unwrap();
+        let scalar = CheckedGenericType::Scalar(3);
+        let mut batch = CheckedBodySpecializationBatch::single(entry(BODY_COPY_TARGET | 400, vec![scalar.clone()], vec![])).unwrap();
+        batch.set_instance_copies(100, vec![(3, None)]).unwrap();
+        let local = CheckedGenericType::Nominal {
+            identity: CheckedNominalIdentity::SourceLocal { unit: [7, 3], declaration_token: 40 },
+            local_replay: Some(0x2000_0000 | 40),
+            arguments: vec![CheckedGenericApplicationArgument::Type(array_of(scalar, 5, None))],
+            words: None,
+        };
+        let foreign = CheckedGenericType::Nominal {
+            identity: CheckedNominalIdentity::SourceLocal { unit: [8, 3], declaration_token: 40 },
+            local_replay: Some(0x2000_0000 | 40), arguments: vec![], words: None,
+        };
+        let mut selected = environment_binding(30, vec![local, foreign], vec![7]);
+        selected.target = [7, 3, 0x4000_0000 | 40];
+        batch.set_impl_bindings(vec![selected.clone()]).unwrap();
+        let copy = batch.declarations_only(&blanking.map(BlankingDirection::ToCopy), 94, 9).unwrap();
+        let binding = &copy.impl_bindings()[0];
+        assert_eq!(binding.required_symbol, 0x8000_0000 | 24);
+        assert_eq!(binding.target, [7, 3, 0x4000_0000 | 31]);
+        assert!(matches!(&binding.environment.arguments[0].ty,
+            CheckedGenericType::Nominal { identity: CheckedNominalIdentity::SourceLocal {
+                declaration_token: 31, .. }, local_replay: Some(anchor), .. } if *anchor == 0x2000_0000 | 31));
+        assert_eq!(binding.environment.arguments[1], selected.environment.arguments[1], "foreign declaration identity is stable");
+        assert_eq!(binding.environment.constants, selected.environment.constants, "literal constants survive remapping exactly");
+        let full = copy.declarations_only(&blanking.map(BlankingDirection::ToFull), 100, 9).unwrap();
+        assert_eq!(full.impl_bindings(), &[selected]);
+    }
+
+    #[test]
+    fn binding_native_layout_remap_tracks_crossing_local_and_imported_symbols() {
+        use crate::type_checker::{BlankingDirection, CheckedBodySpan, TemplateBlanking};
+        let blanking = TemplateBlanking::new([7, 3], &[CheckedBodySpan {
+            function_hir: 4, block_hir: 5, subtree_end: 38,
+            open_token: 10, close_token: 20, open_byte: 100, close_byte: 200,
+        }], &super::super::checked_contracts::CheckedUnitContracts::default()).unwrap().unwrap();
+        let scalar = CheckedGenericType::Scalar(3);
+        let mut full = CheckedBodySpecializationBatch::single(entry(BODY_COPY_TARGET | 400,
+            vec![scalar.clone()], vec![])).unwrap();
+        full.set_instance_copies(120, vec![(3, None)]).unwrap();
+        let mut local = environment_binding(96, vec![CheckedGenericType::Nominal {
+            identity: CheckedNominalIdentity::SourceLocal { unit: [7, 3], declaration_token: 40 },
+            local_replay: Some(0x2000_0000 | 40),
+            arguments: vec![CheckedGenericApplicationArgument::Type(array_of(scalar.clone(), 2, Some(2)))],
+            words: Some(2),
+        }], vec![7]);
+        local.target = [7, 3, 0x4000_0000 | 40];
+        let imported = BodyImplBinding { trait_unit: [8, 9],
+            ..environment_binding(80, vec![array_of(scalar, 3, Some(3))], vec![8]) };
+        full.set_impl_bindings(vec![local.clone(), imported.clone()]).unwrap();
+        let copy = full.declarations_only(&blanking.map(BlankingDirection::ToCopy), 88, 9).unwrap();
+        assert_eq!(full.impl_bindings.iter().map(|binding| binding.required_symbol).collect::<Vec<_>>(),
+            vec![0x8000_0000 | 80, 0x8000_0000 | 96]);
+        assert_eq!(copy.impl_bindings.iter().map(|binding| binding.required_symbol).collect::<Vec<_>>(),
+            vec![0x8000_0000 | 64, 0x8000_0000 | 80]);
+        let native = vec![vec![0, 2, 2], vec![0, 3]];
+        let to_full = blanking.map(BlankingDirection::ToFull);
+        assert_eq!(copy.remap_binding_native_layouts(&to_full, &full, &native).unwrap(),
+            vec![vec![0, 3], vec![0, 2, 2]], "width vectors stay with exact bindings when key order flips");
+        assert!(copy.remap_binding_native_layouts(&to_full, &full, &native[..1]).is_err());
+
+        let mut missing = full.clone();
+        missing.set_impl_bindings(vec![local.clone()]).unwrap();
+        assert!(copy.remap_binding_native_layouts(&to_full, &missing, &native).is_err());
+        let mut conflicting_target = imported.clone();
+        conflicting_target.target[2] = 0x4000_0099;
+        let mut conflicting = full.clone();
+        conflicting.set_impl_bindings(vec![local.clone(), conflicting_target]).unwrap();
+        assert!(copy.remap_binding_native_layouts(&to_full, &conflicting, &native).is_err());
+        let mut conflicting_environment = imported;
+        conflicting_environment.environment.constants[0] = CheckedGenericConstant::literal(0, 9);
+        conflicting.set_impl_bindings(vec![local, conflicting_environment]).unwrap();
+        assert!(copy.remap_binding_native_layouts(&to_full, &conflicting, &native).is_err());
     }
 
     #[test]
@@ -1927,16 +2552,27 @@ mod tests {
             let line = reader.lines()
                 .find(|line| line.starts_with(&format!("static const uint {name} = ")))
                 .unwrap_or_else(|| panic!("{name} is not a literal in body_impl_bindings.slang"));
-            line.split('=').nth(1).unwrap().trim().trim_end_matches(';').trim_end_matches('u').parse().unwrap()
+            let literal = line.split('=').nth(1).unwrap().trim().trim_end_matches(';').trim_end_matches('u');
+            if let Some(hex) = literal.strip_prefix("0x") { usize::from_str_radix(hex, 16).unwrap() }
+            else { literal.parse().unwrap() }
         };
         assert_eq!(value("BODY_MAX_IMPL_BINDINGS"), MAX_BODY_IMPL_BINDINGS);
+        assert_eq!(value("BODY_IMPL_BINDING_MAGIC"), BODY_IMPL_BINDING_MAGIC as usize);
+        assert_eq!(value("BODY_IMPL_BINDING_VERSION"), BODY_IMPL_BINDING_VERSION as usize);
+        assert_eq!(value("BODY_IMPL_BINDING_ROWS"), 3);
+        assert_eq!(value("BODY_MAX_IMPL_ENVIRONMENTS"), MAX_BODY_IMPL_ENVIRONMENTS);
+        assert_eq!(value("BODY_MAX_IMPL_ARGUMENTS"), MAX_BODY_IMPL_ARGUMENTS);
         // The search halves [0, count) until it is empty: log2(capacity) + 1 steps.
         assert_eq!(value("BODY_IMPL_BINDING_SEARCH_STEPS"), MAX_BODY_IMPL_BINDINGS.ilog2() as usize + 1);
         // The shader places the section after the extension rows and every extra entry.
         assert!(reader.contains("BODY_GRAPH_EXT_START + BODY_GRAPH_EXT_ROWS + (BODY_MAX_ENTRIES - 1u) * BODY_EXTRA_ENTRY_ROWS"));
         assert_eq!(BODY_IMPL_BINDING_ROW,
             BODY_ENTRY_TABLE_START + BODY_GRAPH_EXT_ROWS + (MAX_BODY_ENTRIES - 1) * BODY_ENTRY_ROWS);
-        assert_eq!(BODY_CONTINUATION_ROW, BODY_IMPL_BINDING_ROW + 1 + 2 * MAX_BODY_IMPL_BINDINGS);
+        assert_eq!(BODY_IMPL_ENVIRONMENT_ROW, BODY_IMPL_BINDING_ROW + 2 + 3 * MAX_BODY_IMPL_BINDINGS);
+        assert_eq!(BODY_IMPL_ARGUMENT_ROW, BODY_IMPL_ENVIRONMENT_ROW + MAX_BODY_IMPL_ENVIRONMENTS);
+        assert_eq!(BODY_CONTINUATION_ROW, BODY_IMPL_ARGUMENT_ROW + MAX_BODY_IMPL_ARGUMENTS);
+        assert!(reader.contains("BODY_IMPL_BINDING_ROW + 2u + BODY_IMPL_BINDING_ROWS * BODY_MAX_IMPL_BINDINGS;"));
+        assert!(reader.contains("BODY_IMPL_ARGUMENT_ROW = BODY_IMPL_ENVIRONMENT_ROW + BODY_MAX_IMPL_ENVIRONMENTS;"));
         assert_eq!(BODY_INPUT_WORDS, (BODY_CONTINUATION_ROW + 1 + MAX_BODY_CONTINUATION_FILES / 4) * 4);
     }
 
@@ -1951,7 +2587,7 @@ mod tests {
         };
         assert_eq!(value("BODY_MAX_CONTINUATION_FILES"), MAX_BODY_CONTINUATION_FILES);
         assert!(reader.contains(
-            "BODY_CONTINUATION_ROW = BODY_IMPL_BINDING_ROW + 1u + BODY_MAX_IMPL_BINDINGS * 2u;"));
+            "BODY_CONTINUATION_ROW = BODY_IMPL_ARGUMENT_ROW + BODY_MAX_IMPL_ARGUMENTS;"));
         assert_eq!(MAX_BODY_CONTINUATION_FILES % 4, 0);
 
         assert_eq!(continuation_words(0, &[]), vec![0, 0, 0, 0]);

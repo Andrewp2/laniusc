@@ -1,43 +1,63 @@
 //! Native program checking owns its frozen catalog and every replay capability.
 //! Neither source reparsing nor an existing native body can waive this gate.
 
-use std::{collections::{BTreeMap, BTreeSet}, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use anyhow::{Result, anyhow, ensure};
 
 use super::{
+    super::unit_cache::CachedReplayBindingContract,
     catalog::{CatalogInput, FrozenCatalog, FrozenSnapshot, accepted_call_owners},
-    dispatch::{EvidenceDispatchFailure, EvidenceWorkspacePool, GpuPacket, GpuProgramEvidence},
-    packet::{AdmittedCall, ReplayContextInput, RetainedCallSite, ValidatedEvidence},
+    dispatch::{
+        EvidenceDispatchFailure,
+        EvidenceWorkspacePool,
+        GpuPacket,
+        GpuProgramEvidence,
+        ImplProjectionLimits,
+    },
+    packet::{
+        AdmittedCall,
+        AdmittedImplementationApplication,
+        ProgramPacket,
+        ReplayContextInput,
+        RetainedCallSite,
+        ValidatedEvidence,
+    },
 };
 use crate::{
+    codegen::lowering::ReplaySelection,
     compiler::{
         CompileError,
         Diagnostic,
         diagnostic_label_from_source_span,
-        gpu_compiler::typecheck::{
-            CompiledSourcePackObject,
-            NativeSymbolKind,
-            CompiledSourcePackUnit,
-            PendingReplayUnit,
-            OriginalUnitFacts,
+        gpu_compiler::{
+            instance_copies::InstanceSources,
+            typecheck::{
+                CompiledSourcePackObject,
+                CompiledSourcePackUnit,
+                NativeSymbolKind,
+                OriginalUnitFacts,
+                PendingReplayUnit,
+            },
         },
         source_pack_diagnostic_files,
         source_pack_file_for_global_span,
-        gpu_compiler::instance_copies::InstanceSources,
     },
     type_checker::{
         BODY_COPY_TARGET,
+        BlankingDirection,
         BodyImplBinding,
+        BodyImplEnvironment,
         CheckedBodySpecialization,
         CheckedBodySpecializationBatch,
         CheckedGenericCall,
         CheckedGenericTarget,
         CheckedUnitContracts,
-        BlankingDirection,
         TemplateBlanking,
     },
-    codegen::lowering::ReplaySelection,
 };
 
 pub(in crate::compiler::gpu_compiler) struct NativeProgramSession {
@@ -53,41 +73,70 @@ pub(in crate::compiler::gpu_compiler) struct NativeProgramSession {
     /// Closure instances decoded, closed, appended as calls, and admitted
     /// concrete, summed over units (trace only).
     closure_stats: [usize; 4],
+    /// Each exact admitted origin projects its implementation applications at
+    /// most once. These owning capabilities never enter the cross-job cache.
+    impl_applications: BTreeMap<u32, Arc<ReplayImplApplications>>,
 }
 
 /// A host span named for one source unit (or none), recorded only while
 /// tracing.
-pub(in crate::compiler::gpu_compiler) fn unit_span(name: &str, unit: Option<[u32; 2]>, start: std::time::Instant) {
-    if !crate::gpu::trace::enabled() { return; }
+pub(in crate::compiler::gpu_compiler) fn unit_span(
+    name: &str,
+    unit: Option<[u32; 2]>,
+    start: std::time::Instant,
+) {
+    if !crate::gpu::trace::enabled() {
+        return;
+    }
     let end = std::time::Instant::now();
     match unit {
         Some([library, unit]) => crate::gpu::trace::record_host_span(
-            "host.compiler", &format!("{name} {library}:{unit}"), start, end),
+            "host.compiler",
+            &format!("{name} {library}:{unit}"),
+            start,
+            end,
+        ),
         None => crate::gpu::trace::record_host_span("host.compiler", name, start, end),
     }
 }
 
 impl NativeProgramSession {
-    pub fn admit(
-        workspace: &EvidenceWorkspacePool,
-        units: &[OriginalUnitFacts],
-    ) -> Result<Self> {
+    pub fn admit(workspace: &EvidenceWorkspacePool, units: &[OriginalUnitFacts]) -> Result<Self> {
         // Facts contain no object. Freeze the complete exact source inventory
         // before any pending unit can be released or native bodies reused.
-        let inputs = units.iter().map(|facts| CatalogInput { facts }).collect::<Vec<_>>();
+        let inputs = units
+            .iter()
+            .map(|facts| CatalogInput { facts })
+            .collect::<Vec<_>>();
         let start = std::time::Instant::now();
         let catalog = FrozenCatalog::freeze(&inputs)?;
         let frozen = std::time::Instant::now();
-        crate::gpu::trace::record_host_span("host.compiler", "program_evidence.catalog_freeze", start, frozen);
+        crate::gpu::trace::record_host_span(
+            "host.compiler",
+            "program_evidence.catalog_freeze",
+            start,
+            frozen,
+        );
         let gpu = GpuProgramEvidence::admit(workspace.checkout(), catalog.clone())?;
-        crate::gpu::trace::record_host_span("host.compiler", "program_evidence.admit", frozen, std::time::Instant::now());
+        crate::gpu::trace::record_host_span(
+            "host.compiler",
+            "program_evidence.admit",
+            frozen,
+            std::time::Instant::now(),
+        );
         let started = std::time::Instant::now();
         let mut packet = gpu.new_packet()?;
         unit_span("program_evidence.new_packet", None, started);
         for snapshot in &catalog.snapshots {
             let started = std::time::Instant::now();
-            packet.packet_mut()?.append_original_unit_calls(&snapshot.original_facts)?;
-            unit_span("program_evidence.append_original_calls", Some(snapshot.unit), started);
+            packet
+                .packet_mut()?
+                .append_original_unit_calls(&snapshot.original_facts)?;
+            unit_span(
+                "program_evidence.append_original_calls",
+                Some(snapshot.unit),
+                started,
+            );
         }
         let closure_started = std::time::Instant::now();
         // The instance closure's origins join the same check: each closed
@@ -102,40 +151,63 @@ impl NativeProgramSession {
             let mut dependency_calls = BTreeMap::<[u32; 2], Vec<(CheckedGenericCall, u32)>>::new();
             let mut dependency_seen = BTreeSet::<([u32; 2], u32, String)>::new();
             for snapshot in &catalog.snapshots {
-                let Some(closure) = snapshot.original_facts.instance_closure() else { continue };
+                let Some(closure) = snapshot.original_facts.instance_closure() else {
+                    continue;
+                };
                 closure_stats[0] += closure.dependency_instances.len();
                 for instance in &closure.dependency_instances {
                     if instance.unit == snapshot.unit
-                        || !dependency_seen.insert((instance.unit, instance.call.call_hir,
-                            format!("{:?}{:?}", instance.call.arguments, instance.call.constants)))
+                        || !dependency_seen.insert((
+                            instance.unit,
+                            instance.call.call_hir,
+                            format!("{:?}{:?}", instance.call.arguments, instance.call.constants),
+                        ))
                     {
                         continue;
                     }
-                    dependency_calls.entry(instance.unit).or_default()
+                    dependency_calls
+                        .entry(instance.unit)
+                        .or_default()
                         .push((instance.call.clone(), instance.depth));
                 }
             }
             for (index, snapshot) in catalog.snapshots.iter().enumerate() {
-                let local = snapshot.original_facts.instance_closure()
+                let local = snapshot
+                    .original_facts
+                    .instance_closure()
                     .map_or(&[][..], |closure| closure.instances.as_slice());
                 closure_stats[0] += local.len();
-                let (calls, depths): (Vec<_>, Vec<_>) = local.iter()
+                let (calls, depths): (Vec<_>, Vec<_>) = local
+                    .iter()
                     .map(|instance| (&instance.call, instance.depth))
-                    .chain(dependency_calls.get(&snapshot.unit).into_iter().flatten()
-                        .map(|(call, depth)| (call, *depth)))
+                    .chain(
+                        dependency_calls
+                            .get(&snapshot.unit)
+                            .into_iter()
+                            .flatten()
+                            .map(|(call, depth)| (call, *depth)),
+                    )
                     .filter(|(call, _)| call.has_closed_arguments())
                     .map(|(call, depth)| (call.clone(), depth))
                     .unzip();
-                if calls.is_empty() { continue; }
+                if calls.is_empty() {
+                    continue;
+                }
                 closure_stats[1] += calls.len();
                 let calls: Arc<[CheckedGenericCall]> = calls.into();
                 let snapshot_index = u32::try_from(index)?;
-                let appended = packet.packet_mut()?.append_closure_calls(snapshot_index, calls.clone())?;
+                let appended = packet
+                    .packet_mut()?
+                    .append_closure_calls(snapshot_index, calls.clone())?;
                 closure_stats[2] += appended.len();
                 closure_calls.push((snapshot_index, snapshot.unit, calls, depths, appended));
             }
         }
-        unit_span("program_evidence.append_closure_calls", None, closure_started);
+        unit_span(
+            "program_evidence.append_closure_calls",
+            None,
+            closure_started,
+        );
         let mut result = Self {
             catalog,
             gpu,
@@ -144,17 +216,27 @@ impl NativeProgramSession {
             poisoned: false,
             closure_origins: BTreeMap::new(),
             closure_stats,
+            impl_applications: BTreeMap::new(),
         };
         // An empty call inventory still requires catalog and batch admission.
         result.check()?;
-        let _origins_span = crate::gpu::trace::HostSpan::new("host.compiler", "program_evidence.closure_origins");
+        let _origins_span =
+            crate::gpu::trace::HostSpan::new("host.compiler", "program_evidence.closure_origins");
         for (snapshot, unit, calls, depths, appended) in closure_calls {
             let packet = result.packet.packet_mut()?;
-            let origins = appended.into_iter()
-                .map(|(index, context)| Ok((depths[index],
-                    packet.admitted_closure_call(snapshot, context, calls[index].call_hir)?)))
+            let origins = appended
+                .into_iter()
+                .map(|(index, context)| {
+                    Ok((
+                        depths[index],
+                        packet.admitted_closure_call(snapshot, context, calls[index].call_hir)?,
+                    ))
+                })
                 .collect::<Result<Vec<_>>>()?;
-            let origins = origins.into_iter().filter(|(_, call)| call.is_concrete()).collect::<Vec<_>>();
+            let origins = origins
+                .into_iter()
+                .filter(|(_, call)| call.is_concrete())
+                .collect::<Vec<_>>();
             result.closure_stats[3] += origins.len();
             result.closure_origins.insert(unit, origins);
         }
@@ -210,16 +292,30 @@ impl NativeProgramSession {
 
     /// Only this fully admitted session can issue an original publication
     /// receipt. Even a unit with zero calls passed the unconditional batch gate.
-    pub fn validated_original(&mut self, facts: &OriginalUnitFacts) -> Result<ValidatedOriginalUnit> {
+    pub fn validated_original(
+        &mut self,
+        facts: &OriginalUnitFacts,
+    ) -> Result<ValidatedOriginalUnit> {
         self.ready()?;
         let key = [facts.interface().library_id, facts.interface().unit_id];
-        let snapshot = *self.catalog.snapshot_by_unit.get(&key)
+        let snapshot = *self
+            .catalog
+            .snapshot_by_unit
+            .get(&key)
             .ok_or_else(|| anyhow!("native source unit absent from frozen program"))?;
         let frozen = &self.catalog.snapshots[snapshot as usize];
-        ensure!(frozen.original_facts.same_snapshot(facts),
-            "native source unit does not own the admitted original snapshot");
-        let calls = self.packet.packet_mut()?.admitted_unit_calls(snapshot, None)?;
-        Ok(ValidatedOriginalUnit { facts: frozen.original_facts.clone(), calls })
+        ensure!(
+            frozen.original_facts.same_snapshot(facts),
+            "native source unit does not own the admitted original snapshot"
+        );
+        let calls = self
+            .packet
+            .packet_mut()?
+            .admitted_unit_calls(snapshot, None)?;
+        Ok(ValidatedOriginalUnit {
+            facts: frozen.original_facts.clone(),
+            calls,
+        })
     }
 
     /// The lexical scope a concrete origin call would replay: its template
@@ -229,36 +325,253 @@ impl NativeProgramSession {
     /// different callables and every common owner binds identically.
     pub fn replay_scope(&mut self, origin: &AdmittedCall) -> Result<ReplayScope> {
         self.ready()?;
-        let (_, snapshot, selected_owner_hir, _) = self.packet.packet_mut()?.replay_origin(origin)?;
+        let (_, snapshot, selected_owner_hir, _) =
+            self.packet.packet_mut()?.replay_origin(origin)?;
         let owner = self.catalog.owner(snapshot, selected_owner_hir)?;
-        let owners = self.catalog.owner_chain(owner)?.into_iter().map(|owner| {
-            let row = self.catalog.tables.row(2, owner)?;
-            let end = row[4].checked_add(row[5]).ok_or_else(|| anyhow!("parameter span overflow"))?;
-            let parameters = (row[4]..end)
-                .map(|index| {
-                    let parameter = self.catalog.tables.row(3, index)?;
-                    Ok((parameter[2], parameter[3]))
-                })
-                .collect::<Result<Vec<_>>>()?;
-            Ok((owner, parameters))
-        }).collect::<Result<Vec<_>>>()?;
-        Ok(ReplayScope { snapshot, selected_owner_hir, owners })
+        let owners = self
+            .catalog
+            .owner_chain(owner)?
+            .into_iter()
+            .map(|owner| {
+                let row = self.catalog.tables.row(2, owner)?;
+                let end = row[4]
+                    .checked_add(row[5])
+                    .ok_or_else(|| anyhow!("parameter span overflow"))?;
+                let parameters = (row[4]..end)
+                    .map(|index| {
+                        let parameter = self.catalog.tables.row(3, index)?;
+                        Ok((parameter[2], parameter[3]))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                Ok((owner, parameters))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(ReplayScope {
+            snapshot,
+            selected_owner_hir,
+            owners,
+        })
     }
 
-    /// The impl bindings of the body an origin call instantiates, as instance
-    /// 0 (see `BodyImplBinding`). Each bound of the body's owner chain on a
-    /// type slot that evidence proved with a nongeneric implementation outside
-    /// the template unit gives one binding per implementation method. Bounds
-    /// proved by an implementation of the template unit give none: 09 finds
-    /// those in the replayed unit itself.
-    pub fn instance_impl_bindings(&mut self, origin: &AdmittedCall) -> Result<Vec<BodyImplBinding>> {
+    /// Descriptive normalized entry-zero transport for exact bounded packet
+    /// planning. Only the retained holder can authorize its eventual replay.
+    pub fn instance_impl_bindings(
+        &mut self,
+        origin: &AdmittedCall,
+    ) -> Result<Vec<BodyImplBinding>> {
+        Ok(self.replay_impl_applications(origin)?.bindings.clone())
+    }
+
+    /// Descriptive cache contract and GPU-derived layout witnesses. Possessing
+    /// these values cannot authorize a replay; the session retains the apps.
+    pub fn instance_binding_contract(
+        &mut self,
+        origin: &AdmittedCall,
+    ) -> Result<(CachedReplayBindingContract, Vec<u32>)> {
+        let holder = self.replay_impl_applications(origin)?;
+        Ok((holder.contract.clone(), holder.layouts.clone()))
+    }
+
+    fn replay_impl_applications(
+        &mut self,
+        origin: &AdmittedCall,
+    ) -> Result<Arc<ReplayImplApplications>> {
+        self.prepare_impl_applications(&[origin])?;
+        let row = self.packet.packet_mut()?.replay_origin(origin)?.0;
+        self.impl_applications
+            .get(&row)
+            .cloned()
+            .ok_or_else(|| anyhow!("prepared origin omitted implementation capabilities"))
+    }
+
+    /// Collect first-use origins before submitting any projection. A small
+    /// generic batch shares bounded projection/readback calls; ordinary
+    /// nongeneric applications create no GPU projection work.
+    pub fn prepare_impl_applications(&mut self, origins: &[&AdmittedCall]) -> Result<()> {
         self.ready()?;
-        let (_, snapshot, _, obligations) = self.packet.packet_mut()?.replay_origin(origin)?;
-        let end = obligations.first.checked_add(obligations.count)
-            .ok_or_else(|| anyhow!("replay obligation span overflow"))?;
-        let evidence = self.evidence.get(obligations.first as usize..end as usize)
-            .ok_or_else(|| anyhow!("replay origin has no complete retained evidence span"))?;
-        impl_bindings(&self.catalog, self.catalog.snapshots[snapshot as usize].unit, evidence, 0)
+        let mut pending = Vec::<PendingImplApplications>::new();
+        let mut requests = Vec::new();
+        let mut seen = BTreeSet::new();
+        for &origin in origins {
+            let (origin_row, snapshot, owner_hir, obligations) =
+                self.packet.packet_mut()?.replay_origin(origin)?;
+            if let Some(holder) = self.impl_applications.get(&origin_row).cloned() {
+                holder.validate(self.packet.packet_mut()?, origin_row)?;
+                continue;
+            }
+            if !seen.insert(origin_row) {
+                continue;
+            }
+            let end = obligations
+                .first
+                .checked_add(obligations.count)
+                .ok_or_else(|| anyhow!("replay obligation span overflow"))?;
+            let evidence = self
+                .evidence
+                .get(obligations.first as usize..end as usize)
+                .ok_or_else(|| anyhow!("replay origin has no complete retained evidence span"))?
+                .to_vec();
+            let template = &self.catalog.snapshots[snapshot as usize];
+            let template_unit = template.unit;
+            let index = pending.len();
+            pending.push(PendingImplApplications {
+                origin_row,
+                origin: origin.clone(),
+                template_unit,
+                template_sources: template.sources.clone(),
+                owner_hir,
+                applications: Vec::new(),
+                bindings: Vec::new(),
+            });
+            for proof in &evidence {
+                let Some(slot) = self.catalog.predicate_subject_slot(proof.predicate_row)? else {
+                    continue;
+                };
+                if let Some(implementation) = proof.implementation
+                    && let Some(methods) =
+                        self.catalog.implementation_method_targets(implementation)?
+                {
+                    for method in methods {
+                        ensure!(
+                            self.catalog.callable_requirements(method.target)? == (0, 0),
+                            "nongeneric implementation target has its own generic environment"
+                        );
+                        pending[index].bindings.push(BodyImplBinding {
+                            instance: 0,
+                            slot,
+                            required_symbol: method.required_symbol,
+                            trait_unit: if method.trait_unit == template_unit {
+                                [u32::MAX; 2]
+                            } else {
+                                method.trait_unit
+                            },
+                            target: method.target,
+                            receiver_mode: method.receiver_mode,
+                            required_types: 0,
+                            required_constants: 0,
+                            environment: BodyImplEnvironment::default(),
+                        });
+                    }
+                } else {
+                    requests.push((
+                        index,
+                        self.packet
+                            .packet_mut()?
+                            .request_implementation_application(origin, proof)?,
+                    ));
+                }
+            }
+        }
+        let limits = ImplProjectionLimits::production();
+        while !requests.is_empty() {
+            let count = requests.len().min(64);
+            let (owners, chunk): (Vec<_>, Vec<_>) = requests.drain(..count).unzip();
+            let projected =
+                self.gpu
+                    .project_implementation_applications(&self.packet, &chunk, limits)?;
+            ensure!(
+                projected.len() == chunk.len(),
+                "implementation projection omitted an origin"
+            );
+            let source_groups = projected
+                .iter()
+                .map(|projection| projection.type_sources())
+                .collect::<Vec<_>>();
+            let sources = source_groups.iter().flatten().copied().collect::<Vec<_>>();
+            let mut types = Vec::with_capacity(sources.len());
+            for sources in sources.chunks(64) {
+                types.extend(self.gpu.materialize_proof_terms(
+                    &self.packet,
+                    sources,
+                    ImplProjectionLimits::type_layout_limits(),
+                )?);
+            }
+            let mut types = types.into_iter();
+            for (((index, request), projection), sources) in owners
+                .into_iter()
+                .zip(chunk)
+                .zip(projected)
+                .zip(source_groups)
+            {
+                let materialized = types.by_ref().take(sources.len()).collect::<Vec<_>>();
+                ensure!(
+                    materialized.len() == sources.len(),
+                    "implementation type projection omitted a binding"
+                );
+                let app = self.packet.packet_mut()?.admit_implementation_application(
+                    request,
+                    projection,
+                    materialized,
+                )?;
+                let template_unit = pending[index].template_unit;
+                for method in app.methods() {
+                    let (required_types, required_constants) = method.requirements();
+                    let trait_unit = method.required_trait_unit();
+                    pending[index].bindings.push(BodyImplBinding {
+                        instance: 0,
+                        slot: app.subject_slot(),
+                        required_symbol: method.required_symbol(),
+                        trait_unit: if trait_unit == template_unit {
+                            [u32::MAX; 2]
+                        } else {
+                            trait_unit
+                        },
+                        target: method.target(),
+                        receiver_mode: method.receiver_mode(),
+                        required_types,
+                        required_constants,
+                        environment: BodyImplEnvironment {
+                            arguments: app.arguments().to_vec(),
+                            constants: app.constants().to_vec(),
+                        },
+                    });
+                }
+                pending[index].applications.push(app);
+            }
+            ensure!(
+                types.next().is_none(),
+                "implementation type projection returned unused values"
+            );
+        }
+        for mut entry in pending {
+            entry.bindings.sort_by_key(binding_key);
+            entry.bindings.dedup();
+            ensure!(
+                entry
+                    .bindings
+                    .windows(2)
+                    .all(|pair| binding_key(&pair[0]) != binding_key(&pair[1])),
+                "one admitted bound member has conflicting implementation applications"
+            );
+            let (members, layouts) = binding_contract_data(&entry.bindings)?;
+            // The selector does not participate in scheduling_environment;
+            // callable identity is the exact template owner below. No type or
+            // layout inference is performed here.
+            let entry_environment = CheckedBodySpecialization {
+                target_symbol: 0,
+                source_unit: entry.template_unit,
+                arguments: entry.origin.checked_call().arguments.clone(),
+                constants: entry.origin.checked_call().constants.clone(),
+            }
+            .scheduling_environment()?
+            .0;
+            let holder = Arc::new(ReplayImplApplications {
+                origin: entry.origin,
+                applications: entry.applications,
+                bindings: entry.bindings,
+                contract: CachedReplayBindingContract {
+                    template_sources: entry.template_sources,
+                    template_unit: entry.template_unit,
+                    source_owner_hir: entry.owner_hir,
+                    entry_environment,
+                    members,
+                },
+                layouts,
+            });
+            holder.validate(self.packet.packet_mut()?, entry.origin_row)?;
+            self.impl_applications.insert(entry.origin_row, holder);
+        }
+        Ok(())
     }
 
     /// Validate several concrete origins of one template snapshot for one
@@ -279,9 +592,11 @@ impl NativeProgramSession {
     /// run's entries are in rank order.
     pub fn instance_copy_rank(&mut self, origin: &AdmittedCall) -> Result<Option<u32>> {
         self.ready()?;
-        let (_, snapshot, selected_owner_hir, _) = self.packet.packet_mut()?.replay_origin(origin)?;
+        let (_, snapshot, selected_owner_hir, _) =
+            self.packet.packet_mut()?.replay_origin(origin)?;
         let facts = &self.catalog.snapshots[snapshot as usize].original_facts;
-        Ok(facts.owner_spans()
+        Ok(facts
+            .owner_spans()
             .and_then(|spans| spans.get(selected_owner_hir))
             .and_then(|span| InstanceSources::copy_rank(facts.template_sources(), span)))
     }
@@ -299,11 +614,21 @@ impl NativeProgramSession {
             return Ok("the unit kept no owner spans".into());
         };
         if let Some(span) = spans.get(owner_hir) {
-            return Ok(InstanceSources::copy_miss(facts.template_sources(), span).unwrap_or("copyable").into());
+            return Ok(InstanceSources::copy_miss(facts.template_sources(), span)
+                .unwrap_or("copyable")
+                .into());
         }
         let unit = [facts.interface().library_id, facts.interface().unit_id];
-        let subject = facts.checked_contracts().implementations.iter()
-            .find(|implementation| implementation.method_bindings.iter().any(|binding| binding.method_hir == owner_hir))
+        let subject = facts
+            .checked_contracts()
+            .implementations
+            .iter()
+            .find(|implementation| {
+                implementation
+                    .method_bindings
+                    .iter()
+                    .any(|binding| binding.method_hir == owner_hir)
+            })
             .map(|implementation| match &implementation.subject {
                 Type::Scalar(_) => "scalar",
                 Type::Parameter(_) => "type parameter",
@@ -345,46 +670,85 @@ impl NativeProgramSession {
         template_unit: [u32; 2],
         entry_facts: &[Arc<[CheckedGenericCall]>],
         object: &CompiledSourcePackObject,
+        binding_contracts: &[CachedReplayBindingContract],
+        binding_layouts: &[Vec<u32>],
     ) -> Result<Vec<AdmittedCall>> {
         self.ready()?;
-        ensure!(!origins.is_empty() && origins.len() == entry_facts.len(),
-            "cached instance run does not match its origins");
+        ensure!(
+            !origins.is_empty()
+                && origins.len() == entry_facts.len()
+                && origins.len() == binding_contracts.len()
+                && origins.len() == binding_layouts.len(),
+            "cached instance run does not match its origins"
+        );
+        self.prepare_impl_applications(origins)?;
         let mut target_snapshot = None;
         let mut bindings = Vec::new();
         let mut contexts = Vec::with_capacity(origins.len());
         for (index, origin) in origins.iter().enumerate() {
+            let holder = self.replay_impl_applications(origin)?;
             let (origin_call, snapshot, selected_owner_hir, obligations) =
                 self.packet.packet_mut()?.replay_origin(origin)?;
-            ensure!(*target_snapshot.get_or_insert(snapshot) == snapshot,
-                "cached instance run spans several template snapshots");
-            ensure!(self.catalog.snapshots[snapshot as usize].unit == template_unit,
-                "cached instance run belongs to another template unit");
-            let end = obligations.first.checked_add(obligations.count)
+            ensure!(
+                *target_snapshot.get_or_insert(snapshot) == snapshot,
+                "cached instance run spans several template snapshots"
+            );
+            ensure!(
+                self.catalog.snapshots[snapshot as usize].unit == template_unit,
+                "cached instance run belongs to another template unit"
+            );
+            let end = obligations
+                .first
+                .checked_add(obligations.count)
                 .ok_or_else(|| anyhow!("replay obligation span overflow"))?;
-            let evidence = self.evidence.get(obligations.first as usize..end as usize)
+            let evidence = self
+                .evidence
+                .get(obligations.first as usize..end as usize)
                 .ok_or_else(|| anyhow!("replay origin has no complete retained evidence span"))?
                 .iter()
                 .map(|proof| {
-                    ensure!(proof.is_concrete(), "concrete replay origin retains symbolic evidence");
+                    ensure!(
+                        proof.is_concrete(),
+                        "concrete replay origin retains symbolic evidence"
+                    );
                     Ok(proof.clone())
                 })
                 .collect::<Result<Vec<_>>>()?;
-            bindings.extend(impl_bindings(&self.catalog, template_unit, &evidence, index as u32)?);
-            let context = self.packet.packet_mut()?.replay_context(ReplayContextInput {
-                snapshot,
-                selected_owner_hir,
-                evidence: &evidence,
-                origin_call,
-            })?;
+            holder.validate(self.packet.packet_mut()?, origin_call)?;
+            ensure!(
+                holder.contract == binding_contracts[index]
+                    && holder.layouts.iter().all(|&width| width != u32::MAX)
+                    && holder.layouts == binding_layouts[index],
+                "cached implementation environment differs from its fresh admitted contract/layouts"
+            );
+            bindings.extend(holder.for_entry(index as u32));
+            let context = self
+                .packet
+                .packet_mut()?
+                .replay_context(ReplayContextInput {
+                    snapshot,
+                    selected_owner_hir,
+                    evidence: &evidence,
+                    origin_call,
+                })?;
             contexts.push((selected_owner_hir, context));
         }
         let snapshot = target_snapshot.expect("nonempty run");
-        check_external_callees(&self.catalog.snapshots[snapshot as usize], object, &bindings)?;
+        check_external_callees(
+            &self.catalog.snapshots[snapshot as usize],
+            object,
+            &bindings,
+        )?;
         let mut call_hirs = Vec::with_capacity(contexts.len());
         for (&(selected_hir, context), facts) in contexts.iter().zip(entry_facts) {
             let indices = (0..facts.len()).collect::<Vec<_>>();
             self.packet.packet_mut()?.append_context_calls(
-                snapshot, context, selected_hir, facts.clone(), &indices)?;
+                snapshot,
+                context,
+                selected_hir,
+                facts.clone(),
+                &indices,
+            )?;
             call_hirs.push(facts.iter().map(|call| call.call_hir).collect::<Vec<_>>());
         }
         // One check covers the new contexts and their calls.
@@ -393,9 +757,14 @@ impl NativeProgramSession {
         let mut admitted = Vec::new();
         for (&(_, context), call_hirs) in contexts.iter().zip(&call_hirs) {
             let context_calls = packet.admitted_context_calls(snapshot, context)?;
-            ensure!(context_calls.len() == call_hirs.len()
-                && context_calls.iter().zip(call_hirs).all(|(call, &hir)| call.source().call_hir == hir),
-                "a cached instance copy's admitted calls differ from its appended calls");
+            ensure!(
+                context_calls.len() == call_hirs.len()
+                    && context_calls
+                        .iter()
+                        .zip(call_hirs)
+                        .all(|(call, &hir)| call.source().call_hir == hir),
+                "a cached instance copy's admitted calls differ from its appended calls"
+            );
             admitted.extend(context_calls);
         }
         Ok(admitted)
@@ -408,32 +777,57 @@ impl NativeProgramSession {
     ) -> Result<ValidatedReplayRequest<'session>> {
         self.ready()?;
         ensure!(!origins.is_empty(), "replay batch has no origin");
+        self.prepare_impl_applications(origins)?;
         let mut target_snapshot = None;
         let mut resolved = Vec::with_capacity(origins.len());
         for origin in origins {
             let (origin_call, snapshot, selected_owner_hir, obligations) =
                 self.packet.packet_mut()?.replay_origin(origin)?;
-            ensure!(*target_snapshot.get_or_insert(snapshot) == snapshot,
-                "replay batch spans several template snapshots");
-            ensure!(copies || resolved.iter().all(|&(_, _, hir, _)| hir != selected_owner_hir),
-                "replay batch selects one lexical body twice");
+            ensure!(
+                *target_snapshot.get_or_insert(snapshot) == snapshot,
+                "replay batch spans several template snapshots"
+            );
+            ensure!(
+                copies
+                    || resolved
+                        .iter()
+                        .all(|&(_, _, hir, _)| hir != selected_owner_hir),
+                "replay batch selects one lexical body twice"
+            );
             resolved.push((origin_call, snapshot, selected_owner_hir, obligations));
         }
         let target_snapshot = target_snapshot.expect("nonempty batch");
-        let template = self.catalog.snapshots.get(target_snapshot as usize)
+        let template = self
+            .catalog
+            .snapshots
+            .get(target_snapshot as usize)
             .ok_or_else(|| anyhow!("replay target snapshot has no retained template"))?
-            .original_facts.clone();
+            .original_facts
+            .clone();
         // The copies come only from the frozen template text and the byte
         // spans its own check retained.
         let mut instance = if copies {
-            let spans = template.owner_spans()
+            let spans = template
+                .owner_spans()
                 .ok_or_else(|| anyhow!("template retained no owner spans for instance copies"))?;
-            let selected = resolved.iter().map(|&(_, _, hir, _)| spans.get(hir).copied()
-                .ok_or_else(|| anyhow!("selected body has no retained owner span")))
+            let selected = resolved
+                .iter()
+                .map(|&(_, _, hir, _)| {
+                    spans
+                        .get(hir)
+                        .copied()
+                        .ok_or_else(|| anyhow!("selected body has no retained owner span"))
+                })
                 .collect::<Result<Vec<_>>>()?;
             let sources = InstanceSources::build(template.template_sources(), &selected)?;
-            let owners = selected.iter()
-                .map(|span| (span.function_hir, span.enclosing_impl.map(|header| header.hir)))
+            let owners = selected
+                .iter()
+                .map(|span| {
+                    (
+                        span.function_hir,
+                        span.enclosing_impl.map(|header| header.hir),
+                    )
+                })
                 .collect();
             Some(InstanceRequest {
                 sources: Arc::new(sources),
@@ -447,35 +841,56 @@ impl NativeProgramSession {
         let mut batch: Option<CheckedBodySpecializationBatch> = None;
         let mut entries: Vec<(u32, u32)> = Vec::with_capacity(origins.len());
         let mut bindings = Vec::new();
+        let mut impl_applications = Vec::with_capacity(origins.len());
         for (index, (origin, &(origin_call, snapshot, selected_owner_hir, obligations))) in
             origins.iter().zip(&resolved).enumerate()
         {
             let call = origin.checked_call();
             let specialization = CheckedBodySpecialization {
                 target_symbol: match (&instance, call.target) {
-                    (Some(instance), _) => BODY_COPY_TARGET | instance.sources.copies[index].fn_byte,
-                    (None, CheckedGenericTarget::Local {
-                        specialization_symbol,
-                        ..
-                    }) => specialization_symbol,
-                    (None, CheckedGenericTarget::Dependency {
-                        declaration_index, ..
-                    }) => declaration_index,
-                    (None, CheckedGenericTarget::DependencyMethod { method_symbol, .. }) => method_symbol,
+                    (Some(instance), _) => {
+                        BODY_COPY_TARGET | instance.sources.copies[index].fn_byte
+                    }
+                    (
+                        None,
+                        CheckedGenericTarget::Local {
+                            specialization_symbol,
+                            ..
+                        },
+                    ) => specialization_symbol,
+                    (
+                        None,
+                        CheckedGenericTarget::Dependency {
+                            declaration_index, ..
+                        },
+                    ) => declaration_index,
+                    (None, CheckedGenericTarget::DependencyMethod { method_symbol, .. }) => {
+                        method_symbol
+                    }
                 },
                 source_unit: self.catalog.snapshots[snapshot as usize].unit,
                 arguments: call.arguments.clone(),
                 constants: call.constants.clone(),
             };
-            ensure!(specialization.target_symbol & BODY_COPY_TARGET != BODY_COPY_TARGET || instance.is_some(),
-                "an original replay target uses the instance-copy selector");
+            ensure!(
+                specialization.target_symbol & BODY_COPY_TARGET != BODY_COPY_TARGET
+                    || instance.is_some(),
+                "an original replay target uses the instance-copy selector"
+            );
             match batch.as_mut() {
-                None => batch = Some(CheckedBodySpecializationBatch::single(specialization)
-                    .map_err(|error| anyhow!("UNSUPPORTED: native replay environment: {error:#}"))?),
+                None => {
+                    batch = Some(
+                        CheckedBodySpecializationBatch::single(specialization).map_err(
+                            |error| anyhow!("UNSUPPORTED: native replay environment: {error:#}"),
+                        )?,
+                    )
+                }
                 Some(batch) => ensure!(
-                    batch.try_push(specialization)
-                        .map_err(|error| anyhow!("UNSUPPORTED: native replay environment: {error:#}"))?,
-                    "replay batch exceeds the shared packet capacity"),
+                    batch.try_push(specialization).map_err(|error| anyhow!(
+                        "UNSUPPORTED: native replay environment: {error:#}"
+                    ))?,
+                    "replay batch exceeds the shared packet capacity"
+                ),
             }
             let end = obligations
                 .first
@@ -487,12 +902,17 @@ impl NativeProgramSession {
                 .ok_or_else(|| anyhow!("replay origin has no complete retained evidence span"))?
                 .iter()
                 .map(|proof| {
-                    ensure!(proof.is_concrete(), "concrete replay origin retains symbolic evidence");
+                    ensure!(
+                        proof.is_concrete(),
+                        "concrete replay origin retains symbolic evidence"
+                    );
                     Ok(proof.clone())
                 })
                 .collect::<Result<Vec<_>>>()?;
-            bindings.extend(impl_bindings(&self.catalog, self.catalog.snapshots[snapshot as usize].unit,
-                &evidence, index as u32)?);
+            let holder = self.replay_impl_applications(origin)?;
+            holder.validate(self.packet.packet_mut()?, origin_call)?;
+            bindings.extend(holder.for_entry(index as u32));
+            impl_applications.push(holder);
             let context = self
                 .packet
                 .packet_mut()?
@@ -509,33 +929,48 @@ impl NativeProgramSession {
             specialization.set_instance_copies(instance.first_copy_row, instance.owners.clone())?;
             let template_files = u32::try_from(template.template_sources().len())
                 .map_err(|_| anyhow!("template has too many source files"))?;
-            specialization.set_continuation_files(template_files, instance.sources.continuations.clone())?;
+            specialization
+                .set_continuation_files(template_files, instance.sources.continuations.clone())?;
         }
         specialization.set_impl_bindings(bindings)?;
         if let Some(instance) = instance.as_mut()
             && (declarations_only_templates_enabled() || declarations_only_templates_checked())
         {
             let unit = self.catalog.snapshots[target_snapshot as usize].unit;
-            match DeclarationsOnlyTemplate::build(&template, unit, instance, &specialization, resolved[0].2) {
+            match DeclarationsOnlyTemplate::build(
+                &template,
+                unit,
+                instance,
+                &specialization,
+                resolved[0].2,
+            ) {
                 Ok(template) => instance.declarations_only = template.map(Arc::new),
-                Err(error) => if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_DECL_ONLY_TEMPLATES", false) {
-                    eprintln!("[decl-only] unit {}:{} keeps its full template: {error:#}", unit[0], unit[1]);
-                },
+                Err(error) => {
+                    if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_DECL_ONLY_TEMPLATES", false) {
+                        eprintln!(
+                            "[decl-only] unit {}:{} keeps its full template: {error:#}",
+                            unit[0], unit[1]
+                        );
+                    }
+                }
             }
         }
         // GPU checks each new context against the exact origin environment and
         // retained evidence before the frontend can defer a local-only lookup.
         self.check()?;
-        Ok(ValidatedReplayRequest {
+        let request = ValidatedReplayRequest {
             session: self,
             template,
             target_snapshot,
             selected_hirs: entries.iter().map(|&(hir, _)| hir).collect(),
             entries,
             specialization,
+            impl_applications,
             identity: Arc::new(()),
             instance,
-        })
+        };
+        request.validate_impl_transport()?;
+        Ok(request)
     }
 }
 
@@ -558,13 +993,129 @@ pub(in crate::compiler::gpu_compiler) struct ValidatedOriginalUnit {
 
 impl ValidatedOriginalUnit {
     pub fn check_original_unit(self, facts: &OriginalUnitFacts) -> Result<Vec<AdmittedCall>> {
-        ensure!(self.facts.same_snapshot(facts), "original publication receipt belongs to another snapshot");
+        ensure!(
+            self.facts.same_snapshot(facts),
+            "original publication receipt belongs to another snapshot"
+        );
         Ok(self.calls)
     }
 }
 
 /// Private construction ties every frontend input to one GPU-admitted origin.
 /// The mutable session borrow remains held through compilation and fresh checks.
+struct PendingImplApplications {
+    origin_row: u32,
+    origin: AdmittedCall,
+    template_sources: Arc<[String]>,
+    template_unit: [u32; 2],
+    owner_hir: u32,
+    applications: Vec<Arc<AdmittedImplementationApplication>>,
+    bindings: Vec<BodyImplBinding>,
+}
+
+struct ReplayImplApplications {
+    origin: AdmittedCall,
+    applications: Vec<Arc<AdmittedImplementationApplication>>,
+    /// Normalized to entry zero; a request changes only the entry index.
+    bindings: Vec<BodyImplBinding>,
+    contract: CachedReplayBindingContract,
+    layouts: Vec<u32>,
+}
+
+impl ReplayImplApplications {
+    fn validate(&self, packet: &ProgramPacket, origin_row: u32) -> Result<()> {
+        ensure!(
+            packet.replay_origin(&self.origin)?.0 == origin_row,
+            "implementation holder belongs to another admitted occurrence"
+        );
+        for app in &self.applications {
+            app.validate_retained(packet)?;
+            ensure!(
+                packet.replay_origin(app.origin())?.0 == origin_row,
+                "implementation application belongs to another origin"
+            );
+            for method in app.methods() {
+                let trait_unit = method.required_trait_unit();
+                let expected = BodyImplBinding {
+                    instance: 0,
+                    slot: app.subject_slot(),
+                    required_symbol: method.required_symbol(),
+                    trait_unit: if trait_unit == self.contract.template_unit {
+                        [u32::MAX; 2]
+                    } else {
+                        trait_unit
+                    },
+                    target: method.target(),
+                    receiver_mode: method.receiver_mode(),
+                    required_types: method.requirements().0,
+                    required_constants: method.requirements().1,
+                    environment: BodyImplEnvironment {
+                        arguments: app.arguments().to_vec(),
+                        constants: app.constants().to_vec(),
+                    },
+                };
+                let index = self
+                    .bindings
+                    .binary_search_by_key(&binding_key(&expected), binding_key)
+                    .map_err(|_| {
+                        anyhow!("admitted implementation member is absent from its entry transport")
+                    })?;
+                ensure!(
+                    self.bindings[index] == expected,
+                    "implementation transport differs from its owning application"
+                );
+            }
+        }
+        let (members, layouts) = binding_contract_data(&self.bindings)?;
+        ensure!(
+            members == self.contract.members && layouts == self.layouts,
+            "implementation holder changed its exact semantic contract"
+        );
+        Ok(())
+    }
+
+    fn for_entry(&self, instance: u32) -> Vec<BodyImplBinding> {
+        self.bindings
+            .iter()
+            .cloned()
+            .map(|mut binding| {
+                binding.instance = instance;
+                binding
+            })
+            .collect()
+    }
+}
+
+fn binding_key(binding: &BodyImplBinding) -> (u32, u32, [u32; 2]) {
+    (binding.slot, binding.required_symbol, binding.trait_unit)
+}
+
+fn binding_contract_data(bindings: &[BodyImplBinding]) -> Result<(Vec<u32>, Vec<u32>)> {
+    let mut members = vec![u32::try_from(bindings.len())?];
+    let mut layouts = Vec::new();
+    for binding in bindings {
+        ensure!(
+            binding.required_types as usize == binding.environment.arguments.len()
+                && binding.required_constants as usize == binding.environment.constants.len(),
+            "implementation arity differs from its owned environment"
+        );
+        let (semantic, witness) = binding.environment.scheduling_environment()?;
+        members.extend([binding.slot, binding.required_symbol]);
+        members.extend(binding.trait_unit);
+        members.extend(binding.target);
+        members.extend([
+            binding.receiver_mode,
+            binding.required_types,
+            binding.required_constants,
+            u32::try_from(semantic.len())?,
+        ]);
+        members.extend(semantic);
+        layouts.push(u32::try_from(witness.len())?);
+        layouts.extend(witness);
+    }
+    Ok((members, layouts))
+}
+
 pub(in crate::compiler::gpu_compiler) struct ValidatedReplayRequest<'session> {
     session: &'session mut NativeProgramSession,
     template: OriginalUnitFacts,
@@ -573,6 +1124,7 @@ pub(in crate::compiler::gpu_compiler) struct ValidatedReplayRequest<'session> {
     entries: Vec<(u32, u32)>,
     selected_hirs: Vec<u32>,
     specialization: CheckedBodySpecializationBatch,
+    impl_applications: Vec<Arc<ReplayImplApplications>>,
     identity: Arc<()>,
     /// An instance-copy replay checks these copies instead of the template's
     /// own bodies.
@@ -616,7 +1168,10 @@ impl DeclarationsOnlyTemplate {
         specialization: &CheckedBodySpecializationBatch,
         selected_function_hir: u32,
     ) -> Result<Option<Self>> {
-        let Some(bodies) = template.owner_spans().and_then(|spans| spans.bodies.as_ref()) else {
+        let Some(bodies) = template
+            .owner_spans()
+            .and_then(|spans| spans.bodies.as_ref())
+        else {
             return Ok(None);
         };
         let full_contracts = template.checked_contracts();
@@ -625,15 +1180,24 @@ impl DeclarationsOnlyTemplate {
         };
         let map = blanking.map(BlankingDirection::ToCopy);
         let (removed_tokens, removed_rows) = blanking.removed();
-        let first_copy_row = instance.first_copy_row.checked_sub(removed_rows)
+        let first_copy_row = instance
+            .first_copy_row
+            .checked_sub(removed_rows)
             .ok_or_else(|| anyhow!("blanked rows exceed the template's rows"))?;
-        let specialization = specialization.declarations_only(&map, first_copy_row, removed_tokens)?;
+        let specialization =
+            specialization.declarations_only(&map, first_copy_row, removed_tokens)?;
         let mut contracts = CheckedUnitContracts::clone(full_contracts);
         map.contracts(&mut contracts)?;
         let selected_function_hir = map.row(selected_function_hir)?;
         let sources = blanking.blank_sources(&instance.sources.sources)?.into();
-        Ok(Some(Self { blanking, sources, specialization, contracts: Arc::new(contracts), first_copy_row,
-            selected_function_hir }))
+        Ok(Some(Self {
+            blanking,
+            sources,
+            specialization,
+            contracts: Arc::new(contracts),
+            first_copy_row,
+            selected_function_hir,
+        }))
     }
 }
 
@@ -663,9 +1227,72 @@ pub(in crate::compiler::gpu_compiler) struct CheckedReplayCalls {
     /// as appended under its replay context (the library instance cache
     /// keeps them so a later job can admit them again).
     pub entry_facts: Option<Vec<Arc<[CheckedGenericCall]>>>,
+    /// Descriptive cross-job contracts minted only after this request's fresh
+    /// source, capability, object and call admission have all succeeded.
+    pub binding_contracts: Arc<[CachedReplayBindingContract]>,
+    pub binding_layouts: Arc<[Vec<u32>]>,
 }
 
 impl<'session> ValidatedReplayRequest<'session> {
+    fn validate_impl_transport(&self) -> Result<()> {
+        self.session.ready()?;
+        ensure!(
+            self.entries.len() == self.impl_applications.len(),
+            "replay implementation capabilities omit an entry"
+        );
+        let packet = self.session.packet.packet();
+        let mut expected = Vec::new();
+        for (index, (holder, &(owner, _))) in
+            self.impl_applications.iter().zip(&self.entries).enumerate()
+        {
+            let (origin, snapshot, selected_owner, _) = packet.replay_origin(&holder.origin)?;
+            ensure!(
+                snapshot == self.target_snapshot && selected_owner == owner,
+                "implementation capability belongs to another selected body"
+            );
+            holder.validate(packet, origin)?;
+            expected.extend(holder.for_entry(index as u32));
+        }
+        ensure!(
+            expected == self.specialization.impl_bindings(),
+            "replay implementation transport differs from its per-entry capabilities"
+        );
+        Ok(())
+    }
+
+    fn completed_binding_contracts(
+        &self,
+        unit: &CompiledSourcePackUnit,
+    ) -> Result<(Arc<[CachedReplayBindingContract]>, Arc<[Vec<u32>]>)> {
+        let native = unit
+            .body_binding_native_layouts
+            .as_deref()
+            .ok_or_else(|| anyhow!("replay omitted GPU implementation-binding layout witnesses"))?;
+        ensure!(
+            native.len() == self.specialization.impl_bindings().len(),
+            "binding GPU witness count differs from its exact transport"
+        );
+        let mut layouts = vec![Vec::new(); self.entries.len()];
+        for (binding, witness) in self.specialization.impl_bindings().iter().zip(native) {
+            let entry = layouts
+                .get_mut(binding.instance as usize)
+                .ok_or_else(|| anyhow!("binding layout belongs to another entry"))?;
+            entry.push(u32::try_from(witness.len())?);
+            entry.extend(witness);
+        }
+        for (holder, completed) in self.impl_applications.iter().zip(&layouts) {
+            validate_completed_binding_layouts(&holder.layouts, completed)?;
+        }
+        Ok((
+            self.impl_applications
+                .iter()
+                .map(|entry| entry.contract.clone())
+                .collect::<Vec<_>>()
+                .into(),
+            layouts.into(),
+        ))
+    }
+
     pub fn template(&self) -> &OriginalUnitFacts {
         &self.template
     }
@@ -697,7 +1324,9 @@ impl<'session> ValidatedReplayRequest<'session> {
     }
     /// The declarations-only template of an instance-copy replay.
     pub fn declarations_only(&self) -> Option<&DeclarationsOnlyTemplate> {
-        self.instance.as_ref().and_then(|instance| instance.declarations_only.as_deref())
+        self.instance
+            .as_ref()
+            .and_then(|instance| instance.declarations_only.as_deref())
     }
     pub fn identity(&self) -> Arc<()> {
         self.identity.clone()
@@ -722,16 +1351,22 @@ impl<'session> ValidatedReplayRequest<'session> {
             "replay result belongs to another checked request"
         );
         self.session.ready()?;
+        self.validate_impl_transport()?;
         if self.instance.is_some() {
             return self.check_instance_unit(unit);
         }
         let selected: BTreeMap<u32, u32> = self.entries.iter().copied().collect();
         normalize_omitted_batch_template_calls(
-            &self.session.catalog, self.target_snapshot,
-            &selected.keys().copied().collect(), unit,
+            &self.session.catalog,
+            self.target_snapshot,
+            &selected.keys().copied().collect(),
+            unit,
         )?;
-        check_external_callees(&self.session.catalog.snapshots[self.target_snapshot as usize],
-            &unit.object, self.specialization.impl_bindings())?;
+        check_external_callees(
+            &self.session.catalog.snapshots[self.target_snapshot as usize],
+            &unit.object,
+            self.specialization.impl_bindings(),
+        )?;
         self.session
             .packet
             .packet_mut()?
@@ -742,7 +1377,15 @@ impl<'session> ValidatedReplayRequest<'session> {
         for &context in selected.values() {
             calls.extend(packet.admitted_context_calls(self.target_snapshot, context)?);
         }
-        Ok(CheckedReplayCalls { calls, entry_hirs: self.selected_hirs, copy_symbols: None, entry_facts: None })
+        let (binding_contracts, binding_layouts) = self.completed_binding_contracts(unit)?;
+        Ok(CheckedReplayCalls {
+            calls,
+            entry_hirs: self.selected_hirs,
+            copy_symbols: None,
+            entry_facts: None,
+            binding_contracts,
+            binding_layouts,
+        })
     }
 
     /// An instance-copy replay publishes exactly one definition per copy and
@@ -762,57 +1405,89 @@ impl<'session> ValidatedReplayRequest<'session> {
             "instance replay does not retain frozen definition provenance"
         );
         if crate::type_checker::instance_table_checked() {
-            report_instance_table(frozen.unit, self.template.instance_closure(),
-                unit.instance_closure.as_deref(), &self.specialization, &instance.owners);
+            report_instance_table(
+                frozen.unit,
+                self.template.instance_closure(),
+                unit.instance_closure.as_deref(),
+                &self.specialization,
+                &instance.owners,
+            );
         }
-        let callable_symbols = frozen.contracts.binders.iter()
+        let callable_symbols = frozen
+            .contracts
+            .binders
+            .iter()
             .filter_map(|owner| owner.callable.map(|callable| callable.native_symbol))
             .collect::<BTreeSet<_>>();
         check_external_callees(frozen, &unit.object, self.specialization.impl_bindings())?;
         let object = &unit.object;
         object.validate().map_err(anyhow::Error::msg)?;
-        ensure!(object.unit() == frozen.unit,
-            "replay emission has the wrong source unit");
+        ensure!(
+            object.unit() == frozen.unit,
+            "replay emission has the wrong source unit"
+        );
         let mut undefined_count = 0usize;
         let mut definitions_started = false;
         let mut copy_symbols = Vec::with_capacity(self.entries.len());
         for symbol in 0..object.symbol_count() {
             let identity = object.symbol_identity_words(symbol);
             if object.symbol_kind(symbol) == NativeSymbolKind::Undefined {
-                ensure!(!definitions_started, "native undefined symbols are not a prefix");
+                ensure!(
+                    !definitions_started,
+                    "native undefined symbols are not a prefix"
+                );
                 undefined_count += 1;
                 // A call into this unit links against the original object, so
                 // it must name a callable of the frozen template.
                 if let Some(identity) = identity.filter(|identity| identity[..2] == frozen.unit) {
-                    ensure!(callable_symbols.contains(&identity[2]),
-                        "instance copy calls a callable outside the template inventory");
+                    ensure!(
+                        callable_symbols.contains(&identity[2]),
+                        "instance copy calls a callable outside the template inventory"
+                    );
                 }
                 continue;
             }
             definitions_started = true;
-            if object.symbol_kind(symbol) != NativeSymbolKind::Function { continue; }
-            let identity = identity.ok_or_else(|| anyhow!("native definition has no checked callable identity"))?;
-            ensure!(identity[..2] == frozen.unit, "native definition belongs to another source unit");
-            ensure!(identity[2] & 0xc000_0000 == 0x4000_0000 && !callable_symbols.contains(&identity[2]),
-                "instance replay emitted a definition that is not a private copy");
+            if object.symbol_kind(symbol) != NativeSymbolKind::Function {
+                continue;
+            }
+            let identity = identity
+                .ok_or_else(|| anyhow!("native definition has no checked callable identity"))?;
+            ensure!(
+                identity[..2] == frozen.unit,
+                "native definition belongs to another source unit"
+            );
+            ensure!(
+                identity[2] & 0xc000_0000 == 0x4000_0000
+                    && !callable_symbols.contains(&identity[2]),
+                "instance replay emitted a definition that is not a private copy"
+            );
             copy_symbols.push(identity[2]);
         }
         // Copies are private functions named by their first token, which
         // increases with the entry index.
         copy_symbols.sort_unstable();
-        ensure!(copy_symbols.len() == self.entries.len()
-            && copy_symbols.windows(2).all(|pair| pair[0] < pair[1]),
-            "instance replay must define exactly one body per copy");
-        ensure!(unit.native_call_hirs.len() == undefined_count
-            && unit.native_call_function_hirs.len() == undefined_count,
-            "replay native call inventory does not match undefined symbols");
+        ensure!(
+            copy_symbols.len() == self.entries.len()
+                && copy_symbols.windows(2).all(|pair| pair[0] < pair[1]),
+            "instance replay must define exactly one body per copy"
+        );
+        ensure!(
+            unit.native_call_hirs.len() == undefined_count
+                && unit.native_call_function_hirs.len() == undefined_count,
+            "replay native call inventory does not match undefined symbols"
+        );
 
-        let owners = unit.checked_call_owners.iter()
-            .map(|owner| (owner.call_hir, owner.function_hir)).collect::<BTreeMap<_, _>>();
+        let owners = unit
+            .checked_call_owners
+            .iter()
+            .map(|owner| (owner.call_hir, owner.function_hir))
+            .collect::<BTreeMap<_, _>>();
         let mut facts = vec![Vec::<CheckedGenericCall>::new(); self.entries.len()];
         let mut entry_hirs = vec![u32::MAX; self.entries.len()];
         for call in unit.generic_calls.iter() {
-            let owner = *owners.get(&call.call_hir)
+            let owner = *owners
+                .get(&call.call_hir)
                 .ok_or_else(|| anyhow!("checked call missing actual owner"))?;
             let entry = copies.copy_at(call.source_span[0]);
             if owner == u32::MAX || owner < first_row {
@@ -821,27 +1496,55 @@ impl<'session> ValidatedReplayRequest<'session> {
                 ensure!(entry.is_none(), "a call inside a copy has a template owner");
                 continue;
             }
-            let entry = entry.ok_or_else(|| anyhow!("a copy-owned call lies outside every copy"))?;
-            let span = copies.original_body_span(entry, call.source_span)
+            let entry =
+                entry.ok_or_else(|| anyhow!("a copy-owned call lies outside every copy"))?;
+            let span = copies
+                .original_body_span(entry, call.source_span)
                 .ok_or_else(|| anyhow!("a copy call span leaves its copied body"))?;
-            ensure!(call.call_hir >= first_row, "a copy call precedes the copy rows");
+            ensure!(
+                call.call_hir >= first_row,
+                "a copy call precedes the copy rows"
+            );
             let slot = &mut entry_hirs[entry];
-            if *slot == u32::MAX { *slot = owner; }
-            ensure!(*slot == owner, "one copy's calls have several lexical owners");
+            if *slot == u32::MAX {
+                *slot = owner;
+            }
+            ensure!(
+                *slot == owner,
+                "one copy's calls have several lexical owners"
+            );
             let mut translated = call.clone();
             translated.source_span = span;
             facts[entry].push(translated);
         }
-        let rows = entry_hirs.iter().copied().filter(|&row| row != u32::MAX).collect::<BTreeSet<_>>();
-        ensure!(rows.len() == entry_hirs.iter().filter(|&&row| row != u32::MAX).count(),
-            "two copies share one lexical owner");
-        let generic_owner = unit.generic_calls.iter()
-            .map(|call| (call.call_hir, owners[&call.call_hir])).collect::<BTreeMap<_, _>>();
-        for (&hir, &owner) in unit.native_call_hirs.iter().zip(unit.native_call_function_hirs.iter()) {
-            ensure!(owner != u32::MAX && owner >= first_row,
-                "instance replay emitted a call outside the copies");
+        let rows = entry_hirs
+            .iter()
+            .copied()
+            .filter(|&row| row != u32::MAX)
+            .collect::<BTreeSet<_>>();
+        ensure!(
+            rows.len() == entry_hirs.iter().filter(|&&row| row != u32::MAX).count(),
+            "two copies share one lexical owner"
+        );
+        let generic_owner = unit
+            .generic_calls
+            .iter()
+            .map(|call| (call.call_hir, owners[&call.call_hir]))
+            .collect::<BTreeMap<_, _>>();
+        for (&hir, &owner) in unit
+            .native_call_hirs
+            .iter()
+            .zip(unit.native_call_function_hirs.iter())
+        {
+            ensure!(
+                owner != u32::MAX && owner >= first_row,
+                "instance replay emitted a call outside the copies"
+            );
             if let Some(&generic) = generic_owner.get(&hir) {
-                ensure!(generic == owner, "native and generic call ownership disagree");
+                ensure!(
+                    generic == owner,
+                    "native and generic call ownership disagree"
+                );
             }
         }
         let mut calls = Vec::new();
@@ -850,13 +1553,21 @@ impl<'session> ValidatedReplayRequest<'session> {
         for (index, &(selected_hir, context)) in self.entries.iter().enumerate() {
             let entry_facts: Arc<[CheckedGenericCall]> = std::mem::take(&mut facts[index]).into();
             kept_facts.push(entry_facts.clone());
-            let call_hirs = entry_facts.iter().map(|call| call.call_hir).collect::<Vec<_>>();
+            let call_hirs = entry_facts
+                .iter()
+                .map(|call| call.call_hir)
+                .collect::<Vec<_>>();
             published.extend(entry_facts.iter().cloned());
             // A copy's calls are context calls of its entry, owned by the
             // template body the copy reproduces.
             let indices = (0..entry_facts.len()).collect::<Vec<_>>();
             self.session.packet.packet_mut()?.append_context_calls(
-                self.target_snapshot, context, selected_hir, entry_facts, &indices)?;
+                self.target_snapshot,
+                context,
+                selected_hir,
+                entry_facts,
+                &indices,
+            )?;
             calls.push((context, call_hirs));
         }
         unit.generic_calls = published.into();
@@ -865,40 +1576,108 @@ impl<'session> ValidatedReplayRequest<'session> {
         let mut admitted = Vec::new();
         for (context, call_hirs) in calls {
             let context_calls = packet.admitted_context_calls(self.target_snapshot, context)?;
-            ensure!(context_calls.len() == call_hirs.len()
-                && context_calls.iter().zip(&call_hirs).all(|(call, &hir)| call.source().call_hir == hir),
-                "an instance copy's admitted calls differ from its appended calls");
+            ensure!(
+                context_calls.len() == call_hirs.len()
+                    && context_calls
+                        .iter()
+                        .zip(&call_hirs)
+                        .all(|(call, &hir)| call.source().call_hir == hir),
+                "an instance copy's admitted calls differ from its appended calls"
+            );
             admitted.extend(context_calls);
         }
-        Ok(CheckedReplayCalls { calls: admitted, entry_hirs, copy_symbols: Some(copy_symbols),
-            entry_facts: Some(kept_facts) })
+        let (binding_contracts, binding_layouts) = self.completed_binding_contracts(unit)?;
+        Ok(CheckedReplayCalls {
+            calls: admitted,
+            entry_hirs,
+            copy_symbols: Some(copy_symbols),
+            entry_facts: Some(kept_facts),
+            binding_contracts,
+            binding_layouts,
+        })
     }
 }
 
+fn validate_completed_binding_layouts(retained: &[u32], completed: &[u32]) -> Result<()> {
+    // A materializes each required type root with a known width before issuing
+    // its application. Preserve those witnesses, including descriptor roots;
+    // an unused foreign payload beneath a reference/slice may remain unknown.
+    let mut merged = retained.to_vec();
+    CheckedBodySpecialization::merge_layout_witnesses(&mut merged, completed)?;
+    ensure!(
+        merged == completed,
+        "GPU binding layouts differ from a retained input witness"
+    );
+    Ok(())
+}
+
+#[cfg(test)]
+mod binding_layout_tests {
+    use super::validate_completed_binding_layouts;
+
+    #[test]
+    fn completed_binding_layouts_preserve_roots_without_requiring_opaque_payload_layouts() {
+        assert!(validate_completed_binding_layouts(&[], &[]).is_ok());
+        assert!(validate_completed_binding_layouts(&[2, u32::MAX, 4], &[2, 8, 4]).is_ok());
+        assert!(validate_completed_binding_layouts(&[2, u32::MAX, 1], &[2, u32::MAX, 1]).is_ok());
+        assert!(
+            validate_completed_binding_layouts(&[2, u32::MAX, 1], &[2, u32::MAX, u32::MAX])
+                .is_err()
+        );
+        assert!(validate_completed_binding_layouts(&[2, 8, 4], &[2, 9, 4]).is_err());
+        assert!(validate_completed_binding_layouts(&[2, 8, 4], &[2, 8]).is_err());
+    }
+}
 
 /// `ty` with every array length that is a count written as a u32 count.
-fn lengths_as_counts(ty: crate::type_checker::CheckedGenericType) -> crate::type_checker::CheckedGenericType {
-    use crate::type_checker::{CheckedGenericApplicationArgument as Argument, CheckedGenericType as Type};
-    use crate::type_checker::CheckedGenericConstantValue as Value;
+fn lengths_as_counts(
+    ty: crate::type_checker::CheckedGenericType,
+) -> crate::type_checker::CheckedGenericType {
+    use crate::type_checker::{
+        CheckedGenericApplicationArgument as Argument,
+        CheckedGenericConstantValue as Value,
+        CheckedGenericType as Type,
+    };
     match ty {
-        Type::Array { element, length, words } => {
+        Type::Array {
+            element,
+            length,
+            words,
+        } => {
             let length = match length {
-                Value::Literal(value) => value.count()
-                    .and_then(|count| crate::constant_value::CheckedConstantValue::from_words(
-                        crate::primitive_types::SCALAR_U32, [count, 0]))
+                Value::Literal(value) => value
+                    .count()
+                    .and_then(|count| {
+                        crate::constant_value::CheckedConstantValue::from_words(
+                            crate::primitive_types::SCALAR_U32,
+                            [count, 0],
+                        )
+                    })
                     .map_or(Value::Literal(value), Value::Literal),
                 other => other,
             };
-            Type::Array { element: Box::new(lengths_as_counts(*element)), length, words }
+            Type::Array {
+                element: Box::new(lengths_as_counts(*element)),
+                length,
+                words,
+            }
         }
         Type::Slice(element) => Type::Slice(Box::new(lengths_as_counts(*element))),
         Type::Reference(target) => Type::Reference(Box::new(lengths_as_counts(*target))),
-        Type::Nominal { identity, arguments, words, local_replay } => Type::Nominal {
+        Type::Nominal {
             identity,
-            arguments: arguments.into_iter().map(|argument| match argument {
-                Argument::Type(ty) => Argument::Type(lengths_as_counts(ty)),
-                other => other,
-            }).collect(),
+            arguments,
+            words,
+            local_replay,
+        } => Type::Nominal {
+            identity,
+            arguments: arguments
+                .into_iter()
+                .map(|argument| match argument {
+                    Argument::Type(ty) => Argument::Type(lengths_as_counts(ty)),
+                    other => other,
+                })
+                .collect(),
             words,
             local_replay,
         },
@@ -961,10 +1740,18 @@ fn report_instance_table(
     const HIR_RETURN_STMT: u32 = 9;
     let label = format!("[instance-table] unit {}:{}", unit[0], unit[1]);
     let Some(table) = template.and_then(|closure| closure.table.as_ref()) else {
-        eprintln!("{label} no table: template closure {}, found {}, flags {:#x}, error {:?}, {} copies",
-            if template.is_some() { "present" } else { "absent" },
-            template.map_or(0, |closure| closure.found), template.map_or(0, |closure| closure.flags),
-            template.and_then(|closure| closure.error.as_ref()), specialization.entries().len());
+        eprintln!(
+            "{label} no table: template closure {}, found {}, flags {:#x}, error {:?}, {} copies",
+            if template.is_some() {
+                "present"
+            } else {
+                "absent"
+            },
+            template.map_or(0, |closure| closure.found),
+            template.map_or(0, |closure| closure.flags),
+            template.and_then(|closure| closure.error.as_ref()),
+            specialization.entries().len()
+        );
         return;
     };
     if let Some(error) = copies.and_then(|closure| closure.error.as_ref()) {
@@ -976,19 +1763,40 @@ fn report_instance_table(
     }
     let copy_rows = copies.map_or(&[][..], |closure| closure.copy_rows.as_slice());
     let [mut matched, mut unmatched, mut missing, mut lengths] = [0usize; 4];
-    let [mut rows, mut equal, mut differ, mut undecoded, mut params, mut counts, mut returns] = [0usize; 7];
+    let [
+        mut rows,
+        mut equal,
+        mut differ,
+        mut undecoded,
+        mut params,
+        mut counts,
+        mut returns,
+    ] = [0usize; 7];
     // Calls: equal (entry, method, none, dependency), differ, unresolved.
-    let [mut call_entries, mut call_methods, mut call_dependencies, mut call_differ, mut unresolved] = [0usize; 5];
-    for (index, (entry, &(function, _))) in specialization.entries().iter().zip(owners).enumerate() {
-        let Some(found) = entries.iter()
-            .find(|candidate| candidate.is_instance(function, &entry.arguments, &entry.constants, unit))
-        else {
+    let [
+        mut call_entries,
+        mut call_methods,
+        mut call_dependencies,
+        mut call_differ,
+        mut unresolved,
+    ] = [0usize; 5];
+    for (index, (entry, &(function, _))) in specialization.entries().iter().zip(owners).enumerate()
+    {
+        let Some(found) = entries.iter().find(|candidate| {
+            candidate.is_instance(function, &entry.arguments, &entry.constants, unit)
+        }) else {
             unmatched += 1;
             if unmatched <= 3 {
-                let same = entries.iter().filter(|candidate| candidate.function_row == function)
-                    .map(|candidate| format!("{:?}", candidate.arguments)).collect::<Vec<_>>();
-                eprintln!("{label} copy {index} (function {function}) has no table entry: {:?}; \
-                    entries of that function: {same:?}", entry.arguments);
+                let same = entries
+                    .iter()
+                    .filter(|candidate| candidate.function_row == function)
+                    .map(|candidate| format!("{:?}", candidate.arguments))
+                    .collect::<Vec<_>>();
+                eprintln!(
+                    "{label} copy {index} (function {function}) has no table entry: {:?}; \
+                    entries of that function: {same:?}",
+                    entry.arguments
+                );
             }
             continue;
         };
@@ -999,35 +1807,75 @@ fn report_instance_table(
         };
         if copy.len() != found.rows.len() {
             lengths += 1;
-            eprintln!("{label} copy {index} (function {function}) has {} rows, its entry {}",
-                copy.len(), found.rows.len());
+            eprintln!(
+                "{label} copy {index} (function {function}) has {} rows, its entry {}",
+                copy.len(),
+                found.rows.len()
+            );
             continue;
         }
-        let copy_calls = copies.and_then(|closure| closure.copy_calls.get(index))
+        let copy_calls = copies
+            .and_then(|closure| closure.copy_calls.get(index))
             .map_or(&[][..], Vec::as_slice);
         for (row, &[kind, value]) in found.calls.iter().enumerate() {
-            let retained = copy_calls.iter().find(|(offset, _)| *offset == row).map(|(_, call)| call);
+            let retained = copy_calls
+                .iter()
+                .find(|(offset, _)| *offset == row)
+                .map(|(_, call)| call);
             let agrees = match (kind, retained) {
                 (IT_CALL_NONE, None) => true,
-                (IT_CALL_METHOD, None) => { call_methods += 1; true }
+                (IT_CALL_METHOD, None) => {
+                    call_methods += 1;
+                    true
+                }
                 (IT_CALL_ENTRY, Some(call)) => entries.get(value as usize).is_some_and(|callee| {
                     matches!(call.target, CheckedGenericTarget::Local { function_start_token, .. }
                         if function_start_token == callee.function_token)
-                        && callee.is_instance(callee.function_row, &call.arguments, &call.constants, unit)
-                }) && { call_entries += 1; true },
-                (IT_CALL_DEPENDENCY, Some(call)) => matches!(call.target,
-                    CheckedGenericTarget::Dependency { .. } | CheckedGenericTarget::DependencyMethod { .. })
-                    && { call_dependencies += 1; true },
-                (IT_CALL_UNRESOLVED, _) => { unresolved += 1; true }
+                        && callee.is_instance(
+                            callee.function_row,
+                            &call.arguments,
+                            &call.constants,
+                            unit,
+                        )
+                }) && {
+                    call_entries += 1;
+                    true
+                },
+                (IT_CALL_DEPENDENCY, Some(call)) => {
+                    matches!(
+                        call.target,
+                        CheckedGenericTarget::Dependency { .. }
+                            | CheckedGenericTarget::DependencyMethod { .. }
+                    ) && {
+                        call_dependencies += 1;
+                        true
+                    }
+                }
+                (IT_CALL_UNRESOLVED, _) => {
+                    unresolved += 1;
+                    true
+                }
                 _ => false,
             };
             if !agrees {
                 call_differ += 1;
                 if call_differ <= 4 {
-                    let callee = (kind == IT_CALL_ENTRY).then(|| entries.get(value as usize)).flatten()
-                        .map(|callee| (callee.function_row, callee.function_token, &callee.arguments, &callee.constants));
-                    eprintln!("{label} copy {index} function {function} call row +{row}: table ({kind}, {value}) \
-                        callee {callee:?}; copy {:?}", retained.map(|call| (&call.target, &call.arguments, &call.constants)));
+                    let callee = (kind == IT_CALL_ENTRY)
+                        .then(|| entries.get(value as usize))
+                        .flatten()
+                        .map(|callee| {
+                            (
+                                callee.function_row,
+                                callee.function_token,
+                                &callee.arguments,
+                                &callee.constants,
+                            )
+                        });
+                    eprintln!(
+                        "{label} copy {index} function {function} call row +{row}: table ({kind}, {value}) \
+                        callee {callee:?}; copy {:?}",
+                        retained.map(|call| (&call.target, &call.arguments, &call.constants))
+                    );
                 }
             }
         }
@@ -1042,16 +1890,23 @@ fn report_instance_table(
                 _ if kind == Some(HIR_PARAM) => params += 1,
                 _ if kind == Some(HIR_RETURN_STMT) => returns += 1,
                 (CheckedRowFact::Type(left), CheckedRowFact::Type(right))
-                    if lengths_as_counts(left.clone()) == lengths_as_counts(right.clone()) => counts += 1,
+                    if lengths_as_counts(left.clone()) == lengths_as_counts(right.clone()) =>
+                {
+                    counts += 1
+                }
                 (CheckedRowFact::Undecoded(_), CheckedRowFact::Undecoded(_)) => undecoded += 1,
                 _ => {
                     differ += 1;
                     if differ <= 8 {
-                        eprintln!("{label} copy {index} function {function} row +{row} kind {kind:?}: \
-                            table {expected:?}; copy {actual:?}");
+                        eprintln!(
+                            "{label} copy {index} function {function} row +{row} kind {kind:?}: \
+                            table {expected:?}; copy {actual:?}"
+                        );
                         if crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_INSTANCE_TABLE", false) {
-                            eprintln!("{label} copy {index} constants: table {:?}; copy {:?}",
-                                found.constants, entry.constants);
+                            eprintln!(
+                                "{label} copy {index} constants: table {:?}; copy {:?}",
+                                found.constants, entry.constants
+                            );
                         }
                     }
                 }
@@ -1064,36 +1919,11 @@ fn report_instance_table(
          param_rows_differ={params} return_rows_differ={returns} array_count_equal={counts} \
          both_undecoded={undecoded} call_entries={call_entries} call_methods={call_methods} \
          call_dependencies={call_dependencies} call_unresolved={unresolved} call_differ={call_differ}",
-        table.entries.len(), table.flags, table.failed, specialization.entries().len(),
+        table.entries.len(),
+        table.flags,
+        table.failed,
+        specialization.entries().len(),
     );
-}
-
-/// See `NativeProgramSession::instance_impl_bindings`; `instance` numbers the
-/// rows. Copies GPU-selected implementations and their accepted method
-/// bindings; selects and compares nothing. Proportional to the origin's
-/// evidence: an implementation of the template unit costs one lookup.
-fn impl_bindings(
-    catalog: &FrozenCatalog,
-    template_unit: [u32; 2],
-    evidence: &[ValidatedEvidence],
-    instance: u32,
-) -> Result<Vec<BodyImplBinding>> {
-    let mut bindings = Vec::new();
-    for proof in evidence {
-        let Some(implementation) = proof.implementation else { continue };
-        let Some(slot) = catalog.predicate_subject_slot(proof.predicate_row)? else { continue };
-        let Some(methods) = catalog.implementation_method_targets(implementation)? else { continue };
-        for method in methods {
-            bindings.push(BodyImplBinding {
-                instance,
-                slot,
-                required_symbol: method.required_symbol,
-                trait_unit: if method.trait_unit == template_unit { [u32::MAX; 2] } else { method.trait_unit },
-                target: method.target,
-            });
-        }
-    }
-    Ok(bindings)
 }
 
 /// A replay object may call outside its template unit only into the units the
@@ -1104,17 +1934,27 @@ fn check_external_callees(
     object: &CompiledSourcePackObject,
     bindings: &[BodyImplBinding],
 ) -> Result<()> {
-    let imports = frozen.dependency_pages.iter().flatten()
+    let imports = frozen
+        .dependency_pages
+        .iter()
+        .flatten()
         .map(|artifact| [artifact.library_id, artifact.unit_id])
         .collect::<BTreeSet<_>>();
-    let targets = bindings.iter().map(|binding| binding.target).collect::<BTreeSet<_>>();
+    let targets = bindings
+        .iter()
+        .map(|binding| binding.target)
+        .collect::<BTreeSet<_>>();
     for symbol in (0..object.symbol_count())
         .filter(|&symbol| object.symbol_kind(symbol) == NativeSymbolKind::Undefined)
     {
-        let Some(identity) = object.symbol_identity_words(symbol) else { continue };
+        let Some(identity) = object.symbol_identity_words(symbol) else {
+            continue;
+        };
         let unit = [identity[0], identity[1]];
-        ensure!(unit == frozen.unit || imports.contains(&unit) || targets.contains(&identity),
-            "replay calls {identity:?} outside its template's imports, and no implementation binding names it");
+        ensure!(
+            unit == frozen.unit || imports.contains(&unit) || targets.contains(&identity),
+            "replay calls {identity:?} outside its template's imports, and no implementation binding names it"
+        );
     }
     Ok(())
 }
@@ -1132,7 +1972,11 @@ pub(super) fn normalize_omitted_template_calls(
     unit: &mut CompiledSourcePackUnit,
 ) -> Result<()> {
     normalize_omitted_batch_template_calls(
-        catalog, target_snapshot, &BTreeSet::from([selected_owner_hir]), unit)
+        catalog,
+        target_snapshot,
+        &BTreeSet::from([selected_owner_hir]),
+        unit,
+    )
 }
 
 /// The same boundary for a batched replay: every selected body may be published.
@@ -1156,16 +2000,27 @@ pub(super) fn normalize_omitted_batch_template_calls(
         "replay emission does not retain frozen definition provenance"
     );
     let owners = accepted_call_owners(unit)?;
-    ensure!(frozen.call_owner_by_hir.iter().all(|(call, owner)| owners.get(call) == Some(owner)),
-        "replay emission changed the complete source occurrence inventory");
+    ensure!(
+        frozen
+            .call_owner_by_hir
+            .iter()
+            .all(|(call, owner)| owners.get(call) == Some(owner)),
+        "replay emission changed the complete source occurrence inventory"
+    );
     let mut omitted_hirs = BTreeSet::new();
     let mut omitted_symbols = BTreeSet::new();
     let mut callable_symbols = BTreeSet::new();
     for owner in &frozen.contracts.binders {
-        let Some(callable) = owner.callable else { continue };
-        ensure!(callable_symbols.insert(callable.native_symbol),
-            "frozen callable identities are not unique");
-        if selected_owner_hirs.contains(&owner.source_hir) { continue; }
+        let Some(callable) = owner.callable else {
+            continue;
+        };
+        ensure!(
+            callable_symbols.insert(callable.native_symbol),
+            "frozen callable identities are not unique"
+        );
+        if selected_owner_hirs.contains(&owner.source_hir) {
+            continue;
+        }
         let catalog_owner = catalog.owner(target_snapshot, owner.source_hir)?;
         if !catalog.composed_parameters(catalog_owner)?.is_empty() {
             omitted_hirs.insert(owner.source_hir);
@@ -1174,45 +2029,74 @@ pub(super) fn normalize_omitted_batch_template_calls(
     }
     let object = &unit.object;
     object.validate().map_err(anyhow::Error::msg)?;
-    ensure!(object.unit() == frozen.unit,
-        "replay emission has the wrong source unit");
+    ensure!(
+        object.unit() == frozen.unit,
+        "replay emission has the wrong source unit"
+    );
     let mut undefined_count = 0usize;
     let mut definitions_started = false;
     for symbol in 0..object.symbol_count() {
         if object.symbol_kind(symbol) == NativeSymbolKind::Undefined {
-            ensure!(!definitions_started, "native undefined symbols are not a prefix");
+            ensure!(
+                !definitions_started,
+                "native undefined symbols are not a prefix"
+            );
             undefined_count += 1;
             continue;
         }
         definitions_started = true;
-        let identity = object.symbol_identity_words(symbol)
+        let identity = object
+            .symbol_identity_words(symbol)
             .ok_or_else(|| anyhow!("native definition has no checked callable identity"))?;
-        ensure!(identity[..2] == frozen.unit,
-            "native definition belongs to another source unit");
-        ensure!(callable_symbols.contains(&identity[2]),
-            "replay producer emitted a definition outside the frozen callable inventory");
-        ensure!(!omitted_symbols.contains(&identity[2]),
-            "replay producer emitted a non-selected generic body");
+        ensure!(
+            identity[..2] == frozen.unit,
+            "native definition belongs to another source unit"
+        );
+        ensure!(
+            callable_symbols.contains(&identity[2]),
+            "replay producer emitted a definition outside the frozen callable inventory"
+        );
+        ensure!(
+            !omitted_symbols.contains(&identity[2]),
+            "replay producer emitted a non-selected generic body"
+        );
     }
-    ensure!(unit.native_call_hirs.len() == undefined_count,
-        "replay native call inventory does not match undefined symbols");
-    ensure!(unit.native_call_function_hirs.len() == undefined_count,
-        "replay native owner inventory does not match undefined symbols");
-    for (&hir, &owner) in unit.native_call_hirs.iter().zip(unit.native_call_function_hirs.iter()) {
+    ensure!(
+        unit.native_call_hirs.len() == undefined_count,
+        "replay native call inventory does not match undefined symbols"
+    );
+    ensure!(
+        unit.native_call_function_hirs.len() == undefined_count,
+        "replay native owner inventory does not match undefined symbols"
+    );
+    for (&hir, &owner) in unit
+        .native_call_hirs
+        .iter()
+        .zip(unit.native_call_function_hirs.iter())
+    {
         if owner != u32::MAX {
             let accepted_owner = catalog.owner(target_snapshot, owner)?;
-            ensure!(catalog.callable_by_owner.contains_key(&accepted_owner),
-                "replay native call has no accepted lexical callable");
+            ensure!(
+                catalog.callable_by_owner.contains_key(&accepted_owner),
+                "replay native call has no accepted lexical callable"
+            );
         }
         if let Some(&generic_owner) = owners.get(&hir) {
-            ensure!(generic_owner == owner,
-                "native and generic call ownership disagree");
+            ensure!(
+                generic_owner == owner,
+                "native and generic call ownership disagree"
+            );
         }
-        ensure!(!omitted_hirs.contains(&owner),
-            "replay producer retained a call from a non-selected generic body");
+        ensure!(
+            !omitted_hirs.contains(&owner),
+            "replay producer retained a call from a non-selected generic body"
+        );
     }
-    let originals: BTreeMap<_, _> = frozen.original_calls.iter()
-        .map(|call| (call.call_hir, call)).collect();
+    let originals: BTreeMap<_, _> = frozen
+        .original_calls
+        .iter()
+        .map(|call| (call.call_hir, call))
+        .collect();
     let mut published = Vec::with_capacity(unit.generic_calls.len());
     let mut dropped = BTreeSet::new();
     for call in unit.generic_calls.iter() {
@@ -1221,13 +2105,19 @@ pub(super) fn normalize_omitted_batch_template_calls(
             if selected_owner_hirs.contains(&owner) {
                 published.push(call.clone());
             } else {
-                ensure!(omitted_hirs.contains(&owner),
-                    "replay added a generic call outside the selected body");
+                ensure!(
+                    omitted_hirs.contains(&owner),
+                    "replay added a generic call outside the selected body"
+                );
                 dropped.insert(call.call_hir);
             }
         } else if omitted_hirs.contains(&owner) {
-            published.push((*originals.get(&call.call_hir).ok_or_else(||
-                anyhow!("omitted template has no original checked call"))?).clone());
+            published.push(
+                (*originals
+                    .get(&call.call_hir)
+                    .ok_or_else(|| anyhow!("omitted template has no original checked call"))?)
+                .clone(),
+            );
         } else {
             published.push(call.clone());
         }
@@ -1236,12 +2126,15 @@ pub(super) fn normalize_omitted_batch_template_calls(
     // the packet's exact comparison against their admitted originals.
     unit.generic_calls = published.into();
     if !dropped.is_empty() {
-        unit.checked_call_owners = unit.checked_call_owners.iter()
-            .filter(|owner| !dropped.contains(&owner.call_hir)).copied().collect();
+        unit.checked_call_owners = unit
+            .checked_call_owners
+            .iter()
+            .filter(|owner| !dropped.contains(&owner.call_hir))
+            .copied()
+            .collect();
     }
     Ok(())
 }
-
 
 /// Missing implementations remain a source diagnostic. Invalid input, resource
 /// exhaustion, unsupported graphs and ambiguity keep their distinct GPU cause.

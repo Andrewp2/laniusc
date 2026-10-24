@@ -1030,11 +1030,15 @@ impl<'gpu> GpuCompiler<'gpu> {
             Default::default()
         };
         finish_timer.stamp("unit_facts");
-        let body_native_layouts = object_request
+        let body_layouts = object_request
             .and_then(LoweringObjectRequest::body_specialization)
-            .map(|specialization| self.type_checker.retained_body_native_layouts(device, queue, specialization))
+            .map(|specialization| self.type_checker.retained_body_native_layouts_with_bindings(device, queue, specialization))
             .transpose()
             .map_err(|error| CompileError::GpuFrontend(format!("checked body layout readback failed: {error}")))?;
+        let (body_native_layouts, body_binding_native_layouts) = match body_layouts {
+            Some((entries, bindings)) => (Some(entries), Some(bindings)),
+            None => (None, None),
+        };
         finish_timer.stamp("body_native_layouts");
         // An original x86 unit with an interface keeps the byte spans of its
         // generic bodies, from which a concrete replay copies instances. A
@@ -1051,6 +1055,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         };
         Ok(DeferredParserFinish::Complete(CheckedSourcePackArtifacts {
             body_native_layouts,
+            body_binding_native_layouts,
             owner_spans,
             semantic_interface,
             target_artifact,
@@ -1993,7 +1998,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         if let Some(input) = body_specialization {
             artifacts.semantic_interface = Some(input.interface.clone());
             if let Some(blanking) = input.blanking {
-                artifacts.blanked_to_full(blanking).map_err(|error| CompileError::GpuFrontend(format!(
+                artifacts.blanked_to_full(blanking, input.frontend_specialization, input.specialization).map_err(|error| CompileError::GpuFrontend(format!(
                     "declarations-only template results do not map back to the template: {error:#}"
                 )))?;
             }
@@ -2848,7 +2853,9 @@ fn finish_source_pack_unit(
         &mut artifacts.generic_calls,
         template_dependency_pages.as_ref(),
         impl_bindings,
-    );
+    ).map_err(|error| CompileError::GpuFrontend(format!(
+        "generic declaration arity retention failed: {error:#}"
+    )))?;
     let native_call_function_hirs = retain_native_call_owners(
         &artifacts.native_call_hirs, &artifacts.native_call_owners,
     ).map_err(|error| CompileError::GpuFrontend(format!(
@@ -2934,6 +2941,7 @@ fn finish_source_pack_unit(
         template_dependency_pages,
         generic_calls: artifacts.generic_calls.into(),
         body_native_layouts: artifacts.body_native_layouts.map(Into::into),
+        body_binding_native_layouts: artifacts.body_binding_native_layouts.map(Into::into),
         checked_contracts: std::sync::Arc::new(artifacts.checked_contracts),
         checked_call_owners: artifacts.checked_call_owners.into(),
         native_call_hirs: artifacts.native_call_hirs.into(),
@@ -2943,6 +2951,7 @@ fn finish_source_pack_unit(
 
 struct CheckedSourcePackArtifacts {
     body_native_layouts: Option<Vec<Vec<u32>>>,
+    body_binding_native_layouts: Option<Vec<Vec<u32>>>,
     owner_spans: Option<gpu_type_checker::CheckedOwnerSpans>,
     semantic_interface: Option<crate::compiler::GpuSemanticInterfaceArtifact>,
     target_artifact: Option<Vec<u8>>,
@@ -2982,6 +2991,7 @@ fn compare_declarations_only_replay(
             check("native call rows", full.native_call_hirs == short.native_call_hirs);
             check("native call functions", full.native_call_function_hirs == short.native_call_function_hirs);
             check("native layouts", full.body_native_layouts == short.body_native_layouts);
+            check("implementation native layouts", full.body_binding_native_layouts == short.body_binding_native_layouts);
             check("contracts", full.checked_contracts == short.checked_contracts);
             check("native object", objects);
             if !differences.is_empty() && crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_DECL_ONLY_TEMPLATES", false) {
@@ -3032,8 +3042,18 @@ impl CheckedSourcePackArtifacts {
     /// Convert a declarations-only replay's results from the blanked
     /// template's copy space to the template's full space: every token and
     /// row the template unit's checked calls, owners and native symbols name.
-    fn blanked_to_full(&mut self, blanking: &gpu_type_checker::TemplateBlanking) -> anyhow::Result<()> {
+    fn blanked_to_full(
+        &mut self,
+        blanking: &gpu_type_checker::TemplateBlanking,
+        frontend: &gpu_type_checker::CheckedBodySpecializationBatch,
+        full: &gpu_type_checker::CheckedBodySpecializationBatch,
+    ) -> anyhow::Result<()> {
         let map = blanking.map(gpu_type_checker::BlankingDirection::ToFull);
+        if let Some(layouts) = &mut self.body_binding_native_layouts {
+            // Remapping local member identities can change their order relative
+            // to imported members. Keep each GPU witness with its exact binding.
+            *layouts = frontend.remap_binding_native_layouts(&map, full, layouts)?;
+        }
         for call in &mut self.generic_calls {
             map.call(call)?;
         }
@@ -3069,6 +3089,9 @@ pub(in crate::compiler) struct CompiledSourcePackUnit {
     /// concrete replay. These refine the cache independently of semantic keys.
     /// One vector per batched replay entry, in entry order.
     pub(in crate::compiler) body_native_layouts: Option<std::sync::Arc<[Vec<u32>]>>,
+    /// GPU-admitted widths of implementation environments, aligned with the
+    /// replay packet's sorted bindings. These cover binding-only graph nodes.
+    pub(in crate::compiler) body_binding_native_layouts: Option<std::sync::Arc<[Vec<u32>]>>,
     /// Byte spans of this original unit's copyable generic bodies; None for
     /// a replay or a unit whose spans were not retained.
     pub(in crate::compiler) owner_spans: Option<std::sync::Arc<gpu_type_checker::CheckedOwnerSpans>>,

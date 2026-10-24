@@ -4,7 +4,12 @@ use super::{
     GpuCompiler,
     GpuSemanticInterfaceArtifact,
     SourcePackArtifactTarget,
-    typecheck::{CompiledSourcePackObject, CompiledSourcePackUnit, PendingOriginalUnit, RetainedPendingOriginal},
+    typecheck::{
+        CompiledSourcePackObject,
+        CompiledSourcePackUnit,
+        PendingOriginalUnit,
+        RetainedPendingOriginal,
+    },
 };
 use crate::compiler::{
     ExplicitSourcePathFile,
@@ -205,6 +210,40 @@ pub(super) type CompiledUnitCache = UnitCache<Arc<CompiledSourcePackUnit>>;
 /// release like a fresh compilation (the catalog still admits it every job).
 pub(super) type PendingOriginalCache = UnitCache<RetainedPendingOriginal>;
 
+/// Descriptive cache data only. Exact equality with a freshly admitted entry is
+/// required in addition to the lookup hash; this object grants no replay proof.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct CachedReplayBindingContract {
+    pub template_sources: Arc<[String]>,
+    pub template_unit: [u32; 2],
+    pub source_owner_hir: u32,
+    /// Complete canonical entry environment, so hash collisions cannot substitute
+    /// another constant/type application of the same source body.
+    pub entry_environment: Vec<u32>,
+    /// Sorted member keys, targets, receiver/count contracts and canonical typed
+    /// environments. Instance indexes and proof arena/serial IDs are excluded.
+    pub members: Vec<u32>,
+}
+
+impl CachedReplayBindingContract {
+    fn resident_byte_len(&self) -> usize {
+        std::mem::size_of::<Self>()
+            .saturating_add(vector_resident_bytes(&self.members))
+            .saturating_add(vector_resident_bytes(&self.entry_environment))
+            .saturating_add(
+                self.template_sources
+                    .len()
+                    .saturating_mul(std::mem::size_of::<String>()),
+            )
+            .saturating_add(
+                self.template_sources
+                    .iter()
+                    .map(String::capacity)
+                    .sum::<usize>(),
+            )
+    }
+}
+
 /// The finished outputs of one instance-copy run of a standard-library
 /// template (D7b), as `request.finish` returned them, before publication
 /// renames its definitions. Entries are in run order. Holding one confers
@@ -217,6 +256,12 @@ pub(super) struct CachedInstanceRun {
     /// Per entry: the GPU's native seed layouts. A hit needs this job's
     /// layout witnesses to equal them exactly.
     pub layouts: Arc<[Vec<u32>]>,
+    /// Exact successful per-entry input contracts, compared with fresh owning
+    /// capabilities before a hit can publish anything.
+    pub binding_contracts: Arc<[CachedReplayBindingContract]>,
+    /// Per entry, length-delimited canonical GPU layout witnesses for every
+    /// binding environment, including nodes absent from the entry environment.
+    pub binding_layouts: Arc<[Vec<u32>]>,
     pub object: crate::codegen::x86::GpuX86RelocatableObject,
     pub call_hirs: Arc<[u32]>,
     pub call_owners: Arc<[u32]>,
@@ -235,15 +280,28 @@ impl CachedInstanceRun {
             .saturating_add(vector_resident_bytes(&object.relocations))
             .saturating_add(vector_resident_bytes(&object.symbols))
             .saturating_add(vector_resident_bytes(&object.identity_bytes))
-            .saturating_add(self.call_hirs.len().saturating_add(self.call_owners.len()).saturating_mul(4))
+            .saturating_add(
+                self.call_hirs
+                    .len()
+                    .saturating_add(self.call_owners.len())
+                    .saturating_mul(4),
+            )
             .saturating_add(vector_resident_bytes(&self.copy_symbols))
             .saturating_add(vector_resident_bytes(&self.entry_hirs));
         for layouts in self.layouts.iter() {
             bytes = bytes.saturating_add(vector_resident_bytes(layouts));
         }
+        for contract in self.binding_contracts.iter() {
+            bytes = bytes.saturating_add(contract.resident_byte_len());
+        }
+        for layouts in self.binding_layouts.iter() {
+            bytes = bytes.saturating_add(vector_resident_bytes(layouts));
+        }
         for facts in &self.entry_facts {
-            bytes = bytes.saturating_add(facts.len()
-                .saturating_mul(std::mem::size_of::<crate::type_checker::CheckedGenericCall>()));
+            bytes =
+                bytes.saturating_add(facts.len().saturating_mul(std::mem::size_of::<
+                    crate::type_checker::CheckedGenericCall,
+                >()));
             for call in facts.iter() {
                 bytes = bytes.saturating_add(call.resident_argument_bytes());
             }
@@ -267,13 +325,20 @@ pub(super) struct LibraryInstanceCache {
     standard_templates: Vec<Arc<[String]>>,
     /// The last template's sources and dependency pages and their content
     /// hash, reused while the retained snapshot keeps the same allocations.
-    template: Option<(Arc<[String]>, Arc<[Vec<GpuSemanticInterfaceArtifact>]>, blake3::Hash)>,
+    template: Option<(
+        Arc<[String]>,
+        Arc<[Vec<GpuSemanticInterfaceArtifact>]>,
+        blake3::Hash,
+    )>,
 }
 
 impl Default for LibraryInstanceCache {
     fn default() -> Self {
         Self {
-            runs: UnitCache { maximum_bytes: DEFAULT_LIBRARY_INSTANCE_CACHE_BYTES, ..UnitCache::default() },
+            runs: UnitCache {
+                maximum_bytes: DEFAULT_LIBRARY_INSTANCE_CACHE_BYTES,
+                ..UnitCache::default()
+            },
             standard_templates: Vec::new(),
             template: None,
         }
@@ -286,11 +351,20 @@ impl LibraryInstanceCache {
     /// template must be a registered standard-library original of this job.
     pub(super) fn cacheable_template(&self, unit: &CompiledSourcePackUnit) -> bool {
         library_instance_cache_enabled()
-            && self.standard_templates.iter().any(|sources| Arc::ptr_eq(sources, &unit.template_sources))
+            && self
+                .standard_templates
+                .iter()
+                .any(|sources| Arc::ptr_eq(sources, &unit.template_sources))
     }
 
     fn register_standard_template(&mut self, sources: &Arc<[String]>) {
-        if self.standard_templates.iter().any(|known| Arc::ptr_eq(known, sources)) { return; }
+        if self
+            .standard_templates
+            .iter()
+            .any(|known| Arc::ptr_eq(known, sources))
+        {
+            return;
+        }
         // A few library units per daemon; a replaced original's sources go first.
         const MAXIMUM_STANDARD_TEMPLATES: usize = 64;
         if self.standard_templates.len() >= MAXIMUM_STANDARD_TEMPLATES {
@@ -301,7 +375,10 @@ impl LibraryInstanceCache {
 
     /// Content hash of one template unit: its sources, their paths and its
     /// dependency interfaces.
-    pub(super) fn template_hash(&mut self, unit: &CompiledSourcePackUnit) -> Result<blake3::Hash, String> {
+    pub(super) fn template_hash(
+        &mut self,
+        unit: &CompiledSourcePackUnit,
+    ) -> Result<blake3::Hash, String> {
         if let Some((sources, pages, hash)) = &self.template
             && Arc::ptr_eq(sources, &unit.template_sources)
             && Arc::ptr_eq(pages, &unit.template_dependency_pages)
@@ -325,7 +402,11 @@ impl LibraryInstanceCache {
         }
         hash_dependency_interfaces(&mut content, &unit.template_dependency_pages)?;
         let hash = content.finalize();
-        self.template = Some((unit.template_sources.clone(), unit.template_dependency_pages.clone(), hash));
+        self.template = Some((
+            unit.template_sources.clone(),
+            unit.template_dependency_pages.clone(),
+            hash,
+        ));
         Ok(hash)
     }
 
@@ -336,11 +417,25 @@ impl LibraryInstanceCache {
         for instance in instances {
             content.update(instance.as_bytes());
         }
-        CompiledUnitCacheKey { target: 2, library_id, unit_id, content_hash: content.finalize() }
+        CompiledUnitCacheKey {
+            target: 2,
+            library_id,
+            unit_id,
+            content_hash: content.finalize(),
+        }
     }
 
-    fn instance_hint(library_id: u32, unit_id: u32, instance: blake3::Hash) -> CompiledUnitCacheHintKey {
-        CompiledUnitCacheHintKey { target: 2, library_id, unit_id, content_hash: instance }
+    fn instance_hint(
+        library_id: u32,
+        unit_id: u32,
+        instance: blake3::Hash,
+    ) -> CompiledUnitCacheHintKey {
+        CompiledUnitCacheHintKey {
+            target: 2,
+            library_id,
+            unit_id,
+            content_hash: instance,
+        }
     }
 
     /// The stored run that holds an instance, if any. A peek: only a
@@ -351,7 +446,10 @@ impl LibraryInstanceCache {
         unit_id: u32,
         instance: blake3::Hash,
     ) -> Option<(CompiledUnitCacheKey, Arc<CachedInstanceRun>)> {
-        let key = self.runs.hints.get(&Self::instance_hint(library_id, unit_id, instance))?;
+        let key = self
+            .runs
+            .hints
+            .get(&Self::instance_hint(library_id, unit_id, instance))?;
         let run = self.runs.entries.get(key)?.value.clone();
         Some((key.clone(), run))
     }
@@ -369,7 +467,10 @@ impl LibraryInstanceCache {
         let instances = run.instances.clone();
         self.runs.insert(key.clone(), Arc::new(run));
         for instance in instances {
-            self.runs.insert_hint(Self::instance_hint(library_id, unit_id, instance), key.clone());
+            self.runs.insert_hint(
+                Self::instance_hint(library_id, unit_id, instance),
+                key.clone(),
+            );
         }
     }
 
@@ -450,7 +551,10 @@ impl<V> Default for UnitCache<V> {
 
 impl PendingOriginalCache {
     pub(super) fn pending_default() -> Self {
-        Self { maximum_bytes: DEFAULT_PENDING_ORIGINAL_CACHE_BYTES, ..Self::default() }
+        Self {
+            maximum_bytes: DEFAULT_PENDING_ORIGINAL_CACHE_BYTES,
+            ..Self::default()
+        }
     }
 }
 
@@ -525,10 +629,7 @@ impl<V: CachedUnitValue> UnitCache<V> {
         self.evict_to_budget();
     }
 
-    fn get_by_hint(
-        &mut self,
-        hint: &CompiledUnitCacheHintKey,
-    ) -> Option<V> {
+    fn get_by_hint(&mut self, hint: &CompiledUnitCacheHintKey) -> Option<V> {
         let Some(key) = self.hints.get(hint).cloned() else {
             return None;
         };
@@ -578,8 +679,22 @@ impl<V: CachedUnitValue> UnitCache<V> {
 impl CompiledSourcePackUnit {
     pub(super) fn resident_byte_len(&self) -> usize {
         let mut bytes = std::mem::size_of::<Self>()
-            .saturating_add(self.body_native_layouts.as_ref().map_or(0, |entries| entries.iter()
-                .map(|widths| widths.len().saturating_mul(4)).fold(0usize, usize::saturating_add)))
+            .saturating_add(self.body_native_layouts.as_ref().map_or(0, |entries| {
+                entries
+                    .iter()
+                    .map(|widths| widths.len().saturating_mul(4))
+                    .fold(0usize, usize::saturating_add)
+            }))
+            .saturating_add(
+                self.body_binding_native_layouts
+                    .as_ref()
+                    .map_or(0, |entries| {
+                        entries
+                            .iter()
+                            .map(|widths| widths.len().saturating_mul(4))
+                            .fold(0usize, usize::saturating_add)
+                    }),
+            )
             .saturating_add(interface_resident_bytes(&self.interface))
             .saturating_add(
                 self.template_sources
@@ -589,8 +704,11 @@ impl CompiledSourcePackUnit {
         for source in self.template_sources.iter() {
             bytes = bytes.saturating_add(source.capacity());
         }
-        bytes = bytes.saturating_add(self.template_source_paths.len()
-            .saturating_mul(std::mem::size_of::<Option<std::path::PathBuf>>()));
+        bytes = bytes.saturating_add(
+            self.template_source_paths
+                .len()
+                .saturating_mul(std::mem::size_of::<Option<std::path::PathBuf>>()),
+        );
         for path in self.template_source_paths.iter().flatten() {
             bytes = bytes.saturating_add(path.capacity());
         }
@@ -671,8 +789,12 @@ pub(super) fn interface_resident_bytes(interface: &GpuSemanticInterfaceArtifact)
         ))
         .saturating_add(vector_resident_bytes(&interface.name_bytes))
         // The closure summary (D1b) is evicted with its original.
-        .saturating_add(interface.closure_summary.as_ref()
-            .map_or(0, |summary| summary.resident_bytes()))
+        .saturating_add(
+            interface
+                .closure_summary
+                .as_ref()
+                .map_or(0, |summary| summary.resident_bytes()),
+        )
 }
 
 fn vector_resident_bytes<T>(values: &Vec<T>) -> usize {
@@ -741,8 +863,10 @@ impl GpuCompiler<'_> {
             });
         }
 
-        let source_paths = source_files.iter()
-            .map(|file| Some(file.path.clone())).collect::<Vec<_>>();
+        let source_paths = source_files
+            .iter()
+            .map(|file| Some(file.path.clone()))
+            .collect::<Vec<_>>();
         let value = Arc::new(
             self.compile_source_pack_unit_with_dependency_pages_and_paths(
                 sources.into(),
@@ -850,14 +974,17 @@ impl GpuCompiler<'_> {
 
     /// Both caches: released units and standard-library pending originals.
     pub(crate) fn compiled_unit_cache_stats(&self) -> CompiledUnitCacheStats {
-        let compiled = self.compiled_unit_cache
+        let compiled = self
+            .compiled_unit_cache
             .lock()
             .expect("compiled-unit cache mutex poisoned")
             .stats();
-        compiled.plus(self.pending_original_cache
-            .lock()
-            .expect("pending-original cache mutex poisoned")
-            .stats())
+        compiled.plus(
+            self.pending_original_cache
+                .lock()
+                .expect("pending-original cache mutex poisoned")
+                .stats(),
+        )
     }
 
     /// Compiles one path-backed native unit as a pending original, or reuses
@@ -885,46 +1012,75 @@ impl GpuCompiler<'_> {
         let cacheable = standard_library && pending_original_cache_enabled();
         let cache_hint = if cacheable {
             CompiledUnitCacheHintKey::new(
-                target, job.library_id, unit_id, source_files,
+                target,
+                job.library_id,
+                unit_id,
+                source_files,
                 dependency_pages.as_ref(),
-            ).map_err(source_pack_artifact_store_error)?
+            )
+            .map_err(source_pack_artifact_store_error)?
         } else {
             None
         };
-        if let Some(hit) = cache_hint.as_ref().and_then(|hint| self.pending_original_cache
-            .lock().expect("pending-original cache mutex poisoned").get_by_hint(hint))
-        {
+        if let Some(hit) = cache_hint.as_ref().and_then(|hint| {
+            self.pending_original_cache
+                .lock()
+                .expect("pending-original cache mutex poisoned")
+                .get_by_hint(hint)
+        }) {
             return Ok(self.register_standard_original(standard_library, hit.pending()));
         }
-        let sources = read_explicit_source_path_files(
-            "pending native library-interface job", source_files)?;
+        let sources =
+            read_explicit_source_path_files("pending native library-interface job", source_files)?;
         let cache_key = match (&cache_hint, cacheable) {
             (Some(hint), _) => Some(CompiledUnitCacheKey::from_hint(hint)),
-            (None, true) => Some(CompiledUnitCacheKey::new(
-                target, job.library_id, unit_id, &sources,
-                dependency_pages.as_ref(),
-            ).map_err(source_pack_artifact_store_error)?.with_source_paths(source_files)),
+            (None, true) => Some(
+                CompiledUnitCacheKey::new(
+                    target,
+                    job.library_id,
+                    unit_id,
+                    &sources,
+                    dependency_pages.as_ref(),
+                )
+                .map_err(source_pack_artifact_store_error)?
+                .with_source_paths(source_files),
+            ),
             (None, false) => None,
         };
         {
-            let mut cache = self.pending_original_cache
-                .lock().expect("pending-original cache mutex poisoned");
+            let mut cache = self
+                .pending_original_cache
+                .lock()
+                .expect("pending-original cache mutex poisoned");
             match &cache_key {
-                Some(key) => if let Some(hit) = cache.get(key) {
-                    drop(cache);
-                    return Ok(self.register_standard_original(standard_library, hit.pending()));
-                },
+                Some(key) => {
+                    if let Some(hit) = cache.get(key) {
+                        drop(cache);
+                        return Ok(self.register_standard_original(standard_library, hit.pending()));
+                    }
+                }
                 None => cache.record_miss(),
             }
         }
-        let source_paths = source_files.iter()
-            .map(|file| Some(file.path.clone())).collect::<Vec<_>>();
-        let pending = self.compile_pending_original_source_pack_unit_for_target(
-            target, sources.into(), job.library_id, unit_id, dependency_pages, Some(&source_paths),
-        ).await?;
+        let source_paths = source_files
+            .iter()
+            .map(|file| Some(file.path.clone()))
+            .collect::<Vec<_>>();
+        let pending = self
+            .compile_pending_original_source_pack_unit_for_target(
+                target,
+                sources.into(),
+                job.library_id,
+                unit_id,
+                dependency_pages,
+                Some(&source_paths),
+            )
+            .await?;
         if let Some(key) = cache_key {
-            let mut cache = self.pending_original_cache
-                .lock().expect("pending-original cache mutex poisoned");
+            let mut cache = self
+                .pending_original_cache
+                .lock()
+                .expect("pending-original cache mutex poisoned");
             cache.insert_standard_library(key.clone(), pending.retain());
             if let Some(hint) = cache_hint {
                 cache.insert_hint(hint, key);
@@ -935,9 +1091,14 @@ impl GpuCompiler<'_> {
 
     /// A standard-library original's templates may enter the warm library
     /// instance cache (D7b) in this job; no other unit's may.
-    fn register_standard_original(&self, standard_library: bool, pending: PendingOriginalUnit) -> PendingOriginalUnit {
+    fn register_standard_original(
+        &self,
+        standard_library: bool,
+        pending: PendingOriginalUnit,
+    ) -> PendingOriginalUnit {
         if standard_library {
-            self.library_instance_cache.lock()
+            self.library_instance_cache
+                .lock()
                 .expect("library instance cache mutex poisoned")
                 .register_standard_template(pending.facts().template_sources());
         }
@@ -1121,6 +1282,7 @@ mod tests {
     fn unit(library_id: u32) -> CompiledSourcePackUnit {
         CompiledSourcePackUnit {
             body_native_layouts: None,
+            body_binding_native_layouts: None,
             owner_spans: None,
             instance_closure: None,
             interface: GpuSemanticInterfaceArtifact {
@@ -1170,21 +1332,33 @@ mod tests {
         let pending = PendingOriginalUnit::from_unit_for_test(unit(0));
         let mut cache = PendingOriginalCache::pending_default();
         let key = CompiledUnitCacheKey::new(
-            SourcePackArtifactTarget::X86_64, 0, 0, &["module core;".into()], &[],
-        ).unwrap();
+            SourcePackArtifactTarget::X86_64,
+            0,
+            0,
+            &["module core;".into()],
+            &[],
+        )
+        .unwrap();
         cache.insert_standard_library(key.clone(), pending.retain());
         // Every hit is a new pending wrapper over the same facts snapshot, so
         // each build's admission sees the original compilation's facts.
         for _ in 0..2 {
-            let reused = cache.get(&key).expect("retained pending original").pending();
+            let reused = cache
+                .get(&key)
+                .expect("retained pending original")
+                .pending();
             assert!(reused.facts().same_snapshot(pending.facts()));
         }
         cache.record_miss();
         let stats = cache.stats();
         assert_eq!((stats.hits, stats.misses, stats.entries), (2, 1, 1));
         // The facts snapshot's interface copy is charged with the unit.
-        assert_eq!(stats.resident_bytes, std::mem::size_of::<CompiledUnitCacheKey>()
-            + unit(0).resident_byte_len() + interface_resident_bytes(&unit(0).interface));
+        assert_eq!(
+            stats.resident_bytes,
+            std::mem::size_of::<CompiledUnitCacheKey>()
+                + unit(0).resident_byte_len()
+                + interface_resident_bytes(&unit(0).interface)
+        );
         cache.clear_project();
         assert_eq!(cache.stats().entries, 1);
         cache.clear();
@@ -1200,11 +1374,25 @@ mod tests {
             maximum_bytes: std::mem::size_of::<CompiledUnitCacheKey>() + value.resident_byte_len(),
             ..PendingOriginalCache::pending_default()
         };
-        let key = |source: &str| CompiledUnitCacheKey::new(
-            SourcePackArtifactTarget::X86_64, 0, 0, &[source.into()], &[],
-        ).unwrap();
-        cache.insert(key("module a;"), PendingOriginalUnit::from_unit_for_test(value).retain());
-        assert_eq!(cache.stats().entries, 0, "the facts' interface copy exceeds the budget");
+        let key = |source: &str| {
+            CompiledUnitCacheKey::new(
+                SourcePackArtifactTarget::X86_64,
+                0,
+                0,
+                &[source.into()],
+                &[],
+            )
+            .unwrap()
+        };
+        cache.insert(
+            key("module a;"),
+            PendingOriginalUnit::from_unit_for_test(value).retain(),
+        );
+        assert_eq!(
+            cache.stats().entries,
+            0,
+            "the facts' interface copy exceeds the budget"
+        );
         assert_eq!(cache.stats().resident_bytes, 0);
         assert_eq!(cache.stats().evictions, 1);
     }
@@ -1423,7 +1611,9 @@ mod tests {
         assert_eq!(cache.stats().entries, 0);
         assert_eq!(cache.stats().resident_bytes, 0);
         assert_eq!(cache.stats().evictions, 1);
-        let CheckedGenericType::Nominal { arguments, .. } = &active_build.generic_calls[0].arguments[0].ty else {
+        let CheckedGenericType::Nominal { arguments, .. } =
+            &active_build.generic_calls[0].arguments[0].ty
+        else {
             panic!("retained nominal environment");
         };
         assert_eq!(arguments.len(), 32);

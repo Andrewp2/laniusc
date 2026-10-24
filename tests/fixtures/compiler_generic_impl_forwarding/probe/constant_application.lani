@@ -1,0 +1,33 @@
+module probe::constant_application;
+
+pub struct Extra { wide: u64, narrow: i32 }
+pub struct Payload<U> { wide: u64, narrow: i32, flag: bool, extra: U }
+pub struct State { calls: i32, stamp: u64 }
+pub impl State { pub fn borrow(&self) -> &State { return self; } }
+
+// N is a typed value parameter, never a backing-array length.
+pub struct Carrier<T,const N:u64> { item: T, state: &State }
+pub impl<T,const N:u64> Carrier<T,N> {
+    pub fn borrow(&self) -> &Carrier<T,N> { return self; }
+}
+pub trait Inspect<T> {
+    pub fn stamp(&self) -> u64;
+    pub fn payload(&self) -> T;
+    pub fn echo(value: T) -> T;
+}
+// Both applications in the native entry select this same implementation and
+// these same method targets, with independent composed T and full-width N.
+pub impl<T,const N:u64> Inspect<T> for Carrier<T,N> {
+    pub fn stamp(&self) -> u64 {
+        self.state.calls += 1;
+        self.state.stamp = N;
+        return N;
+    }
+    pub fn payload(&self) -> T {
+        self.state.calls += 1;
+        return self.item;
+    }
+    pub fn echo(value: T) -> T {
+        return value;
+    }
+}

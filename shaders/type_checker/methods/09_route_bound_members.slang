@@ -53,6 +53,7 @@ import status;
 import type_checker.methods.lookup;
 import type_checker.methods.candidate;
 import type_checker.checked_type_graph;
+import type_checker.constant_atoms;
 import type_checker.canonical.canonical_api;
 import type_checker.canonical.canonical_checked_rows;
 import type_checker.substitution.ct_checked;
@@ -142,6 +143,7 @@ uint active_hir_node_count() { return active_hir_count(); }
 
 #include "../type/instances/body_specialization_owner.slang"
 #include "../type/instances/body_impl_bindings.slang"
+#include "../type/instances/body_type_graph_reference.slang"
 
 #include "local_required_member.slang"
 
@@ -193,9 +195,11 @@ bool implements(uint impl, uint member, uint4 required)
 // The implementation member (library, unit, native symbol) outside this unit
 // that the replayed instance's evidence selected for the bound that offered
 // `candidate` (07a, 15b) on its parameter, for call token `token`.
-bool external_target(uint token, uint4 required, MethodCandidate candidate, out uint3 target)
+bool external_target(uint token, uint4 required, MethodCandidate candidate,
+    out uint3 target, out uint4 environment)
 {
     target = uint3(INVALID, INVALID, INVALID);
+    environment = uint4(INVALID, 0u, 0u, 0u);
     if (candidate.matched_ref_tag != TYPE_REF_GENERIC_PARAM) return false;
     uint tokens; uint stride;
     type_generic_param_slot_by_token.GetDimensions(tokens, stride);
@@ -214,8 +218,14 @@ bool external_target(uint token, uint4 required, MethodCandidate candidate, out 
         symbol = 0x80000000u | member;
         trait_unit = uint2(INVALID, INVALID);
     }
-    return body_impl_binding(instance, slot, symbol, trait_unit, target) &&
-        target.x != INVALID && target.y != INVALID && target.z != INVALID;
+    if (!body_impl_binding(instance, slot, symbol, trait_unit, target, environment) ||
+        target.x == INVALID || target.y == INVALID || target.z == INVALID) return false;
+    // Transport retains the declaration's source mode. Explicit typed first
+    // parameters use the existing15a adjustment, not a newly inferred plan:
+    // dotted mode3 is value-self1, qualified mode3 is static0. Earlier bound
+    // candidate eligibility and the accepted parameter plan remain unchanged.
+    uint mode = environment.w == 3u ? (method_call_receiver_hir[token] != INVALID ? 1u : 0u) : environment.w;
+    return mode == candidate.receiver_mode;
 }
 
 // The method token of call expression `call`, or INVALID: its callee member's
@@ -272,7 +282,7 @@ void retire_claims(uint call)
 // local member `selected`, or a dependency member `target` (no local callee).
 // An imported trait's required member was itself a dependency callee.
 void publish_callee(uint token, MethodCandidate candidate, uint selected, uint backend,
-    uint3 target)
+    uint3 target, uint requirements)
 {
     if (token >= gParams.n_tokens) return;
     method_candidate[token] = candidate;
@@ -282,7 +292,7 @@ void publish_callee(uint token, MethodCandidate candidate, uint selected, uint b
     call_dependency_unit_id[token] = target.y;
     call_dependency_local_index[token] = target.z;
     call_dependency_host_service[token] = INVALID;
-    call_dependency_generic_requirements[token] = 0u;
+    call_dependency_generic_requirements[token] = requirements;
 }
 
 // Whether call `call` has context rows (contextual_call_environment.slang).
@@ -291,6 +301,81 @@ bool has_context_rows(uint call)
     uint rows; uint stride;
     call_context_ref_tag.GetDimensions(rows, stride);
     return call < rows / 32u;
+}
+
+uint slots_mask(uint count) { return count == 32u ? 0xffffffffu : (1u << count) - 1u; }
+
+// Validate the selected pool span and every destination before writing any
+// context row. The seed already admitted the whole packet in a prior dispatch;
+// this bounded check also rejects an unavailable context rather than publishing
+// a callee with a partial environment. Receiver selection remains the accepted
+// candidate's checked plan; transported mode equality was checked above.
+bool external_environment(uint call, uint4 environment, out uint2 masks)
+{
+    masks = uint2(0u, 0u);
+    uint types = environment.y;
+    uint constants = environment.z;
+    if (types == 0u && constants == 0u) return environment.x == INVALID;
+    if (call == INVALID || types > 32u || constants > 32u) return false;
+    uint3 counts;
+    if (!body_impl_binding_header(counts) || environment.x >= counts.y) return false;
+    uint4 span = body_impl_environment(environment.x);
+    if (span.y != types || span.z != constants || span.w != 0u ||
+        span.x > counts.z || types + constants > counts.z - span.x) return false;
+    uint capacity; uint stride;
+    call_context_arg_mask.GetDimensions(capacity, stride); if (call >= capacity) return false;
+    call_context_constant_mask.GetDimensions(capacity, stride); if (call >= capacity) return false;
+    call_context_constant_valid_mask.GetDimensions(capacity, stride); if (call >= capacity) return false;
+    call_context_ref_tag.GetDimensions(capacity, stride); if (call >= capacity / 32u) return false;
+    call_context_ref_payload.GetDimensions(capacity, stride); if (call >= capacity / 32u) return false;
+    call_context_constant_kind.GetDimensions(capacity, stride); if (call >= capacity / 32u) return false;
+    call_context_constant_payload.GetDimensions(capacity, stride); if (call >= capacity / 32u) return false;
+    call_context_constant_identity_mode.GetDimensions(capacity, stride); if (call >= capacity / 32u) return false;
+    uint source_capacity;
+    type_generic_param_slot_by_token.GetDimensions(source_capacity, stride);
+    uint graph_count = body_specialization_inputs[0u].z;
+    uint atom_base = body_constant_atom_base();
+    if (graph_count > BODY_GRAPH_NODES || (constants != 0u && atom_base == INVALID)) return false;
+    for (uint local = 0u; local < types + constants; local++)
+    {
+        uint4 argument = body_impl_argument(span.x + local);
+        bool constant = local >= types;
+        uint slot = constant ? local - types : local;
+        if (argument.x != (constant ? 1u : 0u) || argument.y != slot ||
+            argument.z >= graph_count || argument.w != 0u) return false;
+        uint kind = body_graph_node(argument.z).x;
+        if (constant ? kind != 10u : !(kind == 1u || kind == 2u || kind == 3u || kind == 4u || kind == 9u)) return false;
+        uint tag; uint payload;
+        body_type_graph_reference(argument.z, source_capacity, tag, payload);
+        if (tag == 0u || payload == INVALID || ((tag & 0x80000000u) != 0u) != constant) return false;
+        if (constant)
+        {
+            uint3 value;
+            if (!checked_constant_atom_value(payload, value)) return false;
+        }
+        else if (tag == 3u && payload >= checked_type_capacity()) return false;
+    }
+    for (uint local = 0u; local < types + constants; local++)
+    {
+        uint4 argument = body_impl_argument(span.x + local);
+        uint tag; uint payload;
+        body_type_graph_reference(argument.z, source_capacity, tag, payload);
+        if (local < types)
+        {
+            uint row = call * 32u + local;
+            call_context_ref_tag[row] = tag;
+            call_context_ref_payload[row] = payload;
+        }
+        else
+        {
+            uint row = call * 32u + local - types;
+            call_context_constant_kind[row] = tag & ~0x80000000u;
+            call_context_constant_payload[row] = payload;
+            call_context_constant_identity_mode[row] = 0u;
+        }
+    }
+    masks = uint2(slots_mask(types), slots_mask(constants));
+    return true;
 }
 
 uint path_index(uint path, uint level) { return (path >> (level * 5u)) & 31u; }
@@ -440,6 +525,9 @@ bool bind_pattern(uint pattern, uint actual, uint2 receiver, uint call, uint slo
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
+    // Seed validation completes in an earlier dispatch. A malformed packet
+    // never publishes even an otherwise searchable prefix of its bindings.
+    if (status[STATUS_OK_SLOT] == 0u) return;
     // One thread per call expression: calls own their context rows by HIR
     // node, and a receiver's HIR parent is not its member.
     uint node = linear_thread_id_2d(dtid, 65535u, 256u);
@@ -537,7 +625,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     // With no implementation in this unit, the one the instance's evidence
     // selected elsewhere.
     uint3 target = uint3(INVALID, INVALID, INVALID);
-    bool external = matches == 0u && accepted && external_target(token, required, candidate, target);
+    uint4 environment = uint4(INVALID, 0u, 0u, 0u);
+    bool external = matches == 0u && accepted && external_target(token, required, candidate, target, environment);
+    uint2 external_masks = uint2(0u, 0u);
+    if (external && !external_environment(call, environment, external_masks)) external = false;
     bool bindings = any(published != 0u);
     bool routed = accepted && (external || (matches == 1u && (!selected_generic || bindings)));
     // The routed callee owns the call's context: a generic one its bindings,
@@ -547,13 +638,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (call != INVALID && (any(written != 0u) || routed))
     {
         call_context_arg_mask[call] = routed
-            ? (selected_generic ? published.x : 0u) : call_context_arg_mask[call] & ~written.x;
+            ? (external ? external_masks.x : selected_generic ? published.x : 0u) : call_context_arg_mask[call] & ~written.x;
         uint constants = routed
-            ? (selected_generic ? published.y : 0u) : call_context_constant_mask[call] & ~written.y;
+            ? (external ? external_masks.y : selected_generic ? published.y : 0u) : call_context_constant_mask[call] & ~written.y;
         call_context_constant_mask[call] = constants;
         call_context_constant_valid_mask[call] = routed
             ? constants : call_context_constant_valid_mask[call] & ~written.y;
-        if (routed && selected_generic)
+        if (routed)
         {
             call_context_owner_by_token[token] = call;
             if (aliases.x < gParams.n_tokens) call_context_owner_by_token[aliases.x] = call;
@@ -589,8 +680,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint start = fn_start_token_by_decl_token[selected];
         backend = start < gParams.n_tokens ? start : selected;
     }
-    publish_callee(token, candidate, selected, backend, target);
-    if (aliases.x != token) publish_callee(aliases.x, candidate, selected, backend, target);
+    uint requirements = external ? environment.y | (environment.z << 16u) : 0u;
+    publish_callee(token, candidate, selected, backend, target, requirements);
+    if (aliases.x != token) publish_callee(aliases.x, candidate, selected, backend, target, requirements);
     if (aliases.y != token && aliases.y != aliases.x)
-        publish_callee(aliases.y, candidate, selected, backend, target);
+        publish_callee(aliases.y, candidate, selected, backend, target, requirements);
 }

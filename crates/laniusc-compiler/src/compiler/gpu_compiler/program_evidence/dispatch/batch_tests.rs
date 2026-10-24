@@ -1099,6 +1099,14 @@ fn main() -> i32 {
     let sources = expected.iter().map(|(source, _)| *source).collect::<Vec<_>>();
     let values = gpu.materialize_proof_terms(&packet, &sources, native_layout_test_limits())
         .expect("GPU expands owned recipes and completes native layouts");
+    assert_eq!(gpu.layout_query_slots.len(), 8, "one reserved role per concurrent root");
+    let query_allocation_ids = |gpu: &GpuProgramEvidence| gpu.layout_query_slots.iter()
+        .map(|slot| slot.buffer(1, wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::COPY_DST, None).unwrap().allocation_id())
+        .collect::<Vec<_>>();
+    let allocations = query_allocation_ids(&gpu);
+    assert_eq!(allocations.iter().copied().collect::<std::collections::BTreeSet<_>>().len(), 8,
+        "simultaneously materialized roots must have distinct physical buffers");
     assert_eq!(values.len(), expected.len());
     for ((value, (reference, expected)), width) in values.iter().zip(&expected)
         .zip([3, 3, 5, 6, 6, 0, 1, 3])
@@ -1114,6 +1122,13 @@ fn main() -> i32 {
     let again = gpu.materialize_proof_terms(&packet, &sources[..1], native_layout_test_limits())
         .expect("a fresh layout job for the same accepted array");
     assert_eq!(again[0].words(), 3);
+    assert_eq!(gpu.layout_query_slots.len(), 8, "a sequential query must not reserve another role");
+    assert_eq!(query_allocation_ids(&gpu), allocations,
+        "completed query scratch reuses the same physical allocations");
+    let oversized = vec![sources[0]; 65];
+    assert!(gpu.materialize_proof_terms(&packet, &oversized, native_layout_test_limits()).is_err());
+    assert_eq!(query_allocation_ids(&gpu), allocations,
+        "over-capacity rejection happens before any scratch allocation");
     assert_eq!(values[0].words(), 3, "later jobs preserve the earlier owned result");
     // LANIUS_DEBUG_CAPTURE_PASS only: save the selected materialization dispatch.
     crate::compiler::write_debug_dispatch_capture();

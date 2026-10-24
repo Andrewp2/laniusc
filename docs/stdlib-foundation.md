@@ -133,6 +133,17 @@ allocation failures. Exact cleanup ledgers include errors owning a String.
 Existing collection clones still copy entries shallowly; automatic destruction
 and general deep-owned collection integration remain work.
 
+[Imported generic implementation applications](compiler-implementation-applications.md)
+now retain proof-selected environments, receiver contracts and declaration
+arities through replay and exact cache validation. Eight focused compilation
+jobs include five native executions: nested Read/Write forwarding, short and
+interrupted progress, errors, aliases, flush, source-local bound rejection,
+full-u64 constants and different generic record layouts. An observed cache hit
+matches fresh replay. Forty-five CPU checks, the GPU lineage gate and a focused
+scratch reuse gate pass under normal shader budgets. A separate nested static
+result-expression failure remains captured; buffered library adapters still
+need their own executable admission.
+
 Verified execution is x86_64 Linux output from GPU compilation; user GPU kernels
 and other targets are unverified. Threads, native FFI/TLS/SQLite, generic
 iterator/stream composition and distribution/reference completion remain on the

@@ -1,0 +1,65 @@
+module app::main;
+import core::io;
+import core::result;
+import probe::alpha;
+import probe::beta;
+import probe::consumers;
+import probe::forward;
+import probe::script;
+
+fn main() -> i32 {
+    let source: [u8;8] = [90,0,128,255,42,7,91,92];
+    let aw_bytes: [u8;8] = [77;8]; let aw_trace: [i32;12] = [-1;12];
+    let bw_bytes: [u8;8] = [77;8]; let bw_trace: [i32;12] = [-1;12];
+    let br_output: [u8;8] = [77;8]; let br_trace: [i32;12] = [-1;12];
+    let ar_output: [u8;8] = [77;8]; let ar_trace: [i32;12] = [-1;12];
+    let aw: probe::script::State = probe::script::state(aw_bytes,aw_trace,true,false,false);
+    let bw: probe::script::State = probe::script::state(bw_bytes,bw_trace,true,true,true);
+    let br: probe::script::State = probe::script::state(source,br_trace,true,false,false);
+    let ar: probe::script::State = probe::script::state(source,ar_trace,true,true,false);
+    let aw_leaf: probe::alpha::Endpoint = probe::alpha::Endpoint { state:aw.borrow() };
+    let bw_leaf: probe::beta::Endpoint = probe::beta::Endpoint { state:bw.borrow() };
+    let br_leaf: probe::beta::Endpoint = probe::beta::Endpoint { state:br.borrow() };
+    let ar_leaf: probe::alpha::Endpoint = probe::alpha::Endpoint { state:ar.borrow() };
+    probe::script::assert_pristine(aw.borrow()); probe::script::assert_pristine(bw.borrow());
+    probe::script::assert_pristine(br.borrow()); probe::script::assert_pristine(ar.borrow());
+
+    // Selecting Forward<W> here uses the imported wrapper's retained W:Write
+    // assumption. Its concrete leaf source-owner is alpha, not beta.
+    assert(probe::consumers::write_through_forward(aw_leaf.borrow(),source,1,5).unwrap() == 5);
+    probe::script::assert_script(aw.borrow(),101,5);
+    probe::script::assert_bytes(aw_bytes,[77,0,128,255,42,7,77,77]);
+    probe::script::assert_pristine(bw.borrow()); probe::script::assert_pristine(br.borrow());
+    probe::script::assert_pristine(ar.borrow());
+
+    let bw_inner: probe::forward::Forward<probe::beta::Endpoint> = probe::forward::forward(bw_leaf.borrow());
+    let bw_outer: probe::forward::Forward<probe::forward::Forward<probe::beta::Endpoint>> = probe::forward::forward(bw_inner.borrow());
+    probe::script::assert_failure(core::io::write_all(bw_outer.borrow(),source,1,5),3,1201);
+    probe::script::assert_script(bw.borrow(),201,3);
+    probe::script::assert_bytes(bw_bytes,[77,0,128,255,77,77,77,77]);
+    probe::script::assert_script(aw.borrow(),101,5);
+    probe::script::assert_pristine(br.borrow()); probe::script::assert_pristine(ar.borrow());
+
+    assert(probe::consumers::read_through_forward(br_leaf.borrow(),br_output,1,5).unwrap() == 5);
+    probe::script::assert_script(br.borrow(),202,5);
+    probe::script::assert_bytes(br_output,[77,0,128,255,42,7,77,77]);
+    probe::script::assert_pristine(ar.borrow());
+    let ar_inner: probe::forward::Forward<probe::alpha::Endpoint> = probe::forward::read_forward(ar_leaf.borrow());
+    let ar_outer: probe::forward::Forward<probe::forward::Forward<probe::alpha::Endpoint>> = probe::forward::read_forward(ar_inner.borrow());
+    probe::script::assert_failure(core::io::read_exact(ar_outer.borrow(),ar_output,1,5),3,1102);
+    probe::script::assert_script(ar.borrow(),102,3);
+    probe::script::assert_bytes(ar_output,[77,0,128,255,77,77,77,77]);
+
+    // Exact/all must not flush. Flush itself must preserve one leaf result,
+    // including its complete owner-specific error through two adapters.
+    assert(aw.flushes == 0 && bw.flushes == 0 && br.flushes == 0 && ar.flushes == 0);
+    let aw_adapter: probe::forward::Forward<probe::alpha::Endpoint> = probe::forward::forward(aw_leaf.borrow());
+    assert(probe::consumers::flush(aw_adapter.borrow()).unwrap() == 0);
+    assert(aw.flushes == 1 && aw.calls == 4 && aw.cursor == 5 && aw.marker == 103);
+    probe::script::assert_host(probe::consumers::flush(bw_outer.borrow()),1203);
+    assert(bw.flushes == 1 && bw.calls == 4 && bw.cursor == 3 && bw.marker == 203);
+    assert(br.flushes == 0 && br.calls == 4 && br.cursor == 5 && br.marker == 202);
+    assert(ar.flushes == 0 && ar.calls == 4 && ar.cursor == 3 && ar.marker == 102);
+    probe::script::assert_bytes(source,[90,0,128,255,42,7,91,92]);
+    return 0;
+}
