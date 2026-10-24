@@ -29,8 +29,8 @@ duplicating active ownership of its entries.
 `as_views()` returns two counted slices whose concatenation is the logical
 front-to-back sequence. Either may be empty. The split point is an implementation
 detail. `iter()` provides a borrowed cursor with `next`, `next_back` and
-`remaining`; the ends never overlap, and exhaustion remains None. Shared
-iterator-trait integration remains a separate compiler dependency.
+`remaining`; the ends never overlap, and exhaustion remains None. The cursor
+also implements the [shared iterator protocol](stdlib-collection-iterators.md).
 
 Successful edits invalidate earlier views and cursors. Failed fallible edits
 preserve them, contents and capacity. Owners must outlive their views. Inputs
@@ -40,6 +40,13 @@ and growth retains the old allocation until all source entries have been copied.
 Without growth, extension writes only into previously uninitialized slots.
 
 ## API contracts
+
+The [fallible iterator sink](stdlib-iterator-transfer.md) implements
+`TrySink<T,Error>` by appending at the back with `try_push_back`. Bounded
+transfer retains any earlier accepted prefix and returns the rejected item on
+failure. A rejected insertion preserves the deque's state and old views;
+successful insertions follow the invalidation rules above. Source backing must
+remain valid independently of those edits.
 
 ```lanius
 let queue: alloc::deque::Deque<i64> = alloc::deque::new();

@@ -38,6 +38,23 @@ pub trait TryFolder<A, T, E> {
     pub fn try_apply(&self, accumulator: A, value: T) -> core::result::Result<A, E>;
 }
 
+// A fallible destination for one shallow item. None accepts the item; Some
+// rejects it with an error. On rejection the sink must not retain the item or
+// publish a partial insertion. Instrumentation may record the failed attempt.
+// Acceptance never implies an implicit clone or destruction of nested owners.
+pub trait TrySink<T, E> {
+    pub fn try_accept(&self, item: T) -> core::option::Option<E>;
+}
+
+// A transfer stops at the quota without probing again. exhausted means an
+// actual None was observed, not that a quota-ending source is known nonempty.
+pub struct Transfer { accepted: u64, exhausted: bool }
+
+// The source has consumed rejected, but the sink has not retained it. Recover
+// or release it before resuming the source; the accepted prefix remains in the
+// destination. accepted counts only this call, not the sink's earlier entries.
+pub struct TransferError<T, E> { accepted: u64, rejected: T, error: E }
+
 pub struct RangeI32 { position: i64, end: i64 }
 pub struct Take<I, T> { source: &I, remaining: u64, done: bool }
 pub struct Chain<A, B, T> { left: &A, right: &B, in_right: bool, done: bool }
@@ -229,6 +246,32 @@ pub fn try_fold<I, F, T, A, E>(source: &I, initial: A, folder: &F)
         accumulator = core::result::unwrap(step);
     }
     return core::result::Ok(accumulator);
+}
+
+// At most limit source.next calls, each Some followed by one sink attempt.
+// A zero quota touches neither object. An error stops immediately and returns
+// the rejected item; successful earlier insertions are not rolled back. The
+// source and sink must not invalidate each other's storage or borrowed views.
+// A next or callback can do unbounded work internally; quota counts calls only.
+pub fn try_transfer_up_to<I, S, T, E>(source: &I, sink: &S, limit: u64)
+    -> core::result::Result<Transfer, TransferError<T, E>>
+    where I: Iterator<T>, S: TrySink<T, E> {
+    let accepted: u64 = 0;
+    while (accepted < limit) {
+        let item: core::option::Option<T> = source.next();
+        if (core::option::is_none(item)) {
+            return core::result::Ok(Transfer { accepted: accepted, exhausted: true });
+        }
+        let value: T = core::option::unwrap(item);
+        let failed: core::option::Option<E> = sink.try_accept(value);
+        if (core::option::is_some(failed)) {
+            let error: E = core::option::unwrap(failed);
+            return core::result::Err(TransferError { accepted: accepted, rejected: value, error: error });
+        }
+        // accepted < limit <= u64::MAX, so this increment cannot overflow.
+        accepted += 1;
+    }
+    return core::result::Ok(Transfer { accepted: accepted, exhausted: false });
 }
 
 // At most limit next calls; no probe when the quota is reached. exhausted says

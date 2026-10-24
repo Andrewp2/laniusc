@@ -13,8 +13,9 @@ Layer: `alloc`. Role: module. Profile: **Source inventory**.
 - [stdlib-vec](../../stdlib-vec.md)
 - [stdlib-collection-iterators](../../stdlib-collection-iterators.md)
 - [stdlib-cursor-integration](../../stdlib-cursor-integration.md)
+- [stdlib-iterator-transfer](../../stdlib-iterator-transfer.md)
 
-Declaration counts: constant: 1; enum: 1; field: 3; function: 3; impl: 1; method: 34; struct: 1; variant: 4.
+Declaration counts: constant: 1; enum: 1; field: 3; function: 3; impl: 2; method: 35; struct: 1; variant: 4.
 
 ## Declared imports
 
@@ -421,4 +422,20 @@ pub fn upper_bound(&self, item: T) -> i32 where T: core::cmp::Ord<T>
 
 ```lanius
 pub fn binary_search(&self, item: T) -> i32 where T: core::cmp::Ord<T>
+```
+
+### impl at line 227
+
+[Source line 227](../../../stdlib/alloc/vec.lani#L227)
+
+```lanius
+pub impl<T> core::iter::TrySink<T, Error> for Vec<T>
+```
+
+#### method: try_accept
+
+[Source line 228](../../../stdlib/alloc/vec.lani#L228)
+
+```lanius
+pub fn try_accept(&self, item: T) -> core::option::Option<Error>
 ```

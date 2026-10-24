@@ -12,18 +12,20 @@ Layer: `core`. Role: module. Profile: **Source inventory**.
 
 - [stdlib-fixed-capacity](../../stdlib-fixed-capacity.md)
 - [stdlib-cursor-integration](../../stdlib-cursor-integration.md)
+- [stdlib-iterator-transfer](../../stdlib-iterator-transfer.md)
 
-Declaration counts: enum: 1; field: 2; function: 28; impl: 1; method: 1; struct: 1; variant: 2.
+Declaration counts: enum: 1; field: 2; function: 28; impl: 2; method: 2; struct: 1; variant: 2.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
 - [core::cmp](cmp.md) · [source](../../../stdlib/core/vec.lani#L5)
-- [core::option](option.md) · [source](../../../stdlib/core/vec.lani#L6)
-- [core::panic](panic.md) · [source](../../../stdlib/core/vec.lani#L7)
-- [core::result](result.md) · [source](../../../stdlib/core/vec.lani#L8)
-- [core::slice](slice.md) · [source](../../../stdlib/core/vec.lani#L9)
+- [core::iter](iter.md) · [source](../../../stdlib/core/vec.lani#L6)
+- [core::option](option.md) · [source](../../../stdlib/core/vec.lani#L7)
+- [core::panic](panic.md) · [source](../../../stdlib/core/vec.lani#L8)
+- [core::result](result.md) · [source](../../../stdlib/core/vec.lani#L9)
+- [core::slice](slice.md) · [source](../../../stdlib/core/vec.lani#L10)
 
 ## Types, fields and variants
 
@@ -31,7 +33,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 10](../../../stdlib/core/vec.lani#L10)
+[Source line 11](../../../stdlib/core/vec.lani#L11)
 
 ```lanius
 pub enum Error
@@ -39,7 +41,7 @@ pub enum Error
 
 #### variant: Full
 
-[Source line 11](../../../stdlib/core/vec.lani#L11)
+[Source line 12](../../../stdlib/core/vec.lani#L12)
 
 ```lanius
 Full
@@ -47,7 +49,7 @@ Full
 
 #### variant: Bounds
 
-[Source line 12](../../../stdlib/core/vec.lani#L12)
+[Source line 13](../../../stdlib/core/vec.lani#L13)
 
 ```lanius
 Bounds
@@ -55,7 +57,7 @@ Bounds
 
 ### struct: Vec
 
-[Source line 14](../../../stdlib/core/vec.lani#L14)
+[Source line 15](../../../stdlib/core/vec.lani#L15)
 
 ```lanius
 pub struct Vec<T, const N: usize>
@@ -63,7 +65,7 @@ pub struct Vec<T, const N: usize>
 
 #### field: items
 
-[Source line 15](../../../stdlib/core/vec.lani#L15)
+[Source line 16](../../../stdlib/core/vec.lani#L16)
 
 ```lanius
 items:[T; N]
@@ -71,7 +73,7 @@ items:[T; N]
 
 #### field: length
 
-[Source line 16](../../../stdlib/core/vec.lani#L16)
+[Source line 17](../../../stdlib/core/vec.lani#L17)
 
 ```lanius
 length: i32
@@ -81,7 +83,7 @@ length: i32
 
 ### function: from_storage
 
-[Source line 19](../../../stdlib/core/vec.lani#L19)
+[Source line 20](../../../stdlib/core/vec.lani#L20)
 
 ```lanius
 pub fn from_storage<T, const N: usize>(storage:[T; N]) -> Vec<T, N>
@@ -89,7 +91,7 @@ pub fn from_storage<T, const N: usize>(storage:[T; N]) -> Vec<T, N>
 
 ### function: from_array
 
-[Source line 29](../../../stdlib/core/vec.lani#L29)
+[Source line 30](../../../stdlib/core/vec.lani#L30)
 
 ```lanius
 pub fn from_array<T, const N: usize>(items:[T; N]) -> Vec<T, N>
@@ -97,7 +99,7 @@ pub fn from_array<T, const N: usize>(items:[T; N]) -> Vec<T, N>
 
 ### function: len
 
-[Source line 45](../../../stdlib/core/vec.lani#L45)
+[Source line 46](../../../stdlib/core/vec.lani#L46)
 
 ```lanius
 pub fn len<T, const N: usize>(value: &Vec<T, N>) -> i32
@@ -105,7 +107,7 @@ pub fn len<T, const N: usize>(value: &Vec<T, N>) -> i32
 
 ### function: capacity
 
-[Source line 48](../../../stdlib/core/vec.lani#L48)
+[Source line 49](../../../stdlib/core/vec.lani#L49)
 
 ```lanius
 pub fn capacity<T, const N: usize>(value: &Vec<T, N>) -> i32
@@ -113,7 +115,7 @@ pub fn capacity<T, const N: usize>(value: &Vec<T, N>) -> i32
 
 ### function: is_empty
 
-[Source line 52](../../../stdlib/core/vec.lani#L52)
+[Source line 53](../../../stdlib/core/vec.lani#L53)
 
 ```lanius
 pub fn is_empty<T, const N: usize>(value: &Vec<T, N>) -> bool
@@ -121,7 +123,7 @@ pub fn is_empty<T, const N: usize>(value: &Vec<T, N>) -> bool
 
 ### function: is_full
 
-[Source line 55](../../../stdlib/core/vec.lani#L55)
+[Source line 56](../../../stdlib/core/vec.lani#L56)
 
 ```lanius
 pub fn is_full<T, const N: usize>(value: &Vec<T, N>) -> bool
@@ -129,7 +131,7 @@ pub fn is_full<T, const N: usize>(value: &Vec<T, N>) -> bool
 
 ### function: get
 
-[Source line 58](../../../stdlib/core/vec.lani#L58)
+[Source line 59](../../../stdlib/core/vec.lani#L59)
 
 ```lanius
 pub fn get<T, const N: usize>(value: &Vec<T, N>, index: i32) -> core::option::Option<T>
@@ -137,7 +139,7 @@ pub fn get<T, const N: usize>(value: &Vec<T, N>, index: i32) -> core::option::Op
 
 ### function: get_or
 
-[Source line 64](../../../stdlib/core/vec.lani#L64)
+[Source line 65](../../../stdlib/core/vec.lani#L65)
 
 ```lanius
 pub fn get_or<T, const N: usize>(value: &Vec<T, N>, index: i32, fallback: T) -> T
@@ -145,7 +147,7 @@ pub fn get_or<T, const N: usize>(value: &Vec<T, N>, index: i32, fallback: T) -> 
 
 ### function: first
 
-[Source line 70](../../../stdlib/core/vec.lani#L70)
+[Source line 71](../../../stdlib/core/vec.lani#L71)
 
 ```lanius
 pub fn first<T, const N: usize>(value: &Vec<T, N>) -> core::option::Option<T>
@@ -153,7 +155,7 @@ pub fn first<T, const N: usize>(value: &Vec<T, N>) -> core::option::Option<T>
 
 ### function: last
 
-[Source line 73](../../../stdlib/core/vec.lani#L73)
+[Source line 74](../../../stdlib/core/vec.lani#L74)
 
 ```lanius
 pub fn last<T, const N: usize>(value: &Vec<T, N>) -> core::option::Option<T>
@@ -161,7 +163,7 @@ pub fn last<T, const N: usize>(value: &Vec<T, N>) -> core::option::Option<T>
 
 ### function: try_push
 
-[Source line 76](../../../stdlib/core/vec.lani#L76)
+[Source line 77](../../../stdlib/core/vec.lani#L77)
 
 ```lanius
 pub fn try_push<T, const N: usize>(value: &Vec<T, N>, item: T) -> core::result::Result<i32, Error>
@@ -169,7 +171,7 @@ pub fn try_push<T, const N: usize>(value: &Vec<T, N>, item: T) -> core::result::
 
 ### function: pop
 
-[Source line 84](../../../stdlib/core/vec.lani#L84)
+[Source line 93](../../../stdlib/core/vec.lani#L93)
 
 ```lanius
 pub fn pop<T, const N: usize>(value: &Vec<T, N>) -> core::option::Option<T>
@@ -177,7 +179,7 @@ pub fn pop<T, const N: usize>(value: &Vec<T, N>) -> core::option::Option<T>
 
 ### function: try_set
 
-[Source line 92](../../../stdlib/core/vec.lani#L92)
+[Source line 101](../../../stdlib/core/vec.lani#L101)
 
 ```lanius
 pub fn try_set<T, const N: usize>(value: &Vec<T, N>, index: i32, item: T) -> core::result::Result<T, Error>
@@ -185,7 +187,7 @@ pub fn try_set<T, const N: usize>(value: &Vec<T, N>, index: i32, item: T) -> cor
 
 ### function: try_insert
 
-[Source line 101](../../../stdlib/core/vec.lani#L101)
+[Source line 110](../../../stdlib/core/vec.lani#L110)
 
 ```lanius
 pub fn try_insert<T, const N: usize>(value: &Vec<T, N>, index: i32, item: T) -> core::result::Result<i32, Error>
@@ -193,7 +195,7 @@ pub fn try_insert<T, const N: usize>(value: &Vec<T, N>, index: i32, item: T) -> 
 
 ### function: try_remove
 
-[Source line 117](../../../stdlib/core/vec.lani#L117)
+[Source line 126](../../../stdlib/core/vec.lani#L126)
 
 ```lanius
 pub fn try_remove<T, const N: usize>(value: &Vec<T, N>, index: i32) -> core::result::Result<T, Error>
@@ -201,7 +203,7 @@ pub fn try_remove<T, const N: usize>(value: &Vec<T, N>, index: i32) -> core::res
 
 ### function: try_swap
 
-[Source line 130](../../../stdlib/core/vec.lani#L130)
+[Source line 139](../../../stdlib/core/vec.lani#L139)
 
 ```lanius
 pub fn try_swap<T, const N: usize>(value: &Vec<T, N>, left: i32, right: i32) -> core::result::Result<i32, Error>
@@ -209,7 +211,7 @@ pub fn try_swap<T, const N: usize>(value: &Vec<T, N>, left: i32, right: i32) -> 
 
 ### function: reverse
 
-[Source line 139](../../../stdlib/core/vec.lani#L139)
+[Source line 148](../../../stdlib/core/vec.lani#L148)
 
 ```lanius
 pub fn reverse<T, const N: usize>(value: &Vec<T, N>) -> i32
@@ -217,7 +219,7 @@ pub fn reverse<T, const N: usize>(value: &Vec<T, N>) -> i32
 
 ### function: truncate
 
-[Source line 152](../../../stdlib/core/vec.lani#L152)
+[Source line 161](../../../stdlib/core/vec.lani#L161)
 
 ```lanius
 pub fn truncate<T, const N: usize>(value: &Vec<T, N>, new_len: i32) -> core::result::Result<i32, Error>
@@ -225,7 +227,7 @@ pub fn truncate<T, const N: usize>(value: &Vec<T, N>, new_len: i32) -> core::res
 
 ### function: clear
 
-[Source line 160](../../../stdlib/core/vec.lani#L160)
+[Source line 169](../../../stdlib/core/vec.lani#L169)
 
 ```lanius
 pub fn clear<T, const N: usize>(value: &Vec<T, N>) -> i32
@@ -233,7 +235,7 @@ pub fn clear<T, const N: usize>(value: &Vec<T, N>) -> i32
 
 ### function: as_view
 
-[Source line 167](../../../stdlib/core/vec.lani#L167)
+[Source line 176](../../../stdlib/core/vec.lani#L176)
 
 ```lanius
 pub fn as_view<T, const N: usize>(value: &Vec<T, N>) -> core::slice::View<T>
@@ -241,7 +243,7 @@ pub fn as_view<T, const N: usize>(value: &Vec<T, N>) -> core::slice::View<T>
 
 ### function: iter
 
-[Source line 174](../../../stdlib/core/vec.lani#L174)
+[Source line 183](../../../stdlib/core/vec.lani#L183)
 
 ```lanius
 pub fn iter<T, const N: usize>(value: &Vec<T, N>) -> core::slice::Iter<T>
@@ -249,7 +251,7 @@ pub fn iter<T, const N: usize>(value: &Vec<T, N>) -> core::slice::Iter<T>
 
 ### function: contains
 
-[Source line 181](../../../stdlib/core/vec.lani#L181)
+[Source line 190](../../../stdlib/core/vec.lani#L190)
 
 ```lanius
 pub fn contains<T, const N: usize>(value: &Vec<T, N>, item: T) -> bool
@@ -259,7 +261,7 @@ where
 
 ### function: position
 
-[Source line 194](../../../stdlib/core/vec.lani#L194)
+[Source line 203](../../../stdlib/core/vec.lani#L203)
 
 ```lanius
 pub fn position<T, const N: usize>(value: &Vec<T, N>, item: T) -> core::option::Option<i32>
@@ -269,7 +271,7 @@ where
 
 ### function: sort
 
-[Source line 208](../../../stdlib/core/vec.lani#L208)
+[Source line 217](../../../stdlib/core/vec.lani#L217)
 
 ```lanius
 pub fn sort<T, const N: usize>(value: &Vec<T, N>) -> i32
@@ -279,7 +281,7 @@ where
 
 ### function: is_sorted
 
-[Source line 225](../../../stdlib/core/vec.lani#L225)
+[Source line 234](../../../stdlib/core/vec.lani#L234)
 
 ```lanius
 pub fn is_sorted<T, const N: usize>(value: &Vec<T, N>) -> bool
@@ -289,7 +291,7 @@ where
 
 ### function: lower_bound
 
-[Source line 239](../../../stdlib/core/vec.lani#L239)
+[Source line 248](../../../stdlib/core/vec.lani#L248)
 
 ```lanius
 pub fn lower_bound<T, const N: usize>(value: &Vec<T, N>, item: T) -> i32
@@ -299,7 +301,7 @@ where
 
 ### function: upper_bound
 
-[Source line 255](../../../stdlib/core/vec.lani#L255)
+[Source line 264](../../../stdlib/core/vec.lani#L264)
 
 ```lanius
 pub fn upper_bound<T, const N: usize>(value: &Vec<T, N>, item: T) -> i32
@@ -309,7 +311,7 @@ where
 
 ### function: binary_search
 
-[Source line 271](../../../stdlib/core/vec.lani#L271)
+[Source line 280](../../../stdlib/core/vec.lani#L280)
 
 ```lanius
 pub fn binary_search<T, const N: usize>(value: &Vec<T, N>, item: T) -> core::option::Option<i32>
@@ -319,9 +321,9 @@ where
 
 ## Implementation blocks and public methods
 
-### impl at line 39
+### impl at line 40
 
-[Source line 39](../../../stdlib/core/vec.lani#L39)
+[Source line 40](../../../stdlib/core/vec.lani#L40)
 
 ```lanius
 pub impl<T, const N: usize>Vec<T, N>
@@ -329,9 +331,25 @@ pub impl<T, const N: usize>Vec<T, N>
 
 #### method: borrow
 
-[Source line 40](../../../stdlib/core/vec.lani#L40)
+[Source line 41](../../../stdlib/core/vec.lani#L41)
 
 ```lanius
 pub fn borrow(&self) -> &Vec<T,
     N>
+```
+
+### impl at line 86
+
+[Source line 86](../../../stdlib/core/vec.lani#L86)
+
+```lanius
+pub impl<T, const N: usize> core::iter::TrySink<T, Error> for Vec<T, N>
+```
+
+#### method: try_accept
+
+[Source line 87](../../../stdlib/core/vec.lani#L87)
+
+```lanius
+pub fn try_accept(&self, item: T) -> core::option::Option<Error>
 ```

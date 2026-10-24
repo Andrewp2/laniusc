@@ -210,6 +210,14 @@ allocation/I/O failure paths. Executable admission and the narrowly scoped
 [assignment context repair](compiler-iterator-assignment-context.md) are
 recorded in those guides.
 
+[Fallible iterator collection](stdlib-iterator-transfer.md) connects that
+protocol to fixed vectors, owned vectors and deques. Bounded transfer reports
+the accepted prefix and returns the rejected item on failure. Independent
+native models cover 236 scenarios and 2,124 stateful actions; typed tests and
+allocation denial check explicit recovery and shallow ownership. The
+[word sorter](stdlib-sort-words.md) collects live Text views, sorts them and
+checks all allocation and output outcomes before releasing their backing.
+
 [Checked file lengths](stdlib-file-resize.md) execute shrink, zero extension,
 sparse lengths above 4 GiB and unchanged duplicated offsets, with explicit
 one-attempt failures. [Bounded regular-file copying](stdlib-file-copy.md) checks

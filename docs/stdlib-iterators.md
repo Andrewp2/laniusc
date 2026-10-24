@@ -5,6 +5,8 @@ compiled by the GPU compiler. Five focused test groups cover its shared generic
 protocol, borrowed adapters, state models, owner aliases and bound rejections.
 Additional [selection and fold gates](stdlib-iterator-selection.md) cover lazy
 predicates, searches, accumulation and typed early failure.
+[Fallible collection gates](stdlib-iterator-transfer.md) cover bounded transfer
+into fixed vectors, owned vectors and deques, including rejection recovery.
 This is native CPU execution evidence; it does not establish user-program GPU
 execution or other targets.
 

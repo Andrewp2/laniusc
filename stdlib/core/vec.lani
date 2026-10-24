@@ -3,6 +3,7 @@
 // No operation allocates or destroys elements. See docs/stdlib-fixed-capacity.md.
 module core::vec;
 import core::cmp;
+import core::iter;
 import core::option;
 import core::panic;
 import core::result;
@@ -80,6 +81,14 @@ pub fn try_push<T, const N: usize>(value: &Vec<T, N>, item: T) -> core::result::
     value.items[value.length] = item;
     value.length += 1;
     return core::result::Ok(value.length);
+}
+// Acceptance changes the active prefix; end borrowed views/cursors first.
+pub impl<T, const N: usize> core::iter::TrySink<T, Error> for Vec<T, N> {
+    pub fn try_accept(&self, item: T) -> core::option::Option<Error> {
+        let pushed: core::result::Result<i32, Error> = try_push<T, N>(self, item);
+        if (core::result::is_err(pushed)) { return core::option::Some(core::result::unwrap_err(pushed)); }
+        return core::option::None();
+    }
 }
 pub fn pop<T, const N: usize>(value: &Vec<T, N>) -> core::option::Option<T> {
     if (value.length == 0) {

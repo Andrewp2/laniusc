@@ -57,6 +57,9 @@ and enumeration, including arithmetic and output failures.
 [Selection, searches and folds](docs/stdlib-iterator-selection.md) add lazy
 filtering and typed short circuits. The [column-sum program](docs/stdlib-column-sum.md)
 combines text splitting, filtering, Result items and checked reduction.
+[Fallible collection](docs/stdlib-iterator-transfer.md) transfers items into
+vectors and deques with explicit progress and rejected-item recovery. The
+[word sorter](docs/stdlib-sort-words.md) collects borrowed text before sorting.
 
 Optional modules use the [`extended` source root](extended/README.md).
 [`ext::csv`](docs/extended-csv.md) and [`ext::json`](docs/extended-json.md)

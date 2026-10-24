@@ -41,7 +41,8 @@
     "alloc::deque": {
       "guides": [
         "docs/stdlib-deque.md",
-        "docs/stdlib-collection-iterators.md"
+        "docs/stdlib-collection-iterators.md",
+        "docs/stdlib-iterator-transfer.md"
       ]
     },
     "alloc::format": {
@@ -93,7 +94,8 @@
       "guides": [
         "docs/stdlib-vec.md",
         "docs/stdlib-collection-iterators.md",
-        "docs/stdlib-cursor-integration.md"
+        "docs/stdlib-cursor-integration.md",
+        "docs/stdlib-iterator-transfer.md"
       ]
     },
     "core::adler32": {
@@ -245,7 +247,8 @@
         "docs/stdlib-iterator-adapters.md",
         "docs/stdlib-cursor-integration.md",
         "docs/stdlib-iterator-selection.md",
-        "docs/compiler-iterator-assignment-context.md"
+        "docs/compiler-iterator-assignment-context.md",
+        "docs/stdlib-iterator-transfer.md"
       ]
     },
     "core::math": {
@@ -447,7 +450,8 @@
     "core::vec": {
       "guides": [
         "docs/stdlib-fixed-capacity.md",
-        "docs/stdlib-cursor-integration.md"
+        "docs/stdlib-cursor-integration.md",
+        "docs/stdlib-iterator-transfer.md"
       ]
     },
     "ext::audio": {

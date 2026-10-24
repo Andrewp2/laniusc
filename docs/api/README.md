@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **219 modules**, **9572 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **219 modules**, **9588 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -51,7 +51,7 @@ Inventory: **219 modules**, **9572 declaration/member entries**. Counts include 
 | [core::i8](core/i8.md) | [source](../../stdlib/core/i8.lani#L5) | 137 | Source inventory | [stdlib-narrow-integers](../stdlib-narrow-integers.md) |
 | [core::io](core/io.md) | [source](../../stdlib/core/io.lani#L2) | 53 | Source inventory | [stdlib-streams](../stdlib-streams.md) |
 | [core::isize](core/isize.md) | [source](../../stdlib/core/isize.lani#L5) | 137 | Source inventory | [stdlib-native-integers](../stdlib-native-integers.md) |
-| [core::iter](core/iter.md) | [source](../../stdlib/core/iter.lani#L9) | 132 | Source inventory | [stdlib-iterators](../stdlib-iterators.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-adapters](../stdlib-iterator-adapters.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-iterator-selection](../stdlib-iterator-selection.md), [compiler-iterator-assignment-context](../compiler-iterator-assignment-context.md) |
+| [core::iter](core/iter.md) | [source](../../stdlib/core/iter.lani#L9) | 142 | Source inventory | [stdlib-iterators](../stdlib-iterators.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-adapters](../stdlib-iterator-adapters.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-iterator-selection](../stdlib-iterator-selection.md), [compiler-iterator-assignment-context](../compiler-iterator-assignment-context.md), [stdlib-iterator-transfer](../stdlib-iterator-transfer.md) |
 | [core::math](core/math.md) | [source](../../stdlib/core/math.lani#L27) | 18 | Source inventory | [stdlib-math](../stdlib-math.md) |
 | [core::mem](core/mem.md) | [source](../../stdlib/core/mem.lani#L5) | 14 | Source inventory | [stdlib-memory](../stdlib-memory.md) |
 | [core::net](core/net.md) | [source](../../stdlib/core/net.lani#L2) | 334 | Source inventory | [stdlib-net](../stdlib-net.md) |
@@ -88,7 +88,7 @@ Inventory: **219 modules**, **9572 declaration/member entries**. Counts include 
 | [core::varint_i32](core/varint_i32.md) | [source](../../stdlib/core/varint_i32.lani#L2) | 6 | Source inventory | [stdlib-byte-codecs](../stdlib-byte-codecs.md) |
 | [core::varint_wide_i64](core/varint_wide_i64.md) | [source](../../stdlib/core/varint_wide_i64.lani#L2) | 6 | Source inventory | **Unregistered** |
 | [core::varint_wide_u64](core/varint_wide_u64.md) | [source](../../stdlib/core/varint_wide_u64.lani#L2) | 10 | Source inventory | **Unregistered** |
-| [core::vec](core/vec.md) | [source](../../stdlib/core/vec.lani#L4) | 36 | Source inventory | [stdlib-fixed-capacity](../stdlib-fixed-capacity.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md) |
+| [core::vec](core/vec.md) | [source](../../stdlib/core/vec.lani#L4) | 38 | Source inventory | [stdlib-fixed-capacity](../stdlib-fixed-capacity.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-iterator-transfer](../stdlib-iterator-transfer.md) |
 | [core::wide_i64](core/wide_i64.md) | [source](../../stdlib/core/wide_i64.lani#L3) | 51 | Source inventory | **Unregistered** |
 | [core::wide_i64_bits](core/wide_i64_bits.md) | [source](../../stdlib/core/wide_i64_bits.lani#L2) | 12 | Source inventory | **Unregistered** |
 | [core::wide_i64_checked](core/wide_i64_checked.md) | [source](../../stdlib/core/wide_i64_checked.lani#L3) | 11 | Source inventory | **Unregistered** |
@@ -107,7 +107,7 @@ Inventory: **219 modules**, **9572 declaration/member entries**. Counts include 
 | [alloc::buffered](alloc/buffered.md) | [source](../../stdlib/alloc/buffered.lani#L4) | 49 | Source inventory | [stdlib-buffered](../stdlib-buffered.md) |
 | [alloc::clone](alloc/clone.md) | [source](../../stdlib/alloc/clone.lani#L2) | 6 | Source inventory | [stdlib-clone](../stdlib-clone.md) |
 | [alloc::clone_vec](alloc/clone_vec.md) | [source](../../stdlib/alloc/clone_vec.lani#L5) | 5 | Source inventory | [stdlib-nested-clone](../stdlib-nested-clone.md) |
-| [alloc::deque](alloc/deque.md) | [source](../../stdlib/alloc/deque.lani#L3) | 66 | Source inventory | [stdlib-deque](../stdlib-deque.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md) |
+| [alloc::deque](alloc/deque.md) | [source](../../stdlib/alloc/deque.lani#L3) | 68 | Source inventory | [stdlib-deque](../stdlib-deque.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-transfer](../stdlib-iterator-transfer.md) |
 | [alloc::format](alloc/format.md) | [source](../../stdlib/alloc/format.lani#L2) | 5 | Source inventory | [stdlib-format-strings](../stdlib-format-strings.md) |
 | [alloc::hash_map](alloc/hash_map.md) | [source](../../stdlib/alloc/hash_map.lani#L3) | 64 | Source inventory | [stdlib-hash-collections](../stdlib-hash-collections.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md) |
 | [alloc::hash_set](alloc/hash_set.md) | [source](../../stdlib/alloc/hash_set.lani#L3) | 33 | Source inventory | [stdlib-owned-sets](../stdlib-owned-sets.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md) |
@@ -116,7 +116,7 @@ Inventory: **219 modules**, **9572 declaration/member entries**. Counts include 
 | [alloc::string](alloc/string.md) | [source](../../stdlib/alloc/string.lani#L5) | 73 | Source inventory | [stdlib-string](../stdlib-string.md), [stdlib-clone](../stdlib-clone.md) |
 | [alloc::tree_map](alloc/tree_map.md) | [source](../../stdlib/alloc/tree_map.lani#L3) | 88 | Source inventory | [stdlib-tree-map](../stdlib-tree-map.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md) |
 | [alloc::tree_set](alloc/tree_set.md) | [source](../../stdlib/alloc/tree_set.lani#L3) | 42 | Source inventory | [stdlib-owned-sets](../stdlib-owned-sets.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md) |
-| [alloc::vec](alloc/vec.md) | [source](../../stdlib/alloc/vec.lani#L4) | 48 | Source inventory | [stdlib-vec](../stdlib-vec.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md) |
+| [alloc::vec](alloc/vec.md) | [source](../../stdlib/alloc/vec.lani#L4) | 50 | Source inventory | [stdlib-vec](../stdlib-vec.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-iterator-transfer](../stdlib-iterator-transfer.md) |
 
 ### `std`
 

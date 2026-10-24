@@ -222,3 +222,12 @@ pub impl<T> Vec<T> {
     pub fn upper_bound(&self, item: T) -> i32 where T: core::cmp::Ord<T> { return core::slice::upper_bound(self.as_slice(), self.length, item); }
     pub fn binary_search(&self, item: T) -> i32 where T: core::cmp::Ord<T> { return core::slice::binary_search_first_or(self.as_slice(), self.length, item, -1); }
 }
+
+// Acceptance has try_push's shallow ownership and view invalidation rules.
+pub impl<T> core::iter::TrySink<T, Error> for Vec<T> {
+    pub fn try_accept(&self, item: T) -> core::option::Option<Error> {
+        let pushed: core::result::Result<i32, Error> = self.try_push(item);
+        if (core::result::is_err(pushed)) { return core::option::Some(core::result::unwrap_err(pushed)); }
+        return core::option::None();
+    }
+}

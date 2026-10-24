@@ -23,6 +23,11 @@ The caller can construct `let values: core::vec::Vec<i64, 2> = core::vec::from_s
 
 ## Vector operations
 
+The vector also implements the [fallible iterator sink](stdlib-iterator-transfer.md)
+`TrySink<T,Error>`. Each acceptance delegates to `try_push`; a full vector
+rejects with `Full` without changing its contents. Bounded transfer returns
+any rejected item and retains the earlier accepted prefix for explicit recovery.
+
 All entries below take a borrowed vector as their first argument. Reads return shallow copies of elements. Mutations change that owner in place.
 
 | Operation | Return and behavior |

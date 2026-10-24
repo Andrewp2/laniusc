@@ -1,0 +1,79 @@
+// Bounded UTF-8 word sorting through real fallible iterator transfer to Vec.
+// Accepted on x86_64 Linux native ELF via the GPU compiler; see docs/stdlib-sort-words.md.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::io;
+import core::iter;
+import core::result;
+import core::text;
+import std::process;
+import std::signal;
+import std::stream;
+
+const MAX_INPUT: i32 = 1048576;
+
+fn output(words: &alloc::vec::Vec<core::text::Text>) -> i32 {
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    let newline: [u8;1] = [10];
+    let index: i32 = 0;
+    while (index < words.len()) {
+        let word: core::text::Text = words.at(index);
+        let body: core::result::Result<i32,core::io::Failure> = core::io::write_all(sink.borrow(),word.bytes,word.start,word.byte_len());
+        if (body.is_err()) { return 3; }
+        let ending: core::result::Result<i32,core::io::Failure> = core::io::write_all(sink.borrow(),newline,0,1);
+        if (ending.is_err()) { return 3; }
+        index += 1;
+    }
+    return 0;
+}
+
+fn collect_and_sort(input: &alloc::io::Buffer) -> i32 {
+    let checked: core::result::Result<core::text::Text,core::text::Error> = core::text::from_utf8(input.as_bytes(),input.len());
+    if (checked.is_err()) { return 6; }
+    let text: core::text::Text = checked.unwrap();
+    let source: core::text::SplitAsciiWhitespace = text.split_ascii_whitespace();
+    let words: alloc::vec::Vec<core::text::Text> = alloc::vec::new();
+    // Every word occupies at least one input byte. This strict larger quota
+    // permits an actual EOF observation, including on an empty input.
+    let collected: core::result::Result<core::iter::Transfer,core::iter::TransferError<core::text::Text,alloc::vec::Error>> = core::iter::try_transfer_up_to<core::text::SplitAsciiWhitespace,alloc::vec::Vec<core::text::Text>,core::text::Text,alloc::vec::Error>(source.borrow(),words.borrow(),1048577);
+    if (collected.is_err()) {
+        let failure: core::iter::TransferError<core::text::Text,alloc::vec::Error> = collected.unwrap_err();
+        let status: i32 = match (failure.error) { alloc::vec::Error::AllocationFailed -> 4, _ -> 7 };
+        words.destroy();
+        return status;
+    }
+    let report: core::iter::Transfer = collected.unwrap();
+    if (!report.exhausted || report.accepted != words.len() as u64) { words.destroy(); return 7; }
+    // Text Ord compares UTF-8 bytes lexicographically. Sort is in place;
+    // the Vec and every shallow Text still borrow the live input owner.
+    words.sort();
+    let status: i32 = output(words.borrow());
+    words.destroy();
+    return status;
+}
+
+fn input_status(error: core::io::Error) -> i32 {
+    return match (error) { core::io::Error::AllocationFailed -> 4, core::io::Error::LimitExceeded -> 7, _ -> 3 };
+}
+
+fn main() -> i32 {
+    // Explicit process-wide policy before allocation permits cleanup on EPIPE.
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let argc: i32 = std::process::argc();
+    if (argc < 0) { return 3; }
+    if (argc != 1) { return 2; }
+    let initialized: core::result::Result<alloc::io::Buffer,core::io::Error> = alloc::io::with_limit(MAX_INPUT);
+    if (initialized.is_err()) { return input_status(initialized.unwrap_err()); }
+    let input: alloc::io::Buffer = initialized.unwrap();
+    let reserved: core::result::Result<i32,core::io::Error> = input.try_reserve(MAX_INPUT);
+    if (reserved.is_err()) { let status: i32 = input_status(reserved.unwrap_err()); input.destroy(); return status; }
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let copied: core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(source.borrow(),input.borrow());
+    let status: i32 = 0;
+    if (copied.is_err()) { let failure: core::io::CopyFailure = copied.unwrap_err(); status = input_status(failure.cause); }
+    else { status = collect_and_sort(input.borrow()); }
+    // collect_and_sort has retired all Text containers before their backing.
+    input.destroy();
+    return status;
+}

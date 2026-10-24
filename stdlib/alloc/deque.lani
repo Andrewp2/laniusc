@@ -306,6 +306,15 @@ pub impl<T> Deque<T> {
     }
 }
 
+// Acceptance has try_push_back's shallow ownership and view invalidation rules.
+pub impl<T> core::iter::TrySink<T, Error> for Deque<T> {
+    pub fn try_accept(&self, item: T) -> core::option::Option<Error> {
+        let pushed: core::result::Result<i32, Error> = self.try_push_back(item);
+        if (core::result::is_err(pushed)) { return core::option::Some(core::result::unwrap_err(pushed)); }
+        return core::option::None();
+    }
+}
+
 pub impl<T> Cursor<T> {
     pub fn borrow(&self) -> &Cursor<T> { return self; }
     pub fn remaining(&self) -> i32 { return self.back - self.front; }

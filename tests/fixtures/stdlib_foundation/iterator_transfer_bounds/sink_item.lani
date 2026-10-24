@@ -1,0 +1,19 @@
+module app::main;
+import core::iter;
+import core::option;
+import core::range;
+import core::result;
+struct Sink {}
+impl Sink { fn borrow(&self) -> &Sink { return self; } }
+pub impl core::iter::TrySink<u64, u8> for Sink {
+    pub fn try_accept(&self, item: u64) -> core::option::Option<u8> {
+        return core::option::None();
+    }
+}
+fn main() -> i32 {
+    let bounds: core::range::Range<i32> = core::range::range<i32>(0, 1);
+    let source: core::iter::RangeI32 = core::iter::range_i32(bounds);
+    let sink: Sink = Sink {};
+    let rejected: core::result::Result<core::iter::Transfer, core::iter::TransferError<i32, u8>> = core::iter::try_transfer_up_to<core::iter::RangeI32, Sink, i32, u8>(source.borrow(), sink.borrow(), 1);
+    return 0;
+}

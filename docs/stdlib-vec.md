@@ -94,6 +94,13 @@ signed zero and NaN payloads. Comparisons do not allocate. See
 
 ## Storage and complexity
 
+The [fallible iterator sink](stdlib-iterator-transfer.md) implements
+`TrySink<T,Error>` through `try_push`. It can append a bounded iterator prefix
+while retaining the owner for recovery. A transfer failure leaves earlier
+accepted items in the vector and returns the rejected item; it is not an
+atomic multi-item edit. The per-item failure guarantee above still applies.
+Sources must use independent backing that remains valid across vector edits.
+
 Capacity and fallible reserve follow the familiar
 [vector contract](https://doc.rust-lang.org/std/vec/struct.Vec.html#method.try_reserve):
 the reservation is additional to length, and failure preserves contents.
