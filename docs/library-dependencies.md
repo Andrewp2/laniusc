@@ -13,7 +13,8 @@ This does not bind the older `std::net` service declarations or supply threads,
 callbacks, general native FFI, TLS or SQLite. The
 [native integration prerequisite proposal](library-native-integration-prerequisites.md)
 separates checked entries, concurrent memory ordering and static/dynamic foreign
-ABI support; TLS is conditional on the chosen worker/foreign-library profile.
+ABI support; thread local storage is conditional on the chosen
+worker/foreign-library profile. Network TLS remains a separate integration.
 The [host prerequisite audit](library-host-prerequisites.md) distinguishes the
 historical missing operations from the remaining code-entry/memory-model work.
 

@@ -58,7 +58,7 @@ Required contracts are:
 The relevant runtime code is [entry emission](../shaders/codegen/lir/x86/emit.slang)
 and [native runtime bindings](../shaders/codegen/lir/x86/runtime_abi.slang).
 
-## Atomics, allocation and TLS
+## Atomics, allocation and thread local storage
 
 A first atomic profile can be aligned 32/64-bit words with sequentially
 consistent load, store, exchange, compare-exchange and fetch-add. Opaque native
@@ -72,8 +72,8 @@ established prerequisite. Cross-thread ownership transfer, exclusion during
 reallocation, and exactly-once destruction remain required. Current shallow
 owner conventions do not create automatic Send/Sync or lifetime enforcement.
 
-A Lanius/raw-syscall thread profile can explicitly omit language/libc TLS.
-Libc-backed threads and TLS-dependent foreign functions need initialization,
+A Lanius/raw-syscall thread profile can explicitly omit thread local storage
+(TLS). Libc-backed threads and foreign functions that use TLS need initialization,
 attachment and teardown. TLS is a requirement of those profiles rather than
 an unconditional blocker of every possible native worker.
 
@@ -90,7 +90,7 @@ Separate three admissions:
 3. **Callbacks:** addressable exported monomorphic entries, ABI trampolines,
    context lifetime, reentrancy and foreign-thread attachment.
 
-TLS and SQLite integration depend on an appropriate foreign-call profile or
+Network TLS and SQLite integration depend on an appropriate foreign-call profile or
 another explicitly implemented native boundary. No JSON bridge, subprocess
 serialization adapter or declaration-only API is counted as that integration.
 

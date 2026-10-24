@@ -17,8 +17,9 @@ its old network family 5 remains unavailable. Working sockets depend on family
 flag remains false.
 
 Thread creation still needs checked entry, a new-stack trampoline, atomic
-memory ordering and ownership/join contracts. TLS can be absent from an initial
-Lanius/raw-syscall profile; libc/TLS-dependent integrations need it separately.
+memory ordering and ownership/join contracts. Thread local storage can be absent
+from an initial Lanius/raw-syscall profile; libc integrations need their storage
+initialization contract separately.
 The [native integration proposal](library-native-integration-prerequisites.md)
 records the existing code-entry, linker, allocator and process-context evidence.
 The syscall thunk requires the
