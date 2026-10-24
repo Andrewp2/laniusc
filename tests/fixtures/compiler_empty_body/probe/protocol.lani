@@ -1,0 +1,11 @@
+// Required declarations have no bodies. They must never become definitions.
+module probe::protocol;
+import probe::values;
+
+pub trait ClosedDestroy {
+    pub fn closed_destroy(source: probe::values::Item);
+}
+
+pub trait Destroy<T> {
+    pub fn destroy_value(source: T);
+}

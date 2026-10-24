@@ -1,3 +1,22 @@
+// Resolve a function-start token to its exact canonical declaration row.
+uint local_function_hir(uint start, uint count)
+{
+    uint lo = 0u;
+    uint hi = count;
+    while (lo < hi)
+    {
+        uint mid = lo + (hi - lo) / 2u;
+        if (compact_hir_core[mid].token_start < start) lo = mid + 1u;
+        else hi = mid;
+    }
+    while (lo < count && compact_hir_core[lo].token_start == start)
+    {
+        if (compact_hir_core[lo].kind == 3u) return lo;
+        lo++;
+    }
+    return 0xffffffffu;
+}
+
 // One decision for omission and direct-call eligibility. A callable captures
 // parameters from every lexical ancestor, even when it declares none itself.
 // Invalid ancestry is never classified as an ordinary direct-call target.

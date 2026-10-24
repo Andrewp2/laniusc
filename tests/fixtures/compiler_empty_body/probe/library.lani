@@ -1,0 +1,17 @@
+module probe::library;
+import probe::protocol;
+import probe::values;
+
+pub fn imported_empty() {}
+pub fn imported_other_empty(source: probe::values::Item) {}
+pub fn imported_sentinel(source: probe::values::Item) -> probe::values::Item {
+    return probe::values::Item { word:source.word+11,signed:source.signed-13 };
+}
+pub fn imported_destroy<T>(source: T) where T: probe::protocol::Destroy<T> {
+    T::destroy_value(source);
+    return;
+}
+pub fn imported_closed<T>(source: probe::values::Item) where T: probe::protocol::ClosedDestroy {
+    T::closed_destroy(source);
+    return;
+}

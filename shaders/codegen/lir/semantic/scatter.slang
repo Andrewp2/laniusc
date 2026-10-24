@@ -2,6 +2,7 @@ import codegen.lir.semantic.common;
 import codegen.lir.semantic.materialize;
 import codegen.lir.schedule.common;
 import codegen.lowering_ir;
+import hir_records;
 import gpu_index;
 
 StructuredBuffer<uint> semantic_lir_total;
@@ -44,13 +45,38 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint local_count = semantic_lir_count[node];
     uint local_row = row - first_row;
     if (local_row >= local_count) return;
-    SemanticLirSchedule schedule = place_semantic_schedule(node, local_row, hir_count);
+    // Count owns body admission. Ordinary block syntax has no LIR rows; the
+    // sole row it publishes for a function body is its unit fallthrough.
+    bool body_return = compact_hir_core[node].kind == 6u;
+    SemanticLirSchedule schedule;
+    if (body_return)
+    {
+        HirCore body = compact_hir_core[node];
+        schedule.execution_region = body.token_end > body.token_start
+            ? body.token_end - 1u : body.token_end;
+        schedule.execution_rank = 0xffffffffu;
+        schedule.execution_tie = 0xffffffffu;
+    }
+    else schedule = place_semantic_schedule(node, local_row, hir_count);
     semantic_lir_schedule[row] = target_schedule_pack(schedule, gParams.schedule_packed_bits);
     semantic_owner_by_instruction[row] = node;
     if (row < gParams.resident_rows)
     {
-        SemanticLirRow result =
-            materialize_semantic_lir_row(node, local_row, hir_count);
+        SemanticLirRow result;
+        if (body_return)
+        {
+            result.core.type_id = 1u;
+            result.core.type_ref_payload = 1u;
+            result.core.value_word_count = 0u;
+            result.core.flags = (1u << SEMANTIC_LIR_TYPE_REF_TAG_SHIFT) |
+                (SEMANTIC_LIR_OP_RETURN << SEMANTIC_LIR_OP_SHIFT);
+            result.operands.result = LIR_INVALID;
+            result.operands.a = LIR_INVALID;
+            result.operands.b = LIR_INVALID;
+            result.operands.c = LIR_INVALID;
+            result.layout_word_offset = LIR_INVALID;
+        }
+        else result = materialize_semantic_lir_row(node, local_row, hir_count);
         semantic_lir_core[row] = result.core;
         semantic_lir_operands[row] = result.operands;
         semantic_lir_layout_word_offset[row] = result.layout_word_offset;

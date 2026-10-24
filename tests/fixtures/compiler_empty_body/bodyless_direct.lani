@@ -1,0 +1,9 @@
+module app::main;
+import probe::protocol;
+
+struct Missing { word: u64 }
+
+fn main() -> i32 {
+    Missing::destroy_value(Missing { word:18446744073709551610 });
+    return 0;
+}

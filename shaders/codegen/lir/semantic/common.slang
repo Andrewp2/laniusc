@@ -88,14 +88,11 @@ static const uint HIR_EXPR_CAST = 36u;
 
 bool semantic_lir_is_expression(HirCore core)
 {
-    return core.kind == HIR_EXPR || core.kind == HIR_ASSIGN_EXPR ||
-        core.kind == HIR_BINARY_EXPR || core.kind == HIR_UNARY_EXPR ||
-        core.kind == HIR_POSTFIX_EXPR || core.kind == HIR_CALL_EXPR ||
-        core.kind == HIR_INDEX_EXPR || core.kind == HIR_MEMBER_EXPR ||
-        core.kind == HIR_NAME_EXPR || core.kind == HIR_LITERAL_EXPR ||
-        core.kind == HIR_PATH_EXPR ||
-        core.kind == HIR_ARRAY_EXPR || core.kind == HIR_STRUCT_LITERAL_EXPR ||
-        core.kind == HIR_MATCH_EXPR;
+    // These canonical expression kinds occupy two complete contiguous bands
+    // plus struct literals. Unsigned subtraction excludes lower kind values.
+    return core.kind - HIR_EXPR <= HIR_ARRAY_EXPR - HIR_EXPR ||
+        core.kind == HIR_STRUCT_LITERAL_EXPR ||
+        core.kind - HIR_PATH_EXPR <= HIR_MATCH_EXPR - HIR_PATH_EXPR;
 }
 
 bool semantic_lir_is_if(HirCore core, HirPayload payload)
