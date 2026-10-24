@@ -1,0 +1,18 @@
+module app::main;
+import core::net;
+import core::result;
+import core::time;
+import ext::http_server;
+import std::clock;
+import std::socket;
+fn main() -> i32 {
+    let listener = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true).unwrap();
+    listener.bind(core::net::SocketAddr::V4(core::net::SocketAddrV4 { address:core::net::ipv4(127,0,0,1),port:0 })).unwrap(); listener.listen(2).unwrap();
+    let address = listener.local_addr().unwrap(); let now = std::clock::monotonic_now().unwrap(); let deadline = core::time::deadline_at(now.checked_add(core::time::from_millis(1000)).unwrap());
+    let client = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true).unwrap(); client.connect_until(address,deadline).unwrap();
+    let got = ext::http_server::accept_until(listener.borrow(),ext::http_server::default_options(),deadline); if (got.is_err()) { client.close(); listener.close(); return 1; }
+    let connection = got.unwrap(); assert(connection.peer().port() == client.local_addr().unwrap().port());
+    assert(connection.stats().cleanup_calls == 0 && connection.stats().io_calls == 2);
+    let ended = connection.close(); assert(ended.is_ok() && ended.unwrap().cleanup_calls == 1 && ended.unwrap().closed);
+    connection.destroy().unwrap(); client.close().unwrap(); listener.close().unwrap(); return 0;
+}
