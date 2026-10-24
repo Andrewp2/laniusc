@@ -1,0 +1,18 @@
+// Compile-negative: Iterator<bool> cannot authorize an Iterator<i32> consumer.
+module app::main;
+import core::iter;
+import core::option;
+struct BooleanIterator { ended: bool }
+impl BooleanIterator { fn borrow(&self) -> &BooleanIterator { return self; } }
+pub impl core::iter::Iterator<bool> for BooleanIterator {
+    pub fn next(&self) -> core::option::Option<bool> {
+        if (self.ended) { return core::option::None(); }
+        self.ended = true;
+        return core::option::Some(true);
+    }
+}
+fn main() -> i32 {
+    let source: BooleanIterator = BooleanIterator { ended: false };
+    let result: core::iter::Advance = core::iter::advance_up_to<BooleanIterator, i32>(source.borrow(), 1);
+    return result.advanced as i32;
+}

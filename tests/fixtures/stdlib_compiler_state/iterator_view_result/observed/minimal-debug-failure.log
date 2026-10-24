@@ -1,0 +1,41 @@
+
+running 1 test
+test direct_slice ... [specialization] round contexts=0..2 new_bodies=19
+GPU source-pack type-check rejection: token=0 code=GenericInstantiationBoundary detail=6
+[specialization] failed depth=1 target=(0, 0, 145) key=79a7d2258839 args=[CheckedGenericArgument { slot: 0, ty: Scalar(3) }] consts=[] witnesses=[[0]]
+[specialization] failed depth=2 target=(0, 0, 146) key=91de29c1b618 args=[CheckedGenericArgument { slot: 0, ty: Scalar(3) }] consts=[] witnesses=[[0]]
+[specialization] failed depth=1 target=(0, 0, 2147491273) key=af509bc2187b args=[CheckedGenericArgument { slot: 0, ty: Scalar(3) }] consts=[] witnesses=[[0]]
+[specialization] failed depth=1 target=(0, 0, 2147491288) key=1736da63a96d args=[CheckedGenericArgument { slot: 0, ty: Scalar(3) }] consts=[] witnesses=[[0]]
+[specialization] failed depth=2 target=(0, 0, 58) key=8faf1c82fdee args=[CheckedGenericArgument { slot: 0, ty: Nominal { identity: Public([0, 0, 18]), arguments: [Type(Scalar(3))], words: None, local_replay: None } }, CheckedGenericArgument { slot: 1, ty: Nominal { identity: Public([0, 0, 17]), arguments: [], words: Some(1), local_replay: None } }] consts=[] witnesses=[[0, 4294967295, 1]]
+[specialization] failed depth=2 target=(0, 0, 61) key=bd5a6368ecd0 args=[CheckedGenericArgument { slot: 0, ty: Nominal { identity: Public([0, 0, 18]), arguments: [Type(Scalar(3))], words: None, local_replay: None } }, CheckedGenericArgument { slot: 1, ty: Nominal { identity: Public([0, 0, 17]), arguments: [], words: Some(1), local_replay: None } }] consts=[] witnesses=[[0, 4294967295, 1]]
+[specialization] failed depth=1 target=(0, 0, 61) key=3fd4aeeb72db args=[CheckedGenericArgument { slot: 0, ty: Nominal { identity: Public([0, 0, 23]), arguments: [Type(Scalar(3))], words: Some(5), local_replay: None } }, CheckedGenericArgument { slot: 1, ty: Nominal { identity: Public([0, 0, 17]), arguments: [], words: Some(1), local_replay: None } }] consts=[] witnesses=[[0, 5, 1]]
+[specialization] failed depth=2 target=(0, 0, 62) key=869ed9c59fd8 args=[CheckedGenericArgument { slot: 0, ty: Nominal { identity: Public([0, 0, 18]), arguments: [Type(Scalar(3))], words: None, local_replay: None } }, CheckedGenericArgument { slot: 1, ty: Nominal { identity: Public([0, 0, 17]), arguments: [], words: Some(1), local_replay: None } }] consts=[] witnesses=[[0, 4294967295, 1]]
+[specialization] failed depth=1 target=(0, 0, 69) key=50df7232adee args=[CheckedGenericArgument { slot: 0, ty: Scalar(3) }] consts=[] witnesses=[[0]]
+[specialization] failed depth=1 target=(0, 0, 72) key=f37de0b30b7b args=[CheckedGenericArgument { slot: 0, ty: Scalar(3) }] consts=[] witnesses=[[0]]
+[specialization] failed depth=1 target=(0, 0, 84) key=8d7e91efabf7 args=[CheckedGenericArgument { slot: 0, ty: Scalar(3) }] consts=[] witnesses=[[0]]
+[specialization] failed depth=1 target=(0, 0, 85) key=9ed765754b47 args=[CheckedGenericArgument { slot: 0, ty: Scalar(3) }] consts=[] witnesses=[[0]]
+[specialization] failed depth=1 target=(0, 0, 90) key=67809e88fbc0 args=[CheckedGenericArgument { slot: 0, ty: Scalar(3) }] consts=[] witnesses=[[0]]
+[specialization] failed depth=1 target=(0, 0, 91) key=9cda91a31566 args=[CheckedGenericArgument { slot: 0, ty: Scalar(3) }] consts=[] witnesses=[[0]]
+[specialization] failed depth=3 target=(0, 0, 2147488585) key=9ef0795e50ca args=[CheckedGenericArgument { slot: 0, ty: Scalar(3) }] consts=[] witnesses=[[0]]
+[specialization] failed depth=2 target=(0, 0, 103) key=59d4e5925692 args=[CheckedGenericArgument { slot: 0, ty: Scalar(3) }] consts=[] witnesses=[[0]]
+[specialization] failed depth=3 target=(0, 0, 104) key=310d14f45cb9 args=[CheckedGenericArgument { slot: 0, ty: Scalar(3) }] consts=[] witnesses=[[0]]
+[specialization] failed depth=2 target=(0, 0, 2147488669) key=5ecb43ebb5ed args=[CheckedGenericArgument { slot: 0, ty: Scalar(3) }] consts=[] witnesses=[[0]]
+[specialization] failed depth=2 target=(0, 0, 2147488679) key=1c6b4886845b args=[CheckedGenericArgument { slot: 0, ty: Scalar(3) }] consts=[] witnesses=[[0]]
+
+thread 'direct_slice' (758033) panicked at tests/compiler_iterator_layout_admission_tmp.rs:14:31:
+01-slice-next.lani: error[LNC0047]: type-check execution failed
+ --> /home/andrew-peterson/code/laniusc/stdlib/core/cmp.lani:5:1
+  |
+5 | module core::cmp;
+  | ^^^^^^ generic type instantiation reached a compiler boundary
+     = note: a replay argument has no complete GPU native layout; its defining nominal payloads or a retained checked width witness are required
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    direct_slice
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 4.70s
+

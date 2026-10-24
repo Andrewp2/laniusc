@@ -1,0 +1,29 @@
+// Native owner-alias contract: values alias the single source String owner.
+// Yielded copies are not destroyed; advance/take must not destroy or clone
+// any element implicitly.
+module app::main;
+import alloc::string;
+import core::iter;
+import core::option;
+import core::result;
+import core::text;
+
+fn main() -> i32 {
+    let bytes: [u8; 4] = [97, 98, 99, 100];
+    let owner: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(bytes, 4));
+    let aliases: [alloc::string::String; 3] = [owner, owner, owner];
+    let source: core::iter::SliceIter<alloc::string::String> =
+        core::result::unwrap(core::iter::from_slice<alloc::string::String>(aliases, 3));
+    let picked: core::option::Option<alloc::string::String> = source.next();
+    let borrowed: alloc::string::String = core::option::unwrap(picked);
+    let discarded: core::iter::Advance = core::iter::advance_up_to<core::iter::SliceIter<alloc::string::String>, alloc::string::String>(source.borrow(), 4);
+    let good: bool = discarded.advanced == 2 && discarded.exhausted && owner.byte_len() == 4 && borrowed.byte_len() == 4;
+    let owner_text: core::text::Text = owner.as_text();
+    let borrowed_text: core::text::Text = borrowed.as_text();
+    let first: core::option::Option<u8> = owner_text.byte_at(0);
+    let last: core::option::Option<u8> = borrowed_text.byte_at(3);
+    let bytes_good: bool = core::option::unwrap(first) == 97 && core::option::unwrap(last) == 100;
+    owner.destroy();
+    if (!good || !bytes_good) { return 1; }
+    return 0;
+}

@@ -151,14 +151,24 @@ real closed-pipe failures. The implementation allocates only at construction
 and requires explicit finish, discard or owner handoff. A chained Vec constructor
 inference failure is retained beside its accepted typed-result control.
 
+[Shared iteration](stdlib-iterators.md) now executes through `Iterator<T>`,
+checked slice cursors, full-domain i32 range cursors, borrowed take/chain and
+bounded consumption. Seven compilation jobs include five checked native
+executables and two exact-bound rejections. Native tests cover 6,602 independent
+sequence/state cases, zero-allocation contracts, shallow owner aliases and an
+expected physical-bounds trap. A nested View-result layout dependency is
+preserved; the module centralizes validation through direct View metadata and
+its checked `from_view` constructor.
+
 Verified execution is x86_64 Linux output from GPU compilation; user GPU kernels
 and other targets are unverified. Threads, native FFI/TLS/SQLite, generic
-iterator integration, additional stream interfaces and distribution/reference
-completion remain on the [full roadmap](library-roadmap.md). Compiler failures retain
+collection/text iterator integration, additional stream interfaces and
+distribution/reference completion remain on the [full roadmap](library-roadmap.md).
+Compiler failures retain
 [reproductions and successful controls](library-dependencies.md).
 
 The [generated declaration reference](library-api-reference.md) inventories
-216 source modules with signatures, bounds, fields and exact source links.
+217 source modules with signatures, bounds, fields and exact source links.
 Twenty focused CPU tests and a fresh generated-output check pass. This is
 documentation extraction, not runtime verification; semantic guide gaps remain
 listed explicitly. The [strict UTF codec guide](stdlib-utf-codecs.md) now maps

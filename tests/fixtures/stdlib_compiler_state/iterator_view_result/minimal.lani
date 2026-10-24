@@ -1,0 +1,16 @@
+// SOURCE ONLY: direct imported generic leaf, without an adapter or consumer.
+module app::main;
+import core::iter;
+import core::option;
+import core::result;
+
+fn main() -> i32 {
+    let values: [i32;2] = [3,5];
+    let source: core::iter::SliceIter<i32> = core::result::unwrap(core::iter::from_slice<i32>(values,2));
+    let first: core::option::Option<i32> = source.next();
+    if (core::option::unwrap(first) != 3 || source.remaining() != 1) { return 1; }
+    let second: core::option::Option<i32> = source.next();
+    if (core::option::unwrap(second) != 5 || source.remaining() != 0) { return 2; }
+    if (core::option::is_some(source.next()) || core::option::is_some(source.next())) { return 3; }
+    return 0;
+}

@@ -1,0 +1,10 @@
+// Compile-negative: source-local LNC0008 at the absent Iterator<i32> bound.
+module app::main;
+import core::iter;
+struct NotIterator { marker: i32 }
+impl NotIterator { fn borrow(&self) -> &NotIterator { return self; } }
+fn main() -> i32 {
+    let source: NotIterator = NotIterator { marker: 7 };
+    let result: core::iter::Advance = core::iter::advance_up_to<NotIterator, i32>(source.borrow(), 1);
+    return result.advanced as i32;
+}

@@ -1,0 +1,14 @@
+// Native exit 101: a logically overclaimed index preserves the ordinary
+// physical bounds trap. Never execute as a pass0.
+module app::main;
+import core::iter;
+import core::option;
+import core::result;
+fn main() -> i32 {
+    let storage: [i32; 1] = [42];
+    let source: core::iter::SliceIter<i32> = core::result::unwrap(core::iter::from_slice<i32>(storage, 2));
+    let first: core::option::Option<i32> = source.next();
+    if (core::option::unwrap(first) != 42) { return 1; }
+    let invalid: core::option::Option<i32> = source.next();
+    return core::option::unwrap(invalid);
+}

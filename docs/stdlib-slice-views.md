@@ -62,8 +62,11 @@ stay exhausted once they return `None`. Copying a cursor forks its position;
 backing elements remain shared. Mutations through a valid alias are visible
 when a cursor later reads those elements. Overlapping windows also alias.
 
-These are inherent cursor methods. The shared `Iterator<T>` protocol and
-adapters still need [imported generic dispatch support](library-dependencies.md).
+These are inherent cursor methods. The separate
+[shared iteration module](stdlib-iterators.md) now exposes a checked
+`SliceIter<T>` constructor, the fused `Iterator<T>` protocol, borrowed take/chain
+adapters and bounded consumption. Its own execution gates cover generic
+dispatch and preserve these native stride, backing and shallow-copy contracts.
 
 ## Executable example
 

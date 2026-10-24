@@ -1,0 +1,20 @@
+
+running 1 test
+test direct_slice ... 
+thread 'direct_slice' (757576) panicked at tests/compiler_iterator_layout_admission_tmp.rs:14:31:
+01-slice-next.lani: error[LNC0047]: type-check execution failed
+ --> /home/andrew-peterson/code/laniusc/stdlib/core/cmp.lani:5:1
+  |
+5 | module core::cmp;
+  | ^^^^^^ generic type instantiation reached a compiler boundary
+     = note: a replay argument has no complete GPU native layout; its defining nominal payloads or a retained checked width witness are required
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    direct_slice
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 4.37s
+

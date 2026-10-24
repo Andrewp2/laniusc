@@ -31,6 +31,7 @@ runtime behavior, failure rules and supported targets.
 | Elementary mathematics | `core::math` | [Full-range binary64 functions and accuracy evidence](../docs/stdlib-math.md) |
 | Wire coding and checksums | `core::base64`, `core::hex`, `core::binary`, `core::endian`, `core::varint`, `core::varint_i32`, `core::crc32`, `core::adler32`, `core::sha1` | [Byte codecs, endian values, varint statuses and CRC contracts](../docs/stdlib-byte-codecs.md); SHA-1 is supplied for the [WebSocket handshake](../docs/extended-websocket.md), with its collision-resistance limitation explicit |
 | Borrowed data and algorithms | `core::slice`, `core::range`, array helpers | [Counted views](../docs/stdlib-slice-views.md), [slice algorithms](../docs/stdlib-slice.md), [range membership and ordered overlap](../docs/stdlib-ranges.md) |
+| Shared iteration | `core::iter` | [Fused slice/range cursors, borrowed take/chain, bounded consumption and shallow item ownership](../docs/stdlib-iterators.md) |
 | UTF-8 and Unicode | `core::text`, `core::char`, `core::utf8`, `core::utf16`, `core::transcode`, `core::unicode` | [UTF encoding, edits and transcoding](../docs/stdlib-utf-codecs.md), [Unicode properties](../docs/stdlib-unicode.md); normalization and full casing are optional extended modules |
 | Owned strings | `alloc::string` | [String ownership, edits and failures](../docs/stdlib-string.md) |
 | Explicit value cloning and memory release | `core::clone`, `alloc::clone`, `alloc::string` | [Fallible element cloning, typed errors and partial-owner cleanup](../docs/stdlib-clone.md) |

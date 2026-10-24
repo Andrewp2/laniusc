@@ -223,6 +223,11 @@
         "docs/stdlib-native-integers.md"
       ]
     },
+    "core::iter": {
+      "guides": [
+        "docs/stdlib-iterators.md"
+      ]
+    },
     "core::math": {
       "guides": [
         "docs/stdlib-math.md"

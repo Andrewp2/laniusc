@@ -1,0 +1,150 @@
+// Native fused cursor, alias, metadata, stride and allocation-free contracts.
+module app::main;
+import core::iter;
+import core::mem;
+import core::option;
+import core::range;
+import core::result;
+import core::slice;
+
+struct Unit {}
+struct Poison { marker: i32 }
+impl Poison { fn borrow(&self) -> &Poison { return self; } }
+pub impl core::iter::Iterator<i32> for Poison {
+    pub fn next(&self) -> core::option::Option<i32> { assert(false); return core::option::None(); }
+}
+struct Probe { length: i32, position: i32, calls: i32 }
+impl Probe { fn borrow(&self) -> &Probe { return self; } }
+pub impl core::iter::Iterator<i32> for Probe {
+    pub fn next(&self) -> core::option::Option<i32> {
+        self.calls += 1;
+        if (self.position == self.length) { return core::option::None(); }
+        let value: i32 = self.position;
+        self.position += 1;
+        return core::option::Some(value);
+    }
+}
+
+fn main() -> i32 {
+    let cells: [i32; 6] = [99, 2, 3, 4, 5, 88];
+    let nowhere: ptr = 0;
+    let absent: [i32] = core::mem::typed_slice_from_raw_parts<i32>(nowhere, 0);
+    // Any element read would fail native bounds; each malformed descriptor
+    // must be rejected using metadata before attempting such a read.
+    let invalid: core::slice::View<i32> = core::slice::View { values: absent, start: -1, length: 1 };
+    if (core::result::is_ok(core::iter::from_view<i32>(invalid))) { return 1; }
+    invalid.start = 0; invalid.length = -1;
+    if (core::result::is_ok(core::iter::from_view<i32>(invalid))) { return 2; }
+    invalid.start = 2147483647; invalid.length = 1;
+    if (core::result::is_ok(core::iter::from_view<i32>(invalid)) || core::result::is_ok(core::iter::from_slice<i32>(absent, -1))) { return 3; }
+    let empty: core::iter::SliceIter<i32> = core::result::unwrap(core::iter::from_slice<i32>(absent, 0));
+    let empty_value: core::option::Option<i32> = empty.next();
+    if (empty.remaining() != 0 || core::option::is_some(empty_value)) { return 25; }
+    let view: core::slice::View<i32> = core::result::unwrap(core::slice::view_range<i32>(cells, 1, 4));
+    let source: core::iter::SliceIter<i32> = core::result::unwrap(core::iter::from_view<i32>(view));
+    let fork: core::iter::SliceIter<i32> = source;
+    let first: core::option::Option<i32> = source.next();
+    if (core::option::unwrap(first) != 2 || source.remaining() != 3 || fork.remaining() != 4) { return 4; }
+    cells[2] = 33;
+    let second: core::option::Option<i32> = source.next();
+    let fork_first: core::option::Option<i32> = fork.next();
+    let fork_second: core::option::Option<i32> = fork.next();
+    if (core::option::unwrap(second) != 33 || core::option::unwrap(fork_first) != 2 || core::option::unwrap(fork_second) != 33) { return 5; }
+    let exhausted: core::iter::Advance = core::iter::advance_up_to<core::iter::SliceIter<i32>, i32>(source.borrow(), 18446744073709551615);
+    if (exhausted.advanced != 2 || !exhausted.exhausted || source.remaining() != 0) { return 6; }
+    let ended1: core::option::Option<i32> = source.next();
+    let ended2: core::option::Option<i32> = source.next();
+    if (core::option::is_some(ended1) || core::option::is_some(ended2)) { return 7; }
+
+    let poison: Poison = Poison { marker: 7 };
+    let zero: core::iter::Take<Poison, i32> = core::iter::take<Poison, i32>(poison.borrow(), 0);
+    let no_query: core::iter::Advance = core::iter::advance_up_to<Poison, i32>(poison.borrow(), 0);
+    let zero_item: core::option::Option<i32> = zero.next();
+    if (no_query.advanced != 0 || no_query.exhausted || core::option::is_some(zero_item) || zero.remaining_limit() != 0) { return 8; }
+
+    let bounded: Probe = Probe { length: 3, position: 0, calls: 0 };
+    let quota: core::iter::Take<Probe, i32> = core::iter::take<Probe, i32>(bounded.borrow(), 2);
+    let exact: core::iter::Advance = core::iter::advance_up_to<core::iter::Take<Probe, i32>, i32>(quota.borrow(), 2);
+    if (exact.advanced != 2 || exact.exhausted || bounded.calls != 2 || bounded.position != 2) { return 9; }
+    let quota_end: core::option::Option<i32> = quota.next();
+    if (core::option::is_some(quota_end) || bounded.calls != 2) { return 10; }
+    let short: Probe = Probe { length: 1, position: 0, calls: 0 };
+    let long_take: core::iter::Take<Probe, i32> = core::iter::take<Probe, i32>(short.borrow(), 18446744073709551615);
+    let short_done: core::iter::Advance = core::iter::advance_up_to<core::iter::Take<Probe, i32>, i32>(long_take.borrow(), 4);
+    let short_again: core::option::Option<i32> = long_take.next();
+    if (short_done.advanced != 1 || !short_done.exhausted || core::option::is_some(short_again) || short.calls != 2 || long_take.remaining_limit() != 18446744073709551614) { return 11; }
+
+    let shared: Probe = Probe { length: 4, position: 0, calls: 0 };
+    let a: core::iter::Take<Probe, i32> = core::iter::take<Probe, i32>(shared.borrow(), 3);
+    let b: core::iter::Take<Probe, i32> = a;
+    let a0: core::option::Option<i32> = a.next();
+    let b1: core::option::Option<i32> = b.next();
+    let a2: core::option::Option<i32> = a.next();
+    let b3: core::option::Option<i32> = b.next();
+    let ae: core::option::Option<i32> = a.next();
+    let be: core::option::Option<i32> = b.next();
+    if (core::option::unwrap(a0) != 0 || core::option::unwrap(b1) != 1 || core::option::unwrap(a2) != 2 || core::option::unwrap(b3) != 3 ||
+        core::option::is_some(ae) || core::option::is_some(be) || shared.calls != 6 || a.remaining_limit() != 1 || b.remaining_limit() != 1) { return 12; }
+    let ae2: core::option::Option<i32> = a.next();
+    let be2: core::option::Option<i32> = b.next();
+    if (core::option::is_some(ae2) || core::option::is_some(be2) || shared.calls != 6) { return 13; }
+
+    let left: Probe = Probe { length: 0, position: 0, calls: 0 };
+    let right: Probe = Probe { length: 2, position: 0, calls: 0 };
+    let joined: core::iter::Chain<Probe, Probe, i32> = core::iter::chain<Probe, Probe, i32>(left.borrow(), right.borrow());
+    let joined0: core::option::Option<i32> = joined.next();
+    let joined1: core::option::Option<i32> = joined.next();
+    let joined_e: core::option::Option<i32> = joined.next();
+    let joined_e2: core::option::Option<i32> = joined.next();
+    if (core::option::unwrap(joined0) != 0 || core::option::unwrap(joined1) != 1 || core::option::is_some(joined_e) ||
+        core::option::is_some(joined_e2) || left.calls != 1 || right.calls != 3) { return 14; }
+    let reused: Probe = Probe { length: 2, position: 0, calls: 0 };
+    let aliases: core::iter::Chain<Probe, Probe, i32> = core::iter::chain<Probe, Probe, i32>(reused.borrow(), reused.borrow());
+    let aliases_done: core::iter::Advance = core::iter::advance_up_to<core::iter::Chain<Probe, Probe, i32>, i32>(aliases.borrow(), 8);
+    if (aliases_done.advanced != 2 || !aliases_done.exhausted || reused.calls != 4) { return 15; }
+
+    // Fixed arrays retain native descending stride. The raw view below uses
+    // packed +1 bytes over the same live i32 stack storage, without allocation.
+    let storage: [i32; 2] = [0, 0];
+    let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts<u8>(pointer, 8);
+    packed[0] = 128; packed[1] = 255; packed[2] = 3;
+    let packed_iter: core::iter::SliceIter<u8> = core::result::unwrap(core::iter::from_slice<u8>(packed, 3));
+    let p0: core::option::Option<u8> = packed_iter.next();
+    let p1: core::option::Option<u8> = packed_iter.next();
+    let p2: core::option::Option<u8> = packed_iter.next();
+    if (core::option::unwrap(p0) != 128 || core::option::unwrap(p1) != 255 || core::option::unwrap(p2) != 3) { return 16; }
+    let strided: [u8; 3] = [128, 255, 3];
+    let strided_iter: core::iter::SliceIter<u8> = core::result::unwrap(core::iter::from_slice<u8>(strided, 3));
+    let s0: core::option::Option<u8> = strided_iter.next();
+    let s1: core::option::Option<u8> = strided_iter.next();
+    let s2: core::option::Option<u8> = strided_iter.next();
+    if (core::option::unwrap(s0) != 128 || core::option::unwrap(s1) != 255 || core::option::unwrap(s2) != 3) { return 17; }
+    let units: [Unit; 3] = [Unit {}, Unit {}, Unit {}];
+    let unit_iter: core::iter::SliceIter<Unit> = core::result::unwrap(core::iter::from_slice<Unit>(units, 3));
+    let unit_done: core::iter::Advance = core::iter::advance_up_to<core::iter::SliceIter<Unit>, Unit>(unit_iter.borrow(), 18446744073709551615);
+    if (unit_done.advanced != 3 || !unit_done.exhausted) { return 18; }
+
+    let full_bounds: core::range::RangeInclusive<i32> = core::range::range_inclusive<i32>(-2147483648, 2147483647);
+    let full: core::iter::RangeI32 = core::iter::range_i32_inclusive(full_bounds);
+    let full_fork: core::iter::RangeI32 = full;
+    if (full.remaining() != 4294967296 || full.advance(4294967295) != 4294967295 || full.remaining() != 1) { return 19; }
+    let maximum: core::option::Option<i32> = full.next();
+    let after_maximum: core::option::Option<i32> = full.next();
+    if (core::option::unwrap(maximum) != 2147483647 || core::option::is_some(after_maximum) || full.remaining() != 0 || full.advance(18446744073709551615) != 0) { return 20; }
+    if (full_fork.advance(18446744073709551615) != 4294967296 || full_fork.remaining() != 0) { return 21; }
+    let exclusive_bounds: core::range::Range<i32> = core::range::range<i32>(-2147483648, 2147483647);
+    let exclusive: core::iter::RangeI32 = core::iter::range_i32(exclusive_bounds);
+    if (exclusive.remaining() != 4294967295 || exclusive.advance(4294967294) != 4294967294) { return 22; }
+    let before_maximum: core::option::Option<i32> = exclusive.next();
+    let exclusive_end: core::option::Option<i32> = exclusive.next();
+    if (core::option::unwrap(before_maximum) != 2147483646 || core::option::is_some(exclusive_end)) { return 23; }
+    let reversed_bounds: core::range::RangeInclusive<i32> = core::range::range_inclusive<i32>(1, -1);
+    let adjacent_bounds: core::range::RangeInclusive<i32> = core::range::range_inclusive<i32>(1, 0);
+    let reversed: core::iter::RangeI32 = core::iter::range_i32_inclusive(reversed_bounds);
+    let adjacent: core::iter::RangeI32 = core::iter::range_i32_inclusive(adjacent_bounds);
+    let reverse_item: core::option::Option<i32> = reversed.next();
+    let adjacent_item: core::option::Option<i32> = adjacent.next();
+    if (reversed.remaining() != 0 || adjacent.remaining() != 0 || core::option::is_some(reverse_item) || core::option::is_some(adjacent_item)) { return 24; }
+    return 0;
+}
