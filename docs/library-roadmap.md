@@ -350,19 +350,25 @@ API list; unrelated library work can continue.
 - Branch: `codex/stdlib`, based on `441e66f9`.
 - Current milestone: the explicit native Linux syscall boundary, owned TCP/UDP
   sockets and signal dispositions; configurable files, metadata, raw directory
-  iteration and bounded walking; complete default Unicode sentence/line
-  boundaries and terminal wrapping; typed settings and four continuous
-  distributions. Real programs, independent models/conformance corpora,
+  iteration and bounded walking; reusable descriptor readiness and explicit-server
+  DNS transport; complete default Unicode sentence/line boundaries and terminal
+  wrapping; typed settings and four continuous plus four discrete distributions.
+  Real programs, independent models/conformance corpora,
   allocation/descriptor/I/O failure checks and source reviews are recorded per
   guide. Numeric helper consolidation removes seven obsolete modules.
   Subprocesses and a real command runner now pass focused native lifecycle and
   fault gates; startup EOF is explicitly Unconfirmed and ambiguous outcomes
-  retain a child owner. Seventeen ordinary collection/output samples now use
+  retain a child owner. Concurrent pipe capture adds byte/work/deadline limits
+  and retained failure progress; nonblocking waits make one host attempt.
+  Seventeen ordinary collection/output samples now use
   checked APIs and real closed-pipe cleanup. The heap view boundary constructs
   directly from initialized owner state; original failed source is preserved.
   These APIs execute as x86_64 Linux programs produced by the GPU compiler;
   user GPU kernels and other targets are unverified. Threads, TLS, SQLite,
   generic adapter composition and final distribution/reference work remain.
+  A generated declaration reference covers the current source inventory;
+  semantic guide gaps stay explicit. Native thread-entry, memory-ordering and
+  foreign-call prerequisites have a separate source-audited proposal.
 - Preceding milestone: canonical narrow integers, full-range binary64 elementary
   functions, generic owned hash/tree sets, TZif time zones, DNS and WebSocket
   wire processing, byte key/value snapshots, signal processing and selective

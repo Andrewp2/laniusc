@@ -11,6 +11,12 @@ peers and OS metadata; fault tests check partial transfers, deadlines, descripto
 and allocation cleanup. Independent review corrected receive-deadline checks
 at EOF and real closed-pipe output handling. The syscall thunk is an explicit
 native binding; its same-stack continuation contract does not supply threads.
+[Reusable descriptor readiness](stdlib-poll.md) adds fixed-capacity borrowed-FD
+sets, atomic result publication and explicit deadline/error behavior, including
+an independent 4,096-record OS oracle. [DNS transport](extended-dns-client.md)
+adds correlated explicit-server UDP queries and one framed TCP fallback under
+one deadline. Seven focused native groups cover 174 program cases, malformed
+and late responses, and allocation/descriptor cleanup.
 
 [Unicode sentence boundaries](extended-unicode-sentences.md) and
 [line opportunities](extended-unicode-lines.md) pass all 512 and 19,338 official
