@@ -10,6 +10,8 @@ import core::option;
 import core::result;
 
 pub enum Error { InvalidCapacity, CapacityOverflow, AllocationFailed }
+// Sink insertion rejects existing keys instead of replacing their entries.
+pub enum SinkError { Duplicate, Storage(Error) }
 pub struct Entry<K, V> { key: K, value: V }
 enum Slot<K, V> { Empty, Deleted, Full(u32, Entry<K, V>) }
 pub struct HashMap<K, V> { storage: ptr, buckets: i32, length: i32, occupied: i32 }
@@ -238,6 +240,21 @@ pub impl<K, V> HashMap<K, V> {
         self.storage = 0; self.buckets = 0; self.length = 0; self.occupied = 0;
     }
 }
+// Reject before allocation or replacement. Hash/equality must remain lawful
+// and stable, without reentrant mutation of this map during either lookup.
+pub impl<K, V> core::iter::TrySink<Entry<K, V>, SinkError> for HashMap<K, V>
+    where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
+    pub fn try_accept(&self, item: Entry<K, V>) -> core::option::Option<SinkError> {
+        if (self.contains_key(item.key)) { return core::option::Some(SinkError::Duplicate()); }
+        let inserted: core::result::Result<core::option::Option<Entry<K, V>>, Error> = self.try_insert(item.key, item.value);
+        if (core::result::is_err(inserted)) { return core::option::Some(SinkError::Storage(core::result::unwrap_err(inserted))); }
+        let previous: core::option::Option<Entry<K, V>> = core::result::unwrap(inserted);
+        // Stable key behavior keeps the prechecked key absent until insertion.
+        assert(core::option::is_none(previous));
+        return core::option::None();
+    }
+}
+
 pub impl<K, V> Iter<K, V> {
     pub fn borrow(&self) -> &Iter<K, V> { return self; }
 }

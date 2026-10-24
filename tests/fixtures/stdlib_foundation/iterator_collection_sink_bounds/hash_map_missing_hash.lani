@@ -1,0 +1,25 @@
+module app::main;
+import alloc::hash_map;
+import alloc::hash_set;
+import alloc::tree_map;
+import alloc::tree_set;
+import alloc::binary_heap;
+import core::cmp;
+import core::hash;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+struct Key { id: i32 }
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(left: Key, right: Key) -> bool { return left.id == right.id; }
+    pub fn ne(left: Key, right: Key) -> bool { return left.id != right.id; }
+}
+fn main() -> i32 {
+    let value: alloc::hash_map::Entry<Key, i32> = alloc::hash_map::Entry { key: Key { id: 1 }, value: 7 };
+    let values: [alloc::hash_map::Entry<Key, i32>; 1] = [value];
+    let source: core::slice::Iter<alloc::hash_map::Entry<Key, i32>> = core::result::unwrap(core::iter::from_slice<alloc::hash_map::Entry<Key, i32>>(values, 1));
+    let sink: alloc::hash_map::HashMap<Key, i32> = alloc::hash_map::new<Key, i32>();
+    let rejected: core::result::Result<core::iter::Transfer, core::iter::TransferError<alloc::hash_map::Entry<Key, i32>, alloc::hash_map::SinkError>> = core::iter::try_transfer_up_to<core::slice::Iter<alloc::hash_map::Entry<Key, i32>>, alloc::hash_map::HashMap<Key, i32>, alloc::hash_map::Entry<Key, i32>, alloc::hash_map::SinkError>(source.borrow(), sink.borrow(), 1);
+    return 0;
+}

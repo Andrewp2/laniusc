@@ -8,6 +8,13 @@ unspecified. Tree cursors visit keys in order.
 
 ## Representatives and ownership
 
+Both sets implement the [fallible iterator sink](stdlib-iterator-collection-sinks.md).
+An equivalent element rejects with the corresponding map engine's
+`SinkError::Duplicate`; the stored representative remains unchanged. Allocation
+failure is wrapped in `SinkError::Storage(Error)`. Bounded transfer returns the
+incoming item and accepted-prefix progress, so callers can recover or release
+rejected owners explicitly before source resumption.
+
 Insertion makes every supplied or displaced representative explicit:
 
 | Operation | Successful result | Ownership |

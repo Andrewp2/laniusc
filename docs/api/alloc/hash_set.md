@@ -12,8 +12,9 @@ Layer: `alloc`. Role: module. Profile: **Source inventory**.
 
 - [stdlib-owned-sets](../../stdlib-owned-sets.md)
 - [stdlib-collection-iterators](../../stdlib-collection-iterators.md)
+- [stdlib-iterator-collection-sinks](../../stdlib-iterator-collection-sinks.md)
 
-Declaration counts: field: 2; function: 2; impl: 3; method: 24; struct: 2.
+Declaration counts: field: 2; function: 2; impl: 4; method: 25; struct: 2.
 
 ## Declared imports
 
@@ -266,9 +267,26 @@ pub fn try_difference(&self, other: &HashSet<T>) -> core::result::Result<HashSet
 pub fn try_symmetric_difference(&self, other: &HashSet<T>) -> core::result::Result<HashSet<T>, alloc::hash_map::Error> where T: core::hash::Hash<T>, T: core::cmp::Eq<T>
 ```
 
-### impl at line 112
+### impl at line 113
 
-[Source line 112](../../../stdlib/alloc/hash_set.lani#L112)
+[Source line 113](../../../stdlib/alloc/hash_set.lani#L113)
+
+```lanius
+pub impl<T> core::iter::TrySink<T, alloc::hash_map::SinkError> for HashSet<T>
+    where T: core::hash::Hash<T>, T: core::cmp::Eq<T>
+```
+
+#### method: try_accept
+
+[Source line 115](../../../stdlib/alloc/hash_set.lani#L115)
+
+```lanius
+pub fn try_accept(&self, item: T) -> core::option::Option<alloc::hash_map::SinkError>
+```
+
+### impl at line 124
+
+[Source line 124](../../../stdlib/alloc/hash_set.lani#L124)
 
 ```lanius
 pub impl<T> Iter<T>
@@ -276,15 +294,15 @@ pub impl<T> Iter<T>
 
 #### method: borrow
 
-[Source line 113](../../../stdlib/alloc/hash_set.lani#L113)
+[Source line 125](../../../stdlib/alloc/hash_set.lani#L125)
 
 ```lanius
 pub fn borrow(&self) -> &Iter<T>
 ```
 
-### impl at line 116
+### impl at line 128
 
-[Source line 116](../../../stdlib/alloc/hash_set.lani#L116)
+[Source line 128](../../../stdlib/alloc/hash_set.lani#L128)
 
 ```lanius
 pub impl<T> core::iter::Iterator<T> for Iter<T>
@@ -292,7 +310,7 @@ pub impl<T> core::iter::Iterator<T> for Iter<T>
 
 #### method: next
 
-[Source line 117](../../../stdlib/alloc/hash_set.lani#L117)
+[Source line 129](../../../stdlib/alloc/hash_set.lani#L129)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>

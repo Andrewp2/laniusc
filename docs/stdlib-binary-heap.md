@@ -8,6 +8,12 @@ targets remain unverified.
 
 ## Ordering and ownership
 
+The [fallible iterator sink](stdlib-iterator-collection-sinks.md) implements
+`TrySink<T,Error>` through checked `try_push`, with the same Ord requirement.
+It preserves this heap's selected Min/Max order and accepts duplicate entries.
+Bounded transfer reports its accepted prefix and returns any rejected item
+without an implicit destructor or rollback.
+
 Operations that compare entries require `T: core::cmp::Ord<T>` and use only
 `T::lt`. The relation must be a strict weak order: irreflexive, asymmetric and
 transitive, with transitive equivalence for tied priorities. Ordering-relevant

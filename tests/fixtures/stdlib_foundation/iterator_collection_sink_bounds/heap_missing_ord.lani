@@ -1,0 +1,26 @@
+module app::main;
+import alloc::hash_map;
+import alloc::hash_set;
+import alloc::tree_map;
+import alloc::tree_set;
+import alloc::binary_heap;
+import core::cmp;
+import core::hash;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+struct Key { id: i32 }
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(left: Key, right: Key) -> bool { return left.id == right.id; }
+    pub fn ne(left: Key, right: Key) -> bool { return left.id != right.id; }
+}
+pub impl core::hash::Hash<Key> for Key { pub fn hash(value: Key) -> u32 { return value.id as u32; } }
+fn main() -> i32 {
+    let value: Key = Key { id: 1 };
+    let values: [Key; 1] = [value];
+    let source: core::slice::Iter<Key> = core::result::unwrap(core::iter::from_slice<Key>(values, 1));
+    let sink: alloc::binary_heap::BinaryHeap<Key> = alloc::binary_heap::new<Key>(alloc::binary_heap::Order::Min);
+    let rejected: core::result::Result<core::iter::Transfer, core::iter::TransferError<Key, alloc::binary_heap::Error>> = core::iter::try_transfer_up_to<core::slice::Iter<Key>, alloc::binary_heap::BinaryHeap<Key>, Key, alloc::binary_heap::Error>(source.borrow(), sink.borrow(), 1);
+    return 0;
+}

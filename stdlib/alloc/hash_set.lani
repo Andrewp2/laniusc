@@ -109,6 +109,18 @@ pub impl<T> HashSet<T> {
     pub fn try_difference(&self, other: &HashSet<T>) -> core::result::Result<HashSet<T>, alloc::hash_map::Error> where T: core::hash::Hash<T>, T: core::cmp::Eq<T> { return self.combine(other, 3); }
     pub fn try_symmetric_difference(&self, other: &HashSet<T>) -> core::result::Result<HashSet<T>, alloc::hash_map::Error> where T: core::hash::Hash<T>, T: core::cmp::Eq<T> { return self.combine(other, 4); }
 }
+// Existing representatives survive duplicate rejection; item remains shallow.
+pub impl<T> core::iter::TrySink<T, alloc::hash_map::SinkError> for HashSet<T>
+    where T: core::hash::Hash<T>, T: core::cmp::Eq<T> {
+    pub fn try_accept(&self, item: T) -> core::option::Option<alloc::hash_map::SinkError> {
+        let inserted: core::result::Result<core::option::Option<T>, alloc::hash_map::Error> = self.try_insert(item);
+        if (core::result::is_err(inserted)) { return core::option::Some(alloc::hash_map::SinkError::Storage(core::result::unwrap_err(inserted))); }
+        let supplied: core::option::Option<T> = core::result::unwrap(inserted);
+        if (core::option::is_some(supplied)) { return core::option::Some(alloc::hash_map::SinkError::Duplicate()); }
+        return core::option::None();
+    }
+}
+
 pub impl<T> Iter<T> {
     pub fn borrow(&self) -> &Iter<T> { return self; }
 }

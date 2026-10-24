@@ -15,7 +15,8 @@
       "guides": [
         "docs/stdlib-binary-heap.md",
         "docs/stdlib-cursor-integration.md",
-        "docs/stdlib-heap-iterators.md"
+        "docs/stdlib-heap-iterators.md",
+        "docs/stdlib-iterator-collection-sinks.md"
       ]
     },
     "alloc::bitset": {
@@ -53,13 +54,15 @@
     "alloc::hash_map": {
       "guides": [
         "docs/stdlib-hash-collections.md",
-        "docs/stdlib-collection-iterators.md"
+        "docs/stdlib-collection-iterators.md",
+        "docs/stdlib-iterator-collection-sinks.md"
       ]
     },
     "alloc::hash_set": {
       "guides": [
         "docs/stdlib-owned-sets.md",
-        "docs/stdlib-collection-iterators.md"
+        "docs/stdlib-collection-iterators.md",
+        "docs/stdlib-iterator-collection-sinks.md"
       ]
     },
     "alloc::io": {
@@ -81,13 +84,15 @@
     "alloc::tree_map": {
       "guides": [
         "docs/stdlib-tree-map.md",
-        "docs/stdlib-collection-iterators.md"
+        "docs/stdlib-collection-iterators.md",
+        "docs/stdlib-iterator-collection-sinks.md"
       ]
     },
     "alloc::tree_set": {
       "guides": [
         "docs/stdlib-owned-sets.md",
-        "docs/stdlib-collection-iterators.md"
+        "docs/stdlib-collection-iterators.md",
+        "docs/stdlib-iterator-collection-sinks.md"
       ]
     },
     "alloc::vec": {
@@ -248,7 +253,8 @@
         "docs/stdlib-cursor-integration.md",
         "docs/stdlib-iterator-selection.md",
         "docs/compiler-iterator-assignment-context.md",
-        "docs/stdlib-iterator-transfer.md"
+        "docs/stdlib-iterator-transfer.md",
+        "docs/stdlib-iterator-collection-sinks.md"
       ]
     },
     "core::math": {

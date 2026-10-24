@@ -234,3 +234,12 @@ pub impl<T> BinaryHeap<T> {
     pub fn clear(&self) { self.items = std::vec::clear(self.items); }
     pub fn destroy(&self) { std::vec::destroy(self.items); self.items = std::vec::new(); }
 }
+
+// Preserve this heap's configured order and try_push's shallow ownership rules.
+pub impl<T> core::iter::TrySink<T, Error> for BinaryHeap<T> where T: core::cmp::Ord<T> {
+    pub fn try_accept(&self, item: T) -> core::option::Option<Error> {
+        let pushed: core::result::Result<i32, Error> = self.try_push(item);
+        if (core::result::is_err(pushed)) { return core::option::Some(core::result::unwrap_err(pushed)); }
+        return core::option::None();
+    }
+}

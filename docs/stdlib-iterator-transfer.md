@@ -28,14 +28,23 @@ The standard destinations use their existing checked insertion operations:
 | `alloc::vec::Vec<T>` | Append with `try_push` | `alloc::vec::Error` |
 | `alloc::deque::Deque<T>` | Append at the back with `try_push_back` | `alloc::deque::Error` |
 | `core::vec::Vec<T,N>` | Append to the active prefix with `try_push` | `core::vec::Error`, including `Full` |
+| `alloc::hash_map::HashMap<K,V>` | Insert an absent key from `hash_map::Entry<K,V>` | `alloc::hash_map::SinkError` |
+| `alloc::tree_map::TreeMap<K,V>` | Insert an absent key from `tree_map::Entry<K,V>` | `alloc::tree_map::SinkError` |
+| `alloc::hash_set::HashSet<T>` | Insert an absent element | `alloc::hash_map::SinkError` |
+| `alloc::tree_set::TreeSet<T>` | Insert an absent element | `alloc::tree_map::SinkError` |
+| `alloc::binary_heap::BinaryHeap<T>` | Checked push in the selected Min/Max order | `alloc::binary_heap::Error` |
 
 Each rejected insertion preserves the collection's contents, capacity and
 existing views. Successful insertions follow that collection's ordinary
 invalidation rules. The transfer itself can already have inserted earlier
 items before a later rejection.
-These append operations can return `CapacityOverflow` or `AllocationFailed`
-for the alloc collections, and `Full` for the fixed vector. They do not produce
-the collections' index or negative-capacity errors.
+Vector/deque/heap appends can return `CapacityOverflow` or `AllocationFailed`,
+and the fixed vector can return `Full`. They do not produce the collections'
+index or negative-capacity errors. The
+[map and set sinks](stdlib-iterator-collection-sinks.md) reject equivalent keys
+with `SinkError::Duplicate` before changing collection storage and wrap checked
+insertion failures in `SinkError::Storage(Error)`. Heap duplicates are accepted.
+That guide records their separate contracts and execution evidence.
 
 ## Transfer contract
 

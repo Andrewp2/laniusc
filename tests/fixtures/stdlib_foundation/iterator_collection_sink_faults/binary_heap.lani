@@ -1,0 +1,118 @@
+// One String owner and one initial collection allocation. All later mmap
+// attempts are observed collection growths; each denied edit is retried before
+// resuming the independent source. Duplicate mode fills the reported capacity.
+module app::main;
+import alloc::binary_heap;
+import alloc::string;
+import core::cmp;
+import core::hash;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import std::args_checked;
+import std::io;
+struct Item { key: i32, mark: i64, nested: core::option::Option<core::result::Result<[u64; 2], i64>>, text: alloc::string::String }
+pub impl core::hash::Hash<Item> for Item { pub fn hash(value: Item) -> u32 { return value.key as u32; } }
+pub impl core::cmp::Eq<Item> for Item {
+    pub fn eq(left: Item, right: Item) -> bool { return left.key == right.key; }
+    pub fn ne(left: Item, right: Item) -> bool { return left.key != right.key; }
+}
+pub impl core::cmp::Ord<Item> for Item {
+    pub fn lt(left: Item, right: Item) -> bool { return left.key < right.key; }
+    pub fn le(left: Item, right: Item) -> bool { return left.key <= right.key; }
+    pub fn gt(left: Item, right: Item) -> bool { return left.key > right.key; }
+    pub fn ge(left: Item, right: Item) -> bool { return left.key >= right.key; }
+}
+fn item(key: i32, mark: i64, owner: alloc::string::String) -> Item {
+    let nested: core::option::Option<core::result::Result<[u64; 2], i64>> = core::option::None();
+    if (key % 3 == 0) {
+        let words: [u64; 2] = [18446744073709551615, 4294967297 + (key as u64)];
+        let good: core::result::Result<[u64; 2], i64> = core::result::Ok(words); nested = core::option::Some(good);
+    }
+    if (key % 3 == 1) {
+        let bad: core::result::Result<[u64; 2], i64> = core::result::Err(-8589934593 - (key as i64)); nested = core::option::Some(bad);
+    }
+    return Item { key: key, mark: -4294967297 - mark, nested: nested, text: owner };
+}
+fn check(value: Item, key: i32, mark: i64) {
+    assert(value.key == key && value.mark == -4294967297 - mark);
+    if (key % 3 == 2) { assert(core::option::is_none(value.nested)); }
+    else {
+        let nested: core::result::Result<[u64; 2], i64> = core::option::unwrap(value.nested);
+        if (key % 3 == 0) {
+            let words: [u64; 2] = core::result::unwrap(nested);
+            assert(words[0] == 18446744073709551615 && words[1] == 4294967297 + (key as u64));
+        } else { assert(core::result::unwrap_err(nested) == -8589934593 - (key as i64)); }
+    }
+    let text: core::text::Text = value.text.as_text();
+    assert(text.byte_len() == 4 && core::option::unwrap(text.byte_at(0)) == 97 && core::option::unwrap(text.byte_at(3)) == 100);
+}
+fn input(key: i32, mark: i64, owner: alloc::string::String) -> Item { return item(key, mark, owner); }
+fn check_input(value: Item, key: i32, mark: i64) { check(value, key, mark); }
+fn unchanged(before: &core::slice::Iter<Item>, after: &core::slice::Iter<Item>) {
+    while (true) {
+        let left: core::option::Option<Item> = before.next();
+        let right: core::option::Option<Item> = after.next();
+        if (core::option::is_none(left)) { assert(core::option::is_none(right)); return; }
+        let value: Item = core::option::unwrap(left);
+        let other: Item = core::option::unwrap(right);
+        check_input(value, value.key, 10);
+        check_input(other, value.key, 10);
+    }
+}
+fn contents(sink: &alloc::binary_heap::BinaryHeap<Item>, prefix: i32, accepted: i32, owner: alloc::string::String) {
+    assert(sink.len() == prefix + accepted);
+    let seen: [bool; 64] = [false; 64]; let view: core::slice::View<Item> = sink.as_view(); let index: i32 = 0;
+    while (index < view.len()) {
+        let value: Item = core::option::unwrap(view.get(index)); let key: i32 = value.key;
+        assert((key >= 50 && key < 50 + prefix) || (key >= 0 && key < accepted));
+        assert(!seen[key]); seen[key] = true; check_input(value, key, 10); index += 1;
+    }
+    let peek: Item = core::option::unwrap(sink.peek());
+    let expected: i32 = 50; if (accepted > 0) { expected = 0; }
+    check_input(peek, expected, 10);
+}
+struct Probe { position: i32, calls: i32, owner: alloc::string::String }
+impl Probe { fn borrow(&self) -> &Probe { return self; } }
+pub impl core::iter::Iterator<Item> for Probe {
+    pub fn next(&self) -> core::option::Option<Item> {
+        self.calls += 1; if (self.position == 17) { return core::option::None(); }
+        let key: i32 = self.position; self.position += 1; return core::option::Some(input(key, 10, self.owner));
+    }
+}
+fn growth(owner: alloc::string::String) -> i32 {
+    let sink: alloc::binary_heap::BinaryHeap<Item> = core::result::unwrap(alloc::binary_heap::with_capacity<Item>(2, alloc::binary_heap::Order::Min));
+    let prefix: i32 = sink.capacity(); assert(prefix > 0 && prefix <= 4);
+    let index: i32 = 0;
+    while (index < prefix) { assert(core::option::is_none(sink.try_accept(input(index + 50, 10, owner)))); index += 1; }
+    let source: Probe = Probe { position: 0, calls: 0, owner: owner };
+    index = 0; let failures: i32 = 0;
+    while (index < 17) {
+        let before: core::slice::Iter<Item> = sink.iter(); let capacity: i32 = sink.capacity();
+        let result: core::result::Result<core::iter::Transfer, core::iter::TransferError<Item, alloc::binary_heap::Error>> = core::iter::try_transfer_up_to<Probe, alloc::binary_heap::BinaryHeap<Item>, Item, alloc::binary_heap::Error>(source.borrow(), sink.borrow(), 1);
+        assert(source.position == index + 1 && source.calls == index + 1);
+        if (core::result::is_err(result)) {
+            failures += 1;
+            let rejected: core::iter::TransferError<Item, alloc::binary_heap::Error> = core::result::unwrap_err(result);
+            assert(rejected.accepted == 0 && sink.capacity() == capacity); assert(match (rejected.error) { alloc::binary_heap::Error::AllocationFailed -> true, _ -> false });
+            check_input(rejected.rejected, index, 10); contents(sink.borrow(), prefix, index, owner);
+            let after: core::slice::Iter<Item> = sink.iter(); unchanged(before.borrow(), after.borrow());
+            assert(core::option::is_none(sink.try_accept(rejected.rejected)));
+        } else {
+            let progress: core::iter::Transfer = core::result::unwrap(result); assert(progress.accepted == 1 && !progress.exhausted);
+        }
+        contents(sink.borrow(), prefix, index + 1, owner); index += 1;
+    }
+    let eof: core::iter::Transfer = core::result::unwrap(core::iter::try_transfer_up_to<Probe, alloc::binary_heap::BinaryHeap<Item>, Item, alloc::binary_heap::Error>(source.borrow(), sink.borrow(), 2));
+    assert(eof.accepted == 0 && eof.exhausted && source.calls == 18);
+    sink.destroy(); check(item(0, 10, owner), 0, 10); return failures;
+}
+fn main() -> i32 {
+    let bytes: [u8; 4] = [97, 194, 162, 100];
+    let owner: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(bytes, 4));
+    let result: i32 = 0;
+    result = growth(owner);
+    owner.destroy(); assert(std::io::write_byte(1, result) == 1); return 0;
+}

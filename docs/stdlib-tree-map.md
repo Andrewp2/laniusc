@@ -13,7 +13,7 @@ algorithm uses portable values; storage uses the existing allocator bindings.
 
 Key operations require `K: core::cmp::Ord<K>` and use `K::lt`. The relation must
 be a stable strict weak order: keys are equivalent when neither is less than
-the other. Equivalent-key insertion replaces both the key and value, returning
+the other. Equivalent-key `try_insert` replaces both the key and value, returning
 the previous `Entry<K, V>`. Values need no comparison implementation. Do not
 mutate stored keys, including their borrowed backing, in a way that changes
 ordering. Floating-point NaNs require an explicit ordering wrapper; the current
@@ -30,6 +30,13 @@ destroy never call key or value destructors. Drain and destroy nested resources
 explicitly when the map owns them. Cloning and sorted construction allocate
 independent node storage but shallow-copy keys and values; callers must choose
 a consistent ownership policy for those nested resources.
+
+The [iterator sink](stdlib-iterator-collection-sinks.md) accepts `Entry<K,V>`
+with an explicit unique-key policy: equivalent keys reject unchanged with
+`SinkError::Duplicate`, preserving the stored key and value. Allocation failures
+are `SinkError::Storage(Error)`. Bounded transfer retains the accepted prefix
+and returns the incoming rejected entry for recovery. Its source must remain
+valid independently of destination edits.
 
 Cursors borrow the map. Successful edits invalidate earlier cursors; failed
 fallible edits preserve them, contents and capacity. Owners and key backing

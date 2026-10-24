@@ -17,6 +17,7 @@ Layer: `core`. Role: module. Profile: **Source inventory**.
 - [stdlib-iterator-selection](../../stdlib-iterator-selection.md)
 - [compiler-iterator-assignment-context](../../compiler-iterator-assignment-context.md)
 - [stdlib-iterator-transfer](../../stdlib-iterator-transfer.md)
+- [stdlib-iterator-collection-sinks](../../stdlib-iterator-collection-sinks.md)
 
 Declaration counts: field: 42; function: 23; impl: 25; method: 28; struct: 14; trait: 5; trait member: 5.
 

@@ -12,8 +12,9 @@ Layer: `alloc`. Role: module. Profile: **Source inventory**.
 
 - [stdlib-owned-sets](../../stdlib-owned-sets.md)
 - [stdlib-collection-iterators](../../stdlib-collection-iterators.md)
+- [stdlib-iterator-collection-sinks](../../stdlib-iterator-collection-sinks.md)
 
-Declaration counts: field: 2; function: 2; impl: 3; method: 33; struct: 2.
+Declaration counts: field: 2; function: 2; impl: 4; method: 34; struct: 2.
 
 ## Declared imports
 
@@ -321,9 +322,26 @@ pub fn upper_bound(&self, key: T) -> core::option::Option<T> where T: core::cmp:
 pub fn range(&self, lower: T, upper: T) -> core::result::Result<Cursor<T>, alloc::tree_map::Error> where T: core::cmp::Ord<T>
 ```
 
-### impl at line 123
+### impl at line 124
 
-[Source line 123](../../../stdlib/alloc/tree_set.lani#L123)
+[Source line 124](../../../stdlib/alloc/tree_set.lani#L124)
+
+```lanius
+pub impl<T> core::iter::TrySink<T, alloc::tree_map::SinkError> for TreeSet<T>
+    where T: core::cmp::Ord<T>
+```
+
+#### method: try_accept
+
+[Source line 126](../../../stdlib/alloc/tree_set.lani#L126)
+
+```lanius
+pub fn try_accept(&self, item: T) -> core::option::Option<alloc::tree_map::SinkError>
+```
+
+### impl at line 135
+
+[Source line 135](../../../stdlib/alloc/tree_set.lani#L135)
 
 ```lanius
 pub impl<T> Cursor<T>
@@ -331,7 +349,7 @@ pub impl<T> Cursor<T>
 
 #### method: borrow
 
-[Source line 124](../../../stdlib/alloc/tree_set.lani#L124)
+[Source line 136](../../../stdlib/alloc/tree_set.lani#L136)
 
 ```lanius
 pub fn borrow(&self) -> &Cursor<T>
@@ -339,7 +357,7 @@ pub fn borrow(&self) -> &Cursor<T>
 
 #### method: next_back
 
-[Source line 125](../../../stdlib/alloc/tree_set.lani#L125)
+[Source line 137](../../../stdlib/alloc/tree_set.lani#L137)
 
 ```lanius
 pub fn next_back(&self) -> core::option::Option<T>
@@ -347,15 +365,15 @@ pub fn next_back(&self) -> core::option::Option<T>
 
 #### method: is_empty
 
-[Source line 126](../../../stdlib/alloc/tree_set.lani#L126)
+[Source line 138](../../../stdlib/alloc/tree_set.lani#L138)
 
 ```lanius
 pub fn is_empty(&self) -> bool
 ```
 
-### impl at line 129
+### impl at line 141
 
-[Source line 129](../../../stdlib/alloc/tree_set.lani#L129)
+[Source line 141](../../../stdlib/alloc/tree_set.lani#L141)
 
 ```lanius
 pub impl<T> core::iter::Iterator<T> for Cursor<T>
@@ -363,7 +381,7 @@ pub impl<T> core::iter::Iterator<T> for Cursor<T>
 
 #### method: next
 
-[Source line 130](../../../stdlib/alloc/tree_set.lani#L130)
+[Source line 142](../../../stdlib/alloc/tree_set.lani#L142)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>

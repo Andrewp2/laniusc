@@ -7,6 +7,8 @@ Additional [selection and fold gates](stdlib-iterator-selection.md) cover lazy
 predicates, searches, accumulation and typed early failure.
 [Fallible collection gates](stdlib-iterator-transfer.md) cover bounded transfer
 into fixed vectors, owned vectors and deques, including rejection recovery.
+[Map, set and heap sink gates](stdlib-iterator-collection-sinks.md) additionally
+check unique-key policies, retained representatives and both heap orders.
 This is native CPU execution evidence; it does not establish user-program GPU
 execution or other targets.
 

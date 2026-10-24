@@ -10,6 +10,8 @@ import core::result;
 import core::slice;
 
 pub enum Error { InvalidCapacity, CapacityOverflow, AllocationFailed, InvalidOrder, InvalidRange }
+// Sink insertion rejects existing keys instead of replacing their entries.
+pub enum SinkError { Duplicate, Storage(Error) }
 pub struct Entry<K, V> { key: K, value: V }
 struct Node<K, V> { item: Entry<K, V>, left: i32, right: i32, parent: i32, height: i32, next_free: i32 }
 pub struct TreeMap<K, V> { storage: ptr, reserved: i32, used: i32, length: i32, root: i32, free: i32 }
@@ -296,6 +298,21 @@ pub impl<K, V> TreeMap<K, V> {
     pub fn destroy(&self) {
         if (self.reserved > 0) { alloc::allocator::dealloc(self.storage, core::mem::size_of<Node<K, V>>() * (self.reserved as usize), ALIGN); }
         let empty: ptr = 0; self.storage = empty; self.reserved = 0; self.clear();
+    }
+}
+
+// Reject before allocation or replacement. Ordering must remain lawful and
+// stable, without reentrant mutation of this map during either lookup.
+pub impl<K, V> core::iter::TrySink<Entry<K, V>, SinkError> for TreeMap<K, V>
+    where K: core::cmp::Ord<K> {
+    pub fn try_accept(&self, item: Entry<K, V>) -> core::option::Option<SinkError> {
+        if (self.contains_key(item.key)) { return core::option::Some(SinkError::Duplicate()); }
+        let inserted: core::result::Result<core::option::Option<Entry<K, V>>, Error> = self.try_insert(item.key, item.value);
+        if (core::result::is_err(inserted)) { return core::option::Some(SinkError::Storage(core::result::unwrap_err(inserted))); }
+        let previous: core::option::Option<Entry<K, V>> = core::result::unwrap(inserted);
+        // Stable key behavior keeps the prechecked key absent until insertion.
+        assert(core::option::is_none(previous));
+        return core::option::None();
     }
 }
 

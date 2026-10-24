@@ -218,6 +218,14 @@ allocation denial check explicit recovery and shallow ownership. The
 [word sorter](stdlib-sort-words.md) collects live Text views, sorts them and
 checks all allocation and output outcomes before releasing their backing.
 
+[Map, set and heap collection](stdlib-iterator-collection-sinks.md) adds five
+owned destinations to that protocol. Maps and sets reject equivalent keys
+without replacing stored representatives; Min/Max heaps retain every item.
+Independent native models cover 640 scenarios and 5,760 bounded transfers,
+with typed owner checks, all 18 observed growth-failure positions and six exact
+bound rejections. The [identifier index](stdlib-index-words.md) combines text,
+enumeration, mapping and ordered collection across 65 native cases.
+
 [Checked file lengths](stdlib-file-resize.md) execute shrink, zero extension,
 sparse lengths above 4 GiB and unchanged duplicated offsets, with explicit
 one-attempt failures. [Bounded regular-file copying](stdlib-file-copy.md) checks

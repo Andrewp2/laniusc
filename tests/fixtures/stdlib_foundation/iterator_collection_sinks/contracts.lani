@@ -1,0 +1,218 @@
+// Six independent String owners live in main. Every nested String below is
+// a borrowed descriptor copy. Destroy collection storage before those owners;
+// rejected, removed and popped shallow values never destroy a String.
+// Exact successful ledger: six String allocations, then one allocation and
+// deallocation for each of four associative containers and the reused heap.
+module app::main;
+import alloc::binary_heap;
+import alloc::hash_map;
+import alloc::hash_set;
+import alloc::string;
+import alloc::tree_map;
+import alloc::tree_set;
+import core::cmp;
+import core::hash;
+import core::iter;
+import core::option;
+import core::result;
+
+enum Fault { Denied(i64, core::option::Option<bool>) }
+type Nested = core::option::Option<core::result::Result<[u64; 2], Fault>>;
+struct Payload { mark: i32, wide: u64, cells: [i64; 2], nested: Nested, text: alloc::string::String }
+struct Key<T> { id: i32, representative: T }
+type Item = Key<Payload>;
+type HashEntry = alloc::hash_map::Entry<Item, Payload>;
+type TreeEntry = alloc::tree_map::Entry<Item, Payload>;
+
+// Identity is frozen while stored. Representatives deliberately differ, and
+// all hashes collide, so successful duplicate rejection must use lawful Eq/Ord.
+pub impl<T> core::cmp::Eq<Key<T>> for Key<T> {
+    pub fn eq(left: Key<T>, right: Key<T>) -> bool { return left.id == right.id; }
+    pub fn ne(left: Key<T>, right: Key<T>) -> bool { return left.id != right.id; }
+}
+pub impl<T> core::cmp::Ord<Key<T>> for Key<T> {
+    pub fn lt(left: Key<T>, right: Key<T>) -> bool { return left.id < right.id; }
+    pub fn le(left: Key<T>, right: Key<T>) -> bool { return left.id <= right.id; }
+    pub fn gt(left: Key<T>, right: Key<T>) -> bool { return left.id > right.id; }
+    pub fn ge(left: Key<T>, right: Key<T>) -> bool { return left.id >= right.id; }
+}
+pub impl<T> core::hash::Hash<Key<T>> for Key<T> {
+    pub fn hash(value: Key<T>) -> u32 { return 7; }
+}
+
+struct Source<T> { values: [T], length: i32, position: i32, calls: i32 }
+impl<T> Source<T> { fn borrow(&self) -> &Source<T> { return self; } }
+pub impl<T> core::iter::Iterator<T> for Source<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        self.calls += 1;
+        if (self.position == self.length) { return core::option::None(); }
+        let item: T = self.values[self.position]; self.position += 1;
+        return core::option::Some(item);
+    }
+}
+fn source<T>(values: [T], length: i32) -> Source<T> { return Source { values: values, length: length, position: 0, calls: 0 }; }
+fn transfer<I, S, T, E>(input: &I, output: &S, limit: u64)
+    -> core::result::Result<core::iter::Transfer, core::iter::TransferError<T, E>>
+    where I: core::iter::Iterator<T>, S: core::iter::TrySink<T, E> {
+    return core::iter::try_transfer_up_to<I, S, T, E>(input, output, limit);
+}
+fn payload(mark: i32, text: alloc::string::String) -> Payload {
+    let nested: Nested = core::option::None();
+    if (mark % 3 == 0) {
+        let pair: [u64; 2] = [18446744073709551615, 4294967297 + (mark as u64)];
+        let good: core::result::Result<[u64; 2], Fault> = core::result::Ok(pair);
+        nested = core::option::Some(good);
+    }
+    if (mark % 3 == 1) {
+        let flag: core::option::Option<bool> = core::option::Some(false);
+        let bad: core::result::Result<[u64; 2], Fault> = core::result::Err(Fault::Denied(-4294967297 - (mark as i64), flag));
+        nested = core::option::Some(bad);
+    }
+    let cells: [i64; 2] = [-8589934593 - (mark as i64), -9223372036854775808];
+    return Payload { mark: mark, wide: 18446744073709551615 - (mark as u64), cells: cells, nested: nested, text: text };
+}
+fn key(id: i32, mark: i32, text: alloc::string::String) -> Item { return Key { id: id, representative: payload(mark, text) }; }
+fn check(item: Payload, mark: i32, owner: alloc::string::String) {
+    assert(item.mark == mark && item.wide == 18446744073709551615 - (mark as u64));
+    assert(item.cells[0] == -8589934593 - (mark as i64) && item.cells[1] == -9223372036854775808);
+    if (mark % 3 == 2) { assert(core::option::is_none(item.nested)); }
+    else {
+        let nested: core::result::Result<[u64; 2], Fault> = core::option::unwrap(item.nested);
+        if (mark % 3 == 0) { let pair: [u64; 2] = core::result::unwrap(nested); assert(pair[0] == 18446744073709551615 && pair[1] == 4294967297 + (mark as u64)); }
+        else {
+            let error: Fault = core::result::unwrap_err(nested);
+            assert(match (error) { Fault::Denied(code, flag) -> code == -4294967297 - (mark as i64) && !core::option::unwrap(flag) });
+        }
+    }
+    assert(item.text.bytes.storage == owner.bytes.storage && item.text.byte_len() == owner.byte_len() && item.text.capacity() == owner.capacity());
+    assert(core::option::unwrap(item.text.byte_at(0)) == core::option::unwrap(owner.byte_at(0)));
+}
+fn check_key(item: Item, id: i32, mark: i32, owner: alloc::string::String) { assert(item.id == id); check(item.representative, mark, owner); }
+fn hash_duplicate(error: alloc::hash_map::SinkError) -> bool { return match (error) { alloc::hash_map::SinkError::Duplicate -> true, alloc::hash_map::SinkError::Storage(inner) -> false }; }
+fn tree_duplicate(error: alloc::tree_map::SinkError) -> bool { return match (error) { alloc::tree_map::SinkError::Duplicate -> true, alloc::tree_map::SinkError::Storage(inner) -> false }; }
+
+fn hash_map_case(old: alloc::string::String, prefix: alloc::string::String, duplicate: alloc::string::String, tail: alloc::string::String, old_value: alloc::string::String, duplicate_value: alloc::string::String) {
+    let first: HashEntry = alloc::hash_map::Entry { key: key(1, 20, prefix), value: payload(200, prefix) };
+    let collision: HashEntry = alloc::hash_map::Entry { key: key(2, 21, duplicate), value: payload(201, duplicate_value) };
+    let last: HashEntry = alloc::hash_map::Entry { key: key(3, 30, tail), value: payload(300, tail) };
+    let rows: [HashEntry; 3] = [first, collision, last]; let input: Source<HashEntry> = source<HashEntry>(rows, 3);
+    let empty: Source<HashEntry> = source<HashEntry>(rows, 0); let sink: alloc::hash_map::HashMap<Item, Payload> = alloc::hash_map::new<Item, Payload>();
+    let drained: core::iter::Transfer = core::result::unwrap(transfer<Source<HashEntry>, alloc::hash_map::HashMap<Item, Payload>, HashEntry, alloc::hash_map::SinkError>(empty.borrow(), sink.borrow(), 18446744073709551615));
+    assert(drained.accepted == 0 && drained.exhausted && empty.calls == 1 && sink.is_empty() && sink.capacity() == 0);
+    core::result::unwrap(sink.try_reserve(2));
+    let reserved: i32 = sink.capacity(); assert(reserved >= 2);
+    assert(core::option::is_none(core::result::unwrap(sink.try_insert(key(2, 10, old), payload(100, old_value)))));
+    let untouched: core::iter::Transfer = core::result::unwrap(transfer<Source<HashEntry>, alloc::hash_map::HashMap<Item, Payload>, HashEntry, alloc::hash_map::SinkError>(input.borrow(), sink.borrow(), 0));
+    assert(untouched.accepted == 0 && !untouched.exhausted && input.position == 0 && input.calls == 0 && sink.len() == 1);
+    let rejected: core::iter::TransferError<HashEntry, alloc::hash_map::SinkError> = core::result::unwrap_err(transfer<Source<HashEntry>, alloc::hash_map::HashMap<Item, Payload>, HashEntry, alloc::hash_map::SinkError>(input.borrow(), sink.borrow(), 18446744073709551615));
+    assert(rejected.accepted == 1 && hash_duplicate(rejected.error) && input.position == 2 && input.calls == 2 && sink.len() == 2 && sink.capacity() == reserved);
+    check_key(rejected.rejected.key, 2, 21, duplicate); check(rejected.rejected.value, 201, duplicate_value);
+    let retained: HashEntry = core::option::unwrap(sink.get_entry(collision.key)); check_key(retained.key, 2, 10, old); check(retained.value, 100, old_value);
+    let accepted: HashEntry = core::option::unwrap(sink.get_entry(first.key)); check_key(accepted.key, 1, 20, prefix); check(accepted.value, 200, prefix);
+    let removed: HashEntry = core::option::unwrap(sink.remove(collision.key)); check_key(removed.key, 2, 10, old); check(removed.value, 100, old_value);
+    // Caller releases the checked prefix and clears tombstones before retry.
+    sink.clear(); assert(sink.is_empty() && sink.capacity() == reserved);
+    assert(core::option::is_none(sink.try_accept(rejected.rejected)));
+    let retried: HashEntry = core::option::unwrap(sink.get_entry(collision.key)); check_key(retried.key, 2, 21, duplicate); check(retried.value, 201, duplicate_value);
+    let exact: core::iter::Transfer = core::result::unwrap(transfer<Source<HashEntry>, alloc::hash_map::HashMap<Item, Payload>, HashEntry, alloc::hash_map::SinkError>(input.borrow(), sink.borrow(), 1));
+    assert(exact.accepted == 1 && !exact.exhausted && input.position == 3 && input.calls == 3 && sink.len() == 2 && sink.capacity() == reserved);
+    let end: core::iter::Transfer = core::result::unwrap(transfer<Source<HashEntry>, alloc::hash_map::HashMap<Item, Payload>, HashEntry, alloc::hash_map::SinkError>(input.borrow(), sink.borrow(), 18446744073709551615));
+    assert(end.accepted == 0 && end.exhausted && input.calls == 4); check(core::option::unwrap(sink.get(last.key)), 300, tail); sink.destroy();
+}
+
+fn tree_map_case(old: alloc::string::String, prefix: alloc::string::String, duplicate: alloc::string::String, tail: alloc::string::String, old_value: alloc::string::String, duplicate_value: alloc::string::String) {
+    let first: TreeEntry = alloc::tree_map::Entry { key: key(1, 20, prefix), value: payload(200, prefix) };
+    let collision: TreeEntry = alloc::tree_map::Entry { key: key(2, 21, duplicate), value: payload(201, duplicate_value) };
+    let last: TreeEntry = alloc::tree_map::Entry { key: key(3, 30, tail), value: payload(300, tail) };
+    let rows: [TreeEntry; 3] = [first, collision, last]; let input: Source<TreeEntry> = source<TreeEntry>(rows, 3);
+    let empty: Source<TreeEntry> = source<TreeEntry>(rows, 0); let sink: alloc::tree_map::TreeMap<Item, Payload> = alloc::tree_map::new<Item, Payload>();
+    let drained: core::iter::Transfer = core::result::unwrap(transfer<Source<TreeEntry>, alloc::tree_map::TreeMap<Item, Payload>, TreeEntry, alloc::tree_map::SinkError>(empty.borrow(), sink.borrow(), 18446744073709551615));
+    assert(drained.accepted == 0 && drained.exhausted && empty.calls == 1 && sink.is_empty() && sink.capacity() == 0);
+    core::result::unwrap(sink.try_reserve(2));
+    assert(core::option::is_none(core::result::unwrap(sink.try_insert(key(2, 10, old), payload(100, old_value)))));
+    let rejected: core::iter::TransferError<TreeEntry, alloc::tree_map::SinkError> = core::result::unwrap_err(transfer<Source<TreeEntry>, alloc::tree_map::TreeMap<Item, Payload>, TreeEntry, alloc::tree_map::SinkError>(input.borrow(), sink.borrow(), 18446744073709551615));
+    assert(rejected.accepted == 1 && tree_duplicate(rejected.error) && input.position == 2 && input.calls == 2 && sink.len() == 2 && sink.capacity() == 2);
+    check_key(rejected.rejected.key, 2, 21, duplicate); check(rejected.rejected.value, 201, duplicate_value);
+    let retained: TreeEntry = core::option::unwrap(sink.get_entry(collision.key)); check_key(retained.key, 2, 10, old); check(retained.value, 100, old_value);
+    let accepted: TreeEntry = core::option::unwrap(sink.get_entry(first.key)); check_key(accepted.key, 1, 20, prefix); check(accepted.value, 200, prefix);
+    let removed: TreeEntry = core::option::unwrap(sink.remove(collision.key)); check_key(removed.key, 2, 10, old); check(removed.value, 100, old_value);
+    assert(core::option::is_none(sink.try_accept(rejected.rejected))); sink.remove(first.key);
+    let exact: core::iter::Transfer = core::result::unwrap(transfer<Source<TreeEntry>, alloc::tree_map::TreeMap<Item, Payload>, TreeEntry, alloc::tree_map::SinkError>(input.borrow(), sink.borrow(), 1));
+    assert(exact.accepted == 1 && !exact.exhausted && input.position == 3 && input.calls == 3 && sink.len() == 2 && sink.capacity() == 2);
+    let end: core::iter::Transfer = core::result::unwrap(transfer<Source<TreeEntry>, alloc::tree_map::TreeMap<Item, Payload>, TreeEntry, alloc::tree_map::SinkError>(input.borrow(), sink.borrow(), 18446744073709551615));
+    assert(end.accepted == 0 && end.exhausted && input.calls == 4);
+    let low: TreeEntry = core::option::unwrap(sink.pop_first()); let high: TreeEntry = core::option::unwrap(sink.pop_last());
+    check_key(low.key, 2, 21, duplicate); check(low.value, 201, duplicate_value); check_key(high.key, 3, 30, tail); check(high.value, 300, tail); assert(sink.is_empty()); sink.destroy();
+}
+
+fn hash_set_case(old: alloc::string::String, prefix: alloc::string::String, duplicate: alloc::string::String, tail: alloc::string::String) {
+    let rows: [Item; 3] = [key(1, 20, prefix), key(2, 21, duplicate), key(3, 30, tail)]; let input: Source<Item> = source<Item>(rows, 3);
+    let empty: Source<Item> = source<Item>(rows, 0); let sink: alloc::hash_set::HashSet<Item> = alloc::hash_set::new<Item>();
+    let drained: core::iter::Transfer = core::result::unwrap(transfer<Source<Item>, alloc::hash_set::HashSet<Item>, Item, alloc::hash_map::SinkError>(empty.borrow(), sink.borrow(), 18446744073709551615));
+    assert(drained.accepted == 0 && drained.exhausted && empty.calls == 1 && sink.is_empty() && sink.capacity() == 0);
+    core::result::unwrap(sink.try_reserve(2));
+    let reserved: i32 = sink.capacity(); assert(reserved >= 2); assert(core::option::is_none(core::result::unwrap(sink.try_insert(key(2, 10, old)))));
+    let rejected: core::iter::TransferError<Item, alloc::hash_map::SinkError> = core::result::unwrap_err(transfer<Source<Item>, alloc::hash_set::HashSet<Item>, Item, alloc::hash_map::SinkError>(input.borrow(), sink.borrow(), 18446744073709551615));
+    assert(rejected.accepted == 1 && hash_duplicate(rejected.error) && input.position == 2 && input.calls == 2 && sink.len() == 2 && sink.capacity() == reserved);
+    check_key(rejected.rejected, 2, 21, duplicate); check_key(core::option::unwrap(sink.get(rows[1])), 2, 10, old); check_key(core::option::unwrap(sink.get(rows[0])), 1, 20, prefix);
+    check_key(core::option::unwrap(sink.remove(rows[1])), 2, 10, old);
+    // Caller releases the checked prefix and clears tombstones before retry.
+    sink.clear(); assert(sink.is_empty() && sink.capacity() == reserved);
+    assert(core::option::is_none(sink.try_accept(rejected.rejected)));
+    let exact: core::iter::Transfer = core::result::unwrap(transfer<Source<Item>, alloc::hash_set::HashSet<Item>, Item, alloc::hash_map::SinkError>(input.borrow(), sink.borrow(), 1));
+    assert(exact.accepted == 1 && !exact.exhausted && input.position == 3 && input.calls == 3 && sink.len() == 2 && sink.capacity() == reserved);
+    let end: core::iter::Transfer = core::result::unwrap(transfer<Source<Item>, alloc::hash_set::HashSet<Item>, Item, alloc::hash_map::SinkError>(input.borrow(), sink.borrow(), 18446744073709551615));
+    assert(end.accepted == 0 && end.exhausted && input.calls == 4); check_key(core::option::unwrap(sink.get(rows[1])), 2, 21, duplicate); check_key(core::option::unwrap(sink.get(rows[2])), 3, 30, tail); sink.destroy();
+}
+
+fn tree_set_case(old: alloc::string::String, prefix: alloc::string::String, duplicate: alloc::string::String, tail: alloc::string::String) {
+    let rows: [Item; 3] = [key(1, 20, prefix), key(2, 21, duplicate), key(3, 30, tail)]; let input: Source<Item> = source<Item>(rows, 3);
+    let empty: Source<Item> = source<Item>(rows, 0); let sink: alloc::tree_set::TreeSet<Item> = alloc::tree_set::new<Item>();
+    let drained: core::iter::Transfer = core::result::unwrap(transfer<Source<Item>, alloc::tree_set::TreeSet<Item>, Item, alloc::tree_map::SinkError>(empty.borrow(), sink.borrow(), 18446744073709551615));
+    assert(drained.accepted == 0 && drained.exhausted && empty.calls == 1 && sink.is_empty() && sink.capacity() == 0);
+    core::result::unwrap(sink.try_reserve(2)); assert(core::option::is_none(core::result::unwrap(sink.try_insert(key(2, 10, old)))));
+    let rejected: core::iter::TransferError<Item, alloc::tree_map::SinkError> = core::result::unwrap_err(transfer<Source<Item>, alloc::tree_set::TreeSet<Item>, Item, alloc::tree_map::SinkError>(input.borrow(), sink.borrow(), 18446744073709551615));
+    assert(rejected.accepted == 1 && tree_duplicate(rejected.error) && input.position == 2 && input.calls == 2 && sink.len() == 2 && sink.capacity() == 2);
+    check_key(rejected.rejected, 2, 21, duplicate); check_key(core::option::unwrap(sink.get(rows[1])), 2, 10, old); check_key(core::option::unwrap(sink.get(rows[0])), 1, 20, prefix);
+    check_key(core::option::unwrap(sink.remove(rows[1])), 2, 10, old); assert(core::option::is_none(sink.try_accept(rejected.rejected))); sink.remove(rows[0]);
+    let exact: core::iter::Transfer = core::result::unwrap(transfer<Source<Item>, alloc::tree_set::TreeSet<Item>, Item, alloc::tree_map::SinkError>(input.borrow(), sink.borrow(), 1));
+    assert(exact.accepted == 1 && !exact.exhausted && input.position == 3 && input.calls == 3 && sink.len() == 2 && sink.capacity() == 2);
+    let end: core::iter::Transfer = core::result::unwrap(transfer<Source<Item>, alloc::tree_set::TreeSet<Item>, Item, alloc::tree_map::SinkError>(input.borrow(), sink.borrow(), 18446744073709551615));
+    assert(end.accepted == 0 && end.exhausted && input.calls == 4);
+    check_key(core::option::unwrap(sink.pop_first()), 2, 21, duplicate); check_key(core::option::unwrap(sink.pop_last()), 3, 30, tail); assert(sink.is_empty()); sink.destroy();
+}
+
+fn heaps(prefix: alloc::string::String, duplicate: alloc::string::String, tail: alloc::string::String) {
+    let rows: [Item; 3] = [key(3, 30, tail), key(1, 20, prefix), key(2, 21, duplicate)];
+    let input: Source<Item> = source<Item>(rows, 3); let empty: Source<Item> = source<Item>(rows, 0);
+    let low: alloc::binary_heap::BinaryHeap<Item> = alloc::binary_heap::new<Item>(alloc::binary_heap::Order::Min);
+    let drained: core::iter::Transfer = core::result::unwrap(transfer<Source<Item>, alloc::binary_heap::BinaryHeap<Item>, Item, alloc::binary_heap::Error>(empty.borrow(), low.borrow(), 18446744073709551615));
+    assert(drained.accepted == 0 && drained.exhausted && empty.calls == 1 && low.is_empty() && low.capacity() == 0);
+    core::result::unwrap(low.try_reserve(3));
+    let exact: core::iter::Transfer = core::result::unwrap(transfer<Source<Item>, alloc::binary_heap::BinaryHeap<Item>, Item, alloc::binary_heap::Error>(input.borrow(), low.borrow(), 3));
+    assert(exact.accepted == 3 && !exact.exhausted && input.position == 3 && input.calls == 3 && low.len() == 3 && low.capacity() == 3);
+    let end: core::iter::Transfer = core::result::unwrap(transfer<Source<Item>, alloc::binary_heap::BinaryHeap<Item>, Item, alloc::binary_heap::Error>(input.borrow(), low.borrow(), 18446744073709551615));
+    assert(end.accepted == 0 && end.exhausted && input.calls == 4); assert(match (low.order()) { alloc::binary_heap::Order::Min -> true, _ -> false });
+    check_key(core::option::unwrap(low.peek()), 1, 20, prefix);
+    check_key(core::option::unwrap(low.pop()), 1, 20, prefix); check_key(core::option::unwrap(low.pop()), 2, 21, duplicate); check_key(core::option::unwrap(low.pop()), 3, 30, tail); assert(core::option::is_none(low.pop()));
+    // Move the empty reserved backing vector into a Max heap, retaining exactly
+    // one active storage owner and making the second heap order allocation free.
+    let high: alloc::binary_heap::BinaryHeap<Item> = alloc::binary_heap::from_vec<Item>(low.take_vec(), alloc::binary_heap::Order::Max);
+    assert(low.is_empty() && low.capacity() == 0 && high.capacity() == 3); low.destroy();
+    let again: Source<Item> = source<Item>(rows, 3);
+    let all: core::iter::Transfer = core::result::unwrap(transfer<Source<Item>, alloc::binary_heap::BinaryHeap<Item>, Item, alloc::binary_heap::Error>(again.borrow(), high.borrow(), 18446744073709551615));
+    assert(all.accepted == 3 && all.exhausted && again.calls == 4 && high.len() == 3 && high.capacity() == 3); assert(match (high.order()) { alloc::binary_heap::Order::Max -> true, _ -> false });
+    check_key(core::option::unwrap(high.peek()), 3, 30, tail);
+    check_key(core::option::unwrap(high.pop()), 3, 30, tail); check_key(core::option::unwrap(high.pop()), 2, 21, duplicate); check_key(core::option::unwrap(high.pop()), 1, 20, prefix); assert(high.is_empty()); high.destroy();
+}
+fn owned(byte: u8) -> alloc::string::String { let bytes: [u8; 1] = [byte]; return core::result::unwrap(alloc::string::from_utf8(bytes, 1)); }
+fn main() -> i32 {
+    let old: alloc::string::String = owned(65); let prefix: alloc::string::String = owned(66); let duplicate: alloc::string::String = owned(67); let tail: alloc::string::String = owned(68);
+    let old_value: alloc::string::String = owned(69); let duplicate_value: alloc::string::String = owned(70);
+    assert(old.bytes.storage != duplicate.bytes.storage && old_value.bytes.storage != duplicate_value.bytes.storage);
+    hash_map_case(old, prefix, duplicate, tail, old_value, duplicate_value);
+    tree_map_case(old, prefix, duplicate, tail, old_value, duplicate_value);
+    hash_set_case(old, prefix, duplicate, tail); tree_set_case(old, prefix, duplicate, tail); heaps(prefix, duplicate, tail);
+    assert(core::option::unwrap(old.byte_at(0)) == 65 && core::option::unwrap(duplicate.byte_at(0)) == 67 && core::option::unwrap(old_value.byte_at(0)) == 69 && core::option::unwrap(duplicate_value.byte_at(0)) == 70);
+    old.destroy(); prefix.destroy(); duplicate.destroy(); tail.destroy(); old_value.destroy(); duplicate_value.destroy(); return 0;
+}

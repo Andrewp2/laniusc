@@ -60,6 +60,10 @@ combines text splitting, filtering, Result items and checked reduction.
 [Fallible collection](docs/stdlib-iterator-transfer.md) transfers items into
 vectors and deques with explicit progress and rejected-item recovery. The
 [word sorter](docs/stdlib-sort-words.md) collects borrowed text before sorting.
+[Map, set and heap sinks](docs/stdlib-iterator-collection-sinks.md) preserve
+rejected items and stored representatives. The
+[identifier index](docs/stdlib-index-words.md) rejects duplicates and prints
+ordered identifiers with their original positions.
 
 Optional modules use the [`extended` source root](extended/README.md).
 [`ext::csv`](docs/extended-csv.md) and [`ext::json`](docs/extended-json.md)

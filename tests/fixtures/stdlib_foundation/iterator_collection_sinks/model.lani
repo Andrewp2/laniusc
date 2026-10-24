@@ -1,0 +1,292 @@
+// Six u64 words: kind, source length, key pattern, old-key mask, quota, recovery.
+// Kinds: hash/tree map, hash/tree set, min/max heap. Recovery keeps a rejected
+// item in caller storage, or saves the old equal representative and retries it.
+module app::main;
+import alloc::binary_heap;
+import alloc::hash_map;
+import alloc::hash_set;
+import alloc::tree_map;
+import alloc::tree_set;
+import core::cmp;
+import core::hash;
+import core::io;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+import std::stream;
+
+struct Key<T> { group: i32, stamp: T }
+pub impl<T> core::cmp::Eq<Key<T>> for Key<T> {
+    pub fn eq(a: Key<T>, b: Key<T>) -> bool { return a.group == b.group; }
+    pub fn ne(a: Key<T>, b: Key<T>) -> bool { return a.group != b.group; }
+}
+pub impl<T> core::hash::Hash<Key<T>> for Key<T> { pub fn hash(value: Key<T>) -> u32 { return 7; } }
+pub impl<T> core::cmp::Ord<Key<T>> for Key<T> {
+    pub fn lt(a: Key<T>, b: Key<T>) -> bool { return a.group < b.group; }
+    pub fn le(a: Key<T>, b: Key<T>) -> bool { return a.group <= b.group; }
+    pub fn gt(a: Key<T>, b: Key<T>) -> bool { return a.group > b.group; }
+    pub fn ge(a: Key<T>, b: Key<T>) -> bool { return a.group >= b.group; }
+}
+struct Stamp { id: u64, parts: [u64; 2], flag: core::option::Option<bool> }
+struct Value { words: [u64; 2], flag: core::option::Option<bool> }
+type K = Key<Stamp>;
+type HEntry = alloc::hash_map::Entry<K, Value>;
+type TEntry = alloc::tree_map::Entry<K, Value>;
+fn flag(id: i32) -> core::option::Option<bool> {
+    if (id % 3 == 0) { return core::option::None(); }
+    return core::option::Some(id % 2 == 0);
+}
+fn key(group: i32, id: i32) -> K {
+    return Key { group: group, stamp: Stamp { id: id as u64,
+        parts: [18446744073709551615 - (id as u64), (id as u64) * 17 + 3], flag: flag(id) } };
+}
+fn value(id: i32) -> Value {
+    return Value { words: [18446744073709551615 - (id as u64), 4294967296 + (id as u64)], flag: flag(id) };
+}
+fn hentry(group: i32, id: i32) -> HEntry { return alloc::hash_map::Entry { key: key(group, id), value: value(id) }; }
+fn tentry(group: i32, id: i32) -> TEntry { return alloc::tree_map::Entry { key: key(group, id), value: value(id) }; }
+fn group_at(pattern: i32, index: i32) -> i32 {
+    if (pattern == 0) { return index; }
+    if (pattern == 1) { return index % 3; }
+    let order: [i32; 6] = [2, 0, 2, 1, 0, 3]; return order[index];
+}
+struct Output { bytes: [u8], used: i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) {
+        let stdout: std::stream::Descriptor = std::stream::stdout();
+        assert(core::result::is_ok(core::io::write_all(stdout.borrow(), self.bytes, 0, self.used))); self.used = 0;
+    }
+    fn word(&self, value: u64) {
+        if (self.used == 1024) { self.flush(); }
+        let index: i32 = 0;
+        while (index < 8) { self.bytes[self.used + index] = ((value >> (index * 8)) & 255) as u8; index += 1; }
+        self.used += 8;
+    }
+    fn flag(&self, value: core::option::Option<bool>) {
+        if (core::option::is_none(value)) { self.word(0); }
+        else { if (core::option::unwrap(value)) { self.word(2); } else { self.word(1); } }
+    }
+    fn key(&self, item: K) {
+        self.word(item.group as u64); self.word(item.stamp.id);
+        self.word(item.stamp.parts[0]); self.word(item.stamp.parts[1]); self.flag(item.stamp.flag);
+    }
+    fn value(&self, item: Value) { self.word(item.words[0]); self.word(item.words[1]); self.flag(item.flag); }
+}
+struct Source<T> { items: [T], length: i32, position: i32, calls: i32 }
+impl<T> Source<T> { fn borrow(&self) -> &Source<T> { return self; } }
+pub impl<T> core::iter::Iterator<T> for Source<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        self.calls += 1;
+        if (self.position == self.length) { return core::option::None(); }
+        let item: T = self.items[self.position]; self.position += 1; return core::option::Some(item);
+    }
+}
+struct Saved<T> { items: [T], length: i32 }
+impl<T> Saved<T> {
+    fn borrow(&self) -> &Saved<T> { return self; }
+    fn push(&self, item: T) { assert(self.length < 8); self.items[self.length] = item; self.length += 1; }
+}
+// Test-only observation/recovery. Actual acceptance always invokes the real
+// collection's core::iter::TrySink implementation directly.
+trait Collection<T, E> {
+    pub fn snapshot(&self, output: &Output);
+    pub fn emit_item(&self, item: T, output: &Output);
+    pub fn duplicate(&self, error: E) -> bool;
+    pub fn displace(&self, rejected: T) -> T;
+    pub fn bound(&self) -> i32;
+    pub fn finish(&self, output: &Output);
+}
+impl Collection<HEntry, alloc::hash_map::SinkError> for alloc::hash_map::HashMap<K, Value> {
+    pub fn emit_item(&self, item: HEntry, output: &Output) { output.key(item.key); output.value(item.value); }
+    pub fn snapshot(&self, output: &Output) {
+        output.word(self.len() as u64); let group: i32 = 0; let observed: i32 = 0;
+        while (group < 6) {
+            let found: core::option::Option<HEntry> = self.get_entry(key(group, 999));
+            if (core::option::is_some(found)) { self.emit_item(core::option::unwrap(found), output); observed += 1; }
+            group += 1;
+        }
+        assert(observed == self.len());
+    }
+    pub fn duplicate(&self, error: alloc::hash_map::SinkError) -> bool { return match(error) { alloc::hash_map::SinkError::Duplicate -> true, _ -> false }; }
+    pub fn displace(&self, rejected: HEntry) -> HEntry { return core::option::unwrap(self.remove(rejected.key)); }
+    pub fn bound(&self) -> i32 { return self.capacity(); }
+    pub fn finish(&self, output: &Output) { self.destroy(); output.word(self.len() as u64); }
+}
+impl Collection<TEntry, alloc::tree_map::SinkError> for alloc::tree_map::TreeMap<K, Value> {
+    pub fn emit_item(&self, item: TEntry, output: &Output) { output.key(item.key); output.value(item.value); }
+    pub fn snapshot(&self, output: &Output) {
+        output.word(self.len() as u64); let group: i32 = 0; let observed: i32 = 0;
+        while (group < 6) {
+            let found: core::option::Option<TEntry> = self.get_entry(key(group, 999));
+            if (core::option::is_some(found)) { self.emit_item(core::option::unwrap(found), output); observed += 1; }
+            group += 1;
+        }
+        assert(observed == self.len());
+    }
+    pub fn duplicate(&self, error: alloc::tree_map::SinkError) -> bool { return match(error) { alloc::tree_map::SinkError::Duplicate -> true, _ -> false }; }
+    pub fn displace(&self, rejected: TEntry) -> TEntry { return core::option::unwrap(self.remove(rejected.key)); }
+    pub fn bound(&self) -> i32 { return self.capacity(); }
+    pub fn finish(&self, output: &Output) { self.destroy(); output.word(self.len() as u64); }
+}
+impl Collection<K, alloc::hash_map::SinkError> for alloc::hash_set::HashSet<K> {
+    pub fn emit_item(&self, item: K, output: &Output) { output.key(item); }
+    pub fn snapshot(&self, output: &Output) {
+        output.word(self.len() as u64); let group: i32 = 0; let observed: i32 = 0;
+        while (group < 6) {
+            let found: core::option::Option<K> = self.get(key(group, 999));
+            if (core::option::is_some(found)) { self.emit_item(core::option::unwrap(found), output); observed += 1; }
+            group += 1;
+        }
+        assert(observed == self.len());
+    }
+    pub fn duplicate(&self, error: alloc::hash_map::SinkError) -> bool { return match(error) { alloc::hash_map::SinkError::Duplicate -> true, _ -> false }; }
+    pub fn displace(&self, rejected: K) -> K { return core::option::unwrap(self.remove(rejected)); }
+    pub fn bound(&self) -> i32 { return self.capacity(); }
+    pub fn finish(&self, output: &Output) { self.destroy(); output.word(self.len() as u64); }
+}
+impl Collection<K, alloc::tree_map::SinkError> for alloc::tree_set::TreeSet<K> {
+    pub fn emit_item(&self, item: K, output: &Output) { output.key(item); }
+    pub fn snapshot(&self, output: &Output) {
+        output.word(self.len() as u64); let group: i32 = 0; let observed: i32 = 0;
+        while (group < 6) {
+            let found: core::option::Option<K> = self.get(key(group, 999));
+            if (core::option::is_some(found)) { self.emit_item(core::option::unwrap(found), output); observed += 1; }
+            group += 1;
+        }
+        assert(observed == self.len());
+    }
+    pub fn duplicate(&self, error: alloc::tree_map::SinkError) -> bool { return match(error) { alloc::tree_map::SinkError::Duplicate -> true, _ -> false }; }
+    pub fn displace(&self, rejected: K) -> K { return core::option::unwrap(self.remove(rejected)); }
+    pub fn bound(&self) -> i32 { return self.capacity(); }
+    pub fn finish(&self, output: &Output) { self.destroy(); output.word(self.len() as u64); }
+}
+fn sort_by_id(values: [K], length: i32) {
+    let index: i32 = 1;
+    while (index < length) {
+        let held: K = values[index]; let at: i32 = index;
+        while (at > 0 && held.stamp.id < values[at - 1].stamp.id) { values[at] = values[at - 1]; at -= 1; }
+        values[at] = held; index += 1;
+    }
+}
+impl Collection<K, alloc::binary_heap::Error> for alloc::binary_heap::BinaryHeap<K> {
+    pub fn emit_item(&self, item: K, output: &Output) { output.key(item); }
+    pub fn snapshot(&self, output: &Output) {
+        let items: [K; 8] = [key(0, 999); 8]; let count: i32 = 0;
+        let cursor: core::slice::Iter<K> = self.iter();
+        while (true) {
+            let found: core::option::Option<K> = cursor.next();
+            if (core::option::is_none(found)) { break; }
+            assert(count < 8); items[count] = core::option::unwrap(found); count += 1;
+        }
+        assert(count == self.len()); sort_by_id(items, count); output.word(count as u64);
+        let index: i32 = 0; while (index < count) { output.key(items[index]); index += 1; }
+    }
+    pub fn duplicate(&self, error: alloc::binary_heap::Error) -> bool { return false; }
+    pub fn displace(&self, rejected: K) -> K { assert(false); return rejected; }
+    pub fn bound(&self) -> i32 { return self.capacity(); }
+    pub fn finish(&self, output: &Output) {
+        let count: i32 = self.len(); output.word(count as u64);
+        let items: [K; 8] = [key(0, 999); 8]; let index: i32 = 0;
+        while (index < count) {
+            let item: K = core::option::unwrap(self.pop()); items[index] = item;
+            output.word(item.group as u64); index += 1;
+        }
+        assert(core::option::is_none(self.pop()) && core::option::is_none(self.pop()));
+        sort_by_id(items, count); index = 0;
+        while (index < count) { output.key(items[index]); index += 1; }
+        self.destroy(); output.word(self.len() as u64);
+    }
+}
+fn state<S, T, E>(source: &Source<T>, sink: &S, saved: &Saved<T>, output: &Output) where S: Collection<T, E> {
+    output.word(source.position as u64); output.word(source.calls as u64); sink.snapshot(output);
+    output.word(saved.length as u64); let index: i32 = 0;
+    while (index < saved.length) { sink.emit_item(saved.items[index], output); index += 1; }
+}
+fn step<S, T, E>(source: &Source<T>, sink: &S, saved: &Saved<T>, quota: u64, recover: bool, output: &Output)
+    where S: core::iter::TrySink<T, E>, S: Collection<T, E> {
+    let capacity: i32 = sink.bound();
+    let result: core::result::Result<core::iter::Transfer, core::iter::TransferError<T, E>> =
+        core::iter::try_transfer_up_to<Source<T>, S, T, E>(source, sink, quota);
+    if (core::result::is_ok(result)) {
+        let progress: core::iter::Transfer = core::result::unwrap(result);
+        output.word(0); output.word(progress.accepted); if (progress.exhausted) { output.word(1); } else { output.word(0); }
+    } else {
+        let failed: core::iter::TransferError<T, E> = core::result::unwrap_err(result);
+        assert(sink.duplicate(failed.error));
+        if (failed.accepted == 0) { assert(sink.bound() == capacity); }
+        output.word(1); output.word(failed.accepted); sink.emit_item(failed.rejected, output);
+        sink.snapshot(output);
+        if (recover) {
+            let previous: T = sink.displace(failed.rejected); output.word(1); sink.emit_item(previous, output); saved.push(previous);
+            let retried: core::option::Option<E> = sink.try_accept(failed.rejected); assert(core::option::is_none(retried));
+        } else { output.word(0); saved.push(failed.rejected); }
+    }
+    state<S, T, E>(source, sink, saved, output);
+}
+fn exercise<S, T, E>(items: [T], length: i32, sink: &S, saved_items: [T], quota: u64, recover: bool, output: &Output)
+    where S: core::iter::TrySink<T, E>, S: Collection<T, E> {
+    let source: Source<T> = Source { items: items, length: length, position: 0, calls: 0 };
+    let saved: Saved<T> = Saved { items: saved_items, length: 0 };
+    step<S, T, E>(source.borrow(), sink, saved.borrow(), quota, recover, output);
+    let round: i32 = 0;
+    while (round < 6) { step<S, T, E>(source.borrow(), sink, saved.borrow(), 1, recover, output); round += 1; }
+    step<S, T, E>(source.borrow(), sink, saved.borrow(), 18446744073709551615, recover, output);
+    step<S, T, E>(source.borrow(), sink, saved.borrow(), 0, recover, output);
+    assert(source.position == length); sink.finish(output);
+}
+fn run(kind: i32, length: i32, pattern: i32, mask: i32, quota: u64, recover: bool, output: &Output) {
+    if (kind == 0) {
+        let sink: alloc::hash_map::HashMap<K, Value> = alloc::hash_map::new();
+        let items: [HEntry; 6] = [hentry(0, 999); 6]; let saved: [HEntry; 8] = [hentry(0, 999); 8];
+        let index: i32 = 0; while (index < length) { items[index] = hentry(group_at(pattern, index), index + 1); index += 1; }
+        index = 0; while (index < 6) { if ((mask & (1 << index)) != 0) { assert(core::option::is_none(sink.try_accept(hentry(index, 100 + index)))); } index += 1; }
+        exercise<alloc::hash_map::HashMap<K, Value>, HEntry, alloc::hash_map::SinkError>(items, length, sink.borrow(), saved, quota, recover, output);
+    } else { if (kind == 1) {
+        let sink: alloc::tree_map::TreeMap<K, Value> = alloc::tree_map::new();
+        let items: [TEntry; 6] = [tentry(0, 999); 6]; let saved: [TEntry; 8] = [tentry(0, 999); 8];
+        let index: i32 = 0; while (index < length) { items[index] = tentry(group_at(pattern, index), index + 1); index += 1; }
+        index = 0; while (index < 6) { if ((mask & (1 << index)) != 0) { assert(core::option::is_none(sink.try_accept(tentry(index, 100 + index)))); } index += 1; }
+        exercise<alloc::tree_map::TreeMap<K, Value>, TEntry, alloc::tree_map::SinkError>(items, length, sink.borrow(), saved, quota, recover, output);
+    } else { if (kind == 2) {
+        let sink: alloc::hash_set::HashSet<K> = alloc::hash_set::new();
+        let items: [K; 6] = [key(0, 999); 6]; let saved: [K; 8] = [key(0, 999); 8];
+        let index: i32 = 0; while (index < length) { items[index] = key(group_at(pattern, index), index + 1); index += 1; }
+        index = 0; while (index < 6) { if ((mask & (1 << index)) != 0) { assert(core::option::is_none(sink.try_accept(key(index, 100 + index)))); } index += 1; }
+        exercise<alloc::hash_set::HashSet<K>, K, alloc::hash_map::SinkError>(items, length, sink.borrow(), saved, quota, recover, output);
+    } else { if (kind == 3) {
+        let sink: alloc::tree_set::TreeSet<K> = alloc::tree_set::new();
+        let items: [K; 6] = [key(0, 999); 6]; let saved: [K; 8] = [key(0, 999); 8];
+        let index: i32 = 0; while (index < length) { items[index] = key(group_at(pattern, index), index + 1); index += 1; }
+        index = 0; while (index < 6) { if ((mask & (1 << index)) != 0) { assert(core::option::is_none(sink.try_accept(key(index, 100 + index)))); } index += 1; }
+        exercise<alloc::tree_set::TreeSet<K>, K, alloc::tree_map::SinkError>(items, length, sink.borrow(), saved, quota, recover, output);
+    } else {
+        let order: alloc::binary_heap::Order = alloc::binary_heap::Order::Min;
+        if (kind == 5) { order = alloc::binary_heap::Order::Max; }
+        let sink: alloc::binary_heap::BinaryHeap<K> = alloc::binary_heap::new(order);
+        let items: [K; 6] = [key(0, 999); 6]; let saved: [K; 8] = [key(0, 999); 8];
+        let index: i32 = 0; while (index < length) { items[index] = key(group_at(pattern, index), index + 1); index += 1; }
+        index = 0; while (index < 6) { if ((mask & (1 << index)) != 0) { assert(core::option::is_none(sink.try_accept(key(index, 100 + index)))); } index += 1; }
+        exercise<alloc::binary_heap::BinaryHeap<K>, K, alloc::binary_heap::Error>(items, length, sink.borrow(), saved, quota, recover, output);
+    } } } }
+}
+fn decode(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0; let index: i32 = 0;
+    while (index < 8) { value |= (bytes[offset + index] as u64) << (index * 8); index += 1; } return value;
+}
+fn main() -> i32 {
+    let bytes: [u8; 1024] = [0; 1024]; let output: Output = Output { bytes: bytes, used: 0 };
+    let stdin: std::stream::Descriptor = std::stream::stdin(); let record: [u8; 48] = [0; 48];
+    while (true) {
+        let first: core::result::Result<i32, core::io::Error> = stdin.read(record, 0, 48);
+        assert(core::result::is_ok(first)); let received: i32 = core::result::unwrap(first);
+        if (received == 0) { output.flush(); return 0; }
+        if (received < 48) { assert(core::result::is_ok(core::io::read_exact(stdin.borrow(), record, received, 48 - received))); }
+        let kind: u64 = decode(record, 0); let length: u64 = decode(record, 8); let pattern: u64 = decode(record, 16);
+        let mask: u64 = decode(record, 24); let recovery: u64 = decode(record, 40);
+        assert(kind <= 5 && length <= 6 && pattern <= 2 && (mask == 0 || mask == 5) && recovery <= 1);
+        run(kind as i32, length as i32, pattern as i32, mask as i32, decode(record, 32), recovery == 1, output.borrow());
+    }
+    return 0;
+}

@@ -23,6 +23,13 @@ randomized or collision-resistant hashing for adversarial keys.
 
 ## API and ownership
 
+The map's [iterator sink](stdlib-iterator-collection-sinks.md) accepts
+`Entry<K,V>` and rejects existing keys with `SinkError::Duplicate`, preserving
+both the stored key and value. Storage failures are `SinkError::Storage(Error)`.
+The ordinary `try_insert` operation below still returns a displaced entry on
+replacement. Bounded transfer retains the accepted prefix and returns any
+rejected incoming entry for explicit recovery.
+
 ```lanius
 let counts: alloc::hash_map::HashMap<i32, i32> = alloc::hash_map::new();
 let added: core::result::Result<

@@ -13,8 +13,9 @@ Layer: `alloc`. Role: module. Profile: **Source inventory**.
 - [stdlib-binary-heap](../../stdlib-binary-heap.md)
 - [stdlib-cursor-integration](../../stdlib-cursor-integration.md)
 - [stdlib-heap-iterators](../../stdlib-heap-iterators.md)
+- [stdlib-iterator-collection-sinks](../../stdlib-iterator-collection-sinks.md)
 
-Declaration counts: enum: 2; field: 2; function: 4; impl: 1; method: 20; struct: 1; variant: 5.
+Declaration counts: enum: 2; field: 2; function: 4; impl: 2; method: 21; struct: 1; variant: 5.
 
 ## Declared imports
 
@@ -314,4 +315,20 @@ pub fn clear(&self)
 
 ```lanius
 pub fn destroy(&self)
+```
+
+### impl at line 239
+
+[Source line 239](../../../stdlib/alloc/binary_heap.lani#L239)
+
+```lanius
+pub impl<T> core::iter::TrySink<T, Error> for BinaryHeap<T> where T: core::cmp::Ord<T>
+```
+
+#### method: try_accept
+
+[Source line 240](../../../stdlib/alloc/binary_heap.lani#L240)
+
+```lanius
+pub fn try_accept(&self, item: T) -> core::option::Option<Error>
 ```
