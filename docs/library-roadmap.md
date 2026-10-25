@@ -1,7 +1,8 @@
 # Standard and extended libraries
 
 The goal is a complete, usable standard library and a broad extended library,
-implemented in Lanius. This document tracks the whole scope. Completing the first
+with Lanius interfaces and explicit native bindings for host and third-party
+services. This document tracks the whole scope. Completing the first
 milestone does not complete the goal.
 
 ## Dependency layers
@@ -27,8 +28,6 @@ package distribution is a separate deliverable.
 | Family | Required contents | Executable state and remaining work |
 | --- | --- | --- |
 | Fundamental values | Option, Result, ordering, comparison, hashing, cloning, explicit errors | Generic Option/Result execute; partial equality/order are distinct from total equality/order, with explicit total float keys. Explicit TryClone/Destroy protocols and String implementations execute with typed errors and manual memory-owner release. Some generic forwarding and record extraction compositions remain compiler dependencies; automatic ownership and implicit derive/move/drop remain |
-| Byte digests | Incremental SHA-2, checked message lengths, copied results and reset | SHA-224/256 and SHA-384/512/512-224/512-256 execute without allocation, including variant-specific initial values, padding and full length encoding. Independent models cover streaming layouts, state/digest copies, finalization and rejection atomicity. The stdin hash program exercises all six algorithms, EOF, byte/call limits and I/O failures on native Linux |
-| Cryptographic byte primitives | Stream cipher, block cipher, one-time authentication, authenticated encryption, key exchange and record protection | [ChaCha20](stdlib-chacha20.md), [Poly1305](stdlib-poly1305.md), [AES-128/192/256](core-aes.md), optional [ChaCha20-Poly1305](extended-chacha20-poly1305.md), [AES-GCM](extended-aes-gcm.md), [X25519](extended-x25519.md) and [TLS record protection](extended-tls-record.md) pass focused native Linux gates. Records support explicit AES-128-GCM/SHA-256 and ChaCha20-Poly1305/SHA-256 suites with directional key-use limits. [Performance evidence](library-foundation-performance.md#explicit-record-suites-and-aes-gcm-integration) includes the changed import closure and output size. [Ed25519](extended-ed25519.md), [P-256](extended-p256.md) and [HMAC/HKDF-SHA-384](extended-hmac-hkdf-sha384.md) also execute. The [portable connection](extended-tls-connection.md) and [TCP adapter](extended-tls-tcp.md) execute X25519 or P-256 with an explicit Ed25519/SHA-256 profile; remaining mandatory TLS algorithms and their integration remain |
 | Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Canonical primitive-width arithmetic, bits and conversion policies execute; seven obsolete number/byte helper modules are removed and their ordinary consumers migrated. Pointer widths explicitly describe x86_64. Binary32/binary64 bit, rounding, square-root, decimal and precision-formatting APIs execute, as do full-range binary64 elementary functions with documented accuracy evidence. Native floats use partial comparison with explicit total keys. Represented two-word values remain an explicit separate API |
 | Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic algorithms and counted View values execute, including subviews, checked mutations and cursors; initial physical counts still require compiler length projection |
 | Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | The shared fused Iterator<T> protocol executes for canonical slice/chunk/window cursors, full-domain i32 ranges, fixed-capacity Vec/Set, owned Vec/deque/heap/hash/tree map/set cursors, bitsets, Text bytes/scalars and text splits. Borrowed take/chain/map/zip/filter/filter_map/skip/take_while/skip_while, checked u64 enumeration, searches, boolean consumers and ordinary/fallible left folds execute with explicit effects and shallow cleanup. Bounded fallible transfer collects into fixed/owned Vec, deque, hash/tree maps and sets, and Min/Max heaps, returning rejected items and accepted-prefix progress. Map/set sinks reject duplicates while preserving stored representatives. Separate native models cover cursor state, selection/copy/callback order, short circuits, transfer recovery and source resumption; owner traces check allocation behavior. Range-dot, window-report, column-sum, word-sort and identifier-index programs exercise composition and errors. Owning Vec/deque cursors transfer cleanup authority and recover their original storage, with explicit nested cleanup and a streaming unique-word application. Further adapters/consumers, replacement sinks, other owning cursor families and language for-loop integration remain |
@@ -39,7 +38,7 @@ package distribution is a separate deliverable.
 | Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and paths, lexical operations, checked mutations, configurable/relative opens, seek/resize, metadata, sync, duplication, raw directory iteration and bounded anchored walking execute on native Linux. Bounded copying checks descriptor capabilities and inode aliases before truncation, preserves progress on error and tests actual EOF even for zero-size pseudo-files. Real copy and directory-report applications check output and cleanup. Automatic owner destruction and broader platform support remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Raw-byte snapshots, explicit argv/environment/PATH/cwd, fork/exec, redirected files, owned pipes, cached waits and child signaling execute on the documented single-threaded Linux profile. Bounded concurrent stdin/stdout/stderr capture preserves partial progress, startup certainty and child ownership across errors. Process groups and concurrent spawn policy remain |
 | Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, calendars, native clocks, deadline waits, deterministic generators, sampling/shuffle and checked OS entropy execute. Optional TZif/POSIX zones provide conversion and ambiguity candidates; four continuous and four discrete distributions have bounded generic sampling and explicit numerical domains. Additional clocks and distribution families remain |
-| Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6 and CIDR values, owned TCP/UDP, polling, deadlines, options and half-close execute via the Linux boundary. Optional DNS transport queries explicit numeric servers with correlated UDP/TCP fallback; bounded cleartext HTTP/1 client and staged server connections use explicit transport, deadlines and resource limits. Real TCP/DNS/fetch/local-service programs exercise transfers. The [TLS TCP adapter](extended-tls-tcp.md) and [exchange application](extended-tls-exchange.md) execute the documented restricted TLS 1.3 profile. Old std::net declarations remain unbound; system resolver/NSS/interface policy, broader TLS/PKIX policy, concurrent server scheduling, keepalive and broader client policies remain |
+| Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6 and CIDR values, owned TCP/UDP, polling, deadlines, options and half-close execute via the Linux boundary. Optional DNS transport queries explicit numeric servers with correlated UDP/TCP fallback; bounded cleartext HTTP/1 client and staged server connections use explicit transport, deadlines and resource limits. Real TCP/DNS/fetch/local-service programs exercise transfers. TLS has no supported implementation; future support depends on native security-library bindings. Old std::net declarations remain unbound; system resolver/NSS/interface policy, native TLS/certificate-verification bindings, concurrent server scheduling, keepalive and broader client policies remain |
 | Concurrency | Threads, joining, synchronization, atomics, channels, cancellation | Current thread module is contract-only; runtime prerequisites remain |
 | Development | Assertions, test runner, property helpers, benchmarks, diagnostics, API docs | Nontrapping checks, explicit source suites, filters, seeded properties, injected/native-clock benchmarks and a bounded native compiler/run driver execute. Selective, relocatable source bundles use the existing package resolver and verify inventory hashes. A generated declaration reference links signatures, bounds, source locations and reviewed contract guides. Automatic compiler discovery/runtime registration, binary SDK distribution and complete semantic API documentation remain |
 
@@ -53,7 +52,7 @@ tests, target support, and relevant performance evidence.
 | Data formats | JSON, CSV, TOML, binary serialization, schema/validation utilities |
 | Text and parsing | Unicode properties and normalization, regex, lexers, parser utilities, diff and patch |
 | Files and packaging | Globs, directory walking utilities, compression, archives |
-| Network protocols | URL handling, HTTP client/server, WebSockets, DNS, TLS integration |
+| Network protocols | URL handling, HTTP client/server, WebSocket request/frame processing, DNS, and future TLS through native library bindings |
 | Storage | Database interfaces, SQLite integration, key-value storage |
 | Mathematics | Big integers, decimal arithmetic, statistics, linear algebra, geometry |
 | Application utilities | CLI parsing, logging, configuration, tables, progress reporting |
@@ -128,7 +127,7 @@ precision-limited division, conversions and lawful numeric keys. A
 [CSV ledger](extended-decimal-ledger.md) calculates rounded line subtotals,
 taxes and running totals without binary floating point. Signed decimal zeros,
 NaNs/infinities, transcendental decimal functions, additional number-theory
-algorithms and cryptographic uses remain separate work.
+algorithms remain separate work.
 
 [Statistics](extended-statistics.md) provides checked streaming moments,
 covariance/correlation, simple linear fits, compensated sums, scaled norms and
@@ -262,7 +261,7 @@ scheduling, upgrades/tunnels and HTTP/2 remain work.
 
 [DNS wire processing](extended-dns.md) validates binary names, compression,
 QUERY sections, common RDATA and EDNS, with bounded complete message writing.
-[WebSocket processing](extended-websocket.md) provides RFC 6455 handshakes,
+[WebSocket processing](extended-websocket.md) provides RFC 6455 request processing,
 role masking, fragmented UTF-8, control/close state and frame generation.
 Both have real offline programs and independent interoperability/failure tests;
 host resolution, TLS and protocol transport orchestration remain separate work.
@@ -325,7 +324,8 @@ availability contracts; do not substitute success-shaped placeholders.
    arguments, configuration, logging, clocks and randomness. Acceptance
    application: a directory report with filters and structured output.
 3. **Connected programs.** Runtime bindings for sockets, processes and threads;
-   HTTP, URLs, cancellation and synchronization. Acceptance applications:
+   HTTP, URLs, cancellation and synchronization. Native C ABI/linking support
+   precedes established-library TLS and database bindings. Acceptance applications:
    a bounded concurrent downloader and a local HTTP service.
 4. **Storage and packaging.** Database integration, key-value storage,
    compression, archives, binary serialization and schemas. Acceptance
@@ -340,24 +340,11 @@ Families can proceed independently once their dependencies have working
 contracts. A compiler defect should have a minimal reproduction and an affected
 API list; unrelated library work can continue.
 
-[SHA-224/256](stdlib-sha256.md) and the [SHA-512 family](stdlib-sha512.md)
-provide the six byte-oriented SHA-2 algorithms with incremental state and
-allocation-free digest values. [HMAC-SHA-256 and HKDF-SHA-256](extended-hmac-hkdf.md)
-add keyed state and extract/expand operations, checked against RFC vectors
-and independent models. Their applications [hash stdin](stdlib-hash-bytes.md)
-and [derive keys from binary stdin](extended-derive-key.md) with explicit byte
-and I/O-call limits. [ChaCha20](stdlib-chacha20.md),
-[Poly1305](stdlib-poly1305.md), [ChaCha20-Poly1305](extended-chacha20-poly1305.md)
-and [X25519](extended-x25519.md) also pass their focused native gates.
-The [TLS record layer](extended-tls-record.md) passes its ordinary consumer
-and 308 protocol commands after a
-[host capacity repair](tls-record-lowering-dependency.md).
-The [seal-bytes application](extended-seal-bytes.md) passes 137 native cases,
-including full 1 MiB seal/open and allocation/I/O failures. The
-[pinned compiler comparison](library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
-records measured workloads and limits. The current connection, certificate and
-transport evidence is listed below. General TLS/PKIX, native foreign-library
-integration and the other remaining families still need their own evidence.
+Cryptography and TLS currently have no supported implementation. Their future
+implementation will use established native libraries. Checked C ABI calls,
+native linking and backend integration must precede those bindings; the
+[native prerequisites](library-native-integration-prerequisites.md) track this
+work. TCP/UDP, OS entropy and noncryptographic CRC/Adler/FNV remain available.
 
 ## Completion requirements
 
@@ -375,200 +362,23 @@ integration and the other remaining families still need their own evidence.
 - Measure relevant operations and representative large-library compile
   workloads with the repository's performance tools. Keep each command below
   two minutes and avoid unrelated GPU test reruns.
-- The language implementations remain Lanius. Rust/Python may drive tests;
-  they do not implement library behavior. No JSON transport or Wasm dependency
-  is introduced as a substitute for native library execution.
+- Portable algorithms and library interfaces use Lanius. Host and third-party
+  services use explicit native bindings with executable ABI/linking contracts.
+  Rust/Python may drive tests; JSON transport, subprocess serialization and Wasm
+  bridges do not establish native library integration.
 
 ## Current work
 
-- Branch: `codex/stdlib`, based on `441e66f9`.
-- Authentication foundation: all five [Ed25519](extended-ed25519.md) groups
-  pass, including pure RFC vectors, independent signing, subgroup/scalar
-  boundaries, valid identity nonces and component-byte mutations.
-  [DER](extended-der.md) passes an ordinary consumer and 1,824 model/certificate
-  commands; [handshake codecs](extended-tls-handshake.md) pass an ordinary
-  consumer and 1,396 commands. The [schedule/transcript](extended-tls-schedule.md)
-  passes 114 unique commands, 460 transcript actions and 12 RFC anchors across
-  its documented invocations; its corrected test-anchor history is retained.
-  Record keys and updates share the checked label encoder, with the unchanged
-  308-command record regression passing. The
-  [signing program](extended-sign-bytes.md) passes 128 native cases, including
-  full 1 MiB sign/verify, owner/I/O failures and call-budget limits. The
-  [composed TLS authentication flight](extended-tls-auth-foundation.md) passes
-  18 cases and 720 output fields, including eight tamper scenarios in both
-  layouts, after independent source/oracle review. All are x86_64 Linux native
-  execution through the GPU compiler; user GPU kernels remain unverified.
-- Certificate structure and incremental framing: [X.509](extended-x509.md)
-  passes its ordinary consumer and 690 model/OpenSSL commands across Ed25519,
-  RSA and ECDSA certificate structures. Its shared budget bounds TLV attempts,
-  successful items, comparisons and cursor/helper work; malformed headers spend
-  budget too. [Framing](extended-tls-framing.md) passes 7,760 state-model
-  actions, an ordinary consumer and the full 16,777,215-byte handshake body.
-  The full-size fixture owns one explicitly accounted allocation; the smaller
-  framing/model processes allocate nothing. The
-  [certificate inspector](extended-certificate-info.md) passes 50 native cases
-  for metadata/schema inspection, complete report publication, allocation/I/O
-  failures, EOF, byte/work/output caps and shared call-budget exhaustion. Its
-  guide preserves the corrected closed-pipe test-harness failure separately.
-- [Bounded nonblocking entropy](stdlib-entropy-bounded.md) passes all four
-  focused groups across its documented admission invocations. New operations
-  use one charged `getrandom(GRND_NONBLOCK)` attempt per read, preserve completed
-  prefixes and expose EAGAIN without spinning. The exact-fill helper retries
-  only EINTR within a shared attempt budget. Existing entropy entry points
-  retain their documented behavior; a connection still checks its own deadline
-  between individual attempts.
-- Certificate authentication: [DNS/IP service identity](extended-service-identity.md)
-  passes 1,592 protocol commands and an ordinary consumer.
-  [Ordered Ed25519 paths](extended-x509-path.md) pass 144 model commands,
-  16 OpenSSL comparisons and an ordinary consumer. Explicit anchors, inclusive
-  validity, supported CA/usage/path constraints and shared budgets precede
-  leaf-key publication. The [certificate verifier](extended-verify-certificate.md)
-  passes 84 native cases across ordinary/CLI, owner/I/O failures and limits.
-  This offline profile uses byte-exact distinguished names and rejects
-  unsupported constraints/policies; general PKIX path building, normalized
-  names, name constraints, certificate policies and revocation remain work.
-- [AES](core-aes.md) passes 1,680 independent block/error commands and an
-  ordinary consumer. [AES-GCM](extended-aes-gcm.md) passes 1,022 commands and
-  an ordinary consumer, including general IV hashing, counter wrap, 16 KiB
-  payloads and authentication-before-output failures. All three AES key
-  widths execute without allocation. No compiler source changed; these gates
-  add no machine constant-time or throughput claim.
-- [P-256](extended-p256.md) passes 1,288 independent protocol commands and an
-  ordinary consumer across five strict ELFs and 82 native processes, all with
-  empty allocation traces. It validates compressed/uncompressed SEC1 points,
-  computes public keys and raw ECDH, verifies ECDSA/SHA-256 and parses strict
-  signature DER. Published NIST/RFC data, affine/OpenSSL comparisons, exceptional
-  group cases, mutations and metadata/range failures check exact bytes in both
-  buffer layouts. Group exchange now has separate
-  [connection evidence](extended-tls-connection.md); certificate/signature
-  integration and the remaining mandatory
-  algorithms are separate work; machine constant-time behavior remains unproven.
-- [HMAC/HKDF-SHA-384](extended-hmac-hkdf-sha384.md) passes 930 independent
-  commands and an ordinary composition program across four strict ELFs and
-  32 native processes with empty allocation traces. Published HMAC vectors,
-  Python/OpenSSL byte comparisons, streaming/reset/copies, full 12,240-byte
-  HKDF output and atomic metadata/counter rejection execute. The fabricated
-  counter-limit tests do not claim huge-message hashing. Selected-hash TLS
-  integration executes as described below; machine constant-time verification
-  remains separate work.
-- [TLS hash and suite foundations](extended-tls-hash.md) pass 1,634 protocol
-  commands and an ordinary composition consumer across four strict ELFs and
-  28 native processes, with empty allocation traces. Selected SHA-256/SHA-384
-  streaming states, independent owned snapshots, explicit count/metadata
-  failures, all three TLS 1.3 suite identities and copied ordered policies
-  execute. The connected SHA-384 migration also passes the gates below.
-- [RSA public verification](extended-rsa.md) passes 620 protocol commands
-  and an ordinary consumer across five x86_64 executables/native processes,
-  with empty allocation traces. NIST/OpenSSL comparisons, exact padding,
-  strict DER, copied keys, budget boundaries and the 2049-bit PSS `emLen`
-  edge execute. The supported profile is 2048–4096-bit RSAE with SHA-256
-  PKCS#1 v1.5 or PSS/salt32. Three malformed source records remain pinned
-  separately from the 69 original byte-vector anchors. Signing, other hash
-  profiles and certificate/TLS integration remain separate work.
-- [Owned public signature dispatch](extended-signature.md) passes 719 protocol
-  commands across 164 input blocks and a four-vector ordinary consumer. Two
-  strict ELFs run in five native processes with empty allocation traces.
-  Ed25519, P-256/SHA-256, and RSAE/SHA-256 verification share explicit work and
-  attempt allowances, strict SPKI/algorithm parsing and certificate-versus-CV
-  scheme rules. OpenSSL supplies independent verification results. Certificate
-  path and TLS signature dispatch integration remain work; a reduced compiler
-  match dependency is preserved separately from the executable implementation.
-- Explicit TLS record suites: 308 ChaCha commands, 220 AES-128 commands and
-  220 AES-256/SHA-384 commands pass with two ordinary consumers. Typed secrets
-  reject suite/hash mismatch before derivation; independent OpenSSL/HMAC peers
-  check complete records, key updates, limits and failure atomicity. Four strict
-  ELFs execute in ten native processes with empty allocation traces.
-  AES uses a cached owned key and a conservative `2^24` record cap, with a
-  signal to reserve the final old-key record for KeyUpdate. The earlier
-  [source comparison](library-foundation-performance.md#explicit-record-suites-and-aes-gcm-integration)
-  records a 4.1% higher warmed compilation median and 36.6% larger ELF for the
-  existing authentication workload; no compiler source changed. The portable
-  connection and transport layers now have separate evidence below.
-- [Semantic TLS negotiation](extended-tls-negotiation.md) passes 1,620 wire-model
-  commands and 72 exact/one-less shared-budget probes, plus a six-flow ordinary
-  consumer covering the original two suites, direct handshakes and two retry forms.
-  Selection re-derives borrowed Offer descriptions, pins retry cookies and
-  suites, preserves unchanged CH2 fields and extension order, and enforces
-  offered SNI/ALPN responses. Independent byte witnesses check returned views;
-  writer snapshots check complete error atomicity. Two strict ELFs run in
-  31 native processes with empty allocation traces. Ordered policies support
-  all three suites independently of the group choice. Typed group policy supports
-  X25519/P-256, strict first mutual preference and ordered dual shares.
-  These helpers add no
-  authentication or connected-transport claim.
-- [Selected-hash TLS schedules and transcripts](extended-tls-schedule.md)
-  pass 232 protocol commands with 1,040 transcript actions, 12 unchanged RFC
-  anchors and an ordinary consumer. Typed SHA-256/SHA-384 secrets and digests,
-  full 12,240-byte output, HRR rewriting, independent snapshots and atomic
-  mismatch/metadata rejection execute without allocation.
-- [Server-flight authentication](extended-tls-authentication.md) passes
-  232 protocol cases with 716 state observations and four ordinary flows
-  across SHA-256/SHA-384 and both byte layouts.
-  Its strict EE/Certificate/CV/Finished order calls the real path validator,
-  checks both transcript proofs and withholds the peer key until success.
-  Copies, cleared prior input, retryable metadata/scratch failures, shared
-  work/signature limits and terminal failures execute. A real eight-certificate
-  flight over 64 KiB rejects the default work quota and succeeds with a raised
-  allowance. This authenticates the server; Established still requires the
-  client's Finished to be committed to the transport.
-- [Portable TLS connection state](extended-tls-connection.md) passes paired
-  client/server handshakes for all three suites and both buffer layouts,
-  cross-hash retry, long eight-certificate flights, 50 error/publication/epoch
-  boundaries and 80 group/entropy/scalar/work admissions. Twenty-four paired
-  flights bring the scripted total to 154 plus the ordinary consumer.
-  The engine uses caller storage without allocation, holds application bytes
-  until client Finished is acknowledged, and retains exact pending wire prefixes.
-  Five paired native processes each own one explicitly accounted test arena;
-  ordinary, control and group-admission consumers have empty allocation traces.
-  Both published groups are independently compared with actual wire selection.
-- [Owned TLS over TCP](extended-tls-tcp.md) passes 122 native cases: 46 OpenSSL
-  exchanges across both roles, three suites and both groups; 37 ownership/fault
-  cases; four exact 1 MiB pressure streams; 14 bounded P-256 entropy/failure
-  cases; 15 SHA-384 limit cases; and six operation-budget resumption cases.
-  Actual syscall traces include one positive short send in the older pressure
-  gate, retained wire progress, matching releases and one socket close attempt.
-  Acknowledged sends and retained unfed receives survive budget renewal without
-  repeated bytes. The two AES-256 pressure cases use a 35-second test deadline;
-  production deadline behavior remains unchanged.
-  The [real TLS exchange program](extended-tls-exchange.md) passes 80 cases
-  across both-role interoperability, CLI/files/I/O, ownership and shared host
-  budgets. These are
-  x86_64 Linux native results through the GPU compiler; they do not establish
-  user GPU kernels or other targets.
-- Further TLS work includes broader certificate policy and mandatory algorithms,
-  as specified in the [connection contract](tls-connection-contract.md). The earlier accepted
-  flight supplies receiver secrets directly and checks a real certificate's
-  self-signature as a primitive; the newer path validator supplies a restricted
-  certificate trust decision separately. The new authentication bridge enforces
-  CertificateVerify and server Finished; the new engine enforces the client
-  Finished checkpoint, partial I/O progress, alerts and closure in its selected
-  profile. Broader signature schemes and certificate policies, session resumption and early-data
-  policy remain part of the broader TLS work. The complete library goal still
-  includes threads, SQLite and the other families above.
-- Earlier crypto checkpoint: [IETF ChaCha20](stdlib-chacha20.md),
-  [Poly1305](stdlib-poly1305.md), their
-  [authenticated-encryption construction](extended-chacha20-poly1305.md) and
-  [X25519 key exchange](extended-x25519.md) pass focused native Linux gates
-  through the GPU compiler. [TLS 1.3 record protection](extended-tls-record.md)
-  passes all three tests, including its ordinary consumer and 308 protocol
-  commands, after a [host capacity repair](tls-record-lowering-dependency.md).
-  The [bounded seal-bytes program](extended-seal-bytes.md) passes all four gates,
-  totaling 137 native cases across ordinary messages, owner/I/O failures,
-  1 MiB boundaries and call budgets. The
-  [pinned compiler comparison](library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
-  records before/after evidence and limits. The selected handshake, peer
-  authentication and transport profile now has the separate evidence above.
-  The full goal still includes broader certificate policy, threads, SQLite and
-  the other families above.
-- Previous hash milestone: the byte-oriented SHA-2 family (SHA-224, SHA-256,
-  SHA-384, SHA-512, SHA-512/224 and SHA-512/256), followed by HMAC-SHA-256
-  and HKDF-SHA-256. Allocation-free Lanius implementations and native admission
-  are complete, with incremental state, explicit bounds/length/finalization
-  errors, primary-specification vectors and 3,362 independent model commands.
-  The streaming stdin hashing and key-derivation applications pass 136 and 51
-  native cases respectively. The whole library goal remains open. This supplies
-  prerequisites for the protocol work described above; broader certificate and
-  trust policy remain open.
+- Branch: `codex/stdlib`; the full library goal remains open.
+- Native security integration is a dependency, with no current cryptography or
+  TLS implementation. The next work is checked C ABI calls, native linking and
+  backend support, followed by bindings to established native libraries.
+- Raw [DER](extended-der.md) and [X.509 structure parsing](extended-x509.md)
+  remain useful schema inspection tools. The
+  [certificate inspector](extended-certificate-info.md) reports schema metadata without a cryptographic fingerprint or trust decision.
+- [Bounded nonblocking entropy](stdlib-entropy-bounded.md) retains one charged
+  getrandom attempt per read, explicit partial progress and shared attempt
+  budgets. Socket, polling and clock contracts remain separate.
 - Previous milestone: runtime formatting to generic byte writers, using the
   existing parser/renderer, bounded scratch, complete preflight before output,
   exact confirmed failure progress and explicit call budgets. Independent
@@ -609,7 +419,7 @@ integration and the other remaining families still need their own evidence.
   foreign-call prerequisites have a separate source-audited proposal.
 - Preceding milestone: canonical narrow integers, full-range binary64 elementary
   functions, generic owned hash/tree sets, TZif time zones, DNS and WebSocket
-  wire processing, byte key/value snapshots, signal processing and selective
+  request/frame processing, byte key/value snapshots, signal processing and selective
   source distribution. Five new native programs and four migrated set consumers
   exercise real behavior. Independent models, malformed-input/resource cases,
   allocation/I/O faults and independent source reviews are recorded per guide.

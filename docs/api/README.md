@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **250 modules**, **11160 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **220 modules**, **9878 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -17,7 +17,6 @@ Inventory: **250 modules**, **11160 declaration/member entries**. Counts include
 | Module | Source | Entries | Profile | Contract guides |
 | --- | --- | ---: | --- | --- |
 | [core::adler32](core/adler32.md) | [source](../../stdlib/core/adler32.lani#L3) | 9 | Source inventory | [stdlib-adler32](../stdlib-adler32.md) |
-| [core::aes](core/aes.md) | [source](../../stdlib/core/aes.lani#L3) | 13 | Source inventory | [core-aes](../core-aes.md) |
 | [core::array_i32](core/array_i32.md) | [source](../../stdlib/core/array_i32.lani#L4) | 2 | Source inventory | **Unregistered** |
 | [core::array_i32_4](core/array_i32_4.md) | [source](../../stdlib/core/array_i32_4.lani#L2) | 14 | Source inventory | **Unregistered** |
 | [core::array_u8_4](core/array_u8_4.md) | [source](../../stdlib/core/array_u8_4.lani#L4) | 17 | Source inventory | **Unregistered** |
@@ -29,7 +28,6 @@ Inventory: **250 modules**, **11160 declaration/member entries**. Counts include
 | [core::bitset](core/bitset.md) | [source](../../stdlib/core/bitset.lani#L5) | 59 | Source inventory | [stdlib-bitset-owned](../stdlib-bitset-owned.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md) |
 | [core::bool](core/bool.md) | [source](../../stdlib/core/bool.lani#L3) | 10 | Source inventory | [stdlib-boolean-bits](../stdlib-boolean-bits.md) |
 | [core::calendar](core/calendar.md) | [source](../../stdlib/core/calendar.lani#L4) | 158 | Source inventory | [stdlib-calendar](../stdlib-calendar.md) |
-| [core::chacha20](core/chacha20.md) | [source](../../stdlib/core/chacha20.lani#L3) | 19 | Source inventory | [stdlib-chacha20](../stdlib-chacha20.md) |
 | [core::char](core/char.md) | [source](../../stdlib/core/char.lani#L2) | 19 | Source inventory | [stdlib-unicode](../stdlib-unicode.md) |
 | [core::clone](core/clone.md) | [source](../../stdlib/core/clone.lani#L3) | 4 | Source inventory | [stdlib-clone](../stdlib-clone.md) |
 | [core::cmp](core/cmp.md) | [source](../../stdlib/core/cmp.lani#L5) | 250 | Source inventory | [stdlib-comparison](../stdlib-comparison.md) |
@@ -64,15 +62,11 @@ Inventory: **250 modules**, **11160 declaration/member entries**. Counts include
 | [core::panic](core/panic.md) | [source](../../stdlib/core/panic.lani#L3) | 29 | Source inventory | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |
 | [core::path](core/path.md) | [source](../../stdlib/core/path.lani#L5) | 78 | Source inventory | [stdlib-paths](../stdlib-paths.md) |
 | [core::path_rules](core/path_rules.md) | [source](../../stdlib/core/path_rules.lani#L3) | 59 | Source inventory | [stdlib-paths](../stdlib-paths.md) |
-| [core::poly1305](core/poly1305.md) | [source](../../stdlib/core/poly1305.lani#L4) | 40 | Source inventory | [stdlib-poly1305](../stdlib-poly1305.md) |
 | [core::random](core/random.md) | [source](../../stdlib/core/random.lani#L5) | 40 | Source inventory | [stdlib-randomness](../stdlib-randomness.md) |
 | [core::range](core/range.md) | [source](../../stdlib/core/range.lani#L9) | 51 | Source inventory | [stdlib-ranges](../stdlib-ranges.md) |
 | [core::result](core/result.md) | [source](../../stdlib/core/result.lani#L7) | 24 | Source inventory | [stdlib-result](../stdlib-result.md) |
 | [core::runtime](core/runtime.md) | [source](../../stdlib/core/runtime.lani#L15) | 113 | Source inventory | [library-host-prerequisites](../library-host-prerequisites.md), [library-host-operation-support](../library-host-operation-support.md) |
 | [core::set](core/set.md) | [source](../../stdlib/core/set.lani#L4) | 24 | Source inventory | [stdlib-fixed-capacity](../stdlib-fixed-capacity.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md) |
-| [core::sha1](core/sha1.md) | [source](../../stdlib/core/sha1.lani#L3) | 22 | Source inventory | **Unregistered** |
-| [core::sha256](core/sha256.md) | [source](../../stdlib/core/sha256.lani#L4) | 30 | Source inventory | [stdlib-sha256](../stdlib-sha256.md), [stdlib-hash-bytes](../stdlib-hash-bytes.md) |
-| [core::sha512](core/sha512.md) | [source](../../stdlib/core/sha512.lani#L4) | 35 | Source inventory | [stdlib-sha512](../stdlib-sha512.md), [stdlib-hash-bytes](../stdlib-hash-bytes.md) |
 | [core::slice](core/slice.md) | [source](../../stdlib/core/slice.lani#L10) | 87 | Source inventory | [stdlib-slice-views](../stdlib-slice-views.md), [stdlib-slice](../stdlib-slice.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md) |
 | [core::target](core/target.md) | [source](../../stdlib/core/target.lani#L6) | 37 | Source inventory | [library-host-prerequisites](../library-host-prerequisites.md), [library-host-operation-support](../library-host-operation-support.md) |
 | [core::text](core/text.md) | [source](../../stdlib/core/text.lani#L4) | 86 | Source inventory | [stdlib-text](../stdlib-text.md), [stdlib-text-composition](../stdlib-text-composition.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-text-split-iterators](../stdlib-text-split-iterators.md) |
@@ -192,12 +186,10 @@ Inventory: **250 modules**, **11160 declaration/member entries**. Counts include
 
 | Module | Source | Entries | Profile | Contract guides |
 | --- | --- | ---: | --- | --- |
-| [ext::aes_gcm](ext/aes_gcm.md) | [source](../../extended/ext/aes_gcm.lani#L3) | 19 | Source inventory | [extended-aes-gcm](../extended-aes-gcm.md) |
 | [ext::audio](ext/audio.md) | [source](../../extended/ext/audio.lani#L2) | 44 | Source inventory | [extended-audio](../extended-audio.md) |
 | [ext::big_int](ext/big_int.md) | [source](../../extended/ext/big_int.lani#L3) | 56 | Source inventory | [extended-big-int](../extended-big-int.md) |
 | [ext::big_uint](ext/big_uint.md) | [source](../../extended/ext/big_uint.lani#L4) | 72 | Source inventory | [extended-big-uint](../extended-big-uint.md) |
 | [ext::cbor](ext/cbor.md) | [source](../../extended/ext/cbor.lani#L4) | 64 | Source inventory | [extended-cbor](../extended-cbor.md) |
-| [ext::chacha20_poly1305](ext/chacha20_poly1305.md) | [source](../../extended/ext/chacha20_poly1305.lani#L3) | 9 | Source inventory | [extended-chacha20-poly1305](../extended-chacha20-poly1305.md), [extended-seal-bytes](../extended-seal-bytes.md) |
 | [ext::cli](ext/cli.md) | [source](../../extended/ext/cli.lani#L3) | 42 | Source inventory | [extended-cli](../extended-cli.md) |
 | [ext::compression](ext/compression.md) | [source](../../extended/ext/compression.lani#L3) | 31 | Source inventory | [extended-compression](../extended-compression.md) |
 | [ext::config](ext/config.md) | [source](../../extended/ext/config.lani#L4) | 47 | Source inventory | [extended-config](../extended-config.md) |
@@ -210,13 +202,8 @@ Inventory: **250 modules**, **11160 declaration/member entries**. Counts include
 | [ext::distributions](ext/distributions.md) | [source](../../extended/ext/distributions.lani#L3) | 45 | Source inventory | [extended-distributions](../extended-distributions.md) |
 | [ext::dns](ext/dns.md) | [source](../../extended/ext/dns.lani#L2) | 139 | Source inventory | [extended-dns](../extended-dns.md) |
 | [ext::dns_client](ext/dns_client.md) | [source](../../extended/ext/dns_client.lani#L2) | 77 | Source inventory | [extended-dns-client](../extended-dns-client.md) |
-| [ext::ed25519](ext/ed25519.md) | [source](../../extended/ext/ed25519.lani#L4) | 12 | Source inventory | [extended-ed25519](../extended-ed25519.md), [extended-sign-bytes](../extended-sign-bytes.md) |
 | [ext::geometry](ext/geometry.md) | [source](../../extended/ext/geometry.lani#L3) | 81 | Source inventory | [extended-geometry](../extended-geometry.md) |
 | [ext::glob](ext/glob.md) | [source](../../extended/ext/glob.lani#L3) | 42 | Source inventory | [extended-glob](../extended-glob.md) |
-| [ext::hkdf_sha256](ext/hkdf_sha256.md) | [source](../../extended/ext/hkdf_sha256.lani#L3) | 9 | Source inventory | [extended-hmac-hkdf](../extended-hmac-hkdf.md), [extended-derive-key](../extended-derive-key.md) |
-| [ext::hkdf_sha384](ext/hkdf_sha384.md) | [source](../../extended/ext/hkdf_sha384.lani#L3) | 9 | Source inventory | [extended-hmac-hkdf-sha384](../extended-hmac-hkdf-sha384.md) |
-| [ext::hmac_sha256](ext/hmac_sha256.md) | [source](../../extended/ext/hmac_sha256.lani#L3) | 17 | Source inventory | [extended-hmac-hkdf](../extended-hmac-hkdf.md), [extended-derive-key](../extended-derive-key.md) |
-| [ext::hmac_sha384](ext/hmac_sha384.md) | [source](../../extended/ext/hmac_sha384.lani#L3) | 17 | Source inventory | [extended-hmac-hkdf-sha384](../extended-hmac-hkdf-sha384.md) |
 | [ext::http](ext/http.md) | [source](../../extended/ext/http.lani#L2) | 108 | Source inventory | [extended-http](../extended-http.md), [extended-http-cursor](../extended-http-cursor.md) |
 | [ext::http_client](ext/http_client.md) | [source](../../extended/ext/http_client.lani#L2) | 74 | Source inventory | [extended-http-client](../extended-http-client.md) |
 | [ext::http_server](ext/http_server.md) | [source](../../extended/ext/http_server.lani#L2) | 128 | Source inventory | [extended-http-server](../extended-http-server.md) |
@@ -226,36 +213,21 @@ Inventory: **250 modules**, **11160 declaration/member entries**. Counts include
 | [ext::kv](ext/kv.md) | [source](../../extended/ext/kv.lani#L3) | 48 | Source inventory | [extended-kv](../extended-kv.md) |
 | [ext::linalg](ext/linalg.md) | [source](../../extended/ext/linalg.lani#L3) | 87 | Source inventory | [extended-linalg](../extended-linalg.md) |
 | [ext::log](ext/log.md) | [source](../../extended/ext/log.lani#L3) | 38 | Source inventory | [extended-log](../extended-log.md) |
-| [ext::p256](ext/p256.md) | [source](../../extended/ext/p256.lani#L3) | 25 | Source inventory | [extended-p256](../extended-p256.md) |
 | [ext::parse](ext/parse.md) | [source](../../extended/ext/parse.lani#L3) | 68 | Source inventory | [extended-parse](../extended-parse.md) |
 | [ext::patch](ext/patch.md) | [source](../../extended/ext/patch.lani#L2) | 32 | Source inventory | [extended-patch](../extended-patch.md) |
 | [ext::percent](ext/percent.md) | [source](../../extended/ext/percent.lani#L5) | 11 | Source inventory | [extended-percent](../extended-percent.md) |
 | [ext::png](ext/png.md) | [source](../../extended/ext/png.lani#L2) | 30 | Source inventory | [extended-png](../extended-png.md) |
 | [ext::progress](ext/progress.md) | [source](../../extended/ext/progress.lani#L2) | 15 | Source inventory | [extended-progress](../extended-progress.md) |
 | [ext::regex](ext/regex.md) | [source](../../extended/ext/regex.lani#L2) | 67 | Source inventory | [extended-regex](../extended-regex.md) |
-| [ext::rsa](ext/rsa.md) | [source](../../extended/ext/rsa.lani#L4) | 50 | Source inventory | [extended-rsa](../extended-rsa.md) |
 | [ext::schema](ext/schema.md) | [source](../../extended/ext/schema.lani#L3) | 90 | Source inventory | [extended-schema](../extended-schema.md) |
-| [ext::service_identity](ext/service_identity.md) | [source](../../extended/ext/service_identity.lani#L3) | 20 | Source inventory | [extended-service-identity](../extended-service-identity.md) |
 | [ext::settings](ext/settings.md) | [source](../../extended/ext/settings.lani#L3) | 118 | Source inventory | [extended-settings](../extended-settings.md) |
 | [ext::settings_env](ext/settings_env.md) | [source](../../extended/ext/settings_env.lani#L3) | 27 | Source inventory | [extended-settings](../extended-settings.md) |
 | [ext::signal](ext/signal.md) | [source](../../extended/ext/signal.lani#L3) | 47 | Source inventory | [extended-signal](../extended-signal.md) |
-| [ext::signature](ext/signature.md) | [source](../../extended/ext/signature.lani#L2) | 58 | Source inventory | [extended-signature](../extended-signature.md) |
 | [ext::statistics](ext/statistics.md) | [source](../../extended/ext/statistics.lani#L4) | 104 | Source inventory | [extended-statistics](../extended-statistics.md) |
 | [ext::table](ext/table.md) | [source](../../extended/ext/table.lani#L2) | 27 | Source inventory | [extended-table](../extended-table.md) |
 | [ext::tar](ext/tar.md) | [source](../../extended/ext/tar.lani#L3) | 81 | Source inventory | [extended-tar](../extended-tar.md) |
 | [ext::terminal](ext/terminal.md) | [source](../../extended/ext/terminal.lani#L3) | 15 | Source inventory | [extended-terminal](../extended-terminal.md) |
 | [ext::timezone](ext/timezone.md) | [source](../../extended/ext/timezone.lani#L3) | 80 | Source inventory | [extended-timezone](../extended-timezone.md) |
-| [ext::tls_authentication](ext/tls_authentication.md) | [source](../../extended/ext/tls_authentication.lani#L3) | 67 | Source inventory | [extended-tls-authentication](../extended-tls-authentication.md) |
-| [ext::tls_connection](ext/tls_connection.md) | [source](../../extended/ext/tls_connection.lani#L3) | 231 | Source inventory | [extended-tls-connection](../extended-tls-connection.md), [tls-connection-contract](../tls-connection-contract.md) |
-| [ext::tls_framing](ext/tls_framing.md) | [source](../../extended/ext/tls_framing.lani#L3) | 47 | Source inventory | [extended-tls-framing](../extended-tls-framing.md) |
-| [ext::tls_handshake](ext/tls_handshake.md) | [source](../../extended/ext/tls_handshake.lani#L3) | 130 | Source inventory | [extended-tls-handshake](../extended-tls-handshake.md), [extended-tls-auth-foundation](../extended-tls-auth-foundation.md) |
-| [ext::tls_hash](ext/tls_hash.md) | [source](../../extended/ext/tls_hash.lani#L3) | 25 | Source inventory | [extended-tls-hash](../extended-tls-hash.md) |
-| [ext::tls_negotiation](ext/tls_negotiation.md) | [source](../../extended/ext/tls_negotiation.lani#L3) | 79 | Source inventory | [extended-tls-negotiation](../extended-tls-negotiation.md) |
-| [ext::tls_record](ext/tls_record.md) | [source](../../extended/ext/tls_record.lani#L4) | 45 | Source inventory | [extended-tls-record](../extended-tls-record.md) |
-| [ext::tls_schedule](ext/tls_schedule.md) | [source](../../extended/ext/tls_schedule.lani#L3) | 60 | Source inventory | [extended-tls-schedule](../extended-tls-schedule.md) |
-| [ext::tls_suite](ext/tls_suite.md) | [source](../../extended/ext/tls_suite.lani#L3) | 19 | Source inventory | [extended-tls-hash](../extended-tls-hash.md) |
-| [ext::tls_tcp](ext/tls_tcp.md) | [source](../../extended/ext/tls_tcp.lani#L3) | 81 | Source inventory | [extended-tls-tcp](../extended-tls-tcp.md), [extended-tls-exchange](../extended-tls-exchange.md) |
-| [ext::tls_transcript](ext/tls_transcript.md) | [source](../../extended/ext/tls_transcript.lani#L3) | 21 | Source inventory | [extended-tls-schedule](../extended-tls-schedule.md) |
 | [ext::toml](ext/toml.md) | [source](../../extended/ext/toml.lani#L2) | 83 | Source inventory | [extended-toml](../extended-toml.md) |
 | [ext::unicode_case](ext/unicode_case.md) | [source](../../extended/ext/unicode_case.lani#L4) | 21 | Source inventory | [extended-unicode-case](../extended-unicode-case.md) |
 | [ext::unicode_graphemes](ext/unicode_graphemes.md) | [source](../../extended/ext/unicode_graphemes.lani#L3) | 18 | Source inventory | [extended-unicode-graphemes](../extended-unicode-graphemes.md) |
@@ -267,10 +239,8 @@ Inventory: **250 modules**, **11160 declaration/member entries**. Counts include
 | [ext::uri](ext/uri.md) | [source](../../extended/ext/uri.lani#L3) | 33 | Source inventory | [extended-uri](../extended-uri.md) |
 | [ext::uri_resolve](ext/uri_resolve.md) | [source](../../extended/ext/uri_resolve.lani#L3) | 8 | Source inventory | [extended-uri-resolve](../extended-uri-resolve.md) |
 | [ext::wave](ext/wave.md) | [source](../../extended/ext/wave.lani#L2) | 38 | Source inventory | [extended-wave](../extended-wave.md) |
-| [ext::websocket](ext/websocket.md) | [source](../../extended/ext/websocket.lani#L3) | 82 | Source inventory | [extended-websocket](../extended-websocket.md) |
-| [ext::x25519](ext/x25519.md) | [source](../../extended/ext/x25519.lani#L3) | 9 | Source inventory | [extended-x25519](../extended-x25519.md) |
+| [ext::websocket](ext/websocket.md) | [source](../../extended/ext/websocket.lani#L3) | 76 | Source inventory | [extended-websocket](../extended-websocket.md) |
 | [ext::x509](ext/x509.md) | [source](../../extended/ext/x509.lani#L3) | 141 | Source inventory | [extended-x509](../extended-x509.md), [extended-certificate-info](../extended-certificate-info.md) |
-| [ext::x509_path](ext/x509_path.md) | [source](../../extended/ext/x509_path.lani#L4) | 58 | Source inventory | [extended-x509-path](../extended-x509-path.md), [extended-verify-certificate](../extended-verify-certificate.md) |
 | [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 80 | Source inventory | [extended-zip](../extended-zip.md) |
 
 ## Support and implementation data
@@ -317,7 +287,6 @@ These are discovery/contract-link gaps, not claims that their code is missing or
 - [core::hex_wide_u64](core/hex_wide_u64.md)
 - [core::ops](core/ops.md)
 - [core::pair](core/pair.md)
-- [core::sha1](core/sha1.md)
 - [core::u32_cells](core/u32_cells.md)
 - [core::varint_wide_i64](core/varint_wide_i64.md)
 - [core::varint_wide_u64](core/varint_wide_u64.md)

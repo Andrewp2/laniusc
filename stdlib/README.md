@@ -29,9 +29,7 @@ runtime behavior, failure rules and supported targets.
 | Boolean values and bit operations | `core::bool`, `core::bits` | [Truth functions, widths, rotations and extraction](../docs/stdlib-boolean-bits.md) |
 | Floating values and conversion | `core::f32`, `core::f64`, `core::float_decimal` | [Exact precision formatting](../docs/stdlib-float-precision.md) |
 | Elementary mathematics | `core::math` | [Full-range binary64 functions and accuracy evidence](../docs/stdlib-math.md) |
-| Wire coding and checksums | `core::base64`, `core::hex`, `core::binary`, `core::endian`, `core::varint`, `core::varint_i32`, `core::crc32`, `core::adler32`, `core::sha1` | [Byte codecs, endian values, varint statuses and CRC contracts](../docs/stdlib-byte-codecs.md); SHA-1 is supplied for the [WebSocket handshake](../docs/extended-websocket.md), with its collision-resistance limitation explicit |
-| SHA-2 byte digests | `core::sha256`, `core::sha512` | [SHA-224/256](../docs/stdlib-sha256.md), [SHA-384/512 and SHA-512/224/256](../docs/stdlib-sha512.md); incremental state, checked length limits and independent digest values; [streaming stdin program](../docs/stdlib-hash-bytes.md) |
-| Stream cipher and one-time authenticator | `core::chacha20`, `core::poly1305` | [IETF ChaCha20](../docs/stdlib-chacha20.md), [Poly1305](../docs/stdlib-poly1305.md); allocation-free byte operations, explicit counter/lifecycle bounds and focused native evidence |
+| Wire coding and checksums | `core::base64`, `core::hex`, `core::binary`, `core::endian`, `core::varint`, `core::varint_i32`, `core::crc32`, `core::adler32` | [Byte codecs, endian values, varint statuses and CRC contracts](../docs/stdlib-byte-codecs.md) |
 | Borrowed data and algorithms | `core::slice`, `core::range`, array helpers | [Counted views](../docs/stdlib-slice-views.md), [slice algorithms](../docs/stdlib-slice.md), [range membership and ordered overlap](../docs/stdlib-ranges.md) |
 | Shared iteration | `core::iter`, collection and Text cursors | [Fused slice/range cursors and borrowed adapters](../docs/stdlib-iterators.md), [collection, Text and bitset integration](../docs/stdlib-collection-iterators.md), [range-statistics application](../docs/stdlib-range-stats.md) |
 | UTF-8 and Unicode | `core::text`, `core::char`, `core::utf8`, `core::utf16`, `core::transcode`, `core::unicode` | [UTF encoding, edits and transcoding](../docs/stdlib-utf-codecs.md), [Unicode properties](../docs/stdlib-unicode.md); normalization and full casing are optional extended modules |
@@ -59,16 +57,13 @@ one heap dependency. New programs should use `alloc::vec`. Silent-failure map,
 set, byte-vector and UTF-8 owners have been removed with their repository
 consumers [migrated to checked APIs](../docs/stdlib-legacy-collections.md).
 
-The optional [extended library](../extended/README.md) adds accepted
-[ChaCha20-Poly1305](../docs/extended-chacha20-poly1305.md) and
-[X25519](../docs/extended-x25519.md) primitives. The
-[TLS record layer](../docs/extended-tls-record.md) supports explicit
-AES-128-GCM/SHA-256 and ChaCha20-Poly1305/SHA-256 suites. Its two ordinary
-consumers and 528 protocol commands execute without allocation. Certificate
-path and server-flight authentication have their own focused evidence;
-negotiated TLS connections and transport integration remain work. The
-[pinned compiler comparison](../docs/library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
-records measured crypto and large-library workloads and their limits.
+Cryptographic hashes, ciphers, signatures and TLS have no supported
+implementation. CRC, Adler and FNV hashing remain available for checksums and
+ordinary data structures. Future security support will use established native
+library bindings; checked C ABI calls, native linking and backend integration
+are [prerequisites](../docs/library-native-integration-prerequisites.md).
+The optional [extended library](../extended/README.md) retains data formats,
+mathematics, cleartext network protocols and raw certificate inspection.
 
 ## Ownership and errors
 
@@ -136,7 +131,8 @@ service 5 remains unavailable. Neither inventory claims all host services work.
 The [operation-level host inventory](../docs/library-host-operation-support.md)
 records the supported subsets and their implementation/test evidence.
 In particular,
-threads and database integration still need host support. The older `std::net`
+threads, native security-library bindings and database integration still need
+host/compiler support. The older `std::net`
 declarations remain unbound; executable numeric socket ownership is in
 `std::socket`. [The remaining API audit](../docs/library-remaining-api-audit.md)
 distinguishes unavailable services and legacy interfaces. Generic

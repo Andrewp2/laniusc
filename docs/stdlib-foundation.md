@@ -248,91 +248,18 @@ preflight, failure, nested buffering and plain-consumer gates. The
 including all 23 representative allocation denials and the exact output cap.
 Existing buffer atomicity and owned formatting retain their contracts.
 
-[SHA-224/256](stdlib-sha256.md) and the [SHA-512 family](stdlib-sha512.md)
-now supply all six byte-oriented SHA-2 variants with incremental state,
-copied results and explicit length/finalization errors. The
-[HMAC/HKDF modules](extended-hmac-hkdf.md) provide keyed state and bounded
-extract/expand output. Native models exercise 3,362 commands, official known
-answers, state/digest independence, layouts and rejection atomicity. The
-[stdin hashing](stdlib-hash-bytes.md) and [key-derivation](extended-derive-key.md)
-programs pass 136 and 51 native cases, including EOF, quota, I/O failure and
-actual partial-write behavior. No compiler, runtime, shader, IR, ABI or proof
-source changed. Supported execution is x86_64 Linux output from GPU compilation;
-TLS and the other recorded native integration dependencies remain separate.
+[Borrowed DER](extended-der.md) and [X.509 structure parsing](extended-x509.md)
+remain schema utilities. Their native gates cover 1,824 DER commands and
+690 X.509 commands, each with an ordinary consumer. Parsing does not verify
+signatures, authenticate names or establish trust.
+Cryptographic operations and authenticated TLS require an established external
+library through a checked native binding, as required by the
+[API conventions](library-api-conventions.md#cryptography-and-tls-boundary).
 
-[IETF ChaCha20](stdlib-chacha20.md), [Poly1305](stdlib-poly1305.md),
-[ChaCha20-Poly1305](extended-chacha20-poly1305.md) and
-[X25519](extended-x25519.md) now pass focused x86_64 Linux native execution
-through the GPU compiler, including ordinary consumers and independent
-cryptographic models. Their guides record exact scope and allocation traces.
-The [TLS record layer](extended-tls-record.md) passes all three focused tests:
-its ordinary consumer and 308 protocol commands (96 failure/preflight and
-212 success/state commands). Two strict ELFs execute in three native processes
-with zero allocations. The unchanged TLS source and fixtures pass after a
-[host capacity repair](tls-record-lowering-dependency.md); the original
-`LNC0057` failures remain recorded there. The
-[seal-bytes application](extended-seal-bytes.md) passes all four focused gates:
-137 native cases cover ordinary messages, allocation/I/O failures, full 1 MiB
-seal/open, excess input and shared call budgets. The
-[pinned compiler comparison](library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
-observed no slowdown on the combined crypto and existing 1 MB workloads; the
-report records measurement conditions and limits. Full TLS connections still
-require handshake, certificates, peer authentication, trust policy and
-transport integration.
-
-[Pure Ed25519](extended-ed25519.md), [borrowed DER](extended-der.md),
-[TLS handshake codecs](extended-tls-handshake.md) and the
-[SHA-256 schedule/transcript](extended-tls-schedule.md) now pass their focused
-native gates. DER covers 1,824 independent model/certificate commands, and
-handshake codecs cover 1,396 model commands, each with an ordinary consumer.
-The [signing application](extended-sign-bytes.md) passes 128 native cases,
-including full 1 MiB sign/verify and allocation/I/O/call-budget failures.
-The [composed authentication flight](extended-tls-auth-foundation.md) checks
-18 cases and 720 byte fields, including both layouts and eight tamper
-scenarios. It uses real certificate bytes and enforced cryptographic
-checkpoints in a fixed fixture. Certificate trust and a connection/transport
-state machine remain required. No compiler, runtime, shader, IR, ABI or proof
-source changed for this authentication foundation.
-
-[X.509 structure parsing](extended-x509.md) passes 690 model/OpenSSL commands
-and an ordinary consumer. [Incremental framing](extended-tls-framing.md) passes
-7,760 state-model actions, ordinary composition and a full 16,777,215-byte
-handshake body using explicitly owned caller storage. The
-[certificate inspector](extended-certificate-info.md) passes 50 native cases;
-its output describes parsed schema and metadata. The
-[bounded entropy API](stdlib-entropy-bounded.md) adds nonblocking OS reads,
-shared attempt budgets and completed-prefix failures, with all four focused
-groups admitted across the documented invocations.
-
-[AES-128/192/256](core-aes.md) passes 1,680 independent block/error commands
-and an ordinary consumer; [AES-GCM](extended-aes-gcm.md) passes 1,022 protocol
-commands and an ordinary consumer. The allocation-free APIs cover copied
-schedules/keys, general IV hashing, counter wrap, both byte layouts and
-authentication before plaintext publication. AES stages a full input block,
-so arbitrary block overlap works; GCM supports exact payload alias or disjoint
-storage. No machine constant-time or throughput guarantee follows from these
-functional gates.
-
-[DNS/IP service identity](extended-service-identity.md) passes 1,592 protocol
-commands and an ordinary consumer, including full SAN traversal after a match.
-[Ordered Ed25519 certificate paths](extended-x509-path.md) pass 144 model
-commands, 16 OpenSSL comparisons and an ordinary consumer. Explicit anchors,
-inclusive UTC validity, CA/usage/path constraints and shared parse/work/signature
-budgets precede a copied leaf key. The [certificate verifier](extended-verify-certificate.md)
-passes 84 native cases, including eight-certificate paths and complete resource
-retirement before publication. This offline profile rejects unsupported
-constraints and uses byte-exact distinguished names; general PKIX, revocation
-and live connection/transport state remain work under the
-[connection contract](tls-connection-contract.md).
-
-[Server-flight authentication](extended-tls-authentication.md) passes
-110 protocol cases, 340 state observations and an ordinary consumer across
-three exact invocations. Its ordered EE/Certificate/CV/Finished stages call
-the real path validator and withhold copied key/transcript results until
-both transcript proofs pass. Cleared prior input, copied state, retries,
-shared allowances, terminal failures and a long certificate flight execute.
-The resulting authentication checkpoint still precedes client-Finished
-transmission and live application-data release.
+The [bounded entropy API](stdlib-entropy-bounded.md) supplies nonblocking OS
+reads, shared attempt budgets and completed-prefix failures. All four focused
+groups are admitted across the documented invocations. Entropy remains a host
+service; it does not supply a cryptographic implementation.
 
 [Checked file lengths](stdlib-file-resize.md) execute shrink, zero extension,
 sparse lengths above 4 GiB and unchanged duplicated offsets, with explicit
@@ -351,14 +278,11 @@ interfaces and distribution/reference completion remain on the
 Compiler failures retain
 [reproductions and successful controls](library-dependencies.md).
 
-The [generated declaration reference](library-api-reference.md) inventories
-240 source modules with signatures, bounds, fields and exact source links.
-The declaration scanner independently confirms 162 stdlib and 78 extended
-modules, including source still under admission. The current regenerated-output
-check passes for 241 pages and 7,440 public declaration markers. The original
-twenty focused CPU tests passed without generator changes. This is
-documentation extraction, not runtime verification; semantic guide gaps remain
-listed explicitly. The [strict UTF codec guide](stdlib-utf-codecs.md) now maps
+The [generated declaration reference](library-api-reference.md) inventories the
+retained source modules with signatures, bounds, fields and exact source links.
+Regenerate it after module changes. Declaration extraction is documentation,
+not runtime verification; semantic guide gaps remain listed explicitly. The
+[strict UTF codec guide](stdlib-utf-codecs.md) now maps
 83 existing functions to their indexing, malformed-input, mutation, progress,
 aliasing and native-test contracts; that source audit adds no new target claim.
 The [memory guide](stdlib-memory.md) distinguishes value helpers, compiler
@@ -377,7 +301,7 @@ distinct from source-derived contracts.
 [binary64 elementary mathematics](stdlib-math.md),
 [generic owned hash/tree sets](stdlib-owned-sets.md),
 [TZif time zones](extended-timezone.md), [DNS wire messages](extended-dns.md),
-[WebSocket handshakes/messages](extended-websocket.md),
+[WebSocket request and frame/message utilities](extended-websocket.md),
 [byte key/value storage](extended-kv.md) and [signal processing](extended-signal.md)
 execute in Lanius. Five new programs expose DNS, WebSocket, key/value files,
 time-zone queries and WAVE spectra. Four existing distinct-value consumers now

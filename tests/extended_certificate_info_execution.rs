@@ -44,7 +44,7 @@ struct Case {
     report: Vec<u8>,
 }
 const CORPUS: &str = r#"
-import datetime,hashlib,pathlib,struct,subprocess,sys,tempfile
+import datetime,pathlib,struct,subprocess,sys,tempfile
 MAX=1048576
 
 def tlv(tag,body):
@@ -105,7 +105,7 @@ def report(data):
  for item in extensions:
   e=nodes(item.body);critical=len(e)==3 and e[1].body==b'\xff'
   unknown += critical and e[0].body not in (b'\x55\x1d\x11',b'\x55\x1d\x13',b'\x55\x1d\x0f',b'\x55\x1d\x25')
- result=(f'inspection=parse-schema-only\ncertificate_sha256={hashlib.sha256(data).hexdigest()}\nversion={version}\nserial_hex={serial.hex()}\n'
+ result=(f'inspection=parse-schema-only\nversion={version}\nserial_hex={serial.hex()}\n'
  +f'not_before_utc={timestamp(dates[0])}\nnot_after_utc={timestamp(dates[1])}\n'
  +f'signature_oid_encoded_content_hex={sig.hex()}\nspki_oid_encoded_content_hex={key.hex()}\n'
  +f'issuer_rdns={len(nodes(issuer.body))}\nsubject_rdns={len(nodes(subject.body))}\nextensions={len(extensions)}\nunknown_critical_extensions={unknown}\n').encode()
@@ -122,12 +122,11 @@ with tempfile.TemporaryDirectory(prefix='certificate_info_openssl_') as d:
   if alg=='ed25519':command+=['-addext','1.2.3.4=critical,DER:05:00']
   run=subprocess.run(command,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=12);assert run.returncode==0,run.stderr
   data=cert.read_bytes();expected=report(data)
-  # OpenSSL independently checks digest, unsigned serial and parsed UTC dates.
-  metadata=subprocess.run(['openssl','x509','-inform','DER','-in',str(cert),'-noout','-serial','-dates','-fingerprint','-sha256'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=5);assert metadata.returncode==0,metadata.stderr
+  # OpenSSL independently checks unsigned serial and parsed UTC dates.
+  metadata=subprocess.run(['openssl','x509','-inform','DER','-in',str(cert),'-noout','-serial','-dates'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=5);assert metadata.returncode==0,metadata.stderr
   values=dict(line.split('=',1) for line in metadata.stdout.decode().splitlines());lines=dict(line.split('=',1) for line in expected.decode().splitlines())
   assert values['serial'].lower()==lines['serial_hex']
   for src,dst in [('notBefore','not_before_utc'),('notAfter','not_after_utc')]:assert datetime.datetime.strptime(values[src],'%b %d %H:%M:%S %Y %Z').strftime('%Y-%m-%dT%H:%M:%SZ')==lines[dst]
-  fingerprint=next(v for k,v in values.items() if k.lower()=='sha256 fingerprint');assert fingerprint.replace(':','').lower()==lines['certificate_sha256']
   good('openssl-'+alg,data)
   if alg=='ed25519':
    tampered=data[:-1]+bytes([data[-1]^1]);good('signature-tamper-inspection-only',tampered)

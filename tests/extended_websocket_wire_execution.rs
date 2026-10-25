@@ -81,7 +81,7 @@ fn hex(data: &[u8]) -> String {
     data.iter().map(|b| format!("{b:02x}")).collect()
 }
 #[test]
-fn websocket_offline_handshakes_match_standard_accept_and_protocol_agreement() {
+fn websocket_offline_requests_preserve_protocol_and_pipeline_validation() {
     let req=request(b"Sec-WebSocket-Protocol: chat, superchat\r\nSec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n");
     let out = invoke(&["--request"], &req);
     checked(&out, 0);
@@ -93,40 +93,6 @@ fn websocket_offline_handshakes_match_standard_accept_and_protocol_agreement() {
         )
         .as_bytes()
     );
-    let out = invoke(&["--accept", "--protocol", "chat"], &req);
-    checked(&out, 0);
-    assert!(
-        out.stdout
-            .windows(52)
-            .any(|s| s == b"Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n")
-    );
-    let response = out.stdout;
-    let file = input(&req);
-    let out = run(Command::new(executable().path())
-        .args(["--response"])
-        .arg(file.path())
-        .stdin(std::fs::File::open(input(&response).path()).unwrap()));
-    checked(&out, 0);
-    assert!(out.stdout.starts_with(b"handshake=1 protocols=1 "));
-    checked(&invoke(&["--accept", "--protocol", "other"], &req), 2);
-    let mut bad = response.clone();
-    let at = bad
-        .windows(28)
-        .position(|v| v == b"s3pPLMBiTxaQ9kYGzzhZRbK+xOo=")
-        .unwrap();
-    bad[at] = b'x';
-    let data = input(&bad);
-    let out = run(Command::new(executable().path())
-        .arg("--response")
-        .arg(file.path())
-        .stdin(std::fs::File::open(data.path()).unwrap()));
-    checked(&out, 2);
-    let oracle = run(Command::new("python3").args([
-        "-c",
-        "from websockets.utils import accept_key; print(accept_key('dGhlIHNhbXBsZSBub25jZQ=='))",
-    ]));
-    checked(&oracle, 0);
-    assert_eq!(oracle.stdout, b"s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\n");
     for extra in [
         b"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n".as_slice(),
         b"Sec-WebSocket-Version: 13\r\n",

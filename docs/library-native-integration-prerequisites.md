@@ -1,4 +1,4 @@
-# Native threads and foreign-call prerequisites
+# Native linking, foreign calls and threads
 
 This is a source audit and a proposed dependency sequence, based on compiler
 `678bf559`. It adds no public declarations or execution claims. Current
@@ -7,61 +7,33 @@ This is a source audit and a proposed dependency sequence, based on compiler
 the documented native profile. Threads, native foreign libraries and callbacks
 need additional contracts.
 
-The current TLS work also pursues a Lanius implementation over the existing
-byte/socket interfaces. Hashes, HMAC/HKDF, [ChaCha20](stdlib-chacha20.md),
-[Poly1305](stdlib-poly1305.md),
-[ChaCha20-Poly1305](extended-chacha20-poly1305.md) and
-[X25519](extended-x25519.md) pass focused native gates. The
-[TLS record layer](extended-tls-record.md) passes two ordinary consumers and
-748 protocol commands across ChaCha20, AES-128 and AES-256/SHA-384 after a
-[host capacity repair](tls-record-lowering-dependency.md). The
-[seal-bytes program](extended-seal-bytes.md)
-passes 137 native cases, including full 1 MiB seal/open and failure cleanup;
-the [pinned compiler comparison](library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
-records measured workloads and limits.
+## Native cryptography and TLS dependency
 
-[Ed25519](extended-ed25519.md), [DER framing](extended-der.md),
-[TLS handshake codecs](extended-tls-handshake.md) and the
-[SHA-256/SHA-384 schedule and transcript](extended-tls-schedule.md) now pass focused native
-execution gates as well. These provide primitives and wire contracts; the
-broader certificate policy remains work. Negotiated state, authentication
-checkpoints and bounded transport now have their own evidence below.
+There is currently no supported cryptography or TLS implementation. Future
+security support will use bindings to established native libraries. The missing
+checked C ABI, native linking and backend integration are the dependency;
+existing socket and byte-stream APIs do not supply that boundary.
 
-[X.509 structure parsing](extended-x509.md) and
-[incremental framing](extended-tls-framing.md) now have native admission too.
-[Nonblocking entropy](stdlib-entropy-bounded.md) supplies explicit shared
-attempt budgets over the existing Linux syscall boundary.
-[DNS/IP service identity](extended-service-identity.md) and
-[ordered Ed25519 paths](extended-x509-path.md) now execute explicit-anchor,
-validity and supported-constraint checks. The
-[certificate verifier](extended-verify-certificate.md) passes 84 native cases.
-This is an offline restricted profile; general PKIX and revocation remain.
-[AES](core-aes.md) and [AES-GCM](extended-aes-gcm.md) execute as Lanius byte
-primitives and through explicit TLS record suites. The
-[server-flight authentication bridge](extended-tls-authentication.md) now
-executes ordered path/CertificateVerify/Finished checks. The
-[portable connection](extended-tls-connection.md) composes negotiation,
-record epochs, the actual trust decision and client-Finished transmission.
-Its paired/fragment/retry, 50 control and 80 admission cases pass. The
-[TCP adapter](extended-tls-tcp.md) passes both-role OpenSSL, 1 MiB pressure,
-ownership/fault and operation-resumption gates. The
-[exchange application](extended-tls-exchange.md) passes 80 native cases.
-The [group migration](tls-group-integration-plan.md) adds P-256 alongside
-X25519, with exact 64/96-byte entropy layouts and bounded P-scalar retries;
-the adapter now passes 122 cases, including both-role AES-256 one-megabyte
-streams under one explicit deadline each. Signature authentication remains
-Ed25519; the three record suites select SHA-256 or SHA-384 independently of
-the group. The [shared signature verifier](extended-signature.md) separately
-passes 719 protocol commands for owned Ed25519/P-256/RSAE keys; path and TLS
-signature dispatch integration remain work.
-The [connection contract](tls-connection-contract.md) retains the broader
-mandatory-algorithm and PKIX requirements.
+TCP/UDP, polling, subprocesses and bounded OS entropy retain their documented
+native contracts. Raw [DER](extended-der.md) and [X.509](extended-x509.md)
+retain schema parsing and inspection roles. None supplies signature
+verification, certificate trust or TLS peer authentication.
 
-This source path does not require foreign-call support. A foreign TLS backend
-and SQLite integration still need the native-library boundaries described
-here. The restricted Lanius TLS profile does not add native foreign calls.
-The thread-entry,
-synchronization and foreign ABI contracts below remain open.
+A first native-library profile needs:
+
+1. Checked C signatures for supported scalars, pointers, byte counts and opaque
+   handles, with explicit ownership and conversion rules.
+2. Native object/library linking and symbol resolution, including the supported
+   sections, relocations and linker inputs.
+3. Backend calls that implement the selected platform ABI: register/stack
+   arguments, stack alignment, preserved registers and return values.
+4. Library adapters with explicit context cleanup, buffer lifetimes, error
+   mapping, verification configuration and partial-I/O behavior. TLS also needs
+   certificate trust/identity policy and integration with socket deadlines.
+
+These contracts must execute before security APIs can claim support. Dynamic
+loading and callbacks are additional profiles when the selected library needs
+them; they need not block a direct static-call profile that does not use them.
 
 ## Existing boundaries
 
@@ -128,9 +100,9 @@ established prerequisite. Cross-thread ownership transfer, exclusion during
 reallocation, and exactly-once destruction remain required. Current shallow
 owner conventions do not create automatic Send/Sync or lifetime enforcement.
 
-A Lanius/raw-syscall thread profile can explicitly omit thread local storage
-(TLS). Libc-backed threads and foreign functions that use TLS need initialization,
-attachment and teardown. TLS is a requirement of those profiles rather than
+A Lanius/raw-syscall thread profile can explicitly omit thread local storage.
+Libc-backed threads and foreign functions that use it need initialization,
+attachment and teardown. It is a requirement of those profiles rather than
 an unconditional blocker of every possible native worker.
 
 ## Foreign libraries
@@ -146,8 +118,8 @@ Separate three admissions:
 3. **Callbacks:** addressable exported monomorphic entries, ABI trampolines,
    context lifetime, reentrancy and foreign-thread attachment.
 
-Foreign TLS libraries and SQLite integration depend on an appropriate
-foreign-call profile or another explicitly implemented native boundary. No JSON bridge, subprocess
+Cryptography/TLS and SQLite bindings depend on an implemented C ABI/native
+linking profile and backend support. No JSON bridge, subprocess
 serialization adapter or declaration-only API is counted as that integration.
 
 Entry authority and concurrent memory semantics need compiler coordination.

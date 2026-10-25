@@ -27,7 +27,9 @@ The [native integration proposal](library-native-integration-prerequisites.md)
 records the existing code-entry, linker, allocator and process-context evidence.
 The syscall thunk requires the
 same returning stack and continuation; it cannot implement clone/vfork/new-stack
-entry by itself. TLS/SQLite and general native FFI remain separate dependencies.
+entry by itself. Cryptography and TLS require an established external library
+through a checked native binding; that integration, SQLite and general native
+FFI remain dependencies.
 [Subprocess support](stdlib-command.md) now executes over same-stack
 fork/exec/wait, with explicit startup uncertainty, owned pipes and a
 single-threaded/no-outside-reaping contract. The command runner and 78-case

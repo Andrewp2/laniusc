@@ -10,6 +10,8 @@ documented framing, field-shape and selected value checks. A certificate
 consumer must still verify signatures, process every relevant extension,
 build and validate a trust path, compare names, apply hostname rules, check
 the clock and validity interval, and handle revocation and application policy.
+Those authentication operations require an established native library through
+a checked binding; that integration remains a dependency.
 
 The structure definitions follow
 [RFC 5280 sections 4.1 and 4.2](https://www.rfc-editor.org/rfc/rfc5280.html#section-4)

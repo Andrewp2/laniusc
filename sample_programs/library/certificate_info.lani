@@ -6,7 +6,6 @@ import core::io;
 import core::mem;
 import core::option;
 import core::result;
-import core::sha256;
 import core::slice;
 import ext::der;
 import ext::x509;
@@ -85,10 +84,8 @@ fn inspect(input: core::slice::View<u8>, report: &Report) -> i32 {
     let extensions: ext::x509::Extensions=certificate.extensions(); let extension_count: u64=0;
     while (true) { let item: core::result::Result<core::option::Option<ext::x509::Extension>,ext::x509::Error> = extensions.next(budget.borrow());
         if (item.is_err()) { return schema_status(item.unwrap_err()); } if (item.unwrap().is_none()) { break; } extension_count+=1; }
-    let hashed: core::result::Result<core::sha256::Digest,core::sha256::Error> = core::sha256::digest(input); if (hashed.is_err()) { return 7; } let digest: core::sha256::Digest=hashed.unwrap();
     let serial: core::slice::View<u8> = certificate.serial; if (serial.length>1 && serial.values[serial.start]==0) { serial.start+=1; serial.length-=1; }
     report.literal("inspection=parse-schema-only\n",29);
-    report.hex_line("certificate_sha256=",19,view(digest.bytes,0,32));
     report.number_line("version=",8,(certificate.version+1) as u64);
     report.hex_line("serial_hex=",11,serial);
     report.date_line("not_before_utc=",15,certificate.validity.not_before); report.date_line("not_after_utc=",14,certificate.validity.not_after);

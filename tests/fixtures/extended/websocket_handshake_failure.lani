@@ -12,7 +12,5 @@ fn main() -> i32 {
     let made=ext::websocket::encode_request(bytes("GET /chat HTTP/1.1",18),core::result::unwrap(core::slice::view(headers,1)),bytes("the sample nonce",16),bytes("chat",4),ext::websocket::default_limits());
     if(core::result::is_err(made)) { return allocation(core::result::unwrap_err(made)); } let request_owner:alloc::vec::Vec<u8> =core::result::unwrap(made);
     let request:ext::websocket::Request=core::result::unwrap(ext::websocket::validate_request(request_owner.as_view(),ext::websocket::default_limits()));
-    let made=ext::websocket::encode_response(request,bytes("chat",4),core::result::unwrap(core::slice::view(headers,0)),ext::websocket::default_limits());
-    if(core::result::is_err(made)) { let code:i32=allocation(core::result::unwrap_err(made)); request_owner.destroy(); return code; } let response_owner:alloc::vec::Vec<u8> =core::result::unwrap(made);
-    assert(core::result::is_ok(ext::websocket::validate_response(response_owner.as_view(),request,ext::websocket::default_limits()))); response_owner.destroy(); request_owner.destroy(); return 0;
+    assert(ext::websocket::offers(request,bytes("chat",4))); request_owner.destroy(); return 0;
 }

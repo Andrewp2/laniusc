@@ -2,15 +2,13 @@
 
 [`sample_programs/library/certificate_info.lani`](../sample_programs/library/certificate_info.lani)
 reads one DER certificate from stdin and writes a bounded structural report.
-The application uses the real [`ext::x509`](../extended/ext/x509.lani) parser
-and [`core::sha256`](../stdlib/core/sha256.lani); Python and OpenSSL appear only
-in the test driver.
+The application uses the real [`ext::x509`](../extended/ext/x509.lani) parser;
+Python and OpenSSL appear only in the test driver. It performs schema metadata
+inspection without hashing or a certificate fingerprint field.
 
-Runtime admission **passed on 2026-10-24** for x86_64 Linux ELF output from the
-GPU compiler, executed natively on the CPU. Three separately selected groups
-passed **50 native cases using three compiled strict ELFs**. These results
-cover the tested target and bounded inspection behavior, not other targets
-or certificate authentication.
+After fingerprint removal, all three focused groups pass on x86_64 Linux
+through the GPU compiler. The report below contains no cryptographic digest
+or verification decision.
 
 ## Invocation and report
 
@@ -27,7 +25,6 @@ The report contains these newline-terminated fields in this order:
 
 ```text
 inspection=parse-schema-only
-certificate_sha256=<64 lowercase hexadecimal digits>
 version=<1, 2, or 3>
 serial_hex=<unsigned serial, lowercase hexadecimal>
 not_before_utc=<YYYY-MM-DDTHH:MM:SSZ>
@@ -40,8 +37,7 @@ extensions=<decimal count>
 unknown_critical_extensions=<decimal count>
 ```
 
-The SHA-256 covers the exact DER bytes read, including the signature. The
-serial field removes a DER integer's optional leading positive sign byte; it
+The serial field removes a DER integer's optional leading positive sign byte; it
 does not truncate a long otherwise-valid serial. Each OID field contains only
 the OID's encoded content octets, excluding its DER tag and length. It is not
 a dotted decimal OID or the complete AlgorithmIdentifier encoding. RDN counts
@@ -127,7 +123,7 @@ per selection.
 
 The three groups are:
 
-| Test | Accepted evidence |
+| Test | Retained coverage |
 | --- | --- |
 | `certificate_info_real_metadata_schema_and_usage` | Real OpenSSL Ed25519, RSA-2048, and P-256 certificates against an independent DER/metadata oracle; valid schema variants, malformed inputs, inspection-only behavior, and argument rejection before input |
 | `certificate_info_owner_cleanup_partial_io_and_faults` | Every reached input allocation denial, matching owner release, successful short reads, acknowledged short-write progress, Interrupted retries, host errors, zero/invalid counts, EPIPE, signal setup failure, and a later write failure after a report prefix |
@@ -135,9 +131,8 @@ The three groups are:
 
 The test-only Python corpus builds independent DER structures and exact report
 bytes. It generates real certificates with OpenSSL, decodes their field
-structure independently, hashes their exact bytes with `hashlib`, and
-cross-checks serials, UTC dates, and fingerprints using OpenSSL's metadata
-command. Synthetic certificates exercise schema and limits without claiming
+structure independently and cross-checks serials and UTC dates using
+OpenSSL's metadata command. Synthetic certificates exercise schema and limits without claiming
 valid signatures. Expected report bytes are not obtained from the Lanius
 parser or renderer.
 
@@ -145,76 +140,32 @@ The native trace checks `rt_sigaction`, `read`, `write`, `mmap`, `munmap`,
 `mremap`, `brk`, `openat`, and `close`. It matches allocation addresses and
 sizes to releases, requires all input owners to retire before the first
 write, checks actual injected-fault reachability, preserves the input file,
-and checks EOF before publication. All three groups passed these checks.
+and checks EOF before publication. These controls pass in the adapted driver.
 An injected successful short write tests the app's response to the reported
 count: strace skips that actual kernel write, so the test expects only the
 remaining suffix on captured stdout. It does not claim the skipped prefix
 was delivered.
 
-The initial cleanup group failed in 6.91 seconds because the common capture
-helper replaced the test's closed pipe with its own stdout pipe. That run
-observed a successful report, not EPIPE. The driver now uses bounded
-`Command::output()` for that case so its explicitly supplied closed-reader
-pipe survives. The application, corpus, and real-prefix/error control are
-unchanged. The failed local log is
-`target/stdlib-work/tls-auth-admission/certificate-info-cleanup.log`; target
-logs are ignored local artifacts and are not checked in.
+## Current execution receipt
 
-## Accepted runs and reproduction
+On 2026-10-25, all three groups passed together in **15.57 seconds**:
+25 metadata/schema/usage cases, 17 ownership/I/O cases and eight limit cases,
+for **50 native cases** using one shared strict ELF. The program contains
+no hash implementation or fingerprint output.
 
-All logs below are under `target/stdlib-work/tls-auth-admission/`. They are
-local ignored artifacts, not checked-in evidence files.
-
-| Exact test | Native cases | Time | Log |
-| --- | ---: | ---: | --- |
-| `certificate_info_real_metadata_schema_and_usage` | 25 | 7.33 s | `certificate-info-ordinary.log` |
-| `certificate_info_owner_cleanup_partial_io_and_faults` | 17 | 7.27 s | `certificate-info-cleanup-corrected.log` |
-| `certificate_info_caps_eof_work_and_shared_call_budget` | 8 | 18.86 s | `certificate-info-limits.log` |
-
-Each accepted invocation compiled one app ELF and reused it for that group's
-native cases. The initial failed cleanup invocation took 6.91 seconds and is
-excluded from the three accepted ELFs and 50 accepted native cases. Only its
-driver capture setup changed; the application and corpus remained frozen.
-
-The initial joint Rust driver build with the TLS framing target took 1.39
-seconds (`build-certificate-framing.log`). Refreshing the certificate driver
-after the closed-pipe fix took 1.41 seconds
-(`build-certificate-closed-pipe-fix.log`). The accepted driver binary was
-`target/stdlib-build/debug/deps/extended_certificate_info_execution-b81e9ee3275c72f9`.
-Build times are not application execution or parser throughput measurements.
-
-From the repository root, the following function keeps each command bounded
-and serializes GPU admission. OpenSSL, Python 3, strace, timeout, and flock are
-test dependencies. The driver refresh used:
+The local runtime log is
+`target/stdlib-work/remove-crypto-certificate-info.log`. The affected Rust
+drivers built together in 86 seconds; build time is separate from native
+execution. Reproduce from the repository root with a freshly built test
+binary (the suffix is specific to this checkout):
 
 ```sh
 timeout --kill-after=2s 100s \
-  flock -E 75 -w 35 target/stdlib-work/library-gpu.lock \
-  timeout --kill-after=2s 60s \
-  env CARGO_TARGET_DIR="$PWD/target/stdlib-build" \
-    CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 \
-    cargo test --test extended_certificate_info_execution --no-run
+  flock target/stdlib-work/library-gpu.lock \
+  target/stdlib-build/debug/deps/extended_certificate_info_execution-c34056dacabe942d \
+  --test-threads=1 --nocapture
 ```
 
-The accepted runtime selections used this bounded form, one invocation per
-test. The binary name is specific to this checkpoint:
-
-```sh
-certificate_info_gate() {
-  timeout --kill-after=2s 100s \
-    flock -E 75 -w 35 target/stdlib-work/library-gpu.lock \
-    timeout --kill-after=2s 60s \
-    env RUST_MIN_STACK=16777216 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000 \
-      target/stdlib-build/debug/deps/extended_certificate_info_execution-b81e9ee3275c72f9 \
-      --exact "$1" --nocapture --test-threads=1
-}
-certificate_info_gate certificate_info_real_metadata_schema_and_usage
-certificate_info_gate certificate_info_owner_cleanup_partial_io_and_faults
-certificate_info_gate certificate_info_caps_eof_work_and_shared_call_budget
-```
-
-The native fault/trace runs support the explicit ownership and bounded I/O
-contracts above. They do not establish trust, signature correctness,
-constant-time behavior, isolated throughput, or a wall-clock bound for an
-arbitrary blocked host operation. No compiler, IR, ABI, or proof change is
-part of this application.
+OpenSSL, Python 3 and strace are test dependencies. Production metadata
+inspection uses the Lanius DER/X.509 parsers. No compiler, IR, ABI or proof
+source changed.

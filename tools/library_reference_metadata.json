@@ -112,11 +112,6 @@
         "docs/stdlib-adler32.md"
       ]
     },
-    "core::aes": {
-      "guides": [
-        "docs/core-aes.md"
-      ]
-    },
     "core::base64": {
       "guides": [
         "docs/stdlib-byte-codecs.md"
@@ -146,11 +141,6 @@
     "core::calendar": {
       "guides": [
         "docs/stdlib-calendar.md"
-      ]
-    },
-    "core::chacha20": {
-      "guides": [
-        "docs/stdlib-chacha20.md"
       ]
     },
     "core::char": {
@@ -316,11 +306,6 @@
         "docs/stdlib-paths.md"
       ]
     },
-    "core::poly1305": {
-      "guides": [
-        "docs/stdlib-poly1305.md"
-      ]
-    },
     "core::random": {
       "guides": [
         "docs/stdlib-randomness.md"
@@ -346,18 +331,6 @@
       "guides": [
         "docs/stdlib-fixed-capacity.md",
         "docs/stdlib-cursor-integration.md"
-      ]
-    },
-    "core::sha256": {
-      "guides": [
-        "docs/stdlib-sha256.md",
-        "docs/stdlib-hash-bytes.md"
-      ]
-    },
-    "core::sha512": {
-      "guides": [
-        "docs/stdlib-sha512.md",
-        "docs/stdlib-hash-bytes.md"
       ]
     },
     "core::slice": {
@@ -494,11 +467,6 @@
         "docs/stdlib-iterator-transfer.md"
       ]
     },
-    "ext::aes_gcm": {
-      "guides": [
-        "docs/extended-aes-gcm.md"
-      ]
-    },
     "ext::audio": {
       "guides": [
         "docs/extended-audio.md"
@@ -517,12 +485,6 @@
     "ext::cbor": {
       "guides": [
         "docs/extended-cbor.md"
-      ]
-    },
-    "ext::chacha20_poly1305": {
-      "guides": [
-        "docs/extended-chacha20-poly1305.md",
-        "docs/extended-seal-bytes.md"
       ]
     },
     "ext::cli": {
@@ -592,12 +554,6 @@
         "docs/extended-dns-client.md"
       ]
     },
-    "ext::ed25519": {
-      "guides": [
-        "docs/extended-ed25519.md",
-        "docs/extended-sign-bytes.md"
-      ]
-    },
     "ext::geometry": {
       "guides": [
         "docs/extended-geometry.md"
@@ -606,28 +562,6 @@
     "ext::glob": {
       "guides": [
         "docs/extended-glob.md"
-      ]
-    },
-    "ext::hkdf_sha256": {
-      "guides": [
-        "docs/extended-hmac-hkdf.md",
-        "docs/extended-derive-key.md"
-      ]
-    },
-    "ext::hkdf_sha384": {
-      "guides": [
-        "docs/extended-hmac-hkdf-sha384.md"
-      ]
-    },
-    "ext::hmac_sha256": {
-      "guides": [
-        "docs/extended-hmac-hkdf.md",
-        "docs/extended-derive-key.md"
-      ]
-    },
-    "ext::hmac_sha384": {
-      "guides": [
-        "docs/extended-hmac-hkdf-sha384.md"
       ]
     },
     "ext::http": {
@@ -676,11 +610,6 @@
         "docs/extended-log.md"
       ]
     },
-    "ext::p256": {
-      "guides": [
-        "docs/extended-p256.md"
-      ]
-    },
     "ext::parse": {
       "guides": [
         "docs/extended-parse.md"
@@ -711,19 +640,9 @@
         "docs/extended-regex.md"
       ]
     },
-    "ext::rsa": {
-      "guides": [
-        "docs/extended-rsa.md"
-      ]
-    },
     "ext::schema": {
       "guides": [
         "docs/extended-schema.md"
-      ]
-    },
-    "ext::service_identity": {
-      "guides": [
-        "docs/extended-service-identity.md"
       ]
     },
     "ext::settings": {
@@ -739,11 +658,6 @@
     "ext::signal": {
       "guides": [
         "docs/extended-signal.md"
-      ]
-    },
-    "ext::signature": {
-      "guides": [
-        "docs/extended-signature.md"
       ]
     },
     "ext::statistics": {
@@ -776,64 +690,6 @@
     "ext::timezone": {
       "guides": [
         "docs/extended-timezone.md"
-      ]
-    },
-    "ext::tls_authentication": {
-      "guides": [
-        "docs/extended-tls-authentication.md"
-      ]
-    },
-    "ext::tls_connection": {
-      "guides": [
-        "docs/extended-tls-connection.md",
-        "docs/tls-connection-contract.md"
-      ]
-    },
-    "ext::tls_framing": {
-      "guides": [
-        "docs/extended-tls-framing.md"
-      ]
-    },
-    "ext::tls_handshake": {
-      "guides": [
-        "docs/extended-tls-handshake.md",
-        "docs/extended-tls-auth-foundation.md"
-      ]
-    },
-    "ext::tls_hash": {
-      "guides": [
-        "docs/extended-tls-hash.md"
-      ]
-    },
-    "ext::tls_negotiation": {
-      "guides": [
-        "docs/extended-tls-negotiation.md"
-      ]
-    },
-    "ext::tls_record": {
-      "guides": [
-        "docs/extended-tls-record.md"
-      ]
-    },
-    "ext::tls_schedule": {
-      "guides": [
-        "docs/extended-tls-schedule.md"
-      ]
-    },
-    "ext::tls_suite": {
-      "guides": [
-        "docs/extended-tls-hash.md"
-      ]
-    },
-    "ext::tls_tcp": {
-      "guides": [
-        "docs/extended-tls-tcp.md",
-        "docs/extended-tls-exchange.md"
-      ]
-    },
-    "ext::tls_transcript": {
-      "guides": [
-        "docs/extended-tls-schedule.md"
       ]
     },
     "ext::toml": {
@@ -938,21 +794,10 @@
         "docs/extended-websocket.md"
       ]
     },
-    "ext::x25519": {
-      "guides": [
-        "docs/extended-x25519.md"
-      ]
-    },
     "ext::x509": {
       "guides": [
         "docs/extended-x509.md",
         "docs/extended-certificate-info.md"
-      ]
-    },
-    "ext::x509_path": {
-      "guides": [
-        "docs/extended-x509-path.md",
-        "docs/extended-verify-certificate.md"
       ]
     },
     "ext::zip": {

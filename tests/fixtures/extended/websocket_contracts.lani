@@ -12,12 +12,11 @@ fn same(a:core::slice::View<u8>,b:core::slice::View<u8>) -> bool { if(a.len()!=b
 fn event(step:ext::websocket::Step) -> i32 { return match(step.event) { ext::websocket::Event::Pending->0, ext::websocket::Event::Text->1, ext::websocket::Event::Binary->2, ext::websocket::Event::Ping->9, ext::websocket::Event::Pong->10, ext::websocket::Event::Close->8 }; }
 fn main() -> i32 {
  let limits:ext::websocket::Limits=ext::websocket::default_limits();
- let accept:[u8;30]=[90;30]; let dst:core::slice::View<u8> =core::result::unwrap(core::slice::view_range(accept,1,28));
- assert(core::result::unwrap(ext::websocket::accept_into(bytes("dGhlIHNhbXBsZSBub25jZQ==",24),dst))==28 && same(dst,bytes("s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",28)) && accept[0]==90 && accept[29]==90);
- let too_short:core::slice::View<u8> =view(accept,27); assert(core::result::is_err(ext::websocket::accept_into(bytes("dGhlIHNhbXBsZSBub25jZQ==",24),too_short)) && accept[0]==90);
+ let key_text:[u8;26]=[90;26]; let dst:core::slice::View<u8> =core::result::unwrap(core::slice::view_range(key_text,1,24));
+ assert(core::result::unwrap(ext::websocket::key_into(bytes("the sample nonce",16),dst))==24 && same(dst,bytes("dGhlIHNhbXBsZSBub25jZQ==",24)) && key_text[0]==90 && key_text[25]==90);
+ assert(core::result::is_err(ext::websocket::key_into(bytes("the sample nonce",16),view(key_text,23))) && key_text[0]==90);
  let request:ext::websocket::Request=core::result::unwrap(ext::websocket::validate_request(bytes("GET /chat HTTP/1.1\r\nHost: server.example.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Protocol: chat, superchat\r\nSec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n\r\n",272),limits));
  assert(request.protocol_count==2 && ext::websocket::offers(request,bytes("chat",4)) && !ext::websocket::offers(request,bytes("Chat",4)));
- let response:ext::websocket::Response=core::result::unwrap(ext::websocket::validate_response(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: keep-alive, Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nSec-WebSocket-Protocol: chat\r\n\r\nFRAME",176),request,limits)); assert(response.head.raw.len()+5==176);
  assert(core::result::is_err(ext::websocket::validate_request(bytes("GET /chat HTTP/1.1\r\nHost: server.example.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n",206),limits)));
  assert(core::result::is_err(ext::websocket::validate_request(bytes("GET /chat HTTP/1.1\r\nHost: server.example.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 12\r\n\r\n",161),limits)));
  assert(core::result::is_err(ext::websocket::validate_request(bytes("GET /chat HTTP/1.1\r\nHost: server.example.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Protocol: chat,chat\r\n\r\n",196),limits)));
@@ -28,9 +27,7 @@ fn main() -> i32 {
  let host:ext::http::Field=ext::http::Field { raw:bytes("",0),name:bytes("Host",4),value:bytes("server.example.com",18),offset:0 }; let fields:[ext::http::Field;1]=[host];
  let made:alloc::vec::Vec<u8> =core::result::unwrap(ext::websocket::encode_request(bytes("GET /chat HTTP/1.1",18),core::result::unwrap(core::slice::view(fields,1)),bytes("the sample nonce",16),bytes("chat, superchat",15),limits));
  let made_request:ext::websocket::Request=core::result::unwrap(ext::websocket::validate_request(made.as_view(),limits)); assert(ext::websocket::offers(made_request,bytes("superchat",9)));
- let empty_fields:core::slice::View<ext::http::Field> =core::result::unwrap(core::slice::view(fields,0));
- let made_response:alloc::vec::Vec<u8> =core::result::unwrap(ext::websocket::encode_response(made_request,bytes("chat",4),empty_fields,limits)); assert(core::result::is_ok(ext::websocket::validate_response(made_response.as_view(),made_request,limits)));
- assert(core::result::is_err(ext::websocket::encode_response(made_request,bytes("other",5),empty_fields,limits))); made_response.destroy(); made.destroy();
+ made.destroy();
  let rfc:[u8;11]=[129,133,55,250,33,61,127,159,77,81,88]; let raw:ext::websocket::Frame=core::result::unwrap(ext::websocket::parse_frame(view(rfc,11),ext::websocket::Role::Server,limits)); assert(raw.consumed==11 && raw.payload.len()==5);
  let decoded:[u8;9]=[90;9]; let out:core::slice::View<u8> =core::result::unwrap(core::slice::view_range(decoded,2,5)); assert(core::result::unwrap(ext::websocket::decode_frame_into(raw,out))==5 && same(out,bytes("Hello",5)) && decoded[1]==90 && decoded[7]==90);
  assert(core::result::is_err(ext::websocket::decode_frame_into(raw,view(decoded,4))) && decoded[0]==90);

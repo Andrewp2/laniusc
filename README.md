@@ -72,76 +72,16 @@ Strings into an ordered set while reusing its batch allocation.
 before publication and uses bounded scratch with explicit partial progress.
 The [CSV report program](docs/stdlib-format-report.md) composes it with numeric
 parsing and buffered output.
-[SHA-224/256](docs/stdlib-sha256.md) and the
-[SHA-512 family](docs/stdlib-sha512.md) provide allocation-free incremental
-byte digests. The [stdin hashing program](docs/stdlib-hash-bytes.md) exercises
-all six algorithms with explicit input and I/O limits.
-[ChaCha20](docs/stdlib-chacha20.md), [Poly1305](docs/stdlib-poly1305.md),
-[ChaCha20-Poly1305](docs/extended-chacha20-poly1305.md) and
-[X25519](docs/extended-x25519.md) have focused native Linux execution evidence.
-[P-256](docs/extended-p256.md) also passes 1,288 independent protocol cases
-for SEC1 public keys, ECDH and ECDSA/SHA-256 verification, plus an ordinary
-consumer, without allocation. [TLS group integration](docs/tls-group-integration-plan.md)
-now executes X25519/P-256 policy selection, independent keys and bounded retries;
-ECDSA certificate/signature integration remains separate work.
-[HMAC/HKDF-SHA-384](docs/extended-hmac-hkdf-sha384.md) passes 930 protocol
-commands and an ordinary composition program, including streaming/reset,
-copied state and full output through HKDF counter 255.
-[RSA public verification](docs/extended-rsa.md) passes 620 protocol commands
-and an ordinary consumer for its explicit SHA-256 PKCS#1/PSS profile,
-including the 2049-bit PSS boundary. Both foundations execute without allocation;
-their certificate-signature integrations remain separate work.
-[Owned public signature dispatch](docs/extended-signature.md) passes 719
-protocol commands and a four-vector consumer across Ed25519, P-256 and RSAE,
-with strict encodings, copied keys and shared verification allowances.
-[TLS hash and suite foundations](docs/extended-tls-hash.md) pass 1,634 commands
-and an ordinary consumer for selected SHA-256/SHA-384 streams, owned snapshots
-and ordered three-suite policies.
-[AES-128/192/256](docs/core-aes.md) and
-[AES-GCM](docs/extended-aes-gcm.md) also execute without allocation, with
-independent block/AEAD models and authentication-before-output checks.
-The [TLS record layer](docs/extended-tls-record.md) passes ordinary
-consumers, 308 ChaCha commands, 220 AES-128 and 220 AES-256/SHA-384 commands after a
-[host capacity repair](docs/tls-record-lowering-dependency.md).
-[Ed25519 signatures](docs/extended-ed25519.md),
-[borrowed DER](docs/extended-der.md),
-[TLS handshake codecs](docs/extended-tls-handshake.md) and the
-[key schedule/transcript](docs/extended-tls-schedule.md) also pass focused
-native gates. General certificate trust remains work.
-[X.509 structure parsing](docs/extended-x509.md) and
-[incremental framing](docs/extended-tls-framing.md) add bounded certificate
-inspection and record/handshake reassembly, including the full u24 body limit.
-[Nonblocking OS entropy](docs/stdlib-entropy-bounded.md) provides shared attempt
-budgets and explicit partial progress for connection initialization.
-The [certificate inspector](docs/extended-certificate-info.md) passes 50 native
-cases covering parsed metadata, report publication and resource/I/O failures.
-[DNS/IP identity matching](docs/extended-service-identity.md) and
-[ordered Ed25519 certificate paths](docs/extended-x509-path.md) enforce
-explicit anchors, validity, supported constraints and shared resource budgets.
-The [certificate verifier](docs/extended-verify-certificate.md) passes 84 native
-cases. This offline profile rejects unsupported policies; general PKIX remains
-work.
-[Server-flight authentication](docs/extended-tls-authentication.md) now joins
-that path decision to ordered CertificateVerify and Finished checks, with
-232 protocol cases and 716 state observations across SHA-256/SHA-384. The
-[connection engine](docs/extended-tls-connection.md) composes it with negotiation,
-directional epochs and client-Finished acknowledgement, passing 154 scripted
-cases plus an ordinary consumer across both groups, retry forms, long
-certificate flights and error/entropy/work boundaries.
-The [TCP adapter](docs/extended-tls-tcp.md) passes 18 real OpenSSL exchanges,
-37 fault/ownership cases, two 1 MiB pressure streams and six deadline/budget
-resumption cases, including actual partial-send and retained-input witnesses.
-Another 28 cases cover P-256 peers, both group policies and bounded scalar
-rejection. AES-256/SHA-384 adds 31 interoperability, failure, full-exporter and
-one-megabyte pressure cases, for 122 transport cases in total.
-The [exchange application](docs/extended-tls-exchange.md) passes 80 native cases
-for duplex transfers, explicit trust, file/input limits, I/O and owner failures.
-The [seal-bytes program](docs/extended-seal-bytes.md) passes 137 native cases,
-including allocation/I/O failures and the full 1 MiB boundary. The
-[pinned compiler comparison](docs/library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
-records the measured crypto and large-library workloads. These connections use
-X25519 or P-256 with Ed25519 and SHA-256/SHA-384; ECDSA and RSA signature integration and
-broader PKIX support remain part of the full TLS work.
+
+Cryptography and TLS currently have no supported implementation. Future support
+will bind established native libraries, after the compiler provides the required
+C ABI, native linking and backend integration. The
+[native integration prerequisites](docs/library-native-integration-prerequisites.md)
+track that dependency. TCP/UDP sockets and
+[bounded OS entropy](docs/stdlib-entropy-bounded.md) remain available.
+[DER](docs/extended-der.md) and
+[X.509 structure parsing](docs/extended-x509.md) provide data inspection; they
+do not verify signatures, certificate trust or TLS peers.
 
 Optional modules use the [`extended` source root](extended/README.md).
 [`ext::csv`](docs/extended-csv.md) and [`ext::json`](docs/extended-json.md)
