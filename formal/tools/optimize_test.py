@@ -29,6 +29,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import run_cache  # noqa: E402
 import mini_difftest  # noqa: E402
 import oracle_difftest  # noqa: E402
 
@@ -145,8 +146,7 @@ def main():
     os.makedirs(args.workdir, exist_ok=True)
     lean_path = os.path.abspath(os.path.join(args.workdir, 'optimize.lean'))
     open(lean_path, 'w').write(lean_file(minis, sources))
-    env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
-    lean = subprocess.run(['lake', 'env', 'lean', lean_path], cwd='formal', env=env, capture_output=True, text=True)
+    lean = run_cache.run_lean(lean_path)
     if lean.returncode != 0:
         raise SystemExit('lean failed:\n' + lean.stdout[-4000:] + lean.stderr[-4000:])
     lines = lean.stdout.strip().split('\n')

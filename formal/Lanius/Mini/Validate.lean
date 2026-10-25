@@ -804,14 +804,14 @@ theorem seqAgrees_cases {first second other : Stmt} {facts : List Fact}
         second.agrees (first.factsAfter facts) s = true := by
   simp only [Stmt.agrees, Bool.or_eq_true, Bool.and_eq_true] at h
   rcases h with ((h | h) | h) | h
-  · exact .inl h
-  · exact .inr (.inl h)
-  · right; right; left
-    cases first <;> simp only [Bool.false_eq_true, Bool.and_eq_true] at h
-    exact ⟨_, _, rfl, h⟩
   · right; right; right
     cases other <;> simp only [Bool.false_eq_true, Bool.and_eq_true] at h
     exact ⟨_, _, rfl, h⟩
+  · right; right; left
+    cases first <;> simp only [Bool.false_eq_true, Bool.and_eq_true] at h
+    exact ⟨_, _, rfl, h⟩
+  · exact .inl h
+  · exact .inr (.inl ⟨h.1.2, h.2⟩)
 
 theorem iteAgrees_cases {condition : Expr} {thenBranch elseBranch other : Stmt} {facts : List Fact}
     (h : (Stmt.ite condition thenBranch elseBranch).agrees facts other = true) :
@@ -822,16 +822,16 @@ theorem iteAgrees_cases {condition : Expr} {thenBranch elseBranch other : Stmt} 
         thenBranch.agrees facts t = true ∧ elseBranch.agrees facts e = true := by
   simp only [Stmt.agrees, Bool.or_eq_true, Bool.and_eq_true] at h
   rcases h with (h | h) | h
-  · exact .inl h
+  · right; right
+    cases other <;> simp only [Bool.false_eq_true, Bool.and_eq_true] at h
+    exact ⟨_, _, _, rfl, h.1.1, h.1.2, h.2⟩
   · right; left
     split at h
     · rename_i v known
       simp only [Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq] at h
       exact ⟨v, known, h⟩
     · simp at h
-  · right; right
-    cases other <;> simp only [Bool.false_eq_true, Bool.and_eq_true] at h
-    exact ⟨_, _, _, rfl, h.1.1, h.1.2, h.2⟩
+  · exact .inl ⟨h.1.2, h.2⟩
 
 theorem loopAgrees_cases {condition : Expr} {body other : Stmt} {facts : List Fact}
     (h : (Stmt.loop condition body).agrees facts other = true) :

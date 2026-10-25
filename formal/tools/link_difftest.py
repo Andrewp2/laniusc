@@ -21,6 +21,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import run_cache  # noqa: E402
 from mini_difftest import gen_stmt, break_program, lean_stmt  # noqa: E402
 
 
@@ -117,12 +118,11 @@ def main():
     rng = random.Random(args.seed)
     programs = [gen_modules(rng, broken=rng.random() < 0.25) for _ in range(args.count)]
     os.makedirs(args.workdir, exist_ok=True)
-    env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
     lines = []
     for start in range(0, len(programs), args.chunk):
         path = os.path.abspath(os.path.join(args.workdir, f'modules{start // args.chunk}.lean'))
         open(path, 'w').write(lean_file(programs[start:start + args.chunk]))
-        lean = subprocess.run(['lake', 'env', 'lean', path], cwd='formal', env=env, capture_output=True, text=True)
+        lean = run_cache.run_lean(path)
         if lean.returncode != 0:
             raise SystemExit('lean failed:\n' + lean.stdout + lean.stderr)
         lines += lean.stdout.strip().split('\n')

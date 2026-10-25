@@ -112,6 +112,64 @@ def filterRetagTokens (source : List Byte) : List RawToken → List RawToken
       | none => filterRetagTokens source rest
       | some canonical => canonical :: filterRetagTokens source rest
 
+/-- A token's bytes, from the source's suffix at the token's start. -/
+def tokenBytesFrom (suffix : List Byte) (token : RawToken) : List Nat :=
+  (suffix.take (token.finish - token.start)).map Fin.val
+
+/-- `source.drop target`, from `rest = source.drop pos`: a walk on from
+`rest` when target is not before pos. -/
+def dropTo (source rest : List Byte) (pos target : Nat) : List Byte :=
+  if pos ≤ target then rest.drop (target - pos) else source.drop target
+
+theorem dropTo_eq {source rest : List Byte} {pos : Nat} (target : Nat) (at_pos : rest = source.drop pos) :
+    dropTo source rest pos target = source.drop target := by
+  unfold dropTo
+  by_cases before : pos ≤ target
+  · rw [if_pos before, at_pos, List.drop_drop]
+    congr 1
+    omega
+  · rw [if_neg before]
+
+/-- `filterRetagTokens` with a cursor (`rest = source.drop pos`) through the
+tokens' starts, which the lexer emits in order, so the keyword check reads
+each identifier's bytes without walking the source from its start.
+Compiled code runs it, by `filterRetagTokens_eq_fast`. -/
+def filterRetagFrom (source rest : List Byte) (pos : Nat) : List RawToken → List RawToken
+  | [] => []
+  | token :: more =>
+      let here := dropTo source rest pos token.start
+      if isTriviaKind token.kind then
+        filterRetagFrom source here token.start more
+      else
+        { token with kind :=
+            if token.kind = .identifier then
+              (exactKeywordKind (tokenBytesFrom here token) keywordRules).getD .identifier
+            else
+              token.kind } :: filterRetagFrom source here token.start more
+
+theorem filterRetagFrom_eq (source : List Byte) (tokens : List RawToken) :
+    ∀ rest pos, rest = source.drop pos → filterRetagFrom source rest pos tokens = filterRetagTokens source tokens := by
+  induction tokens with
+  | nil => intro rest pos _; rfl
+  | cons token more inductionHypothesis =>
+      intro rest pos at_pos
+      have here := dropTo_eq token.start at_pos
+      rw [filterRetagFrom, filterRetagTokens, canonicalizeToken]
+      simp only [here]
+      by_cases trivia : isTriviaKind token.kind = true
+      · simp only [trivia, if_true]
+        exact inductionHypothesis _ _ rfl
+      · simp only [trivia]
+        rw [inductionHypothesis _ _ rfl]
+        rfl
+
+def filterRetagFast (source : List Byte) (tokens : List RawToken) : List RawToken :=
+  filterRetagFrom source source 0 tokens
+
+@[csimp] theorem filterRetagTokens_eq_fast : @filterRetagTokens = @filterRetagFast := by
+  funext source tokens
+  exact (filterRetagFrom_eq source tokens source 0 List.drop_zero.symm).symm
+
 inductive Canonicalizes (source : List Byte) : List RawToken → List RawToken → Prop
   | empty : Canonicalizes source [] []
   | dropsTrivia (trivia : isTriviaKind token.kind = true)

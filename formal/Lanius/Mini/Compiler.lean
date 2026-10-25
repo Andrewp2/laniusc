@@ -3841,26 +3841,13 @@ def Stmt.kills (self : Stmt) (index : Nat) : Bool :=
   | .storeWord w a v => false
   | .divide w o t l r => false
 
-/-- other ends every run of this statement the same way, when facts hold on entry: the same shape with agreeing expressions (each original one read with the facts substituted), or a statement dropped because it does nothing (skip, x = x, a loop whose condition is 0) or because it stores a slot the rest kills, or a branch chosen because its condition is a constant or both branches agree with other. -/
+/-- other ends every run of this statement the same way, when facts hold on entry: the same shape with agreeing expressions (each original one read with the facts substituted), or a statement dropped because it does nothing (skip, x = x, a loop whose condition is 0) or because it stores a slot the rest kills, or a branch chosen because its condition is a constant or both branches agree with other. Against Skip, a Seq's two dropped-statement cases are the same check, and with a constant condition both branches agreeing implies the chosen one does, so those are not tried twice: each would double the time at each level of nesting. The same shape, the usual case, is tried first. -/
 def Stmt.agrees (self : Stmt) (facts : List Fact) (other : Stmt) : Bool :=
   match self with
   | .skip => Stmt.isSkip other
   | .assign index value => assignAgrees index (Expr.subst value facts) other
   | .seq first second =>
-    Stmt.agrees first facts Stmt.skip && Stmt.agrees second (Stmt.factsAfter first facts) other || Stmt.agrees second (Stmt.factsAfter first facts) Stmt.skip && Stmt.agrees first facts other || (match first with
-     | .skip => false
-     | .assign index value => Stmt.kills other index && Stmt.agrees second (assigned facts index value) other
-     | .seq f s => false
-     | .ite c t e => false
-     | .loop c b => false
-     | .call t n f a => false
-     | .ret v => false
-     | .alloc t sh sz => false
-     | .loadByte t a => false
-     | .storeByte a v => false
-     | .loadWord w t a => false
-     | .storeWord w a v => false
-     | .divide w o t l r => false) || (match other with
+    (match other with
      | .skip => false
      | .assign i v => false
      | .seq f s => Stmt.agrees first facts f && Stmt.agrees second (Stmt.factsAfter first facts) s
@@ -3873,12 +3860,22 @@ def Stmt.agrees (self : Stmt) (facts : List Fact) (other : Stmt) : Bool :=
      | .storeByte a v => false
      | .loadWord w t a => false
      | .storeWord w a v => false
-     | .divide w o t l r => false)
+     | .divide w o t l r => false) || (match first with
+     | .skip => false
+     | .assign index value => Stmt.kills other index && Stmt.agrees second (assigned facts index value) other
+     | .seq f s => false
+     | .ite c t e => false
+     | .loop c b => false
+     | .call t n f a => false
+     | .ret v => false
+     | .alloc t sh sz => false
+     | .loadByte t a => false
+     | .storeByte a v => false
+     | .loadWord w t a => false
+     | .storeWord w a v => false
+     | .divide w o t l r => false) || Stmt.agrees first facts Stmt.skip && Stmt.agrees second (Stmt.factsAfter first facts) other || !(Stmt.isSkip other) && Stmt.agrees second (Stmt.factsAfter first facts) Stmt.skip && Stmt.agrees first facts other
   | .ite condition thenBranch elseBranch =>
-    Stmt.agrees thenBranch facts other && Stmt.agrees elseBranch facts other || (let known : Option (BitVec 64) := Expr.constant (Expr.subst condition facts)
-     match known with
-     | some v => decide (v = 0) && Stmt.agrees elseBranch facts other || decide (v ≠ 0) && Stmt.agrees thenBranch facts other
-     | none => false) || (let test : Expr := Expr.subst condition facts
+    (let test : Expr := Expr.subst condition facts
      match other with
      | .skip => false
      | .assign i v => false
@@ -3892,7 +3889,13 @@ def Stmt.agrees (self : Stmt) (facts : List Fact) (other : Stmt) : Bool :=
      | .storeByte a v => false
      | .loadWord w t a => false
      | .storeWord w a v => false
-     | .divide w o t l r => false)
+     | .divide w o t l r => false) || (let known : Option (BitVec 64) := Expr.constant (Expr.subst condition facts)
+     match known with
+     | some v => decide (v = 0) && Stmt.agrees elseBranch facts other || decide (v ≠ 0) && Stmt.agrees thenBranch facts other
+     | none => false) || (let known : Option (BitVec 64) := Expr.constant (Expr.subst condition facts)
+     match known with
+     | some v => false
+     | none => true) && Stmt.agrees thenBranch facts other && Stmt.agrees elseBranch facts other
   | .loop condition body =>
     Expr.isZero condition && Stmt.isSkip other || (match other with
      | .skip => false

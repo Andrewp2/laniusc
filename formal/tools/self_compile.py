@@ -36,6 +36,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import run_cache  # noqa: E402
 import mini_difftest as md  # noqa: E402
 import stdlib_oracle as so  # noqa: E402
 
@@ -210,6 +211,7 @@ def digest(bs):
 
 
 def main():
+    run_cache.no_core_dumps()
     parser = argparse.ArgumentParser()
     parser.add_argument('workdir')
     parser.add_argument('--count', type=int, default=20)
@@ -238,13 +240,10 @@ def main():
 
     def parse(base):
         if base not in parsed:
-            tree = so.parse_tree(args.laniusc, base + '.lani', files_dir)
-            if tree is not None:
-                open(base + '.prods', 'w').write(' '.join(map(str, tree[0])))
-                open(base + '.parents', 'w').write(' '.join(map(str, tree[1])))
-            parsed[base] = tree is not None
+            parsed[base] = so.parse_checked(args.laniusc, base, files_dir)
         return parsed[base]
 
+    so.build_run_all()
     dep_bases = []
     for dep in deps:
         b = os.path.join(files_dir, dep.replace('::', '__'))
@@ -266,26 +265,22 @@ def main():
     open(base + '.lani', 'w').write(text)
     if not parse(base):
         raise SystemExit(f'laniusc does not parse {base}.lani')
-    open(os.path.join(workdir, 'manifest.txt'), 'w').write(' '.join(['tests', base] + dep_bases) + '\n')
+    open(os.path.join(workdir, 'manifest.txt'), 'w').write(' '.join(['compile', 'tests', base] + dep_bases) + '\n')
 
-    # Lean: the front end and compileSource on the module, once, and the
-    # extracted definitions on each test.
+    # The front end and compileSource on the module, once (the compiled
+    # runAll), and the extracted definitions on each test (Lean).
+    run = subprocess.run([so.RUN_ALL, os.path.join(workdir, 'manifest.txt')], capture_output=True, text=True)
+    status = run.stdout.strip().split(' ', 1)[1] if run.returncode == 0 and ' ' in run.stdout.strip() else None
     lean_path = os.path.join(workdir, 'self_compile.lean')
     expected = '\n'.join(f'#eval IO.println ("t{k} " ++ ({lean_text(t)}))' for k, t in enumerate(tests))
-    open(lean_path, 'w').write(so.LEAN + f'\n#eval runAll "{os.path.join(workdir, "manifest.txt")}"\n\n'
-                               + expected + '\n')
-    env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
-    lean = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=8G', '-p', 'MemorySwapMax=0',
-                           'lake', 'env', 'lean', lean_path], cwd='formal', env=env, capture_output=True, text=True)
+    open(lean_path, 'w').write('import Lanius.Mini.FrontLex\nopen Lanius.Mini\n\n' + expected + '\n')
+    lean = run_cache.run_lean(lean_path, memory='8G')
     if lean.returncode != 0:
         raise SystemExit('lean failed:\n' + lean.stdout[-4000:] + lean.stderr[-4000:])
-    status, want = None, {}
+    want = {}
     for line in lean.stdout.strip().split('\n'):
         name, rest = line.split(' ', 1)
-        if name == 'tests':
-            status = rest
-        else:
-            want[int(name[1:])] = None if rest == 'none' else [int(x) for x in re.findall(r'\d+', rest)]
+        want[int(name[1:])] = None if rest == 'none' else [int(x) for x in re.findall(r'\d+', rest)]
     if status is None or not status.startswith('image'):
         raise SystemExit(f'the verified compiler: {status}')
 

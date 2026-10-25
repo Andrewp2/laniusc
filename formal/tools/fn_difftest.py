@@ -24,8 +24,10 @@ import os
 import random
 import subprocess
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import run_cache  # noqa: E402
 import extract  # noqa: E402
 from extract import Ty, camel, lower_first  # noqa: E402
 
@@ -356,6 +358,7 @@ fn put_hex(digit: i32) -> i32 {
 
 
 def main():
+    run_cache.no_core_dumps()
     parser = argparse.ArgumentParser()
     parser.add_argument('workdir')
     parser.add_argument('--per-fn', type=int, default=20)
@@ -419,20 +422,24 @@ def main():
     lani_path = os.path.join(args.workdir, 'app/main.lani')
     open(lani_path, 'w').write(body + '\n'.join(tail) + '\n')
 
-    lean_out = subprocess.run(['lake', 'env', 'lean', os.path.abspath(lean_path)], cwd=FORMAL,
-                              capture_output=True, text=True)
+    began = time.time()
+    lean_out = run_cache.run_lean(lean_path)
     if lean_out.returncode != 0:
         print(lean_out.stdout[-3000:], lean_out.stderr[-3000:], file=sys.stderr)
         return 1
     expected = dict(line.split(':', 1) for line in lean_out.stdout.splitlines() if ':' in line)
 
+    lean_s = time.time() - began
     binary = os.path.join(args.workdir, 'cases')
+    began = time.time()
     built = subprocess.run([HEAVY, '-t', '20', args.laniusc, '--stdlib-root', os.path.join(ROOT, 'stdlib'),
                             '-o', binary, lani_path], capture_output=True, text=True)
     if built.returncode != 0:
         print(built.stdout[-3000:], built.stderr[-3000:], file=sys.stderr)
         return 1
 
+    build_s = time.time() - began
+    began = time.time()
     actual, panicked, start, codes = {}, [], 0, {}
     while start < len(cases):
         run = subprocess.run([binary] + ['x'] * start, capture_output=True, timeout=120)
@@ -448,6 +455,7 @@ def main():
         codes[failed] = run.returncode
         start = failed + 1
 
+    print(f'time: lean {lean_s:.0f} s, laniusc {build_s:.0f} s, {len(panicked) + 1} native runs {time.time() - began:.0f} s', file=sys.stderr)
     mismatches = [(i, cases[i][0]) for i in range(len(cases))
                   if str(i) in actual and actual[str(i)] != expected.get(str(i))]
     for i, label in mismatches[:10]:

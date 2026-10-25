@@ -329,6 +329,56 @@ theorem lexRawFromFuel_ne_exhausted
 def lexRaw (source : List Byte) : RawLexResult :=
   lexRawFromFuel source (source.length + 1) 0
 
+set_option linter.unusedVariables false in
+/-- `lexRawFromFuel` from the unread suffix `rest` (`source.drop offset`):
+a step reads its token from `rest` instead of walking `source` from the
+start to `offset`, twice (`length` and `drop`), so lexing is linear rather
+than quadratic. Compiled code runs it, by `lexRaw_eq_fast`. -/
+def lexRawFromRest : List Byte → Nat → Nat → RawLexResult
+  | rest, 0, offset => .fuelExhausted [] offset
+  | [], fuel + 1, offset => .success []
+  | byte :: more, fuel + 1, offset =>
+      match (scanOneAt (byte :: more) 0).shift offset with
+      | .failure error => .failure [] error
+      | .token token =>
+          (lexRawFromRest ((byte :: more).drop (token.finish - offset)) fuel token.finish).prepend token
+
+theorem lexRawFromFuel_eq_rest (source : List Byte) (fuel : Nat) :
+    ∀ offset, lexRawFromFuel source fuel offset = lexRawFromRest (source.drop offset) fuel offset := by
+  induction fuel with
+  | zero =>
+      intro offset
+      cases source.drop offset <;> rfl
+  | succ fuel inductionHypothesis =>
+      intro offset
+      rw [lexRawFromFuel]
+      by_cases atEnd : source.length ≤ offset
+      · rw [if_pos atEnd, List.drop_eq_nil_of_le atEnd, lexRawFromRest]
+      · rw [if_neg atEnd]
+        cases rest : source.drop offset with
+        | nil => exact absurd (List.drop_eq_nil_iff.mp rest) atEnd
+        | cons byte more =>
+            have scanned : scanOne source offset = (scanOneAt (byte :: more) 0).shift offset := by
+              rw [scanOne, rest]
+            rw [lexRawFromRest, scanned]
+            cases found : (scanOneAt (byte :: more) 0).shift offset with
+            | failure error => rfl
+            | token token =>
+                have advances : offset < token.finish := scanOne_token_advances (scanned.trans found)
+                have tail : source.drop token.finish = (byte :: more).drop (token.finish - offset) := by
+                  rw [← rest, List.drop_drop]
+                  congr 1
+                  omega
+                simp only
+                rw [inductionHypothesis token.finish, tail]
+
+def lexRawFast (source : List Byte) : RawLexResult :=
+  lexRawFromRest source (source.length + 1) 0
+
+@[csimp] theorem lexRaw_eq_fast : @lexRaw = @lexRawFast := by
+  funext source
+  rw [lexRaw, lexRawFast, lexRawFromFuel_eq_rest, List.drop_zero]
+
 theorem lexRaw_ne_exhausted (source : List Byte) :
     ∀ acceptedPrefix exhaustedAt,
       lexRaw source ≠ .fuelExhausted acceptedPrefix exhaustedAt := by

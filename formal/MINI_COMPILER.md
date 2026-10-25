@@ -22,6 +22,26 @@ size relative to the compiler, and Lean check time.
 - Each file checks in seconds. Proof size is measured against the compiler code
   it covers.
 
+## Tests
+
+The difftests run through one gate, from the repository root:
+
+```text
+python3 -I formal/tools/gate.py                 # quick tier: 9 steps, about 2 minutes cold
+python3 -I formal/tools/gate.py --tier full     # larger counts, every stdlib module
+```
+
+A step that passes is stored under a hash of what it reads (the built
+definitions, runAll, the .lani sources, the scripts, laniusc, the stdlib), so
+the gate reruns only the steps a change can affect and prints the others'
+stored results; with nothing changed it takes under a second. A step that
+runs past 300 s is stopped. Below the gate, laniusc's parse trees and builds
+and each `lake env lean` run are cached by content (`run_cache.py`), and the
+Lean lexer and the validator run in linear and polynomial time where they had
+been quadratic and exponential, so the suite that took 3 hours on
+2026-10-24 takes about 2 minutes. The sections below give each script's own
+command line.
+
 ## Top-level theorem
 
 `Lanius.Mini.compileProgram_correct` in `Lanius/Mini/Correct.lean`. For a
@@ -667,6 +687,15 @@ of `compiler.lani`, before `compile_declared`, and both are extracted.
   compared. A sequence `x = e; rest` also agrees with `other` when
   `other.kills x` (`Stmt.kills`, with `Stmt.ignores` for "does not read")
   and `rest` agrees with `other` under the facts after `x = e`.
+  The cases are tried in an order that keeps the walk polynomial
+  (2026-10-25): the same shape first, then the dropped store, then a
+  dropped statement on either side. Against `skip` the two dropped-statement
+  cases of a sequence are one check, and with a constant condition "both
+  branches agree" implies "the chosen branch agrees", so the second of each
+  pair is guarded off (the guards change no result). Before, each level of a
+  deep `Seq` nest checked its children against `skip` twice, and validating
+  the verified compiler's own program (1,647 functions, one a 334,000-character
+  table) did not finish in 2 hours; it now takes 0.7 s.
 - **Pipeline** (`compile_optimized`): optimize, keep the result when
   `validate` accepts it and it compiles, and otherwise compile the original
   program. `compile_source` calls it.

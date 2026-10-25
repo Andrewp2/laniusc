@@ -1,4 +1,5 @@
 import Lanius.Mini.FrontLex
+import Std.Data.HashMap
 
 /-! A compiled driver for the self-hosting checks (formal/tools/self_host.py):
 the front end and `compileSource` on programs given as lexed files and
@@ -7,12 +8,14 @@ laniusc's parse trees, as native code rather than `#eval`'s interpreter.
     lake exe runAll MANIFEST
 
 Each manifest line is `compile NAME BASE...`, `dump NAME BASE...`,
-`diag NAME BASE...` or `validate NAME BASE...`, where a base names BASE.lani, BASE.prods and BASE.parents. `compile` prints NAME and
+`diag NAME BASE...`, `validate NAME BASE...` or `time NAME BASE...`, where a
+base names BASE.lani, BASE.prods and BASE.parents. `compile` prints NAME and
 nolex, tree (the grammar rejects the tree), unread (the builder rejects it),
 uncompiled (`compileSource` rejects it) or `image [entries] [bytes]`; `dump`
 prints NAME and, for each file, its tokens (kind:start:text), prods and
 parents, or nolex; `diag` says why `compileSource` rejects a program;
-`validate` prints ok or tree for each file. -/
+`validate` prints ok or tree for each file; `time` prints how long each stage
+of the front end and `compileSource` takes. -/
 
 open Lanius.Mini
 
@@ -26,11 +29,17 @@ def readSource (path : String) : IO (List Lanius.Compiler.Lexer.Byte) := do
   let bytes ← IO.FS.readBinFile path
   return bytes.toList.map (fun b => Fin.ofNat 256 b.toNat)
 
+/-- The files read so far, by base: a stdlib file is shared by many programs. -/
+initialize loaded : IO.Ref (Std.HashMap String (Option FileInput)) ← IO.mkRef {}
+
 def loadFile (base : String) : IO (Option FileInput) := do
+  if let some r := (← loaded.get)[base]? then return r
   let source ← readSource (base ++ ".lani")
   let prods ← readNats (base ++ ".prods")
   let parents ← readNats (base ++ ".parents")
-  return (lexTokens source).map fun tokens => ({ tokens := tokens, prods := prods, parents := parents } : FileInput)
+  let r := (lexTokens source).map fun tokens => ({ tokens := tokens, prods := prods, parents := parents } : FileInput)
+  loaded.modify (·.insert base r)
+  return r
 
 def showNats (xs : List Nat) (sep : String) : String := sep.intercalate (xs.map toString)
 
@@ -109,6 +118,38 @@ def diagLine (name : String) (bases : List String) : IO Unit := do
           | none => IO.println s!"{name} compileOptimized fails ({fs.length} functions)"
           | some b => IO.println s!"{name} compiles: {b.image.length} bytes"
 
+/-- How long each stage of `compileSource` takes on a program, in ms. -/
+def timeLine (name : String) (bases : List String) : IO Unit := do
+  let stage {α : Type} (label : String) (f : Unit → α) (size : α → Nat) : IO α := do
+    let t0 ← IO.monoMsNow
+    let x ← IO.lazyPure f
+    let n := size x
+    IO.println s!"{name} {label} {(← IO.monoMsNow) - t0} ms ({n})"
+    (← IO.getStdout).flush
+    return x
+  let t0 ← IO.monoMsNow
+  let mut files : List FileInput := []
+  for b in bases do
+    if let some f ← loadFile b then files := files ++ [f]
+  IO.println s!"{name} lex {(← IO.monoMsNow) - t0} ms ({files.length} files)"
+  (← IO.getStdout).flush
+  let some _ ← stage "validate" (fun _ => validateFiles grammar files) (fun r => r.map List.length |>.getD 0)
+    | IO.println s!"{name} tree"
+  let some p ← stage "frontEnd" (fun _ => frontEndFiles grammar files) (fun r => r.map (·.funcs.length) |>.getD 0)
+    | IO.println s!"{name} unread"
+  let some d ← stage "declare" (fun _ => declareProgram p) (fun r => r.map (·.structs.length) |>.getD 0)
+    | IO.println s!"{name} declare fails"
+  let some fs ← stage "lower" (fun _ => lowerFuncs (sigs p.funcs) d p.funcs) (fun r => r.map List.length |>.getD 0)
+    | IO.println s!"{name} lower fails"
+  let prog : Program := { funcs := fs }
+  let opt ← stage "optimize" (fun _ => optimizeProgram prog) (·.funcs.length)
+  let _ ← stage "validate-opt" (fun _ => validate prog opt) (fun b => if b then 1 else 0)
+  let some codes ← stage "compileFuncs" (fun _ => compileFuncs (arities opt.funcs) opt.funcs) (fun r => r.map List.length |>.getD 0)
+    | IO.println s!"{name} compileFuncs fails"
+  let entries ← stage "layout" (fun _ => layout 0 codes) List.length
+  let _ ← stage "link" (fun _ => linkFrom entries 0 codes) List.length
+  return ()
+
 end Lanius.Tools
 
 open Lanius.Tools in
@@ -121,6 +162,7 @@ def main (args : List String) : IO UInt32 := do
     | "dump" :: name :: bases => dumpLine name bases
     | "diag" :: name :: bases => diagLine name bases
     | "validate" :: name :: bases => validateLine name bases
+    | "time" :: name :: bases => timeLine name bases
     | _ => IO.eprintln s!"bad manifest line: {line}"; return 2
     (← IO.getStdout).flush
   return 0

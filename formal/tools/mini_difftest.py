@@ -15,6 +15,9 @@ import random
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import run_cache  # noqa: E402
+
 BINOPS = ['add', 'sub', 'mul', 'and', 'or', 'xor', 'shl', 'shr', 'sar']
 CMPOPS = ['eq', 'ne', 'lt', 'le', 'gt', 'ge']
 WORDS = ['s32', 'u64']
@@ -367,6 +370,7 @@ def parse_lanius(data, count):
 
 
 def main():
+    run_cache.no_core_dumps()
     parser = argparse.ArgumentParser()
     parser.add_argument('workdir')
     parser.add_argument('--count', type=int, default=40)
@@ -379,8 +383,7 @@ def main():
     os.makedirs(args.workdir, exist_ok=True)
     lean_path = os.path.abspath(os.path.join(args.workdir, 'programs.lean'))
     open(lean_path, 'w').write(lean_file(programs))
-    env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
-    lean = subprocess.run(['lake', 'env', 'lean', lean_path], cwd='formal', env=env, capture_output=True, text=True)
+    lean = run_cache.run_lean(lean_path)
     if lean.returncode != 0:
         raise SystemExit('lean failed:\n' + lean.stdout + lean.stderr)
     expected = [None if line == 'none' else bytes.fromhex(line) for line in lean.stdout.strip().split('\n')]

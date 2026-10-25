@@ -22,14 +22,18 @@ they are, never edited.
    `T::m(..)`, the way the stdlib's own generic code calls it. The program's
    other files are the target's module and the modules it reaches by import
    or path, read from stdlib/ as written.
-3. laniusc parses each file (under heavy), and under `lake env lean`
-   `frontEndFiles` reads the program, then `compileSource` compiles it.
+3. laniusc parses each stdlib file once, with its import lines blanked, and
+   the wrappers in batches of many, its tree of a batch split back into the
+   wrappers'; the verified validator checks every tree (a rejected one is
+   parsed again from laniusc's captures of the whole program). Trees and
+   builds are cached (run_cache.py). Then the compiled runAll reads each
+   program with `frontEndFiles` and compiles it with `compileSource`.
 4. Each compiled image runs natively on K argument tuples, each call in a
    forked child (a trap or a two-second timeout is a result, not a crash).
-   The wrappers that compiled, with every call that did not trap, are also
-   compiled by laniusc in one harness binary per chunk, which prints each
-   result; the two must agree. A call that trapped natively must also stop
-   the laniusc binary (checked one call per binary, at most 20).
+   The wrappers that compiled are also compiled by laniusc in one harness
+   binary per chunk, which prints each result; the two must agree, and a
+   call that traps natively must stop the laniusc binary too (it is then
+   run again from the next call).
 
 The front end gives no reason for a rejection, so for each target it does
 not read, WORKDIR/unread.txt lists the constructs, in the target or in the
@@ -49,10 +53,12 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import frontend_difftest as front  # noqa: E402
 import oracle_difftest as oracle  # noqa: E402
+import run_cache  # noqa: E402
 
 STDLIB = 'stdlib'
 HEAVY = 'target/claude-work/bin/heavy'
@@ -488,58 +494,127 @@ def parse_tree(laniusc, lani_path, workdir):
     return first
 
 
-# ---------------------------------------------------------------- Lean
+NONE = 4294967295
 
-LEAN = '''import Lanius.Mini.FrontLex
-open Lanius.Mini
+# Put between the wrappers of a batch: an item no wrapper has the shape of.
+MARK = 'fn oracle_mark(a: u8, b: u8, c: u8, d: u8, e: u8) -> u8 {\n    return a;\n}\n'
 
-def readNats (path : String) : IO (List Nat) := do
-  let text ← IO.FS.readFile path
-  return (text.splitOn " ").filterMap String.toNat?
 
-def readSource (path : String) : IO (List Lanius.Compiler.Lexer.Byte) := do
-  let bytes ← IO.FS.readBinFile path
-  return bytes.toList.map (fun b => Fin.ofNat 256 b.toNat)
+def item_trees(prods, parents):
+    """A file tree's items, in order, each a list of (prod, parent) with the
+    parent relative to the item's first node (None for that node). The tree
+    is in preorder: node 0 is the file, then the item_list chain
+    (item_list -> item item_list | empty), each item's nodes before the next
+    link's."""
+    kids = {}
+    for i, q in enumerate(parents):
+        kids.setdefault(q, []).append(i)
+    items, c = [], 1
+    while prods[c] == 1:
+        nxt = kids[c][-1]
+        items.append([(prods[i], None if i == c + 1 else parents[i] - (c + 1)) for i in range(c + 1, nxt)])
+        c = nxt
+    return items
 
-def loadFile (cache : IO.Ref (List (String × Option FileInput))) (base : String) : IO (Option FileInput) := do
-  match (← cache.get).lookup base with
-  | some r => return r
-  | none =>
-    let source ← readSource (base ++ ".lani")
-    let prods ← readNats (base ++ ".prods")
-    let parents ← readNats (base ++ ".parents")
-    let r := (lexTokens source).map fun tokens => ({ tokens := tokens, prods := prods, parents := parents } : FileInput)
-    cache.modify fun c => (base, r) :: c
-    return r
 
--- One line per program: its name, then its files' bases. Prints the name and
--- nolex, tree (a tree the grammar rejects), unread (the builder rejects it),
--- uncompiled (compileSource rejects the program read), or the image.
-def runAll (manifest : String) : IO Unit := do
-  let cache ← IO.mkRef ([] : List (String × Option FileInput))
-  let lines := ((← IO.FS.readFile manifest).splitOn "\\n").filter (· ≠ "")
-  for line in lines do
-    let parts := line.splitOn " "
-    let name := parts.headD ""
-    let mut files : List FileInput := []
-    let mut lexed := true
-    for b in parts.tail do
-      match ← loadFile cache b with
-      | none => lexed := false
-      | some f => files := files ++ [f]
-    if !lexed then
-      IO.println s!"{name} nolex"
-    else
-      match frontEndFiles grammar files with
-      | none =>
-        match validateFiles grammar files with
-        | none => IO.println s!"{name} tree"
-        | some _ => IO.println s!"{name} unread"
-      | some p =>
-        match compileSource p with
-        | none => IO.println s!"{name} uncompiled"
-        | some b => IO.println s!"{name} image {b.entries} {b.image.map (·.toNat)}"
-'''
+def file_tree(items):
+    """The tree of a file with these items (item_trees' inverse)."""
+    prods, parents, up = [0], [NONE], 0
+    for item in items:
+        link = len(prods)
+        prods.append(1)
+        parents.append(up)
+        base = len(prods)
+        for p, q in item:
+            prods.append(p)
+            parents.append(link if q is None else base + q)
+        up = link
+    prods.append(2)
+    parents.append(up)
+    return prods, parents
+
+
+def parse_wrappers(laniusc, texts, workdir, batch_bytes=1 << 16):
+    """laniusc's trees of the wrappers (each `module app::main;`, imports, then
+    items), parsed in batches: one file of the module line and each wrapper's
+    items after a MARK, whose tree is split back into the wrappers'. The
+    caller validates each tree."""
+    trees, start = [], 0
+    while start < len(texts):
+        end, size = start, 0
+        while end < len(texts) and (end == start or size + len(texts[end]) < batch_bytes):
+            size += len(texts[end])
+            end += 1
+        bodies, imports = [], []
+        for text in texts[start:end]:
+            lines = text.split('\n')
+            imports.append([line[7:-1].split('::') for line in lines if line.startswith('import ')])
+            bodies.append('\n'.join(line for line in lines if not line.startswith(('module ', 'import '))))
+        path = os.path.join(workdir, 'batch.lani')
+        open(path, 'w').write('module app::main;\n' + ''.join(MARK + b + '\n' for b in bodies))
+        prods, parents, _ = front.parse_plain(HEAVY, laniusc, path, workdir)
+        items = item_trees(prods, parents)
+        mark = items[1]
+        groups = []
+        for item in items[1:]:
+            if item == mark:
+                groups.append([])
+            else:
+                groups[-1].append(item)
+        if len(groups) != end - start:
+            raise SystemExit(f'batch of {end - start} wrappers split into {len(groups)}')
+        for group, paths in zip(groups, imports):
+            tree = file_tree([items[0]] + group)
+            trees.append(front.splice_imports(*tree, 1, paths) if paths else tree)
+        start = end
+    return trees
+
+
+def parse_stdlib_file(laniusc, lani_path, workdir):
+    """laniusc's tree of a stdlib file: with its import lines blanked (one
+    cached laniusc run), else as parse_tree finds it."""
+    try:
+        prods, parents, _ = front.parse_with_laniusc(HEAVY, laniusc, lani_path, workdir)
+        return prods, parents
+    except (SystemExit, OSError, IndexError):
+        return parse_tree(laniusc, lani_path, workdir)
+
+
+def parse_checked(laniusc, base, workdir):
+    """Write laniusc's tree of base.lani (parse_stdlib_file), if the verified
+    validator accepts it, else from laniusc's whole-program captures; returns
+    whether a tree was written."""
+    tree = parse_stdlib_file(laniusc, base + '.lani', workdir)
+    if tree is None:
+        return False
+    write_tree(base, tree)
+    if validate_all([base], workdir):
+        return True
+    tree = parse_tree(laniusc, base + '.lani', workdir)
+    if tree is not None:
+        write_tree(base, tree)
+    return tree is not None
+
+
+def build_run_all():
+    """Build runAll (a no-op when it is current)."""
+    env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
+    subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+                    'lake', 'build', 'runAll'], cwd='formal', env=env, capture_output=True, check=True)
+
+
+def validate_all(bases, workdir):
+    """The bases whose stored tree the verified validator accepts."""
+    manifest = os.path.join(workdir, 'validate.txt')
+    open(manifest, 'w').write(''.join(f'validate {i} {b}\n' for i, b in enumerate(bases)))
+    out = subprocess.run([RUN_ALL, manifest], capture_output=True, text=True, check=True).stdout
+    ok = {int(line.split(' ')[0]) for line in out.split('\n') if line.endswith(' ok')}
+    return {b for i, b in enumerate(bases) if i in ok}
+
+
+def write_tree(base, tree):
+    open(base + '.prods', 'w').write(' '.join(map(str, tree[0])))
+    open(base + '.parents', 'w').write(' '.join(map(str, tree[1])))
 
 
 # ---------------------------------------------------------------- native side
@@ -716,6 +791,7 @@ def causes(mods, t, find=None):
 # ---------------------------------------------------------------- main
 
 def main():
+    run_cache.no_core_dumps()
     parser = argparse.ArgumentParser()
     parser.add_argument('workdir')
     parser.add_argument('--modules', help='comma-separated module names (default: every stdlib module)')
@@ -745,55 +821,51 @@ def main():
             open(base + '.lani', 'w').write(text)
             programs.append(dict(target=t, part=part, base=base, wparams=wparams, deps=closure(mods, t.module)))
 
-    # laniusc's parse trees: each stdlib file once, each wrapper once.
-    parsed = {}
+    # laniusc's parse trees: the stdlib files one by one, the wrappers in
+    # batches (both cached); a tree the validator rejects is parsed again the
+    # slow way (parse_tree), and a file with none is left out.
+    began = time.time()
+    build_run_all()
+    deps = sorted({dep for p in programs for dep in p['deps']})
+    dep_base = {dep: os.path.join(files_dir, dep.replace('::', '__')) for dep in deps}
+    trees = {}
+    for dep in deps:
+        shutil.copy(mods[dep].path, dep_base[dep] + '.lani')
+        trees[dep_base[dep]] = parse_stdlib_file(args.laniusc, dep_base[dep] + '.lani', files_dir)
+    for p, tree in zip(programs, parse_wrappers(args.laniusc, [open(p['base'] + '.lani').read() for p in programs],
+                                                files_dir)):
+        trees[p['base']] = tree
+    for b, tree in trees.items():
+        if tree is not None:
+            write_tree(b, tree)
+    good = validate_all([b for b, tree in trees.items() if tree is not None], workdir)
+    for b in [b for b in trees if b not in good]:
+        tree = parse_tree(args.laniusc, b + '.lani', files_dir)
+        if tree is not None:
+            write_tree(b, tree)
+            good |= validate_all([b], workdir)
 
-    def parse(base):
-        if base in parsed:
-            return
-        text = open(base + '.lani').read()
-        if os.path.exists(base + '.parsed') and open(base + '.parsed').read() == text and os.path.exists(base + '.prods'):
-            parsed[base] = True  # parsed by an earlier run, unchanged
-            return
-        tree = parse_tree(args.laniusc, base + '.lani', files_dir)
-        if tree is None:
-            parsed[base] = False
-            return
-        open(base + '.prods', 'w').write(' '.join(map(str, tree[0])))
-        open(base + '.parents', 'w').write(' '.join(map(str, tree[1])))
-        open(base + '.parsed', 'w').write(text)
-        parsed[base] = True
-
+    parse_s = time.time() - began
     manifest = []
-    for p in programs:
-        bases = [p['base']]
-        for dep in p['deps']:
-            b = os.path.join(files_dir, dep.replace('::', '__'))
-            if not os.path.exists(b + '.lani'):
-                shutil.copy(mods[dep].path, b + '.lani')
-            bases.append(b)
-        for b in bases:
-            parse(b)
-        if not all(parsed[b] for b in bases):
+    for k, p in enumerate(programs):
+        bases = [p['base']] + [dep_base[dep] for dep in p['deps']]
+        if not all(b in good for b in bases):
             p['status'] = 'noparse'
             continue
-        manifest.append(f'p{programs.index(p)} ' + ' '.join(bases))
+        manifest.append(f'compile p{k} ' + ' '.join(bases))
     open(os.path.join(workdir, 'manifest.txt'), 'w').write('\n'.join(manifest) + '\n')
-    lean_path = os.path.join(workdir, 'stdlib_oracle.lean')
-    open(lean_path, 'w').write(LEAN + f'\n#eval runAll "{os.path.join(workdir, "manifest.txt")}"\n')
-    env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
-    lean = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
-                           'lake', 'env', 'lean', lean_path], cwd='formal', env=env, capture_output=True, text=True)
-    if lean.returncode != 0:
-        raise SystemExit('lean failed:\n' + lean.stdout[-4000:] + lean.stderr[-4000:])
+    run = subprocess.run([RUN_ALL, os.path.join(workdir, 'manifest.txt')], capture_output=True, text=True)
+    if run.returncode != 0:
+        raise SystemExit('runAll failed:\n' + run.stdout[-4000:] + run.stderr[-4000:])
     status = {}
-    for line in lean.stdout.strip().split('\n'):
+    for line in run.stdout.strip().split('\n'):
         name, rest = line.split(' ', 1)
         status[int(name[1:])] = rest
     expected = sum(1 for p in programs if p.get('status') != 'noparse')
     if len(status) != expected:
-        raise SystemExit(f'lean printed {len(status)} results for {expected} programs')
+        raise SystemExit(f'runAll printed {len(status)} results for {expected} programs')
 
+    compile_s = time.time() - began - parse_s
     # Native runs.
     native = Native()
     for k, p in enumerate(programs):
@@ -809,16 +881,21 @@ def main():
         p['calls'] = [[gen_arg(rng, ty) for ty in types] for _ in range(args.calls if types else 1)]
         p['native'] = [native_call(native, a, types) for a in p['calls']]
 
+    native_s = time.time() - began - parse_s - compile_s
     # laniusc: the compiled wrappers, renamed, in harness binaries.
     compiled = [p for p in programs if p['status'] == 'image']
     disagreements = []
-    agreed = calls_total = trapped_total = 0
+    agreed = calls_total = traps = 0
     for start in range(0, len(compiled), args.chunk):
         chunk = compiled[start:start + args.chunk]
-        results = laniusc_chunk(args, workdir, chunk, start, mods)
+        results = laniusc_chunk(args, workdir, chunk, start)
         for p, got in zip(chunk, results):
             for a, want, have in zip(p['calls'], p['native'], got):
                 if want in ('trap', 'timeout'):
+                    traps += 1
+                    if have not in ('trap', 'timeout', 'laniusc rejects it'):
+                        disagreements.append(f'{p["target"].label} [{p["part"]}] args {a}: verified compiler traps, '
+                                             f'laniusc {have}')
                     continue
                 calls_total += 1
                 if have == want:
@@ -826,21 +903,21 @@ def main():
                 else:
                     disagreements.append(f'{p["target"].label} [{p["part"]}] args {a}: verified compiler {want}, '
                                          f'laniusc {have}')
-    traps = [(p, a) for p in compiled for a, want in zip(p['calls'], p['native']) if want in ('trap', 'timeout')]
-    for p, a in traps[:20]:
-        trapped_total += 1
-        code = laniusc_trap(args, workdir, p, a, mods)
-        if code == 0:
-            disagreements.append(f'{p["target"].label} [{p["part"]}] args {a}: verified compiler traps, '
-                                 f'laniusc exits 0')
 
-    report(workdir, mods, all_targets, programs, disagreements, agreed, calls_total, len(traps), trapped_total)
+    print(f'time: parse {parse_s:.0f} s, runAll {compile_s:.0f} s, native {native_s:.0f} s, '
+          f'laniusc {time.time() - began - parse_s - compile_s - native_s:.0f} s',
+          file=sys.stderr)
+    report(workdir, mods, all_targets, programs, disagreements, agreed, calls_total, traps)
     return 1 if disagreements else 0
 
 
-def harness_text(chunk, start, calls_of):
-    imports = sorted({'std::io_byte'} | {line[7:-1] for p in chunk for line in open(p['base'] + '.lani').read().split('\n')
-                                         if line.startswith('import ')})
+def harness_text(chunk, start):
+    """One binary for a chunk's wrappers: main makes every call, from the one
+    numbered by its argument count on, printing each result (laniusc's
+    output is unbuffered, so the results before a trap are kept)."""
+    imports = sorted({'std::io_byte', 'std::process'} |
+                     {line[7:-1] for p in chunk for line in open(p['base'] + '.lani').read().split('\n')
+                      if line.startswith('import ')})
     out = ['module app::main;'] + [f'import {m};' for m in imports] + ['']
     out += oracle.LANI_HEAD.split('\n', 4)[4].split('\n')
     for j, p in enumerate(chunk):
@@ -850,67 +927,68 @@ def harness_text(chunk, start, calls_of):
             body = re.sub(rf'\b{name}\b', f'{name}{start + j}', body)
         body = re.sub(r'\bfn w\(', f'fn w{start + j}(', body)
         out.append(body)
-    out.append('fn main() -> i32 {')
+    out += ['fn main() -> i32 {', '    let start: i32 = std::process::argc() - 1;']
+    n = 0
     for j, p in enumerate(chunk):
         types = [ty for _, ty in p['wparams']]
-        for a in calls_of(p):
-            out.append(f'    put32(w{start + j}({", ".join(lani_arg(v, t) for v, t in zip(a, types))}));')
+        for a in p['calls']:
+            out.append(f'    if (start <= {n}) {{ put32(w{start + j}({", ".join(lani_arg(v, t) for v, t in zip(a, types))})); }}')
+            n += 1
     out.append('    return 0;\n}')
     return '\n'.join(out) + '\n'
 
 
-def build_and_run(args, workdir, name, text):
+def build(args, workdir, name, text):
+    """laniusc's binary of a harness (cached), or None and its error output."""
     lani_path = os.path.join(workdir, name + '.lani')
-    exe = os.path.join(workdir, name)
     open(lani_path, 'w').write(text)
+    k = run_cache.key(run_cache.file_digest(args.laniusc), run_cache.tree_digest(STDLIB), text)
+    hit = run_cache.load_file('build', k)
+    if hit is not None:
+        return hit, ''
+    exe = os.path.join(workdir, name)
     if os.path.exists(exe):
         os.remove(exe)
-    build = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+    built = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
                             HEAVY, '-t', '20', args.laniusc, '--stdlib-root', STDLIB, '-o', exe, lani_path],
                            capture_output=True, text=True)
-    if build.returncode != 0 or not os.path.exists(exe):
-        return None, build.stdout[-2000:] + build.stderr[-2000:]
-    try:
-        run = subprocess.run([exe], capture_output=True, timeout=60)
-    except subprocess.TimeoutExpired:
-        return 'timeout', b''
-    return run.returncode, run.stdout
+    if built.returncode != 0 or not os.path.exists(exe):
+        return None, built.stdout[-2000:] + built.stderr[-2000:]
+    return run_cache.store_file('build', k, exe), ''
 
 
-def laniusc_chunk(args, workdir, chunk, start, mods):
-    """Each wrapper's laniusc results on its non-trapping calls ('build' if laniusc rejects it)."""
-    def calls_of(p):
-        return [a for a, want in zip(p['calls'], p['native']) if want not in ('trap', 'timeout')]
+def run_calls(exe, n):
+    """The binary's result for each of its n calls: a value, or 'trap' or
+    'timeout' for the call it stopped at (it is run again from the next)."""
+    got = []
+    while len(got) < n:
+        try:
+            run = subprocess.run([exe] + ['x'] * len(got), capture_output=True, timeout=10)
+            data, code = run.stdout, run.returncode
+        except subprocess.TimeoutExpired as e:
+            data, code = e.stdout or b'', 'timeout'
+        done = min(len(data) // 4, n - len(got))
+        got += [oracle.i32(int.from_bytes(data[4 * i:4 * i + 4], 'little')) for i in range(done)]
+        if len(got) < n:
+            got.append('missing' if code == 0 else 'timeout' if code == 'timeout' else 'trap')
+    return got
 
-    def decode(data, n):
-        return [oracle.i32(int.from_bytes(data[4 * i:4 * i + 4], 'little')) if 4 * i + 4 <= len(data) else 'missing'
-                for i in range(n)]
 
-    code, data = build_and_run(args, workdir, f'harness{start}', harness_text(chunk, start, calls_of))
-    if code is None and len(chunk) > 1:
+def laniusc_chunk(args, workdir, chunk, start):
+    """Each wrapper's laniusc result on each call ('laniusc rejects it' when
+    laniusc does not build it)."""
+    exe, error = build(args, workdir, f'harness{start}', harness_text(chunk, start))
+    if exe is None and len(chunk) > 1:
         # laniusc rejects the chunk: build each wrapper alone to find which.
         out = []
         for j, p in enumerate(chunk):
-            out += laniusc_chunk(args, workdir, [p], start + j, mods)
+            out += laniusc_chunk(args, workdir, [p], start + j)
         return out
-    results, at = [], 0
-    for p in chunk:
-        n = len(calls_of(p))
-        if code is None:
-            got = ['laniusc rejects it'] * n
-            open(os.path.join(workdir, f'harness{start}.error'), 'w').write(data)
-        else:
-            got = decode(data[4 * at:], n)
-        at += n
-        it = iter(got)
-        results.append([next(it) if want not in ('trap', 'timeout') else None for want in p['native']])
-    return results
-
-
-def laniusc_trap(args, workdir, p, a, mods):
-    k = p['base'].rsplit('p', 1)[1]
-    code, _ = build_and_run(args, workdir, f'trap{k}', harness_text([p], int(k), lambda q: [a]))
-    return code
+    if exe is None:
+        open(os.path.join(workdir, f'harness{start}.error'), 'w').write(error)
+        return [['laniusc rejects it'] * len(chunk[0]['calls'])]
+    got = iter(run_calls(exe, sum(len(p['calls']) for p in chunk)))
+    return [[next(got) for _ in p['calls']] for p in chunk]
 
 
 def category(cause):
@@ -921,7 +999,7 @@ def category(cause):
     return c
 
 
-def report(workdir, mods, all_targets, programs, disagreements, agreed, calls_total, traps, traps_checked):
+def report(workdir, mods, all_targets, programs, disagreements, agreed, calls_total, traps):
     by_target = {}
     for p in programs:
         by_target.setdefault(p['target'].label, []).append(p)
@@ -966,7 +1044,7 @@ def report(workdir, mods, all_targets, programs, disagreements, agreed, calls_to
         'not read or not compiled, by construct (a target can count under several): '
         + ', '.join(f'{k} {v}' for k, v in sorted(reason_counts.items(), key=lambda kv: -kv[1])),
         f'{calls_total} calls compared with laniusc, {agreed} agree; {traps} calls trap natively, '
-        f'{traps_checked} checked against laniusc',
+        f'each checked to stop laniusc\'s binary too',
         f'{len(disagreements)} disagreements',
     ]
     for d in disagreements:

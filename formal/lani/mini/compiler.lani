@@ -4848,13 +4848,17 @@ impl Stmt {
     // read with the facts substituted), or a statement dropped because it
     // does nothing (skip, x = x, a loop whose condition is 0) or because it
     // stores a slot the rest kills, or a branch chosen because its condition
-    // is a constant or both branches agree with other.
+    // is a constant or both branches agree with other. Against Skip, a Seq's
+    // two dropped-statement cases are the same check, and with a constant
+    // condition both branches agreeing implies the chosen one does, so those
+    // are not tried twice: each would double the time at each level of
+    // nesting. The same shape, the usual case, is tried first.
     pub fn agrees(self, facts: List<Fact>, other: Stmt) -> bool {
         return match (self) {
             Skip -> other.is_skip(),
             Assign(index, value) -> assign_agrees(index, value.subst(facts), other),
-            Seq(first, second) -> (unbox(first).agrees(facts, Skip) && unbox(second).agrees(unbox(first).facts_after(facts), other)) || (unbox(second).agrees(unbox(first).facts_after(facts), Skip) && unbox(first).agrees(facts, other)) || dead_agrees(unbox(first), unbox(second), facts, other) || seq_agrees(unbox(first), unbox(second), facts, other),
-            Ite(condition, then_branch, else_branch) -> (unbox(then_branch).agrees(facts, other) && unbox(else_branch).agrees(facts, other)) || branch_agrees(condition.subst(facts).constant(), unbox(then_branch), unbox(else_branch), facts, other) || ite_agrees(condition.subst(facts), unbox(then_branch), unbox(else_branch), facts, other),
+            Seq(first, second) -> seq_agrees(unbox(first), unbox(second), facts, other) || dead_agrees(unbox(first), unbox(second), facts, other) || (unbox(first).agrees(facts, Skip) && unbox(second).agrees(unbox(first).facts_after(facts), other)) || (!other.is_skip() && unbox(second).agrees(unbox(first).facts_after(facts), Skip) && unbox(first).agrees(facts, other)),
+            Ite(condition, then_branch, else_branch) -> ite_agrees(condition.subst(facts), unbox(then_branch), unbox(else_branch), facts, other) || branch_agrees(condition.subst(facts).constant(), unbox(then_branch), unbox(else_branch), facts, other) || (unknown(condition.subst(facts).constant()) && unbox(then_branch).agrees(facts, other) && unbox(else_branch).agrees(facts, other)),
             Loop(condition, body) -> (condition.is_zero() && other.is_skip()) || loop_agrees(condition, unbox(body), other),
             Stmt::Call(target, count, callee, args) -> call_agrees(target, count, callee, subst_all(args, facts), other),
             Stmt::Ret(values) -> ret_agrees(subst_all(values, facts), other),
@@ -4904,6 +4908,15 @@ fn seq_agrees(first: Stmt, second: Stmt, facts: List<Fact>, other: Stmt) -> bool
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+    };
+}
+
+// A condition the facts do not make a constant.
+// extract: inline
+fn unknown(known: core::option::Option<u64>) -> bool {
+    return match (known) {
+        Some(v) -> false,
+        None -> true,
     };
 }
 

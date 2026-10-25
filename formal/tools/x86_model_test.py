@@ -51,6 +51,9 @@ import subprocess
 import sys
 import time
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import run_cache  # noqa: E402
+
 M64 = (1 << 64) - 1
 STATUS = 0x8D5          # CF PF AF ZF SF OF
 AF = 0x10
@@ -567,6 +570,7 @@ def describe(c):
 
 
 def main():
+    run_cache.no_core_dumps()
     ap = argparse.ArgumentParser()
     ap.add_argument('out', help='directory for the generated Lean file, cases and results')
     ap.add_argument('--per-form', type=int, default=200)

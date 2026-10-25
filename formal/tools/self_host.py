@@ -34,9 +34,11 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import run_cache  # noqa: E402
 import stdlib_oracle as so  # noqa: E402
 
 S = 'mini::selfhost::'
@@ -325,6 +327,7 @@ def decode(data):
 
 
 def main():
+    run_cache.no_core_dumps()
     parser = argparse.ArgumentParser()
     parser.add_argument('workdir')
     parser.add_argument('--cases', default='formal/tools/frontend_cases')
@@ -352,13 +355,11 @@ def main():
     files_dir = os.path.join(workdir, 'files')
     os.makedirs(files_dir, exist_ok=True)
 
+    began = time.time()
+    so.build_run_all()
+
     def parse(base):
-        tree = so.parse_tree(args.laniusc, base + '.lani', files_dir)
-        if tree is None:
-            return False
-        open(base + '.prods', 'w').write(' '.join(map(str, tree[0])))
-        open(base + '.parents', 'w').write(' '.join(map(str, tree[1])))
-        return True
+        return so.parse_checked(args.laniusc, base, files_dir)
 
     # The self-built compiler: the driver, mini::selfhost and its imports.
     driver = os.path.join(files_dir, 'driver')
@@ -404,13 +405,12 @@ def main():
         manifest += [f'compile t{k} {" ".join(t["bases"])}', f'dump in{k} {" ".join(t["bases"])}']
     manifest_path = os.path.join(workdir, 'manifest.txt')
     open(manifest_path, 'w').write('\n'.join(manifest) + '\n')
-    env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
-    built = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
-                            'lake', 'build', 'runAll'], cwd='formal', env=env, capture_output=True, text=True)
-    if built.returncode != 0:
-        raise SystemExit('lake build runAll failed:\n' + built.stdout[-4000:] + built.stderr[-4000:])
+    print(f'time: parse {time.time() - began:.0f} s', file=sys.stderr, flush=True)
+    began = time.time()
     lean = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=10G', '-p', 'MemorySwapMax=0',
-                           'formal/.lake/build/bin/runAll', manifest_path], env=env, capture_output=True, text=True)
+                           so.RUN_ALL, manifest_path], capture_output=True, text=True)
+    print(f'time: runAll {time.time() - began:.0f} s', file=sys.stderr, flush=True)
+    began = time.time()
     if lean.returncode != 0:
         raise SystemExit('runAll failed:\n' + lean.stdout[-4000:] + lean.stderr[-4000:])
     status, inputs = {}, {}

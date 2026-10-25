@@ -49,6 +49,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import oracle_difftest as oracle  # noqa: E402
+import run_cache  # noqa: E402
 oracle.EFFECTS = False  # set in main: effectful expressions, except with --generic
 oracle.NESTED = False  # nested struct fields: the oracle's, not yet the front end tests'
 
@@ -937,6 +938,17 @@ def parse_with_laniusc(heavy, laniusc, lani_path, workdir):
 
 
 def parse_plain(heavy, laniusc, lani_path, workdir):
+    """laniusc's tree and tokens of one file (cached by its bytes and laniusc)."""
+    k = run_cache.key(run_cache.file_digest(laniusc), open(lani_path, 'rb').read())
+    hit = run_cache.load('parse', k)
+    if hit is not None:
+        return hit['prods'], hit['parents'], [tuple(t) for t in hit['tokens']]
+    prods, parents, tokens = parse_uncached(heavy, laniusc, lani_path, workdir)
+    run_cache.store('parse', k, dict(prods=prods, parents=parents, tokens=tokens))
+    return prods, parents, tokens
+
+
+def parse_uncached(heavy, laniusc, lani_path, workdir):
     cap = os.path.join(workdir, 'cap')
     env = dict(os.environ,
                LANIUS_DEBUG_CAPTURE_PASS='parser/tree/parent_parallel',
@@ -1285,8 +1297,7 @@ def run_cases(args, cases_dir):
         checks.append((case, out_dir, os.path.exists(os.path.join(src, 'reject'))))
     lean_path = os.path.join(workdir, 'cases_check.lean')
     open(lean_path, 'w').write('\n'.join(lean) + '\n')
-    env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
-    run = subprocess.run(['lake', 'env', 'lean', lean_path], cwd='formal', env=env, capture_output=True, text=True)
+    run = run_cache.run_lean(lean_path)
     if run.returncode != 0:
         raise SystemExit('lean failed:\n' + run.stdout[-4000:] + run.stderr[-4000:])
     problems = unchecked = 0
@@ -1408,8 +1419,7 @@ def main():
         consts_total += sum(len(v) for v in chunk.consts.values())
     lean_path = os.path.join(workdir, 'frontend_check.lean')
     open(lean_path, 'w').write('\n'.join(lean) + '\n')
-    env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
-    run = subprocess.run(['lake', 'env', 'lean', lean_path], cwd='formal', env=env, capture_output=True, text=True)
+    run = run_cache.run_lean(lean_path)
     if run.returncode != 0:
         raise SystemExit('lean failed:\n' + run.stdout[-4000:] + run.stderr[-4000:])
     lines = run.stdout.strip().split('\n')
