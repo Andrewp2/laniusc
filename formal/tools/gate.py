@@ -68,6 +68,9 @@ STEPS = [
     ('self-compile-program-100', ['self_compile.py', '{w}', '--stage', 'program', '--count', '100', '--seed', '{s}'],
      ['lean', 'run_all', 'lani', 'laniusc', 'stdlib'], False),
     ('stdlib', ['stdlib_oracle.py', '{w}', '--seed', '{s}'], ['run_all', 'laniusc', 'stdlib'], False),
+    # M11c: the self-built verified compiler compiles itself to its own image.
+    ('self-host-fixpoint', ['self_host.py', '{w}', '--no-cases', '--fixpoint', '--timeout', '280'],
+     ['run_all', 'lani', 'laniusc', 'stdlib'], False),
 ]
 
 

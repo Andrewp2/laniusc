@@ -1188,6 +1188,51 @@ takes about 2 minutes under `#eval`. The same probe on `frontend.lani` as
 one program was stopped after 82 minutes without output, so that file is
 still measured function by function only.)
 
+Self-hosting (M11c, `tools/self_host.py`, gate steps `self-host` and, full
+tier, `self-host-fixpoint`). `mini::selfhost` is `compiler.lani` followed by
+the body of `frontend.lani`; `compileSource` of a driver over it is the
+self-built verified compiler (11.0 MB of x86 in 1,672 functions, 2026-10-25).
+Run natively on the front end's 64 case programs it gives the entries and
+image bytes of Lean's `compileSource` and of laniusc's build of the same
+driver. The fixpoint (10-25): run on its own source (the driver and the
+eight modules, lexed, with laniusc's parse trees) it returns in about 105 s
+exactly Lean's result, 11,032,230 words, whose image is its own image byte
+for byte. What it took, measured with a sampling profiler and an
+allocation tracer on the native run (`target/claude-work/q/dbg/run.c`):
+- Heap. The bump allocator never frees, so the heap must hold everything
+  the run allocates: first 4 GiB ran out in the front end (the trap), then
+  12.3 GiB at `link`. `primitive` built its eight spellings as lists on
+  every call (38% of the front end's allocation); the optimizer used the
+  validator's `kill`, which rebuilds the whole fact list on every write (7
+  GiB of the 12, half in the optimizer, half in the validator). Now
+  `primitive` compares characters (`spelled0`..`spelled5`), the optimizer
+  has its own `opt_facts_after`, whose `opt_kill` keeps the facts after the
+  last one a write kills (same facts, shared tail), and the run allocates
+  7.0 GiB. The validator's `kill` is unchanged (its proofs unfold it): 3.7
+  GiB of the 7.
+- Stack. `length` and `concat` over the 11M-byte image, and the driver's
+  output loop, recurse once per byte: more than 1 GiB of stack (the second
+  failure: SIGSEGV at the 1 GiB thread stack inside `link`'s `length`).
+- Memory held. self_host.py runs each native run in a fork with a fresh
+  2^36-byte heap and 2^33-byte stack, both `MAP_SHARED` on sparse files it
+  has already unlinked, and the stub switches to that stack; all native
+  runs happen in one child under a 4 GiB cgroup cap. The kernel writes
+  pages out to the files instead of holding them, so the cap bounds what is
+  resident (3.9 GiB at peak), not what is allocated.
+- Time. The native code is about 40 times slower than Lean's compiled code
+  on the front end. Comparing names before module paths in the lookups,
+  passing over types whose instance the type table already holds
+  (`type_table_more`, `ty_known`), and lowering each type instance once for
+  the close phase (`Tables.lowered`, `close_ty`) took the run from 206 s
+  (the first that returned) to 105 s, the front end's part from about 150 s
+  to 50 s; Lean's compiled `frontEnd` on the same program went from 3.8 s
+  to 0.6 s.
+laniusc's build of the driver does not finish the fixpoint: its runtime's
+`alloc` is one `mmap` per allocation (a page each), and the run makes on
+the order of 10^8 allocations; under the cap it is killed after about 10 s.
+It still gets every case program right. A laniusc small-object allocator
+(roadmap step 3) is what remains for the three-way fixpoint.
+
 Type aliases, wide literals, null pointers, `!` arms (10-22). Each closes a
 gap the stdlib oracle or the census found:
 - `type A<P..> = T;` (no `where` clause) is an alias: a type path that
@@ -1330,5 +1375,7 @@ Limits found on the way:
 - The Lanius runtime gave every allocation its own page inside a 1 GiB
   `MAP_32BIT` window, which capped one run at about 262k live allocations. The
   window is gone (70a4134f), and the cons list made list walks free, so 300
-  programs now run in one binary in 39 MB. Every allocation is still one page;
-  a small-object allocator matters once the verified compiler runs on itself.
+  programs now run in one binary in 39 MB. Every allocation is still one page,
+  so laniusc's build cannot run the self-hosting fixpoint (about 10^8
+  allocations); the self-built compiler's own bump allocator can (see the
+  self-hosting paragraph of the front end section).

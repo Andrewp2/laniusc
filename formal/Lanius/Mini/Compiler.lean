@@ -3938,6 +3938,65 @@ def funcsAgree (funcs : List Func) (others : List Func) : Bool :=
 def validate (original : Program) (optimized : Program) : Bool :=
   funcsAgree original.funcs optimized.funcs
 
+def factDies (fact : Fact) (index : Nat) : Bool :=
+  decide (fact.slot = index) || Expr.mentions fact.value index
+
+def extentAfter (dies : Bool) (k : Nat) (extent : Nat) : Nat :=
+  if dies then
+    k
+  else
+    extent
+
+/-- How many of the facts, counted from the front, reach the last one that dies (0 when none does); k facts come before these. -/
+def dyingExtent (facts : List Fact) (index : Nat) (k : Nat) (extent : Nat) : Nat :=
+  match facts with
+  | [] => extent
+  | fact :: rest => dyingExtent rest index (k + 1) (extentAfter (factDies fact index) (k + 1) extent)
+
+def killPrefixAt (fact : Fact) (index : Nat) (tail : List Fact) : List Fact :=
+  if factDies fact index then
+    tail
+  else
+    fact :: tail
+
+/-- The first n facts filtered as kill does, followed by the rest unchanged. -/
+def killPrefix (facts : List Fact) (index : Nat) (n : Nat) : List Fact :=
+  if n = 0 then
+    facts
+  else
+    match facts with
+    | [] => []
+    | fact :: rest => killPrefixAt fact index (killPrefix rest index (n - 1))
+
+/-- kill(facts, index), sharing the facts after the last one that dies. -/
+def optKill (facts : List Fact) (index : Nat) : List Fact :=
+  killPrefix facts index (dyingExtent facts index 0 0)
+
+def optAssigned (facts : List Fact) (index : Nat) (value : Expr) : List Fact :=
+  let known : Expr := Expr.subst value facts
+  let rest : List Fact := optKill facts index
+  if Expr.isAtom known && !(Expr.mentions known index) then
+    ({ slot := index, value := known } : Fact) :: rest
+  else
+    rest
+
+/-- The optimizer's copy of the validator's facts_after: the same facts, but a write keeps the part of the list after the last fact it kills instead of rebuilding it (the self-built compiler's heap is never freed, and the validator's kill rebuilds the whole list on every write). -/
+def optFactsAfter (s : Stmt) (facts : List Fact) : List Fact :=
+  match s with
+  | .skip => facts
+  | .assign index value => optAssigned facts index value
+  | .seq first second => optFactsAfter second (optFactsAfter first facts)
+  | .ite c t e => []
+  | .loop c b => []
+  | .call t n f a => []
+  | .ret v => []
+  | .alloc target sh sz => optKill facts target
+  | .loadByte target a => optKill facts target
+  | .storeByte a v => facts
+  | .loadWord w target a => optKill facts target
+  | .storeWord w a v => facts
+  | .divide w o target l r => optKill facts target
+
 def Expr.literal (self : Expr) : Option (BitVec 64) :=
   match self with
   | .lit value => some value
@@ -4076,7 +4135,7 @@ def Stmt.optimize (self : Stmt) (facts : List Fact) : Stmt :=
   | .skip => Stmt.skip
   | .assign index value => optimizeAssign index (Expr.optimize (Expr.subst value facts))
   | .seq first second =>
-    (let rest : Stmt := Stmt.optimize second (Stmt.factsAfter first facts)
+    (let rest : Stmt := Stmt.optimize second (optFactsAfter first facts)
      if Stmt.deadBefore first rest then
        rest
      else

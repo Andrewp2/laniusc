@@ -229,10 +229,6 @@ def sameText (a : List Nat) (b : List Nat) : Bool :=
 def spelled (a : List Nat) (b : List Nat) : Bool :=
   sameText a b
 
-def textPtr : List Nat :=
-  let t : List Nat := 112 :: 116 :: [114]
-  t
-
 def textSelf : List Nat :=
   let t : List Nat := 115 :: 101 :: 108 :: [102]
   t
@@ -263,37 +259,61 @@ def textSliceFromRawParts : List Nat :=
   let t : List Nat := 115 :: 108 :: 105 :: 99 :: 101 :: 95 :: 102 :: 114 :: 111 :: 109 :: 95 :: 114 :: 97 :: 119 :: 95 :: 112 :: 97 :: 114 :: 116 :: [115]
   t
 
+/-- The text is exactly the given characters (no list is built: the self-built compiler's heap is never freed). -/
+def spelled0 (name : List Nat) : Bool :=
+  match name with
+  | [] => true
+  | x :: rest => false
+
+def spelled1 (name : List Nat) (a : Nat) : Bool :=
+  match name with
+  | [] => false
+  | x :: rest => decide (x = a) && spelled0 rest
+
+def spelled2 (name : List Nat) (a : Nat) (b : Nat) : Bool :=
+  match name with
+  | [] => false
+  | x :: rest => decide (x = a) && spelled1 rest b
+
+def spelled3 (name : List Nat) (a : Nat) (b : Nat) (c : Nat) : Bool :=
+  match name with
+  | [] => false
+  | x :: rest => decide (x = a) && spelled2 rest b c
+
+def spelled4 (name : List Nat) (a : Nat) (b : Nat) (c : Nat) (d : Nat) : Bool :=
+  match name with
+  | [] => false
+  | x :: rest => decide (x = a) && spelled3 rest b c d
+
+def spelled5 (name : List Nat) (a : Nat) (b : Nat) (c : Nat) (d : Nat) (e : Nat) : Bool :=
+  match name with
+  | [] => false
+  | x :: rest => decide (x = a) && spelled4 rest b c d e
+
 /-- i32, bool, u8, u32, u64, usize, ptr, isize -/
 def primitive (name : List Nat) : Option SrcType :=
-  let i32Text : List Nat := 105 :: 51 :: [50]
-  let boolText : List Nat := 98 :: 111 :: 111 :: [108]
-  let u8Text : List Nat := 117 :: [56]
-  let u32Text : List Nat := 117 :: 51 :: [50]
-  let u64Text : List Nat := 117 :: 54 :: [52]
-  let usizeText : List Nat := 117 :: 115 :: 105 :: 122 :: [101]
-  let isizeText : List Nat := 105 :: 115 :: 105 :: 122 :: [101]
-  if spelled name i32Text then
+  if spelled3 name 105 51 50 then
     some SrcType.i32
   else
-    if spelled name boolText then
+    if spelled4 name 98 111 111 108 then
       some SrcType.bool
     else
-      if spelled name u8Text then
+      if spelled2 name 117 56 then
         some (SrcType.uint UintTy.uint8)
       else
-        if spelled name u32Text then
+        if spelled3 name 117 51 50 then
           some (SrcType.uint UintTy.uint32)
         else
-          if spelled name u64Text then
+          if spelled3 name 117 54 52 then
             some (SrcType.uint UintTy.uint64)
           else
-            if spelled name usizeText then
+            if spelled5 name 117 115 105 122 101 then
               some (SrcType.uint UintTy.usize)
             else
-              if spelled name textPtr then
+              if spelled3 name 112 116 114 then
                 some SrcType.ptr
               else
-                if spelled name isizeText then
+                if spelled5 name 105 115 105 122 101 then
                   some SrcType.isize
                 else
                   none
@@ -905,7 +925,7 @@ def findType (types : List TypeDecl) (m : List (List Nat)) (name : List Nat) (k 
   match types with
   | [] => none
   | t :: rest =>
-    if sameSpellings t.home m && sameText t.name name then
+    if sameText t.name name && sameSpellings t.home m then
       some k
     else
       findType rest m name (k + 1)
@@ -915,7 +935,7 @@ def findFn (fns : List FnDecl) (m : List (List Nat)) (name : List Nat) (k : Nat)
   match fns with
   | [] => none
   | f :: rest =>
-    if !f.inImpl && sameSpellings f.home m && sameText f.name name then
+    if !f.inImpl && sameText f.name name && sameSpellings f.home m then
       some k
     else
       findFn rest m name (k + 1)
@@ -924,7 +944,7 @@ def findConst (consts : List ConstDecl) (m : List (List Nat)) (name : List Nat) 
   match consts with
   | [] => none
   | c :: rest =>
-    if sameSpellings c.home m && sameText c.name name then
+    if sameText c.name name && sameSpellings c.home m then
       some c
     else
       findConst rest m name
@@ -933,7 +953,7 @@ def findAlias (aliases : List AliasDecl) (m : List (List Nat)) (name : List Nat)
   match aliases with
   | [] => none
   | a :: rest =>
-    if sameSpellings a.home m && sameText a.name name then
+    if sameText a.name name && sameSpellings a.home m then
       some a
     else
       findAlias rest m name
@@ -4931,15 +4951,65 @@ def typeTable (fuel : Nat) (decls : Decls) (table : List Inst) (ts : List Ty) : 
     | none => none
     | some xs => typeTable fuel decls (addInsts table xs) rest
 
+/-- The table holds the instance of every named type in t. -/
+def tyKnown (table : List Inst) (t : Ty) : Bool :=
+  match t with
+  | .tyI32 => true
+  | .tyBool => true
+  | .tyUint k => true
+  | .tyPtr => true
+  | .tyIsize => true
+  | .tySlice e => tyKnown table e
+  | .tyNamed d args => instMember table ({ decl := d, args := args } : Inst)
+
+/-- type_table over more types, from a table that holds every instance the types of its members need (as type_table's result from the seeds does): a type whose instance the table holds adds nothing new, so it is passed over without reading its declaration again. The types are every type the functions mention, most of them many times over. -/
+def typeTableMore (fuel : Nat) (decls : Decls) (table : Option (List Inst)) (ts : List Ty) : Option (List Inst) :=
+  match table with
+  | none => none
+  | some x =>
+    match ts with
+    | [] => some x
+    | t :: rest =>
+      if tyKnown x t then
+        typeTableMore fuel decls (some x) rest
+      else
+        typeTableMore fuel decls (typeTable fuel decls x [t]) rest
+
 /-- The declarations and the function and type instance tables. -/
 structure Tables where
   decls : Decls
   fns : List Inst
   types : List Inst
+  /-- lower_named of each type instance, in order (see close_ty) -/
+  lowered : List (Option SrcType)
   deriving Repr
 
+def loweredAll (fuel : Nat) (decls : Decls) (types : List Inst) (insts : List Inst) : List (Option SrcType) :=
+  match insts with
+  | [] => []
+  | x :: rest => lowerNamed (fuel - 1) decls types x.decl x.args :: loweredAll fuel decls types rest
+
+def closeNamed (fuel : Nat) (t : Tables) (d : Nat) (args : List Ty) (id : Option Nat) : Option SrcType :=
+  match id with
+  | none => lowerNamed (fuel - 1) t.decls t.types d args
+  | some i =>
+    match t.lowered[i]? with
+    | none => lowerNamed (fuel - 1) t.decls t.types d args
+    | some x => x
+
+/-- lower_ty, reading a type instance's lowering from the table instead of lowering its declaration again at every one of its many uses. -/
 def closeTy (fuel : Nat) (t : Tables) (ty : Ty) : Option SrcType :=
-  lowerTy fuel t.decls t.types ty
+  if fuel = 0 then
+    none
+  else
+    match ty with
+    | .tyI32 => some SrcType.i32
+    | .tyBool => some SrcType.bool
+    | .tyUint k => some (SrcType.uint k)
+    | .tyPtr => some SrcType.ptr
+    | .tyIsize => some SrcType.isize
+    | .tySlice e => sliceType (closeTy (fuel - 1) t e)
+    | .tyNamed d args => closeNamed fuel t d args (instIndex t.types ({ decl := d, args := args } : Inst) 0)
 
 def srcEnumId (t : Option SrcType) : Option Nat :=
   match t with
@@ -5798,14 +5868,14 @@ def buildClosed (fuel : Nat) (decls : Decls) (fns : List Inst) (types : Option (
   match types with
   | none => none
   | some ts =>
-    match closeFuncs fuel ({ decls := decls, fns := fns, types := ts } : Tables) funcs with
+    match closeFuncs fuel ({ decls := decls, fns := fns, types := ts, lowered := loweredAll fuel decls ts ts } : Tables) funcs with
     | none => none
     | some fs => untypedRejected (litFuncs fs fs)
 
 def buildMono (fuel : Nat) (decls : Decls) (seeds : List Inst) (m : Option Mono) : Option SrcProgram :=
   match m with
   | none => none
-  | some x => buildClosed fuel decls x.table (typeTable fuel decls seeds (seedTys seeds ++ funcsTys x.funcs)) x.funcs
+  | some x => buildClosed fuel decls x.table (typeTableMore fuel decls (typeTable fuel decls seeds (seedTys seeds)) (funcsTys x.funcs)) x.funcs
 
 /-- The roots are the first file's functions without type parameters, in order; they keep their positions as ids. Every other function instance is numbered when it is first called. -/
 def buildChecked (fuel : Nat) (c : Collected) (roots : List Inst) (seeds : List Inst) : Option SrcProgram :=

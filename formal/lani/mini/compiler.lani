@@ -5003,6 +5003,80 @@ pub fn validate(original: Program, optimized: Program) -> bool {
 // or y is written; branches, loops and calls forget all of them), and drops
 // x = e when the optimized rest of the sequence writes x before reading it.
 
+pub fn fact_dies(fact: Fact, index: usize) -> bool {
+    return (fact.slot == index) || fact.value.mentions(index);
+}
+
+pub fn extent_after(dies: bool, k: usize, extent: usize) -> usize {
+    if (dies) {
+        return k;
+    }
+    return extent;
+}
+
+// How many of the facts, counted from the front, reach the last one that
+// dies (0 when none does); k facts come before these.
+pub fn dying_extent(facts: List<Fact>, index: usize, k: usize, extent: usize) -> usize {
+    return match (facts) {
+        Nil -> extent,
+        Cons(fact, rest) -> dying_extent(unbox(rest), index, plus(k, 1), extent_after(fact_dies(fact, index), plus(k, 1), extent)),
+    };
+}
+
+pub fn kill_prefix_at(fact: Fact, index: usize, tail: List<Fact>) -> List<Fact> {
+    if (fact_dies(fact, index)) {
+        return tail;
+    }
+    return cons(fact, tail);
+}
+
+// The first n facts filtered as kill does, followed by the rest unchanged.
+pub fn kill_prefix(facts: List<Fact>, index: usize, n: usize) -> List<Fact> {
+    if (n == 0) {
+        return facts;
+    }
+    return match (facts) {
+        Nil -> empty(),
+        Cons(fact, rest) -> kill_prefix_at(fact, index, kill_prefix(unbox(rest), index, minus(n, 1))),
+    };
+}
+
+// kill(facts, index), sharing the facts after the last one that dies.
+pub fn opt_kill(facts: List<Fact>, index: usize) -> List<Fact> {
+    return kill_prefix(facts, index, dying_extent(facts, index, 0, 0));
+}
+
+pub fn opt_assigned(facts: List<Fact>, index: usize, value: Expr) -> List<Fact> {
+    let known: Expr = value.subst(facts);
+    let rest: List<Fact> = opt_kill(facts, index);
+    if (known.is_atom() && !known.mentions(index)) {
+        return cons(Fact { slot: index, value: known }, rest);
+    }
+    return rest;
+}
+
+// The optimizer's copy of the validator's facts_after: the same facts, but a
+// write keeps the part of the list after the last fact it kills instead of
+// rebuilding it (the self-built compiler's heap is never freed, and the
+// validator's kill rebuilds the whole list on every write).
+pub fn opt_facts_after(s: Stmt, facts: List<Fact>) -> List<Fact> {
+    return match (s) {
+        Skip -> facts,
+        Assign(index, value) -> opt_assigned(facts, index, value),
+        Seq(first, second) -> opt_facts_after(unbox(second), opt_facts_after(unbox(first), facts)),
+        Ite(c, t, e) -> empty(),
+        Loop(c, b) -> empty(),
+        Stmt::Call(t, n, f, a) -> empty(),
+        Stmt::Ret(v) -> empty(),
+        Alloc(target, sh, sz) -> opt_kill(facts, target),
+        LoadByte(target, a) -> opt_kill(facts, target),
+        StoreByte(a, v) -> facts,
+        LoadWord(w, target, a) -> opt_kill(facts, target),
+        StoreWord(w, a, v) -> facts,
+        Divide(w, o, target, l, r) -> opt_kill(facts, target),
+    };
+}
+
 impl Expr {
     pub fn literal(self) -> core::option::Option<u64> {
         return match (self) {
@@ -5190,7 +5264,7 @@ impl Stmt {
 // to a slot the optimized rest kills is dropped.
 // extract: inline
 fn optimize_sequence(first: Stmt, second: Stmt, facts: List<Fact>) -> Stmt {
-    let rest: Stmt = second.optimize(first.facts_after(facts));
+    let rest: Stmt = second.optimize(opt_facts_after(first, facts));
     if (first.dead_before(rest)) {
         return rest;
     }

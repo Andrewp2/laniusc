@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Step 11, milestone M11c: the verified compiler compiled by itself.
 
-    python3 -I formal/tools/self_host.py WORKDIR [--cases DIR] [--laniusc PATH] [--heap-log2 N]
+    python3 -I formal/tools/self_host.py WORKDIR [--cases DIR | --no-cases] [--fixpoint]
+        [--laniusc PATH] [--heap-log2 N] [--stack-log2 N] [--memory-max SIZE]
 
 Run from the repository root. `mini::selfhost` is formal/lani/mini/compiler.lani
 followed by the body of formal/lani/mini/frontend.lani (after its prelude and
@@ -21,8 +22,18 @@ The Lean side runs compiled, as `lake exe runAll` (Lanius/Tools/RunAll.lean):
 
 The test programs are the front end's hand-written cases (each case's files,
 and its want.lani). All three must give the same entries and image bytes on
-every test, or all must reject it. Prints a summary; exits nonzero on any
-difference.
+every test, or all must reject it. With --fixpoint the last test is the
+self-built compiler's own source: it must give exactly Lean's result, whose
+image is the self-built compiler's own image. laniusc's build is run on it
+too but not counted: laniusc's runtime allocator maps fresh pages for every
+allocation, and this run makes on the order of 10^8 of them.
+
+The self-built compiler's runs happen in one child process under a memory
+cap (--memory-max), each run in a fork with a fresh heap and stack backed by
+sparse, unlinked files in WORKDIR/native, so the cap bounds the memory held,
+not the memory used: on its own source the compiler (whose bump allocator
+never frees) allocates about 7 GiB and recurses over ten million calls deep.
+Prints a summary; exits nonzero on any difference.
 """
 
 import argparse
@@ -249,74 +260,131 @@ def expected_words(status):
     return [len(entries)] + entries + [len(image)] + image
 
 
+def backed(path, size):
+    """size bytes of zeros, shared with a sparse file that is already
+    unlinked: the kernel can write the pages out to it instead of keeping
+    them all in memory. The self-built compiler's bump allocator never frees,
+    and compiling itself it allocates about 8.5 GiB and recurses more than
+    ten million calls deep (a list walk over its own 11 MB image)."""
+    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.ftruncate(fd, size)
+        m = mmap.mmap(fd, size, flags=mmap.MAP_SHARED, prot=mmap.PROT_READ | mmap.PROT_WRITE)
+    finally:
+        os.close(fd)
+        os.unlink(path)
+    return m, ctypes.addressof(ctypes.c_char.from_buffer(m))
+
+
 class Native:
-    """The self-built image in executable memory, with a private heap so that
-    every forked run starts from zeros. The input and output slices sit at
-    the top of the heap, above the limit."""
+    """The self-built image in executable memory. Each run forks; the child
+    maps a fresh heap and a fresh stack, both backed by files under `scratch`
+    (see backed), and the stub switches to that stack for the call. The input
+    and output slices sit at the top of the heap, above the limit."""
 
-    def __init__(self, code_size, heap_size):
+    def __init__(self, entries, image, heap_size, stack_size, scratch):
         private = mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS
-        self.code = mmap.mmap(-1, code_size, flags=private, prot=mmap.PROT_READ | mmap.PROT_WRITE | mmap.PROT_EXEC)
+        self.code = mmap.mmap(-1, len(image) + 4096, flags=private,
+                              prot=mmap.PROT_READ | mmap.PROT_WRITE | mmap.PROT_EXEC)
         self.base = ctypes.addressof(ctypes.c_char.from_buffer(self.code))
-        self.heap_size = heap_size
-        self.heap = mmap.mmap(-1, heap_size, flags=private, prot=mmap.PROT_READ | mmap.PROT_WRITE)
-        self.heap_base = ctypes.addressof(ctypes.c_char.from_buffer(self.heap))
-
-    def load(self, entries, image, limit):
         self.code[0:len(image)] = bytes(image)
-        at = len(image)
-        stub = bytes([0x41, 0x54, 0x41, 0x55, 0x41, 0x56])
-        stub += bytes([0x49, 0xBC]) + self.heap_base.to_bytes(8, 'little')
+        self.entries, self.at = entries, len(image)
+        self.heap_size, self.stack_size, self.scratch = heap_size, stack_size, scratch
+
+    def stub(self, heap_base, stack_top, limit):
+        # push rbx, r12, r13, r14; mov rbx, rsp; mov rsp, stack_top; r12 = the
+        # heap, r13 = the cursor (1), r14 = the limit; the four arguments just
+        # below rsp; call w; mov rsp, rbx; pop r14, r13, r12, rbx; ret
+        stub = bytes([0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x48, 0x89, 0xE3])
+        stub += bytes([0x48, 0xBC]) + stack_top.to_bytes(8, 'little')
+        stub += bytes([0x49, 0xBC]) + heap_base.to_bytes(8, 'little')
         stub += bytes([0x49, 0xBD]) + (1).to_bytes(8, 'little')
         stub += bytes([0x49, 0xBE]) + limit.to_bytes(8, 'little')
         for k in range(4):
             stub += so.ARG_STORES[k] + bytes([(256 - (8 * k + 24)) & 0xff])
-        rel = entries[0] - (at + len(stub) + 5)
+        rel = self.entries[0] - (self.at + len(stub) + 5)
         stub += b'\xe8' + (rel & 0xffffffff).to_bytes(4, 'little')
-        stub += bytes([0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0xC3])
-        self.code[at:at + len(stub)] = stub
-        self.fn = ctypes.CFUNCTYPE(ctypes.c_uint64, *([ctypes.c_uint64] * 4))(self.base + at)
+        stub += bytes([0x48, 0x89, 0xDC, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0x5B, 0xC3])
+        self.code[self.at:self.at + len(stub)] = stub
+        return ctypes.CFUNCTYPE(ctypes.c_uint64, *([ctypes.c_uint64] * 4))(self.base + self.at)
 
     def run(self, words, room, timeout):
-        """The driver's output words, None when it rejects, or 'trap'/'timeout'."""
-        in_at = self.heap_size - 4 * (len(words) + room) - 4096
-        out_at = in_at + 4 * len(words) + 64
+        """The driver's output words, None when it rejects, or 'trap (SIG...)'
+        or 'timeout'; and the child's peak resident memory in KiB."""
         r, w = os.pipe()
         pid = os.fork()
         if pid == 0:
             os.close(r)
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
             signal.alarm(timeout)
-            self.heap[in_at:in_at + 4 * len(words)] = b''.join(x.to_bytes(4, 'little') for x in words)
-            result = []
-
-            def call():
-                result.append(self.fn(in_at, len(words), out_at, room))
-            threading.stack_size(1 << 30)
-            t = threading.Thread(target=call)
-            t.start()
-            t.join()
-            n = result[0] & 0xffffffff
+            heap, heap_base = backed(os.path.join(self.scratch, f'heap.{os.getpid()}'), self.heap_size)
+            stack, stack_base = backed(os.path.join(self.scratch, f'stack.{os.getpid()}'), self.stack_size)
+            in_at = self.heap_size - 4 * (len(words) + room) - 4096
+            out_at = in_at + 4 * len(words) + 64
+            heap[in_at:in_at + 4 * len(words)] = b''.join((x & 0xffffffff).to_bytes(4, 'little') for x in words)
+            fn = self.stub(heap_base, stack_base + self.stack_size - 64, in_at - 4096)
+            n = fn(in_at, len(words), out_at, room) & 0xffffffff
             n = n - 2 ** 32 if n >= 2 ** 31 else n
             payload = n.to_bytes(4, 'little', signed=True)
             if n > 0:
-                payload += bytes(self.heap[out_at:out_at + 4 * n])
+                payload += bytes(heap[out_at:out_at + 4 * n])
             os.write(w, len(payload).to_bytes(8, 'little'))
             view = memoryview(payload)
             while view:
                 view = view[os.write(w, view):]
             os._exit(0)
         os.close(w)
-        data = b''
+        chunks = []
         while True:
             chunk = os.read(r, 1 << 20)
             if not chunk:
                 break
-            data += chunk
+            chunks.append(chunk)
         os.close(r)
-        _, status = os.waitpid(pid, 0)
+        _, status, usage = os.wait4(pid, 0)
         if os.WIFSIGNALED(status):
-            return 'timeout' if os.WTERMSIG(status) == signal.SIGALRM else 'trap'
-        return decode(data[8:])
+            sig = os.WTERMSIG(status)
+            return ('timeout' if sig == signal.SIGALRM else f'trap ({signal.Signals(sig).name})'), usage.ru_maxrss
+        return decode(b''.join(chunks)[8:]), usage.ru_maxrss
+
+
+def words_file(path, words):
+    open(path, 'wb').write(b''.join((x & 0xffffffff).to_bytes(4, 'little') for x in words))
+
+
+def read_words(path):
+    data = open(path, 'rb').read()
+    return [int.from_bytes(data[i:i + 4], 'little', signed=True) for i in range(0, len(data), 4)]
+
+
+def native_batch(batch, heap_log2, stack_log2, room, timeout):
+    """Run the self-built image (batch/self.image, batch/self.entries) on
+    each batch/inK.words, writing batch/outK: a status line, then the
+    output words. Run under a memory cap (see main)."""
+    run_cache.no_core_dumps()
+    image = open(os.path.join(batch, 'self.image'), 'rb').read()
+    entries = [int(x) for x in open(os.path.join(batch, 'self.entries')).read().split()]
+    native = Native(entries, image, 1 << heap_log2, 1 << stack_log2, batch)
+    k = 0
+    while os.path.exists(os.path.join(batch, f'in{k}.words')):
+        began = time.time()
+        got, rss = native.run(read_words(os.path.join(batch, f'in{k}.words')), room, timeout)
+        with open(os.path.join(batch, f'out{k}'), 'wb') as f:
+            status = 'words' if isinstance(got, list) else 'rejected' if got is None else got
+            f.write(f'{status} {time.time() - began:.1f} {rss}\n'.encode())
+            if isinstance(got, list):
+                f.write(b''.join((x & 0xffffffff).to_bytes(4, 'little') for x in got))
+        k += 1
+
+
+def read_out(path):
+    data = open(path, 'rb').read()
+    line, rest = data.split(b'\n', 1)
+    status, seconds, rss = line.decode().split(' ')
+    got = {'words': None, 'rejected': None}.get(status, status)
+    if status == 'words':
+        got = [int.from_bytes(rest[i:i + 4], 'little', signed=True) for i in range(0, len(rest), 4)]
+    return got, float(seconds), int(rss)
 
 
 def decode(data):
@@ -332,11 +400,19 @@ def main():
     parser.add_argument('workdir')
     parser.add_argument('--cases', default='formal/tools/frontend_cases')
     parser.add_argument('--laniusc', default='target/release/laniusc')
-    parser.add_argument('--heap-log2', type=int, default=32)
+    parser.add_argument('--heap-log2', type=int, default=36,
+                        help='heap size (file-backed and sparse, so only what is used is written)')
+    parser.add_argument('--stack-log2', type=int, default=33)
+    parser.add_argument('--memory-max', default='4G', help='memory cap of the native runs')
+    parser.add_argument('--no-cases', action='store_true', help='skip the hand-written cases')
+    parser.add_argument('--native-batch', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--timeout', type=int, default=600)
     parser.add_argument('--fixpoint', action='store_true',
                         help='also give the self-built compiler its own source, which must give its own image')
     args = parser.parse_args()
+    if args.native_batch:
+        native_batch(args.workdir, args.heap_log2, args.stack_log2, 1 << 24, args.timeout)
+        return 0
     workdir = os.path.abspath(args.workdir)
     os.makedirs(workdir, exist_ok=True)
 
@@ -376,7 +452,7 @@ def main():
 
     # The tests: each case's files, and its want.lani.
     tests = []
-    for case in sorted(os.listdir(args.cases)):
+    for case in [] if args.no_cases else sorted(os.listdir(args.cases)):
         src = os.path.join(args.cases, case)
         if not os.path.isdir(src):
             continue
@@ -399,7 +475,7 @@ def main():
                 tests.append(dict(name=f'{case}/{kind}', bases=bases))
 
     if args.fixpoint:
-        tests.append(dict(name='the verified compiler itself', bases=self_bases))
+        tests.append(dict(name='the verified compiler itself', bases=self_bases, fixpoint=True))
     manifest = [f'compile self {" ".join(self_bases)}']
     for k, t in enumerate(tests):
         manifest += [f'compile t{k} {" ".join(t["bases"])}', f'dump in{k} {" ".join(t["bases"])}']
@@ -435,8 +511,6 @@ def main():
     print(f'self-built verified compiler: {len(image)} bytes, {len(entries)} functions')
     open(os.path.join(workdir, 'self.image'), 'wb').write(bytes(image))
 
-    heap_size = 1 << args.heap_log2
-    native = Native(max(1 << 22, len(image) + 4096), heap_size)
     room = 1 << 24  # output words: the fixpoint image is about 11M bytes
 
     # laniusc's build of the same driver.
@@ -452,35 +526,93 @@ def main():
                            capture_output=True, text=True)
     if build.returncode != 0 or not os.path.exists(exe):
         raise SystemExit('laniusc does not build the driver:\n' + build.stdout[-2000:] + build.stderr[-2000:])
+    print(f'time: laniusc build {time.time() - began:.0f} s', file=sys.stderr, flush=True)
+    began = time.time()
 
-    problems, agree = [], 0
+    # The self-built compiler on every test, in one process under a memory
+    # cap: its heap and stack are file-backed, so the cap bounds the memory
+    # it holds, not what it allocates.
+    batch = os.path.join(workdir, 'native')
+    shutil.rmtree(batch, ignore_errors=True)
+    os.makedirs(batch)
+    open(os.path.join(batch, 'self.image'), 'wb').write(bytes(image))
+    open(os.path.join(batch, 'self.entries'), 'w').write(' '.join(map(str, entries)) + '\n')
+    runnable = []
+    for k, t in enumerate(tests):
+        if inputs.get(k) is not None:
+            words_file(os.path.join(batch, f'in{len(runnable)}.words'), layout(inputs[k]))
+            runnable.append(k)
+    subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', f'MemoryMax={args.memory_max}',
+                    '-p', 'MemorySwapMax=0', sys.executable, '-I', os.path.abspath(__file__), batch,
+                    '--native-batch', '--heap-log2', str(args.heap_log2), '--stack-log2', str(args.stack_log2),
+                    '--timeout', str(args.timeout)], check=True)
+    selfs = {k: read_out(os.path.join(batch, f'out{j}')) for j, k in enumerate(runnable)}
+    print(f'time: self-built runs {time.time() - began:.0f} s', file=sys.stderr, flush=True)
+    began = time.time()
+
+    problems, agree, notes = [], 0, []
     for k, t in enumerate(tests):
         want = expected_words(status.get(f't{k}', 'missing'))
         if inputs.get(k) is None:
             problems.append(f'{t["name"]}: the Lean lexer rejects it')
             continue
-        words = layout(inputs[k])
-        native.load(entries, image, heap_size - 4 * (len(words) + room) - 8192)
-        got_self = native.run(words, room, args.timeout)
-        stdin = b''.join(x.to_bytes(4, 'little') for x in [len(words), room] + words)
-        try:
-            run = subprocess.run([exe], input=stdin, capture_output=True, timeout=args.timeout)
-            got_laniusc = decode(run.stdout) if run.returncode == 0 else f'exit {run.returncode}'
-        except subprocess.TimeoutExpired:
-            got_laniusc = 'timeout'
+        got_self, seconds, rss = selfs[k]
+        words = read_words(os.path.join(batch, f'in{runnable.index(k)}.words'))
+        stdin = b''.join((x & 0xffffffff).to_bytes(4, 'little') for x in [len(words), room] + words)
+        show = lambda v: v if not isinstance(v, list) else f'{len(v)} words'  # noqa: E731
+        if t.get('fixpoint'):
+            image_words = want[2 + want[0]:] if isinstance(want, list) else None
+            print(f'fixpoint: the self-built verified compiler on its own source: {show(got_self)} in {seconds:.0f} s '
+                  f'(peak resident {rss >> 10} MiB), Lean {show(want)}; '
+                  f'its own image: {image_words == list(image)}')
+            # laniusc's build on the same input. Its runtime allocator maps
+            # fresh pages for every allocation (one mmap each), and this run
+            # makes on the order of 10^8 allocations, so it cannot finish; it
+            # is run under a cap and reported, not counted.
+            got_laniusc = run_laniusc(exe, stdin, args.timeout, args.memory_max, 1 << args.stack_log2)
+            notes.append(f'{t["name"]}: laniusc {show(got_laniusc)} (not counted: laniusc\'s runtime maps a fresh '
+                         f'page for every allocation)')
+            if got_self == want and image_words == list(image):
+                agree += 1
+            else:
+                problems.append(f'{t["name"]}: Lean {show(want)}, self {show(got_self)}'
+                                + ('' if not (isinstance(want, list) and isinstance(got_self, list)) or want == got_self
+                                   else ' (self differs from Lean)'))
+            continue
+        got_laniusc = run_laniusc(exe, stdin, args.timeout, None, None)
         if got_self == want and got_laniusc == want:
             agree += 1
         else:
-            show = lambda v: v if not isinstance(v, list) else f'{len(v)} words'  # noqa: E731
             problems.append(f'{t["name"]}: Lean {show(want)}, self {show(got_self)}, laniusc {show(got_laniusc)}'
                             + ('' if not (isinstance(want, list) and isinstance(got_self, list)) or want == got_self
                                else ' (self differs from Lean)'))
-    for line in problems:
+    print(f'time: laniusc runs {time.time() - began:.0f} s', file=sys.stderr, flush=True)
+    for line in notes + problems:
         print(line)
     accepted = sum(1 for k in range(len(tests)) if expected_words(status.get(f't{k}', '')) is not None)
-    print(f'{len(tests)} programs ({accepted} compiled, {len(tests) - accepted} rejected): {agree} agree three ways, '
+    print(f'{len(tests)} programs ({accepted} compiled, {len(tests) - accepted} rejected): {agree} agree, '
           f'{len(problems)} problems')
     return 1 if problems else 0
+
+
+def run_laniusc(exe, stdin, timeout, memory_max, stack):
+    """laniusc's build of the driver on stdin: its output words, None when it
+    rejects, 'exit N' or 'timeout'. With memory_max, under that cap and with
+    a stack limit of `stack` bytes."""
+    argv = [exe]
+    preexec = None
+    if memory_max is not None:
+        argv = ['systemd-run', '--user', '--scope', '-q', '-p', f'MemoryMax={memory_max}', '-p', 'MemorySwapMax=0',
+                exe]
+
+        def preexec():
+            import resource
+            resource.setrlimit(resource.RLIMIT_STACK, (stack, stack))
+    try:
+        run = subprocess.run(argv, input=stdin, capture_output=True, timeout=timeout, preexec_fn=preexec)
+        return decode(run.stdout) if run.returncode == 0 else f'exit {run.returncode}'
+    except subprocess.TimeoutExpired:
+        return 'timeout'
 
 
 if __name__ == '__main__':

@@ -588,11 +588,6 @@ pub fn spelled(a: List<usize>, b: List<usize>) -> bool {
     return same_text(a, b);
 }
 
-pub fn text_ptr() -> List<usize> {
-    let t: List<usize> = cons(112, cons(116, single(114)));
-    return t;
-}
-
 pub fn text_self() -> List<usize> {
     let t: List<usize> = cons(115, cons(101, cons(108, single(102))));
     return t;
@@ -630,38 +625,74 @@ pub fn text_slice_from_raw_parts() -> List<usize> {
     return t;
 }
 
+// The text is exactly the given characters (no list is built: the
+// self-built compiler's heap is never freed).
+pub fn spelled0(name: List<usize>) -> bool {
+    return match (name) {
+        Nil -> true,
+        Cons(x, rest) -> false,
+    };
+}
+
+pub fn spelled1(name: List<usize>, a: usize) -> bool {
+    return match (name) {
+        Nil -> false,
+        Cons(x, rest) -> (x == a) && spelled0(unbox(rest)),
+    };
+}
+
+pub fn spelled2(name: List<usize>, a: usize, b: usize) -> bool {
+    return match (name) {
+        Nil -> false,
+        Cons(x, rest) -> (x == a) && spelled1(unbox(rest), b),
+    };
+}
+
+pub fn spelled3(name: List<usize>, a: usize, b: usize, c: usize) -> bool {
+    return match (name) {
+        Nil -> false,
+        Cons(x, rest) -> (x == a) && spelled2(unbox(rest), b, c),
+    };
+}
+
+pub fn spelled4(name: List<usize>, a: usize, b: usize, c: usize, d: usize) -> bool {
+    return match (name) {
+        Nil -> false,
+        Cons(x, rest) -> (x == a) && spelled3(unbox(rest), b, c, d),
+    };
+}
+
+pub fn spelled5(name: List<usize>, a: usize, b: usize, c: usize, d: usize, e: usize) -> bool {
+    return match (name) {
+        Nil -> false,
+        Cons(x, rest) -> (x == a) && spelled4(unbox(rest), b, c, d, e),
+    };
+}
+
 // i32, bool, u8, u32, u64, usize, ptr, isize
 pub fn primitive(name: List<usize>) -> core::option::Option<SrcType> {
-    // Typed lets, so that laniusc reads the literals as usize.
-    let i32_text: List<usize> = cons(105, cons(51, single(50)));
-    let bool_text: List<usize> = cons(98, cons(111, cons(111, single(108))));
-    let u8_text: List<usize> = cons(117, single(56));
-    let u32_text: List<usize> = cons(117, cons(51, single(50)));
-    let u64_text: List<usize> = cons(117, cons(54, single(52)));
-    let usize_text: List<usize> = cons(117, cons(115, cons(105, cons(122, single(101)))));
-    let isize_text: List<usize> = cons(105, cons(115, cons(105, cons(122, single(101)))));
-    if (spelled(name, i32_text)) {
+    if (spelled3(name, 105, 51, 50)) {
         return Some(I32);
     }
-    if (spelled(name, bool_text)) {
+    if (spelled4(name, 98, 111, 111, 108)) {
         return Some(Bool);
     }
-    if (spelled(name, u8_text)) {
+    if (spelled2(name, 117, 56)) {
         return Some(Uint(Uint8));
     }
-    if (spelled(name, u32_text)) {
+    if (spelled3(name, 117, 51, 50)) {
         return Some(Uint(Uint32));
     }
-    if (spelled(name, u64_text)) {
+    if (spelled3(name, 117, 54, 52)) {
         return Some(Uint(Uint64));
     }
-    if (spelled(name, usize_text)) {
+    if (spelled5(name, 117, 115, 105, 122, 101)) {
         return Some(Uint(Usize));
     }
-    if (spelled(name, text_ptr())) {
+    if (spelled3(name, 112, 116, 114)) {
         return Some(Ptr);
     }
-    if (spelled(name, isize_text)) {
+    if (spelled5(name, 105, 115, 105, 122, 101)) {
         return Some(Isize);
     }
     return None;
@@ -1473,7 +1504,7 @@ pub fn find_type(types: List<TypeDecl>, m: List<List<usize>>, name: List<usize>,
 
 // extract: inline
 fn find_type_at(ft: TypeDecl, frest: List<TypeDecl>, fm: List<List<usize>>, fname: List<usize>, fk: usize) -> core::option::Option<usize> {
-    if (same_spellings(ft.home, fm) && same_text(ft.name, fname)) {
+    if (same_text(ft.name, fname) && same_spellings(ft.home, fm)) {
         return Some(fk);
     }
     return find_type(frest, fm, fname, plus(fk, 1));
@@ -1489,7 +1520,7 @@ pub fn find_fn(fns: List<FnDecl>, m: List<List<usize>>, name: List<usize>, k: us
 
 // extract: inline
 fn find_fn_at(gf: FnDecl, grest: List<FnDecl>, gm: List<List<usize>>, gname: List<usize>, gk: usize) -> core::option::Option<usize> {
-    if (!gf.in_impl && same_spellings(gf.home, gm) && same_text(gf.name, gname)) {
+    if (!gf.in_impl && same_text(gf.name, gname) && same_spellings(gf.home, gm)) {
         return Some(gk);
     }
     return find_fn(grest, gm, gname, plus(gk, 1));
@@ -1504,7 +1535,7 @@ pub fn find_const(consts: List<ConstDecl>, m: List<List<usize>>, name: List<usiz
 
 // extract: inline
 fn find_const_at(hc: ConstDecl, hrest: List<ConstDecl>, hm: List<List<usize>>, hname: List<usize>) -> core::option::Option<ConstDecl> {
-    if (same_spellings(hc.home, hm) && same_text(hc.name, hname)) {
+    if (same_text(hc.name, hname) && same_spellings(hc.home, hm)) {
         return Some(hc);
     }
     return find_const(hrest, hm, hname);
@@ -1519,7 +1550,7 @@ pub fn find_alias(aliases: List<AliasDecl>, m: List<List<usize>>, name: List<usi
 
 // extract: inline
 fn find_alias_at(fa: AliasDecl, farest: List<AliasDecl>, fam: List<List<usize>>, faname: List<usize>) -> core::option::Option<AliasDecl> {
-    if (same_spellings(fa.home, fam) && same_text(fa.name, faname)) {
+    if (same_text(fa.name, faname) && same_spellings(fa.home, fam)) {
         return Some(fa);
     }
     return find_alias(farest, fam, faname);
@@ -6420,6 +6451,42 @@ fn type_table_next(tfuel: usize, tdecls: Decls, ttable: List<Inst>, tnew: core::
     };
 }
 
+// The table holds the instance of every named type in t.
+pub fn ty_known(table: List<Inst>, t: Ty) -> bool {
+    return match (t) {
+        TyI32 -> true,
+        TyBool -> true,
+        TyUint(k) -> true,
+        TyPtr -> true,
+        TyIsize -> true,
+        TySlice(e) -> ty_known(table, unbox(e)),
+        TyNamed(d, args) -> inst_member(table, Inst { decl: d, args: unbox(args) }),
+    };
+}
+
+// type_table over more types, from a table that holds every instance the
+// types of its members need (as type_table's result from the seeds does):
+// a type whose instance the table holds adds nothing new, so it is passed
+// over without reading its declaration again. The types are every type the
+// functions mention, most of them many times over.
+pub fn type_table_more(fuel: usize, decls: Decls, table: core::option::Option<List<Inst>>, ts: List<Ty>) -> core::option::Option<List<Inst>> {
+    return match (table) {
+        None -> None,
+        Some(x) -> match (ts) {
+            Nil -> Some(x),
+            Cons(t, rest) -> type_table_more_at(fuel, decls, x, t, unbox(rest)),
+        },
+    };
+}
+
+// extract: inline
+fn type_table_more_at(mfuel: usize, mdecls: Decls, mtable: List<Inst>, mt: Ty, mrest: List<Ty>) -> core::option::Option<List<Inst>> {
+    if (ty_known(mtable, mt)) {
+        return type_table_more(mfuel, mdecls, Some(mtable), mrest);
+    }
+    return type_table_more(mfuel, mdecls, type_table(mfuel, mdecls, mtable, single(mt)), mrest);
+}
+
 // ---------------------------------------------------------------- the closed program
 
 // The declarations and the function and type instance tables.
@@ -6427,10 +6494,42 @@ pub struct Tables {
     decls: Decls,
     fns: List<Inst>,
     types: List<Inst>,
+    // lower_named of each type instance, in order (see close_ty)
+    lowered: List<core::option::Option<SrcType>>,
 }
 
+pub fn lowered_all(fuel: usize, decls: Decls, types: List<Inst>, insts: List<Inst>) -> List<core::option::Option<SrcType>> {
+    return match (insts) {
+        Nil -> empty(),
+        Cons(x, rest) -> cons(lower_named(minus(fuel, 1), decls, types, x.decl, x.args), lowered_all(fuel, decls, types, unbox(rest))),
+    };
+}
+
+pub fn close_named(fuel: usize, t: Tables, d: usize, args: List<Ty>, id: core::option::Option<usize>) -> core::option::Option<SrcType> {
+    return match (id) {
+        None -> lower_named(minus(fuel, 1), t.decls, t.types, d, args),
+        Some(i) -> match (get(t.lowered, i)) {
+            None -> lower_named(minus(fuel, 1), t.decls, t.types, d, args),
+            Some(x) -> x,
+        },
+    };
+}
+
+// lower_ty, reading a type instance's lowering from the table instead of
+// lowering its declaration again at every one of its many uses.
 pub fn close_ty(fuel: usize, t: Tables, ty: Ty) -> core::option::Option<SrcType> {
-    return lower_ty(fuel, t.decls, t.types, ty);
+    if (fuel == 0) {
+        return None;
+    }
+    return match (ty) {
+        TyI32 -> Some(I32),
+        TyBool -> Some(Bool),
+        TyUint(k) -> Some(Uint(k)),
+        TyPtr -> Some(Ptr),
+        TyIsize -> Some(Isize),
+        TySlice(e) -> slice_type(close_ty(minus(fuel, 1), t, unbox(e))),
+        TyNamed(d, args) -> close_named(fuel, t, d, unbox(args), inst_index(t.types, Inst { decl: d, args: unbox(args) }, 0)),
+    };
 }
 
 pub fn src_enum_id(t: core::option::Option<SrcType>) -> core::option::Option<usize> {
@@ -7492,7 +7591,7 @@ pub fn untyped_rejected(fs: List<SrcFunc>) -> core::option::Option<SrcProgram> {
 pub fn build_closed(fuel: usize, decls: Decls, fns: List<Inst>, types: core::option::Option<List<Inst>>, funcs: List<MFunc>) -> core::option::Option<SrcProgram> {
     return match (types) {
         None -> None,
-        Some(ts) -> match (close_funcs(fuel, Tables { decls: decls, fns: fns, types: ts }, funcs)) {
+        Some(ts) -> match (close_funcs(fuel, Tables { decls: decls, fns: fns, types: ts, lowered: lowered_all(fuel, decls, ts, ts) }, funcs)) {
             None -> None,
             Some(fs) -> untyped_rejected(lit_funcs(fs, fs)),
         },
@@ -7502,7 +7601,7 @@ pub fn build_closed(fuel: usize, decls: Decls, fns: List<Inst>, types: core::opt
 pub fn build_mono(fuel: usize, decls: Decls, seeds: List<Inst>, m: core::option::Option<Mono>) -> core::option::Option<SrcProgram> {
     return match (m) {
         None -> None,
-        Some(x) -> build_closed(fuel, decls, x.table, type_table(fuel, decls, seeds, concat(seed_tys(seeds), funcs_tys(x.funcs))), x.funcs),
+        Some(x) -> build_closed(fuel, decls, x.table, type_table_more(fuel, decls, type_table(fuel, decls, seeds, seed_tys(seeds)), funcs_tys(x.funcs)), x.funcs),
     };
 }
 

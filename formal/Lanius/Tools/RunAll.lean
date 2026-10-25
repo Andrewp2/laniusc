@@ -15,7 +15,9 @@ uncompiled (`compileSource` rejects it) or `image [entries] [bytes]`; `dump`
 prints NAME and, for each file, its tokens (kind:start:text), prods and
 parents, or nolex; `diag` says why `compileSource` rejects a program;
 `validate` prints ok or tree for each file; `time` prints how long each stage
-of the front end and `compileSource` takes. -/
+of the front end and `compileSource` takes; `names` prints each function
+instance's position, module, spelling and type argument count (a native
+image's entries are in this order). -/
 
 open Lanius.Mini
 
@@ -150,6 +152,26 @@ def timeLine (name : String) (bases : List String) : IO Unit := do
   let _ ← stage "link" (fun _ => linkFrom entries 0 codes) List.length
   return ()
 
+def spell (xs : List Nat) : String := String.ofList (xs.map Char.ofNat)
+
+/-- Each function instance, in the order the image's entries are. -/
+def namesLine (name : String) (bases : List String) : IO Unit := do
+  let mut files : List FileInput := []
+  for b in bases do
+    if let some f ← loadFile b then files := files ++ [f]
+  let some roots := validateFiles grammar files | IO.println s!"{name} tree"
+  let fuel := filesFuel files
+  let first :: rest := roots | IO.println s!"{name} unread"
+  let some f := fileDecls fuel first | IO.println s!"{name} unread"
+  let some c := collectFiles fuel rest { decls := f.decls, modules := [f.home] } | IO.println s!"{name} unread"
+  let some m := monoLoop fuel fuel c.decls (rootInsts f.decls.fns 0) [] 0 | IO.println s!"{name} unread"
+  let mut i := 0
+  for inst in m.table do
+    match c.decls.fns[inst.decl]? with
+    | some d => IO.println s!"{name} fn {i} {"::".intercalate (d.home.map spell)}::{spell d.name} {inst.args.length}"
+    | none => IO.println s!"{name} fn {i} projection {inst.decl} {inst.args.length}"
+    i := i + 1
+
 end Lanius.Tools
 
 open Lanius.Tools in
@@ -163,6 +185,7 @@ def main (args : List String) : IO UInt32 := do
     | "diag" :: name :: bases => diagLine name bases
     | "validate" :: name :: bases => validateLine name bases
     | "time" :: name :: bases => timeLine name bases
+    | "names" :: name :: bases => namesLine name bases
     | _ => IO.eprintln s!"bad manifest line: {line}"; return 2
     (← IO.getStdout).flush
   return 0
