@@ -1,0 +1,254 @@
+// Pure Ed25519, RFC 8032 section 5.1. Original extended-coordinate arithmetic.
+// Allocation-free; canonical prime-subgroup verification, nonidentity public key.
+// See docs/extended-ed25519.md for arithmetic, input and secret-handling contracts.
+module ext::ed25519;
+import core::option;
+import core::result;
+import core::sha512;
+import core::slice;
+import core::u64;
+
+pub enum Error { Bounds, InvalidSeedLength, InvalidPublicKeyLength, InvalidSignatureLength }
+pub struct Key32 { bytes: [u8; 32] }
+pub struct Signature64 { bytes: [u8; 64] }
+struct Field { limbs: [u64; 16] }
+struct Scalar { limbs: [u64; 16] }
+struct Point { x: Field, y: Field, z: Field, t: Field }
+fn valid(value: core::slice::View<u8>) -> bool {
+    return value.start >= 0 && value.length >= 0 && value.start <= 2147483647-value.length;
+}
+fn prime(index: i32) -> u64 {
+    if (index == 0) { return 65517; } if (index == 15) { return 32767; } return 65535;
+}
+fn small(value: u64) -> Field {
+    let limbs: [u64; 16] = [0; 16]; limbs[0] = value & 65535; limbs[1] = value >> 16;
+    return Field { limbs: limbs };
+}
+// Input coefficients are nonnegative, lower limbs <2^42 and top <2^37.
+// After the first pass low limb <2^28, other limbs radix-sized. The second
+// can carry at most one out of the top; a third resolves that possible wrap.
+fn reduce(value: Field) -> Field {
+    let result: Field = value; let pass: i32 = 0;
+    while (pass < 3) {
+        let index: i32 = 0;
+        while (index < 15) {
+            result.limbs[index + 1] += result.limbs[index] >> 16;
+            result.limbs[index] &= 65535; index += 1;
+        }
+        let carry: u64 = result.limbs[15] >> 15;
+        result.limbs[15] &= 32767; result.limbs[0] += carry * 19; pass += 1;
+    }
+    // Radix subtraction with borrow in {0,1}; the added radix keeps every
+    // temporary nonnegative. Select r-p exactly when its final borrow is zero.
+    let difference: [u64; 16] = [0; 16]; let borrow: u64 = 0; let index: i32 = 0;
+    while (index < 16) {
+        let next: u64 = result.limbs[index] + 65536 - prime(index) - borrow;
+        difference[index] = next & 65535; borrow = 1 - (next >> 16); index += 1;
+    }
+    let mask: u64 = core::u64::wrapping_sub(0, 1 - borrow); index = 0;
+    while (index < 16) {
+        result.limbs[index] = (result.limbs[index] & (mask ^ 18446744073709551615)) | (difference[index] & mask); index += 1;
+    }
+    return result;
+}
+fn add(left: Field, right: Field) -> Field {
+    let limbs: [u64; 16] = [0; 16]; let index: i32 = 0;
+    while (index < 16) { limbs[index] = left.limbs[index] + right.limbs[index]; index += 1; }
+    return reduce(Field { limbs: limbs });
+}
+fn subtract(left: Field, right: Field) -> Field {
+    let limbs: [u64; 16] = [0; 16]; let index: i32 = 0;
+    while (index < 16) { limbs[index] = left.limbs[index] + 2 * prime(index) - right.limbs[index]; index += 1; }
+    return reduce(Field { limbs: limbs });
+}
+fn multiply(left: Field, right: Field) -> Field {
+    let product: [u64; 32] = [0; 32]; let first: i32 = 0;
+    while (first < 16) {
+        let second: i32 = 0;
+        while (second < 16) { product[first + second] += left.limbs[first] * right.limbs[second]; second += 1; }
+        first += 1;
+    }
+    // Each unfurled coefficient <16*2^32=2^36. Folding the upper half
+    // through 2^256 == 38 (mod p) stays below 2^42, with carry headroom.
+    let limbs: [u64; 16] = [0; 16]; first = 0;
+    while (first < 16) { limbs[first] = product[first] + 38 * product[first + 16]; first += 1; }
+    return reduce(Field { limbs: limbs });
+}
+fn square(value: Field) -> Field { return multiply(value, value); }
+fn multiply_small(value: Field, factor: u64) -> Field {
+    let limbs: [u64; 16] = [0; 16]; let index: i32 = 0;
+    while (index < 16) { limbs[index] = value.limbs[index] * factor; index += 1; }
+    return reduce(Field { limbs: limbs });
+}
+fn inverse(value: Field) -> Field {
+    // p-2 = 2^255-21: bits 254..0 are one except bits 4 and 2. These
+    // branches depend only on the fixed exponent position, never field data.
+    let result: Field = small(1); let bit: i32 = 254;
+    while (bit >= 0) {
+        result = square(result); if (bit != 4 && bit != 2) { result = multiply(result, value); } bit -= 1;
+    }
+    return result;
+}
+fn curve_d() -> Field { let limbs: [u64; 16] = [30883,4953,19914,30187,55467,16705,2637,112,59544,30585,16505,36039,65139,11119,27886,20995]; return Field { limbs:limbs }; }
+fn sqrt_minus_one() -> Field { let limbs: [u64; 16] = [41136,18958,6951,50414,58488,44335,6150,12099,55207,15867,153,11085,57099,20417,9344,11139]; return Field { limbs:limbs }; }
+fn base_x() -> Field { let limbs: [u64; 16] = [54554,36645,11616,51542,42930,38181,51040,26924,56412,64982,57905,49316,21502,52590,14035,8553]; return Field { limbs:limbs }; }
+fn base_y() -> Field { let limbs: [u64; 16] = [26200,26214,26214,26214,26214,26214,26214,26214,26214,26214,26214,26214,26214,26214,26214,26214]; return Field { limbs:limbs }; }
+fn order() -> Scalar { let limbs: [u64; 16] = [54253,23797,25370,22546,40150,41719,63966,5342,0,0,0,0,0,0,0,4096]; return Scalar { limbs:limbs }; }
+fn field_equal(left: Field, right: Field) -> bool {
+    let difference: u64 = 0; let i: i32 = 0;
+    while (i < 16) { difference |= left.limbs[i] ^ right.limbs[i]; i += 1; }
+    return difference == 0;
+}
+fn field_select(left: Field, right: Field, bit: u64) -> Field {
+    let mask: u64 = core::u64::wrapping_sub(0,bit); let limbs: [u64;16] = [0;16]; let i: i32 = 0;
+    while (i < 16) { limbs[i] = left.limbs[i] ^ (mask & (left.limbs[i] ^ right.limbs[i])); i += 1; }
+    return Field { limbs:limbs };
+}
+fn identity() -> Point { return Point { x:small(0), y:small(1), z:small(1), t:small(0) }; }
+fn base() -> Point { let x: Field = base_x(); let y: Field = base_y(); return Point { x:x,y:y,z:small(1),t:multiply(x,y) }; }
+// RFC 8032 complete extended-coordinate addition, including identical inputs.
+fn point_add(left: Point, right: Point) -> Point {
+    let a: Field = multiply(subtract(left.y,left.x),subtract(right.y,right.x));
+    let b: Field = multiply(add(left.y,left.x),add(right.y,right.x));
+    let c: Field = multiply(multiply(left.t,right.t),multiply_small(curve_d(),2));
+    let d: Field = multiply_small(multiply(left.z,right.z),2);
+    let e: Field = subtract(b,a); let f: Field = subtract(d,c);
+    let g: Field = add(d,c); let h: Field = add(b,a);
+    return Point { x:multiply(e,f), y:multiply(g,h), z:multiply(f,g), t:multiply(e,h) };
+}
+fn point_double(value: Point) -> Point {
+    let a: Field = square(value.x); let b: Field = square(value.y); let c: Field = multiply_small(square(value.z),2);
+    let h: Field = add(a,b); let e: Field = subtract(h,square(add(value.x,value.y)));
+    let g: Field = subtract(a,b); let f: Field = add(c,g);
+    return Point { x:multiply(e,f), y:multiply(g,h), z:multiply(f,g), t:multiply(e,h) };
+}
+fn point_select(left: Point, right: Point, bit: u64) -> Point {
+    return Point { x:field_select(left.x,right.x,bit), y:field_select(left.y,right.y,bit),
+        z:field_select(left.z,right.z,bit), t:field_select(left.t,right.t,bit) };
+}
+// Exactly 256 double/add/select steps and fixed addresses, for secret as well
+// as public scalars. No table is indexed by a scalar digit.
+fn point_multiply(value: Point, scalar: Scalar) -> Point {
+    let result: Point = identity(); let bit: i32 = 255;
+    while (bit >= 0) {
+        let doubled: Point = point_double(result); let added: Point = point_add(doubled,value);
+        let selected: u64 = (scalar.limbs[bit/16] >> (bit%16)) & 1;
+        result = point_select(doubled,added,selected); bit -= 1;
+    }
+    return result;
+}
+fn point_equal(left: Point, right: Point) -> bool {
+    return field_equal(multiply(left.x,right.z),multiply(right.x,left.z)) &&
+        field_equal(multiply(left.y,right.z),multiply(right.y,left.z));
+}
+fn point_identity(value: Point) -> bool { return field_equal(value.x,small(0)) && field_equal(value.y,value.z); }
+fn encode(value: Point) -> Key32 {
+    let reciprocal: Field = inverse(value.z); let x: Field = multiply(value.x,reciprocal); let y: Field = multiply(value.y,reciprocal);
+    let bytes: [u8;32] = [0;32]; let i: i32 = 0;
+    while (i < 16) { bytes[2*i]=(y.limbs[i]&255) as u8; bytes[2*i+1]=(y.limbs[i]>>8) as u8; i += 1; }
+    bytes[31] |= ((x.limbs[0]&1)<<7) as u8; return Key32 { bytes:bytes };
+}
+// Decode is public-data control flow. Check the original y before reduction;
+// no noncanonical encoding or negative zero is silently normalized.
+fn decode(input: core::slice::View<u8>) -> core::option::Option<Point> {
+    let limbs: [u64;16] = [0;16]; let i: i32 = 0;
+    while (i < 16) { limbs[i]=(input.values[input.start+2*i] as u64) | ((input.values[input.start+2*i+1] as u64)<<8); i += 1; }
+    let sign: u64 = limbs[15]>>15; limbs[15] &= 32767; let y: Field = Field { limbs:limbs };
+    if (!field_equal(y,reduce(y))) { return core::option::None(); }
+    let yy: Field = square(y); let u: Field = subtract(yy,small(1)); let v: Field = add(multiply(curve_d(),yy),small(1));
+    let vv: Field = square(v); let v3: Field = multiply(vv,v); let v7: Field = multiply(square(v3),v);
+    let exponent_base: Field = multiply(u,v7); let power: Field = small(1); let bit: i32 = 251;
+    // (p-5)/8 = 2^252-3, all exponent bits except bit 1 are set.
+    while (bit >= 0) { power=square(power); if (bit != 1) { power=multiply(power,exponent_base); } bit -= 1; }
+    let x: Field = multiply(multiply(u,v3),power); let check: Field = multiply(v,square(x));
+    if (!field_equal(check,u)) {
+        if (!field_equal(check,subtract(small(0),u))) { return core::option::None(); }
+        x=multiply(x,sqrt_minus_one());
+    }
+    if (field_equal(x,small(0)) && sign == 1) { return core::option::None(); }
+    if ((x.limbs[0]&1) != sign) { x=subtract(small(0),x); }
+    return core::option::Some(Point { x:x,y:y,z:small(1),t:multiply(x,y) });
+}
+// Every step starts with r<L and produces 2r+bit<2L. One masked subtraction
+// restores r<L. All limb temporaries are below 2^17; borrow stays in {0,1}.
+// Public internal lengths are 32 or 64, never derived from scalar contents.
+fn scalar_reduce(bytes: [u8], length: i32) -> Scalar {
+    let zero: [u64;16] = [0;16]; let r: Scalar = Scalar { limbs:zero }; let modulus: Scalar = order(); let bit: i32 = length*8-1;
+    while (bit >= 0) {
+        let carry: u64 = ((bytes[bit/8] >> (bit%8))&1) as u64; let i: i32 = 0;
+        while (i < 16) { let next: u64 = r.limbs[i]*2+carry; r.limbs[i]=next&65535; carry=next>>16; i += 1; }
+        let difference: [u64;16] = [0;16]; let borrow: u64 = 0; i=0;
+        while (i < 16) { let next: u64 = r.limbs[i]+65536-modulus.limbs[i]-borrow; difference[i]=next&65535; borrow=1-(next>>16); i += 1; }
+        let mask: u64 = core::u64::wrapping_sub(0,1-borrow); i=0;
+        while (i < 16) { r.limbs[i] ^= mask & (r.limbs[i]^difference[i]); i += 1; } bit -= 1;
+    }
+    return r;
+}
+fn scalar_decode(input: core::slice::View<u8>) -> Scalar {
+    let limbs: [u64;16] = [0;16]; let i: i32 = 0;
+    while (i < 16) { limbs[i]=(input.values[input.start+2*i] as u64) | ((input.values[input.start+2*i+1] as u64)<<8); i += 1; }
+    return Scalar { limbs:limbs };
+}
+fn scalar_canonical(value: Scalar) -> bool {
+    let modulus: Scalar = order(); let borrow: u64 = 0; let i: i32 = 0;
+    while (i < 16) { let next: u64 = value.limbs[i]+65536-modulus.limbs[i]-borrow; borrow=1-(next>>16); i += 1; }
+    return borrow == 1;
+}
+fn scalar_product_add(left: Scalar, right: Scalar, extra: Scalar) -> Scalar {
+    let product: [u64;32] = [0;32]; let i: i32 = 0;
+    while (i < 16) { let j: i32 = 0; while (j < 16) { product[i+j] += left.limbs[i]*right.limbs[j]; j += 1; } product[i] += extra.limbs[i]; i += 1; }
+    // Coefficients <16*2^32+2^16<2^37. Normalization adds <2^21 carry.
+    // Both operands and extra are <L, so the integer fits the full 512 bits.
+    let bytes: [u8;64] = [0;64]; let carry: u64 = 0; i=0;
+    while (i < 32) { let next: u64 = product[i]+carry; bytes[2*i]=(next&255) as u8; bytes[2*i+1]=((next>>8)&255) as u8; carry=next>>16; i += 1; }
+    return scalar_reduce(bytes,64);
+}
+fn expanded(seed: core::slice::View<u8>) -> core::sha512::Digest { return core::sha512::digest(seed).unwrap(); }
+fn secret_scalar(hash: core::sha512::Digest) -> Scalar {
+    let bytes: [u8;32] = [0;32]; let i: i32 = 0;
+    while (i < 32) { bytes[i]=hash.bytes[i]; i += 1; } bytes[0]&=248; bytes[31]=(bytes[31]&63)|64;
+    return scalar_reduce(bytes,32);
+}
+fn challenge(r: Key32, public: Key32, message: core::slice::View<u8>) -> Scalar {
+    let hash: core::sha512::State = core::sha512::new();
+    let r_values: [u8] = r.bytes; let public_values: [u8] = public.bytes;
+    assert(hash.update(core::slice::View { values:r_values,start:0,length:32 }).is_ok());
+    assert(hash.update(core::slice::View { values:public_values,start:0,length:32 }).is_ok()); assert(hash.update(message).is_ok());
+    let digest: core::sha512::Digest = hash.finish(); return scalar_reduce(digest.bytes,64);
+}
+pub fn public_key(seed: core::slice::View<u8>) -> core::result::Result<Key32,Error> {
+    if (!valid(seed)) { return core::result::Err(Error::Bounds); }
+    if (seed.length != 32) { return core::result::Err(Error::InvalidSeedLength); }
+    let hash: core::sha512::Digest = expanded(seed); return core::result::Ok(encode(point_multiply(base(),secret_scalar(hash))));
+}
+pub fn sign(seed: core::slice::View<u8>, message: core::slice::View<u8>) -> core::result::Result<Signature64,Error> {
+    if (!valid(seed) || !valid(message)) { return core::result::Err(Error::Bounds); }
+    if (seed.length != 32) { return core::result::Err(Error::InvalidSeedLength); }
+    let hash: core::sha512::Digest = expanded(seed); let secret: Scalar = secret_scalar(hash);
+    let public: Key32 = encode(point_multiply(base(),secret)); let nonce_hash: core::sha512::State = core::sha512::new();
+    let prefix: [u8] = hash.bytes;
+    assert(nonce_hash.update(core::slice::View { values:prefix,start:32,length:32 }).is_ok()); assert(nonce_hash.update(message).is_ok());
+    let nonce_digest: core::sha512::Digest = nonce_hash.finish(); let nonce: Scalar = scalar_reduce(nonce_digest.bytes,64);
+    let r: Key32 = encode(point_multiply(base(),nonce)); let k: Scalar = challenge(r,public,message);
+    let s: Scalar = scalar_product_add(k,secret,nonce); let bytes: [u8;64] = [0;64]; let i: i32 = 0;
+    while (i < 32) { bytes[i]=r.bytes[i]; i += 1; } i=0;
+    while (i < 16) { bytes[32+2*i]=(s.limbs[i]&255) as u8; bytes[33+2*i]=(s.limbs[i]>>8) as u8; i += 1; }
+    return core::result::Ok(Signature64 { bytes:bytes });
+}
+pub fn verify(public: core::slice::View<u8>, message: core::slice::View<u8>, signature: core::slice::View<u8>) -> core::result::Result<bool,Error> {
+    if (!valid(public) || !valid(message) || !valid(signature)) { return core::result::Err(Error::Bounds); }
+    if (public.length != 32) { return core::result::Err(Error::InvalidPublicKeyLength); }
+    if (signature.length != 64) { return core::result::Err(Error::InvalidSignatureLength); }
+    let s: Scalar = scalar_decode(core::slice::View { values:signature.values,start:signature.start+32,length:32 });
+    if (!scalar_canonical(s)) { return core::result::Ok(false); }
+    let encoded_r: core::slice::View<u8> = core::slice::View { values:signature.values,start:signature.start,length:32 };
+    let decoded_a: core::option::Option<Point> = decode(public); let decoded_r: core::option::Option<Point> = decode(encoded_r);
+    if (decoded_a.is_none() || decoded_r.is_none()) { return core::result::Ok(false); }
+    let a: Point = decoded_a.unwrap(); let r: Point = decoded_r.unwrap();
+    if (point_identity(a)) { return core::result::Ok(false); }
+    if (!point_identity(point_multiply(a,order())) || !point_identity(point_multiply(r,order()))) { return core::result::Ok(false); }
+    let public_bytes: [u8;32] = [0;32]; let r_bytes: [u8;32] = [0;32]; let i: i32 = 0;
+    while (i < 32) { public_bytes[i]=public.values[public.start+i]; r_bytes[i]=encoded_r.values[encoded_r.start+i]; i += 1; }
+    let k: Scalar = challenge(Key32 { bytes:r_bytes },Key32 { bytes:public_bytes },message);
+    return core::result::Ok(point_equal(point_multiply(base(),s),point_add(r,point_multiply(a,k))));
+}

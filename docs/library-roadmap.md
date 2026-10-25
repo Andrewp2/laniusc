@@ -382,6 +382,27 @@ other remaining families above still need their own executable evidence.
 ## Current work
 
 - Branch: `codex/stdlib`, based on `441e66f9`.
+- Authentication foundation checkpoint: the shared-label record regression
+  passes all 308 protocol commands. Schedule/transcript admission passes 114
+  unique protocol commands, 460 transcript actions and 12 RFC anchors; the
+  initial malformed RFC anchor in the test driver was corrected before its
+  focused rerun passed. Ed25519's ordinary consumer, all five pure RFC vectors
+  and deterministic libsodium model pass. Its subgroup/malleability and
+  mutation/bounds groups remain pending. DER, handshake codecs, `sign_bytes`
+  and the composed authentication flight are checked in with runtime admission
+  pending. The composed flight also needs final source review. This checkpoint
+  does not establish a usable TLS connection or complete the library goal.
+- Next TLS layer: executable SHA-256 transcript/key-schedule operations,
+  borrowed handshake message codecs, pure Ed25519 signatures and DER parsing
+  for certificate processing. These stay separate from record state and host
+  transport. Record keys and updates will share the checked label encoder with
+  the schedule. Admission requires independent byte/state models and a real
+  sign/verify program; these additions do not establish a TLS connection.
+  Connection work still requires handshake ordering and fragmentation,
+  certificate chain/identity/time/constraint policy, CertificateVerify and
+  Finished checkpoints, partial transport progress, alerts and closure. Other
+  cipher/signature suites, resumption and early-data policy remain part of the
+  broader TLS work.
 - Current crypto checkpoint: [IETF ChaCha20](stdlib-chacha20.md),
   [Poly1305](stdlib-poly1305.md), their
   [authenticated-encryption construction](extended-chacha20-poly1305.md) and

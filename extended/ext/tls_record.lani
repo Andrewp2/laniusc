@@ -5,7 +5,7 @@ module ext::tls_record;
 import core::result;
 import core::slice;
 import ext::chacha20_poly1305;
-import ext::hkdf_sha256;
+import ext::tls_schedule;
 
 pub const MAX_CONTENT: i32 = 16384;
 pub const MAX_INNER: i32 = 16385;
@@ -40,16 +40,15 @@ fn derive(secret: core::slice::View<u8>) -> core::result::Result<Traffic, Error>
     let stored: [u8; 32] = [0; 32]; let index: i32 = 0;
     while (index < 32) { stored[index] = secret.values[secret.start + index]; index += 1; }
     let key: [u8; 32] = [0; 32]; let iv: [u8; 12] = [0; 12];
-    // HkdfLabel: uint16 length; uint8 label length; "tls13 " + label;
-    // uint8 context length (zero). Neither label contains a trailing NUL.
-    let key_label: [u8; 13] = [0, 32, 9, 116, 108, 115, 49, 51, 32, 107, 101, 121, 0];
-    let iv_label: [u8; 12] = [0, 12, 8, 116, 108, 115, 49, 51, 32, 105, 118, 0];
+    let key_label: [u8; 3] = [107, 101, 121];
+    let iv_label: [u8; 2] = [105, 118]; let empty: [u8; 0] = [];
     let prk: core::slice::View<u8> = core::slice::View { values: stored, start: 0, length: 32 };
-    let keyed: core::result::Result<i32, ext::hkdf_sha256::Error> = ext::hkdf_sha256::expand(prk,
-        core::slice::View { values: key_label, start: 0, length: 13 }, core::slice::View { values: key, start: 0, length: 32 });
+    let context: core::slice::View<u8> = core::slice::View { values: empty, start: 0, length: 0 };
+    let keyed: core::result::Result<i32, ext::tls_schedule::Error> = ext::tls_schedule::expand_label(prk,
+        core::slice::View { values: key_label, start: 0, length: 3 }, context, core::slice::View { values: key, start: 0, length: 32 });
     if (core::result::is_err(keyed)) { return core::result::Err(Error::Derivation); }
-    let vectored: core::result::Result<i32, ext::hkdf_sha256::Error> = ext::hkdf_sha256::expand(prk,
-        core::slice::View { values: iv_label, start: 0, length: 12 }, core::slice::View { values: iv, start: 0, length: 12 });
+    let vectored: core::result::Result<i32, ext::tls_schedule::Error> = ext::tls_schedule::expand_label(prk,
+        core::slice::View { values: iv_label, start: 0, length: 2 }, context, core::slice::View { values: iv, start: 0, length: 12 });
     if (core::result::is_err(vectored)) { return core::result::Err(Error::Derivation); }
     return core::result::Ok(Traffic { secret: stored, key: key, iv: iv, next: 0, exhausted: false, poisoned: false });
 }
@@ -80,14 +79,11 @@ impl Traffic {
     }
     fn update(&self) -> core::result::Result<i32, Error> {
         if (self.poisoned) { return core::result::Err(Error::Poisoned); }
-        let label: [u8; 21] = [0, 32, 17, 116, 108, 115, 49, 51, 32, 116, 114, 97, 102, 102, 105, 99, 32, 117, 112, 100, 0];
-        let next_secret: [u8; 32] = [0; 32];
-        let expanded: core::result::Result<i32, ext::hkdf_sha256::Error> = ext::hkdf_sha256::expand(
-            core::slice::View { values: self.secret, start: 0, length: 32 },
-            core::slice::View { values: label, start: 0, length: 21 },
-            core::slice::View { values: next_secret, start: 0, length: 32 });
+        let expanded: core::result::Result<ext::tls_schedule::Secret, ext::tls_schedule::Error> = ext::tls_schedule::update_traffic(
+            core::slice::View { values: self.secret, start: 0, length: 32 });
         if (core::result::is_err(expanded)) { return core::result::Err(Error::Derivation); }
-        let made: core::result::Result<Traffic, Error> = derive(core::slice::View { values: next_secret, start: 0, length: 32 });
+        let next_secret: ext::tls_schedule::Secret = core::result::unwrap(expanded);
+        let made: core::result::Result<Traffic, Error> = derive(next_secret.view());
         if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
         // Replacement is atomic with respect to every returned error. This
         // overwrites current fields but is not a secure-erasure guarantee.

@@ -545,6 +545,11 @@
         "docs/extended-deflate.md"
       ]
     },
+    "ext::der": {
+      "guides": [
+        "docs/extended-der.md"
+      ]
+    },
     "ext::diff": {
       "guides": [
         "docs/extended-diff.md"
@@ -575,6 +580,12 @@
     "ext::dns_client": {
       "guides": [
         "docs/extended-dns-client.md"
+      ]
+    },
+    "ext::ed25519": {
+      "guides": [
+        "docs/extended-ed25519.md",
+        "docs/extended-sign-bytes.md"
       ]
     },
     "ext::geometry": {
@@ -727,9 +738,24 @@
         "docs/extended-timezone.md"
       ]
     },
+    "ext::tls_handshake": {
+      "guides": [
+        "docs/extended-tls-handshake.md"
+      ]
+    },
     "ext::tls_record": {
       "guides": [
         "docs/extended-tls-record.md"
+      ]
+    },
+    "ext::tls_schedule": {
+      "guides": [
+        "docs/extended-tls-schedule.md"
+      ]
+    },
+    "ext::tls_transcript": {
+      "guides": [
+        "docs/extended-tls-schedule.md"
       ]
     },
     "ext::toml": {

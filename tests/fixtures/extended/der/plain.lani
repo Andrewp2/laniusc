@@ -1,0 +1,17 @@
+// Isolated ordinary consumer: no Error/ErrorKind result projection.
+module app::main;
+import core::result;
+import core::slice;
+import ext::der;
+fn main() -> i32 {
+    let storage: [u8; 32] = [0; 32];
+    let output: core::slice::View<u8> = core::slice::View { values: storage, start: 3, length: 20 };
+    let length: i32 = ext::der::write_i64(-129, output).unwrap();
+    assert(length == 4 && storage[3] == 2 && storage[4] == 2 && storage[5] == 255 && storage[6] == 127);
+    let value: ext::der::Element = ext::der::parse_one(core::slice::View { values: storage, start: 3, length: length }).unwrap();
+    assert(value.as_i64().unwrap() == -129);
+    let cursor: ext::der::Reader = ext::der::reader(value.encoded).unwrap();
+    assert(cursor.next().unwrap().unwrap().as_i64().unwrap() == -129);
+    assert(cursor.next().unwrap().is_none() && cursor.next().unwrap().is_none());
+    assert(cursor.finish().unwrap() == 4); return 0;
+}

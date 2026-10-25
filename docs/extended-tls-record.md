@@ -11,6 +11,11 @@ The ordinary consumer and all 308 protocol model commands execute. User GPU
 kernels and other execution targets remain unverified. The module is written
 entirely in Lanius and requires no allocation or host service.
 
+Key/IV label encoding and traffic-secret updates now use the shared
+[SHA-256 schedule](extended-tls-schedule.md): `expand_label` for `key`/`iv`
+and `update_traffic` for `traffic upd`. The record API and failure contracts
+remain the same.
+
 This is a protocol prerequisite, not a TLS connection. Handshake negotiation,
 traffic-secret establishment, peer authentication, certificates, trust policy,
 transcript validation, handshake fragmentation/reassembly, alerts/closure,
@@ -173,7 +178,7 @@ API is provided.
 | `record_failures_preserve_retryable_state_and_poison_fatal_input_without_publication` | 96 protocol commands |
 | `tls13_records_match_independent_peer_over_sizes_padding_types_strides_and_sequences` | 212 protocol commands |
 
-The three-test invocation passed in **11.28 seconds**. It produced two strict
+The original three-test invocation passed in **11.28 seconds**. It produced two strict
 ELFs and executed three native processes; both protocol groups shared their
 compiled fixture through `OnceLock`. Drivers asserted empty allocation traces
 for `mmap`, `munmap`, `mremap` and `brk`. The fresh joint Rust build with the
@@ -198,6 +203,31 @@ compares the combined crypto/record consumer and an existing 1 MB workload with
 one pinned shader set, before/after/after/before ordering and six samples per
 variant/workload. All 32 emitted programs passed; no slowdown was observed.
 The measurements do not establish a causal speedup or cross-compiler ratio.
+
+### Shared schedule integration
+
+After replacing the record module's repeated label encodings with
+`tls_schedule::expand_label` and `tls_schedule::update_traffic`, the unchanged
+full three-test driver passed again in **11.27 seconds**: the ordinary consumer
+and all 308 model commands. Its two strict ELFs executed three native processes
+with the same empty allocation-trace assertions. The fresh joint Rust build
+with the sign-bytes driver took 1.57 seconds. The runtime command was:
+
+```bash
+RUST_MIN_STACK=16777216 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000 \
+LANIUS_DEBUG_STAGE_ERRORS=1 timeout --kill-after=2s 100s \
+  flock -E 75 -w 35 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 60s \
+  target/stdlib-build/debug/deps/extended_tls_record_execution-ece0ab2532f0d157 \
+  --nocapture --test-threads=1 \
+  > target/stdlib-work/tls-auth-admission/record-shared-labels.log 2>&1
+```
+
+Local build evidence is `target/stdlib-work/tls-auth-admission/build-record-and-sign.log`.
+The earlier performance comparison above predates the new schedule dependency;
+performance comparison of this expanded import closure remains pending. Record
+correctness does not establish handshake sequencing, peer authentication or a
+complete TLS connection.
 
 ### Original compiler failure and repair
 

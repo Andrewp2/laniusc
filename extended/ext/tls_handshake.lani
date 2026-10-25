@@ -1,0 +1,325 @@
+// Borrowed TLS 1.3 handshake wire codecs: RFC 8446 sections 4/B.3.
+// No record reassembly, negotiation, transcript sequencing or authentication.
+module ext::tls_handshake;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+
+pub const MAX_BODY: i32 = 16777215;
+pub const CLIENT_HELLO: u8 = 1;
+pub const SERVER_HELLO: u8 = 2;
+pub const NEW_SESSION_TICKET: u8 = 4;
+pub const END_OF_EARLY_DATA: u8 = 5;
+pub const ENCRYPTED_EXTENSIONS: u8 = 8;
+pub const CERTIFICATE: u8 = 11;
+pub const CERTIFICATE_REQUEST: u8 = 13;
+pub const CERTIFICATE_VERIFY: u8 = 15;
+pub const FINISHED: u8 = 20;
+pub const KEY_UPDATE: u8 = 24;
+pub enum Error { Bounds, Truncated, InvalidLength, UnsupportedType, InvalidValue, DuplicateExtension, MissingExtension, BufferTooSmall }
+pub struct Frame { kind: u8, wire: core::slice::View<u8>, body: core::slice::View<u8> }
+pub struct Extension { kind: u16, data: core::slice::View<u8> }
+pub struct CertificateEntry { data: core::slice::View<u8>, extensions: core::slice::View<u8> }
+pub struct ClientHello { random: core::slice::View<u8>, session_id: core::slice::View<u8>, cipher_suites: core::slice::View<u8>, extensions: core::slice::View<u8> }
+pub struct ServerHello { random: core::slice::View<u8>, session_id: core::slice::View<u8>, cipher_suite: u16, extensions: core::slice::View<u8> }
+pub struct EncryptedExtensions { extensions: core::slice::View<u8> }
+pub struct CertificateRequest { context: core::slice::View<u8>, extensions: core::slice::View<u8> }
+pub struct Certificate { context: core::slice::View<u8>, entries: core::slice::View<u8> }
+pub struct CertificateVerify { algorithm: u16, signature: core::slice::View<u8> }
+pub struct Finished { verify_data: core::slice::View<u8> }
+pub struct KeyUpdate { request_update: u8 }
+pub struct NewSessionTicket { lifetime: u32, age_add: u32, nonce: core::slice::View<u8>, ticket: core::slice::View<u8>, extensions: core::slice::View<u8> }
+
+fn valid(value: core::slice::View<u8>) -> bool { return value.start >= 0 && value.length >= 0 && value.start <= 2147483647-value.length; }
+fn region(value: core::slice::View<u8>, offset: i32, length: i32) -> core::slice::View<u8> { return core::slice::View<u8> { values: value.values, start: value.start+offset, length: length }; }
+fn byte(value: core::slice::View<u8>, offset: i32) -> u8 { return value.values[value.start+offset]; }
+fn number(value: core::slice::View<u8>, offset: i32, width: i32) -> i32 { let result: i32=0; let index: i32=0; while (index<width) { result=(result<<8)|(byte(value,offset+index) as i32); index+=1; } return result; }
+fn supported(kind: u8) -> bool { return kind==1 || kind==2 || kind==4 || kind==5 || kind==8 || kind==11 || kind==13 || kind==15 || kind==20 || kind==24; }
+fn hash_length_valid(length: i32) -> bool { return length==32 || length==48; }
+
+// Private checked reader. A failure latches before any invalid indexing and
+// preserves its first error. Public parsers never expose a partial result.
+struct Reader { input: core::slice::View<u8>, position: i32, failed: bool, error: Error }
+fn reader(input: core::slice::View<u8>) -> Reader { return Reader { input: input, position: 0, failed: false, error: Error::Truncated }; }
+impl Reader {
+    fn fail(&self, error: Error) { if (!self.failed) { self.failed=true; self.error=error; } }
+    fn take(&self, count: i32) -> core::slice::View<u8> {
+        if (self.failed) { return region(self.input,0,0); }
+        if (count<0 || count>self.input.length-self.position) { self.fail(Error::Truncated); return region(self.input,0,0); }
+        let value: core::slice::View<u8> = region(self.input,self.position,count); self.position+=count; return value;
+    }
+    fn integer(&self, width: i32) -> i32 { let value: core::slice::View<u8> = self.take(width); if (self.failed) { return 0; } return number(value,0,width); }
+    fn word(&self) -> u32 { let value: core::slice::View<u8> = self.take(4); if (self.failed) { return 0; } let result: u64=0; let index: i32=0; while (index<4) { result=(result<<8)|(byte(value,index) as u64); index+=1; } return result as u32; }
+    fn vector(&self, width: i32, minimum: i32, maximum: i32) -> core::slice::View<u8> {
+        let count: i32=self.integer(width); if (self.failed) { return region(self.input,0,0); }
+        if (count<minimum || count>maximum) { self.fail(Error::InvalidLength); return region(self.input,0,0); } return self.take(count);
+    }
+    fn checked(&self) -> core::result::Result<i32, Error> { if (self.failed) { return core::result::Err(self.error); } return core::result::Ok(self.position); }
+    fn done(&self) -> core::result::Result<i32, Error> { if (self.failed) { return core::result::Err(self.error); } if (self.position!=self.input.length) { return core::result::Err(Error::InvalidLength); } return core::result::Ok(self.position); }
+}
+
+pub fn parse_frame(input: core::slice::View<u8>) -> core::result::Result<Frame, Error> {
+    if (!valid(input)) { return core::result::Err(Error::Bounds); }
+    if (input.length<4) { return core::result::Err(Error::Truncated); }
+    let kind: u8=byte(input,0); if (!supported(kind)) { return core::result::Err(Error::UnsupportedType); }
+    let length: i32=number(input,1,3);
+    if (length>input.length-4) { return core::result::Err(Error::Truncated); }
+    if (length!=input.length-4) { return core::result::Err(Error::InvalidLength); }
+    return core::result::Ok(Frame { kind: kind, wire: input, body: region(input,4,length) });
+}
+
+// Eager constructors validate entire raw lists, then iteration is infallible
+// and fused while the borrowed backing remains immutable. Fields are not a
+// serialization format; use constructors, not fabricated cursor states.
+pub struct FrameCursor { input: core::slice::View<u8>, position: i32, ended: bool }
+pub struct VectorCursor { input: core::slice::View<u8>, position: i32, prefix: i32, ended: bool }
+pub struct ExtensionCursor { input: core::slice::View<u8>, position: i32, ended: bool }
+pub struct CertificateCursor { input: core::slice::View<u8>, position: i32, ended: bool }
+pub fn frames(input: core::slice::View<u8>) -> core::result::Result<FrameCursor, Error> {
+    if (!valid(input)) { return core::result::Err(Error::Bounds); }
+    let position: i32=0;
+    while (position<input.length) {
+        if (input.length-position<4) { return core::result::Err(Error::Truncated); }
+        if (!supported(byte(input,position))) { return core::result::Err(Error::UnsupportedType); }
+        let count: i32=number(input,position+1,3); if (count>input.length-position-4) { return core::result::Err(Error::Truncated); } position+=4+count;
+    }
+    return core::result::Ok(FrameCursor { input: input, position: 0, ended: false });
+}
+pub fn vectors(input: core::slice::View<u8>, prefix: u8, minimum: i32, maximum: i32) -> core::result::Result<VectorCursor, Error> {
+    if (!valid(input)) { return core::result::Err(Error::Bounds); }
+    if (prefix<1 || prefix>3 || minimum<0 || maximum<minimum) { return core::result::Err(Error::InvalidLength); }
+    let limit: i32=255; if (prefix==2) { limit=65535; } if (prefix==3) { limit=MAX_BODY; }
+    if (maximum>limit) { return core::result::Err(Error::InvalidLength); }
+    let scan: Reader=reader(input); while (!scan.failed && scan.position<input.length) { scan.vector(prefix as i32,minimum,maximum); }
+    let checked: core::result::Result<i32,Error> = scan.done(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    return core::result::Ok(VectorCursor { input: input, position: 0, prefix: prefix as i32, ended: false });
+}
+fn check_extensions(input: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (!valid(input)) { return core::result::Err(Error::Bounds); }
+    if (input.length>65535) { return core::result::Err(Error::InvalidLength); }
+    if (input.length==0) { return core::result::Ok(0); }
+    // Fixed 8KiB duplicate bitmap; one clear per nonempty extension list.
+    let seen: [u64;1024]=[0;1024]; let scan: Reader=reader(input); let count: i32=0;
+    while (!scan.failed && scan.position<input.length) {
+        let kind: i32=scan.integer(2); scan.vector(2,0,65535);
+        let checked: core::result::Result<i32,Error> = scan.checked(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        let mask: u64=(1 as u64)<<(kind%64); if ((seen[kind/64]&mask)!=0) { return core::result::Err(Error::DuplicateExtension); }
+        seen[kind/64]|=mask; count+=1;
+    }
+    return core::result::Ok(count);
+}
+pub fn extensions(input: core::slice::View<u8>) -> core::result::Result<ExtensionCursor,Error> {
+    let checked: core::result::Result<i32,Error> = check_extensions(input); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    return core::result::Ok(ExtensionCursor { input: input, position: 0, ended: false });
+}
+fn find(input: core::slice::View<u8>, kind: u16) -> core::option::Option<core::slice::View<u8>> {
+    let position: i32=0; while (position<input.length) { let count: i32=number(input,position+2,2); if (number(input,position,2)==(kind as i32)) { return core::option::Some(region(input,position+4,count)); } position+=4+count; }
+    return core::option::None();
+}
+pub fn find_extension(input: core::slice::View<u8>, kind: u16) -> core::result::Result<core::option::Option<core::slice::View<u8>>,Error> {
+    let checked: core::result::Result<i32,Error> = check_extensions(input); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); } return core::result::Ok(find(input,kind));
+}
+fn check_certificates(input: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (!valid(input)) { return core::result::Err(Error::Bounds); } if (input.length>MAX_BODY) { return core::result::Err(Error::InvalidLength); }
+    let scan: Reader=reader(input); let count: i32=0;
+    while (!scan.failed && scan.position<input.length) {
+        scan.vector(3,1,MAX_BODY); let ext: core::slice::View<u8> = scan.vector(2,0,65535);
+        let checked: core::result::Result<i32,Error> = scan.checked(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        let nested: core::result::Result<i32,Error> = check_extensions(ext); if (nested.is_err()) { return core::result::Err(nested.unwrap_err()); } count+=1;
+    }
+    return core::result::Ok(count);
+}
+pub fn certificate_entries(input: core::slice::View<u8>) -> core::result::Result<CertificateCursor,Error> {
+    let checked: core::result::Result<i32,Error> = check_certificates(input); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    return core::result::Ok(CertificateCursor { input: input, position: 0, ended: false });
+}
+pub impl FrameCursor { pub fn borrow(&self) -> &FrameCursor { return self; } pub fn remaining_bytes(&self) -> i32 { return self.input.length-self.position; } }
+pub impl VectorCursor { pub fn borrow(&self) -> &VectorCursor { return self; } pub fn remaining_bytes(&self) -> i32 { return self.input.length-self.position; } }
+pub impl ExtensionCursor { pub fn borrow(&self) -> &ExtensionCursor { return self; } pub fn remaining_bytes(&self) -> i32 { return self.input.length-self.position; } }
+pub impl CertificateCursor { pub fn borrow(&self) -> &CertificateCursor { return self; } pub fn remaining_bytes(&self) -> i32 { return self.input.length-self.position; } }
+pub impl core::iter::Iterator<Frame> for FrameCursor {
+    pub fn next(&self) -> core::option::Option<Frame> {
+        if (self.ended || self.position==self.input.length) { self.ended=true; return core::option::None(); }
+        let count: i32=number(self.input,self.position+1,3); let frame: Frame=Frame { kind: byte(self.input,self.position), wire: region(self.input,self.position,4+count), body: region(self.input,self.position+4,count) }; self.position+=4+count; return core::option::Some(frame);
+    }
+}
+pub impl core::iter::Iterator<core::slice::View<u8>> for VectorCursor {
+    pub fn next(&self) -> core::option::Option<core::slice::View<u8>> {
+        if (self.ended || self.position==self.input.length) { self.ended=true; return core::option::None(); }
+        let count: i32=number(self.input,self.position,self.prefix); let value: core::slice::View<u8> = region(self.input,self.position+self.prefix,count); self.position+=self.prefix+count; return core::option::Some(value);
+    }
+}
+pub impl core::iter::Iterator<Extension> for ExtensionCursor {
+    pub fn next(&self) -> core::option::Option<Extension> {
+        if (self.ended || self.position==self.input.length) { self.ended=true; return core::option::None(); }
+        let count: i32=number(self.input,self.position+2,2); let value: Extension=Extension { kind: number(self.input,self.position,2) as u16, data: region(self.input,self.position+4,count) }; self.position+=4+count; return core::option::Some(value);
+    }
+}
+pub impl core::iter::Iterator<CertificateEntry> for CertificateCursor {
+    pub fn next(&self) -> core::option::Option<CertificateEntry> {
+        if (self.ended || self.position==self.input.length) { self.ended=true; return core::option::None(); }
+        let count: i32=number(self.input,self.position,3); let ext_at: i32=self.position+3+count; let ext_count: i32=number(self.input,ext_at,2);
+        let value: CertificateEntry=CertificateEntry { data: region(self.input,self.position+3,count), extensions: region(self.input,ext_at+2,ext_count) }; self.position=ext_at+2+ext_count; return core::option::Some(value);
+    }
+}
+
+fn hello_extensions(input: core::slice::View<u8>, server: bool) -> core::result::Result<i32,Error> {
+    let checked: core::result::Result<i32,Error> = check_extensions(input); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    let found: core::option::Option<core::slice::View<u8>> = find(input,43); if (found.is_none()) { return core::result::Err(Error::MissingExtension); }
+    let data: core::slice::View<u8> = found.unwrap();
+    if (server) { if (data.length!=2) { return core::result::Err(Error::InvalidLength); } if (number(data,0,2)!=772) { return core::result::Err(Error::InvalidValue); } }
+    else {
+        let scan: Reader=reader(data); let versions: core::slice::View<u8> = scan.vector(1,2,254); let checked_version: core::result::Result<i32,Error> = scan.done(); if (checked_version.is_err()) { return core::result::Err(checked_version.unwrap_err()); }
+        if (versions.length%2!=0) { return core::result::Err(Error::InvalidLength); }
+        let matched: bool=false; let index: i32=0; while (index<versions.length) { if (number(versions,index,2)==772) { matched=true; } index+=2; } if (!matched) { return core::result::Err(Error::InvalidValue); }
+    }
+    return core::result::Ok(0);
+}
+fn request_extensions(input: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    let checked: core::result::Result<i32,Error> = check_extensions(input); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    let found: core::option::Option<core::slice::View<u8>> = find(input,13); if (found.is_none()) { return core::result::Err(Error::MissingExtension); }
+    let scan: Reader=reader(found.unwrap()); let algorithms: core::slice::View<u8> = scan.vector(2,2,65534); let done: core::result::Result<i32,Error> = scan.done(); if (done.is_err()) { return core::result::Err(done.unwrap_err()); }
+    if (algorithms.length%2!=0) { return core::result::Err(Error::InvalidLength); } return core::result::Ok(0);
+}
+pub fn hello_retry_random() -> [u8;32] { return [207,33,173,116,229,154,97,17,190,29,140,2,30,101,184,145,194,162,17,22,122,187,140,94,7,158,9,226,200,168,51,156]; }
+pub impl ServerHello {
+    pub fn is_hello_retry_request(&self) -> bool { if (!valid(self.random) || self.random.length!=32) { return false; } let expected: [u8;32]=hello_retry_random(); let index: i32=0; while (index<32) { if (byte(self.random,index)!=expected[index]) { return false; } index+=1; } return true; }
+}
+
+pub fn parse_client_hello(body: core::slice::View<u8>) -> core::result::Result<ClientHello,Error> {
+    if (!valid(body)) { return core::result::Err(Error::Bounds); } if (body.length>MAX_BODY) { return core::result::Err(Error::InvalidLength); } let scan: Reader=reader(body);
+    let legacy: i32=scan.integer(2); let random: core::slice::View<u8> = scan.take(32); let session: core::slice::View<u8> = scan.vector(1,0,32);
+    let suites: core::slice::View<u8> = scan.vector(2,2,65534); let compression: core::slice::View<u8> = scan.vector(1,1,255); let ext: core::slice::View<u8> = scan.vector(2,8,65535);
+    let checked: core::result::Result<i32,Error> = scan.done(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    if (legacy!=771 || compression.length!=1 || byte(compression,0)!=0) { return core::result::Err(Error::InvalidValue); }
+    if (suites.length%2!=0) { return core::result::Err(Error::InvalidLength); }
+    let nested: core::result::Result<i32,Error> = hello_extensions(ext,false); if (nested.is_err()) { return core::result::Err(nested.unwrap_err()); }
+    return core::result::Ok(ClientHello { random: random, session_id: session, cipher_suites: suites, extensions: ext });
+}
+pub fn parse_server_hello(body: core::slice::View<u8>) -> core::result::Result<ServerHello,Error> {
+    if (!valid(body)) { return core::result::Err(Error::Bounds); } if (body.length>MAX_BODY) { return core::result::Err(Error::InvalidLength); } let scan: Reader=reader(body);
+    let legacy: i32=scan.integer(2); let random: core::slice::View<u8> = scan.take(32); let session: core::slice::View<u8> = scan.vector(1,0,32); let suite: i32=scan.integer(2); let compression: i32=scan.integer(1); let ext: core::slice::View<u8> = scan.vector(2,6,65535);
+    let checked: core::result::Result<i32,Error> = scan.done(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    if (legacy!=771 || compression!=0) { return core::result::Err(Error::InvalidValue); }
+    let nested: core::result::Result<i32,Error> = hello_extensions(ext,true); if (nested.is_err()) { return core::result::Err(nested.unwrap_err()); }
+    return core::result::Ok(ServerHello { random: random, session_id: session, cipher_suite: suite as u16, extensions: ext });
+}
+pub fn parse_encrypted_extensions(body: core::slice::View<u8>) -> core::result::Result<EncryptedExtensions,Error> {
+    if (!valid(body)) { return core::result::Err(Error::Bounds); } if (body.length>MAX_BODY) { return core::result::Err(Error::InvalidLength); } let scan: Reader=reader(body); let ext: core::slice::View<u8> = scan.vector(2,0,65535);
+    let checked: core::result::Result<i32,Error> = scan.done(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    let nested: core::result::Result<i32,Error> = check_extensions(ext); if (nested.is_err()) { return core::result::Err(nested.unwrap_err()); } return core::result::Ok(EncryptedExtensions { extensions: ext });
+}
+pub fn parse_certificate_request(body: core::slice::View<u8>) -> core::result::Result<CertificateRequest,Error> {
+    if (!valid(body)) { return core::result::Err(Error::Bounds); } if (body.length>MAX_BODY) { return core::result::Err(Error::InvalidLength); } let scan: Reader=reader(body); let context: core::slice::View<u8> = scan.vector(1,0,255); let ext: core::slice::View<u8> = scan.vector(2,2,65535);
+    let checked: core::result::Result<i32,Error> = scan.done(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    let nested: core::result::Result<i32,Error> = request_extensions(ext); if (nested.is_err()) { return core::result::Err(nested.unwrap_err()); } return core::result::Ok(CertificateRequest { context: context, extensions: ext });
+}
+pub fn parse_certificate(body: core::slice::View<u8>) -> core::result::Result<Certificate,Error> {
+    if (!valid(body)) { return core::result::Err(Error::Bounds); } if (body.length>MAX_BODY) { return core::result::Err(Error::InvalidLength); } let scan: Reader=reader(body); let context: core::slice::View<u8> = scan.vector(1,0,255); let entries: core::slice::View<u8> = scan.vector(3,0,MAX_BODY);
+    let checked: core::result::Result<i32,Error> = scan.done(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    let nested: core::result::Result<i32,Error> = check_certificates(entries); if (nested.is_err()) { return core::result::Err(nested.unwrap_err()); } return core::result::Ok(Certificate { context: context, entries: entries });
+}
+pub fn parse_certificate_verify(body: core::slice::View<u8>) -> core::result::Result<CertificateVerify,Error> {
+    if (!valid(body)) { return core::result::Err(Error::Bounds); } if (body.length>MAX_BODY) { return core::result::Err(Error::InvalidLength); } let scan: Reader=reader(body); let algorithm: i32=scan.integer(2); let signature: core::slice::View<u8> = scan.vector(2,0,65535);
+    let checked: core::result::Result<i32,Error> = scan.done(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); } return core::result::Ok(CertificateVerify { algorithm: algorithm as u16, signature: signature });
+}
+pub fn parse_finished(body: core::slice::View<u8>, hash_length: i32) -> core::result::Result<Finished,Error> {
+    if (!valid(body)) { return core::result::Err(Error::Bounds); } if (body.length>MAX_BODY) { return core::result::Err(Error::InvalidLength); } if (!hash_length_valid(hash_length)) { return core::result::Err(Error::InvalidLength); }
+    if (body.length<hash_length) { return core::result::Err(Error::Truncated); } if (body.length!=hash_length) { return core::result::Err(Error::InvalidLength); } return core::result::Ok(Finished { verify_data: body });
+}
+pub fn parse_key_update(body: core::slice::View<u8>) -> core::result::Result<KeyUpdate,Error> {
+    if (!valid(body)) { return core::result::Err(Error::Bounds); } if (body.length>MAX_BODY) { return core::result::Err(Error::InvalidLength); } if (body.length<1) { return core::result::Err(Error::Truncated); } if (body.length!=1) { return core::result::Err(Error::InvalidLength); }
+    let flag: u8=byte(body,0); if (flag>1) { return core::result::Err(Error::InvalidValue); } return core::result::Ok(KeyUpdate { request_update: flag });
+}
+pub fn parse_new_session_ticket(body: core::slice::View<u8>) -> core::result::Result<NewSessionTicket,Error> {
+    if (!valid(body)) { return core::result::Err(Error::Bounds); } if (body.length>MAX_BODY) { return core::result::Err(Error::InvalidLength); } let scan: Reader=reader(body); let lifetime: u32=scan.word(); let age: u32=scan.word(); let nonce: core::slice::View<u8> = scan.vector(1,0,255); let ticket: core::slice::View<u8> = scan.vector(2,1,65535); let ext: core::slice::View<u8> = scan.vector(2,0,65534);
+    let checked: core::result::Result<i32,Error> = scan.done(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    if ((lifetime as u64)>604800) { return core::result::Err(Error::InvalidValue); }
+    let nested: core::result::Result<i32,Error> = check_extensions(ext); if (nested.is_err()) { return core::result::Err(nested.unwrap_err()); } return core::result::Ok(NewSessionTicket { lifetime: lifetime, age_add: age, nonce: nonce, ticket: ticket, extensions: ext });
+}
+pub fn parse_end_of_early_data(body: core::slice::View<u8>) -> core::result::Result<i32,Error> { if (!valid(body)) { return core::result::Err(Error::Bounds); } if (body.length>MAX_BODY) { return core::result::Err(Error::InvalidLength); } if (body.length!=0) { return core::result::Err(Error::InvalidLength); } return core::result::Ok(0); }
+
+// All writers validate metadata, syntax/lengths and destination capacity before
+// any write. Inputs must remain immutable and disjoint from destination. Views
+// must physically back their logical ranges; no owner is retained or allocated.
+struct Writer { output: core::slice::View<u8>, position: i32 }
+fn writer(output: core::slice::View<u8>) -> Writer { return Writer { output: output, position: 0 }; }
+impl Writer {
+    fn integer(&self, value: u64, width: i32) { let index: i32=0; while (index<width) { self.output.values[self.output.start+self.position]=((value>>((width-1-index)*8))&255) as u8; self.position+=1; index+=1; } }
+    fn bytes(&self, value: core::slice::View<u8>) { let index: i32=0; while (index<value.length) { self.output.values[self.output.start+self.position]=byte(value,index); self.position+=1; index+=1; } }
+    fn vector(&self, value: core::slice::View<u8>, width: i32) { self.integer(value.length as u64,width); self.bytes(value); }
+    fn header(&self, kind: u8, length: i32) { self.integer(kind as u64,1); self.integer(length as u64,3); }
+}
+fn room(length: u64, output: core::slice::View<u8>) -> core::result::Result<i32,Error> { if (length>16777215) { return core::result::Err(Error::InvalidLength); } if ((output.length as u64)<length+4) { return core::result::Err(Error::BufferTooSmall); } return core::result::Ok(length as i32); }
+// Raw framing only: this does not validate the selected message body's syntax.
+pub fn write_frame(kind: u8, body: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (!valid(body) || !valid(output)) { return core::result::Err(Error::Bounds); } if (!supported(kind)) { return core::result::Err(Error::UnsupportedType); }
+    let length: core::result::Result<i32,Error> = room(body.length as u64,output); if (length.is_err()) { return core::result::Err(length.unwrap_err()); } let sink: Writer=writer(output); sink.header(kind,length.unwrap()); sink.bytes(body); return core::result::Ok(sink.position);
+}
+pub fn write_extension(kind: u16, data: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (!valid(data) || !valid(output)) { return core::result::Err(Error::Bounds); } if (data.length>65535) { return core::result::Err(Error::InvalidLength); } if (output.length<4+data.length) { return core::result::Err(Error::BufferTooSmall); }
+    let sink: Writer=writer(output); sink.integer(kind as u64,2); sink.vector(data,2); return core::result::Ok(sink.position);
+}
+pub fn write_certificate_entry(value: CertificateEntry, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (!valid(value.data) || !valid(value.extensions) || !valid(output)) { return core::result::Err(Error::Bounds); }
+    if (value.data.length<1 || value.data.length>MAX_BODY || value.extensions.length>65535) { return core::result::Err(Error::InvalidLength); }
+    let nested: core::result::Result<i32,Error> = check_extensions(value.extensions); if (nested.is_err()) { return core::result::Err(nested.unwrap_err()); }
+    let total: u64=5+(value.data.length as u64)+(value.extensions.length as u64); if (total>16777215) { return core::result::Err(Error::InvalidLength); } if ((output.length as u64)<total) { return core::result::Err(Error::BufferTooSmall); }
+    let sink: Writer=writer(output); sink.vector(value.data,3); sink.vector(value.extensions,2); return core::result::Ok(sink.position);
+}
+pub fn write_client_hello(value: ClientHello, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (!valid(value.random) || !valid(value.session_id) || !valid(value.cipher_suites) || !valid(value.extensions) || !valid(output)) { return core::result::Err(Error::Bounds); }
+    if (value.random.length!=32 || value.session_id.length>32 || value.cipher_suites.length<2 || value.cipher_suites.length>65534 || value.cipher_suites.length%2!=0 || value.extensions.length<8 || value.extensions.length>65535) { return core::result::Err(Error::InvalidLength); }
+    let nested: core::result::Result<i32,Error> = hello_extensions(value.extensions,false); if (nested.is_err()) { return core::result::Err(nested.unwrap_err()); }
+    let length: core::result::Result<i32,Error> = room(41+(value.session_id.length as u64)+(value.cipher_suites.length as u64)+(value.extensions.length as u64),output); if (length.is_err()) { return core::result::Err(length.unwrap_err()); }
+    let sink: Writer=writer(output); sink.header(CLIENT_HELLO,length.unwrap()); sink.integer(771,2); sink.bytes(value.random); sink.vector(value.session_id,1); sink.vector(value.cipher_suites,2); sink.integer(1,1); sink.integer(0,1); sink.vector(value.extensions,2); return core::result::Ok(sink.position);
+}
+pub fn write_server_hello(value: ServerHello, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (!valid(value.random) || !valid(value.session_id) || !valid(value.extensions) || !valid(output)) { return core::result::Err(Error::Bounds); }
+    if (value.random.length!=32 || value.session_id.length>32 || value.extensions.length<6 || value.extensions.length>65535) { return core::result::Err(Error::InvalidLength); }
+    let nested: core::result::Result<i32,Error> = hello_extensions(value.extensions,true); if (nested.is_err()) { return core::result::Err(nested.unwrap_err()); }
+    let length: core::result::Result<i32,Error> = room(40+(value.session_id.length as u64)+(value.extensions.length as u64),output); if (length.is_err()) { return core::result::Err(length.unwrap_err()); }
+    let sink: Writer=writer(output); sink.header(SERVER_HELLO,length.unwrap()); sink.integer(771,2); sink.bytes(value.random); sink.vector(value.session_id,1); sink.integer(value.cipher_suite as u64,2); sink.integer(0,1); sink.vector(value.extensions,2); return core::result::Ok(sink.position);
+}
+pub fn write_encrypted_extensions(value: EncryptedExtensions, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (!valid(value.extensions) || !valid(output)) { return core::result::Err(Error::Bounds); }
+    let nested: core::result::Result<i32,Error> = check_extensions(value.extensions); if (nested.is_err()) { return core::result::Err(nested.unwrap_err()); }
+    let length: core::result::Result<i32,Error> = room(2+(value.extensions.length as u64),output); if (length.is_err()) { return core::result::Err(length.unwrap_err()); }
+    let sink: Writer=writer(output); sink.header(ENCRYPTED_EXTENSIONS,length.unwrap()); sink.vector(value.extensions,2); return core::result::Ok(sink.position);
+}
+pub fn write_certificate_request(value: CertificateRequest, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (!valid(value.context) || !valid(value.extensions) || !valid(output)) { return core::result::Err(Error::Bounds); }
+    if (value.context.length>255 || value.extensions.length<2 || value.extensions.length>65535) { return core::result::Err(Error::InvalidLength); }
+    let nested: core::result::Result<i32,Error> = request_extensions(value.extensions); if (nested.is_err()) { return core::result::Err(nested.unwrap_err()); }
+    let length: core::result::Result<i32,Error> = room(3+(value.context.length as u64)+(value.extensions.length as u64),output); if (length.is_err()) { return core::result::Err(length.unwrap_err()); }
+    let sink: Writer=writer(output); sink.header(CERTIFICATE_REQUEST,length.unwrap()); sink.vector(value.context,1); sink.vector(value.extensions,2); return core::result::Ok(sink.position);
+}
+pub fn write_certificate(value: Certificate, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (!valid(value.context) || !valid(value.entries) || !valid(output)) { return core::result::Err(Error::Bounds); } if (value.context.length>255) { return core::result::Err(Error::InvalidLength); }
+    let nested: core::result::Result<i32,Error> = check_certificates(value.entries); if (nested.is_err()) { return core::result::Err(nested.unwrap_err()); }
+    let length: core::result::Result<i32,Error> = room(4+(value.context.length as u64)+(value.entries.length as u64),output); if (length.is_err()) { return core::result::Err(length.unwrap_err()); }
+    let sink: Writer=writer(output); sink.header(CERTIFICATE,length.unwrap()); sink.vector(value.context,1); sink.vector(value.entries,3); return core::result::Ok(sink.position);
+}
+pub fn write_certificate_verify(value: CertificateVerify, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (!valid(value.signature) || !valid(output)) { return core::result::Err(Error::Bounds); } if (value.signature.length>65535) { return core::result::Err(Error::InvalidLength); }
+    let length: core::result::Result<i32,Error> = room(4+(value.signature.length as u64),output); if (length.is_err()) { return core::result::Err(length.unwrap_err()); }
+    let sink: Writer=writer(output); sink.header(CERTIFICATE_VERIFY,length.unwrap()); sink.integer(value.algorithm as u64,2); sink.vector(value.signature,2); return core::result::Ok(sink.position);
+}
+pub fn write_finished(value: Finished, hash_length: i32, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (!valid(value.verify_data) || !valid(output)) { return core::result::Err(Error::Bounds); } if (!hash_length_valid(hash_length) || value.verify_data.length!=hash_length) { return core::result::Err(Error::InvalidLength); }
+    return write_frame(FINISHED,value.verify_data,output);
+}
+pub fn write_key_update(value: KeyUpdate, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (!valid(output)) { return core::result::Err(Error::Bounds); } if (value.request_update>1) { return core::result::Err(Error::InvalidValue); }
+    let length: core::result::Result<i32,Error> = room(1,output); if (length.is_err()) { return core::result::Err(length.unwrap_err()); } let sink: Writer=writer(output); sink.header(KEY_UPDATE,1); sink.integer(value.request_update as u64,1); return core::result::Ok(sink.position);
+}
+pub fn write_new_session_ticket(value: NewSessionTicket, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (!valid(value.nonce) || !valid(value.ticket) || !valid(value.extensions) || !valid(output)) { return core::result::Err(Error::Bounds); }
+    if (value.nonce.length>255 || value.ticket.length<1 || value.ticket.length>65535 || value.extensions.length>65534) { return core::result::Err(Error::InvalidLength); }
+    if ((value.lifetime as u64)>604800) { return core::result::Err(Error::InvalidValue); }
+    let nested: core::result::Result<i32,Error> = check_extensions(value.extensions); if (nested.is_err()) { return core::result::Err(nested.unwrap_err()); }
+    let length: core::result::Result<i32,Error> = room(13+(value.nonce.length as u64)+(value.ticket.length as u64)+(value.extensions.length as u64),output); if (length.is_err()) { return core::result::Err(length.unwrap_err()); }
+    let sink: Writer=writer(output); sink.header(NEW_SESSION_TICKET,length.unwrap()); sink.integer(value.lifetime as u64,4); sink.integer(value.age_add as u64,4); sink.vector(value.nonce,1); sink.vector(value.ticket,2); sink.vector(value.extensions,2); return core::result::Ok(sink.position);
+}
+pub fn write_end_of_early_data(output: core::slice::View<u8>) -> core::result::Result<i32,Error> { if (!valid(output)) { return core::result::Err(Error::Bounds); } let empty: core::slice::View<u8> = region(output,0,0); return write_frame(END_OF_EARLY_DATA,empty,output); }

@@ -21,7 +21,7 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::result](../core/result.md) · [source](../../../extended/ext/tls_record.lani#L5)
 - [core::slice](../core/slice.md) · [source](../../../extended/ext/tls_record.lani#L6)
 - [ext::chacha20_poly1305](chacha20_poly1305.md) · [source](../../../extended/ext/tls_record.lani#L7)
-- [ext::hkdf_sha256](hkdf_sha256.md) · [source](../../../extended/ext/tls_record.lani#L8)
+- [ext::tls_schedule](tls_schedule.md) · [source](../../../extended/ext/tls_record.lani#L8)
 
 ## Types, fields and variants
 
@@ -233,7 +233,7 @@ pub const MAX_RECORD: i32 = 16406;
 
 ### function: sealer
 
-[Source line 56](../../../extended/ext/tls_record.lani#L56)
+[Source line 55](../../../extended/ext/tls_record.lani#L55)
 
 ```lanius
 pub fn sealer(secret: core::slice::View<u8>) -> core::result::Result<Sealer, Error>
@@ -241,7 +241,7 @@ pub fn sealer(secret: core::slice::View<u8>) -> core::result::Result<Sealer, Err
 
 ### function: opener
 
-[Source line 63](../../../extended/ext/tls_record.lani#L63)
+[Source line 62](../../../extended/ext/tls_record.lani#L62)
 
 ```lanius
 pub fn opener(secret: core::slice::View<u8>) -> core::result::Result<Opener, Error>
@@ -249,9 +249,9 @@ pub fn opener(secret: core::slice::View<u8>) -> core::result::Result<Opener, Err
 
 ## Implementation blocks and public methods
 
-### impl at line 99
+### impl at line 95
 
-[Source line 99](../../../extended/ext/tls_record.lani#L99)
+[Source line 95](../../../extended/ext/tls_record.lani#L95)
 
 ```lanius
 pub impl Sealer
@@ -259,7 +259,7 @@ pub impl Sealer
 
 #### method: borrow
 
-[Source line 100](../../../extended/ext/tls_record.lani#L100)
+[Source line 96](../../../extended/ext/tls_record.lani#L96)
 
 ```lanius
 pub fn borrow(&self) -> &Sealer
@@ -267,7 +267,7 @@ pub fn borrow(&self) -> &Sealer
 
 #### method: sequence
 
-[Source line 101](../../../extended/ext/tls_record.lani#L101)
+[Source line 97](../../../extended/ext/tls_record.lani#L97)
 
 ```lanius
 pub fn sequence(&self) -> u64
@@ -275,7 +275,7 @@ pub fn sequence(&self) -> u64
 
 #### method: exhausted
 
-[Source line 102](../../../extended/ext/tls_record.lani#L102)
+[Source line 98](../../../extended/ext/tls_record.lani#L98)
 
 ```lanius
 pub fn exhausted(&self) -> bool
@@ -283,7 +283,7 @@ pub fn exhausted(&self) -> bool
 
 #### method: key_update
 
-[Source line 103](../../../extended/ext/tls_record.lani#L103)
+[Source line 99](../../../extended/ext/tls_record.lani#L99)
 
 ```lanius
 pub fn key_update(&self) -> core::result::Result<i32, Error>
@@ -291,15 +291,15 @@ pub fn key_update(&self) -> core::result::Result<i32, Error>
 
 #### method: seal
 
-[Source line 106](../../../extended/ext/tls_record.lani#L106)
+[Source line 102](../../../extended/ext/tls_record.lani#L102)
 
 ```lanius
 pub fn seal(&self, content: core::slice::View<u8>, content_type: u8, padding: i32, destination: core::slice::View<u8>) -> core::result::Result<i32, Error>
 ```
 
-### impl at line 130
+### impl at line 126
 
-[Source line 130](../../../extended/ext/tls_record.lani#L130)
+[Source line 126](../../../extended/ext/tls_record.lani#L126)
 
 ```lanius
 pub impl Opener
@@ -307,7 +307,7 @@ pub impl Opener
 
 #### method: borrow
 
-[Source line 131](../../../extended/ext/tls_record.lani#L131)
+[Source line 127](../../../extended/ext/tls_record.lani#L127)
 
 ```lanius
 pub fn borrow(&self) -> &Opener
@@ -315,7 +315,7 @@ pub fn borrow(&self) -> &Opener
 
 #### method: sequence
 
-[Source line 132](../../../extended/ext/tls_record.lani#L132)
+[Source line 128](../../../extended/ext/tls_record.lani#L128)
 
 ```lanius
 pub fn sequence(&self) -> u64
@@ -323,7 +323,7 @@ pub fn sequence(&self) -> u64
 
 #### method: exhausted
 
-[Source line 133](../../../extended/ext/tls_record.lani#L133)
+[Source line 129](../../../extended/ext/tls_record.lani#L129)
 
 ```lanius
 pub fn exhausted(&self) -> bool
@@ -331,7 +331,7 @@ pub fn exhausted(&self) -> bool
 
 #### method: is_poisoned
 
-[Source line 134](../../../extended/ext/tls_record.lani#L134)
+[Source line 130](../../../extended/ext/tls_record.lani#L130)
 
 ```lanius
 pub fn is_poisoned(&self) -> bool
@@ -339,7 +339,7 @@ pub fn is_poisoned(&self) -> bool
 
 #### method: key_update
 
-[Source line 135](../../../extended/ext/tls_record.lani#L135)
+[Source line 131](../../../extended/ext/tls_record.lani#L131)
 
 ```lanius
 pub fn key_update(&self) -> core::result::Result<i32, Error>
@@ -347,7 +347,7 @@ pub fn key_update(&self) -> core::result::Result<i32, Error>
 
 #### method: open
 
-[Source line 142](../../../extended/ext/tls_record.lani#L142)
+[Source line 138](../../../extended/ext/tls_record.lani#L138)
 
 ```lanius
 pub fn open(&self, record: core::slice::View<u8>, scratch: core::slice::View<u8>) -> core::result::Result<Opened, Error>

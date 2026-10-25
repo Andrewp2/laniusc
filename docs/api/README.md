@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **228 modules**, **9864 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **233 modules**, **10175 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -202,11 +202,13 @@ Inventory: **228 modules**, **9864 declaration/member entries**. Counts include 
 | [ext::csv](ext/csv.md) | [source](../../extended/ext/csv.lani#L4) | 87 | Source inventory | [extended-csv](../extended-csv.md) |
 | [ext::decimal](ext/decimal.md) | [source](../../extended/ext/decimal.lani#L3) | 92 | Source inventory | [extended-decimal](../extended-decimal.md) |
 | [ext::deflate](ext/deflate.md) | [source](../../extended/ext/deflate.lani#L4) | 8 | Source inventory | [extended-deflate](../extended-deflate.md) |
+| [ext::der](ext/der.md) | [source](../../extended/ext/der.lani#L3) | 92 | Source inventory | [extended-der](../extended-der.md) |
 | [ext::diff](ext/diff.md) | [source](../../extended/ext/diff.lani#L2) | 48 | Source inventory | [extended-diff](../extended-diff.md) |
 | [ext::discrete_distributions](ext/discrete_distributions.md) | [source](../../extended/ext/discrete_distributions.lani#L5) | 46 | Source inventory | [extended-discrete-distributions](../extended-discrete-distributions.md) |
 | [ext::distributions](ext/distributions.md) | [source](../../extended/ext/distributions.lani#L3) | 45 | Source inventory | [extended-distributions](../extended-distributions.md) |
 | [ext::dns](ext/dns.md) | [source](../../extended/ext/dns.lani#L2) | 139 | Source inventory | [extended-dns](../extended-dns.md) |
 | [ext::dns_client](ext/dns_client.md) | [source](../../extended/ext/dns_client.lani#L2) | 77 | Source inventory | [extended-dns-client](../extended-dns-client.md) |
+| [ext::ed25519](ext/ed25519.md) | [source](../../extended/ext/ed25519.lani#L4) | 12 | Source inventory | [extended-ed25519](../extended-ed25519.md), [extended-sign-bytes](../extended-sign-bytes.md) |
 | [ext::geometry](ext/geometry.md) | [source](../../extended/ext/geometry.lani#L3) | 81 | Source inventory | [extended-geometry](../extended-geometry.md) |
 | [ext::glob](ext/glob.md) | [source](../../extended/ext/glob.lani#L3) | 42 | Source inventory | [extended-glob](../extended-glob.md) |
 | [ext::hkdf_sha256](ext/hkdf_sha256.md) | [source](../../extended/ext/hkdf_sha256.lani#L3) | 9 | Source inventory | [extended-hmac-hkdf](../extended-hmac-hkdf.md), [extended-derive-key](../extended-derive-key.md) |
@@ -235,7 +237,10 @@ Inventory: **228 modules**, **9864 declaration/member entries**. Counts include 
 | [ext::tar](ext/tar.md) | [source](../../extended/ext/tar.lani#L3) | 81 | Source inventory | [extended-tar](../extended-tar.md) |
 | [ext::terminal](ext/terminal.md) | [source](../../extended/ext/terminal.lani#L3) | 15 | Source inventory | [extended-terminal](../extended-terminal.md) |
 | [ext::timezone](ext/timezone.md) | [source](../../extended/ext/timezone.lani#L3) | 80 | Source inventory | [extended-timezone](../extended-timezone.md) |
+| [ext::tls_handshake](ext/tls_handshake.md) | [source](../../extended/ext/tls_handshake.lani#L3) | 130 | Source inventory | [extended-tls-handshake](../extended-tls-handshake.md) |
 | [ext::tls_record](ext/tls_record.md) | [source](../../extended/ext/tls_record.lani#L4) | 40 | Source inventory | [extended-tls-record](../extended-tls-record.md) |
+| [ext::tls_schedule](ext/tls_schedule.md) | [source](../../extended/ext/tls_schedule.lani#L2) | 57 | Source inventory | [extended-tls-schedule](../extended-tls-schedule.md) |
+| [ext::tls_transcript](ext/tls_transcript.md) | [source](../../extended/ext/tls_transcript.lani#L2) | 20 | Source inventory | [extended-tls-schedule](../extended-tls-schedule.md) |
 | [ext::toml](ext/toml.md) | [source](../../extended/ext/toml.lani#L2) | 83 | Source inventory | [extended-toml](../extended-toml.md) |
 | [ext::unicode_case](ext/unicode_case.md) | [source](../../extended/ext/unicode_case.lani#L4) | 21 | Source inventory | [extended-unicode-case](../extended-unicode-case.md) |
 | [ext::unicode_graphemes](ext/unicode_graphemes.md) | [source](../../extended/ext/unicode_graphemes.lani#L3) | 18 | Source inventory | [extended-unicode-graphemes](../extended-unicode-graphemes.md) |
