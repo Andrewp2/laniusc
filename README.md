@@ -76,6 +76,18 @@ parsing and buffered output.
 [SHA-512 family](docs/stdlib-sha512.md) provide allocation-free incremental
 byte digests. The [stdin hashing program](docs/stdlib-hash-bytes.md) exercises
 all six algorithms with explicit input and I/O limits.
+[ChaCha20](docs/stdlib-chacha20.md), [Poly1305](docs/stdlib-poly1305.md),
+[ChaCha20-Poly1305](docs/extended-chacha20-poly1305.md) and
+[X25519](docs/extended-x25519.md) have focused native Linux execution evidence.
+The [TLS record layer](docs/extended-tls-record.md) passes its ordinary
+consumer and 308 protocol commands after a
+[host capacity repair](docs/tls-record-lowering-dependency.md).
+The [seal-bytes program](docs/extended-seal-bytes.md) passes 137 native cases,
+including allocation/I/O failures and the full 1 MiB boundary. The
+[pinned compiler comparison](docs/library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
+records the measured crypto and large-library workloads. A full TLS connection
+still requires handshake, certificates, peer authentication, trust policy and
+transport integration.
 
 Optional modules use the [`extended` source root](extended/README.md).
 [`ext::csv`](docs/extended-csv.md) and [`ext::json`](docs/extended-json.md)

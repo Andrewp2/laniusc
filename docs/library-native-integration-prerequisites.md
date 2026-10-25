@@ -8,11 +8,23 @@ the documented native profile. Threads, native foreign libraries and callbacks
 need additional contracts.
 
 The current TLS work also pursues a Lanius implementation over the existing
-byte/socket interfaces: hashes and HMAC/HKDF execute, and authenticated
-encryption, key exchange and record protection are being implemented next.
-That path does not require foreign-call support. A foreign TLS backend and
-SQLite integration still need the native-library boundaries described here;
-TLS handshake and peer/trust policy still need executable source support.
+byte/socket interfaces. Hashes, HMAC/HKDF, [ChaCha20](stdlib-chacha20.md),
+[Poly1305](stdlib-poly1305.md),
+[ChaCha20-Poly1305](extended-chacha20-poly1305.md) and
+[X25519](extended-x25519.md) pass focused native gates. The
+[TLS record layer](extended-tls-record.md) passes its ordinary consumer and
+308 protocol commands after a
+[host capacity repair](tls-record-lowering-dependency.md). The
+[seal-bytes program](extended-seal-bytes.md)
+passes 137 native cases, including full 1 MiB seal/open and failure cleanup;
+the [pinned compiler comparison](library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
+records measured workloads and limits.
+
+This source path does not require foreign-call support. A foreign TLS backend
+and SQLite integration still need the native-library boundaries described
+here. Full TLS connections still need executable handshake, certificate, peer
+authentication, trust policy and transport support. The thread-entry,
+synchronization and foreign ABI contracts below remain open.
 
 ## Existing boundaries
 

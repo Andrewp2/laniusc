@@ -1172,7 +1172,7 @@ impl LoweringCapacities {
     /// The capacities that bound what a job with `source_bytes` lexed bytes
     /// and at most `hir_rows` compact-HIR rows can address in a workspace
     /// built with these, never more than these. They are those of a fresh
-    /// workspace for the job's rows (the structural bounds of
+    /// workspace for the job's rows (the initial capacities from
     /// `from_frontend_unit`; every kernel also clamps its totals to the
     /// capacities it was built with), except that the token capacity stays
     /// this workspace's: synthetic declarations are numbered after the built
@@ -1236,17 +1236,19 @@ impl LoweringCapacities {
         }
     }
 
-    /// Derives lossless lowering capacities from the bounded frontend unit.
-    /// These factors are structural upper bounds of the current IR contracts,
-    /// not workload guesses. A named inclusive range loop owns at least three
+    /// Derives initial lowering capacities from the bounded frontend unit.
+    /// Semantic factors below are structural bounds. Target rows and artifact
+    /// bytes are initial capacity estimates: wide aggregate repeats/copies can
+    /// exceed them, so host orchestration retries with measured GPU demand.
+    /// A named inclusive range loop owns at least three
     /// distinct compact-HIR rows: the loop owner, iterable path and body block.
     /// Its expanded recipe emits twenty-four semantic rows, including the
     /// equality check before increment, so it reaches eight rows per HIR row.
     /// Direct ranges own additional endpoint roots and have a smaller ratio.
     /// A match with N arms owns its scrutinee plus N distinct pattern rows and
     /// N distinct result roots; its first-match recipe stays below seven rows
-    /// per compact-HIR row. Target bounds are likewise coupled over distinct
-    /// HIR owners and edges instead of adding mutually exclusive maxima:
+    /// per compact-HIR row. The initial target estimate covers these coupled
+    /// recipes over distinct HIR owners and edges:
     ///
     /// - x86 range lowering preserves the eight-row bound, while match
     ///   lowering retains at most twelve target rows per arm and stays below
@@ -1259,8 +1261,8 @@ impl LoweringCapacities {
     ///   Every such edge has a distinct child HIR row, so their expansions do
     ///   not add another whole-HIR maximum on top of the range-loop maximum.
     ///
-    /// These remain logical stream bounds; converting them to fixed resident
-    /// pages is required before large-unit production use.
+    /// Output estimates are not semantic limits. Measured output growth leaves
+    /// these semantic and side-table capacities unchanged.
     pub fn from_frontend_unit(
         source_bytes: u32,
         token_capacity: u32,

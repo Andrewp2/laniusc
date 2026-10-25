@@ -31,6 +31,7 @@ runtime behavior, failure rules and supported targets.
 | Elementary mathematics | `core::math` | [Full-range binary64 functions and accuracy evidence](../docs/stdlib-math.md) |
 | Wire coding and checksums | `core::base64`, `core::hex`, `core::binary`, `core::endian`, `core::varint`, `core::varint_i32`, `core::crc32`, `core::adler32`, `core::sha1` | [Byte codecs, endian values, varint statuses and CRC contracts](../docs/stdlib-byte-codecs.md); SHA-1 is supplied for the [WebSocket handshake](../docs/extended-websocket.md), with its collision-resistance limitation explicit |
 | SHA-2 byte digests | `core::sha256`, `core::sha512` | [SHA-224/256](../docs/stdlib-sha256.md), [SHA-384/512 and SHA-512/224/256](../docs/stdlib-sha512.md); incremental state, checked length limits and independent digest values; [streaming stdin program](../docs/stdlib-hash-bytes.md) |
+| Stream cipher and one-time authenticator | `core::chacha20`, `core::poly1305` | [IETF ChaCha20](../docs/stdlib-chacha20.md), [Poly1305](../docs/stdlib-poly1305.md); allocation-free byte operations, explicit counter/lifecycle bounds and focused native evidence |
 | Borrowed data and algorithms | `core::slice`, `core::range`, array helpers | [Counted views](../docs/stdlib-slice-views.md), [slice algorithms](../docs/stdlib-slice.md), [range membership and ordered overlap](../docs/stdlib-ranges.md) |
 | Shared iteration | `core::iter`, collection and Text cursors | [Fused slice/range cursors and borrowed adapters](../docs/stdlib-iterators.md), [collection, Text and bitset integration](../docs/stdlib-collection-iterators.md), [range-statistics application](../docs/stdlib-range-stats.md) |
 | UTF-8 and Unicode | `core::text`, `core::char`, `core::utf8`, `core::utf16`, `core::transcode`, `core::unicode` | [UTF encoding, edits and transcoding](../docs/stdlib-utf-codecs.md), [Unicode properties](../docs/stdlib-unicode.md); normalization and full casing are optional extended modules |
@@ -57,6 +58,17 @@ The older `std::vec` remains for the verified compiler's extraction contract and
 one heap dependency. New programs should use `alloc::vec`. Silent-failure map,
 set, byte-vector and UTF-8 owners have been removed with their repository
 consumers [migrated to checked APIs](../docs/stdlib-legacy-collections.md).
+
+The optional [extended library](../extended/README.md) adds accepted
+[ChaCha20-Poly1305](../docs/extended-chacha20-poly1305.md) and
+[X25519](../docs/extended-x25519.md) primitives. The
+[TLS record layer](../docs/extended-tls-record.md) passes its ordinary consumer
+and 308 protocol commands after a
+[host capacity repair](../docs/tls-record-lowering-dependency.md). Full TLS
+handshake, certificates, peer authentication, trust policy and transport
+integration remain separate work. The
+[pinned compiler comparison](../docs/library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
+records measured crypto and large-library workloads and their limits.
 
 ## Ownership and errors
 

@@ -13,17 +13,27 @@ The [staged HTTP/1 server and local service](extended-http-server.md), accepted
 at `493d4e87`, compose these operations with explicit deadlines, quotas and
 manual connection ownership.
 This does not bind the older `std::net` service declarations or supply threads,
-callbacks, general native FFI, TLS or SQLite. The
+callbacks, general native FFI, full TLS connections or SQLite. The
 [native integration prerequisite proposal](library-native-integration-prerequisites.md)
 separates checked entries, concurrent memory ordering and static/dynamic foreign
 ABI support; thread local storage is conditional on the chosen
 worker/foreign-library profile. Network TLS remains a separate integration.
-The [SHA-2 modules](stdlib-sha512.md) and
-[HMAC/HKDF](extended-hmac-hkdf.md) now execute entirely in Lanius over existing
-interfaces. They add no compiler/runtime dependency. TLS still needs its other
-cryptographic algorithms, handshake and certificate/trust policy; native
-foreign-library integration remains a distinct prerequisite for the proposed
-SQLite and foreign-library profiles.
+The [SHA-2 modules](stdlib-sha512.md), [HMAC/HKDF](extended-hmac-hkdf.md),
+[ChaCha20](stdlib-chacha20.md), [Poly1305](stdlib-poly1305.md),
+[ChaCha20-Poly1305](extended-chacha20-poly1305.md) and
+[X25519](extended-x25519.md) execute entirely in Lanius over existing
+interfaces. These primitive gates add no compiler/runtime dependency. The
+[TLS record layer](extended-tls-record.md) passes its ordinary consumer and
+308 protocol commands after a
+[host capacity repair](tls-record-lowering-dependency.md). That repair changes
+host capacity policy/orchestration; shaders, IR records/opcodes, ABI and proofs
+are unchanged. The [seal-bytes application](extended-seal-bytes.md)
+passes 137 native cases, including 1 MiB seal/open and allocation/I/O failures.
+The [pinned compiler comparison](library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
+records measured workloads and limits. TLS handshake, certificates, peer
+authentication, trust policy and transport orchestration are still
+required. Native foreign-library integration remains
+a distinct prerequisite for the proposed SQLite and foreign-library profiles.
 The [host prerequisite audit](library-host-prerequisites.md) distinguishes the
 historical missing operations from the remaining code-entry/memory-model work.
 Current [memory/view contracts](stdlib-memory.md) and
@@ -65,6 +75,7 @@ distribution uses the compiler's existing package resolver.
 
 | Dependency | Evidence | Affected APIs | Status |
 | --- | --- | --- | --- |
+| Resolved: TLS record protocol fixture target capacity | [Preserved capacity failure, host repair and native acceptance](tls-record-lowering-dependency.md); [record contracts](extended-tls-record.md) | `ext::tls_record` record, sequence, update, rejection and poisoning contracts | The original LNC0057 target-capacity failure is resolved by host capacity policy/orchestration changes. Unchanged TLS source and fixtures pass all three tests: ordinary consumer plus 308 protocol commands, two strict ELFs and three native processes with zero allocations. Shaders, IR records/opcodes, ABI and proofs are unchanged. Full TLS connections remain separate work. |
 | Imported owning-cursor finish result in a generic cleanup helper | [Minimal caller, original helper and caller-projection control](../tests/fixtures/stdlib_compiler_state/owning_string_application/README.md) | Original `destroy_vec_iter<String>` calling `try_finish().is_none()` without a caller finish-result projection | Reproduced on 2026-10-24 at `f867a596`: the 18-line caller fails LNC0047 detail 6. A caller that explicitly projects `IntoIterError::Remaining` compiles; a typed Option local inside the helper still fails. Production helpers drain, recover an empty typed collection and release it through its canonical owner. Helper-only Vec/Deque String callers and the 126-case streaming application execute. This is a retained compiler dependency, with no compiler or ABI repair claimed. |
 | Raw native arguments lost high `usize` bits | [Assembly/table oracle, full-width probes and bounded native controls](stdlib-raw-host-width.md); `raw_host_width_admission.lani` | Allocation sizes, raw stdio counts, startup-copy bounds, environment key identity and clock/cwd capacities | Repaired in the native thunks. Six focused tests verify full-word transport with injected errors, finite guarded copies, supported/rejected alignment and owner preservation. Large successful backing allocation is not claimed; initial allocation retains MAP_32BIT. Declared i32 indices/results and wrapper error policies retain their domains. |
 | Runtime emission stopped at 2,048 bytes | [Runtime tail contract and per-ELF byte oracle](stdlib-raw-host-width.md); `x86_runtime_dispatch_tests.rs` | Relocated assertion and Linux syscall bridge after runtime growth to 2,095 bytes | Repaired with a private GPU dispatch-argument producer over the final checked runtime length. Fresh native ELFs match all 2,095 literal bytes and execute both formerly missing tail entries; the retained old ELF fails at byte 2,048. Invalid status/range resets indirect work rather than retaining an earlier dispatch. No public IR, ABI record or proof change. |
@@ -101,7 +112,7 @@ distribution uses the compiler's existing package resolver.
 | Pointer address/alignment projection | `tests/fixtures/stdlib_foundation/arena_dependency/pointer_cast.lani` reports LNC0072, cannot cast `ptr` as `usize` | Arbitrary over-aligned arena layouts | Reproduced 2026-10-23. Current raw arenas explicitly support alignments 1, 2, 4 and 8, covering current native typed layouts. Larger powers return `UnsupportedAlignment`; no assumed host page alignment is used. |
 | Nominal allocation result inside an imported generic copy | `tests/fixtures/stdlib_foundation/arena_dependency/README.md`: the 32-line Block-return provider reports LNC0047; a pointer-return provider compiles and executes with the same caller | Some compositions of generic typed storage with nominal allocation-result helpers | Reproduced 2026-10-23. This source-shape difference does not establish the compiler root cause. Production arena uses one primitive internal allocation boundary and wraps raw Blocks separately; generic typed APIs, a standalone byte-copy control, broad native layouts and the real word-count consumer all execute. |
 | Direct generic View record from a native array | [Inferred path literal/control](../tests/fixtures/stdlib_foundation/path_view_dependency/README.md) and [explicit schema literal/control](../tests/fixtures/extended_library/schema_view_dependency.README.md) retain historical diagnostics/output and current source/ELF hashes | Earlier direct View record constructions, including invalid-metadata tests | Repaired by `678bf559`. All four exact unchanged forms compile and execute at `10be2529`: path literal/control return the expected Bounds result; schema literal/control both print `-1,2`. The native-array record field retains its accepted slice descriptor instead of shifting following fields. This closes these source forms without claiming arbitrary inferred expressions work. |
-| Complete host services | Old `std::net` and `std::thread` bindings remain unavailable; service 14 is executable | Threads, native callbacks/FFI, TLS, database integration and higher-level protocol orchestration | Owned sockets and extended filesystem operations now execute as Lanius code over `std::linux`. `core::target::HAS_NETWORK` describes those working library APIs; `core::runtime::HAS_NETWORK` describes the still-unbound old direct service 5. Neither implies general host-service completeness. |
+| Complete host services | Old `std::net` and `std::thread` bindings remain unavailable; service 14 is executable | Threads, native callbacks/FFI, foreign TLS backends, database integration and higher-level protocol orchestration | Owned sockets and extended filesystem operations now execute as Lanius code over `std::linux`. `core::target::HAS_NETWORK` describes those working library APIs; `core::runtime::HAS_NETWORK` describes the still-unbound old direct service 5. The Lanius TLS source path uses the existing byte/socket boundary; general host-service completeness remains open. |
 | Historical directory extern without a binding | `tests/fixtures/stdlib_foundation/filesystem_operations_directory_dependency.lani` declares an unrecognized directory-read extern and reports LNC0017 | The unsupported spelling retained as compiler evidence | Superseded as a library blocker by `std::directory` over the explicit Linux syscall binding. The old arbitrary extern remains unsupported; its failure is excluded from passing API claims. |
 | Earlier extended-filesystem prerequisite | Basic `std::file::open` still uses its three original modes | Distinguishing old fixed-mode opens from current file options | Resolved for the selected native profile by `std::file_ops` and `std::directory`, with nine focused execution groups and independent review. Existing fixed-mode opens still follow symlinks and omit close-on-exec; configurable opens default to close-on-exec. Paths remain bounded to 4,095 bytes. |
 | Native array converted inside a View record initializer | [Historical four-way source/output and current descriptor-layout regressions](../tests/fixtures/stdlib_compiler_state/settings_array_view/README.md) | Outer array-to-slice adjustment in imported/local record fields | Resolved by retaining the accepted mode4 descriptor adjustment and using its width during aggregate construction. The unchanged Text case now prints 6/6/6/6. Reordered generic records, sentinels, aliasing, positive/negative strides, nested arrays and zero-size/empty elements execute; incompatible element/extent types reject. No target/IR/ABI representation changed. Historical corruption remains preserved separately. |

@@ -28,6 +28,7 @@ package distribution is a separate deliverable.
 | --- | --- | --- |
 | Fundamental values | Option, Result, ordering, comparison, hashing, cloning, explicit errors | Generic Option/Result execute; partial equality/order are distinct from total equality/order, with explicit total float keys. Explicit TryClone/Destroy protocols and String implementations execute with typed errors and manual memory-owner release. Some generic forwarding and record extraction compositions remain compiler dependencies; automatic ownership and implicit derive/move/drop remain |
 | Byte digests | Incremental SHA-2, checked message lengths, copied results and reset | SHA-224/256 and SHA-384/512/512-224/512-256 execute without allocation, including variant-specific initial values, padding and full length encoding. Independent models cover streaming layouts, state/digest copies, finalization and rejection atomicity. The stdin hash program exercises all six algorithms, EOF, byte/call limits and I/O failures on native Linux |
+| Cryptographic byte primitives | Stream cipher, one-time authentication, authenticated encryption, key exchange and record protection | [ChaCha20](stdlib-chacha20.md), [Poly1305](stdlib-poly1305.md), optional [ChaCha20-Poly1305](extended-chacha20-poly1305.md), [X25519](extended-x25519.md) and [TLS record protection](extended-tls-record.md) pass focused native Linux gates, with a [pinned compiler comparison](library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records). Full TLS handshake/certificate/peer/trust/transport integration remains |
 | Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Canonical primitive-width arithmetic, bits and conversion policies execute; seven obsolete number/byte helper modules are removed and their ordinary consumers migrated. Pointer widths explicitly describe x86_64. Binary32/binary64 bit, rounding, square-root, decimal and precision-formatting APIs execute, as do full-range binary64 elementary functions with documented accuracy evidence. Native floats use partial comparison with explicit total keys. Represented two-word values remain an explicit separate API |
 | Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic algorithms and counted View values execute, including subviews, checked mutations and cursors; initial physical counts still require compiler length projection |
 | Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | The shared fused Iterator<T> protocol executes for canonical slice/chunk/window cursors, full-domain i32 ranges, fixed-capacity Vec/Set, owned Vec/deque/heap/hash/tree map/set cursors, bitsets, Text bytes/scalars and text splits. Borrowed take/chain/map/zip/filter/filter_map/skip/take_while/skip_while, checked u64 enumeration, searches, boolean consumers and ordinary/fallible left folds execute with explicit effects and shallow cleanup. Bounded fallible transfer collects into fixed/owned Vec, deque, hash/tree maps and sets, and Min/Max heaps, returning rejected items and accepted-prefix progress. Map/set sinks reject duplicates while preserving stored representatives. Separate native models cover cursor state, selection/copy/callback order, short circuits, transfer recovery and source resumption; owner traces check allocation behavior. Range-dot, window-report, column-sum, word-sort and identifier-index programs exercise composition and errors. Owning Vec/deque cursors transfer cleanup authority and recover their original storage, with explicit nested cleanup and a streaming unique-word application. Further adapters/consumers, replacement sinks, other owning cursor families and language for-loop integration remain |
@@ -345,9 +346,18 @@ allocation-free digest values. [HMAC-SHA-256 and HKDF-SHA-256](extended-hmac-hkd
 add keyed state and extract/expand operations, checked against RFC vectors
 and independent models. Their applications [hash stdin](stdlib-hash-bytes.md)
 and [derive keys from binary stdin](extended-derive-key.md) with explicit byte
-and I/O-call limits. This is a prerequisite milestone for protocol work;
-TLS, certificate handling, native foreign-library integration and the other
-remaining families above still need their own executable evidence.
+and I/O-call limits. [ChaCha20](stdlib-chacha20.md),
+[Poly1305](stdlib-poly1305.md), [ChaCha20-Poly1305](extended-chacha20-poly1305.md)
+and [X25519](extended-x25519.md) also pass their focused native gates.
+The [TLS record layer](extended-tls-record.md) passes its ordinary consumer
+and 308 protocol commands after a
+[host capacity repair](tls-record-lowering-dependency.md).
+The [seal-bytes application](extended-seal-bytes.md) passes 137 native cases,
+including full 1 MiB seal/open and allocation/I/O failures. The
+[pinned compiler comparison](library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
+records measured workloads and limits. TLS handshake, certificate/peer/trust
+handling, transport orchestration, native foreign-library integration and the
+other remaining families above still need their own executable evidence.
 
 ## Completion requirements
 
@@ -372,12 +382,21 @@ remaining families above still need their own executable evidence.
 ## Current work
 
 - Branch: `codex/stdlib`, based on `441e66f9`.
-- Current milestone: IETF ChaCha20, one-time Poly1305, their authenticated
-  encryption construction, X25519 key exchange and TLS 1.3 record protection.
-  The implementations use Lanius and the existing byte/integer interfaces;
-  executable admission is in progress. A bounded authenticated-byte program
-  will exercise files, framing, allocation and I/O failures. TLS handshake,
-  peer authentication and trust policy remain required after this layer.
+- Current crypto checkpoint: [IETF ChaCha20](stdlib-chacha20.md),
+  [Poly1305](stdlib-poly1305.md), their
+  [authenticated-encryption construction](extended-chacha20-poly1305.md) and
+  [X25519 key exchange](extended-x25519.md) pass focused native Linux gates
+  through the GPU compiler. [TLS 1.3 record protection](extended-tls-record.md)
+  passes all three tests, including its ordinary consumer and 308 protocol
+  commands, after a [host capacity repair](tls-record-lowering-dependency.md).
+  The [bounded seal-bytes program](extended-seal-bytes.md) passes all four gates,
+  totaling 137 native cases across ordinary messages, owner/I/O failures,
+  1 MiB boundaries and call budgets. The
+  [pinned compiler comparison](library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
+  records before/after evidence and limits. TLS handshake, peer authentication,
+  certificates, trust policy and transport integration remain required after
+  this layer. The full goal still includes threads, SQLite and the other
+  families above.
 - Previous hash milestone: the byte-oriented SHA-2 family (SHA-224, SHA-256,
   SHA-384, SHA-512, SHA-512/224 and SHA-512/256), followed by HMAC-SHA-256
   and HKDF-SHA-256. Allocation-free Lanius implementations and native admission
@@ -385,8 +404,8 @@ remaining families above still need their own executable evidence.
   errors, primary-specification vectors and 3,362 independent model commands.
   The streaming stdin hashing and key-derivation applications pass 136 and 51
   native cases respectively. The whole library goal remains open. This supplies
-  prerequisites for protocol work; TLS still needs its other algorithms,
-  certificate policy and transport state machine.
+  prerequisites for protocol work; TLS still needs handshake/certificate/trust
+  policy and its transport state machine.
 - Previous milestone: runtime formatting to generic byte writers, using the
   existing parser/renderer, bounded scratch, complete preflight before output,
   exact confirmed failure progress and explicit call budgets. Independent

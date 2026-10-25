@@ -20,6 +20,9 @@ Declaration inventory does not establish execution or complete semantic docs.
 | Module | Working surface | Execution evidence |
 | --- | --- | --- |
 | [`ext::hmac_sha256`](ext/hmac_sha256.lani), [`ext::hkdf_sha256`](ext/hkdf_sha256.lani) | Incremental keyed MACs, extract/expand key derivation, explicit lifecycle and output limits, caller storage | x86_64 Linux; [RFC vectors, state ownership and failure contracts](../docs/extended-hmac-hkdf.md), [streaming key-derivation program](../docs/extended-derive-key.md) |
+| [`ext::chacha20_poly1305`](ext/chacha20_poly1305.lani) | IETF authenticated encryption/decryption with full tags, checked views and authenticate-before-output behavior | x86_64 Linux; [RFC vectors, independent models, mutation rejection and ordinary consumer](../docs/extended-chacha20-poly1305.md) |
+| [`ext::x25519`](ext/x25519.lani) | Fixed-storage scalar multiplication, canonical coordinates and all-zero shared-result rejection | x86_64 Linux; [RFC vectors, libsodium/field models, encodings and iteration evidence](../docs/extended-x25519.md) |
+| [`ext::tls_record`](ext/tls_record.lani) | TLS 1.3 ChaCha20-Poly1305 record protection with directional state | x86_64 Linux; [ordinary consumer and 308 protocol commands](../docs/extended-tls-record.md), with zero allocations, after a [host capacity repair](../docs/tls-record-lowering-dependency.md). Full TLS connections remain separate work. |
 | [`ext::csv`](ext/csv.lani) | Incremental UTF-8 decoding, reusable packed records, whole tables, borrowed/copied fields and canonical encoding | x86_64 Linux; [contracts and tests](../docs/extended-csv.md) |
 | [`ext::json`](ext/json.lani) | Parse/build owned documents, query nodes, encode compact JSON with exact number text | x86_64 Linux; [contracts and tests](../docs/extended-json.md) |
 | [`ext::cli`](ext/cli.lani) | Borrowed raw-byte argument parser, short groups, exact long names, required/optional values and structured errors | x86_64 Linux; [contracts and tests](../docs/extended-cli.md) |
@@ -71,6 +74,14 @@ Declaration inventory does not establish execution or complete semantic docs.
 | [`ext::audio`](ext/audio.lani) | Owned interleaved finite samples, checked edits, gain/mix/clip, metrics and mono conversion | x86_64 Linux; [numeric and ownership contracts](../docs/extended-audio.md) |
 | [`ext::wave`](ext/wave.lani) | PCM8/16/24/32, IEEE float and ordinary extensible WAVE decoding; checked canonical encoding | x86_64 Linux; [format and conversion contracts](../docs/extended-wave.md) |
 | [`ext::signal`](ext/signal.lani) | Finite complex arithmetic, FFT/inverse, windows, full convolution and spectral bins | x86_64 Linux; [numerical/resource contracts](../docs/extended-signal.md), [WAVE spectrum program](../docs/extended-wave-spectrum.md) |
+
+The [seal-bytes application](../docs/extended-seal-bytes.md) passes 137 native
+cases, including allocation/I/O failures, full 1 MiB seal/open and shared
+call-budget checks. The
+[pinned compiler comparison](../docs/library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
+records measured crypto and large-library workloads and their limits. Full TLS
+connections still require handshake negotiation, certificates, peer
+authentication, trust policy and transport integration.
 
 Generated Unicode table modules are implementation data rather than separate
 APIs. Their source versions and regeneration commands are recorded by the

@@ -44,6 +44,42 @@ fn array_repeat_context_executes_modest_native_arrays() {
 }
 
 #[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn array_repeat_and_value_copy_grow_target_capacity_from_measured_demand() {
+    let source = include_str!(
+        "fixtures/stdlib_foundation/dependencies/nonzero_array_repeat_target_capacity.lani"
+    );
+    let (bytes, small) = common::run_gpu_codegen_with_timeout("expanded array target capacity", move || {
+        pollster::block_on(async {
+            let bytes = compile_source_to_x86_64_with_gpu_codegen(source).await?;
+            // Reuse the compiler after growing its workspace for a large job.
+            let small = compile_source_to_x86_64_with_gpu_codegen(
+                "module app::main; fn main() -> i32 { let a: [u8; 4] = [7; 4]; assert(a[0] == 7 && a[3] == 7); return 0; }",
+            ).await?;
+            Ok::<_, CompileError>((bytes, small))
+        })
+    })
+    .expect("valid repeats and value copies must not be limited by source-sized target estimates");
+
+    let output = common::run_x86_64_elf_output(
+        "expanded array target capacity",
+        "array_repeat_target_capacity",
+        &bytes,
+    );
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    let output = common::run_x86_64_elf_output(
+        "small array after expanded target capacity",
+        "array_repeat_after_growth",
+        &small,
+    );
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
+#[test]
 fn array_repeat_context_rejects_unsigned_element_range_errors() {
     for (source, anchor, length) in [
         (

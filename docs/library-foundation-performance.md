@@ -636,3 +636,96 @@ failed before execution; `perf-fixture-syntax.log` preserves it. The successful
 workload adds that declaration without changing any algorithm or expected byte.
 No compiler, runtime, shader, IR, ABI or proof source changed. Supported
 execution remains x86_64 Linux output from GPU compilation.
+
+## Authenticated bytes, key exchange and TLS records
+
+On 2026-10-24 the existing `stdlib_gpu_perf` harness measured the
+[combined crypto consumer](../tests/fixtures/extended/tls_crypto_perf.lani)
+and the existing exact 1,000,000-byte imported-library entry before and after
+the [target-capacity repair](tls-record-lowering-dependency.md). The consumer
+checks complete independent expected bytes for ChaCha20, Poly1305, X25519,
+AEAD sealing/opening and TLS records before and after a key update. The large
+entry retains its independent expected stdout. Every emitted ELF, including
+warmups, executed outside its compiler timer and passed exact stdout, empty
+stderr and exit-zero checks.
+
+Both compiler binaries loaded the same pinned shader set: digest
+`56d7e3d8b5f8bfd5`, 918 kernels. The before binary uses compiler source at
+`c6305910`; the after binary adds the four-file host capacity repair. The
+stdlib, extended modules, workload entries and harness remained identical.
+Runs used before/after/after/before order, with one warmup and three measured
+private entry rebuilds in each process. Each table row therefore has six
+measured samples per compiler, and all 32 emitted programs passed.
+
+| Workload | Before samples (ms) | After samples (ms) | Before median (ms) | After median (ms) | ELF bytes, both |
+| --- | --- | --- | ---: | ---: | ---: |
+| Combined crypto and records | 296.531, 239.923, 233.859, 259.133, 231.994, 255.630 | 272.219, 232.984, 211.855, 235.903, 211.186, 195.876 | 247.7765 | 222.4195 | 601,778 |
+| Existing 1 MB imported-library entry | 1474.182, 1437.803, 1484.335, 1438.207, 1387.255, 1434.281 | 1327.112, 1468.991, 1306.912, 1288.577, 1392.104, 1377.287 | 1438.0050 | 1352.1995 | 2,173,765 |
+
+Observed medians decreased 10.23% and 5.97%; no slowdown was observed in this
+comparison. Ranges overlap, and desktop load, clocks and temperature were
+uncontrolled. These observations do not establish a causal speedup, cold-build
+bound or cross-compiler ratio. The repair adds no readback or dispatch to a
+successful job; capacity retries are confined to jobs whose output exceeds
+their initial estimate.
+
+The source import closures stayed unchanged through measurement:
+
+| Workload | Files / bytes, including entry | Closure SHA-256 |
+| --- | ---: | --- |
+| Combined crypto | 17 / 152,120 | `ee2d9879d5a7b86fdebd60aee00f47565c10712dbf1cc395fe4e45265ea20dec` |
+| 1 MB entry | 12 / 1,102,636 | `e7e57a1df49300421e0b54e236e48c7997d4276db209d721a89207271117547a` |
+
+Closure hashes use sorted `SHA256  BYTE_COUNT  REPOSITORY_RELATIVE_PATH`
+lines. The before and after harness binaries have SHA-256
+`ce04de0164e9f9d8a877a47d6468f33e0ffd11738d2d54485d32fd885cdf7d6c`
+and `409ed38f75eb0df04abeec8488b6ae1a99d080ae0b92fd5903aafb09af58ea66`.
+The manifest of the 1,837 pinned SPIR-V, reflection and metadata files has
+SHA-256 `24773c27a335fe499f41bb270232a33078b8853095f16846810bf7371e81f507`;
+those files were checked again after all runs.
+
+After fresh builds, the existing pinning tool saved the shader set:
+
+```sh
+timeout --kill-after=2s 90s python3 tools/pin_laniusc.py \
+  --target-dir target/stdlib-build --profile debug \
+  --out target/stdlib-work/tls-crypto-admission/pins
+```
+
+Each measured child command had this form, with `BINARY` selecting an immutable
+before/after harness copy and `SHADER_ROOT` the pinned directory above:
+
+```sh
+RUST_MIN_STACK=16777216 LANIUS_PERF_REBUILD_ENTRY=1 \
+LANIUS_SHADER_ARTIFACT_ROOT=SHADER_ROOT \
+  timeout --kill-after=2s 60s BINARY \
+  tests/fixtures/extended/tls_crypto_perf.lani stdlib - 1 3 extended
+RUST_MIN_STACK=16777216 LANIUS_PERF_REBUILD_ENTRY=1 \
+LANIUS_SHADER_ARTIFACT_ROOT=SHADER_ROOT \
+  timeout --kill-after=2s 60s BINARY \
+  target/stdlib-work/workload-current/stdlib_generic.lani stdlib \
+  target/stdlib-work/workload-current/expected.stdout 1 3
+```
+
+The serialized parent command was bounded independently:
+
+```sh
+timeout --kill-after=2s 110s \
+  flock -E75 -w15 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 90s \
+  python3 target/stdlib-work/tls-crypto-admission/run-pinned-capacity-perf.py
+```
+
+Ignored local evidence in that directory includes `pinned-perf-inputs.json`,
+`pinned-perf-results.json`, `pinned-shader-files.sha256`,
+`perf-input-closures.json`, `perf-capacity-pinned.log` and the eight
+`perf-pinned-*.log` files. Earlier exploratory timing logs span a shader
+artifact refresh and are excluded from the paired comparison.
+
+Separately, the [authenticated-byte application](extended-seal-bytes.md) passed
+137 native cases. Its successful 1 MiB seal/open cases took 333.164/329.238 ms,
+including input-file setup, strace, native startup and trace parsing, with
+compiler/oracle time excluded. These case observations do not isolate cipher
+throughput. Supported execution remains x86_64 Linux output from GPU
+compilation; complete TLS handshake, authentication and trust support remain
+unfinished.

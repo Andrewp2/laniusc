@@ -6,11 +6,10 @@
 inner content types and padding, maintains independent directional sequence
 numbers, and derives the next application traffic secret.
 
-Runtime admission is incomplete. The ordinary consumer executes on x86_64 Linux
-through the GPU compiler, but both protocol-test groups currently fail during
-target generation with `LNC0057` (compiler execution failed). Their runtime
-contracts remain unverified. The module is written entirely in Lanius and
-requires no allocation or host service.
+Accepted on 2026-10-24 for native x86_64 Linux output from GPU compilation.
+The ordinary consumer and all 308 protocol model commands execute. User GPU
+kernels and other execution targets remain unverified. The module is written
+entirely in Lanius and requires no allocation or host service.
 
 This is a protocol prerequisite, not a TLS connection. Handshake negotiation,
 traffic-secret establishment, peer authentication, certificates, trust policy,
@@ -150,7 +149,7 @@ this module nor its tests prove constant-time generated machine code, compiler
 side-channel properties or secure erasure. This foundation has not received an
 independent cryptographic security audit.
 
-## Admission plan
+## Admission
 
 [extended_tls_record_execution.rs](../tests/extended_tls_record_execution.rs)
 uses a Python test peer with independent `hashlib`/`hmac` label derivation and
@@ -158,7 +157,7 @@ uses a Python test peer with independent `hashlib`/`hmac` label derivation and
 binary commands. A separate ordinary consumer imports no error projections and
 checks round trips after the original traffic-secret storage changes.
 
-The targeted states include normal and maximum records; all three valid inner
+The accepted states include normal and maximum records; all three valid inner
 types; forbidden and unknown types; empty application/handshake/alert behavior;
 size and padding limits; packed and strided views; explicit offsets and guards;
 multiple sequences including the final value; repeated records; synchronized
@@ -168,13 +167,58 @@ memory traces. Sequence-boundary fixture setup mutates private implementation
 state solely to make `u64::MAX` reachable; no public arbitrary-sequence import
 API is provided.
 
-The first root-run gate completed in 5.98 seconds: one test passed and two
-failed. `ordinary_record_consumer_roundtrips_without_error_projection_and_owns_the_secret`
-passed. Both protocol groups failed while compiling their shared protocol
-fixture, before its commands could execute, with `LNC0057`; the underlying
-compiler failure has not yet been diagnosed. The prepared 308 protocol
-commands are not accepted runtime evidence. Other targets remain unverified.
+| Accepted gate | Runtime cases |
+| --- | ---: |
+| `ordinary_record_consumer_roundtrips_without_error_projection_and_owns_the_secret` | One consumer, two records and a key update |
+| `record_failures_preserve_retryable_state_and_poison_fatal_input_without_publication` | 96 protocol commands |
+| `tls13_records_match_independent_peer_over_sizes_padding_types_strides_and_sequences` | 212 protocol commands |
 
-Local evidence is retained in the ignored
-`target/stdlib-work/tls-crypto-admission/tls-record.log`. This checkpoint does
-not claim complete record-layer admission or a working TLS connection.
+The three-test invocation passed in **11.28 seconds**. It produced two strict
+ELFs and executed three native processes; both protocol groups shared their
+compiled fixture through `OnceLock`. Drivers asserted empty allocation traces
+for `mmap`, `munmap`, `mremap` and `brk`. The fresh joint Rust build with the
+array-capacity regression took 38.82 seconds and produced
+`target/stdlib-build/debug/deps/extended_tls_record_execution-ece0ab2532f0d157`.
+
+The accepted runtime command was:
+
+```bash
+RUST_MIN_STACK=16777216 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000 \
+LANIUS_DEBUG_STAGE_ERRORS=1 timeout --kill-after=2s 100s \
+  flock -E 75 -w 35 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 60s \
+  target/stdlib-build/debug/deps/extended_tls_record_execution-ece0ab2532f0d157 \
+  --nocapture --test-threads=1 \
+  > target/stdlib-work/tls-crypto-admission/tls-record-after-capacity.log 2>&1
+```
+
+These are correctness, state-transition and allocation observations. The
+[performance record](library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
+compares the combined crypto/record consumer and an existing 1 MB workload with
+one pinned shader set, before/after/after/before ordering and six samples per
+variant/workload. All 32 emitted programs passed; no slowdown was observed.
+The measurements do not establish a causal speedup or cross-compiler ratio.
+
+### Original compiler failure and repair
+
+The first invocation took 5.98 seconds: the ordinary consumer passed and both
+protocol groups failed while compiling their shared fixture, before any model
+command executed. The public diagnostic was `LNC0057`. A subsequent diagnostic
+run identified target capacity exhaustion: 187055 target rows were required,
+with 135168 available. Large nonzero array repeats and value copies exceed the
+compiler's original eight-target-rows-per-HIR estimate.
+
+The [dependency record](tls-record-lowering-dependency.md) preserves the
+original failure, a smaller independent reproduction, and the accepted repair.
+Host orchestration now grows target/artifact capacity from measured demand,
+plans the replacement device graph, and bounds monotonic full-graph retries
+at three. Production TLS code, the complete protocol fixture and its model
+expectations were unchanged for the accepted rerun. The repair changes no
+shader, compiler IR record, ABI or formal proof.
+
+Local evidence remains under the ignored
+`target/stdlib-work/tls-crypto-admission/`: `tls-record.log` and
+`tls-stage-error.log` preserve the initial failures;
+`build-capacity-native.log` and `tls-record-after-capacity.log` record the
+accepted build and runtime gate. This record-layer admission does not establish
+a complete TLS connection.

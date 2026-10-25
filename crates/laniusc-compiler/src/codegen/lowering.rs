@@ -52,12 +52,22 @@ pub(crate) const LOWERING_KERNEL_PREFIXES: &[&str] =
 // The final validation rejects aggregate graphs that have not converged.
 const AGGREGATE_LAYOUT_ROUNDS: usize = 64;
 
+/// Output storage measured by an earlier attempt of this same compilation.
+/// This is host orchestration policy, not an IR or shader-visible record.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct LoweringOutputDemand {
+    pub(crate) target_instructions: u32,
+    pub(crate) artifact_bytes: u32,
+}
+
 /// What the host knows about one lowering job's sources before recording it.
 /// The lowering stages are built once per workspace and reused across jobs,
 /// so anything that trims a job's recording comes from here, per job. A field
 /// may only claim what it proves for the job: `CONSERVATIVE` claims nothing.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct LoweringJobBounds {
+    /// Exact GPU demand retained only across this compilation's retries.
+    pub(crate) output_demand: LoweringOutputDemand,
     /// The lexer's parser feature bits for the job's source pack
     /// (`crate::lexer::features`). A clear bit proves the syntax is absent.
     pub(crate) parser_features: u32,
@@ -77,6 +87,9 @@ pub(crate) struct LoweringJobBounds {
 
 impl LoweringJobBounds {
     pub(crate) const CONSERVATIVE: Self = Self {
+        output_demand: LoweringOutputDemand {
+            target_instructions: 0, artifact_bytes: 0,
+        },
         parser_features: crate::lexer::features::CONSERVATIVE_PARSER_FEATURES,
         enum_declarations: u32::MAX,
         hir_rows: u32::MAX,
@@ -139,6 +152,13 @@ impl LoweringJobBounds {
     pub(crate) fn with_token_capacity(self, token_capacity: u32) -> Self {
         Self {
             hir_rows: token_capacity.saturating_add(2),
+            ..self
+        }
+    }
+
+    pub(crate) fn with_output_demand(self, output_demand: LoweringOutputDemand) -> Self {
+        Self {
+            output_demand,
             ..self
         }
     }

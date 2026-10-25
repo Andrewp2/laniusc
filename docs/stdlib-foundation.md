@@ -260,6 +260,26 @@ actual partial-write behavior. No compiler, runtime, shader, IR, ABI or proof
 source changed. Supported execution is x86_64 Linux output from GPU compilation;
 TLS and the other recorded native integration dependencies remain separate.
 
+[IETF ChaCha20](stdlib-chacha20.md), [Poly1305](stdlib-poly1305.md),
+[ChaCha20-Poly1305](extended-chacha20-poly1305.md) and
+[X25519](extended-x25519.md) now pass focused x86_64 Linux native execution
+through the GPU compiler, including ordinary consumers and independent
+cryptographic models. Their guides record exact scope and allocation traces.
+The [TLS record layer](extended-tls-record.md) passes all three focused tests:
+its ordinary consumer and 308 protocol commands (96 failure/preflight and
+212 success/state commands). Two strict ELFs execute in three native processes
+with zero allocations. The unchanged TLS source and fixtures pass after a
+[host capacity repair](tls-record-lowering-dependency.md); the original
+`LNC0057` failures remain recorded there. The
+[seal-bytes application](extended-seal-bytes.md) passes all four focused gates:
+137 native cases cover ordinary messages, allocation/I/O failures, full 1 MiB
+seal/open, excess input and shared call budgets. The
+[pinned compiler comparison](library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
+observed no slowdown on the combined crypto and existing 1 MB workloads; the
+report records measurement conditions and limits. Full TLS connections still
+require handshake, certificates, peer authentication, trust policy and
+transport integration.
+
 [Checked file lengths](stdlib-file-resize.md) execute shrink, zero extension,
 sparse lengths above 4 GiB and unchanged duplicated offsets, with explicit
 one-attempt failures. [Bounded regular-file copying](stdlib-file-copy.md) checks
@@ -278,9 +298,11 @@ Compiler failures retain
 [reproductions and successful controls](library-dependencies.md).
 
 The [generated declaration reference](library-api-reference.md) inventories
-223 source modules with signatures, bounds, fields and exact source links.
-The original twenty focused CPU tests passed; the current regenerated-output
-check also passes without changes to the generator. This is
+228 source modules with signatures, bounds, fields and exact source links.
+The declaration scanner independently confirms 161 stdlib and 67 extended
+modules, including source still under admission. The original twenty focused
+CPU tests and earlier regenerated-output check passed without generator
+changes. This is
 documentation extraction, not runtime verification; semantic guide gaps remain
 listed explicitly. The [strict UTF codec guide](stdlib-utf-codecs.md) now maps
 83 existing functions to their indexing, malformed-input, mutation, progress,
