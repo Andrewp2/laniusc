@@ -1,4 +1,5 @@
 //! Real authenticated binary envelopes; independent libsodium oracle and owner ledgers.
+//! Accepted native execution evidence: docs/extended-seal-bytes.md (137 cases, four groups).
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
 use std::{

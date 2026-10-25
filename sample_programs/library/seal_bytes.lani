@@ -1,5 +1,5 @@
 // Bounded authenticated binary envelope using real ChaCha20-Poly1305.
-// Runtime admission is pending; see docs/extended-seal-bytes.md.
+// Accepted native execution evidence: docs/extended-seal-bytes.md.
 module app::main;
 import alloc::io;
 import alloc::vec;

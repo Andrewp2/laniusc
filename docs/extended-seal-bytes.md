@@ -7,10 +7,10 @@ It reads a complete owned message before performing one AEAD operation. This
 is a whole-message codec, with bounded chunked input and output; it is not a
 resumable encryption stream. All application behavior is Lanius.
 
-Runtime admission is **pending**. The intended gate compiles an x86_64 Linux
-ELF through the GPU compiler and executes it natively. Source and focused
-drivers are prepared; no runtime, target-support, or throughput acceptance is
-claimed yet.
+Runtime admission **passed on 2026-10-24** for x86_64 Linux: four strict ELF
+executables compiled through the GPU compiler passed 137 native cases. The
+application runs on the CPU; these gates do not establish other targets or
+isolated cipher throughput. See the acceptance evidence below.
 
 ## CLI and key policy
 
@@ -148,25 +148,27 @@ fail. Allocation can fail before authentication and return 4. All failures
 before publication leave stdout empty; later statuses 3 or 7 can leave a
 prefix.
 
-## Focused driver and pending evidence
+## Focused driver
 
 [`tests/extended_seal_bytes_execution.rs`](../tests/extended_seal_bytes_execution.rs)
 compiles the real application with the stdlib and extended roots, applies the
 unchanged shared strict ELF/jump checker, and shares the resulting executable
-through `OnceLock` within a driver process. Four exact test groups are prepared:
+through `OnceLock` within a driver process. The accepted groups were invoked
+in separate processes, producing one strict ELF per group:
 
-| Test | Prepared native cases |
+| Test | Accepted native cases |
 | --- | ---: |
 | `seal_bytes_envelopes_oracle_tamper_and_argument_policy` | 92 |
-| `seal_bytes_owned_cleanup_and_io_faults` | 31 plus observed seal/open allocation positions |
+| `seal_bytes_owned_cleanup_and_io_faults` | 39: 31 fixed plus four seal and four open allocation denials |
 | `seal_bytes_payload_boundaries_and_scale` | 4 |
 | `seal_bytes_shared_call_budget_bounds_retries` | 2 |
 
-The total is **129 plus both observed representative allocation counts**. No
-physical View/Vec width or allocation count is hardcoded. Larger and budget
-groups are separately selectable to keep root gates bounded. Ordinary cases
-use five-second native timeouts and one-second termination grace; scale and
-budget cases use 20 seconds plus the same grace.
+The total was **137 native cases**. The cleanup group discovers each mode's
+allocation count before injecting denials; it hardcodes no physical View/Vec
+width or allocation count. Larger and budget groups are separately selectable
+to keep root gates bounded. Ordinary cases use five-second native timeouts
+and one-second termination grace; scale and budget cases use 20 seconds plus
+the same grace.
 
 The independent oracle loads libsodium through Python ctypes and calls its
 IETF ChaCha20-Poly1305 implementation. It receives binary files and ordinary
@@ -207,9 +209,76 @@ remaining suffix once. Persistent Interrupted tests reach exactly the shared
 call cap on stdin and stdout. Scale cases seal/open a 1 MiB payload and reject
 one-byte excess for each mode, checking actual final probe requests/results.
 
-Build target: `cargo test --test extended_seal_bytes_execution --no-run`.
-Select an exact named group from the freshly emitted driver with its positional
-name and `--exact --nocapture --test-threads=1`, under the root's serialized
-timeout and GPU lock. Record actual bounded commands, source checkpoint,
-local logs, elapsed times, observed allocation counts, and reached native
-counts after admission. Runtime verification remains pending.
+## Accepted execution evidence
+
+The accepted source base was
+`c6305910ff53d73969eb7d645729b7c6fcd9d83b` with the milestone's AEAD and
+application additions. Body and fixture sources stayed frozen from the fresh
+build through execution; only evidence comments and this guide changed later.
+
+The fresh Rust driver build completed in **1.38 s**; its ignored local log is
+`target/stdlib-work/tls-crypto-admission/build-seal-bytes.log`. The application
+body and test assertions stayed unchanged during the four accepted gates.
+Each gate passed its exact test with zero failures:
+
+| Group | Native cases | Gate elapsed | Ignored local log |
+| --- | ---: | ---: | --- |
+| Ordinary/oracle/tamper/arguments | 92 | 8.76 s | `target/stdlib-work/tls-crypto-admission/seal-ordinary.log` |
+| Ownership/allocation/I/O faults | 39 | 6.20 s | `target/stdlib-work/tls-crypto-admission/seal-faults.log` |
+| 1 MiB scale and exact/excess bounds | 4 | 7.03 s | `target/stdlib-work/tls-crypto-admission/seal-scale.log` |
+| Persistent Interrupted budget | 2 | 16.03 s | `target/stdlib-work/tls-crypto-admission/seal-budget.log` |
+
+Both representative allocation sweeps reached all four observed positions for
+their mode. The final group reached the shared 131,072-attempt cap on reads
+and writes. These are functional and cleanup gates, with the injected-close
+model described above.
+
+The successful 1 MiB seal and open cases measured **333.164 ms** and
+**329.238 ms**, respectively. Each is observed case wall time around `run()`,
+including input-file setup, strace, native process startup, and trace parsing.
+Compiler and oracle time are excluded. These measurements are not isolated
+cipher throughput.
+
+The exact bounded build command, from the repository root, was:
+
+```sh
+timeout --kill-after=2s 100s flock -E75 -w35 \
+  target/stdlib-work/library-gpu.lock timeout --kill-after=2s 60s \
+  env CARGO_TARGET_DIR=/home/andrew-peterson/code/laniusc/target/stdlib-build \
+  CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 \
+  cargo test --test extended_seal_bytes_execution --no-run \
+  > target/stdlib-work/tls-crypto-admission/build-seal-bytes.log 2>&1
+```
+
+The exact accepted runtime commands were:
+
+```sh
+RUST_MIN_STACK=16777216 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000 \
+  timeout --kill-after=2s 100s flock -E75 -w35 \
+  target/stdlib-work/library-gpu.lock timeout --kill-after=2s 60s \
+  target/stdlib-build/debug/deps/extended_seal_bytes_execution-74b93d758ed07f1e \
+  --exact seal_bytes_envelopes_oracle_tamper_and_argument_policy \
+  --nocapture --test-threads=1 \
+  > target/stdlib-work/tls-crypto-admission/seal-ordinary.log 2>&1
+RUST_MIN_STACK=16777216 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000 \
+  timeout --kill-after=2s 100s flock -E75 -w35 \
+  target/stdlib-work/library-gpu.lock timeout --kill-after=2s 60s \
+  target/stdlib-build/debug/deps/extended_seal_bytes_execution-74b93d758ed07f1e \
+  --exact seal_bytes_owned_cleanup_and_io_faults \
+  --nocapture --test-threads=1 \
+  > target/stdlib-work/tls-crypto-admission/seal-faults.log 2>&1
+RUST_MIN_STACK=16777216 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000 \
+  timeout --kill-after=2s 100s flock -E75 -w35 \
+  target/stdlib-work/library-gpu.lock timeout --kill-after=2s 60s \
+  target/stdlib-build/debug/deps/extended_seal_bytes_execution-74b93d758ed07f1e \
+  --exact seal_bytes_payload_boundaries_and_scale \
+  --nocapture --test-threads=1 \
+  > target/stdlib-work/tls-crypto-admission/seal-scale.log 2>&1
+RUST_MIN_STACK=16777216 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000 \
+  timeout --kill-after=2s 100s flock -E75 -w35 \
+  target/stdlib-work/library-gpu.lock timeout --kill-after=2s 60s \
+  target/stdlib-build/debug/deps/extended_seal_bytes_execution-74b93d758ed07f1e \
+  --exact seal_bytes_shared_call_budget_bounds_retries \
+  --nocapture --test-threads=1 \
+  > target/stdlib-work/tls-crypto-admission/seal-budget.log 2>&1
+```
