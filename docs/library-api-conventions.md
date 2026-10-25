@@ -96,9 +96,10 @@ algorithms remain separate from allocation and operating-system bindings.
 
 Cryptographic primitives, key derivation, signatures, certificate trust and TLS
 must come from an established external library through a checked native binding.
-Do not add in-house implementations to the standard or extended library. That
-native integration remains a dependency; protocol declarations or raw syscalls
-do not supply a working backend.
+Do not add in-house implementations to the standard or extended library. The
+[native C profile](library-native-c.md) and [OpenSSL digest adapter](extended-openssl-digest.md)
+now execute. Other security adapters and broader ABI types need their own
+implementation and tests; declarations or raw syscalls alone do not establish support.
 
 Checksums, noncryptographic hashes and protocol framing can remain Lanius code.
 Secure entropy remains an operating-system service. DER/X.509 structure parsing

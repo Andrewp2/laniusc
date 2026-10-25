@@ -1,0 +1,72 @@
+// Run with fault_interposer.c preloaded. Every configured failure must close
+// the operation, preserve output, and release native resources exactly once.
+module app::main;
+import core::io;
+import core::result;
+import core::slice;
+import ext::openssl_digest;
+import std::stream;
+
+fn cause(value: ext::openssl_digest::Cause) -> u64 {
+    return match (value) {
+        ext::openssl_digest::Cause::Bounds -> 1,
+        ext::openssl_digest::Cause::Closed -> 2,
+        ext::openssl_digest::Cause::OutputTooSmall -> 3,
+        ext::openssl_digest::Cause::UnexpectedSize(n) -> 4,
+        ext::openssl_digest::Cause::OpenSsl -> 5
+    };
+}
+fn stage(value: ext::openssl_digest::Stage) -> u64 {
+    return match (value) {
+        ext::openssl_digest::Stage::Fetch -> 1,
+        ext::openssl_digest::Stage::Size -> 2,
+        ext::openssl_digest::Stage::Context -> 3,
+        ext::openssl_digest::Stage::Init -> 4,
+        ext::openssl_digest::Stage::Update -> 5,
+        ext::openssl_digest::Stage::Final -> 6
+    };
+}
+fn report(error: ext::openssl_digest::Failure) {
+    let detail: i32 = match (error.cause) { ext::openssl_digest::Cause::UnexpectedSize(n) -> n, _ -> 0 };
+    let words: [u64; 5] = [cause(error.cause), stage(error.stage), error.code, error.completed as u64, detail as u64];
+    let bytes: [u8; 40] = [0; 40]; let at: i32 = 0;
+    while (at < 5) {
+        let shift: i32 = 0;
+        while (shift < 8) { bytes[at * 8 + shift] = ((words[at] >> (shift * 8)) & 255) as u8; shift += 1; }
+        at += 1;
+    }
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    assert(core::io::write_all(sink.borrow(), bytes, 0, 40).is_ok());
+}
+fn closed(context: &ext::openssl_digest::Context, input: core::slice::View<u8>, output: core::slice::View<u8>) {
+    assert(!context.is_open());
+    context.destroy(); context.destroy();
+    let update_error: ext::openssl_digest::Failure = context.update(input).unwrap_err();
+    let finish_error: ext::openssl_digest::Failure = context.finish_into(output).unwrap_err();
+    assert(cause(update_error.cause) == 2 && stage(update_error.stage) == 5 && update_error.code == 0 && update_error.completed == 0);
+    assert(cause(finish_error.cause) == 2 && stage(finish_error.stage) == 6 && finish_error.code == 0 && finish_error.completed == 0);
+}
+fn main() -> i32 {
+    let created: core::result::Result<ext::openssl_digest::Context, ext::openssl_digest::Failure> = ext::openssl_digest::new(ext::openssl_digest::Algorithm::Sha256);
+    if (created.is_err()) { report(created.unwrap_err()); return 0; }
+    let context: ext::openssl_digest::Context = created.unwrap();
+    let data: [u8; 2051] = [37; 2051];
+    let input: core::slice::View<u8> = core::slice::View { values: data, start: 1, length: 2049 };
+    let target: [u8; 83] = [221; 83];
+    let output: core::slice::View<u8> = core::slice::View { values: target, start: 7, length: 64 };
+    assert(context.update(core::slice::View { values: data, start: 0, length: 0 }).unwrap() == 0);
+    // Earlier successful calls are excluded from a later call's completed.
+    assert(context.update(core::slice::View { values: data, start: 0, length: 13 }).unwrap() == 13);
+    let updated: core::result::Result<i32, ext::openssl_digest::Failure> = context.update(input);
+    if (updated.is_err()) { report(updated.unwrap_err()); }
+    else {
+        assert(updated.unwrap() == 2049);
+        let finished: core::result::Result<i32, ext::openssl_digest::Failure> = context.finish_into(output);
+        assert(finished.is_err()); report(finished.unwrap_err());
+    }
+    closed(context.borrow(), input, output);
+    let at: i32 = 0;
+    while (at < 83) { assert(target[at] == 221); at += 1; }
+    at = 0; while (at < 2051) { assert(data[at] == 37); at += 1; }
+    return 0;
+}

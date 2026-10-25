@@ -73,12 +73,16 @@ before publication and uses bounded scratch with explicit partial progress.
 The [CSV report program](docs/stdlib-format-report.md) composes it with numeric
 parsing and buffered output.
 
-Cryptography and TLS currently have no supported implementation. Future support
-will bind established native libraries, after the compiler provides the required
-C ABI, native linking and backend integration. The
-[native integration prerequisites](docs/library-native-integration-prerequisites.md)
-track that dependency. TCP/UDP sockets and
-[bounded OS entropy](docs/stdlib-entropy-bounded.md) remain available.
+[Checked native C calls](docs/library-native-c.md) execute on Linux x86_64/glibc
+through ordinary ELF objects, the system C linker and libc startup.
+[OpenSSL digest contexts](docs/extended-openssl-digest.md) provide streaming
+SHA-256, SHA-512, SHA3-256 and SHA3-512 through `libcrypto`; the
+[hashing program](docs/extended-openssl-hash.md) hashes bounded binary stdin.
+All cryptographic operations use the native library. TLS, encryption,
+signatures, certificate trust and SQLite wrappers remain unimplemented; the
+[remaining native prerequisites](docs/library-native-integration-prerequisites.md)
+record those boundaries. TCP/UDP sockets and
+[bounded OS entropy](docs/stdlib-entropy-bounded.md) are also available.
 [DER](docs/extended-der.md) and
 [X.509 structure parsing](docs/extended-x509.md) provide data inspection; they
 do not verify signatures, certificate trust or TLS peers.

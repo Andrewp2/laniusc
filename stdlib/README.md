@@ -50,6 +50,7 @@ runtime behavior, failure rules and supported targets.
 | Descriptor readiness | `std::poll` | [Reusable borrowed-FD sets, flags, atomic publication and observed deadlines](../docs/stdlib-poll.md) |
 | Signal dispositions | `std::signal` | [Explicit native Default/Ignore policies](../docs/stdlib-signals.md); source callbacks and signal trampolines remain unavailable |
 | Native operating-system boundary | `std::linux` | [Unsafe Linux x86-64 syscall contract](../docs/stdlib-linux.md); higher-level modules validate their own operations |
+| Native C libraries | Checked `extern "C"` declarations; optional `ext::openssl_digest` | [Linux x86_64/glibc ABI and linking](../docs/library-native-c.md), [OpenSSL digest ownership](../docs/extended-openssl-digest.md), [binary stdin hashing](../docs/extended-openssl-hash.md) |
 | Tests and benchmarks | `test::assert`, `test::check`, `test::suite`, `test::property`, `test::bench` | [Development workflow](../docs/stdlib-development.md), `tools/lanius-test` |
 
 The older `std::vec` remains for the verified compiler's extraction contract and
@@ -57,12 +58,13 @@ one heap dependency. New programs should use `alloc::vec`. Silent-failure map,
 set, byte-vector and UTF-8 owners have been removed with their repository
 consumers [migrated to checked APIs](../docs/stdlib-legacy-collections.md).
 
-Cryptographic hashes, ciphers, signatures and TLS have no supported
-implementation. CRC, Adler and FNV hashing remain available for checksums and
-ordinary data structures. Future security support will use established native
-library bindings; checked C ABI calls, native linking and backend integration
-are [prerequisites](../docs/library-native-integration-prerequisites.md).
-The optional [extended library](../extended/README.md) retains data formats,
+The optional [OpenSSL digest module](../docs/extended-openssl-digest.md) executes
+streaming SHA-256, SHA-512, SHA3-256 and SHA3-512 through checked native C calls.
+CRC, Adler and FNV hashing serve checksums and ordinary data structures.
+TLS, encryption, signatures, certificate trust and SQLite wrappers remain
+unimplemented; the [native integration guide](../docs/library-native-integration-prerequisites.md)
+records that work. Sensitive operations use established native libraries.
+The [extended library](../extended/README.md) also contains data formats,
 mathematics, cleartext network protocols and raw certificate inspection.
 
 ## Ownership and errors
@@ -102,8 +104,9 @@ their preconditions. See the [API conventions](../docs/library-api-conventions.m
 With the compiler already built, from the repository root:
 
 ```sh
+export CARGO_TARGET_DIR="$PWD/target/stdlib-build"
 mkdir -p target/stdlib-work
-timeout --kill-after=2s 100s target/stdlib-build/debug/laniusc \
+timeout --kill-after=2s 100s "$CARGO_TARGET_DIR/debug/laniusc" \
   --stdlib-root stdlib --source-root extended \
   sample_programs/library/expr_calc.lani -o target/stdlib-work/expr-calc
 printf '1+2*3\n-(5+6)\n' | target/stdlib-work/expr-calc
@@ -130,9 +133,11 @@ direct host bindings. For example, the library network capability is true for
 service 5 remains unavailable. Neither inventory claims all host services work.
 The [operation-level host inventory](../docs/library-host-operation-support.md)
 records the supported subsets and their implementation/test evidence.
-In particular,
-threads, native security-library bindings and database integration still need
-host/compiler support. The older `std::net`
+The [native C profile](../docs/library-native-c.md) supports checked scalar and
+pointer calls, libc startup and OpenSSL digests. It currently requires source
+packs that fit the resident compiler path; file-backed native ELF linking,
+callbacks and foreign thread entry remain dependencies. Threads, further
+security-library wrappers and database integration remain work. The older `std::net`
 declarations remain unbound; executable numeric socket ownership is in
 `std::socket`. [The remaining API audit](../docs/library-remaining-api-audit.md)
 distinguishes unavailable services and legacy interfaces. Generic

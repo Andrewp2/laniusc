@@ -9,6 +9,7 @@ use crate::cli::{
         LANIUS_TARGET_TRIPLES,
         LANIUS_X86_64_SUPPORT,
         incompatible_cli_options_error,
+        invalid_cli_argument_count_error,
         missing_cli_argument_error,
         missing_cli_option_value_error,
         parse_usize_value,
@@ -80,6 +81,55 @@ pub(super) fn validate_language_edition(language_edition: &str) -> Result<(), Cl
             "unsupported language edition; {LANIUS_EDITION_POLICY}"
         )),
     ))
+}
+
+/// Validates the executable-only native link profile before selecting a compile path.
+pub(super) fn validate_native_link_mode(
+    emit: &str,
+    check_only: bool,
+    inputs: &[PathBuf],
+    stdlib_paths: &[PathBuf],
+    has_package_input: bool,
+    source_pack_options_requested: bool,
+) -> Result<(), CliError> {
+    if emit != "x86_64" {
+        return Err(incompatible_cli_options_error(
+            "laniusc",
+            "native linking options",
+            "--emit wasm",
+            "native linking requires --emit x86_64 and targets x86_64-unknown-linux-gnu",
+        ));
+    }
+    if check_only {
+        return Err(incompatible_cli_options_error(
+            "laniusc check",
+            "native linking options",
+            "diagnostics-only check mode",
+            "use native linking options when compiling an executable; check mode does not link",
+        ));
+    }
+    if source_pack_options_requested || !stdlib_paths.is_empty() {
+        return Err(incompatible_cli_options_error(
+            "laniusc",
+            "native linking options",
+            "source-pack options or --stdlib",
+            "native linking accepts one entry with optional --source-root/--stdlib-root, or a package manifest/lockfile; omit explicit source-pack options and --stdlib",
+        ));
+    }
+    if !has_package_input && inputs.is_empty() {
+        return Err(missing_cli_argument_error(
+            "laniusc native linking",
+            "one entry input file, --package-manifest, or --package-lockfile",
+        ));
+    }
+    if !has_package_input && inputs.len() != 1 {
+        return Err(invalid_cli_argument_count_error(
+            "laniusc native linking",
+            "exactly one entry input file",
+            format!("received {} entry input files", inputs.len()),
+        ));
+    }
+    Ok(())
 }
 
 /// Validates source-pack mode flags that are mutually exclusive by shape.

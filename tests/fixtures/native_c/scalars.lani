@@ -1,0 +1,42 @@
+module app::main;
+import core::mem;
+
+extern "C" fn probe_i32(value: i32) -> i32;
+extern "C" fn probe_u32(value: u32) -> u32;
+extern "C" fn probe_i64(value: i64) -> i64;
+extern "C" fn probe_u64(value: u64) -> u64;
+extern "C" fn probe_isize(value: isize) -> isize;
+extern "C" fn probe_usize(value: usize) -> usize;
+extern "C" fn probe_pointer() -> ptr;
+extern "C" fn probe_pointer_echo(value: ptr) -> ptr;
+extern "C" fn probe_pointer_bits(value: ptr) -> u64;
+extern "C" fn probe_null() -> ptr;
+extern "C" fn probe_is_null(value: ptr) -> i32;
+extern "C" fn probe_buffer() -> ptr;
+extern "C" fn probe_fill(destination: ptr, count: usize, seed: u32);
+
+fn main() -> i32 {
+    if (probe_i32(-2147483611) != -1700000011) { return 1; }
+    if (probe_u32(4045620583) != 3795080824) { return 2; }
+    if (probe_i64(-5124095576030430) != -9927935178558959) { return 3; }
+    if (probe_u64(18364758544493064720) != 7847782801484606688) { return 4; }
+    if (probe_isize(-920735923817967) != -1220975898975984) { return 5; }
+    if (probe_usize(18364758544493064720) != 12379813738877118345) { return 6; }
+    let opaque: ptr = probe_pointer();
+    if (probe_pointer_bits(opaque) != 1311768467139281697) { return 7; }
+    if (probe_pointer_echo(opaque) != opaque) { return 8; }
+    let null: ptr = 0;
+    if (probe_null() != null || probe_is_null(null) != 1 || probe_is_null(opaque) != 0) { return 9; }
+    let buffer: ptr = probe_buffer();
+    probe_fill(buffer,32,241);
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(buffer,32);
+    let index: i32 = 0;
+    while (index < 32) {
+        let expected: u8 = (241 + index * 17) as u8;
+        if (bytes[index] != expected) { return 10; }
+        index = index + 1;
+    }
+    probe_fill(buffer,0,0);
+    if (bytes[0] != 241 || bytes[31] != 0) { return 11; }
+    return 0;
+}

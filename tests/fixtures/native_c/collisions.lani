@@ -1,0 +1,13 @@
+module app::main;
+import std::fs;
+extern "C" fn close(handle: i32) -> i32;
+extern "C" fn read(handle: i32, destination: ptr, count: usize) -> isize;
+
+fn main() -> i32 {
+    let null: ptr = 0;
+    if (close(-1) != -1) { return 1; }
+    if (std::fs::close(-1) != -9) { return 2; }
+    if (read(-1,null,0) != -1) { return 3; }
+    if (std::fs::read(-1,null,0) != -9) { return 4; }
+    return 0;
+}

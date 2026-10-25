@@ -4070,6 +4070,7 @@ fn build_graph(
         semantic_function_return_type_by_hir in HirNodes => hir_rows * 4;
         semantic_function_entrypoint_by_hir in HirNodes => hir_rows * 4;
         semantic_function_host_service_by_hir in HirNodes => hir_rows * 4;
+        semantic_function_native_abi_by_hir in HirNodes => hir_rows * 4;
         semantic_control_depth_by_hir in HirNodes => hir_rows * 4;
         semantic_expr_scalar_type_by_hir in HirNodes => hir_rows * 4;
         semantic_type_ref_tag_by_hir in HirNodes => hir_rows * 4;
@@ -6584,6 +6585,8 @@ fn build_graph(
             "semantic_function_return_type_by_hir" => semantic_function_return_type_by_hir: Write,
             "semantic_function_entrypoint_by_hir" => semantic_function_entrypoint_by_hir: Write,
             "semantic_function_host_service_by_hir" => semantic_function_host_service_by_hir: Write,
+            "semantic_function_native_abi_by_hir" => semantic_function_native_abi_by_hir: Write,
+            "status" => _status: ReadWrite,
             "semantic_function_native_symbol_by_hir" => semantic_function_native_symbol_by_hir: Write,
             "semantic_predicate_subject_parameter_token_by_hir" => semantic_predicate_subject_parameter_token_by_hir: Write,
             "public_decl_index_by_hir" => _interface_public_decl_index_by_hir: Read,
@@ -8462,6 +8465,7 @@ mod tests {
             resource("semantic_function_return_type_by_hir"),
             resource("semantic_function_entrypoint_by_hir"),
             resource("semantic_function_host_service_by_hir"),
+            resource("semantic_function_native_abi_by_hir"),
             resource("semantic_control_depth_by_hir"),
             resource("semantic_expr_scalar_type_by_hir"),
             resource("semantic_type_ref_tag_by_hir"),

@@ -5,6 +5,7 @@ import semantic_interface_layout;
 import gpu_index;
 import atomics;
 import hir_records;
+import native_c_abi;
 
 struct Params
 {
@@ -68,6 +69,7 @@ StructuredBuffer<HirPayload> compact_hir_payload;
 StructuredBuffer<uint2> semantic_value_const_by_hir;
 StructuredBuffer<uint> semantic_value_const_present_by_hir;
 StructuredBuffer<uint> semantic_function_host_service_by_hir;
+StructuredBuffer<uint> semantic_function_native_abi_by_hir;
 StructuredBuffer<uint> interface_name_ref_len;
 StructuredBuffer<uint> interface_name_ref_prefix;
 StructuredBuffer<uint> interface_signature_type_by_decl;
@@ -89,6 +91,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint HIR_ITEM_VIS_PUBLIC = 1u;
 // A private type an exported layout needs (public_decls/02_hidden).
 static const uint DECL_FLAG_HIDDEN = 1u;
+static const uint DECL_FLAG_NATIVE_C = 2u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -186,8 +189,11 @@ void write_decl(uint dst, uint decl, uint name_ref)
     }
     interface_declaration_words[base + 10u] = persisted_owner;
     uint hir = decl_hir_node[decl];
+    uint native_abi = decl_kind[decl] == 5u && hir < gParams.hir_capacity
+        ? semantic_function_native_abi_by_hir[hir] : NATIVE_ABI_NONE;
     interface_declaration_words[base + 11u] =
-        decl_visibility[decl] == HIR_ITEM_VIS_PUBLIC ? 0u : DECL_FLAG_HIDDEN;
+        (decl_visibility[decl] == HIR_ITEM_VIS_PUBLIC ? 0u : DECL_FLAG_HIDDEN) |
+        (native_abi == NATIVE_ABI_C ? DECL_FLAG_NATIVE_C : 0u);
     uint kind = decl_kind[decl];
     uint value_hir = hir < gParams.hir_capacity ? compact_const_value[hir] : INVALID;
     bool constant_present = kind == 3u && value_hir < gParams.hir_capacity &&
@@ -203,7 +209,7 @@ void write_decl(uint dst, uint decl, uint name_ref)
     interface_declaration_words[base + 12u] = kind == 3u ? constant.x :
         (kind == 4u || kind == 5u) && hir < gParams.hir_capacity
             ? semantic_function_host_service_by_hir[hir] : INVALID;
-    interface_declaration_words[base + 13u] = kind == 3u ? constant.y : 0u;
+    interface_declaration_words[base + 13u] = kind == 3u ? constant.y : native_abi;
 }
 
 [shader("compute")]

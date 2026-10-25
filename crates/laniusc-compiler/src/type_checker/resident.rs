@@ -2778,6 +2778,10 @@ impl GpuTypeChecker {
             .typecheck_graph
             .u32_buffer("semantic_function_host_service_by_hir")
             .ok()?;
+        let function_native_abi_by_hir = state
+            .typecheck_graph
+            .u32_buffer("semantic_function_native_abi_by_hir")
+            .ok()?;
         let semantic_value_const_by_hir = state
             .typecheck_graph
             .u32_buffer("semantic_value_const_by_hir")
@@ -2854,6 +2858,7 @@ impl GpuTypeChecker {
             semantic_value_const_by_hir: (&semantic_value_const_by_hir).into(),
             semantic_value_const_present_by_hir: (&semantic_value_const_present_by_hir).into(),
             function_host_service_by_hir: (&function_host_service_by_hir).into(),
+            function_native_abi_by_hir: (&function_native_abi_by_hir).into(),
             public_decl_count: (&module_path.interface_public_decl_count).into(),
             public_decl_local_id: (&module_path.interface_public_decl_local_id).into(),
             public_decl_index_by_local: (&module_path.interface_public_decl_index_by_local).into(),

@@ -1,0 +1,5 @@
+module app::main;
+
+extern "C" fn native_unused(value: f32) -> i32;
+
+fn main() -> i32 { return 0; }

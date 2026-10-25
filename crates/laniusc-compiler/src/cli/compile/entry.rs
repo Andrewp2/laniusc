@@ -4,8 +4,10 @@ use crate::{
     cli::{common::CliError, output::CliEmission},
     compiler::{
         EntrySourceRoots,
+        NativeLinkOptions,
         compile_entry_to_wasm_with_source_roots,
         compile_entry_to_wasm_with_stdlib,
+        compile_entry_to_x86_64_with_native_link,
         compile_entry_to_x86_64_with_source_roots,
         compile_entry_to_x86_64_with_stdlib,
         compile_source_to_wasm_with_gpu_codegen,
@@ -17,6 +19,20 @@ use crate::{
         type_check_source_with_gpu_from_path,
     },
 };
+
+/// Compiles one entry and links it through the native C compiler driver.
+pub(super) fn compile_native(
+    input: &Path,
+    roots: &EntrySourceRoots,
+    options: &NativeLinkOptions,
+) -> Result<CliEmission, CliError> {
+    Ok(CliEmission::Bytes(
+        pollster::block_on(compile_entry_to_x86_64_with_native_link(
+            input, roots, options,
+        ))
+        .map_err(CliError::from_compile_error)?,
+    ))
+}
 
 /// Compiles or checks one entry file using explicit source roots.
 pub(super) fn compile_source_root(

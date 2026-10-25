@@ -6,8 +6,10 @@
 
 use crate::compiler::stable_name_hash;
 
-// Version 3 introduces (data, length, signed byte stride) slice values.
-pub const GPU_X86_OBJECT_VERSION: u32 = 3;
+// Version 3 introduced (data, length, signed byte stride) slice values.
+// Version 4 appends the GPU-emitted CRT main bridge to each text section.
+pub const GPU_X86_OBJECT_VERSION: u32 = 4;
+pub const GPU_X86_CRT_MAIN_BRIDGE_BYTES: u32 = 225;
 const GPU_X86_OBJECT_MAGIC: [u8; 8] = *b"LNX86OBJ";
 const HEADER_U32S: usize = 9;
 const RELOCATION_U32S: usize = 8;
@@ -316,6 +318,20 @@ pub struct GpuX86RelocatableObject {
 }
 
 impl GpuX86RelocatableObject {
+    /// CRT entry bytes are a versioned GPU-emitted text trailer. This only
+    /// validates their recorded range; it never decodes or synthesizes code.
+    pub fn crt_main_bridge_range(&self) -> Result<Option<std::ops::Range<u32>>, String> {
+        self.validate()?;
+        if self.entry_offset.is_none() {
+            return Ok(None);
+        }
+        let end = u32::try_from(self.text.len())
+            .map_err(|_| "x86 object text length exceeds u32".to_owned())?;
+        let start = end.checked_sub(GPU_X86_CRT_MAIN_BRIDGE_BYTES)
+            .ok_or_else(|| "x86 object is too short for its CRT main bridge".to_owned())?;
+        Ok(Some(start..end))
+    }
+
     /// Validates all section ranges, relocation targets, and collision-safe
     /// symbol identities.
     pub fn validate(&self) -> Result<(), String> {

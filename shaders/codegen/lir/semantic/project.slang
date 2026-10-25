@@ -142,9 +142,19 @@ void main(uint3 dtid: SV_DispatchThreadID)
             {
                 SemanticLirFunction function = semantic_lir_functions[target];
                 uint service = function.host_service;
-                semantic_call_kind[node] = service != INVALID
-                    ? SEMANTIC_CALL_HOST : SEMANTIC_CALL_FUNCTION;
-                semantic_call_target[node] = service != INVALID ? service : target;
+                if ((function.flags & SEMANTIC_FUNCTION_FLAG_NATIVE_C) != 0u)
+                {
+                    semantic_call_kind[node] = SEMANTIC_CALL_SYMBOL;
+                    semantic_call_symbol_library_id[node] = INVALID;
+                    semantic_call_symbol_unit_id[node] = INVALID;
+                    semantic_call_symbol_local_index[node] = function.symbol_local_index;
+                }
+                else
+                {
+                    semantic_call_kind[node] = service != INVALID
+                        ? SEMANTIC_CALL_HOST : SEMANTIC_CALL_FUNCTION;
+                    semantic_call_target[node] = service != INVALID ? service : target;
+                }
                 semantic_call_result_type[node] = function.result_type;
                 semantic_call_receiver[node] = checked.receiver_hir;
             }

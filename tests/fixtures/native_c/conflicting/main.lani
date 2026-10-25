@@ -1,0 +1,8 @@
+module app::main;
+import ffi::one;
+import ffi::two;
+fn main() -> i32 {
+    let first: i32 = ffi::one::probe_imported(19);
+    let second: i64 = ffi::two::probe_imported(19);
+    return first + (second as i32);
+}

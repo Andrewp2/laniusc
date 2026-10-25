@@ -104,8 +104,10 @@ the catalog's canonical nondecreasing service-ID order and its existing gate.
 
 Direct native success does not loosen composable-artifact descriptor policy:
 target-byte descriptors with runtime requirements remain rejected, including
-family 14. General native FFI, thread entry/TLS/atomics, user GPU execution,
-and complete external runtime linking require their own contracts and evidence.
+family 14. The separate [native C profile](library-native-c.md) supplies
+executable scalar/pointer calls and CRT linking outside those descriptor modes.
+Broader C ABI profiles, thread entry/TLS/atomics, user GPU execution and complete
+external runtime linking require their own contracts and evidence.
 
 ### Keeping this inventory current
 

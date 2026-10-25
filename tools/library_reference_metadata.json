@@ -610,6 +610,14 @@
         "docs/extended-log.md"
       ]
     },
+    "ext::openssl_digest": {
+      "guides": [
+        "docs/extended-openssl-digest.md",
+        "docs/library-native-c.md",
+        "docs/extended-openssl-hash.md"
+      ],
+      "note": "Digests execute through OpenSSL 3 EVP on Linux x86_64/glibc with checked native C linking and an explicit libcrypto dependency. The raw extern declarations require caller-managed native pointer and lifetime contracts."
+    },
     "ext::parse": {
       "guides": [
         "docs/extended-parse.md"

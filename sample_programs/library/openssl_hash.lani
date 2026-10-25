@@ -1,0 +1,185 @@
+// Bounded stdin -> lowercase digest hex through OpenSSL 3 EVP.
+// Exit 2: arguments/limits; 3: I/O; 4: OpenSSL/argument allocation.
+module app::main;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::u8;
+import ext::cli;
+import ext::openssl_digest;
+import std::args;
+import std::stream;
+
+enum HashError { InputLimit, CallLimit, InputIo, OutputIo, OpenSsl }
+struct Options { algorithm: ext::openssl_digest::Algorithm, selected: bool, help: bool, max_input: i32, max_io_calls: i32 }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Budget { remaining: i32 }
+impl Budget { fn borrow(&self) -> &Budget { return self; } }
+
+fn literal(text: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text),count);
+    return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn equal(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len() != right.len()) { return false; }
+    let index: i32 = 0;
+    while (index < left.len()) {
+        if (core::option::unwrap(left.get(index)) != core::option::unwrap(right.get(index))) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+// Each attempt, including EINTR, spends one call. Error means no progress;
+// short writes resume at the first unwritten byte. Zero progress is an error.
+fn write_bounded<W>(writer: &W, bytes: core::slice::View<u8>, budget: &Budget) -> core::result::Result<i32,HashError>
+    where W: core::io::Write {
+    let completed: i32 = 0;
+    while (completed < bytes.len()) {
+        if (budget.remaining == 0) { return core::result::Err(HashError::CallLimit); }
+        budget.remaining -= 1;
+        let attempt: core::result::Result<i32,core::io::Error> = writer.write(bytes.values,bytes.start + completed,bytes.len() - completed);
+        if (core::result::is_err(attempt)) {
+            if (core::io::is_interrupted(core::result::unwrap_err(attempt))) { continue; }
+            return core::result::Err(HashError::OutputIo);
+        }
+        let written: i32 = core::result::unwrap(attempt);
+        if (written <= 0 || written > bytes.len() - completed) { return core::result::Err(HashError::OutputIo); }
+        completed += written;
+    }
+    return core::result::Ok(completed);
+}
+
+// The owner is live only while reading/updating. Finish closes it before any
+// output, and every earlier failure explicitly destroys it. Memory is fixed.
+fn hash_stream<R,W>(reader: &R, writer: &W, algorithm: ext::openssl_digest::Algorithm, maximum: i32, calls: i32)
+    -> core::result::Result<i32,HashError> where R: core::io::Read, W: core::io::Write {
+    if (maximum < 0 || calls < 0) { return core::result::Err(HashError::InputLimit); }
+    let created: core::result::Result<ext::openssl_digest::Context,ext::openssl_digest::Failure> = ext::openssl_digest::new(algorithm);
+    if (core::result::is_err(created)) { return core::result::Err(HashError::OpenSsl); }
+    let context: ext::openssl_digest::Context = core::result::unwrap(created);
+    let scratch: [u8; 1024] = [0; 1024];
+    let total: i32 = 0;
+    let budget: Budget = Budget { remaining: calls };
+    while (true) {
+        if (budget.remaining == 0) { context.destroy(); return core::result::Err(HashError::CallLimit); }
+        budget.remaining -= 1;
+        let amount: i32 = 1024;
+        // Probe one byte beyond the limit, including when maximum is zero.
+        // Subtract before adding so i32::MAX remains a valid bound.
+        if (maximum - total < 1024) { amount = maximum - total + 1; }
+        let attempt: core::result::Result<i32,core::io::Error> = reader.read(scratch,0,amount);
+        if (core::result::is_err(attempt)) {
+            if (core::io::is_interrupted(core::result::unwrap_err(attempt))) { continue; }
+            context.destroy(); return core::result::Err(HashError::InputIo);
+        }
+        let received: i32 = core::result::unwrap(attempt);
+        if (received < 0 || received > amount) { context.destroy(); return core::result::Err(HashError::InputIo); }
+        if (received == 0) { break; }
+        if (received > maximum - total) { context.destroy(); return core::result::Err(HashError::InputLimit); }
+        let chunk: core::slice::View<u8> = core::result::unwrap(core::slice::view(scratch,received));
+        if (core::result::is_err(context.update(chunk))) { context.destroy(); return core::result::Err(HashError::OpenSsl); }
+        total += received;
+    }
+    let digest: [u8; 64] = [0; 64];
+    let output: core::slice::View<u8> = core::result::unwrap(core::slice::view(digest,64));
+    let finished: core::result::Result<i32,ext::openssl_digest::Failure> = context.finish_into(output);
+    context.destroy();
+    if (core::result::is_err(finished)) { return core::result::Err(HashError::OpenSsl); }
+    let length: i32 = core::result::unwrap(finished);
+    let encoded: [u8; 129] = [0; 129];
+    let index: i32 = 0;
+    while (index < length) {
+        encoded[index * 2] = core::u8::ascii_lower_hex_digit_or(digest[index] >> 4,0);
+        encoded[index * 2 + 1] = core::u8::ascii_lower_hex_digit_or(digest[index] & 15,0);
+        index += 1;
+    }
+    encoded[length * 2] = 10;
+    let text: core::slice::View<u8> = core::result::unwrap(core::slice::view(encoded,length * 2 + 1));
+    return write_bounded(writer,text,budget.borrow());
+}
+
+// Diagnostics get their own small budget and preserve the original status.
+fn report(status: i32, message: core::slice::View<u8>) -> i32 {
+    let sink: std::stream::Descriptor = std::stream::stderr();
+    let budget: Budget = Budget { remaining: 8 };
+    write_bounded(sink.borrow(),message,budget.borrow());
+    return status;
+}
+fn hash_error(error: HashError) -> i32 {
+    return match (error) {
+        HashError::InputLimit -> report(2,literal("openssl-hash: input limit exceeded\n",35)),
+        HashError::CallLimit -> report(2,literal("openssl-hash: I/O call limit exceeded\n",38)),
+        HashError::InputIo -> report(3,literal("openssl-hash: input I/O failed\n",31)),
+        HashError::OutputIo -> report(3,literal("openssl-hash: output I/O failed\n",32)),
+        HashError::OpenSsl -> report(4,literal("openssl-hash: OpenSSL digest failed\n",36))
+    };
+}
+fn apply(options: &Options, item: ext::cli::Occurrence) -> bool {
+    if (item.id == 1) { options.help = true; return true; }
+    let bytes: core::slice::View<u8> = core::option::unwrap(item.value).bytes;
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(bytes.values,bytes.start,bytes.len());
+    if (core::result::is_err(parsed)) { return false; }
+    let value: u64 = core::result::unwrap(parsed);
+    if (value > 2147483647 as u64) { return false; }
+    if (item.id == 2) { options.max_input = value as i32; }
+    if (item.id == 3) { options.max_io_calls = value as i32; }
+    return true;
+}
+fn select(options: &Options, bytes: core::slice::View<u8>) -> bool {
+    if (options.selected) { return false; }
+    options.selected = true;
+    if (equal(bytes,literal("sha256",6))) { options.algorithm = ext::openssl_digest::Algorithm::Sha256; return true; }
+    if (equal(bytes,literal("sha512",6))) { options.algorithm = ext::openssl_digest::Algorithm::Sha512; return true; }
+    if (equal(bytes,literal("sha3-256",8))) { options.algorithm = ext::openssl_digest::Algorithm::Sha3_256; return true; }
+    if (equal(bytes,literal("sha3-512",8))) { options.algorithm = ext::openssl_digest::Algorithm::Sha3_512; return true; }
+    return false;
+}
+fn arguments(values: std::args::Arguments) -> i32 {
+    let specs: [ext::cli::Spec; 3] = [
+        ext::cli::Spec { id: 1, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 2, long: literal("max-input",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 3, long: literal("max-io-calls",12), short: 0, arity: ext::cli::Arity::Required }
+    ];
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,3));
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(values.as_view(),schema,ext::cli::Ordering::Intermixed));
+    let options: Options = Options { algorithm: ext::openssl_digest::Algorithm::Sha256, selected: false, help: false, max_input: 16777216, max_io_calls: 65536 };
+    while (true) {
+        let parsed: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next();
+        if (core::result::is_err(parsed)) { return report(2,literal("openssl-hash: invalid arguments\n",32)); }
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(parsed);
+        if (core::option::is_none(next)) { break; }
+        let valid: bool = match (core::option::unwrap(next)) {
+            ext::cli::Event::Option(item) -> apply(options.borrow(),item),
+            ext::cli::Event::Operand(item) -> select(options.borrow(),item.bytes)
+        };
+        if (!valid) { return report(2,literal("openssl-hash: invalid arguments\n",32)); }
+    }
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    if (options.help) {
+        let usage: core::slice::View<u8> = literal("Usage: openssl-hash sha256|sha512|sha3-256|sha3-512 [--max-input N] [--max-io-calls N]\n",87);
+        let budget: Budget = Budget { remaining: options.max_io_calls };
+        let written: core::result::Result<i32,HashError> = write_bounded(sink.borrow(),usage,budget.borrow());
+        if (core::result::is_err(written)) { return hash_error(core::result::unwrap_err(written)); }
+        return 0;
+    }
+    if (!options.selected) { return report(2,literal("openssl-hash: select one digest algorithm\n",42)); }
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let hashed: core::result::Result<i32,HashError> = hash_stream(source.borrow(),sink.borrow(),options.algorithm,options.max_input,options.max_io_calls);
+    if (core::result::is_err(hashed)) { return hash_error(core::result::unwrap_err(hashed)); }
+    return 0;
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,16,4096);
+    if (core::result::is_err(captured)) {
+        let status: i32 = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 };
+        return report(status,literal("openssl-hash: cannot capture arguments\n",39));
+    }
+    let values: std::args::Arguments = core::result::unwrap(captured);
+    let status: i32 = arguments(values);
+    values.destroy();
+    return status;
+}

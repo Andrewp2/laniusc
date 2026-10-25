@@ -12,8 +12,10 @@ use crate::{
         source_pack::{self, Options},
     },
     compiler::{
+        NativeLinkOptions,
         PackageLockfile,
         PackageManifest,
+        compile_entry_to_x86_64_with_native_link,
         compile_source_pack_path_manifest_to_wasm_with_gpu_codegen,
         compile_source_pack_path_manifest_to_x86_64_with_gpu_codegen,
         type_check_entry_with_source_roots,
@@ -25,11 +27,21 @@ pub(super) fn compile_manifest(
     manifest_path: &Path,
     check_only: bool,
     emit: &str,
+    native_link: Option<&NativeLinkOptions>,
 ) -> Result<CliEmission, CliError> {
     let package = PackageManifest::load_json_file(manifest_path)
         .map_err(|err| package_metadata_cli_error("--package-manifest", manifest_path, err))?;
     let roots = package.to_entry_source_roots();
-    if check_only {
+    if let Some(options) = native_link {
+        Ok(CliEmission::Bytes(
+            pollster::block_on(compile_entry_to_x86_64_with_native_link(
+                &package.entry,
+                &roots,
+                options,
+            ))
+            .map_err(|err| package_compile_cli_error("--package-manifest", manifest_path, err))?,
+        ))
+    } else if check_only {
         pollster::block_on(type_check_entry_with_source_roots(&package.entry, &roots))
             .map_err(|err| package_compile_cli_error("--package-manifest", manifest_path, err))?;
         Ok(CliEmission::Bytes(Vec::new()))
@@ -61,11 +73,25 @@ pub(super) fn compile_lockfile(
     lockfile_path: &Path,
     check_only: bool,
     emit: &str,
+    native_link: Option<&NativeLinkOptions>,
 ) -> Result<CliEmission, CliError> {
     let package = PackageLockfile::load_json_file(lockfile_path)
         .map_err(|err| package_metadata_cli_error("--package-lockfile", lockfile_path, err))?;
     let roots = package.to_entry_source_roots();
-    if check_only {
+    if let Some(options) = native_link {
+        // Preserve lockfile replay validation before entry-root compilation.
+        package
+            .load_path_manifest()
+            .map_err(|err| package_compile_cli_error("--package-lockfile", lockfile_path, err))?;
+        Ok(CliEmission::Bytes(
+            pollster::block_on(compile_entry_to_x86_64_with_native_link(
+                &package.entry,
+                &roots,
+                options,
+            ))
+            .map_err(|err| package_compile_cli_error("--package-lockfile", lockfile_path, err))?,
+        ))
+    } else if check_only {
         pollster::block_on(type_check_entry_with_source_roots(&package.entry, &roots))
             .map_err(|err| package_compile_cli_error("--package-lockfile", lockfile_path, err))?;
         Ok(CliEmission::Bytes(Vec::new()))

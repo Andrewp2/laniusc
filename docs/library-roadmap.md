@@ -38,7 +38,8 @@ package distribution is a separate deliverable.
 | Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and paths, lexical operations, checked mutations, configurable/relative opens, seek/resize, metadata, sync, duplication, raw directory iteration and bounded anchored walking execute on native Linux. Bounded copying checks descriptor capabilities and inode aliases before truncation, preserves progress on error and tests actual EOF even for zero-size pseudo-files. Real copy and directory-report applications check output and cleanup. Automatic owner destruction and broader platform support remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Raw-byte snapshots, explicit argv/environment/PATH/cwd, fork/exec, redirected files, owned pipes, cached waits and child signaling execute on the documented single-threaded Linux profile. Bounded concurrent stdin/stdout/stderr capture preserves partial progress, startup certainty and child ownership across errors. Process groups and concurrent spawn policy remain |
 | Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, calendars, native clocks, deadline waits, deterministic generators, sampling/shuffle and checked OS entropy execute. Optional TZif/POSIX zones provide conversion and ambiguity candidates; four continuous and four discrete distributions have bounded generic sampling and explicit numerical domains. Additional clocks and distribution families remain |
-| Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6 and CIDR values, owned TCP/UDP, polling, deadlines, options and half-close execute via the Linux boundary. Optional DNS transport queries explicit numeric servers with correlated UDP/TCP fallback; bounded cleartext HTTP/1 client and staged server connections use explicit transport, deadlines and resource limits. Real TCP/DNS/fetch/local-service programs exercise transfers. TLS has no supported implementation; future support depends on native security-library bindings. Old std::net declarations remain unbound; system resolver/NSS/interface policy, native TLS/certificate-verification bindings, concurrent server scheduling, keepalive and broader client policies remain |
+| Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6 and CIDR values, owned TCP/UDP, polling, deadlines, options and half-close execute via the Linux boundary. Optional DNS transport queries explicit numeric servers with correlated UDP/TCP fallback; bounded cleartext HTTP/1 client and staged server connections use explicit transport, deadlines and resource limits. Real TCP/DNS/fetch/local-service programs exercise transfers. Checked native C calls and OpenSSL digests now execute, while TLS and certificate-verification wrappers remain unimplemented. Old std::net declarations remain unbound; system resolver/NSS/interface policy, concurrent server scheduling, keepalive and broader client policies remain |
+| Native libraries | Checked C signatures, ordinary ELF linking, process startup and explicit library owners | The Linux x86_64/glibc profile executes integer/pointer/void calls with up to 32 parameters, ordinary ELF objects and CRT startup. OpenSSL EVP digest contexts and a binary stdin hashing program execute with dynamic libcrypto.so.3. File-backed native linking, callbacks, additional ABI types, foreign thread entry, TLS/encryption/signature/certificate-trust wrappers and SQLite integration remain |
 | Concurrency | Threads, joining, synchronization, atomics, channels, cancellation | Current thread module is contract-only; runtime prerequisites remain |
 | Development | Assertions, test runner, property helpers, benchmarks, diagnostics, API docs | Nontrapping checks, explicit source suites, filters, seeded properties, injected/native-clock benchmarks and a bounded native compiler/run driver execute. Selective, relocatable source bundles use the existing package resolver and verify inventory hashes. A generated declaration reference links signatures, bounds, source locations and reviewed contract guides. Automatic compiler discovery/runtime registration, binary SDK distribution and complete semantic API documentation remain |
 
@@ -54,6 +55,7 @@ tests, target support, and relevant performance evidence.
 | Files and packaging | Globs, directory walking utilities, compression, archives |
 | Network protocols | URL handling, HTTP client/server, WebSocket request/frame processing, DNS, and future TLS through native library bindings |
 | Storage | Database interfaces, SQLite integration, key-value storage |
+| Security | Native-library cryptographic digests, encryption, signatures, certificate trust and TLS; OpenSSL EVP digests execute, with the remaining wrappers still open |
 | Mathematics | Big integers, decimal arithmetic, statistics, linear algebra, geometry |
 | Application utilities | CLI parsing, logging, configuration, tables, progress reporting |
 | Media | Image codecs, pixel operations, audio codecs and signal utilities |
@@ -340,11 +342,16 @@ Families can proceed independently once their dependencies have working
 contracts. A compiler defect should have a minimal reproduction and an affected
 API list; unrelated library work can continue.
 
-Cryptography and TLS currently have no supported implementation. Their future
-implementation will use established native libraries. Checked C ABI calls,
-native linking and backend integration must precede those bindings; the
-[native prerequisites](library-native-integration-prerequisites.md) track this
-work. TCP/UDP, OS entropy and noncryptographic CRC/Adler/FNV remain available.
+[Checked C ABI calls and native linking](library-native-c.md) now execute on
+Linux x86_64/glibc. [OpenSSL EVP digest contexts](extended-openssl-digest.md)
+and the [binary stdin hashing program](extended-openssl-hash.md) use that profile
+for SHA-256, SHA-512, SHA3-256 and SHA3-512. Native libraries perform all
+sensitive operations; no Lanius, Rust or Python production implementation of
+the cryptographic algorithms is introduced. TLS, encryption, signatures,
+certificate trust and SQLite wrappers remain unimplemented. The
+[remaining native prerequisites](library-native-integration-prerequisites.md)
+include callbacks, foreign threads and file-backed native linking. TCP/UDP,
+OS entropy and noncryptographic CRC/Adler/FNV are also available.
 
 ## Completion requirements
 
@@ -370,9 +377,17 @@ work. TCP/UDP, OS entropy and noncryptographic CRC/Adler/FNV remain available.
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
-- Native security integration is a dependency, with no current cryptography or
-  TLS implementation. The next work is checked C ABI calls, native linking and
-  backend support, followed by bindings to established native libraries.
+- Current native milestone: [checked C declarations and native linking](library-native-c.md)
+  execute on Linux x86_64/glibc, including scalar normalization, register/stack
+  arguments through 32 parameters, imported generic replay and CRT startup.
+  [OpenSSL EVP digests](extended-openssl-digest.md) and the
+  [hashing program](extended-openssl-hash.md) execute with dynamic `libcrypto.so.3`.
+  The four focused gates pass 3 declaration groups, 8 native-call groups,
+  4 digest groups covering 2,124 cases plus 12 failure modes, and 3 application
+  groups. Semantic interface v17 and x86 object v4 require rebuilt artifacts.
+  File-backed native linking, callbacks, foreign thread entry, TLS, encryption,
+  signatures, certificate trust and SQLite wrappers remain open. The full
+  library goal remains open.
 - Raw [DER](extended-der.md) and [X.509 structure parsing](extended-x509.md)
   remain useful schema inspection tools. The
   [certificate inspector](extended-certificate-info.md) reports schema metadata without a cryptographic fingerprint or trust decision.
@@ -416,7 +431,7 @@ work. TCP/UDP, OS entropy and noncryptographic CRC/Adler/FNV remain available.
   generic adapter composition and final distribution/reference work remain.
   A generated declaration reference covers the current source inventory;
   semantic guide gaps stay explicit. Native thread-entry, memory-ordering and
-  foreign-call prerequisites have a separate source-audited proposal.
+  remaining foreign-call prerequisites have a separate [boundary guide](library-native-integration-prerequisites.md).
 - Preceding milestone: canonical narrow integers, full-range binary64 elementary
   functions, generic owned hash/tree sets, TZif time zones, DNS and WebSocket
   request/frame processing, byte key/value snapshots, signal processing and selective

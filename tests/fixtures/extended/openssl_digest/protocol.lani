@@ -1,0 +1,183 @@
+// Count, then seven little-endian u64 words and payload per case:
+// algorithm, layout, partition mode, partition argument, input/output offsets,
+// payload length. Output: digest length followed by digest bytes, as u64s.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::openssl_digest;
+import std::stream;
+
+struct Output { bytes: [u8], used: i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) {
+        let sink: std::stream::Descriptor = std::stream::stdout();
+        assert(core::io::write_all(sink.borrow(), self.bytes, 0, self.used).is_ok());
+        self.used = 0;
+    }
+    fn word(&self, value: u64) {
+        if (self.used == 1024) { self.flush(); }
+        let at: i32 = 0;
+        while (at < 8) { self.bytes[self.used + at] = ((value >> (at * 8)) & 255) as u8; at += 1; }
+        self.used += 8;
+    }
+}
+fn decode(bytes: [u8], start: i32) -> u64 {
+    let value: u64 = 0; let at: i32 = 0;
+    while (at < 8) { value |= (bytes[start + at] as u64) << (at * 8); at += 1; }
+    return value;
+}
+fn algorithm(value: u64) -> ext::openssl_digest::Algorithm {
+    return match (value) {
+        0 -> ext::openssl_digest::Algorithm::Sha256,
+        1 -> ext::openssl_digest::Algorithm::Sha512,
+        2 -> ext::openssl_digest::Algorithm::Sha3_256,
+        _ -> ext::openssl_digest::Algorithm::Sha3_512
+    };
+}
+fn cause(value: ext::openssl_digest::Cause) -> i32 {
+    return match (value) {
+        ext::openssl_digest::Cause::Bounds -> 1,
+        ext::openssl_digest::Cause::Closed -> 2,
+        ext::openssl_digest::Cause::OutputTooSmall -> 3,
+        ext::openssl_digest::Cause::UnexpectedSize(n) -> 4,
+        ext::openssl_digest::Cause::OpenSsl -> 5
+    };
+}
+fn stage(value: ext::openssl_digest::Stage) -> i32 {
+    return match (value) {
+        ext::openssl_digest::Stage::Fetch -> 1,
+        ext::openssl_digest::Stage::Size -> 2,
+        ext::openssl_digest::Stage::Context -> 3,
+        ext::openssl_digest::Stage::Init -> 4,
+        ext::openssl_digest::Stage::Update -> 5,
+        ext::openssl_digest::Stage::Final -> 6
+    };
+}
+fn failure(error: ext::openssl_digest::Failure, expected_cause: i32, expected_stage: i32) {
+    assert(cause(error.cause) == expected_cause && stage(error.stage) == expected_stage);
+    assert(error.code == 0 && error.completed == 0);
+}
+fn unchanged(bytes: [u8], length: i32, expected: u8) {
+    let at: i32 = 0; while (at < length) { assert(bytes[at] == expected); at += 1; }
+}
+fn malformed(bytes: [u8], mode: i32) -> core::slice::View<u8> {
+    if (mode == 0) { return core::slice::View { values: bytes, start: -1, length: 0 }; }
+    if (mode == 1) { return core::slice::View { values: bytes, start: 0, length: -1 }; }
+    return core::slice::View { values: bytes, start: 2147483647, length: 1 };
+}
+fn update(context: &ext::openssl_digest::Context, bytes: [u8], start: i32, length: i32) {
+    assert(context.update(core::slice::View { values: bytes, start: start, length: length }).unwrap() == length);
+    assert(context.is_open());
+    assert(context.update(core::slice::View { values: bytes, start: start + length, length: 0 }).unwrap() == 0);
+}
+fn run(header: [u8], payload: [u8], output: &Output) {
+    let alg: ext::openssl_digest::Algorithm = algorithm(decode(header, 0));
+    let layout: u64 = decode(header, 8); let mode: u64 = decode(header, 16); let parameter: u64 = decode(header, 24);
+    let input_offset: i32 = decode(header, 32) as i32; let output_offset: i32 = decode(header, 40) as i32;
+    let length: i32 = decode(header, 48) as i32;
+    let source_stack: [u8; 4128] = [165; 4128]; let packed_words: [i32; 1032] = [0; 1032];
+    let target_stack: [u8; 128] = [221; 128]; let target_words: [i32; 32] = [0; 32];
+    let owned_source: alloc::vec::Vec<u8> = alloc::vec::new();
+    let owned_target: alloc::vec::Vec<u8> = alloc::vec::new();
+    let source: [u8] = source_stack; let target: [u8] = target_stack;
+    if (layout == 1) {
+        source = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(packed_words), 4128);
+        target = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(target_words), 128);
+    }
+    if (layout == 2) {
+        assert(owned_source.try_extend(core::slice::View { values: source_stack, start: 0, length: 4128 }).unwrap() == 4128);
+        assert(owned_target.try_extend(core::slice::View { values: target_stack, start: 0, length: 128 }).unwrap() == 128);
+        source = owned_source.as_slice(); target = owned_target.as_slice();
+    }
+    let at: i32 = 0;
+    while (at < 4128) { source[at] = 165; at += 1; }
+    at = 0; while (at < 128) { target[at] = 221; at += 1; }
+    at = 0; while (at < length) { source[input_offset + at] = payload[at]; at += 1; }
+    let context: ext::openssl_digest::Context = ext::openssl_digest::new(alg).unwrap();
+    let size: i32 = ext::openssl_digest::digest_size(alg);
+    assert(context.is_open() && context.output_size() == size);
+    // Invalid metadata must not consume input or close the operation.
+    at = 0;
+    while (at < 3) { failure(context.update(malformed(source, at)).unwrap_err(), 1, 5); assert(context.is_open()); at += 1; }
+    update(context.borrow(), source, input_offset, 0);
+    if (mode == 0) { update(context.borrow(), source, input_offset, length); }
+    if (mode == 1) {
+        assert(parameter <= length as u64);
+        update(context.borrow(), source, input_offset, parameter as i32);
+        update(context.borrow(), source, input_offset + parameter as i32, length - parameter as i32);
+    }
+    if (mode == 2) {
+        assert(length <= 8);
+        let begin: i32 = 0; at = 0;
+        while (at < length) {
+            at += 1;
+            if (at == length || ((parameter >> (at - 1)) & 1) != 0) {
+                update(context.borrow(), source, input_offset + begin, at - begin); begin = at;
+            }
+        }
+    }
+    if (mode == 3) {
+        assert(parameter > 0 && parameter <= 4096); at = 0;
+        while (at < length) {
+            let amount: i32 = parameter as i32; if (amount > length - at) { amount = length - at; }
+            update(context.borrow(), source, input_offset + at, amount); at += amount;
+        }
+    }
+    // Both metadata and insufficient capacity are recoverable and atomic.
+    at = 0;
+    while (at < 3) { failure(context.finish_into(malformed(target, at)).unwrap_err(), 1, 6); assert(context.is_open()); unchanged(target, 128, 221); at += 1; }
+    let short: core::slice::View<u8> = core::slice::View { values: target, start: output_offset, length: size - 1 };
+    failure(context.finish_into(short).unwrap_err(), 3, 6); assert(context.is_open()); unchanged(target, 128, 221);
+    short.length = 0; failure(context.finish_into(short).unwrap_err(), 3, 6); assert(context.is_open()); unchanged(target, 128, 221);
+    let destination: core::slice::View<u8> = core::slice::View { values: target, start: output_offset, length: 80 };
+    assert(context.finish_into(destination).unwrap() == size && !context.is_open() && context.output_size() == size);
+    let snapshot: [u8; 128] = [0; 128];
+    at = 0; while (at < 128) { snapshot[at] = target[at]; at += 1; }
+    output.word(size as u64); at = 0;
+    while (at < 128) {
+        if (at < output_offset || at >= output_offset + size) { assert(target[at] == 221); }
+        else { output.word(target[at] as u64); }
+        at += 1;
+    }
+    // Repeated close and closed operations must not release or mutate again.
+    context.destroy(); context.destroy(); assert(!context.is_open());
+    failure(context.update(core::slice::View { values: source, start: input_offset, length: length }).unwrap_err(), 2, 5);
+    failure(context.finish_into(destination).unwrap_err(), 2, 6);
+    at = 0; while (at < 128) { assert(target[at] == snapshot[at]); at += 1; }
+    at = 0;
+    while (at < 4128) {
+        if (at < input_offset || at >= input_offset + length) { assert(source[at] == 165); }
+        else { assert(source[at] == payload[at - input_offset]); }
+        at += 1;
+    }
+    owned_source.destroy(); owned_target.destroy();
+}
+fn destroy_contract() {
+    let bytes: [u8; 64] = [77; 64];
+    let context: ext::openssl_digest::Context = ext::openssl_digest::new(ext::openssl_digest::Algorithm::Sha256).unwrap();
+    context.destroy(); context.destroy(); assert(!context.is_open() && context.output_size() == 32);
+    let view: core::slice::View<u8> = core::slice::View { values: bytes, start: 0, length: 64 };
+    failure(context.update(view).unwrap_err(), 2, 5); failure(context.finish_into(view).unwrap_err(), 2, 6);
+    unchanged(bytes, 64, 77);
+}
+fn main() -> i32 {
+    destroy_contract();
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let sink_bytes: [u8; 1024] = [0; 1024]; let output: Output = Output { bytes: sink_bytes, used: 0 };
+    let header: [u8; 56] = [0; 56]; let payload: [u8; 4096] = [0; 4096];
+    assert(core::io::read_exact(source.borrow(), header, 0, 8).is_ok());
+    let count: u64 = decode(header, 0); assert(count <= 8192); let index: u64 = 0;
+    while (index < count) {
+        assert(core::io::read_exact(source.borrow(), header, 0, 56).is_ok());
+        let length: u64 = decode(header, 48);
+        assert(length <= 4096 && decode(header, 0) <= 3 && decode(header, 8) <= 2 && decode(header, 16) <= 3);
+        assert(decode(header, 32) <= 31 && decode(header, 40) <= 31);
+        assert(core::io::read_exact(source.borrow(), payload, 0, length as i32).is_ok());
+        run(header, payload, output.borrow()); index += 1;
+    }
+    output.flush(); return 0;
+}

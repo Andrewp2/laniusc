@@ -1,6 +1,6 @@
 use std::{iter::Peekable, path::PathBuf};
 
-use super::{command::Command, request::CompileRequestBuilder, source_pack};
+use super::{command::Command, native_link, request::CompileRequestBuilder, source_pack};
 use crate::cli::common::{
     CliError,
     LANIUS_DIAGNOSTIC_FORMATS,
@@ -33,6 +33,10 @@ pub(crate) fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Comma
 
     while let Some(arg) = args.next() {
         if source_pack::parse_arg(&arg, &mut args, &mut request)? {
+            request.source_pack_options_requested = true;
+            continue;
+        }
+        if native_link::parse_arg(&arg, &mut args, &mut request)? {
             continue;
         }
 
@@ -147,7 +151,7 @@ pub(crate) fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Comma
                 return Err(unknown_cli_option_error(
                     "laniusc",
                     flag,
-                    "--version, --edition, --emit, --target, --diagnostic-format, --package-manifest, --package-lockfile, --stdlib, --stdlib-root, --source-root, --source-pack-descriptors, --source-pack-manifest, --source-pack-library-manifest, --source-pack-artifact-root, --source-pack-metadata-only, --source-pack-prepare-only, --source-pack-build-from-metadata, --source-pack-build-prepare-only, --emit-contract, -o/--out",
+                    "--version, --edition, --emit, --target, --diagnostic-format, --package-manifest, --package-lockfile, --stdlib, --stdlib-root, --source-root, --native-link, --native-library, --native-object, --native-library-path, --native-linker, --source-pack-descriptors, --source-pack-manifest, --source-pack-library-manifest, --source-pack-artifact-root, --source-pack-metadata-only, --source-pack-prepare-only, --source-pack-build-from-metadata, --source-pack-build-prepare-only, --emit-contract, -o/--out",
                 ));
             }
             path => {

@@ -33,6 +33,7 @@ StructuredBuffer<uint> semantic_function_return_type_by_hir;
 StructuredBuffer<uint> semantic_function_result_word_count_by_hir;
 StructuredBuffer<uint> semantic_function_entrypoint_by_hir;
 StructuredBuffer<uint> semantic_function_host_service_by_hir;
+StructuredBuffer<uint> semantic_function_native_abi_by_hir;
 StructuredBuffer<uint> public_decl_index_by_hir;
 StructuredBuffer<uint> semantic_value_type_by_hir;
 StructuredBuffer<uint> semantic_expr_ref_tag_by_hir;
@@ -286,6 +287,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         hir, hir_count, public_decl_index_by_hir[hir], core.token_start);
     result.symbol_flags = 0u;
     result.host_service = semantic_function_host_service_by_hir[hir];
+    if (semantic_function_native_abi_by_hir[hir] == 1u)
+        result.flags |= SEMANTIC_FUNCTION_FLAG_NATIVE_C;
     semantic_lir_functions[function_id] = result;
 
     // Type checking deliberately exposes backend call targets in the

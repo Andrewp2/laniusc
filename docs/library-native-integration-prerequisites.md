@@ -1,39 +1,45 @@
 # Native linking, foreign calls and threads
 
-This is a source audit and a proposed dependency sequence, based on compiler
-`678bf559`. It adds no public declarations or execution claims. Current
+The [checked native C profile](library-native-c.md) now executes on Linux
+x86_64/glibc. It provides scalar/pointer calls, ordinary ELF linking through
+the system C driver and libc startup. [OpenSSL digest contexts](extended-openssl-digest.md)
+and the [stdin hashing program](extended-openssl-hash.md) execute through that
+boundary with dynamic `libcrypto.so.3`. This guide records the remaining
+integration and thread contracts. The earlier source audit was based on
+compiler `678bf559`; its blanket native-FFI dependency is superseded by the
+selected working profile.
+
 [Linux syscalls](stdlib-linux.md), [sockets](stdlib-sockets.md),
-[polling](stdlib-poll.md) and [subprocesses](stdlib-command.md) execute through
-the documented native profile. Threads, native foreign libraries and callbacks
-need additional contracts.
+[polling](stdlib-poll.md) and [subprocesses](stdlib-command.md) retain their
+documented contracts. The full library goal remains open.
 
-## Native cryptography and TLS dependency
+## Native cryptography and remaining security work
 
-There is currently no supported cryptography or TLS implementation. Future
-security support will use bindings to established native libraries. The missing
-checked C ABI, native linking and backend integration are the dependency;
-existing socket and byte-stream APIs do not supply that boundary.
+OpenSSL 3 EVP supplies executable SHA-256, SHA-512, SHA3-256 and SHA3-512.
+The Lanius wrapper owns contexts, adapts byte layout and reports errors; all
+cryptographic operations run in the established native library. TLS, encryption,
+signatures, certificate trust and SQLite wrappers remain unimplemented.
 
 TCP/UDP, polling, subprocesses and bounded OS entropy retain their documented
 native contracts. Raw [DER](extended-der.md) and [X.509](extended-x509.md)
 retain schema parsing and inspection roles. None supplies signature
 verification, certificate trust or TLS peer authentication.
 
-A first native-library profile needs:
+A native library adapter still needs:
 
-1. Checked C signatures for supported scalars, pointers, byte counts and opaque
-   handles, with explicit ownership and conversion rules.
-2. Native object/library linking and symbol resolution, including the supported
-   sections, relocations and linker inputs.
-3. Backend calls that implement the selected platform ABI: register/stack
-   arguments, stack alignment, preserved registers and return values.
-4. Library adapters with explicit context cleanup, buffer lifetimes, error
-   mapping, verification configuration and partial-I/O behavior. TLS also needs
-   certificate trust/identity policy and integration with socket deadlines.
+1. Source declarations that match the actual C headers. The checker validates
+   the supported Lanius signature shape; it cannot inspect a C library's types
+   or establish pointer validity.
+2. Explicit dependencies and native linker inputs within the
+   [selected profile](library-native-c.md). Resident-sized source packs execute;
+   file-backed native ELF linking remains a compiler dependency.
+3. An owner contract for native contexts, allocations and borrowed buffers.
+4. Correct library-specific initialization, error mapping and configuration.
+   TLS also needs certificate trust/identity policy and socket deadlines.
 
-These contracts must execute before security APIs can claim support. Dynamic
-loading and callbacks are additional profiles when the selected library needs
-them; they need not block a direct static-call profile that does not use them.
+The digest gates exercise these contracts for EVP. They do not establish a
+different adapter's security policy. Runtime loading with `dlopen`/`dlsym`,
+callbacks and foreign thread entry remain separate profiles.
 
 ## Existing boundaries
 
@@ -41,8 +47,9 @@ them; they need not block a direct static-call profile that does not use them.
 | --- | --- |
 | Direct Lanius calls | Monomorphic/imported calls execute; generic composition has separate [routing dependencies](library-dependencies.md). |
 | Callable values | The grammar has no function type or address-of expression. Checked calls retain a declaration target; lowering has direct calls and host/intrinsic calls, with no checked indirect-call operation. |
-| Native linking | The custom LNX86OBJ format resolves static Lanius symbols and text/rodata relocations. This does not supply an ELF-object or shared-library loader. |
-| Arbitrary externs | Parsing/type checking a declaration does not bind it. Native emission rejects an unrecognized service call. |
+| Native linking | The opt-in C profile packages generated sections as ordinary ELF ET_REL objects and invokes `cc -no-pie`, with normal CRT/libc startup and native object/library inputs. The default raw profile retains its existing linker. |
+| Extern declarations | Checked `extern "C"` scalar/pointer/void declarations execute through native linking, with up to 32 parameters. Unknown ABIs and unsupported C signatures fail; unrelated runtime-service declarations still need a bound service. |
+| Scaling and artifacts | Native linking currently requires resident-sized source packs. Semantic interface v17 and x86 object v4 require rebuilt cached artifacts; file-backed native ELF linking remains open. |
 | Atomics | No source atomic or memory-order contract is established. Conservative call effects alone do not establish atomicity or a happens-before relation. |
 
 The source boundaries are [grammar/lanius.bnf](../grammar/lanius.bnf),
@@ -50,12 +57,16 @@ The source boundaries are [grammar/lanius.bnf](../grammar/lanius.bnf),
 [lowering calls](../crates/laniusc-compiler/src/codegen/lowering_ir.rs),
 [native argument layout](../shaders/codegen/lir/x86/common.slang) and
 [call effects](../shaders/codegen/optimization_ir.slang).
-Existing direct-call controls and arbitrary-extern rejections are retained in
-[codegen_x86.rs](../tests/codegen_x86.rs). This audit did not rerun those tests.
+The new [declaration contract tests](../tests/native_c_contract.rs) pass three
+groups and the [native C execution tests](../tests/native_c_execution.rs) pass
+eight, including imported calls, generic replay, 32 mixed arguments and CRT
+initialization. The [native C guide](library-native-c.md) records the focused
+receipts and remaining restrictions.
 
-The native calling convention is Lanius-specific: slices occupy three words,
+Ordinary Lanius calls retain their own convention: slices occupy three words,
 aggregates have defined passing rules, and large returns use hidden storage.
-Register names shared with System V do not establish C ABI compatibility.
+The separate checked C call path implements the admitted System V scalar ABI;
+it does not make a Lanius slice or record C-compatible.
 
 ## First thread profile
 
@@ -78,7 +89,7 @@ Required contracts are:
   traps, allocation failure and unexpected worker termination must not leave
   join waiting forever. Initially exclude detach and asynchronous cancellation.
 - Whole-process termination and worker completion need separate paths. The
-  current wrapper, process exit and allocation-failure runtime use Linux
+  raw-entry wrapper, process exit and allocation-failure runtime use Linux
   syscall 60, which exits the calling thread in a multithreaded process. The
   wrapper also retains the original argument stack in R15. A thread runtime
   must define and preserve those process-context and termination contracts.
@@ -101,26 +112,31 @@ reallocation, and exactly-once destruction remain required. Current shallow
 owner conventions do not create automatic Send/Sync or lifetime enforcement.
 
 A Lanius/raw-syscall thread profile can explicitly omit thread local storage.
-Libc-backed threads and foreign functions that use it need initialization,
-attachment and teardown. It is a requirement of those profiles rather than
-an unconditional blocker of every possible native worker.
+The native C profile supplies libc startup and thread local storage for its
+initial thread. Libc-backed worker threads and foreign thread entry still need
+initialization, attachment and teardown contracts. Their absence does not
+prevent the initial-thread native C profile from executing.
 
 ## Foreign libraries
 
 Separate three admissions:
 
-1. **Direct static foreign calls:** checked platform ABI signatures, foreign
-   symbol identity, supported object sections/relocations and linker inputs.
-   Argument/return normalization and aggregate layouts must be explicit;
-   arbitrary source extern declarations are insufficient.
-2. **Dynamic calls:** loading/symbol lookup, library-handle lifetime, address
-   relocation and checked indirect-call signatures.
-3. **Callbacks:** addressable exported monomorphic entries, ABI trampolines,
-   context lifetime, reentrancy and foreign-thread attachment.
+1. **Direct foreign calls:** implemented for the selected scalar/pointer profile,
+   including symbols resolved by the system linker from shared libraries.
+   Actual C signature agreement, buffer validity and ownership remain caller
+   contracts. C aggregate arguments and results are unsupported.
+2. **Runtime dynamic calls:** `dlopen`/`dlsym`, library-handle lifetime and checked
+   indirect signatures remain unimplemented. Linking a shared library at build
+   time does not require this application-level loading interface.
+3. **Callbacks:** addressable exported entries, ABI trampolines, context lifetime,
+   reentrancy and foreign-thread attachment remain unimplemented.
 
-Cryptography/TLS and SQLite bindings depend on an implemented C ABI/native
-linking profile and backend support. No JSON bridge, subprocess
-serialization adapter or declaration-only API is counted as that integration.
+OpenSSL digests now supply a native binding with execution evidence. TLS,
+encryption, signatures, certificate trust and SQLite still need their own
+wrappers and policy contracts. No JSON bridge, subprocess serialization adapter
+or declaration-only API is counted as native integration. Production sensitive
+operations use established native libraries, with no custom Lanius or
+Rust/Python cryptographic implementation.
 
 Entry authority and concurrent memory semantics need compiler coordination.
 Source ownership policies, synchronization algorithms and higher-level library

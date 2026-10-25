@@ -158,6 +158,7 @@ pub enum GpuTypeCheckCode {
     MissingConstantBinding,
     GenericInstantiationBoundary,
     RecursiveType,
+    InvalidNativeCSignature,
     Unknown(u32),
 }
 
@@ -191,6 +192,7 @@ impl GpuTypeCheckCode {
             26 => Self::ComputedFloatConstant,
             27 => Self::InvalidCast,
             28 => Self::RecursiveType,
+            29 => Self::InvalidNativeCSignature,
             other => Self::Unknown(other),
         }
     }
@@ -224,6 +226,7 @@ impl GpuTypeCheckCode {
             Self::InvalidCast => "invalid cast".to_string(),
             Self::MissingConstantBinding => "constant parameter could not be inferred".to_string(),
             Self::RecursiveType => "recursive type has infinite size".to_string(),
+            Self::InvalidNativeCSignature => "unsupported native C signature".to_string(),
             Self::GenericInstantiationBoundary => {
                 "generic type instantiation reached a compiler boundary".to_string()
             }
@@ -763,6 +766,7 @@ impl ResidentTypeCheckWorkspace {
             function_return_type_by_hir: graph.buffer("semantic_function_return_type_by_hir")?,
             function_entrypoint_by_hir: graph.buffer("semantic_function_entrypoint_by_hir")?,
             function_host_service_by_hir: graph.buffer("semantic_function_host_service_by_hir")?,
+            function_native_abi_by_hir: graph.buffer("semantic_function_native_abi_by_hir")?,
             control_depth_by_hir: graph.buffer("semantic_control_depth_by_hir")?,
             calls_by_hir: graph.buffer("semantic_calls_by_hir")?,
             expr_ref_tag_by_hir: graph.buffer("semantic_expr_ref_tag_by_hir")?,
@@ -910,6 +914,7 @@ pub(crate) struct GpuSemanticArtifactView<'a> {
     pub function_entrypoint_by_hir: &'a LaniusBuffer<u32>,
     /// Resolved runtime host-service identity keyed by dense function HIR row.
     pub function_host_service_by_hir: &'a LaniusBuffer<u32>,
+    pub function_native_abi_by_hir: &'a LaniusBuffer<u32>,
     /// Structured-control nesting depth keyed by dense HIR row.
     pub control_depth_by_hir: &'a LaniusBuffer<u32>,
     /// Canonical checked call resolution keyed by call-expression HIR row.
@@ -991,6 +996,7 @@ pub(crate) struct OwnedGpuSemanticArtifact {
     function_return_type_by_hir: LaniusBuffer<u32>,
     function_entrypoint_by_hir: LaniusBuffer<u32>,
     function_host_service_by_hir: LaniusBuffer<u32>,
+    function_native_abi_by_hir: LaniusBuffer<u32>,
     control_depth_by_hir: LaniusBuffer<u32>,
     calls_by_hir: LaniusBuffer<GpuCheckedCallArtifact>,
     expr_ref_tag_by_hir: LaniusBuffer<u32>,
@@ -1049,6 +1055,7 @@ impl OwnedGpuSemanticArtifact {
             (&self.function_return_type_by_hir).into(),
             (&self.function_entrypoint_by_hir).into(),
             (&self.function_host_service_by_hir).into(),
+            (&self.function_native_abi_by_hir).into(),
             (&self.control_depth_by_hir).into(),
             (&self.calls_by_hir).into(),
             (&self.expr_ref_tag_by_hir).into(),
@@ -1118,6 +1125,7 @@ impl OwnedGpuSemanticArtifact {
             function_return_type_by_hir: &self.function_return_type_by_hir,
             function_entrypoint_by_hir: &self.function_entrypoint_by_hir,
             function_host_service_by_hir: &self.function_host_service_by_hir,
+            function_native_abi_by_hir: &self.function_native_abi_by_hir,
             control_depth_by_hir: &self.control_depth_by_hir,
             calls_by_hir: &self.calls_by_hir,
             expr_ref_tag_by_hir: &self.expr_ref_tag_by_hir,
@@ -1202,6 +1210,7 @@ pub struct GpuSemanticInterfaceIdentityBuffers<'a> {
     /// Runtime host-service identity for an extern function declaration,
     /// keyed by its dense HIR row. Non-host declarations carry `u32::MAX`.
     pub function_host_service_by_hir: TrackedBufferView<'a>,
+    pub function_native_abi_by_hir: TrackedBufferView<'a>,
     pub public_decl_count: TrackedBufferView<'a>,
     pub public_decl_local_id: TrackedBufferView<'a>,
     pub public_decl_index_by_local: TrackedBufferView<'a>,

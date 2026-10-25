@@ -271,7 +271,9 @@ paths and allocation/descriptor cleanup. These counts exclude the two earlier
 fixture compilation failures retained in the byte-array count capture.
 
 Verified execution is x86_64 Linux output from GPU compilation; user GPU kernels
-and other targets are unverified. Threads, native FFI/TLS/SQLite, further
+and other targets are unverified. The [native C profile](library-native-c.md)
+and [OpenSSL digests](extended-openssl-digest.md) now execute. Threads, broader
+C ABI profiles, TLS/SQLite adapters, further
 iterator adapters/consumers and cursor integrations, additional stream
 interfaces and distribution/reference completion remain on the
 [full roadmap](library-roadmap.md).

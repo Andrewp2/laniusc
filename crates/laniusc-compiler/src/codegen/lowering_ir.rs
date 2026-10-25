@@ -1727,6 +1727,11 @@ fn lowering_compiler_graph_builder(
         ResourceDomain::HirNodes,
         LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
     ))?;
+    let semantic_function_native_abis_by_hir = graph.add_resource(input(
+        "typecheck.semantic_function_native_abis_by_hir",
+        ResourceDomain::HirNodes,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
     let public_decl_index_by_hir = graph.add_resource(input(
         "typecheck.public_decl_index_by_hir",
         ResourceDomain::HirNodes,
@@ -2949,6 +2954,10 @@ fn lowering_compiler_graph_builder(
             PassAccess::read(
                 "semantic_function_host_service_by_hir",
                 semantic_function_host_services_by_hir,
+            ),
+            PassAccess::read(
+                "semantic_function_native_abi_by_hir",
+                semantic_function_native_abis_by_hir,
             ),
             PassAccess::read("public_decl_index_by_hir", public_decl_index_by_hir),
             PassAccess::read("semantic_value_type_by_hir", checked_value_types),

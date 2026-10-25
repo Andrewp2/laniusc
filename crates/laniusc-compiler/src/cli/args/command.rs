@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::cli::source_pack;
+use crate::{cli::source_pack, compiler::NativeLinkOptions};
 
 /// Parsed top-level CLI command after global argument handling.
 pub(crate) enum Command {
@@ -39,6 +39,7 @@ pub(crate) struct CompileRequest {
     pub(crate) output: Option<PathBuf>,
     pub(crate) emit: String,
     pub(crate) check_only: bool,
+    pub(crate) native_link: Option<NativeLinkOptions>,
     pub(crate) source_pack: source_pack::Options,
     pub(crate) uses_source_pack: bool,
 }

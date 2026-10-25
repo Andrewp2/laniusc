@@ -4190,6 +4190,14 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                 ))
                 .with_note("a value of this type contains itself by value; hold the inner value through a reference or a slice instead"),
         ),
+        GpuTypeCheckCode::InvalidNativeCSignature => CompileError::Diagnostic(
+            Diagnostic::error("LNC0006", "unsupported native C signature")
+                .with_primary_label(diagnostic_label_from_source_span(
+                    path, source, start, len, "this declaration is outside the direct C-call profile",
+                ))
+                .with_note("extern \"C\" accepts up to 32 i32, u32, i64, u64, isize, usize or ptr parameters and one of those result types or void")
+                .with_note("C declarations must be monomorphic; floats, narrow integers, bool, aggregates, references and variadic calls are not supported"),
+        ),
         GpuTypeCheckCode::MissingConstantBinding => CompileError::Diagnostic(
             Diagnostic::error("LNC0006", "type mismatch")
                 .with_primary_label(diagnostic_label_from_source_span(
