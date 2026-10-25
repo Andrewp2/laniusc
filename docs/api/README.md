@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **235 modules**, **10380 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **240 modules**, **10544 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -17,6 +17,7 @@ Inventory: **235 modules**, **10380 declaration/member entries**. Counts include
 | Module | Source | Entries | Profile | Contract guides |
 | --- | --- | ---: | --- | --- |
 | [core::adler32](core/adler32.md) | [source](../../stdlib/core/adler32.lani#L3) | 9 | Source inventory | [stdlib-adler32](../stdlib-adler32.md) |
+| [core::aes](core/aes.md) | [source](../../stdlib/core/aes.lani#L3) | 13 | Source inventory | [core-aes](../core-aes.md) |
 | [core::array_i32](core/array_i32.md) | [source](../../stdlib/core/array_i32.lani#L4) | 2 | Source inventory | **Unregistered** |
 | [core::array_i32_4](core/array_i32_4.md) | [source](../../stdlib/core/array_i32_4.lani#L2) | 14 | Source inventory | **Unregistered** |
 | [core::array_u8_4](core/array_u8_4.md) | [source](../../stdlib/core/array_u8_4.lani#L4) | 17 | Source inventory | **Unregistered** |
@@ -191,6 +192,7 @@ Inventory: **235 modules**, **10380 declaration/member entries**. Counts include
 
 | Module | Source | Entries | Profile | Contract guides |
 | --- | --- | ---: | --- | --- |
+| [ext::aes_gcm](ext/aes_gcm.md) | [source](../../extended/ext/aes_gcm.lani#L3) | 19 | Source inventory | [extended-aes-gcm](../extended-aes-gcm.md) |
 | [ext::audio](ext/audio.md) | [source](../../extended/ext/audio.lani#L2) | 44 | Source inventory | [extended-audio](../extended-audio.md) |
 | [ext::big_int](ext/big_int.md) | [source](../../extended/ext/big_int.lani#L3) | 56 | Source inventory | [extended-big-int](../extended-big-int.md) |
 | [ext::big_uint](ext/big_uint.md) | [source](../../extended/ext/big_uint.lani#L4) | 72 | Source inventory | [extended-big-uint](../extended-big-uint.md) |
@@ -229,6 +231,7 @@ Inventory: **235 modules**, **10380 declaration/member entries**. Counts include
 | [ext::progress](ext/progress.md) | [source](../../extended/ext/progress.lani#L2) | 15 | Source inventory | [extended-progress](../extended-progress.md) |
 | [ext::regex](ext/regex.md) | [source](../../extended/ext/regex.lani#L2) | 67 | Source inventory | [extended-regex](../extended-regex.md) |
 | [ext::schema](ext/schema.md) | [source](../../extended/ext/schema.lani#L3) | 90 | Source inventory | [extended-schema](../extended-schema.md) |
+| [ext::service_identity](ext/service_identity.md) | [source](../../extended/ext/service_identity.lani#L3) | 20 | Source inventory | [extended-service-identity](../extended-service-identity.md) |
 | [ext::settings](ext/settings.md) | [source](../../extended/ext/settings.lani#L3) | 118 | Source inventory | [extended-settings](../extended-settings.md) |
 | [ext::settings_env](ext/settings_env.md) | [source](../../extended/ext/settings_env.lani#L3) | 27 | Source inventory | [extended-settings](../extended-settings.md) |
 | [ext::signal](ext/signal.md) | [source](../../extended/ext/signal.lani#L3) | 47 | Source inventory | [extended-signal](../extended-signal.md) |
@@ -237,6 +240,7 @@ Inventory: **235 modules**, **10380 declaration/member entries**. Counts include
 | [ext::tar](ext/tar.md) | [source](../../extended/ext/tar.lani#L3) | 81 | Source inventory | [extended-tar](../extended-tar.md) |
 | [ext::terminal](ext/terminal.md) | [source](../../extended/ext/terminal.lani#L3) | 15 | Source inventory | [extended-terminal](../extended-terminal.md) |
 | [ext::timezone](ext/timezone.md) | [source](../../extended/ext/timezone.lani#L3) | 80 | Source inventory | [extended-timezone](../extended-timezone.md) |
+| [ext::tls_authentication](ext/tls_authentication.md) | [source](../../extended/ext/tls_authentication.lani#L3) | 56 | Source inventory | [extended-tls-authentication](../extended-tls-authentication.md) |
 | [ext::tls_framing](ext/tls_framing.md) | [source](../../extended/ext/tls_framing.lani#L3) | 47 | Source inventory | [extended-tls-framing](../extended-tls-framing.md) |
 | [ext::tls_handshake](ext/tls_handshake.md) | [source](../../extended/ext/tls_handshake.lani#L3) | 130 | Source inventory | [extended-tls-handshake](../extended-tls-handshake.md), [extended-tls-auth-foundation](../extended-tls-auth-foundation.md) |
 | [ext::tls_record](ext/tls_record.md) | [source](../../extended/ext/tls_record.lani#L4) | 40 | Source inventory | [extended-tls-record](../extended-tls-record.md) |
@@ -256,6 +260,7 @@ Inventory: **235 modules**, **10380 declaration/member entries**. Counts include
 | [ext::websocket](ext/websocket.md) | [source](../../extended/ext/websocket.lani#L3) | 82 | Source inventory | [extended-websocket](../extended-websocket.md) |
 | [ext::x25519](ext/x25519.md) | [source](../../extended/ext/x25519.lani#L3) | 9 | Source inventory | [extended-x25519](../extended-x25519.md) |
 | [ext::x509](ext/x509.md) | [source](../../extended/ext/x509.lani#L3) | 141 | Source inventory | [extended-x509](../extended-x509.md), [extended-certificate-info](../extended-certificate-info.md) |
+| [ext::x509_path](ext/x509_path.md) | [source](../../extended/ext/x509_path.lani#L3) | 56 | Source inventory | [extended-x509-path](../extended-x509-path.md), [extended-verify-certificate](../extended-verify-certificate.md) |
 | [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 80 | Source inventory | [extended-zip](../extended-zip.md) |
 
 ## Support and implementation data

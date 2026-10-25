@@ -1,0 +1,107 @@
+// Ten LEu64 words: decrypt,layout,alias(0disjoint1exact2forward3backward),
+// copy,key/input lengths,output capacity,bad target(1key2input3output),variant,
+// reserved. Native arrays and packed bytes; all output/source guards asserted.
+module app::main;
+import core::aes;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import std::stream;
+fn load(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0; let index: i32 = 0;
+    while (index < 8) { value |= (bytes[offset+index] as u64) << (index*8); index += 1; }
+    return value;
+}
+struct Output { bytes: [u8], used: i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) {
+        let stdout: std::stream::Descriptor = std::stream::stdout();
+        core::result::unwrap(core::io::write_all<std::stream::Descriptor>(stdout.borrow(), self.bytes, 0, self.used)); self.used = 0;
+    }
+    fn byte(&self, value: u8) { if (self.used == 2048) { self.flush(); } self.bytes[self.used] = value; self.used += 1; }
+    fn word(&self, value: u64) { let index: i32 = 0; while (index < 8) { self.byte(((value >> (index*8)) & 255) as u8); index += 1; } }
+}
+fn fill(bytes: [u8], count: i32) { let index: i32 = 0; while (index < count) { bytes[index] = 222; index += 1; } }
+fn copy(source: [u8], target: [u8], count: i32) { let index: i32 = 0; while (index < count) { target[index] = source[index]; index += 1; } }
+fn same(left: [u8], right: [u8], count: i32) { let index: i32 = 0; while (index < count) { assert(left[index] == right[index]); index += 1; } }
+fn bad(view: core::slice::View<u8>, variant: i32) -> core::slice::View<u8> {
+    let broken: core::slice::View<u8> = view;
+    if (variant == 0) { broken.start = -1; }
+    if (variant == 1) { broken.length = -1; }
+    if (variant == 2) { broken.start = 2147483647; broken.length = 1; }
+    return broken;
+}
+fn kind(error: core::aes::Error) -> u64 {
+    return match (error) { core::aes::Error::Bounds -> 1, core::aes::Error::InvalidKeyLength -> 2,
+        core::aes::Error::InvalidBlockLength -> 3, core::aes::Error::BufferTooSmall -> 4 };
+}
+fn main() -> i32 {
+    let stdin: std::stream::Descriptor = std::stream::stdin();
+    let count_bytes: [u8; 8] = [0; 8]; core::io::read_exact<std::stream::Descriptor>(stdin.borrow(), count_bytes, 0, 8).unwrap();
+    let count: u64 = load(count_bytes, 0); let record: u64 = 0;
+    let output_bytes: [u8; 2048] = [0; 2048]; let writer: Output = Output { bytes: output_bytes, used: 0 };
+    while (record < count) {
+        let header: [u8; 80] = [0; 80]; core::io::read_exact<std::stream::Descriptor>(stdin.borrow(), header, 0, 80).unwrap();
+        let decrypt: bool = load(header, 0) != 0; let layout: i32 = load(header, 8) as i32;
+        let alias: i32 = load(header, 16) as i32; let copied: bool = load(header, 24) != 0;
+        let klen: i32 = load(header, 32) as i32; let ilen: i32 = load(header, 40) as i32;
+        let capacity: i32 = load(header, 48) as i32; let target: i32 = load(header, 56) as i32; let variant: i32 = load(header, 64) as i32;
+        assert(layout >= 0 && layout <= 1 && alias >= 0 && alias <= 3 && klen >= 0 && klen <= 40 && ilen >= 0 && ilen <= 32 && capacity >= 0 && capacity <= 40);
+        let raw_key: [u8; 64] = [0; 64]; let raw_input: [u8; 64] = [0; 64]; let raw_output: [u8; 64] = [0; 64];
+        fill(raw_key, 64); fill(raw_input, 64); fill(raw_output, 64);
+        core::io::read_exact<std::stream::Descriptor>(stdin.borrow(), raw_key, 3, klen).unwrap();
+        core::io::read_exact<std::stream::Descriptor>(stdin.borrow(), raw_input, 3, ilen).unwrap();
+        let saved_key: [u8; 64] = raw_key; let saved_input: [u8; 64] = raw_input;
+        let key_words: [i32; 16] = [0; 16]; let input_words: [i32; 16] = [0; 16]; let output_words: [i32; 16] = [0; 16];
+        let key: [u8] = raw_key; let input: [u8] = raw_input; let output: [u8] = raw_output;
+        if (layout == 1) {
+            key = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(key_words), 64);
+            input = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(input_words), 64);
+            output = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(output_words), 64);
+            copy(raw_key, key, 64); copy(raw_input, input, 64); fill(output, 64);
+        }
+        let out_start: i32 = 3;
+        if (alias != 0) { output = input; }
+        if (alias == 2) { out_start = 4; } if (alias == 3) { out_start = 2; }
+        let kv: core::slice::View<u8> = core::slice::View { values: key, start: 3, length: klen };
+        let iv: core::slice::View<u8> = core::slice::View { values: input, start: 3, length: ilen };
+        let ov: core::slice::View<u8> = core::slice::View { values: output, start: out_start, length: capacity };
+        if (target == 1) { kv = bad(kv, variant); } if (target == 2) { iv = bad(iv, variant); } if (target == 3) { ov = bad(ov, variant); }
+        let made: core::result::Result<core::aes::Schedule, core::aes::Error> = core::aes::new(kv);
+        let result: core::result::Result<i32, core::aes::Error> = core::result::Ok(0);
+        if (made.is_err()) { result = core::result::Err(made.unwrap_err()); }
+        else {
+            let schedule: core::aes::Schedule = made.unwrap(); let snapshot: core::aes::Schedule = schedule;
+            if (copied) {
+                let zero: [u8; 32] = [0; 32]; schedule = core::aes::new(core::slice::View { values: zero, start: 0, length: klen }).unwrap();
+                let index: i32 = 0; while (index < klen) { key[3+index] ^= 255; index += 1; }
+            }
+            if (decrypt) { result = snapshot.decrypt_into(iv, ov); } else { result = snapshot.encrypt_into(iv, ov); }
+            if (copied) { let index: i32 = 0; while (index < klen) { key[3+index] ^= 255; index += 1; } }
+            // Repeated use must preserve both inline states.
+            if (!copied && result.is_ok()) {
+                let repeated: [u8; 16] = [0; 16];
+                let source: core::slice::View<u8> = core::slice::View { values: saved_input, start: 3, length: 16 };
+                let dest: core::slice::View<u8> = core::slice::View { values: repeated, start: 0, length: 16 };
+                if (decrypt) { schedule.decrypt_into(source, dest).unwrap(); } else { schedule.encrypt_into(source, dest).unwrap(); }
+                let index: i32 = 0; while (index < 16) { assert(repeated[index] == output[out_start+index]); index += 1; }
+            }
+        }
+        let status: u64 = 0; let written: i32 = 0;
+        if (result.is_err()) { status = kind(result.unwrap_err()); } else { written = result.unwrap(); assert(written == 16); }
+        same(key, saved_key, 64); if (alias == 0) { same(input, saved_input, 64); }
+        let index: i32 = 0; while (index < 64) {
+            if (index < out_start || index >= out_start+written) {
+                if (alias == 0) { assert(output[index] == 222); } else { assert(output[index] == saved_input[index]); }
+            }
+            index += 1;
+        }
+        writer.word(core::mem::slice_stride(input) as u64); writer.word(core::mem::slice_stride(output) as u64);
+        writer.word(status); writer.word(written as u64); writer.word(capacity as u64);
+        index = 0; while (index < capacity) { writer.byte(output[out_start+index]); index += 1; }
+        record += 1;
+    }
+    writer.flush(); return 0;
+}

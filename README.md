@@ -79,6 +79,9 @@ all six algorithms with explicit input and I/O limits.
 [ChaCha20](docs/stdlib-chacha20.md), [Poly1305](docs/stdlib-poly1305.md),
 [ChaCha20-Poly1305](docs/extended-chacha20-poly1305.md) and
 [X25519](docs/extended-x25519.md) have focused native Linux execution evidence.
+[AES-128/192/256](docs/core-aes.md) and
+[AES-GCM](docs/extended-aes-gcm.md) also execute without allocation, with
+independent block/AEAD models and authentication-before-output checks.
 The [TLS record layer](docs/extended-tls-record.md) passes its ordinary
 consumer and 308 protocol commands after a
 [host capacity repair](docs/tls-record-lowering-dependency.md).
@@ -86,7 +89,7 @@ consumer and 308 protocol commands after a
 [borrowed DER](docs/extended-der.md),
 [TLS handshake codecs](docs/extended-tls-handshake.md) and the
 [key schedule/transcript](docs/extended-tls-schedule.md) also pass focused
-native gates. Connection state and certificate trust remain separate work.
+native gates. Full connection state and general certificate trust remain work.
 [X.509 structure parsing](docs/extended-x509.md) and
 [incremental framing](docs/extended-tls-framing.md) add bounded certificate
 inspection and record/handshake reassembly, including the full u24 body limit.
@@ -94,6 +97,16 @@ inspection and record/handshake reassembly, including the full u24 body limit.
 budgets and explicit partial progress for connection initialization.
 The [certificate inspector](docs/extended-certificate-info.md) passes 50 native
 cases covering parsed metadata, report publication and resource/I/O failures.
+[DNS/IP identity matching](docs/extended-service-identity.md) and
+[ordered Ed25519 certificate paths](docs/extended-x509-path.md) enforce
+explicit anchors, validity, supported constraints and shared resource budgets.
+The [certificate verifier](docs/extended-verify-certificate.md) passes 84 native
+cases. This offline profile rejects unsupported policies; general PKIX and
+live TLS connection integration remain work.
+[Server-flight authentication](docs/extended-tls-authentication.md) now joins
+that path decision to ordered CertificateVerify and Finished checks, with
+110 protocol cases and 340 state observations. A live connection must still
+negotiate parameters, manage records and commit the client's Finished.
 The [seal-bytes program](docs/extended-seal-bytes.md) passes 137 native cases,
 including allocation/I/O failures and the full 1 MiB boundary. The
 [pinned compiler comparison](docs/library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)

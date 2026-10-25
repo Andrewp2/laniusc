@@ -302,8 +302,37 @@ handshake body using explicitly owned caller storage. The
 its output describes parsed schema and metadata. The
 [bounded entropy API](stdlib-entropy-bounded.md) adds nonblocking OS reads,
 shared attempt budgets and completed-prefix failures, with all four focused
-groups admitted across the documented invocations. Certificate trust and
-connection state remain governed by the [remaining contract](tls-connection-contract.md).
+groups admitted across the documented invocations.
+
+[AES-128/192/256](core-aes.md) passes 1,680 independent block/error commands
+and an ordinary consumer; [AES-GCM](extended-aes-gcm.md) passes 1,022 protocol
+commands and an ordinary consumer. The allocation-free APIs cover copied
+schedules/keys, general IV hashing, counter wrap, both byte layouts and
+authentication before plaintext publication. AES stages a full input block,
+so arbitrary block overlap works; GCM supports exact payload alias or disjoint
+storage. No machine constant-time or throughput guarantee follows from these
+functional gates.
+
+[DNS/IP service identity](extended-service-identity.md) passes 1,592 protocol
+commands and an ordinary consumer, including full SAN traversal after a match.
+[Ordered Ed25519 certificate paths](extended-x509-path.md) pass 144 model
+commands, 16 OpenSSL comparisons and an ordinary consumer. Explicit anchors,
+inclusive UTC validity, CA/usage/path constraints and shared parse/work/signature
+budgets precede a copied leaf key. The [certificate verifier](extended-verify-certificate.md)
+passes 84 native cases, including eight-certificate paths and complete resource
+retirement before publication. This offline profile rejects unsupported
+constraints and uses byte-exact distinguished names; general PKIX, revocation
+and live connection/transport state remain work under the
+[connection contract](tls-connection-contract.md).
+
+[Server-flight authentication](extended-tls-authentication.md) passes
+110 protocol cases, 340 state observations and an ordinary consumer across
+three exact invocations. Its ordered EE/Certificate/CV/Finished stages call
+the real path validator and withhold copied key/transcript results until
+both transcript proofs pass. Cleared prior input, copied state, retries,
+shared allowances, terminal failures and a long certificate flight execute.
+The resulting authentication checkpoint still precedes client-Finished
+transmission and live application-data release.
 
 [Checked file lengths](stdlib-file-resize.md) execute shrink, zero extension,
 sparse lengths above 4 GiB and unchanged duplicated offsets, with explicit
@@ -323,11 +352,11 @@ Compiler failures retain
 [reproductions and successful controls](library-dependencies.md).
 
 The [generated declaration reference](library-api-reference.md) inventories
-235 source modules with signatures, bounds, fields and exact source links.
-The declaration scanner independently confirms 161 stdlib and 74 extended
-modules, including source still under admission. The original twenty focused
-CPU tests and earlier regenerated-output check passed without generator
-changes. This is
+240 source modules with signatures, bounds, fields and exact source links.
+The declaration scanner independently confirms 162 stdlib and 78 extended
+modules, including source still under admission. The current regenerated-output
+check passes for 241 pages and 7,440 public declaration markers. The original
+twenty focused CPU tests passed without generator changes. This is
 documentation extraction, not runtime verification; semantic guide gaps remain
 listed explicitly. The [strict UTF codec guide](stdlib-utf-codecs.md) now maps
 83 existing functions to their indexing, malformed-input, mutation, progress,

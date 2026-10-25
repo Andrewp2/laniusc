@@ -1,0 +1,27 @@
+// Ordinary AES-GCM imported consumer. NIST example1 AES256 empty tag;
+// nonempty general-IV application round trip uses copied inline key state.
+module app::main;
+import core::slice;
+import ext::aes_gcm;
+fn view(bytes: [u8], start: i32, length: i32) -> core::slice::View<u8> { return core::slice::View { values: bytes, start: start, length: length }; }
+fn main() -> i32 {
+    let key: [u8; 32] = [254,255,233,146,134,101,115,28,109,106,143,148,103,48,131,8,254,255,233,146,134,101,115,28,109,106,143,148,103,48,131,8];
+    let nonce: [u8; 12] = [202,254,186,190,250,206,219,173,222,202,248,136];
+    let state: ext::aes_gcm::Key = ext::aes_gcm::new(view(key, 0, 32)).unwrap();
+    let copied: ext::aes_gcm::Key = state;
+    let index: i32 = 0; while (index < 32) { key[index] = 0; index += 1; }
+    state = ext::aes_gcm::new(view(key, 0, 16)).unwrap();
+    let empty: [u8; 1] = [165]; let tag: [u8; 18] = [165; 18];
+    assert(copied.seal_into(view(nonce, 0, 12), view(empty, 0, 0), view(empty, 0, 0), view(empty, 0, 0), view(tag, 1, 16)).unwrap() == 0);
+    let expected: [u8; 16] = [253,44,170,22,165,131,46,118,170,19,44,20,83,238,218,126];
+    index = 0; while (index < 16) { assert(tag[index+1] == expected[index]); index += 1; }
+    assert(tag[0] == 165 && tag[17] == 165 && empty[0] == 165);
+    let nonce2: [u8; 17] = [93; 17]; let aad: [u8; 5] = [23,3,3,0,33];
+    let plain: [u8; 33] = [0; 33]; index = 0; while (index < 33) { plain[index] = (index*7) as u8; index += 1; }
+    let cipher: [u8; 35] = [165; 35]; let delivered: [u8; 35] = [165; 35];
+    assert(copied.seal_into(view(nonce2, 0, 17), view(aad, 0, 5), view(plain, 0, 33), view(cipher, 1, 34), view(tag, 1, 16)).unwrap() == 33);
+    assert(copied.open_into(view(nonce2, 0, 17), view(aad, 0, 5), view(cipher, 1, 33), view(tag, 1, 16), view(delivered, 1, 34)).unwrap() == 33);
+    index = 0; while (index < 33) { assert(delivered[index+1] == plain[index]); index += 1; }
+    assert(cipher[0] == 165 && cipher[34] == 165 && delivered[0] == 165 && delivered[34] == 165);
+    return 0;
+}

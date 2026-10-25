@@ -1,8 +1,9 @@
 # Authenticated TLS connection contract
 
 This is the implementation contract for the reusable connection layer still
-needed above the current Lanius primitives. It adds no public declarations or
-execution claims. Source audit: `bad37f72` plus the current X.509/framing work,
+needed above the current Lanius primitives. Existing execution evidence is in
+the linked guides; the connection contracts below remain proposed. Source audit:
+`8efce644` plus the current certificate-path and AES work,
 2026-10-24. Production protocol, cryptography and certificate validation stay
 in Lanius; OpenSSL is an independent test peer.
 
@@ -12,7 +13,9 @@ in Lanius; OpenSSL is an independent test peer.
 | --- | --- |
 | [tls_record](../extended/ext/tls_record.lani), [tls_schedule](../extended/ext/tls_schedule.lani), [tls_transcript](../extended/ext/tls_transcript.lani) | Negotiate algorithms, bind directional keys to epochs, and enforce authenticated transcript checkpoints. A successful AEAD open alone does not authenticate the peer. |
 | [tls_handshake](../extended/ext/tls_handshake.lani), [tls_framing](../extended/ext/tls_framing.lani) | Validate message/extension meaning, ordering, fragmentation and key-change boundaries. Framing returns borrowed storage and partial consumed counts. |
-| [x509](../extended/ext/x509.lani), [DER](../extended/ext/der.lani), [Ed25519](../extended/ext/ed25519.lani) | Validate a bounded certificate path, service identity, time and constraints; then verify CertificateVerify with that validated leaf key. X.509 parsing currently establishes none of those decisions. |
+| [x509_path](../extended/ext/x509_path.lani), [service_identity](../extended/ext/service_identity.lani), [x509](../extended/ext/x509.lani), [Ed25519](../extended/ext/ed25519.lani) | Use the admitted explicit-anchor ordered Ed25519/offline profile, then enforce proof of possession. Extend normalized names, path building, name constraints, certificate policies and revocation before claiming general PKIX support. Parsing alone establishes no trust decision. |
+| [tls_authentication](../extended/ext/tls_authentication.lani) | Reuse the admitted EE/Certificate/CV/Finished server-authentication checkpoint. The engine must validate CH/SH and EE negotiation, bind traffic secrets/epochs, and commit client Finished before releasing application data. |
+| [AES](../stdlib/core/aes.lani), [AES-GCM](../extended/ext/aes_gcm.lani) | Integrate admitted block/AEAD primitives into TLS cipher-suite record state and key derivation. Current record owners still use ChaCha20-Poly1305. |
 | [std::socket](../stdlib/std/socket.lani), [std::poll](../stdlib/std/poll.lani), [core::io](../stdlib/core/io.lani) | Own transport lifetime, retained partial records, bounded progress and deadlines. TCP lives in `std::socket`; `std::net` is legacy host-ABI surface. |
 | [std::entropy](../stdlib/std/entropy.lani), [std::random](../stdlib/std/random.lani), [std::clock](../stdlib/std/clock.lani), [calendar](../stdlib/core/calendar.lani) | Bound entropy attempts, separate monotonic deadlines from certificate wall time, and propagate every host failure. |
 
@@ -27,13 +30,14 @@ post-handshake authentication is offered initially. Session tickets may be
 validated and discarded under an explicit disabled-cache policy. Unsupported
 negotiation must fail explicitly rather than select an unimplemented path.
 
-This profile is a useful authenticated implementation, not complete general
-TLS interoperability. [RFC 8446 section 9.1](https://www.rfc-editor.org/rfc/rfc8446.html#section-9.1)
+The proposed profile covers a subset of general TLS interoperability.
+[RFC 8446 section 9.1](https://www.rfc-editor.org/rfc/rfc8446.html#section-9.1)
 requires, absent a different application profile standard, AES-128-GCM/SHA-256,
 P-256 key exchange, RSA-PSS/RSAE/SHA-256 and ECDSA/P-256/SHA-256 signatures,
-and RSA-PKCS1/SHA-256 certificate verification. Those primitives and their
-record/certificate integrations are missing; the SHA-256 and SHA-384 hashes
-themselves already exist. AES-256-GCM/SHA-384 and X25519
+and RSA-PKCS1/SHA-256 certificate verification. AES and AES-GCM now have native
+admission, but TLS record integration is still missing; P-256, RSA and ECDSA
+primitives and their certificate integrations are missing. The SHA-256 and
+SHA-384 hashes themselves already exist. AES-256-GCM/SHA-384 and X25519
 also have the RFC's recommended status; supporting X25519/ChaCha/Ed25519 does
 not satisfy the mandatory set. The [section 9.2 extension requirements](https://www.rfc-editor.org/rfc/rfc8446.html#section-9.2)
 also require semantic implementations, beyond the existing generic codecs.
@@ -105,10 +109,15 @@ only the client's permitted post-server-Finished holding case above applies.
 
 ## Certificate verification boundary
 
-Implement a real bounded verifier before exposing authenticated connections.
-Its inputs are the presented chain, explicit configured anchors, intended
-server/client usage, expected reference identity, one checked wall-clock time
-and shared work limits. Its success supplies the exact leaf key tied to that
+Use the [bounded ordered verifier](extended-x509-path.md) and
+[service identity matcher](extended-service-identity.md) for the first profile
+before exposing authenticated connections. The
+[certificate-verifier program](extended-verify-certificate.md) independently
+exercises this boundary in 84 native cases. General PKIX support remains work.
+The admitted verifier takes the presented chain, explicit configured anchors,
+expected reference identity, supplied UTC time, caller workspace and shared
+work limits. It fixes usage to TLS server authentication; a broader verifier
+must add explicit client/server purpose policy. Success supplies the leaf key tied to that
 validated path and identity, for the engine's subsequent CV check. A parser
 result, self-signature, issuer-name match or encryption success is insufficient.
 
@@ -121,9 +130,10 @@ cannot appoint itself an anchor. Reject unknown critical information and any
 known constraint/policy form whose semantics are not implemented.
 `unknown_critical_count == 0` is not a validation result. Name constraints,
 certificate policies and distinguished-name matching/path building remain
-missing contracts, not fields a verifier may silently ignore. An initial
-bounded ordered-chain implementation may reject unsupported name/constraint
-forms; document those limits and then extend it toward RFC 5280 path validation.
+missing general-profile contracts, not fields a verifier may silently ignore.
+The admitted ordered-chain implementation rejects unsupported policies and
+constraints and uses byte-exact DN matching; extend that explicit profile
+toward RFC 5280 path validation.
 
 Service identity follows [RFC 9525 section 6](https://www.rfc-editor.org/rfc/rfc9525.html#section-6):
 match the application-supplied DNS reference against DNS SANs, or literal IP
@@ -138,6 +148,15 @@ an offline profile without revocation checking cannot claim it checked
 revocation. Server credentials, roots and validation decisions need no foreign
 TLS backend. [RFC 5280 section 6](https://www.rfc-editor.org/rfc/rfc5280.html#section-6)
 is the path-validation source of truth.
+
+The [server-flight authentication state](extended-tls-authentication.md) now
+calls that verifier, verifies exact CV/Finished transcript checkpoints, and
+withholds the copied peer key/transcript until success. Its admitted
+110 protocol cases and 340 observations include retired input buffers,
+independent copies, shared budgets and terminal errors. The caller still
+supplies checked negotiation, certificate-signature offers and the correct
+handshake record secret. Its `Authenticated` state is not `Established`;
+the engine must commit the client's Finished before releasing application data.
 
 ## Partial I/O, deadlines and entropy
 
@@ -243,10 +262,10 @@ policy before enabling resumption or 0-RTT; unsupported early data is rejected.
 
 ## Implementation sequence and acceptance gates
 
-1. Implement and test the bounded Ed25519 path/identity/time verifier above,
-   using real CA/intermediate/leaf fixtures and explicit anchors. No externally
-   supplied trust token substitutes for it. Use the admitted bounded entropy
-   attempts with connection deadline checks.
+1. Reuse the admitted Ed25519 path/identity/time verifier and server-flight
+   authentication state, with real CA/intermediate/leaf fixtures and explicit
+   anchors. No externally supplied trust token substitutes for those checks.
+   Use the admitted bounded entropy attempts with connection deadline checks.
 2. Implement one portable engine with framing, exact negotiation, HRR, server
    credential proof, CV/Finished checkpoints, alerts, pending-record progress,
    close and KeyUpdate. Script fragments, stalls and clock/entropy failures;

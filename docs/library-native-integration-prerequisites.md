@@ -24,15 +24,25 @@ records measured workloads and limits.
 [TLS handshake codecs](extended-tls-handshake.md) and the
 [SHA-256 schedule/transcript](extended-tls-schedule.md) now pass focused native
 execution gates as well. These provide primitives and wire contracts; the
-connection still needs negotiated state, certificate path/identity/time
-policy, enforced authentication checkpoints and bounded transport progress.
+connection still needs negotiated state, enforced authentication checkpoints,
+broader certificate policy and bounded transport progress.
 
 [X.509 structure parsing](extended-x509.md) and
 [incremental framing](extended-tls-framing.md) now have native admission too.
 [Nonblocking entropy](stdlib-entropy-bounded.md) supplies explicit shared
-attempt budgets over the existing Linux syscall boundary. The
+attempt budgets over the existing Linux syscall boundary.
+[DNS/IP service identity](extended-service-identity.md) and
+[ordered Ed25519 paths](extended-x509-path.md) now execute explicit-anchor,
+validity and supported-constraint checks. The
+[certificate verifier](extended-verify-certificate.md) passes 84 native cases.
+This is an offline restricted profile; general PKIX and revocation remain.
+[AES](core-aes.md) and [AES-GCM](extended-aes-gcm.md) execute as Lanius byte
+primitives; their TLS record integration remains. The
+[server-flight authentication bridge](extended-tls-authentication.md) now
+executes ordered path/CertificateVerify/Finished checks. The
 [connection contract](tls-connection-contract.md) identifies the remaining
-path/identity/time policy, authentication state and transport integration.
+negotiation, record/epoch state, client-Finished transmission and transport
+integration.
 
 This source path does not require foreign-call support. A foreign TLS backend
 and SQLite integration still need the native-library boundaries described

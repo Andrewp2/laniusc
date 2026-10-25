@@ -112,6 +112,11 @@
         "docs/stdlib-adler32.md"
       ]
     },
+    "core::aes": {
+      "guides": [
+        "docs/core-aes.md"
+      ]
+    },
     "core::base64": {
       "guides": [
         "docs/stdlib-byte-codecs.md"
@@ -489,6 +494,11 @@
         "docs/stdlib-iterator-transfer.md"
       ]
     },
+    "ext::aes_gcm": {
+      "guides": [
+        "docs/extended-aes-gcm.md"
+      ]
+    },
     "ext::audio": {
       "guides": [
         "docs/extended-audio.md"
@@ -691,6 +701,11 @@
         "docs/extended-schema.md"
       ]
     },
+    "ext::service_identity": {
+      "guides": [
+        "docs/extended-service-identity.md"
+      ]
+    },
     "ext::settings": {
       "guides": [
         "docs/extended-settings.md"
@@ -736,6 +751,11 @@
     "ext::timezone": {
       "guides": [
         "docs/extended-timezone.md"
+      ]
+    },
+    "ext::tls_authentication": {
+      "guides": [
+        "docs/extended-tls-authentication.md"
       ]
     },
     "ext::tls_framing": {
@@ -875,6 +895,12 @@
       "guides": [
         "docs/extended-x509.md",
         "docs/extended-certificate-info.md"
+      ]
+    },
+    "ext::x509_path": {
+      "guides": [
+        "docs/extended-x509-path.md",
+        "docs/extended-verify-certificate.md"
       ]
     },
     "ext::zip": {
