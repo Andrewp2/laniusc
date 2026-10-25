@@ -110,7 +110,7 @@ impl<'a> Reader<'a> {
 struct Observation {
     rule: u64,
     debit: u64,
-    words: [u64; 18],
+    words: [u64; 20],
     frame: Vec<u8>,
 }
 struct Case {
@@ -134,7 +134,7 @@ fn prepare(mode: &str) -> Vec<Case> {
         let work = data.word();
         let count = data.word();
         let anchor = data.block();
-        assert!(count <= 64);
+        assert!(count <= 128);
         let mut observations = Vec::new();
         for _ in 0..count {
             let rule = data.word();
@@ -182,7 +182,7 @@ fn compare(mode: &str) {
         assert_eq!(data.word(), case.constructor, "case {index}: constructor");
         let mut work = case.work;
         for (turn, observation) in case.observations.iter().enumerate() {
-            let actual: [u64; 18] = std::array::from_fn(|_| data.word());
+            let actual: [u64; 20] = std::array::from_fn(|_| data.word());
             for (field, (&got, &expected)) in actual.iter().zip(&observation.words).enumerate() {
                 if field != 7 {
                     assert_eq!(

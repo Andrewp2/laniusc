@@ -1,4 +1,4 @@
-//! Independent SHA256 TLS key schedule/transcript peer; RFC8448 §3 anchors.
+//! Independent SHA256/SHA384 schedule/transcript peer; unchanged RFC8448 SHA256 anchors.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
 use std::{
@@ -38,6 +38,7 @@ struct Case {
     c: Vec<u8>,
     length: usize,
     mode: u64,
+    algorithm: u64,
 }
 fn case(op: u64) -> Case {
     Case {
@@ -48,6 +49,7 @@ fn case(op: u64) -> Case {
         c: vec![],
         length: 32,
         mode: 0,
+        algorithm: 0,
     }
 }
 fn layouts(value: Case, cases: &mut Vec<Case>) {
@@ -68,6 +70,7 @@ fn input(cases: &[Case]) -> Vec<u8> {
             c.c.len() as u64,
             c.length as u64,
             c.mode,
+            c.algorithm,
         ] {
             bytes.extend(n.to_le_bytes());
         }
@@ -77,61 +80,7 @@ fn input(cases: &[Case]) -> Vec<u8> {
     }
     bytes
 }
-const PEER: &str = r#"
-import hashlib,hmac,struct,sys
-source=sys.stdin.buffer.read();at=0
-def words(n):
- global at
- v=struct.unpack_from('<'+'Q'*n,source,at);at+=8*n;return v
-def take(n):
- global at
- v=source[at:at+n];assert len(v)==n;at+=n;return v
-def H(b):return hashlib.sha256(b).digest()
-def mac(k,b):return hmac.new(k,b,hashlib.sha256).digest()
-def expand(k,label,ctx,n):
- label=b'tls13 '+label;info=struct.pack('>H',n)+bytes([len(label)])+label+bytes([len(ctx)])+ctx;out=b'';prev=b''
- for i in range(1,(n+31)//32+1):prev=mac(k,prev+info+bytes([i]));out+=prev
- return out[:n]
-def derive(k,label,th):return expand(k,label,th,32)
-def finished(k,th):return mac(expand(k,b'finished',b'',32),th)
-def q(*a):return struct.pack('<'+'Q'*len(a),*a)
-magic=bytes.fromhex('cf21ad74e59a6111be1d8c021e65b891c2a211167abb8c5e079e09e2c8a8339c')
-count,=words(1)
-for _ in range(count):
- op,layout,alen,blen,clen,n,mode=words(7);a,b,c=take(alen),take(blen),take(clen);status=0;out=b''
- if op==0:
-  if mode:status=1
-  elif len(a)!=32:status=2
-  elif not 1<=len(b)<=249:status=4
-  elif len(c)>255:status=5
-  elif n>8160:status=6
-  else:out=expand(a,b,c,n)
- elif op in (1,3):
-  ch,sh,sf,cf,before=[c[i:i+32] for i in range(0,160,32)];empty=H(b'');early=mac(bytes(32),bytes(32) if mode&1 else a);hs=mac(derive(early,b'derived',empty),bytes(32) if mode&2 else b);master=mac(derive(hs,b'derived',empty),bytes(32))
-  client=derive(hs,b'c hs traffic',sh);server=derive(hs,b's hs traffic',sh);ex=derive(master,b'exp master',sf);res=derive(master,b'res master',cf);ee=derive(early,b'e exp master',ch)
-  values=[early,derive(early,b'ext binder',empty),derive(early,b'res binder',empty),derive(early,b'c e traffic',ch),ee,hs,client,server,master,derive(master,b'c ap traffic',sf),derive(master,b's ap traffic',sf),ex,res,expand(res,b'resumption',bytes({0:0,1:1,33:255}.get(n,2)),32),finished(server,before),finished(client,sf),expand(client,b'traffic upd',b'',32)]
-  out=b''.join(values)+expand(derive(ex,b'test export',empty),b'exporter',H(a),n)+expand(derive(ee,b'test export',empty),b'exporter',H(a),n)
- elif op==2:
-  state=(b'',0,0,False);fork=state;pos=0
-  while pos<len(a):
-   action=a[pos];size=int.from_bytes(a[pos+1:pos+3],'little');frame=a[pos+3:pos+3+size];pos+=3+size;raw,count,first,hrr=state;error=0
-   if action in (0,1,5,6,7):
-    if action==5:error=1
-    elif len(frame)<4 or len(frame)!=int.from_bytes(frame[1:4],'big')+4:error=2
-    elif action==1:
-     if len(frame)<38 or frame[0]!=2 or frame[6:38]!=magic:error=2
-     elif hrr or count!=1 or first!=1:error=4
-     else:state=(b'\xfe\0\0\x20'+H(raw)+frame,2,first,True)
-    elif frame[0]==254:error=3
-    elif action in (6,7):error=5
-    else:state=(raw+frame,count+1,frame[0] if count==0 else first,hrr)
-   if action==3:fork=state
-   if action==4:state,fork=fork,state
-   raw,count,first,hrr=state;out+=q(error,count,int(hrr))+H(raw)
- else:raise AssertionError(op)
- sys.stdout.buffer.write(q(status,len(out))+out)
-assert at==len(source)
-"#;
+const PEER: &str = include_str!("fixtures/extended/tls_schedule/model.py");
 fn checked(out: &std::process::Output) {
     assert_eq!(
         out.status.code(),
@@ -212,7 +161,11 @@ fn pattern(n: usize, seed: usize) -> Vec<u8> {
     (0..n).map(|i| (i * 73 + seed) as u8).collect()
 }
 fn hex(s: &str) -> Vec<u8> {
-    assert_eq!(s.len() % 2, 0, "hexadecimal vectors must contain full bytes");
+    assert_eq!(
+        s.len() % 2,
+        0,
+        "hexadecimal vectors must contain full bytes"
+    );
     s.as_bytes()
         .chunks_exact(2)
         .map(|p| u8::from_str_radix(std::str::from_utf8(p).unwrap(), 16).unwrap())
@@ -244,15 +197,26 @@ fn labels_phases_finished_exporters_and_rfc8448_anchors_match_independent_peer()
     rfc.c = include_bytes!("fixtures/extended/tls_schedule/rfc8448-1rtt-hashes.bin").to_vec();
     rfc.mode = 1;
     layouts(rfc, &mut cases);
-    for seed in 0..20 {
-        let mut c = case(if seed == 0 { 3 } else { 1 });
-        c.a = pattern([0, 1, 31, 32, 257][seed % 5], seed);
-        c.b = pattern([0, 1, 32, 128][seed % 4], seed + 2);
-        c.c = pattern(160, seed + 4);
-        c.mode = (seed % 4) as u64;
-        c.length = [0, 1, 32, 33, 257][seed % 5];
-        layouts(c, &mut cases);
+    for algorithm in [0, 1] {
+        let size = if algorithm == 0 { 32 } else { 48 };
+        for seed in 0..20 {
+            let mut c = case(if seed == 0 { 3 } else { 1 });
+            c.algorithm = algorithm;
+            c.a = pattern([0, 1, size - 1, size, 257][seed % 5], seed);
+            c.b = pattern([0, 1, 32, 128][seed % 4], seed + 2);
+            c.c = pattern(5 * size, seed + 4);
+            c.mode = (seed % 4) as u64;
+            c.length = [0, 1, size, size + 1, 257][seed % 5];
+            layouts(c, &mut cases);
+        }
     }
+    let mut maximum = case(1);
+    maximum.algorithm = 1;
+    maximum.a = pattern(257, 3);
+    maximum.b = pattern(32, 4);
+    maximum.c = pattern(240, 5);
+    maximum.length = 12240;
+    layouts(maximum, &mut cases);
     let values = compare(cases);
     for value in &values[..2] {
         for (index, anchor) in [
@@ -316,30 +280,37 @@ fn labels_phases_finished_exporters_and_rfc8448_anchors_match_independent_peer()
 #[test]
 fn checked_label_lengths_bounds_and_output_limits_preserve_all_output() {
     let mut cases = vec![];
-    for (key, label, ctx, n) in [
-        (32, 1, 0, 0),
-        (32, 249, 255, 8160),
-        (32, 250, 0, 32),
-        (32, 0, 0, 0),
-        (31, 3, 0, 32),
-        (33, 3, 0, 32),
-        (0, 3, 0, 0),
-        (32, 3, 256, 32),
-        (32, 3, 0, 8161),
-        (32, 249, 255, 33),
-        (32, 3, 0, 1),
-    ] {
-        let mut c = case(0);
-        c.a = pattern(key, 1);
-        c.b = pattern(label, 2);
-        c.c = pattern(ctx, 3);
-        c.length = n;
-        layouts(c, &mut cases);
-    }
-    for mode in 1..=12 {
-        let mut c = case(0);
-        c.mode = mode;
-        layouts(c, &mut cases);
+    for algorithm in [0, 1] {
+        let size = if algorithm == 0 { 32 } else { 48 };
+        let limit = 255 * size;
+        for (key, label, ctx, n) in [
+            (size, 1, 0, 0),
+            (size, 249, 255, limit),
+            (size, 250, 0, size),
+            (size, 0, 0, 0),
+            (size - 1, 3, 0, size),
+            (size + 1, 3, 0, size),
+            (0, 3, 0, 0),
+            (size, 3, 256, size),
+            (size, 3, 0, limit + 1),
+            (size, 249, 255, size + 1),
+            (size, 3, 0, 1),
+        ] {
+            let mut c = case(0);
+            c.algorithm = algorithm;
+            c.a = pattern(key, 1);
+            c.b = pattern(label, 2);
+            c.c = pattern(ctx, 3);
+            c.length = n;
+            layouts(c, &mut cases);
+        }
+        for mode in 1..=12 {
+            let mut c = case(0);
+            c.algorithm = algorithm;
+            c.a = pattern(size, 1);
+            c.mode = mode;
+            layouts(c, &mut cases);
+        }
     }
     compare(cases);
 }
@@ -408,6 +379,24 @@ fn complete_transcripts_snapshots_copies_hrr_and_error_atomicity_match_hashlib()
         }
         command(&mut commands, 0, &frame(20, &pattern(32, seed)));
         let mut c = case(2);
+        c.a = commands;
+        layouts(c, &mut cases);
+    }
+    let original = cases;
+    let mut cases = vec![];
+    for algorithm in [0, 1] {
+        for mut value in original.clone() {
+            value.algorithm = algorithm;
+            cases.push(value);
+        }
+        let mut commands = vec![];
+        for length in [55, 56, 63, 64, 65, 111, 112, 127, 128, 129] {
+            command(&mut commands, 0, &frame(1, &pattern(length - 4, length)));
+            command(&mut commands, 2, &[]);
+            command(&mut commands, 8, &[]);
+        }
+        let mut c = case(2);
+        c.algorithm = algorithm;
         c.a = commands;
         layouts(c, &mut cases);
     }

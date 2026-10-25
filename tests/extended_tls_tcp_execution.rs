@@ -313,14 +313,16 @@ fn check(c: &Case, a: &Actual) {
                 String::from_utf8_lossy(&a.peer_error)
             );
             assert_eq!(&a.report[1..3], &[c.length as u64, c.length as u64]);
-            assert_eq!(
-                a.bytes,
-                if c.role == 0 {
-                    pattern(c.length, 53, 193)
-                } else {
-                    pattern(c.length, 37, 11)
-                }
-            );
+            if c.mode != 12 {
+                assert_eq!(
+                    a.bytes,
+                    if c.role == 0 {
+                        pattern(c.length, 53, 193)
+                    } else {
+                        pattern(c.length, 37, 11)
+                    }
+                );
+            }
             if c.exporter {
                 let text = format!(
                     "{}\n{}",
@@ -336,7 +338,8 @@ fn check(c: &Case, a: &Actual) {
                     .collect();
                 assert!(!values.is_empty(), "OpenSSL exporter output: {text}");
                 for hex in values {
-                    assert_eq!(hex.len(), 64);
+                    let length = if c.mode == 12 { 12240 } else { 32 };
+                    assert_eq!(hex.len(), length * 2);
                     let bytes: Vec<u64> = hex
                         .as_bytes()
                         .chunks_exact(2)
@@ -344,7 +347,10 @@ fn check(c: &Case, a: &Actual) {
                             u8::from_str_radix(std::str::from_utf8(b).unwrap(), 16).unwrap() as u64
                         })
                         .collect();
-                    assert_eq!(&a.report[9..], bytes);
+                    assert_eq!(&a.report[9..], &bytes[..32]);
+                    if c.mode == 12 {
+                        assert_eq!(a.bytes, bytes.iter().map(|n| *n as u8).collect::<Vec<_>>());
+                    }
                 }
             } else {
                 assert_eq!(a.peer_bytes, pattern(c.length, 37, 11));
@@ -678,4 +684,105 @@ fn p256_entropy_rejection_cap_refill_failure_and_shared_budget_preserve_socket()
     }
     assert_eq!(count, 14);
     eprintln!("P-256 entropy:{count} cases; eight-candidate cap, only P-slot32 refills, invalid-refill count stops, original shared budget stops and caller socket retained");
+}
+
+fn sha384_case(role: u32, group: u32, length: usize) -> Case {
+    let mut c = case(role, 2, length);
+    c.group = group;
+    c.peer_groups = if group == 0 { "X25519" } else { "P-256" };
+    c
+}
+
+#[test]
+fn aes256_sha384_openssl_peers_cover_groups_hrr_key_updates_and_exporters() {
+    let directory = Directory::new();
+    let mut count = 0;
+    for role in 0..2 {
+        for group in [0, 1] {
+            let mut c = sha384_case(role, group, 4097);
+            c.fragment = 7;
+            check(&c, &run(&directory, &c));
+            count += 1;
+            c = sha384_case(role, group, 8193);
+            c.mode = 8;
+            check(&c, &run(&directory, &c));
+            count += 1;
+            c = sha384_case(role, group, 0);
+            c.exporter = true;
+            check(&c, &run(&directory, &c));
+            count += 1;
+        }
+    }
+    for role in 0..2 {
+        let mut c = sha384_case(role, if role == 0 { 2 } else { 3 }, 33);
+        if role == 1 {
+            c.peer_groups = "X25519:P-256";
+        }
+        check(&c, &run(&directory, &c));
+        count += 1;
+    }
+    assert_eq!(count, 14);
+    eprintln!("AES256/SHA384 TCP:{count} real OpenSSL cases; singleton suite, both roles/groups, fragmented app records, requested-group HRR both directions, confirmed KU generations and exporter agreement");
+}
+
+#[test]
+fn aes256_sha384_tcp_limits_faults_prefixes_and_full_exporter_cap() {
+    let directory = Directory::new();
+    let mut count = 0;
+    for role in 0..2 {
+        let mut c = sha384_case(role, role, 0);
+        c.exporter = true;
+        c.mode = 12;
+        let a = run(&directory, &c);
+        check(&c, &a);
+        assert_eq!(a.bytes.len(), 12240);
+        count += 1;
+    }
+    for group in [0, 1] {
+        for mode in [2, 3, 5] {
+            let mut c = sha384_case(0, group, 8193);
+            c.mode = mode;
+            check(&c, &run(&directory, &c));
+            count += 1;
+        }
+    }
+    for (mode, group, root) in [
+        (0, 0, "wrong-root.der"),
+        (6, 1, "root.der"),
+        (7, 0, "root.der"),
+    ] {
+        let mut c = sha384_case(0, group, 0);
+        c.mode = mode;
+        c.root = root;
+        c.expected = 14;
+        check(&c, &run(&directory, &c));
+        count += 1;
+    }
+    let mut c = sha384_case(0, 0, 0);
+    c.fault = "sendto:error=EPIPE:when=1".into();
+    c.expected = 11;
+    check(&c, &run(&directory, &c));
+    count += 1;
+    c = sha384_case(0, 0, 0);
+    c.mode = 9;
+    c.expected = 14;
+    check(&c, &run(&directory, &c));
+    count += 1;
+    for role in 0..2 {
+        let mut c = sha384_case(role, 0, 0);
+        c.mode = 13;
+        c.expected = 14;
+        let a = run(&directory, &c);
+        check(&c, &a);
+        assert!(entropy_requests(&a.trace).is_empty());
+        assert!(!a
+            .trace
+            .lines()
+            .any(|line| ["fcntl(", "getsockopt(", "getpeername(", "mmap("]
+                .iter()
+                .any(|name| line.starts_with(name))));
+        count += 1;
+    }
+    assert_eq!(count, 15);
+    eprintln!("AES256/SHA384 TCP:{count} limit/failure cases; real12240-byte exporter agrees in full,12241 leaves guards intact, actual send/receive prefix resumption, trust/name/time/host/work errors and suite policy preflight preserve owners");
 }

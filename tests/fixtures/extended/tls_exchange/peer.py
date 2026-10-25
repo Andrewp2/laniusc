@@ -57,11 +57,14 @@ def write_receipt(receipt, status, output, errors):
         target.write(struct.pack('<I', len(field)) + field)
 
 
-def context(directory, server, p256=False):
+def context(directory, server, mode):
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER if server else ssl.PROTOCOL_TLS_CLIENT)
     ctx.minimum_version = ssl.TLSVersion.TLSv1_3
     ctx.maximum_version = ssl.TLSVersion.TLSv1_3
-    ctx.set_ecdh_curve('prime256v1' if p256 else 'X25519')
+    ctx.set_ecdh_curve('prime256v1' if mode in ['p256', 'aes256-p256'] else 'X25519')
+    expected = {'TLS_AES_256_GCM_SHA384'} if mode.startswith('aes256-') else {'TLS_CHACHA20_POLY1305_SHA256', 'TLS_AES_128_GCM_SHA256'}
+    active = {value['name'] for value in ctx.get_ciphers() if value['protocol'] == 'TLSv1.3'}
+    assert active == expected, f'OpenSSL peer suite policy not applied: {active} != {expected}'
     if server:
         ctx.num_tickets = 0
         ctx.load_cert_chain(directory / 'server-chain.pem', directory / 'key.pem')
@@ -181,7 +184,7 @@ def main():
                     raw.sendall(b'not a TLS record')
                     raw.close()
                     return
-                connection = context(directory, True, spec['peer'] == 'p256').wrap_socket(raw, server_side=True)
+                connection = context(directory, True, spec['peer']).wrap_socket(raw, server_side=True)
             else:
                 while not stop.is_set():
                     try:
@@ -194,7 +197,7 @@ def main():
                 if raw is None:
                     return
                 raw.settimeout(5)
-                connection = context(directory, False, spec['peer'] == 'p256').wrap_socket(raw, server_hostname='path.example')
+                connection = context(directory, False, spec['peer']).wrap_socket(raw, server_hostname='path.example')
             receipt['version'] = connection.version()
             receipt['cipher'] = connection.cipher()[0]
             receipt['reused'] = connection.session_reused

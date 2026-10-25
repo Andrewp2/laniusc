@@ -5,7 +5,8 @@ import core::iter;
 import core::mem;
 import core::option;
 import core::result;
-import core::sha256;
+import ext::tls_hash;
+import ext::tls_suite;
 import core::slice;
 import ext::ed25519;
 import ext::service_identity;
@@ -48,17 +49,17 @@ pub struct ClientConfig {
     anchors:core::slice::View<core::slice::View<u8>>,
     reference:ext::service_identity::Reference, unix_time:i64,
     server_name:core::slice::View<u8>, alpn:core::slice::View<u8>,
-    require_alpn:bool, prefer_suite:ext::tls_record::Suite,
+    require_alpn:bool, suites:ext::tls_suite::Policy,
     groups:ext::tls_negotiation::GroupPolicy, initial_share:core::option::Option<ext::tls_negotiation::Group>, limits:Limits
 }
 pub struct ServerConfig {
     chain:core::slice::View<core::slice::View<u8>>, seed:core::slice::View<u8>,
     alpn:core::slice::View<u8>, require_alpn:bool,
-    prefer_suite:ext::tls_record::Suite, groups:ext::tls_negotiation::GroupPolicy, require_cookie:bool, limits:Limits
+    suites:ext::tls_suite::Policy, groups:ext::tls_negotiation::GroupPolicy, require_cookie:bool, limits:Limits
 }
 pub struct Read { written:i32, eof:bool }
 pub struct FeedFailure { cause:Error, consumed:i32 }
-pub struct Negotiated { suite:ext::tls_record::Suite, group:ext::tls_negotiation::Group, alpn:[u8;255], alpn_length:i32 }
+pub struct Negotiated { suite:ext::tls_suite::Suite, group:ext::tls_negotiation::Group, alpn:[u8;255], alpn_length:i32 }
 pub struct Stats {
     received_records:u64, sent_records:u64, controls:u64, handshake_bytes:u64,
     send_generation:u64, receive_generation:u64, send_sequence:u64, receive_sequence:u64,
@@ -77,14 +78,14 @@ pub struct Engine {
     failed:bool, issue:Error, abandoned:bool, first_hello:bool, peer_finished:bool,
     peer_close:bool, close_intent:bool, close_sent:bool,
     random:[u8;32], scalar:[u8;32], public:[u8;32], p_scalar:[u8;32], p_public:[u8;65], seed:[u8;32],
-    transcript:ext::tls_transcript::State,
+    transcript:core::option::Option<ext::tls_transcript::State>, first_hello_length:i32,
     first_offer:core::option::Option<ext::tls_negotiation::Offer>,
     offer:core::option::Option<ext::tls_negotiation::Offer>,
     retry:core::option::Option<ext::tls_negotiation::Retry>,
-    selected:ext::tls_record::Suite, selected_group:ext::tls_negotiation::Group, peer_share:core::slice::View<u8>, alpn:[u8;255], alpn_length:i32,
-    handshake_client:ext::tls_schedule::Secret, handshake_server:ext::tls_schedule::Secret,
-    master:ext::tls_schedule::Master, application_client:ext::tls_schedule::Secret,
-    application_server:ext::tls_schedule::Secret, exporter:ext::tls_schedule::Exporter,
+    selected:core::option::Option<ext::tls_suite::Suite>, selected_group:ext::tls_negotiation::Group, peer_share:core::slice::View<u8>, alpn:[u8;255], alpn_length:i32,
+    handshake_client:core::option::Option<ext::tls_schedule::Secret>, handshake_server:core::option::Option<ext::tls_schedule::Secret>,
+    master:core::option::Option<ext::tls_schedule::Master>, application_client:core::option::Option<ext::tls_schedule::Secret>,
+    application_server:core::option::Option<ext::tls_schedule::Secret>, exporter:core::option::Option<ext::tls_schedule::Exporter>,
     authentication:core::option::Option<ext::tls_authentication::State>, leaf:ext::ed25519::Key32,
     sender:core::option::Option<ext::tls_record::Sealer>, receiver:core::option::Option<ext::tls_record::Opener>,
     send_generation:u64, receive_generation:u64, send_sequence:u64, receive_sequence:u64,
@@ -100,8 +101,6 @@ fn valid<T>(v:core::slice::View<T>)->bool { return v.start>=0 && v.length>=0 && 
 fn region(v:core::slice::View<u8>,at:i32,n:i32)->core::slice::View<u8> { return core::slice::View { values:v.values,start:v.start+at,length:n }; }
 fn byte(v:core::slice::View<u8>,at:i32)->u8 { return v.values[v.start+at]; }
 fn copy(input:core::slice::View<u8>,output:core::slice::View<u8>) { let i:i32=0; while(i<input.length) { output.values[output.start+i]=byte(input,i); i+=1; } }
-fn zero()->ext::tls_schedule::Secret { return ext::tls_schedule::Secret { bytes:[0;32] }; }
-fn suite_number(suite:ext::tls_record::Suite)->u16 { return match(suite) { ext::tls_record::Suite::Aes128GcmSha256 -> 4865, ext::tls_record::Suite::ChaCha20Poly1305Sha256 -> 4867 }; }
 fn path_resource(e:ext::x509_path::Error)->bool { return match(e.kind) { ext::x509_path::ErrorKind::ChainLimit -> true, ext::x509_path::ErrorKind::AnchorLimit -> true, ext::x509_path::ErrorKind::InputLimit -> true, ext::x509_path::ErrorKind::ScratchTooSmall -> true, ext::x509_path::ErrorKind::ItemLimit -> true, ext::x509_path::ErrorKind::WorkLimit -> true, ext::x509_path::ErrorKind::SignatureLimit -> true, _ -> false }; }
 fn auth_resource(e:ext::tls_authentication::Error)->bool { return match(e) { ext::tls_authentication::Error::FrameLimit -> true, ext::tls_authentication::Error::WorkLimit -> true, ext::tls_authentication::Error::SignatureLimit -> true, ext::tls_authentication::Error::ScratchTooSmall -> true, ext::tls_authentication::Error::CertificateLimit -> true, ext::tls_authentication::Error::Path(detail) -> path_resource(detail), _ -> false }; }
 fn negotiation_resource(e:ext::tls_negotiation::Error)->bool { return match(e) { ext::tls_negotiation::Error::InputLimit -> true, ext::tls_negotiation::Error::WorkLimit -> true, ext::tls_negotiation::Error::BufferTooSmall -> true, _ -> false }; }
@@ -145,6 +144,16 @@ pub fn entropy_layout(policy:ext::tls_negotiation::GroupPolicy)->core::result::R
 // Source-counted conservative admission units; see tls-group-integration-plan.
 // P-256 shared-secret bound: 8712*6144 + 256*32768 + 65536 < 64 Mi.
 const P256_WORK:u64=67108864;
+// SHA384 fresh finalization and HKDF expansion. Callers preflight label<=249,
+// context<=255/output<=12240; external context is bounded by i32 metadata.
+fn sha384_blocks(n:u64)->u64 { return (n+144)/128; }
+fn sha384_expand_work(label:i32,context:i32,output:i32)->u64 {
+    if(output==0) { return 0; }
+    let blocks:u64=((output as u64)+47)/48; let info:u64=10+(label as u64)+(context as u64);
+    let compressions:u64=2+sha384_blocks(info+1)+1+(blocks-1)*(sha384_blocks(info+49)+1);
+    return 16384*compressions+8192+4096*blocks+8*((output as u64)+info*blocks);
+}
+
 fn make(side:Role,buffers:Buffers,limits:Limits,policy:ext::tls_negotiation::GroupPolicy,entropy:core::slice::View<u8>)->core::result::Result<Engine,Error> {
     if(!valid(entropy)) { return core::result::Err(Error::Bounds); }
     let layout:core::result::Result<EntropyLayout,Error> = entropy_layout(policy); if(layout.is_err()) { return core::result::Err(layout.unwrap_err()); } let slots:EntropyLayout=layout.unwrap();
@@ -163,7 +172,7 @@ fn make(side:Role,buffers:Buffers,limits:Limits,policy:ext::tls_negotiation::Gro
     if(slots.x25519_offset.is_some()) { let derived:core::result::Result<ext::x25519::Key,ext::x25519::Error> = ext::x25519::public_key(core::slice::View { values:scalar,start:0,length:32 }); if(derived.is_err()) { return core::result::Err(Error::Crypto); } public=derived.unwrap().bytes; }
     let step:i32=0; if(match(side) { Role::Client -> false, Role::Server -> true }) { step=10; }
     let empty:core::slice::View<u8> = region(b.handshake,0,0);
-    return core::result::Ok(Engine { side:side,step:step,buffers:b,limits:limits,client_config:core::option::None(),server_config:core::option::None(),path_budget:ext::x509_path::budget(limits.path).unwrap(),negotiation_budget:ext::tls_negotiation::budget(limits.negotiation).unwrap(),records_left:limits.max_records,controls_left:limits.max_controls,handshake_left:limits.max_handshake_bytes,updates_left:limits.max_key_updates,work_left:limits.max_work-cost,received:0,sent:0,controls:0,handshake_bytes:0,failed:false,issue:Error::Internal,abandoned:false,first_hello:false,peer_finished:false,peer_close:false,close_intent:false,close_sent:false,random:random,scalar:scalar,public:public,p_scalar:p_scalar,p_public:p_public,seed:[0;32],transcript:ext::tls_transcript::new(),first_offer:core::option::None(),offer:core::option::None(),retry:core::option::None(),selected:ext::tls_record::Suite::ChaCha20Poly1305Sha256,selected_group:policy.preferred,peer_share:empty,alpn:[0;255],alpn_length:0,handshake_client:zero(),handshake_server:zero(),master:ext::tls_schedule::Master { secret:zero() },application_client:zero(),application_server:zero(),exporter:ext::tls_schedule::Exporter { secret:zero() },authentication:core::option::None(),leaf:ext::ed25519::Key32 { bytes:[0;32] },sender:core::option::None(),receiver:core::option::None(),send_generation:0,receive_generation:0,send_sequence:0,receive_sequence:0,record:ext::tls_framing::record_decoder(b.record,16640).unwrap(),handshake:ext::tls_framing::handshake_decoder(b.handshake,limits.max_handshake_body).unwrap(),content:empty,content_at:0,content_kind:0,content_active:false,content_epoch:0,partial_epoch:0,tx:empty,tx_at:0,tx_action:0,tx_protected:false,pending_length:0,pending_at:0,pending_action:0,pending_fatal:false,app_length:0,app_at:0,update_intent:false,update_request:false,update_response:false });
+    return core::result::Ok(Engine { side:side,step:step,buffers:b,limits:limits,client_config:core::option::None(),server_config:core::option::None(),path_budget:ext::x509_path::budget(limits.path).unwrap(),negotiation_budget:ext::tls_negotiation::budget(limits.negotiation).unwrap(),records_left:limits.max_records,controls_left:limits.max_controls,handshake_left:limits.max_handshake_bytes,updates_left:limits.max_key_updates,work_left:limits.max_work-cost,received:0,sent:0,controls:0,handshake_bytes:0,failed:false,issue:Error::Internal,abandoned:false,first_hello:false,peer_finished:false,peer_close:false,close_intent:false,close_sent:false,random:random,scalar:scalar,public:public,p_scalar:p_scalar,p_public:p_public,seed:[0;32],transcript:core::option::None(),first_hello_length:0,first_offer:core::option::None(),offer:core::option::None(),retry:core::option::None(),selected:core::option::None(),selected_group:policy.preferred,peer_share:empty,alpn:[0;255],alpn_length:0,handshake_client:core::option::None(),handshake_server:core::option::None(),master:core::option::None(),application_client:core::option::None(),application_server:core::option::None(),exporter:core::option::None(),authentication:core::option::None(),leaf:ext::ed25519::Key32 { bytes:[0;32] },sender:core::option::None(),receiver:core::option::None(),send_generation:0,receive_generation:0,send_sequence:0,receive_sequence:0,record:ext::tls_framing::record_decoder(b.record,16640).unwrap(),handshake:ext::tls_framing::handshake_decoder(b.handshake,limits.max_handshake_body).unwrap(),content:empty,content_at:0,content_kind:0,content_active:false,content_epoch:0,partial_epoch:0,tx:empty,tx_at:0,tx_action:0,tx_protected:false,pending_length:0,pending_at:0,pending_action:0,pending_fatal:false,app_length:0,app_at:0,update_intent:false,update_request:false,update_response:false });
 }
 
 // Pure-engine seam: entropy MUST match entropy_layout and contain independent
@@ -178,8 +187,9 @@ pub fn client(config:ClientConfig,buffers:Buffers,entropy:core::slice::View<u8>)
     else { reference=ext::service_identity::ip_reference(refbytes); }
     if(reference.is_err() || config.anchors.length>config.limits.path.max_anchors || (config.require_alpn && config.alpn.length==0)) { return core::result::Err(Error::InvalidConfig); }
     if(config.initial_share.is_some()) { let g:u16=ext::tls_negotiation::group_id(config.initial_share.unwrap()); if(g!=ext::tls_negotiation::group_id(config.groups.preferred) && (config.groups.fallback.is_none() || g!=ext::tls_negotiation::group_id(config.groups.fallback.unwrap()))) { return core::result::Err(Error::InvalidConfig); } }
+    if(ext::tls_suite::validate_policy(config.suites).is_err()) { return core::result::Err(Error::InvalidConfig); }
     let made:core::result::Result<Engine,Error> = make(Role::Client,buffers,config.limits,config.groups,entropy); if(made.is_err()) { return made; }
-    let engine:Engine=made.unwrap(); engine.client_config=core::option::Some(config); engine.selected=config.prefer_suite;
+    let engine:Engine=made.unwrap(); engine.client_config=core::option::Some(config);
     let prepared:core::result::Result<i32,Error> = engine.prepare_client_hello(false); if(prepared.is_err()) { return core::result::Err(prepared.unwrap_err()); }
     return core::result::Ok(engine);
 }
@@ -187,8 +197,9 @@ pub fn server(config:ServerConfig,buffers:Buffers,entropy:core::slice::View<u8>)
     if(!valid(config.seed) || !valid(config.alpn)) { return core::result::Err(Error::Bounds); }
     let chain:core::result::Result<i32,Error> = descriptors(config.chain,8,config.limits.path.max_input); if(chain.is_err()) { return core::result::Err(chain.unwrap_err()); }
     if(config.seed.length!=32 || config.chain.length>config.limits.path.max_chain || config.alpn.length>255 || (config.require_alpn && config.alpn.length==0)) { return core::result::Err(Error::InvalidConfig); }
+    if(ext::tls_suite::validate_policy(config.suites).is_err()) { return core::result::Err(Error::InvalidConfig); }
     let made:core::result::Result<Engine,Error> = make(Role::Server,buffers,config.limits,config.groups,entropy); if(made.is_err()) { return made; }
-    let engine:Engine=made.unwrap(); engine.server_config=core::option::Some(config); engine.selected=config.prefer_suite;
+    let engine:Engine=made.unwrap(); engine.server_config=core::option::Some(config);
     let i:i32=0; while(i<32) { engine.seed[i]=byte(config.seed,i); i+=1; }
     let charged:core::result::Result<i32,Error> = engine.work(1048576); if(charged.is_err()) { return core::result::Err(charged.unwrap_err()); }
     let public:core::result::Result<ext::ed25519::Key32,ext::ed25519::Error> = ext::ed25519::public_key(core::slice::View { values:engine.seed,start:0,length:32 }); if(public.is_err()) { return core::result::Err(Error::Credential); }
@@ -211,9 +222,20 @@ impl Engine {
     fn is_client(&self)->bool { return match(self.side) { Role::Client -> true, Role::Server -> false }; }
     fn work(&self,n:u64)->core::result::Result<i32,Error> { if(n>self.work_left) { return core::result::Err(Error::Limit); } self.work_left-=n; return core::result::Ok(0); }
     fn control(&self)->core::result::Result<i32,Error> { if(self.controls_left==0) { return core::result::Err(Error::Limit); } self.controls_left-=1; self.controls+=1; return core::result::Ok(0); }
-    fn charge_record(&self,length:i32,sending:bool)->core::result::Result<i32,Error> {
+    fn sha384(&self)->bool { return self.selected.is_some() && ext::tls_hash::hash_length(ext::tls_suite::hash(self.selected.unwrap()))==48; }
+    fn hash_length(&self)->i32 { return ext::tls_hash::hash_length(ext::tls_suite::hash(self.selected.unwrap())); }
+    // See the source-counted SHA384/AES256 table in the connection guide.
+    // Callers bound all counts to i32 frame lengths or <=255 HKDF blocks;
+    // products/sums below therefore remain well inside u64.
+    fn hash_work(&self,compressions:u64,copies:u64)->core::result::Result<i32,Error> { if(!self.sha384()) { return core::result::Ok(0); } return self.work(16384*compressions+copies); }
+    fn record_owner_work(&self)->core::result::Result<i32,Error> { if(!self.sha384()) { return core::result::Ok(0); } return self.work(8*16384+32768+196608); }
+    fn charge_record(&self,length:i32,sending:bool,protected:bool)->core::result::Result<i32,Error> {
         if(self.records_left==0) { return core::result::Err(Error::Limit); }
-        let charged:core::result::Result<i32,Error> = self.work(1024+8*(length as u64)); if(charged.is_err()) { return charged; }
+        let cost:u64=1024+8*(length as u64);
+        // Only AES256's extra four rounds are new. The incoming wire length
+        // conservatively dominates its inner length; outgoing includes type.
+        if(protected && self.sha384()) { cost+=131072*(1+((length as u64)+16)/16); }
+        let charged:core::result::Result<i32,Error> = self.work(cost); if(charged.is_err()) { return charged; }
         self.records_left-=1; if(sending) { self.sent+=1; } else { self.received+=1; } return core::result::Ok(0);
     }
     fn charge_handshake(&self,length:i32)->core::result::Result<i32,Error> {
@@ -221,8 +243,31 @@ impl Engine {
         let charged:core::result::Result<i32,Error> = self.work(4096+32*(length as u64)); if(charged.is_err()) { return charged; }
         self.handshake_left-=length as u64; self.handshake_bytes+=length as u64; return core::result::Ok(0);
     }
+    fn bind_suite(&self,suite:ext::tls_suite::Suite)->core::result::Result<i32,Error> {
+        if(self.selected.is_some()) { if(ext::tls_suite::id(self.selected.unwrap())!=ext::tls_suite::id(suite)) { return core::result::Err(Error::Negotiation(ext::tls_negotiation::Error::Retry)); } if(self.transcript.is_none()) { return core::result::Err(Error::Internal); } return core::result::Ok(0); }
+        if(ext::tls_hash::hash_length(ext::tls_suite::hash(suite))==48) { let charged:core::result::Result<i32,Error> = self.work(4096); if(charged.is_err()) { return charged; } }
+        let transcript:ext::tls_transcript::State=ext::tls_transcript::new(ext::tls_suite::hash(suite)); self.selected=core::option::Some(suite); self.transcript=core::option::Some(transcript); return core::result::Ok(0);
+    }
+    fn bind_client_suite(&self,suite:ext::tls_suite::Suite)->core::result::Result<i32,Error> {
+        let first:bool=self.selected.is_none(); let bound:core::result::Result<i32,Error> = self.bind_suite(suite); if(bound.is_err()) { return bound; }
+        // CH1 was charged when built; hash its retained exact bytes once, with
+        // no second handshake-byte debit. HRR can never rebind the algorithm.
+        if(first) { if(self.first_hello_length<4) { return core::result::Err(Error::Internal); } return self.append(region(self.hello_part(false),0,self.first_hello_length)); } return core::result::Ok(0);
+    }
     fn append(&self,frame:core::slice::View<u8>)->core::result::Result<i32,Error> {
-        let updated:core::result::Result<i32,ext::tls_transcript::Error> = self.transcript.update(frame); if(updated.is_err()) { return core::result::Err(Error::Crypto); } return core::result::Ok(frame.length);
+        if(self.transcript.is_none()) { return core::result::Err(Error::Internal); }
+        let charged:core::result::Result<i32,Error> = self.hash_work(((frame.length as u64)+127)/128+1,4096+8*(frame.length as u64)); if(charged.is_err()) { return charged; }
+        let transcript:ext::tls_transcript::State=self.transcript.unwrap(); let updated:core::result::Result<i32,ext::tls_transcript::Error> = transcript.update(frame); if(updated.is_err()) { return core::result::Err(Error::Crypto); } self.transcript=core::option::Some(transcript); return core::result::Ok(frame.length);
+    }
+    fn snapshot(&self)->core::result::Result<ext::tls_hash::Digest,Error> {
+        if(self.transcript.is_none()) { return core::result::Err(Error::Internal); }
+        let charged:core::result::Result<i32,Error> = self.hash_work(2,4096); if(charged.is_err()) { return core::result::Err(charged.unwrap_err()); }
+        let transcript:ext::tls_transcript::State=self.transcript.unwrap(); return core::result::Ok(transcript.snapshot());
+    }
+    fn rewrite_hrr(&self,frame:core::slice::View<u8>)->core::result::Result<i32,Error> {
+        if(self.transcript.is_none()) { return core::result::Err(Error::Internal); }
+        let charged:core::result::Result<i32,Error> = self.hash_work(2+((52+(frame.length as u64))+127)/128+1,8192+8*(52+(frame.length as u64))); if(charged.is_err()) { return charged; }
+        let transcript:ext::tls_transcript::State=self.transcript.unwrap(); let rewritten:core::result::Result<i32,ext::tls_transcript::Error> = transcript.rewrite_for_hrr(frame); if(rewritten.is_err()) { return core::result::Err(Error::Crypto); } self.transcript=core::option::Some(transcript); return core::result::Ok(frame.length);
     }
     fn hello_part(&self,second:bool)->core::slice::View<u8> { let at:i32=0; if(second) { at=self.limits.max_hello_frame; } return region(self.buffers.hello,at,self.limits.max_hello_frame); }
     fn cookie_part(&self)->core::slice::View<u8> { let n:i32=self.limits.max_hello_frame; if(n>65533) { n=65533; } return region(self.buffers.hello,2*self.limits.max_hello_frame,n); }
@@ -241,8 +286,8 @@ impl Engine {
         let cookie:core::slice::View<u8> = empty; if(second) { cookie=self.retry.unwrap().cookie; }
         let extensions:core::result::Result<i32,ext::tls_negotiation::Error> = ext::tls_negotiation::write_client_extensions(config.groups,share,config.server_name,config.alpn,cookie,self.buffers.handshake,self.negotiation_budget.borrow());
         if(extensions.is_err()) { return core::result::Err(Error::Negotiation(extensions.unwrap_err())); }
-        let suites:[u8;4]=[19,3,19,1]; if(suite_number(config.prefer_suite)==4865) { suites=[19,1,19,3]; }
-        let hello:ext::tls_handshake::ClientHello=ext::tls_handshake::ClientHello { random:core::slice::View { values:self.random,start:0,length:32 },session_id:empty,cipher_suites:core::slice::View { values:suites,start:0,length:4 },extensions:region(self.buffers.handshake,0,extensions.unwrap()) };
+        let suites:[u8;6]=[0;6]; let index:i32=0; while(index<config.suites.length) { let id:u16=ext::tls_suite::id(config.suites.order[index]); suites[2*index]=(id>>8) as u8; suites[2*index+1]=id as u8; index+=1; }
+        let hello:ext::tls_handshake::ClientHello=ext::tls_handshake::ClientHello { random:core::slice::View { values:self.random,start:0,length:32 },session_id:empty,cipher_suites:core::slice::View { values:suites,start:0,length:2*config.suites.length },extensions:region(self.buffers.handshake,0,extensions.unwrap()) };
         let written:core::result::Result<i32,ext::tls_handshake::Error> = ext::tls_handshake::write_client_hello(hello,self.hello_part(second)); if(written.is_err()) { return core::result::Err(Error::Negotiation(ext::tls_negotiation::Error::Codec(written.unwrap_err()))); }
         let frame:core::slice::View<u8> = region(self.hello_part(second),0,written.unwrap());
         let parsed:ext::tls_handshake::ClientHello=ext::tls_handshake::parse_client_hello(region(frame,4,frame.length-4)).unwrap();
@@ -251,7 +296,8 @@ impl Engine {
         else { offer=ext::tls_negotiation::inspect_client_hello(parsed,self.negotiation_budget.borrow()); }
         if(offer.is_err()) { return core::result::Err(Error::Negotiation(offer.unwrap_err())); }
         self.offer=core::option::Some(offer.unwrap()); if(!second) { self.first_offer=self.offer; }
-        return self.start_tx(frame,false,1,true);
+        if(!second) { self.first_hello_length=frame.length; }
+        return self.start_tx(frame,false,1,second);
     }
     // Temporary views into inline key material are used only by immediate
     // writers/crypto calls; retained Offer views always use hello backing.
@@ -271,28 +317,32 @@ impl Engine {
             let charged:core::result::Result<i32,Error> = self.work(P256_WORK+131072); if(charged.is_err()) { return charged; }
             let shared:core::result::Result<ext::p256::SharedSecret,ext::p256::Error> = ext::p256::shared_secret(core::slice::View { values:self.p_scalar,start:0,length:32 },peer); if(shared.is_err()) { return core::result::Err(Error::Crypto); } key=shared.unwrap().bytes;
         }
-        let early:ext::tls_schedule::Early=ext::tls_schedule::no_psk();
-        let schedule:ext::tls_schedule::Handshake=early.handshake(core::slice::View { values:key,start:0,length:32 }).unwrap(); let hash:core::sha256::Digest=self.transcript.snapshot();
-        let digest:core::slice::View<u8> = core::slice::View { values:hash.bytes,start:0,length:32 };
-        self.handshake_client=schedule.traffic(ext::tls_schedule::Side::Client,digest).unwrap(); self.handshake_server=schedule.traffic(ext::tls_schedule::Side::Server,digest).unwrap(); self.master=schedule.master();
-        let receiving:ext::tls_schedule::Secret=self.handshake_client; if(self.is_client()) { receiving=self.handshake_server; }
-        self.receiver=core::option::Some(ext::tls_record::opener(self.selected,receiving.view()).unwrap()); self.receive_generation=0; self.receive_sequence=0;
+        let hashed:core::result::Result<i32,Error> = self.hash_work(30,65536); if(hashed.is_err()) { return hashed; }
+        let early:ext::tls_schedule::Early=ext::tls_schedule::no_psk(ext::tls_suite::hash(self.selected.unwrap()));
+        let schedule:ext::tls_schedule::Handshake=early.handshake(core::slice::View { values:key,start:0,length:32 }).unwrap(); let snapshot:core::result::Result<ext::tls_hash::Digest,Error> = self.snapshot(); if(snapshot.is_err()) { return core::result::Err(snapshot.unwrap_err()); } let hash:ext::tls_hash::Digest=snapshot.unwrap();
+
+        self.handshake_client=core::option::Some(schedule.traffic(ext::tls_schedule::Side::Client,hash).unwrap()); self.handshake_server=core::option::Some(schedule.traffic(ext::tls_schedule::Side::Server,hash).unwrap()); self.master=core::option::Some(schedule.master());
+        let receiving:ext::tls_schedule::Secret=self.handshake_client.unwrap(); if(self.is_client()) { receiving=self.handshake_server.unwrap(); }
+        let opened:core::result::Result<i32,Error> = self.record_owner_work(); if(opened.is_err()) { return opened; }
+        self.receiver=core::option::Some(ext::tls_record::opener(self.selected.unwrap(),receiving).unwrap()); self.receive_generation=0; self.receive_sequence=0;
         if(self.is_client()) {
-            self.sender=core::option::Some(ext::tls_record::sealer(self.selected,self.handshake_client.view()).unwrap());
+            let sealed:core::result::Result<i32,Error> = self.record_owner_work(); if(sealed.is_err()) { return sealed; }
+            self.sender=core::option::Some(ext::tls_record::sealer(self.selected.unwrap(),self.handshake_client.unwrap()).unwrap());
             let config:ClientConfig=self.client_config.unwrap(); let schemes:[u16;1]=[2055];
-            let auth:core::result::Result<ext::tls_authentication::State,ext::tls_authentication::Error> = ext::tls_authentication::server(self.transcript,self.handshake_server.view(),core::slice::View { values:schemes,start:0,length:1 },ext::tls_authentication::Config { anchors:config.anchors,reference:config.reference,unix_time:config.unix_time,max_frame:self.limits.max_handshake_body+4 });
+            let auth:core::result::Result<ext::tls_authentication::State,ext::tls_authentication::Error> = ext::tls_authentication::server(self.transcript.unwrap(),self.handshake_server.unwrap(),core::slice::View { values:schemes,start:0,length:1 },ext::tls_authentication::Config { anchors:config.anchors,reference:config.reference,unix_time:config.unix_time,max_frame:self.limits.max_handshake_body+4 });
             if(auth.is_err()) { return core::result::Err(Error::Authentication(auth.unwrap_err())); } self.authentication=core::option::Some(auth.unwrap());
         }
         return core::result::Ok(0);
     }
     fn derive_application(&self)->core::result::Result<i32,Error> {
         let charged:core::result::Result<i32,Error> = self.work(131072); if(charged.is_err()) { return charged; }
-        let hash:core::sha256::Digest=self.transcript.snapshot(); let digest:core::slice::View<u8> = core::slice::View { values:hash.bytes,start:0,length:32 };
-        self.application_client=self.master.traffic(ext::tls_schedule::Side::Client,digest).unwrap(); self.application_server=self.master.traffic(ext::tls_schedule::Side::Server,digest).unwrap(); self.exporter=self.master.exporter(digest).unwrap();
+        let hashed:core::result::Result<i32,Error> = self.hash_work(12,49152); if(hashed.is_err()) { return hashed; }
+        let snapshot:core::result::Result<ext::tls_hash::Digest,Error> = self.snapshot(); if(snapshot.is_err()) { return core::result::Err(snapshot.unwrap_err()); } let hash:ext::tls_hash::Digest=snapshot.unwrap();
+        let master:ext::tls_schedule::Master=self.master.unwrap(); self.application_client=core::option::Some(master.traffic(ext::tls_schedule::Side::Client,hash).unwrap()); self.application_server=core::option::Some(master.traffic(ext::tls_schedule::Side::Server,hash).unwrap()); self.exporter=core::option::Some(master.exporter(hash).unwrap());
         return core::result::Ok(0);
     }
-    fn application_sender(&self) { let secret:ext::tls_schedule::Secret=self.application_server; if(self.is_client()) { secret=self.application_client; } self.sender=core::option::Some(ext::tls_record::sealer(self.selected,secret.view()).unwrap()); self.send_generation=1; self.send_sequence=0; }
-    fn application_receiver(&self) { let secret:ext::tls_schedule::Secret=self.application_client; if(self.is_client()) { secret=self.application_server; } self.receiver=core::option::Some(ext::tls_record::opener(self.selected,secret.view()).unwrap()); self.receive_generation=1; self.receive_sequence=0; }
+    fn application_sender(&self)->core::result::Result<i32,Error> { let charged:core::result::Result<i32,Error> = self.record_owner_work(); if(charged.is_err()) { return charged; } let secret:ext::tls_schedule::Secret=self.application_server.unwrap(); if(self.is_client()) { secret=self.application_client.unwrap(); } self.sender=core::option::Some(ext::tls_record::sealer(self.selected.unwrap(),secret).unwrap()); self.send_generation=1; self.send_sequence=0; return core::result::Ok(0); }
+    fn application_receiver(&self)->core::result::Result<i32,Error> { let charged:core::result::Result<i32,Error> = self.record_owner_work(); if(charged.is_err()) { return charged; } let secret:ext::tls_schedule::Secret=self.application_client.unwrap(); if(self.is_client()) { secret=self.application_server.unwrap(); } self.receiver=core::option::Some(ext::tls_record::opener(self.selected.unwrap(),secret).unwrap()); self.receive_generation=1; self.receive_sequence=0; return core::result::Ok(0); }
     fn prepare_server_hello(&self,retry:bool)->core::result::Result<i32,Error> {
         let storage:[u8;128]=[0;128]; let extensions:core::slice::View<u8> = core::slice::View { values:storage,start:0,length:128 };
         let written:core::result::Result<i32,ext::tls_negotiation::Error> = core::result::Err(ext::tls_negotiation::Error::Retry);
@@ -300,11 +350,11 @@ impl Engine {
         if(retry) { let choice:ext::tls_negotiation::Retry=self.retry.unwrap(); written=ext::tls_negotiation::write_retry_extensions(choice.requested,choice.cookie,extensions,self.negotiation_budget.borrow()); random=ext::tls_handshake::hello_retry_random(); }
         else { written=ext::tls_negotiation::write_server_extensions(self.local_share(self.selected_group),extensions,self.negotiation_budget.borrow()); }
         if(written.is_err()) { return core::result::Err(Error::Negotiation(written.unwrap_err())); }
-        let hello:ext::tls_handshake::ServerHello=ext::tls_handshake::ServerHello { random:core::slice::View { values:random,start:0,length:32 },session_id:self.offer.unwrap().hello.session_id,cipher_suite:suite_number(self.selected),extensions:region(extensions,0,written.unwrap()) };
+        let hello:ext::tls_handshake::ServerHello=ext::tls_handshake::ServerHello { random:core::slice::View { values:random,start:0,length:32 },session_id:self.offer.unwrap().hello.session_id,cipher_suite:ext::tls_suite::id(self.selected.unwrap()),extensions:region(extensions,0,written.unwrap()) };
         let encoded:core::result::Result<i32,ext::tls_handshake::Error> = ext::tls_handshake::write_server_hello(hello,self.buffers.handshake); if(encoded.is_err()) { return core::result::Err(Error::Negotiation(ext::tls_negotiation::Error::Codec(encoded.unwrap_err()))); }
         let frame:core::slice::View<u8> = region(self.buffers.handshake,0,encoded.unwrap());
         if(retry) {
-            let rewritten:core::result::Result<i32,ext::tls_transcript::Error> = self.transcript.rewrite_for_hrr(frame); if(rewritten.is_err()) { return core::result::Err(Error::Crypto); }
+            let rewritten:core::result::Result<i32,Error> = self.rewrite_hrr(frame); if(rewritten.is_err()) { return rewritten; }
             return self.start_tx(frame,false,2,false);
         }
         let started:core::result::Result<i32,Error> = self.start_tx(frame,false,3,true); if(started.is_err()) { return started; }
@@ -328,26 +378,26 @@ impl Engine {
     fn prepare_cv(&self)->core::result::Result<i32,Error> {
         if(self.path_budget.signatures_left==0) { return core::result::Err(Error::Limit); }
         let charged:core::result::Result<i32,Error> = self.work(1048576); if(charged.is_err()) { return charged; } self.path_budget.signatures_left-=1;
-        let hash:core::sha256::Digest=self.transcript.snapshot(); let signed:[u8;130]=[0;130];
-        let context:[u8;33]=[84,76,83,32,49,46,51,44,32,115,101,114,118,101,114,32,67,101,114,116,105,102,105,99,97,116,101,86,101,114,105,102,121];
-        let i:i32=0; while(i<64) { signed[i]=32; i+=1; } i=0; while(i<33) { signed[64+i]=context[i]; i+=1; } i=0; while(i<32) { signed[98+i]=hash.bytes[i]; i+=1; }
-        let signature:core::result::Result<ext::ed25519::Signature64,ext::ed25519::Error> = ext::ed25519::sign(core::slice::View { values:self.seed,start:0,length:32 },core::slice::View { values:signed,start:0,length:130 }); if(signature.is_err()) { return core::result::Err(Error::Crypto); }
+        let snapshot:core::result::Result<ext::tls_hash::Digest,Error> = self.snapshot(); if(snapshot.is_err()) { return core::result::Err(snapshot.unwrap_err()); } let hash:ext::tls_hash::Digest=snapshot.unwrap(); let signed:ext::tls_authentication::CVInput=ext::tls_authentication::certificate_verify_input(ext::tls_schedule::Side::Server,hash);
+        let copied:core::result::Result<i32,Error> = self.hash_work(0,8192); if(copied.is_err()) { return copied; }
+        let signature:core::result::Result<ext::ed25519::Signature64,ext::ed25519::Error> = ext::ed25519::sign(core::slice::View { values:self.seed,start:0,length:32 },signed.view()); if(signature.is_err()) { return core::result::Err(Error::Crypto); }
         let proof:ext::ed25519::Signature64=signature.unwrap();
         let written:core::result::Result<i32,ext::tls_handshake::Error> = ext::tls_handshake::write_certificate_verify(ext::tls_handshake::CertificateVerify { algorithm:2055,signature:core::slice::View { values:proof.bytes,start:0,length:64 } },self.buffers.handshake); if(written.is_err()) { return core::result::Err(Error::Internal); }
         return self.start_tx(region(self.buffers.handshake,0,written.unwrap()),true,6,true);
     }
     fn prepare_finished(&self)->core::result::Result<i32,Error> {
         let charged:core::result::Result<i32,Error> = self.work(32768); if(charged.is_err()) { return charged; }
-        let hash:core::sha256::Digest=self.transcript.snapshot(); let secret:ext::tls_schedule::Secret=self.handshake_server; if(self.is_client()) { secret=self.handshake_client; }
-        let verify:ext::tls_schedule::Secret=ext::tls_schedule::finished(secret.view(),core::slice::View { values:hash.bytes,start:0,length:32 }).unwrap();
-        let written:core::result::Result<i32,ext::tls_handshake::Error> = ext::tls_handshake::write_finished(ext::tls_handshake::Finished { verify_data:verify.view() },32,self.buffers.handshake); if(written.is_err()) { return core::result::Err(Error::Internal); }
+        let hashed:core::result::Result<i32,Error> = self.hash_work(8,32768); if(hashed.is_err()) { return hashed; }
+        let snapshot:core::result::Result<ext::tls_hash::Digest,Error> = self.snapshot(); if(snapshot.is_err()) { return core::result::Err(snapshot.unwrap_err()); } let hash:ext::tls_hash::Digest=snapshot.unwrap(); let secret:ext::tls_schedule::Secret=self.handshake_server.unwrap(); if(self.is_client()) { secret=self.handshake_client.unwrap(); }
+        let verify:ext::tls_schedule::Secret=ext::tls_schedule::finished(secret,hash).unwrap();
+        let written:core::result::Result<i32,ext::tls_handshake::Error> = ext::tls_handshake::write_finished(ext::tls_handshake::Finished { verify_data:verify.view() },ext::tls_hash::hash_length(verify.algorithm),self.buffers.handshake); if(written.is_err()) { return core::result::Err(Error::Internal); }
         let action:i32=7; if(self.is_client()) { action=8; }
         let started:core::result::Result<i32,Error> = self.start_tx(region(self.buffers.handshake,0,written.unwrap()),true,action,true); if(started.is_err()) { return started; }
         if(!self.is_client()) { return self.derive_application(); } return started;
     }
     fn seal_record(&self,content:core::slice::View<u8>,kind:u8,action:i32,protected:bool)->core::result::Result<i32,Error> {
         if(self.pending_length!=0) { return core::result::Err(Error::Internal); }
-        let charged:core::result::Result<i32,Error> = self.charge_record(content.length,true); if(charged.is_err()) { return charged; }
+        let charged:core::result::Result<i32,Error> = self.charge_record(content.length,true,protected); if(charged.is_err()) { return charged; }
         let length:i32=content.length+5;
         if(protected) {
             if(self.sender.is_none()) { return core::result::Err(Error::Internal); }
@@ -375,7 +425,7 @@ fn negotiation_alert(e:ext::tls_negotiation::Error)->u8 { return match(e) { ext:
 fn answer_alert(e:Error)->bool { return match(e) { Error::PeerAlert(description) -> false, Error::Truncated -> false, Error::Aborted -> false, _ -> true }; }
 impl Engine {
     fn forget_keys(&self) {
-        self.scalar=[0;32]; self.p_scalar=[0;32]; self.seed=[0;32]; self.handshake_client=zero(); self.handshake_server=zero(); self.application_client=zero(); self.application_server=zero(); self.master=ext::tls_schedule::Master { secret:zero() }; self.exporter=ext::tls_schedule::Exporter { secret:zero() }; self.authentication=core::option::None(); self.leaf=ext::ed25519::Key32 { bytes:[0;32] }; self.sender=core::option::None(); self.receiver=core::option::None();
+        self.scalar=[0;32]; self.p_scalar=[0;32]; self.seed=[0;32]; self.handshake_client=core::option::None(); self.handshake_server=core::option::None(); self.application_client=core::option::None(); self.application_server=core::option::None(); self.master=core::option::None(); self.exporter=core::option::None(); self.transcript=core::option::None(); self.selected=core::option::None(); self.authentication=core::option::None(); self.leaf=ext::ed25519::Key32 { bytes:[0;32] }; self.sender=core::option::None(); self.receiver=core::option::None();
     }
     fn fail(&self,e:Error)->Error {
         if(self.failed) { return self.issue; }
@@ -392,13 +442,14 @@ impl Engine {
     fn after_ack(&self,action:i32)->core::result::Result<i32,Error> {
         if(action==1) { self.first_hello=true; self.step=1; }
         if(action==2) { self.step=12; }
-        if(action==3) { self.sender=core::option::Some(ext::tls_record::sealer(self.selected,self.handshake_server.view()).unwrap()); self.send_sequence=0; self.step=14; }
+        if(action==3) { let charged:core::result::Result<i32,Error> = self.record_owner_work(); if(charged.is_err()) { return charged; } self.sender=core::option::Some(ext::tls_record::sealer(self.selected.unwrap(),self.handshake_server.unwrap()).unwrap()); self.send_sequence=0; self.step=14; }
         if(action==4) { self.step=15; } if(action==5) { self.step=16; } if(action==6) { self.step=17; }
-        if(action==7) { self.application_sender(); self.step=18; }
-        if(action==8) { self.application_sender(); self.step=4; }
+        if(action==7) { let installed:core::result::Result<i32,Error> = self.application_sender(); if(installed.is_err()) { return installed; } self.step=18; }
+        if(action==8) { let installed:core::result::Result<i32,Error> = self.application_sender(); if(installed.is_err()) { return installed; } self.step=4; }
         if(action==9) {
             if(self.send_generation==18446744073709551615 || self.sender.is_none()) { return core::result::Err(Error::Limit); }
             let charged:core::result::Result<i32,Error> = self.work(32768); if(charged.is_err()) { return charged; }
+            let extra:core::result::Result<i32,Error> = self.hash_work(12,49152+196608); if(extra.is_err()) { return extra; }
             let sender:ext::tls_record::Sealer=self.sender.unwrap(); let updated:core::result::Result<i32,ext::tls_record::Error> = sender.key_update(); self.sender=core::option::Some(sender);
             if(updated.is_err()) { return core::result::Err(Error::Record(updated.unwrap_err())); } self.send_generation+=1; self.send_sequence=0;
         }
@@ -414,29 +465,29 @@ impl Engine {
         let selection:core::option::Option<ext::tls_negotiation::Selection> = match(decision) { ext::tls_negotiation::Decision::Selected(value) -> core::option::Some(value), ext::tls_negotiation::Decision::Retry(value) -> core::option::None() };
         let request:core::option::Option<ext::tls_negotiation::Retry> = match(decision) { ext::tls_negotiation::Decision::Selected(value) -> core::option::None(), ext::tls_negotiation::Decision::Retry(value) -> core::option::Some(value) };
         if(request.is_some()) {
-            let retry:ext::tls_negotiation::Retry=request.unwrap(); self.selected=ext::tls_negotiation::record_suite(retry.suite).unwrap();
+            let retry:ext::tls_negotiation::Retry=request.unwrap(); let bound:core::result::Result<i32,Error> = self.bind_client_suite(ext::tls_suite::from_id(retry.suite).unwrap()); if(bound.is_err()) { return bound; }
             if(retry.cookie.length>self.cookie_part().length) { return core::result::Err(Error::Limit); }
             copy(retry.cookie,self.cookie_part()); self.retry=core::option::Some(ext::tls_negotiation::Retry { suite:retry.suite,requested:retry.requested,cookie:region(self.cookie_part(),0,retry.cookie.length) });
-            let rewritten:core::result::Result<i32,ext::tls_transcript::Error> = self.transcript.rewrite_for_hrr(frame); if(rewritten.is_err()) { return core::result::Err(Error::Crypto); }
+            let rewritten:core::result::Result<i32,Error> = self.rewrite_hrr(frame); if(rewritten.is_err()) { return rewritten; }
             // Build CH2 only after releasing the RX frame in process_content().
             self.step=0; return core::result::Ok(0);
         }
-        let selected:ext::tls_negotiation::Selection=selection.unwrap(); self.selected=ext::tls_negotiation::record_suite(selected.suite).unwrap(); self.selected_group=selected.group;
+        let selected:ext::tls_negotiation::Selection=selection.unwrap(); let bound:core::result::Result<i32,Error> = self.bind_client_suite(ext::tls_suite::from_id(selected.suite).unwrap()); if(bound.is_err()) { return bound; } self.selected_group=selected.group;
         let appended:core::result::Result<i32,Error> = self.append(frame); if(appended.is_err()) { return appended; }
         let derived:core::result::Result<i32,Error> = self.derive_handshake(selected.peer_key); if(derived.is_err()) { return derived; }
         self.step=2; return core::result::Ok(0);
     }
     fn server_client_hello(&self,frame:core::slice::View<u8>)->core::result::Result<i32,Error> {
         if(frame.length>self.limits.max_hello_frame) { return core::result::Err(Error::Limit); }
-        let second:bool=self.step==12; let stable:core::slice::View<u8> = region(self.hello_part(second),0,frame.length); copy(frame,stable);
+        let second:bool=self.step==12; if(!second) { self.first_hello_length=frame.length; } let stable:core::slice::View<u8> = region(self.hello_part(second),0,frame.length); copy(frame,stable);
         let parsed:core::result::Result<ext::tls_handshake::ClientHello,ext::tls_handshake::Error> = ext::tls_handshake::parse_client_hello(region(stable,4,stable.length-4)); if(parsed.is_err()) { return core::result::Err(Error::Negotiation(ext::tls_negotiation::Error::Codec(parsed.unwrap_err()))); }
         let offer:core::result::Result<ext::tls_negotiation::Offer,ext::tls_negotiation::Error> = core::result::Err(ext::tls_negotiation::Error::Retry);
         if(second) { offer=ext::tls_negotiation::check_second_client_hello(self.first_offer.unwrap(),self.retry.unwrap(),parsed.unwrap(),self.negotiation_budget.borrow()); }
         else { offer=ext::tls_negotiation::inspect_client_hello(parsed.unwrap(),self.negotiation_budget.borrow()); }
         if(offer.is_err()) { return core::result::Err(Error::Negotiation(offer.unwrap_err())); }
         self.offer=core::option::Some(offer.unwrap()); if(!second) { self.first_offer=self.offer; }
-        let preferred:u16=suite_number(self.server_config.unwrap().prefer_suite); if(second) { preferred=self.retry.unwrap().suite; }
-        let chosen:core::result::Result<ext::tls_negotiation::Decision,ext::tls_negotiation::Error> = ext::tls_negotiation::choose(offer.unwrap(),preferred,self.server_config.unwrap().groups,self.negotiation_budget.borrow()); if(chosen.is_err()) { return core::result::Err(Error::Negotiation(chosen.unwrap_err())); }
+        let suites:ext::tls_suite::Policy=self.server_config.unwrap().suites;
+        let chosen:core::result::Result<ext::tls_negotiation::Decision,ext::tls_negotiation::Error> = ext::tls_negotiation::choose(offer.unwrap(),suites,self.server_config.unwrap().groups,self.negotiation_budget.borrow()); if(chosen.is_err()) { return core::result::Err(Error::Negotiation(chosen.unwrap_err())); }
         let requested:core::option::Option<ext::tls_negotiation::Group> = core::option::None(); let selected_suite:u16=0; let group:ext::tls_negotiation::Group=self.selected_group;
         let decision:ext::tls_negotiation::Decision=chosen.unwrap();
         let selection:core::option::Option<ext::tls_negotiation::Selection> = match(decision) { ext::tls_negotiation::Decision::Selected(value) -> core::option::Some(value), ext::tls_negotiation::Decision::Retry(value) -> core::option::None() };
@@ -444,7 +495,7 @@ impl Engine {
         if(selection.is_some()) { let value:ext::tls_negotiation::Selection=selection.unwrap(); selected_suite=value.suite; group=value.group; self.peer_share=value.peer_key; }
         else { let value:ext::tls_negotiation::Retry=request.unwrap(); selected_suite=value.suite; requested=value.requested; group=value.requested.unwrap(); }
         if(second && (requested.is_some() || selected_suite!=self.retry.unwrap().suite || ext::tls_negotiation::group_id(group)!=ext::tls_negotiation::group_id(self.selected_group))) { return core::result::Err(Error::Negotiation(ext::tls_negotiation::Error::Retry)); }
-        self.selected=ext::tls_negotiation::record_suite(selected_suite).unwrap(); self.selected_group=group;
+        let bound:core::result::Result<i32,Error> = self.bind_suite(ext::tls_suite::from_id(selected_suite).unwrap()); if(bound.is_err()) { return bound; } self.selected_group=group;
         let config:ServerConfig=self.server_config.unwrap(); let alpn:core::result::Result<core::slice::View<u8>,ext::tls_negotiation::Error> = ext::tls_negotiation::select_alpn(offer.unwrap(),config.alpn,config.require_alpn,self.negotiation_budget.borrow()); if(alpn.is_err()) { return core::result::Err(Error::Negotiation(alpn.unwrap_err())); } self.set_alpn(alpn.unwrap());
         let appended:core::result::Result<i32,Error> = self.append(frame); if(appended.is_err()) { return appended; } self.first_hello=true;
         if(!second && (requested.is_some() || config.require_cookie)) {
@@ -463,18 +514,19 @@ impl Engine {
         let verified:core::result::Result<ext::tls_authentication::Phase,ext::tls_authentication::Error> = auth.feed(frame,self.buffers.path,self.path_budget.borrow()); self.authentication=core::option::Some(auth);
         if(verified.is_err()) { return core::result::Err(Error::Authentication(verified.unwrap_err())); }
         if(auth.authenticated()) {
-            self.leaf=auth.peer_key().unwrap(); self.transcript=auth.transcript().unwrap();
+            self.leaf=auth.peer_key().unwrap(); self.transcript=core::option::Some(auth.transcript().unwrap());
             let derived:core::result::Result<i32,Error> = self.derive_application(); if(derived.is_err()) { return derived; }
-            self.peer_finished=true; self.application_receiver(); self.step=3;
+            let installed:core::result::Result<i32,Error> = self.application_receiver(); if(installed.is_err()) { return installed; } self.peer_finished=true; self.step=3;
         }
         return core::result::Ok(0);
     }
     fn server_client_finished(&self,frame:core::slice::View<u8>)->core::result::Result<i32,Error> {
-        let parsed:core::result::Result<ext::tls_handshake::Finished,ext::tls_handshake::Error> = ext::tls_handshake::parse_finished(region(frame,4,frame.length-4),32); if(parsed.is_err()) { return core::result::Err(Error::Authentication(ext::tls_authentication::Error::Handshake(parsed.unwrap_err()))); }
-        let hash:core::sha256::Digest=self.transcript.snapshot(); let verified:core::result::Result<bool,ext::tls_schedule::Error> = ext::tls_schedule::verify_finished(self.handshake_client.view(),core::slice::View { values:hash.bytes,start:0,length:32 },parsed.unwrap().verify_data);
+        let parsed:core::result::Result<ext::tls_handshake::Finished,ext::tls_handshake::Error> = ext::tls_handshake::parse_finished(region(frame,4,frame.length-4),self.hash_length()); if(parsed.is_err()) { return core::result::Err(Error::Authentication(ext::tls_authentication::Error::Handshake(parsed.unwrap_err()))); }
+        let hashed:core::result::Result<i32,Error> = self.hash_work(8,32768); if(hashed.is_err()) { return hashed; }
+        let snapshot:core::result::Result<ext::tls_hash::Digest,Error> = self.snapshot(); if(snapshot.is_err()) { return core::result::Err(snapshot.unwrap_err()); } let hash:ext::tls_hash::Digest=snapshot.unwrap(); let verified:core::result::Result<bool,ext::tls_schedule::Error> = ext::tls_schedule::verify_finished(self.handshake_client.unwrap(),hash,parsed.unwrap().verify_data);
         if(verified.is_err()) { return core::result::Err(Error::Crypto); } if(!verified.unwrap()) { return core::result::Err(Error::Authentication(ext::tls_authentication::Error::Finished)); }
         let appended:core::result::Result<i32,Error> = self.append(frame); if(appended.is_err()) { return appended; }
-        self.peer_finished=true; self.application_receiver(); self.step=4; return core::result::Ok(0);
+        let installed:core::result::Result<i32,Error> = self.application_receiver(); if(installed.is_err()) { return installed; } self.peer_finished=true; self.step=4; return core::result::Ok(0);
     }
     fn post_handshake(&self,frame:core::slice::View<u8>)->core::result::Result<i32,Error> {
         if(!self.peer_finished || (self.step!=4 && !(self.is_client() && self.step==3))) { return core::result::Err(Error::UnexpectedMessage); }
@@ -490,6 +542,7 @@ impl Engine {
             if(self.updates_left==0 || self.receive_generation==18446744073709551615) { return core::result::Err(Error::Limit); }
             let update:core::result::Result<ext::tls_handshake::KeyUpdate,ext::tls_handshake::Error> = ext::tls_handshake::parse_key_update(region(frame,4,frame.length-4)); if(update.is_err()) { return core::result::Err(Error::Negotiation(ext::tls_negotiation::Error::Codec(update.unwrap_err()))); }
             let charged:core::result::Result<i32,Error> = self.work(32768); if(charged.is_err()) { return charged; }
+            let extra:core::result::Result<i32,Error> = self.hash_work(12,49152+196608); if(extra.is_err()) { return extra; }
             let receiver:ext::tls_record::Opener=self.receiver.unwrap(); let changed:core::result::Result<i32,ext::tls_record::Error> = receiver.key_update(); self.receiver=core::option::Some(receiver); if(changed.is_err()) { return core::result::Err(Error::Record(changed.unwrap_err())); }
             self.updates_left-=1; self.receive_generation+=1; self.receive_sequence=0;
             if(update.unwrap().request_update==1) { self.update_response=true; }
@@ -520,7 +573,7 @@ impl Engine {
     }
     fn open_record(&self)->core::result::Result<i32,Error> {
         let framed:ext::tls_framing::RecordFrame=self.record.frame().unwrap();
-        let charged:core::result::Result<i32,Error> = self.charge_record(framed.wire.length,false); if(charged.is_err()) { return charged; }
+        let charged:core::result::Result<i32,Error> = self.charge_record(framed.wire.length,false,self.receiver.is_some() && framed.content_type!=20); if(charged.is_err()) { return charged; }
         if(framed.content_type==20) {
             let counted:core::result::Result<i32,Error> = self.control(); if(counted.is_err()) { return counted; }
             if(!self.first_hello || self.peer_finished || framed.payload.length!=1 || byte(framed.payload,0)!=1) { return core::result::Err(Error::UnexpectedMessage); }
@@ -642,7 +695,7 @@ pub impl Engine {
         if(self.step==1 || self.step==11 || self.step==13) { return Phase::ServerHello; } if(self.step==3 || self.step==18) { return Phase::ClientFinished; } return Phase::ServerFlight;
     }
     pub fn peer_key(&self)->core::option::Option<ext::ed25519::Key32> { if(self.established() && self.is_client()) { return core::option::Some(self.leaf); } return core::option::None(); }
-    pub fn negotiated(&self)->core::option::Option<Negotiated> { if(!self.established()) { return core::option::None(); } return core::option::Some(Negotiated { suite:self.selected,group:self.selected_group,alpn:self.alpn,alpn_length:self.alpn_length }); }
+    pub fn negotiated(&self)->core::option::Option<Negotiated> { if(!self.established()) { return core::option::None(); } return core::option::Some(Negotiated { suite:self.selected.unwrap(),group:self.selected_group,alpn:self.alpn,alpn_length:self.alpn_length }); }
     pub fn stats(&self)->Stats { return Stats { received_records:self.received,sent_records:self.sent,controls:self.controls,handshake_bytes:self.handshake_bytes,send_generation:self.send_generation,receive_generation:self.receive_generation,send_sequence:self.send_sequence,receive_sequence:self.receive_sequence,pending_wire:self.pending_length-self.pending_at,pending_plaintext:self.app_length-self.app_at,handshake_buffered:self.handshake.buffered(),retained_content:self.content.length-self.content_at,records_left:self.records_left,controls_left:self.controls_left,handshake_bytes_left:self.handshake_left,key_updates_left:self.updates_left,work_left:self.work_left,signatures_left:self.path_budget.signatures_left }; }
     // Borrow expires at the next mutating engine call. No call reseals a retry.
     // In Failed, only the optional prepared fatal alert is exposed.
@@ -724,9 +777,13 @@ pub impl Engine {
     }
     pub fn export(&self,label:core::slice::View<u8>,context:core::slice::View<u8>,output:core::slice::View<u8>)->core::result::Result<i32,Error> {
         if(!valid(label) || !valid(context) || !valid(output)) { return core::result::Err(Error::Bounds); } if(self.abandoned) { return core::result::Err(Error::Aborted); } if(self.failed) { return core::result::Err(self.issue); } if(!self.established()) { return core::result::Err(Error::NotEstablished); }
-        if(label.length<1 || label.length>249 || output.length>8160) { return core::result::Err(Error::InvalidConfig); }
+        if(label.length<1 || label.length>249 || output.length>ext::tls_schedule::max_output(ext::tls_suite::hash(self.selected.unwrap()))) { return core::result::Err(Error::InvalidConfig); }
         let charged:core::result::Result<i32,Error> = self.work(32768+128*((context.length as u64)+(output.length as u64))); if(charged.is_err()) { return core::result::Err(self.fail(charged.unwrap_err())); }
-        let exported:core::result::Result<i32,ext::tls_schedule::Error> = self.exporter.export(label,context,output); if(exported.is_err()) { return core::result::Err(self.fail(Error::Crypto)); } return core::result::Ok(exported.unwrap());
+        if(self.sha384()) {
+            let cost:u64=16384*(1+sha384_blocks(context.length as u64))+8192+8*(context.length as u64)+sha384_expand_work(label.length,48,48)+sha384_expand_work(8,48,output.length);
+            let extra:core::result::Result<i32,Error> = self.work(cost); if(extra.is_err()) { return core::result::Err(self.fail(extra.unwrap_err())); }
+        }
+        let exporter:ext::tls_schedule::Exporter=self.exporter.unwrap(); let exported:core::result::Result<i32,ext::tls_schedule::Error> = exporter.export(label,context,output); if(exported.is_err()) { return core::result::Err(self.fail(Error::Crypto)); } return core::result::Ok(exported.unwrap());
     }
     // Abandon does not free caller backing or roll back any spent nonce/cursor.
     pub fn abort(&self)->i32 { if(!self.failed) { self.failed=true; self.issue=Error::Aborted; } self.abandoned=true; self.pending_fatal=false; self.forget_keys(); return self.pending_length-self.pending_at; }

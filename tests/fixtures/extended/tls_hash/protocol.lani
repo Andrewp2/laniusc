@@ -1,0 +1,100 @@
+// Test-only binary protocol. Counter injection below tests wrapper admission,
+// never a huge-message digest or an arbitrary state restoration API.
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::tls_hash;
+import ext::tls_suite;
+import std::stream;
+
+fn view(bytes:[u8],at:i32,n:i32)->core::slice::View<u8> { return core::slice::View { values:bytes,start:at,length:n }; }
+fn part(v:core::slice::View<u8>,at:i32,n:i32)->core::slice::View<u8> { return view(v.values,v.start+at,n); }
+fn load(bytes:[u8],at:i32)->u64 { let n:u64=0; let i:i32=0; while(i<8) { n|=(bytes[at+i] as u64)<<(i*8); i+=1; } return n; }
+fn algorithm(id:u64)->ext::tls_hash::Algorithm { if(id==0) { return ext::tls_hash::Algorithm::Sha256; } return ext::tls_hash::Algorithm::Sha384; }
+fn aid(value:ext::tls_hash::Algorithm)->u64 { return match(value) { ext::tls_hash::Algorithm::Sha256->0,ext::tls_hash::Algorithm::Sha384->1 }; }
+fn suite(code:u8)->ext::tls_suite::Suite { assert(code<=2); if(code==0) { return ext::tls_suite::Suite::Aes128GcmSha256; } if(code==1) { return ext::tls_suite::Suite::Aes256GcmSha384; } return ext::tls_suite::Suite::ChaCha20Poly1305Sha256; }
+fn hcode(error:ext::tls_hash::Error)->u64 { return match(error) { ext::tls_hash::Error::Bounds->1,ext::tls_hash::Error::InvalidLength->2,ext::tls_hash::Error::LengthOverflow->3 }; }
+fn scode(error:ext::tls_suite::Error)->u64 { return match(error) { ext::tls_suite::Error::Bounds->1,ext::tls_suite::Error::Unsupported->2,ext::tls_suite::Error::InvalidPolicy->3 }; }
+fn bad(v:core::slice::View<u8>,mode:u64)->core::slice::View<u8> { let result:core::slice::View<u8> =v; if(mode==1) { result.start=-1; } if(mode==2) { result.length=-1; } if(mode==3) { result.start=2147483647; result.length=1; } if(mode==4) { result.start=2147483647; result.length=0; } return result; }
+fn fill(v:core::slice::View<u8>,value:u8) { let i:i32=0; while(i<v.length) { v.values[v.start+i]=value; i+=1; } }
+struct Output { bytes:[u8],used:i32 }
+impl Output {
+ fn borrow(&self)->&Output { return self; }
+ fn flush(&self) { let out:std::stream::Descriptor=std::stream::stdout(); core::io::write_all<std::stream::Descriptor>(out.borrow(),self.bytes,0,self.used).unwrap(); self.used=0; }
+ fn word(&self,n:u64) { if(self.used==1024) { self.flush(); } let i:i32=0; while(i<8) { self.bytes[self.used+i]=(n>>(8*i)) as u8; i+=1; } self.used+=8; }
+ fn digest(&self,d:ext::tls_hash::Digest,kind:ext::tls_hash::Algorithm) {
+  assert(aid(d.algorithm)==aid(kind)); let borrowed:core::slice::View<u8> =d.view(); assert(borrowed.start==0 && borrowed.length==ext::tls_hash::hash_length(kind));
+  let i:i32=0; while(i<borrowed.length) { assert(borrowed.values[borrowed.start+i]==d.bytes[i]); i+=1; }
+  i=0; while(i<48) { let n:u64=0; let j:i32=0; while(j<8) { n|=(d.bytes[i+j] as u64)<<(8*j); j+=1; } self.word(n); i+=8; }
+ }
+ fn policy(&self,p:ext::tls_suite::Policy) { self.word(p.length as u64); let i:i32=0; while(i<3) { self.word(ext::tls_suite::id(p.order[i]) as u64); i+=1; } }
+}
+fn stream(state:&ext::tls_hash::State,input:core::slice::View<u8>,chunk:i32) {
+ assert(chunk>0); assert(state.update(part(input,0,0)).unwrap()==0); let at:i32=0;
+ while(at<input.length) { let n:i32=chunk; if(n>input.length-at) { n=input.length-at; } assert(state.update(part(input,at,n)).unwrap()==n); at+=n; }
+}
+fn hashes(a:core::slice::View<u8>,b:core::slice::View<u8>,c:core::slice::View<u8>,kind:ext::tls_hash::Algorithm,split:i32,chunk:i32,out:&Output) {
+ assert(split>=0 && split<=a.length); let direct:ext::tls_hash::Digest=ext::tls_hash::digest(kind,a).unwrap();
+ let state:ext::tls_hash::State=ext::tls_hash::new(kind); stream(state.borrow(),part(a,0,split),chunk); let retained:ext::tls_hash::Digest=state.snapshot(); let fork:ext::tls_hash::State=state;
+ stream(state.borrow(),part(a,split,a.length-split),chunk); stream(fork.borrow(),b,chunk); fill(a,211);
+ let full:ext::tls_hash::Digest=state.snapshot(); let repeated:ext::tls_hash::Digest=state.snapshot(); stream(state.borrow(),c,chunk); let continued:ext::tls_hash::Digest=state.snapshot();
+ let mutated:ext::tls_hash::Digest=retained; mutated.bytes[0]^=128; mutated.bytes[47]^=1;
+ assert(aid(state.algorithm())==aid(kind) && aid(fork.algorithm())==aid(kind)); out.word(0); out.word(aid(state.algorithm())); out.word(ext::tls_hash::hash_length(kind) as u64); out.word(state.count); out.word(fork.count);
+ out.digest(direct,kind); out.digest(retained,kind); out.digest(mutated,kind); out.digest(full,kind); out.digest(repeated,kind); out.digest(fork.snapshot(),kind); out.digest(continued,kind);
+}
+fn factory(a:core::slice::View<u8>,b:core::slice::View<u8>,kind:ext::tls_hash::Algorithm,mode:u64,out:&Output)->bool {
+ let result:core::result::Result<ext::tls_hash::Digest,ext::tls_hash::Error> =ext::tls_hash::digest_from_view(kind,bad(a,mode));
+ if(result.is_err()) { out.word(hcode(result.unwrap_err())); out.word(0); return false; }
+ let owned:ext::tls_hash::Digest=result.unwrap(); let retained:ext::tls_hash::Digest=owned; let copied:ext::tls_hash::Digest=ext::tls_hash::digest_from_view(kind,retained.view()).unwrap(); fill(a,211);
+ // Exercise subsequent stack/algorithm use while all owned copies stay live.
+ let other:ext::tls_hash::Algorithm=ext::tls_hash::Algorithm::Sha384; if(aid(kind)==1) { other=ext::tls_hash::Algorithm::Sha256; } let later:ext::tls_hash::Digest=ext::tls_hash::digest(other,b).unwrap(); assert(later.view().length==ext::tls_hash::hash_length(other));
+ owned.bytes[0]^=128; owned.bytes[47]^=1; out.word(0); out.word(ext::tls_hash::hash_length(kind) as u64); out.digest(retained,kind); out.digest(owned,kind); out.digest(copied,kind); return true;
+}
+fn rejection(a:core::slice::View<u8>,b:core::slice::View<u8>,c:core::slice::View<u8>,kind:ext::tls_hash::Algorithm,mode:u64,seam:u64,out:&Output) {
+ let state:ext::tls_hash::State=ext::tls_hash::new(kind); assert(state.update(b).unwrap()==b.length); let before:ext::tls_hash::Digest=state.snapshot(); let real:u64=state.count;
+ if(seam==1) { state.count=ext::tls_hash::MAX_BYTES; } if(seam==2) { state.count=ext::tls_hash::MAX_BYTES+1; } if(seam==3) { state.count=ext::tls_hash::MAX_BYTES-1; } if(seam==4) { state.count=ext::tls_hash::MAX_BYTES-3; } if(seam==5) { state.count=18446744073709551615; }
+ let staged:u64=state.count; let result:core::result::Result<i32,ext::tls_hash::Error> =state.update(bad(a,mode)); let status:u64=0; let accepted:i32=0;
+ if(result.is_err()) { status=hcode(result.unwrap_err()); assert(state.count==staged); } else { accepted=result.unwrap(); assert(accepted==bad(a,mode).length); }
+ let raw:u64=state.count; let second:u64=0;
+ if(seam==3 && mode==0 && a.length==1) { let again:core::result::Result<i32,ext::tls_hash::Error> =state.update(a); assert(again.is_err()); second=hcode(again.unwrap_err()); assert(second==3 && state.count==raw); }
+ // Primitive core state has only consumed the small real inputs. Restore the
+ // wrapper count before observing it; never finalize a fabricated history.
+ state.count=real+(accepted as u64); let after:ext::tls_hash::Digest=state.snapshot(); stream(state.borrow(),c,17);
+ out.word(status); out.word(accepted as u64); out.word(raw); out.word(second); out.word(state.count); out.word(aid(state.algorithm())); out.word(ext::tls_hash::hash_length(kind) as u64); out.digest(before,kind); out.digest(after,kind); out.digest(state.snapshot(),kind);
+}
+fn mapping(value:u16,out:&Output) {
+ let result:core::result::Result<ext::tls_suite::Suite,ext::tls_suite::Error> =ext::tls_suite::from_id(value);
+ if(result.is_err()) { out.word(scode(result.unwrap_err())); let i:i32=0; while(i<5) { out.word(0); i+=1; } return; }
+ let selected:ext::tls_suite::Suite=result.unwrap(); let kind:ext::tls_hash::Algorithm=ext::tls_suite::hash(selected); out.word(0); out.word(ext::tls_suite::id(selected) as u64); out.word(aid(kind)); out.word(ext::tls_hash::hash_length(kind) as u64); out.word(ext::tls_suite::key_length(selected) as u64); if(ext::tls_suite::is_aes(selected)) { out.word(1); } else { out.word(0); }
+}
+fn one_shot(a:core::slice::View<u8>,kind:ext::tls_hash::Algorithm,mode:u64,out:&Output) {
+ let result:core::result::Result<ext::tls_hash::Digest,ext::tls_hash::Error> =ext::tls_hash::digest(kind,bad(a,mode)); if(result.is_err()) { out.word(hcode(result.unwrap_err())); out.word(0); return; } out.word(0); out.word(ext::tls_hash::hash_length(kind) as u64); out.digest(result.unwrap(),kind);
+}
+fn policies(a:core::slice::View<u8>,mode:u64,manual:bool,length:i32,out:&Output) {
+ assert(a.length<=4); let source:[ext::tls_suite::Suite;8]=[ext::tls_suite::Suite::ChaCha20Poly1305Sha256;8]; let i:i32=0; while(i<a.length) { source[2+i]=suite(a.values[a.start+i]); i+=1; }
+ if(manual) {
+  assert(a.length==3); let p:ext::tls_suite::Policy=ext::tls_suite::Policy { order:[source[2],source[3],source[4]],length:length }; let checked:core::result::Result<i32,ext::tls_suite::Error> =ext::tls_suite::validate_policy(p);
+  if(checked.is_err()) { out.word(scode(checked.unwrap_err())); out.word(0); } else { out.word(0); out.word(checked.unwrap() as u64); } out.policy(p); return;
+ }
+ let input:core::slice::View<ext::tls_suite::Suite> =core::slice::View { values:source,start:2,length:a.length }; if(mode==1) { input.start=-1; } if(mode==2) { input.length=-1; } if(mode==3) { input.start=2147483647; input.length=1; } if(mode==4) { input.start=2147483647; input.length=0; }
+ let checked:core::result::Result<ext::tls_suite::Policy,ext::tls_suite::Error> =ext::tls_suite::policy(input);
+ if(checked.is_err()) { out.word(scode(checked.unwrap_err())); return; }
+ let p:ext::tls_suite::Policy=checked.unwrap(); let retained:ext::tls_suite::Policy=p; i=0; while(i<8) { source[i]=ext::tls_suite::Suite::Aes256GcmSha384; i+=1; }
+ let replacement:ext::tls_suite::Suite=ext::tls_suite::Suite::Aes128GcmSha256; if(ext::tls_suite::id(p.order[0])==4865) { replacement=ext::tls_suite::Suite::Aes256GcmSha384; } p.order[0]=replacement; if(p.length<3) { p.order[p.length]=ext::tls_suite::Suite::Aes128GcmSha256; }
+ assert(ext::tls_suite::validate_policy(retained).unwrap()==retained.length); out.word(0); out.policy(retained); out.policy(p);
+}
+fn run(h:[u8],input:[u8],out:&Output) {
+ let op:u64=load(h,0); let layout:u64=load(h,8); let kind:ext::tls_hash::Algorithm=algorithm(load(h,16)); let mode:u64=load(h,24); let an:i32=load(h,32) as i32; let bn:i32=load(h,40) as i32; let cn:i32=load(h,48) as i32; let split:i32=load(h,56) as i32; let chunk:i32=load(h,64) as i32; let parameter:u64=load(h,72); let total:i32=an+bn+cn;
+ let stack:[u8;8224]=[165;8224]; let packed:[i32;2056]=[0;2056]; let bytes:[u8]=stack; if(layout==1) { bytes=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(packed),8224); } let i:i32=0; while(i<8224) { bytes[i]=165; i+=1; } i=0; while(i<total) { bytes[5+i]=input[i]; i+=1; }
+ let a:core::slice::View<u8> =view(bytes,5,an); let b:core::slice::View<u8> =view(bytes,5+an,bn); let c:core::slice::View<u8> =view(bytes,5+an+bn,cn); let overwritten:bool=false;
+ if(op==0) { hashes(a,b,c,kind,split,chunk,out); overwritten=true; } if(op==1) { overwritten=factory(a,b,kind,mode,out); } if(op==2) { rejection(a,b,c,kind,mode,parameter,out); } if(op==3) { mapping(parameter as u16,out); } if(op==4 || op==5) { policies(a,mode,op==5,parameter as i32,out); }
+ if(op==6) { let p:ext::tls_suite::Policy=ext::tls_suite::default_policy(); assert(ext::tls_suite::validate_policy(p).unwrap()==3); out.word(0); out.policy(p); }
+ if(op==7) { one_shot(a,kind,mode,out); }
+ i=0; while(i<8224) { let expected:u8=165; if(i>=5 && i<5+total) { expected=input[i-5]; } if(overwritten && i>=5 && i<5+an) { expected=211; } assert(bytes[i]==expected); i+=1; }
+}
+fn main()->i32 {
+ let input:std::stream::Descriptor=std::stream::stdin(); let header:[u8;80]=[0;80]; core::io::read_exact<std::stream::Descriptor>(input.borrow(),header,0,8).unwrap(); let count:u64=load(header,0); assert(count<=2048); let raw:[u8;8192]=[0;8192]; let backing:[u8;1024]=[0;1024]; let out:Output=Output { bytes:backing,used:0 }; let i:u64=0;
+ while(i<count) { core::io::read_exact<std::stream::Descriptor>(input.borrow(),header,0,80).unwrap(); let total:u64=load(header,32)+load(header,40)+load(header,48); assert(load(header,0)<=7 && load(header,8)<=1 && load(header,16)<=1 && load(header,24)<=4 && total<=8192); core::io::read_exact<std::stream::Descriptor>(input.borrow(),raw,0,total as i32).unwrap(); run(header,raw,out.borrow()); i+=1; } out.flush(); return 0;
+}

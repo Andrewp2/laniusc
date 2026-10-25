@@ -57,7 +57,8 @@ def proxy(left, right, fragment, threads):
 
 def run(binary, directory, role, suite, length, mode, fault, fragment, transport, expected, root_name, exporter, group, peer_groups, calls):
     directory = pathlib.Path(directory)
-    cipher = ['TLS_CHACHA20_POLY1305_SHA256', 'TLS_AES_128_GCM_SHA256'][suite]
+    cipher = ['TLS_CHACHA20_POLY1305_SHA256', 'TLS_AES_128_GCM_SHA256', 'TLS_AES_256_GCM_SHA384'][suite]
+    export_length = 12240 if mode == 12 else 32
     assert group in range(4) and peer_groups in ['X25519', 'P-256', 'X25519:P-256']
     common = ['-tls1_3', '-groups', peer_groups, '-sigalgs', 'ed25519', '-ciphersuites', cipher]
     peer = None
@@ -84,7 +85,7 @@ def run(binary, directory, role, suite, length, mode, fault, fragment, transport
         command = ['openssl', 's_server', '-accept', f'127.0.0.1:{port}', '-cert', str(directory / 'leaf.pem'), '-cert_chain', str(directory / 'ca.pem'), '-key', str(directory / 'key.pem'), '-quiet', '-naccept', '1', '-ign_eof'] + common
         if exporter:
             command.remove('-quiet')
-            command += ['-keymatexport', 'lanius-tcp-test', '-keymatexportlen', '32']
+            command += ['-keymatexport', 'lanius-tcp-test', '-keymatexportlen', str(export_length)]
         peer = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         remote = connect(port, small)
         if fragment:
@@ -101,7 +102,7 @@ def run(binary, directory, role, suite, length, mode, fault, fragment, transport
         command = ['openssl', 's_client', '-connect', f'127.0.0.1:{port}', '-CAfile', str(directory / 'root.pem'), '-no-CApath', '-no-CAstore', '-verify_return_error', '-verify_hostname', 'path.example', '-quiet', '-no_ign_eof'] + common
         if exporter:
             command.remove('-quiet')
-            command += ['-nocommands', '-keymatexport', 'lanius-tcp-test', '-keymatexportlen', '32']
+            command += ['-nocommands', '-keymatexport', 'lanius-tcp-test', '-keymatexportlen', str(export_length)]
         peer = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         front, _ = local.accept()
         local.close()

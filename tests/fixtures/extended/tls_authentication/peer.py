@@ -17,8 +17,10 @@ U16 = lambda n: n.to_bytes(2, 'big')
 U24 = lambda n: n.to_bytes(3, 'big')
 FRAME = lambda kind, body: bytes([kind]) + U24(len(body)) + body
 EXT = lambda kind, body: U16(kind) + U16(len(body)) + body
-H = lambda b: hashlib.sha256(b).digest()
-MAC = lambda k, b: hmac.new(k, b, hashlib.sha256).digest()
+HASH = (hashlib.sha256, hashlib.sha384)
+H = lambda b, algorithm=0: HASH[algorithm](b).digest()
+MAC = lambda k, b, algorithm=0: hmac.new(k, b, HASH[algorithm]).digest()
+HASH_LENGTH = (32, 48)
 SODIUM = ctypes.CDLL('libsodium.so.23')
 assert SODIUM.sodium_init() >= 0
 P, U = ctypes.c_void_p, ctypes.c_ulonglong
@@ -44,12 +46,14 @@ def sign(message):
 def verify(public, message, signature):
     return SODIUM.crypto_sign_verify_detached(signature, message, len(message), public) == 0
 
-def expand(secret, label, context, length=32):
+def expand(secret, label, context, length=None, algorithm=0):
+    size = HASH_LENGTH[algorithm]
+    if length is None: length = size
     label = b'tls13 ' + label
     info = U16(length) + bytes([len(label)]) + label + bytes([len(context)]) + context
     previous, output = b'', b''
-    for i in range(1, (length+31)//32+1):
-        previous = MAC(secret, previous + info + bytes([i]))
+    for i in range(1, (length+size-1)//size+1):
+        previous = MAC(secret, previous + info + bytes([i]), algorithm)
         output += previous
     return output[:length]
 
@@ -162,7 +166,8 @@ class Chain:
             self.checked_paths[token]=result.returncode==0
         return self.checked_paths[token]
 
-def hello(hrr=False):
+def hello(hrr=False, algorithm=0):
+    suite = U16(4867 if algorithm == 0 else 4866)
     client_private=bytes(range(32)); server_private=bytes(range(32,64))
     client_public, server_public, shared = (ctypes.create_string_buffer(32) for _ in range(3))
     assert SODIUM.crypto_scalarmult_curve25519_base(client_public,client_private)==0
@@ -171,45 +176,47 @@ def hello(hrr=False):
     versions=EXT(43,b'\x02\x03\x04'); schemes=EXT(13,b'\x00\x02\x08\x07'); groups=EXT(10,b'\x00\x02\x00\x1d')
     shares=EXT(51,U16(36)+b'\x00\x1d\x00\x20'+client_public.raw)
     def ch(extension):
-        return FRAME(1,b'\x03\x03'+bytes(range(32))+b'\x00\x00\x02\x13\x03\x01\x00'+U16(len(extension))+extension)
+        return FRAME(1,b'\x03\x03'+bytes(range(32))+b'\x00\x00\x02'+suite+b'\x01\x00'+U16(len(extension))+extension)
     full=ch(versions+schemes+groups+shares)
     sh_ext=EXT(43,b'\x03\x04')+EXT(51,b'\x00\x1d\x00\x20'+server_public.raw)
-    sh=FRAME(2,b'\x03\x03'+bytes(range(32,64))+b'\x00\x13\x03\x00'+U16(len(sh_ext))+sh_ext)
+    sh=FRAME(2,b'\x03\x03'+bytes(range(32,64))+b'\x00'+suite+b'\x00'+U16(len(sh_ext))+sh_ext)
     first=full; retry=b''; second=b''; prefix=first+sh
     if hrr:
         first=ch(versions+schemes+groups+EXT(51,b'\x00\x00'))
         retry_ext=EXT(43,b'\x03\x04')+EXT(51,b'\x00\x1d')
         magic=bytes.fromhex('cf21ad74e59a6111be1d8c021e65b891c2a211167abb8c5e079e09e2c8a8339c')
-        retry=FRAME(2,b'\x03\x03'+magic+b'\x00\x13\x03\x00'+U16(len(retry_ext))+retry_ext)
+        retry=FRAME(2,b'\x03\x03'+magic+b'\x00'+suite+b'\x00'+U16(len(retry_ext))+retry_ext)
         second=full
-        prefix=FRAME(254,H(first))+retry+second+sh
-    early=MAC(bytes(32),bytes(32)); derived=expand(early,b'derived',H(b''))
-    handshake=MAC(derived,shared.raw); secret=expand(handshake,b's hs traffic',H(prefix))
+        prefix=FRAME(254,H(first,algorithm))+retry+second+sh
+    size=HASH_LENGTH[algorithm]
+    early=MAC(bytes(size),bytes(size),algorithm); derived=expand(early,b'derived',H(b'',algorithm),algorithm=algorithm)
+    handshake=MAC(derived,shared.raw,algorithm); secret=expand(handshake,b's hs traffic',H(prefix,algorithm),algorithm=algorithm)
     return first,sh,retry,second,prefix,secret
 
-def flight(chain, prefix, secret, context=b'', entry_ext=b''):
+def flight(chain, prefix, secret, context=b'', entry_ext=b'', algorithm=0):
     ee=FRAME(8,b'\x00\x00')
     entries=b''.join(U24(len(cert))+cert+U16(len(entry_ext))+entry_ext for cert in chain)
     certificate=FRAME(11,bytes([len(context)])+context+U24(len(entries))+entries)
-    signed=b' '*64+b'TLS 1.3, server CertificateVerify\x00'+H(prefix+ee+certificate)
-    assert len(signed)==130
+    signed=b' '*64+b'TLS 1.3, server CertificateVerify\x00'+H(prefix+ee+certificate,algorithm)
+    assert len(signed)==98+HASH_LENGTH[algorithm]
     signature=sign(signed); assert verify(PUBLIC,signed,signature)
     cv=FRAME(15,b'\x08\x07\x00\x40'+signature)
-    finished=FRAME(20,MAC(expand(secret,b'finished',b''),H(prefix+ee+certificate+cv)))
+    finished=FRAME(20,MAC(expand(secret,b'finished',b'',algorithm=algorithm),H(prefix+ee+certificate+cv,algorithm),algorithm))
     return [ee,certificate,cv,finished]
 
 class Case:
     def __init__(self, material, **changes):
+        self.algorithm=changes.pop('algorithm',0)
         self.material=material; self.layout=0; self.maximum=98304; self.max_input=1048576; self.work=67108864; self.signatures=64
         self.reference=b'server.example'; self.now=material.now; self.anchor=material.root; self.variant=0; self.mode=0; self.mutate=0
-        self.ch,self.sh,self.hrr,self.ch2,self.prefix,self.secret=hello(False)
+        self.ch,self.sh,self.hrr,self.ch2,self.prefix,self.secret=hello(False,self.algorithm)
         self.path_error=0; self.path_spent=len(material.chain); self.actions=[]
         self.__dict__.update(changes)
     def feed(self, frame, fault=0, scratch=0, op=0): self.actions.append((op,fault,scratch,bytes(frame))); return self
     def action(self, op): return self.feed(b'',op=op)
-    def frames(self): return flight(self.material.chain,self.prefix,self.secret)
+    def frames(self): return flight(self.material.chain,self.prefix,self.secret,algorithm=self.algorithm)
     def wire(self):
-        h=[self.layout,self.now,self.variant,self.maximum,self.max_input,self.work,self.signatures,len(self.actions),len(self.anchor),len(self.ch),len(self.sh),32,len(self.reference),len(self.hrr),len(self.ch2),self.mode,self.mutate]
+        h=[self.layout,self.now,self.variant,self.maximum,self.max_input,self.work,self.signatures,len(self.actions),len(self.anchor),len(self.ch),len(self.sh),len(self.secret),len(self.reference),len(self.hrr),len(self.ch2),self.mode,self.mutate,self.algorithm]
         out=Q(*h)+self.anchor+self.ch+self.sh+self.secret+self.reference+self.hrr+self.ch2
         for op,fault,scratch,frame in self.actions: out+=Q(op,fault,scratch,len(frame))+frame
         return out
@@ -218,8 +225,8 @@ def constructor(c):
     if c.variant in (7,8,9,10): return 1
     if c.variant==1: return 5
     if c.variant==2: return 6
-    if c.maximum<4 or c.maximum>16777219: return 2
     if c.variant==6: return 3
+    if c.maximum<4 or c.maximum>16777219: return 2
     if c.variant in (3,4,5): return 7
     if c.mode in (1,2,3): return 4
     return 0
@@ -227,11 +234,11 @@ def constructor(c):
 class State:
     def __init__(self,c): self.step=0; self.error=0; self.prefix=c.prefix
 
-def observe(s,status,signatures,work):
+def observe(c,s,status,signatures,work):
     auth=s.error==0 and s.step==4
     words=[status,5 if s.error else s.step,int(bool(s.error)),int(auth),int(auth),int(auth),signatures,work]
     words+=struct.unpack('<4Q',PUBLIC if auth else bytes(32))
-    words+=struct.unpack('<4Q',H(s.prefix) if auth else bytes(32))
+    words+=struct.unpack('<6Q',H(s.prefix,c.algorithm).ljust(48,b'\0') if auth else bytes(48))
     words += [6 if auth and not s.prefix.startswith(b'\xfe') else 8 if auth else 0, s.error]
     return list(words)
 
@@ -275,53 +282,53 @@ def oracle(c):
                     elif signatures==0: status=10
                     else:
                         signatures-=1
-                        signed=b' '*64+b'TLS 1.3, server CertificateVerify\0'+H(s.prefix)
+                        signed=b' '*64+b'TLS 1.3, server CertificateVerify\0'+H(s.prefix,c.algorithm)
                         if not verify(PUBLIC,signed,frame[8:]): status=17
                 elif s.step==3:
-                    if len(frame[4:])<32: status=202
-                    elif len(frame[4:])!=32: status=203
-                    elif frame[4:]!=MAC(expand(c.secret,b'finished',b''),H(s.prefix)): status=18
+                    if len(frame[4:])<HASH_LENGTH[c.algorithm]: status=202
+                    elif len(frame[4:])!=HASH_LENGTH[c.algorithm]: status=203
+                    elif frame[4:]!=MAC(expand(c.secret,b'finished',b'',algorithm=c.algorithm),H(s.prefix,c.algorithm),c.algorithm): status=18
                 if not status: s.prefix+=frame; s.step+=1
             if status not in (0,1,11): s.error=s.error or status
         # Work model never mirrors X.509 parsing. Rule3 requires its unknown
         # nonnegative extra debit; rule2 checks the exact portable bridge tariff.
-        observations.append((observe(s,status,signatures,0),rule,debit,frame))
+        observations.append((observe(c,s,status,signatures,0),rule,debit,frame))
     return observations
 
-def cases(material, mode, long=None):
+def cases(material, mode, long=None, algorithm=0):
     result=[]
     def add(c):
         for layout in (0,1): d=copy.copy(c); d.layout=layout; result.append(d)
     if mode=='positive':
-        c=Case(material,mutate=1)
+        c=Case(material,algorithm=algorithm,mutate=1)
         for frame in c.frames(): c.feed(frame)
         c.action(4).action(3); add(c)
-        c=Case(material,mode=4); c.ch,c.sh,c.hrr,c.ch2,c.prefix,c.secret=hello(True)
+        c=Case(material,algorithm=algorithm,mode=4); c.ch,c.sh,c.hrr,c.ch2,c.prefix,c.secret=hello(True,algorithm)
         for frame in c.frames(): c.feed(frame)
         add(c)
-        c=Case(material); f=c.frames()
+        c=Case(material,algorithm=algorithm); f=c.frames()
         c.feed(f[0]).action(1).feed(f[1],op=2).feed(f[1]).feed(f[2],op=2).feed(f[2]).feed(f[3],op=2).feed(f[3]).action(4)
         add(c)
-        assert long is not None and len(flight(long.chain,c.prefix,c.secret)[1])>65536
-        c=Case(long,work=16777216)
+        assert long is not None and len(flight(long.chain,c.prefix,c.secret,algorithm=algorithm)[1])>65536
+        c=Case(long,algorithm=algorithm,work=16777216)
         for frame in c.frames(): c.feed(frame)
         add(c)
-        c=Case(long,work=67108864)
+        c=Case(long,algorithm=algorithm,work=67108864)
         for frame in c.frames(): c.feed(frame)
         add(c)
     else:
-        for variant in range(1,11): add(Case(material,variant=variant))
-        for maximum in (3,16777220): add(Case(material,maximum=maximum))
-        for mode in (1,2,3): add(Case(material,mode=mode))
+        for variant in range(1,11): add(Case(material,algorithm=algorithm,variant=variant))
+        for maximum in (3,16777220): add(Case(material,algorithm=algorithm,maximum=maximum))
+        for mode in (1,2,3): add(Case(material,algorithm=algorithm,mode=mode))
         for fault in (1,2,3):
-            c=Case(material); f=c.frames()
+            c=Case(material,algorithm=algorithm); f=c.frames()
             for frame in f: c.feed(frame,fault=fault).feed(frame)
             add(c)
         for scratch in (1,2,3,4):
-            c=Case(material); f=c.frames()
+            c=Case(material,algorithm=algorithm); f=c.frames()
             c.feed(f[0]).feed(f[1],scratch=scratch).feed(f[1]).feed(f[2]).feed(f[3]); add(c)
         for kind in ('order','replay','unknown','truncated','length','ee_duplicate','context','empty','extensions','count','raw','cert_signature','anchor','identity','time','cv','cv_context','cv_scheme','cv_length','finished','finished_length','cv_budget','path_budget','work','frame_limit','certificate_work','after_complete','copy_failure'):
-            c=Case(material); f=c.frames()
+            c=Case(material,algorithm=algorithm); f=c.frames()
             if kind=='order': c.feed(f[1]).feed(f[0])
             elif kind=='replay': c.feed(f[0]).feed(f[0]).feed(f[1])
             elif kind=='unknown': c.feed(FRAME(255,b'')).feed(f[0])
@@ -329,14 +336,14 @@ def cases(material, mode, long=None):
             elif kind=='length': c.feed(f[0]+b'x').feed(f[0])
             elif kind=='ee_duplicate':
                 ext=EXT(0,b'')*2; c.feed(FRAME(8,U16(len(ext))+ext)).feed(f[0])
-            elif kind=='context': c.feed(f[0]).feed(flight(material.chain,c.prefix,c.secret,context=b'x')[1])
+            elif kind=='context': c.feed(f[0]).feed(flight(material.chain,c.prefix,c.secret,context=b'x',algorithm=algorithm)[1])
             elif kind=='empty': c.feed(f[0]).feed(FRAME(11,b'\0\0\0\0'))
-            elif kind=='extensions': c.entry_extensions=True; c.feed(f[0]).feed(flight(material.chain,c.prefix,c.secret,entry_ext=EXT(18,b''))[1])
-            elif kind=='count': c.too_many=True; c.feed(f[0]).feed(flight([material.chain[0]]*9,c.prefix,c.secret)[1])
-            elif kind=='raw': c.path_error=109; c.path_spent=0; c.feed(f[0]).feed(flight([cert_parts(material.chain[0])['spki']],c.prefix,c.secret)[1])
+            elif kind=='extensions': c.entry_extensions=True; c.feed(f[0]).feed(flight(material.chain,c.prefix,c.secret,entry_ext=EXT(18,b''),algorithm=algorithm)[1])
+            elif kind=='count': c.too_many=True; c.feed(f[0]).feed(flight([material.chain[0]]*9,c.prefix,c.secret,algorithm=algorithm)[1])
+            elif kind=='raw': c.path_error=109; c.path_spent=0; c.feed(f[0]).feed(flight([cert_parts(material.chain[0])['spki']],c.prefix,c.secret,algorithm=algorithm)[1])
             elif kind=='cert_signature':
                 bad=material.chain[0][:-1]+bytes([material.chain[0][-1]^1]); assert not material.openssl([bad]+material.chain[1:],c.anchor,c.reference,c.now)
-                c.path_error=117; c.path_spent=1; c.feed(f[0]).feed(flight([bad]+material.chain[1:],c.prefix,c.secret)[1])
+                c.path_error=117; c.path_spent=1; c.feed(f[0]).feed(flight([bad]+material.chain[1:],c.prefix,c.secret,algorithm=algorithm)[1])
             elif kind in ('anchor','identity','time'):
                 if kind=='anchor': c.anchor=material.chain[0]; c.path_error=116; c.path_spent=len(material.chain)-1
                 if kind=='identity': c.reference=b'other.example'; c.path_error=126; c.path_spent=len(material.chain)-1
@@ -346,7 +353,7 @@ def cases(material, mode, long=None):
             elif kind in ('cv','cv_context','cv_scheme','cv_length'):
                 altered=bytearray(f[2])
                 if kind=='cv': altered[-1]^=1
-                if kind=='cv_context': altered[8:]=sign(b' '*64+b'TLS 1.3, client CertificateVerify\0'+H(c.prefix+f[0]+f[1]))
+                if kind=='cv_context': altered[8:]=sign(b' '*64+b'TLS 1.3, client CertificateVerify\0'+H(c.prefix+f[0]+f[1],algorithm))
                 if kind=='cv_scheme': altered[4:6]=b'\x04\x03'
                 if kind=='cv_length': altered=bytearray(FRAME(15,b'\x08\x07\x00\x3f'+bytes(altered[8:-1])))
                 c.feed(f[0]).feed(f[1]).feed(altered).feed(f[2],fault=1).feed(f[2]).feed(f[3])

@@ -1,5 +1,5 @@
 module app::main;
-import core::io; import core::mem; import core::result; import core::sha256; import core::slice;
+import core::io; import core::mem; import core::result; import ext::tls_hash; import core::slice;
 import ext::tls_schedule; import ext::tls_transcript; import std::stream;
 fn load(bytes: [u8], at: i32) -> u64 { let value: u64=0; let i:i32=0; while(i<8){value|=(bytes[at+i] as u64)<<(i*8);i+=1;}return value; }
 struct Output { bytes:[u8], used:i32 }
@@ -9,65 +9,81 @@ impl Output {
  fn byte(&self,value:u8){if(self.used==2048){self.flush();}self.bytes[self.used]=value;self.used+=1;}
  fn word(&self,value:u64){let i:i32=0;while(i<8){self.byte(((value>>(i*8))&255) as u8);i+=1;}}
  fn view(&self,value:core::slice::View<u8>){let i:i32=0;while(i<value.length){self.byte(value.values[value.start+i]);i+=1;}}
- fn secret(&self,value:ext::tls_schedule::Secret){self.view(value.view());}
+ fn secret(&self,value:ext::tls_schedule::Secret){let n:i32=ext::tls_hash::hash_length(value.algorithm);let i:i32=n;while(i<48){assert(value.bytes[i]==0);i+=1;}self.view(value.view());}
+ fn digest(&self,value:ext::tls_hash::Digest){let n:i32=ext::tls_hash::hash_length(value.algorithm);let i:i32=n;while(i<48){assert(value.bytes[i]==0);i+=1;}self.view(value.view());}
 }
 fn part(value:core::slice::View<u8>,at:i32,n:i32)->core::slice::View<u8>{return core::slice::View{values:value.values,start:value.start+at,length:n};}
-fn skind(error:ext::tls_schedule::Error)->u64{return match(error){ext::tls_schedule::Error::Bounds->1,ext::tls_schedule::Error::InvalidSecretLength->2,ext::tls_schedule::Error::InvalidHashLength->3,ext::tls_schedule::Error::InvalidLabelLength->4,ext::tls_schedule::Error::ContextLimit->5,ext::tls_schedule::Error::OutputLimit->6,ext::tls_schedule::Error::InvalidVerifyLength->7,ext::tls_schedule::Error::Derivation->8};}
+fn skind(error:ext::tls_schedule::Error)->u64{return match(error){ext::tls_schedule::Error::Bounds->1,ext::tls_schedule::Error::InvalidSecretLength->2,ext::tls_schedule::Error::HashMismatch->3,ext::tls_schedule::Error::InvalidLabelLength->4,ext::tls_schedule::Error::ContextLimit->5,ext::tls_schedule::Error::OutputLimit->6,ext::tls_schedule::Error::InvalidVerifyLength->7,ext::tls_schedule::Error::Derivation->8};}
 fn tkind(error:ext::tls_transcript::Error)->u64{return match(error){ext::tls_transcript::Error::Bounds->1,ext::tls_transcript::Error::InvalidFrame->2,ext::tls_transcript::Error::SyntheticMessage->3,ext::tls_transcript::Error::InvalidHrrState->4,ext::tls_transcript::Error::LengthOverflow->5,ext::tls_transcript::Error::Hash->6};}
 fn bad(value:core::slice::View<u8>,mode:i32)->core::slice::View<u8>{let v:core::slice::View<u8> =value;if(mode==0){v.start=-1;}if(mode==1){v.length=-1;}if(mode==2){v.start=2147483647;v.length=1;}return v;}
-fn same(a:ext::tls_schedule::Secret,b:ext::tls_schedule::Secret){let i:i32=0;while(i<32){assert(a.bytes[i]==b.bytes[i]);i+=1;}}
-fn schedule(a:core::slice::View<u8>,b:core::slice::View<u8>,c:core::slice::View<u8>,target:core::slice::View<u8>,mode:i32,contracts:bool,output:&Output){
- assert(c.length==160);let early:ext::tls_schedule::Early=core::result::unwrap(ext::tls_schedule::early(a));if((mode&1)!=0){early=ext::tls_schedule::no_psk();}
- let handshake:ext::tls_schedule::Handshake=core::result::unwrap(early.handshake(b));if((mode&2)!=0){handshake=early.handshake_no_dhe();}
- let master:ext::tls_schedule::Master=handshake.master();let ch:core::slice::View<u8> =part(c,0,32);let sh:core::slice::View<u8> =part(c,32,32);let sf:core::slice::View<u8> =part(c,64,32);let cf:core::slice::View<u8> =part(c,96,32);let before:core::slice::View<u8> =part(c,128,32);
- let client:ext::tls_schedule::Secret=core::result::unwrap(handshake.traffic(ext::tls_schedule::Side::Client,sh));let server:ext::tls_schedule::Secret=core::result::unwrap(handshake.traffic(ext::tls_schedule::Side::Server,sh));
- let exporter:ext::tls_schedule::Exporter=core::result::unwrap(master.exporter(sf));let resumption:ext::tls_schedule::Resumption=core::result::unwrap(master.resumption(cf));let early_exporter:ext::tls_schedule::EarlyExporter=core::result::unwrap(early.exporter(ch));
- let nonce:[u8;255]=[0;255];let nonce_length:i32=2;if(target.length==0){nonce_length=0;}if(target.length==1){nonce_length=1;}if(target.length==33){nonce_length=255;}let nv:core::slice::View<u8> =core::slice::View{values:nonce,start:0,length:nonce_length};
- let finished:ext::tls_schedule::Secret=core::result::unwrap(ext::tls_schedule::finished(server.view(),before));assert(core::result::unwrap(ext::tls_schedule::verify_finished(server.view(),before,finished.view())));
- let i:i32=0;while(i<32){let changed:ext::tls_schedule::Secret=finished;changed.bytes[i]^=1;assert(!core::result::unwrap(ext::tls_schedule::verify_finished(server.view(),before,changed.view())));i+=1;}
+fn same(a:ext::tls_schedule::Secret,b:ext::tls_schedule::Secret){assert(ext::tls_hash::hash_length(a.algorithm)==ext::tls_hash::hash_length(b.algorithm));let i:i32=0;while(i<48){assert(a.bytes[i]==b.bytes[i]);i+=1;}}
+fn hash(value:core::slice::View<u8>,algorithm:ext::tls_hash::Algorithm)->ext::tls_hash::Digest{return ext::tls_hash::digest_from_view(algorithm,value).unwrap();}
+fn schedule(algorithm:ext::tls_hash::Algorithm,a:core::slice::View<u8>,b:core::slice::View<u8>,c:core::slice::View<u8>,target:core::slice::View<u8>,mode:i32,contracts:bool,output:&Output){
+ let n:i32=ext::tls_hash::hash_length(algorithm);assert(c.length==5*n);
+ let early:ext::tls_schedule::Early=ext::tls_schedule::early(algorithm,a).unwrap();if((mode&1)!=0){early=ext::tls_schedule::no_psk(algorithm);}
+ let handshake:ext::tls_schedule::Handshake=early.handshake(b).unwrap();if((mode&2)!=0){handshake=early.handshake_no_dhe();}
+ let master:ext::tls_schedule::Master=handshake.master();
+ let ch:ext::tls_hash::Digest=hash(part(c,0,n),algorithm);let sh:ext::tls_hash::Digest=hash(part(c,n,n),algorithm);let sf:ext::tls_hash::Digest=hash(part(c,2*n,n),algorithm);let cf:ext::tls_hash::Digest=hash(part(c,3*n,n),algorithm);let before:ext::tls_hash::Digest=hash(part(c,4*n,n),algorithm);
+ let client:ext::tls_schedule::Secret=handshake.traffic(ext::tls_schedule::Side::Client,sh).unwrap();let server:ext::tls_schedule::Secret=handshake.traffic(ext::tls_schedule::Side::Server,sh).unwrap();
+ let exporter:ext::tls_schedule::Exporter=master.exporter(sf).unwrap();let resumption:ext::tls_schedule::Resumption=master.resumption(cf).unwrap();let early_exporter:ext::tls_schedule::EarlyExporter=early.exporter(ch).unwrap();
+ let nonce:[u8;255]=[0;255];let nonce_length:i32=2;if(target.length==0){nonce_length=0;}if(target.length==1){nonce_length=1;}if(target.length==n+1){nonce_length=255;}let nv:core::slice::View<u8> =core::slice::View{values:nonce,start:0,length:nonce_length};
+ let finished:ext::tls_schedule::Secret=ext::tls_schedule::finished(server,before).unwrap();assert(ext::tls_schedule::verify_finished(server,before,finished.view()).unwrap());
+ let i:i32=0;while(i<n){let changed:ext::tls_schedule::Secret=finished;changed.bytes[i]^=1;assert(!ext::tls_schedule::verify_finished(server,before,changed.view()).unwrap());i+=1;}
  let label:[u8;11]=[116,101,115,116,32,101,120,112,111,114,116];let lv:core::slice::View<u8> =core::slice::View{values:label,start:0,length:11};
  if(contracts){
+  let other:ext::tls_hash::Algorithm=ext::tls_hash::Algorithm::Sha384;if(n==48){other=ext::tls_hash::Algorithm::Sha256;}
+  let zeros:[u8;48]=[0;48];let wrong:ext::tls_hash::Digest=hash(core::slice::View{values:zeros,start:0,length:ext::tls_hash::hash_length(other)},other);
+  assert(skind(early.traffic(wrong).unwrap_err())==3);assert(skind(handshake.traffic(ext::tls_schedule::Side::Client,wrong).unwrap_err())==3);
+  assert(skind(master.traffic(ext::tls_schedule::Side::Client,wrong).unwrap_err())==3);assert(skind(master.exporter(wrong).unwrap_err())==3);assert(skind(master.resumption(wrong).unwrap_err())==3);
+  assert(skind(ext::tls_schedule::finished(server,wrong).unwrap_err())==3);assert(skind(ext::tls_schedule::verify_finished(server,wrong,finished.view()).unwrap_err())==3);
+  assert(skind(ext::tls_schedule::derive_secret(server,lv,wrong).unwrap_err())==3);
   let variant:i32=0;while(variant<3){
-   assert(skind(core::result::unwrap_err(early.traffic(bad(ch,variant))))==1);assert(skind(core::result::unwrap_err(handshake.traffic(ext::tls_schedule::Side::Client,bad(sh,variant))))==1);
-   assert(skind(core::result::unwrap_err(master.traffic(ext::tls_schedule::Side::Client,bad(sf,variant))))==1);assert(skind(core::result::unwrap_err(master.exporter(bad(sf,variant))))==1);assert(skind(core::result::unwrap_err(master.resumption(bad(cf,variant))))==1);
-   assert(skind(core::result::unwrap_err(ext::tls_schedule::finished(bad(server.view(),variant),before)))==1);assert(skind(core::result::unwrap_err(ext::tls_schedule::finished(server.view(),bad(before,variant))))==1);
-   assert(skind(core::result::unwrap_err(ext::tls_schedule::verify_finished(server.view(),before,bad(finished.view(),variant))))==1);
-   assert(skind(core::result::unwrap_err(exporter.export(bad(lv,variant),a,target)))==1);assert(skind(core::result::unwrap_err(exporter.export(lv,bad(a,variant),target)))==1);assert(skind(core::result::unwrap_err(exporter.export(lv,a,bad(target,variant))))==1);variant+=1;
+   assert(skind(ext::tls_schedule::secret_from_view(algorithm,bad(server.view(),variant)).unwrap_err())==1);
+   assert(ext::tls_hash::digest_from_view(algorithm,bad(ch.view(),variant)).is_err());
+   assert(skind(ext::tls_schedule::early(algorithm,bad(a,variant)).unwrap_err())==1);assert(skind(early.handshake(bad(b,variant)).unwrap_err())==1);
+   assert(skind(ext::tls_schedule::verify_finished(server,before,bad(finished.view(),variant)).unwrap_err())==1);
+   assert(skind(ext::tls_schedule::verify_finished(server,wrong,bad(finished.view(),variant)).unwrap_err())==1);
+   assert(skind(ext::tls_schedule::derive_secret(server,bad(lv,variant),wrong).unwrap_err())==1);
+   assert(skind(exporter.export(bad(lv,variant),a,target).unwrap_err())==1);assert(skind(exporter.export(lv,bad(a,variant),target).unwrap_err())==1);assert(skind(exporter.export(lv,a,bad(target,variant)).unwrap_err())==1);variant+=1;
   }
-  let short:core::slice::View<u8> =part(c,0,31);assert(skind(core::result::unwrap_err(early.traffic(short)))==3);assert(skind(core::result::unwrap_err(master.resumption(short)))==3);
-  assert(skind(core::result::unwrap_err(ext::tls_schedule::verify_finished(server.view(),before,short)))==7);same(client,core::result::unwrap(handshake.traffic(ext::tls_schedule::Side::Client,sh)));
-  let wide:core::slice::View<u8> =part(c,0,33);assert(skind(core::result::unwrap_err(ext::tls_schedule::finished(wide,before)))==2);assert(skind(core::result::unwrap_err(ext::tls_schedule::verify_finished(server.view(),wide,finished.view())))==3);
-  let nonce_long:core::slice::View<u8> =part(a,0,256);assert(skind(core::result::unwrap_err(resumption.ticket(nonce_long)))==5);
-  let empty_label:core::slice::View<u8> =part(a,0,0);assert(skind(core::result::unwrap_err(exporter.export(empty_label,a,target)))==4);assert(skind(core::result::unwrap_err(early_exporter.export(empty_label,a,target)))==4);
-  let excessive:core::slice::View<u8> =target;excessive.length=8161;assert(skind(core::result::unwrap_err(exporter.export(lv,a,excessive)))==6);assert(skind(core::result::unwrap_err(early_exporter.export(lv,a,excessive)))==6);
-  let cell:i32=0;while(cell<8200){assert(target.values[cell]==222);cell+=1;}
+  let short:core::slice::View<u8> =part(c,0,n-1);let wide:core::slice::View<u8> =part(c,0,n+1);
+  assert(skind(ext::tls_schedule::secret_from_view(algorithm,short).unwrap_err())==2);assert(skind(ext::tls_schedule::secret_from_view(algorithm,wide).unwrap_err())==2);
+  assert(ext::tls_hash::digest_from_view(algorithm,short).is_err());assert(ext::tls_hash::digest_from_view(algorithm,wide).is_err());
+  assert(skind(ext::tls_schedule::verify_finished(server,before,short).unwrap_err())==7);assert(skind(ext::tls_schedule::verify_finished(server,before,wide).unwrap_err())==7);
+  let nonce_long:core::slice::View<u8> =part(a,0,256);assert(skind(resumption.ticket(nonce_long).unwrap_err())==5);
+  let empty_label:core::slice::View<u8> =part(a,0,0);assert(skind(exporter.export(empty_label,a,target).unwrap_err())==4);assert(skind(early_exporter.export(empty_label,a,target).unwrap_err())==4);
+  let excessive:core::slice::View<u8> =target;excessive.length=ext::tls_schedule::max_output(algorithm)+1;assert(skind(exporter.export(lv,a,excessive).unwrap_err())==6);assert(skind(early_exporter.export(lv,a,excessive).unwrap_err())==6);
+  let cell:i32=0;while(cell<12280){assert(target.values[cell]==222);cell+=1;}
+  let seed:[u8;48]=[7;48];let made:ext::tls_schedule::Secret=ext::tls_schedule::secret_from_view(algorithm,core::slice::View{values:seed,start:0,length:n}).unwrap();seed[0]=99;assert(made.bytes[0]==7);
+  same(client,handshake.traffic(ext::tls_schedule::Side::Client,sh).unwrap());
  }
- output.word(0);output.word((17*32+target.length*2) as u64);
- output.secret(early.secret);output.secret(early.binder(ext::tls_schedule::BinderKind::External));output.secret(early.binder(ext::tls_schedule::BinderKind::Resumption));output.secret(core::result::unwrap(early.traffic(ch)));output.secret(early_exporter.secret);
- output.secret(handshake.secret);output.secret(client);output.secret(server);output.secret(master.secret);output.secret(core::result::unwrap(master.traffic(ext::tls_schedule::Side::Client,sf)));output.secret(core::result::unwrap(master.traffic(ext::tls_schedule::Side::Server,sf)));output.secret(exporter.secret);output.secret(resumption.secret);output.secret(core::result::unwrap(resumption.ticket(nv)));output.secret(finished);output.secret(core::result::unwrap(ext::tls_schedule::finished(client.view(),sf)));output.secret(core::result::unwrap(ext::tls_schedule::update_traffic(client.view())));
- core::result::unwrap(exporter.export(lv,a,target));output.view(target);core::result::unwrap(early_exporter.export(lv,a,target));output.view(target);
+ output.word(0);output.word((17*n+target.length*2) as u64);
+ output.secret(early.secret);output.secret(early.binder(ext::tls_schedule::BinderKind::External));output.secret(early.binder(ext::tls_schedule::BinderKind::Resumption));output.secret(early.traffic(ch).unwrap());output.secret(early_exporter.secret);
+ output.secret(handshake.secret);output.secret(client);output.secret(server);output.secret(master.secret);output.secret(master.traffic(ext::tls_schedule::Side::Client,sf).unwrap());output.secret(master.traffic(ext::tls_schedule::Side::Server,sf).unwrap());output.secret(exporter.secret);output.secret(resumption.secret);output.secret(resumption.ticket(nv).unwrap());output.secret(finished);output.secret(ext::tls_schedule::finished(client,sf).unwrap());output.secret(ext::tls_schedule::update_traffic(client).unwrap());
+ exporter.export(lv,a,target).unwrap();output.view(target);early_exporter.export(lv,a,target).unwrap();output.view(target);
 }
-fn transcript(commands:core::slice::View<u8>,output:&Output){
- let state:ext::tls_transcript::State=ext::tls_transcript::new();let fork:ext::tls_transcript::State=state;let at:i32=0;let count:i32=0;while(at<commands.length){let n:i32=(commands.values[commands.start+at+1] as i32)|((commands.values[commands.start+at+2] as i32)<<8);at+=3+n;count+=1;}assert(at==commands.length);output.word(0);output.word((count*56) as u64);at=0;
+fn transcript(algorithm:ext::tls_hash::Algorithm,commands:core::slice::View<u8>,output:&Output){
+ let state:ext::tls_transcript::State=ext::tls_transcript::new(algorithm);let fork:ext::tls_transcript::State=state;let at:i32=0;let count:i32=0;while(at<commands.length){let n:i32=(commands.values[commands.start+at+1] as i32)|((commands.values[commands.start+at+2] as i32)<<8);at+=3+n;count+=1;}assert(at==commands.length);output.word(0);output.word((count*(24+ext::tls_hash::hash_length(algorithm))) as u64);at=0;
  while(at<commands.length){let action:u8=commands.values[commands.start+at];let n:i32=(commands.values[commands.start+at+1] as i32)|((commands.values[commands.start+at+2] as i32)<<8);let frame:core::slice::View<u8> =part(commands,at+3,n);at+=3+n;let status:u64=0;
   if(action==0||action==1||action==5||action==6||action==7){let value:core::slice::View<u8> =frame;if(action==5){value=bad(frame,0);}let prior_count:u64=state.count;let prior_bytes:u64=state.hash.count;if(action==6){state.count=18446744073709551615;}if(action==7){state.hash.count=2305843009213693951;}
    let result:core::result::Result<i32,ext::tls_transcript::Error> =core::result::Ok(0);if(action==1){result=state.rewrite_for_hrr(value);}else{result=state.update(value);}if(core::result::is_err(result)){status=tkind(core::result::unwrap_err(result));}
    if(action==6){assert(status==5&&state.count==18446744073709551615);state.count=prior_count;}if(action==7){assert(status==5&&state.hash.count==2305843009213693951);state.hash.count=prior_bytes;}
   }
   if(action==3){fork=state;}if(action==4){let saved:ext::tls_transcript::State=state;state=fork;fork=saved;}
-  let flag:u64=0;if(state.used_hrr()){flag=1;}output.word(status);output.word(state.messages());output.word(flag);let digest:core::sha256::Digest=state.snapshot();output.view(core::slice::View{values:digest.bytes,start:0,length:32});
+  let flag:u64=0;if(state.used_hrr()){flag=1;}output.word(status);output.word(state.messages());output.word(flag);if(action==8){let original:ext::tls_hash::Digest=state.snapshot();let changed:ext::tls_hash::Digest=original;changed.bytes[0]^=1;let again:ext::tls_hash::Digest=state.snapshot();let i:i32=0;while(i<48){assert(original.bytes[i]==again.bytes[i]);i+=1;}assert(changed.bytes[0]!=again.bytes[0]);}
+  let digest:ext::tls_hash::Digest=state.snapshot();assert(ext::tls_hash::hash_length(state.algorithm())==ext::tls_hash::hash_length(algorithm));output.digest(digest);
  }
 }
 fn main()->i32{
  let stdin:std::stream::Descriptor=std::stream::stdin();let head:[u8;8]=[0;8];core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(),head,0,8));let cases:u64=load(head,0);let out:[u8;2048]=[0;2048];let output:Output=Output{bytes:out,used:0};let current:u64=0;
- while(current<cases){let h:[u8;56]=[0;56];core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(),h,0,56));let op:i32=load(h,0) as i32;let layout:i32=load(h,8) as i32;let alen:i32=load(h,16) as i32;let blen:i32=load(h,24) as i32;let clen:i32=load(h,32) as i32;let length:i32=load(h,40) as i32;let mode:i32=load(h,48) as i32;
- assert(alen>=0&&alen<=2048&&blen>=0&&blen<=256&&clen>=0&&clen<=256&&length>=0&&length<=8161);
- let ra:[u8;2100]=[165;2100];let rb:[u8;300]=[166;300];let rc:[u8;300]=[167;300];let rt:[u8;8200]=[222;8200];core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(),ra,3,alen));core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(),rb,3,blen));core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(),rc,3,clen));
- let sa:[u8;2100]=ra;let sb:[u8;300]=rb;let sc:[u8;300]=rc;let wa:[i32;525]=[0;525];let wb:[i32;75]=[0;75];let wc:[i32;75]=[0;75];let wt:[i32;2050]=[0;2050];let a:[u8]=ra;let b:[u8]=rb;let c:[u8]=rc;let target:[u8]=rt;
- if(layout==1){a=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(wa),2100);b=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(wb),300);c=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(wc),300);target=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(wt),8200);let i:i32=0;while(i<2100){a[i]=ra[i];i+=1;}i=0;while(i<300){b[i]=rb[i];c[i]=rc[i];i+=1;}i=0;while(i<8200){target[i]=222;i+=1;}}
+ while(current<cases){let h:[u8;64]=[0;64];core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(),h,0,64));let op:i32=load(h,0) as i32;let layout:i32=load(h,8) as i32;let alen:i32=load(h,16) as i32;let blen:i32=load(h,24) as i32;let clen:i32=load(h,32) as i32;let length:i32=load(h,40) as i32;let mode:i32=load(h,48) as i32;let algorithm:ext::tls_hash::Algorithm=ext::tls_hash::Algorithm::Sha256;if(load(h,56)==1){algorithm=ext::tls_hash::Algorithm::Sha384;}
+ assert(alen>=0&&alen<=2048&&blen>=0&&blen<=256&&clen>=0&&clen<=256&&length>=0&&length<=12241);
+ let ra:[u8;2100]=[165;2100];let rb:[u8;300]=[166;300];let rc:[u8;300]=[167;300];let rt:[u8;12280]=[222;12280];core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(),ra,3,alen));core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(),rb,3,blen));core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(),rc,3,clen));
+ let sa:[u8;2100]=ra;let sb:[u8;300]=rb;let sc:[u8;300]=rc;let wa:[i32;525]=[0;525];let wb:[i32;75]=[0;75];let wc:[i32;75]=[0;75];let wt:[i32;3070]=[0;3070];let a:[u8]=ra;let b:[u8]=rb;let c:[u8]=rc;let target:[u8]=rt;
+ if(layout==1){a=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(wa),2100);b=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(wb),300);c=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(wc),300);target=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(wt),12280);let i:i32=0;while(i<2100){a[i]=ra[i];i+=1;}i=0;while(i<300){b[i]=rb[i];c[i]=rc[i];i+=1;}i=0;while(i<12280){target[i]=222;i+=1;}}
  output.word(core::mem::slice_stride(a) as u64);output.word(core::mem::slice_stride(target) as u64);let av:core::slice::View<u8> =core::slice::View{values:a,start:3,length:alen};let bv:core::slice::View<u8> =core::slice::View{values:b,start:3,length:blen};let cv:core::slice::View<u8> =core::slice::View{values:c,start:3,length:clen};let tv:core::slice::View<u8> =core::slice::View{values:target,start:3,length:length};let allowed:i32=0;
- if(op==0){let base:core::slice::View<u8> =av;let label:core::slice::View<u8> =bv;let context:core::slice::View<u8> =cv;let destination:core::slice::View<u8> =tv;if(mode>=1&&mode<=3){base=bad(av,mode-1);}if(mode>=4&&mode<=6){label=bad(bv,mode-4);}if(mode>=7&&mode<=9){context=bad(cv,mode-7);}if(mode>=10&&mode<=12){destination=bad(tv,mode-10);}let result:core::result::Result<i32,ext::tls_schedule::Error> =ext::tls_schedule::expand_label(base,label,context,destination);if(core::result::is_err(result)){output.word(skind(core::result::unwrap_err(result)));output.word(0);}else{allowed=core::result::unwrap(result);output.word(0);output.word(allowed as u64);output.view(tv);}}
- if(op==1||op==3){schedule(av,bv,cv,tv,mode,op==3,output.borrow());allowed=length;}if(op==2){transcript(av,output.borrow());}
- let i:i32=0;while(i<2100){assert(a[i]==sa[i]);i+=1;}i=0;while(i<300){assert(b[i]==sb[i]&&c[i]==sc[i]);i+=1;}i=0;while(i<8200){if(i<3||i>=3+allowed){assert(target[i]==222);}i+=1;}current+=1;
+ if(op==0){let base:core::slice::View<u8> =av;let label:core::slice::View<u8> =bv;let context:core::slice::View<u8> =cv;let destination:core::slice::View<u8> =tv;if(mode>=1&&mode<=3){base=bad(av,mode-1);}if(mode>=4&&mode<=6){label=bad(bv,mode-4);}if(mode>=7&&mode<=9){context=bad(cv,mode-7);}if(mode>=10&&mode<=12){destination=bad(tv,mode-10);}let result:core::result::Result<i32,ext::tls_schedule::Error> =core::result::Err(ext::tls_schedule::Error::Bounds);let imported:core::result::Result<ext::tls_schedule::Secret,ext::tls_schedule::Error> =ext::tls_schedule::secret_from_view(algorithm,base);if(imported.is_err()){result=core::result::Err(imported.unwrap_err());}else{let secret:ext::tls_schedule::Secret=imported.unwrap();result=ext::tls_schedule::expand_label(secret,label,context,destination);}if(core::result::is_err(result)){output.word(skind(core::result::unwrap_err(result)));output.word(0);}else{allowed=core::result::unwrap(result);output.word(0);output.word(allowed as u64);output.view(tv);}}
+ if(op==1||op==3){schedule(algorithm,av,bv,cv,tv,mode,op==3,output.borrow());allowed=length;}if(op==2){transcript(algorithm,av,output.borrow());}
+ let i:i32=0;while(i<2100){assert(a[i]==sa[i]);i+=1;}i=0;while(i<300){assert(b[i]==sb[i]&&c[i]==sc[i]);i+=1;}i=0;while(i<12280){if(i<3||i>=3+allowed){assert(target[i]==222);}i+=1;}current+=1;
  }output.flush();return 0;
 }

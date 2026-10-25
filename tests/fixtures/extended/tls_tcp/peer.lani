@@ -11,7 +11,7 @@ import ext::der;
 import ext::service_identity;
 import ext::tls_connection;
 import ext::tls_negotiation;
-import ext::tls_record;
+import ext::tls_suite;
 import ext::tls_tcp;
 import std::process;
 import std::socket;
@@ -35,11 +35,14 @@ fn main() -> i32 {
     let role: u64 = number(args,arg(1,args_pointer)); let suite_number: u64 = number(args,arg(2,args_pointer)); let root: [u8;4096] = [0;4096]; let chain_bytes: [u8;4096] = [0;4096]; let seed: [u8;4096] = [0;4096];
     let root_length: i32 = hex(args,arg(3,args_pointer),root); let chain_length: i32 = hex(args,arg(4,args_pointer),chain_bytes); let seed_length: i32 = hex(args,arg(5,args_pointer),seed);
     let length: u64 = number(args,arg(6,args_pointer)); let mode: u64 = number(args,arg(7,args_pointer)); let calls: u64 = number(args,arg(8,args_pointer)); let milliseconds: u64 = number(args,arg(9,args_pointer)); let expect_failure: bool = number(args,arg(10,args_pointer)) != 0;
-    let group: u64 = number(args,arg(11,args_pointer)); assert(role <= 1 && suite_number <= 1 && length <= 1048576 && mode <= 11 && group <= 3 && milliseconds <= 20000);
+    let group: u64 = number(args,arg(11,args_pointer)); assert(role <= 1 && suite_number <= 2 && length <= 1048576 && mode <= 13 && group <= 3 && milliseconds <= 20000);
     let empty: core::slice::View<u8> = view(chain_bytes,0); let chain: [core::slice::View<u8>;8] = [empty;8]; let reader: ext::der::Reader = ext::der::reader(view(chain_bytes,chain_length)).unwrap(); let count: i32 = 0;
     while (true) { let next: core::option::Option<ext::der::Element> = reader.next().unwrap(); if (next.is_none()) { break; } assert(count < 8); chain[count] = next.unwrap().encoded; count += 1; }
     let anchor: [core::slice::View<u8>;1] = [view(root,root_length);1]; let dns: [u8;12] = [112,97,116,104,46,101,120,97,109,112,108,101];
-    let reference: ext::service_identity::Reference = ext::service_identity::dns_reference(view(dns,12)).unwrap(); let suite: ext::tls_record::Suite = ext::tls_record::Suite::ChaCha20Poly1305Sha256; if (suite_number == 1) { suite = ext::tls_record::Suite::Aes128GcmSha256; }
+    let reference: ext::service_identity::Reference = ext::service_identity::dns_reference(view(dns,12)).unwrap();
+    let offered: [ext::tls_suite::Suite;3] = [ext::tls_suite::Suite::ChaCha20Poly1305Sha256,ext::tls_suite::Suite::Aes128GcmSha256,ext::tls_suite::Suite::Aes256GcmSha384]; let suite_count: i32 = 2; let wanted: u16 = 4867;
+    if (suite_number == 1) { offered[0] = ext::tls_suite::Suite::Aes128GcmSha256; offered[1] = ext::tls_suite::Suite::ChaCha20Poly1305Sha256; wanted = 4865; } if (suite_number == 2) { offered[0] = ext::tls_suite::Suite::Aes256GcmSha384; suite_count = 1; wanted = 4866; }
+    let suites: ext::tls_suite::Policy = ext::tls_suite::policy(core::slice::View {values:offered,start:0,length:suite_count}).unwrap(); if (mode == 13) { suites.length = 0; }
     if (mode == 6) { let wrong: [u8;13] = [119,114,111,110,103,46,101,120,97,109,112,108,101]; reference = ext::service_identity::dns_reference(view(wrong,13)).unwrap(); }
     let host: ext::tls_tcp::HostBudget = ext::tls_tcp::host_budget(calls); let start: core::time::Instant = host.now().unwrap(); let deadline: core::time::Deadline = core::time::deadline_at(start.checked_add(core::time::from_millis(milliseconds)).unwrap());
     let socket: std::socket::Socket = std::socket::from_owned_handle(0,std::socket::Family::Ipv4,std::socket::Kind::Tcp).unwrap(); let made: core::result::Result<ext::tls_tcp::Connection,ext::tls_tcp::Failure> = core::result::Err(ext::tls_tcp::Failure { cause: ext::tls_tcp::Error::Closed, progress: ext::tls_tcp::Progress { sent:0,received:0,consumed:0,pending_wire:0,pending_input:0,pending_plaintext:0,established:false,peer_closed:false,local_closed:false }, cleanup: core::option::None() });
@@ -48,8 +51,8 @@ fn main() -> i32 {
     if (group == 1) { groups.preferred = ext::tls_negotiation::Group::Secp256r1; initial = core::option::Some(ext::tls_negotiation::Group::Secp256r1); } if (group == 2) { groups = ext::tls_negotiation::default_groups(); } if (group == 3) { groups.preferred = ext::tls_negotiation::Group::Secp256r1; groups.fallback = core::option::Some(ext::tls_negotiation::Group::X25519); }
     if (mode == 10) { assert(group == 1); initial = core::option::Some(ext::tls_negotiation::Group::X25519); }
     if (role == 0) { let now: i64 = 1792843200; if (mode == 7) { now = 0; }
-        made = ext::tls_tcp::attach_client(socket.borrow(),ext::tls_connection::ClientConfig { anchors: core::slice::View {values:anchor,start:0,length:1}, reference: reference, unix_time: now, server_name: view(dns,12), alpn: empty, require_alpn: false, prefer_suite: suite, groups: groups, initial_share: initial, limits: limits },deadline,host.borrow());
-    } else { let used_seed: i32 = seed_length; if (mode == 10) { used_seed = 31; } made = ext::tls_tcp::attach_server(socket.borrow(),ext::tls_connection::ServerConfig { chain: core::slice::View {values:chain,start:0,length:count}, seed: view(seed,used_seed), alpn: empty, require_alpn: false, prefer_suite: suite, groups: groups, require_cookie: false, limits: limits },deadline,host.borrow()); }
+        made = ext::tls_tcp::attach_client(socket.borrow(),ext::tls_connection::ClientConfig { anchors: core::slice::View {values:anchor,start:0,length:1}, reference: reference, unix_time: now, server_name: view(dns,12), alpn: empty, require_alpn: false, suites: suites, groups: groups, initial_share: initial, limits: limits },deadline,host.borrow());
+    } else { let used_seed: i32 = seed_length; if (mode == 10) { used_seed = 31; } made = ext::tls_tcp::attach_server(socket.borrow(),ext::tls_connection::ServerConfig { chain: core::slice::View {values:chain,start:0,length:count}, seed: view(seed,used_seed), alpn: empty, require_alpn: false, suites: suites, groups: groups, require_cookie: false, limits: limits },deadline,host.borrow()); }
     let exported: [u8;32] = [0;32];
     if (made.is_err()) { assert(expect_failure && socket.is_open()); let e: ext::tls_tcp::Failure = made.unwrap_err(); if (mode == 11) { assert(match(e.cause) { ext::tls_tcp::Error::Engine(inner) -> match(inner) { ext::tls_connection::Error::InvalidEphemeralScalar -> true, _ -> false }, _ -> false }); } if (mode == 10) { assert(match(e.cause) { ext::tls_tcp::Error::Engine(inner) -> match(inner) { ext::tls_connection::Error::InvalidConfig -> true, _ -> false }, _ -> false }); } let cleanup: ext::tls_tcp::CloseReport = core::option::unwrap_or(e.cleanup,ext::tls_tcp::CloseReport {primary:core::option::Some(e.cause),close_error:core::option::None(),release_attempts:0,cleanup_calls:0}); assert(socket.close().is_ok()); report(code(e.cause),0,0,0,0,0,cleanup,exported); return 0; }
     let connection: ext::tls_tcp::Connection = made.unwrap(); assert(!socket.is_open()); let accepted: u64 = 0; let received: u64 = 0; let sent: u64 = 0; let native_received: u64 = 0; let consumed: u64 = 0; let issue: core::option::Option<ext::tls_tcp::Error> = core::option::None();
@@ -57,8 +60,12 @@ fn main() -> i32 {
     while (!connection.established()) { let step: core::result::Result<ext::tls_tcp::Progress,ext::tls_tcp::Failure> = connection.step(deadline,host.borrow()); if (step.is_err()) { issue = core::option::Some(step.unwrap_err().cause); sent += step.unwrap_err().progress.sent as u64; native_received += step.unwrap_err().progress.received as u64; consumed += step.unwrap_err().progress.consumed as u64; break; } sent += step.unwrap().sent as u64; native_received += step.unwrap().received as u64; consumed += step.unwrap().consumed as u64; }
     let send_bytes: [u8;1024] = [0;1024]; let read_bytes: [u8;1024] = [0;1024]; let held: i32 = 0; let held_at: i32 = 0;
     if (issue.is_none()) {
-        let negotiated: ext::tls_connection::Negotiated = connection.negotiated().unwrap(); if (group == 0) { assert(ext::tls_negotiation::group_id(negotiated.group) == 29); } else { assert(ext::tls_negotiation::group_id(negotiated.group) == 23); }
+        let negotiated: ext::tls_connection::Negotiated = connection.negotiated().unwrap(); assert(ext::tls_suite::id(negotiated.suite) == wanted); if (group == 0) { assert(ext::tls_negotiation::group_id(negotiated.group) == 29); } else { assert(ext::tls_negotiation::group_id(negotiated.group) == 23); }
         let label: [u8;15] = [108,97,110,105,117,115,45,116,99,112,45,116,101,115,116]; assert(connection.export(view(label,15),empty,view(exported,32),deadline,host.borrow()).unwrap() == 32);
+        if (mode == 12) { assert(suite_number == 2 && length == 0); let words: [i32;3062] = [0;3062]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words),12248); let i: i32 = 0; while (i < 12248) { bytes[i] = 165; i += 1; }
+            let too_large: core::result::Result<i32,ext::tls_tcp::Failure> = connection.export(view(label,15),empty,core::slice::View {values:bytes,start:3,length:12241},deadline,host.borrow()); assert(too_large.is_err() && too_large.unwrap_err().cleanup.is_none() && connection.is_open()); i = 0; while (i < 12248) { assert(bytes[i] == 165); i += 1; }
+            assert(connection.export(view(label,15),empty,core::slice::View {values:bytes,start:3,length:12240},deadline,host.borrow()).unwrap() == 12240); i = 0; while (i < 3) { assert(bytes[i] == 165); i += 1; } i = 12243; while (i < 12248) { assert(bytes[i] == 165); i += 1; } i = 0; while (i < 32) { exported[i] = bytes[3 + i]; i += 1; } let sink: std::stream::Descriptor = std::stream::stdout(); assert(core::io::write_all(sink.borrow(),bytes,3,12240).is_ok());
+        }
         if (mode == 9) {
             // Exhaust only through the public exporter, with no fabricated
             // state/counter mutation. Each successful call costs >=32768 work.

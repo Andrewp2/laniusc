@@ -1,8 +1,8 @@
 // Test-only authentication protocol. Frames are clear authenticated-record
 // content supplied by an independent peer, not a transport or connection.
 module app::main;
-import core::io; import core::mem; import core::option; import core::result; import core::sha256; import core::slice;
-import ext::ed25519; import ext::service_identity; import ext::tls_authentication; import ext::tls_handshake; import ext::tls_transcript; import ext::x509_path;
+import core::io; import core::mem; import core::option; import core::result; import core::slice;
+import ext::ed25519; import ext::service_identity; import ext::tls_authentication; import ext::tls_hash; import ext::tls_schedule; import ext::tls_handshake; import ext::tls_transcript; import ext::x509_path;
 import std::stream;
 fn load(bytes:[u8],offset:i32)->u64{let value:u64=0;let i:i32=0;while(i<8){value|=(bytes[offset+i] as u64)<<(8*i);i+=1;}return value;}
 fn read(input:&std::stream::Descriptor,bytes:[u8],start:i32,length:i32){core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(input,bytes,start,length));}
@@ -21,7 +21,7 @@ fn handshake_error(value:ext::tls_handshake::Error)->u64{return match(value){ext
 fn path_error(value:ext::x509_path::ErrorKind)->u64{return match(value){ext::x509_path::ErrorKind::Bounds->1,ext::x509_path::ErrorKind::EmptyChain->2,ext::x509_path::ErrorKind::EmptyAnchors->3,ext::x509_path::ErrorKind::ChainLimit->4,ext::x509_path::ErrorKind::AnchorLimit->5,ext::x509_path::ErrorKind::InputLimit->6,ext::x509_path::ErrorKind::ScratchTooSmall->7,ext::x509_path::ErrorKind::InvalidTime->8,ext::x509_path::ErrorKind::Parse->9,ext::x509_path::ErrorKind::ItemLimit->10,ext::x509_path::ErrorKind::WorkLimit->11,ext::x509_path::ErrorKind::SignatureLimit->12,ext::x509_path::ErrorKind::Duplicate->13,ext::x509_path::ErrorKind::UnsupportedAlgorithm->14,ext::x509_path::ErrorKind::IssuerMismatch->15,ext::x509_path::ErrorKind::Untrusted->16,ext::x509_path::ErrorKind::InvalidSignature->17,ext::x509_path::ErrorKind::Validity->18,ext::x509_path::ErrorKind::CaRequired->19,ext::x509_path::ErrorKind::KeyUsage->20,ext::x509_path::ErrorKind::ExtendedKeyUsage->21,ext::x509_path::ErrorKind::PathLength->22,ext::x509_path::ErrorKind::UnknownCritical->23,ext::x509_path::ErrorKind::UnsupportedConstraint->24,ext::x509_path::ErrorKind::UnsupportedCritical->25,ext::x509_path::ErrorKind::Identity->26};}
 fn phase(value:ext::tls_authentication::Phase)->u64{return match(value){ext::tls_authentication::Phase::EncryptedExtensions->0,ext::tls_authentication::Phase::Certificate->1,ext::tls_authentication::Phase::CertificateVerify->2,ext::tls_authentication::Phase::Finished->3,ext::tls_authentication::Phase::Authenticated->4,ext::tls_authentication::Phase::Failed->5};}
 fn error(value:ext::tls_authentication::Error)->u64{return match(value){
- ext::tls_authentication::Error::Bounds->1,ext::tls_authentication::Error::InvalidLimit->2,ext::tls_authentication::Error::InvalidSecretLength->3,
+ ext::tls_authentication::Error::Bounds->1,ext::tls_authentication::Error::InvalidLimit->2,ext::tls_authentication::Error::HashMismatch->3,
  ext::tls_authentication::Error::InvalidTranscript->4,ext::tls_authentication::Error::EmptyAnchors->5,ext::tls_authentication::Error::AnchorLimit->6,
  ext::tls_authentication::Error::SignatureScheme->7,ext::tls_authentication::Error::FrameLimit->8,ext::tls_authentication::Error::WorkLimit->9,
  ext::tls_authentication::Error::SignatureLimit->10,ext::tls_authentication::Error::ScratchTooSmall->11,ext::tls_authentication::Error::UnexpectedMessage->12,
@@ -33,20 +33,20 @@ fn report(state:&ext::tls_authentication::State,budget:&ext::x509_path::Budget,s
  let key:core::option::Option<ext::ed25519::Key32> = state.peer_key();let transcript:core::option::Option<ext::tls_transcript::State> = state.transcript();
  out.word(status);out.word(phase(state.phase()));out.word(state.is_poisoned() as u64);out.word(state.authenticated() as u64);
  out.word(key.is_some() as u64);out.word(transcript.is_some() as u64);out.word(budget.signatures_left);out.word(budget.work_left);
- let key_bytes:[u8;32]=[0;32];let hash_bytes:[u8;32]=[0;32];let count:u64=0;let i:i32=0;
+ let key_bytes:[u8;32]=[0;32];let hash_bytes:[u8;48]=[0;48];let count:u64=0;let i:i32=0;
  if(key.is_some()){let owned:ext::ed25519::Key32=key.unwrap();while(i<32){key_bytes[i]=owned.bytes[i];i+=1;}}
- if(transcript.is_some()){let owned:ext::tls_transcript::State=transcript.unwrap();let digest:core::sha256::Digest=owned.snapshot();count=owned.messages();i=0;while(i<32){hash_bytes[i]=digest.bytes[i];i+=1;}}
- out.view(view(key_bytes,0,32));out.view(view(hash_bytes,0,32));out.word(count);
+ if(transcript.is_some()){let owned:ext::tls_transcript::State=transcript.unwrap();let digest:ext::tls_hash::Digest=owned.snapshot();count=owned.messages();i=0;while(i<48){hash_bytes[i]=digest.bytes[i];i+=1;}}
+ out.view(view(key_bytes,0,32));out.view(view(hash_bytes,0,48));out.word(count);
  let failed:core::option::Option<ext::tls_authentication::Error> = state.failure();let issue:u64=0;if(failed.is_some()){issue=error(failed.unwrap());}out.word(issue);
 }
 fn copies(state:&ext::tls_authentication::State){
  let key:core::option::Option<ext::ed25519::Key32> = state.peer_key();let hash:core::option::Option<ext::tls_transcript::State> = state.transcript();
  assert(key.is_some()&&hash.is_some());let changed:ext::ed25519::Key32=key.unwrap();changed.bytes[0]^=255;
  let current:ext::ed25519::Key32=state.peer_key().unwrap();assert(changed.bytes[0]!=current.bytes[0]);
- let transcript:ext::tls_transcript::State=hash.unwrap();let before:core::sha256::Digest=transcript.snapshot();
+ let transcript:ext::tls_transcript::State=hash.unwrap();let before:ext::tls_hash::Digest=transcript.snapshot();
  let extra:[u8;4]=[8,0,0,0];core::result::unwrap(transcript.update(view(extra,0,4)));
- let still:ext::tls_transcript::State=state.transcript().unwrap();let after:core::sha256::Digest=still.snapshot();
- let i:i32=0;while(i<32){assert(before.bytes[i]==after.bytes[i]);i+=1;}assert(transcript.messages()==still.messages()+1);
+ let still:ext::tls_transcript::State=state.transcript().unwrap();let after:ext::tls_hash::Digest=still.snapshot();
+ let i:i32=0;while(i<48){assert(before.bytes[i]==after.bytes[i]);i+=1;}assert(transcript.messages()==still.messages()+1);
 }
 fn run(state:ext::tls_authentication::State,actions:i32,budget:&ext::x509_path::Budget,input:&std::stream::Descriptor,bytes:[u8],out:&Output){
  let branch:ext::tls_authentication::State=state;let slots:[ext::x509_path::Slot;18]=[ext::x509_path::empty_slot();18];let turn:i32=0;
@@ -76,30 +76,30 @@ fn main()->i32{
  let input:std::stream::Descriptor=std::stream::stdin();let count_bytes:[u8;8]=[0;8];read(input.borrow(),count_bytes,0,8);let count:u64=load(count_bytes,0);let turn:u64=0;
  let output:[u8;2048]=[0;2048];let out:Output=Output{bytes:output,used:0};
  while(turn<count){
-  let header:[u8;136]=[0;136];read(input.borrow(),header,0,136);
+  let header:[u8;144]=[0;144];read(input.borrow(),header,0,144);
   let layout:i32=load(header,0) as i32;let now:i64=load(header,8) as i64;let variant:i32=load(header,16) as i32;let maximum:i32=load(header,24) as i32;
   let actions:i32=load(header,56) as i32;let root_len:i32=load(header,64) as i32;let ch_len:i32=load(header,72) as i32;let sh_len:i32=load(header,80) as i32;
   let secret_len:i32=load(header,88) as i32;let reference_len:i32=load(header,96) as i32;let hrr_len:i32=load(header,104) as i32;let ch2_len:i32=load(header,112) as i32;
-  let mode:i32=load(header,120) as i32;let mutate:bool=load(header,128)!=0;
-  assert(layout>=0&&layout<=1&&root_len>0&&root_len<=4096&&ch_len>0&&ch_len<=512&&sh_len>0&&sh_len<=512&&secret_len==32&&reference_len>0&&reference_len<=253&&hrr_len>=0&&hrr_len<=512&&ch2_len>=0&&ch2_len<=512);
+  let mode:i32=load(header,120) as i32;let mutate:bool=load(header,128)!=0;let algorithm_id:i32=load(header,136) as i32;assert(algorithm_id==0||algorithm_id==1);let algorithm:ext::tls_hash::Algorithm=ext::tls_hash::Algorithm::Sha256;if(algorithm_id==1){algorithm=ext::tls_hash::Algorithm::Sha384;}let hash_length:i32=ext::tls_hash::hash_length(algorithm);
+  assert(layout>=0&&layout<=1&&root_len>0&&root_len<=4096&&ch_len>0&&ch_len<=512&&sh_len>0&&sh_len<=512&&secret_len==hash_length&&reference_len>0&&reference_len<=253&&hrr_len>=0&&hrr_len<=512&&ch2_len>=0&&ch2_len<=512);
   let native:[u8;8192]=[0;8192];let packed:[i32;2048]=[0;2048];let frame_native:[u8;98336]=[0;98336];let frame_packed:[i32;24584]=[0;24584];
   let arena:[u8]=native;let frame_bytes:[u8]=frame_native;
   if(layout==1){arena=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(packed),8192);frame_bytes=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(frame_packed),98336);}
-  fill(arena,8192,222);read(input.borrow(),arena,3,root_len);read(input.borrow(),arena,4102,ch_len);read(input.borrow(),arena,4620,sh_len);read(input.borrow(),arena,5138,32);read(input.borrow(),arena,5176,reference_len);read(input.borrow(),arena,5435,hrr_len);read(input.borrow(),arena,5953,ch2_len);
+  fill(arena,8192,222);read(input.borrow(),arena,3,root_len);read(input.borrow(),arena,4102,ch_len);read(input.borrow(),arena,4620,sh_len);read(input.borrow(),arena,5138,hash_length);read(input.borrow(),arena,5192,reference_len);read(input.borrow(),arena,5451,hrr_len);read(input.borrow(),arena,5969,ch2_len);
   let root:core::slice::View<u8> = view(arena,3,root_len);let ch:core::slice::View<u8> = view(arena,4102,ch_len);let sh:core::slice::View<u8> = view(arena,4620,sh_len);
   let ch_frame:ext::tls_handshake::Frame=core::result::unwrap(ext::tls_handshake::parse_frame(ch));let sh_frame:ext::tls_handshake::Frame=core::result::unwrap(ext::tls_handshake::parse_frame(sh));
-  assert(ch_frame.kind==1&&sh_frame.kind==2);core::result::unwrap(ext::tls_handshake::parse_client_hello(ch_frame.body));let selected:ext::tls_handshake::ServerHello=core::result::unwrap(ext::tls_handshake::parse_server_hello(sh_frame.body));assert(selected.cipher_suite==4867&&!selected.is_hello_retry_request());
-  let transcript:ext::tls_transcript::State=ext::tls_transcript::new();
+  assert(ch_frame.kind==1&&sh_frame.kind==2);core::result::unwrap(ext::tls_handshake::parse_client_hello(ch_frame.body));let selected:ext::tls_handshake::ServerHello=core::result::unwrap(ext::tls_handshake::parse_server_hello(sh_frame.body));let suite:u16=4867;if(algorithm_id==1){suite=4866;}assert(selected.cipher_suite==suite&&!selected.is_hello_retry_request());
+  let transcript:ext::tls_transcript::State=ext::tls_transcript::new(algorithm);
   if(mode!=1){core::result::unwrap(transcript.update(ch));}
-  if(mode==4){core::result::unwrap(transcript.rewrite_for_hrr(view(arena,5435,hrr_len)));let second:ext::tls_handshake::Frame=core::result::unwrap(ext::tls_handshake::parse_frame(view(arena,5953,ch2_len)));core::result::unwrap(ext::tls_handshake::parse_client_hello(second.body));core::result::unwrap(transcript.update(second.wire));}
+  if(mode==4){core::result::unwrap(transcript.rewrite_for_hrr(view(arena,5451,hrr_len)));let second:ext::tls_handshake::Frame=core::result::unwrap(ext::tls_handshake::parse_frame(view(arena,5969,ch2_len)));core::result::unwrap(ext::tls_handshake::parse_client_hello(second.body));core::result::unwrap(transcript.update(second.wire));}
   if(mode!=1&&mode!=2){core::result::unwrap(transcript.update(sh));}
   if(mode==3){core::result::unwrap(transcript.update(ch));}
   let anchors:[core::slice::View<u8>;9]=[root;9];let anchor_view:core::slice::View<core::slice::View<u8>> = core::slice::View{values:anchors,start:0,length:1};
   if(variant==1){anchor_view.length=0;}if(variant==2){anchor_view.length=9;}if(variant==8){anchor_view.start=-1;}if(variant==9){anchors[0].start=-1;}
-  let reference:ext::service_identity::Reference=core::result::unwrap(ext::service_identity::dns_reference(view(arena,5176,reference_len)));
-  let secret:core::slice::View<u8> = view(arena,5138,32);if(variant==6){secret.length=31;}if(variant==7){secret.start=-1;}
+  let reference:ext::service_identity::Reference=core::result::unwrap(ext::service_identity::dns_reference(view(arena,5192,reference_len)));
+  let secret:ext::tls_schedule::Secret=ext::tls_schedule::secret_from_view(algorithm,view(arena,5138,hash_length)).unwrap();if(variant==6||variant==7){let opposite:ext::tls_hash::Algorithm=ext::tls_hash::Algorithm::Sha384;if(algorithm_id==1){opposite=ext::tls_hash::Algorithm::Sha256;}let zeros:[u8;48]=[0;48];secret=ext::tls_schedule::secret_from_view(opposite,view(zeros,0,ext::tls_hash::hash_length(opposite))).unwrap();}
   let schemes:[u16;32768]=[0;32768];schemes[0]=2055;let offered:core::slice::View<u16> = core::slice::View{values:schemes,start:0,length:1};
-  if(variant==3){offered.length=0;}if(variant==4){schemes[0]=1027;}if(variant==5){offered.length=32768;}if(variant==10){offered.start=-1;}
+  if(variant==3){offered.length=0;}if(variant==4){schemes[0]=1027;}if(variant==5){offered.length=32768;}if(variant==10||variant==7){offered.start=-1;}
   let limits:ext::x509_path::Limits=ext::x509_path::default_limits();limits.max_input=load(header,32);limits.max_work=load(header,40);limits.max_signatures=load(header,48);limits.parsing.max_items=1000000;limits.parsing.max_work=67108864;
   let budget:ext::x509_path::Budget=core::result::unwrap(ext::x509_path::budget(limits));
   let config:ext::tls_authentication::Config=ext::tls_authentication::Config{anchors:anchor_view,reference:reference,unix_time:now,max_frame:maximum};
@@ -107,7 +107,7 @@ fn main()->i32{
   out.word(core::mem::slice_stride(arena) as u64);out.word(core::mem::slice_stride(frame_bytes) as u64);
   if(made.is_err()){out.word(error(made.unwrap_err()));assert(actions==0);}else{
    out.word(0);let state:ext::tls_authentication::State=made.unwrap();
-   if(mutate){let i:i32=0;while(i<32){arena[5138+i]^=255;i+=1;}reference.bytes[0]=120;schemes[0]=0;let extra:[u8;4]=[8,0,0,0];core::result::unwrap(transcript.update(view(extra,0,4)));}
+   if(mutate){let i:i32=0;while(i<hash_length){arena[5138+i]^=255;secret.bytes[i]^=255;i+=1;}reference.bytes[0]=120;schemes[0]=0;let extra:[u8;4]=[8,0,0,0];core::result::unwrap(transcript.update(view(extra,0,4)));}
    run(state,actions,budget.borrow(),input.borrow(),frame_bytes,out.borrow());
   }
   out.view(root);assert(arena[0]==222&&arena[1]==222&&arena[2]==222&&arena[3+root_len]==222);turn+=1;

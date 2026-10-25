@@ -1,4 +1,4 @@
-// TLS 1.3 protected records, AES128-GCM/SHA256 and ChaCha20-Poly1305/SHA256.
+// TLS1.3 protected records: AES128/256-GCM and ChaCha20-Poly1305.
 // RFC 8446 sections 5, 7.1-7.3. This is not a TLS handshake or connection.
 // See docs/extended-tls-record.md for ownership, failure and target contracts.
 module ext::tls_record;
@@ -8,8 +8,9 @@ import core::slice;
 import ext::aes_gcm;
 import ext::chacha20_poly1305;
 import ext::tls_schedule;
+import ext::tls_hash;
+import ext::tls_suite;
 
-pub enum Suite { Aes128GcmSha256, ChaCha20Poly1305Sha256 }
 // Conservative per-traffic-key policy below RFC8446 section5.5 AES guidance.
 pub const AES_GCM_RECORD_LIMIT: u64 = 16777216;
 pub const MAX_CONTENT: i32 = 16384;
@@ -17,14 +18,14 @@ pub const MAX_INNER: i32 = 16385;
 pub const MAX_CIPHERTEXT: i32 = 16640;
 pub const MAX_RECORD: i32 = 16406;
 pub enum Error {
-    Bounds, InvalidSecretLength, InvalidType, InvalidContentLength,
+    Bounds, HashMismatch, InvalidType, InvalidContentLength,
     InvalidPadding, RecordOverflow, BufferTooSmall, Exhausted, Poisoned,
     InvalidRecord, Authentication, InvalidInner, Derivation
 }
 pub struct Opened { content: core::slice::View<u8>, content_type: u8 }
 // Use constructors/methods. Fields are implementation state, not a resumption
 // format. A value copy does not grant independent rights to use the nonce space.
-struct Traffic { suite: Suite, secret: [u8; 32], key: [u8; 32], aes_key: core::option::Option<ext::aes_gcm::Key>, iv: [u8; 12], next: u64, exhausted: bool, poisoned: bool }
+struct Traffic { suite: ext::tls_suite::Suite, secret: ext::tls_schedule::Secret, key: [u8; 32], aes_key: core::option::Option<ext::aes_gcm::Key>, iv: [u8; 12], next: u64, exhausted: bool, poisoned: bool }
 pub struct Sealer { traffic: Traffic }
 pub struct Opener { traffic: Traffic }
 
@@ -41,40 +42,34 @@ fn content_length_valid(kind: u8, length: i32) -> bool {
     if (kind == 22) { return length > 0; }
     return true;
 }
-fn is_aes(suite: Suite) -> bool { return match (suite) { Suite::Aes128GcmSha256 -> true, Suite::ChaCha20Poly1305Sha256 -> false }; }
-fn derive(suite: Suite, secret: core::slice::View<u8>) -> core::result::Result<Traffic, Error> {
-    let stored: [u8; 32] = [0; 32]; let index: i32 = 0;
-    while (index < 32) { stored[index] = secret.values[secret.start + index]; index += 1; }
-    let key_length: i32 = 32; if (is_aes(suite)) { key_length = 16; }
+fn derive(suite: ext::tls_suite::Suite, secret: ext::tls_schedule::Secret) -> core::result::Result<Traffic, Error> {
+    if (ext::tls_hash::hash_length(secret.algorithm) != ext::tls_hash::hash_length(ext::tls_suite::hash(suite))) { return core::result::Err(Error::HashMismatch); }
+    let stored: ext::tls_schedule::Secret = secret;
+    let key_length: i32 = ext::tls_suite::key_length(suite);
     let key: [u8; 32] = [0; 32]; let iv: [u8; 12] = [0; 12];
     let key_label: [u8; 3] = [107, 101, 121];
     let iv_label: [u8; 2] = [105, 118]; let empty: [u8; 0] = [];
-    let prk: core::slice::View<u8> = core::slice::View { values: stored, start: 0, length: 32 };
     let context: core::slice::View<u8> = core::slice::View { values: empty, start: 0, length: 0 };
-    let keyed: core::result::Result<i32, ext::tls_schedule::Error> = ext::tls_schedule::expand_label(prk,
+    let keyed: core::result::Result<i32, ext::tls_schedule::Error> = ext::tls_schedule::expand_label(stored,
         core::slice::View { values: key_label, start: 0, length: 3 }, context, core::slice::View { values: key, start: 0, length: key_length });
     if (core::result::is_err(keyed)) { return core::result::Err(Error::Derivation); }
-    let vectored: core::result::Result<i32, ext::tls_schedule::Error> = ext::tls_schedule::expand_label(prk,
+    let vectored: core::result::Result<i32, ext::tls_schedule::Error> = ext::tls_schedule::expand_label(stored,
         core::slice::View { values: iv_label, start: 0, length: 2 }, context, core::slice::View { values: iv, start: 0, length: 12 });
     if (core::result::is_err(vectored)) { return core::result::Err(Error::Derivation); }
     let aes_key: core::option::Option<ext::aes_gcm::Key> = core::option::None;
-    if (is_aes(suite)) {
-        let expanded: core::result::Result<ext::aes_gcm::Key, ext::aes_gcm::Error> = ext::aes_gcm::new(core::slice::View { values: key, start: 0, length: 16 });
+    if (ext::tls_suite::is_aes(suite)) {
+        let expanded: core::result::Result<ext::aes_gcm::Key, ext::aes_gcm::Error> = ext::aes_gcm::new(core::slice::View { values: key, start: 0, length: key_length });
         if (core::result::is_err(expanded)) { return core::result::Err(Error::Derivation); }
         aes_key = core::option::Some(core::result::unwrap(expanded));
     }
     return core::result::Ok(Traffic { suite: suite, secret: stored, key: key, aes_key: aes_key, iv: iv, next: 0, exhausted: false, poisoned: false });
 }
-pub fn sealer(suite: Suite, secret: core::slice::View<u8>) -> core::result::Result<Sealer, Error> {
-    if (!valid(secret)) { return core::result::Err(Error::Bounds); }
-    if (secret.length != 32) { return core::result::Err(Error::InvalidSecretLength); }
+pub fn sealer(suite: ext::tls_suite::Suite, secret: ext::tls_schedule::Secret) -> core::result::Result<Sealer, Error> {
     let made: core::result::Result<Traffic, Error> = derive(suite, secret);
     if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
     return core::result::Ok(Sealer { traffic: core::result::unwrap(made) });
 }
-pub fn opener(suite: Suite, secret: core::slice::View<u8>) -> core::result::Result<Opener, Error> {
-    if (!valid(secret)) { return core::result::Err(Error::Bounds); }
-    if (secret.length != 32) { return core::result::Err(Error::InvalidSecretLength); }
+pub fn opener(suite: ext::tls_suite::Suite, secret: ext::tls_schedule::Secret) -> core::result::Result<Opener, Error> {
     let made: core::result::Result<Traffic, Error> = derive(suite, secret);
     if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
     return core::result::Ok(Opener { traffic: core::result::unwrap(made) });
@@ -87,15 +82,15 @@ impl Traffic {
         return nonce;
     }
     fn at_limit(&self) -> bool {
-        return self.exhausted || (is_aes(self.suite) && self.next >= AES_GCM_RECORD_LIMIT);
+        return self.exhausted || (ext::tls_suite::is_aes(self.suite) && self.next >= AES_GCM_RECORD_LIMIT);
     }
     fn update_due(&self) -> bool {
         if (self.at_limit()) { return true; }
-        if (is_aes(self.suite)) { return self.next >= AES_GCM_RECORD_LIMIT-1; }
+        if (ext::tls_suite::is_aes(self.suite)) { return self.next >= AES_GCM_RECORD_LIMIT-1; }
         return self.next == 18446744073709551615;
     }
     fn advance(&self) {
-        if (is_aes(self.suite)) {
+        if (ext::tls_suite::is_aes(self.suite)) {
             self.next += 1; if (self.next == AES_GCM_RECORD_LIMIT) { self.exhausted = true; }
         } else {
             if (self.next == 18446744073709551615) { self.exhausted = true; }
@@ -104,11 +99,10 @@ impl Traffic {
     }
     fn update(&self) -> core::result::Result<i32, Error> {
         if (self.poisoned) { return core::result::Err(Error::Poisoned); }
-        let expanded: core::result::Result<ext::tls_schedule::Secret, ext::tls_schedule::Error> = ext::tls_schedule::update_traffic(
-            core::slice::View { values: self.secret, start: 0, length: 32 });
+        let expanded: core::result::Result<ext::tls_schedule::Secret, ext::tls_schedule::Error> = ext::tls_schedule::update_traffic(self.secret);
         if (core::result::is_err(expanded)) { return core::result::Err(Error::Derivation); }
         let next_secret: ext::tls_schedule::Secret = core::result::unwrap(expanded);
-        let made: core::result::Result<Traffic, Error> = derive(self.suite, next_secret.view());
+        let made: core::result::Result<Traffic, Error> = derive(self.suite, next_secret);
         if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
         // Replacement is atomic with respect to every returned error. This
         // overwrites current fields but is not a secure-erasure guarantee.
@@ -121,7 +115,7 @@ pub impl Sealer {
     pub fn borrow(&self) -> &Sealer { return self; }
     pub fn sequence(&self) -> u64 { return self.traffic.next; }
     pub fn exhausted(&self) -> bool { return self.traffic.at_limit(); }
-    pub fn suite(&self) -> Suite { return self.traffic.suite; }
+    pub fn suite(&self) -> ext::tls_suite::Suite { return self.traffic.suite; }
     // Query before sealing application data; reserve the last old-key record
     // for KeyUpdate. This method neither sends nor performs the update.
     pub fn key_update_due(&self) -> bool { return self.traffic.update_due(); }
@@ -146,8 +140,8 @@ pub impl Sealer {
         let nonce: [u8; 12] = self.traffic.nonce(); let body: core::slice::View<u8> = region(destination, 5, inner_length);
         // All AEAD preconditions are established above. Exact in-place body
         // encryption and the disjoint header/tag regions are supported.
-        if (is_aes(self.traffic.suite)) {
-            // Cached state is constructed with exactly16 key bytes; nonce12,
+        if (ext::tls_suite::is_aes(self.traffic.suite)) {
+            // Cached state uses the suite's exact16/32 key bytes; nonce12,
             // tag16, supported body length and capacity are fixed/proven above.
             // No AES error can be returned after the destination is staged.
             let aes: ext::aes_gcm::Key = core::option::unwrap(self.traffic.aes_key);
@@ -165,7 +159,7 @@ pub impl Opener {
     pub fn borrow(&self) -> &Opener { return self; }
     pub fn sequence(&self) -> u64 { return self.traffic.next; }
     pub fn exhausted(&self) -> bool { return self.traffic.at_limit(); }
-    pub fn suite(&self) -> Suite { return self.traffic.suite; }
+    pub fn suite(&self) -> ext::tls_suite::Suite { return self.traffic.suite; }
     // Query before sealing application data; reserve the last old-key record
     // for KeyUpdate. This method neither sends nor performs the update.
     pub fn key_update_due(&self) -> bool { return self.traffic.update_due(); }
@@ -192,7 +186,7 @@ pub impl Opener {
         if (scratch.length < inner_length) { return core::result::Err(Error::BufferTooSmall); }
         let nonce: [u8; 12] = self.traffic.nonce();
         let authenticated: bool = false;
-        if (is_aes(self.traffic.suite)) {
+        if (ext::tls_suite::is_aes(self.traffic.suite)) {
             let aes: ext::aes_gcm::Key = core::option::unwrap(self.traffic.aes_key);
             authenticated = core::result::is_ok(aes.open_into(core::slice::View { values: nonce, start: 0, length: 12 },
                 region(record, 0, 5), region(record, 5, inner_length), region(record, 5 + inner_length, 16), scratch));

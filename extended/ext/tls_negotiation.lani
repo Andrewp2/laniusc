@@ -1,4 +1,4 @@
-// TLS 1.3 full-DHE Ed25519/X25519/P-256/SHA256 negotiation, RFC8446 4/9.
+// TLS 1.3 full-DHE Ed25519/X25519/P-256/SHA256/SHA384 negotiation, RFC8446 4/9.
 // Borrowed views require live immutable backing. No transcript or key schedule.
 module ext::tls_negotiation;
 import core::iter;
@@ -8,7 +8,7 @@ import core::result;
 import core::slice;
 import ext::service_identity;
 import ext::tls_handshake;
-import ext::tls_record;
+import ext::tls_suite;
 
 pub enum Error { Bounds, InputLimit, WorkLimit, Codec(ext::tls_handshake::Error), MissingExtension, InvalidExtension, DuplicateValue, UnsupportedFeature, NoSuite, NoGroup, NoSignature, SessionMismatch, Unoffered, Retry, Alpn, Sni, ChangedClientHello, BufferTooSmall }
 pub struct Limits { max_message:i32, max_work:u64 }
@@ -36,7 +36,7 @@ fn byte(v:core::slice::View<u8>,i:i32)->u8{return v.values[v.start+i];}
 fn word(v:core::slice::View<u8>,i:i32)->u16{return ((byte(v,i) as u16)<<8)|(byte(v,i+1) as u16);}
 fn equal(a:core::slice::View<u8>,b:core::slice::View<u8>)->bool{if(a.length!=b.length){return false;}let i:i32=0;while(i<a.length){if(byte(a,i)!=byte(b,i)){return false;}i+=1;}return true;}
 fn contains(v:core::slice::View<u8>,n:u16)->bool{let i:i32=0;while(i<v.length){if(word(v,i)==n){return true;}i+=2;}return false;}
-fn supported_suite(n:u16)->bool{return n==4865||n==4867;}
+fn supported_suite(n:u16)->bool{return ext::tls_suite::from_id(n).is_ok();}
 fn work(b:&Budget,n:u64)->core::result::Result<i32,Error>{if(n>b.work_left){return core::result::Err(Error::WorkLimit);}b.work_left-=n;return core::result::Ok(0);}
 // Every variable scan is preceded by a conservative linear debit. Fixed clears
 // are charged as well. The allowance measures abstract work, not CPU cycles.
@@ -100,14 +100,13 @@ pub fn inspect_client_hello(hello:ext::tls_handshake::ClientHello,b:&Budget)->co
 // Public Offer fields are descriptive, not an unforgeable success token.
 // Re-derive all views from hello, including for copied/manual Offer records.
 fn canonical(offer:Offer,b:&Budget)->core::result::Result<Offer,Error>{return inspect(offer.hello,true,b);}
-pub fn record_suite(id:u16)->core::result::Result<ext::tls_record::Suite,Error>{if(id==4865){return core::result::Ok(ext::tls_record::Suite::Aes128GcmSha256);}if(id==4867){return core::result::Ok(ext::tls_record::Suite::ChaCha20Poly1305Sha256);}return core::result::Err(Error::NoSuite);}
 // Called only after canonical inspection has checked lengths and membership.
 fn find_share(offer:Offer,group:Group)->core::option::Option<KeyShare>{let at:i32=0;while(at<offer.key_shares.length){let id:u16=word(offer.key_shares,at);let n:i32=word(offer.key_shares,at+2) as i32;if(id==group_id(group)){return core::option::Some(KeyShare{group:group,data:region(offer.key_shares,at+4,n)});}at+=4+n;}return core::option::None();}
 fn usable_share(offer:Offer)->bool{return find_share(offer,Group::X25519).is_some()||find_share(offer,Group::Secp256r1).is_some();}
 pub fn key_share(offer:Offer,group:Group,b:&Budget)->core::result::Result<core::option::Option<KeyShare>,Error>{let checked:core::result::Result<Offer,Error> = canonical(offer,b);if(checked.is_err()){return core::result::Err(checked.unwrap_err());}return core::result::Ok(find_share(checked.unwrap(),group));}
-pub fn choose(offer:Offer,preferred_suite:u16,policy:GroupPolicy,b:&Budget)->core::result::Result<Decision,Error>{
-    let checked:core::result::Result<Offer,Error> = canonical(offer,b);if(checked.is_err()){return core::result::Err(checked.unwrap_err());}let o:Offer=checked.unwrap();let checked_policy:core::result::Result<i32,Error> = validate_policy(policy);if(checked_policy.is_err()){return core::result::Err(checked_policy.unwrap_err());}if(!supported_suite(preferred_suite)){return core::result::Err(Error::NoSuite);}
-    let suite:u16=preferred_suite;if(!contains(o.hello.cipher_suites,suite)){if(suite==4865){suite=4867;}else{suite=4865;}if(!contains(o.hello.cipher_suites,suite)){return core::result::Err(Error::NoSuite);}}
+pub fn choose(offer:Offer,suites:ext::tls_suite::Policy,policy:GroupPolicy,b:&Budget)->core::result::Result<Decision,Error>{
+    let checked:core::result::Result<Offer,Error> = canonical(offer,b);if(checked.is_err()){return core::result::Err(checked.unwrap_err());}let o:Offer=checked.unwrap();let checked_policy:core::result::Result<i32,Error> = validate_policy(policy);if(checked_policy.is_err()){return core::result::Err(checked_policy.unwrap_err());}if(ext::tls_suite::validate_policy(suites).is_err()){return core::result::Err(Error::NoSuite);}
+    let suite:u16=0;let at:i32=0;while(at<suites.length&&suite==0){let id:u16=ext::tls_suite::id(suites.order[at]);if(contains(o.hello.cipher_suites,id)){suite=id;}at+=1;}if(suite==0){return core::result::Err(Error::NoSuite);}
     let group:Group=policy.preferred;if(!contains(o.groups,group_id(group))){if(policy.fallback.is_none()){return core::result::Err(Error::NoGroup);}group=policy.fallback.unwrap();if(!contains(o.groups,group_id(group))){return core::result::Err(Error::NoGroup);}}
     if(!contains(o.signatures,2055)||!contains(o.certificate_signatures,2055)){return core::result::Err(Error::NoSignature);}
     let share:core::option::Option<KeyShare> = find_share(o,group);if(share.is_none()){return core::result::Ok(Decision::Retry(Retry{suite:suite,requested:core::option::Some(group),cookie:region(o.cookie,0,0)}));}

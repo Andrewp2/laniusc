@@ -1,0 +1,142 @@
+// Owned public signature dispatch; strict X.509/TLS encodings, no trust/signing.
+module ext::signature;
+import core::option;
+import core::panic;
+import core::result;
+import core::slice;
+import ext::der;
+import ext::ed25519;
+import ext::p256;
+import ext::rsa;
+
+pub enum Error { Bounds, InvalidLimits, InputLimit, WorkLimit, SignatureLimit, UnsupportedAlgorithm, InvalidParameters, InvalidKey, SchemeKeyMismatch, InvalidSignatureEncoding }
+pub enum Scheme { Ed25519, EcdsaP256Sha256, RsaPkcs1Sha256, RsaPssRsaeSha256 }
+pub enum Use { Certificate, CertificateVerify }
+pub enum Kind { Ed25519, P256, Rsae }
+pub struct Limits { max_message:i32, max_signatures:u64, max_work:u64 }
+pub struct Budget { message_limit:i32, signatures_left:u64, work_left:u64 }
+enum Material { Ed25519(ext::ed25519::Key32), P256(ext::p256::PublicKey), Rsae(ext::rsa::PublicKey) }
+// Constructor-produced immutable implementation state, never a trust token.
+// Arrays are owned inline; copies do not retain source borrows.
+pub struct PublicKey { material:Material }
+pub const MAX_SPKI_BYTES:i32=1024;
+pub const MAX_ALGORITHM_BYTES:i32=256;
+pub const P256_IMPORT_WORK:u64=1048576;
+pub const P256_VERIFY_WORK:u64=33554432;
+pub const ED25519_VERIFY_WORK:u64=67108864;
+// Source-counted envelopes: P256 product<=512 digit/body credits, linear
+// primitive<=64; scalar step<=40 products+128 linear primitives<32768.
+// Import<=1040 products+4096 linear; verify<=512 steps+2048 products+8192
+// linear. Ed product<=512, linear<=256; step<=20 products+64 linear<32768;
+// verify<=1024 steps+4096 products+8192 linear, including two decodes and
+// scalar reduction. Constants round these bounds upward. Not machine time.
+fn valid(v:core::slice::View<u8>)->bool{return v.start>=0&&v.length>=0&&v.start<=2147483647-v.length;}
+fn byte(v:core::slice::View<u8>,i:i32)->u8{return v.values[v.start+i];}
+fn view(v:[u8],n:i32)->core::slice::View<u8>{return core::slice::View{values:v,start:0,length:n};}
+fn charge(b:&Budget,n:u64)->bool{if(n>b.work_left){return false;}b.work_left-=n;return true;}
+pub fn default_limits()->Limits{return Limits{max_message:1048576,max_signatures:64,max_work:1073741824};}
+pub fn budget(limits:Limits)->core::result::Result<Budget,Error>{
+    if(limits.max_message<0){return core::result::Err(Error::InvalidLimits);}
+    return core::result::Ok(Budget{message_limit:limits.max_message,signatures_left:limits.max_signatures,work_left:limits.max_work});
+}
+pub impl Budget{pub fn borrow(&self)->&Budget{return self;}}
+pub impl PublicKey{
+    pub fn borrow(&self)->&PublicKey{return self;}
+    pub fn kind(&self)->Kind{return match(self.material){Material::Ed25519(_)->Kind::Ed25519,Material::P256(_)->Kind::P256,Material::Rsae(_)->Kind::Rsae};}
+}
+fn proof(use:Use)->bool{return match(use){Use::Certificate->false,Use::CertificateVerify->true};}
+fn number(scheme:Scheme)->i32{return match(scheme){Scheme::Ed25519->0,Scheme::EcdsaP256Sha256->1,Scheme::RsaPkcs1Sha256->2,Scheme::RsaPssRsaeSha256->3};}
+pub fn tls_scheme(id:u16,use:Use)->core::result::Result<Scheme,Error>{
+    if(id==2055){return core::result::Ok(Scheme::Ed25519);}if(id==1027){return core::result::Ok(Scheme::EcdsaP256Sha256);}
+    if(id==2052){return core::result::Ok(Scheme::RsaPssRsaeSha256);}if(id==1025&&!proof(use)){return core::result::Ok(Scheme::RsaPkcs1Sha256);}
+    return core::result::Err(Error::UnsupportedAlgorithm);
+}
+fn rsa_error(e:ext::rsa::Error,key:bool)->Error{
+    return match(e){ext::rsa::Error::Bounds->Error::Bounds,ext::rsa::Error::InvalidLimits->Error::InvalidLimits,ext::rsa::Error::InputLimit->Error::InputLimit,ext::rsa::Error::WorkLimit->Error::WorkLimit,ext::rsa::Error::UnsupportedAlgorithm->Error::UnsupportedAlgorithm,ext::rsa::Error::InvalidParameters->Error::InvalidParameters,_->if_key(key)};
+}
+fn if_key(key:bool)->Error{if(key){return Error::InvalidKey;}return Error::InvalidSignatureEncoding;}
+// A transferred allowance: always copy remaining work back before returning,
+// including malformed encodings and unsuccessful reservations/verification.
+fn rsa_budget(b:&Budget)->ext::rsa::Budget{return ext::rsa::Budget{message_limit:b.message_limit,work_left:b.work_left};}
+fn take(r:&ext::der::Reader,cause:Error)->core::result::Result<ext::der::Element,Error>{
+    let got:core::result::Result<core::option::Option<ext::der::Element>,ext::der::Error> =r.next();if(got.is_err()){return core::result::Err(cause);}
+    let next:core::option::Option<ext::der::Element> =got.unwrap();if(next.is_none()){return core::result::Err(cause);}return core::result::Ok(next.unwrap());
+}
+fn sequence(v:core::slice::View<u8>,cause:Error)->core::result::Result<ext::der::Reader,Error>{
+    let got:core::result::Result<ext::der::Element,ext::der::Error> =ext::der::parse_one(v);if(got.is_err()){return core::result::Err(cause);}
+    let r:core::result::Result<ext::der::Reader,ext::der::Error> =got.unwrap().as_sequence();if(r.is_err()){return core::result::Err(cause);}return core::result::Ok(r.unwrap());
+}
+fn oid(e:ext::der::Element,expected:[u8],n:i32)->bool{
+    let got:core::result::Result<ext::der::Oid,ext::der::Error> =e.as_oid();if(got.is_err()){return false;}let bytes:core::slice::View<u8> =got.unwrap().bytes;
+    if(bytes.length!=n){return false;}let i:i32=0;while(i<n){if(byte(bytes,i)!=expected[i]){return false;}i+=1;}return true;
+}
+fn ed(e:ext::der::Element)->bool{let b:[u8;3]=[43,101,112];return oid(e,b,3);}
+fn ec(e:ext::der::Element)->bool{let b:[u8;7]=[42,134,72,206,61,2,1];return oid(e,b,7);}
+fn curve(e:ext::der::Element)->bool{let b:[u8;8]=[42,134,72,206,61,3,1,7];return oid(e,b,8);}
+fn ecdsa(e:ext::der::Element)->bool{let b:[u8;8]=[42,134,72,206,61,4,3,2];return oid(e,b,8);}
+fn rsa_oid(e:ext::der::Element,last:u8)->bool{let b:[u8;9]=[42,134,72,134,247,13,1,1,0];b[8]=last;return oid(e,b,9);}
+fn preflight(input:core::slice::View<u8>,cap:i32,b:&Budget)->core::result::Result<i32,Error>{
+    if(!valid(input)){return core::result::Err(Error::Bounds);}if(b.message_limit<0){return core::result::Err(Error::InvalidLimits);}
+    if(input.length>cap){return core::result::Err(Error::InputLimit);}if(!charge(b,(input.length as u64)+128)){return core::result::Err(Error::WorkLimit);}return core::result::Ok(0);
+}
+pub fn parse_spki(input:core::slice::View<u8>,b:&Budget)->core::result::Result<PublicKey,Error>{
+    let ready:core::result::Result<i32,Error> =preflight(input,MAX_SPKI_BYTES,b);if(ready.is_err()){return core::result::Err(ready.unwrap_err());}
+    let opened:core::result::Result<ext::der::Reader,Error> =sequence(input,Error::InvalidKey);if(opened.is_err()){return core::result::Err(opened.unwrap_err());}let fields:ext::der::Reader=opened.unwrap();
+    let a:core::result::Result<ext::der::Element,Error> =take(fields.borrow(),Error::InvalidKey);let k:core::result::Result<ext::der::Element,Error> =take(fields.borrow(),Error::InvalidKey);
+    if(a.is_err()||k.is_err()||fields.remaining()!=0){return core::result::Err(Error::InvalidKey);}
+    let alg:core::result::Result<ext::der::Reader,Error> =sequence(a.unwrap().encoded,Error::InvalidParameters);if(alg.is_err()){return core::result::Err(alg.unwrap_err());}let r:ext::der::Reader=alg.unwrap();
+    let id:core::result::Result<ext::der::Element,Error> =take(r.borrow(),Error::InvalidParameters);if(id.is_err()){return core::result::Err(id.unwrap_err());}let identity:ext::der::Element=id.unwrap();
+    if(rsa_oid(identity,1)){
+        let local:ext::rsa::Budget=rsa_budget(b);let got:core::result::Result<ext::rsa::PublicKey,ext::rsa::Error> =ext::rsa::parse_rsae_spki(input,local.borrow());b.work_left=local.work_left;
+        if(got.is_err()){return core::result::Err(rsa_error(got.unwrap_err(),true));}return core::result::Ok(PublicKey{material:Material::Rsae(got.unwrap())});
+    }
+    if(!ed(identity)&&!ec(identity)){return core::result::Err(Error::UnsupportedAlgorithm);}
+    if(ed(identity)&&r.remaining()!=0){return core::result::Err(Error::InvalidParameters);}
+    if(ec(identity)){let parameter:core::result::Result<ext::der::Element,Error> =take(r.borrow(),Error::InvalidParameters);if(parameter.is_err()){return core::result::Err(Error::InvalidParameters);}if(!curve(parameter.unwrap())||r.remaining()!=0){return core::result::Err(Error::InvalidParameters);}}
+    let bits:core::result::Result<ext::der::BitString,ext::der::Error> =k.unwrap().as_bit_string();if(bits.is_err()){return core::result::Err(Error::InvalidKey);}let content:ext::der::BitString=bits.unwrap();if(content.unused_bits!=0){return core::result::Err(Error::InvalidKey);}
+    if(ed(identity)){
+        if(content.bytes.length!=32){return core::result::Err(Error::InvalidKey);}if(!charge(b,32)){return core::result::Err(Error::WorkLimit);}
+        let bytes:[u8;32]=[0;32];let i:i32=0;while(i<32){bytes[i]=byte(content.bytes,i);i+=1;}return core::result::Ok(PublicKey{material:Material::Ed25519(ext::ed25519::Key32{bytes:bytes})});
+    }
+    if(content.bytes.length!=33&&content.bytes.length!=65){return core::result::Err(Error::InvalidKey);}
+    if((content.bytes.length==65&&byte(content.bytes,0)!=4)||(content.bytes.length==33&&byte(content.bytes,0)!=2&&byte(content.bytes,0)!=3)){return core::result::Err(Error::InvalidKey);}
+    if(!charge(b,P256_IMPORT_WORK)){return core::result::Err(Error::WorkLimit);}let key:core::result::Result<ext::p256::PublicKey,ext::p256::Error> =ext::p256::validate_public_key(content.bytes);
+    if(key.is_err()){return core::result::Err(Error::InvalidKey);}return core::result::Ok(PublicKey{material:Material::P256(key.unwrap())});
+}
+pub fn certificate_scheme(input:core::slice::View<u8>,b:&Budget)->core::result::Result<Scheme,Error>{
+    let ready:core::result::Result<i32,Error> =preflight(input,MAX_ALGORITHM_BYTES,b);if(ready.is_err()){return core::result::Err(ready.unwrap_err());}
+    let opened:core::result::Result<ext::der::Reader,Error> =sequence(input,Error::InvalidParameters);if(opened.is_err()){return core::result::Err(opened.unwrap_err());}let r:ext::der::Reader=opened.unwrap();
+    let first:core::result::Result<ext::der::Element,Error> =take(r.borrow(),Error::InvalidParameters);if(first.is_err()){return core::result::Err(first.unwrap_err());}let id:ext::der::Element=first.unwrap();
+    if(ed(id)||ecdsa(id)){if(r.remaining()!=0){return core::result::Err(Error::InvalidParameters);}if(ed(id)){return core::result::Ok(Scheme::Ed25519);}return core::result::Ok(Scheme::EcdsaP256Sha256);}
+    if(!rsa_oid(id,10)&&!rsa_oid(id,11)){return core::result::Err(Error::UnsupportedAlgorithm);}
+    let local:ext::rsa::Budget=rsa_budget(b);let got:core::result::Result<ext::rsa::Scheme,ext::rsa::Error> =ext::rsa::signature_scheme(input,local.borrow());b.work_left=local.work_left;
+    if(got.is_err()){return core::result::Err(rsa_error(got.unwrap_err(),false));}
+    let scheme:Scheme=match(got.unwrap()){ext::rsa::Scheme::Pkcs1v15Sha256->Scheme::RsaPkcs1Sha256,ext::rsa::Scheme::PssSha256Salt32->Scheme::RsaPssRsaeSha256};return core::result::Ok(scheme);
+}
+fn hash_work(n:u64,wide:bool)->u64{if(wide){return n+1024*((n+144)/128)+4096;}return n+1024*((n+72)/64)+4096;}
+pub fn verify(key:&PublicKey,use:Use,scheme:Scheme,message:core::slice::View<u8>,signature:core::slice::View<u8>,b:&Budget)->core::result::Result<bool,Error>{
+    if(!valid(message)||!valid(signature)){return core::result::Err(Error::Bounds);}if(b.message_limit<0){return core::result::Err(Error::InvalidLimits);}
+    if(message.length>b.message_limit){return core::result::Err(Error::InputLimit);}let id:i32=number(scheme);
+    if(proof(use)&&id==2){return core::result::Err(Error::UnsupportedAlgorithm);}
+    let family:i32=match(key.material){Material::Ed25519(_)->0,Material::P256(_)->1,Material::Rsae(_)->2};
+    if((id==0&&family!=0)||(id==1&&family!=1)||(id>=2&&family!=2)){return core::result::Err(Error::SchemeKeyMismatch);}
+    if((id==0&&signature.length!=64)||(id==1&&(signature.length<8||signature.length>72))){return core::result::Err(Error::InvalidSignatureEncoding);}
+    // RSA preflight/debit remains authoritative; after full wrapper preflight
+    // only WorkLimit can prevent its positive reservation. No fresh allowance.
+    if(family==2){
+        let owned:ext::rsa::PublicKey=match(key.material){Material::Rsae(v)->v,_->core::panic::panic()};
+        if(signature.length!=owned.signature_length()){return core::result::Err(Error::InvalidSignatureEncoding);}if(b.signatures_left==0){return core::result::Err(Error::SignatureLimit);}
+        let local:ext::rsa::Budget=rsa_budget(b);let before:u64=local.work_left;let algorithm:ext::rsa::Scheme=ext::rsa::Scheme::Pkcs1v15Sha256;if(id==3){algorithm=ext::rsa::Scheme::PssSha256Salt32;}
+        let got:core::result::Result<bool,ext::rsa::Error> =owned.verify_sha256(algorithm,message,signature,local.borrow());b.work_left=local.work_left;
+        if(local.work_left<before){b.signatures_left-=1;}if(got.is_err()){return core::result::Err(rsa_error(got.unwrap_err(),false));}return core::result::Ok(got.unwrap());
+    }
+    // DER parsing is separately charged before the attempt. Invalid DER never
+    // enters curve arithmetic and consumes no signature allowance.
+    let raw:ext::p256::Signature=ext::p256::Signature{bytes:[0;64]};
+    if(family==1){if(!charge(b,(signature.length as u64)+128)){return core::result::Err(Error::WorkLimit);}let parsed:core::result::Result<ext::p256::Signature,ext::p256::Error> =ext::p256::parse_der_signature(signature);if(parsed.is_err()){return core::result::Err(Error::InvalidSignatureEncoding);}raw=parsed.unwrap();}
+    if(b.signatures_left==0){return core::result::Err(Error::SignatureLimit);}let cost:u64=P256_VERIFY_WORK+hash_work(message.length as u64,false);
+    if(family==0){cost=ED25519_VERIFY_WORK+hash_work((message.length as u64)+64,true);}if(!charge(b,cost)){return core::result::Err(Error::WorkLimit);}b.signatures_left-=1;
+    if(family==0){let owned:ext::ed25519::Key32=match(key.material){Material::Ed25519(v)->v,_->core::panic::panic()};let got:core::result::Result<bool,ext::ed25519::Error> =ext::ed25519::verify(view(owned.bytes,32),message,signature);if(got.is_err()){return core::result::Err(Error::InvalidSignatureEncoding);}return core::result::Ok(got.unwrap());}
+    let owned:ext::p256::PublicKey=match(key.material){Material::P256(v)->v,_->core::panic::panic()};let got:core::result::Result<bool,ext::p256::Error> =ext::p256::verify_sha256(view(owned.bytes,65),message,view(raw.bytes,64));
+    if(got.is_err()){return core::result::Err(Error::InvalidSignatureEncoding);}return core::result::Ok(got.unwrap());
+}

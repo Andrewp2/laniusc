@@ -83,6 +83,14 @@ fn fixtures() -> &'static Fixtures {
         let leaf = fs::read(path.join("leaf.der")).unwrap();
         fs::write(path.join("chain-nine.der"), leaf.repeat(9)).unwrap();
         fs::write(path.join("anchor-excess.der"), vec![0; MAX + 1]).unwrap();
+        // OpenSSL's documented system_default configuration controls TLS1.3
+        // suites; Python set_ciphers only controls earlier protocol versions.
+        for (name, suites) in [
+            ("peer-sha256.cnf", "TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256"),
+            ("peer-sha384.cnf", "TLS_AES_256_GCM_SHA384"),
+        ] {
+            fs::write(path.join(name), format!("openssl_conf = init\nconfig_diagnostics = 1\n[init]\nssl_conf = ssl\n[ssl]\nsystem_default = tls\n[tls]\nCipherSuites = {suites}\n")).unwrap();
+        }
         let original = fs::read_dir(&path)
             .unwrap()
             .map(|entry| {
@@ -514,6 +522,14 @@ fn run(
         let output = common::process_output_with_timeout(
             "TLS exchange CLI with independent OpenSSL peer",
             Command::new("python3")
+                .env(
+                    "OPENSSL_CONF",
+                    file(if peer_mode.starts_with("aes256-") {
+                        "peer-sha384.cnf"
+                    } else {
+                        "peer-sha256.cnf"
+                    }),
+                )
                 .arg(root().join("tests/fixtures/extended/tls_exchange/peer.py"))
                 .arg(spec.path()),
             Duration::from_secs((seconds + 10) as u64),
@@ -571,13 +587,21 @@ fn checked(run: &Run, status: i32, stdout: &[u8]) {
     }
 }
 fn independent_peer(run: &Run, input: &[u8]) {
+    independent_peer_suites(
+        run,
+        input,
+        &["TLS_AES_128_GCM_SHA256", "TLS_CHACHA20_POLY1305_SHA256"],
+    );
+}
+fn independent_peer_suites(run: &Run, input: &[u8], suites: &[&str]) {
     let peer = run.peer.as_ref().unwrap();
     assert!(peer.openssl.starts_with("OpenSSL "));
     assert_eq!(peer.version, "TLSv1.3");
-    assert!(matches!(
-        peer.cipher.as_str(),
-        "TLS_AES_128_GCM_SHA256" | "TLS_CHACHA20_POLY1305_SHA256"
-    ));
+    assert!(
+        suites.contains(&peer.cipher.as_str()),
+        "unexpected negotiated suite: {}",
+        peer.cipher
+    );
     assert_eq!(peer.reused, Some(false));
     assert!(peer.error.is_none(), "{:?}", peer.error);
     assert!(peer.clean_close);
@@ -667,6 +691,24 @@ fn tls_exchange_dual_policy_interoperates_with_p256_only_openssl_peers() {
         );
     }
     eprintln!("tls_exchange P-256:2 real independent peers,default dual policy with initial X share,forced P fallback/requested-group retry,exact binary/authenticated publication and owner ledgers");
+}
+
+#[test]
+fn tls_exchange_default_policy_interoperates_with_aes256_sha384_only_peers() {
+    for role in ["client", "serve"] {
+        for peer in ["aes256-x25519", "aes256-p256"] {
+            let input = payload(1025);
+            let args = if role == "client" {
+                client_arguments("@ENDPOINT@", "path.example", "root.der")
+            } else {
+                server_arguments("@ENDPOINT@", "seed.bin", "chain.der")
+            };
+            let observed = run(&input, args, &[], Some(role), false, 12, peer);
+            checked(&observed, 0, &input);
+            independent_peer_suites(&observed, &input, &["TLS_AES_256_GCM_SHA384"]);
+        }
+    }
+    eprintln!("tls_exchange AES256/SHA384:4 real peers force the third offered suite, both roles/groups, actual HRR from initial X share with P-only server, exact binary publication/trust/clean close and owner ledgers");
 }
 
 #[test]
