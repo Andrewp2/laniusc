@@ -9,7 +9,7 @@ import core::option;
 import core::result;
 import core::slice;
 
-pub enum Error { InvalidCapacity, CapacityOverflow, AllocationFailed, InvalidOrder, InvalidRange }
+pub enum Error { InvalidCapacity, CapacityOverflow, AllocationFailed, InvalidOrder, InvalidRange, NotEmpty }
 // Sink insertion rejects existing keys instead of replacing their entries.
 pub enum SinkError { Duplicate, Storage(Error) }
 pub struct Entry<K, V> { key: K, value: V }
@@ -60,24 +60,10 @@ fn adjacent<K, V>(nodes: [Node<K, V>], index: i32, previous: bool) -> i32 {
 // Strictly increasing input: equivalent or descending adjacent keys are errors.
 pub fn from_sorted<K, V>(input: core::slice::View<Entry<K, V>>) -> core::result::Result<TreeMap<K, V>, Error>
     where K: core::cmp::Ord<K> {
-    let count: i32 = input.len();
-    if (count > capacity_limit<K, V>()) { return core::result::Err(Error::CapacityOverflow); }
-    let index: i32 = 1;
-    while (index < count) {
-        let left: Entry<K, V> = core::option::unwrap(input.get(index - 1));
-        let right: Entry<K, V> = core::option::unwrap(input.get(index));
-        if (!K::lt(left.key, right.key)) { return core::result::Err(Error::InvalidOrder); }
-        index += 1;
-    }
     let value: TreeMap<K, V> = new();
-    let reserved: core::result::Result<i32, Error> = value.try_reserve(count);
-    if (core::result::is_err(reserved)) { return core::result::Err(core::result::unwrap_err(reserved)); }
-    let target: [Node<K, V>] = value.nodes(); index = 0;
-    while (index < count) {
-        let item: Entry<K, V> = core::option::unwrap(input.get(index));
-        target[index] = Node { item: item, left: -1, right: -1, parent: -1, height: 1, next_free: -1 }; index += 1;
-    }
-    value.length = count; value.link_sorted(); return core::result::Ok(value);
+    let initialized: core::result::Result<i32, Error> = value.try_init_sorted(input);
+    if (initialized.is_err()) { return core::result::Err(initialized.unwrap_err()); }
+    return core::result::Ok(value);
 }
 
 pub impl<K, V> TreeMap<K, V> {
@@ -85,6 +71,36 @@ pub impl<K, V> TreeMap<K, V> {
     pub fn len(&self) -> i32 { return self.length; }
     pub fn capacity(&self) -> i32 { return self.reserved; }
     pub fn is_empty(&self) -> bool { return self.length == 0; }
+    // Initialize an empty actual owner from strictly increasing entries.
+    // Input must be physically backed and must not alias this map's storage.
+    // Shallow copies transfer no nested cleanup automatically. All validation
+    // and reservation precedes writes; a pre-reserved count allocates nothing.
+    // Err preserves this empty owner, its capacity, and every input entry.
+    pub fn try_init_sorted(&self, input: core::slice::View<Entry<K, V>>) -> core::result::Result<i32, Error>
+        where K: core::cmp::Ord<K> {
+        if (self.length != 0) { return core::result::Err(Error::NotEmpty); }
+        if (input.start < 0 || input.length < 0 || input.start > 2147483647-input.length) {
+            return core::result::Err(Error::InvalidRange);
+        }
+        let count: i32 = input.len();
+        if (count > capacity_limit<K, V>()) { return core::result::Err(Error::CapacityOverflow); }
+        let index: i32 = 1;
+        while (index < count) {
+            let left: Entry<K, V> = core::option::unwrap(input.get(index - 1));
+            let right: Entry<K, V> = core::option::unwrap(input.get(index));
+            if (!K::lt(left.key, right.key)) { return core::result::Err(Error::InvalidOrder); }
+            index += 1;
+        }
+        let reserved: core::result::Result<i32, Error> = self.try_reserve(count);
+        if (reserved.is_err()) { return core::result::Err(reserved.unwrap_err()); }
+        let target: [Node<K, V>] = self.nodes(); index = 0;
+        while (index < count) {
+            let item: Entry<K, V> = core::option::unwrap(input.get(index));
+            target[index] = Node { item: item, left: -1, right: -1, parent: -1, height: 1, next_free: -1 };
+            index += 1;
+        }
+        self.length = count; self.link_sorted(); return core::result::Ok(count);
+    }
     fn nodes(&self) -> [Node<K, V>] { return core::mem::typed_slice_from_storage(self.storage, self.reserved); }
     fn find(&self, key: K) -> i32 where K: core::cmp::Ord<K> {
         let nodes: [Node<K, V>] = self.nodes(); let index: i32 = self.root;

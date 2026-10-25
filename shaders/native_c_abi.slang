@@ -64,5 +64,6 @@ public bool native_c_scalar(uint scalar, bool result)
 {
     return scalar == SCALAR_I32 || scalar == SCALAR_U32 || scalar == SCALAR_I64 ||
         scalar == SCALAR_U64 || scalar == SCALAR_ISIZE || scalar == SCALAR_USIZE ||
-        scalar == SCALAR_PTR || (result && scalar == SCALAR_UNIT);
+        scalar == SCALAR_PTR || scalar == SCALAR_F32 || scalar == SCALAR_F64 ||
+        (result && scalar == SCALAR_UNIT);
 }

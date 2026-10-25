@@ -1,0 +1,238 @@
+// Test-only client: endpoint, CA file, identity, DNS/IP(0/1), mode, bytes,
+// source layout(0/1/2), and a finite step/poll budget. Output is 15 u64 words.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::net;
+import core::result;
+import core::slice;
+import core::time;
+import ext::openssl_tls;
+import std::args;
+import std::clock;
+import std::signal;
+import std::socket;
+import std::stream;
+
+extern "C" fn tls_test_dirty_error_queue();
+extern "C" fn tls_test_context_owners() -> i32;
+extern "C" fn tls_test_session_owners() -> i32;
+extern "C" fn tls_test_invalid_frees() -> i32;
+extern "C" fn tls_test_io_calls() -> i32;
+
+struct Stats { outcome: i32, cause: i32, verify: i64, ssl: i32, code: u64, reads: i32, writes: i32, sent: i32, received: i32, shutdown_sent: i32, shutdown_done: i32, terminal: i32, calls: i32, guards: i32, read_retries: i32 }
+impl Stats {
+    fn borrow(&self) -> &Stats { return self; }
+    fn failure(&self, outcome: i32, error: ext::openssl_tls::Error) {
+        self.outcome = outcome; self.cause = cause(error.cause); self.verify = error.verify_code; self.ssl = error.ssl_error; self.code = error.code;
+    }
+    fn charge(&self, maximum: i32) -> bool {
+        if (self.calls >= maximum) { self.outcome = 3; return false; }
+        self.calls += 1; return true;
+    }
+}
+fn cause(value: ext::openssl_tls::Cause) -> i32 {
+    return match (value) {
+        ext::openssl_tls::Cause::Bounds -> 1, ext::openssl_tls::Cause::InvalidLimits -> 2,
+        ext::openssl_tls::Cause::Limit -> 3, ext::openssl_tls::Cause::Closed -> 4,
+        ext::openssl_tls::Cause::InvalidState -> 5, ext::openssl_tls::Cause::Identity -> 6,
+        ext::openssl_tls::Cause::Utf8 -> 7, ext::openssl_tls::Cause::Nul -> 8,
+        ext::openssl_tls::Cause::AllocationFailed -> 9, ext::openssl_tls::Cause::Native -> 10,
+        ext::openssl_tls::Cause::Verification -> 11, ext::openssl_tls::Cause::PeerCertificate -> 12,
+        ext::openssl_tls::Cause::PeerClosed -> 13, ext::openssl_tls::Cause::Truncated -> 14,
+        ext::openssl_tls::Cause::UnexpectedNative -> 15
+    };
+}
+fn state(value: ext::openssl_tls::State) -> i32 {
+    return match (value) { ext::openssl_tls::State::Handshake -> 1, ext::openssl_tls::State::Open -> 2,
+        ext::openssl_tls::State::PeerClosed -> 3, ext::openssl_tls::State::Closing -> 4,
+        ext::openssl_tls::State::Closed -> 5, ext::openssl_tls::State::Failed -> 6 };
+}
+fn view(bytes: [u8], start: i32, length: i32) -> core::slice::View<u8> { return core::slice::View { values: bytes, start: start, length: length }; }
+fn literal(value: str, length: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), length);
+    return view(bytes, 0, length);
+}
+fn number(bytes: core::slice::View<u8>) -> i32 { return core::decimal::parse_u32_range(bytes.values, bytes.start, bytes.length).unwrap() as i32; }
+fn byte(index: i32) -> u8 { return (((index as u64) * 73 + 11) ^ ((index as u64) / 251)) as u8; }
+fn wait(socket: &std::socket::Socket, writing: bool, deadline: core::time::Deadline, stats: &Stats, maximum: i32) -> bool {
+    if (writing) { stats.writes += 1; } else { stats.reads += 1; }
+    if (!stats.charge(maximum)) { return false; }
+    let ready: core::result::Result<std::socket::Ready, core::io::Error> = socket.wait_until(!writing, writing, deadline);
+    if (ready.is_err() || ready.unwrap().timed_out) { stats.outcome = 3; return false; }
+    return true;
+}
+fn handshake(session: &ext::openssl_tls::Session, socket: &std::socket::Socket, deadline: core::time::Deadline, stats: &Stats, maximum: i32) -> bool {
+    while (true) {
+        if (!stats.charge(maximum)) { return false; }
+        tls_test_dirty_error_queue();
+        let result: core::result::Result<ext::openssl_tls::Handshake, ext::openssl_tls::Error> = session.handshake();
+        if (result.is_err()) { stats.failure(1, result.unwrap_err()); assert(state(session.state()) == 6 && !session.is_open()); return false; }
+        let action: i32 = match (result.unwrap()) { ext::openssl_tls::Handshake::Complete -> 0, ext::openssl_tls::Handshake::WantRead -> 1, ext::openssl_tls::Handshake::WantWrite -> 2 };
+        if (action == 0) { assert(state(session.state()) == 2 && session.is_open()); return true; }
+        if (!wait(socket, action == 2, deadline, stats, maximum)) { return false; }
+    }
+    return false;
+}
+fn pending_write_guards(session: &ext::openssl_tls::Session, source: core::slice::View<u8>, destination: core::slice::View<u8>, stats: &Stats) {
+    let before: i32 = tls_test_io_calls();
+    assert(cause(session.handshake().unwrap_err().cause) == 5);
+    assert(cause(session.read_into(destination).unwrap_err().cause) == 5);
+    assert(cause(session.write(source).unwrap_err().cause) == 5);
+    assert(cause(session.shutdown().unwrap_err().cause) == 5);
+    assert(tls_test_io_calls() == before); stats.guards += 1;
+}
+fn write_all(session: &ext::openssl_tls::Session, socket: &std::socket::Socket, source: [u8], capacity: i32, length: i32, mode: i32, deadline: core::time::Deadline, stats: &Stats, maximum: i32) -> bool {
+    let scratch: [u8; 16] = [177; 16]; let changed: bool = false;
+    while (stats.sent < length) {
+        let amount: i32 = length - stats.sent; if (amount > capacity) { amount = capacity; }
+        let index: i32 = 0; while (index < amount) { source[3 + index] = byte(stats.sent + index); index += 1; }
+        if (!stats.charge(maximum)) { return false; }
+        tls_test_dirty_error_queue();
+        let result: core::result::Result<ext::openssl_tls::Write, ext::openssl_tls::Error> = session.write(view(source, 3, amount));
+        let done: bool = false;
+        while (!done) {
+            if (result.is_err()) { stats.failure(4, result.unwrap_err()); return false; }
+            let action: i32 = match (result.unwrap()) { ext::openssl_tls::Write::Complete(value) -> value, ext::openssl_tls::Write::WantRead -> -1, ext::openssl_tls::Write::WantWrite -> -2 };
+            if (action >= 0) {
+                let count: i32 = action;
+                assert(count > 0 && count <= amount && session.pending_write_bytes() == 0);
+                // The selected profile retains OpenSSL's all-bytes write mode.
+                assert(count == amount); stats.sent += count; done = true;
+            } else {
+                assert(session.pending_write_bytes() == amount && session.pending_read_bytes() == 0);
+                pending_write_guards(session, view(source, 3, amount), view(scratch, 2, 8), stats);
+                // The caller's bytes can change or be released after WANT.
+                index = 0; while (index < amount) { source[3 + index] = 238; index += 1; }
+                if (mode == 4 && action == -2 && !changed) {
+                    let sink: std::stream::Descriptor = std::stream::stderr();
+                    assert(core::io::write_all(sink.borrow(), literal("W\n", 2).values, 0, 2).is_ok()); changed = true;
+                }
+                if (!wait(socket, action == -2, deadline, stats, maximum)) { return false; }
+                if (!stats.charge(maximum)) { return false; }
+                tls_test_dirty_error_queue(); result = session.retry_write();
+            }
+        }
+    }
+    return true;
+}
+fn read_all(session: &ext::openssl_tls::Session, socket: &std::socket::Socket, length: i32, mode: i32, deadline: core::time::Deadline, stats: &Stats, maximum: i32) -> bool {
+    let native: [u8; 1040] = [205; 1040]; let packed: [i32; 260] = [0; 260];
+    let second: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(packed), 1040);
+    let target: [u8] = native; let requested: i32 = 0; let attempts: i32 = 0; let notified: bool = false;
+    while (true) {
+        let index: i32 = 0; while (index < 1040) { target[index] = 205; index += 1; }
+        if (requested == 0) { requested = length - stats.received; if (requested <= 0 || requested > 1024) { requested = 1024; } }
+        if (!stats.charge(maximum)) { return false; }
+        tls_test_dirty_error_queue();
+        let result: core::result::Result<ext::openssl_tls::Read, ext::openssl_tls::Error> = session.read_into(view(target, 5, requested));
+        if (result.is_err()) {
+            stats.failure(2, result.unwrap_err()); assert(state(session.state()) == 6 && !session.is_open());
+            index = 0; while (index < 1040) { assert(target[index] == 205); index += 1; }
+            return false;
+        }
+        let action: i32 = match (result.unwrap()) { ext::openssl_tls::Read::Data(value) -> value, ext::openssl_tls::Read::Closed -> -3, ext::openssl_tls::Read::WantRead -> -1, ext::openssl_tls::Read::WantWrite -> -2 };
+        if (action >= 0) {
+            let count: i32 = action;
+            assert(count > 0 && count <= requested && stats.received <= length - count && session.pending_read_bytes() == 0);
+            index = 0; while (index < count) { assert(target[5 + index] == (byte(stats.received + index) ^ 90)); index += 1; }
+            index = 0; while (index < 1040) { if (index < 5 || index >= 5 + count) { assert(target[index] == 205); } index += 1; }
+            stats.received += count; requested = 0;
+        } else {
+            index = 0; while (index < 1040) { assert(target[index] == 205); index += 1; }
+            if (action == -3) { assert(stats.received == length && state(session.state()) == 3); return true; }
+            assert(session.pending_read_bytes() == requested);
+            let before: i32 = tls_test_io_calls();
+            assert(cause(session.read_into(view(target, 5, requested - 1)).unwrap_err().cause) == 1);
+            assert(cause(session.write(view(target, 0, 0)).unwrap_err().cause) == 5);
+            assert(cause(session.handshake().unwrap_err().cause) == 5);
+            assert(cause(session.shutdown().unwrap_err().cause) == 5);
+            assert(tls_test_io_calls() == before); stats.read_retries += 1;
+            if (mode == 4 && !notified) {
+                let sink: std::stream::Descriptor = std::stream::stderr();
+                assert(core::io::write_all(sink.borrow(), literal("R\n", 2).values, 0, 2).is_ok()); notified = true;
+            }
+            attempts += 1; target = native; if (attempts % 2 == 1) { target = second; }
+            if (!wait(socket, action == -2, deadline, stats, maximum)) { return false; }
+        }
+    }
+    return false;
+}
+fn shutdown(session: &ext::openssl_tls::Session, socket: &std::socket::Socket, deadline: core::time::Deadline, stats: &Stats, maximum: i32) -> bool {
+    while (true) {
+        if (!stats.charge(maximum)) { return false; }
+        tls_test_dirty_error_queue();
+        let result: core::result::Result<ext::openssl_tls::Shutdown, ext::openssl_tls::Error> = session.shutdown();
+        if (result.is_err()) { stats.failure(5, result.unwrap_err()); return false; }
+        let action: i32 = match (result.unwrap()) { ext::openssl_tls::Shutdown::Complete -> 0, ext::openssl_tls::Shutdown::Sent -> 3, ext::openssl_tls::Shutdown::WantRead -> 1, ext::openssl_tls::Shutdown::WantWrite -> 2 };
+        if (action == 0) { stats.shutdown_done += 1; assert(state(session.state()) == 5 && !session.is_open()); return true; }
+        if (action == 3) { stats.shutdown_sent += 1; }
+        if (!wait(socket, action == 2, deadline, stats, maximum)) { return false; }
+    }
+    return false;
+}
+fn local_contracts(context: &ext::openssl_tls::Context, fd: i32) {
+    let empty: [u8; 1] = [0; 1]; let invalid_utf8: [u8; 1] = [255];
+    let malformed: core::slice::View<u8> = view(empty, -1, 1);
+    assert(cause(context.session(fd, ext::openssl_tls::Identity::Dns(malformed)).unwrap_err().cause) == 1);
+    assert(cause(context.session(fd, ext::openssl_tls::Identity::Dns(view(empty, 0, 0))).unwrap_err().cause) == 6);
+    assert(cause(context.session(fd, ext::openssl_tls::Identity::Dns(literal("*.fixture.test", 14))).unwrap_err().cause) == 6);
+    assert(cause(context.session(fd, ext::openssl_tls::Identity::Dns(literal("localhost.", 10))).unwrap_err().cause) == 6);
+    assert(cause(context.session(fd, ext::openssl_tls::Identity::Dns(literal("127.0.0.1", 9))).unwrap_err().cause) == 6);
+    assert(cause(context.session(fd, ext::openssl_tls::Identity::Dns(view(empty, 0, 1))).unwrap_err().cause) == 8);
+    assert(cause(context.session(fd, ext::openssl_tls::Identity::Dns(view(invalid_utf8, 0, 1))).unwrap_err().cause) == 6);
+    assert(cause(context.session(fd, ext::openssl_tls::Identity::Ip(literal("127.0.0.999", 11))).unwrap_err().cause) == 6);
+    assert(tls_test_session_owners() == 0 && tls_test_context_owners() == 1);
+}
+fn publish(stats: &Stats) {
+    let values: [u64; 15] = [stats.outcome as u64, stats.cause as u64, stats.verify as u64, stats.ssl as u64, stats.code, stats.reads as u64, stats.writes as u64, stats.sent as u64, stats.received as u64, stats.shutdown_sent as u64, stats.shutdown_done as u64, stats.terminal as u64, stats.calls as u64, stats.guards as u64, stats.read_retries as u64];
+    let bytes: [u8; 120] = [0; 120]; let index: i32 = 0;
+    while (index < 15) { let part: i32 = 0; while (part < 8) { bytes[index * 8 + part] = (values[index] >> (part * 8)) as u8; part += 1; } index += 1; }
+    let sink: std::stream::Descriptor = std::stream::stdout(); assert(core::io::write_all(sink.borrow(), bytes, 0, 120).is_ok());
+}
+fn main() -> i32 {
+    assert(std::signal::set_disposition(std::signal::Signal::BrokenPipe, std::signal::Disposition::Ignore).is_ok());
+    let arguments: std::args::Arguments = std::args::snapshot(1, 8, 16384).unwrap(); assert(arguments.len() == 8);
+    let endpoint: core::net::SocketAddr = core::net::parse_socket(arguments.get(0).unwrap()).unwrap();
+    let mode: i32 = number(arguments.get(4).unwrap()); let length: i32 = number(arguments.get(5).unwrap());
+    let layout: i32 = number(arguments.get(6).unwrap()); let maximum: i32 = number(arguments.get(7).unwrap());
+    assert(mode >= 0 && mode <= 8 && length >= 0 && length <= 1048576 && layout >= 0 && layout <= 2 && maximum > 0 && maximum <= 100000);
+    let now: core::time::Instant = std::clock::monotonic_now().unwrap();
+    let deadline: core::time::Deadline = core::time::deadline_at(now.checked_add(core::time::from_millis(4000)).unwrap());
+    let family: std::socket::Family = match (endpoint) { core::net::SocketAddr::V4(value) -> std::socket::Family::Ipv4, core::net::SocketAddr::V6(value) -> std::socket::Family::Ipv6 };
+    let socket: std::socket::Socket = std::socket::create(family, std::socket::Kind::Tcp, true).unwrap();
+    if (mode == 4) { assert(socket.set_option(std::socket::Setting::SendBuffer, 4096).is_ok()); }
+    assert(socket.connect_until(endpoint, deadline).is_ok()); let fd: i32 = socket.raw_handle().unwrap();
+    let limits: ext::openssl_tls::Limits = ext::openssl_tls::default_limits(); if (mode == 4) { limits.io_bytes = 65536; }
+    let context: ext::openssl_tls::Context = ext::openssl_tls::new(ext::openssl_tls::Trust::CaFile(arguments.get(1).unwrap()), limits).unwrap();
+    assert(context.is_open() && tls_test_context_owners() == 1);
+    if (mode == 8) { local_contracts(context.borrow(), fd); }
+    let identity: ext::openssl_tls::Identity = ext::openssl_tls::Identity::Dns(arguments.get(2).unwrap());
+    if (number(arguments.get(3).unwrap()) == 1) { identity = ext::openssl_tls::Identity::Ip(arguments.get(2).unwrap()); }
+    let session: ext::openssl_tls::Session = context.session(fd, identity).unwrap();
+    assert(session.is_open() && tls_test_session_owners() == 1);
+    if (mode == 6) { context.destroy(); context.destroy(); assert(!context.is_open() && tls_test_context_owners() == 0); }
+    let stats: Stats = Stats { outcome: 0, cause: 0, verify: 0, ssl: 0, code: 0, reads: 0, writes: 0, sent: 0, received: 0, shutdown_sent: 0, shutdown_done: 0, terminal: 0, calls: 0, guards: 0, read_retries: 0 };
+    let active: bool = handshake(session.borrow(), socket.borrow(), deadline, stats.borrow(), maximum);
+    if (active && mode != 0 && mode != 8) {
+        let strided: [u8; 1032] = [165; 1032]; let packed: [i32; 16388] = [0; 16388];
+        let owned: alloc::vec::Vec<u8> = alloc::vec::new(); let source: [u8] = strided; let capacity: i32 = 1024;
+        if (layout == 1) { source = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(packed), 65552); capacity = limits.io_bytes; }
+        if (layout == 2) { let index: i32 = 0; while (index < 65552) { assert(owned.try_push(165).is_ok()); index += 1; } source = owned.as_slice(); capacity = limits.io_bytes; }
+        active = write_all(session.borrow(), socket.borrow(), source, capacity, length, mode, deadline, stats.borrow(), maximum);
+        if (active) { active = read_all(session.borrow(), socket.borrow(), length, mode, deadline, stats.borrow(), maximum); }
+        owned.destroy();
+    }
+    if (active) { active = shutdown(session.borrow(), socket.borrow(), deadline, stats.borrow(), maximum); }
+    stats.terminal = state(session.state());
+    if (stats.terminal == 6) {
+        let before: i32 = tls_test_io_calls(); assert(session.handshake().is_err() && session.shutdown().is_err()); assert(tls_test_io_calls() == before);
+    }
+    session.destroy(); session.destroy(); context.destroy(); context.destroy();
+    assert(!session.is_open() && state(session.state()) == 5 && !context.is_open());
+    assert(tls_test_context_owners() == 0 && tls_test_session_owners() == 0 && tls_test_invalid_frees() == 0);
+    assert(socket.is_open() && socket.option(std::socket::Setting::SendBuffer).is_ok()); assert(socket.close().is_ok() && !socket.is_open());
+    arguments.destroy(); publish(stats.borrow()); return 0;
+}

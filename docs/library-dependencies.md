@@ -12,16 +12,35 @@ of [socket ownership and TCP/UDP](stdlib-sockets.md),
 The [staged HTTP/1 server and local service](extended-http-server.md), accepted
 at `493d4e87`, compose these operations with explicit deadlines, quotas and
 manual connection ownership.
-This does not bind the older `std::net` service declarations or supply threads,
-callbacks, broader C ABI profiles, full TLS connections or SQLite. The
+This does not bind the older `std::net` service declarations or supply threads
+or callbacks. Client TLS with peer verification now uses a separate OpenSSL binding. The
 [native integration prerequisite proposal](library-native-integration-prerequisites.md)
 separates checked entries, concurrent memory ordering and static/dynamic foreign
 ABI support; thread local storage is conditional on the chosen
 worker/foreign-library profile. Cryptographic operations and authenticated TLS
 require an established external library through a checked native binding;
 there is no in-house crypto or TLS stack. The
-[native C profile](library-native-c.md) and [OpenSSL digests](extended-openssl-digest.md)
-now execute; SQLite still needs its adapter and any additional ABI types. The
+[native C profile](library-native-c.md), [OpenSSL digests](extended-openssl-digest.md)
+and [client TLS with peer verification](extended-openssl-tls.md) now execute. The TLS gates
+cover 34 cases across four groups for explicit trust/identity, binary transfers,
+authenticated closure/truncation and stable retries. Sessions borrow connected
+nonblocking descriptors; caller deadlines, SIGPIPE policy and manual cleanup
+remain explicit. The [TLS stream/HTTPS application](extended-https-fetch.md)
+also executes: 62 cases across four groups cover stream progress,
+verification/HTTP failures, limits and binary framing on Linux x86_64. It uses
+numeric endpoints, explicit trust/identity, deadlines and manual owner cleanup.
+Server TLS remains separate work. C `f32`/`f64` calls also pass
+exact IEEE transport, independent SSE/GPR banks, mixed 32-parameter stack/alignment and imported generic replay
+gates. An owned [SQLite adapter](extended-sqlite.md) and its
+[persistent binary key/value application](extended-sqlite-kv.md) execute on
+Linux x86_64/glibc with system SQLite. Typed values, transaction models, real
+persistence/locking, native errors and
+[staging allocation failures](extended-sqlite-allocation.md) pass focused gates;
+their guides record the exact coverage and measured bulk workload. Native
+entry/package builds now spool original/replay section payloads and execute a
+6 MiB source pack above the resident aggregate threshold. Source snapshots and
+global metadata still grow; explicit descriptor CLI modes remain unsupported.
+Callbacks, variadics, aggregates and foreign thread entry remain separate compiler contracts. The
 [API conventions](library-api-conventions.md#cryptography-and-tls-boundary)
 record this boundary.
 The [host prerequisite audit](library-host-prerequisites.md) distinguishes the
@@ -29,6 +48,18 @@ historical missing operations from the remaining code-entry/memory-model work.
 Current [memory/view contracts](stdlib-memory.md) and
 [process-context contracts](stdlib-process-context.md) document raw backing,
 startup bytes, checked copies and manual owner lifetimes over these interfaces.
+[Opt-in deep HashMap cloning](stdlib-clone-hash-map.md) also passes all four
+focused native groups, including independent nested owners, typed rollback,
+changed-key rejection and every reached allocation failure.
+[Recursive deque cloning](stdlib-clone-deque.md) also passes four native groups,
+including ring-order models, nested allocation failures and owned-error cleanup.
+[Opt-in deep heap cloning](stdlib-clone-binary-heap.md) also passes all five
+native groups, including priority models and nested/owned-error failure cleanup.
+[Opt-in deep ordered-map cloning](stdlib-clone-tree-map.md) also passes all
+five native groups after the two general compiler corrections recorded below.
+Its contract group passes in 9.83 seconds and the other four active groups in
+13.47 seconds; the manual diagnostic probe is ignored. These receipts do not
+revalidate the unrelated generic replay failures in this list.
 
 The 2026-10-23 bitset/calendar integration, finite decimal, statistics and matrix
 milestone executes over the existing interfaces without additional compiler or
@@ -65,6 +96,8 @@ distribution uses the compiler's existing package resolver.
 
 | Dependency | Evidence | Affected APIs | Status |
 | --- | --- | --- | --- |
+| Resolved: public nominal replay lacked its local layout declaration | [TreeMap clone execution and reductions](stdlib-clone-tree-map.md); `tree-clone-layout-dump-run.log`, `clone-tree-map-contracts-fixed.log`, `clone-tree-map-failures-current.log` under `target/stdlib-work/` | Native layout derivation when a portable public nominal returns to its defining source unit during generic replay | The original direct String clone failed LNC0047 detail 6. Its `Vec<Entry<String,String>>` replay root lacked both a width witness and a source-local token, while Entry already had a complete six-word layout. Explicit local annotations did not repair it. The native-width producer function `local_nominal_owner` now resolves an absent raw token through the completed canonical ID, whose existing exact unit/declaration identity mapping supplies the local token. Existing token/HIR-kind checks and checked field/variant layout derivation remain authoritative; no Vec-specific width, host layout calculation or cross-source raw token transport was added. The direct probe and all five production groups now execute. Other missing-layout reproductions remain unvalidated. |
+| Resolved: constructor field count widened a checked zero-sized payload | [TreeMap clone zero-sized contract](../tests/fixtures/stdlib_foundation/clone_tree_map/zero_sized.lani); the same two accepted execution logs above | Native copies of aggregate constructors whose zero-sized fields make field count exceed machine-word width | `Node<Unit,Unit>` has six fields but occupies five checked words because its Entry payload is empty. The x86 `x86_aggregate_value_word_count` helper incorrectly took the maximum of that width and the six syntactic fields. A six-qword indexed copy then started eight bytes before its 40-byte allocation; retained native code and GDB confirmed the mismatch. The helper now preserves the checked value width, including zero. Constructor storage, copies and native size agree without an IR, ABI or artifact-version change. The previously crashing unchanged zero-sized fixture passes within the 9.83-second contract group. The independent `compiler_generic_types_execution::zero_sized_compositions_preserve_neighbors_and_array_bounds` regression also passes in 4.11 seconds (`target/stdlib-work/generic-zero-size-constructor-regression.log`), covering generic empty members/arrays, neighboring values, effects, nominal distinctions and four bounds traps. |
 | Resolved: array repetition/copy target capacity | [Independent nonzero-repeat fixture](../tests/fixtures/stdlib_foundation/dependencies/nonzero_array_repeat_target_capacity.lani) and [focused compiler driver](../tests/compiler_array_repeat_context_execution.rs) | Native lowering of fixed-array repetition and local copies | The minimal fixture originally failed LNC0057 with required target capacity 49,273 versus 36,864 available (flags `0x2`). Host orchestration now grows from measured demand with bounded monotonic full-graph retries; the large fixture and a subsequent tiny program pass using the same compiler. Shaders, IR records/opcodes, ABI and proofs are unchanged. |
 | Imported owning-cursor finish result in a generic cleanup helper | [Minimal caller, original helper and caller-projection control](../tests/fixtures/stdlib_compiler_state/owning_string_application/README.md) | Original `destroy_vec_iter<String>` calling `try_finish().is_none()` without a caller finish-result projection | Reproduced on 2026-10-24 at `f867a596`: the 18-line caller fails LNC0047 detail 6. A caller that explicitly projects `IntoIterError::Remaining` compiles; a typed Option local inside the helper still fails. Production helpers drain, recover an empty typed collection and release it through its canonical owner. Helper-only Vec/Deque String callers and the 126-case streaming application execute. This is a retained compiler dependency, with no compiler or ABI repair claimed. |
 | Raw native arguments lost high `usize` bits | [Assembly/table oracle, full-width probes and bounded native controls](stdlib-raw-host-width.md); `raw_host_width_admission.lani` | Allocation sizes, raw stdio counts, startup-copy bounds, environment key identity and clock/cwd capacities | Repaired in the native thunks. Six focused tests verify full-word transport with injected errors, finite guarded copies, supported/rejected alignment and owner preservation. Large successful backing allocation is not claimed; initial allocation retains MAP_32BIT. Declared i32 indices/results and wrapper error policies retain their domains. |
@@ -103,7 +136,7 @@ distribution uses the compiler's existing package resolver.
 | Pointer address/alignment projection | `tests/fixtures/stdlib_foundation/arena_dependency/pointer_cast.lani` reports LNC0072, cannot cast `ptr` as `usize` | Arbitrary over-aligned arena layouts | Reproduced 2026-10-23. Current raw arenas explicitly support alignments 1, 2, 4 and 8, covering current native typed layouts. Larger powers return `UnsupportedAlignment`; no assumed host page alignment is used. |
 | Nominal allocation result inside an imported generic copy | `tests/fixtures/stdlib_foundation/arena_dependency/README.md`: the 32-line Block-return provider reports LNC0047; a pointer-return provider compiles and executes with the same caller | Some compositions of generic typed storage with nominal allocation-result helpers | Reproduced 2026-10-23. This source-shape difference does not establish the compiler root cause. Production arena uses one primitive internal allocation boundary and wraps raw Blocks separately; generic typed APIs, a standalone byte-copy control, broad native layouts and the real word-count consumer all execute. |
 | Direct generic View record from a native array | [Inferred path literal/control](../tests/fixtures/stdlib_foundation/path_view_dependency/README.md) and [explicit schema literal/control](../tests/fixtures/extended_library/schema_view_dependency.README.md) retain historical diagnostics/output and current source/ELF hashes | Earlier direct View record constructions, including invalid-metadata tests | Repaired by `678bf559`. All four exact unchanged forms compile and execute at `10be2529`: path literal/control return the expected Bounds result; schema literal/control both print `-1,2`. The native-array record field retains its accepted slice descriptor instead of shifting following fields. This closes these source forms without claiming arbitrary inferred expressions work. |
-| Complete host services | Old `std::net` and `std::thread` bindings remain unavailable; service 14 is executable | Threads, native callbacks and broader C ABI profiles, TLS adapters, database integration and higher-level protocol orchestration | Owned sockets and extended filesystem operations now execute as Lanius code over `std::linux`. `core::target::HAS_NETWORK` describes those working library APIs; `core::runtime::HAS_NETWORK` describes the still-unbound old direct service 5. Authenticated TLS requires an established external library via a checked native binding; working sockets do not provide that integration. General host-service completeness remains open. |
+| Complete host services | Old `std::net` and `std::thread` bindings remain unavailable; service 14 is executable | Threads, native callbacks and broader C ABI profiles, server TLS, additional database integrations and higher-level protocol orchestration | Owned sockets and extended filesystem operations now execute as Lanius code over `std::linux`; SQLite executes through the selected Linux x86_64/glibc C profile. `core::target::HAS_NETWORK` describes those working library APIs; `core::runtime::HAS_NETWORK` describes the still-unbound old direct service 5. Client TLS with peer verification now executes through OpenSSL 3 with borrowed nonblocking sockets, explicit identity/trust and caller polling/deadline/SIGPIPE policy. Server TLS, callbacks, threads and broader host-service completeness remain open. |
 | Historical directory extern without a binding | `tests/fixtures/stdlib_foundation/filesystem_operations_directory_dependency.lani` declares an unrecognized directory-read extern and reports LNC0017 | The unsupported spelling retained as compiler evidence | Superseded as a library blocker by `std::directory` over the explicit Linux syscall binding. The old arbitrary extern remains unsupported; its failure is excluded from passing API claims. |
 | Earlier extended-filesystem prerequisite | Basic `std::file::open` still uses its three original modes | Distinguishing old fixed-mode opens from current file options | Resolved for the selected native profile by `std::file_ops` and `std::directory`, with nine focused execution groups and independent review. Existing fixed-mode opens still follow symlinks and omit close-on-exec; configurable opens default to close-on-exec. Paths remain bounded to 4,095 bytes. |
 | Native array converted inside a View record initializer | [Historical four-way source/output and current descriptor-layout regressions](../tests/fixtures/stdlib_compiler_state/settings_array_view/README.md) | Outer array-to-slice adjustment in imported/local record fields | Resolved by retaining the accepted mode4 descriptor adjustment and using its width during aggregate construction. The unchanged Text case now prints 6/6/6/6. Reordered generic records, sentinels, aliasing, positive/negative strides, nested arrays and zero-size/empty elements execute; incompatible element/extent types reject. No target/IR/ABI representation changed. Historical corruption remains preserved separately. |

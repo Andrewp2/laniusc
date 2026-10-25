@@ -1687,6 +1687,11 @@ fn lowering_compiler_graph_builder(
             capacities.hir_nodes,
         ),
     ))?;
+    let checked_call_native_abis = graph.add_resource(input(
+        "typecheck.semantic_call_native_abis_by_hir",
+        ResourceDomain::Calls,
+        LoweringCapacities::bytes::<u32>(capacities.hir_nodes),
+    ))?;
     let member_field_ordinals = graph.add_resource(input(
         "typecheck.semantic_member_field_ordinals_by_hir",
         ResourceDomain::HirNodes,
@@ -3053,6 +3058,7 @@ fn lowering_compiler_graph_builder(
                 checked_value_const_present,
             ),
             PassAccess::read("semantic_calls_by_hir", checked_calls),
+            PassAccess::read("checked_call_native_abi_by_hir", checked_call_native_abis),
             PassAccess::read("semantic_enclosing_fn_by_hir", checked_enclosing_functions),
             PassAccess::read("semantic_function_flag", semantic_function_flags),
             PassAccess::read("semantic_function_prefix", semantic_function_prefix),

@@ -1,0 +1,81 @@
+module app::main;
+import alloc::clone_deque;
+import alloc::deque;
+import alloc::string;
+import core::result;
+import fixture::leaf;
+
+fn allocation(error: alloc::string::Error) -> i32 {
+    assert(match(error) { alloc::string::Error::AllocationFailed -> true, _ -> false }); return 4;
+}
+fn storage(error: alloc::deque::Error) -> i32 {
+    assert(match(error) { alloc::deque::Error::AllocationFailed -> true, _ -> false }); return 4;
+}
+fn payload(value: fixture::leaf::Payload, tag: i32, stage: i32, index: i32, expected: i32, expected_stage: i32) -> i32 {
+    let text: alloc::string::String = value.message;
+    let valid: bool = index == expected && tag == expected+1 && stage == expected_stage
+        && value.wide == 18446744073709551615-(tag as u64)
+        && value.cells[0] == tag && value.cells[1] == stage
+        && text.byte_len() == 5 && text.byte_at(0).unwrap() == 69 && text.byte_at(1).unwrap() == 0
+        && text.byte_at(2).unwrap() == ((48+tag) as u8)
+        && text.byte_at(3).unwrap() == ((48+stage) as u8) && text.byte_at(4).unwrap() == 85;
+    text.destroy();
+    if (!valid) { return 1; } return 0;
+}
+fn leaf_error(error: fixture::leaf::Fault<fixture::leaf::Payload>, index: i32, expected: i32, stage: i32) -> i32 {
+    return match(error) {
+        fixture::leaf::Fault::Allocation(error) -> allocation(error),
+        fixture::leaf::Fault::Rejected(tag,actual_stage,value) -> payload(value,tag,actual_stage,index,expected,stage)
+    };
+}
+fn clone_error(error: alloc::clone_deque::Error<fixture::leaf::Fault<fixture::leaf::Payload>>, expected: i32, stage: i32) -> i32 {
+    return match(error) {
+        alloc::clone_deque::Error::Storage(error) -> storage(error),
+        alloc::clone_deque::Error::Element(index,error) -> leaf_error(error,index,expected,stage)
+    };
+}
+fn item(text: alloc::string::String, tag: i32, expected: i32, stage: i32) -> fixture::leaf::Leaf {
+    let fail: i32 = -1; if (tag == expected+1) { fail = stage; }
+    return fixture::leaf::Leaf { text: text, tag: tag, fail: fail };
+}
+fn run_case(expected: i32, stage: i32) -> i32 {
+    let bytes: [u8;4] = [83,0,195,169];
+    let made = alloc::string::from_utf8(bytes,4);
+    if (made.is_err()) { return allocation(made.unwrap_err()); }
+    let original: alloc::string::String = made.unwrap();
+    let reserved: core::result::Result<alloc::deque::Deque<fixture::leaf::Leaf>,alloc::deque::Error> = alloc::deque::with_capacity<fixture::leaf::Leaf>(3);
+    if (reserved.is_err()) { original.destroy(); return storage(reserved.unwrap_err()); }
+    let source = reserved.unwrap();
+    source.try_push_back(item(original,3,expected,stage)).unwrap();
+    source.try_push_back(item(original,1,expected,stage)).unwrap();
+    source.try_push_back(item(original,2,expected,stage)).unwrap();
+    source.pop_front(); source.try_push_back(item(original,3,expected,stage)).unwrap();
+    assert(source.as_views().first.len() == 2 && source.as_views().second.len() == 1);
+    let result: core::result::Result<alloc::deque::Deque<fixture::leaf::Leaf>,alloc::clone_deque::Error<fixture::leaf::Fault<fixture::leaf::Payload>>> =
+        alloc::clone_deque::try_clone<fixture::leaf::Leaf,fixture::leaf::Fault<fixture::leaf::Payload>>(source.borrow());
+    assert(source.len() == 3 && source.capacity() == 3 && source.head == 1
+        && source.at(0).tag == 1 && source.at(1).tag == 2 && source.at(2).tag == 3
+        && original.byte_len() == 4 && original.byte_at(1).unwrap() == 0 && original.byte_at(3).unwrap() == 169);
+    // All source leaves borrow original; release the actual source owners once.
+    source.destroy(); original.destroy();
+    if (result.is_ok()) {
+        let unexpected = result.unwrap();
+        alloc::clone_deque::destroy_deque<fixture::leaf::Leaf>(unexpected.borrow()); return 1;
+    }
+    // The error's owned String must remain live after source and destination
+    // storage have gone. It is released only by the payload caller above.
+    return clone_error(result.unwrap_err(),expected,stage);
+}
+fn main() -> i32 {
+    let index: i32 = 0;
+    while (index < 3) {
+        let stage: i32 = 0;
+        while (stage < 2) {
+            let status: i32 = run_case(index,stage);
+            if (status != 0) { return status; }
+            stage += 1;
+        }
+        index += 1;
+    }
+    return 0;
+}

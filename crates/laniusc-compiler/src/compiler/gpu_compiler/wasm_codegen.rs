@@ -77,7 +77,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         let objects = self.specialize_pending_source_pack_objects(vec![pending]).await?;
         let objects = objects.iter().map(|object| match object {
             super::typecheck::CompiledSourcePackObject::Wasm(object) => Ok(object),
-            super::typecheck::CompiledSourcePackObject::X86_64(_) => Err(CompileError::GpuCodegen(
+            super::typecheck::CompiledSourcePackObject::X86_64(_) | super::typecheck::CompiledSourcePackObject::X86_64File(_) => Err(CompileError::GpuCodegen(
                 "Wasm specialization produced an x86_64 object".into())),
         }).collect::<Result<Vec<_>, _>>()?;
         let input = wasm::GpuWasmLinkInput::for_executable_refs(objects).map_err(wasm_link_input_error)?;

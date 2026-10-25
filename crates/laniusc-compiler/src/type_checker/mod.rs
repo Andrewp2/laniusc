@@ -769,6 +769,7 @@ impl ResidentTypeCheckWorkspace {
             function_native_abi_by_hir: graph.buffer("semantic_function_native_abi_by_hir")?,
             control_depth_by_hir: graph.buffer("semantic_control_depth_by_hir")?,
             calls_by_hir: graph.buffer("semantic_calls_by_hir")?,
+            call_native_abi_by_hir: graph.buffer("semantic_call_native_abi_by_hir")?,
             expr_ref_tag_by_hir: graph.buffer("semantic_expr_ref_tag_by_hir")?,
             expr_ref_payload_by_hir: graph.buffer("semantic_expr_ref_payload_by_hir")?,
             aggregate_decl_token_by_hir: graph.buffer("semantic_aggregate_decl_token_by_hir")?,
@@ -919,6 +920,7 @@ pub(crate) struct GpuSemanticArtifactView<'a> {
     pub control_depth_by_hir: &'a LaniusBuffer<u32>,
     /// Canonical checked call resolution keyed by call-expression HIR row.
     pub calls_by_hir: &'a LaniusBuffer<GpuCheckedCallArtifact>,
+    pub call_native_abi_by_hir: &'a LaniusBuffer<u32>,
     /// Canonical checked type-reference tag keyed by dense expression HIR row.
     pub expr_ref_tag_by_hir: &'a LaniusBuffer<u32>,
     /// Canonical checked type-reference payload keyed by dense expression HIR row.
@@ -999,6 +1001,7 @@ pub(crate) struct OwnedGpuSemanticArtifact {
     function_native_abi_by_hir: LaniusBuffer<u32>,
     control_depth_by_hir: LaniusBuffer<u32>,
     calls_by_hir: LaniusBuffer<GpuCheckedCallArtifact>,
+    call_native_abi_by_hir: LaniusBuffer<u32>,
     expr_ref_tag_by_hir: LaniusBuffer<u32>,
     expr_ref_payload_by_hir: LaniusBuffer<u32>,
     aggregate_decl_token_by_hir: LaniusBuffer<u32>,
@@ -1058,6 +1061,7 @@ impl OwnedGpuSemanticArtifact {
             (&self.function_native_abi_by_hir).into(),
             (&self.control_depth_by_hir).into(),
             (&self.calls_by_hir).into(),
+            (&self.call_native_abi_by_hir).into(),
             (&self.expr_ref_tag_by_hir).into(),
             (&self.expr_ref_payload_by_hir).into(),
             (&self.aggregate_decl_token_by_hir).into(),
@@ -1128,6 +1132,7 @@ impl OwnedGpuSemanticArtifact {
             function_native_abi_by_hir: &self.function_native_abi_by_hir,
             control_depth_by_hir: &self.control_depth_by_hir,
             calls_by_hir: &self.calls_by_hir,
+            call_native_abi_by_hir: &self.call_native_abi_by_hir,
             expr_ref_tag_by_hir: &self.expr_ref_tag_by_hir,
             expr_ref_payload_by_hir: &self.expr_ref_payload_by_hir,
             aggregate_decl_token_by_hir: &self.aggregate_decl_token_by_hir,

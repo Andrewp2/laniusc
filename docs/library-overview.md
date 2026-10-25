@@ -1,0 +1,90 @@
+# Standard and extended library overview
+
+The [execution audit and portable foundation](stdlib-foundation.md) lists
+the stdlib APIs verified on x86_64, their edge behavior, and the remaining
+compiler and runtime dependencies.
+
+The [standard and extended library roadmap](library-roadmap.md) tracks the
+full scope and delivery requirements. New APIs follow the
+[library conventions](library-api-conventions.md); the first
+[owned UTF-8 String](stdlib-string.md) has executable native examples and
+allocation-failure tests.
+[Borrowed UTF-8 text](stdlib-text.md) provides subviews, splitting, scalar
+iteration and hashing without copying.
+The [byte stream APIs](stdlib-streams.md) provide shared reader/writer
+contracts, owned byte buffers and native descriptor adapters.
+The [generic hash map](stdlib-hash-collections.md) provides hashed lookup,
+explicit allocation errors and returned displaced keys/values.
+[Opt-in deep HashMap cloning](stdlib-clone-hash-map.md) now executes with
+independent nested owners, typed key/value errors and allocation-failure cleanup.
+[Opt-in recursive deque cloning](stdlib-clone-deque.md) also executes across
+four groups, including ring-order models and owned-error rollback. [Opt-in deep heap cloning](stdlib-clone-binary-heap.md) also passes all five
+native groups, including priority models and nested/owned-error failure cleanup.
+[Opt-in deep TreeMap cloning](stdlib-clone-tree-map.md) also passes all five
+native groups, including sorted staging, independent nested owners, typed
+key/value rollback, allocation failures and zero-sized keys and values.
+The [shared iterator protocol](stdlib-iterators.md) connects ranges, views,
+collections and text with borrowed adapters. A checked
+[range dot-product program](stdlib-range-dot.md) composes zip, take, map
+and enumeration, including arithmetic and output failures.
+[Canonical slice cursors](stdlib-cursor-integration.md),
+[text splits](stdlib-text-split-iterators.md) and
+[heap iteration](stdlib-heap-iterators.md) use that same protocol.
+[Selection, searches and folds](stdlib-iterator-selection.md) add lazy
+filtering and typed short circuits. The [column-sum program](stdlib-column-sum.md)
+combines text splitting, filtering, Result items and checked reduction.
+[Fallible collection](stdlib-iterator-transfer.md) transfers items into
+vectors and deques with explicit progress and rejected-item recovery. The
+[word sorter](stdlib-sort-words.md) collects borrowed text before sorting.
+[Map, set and heap sinks](stdlib-iterator-collection-sinks.md) preserve
+rejected items and stored representatives. The
+[identifier index](stdlib-index-words.md) rejects duplicates and prints
+ordered identifiers with their original positions.
+[Owning Vec and Deque cursors](stdlib-owning-iterators.md) transfer items,
+recover unconsumed storage and provide explicit nested cleanup. The
+[streaming word deduplicator](stdlib-unique-words.md) moves independent
+Strings into an ordered set while reusing its batch allocation.
+[Runtime formatting to byte writers](stdlib-format-write.md) validates
+before publication and uses bounded scratch with explicit partial progress.
+The [CSV report program](stdlib-format-report.md) composes it with numeric
+parsing and buffered output.
+
+[Checked native C calls](library-native-c.md) execute on Linux x86_64/glibc
+through ordinary ELF objects, the system C linker and libc startup.
+[OpenSSL digest contexts](extended-openssl-digest.md) provide streaming
+SHA-256, SHA-512, SHA3-256 and SHA3-512 through `libcrypto`; the
+[hashing program](extended-openssl-hash.md) hashes bounded binary stdin.
+All cryptographic operations use the native library. C `f32`/`f64` calls also
+execute with independent SSE/GPR banks and up to 32 total scalar parameters.
+An owned [SQLite adapter](extended-sqlite.md) and
+a [persistent binary key/value program](extended-sqlite-kv.md) execute
+through system SQLite on Linux x86_64/glibc, including typed values, transactions,
+persistence, locking and failure tests. Their guides record the execution
+evidence and measured bulk workload. [Client TLS with peer verification](extended-openssl-tls.md)
+executes through OpenSSL 3 `libssl`/`libcrypto`, with 34 cases across four groups
+covering peer identity/trust, binary transfers, closure/truncation and stable
+nonblocking retries. It uses manual context/session owners and a borrowed
+nonblocking socket with explicit caller deadlines and SIGPIPE policy. The
+[TLS stream adapter and HTTPS application](extended-https-fetch.md) execute
+62 cases across four groups on Linux x86_64, covering stream progress,
+verification/HTTP failures, limits and binary response framing. The application
+uses a numeric endpoint, explicit trust/peer identity, bounded deadlines and
+manual socket/TLS/buffer cleanup. Server TLS, standalone encryption/signature
+APIs and certificate trust APIs outside TLS remain work; the
+[remaining native prerequisites](library-native-integration-prerequisites.md)
+record those boundaries. Native linking now spools opaque original/replay
+sections and supports source packs above one resident unit, while source
+snapshots and global metadata still grow with the program. TCP/UDP sockets and
+[bounded OS entropy](stdlib-entropy-bounded.md) are also available.
+[DER](extended-der.md) and
+[X.509 structure parsing](extended-x509.md) provide data inspection; they
+do not verify signatures, certificate trust or TLS peers.
+
+Optional modules use the [`extended` source root](../extended/README.md).
+[`ext::csv`](extended-csv.md) and [`ext::json`](extended-json.md)
+include executable normalizers, generated round trips and allocation-failure
+coverage.
+
+The [CSV report application](csv-report.md) combines streams, UTF-8 text,
+checked decimal parsing, generic collections, CSV and JSON to validate and
+group records with executable failure coverage.

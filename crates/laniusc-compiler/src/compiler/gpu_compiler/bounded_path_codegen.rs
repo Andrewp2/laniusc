@@ -450,19 +450,22 @@ pub(super) fn write_output_file_atomically(
             output.display()
         ))
     })?;
-    let id = NEXT_BOUNDED_BUILD_ID.fetch_add(1, Ordering::Relaxed);
-    let temporary = output.with_file_name(format!(
-        ".{}.laniusc-{}-{id}.tmp",
-        file_name.to_string_lossy(),
-        std::process::id()
-    ));
+    let mut created = None;
+    for _ in 0..16 {
+        let temporary = output.with_file_name(format!(
+            ".{}.laniusc-{}-{:032x}.tmp",
+            file_name.to_string_lossy(), std::process::id(), rand::random::<u128>(),
+        ));
+        match create_private_output_file(&temporary) {
+            Ok(file) => { created = Some((temporary, file)); break; }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(source_pack_artifact_store_error(format!(
+                "create compiled output {}: {error}", temporary.display()))),
+        }
+    }
+    let (temporary, mut file) = created.ok_or_else(|| source_pack_artifact_store_error(
+        "could not create a unique private compiled output file"))?;
     let result = (|| {
-        let mut file = fs::File::create(&temporary).map_err(|err| {
-            source_pack_artifact_store_error(format!(
-                "create compiled output {}: {err}",
-                temporary.display()
-            ))
-        })?;
         let byte_len = write(&mut file)?;
         drop(file);
         set_executable_if_needed(&temporary, target)?;
@@ -473,6 +476,19 @@ pub(super) fn write_output_file_atomically(
         let _ = fs::remove_file(&temporary);
     }
     result
+}
+
+/// Exclusive creation rejects existing files and symlinks. Cleanup belongs only
+/// to the caller that successfully created this file.
+fn create_private_output_file(path: &Path) -> std::io::Result<fs::File> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path)
 }
 
 struct TemporaryBoundedArtifactRoot {
@@ -644,6 +660,46 @@ mod tests {
             assert!(units.max_unit_source_bytes() <= limits.max_source_bytes);
             assert!(units.max_unit_source_files() <= limits.max_source_files);
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_output_rejects_preexisting_symlink_without_touching_its_target() {
+        use std::os::unix::fs::symlink;
+        let root = TemporaryBoundedArtifactRoot::create().unwrap();
+        let destination = root.path().join("existing-output");
+        let collision = root.path().join("occupied-temporary");
+        fs::write(&destination, b"existing executable").unwrap();
+        symlink(&destination, &collision).unwrap();
+        assert_eq!(create_private_output_file(&collision).unwrap_err().kind(),
+            std::io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&destination).unwrap(), b"existing executable");
+        assert!(fs::symlink_metadata(&collision).unwrap().file_type().is_symlink());
+    }
+
+    #[test]
+    fn atomic_output_failure_preserves_existing_destination_and_unowned_siblings() {
+        use std::io::Write;
+        let root = TemporaryBoundedArtifactRoot::create().unwrap();
+        let destination = root.path().join("existing-output");
+        let unowned = root.path().join("preexisting-sibling");
+        fs::write(&destination, b"old executable").unwrap();
+        fs::write(&unowned, b"unrelated bytes").unwrap();
+        let result = write_output_file_atomically(&destination, SourcePackArtifactTarget::X86_64,
+            |file| {
+                file.write_all(b"partial output").unwrap();
+                Err(source_pack_artifact_store_error("injected output failure"))
+            });
+        assert!(result.is_err());
+        assert_eq!(fs::read(&destination).unwrap(), b"old executable");
+        assert_eq!(fs::read(&unowned).unwrap(), b"unrelated bytes");
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 2);
+        let bytes = write_output_file_atomically(&destination, SourcePackArtifactTarget::X86_64,
+            |file| { file.write_all(b"complete output").unwrap(); Ok(15) }).unwrap();
+        assert_eq!(bytes, 15);
+        assert_eq!(fs::read(&destination).unwrap(), b"complete output");
+        assert_eq!(fs::read(&unowned).unwrap(), b"unrelated bytes");
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 2);
     }
 
     #[test]

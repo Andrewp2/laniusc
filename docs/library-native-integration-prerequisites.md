@@ -17,8 +17,28 @@ documented contracts. The full library goal remains open.
 
 OpenSSL 3 EVP supplies executable SHA-256, SHA-512, SHA3-256 and SHA3-512.
 The Lanius wrapper owns contexts, adapts byte layout and reports errors; all
-cryptographic operations run in the established native library. TLS, encryption,
-signatures, certificate trust and SQLite wrappers remain unimplemented.
+cryptographic operations run in the established native library.
+[Client TLS with peer verification](extended-openssl-tls.md) also executes through OpenSSL 3
+`libssl`/`libcrypto`: 34 cases across four groups cover explicit CA trust,
+DNS/IP identity, binary transfers, closure/truncation and stable WANT retries.
+The caller supplies a connected nonblocking socket, readiness/deadline policy,
+manual owner cleanup and process SIGPIPE policy. The TLS guide records the
+separate passing receipts and corrected legacy test-peer fixture. Server TLS,
+standalone encryption/signature APIs and certificate trust APIs outside TLS
+remain work. The [TLS stream/HTTPS application](extended-https-fetch.md)
+executes 62 cases across four groups on Linux x86_64, with a numeric endpoint,
+explicit trust/identity, deadline/resource limits and manual owner cleanup.
+
+Native `f32`/`f64` C calls now execute with independent SSE and integer/pointer
+register banks and up to 32 total parameters. Exact IEEE transport, stack
+alignment, imported generic replay and live SSE clobbers pass the focused
+gate recorded in the [native C guide](library-native-c.md). An owned
+[SQLite adapter](extended-sqlite.md) and
+[persistent binary key/value program](extended-sqlite-kv.md) now execute through
+system SQLite on the selected Linux x86_64/glibc profile. Their gates cover
+typed values, transactions, persistence, locks, native failure cleanup and
+[staging allocation failures](extended-sqlite-allocation.md). The module guide
+records exact receipts and the bounded bulk workload's time/allocation sample.
 
 TCP/UDP, polling, subprocesses and bounded OS entropy retain their documented
 native contracts. Raw [DER](extended-der.md) and [X.509](extended-x509.md)
@@ -31,15 +51,18 @@ A native library adapter still needs:
    the supported Lanius signature shape; it cannot inspect a C library's types
    or establish pointer validity.
 2. Explicit dependencies and native linker inputs within the
-   [selected profile](library-native-c.md). Resident-sized source packs execute;
-   file-backed native ELF linking remains a compiler dependency.
+   [selected profile](library-native-c.md). Native entry/package builds spool
+   original/replay payloads and execute above the resident aggregate threshold;
+   each source file must still fit its frontend unit. Source snapshots and
+   global metadata remain resident, and explicit descriptor CLI modes are not
+   supported by this native path.
 3. An owner contract for native contexts, allocations and borrowed buffers.
 4. Correct library-specific initialization, error mapping and configuration.
    TLS also needs certificate trust/identity policy and socket deadlines.
 
-The digest gates exercise these contracts for EVP. They do not establish a
-different adapter's security policy. Runtime loading with `dlopen`/`dlsym`,
-callbacks and foreign thread entry remain separate profiles.
+The digest and client TLS gates exercise their documented EVP and SSL
+contracts. They do not establish a different adapter's security policy.
+Runtime loading with `dlopen`/`dlsym`, callbacks and foreign thread entry remain separate profiles.
 
 ## Existing boundaries
 
@@ -48,8 +71,8 @@ callbacks and foreign thread entry remain separate profiles.
 | Direct Lanius calls | Monomorphic/imported calls execute; generic composition has separate [routing dependencies](library-dependencies.md). |
 | Callable values | The grammar has no function type or address-of expression. Checked calls retain a declaration target; lowering has direct calls and host/intrinsic calls, with no checked indirect-call operation. |
 | Native linking | The opt-in C profile packages generated sections as ordinary ELF ET_REL objects and invokes `cc -no-pie`, with normal CRT/libc startup and native object/library inputs. The default raw profile retains its existing linker. |
-| Extern declarations | Checked `extern "C"` scalar/pointer/void declarations execute through native linking, with up to 32 parameters. Unknown ABIs and unsupported C signatures fail; unrelated runtime-service declarations still need a bound service. |
-| Scaling and artifacts | Native linking currently requires resident-sized source packs. Semantic interface v17 and x86 object v4 require rebuilt cached artifacts; file-backed native ELF linking remains open. |
+| Extern declarations | Checked `extern "C"` integer/pointer/f32/f64/void declarations execute through native linking, with independent SSE/GPR banks and up to 32 total parameters. Unknown ABIs and unsupported C signatures fail; unrelated runtime-service declarations still need a bound service. |
+| Scaling and artifacts | Native entry/package builds spool original/replay payloads and stream ELF export; a two-file 6 MiB pack executes above the 5 MiB aggregate threshold. Source snapshots and global metadata still grow. Explicit descriptor CLI modes remain unsupported. Semantic interface v17 and x86 object v4 are unchanged. |
 | Atomics | No source atomic or memory-order contract is established. Conservative call effects alone do not establish atomicity or a happens-before relation. |
 
 The source boundaries are [grammar/lanius.bnf](../grammar/lanius.bnf),
@@ -57,10 +80,12 @@ The source boundaries are [grammar/lanius.bnf](../grammar/lanius.bnf),
 [lowering calls](../crates/laniusc-compiler/src/codegen/lowering_ir.rs),
 [native argument layout](../shaders/codegen/lir/x86/common.slang) and
 [call effects](../shaders/codegen/optimization_ir.slang).
-The new [declaration contract tests](../tests/native_c_contract.rs) pass three
+The [declaration contract tests](../tests/native_c_contract.rs) pass four
 groups and the [native C execution tests](../tests/native_c_execution.rs) pass
 eight, including imported calls, generic replay, 32 mixed arguments and CRT
-initialization. The [native C guide](library-native-c.md) records the focused
+initialization. The [float C execution gate](../tests/native_c_float_execution.rs)
+adds exact IEEE transport and independent SSE/GPR register/stack coverage.
+The [native C guide](library-native-c.md) records the focused
 receipts and remaining restrictions.
 
 Ordinary Lanius calls retain their own convention: slices occupy three words,
@@ -131,10 +156,14 @@ Separate three admissions:
 3. **Callbacks:** addressable exported entries, ABI trampolines, context lifetime,
    reentrancy and foreign-thread attachment remain unimplemented.
 
-OpenSSL digests now supply a native binding with execution evidence. TLS,
-encryption, signatures, certificate trust and SQLite still need their own
-wrappers and policy contracts. No JSON bridge, subprocess serialization adapter
-or declaration-only API is counted as native integration. Production sensitive
+OpenSSL digests, client TLS with peer verification and SQLite supply native bindings with
+execution evidence. The SQLite adapter and its application execute database,
+statement, buffer and failure contracts documented in their guides, including
+real files, transactions and native lock recovery. Client TLS verifies peer
+trust and identity within its documented profile. Server TLS, standalone
+encryption/signature APIs and broader certificate policy still need their own
+accepted wrappers. No JSON bridge, subprocess serialization adapter or
+declaration-only API is counted as native integration. Production sensitive
 operations use established native libraries, with no custom Lanius or
 Rust/Python cryptographic implementation.
 

@@ -54,8 +54,9 @@ uint x86_aggregate_value_word_count(OptIrNodeCore core,
     uint op = opt_ir_op(core);
     if (op == SEMANTIC_LIR_OP_CALL_SYMBOL)
         return x86_imported_call_result_words(core);
-    if (op == SEMANTIC_LIR_OP_AGGREGATE_NEW)
-        return max(core.value_word_count, operands.b);
+    // AGGREGATE_NEW operand b counts syntactic fields/elements, which may
+    // include zero-sized values. Its checked payload width is authoritative,
+    // including zero; field/element count cannot supply a storage-word width.
     // Intrinsics do not have a SemanticLirFunction row from which the x86
     // lowering can recover an aggregate result width. Keep their value-shape
     // contract here so every aggregate consumer (counting, scattering, local

@@ -498,7 +498,7 @@ impl GpuX86RelocatableObject {
     }
 }
 
-fn validate_link_object_columns(
+pub(crate) fn validate_link_object_columns(
     version: u32,
     entry_offset: Option<u32>,
     text_len: usize,

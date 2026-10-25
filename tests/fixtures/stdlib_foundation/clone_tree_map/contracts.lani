@@ -1,0 +1,74 @@
+module app::main;
+import alloc::clone;
+import alloc::clone_tree_map;
+import alloc::clone_vec;
+import alloc::string;
+import alloc::tree_map;
+import alloc::vec;
+import core::clone;
+import core::iter;
+import core::result;
+import core::slice;
+import fixture::consumer;
+
+fn text(byte: u8) -> alloc::string::String {
+    let bytes: [u8;4] = [byte,0,195,169];
+    return alloc::string::from_utf8(bytes,4).unwrap();
+}
+fn strings() {
+    let a = text(65); let b = text(66); let c = text(67); let value = text(86);
+    let source: alloc::tree_map::TreeMap<alloc::string::String,alloc::string::String> = alloc::tree_map::with_capacity<alloc::string::String,alloc::string::String>(8).unwrap();
+    source.try_insert(c,value).unwrap(); source.try_insert(a,value).unwrap(); source.try_insert(b,value).unwrap();
+    // A hole and spare capacity must not become additional logical entries.
+    let hole = source.remove(b).unwrap(); assert(hole.key.equals(b) && hole.value.equals(value));
+    let shallow = source.try_clone().unwrap();
+    let borrowed = shallow.first().unwrap();
+    assert(borrowed.key.bytes.storage==a.bytes.storage && borrowed.value.bytes.storage==value.bytes.storage);
+    shallow.destroy();
+    let made: core::result::Result<alloc::tree_map::TreeMap<alloc::string::String,alloc::string::String>,alloc::clone_tree_map::Error<alloc::string::Error,alloc::string::Error>> =
+        fixture::consumer::duplicate<alloc::tree_map::TreeMap<alloc::string::String,alloc::string::String>,alloc::clone_tree_map::Error<alloc::string::Error,alloc::string::Error>>(source);
+    assert(source.len()==2 && source.capacity()==8 && a.byte_len()==4 && value.byte_at(1).unwrap()==0);
+    let copy = made.unwrap(); let first = copy.first().unwrap();
+    assert(copy.len()==2 && first.key.bytes.storage!=a.bytes.storage && first.value.bytes.storage!=value.bytes.storage);
+    // remove transfers both actual owners. Grow them, then reinstall their
+    // updated descriptors before any map access or deep destruction.
+    let transferred = copy.remove(first.key).unwrap();
+    transferred.key.try_push_scalar(88).unwrap(); transferred.value.try_push_scalar(89).unwrap();
+    copy.try_insert(transferred.key,transferred.value).unwrap();
+    let changed = copy.first().unwrap(); let sibling = copy.last().unwrap();
+    assert(changed.key.byte_len()==5 && changed.key.byte_at(4).unwrap()==88);
+    assert(changed.value.byte_len()==5 && changed.value.byte_at(4).unwrap()==89);
+    assert(sibling.key.byte_len()==4 && sibling.value.byte_len()==4 && value.byte_len()==4 && a.byte_len()==4);
+    source.destroy(); a.destroy(); b.destroy(); c.destroy(); value.destroy();
+    let saved = copy.pop_last().unwrap();
+    alloc::clone_tree_map::destroy_tree_map<alloc::string::String,alloc::string::String>(copy.borrow());
+    alloc::clone_tree_map::destroy_tree_map<alloc::string::String,alloc::string::String>(copy.borrow());
+    assert(copy.is_empty() && copy.capacity()==0 && saved.value.byte_at(1).unwrap()==0);
+    saved.key.destroy(); saved.value.destroy();
+    // The reset actual owner can be used again, then released by the trait.
+    copy.try_insert(text(68),text(87)).unwrap();
+    fixture::consumer::release<alloc::tree_map::TreeMap<alloc::string::String,alloc::string::String>>(copy);
+}
+fn nested() {
+    let a = text(97); let b = text(98); let original = text(83);
+    let values: [alloc::string::String;2] = [original,original];
+    let row = alloc::vec::from_view<alloc::string::String>(core::slice::view(values,2).unwrap()).unwrap();
+    let source: alloc::tree_map::TreeMap<alloc::string::String,alloc::vec::Vec<alloc::string::String>> = alloc::tree_map::new();
+    source.try_insert(b,row).unwrap(); source.try_insert(a,row).unwrap();
+    let made: core::result::Result<alloc::tree_map::TreeMap<alloc::string::String,alloc::vec::Vec<alloc::string::String>>,alloc::clone_tree_map::Error<alloc::string::Error,alloc::clone::Error<alloc::string::Error>>> =
+        alloc::clone_tree_map::try_clone<alloc::string::String,alloc::vec::Vec<alloc::string::String>,alloc::string::Error,alloc::clone::Error<alloc::string::Error>>(source.borrow());
+    let copy = made.unwrap();
+    let pair = copy.pop_first().unwrap(); let other = copy.first().unwrap();
+    let child = pair.value.remove(0).unwrap();
+    child.try_push_scalar(90).unwrap(); pair.value.try_insert(0,child).unwrap();
+    copy.try_insert(pair.key,pair.value).unwrap();
+    let changed = copy.first().unwrap(); let changed_values = changed.value.as_slice(); let old_values = other.value.as_slice();
+    let changed_child: alloc::string::String = changed_values[0]; let unchanged_child: alloc::string::String = changed_values[1];
+    let other_child: alloc::string::String = old_values[0];
+    assert(changed_child.byte_len()==5 && changed_child.byte_at(4).unwrap()==90);
+    assert(unchanged_child.byte_len()==4 && other_child.byte_len()==4 && original.byte_len()==4);
+    source.destroy(); row.destroy(); a.destroy(); b.destroy(); original.destroy();
+    alloc::clone_tree_map::destroy_tree_map<alloc::string::String,alloc::vec::Vec<alloc::string::String>>(copy.borrow());
+    assert(copy.len()==0 && copy.capacity()==0);
+}
+fn main() -> i32 { strings(); nested(); return 0; }

@@ -55,6 +55,7 @@ RWStructuredBuffer<uint> call_dependency_library_id;
 RWStructuredBuffer<uint> call_dependency_unit_id;
 RWStructuredBuffer<uint> call_dependency_local_index;
 RWStructuredBuffer<uint> call_dependency_host_service;
+RWStructuredBuffer<uint> call_dependency_native_abi;
 RWStructuredBuffer<uint> call_fn_index;
 RWStructuredBuffer<uint> call_dependency_generic_requirements;
 RWStructuredBuffer<uint> call_param_count;
@@ -171,6 +172,9 @@ void publish_call(
         dependency_declaration_local_index(declaration_i);
     call_dependency_host_service[token] = dependency_declaration_word(
         declaration_i * DECL_WORDS + 12u);
+    call_dependency_native_abi[token] =
+        (dependency_declaration_word(declaration_i * DECL_WORDS + 11u) & 2u) != 0u
+        ? dependency_declaration_word(declaration_i * DECL_WORDS + 13u) : 0u;
     // Total declaration arity includes both domains; preserve the separate
     // counts even when an unused slot does not appear in the callable signature.
     uint header = declaration_i;

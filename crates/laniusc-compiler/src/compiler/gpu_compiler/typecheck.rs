@@ -2640,6 +2640,12 @@ pub(super) struct PendingOriginalUnit {
 }
 
 impl PendingOriginalUnit {
+    /// Storage changes do not change the immutable facts or release this unit.
+    pub(super) fn spill_native(mut self) -> Result<Self, CompileError> {
+        self.unit.object = self.unit.object.spill_native()?;
+        Ok(self)
+    }
+
     pub(super) fn facts(&self) -> &OriginalUnitFacts {
         &self.facts
     }
@@ -3248,6 +3254,8 @@ pub(in crate::compiler) struct CompiledSourcePackUnit {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::compiler) enum CompiledSourcePackObject {
     X86_64(crate::codegen::x86::GpuX86RelocatableObject),
+    /// Native C storage keeps opaque sections in a private guarded file.
+    X86_64File(crate::codegen::x86::GpuX86FileObject),
     Wasm(crate::codegen::wasm::GpuWasmRelocatableObject),
 }
 
@@ -3266,9 +3274,20 @@ pub(in crate::compiler) enum NativeSymbolKind {
 /// use. Both object formats keep undefined symbols before definitions, name
 /// every symbol by identity bytes, and hash them the same way.
 impl CompiledSourcePackObject {
+    /// Spill a native-profile object before it enters the program inventory.
+    pub(super) fn spill_native(self) -> Result<Self, CompileError> {
+        match self {
+            Self::X86_64(object) => crate::codegen::x86::GpuX86FileObject::spill(object)
+                .map(Self::X86_64File).map_err(super::source_pack_artifact_store_error),
+            Self::X86_64File(_) => Ok(self),
+            Self::Wasm(_) => Err(super::source_pack_artifact_store_error(
+                "native C storage received a Wasm object")),
+        }
+    }
+
     pub(in crate::compiler) fn target(&self) -> SourcePackArtifactTarget {
         match self {
-            Self::X86_64(_) => SourcePackArtifactTarget::X86_64,
+            Self::X86_64(_) | Self::X86_64File(_) => SourcePackArtifactTarget::X86_64,
             Self::Wasm(_) => SourcePackArtifactTarget::Wasm,
         }
     }
@@ -3277,6 +3296,7 @@ impl CompiledSourcePackObject {
     pub(in crate::compiler) fn unit(&self) -> [u32; 2] {
         match self {
             Self::X86_64(object) => [object.library_id, object.unit_id],
+            Self::X86_64File(object) => [object.layout.library_id, object.layout.unit_id],
             Self::Wasm(object) => [object.library_id, object.unit_id],
         }
     }
@@ -3284,6 +3304,7 @@ impl CompiledSourcePackObject {
     pub(in crate::compiler) fn validate(&self) -> Result<(), String> {
         match self {
             Self::X86_64(object) => object.validate(),
+            Self::X86_64File(object) => object.validate(),
             Self::Wasm(object) => object.validate(),
         }
     }
@@ -3291,6 +3312,7 @@ impl CompiledSourcePackObject {
     pub(in crate::compiler) fn symbol_count(&self) -> usize {
         match self {
             Self::X86_64(object) => object.symbols.len(),
+            Self::X86_64File(object) => object.symbols.len(),
             Self::Wasm(object) => object.symbols.len(),
         }
     }
@@ -3299,6 +3321,11 @@ impl CompiledSourcePackObject {
         use crate::codegen::{wasm::GpuWasmSymbolKind, x86::GpuX86ObjectSection};
         match self {
             Self::X86_64(object) => match object.symbols[index].section {
+                GpuX86ObjectSection::Undefined => NativeSymbolKind::Undefined,
+                GpuX86ObjectSection::Text => NativeSymbolKind::Function,
+                GpuX86ObjectSection::Rodata => NativeSymbolKind::Data,
+            },
+            Self::X86_64File(object) => match object.symbols[index].section {
                 GpuX86ObjectSection::Undefined => NativeSymbolKind::Undefined,
                 GpuX86ObjectSection::Text => NativeSymbolKind::Function,
                 GpuX86ObjectSection::Rodata => NativeSymbolKind::Data,
@@ -3314,6 +3341,10 @@ impl CompiledSourcePackObject {
     pub(in crate::compiler) fn symbol_identity(&self, index: usize) -> &[u8] {
         let (bytes, start, len) = match self {
             Self::X86_64(object) => {
+                let symbol = &object.symbols[index];
+                (&object.identity_bytes, symbol.identity_byte_start, symbol.identity_byte_len)
+            }
+            Self::X86_64File(object) => {
                 let symbol = &object.symbols[index];
                 (&object.identity_bytes, symbol.identity_byte_start, symbol.identity_byte_len)
             }
@@ -3344,6 +3375,11 @@ impl CompiledSourcePackObject {
                 (&mut object.identity_bytes, &mut symbol.identity_byte_start, &mut symbol.identity_byte_len,
                  &mut symbol.identity_hash_lo, &mut symbol.identity_hash_hi)
             }
+            Self::X86_64File(object) => {
+                let symbol = object.symbols.get_mut(index).ok_or("specialization symbol is absent")?;
+                (&mut object.identity_bytes, &mut symbol.identity_byte_start, &mut symbol.identity_byte_len,
+                 &mut symbol.identity_hash_lo, &mut symbol.identity_hash_hi)
+            }
             Self::Wasm(object) => {
                 let symbol = object.symbols.get_mut(index).ok_or("specialization symbol is absent")?;
                 (&mut object.identity_bytes, &mut symbol.identity_byte_start, &mut symbol.identity_byte_len,
@@ -3357,6 +3393,7 @@ impl CompiledSourcePackObject {
         *start_field = start;
         *len_field = len;
         bytes.extend_from_slice(identity);
+        if let Self::X86_64File(object) = self { object.refresh_layout()?; }
         Ok(())
     }
 
@@ -3397,6 +3434,7 @@ impl CompiledSourcePackObject {
         }
         match self {
             Self::X86_64(object) => remap!(object),
+            Self::X86_64File(object) => { remap!(&mut *object); object.refresh_layout().map_err(anyhow::Error::msg)?; }
             Self::Wasm(object) => remap!(object),
         }
         self.validate().map_err(anyhow::Error::msg)
@@ -3415,6 +3453,18 @@ impl CompiledSourcePackObject {
                     index += 1;
                     retain
                 });
+            }
+            Self::X86_64File(object) => {
+                let original_count = object.symbols.len();
+                let mut index = 0;
+                object.symbols.retain(|_| {
+                    let retain = keep[index];
+                    index += 1;
+                    retain
+                });
+                // Retaining rows can only decrease the already admitted count.
+                object.layout.symbol_count = object.symbols.len() as u32;
+                object.layout.serialized_byte_len -= (original_count - object.symbols.len()) as u64 * 32;
             }
             Self::Wasm(object) => {
                 let mut renumbered = Vec::with_capacity(keep.len());
@@ -3447,6 +3497,7 @@ impl CompiledSourcePackObject {
     pub(in crate::compiler) fn code_len(&self) -> usize {
         match self {
             Self::X86_64(object) => object.text.len(),
+            Self::X86_64File(object) => object.layout.text_byte_len as usize,
             Self::Wasm(object) => object.body_bytes.len(),
         }
     }
@@ -3457,6 +3508,10 @@ impl CompiledSourcePackObject {
             Self::X86_64(object) => {
                 object.unit_id = unit_id;
                 object.entry_offset = None;
+            }
+            Self::X86_64File(object) => {
+                object.layout.unit_id = unit_id;
+                object.layout.entry_offset = None;
             }
             Self::Wasm(object) => {
                 object.unit_id = unit_id;
@@ -3473,8 +3528,8 @@ impl CompiledSourcePackObject {
     ) -> Result<crate::codegen::x86::GpuX86RelocatableObject, CompileError> {
         match self {
             Self::X86_64(object) => Ok(object),
-            Self::Wasm(_) => Err(CompileError::GpuCodegen(
-                "compiled source-pack unit returned a Wasm object for x86_64".into(),
+            Self::X86_64File(_) | Self::Wasm(_) => Err(CompileError::GpuCodegen(
+                "compiled source-pack unit returned a file-backed or Wasm object for resident x86_64".into(),
             )),
         }
     }
@@ -3484,7 +3539,7 @@ impl CompiledSourcePackObject {
     ) -> Result<crate::codegen::wasm::GpuWasmRelocatableObject, CompileError> {
         match self {
             Self::Wasm(object) => Ok(object),
-            Self::X86_64(_) => Err(CompileError::GpuCodegen(
+            Self::X86_64(_) | Self::X86_64File(_) => Err(CompileError::GpuCodegen(
                 "compiled source-pack unit returned an x86_64 object for Wasm".into(),
             )),
         }
@@ -4195,8 +4250,8 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                 .with_primary_label(diagnostic_label_from_source_span(
                     path, source, start, len, "this declaration is outside the direct C-call profile",
                 ))
-                .with_note("extern \"C\" accepts up to 32 i32, u32, i64, u64, isize, usize or ptr parameters and one of those result types or void")
-                .with_note("C declarations must be monomorphic; floats, narrow integers, bool, aggregates, references and variadic calls are not supported"),
+                .with_note("extern \"C\" accepts up to 32 i32, u32, i64, u64, isize, usize, ptr, f32 or f64 parameters and one of those result types or void")
+                .with_note("C declarations must be monomorphic; narrow integers, bool, aggregates, references and variadic calls are not supported"),
         ),
         GpuTypeCheckCode::MissingConstantBinding => CompileError::Diagnostic(
             Diagnostic::error("LNC0006", "type mismatch")

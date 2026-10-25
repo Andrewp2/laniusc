@@ -1,0 +1,41 @@
+module app::main;
+import alloc::clone_hash_map;
+import alloc::hash_map;
+import core::clone;
+import core::cmp;
+import core::hash;
+import core::result;
+
+struct PoisonKey {}
+struct PoisonValue {}
+enum Never { Unexpected }
+pub impl core::cmp::Eq<PoisonKey> for PoisonKey {
+    pub fn eq(a: PoisonKey, b: PoisonKey) -> bool { assert(false); return false; }
+    pub fn ne(a: PoisonKey, b: PoisonKey) -> bool { assert(false); return false; }
+}
+pub impl core::hash::Hash<PoisonKey> for PoisonKey { pub fn hash(value: PoisonKey) -> u32 { assert(false); return 0; } }
+pub impl core::clone::TryClone<PoisonKey,Never> for PoisonKey { pub fn try_clone_value(source: PoisonKey) -> core::result::Result<PoisonKey,Never> { assert(false); return core::result::Ok(source); } }
+pub impl core::clone::TryClone<PoisonValue,Never> for PoisonValue { pub fn try_clone_value(source: PoisonValue) -> core::result::Result<PoisonValue,Never> { assert(false); return core::result::Ok(source); } }
+pub impl core::clone::Destroy<PoisonKey> for PoisonKey { pub fn destroy_value(owned: PoisonKey) { assert(false); } }
+pub impl core::clone::Destroy<PoisonValue> for PoisonValue { pub fn destroy_value(owned: PoisonValue) { assert(false); } }
+struct Unit {}
+pub impl core::cmp::Eq<Unit> for Unit { pub fn eq(a: Unit, b: Unit) -> bool { return true; } pub fn ne(a: Unit, b: Unit) -> bool { return false; } }
+pub impl core::hash::Hash<Unit> for Unit { pub fn hash(value: Unit) -> u32 { return 0; } }
+pub impl core::clone::TryClone<Unit,Never> for Unit { pub fn try_clone_value(source: Unit) -> core::result::Result<Unit,Never> { return core::result::Ok(source); } }
+pub impl core::clone::Destroy<Unit> for Unit { pub fn destroy_value(owned: Unit) {} }
+fn main() -> i32 {
+    let empty: alloc::hash_map::HashMap<PoisonKey,PoisonValue> = alloc::hash_map::new();
+    let copy: alloc::hash_map::HashMap<PoisonKey,PoisonValue> = alloc::clone_hash_map::try_clone<PoisonKey,PoisonValue,Never,Never>(empty.borrow()).unwrap();
+    assert(empty.is_empty() && copy.is_empty() && empty.capacity()==0 && copy.capacity()==0);
+    alloc::clone_hash_map::destroy_hash_map<PoisonKey,PoisonValue>(copy.borrow()); alloc::clone_hash_map::destroy_hash_map<PoisonKey,PoisonValue>(copy.borrow());
+    alloc::clone_hash_map::destroy_hash_map<PoisonKey,PoisonValue>(empty.borrow());
+    // Zero-sized leaves still need a nonempty hash table for slot tags/hash.
+    let source: alloc::hash_map::HashMap<Unit,Unit> = alloc::hash_map::new();
+    assert(source.try_insert(Unit {},Unit {}).unwrap().is_none());
+    let cloned: alloc::hash_map::HashMap<Unit,Unit> = alloc::clone_hash_map::try_clone<Unit,Unit,Never,Never>(source.borrow()).unwrap();
+    assert(source.len()==1 && cloned.len()==1 && source.capacity()>=1 && cloned.capacity()>=1 && source.storage!=cloned.storage);
+    alloc::clone_hash_map::destroy_hash_map<Unit,Unit>(source.borrow());
+    assert(cloned.contains_key(Unit {}) && cloned.get_entry(Unit {}).is_some());
+    alloc::clone_hash_map::destroy_hash_map<Unit,Unit>(cloned.borrow()); alloc::clone_hash_map::destroy_hash_map<Unit,Unit>(cloned.borrow());
+    assert(source.is_empty() && cloned.is_empty() && source.capacity()==0 && cloned.capacity()==0); return 0;
+}

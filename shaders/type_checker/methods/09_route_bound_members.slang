@@ -93,6 +93,7 @@ RWStructuredBuffer<uint> call_dependency_library_id;
 RWStructuredBuffer<uint> call_dependency_unit_id;
 RWStructuredBuffer<uint> call_dependency_local_index;
 RWStructuredBuffer<uint> call_dependency_host_service;
+RWStructuredBuffer<uint> call_dependency_native_abi;
 StructuredBuffer<uint> predicate_method_validation_required_symbol;
 StructuredBuffer<uint> predicate_method_contract_owner_hir;
 StructuredBuffer<uint> predicate_bound_reference;
@@ -292,6 +293,7 @@ void publish_callee(uint token, MethodCandidate candidate, uint selected, uint b
     call_dependency_unit_id[token] = target.y;
     call_dependency_local_index[token] = target.z;
     call_dependency_host_service[token] = INVALID;
+    call_dependency_native_abi[token] = 0u;
     call_dependency_generic_requirements[token] = requirements;
 }
 

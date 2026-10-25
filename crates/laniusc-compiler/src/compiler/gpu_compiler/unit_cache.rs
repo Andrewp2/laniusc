@@ -760,6 +760,10 @@ impl CompiledSourcePackUnit {
                 .saturating_add(vector_resident_bytes(&object.relocations))
                 .saturating_add(vector_resident_bytes(&object.symbols))
                 .saturating_add(vector_resident_bytes(&object.identity_bytes)),
+            CompiledSourcePackObject::X86_64File(object) => bytes
+                .saturating_add(vector_resident_bytes(&object.relocations))
+                .saturating_add(vector_resident_bytes(&object.symbols))
+                .saturating_add(vector_resident_bytes(&object.identity_bytes)),
             CompiledSourcePackObject::Wasm(object) => bytes
                 .saturating_add(vector_resident_bytes(&object.functions))
                 .saturating_add(vector_resident_bytes(&object.type_bytes))
@@ -1363,6 +1367,47 @@ mod tests {
         assert_eq!(cache.stats().entries, 1);
         cache.clear();
         assert!(cache.get(&key).is_none());
+    }
+
+    #[test]
+    fn native_spilling_preserves_the_exact_pending_original_facts() {
+        let pending = PendingOriginalUnit::from_unit_for_test(unit(7));
+        let facts = pending.facts().clone();
+        let pending = pending.spill_native().expect("spill private original");
+        assert!(pending.facts().same_snapshot(&facts));
+        // Storage does not create a replacement snapshot with equal IDs. A
+        // later wrapper still needs admission for the original exact facts.
+        let retained = pending.retain();
+        drop(pending);
+        assert!(retained.pending().facts().same_snapshot(&facts));
+    }
+
+    #[test]
+    fn native_file_metadata_patches_preserve_the_frozen_code() {
+        let mut value = unit(7);
+        let CompiledSourcePackObject::X86_64(object) = &mut value.object else { unreachable!() };
+        object.text = vec![0, 255, 0x90, 0xc3];
+        object.identity_bytes = [7u32, 0, 11].into_iter().flat_map(u32::to_le_bytes).collect();
+        let (lo, hi) = crate::compiler::stable_name_hash(&object.identity_bytes);
+        object.symbols.push(crate::codegen::x86::GpuX86ObjectSymbolRecord {
+            identity_hash_lo: lo, identity_hash_hi: hi, identity_byte_start: 0, identity_byte_len: 12,
+            section: crate::codegen::x86::GpuX86ObjectSection::Text, offset: 0, size: 4, flags: 0,
+        });
+        let mut object = value.object.spill_native().unwrap();
+        let identity = [7u32, 41, 13].into_iter().flat_map(u32::to_le_bytes).collect::<Vec<_>>();
+        object.replace_symbol_identity(0, &identity).unwrap();
+        object.map_symbol_identity_words(|words| { words[2] += 1; Ok(()) }).unwrap();
+        object.publish_as_unit(41);
+        object.validate().unwrap();
+        assert_eq!(object.unit(), [7, 41]);
+        assert_eq!(object.symbol_identity_words(0), Some([7, 41, 14]));
+        object.retain_symbols(&[false]);
+        object.validate().unwrap();
+        assert_eq!(object.symbol_count(), 0);
+        let CompiledSourcePackObject::X86_64File(stored) = object else { unreachable!() };
+        let mut code = Vec::new();
+        stored.copy_text_to(&mut code).unwrap();
+        assert_eq!(code, [0, 255, 0x90, 0xc3]);
     }
 
     #[test]

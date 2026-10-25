@@ -1,0 +1,68 @@
+module fixture::leaf;
+import alloc::string;
+import core::clone;
+import core::cmp;
+import core::hash;
+import core::result;
+
+// log[0..4] counts clone/destroy calls; log[4] counts ordered events at16+.
+// log[6] is reserved for a deliberately unlawful Eq mutation test. The trace
+// belongs to the test, not to any leaf owner, and has no destruction authority.
+pub struct Key { text: alloc::string::String, id: i32, ordinal: i32, fail: i32, mode: i32, hash_code: u32, cloned: bool, log: [i32] }
+pub struct Value { text: alloc::string::String, id: i32, fail: i32, switch_eq: bool, log: [i32] }
+pub enum KeyError { Allocation(alloc::string::Error), Injected(i32,i32,alloc::string::String) }
+pub enum ValueError { Allocation(alloc::string::Error), Injected(i32,i32,alloc::string::String) }
+
+fn record(log: [i32], event: i32) { let at: i32 = log[4]; assert(at>=0 && at<240); log[16+at]=event; log[4]=at+1; }
+fn message(tag: i32, stage: i32) -> core::result::Result<alloc::string::String,alloc::string::Error> {
+    let bytes: [u8; 5] = [69,0,tag as u8,stage as u8,90]; return alloc::string::from_utf8(bytes,5);
+}
+fn key_error(tag: i32, stage: i32) -> KeyError {
+    let made = message(tag,stage); if (made.is_err()) { return KeyError::Allocation(made.unwrap_err()); }
+    return KeyError::Injected(tag,stage,made.unwrap());
+}
+fn value_error(tag: i32, stage: i32) -> ValueError {
+    let made = message(tag,stage); if (made.is_err()) { return ValueError::Allocation(made.unwrap_err()); }
+    return ValueError::Injected(tag,stage,made.unwrap());
+}
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(left: Key, right: Key) -> bool {
+        // Modes3/4 intentionally violate Eq's laws to exercise defensive
+        // duplicate/replacement cleanup, not to admit such keys as lawful.
+        if (left.log[6]!=0 || left.cloned || right.cloned) { return true; }
+        return left.id==right.id;
+    }
+    pub fn ne(left: Key, right: Key) -> bool { return !Key::eq(left,right); }
+}
+pub impl core::hash::Hash<Key> for Key { pub fn hash(value: Key) -> u32 { return value.hash_code; } }
+pub impl core::clone::TryClone<Key,KeyError> for Key {
+    pub fn try_clone_value(source: Key) -> core::result::Result<Key,KeyError> {
+        source.log[0]+=1; record(source.log,1000+source.ordinal);
+        if (source.fail==0) { return core::result::Err(key_error(source.ordinal,0)); }
+        let made = source.text.try_clone();
+        if (made.is_err()) { return core::result::Err(KeyError::Allocation(made.unwrap_err())); }
+        let partial: alloc::string::String = made.unwrap();
+        if (source.fail==1) { let error: KeyError = key_error(source.ordinal,1); partial.destroy(); return core::result::Err(error); }
+        let id: i32 = source.id; let hash_code: u32 = source.hash_code; let cloned: bool = false;
+        if (source.mode==1) { id+=100; } if (source.mode==2) { hash_code+=1; } if (source.mode==3) { cloned=true; }
+        return core::result::Ok(Key { text:partial,id:id,ordinal:source.ordinal,fail:-1,mode:0,hash_code:hash_code,cloned:cloned,log:source.log });
+    }
+}
+pub impl core::clone::Destroy<Key> for Key {
+    pub fn destroy_value(owned: Key) { owned.log[2]+=1; record(owned.log,3000+owned.ordinal); owned.text.destroy(); }
+}
+pub impl core::clone::TryClone<Value,ValueError> for Value {
+    pub fn try_clone_value(source: Value) -> core::result::Result<Value,ValueError> {
+        source.log[1]+=1; record(source.log,2000+source.id);
+        if (source.fail==0) { return core::result::Err(value_error(source.id,0)); }
+        let made = source.text.try_clone();
+        if (made.is_err()) { return core::result::Err(ValueError::Allocation(made.unwrap_err())); }
+        let partial: alloc::string::String = made.unwrap();
+        if (source.fail==1) { let error: ValueError = value_error(source.id,1); partial.destroy(); return core::result::Err(error); }
+        if (source.switch_eq) { source.log[6]=1; }
+        return core::result::Ok(Value { text:partial,id:source.id,fail:-1,switch_eq:false,log:source.log });
+    }
+}
+pub impl core::clone::Destroy<Value> for Value {
+    pub fn destroy_value(owned: Value) { owned.log[3]+=1; record(owned.log,4000+owned.id); owned.text.destroy(); }
+}

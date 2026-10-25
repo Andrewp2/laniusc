@@ -1,0 +1,10 @@
+module app::main;
+
+import ffi::replay;
+
+fn main() {
+    let integer: i64 = ffi::replay::through_c<i64>(73, 40);
+    let unsigned: u64 = ffi::replay::through_c<u64>(91, 40);
+    if (integer != 73 || unsigned != 91) { return 1; }
+    return 0;
+}

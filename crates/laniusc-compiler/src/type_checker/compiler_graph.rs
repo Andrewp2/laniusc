@@ -3095,6 +3095,7 @@ fn build_graph(
         _call_dependency_unit_id as "call_dependency_unit_id" in Tokens => token_rows * 4;
         _call_dependency_local_index as "call_dependency_local_index" in Tokens => token_rows * 4;
         _call_dependency_host_service as "call_dependency_host_service" in Tokens => token_rows * 4;
+        _call_dependency_native_abi as "call_dependency_native_abi" in Tokens => token_rows * 4;
         _call_dependency_generic_requirements as "call_dependency_generic_requirements" in Tokens => token_rows * 4;
     });
     graph_resources!(graph, Input {
@@ -4080,6 +4081,7 @@ fn build_graph(
         semantic_type_external_unit_id_by_hir in HirNodes => hir_rows * 4;
         semantic_type_external_local_index_by_hir in HirNodes => hir_rows * 4;
         semantic_calls_by_hir in Calls => hir_rows * std::mem::size_of::<GpuCheckedCallArtifact>() as u64;
+        semantic_call_native_abi_by_hir in Calls => hir_rows * 4;
         semantic_expr_ref_tag_by_hir in HirNodes => hir_rows * 4;
         semantic_expr_ref_payload_by_hir in HirNodes => hir_rows * 4;
         semantic_aggregate_decl_token_by_hir in HirNodes => hir_rows * 4;
@@ -6488,6 +6490,7 @@ fn build_graph(
             "decl_type_ref_tag" => decl_type_ref_tag: Read,
             "decl_type_ref_payload" => decl_type_ref_payload: Read,
             "semantic_calls_by_hir" => semantic_calls_by_hir: Write,
+            "semantic_call_native_abi_by_hir" => semantic_call_native_abi_by_hir: Write,
             "semantic_aggregate_word_count_by_hir" => semantic_aggregate_word_count_by_hir: Write,
         ],
     )?;

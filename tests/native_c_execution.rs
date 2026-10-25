@@ -193,10 +193,6 @@ fn native_c_rejects_unsupported_signatures_even_when_uncalled() {
             "extern \"C\" fn invalid(value: i16) -> i32;",
         ),
         (
-            "float_argument",
-            "extern \"C\" fn invalid(value: f64) -> i32;",
-        ),
-        (
             "string_argument",
             "extern \"C\" fn invalid(value: str) -> i32;",
         ),

@@ -8,9 +8,13 @@
 use std::{
     collections::BTreeMap,
     fs::{self, File},
-    io::{Read, Write},
+    io::{BufWriter, Read, Seek, SeekFrom, Write},
     path::{Component, Path, PathBuf},
     process::{Command, Stdio},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -18,9 +22,9 @@ use std::{
 use anyhow::{Context, Result, bail, ensure};
 
 use super::{
+    GpuX86FileObject,
     GpuX86ObjectSection,
     GpuX86ObjectSymbolRecord,
-    GpuX86RelocatableObject,
     GpuX86RelocationKind,
     GpuX86RelocationTargetKind,
 };
@@ -84,6 +88,7 @@ const RELA_BYTES: usize = 24;
 const INTERNAL_SYMBOL_PREFIX: &str = "__lanius_";
 const MAX_LINK_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_DIAGNOSTIC_BYTES: u64 = 64 * 1024;
+const MAX_RESPONSE_BYTES: u64 = 64 * 1024 * 1024;
 
 type Identity = [u32; 3];
 
@@ -93,7 +98,7 @@ struct NativeSymbols<'a> {
 
 impl<'a> NativeSymbols<'a> {
     fn validate(
-        objects: &[GpuX86RelocatableObject],
+        objects: &[GpuX86FileObject],
         bindings: &'a [NativeCFunction],
         main: NativeMainBridge,
     ) -> Result<Self> {
@@ -105,10 +110,10 @@ impl<'a> NativeSymbols<'a> {
             .get(main.object_index)
             .context("native main bridge names an absent object")?;
         ensure!(
-            main_object.entry_offset.is_some()
+            main_object.layout.entry_offset.is_some()
                 && objects
                     .iter()
-                    .filter(|object| object.entry_offset.is_some())
+                    .filter(|object| object.layout.entry_offset.is_some())
                     .count()
                     == 1,
             "native C link requires exactly one entry object, containing its main bridge"
@@ -122,8 +127,16 @@ impl<'a> NativeSymbols<'a> {
             .checked_add(main.byte_len)
             .context("native main bridge text range overflows")?;
         ensure!(
-            main_end as usize <= main_object.text.len(),
+            main_end as usize <= main_object.layout.text_byte_len as usize,
             "native main bridge exceeds its object's text section"
+        );
+        let emitted_bridge = main_object
+            .crt_main_bridge_range()
+            .map_err(anyhow::Error::msg)?
+            .context("native main object has no admitted CRT bridge")?;
+        ensure!(
+            main.text_offset == emitted_bridge.start && main_end == emitted_bridge.end,
+            "native main bridge must exactly match its GPU-emitted versioned trailer"
         );
 
         let mut foreign = BTreeMap::<Identity, &NativeCFunction>::new();
@@ -162,6 +175,14 @@ impl<'a> NativeSymbols<'a> {
                 .validate()
                 .map_err(anyhow::Error::msg)
                 .with_context(|| format!("validate native Lanius object {object_index}"))?;
+            for relocation in &object.relocations {
+                if relocation.target_kind == GpuX86RelocationTargetKind::SectionOffset {
+                    relocation
+                        .addend
+                        .checked_add(i64::from(relocation.target_offset))
+                        .context("native ELF relocation addend overflows i64")?;
+                }
+            }
             for symbol in &object.symbols {
                 let identity = symbol_identity(object, symbol)?;
                 if symbol.section != GpuX86ObjectSection::Undefined {
@@ -223,7 +244,7 @@ fn validate_foreign_name(name: &str) -> Result<()> {
 }
 
 fn symbol_identity(
-    object: &GpuX86RelocatableObject,
+    object: &GpuX86FileObject,
     symbol: &GpuX86ObjectSymbolRecord,
 ) -> Result<Identity> {
     ensure!(
@@ -247,36 +268,38 @@ fn symbol_identity(
     }))
 }
 
-/// Serialize the GPU-produced sections as ordinary ELF64 relocatable objects.
-///
-/// Unbound declarations, duplicate definitions and inconsistent declarations of
-/// the same C symbol reject before invoking an external linker. The returned
-/// object's text and rodata sections are exact copies of the GPU byte arrays.
-pub(crate) fn emit_native_elf_objects(
-    objects: &[GpuX86RelocatableObject],
+/// Validate the complete metadata inventory before streaming unchanged GPU
+/// payloads into one ELF file at a time. Only metadata remains resident.
+fn emit_native_elf_objects(
+    objects: &[GpuX86FileObject],
     bindings: &[NativeCFunction],
     main: NativeMainBridge,
-) -> Result<Vec<Vec<u8>>> {
+    directory: &NativeTempDirectory,
+) -> Result<Vec<PathBuf>> {
     let symbols = NativeSymbols::validate(objects, bindings, main)?;
-    objects
-        .iter()
-        .enumerate()
-        .map(|(object_index, object)| {
-            emit_object(
-                object,
-                &symbols,
-                (object_index == main.object_index).then_some(main),
-            )
-            .with_context(|| format!("export native ELF object {object_index}"))
-        })
-        .collect()
+    let mut paths = Vec::with_capacity(objects.len());
+    for (object_index, object) in objects.iter().enumerate() {
+        let path = directory.path.join(format!("lanius-{object_index}.o"));
+        let mut file = create_private_file(&path)?;
+        emit_object(
+            object,
+            &symbols,
+            (object_index == main.object_index).then_some(main),
+            &mut file,
+        )
+        .with_context(|| format!("export native ELF object {object_index}"))?;
+        file.flush().context("flush native ELF object")?;
+        paths.push(path);
+    }
+    Ok(paths)
 }
 
-fn emit_object(
-    object: &GpuX86RelocatableObject,
+fn emit_object<W: Write + Seek>(
+    object: &GpuX86FileObject,
     names: &NativeSymbols<'_>,
     main: Option<NativeMainBridge>,
-) -> Result<Vec<u8>> {
+    output: &mut W,
+) -> Result<()> {
     let mut strings = StringTable::new();
     let mut symbols = vec![0; SYMBOL_BYTES];
     // Section symbols are local and precede every global symbol. ELF sh_info
@@ -375,11 +398,12 @@ fn emit_object(
     let strtab_name = section_names.insert(".strtab")?;
     let shstrtab_name = section_names.insert(".shstrtab")?;
     let stack_name = section_names.insert(".note.GNU-stack")?;
-    let mut output = vec![0; ELF_HEADER_BYTES];
-    let mut sections = vec![SectionHeader::default(); SECTION_COUNT];
-    sections[TEXT as usize] = append_section(
-        &mut output,
-        &object.text,
+    output.write_all(&[0; ELF_HEADER_BYTES])?;
+    let mut sections = [SectionHeader::default(); SECTION_COUNT];
+    sections[TEXT as usize] = append_payload_section(
+        output,
+        object,
+        true,
         16,
         SectionHeader {
             name: text_name,
@@ -388,9 +412,10 @@ fn emit_object(
             ..Default::default()
         },
     )?;
-    sections[RODATA as usize] = append_section(
-        &mut output,
-        &object.rodata,
+    sections[RODATA as usize] = append_payload_section(
+        output,
+        object,
+        false,
         1,
         SectionHeader {
             name: rodata_name,
@@ -400,7 +425,7 @@ fn emit_object(
         },
     )?;
     sections[RELA_TEXT] = append_section(
-        &mut output,
+        output,
         &text_relocations,
         8,
         SectionHeader {
@@ -413,7 +438,7 @@ fn emit_object(
         },
     )?;
     sections[RELA_RODATA] = append_section(
-        &mut output,
+        output,
         &rodata_relocations,
         8,
         SectionHeader {
@@ -426,7 +451,7 @@ fn emit_object(
         },
     )?;
     sections[SYMTAB] = append_section(
-        &mut output,
+        output,
         &symbols,
         8,
         SectionHeader {
@@ -439,7 +464,7 @@ fn emit_object(
         },
     )?;
     sections[STRTAB] = append_section(
-        &mut output,
+        output,
         &strings.bytes,
         1,
         SectionHeader {
@@ -449,7 +474,7 @@ fn emit_object(
         },
     )?;
     sections[SHSTRTAB] = append_section(
-        &mut output,
+        output,
         &section_names.bytes,
         1,
         SectionHeader {
@@ -459,7 +484,7 @@ fn emit_object(
         },
     )?;
     sections[GNU_STACK] = append_section(
-        &mut output,
+        output,
         &[],
         1,
         SectionHeader {
@@ -468,13 +493,12 @@ fn emit_object(
             ..Default::default()
         },
     )?;
-    align_output(&mut output, 8)?;
-    let section_header_offset = output.len() as u64;
-    output
-        .try_reserve(SECTION_COUNT * SECTION_HEADER_BYTES)
-        .context("reserve native ELF section headers")?;
+    align_output(output, 8)?;
+    let section_header_offset = output.stream_position()?;
     for section in sections {
-        section.write(&mut output);
+        let mut row = Vec::with_capacity(SECTION_HEADER_BYTES);
+        section.write(&mut row);
+        output.write_all(&row)?;
     }
 
     let mut header = Vec::with_capacity(ELF_HEADER_BYTES);
@@ -492,8 +516,9 @@ fn emit_object(
     put_u16(&mut header, SECTION_HEADER_BYTES as u16);
     put_u16(&mut header, SECTION_COUNT as u16);
     put_u16(&mut header, SHSTRTAB as u16);
-    output[..ELF_HEADER_BYTES].copy_from_slice(&header);
-    Ok(output)
+    output.seek(SeekFrom::Start(0))?;
+    output.write_all(&header)?;
+    Ok(())
 }
 
 #[derive(Clone, Copy, Default)]
@@ -524,37 +549,59 @@ impl SectionHeader {
     }
 }
 
-fn append_section(
-    output: &mut Vec<u8>,
+fn append_section<W: Write + Seek>(
+    output: &mut W,
     bytes: &[u8],
-    align: usize,
+    align: u64,
     mut header: SectionHeader,
 ) -> Result<SectionHeader> {
     align_output(output, align)?;
-    header.offset = output.len() as u64;
+    header.offset = output.stream_position()?;
     header.size = bytes.len() as u64;
-    header.align = align as u64;
-    output
-        .len()
-        .checked_add(bytes.len())
-        .context("native ELF section size overflows")?;
-    output
-        .try_reserve(bytes.len())
-        .context("reserve native ELF section bytes")?;
-    output.extend_from_slice(bytes);
+    header.align = align;
+    output.write_all(bytes)?;
     Ok(header)
 }
 
-fn align_output(output: &mut Vec<u8>, align: usize) -> Result<()> {
-    let padding = (align - output.len() % align) % align;
-    let aligned_len = output
-        .len()
+fn append_payload_section<W: Write + Seek>(
+    output: &mut W,
+    object: &GpuX86FileObject,
+    text: bool,
+    align: u64,
+    mut header: SectionHeader,
+) -> Result<SectionHeader> {
+    align_output(output, align)?;
+    header.offset = output.stream_position()?;
+    header.size = u64::from(if text {
+        object.layout.text_byte_len
+    } else {
+        object.layout.rodata_byte_len
+    });
+    header.align = align;
+    let copied = if text {
+        object.copy_text_to(output)
+    } else {
+        object.copy_rodata_to(output)
+    }
+    .map_err(anyhow::Error::msg)?;
+    ensure!(
+        copied == header.size,
+        "native GPU payload length changed during export"
+    );
+    Ok(header)
+}
+
+fn align_output<W: Write + Seek>(output: &mut W, align: u64) -> Result<()> {
+    let position = output.stream_position()?;
+    let padding = (align - position % align) % align;
+    position
         .checked_add(padding)
         .context("native ELF alignment overflows")?;
-    output
-        .try_reserve(padding)
-        .context("reserve native ELF alignment padding")?;
-    output.resize(aligned_len, 0);
+    ensure!(
+        padding <= 15,
+        "native ELF section alignment exceeds supported padding"
+    );
+    output.write_all(&[0; 15][..padding as usize])?;
     Ok(())
 }
 
@@ -615,16 +662,76 @@ fn checked_u32(value: usize, description: &str) -> Result<u32> {
     u32::try_from(value).with_context(|| format!("native {description} exceeds u32"))
 }
 
-/// Link exact GPU-generated object sections using the system C driver.
-///
-/// This opt-in profile deliberately selects a non-PIE executable, because the
-/// existing object relocations use the small absolute-address code model.
-pub(crate) fn link_native_executable(
-    objects: &[GpuX86RelocatableObject],
+/// A private, completed native executable. Its directory stays alive until
+/// this guard is dropped. Every read/copy checks the admitted size first.
+pub(crate) struct NativeLinkedExecutable {
+    directory: NativeTempDirectory,
+    byte_len: u64,
+    max_output_bytes: u64,
+}
+
+impl NativeLinkedExecutable {
+    fn open_checked(&self, maximum: u64) -> Result<File> {
+        let file = File::open(self.directory.path.join("program"))
+            .context("open native linked executable")?;
+        let metadata = file.metadata().context("stat native linked executable")?;
+        ensure!(
+            metadata.is_file(),
+            "native linker output is not a regular file"
+        );
+        ensure!(
+            metadata.len() == self.byte_len && self.byte_len != 0 && self.byte_len <= maximum,
+            "native linked executable size {} exceeds the admitted range 1..={maximum} or changed after linking",
+            metadata.len()
+        );
+        Ok(file)
+    }
+
+    pub(crate) fn read_bytes(&self, maximum: usize) -> Result<Vec<u8>> {
+        let maximum = self.max_output_bytes.min(maximum as u64);
+        let mut file = self.open_checked(maximum)?;
+        let length = usize::try_from(self.byte_len).context("native executable exceeds usize")?;
+        let mut bytes = Vec::new();
+        bytes
+            .try_reserve_exact(length)
+            .context("reserve bounded native executable bytes")?;
+        bytes.resize(length, 0);
+        file.read_exact(&mut bytes)
+            .context("read bounded native executable")?;
+        self.check_end(&mut file)?;
+        Ok(bytes)
+    }
+
+    pub(crate) fn write_to<W: Write>(&self, output: &mut W) -> Result<u64> {
+        let mut file = self.open_checked(self.max_output_bytes)?;
+        let copied = std::io::copy(&mut (&mut file).take(self.byte_len), output)
+            .context("copy bounded native executable")?;
+        ensure!(
+            copied == self.byte_len,
+            "native linked executable shrank during copy"
+        );
+        self.check_end(&mut file)?;
+        Ok(copied)
+    }
+
+    fn check_end(&self, file: &mut File) -> Result<()> {
+        let mut extra = [0; 1];
+        ensure!(
+            file.read(&mut extra)? == 0 && file.metadata()?.len() == self.byte_len,
+            "native linked executable changed during bounded transfer"
+        );
+        Ok(())
+    }
+}
+
+/// Link exact GPU-generated file payloads using the system C driver.
+/// The non-PIE profile matches the admitted small absolute-address code model.
+pub(crate) fn link_native_file_executable(
+    objects: &[GpuX86FileObject],
     bindings: &[NativeCFunction],
     main: NativeMainBridge,
     options: &NativeLinkOptions,
-) -> Result<Vec<u8>> {
+) -> Result<NativeLinkedExecutable> {
     ensure!(
         cfg!(all(
             target_os = "linux",
@@ -634,75 +741,113 @@ pub(crate) fn link_native_executable(
         "native C linking currently supports Linux x86_64/glibc hosts"
     );
     validate_options(options)?;
-    let elf_objects = emit_native_elf_objects(objects, bindings, main)?;
     let directory = NativeTempDirectory::create()?;
-    let mut object_paths = Vec::with_capacity(elf_objects.len());
-    for (index, bytes) in elf_objects.iter().enumerate() {
-        let path = directory.path.join(format!("lanius-{index}.o"));
-        write_private_file(&path, bytes)?;
-        object_paths.push(path);
-    }
+    let object_paths = emit_native_elf_objects(objects, bindings, main, &directory)?;
     let output_path = directory.path.join("program");
+    let response_path = directory.path.join("link.rsp");
+    write_link_response(options, &object_paths, &output_path, &response_path)?;
     let diagnostics_path = directory.path.join("link.stderr");
     let diagnostics = create_private_file(&diagnostics_path)?;
-    let mut command = link_command(options, &object_paths, &output_path)?;
+    let mut command = link_command(options, &response_path)?;
     command
         .current_dir(&directory.path)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::from(diagnostics));
+        .stderr(Stdio::piped());
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
     let mut child = command.spawn().context("start native C linker")?;
-    let started = Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) => {}
-            Err(error) => {
-                terminate_linker(&mut child);
-                return Err(error).context("wait for native C linker");
-            }
-        }
-        if started.elapsed() >= options.timeout {
+    let diagnostic_overflow = Arc::new(AtomicBool::new(false));
+    let overflow = Arc::clone(&diagnostic_overflow);
+    let stderr = child.stderr.take().expect("piped native linker stderr");
+    let collector = match thread::Builder::new()
+        .name("native-link-diagnostics".into())
+        .spawn(move || collect_diagnostics(stderr, diagnostics, &overflow))
+    {
+        Ok(collector) => collector,
+        Err(error) => {
             terminate_linker(&mut child);
-            bail!(
-                "native C linker exceeded its {} ms timeout{}",
-                options.timeout.as_millis(),
-                read_diagnostics(&diagnostics_path)
+            return Err(error).context("start bounded native linker diagnostics");
+        }
+    };
+    let started = Instant::now();
+    let status = (|| -> Result<_> {
+        loop {
+            if diagnostic_overflow.load(Ordering::Relaxed) {
+                bail!(
+                    "native C linker diagnostics exceeded their {MAX_DIAGNOSTIC_BYTES} byte limit"
+                );
+            }
+            match child.try_wait().context("wait for native C linker")? {
+                Some(status) => return Ok(status),
+                None => {}
+            }
+            if let Ok(metadata) = fs::metadata(&output_path) {
+                ensure!(
+                    metadata.len() <= options.max_output_bytes as u64,
+                    "native linked executable exceeds its {} byte output limit",
+                    options.max_output_bytes
+                );
+            }
+            if started.elapsed() >= options.timeout {
+                bail!(
+                    "native C linker exceeded its {} ms timeout{}",
+                    options.timeout.as_millis(),
+                    read_diagnostics(&diagnostics_path)
+                );
+            }
+            thread::sleep(
+                Duration::from_millis(10).min(options.timeout.saturating_sub(started.elapsed())),
             );
         }
-        thread::sleep(
-            Duration::from_millis(10).min(options.timeout.saturating_sub(started.elapsed())),
-        );
-    };
+    })();
+    // A driver can exit while its linker descendants still own stderr/output.
+    // End that entire group before joining the bounded stderr reader, including
+    // nonzero and successful driver exits as well as watchdog failures.
+    terminate_linker(&mut child);
+    collector
+        .join()
+        .map_err(|_| anyhow::anyhow!("native linker diagnostic collector panicked"))??;
+    let status = status?;
+    ensure!(
+        !diagnostic_overflow.load(Ordering::Relaxed),
+        "native C linker diagnostics exceeded their {MAX_DIAGNOSTIC_BYTES} byte limit"
+    );
     ensure!(
         status.success(),
         "native C linker failed ({status}){}",
         read_diagnostics(&diagnostics_path)
     );
-    let file = File::open(&output_path).context("open native linked executable")?;
-    let output_len = file
-        .metadata()
-        .context("stat native linked executable")?
-        .len();
+    let metadata = fs::metadata(&output_path).context("stat native linked executable")?;
     ensure!(
-        output_len != 0 && output_len <= options.max_output_bytes as u64,
-        "native linked executable size {output_len} exceeds the admitted range 1..={}",
+        metadata.is_file(),
+        "native linker output is not a regular file"
+    );
+    let byte_len = metadata.len();
+    ensure!(
+        byte_len != 0 && byte_len <= options.max_output_bytes as u64,
+        "native linked executable size {byte_len} exceeds the admitted range 1..={}",
         options.max_output_bytes
     );
-    let mut bytes = Vec::new();
-    file.take(options.max_output_bytes as u64 + 1)
-        .read_to_end(&mut bytes)
-        .context("read native linked executable")?;
-    ensure!(
-        bytes.len() <= options.max_output_bytes,
-        "native linked executable grew beyond its output limit"
-    );
-    Ok(bytes)
+    Ok(NativeLinkedExecutable {
+        directory,
+        byte_len,
+        max_output_bytes: options.max_output_bytes as u64,
+    })
+}
+
+/// Bounded bytes boundary for callers that explicitly request resident output.
+pub(crate) fn link_native_executable(
+    objects: &[GpuX86FileObject],
+    bindings: &[NativeCFunction],
+    main: NativeMainBridge,
+    options: &NativeLinkOptions,
+) -> Result<Vec<u8>> {
+    link_native_file_executable(objects, bindings, main, options)?
+        .read_bytes(options.max_output_bytes)
 }
 
 pub(crate) fn validate_options(options: &NativeLinkOptions) -> Result<()> {
@@ -750,30 +895,84 @@ pub(crate) fn validate_options(options: &NativeLinkOptions) -> Result<()> {
     Ok(())
 }
 
-fn link_command(
+/// GCC/Clang driver response grammar: each argument is double-quoted;
+/// backslash escapes a following quote or backslash. Whitespace stays inside
+/// the quotes. Absolute input paths cannot introduce nested @response files.
+struct LinkResponse {
+    file: BufWriter<File>,
+    byte_len: u64,
+}
+
+impl LinkResponse {
+    fn argument(&mut self, value: &std::ffi::OsStr) -> Result<()> {
+        let bytes = value.as_encoded_bytes();
+        ensure!(!bytes.contains(&0), "native response argument contains NUL");
+        let escaped = bytes
+            .iter()
+            .filter(|byte| matches!(**byte, b'\\' | b'"'))
+            .count();
+        let length = (bytes.len() as u64)
+            .checked_add(escaped as u64)
+            .and_then(|length| length.checked_add(3))
+            .and_then(|length| self.byte_len.checked_add(length))
+            .context("native link response length overflows")?;
+        ensure!(
+            length <= MAX_RESPONSE_BYTES,
+            "native link response exceeds its {MAX_RESPONSE_BYTES} byte limit"
+        );
+        self.file.write_all(b"\"")?;
+        for &byte in bytes {
+            if matches!(byte, b'\\' | b'"') {
+                self.file.write_all(b"\\")?;
+            }
+            self.file.write_all(&[byte])?;
+        }
+        self.file.write_all(b"\"\n")?;
+        self.byte_len = length;
+        Ok(())
+    }
+}
+
+fn write_link_response(
     options: &NativeLinkOptions,
     object_paths: &[PathBuf],
     output: &Path,
-) -> Result<Command> {
+    response: &Path,
+) -> Result<()> {
+    let mut response = LinkResponse {
+        file: BufWriter::new(create_private_file(response)?),
+        byte_len: 0,
+    };
+    for option in ["-no-pie", "-Wl,-z,noexecstack", "-o"] {
+        response.argument(option.as_ref())?;
+    }
+    response.argument(output.as_os_str())?;
+    for path in object_paths.iter().chain(&options.objects) {
+        ensure!(
+            path.is_absolute(),
+            "native response object path must be absolute"
+        );
+        response.argument(path.as_os_str())?;
+    }
+    for directory in &options.library_paths {
+        response.argument("-L".as_ref())?;
+        response.argument(directory.as_os_str())?;
+    }
+    for library in &options.libraries {
+        response.argument(format!("-l{library}").as_ref())?;
+    }
+    response.file.flush().context("flush native link response")
+}
+
+fn link_command(options: &NativeLinkOptions, response: &Path) -> Result<Command> {
     let executable = options.linker.as_deref().unwrap_or_else(|| Path::new("cc"));
-    // Resolve PATH before changing the command's working directory; relative
-    // PATH entries otherwise acquire a different meaning inside the stage.
+    // Resolve PATH before changing the command's working directory.
     let executable = which::which(executable)
         .with_context(|| format!("find native C linker {}", executable.display()))?;
     let mut command = Command::new(executable);
-    command
-        .arg("-no-pie")
-        .arg("-Wl,-z,noexecstack")
-        .arg("-o")
-        .arg(output);
-    command.args(object_paths);
-    command.args(&options.objects);
-    for directory in &options.library_paths {
-        command.arg("-L").arg(directory);
-    }
-    for library in &options.libraries {
-        command.arg(format!("-l{library}"));
-    }
+    let mut argument = std::ffi::OsString::from("@");
+    argument.push(response);
+    command.arg(argument);
     Ok(command)
 }
 
@@ -793,6 +992,33 @@ fn terminate_linker(child: &mut std::process::Child) {
     }
     let _ = child.kill();
     let _ = child.wait();
+}
+
+fn collect_diagnostics<R: Read>(
+    mut input: R,
+    mut output: File,
+    overflow: &AtomicBool,
+) -> Result<()> {
+    let mut remaining = MAX_DIAGNOSTIC_BYTES as usize;
+    let mut buffer = [0; 8192];
+    loop {
+        let count = match input.read(&mut buffer) {
+            Ok(0) => return Ok(()),
+            Ok(count) => count,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error).context("read native linker diagnostics"),
+        };
+        let retained = remaining.min(count);
+        output
+            .write_all(&buffer[..retained])
+            .context("write bounded native linker diagnostics")?;
+        remaining -= retained;
+        if retained < count {
+            overflow.store(true, Ordering::Relaxed);
+        }
+        // Drain and discard excess until the watchdog ends the process group.
+        // The disk spool itself never exceeds MAX_DIAGNOSTIC_BYTES.
+    }
 }
 
 fn read_diagnostics(path: &Path) -> String {
@@ -866,6 +1092,7 @@ fn create_private_file(path: &Path) -> Result<File> {
         .open(path)
         .with_context(|| format!("create private native link file {}", path.display()))
 }
+#[cfg(test)]
 fn write_private_file(path: &Path, bytes: &[u8]) -> Result<()> {
     create_private_file(path)?
         .write_all(bytes)

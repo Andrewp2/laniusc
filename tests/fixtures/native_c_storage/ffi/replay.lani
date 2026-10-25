@@ -1,0 +1,10 @@
+module ffi::replay;
+
+// A private declaration remains tied to this exact original unit when the
+// generic body is published in new replay units.
+extern "C" fn native_storage_add(left: i64, right: i64) -> i64;
+
+pub fn through_c<T>(payload: T, left: i64) -> T {
+    assert(native_storage_add(left, 2) == 42);
+    return payload;
+}

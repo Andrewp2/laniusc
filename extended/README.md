@@ -23,13 +23,19 @@ SHA-512, SHA3-256 and SHA3-512 through the [native C profile](../docs/library-na
 on Linux x86_64/glibc. The [hashing program](../docs/extended-openssl-hash.md)
 uses that binding for binary stdin. Sensitive operations belong to established
 native libraries; Lanius handles the interface, byte layout and ownership.
-TLS, encryption, signatures, certificate trust and SQLite wrappers remain
-unimplemented; see the [remaining native prerequisites](../docs/library-native-integration-prerequisites.md).
+C `f32`/`f64` calls execute through independent SSE/GPR banks. An owned
+[SQLite adapter](../docs/extended-sqlite.md) and
+[persistent binary key/value program](../docs/extended-sqlite-kv.md) execute
+through system SQLite on the same Linux x86_64/glibc profile, including typed
+values, transactions, persistence, locks and explicit failure recovery.
+TLS, encryption, signatures and certificate trust wrappers remain unimplemented;
+see the [remaining native prerequisites](../docs/library-native-integration-prerequisites.md).
 Raw DER/X.509 parsing supplies schema inspection independently.
 
 | Module | Working surface | Execution evidence |
 | --- | --- | --- |
 | [`ext::openssl_digest`](ext/openssl_digest.lani) | Owned OpenSSL 3 EVP contexts for streaming SHA-256, SHA-512, SHA3-256 and SHA3-512; checked byte views, output buffers, errors and cleanup | Linux x86_64/glibc with dynamic `libcrypto.so.3`; [2,124 digest cases and 12 native failure modes](../docs/extended-openssl-digest.md), [bounded stdin hashing program](../docs/extended-openssl-hash.md). Other security wrappers remain work. |
+| [`ext::sqlite`](ext/sqlite.lani) | Native SQLite database and prepared-statement owners, strict typed values, copied text/blobs, transactions, limits, errors and cleanup | Linux x86_64/glibc with system SQLite; [558 typed cases, 640 model commands, 21 native failure modes and a measured bulk workload](../docs/extended-sqlite.md), [four staging allocation failures](../docs/extended-sqlite-allocation.md), [persistent binary key/value program](../docs/extended-sqlite-kv.md). |
 | [`ext::der`](ext/der.lani) | Borrowed canonical TLV framing, typed values, checked cursors and atomic caller-buffer writes | x86_64 Linux; [1,824 model/certificate commands and an ordinary consumer](../docs/extended-der.md). Certificate schema and trust policy remain separate. |
 | [`ext::x509`](ext/x509.lani) | Borrowed certificate structure, Names, algorithms, selected extensions and shared parse/work budgets | x86_64 Linux; [690 model/OpenSSL commands and an ordinary consumer](../docs/extended-x509.md). Schema inspection only; no signature, path or trust verification. |
 | [`ext::csv`](ext/csv.lani) | Incremental UTF-8 decoding, reusable packed records, whole tables, borrowed/copied fields and canonical encoding | x86_64 Linux; [contracts and tests](../docs/extended-csv.md) |

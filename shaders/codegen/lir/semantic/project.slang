@@ -22,6 +22,7 @@ StructuredBuffer<uint> semantic_value_type_by_hir;
 StructuredBuffer<uint2> semantic_value_const_by_hir;
 StructuredBuffer<uint> semantic_value_const_present_by_hir;
 StructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
+StructuredBuffer<uint> checked_call_native_abi_by_hir;
 StructuredBuffer<uint> semantic_enclosing_fn_by_hir;
 StructuredBuffer<uint> semantic_function_flag;
 StructuredBuffer<uint> semantic_function_prefix;
@@ -48,6 +49,7 @@ static const uint SEMANTIC_CALL_INTRINSIC = 2u;
 static const uint SEMANTIC_CALL_HOST = 3u;
 static const uint SEMANTIC_CALL_SYMBOL = 4u;
 static const uint SEMANTIC_CALL_ENUM_CONSTRUCTOR = 5u;
+static const uint SEMANTIC_CALL_NATIVE_C_SYMBOL = 6u;
 static const uint CHECKED_CALLABLE_ENUM_VARIANT = 4u;
 static const uint CHECKED_CALLABLE_FUNCTION = 1u;
 static const uint CHECKED_CALLABLE_INTRINSIC = 2u;
@@ -144,7 +146,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 uint service = function.host_service;
                 if ((function.flags & SEMANTIC_FUNCTION_FLAG_NATIVE_C) != 0u)
                 {
-                    semantic_call_kind[node] = SEMANTIC_CALL_SYMBOL;
+                    semantic_call_kind[node] = SEMANTIC_CALL_NATIVE_C_SYMBOL;
                     semantic_call_symbol_library_id[node] = INVALID;
                     semantic_call_symbol_unit_id[node] = INVALID;
                     semantic_call_symbol_local_index[node] = function.symbol_local_index;
@@ -187,7 +189,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 }
                 else
                 {
-                    semantic_call_kind[node] = SEMANTIC_CALL_SYMBOL;
+                    semantic_call_kind[node] = checked_call_native_abi_by_hir[node] == 1u
+                        ? SEMANTIC_CALL_NATIVE_C_SYMBOL : SEMANTIC_CALL_SYMBOL;
                     semantic_call_symbol_library_id[node] = checked.dependency_library_id;
                     semantic_call_symbol_unit_id[node] = checked.dependency_unit_id;
                     semantic_call_symbol_local_index[node] = checked.dependency_local_index;

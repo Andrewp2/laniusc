@@ -1,0 +1,10 @@
+module app::main;
+import alloc::tree_map;
+import alloc::string;
+import core::clone;
+fn release<T>(owned: T) where T: core::clone::Destroy<T> {T::destroy_value(owned);}
+fn main() -> i32 {
+    let map: alloc::tree_map::TreeMap<alloc::string::String,alloc::string::String> = alloc::tree_map::new();
+    release<alloc::tree_map::TreeMap<alloc::string::String,alloc::string::String>>(map);
+    return 0;
+}

@@ -41,6 +41,7 @@ StructuredBuffer<uint> call_dependency_library_id;
 StructuredBuffer<uint> call_dependency_unit_id;
 StructuredBuffer<uint> call_dependency_local_index;
 StructuredBuffer<uint> call_dependency_host_service;
+StructuredBuffer<uint> call_dependency_native_abi;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> call_return_type;
 StructuredBuffer<uint> call_return_type_token;
@@ -61,6 +62,7 @@ StructuredBuffer<uint> method_call_parameter_ref_tag;
 StructuredBuffer<uint> method_call_parameter_ref_payload;
 RWStructuredBuffer<uint> semantic_argument_mode_by_hir;
 RWStructuredBuffer<CheckedCallArtifact> semantic_calls_by_hir;
+RWStructuredBuffer<uint> semantic_call_native_abi_by_hir;
 RWStructuredBuffer<uint> semantic_aggregate_word_count_by_hir;
 
 static const uint INVALID = 0xffffffffu;
@@ -392,5 +394,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             }
         }
     }
+    uint abi_token = callee_token_for_call(row);
+    semantic_call_native_abi_by_hir[row] = call.callable_kind == CALLABLE_DEPENDENCY &&
+        valid_token(abi_token) ? call_dependency_native_abi[abi_token] : 0u;
     semantic_calls_by_hir[row] = call;
 }

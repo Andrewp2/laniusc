@@ -6,6 +6,7 @@ functions retain their own sizes in .symtab, so apply the compiler's stricter
 local branch contract to those symbols and the generated main bridge only.
 """
 
+from bisect import bisect_left
 import re
 import struct
 import subprocess
@@ -16,6 +17,41 @@ from pathlib import Path
 def check(condition, message):
     if not condition:
         raise ValueError(message)
+
+
+def validate_function_instructions(functions, instructions, executable_range):
+    """Check every covered instruction, without scanning unrelated functions."""
+    addresses = sorted(instructions)
+    branches = 0
+    for name, start, size in functions:
+        check(size > 0 and executable_range(start, size), f"{name}: invalid executable symbol range")
+        check(start in instructions, f"{name}: entry is not an instruction boundary")
+        # Each overlapping symbol range retains its own validation. A single
+        # instruction-to-owner map would silently drop checks for aliases.
+        first = bisect_left(addresses, start)
+        last = bisect_left(addresses, start + size, lo=first)
+        for index in range(first, last):
+            address = addresses[index]
+            mnemonic, arguments = instructions[address]
+            check(mnemonic != "(bad)" and not mnemonic.startswith("."),
+                  f"{name}: invalid instruction at {address:#x}")
+            is_branch = mnemonic.startswith("j") or mnemonic.startswith("loop")
+            is_call = mnemonic in {"call", "callq"}
+            if not (is_branch or is_call) or not arguments:
+                continue
+            target = arguments[0]
+            if target.startswith("*"):  # GOT/PLT and indirect runtime calls.
+                continue
+            check(re.fullmatch(r"[0-9a-f]+", target), f"{name}: unrecognized direct branch target {target}")
+            target = int(target, 16)
+            check(target in instructions, f"{name}: target {target:#x} is not an instruction boundary")
+            if is_branch:
+                branches += 1
+                check(start < target < start + size,
+                      f"{name}: jump at {address:#x} leaves its function for {target:#x}")
+            else:
+                check(executable_range(target), f"{name}: call target is outside executable PT_LOAD")
+    return branches
 
 
 def validate(path):
@@ -101,31 +137,7 @@ def validate(path):
         check(tokens, "instruction has no mnemonic")
         instructions[address] = (tokens[0], tokens[1:])
 
-    branches = 0
-    for name, start, size in functions:
-        check(size > 0 and executable_range(start, size), f"{name}: invalid executable symbol range")
-        check(start in instructions, f"{name}: entry is not an instruction boundary")
-        for address, (mnemonic, arguments) in instructions.items():
-            if not start <= address < start + size:
-                continue
-            check(mnemonic != "(bad)" and not mnemonic.startswith("."),
-                  f"{name}: invalid instruction at {address:#x}")
-            is_branch = mnemonic.startswith("j") or mnemonic.startswith("loop")
-            is_call = mnemonic in {"call", "callq"}
-            if not (is_branch or is_call) or not arguments:
-                continue
-            target = arguments[0]
-            if target.startswith("*"):  # GOT/PLT and indirect runtime calls.
-                continue
-            check(re.fullmatch(r"[0-9a-f]+", target), f"{name}: unrecognized direct branch target {target}")
-            target = int(target, 16)
-            check(target in instructions, f"{name}: target {target:#x} is not an instruction boundary")
-            if is_branch:
-                branches += 1
-                check(start < target < start + size,
-                      f"{name}: jump at {address:#x} leaves its function for {target:#x}")
-            else:
-                check(executable_range(target), f"{name}: call target is outside executable PT_LOAD")
+    branches = validate_function_instructions(functions, instructions, executable_range)
     return len(functions), branches
 
 

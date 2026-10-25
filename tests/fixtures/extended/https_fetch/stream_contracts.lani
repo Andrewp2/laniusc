@@ -1,0 +1,64 @@
+module app::main;
+import core::io;
+import core::net;
+import core::result;
+import core::slice;
+import core::time;
+import ext::openssl_tls;
+import ext::tls_stream;
+import std::args;
+import std::clock;
+import std::signal;
+fn main() -> i32 {
+    assert(std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_ok());
+    let args: std::args::Arguments = std::args::snapshot(1,3,8192).unwrap(); assert(args.len() == 3);
+    let endpoint: core::net::SocketAddr = core::net::parse_socket(args.get(0).unwrap()).unwrap();
+    let mode: u8 = args.get(2).unwrap().get(0).unwrap();
+    let now = std::clock::monotonic_now().unwrap(); let timeout: u64 = 3000; if (mode == 50 || mode == 51) { timeout = 200; }
+    let deadline: core::time::Deadline = core::time::deadline_after(now,core::time::from_millis(timeout)).unwrap();
+    let tls: ext::openssl_tls::Limits = ext::openssl_tls::default_limits(); tls.io_bytes = 16384;
+    let limits: ext::tls_stream::Limits = ext::tls_stream::default_limits(); limits.written_bytes = 7;
+    if (mode == 51) { limits.written_bytes = 16777216; }
+    let name: [u8; 9] = [108,111,99,97,108,104,111,115,116];
+    let connected = ext::tls_stream::connect_until(endpoint,ext::openssl_tls::Trust::CaFile(args.get(1).unwrap()),ext::openssl_tls::Identity::Dns(core::slice::view(name,9).unwrap()),tls,limits,deadline);
+    assert(connected.is_ok()); let stream: ext::tls_stream::Stream = connected.unwrap();
+    if (mode == 51) {
+        let block: [u8; 16384] = [99; 16384]; let index: i32 = 0; let failed: bool = false;
+        while (index < 1024) {
+            let accepted = stream.write(block,0,16384);
+            if (accepted.is_err()) { failed = true; break; }
+            if (stream.flush().is_err()) { failed = true; break; }
+            index += 1;
+        }
+        assert(failed && !stream.is_open() && stream.last_failure().is_some());
+        assert(stream.stats().accepted_bytes >= stream.stats().written_bytes);
+        stream.close(); args.destroy(); return 0;
+    }
+    let data: [u8; 7] = [97,98,0,255,10,0,120];
+    let before: ext::tls_stream::Stats = stream.stats();
+    assert(stream.write(data,0,7).unwrap() == 7);
+    assert(stream.stats().accepted_bytes == 7 && stream.stats().written_bytes == 0);
+    assert(stream.stats().tls_calls == before.tls_calls);
+    let index: i32 = 0; while (index < 7) { data[index] = 0; index += 1; }
+    if (mode == 49) {
+        assert(stream.write(data,0,1).is_err());
+        assert(stream.stats().accepted_bytes == 7 && stream.stats().written_bytes == 7 && !stream.is_open());
+        stream.close(); args.destroy(); return 0;
+    }
+    let output: [u8; 3] = [199; 3];
+    if (mode == 50) {
+        assert(stream.read(output,0,3).is_err()); assert(!stream.is_open());
+        let timed_out: bool = match (stream.last_failure().unwrap().cause) { ext::tls_stream::Cause::Timeout -> true, _ -> false };
+        assert(timed_out && stream.stats().accepted_bytes == 7 && stream.stats().written_bytes == 7);
+        stream.close(); args.destroy(); return 0;
+    }
+    // read must drain the queued request before waiting for the server ACK.
+    assert(core::io::read_exact(stream.borrow(),output,0,3).is_ok());
+    assert(output[0] == 65 && output[1] == 67 && output[2] == 75);
+    assert(stream.stats().written_bytes == 7 && stream.stats().accepted_bytes == 7);
+    assert(stream.flush().is_ok() && stream.check().is_ok());
+    assert(stream.shutdown().is_ok() && !stream.is_open());
+    assert(stream.write(data,0,1).is_err() && stream.stats().accepted_bytes == 7);
+    assert(stream.read(output,0,1).is_err());
+    assert(stream.close().is_ok() && stream.close().is_ok()); args.destroy(); return 0;
+}

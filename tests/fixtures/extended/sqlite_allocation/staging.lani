@@ -1,0 +1,129 @@
+// One reached staging-allocation failure per run. All application assertions
+// and recovery use the production Lanius SQLite wrapper and system SQLite.
+module app::main;
+import core::result;
+import core::slice;
+import ext::sqlite;
+
+fn phase(value: ext::sqlite::Phase) -> i32 {
+    return match (value) {
+        ext::sqlite::Phase::Open -> 1,
+        ext::sqlite::Phase::Prepare -> 2,
+        ext::sqlite::Phase::Bind -> 3,
+        _ -> -1
+    };
+}
+fn allocation(error: ext::sqlite::Error, expected: i32) {
+    let failed: bool = match (error.cause) { ext::sqlite::Cause::AllocationFailed -> true, _ -> false };
+    assert(failed && phase(error.phase) == expected && error.code == 0);
+}
+fn ready(statement: &ext::sqlite::Statement) -> bool {
+    let is_ready: bool = match (statement.state()) { ext::sqlite::State::Ready -> true, _ -> false };
+    return statement.is_open() && is_ready;
+}
+fn row(statement: &ext::sqlite::Statement) {
+    let result = statement.step();
+    assert(result.is_ok());
+    assert(match (result.unwrap()) { ext::sqlite::Step::Row -> true, _ -> false });
+}
+fn copied(statement: &ext::sqlite::Statement, column: i32, expected: core::slice::View<u8>, text: bool) {
+    let output: [u8; 600] = [221; 600];
+    let destination: core::slice::View<u8> = core::slice::View { values: output, start: 13, length: 574 };
+    let count: i32 = 0;
+    if (text) {
+        assert(statement.column_text_len(column).unwrap() == expected.length);
+        count = statement.column_text_copy(column, destination).unwrap();
+    } else {
+        assert(statement.column_blob_len(column).unwrap() == expected.length);
+        count = statement.column_blob_copy(column, destination).unwrap();
+    }
+    assert(count == expected.length);
+    let index: i32 = 0;
+    while (index < 600) {
+        if (index >= 13 && index < 13 + count) {
+            let at: i32 = index - 13;
+            let byte: u8 = 0;
+            if (text) { byte = (65 + at % 26) as u8; }
+            else { byte = ((at * 73 + 19) & 255) as u8; }
+            assert(output[index] == byte && expected.values[expected.start + at] == byte);
+        }
+        else { assert(output[index] == 221); }
+        index += 1;
+    }
+}
+fn main() -> i32 {
+    // Lengths are deliberately distinct and below one page. The wrapper adds
+    // one NUL byte, yielding mmap requests 97, 209, 313 and 521 respectively.
+    // Each process runs in its own harness-owned directory.
+    let path: [u8; 96] = [113; 96];
+    path[93] = 46; path[94] = 100; path[95] = 98;
+    let path_view: core::slice::View<u8> = core::slice::View { values: path, start: 0, length: 96 };
+    let sql: [u8; 208] = [32; 208];
+    sql[0] = 83; sql[1] = 69; sql[2] = 76; sql[3] = 69; sql[4] = 67; sql[5] = 84;
+    sql[7] = 63; sql[8] = 49; sql[9] = 44; sql[11] = 63; sql[12] = 50;
+    let sql_view: core::slice::View<u8> = core::slice::View { values: sql, start: 0, length: 208 };
+    let text: [u8; 324] = [241; 324];
+    let blob: [u8; 536] = [242; 536];
+    let index: i32 = 0;
+    while (index < 312) { text[index + 7] = (65 + index % 26) as u8; index += 1; }
+    index = 0;
+    while (index < 520) { blob[index + 11] = ((index * 73 + 19) & 255) as u8; index += 1; }
+    let text_view: core::slice::View<u8> = core::slice::View { values: text, start: 7, length: 312 };
+    let blob_view: core::slice::View<u8> = core::slice::View { values: blob, start: 11, length: 520 };
+
+    let failed: i32 = 0;
+    let opened: core::result::Result<ext::sqlite::Database, ext::sqlite::Error> =
+        ext::sqlite::open(path_view, ext::sqlite::Mode::Create, ext::sqlite::default_limits());
+    if (opened.is_err()) {
+        allocation(opened.unwrap_err(), 1); failed = 1;
+        opened = ext::sqlite::open(path_view, ext::sqlite::Mode::Create, ext::sqlite::default_limits());
+    }
+    // The Result becomes an inactive copy after this manual owner transfer.
+    let database: ext::sqlite::Database = opened.unwrap();
+    assert(database.is_open() && database.autocommit().unwrap());
+    let prepared: core::result::Result<ext::sqlite::Statement, ext::sqlite::Error> = database.prepare(sql_view);
+    if (prepared.is_err()) {
+        allocation(prepared.unwrap_err(), 2); assert(failed == 0); failed = 2;
+        assert(database.is_open() && database.autocommit().unwrap());
+        prepared = database.prepare(sql_view);
+    }
+    let statement: ext::sqlite::Statement = prepared.unwrap();
+    assert(ready(statement.borrow()) && statement.parameter_count() == 2 && statement.column_count() == 2);
+    assert(statement.bind_i64(1, 101).is_ok() && statement.bind_i64(2, 202).is_ok());
+
+    let text_bound = statement.bind_text(1, text_view);
+    if (text_bound.is_err()) {
+        allocation(text_bound.unwrap_err(), 3); assert(failed == 0); failed = 3;
+        assert(database.is_open() && ready(statement.borrow()));
+        row(statement.borrow());
+        assert(statement.column_i64(0).unwrap() == 101 && statement.column_i64(1).unwrap() == 202);
+        assert(statement.reset().is_ok() && ready(statement.borrow()));
+        text_bound = statement.bind_text(1, text_view);
+    }
+    assert(text_bound.is_ok());
+    let blob_bound = statement.bind_blob(2, blob_view);
+    if (blob_bound.is_err()) {
+        allocation(blob_bound.unwrap_err(), 3); assert(failed == 0); failed = 4;
+        assert(database.is_open() && ready(statement.borrow()));
+        row(statement.borrow());
+        copied(statement.borrow(), 0, text_view, true);
+        assert(statement.column_i64(1).unwrap() == 202);
+        assert(statement.reset().is_ok() && ready(statement.borrow()));
+        blob_bound = statement.bind_blob(2, blob_view);
+    }
+    assert(blob_bound.is_ok());
+    row(statement.borrow());
+    copied(statement.borrow(), 0, text_view, true);
+    copied(statement.borrow(), 1, blob_view, false);
+    assert(match (statement.step().unwrap()) { ext::sqlite::Step::Done -> true, _ -> false });
+    assert(statement.reset().is_ok() && ready(statement.borrow()));
+    // Both successful bindings survive reset, including after either retry.
+    row(statement.borrow());
+    copied(statement.borrow(), 0, text_view, true);
+    copied(statement.borrow(), 1, blob_view, false);
+    assert(statement.finalize().is_ok() && statement.finalize().is_ok() && !statement.is_open());
+    assert(match (statement.state()) { ext::sqlite::State::Finalized -> true, _ -> false });
+    assert(database.close().is_ok() && database.close().is_ok() && !database.is_open());
+    assert(text[6] == 241 && text[319] == 241 && blob[10] == 242 && blob[531] == 242);
+    return failed;
+}

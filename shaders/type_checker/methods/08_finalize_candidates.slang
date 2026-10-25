@@ -37,6 +37,7 @@ RWStructuredBuffer<uint> call_dependency_unit_id;
 RWStructuredBuffer<uint> call_dependency_local_index;
 RWStructuredBuffer<uint> call_dependency_generic_requirements;
 RWStructuredBuffer<uint> call_dependency_host_service;
+RWStructuredBuffer<uint> call_dependency_native_abi;
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> call_return_type_token;
 RWStructuredBuffer<uint> call_return_aggregate_word_count;
@@ -179,6 +180,7 @@ void clear_target(uint token)
     call_dependency_local_index[token] = INVALID;
     call_dependency_generic_requirements[token] = 0u;
     call_dependency_host_service[token] = INVALID;
+    call_dependency_native_abi[token] = 0u;
     call_return_type[token] = 0u;
     call_return_type_token[token] = INVALID;
     call_return_aggregate_word_count[token] = 0u;
@@ -207,6 +209,7 @@ void publish_local_owner_alias(uint token)
     call_dependency_local_index[owner] = call_dependency_local_index[token];
     call_dependency_generic_requirements[owner] = call_dependency_generic_requirements[token];
     call_dependency_host_service[owner] = call_dependency_host_service[token];
+    call_dependency_native_abi[owner] = call_dependency_native_abi[token];
     call_return_type[owner] = call_return_type[token];
     call_return_type_token[owner] = call_return_type_token[token];
     call_return_aggregate_word_count[owner] = call_return_aggregate_word_count[token];

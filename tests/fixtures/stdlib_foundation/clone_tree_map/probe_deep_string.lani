@@ -1,0 +1,15 @@
+module app::main;
+import alloc::clone_tree_map;
+import alloc::string;
+import alloc::tree_map;
+import core::result;
+fn main() -> i32 {
+    let bytes: [u8;1] = [83]; let text = alloc::string::from_utf8(bytes,1).unwrap();
+    let source = alloc::tree_map::with_capacity<alloc::string::String,alloc::string::String>(1).unwrap();
+    source.try_insert(text,text).unwrap();
+    let result: core::result::Result<alloc::tree_map::TreeMap<alloc::string::String,alloc::string::String>,alloc::clone_tree_map::Error<alloc::string::Error,alloc::string::Error>> =
+        alloc::clone_tree_map::try_clone<alloc::string::String,alloc::string::String,alloc::string::Error,alloc::string::Error>(source.borrow());
+    let copy = result.unwrap(); source.destroy(); text.destroy();
+    let item = copy.first().unwrap(); assert(item.key.byte_at(0).unwrap()==83 && item.value.byte_at(0).unwrap()==83);
+    alloc::clone_tree_map::destroy_tree_map<alloc::string::String,alloc::string::String>(copy.borrow()); return 0;
+}

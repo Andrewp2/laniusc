@@ -1,0 +1,70 @@
+// All14 reached requests: five borrowed-source setup and nine deep-clone.
+// Report runtime String/Vec widths and an independently decoded typed error tag.
+module app::main;
+import alloc::clone;
+import alloc::clone_hash_map;
+import alloc::clone_vec;
+import alloc::hash_map;
+import alloc::string;
+import alloc::vec;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import std::io;
+import std::io_decimal;
+
+fn string_allocation(error: alloc::string::Error) { assert(match(error) { alloc::string::Error::AllocationFailed -> true, _ -> false }); }
+fn vector_allocation(error: alloc::vec::Error) { assert(match(error) { alloc::vec::Error::AllocationFailed -> true, _ -> false }); }
+fn map_allocation(error: alloc::hash_map::Error) { assert(match(error) { alloc::hash_map::Error::AllocationFailed -> true, _ -> false }); }
+fn finish(tag: i32, status: i32) -> i32 { assert(std::io_decimal::write_i32(1,tag)>0 && std::io::write_byte(1,10)==1); return status; }
+fn storage(error: alloc::hash_map::Error) -> i32 { map_allocation(error); return 10; }
+fn key_error(index: i32, error: alloc::string::Error) -> i32 { assert(index>=0 && index<2); string_allocation(error); return 100+index; }
+fn row_storage(index: i32, error: alloc::vec::Error) -> i32 { vector_allocation(error); return 200+index; }
+fn element_error(index: i32, inner: i32, error: alloc::string::Error) -> i32 { assert(inner>=0 && inner<2); string_allocation(error); return 300+2*index+inner; }
+fn value_error(index: i32, error: alloc::clone::Error<alloc::string::Error>) -> i32 {
+    assert(index>=0 && index<2);
+    return match(error) { alloc::clone::Error::Storage(error) -> row_storage(index,error), alloc::clone::Error::Element(inner,error) -> element_error(index,inner,error), alloc::clone::Error::Bounds -> -1 };
+}
+fn failure(error: alloc::clone_hash_map::Error<alloc::string::Error,alloc::clone::Error<alloc::string::Error>>) -> i32 {
+    return match(error) { alloc::clone_hash_map::Error::Storage(error) -> storage(error), alloc::clone_hash_map::Error::Key(index,error) -> key_error(index,error), alloc::clone_hash_map::Error::Value(index,error) -> value_error(index,error), alloc::clone_hash_map::Error::ChangedKey(index) -> -1 };
+}
+fn main() -> i32 {
+    assert(std::io_decimal::write_usize(1,core::mem::size_of<alloc::string::String>())>0 && std::io::write_byte(1,10)==1);
+    assert(std::io_decimal::write_usize(1,core::mem::size_of<alloc::vec::Vec<alloc::string::String>>())>0 && std::io::write_byte(1,10)==1);
+    let a: [u8; 4] = [65,0,195,169]; let b: [u8; 4] = [66,0,195,169]; let data: [u8; 7] = [86,0,195,169,33,90,78];
+    let made_a = alloc::string::from_utf8(a,4); if (made_a.is_err()) { string_allocation(made_a.unwrap_err()); return finish(1,4); }
+    let key_a: alloc::string::String = made_a.unwrap();
+    let made_b = alloc::string::from_utf8(b,4); if (made_b.is_err()) { string_allocation(made_b.unwrap_err()); key_a.destroy(); return finish(2,4); }
+    let key_b: alloc::string::String = made_b.unwrap();
+    let made_value = alloc::string::from_utf8(data,7); if (made_value.is_err()) { string_allocation(made_value.unwrap_err()); key_b.destroy(); key_a.destroy(); return finish(3,4); }
+    let original: alloc::string::String = made_value.unwrap();
+    let made_row: core::result::Result<alloc::vec::Vec<alloc::string::String>,alloc::vec::Error> = alloc::vec::with_capacity<alloc::string::String>(2);
+    if (made_row.is_err()) { vector_allocation(made_row.unwrap_err()); original.destroy(); key_b.destroy(); key_a.destroy(); return finish(4,4); }
+    let row: alloc::vec::Vec<alloc::string::String> = made_row.unwrap(); assert(row.try_push(original).is_ok() && row.try_push(original).is_ok());
+    let source: alloc::hash_map::HashMap<alloc::string::String,alloc::vec::Vec<alloc::string::String>> = alloc::hash_map::new();
+    let reserved = source.try_reserve(2);
+    if (reserved.is_err()) { map_allocation(reserved.unwrap_err()); source.destroy(); row.destroy(); original.destroy(); key_b.destroy(); key_a.destroy(); return finish(5,4); }
+    assert(source.try_insert(key_a,row).unwrap().is_none() && source.try_insert(key_b,row).unwrap().is_none());
+    let capacity: i32 = source.capacity(); let pointer: ptr = source.storage; let borrowed: [u8] = original.as_bytes();
+    let result: core::result::Result<alloc::hash_map::HashMap<alloc::string::String,alloc::vec::Vec<alloc::string::String>>,alloc::clone_hash_map::Error<alloc::string::Error,alloc::clone::Error<alloc::string::Error>>> =
+        alloc::clone_hash_map::try_clone<alloc::string::String,alloc::vec::Vec<alloc::string::String>,alloc::string::Error,alloc::clone::Error<alloc::string::Error>>(source.borrow());
+    assert(source.len()==2 && source.capacity()==capacity && source.storage==pointer && row.len()==2 && row.capacity()==2 && borrowed[1]==0 && original.byte_len()==7);
+    assert(source.get(key_a).unwrap().at(1).byte_at(3).unwrap()==169 && source.get(key_b).unwrap().at(0).byte_at(6).unwrap()==78);
+    // Source map/row borrow their key/leaf handles; release only these five
+    // setup allocations, never deep-release duplicated source leaf aliases.
+    source.destroy(); row.destroy(); original.destroy(); key_b.destroy(); key_a.destroy();
+    if (result.is_err()) { return finish(failure(result.unwrap_err()),4); }
+    let copy: alloc::hash_map::HashMap<alloc::string::String,alloc::vec::Vec<alloc::string::String>> = result.unwrap(); assert(copy.len()==2);
+    let cursor: alloc::hash_map::Iter<alloc::string::String,alloc::vec::Vec<alloc::string::String>> = copy.iter(); let seen_a: bool = false; let seen_b: bool = false;
+    while (true) {
+        let next: core::option::Option<alloc::hash_map::Entry<alloc::string::String,alloc::vec::Vec<alloc::string::String>>> = cursor.next();
+        if (next.is_none()) { break; } let entry = next.unwrap();
+        assert(entry.key.byte_len()==4 && entry.key.byte_at(1).unwrap()==0 && entry.key.byte_at(3).unwrap()==169 && entry.value.len()==2);
+        if (entry.key.byte_at(0).unwrap()==65) { assert(!seen_a); seen_a=true; } else { assert(entry.key.byte_at(0).unwrap()==66 && !seen_b); seen_b=true; }
+        let at: i32 = 0; while (at<2) { let value: alloc::string::String = entry.value.at(at); assert(value.byte_len()==7 && value.byte_at(1).unwrap()==0 && value.byte_at(3).unwrap()==169 && value.byte_at(6).unwrap()==78); at+=1; }
+    }
+    assert(seen_a && seen_b); alloc::clone_hash_map::destroy_hash_map<alloc::string::String,alloc::vec::Vec<alloc::string::String>>(copy.borrow());
+    alloc::clone_hash_map::destroy_hash_map<alloc::string::String,alloc::vec::Vec<alloc::string::String>>(copy.borrow()); assert(copy.is_empty() && copy.capacity()==0);
+    return finish(0,0);
+}

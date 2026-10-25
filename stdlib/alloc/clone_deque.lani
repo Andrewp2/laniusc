@@ -1,0 +1,68 @@
+// Opt-in recursive deque memory-owner cloning and explicit release.
+// Import this module in the composition entry and generic consumers.
+// Ordinary Deque.try_clone/destroy retain their shallow entry policy.
+module alloc::clone_deque;
+import alloc::deque;
+import core::clone;
+import core::option;
+import core::result;
+
+pub enum Error<E> { Storage(alloc::deque::Error), Element(i32,E) }
+
+// Consume each initialized entry in logical front-to-back order, then release
+// storage and reset the actual owner. Every entry must be a distinct active
+// memory owner under Destroy<T>; borrowed duplicate descriptors are ineligible.
+pub fn destroy_deque<T>(owner: &alloc::deque::Deque<T>) where T: core::clone::Destroy<T> {
+    while (true) {
+        let next: core::option::Option<T> = owner.pop_front();
+        if (next.is_none()) { break; }
+        T::destroy_value(next.unwrap());
+    }
+    owner.destroy();
+}
+
+// Borrow initialized entries without changing source or its ring metadata.
+// Reserve all outer storage before any leaf clone. Successful entries become
+// independent destination owners, even when source entries repeat aliases.
+pub fn try_clone<T,E>(source: &alloc::deque::Deque<T>)
+    -> core::result::Result<alloc::deque::Deque<T>,Error<E>>
+    where T: core::clone::TryClone<T,E>, T: core::clone::Destroy<T> {
+    let made: core::result::Result<alloc::deque::Deque<T>,alloc::deque::Error> = alloc::deque::with_capacity<T>(source.len());
+    if (made.is_err()) { return core::result::Err(Error::Storage(made.unwrap_err())); }
+    let output: alloc::deque::Deque<T> = made.unwrap();
+    let index: i32 = 0;
+    while (index < source.len()) {
+        let borrowed: T = source.at(index);
+        let cloned: core::result::Result<T,E> = T::try_clone_value(borrowed);
+        if (cloned.is_err()) {
+            let error: E = cloned.unwrap_err();
+            destroy_deque<T>(output.borrow());
+            return core::result::Err(Error::Element(index,error));
+        }
+        let value: T = cloned.unwrap();
+        let added: core::result::Result<i32,alloc::deque::Error> = output.try_push_back(value);
+        if (added.is_err()) {
+            T::destroy_value(value);
+            destroy_deque<T>(output.borrow());
+            return core::result::Err(Error::Storage(added.unwrap_err()));
+        }
+        index += 1;
+    }
+    return core::result::Ok(output);
+}
+
+pub impl<T,E> core::clone::TryClone<alloc::deque::Deque<T>,Error<E>>
+    for alloc::deque::Deque<T>
+    where T: core::clone::TryClone<T,E>, T: core::clone::Destroy<T> {
+    pub fn try_clone_value(source: alloc::deque::Deque<T>)
+        -> core::result::Result<alloc::deque::Deque<T>,Error<E>> {
+        return try_clone<T,E>(source.borrow());
+    }
+}
+
+// Consumes this passed descriptor without resetting any stale shallow alias.
+// Use destroy_deque on the actual borrowed owner when it must remain reusable.
+pub impl<T> core::clone::Destroy<alloc::deque::Deque<T>> for alloc::deque::Deque<T>
+    where T: core::clone::Destroy<T> {
+    pub fn destroy_value(owned: alloc::deque::Deque<T>) { destroy_deque<T>(owned.borrow()); }
+}

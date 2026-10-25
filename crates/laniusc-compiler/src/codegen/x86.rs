@@ -18,6 +18,8 @@ mod link;
 pub(crate) use link::{GpuX86LinkInput, GpuX86MissingSymbolDefinition, X86_LINK_NO_ENTRY_OBJECT};
 
 mod object;
+mod file_object;
+pub(crate) use file_object::GpuX86FileObject;
 pub(crate) mod native;
 pub(crate) use object::{
     GPU_X86_OBJECT_HEADER_BYTES,

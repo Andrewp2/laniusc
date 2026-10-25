@@ -1,0 +1,36 @@
+module app::main;
+import alloc::tree_map;
+import core::result;
+import core::slice;
+fn code(error: alloc::tree_map::Error) -> i32 {
+    return match(error) { alloc::tree_map::Error::NotEmpty -> 1,alloc::tree_map::Error::InvalidOrder -> 2,alloc::tree_map::Error::InvalidRange -> 3,_ -> 4 };
+}
+fn main() -> i32 {
+    let entries: [alloc::tree_map::Entry<i32,i32>;3] = [alloc::tree_map::Entry {key:1,value:11},alloc::tree_map::Entry {key:2,value:22},alloc::tree_map::Entry {key:3,value:33}];
+    let duplicate: [alloc::tree_map::Entry<i32,i32>;2] = [entries[0],entries[0]];
+    let reverse: [alloc::tree_map::Entry<i32,i32>;2] = [entries[2],entries[0]];
+    let fresh: alloc::tree_map::TreeMap<i32,i32> = alloc::tree_map::new();
+    assert(code(fresh.try_init_sorted(core::slice::view(duplicate,2).unwrap()).unwrap_err())==2);
+    assert(code(fresh.try_init_sorted(core::slice::view(reverse,2).unwrap()).unwrap_err())==2);
+    let invalid_start: core::slice::View<alloc::tree_map::Entry<i32,i32>> = core::slice::View {values:entries,start:-1,length:1};
+    let invalid_length: core::slice::View<alloc::tree_map::Entry<i32,i32>> = core::slice::View {values:entries,start:0,length:-1};
+    let overflow: core::slice::View<alloc::tree_map::Entry<i32,i32>> = core::slice::View {values:entries,start:2147483647,length:1};
+    assert(code(fresh.try_init_sorted(invalid_start).unwrap_err())==3);
+    assert(code(fresh.try_init_sorted(invalid_length).unwrap_err())==3);
+    assert(code(fresh.try_init_sorted(overflow).unwrap_err())==3);
+    assert(fresh.is_empty() && fresh.capacity()==0); fresh.destroy();
+    // Exactly one mapping for reserve. Every initialization below must reuse
+    // it, including empty input and maps emptied by removals with free holes.
+    let map: alloc::tree_map::TreeMap<i32,i32> = alloc::tree_map::with_capacity<i32,i32>(8).unwrap();
+    let round: i32 = 0;
+    while (round<24) {
+        assert(map.try_init_sorted(core::slice::view_range(entries,1,2).unwrap()).unwrap()==2);
+        assert(map.len()==2 && map.capacity()==8 && map.get(2).unwrap()==22 && map.get(3).unwrap()==33);
+        assert(code(map.try_init_sorted(invalid_length).unwrap_err())==1);
+        assert(map.len()==2 && map.capacity()==8 && map.first().unwrap().key==2 && map.last().unwrap().value==33);
+        map.pop_first().unwrap(); map.pop_last().unwrap(); assert(map.is_empty());
+        assert(map.try_init_sorted(core::slice::view(entries,0).unwrap()).unwrap()==0 && map.capacity()==8);
+        round+=1;
+    }
+    map.destroy(); return 0;
+}

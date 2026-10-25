@@ -1,0 +1,71 @@
+module fixture::types;
+import alloc::clone;
+import alloc::clone_vec;
+import alloc::string;
+import alloc::vec;
+import core::clone;
+import core::cmp;
+import core::result;
+
+pub struct Record { priority: i32, id: i32, values: alloc::vec::Vec<alloc::string::String> }
+pub impl core::cmp::Ord<Record> for Record {
+    pub fn lt(left: Record, right: Record) -> bool { return left.priority < right.priority; }
+    pub fn le(left: Record, right: Record) -> bool { return left.priority <= right.priority; }
+    pub fn gt(left: Record, right: Record) -> bool { return left.priority > right.priority; }
+    pub fn ge(left: Record, right: Record) -> bool { return left.priority >= right.priority; }
+}
+pub impl core::clone::TryClone<Record,alloc::clone::Error<alloc::string::Error>> for Record {
+    pub fn try_clone_value(source: Record) -> core::result::Result<Record,alloc::clone::Error<alloc::string::Error>> {
+        let copied = alloc::clone_vec::try_clone<alloc::string::String,alloc::string::Error>(source.values.borrow());
+        if (copied.is_err()) { return core::result::Err(copied.unwrap_err()); }
+        return core::result::Ok(Record { priority: source.priority, id: source.id, values: copied.unwrap() });
+    }
+}
+pub impl core::clone::Destroy<Record> for Record {
+    pub fn destroy_value(owned: Record) { alloc::clone::destroy_vec<alloc::string::String>(owned.values.borrow()); }
+}
+
+pub struct Leaf { priority: i32, id: i32, fail: i32, text: alloc::string::String }
+pub enum Fault { Allocation(alloc::string::Error), Injected(i32,i32,alloc::string::String) }
+pub impl core::cmp::Ord<Leaf> for Leaf {
+    pub fn lt(left: Leaf, right: Leaf) -> bool { return left.priority < right.priority; }
+    pub fn le(left: Leaf, right: Leaf) -> bool { return left.priority <= right.priority; }
+    pub fn gt(left: Leaf, right: Leaf) -> bool { return left.priority > right.priority; }
+    pub fn ge(left: Leaf, right: Leaf) -> bool { return left.priority >= right.priority; }
+}
+fn failure(id: i32, stage: i32) -> Fault {
+    let bytes: [u8;5] = [69,0,(48+id) as u8,(48+stage) as u8,85];
+    let made = alloc::string::from_utf8(bytes,5);
+    if (made.is_err()) { return Fault::Allocation(made.unwrap_err()); }
+    return Fault::Injected(id,stage,made.unwrap());
+}
+pub impl core::clone::TryClone<Leaf,Fault> for Leaf {
+    pub fn try_clone_value(source: Leaf) -> core::result::Result<Leaf,Fault> {
+        if (source.fail == 0) { return core::result::Err(failure(source.id,0)); }
+        let copied = source.text.try_clone();
+        if (copied.is_err()) { return core::result::Err(Fault::Allocation(copied.unwrap_err())); }
+        let partial: alloc::string::String = copied.unwrap();
+        if (source.fail == 1) { let error: Fault = failure(source.id,1); partial.destroy(); return core::result::Err(error); }
+        return core::result::Ok(Leaf { priority: source.priority, id: source.id, fail: -1, text: partial });
+    }
+}
+pub impl core::clone::Destroy<Leaf> for Leaf {
+    pub fn destroy_value(owned: Leaf) { owned.text.destroy(); }
+}
+
+pub struct Unit {}
+pub enum Never { Unreachable }
+pub impl core::cmp::Ord<Unit> for Unit {
+    pub fn lt(left: Unit, right: Unit) -> bool { return false; }
+    pub fn le(left: Unit, right: Unit) -> bool { return true; }
+    pub fn gt(left: Unit, right: Unit) -> bool { return false; }
+    pub fn ge(left: Unit, right: Unit) -> bool { return true; }
+}
+pub impl core::clone::TryClone<Unit,Never> for Unit {
+    pub fn try_clone_value(source: Unit) -> core::result::Result<Unit,Never> { return core::result::Ok(source); }
+}
+pub impl core::clone::Destroy<Unit> for Unit { pub fn destroy_value(owned: Unit) {} }
+
+// Destroy must remain usable without Clone or Ord bounds.
+pub struct ReleaseOnly {}
+pub impl core::clone::Destroy<ReleaseOnly> for ReleaseOnly { pub fn destroy_value(owned: ReleaseOnly) {} }

@@ -1,0 +1,31 @@
+module app::main;
+import alloc::binary_heap;
+import alloc::clone;
+import alloc::clone_binary_heap;
+import alloc::clone_vec;
+import alloc::string;
+import alloc::vec;
+import core::result;
+import fixture::consumer;
+import fixture::types;
+import std::io;
+import std::io_decimal;
+fn number(value: i32) { assert(std::io_decimal::write_i32(1,value)>=0); assert(std::io::write_byte(1,32)==1); }
+fn run(order: i32) {
+    let selected: alloc::binary_heap::Order = alloc::binary_heap::Order::Min; if (order==1) { selected=alloc::binary_heap::Order::Max; }
+    let bytes: [u8;4] = [77,0,195,169]; let original: alloc::string::String = alloc::string::from_utf8(bytes,4).unwrap();
+    let row: alloc::vec::Vec<alloc::string::String> = alloc::vec::with_capacity<alloc::string::String>(2).unwrap(); row.try_push(original).unwrap(); row.try_push(original).unwrap();
+    let source: alloc::binary_heap::BinaryHeap<fixture::types::Record> = alloc::binary_heap::with_capacity<fixture::types::Record>(96,selected).unwrap();
+    let index: i32 = 0; while (index<96) { source.try_push(fixture::types::Record { priority:(index*37+17)%11-5,id:index,values:row }).unwrap(); index+=1; }
+    let copied: core::result::Result<alloc::binary_heap::BinaryHeap<fixture::types::Record>,alloc::clone_binary_heap::Error<alloc::clone::Error<alloc::string::Error>>> = fixture::consumer::duplicate<alloc::binary_heap::BinaryHeap<fixture::types::Record>,alloc::clone_binary_heap::Error<alloc::clone::Error<alloc::string::Error>>>(source);
+    let clone = copied.unwrap(); assert(source.len()==96 && source.capacity()==96 && original.byte_at(1).unwrap()==0);
+    source.destroy(); row.destroy(); original.destroy();
+    while (!clone.is_empty()) {
+        let item: fixture::types::Record = clone.pop().unwrap();
+        assert(item.values.len()==2 && item.values.at(0).byte_len()==4 && item.values.at(0).byte_at(1).unwrap()==0 && item.values.at(1).byte_at(3).unwrap()==169);
+        number(order); number(item.priority); number(item.id); assert(std::io::write_byte(1,10)==1);
+        fixture::consumer::release<fixture::types::Record>(item);
+    }
+    alloc::clone_binary_heap::destroy_heap<fixture::types::Record>(clone.borrow());
+}
+fn main() -> i32 { run(0); run(1); return 0; }

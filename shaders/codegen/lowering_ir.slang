@@ -584,6 +584,10 @@ static const uint SEMANTIC_LIR_FLAG_NATIVE_PLACE = 4096u;
 // A projection base denotes mutable backing, rather than a value snapshot.
 // IR_OPCODE
 static const uint SEMANTIC_LIR_FLAG_PLACE_VIEW = 8192u;
+// Checked native C call convention. The symbolic target retains its ordinary
+// stable identity; this flag selects the platform argument/result contract.
+// IR_OPCODE
+static const uint SEMANTIC_LIR_FLAG_NATIVE_C_CALL = 16384u;
 
 static const uint SEMANTIC_LIR_ARRAY_LENGTH_RUNTIME = 0xfffffffeu;
 
@@ -1176,6 +1180,9 @@ static const uint X86_LIR_METADATA_FIELD_AGGREGATE_WORD = 0x00200000u;
 // INDEX_STORE copies a complete typed aggregate element. The store's
 // result_or_target field carries its element width in eight-byte words.
 static const uint X86_LIR_METADATA_INDEX_AGGREGATE_COPY = 0x00100000u;
+// Native C scalar calls use independent INTEGER and SSE argument banks.
+// IR_OPCODE
+static const uint X86_LIR_METADATA_NATIVE_C = 0x00080000u;
 
 // Semantic AGGREGATE_NEW metadata. The high bit distinguishes tagged enums;
 // the remaining bits contain the checked variant ordinal.

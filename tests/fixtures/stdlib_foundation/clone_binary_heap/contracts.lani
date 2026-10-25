@@ -1,0 +1,78 @@
+module app::main;
+import alloc::binary_heap;
+import alloc::clone;
+import alloc::clone_binary_heap;
+import alloc::clone_vec;
+import alloc::string;
+import alloc::vec;
+import core::result;
+import core::slice;
+import fixture::consumer;
+import fixture::types;
+import std::vec;
+
+fn strings(order: alloc::binary_heap::Order) {
+    let data: [u8;4] = [65,0,195,169]; let other: [u8;1] = [66];
+    let a: alloc::string::String = alloc::string::from_utf8(data,4).unwrap();
+    let b: alloc::string::String = alloc::string::from_utf8(other,1).unwrap();
+    let source: alloc::binary_heap::BinaryHeap<alloc::string::String> = alloc::binary_heap::with_capacity<alloc::string::String>(5,order).unwrap();
+    source.try_push(b).unwrap(); source.try_push(a).unwrap(); source.try_push(a).unwrap(); source.try_push(b).unwrap(); source.try_push(a).unwrap();
+    let before: [i32;5] = [0;5]; let view = source.as_view(); let index: i32 = 0;
+    while (index < 5) { before[index] = view.get(index).unwrap().byte_len(); index += 1; }
+    let first = alloc::clone_binary_heap::try_clone<alloc::string::String,alloc::string::Error>(source.borrow()).unwrap();
+    let copied: core::result::Result<alloc::binary_heap::BinaryHeap<alloc::string::String>,alloc::clone_binary_heap::Error<alloc::string::Error>> = fixture::consumer::duplicate<alloc::binary_heap::BinaryHeap<alloc::string::String>,alloc::clone_binary_heap::Error<alloc::string::Error>>(source);
+    let second = copied.unwrap();
+    assert(source.len()==5 && source.capacity()==5 && a.byte_len()==4 && b.byte_len()==1);
+    index = 0; while (index < 5) { assert(view.get(index).unwrap().byte_len()==before[index]); index += 1; }
+    source.destroy(); a.destroy(); b.destroy();
+    let min: bool = match(order) { alloc::binary_heap::Order::Min -> true, _ -> false };
+    let configured: bool = match(first.order()) { alloc::binary_heap::Order::Min -> min, alloc::binary_heap::Order::Max -> !min };
+    assert(configured && second.len()==5);
+    let transferred: alloc::string::String = first.pop().unwrap();
+    let initial: i32 = transferred.byte_len(); transferred.try_push_scalar(88).unwrap();
+    assert(transferred.byte_len()==initial+1 && second.peek().unwrap().byte_len()==initial);
+    alloc::clone_binary_heap::destroy_heap<alloc::string::String>(first.borrow());
+    alloc::clone_binary_heap::destroy_heap<alloc::string::String>(first.borrow());
+    assert(first.is_empty() && first.capacity()==0 && transferred.byte_at(initial).unwrap()==88);
+    transferred.destroy();
+    let previous: i32 = 0; if (!min) { previous=255; }
+    let count_a: i32 = 0; let count_b: i32 = 0;
+    while (!second.is_empty()) {
+        let value: alloc::string::String = second.pop().unwrap(); let key: i32 = value.byte_at(0).unwrap() as i32;
+        if (min) { assert(key>=previous); } else { assert(key<=previous); } previous=key;
+        if (key==65) { assert(value.byte_len()==4 && value.byte_at(1).unwrap()==0 && value.byte_at(3).unwrap()==169); count_a+=1; }
+        else { assert(key==66 && value.byte_len()==1); count_b+=1; }
+        value.destroy();
+    }
+    assert(count_a==3 && count_b==2);
+    fixture::consumer::release<alloc::binary_heap::BinaryHeap<alloc::string::String>>(second);
+}
+fn records(order: alloc::binary_heap::Order) {
+    let bytes: [u8;4] = [82,0,195,169];
+    let original: alloc::string::String = alloc::string::from_utf8(bytes,4).unwrap();
+    let values: [alloc::string::String;2] = [original,original];
+    let row: alloc::vec::Vec<alloc::string::String> = alloc::vec::from_view<alloc::string::String>(core::slice::view<alloc::string::String>(values,2).unwrap()).unwrap();
+    let source: alloc::binary_heap::BinaryHeap<fixture::types::Record> = alloc::binary_heap::with_capacity<fixture::types::Record>(4,order).unwrap();
+    let priorities: [i32;4] = [2,-1,2,0]; let index: i32 = 0;
+    while (index<4) { source.try_push(fixture::types::Record { priority:priorities[index],id:index,values:row }).unwrap(); index+=1; }
+    let cloned: core::result::Result<alloc::binary_heap::BinaryHeap<fixture::types::Record>,alloc::clone_binary_heap::Error<alloc::clone::Error<alloc::string::Error>>> = fixture::consumer::duplicate<alloc::binary_heap::BinaryHeap<fixture::types::Record>,alloc::clone_binary_heap::Error<alloc::clone::Error<alloc::string::Error>>>(source);
+    let copy = cloned.unwrap(); source.destroy(); row.destroy(); original.destroy();
+    // pop transfers one entire nested owner. Grow its String only after
+    // removing it from the heap and its row, then restore the String owner.
+    let item: fixture::types::Record = copy.pop().unwrap();
+    let text: alloc::string::String = item.values.remove(0).unwrap(); text.try_push_scalar(88).unwrap(); item.values.try_insert(0,text).unwrap();
+    assert(text.byte_len()==5 && item.values.at(1).byte_len()==4 && copy.peek().unwrap().values.at(0).byte_len()==4);
+    let storage: std::vec::Vec<fixture::types::Record> = copy.take_vec();
+    alloc::clone_binary_heap::destroy_heap<fixture::types::Record>(copy.borrow());
+    let rebuilt: alloc::binary_heap::BinaryHeap<fixture::types::Record> = alloc::binary_heap::from_vec<fixture::types::Record>(storage,order);
+    assert(copy.is_empty() && copy.capacity()==0 && rebuilt.len()==3 && item.values.at(0).byte_at(4).unwrap()==88);
+    fixture::consumer::release<fixture::types::Record>(item);
+    alloc::clone_binary_heap::destroy_heap<fixture::types::Record>(rebuilt.borrow());
+    alloc::clone_binary_heap::destroy_heap<fixture::types::Record>(rebuilt.borrow());
+    assert(rebuilt.is_empty() && rebuilt.capacity()==0);
+}
+fn main() -> i32 {
+    strings(alloc::binary_heap::Order::Min); strings(alloc::binary_heap::Order::Max);
+    records(alloc::binary_heap::Order::Min); records(alloc::binary_heap::Order::Max);
+    return 0;
+}

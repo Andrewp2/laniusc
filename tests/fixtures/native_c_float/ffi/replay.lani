@@ -1,0 +1,18 @@
+module ffi::replay;
+
+pub extern "C" fn fp_c_bits32(value: f32) -> u32;
+pub extern "C" fn fp_c_bits64(value: f64) -> u64;
+pub extern "C" fn fp_c_from32(bits: u32) -> f32;
+pub extern "C" fn fp_c_from64(bits: u64) -> f64;
+pub extern "C" fn fp_c_echo32(value: f32) -> f32;
+pub extern "C" fn fp_c_echo64(value: f64) -> f64;
+pub extern "C" fn fp_c_add32(a: f32, b: f32) -> f32;
+pub extern "C" fn fp_c_add64(a: f64, b: f64) -> f64;
+
+// This body is replayed for the entry's concrete payload type. Both float
+// widths cross the C boundary while the payload remains live.
+pub fn through_c<T>(payload: T, single: f32, double: f64) -> T {
+    assert(fp_c_add32(single,0.25) == 1.75);
+    assert(fp_c_add64(double,0.75) == -1.75);
+    return payload;
+}

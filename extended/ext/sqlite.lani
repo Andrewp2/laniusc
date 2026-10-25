@@ -1,0 +1,419 @@
+// Owned SQLite 3 connections and prepared statements over the native C profile.
+// Raw declarations retain SQLite's ABI; no callback or C shim is involved.
+module ext::sqlite;
+import alloc::allocator;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+import core::utf8;
+
+pub enum Mode { ReadOnly, ReadWrite, Create }
+pub enum Transaction { Deferred, Immediate, Exclusive }
+pub enum Step { Row, Done }
+pub enum State { Ready, Row, Done, Failed, Finalized }
+pub enum ColumnType { Null, Integer, Real, Text, Blob }
+pub enum Phase { Open, Configure, Prepare, Bind, Step, Reset, ClearBindings, Column, Finalize, Close, Transaction }
+pub enum Cause { Bounds, InvalidLimits, Limit, Closed, InvalidState, Parameter, Column, Type, Utf8, Nul, EmptySql, TrailingSql, OutputTooSmall, AllocationFailed, UnexpectedNative, ReadOnly, NotANumber, Native }
+pub struct Error { cause: Cause, phase: Phase, code: i32 }
+// value_bytes also configures SQLite's whole-row/string/BLOB length limit.
+// vm_ops limits compiled instructions, never VM execution work or time.
+pub struct Limits { path_bytes: i32, sql_bytes: i32, value_bytes: i32, column_bytes: i32, variables: i32, columns: i32, expression_depth: i32, compound_selects: i32, vm_ops: i32, busy_timeout_ms: i32 }
+// One active manual owner; inactive copies must not operate on or close it.
+pub struct Database { handle: ptr, limits: Limits }
+// SQLite keeps the database live while this native statement exists. Do not
+// copy ownership or modify these fields. Columns borrow the current row only
+// inside each copying/accessor call; no native row pointer escapes this API.
+pub struct Statement { handle: ptr, database: ptr, limits: Limits, current: State, parameters: i32, columns: i32 }
+struct Packed { storage: ptr, length: i32 }
+struct NativeBytes { storage: ptr, length: i32 }
+
+pub fn default_limits() -> Limits {
+    return Limits { path_bytes: 4096, sql_bytes: 65536, value_bytes: 33554432, column_bytes: 16777216, variables: 1024, columns: 256, expression_depth: 64, compound_selects: 32, vm_ops: 100000, busy_timeout_ms: 0 };
+}
+pub fn primary_code(error: Error) -> i32 { return error.code & 255; }
+pub fn is_busy(error: Error) -> bool { return primary_code(error) == 5; }
+fn error(cause: Cause, phase: Phase) -> Error { return Error { cause: cause, phase: phase, code: 0 }; }
+fn native_error(phase: Phase, code: i32) -> Error { return Error { cause: Cause::Native, phase: phase, code: code }; }
+fn outcome(phase: Phase, code: i32) -> core::result::Result<i32, Error> {
+    if (code != 0) { return core::result::Err(native_error(phase, code)); }
+    return core::result::Ok(0);
+}
+fn valid(bytes: core::slice::View<u8>) -> bool { return bytes.start >= 0 && bytes.length >= 0 && bytes.start <= 2147483647 - bytes.length; }
+fn valid_limits(limits: Limits) -> bool {
+    return limits.path_bytes > 0 && limits.path_bytes < 2147483647 && limits.sql_bytes > 0 && limits.sql_bytes < 2147483647 && limits.value_bytes > 0 && limits.value_bytes < 2147483647 && limits.column_bytes >= 0 && limits.column_bytes <= limits.value_bytes && limits.variables > 0 && limits.columns > 0 && limits.expression_depth > 0 && limits.compound_selects > 0 && limits.vm_ops > 0 && limits.busy_timeout_ms >= 0 && limits.busy_timeout_ms <= 60000;
+}
+fn literal(text: str, length: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text), length);
+    return core::slice::View { values: bytes, start: 0, length: length };
+}
+fn checked_bytes(bytes: core::slice::View<u8>, maximum: i32, phase: Phase, text: bool, nul_free: bool) -> core::result::Result<i32, Error> {
+    if (!valid(bytes)) { return core::result::Err(error(Cause::Bounds, phase)); }
+    if (bytes.length > maximum) { return core::result::Err(error(Cause::Limit, phase)); }
+    if (nul_free) {
+        let index: i32 = 0;
+        while (index < bytes.length) { if (bytes.values[bytes.start + index] == 0) { return core::result::Err(error(Cause::Nul, phase)); } index += 1; }
+    }
+    if (text && core::text::from_utf8_range(bytes.values, bytes.start, bytes.length).is_err()) { return core::result::Err(error(Cause::Utf8, phase)); }
+    return core::result::Ok(bytes.length);
+}
+// Caller validates the view and cap before allocating. Always allocate one
+// extra byte: empty TEXT/BLOB must pass a non-null pointer and explicit zero.
+fn pack(bytes: core::slice::View<u8>, phase: Phase) -> core::result::Result<Packed, Error> {
+    let storage: ptr = alloc::allocator::alloc((bytes.length as usize) + 1, 8);
+    if (storage == 0) { return core::result::Err(error(Cause::AllocationFailed, phase)); }
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(storage, bytes.length + 1);
+    let index: i32 = 0;
+    while (index < bytes.length) { raw[index] = bytes.values[bytes.start + index]; index += 1; }
+    raw[bytes.length] = 0;
+    return core::result::Ok(Packed { storage: storage, length: bytes.length });
+}
+impl Packed {
+    fn destroy(&self) { alloc::allocator::dealloc(self.storage, (self.length as usize) + 1, 8); }
+}
+fn pointer_at(storage: ptr) -> ptr { let cell: [ptr] = core::mem::typed_slice_from_raw_parts(storage, 1); return cell[0]; }
+// SQLITE_TRANSIENT is SQLite's documented destructor sentinel, not a callable
+// address. Linux x86_64 represents it as the all-ones pointer value.
+fn transient() -> ptr { let nowhere: ptr = 0; let offset: usize = 18446744073709551615; return nowhere + offset; }
+
+fn configure(handle: ptr, mode: Mode, limits: Limits) -> core::result::Result<i32, Error> {
+    let extended: i32 = sqlite3_extended_result_codes(handle, 1);
+    if (extended != 0) { return core::result::Err(native_error(Phase::Configure, extended)); }
+    // sqlite3_limit returns the previous value; hard build limits may make
+    // the effective cap smaller than requested. None can enlarge our cap.
+    sqlite3_limit(handle, 0, limits.value_bytes);
+    sqlite3_limit(handle, 1, limits.sql_bytes);
+    sqlite3_limit(handle, 2, limits.columns);
+    sqlite3_limit(handle, 3, limits.expression_depth);
+    sqlite3_limit(handle, 4, limits.compound_selects);
+    sqlite3_limit(handle, 5, limits.vm_ops);
+    sqlite3_limit(handle, 9, limits.variables);
+    let busy: i32 = sqlite3_busy_timeout(handle, limits.busy_timeout_ms);
+    if (busy != 0) { return core::result::Err(native_error(Phase::Configure, busy)); }
+    let writable: bool = match (mode) { Mode::ReadOnly -> false, _ -> true };
+    if (writable) {
+        let storage: [i32; 2] = [0; 2];
+        let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+        let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer, 8);
+        bytes[0] = 109; bytes[1] = 97; bytes[2] = 105; bytes[3] = 110; bytes[4] = 0;
+        let readonly: i32 = sqlite3_db_readonly(handle, pointer);
+        if (readonly == 1) { return core::result::Err(Error { cause: Cause::ReadOnly, phase: Phase::Open, code: 8 }); }
+        if (readonly != 0) { return core::result::Err(error(Cause::UnexpectedNative, Phase::Open)); }
+    }
+    return core::result::Ok(0);
+}
+
+pub fn open(path: core::slice::View<u8>, mode: Mode, limits: Limits) -> core::result::Result<Database, Error> {
+    if (!valid_limits(limits)) { return core::result::Err(error(Cause::InvalidLimits, Phase::Open)); }
+    let checked = checked_bytes(path, limits.path_bytes, Phase::Open, true, true);
+    if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    if (path.length == 0) { return core::result::Err(error(Cause::Bounds, Phase::Open)); }
+    let allocated = pack(path, Phase::Open);
+    if (allocated.is_err()) { return core::result::Err(allocated.unwrap_err()); }
+    let packed: Packed = allocated.unwrap();
+    let storage: [i32; 2] = [0; 2];
+    let output: ptr = core::mem::i32_array_data_ptr(storage);
+    let flags: i32 = match (mode) { Mode::ReadOnly -> 1, Mode::ReadWrite -> 2, Mode::Create -> 6 };
+    let nowhere: ptr = 0;
+    let code: i32 = sqlite3_open_v2(packed.storage, output, flags | 33554432, nowhere);
+    let handle: ptr = pointer_at(output);
+    // The result code is already captured before releasing either allocation.
+    packed.destroy();
+    if (code != 0) {
+        let failure: Error = native_error(Phase::Open, code);
+        if (handle != 0) { sqlite3_close(handle); }
+        return core::result::Err(failure);
+    }
+    if (handle == 0) { return core::result::Err(error(Cause::UnexpectedNative, Phase::Open)); }
+    let configured = configure(handle, mode, limits);
+    if (configured.is_err()) {
+        let failure: Error = configured.unwrap_err();
+        sqlite3_close(handle);
+        return core::result::Err(failure);
+    }
+    return core::result::Ok(Database { handle: handle, limits: limits });
+}
+pub fn memory(limits: Limits) -> core::result::Result<Database, Error> { return open(literal(":memory:", 8), Mode::Create, limits); }
+
+pub impl Database {
+    pub fn borrow(&self) -> &Database { return self; }
+    pub fn is_open(&self) -> bool { return self.handle != 0; }
+    // A failed close keeps this owner and its statements usable. sqlite3_close
+    // returns BUSY while any statement exists; close_v2 is deliberately absent.
+    pub fn close(&self) -> core::result::Result<i32, Error> {
+        if (self.handle == 0) { return core::result::Ok(0); }
+        let code: i32 = sqlite3_close(self.handle);
+        if (code != 0) { return core::result::Err(native_error(Phase::Close, code)); }
+        let nowhere: ptr = 0; self.handle = nowhere;
+        return core::result::Ok(0);
+    }
+    pub fn changes(&self) -> core::result::Result<i64, Error> {
+        if (!self.is_open()) { return core::result::Err(error(Cause::Closed, Phase::Step)); }
+        return core::result::Ok(sqlite3_changes64(self.handle));
+    }
+    pub fn last_insert_rowid(&self) -> core::result::Result<i64, Error> {
+        if (!self.is_open()) { return core::result::Err(error(Cause::Closed, Phase::Step)); }
+        return core::result::Ok(sqlite3_last_insert_rowid(self.handle));
+    }
+    pub fn autocommit(&self) -> core::result::Result<bool, Error> {
+        if (!self.is_open()) { return core::result::Err(error(Cause::Closed, Phase::Transaction)); }
+        return core::result::Ok(sqlite3_get_autocommit(self.handle) != 0);
+    }
+    pub fn prepare(&self, sql: core::slice::View<u8>) -> core::result::Result<Statement, Error> {
+        let checked = checked_bytes(sql, self.limits.sql_bytes, Phase::Prepare, true, true);
+        if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        if (!self.is_open()) { return core::result::Err(error(Cause::Closed, Phase::Prepare)); }
+        if (sql.length == 0) { return core::result::Err(error(Cause::EmptySql, Phase::Prepare)); }
+        let allocated = pack(sql, Phase::Prepare);
+        if (allocated.is_err()) { return core::result::Err(allocated.unwrap_err()); }
+        let packed: Packed = allocated.unwrap();
+        let storage: [i32; 4] = [0; 4];
+        let output: ptr = core::mem::i32_array_data_ptr(storage);
+        let tail_cell: ptr = output + 8;
+        let code: i32 = sqlite3_prepare_v3(self.handle, packed.storage, packed.length, 0, output, tail_cell);
+        let handle: ptr = pointer_at(output);
+        let tail: ptr = pointer_at(tail_cell);
+        if (code != 0) {
+            let failure: Error = native_error(Phase::Prepare, code);
+            if (handle != 0) { sqlite3_finalize(handle); }
+            packed.destroy();
+            return core::result::Err(failure);
+        }
+        if (handle == 0) { packed.destroy(); return core::result::Err(error(Cause::EmptySql, Phase::Prepare)); }
+        // Locate SQLite's tail within this allocation without pointer casts or
+        // subtraction. Only explicit ASCII whitespace may follow the first SQL.
+        let offset: i32 = 0;
+        while (offset <= packed.length && packed.storage + (offset as usize) != tail) { offset += 1; }
+        if (offset > packed.length) {
+            sqlite3_finalize(handle); packed.destroy();
+            return core::result::Err(error(Cause::UnexpectedNative, Phase::Prepare));
+        }
+        let bytes: [u8] = core::mem::typed_slice_from_raw_parts(packed.storage, packed.length);
+        while (offset < packed.length) {
+            let byte: u8 = bytes[offset];
+            if (byte != 32 && byte != 9 && byte != 10 && byte != 13) {
+                sqlite3_finalize(handle); packed.destroy();
+                return core::result::Err(error(Cause::TrailingSql, Phase::Prepare));
+            }
+            offset += 1;
+        }
+        packed.destroy();
+        let parameters: i32 = sqlite3_bind_parameter_count(handle);
+        let columns: i32 = sqlite3_column_count(handle);
+        if (parameters < 0 || columns < 0) { sqlite3_finalize(handle); return core::result::Err(error(Cause::UnexpectedNative, Phase::Prepare)); }
+        if (parameters > self.limits.variables || columns > self.limits.columns) { sqlite3_finalize(handle); return core::result::Err(error(Cause::Limit, Phase::Prepare)); }
+        return core::result::Ok(Statement { handle: handle, database: self.handle, limits: self.limits, current: State::Ready, parameters: parameters, columns: columns });
+    }
+    pub fn begin(&self, mode: Transaction) -> core::result::Result<i32, Error> {
+        let sql: core::slice::View<u8> = match (mode) { Transaction::Deferred -> literal("BEGIN DEFERRED", 14), Transaction::Immediate -> literal("BEGIN IMMEDIATE", 15), Transaction::Exclusive -> literal("BEGIN EXCLUSIVE", 15) };
+        return transaction_sql(self, sql);
+    }
+    pub fn commit(&self) -> core::result::Result<i32, Error> { return transaction_sql(self, literal("COMMIT", 6)); }
+    pub fn rollback(&self) -> core::result::Result<i32, Error> { return transaction_sql(self, literal("ROLLBACK", 8)); }
+}
+
+fn transaction_sql(database: &Database, sql: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+    let prepared = database.prepare(sql);
+    if (prepared.is_err()) { return core::result::Err(prepared.unwrap_err()); }
+    let statement: Statement = prepared.unwrap();
+    let result = statement.step();
+    if (result.is_err()) { let failure: Error = result.unwrap_err(); statement.finalize(); return core::result::Err(failure); }
+    let done: bool = match (result.unwrap()) { Step::Done -> true, _ -> false };
+    if (!done) { statement.finalize(); return core::result::Err(error(Cause::UnexpectedNative, Phase::Transaction)); }
+    return statement.finalize();
+}
+
+fn bind_ready(statement: &Statement, index: i32) -> core::result::Result<i32, Error> {
+    if (!statement.is_open()) { return core::result::Err(error(Cause::Closed, Phase::Bind)); }
+    let ready: bool = match (statement.current) { State::Ready -> true, _ -> false };
+    if (!ready) { return core::result::Err(error(Cause::InvalidState, Phase::Bind)); }
+    if (index < 1 || index > statement.parameters) { return core::result::Err(error(Cause::Parameter, Phase::Bind)); }
+    return core::result::Ok(0);
+}
+fn bind_bytes(statement: &Statement, index: i32, bytes: core::slice::View<u8>, text: bool) -> core::result::Result<i32, Error> {
+    let checked = checked_bytes(bytes, statement.limits.value_bytes, Phase::Bind, text, false);
+    if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    let ready = bind_ready(statement, index);
+    if (ready.is_err()) { return ready; }
+    let allocated = pack(bytes, Phase::Bind);
+    if (allocated.is_err()) { return core::result::Err(allocated.unwrap_err()); }
+    let packed: Packed = allocated.unwrap();
+    let code: i32 = 0;
+    if (text) { code = sqlite3_bind_text(statement.handle, index, packed.storage, packed.length, transient()); }
+    else { code = sqlite3_bind_blob(statement.handle, index, packed.storage, packed.length, transient()); }
+    // SQLITE_TRANSIENT copied all bytes before return, including zero bytes.
+    // Preserve the native result before the staging allocation is released.
+    let result = outcome(Phase::Bind, code);
+    packed.destroy();
+    return result;
+}
+
+pub impl Statement {
+    pub fn borrow(&self) -> &Statement { return self; }
+    pub fn is_open(&self) -> bool { return self.handle != 0; }
+    pub fn state(&self) -> State { return self.current; }
+    pub fn parameter_count(&self) -> i32 { return self.parameters; }
+    pub fn column_count(&self) -> i32 { return self.columns; }
+    pub fn bind_null(&self, index: i32) -> core::result::Result<i32, Error> {
+        let ready = bind_ready(self, index); if (ready.is_err()) { return ready; }
+        return outcome(Phase::Bind, sqlite3_bind_null(self.handle, index));
+    }
+    pub fn bind_i64(&self, index: i32, value: i64) -> core::result::Result<i32, Error> {
+        let ready = bind_ready(self, index); if (ready.is_err()) { return ready; }
+        return outcome(Phase::Bind, sqlite3_bind_int64(self.handle, index, value));
+    }
+    // SQLite maps NaN to NULL. Reject it explicitly; infinities are admitted.
+    // SQL arithmetic, affinity and storage decide signed-zero behavior.
+    pub fn bind_f64(&self, index: i32, value: f64) -> core::result::Result<i32, Error> {
+        let ready = bind_ready(self, index); if (ready.is_err()) { return ready; }
+        if (value != value) { return core::result::Err(error(Cause::NotANumber, Phase::Bind)); }
+        return outcome(Phase::Bind, sqlite3_bind_double(self.handle, index, value));
+    }
+    // Counted UTF-8 may include NUL. SQLite does not define general expression
+    // behavior for embedded-NUL strings; use BLOB for arbitrary binary data.
+    pub fn bind_text(&self, index: i32, bytes: core::slice::View<u8>) -> core::result::Result<i32, Error> { return bind_bytes(self, index, bytes, true); }
+    pub fn bind_blob(&self, index: i32, bytes: core::slice::View<u8>) -> core::result::Result<i32, Error> { return bind_bytes(self, index, bytes, false); }
+    pub fn step(&self) -> core::result::Result<Step, Error> {
+        if (!self.is_open()) { return core::result::Err(error(Cause::Closed, Phase::Step)); }
+        let allowed: bool = match (self.current) { State::Ready -> true, State::Row -> true, _ -> false };
+        if (!allowed) { return core::result::Err(error(Cause::InvalidState, Phase::Step)); }
+        let code: i32 = sqlite3_step(self.handle);
+        if (code == 100 || code == 101) {
+            self.columns = sqlite3_column_count(self.handle);
+            if (self.columns < 0 || self.columns > self.limits.columns) { self.current = State::Failed; return core::result::Err(error(Cause::Limit, Phase::Step)); }
+            if (code == 100) { self.current = State::Row; return core::result::Ok(Step::Row); }
+            self.current = State::Done; return core::result::Ok(Step::Done);
+        }
+        let failure: Error = native_error(Phase::Step, code);
+        self.current = State::Failed;
+        return core::result::Err(failure);
+    }
+    // Reset returns to Ready even if SQLite reports the previous step error.
+    // Bound values persist. No implicit retry or clear occurs.
+    pub fn reset(&self) -> core::result::Result<i32, Error> {
+        if (!self.is_open()) { return core::result::Err(error(Cause::Closed, Phase::Reset)); }
+        let code: i32 = sqlite3_reset(self.handle);
+        self.current = State::Ready;
+        return outcome(Phase::Reset, code);
+    }
+    pub fn clear_bindings(&self) -> core::result::Result<i32, Error> {
+        if (!self.is_open()) { return core::result::Err(error(Cause::Closed, Phase::ClearBindings)); }
+        let ready: bool = match (self.current) { State::Ready -> true, _ -> false };
+        if (!ready) { return core::result::Err(error(Cause::InvalidState, Phase::ClearBindings)); }
+        return outcome(Phase::ClearBindings, sqlite3_clear_bindings(self.handle));
+    }
+    // SQLite deletes the statement even when it returns an evaluation error.
+    // Clear ownership before calling it; repeated finalize is a no-op.
+    pub fn finalize(&self) -> core::result::Result<i32, Error> {
+        if (self.handle == 0) { return core::result::Ok(0); }
+        let handle: ptr = self.handle;
+        let nowhere: ptr = 0; self.handle = nowhere; self.database = nowhere; self.current = State::Finalized;
+        return outcome(Phase::Finalize, sqlite3_finalize(handle));
+    }
+    pub fn column_type(&self, index: i32) -> core::result::Result<ColumnType, Error> {
+        if (!self.is_open()) { return core::result::Err(error(Cause::Closed, Phase::Column)); }
+        let row: bool = match (self.current) { State::Row -> true, _ -> false };
+        if (!row) { return core::result::Err(error(Cause::InvalidState, Phase::Column)); }
+        if (index < 0 || index >= self.columns) { return core::result::Err(error(Cause::Column, Phase::Column)); }
+        let kind: i32 = sqlite3_column_type(self.handle, index);
+        if (kind == 1) { return core::result::Ok(ColumnType::Integer); }
+        if (kind == 2) { return core::result::Ok(ColumnType::Real); }
+        if (kind == 3) { return core::result::Ok(ColumnType::Text); }
+        if (kind == 4) { return core::result::Ok(ColumnType::Blob); }
+        if (kind == 5) { return core::result::Ok(ColumnType::Null); }
+        return core::result::Err(error(Cause::UnexpectedNative, Phase::Column));
+    }
+    pub fn column_i64(&self, index: i32) -> core::result::Result<i64, Error> {
+        let kind = self.column_type(index); if (kind.is_err()) { return core::result::Err(kind.unwrap_err()); }
+        let integer: bool = match (kind.unwrap()) { ColumnType::Integer -> true, _ -> false };
+        if (!integer) { return core::result::Err(error(Cause::Type, Phase::Column)); }
+        return core::result::Ok(sqlite3_column_int64(self.handle, index));
+    }
+    pub fn column_f64(&self, index: i32) -> core::result::Result<f64, Error> {
+        let kind = self.column_type(index); if (kind.is_err()) { return core::result::Err(kind.unwrap_err()); }
+        let real: bool = match (kind.unwrap()) { ColumnType::Real -> true, _ -> false };
+        if (!real) { return core::result::Err(error(Cause::Type, Phase::Column)); }
+        return core::result::Ok(sqlite3_column_double(self.handle, index));
+    }
+    pub fn column_text_len(&self, index: i32) -> core::result::Result<i32, Error> {
+        let bytes = column_bytes(self, index, true); if (bytes.is_err()) { return core::result::Err(bytes.unwrap_err()); }
+        return core::result::Ok(bytes.unwrap().length);
+    }
+    pub fn column_blob_len(&self, index: i32) -> core::result::Result<i32, Error> {
+        let bytes = column_bytes(self, index, false); if (bytes.is_err()) { return core::result::Err(bytes.unwrap_err()); }
+        return core::result::Ok(bytes.unwrap().length);
+    }
+    pub fn column_text_copy(&self, index: i32, output: core::slice::View<u8>) -> core::result::Result<i32, Error> { return copy_column(self, index, output, true); }
+    pub fn column_blob_copy(&self, index: i32, output: core::slice::View<u8>) -> core::result::Result<i32, Error> { return copy_column(self, index, output, false); }
+}
+
+fn column_bytes(statement: &Statement, index: i32, text: bool) -> core::result::Result<NativeBytes, Error> {
+    let kind = statement.column_type(index);
+    if (kind.is_err()) { return core::result::Err(kind.unwrap_err()); }
+    let matches: bool = match (kind.unwrap()) { ColumnType::Text -> text, ColumnType::Blob -> !text, _ -> false };
+    if (!matches) { return core::result::Err(error(Cause::Type, Phase::Column)); }
+    let pointer: ptr = 0;
+    if (text) { pointer = sqlite3_column_text(statement.handle, index); }
+    else { pointer = sqlite3_column_blob(statement.handle, index); }
+    // Conversion OOM looks like SQL NULL/empty. Capture its code before ANY
+    // other SQLite interface on this connection. Empty BLOB may be null.
+    if (pointer == 0) {
+        let code: i32 = sqlite3_errcode(statement.database);
+        if ((code & 255) == 7) { statement.current = State::Failed; return core::result::Err(native_error(Phase::Column, code)); }
+        if (text) { return core::result::Err(error(Cause::UnexpectedNative, Phase::Column)); }
+    }
+    let length: i32 = sqlite3_column_bytes(statement.handle, index);
+    if (length == 0) {
+        let code: i32 = sqlite3_errcode(statement.database);
+        if ((code & 255) == 7) { statement.current = State::Failed; return core::result::Err(native_error(Phase::Column, code)); }
+    }
+    if (length < 0 || (length > 0 && pointer == 0)) { return core::result::Err(error(Cause::UnexpectedNative, Phase::Column)); }
+    if (length > statement.limits.column_bytes) { return core::result::Err(error(Cause::Limit, Phase::Column)); }
+    if (text) {
+        let raw: [u8] = core::mem::typed_slice_from_raw_parts(pointer, length);
+        if (!core::utf8::bytes_are_valid(raw, length)) { return core::result::Err(error(Cause::Utf8, Phase::Column)); }
+    }
+    return core::result::Ok(NativeBytes { storage: pointer, length: length });
+}
+fn copy_column(statement: &Statement, index: i32, output: core::slice::View<u8>, text: bool) -> core::result::Result<i32, Error> {
+    if (!valid(output)) { return core::result::Err(error(Cause::Bounds, Phase::Column)); }
+    let borrowed = column_bytes(statement, index, text);
+    if (borrowed.is_err()) { return core::result::Err(borrowed.unwrap_err()); }
+    let bytes: NativeBytes = borrowed.unwrap();
+    if (bytes.length > output.length) { return core::result::Err(error(Cause::OutputTooSmall, Phase::Column)); }
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(bytes.storage, bytes.length);
+    let offset: i32 = 0;
+    while (offset < bytes.length) { output.values[output.start + offset] = raw[offset]; offset += 1; }
+    return core::result::Ok(bytes.length);
+}
+
+// Actual SQLite 3 C entry points. Destructor ptr is used only with the native
+// SQLITE_TRANSIENT sentinel; arbitrary callbacks are not admitted by this API.
+pub extern "C" fn sqlite3_open_v2(filename: ptr, database: ptr, flags: i32, vfs: ptr) -> i32;
+pub extern "C" fn sqlite3_close(database: ptr) -> i32;
+pub extern "C" fn sqlite3_extended_result_codes(database: ptr, enabled: i32) -> i32;
+pub extern "C" fn sqlite3_limit(database: ptr, category: i32, value: i32) -> i32;
+pub extern "C" fn sqlite3_busy_timeout(database: ptr, milliseconds: i32) -> i32;
+pub extern "C" fn sqlite3_db_readonly(database: ptr, schema: ptr) -> i32;
+pub extern "C" fn sqlite3_prepare_v3(database: ptr, sql: ptr, count: i32, flags: u32, statement: ptr, tail: ptr) -> i32;
+pub extern "C" fn sqlite3_bind_parameter_count(statement: ptr) -> i32;
+pub extern "C" fn sqlite3_column_count(statement: ptr) -> i32;
+pub extern "C" fn sqlite3_bind_null(statement: ptr, index: i32) -> i32;
+pub extern "C" fn sqlite3_bind_int64(statement: ptr, index: i32, value: i64) -> i32;
+pub extern "C" fn sqlite3_bind_double(statement: ptr, index: i32, value: f64) -> i32;
+pub extern "C" fn sqlite3_bind_text(statement: ptr, index: i32, bytes: ptr, count: i32, destructor: ptr) -> i32;
+pub extern "C" fn sqlite3_bind_blob(statement: ptr, index: i32, bytes: ptr, count: i32, destructor: ptr) -> i32;
+pub extern "C" fn sqlite3_step(statement: ptr) -> i32;
+pub extern "C" fn sqlite3_reset(statement: ptr) -> i32;
+pub extern "C" fn sqlite3_clear_bindings(statement: ptr) -> i32;
+pub extern "C" fn sqlite3_finalize(statement: ptr) -> i32;
+pub extern "C" fn sqlite3_column_type(statement: ptr, index: i32) -> i32;
+pub extern "C" fn sqlite3_column_int64(statement: ptr, index: i32) -> i64;
+pub extern "C" fn sqlite3_column_double(statement: ptr, index: i32) -> f64;
+pub extern "C" fn sqlite3_column_text(statement: ptr, index: i32) -> ptr;
+pub extern "C" fn sqlite3_column_blob(statement: ptr, index: i32) -> ptr;
+pub extern "C" fn sqlite3_column_bytes(statement: ptr, index: i32) -> i32;
+pub extern "C" fn sqlite3_errcode(database: ptr) -> i32;
+pub extern "C" fn sqlite3_changes64(database: ptr) -> i64;
+pub extern "C" fn sqlite3_last_insert_rowid(database: ptr) -> i64;
+pub extern "C" fn sqlite3_get_autocommit(database: ptr) -> i32;

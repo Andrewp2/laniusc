@@ -1,0 +1,72 @@
+// Source leaves borrow one String; successful clones own separate Strings.
+module fixture::leaf;
+import alloc::string;
+import core::clone;
+import core::cmp;
+import core::result;
+
+pub struct Key { number: i32, text: alloc::string::String, fail: i32, trace: [i32] }
+pub struct Value { number: i32, text: alloc::string::String, fail: i32, trace: [i32] }
+pub enum Fault { Allocation(alloc::string::Error), Injected(i32,i32,alloc::string::String) }
+
+fn record(trace: [i32], event: i32) {
+    assert(trace[0]<32); trace[8+trace[0]]=event; trace[0]+=1;
+}
+fn failure(number: i32, stage: i32) -> Fault {
+    let bytes: [u8;5] = [69,0,number as u8,stage as u8,85];
+    let made = alloc::string::from_utf8(bytes,5);
+    if (made.is_err()) { return Fault::Allocation(made.unwrap_err()); }
+    return Fault::Injected(number,stage,made.unwrap());
+}
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(left: Key, right: Key) -> bool { return left.number==right.number; }
+    pub fn ne(left: Key, right: Key) -> bool { return left.number!=right.number; }
+}
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(left: Key, right: Key) -> bool { return left.number<right.number; }
+    pub fn le(left: Key, right: Key) -> bool { return left.number<=right.number; }
+    pub fn gt(left: Key, right: Key) -> bool { return left.number>right.number; }
+    pub fn ge(left: Key, right: Key) -> bool { return left.number>=right.number; }
+}
+pub impl core::clone::TryClone<Key,Fault> for Key {
+    pub fn try_clone_value(source: Key) -> core::result::Result<Key,Fault> {
+        record(source.trace,100+source.number); source.trace[3]+=1;
+        if (source.fail==0) { return core::result::Err(failure(source.number,0)); }
+        let made = source.text.try_clone();
+        if (made.is_err()) { return core::result::Err(Fault::Allocation(made.unwrap_err())); }
+        let partial = made.unwrap();
+        if (source.fail==1) {
+            let error: Fault = failure(source.number,1); partial.destroy();
+            return core::result::Err(error);
+        }
+        let number: i32 = source.number;
+        if (source.fail==2) { number+=100; }
+        source.trace[1]+=1;
+        return core::result::Ok(Key { number:number,text:partial,fail:-1,trace:source.trace });
+    }
+}
+pub impl core::clone::TryClone<Value,Fault> for Value {
+    pub fn try_clone_value(source: Value) -> core::result::Result<Value,Fault> {
+        record(source.trace,200+source.number); source.trace[4]+=1;
+        if (source.fail==0) { return core::result::Err(failure(source.number,0)); }
+        let made = source.text.try_clone();
+        if (made.is_err()) { return core::result::Err(Fault::Allocation(made.unwrap_err())); }
+        let partial = made.unwrap();
+        if (source.fail==1) {
+            let error: Fault = failure(source.number,1); partial.destroy();
+            return core::result::Err(error);
+        }
+        source.trace[2]+=1;
+        return core::result::Ok(Value { number:source.number,text:partial,fail:-1,trace:source.trace });
+    }
+}
+pub impl core::clone::Destroy<Key> for Key {
+    pub fn destroy_value(owned: Key) {
+        assert(owned.trace[1]>0); owned.trace[1]-=1; owned.text.destroy();
+    }
+}
+pub impl core::clone::Destroy<Value> for Value {
+    pub fn destroy_value(owned: Value) {
+        assert(owned.trace[2]>0); owned.trace[2]-=1; owned.text.destroy();
+    }
+}

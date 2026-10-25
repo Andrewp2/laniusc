@@ -38,6 +38,8 @@ pub enum NativeCType {
     Isize,
     Usize,
     Ptr,
+    F32,
+    F64,
 }
 
 impl NativeCType {
@@ -52,6 +54,8 @@ impl NativeCType {
             SCALAR_ISIZE => Self::Isize,
             SCALAR_USIZE => Self::Usize,
             SCALAR_PTR => Self::Ptr,
+            SCALAR_F32 => Self::F32,
+            SCALAR_F64 => Self::F64,
             _ => return None,
         })
     }
@@ -1912,7 +1916,7 @@ mod tests {
                 1 => interface.declarations[0].value_hi = 2,
                 2 => interface.declarations[0].value_lo = 43,
                 3 => interface.declarations[0].flags = 1,
-                4 => interface.types[0].payload_lo = crate::primitive_types::SCALAR_F32,
+                4 => interface.types[0].payload_lo = crate::primitive_types::SCALAR_BOOL,
                 5 => interface.types[0].payload_lo = crate::primitive_types::SCALAR_I8,
                 6 => interface.types[0].payload_lo = crate::primitive_types::SCALAR_UNIT,
                 _ => interface.types[1].edge_count = 34,

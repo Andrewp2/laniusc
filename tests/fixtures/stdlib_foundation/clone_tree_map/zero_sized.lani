@@ -1,0 +1,16 @@
+module app::main;
+import alloc::clone_tree_map;
+import alloc::tree_map;
+import core::result;
+import fixture::zst;
+fn main() -> i32 {
+    let source: alloc::tree_map::TreeMap<fixture::zst::Unit,fixture::zst::Unit> = alloc::tree_map::new();
+    source.try_insert(fixture::zst::Unit {},fixture::zst::Unit {}).unwrap();
+    let result: core::result::Result<alloc::tree_map::TreeMap<fixture::zst::Unit,fixture::zst::Unit>,alloc::clone_tree_map::Error<fixture::zst::Never,fixture::zst::Never>> =
+        alloc::clone_tree_map::try_clone<fixture::zst::Unit,fixture::zst::Unit,fixture::zst::Never,fixture::zst::Never>(source.borrow());
+    let copy = result.unwrap(); assert(copy.len()==1 && source.len()==1);
+    alloc::clone_tree_map::destroy_tree_map<fixture::zst::Unit,fixture::zst::Unit>(copy.borrow());
+    alloc::clone_tree_map::destroy_tree_map<fixture::zst::Unit,fixture::zst::Unit>(source.borrow());
+    assert(copy.is_empty() && source.is_empty() && copy.capacity()==0 && source.capacity()==0);
+    return 0;
+}

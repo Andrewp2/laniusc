@@ -36,6 +36,30 @@
         "docs/stdlib-owning-iterators.md"
       ]
     },
+    "alloc::clone_binary_heap": {
+      "guides": [
+        "docs/stdlib-clone-binary-heap.md"
+      ],
+      "note": "Opt-in recursive heap cloning and explicit destruction execute on Linux x86_64 through the GPU compiler and preserve Min/Max order. All five focused groups pass, covering independent nested owners, priority multiplicities, empty/zero-sized values, 13 typed allocation failures, 16 owned-error paths and all 96 reached owned-error allocations. Ordinary inherent collection methods retain their documented shallow policy."
+    },
+    "alloc::clone_deque": {
+      "guides": [
+        "docs/stdlib-clone-deque.md"
+      ],
+      "note": "Opt-in recursive deque cloning and explicit destruction execute on Linux x86_64 through the production GPU compiler. All four focused groups pass, with 379 logical ring cases, 13 reached nested allocation failures, six owned-error paths and 33 owned-error allocation failures. Ordinary inherent Deque methods retain their documented shallow policy; the guide defines actual-owner and borrowed-alias cleanup."
+    },
+    "alloc::clone_hash_map": {
+      "guides": [
+        "docs/stdlib-clone-hash-map.md"
+      ],
+      "note": "Opt-in recursive hash-map cloning and explicit key/value destruction execute on Linux x86_64 through the GPU compiler. All four focused groups pass, covering independent nested owners, collisions/tombstones, typed rollback, 14 reached allocation failures, 18 owned key/value errors and changed key identity. Ordinary inherent collection methods retain their documented shallow policy."
+    },
+    "alloc::clone_tree_map": {
+      "guides": [
+        "docs/stdlib-clone-tree-map.md"
+      ],
+      "note": "Opt-in recursive ordered-map cloning and explicit key/value destruction execute on Linux x86_64 through the production GPU compiler. All five focused groups pass, covering independent nested owners, sorted staging, transfer/reset, empty/zero-sized values, 15 reached clone-allocation failures, 12 owned key/value errors and three changed-key cases. Ordinary inherent TreeMap methods retain their documented shallow policy; unrelated generic replay dependencies remain separate."
+    },
     "alloc::clone_vec": {
       "guides": [
         "docs/stdlib-nested-clone.md"
@@ -261,7 +285,8 @@
         "docs/compiler-iterator-assignment-context.md",
         "docs/stdlib-iterator-transfer.md",
         "docs/stdlib-iterator-collection-sinks.md",
-        "docs/stdlib-owning-iterators.md"
+        "docs/stdlib-owning-iterators.md",
+        "docs/stdlib-iterator-sources.md"
       ]
     },
     "core::math": {
@@ -618,6 +643,13 @@
       ],
       "note": "Digests execute through OpenSSL 3 EVP on Linux x86_64/glibc with checked native C linking and an explicit libcrypto dependency. The raw extern declarations require caller-managed native pointer and lifetime contracts."
     },
+    "ext::openssl_tls": {
+      "guides": [
+        "docs/extended-openssl-tls.md",
+        "docs/library-native-c.md"
+      ],
+      "note": "Client TLS with peer verification executes through OpenSSL 3 libssl/libcrypto on Linux x86_64/glibc, with 34 cases across four groups covering explicit trust/identity, binary transfers, closure/truncation and stable retries. Context and Session are manual owners over borrowed connected nonblocking sockets; callers provide deadlines, SIGPIPE policy and cleanup. Server TLS, callbacks and broader certificate/security APIs remain separate work."
+    },
     "ext::parse": {
       "guides": [
         "docs/extended-parse.md"
@@ -668,6 +700,15 @@
         "docs/extended-signal.md"
       ]
     },
+    "ext::sqlite": {
+      "guides": [
+        "docs/extended-sqlite.md",
+        "docs/library-native-c.md",
+        "docs/extended-sqlite-kv.md",
+        "docs/extended-sqlite-allocation.md"
+      ],
+      "note": "SQLite database and prepared-statement owners execute on Linux x86_64/glibc through checked C linking with an explicit sqlite3 dependency. Native gates cover 558 typed-value cases, 640 model commands, real persistence and locks, 21 native failure modes and four staging allocation failures. The linked guides define strict value access, ownership, limits, cleanup and the measured bulk workload."
+    },
     "ext::statistics": {
       "guides": [
         "docs/extended-statistics.md"
@@ -699,6 +740,13 @@
       "guides": [
         "docs/extended-timezone.md"
       ]
+    },
+    "ext::tls_stream": {
+      "guides": [
+        "docs/extended-https-fetch.md",
+        "docs/extended-openssl-tls.md"
+      ],
+      "note": "Buffered TLS stream and HTTPS GET execute on Linux x86_64 through OpenSSL 3: 62 cases across four groups cover stream progress, verification/HTTP failures, limits and binary response framing. The supported application profile uses numeric endpoints, explicit trust/peer identity, deadlines and manual socket/TLS/buffer ownership. TLS and sensitive operations remain in OpenSSL; server TLS, automatic resolution, redirects and broader protocol policies remain separate work."
     },
     "ext::toml": {
       "guides": [

@@ -58,6 +58,11 @@ pub struct Transfer { accepted: u64, exhausted: bool }
 // destination. accepted counts only this call, not the sink's earlier entries.
 pub struct TransferError<T, E> { accepted: u64, rejected: T, error: E }
 
+pub struct Empty<T> {}
+pub struct Once<T> { value: T, done: bool }
+pub struct Repeat<T> { value: T }
+pub enum StepError { Zero }
+pub struct StepBy<I, T> { source: &I, skip: u64, first: bool, done: bool }
 pub struct RangeI32 { position: i64, end: i64 }
 pub struct Take<I, T> { source: &I, remaining: u64, done: bool }
 pub struct Chain<A, B, T> { left: &A, right: &B, in_right: bool, done: bool }
@@ -70,6 +75,27 @@ pub struct Skip<I, T> { source: &I, remaining: u64, done: bool }
 pub struct TakeWhile<I, P, T> { source: &I, predicate: &P, done: bool }
 pub struct SkipWhile<I, P, T> { source: &I, predicate: &P, skipping: bool, done: bool }
 pub struct Advance { advanced: u64, exhausted: bool }
+
+pub fn empty<T>() -> Empty<T> { return Empty {}; }
+
+// The stored value and every cursor copy are shallow. Copying this leaf forks
+// its one-item availability, without creating another cleanup authority.
+pub fn once<T>(value: T) -> Once<T> { return Once { value: value, done: false }; }
+
+// Yield the same shallow value forever. Bound consumption with Take. A
+// transferred memory owner cannot be repeated safely unless the application
+// keeps a separate cleanup authority and treats yielded handles as aliases.
+pub fn repeat<T>(value: T) -> Repeat<T> { return Repeat { value: value }; }
+
+// Construction never polls. First next pulls one item; later calls discard
+// step-1 successful items before pulling the result. Stop at the first None,
+// even for MAX, and never poll the source again through this adapter.
+pub fn step_by<I, T>(source: &I, step: u64)
+    -> core::result::Result<StepBy<I, T>, StepError> where I: Iterator<T> {
+    if (step == 0) { return core::result::Err(StepError::Zero); }
+    let selected: StepBy<I, T> = StepBy { source: source, skip: step - 1, first: true, done: false };
+    return core::result::Ok(selected);
+}
 
 // Check logical metadata only. values must physically back count elements.
 pub fn from_slice<T>(values: [T], count: i32)
@@ -319,6 +345,56 @@ pub impl<T> Iterator<core::slice::View<T>> for core::slice::Windows<T> {
         if (self.end - self.position < self.width) { return core::option::None(); }
         let result: core::slice::View<T> = core::slice::View { values: self.values, start: self.position, length: self.width };
         self.position += 1; return core::option::Some(result);
+    }
+}
+
+pub impl<T> Empty<T> {
+    pub fn borrow(&self) -> &Empty<T> { return self; }
+}
+
+pub impl<T> Iterator<T> for Empty<T> {
+    pub fn next(&self) -> core::option::Option<T> { return core::option::None(); }
+}
+
+pub impl<T> Once<T> {
+    pub fn borrow(&self) -> &Once<T> { return self; }
+}
+
+pub impl<T> Iterator<T> for Once<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.done) { return core::option::None(); }
+        self.done = true;
+        return core::option::Some(self.value);
+    }
+}
+
+pub impl<T> Repeat<T> {
+    pub fn borrow(&self) -> &Repeat<T> { return self; }
+}
+
+pub impl<T> Iterator<T> for Repeat<T> {
+    pub fn next(&self) -> core::option::Option<T> { return core::option::Some(self.value); }
+}
+
+pub impl<I, T> StepBy<I, T> {
+    pub fn borrow(&self) -> &StepBy<I, T> { return self; }
+}
+
+pub impl<I, T> Iterator<T> for StepBy<I, T> where I: Iterator<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let remaining: u64 = 0;
+        if (!self.first) { remaining = self.skip; }
+        self.first = false;
+        while (remaining > 0) {
+            let skipped: core::option::Option<T> = source.next();
+            if (core::option::is_none(skipped)) { self.done = true; return skipped; }
+            remaining -= 1;
+        }
+        let item: core::option::Option<T> = source.next();
+        if (core::option::is_none(item)) { self.done = true; }
+        return item;
     }
 }
 

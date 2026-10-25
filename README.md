@@ -32,69 +32,7 @@ You can control the diagnostics output using `--diagnostic-format=<json|lsp-json
 
 ## Standard library
 
-The [execution audit and portable foundation](docs/stdlib-foundation.md) lists
-the stdlib APIs verified on x86_64, their edge behavior, and the remaining
-compiler and runtime dependencies.
-
-The [standard and extended library roadmap](docs/library-roadmap.md) tracks the
-full scope and delivery requirements. New APIs follow the
-[library conventions](docs/library-api-conventions.md); the first
-[owned UTF-8 String](docs/stdlib-string.md) has executable native examples and
-allocation-failure tests.
-[Borrowed UTF-8 text](docs/stdlib-text.md) provides subviews, splitting, scalar
-iteration and hashing without copying.
-The [byte stream APIs](docs/stdlib-streams.md) provide shared reader/writer
-contracts, owned byte buffers and native descriptor adapters.
-The [generic hash map](docs/stdlib-hash-collections.md) provides hashed lookup,
-explicit allocation errors and returned displaced keys/values.
-The [shared iterator protocol](docs/stdlib-iterators.md) connects ranges, views,
-collections and text with borrowed adapters. A checked
-[range dot-product program](docs/stdlib-range-dot.md) composes zip, take, map
-and enumeration, including arithmetic and output failures.
-[Canonical slice cursors](docs/stdlib-cursor-integration.md),
-[text splits](docs/stdlib-text-split-iterators.md) and
-[heap iteration](docs/stdlib-heap-iterators.md) use that same protocol.
-[Selection, searches and folds](docs/stdlib-iterator-selection.md) add lazy
-filtering and typed short circuits. The [column-sum program](docs/stdlib-column-sum.md)
-combines text splitting, filtering, Result items and checked reduction.
-[Fallible collection](docs/stdlib-iterator-transfer.md) transfers items into
-vectors and deques with explicit progress and rejected-item recovery. The
-[word sorter](docs/stdlib-sort-words.md) collects borrowed text before sorting.
-[Map, set and heap sinks](docs/stdlib-iterator-collection-sinks.md) preserve
-rejected items and stored representatives. The
-[identifier index](docs/stdlib-index-words.md) rejects duplicates and prints
-ordered identifiers with their original positions.
-[Owning Vec and Deque cursors](docs/stdlib-owning-iterators.md) transfer items,
-recover unconsumed storage and provide explicit nested cleanup. The
-[streaming word deduplicator](docs/stdlib-unique-words.md) moves independent
-Strings into an ordered set while reusing its batch allocation.
-[Runtime formatting to byte writers](docs/stdlib-format-write.md) validates
-before publication and uses bounded scratch with explicit partial progress.
-The [CSV report program](docs/stdlib-format-report.md) composes it with numeric
-parsing and buffered output.
-
-[Checked native C calls](docs/library-native-c.md) execute on Linux x86_64/glibc
-through ordinary ELF objects, the system C linker and libc startup.
-[OpenSSL digest contexts](docs/extended-openssl-digest.md) provide streaming
-SHA-256, SHA-512, SHA3-256 and SHA3-512 through `libcrypto`; the
-[hashing program](docs/extended-openssl-hash.md) hashes bounded binary stdin.
-All cryptographic operations use the native library. TLS, encryption,
-signatures, certificate trust and SQLite wrappers remain unimplemented; the
-[remaining native prerequisites](docs/library-native-integration-prerequisites.md)
-record those boundaries. TCP/UDP sockets and
-[bounded OS entropy](docs/stdlib-entropy-bounded.md) are also available.
-[DER](docs/extended-der.md) and
-[X.509 structure parsing](docs/extended-x509.md) provide data inspection; they
-do not verify signatures, certificate trust or TLS peers.
-
-Optional modules use the [`extended` source root](extended/README.md).
-[`ext::csv`](docs/extended-csv.md) and [`ext::json`](docs/extended-json.md)
-include executable normalizers, generated round trips and allocation-failure
-coverage.
-
-The [CSV report application](docs/csv-report.md) combines streams, UTF-8 text,
-checked decimal parsing, generic collections, CSV and JSON to validate and
-group records with executable failure coverage.
+[Standard and extended library overview](docs/library-overview.md)
 
 ## Benchmarks
 

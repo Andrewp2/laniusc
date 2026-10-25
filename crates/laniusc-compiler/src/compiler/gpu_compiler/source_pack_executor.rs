@@ -338,6 +338,10 @@ impl<'compiler, 'gpu> GpuSourcePackArtifactExecutor<'compiler, 'gpu> {
                 let artifact = self.write_x86_codegen_object_artifact(&handle.job, &bytes)?;
                 attach_x86_codegen_object_artifact(&mut descriptor, &artifact, object, bytes.len());
             }
+            Some(CompiledSourcePackObject::X86_64File(_)) => {
+                return Err(source_pack_artifact_store_error(
+                    "descriptor executor received private native file storage"));
+            }
             Some(CompiledSourcePackObject::Wasm(object)) => {
                 let bytes = object.to_bytes().map_err(|reason| {
                     source_pack_artifact_store_error(format!(
