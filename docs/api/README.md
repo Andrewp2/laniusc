@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **223 modules**, **9747 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **228 modules**, **9864 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -28,6 +28,7 @@ Inventory: **223 modules**, **9747 declaration/member entries**. Counts include 
 | [core::bitset](core/bitset.md) | [source](../../stdlib/core/bitset.lani#L5) | 59 | Source inventory | [stdlib-bitset-owned](../stdlib-bitset-owned.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md) |
 | [core::bool](core/bool.md) | [source](../../stdlib/core/bool.lani#L3) | 10 | Source inventory | [stdlib-boolean-bits](../stdlib-boolean-bits.md) |
 | [core::calendar](core/calendar.md) | [source](../../stdlib/core/calendar.lani#L4) | 158 | Source inventory | [stdlib-calendar](../stdlib-calendar.md) |
+| [core::chacha20](core/chacha20.md) | [source](../../stdlib/core/chacha20.lani#L3) | 19 | Source inventory | [stdlib-chacha20](../stdlib-chacha20.md) |
 | [core::char](core/char.md) | [source](../../stdlib/core/char.lani#L2) | 19 | Source inventory | [stdlib-unicode](../stdlib-unicode.md) |
 | [core::clone](core/clone.md) | [source](../../stdlib/core/clone.lani#L3) | 4 | Source inventory | [stdlib-clone](../stdlib-clone.md) |
 | [core::cmp](core/cmp.md) | [source](../../stdlib/core/cmp.lani#L5) | 250 | Source inventory | [stdlib-comparison](../stdlib-comparison.md) |
@@ -62,6 +63,7 @@ Inventory: **223 modules**, **9747 declaration/member entries**. Counts include 
 | [core::panic](core/panic.md) | [source](../../stdlib/core/panic.lani#L3) | 29 | Source inventory | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |
 | [core::path](core/path.md) | [source](../../stdlib/core/path.lani#L5) | 78 | Source inventory | [stdlib-paths](../stdlib-paths.md) |
 | [core::path_rules](core/path_rules.md) | [source](../../stdlib/core/path_rules.lani#L3) | 59 | Source inventory | [stdlib-paths](../stdlib-paths.md) |
+| [core::poly1305](core/poly1305.md) | [source](../../stdlib/core/poly1305.lani#L4) | 40 | Source inventory | [stdlib-poly1305](../stdlib-poly1305.md) |
 | [core::random](core/random.md) | [source](../../stdlib/core/random.lani#L5) | 40 | Source inventory | [stdlib-randomness](../stdlib-randomness.md) |
 | [core::range](core/range.md) | [source](../../stdlib/core/range.lani#L9) | 51 | Source inventory | [stdlib-ranges](../stdlib-ranges.md) |
 | [core::result](core/result.md) | [source](../../stdlib/core/result.lani#L7) | 24 | Source inventory | [stdlib-result](../stdlib-result.md) |
@@ -193,6 +195,7 @@ Inventory: **223 modules**, **9747 declaration/member entries**. Counts include 
 | [ext::big_int](ext/big_int.md) | [source](../../extended/ext/big_int.lani#L3) | 56 | Source inventory | [extended-big-int](../extended-big-int.md) |
 | [ext::big_uint](ext/big_uint.md) | [source](../../extended/ext/big_uint.lani#L4) | 72 | Source inventory | [extended-big-uint](../extended-big-uint.md) |
 | [ext::cbor](ext/cbor.md) | [source](../../extended/ext/cbor.lani#L4) | 64 | Source inventory | [extended-cbor](../extended-cbor.md) |
+| [ext::chacha20_poly1305](ext/chacha20_poly1305.md) | [source](../../extended/ext/chacha20_poly1305.lani#L3) | 9 | Source inventory | [extended-chacha20-poly1305](../extended-chacha20-poly1305.md), [extended-seal-bytes](../extended-seal-bytes.md) |
 | [ext::cli](ext/cli.md) | [source](../../extended/ext/cli.lani#L3) | 42 | Source inventory | [extended-cli](../extended-cli.md) |
 | [ext::compression](ext/compression.md) | [source](../../extended/ext/compression.lani#L3) | 31 | Source inventory | [extended-compression](../extended-compression.md) |
 | [ext::config](ext/config.md) | [source](../../extended/ext/config.lani#L4) | 47 | Source inventory | [extended-config](../extended-config.md) |
@@ -232,6 +235,7 @@ Inventory: **223 modules**, **9747 declaration/member entries**. Counts include 
 | [ext::tar](ext/tar.md) | [source](../../extended/ext/tar.lani#L3) | 81 | Source inventory | [extended-tar](../extended-tar.md) |
 | [ext::terminal](ext/terminal.md) | [source](../../extended/ext/terminal.lani#L3) | 15 | Source inventory | [extended-terminal](../extended-terminal.md) |
 | [ext::timezone](ext/timezone.md) | [source](../../extended/ext/timezone.lani#L3) | 80 | Source inventory | [extended-timezone](../extended-timezone.md) |
+| [ext::tls_record](ext/tls_record.md) | [source](../../extended/ext/tls_record.lani#L4) | 40 | Source inventory | [extended-tls-record](../extended-tls-record.md) |
 | [ext::toml](ext/toml.md) | [source](../../extended/ext/toml.lani#L2) | 83 | Source inventory | [extended-toml](../extended-toml.md) |
 | [ext::unicode_case](ext/unicode_case.md) | [source](../../extended/ext/unicode_case.lani#L4) | 21 | Source inventory | [extended-unicode-case](../extended-unicode-case.md) |
 | [ext::unicode_graphemes](ext/unicode_graphemes.md) | [source](../../extended/ext/unicode_graphemes.lani#L3) | 18 | Source inventory | [extended-unicode-graphemes](../extended-unicode-graphemes.md) |
@@ -244,6 +248,7 @@ Inventory: **223 modules**, **9747 declaration/member entries**. Counts include 
 | [ext::uri_resolve](ext/uri_resolve.md) | [source](../../extended/ext/uri_resolve.lani#L3) | 8 | Source inventory | [extended-uri-resolve](../extended-uri-resolve.md) |
 | [ext::wave](ext/wave.md) | [source](../../extended/ext/wave.lani#L2) | 38 | Source inventory | [extended-wave](../extended-wave.md) |
 | [ext::websocket](ext/websocket.md) | [source](../../extended/ext/websocket.lani#L3) | 82 | Source inventory | [extended-websocket](../extended-websocket.md) |
+| [ext::x25519](ext/x25519.md) | [source](../../extended/ext/x25519.lani#L3) | 9 | Source inventory | [extended-x25519](../extended-x25519.md) |
 | [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 80 | Source inventory | [extended-zip](../extended-zip.md) |
 
 ## Support and implementation data

@@ -1,0 +1,101 @@
+// Batched public test keys only. Repeated known-vector computations are test
+// oracles, not authority to reuse a production one-time key for other messages.
+module app::main;
+import core::io;
+import core::mem;
+import core::poly1305;
+import core::result;
+import core::slice;
+import std::stream;
+fn view(bytes:[u8], start:i32, count:i32) -> core::slice::View<u8> { return core::slice::view_range(bytes,start,count).unwrap(); }
+fn code(error:core::poly1305::Error) -> i32 { return match (error) { core::poly1305::Error::Bounds -> 1, core::poly1305::Error::InvalidKeyLength -> 2, core::poly1305::Error::LengthOverflow -> 3, core::poly1305::Error::Finished -> 4 }; }
+fn equal(left:core::poly1305::Tag, right:core::poly1305::Tag) { let i:i32=0; while (i < 16) { assert(left.bytes[i] == right.bytes[i]); i+=1; } }
+fn emit(sink:&std::stream::Descriptor, tag:core::poly1305::Tag) { core::io::write_all(sink,tag.bytes,0,16).unwrap(); }
+fn snapshot(state:&core::poly1305::State, values:[u64]) {
+    values[0]=state.r0; values[1]=state.r1; values[2]=state.r2; values[3]=state.r3; values[4]=state.r4;
+    values[5]=state.s1; values[6]=state.s2; values[7]=state.s3; values[8]=state.s4;
+    values[9]=state.h0; values[10]=state.h1; values[11]=state.h2; values[12]=state.h3; values[13]=state.h4;
+    values[14]=state.pad0; values[15]=state.pad1; values[16]=state.pad2; values[17]=state.pad3;
+    values[18]=state.tag0; values[19]=state.tag1; values[20]=state.tag2; values[21]=state.tag3;
+    values[22]=state.total; values[23]=state.used as u64; values[24]=0; if (state.finished) { values[24]=1; }
+    let i:i32=0; while (i < 16) { values[25+i]=state.block[i] as u64; i+=1; }
+}
+fn unchanged(state:&core::poly1305::State, before:[u64]) { let after:[u64;41]=[0;41]; snapshot(state,after); let i:i32=0; while (i < 41) { assert(before[i] == after[i]); i+=1; } }
+fn contracts() {
+    let key_bytes:[u8;33]=[255;33]; let key:core::slice::View<u8> = view(key_bytes,1,32); let empty:core::slice::View<u8> = view(key_bytes,1,0);
+    let short:core::slice::View<u8> = view(key_bytes,0,31); let long:core::slice::View<u8> = view(key_bytes,0,33);
+    assert(code(core::poly1305::new(empty).unwrap_err()) == 2 && code(core::poly1305::new(short).unwrap_err()) == 2 && code(core::poly1305::new(long).unwrap_err()) == 2);
+    let malformed:core::slice::View<u8> = key; malformed.start=-1; assert(code(core::poly1305::new(malformed).unwrap_err()) == 1);
+    malformed=key; malformed.length=-1; assert(code(core::poly1305::new(malformed).unwrap_err()) == 1);
+    malformed=key; malformed.start=2147483647; malformed.length=1; assert(code(core::poly1305::new(malformed).unwrap_err()) == 1);
+    assert(code(core::poly1305::authenticate(short,malformed).unwrap_err()) == 1 && code(core::poly1305::authenticate(short,empty).unwrap_err()) == 2);
+    let state:core::poly1305::State=core::poly1305::new(key).unwrap();
+    assert(state.r0 == 0x3ffffff && state.r1 == 0x3ffff03 && state.r2 == 0x3ffc0ff && state.r3 == 0x3f03fff && state.r4 == 0xfffff);
+    let data:[u8;3]=[97,98,99]; let input:core::slice::View<u8> = view(data,0,3); assert(state.update(input).unwrap() == 3);
+    let saved:[u64;41]=[0;41]; snapshot(state.borrow(),saved);
+    assert(code(state.update(malformed).unwrap_err()) == 1); unchanged(state.borrow(),saved);
+    malformed=input; malformed.start=-1; assert(code(state.update(malformed).unwrap_err()) == 1); unchanged(state.borrow(),saved);
+    malformed=input; malformed.length=-1; assert(code(state.update(malformed).unwrap_err()) == 1); unchanged(state.borrow(),saved);
+    assert(state.update(empty).unwrap() == 0); unchanged(state.borrow(),saved);
+    state.finish(); snapshot(state.borrow(),saved);
+    assert(code(state.update(malformed).unwrap_err()) == 1); unchanged(state.borrow(),saved);
+    assert(code(state.update(empty).unwrap_err()) == 4); unchanged(state.borrow(),saved);
+    state.finish(); unchanged(state.borrow(),saved);
+
+    // Fabricated structurally consistent count/buffer metadata tests arithmetic
+    // and error atomicity; it does not authenticate an actually huge message.
+    let limit:core::poly1305::State=core::poly1305::new(key).unwrap(); limit.total=18446744073709551614; limit.used=14;
+    snapshot(limit.borrow(),saved); assert(code(limit.update(input).unwrap_err()) == 3); unchanged(limit.borrow(),saved);
+    assert(limit.update(view(data,0,1)).unwrap() == 1 && limit.total == 18446744073709551615 && limit.used == 15);
+    snapshot(limit.borrow(),saved); assert(code(limit.update(view(data,1,1)).unwrap_err()) == 3); unchanged(limit.borrow(),saved);
+    assert(code(limit.update(malformed).unwrap_err()) == 1); unchanged(limit.borrow(),saved);
+    assert(limit.update(empty).unwrap() == 0); unchanged(limit.borrow(),saved);
+}
+fn feed(first:&core::poly1305::State, second:&core::poly1305::State, input:core::slice::View<u8>, schedule:i32) {
+    let widths:[i32;8]=[1,7,15,16,17,31,32,3]; let position:i32=0; let step:i32=0;
+    while (position < input.len()) {
+        let count:i32=input.len()-position; if (schedule == 1) { count=1; }
+        if (schedule == 2 && count > widths[step%8]) { count=widths[step%8]; }
+        if (schedule == 3 && count > 16) { count=16; }
+        let part:core::slice::View<u8> = input.subview(position,position+count).unwrap();
+        assert(first.update(part).unwrap() == count && second.update(part).unwrap() == count);
+        let empty:core::slice::View<u8> = input.subview(position,position).unwrap(); assert(first.update(empty).unwrap() == 0 && second.update(empty).unwrap() == 0);
+        position+=count; step+=1;
+    }
+}
+fn check_case(sink:&std::stream::Descriptor, key:core::slice::View<u8>, input:core::slice::View<u8>, schedule:i32) {
+    let reference:core::poly1305::Tag=core::poly1305::authenticate(key,input).unwrap();
+    let other_bytes:[u8;32]=[0;32]; let third_bytes:[u8;32]=[0;32]; let i:i32=0;
+    while (i < 32) { other_bytes[i]=key.values[key.start+i]; i+=1; } other_bytes[0]^=128; other_bytes[31]^=85;
+    i=0; while (i < 32) { third_bytes[i]=other_bytes[i]; i+=1; } third_bytes[1]^=90;
+    let first:core::poly1305::State=core::poly1305::new(key).unwrap(); let second:core::poly1305::State=core::poly1305::new(view(other_bytes,0,32)).unwrap();
+    // new copies key material rather than retaining the caller's byte view.
+    key.values[key.start]^=1; feed(first.borrow(),second.borrow(),input,schedule); key.values[key.start]^=1;
+    let actual:core::poly1305::Tag=first.finish(); let different:core::poly1305::Tag=second.finish(); let again:core::poly1305::Tag=first.finish(); equal(actual,reference); equal(actual,again);
+    let byte:u8=actual.bytes[0]; reference.bytes[0]^=255; assert(actual.bytes[0] == byte && again.bytes[0] == byte && first.finish().bytes[0] == byte);
+    let retained:core::poly1305::Tag=actual;
+    let alternate:[u8;4]=[0,255,13,7]; let third:core::poly1305::Tag=core::poly1305::authenticate(view(third_bytes,0,32),view(alternate,0,4)).unwrap();
+    equal(retained,actual); retained.bytes[1]^=255; assert(actual.bytes[1] == again.bytes[1] && first.finish().bytes[1] == again.bytes[1]);
+    assert(code(first.update(input.subview(0,0).unwrap()).unwrap_err()) == 4);
+    emit(sink,actual); emit(sink,different); emit(sink,again); emit(sink,third);
+}
+fn word(bytes:[u8], offset:i32) -> u32 { return (bytes[offset] as u32)|((bytes[offset+1] as u32)<<8)|((bytes[offset+2] as u32)<<16)|((bytes[offset+3] as u32)<<24); }
+fn main() -> i32 {
+    contracts(); let source:std::stream::Descriptor=std::stream::stdin(); let sink:std::stream::Descriptor=std::stream::stdout();
+    let header:[u8;8]=[0;8]; core::io::read_exact(source.borrow(),header,0,4).unwrap(); let cases:u32=word(header,0); let case:u32=0;
+    let storage:[i32;2080]=[0;2080]; let packed:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),8320);
+    let native_key:[u8;40]=[0;40]; let native_message:[u8;8208]=[0;8208];
+    while (case < cases) {
+        core::io::read_exact(source.borrow(),header,0,8).unwrap(); let layout:i32=header[0] as i32; let schedule:i32=header[1] as i32; let length:i32=word(header,4) as i32;
+        assert(layout >= 0 && layout < 2 && schedule >= 0 && schedule < 4 && length >= 0 && length <= 8192);
+        packed[6]=165; packed[39]=90; packed[63]=165; packed[64+length]=90;
+        core::io::read_exact(source.borrow(),packed,7,32).unwrap(); core::io::read_exact(source.borrow(),packed,64,length).unwrap();
+        native_key[4]=165; native_key[37]=90; native_message[4]=165; native_message[5+length]=90;
+        let i:i32=0; while (i < 32) { native_key[5+i]=packed[7+i]; i+=1; } i=0; while (i < length) { native_message[5+i]=packed[64+i]; i+=1; }
+        let key:core::slice::View<u8> = view(packed,7,32); let message:core::slice::View<u8> = view(packed,64,length);
+        if (layout == 1) { key=view(native_key,5,32); message=view(native_message,5,length); }
+        check_case(sink.borrow(),key,message,schedule);
+        assert(packed[6] == 165 && packed[39] == 90 && packed[63] == 165 && packed[64+length] == 90 && native_key[4] == 165 && native_key[37] == 90 && native_message[4] == 165 && native_message[5+length] == 90); case+=1;
+    }
+    assert(source.read(header,0,1).unwrap() == 0); return 0;
+}

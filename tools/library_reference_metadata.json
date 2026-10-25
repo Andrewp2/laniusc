@@ -143,6 +143,11 @@
         "docs/stdlib-calendar.md"
       ]
     },
+    "core::chacha20": {
+      "guides": [
+        "docs/stdlib-chacha20.md"
+      ]
+    },
     "core::char": {
       "guides": [
         "docs/stdlib-unicode.md"
@@ -304,6 +309,11 @@
     "core::path_rules": {
       "guides": [
         "docs/stdlib-paths.md"
+      ]
+    },
+    "core::poly1305": {
+      "guides": [
+        "docs/stdlib-poly1305.md"
       ]
     },
     "core::random": {
@@ -497,6 +507,12 @@
     "ext::cbor": {
       "guides": [
         "docs/extended-cbor.md"
+      ]
+    },
+    "ext::chacha20_poly1305": {
+      "guides": [
+        "docs/extended-chacha20-poly1305.md",
+        "docs/extended-seal-bytes.md"
       ]
     },
     "ext::cli": {
@@ -711,6 +727,11 @@
         "docs/extended-timezone.md"
       ]
     },
+    "ext::tls_record": {
+      "guides": [
+        "docs/extended-tls-record.md"
+      ]
+    },
     "ext::toml": {
       "guides": [
         "docs/extended-toml.md"
@@ -811,6 +832,11 @@
     "ext::websocket": {
       "guides": [
         "docs/extended-websocket.md"
+      ]
+    },
+    "ext::x25519": {
+      "guides": [
+        "docs/extended-x25519.md"
       ]
     },
     "ext::zip": {

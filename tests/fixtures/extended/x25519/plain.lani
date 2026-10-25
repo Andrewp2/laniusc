@@ -1,0 +1,24 @@
+// Ordinary imported consumers: no caller projection of the public error enum.
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::x25519;
+fn nibble(value: u8) -> u8 { if (value <= 57) { return value - 48; } return value - 97 + 10; }
+fn decode(value: str) -> [u8; 32] {
+    let source: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), 64);
+    let bytes: [u8; 32] = [0; 32]; let index: i32 = 0;
+    while (index < 32) { bytes[index] = nibble(source[2 * index]) * 16 + nibble(source[2 * index + 1]); index += 1; } return bytes;
+}
+fn check(key: ext::x25519::Key, expected: [u8; 32]) { let index: i32 = 0; while (index < 32) { assert(key.bytes[index] == expected[index]); index += 1; } }
+fn main() -> i32 {
+    let alice: [u8; 32] = decode("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
+    let bob: [u8; 32] = decode("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb");
+    let a: ext::x25519::Key = ext::x25519::public_key(core::slice::view(alice, 32).unwrap()).unwrap();
+    let b: ext::x25519::Key = ext::x25519::public_key(core::slice::view(bob, 32).unwrap()).unwrap();
+    check(a, decode("8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a"));
+    check(b, decode("de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f"));
+    let first: ext::x25519::Key = ext::x25519::shared_secret(core::slice::view(alice, 32).unwrap(), core::slice::view(b.bytes, 32).unwrap()).unwrap();
+    let second: ext::x25519::Key = ext::x25519::shared_secret(core::slice::view(bob, 32).unwrap(), core::slice::view(a.bytes, 32).unwrap()).unwrap();
+    check(first, decode("4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742")); check(second, first.bytes); return 0;
+}

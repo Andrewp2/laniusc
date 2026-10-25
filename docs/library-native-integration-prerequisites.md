@@ -7,6 +7,13 @@ This is a source audit and a proposed dependency sequence, based on compiler
 the documented native profile. Threads, native foreign libraries and callbacks
 need additional contracts.
 
+The current TLS work also pursues a Lanius implementation over the existing
+byte/socket interfaces: hashes and HMAC/HKDF execute, and authenticated
+encryption, key exchange and record protection are being implemented next.
+That path does not require foreign-call support. A foreign TLS backend and
+SQLite integration still need the native-library boundaries described here;
+TLS handshake and peer/trust policy still need executable source support.
+
 ## Existing boundaries
 
 | Boundary | Current state |
@@ -90,8 +97,8 @@ Separate three admissions:
 3. **Callbacks:** addressable exported monomorphic entries, ABI trampolines,
    context lifetime, reentrancy and foreign-thread attachment.
 
-Network TLS and SQLite integration depend on an appropriate foreign-call profile or
-another explicitly implemented native boundary. No JSON bridge, subprocess
+Foreign TLS libraries and SQLite integration depend on an appropriate
+foreign-call profile or another explicitly implemented native boundary. No JSON bridge, subprocess
 serialization adapter or declaration-only API is counted as that integration.
 
 Entry authority and concurrent memory semantics need compiler coordination.

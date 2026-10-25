@@ -372,7 +372,13 @@ remaining families above still need their own executable evidence.
 ## Current work
 
 - Branch: `codex/stdlib`, based on `441e66f9`.
-- Current milestone: the byte-oriented SHA-2 family (SHA-224, SHA-256,
+- Current milestone: IETF ChaCha20, one-time Poly1305, their authenticated
+  encryption construction, X25519 key exchange and TLS 1.3 record protection.
+  The implementations use Lanius and the existing byte/integer interfaces;
+  executable admission is in progress. A bounded authenticated-byte program
+  will exercise files, framing, allocation and I/O failures. TLS handshake,
+  peer authentication and trust policy remain required after this layer.
+- Previous hash milestone: the byte-oriented SHA-2 family (SHA-224, SHA-256,
   SHA-384, SHA-512, SHA-512/224 and SHA-512/256), followed by HMAC-SHA-256
   and HKDF-SHA-256. Allocation-free Lanius implementations and native admission
   are complete, with incremental state, explicit bounds/length/finalization
