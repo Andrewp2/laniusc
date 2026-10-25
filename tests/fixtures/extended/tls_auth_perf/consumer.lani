@@ -162,7 +162,7 @@ fn main() -> i32 {
     let ticket_nonce:[u8;11]=[112,101,114,102,32,116,105,99,107,101,116];let psk:ext::tls_schedule::Secret=resumption.ticket(view(ticket_nonce,0,11)).unwrap();
 
     // Real record encryption/authentication, substantial payload and key update.
-    let sender:ext::tls_record::Sealer=ext::tls_record::sealer(application.view()).unwrap();let receiver:ext::tls_record::Opener=ext::tls_record::opener(application.view()).unwrap();
+    let sender:ext::tls_record::Sealer=ext::tls_record::sealer(ext::tls_record::Suite::ChaCha20Poly1305Sha256, application.view()).unwrap();let receiver:ext::tls_record::Opener=ext::tls_record::opener(ext::tls_record::Suite::ChaCha20Poly1305Sha256, application.view()).unwrap();
     let packet:[u8;1100]=[222;1100];let scratch:[u8;1100]=[222;1100];let wire:i32=sender.seal(view(encoded,3,count),23,11,view(packet,3,1097)).unwrap();assert(wire==1060);
     let opened:ext::tls_record::Opened=receiver.open(view(packet,3,wire),view(scratch,3,1097)).unwrap();assert(opened.content_type==23);same(opened.content,view(encoded,3,count));
     let delivered:ext::der::Element=ext::der::parse_one(opened.content).unwrap();same(delivered.as_octets().unwrap(),view(message,0,1023));let delivered_hash:core::sha256::Digest=core::sha256::digest(opened.content).unwrap();

@@ -1,12 +1,17 @@
-// TLS 1.3 protected records, TLS_CHACHA20_POLY1305_SHA256 only.
+// TLS 1.3 protected records, AES128-GCM/SHA256 and ChaCha20-Poly1305/SHA256.
 // RFC 8446 sections 5, 7.1-7.3. This is not a TLS handshake or connection.
 // See docs/extended-tls-record.md for ownership, failure and target contracts.
 module ext::tls_record;
+import core::option;
 import core::result;
 import core::slice;
+import ext::aes_gcm;
 import ext::chacha20_poly1305;
 import ext::tls_schedule;
 
+pub enum Suite { Aes128GcmSha256, ChaCha20Poly1305Sha256 }
+// Conservative per-traffic-key policy below RFC8446 section5.5 AES guidance.
+pub const AES_GCM_RECORD_LIMIT: u64 = 16777216;
 pub const MAX_CONTENT: i32 = 16384;
 pub const MAX_INNER: i32 = 16385;
 pub const MAX_CIPHERTEXT: i32 = 16640;
@@ -19,7 +24,7 @@ pub enum Error {
 pub struct Opened { content: core::slice::View<u8>, content_type: u8 }
 // Use constructors/methods. Fields are implementation state, not a resumption
 // format. A value copy does not grant independent rights to use the nonce space.
-struct Traffic { secret: [u8; 32], key: [u8; 32], iv: [u8; 12], next: u64, exhausted: bool, poisoned: bool }
+struct Traffic { suite: Suite, secret: [u8; 32], key: [u8; 32], aes_key: core::option::Option<ext::aes_gcm::Key>, iv: [u8; 12], next: u64, exhausted: bool, poisoned: bool }
 pub struct Sealer { traffic: Traffic }
 pub struct Opener { traffic: Traffic }
 
@@ -36,33 +41,41 @@ fn content_length_valid(kind: u8, length: i32) -> bool {
     if (kind == 22) { return length > 0; }
     return true;
 }
-fn derive(secret: core::slice::View<u8>) -> core::result::Result<Traffic, Error> {
+fn is_aes(suite: Suite) -> bool { return match (suite) { Suite::Aes128GcmSha256 -> true, Suite::ChaCha20Poly1305Sha256 -> false }; }
+fn derive(suite: Suite, secret: core::slice::View<u8>) -> core::result::Result<Traffic, Error> {
     let stored: [u8; 32] = [0; 32]; let index: i32 = 0;
     while (index < 32) { stored[index] = secret.values[secret.start + index]; index += 1; }
+    let key_length: i32 = 32; if (is_aes(suite)) { key_length = 16; }
     let key: [u8; 32] = [0; 32]; let iv: [u8; 12] = [0; 12];
     let key_label: [u8; 3] = [107, 101, 121];
     let iv_label: [u8; 2] = [105, 118]; let empty: [u8; 0] = [];
     let prk: core::slice::View<u8> = core::slice::View { values: stored, start: 0, length: 32 };
     let context: core::slice::View<u8> = core::slice::View { values: empty, start: 0, length: 0 };
     let keyed: core::result::Result<i32, ext::tls_schedule::Error> = ext::tls_schedule::expand_label(prk,
-        core::slice::View { values: key_label, start: 0, length: 3 }, context, core::slice::View { values: key, start: 0, length: 32 });
+        core::slice::View { values: key_label, start: 0, length: 3 }, context, core::slice::View { values: key, start: 0, length: key_length });
     if (core::result::is_err(keyed)) { return core::result::Err(Error::Derivation); }
     let vectored: core::result::Result<i32, ext::tls_schedule::Error> = ext::tls_schedule::expand_label(prk,
         core::slice::View { values: iv_label, start: 0, length: 2 }, context, core::slice::View { values: iv, start: 0, length: 12 });
     if (core::result::is_err(vectored)) { return core::result::Err(Error::Derivation); }
-    return core::result::Ok(Traffic { secret: stored, key: key, iv: iv, next: 0, exhausted: false, poisoned: false });
+    let aes_key: core::option::Option<ext::aes_gcm::Key> = core::option::None;
+    if (is_aes(suite)) {
+        let expanded: core::result::Result<ext::aes_gcm::Key, ext::aes_gcm::Error> = ext::aes_gcm::new(core::slice::View { values: key, start: 0, length: 16 });
+        if (core::result::is_err(expanded)) { return core::result::Err(Error::Derivation); }
+        aes_key = core::option::Some(core::result::unwrap(expanded));
+    }
+    return core::result::Ok(Traffic { suite: suite, secret: stored, key: key, aes_key: aes_key, iv: iv, next: 0, exhausted: false, poisoned: false });
 }
-pub fn sealer(secret: core::slice::View<u8>) -> core::result::Result<Sealer, Error> {
+pub fn sealer(suite: Suite, secret: core::slice::View<u8>) -> core::result::Result<Sealer, Error> {
     if (!valid(secret)) { return core::result::Err(Error::Bounds); }
     if (secret.length != 32) { return core::result::Err(Error::InvalidSecretLength); }
-    let made: core::result::Result<Traffic, Error> = derive(secret);
+    let made: core::result::Result<Traffic, Error> = derive(suite, secret);
     if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
     return core::result::Ok(Sealer { traffic: core::result::unwrap(made) });
 }
-pub fn opener(secret: core::slice::View<u8>) -> core::result::Result<Opener, Error> {
+pub fn opener(suite: Suite, secret: core::slice::View<u8>) -> core::result::Result<Opener, Error> {
     if (!valid(secret)) { return core::result::Err(Error::Bounds); }
     if (secret.length != 32) { return core::result::Err(Error::InvalidSecretLength); }
-    let made: core::result::Result<Traffic, Error> = derive(secret);
+    let made: core::result::Result<Traffic, Error> = derive(suite, secret);
     if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
     return core::result::Ok(Opener { traffic: core::result::unwrap(made) });
 }
@@ -73,9 +86,21 @@ impl Traffic {
         while (index < 8) { nonce[4 + index] ^= ((self.next >> ((7 - index) * 8)) & 255) as u8; index += 1; }
         return nonce;
     }
+    fn at_limit(&self) -> bool {
+        return self.exhausted || (is_aes(self.suite) && self.next >= AES_GCM_RECORD_LIMIT);
+    }
+    fn update_due(&self) -> bool {
+        if (self.at_limit()) { return true; }
+        if (is_aes(self.suite)) { return self.next >= AES_GCM_RECORD_LIMIT-1; }
+        return self.next == 18446744073709551615;
+    }
     fn advance(&self) {
-        if (self.next == 18446744073709551615) { self.exhausted = true; }
-        else { self.next += 1; }
+        if (is_aes(self.suite)) {
+            self.next += 1; if (self.next == AES_GCM_RECORD_LIMIT) { self.exhausted = true; }
+        } else {
+            if (self.next == 18446744073709551615) { self.exhausted = true; }
+            else { self.next += 1; }
+        }
     }
     fn update(&self) -> core::result::Result<i32, Error> {
         if (self.poisoned) { return core::result::Err(Error::Poisoned); }
@@ -83,25 +108,29 @@ impl Traffic {
             core::slice::View { values: self.secret, start: 0, length: 32 });
         if (core::result::is_err(expanded)) { return core::result::Err(Error::Derivation); }
         let next_secret: ext::tls_schedule::Secret = core::result::unwrap(expanded);
-        let made: core::result::Result<Traffic, Error> = derive(next_secret.view());
+        let made: core::result::Result<Traffic, Error> = derive(self.suite, next_secret.view());
         if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
         // Replacement is atomic with respect to every returned error. This
         // overwrites current fields but is not a secure-erasure guarantee.
         let replacement: Traffic = core::result::unwrap(made);
-        self.secret = replacement.secret; self.key = replacement.key; self.iv = replacement.iv;
+        self.secret = replacement.secret; self.key = replacement.key; self.aes_key = replacement.aes_key; self.iv = replacement.iv;
         self.next = 0; self.exhausted = false; return core::result::Ok(0);
     }
 }
 pub impl Sealer {
     pub fn borrow(&self) -> &Sealer { return self; }
     pub fn sequence(&self) -> u64 { return self.traffic.next; }
-    pub fn exhausted(&self) -> bool { return self.traffic.exhausted; }
+    pub fn exhausted(&self) -> bool { return self.traffic.at_limit(); }
+    pub fn suite(&self) -> Suite { return self.traffic.suite; }
+    // Query before sealing application data; reserve the last old-key record
+    // for KeyUpdate. This method neither sends nor performs the update.
+    pub fn key_update_due(&self) -> bool { return self.traffic.update_due(); }
     pub fn key_update(&self) -> core::result::Result<i32, Error> { return self.traffic.update(); }
     // Input and destination are disjoint, and both are disjoint from self.
     // Every returned error leaves destination and sequence unchanged.
     pub fn seal(&self, content: core::slice::View<u8>, content_type: u8, padding: i32, destination: core::slice::View<u8>) -> core::result::Result<i32, Error> {
         if (!valid(content) || !valid(destination)) { return core::result::Err(Error::Bounds); }
-        if (self.traffic.exhausted) { return core::result::Err(Error::Exhausted); }
+        if (self.traffic.at_limit()) { return core::result::Err(Error::Exhausted); }
         if (!content_type_valid(content_type)) { return core::result::Err(Error::InvalidType); }
         if (!content_length_valid(content_type, content.length)) { return core::result::Err(Error::InvalidContentLength); }
         if (padding < 0 || padding > MAX_CONTENT - content.length) { return core::result::Err(Error::InvalidPadding); }
@@ -117,16 +146,29 @@ pub impl Sealer {
         let nonce: [u8; 12] = self.traffic.nonce(); let body: core::slice::View<u8> = region(destination, 5, inner_length);
         // All AEAD preconditions are established above. Exact in-place body
         // encryption and the disjoint header/tag regions are supported.
-        core::result::unwrap(ext::chacha20_poly1305::seal_into(
-            core::slice::View { values: self.traffic.key, start: 0, length: 32 },
-            core::slice::View { values: nonce, start: 0, length: 12 }, region(destination, 0, 5), body, body, region(destination, 5 + inner_length, 16)));
+        if (is_aes(self.traffic.suite)) {
+            // Cached state is constructed with exactly16 key bytes; nonce12,
+            // tag16, supported body length and capacity are fixed/proven above.
+            // No AES error can be returned after the destination is staged.
+            let aes: ext::aes_gcm::Key = core::option::unwrap(self.traffic.aes_key);
+            core::result::unwrap(aes.seal_into(core::slice::View { values: nonce, start: 0, length: 12 },
+                region(destination, 0, 5), body, body, region(destination, 5 + inner_length, 16)));
+        } else {
+            core::result::unwrap(ext::chacha20_poly1305::seal_into(
+                core::slice::View { values: self.traffic.key, start: 0, length: 32 },
+                core::slice::View { values: nonce, start: 0, length: 12 }, region(destination, 0, 5), body, body, region(destination, 5 + inner_length, 16)));
+        }
         self.traffic.advance(); return core::result::Ok(total);
     }
 }
 pub impl Opener {
     pub fn borrow(&self) -> &Opener { return self; }
     pub fn sequence(&self) -> u64 { return self.traffic.next; }
-    pub fn exhausted(&self) -> bool { return self.traffic.exhausted; }
+    pub fn exhausted(&self) -> bool { return self.traffic.at_limit(); }
+    pub fn suite(&self) -> Suite { return self.traffic.suite; }
+    // Query before sealing application data; reserve the last old-key record
+    // for KeyUpdate. This method neither sends nor performs the update.
+    pub fn key_update_due(&self) -> bool { return self.traffic.update_due(); }
     pub fn is_poisoned(&self) -> bool { return self.traffic.poisoned; }
     pub fn key_update(&self) -> core::result::Result<i32, Error> { return self.traffic.update(); }
     // Bounds and undersized scratch are retryable. Malformed records, failed
@@ -138,7 +180,7 @@ pub impl Opener {
     pub fn open(&self, record: core::slice::View<u8>, scratch: core::slice::View<u8>) -> core::result::Result<Opened, Error> {
         if (!valid(record) || !valid(scratch)) { return core::result::Err(Error::Bounds); }
         if (self.traffic.poisoned) { return core::result::Err(Error::Poisoned); }
-        if (self.traffic.exhausted) { return core::result::Err(Error::Exhausted); }
+        if (self.traffic.at_limit()) { return core::result::Err(Error::Exhausted); }
         if (record.length < 5) { self.traffic.poisoned = true; return core::result::Err(Error::InvalidRecord); }
         let at: i32 = record.start;
         let length: i32 = ((record.values[at + 3] as i32) << 8) | (record.values[at + 4] as i32);
@@ -149,10 +191,17 @@ pub impl Opener {
         let inner_length: i32 = length - 16;
         if (scratch.length < inner_length) { return core::result::Err(Error::BufferTooSmall); }
         let nonce: [u8; 12] = self.traffic.nonce();
-        let opened: core::result::Result<i32, ext::chacha20_poly1305::Error> = ext::chacha20_poly1305::open_into(
-            core::slice::View { values: self.traffic.key, start: 0, length: 32 },
-            core::slice::View { values: nonce, start: 0, length: 12 }, region(record, 0, 5), region(record, 5, inner_length), region(record, 5 + inner_length, 16), scratch);
-        if (core::result::is_err(opened)) { self.traffic.poisoned = true; return core::result::Err(Error::Authentication); }
+        let authenticated: bool = false;
+        if (is_aes(self.traffic.suite)) {
+            let aes: ext::aes_gcm::Key = core::option::unwrap(self.traffic.aes_key);
+            authenticated = core::result::is_ok(aes.open_into(core::slice::View { values: nonce, start: 0, length: 12 },
+                region(record, 0, 5), region(record, 5, inner_length), region(record, 5 + inner_length, 16), scratch));
+        } else {
+            authenticated = core::result::is_ok(ext::chacha20_poly1305::open_into(
+                core::slice::View { values: self.traffic.key, start: 0, length: 32 },
+                core::slice::View { values: nonce, start: 0, length: 12 }, region(record, 0, 5), region(record, 5, inner_length), region(record, 5 + inner_length, 16), scratch));
+        }
+        if (!authenticated) { self.traffic.poisoned = true; return core::result::Err(Error::Authentication); }
         if (inner_length > MAX_INNER) { self.traffic.poisoned = true; return core::result::Err(Error::RecordOverflow); }
         let end: i32 = inner_length;
         while (end > 0 && scratch.values[scratch.start + end - 1] == 0) { end -= 1; }

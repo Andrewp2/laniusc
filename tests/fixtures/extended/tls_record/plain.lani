@@ -7,8 +7,8 @@ import ext::tls_record;
 import std::stream;
 fn main() -> i32 {
     let secret: [u8; 32] = [0; 32]; let secret_view: core::slice::View<u8> = core::slice::View { values: secret, start: 0, length: 32 };
-    let send: ext::tls_record::Sealer = core::result::unwrap(ext::tls_record::sealer(secret_view));
-    let receive: ext::tls_record::Opener = core::result::unwrap(ext::tls_record::opener(secret_view));
+    let send: ext::tls_record::Sealer = core::result::unwrap(ext::tls_record::sealer(ext::tls_record::Suite::ChaCha20Poly1305Sha256, secret_view));
+    let receive: ext::tls_record::Opener = core::result::unwrap(ext::tls_record::opener(ext::tls_record::Suite::ChaCha20Poly1305Sha256, secret_view));
     // Both constructors own their key material; no borrow of secret survives.
     let index: i32 = 0; while (index < 32) { secret[index] = 255; index += 1; }
     let message: [u8; 5] = [104, 101, 108, 108, 111]; let record: [u8; 64] = [165; 64]; let scratch: [u8; 64] = [166; 64];
