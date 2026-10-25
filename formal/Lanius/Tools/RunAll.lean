@@ -6,13 +6,13 @@ laniusc's parse trees, as native code rather than `#eval`'s interpreter.
 
     lake exe runAll MANIFEST
 
-Each manifest line is `compile NAME BASE...`, `dump NAME BASE...` or
-`diag NAME BASE...`, where a
-base names BASE.lani, BASE.prods and BASE.parents. `compile` prints NAME and
+Each manifest line is `compile NAME BASE...`, `dump NAME BASE...`,
+`diag NAME BASE...` or `validate NAME BASE...`, where a base names BASE.lani, BASE.prods and BASE.parents. `compile` prints NAME and
 nolex, tree (the grammar rejects the tree), unread (the builder rejects it),
 uncompiled (`compileSource` rejects it) or `image [entries] [bytes]`; `dump`
 prints NAME and, for each file, its tokens (kind:start:text), prods and
-parents, or nolex; `diag` says why `compileSource` rejects a program. -/
+parents, or nolex; `diag` says why `compileSource` rejects a program;
+`validate` prints ok or tree for each file. -/
 
 open Lanius.Mini
 
@@ -53,6 +53,16 @@ def compileLine (name : String) (bases : List String) : IO Unit := do
       match compileSource p with
       | none => IO.println s!"{name} uncompiled"
       | some b => IO.println s!"{name} image {b.entries} {b.image.map (·.toNat)}"
+
+/-- Whether the grammar accepts each file's tree: NAME and ok or tree. -/
+def validateLine (name : String) (bases : List String) : IO Unit := do
+  for b in bases do
+    match ← loadFile b with
+    | none => IO.println s!"{name} nolex"
+    | some f =>
+      match validateFiles grammar [f] with
+      | none => IO.println s!"{name} tree"
+      | some _ => IO.println s!"{name} ok"
 
 def dumpLine (name : String) (bases : List String) : IO Unit := do
   for b in bases do
@@ -110,6 +120,7 @@ def main (args : List String) : IO UInt32 := do
     | "compile" :: name :: bases => compileLine name bases
     | "dump" :: name :: bases => dumpLine name bases
     | "diag" :: name :: bases => diagLine name bases
+    | "validate" :: name :: bases => validateLine name bases
     | _ => IO.eprintln s!"bad manifest line: {line}"; return 2
     (← IO.getStdout).flush
   return 0

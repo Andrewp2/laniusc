@@ -3675,12 +3675,13 @@ pub fn lower_return_unit(ret: SrcType) -> core::option::Option<Stmt> {
     return None;
 }
 
-// assert(condition): the condition's code. Core traps when it is false, and
-// the theorem is about runs that return.
-pub fn lower_assert(condition: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
+// assert(condition): the condition's code, then 1 / condition into the same
+// slot, which has no run when the condition is false (on x86 the division
+// traps, as Core does), so a failed assert or a panic stops the program.
+pub fn lower_assert(condition: core::option::Option<Evaluated>, slot: usize) -> core::option::Option<Stmt> {
     return match (condition) {
         None -> None,
-        Some(c) -> eval_same(c, Bool, c.stmt),
+        Some(c) -> eval_same(c, Bool, Seq(boxed(c.stmt), boxed(Stmt::Divide(U64, UDiv, slot, Lit(1), Var(slot))))),
     };
 }
 
@@ -3726,7 +3727,7 @@ impl SrcStmt {
             SetIndexEval(slice, index, value) -> lower_set_index_eval(decls, next, lookup(scope, slice), index.eval(sigs, decls, scope, next), value.eval(sigs, decls, scope, plus(next, 1))),
             SetFieldEval(id, field, value) -> lower_set_field_eval(next, lookup(scope, id), field, value.eval(sigs, decls, scope, next)),
             ReturnUnit -> lower_return_unit(ret),
-            Assert(condition) -> lower_assert(condition.eval(sigs, decls, scope, next)),
+            Assert(condition) -> lower_assert(condition.eval(sigs, decls, scope, next), next),
         };
     }
 

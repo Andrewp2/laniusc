@@ -2897,11 +2897,11 @@ def lowerReturnUnit (ret : SrcType) : Option Stmt :=
   else
     none
 
-/-- assert(condition): the condition's code. Core traps when it is false, and the theorem is about runs that return. -/
-def lowerAssert (condition : Option Evaluated) : Option Stmt :=
+/-- assert(condition): the condition's code, then 1 / condition into the same slot, which has no run when the condition is false (on x86 the division traps, as Core does), so a failed assert or a panic stops the program. -/
+def lowerAssert (condition : Option Evaluated) (slot : Nat) : Option Stmt :=
   match condition with
   | none => none
-  | some c => evalSame c SrcType.bool c.stmt
+  | some c => evalSame c SrcType.bool (Stmt.seq c.stmt (Stmt.divide Word.u64 DivOp.uDiv slot (Expr.lit 1) (Expr.var slot)))
 
 def lowerSetIndexEval (decls : SrcDecls) (slot : Nat) (binding : Option Binding) (index : Option Evaluated) (value : Option Evaluated) : Option Stmt :=
   match binding with
@@ -2942,7 +2942,7 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : S
   | .setIndexEval slice index value => lowerSetIndexEval decls next (lookup scope slice) (SrcEff.eval index sigs decls scope next) (SrcEff.eval value sigs decls scope (next + 1))
   | .setFieldEval id field value => lowerSetFieldEval next (lookup scope id) field (SrcEff.eval value sigs decls scope next)
   | .returnUnit => lowerReturnUnit ret
-  | .assert condition => lowerAssert (SrcEff.eval condition sigs decls scope next)
+  | .assert condition => lowerAssert (SrcEff.eval condition sigs decls scope next) next
 
 /-- Slots the statement's lets need beyond the ones in scope. -/
 def SrcStmt.depth (self : SrcStmt) : Nat :=

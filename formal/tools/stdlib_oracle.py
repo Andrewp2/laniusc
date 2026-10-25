@@ -428,17 +428,14 @@ def wrapper_text(mods, t, part):
 
 # ---------------------------------------------------------------- laniusc's trees
 
-def parse_tree(laniusc, lani_path, workdir):
-    """laniusc's parse tree of one file: its node kinds and parents, or None.
+RUN_ALL = 'formal/.lake/build/bin/runAll'
 
-    laniusc parses the modules a file imports first, as one pack, then the
-    file: so the file's tree is the second capture of the parser's last pass
-    when it has imports, the first when it has none (a third, for generic
-    code, is laniusc's text after its own monomorphization)."""
-    has_imports = bool(re.search(r'^\s*import\s', strip_comments(open(lani_path).read()), re.M))
+
+def capture_tree(laniusc, lani_path, workdir, index):
+    """The parser's tree at one capture index, or None."""
     cap = os.path.join(workdir, 'cap')
     env = dict(os.environ, LANIUS_DEBUG_CAPTURE_PASS='parser/tree/parent_parallel', LANIUS_DEBUG_CAPTURE_DIR=cap,
-               LANIUS_DEBUG_CAPTURE_INDEX='1' if has_imports else '0')
+               LANIUS_DEBUG_CAPTURE_INDEX=str(index))
     shutil.rmtree(cap, ignore_errors=True)
     subprocess.run([HEAVY, '-t', '10', laniusc, '--stdlib-root', STDLIB, '-o', os.path.join(workdir, 'a.out'),
                     lani_path], env=env, capture_output=True, text=True)
@@ -446,9 +443,49 @@ def parse_tree(laniusc, lani_path, workdir):
     if not os.path.exists(status):
         return None
     count = front.words(status)[5]
+    if count == 0:
+        return None
     prods = front.words(os.path.join(cap, 'post', '006_node_kind.bin'))[:count]
     parents = front.words(os.path.join(cap, 'post', '007_parent.bin'))[:count]
     return prods, parents
+
+
+def accepted(lani_path, tree, workdir):
+    """Whether the verified validator accepts tree as lani_path's parse tree."""
+    if not os.path.exists(RUN_ALL):
+        env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
+        subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+                        'lake', 'build', 'runAll'], cwd='formal', env=env, capture_output=True, check=True)
+    base = os.path.join(workdir, 'candidate')
+    shutil.copy(lani_path, base + '.lani')
+    open(base + '.prods', 'w').write(' '.join(map(str, tree[0])))
+    open(base + '.parents', 'w').write(' '.join(map(str, tree[1])))
+    manifest = os.path.join(workdir, 'candidate.txt')
+    open(manifest, 'w').write(f'validate c {base}\n')
+    out = subprocess.run([RUN_ALL, manifest], capture_output=True, text=True).stdout
+    return out.strip() == 'c ok'
+
+
+def parse_tree(laniusc, lani_path, workdir):
+    """laniusc's parse tree of one file: its node kinds and parents, or None.
+
+    laniusc parses the modules a file imports first, as one or more packs,
+    then the file (a later capture, for generic code, is laniusc's text after
+    its own monomorphization). The captures are tried in order (the first
+    when the file has no imports, from the second when it has) and the first
+    tree the verified validator accepts for the file is its tree; when none
+    is, the first nonempty one is returned for the caller to reject."""
+    has_imports = bool(re.search(r'^\s*import\s', strip_comments(open(lani_path).read()), re.M))
+    first = None
+    for index in ([1, 2, 3, 0] if has_imports else [0]):
+        tree = capture_tree(laniusc, lani_path, workdir, index)
+        if tree is None:
+            continue
+        if first is None:
+            first = tree
+        if not has_imports or accepted(lani_path, tree, workdir):
+            return tree
+    return first
 
 
 # ---------------------------------------------------------------- Lean

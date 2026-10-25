@@ -1901,8 +1901,9 @@ theorem stmt_discard (ihe : EvalSound sp mp fuel) {value : SrcEff}
     exact ⟨fresh1, keeps1.lower le, d1, _, exec1, .next (corr.after fr fresh keeps1 locals1 same1) hc1⟩
   all_goals simp at run
 
-/-- `assert(condition)`: the condition's code. Core continues only when it
-is true. -/
+/-- `assert(condition)`: the condition's code, then `1 / condition` into the
+condition's slot. Core continues only when the condition is true, and then
+the division has a run. -/
 theorem stmt_assert (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {condition : SrcEff}
     (ok : (SrcStmt.assert condition).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
@@ -1917,6 +1918,7 @@ theorem stmt_assert (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {condition : SrcEf
   simp only [evalSame] at ok
   split at ok
   case isFalse => simp at ok
+  rename_i same
   simp only [Option.some.injEq] at ok
   subst ok
   simp only [SrcStmt.toCore, execStmt] at run
@@ -1930,14 +1932,26 @@ theorem stmt_assert (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {condition : SrcEf
       simp only [evalExpr] at assertRun
       split at assertRun
       · rename_i w mid condRun
-        have done : mid = st1 := by
+        have done : mid = st1 ∧ w = .boolean true := by
           split at assertRun
           all_goals (try simp only [Semantics.Outcome.done.injEq, reduceCtorEq] at assertRun)
           all_goals simp_all
-        subst done
-        obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, -, hc1⟩ :=
+        obtain ⟨rfl, rfl⟩ := done
+        obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1⟩ :=
           ihe k (Nat.le_succ _) condOk corr fr fresh hc condRun bound
-        exact ⟨fresh1, keeps1.lower le, d1, _, exec1, .next (corr.after fr fresh keeps1 locals1 same1) hc1⟩
+        rw [SrcType.same_eq same] at holds1
+        have one : env1 next = 1 := by
+          obtain ⟨b, hb, bits⟩ := holds_var holds1 rfl
+          simp only [Value.boolean.injEq] at hb
+          subst hb
+          simpa [Expr.eval, boolBits] using bits
+        have defined : Word.u64.divides DivOp.uDiv ((Expr.lit 1).eval env1) ((Expr.var next).eval env1) = true := by
+          simp [Expr.eval, one, Word.divides, DivOp.defined]
+        have below : ∀ j < next, (env1.set next (Word.u64.divide DivOp.uDiv ((Expr.lit 1).eval env1)
+            ((Expr.var next).eval env1))) j = env j := fun j lt => by
+          rw [set_below lt, same1 j lt]
+        exact ⟨fresh1, keeps1.lower le, d1, _, .seq exec1 (.divide defined),
+          .next (corr.after fr fresh keeps1 locals1 below) hc1⟩
       all_goals simp at assertRun
   all_goals simp at run
 
