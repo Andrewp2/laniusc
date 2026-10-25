@@ -1,4 +1,4 @@
-// TLS 1.3 full-DHE Ed25519/X25519/P-256/SHA256/SHA384 negotiation, RFC8446 4/9.
+// TLS 1.3 full-DHE suite/group and explicit signature policies, RFC8446 4/9.
 // Borrowed views require live immutable backing. No transcript or key schedule.
 module ext::tls_negotiation;
 import core::iter;
@@ -7,6 +7,7 @@ import core::option;
 import core::result;
 import core::slice;
 import ext::service_identity;
+import ext::signature;
 import ext::tls_handshake;
 import ext::tls_suite;
 
@@ -17,7 +18,7 @@ pub enum Group { X25519, Secp256r1 }
 pub struct GroupPolicy { preferred:Group, fallback:core::option::Option<Group> }
 pub struct KeyShare { group:Group, data:core::slice::View<u8> }
 pub struct Offer { hello:ext::tls_handshake::ClientHello, groups:core::slice::View<u8>, signatures:core::slice::View<u8>, certificate_signatures:core::slice::View<u8>, key_shares:core::slice::View<u8>, server_name:core::slice::View<u8>, alpn:core::slice::View<u8>, cookie:core::slice::View<u8>, has_server_name:bool, has_alpn:bool }
-pub struct Selection { suite:u16, group:Group, signature:u16, peer_key:core::slice::View<u8> }
+pub struct Selection { suite:u16, group:Group, peer_key:core::slice::View<u8> }
 pub struct Retry { suite:u16, requested:core::option::Option<Group>, cookie:core::slice::View<u8> }
 pub enum Decision { Selected(Selection), Retry(Retry) }
 pub fn group_id(group:Group)->u16{return match(group){Group::X25519->29,Group::Secp256r1->23};}
@@ -104,13 +105,23 @@ fn canonical(offer:Offer,b:&Budget)->core::result::Result<Offer,Error>{return in
 fn find_share(offer:Offer,group:Group)->core::option::Option<KeyShare>{let at:i32=0;while(at<offer.key_shares.length){let id:u16=word(offer.key_shares,at);let n:i32=word(offer.key_shares,at+2) as i32;if(id==group_id(group)){return core::option::Some(KeyShare{group:group,data:region(offer.key_shares,at+4,n)});}at+=4+n;}return core::option::None();}
 fn usable_share(offer:Offer)->bool{return find_share(offer,Group::X25519).is_some()||find_share(offer,Group::Secp256r1).is_some();}
 pub fn key_share(offer:Offer,group:Group,b:&Budget)->core::result::Result<core::option::Option<KeyShare>,Error>{let checked:core::result::Result<Offer,Error> = canonical(offer,b);if(checked.is_err()){return core::result::Err(checked.unwrap_err());}return core::result::Ok(find_share(checked.unwrap(),group));}
+// Own the recognized policy derived from the actual hello. Descriptive Offer
+// views cannot grant permission; certificate use selects the ext50/fallback list.
+// Unknown peer IDs and IDs inappropriate for this use grant no permission.
+pub fn signature_policy(offer:Offer,use:ext::signature::Use,b:&Budget)->core::result::Result<ext::signature::Policy,Error>{
+    let checked:core::result::Result<Offer,Error> = canonical(offer,b);if(checked.is_err()){return core::result::Err(checked.unwrap_err());}let o:Offer=checked.unwrap();
+    let offered:core::slice::View<u8> = o.signatures;if(match(use){ext::signature::Use::Certificate->true,ext::signature::Use::CertificateVerify->false}){offered=o.certificate_signatures;}
+    let charged:core::result::Result<i32,Error> = work(b,8*(offered.length as u64)+32);if(charged.is_err()){return core::result::Err(charged.unwrap_err());}
+    let result:ext::signature::Policy=ext::signature::Policy{order:[0;4],length:0};let at:i32=0;
+    while(at<offered.length){let id:u16=word(offered,at);if(ext::signature::tls_scheme(id,use).is_ok()){let found:bool=false;let i:i32=0;while(i<result.length){if(result.order[i]==id){found=true;}i+=1;}if(!found){result.order[result.length]=id;result.length+=1;}}at+=2;}
+    if(result.length==0){return core::result::Err(Error::NoSignature);}return core::result::Ok(result);
+}
 pub fn choose(offer:Offer,suites:ext::tls_suite::Policy,policy:GroupPolicy,b:&Budget)->core::result::Result<Decision,Error>{
     let checked:core::result::Result<Offer,Error> = canonical(offer,b);if(checked.is_err()){return core::result::Err(checked.unwrap_err());}let o:Offer=checked.unwrap();let checked_policy:core::result::Result<i32,Error> = validate_policy(policy);if(checked_policy.is_err()){return core::result::Err(checked_policy.unwrap_err());}if(ext::tls_suite::validate_policy(suites).is_err()){return core::result::Err(Error::NoSuite);}
     let suite:u16=0;let at:i32=0;while(at<suites.length&&suite==0){let id:u16=ext::tls_suite::id(suites.order[at]);if(contains(o.hello.cipher_suites,id)){suite=id;}at+=1;}if(suite==0){return core::result::Err(Error::NoSuite);}
     let group:Group=policy.preferred;if(!contains(o.groups,group_id(group))){if(policy.fallback.is_none()){return core::result::Err(Error::NoGroup);}group=policy.fallback.unwrap();if(!contains(o.groups,group_id(group))){return core::result::Err(Error::NoGroup);}}
-    if(!contains(o.signatures,2055)||!contains(o.certificate_signatures,2055)){return core::result::Err(Error::NoSignature);}
     let share:core::option::Option<KeyShare> = find_share(o,group);if(share.is_none()){return core::result::Ok(Decision::Retry(Retry{suite:suite,requested:core::option::Some(group),cookie:region(o.cookie,0,0)}));}
-    return core::result::Ok(Decision::Selected(Selection{suite:suite,group:group,signature:2055,peer_key:share.unwrap().data}));
+    return core::result::Ok(Decision::Selected(Selection{suite:suite,group:group,peer_key:share.unwrap().data}));
 }
 fn extension_present(raw:core::slice::View<u8>,kind:u16)->bool{let i:i32=0;while(i<raw.length){if(word(raw,i)==kind){return true;}i+=4+(word(raw,i+2) as i32);}return false;}
 pub fn check_server_hello(offer:Offer,hello:ext::tls_handshake::ServerHello,prior:core::option::Option<Retry>,b:&Budget)->core::result::Result<Decision,Error>{
@@ -128,10 +139,10 @@ pub fn check_server_hello(offer:Offer,hello:ext::tls_handshake::ServerHello,prio
         else{if(e.kind==44&&retry){if(d.length<3||word(d,0) as i32!=d.length-2){return core::result::Err(Error::InvalidExtension);}cookie=region(d,2,d.length-2);}
         else{if(e.kind==41||e.kind==42){return core::result::Err(Error::UnsupportedFeature);}if(!extension_present(o.hello.extensions,e.kind)){return core::result::Err(Error::Unoffered);}return core::result::Err(Error::InvalidExtension);}}}
     }}
-    if(!version){return core::result::Err(Error::MissingExtension);}if(!contains(o.signatures,2055)||!contains(o.certificate_signatures,2055)){return core::result::Err(Error::NoSignature);}
+    if(!version){return core::result::Err(Error::MissingExtension);}
     if(retry){if(group.is_none()&&cookie.length==0){return core::result::Err(Error::Retry);}if(group.is_none()&&!usable_share(o)){return core::result::Err(Error::NoGroup);}return core::result::Ok(Decision::Retry(Retry{suite:hello.cipher_suite,requested:group,cookie:cookie}));}
     if(group.is_none()){return core::result::Err(Error::MissingExtension);}let selected:Group=group.unwrap();if(prior.is_some()&&prior.unwrap().requested.is_some()&&group_id(prior.unwrap().requested.unwrap())!=group_id(selected)){return core::result::Err(Error::Retry);}
-    return core::result::Ok(Decision::Selected(Selection{suite:hello.cipher_suite,group:selected,signature:2055,peer_key:key}));
+    return core::result::Ok(Decision::Selected(Selection{suite:hello.cipher_suite,group:selected,peer_key:key}));
 }
 fn next_unchanged(raw:core::slice::View<u8>,at:i32)->i32{let i:i32=at;let done:bool=false;while(i<raw.length&&!done){let k:u16=word(raw,i);if(k==21||k==44){i+=4+(word(raw,i+2) as i32);}else{done=true;}}return i;}
 pub fn check_second_client_hello(first:Offer,retry:Retry,second:ext::tls_handshake::ClientHello,b:&Budget)->core::result::Result<Offer,Error>{
@@ -173,16 +184,16 @@ fn put(out:core::slice::View<u8>,at:i32,n:u16){out.values[out.start+at]=(n>>8) a
 fn copy(out:core::slice::View<u8>,at:i32,input:core::slice::View<u8>){let i:i32=0;while(i<input.length){out.values[out.start+at+i]=byte(input,i);i+=1;}}
 fn header(out:core::slice::View<u8>,at:i32,kind:u16,n:i32){put(out,at,kind);put(out,at+2,n as u16);}
 fn writer_ready(out:core::slice::View<u8>,n:i32,b:&Budget)->core::result::Result<i32,Error>{if(n>65535){return core::result::Err(Error::InvalidExtension);}if(out.length<n){return core::result::Err(Error::BufferTooSmall);}return prepare(b,n as u64,8);}
-pub fn write_client_extensions(policy:GroupPolicy,share:core::option::Option<KeyShare>,server_name_value:core::slice::View<u8>,alpn:core::slice::View<u8>,cookie:core::slice::View<u8>,output:core::slice::View<u8>,b:&Budget)->core::result::Result<i32,Error>{
+pub fn write_client_extensions(policy:GroupPolicy,proofs:ext::signature::Policy,certificates:core::option::Option<ext::signature::Policy>,share:core::option::Option<KeyShare>,server_name_value:core::slice::View<u8>,alpn:core::slice::View<u8>,cookie:core::slice::View<u8>,output:core::slice::View<u8>,b:&Budget)->core::result::Result<i32,Error>{
     if(!valid(server_name_value)||!valid(alpn)||!valid(cookie)||!valid(output)){return core::result::Err(Error::Bounds);}if(share.is_some()&&!valid(share.unwrap().data)){return core::result::Err(Error::Bounds);}
-    let checked:core::result::Result<i32,Error> = validate_policy(policy);if(checked.is_err()){return checked;}if(server_name_value.length>253||alpn.length>65533||cookie.length>65533){return core::result::Err(Error::InvalidExtension);}if(share.is_some()&&(!policy_has(policy,share.unwrap().group)||!share_shape(share.unwrap().group,share.unwrap().data))){return core::result::Err(Error::InvalidExtension);}
-    let groups:i32=2;if(policy.fallback.is_some()){groups=4;}let n:i32=35+groups;if(share.is_some()){n+=4+share.unwrap().data.length;}if(server_name_value.length!=0){n+=9+server_name_value.length;}if(alpn.length!=0){n+=6+alpn.length;}if(cookie.length!=0){n+=6+cookie.length;}
+    let checked:core::result::Result<i32,Error> = validate_policy(policy);if(checked.is_err()){return checked;}if(ext::signature::validate_policy(proofs,ext::signature::Use::CertificateVerify).is_err()){return core::result::Err(Error::NoSignature);}if(certificates.is_some()&&ext::signature::validate_policy(certificates.unwrap(),ext::signature::Use::Certificate).is_err()){return core::result::Err(Error::NoSignature);}if(server_name_value.length>253||alpn.length>65533||cookie.length>65533){return core::result::Err(Error::InvalidExtension);}if(share.is_some()&&(!policy_has(policy,share.unwrap().group)||!share_shape(share.unwrap().group,share.unwrap().data))){return core::result::Err(Error::InvalidExtension);}
+    let groups:i32=2;if(policy.fallback.is_some()){groups=4;}let n:i32=25+groups+2*proofs.length;if(certificates.is_some()){n+=6+2*certificates.unwrap().length;}if(share.is_some()){n+=4+share.unwrap().data.length;}if(server_name_value.length!=0){n+=9+server_name_value.length;}if(alpn.length!=0){n+=6+alpn.length;}if(cookie.length!=0){n+=6+cookie.length;}
     let ready:core::result::Result<i32,Error> = writer_ready(output,n,b);if(ready.is_err()){return ready;}
     if(server_name_value.length!=0&&!host_name(server_name_value)){return core::result::Err(Error::Sni);}if(alpn.length!=0&&!check_alpn(alpn)){return core::result::Err(Error::Alpn);}
     header(output,0,43,3);output.values[output.start+4]=2;put(output,5,772);
     header(output,7,10,2+groups);put(output,11,groups as u16);put(output,13,group_id(policy.preferred));if(policy.fallback.is_some()){put(output,15,group_id(policy.fallback.unwrap()));}
-    let at:i32=13+groups;header(output,at,13,4);put(output,at+4,2);put(output,at+6,2055);at+=8;
-    header(output,at,50,4);put(output,at+4,2);put(output,at+6,2055);at+=8;
+    let at:i32=13+groups;header(output,at,13,2+2*proofs.length);put(output,at+4,(2*proofs.length) as u16);let i:i32=0;while(i<proofs.length){put(output,at+6+2*i,proofs.order[i]);i+=1;}at+=6+2*proofs.length;
+    if(certificates.is_some()){let cert:ext::signature::Policy=certificates.unwrap();header(output,at,50,2+2*cert.length);put(output,at+4,(2*cert.length) as u16);i=0;while(i<cert.length){put(output,at+6+2*i,cert.order[i]);i+=1;}at+=6+2*cert.length;}
     let key_length:i32=0;if(share.is_some()){key_length=4+share.unwrap().data.length;}header(output,at,51,2+key_length);put(output,at+4,key_length as u16);at+=6;
     if(share.is_some()){let k:KeyShare=share.unwrap();put(output,at,group_id(k.group));put(output,at+2,k.data.length as u16);copy(output,at+4,k.data);at+=4+k.data.length;}
     if(server_name_value.length!=0){header(output,at,0,5+server_name_value.length);put(output,at+4,(3+server_name_value.length) as u16);output.values[output.start+at+6]=0;put(output,at+7,server_name_value.length as u16);copy(output,at+9,server_name_value);at+=9+server_name_value.length;}

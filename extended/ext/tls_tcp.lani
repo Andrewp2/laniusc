@@ -9,6 +9,7 @@ import core::option;
 import core::result;
 import core::slice;
 import core::time;
+import ext::signature;
 import ext::tls_connection;
 import ext::tls_suite;
 import ext::x509_path;
@@ -140,6 +141,11 @@ fn acquired_failure(e: Error, owned: &Storage, poll: core::option::Option<std::p
 fn attach(socket: &std::socket::Socket, client: core::option::Option<ext::tls_connection::ClientConfig>, server: core::option::Option<ext::tls_connection::ServerConfig>, deadline: core::time::Deadline, budget: &HostBudget) -> core::result::Result<Connection, Failure> {
     let suites: ext::tls_suite::Policy = ext::tls_suite::default_policy(); if (client.is_some()) { suites = client.unwrap().suites; } else { suites = server.unwrap().suites; }
     if (ext::tls_suite::validate_policy(suites).is_err()) { return core::result::Err(failure(Error::Engine(ext::tls_connection::Error::InvalidConfig))); }
+    if (client.is_some()) {
+        let config: ext::tls_connection::ClientConfig = client.unwrap();
+        if (ext::signature::validate_policy(config.proofs,ext::signature::Use::CertificateVerify).is_err()) { return core::result::Err(failure(Error::Engine(ext::tls_connection::Error::InvalidConfig))); }
+        if (config.certificates.is_some()) { if (ext::signature::validate_policy(config.certificates.unwrap(),ext::signature::Use::Certificate).is_err()) { return core::result::Err(failure(Error::Engine(ext::tls_connection::Error::InvalidConfig))); } }
+    }
     let layout: core::result::Result<ext::tls_connection::EntropyLayout, ext::tls_connection::Error> = core::result::Err(ext::tls_connection::Error::InvalidConfig);
     if (client.is_some()) { layout = ext::tls_connection::entropy_layout(client.unwrap().groups); } else { layout = ext::tls_connection::entropy_layout(server.unwrap().groups); }
     if (layout.is_err()) { return core::result::Err(failure(Error::Engine(layout.unwrap_err()))); }

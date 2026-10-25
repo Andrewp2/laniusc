@@ -3,6 +3,8 @@ and OpenSSL AEAD plus hashlib/hmac check every emitted handshake/record byte.
 It observes two Lanius engines; independent TCP/OpenSSL interoperability is a
 separate gate. This diagnostic protocol deliberately exposes test secrets.
 """
+import calendar
+import datetime
 import ctypes
 import ctypes.util
 import hashlib
@@ -208,9 +210,58 @@ def public_key(policy, group):
     return public.raw
 
 
+def offered_policies(profile):
+    proofs = (2055,1027,2052) if profile in (1,3,8) else (1027,) if profile==4 else (2055,)
+    certificates = None if profile in (2,3,10) else (2055,1027,2052,1025) if profile in (1,4,8) else (1025,) if profile==6 else (1027,) if profile==7 else (2055,)
+    return proofs,certificates
+
+
+def check_offers(ch, profile):
+    proofs, certificates = offered_policies(profile)
+    encode=lambda ns:U16(2*len(ns))+b''.join(U16(n) for n in ns)
+    assert ch['extensions'][13]==encode(proofs)
+    if certificates is None:
+        assert 50 not in ch['extensions']
+    else:
+        assert ch['extensions'][50]==encode(certificates)
+
+
+class MixedChain:
+    # OpenSSL is an independent certificate/issuer-signature oracle. The real
+    # local leaf remains the RFC8032 Ed25519 seed; issuer family is unrelated.
+    openssl=material.Chain.openssl
+    def __init__(self,folder,family):
+        self.folder=folder; folder.mkdir(); config=folder/'config.ini'
+        config.write_text('[req]\nprompt=no\ndistinguished_name=dn\n[dn]\nCN=TLS mixed issuer\n[root]\nbasicConstraints=critical,CA:TRUE,pathlen:8\nkeyUsage=critical,keyCertSign,cRLSign\nsubjectKeyIdentifier=hash\n[leaf]\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid:always\nsubjectAltName=DNS:server.example\n')
+        key=folder/'issuer.key'; root=folder/'root.pem'; leafkey=folder/'leaf.key'; leaf=folder/'leaf.pem'; csr=folder/'leaf.csr'
+        if family=='ecdsa':
+            material.command(['genpkey','-algorithm','EC','-pkeyopt','ec_paramgen_curve:prime256v1','-out',key])
+        else:
+            material.command(['genpkey','-algorithm','RSA','-pkeyopt','rsa_keygen_bits:2048','-out',key])
+        options=['-sha256']
+        if family=='pss':options+=['-sigopt','rsa_padding_mode:pss','-sigopt','rsa_pss_saltlen:32','-sigopt','rsa_mgf1_md:sha256']
+        material.command(['req','-new','-x509','-key',key,'-config',config,'-extensions','root','-subj','/CN=Mixed issuer root','-days','2','-set_serial','100','-out',root]+options)
+        raw=folder/'leaf.key.der'; raw.write_bytes(bytes.fromhex('302e020100300506032b657004220420')+material.LEAF_SEED)
+        material.command(['pkey','-inform','DER','-in',raw,'-out',leafkey])
+        material.command(['req','-new','-key',leafkey,'-config',config,'-subj','/CN=server.example','-out',csr])
+        material.command(['x509','-req','-in',csr,'-CA',root,'-CAkey',key,'-set_serial','400','-days','2','-extfile',config,'-extensions','leaf','-out',leaf]+options)
+        self.root=material.command(['x509','-in',root,'-outform','DER'])
+        self.chain=[material.command(['x509','-in',leaf,'-outform','DER'])]
+        dates=[]
+        for pem in [root,leaf]:
+            text=material.command(['x509','-in',pem,'-startdate','-noout']).decode().strip().split('=',1)[1]
+            dates.append(calendar.timegm(datetime.datetime.strptime(text,'%b %d %H:%M:%S %Y %Z').timetuple()))
+        self.now=max(dates)+1; self.checked_paths={}
+        assert self.openssl(self.chain,self.root,b'server.example',self.now)
+        # Independent subject key bytes, without assuming the issuer family.
+        public=material.command(['pkey','-in',leafkey,'-pubout','-outform','DER'])
+        assert public==bytes.fromhex('302a300506032b6570032100')+material.PUBLIC
+
+
 class Peer:
-    def __init__(self, chain, suite, retry, client_policy, server_policy, initial, client_suites, server_suites):
+    def __init__(self, chain, suite, retry, client_policy, server_policy, initial, client_suites, server_suites, profile=0):
         self.chain, self.retry = chain, retry
+        self.profile = profile
         self.client_suites, self.server_suites = client_suites, server_suites
         self.suite = next(s for s in server_suites if s in client_suites)
         assert self.suite == (4867, 4865, 4866)[suite]
@@ -248,7 +299,7 @@ class Peer:
             assert ch['suite'] == expected
             ext = ch['extensions']
             assert ext[43] == b'\x02\x03\x04' and ext[10] == U16(2*len(self.client_policy))+b''.join(U16(g) for g in self.client_policy)
-            assert ext[13] == ext[50] == b'\0\x02\x08\x07'
+            check_offers(ch,self.profile)
             assert ext[16] == b'\0\x03\x02h2' and ext[0].endswith(b'server.example')
             if self.ch1 is None:
                 assert 44 not in ext
@@ -371,7 +422,11 @@ class Peer:
             assert self.finished == [True, True] and not self.partial[side]
             self.data[side] += content
         elif kind == 21:
-            assert content == b'\x01\0' and self.finished == [True, True]
+            if self.profile in (12,13):
+                assert side == 1 and content == b'\x02\x50' and self.finished == [False, False]
+                assert self.messages == [[1], [2, 8, 11]] and self.partial == [b'', b'']
+            else:
+                assert content == b'\x01\0' and self.finished == [True, True]
             self.closed[side] = True
         else:
             raise AssertionError(('unexpected inner type', kind))
@@ -418,12 +473,32 @@ def run(mode, executable):
             # Client preference deliberately has a different hash from actual SH.
             cases = [(short,2,1,layout,1,(29,23),(23,29),29,(4867,4866,4865),(4866,)) for layout in (0,1)]
             cases += [(short,2,2,layout,1,(group,),(group,),group,(4865,4866),(4866,4865)) for layout,group in [(0,29),(1,23)]]
+        elif mode == 'signing-limits':
+            # The endpoint caps its existing shared verification allowance only
+            # after the real Certificate record has fully reached its peer.
+            # Exact credit signs a full proof; one less emits only a fatal alert.
+            cases = [(short,suite,0,layout,1,(29,),(29,),29,(suite_id,),(suite_id,),profile)
+                     for suite,suite_id in [(0,4867),(2,4866)]
+                     for layout in (0,1) for profile in (11,12)]
+        elif mode == 'signing-protocol-limits':
+            cases = [(short,suite,0,layout,1,(29,),(29,),29,(suite_id,),(suite_id,),profile)
+                     for suite,suite_id in [(0,4867),(2,4866)]
+                     for layout in (0,1) for profile in (13,14,15)]
+        elif mode in ('signatures','signature-policies'):
+            rsa=MixedChain(base/'rsa','rsa'); ec=MixedChain(base/'ec','ecdsa'); pss=MixedChain(base/'pss','pss')
+            if mode=='signatures':
+                cases=[(chain,suite,0,layout,1,(29,),(29,),29,((4867,4865) if suite==0 else (4865,4867) if suite==1 else (4866,)),((4867,4865) if suite==0 else (4865,4867) if suite==1 else (4866,)),1) for chain,suite in [(rsa,0),(ec,1),(pss,2)] for layout in (0,1)]
+            else:
+                cases=[(short,0,0,layout,1,(29,),(29,),29,(4867,),(4867,),2) for layout in (0,1)]
+                cases += [(rsa,0,0,0,1,(29,),(29,),29,(4867,),(4867,),6),(ec,1,0,1,1,(29,),(29,),29,(4865,),(4865,),7),(ec,0,0,0,1,(29,),(29,),29,(4867,),(4867,),3),(rsa,0,0,1,1,(29,),(29,),29,(4867,),(4867,),8)]
+                cases += [(chain,0,0,layout,1,(29,),(29,),29,(4867,),(4867,),profile) for chain,profile in [(short,4),(rsa,5),(rsa,10),(ec,5)] for layout in (0,1)]
         else:
             raise AssertionError(mode)
         cases = [(*case, ((4867, 4865) if case[1] == 0 else (4865, 4867)), ((4867, 4865) if case[1] == 0 else (4865, 4867))) if len(case)==8 else case for case in cases]
+        cases=[(*case,0) if len(case)==10 else case for case in cases]
         source = Q(len(cases))
-        for chain, suite, retry, layout, split, cp, sp, initial, cs, ss in cases:
-            source += Q(layout, suite, retry, split, chain.now, len(chain.root), len(chain.chain), int(chain is not short), cp[0], cp[1] if len(cp)>1 else 0, sp[0], sp[1] if len(sp)>1 else 0, initial, *(cs+(4867,)*3)[:3], len(cs), *(ss+(4867,)*3)[:3], len(ss))
+        for chain, suite, retry, layout, split, cp, sp, initial, cs, ss, profile in cases:
+            source += Q(layout, suite, retry, split, chain.now, len(chain.root), len(chain.chain), int(chain is not short), cp[0], cp[1] if len(cp)>1 else 0, sp[0], sp[1] if len(sp)>1 else 0, initial, *(cs+(4867,)*3)[:3], len(cs), *(ss+(4867,)*3)[:3], len(ss),profile)
             source += chain.root+b''.join(Q(len(cert))+cert for cert in chain.chain)
         trace = base/'memory.trace'
         result = subprocess.run(['strace', '-qq', '-o', str(trace), '-e', 'trace=mmap,munmap,mremap,brk', '-e', 'signal=none', executable], input=source, capture_output=True, timeout=45)
@@ -439,9 +514,17 @@ def run(mode, executable):
         released = re.fullmatch(r'munmap\((0x[0-9a-f]+), (\d+)\)\s+= 0', lines[1])
         assert released and released[1] == allocated[3] and released[2] == allocated[1], lines
         reader = Reader(result.stdout)
-        for number, (chain, suite, retry, layout, split, cp, sp, initial, cs, ss) in enumerate(cases):
-            assert reader.word() == 10 and reader.word() == number
-            peer, witness = Peer(chain, suite, retry, cp, sp, initial, cs, ss), 0
+        for number, (chain, suite, retry, layout, split, cp, sp, initial, cs, ss, profile) in enumerate(cases):
+            tag=reader.word(); assert reader.word()==number
+            if profile in (4,5,10):
+                assert tag==20
+                packet,alert=reader.block(),reader.block(); assert packet[:3]==b'\x16\x03\x01' and int.from_bytes(packet[3:5],'big')==len(packet)-5
+                check_offers(hello(packet[5:]),profile)
+                assert alert==b'\x15\x03\x03\x00\x02\x02\x2f' and reader.word()==10
+                continue
+            assert tag==10
+            peer, witness = Peer(chain, suite, retry, cp, sp, initial, cs, ss,profile), 0
+            signing_witness = 0
             while True:
                 tag = reader.word()
                 if tag == 1:
@@ -451,6 +534,39 @@ def run(mode, executable):
                 elif tag == 3:
                     assert reader.word() > 0
                     witness += 1
+                elif tag == 4:
+                    assert profile in (11,12) and signing_witness == 0
+                    allowance, remaining, before, after = [reader.word() for _ in range(4)]
+                    assert before > 0 and peer.messages == [[1], [2,8,11]]
+                    if profile == 11:
+                        assert allowance == 67108864 and remaining == 0 and after == before-1
+                    else:
+                        assert allowance == remaining == 67108863 and after == before
+                        peer.record(1,reader.block())
+                    signing_witness += 1
+                elif tag == 5:
+                    assert profile in (12,13,14,15) and signing_witness == 1 and witness == 0
+                    assert peer.finished == [False,False] and peer.closed == [False,profile in (12,13)]
+                    assert peer.messages == [[1], [2,8,11]] and peer.data == [b'',b'']
+                    break
+                elif tag == 6:
+                    assert profile in (13,14,15) and signing_witness == 0
+                    allowance, remaining, before_work, after_work, before_attempts, after_attempts = [reader.word() for _ in range(6)]
+                    proof, alert = reader.block(), reader.block()
+                    assert before_work > 67108864 and before_attempts > 0
+                    assert peer.messages == [[1], [2,8,11]]
+                    required = 1048576 + (2*16384+12288+32*(128+48)+8768 if peer.hashlen == 48 else 0)
+                    assert allowance == required+profile-14
+                    if profile == 13:
+                        fatal_cost = 1040+(262144 if peer.hashlen == 48 else 0)
+                        assert remaining == allowance-fatal_cost and after_work == before_work and after_attempts == before_attempts and proof == b''
+                        peer.record(1,alert)
+                    else:
+                        assert remaining == profile-14 and after_work == before_work-67108864 and after_attempts == before_attempts-1 and alert == b''
+                        assert proof[:8] == b'\x0f\x00\x00\x44\x08\x07\x00\x40' and len(proof) == 72
+                        signed = b' '*64+b'TLS 1.3, server CertificateVerify\0'+peer.H(peer.transcript)
+                        assert material.verify(material.PUBLIC,signed,proof[8:]) and proof[8:] == material.sign(signed)
+                    signing_witness += 1
                 else:
                     assert tag == 0
                     key, exporter = reader.block(), reader.block()
@@ -460,6 +576,7 @@ def run(mode, executable):
                     stats = [reader.word() for _ in range(6)]
                     assert reader.word() == witness
                     peer.finish(key, exporter, published_groups, published_suites, maximum_export, update_cost, zero_cost, quota_rejected, stats, witness)
+                    assert signing_witness == (1 if profile == 11 else 0)
                     break
         assert reader.at == len(reader.data)
     print(f'tls connection {mode}: accepted')

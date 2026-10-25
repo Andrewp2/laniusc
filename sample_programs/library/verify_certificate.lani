@@ -1,4 +1,5 @@
-// Explicit-anchor Ed25519 certificate path, service identity and UTC checks.
+// Explicit-anchor certificate path, service identity and UTC checks.
+// Multi-algorithm caller migration pending admission; see the application guide.
 // No implicit trust store, host clock, network lookup or TLS transcript claim.
 module app::main;
 import alloc::io;
@@ -11,6 +12,7 @@ import core::result;
 import core::slice;
 import ext::der;
 import ext::service_identity;
+import ext::signature;
 import ext::x509_path;
 import std::args;
 import std::file;
@@ -82,7 +84,7 @@ fn validate(input:&alloc::io::Buffer,anchor_length:i32,identity:ext::service_ide
     let budget_result:core::result::Result<ext::x509_path::Budget,ext::x509_path::Error> = ext::x509_path::budget(ext::x509_path::default_limits());
     if(budget_result.is_err()){return path_status(budget_result.unwrap_err());}let budget:ext::x509_path::Budget=budget_result.unwrap();
     let checked:core::result::Result<ext::x509_path::ValidatedServer,ext::x509_path::Error> = ext::x509_path::validate_server(
-        core::slice::View{values:chain,start:0,length:count},core::slice::View{values:anchors,start:0,length:1},identity,time,
+        core::slice::View{values:chain,start:0,length:count},core::slice::View{values:anchors,start:0,length:1},identity,time,ext::signature::default_certificates(),
         core::slice::View{values:scratch,start:0,length:9},budget.borrow());
     if(checked.is_err()){return path_status(checked.unwrap_err());}
     // Only this complete path+identity+time result authorizes publication.

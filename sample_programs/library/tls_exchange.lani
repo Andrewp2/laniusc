@@ -12,6 +12,7 @@ import core::slice;
 import core::time;
 import ext::der;
 import ext::service_identity;
+import ext::signature;
 import ext::tls_connection;
 import ext::tls_negotiation;
 import ext::tls_suite;
@@ -234,7 +235,7 @@ fn client_session(socket:&std::socket::Socket,anchor:&alloc::io::Buffer,input:&a
     let server_name:core::slice::View<u8> = view(reference.bytes,0,0);if(dns){let candidate:core::slice::View<u8> = view(reference.bytes,0,reference.length);
         let numeric:core::result::Result<core::net::IpAddr,core::net::Error> = core::net::parse_ip(candidate);if(numeric.is_err()){server_name.length=reference.length;}}
     let config:ext::tls_connection::ClientConfig=ext::tls_connection::ClientConfig{anchors:core::slice::View{values:anchors,start:0,length:1},reference:reference,unix_time:utc,server_name:server_name,
-        alpn:view(reference.bytes,0,0),require_alpn:false,suites:ext::tls_suite::default_policy(),groups:ext::tls_negotiation::default_groups(),initial_share:core::option::Some(ext::tls_negotiation::Group::X25519),limits:ext::tls_connection::default_limits()};
+        alpn:view(reference.bytes,0,0),require_alpn:false,proofs:ext::signature::default_proofs(),certificates:core::option::Some(ext::signature::default_certificates()),suites:ext::tls_suite::default_policy(),groups:ext::tls_negotiation::default_groups(),initial_share:core::option::Some(ext::tls_negotiation::Group::X25519),limits:ext::tls_connection::default_limits()};
     let made:core::result::Result<ext::tls_tcp::Connection,ext::tls_tcp::Failure> = ext::tls_tcp::attach_client(socket,config,deadline,budget);
     if(made.is_err()){failure(made.unwrap_err(),out,5);return;}let connection:ext::tls_tcp::Connection=made.unwrap();exchange(connection.borrow(),view(input.as_bytes(),0,input.len()),false,deadline,budget,out);
 }

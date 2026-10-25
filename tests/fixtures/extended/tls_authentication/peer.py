@@ -207,7 +207,7 @@ def flight(chain, prefix, secret, context=b'', entry_ext=b'', algorithm=0):
 class Case:
     def __init__(self, material, **changes):
         self.algorithm=changes.pop('algorithm',0)
-        self.material=material; self.layout=0; self.maximum=98304; self.max_input=1048576; self.work=67108864; self.signatures=64
+        self.material=material; self.layout=0; self.maximum=98304; self.max_input=1048576; self.work=1073741824; self.signatures=64
         self.reference=b'server.example'; self.now=material.now; self.anchor=material.root; self.variant=0; self.mode=0; self.mutate=0
         self.ch,self.sh,self.hrr,self.ch2,self.prefix,self.secret=hello(False,self.algorithm)
         self.path_error=0; self.path_spent=len(material.chain); self.actions=[]
@@ -222,12 +222,12 @@ class Case:
         return out
 
 def constructor(c):
-    if c.variant in (7,8,9,10): return 1
+    if c.variant in (8,9): return 1
     if c.variant==1: return 5
     if c.variant==2: return 6
-    if c.variant==6: return 3
+    if c.variant in (6,7): return 3
     if c.maximum<4 or c.maximum>16777219: return 2
-    if c.variant in (3,4,5): return 7
+    if c.variant in (3,4,5,10): return 7
     if c.mode in (1,2,3): return 4
     return 0
 
@@ -236,7 +236,7 @@ class State:
 
 def frame_tariff(algorithm, step, length):
     # Public quota policy, independent of certificate parsing/signature work.
-    debit = 4096 + 256 * length
+    debit = 1048576 + 4096 + 256 * length
     if algorithm == 1:
         blocks = (length + 127) // 128
         copies = 8192
@@ -293,6 +293,7 @@ def oracle(c):
                     elif signatures==0: status=10
                     else:
                         signatures-=1
+                        debit+=67108864+((98+HASH_LENGTH[c.algorithm])+64)+1024*(((98+HASH_LENGTH[c.algorithm])+64+144)//128)+4096
                         signed=b' '*64+b'TLS 1.3, server CertificateVerify\0'+H(s.prefix,c.algorithm)
                         if not verify(PUBLIC,signed,frame[8:]): status=17
                 elif s.step==3:
@@ -324,7 +325,7 @@ def cases(material, mode, long=None, algorithm=0):
         c=Case(long,algorithm=algorithm,work=16777216)
         for frame in c.frames(): c.feed(frame)
         add(c)
-        c=Case(long,algorithm=algorithm,work=67108864)
+        c=Case(long,algorithm=algorithm,work=1073741824)
         for frame in c.frames(): c.feed(frame)
         add(c)
     else:

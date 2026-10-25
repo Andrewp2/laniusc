@@ -88,6 +88,8 @@ fn fixtures() -> &'static Fixtures {
         for (name, suites) in [
             ("peer-sha256.cnf", "TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256"),
             ("peer-sha384.cnf", "TLS_AES_256_GCM_SHA384"),
+            ("peer-chacha.cnf", "TLS_CHACHA20_POLY1305_SHA256"),
+            ("peer-aes128.cnf", "TLS_AES_128_GCM_SHA256"),
         ] {
             fs::write(path.join(name), format!("openssl_conf = init\nconfig_diagnostics = 1\n[init]\nssl_conf = ssl\n[ssl]\nsystem_default = tls\n[tls]\nCipherSuites = {suites}\n")).unwrap();
         }
@@ -104,6 +106,23 @@ fn fixtures() -> &'static Fixtures {
         std::mem::forget(location);
         Fixtures { path, original }
     })
+}
+fn signature_fixtures() {
+    static SIGNATURES: OnceLock<()> = OnceLock::new();
+    SIGNATURES.get_or_init(|| {
+        let output = common::process_output_with_timeout(
+            "independent application mixed signature credentials",
+            Command::new("python3")
+                .arg(root().join("tests/fixtures/extended/tls_tcp/peers.py"))
+                .arg("signature-fixtures")
+                .arg(&fixtures().path),
+            Duration::from_secs(25),
+        );
+        assert!(
+            output.status.success() && output.stdout.is_empty() && output.stderr.is_empty(),
+            "{output:?}"
+        );
+    });
 }
 fn file(name: &str) -> PathBuf {
     fixtures().path.join(name)
@@ -524,7 +543,14 @@ fn run(
             Command::new("python3")
                 .env(
                     "OPENSSL_CONF",
-                    file(if peer_mode.starts_with("aes256-") {
+                    file(if peer_mode.starts_with("signature-") {
+                        match peer_mode.split('-').nth(2).unwrap() {
+                            "chacha" => "peer-chacha.cnf",
+                            "aes128" => "peer-aes128.cnf",
+                            "aes256" => "peer-sha384.cnf",
+                            other => panic!("unknown signature peer suite {other}"),
+                        }
+                    } else if peer_mode.starts_with("aes256-") {
                         "peer-sha384.cnf"
                     } else {
                         "peer-sha256.cnf"
@@ -709,6 +735,79 @@ fn tls_exchange_default_policy_interoperates_with_aes256_sha384_only_peers() {
         }
     }
     eprintln!("tls_exchange AES256/SHA384:4 real peers force the third offered suite, both roles/groups, actual HRR from initial X share with P-only server, exact binary publication/trust/clean close and owner ledgers");
+}
+
+#[test]
+fn tls_exchange_signature_defaults_authenticate_rsa_p256_and_mixed_issuer_peers() {
+    signature_fixtures();
+    let input = payload(1025);
+    let mut count = 0;
+    for credential in ["rsa", "p256", "mixed"] {
+        for (suite, cipher, group) in [
+            ("chacha", "TLS_CHACHA20_POLY1305_SHA256", "x25519"),
+            ("aes128", "TLS_AES_128_GCM_SHA256", "p256"),
+            ("aes256", "TLS_AES_256_GCM_SHA384", "x25519"),
+        ] {
+            let role = if credential == "mixed" {
+                "serve"
+            } else {
+                "client"
+            };
+            let args = if role == "client" {
+                client_arguments(
+                    "@ENDPOINT@",
+                    "path.example",
+                    &format!("signature/{credential}/root.der"),
+                )
+            } else {
+                server_arguments(
+                    "@ENDPOINT@",
+                    "signature/mixed/seed.bin",
+                    "signature/mixed/chain.der",
+                )
+            };
+            let mode = format!("signature-{credential}-{suite}-{group}");
+            let observed = run(&input, args, &[], Some(role), false, 12, &mode);
+            checked(&observed, 0, &input);
+            independent_peer_suites(&observed, &input, &[cipher]);
+            count += 1;
+        }
+    }
+    assert_eq!(count, 9);
+    eprintln!("tls_exchange signatures:9 real RSA-PSS/P256 leaf and mixed RSA/P256/Ed server peers;all3suites,both hashes/groups,HRR,exact authenticated duplex/close/owner ledgers");
+}
+
+#[test]
+fn tls_exchange_signature_trust_proof_and_finished_failures_withhold_stdout() {
+    signature_fixtures();
+    let input = payload(1025);
+    let mut count = 0;
+    for (credential, suite, group) in [("rsa", "chacha", "x25519"), ("p256", "aes256", "p256")] {
+        for failure in ["trust", "proof", "finished"] {
+            let anchor = if failure == "trust" {
+                "wrong-root.der".into()
+            } else {
+                format!("signature/{credential}/root.der")
+            };
+            let args = client_arguments("@ENDPOINT@", "path.example", &anchor);
+            let mode = format!(
+                "signature-{credential}-{suite}-{group}{}",
+                if failure == "trust" {
+                    String::new()
+                } else {
+                    format!("-{failure}")
+                }
+            );
+            let observed = run(&input, args, &[], Some("client"), false, 12, &mode);
+            checked(&observed, 5, &[]);
+            let peer = observed.peer.as_ref().unwrap();
+            assert!(peer.received.is_empty() && peer.sent.is_empty());
+            assert!(!peer.clean_close && peer.error.is_some());
+            count += 1;
+        }
+    }
+    assert_eq!(count, 6);
+    eprintln!("tls_exchange signature failures:6 independent trust/CV/Finished failures,both transcript hashes;valid record AEAD around exact targeted corruption,no plaintext publication,full owner retirement");
 }
 
 #[test]

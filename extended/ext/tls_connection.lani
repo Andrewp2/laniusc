@@ -10,6 +10,7 @@ import ext::tls_suite;
 import core::slice;
 import ext::ed25519;
 import ext::service_identity;
+import ext::signature;
 import ext::tls_authentication;
 import ext::tls_framing;
 import ext::tls_handshake;
@@ -50,6 +51,7 @@ pub struct ClientConfig {
     reference:ext::service_identity::Reference, unix_time:i64,
     server_name:core::slice::View<u8>, alpn:core::slice::View<u8>,
     require_alpn:bool, suites:ext::tls_suite::Policy,
+    proofs:ext::signature::Policy, certificates:core::option::Option<ext::signature::Policy>,
     groups:ext::tls_negotiation::GroupPolicy, initial_share:core::option::Option<ext::tls_negotiation::Group>, limits:Limits
 }
 pub struct ServerConfig {
@@ -86,7 +88,8 @@ pub struct Engine {
     handshake_client:core::option::Option<ext::tls_schedule::Secret>, handshake_server:core::option::Option<ext::tls_schedule::Secret>,
     master:core::option::Option<ext::tls_schedule::Master>, application_client:core::option::Option<ext::tls_schedule::Secret>,
     application_server:core::option::Option<ext::tls_schedule::Secret>, exporter:core::option::Option<ext::tls_schedule::Exporter>,
-    authentication:core::option::Option<ext::tls_authentication::State>, leaf:ext::ed25519::Key32,
+    authentication:core::option::Option<ext::tls_authentication::State>, leaf:core::option::Option<ext::signature::PublicKey>,
+    local_certificate_schemes:[ext::signature::Scheme;8], local_certificate_count:i32,
     sender:core::option::Option<ext::tls_record::Sealer>, receiver:core::option::Option<ext::tls_record::Opener>,
     send_generation:u64, receive_generation:u64, send_sequence:u64, receive_sequence:u64,
     record:ext::tls_framing::RecordDecoder, handshake:ext::tls_framing::HandshakeDecoder,
@@ -105,6 +108,18 @@ fn path_resource(e:ext::x509_path::Error)->bool { return match(e.kind) { ext::x5
 fn auth_resource(e:ext::tls_authentication::Error)->bool { return match(e) { ext::tls_authentication::Error::FrameLimit -> true, ext::tls_authentication::Error::WorkLimit -> true, ext::tls_authentication::Error::SignatureLimit -> true, ext::tls_authentication::Error::ScratchTooSmall -> true, ext::tls_authentication::Error::CertificateLimit -> true, ext::tls_authentication::Error::Path(detail) -> path_resource(detail), _ -> false }; }
 fn negotiation_resource(e:ext::tls_negotiation::Error)->bool { return match(e) { ext::tls_negotiation::Error::InputLimit -> true, ext::tls_negotiation::Error::WorkLimit -> true, ext::tls_negotiation::Error::BufferTooSmall -> true, _ -> false }; }
 fn certificate_resource(e:ext::x509::Error)->bool { return match(e.kind) { ext::x509::ErrorKind::InputLimit -> true, ext::x509::ErrorKind::ItemLimit -> true, ext::x509::ErrorKind::WorkLimit -> true, _ -> false }; }
+fn credential_error(e:ext::signature::Error)->Error { return match(e) { ext::signature::Error::WorkLimit->Error::Limit,ext::signature::Error::SignatureLimit->Error::Limit,ext::signature::Error::InputLimit->Error::Limit,ext::signature::Error::Bounds->Error::Bounds,_ -> Error::Credential }; }
+// Conservative source-action envelope for the sole local signer, not a time
+// or instruction bound. Ed25519 sign has 512 double/add/select steps; each is
+// below 20 field products and 64 linear operations. Charge a product 512 and
+// a linear operation 256: a step is below 32768. Two affine encodings and
+// scalar reductions fit another 4096 products and 16384 linear operations.
+// The fixed CertificateVerify input is at most 146 bytes; its three SHA512
+// invocations consume at most five blocks. Even reserving 65536 per block,
+// 512*32768 +4096*512 +16384*256 +5*65536 <67108864.
+// The separate legacy engine debit remains protocol admission work.
+const LOCAL_SIGN_WORK:u64=67108864;
+const LOCAL_SIGN_PROTOCOL_WORK:u64=1048576;
 fn framing_resource(e:ext::tls_framing::Error)->bool { return match(e) { ext::tls_framing::Error::TooLarge -> true, ext::tls_framing::Error::BufferTooSmall -> true, _ -> false }; }
 pub fn is_resource_limit(e:Error)->bool { return match(e) { Error::Limit -> true, Error::BufferTooSmall -> true, Error::Negotiation(detail) -> negotiation_resource(detail), Error::Authentication(detail) -> auth_resource(detail), Error::Certificate(detail) -> certificate_resource(detail), Error::Framing(detail) -> framing_resource(detail), _ -> false }; }
 pub fn default_limits()->Limits { return Limits { max_handshake_body:1048576,max_hello_frame:16384,max_application_hold:16384,max_records:100000,max_controls:4096,max_handshake_bytes:4194304,max_key_updates:64,max_work:68719476736,path:ext::x509_path::default_limits(),negotiation:ext::tls_negotiation::default_limits() }; }
@@ -183,7 +198,7 @@ fn make(side:Role,buffers:Buffers,limits:Limits,policy:ext::tls_negotiation::Gro
     if(slots.x25519_offset.is_some()) { let derived:core::result::Result<ext::x25519::Key,ext::x25519::Error> = ext::x25519::public_key(core::slice::View { values:scalar,start:0,length:32 }); if(derived.is_err()) { return core::result::Err(Error::Crypto); } public=derived.unwrap().bytes; }
     let step:i32=0; if(match(side) { Role::Client -> false, Role::Server -> true }) { step=10; }
     let empty:core::slice::View<u8> = region(b.handshake,0,0);
-    return core::result::Ok(Engine { side:side,step:step,buffers:b,limits:limits,client_config:core::option::None(),server_config:core::option::None(),path_budget:ext::x509_path::budget(limits.path).unwrap(),negotiation_budget:ext::tls_negotiation::budget(limits.negotiation).unwrap(),records_left:limits.max_records,controls_left:limits.max_controls,handshake_left:limits.max_handshake_bytes,updates_left:limits.max_key_updates,work_left:limits.max_work-cost,received:0,sent:0,controls:0,handshake_bytes:0,failed:false,issue:Error::Internal,abandoned:false,first_hello:false,peer_finished:false,peer_close:false,close_intent:false,close_sent:false,random:random,scalar:scalar,public:public,p_scalar:p_scalar,p_public:p_public,seed:[0;32],transcript:core::option::None(),first_hello_length:0,first_offer:core::option::None(),offer:core::option::None(),retry:core::option::None(),selected:core::option::None(),selected_group:policy.preferred,peer_share:empty,alpn:[0;255],alpn_length:0,handshake_client:core::option::None(),handshake_server:core::option::None(),master:core::option::None(),application_client:core::option::None(),application_server:core::option::None(),exporter:core::option::None(),authentication:core::option::None(),leaf:ext::ed25519::Key32 { bytes:[0;32] },sender:core::option::None(),receiver:core::option::None(),send_generation:0,receive_generation:0,send_sequence:0,receive_sequence:0,record:ext::tls_framing::record_decoder(b.record,16640).unwrap(),handshake:ext::tls_framing::handshake_decoder(b.handshake,limits.max_handshake_body).unwrap(),content:empty,content_at:0,content_kind:0,content_active:false,content_epoch:0,partial_epoch:0,tx:empty,tx_at:0,tx_action:0,tx_protected:false,pending_length:0,pending_at:0,pending_action:0,pending_fatal:false,app_length:0,app_at:0,update_intent:false,update_request:false,update_response:false });
+    return core::result::Ok(Engine { side:side,step:step,buffers:b,limits:limits,client_config:core::option::None(),server_config:core::option::None(),path_budget:ext::x509_path::budget(limits.path).unwrap(),negotiation_budget:ext::tls_negotiation::budget(limits.negotiation).unwrap(),records_left:limits.max_records,controls_left:limits.max_controls,handshake_left:limits.max_handshake_bytes,updates_left:limits.max_key_updates,work_left:limits.max_work-cost,received:0,sent:0,controls:0,handshake_bytes:0,failed:false,issue:Error::Internal,abandoned:false,first_hello:false,peer_finished:false,peer_close:false,close_intent:false,close_sent:false,random:random,scalar:scalar,public:public,p_scalar:p_scalar,p_public:p_public,seed:[0;32],transcript:core::option::None(),first_hello_length:0,first_offer:core::option::None(),offer:core::option::None(),retry:core::option::None(),selected:core::option::None(),selected_group:policy.preferred,peer_share:empty,alpn:[0;255],alpn_length:0,handshake_client:core::option::None(),handshake_server:core::option::None(),master:core::option::None(),application_client:core::option::None(),application_server:core::option::None(),exporter:core::option::None(),authentication:core::option::None(),leaf:core::option::None(),local_certificate_schemes:[ext::signature::Scheme::Ed25519;8],local_certificate_count:0,sender:core::option::None(),receiver:core::option::None(),send_generation:0,receive_generation:0,send_sequence:0,receive_sequence:0,record:ext::tls_framing::record_decoder(b.record,16640).unwrap(),handshake:ext::tls_framing::handshake_decoder(b.handshake,limits.max_handshake_body).unwrap(),content:empty,content_at:0,content_kind:0,content_active:false,content_epoch:0,partial_epoch:0,tx:empty,tx_at:0,tx_action:0,tx_protected:false,pending_length:0,pending_at:0,pending_action:0,pending_fatal:false,app_length:0,app_at:0,update_intent:false,update_request:false,update_response:false });
 }
 
 // Pure-engine seam: entropy MUST match entropy_layout and contain independent
@@ -199,6 +214,8 @@ pub fn client(config:ClientConfig,buffers:Buffers,entropy:core::slice::View<u8>)
     if(reference.is_err() || config.anchors.length>config.limits.path.max_anchors || (config.require_alpn && config.alpn.length==0)) { return core::result::Err(Error::InvalidConfig); }
     if(config.initial_share.is_some()) { let g:u16=ext::tls_negotiation::group_id(config.initial_share.unwrap()); if(g!=ext::tls_negotiation::group_id(config.groups.preferred) && (config.groups.fallback.is_none() || g!=ext::tls_negotiation::group_id(config.groups.fallback.unwrap()))) { return core::result::Err(Error::InvalidConfig); } }
     if(ext::tls_suite::validate_policy(config.suites).is_err()) { return core::result::Err(Error::InvalidConfig); }
+    if(ext::signature::validate_policy(config.proofs,ext::signature::Use::CertificateVerify).is_err()) { return core::result::Err(Error::InvalidConfig); }
+    if(config.certificates.is_some()) { if(ext::signature::validate_policy(config.certificates.unwrap(),ext::signature::Use::Certificate).is_err()) { return core::result::Err(Error::InvalidConfig); } }
     let made:core::result::Result<Engine,Error> = make(Role::Client,buffers,config.limits,config.groups,entropy); if(made.is_err()) { return made; }
     let engine:Engine=made.unwrap(); engine.client_config=core::option::Some(config);
     let prepared:core::result::Result<i32,Error> = engine.prepare_client_hello(false); if(prepared.is_err()) { return core::result::Err(prepared.unwrap_err()); }
@@ -215,17 +232,21 @@ pub fn server(config:ServerConfig,buffers:Buffers,entropy:core::slice::View<u8>)
     let charged:core::result::Result<i32,Error> = engine.work(1048576); if(charged.is_err()) { return core::result::Err(charged.unwrap_err()); }
     let public:core::result::Result<ext::ed25519::Key32,ext::ed25519::Error> = ext::ed25519::public_key(core::slice::View { values:engine.seed,start:0,length:32 }); if(public.is_err()) { return core::result::Err(Error::Credential); }
     let leaf:core::result::Result<ext::x509::Certificate,ext::x509::Error> = ext::x509::parse(config.chain.values[config.chain.start],engine.path_budget.parsing.borrow()); if(leaf.is_err()) { return core::result::Err(Error::Certificate(leaf.unwrap_err())); }
-    let cert:ext::x509::Certificate=leaf.unwrap(); let oid:core::slice::View<u8> = cert.spki.algorithm.oid.bytes;
-    if(oid.length!=3 || byte(oid,0)!=43 || byte(oid,1)!=101 || byte(oid,2)!=112 || cert.spki.algorithm.parameters.is_some() || cert.spki.key.unused_bits!=0 || cert.spki.key.bytes.length!=32) { return core::result::Err(Error::Credential); }
-    let difference:u8=0; i=0; let expected:ext::ed25519::Key32=public.unwrap(); while(i<32) { difference|=expected.bytes[i]^byte(cert.spki.key.bytes,i); i+=1; }
+    let cert:ext::x509::Certificate=leaf.unwrap();
+    let imported:core::result::Result<ext::signature::PublicKey,ext::signature::Error> = ext::signature::parse_spki(cert.spki.encoded,engine.path_budget.verification.borrow()); if(imported.is_err()) { return core::result::Err(credential_error(imported.unwrap_err())); }
+    let key:ext::signature::PublicKey=imported.unwrap(); let signing_key:core::option::Option<ext::ed25519::Key32> = key.ed25519_key(); if(signing_key.is_none()) { return core::result::Err(Error::Credential); }
+    let difference:u8=0; i=0; let expected:ext::ed25519::Key32=public.unwrap(); let actual:ext::ed25519::Key32=signing_key.unwrap(); while(i<32) { difference|=expected.bytes[i]^actual.bytes[i]; i+=1; }
     if(difference!=0) { return core::result::Err(Error::Credential); }
-    // The offered certificate-signature profile is Ed25519 for every sent
-    // certificate, independently of the leaf proof-of-possession check above.
+    // Classify each transmitted certificate once. Issuer signature families
+    // are independent of our real Ed25519 leaf signer. The actual CH offer is
+    // enforced later, including a transmitted root's signature algorithm.
     i=0; while(i<config.chain.length) {
-        let parsed:core::result::Result<ext::x509::Certificate,ext::x509::Error> = ext::x509::parse(config.chain.values[config.chain.start+i],engine.path_budget.parsing.borrow()); if(parsed.is_err()) { return core::result::Err(Error::Certificate(parsed.unwrap_err())); }
-        let certificate:ext::x509::Certificate=parsed.unwrap(); let algorithm:core::slice::View<u8> = certificate.signature_algorithm.oid.bytes;
-        if(algorithm.length!=3 || byte(algorithm,0)!=43 || byte(algorithm,1)!=101 || byte(algorithm,2)!=112 || certificate.signature_algorithm.parameters.is_some()) { return core::result::Err(Error::Credential); } i+=1;
+        let certificate:ext::x509::Certificate=cert;
+        if(i!=0) { let parsed:core::result::Result<ext::x509::Certificate,ext::x509::Error> = ext::x509::parse(config.chain.values[config.chain.start+i],engine.path_budget.parsing.borrow()); if(parsed.is_err()) { return core::result::Err(Error::Certificate(parsed.unwrap_err())); } certificate=parsed.unwrap(); }
+        let scheme:core::result::Result<ext::signature::Scheme,ext::signature::Error> = ext::signature::certificate_scheme(certificate.signature_algorithm.encoded,engine.path_budget.verification.borrow()); if(scheme.is_err()) { return core::result::Err(credential_error(scheme.unwrap_err())); }
+        engine.local_certificate_schemes[i]=scheme.unwrap(); i+=1;
     }
+    engine.local_certificate_count=config.chain.length;
     return core::result::Ok(engine);
 }
 
@@ -295,7 +316,7 @@ impl Engine {
         if(second && self.retry.unwrap().requested.is_some()) { selected=self.retry.unwrap().requested; }
         let share:core::option::Option<ext::tls_negotiation::KeyShare> = core::option::None(); if(selected.is_some()) { share=core::option::Some(self.local_share(selected.unwrap())); }
         let cookie:core::slice::View<u8> = empty; if(second) { cookie=self.retry.unwrap().cookie; }
-        let extensions:core::result::Result<i32,ext::tls_negotiation::Error> = ext::tls_negotiation::write_client_extensions(config.groups,share,config.server_name,config.alpn,cookie,self.buffers.handshake,self.negotiation_budget.borrow());
+        let extensions:core::result::Result<i32,ext::tls_negotiation::Error> = ext::tls_negotiation::write_client_extensions(config.groups,config.proofs,config.certificates,share,config.server_name,config.alpn,cookie,self.buffers.handshake,self.negotiation_budget.borrow());
         if(extensions.is_err()) { return core::result::Err(Error::Negotiation(extensions.unwrap_err())); }
         let suites:[u8;6]=[0;6]; let index:i32=0; while(index<config.suites.length) { let id:u16=ext::tls_suite::id(config.suites.order[index]); suites[2*index]=(id>>8) as u8; suites[2*index+1]=id as u8; index+=1; }
         let hello:ext::tls_handshake::ClientHello=ext::tls_handshake::ClientHello { random:core::slice::View { values:self.random,start:0,length:32 },session_id:empty,cipher_suites:core::slice::View { values:suites,start:0,length:2*config.suites.length },extensions:region(self.buffers.handshake,0,extensions.unwrap()) };
@@ -339,8 +360,13 @@ impl Engine {
         if(self.is_client()) {
             let sealed:core::result::Result<i32,Error> = self.record_owner_work(); if(sealed.is_err()) { return sealed; }
             self.sender=core::option::Some(ext::tls_record::sealer(self.selected.unwrap(),self.handshake_client.unwrap()).unwrap());
-            let config:ClientConfig=self.client_config.unwrap(); let schemes:[u16;1]=[2055];
-            let auth:core::result::Result<ext::tls_authentication::State,ext::tls_authentication::Error> = ext::tls_authentication::server(self.transcript.unwrap(),self.handshake_server.unwrap(),core::slice::View { values:schemes,start:0,length:1 },ext::tls_authentication::Config { anchors:config.anchors,reference:config.reference,unix_time:config.unix_time,max_frame:self.limits.max_handshake_body+4 });
+            // Derive owned acceptance policies from the actual retained wire,
+            // including extension50's required fallback. Config metadata is
+            // not evidence of what this connection emitted.
+            let proofs:core::result::Result<ext::signature::Policy,ext::tls_negotiation::Error> = ext::tls_negotiation::signature_policy(self.offer.unwrap(),ext::signature::Use::CertificateVerify,self.negotiation_budget.borrow()); if(proofs.is_err()) { return core::result::Err(Error::Negotiation(proofs.unwrap_err())); }
+            let certificates:core::result::Result<ext::signature::Policy,ext::tls_negotiation::Error> = ext::tls_negotiation::signature_policy(self.offer.unwrap(),ext::signature::Use::Certificate,self.negotiation_budget.borrow()); if(certificates.is_err()) { return core::result::Err(Error::Negotiation(certificates.unwrap_err())); }
+            let config:ClientConfig=self.client_config.unwrap();
+            let auth:core::result::Result<ext::tls_authentication::State,ext::tls_authentication::Error> = ext::tls_authentication::server(self.transcript.unwrap(),self.handshake_server.unwrap(),ext::tls_authentication::Config { anchors:config.anchors,reference:config.reference,unix_time:config.unix_time,max_frame:self.limits.max_handshake_body+4,proofs:proofs.unwrap(),certificates:certificates.unwrap() });
             if(auth.is_err()) { return core::result::Err(Error::Authentication(auth.unwrap_err())); } self.authentication=core::option::Some(auth.unwrap());
         }
         return core::result::Ok(0);
@@ -387,8 +413,16 @@ impl Engine {
         return self.start_tx(region(out,0,total as i32),true,5,true);
     }
     fn prepare_cv(&self)->core::result::Result<i32,Error> {
-        if(self.path_budget.signatures_left==0) { return core::result::Err(Error::Limit); }
-        let charged:core::result::Result<i32,Error> = self.work(1048576); if(charged.is_err()) { return charged; } self.path_budget.signatures_left-=1;
+        // Neither an unaffordable crypto reservation nor an unaffordable
+        // protocol reservation consumes an attempt or the other allowance.
+        // Include every known pre-sign debit in the check; snapshot/staging
+        // retain their existing individual debits below, exactly once each.
+        let presign:u64=LOCAL_SIGN_PROTOCOL_WORK;
+        if(self.sha384()) { presign+=sha384_snapshot_work()+8768; }
+        if(self.path_budget.verification.signatures_left==0 || self.path_budget.verification.work_left<LOCAL_SIGN_WORK || self.work_left<presign) { return core::result::Err(Error::Limit); }
+        self.path_budget.verification.work_left-=LOCAL_SIGN_WORK;
+        self.work_left-=LOCAL_SIGN_PROTOCOL_WORK;
+        self.path_budget.verification.signatures_left-=1;
         let snapshot:core::result::Result<ext::tls_hash::Digest,Error> = self.snapshot(); if(snapshot.is_err()) { return core::result::Err(snapshot.unwrap_err()); } let hash:ext::tls_hash::Digest=snapshot.unwrap();
         let copied:core::result::Result<i32,Error> = self.selected_hash_work(4096+32*146); if(copied.is_err()) { return copied; }
         let signed:ext::tls_authentication::CVInput=ext::tls_authentication::certificate_verify_input(ext::tls_schedule::Side::Server,hash);
@@ -437,7 +471,7 @@ fn negotiation_alert(e:ext::tls_negotiation::Error)->u8 { return match(e) { ext:
 fn answer_alert(e:Error)->bool { return match(e) { Error::PeerAlert(description) -> false, Error::Truncated -> false, Error::Aborted -> false, _ -> true }; }
 impl Engine {
     fn forget_keys(&self) {
-        self.scalar=[0;32]; self.p_scalar=[0;32]; self.seed=[0;32]; self.handshake_client=core::option::None(); self.handshake_server=core::option::None(); self.application_client=core::option::None(); self.application_server=core::option::None(); self.master=core::option::None(); self.exporter=core::option::None(); self.transcript=core::option::None(); self.selected=core::option::None(); self.authentication=core::option::None(); self.leaf=ext::ed25519::Key32 { bytes:[0;32] }; self.sender=core::option::None(); self.receiver=core::option::None();
+        self.scalar=[0;32]; self.p_scalar=[0;32]; self.seed=[0;32]; self.handshake_client=core::option::None(); self.handshake_server=core::option::None(); self.application_client=core::option::None(); self.application_server=core::option::None(); self.master=core::option::None(); self.exporter=core::option::None(); self.transcript=core::option::None(); self.selected=core::option::None(); self.authentication=core::option::None(); self.leaf=core::option::None(); self.local_certificate_count=0; self.sender=core::option::None(); self.receiver=core::option::None();
     }
     fn fail(&self,e:Error)->Error {
         if(self.failed) { return self.issue; }
@@ -498,6 +532,10 @@ impl Engine {
         else { offer=ext::tls_negotiation::inspect_client_hello(parsed.unwrap(),self.negotiation_budget.borrow()); }
         if(offer.is_err()) { return core::result::Err(Error::Negotiation(offer.unwrap_err())); }
         self.offer=core::option::Some(offer.unwrap()); if(!second) { self.first_offer=self.offer; }
+        let proofs:core::result::Result<ext::signature::Policy,ext::tls_negotiation::Error> = ext::tls_negotiation::signature_policy(offer.unwrap(),ext::signature::Use::CertificateVerify,self.negotiation_budget.borrow()); if(proofs.is_err()) { return core::result::Err(Error::Negotiation(proofs.unwrap_err())); }
+        let proof_allowed:core::result::Result<bool,ext::signature::Error> = ext::signature::allows(proofs.unwrap(),ext::signature::Scheme::Ed25519,ext::signature::Use::CertificateVerify); if(proof_allowed.is_err() || !proof_allowed.unwrap()) { return core::result::Err(Error::Negotiation(ext::tls_negotiation::Error::NoSignature)); }
+        let certificates:core::result::Result<ext::signature::Policy,ext::tls_negotiation::Error> = ext::tls_negotiation::signature_policy(offer.unwrap(),ext::signature::Use::Certificate,self.negotiation_budget.borrow()); if(certificates.is_err()) { return core::result::Err(Error::Negotiation(certificates.unwrap_err())); }
+        let index:i32=0; while(index<self.local_certificate_count) { let permitted:core::result::Result<bool,ext::signature::Error> = ext::signature::allows(certificates.unwrap(),self.local_certificate_schemes[index],ext::signature::Use::Certificate); if(permitted.is_err() || !permitted.unwrap()) { return core::result::Err(Error::Negotiation(ext::tls_negotiation::Error::NoSignature)); } index+=1; }
         let suites:ext::tls_suite::Policy=self.server_config.unwrap().suites;
         let chosen:core::result::Result<ext::tls_negotiation::Decision,ext::tls_negotiation::Error> = ext::tls_negotiation::choose(offer.unwrap(),suites,self.server_config.unwrap().groups,self.negotiation_budget.borrow()); if(chosen.is_err()) { return core::result::Err(Error::Negotiation(chosen.unwrap_err())); }
         let requested:core::option::Option<ext::tls_negotiation::Group> = core::option::None(); let selected_suite:u16=0; let group:ext::tls_negotiation::Group=self.selected_group;
@@ -526,7 +564,7 @@ impl Engine {
         let verified:core::result::Result<ext::tls_authentication::Phase,ext::tls_authentication::Error> = auth.feed(frame,self.buffers.path,self.path_budget.borrow()); self.authentication=core::option::Some(auth);
         if(verified.is_err()) { return core::result::Err(Error::Authentication(verified.unwrap_err())); }
         if(auth.authenticated()) {
-            self.leaf=auth.peer_key().unwrap(); self.transcript=core::option::Some(auth.transcript().unwrap());
+            self.leaf=auth.peer_key(); self.transcript=core::option::Some(auth.transcript().unwrap());
             let derived:core::result::Result<i32,Error> = self.derive_application(); if(derived.is_err()) { return derived; }
             let installed:core::result::Result<i32,Error> = self.application_receiver(); if(installed.is_err()) { return installed; } self.peer_finished=true; self.step=3;
         }
@@ -706,9 +744,9 @@ pub impl Engine {
         if(self.step==4) { return Phase::Established; } if(self.step==0 || self.step==10 || self.step==12) { return Phase::ClientHello; }
         if(self.step==1 || self.step==11 || self.step==13) { return Phase::ServerHello; } if(self.step==3 || self.step==18) { return Phase::ClientFinished; } return Phase::ServerFlight;
     }
-    pub fn peer_key(&self)->core::option::Option<ext::ed25519::Key32> { if(self.established() && self.is_client()) { return core::option::Some(self.leaf); } return core::option::None(); }
+    pub fn peer_key(&self)->core::option::Option<ext::signature::PublicKey> { if(self.established() && self.is_client()) { return self.leaf; } return core::option::None(); }
     pub fn negotiated(&self)->core::option::Option<Negotiated> { if(!self.established()) { return core::option::None(); } return core::option::Some(Negotiated { suite:self.selected.unwrap(),group:self.selected_group,alpn:self.alpn,alpn_length:self.alpn_length }); }
-    pub fn stats(&self)->Stats { return Stats { received_records:self.received,sent_records:self.sent,controls:self.controls,handshake_bytes:self.handshake_bytes,send_generation:self.send_generation,receive_generation:self.receive_generation,send_sequence:self.send_sequence,receive_sequence:self.receive_sequence,pending_wire:self.pending_length-self.pending_at,pending_plaintext:self.app_length-self.app_at,handshake_buffered:self.handshake.buffered(),retained_content:self.content.length-self.content_at,records_left:self.records_left,controls_left:self.controls_left,handshake_bytes_left:self.handshake_left,key_updates_left:self.updates_left,work_left:self.work_left,signatures_left:self.path_budget.signatures_left }; }
+    pub fn stats(&self)->Stats { return Stats { received_records:self.received,sent_records:self.sent,controls:self.controls,handshake_bytes:self.handshake_bytes,send_generation:self.send_generation,receive_generation:self.receive_generation,send_sequence:self.send_sequence,receive_sequence:self.receive_sequence,pending_wire:self.pending_length-self.pending_at,pending_plaintext:self.app_length-self.app_at,handshake_buffered:self.handshake.buffered(),retained_content:self.content.length-self.content_at,records_left:self.records_left,controls_left:self.controls_left,handshake_bytes_left:self.handshake_left,key_updates_left:self.updates_left,work_left:self.work_left,signatures_left:self.path_budget.verification.signatures_left }; }
     // Borrow expires at the next mutating engine call. No call reseals a retry.
     // In Failed, only the optional prepared fatal alert is exposed.
     pub fn outgoing(&self)->core::slice::View<u8> { if(self.abandoned || (self.failed && !self.pending_fatal)) { return region(self.buffers.pending_wire,0,0); } return region(self.buffers.pending_wire,self.pending_at,self.pending_length-self.pending_at); }

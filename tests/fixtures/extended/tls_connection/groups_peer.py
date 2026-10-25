@@ -84,6 +84,8 @@ def run(executable):
     add(1, 23, 63, status=2)
     add(2, 29, 64, status=2)
     add(1, 23, 64, metadata=1, status=1)
+    for invalid_policy in range(2,7):
+        add(0,29,64,metadata=invalid_policy,status=4)
     for scalar in (1, 2, 3):
         add(1, 23, 64, scalar=scalar, status=3)
         add(2, 29, 96, scalar=scalar, status=3)

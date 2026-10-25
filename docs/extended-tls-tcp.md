@@ -13,15 +13,16 @@ connection establishment, a listener, implicit trust anchors or client
 certificate authentication. Numeric connect and accept can happen outside
 attachment using single-attempt socket methods and the shared host budget.
 
-**SHA-384 suite-migration admission passed all 122 native cases.** Nine
-focused selections ran across three shared strict protocol ELFs and three
-driver invocations. Current source uses the
-owned [`tls_suite::Policy`](../extended/ext/tls_suite.lani) contract for
-ChaCha20-Poly1305/SHA-256, AES-128-GCM/SHA-256 and AES-256-GCM/SHA-384.
-X25519 and secp256r1 remain independent group choices under the
-[group contract](tls-group-integration-plan.md). The accepted 91-case group
-checkpoint and earlier receipts below identify their exact historical
-snapshots separately from this migration.
+**Connected signature-policy migration admission is pending.** Current
+clients carry separate proof and certificate policies; the prepared new
+peer gates exercise RSA-PSS/SHA-256 and P-256 ECDSA/SHA-256 proofs alongside
+Ed25519. Local servers still sign only with a provisioned Ed25519 seed,
+including Ed25519 leaves with mixed-family issuers. Signature selection is
+independent of the three cipher suites and two DHE groups.
+
+The preceding SHA-384 checkpoint passed 122 native cases across three
+strict protocol ELFs. Its receipts and earlier snapshots below remain
+historical evidence; they do not admit this signature migration.
 
 ## Attachment and ownership
 
@@ -253,7 +254,61 @@ send before cleanup. Existing pending sealed data suppresses that alert;
 failure never transmits stale application output or rolls back a spent nonce.
 Alert, clock and close failures do not replace the original engine cause.
 
-## SHA-384 migration coverage and admission
+## Signature policy and prepared connected gates
+
+`ClientConfig.proofs` is an owned `signature::Policy` validated for
+`CertificateVerify`; `certificates` is an optional policy validated for
+`Certificate`. The adapter rejects malformed policies before socket
+metadata, allocation or entropy calls, preserving the original socket.
+`None` selects the actual proof-offer fallback for certificate algorithms;
+`Some` supplies a separate certificate offer. The app uses `default_proofs()`
+(`0807,0403,0804`) and `Some(default_certificates())`
+(`0807,0403,0804,0401`). Certificate-only RSA PKCS#1 permission does not
+authorize a CertificateVerify proof.
+
+Three additional focused selections are prepared, **31 native cases**:
+
+- `openssl_rsa_pss_and_p256_proofs_cover_all_suites_groups_and_hrr`: 14
+  native-client cases against real RSA and P-256 OpenSSL servers. A singleton
+  proof policy and copied returned key kind require the selected proof
+  family, across all three suites, both DHE groups and P-requested HRR.
+- `openssl_clients_verify_native_ed25519_servers_with_mixed_issuer_chains`:
+  seven native Ed25519 servers present a RSA-root/P-256-issuer/Ed25519-leaf
+  chain to verifying OpenSSL clients, across all suites, both groups and HRR.
+  This adds no RSA/ECDSA private-key signer to production.
+- `signature_trust_proof_finished_and_policy_failures_publish_no_plaintext`:
+  ten controls cover wrong trust, incompatible proof offers, bad proof and
+  Finished values, and both malformed local policies. Failed handshakes
+  publish no application bytes or peer key; acquired owners retire once.
+  Policy rejection precedes any adapter host operation.
+
+The retained 122 cases keep explicit Ed-only offers, existing work bounds
+and original deadlines, including the separate AES-256 scale allowance.
+The prepared total is **153 cases**; none of the new signature gates has
+runtime admission yet. New mixed-family cases use current default work
+allowances instead of changing preceding regression limits.
+
+Only test code generates the new credentials. OpenSSL generates RSA-2048
+and P-256 keys and signs exact DER TBS bytes framed by the independent host
+fixture builder. It then independently verifies every generated leaf with
+explicit CA, server purpose, hostname and fixture time. The chains have
+2020–2049 validity and contain no root in the transmitted peer chain.
+
+The test-only [`signature_proxy.py`](../tests/fixtures/extended/tls_tcp/signature_proxy.py)
+reads a real OpenSSL peer's test key log, authenticates server handshake
+records through OpenSSL EVP, changes exactly one CertificateVerify signature
+or Finished MAC byte, and recomputes valid record AEAD at the original
+sequence. Its checked target count and proof scheme distinguish these
+controls from random ciphertext corruption. Test secrets and transformation
+are never used by production. Full duplex bytes, real host-prefix counters,
+clean close and the ten-owner ledger retain their existing assertions.
+
+Static checks cover Rust formatting and Python syntax. The explicitly
+authorized CPU-only credential generation and independent OpenSSL path
+checks passed; no Lanius native/GPU gate was run by the author. Those fixture
+checks do not admit the connected implementation.
+
+## Accepted preceding SHA-384 checkpoint
 
 The six retained selections still contain 91 cases. Their native fixture
 explicitly uses only the preceding two SHA-256 suites, with the original
@@ -344,7 +399,7 @@ were unchanged by this admission. The root used the same 45-second GPU compilati
 and a 90-second inner timeout, selecting this test with `--exact`,
 `--nocapture` and `--test-threads=1`.
 
-### Accepted complete current migration
+### Accepted complete SHA-384 checkpoint
 
 The other eight selections passed in two disjoint filter groups, each
 reusing one strict protocol ELF for all its native processes. Together with
@@ -558,8 +613,8 @@ evidence for partial-record progress.
 
 Python/OpenSSL setup and fragmentation are loopback-only test plumbing, not
 production TLS. Each harness case and host peer has a finite timeout. The
-evidence above covers all six current adapter gates and the earlier
-checkpoint. The separate [application guide](extended-tls-exchange.md)
+accepted evidence above covers the recorded SHA-384 and preceding adapter
+checkpoints. Signature-policy connected gates remain pending. The separate [application guide](extended-tls-exchange.md)
 tracks application admission and its earlier parser/source corrections. No security
 certification claim follows from these focused gates. General PKIX, mandatory
 TLS algorithm coverage and the remaining [whole connection

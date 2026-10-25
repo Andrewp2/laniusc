@@ -12,7 +12,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-signature](../../extended-signature.md)
 
-Declaration counts: constant: 5; enum: 4; field: 7; function: 6; impl: 2; method: 3; struct: 3; variant: 19.
+Declaration counts: constant: 5; enum: 4; field: 9; function: 11; impl: 2; method: 4; struct: 4; variant: 19.
 
 ## Declared imports
 
@@ -214,9 +214,33 @@ P256
 Rsae
 ```
 
+### struct: Policy
+
+[Source line 18](../../../extended/ext/signature.lani#L18)
+
+```lanius
+pub struct Policy
+```
+
+#### field: order
+
+[Source line 18](../../../extended/ext/signature.lani#L18)
+
+```lanius
+order:[u16;4]
+```
+
+#### field: length
+
+[Source line 18](../../../extended/ext/signature.lani#L18)
+
+```lanius
+length:i32
+```
+
 ### struct: Limits
 
-[Source line 15](../../../extended/ext/signature.lani#L15)
+[Source line 19](../../../extended/ext/signature.lani#L19)
 
 ```lanius
 pub struct Limits
@@ -224,7 +248,7 @@ pub struct Limits
 
 #### field: max_message
 
-[Source line 15](../../../extended/ext/signature.lani#L15)
+[Source line 19](../../../extended/ext/signature.lani#L19)
 
 ```lanius
 max_message:i32
@@ -232,7 +256,7 @@ max_message:i32
 
 #### field: max_signatures
 
-[Source line 15](../../../extended/ext/signature.lani#L15)
+[Source line 19](../../../extended/ext/signature.lani#L19)
 
 ```lanius
 max_signatures:u64
@@ -240,7 +264,7 @@ max_signatures:u64
 
 #### field: max_work
 
-[Source line 15](../../../extended/ext/signature.lani#L15)
+[Source line 19](../../../extended/ext/signature.lani#L19)
 
 ```lanius
 max_work:u64
@@ -248,7 +272,7 @@ max_work:u64
 
 ### struct: Budget
 
-[Source line 16](../../../extended/ext/signature.lani#L16)
+[Source line 20](../../../extended/ext/signature.lani#L20)
 
 ```lanius
 pub struct Budget
@@ -256,7 +280,7 @@ pub struct Budget
 
 #### field: message_limit
 
-[Source line 16](../../../extended/ext/signature.lani#L16)
+[Source line 20](../../../extended/ext/signature.lani#L20)
 
 ```lanius
 message_limit:i32
@@ -264,7 +288,7 @@ message_limit:i32
 
 #### field: signatures_left
 
-[Source line 16](../../../extended/ext/signature.lani#L16)
+[Source line 20](../../../extended/ext/signature.lani#L20)
 
 ```lanius
 signatures_left:u64
@@ -272,7 +296,7 @@ signatures_left:u64
 
 #### field: work_left
 
-[Source line 16](../../../extended/ext/signature.lani#L16)
+[Source line 20](../../../extended/ext/signature.lani#L20)
 
 ```lanius
 work_left:u64
@@ -280,7 +304,7 @@ work_left:u64
 
 ### struct: PublicKey
 
-[Source line 20](../../../extended/ext/signature.lani#L20)
+[Source line 24](../../../extended/ext/signature.lani#L24)
 
 ```lanius
 pub struct PublicKey
@@ -288,7 +312,7 @@ pub struct PublicKey
 
 #### field: material
 
-[Source line 20](../../../extended/ext/signature.lani#L20)
+[Source line 24](../../../extended/ext/signature.lani#L24)
 
 ```lanius
 material:Material
@@ -298,7 +322,7 @@ material:Material
 
 ### constant: MAX_SPKI_BYTES
 
-[Source line 21](../../../extended/ext/signature.lani#L21)
+[Source line 25](../../../extended/ext/signature.lani#L25)
 
 ```lanius
 pub const MAX_SPKI_BYTES:i32=1024;
@@ -306,7 +330,7 @@ pub const MAX_SPKI_BYTES:i32=1024;
 
 ### constant: MAX_ALGORITHM_BYTES
 
-[Source line 22](../../../extended/ext/signature.lani#L22)
+[Source line 26](../../../extended/ext/signature.lani#L26)
 
 ```lanius
 pub const MAX_ALGORITHM_BYTES:i32=256;
@@ -314,7 +338,7 @@ pub const MAX_ALGORITHM_BYTES:i32=256;
 
 ### constant: P256_IMPORT_WORK
 
-[Source line 23](../../../extended/ext/signature.lani#L23)
+[Source line 27](../../../extended/ext/signature.lani#L27)
 
 ```lanius
 pub const P256_IMPORT_WORK:u64=1048576;
@@ -322,7 +346,7 @@ pub const P256_IMPORT_WORK:u64=1048576;
 
 ### constant: P256_VERIFY_WORK
 
-[Source line 24](../../../extended/ext/signature.lani#L24)
+[Source line 28](../../../extended/ext/signature.lani#L28)
 
 ```lanius
 pub const P256_VERIFY_WORK:u64=33554432;
@@ -330,7 +354,7 @@ pub const P256_VERIFY_WORK:u64=33554432;
 
 ### constant: ED25519_VERIFY_WORK
 
-[Source line 25](../../../extended/ext/signature.lani#L25)
+[Source line 29](../../../extended/ext/signature.lani#L29)
 
 ```lanius
 pub const ED25519_VERIFY_WORK:u64=67108864;
@@ -340,7 +364,7 @@ pub const ED25519_VERIFY_WORK:u64=67108864;
 
 ### function: default_limits
 
-[Source line 36](../../../extended/ext/signature.lani#L36)
+[Source line 40](../../../extended/ext/signature.lani#L40)
 
 ```lanius
 pub fn default_limits()->Limits
@@ -348,7 +372,7 @@ pub fn default_limits()->Limits
 
 ### function: budget
 
-[Source line 37](../../../extended/ext/signature.lani#L37)
+[Source line 41](../../../extended/ext/signature.lani#L41)
 
 ```lanius
 pub fn budget(limits:Limits)->core::result::Result<Budget,Error>
@@ -356,15 +380,55 @@ pub fn budget(limits:Limits)->core::result::Result<Budget,Error>
 
 ### function: tls_scheme
 
-[Source line 48](../../../extended/ext/signature.lani#L48)
+[Source line 55](../../../extended/ext/signature.lani#L55)
 
 ```lanius
 pub fn tls_scheme(id:u16,use:Use)->core::result::Result<Scheme,Error>
 ```
 
+### function: tls_id
+
+[Source line 60](../../../extended/ext/signature.lani#L60)
+
+```lanius
+pub fn tls_id(scheme:Scheme)->u16
+```
+
+### function: default_proofs
+
+[Source line 61](../../../extended/ext/signature.lani#L61)
+
+```lanius
+pub fn default_proofs()->Policy
+```
+
+### function: default_certificates
+
+[Source line 62](../../../extended/ext/signature.lani#L62)
+
+```lanius
+pub fn default_certificates()->Policy
+```
+
+### function: validate_policy
+
+[Source line 65](../../../extended/ext/signature.lani#L65)
+
+```lanius
+pub fn validate_policy(policy:Policy,use:Use)->core::result::Result<i32,Error>
+```
+
+### function: allows
+
+[Source line 74](../../../extended/ext/signature.lani#L74)
+
+```lanius
+pub fn allows(policy:Policy,scheme:Scheme,use:Use)->core::result::Result<bool,Error>
+```
+
 ### function: parse_spki
 
-[Source line 81](../../../extended/ext/signature.lani#L81)
+[Source line 107](../../../extended/ext/signature.lani#L107)
 
 ```lanius
 pub fn parse_spki(input:core::slice::View<u8>,b:&Budget)->core::result::Result<PublicKey,Error>
@@ -372,7 +436,7 @@ pub fn parse_spki(input:core::slice::View<u8>,b:&Budget)->core::result::Result<P
 
 ### function: certificate_scheme
 
-[Source line 105](../../../extended/ext/signature.lani#L105)
+[Source line 131](../../../extended/ext/signature.lani#L131)
 
 ```lanius
 pub fn certificate_scheme(input:core::slice::View<u8>,b:&Budget)->core::result::Result<Scheme,Error>
@@ -380,7 +444,7 @@ pub fn certificate_scheme(input:core::slice::View<u8>,b:&Budget)->core::result::
 
 ### function: verify
 
-[Source line 116](../../../extended/ext/signature.lani#L116)
+[Source line 142](../../../extended/ext/signature.lani#L142)
 
 ```lanius
 pub fn verify(key:&PublicKey,use:Use,scheme:Scheme,message:core::slice::View<u8>,signature:core::slice::View<u8>,b:&Budget)->core::result::Result<bool,Error>
@@ -388,9 +452,9 @@ pub fn verify(key:&PublicKey,use:Use,scheme:Scheme,message:core::slice::View<u8>
 
 ## Implementation blocks and public methods
 
-### impl at line 41
+### impl at line 45
 
-[Source line 41](../../../extended/ext/signature.lani#L41)
+[Source line 45](../../../extended/ext/signature.lani#L45)
 
 ```lanius
 pub impl Budget
@@ -398,15 +462,15 @@ pub impl Budget
 
 #### method: borrow
 
-[Source line 41](../../../extended/ext/signature.lani#L41)
+[Source line 45](../../../extended/ext/signature.lani#L45)
 
 ```lanius
 pub fn borrow(&self)->&Budget
 ```
 
-### impl at line 42
+### impl at line 46
 
-[Source line 42](../../../extended/ext/signature.lani#L42)
+[Source line 46](../../../extended/ext/signature.lani#L46)
 
 ```lanius
 pub impl PublicKey
@@ -414,7 +478,7 @@ pub impl PublicKey
 
 #### method: borrow
 
-[Source line 43](../../../extended/ext/signature.lani#L43)
+[Source line 47](../../../extended/ext/signature.lani#L47)
 
 ```lanius
 pub fn borrow(&self)->&PublicKey
@@ -422,8 +486,16 @@ pub fn borrow(&self)->&PublicKey
 
 #### method: kind
 
-[Source line 44](../../../extended/ext/signature.lani#L44)
+[Source line 48](../../../extended/ext/signature.lani#L48)
 
 ```lanius
 pub fn kind(&self)->Kind
+```
+
+#### method: ed25519_key
+
+[Source line 51](../../../extended/ext/signature.lani#L51)
+
+```lanius
+pub fn ed25519_key(&self)->core::option::Option<ext::ed25519::Key32>
 ```

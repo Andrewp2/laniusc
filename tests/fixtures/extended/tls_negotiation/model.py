@@ -99,13 +99,15 @@ def inspect(p,allow_cookie=False):
  return dict(p,groups=groups,sigs=sigs,cert=cert,keys=keys,shares=shares,keybytes=m[51][2:],sni=server_name,alpn=alpn,cookie=cookie)
 def witness(b):return list(struct.unpack('<4Q',hashlib.sha256(b).digest()))
 def offer_summary(p,group=29):return [0,0,0,0,0,len(p['keys'].get(group,b'')),len(p['cookie']),len(p['sni']),len(p['alpn']),0,W,0]+witness(p['keys'].get(group,b''))+witness(p['cookie'])+witness(p['sni'])+witness(p['alpn'])
-def selection(suite,group,retry,key=b'',cookie=b''):return [0,suite,group,2055,int(retry),len(key),len(cookie),0,0,0,W,0]+witness(key)+witness(cookie)+[0]*8
-def writer(sub,group,flag,a,b,c,d,policy=(29,),share_group=29):
+def selection(suite,group,retry,key=b'',cookie=b''):return [0,suite,group,0,int(retry),len(key),len(cookie),0,0,0,W,0]+witness(key)+witness(cookie)+[0]*8
+def valid_policy(ids,use):
+ require(1<=len(ids)<=4 and len(set(ids))==len(ids) and all(i in ((2055,1027,2052,1025) if use else (2055,1027,2052)) for i in ids),10)
+def writer(sub,group,flag,a,b,c,d,policy=(29,),share_group=29,proofs=(2055,),certificates=(2055,)):
  if sub==0:
   require(len(set(policy))==len(policy),5);require((not a or (share_group in policy and share_shape(share_group,a))) and len(b)<=253 and len(c)<=65533 and len(d)<=65533,5)
   if b:host(b)
   if c:protocols(c)
-  es=base_extensions(a or None,groups=policy,sni=b or None,alpn=c or None,cookie=d,share_group=share_group)
+  es=base_extensions(a or None,groups=policy,sigs=proofs,cert=certificates,sni=b or None,alpn=c or None,cookie=d,share_group=share_group)
  elif sub==1:require(share_shape(share_group,a),5);es=[(43,b'\x03\x04'),(51,u16(share_group)+vec(a))]
  elif sub==2:
   require(group in (0,23,29) and len(d)<=65533 and (group or d),13);es=[(43,b'\x03\x04')]
@@ -118,28 +120,33 @@ def writer(sub,group,flag,a,b,c,d,policy=(29,),share_group=29):
  return b''.join(ext(k,d) for k,d in es)
 def share_shape(group,data):return (group==29 and len(data)==32) or (group==23 and len(data)==65 and data[:1]==b'\x04')
 def expected(h,blobs):
- op,layout,mode,pref,group,flag,limit,work,capacity,*_=h;policy=tuple(g for g in h[13:15] if g);share_group=h[15];suite_length=h[19];suite_policy=tuple(h[16:19][:suite_length]);a,b,c,d=blobs;result=[0]*28;result[10]=W;extra=[]
+ op,layout,mode,pref,group,flag,limit,work,capacity,*_=h;policy=tuple(g for g in h[13:15] if g);share_group=h[15];suite_length=h[19];suite_policy=tuple(h[16:19][:suite_length]);proof_length=h[24];proofs=tuple(h[20:24][:proof_length]);cert_length=h[29];certificates=tuple(h[25:29][:cert_length]) if h[30] else None;a,b,c,d=blobs;result=[0]*28;result[10]=W;extra=[]
  try:
   if op==6:
    require(mode!=3 and not(mode==1 and pref in (0,1)) and not(mode==2 and pref==0),1)
    # Capacity precedes detailed syntax and work in writer preflight. Shape
    # failures are checked before total/capacity, as documented publicly.
-   n={0:35+2*len(policy)+(4+len(a) if a else 0)+(9+len(b) if b else 0)+(6+len(c) if c else 0)+(6+len(d) if d else 0),1:14+len(a),2:6+(6 if group else 0)+(6+len(d) if d else 0),3:(4 if flag else 0)+(7+len(c) if c else 0)}[pref]
-   if pref==0:require(len(set(policy))==len(policy),5);require((not a or (share_group in policy and share_shape(share_group,a))) and len(b)<=253 and len(c)<=65533 and len(d)<=65533,5)
+   n={0:25+2*len(policy)+2*proof_length+(6+2*cert_length if certificates is not None else 0)+(4+len(a) if a else 0)+(9+len(b) if b else 0)+(6+len(c) if c else 0)+(6+len(d) if d else 0),1:14+len(a),2:6+(6 if group else 0)+(6+len(d) if d else 0),3:(4 if flag else 0)+(7+len(c) if c else 0)}[pref]
+   if pref==0:require(len(set(policy))==len(policy),5);require(1<=proof_length<=4 and (certificates is None or 1<=cert_length<=4),10);valid_policy(proofs,False);valid_policy(certificates,True) if certificates is not None else None;require((not a or (share_group in policy and share_shape(share_group,a))) and len(b)<=253 and len(c)<=65533 and len(d)<=65533,5)
    if pref==1:require(share_shape(share_group,a),5)
    if pref==2:require(group in (0,23,29) and len(d)<=65533 and (group or d),13)
    if pref==3:require(len(c)<=255,14)
    require(n<=65535,5);require(capacity>=n,17);require(mode!=5,1);require(n<=limit,2);require(work>=8*n+8,3)
-   wire=writer(pref,group,flag,a,b,c,d,policy,share_group);assert len(wire)==n;result[11]=n
+   wire=writer(pref,group,flag,a,b,c,d,policy,share_group,proofs,certificates);assert len(wire)==n;result[11]=n
   else:
    require(mode!=1,101);p=parse_ch(a);require(mode!=3,1);require(mode!=5,1)
    require(len(p['random'])+len(p['session'])+len(p['suitebytes'])+len(p['es'])<=limit,2);require(work>=4096+8*(32+len(p['session'])+len(p['suitebytes'])+len(p['es'])),3)
    p=inspect(p,mode==6)
    if op==0:result=offer_summary(p,share_group)
    if op==7:result[5]=len(p["keys"].get(share_group,b""));result[12:16]=witness(p["keys"].get(share_group,b""))
+   if op==8:
+    recognized=(2055,1027,2052,1025) if flag else (2055,1027,2052)
+    offered=p['cert'] if flag else p['sigs']
+    ids=list(dict.fromkeys(i for i in offered if i in recognized));require(ids,10)
+    result[1]=len(ids);result[2:6]=ids+[0]*(4-len(ids))
    if op==1:
     require(len(set(policy))==len(policy),5);require(1<=suite_length<=3 and len(set(suite_policy))==suite_length,8);mutual_suites=[s for s in suite_policy if s in p['suites']];require(mutual_suites,8);suite=mutual_suites[0]
-    mutual=[g for g in policy if g in p['groups']];require(mutual,9);g=mutual[0];require(2055 in p['sigs'] and 2055 in p['cert'],10);result=selection(suite,g,g not in p['keys'],p['keys'].get(g,b''))
+    mutual=[g for g in policy if g in p['groups']];require(mutual,9);g=mutual[0];result=selection(suite,g,g not in p['keys'],p['keys'].get(g,b''))
    if op==2:
     require(mode!=2,101);s=parse_sh(b);require(s['session']==p['session'],11);require(s['suite'] in (4865,4866,4867) and s['suite'] in p['suites'],12);retry=s['random']==HRR
     require(flag or not p['cookie'],13)
@@ -154,7 +161,7 @@ def expected(h,blobs):
     if retry and 44 in m:require(len(m[44])>=3 and int.from_bytes(m[44][:2],'big')==len(m[44])-2,5);cookie=m[44][2:]
     if retry:require(g or cookie,13);require(g or bool(set(p['keys'])&{23,29}),9)
     else:require(g in (23,29),4);require(not flag or not group or group==g,13)
-    require(2055 in p['sigs'] and 2055 in p['cert'],10);result=selection(s['suite'],g,retry,key,cookie)
+    result=selection(s['suite'],g,retry,key,cookie)
    if op==3:
     require(group in (0,23,29) and pref in (4865,4866,4867) and len(c)<=65533,13);require(mode!=2,101);q=inspect(parse_ch(b),True)
     require(pref in p['suites'] and (group or (c and bool(set(p['keys'])&{23,29}))) and (not group or (group in p['groups'] and group not in p['keys'])),13)
@@ -181,16 +188,32 @@ def expected(h,blobs):
  return result+extra
 
 CASES=[]
-def add(op=0,a=None,b=b'',c=b'',d=b'',pref=4867,group=0,flag=0,mode=0,limit=262144,work=16777216,capacity=1016,layouts=(0,1),policy=(29,),share_group=29,suite_policy=None,suite_length=None):
+def add(op=0,a=None,b=b'',c=b'',d=b'',pref=4867,group=0,flag=0,mode=0,limit=262144,work=16777216,capacity=1016,layouts=(0,1),policy=(29,),share_group=29,suite_policy=None,suite_length=None,proofs=(2055,),certificates=(2055,),proof_length=None,cert_length=None):
  if a is None:a=ch()
  if suite_policy is None:suite_policy=(pref,4867 if pref==4865 else 4865) if op==1 else (4867,4865)
  if suite_length is None:suite_length=len(suite_policy)
  suite_slots=(*suite_policy,4867,4867,4867)[:3]
+ if proof_length is None:proof_length=len(proofs)
+ if cert_length is None:cert_length=len(certificates) if certificates is not None else 0
+ proof_slots=(*proofs,0,0,0,0)[:4];cert_slots=(*(certificates or ()),0,0,0,0)[:4]
  for layout in layouts:
-  h=[op,layout,mode,pref,group,flag,limit,work,capacity,len(a),len(b),len(c),len(d),policy[0],policy[1] if len(policy)>1 else 0,share_group,*suite_slots,suite_length];blobs=[a,b,c,d];wire=struct.pack('<20Q',*h)+b''.join(blobs);CASES.append((wire,expected(h,blobs)))
+  h=[op,layout,mode,pref,group,flag,limit,work,capacity,len(a),len(b),len(c),len(d),policy[0],policy[1] if len(policy)>1 else 0,share_group,*suite_slots,suite_length,*proof_slots,proof_length,*cert_slots,cert_length,int(certificates is not None)];blobs=[a,b,c,d];wire=struct.pack('<31Q',*h)+b''.join(blobs);CASES.append((wire,expected(h,blobs)))
 def replace(es,k,d):return [(t,d if t==k else b) for t,b in es]
 def omit(es,k):return [(t,b) for t,b in es if t!=k]
 def offers():
+ # Owned, use-specific policies come from actual hello bytes, not descriptive
+ # fields. Put successful helper cases first so exact/one-less replay covers
+ # canonical rescanning and the extra bounded policy scan.
+ for sigs,cert in [((2055,1027,2052),(1025,1027)),((1027,2052),None),((2052,2055,2052,0xaaaa,1027,1025),(1025,2052,1025,0xaaaa,2055,1027)),((0xaaaa,1027),(2055,)),((1025,),(1025,))]:
+  a=ch(base_extensions(sigs=sigs,cert=cert))
+  for use in (0,1):
+   for mode in (0,4,6):add(8,a,flag=use,mode=mode)
+ for sigs,cert in [((0xaaaa,),None),((1025,),None),((2055,),(0xaaaa,)),((1027,),(1025,)),((2052,),(1025,))]:
+  a=ch(base_extensions(sigs=sigs,cert=cert))
+  for use in (0,1):add(8,a,flag=use)
+ # Credential policy must not manufacture or prevent a suite/group decision.
+ for sigs,cert in [((1027,),(1025,)),((2052,),None),((0xaaaa,),(0xbbbb,))]:
+  add(1,ch(base_extensions(sigs=sigs,cert=cert)))
  rng=random.Random(0x84467301)
  for i in range(72):
   groups=rng.sample([23,24,29,256,0xaaaa],rng.randrange(1,6));share=SHARE if 29 in groups and rng.randrange(2) else None;sigs=rng.sample([2055,1027,2052],rng.randrange(1,4));cert=None if i%3==0 else rng.sample([2055,1027],rng.randrange(1,3));suites=rng.sample([4865,4867,4866,0xaaaa],rng.randrange(1,5));alpn=[ALPN,b'\x03foo',b'\x01\0',None][i%4];es=base_extensions(share,groups,sigs,cert,alpn=alpn,extra=[(0xaaaa,b'opaque'),(45,b'\x01\x01')]);a=ch(es,suites=suites)
@@ -235,6 +258,17 @@ def offers():
    add(1,ch(suites=offered),suite_policy=suites)
  add(1,suite_policy=(4866,4867,4865),suite_length=4)
 def servers():
+ # ServerHello chooses no proof. These valid no-Ed offers must select normally.
+ for sigs,cert in [((1027,),(1025,)),((2052,),None),((0xaaaa,),(0xbbbb,))]:
+  add(2,ch(base_extensions(sigs=sigs,cert=cert)),sh())
+ # Both signature lists are immutable across HRR, including ext50 omission.
+ for sigs,cert in [((1027,2052),(1025,2055)),((2052,1027),None)]:
+  first=ch(base_extensions(None,sigs=sigs,cert=cert))
+  second=base_extensions(SHARE,sigs=sigs,cert=cert,cookie=b'cookie')
+  add(3,first,ch(second),b'cookie',group=29)
+  add(3,first,ch(replace(second,13,vec(words(tuple(reversed(sigs)))))),b'cookie',group=29)
+  changed=omit(second,50) if cert is not None else second+[(50,vec(words(sigs)))]
+  add(3,first,ch(changed),b'cookie',group=29)
  for first_share in (None,SHARE):
   a=ch(base_extensions(first_share))
   for suite in (4865,4867,4866):
@@ -283,6 +317,18 @@ def servers():
    add(2,second,sh(suite=final),b'cookie',pref=chosen,group=29,flag=1,mode=6)
   add(3,first,second,b'cookie',pref=chosen,group=29)
 def writers():
+ # Exact bytes distinguish proof/certificate permission, order and omission.
+ for proofs,certificates in [((2055,1027,2052),(2055,1027,2052,1025)),((1027,2052),None),((2055,),(1025,)),((2052,1027),(1027,2052))]:
+  args=dict(op=6,a=SHARE,pref=0,proofs=proofs,certificates=certificates)
+  n=len(writer(0,0,0,SHARE,b'',b'',b'',proofs=proofs,certificates=certificates))
+  for capacity in (n-1,n,n+1):add(**args,capacity=capacity)
+ for proofs,certificates in [((),(2055,)),((2055,2055),(2055,)),((1025,),(2055,)),((0xaaaa,),(2055,)),((2055,),()),((2055,),(1025,1025)),((2055,),(0xaaaa,))]:
+  add(6,a=SHARE,pref=0,proofs=proofs,certificates=certificates)
+ add(6,a=SHARE,pref=0,proof_length=5)
+ add(6,a=SHARE,pref=0,cert_length=5)
+ # An absent optional certificate policy has no authority, even if its unused
+ # descriptor length is malformed; it emits no extension50.
+ add(6,a=SHARE,pref=0,certificates=None,cert_length=5)
  for share in (b'',SHARE,b'x',b'x'*33):
   for name in (b'',b'example.com',b'example.com.',b'127.0.0.1'):
    for alpn in (b'',ALPN,b'\0'):

@@ -88,6 +88,7 @@ class Cert:
     serial: int = 1
     tamper: bool = False
     algorithm: bytes = ED
+    spki_algorithm: bytes = ED
     raw: object = None
 
     def encode(self):
@@ -98,7 +99,7 @@ class Cert:
         if self.eku is not None: extensions.append(extension(37, seq(*(oid(2, 5, 29, 37, 0) if p == 'any' else oid(1, 3, 6, 1, 5, 5, 7, 3, 1 if p == 'server' else 2) for p in self.eku))))
         if self.sans: extensions.append(extension(17, seq(*(tlv(128 + t, b) for t, b in self.sans)), self.critical_san))
         extensions += list(self.extra)
-        tbs = seq(tlv(160, integer(2)), integer(self.serial), self.algorithm, name(self.issuer, self.issuer_tag), seq(utc(self.before), utc(self.after)), name(self.subject, self.subject_tag), seq(ED, bitstring(self.public)), tlv(163, seq(*extensions)))
+        tbs = seq(tlv(160, integer(2)), integer(self.serial), self.algorithm, name(self.issuer, self.issuer_tag), seq(utc(self.before), utc(self.after)), name(self.subject, self.subject_tag), seq(self.spki_algorithm, bitstring(self.public)), tlv(163, seq(*extensions)))
         signature = bytearray(signed(tbs, self.signer))
         if self.tamper: signature[17] ^= 4
         return seq(tbs, self.algorithm, bitstring(bytes(signature)))
@@ -142,6 +143,7 @@ def semantic_accept(chain, anchor, now=NOW, reference=b'path.example', ip=False)
             count = sum(c.subject != c.issuer or c.subject_tag != c.issuer_tag for c in peers[1:index])
             if count > cert.path: return False
     for child, issuer in zip(peers, peers[1:] + [anchor]):
+        if child.algorithm != ED: return False
         if name(child.issuer, child.issuer_tag) != name(issuer.subject, issuer.subject_tag): return False
         outer = children(one(child.encode())[1])
         signature = outer[2][1][1:]
@@ -186,8 +188,9 @@ def models():
               case('wrong issuer', chain=[changed(leaf, issuer='Other'), ca], error='IssuerMismatch'),
               case('byte exact DN restricted profile', chain=[changed(leaf, issuer_tag=19), ca], error='IssuerMismatch'),
               case('wrong intermediate public key', chain=[leaf, changed(ca, public=OTHER_PK)], error='InvalidSignature'),
+              case('wellframed P256 issuer wrong key length has issuer index', chain=[leaf, changed(ca, spki_algorithm=seq(oid(1, 2, 840, 10045, 2, 1), oid(1, 2, 840, 10045, 3, 1, 7)))], error='UnsupportedAlgorithm', signatures=0, error_indices=(1, -1)),
               case('tampered signed TBS signature', chain=[changed(leaf, tamper=True), ca], error='InvalidSignature'),
-              case('RSA signature algorithm outside this profile', chain=[changed(leaf, algorithm=seq(oid(1, 2, 840, 113549, 1, 1, 11), b'\x05\0')), ca], error='UnsupportedAlgorithm', signatures=0),
+              case('RSA algorithm mismatches Ed issuer key', chain=[changed(leaf, algorithm=seq(oid(1, 2, 840, 113549, 1, 1, 11), b'\x05\0')), ca], error='InvalidSignature', signatures=0),
               case('wrong root public key', anchors=[changed(root, public=OTHER_PK)], error='InvalidSignature'),
               case('untrusted root', anchors=[changed(root, subject='Other', issuer='Other', public=OTHER_PK, signer=OTHER_SK)], error='Untrusted'),
               case('selfsignature is not trust', chain=[changed(leaf, issuer='Leaf', signer=LEAF_SK)], error='Untrusted'),
@@ -271,7 +274,7 @@ def record(c, layout):
         assert not any(accepted(anchor) for anchor in c['anchors']), ('independent negative predicate', c['label'])
     chain, anchors = [v.encode() for v in c['chain']], [v.encode() for v in c['anchors']]
     reference = o.get('reference', b'path.example')
-    fields = [layout, o.get('mode', 0), o.get('max_chain', 8), o.get('max_anchors', 8), o.get('max_input', 1048576), o.get('max_signatures', 64), o.get('max_work', 16777216), o.get('max_items', 100000), o.get('parse_work', 16777216), o.get('now', NOW) & U64, o.get('ip', 0), len(reference), len(chain), len(anchors)]
+    fields = [layout, o.get('mode', 0), o.get('max_chain', 8), o.get('max_anchors', 8), o.get('max_input', 1048576), o.get('max_signatures', 64), o.get('max_work', 1073741824), o.get('max_items', 100000), o.get('parse_work', 16777216), o.get('now', NOW) & U64, o.get('ip', 0), len(reference), len(chain), len(anchors)]
     wire = b''.join(struct.pack('<Q', n) for n in fields) + reference
     for cert in chain + anchors: wire += struct.pack('<Q', len(cert)) + cert
     ci, ai = o.get('error_indices', (U64 - 1, U64 - 1))

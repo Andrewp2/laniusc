@@ -127,6 +127,24 @@ fn ordinary_consumer_imports_owns_classifies_and_verifies_all_families() {
     assert!(std::fs::read_to_string(trace.path()).unwrap().is_empty());
 }
 
+#[test]
+fn explicit_policies_cover_ids_subsets_copies_and_use_permissions() {
+    let exe = compile("policy");
+    let trace = common::TempArtifact::new("laniusc_signature", "policy_memory", None);
+    let out = common::process_output_with_timeout(
+        "native signature policy contracts",
+        Command::new("strace")
+            .args(["-qq", "-o"])
+            .arg(trace.path())
+            .args(["-e", "trace=mmap,munmap,mremap,brk"])
+            .arg(exe.path()),
+        Duration::from_secs(10),
+    );
+    checked(&out);
+    assert!(out.stdout.is_empty());
+    assert!(std::fs::read_to_string(trace.path()).unwrap().is_empty());
+}
+
 // A positive control, never an expected compiler error. Select the other
 // semantically identical source forms explicitly while diagnosing admission.
 #[test]

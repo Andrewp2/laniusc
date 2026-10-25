@@ -1,0 +1,13 @@
+// Positive diagnostic using the actual nested authentication Error payload.
+// No expected-error assertion: root may compile either control independently.
+module app::main;
+import ext::tls_authentication; import ext::tls_handshake; import ext::x509_path;
+fn error(e:ext::tls_authentication::Error)->u64{return match(e){ext::tls_authentication::Error::Bounds->999,ext::tls_authentication::Error::InvalidLimit->999,ext::tls_authentication::Error::HashMismatch->999,ext::tls_authentication::Error::InvalidTranscript->999,ext::tls_authentication::Error::EmptyAnchors->999,ext::tls_authentication::Error::AnchorLimit->999,ext::tls_authentication::Error::SignatureScheme->7,ext::tls_authentication::Error::FrameLimit->8,ext::tls_authentication::Error::WorkLimit->9,ext::tls_authentication::Error::SignatureLimit->10,ext::tls_authentication::Error::ScratchTooSmall->999,ext::tls_authentication::Error::UnexpectedMessage->999,ext::tls_authentication::Error::Handshake(_)->999,ext::tls_authentication::Error::CertificateContext->999,ext::tls_authentication::Error::EmptyCertificate->999,ext::tls_authentication::Error::CertificateLimit->999,ext::tls_authentication::Error::CertificateExtensions->999,ext::tls_authentication::Error::Path(_)->100,ext::tls_authentication::Error::CertificateVerify->17,ext::tls_authentication::Error::Finished->18,ext::tls_authentication::Error::Transcript->999};}
+fn main()->i32{
+ assert(error(ext::tls_authentication::Error::SignatureScheme)==7);
+ assert(error(ext::tls_authentication::Error::Bounds)==999);
+ assert(error(ext::tls_authentication::Error::Handshake(ext::tls_handshake::Error::Bounds))==999);
+ let issue:ext::x509_path::Error=ext::x509_path::Error{kind:ext::x509_path::ErrorKind::InvalidSignature,certificate:2,anchor:1,offset:17};
+ assert(error(ext::tls_authentication::Error::Path(issue))==100);
+ return 0;
+}

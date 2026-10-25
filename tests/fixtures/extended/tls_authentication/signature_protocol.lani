@@ -1,0 +1,76 @@
+// Test-only generic-key authentication consumer; independent peer supplies bytes.
+module app::main;
+import core::io; import core::mem; import core::option; import core::result; import core::slice;
+import ext::signature; import ext::service_identity; import ext::tls_authentication; import ext::tls_hash; import ext::tls_schedule; import ext::tls_transcript; import ext::x509_path; import ext::x509;
+import std::stream;
+fn load(b:[u8],at:i32)->u64{let v:u64=0;let i:i32=0;while(i<8){v|=(b[at+i] as u64)<<(8*i);i+=1;}return v;}
+fn read(input:&std::stream::Descriptor,b:[u8],at:i32,n:i32){core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(input,b,at,n));}
+fn view(b:[u8],at:i32,n:i32)->core::slice::View<u8>{return core::slice::View{values:b,start:at,length:n};}
+fn word(out:&std::stream::Descriptor,n:u64){let b:[u8;8]=[0;8];let i:i32=0;while(i<8){b[i]=((n>>(8*i))&255) as u8;i+=1;}core::result::unwrap(core::io::write_all<std::stream::Descriptor>(out,b,0,8));}
+fn phase(p:ext::tls_authentication::Phase)->u64{return match(p){ext::tls_authentication::Phase::EncryptedExtensions->0,ext::tls_authentication::Phase::Certificate->1,ext::tls_authentication::Phase::CertificateVerify->2,ext::tls_authentication::Phase::Finished->3,ext::tls_authentication::Phase::Authenticated->4,ext::tls_authentication::Phase::Failed->5};}
+fn error(e:ext::tls_authentication::Error)->u64{return match(e){ext::tls_authentication::Error::Bounds->999,ext::tls_authentication::Error::InvalidLimit->999,ext::tls_authentication::Error::HashMismatch->999,ext::tls_authentication::Error::InvalidTranscript->999,ext::tls_authentication::Error::EmptyAnchors->999,ext::tls_authentication::Error::AnchorLimit->999,ext::tls_authentication::Error::SignatureScheme->7,ext::tls_authentication::Error::FrameLimit->8,ext::tls_authentication::Error::WorkLimit->9,ext::tls_authentication::Error::SignatureLimit->10,ext::tls_authentication::Error::ScratchTooSmall->999,ext::tls_authentication::Error::UnexpectedMessage->999,ext::tls_authentication::Error::Handshake(_)->999,ext::tls_authentication::Error::CertificateContext->999,ext::tls_authentication::Error::EmptyCertificate->999,ext::tls_authentication::Error::CertificateLimit->999,ext::tls_authentication::Error::CertificateExtensions->999,ext::tls_authentication::Error::Path(_)->100,ext::tls_authentication::Error::CertificateVerify->17,ext::tls_authentication::Error::Finished->18,ext::tls_authentication::Error::Transcript->999};}
+fn policy(id:i32)->ext::signature::Policy{
+ if(id==0){return ext::signature::default_proofs();}if(id==1){return ext::signature::Policy{order:[2055,0,0,0],length:1};}
+ if(id==2){return ext::signature::Policy{order:[1027,0,0,0],length:1};}if(id==3){return ext::signature::Policy{order:[2052,0,0,0],length:1};}
+ if(id==4){return ext::signature::Policy{order:[1025,0,0,0],length:1};}if(id==5){return ext::signature::Policy{order:[2055,2055,0,0],length:2};}
+ return ext::signature::Policy{order:[0,0,0,0],length:0};
+}
+fn kind(k:ext::signature::Kind)->u64{return match(k){ext::signature::Kind::Ed25519->1,ext::signature::Kind::P256->2,ext::signature::Kind::Rsae->3};}
+fn main()->i32{
+ let input:std::stream::Descriptor=std::stream::stdin();let output:std::stream::Descriptor=std::stream::stdout();let cb:[u8;8]=[0;8];read(input.borrow(),cb,0,8);let count:u64=load(cb,0);let turn:u64=0;
+ while(turn<count){
+  let h:[u8;152]=[0;152];read(input.borrow(),h,0,152);
+  let layout:i32=load(h,0) as i32;let algid:i32=load(h,8) as i32;let ownid:u16=load(h,16) as u16;let pm:i32=load(h,24) as i32;let cm:i32=load(h,32) as i32;
+  let now:i64=load(h,40) as i64;let totalwork:u64=load(h,48);let attempts:u64=load(h,56);let cap:u64=load(h,64);let quota:u64=load(h,72);let messagecap:i32=load(h,80) as i32;
+  let rootn:i32=load(h,88) as i32;let chn:i32=load(h,96) as i32;let shn:i32=load(h,104) as i32;let certn:i32=load(h,112) as i32;let cvn:i32=load(h,120) as i32;let finn:i32=load(h,128) as i32;let wn:i32=load(h,136) as i32;let mutate:bool=load(h,144)!=0;
+  assert(layout>=0&&layout<=1&&algid>=0&&algid<=1&&rootn>0&&rootn<=4096&&chn>0&&chn<=512&&shn>0&&shn<=512&&certn>0&&certn<=8192&&cvn>0&&cvn<=1024&&finn>0&&finn<=64&&wn>0&&wn<=512);
+  let algorithm:ext::tls_hash::Algorithm=ext::tls_hash::Algorithm::Sha256;if(algid==1){algorithm=ext::tls_hash::Algorithm::Sha384;}let size:i32=ext::tls_hash::hash_length(algorithm);
+  let native:[u8;8192]=[0;8192];let packed:[i32;2048]=[0;2048];let frames:[u8;8200]=[0;8200];let fp:[i32;2050]=[0;2050];let arena:[u8]=native;let frame:[u8]=frames;
+  if(layout==1){arena=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(packed),8192);frame=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(fp),8200);}
+  let i:i32=0;while(i<8192){arena[i]=165;i+=1;}i=0;while(i<8200){frame[i]=165;i+=1;}
+  read(input.borrow(),arena,3,rootn);read(input.borrow(),arena,4102,chn);read(input.borrow(),arena,4620,shn);read(input.borrow(),arena,5138,size);read(input.borrow(),arena,5200,wn);
+  let anchor:core::slice::View<u8> = view(arena,3,rootn);let anchors:[core::slice::View<u8>;1]=[anchor];let refbytes:[u8;14]=[115,101,114,118,101,114,46,101,120,97,109,112,108,101];
+  let reference:ext::service_identity::Reference=ext::service_identity::dns_reference(view(refbytes,0,14)).unwrap();let transcript:ext::tls_transcript::State=ext::tls_transcript::new(algorithm);transcript.update(view(arena,4102,chn)).unwrap();transcript.update(view(arena,4620,shn)).unwrap();
+  let secret:ext::tls_schedule::Secret=ext::tls_schedule::secret_from_view(algorithm,view(arena,5138,size)).unwrap();
+  let config:ext::tls_authentication::Config=ext::tls_authentication::Config{anchors:core::slice::View{values:anchors,start:0,length:1},reference:reference,unix_time:now,max_frame:16384,proofs:policy(pm),certificates:policy(cm)};
+  let made:core::result::Result<ext::tls_authentication::State,ext::tls_authentication::Error> = ext::tls_authentication::server(transcript,secret,config);
+  word(output.borrow(),core::mem::slice_stride(arena) as u64);word(output.borrow(),core::mem::slice_stride(frame) as u64);
+  let status:u64=0;if(made.is_err()){status=error(made.unwrap_err());}word(output.borrow(),status);
+  let lengths:[i32;4]=[6,certn,cvn,finn];let slots:[ext::x509_path::Slot;5]=[ext::x509_path::empty_slot();5];let scratch:core::slice::View<ext::x509_path::Slot> = core::slice::View{values:slots,start:1,length:3};
+  let limits:ext::x509_path::Limits=ext::x509_path::default_limits();limits.max_work=totalwork;limits.max_signatures=attempts;let budget:ext::x509_path::Budget=ext::x509_path::budget(limits).unwrap();
+  // Failed constructors still consume their framed peer input; no state exists.
+  let state:core::option::Option<ext::tls_authentication::State> = core::option::None();if(made.is_ok()){state=core::option::Some(made.unwrap());}
+  let step:i32=0;while(step<4){
+   let n:i32=lengths[step];read(input.borrow(),frame,3,n);
+   if(state.is_some()){
+    let active:ext::tls_authentication::State=state.unwrap();
+    if(step==2){if(cap<budget.verification.work_left){budget.verification.work_left=cap;}if(quota<budget.verification.signatures_left){budget.verification.signatures_left=quota;}budget.verification.message_limit=messagecap;}
+    if(mutate){config.proofs.order=[0;4];config.certificates.order=[0;4];secret.bytes=[0;48];reference.bytes[0]=120;}
+    let before:u64=budget.verification.work_left;let result:core::result::Result<ext::tls_authentication::Phase,ext::tls_authentication::Error> = active.feed(view(frame,3,n),scratch,budget.borrow());status=0;if(result.is_err()){status=error(result.unwrap_err());}
+    word(output.borrow(),before);word(output.borrow(),status);word(output.borrow(),phase(active.phase()));word(output.borrow(),active.is_poisoned() as u64);word(output.borrow(),active.authenticated() as u64);word(output.borrow(),active.peer_key().is_some() as u64);word(output.borrow(),active.transcript().is_some() as u64);word(output.borrow(),budget.verification.signatures_left);word(output.borrow(),budget.verification.work_left);
+    let digest:ext::tls_hash::Digest=ext::tls_hash::Digest{algorithm:algorithm,bytes:[0;48]};let count:u64=0;let family:u64=0;
+    if(active.authenticated()){let hash:ext::tls_transcript::State=active.transcript().unwrap();digest=hash.snapshot();count=hash.messages();family=kind(active.peer_key().unwrap().kind());}
+    core::result::unwrap(core::io::write_all<std::stream::Descriptor>(output.borrow(),digest.bytes,0,48));word(output.borrow(),count);word(output.borrow(),family);
+    if(active.is_poisoned()){
+     let work:u64=budget.verification.work_left;let sigs:u64=budget.verification.signatures_left;assert(active.peer_key().is_none()&&active.transcript().is_none());let repeated:core::result::Result<ext::tls_authentication::Phase,ext::tls_authentication::Error> = active.feed(view(frame,3,n),scratch,budget.borrow());assert(repeated.is_err()&&error(repeated.unwrap_err())==status);let bad:core::slice::View<u8> = view(frame,-1,n);assert(active.feed(bad,scratch,budget.borrow()).is_err());assert(budget.verification.work_left==work&&budget.verification.signatures_left==sigs);
+    }
+    if(active.authenticated()){
+     let key:ext::signature::PublicKey=active.peer_key().unwrap();let original:ext::signature::PublicKey=key;let duplicate:ext::tls_authentication::State=active;
+     let message:[u8;35]=[111,119,110,101,100,32,84,76,83,32,108,101,97,102,32,107,101,121,32,97,102,116,101,114,32,114,101,116,105,114,101,109,101,110,116];let own:ext::signature::Scheme=ext::signature::tls_scheme(ownid,ext::signature::Use::CertificateVerify).unwrap();
+     let allowance:ext::signature::Budget=ext::signature::budget(ext::signature::default_limits()).unwrap();let witness:bool=ext::signature::verify(key.borrow(),ext::signature::Use::CertificateVerify,own,view(message,0,35),view(arena,5200,wn),allowance.borrow()).unwrap();assert(witness);
+     // Clear every parsed Slot and reassign a full returned key value. Both the
+     // saved key and a copied authenticated State must still verify independently.
+     i=1;while(i<4){slots[i]=ext::x509_path::empty_slot();i+=1;}
+     let root:ext::signature::PublicKey=ext::signature::parse_spki(ext::x509::parse(anchor,budget.parsing.borrow()).unwrap().spki.encoded,allowance.borrow()).unwrap();key=root;assert(kind(key.kind())==1);
+     let saved:ext::signature::PublicKey=duplicate.peer_key().unwrap();assert(ext::signature::verify(original.borrow(),ext::signature::Use::CertificateVerify,own,view(message,0,35),view(arena,5200,wn),allowance.borrow()).unwrap());assert(ext::signature::verify(saved.borrow(),ext::signature::Use::CertificateVerify,own,view(message,0,35),view(arena,5200,wn),allowance.borrow()).unwrap());
+     word(output.borrow(),1);
+    }else{word(output.borrow(),0);}
+    state=core::option::Some(active);
+   }
+   assert(frame[0]==165&&frame[1]==165&&frame[2]==165&&frame[3+n]==165&&frame[4+n]==165&&frame[5+n]==165);assert(slots[0].certificate.is_none()&&slots[4].certificate.is_none());
+   i=0;while(i<n+6){frame[i]=165;i+=1;}step+=1;
+  }
+  core::result::unwrap(core::io::write_all<std::stream::Descriptor>(output.borrow(),arena,3,rootn));assert(arena[0]==165&&arena[1]==165&&arena[2]==165&&arena[3+rootn]==165);turn+=1;
+ }
+ return 0;
+}

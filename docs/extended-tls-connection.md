@@ -1,16 +1,19 @@
 # Portable TLS connection engine
 
 `ext::tls_connection` composes the Lanius negotiation, framing, transcript,
-X25519/P-256, selected hash, key schedule, record and server-authentication layers. It implements
-client and server roles in one allocation-free engine. Socket ownership,
-nonblocking calls, entropy acquisition and deadlines belong to `ext::tls_tcp`.
+X25519/P-256, selected hash, key schedule, record and server-authentication
+layers. It implements client and server roles in one allocation-free engine.
+Socket ownership, nonblocking calls, entropy acquisition and deadlines belong
+to `ext::tls_tcp`.
 
-The source profile is TLS 1.3 with X25519 or secp256r1 ECDHE, Ed25519 certificates
-and CertificateVerify, and an explicit suite policy: AES-128-GCM/SHA256 (`1301`),
-AES-256-GCM/SHA384 (`1302`), or ChaCha20-Poly1305/SHA256 (`1303`).
-The SHA384 migration is accepted on x86_64 Linux at engine `635898ed`.
-All eight focused gates passed in two serialized invocations. The current
-receipts and earlier pinned milestones are recorded separately below.
+The source profile is TLS 1.3 with X25519 or secp256r1 ECDHE, explicit
+certificate/proof signature policies, and an explicit suite policy:
+AES-128-GCM/SHA256 (`1301`), AES-256-GCM/SHA384 (`1302`), or
+ChaCha20-Poly1305/SHA256 (`1303`). The signature-policy/generic-key integration
+is accepted on x86_64 Linux at engine `163f9b96`: all twelve engine gates passed
+in four serialized invocations. Earlier pinned milestones are recorded
+separately below. Connected TCP/application and performance admission for this
+migration are separate, still-pending gates.
 The server authenticates; its client is explicitly anonymous. There is no PSK
 resumption, early data, client certificate authentication or post-handshake
 authentication. Received NewSessionTicket messages are structurally validated
@@ -18,7 +21,7 @@ and discarded; the cache is disabled and this engine never issues a ticket.
 
 This profile does not satisfy the complete mandatory algorithm set in
 [RFC 8446 section 9](https://www.rfc-editor.org/rfc/rfc8446.html#section-9).
-The ordered Ed25519 certificate verifier retains its documented offline,
+The ordered certificate verifier retains its documented offline,
 explicit-anchor constraints; this engine does not add general PKIX path
 building, normalized distinguished names, revocation or unsupported policies.
 See [the connection contract](tls-connection-contract.md),
@@ -60,9 +63,28 @@ encoded ALPN offer list (concatenated nonempty `u8`-length-prefixed names).
 Server configuration supplies an immutable ordered DER chain, a 32-byte seed,
 and one preferred **plain**, unprefixed ALPN protocol. `require_alpn` requires a
 negotiated protocol. SNI and certificate reference identity remain distinct.
-The server derives the seed's public key and compares all 32 bytes to the
-actual leaf SPKI before it can emit a handshake. Every sent certificate uses
-the implemented Ed25519 certificate-signature profile.
+The server derives the real Ed25519 seed's public key, imports the actual leaf
+SPKI through `signature::parse_spki`, and compares all 32 bytes before it can
+emit a handshake. The local signer remains Ed25519 only. Issuer certificate
+signatures may independently use the supported Ed25519, P-256 ECDSA/SHA256,
+RSA PKCS#1/SHA256, or RSA-PSS/SHA256 profile. This adds no RSA/ECDSA private
+signer or external signing substitute.
+
+`ClientConfig.proofs: signature::Policy` controls CertificateVerify offers;
+`certificates: Option<signature::Policy>` controls extension 50. `None` omits
+extension 50 and uses the actual extension-13 fallback. Both local policies
+are validated before construction work. ServerHello selects suite/group only,
+never a proof algorithm. The client constructs authentication's owned policies
+from `signature_policy` over the actual retained ClientHello, including CH2,
+rather than trusting mutable caller metadata or assuming Ed25519.
+
+The server separately requires Ed25519 in the actual proof offer. Each sent
+certificate's algorithm must appear in the effective certificate offer.
+Algorithms are classified once during construction and cached as owned scheme
+values; the leaf is not parsed twice. A transmitted root is included in this
+stricter sender check, even though path validation can trust a configured
+anchor without verifying its self-signature. Omitting a root is supported.
+Unsent trust anchors are never eagerly imported by engine construction.
 
 Call `required_buffers(limits)` before allocating caller backing. It checks
 wire maxima, arithmetic and the packed-owner allocation-size domain. The
@@ -79,8 +101,11 @@ returned counts are logical elements:
 | `path` | 16 `x509_path::Slot` values |
 
 The hello region retains separate CH1, CH2 and HRR-cookie ranges. Negotiation
-views never point into temporary inline engine arrays. The path workspace is
-used synchronously and may retain obsolete borrowed parser records after an
+views never point into temporary inline engine arrays. The path workspace
+includes owned imported-key cache entries, so sixteen logical slots occupy
+more physical bytes than the earlier parser-only slots. Callers must use
+`size_of<x509_path::Slot>()`, not an old byte constant. It is used synchronously
+and may retain obsolete borrowed parser records after an
 input frame is retired; neither the engine nor callers may use those old
 records after their backing changes.
 
@@ -121,6 +146,10 @@ Only the final transport acknowledgement of that record releases application
 reads, writes, exporter output and the copied peer key. The server enters
 Established only after verifying and appending client Finished. No caller trust
 flag or externally supplied leaf key can perform these transitions.
+`peer_key()` returns `Option<signature::PublicKey>` with no certificate backing
+borrow. Failure/abort drops the engine's retained key. A copied returned key
+remains owned after frame/cache retirement; it conveys no trust outside the
+decision that produced it.
 
 `queue_plaintext` accepts at most one 16,384-byte prefix in Established and
 reports accepted plaintext independently of wire transmission. `WantOutput`
@@ -167,9 +196,10 @@ elapsed time. A transport deadline or host-call budget is independently owned
 by the adapter and can stop an Established operation without replenishing the
 engine's hard allowances.
 
-Defaults allow a 1 MiB handshake body as a storage ceiling. The default path
-work allowance remains the authentication bridge's conservative tariff:
-`4096 + 256 * frame_length` before nested parsing, plus actual path work.
+Defaults allow a 1 MiB handshake body as a storage ceiling. The shared path
+verification account starts with 1 Gi abstract work credits. Authentication
+also reserves its conservative `4096 + 256 * frame_length` tariff before
+nested parsing, plus actual path/signature work and owned-key copy credits.
 Consequently raising the frame/storage ceiling alone does not admit large
 certificate flights. The long-chain test explicitly raises path work; callers
 must choose all resource limits coherently.
@@ -297,9 +327,168 @@ bound. Rejected scalar admissions run fixed decode/range checks and are separate
 bounded by the adapter's eight-candidate cap. Default engine work is 64 Gi;
 large certificate/record workloads still need explicit sufficient session/path limits.
 
-## Current verification scope
+## Signature-policy integration
 
-The current eight exact filters retain the six earlier filter names and add:
+The current source uses one `path_budget.verification` allowance for imported
+keys, algorithm classification, certificate/CV verification and the shared
+attempt count. Earlier parsing/classification charges remain spent on later
+failure. Local Ed25519 signing reserves **67,108,864 shared verification
+credits** and one attempt, as well as the separate **1,048,576 engine
+protocol-work credits**. Both work allowances and the attempt are preflighted
+before any of these debits. The protocol check also includes every known
+pre-sign SHA384 debit: the 50,688-credit snapshot and 8,768-credit CV-input
+staging fee. Their existing later debits each occur once. Stats reads the
+shared attempt counter; there is no per-certificate, per-algorithm or proof
+reset. Signature resource errors during local credential setup map to the
+engine's existing `Limit`;
+unsupported or mismatched local credentials map to `Credential`.
+
+The signing envelope follows the actual Ed25519 source: 512 fixed point
+double/add/select steps, each below 20 field products and 64 linear
+operations. At 512 credits per product and 256 per linear operation, a step
+fits 32,768 credits. Another 4,096 products and 16,384 linear operations
+cover the two affine encodings and scalar reductions. The fixed 130/146-byte
+CertificateVerify input needs at most five SHA512 blocks across seed,
+nonce and challenge hashes; allowing 65,536 credits per block still gives
+`512*32768 + 4096*512 + 16384*256 + 5*65536 < 67108864`. These are conservative
+source-action admission credits, with no timing or compiled-instruction bound.
+The engine protocol account separately pays framing, transcript and record
+operations; neither account refills the other.
+
+The new exact gates in `extended_tls_connection_execution` are:
+
+- `mixed_certificate_issuers_keep_real_ed25519_signer_and_full_epochs`: six
+  full paired connections, real Ed25519 leaf signer under RSA PKCS#1,
+  ECDSA/P-256, and RSA-PSS issuer certificates, both layouts and all three
+  existing suites. OpenSSL generates and independently verifies each path;
+  the wire peer checks Ed25519 proofs, complete records and all epochs.
+- `actual_signature_offers_fallback_rejections_and_owned_key_retirement_execute`:
+  six accepted and eight rejected offer cases. These separate proof and
+  certificate permission, exercise extension-50 omission/fallback, retain
+  copied generic keys through certificate/cache retirement and abort, and
+  reject non-Ed proof offers or unoffered sent-certificate algorithms before
+  any successful ServerHello. A labeled private metadata challenge changes
+  the retained ClientConfig after CH emission; actual CH bytes remain policy
+  authority. This is not a supported Engine restoration API.
+- `local_signing_shares_verification_work_and_attempt_boundary_after_credentials`:
+  eight layout cases, exact and one-less remaining shared signing work under
+  SHA256 and SHA384. A labeled private seam only decreases the existing account
+  after real credential import and complete Certificate acknowledgement.
+  Exact credit must produce a separately verified proof and complete all
+  epochs. One less must leave the attempt and remaining shared work unchanged,
+  emit only the independently decrypted fatal alert, and withhold the key.
+  These counter probes do not describe a public allowance-reset API.
+- `local_signing_preflights_all_presign_protocol_work_before_shared_reservation`:
+  twelve cases, pre-sign protocol credit minus one/exact/plus one under both
+  hashes and layouts, capped after the same real Certificate ACK. Minus one
+  preserves the shared verification work, attempt and handshake backing.
+  Exact/plus one signs and stages a full CertificateVerify that libsodium
+  independently verifies byte for byte against the real transcript. The
+  subsequent frame reservation correctly fails because those cases leave
+  zero/one protocol credit; no wire CV or authentication success is claimed.
+  The crypto reservation and attempt remain spent once signing was admitted.
+
+The public constructor/admission fixture adds ten layout cases for empty,
+duplicate or forbidden proof policies and empty/unknown certificate policies,
+bringing its accepted total to 90. Existing Ed-only paired cases retain their
+actual offered bytes, shared budgets, ACK barrier, all record epochs, partial
+progress, close/KeyUpdate and full guard checks. The certificate work allowance
+is explicitly sized for the new signature tariffs; it is never replenished.
+
+### Signature integration admission
+
+All twelve gates passed against unchanged frozen engine `163f9b96`, driver
+`599b184c`, protocol `83cb790b` and independent peer `02020d0b`. The ordinary
+fixture is `2d4aa639`, controls `c361dee4`/`2dacff2d`, and constructor admissions
+`11d38ca9`/`ebd275ff`. Root ran four disjoint selections of
+`extended_tls_connection_execution-45bdd3cf3691412b`:
+
+| Invocation | Gates and scripted cases | Strict ELFs / native processes | Elapsed |
+| --- | --- | --- | --- |
+| Ordinary exact gate | Storage, CH construction, partial ACK and abort consumer | 1 / 1 | 21.66 s |
+| Four new signature gates | Mixed issuers 6; offers/copy lifetime 14; shared signing work 8; pre-sign protocol work 12 | 1 / 4 | 36.34 s |
+| Five paired regression gates | X pairs 4; long/HRR 4; P groups 8; SHA384-only 4; cross-hash/cookie HRR 4 | 1 / 5 | 42.15 s |
+| Two `boundaries_execute` gates | Controls 50; constructor admissions 90 | 2 / 2 | 47.98 s |
+
+This is **204 scripted cases plus the ordinary consumer, five compiled strict
+ELFs and twelve native processes**, across four invocations. It is not a
+single full-suite invocation. The two sets of paired gates each share their
+own protocol compilation through `OnceLock`. Each of the nine paired native
+processes owns exactly one 3,520,000-byte test-arena mmap and matching
+address/size munmap; the peer rejects every additional allocation event.
+Controls, constructor admissions and the ordinary consumer require empty
+mmap/mremap/munmap/brk traces. The portable engine itself allocates nothing.
+
+The final receipt includes the pre-sign guard correction found in source
+review before engine admission: the initial SHA384 check now includes snapshot
+and CV-input staging fees before reserving shared crypto work or an attempt.
+The later fees remain unchanged and occur once. There was no failed engine
+runtime gate in this admission. The exact/plus-one protocol probes prove a
+valid **staged** proof followed by the expected post-sign frame limit, as
+described above; they do not claim a completed wire proof or authenticated
+connection. Full wire proof/Finished/ACK publication is separately checked by
+the accepted shared-work-exact and ordinary paired success cases.
+
+The fresh joint engine/authentication/verify-certificate Rust driver build
+passed in 1.46 s. Its log is
+`target/stdlib-work/tls-signature-engine-cert-control-build.log`; this build
+receipt does not admit the other targets' runtime behavior. Engine runtime
+logs in the same directory are:
+
+- `tls-signature-engine-ordinary-first.log`;
+- `tls-signature-engine-new-first.log`;
+- `tls-signature-engine-paired-regression-first.log`;
+- `tls-signature-engine-boundaries-first.log`.
+
+All invocations used `RUST_MIN_STACK=16777216`,
+`LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000`, `LANIUS_DEBUG_STAGE_ERRORS=1`, a
+100 s outer timeout and 35 s lock wait. The ordinary inner timeout was 60 s;
+the other three used 90 s. These commands reproduce the accepted selections
+without repeating a gate:
+
+```bash
+engine=target/stdlib-build/debug/deps/extended_tls_connection_execution-45bdd3cf3691412b
+run_engine() {
+  local inner_seconds="$1"
+  shift
+  RUST_MIN_STACK=16777216 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000 \
+    LANIUS_DEBUG_STAGE_ERRORS=1 timeout --kill-after=2s 100s \
+    flock -E 75 -w 35 target/stdlib-work/library-gpu.lock \
+    timeout --kill-after=2s "${inner_seconds}s" "$engine" "$@" \
+    --nocapture --test-threads=1
+}
+run_engine 60 --exact ordinary_connection_storage_and_pending_wire_consumer_executes
+run_engine 90 \
+  --skip ordinary_connection_storage_and_pending_wire_consumer_executes \
+  --skip connection_error_atomicity_and_record_epoch_boundaries_execute \
+  --skip group_entropy_scalar_encoding_and_work_admission_boundaries_execute \
+  --skip paired_connections_match_independent_wire_epochs_and_authentication \
+  --skip fragmented_long_certificate_and_both_hello_retry_modes_execute \
+  --skip p256_and_dual_group_connections_match_independent_openssl_ecdh \
+  --skip sha384_only_suite_both_groups_and_publication_execute \
+  --skip sha384_late_binding_cross_hash_retry_and_cookie_execute
+run_engine 90 \
+  --skip ordinary_connection_storage_and_pending_wire_consumer_executes \
+  --skip connection_error_atomicity_and_record_epoch_boundaries_execute \
+  --skip group_entropy_scalar_encoding_and_work_admission_boundaries_execute \
+  --skip mixed_certificate_issuers_keep_real_ed25519_signer_and_full_epochs \
+  --skip actual_signature_offers_fallback_rejections_and_owned_key_retirement_execute \
+  --skip local_signing_shares_verification_work_and_attempt_boundary_after_credentials \
+  --skip local_signing_preflights_all_presign_protocol_work_before_shared_reservation
+run_engine 90 boundaries_execute
+```
+
+Root performed all compiler/native admission. Author checks were Python AST
+parsing, Rust formatting, and source/whitespace review only. GPU execution here
+is the compiler running on the GPU; user GPU kernels remain unverified.
+Independent real OpenSSL RSA/ECDSA server-proof interoperability belongs to
+the connected TCP/application gates, still pending for this migration. The
+new paired sender remains a real Ed25519 signer. No general PKIX, timing,
+compiled constant-time or secure-erasure guarantee is added.
+
+## Earlier SHA384 verification scope
+
+That milestone's eight exact filters retained the six earlier names and added:
 
 - `sha384_only_suite_both_groups_and_publication_execute`: four singleton-AES256
   flights across X/P and native/packed storage;
@@ -316,8 +505,8 @@ hash, schedule, records, exporters and directional KeyUpdate bytes through
 OpenSSL/hashlib/hmac. Wire-feed fragmentation does not by itself mean that one
 small handshake frame spans multiple protected records.
 
-The public-constructor/admission mode now has 80 layout cases: the previous 52
-plus suite-policy validation, unbound pre-SH state, actual SHA384 transcript
+At that snapshot the public-constructor/admission mode had 80 layout cases:
+the previous 52 plus suite-policy validation, unbound pre-SH state, actual SHA384 transcript
 snapshots, exact/one-less selected-hash handshake charges and HRR suite/history
 rejections. Constructor metadata/policy failures preserve the full caller arena.
 Initial CH pumping and every partial ACK retain absent suite/transcript state;
@@ -344,7 +533,7 @@ opener. Mismatch retains the old receive generation, withholds publication and
 produces the independently checked fatal alert. These labeled private phase/keys
 seams test reassembly and Finished verification, not certificate authentication.
 
-## SHA384 admission
+## Earlier SHA384 admission
 
 All eight engine gates passed against production `635898ed`, with negotiation
 `b3044892`, driver `44df5a19`, and frozen protocol/peer `4879ee72`/`83c63d68`.

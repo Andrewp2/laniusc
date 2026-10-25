@@ -10,6 +10,10 @@ import sys
 import threading
 import time
 
+# Shared test-only authenticated-record transformer; no production backend.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'tls_tcp'))
+import signature_proxy
+
 
 def read_spec(path):
     data = memoryview(pathlib.Path(path).read_bytes())
@@ -58,11 +62,17 @@ def write_receipt(receipt, status, output, errors):
 
 
 def context(directory, server, mode):
+    signature = mode.split('-') if mode.startswith('signature-') else None
+    if signature:
+        assert len(signature) in [4, 5] and signature[1] in ['rsa', 'p256', 'mixed']
+        directory = directory / 'signature' / signature[1]
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER if server else ssl.PROTOCOL_TLS_CLIENT)
     ctx.minimum_version = ssl.TLSVersion.TLSv1_3
     ctx.maximum_version = ssl.TLSVersion.TLSv1_3
-    ctx.set_ecdh_curve('prime256v1' if mode in ['p256', 'aes256-p256'] else 'X25519')
-    expected = {'TLS_AES_256_GCM_SHA384'} if mode.startswith('aes256-') else {'TLS_CHACHA20_POLY1305_SHA256', 'TLS_AES_128_GCM_SHA256'}
+    p256 = signature[3] == 'p256' if signature else mode in ['p256', 'aes256-p256']
+    ctx.set_ecdh_curve('prime256v1' if p256 else 'X25519')
+    expected = ({'chacha': {'TLS_CHACHA20_POLY1305_SHA256'}, 'aes128': {'TLS_AES_128_GCM_SHA256'}, 'aes256': {'TLS_AES_256_GCM_SHA384'}}[signature[2]] if signature else
+                {'TLS_AES_256_GCM_SHA384'} if mode.startswith('aes256-') else {'TLS_CHACHA20_POLY1305_SHA256', 'TLS_AES_128_GCM_SHA256'})
     active = {value['name'] for value in ctx.get_ciphers() if value['protocol'] == 'TLSv1.3'}
     assert active == expected, f'OpenSSL peer suite policy not applied: {active} != {expected}'
     if server:
@@ -150,6 +160,7 @@ def main():
     receipt = dict(received=b'', sent=b'', error=None, clean_close=False,
                    version=None, cipher=None, reused=None, openssl=ssl.OPENSSL_VERSION)
     stop = threading.Event()
+    mutations, proxy_threads, proxy_sockets = [], [], []
     listener = None
     if not server:
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -184,7 +195,19 @@ def main():
                     raw.sendall(b'not a TLS record')
                     raw.close()
                     return
-                connection = context(directory, True, spec['peer']).wrap_socket(raw, server_side=True)
+                ctx = context(directory, True, spec['peer'])
+                parts = spec['peer'].split('-')
+                if parts[0] == 'signature' and len(parts) == 5:
+                    assert parts[4] in ['proof', 'finished']
+                    keylog = directory / ('signature-keylog-' + str(time.monotonic_ns()) + '.txt')
+                    ctx.keylog_filename = str(keylog)
+                    bridge, endpoint = socket.socketpair()
+                    proxy_sockets.extend([raw, bridge])
+                    mutations.append(signature_proxy.start(raw, bridge, keylog,
+                        {'chacha': 0, 'aes128': 1, 'aes256': 2}[parts[2]],
+                        15 if parts[4] == 'proof' else 20, proxy_threads))
+                    raw = endpoint
+                connection = ctx.wrap_socket(raw, server_side=True)
             else:
                 while not stop.is_set():
                     try:
@@ -254,6 +277,13 @@ def main():
             assert not worker.is_alive(), 'peer cleanup timed out'
             if listener is not None:
                 listener.close()
+            for sock in proxy_sockets:
+                sock.close()
+            for thread in proxy_threads:
+                thread.join(timeout=1)
+            for mutation in mutations:
+                assert not mutation.errors and mutation.mutations == 1, (mutation.errors, mutation.mutations)
+                assert mutation.proof_scheme == (2052 if spec['peer'].split('-')[1] == 'rsa' else 1027)
     write_receipt(receipt, process.returncode, output, errors)
 
 

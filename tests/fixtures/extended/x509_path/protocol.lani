@@ -7,6 +7,7 @@ import core::result;
 import core::slice;
 import ext::ed25519;
 import ext::service_identity;
+import ext::signature;
 import ext::x509;
 import ext::x509_path;
 import std::stream;
@@ -50,20 +51,20 @@ fn run(header: [u8], reference_bytes: [u8], input: [u8], lengths: [i32], length:
     if (mode == 3) { scratch.length -= 1; } if (mode == 4) { trust.length = 0; } if (mode == 5) { chain.length = 0; } if (mode == 6) { trust.start = -1; }
     let limits: ext::x509_path::Limits = ext::x509_path::Limits { max_chain: decode(header, 16) as i32, max_anchors: decode(header, 24) as i32, max_input: decode(header, 32), max_signatures: decode(header, 40), max_work: decode(header, 48), parsing: ext::x509::Limits { max_input: 32768, max_items: decode(header, 56), max_work: decode(header, 64) } };
     let budget: ext::x509_path::Budget = ext::x509_path::budget(limits).unwrap();
-    let result: core::result::Result<ext::x509_path::ValidatedServer, ext::x509_path::Error> = ext::x509_path::validate_server(chain, trust, reference, decode(header, 72) as i64, scratch, budget.borrow());
+    let result: core::result::Result<ext::x509_path::ValidatedServer, ext::x509_path::Error> = ext::x509_path::validate_server(chain, trust, reference, decode(header, 72) as i64, ext::signature::default_certificates(), scratch, budget.borrow());
     if (result.is_err()) { let e: ext::x509_path::Error = result.unwrap_err(); out.word(code(e.kind)); out.word((e.certificate + 1) as u64); out.word((e.anchor + 1) as u64); out.word(e.offset as u64); }
     else { out.word(0); out.word(0); out.word(0); out.word(0); }
-    out.word(limits.max_signatures - budget.signatures_left); out.word(limits.max_work - budget.work_left); out.word(limits.parsing.max_items - budget.parsing.items_left); out.word(limits.parsing.max_work - budget.parsing.work_left);
+    out.word(limits.max_signatures - budget.verification.signatures_left); out.word(limits.max_work - budget.verification.work_left); out.word(limits.parsing.max_items - budget.parsing.items_left); out.word(limits.parsing.max_work - budget.parsing.work_left);
     if (result.is_ok()) {
-        let accepted: ext::x509_path::ValidatedServer = result.unwrap(); let saved: ext::ed25519::Key32 = accepted.public_key;
+        let accepted: ext::x509_path::ValidatedServer = result.unwrap(); let key: ext::ed25519::Key32 = accepted.public_key.ed25519_key().unwrap(); let saved: ext::ed25519::Key32 = key;
         // Only inspect independent inline results while temporarily mutating
         // borrowed backing. Restore before any checked borrowed helper reuse.
         let leaf_bytes: core::slice::View<u8> = slots[1].certificate.unwrap().spki.key.bytes;
-        let original_first: u8 = accepted.public_key.bytes[0];
-        bytes[leaf_bytes.start] ^= 1; let copied: ext::ed25519::Key32 = accepted.public_key; copied.bytes[0] ^= 1;
-        assert(accepted.public_key.bytes[0] == original_first && saved.bytes[0] == original_first && copied.bytes[0] != original_first); bytes[leaf_bytes.start] ^= 1;
+        let original_first: u8 = key.bytes[0];
+        bytes[leaf_bytes.start] ^= 1; let copied: ext::ed25519::Key32 = accepted.public_key.ed25519_key().unwrap(); copied.bytes[0] ^= 1;
+        assert(key.bytes[0] == original_first && saved.bytes[0] == original_first && copied.bytes[0] != original_first); bytes[leaf_bytes.start] ^= 1;
         out.word(accepted.anchor_index as u64); out.word(accepted.chain_length as u64); at = 0; while (at < 32) { out.word(saved.bytes[at] as u64); at += 1; }
-        assert(budget.signatures_left < limits.max_signatures);
+        assert(budget.verification.signatures_left < limits.max_signatures);
         if (mode == 7) {
             // This leaf has BC/KU/EKU/SAN and two DNS names. Reframing the
             // four extensions costs 5+5+4+4 items; SAN helper consumes3,
@@ -76,9 +77,9 @@ fn run(header: [u8], reference_bytes: [u8], input: [u8], lengths: [i32], length:
             assert(limited && short.items_left == 0);
         }
     }
-    assert(slots[0].certificate.is_none() && slots[19].certificate.is_none());
+    assert(slots[0].certificate.is_none() && slots[19].certificate.is_none() && slots[0].public_key.is_none() && slots[19].public_key.is_none());
     at = 0; while (at < 32768) { if (at < 3 || at >= length + 3) { assert(bytes[at] == 165); } else { assert(bytes[at] == input[at - 3]); } at += 1; }
-    if (mode >= 1 && mode <= 6) { assert(budget.signatures_left == limits.max_signatures && budget.work_left == limits.max_work && budget.parsing.items_left == limits.parsing.max_items && budget.parsing.work_left == limits.parsing.max_work && slots[1].certificate.is_none()); }
+    if (mode >= 1 && mode <= 6) { assert(budget.verification.signatures_left == limits.max_signatures && budget.verification.work_left == limits.max_work && budget.parsing.items_left == limits.parsing.max_items && budget.parsing.work_left == limits.parsing.max_work && slots[1].certificate.is_none()); }
 }
 fn main() -> i32 {
     let source: std::stream::Descriptor = std::stream::stdin(); let header: [u8;112] = [0;112]; let reference: [u8;253] = [0;253]; let input: [u8;32768] = [0;32768]; let lengths: [i32;16] = [0;16]; let output_bytes: [u8;1024] = [0;1024]; let out: Output = Output { bytes: output_bytes, used: 0 };

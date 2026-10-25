@@ -4,13 +4,14 @@
 verifies an ordered certificate chain against one explicitly chosen anchor,
 service identity, and UTC time. All application behavior runs in Lanius. It
 composes [`ext::x509_path`](../extended/ext/x509_path.lani),
-[`ext::service_identity`](../extended/ext/service_identity.lani), and the real
-Ed25519 signature verifier.
+[`ext::service_identity`](../extended/ext/service_identity.lani), and the owned
+[signature dispatcher](extended-signature.md).
 
-**Runtime admission passed** for x86_64 Linux ELF output from the GPU compiler,
-executed natively on the CPU. Three exact groups passed **84 native cases
-using three independently compiled strict ELFs**. These gates cover the
-bounded application and supported verification profile on this target.
+**Multi-algorithm caller admission is pending.** The application now passes an
+explicit default certificate policy to the shared path validator and keeps
+its CLI, I/O, publication and cleanup contract. The historical Ed25519-only
+84-case receipt is preserved separately below; it does not verify the new
+signature routes or expanded inline path storage.
 
 ## CLI and input
 
@@ -57,15 +58,40 @@ opening the anchor, or reading stdin. Arguments are copied with
 `snapshot(1,4,4372)`, excluding argv[0]. There are no options or implicit
 identity/time defaults.
 
-## Verification profile and output
+## Current multi-algorithm caller gates: runtime pending
+
+The focused driver retains its original three exact test names and all prior
+owner, descriptor, EOF, input-limit and shared-call-budget controls. Eleven
+additional default-policy/single-anchor cases consume the independent OpenSSL
+mixed corpus: RSA→P-256→Ed25519 and P-256→RSA→Ed25519 issuers, RSA and P-256
+leaf keys, RSA-PSS and PKCS#1 certificate signatures, exact included roots,
+ECDSA/RSA tampering and an unsupported child signature algorithm. Common
+supported paths are checked independently with `openssl verify` before they
+are supplied to the native application.
+
+The planned total is 95 native cases: 61 CLI/path cases, 27 owner/fault cases
+and seven cumulative-limit/I/O-budget cases. All application outputs remain
+exact `verified\n` on success and empty before-publication failures. No
+allocation occurs in path verification or publication; the existing
+address/length/generation allocation and descriptor ledgers remain in force.
+Only the source's explicit certificate policy call and profile comment change;
+its input/I/O/cleanup body is preserved. No runtime result for this migration
+is claimed until root completes the serialized gates.
+
+## Historical Ed25519-only native admission
 
 The executable calls `validate_server` with the complete chain, one configured
 anchor, the prepared reference, caller-provided scratch, and a fresh default
-shared path budget. Only a successful `ValidatedServer` authorizes output.
+shared path budget and explicit `signature::default_certificates()` policy.
+Only a successful `ValidatedServer` authorizes output.
 It never releases a key obtained merely by parsing the leaf.
 
-This is the shared validator's **bounded ordered Ed25519 server profile**:
-Ed25519 keys and signatures, exact encoded issuer/subject name links, validity
+This is the shared validator's **bounded ordered server profile**, with
+Ed25519, ECDSA/P-256/SHA-256, RSAE PKCS#1/SHA-256 and
+RSA-PSS/SHA-256/MGF1-SHA-256/salt32 certificate-edge verification. The explicit
+default certificate policy permits `0807,0403,0804,0401`; a child's public-key
+family is independent of its issuer's signature algorithm. It retains exact
+encoded issuer/subject name links, validity
 and calendar checks, issuer/anchor CA constraints, applicable key usage and
 server EKU restrictions, path-length checks, supported extension policy, and
 SAN service identity matching. Unsupported algorithms or constraints fail
@@ -109,9 +135,14 @@ and its failure returns 3 even after a read or exhausted-budget failure.
 Stdin and stdout are borrowed and are never closed.
 
 Peer framing uses up to eight borrowed DER views. Path parsing uses inline
-storage for nine slots, enough for eight peers and one anchor. The default
+storage for nine slots, enough for eight peers and one anchor. Each Slot now
+contains an optional owned multi-algorithm key cache, including RSA's larger
+inline state; the prior Ed25519 storage footprint is not a bound. The default
 path budget bounds aggregate input to 1 MiB, signature attempts to 64, and
-path work to 16,777,216 units. Its shared X509 parser budget additionally
+combined path/signature work to 1,073,741,824 abstract units. This explicitly
+raises the historical work allowance for primitive and owned-cache costs;
+`verification.message_limit` derives from the nonnegative parser input cap.
+Its shared X509 parser budget additionally
 bounds DER items to 100,000 and parser work to 16,777,216 units. These budgets
 stay shared through path and identity validation; no cursor receives a fresh
 allowance. Logical caps and work units do not specify RSS, physical View

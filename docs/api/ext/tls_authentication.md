@@ -12,7 +12,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-tls-authentication](../../extended-tls-authentication.md)
 
-Declaration counts: constant: 1; enum: 2; field: 16; function: 2; impl: 2; method: 9; struct: 3; variant: 27.
+Declaration counts: constant: 2; enum: 2; field: 20; function: 2; impl: 2; method: 9; struct: 3; variant: 27.
 
 ## Declared imports
 
@@ -22,7 +22,7 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::option](../core/option.md) · [source](../../../extended/ext/tls_authentication.lani#L5)
 - [core::result](../core/result.md) · [source](../../../extended/ext/tls_authentication.lani#L6)
 - [core::slice](../core/slice.md) · [source](../../../extended/ext/tls_authentication.lani#L7)
-- [ext::ed25519](ed25519.md) · [source](../../../extended/ext/tls_authentication.lani#L8)
+- [ext::signature](signature.md) · [source](../../../extended/ext/tls_authentication.lani#L8)
 - [ext::service_identity](service_identity.md) · [source](../../../extended/ext/tls_authentication.lani#L9)
 - [ext::tls_hash](tls_hash.md) · [source](../../../extended/ext/tls_authentication.lani#L10)
 - [ext::tls_handshake](tls_handshake.md) · [source](../../../extended/ext/tls_authentication.lani#L11)
@@ -36,7 +36,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Phase
 
-[Source line 17](../../../extended/ext/tls_authentication.lani#L17)
+[Source line 20](../../../extended/ext/tls_authentication.lani#L20)
 
 ```lanius
 pub enum Phase
@@ -44,7 +44,7 @@ pub enum Phase
 
 #### variant: EncryptedExtensions
 
-[Source line 17](../../../extended/ext/tls_authentication.lani#L17)
+[Source line 20](../../../extended/ext/tls_authentication.lani#L20)
 
 ```lanius
 EncryptedExtensions
@@ -52,7 +52,7 @@ EncryptedExtensions
 
 #### variant: Certificate
 
-[Source line 17](../../../extended/ext/tls_authentication.lani#L17)
+[Source line 20](../../../extended/ext/tls_authentication.lani#L20)
 
 ```lanius
 Certificate
@@ -60,7 +60,7 @@ Certificate
 
 #### variant: CertificateVerify
 
-[Source line 17](../../../extended/ext/tls_authentication.lani#L17)
+[Source line 20](../../../extended/ext/tls_authentication.lani#L20)
 
 ```lanius
 CertificateVerify
@@ -68,7 +68,7 @@ CertificateVerify
 
 #### variant: Finished
 
-[Source line 17](../../../extended/ext/tls_authentication.lani#L17)
+[Source line 20](../../../extended/ext/tls_authentication.lani#L20)
 
 ```lanius
 Finished
@@ -76,7 +76,7 @@ Finished
 
 #### variant: Authenticated
 
-[Source line 17](../../../extended/ext/tls_authentication.lani#L17)
+[Source line 20](../../../extended/ext/tls_authentication.lani#L20)
 
 ```lanius
 Authenticated
@@ -84,7 +84,7 @@ Authenticated
 
 #### variant: Failed
 
-[Source line 17](../../../extended/ext/tls_authentication.lani#L17)
+[Source line 20](../../../extended/ext/tls_authentication.lani#L20)
 
 ```lanius
 Failed
@@ -92,7 +92,7 @@ Failed
 
 ### enum: Error
 
-[Source line 18](../../../extended/ext/tls_authentication.lani#L18)
+[Source line 21](../../../extended/ext/tls_authentication.lani#L21)
 
 ```lanius
 pub enum Error
@@ -100,7 +100,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 19](../../../extended/ext/tls_authentication.lani#L19)
+[Source line 22](../../../extended/ext/tls_authentication.lani#L22)
 
 ```lanius
 Bounds
@@ -108,7 +108,7 @@ Bounds
 
 #### variant: InvalidLimit
 
-[Source line 19](../../../extended/ext/tls_authentication.lani#L19)
+[Source line 22](../../../extended/ext/tls_authentication.lani#L22)
 
 ```lanius
 InvalidLimit
@@ -116,7 +116,7 @@ InvalidLimit
 
 #### variant: HashMismatch
 
-[Source line 19](../../../extended/ext/tls_authentication.lani#L19)
+[Source line 22](../../../extended/ext/tls_authentication.lani#L22)
 
 ```lanius
 HashMismatch
@@ -124,7 +124,7 @@ HashMismatch
 
 #### variant: InvalidTranscript
 
-[Source line 19](../../../extended/ext/tls_authentication.lani#L19)
+[Source line 22](../../../extended/ext/tls_authentication.lani#L22)
 
 ```lanius
 InvalidTranscript
@@ -132,7 +132,7 @@ InvalidTranscript
 
 #### variant: EmptyAnchors
 
-[Source line 19](../../../extended/ext/tls_authentication.lani#L19)
+[Source line 22](../../../extended/ext/tls_authentication.lani#L22)
 
 ```lanius
 EmptyAnchors
@@ -140,7 +140,7 @@ EmptyAnchors
 
 #### variant: AnchorLimit
 
-[Source line 20](../../../extended/ext/tls_authentication.lani#L20)
+[Source line 23](../../../extended/ext/tls_authentication.lani#L23)
 
 ```lanius
 AnchorLimit
@@ -148,7 +148,7 @@ AnchorLimit
 
 #### variant: SignatureScheme
 
-[Source line 20](../../../extended/ext/tls_authentication.lani#L20)
+[Source line 23](../../../extended/ext/tls_authentication.lani#L23)
 
 ```lanius
 SignatureScheme
@@ -156,7 +156,7 @@ SignatureScheme
 
 #### variant: FrameLimit
 
-[Source line 20](../../../extended/ext/tls_authentication.lani#L20)
+[Source line 23](../../../extended/ext/tls_authentication.lani#L23)
 
 ```lanius
 FrameLimit
@@ -164,7 +164,7 @@ FrameLimit
 
 #### variant: WorkLimit
 
-[Source line 20](../../../extended/ext/tls_authentication.lani#L20)
+[Source line 23](../../../extended/ext/tls_authentication.lani#L23)
 
 ```lanius
 WorkLimit
@@ -172,7 +172,7 @@ WorkLimit
 
 #### variant: SignatureLimit
 
-[Source line 20](../../../extended/ext/tls_authentication.lani#L20)
+[Source line 23](../../../extended/ext/tls_authentication.lani#L23)
 
 ```lanius
 SignatureLimit
@@ -180,7 +180,7 @@ SignatureLimit
 
 #### variant: ScratchTooSmall
 
-[Source line 21](../../../extended/ext/tls_authentication.lani#L21)
+[Source line 24](../../../extended/ext/tls_authentication.lani#L24)
 
 ```lanius
 ScratchTooSmall
@@ -188,7 +188,7 @@ ScratchTooSmall
 
 #### variant: UnexpectedMessage
 
-[Source line 21](../../../extended/ext/tls_authentication.lani#L21)
+[Source line 24](../../../extended/ext/tls_authentication.lani#L24)
 
 ```lanius
 UnexpectedMessage
@@ -196,7 +196,7 @@ UnexpectedMessage
 
 #### variant: Handshake
 
-[Source line 21](../../../extended/ext/tls_authentication.lani#L21)
+[Source line 24](../../../extended/ext/tls_authentication.lani#L24)
 
 ```lanius
 Handshake(ext::tls_handshake::Error)
@@ -204,7 +204,7 @@ Handshake(ext::tls_handshake::Error)
 
 #### variant: CertificateContext
 
-[Source line 22](../../../extended/ext/tls_authentication.lani#L22)
+[Source line 25](../../../extended/ext/tls_authentication.lani#L25)
 
 ```lanius
 CertificateContext
@@ -212,7 +212,7 @@ CertificateContext
 
 #### variant: EmptyCertificate
 
-[Source line 22](../../../extended/ext/tls_authentication.lani#L22)
+[Source line 25](../../../extended/ext/tls_authentication.lani#L25)
 
 ```lanius
 EmptyCertificate
@@ -220,7 +220,7 @@ EmptyCertificate
 
 #### variant: CertificateLimit
 
-[Source line 22](../../../extended/ext/tls_authentication.lani#L22)
+[Source line 25](../../../extended/ext/tls_authentication.lani#L25)
 
 ```lanius
 CertificateLimit
@@ -228,7 +228,7 @@ CertificateLimit
 
 #### variant: CertificateExtensions
 
-[Source line 22](../../../extended/ext/tls_authentication.lani#L22)
+[Source line 25](../../../extended/ext/tls_authentication.lani#L25)
 
 ```lanius
 CertificateExtensions
@@ -236,7 +236,7 @@ CertificateExtensions
 
 #### variant: Path
 
-[Source line 23](../../../extended/ext/tls_authentication.lani#L23)
+[Source line 26](../../../extended/ext/tls_authentication.lani#L26)
 
 ```lanius
 Path(ext::x509_path::Error)
@@ -244,7 +244,7 @@ Path(ext::x509_path::Error)
 
 #### variant: CertificateVerify
 
-[Source line 23](../../../extended/ext/tls_authentication.lani#L23)
+[Source line 26](../../../extended/ext/tls_authentication.lani#L26)
 
 ```lanius
 CertificateVerify
@@ -252,7 +252,7 @@ CertificateVerify
 
 #### variant: Finished
 
-[Source line 23](../../../extended/ext/tls_authentication.lani#L23)
+[Source line 26](../../../extended/ext/tls_authentication.lani#L26)
 
 ```lanius
 Finished
@@ -260,7 +260,7 @@ Finished
 
 #### variant: Transcript
 
-[Source line 23](../../../extended/ext/tls_authentication.lani#L23)
+[Source line 26](../../../extended/ext/tls_authentication.lani#L26)
 
 ```lanius
 Transcript
@@ -268,7 +268,7 @@ Transcript
 
 ### struct: Config
 
-[Source line 25](../../../extended/ext/tls_authentication.lani#L25)
+[Source line 28](../../../extended/ext/tls_authentication.lani#L28)
 
 ```lanius
 pub struct Config
@@ -276,7 +276,7 @@ pub struct Config
 
 #### field: anchors
 
-[Source line 26](../../../extended/ext/tls_authentication.lani#L26)
+[Source line 29](../../../extended/ext/tls_authentication.lani#L29)
 
 ```lanius
 anchors: core::slice::View<core::slice::View<u8>>
@@ -284,7 +284,7 @@ anchors: core::slice::View<core::slice::View<u8>>
 
 #### field: reference
 
-[Source line 27](../../../extended/ext/tls_authentication.lani#L27)
+[Source line 30](../../../extended/ext/tls_authentication.lani#L30)
 
 ```lanius
 reference: ext::service_identity::Reference
@@ -292,7 +292,7 @@ reference: ext::service_identity::Reference
 
 #### field: unix_time
 
-[Source line 28](../../../extended/ext/tls_authentication.lani#L28)
+[Source line 31](../../../extended/ext/tls_authentication.lani#L31)
 
 ```lanius
 unix_time: i64
@@ -300,15 +300,31 @@ unix_time: i64
 
 #### field: max_frame
 
-[Source line 29](../../../extended/ext/tls_authentication.lani#L29)
+[Source line 32](../../../extended/ext/tls_authentication.lani#L32)
 
 ```lanius
 max_frame: i32
 ```
 
-### struct: CVInput
+#### field: proofs
 
 [Source line 33](../../../extended/ext/tls_authentication.lani#L33)
+
+```lanius
+proofs: ext::signature::Policy
+```
+
+#### field: certificates
+
+[Source line 33](../../../extended/ext/tls_authentication.lani#L33)
+
+```lanius
+certificates: ext::signature::Policy
+```
+
+### struct: CVInput
+
+[Source line 37](../../../extended/ext/tls_authentication.lani#L37)
 
 ```lanius
 pub struct CVInput
@@ -316,7 +332,7 @@ pub struct CVInput
 
 #### field: bytes
 
-[Source line 33](../../../extended/ext/tls_authentication.lani#L33)
+[Source line 37](../../../extended/ext/tls_authentication.lani#L37)
 
 ```lanius
 bytes: [u8;146]
@@ -324,7 +340,7 @@ bytes: [u8;146]
 
 #### field: length
 
-[Source line 33](../../../extended/ext/tls_authentication.lani#L33)
+[Source line 37](../../../extended/ext/tls_authentication.lani#L37)
 
 ```lanius
 length: i32
@@ -332,7 +348,7 @@ length: i32
 
 ### struct: State
 
-[Source line 51](../../../extended/ext/tls_authentication.lani#L51)
+[Source line 55](../../../extended/ext/tls_authentication.lani#L55)
 
 ```lanius
 pub struct State
@@ -340,7 +356,7 @@ pub struct State
 
 #### field: hash
 
-[Source line 52](../../../extended/ext/tls_authentication.lani#L52)
+[Source line 56](../../../extended/ext/tls_authentication.lani#L56)
 
 ```lanius
 hash: ext::tls_transcript::State
@@ -348,7 +364,7 @@ hash: ext::tls_transcript::State
 
 #### field: secret
 
-[Source line 52](../../../extended/ext/tls_authentication.lani#L52)
+[Source line 56](../../../extended/ext/tls_authentication.lani#L56)
 
 ```lanius
 secret: ext::tls_schedule::Secret
@@ -356,7 +372,7 @@ secret: ext::tls_schedule::Secret
 
 #### field: anchors
 
-[Source line 53](../../../extended/ext/tls_authentication.lani#L53)
+[Source line 57](../../../extended/ext/tls_authentication.lani#L57)
 
 ```lanius
 anchors: core::slice::View<core::slice::View<u8>>
@@ -364,7 +380,7 @@ anchors: core::slice::View<core::slice::View<u8>>
 
 #### field: reference
 
-[Source line 54](../../../extended/ext/tls_authentication.lani#L54)
+[Source line 58](../../../extended/ext/tls_authentication.lani#L58)
 
 ```lanius
 reference: ext::service_identity::Reference
@@ -372,7 +388,7 @@ reference: ext::service_identity::Reference
 
 #### field: unix_time
 
-[Source line 54](../../../extended/ext/tls_authentication.lani#L54)
+[Source line 58](../../../extended/ext/tls_authentication.lani#L58)
 
 ```lanius
 unix_time: i64
@@ -380,15 +396,31 @@ unix_time: i64
 
 #### field: max_frame
 
-[Source line 54](../../../extended/ext/tls_authentication.lani#L54)
+[Source line 58](../../../extended/ext/tls_authentication.lani#L58)
 
 ```lanius
 max_frame: i32
 ```
 
+#### field: proofs
+
+[Source line 59](../../../extended/ext/tls_authentication.lani#L59)
+
+```lanius
+proofs: ext::signature::Policy
+```
+
+#### field: certificates
+
+[Source line 59](../../../extended/ext/tls_authentication.lani#L59)
+
+```lanius
+certificates: ext::signature::Policy
+```
+
 #### field: step
 
-[Source line 55](../../../extended/ext/tls_authentication.lani#L55)
+[Source line 60](../../../extended/ext/tls_authentication.lani#L60)
 
 ```lanius
 step: i32
@@ -396,7 +428,7 @@ step: i32
 
 #### field: failed
 
-[Source line 55](../../../extended/ext/tls_authentication.lani#L55)
+[Source line 60](../../../extended/ext/tls_authentication.lani#L60)
 
 ```lanius
 failed: bool
@@ -404,7 +436,7 @@ failed: bool
 
 #### field: issue
 
-[Source line 55](../../../extended/ext/tls_authentication.lani#L55)
+[Source line 60](../../../extended/ext/tls_authentication.lani#L60)
 
 ```lanius
 issue: Error
@@ -412,10 +444,10 @@ issue: Error
 
 #### field: leaf
 
-[Source line 55](../../../extended/ext/tls_authentication.lani#L55)
+[Source line 60](../../../extended/ext/tls_authentication.lani#L60)
 
 ```lanius
-leaf: ext::ed25519::Key32
+leaf: core::option::Option<ext::signature::PublicKey>
 ```
 
 ## Constants
@@ -428,11 +460,19 @@ leaf: ext::ed25519::Key32
 pub const MAX_CERTIFICATES: i32 = 8;
 ```
 
+### constant: OWNED_KEY_WORK
+
+[Source line 19](../../../extended/ext/tls_authentication.lani#L19)
+
+```lanius
+pub const OWNED_KEY_WORK: u64 = 1048576;
+```
+
 ## Free functions and extern declarations
 
 ### function: certificate_verify_input
 
-[Source line 37](../../../extended/ext/tls_authentication.lani#L37)
+[Source line 41](../../../extended/ext/tls_authentication.lani#L41)
 
 ```lanius
 pub fn certificate_verify_input(side: ext::tls_schedule::Side, hash: ext::tls_hash::Digest) -> CVInput
@@ -440,17 +480,17 @@ pub fn certificate_verify_input(side: ext::tls_schedule::Side, hash: ext::tls_ha
 
 ### function: server
 
-[Source line 62](../../../extended/ext/tls_authentication.lani#L62)
+[Source line 67](../../../extended/ext/tls_authentication.lani#L67)
 
 ```lanius
-pub fn server(transcript: ext::tls_transcript::State, server_handshake_secret: ext::tls_schedule::Secret, offered_signature_schemes: core::slice::View<u16>, config: Config) -> core::result::Result<State,Error>
+pub fn server(transcript: ext::tls_transcript::State, server_handshake_secret: ext::tls_schedule::Secret, config: Config) -> core::result::Result<State,Error>
 ```
 
 ## Implementation blocks and public methods
 
-### impl at line 34
+### impl at line 38
 
-[Source line 34](../../../extended/ext/tls_authentication.lani#L34)
+[Source line 38](../../../extended/ext/tls_authentication.lani#L38)
 
 ```lanius
 pub impl CVInput
@@ -458,15 +498,15 @@ pub impl CVInput
 
 #### method: view
 
-[Source line 35](../../../extended/ext/tls_authentication.lani#L35)
+[Source line 39](../../../extended/ext/tls_authentication.lani#L39)
 
 ```lanius
 pub fn view(&self) -> core::slice::View<u8>
 ```
 
-### impl at line 141
+### impl at line 163
 
-[Source line 141](../../../extended/ext/tls_authentication.lani#L141)
+[Source line 163](../../../extended/ext/tls_authentication.lani#L163)
 
 ```lanius
 pub impl State
@@ -474,7 +514,7 @@ pub impl State
 
 #### method: borrow
 
-[Source line 142](../../../extended/ext/tls_authentication.lani#L142)
+[Source line 164](../../../extended/ext/tls_authentication.lani#L164)
 
 ```lanius
 pub fn borrow(&self) -> &State
@@ -482,7 +522,7 @@ pub fn borrow(&self) -> &State
 
 #### method: phase
 
-[Source line 143](../../../extended/ext/tls_authentication.lani#L143)
+[Source line 165](../../../extended/ext/tls_authentication.lani#L165)
 
 ```lanius
 pub fn phase(&self) -> Phase
@@ -490,7 +530,7 @@ pub fn phase(&self) -> Phase
 
 #### method: is_poisoned
 
-[Source line 151](../../../extended/ext/tls_authentication.lani#L151)
+[Source line 173](../../../extended/ext/tls_authentication.lani#L173)
 
 ```lanius
 pub fn is_poisoned(&self) -> bool
@@ -498,7 +538,7 @@ pub fn is_poisoned(&self) -> bool
 
 #### method: authenticated
 
-[Source line 152](../../../extended/ext/tls_authentication.lani#L152)
+[Source line 174](../../../extended/ext/tls_authentication.lani#L174)
 
 ```lanius
 pub fn authenticated(&self) -> bool
@@ -506,7 +546,7 @@ pub fn authenticated(&self) -> bool
 
 #### method: failure
 
-[Source line 153](../../../extended/ext/tls_authentication.lani#L153)
+[Source line 175](../../../extended/ext/tls_authentication.lani#L175)
 
 ```lanius
 pub fn failure(&self) -> core::option::Option<Error>
@@ -514,15 +554,15 @@ pub fn failure(&self) -> core::option::Option<Error>
 
 #### method: peer_key
 
-[Source line 155](../../../extended/ext/tls_authentication.lani#L155)
+[Source line 177](../../../extended/ext/tls_authentication.lani#L177)
 
 ```lanius
-pub fn peer_key(&self) -> core::option::Option<ext::ed25519::Key32>
+pub fn peer_key(&self) -> core::option::Option<ext::signature::PublicKey>
 ```
 
 #### method: transcript
 
-[Source line 156](../../../extended/ext/tls_authentication.lani#L156)
+[Source line 178](../../../extended/ext/tls_authentication.lani#L178)
 
 ```lanius
 pub fn transcript(&self) -> core::option::Option<ext::tls_transcript::State>
@@ -530,7 +570,7 @@ pub fn transcript(&self) -> core::option::Option<ext::tls_transcript::State>
 
 #### method: feed
 
-[Source line 159](../../../extended/ext/tls_authentication.lani#L159)
+[Source line 181](../../../extended/ext/tls_authentication.lani#L181)
 
 ```lanius
 pub fn feed(&self, frame: core::slice::View<u8>, certificate_scratch: core::slice::View<ext::x509_path::Slot>, budget: &ext::x509_path::Budget) -> core::result::Result<Phase,Error>

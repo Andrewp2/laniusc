@@ -1,5 +1,6 @@
 // Scripted constructor/admission controls. All entropy is test-only.
 module app::main;
+import ext::signature;
 import core::io; import core::mem; import core::option; import core::result; import core::sha256; import core::slice;
 import ext::service_identity; import ext::tls_connection; import ext::tls_negotiation; import ext::tls_record; import ext::tls_suite; import ext::tls_hash; import ext::x509_path;
 import ext::tls_transcript;
@@ -35,8 +36,9 @@ fn main()->i32{
   let limits:ext::tls_connection::Limits=ext::tls_connection::default_limits();limits.max_handshake_body=512;limits.max_hello_frame=512;limits.max_application_hold=32;limits.max_work=max_work;
   let suites:ext::tls_suite::Policy=ext::tls_suite::Policy { order:[ext::tls_suite::Suite::ChaCha20Poly1305Sha256,ext::tls_suite::Suite::Aes128GcmSha256,ext::tls_suite::Suite::ChaCha20Poly1305Sha256],length:2 };
   if(suite_policy==1){suites.order[0]=ext::tls_suite::Suite::Aes256GcmSha384;suites.length=1;}if(suite_policy==2){suites=ext::tls_suite::default_policy();}if(suite_policy==3){suites.length=0;}if(suite_policy==4){suites.order[1]=suites.order[0];}if(suite_policy==5){suites.length=4;}
-  let config:ext::tls_connection::ClientConfig=ext::tls_connection::ClientConfig { anchors:core::slice::View { values:anchors,start:0,length:1 },reference:ext::service_identity::dns_reference(view(name,0,14)).unwrap(),unix_time:1792800000,server_name:view(name,0,0),alpn:view(name,0,0),require_alpn:false,suites:suites,groups:groups,initial_share:initial,limits:limits };
-  let supplied:core::slice::View<u8> = view(entropy,0,entropy_length);if(metadata!=0){supplied.start=-1;}
+  let config:ext::tls_connection::ClientConfig=ext::tls_connection::ClientConfig { anchors:core::slice::View { values:anchors,start:0,length:1 },reference:ext::service_identity::dns_reference(view(name,0,14)).unwrap(),unix_time:1792800000,server_name:view(name,0,0),alpn:view(name,0,0),proofs:ext::signature::Policy { order:[2055;4],length:1 },certificates:core::option::Some(ext::signature::Policy { order:[2055;4],length:1 }),require_alpn:false,suites:suites,groups:groups,initial_share:initial,limits:limits };
+  if(metadata==2) { config.proofs.length=0; } if(metadata==3) { config.proofs.length=2; } if(metadata==4) { config.proofs.order[0]=1025; } if(metadata==5) { config.certificates=core::option::Some(ext::signature::Policy { order:[2055;4],length:0 }); } if(metadata==6) { config.certificates=core::option::Some(ext::signature::Policy { order:[65535;4],length:1 }); }
+  let supplied:core::slice::View<u8> = view(entropy,0,entropy_length);if(metadata==1){supplied.start=-1;}
   let made:core::result::Result<ext::tls_connection::Engine,ext::tls_connection::Error> = ext::tls_connection::client(config,buffers,supplied);
   let status:u64=0;let feed_status:u64=0;let consumed:u64=0;let work_left:u64=0;let failed:bool=false;let observed:[u8;48]=[0;48];let observed_length:i32=0;
   if(made.is_err()){

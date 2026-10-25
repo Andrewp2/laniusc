@@ -1,0 +1,105 @@
+// Independent OpenSSL corpus drives real mixed-family ordered validation.
+// Owned-key witnesses run only after all DER and cache backing is retired.
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::service_identity;
+import ext::signature;
+import ext::x509;
+import ext::x509_path;
+import std::stream;
+fn view(bytes:[u8],start:i32,length:i32)->core::slice::View<u8>{return core::slice::View{values:bytes,start:start,length:length};}
+fn load(bytes:[u8],at:i32)->u64{let n:u64=0;let i:i32=0;while(i<8){n|=(bytes[at+i] as u64)<<(8*i);i+=1;}return n;}
+fn word(value:u64){let bytes:[u8;8]=[0;8];let i:i32=0;while(i<8){bytes[i]=((value>>(8*i))&255) as u8;i+=1;}let out:std::stream::Descriptor=std::stream::stdout();assert(core::io::write_all(out.borrow(),bytes,0,8).is_ok());}
+fn code(k: ext::x509_path::ErrorKind) -> u64 { return match(k) {
+    ext::x509_path::ErrorKind::Bounds -> 1, ext::x509_path::ErrorKind::EmptyChain -> 2, ext::x509_path::ErrorKind::EmptyAnchors -> 3,
+    ext::x509_path::ErrorKind::ChainLimit -> 4, ext::x509_path::ErrorKind::AnchorLimit -> 5, ext::x509_path::ErrorKind::InputLimit -> 6,
+    ext::x509_path::ErrorKind::ScratchTooSmall -> 7, ext::x509_path::ErrorKind::InvalidTime -> 8, ext::x509_path::ErrorKind::Parse -> 9,
+    ext::x509_path::ErrorKind::ItemLimit -> 10, ext::x509_path::ErrorKind::WorkLimit -> 11, ext::x509_path::ErrorKind::SignatureLimit -> 12,
+    ext::x509_path::ErrorKind::Duplicate -> 13, ext::x509_path::ErrorKind::UnsupportedAlgorithm -> 14, ext::x509_path::ErrorKind::IssuerMismatch -> 15,
+    ext::x509_path::ErrorKind::Untrusted -> 16, ext::x509_path::ErrorKind::InvalidSignature -> 17, ext::x509_path::ErrorKind::Validity -> 18,
+    ext::x509_path::ErrorKind::CaRequired -> 19, ext::x509_path::ErrorKind::KeyUsage -> 20, ext::x509_path::ErrorKind::ExtendedKeyUsage -> 21,
+    ext::x509_path::ErrorKind::PathLength -> 22, ext::x509_path::ErrorKind::UnknownCritical -> 23, ext::x509_path::ErrorKind::UnsupportedConstraint -> 24,
+    ext::x509_path::ErrorKind::UnsupportedCritical -> 25, ext::x509_path::ErrorKind::Identity -> 26
+}; }
+
+fn certificate_policy(mode:i32)->ext::signature::Policy{
+ let p:ext::signature::Policy=ext::signature::default_certificates();
+ if(mode==1){p=ext::signature::Policy{order:[2055,0,0,0],length:1};}
+ if(mode==2){p=ext::signature::Policy{order:[1027,0,0,0],length:1};}
+ if(mode==3){p=ext::signature::Policy{order:[2052,0,0,0],length:1};}
+ if(mode==4){p=ext::signature::Policy{order:[1025,0,0,0],length:1};}
+ if(mode==5){p=ext::signature::default_proofs();}
+ if(mode==6){p.length=0;}
+ if(mode==7){p.order=[2055,2055,0,0];p.length=2;}
+ if(mode==8){p.order=[4660,0,0,0];p.length=1;}
+ if(mode==9){p.length=5;}
+ return p;
+}
+fn kind(key:ext::signature::PublicKey)->u64{return match(key.kind()){ext::signature::Kind::Ed25519->0,ext::signature::Kind::P256->1,ext::signature::Kind::Rsae->2};}
+fn run(header:[u8],source:[u8],lengths:[i32],used:i32,proof:core::slice::View<u8>){
+ let mode:i32=load(header,8) as i32;let policy_mode:i32=load(header,16) as i32;let n:i32=load(header,40) as i32;let a:i32=load(header,48) as i32;
+ let raw:[u8;32768]=[165;32768];let packed:[i32;8192]=[0;8192];let bytes:[u8]=raw;
+ if(load(header,0)==1){bytes=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(packed),32768);}
+ let i:i32=0;while(i<32768){bytes[i]=165;i+=1;}i=0;while(i<used){bytes[i+3]=source[i];i+=1;}
+ let descriptors:[core::slice::View<u8>;18]=[view(bytes,0,0);18];let at:i32=3;i=0;
+ while(i<n+a){descriptors[i+1]=view(bytes,at,lengths[i]);at+=lengths[i];i+=1;}
+ let chain:core::slice::View<core::slice::View<u8>> =core::slice::View{values:descriptors,start:1,length:n};
+ let anchors:core::slice::View<core::slice::View<u8>> =core::slice::View{values:descriptors,start:n+1,length:a};
+ let slots:[ext::x509_path::Slot;18]=[ext::x509_path::empty_slot();18];
+ let scratch:core::slice::View<ext::x509_path::Slot> =core::slice::View{values:slots,start:1,length:n+a};
+ let limits:ext::x509_path::Limits=ext::x509_path::default_limits();limits.max_work=load(header,24);limits.max_signatures=load(header,32);
+ let b:ext::x509_path::Budget=ext::x509_path::budget(limits).unwrap();assert(b.verification.message_limit==limits.parsing.max_input);
+ let dns:[u8;12]=[112,97,116,104,46,101,120,97,109,112,108,101];let reference:ext::service_identity::Reference=ext::service_identity::dns_reference(view(dns,0,12)).unwrap();
+ let certificates:ext::signature::Policy=certificate_policy(policy_mode);
+ // Real imported but incorrect caller-supplied cache entries must not authorize
+ // any decision. Separate setup allowances never replenish the path allowance.
+ if(mode==1||mode==5||mode==6||mode==7||mode==8){
+  let pb:ext::x509::Budget=ext::x509::budget(ext::x509::default_limits()).unwrap();let anchor:ext::x509::Certificate=ext::x509::parse(descriptors[n+1],pb.borrow()).unwrap();
+  let kb:ext::signature::Budget=ext::signature::budget(ext::signature::default_limits()).unwrap();let wrong:ext::signature::PublicKey=ext::signature::parse_spki(anchor.spki.encoded,kb.borrow()).unwrap();
+  i=1;while(i<=n+a){slots[i]=ext::x509_path::Slot{certificate:core::option::Some(anchor),public_key:core::option::Some(wrong)};i+=1;}
+ }
+ if(mode==6){chain.start=-1;}
+ let result:core::result::Result<ext::x509_path::ValidatedServer,ext::x509_path::Error> =ext::x509_path::validate_server(chain,anchors,reference,1792843200,certificates,scratch,b.borrow());
+ if(mode==6||mode==7||policy_mode>=6){
+  assert(result.is_err()&&b.verification.work_left==limits.max_work&&b.verification.signatures_left==limits.max_signatures&&b.parsing.work_left==limits.parsing.max_work&&b.parsing.items_left==limits.parsing.max_items);
+  i=1;while(i<=n+a){assert(slots[i].certificate.is_some()&&slots[i].public_key.is_some());i+=1;}
+ }
+ if(mode==8){i=1;while(i<=n+a){assert(slots[i].public_key.is_none());i+=1;}}
+ if((mode==2||mode==3||mode==5)&&result.is_err()){assert(match(result.unwrap_err().kind){ext::x509_path::ErrorKind::WorkLimit->true,_->false});}
+ if(mode==2&&result.is_ok()){assert(slots[n+1].certificate.is_some()&&slots[n+1].public_key.is_none());}
+ if(mode==3&&result.is_ok()){assert(slots[n+1].public_key.is_some()&&slots[n+2].public_key.is_some());}
+ if(mode==5&&result.is_ok()){
+  let before_work:u64=b.verification.work_left;let before_signatures:u64=b.verification.signatures_left;let before_items:u64=b.parsing.items_left;let before_parsing:u64=b.parsing.work_left;
+  let wrong:ext::signature::PublicKey=slots[n+1].public_key.unwrap();i=1;while(i<=n+a){slots[i].public_key=core::option::Some(wrong);i+=1;}
+  let repeat:ext::x509_path::Budget=ext::x509_path::budget(limits).unwrap();let again:ext::x509_path::ValidatedServer=ext::x509_path::validate_server(chain,anchors,reference,1792843200,certificates,scratch,repeat.borrow()).unwrap();
+  assert(kind(again.public_key)==kind(result.unwrap().public_key)&&repeat.verification.work_left==before_work&&repeat.verification.signatures_left==before_signatures&&repeat.parsing.items_left==before_items&&repeat.parsing.work_left==before_parsing);
+ }
+ if(result.is_err()){let e:ext::x509_path::Error=result.unwrap_err();word(code(e.kind));word((e.certificate+1) as u64);word((e.anchor+1) as u64);word(e.offset as u64);}
+ else{word(0);word(0);word(0);word(0);}
+ word(limits.max_signatures-b.verification.signatures_left);word(limits.max_work-b.verification.work_left);word(limits.parsing.max_items-b.parsing.items_left);word(limits.parsing.max_work-b.parsing.work_left);
+ assert(slots[0].certificate.is_none()&&slots[0].public_key.is_none()&&slots[17].certificate.is_none()&&slots[17].public_key.is_none());
+ i=0;while(i<32768){if(i<3||i>=used+3){assert(bytes[i]==165);}else{assert(bytes[i]==source[i-3]);}i+=1;}
+ if(result.is_ok()){
+  let accepted:ext::x509_path::ValidatedServer=result.unwrap();let owned:ext::signature::PublicKey=accepted.public_key;let copied:ext::signature::PublicKey=owned;
+  word(kind(owned));word(accepted.anchor_index as u64);word(accepted.chain_length as u64);
+  i=1;while(i<=n+a){slots[i]=ext::x509_path::empty_slot();descriptors[i]=view(bytes,0,0);i+=1;}i=0;while(i<32768){bytes[i]=90;i+=1;}
+  let message:[u8;47]=[111,119,110,101,100,32,120,53,48,57,32,108,101,97,102,32,107,101,121,32,97,102,116,101,114,32,97,108,108,32,115,111,117,114,99,101,32,114,101,116,105,114,101,109,101,110,116];
+  let scheme:ext::signature::Scheme=ext::signature::tls_scheme(load(header,56) as u16,ext::signature::Use::CertificateVerify).unwrap();
+  let proof_budget:ext::signature::Budget=ext::signature::budget(ext::signature::default_limits()).unwrap();
+  assert(ext::signature::verify(owned.borrow(),ext::signature::Use::CertificateVerify,scheme,view(message,0,47),proof,proof_budget.borrow()).unwrap());
+  assert(ext::signature::verify(copied.borrow(),ext::signature::Use::CertificateVerify,scheme,view(message,0,47),proof,proof_budget.borrow()).unwrap());
+ }
+}
+fn main()->i32{
+ let stdin:std::stream::Descriptor=std::stream::stdin();let header:[u8;72]=[0;72];assert(core::io::read_exact(stdin.borrow(),header,0,8).is_ok());let cases:u64=load(header,0);assert(cases<=128);let case:u64=0;
+ let input:[u8;32768]=[0;32768];let lengths:[i32;16]=[0;16];let proof:[u8;512]=[0;512];let size:[u8;8]=[0;8];
+ while(case<cases){assert(core::io::read_exact(stdin.borrow(),header,0,72).is_ok());let n:i32=load(header,40) as i32;let a:i32=load(header,48) as i32;let proof_length:i32=load(header,64) as i32;
+  assert(load(header,0)<=1&&load(header,8)<=8&&load(header,16)<=9&&n>0&&n<=8&&a>0&&a<=8&&proof_length>0&&proof_length<=512);
+  let i:i32=0;let used:i32=0;while(i<n+a){assert(core::io::read_exact(stdin.borrow(),size,0,8).is_ok());let count:i32=load(size,0) as i32;assert(count>=0&&count<=8192&&count<=32765-used);lengths[i]=count;assert(core::io::read_exact(stdin.borrow(),input,used,count).is_ok());used+=count;i+=1;}
+  assert(core::io::read_exact(stdin.borrow(),proof,0,proof_length).is_ok());run(header,input,lengths,used,view(proof,0,proof_length));case+=1;
+ }return 0;
+}

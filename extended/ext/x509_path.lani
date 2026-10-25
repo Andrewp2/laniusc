@@ -1,4 +1,5 @@
-// Bounded ordered Ed25519 TLS-server paths with explicit configured anchors.
+// Bounded ordered multi-algorithm TLS-server paths with configured anchors.
+// Integration admission pending; see docs/extended-x509-path.md.
 // No path building, revocation, normalized DN matching or general PKIX policy.
 module ext::x509_path;
 import core::calendar;
@@ -7,7 +8,7 @@ import core::result;
 import core::slice;
 import core::time;
 import ext::der;
-import ext::ed25519;
+import ext::signature;
 import ext::service_identity;
 import ext::x509;
 
@@ -22,17 +23,23 @@ pub enum ErrorKind {
 // inapplicable. offset is logical within that certificate, never an address.
 pub struct Error { kind: ErrorKind, certificate: i32, anchor: i32, offset: i32 }
 pub struct Limits { max_chain: i32, max_anchors: i32, max_input: u64, max_signatures: u64, max_work: u64, parsing: ext::x509::Limits }
-pub struct Budget { parsing: ext::x509::Budget, signatures_left: u64, work_left: u64, limits: Limits }
-pub struct Slot { certificate: core::option::Option<ext::x509::Certificate> }
-pub struct ValidatedServer { public_key: ext::ed25519::Key32, anchor_index: i32, chain_length: i32 }
-pub fn empty_slot() -> Slot { return Slot { certificate: core::option::None() }; }
+pub struct Budget { parsing: ext::x509::Budget, verification: ext::signature::Budget, limits: Limits }
+pub struct Slot { certificate: core::option::Option<ext::x509::Certificate>, public_key: core::option::Option<ext::signature::PublicKey> }
+pub struct ValidatedServer { public_key: ext::signature::PublicKey, anchor_index: i32, chain_length: i32 }
+// Logical copy/storage admission envelopes, independent of physical ABI width.
+// Slot reset plus parsed publication: two 8KiB envelopes at32 credits/byte.
+// An owned key handoff: 4KiB at32; RSA owns three128*u64 arrays plus metadata.
+pub const SLOT_STORAGE_WORK: u64 = 524288;
+pub const KEY_COPY_WORK: u64 = 131072;
+pub fn empty_slot() -> Slot { return Slot { certificate: core::option::None(), public_key: core::option::None() }; }
 pub fn default_limits() -> Limits {
-    return Limits { max_chain: 8, max_anchors: 8, max_input: 1048576, max_signatures: 64, max_work: 16777216, parsing: ext::x509::default_limits() };
+    return Limits { max_chain: 8, max_anchors: 8, max_input: 1048576, max_signatures: 64, max_work: 1073741824, parsing: ext::x509::default_limits() };
 }
 fn error(kind: ErrorKind, certificate: i32, anchor: i32, offset: i32) -> Error { return Error { kind: kind, certificate: certificate, anchor: anchor, offset: offset }; }
 pub fn budget(limits: Limits) -> core::result::Result<Budget, Error> {
     if (limits.max_chain < 0 || limits.max_anchors < 0 || limits.max_chain > 2147483647 - limits.max_anchors || limits.parsing.max_input < 0) { return core::result::Err(error(ErrorKind::Bounds, -1, -1, 0)); }
-    return core::result::Ok(Budget { parsing: ext::x509::budget(limits.parsing).unwrap(), signatures_left: limits.max_signatures, work_left: limits.max_work, limits: limits });
+    let verification: ext::signature::Budget = ext::signature::budget(ext::signature::Limits { max_message: limits.parsing.max_input, max_signatures: limits.max_signatures, max_work: limits.max_work }).unwrap();
+    return core::result::Ok(Budget { parsing: ext::x509::budget(limits.parsing).unwrap(), verification: verification, limits: limits });
 }
 pub impl Budget { pub fn borrow(&self) -> &Budget { return self; } }
 fn valid(v: core::slice::View<u8>) -> bool { return v.start >= 0 && v.length >= 0 && v.start <= 2147483647 - v.length; }
@@ -44,8 +51,8 @@ impl Context {
     fn fail(&self, kind: ErrorKind, at: i32) { if (!self.failed) { self.failed = true; self.issue = error(kind, self.ci, self.ai, at); } }
     fn work(&self, n: u64, at: i32) -> bool {
         if (self.failed) { return false; }
-        if (n > self.budget.work_left) { self.fail(ErrorKind::WorkLimit, at); return false; }
-        self.budget.work_left -= n; return true;
+        if (n > self.budget.verification.work_left) { self.fail(ErrorKind::WorkLimit, at); return false; }
+        self.budget.verification.work_left -= n; return true;
     }
     fn parsed(&self, e: ext::x509::Error) {
         let kind: ErrorKind = match (e.kind) { ext::x509::ErrorKind::Bounds -> ErrorKind::Bounds, ext::x509::ErrorKind::InputLimit -> ErrorKind::InputLimit, ext::x509::ErrorKind::ItemLimit -> ErrorKind::ItemLimit, ext::x509::ErrorKind::WorkLimit -> ErrorKind::WorkLimit, _ -> ErrorKind::Parse };
@@ -59,7 +66,6 @@ impl Context {
 }
 fn resource(kind: ErrorKind) -> bool { return match (kind) { ErrorKind::InputLimit -> true, ErrorKind::ItemLimit -> true, ErrorKind::WorkLimit -> true, ErrorKind::SignatureLimit -> true, _ -> false }; }
 // These fixed OID predicates only operate on parser-produced immutable records.
-fn ed(oid: ext::der::Oid) -> bool { let b: core::slice::View<u8> = oid.bytes; return b.length == 3 && byte(b, 0) == 43 && byte(b, 1) == 101 && byte(b, 2) == 112; }
 fn extension_number(oid: ext::der::Oid) -> i32 { let b: core::slice::View<u8> = oid.bytes; if (b.length == 3 && byte(b, 0) == 85 && byte(b, 1) == 29) { return byte(b, 2) as i32; } return -1; }
 fn access_info(oid: ext::der::Oid) -> bool { let b: core::slice::View<u8> = oid.bytes; return b.length == 8 && byte(b, 0) == 43 && byte(b, 1) == 6 && byte(b, 2) == 1 && byte(b, 3) == 5 && byte(b, 4) == 5 && byte(b, 5) == 7 && byte(b, 6) == 1 && byte(b, 7) == 1; }
 fn server_purpose(oid: ext::der::Oid) -> bool {
@@ -75,13 +81,34 @@ fn lifetime(cert: ext::x509::Certificate, now: core::calendar::LocalDateTime, p:
     let first: core::calendar::LocalDateTime = civil(cert.validity.not_before); let last: core::calendar::LocalDateTime = civil(cert.validity.not_after);
     if (first.compare(last) > 0 || now.compare(first) < 0 || now.compare(last) > 0) { p.fail(ErrorKind::Validity, cert.validity.encoded.start - cert.encoded.start); }
 }
-fn public_algorithm(cert: ext::x509::Certificate, p: &Context) {
-    if (!p.work((cert.spki.algorithm.oid.bytes.length as u64) + 1, cert.spki.encoded.start - cert.encoded.start)) { return; }
-    if (!ed(cert.spki.algorithm.oid) || cert.spki.algorithm.parameters.is_some() || cert.spki.key.unused_bits != 0 || cert.spki.key.bytes.length != 32) { p.fail(ErrorKind::UnsupportedAlgorithm, cert.spki.encoded.start - cert.encoded.start); }
+// Cached keys belong only to this validation call. The preflight clears every
+// active entry before any cache is read; failed imports are never cached.
+fn imported(slots: core::slice::View<Slot>, index: i32, p: &Context) {
+    if (p.failed) { return; }
+    if (!p.work(KEY_COPY_WORK, 0)) { return; }
+    if (slots.values[slots.start + index].public_key.is_some()) { return; }
+    let cert: ext::x509::Certificate = get(slots, index); let at: i32 = cert.spki.encoded.start - cert.encoded.start;
+    if (!p.work((cert.spki.algorithm.oid.bytes.length as u64) + 1, at)) { return; }
+    let made: core::result::Result<ext::signature::PublicKey, ext::signature::Error> = ext::signature::parse_spki(cert.spki.encoded, p.budget.verification.borrow());
+    if (made.is_err()) { cryptographic(made.unwrap_err(), false, at, p); return; }
+    if (!p.work(2 * KEY_COPY_WORK, at)) { return; }
+    let key: ext::signature::PublicKey = made.unwrap(); slots.values[slots.start + index].public_key = core::option::Some(key);
 }
+fn cryptographic(issue: ext::signature::Error, verifying: bool, at: i32, p: &Context) {
+    let fallback: ErrorKind = ErrorKind::UnsupportedAlgorithm; if (verifying) { fallback = ErrorKind::InvalidSignature; }
+    let kind: ErrorKind = match (issue) {
+        ext::signature::Error::Bounds -> ErrorKind::Bounds,
+        ext::signature::Error::InvalidLimits -> ErrorKind::Bounds,
+        ext::signature::Error::InputLimit -> ErrorKind::InputLimit,
+        ext::signature::Error::WorkLimit -> ErrorKind::WorkLimit,
+        ext::signature::Error::SignatureLimit -> ErrorKind::SignatureLimit,
+        _ -> fallback
+    }; p.fail(kind, at);
+}
+
 struct Policy { path_length: core::option::Option<ext::der::Element> }
-fn policy(cert: ext::x509::Certificate, ca: bool, now: core::calendar::LocalDateTime, p: &Context) -> Policy {
-    let result: Policy = Policy { path_length: core::option::None() }; lifetime(cert, now, p); public_algorithm(cert, p);
+fn policy(slots: core::slice::View<Slot>, index: i32, ca: bool, now: core::calendar::LocalDateTime, p: &Context) -> Policy {
+    let cert: ext::x509::Certificate = get(slots, index); let result: Policy = Policy { path_length: core::option::None() }; lifetime(cert, now, p); imported(slots, index, p);
     let is_ca: bool = false; let extensions: ext::x509::Extensions = cert.extensions();
     while (!p.failed) {
         let got: core::result::Result<core::option::Option<ext::x509::Extension>, ext::x509::Error> = extensions.next(p.budget.parsing.borrow());
@@ -133,21 +160,25 @@ fn path_length(value: core::option::Option<ext::der::Element>, below: i32, cert:
     if ((below as u64) > count) { p.fail(ErrorKind::PathLength, bytes.start - cert.encoded.start); }
 }
 fn same_authority(a: ext::x509::Certificate, b: ext::x509::Certificate, p: &Context) -> bool { return p.same(a.subject.element.encoded, b.subject.element.encoded) && p.same(a.spki.encoded, b.spki.encoded); }
-fn signature(child: ext::x509::Certificate, issuer: ext::x509::Certificate, p: &Context) {
+fn signature(child: ext::x509::Certificate, issuer_index: i32, certificates: ext::signature::Policy, slots: core::slice::View<Slot>, p: &Context) {
     if (p.failed) { return; }
     if (!p.work((child.signature_algorithm.oid.bytes.length as u64) + 1, 0)) { return; }
-    // Executable algorithm boundary: unsupported algorithms fail explicitly;
-    // future RSA/ECDSA verifiers can be added here without changing path policy.
-    if (!ed(child.signature_algorithm.oid) || child.signature_algorithm.parameters.is_some()) { p.fail(ErrorKind::UnsupportedAlgorithm, 0); return; }
-    if (p.budget.signatures_left == 0) { p.fail(ErrorKind::SignatureLimit, 0); return; }
+    let classified: core::result::Result<ext::signature::Scheme, ext::signature::Error> = ext::signature::certificate_scheme(child.signature_algorithm.encoded, p.budget.verification.borrow());
+    if (classified.is_err()) { cryptographic(classified.unwrap_err(), false, 0, p); return; }
+    let scheme: ext::signature::Scheme = classified.unwrap();
+    let allowed: core::result::Result<bool, ext::signature::Error> = ext::signature::allows(certificates, scheme, ext::signature::Use::Certificate);
+    if (allowed.is_err() || !allowed.unwrap()) { p.fail(ErrorKind::UnsupportedAlgorithm, 0); return; }
+    if (p.budget.verification.signatures_left == 0) { p.fail(ErrorKind::SignatureLimit, 0); return; }
     if (!p.work((child.tbs.length as u64) + 97, child.tbs.start - child.encoded.start)) { return; }
-    p.budget.signatures_left -= 1;
-    let verified: core::result::Result<bool, ext::ed25519::Error> = ext::ed25519::verify(issuer.spki.key.bytes, child.tbs, child.signature.bytes);
-    if (verified.is_err()) { p.fail(ErrorKind::InvalidSignature, child.signature.bytes.start - child.encoded.start); }
-    else { if (!verified.unwrap()) { p.fail(ErrorKind::InvalidSignature, child.signature.bytes.start - child.encoded.start); } }
+    if (!p.work(2 * KEY_COPY_WORK, 0)) { return; }
+    let key: ext::signature::PublicKey = slots.values[slots.start + issuer_index].public_key.unwrap();
+    let verified: core::result::Result<bool, ext::signature::Error> = ext::signature::verify(key.borrow(), ext::signature::Use::Certificate, scheme, child.tbs, child.signature.bytes, p.budget.verification.borrow());
+    let at: i32 = child.signature.bytes.start - child.encoded.start;
+    if (verified.is_err()) { cryptographic(verified.unwrap_err(), true, at, p); }
+    else { if (!verified.unwrap()) { p.fail(ErrorKind::InvalidSignature, at); } }
 }
 fn get(slots: core::slice::View<Slot>, i: i32) -> ext::x509::Certificate { return slots.values[slots.start + i].certificate.unwrap(); }
-pub fn validate_server(chain: core::slice::View<core::slice::View<u8>>, anchors: core::slice::View<core::slice::View<u8>>, reference: ext::service_identity::Reference, unix_time: i64, scratch: core::slice::View<Slot>, budget: &Budget) -> core::result::Result<ValidatedServer, Error> {
+pub fn validate_server(chain: core::slice::View<core::slice::View<u8>>, anchors: core::slice::View<core::slice::View<u8>>, reference: ext::service_identity::Reference, unix_time: i64, certificates: ext::signature::Policy, scratch: core::slice::View<Slot>, budget: &Budget) -> core::result::Result<ValidatedServer, Error> {
     if (chain.start < 0 || chain.length < 0 || chain.start > 2147483647 - chain.length || anchors.start < 0 || anchors.length < 0 || anchors.start > 2147483647 - anchors.length || scratch.start < 0 || scratch.length < 0 || scratch.start > 2147483647 - scratch.length) { return core::result::Err(error(ErrorKind::Bounds, -1, -1, 0)); }
     if (chain.length == 0) { return core::result::Err(error(ErrorKind::EmptyChain, -1, -1, 0)); }
     if (anchors.length == 0) { return core::result::Err(error(ErrorKind::EmptyAnchors, -1, -1, 0)); }
@@ -164,7 +195,12 @@ pub fn validate_server(chain: core::slice::View<core::slice::View<u8>>, anchors:
         if ((input.length as u64) > budget.limits.max_input - total || input.length > budget.parsing.max_input) { return core::result::Err(error(ErrorKind::InputLimit, -1, -1, 0)); }
         total += input.length as u64; i += 1;
     }
-    if (!p.work(((chain.length as u64) + (anchors.length as u64)) + 1, 0)) { return core::result::Err(p.issue); }
+    if (ext::signature::validate_policy(certificates, ext::signature::Use::Certificate).is_err()) { return core::result::Err(error(ErrorKind::UnsupportedAlgorithm, -1, -1, 0)); }
+    if (!p.work(((chain.length as u64) + (anchors.length as u64)) * (SLOT_STORAGE_WORK + 1) + 1, 0)) { return core::result::Err(p.issue); }
+    // Scratch is caller-controlled: supplied parsed records and imported keys
+    // never authorize reuse across validations. Bad preflight/initial work
+    // admission leaves scratch untouched; every cache used below is rebuilt.
+    i = 0; while (i < chain.length + anchors.length) { scratch.values[scratch.start + i] = empty_slot(); i += 1; }
     let converted: core::result::Result<core::calendar::OffsetDateTime, core::calendar::Error> = core::calendar::from_system_time(core::time::SystemTime { seconds: unix_time, nanos: 0 }, core::calendar::utc());
     if (converted.is_err()) { return core::result::Err(error(ErrorKind::InvalidTime, -1, -1, 0)); } let now: core::calendar::LocalDateTime = converted.unwrap().local;
     i = 0;
@@ -173,7 +209,7 @@ pub fn validate_server(chain: core::slice::View<core::slice::View<u8>>, anchors:
         if (i < chain.length) { input = chain.values[chain.start + i]; } else { input = anchors.values[anchors.start + i - chain.length]; p.ci = -1; p.ai = i - chain.length; }
         let parsed: core::result::Result<ext::x509::Certificate, ext::x509::Error> = ext::x509::parse(input, budget.parsing.borrow());
         if (parsed.is_err()) { p.parsed(parsed.unwrap_err()); return core::result::Err(p.issue); }
-        scratch.values[scratch.start + i] = Slot { certificate: core::option::Some(parsed.unwrap()) }; i += 1;
+        scratch.values[scratch.start + i] = Slot { certificate: core::option::Some(parsed.unwrap()), public_key: core::option::None() }; i += 1;
     }
     // Duplicates/cycles within each list are errors. A cross-list exact final
     // peer root is handled per candidate below, never mistaken for a cycle.
@@ -184,7 +220,7 @@ pub fn validate_server(chain: core::slice::View<core::slice::View<u8>>, anchors:
     }
     let below: i32 = 0; i = 0;
     while (i < chain.length) {
-        p.ci = i; p.ai = -1; let cert: ext::x509::Certificate = get(scratch, i); let checked: Policy = policy(cert, i != 0, now, p.borrow()); path_length(checked.path_length, below, cert, p.borrow());
+        p.ci = i; p.ai = -1; let cert: ext::x509::Certificate = get(scratch, i); let checked: Policy = policy(scratch, i, i != 0, now, p.borrow()); path_length(checked.path_length, below, cert, p.borrow());
         if (p.failed) { return core::result::Err(p.issue); }
         if (i > 0 && !p.same(cert.subject.element.encoded, cert.issuer.element.encoded)) { below += 1; }
         if (p.failed) { return core::result::Err(p.issue); }
@@ -192,7 +228,7 @@ pub fn validate_server(chain: core::slice::View<core::slice::View<u8>>, anchors:
             if (!p.same(cert.issuer.element.encoded, issuer.subject.element.encoded)) { p.fail(ErrorKind::IssuerMismatch, 0); }
             // Check the issuer key's algorithm before feeding its bytes into
             // the signature dispatcher (its full policy follows next loop).
-            public_algorithm(issuer, p.borrow()); signature(cert, issuer, p.borrow()); if (p.failed) { return core::result::Err(p.issue); }
+            p.ci = i + 1; imported(scratch, i + 1, p.borrow()); p.ci = i; signature(cert, i + 1, certificates, scratch, p.borrow()); if (p.failed) { return core::result::Err(p.issue); }
         } i += 1;
     }
     let leaf: ext::x509::Certificate = get(scratch, 0); p.ci = 0; p.ai = -1;
@@ -208,17 +244,18 @@ pub fn validate_server(chain: core::slice::View<core::slice::View<u8>>, anchors:
         let linked: bool = candidate.same(tail.issuer.element.encoded, anchor.subject.element.encoded);
         if (candidate.failed) { return core::result::Err(candidate.issue); }
         if (linked) {
-            candidate.ci = -1; let anchor_policy: Policy = policy(anchor, true, now, candidate.borrow());
+            candidate.ci = -1; let anchor_policy: Policy = policy(scratch, chain.length + a, true, now, candidate.borrow());
             let intermediate_count: i32 = 0; i = 1;
             while (i < count && !candidate.failed) { let cert: ext::x509::Certificate = get(scratch, i); if (!candidate.same(cert.subject.element.encoded, cert.issuer.element.encoded)) { intermediate_count += 1; } i += 1; }
             path_length(anchor_policy.path_length, intermediate_count, anchor, candidate.borrow());
             i = 0; while (i < count && !candidate.failed) { if (same_authority(get(scratch, i), anchor, candidate.borrow())) { candidate.ci = i; candidate.fail(ErrorKind::Duplicate, 0); } i += 1; }
             // The last common edge was already verified against this exact
             // configured certificate when its peer copy was stripped.
-            candidate.ci = count - 1; if (count == chain.length) { signature(tail, anchor, candidate.borrow()); }
+            candidate.ci = count - 1; if (count == chain.length) { signature(tail, chain.length + a, certificates, scratch, candidate.borrow()); }
             if (!candidate.failed) {
-                let bytes: [u8;32] = [0;32]; i = 0; while (i < 32) { bytes[i] = byte(leaf.spki.key.bytes, i); i += 1; }
-                return core::result::Ok(ValidatedServer { public_key: ext::ed25519::Key32 { bytes: bytes }, anchor_index: a, chain_length: count });
+                candidate.ci = 0; if (!candidate.work(2 * KEY_COPY_WORK, 0)) { return core::result::Err(candidate.issue); }
+                let key: ext::signature::PublicKey = scratch.values[scratch.start].public_key.unwrap();
+                return core::result::Ok(ValidatedServer { public_key: key, anchor_index: a, chain_length: count });
             }
             if (resource(candidate.issue.kind)) { return core::result::Err(candidate.issue); }
             if (best.is_none()) { best = core::option::Some(candidate.issue); }

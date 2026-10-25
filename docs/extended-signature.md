@@ -4,14 +4,14 @@ Accepted for **x86_64 Linux output from GPU compilation**. Four focused
 protocol gates passed 719 commands, and the ordinary consumer passed four
 published cases. Source and independent oracles are reviewed. Performance
 and user GPU-kernel behavior remain unverified. The existing path,
-authentication, negotiation and connection modules are unchanged.
+authentication, negotiation and connection integrations are being extended
+separately; their guides distinguish accepted evidence from pending work.
 
 This Lanius module imports owned public keys, classifies strict certificate
 AlgorithmIdentifiers and TLS signature IDs, and dispatches real Ed25519,
 P-256/SHA256 and RSA/SHA256 verification. It provides no signing, certificate
 trust decision, identity/time validation or complete TLS authentication.
-The [integration proposal](tls-signature-integration-plan.md) remains a
-separate next step.
+The [integration plan](tls-signature-integration-plan.md) tracks that work.
 
 ## API and supported matrix
 
@@ -24,9 +24,13 @@ separate next step.
 | `budget(Limits)` | `Budget` |
 | `parse_spki(complete_der: Bytes, budget: &Budget)` | `PublicKey` |
 | `certificate_scheme(complete_algorithm_der: Bytes, budget: &Budget)` | `Scheme` |
-| `tls_scheme(id: u16, use: Use)` | `Scheme` |
+| `tls_scheme(id: u16, use: Use)` / `tls_id(Scheme)` | `Scheme` / `u16` |
+| `default_proofs()` / `default_certificates()` | Owned ordered `Policy` |
+| `validate_policy(Policy, Use)` | `i32` zero |
+| `allows(Policy, Scheme, Use)` | `bool` |
 | `verify(key: &PublicKey, use: Use, scheme: Scheme, message: Bytes, wire_signature: Bytes, budget: &Budget)` | `bool` |
 | `key.borrow()` / `key.kind()` / `budget.borrow()` | `&PublicKey` / `Kind` / `&Budget` |
+| `key.ed25519_key()` | Copied `Option<ext::ed25519::Key32>` |
 
 `Use` is `Certificate` or `CertificateVerify`. `Kind` is `Ed25519`, `P256`
 or `Rsae`. `PublicKey` is an owned struct containing a private material enum.
@@ -50,6 +54,51 @@ message once with SHA256. No digest shortcut, signature-format guessing,
 algorithm fallback or automatic TLS context construction is supplied.
 Callers construct the correct signed certificate/proof bytes and enforce
 offers, roles, transcript checkpoints and Finished separately.
+
+### Explicit ordered policies
+
+`Policy { order: [u16;4], length: i32 }` owns one to four active, unique TLS
+IDs in preference order. The unused tail is ignored. Default proof policy
+is `0807,0403,0804`; default certificate policy adds `0401`. Callers validate
+each public configuration value for its intended `Use`. Invalid active lengths
+and duplicate IDs return `InvalidParameters`; unknown or use-forbidden active
+IDs return `UnsupportedAlgorithm`. No validation or permission helper changes
+the policy or a budget.
+
+`allows` validates the whole policy before returning membership. A malformed
+policy returns an error even when the requested scheme is absent. A valid
+proof policy returns false for the certificate-only PKCS#1 scheme. Copying a
+policy preserves its active list independently of later changes to the original.
+The copied Ed25519 key projection returns `None` for P-256/RSAE keys; it adds
+no private-key capability or trust decision.
+
+The four-family ordinary consumer also passed after adding explicit projection
+checks: mutating the projected Ed25519 copy leaves the retained key unchanged
+and executable, and P-256 plus both RSA cases return `None`. That gate took
+8.66 seconds including GPU compilation, with an empty allocation trace;
+receipt: `target/stdlib-work/tls-signature-projection-copy.log`.
+
+The focused native policy consumer passed on 2026-10-25 in 7.84 seconds,
+including GPU compilation. It checks all 65,536 TLS IDs for each use, 10,368
+policy cases drawn from supported/unknown IDs and duplicate combinations,
+permission queries, copied ownership, invalid lengths and unused tails.
+The emitted executable exits zero with empty stdout/stderr and an empty
+allocation trace. Receipt: `target/stdlib-work/tls-signature-policy-first.log`.
+Connected signature integration remains under implementation and requires its
+own path, proof and peer evidence.
+
+The admitted policy/projection source pins are production
+`887ca81497e6ced65afbdc0a87d093ec1c28d338a09296987f9dedb4734a6ee0`,
+policy consumer
+`9c0bd64e777e8629d2081c0910c987dbae49674e0915c0794cf91917f23ce8f5`,
+ordinary consumer
+`e55ce7dba66c7d4737c3520c4f5b466bfe33438112200dfea285b6354935a2fc`,
+and driver
+`d1f64fe154bfd5c67d28a9325ebf199dea1e4a94a20ce07c2e2651fe9b2f6542`.
+The fresh driver build took 1.14 seconds
+(`target/stdlib-work/tls-signature-policy-build.log`). These receipts extend
+the earlier standalone admission below; they do not rerun its 719-command
+matrix or establish connected TLS behavior.
 
 ### Strict import and classification
 
@@ -213,7 +262,7 @@ offer enforcement, TLS authentication integration, cross-peer TLS tests and
 performance remain pending. No public trust/identity/time/Finished or signing
 capability follows from this foundation.
 
-### Accepted commands and source receipts
+### Earlier standalone commands and source receipts
 
 Frozen SHA256 prefixes are production `8d1f17ee`, final Rust driver
 `61e73950`, independent peer `3e8d5964`, protocol `8b101d45` and ordinary
@@ -247,6 +296,7 @@ LANIUS_DEBUG_STAGE_ERRORS=1 timeout --kill-after=2s 100s \
   target/stdlib-build/debug/deps/extended_signature_execution-cb9d8345407ed7f3 \
   --nocapture --test-threads=1 \
   --skip ordinary_consumer_imports_owns_classifies_and_verifies_all_families \
+  --skip explicit_policies_cover_ids_subsets_copies_and_use_permissions \
   --skip signature_match_arm_control \
   > target/stdlib-work/signature-protocol-first.log 2>&1
 ```

@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **250 modules**, **11140 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **250 modules**, **11160 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -239,14 +239,14 @@ Inventory: **250 modules**, **11140 declaration/member entries**. Counts include
 | [ext::settings](ext/settings.md) | [source](../../extended/ext/settings.lani#L3) | 118 | Source inventory | [extended-settings](../extended-settings.md) |
 | [ext::settings_env](ext/settings_env.md) | [source](../../extended/ext/settings_env.lani#L3) | 27 | Source inventory | [extended-settings](../extended-settings.md) |
 | [ext::signal](ext/signal.md) | [source](../../extended/ext/signal.lani#L3) | 47 | Source inventory | [extended-signal](../extended-signal.md) |
-| [ext::signature](ext/signature.md) | [source](../../extended/ext/signature.lani#L2) | 49 | Source inventory | [extended-signature](../extended-signature.md) |
+| [ext::signature](ext/signature.md) | [source](../../extended/ext/signature.lani#L2) | 58 | Source inventory | [extended-signature](../extended-signature.md) |
 | [ext::statistics](ext/statistics.md) | [source](../../extended/ext/statistics.lani#L4) | 104 | Source inventory | [extended-statistics](../extended-statistics.md) |
 | [ext::table](ext/table.md) | [source](../../extended/ext/table.lani#L2) | 27 | Source inventory | [extended-table](../extended-table.md) |
 | [ext::tar](ext/tar.md) | [source](../../extended/ext/tar.lani#L3) | 81 | Source inventory | [extended-tar](../extended-tar.md) |
 | [ext::terminal](ext/terminal.md) | [source](../../extended/ext/terminal.lani#L3) | 15 | Source inventory | [extended-terminal](../extended-terminal.md) |
 | [ext::timezone](ext/timezone.md) | [source](../../extended/ext/timezone.lani#L3) | 80 | Source inventory | [extended-timezone](../extended-timezone.md) |
-| [ext::tls_authentication](ext/tls_authentication.md) | [source](../../extended/ext/tls_authentication.lani#L3) | 62 | Source inventory | [extended-tls-authentication](../extended-tls-authentication.md) |
-| [ext::tls_connection](ext/tls_connection.md) | [source](../../extended/ext/tls_connection.lani#L3) | 227 | Source inventory | [extended-tls-connection](../extended-tls-connection.md), [tls-connection-contract](../tls-connection-contract.md) |
+| [ext::tls_authentication](ext/tls_authentication.md) | [source](../../extended/ext/tls_authentication.lani#L3) | 67 | Source inventory | [extended-tls-authentication](../extended-tls-authentication.md) |
+| [ext::tls_connection](ext/tls_connection.md) | [source](../../extended/ext/tls_connection.lani#L3) | 231 | Source inventory | [extended-tls-connection](../extended-tls-connection.md), [tls-connection-contract](../tls-connection-contract.md) |
 | [ext::tls_framing](ext/tls_framing.md) | [source](../../extended/ext/tls_framing.lani#L3) | 47 | Source inventory | [extended-tls-framing](../extended-tls-framing.md) |
 | [ext::tls_handshake](ext/tls_handshake.md) | [source](../../extended/ext/tls_handshake.lani#L3) | 130 | Source inventory | [extended-tls-handshake](../extended-tls-handshake.md), [extended-tls-auth-foundation](../extended-tls-auth-foundation.md) |
 | [ext::tls_hash](ext/tls_hash.md) | [source](../../extended/ext/tls_hash.lani#L3) | 25 | Source inventory | [extended-tls-hash](../extended-tls-hash.md) |
@@ -270,7 +270,7 @@ Inventory: **250 modules**, **11140 declaration/member entries**. Counts include
 | [ext::websocket](ext/websocket.md) | [source](../../extended/ext/websocket.lani#L3) | 82 | Source inventory | [extended-websocket](../extended-websocket.md) |
 | [ext::x25519](ext/x25519.md) | [source](../../extended/ext/x25519.lani#L3) | 9 | Source inventory | [extended-x25519](../extended-x25519.md) |
 | [ext::x509](ext/x509.md) | [source](../../extended/ext/x509.lani#L3) | 141 | Source inventory | [extended-x509](../extended-x509.md), [extended-certificate-info](../extended-certificate-info.md) |
-| [ext::x509_path](ext/x509_path.md) | [source](../../extended/ext/x509_path.lani#L3) | 56 | Source inventory | [extended-x509-path](../extended-x509-path.md), [extended-verify-certificate](../extended-verify-certificate.md) |
+| [ext::x509_path](ext/x509_path.md) | [source](../../extended/ext/x509_path.lani#L4) | 58 | Source inventory | [extended-x509-path](../extended-x509-path.md), [extended-verify-certificate](../extended-verify-certificate.md) |
 | [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 80 | Source inventory | [extended-zip](../extended-zip.md) |
 
 ## Support and implementation data

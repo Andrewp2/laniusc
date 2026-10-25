@@ -1,11 +1,11 @@
-// Portable TLS1.3 SHA256/SHA384 + Ed25519 server authentication, RFC8446 4.4.
+// Portable TLS1.3 server authentication with explicit certificate/proof policies.
 // Caller has checked CH/SH negotiation and supplies authenticated record content.
 module ext::tls_authentication;
 import core::iter;
 import core::option;
 import core::result;
 import core::slice;
-import ext::ed25519;
+import ext::signature;
 import ext::service_identity;
 import ext::tls_hash;
 import ext::tls_handshake;
@@ -14,6 +14,9 @@ import ext::tls_transcript;
 import ext::x509_path;
 
 pub const MAX_CERTIFICATES: i32 = 8;
+// Eight bounded named key/result/Option handoffs per feed, each covered by
+// 4KiB logical storage at 32 credits/byte. Source envelope, not an ABI size.
+pub const OWNED_KEY_WORK: u64 = 1048576;
 pub enum Phase { EncryptedExtensions, Certificate, CertificateVerify, Finished, Authenticated, Failed }
 pub enum Error {
     Bounds, InvalidLimit, HashMismatch, InvalidTranscript, EmptyAnchors,
@@ -26,7 +29,8 @@ pub struct Config {
     anchors: core::slice::View<core::slice::View<u8>>,
     reference: ext::service_identity::Reference,
     unix_time: i64,
-    max_frame: i32
+    max_frame: i32,
+    proofs: ext::signature::Policy, certificates: ext::signature::Policy
 }
 // Owned RFC8446 4.4.3 input, independent of the digest and transcript. Borrow
 // only from a stable, live, unchanged owner. Fields are not a resume format.
@@ -52,29 +56,27 @@ pub struct State {
     hash: ext::tls_transcript::State, secret: ext::tls_schedule::Secret,
     anchors: core::slice::View<core::slice::View<u8>>,
     reference: ext::service_identity::Reference, unix_time: i64, max_frame: i32,
-    step: i32, failed: bool, issue: Error, leaf: ext::ed25519::Key32
+    proofs: ext::signature::Policy, certificates: ext::signature::Policy,
+    step: i32, failed: bool, issue: Error, leaf: core::option::Option<ext::signature::PublicKey>
 }
 fn valid<T>(value: core::slice::View<T>) -> bool { return value.start>=0 && value.length>=0 && value.start<=2147483647-value.length; }
 fn same_hash(a:ext::tls_hash::Algorithm,b:ext::tls_hash::Algorithm)->bool {
     return match(a) { ext::tls_hash::Algorithm::Sha256 -> match(b) { ext::tls_hash::Algorithm::Sha256 -> true, ext::tls_hash::Algorithm::Sha384 -> false }, ext::tls_hash::Algorithm::Sha384 -> match(b) { ext::tls_hash::Algorithm::Sha256 -> false, ext::tls_hash::Algorithm::Sha384 -> true } };
 }
 
-pub fn server(transcript: ext::tls_transcript::State, server_handshake_secret: ext::tls_schedule::Secret, offered_signature_schemes: core::slice::View<u16>, config: Config) -> core::result::Result<State,Error> {
-    if (!valid(offered_signature_schemes) || !valid(config.anchors)) { return core::result::Err(Error::Bounds); }
+pub fn server(transcript: ext::tls_transcript::State, server_handshake_secret: ext::tls_schedule::Secret, config: Config) -> core::result::Result<State,Error> {
+    if (!valid(config.anchors)) { return core::result::Err(Error::Bounds); }
     if (config.anchors.length == 0) { return core::result::Err(Error::EmptyAnchors); }
     if (config.anchors.length > 8) { return core::result::Err(Error::AnchorLimit); }
     let index: i32=0;
     while (index < config.anchors.length) { if (!valid(config.anchors.values[config.anchors.start+index])) { return core::result::Err(Error::Bounds); } index+=1; }
     if (!same_hash(server_handshake_secret.algorithm,transcript.algorithm())) { return core::result::Err(Error::HashMismatch); }
     if (config.max_frame < 4 || config.max_frame > 16777219) { return core::result::Err(Error::InvalidLimit); }
-    if (offered_signature_schemes.length < 1 || offered_signature_schemes.length > 32767) { return core::result::Err(Error::SignatureScheme); }
-    let offered: bool=false; index=0;
-    while (index < offered_signature_schemes.length) { if (offered_signature_schemes.values[offered_signature_schemes.start+index] == 2055) { offered=true; } index+=1; }
-    if (!offered) { return core::result::Err(Error::SignatureScheme); }
+    if (ext::signature::validate_policy(config.proofs,ext::signature::Use::CertificateVerify).is_err() || ext::signature::validate_policy(config.certificates,ext::signature::Use::Certificate).is_err()) { return core::result::Err(Error::SignatureScheme); }
     // A shape check, not proof of CH/SH negotiation or transcript provenance.
     let count: u64=transcript.messages(); let hrr: bool=transcript.used_hrr();
     if ((!hrr && count != 2) || (hrr && count != 4)) { return core::result::Err(Error::InvalidTranscript); }
-    return core::result::Ok(State { hash: transcript, secret: server_handshake_secret, anchors: config.anchors, reference: config.reference, unix_time: config.unix_time, max_frame: config.max_frame, step: 0, failed: false, issue: Error::UnexpectedMessage, leaf: ext::ed25519::Key32 { bytes: [0;32] } });
+    return core::result::Ok(State { hash: transcript, secret: server_handshake_secret, anchors: config.anchors, reference: config.reference, unix_time: config.unix_time, max_frame: config.max_frame, proofs: config.proofs, certificates: config.certificates, step: 0, failed: false, issue: Error::UnexpectedMessage, leaf: core::option::None() });
 }
 impl State {
     fn latch(&self, issue: Error) -> Error {
@@ -86,7 +88,7 @@ impl State {
         let result: core::result::Result<i32,ext::tls_transcript::Error> = self.hash.update(frame);
         return result.is_ok();
     }
-    fn certificate(&self, body: core::slice::View<u8>, scratch: core::slice::View<ext::x509_path::Slot>, budget: &ext::x509_path::Budget) -> core::result::Result<ext::ed25519::Key32,Error> {
+    fn certificate(&self, body: core::slice::View<u8>, scratch: core::slice::View<ext::x509_path::Slot>, budget: &ext::x509_path::Budget) -> core::result::Result<ext::signature::PublicKey,Error> {
         let parsed: core::result::Result<ext::tls_handshake::Certificate,ext::tls_handshake::Error> = ext::tls_handshake::parse_certificate(body);
         if (parsed.is_err()) { return core::result::Err(self.latch(Error::Handshake(parsed.unwrap_err()))); }
         let certificate: ext::tls_handshake::Certificate=parsed.unwrap();
@@ -111,7 +113,7 @@ impl State {
         }
         if (scratch.length < count+self.anchors.length) { return core::result::Err(Error::ScratchTooSmall); }
         let chain: core::slice::View<core::slice::View<u8>> = core::slice::View { values: entries, start: 0, length: count };
-        let validated: core::result::Result<ext::x509_path::ValidatedServer,ext::x509_path::Error> = ext::x509_path::validate_server(chain,self.anchors,self.reference,self.unix_time,scratch,budget);
+        let validated: core::result::Result<ext::x509_path::ValidatedServer,ext::x509_path::Error> = ext::x509_path::validate_server(chain,self.anchors,self.reference,self.unix_time,self.certificates,scratch,budget);
         if (validated.is_err()) { return core::result::Err(self.latch(Error::Path(validated.unwrap_err()))); }
         return core::result::Ok(validated.unwrap().public_key);
     }
@@ -119,12 +121,32 @@ impl State {
         let parsed: core::result::Result<ext::tls_handshake::CertificateVerify,ext::tls_handshake::Error> = ext::tls_handshake::parse_certificate_verify(body);
         if (parsed.is_err()) { return self.poison(Error::Handshake(parsed.unwrap_err())); }
         let proof: ext::tls_handshake::CertificateVerify=parsed.unwrap();
-        if (proof.algorithm != 2055 || proof.signature.length != 64) { return self.poison(Error::SignatureScheme); }
-        if (budget.signatures_left == 0) { return self.poison(Error::SignatureLimit); }
-        budget.signatures_left-=1;
+        let mapped: core::result::Result<ext::signature::Scheme,ext::signature::Error> = ext::signature::tls_scheme(proof.algorithm,ext::signature::Use::CertificateVerify);
+        if (mapped.is_err()) { return self.poison(Error::SignatureScheme); }
+        let scheme: ext::signature::Scheme=mapped.unwrap();
+        let allowed: core::result::Result<bool,ext::signature::Error> = ext::signature::allows(self.proofs,scheme,ext::signature::Use::CertificateVerify);
+        if (allowed.is_err()) { return self.poison(Error::SignatureScheme); }
+        if (!allowed.unwrap()) { return self.poison(Error::SignatureScheme); }
         let digest: ext::tls_hash::Digest=self.hash.snapshot(); let signed: CVInput=certificate_verify_input(ext::tls_schedule::Side::Server,digest);
-        let checked: core::result::Result<bool,ext::ed25519::Error> = ext::ed25519::verify(core::slice::View { values: self.leaf.bytes, start: 0, length: 32 },signed.view(),proof.signature);
-        if (checked.is_err()) { return self.poison(Error::CertificateVerify); }
+        // Both phases spend the same caller allowance. Never replenish or copy
+        // a fresh default here; an expensive failed proof remains charged.
+        let key: ext::signature::PublicKey=self.leaf.unwrap();
+        let checked: core::result::Result<bool,ext::signature::Error> = ext::signature::verify(key.borrow(),ext::signature::Use::CertificateVerify,scheme,signed.view(),proof.signature,budget.verification.borrow());
+        if (checked.is_err()) {
+            let cause: Error=match(checked.unwrap_err()) {
+                ext::signature::Error::WorkLimit -> Error::WorkLimit,
+                ext::signature::Error::SignatureLimit -> Error::SignatureLimit,
+                ext::signature::Error::InputLimit -> Error::FrameLimit,
+                ext::signature::Error::UnsupportedAlgorithm -> Error::SignatureScheme,
+                ext::signature::Error::InvalidParameters -> Error::SignatureScheme,
+                ext::signature::Error::SchemeKeyMismatch -> Error::SignatureScheme,
+                ext::signature::Error::InvalidSignatureEncoding -> Error::SignatureScheme,
+                ext::signature::Error::Bounds -> Error::CertificateVerify,
+                ext::signature::Error::InvalidLimits -> Error::CertificateVerify,
+                ext::signature::Error::InvalidKey -> Error::CertificateVerify
+            };
+            return self.poison(cause);
+        }
         if (!checked.unwrap()) { return self.poison(Error::CertificateVerify); }
         return core::result::Ok(Phase::Finished);
     }
@@ -152,7 +174,7 @@ pub impl State {
     pub fn authenticated(&self) -> bool { return !self.failed && self.step == 4; }
     pub fn failure(&self) -> core::option::Option<Error> { if (self.failed) { return core::option::Some(self.issue); } return core::option::None(); }
     // Returned key/hash state own inline bytes; no input/config/scratch borrow.
-    pub fn peer_key(&self) -> core::option::Option<ext::ed25519::Key32> { if (!self.authenticated()) { return core::option::None(); } return core::option::Some(self.leaf); }
+    pub fn peer_key(&self) -> core::option::Option<ext::signature::PublicKey> { if (!self.authenticated()) { return core::option::None(); } return self.leaf; }
     pub fn transcript(&self) -> core::option::Option<ext::tls_transcript::State> { if (!self.authenticated()) { return core::option::None(); } return core::option::Some(self.hash); }
     // Frame and scratch need physical backing, disjoint from State, Budget and
     // anchors. Scratch is used/validated only in Certificate, never retained.
@@ -164,7 +186,7 @@ pub impl State {
         if (frame.length > self.max_frame || (frame.length as u64) > budget.limits.max_input) { return self.poison(Error::FrameLimit); }
         // Conservative syntax/copy tariff: covers all possible nested extension
         // bitmap clears before eager Certificate parsing traverses the list.
-        let cost: u64=4096+256*(frame.length as u64);
+        let cost: u64=OWNED_KEY_WORK+4096+256*(frame.length as u64);
         // SHA384's selected branch precharges complete update blocks under any
         // prior residue, at most two snapshot blocks, and eight Finished MAC
         // blocks. Fixed staging/copy/padding work has a separate allowance;
@@ -178,24 +200,24 @@ pub impl State {
             if (self.step==3) { blocks+=10; copies+=131072; }
             cost+=copies+16384*blocks;
         }
-        if (cost > budget.work_left) { return self.poison(Error::WorkLimit); }
-        budget.work_left-=cost;
+        if (cost > budget.verification.work_left) { return self.poison(Error::WorkLimit); }
+        budget.verification.work_left-=cost;
         let parsed: core::result::Result<ext::tls_handshake::Frame,ext::tls_handshake::Error> = ext::tls_handshake::parse_frame(frame);
         if (parsed.is_err()) { return self.poison(Error::Handshake(parsed.unwrap_err())); }
         let message: ext::tls_handshake::Frame=parsed.unwrap();
         let expected: u8=8; if (self.step == 1) { expected=11; } if (self.step == 2) { expected=15; } if (self.step == 3) { expected=20; }
         if (message.kind != expected) { return self.poison(Error::UnexpectedMessage); }
         let next: core::result::Result<Phase,Error> = core::result::Ok(Phase::Certificate);
-        let selected: ext::ed25519::Key32=self.leaf;
+        let selected: core::option::Option<ext::signature::PublicKey> = self.leaf;
         if (self.step == 0) {
             let checked: core::result::Result<ext::tls_handshake::EncryptedExtensions,ext::tls_handshake::Error> = ext::tls_handshake::parse_encrypted_extensions(message.body);
             if (checked.is_err()) { return self.poison(Error::Handshake(checked.unwrap_err())); }
             // Extension negotiation/meaning must be checked by the caller.
         }
         if (self.step == 1) {
-            let checked: core::result::Result<ext::ed25519::Key32,Error> = self.certificate(message.body,certificate_scratch,budget);
+            let checked: core::result::Result<ext::signature::PublicKey,Error> = self.certificate(message.body,certificate_scratch,budget);
             if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
-            selected=checked.unwrap();
+            selected=core::option::Some(checked.unwrap());
         }
         if (self.step == 2) { next=self.verify(message.body,budget); }
         if (self.step == 3) { next=self.finished(message.body); }

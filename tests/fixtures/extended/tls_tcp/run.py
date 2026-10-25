@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+import signature_proxy
 
 def stream_pattern(length, multiplier, increment):
     return bytes((i * multiplier + increment) % 256 for i in range(length))
@@ -56,8 +57,10 @@ def proxy(left, right, fragment, threads):
         thread.start()
         threads.append(thread)
 
-def run(binary, directory, role, suite, length, mode, fault, fragment, transport, expected, root_name, exporter, group, peer_groups, calls):
+def run(binary, directory, role, suite, length, mode, fault, fragment, transport, expected, root_name, exporter, group, peer_groups, calls, credential='ed'):
     directory = pathlib.Path(directory)
+    assert credential in ['ed', 'rsa', 'p256', 'mixed']
+    if credential != 'ed': directory = directory / 'signature' / credential
     scale = suite == 2 and length == 1048576 and mode == 0
     # The software AES256 scale case has one35s operation deadline. Keep a
     # separate whole-helper bound with four seconds reserved for kill/reap.
@@ -68,8 +71,10 @@ def run(binary, directory, role, suite, length, mode, fault, fragment, transport
     cipher = ['TLS_CHACHA20_POLY1305_SHA256', 'TLS_AES_128_GCM_SHA256', 'TLS_AES_256_GCM_SHA384'][suite]
     export_length = 12240 if mode == 12 else 32
     assert group in range(4) and peer_groups in ['X25519', 'P-256', 'X25519:P-256']
-    common = ['-tls1_3', '-groups', peer_groups, '-sigalgs', 'ed25519', '-ciphersuites', cipher]
+    schemes = 'ed25519' if credential == 'ed' else 'ed25519:ecdsa_secp256r1_sha256:rsa_pss_rsae_sha256:rsa_pkcs1_sha256'
+    common = ['-tls1_3', '-groups', peer_groups, '-sigalgs', schemes, '-ciphersuites', cipher]
     peer = None
+    mutation = None
     resources, threads = [], []
     small = length >= 65537
     peer_input = stream_pattern(length, 37 if role else 53, 11 if role else 193)
@@ -91,18 +96,21 @@ def run(binary, directory, role, suite, length, mode, fault, fragment, transport
         port = reservation.getsockname()[1]
         reservation.close()
         command = ['openssl', 's_server', '-accept', f'127.0.0.1:{port}', '-cert', str(directory / 'leaf.pem'), '-cert_chain', str(directory / 'ca.pem'), '-key', str(directory / 'key.pem'), '-quiet', '-naccept', '1', '-ign_eof'] + common
+        keylog = directory / ('keylog-' + str(time.monotonic_ns()) + '.txt')
+        if mode in [17, 18]: command += ['-keylogfile', str(keylog)]
         if exporter:
             command.remove('-quiet')
             command += ['-keymatexport', 'lanius-tcp-test', '-keymatexportlen', str(export_length)]
         peer = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         remote = connect(port, small)
-        if fragment:
+        if fragment or mode in [17, 18]:
             local = listener(small)
             native = connect(local.getsockname()[1], small)
             bridge, _ = local.accept()
             local.close()
             resources += [bridge, remote]
-            proxy(bridge, remote, fragment, threads)
+            if mode in [17, 18]: mutation = signature_proxy.start(bridge, remote, keylog, suite, 15 if mode == 17 else 20, threads)
+            else: proxy(bridge, remote, fragment, threads)
         else: native = remote
     else:
         local = listener(small)
@@ -195,6 +203,9 @@ def run(binary, directory, role, suite, length, mode, fault, fragment, transport
         raise
     finally:
         for sock in resources: sock.close()
+    if mutation is not None:
+        assert not mutation.errors and mutation.mutations == 1, (mutation.errors, mutation.mutations)
+        assert mutation.proof_scheme == (2052 if credential == 'rsa' else 1027)
     # Preserve full diagnostics only in ignored storage. Assertions must not
     # turn a scale failure into megabytes of escaped stdout/trace in the gate.
     if native_process.returncode != 0:
@@ -218,5 +229,5 @@ def run(binary, directory, role, suite, length, mode, fault, fragment, transport
     sys.stdout.buffer.write(b''.join(struct.pack('<Q', len(value)) + value for value in fields))
 
 if __name__ == '__main__':
-    assert len(sys.argv) == 16
-    run(sys.argv[1], sys.argv[2], *(int(value) for value in sys.argv[3:7]), sys.argv[7], int(sys.argv[8]), sys.argv[9], bool(int(sys.argv[10])), sys.argv[11], bool(int(sys.argv[12])), int(sys.argv[13]), sys.argv[14], int(sys.argv[15]))
+    assert len(sys.argv) in [16, 17]
+    run(sys.argv[1], sys.argv[2], *(int(value) for value in sys.argv[3:7]), sys.argv[7], int(sys.argv[8]), sys.argv[9], bool(int(sys.argv[10])), sys.argv[11], bool(int(sys.argv[12])), int(sys.argv[13]), sys.argv[14], int(sys.argv[15]), sys.argv[16] if len(sys.argv) == 17 else 'ed')

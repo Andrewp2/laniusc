@@ -4,7 +4,7 @@
 
 Generated source inventory. Linked guides own runtime and semantic contracts; a listed declaration does not establish executable behavior.
 
-[All modules](../README.md) · [Source](../../../extended/ext/x509_path.lani#L3)
+[All modules](../README.md) · [Source](../../../extended/ext/x509_path.lani#L4)
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
@@ -13,21 +13,21 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 - [extended-x509-path](../../extended-x509-path.md)
 - [extended-verify-certificate](../../extended-verify-certificate.md)
 
-Declaration counts: enum: 1; field: 18; function: 4; impl: 1; method: 1; struct: 5; variant: 26.
+Declaration counts: constant: 2; enum: 1; field: 18; function: 4; impl: 1; method: 1; struct: 5; variant: 26.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::calendar](../core/calendar.md) · [source](../../../extended/ext/x509_path.lani#L4)
-- [core::option](../core/option.md) · [source](../../../extended/ext/x509_path.lani#L5)
-- [core::result](../core/result.md) · [source](../../../extended/ext/x509_path.lani#L6)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/x509_path.lani#L7)
-- [core::time](../core/time.md) · [source](../../../extended/ext/x509_path.lani#L8)
-- [ext::der](der.md) · [source](../../../extended/ext/x509_path.lani#L9)
-- [ext::ed25519](ed25519.md) · [source](../../../extended/ext/x509_path.lani#L10)
-- [ext::service_identity](service_identity.md) · [source](../../../extended/ext/x509_path.lani#L11)
-- [ext::x509](x509.md) · [source](../../../extended/ext/x509_path.lani#L12)
+- [core::calendar](../core/calendar.md) · [source](../../../extended/ext/x509_path.lani#L5)
+- [core::option](../core/option.md) · [source](../../../extended/ext/x509_path.lani#L6)
+- [core::result](../core/result.md) · [source](../../../extended/ext/x509_path.lani#L7)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/x509_path.lani#L8)
+- [core::time](../core/time.md) · [source](../../../extended/ext/x509_path.lani#L9)
+- [ext::der](der.md) · [source](../../../extended/ext/x509_path.lani#L10)
+- [ext::signature](signature.md) · [source](../../../extended/ext/x509_path.lani#L11)
+- [ext::service_identity](service_identity.md) · [source](../../../extended/ext/x509_path.lani#L12)
+- [ext::x509](x509.md) · [source](../../../extended/ext/x509_path.lani#L13)
 
 ## Types, fields and variants
 
@@ -35,7 +35,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: ErrorKind
 
-[Source line 14](../../../extended/ext/x509_path.lani#L14)
+[Source line 15](../../../extended/ext/x509_path.lani#L15)
 
 ```lanius
 pub enum ErrorKind
@@ -43,7 +43,7 @@ pub enum ErrorKind
 
 #### variant: Bounds
 
-[Source line 15](../../../extended/ext/x509_path.lani#L15)
+[Source line 16](../../../extended/ext/x509_path.lani#L16)
 
 ```lanius
 Bounds
@@ -51,7 +51,7 @@ Bounds
 
 #### variant: EmptyChain
 
-[Source line 15](../../../extended/ext/x509_path.lani#L15)
+[Source line 16](../../../extended/ext/x509_path.lani#L16)
 
 ```lanius
 EmptyChain
@@ -59,7 +59,7 @@ EmptyChain
 
 #### variant: EmptyAnchors
 
-[Source line 15](../../../extended/ext/x509_path.lani#L15)
+[Source line 16](../../../extended/ext/x509_path.lani#L16)
 
 ```lanius
 EmptyAnchors
@@ -67,7 +67,7 @@ EmptyAnchors
 
 #### variant: ChainLimit
 
-[Source line 15](../../../extended/ext/x509_path.lani#L15)
+[Source line 16](../../../extended/ext/x509_path.lani#L16)
 
 ```lanius
 ChainLimit
@@ -75,7 +75,7 @@ ChainLimit
 
 #### variant: AnchorLimit
 
-[Source line 15](../../../extended/ext/x509_path.lani#L15)
+[Source line 16](../../../extended/ext/x509_path.lani#L16)
 
 ```lanius
 AnchorLimit
@@ -83,7 +83,7 @@ AnchorLimit
 
 #### variant: InputLimit
 
-[Source line 15](../../../extended/ext/x509_path.lani#L15)
+[Source line 16](../../../extended/ext/x509_path.lani#L16)
 
 ```lanius
 InputLimit
@@ -91,7 +91,7 @@ InputLimit
 
 #### variant: ScratchTooSmall
 
-[Source line 16](../../../extended/ext/x509_path.lani#L16)
+[Source line 17](../../../extended/ext/x509_path.lani#L17)
 
 ```lanius
 ScratchTooSmall
@@ -99,7 +99,7 @@ ScratchTooSmall
 
 #### variant: InvalidTime
 
-[Source line 16](../../../extended/ext/x509_path.lani#L16)
+[Source line 17](../../../extended/ext/x509_path.lani#L17)
 
 ```lanius
 InvalidTime
@@ -107,7 +107,7 @@ InvalidTime
 
 #### variant: Parse
 
-[Source line 16](../../../extended/ext/x509_path.lani#L16)
+[Source line 17](../../../extended/ext/x509_path.lani#L17)
 
 ```lanius
 Parse
@@ -115,7 +115,7 @@ Parse
 
 #### variant: ItemLimit
 
-[Source line 16](../../../extended/ext/x509_path.lani#L16)
+[Source line 17](../../../extended/ext/x509_path.lani#L17)
 
 ```lanius
 ItemLimit
@@ -123,7 +123,7 @@ ItemLimit
 
 #### variant: WorkLimit
 
-[Source line 16](../../../extended/ext/x509_path.lani#L16)
+[Source line 17](../../../extended/ext/x509_path.lani#L17)
 
 ```lanius
 WorkLimit
@@ -131,7 +131,7 @@ WorkLimit
 
 #### variant: SignatureLimit
 
-[Source line 16](../../../extended/ext/x509_path.lani#L16)
+[Source line 17](../../../extended/ext/x509_path.lani#L17)
 
 ```lanius
 SignatureLimit
@@ -139,7 +139,7 @@ SignatureLimit
 
 #### variant: Duplicate
 
-[Source line 17](../../../extended/ext/x509_path.lani#L17)
+[Source line 18](../../../extended/ext/x509_path.lani#L18)
 
 ```lanius
 Duplicate
@@ -147,7 +147,7 @@ Duplicate
 
 #### variant: UnsupportedAlgorithm
 
-[Source line 17](../../../extended/ext/x509_path.lani#L17)
+[Source line 18](../../../extended/ext/x509_path.lani#L18)
 
 ```lanius
 UnsupportedAlgorithm
@@ -155,7 +155,7 @@ UnsupportedAlgorithm
 
 #### variant: IssuerMismatch
 
-[Source line 17](../../../extended/ext/x509_path.lani#L17)
+[Source line 18](../../../extended/ext/x509_path.lani#L18)
 
 ```lanius
 IssuerMismatch
@@ -163,7 +163,7 @@ IssuerMismatch
 
 #### variant: Untrusted
 
-[Source line 17](../../../extended/ext/x509_path.lani#L17)
+[Source line 18](../../../extended/ext/x509_path.lani#L18)
 
 ```lanius
 Untrusted
@@ -171,7 +171,7 @@ Untrusted
 
 #### variant: InvalidSignature
 
-[Source line 17](../../../extended/ext/x509_path.lani#L17)
+[Source line 18](../../../extended/ext/x509_path.lani#L18)
 
 ```lanius
 InvalidSignature
@@ -179,7 +179,7 @@ InvalidSignature
 
 #### variant: Validity
 
-[Source line 18](../../../extended/ext/x509_path.lani#L18)
+[Source line 19](../../../extended/ext/x509_path.lani#L19)
 
 ```lanius
 Validity
@@ -187,7 +187,7 @@ Validity
 
 #### variant: CaRequired
 
-[Source line 18](../../../extended/ext/x509_path.lani#L18)
+[Source line 19](../../../extended/ext/x509_path.lani#L19)
 
 ```lanius
 CaRequired
@@ -195,7 +195,7 @@ CaRequired
 
 #### variant: KeyUsage
 
-[Source line 18](../../../extended/ext/x509_path.lani#L18)
+[Source line 19](../../../extended/ext/x509_path.lani#L19)
 
 ```lanius
 KeyUsage
@@ -203,7 +203,7 @@ KeyUsage
 
 #### variant: ExtendedKeyUsage
 
-[Source line 18](../../../extended/ext/x509_path.lani#L18)
+[Source line 19](../../../extended/ext/x509_path.lani#L19)
 
 ```lanius
 ExtendedKeyUsage
@@ -211,7 +211,7 @@ ExtendedKeyUsage
 
 #### variant: PathLength
 
-[Source line 18](../../../extended/ext/x509_path.lani#L18)
+[Source line 19](../../../extended/ext/x509_path.lani#L19)
 
 ```lanius
 PathLength
@@ -219,7 +219,7 @@ PathLength
 
 #### variant: UnknownCritical
 
-[Source line 18](../../../extended/ext/x509_path.lani#L18)
+[Source line 19](../../../extended/ext/x509_path.lani#L19)
 
 ```lanius
 UnknownCritical
@@ -227,7 +227,7 @@ UnknownCritical
 
 #### variant: UnsupportedConstraint
 
-[Source line 19](../../../extended/ext/x509_path.lani#L19)
+[Source line 20](../../../extended/ext/x509_path.lani#L20)
 
 ```lanius
 UnsupportedConstraint
@@ -235,7 +235,7 @@ UnsupportedConstraint
 
 #### variant: UnsupportedCritical
 
-[Source line 19](../../../extended/ext/x509_path.lani#L19)
+[Source line 20](../../../extended/ext/x509_path.lani#L20)
 
 ```lanius
 UnsupportedCritical
@@ -243,7 +243,7 @@ UnsupportedCritical
 
 #### variant: Identity
 
-[Source line 19](../../../extended/ext/x509_path.lani#L19)
+[Source line 20](../../../extended/ext/x509_path.lani#L20)
 
 ```lanius
 Identity
@@ -251,7 +251,7 @@ Identity
 
 ### struct: Error
 
-[Source line 23](../../../extended/ext/x509_path.lani#L23)
+[Source line 24](../../../extended/ext/x509_path.lani#L24)
 
 ```lanius
 pub struct Error
@@ -259,7 +259,7 @@ pub struct Error
 
 #### field: kind
 
-[Source line 23](../../../extended/ext/x509_path.lani#L23)
+[Source line 24](../../../extended/ext/x509_path.lani#L24)
 
 ```lanius
 kind: ErrorKind
@@ -267,7 +267,7 @@ kind: ErrorKind
 
 #### field: certificate
 
-[Source line 23](../../../extended/ext/x509_path.lani#L23)
+[Source line 24](../../../extended/ext/x509_path.lani#L24)
 
 ```lanius
 certificate: i32
@@ -275,7 +275,7 @@ certificate: i32
 
 #### field: anchor
 
-[Source line 23](../../../extended/ext/x509_path.lani#L23)
+[Source line 24](../../../extended/ext/x509_path.lani#L24)
 
 ```lanius
 anchor: i32
@@ -283,7 +283,7 @@ anchor: i32
 
 #### field: offset
 
-[Source line 23](../../../extended/ext/x509_path.lani#L23)
+[Source line 24](../../../extended/ext/x509_path.lani#L24)
 
 ```lanius
 offset: i32
@@ -291,7 +291,7 @@ offset: i32
 
 ### struct: Limits
 
-[Source line 24](../../../extended/ext/x509_path.lani#L24)
+[Source line 25](../../../extended/ext/x509_path.lani#L25)
 
 ```lanius
 pub struct Limits
@@ -299,7 +299,7 @@ pub struct Limits
 
 #### field: max_chain
 
-[Source line 24](../../../extended/ext/x509_path.lani#L24)
+[Source line 25](../../../extended/ext/x509_path.lani#L25)
 
 ```lanius
 max_chain: i32
@@ -307,7 +307,7 @@ max_chain: i32
 
 #### field: max_anchors
 
-[Source line 24](../../../extended/ext/x509_path.lani#L24)
+[Source line 25](../../../extended/ext/x509_path.lani#L25)
 
 ```lanius
 max_anchors: i32
@@ -315,7 +315,7 @@ max_anchors: i32
 
 #### field: max_input
 
-[Source line 24](../../../extended/ext/x509_path.lani#L24)
+[Source line 25](../../../extended/ext/x509_path.lani#L25)
 
 ```lanius
 max_input: u64
@@ -323,7 +323,7 @@ max_input: u64
 
 #### field: max_signatures
 
-[Source line 24](../../../extended/ext/x509_path.lani#L24)
+[Source line 25](../../../extended/ext/x509_path.lani#L25)
 
 ```lanius
 max_signatures: u64
@@ -331,7 +331,7 @@ max_signatures: u64
 
 #### field: max_work
 
-[Source line 24](../../../extended/ext/x509_path.lani#L24)
+[Source line 25](../../../extended/ext/x509_path.lani#L25)
 
 ```lanius
 max_work: u64
@@ -339,7 +339,7 @@ max_work: u64
 
 #### field: parsing
 
-[Source line 24](../../../extended/ext/x509_path.lani#L24)
+[Source line 25](../../../extended/ext/x509_path.lani#L25)
 
 ```lanius
 parsing: ext::x509::Limits
@@ -347,7 +347,7 @@ parsing: ext::x509::Limits
 
 ### struct: Budget
 
-[Source line 25](../../../extended/ext/x509_path.lani#L25)
+[Source line 26](../../../extended/ext/x509_path.lani#L26)
 
 ```lanius
 pub struct Budget
@@ -355,31 +355,23 @@ pub struct Budget
 
 #### field: parsing
 
-[Source line 25](../../../extended/ext/x509_path.lani#L25)
+[Source line 26](../../../extended/ext/x509_path.lani#L26)
 
 ```lanius
 parsing: ext::x509::Budget
 ```
 
-#### field: signatures_left
+#### field: verification
 
-[Source line 25](../../../extended/ext/x509_path.lani#L25)
-
-```lanius
-signatures_left: u64
-```
-
-#### field: work_left
-
-[Source line 25](../../../extended/ext/x509_path.lani#L25)
+[Source line 26](../../../extended/ext/x509_path.lani#L26)
 
 ```lanius
-work_left: u64
+verification: ext::signature::Budget
 ```
 
 #### field: limits
 
-[Source line 25](../../../extended/ext/x509_path.lani#L25)
+[Source line 26](../../../extended/ext/x509_path.lani#L26)
 
 ```lanius
 limits: Limits
@@ -387,7 +379,7 @@ limits: Limits
 
 ### struct: Slot
 
-[Source line 26](../../../extended/ext/x509_path.lani#L26)
+[Source line 27](../../../extended/ext/x509_path.lani#L27)
 
 ```lanius
 pub struct Slot
@@ -395,18 +387,10 @@ pub struct Slot
 
 #### field: certificate
 
-[Source line 26](../../../extended/ext/x509_path.lani#L26)
-
-```lanius
-certificate: core::option::Option<ext::x509::Certificate>
-```
-
-### struct: ValidatedServer
-
 [Source line 27](../../../extended/ext/x509_path.lani#L27)
 
 ```lanius
-pub struct ValidatedServer
+certificate: core::option::Option<ext::x509::Certificate>
 ```
 
 #### field: public_key
@@ -414,12 +398,28 @@ pub struct ValidatedServer
 [Source line 27](../../../extended/ext/x509_path.lani#L27)
 
 ```lanius
-public_key: ext::ed25519::Key32
+public_key: core::option::Option<ext::signature::PublicKey>
+```
+
+### struct: ValidatedServer
+
+[Source line 28](../../../extended/ext/x509_path.lani#L28)
+
+```lanius
+pub struct ValidatedServer
+```
+
+#### field: public_key
+
+[Source line 28](../../../extended/ext/x509_path.lani#L28)
+
+```lanius
+public_key: ext::signature::PublicKey
 ```
 
 #### field: anchor_index
 
-[Source line 27](../../../extended/ext/x509_path.lani#L27)
+[Source line 28](../../../extended/ext/x509_path.lani#L28)
 
 ```lanius
 anchor_index: i32
@@ -427,17 +427,35 @@ anchor_index: i32
 
 #### field: chain_length
 
-[Source line 27](../../../extended/ext/x509_path.lani#L27)
+[Source line 28](../../../extended/ext/x509_path.lani#L28)
 
 ```lanius
 chain_length: i32
+```
+
+## Constants
+
+### constant: SLOT_STORAGE_WORK
+
+[Source line 32](../../../extended/ext/x509_path.lani#L32)
+
+```lanius
+pub const SLOT_STORAGE_WORK: u64 = 524288;
+```
+
+### constant: KEY_COPY_WORK
+
+[Source line 33](../../../extended/ext/x509_path.lani#L33)
+
+```lanius
+pub const KEY_COPY_WORK: u64 = 131072;
 ```
 
 ## Free functions and extern declarations
 
 ### function: empty_slot
 
-[Source line 28](../../../extended/ext/x509_path.lani#L28)
+[Source line 34](../../../extended/ext/x509_path.lani#L34)
 
 ```lanius
 pub fn empty_slot() -> Slot
@@ -445,7 +463,7 @@ pub fn empty_slot() -> Slot
 
 ### function: default_limits
 
-[Source line 29](../../../extended/ext/x509_path.lani#L29)
+[Source line 35](../../../extended/ext/x509_path.lani#L35)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -453,7 +471,7 @@ pub fn default_limits() -> Limits
 
 ### function: budget
 
-[Source line 33](../../../extended/ext/x509_path.lani#L33)
+[Source line 39](../../../extended/ext/x509_path.lani#L39)
 
 ```lanius
 pub fn budget(limits: Limits) -> core::result::Result<Budget, Error>
@@ -461,17 +479,17 @@ pub fn budget(limits: Limits) -> core::result::Result<Budget, Error>
 
 ### function: validate_server
 
-[Source line 150](../../../extended/ext/x509_path.lani#L150)
+[Source line 181](../../../extended/ext/x509_path.lani#L181)
 
 ```lanius
-pub fn validate_server(chain: core::slice::View<core::slice::View<u8>>, anchors: core::slice::View<core::slice::View<u8>>, reference: ext::service_identity::Reference, unix_time: i64, scratch: core::slice::View<Slot>, budget: &Budget) -> core::result::Result<ValidatedServer, Error>
+pub fn validate_server(chain: core::slice::View<core::slice::View<u8>>, anchors: core::slice::View<core::slice::View<u8>>, reference: ext::service_identity::Reference, unix_time: i64, certificates: ext::signature::Policy, scratch: core::slice::View<Slot>, budget: &Budget) -> core::result::Result<ValidatedServer, Error>
 ```
 
 ## Implementation blocks and public methods
 
-### impl at line 37
+### impl at line 44
 
-[Source line 37](../../../extended/ext/x509_path.lani#L37)
+[Source line 44](../../../extended/ext/x509_path.lani#L44)
 
 ```lanius
 pub impl Budget
@@ -479,7 +497,7 @@ pub impl Budget
 
 #### method: borrow
 
-[Source line 37](../../../extended/ext/x509_path.lani#L37)
+[Source line 44](../../../extended/ext/x509_path.lani#L44)
 
 ```lanius
 pub fn borrow(&self) -> &Budget

@@ -18,6 +18,7 @@ fn compile(name: &str) -> common::TempArtifact {
         )
     })
     .unwrap_or_else(|e| panic!("TLS connection {name}: {e}"));
+    assert!(common::x86_jumps::is_x86_64_executable(&bytes));
     let exe = common::TempArtifact::new("laniusc_tls_connection", name, None);
     exe.write_bytes(bytes);
     std::fs::set_permissions(exe.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -119,7 +120,7 @@ fn group_entropy_scalar_encoding_and_work_admission_boundaries_execute() {
     checked(&result);
     assert_eq!(
         result.stdout,
-        b"tls connection group admissions: 80 accepted\n"
+        b"tls connection group admissions: 90 accepted\n"
     );
 }
 
@@ -130,4 +131,23 @@ fn sha384_only_suite_both_groups_and_publication_execute() {
 #[test]
 fn sha384_late_binding_cross_hash_retry_and_cookie_execute() {
     peer("hash-retries");
+}
+
+#[test]
+fn mixed_certificate_issuers_keep_real_ed25519_signer_and_full_epochs() {
+    peer("signatures");
+}
+#[test]
+fn actual_signature_offers_fallback_rejections_and_owned_key_retirement_execute() {
+    peer("signature-policies");
+}
+
+#[test]
+fn local_signing_shares_verification_work_and_attempt_boundary_after_credentials() {
+    peer("signing-limits");
+}
+
+#[test]
+fn local_signing_preflights_all_presign_protocol_work_before_shared_reservation() {
+    peer("signing-protocol-limits");
 }

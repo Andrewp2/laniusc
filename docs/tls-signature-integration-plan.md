@@ -8,6 +8,13 @@ CertificateVerify receiver and local credential signer still use Ed25519.
 This document proposes their integration; it adds no new trust decision.
 The overall standard-library/TLS goal remains open.
 
+The working integration now includes executable shared ordered policies and
+negotiation: all TLS IDs for both uses, 10,368 policy cases, copied key
+projections, and 1,840 negotiation commands/probes plus six ordinary flows
+pass native gates. Their current guides contain the receipts. The path,
+authentication, engine and connected-peer changes still require their own
+admission before this proposal can be marked implemented.
+
 ## Current boundaries
 
 | Source | Existing contract that integration must preserve/change |
@@ -169,8 +176,8 @@ The initial sender can require offered algorithms on every transmitted
 certificate and omit a root; document that stricter chain-selection policy.
 
 CertificateVerify continues to cover the 64 spaces, server context string,
-zero separator and transcript snapshot through Certificate. In the current
-SHA256 transcript profile that message is 130 bytes. Pass it unchanged to
+zero separator and transcript snapshot through Certificate. In the admitted
+SHA256/SHA384 transcript profiles that message is 130/146 bytes. Pass it unchanged to
 Ed25519; SHA256-based RSA/ECDSA schemes hash that **whole message once**.
 Do not substitute the transcript digest for this message or double hash it.
 Verify before appending CertificateVerify, and verify Finished before
@@ -205,7 +212,7 @@ credential capabilities or claiming complete two-role interoperability.
    Certificate-only permission must never authorize CertificateVerify.
 4. Run real OpenSSL peers: Lanius client ↔ RSA/ECDSA/Ed25519 servers and
    Lanius Ed25519 server with mixed issuer chains ↔ OpenSSL client. Cover
-   both existing suites, both DHE groups, HRR, fragmented frames, partial
+   all three existing suites, both DHE groups, HRR, fragmented frames, partial
    transport progress, application bytes, close and fatal alerts. Assert no
    established state on trust/proof/Finished failures. Each command stays
    under two minutes; root serializes GPU compilation/native admission.
@@ -222,7 +229,8 @@ fully before exposing it in offers; no declaration-only dispatch branches.
 This closes the missing SHA256 signature verification routes toward the
 mandatory TLS algorithms. It does not expand the existing ordered/offline
 PKIX profile into general path building, normalized DN processing,
-revocation or policy/name-constraint support. SHA384/HKDF primitives alone
-do not add a SHA384 TLS schedule/suite, P-384 or new credential signers.
+revocation or policy/name-constraint support. The selected-hash TLS milestone
+already supplies SHA384 schedules and AES-256-GCM/SHA384; this signature work
+adds neither P-384 nor new local credential signers.
 All integration behavior and cross-peer interoperability in this proposal
 remain unverified until the gates above pass.

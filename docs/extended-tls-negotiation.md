@@ -1,9 +1,10 @@
 # TLS 1.3 negotiation helpers
 
 `ext::tls_negotiation` validates the meaning of borrowed TLS handshake fields and writes checked
-extension lists. It implements a full DHE profile using X25519 (`0x001d`) or secp256r1 (`0x0017`), Ed25519 (`0x0807`), and
-an explicit shared suite policy: AES128GCM/SHA256 (`0x1301`), AES256GCM/SHA384
-(`0x1302`), or ChaCha20Poly1305/SHA256 (`0x1303`).
+extension lists. Its full DHE profile uses X25519 (`0x001d`) or secp256r1
+(`0x0017`), explicit proof/certificate signature policies, and an explicit shared
+suite policy: AES128GCM/SHA256 (`0x1301`), AES256GCM/SHA384 (`0x1302`), or
+ChaCha20Poly1305/SHA256 (`0x1303`).
 
 The source follows [RFC 8446 sections 4 and
 9](https://www.rfc-editor.org/rfc/rfc8446.html#section-4), [RFC 6066 section
@@ -14,7 +15,11 @@ TLS algorithm conformance.
 
 ## Migration status
 
-The shared-suite/SHA384 migration is accepted on x86_64 Linux at production
+The signature-policy integration is accepted on x86_64 Linux at production
+`bf0f259f`. All four gates passed in one invocation. It removes synthetic
+signature selection from ServerHello and uses explicit `signature::Policy`
+values for proof and certificate permission. The earlier
+shared-suite/SHA384 migration was accepted on x86_64 Linux at production
 `b3044892`. All four gates passed in one invocation with empty allocation traces.
 Source and focused fixtures use `tls_suite` as the single suite authority and
 migrate callers directly, with no old suite-mapping alias. Current and earlier
@@ -39,6 +44,7 @@ helpers; the engine and transport have their own admission evidence.
 | `select_alpn(Offer, preferred, required, &Budget)` | Offered protocol or empty optional selection |
 | `check_encrypted_extensions(Offer, EncryptedExtensions, required_alpn, &Budget)` | `NegotiatedExtensions` |
 | `key_share(Offer, Group, &Budget)` | Canonically validated `Option<KeyShare>` |
+| `signature_policy(Offer, signature::Use, &Budget)` | Owned recognized proof/effective-certificate policy |
 | `group_id(Group)` / `group_from_id(u16)` | Typed group / wire-ID conversion |
 | `validate_policy(GroupPolicy)` / `default_groups()` | Distinct one/two-group policy / X25519 then P-256 default |
 | `tls_suite::from_id(u16)` | Shared checked suite conversion (separate module) |
@@ -58,8 +64,8 @@ budget/output storage are manual contracts.
 
 `Group` is `X25519` or `Secp256r1`. `GroupPolicy` contains `preferred` and
 `fallback: Option<Group>`; repeated groups are invalid. `KeyShare` contains a typed
-`group` and borrowed `data`. `Selection` contains `suite`, typed `group`, `signature`
-and `peer_key`. `Retry` contains `suite`, `requested: Option<Group>` and `cookie`.
+`group` and borrowed `data`. `Selection` contains only `suite`, typed `group`
+and `peer_key`; ServerHello selects no signature scheme. `Retry` contains `suite`, `requested: Option<Group>` and `cookie`.
 `requested=None` denotes cookie-only HRR. `Decision` distinguishes the two results;
 there is no placeholder peer key or retry boolean in a successful selection. Cookies
 are unprefixed content, not the encoded u16 length. `NegotiatedExtensions` contains
@@ -83,12 +89,17 @@ prefix `04`; compressed SEC1 points are rejected. This module validates wire sha
 engine calls the P-256 primitive to validate the actual point before scalar multiplication.
 Other groups remain opaque and cannot be selected by this profile.
 
-Ed25519 must appear in signature_algorithms and the effective certificate-signature list. Absent
-signature_algorithms_cert falls back to signature_algorithms. Server preference is an owned `tls_suite::Policy` with one to three distinct
+Suite/group selection is independent of credential permission. A valid hello
+without Ed25519, or even without a locally supported signature ID, can select
+a suite/group. A credential/authentication consumer separately decides whether
+it can satisfy the actual proof and certificate policies.
+
+Server preference is an owned `tls_suite::Policy` with one to three distinct
 active entries. Selection revalidates the public policy and chooses its first
 offered entry. A singleton does not permit fallback to another implemented suite.
 The shared default orders ChaCha20, AES128, then AES256. Invalid empty, duplicate
-or oversized policies reject; inactive slots grant no authority. The server chooses the first group in its policy that the client advertised. If its
+or oversized policies reject; inactive slots grant no authority. The server
+chooses the first group in its policy that the client advertised. If its
 share is absent, selection returns a requested-group HRR even when a less preferred
 mutual group already has a share. Group preference does not depend on suite preference.
 
@@ -142,9 +153,9 @@ publication of success.
 All four writers return the length of a **raw extension list**, with no outer u16 list prefix.
 The existing `tls_handshake` ClientHello/ServerHello/EE writers add their enclosing lengths.
 
-- `write_client_extensions(GroupPolicy, Option<KeyShare>, server_name, alpn_list, cookie, output, &Budget)`
-  emits versions, groups, CV and certificate signature algorithms, key share, and optional
-  SNI/ALPN/cookie.
+- `write_client_extensions(GroupPolicy, proofs: signature::Policy, certificates: Option<signature::Policy>, Option<KeyShare>, server_name, alpn_list, cookie, output, &Budget)`
+  emits versions, groups, explicit proof signatures, optional certificate signatures,
+  key share and optional SNI/ALPN/cookie.
 - `write_server_extensions(KeyShare, output, &Budget)` emits TLS 1.3 version and its typed share.
 - `write_retry_extensions(Option<Group>, cookie, output, &Budget)` emits version and
   requested group and/or cookie.
@@ -154,8 +165,11 @@ The existing `tls_handshake` ClientHello/ServerHello/EE writers add their enclos
 Client ALPN is a concatenated u8-prefixed list. Selected ALPN is one unprefixed protocol. Empty
 optional views omit their extensions; `share=None` emits the required empty
 key_share vector. Cookie content is 1–65533 bytes when present; session IDs are 0–32 bytes in
-the codec. A one-group client list is 37 bytes with no share, 73 with an X25519 share, or 106
-with a P-256 share. A two-group policy adds two bytes. Optional extensions add their
+the codec. With singleton proof and certificate policies, a one-group client list is
+37 bytes with no share, 73 with an X25519 share, or 106 with a P-256 share. More
+generally its base length is `25 + group_bytes + 2*proof_count`, plus
+`6 + 2*certificate_count` when extension 50 is present, and `4 + share_length`
+when a share is present. A two-group policy adds two bytes. Optional extensions add their
 framing and contents. A supplied share must belong to the policy.
 
 Writers validate all metadata, shape, output capacity, resource allowance and semantic inputs
@@ -164,6 +178,39 @@ advertised range. Success changes only the returned prefix; trailing bytes are u
 views, output and mutable budget must be disjoint. Budget debits can remain after a semantic
 error. Capacity failures precede detailed content scanning; malformed metadata precedes
 capacity/budget access.
+
+## Independent proof and certificate policies
+
+The shared `signature::Policy` owns four u16 slots and an active length of 1–4.
+Proof defaults are `0807,0403,0804`; certificate defaults add `0401`. Local
+policies are validated for their intended `signature::Use` before writer stores:
+unknown IDs, duplicate active IDs, forbidden-use IDs and invalid lengths reject
+with negotiation `NoSignature`. Inactive slots grant no permission. This module
+classifies IDs through the shared signature boundary; it implements no verifier
+or signer and makes no leaf-key compatibility or trust decision.
+
+`certificates=None` omits extension 50. Its effective certificate list is then
+extension 13's actual list, as required by [RFC 8446 section
+4.2.3](https://www.rfc-editor.org/rfc/rfc8446.html#section-4.2.3). With extension 50
+present, certificate permission comes exclusively from that list; proof
+permission never fills a missing certificate algorithm. PKCS#1 SHA256 (`0401`)
+can be certificate permission, including via fallback, but cannot authorize a
+CertificateVerify proof.
+
+`signature_policy(offer,use,budget)` re-parses `offer.hello` rather than trusting
+its descriptive views. It scans the appropriate effective list, retains
+recognized/use-appropriate IDs in peer order, ignores unknown or forbidden-use
+IDs, and collapses recognized duplicates. Empty recognized output returns
+`NoSignature`. A successful result owns its four slots, with a zero inactive
+tail; later descriptive Offer changes cannot alter it. Both signature extension
+bytes, including extension-50 presence, remain immutable across HRR/CH2.
+
+The helper retains canonical inspection's charges and reserves another
+`8 * effective_list_bytes + 32` abstract units before its bounded scan. At most
+four recognized IDs exist in the implemented dispatch matrix; duplicate collapse
+compares against at most those four owned slots. Failure can retain earlier
+budget charges, but returns no partial policy. No cryptographic operation or
+allocation occurs.
 
 ## Work and lifetime bounds
 
@@ -182,7 +229,9 @@ manual backing contract.
 
 ## Current verification scope
 
-The ordinary six-flow fixture retains an explicit two-suite SHA256 policy. The
+The ordinary six-flow fixture retains an explicit two-suite SHA256 policy and
+now emits the shared proof/certificate defaults, then inspects their owned
+policies through the new helper. The
 independent offer model adds singleton SHA384, all three ordered suites, both
 server preference orders, invalid policies and disjoint/no-fallback cases. It
 retains valid ordered X/P share pairs and reversed-share rejection. The server
@@ -193,9 +242,61 @@ extension-list contract; cipher-suite lists belong to the enclosing hello codec.
 `protocol.lani` transports all three active policy entries and the active length;
 the Python peer selects from its own policy/list intersection. All returned
 views, source bytes, guards and existing exact/one-less work probes remain
-checked. The four Rust filters retain their names listed below.
+checked. The four Rust filters retain their names listed below. New focused cases check
+full owned policy arrays (including inactive zeros), use separation, peer-order
+deduplication, unknown IDs, PKCS#1 certificate-only permission, extension-50
+omission/fallback, forged descriptive Offer fields, and valid no-Ed selection.
+Exact extension bytes and full output guards cover local invalid policies and
+independent proof/certificate orders. HRR cases preserve or deliberately alter
+each signature list and extension-50 presence. The helper cases lead the offer
+model so exact/one-less replay covers canonical rescanning plus policy scanning.
+## Signature-policy admission
 
-## SHA384 admission
+All four filters passed in one unfiltered invocation in **18.81 s**, with the
+shared signature Policy helpers present. The ordinary consumer retained six
+SHA256/two-suite flows while exercising the new explicit signature defaults.
+The independent protocol supplied the broader policies and negative cases.
+
+| Gate | Wire commands | Exact/one-less probes | Native processes |
+| --- | --- | --- | --- |
+| Atomic writers | 382 | 24 | 7 |
+| Client offers | 752 | 24 | 13 |
+| Server / HRR / CH2 / EE | 634 | 24 | 11 |
+| Ordinary consumer | Six flows | — | 1 |
+
+This is **1,768 wire commands plus 72 budget probes (1,840 commands), and six
+ordinary flows**. The driver batches model commands in groups of 64 and runs
+each gate's 24 probes in one additional process: `ceil(382/64)+1`,
+`ceil(752/64)+1` and `ceil(634/64)+1`. Including the ordinary consumer gives
+**32 native processes**. Every process has an empty mmap/mremap/munmap/brk trace.
+One protocol ELF is shared by `OnceLock` across the three model filters; the
+ordinary consumer compiles the second strict ELF. No runtime test was repeated.
+
+The executed source/test inputs retained their frozen full SHA256 hashes:
+
+| File | SHA256 |
+| --- | --- |
+| `extended/ext/tls_negotiation.lani` | `bf0f259f2f00e1785ddf10c68131e2cbbcee38ddd8ee4dfc9a62e5abfcf32a94` |
+| `tests/extended_tls_negotiation_execution.rs` | `81692627a1f780e816d3e62b85ff323e91253150c44fd38f370af2b14f592afb` |
+| `tests/fixtures/extended/tls_negotiation/model.py` | `a0cf754fb992f2e699d940b58e5454f2dac7b98444ee8f1f4535b7cf28f2bbd4` |
+| `tests/fixtures/extended/tls_negotiation/protocol.lani` | `df7eff1cbfe4fe23cb0ae069045901cddee155d67867d8528501327565ecaf93` |
+| `tests/fixtures/extended/tls_negotiation/plain.lani` | `1fea52ce5e0e61fc0fdc3c0bd55d06ea4fdbe937ba8e0b0ed589d0c180f54e58` |
+
+Root's fresh Rust build passed in **1.15 s**. Evidence under
+`target/stdlib-work/` is `tls-signature-negotiation-build.log` and
+`tls-signature-negotiation-first.log`. The binary was
+`target/stdlib-build/debug/deps/extended_tls_negotiation_execution-b5ff2330e3937816`.
+All four filters ran together with no filtered-out test. There was no failed
+signature-policy negotiation gate or source change during admission.
+
+Root performed compiler/native execution. Author-side checks were Python AST
+parsing, targeted Rust formatting and static/whitespace review; the author ran
+no Cargo, GPU/compiler, native or oracle process. These receipts cover the
+negotiation helper boundary. Certificate validation, proof verification and
+connection/transport acceptance have their own contracts and gates. Earlier
+receipts below remain evidence only for their pinned historical inputs.
+
+## Earlier SHA384 admission
 
 All four gates passed in one unfiltered invocation, **13.14 s**, against production
 `b3044892`, driver `da50c181`, model `2cdb56b6`, protocol `d922cf63` and ordinary

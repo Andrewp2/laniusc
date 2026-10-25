@@ -1,4 +1,5 @@
 //! Real bounded certificate path/identity/time verifier and owner/I/O contracts.
+//! Shared multi-algorithm signature migration admission is pending.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
 use std::{
@@ -173,10 +174,22 @@ fn corpus() -> &'static Vec<Case> {
         );
         assert!(output.status.success(), "{output:?}");
         assert!(output.stderr.is_empty(), "{output:?}");
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let mixed = common::process_output_with_timeout(
+            "OpenSSL mixed issuer and leaf algorithms for the real application",
+            Command::new("python3")
+                .arg(root.join("tests/fixtures/extended/x509_path/mixed.py"))
+                .arg("app"),
+            Duration::from_secs(40),
+        );
+        assert!(mixed.status.success(), "{mixed:?}");
+        assert!(mixed.stderr.is_empty(), "{mixed:?}");
+        let mut bytes = output.stdout;
+        bytes.extend(mixed.stdout);
         let mut at = 0;
         let mut records = Vec::new();
-        while at < output.stdout.len() {
-            let header = &output.stdout[at..at + 28];
+        while at < bytes.len() {
+            let header = &bytes[at..at + 28];
             let word = |i: usize| {
                 u32::from_le_bytes(header[i * 4..i * 4 + 4].try_into().unwrap()) as usize
             };
@@ -186,7 +199,7 @@ fn corpus() -> &'static Vec<Case> {
             let values = lengths
                 .into_iter()
                 .map(|length| {
-                    let value = output.stdout[at..at + length].to_vec();
+                    let value = bytes[at..at + length].to_vec();
                     at += length;
                     value
                 })
@@ -201,7 +214,7 @@ fn corpus() -> &'static Vec<Case> {
                 status,
             });
         }
-        assert_eq!(at, output.stdout.len());
+        assert_eq!(at, bytes.len());
         records
     })
 }

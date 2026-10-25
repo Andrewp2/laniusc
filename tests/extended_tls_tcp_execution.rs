@@ -54,6 +54,22 @@ impl Directory {
         );
         Self(path)
     }
+    fn signatures() -> Self {
+        let directory = Self::new();
+        let output = common::process_output_with_timeout(
+            "independent mixed signature credentials",
+            Command::new("python3")
+                .arg(helper("peers.py"))
+                .arg("signature-fixtures")
+                .arg(&directory.0),
+            Duration::from_secs(25),
+        );
+        assert!(
+            output.status.success() && output.stdout.is_empty() && output.stderr.is_empty(),
+            "{output:?}"
+        );
+        directory
+    }
 }
 impl Drop for Directory {
     fn drop(&mut self) {
@@ -80,6 +96,7 @@ struct Case {
     group: u32,
     peer_groups: &'static str,
     calls: u64,
+    credential: &'static str,
 }
 fn case(role: u32, suite: u32, length: usize) -> Case {
     Case {
@@ -96,6 +113,7 @@ fn case(role: u32, suite: u32, length: usize) -> Case {
         group: 0,
         peer_groups: "X25519",
         calls: 1_000_000,
+        credential: "ed",
     }
 }
 struct Actual {
@@ -135,7 +153,8 @@ fn run(directory: &Directory, c: &Case) -> Actual {
             .arg(u32::from(c.exporter).to_string())
             .arg(c.group.to_string())
             .arg(c.peer_groups)
-            .arg(c.calls.to_string()),
+            .arg(c.calls.to_string())
+            .arg(c.credential),
         Duration::from_secs(if scale { 45 } else { 30 }),
     );
     assert!(
@@ -796,4 +815,100 @@ fn aes256_sha384_tcp_limits_faults_prefixes_and_full_exporter_cap() {
     }
     assert_eq!(count, 15);
     eprintln!("AES256/SHA384 TCP:{count} limit/failure cases; real12240-byte exporter agrees in full,12241 leaves guards intact, actual send/receive prefix resumption, trust/name/time/host/work errors and suite policy preflight preserve owners");
+}
+
+fn signature_case(credential: &'static str, role: u32, suite: u32, group: u32) -> Case {
+    let mut c = case(role, suite, 1025);
+    c.credential = credential;
+    c.group = group;
+    c.peer_groups = if group == 0 { "X25519" } else { "P-256" };
+    if role == 0 {
+        c.mode = if credential == "rsa" { 14 } else { 15 };
+    } else {
+        c.mode = 21; // New mixed-issuer case, using the current default work bound.
+    }
+    c
+}
+
+#[test]
+fn openssl_rsa_pss_and_p256_proofs_cover_all_suites_groups_and_hrr() {
+    let directory = Directory::signatures();
+    let mut count = 0;
+    for credential in ["rsa", "p256"] {
+        for suite in 0..3 {
+            for group in 0..2 {
+                let mut c = signature_case(credential, 0, suite, group);
+                c.fragment = 7;
+                check(&c, &run(&directory, &c));
+                count += 1;
+            }
+        }
+        // A dual-policy client sends X first; a P-only peer forces real HRR.
+        let c = signature_case(credential, 0, 2, 2);
+        check(&c, &run(&directory, &c));
+        count += 1;
+    }
+    assert_eq!(count, 14);
+    eprintln!("TLS signature proofs:14 real RSA-PSS/P256 OpenSSL servers;3suites,both transcript hashes,both groups,HRR,exact duplex bytes and owner/close ledgers");
+}
+
+#[test]
+fn openssl_clients_verify_native_ed25519_servers_with_mixed_issuer_chains() {
+    let directory = Directory::signatures();
+    let mut count = 0;
+    for suite in 0..3 {
+        for group in 0..2 {
+            let c = signature_case("mixed", 1, suite, group);
+            check(&c, &run(&directory, &c));
+            count += 1;
+        }
+    }
+    let mut c = signature_case("mixed", 1, 2, 3);
+    c.peer_groups = "X25519:P-256";
+    check(&c, &run(&directory, &c));
+    count += 1;
+    assert_eq!(count, 7);
+    eprintln!("TLS mixed issuers:7 real OpenSSL clients validate RSA-root/P256-issuer/Edleaf servers;3suites,both groups,HRR,exact duplex bytes and owner/close ledgers");
+}
+
+#[test]
+fn signature_trust_proof_finished_and_policy_failures_publish_no_plaintext() {
+    let directory = Directory::signatures();
+    let mut count = 0;
+    for credential in ["rsa", "p256"] {
+        for kind in [0, 16, 17, 18] {
+            let mut c = signature_case(credential, 0, if credential == "rsa" { 0 } else { 2 }, 0);
+            if kind == 0 {
+                c.root = "wrong-root.der";
+            } else {
+                c.mode = kind;
+            }
+            c.expected = 14;
+            let a = run(&directory, &c);
+            check(&c, &a);
+            assert_eq!(&a.report[1..3], &[0, 0], "{c:?}");
+            assert_eq!(&a.report[6..8], &[10, 11], "{c:?}");
+            count += 1;
+        }
+    }
+    for mode in [19, 20] {
+        let mut c = case(0, 0, 0);
+        c.mode = mode;
+        c.expected = 14;
+        let a = run(&directory, &c);
+        check(&c, &a);
+        assert_eq!(&a.report[6..8], &[0, 0]);
+        assert!(!a.trace.lines().any(|line| [
+            "getrandom(",
+            "fcntl(",
+            "getsockopt(",
+            "getpeername(",
+            "mmap("
+        ]
+        .iter()
+        .any(|name| line.starts_with(name))));
+        count += 1;
+    }
+    assert_eq!(count, 10);
+    eprintln!("TLS signature failures:10 trust,wrong-proof-offer,authenticated-record CV/Finished corruption and pre-host policy controls;no app/key publication,exact owner retirement");
 }

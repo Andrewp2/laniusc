@@ -7,14 +7,16 @@ adapter run in Lanius. It composes
 [`ext::tls_connection`](../extended/ext/tls_connection.lani) and
 [`ext::tls_tcp`](../extended/ext/tls_tcp.lani).
 
-**SHA-384 suite-migration admission passed all 80 native cases.** The five
-focused selections ran across three compiled strict ELFs and three driver
-invocations. Current source offers
-ChaCha20-Poly1305/SHA-256, AES-128-GCM/SHA-256 and AES-256-GCM/SHA-384 in
-that order, with X25519 then secp256r1 as its independent group policy.
-The preceding group checkpoint passed 76 native CLI cases across four
-strict ELFs; those receipts and the earlier 74-case X25519 checkpoint are
-recorded separately below as historical evidence.
+**Connected signature-policy migration admission is pending.** The client
+now offers Ed25519, P-256 ECDSA/SHA-256 and RSA-PSS/SHA-256 proofs with a
+separate certificate-signature policy. It retains ChaCha20-Poly1305/SHA-256,
+AES-128-GCM/SHA-256 and AES-256-GCM/SHA-384 in that order, with X25519 then
+secp256r1 as its independent group policy. The local server still uses its
+provisioned Ed25519 signer.
+
+The preceding SHA-384 checkpoint passed 80 native CLI cases across three
+strict ELFs and three driver invocations. Those receipts and earlier
+checkpoints below remain historical evidence, separate from this migration.
 
 ## CLI and trust
 
@@ -56,13 +58,17 @@ The engine checks that the seed's public key matches the actual leaf SPKI
 before emitting a handshake flight. Provisioning and protecting that seed
 remain the caller's responsibility.
 
-The supported connection profile is TLS 1.3 with X25519 or secp256r1 ECDHE,
-Ed25519 server authentication, and the three suites listed above. The
+The source connection profile is TLS 1.3 with X25519 or secp256r1 ECDHE,
+Ed25519, P-256 ECDSA/SHA-256 or RSA-PSS/SHA-256 peer proofs, and the three
+suites listed above. Local proof signing remains Ed25519-only. The
 application uses the owned `tls_suite::default_policy()` without CLI
 implementation flags, sets the ordered groups to X25519 then secp256r1,
 sends an initial X25519 client share, requests no ALPN, and
-uses the engine's bounded ordered Ed25519 certificate-path profile with
-explicit trust and SAN identity checks. Unsupported algorithms or path
+uses `signature::default_proofs()` and an explicit
+`Some(signature::default_certificates())`. It composes the engine's bounded
+ordered mixed-signature certificate-path profile with explicit trust and
+SAN identity checks. Supported issuers can differ from the leaf key family;
+certificate permission never grants a proof algorithm. Unsupported algorithms or path
 constraints fail. There is no certificate fetching, general PKIX policy,
 revocation service, PSK, resumption, early data, or client certificate
 authentication in this program. The server deliberately accepts anonymous
@@ -292,7 +298,36 @@ Interrupted and invalid-count injections likewise exercise returned results;
 ordinary loopback transfers, EOF probes, and closed-pipe EPIPE use real host
 behavior. The reusable TCP suite owns the broader transport/protocol matrix.
 
-## SHA-384 migration coverage and admission
+## Prepared signature migration gates
+
+Two additional exact selections prepare **15 native cases**, bringing the
+retained 80-case checkpoint plus new coverage to **95 cases**:
+
+- `tls_exchange_signature_defaults_authenticate_rsa_p256_and_mixed_issuer_peers`:
+  nine independent peers cross all three suites with RSA and P-256 proof
+  leaves in client mode, and mixed RSA/P-256 issuers for the provisioned
+  Ed25519 leaf in server mode. Both DHE groups and requested-group HRR are
+  exercised; actual cipher, exact binary duplex bytes, clean close and all
+  owners remain checked.
+- `tls_exchange_signature_trust_proof_and_finished_failures_withhold_stdout`:
+  six client cases reject wrong trust or a targeted bad CertificateVerify
+  or Finished for both RSA and P-256 leaf families and both transcript
+  hashes. The test proxy authenticates and re-encrypts the altered record,
+  checks exactly one target mutation, and leaves record framing valid.
+  Failed runs must emit no stdout, send no application bytes and retire all
+  allocated memory and owned descriptors.
+
+The shared [TCP fixture description](extended-tls-tcp.md#signature-policy-and-prepared-connected-gates)
+explains independent OpenSSL keys, certificate signatures/path checks and
+test-only key-log mutation. New peer contexts pin one exact suite through
+fixture-local OpenSSL configuration; the retained peers keep their preceding
+suite restrictions. There is no new CLI argument or production foreign TLS
+backend. The five-second application deadline, original shared host budget,
+64/96-byte entropy layout and eight-candidate scalar bound are unchanged.
+All signature migration runtime gates remain pending; CPU-only credential
+setup/path verification and static syntax/format checks are separate.
+
+## Accepted preceding SHA-384 checkpoint
 
 The four retained selections keep their 76 cases and require the preceding
 SHA-256 cipher alternatives from their independent peers. The new exact
@@ -316,7 +351,7 @@ set before connecting, and receipts check the actual selected cipher.
 This is test-only peer configuration, not an application option, private
 Python object access or a production foreign TLS backend.
 
-### Accepted current migration
+### Accepted SHA-384 checkpoint
 
 On application `7e66f3ea`, the four-case exact AES-256-only peer selection
 passed in **27.38 s**. All four role/group combinations required the actual

@@ -12,6 +12,10 @@ pub enum Error { Bounds, InvalidLimits, InputLimit, WorkLimit, SignatureLimit, U
 pub enum Scheme { Ed25519, EcdsaP256Sha256, RsaPkcs1Sha256, RsaPssRsaeSha256 }
 pub enum Use { Certificate, CertificateVerify }
 pub enum Kind { Ed25519, P256, Rsae }
+// Active entries are ordered TLS IDs, unique and supported for the given Use.
+// Values own their list; unused tail entries are ignored. Validate at each
+// public configuration boundary, since fields are not a trusted resume format.
+pub struct Policy { order:[u16;4], length:i32 }
 pub struct Limits { max_message:i32, max_signatures:u64, max_work:u64 }
 pub struct Budget { message_limit:i32, signatures_left:u64, work_left:u64 }
 enum Material { Ed25519(ext::ed25519::Key32), P256(ext::p256::PublicKey), Rsae(ext::rsa::PublicKey) }
@@ -42,6 +46,9 @@ pub impl Budget{pub fn borrow(&self)->&Budget{return self;}}
 pub impl PublicKey{
     pub fn borrow(&self)->&PublicKey{return self;}
     pub fn kind(&self)->Kind{return match(self.material){Material::Ed25519(_)->Kind::Ed25519,Material::P256(_)->Kind::P256,Material::Rsae(_)->Kind::Rsae};}
+    // Explicit copied projection for the executable Ed25519 local signer.
+    // None means this key belongs to another family, not a validation failure.
+    pub fn ed25519_key(&self)->core::option::Option<ext::ed25519::Key32>{return match(self.material){Material::Ed25519(v)->core::option::Some(v),Material::P256(_)->core::option::None(),Material::Rsae(_)->core::option::None()};}
 }
 fn proof(use:Use)->bool{return match(use){Use::Certificate->false,Use::CertificateVerify->true};}
 fn number(scheme:Scheme)->i32{return match(scheme){Scheme::Ed25519->0,Scheme::EcdsaP256Sha256->1,Scheme::RsaPkcs1Sha256->2,Scheme::RsaPssRsaeSha256->3};}
@@ -49,6 +56,25 @@ pub fn tls_scheme(id:u16,use:Use)->core::result::Result<Scheme,Error>{
     if(id==2055){return core::result::Ok(Scheme::Ed25519);}if(id==1027){return core::result::Ok(Scheme::EcdsaP256Sha256);}
     if(id==2052){return core::result::Ok(Scheme::RsaPssRsaeSha256);}if(id==1025&&!proof(use)){return core::result::Ok(Scheme::RsaPkcs1Sha256);}
     return core::result::Err(Error::UnsupportedAlgorithm);
+}
+pub fn tls_id(scheme:Scheme)->u16{return match(scheme){Scheme::Ed25519->2055,Scheme::EcdsaP256Sha256->1027,Scheme::RsaPkcs1Sha256->1025,Scheme::RsaPssRsaeSha256->2052};}
+pub fn default_proofs()->Policy{return Policy{order:[2055,1027,2052,0],length:3};}
+pub fn default_certificates()->Policy{return Policy{order:[2055,1027,2052,1025],length:4};}
+// Malformed length/duplicates are InvalidParameters; unknown or use-forbidden
+// active IDs are UnsupportedAlgorithm. Validation reads no unused entries.
+pub fn validate_policy(policy:Policy,use:Use)->core::result::Result<i32,Error>{
+    if(policy.length<1||policy.length>4){return core::result::Err(Error::InvalidParameters);}
+    let i:i32=0;while(i<policy.length){
+        let scheme:core::result::Result<Scheme,Error> =tls_scheme(policy.order[i],use);if(scheme.is_err()){return core::result::Err(scheme.unwrap_err());}
+        let j:i32=0;while(j<i){if(policy.order[j]==policy.order[i]){return core::result::Err(Error::InvalidParameters);}j+=1;}i+=1;
+    }return core::result::Ok(0);
+}
+// Validate even for a nonmember; a malformed local policy never becomes a
+// successful negative permission decision. Schemes not legal for Use are false.
+pub fn allows(policy:Policy,scheme:Scheme,use:Use)->core::result::Result<bool,Error>{
+    let checked:core::result::Result<i32,Error> =validate_policy(policy,use);if(checked.is_err()){return core::result::Err(checked.unwrap_err());}
+    let id:u16=tls_id(scheme);if(tls_scheme(id,use).is_err()){return core::result::Ok(false);}
+    let i:i32=0;while(i<policy.length){if(policy.order[i]==id){return core::result::Ok(true);}i+=1;}return core::result::Ok(false);
 }
 fn rsa_error(e:ext::rsa::Error,key:bool)->Error{
     return match(e){ext::rsa::Error::Bounds->Error::Bounds,ext::rsa::Error::InvalidLimits->Error::InvalidLimits,ext::rsa::Error::InputLimit->Error::InputLimit,ext::rsa::Error::WorkLimit->Error::WorkLimit,ext::rsa::Error::UnsupportedAlgorithm->Error::UnsupportedAlgorithm,ext::rsa::Error::InvalidParameters->Error::InvalidParameters,_->if_key(key)};
