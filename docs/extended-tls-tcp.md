@@ -216,7 +216,51 @@ send before cleanup. Existing pending sealed data suppresses that alert;
 failure never transmits stale application output or rolls back a spent nonce.
 Alert, clock and close failures do not replace the original engine cause.
 
-## Prepared verification; native admission pending
+## Verification
+
+All four focused gates passed on **x86_64 Linux**, totaling **63 native
+cases**. Each gate was invoked separately: four strict ELFs were generated
+by the GPU compiler, each reused for that gate's native cases. TLS processing
+executes natively, not as a GPU kernel. All accepted gates used adapter
+`b916a2ce`, engine `b26122db`, Rust driver `cae568bf` and helper `4ab7feeb`.
+Fixture snapshots differ as recorded below; acceptance is not a claim that
+all groups were rerun after every fixture-only correction.
+The independent peer was OpenSSL 3.0.13; syscall observation used strace 6.8.
+
+Receipts are under `target/stdlib-work/tls-connection-admission/`:
+
+| Gate | Native cases | Elapsed | Fixture | Receipt |
+| --- | ---: | ---: | --- | --- |
+| Constructor, fault and cleanup | 37 | 26.82 s | `b3c80ed9` | `tcp-faults-first.log` |
+| OpenSSL interoperability | 18 | 26.17 s | `ff58319f` | `tcp-interop-scheduled.log` |
+| 1 MiB pressure streams | 2 | 27.03 s | `ff58319f` | `tcp-pressure-first.log` |
+| Established deadline/budget resume | 6 | 27.02 s | `7138fd26` | `tcp-resume-preconditions.log` |
+
+The 18-case interoperability group passed both roles and suites, exact binary
+output, confirmed syscall byte counts, clean closure and the ten-allocation
+ledger. KeyUpdate cases checked both traffic generations; exporter cases
+matched the independent peer. Every case observed EAGAIN, with 2–19 such
+events per case. No positive short send was observed in this group.
+
+The separate two-case pressure gate passed in **27.03 s**
+(`tcp-pressure-first.log` in the same directory), using the same production,
+fixture, driver and helper versions. Both role directions transferred exact
+1 MiB streams in each direction and passed the resource ledger and clean
+closure checks. The native client observed **one real positive short send**
+and 69 EAGAIN events; the native server observed zero positive short sends
+and 263 EAGAIN events. This supplies actual kernel partial-send evidence
+without injected successful counts.
+
+The corrected six-case resume group passed both suites' expired-read,
+limited-send and limited-receive probes. Actual held authenticated plaintext
+and caller sentinels survived expiry; real positive sends advanced the exact
+wire cursor before CallLimit; real positive receives remained in the raw slot
+without advancing the engine's received-record count. Renewed budgets then
+produced exact peer bytes, clean closure and matching resource ledgers. The
+six EAGAIN counts were `(12, 3, 4, 11, 2, 3)`; this group observed no positive
+short send.
+
+### Admission history
 
 The first 18-case interoperability gate stopped on its second case after
 21.97 s: the native client completed the one-byte ChaCha20 exchange with
@@ -227,18 +271,47 @@ stdin open until the native process finishes, using its existing bounded
 wait, so stdin EOF cannot prematurely end the independent peer's receive
 loop. Production code and test assertions are unchanged. The failed attempt
 is recorded in `target/stdlib-work/tls-connection-admission/tcp-interop-first.log`;
-corrected interoperability admission remains pending.
+the exact failing case then passed with the preserved ELF and corrected
+helper in 0.186 s. OpenSSL returned status zero, native output was `c1`, peer
+output was `0b`, and the native report confirmed one accepted/received byte,
+ten release attempts and eleven cleanup calls. That narrow diagnostic is
+recorded in `tcp-single-stdin-fixed.bin` and `.err` in the same directory.
 
-Replaying only that failed case against the preserved, unchanged ELF with the
-corrected helper passed in 0.186 s: native output was `c1`, OpenSSL output was
-`0b`, both process statuses were zero, and the native report recorded one byte
-accepted and one received. The binary receipt and helper stderr are retained
-as `tcp-single-stdin-fixed.bin` and `.err` in the same admission directory.
-This narrow reproduction does not replace the complete 18-case gate.
+The corrected full group next reached its eleventh case before failing after
+37.45 s: the native server's one-byte ChaCha20 exchange had matching native
+output/report, but OpenSSL client output was empty. Native and peer syscall
+traces showed the fixture retained a newly read echo, then called a blocking
+transport step before its next loop turn could queue that echo. The peer
+waited for the echo until stdin EOF began its shutdown; the late echo was
+then discarded by the peer's shutdown drain. The fixture now queues held
+echo before any potentially blocking step. Assertions, peer bytes and
+timeouts remain unchanged. This classified attempt is recorded in
+`tcp-interop-stdin-fixed.log`; the full gate passed after the fixture
+scheduling correction as recorded above.
+
+The constructor/fault/cleanup gate passed before the scheduling correction
+at its separately recorded fixture snapshot. The root ran all admission
+gates; the fixture author ran only two bounded preserved-ELF diagnostic
+reproductions of the second interoperability failure.
+
+The first six-case resume gate stopped on its second case after **24.51 s**
+(`tcp-resume-first.log`), using fixture `ff58319f`. The expired-read case
+passed, but the limited-send case still had post-handshake input retained.
+Its four-credit fixture allowance omitted the post-feed clock check and
+therefore stopped before the intended send, triggering the fixture's
+positive-progress assertion. The corrected fixture adds one credit exactly
+when retained input needs a feed, accounts that actual consumed prefix, and
+keeps the positive-send and exact remaining-wire assertions. Its receive
+probe now starts only with empty raw, plaintext and output slots and no
+pending EOF/error, before queuing application bytes; successful completion
+must have exercised that probe. Production code, peer data and timeouts are
+unchanged. The corrected resume gate passed at fixture `7138fd26` as recorded
+above. These three failed attempts exposed test-helper or fixture
+precondition errors; none required an adapter production change.
 
 [`extended_tls_tcp_execution.rs`](../tests/extended_tls_tcp_execution.rs)
-prepares one strict ELF fixture, reused within the driver process, and four
-focused groups totaling **63 native cases**:
+compiles one strict ELF fixture per driver invocation and reuses it within
+that process. Its four accepted groups cover:
 
 - 18 real OpenSSL peer exchanges in both role directions, both SHA-256 suites
   (ChaCha20-Poly1305 and AES-128-GCM), binary/empty/fragmented application
@@ -257,9 +330,11 @@ focused groups totaling **63 native cases**:
   exhaust engine work and must leave failed output unchanged while retiring
   the terminal owner with its original cause.
 - Six Established resume cases across both suites. An expired read preserves
-  destination sentinels; a four-call operation allowance stops after a real
-  positive send or receive, proving acknowledged wire progress and retained
-  unfed input survive a renewed budget and produce exact peer bytes.
+  held authenticated plaintext and destination sentinels. A finite allowance
+  accounts for any retained-input feed, then stops after a real positive
+  send; a four-call receive probe starts with empty slots and stops before
+  feeding its newly received bytes. Both retain actual progress across a
+  renewed budget and must produce exact peer bytes.
 
 The test fixture inherits one real connected TCP descriptor and uses
 allocation-free argument decoding. Exact binary outputs, confirmed syscall
@@ -268,15 +343,14 @@ later growth and one fd0 close attempt are checked independently. Injected
 positive invalid counts test rejection only, never fabricated data progress.
 Small real socket buffers exercise pressure; actual kernel positive short
 sends and EAGAIN counts are reported. Positive short sends are not a flaky
-mandatory assertion. The portable engine's three-byte acknowledgement models
-cover exact partial-record progress independently; a missing observed kernel
-positive-short case must remain an explicit coverage limit.
+mandatory assertion. The pressure gate's real positive short send and the
+portable engine's three-byte acknowledgement models provide independent
+evidence for partial-record progress.
 
 Python/OpenSSL setup and fragmentation are loopback-only test plumbing, not
 production TLS. Each harness case and host peer has a finite timeout. The
-guide currently records prepared source and static syntax checks;
-compilation, native execution, interoperability and allocation results
-remain pending the parent's serialized admission. No runtime or security
-certification claim follows from source review alone. General PKIX, mandatory
+evidence above covers all four adapter gates. The separate application's
+parser admission is independent of these adapter results. No security
+certification claim follows from these focused gates. General PKIX, mandatory
 TLS algorithm coverage and the remaining [whole connection
 contract](tls-connection-contract.md) remain open.

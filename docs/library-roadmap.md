@@ -355,9 +355,9 @@ and 308 protocol commands after a
 The [seal-bytes application](extended-seal-bytes.md) passes 137 native cases,
 including full 1 MiB seal/open and allocation/I/O failures. The
 [pinned compiler comparison](library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
-records measured workloads and limits. TLS handshake, certificate/peer/trust
-handling, transport orchestration, native foreign-library integration and the
-other remaining families above still need their own executable evidence.
+records measured workloads and limits. The current connection, certificate and
+transport evidence is listed below. General TLS/PKIX, native foreign-library
+integration and the other remaining families still need their own evidence.
 
 ## Completion requirements
 
@@ -441,8 +441,7 @@ other remaining families above still need their own executable evidence.
   [source comparison](library-foundation-performance.md#explicit-record-suites-and-aes-gcm-integration)
   records a 4.1% higher warmed compilation median and 36.6% larger ELF for the
   existing authentication workload; no compiler source changed. The portable
-  connection engine, owned TCP adapter and real TLS exchange application are
-  now being implemented; they are not yet admitted.
+  connection and transport layers now have separate evidence below.
 - [Semantic TLS negotiation](extended-tls-negotiation.md) passes 1,222 wire-model
   commands and 72 exact/one-less shared-budget probes, plus a six-flow ordinary
   consumer covering both suites, direct handshakes and two retry forms.
@@ -461,15 +460,31 @@ other remaining families above still need their own executable evidence.
   flight over 64 KiB rejects the default work quota and succeeds with a raised
   allowance. This authenticates the server; Established still requires the
   client's Finished to be committed to the transport.
-- Next TLS layer: negotiated connection state and bounded transport integration,
-  alongside broader certificate policy, as specified in the
-  [connection contract](tls-connection-contract.md). The earlier accepted
+- [Portable TLS connection state](extended-tls-connection.md) passes paired
+  client/server handshakes for both suites and buffer layouts, both retry forms,
+  long eight-certificate flights and 46 error/publication/epoch boundary cases.
+  The engine uses caller storage without allocation, holds application bytes
+  until client Finished is acknowledged, and retains exact pending wire prefixes.
+  Two paired native processes each own one explicitly accounted test arena;
+  the ordinary and boundary consumers have empty allocation traces.
+- [Owned TLS over TCP](extended-tls-tcp.md) passes 18 independent OpenSSL
+  exchanges in both roles and suites, 37 ownership/fault cases, and two exact
+  1 MiB pressure streams. Actual syscall traces include one positive short send,
+  retained wire progress, matching releases and one socket close attempt.
+  Six operation-resumption cases also pass: actual acknowledged sends and
+  retained unfed receives survive budget renewal without repeated bytes.
+  The [real TLS exchange program](extended-tls-exchange.md) remains under
+  admission. These are
+  x86_64 Linux native results through the GPU compiler; they do not establish
+  user GPU kernels or other targets.
+- Further TLS work includes broader certificate policy and mandatory algorithms,
+  as specified in the [connection contract](tls-connection-contract.md). The earlier accepted
   flight supplies receiver secrets directly and checks a real certificate's
   self-signature as a primitive; the newer path validator supplies a restricted
   certificate trust decision separately. The new authentication bridge enforces
-  CertificateVerify and server Finished; a connection must enforce its remaining
-  checkpoints, partial I/O progress,
-  alerts and closure. Other cipher/signature suites, resumption and early-data
+  CertificateVerify and server Finished; the new engine enforces the client
+  Finished checkpoint, partial I/O progress, alerts and closure in its selected
+  profile. Other cipher/signature suites, resumption and early-data
   policy remain part of the broader TLS work. The complete library goal still
   includes threads, SQLite and the other families above.
 - Current crypto checkpoint: [IETF ChaCha20](stdlib-chacha20.md),

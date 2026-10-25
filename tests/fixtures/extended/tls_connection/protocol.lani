@@ -15,6 +15,23 @@ fn block(out:&std::stream::Descriptor,v:core::slice::View<u8>) { word(out,v.leng
 fn fill(v:core::slice::View<u8>,n:u8) { let i:i32=0; while(i<v.length) { v.values[v.start+i]=n; i+=1; } }
 fn equal(a:core::slice::View<u8>,b:core::slice::View<u8>)->bool { if(a.length!=b.length) { return false; } let i:i32=0; while(i<a.length) { if(a.values[a.start+i]!=b.values[b.start+i]) { return false; } i+=1; } return true; }
 fn guards(v:core::slice::View<u8>) { let i:i32=1; while(i<=3) { assert(v.values[v.start-i]==165 && v.values[v.start+v.length+i-1]==165); i+=1; } }
+// Test-only unsafe representation seam, tied to the documented native ABI:
+// shaders/native_value_layout.slang and docs/stdlib-memory.md. Both records
+// occupy three descending native words: data, logical count, signed stride.
+// No production API or descriptor layout is changed by this fixture.
+struct RawSlice { data:ptr,length:i32,stride:isize }
+struct SliceValue { bytes:[u8] }
+fn arena_bytes(backing:ptr,layout:i32)->[u8] {
+ let physical:[u8]=core::mem::typed_slice_from_raw_parts<u8>(backing,3520000);
+ if(layout==1) { let bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(backing,440000); assert(core::mem::slice_stride(bytes)==1); bytes[0]=17; bytes[439999]=18; assert(physical[0]==17 && physical[439999]==18); return bytes; }
+ let descriptor:[RawSlice]=core::mem::typed_slice_from_storage<RawSlice>(backing,1);
+ descriptor[0].data=backing+3519992; descriptor[0].length=440000; descriptor[0].stride=0-8;
+ // Copy the descriptor before reusing its temporary first24physicalbytes.
+ // Native element0 is the allocation's last word; element439999 is its first.
+ let bytes:[u8]=core::mem::typed_slice_from_storage<SliceValue>(backing,1)[0].bytes;
+ assert(core::mem::slice_stride(bytes)==-8); bytes[0]=17; bytes[439999]=18;
+ assert(physical[3519992]==17 && physical[0]==18); return bytes;
+}
 struct Pool { bytes:core::slice::View<u8>,at:i32 }
 impl Pool {
  fn borrow(&self)->&Pool { return self; }
@@ -61,12 +78,9 @@ fn exercise(backing:ptr)->i32 {
   let layout:i32=load(header,0) as i32; let suite:u64=load(header,8); let retry:u64=load(header,16); let split:i32=load(header,24) as i32;
   let now:i64=load(header,32) as i64; let root_length:i32=load(header,40) as i32; let count:i32=load(header,48) as i32; let large:u64=load(header,56);
   assert(layout>=0 && layout<=1 && suite<=1 && retry<=2 && root_length>0 && root_length<=16384 && count>0 && count<=8);
-  // Borrow one externally owned fixed array directly; never materialize/copy a
-  // 440000-element aggregate on the stack. Packed/native layouts reuse the
-  // same allocation in separate cases after both previous engines are disarmed.
-  let bytes:[u8]=core::mem::typed_slice_from_storage<[u8;440000]>(backing,1)[0];
-  if(layout==1) { bytes=core::mem::typed_slice_from_raw_parts<u8>(backing,440000); }
-  if(layout==0) { assert(core::mem::slice_stride(bytes)==-8); } else { assert(core::mem::slice_stride(bytes)==1); }
+  // The two layouts reuse the sole caller allocation only after both previous
+  // engines have been disarmed. No huge fixed-array type/aggregate is needed.
+  let bytes:[u8]=arena_bytes(backing,layout);
   fill(view(bytes,0,440000),165);
   let at:i32=3; read(input.borrow(),bytes,at,root_length); let root:core::slice::View<u8> = view(bytes,at,root_length); at+=root_length+6;
   let empty:core::slice::View<u8> = view(bytes,0,0); let chain:[core::slice::View<u8>;8]=[empty;8]; let i:i32=0;

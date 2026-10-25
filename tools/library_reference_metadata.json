@@ -758,6 +758,12 @@
         "docs/extended-tls-authentication.md"
       ]
     },
+    "ext::tls_connection": {
+      "guides": [
+        "docs/extended-tls-connection.md",
+        "docs/tls-connection-contract.md"
+      ]
+    },
     "ext::tls_framing": {
       "guides": [
         "docs/extended-tls-framing.md"
@@ -782,6 +788,12 @@
     "ext::tls_schedule": {
       "guides": [
         "docs/extended-tls-schedule.md"
+      ]
+    },
+    "ext::tls_tcp": {
+      "guides": [
+        "docs/extended-tls-tcp.md",
+        "docs/extended-tls-exchange.md"
       ]
     },
     "ext::tls_transcript": {

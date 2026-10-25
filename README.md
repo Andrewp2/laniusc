@@ -82,14 +82,14 @@ all six algorithms with explicit input and I/O limits.
 [AES-128/192/256](docs/core-aes.md) and
 [AES-GCM](docs/extended-aes-gcm.md) also execute without allocation, with
 independent block/AEAD models and authentication-before-output checks.
-The [TLS record layer](docs/extended-tls-record.md) passes its ordinary
-consumer and 308 protocol commands after a
+The [TLS record layer](docs/extended-tls-record.md) passes ordinary
+consumers, 308 ChaCha commands and 220 AES-GCM commands after a
 [host capacity repair](docs/tls-record-lowering-dependency.md).
 [Ed25519 signatures](docs/extended-ed25519.md),
 [borrowed DER](docs/extended-der.md),
 [TLS handshake codecs](docs/extended-tls-handshake.md) and the
 [key schedule/transcript](docs/extended-tls-schedule.md) also pass focused
-native gates. Full connection state and general certificate trust remain work.
+native gates. General certificate trust remains work.
 [X.509 structure parsing](docs/extended-x509.md) and
 [incremental framing](docs/extended-tls-framing.md) add bounded certificate
 inspection and record/handshake reassembly, including the full u24 body limit.
@@ -101,18 +101,24 @@ cases covering parsed metadata, report publication and resource/I/O failures.
 [ordered Ed25519 certificate paths](docs/extended-x509-path.md) enforce
 explicit anchors, validity, supported constraints and shared resource budgets.
 The [certificate verifier](docs/extended-verify-certificate.md) passes 84 native
-cases. This offline profile rejects unsupported policies; general PKIX and
-live TLS connection integration remain work.
+cases. This offline profile rejects unsupported policies; general PKIX remains
+work.
 [Server-flight authentication](docs/extended-tls-authentication.md) now joins
 that path decision to ordered CertificateVerify and Finished checks, with
-110 protocol cases and 340 state observations. A live connection must still
-negotiate parameters, manage records and commit the client's Finished.
+110 protocol cases and 340 state observations. The
+[connection engine](docs/extended-tls-connection.md) composes it with negotiation,
+directional epochs and client-Finished acknowledgement, passing paired
+handshakes, both retry forms, long certificate flights and 46 boundary cases.
+The [TCP adapter](docs/extended-tls-tcp.md) passes 18 real OpenSSL exchanges,
+37 fault/ownership cases, two 1 MiB pressure streams and six deadline/budget
+resumption cases, including actual partial-send and retained-input witnesses.
+The [exchange application](docs/extended-tls-exchange.md) remains under admission.
 The [seal-bytes program](docs/extended-seal-bytes.md) passes 137 native cases,
 including allocation/I/O failures and the full 1 MiB boundary. The
 [pinned compiler comparison](docs/library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
-records the measured crypto and large-library workloads. A full TLS connection
-still requires handshake, certificates, peer authentication, trust policy and
-transport integration.
+records the measured crypto and large-library workloads. These connections use
+the explicit X25519/Ed25519/SHA-256 profile; mandatory P-256/RSA/ECDSA algorithms
+and broader PKIX support remain part of the full TLS work.
 
 Optional modules use the [`extended` source root](extended/README.md).
 [`ext::csv`](docs/extended-csv.md) and [`ext::json`](docs/extended-json.md)

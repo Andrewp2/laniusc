@@ -1,11 +1,14 @@
 # Authenticated TLS connection contract
 
-This is the implementation contract for the reusable connection layer still
-needed above the current Lanius primitives. Existing execution evidence is in
-the linked guides; the connection contracts below remain proposed. Source audit:
-`8efce644` plus the current certificate-path and AES work,
-2026-10-24. Production protocol, cryptography and certificate validation stay
-in Lanius; OpenSSL is an independent test peer.
+This is the implementation and acceptance contract for reusable TLS connections.
+The [portable engine](extended-tls-connection.md) now passes paired handshakes,
+fragmentation, retry and boundary gates. The [TCP adapter](extended-tls-tcp.md)
+passes real OpenSSL exchanges, 1 MiB pressure streams, ownership/fault gates and
+deadline/budget resumption. The [real program](extended-tls-exchange.md) remains
+under admission. The guides distinguish accepted snapshots from pending
+work. Production protocol, cryptography and certificate validation stay in
+Lanius; OpenSSL is an independent test peer. The broader algorithm and PKIX
+requirements below remain open.
 
 ## Existing boundaries and remaining work
 
@@ -32,7 +35,7 @@ post-handshake authentication is offered initially. Session tickets may be
 validated and discarded under an explicit disabled-cache policy. Unsupported
 negotiation must fail explicitly rather than select an unimplemented path.
 
-The proposed profile covers a subset of general TLS interoperability.
+This profile covers a subset of general TLS interoperability.
 [RFC 8446 section 9.1](https://www.rfc-editor.org/rfc/rfc8446.html#section-9.1)
 requires, absent a different application profile standard, AES-128-GCM/SHA-256,
 P-256 key exchange, RSA-PSS/RSAE/SHA-256 and ECDSA/P-256/SHA-256 signatures,
@@ -48,8 +51,9 @@ full-library objective.
 
 ## Types, storage and ownership
 
-Implement the portable engine before coupling it to sockets. The following
-are proposed contracts, not currently exported library types:
+The engine and adapter keep separate storage and host ownership. Their exported
+types implement the following responsibilities; the linked guides give exact
+signatures, size formulas and current runtime evidence:
 
 | Type | Responsibility |
 | --- | --- |
@@ -57,8 +61,8 @@ are proposed contracts, not currently exported library types:
 | `ServerConfig` | Immutable DER chain and owned Ed25519 seed; construction checks that the derived public key matches the leaf. Configure one credential initially; SNI selection can be added with an explicit bounded registry. |
 | `Engine` | One active owner of role/phase, transcript, ephemeral secret, directional record owners, epoch numbers, decoders, pending wire output and authenticated plaintext cursors. It borrows immutable config and caller-owned buffers. |
 | `Buffers` | Disjoint record input, decrypted record, handshake reassembly, pending output and application staging storage. Capacities are validated once; no implicit growth during a handshake. |
-| `Limits` / `Budget` | Per-record and aggregate handshake bytes, certificate count/depth/items/work/signature checks, records/control messages, entropy/I/O/clock/poll attempts and pending application bytes. Exhaustion is an observable result. |
-| `TcpConnection` | Owns one nonblocking `std::socket::Socket`, engine storage and a polling owner, or explicitly borrows a reactor. It closes/releases each owned resource once. Construction failure returns or cleans up the original ownership consistently. |
+| `tls_connection::Limits` / `tls_tcp::HostBudget` | Separate hard session byte/work/signature/record/control allowances from charged entropy/I/O/clock/poll attempts and observed deadlines. Exhaustion is an observable result. |
+| `tls_tcp::Connection` | Owns one nonblocking `std::socket::Socket`, ten fixed storage/poll allocations and retained raw input. Each resource receives one retirement attempt. Attachment failure preserves the caller's original socket. |
 
 Reserve at least 16645 bytes for a generic maximum protected frame and 16624
 for possible decrypted inner data, applying the stricter record-layer limits
@@ -254,7 +258,7 @@ response with another request. Reserve an old-key sequence slot for the update;
 rekey before exhaustion, or terminate. Sequence reset always accompanies a new
 traffic secret. Send and receive generations remain independent.
 
-Initial `TicketPolicy::Disabled` parses/limits received NewSessionTicket and
+The initial disabled-cache policy parses/limits received NewSessionTicket and
 explicitly discards it; the server issues none. This offers no resumption API.
 A later bounded cache must bind tickets/PSKs to authenticated identity, trust
 policy, ALPN, cipher hash, nonce, receipt time, lifetime and age_add. Derive its

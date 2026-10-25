@@ -327,10 +327,12 @@ def run(mode, executable):
         # add allocations or release/resize that owner. Match address AND size.
         lines = trace.read_text().splitlines()
         assert len(lines) == 2, lines
-        allocated = re.fullmatch(r'mmap\(NULL, (\d+), PROT_READ\|PROT_WRITE, MAP_PRIVATE\|MAP_ANONYMOUS, -1, 0\)\s+= (0x[0-9a-f]+)', lines[0])
-        assert allocated and int(allocated[1]) >= 3520000, lines
+        allocated = re.fullmatch(r'mmap\(NULL, (\d+), PROT_READ\|PROT_WRITE, ([A-Z_0-9|]+), -1, 0\)\s+= (0x[0-9a-f]+)', lines[0])
+        assert allocated and int(allocated[1]) == 3520000, lines
+        flags = allocated[2].split('|')
+        assert len(flags) == 3 and set(flags) == {'MAP_PRIVATE', 'MAP_ANONYMOUS', 'MAP_32BIT'}, lines
         released = re.fullmatch(r'munmap\((0x[0-9a-f]+), (\d+)\)\s+= 0', lines[1])
-        assert released and released[1] == allocated[2] and released[2] == allocated[1], lines
+        assert released and released[1] == allocated[3] and released[2] == allocated[1], lines
         reader = Reader(result.stdout)
         for number, (chain, suite, retry, layout, split) in enumerate(cases):
             assert reader.word() == 10 and reader.word() == number

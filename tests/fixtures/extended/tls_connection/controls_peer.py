@@ -96,6 +96,7 @@ def inputs(op):
         19: (seal(KEY, 0, 21, b'\x01\xff'), b''),
         20: (ccs, ccs),
         21: (b'\x16\xff\xff', b''),
+        22: (seal(KEY, 0, 22, frame(24, b'\0')+frame(4, b'')), b''),
     }[op]
 
 
@@ -116,6 +117,7 @@ def check(op, a, b, first, second, words, result, outgoing):
         16: (0, len(a), 0, len(b)), 17: (0, len(a), 10, len(b)),
         18: (0, len(a), 0, len(b)), 19: (9, len(a), 9, 0),
         20: (0, len(a), 6, len(b)), 21: (0, len(a), 5, 0),
+        22: (6, len(a), 6, 0),
     }[op]
     assert (sa, ca, sb, cb) == expected, (op, words, expected)
     assert eof == int(op in (11, 18)) and peerclose == int(op in (11, 18))
@@ -149,10 +151,14 @@ def check(op, a, b, first, second, words, result, outgoing):
         assert outgoing == plain(21, bytes([2, {3: 10, 4: 50, 5: 22, 6: 10, 7: 80, 20: 10}[op]]), b'\x03\x03')
     if op in (10, 14, 17):
         assert decode(outgoing, KEY, 0) == bytes([2, 50 if op == 10 else 80 if op == 14 else 20, 21])
+    if op == 22:
+        assert rg == sg == 1 and rx == ss == 1 and hs == 5
+        assert received == sent == 1
+        assert decode(outgoing, KEY, 0) == b'\x02\x0a\x15'
 
 
 def run(executable):
-    cases = [(op, layout, *inputs(op)) for op in range(22) for layout in (0, 1)]
+    cases = [(op, layout, *inputs(op)) for op in range(23) for layout in (0, 1)]
     source = Q(len(cases))+b''.join(Q(op, layout, len(a), len(b))+a+b for op, layout, a, b in cases)
     with tempfile.TemporaryDirectory(prefix='laniusc_connection_controls_') as temp:
         trace = pathlib.Path(temp)/'memory'
@@ -167,7 +173,7 @@ def run(executable):
         observed, outgoing = reader.block(), reader.block()
         check(op, a, b, first, second, words, observed, outgoing)
     assert reader.at == len(reader.data)
-    print('tls connection controls: 44 accepted')
+    print('tls connection controls: 46 accepted')
 
 
 if __name__ == '__main__':

@@ -98,5 +98,5 @@ fn connection_error_atomicity_and_record_epoch_boundaries_execute() {
         Duration::from_secs(40),
     );
     checked(&result);
-    assert_eq!(result.stdout, b"tls connection controls: 44 accepted\n");
+    assert_eq!(result.stdout, b"tls connection controls: 46 accepted\n");
 }

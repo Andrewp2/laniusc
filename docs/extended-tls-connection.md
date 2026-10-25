@@ -179,6 +179,26 @@ sticky `Truncated`; it is never clean TLS EOF.
 
 ## Admission status
 
+The portable paired selected profile is accepted on x86_64 Linux. The four
+independent exact invocations below each compiled one strict ELF and ran one
+native process. Production remains allocation-free: the ordinary and controls
+fixtures have empty memory traces; each paired fixture process intentionally
+owns exactly one 3,520,000-byte arena with a matching address/size release.
+
+| Exact gate | Accepted cases | Elapsed |
+| --- | --- | --- |
+| `ordinary_connection_storage_and_pending_wire_consumer_executes` | Ordinary constructor/pending-wire consumer, earlier production snapshot | 16.32 s |
+| `paired_connections_match_independent_wire_epochs_and_authentication` | 4: both suites × both layouts | 18.15 s |
+| `fragmented_long_certificate_and_both_hello_retry_modes_execute` | 4: both HRR forms and long eight-certificate flights | 25.30 s |
+| `connection_error_atomicity_and_record_epoch_boundaries_execute` | 46: 23 controls × both layouts | 17.82 s |
+
+Each gate used the serialized 100 s outer / 35 s lock-wait / 60 s inner
+wrapper, `RUST_MIN_STACK=16777216`,
+`LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000`, `LANIUS_DEBUG_STAGE_ERRORS=1`,
+and `--exact GATE --nocapture --test-threads=1`. This acceptance
+covers the documented paired profile; the real TCP/OpenSSL matrix remains a
+separate adapter/application admission.
+
 The ordinary x86_64 Linux consumer passed the serialized parent gate at
 production SHA256 `5b1ad994d88b41d5b006119b6a746d0b6b279a20ad6c941ea81751cc1d563704`:
 one strict ELF, one native process, empty `mmap/munmap/mremap/brk` trace, 16.32 s.
@@ -187,16 +207,44 @@ acknowledgement and abort. Rust target build took 1.58 s. Logs:
 `target/stdlib-work/tls-connection-admission/build-connection-ordinary.log` and
 `connection-ordinary.log`.
 
-Paired/state and live-peer admission are pending. The first paired native process
+The first paired native process
 terminated with SIGSEGV before stdout. The preserved ELF reserved 12,649,328
 bytes in its entry frame and failed on its first call before reading input.
 The two large fixture arrays and lowering temporaries exceeded the ordinary
 stack. The same ELF passed all four pair cases with a 32 MiB stack as a
 diagnostic control; that is not the normal-stack acceptance gate.
-The revised fixture explicitly owns one arena allocation and directly borrows
-native/packed views without creating the enormous stack aggregates. The peer
-requires exactly one mmap and a matching address-and-size munmap, with no engine
-allocation, resize or extra release. Revised native admission remains pending.
+The first arena revision failed before ELF creation with LNC0017, "invalid
+checked fixed-array layout": `typed_slice_from_storage<[u8;440000]>` crossed
+the generic specialization's existing 65,535-native-word fixed-array limit in
+`crates/laniusc-compiler/src/type_checker/generic_body.rs`. That failed gate took
+5.32 s; its log is `connection-pairs-arena.log`. The former source is preserved
+as `protocol-generic-array-arena.lani` beside that log. The unregistered tiny
+`generic_array_limit.lani` fixture records the checked-layout dependency. Its
+negative compilation probe reproduced LNC0017 before ELF emission; the receipt
+is `generic-array-limit.log` in the same admission directory. It is not an
+executable TLS regression gate.
+
+The revised fixture explicitly owns one arena allocation and constructs a
+three-word native byte-slice descriptor through small caller-storage records.
+This is a test-only unsafe seam tied to the documented native data/count/stride
+ABI, not a new production constructor. It checks actual `-8` and `+1` strides
+and both physical endpoints, then preserves every previous layout, flight and
+guard case. Its temporary descriptor is copied before those backing bytes are
+reused. The peer requires exactly one 3,520,000-byte mmap with the allocator's
+exact `MAP_PRIVATE|MAP_ANONYMOUS|MAP_32BIT` flags and a matching address-and-size
+munmap, with no engine allocation, resize or extra release.
+The revised normal-stack paired gate passed in 18.15 s: four cases (both suites
+in both layouts), one strict ELF and one native process. Exact gate:
+`paired_connections_match_independent_wire_epochs_and_authentication`. Its
+independent wire oracles and sole-arena address/size ledger passed at production
+`b26122db`, protocol `9c2bf1ca`, peer `ee5ce301`, and driver `f10e1ea6`. Log:
+`target/stdlib-work/tls-connection-admission/connection-pairs-descriptor.log`.
+The separate `fragmented_long_certificate_and_both_hello_retry_modes_execute`
+gate passed in 25.30 s on those unchanged sources: four cases covering
+requested-group HRR, cookie-only HRR, and eight-certificate flights with
+ChaCha/native and AES/packed backing. It used one strict ELF/one native process
+and the same exact sole-arena allocation/release ledger. Log:
+`target/stdlib-work/tls-connection-admission/connection-fragments-descriptor.log`.
 Production also received a source-reviewed outer-record overflow classification
 correction: record framing above 16,640 bytes reports `RecordOverflow` and alert
 22; the separate handshake reassembly cap retains its own error.
@@ -209,15 +257,38 @@ secret-derived diagnostics; this is not a deployable secret-handling program.
 The fixture also checks source/entropy/seed lifetimes, pending suffix stability,
 final client-Finished acknowledgement, buffer guards and both layouts.
 The separate `connection_error_atomicity_and_record_epoch_boundaries_execute`
-gate prepares 22 controls in both layouts (44 cases): caller metadata and ACK
+gate prepares 23 controls in both layouts (46 cases): caller metadata and ACK
 atomicity, consumed header prefixes, record/handshake limits, CCS/order/EOF,
 terminal error persistence, final permitted receiver app/close records and
 next-old-key exhaustion, aligned last-slot KeyUpdate, sender update drain,
-fragmented tickets with local controls, suppressed fatal pending output and
-application withholding/half-close. Near-limit sequence/generation and held
-publication cases use explicitly labeled private state seams; they are not
-evidence of peer authentication. Public paired flights exercise real trust.
-Revised pair/fragment and controls gates are authored but have not been admitted
-at this push checkpoint. No full connection acceptance is claimed.
+fragmented tickets with local controls, an authenticated KeyUpdate with a
+trailing handshake frame rejected before receive-key installation, suppressed
+fatal pending output and application withholding/half-close. Cases near sequence
+or generation limits, or holding application data, use explicitly labeled
+private state seams; they are not evidence of peer authentication. Public
+paired flights exercise real trust.
+The initial 44 controls passed their independent exact x86_64 Linux gate in
+19.25 s, one strict ELF/one native process with an empty memory trace. This
+supplemental receipt is superseded by the accepted 46-case fixture below. Log:
+`target/stdlib-work/tls-connection-admission/connection-controls-first.log`.
+Production was `b26122db`, controls `159cd2e5`, driver `f7aca22e`, and peer
+`c895cf04`. The legal CCS half of operation20 uses actual CH transmission; its
+late-CCS half deliberately injects the peer-Finished phase. Operation21's
+partial-prefix EOF control uses only public progress.
+The earlier source is preserved as
+`target/stdlib-work/tls-connection-admission/controls-first-44.lani`.
+The added operation22, in both layouts, brings the current fixture to 46 cases.
+That enlarged gate independently passed in 17.82 s: one strict ELF/one native
+process with an empty `mmap/munmap/mremap/brk` trace. It checks the full consumed
+ciphertext prefix, sticky UnexpectedMessage, unchanged receive generation,
+the already consumed AEAD sequence and a fatal alert under the unchanged
+sending key.
+Its frozen sources were production `b26122db`, controls `2f3fd0e2`, peer
+`8545fc00`, and driver `f10e1ea6`. Rust driver build took 1.18 s and produced
+`extended_tls_connection_execution-45bdd3cf3691412b`. Logs:
+`target/stdlib-work/tls-connection-admission/connection-controls46.log` and
+`build-connection-controls46.log` in the same directory.
+The current portable selected profile is accepted. Real TCP/OpenSSL and
+application admission remains separate; general TLS compliance is not claimed.
 These tests do not establish constant-time generated code or general TLS/PKIX
 compliance. TCP/OpenSSL peer evidence belongs to the adapter/application gates.

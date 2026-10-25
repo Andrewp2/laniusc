@@ -1,0 +1,12 @@
+// Unregistered negative compilation reproduction; not an executable TLS gate.
+// generic_body.rs append_checked_node currently requires fixed-array native
+// words <=0xffff. [u8;65536] crosses that generic-specialization boundary.
+// The zero-length borrow never dereferences storage. This exact reduction was
+// rejected before ELF emission with LNC0017/invalid checked fixed-array layout.
+// Receipt: target/stdlib-work/tls-connection-admission/generic-array-limit.log.
+module app::main;
+import core::mem;
+fn main()->i32 {
+ let storage:[[u8;65536]]=core::mem::typed_slice_from_storage<[u8;65536]>(0,0);
+ return core::mem::slice_stride(storage) as i32;
+}

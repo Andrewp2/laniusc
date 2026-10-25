@@ -24,8 +24,8 @@ records measured workloads and limits.
 [TLS handshake codecs](extended-tls-handshake.md) and the
 [SHA-256 schedule/transcript](extended-tls-schedule.md) now pass focused native
 execution gates as well. These provide primitives and wire contracts; the
-connection still needs negotiated state, enforced authentication checkpoints,
-broader certificate policy and bounded transport progress.
+broader certificate policy remains work. Negotiated state, authentication
+checkpoints and bounded transport now have their own evidence below.
 
 [X.509 structure parsing](extended-x509.md) and
 [incremental framing](extended-tls-framing.md) now have native admission too.
@@ -37,17 +37,22 @@ validity and supported-constraint checks. The
 [certificate verifier](extended-verify-certificate.md) passes 84 native cases.
 This is an offline restricted profile; general PKIX and revocation remain.
 [AES](core-aes.md) and [AES-GCM](extended-aes-gcm.md) execute as Lanius byte
-primitives; their TLS record integration remains. The
+primitives and through explicit TLS record suites. The
 [server-flight authentication bridge](extended-tls-authentication.md) now
 executes ordered path/CertificateVerify/Finished checks. The
-[connection contract](tls-connection-contract.md) identifies the remaining
-negotiation, record/epoch state, client-Finished transmission and transport
-integration.
+[portable connection](extended-tls-connection.md) composes negotiation,
+record epochs, the actual trust decision and client-Finished transmission.
+Its paired/fragment/retry and 46 boundary cases pass. The
+[TCP adapter](extended-tls-tcp.md) passes both-role OpenSSL, 1 MiB pressure,
+ownership/fault and operation-resumption gates; the
+[exchange application](extended-tls-exchange.md) remain under admission.
+The [connection contract](tls-connection-contract.md) retains the broader
+mandatory-algorithm and PKIX requirements.
 
 This source path does not require foreign-call support. A foreign TLS backend
 and SQLite integration still need the native-library boundaries described
-here. Full TLS connections still need executable handshake, certificate, peer
-authentication, trust policy and transport support. The thread-entry,
+here. The restricted Lanius TLS profile does not add native foreign calls.
+The thread-entry,
 synchronization and foreign ABI contracts below remain open.
 
 ## Existing boundaries
