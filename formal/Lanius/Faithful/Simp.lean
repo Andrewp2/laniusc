@@ -56,29 +56,38 @@ open Lanius.Semantics (matchPattern matchPatterns)
 @[pure_rule] theorem Env.bindAll_cons (env : Env) (b : Nat × Value) (bs : List (Nat × Value)) :
     env.bindAll (b :: bs) = Env.bindAll (b :: env) bs := rfl
 
-@[pure_rule] theorem bind_ite {α β : Type} (c : Prop) [Decidable c] (a b : Option α) (f : α → Option β) :
+/-- Not `pure_rule`s: each copies the rest of the body into both branches,
+so a run of `if`s grows exponentially. `faithful` splits on the condition
+instead. -/
+theorem bind_ite {α β : Type} (c : Prop) [Decidable c] (a b : Option α) (f : α → Option β) :
     (if c then a else b).bind f = if c then a.bind f else b.bind f := by
   split <;> rfl
 
-@[pure_rule] theorem map_ite {α β : Type} (c : Prop) [Decidable c] (a b : Option α) (f : α → β) :
+theorem map_ite {α β : Type} (c : Prop) [Decidable c] (a b : Option α) (f : α → β) :
     (if c then a else b).map f = if c then a.map f else b.map f := by
   split <;> rfl
 
-/-- A call that returned: the only binds the certificates split. -/
-@[pure_rule] theorem pcall_bind {sp : SrcProgram} {prims : Prims} {n c : Nat} {vs : List Value} {β : Type}
-    {f : Value → Option β} {w : β} :
-    (pcall sp prims n c vs).bind f = some w ↔ ∃ x, pcall sp prims n c vs = some x ∧ f x = some w :=
-  Option.bind_eq_some_iff
+/-- A call that returned: the only binds the certificates split. They are
+not `simp` rules: rewriting a chain of calls into a chain of `∃` under
+binders makes a proof quadratic in the chain, which the kernel then checks
+(`peelCalls` in Tactic.lean takes off one call at a time instead). -/
+theorem pcall_bind {sp : SrcProgram} {prims : Prims} {n c : Nat} {vs : List Value} {β : Type}
+    {f : Value → Option β} {w : β} (h : (pcall sp prims n c vs).bind f = some w) :
+    ∃ x, pcall sp prims n c vs = some x ∧ f x = some w :=
+  Option.bind_eq_some_iff.mp h
 
-@[pure_rule] theorem pcall_map {sp : SrcProgram} {prims : Prims} {n c : Nat} {vs : List Value} {β : Type}
-    {f : Value → β} {w : β} :
-    (pcall sp prims n c vs).map f = some w ↔ ∃ x, pcall sp prims n c vs = some x ∧ f x = w :=
-  Option.map_eq_some_iff
+theorem pcall_map {sp : SrcProgram} {prims : Prims} {n c : Nat} {vs : List Value} {β : Type}
+    {f : Value → β} {w : β} (h : (pcall sp prims n c vs).map f = some w) :
+    ∃ x, pcall sp prims n c vs = some x ∧ f x = w :=
+  Option.map_eq_some_iff.mp h
 
 @[pure_rule] theorem Done.then_next (rest : Option Done) : Done.then rest .next = rest := rfl
 @[pure_rule] theorem Done.then_ret (rest : Option Done) (v : Option Value) : Done.then rest (.ret v) = some (.ret v) := rfl
 
 @[pure_rule] theorem doneValue_ret (ret : SrcType) (v : Value) : doneValue ret (.ret (some v)) = some v := rfl
+
+@[pure_rule] theorem fieldOf_structure (id k : Nat) (fields : List Value) :
+    fieldOf (.structure id fields) k = fields[k]? := rfl
 
 @[pure_rule] theorem asBool_boolean (b : Bool) : asBool (.boolean b) = some b := rfl
 
@@ -95,11 +104,33 @@ theorem pcall_succ {sp : SrcProgram} {prims : Prims} {n c : Nat} {vs : List Valu
     (∃ b, (∃ a, p a ∧ f a = b) ∧ q b) ↔ ∃ a, p a ∧ q (f a) :=
   ⟨fun ⟨_, ⟨a, pa, rfl⟩, qb⟩ => ⟨a, pa, qb⟩, fun ⟨a, pa, qa⟩ => ⟨_, ⟨a, pa, rfl⟩, qa⟩⟩
 
-attribute [pure_rule] Option.bind_some Option.bind_none Option.map_some Option.map_none Option.bind_assoc
+/-- `Option.bind_some` and `Option.map_some` as rewrites with a proof: as
+`rfl` lemmas `simp` would apply them by definitional unfolding, which leaves
+the kernel to show `(some v).bind f` is the rest of a chain of calls, and
+its unfolding compares the chain's binds head to head. -/
+@[pure_rule] theorem bind_some {α β : Type} (v : α) (f : α → Option β) : (some v).bind f = f v :=
+  (Option.bind_some (a := v) (f := f)).trans rfl
+
+@[pure_rule] theorem map_some {α β : Type} (v : α) (f : α → β) : (some v).map f = some (f v) :=
+  (Option.map_some (a := v) (f := f)).trans rfl
+
+attribute [pure_rule] Option.bind_none Option.map_none Option.bind_assoc
   Option.map_bind Option.bind_map Function.comp_def List.zip_cons_cons List.zip_nil_left List.map_cons List.map_nil
   List.length_cons List.length_nil ite_true ite_false if_true if_false Option.some.injEq reduceCtorEq exists_eq_left
   exists_eq_right exists_and_left exists_and_right and_true true_and ne_eq not_false_eq_true decide_true
-  decide_false List.cons.injEq and_self eq_self_iff_true
+  decide_false List.cons.injEq and_self eq_self_iff_true decide_eq_true_eq decide_eq_false_iff_not
+  Bool.not_eq_true Bool.not_eq_false Bool.not_eq_true' Bool.not_eq_false' Bool.not_not List.getElem?_cons_zero List.getElem?_cons_succ
+  List.getElem?_nil
+
+/-- `u64` comparisons as `BitVec`'s, which the extraction writes. -/
+@[pure_rule] theorem bitvec_toNat_lt {w : Nat} (x y : BitVec w) : (x.toNat < y.toNat) = (x < y) :=
+  propext BitVec.lt_def.symm
+@[pure_rule] theorem bitvec_toNat_le {w : Nat} (x y : BitVec w) : (x.toNat ≤ y.toNat) = (x ≤ y) :=
+  propext BitVec.le_def.symm
+@[pure_rule] theorem bitvec_toNat_eq {w : Nat} (x y : BitVec w) : (x.toNat = y.toNat) = (x = y) :=
+  propext BitVec.toNat_inj
+
+attribute [pure_rule] BitVec.ofNat_eq_ofNat
 
 @[pure_rule] theorem toOption_ok {ε α : Type} (x : α) : (Except.ok x : Except ε α).toOption = some x := rfl
 @[pure_rule] theorem toOption_error {ε α : Type} (e : ε) : (Except.error e : Except ε α).toOption = none := rfl
@@ -107,7 +138,13 @@ attribute [pure_rule] Option.bind_some Option.bind_none Option.map_some Option.m
 /-- Run the pure meaning of a body as far as its calls. -/
 macro "pure_simp" " at " h:ident : tactic => `(tactic|
   simp only [pure_rule, pstmt, peff, peffs, pexpr, pexprs, paramEnv, paramBindings, applyOp, binary, unary, cast,
-    SrcOp.toCore, Nat.reduceEqDiff, Nat.reduceAdd, Nat.reduceSub, Nat.reduceMul, Nat.reduceMod, Nat.reducePow,
+    SrcOp.toCore, SrcDivOp.toCore, UintTy.toCore, SrcType.toScalar, Nat.reduceLT, Nat.reduceEqDiff, Nat.reduceAdd, Nat.reduceSub, Nat.reduceMul, Nat.reduceMod, Nat.reducePow,
     Nat.reduceBEq, Nat.reduceBNe] at $h:ident)
+
+/-- `pure_simp` on every hypothesis. -/
+macro "pure_simp_all" : tactic => `(tactic|
+  simp only [pure_rule, pstmt, peff, peffs, pexpr, pexprs, paramEnv, paramBindings, applyOp, binary, unary, cast,
+    SrcOp.toCore, SrcDivOp.toCore, UintTy.toCore, SrcType.toScalar, Nat.reduceLT, Nat.reduceEqDiff, Nat.reduceAdd, Nat.reduceSub, Nat.reduceMul, Nat.reduceMod, Nat.reducePow,
+    Nat.reduceBEq, Nat.reduceBNe] at *)
 
 end Lanius.Faithful

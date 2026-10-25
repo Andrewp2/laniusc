@@ -8,7 +8,7 @@ import Std.Data.HashMap
 The manifest's one line is `NAME BASE...` (as runAll's). OUT gets a Lean
 file: for each function of the front end's `SrcProgram`, its instance (the
 declaration's module, name and type arguments) as a comment, then the
-function as a `SrcFunc` term. -/
+function as a `SrcFunc` term. OUT.meta names the functions and types (`describe`). -/
 
 open Lanius.Mini
 
@@ -28,8 +28,92 @@ def text (bytes : List Nat) : String := String.ofList (bytes.map Char.ofNat)
 
 def path (segments : List (List Nat)) : String := "::".intercalate (segments.map text)
 
-/-- Each function instance's name: module::name<type arguments>. -/
-def instNames (files : List FileInput) : Option (List String) := do
+def uintName : UintTy → String
+  | .uint8 => "u8"
+  | .uint32 => "u32"
+  | .uint64 => "u64"
+  | .usize => "usize"
+
+/-- A type as Lanius writes it, each named type with its module. -/
+partial def tyName (decls : Decls) : Ty → String
+  | .tyI32 => "i32"
+  | .tyBool => "bool"
+  | .tyUint k => uintName k
+  | .tyPtr => "ptr"
+  | .tyIsize => "isize"
+  | .tySlice e => s!"[{tyName decls e}]"
+  | .tyNamed d args =>
+    let name := match decls.types[d]? with
+      | none => s!"?{d}"
+      | some t => s!"{path t.home}::{text t.name}"
+    if args.isEmpty then name else s!"{name}<{",".intercalate (args.map (tyName decls))}>"
+
+partial def firstLeaf : CTree → Option String
+  | .leaf t => some (text t.text)
+  | .node _ kids => kids.findSome? firstLeaf
+
+/-- A front-pass type: scalars by name, a struct or enum by its id. -/
+def srcTyName : SrcType → String
+  | .i32 => "i32"
+  | .bool => "bool"
+  | .uint k => uintName k
+  | .ptr => "ptr"
+  | .unit => "unit"
+  | .isize => "isize"
+  | .slice _ => "slice"
+  | .struct id _ => s!"#{id}"
+  | .enum id _ => s!"#{id}"
+
+mutual
+partial def effCalls : SrcEff → List Nat
+  | .ePure _ => []
+  | .eCall c args => c :: args.flatMap effCalls
+  | .eApply _ l r => effCalls l ++ effCalls r
+  | .eNeg e => effCalls e
+  | .eNot e => effCalls e
+  | .eCast _ e => effCalls e
+  | .eIndex _ i => effCalls i
+  | .eStruct _ fs => fs.flatMap effCalls
+  | .eVariant _ _ ps => ps.flatMap effCalls
+  | .eMatch s _ _ _ vs => effCalls s ++ vs.flatMap effCalls
+  | .eDivide _ l r => effCalls l ++ effCalls r
+  | .eStride _ => []
+
+partial def stmtCalls : SrcStmt → List Nat
+  | .let _ _ _ b | .letStruct _ _ _ b | .letEnum _ _ _ _ b | .letMatch _ _ _ _ _ b => stmtCalls b
+  | .letAlloc _ _ _ b | .letLoad _ _ _ b | .letSlice _ _ _ _ b | .letIndex _ _ _ _ b => stmtCalls b
+  | .letCall _ _ c _ b => c :: stmtCalls b
+  | .setCall _ c _ => [c]
+  | .then a b => stmtCalls a ++ stmtCalls b
+  | .if _ a b => stmtCalls a ++ stmtCalls b
+  | .while _ b => stmtCalls b
+  | .letEval _ _ v b => effCalls v ++ stmtCalls b
+  | .setEval _ v | .returnEval v | .discard v | .setFieldEval _ _ v | .assert v => effCalls v
+  | .ifEval c a b => effCalls c ++ stmtCalls a ++ stmtCalls b
+  | .whileEval c b => effCalls c ++ stmtCalls b
+  | .setIndexEval _ i v => effCalls i ++ effCalls v
+  | .nop | .set _ _ | .setField _ _ _ | .return _ | .setByte _ _ _ | .free _ _ _ | .setIndex _ _ _
+  | .returnUnit => []
+end
+
+/-- `sig ID PARAMS RET CALLEES` (comma lists, `-` when empty), and for a
+struct or enum id `shape ID FIELDS` with one `|`-separated field list per
+variant. -/
+def sigLine (i : Nat) (f : SrcFunc) : String :=
+  let list (xs : List String) := if xs.isEmpty then "-" else ",".intercalate xs
+  s!"sig {i} {list (f.params.map (srcTyName ·.ty))} {srcTyName f.ret} {list ((stmtCalls f.body).eraseDups.map toString)}"
+
+def shapeLine (i : Nat) : Option SrcType → String
+  | some (.struct _ fs) => s!"shape {i} {",".intercalate (fs.map srcTyName)}"
+  | some (.enum _ vs) => s!"shape {i} {"|".intercalate (vs.map fun v => ",".intercalate (v.map srcTyName))}"
+  | _ => s!"shape {i} ?"
+
+/-- What the certificates need to name the program's parts in Lean, one
+line each: `fn ID MODULE::NAME SELF ARGS` (SELF is an impl method's type,
+or `-`; ARGS the type arguments, or `-`; an instance the front end made has
+name `?`), and `type ID MODULE::NAME ARGS struct|enum NAMES` with the
+fields' or variants' spellings, ID the SrcType id. -/
+def describe (files : List FileInput) : Option (List String) := do
   let roots ← validateFiles grammar files
   let fuel := filesFuel files
   match roots with
@@ -38,12 +122,24 @@ def instNames (files : List FileInput) : Option (List String) := do
     let f ← fileDecls fuel first
     let c ← collectFiles fuel rest ({ decls := f.decls, modules := [f.home] } : Collected)
     let m ← monoLoop fuel fuel c.decls (rootInsts f.decls.fns 0) [] 0
-    return m.table.map fun inst =>
+    let seeds := seedInsts f.decls.types 0
+    let types ← typeTable fuel c.decls seeds (seedTys seeds ++ funcsTys m.funcs)
+    let args (ts : List Ty) := if ts.isEmpty then "-" else ",".intercalate (ts.map (tyName c.decls))
+    let fns := (List.range m.table.length).zip m.table |>.map fun (i, inst) =>
       match c.decls.fns[inst.decl]? with
-      | none => s!"?{inst.decl}"
+      | none => s!"fn {i} ? - {args inst.args}"
       | some d =>
-        let args := if inst.args.isEmpty then "" else s!"<{(reprStr inst.args).replace "\n" " "}>"
-        s!"{path d.home}::{text d.name}{args}"
+        let self := if d.inImpl then (firstLeaf d.selfType).getD "?" else "-"
+        s!"fn {i} {path d.home}::{text d.name} {self} {args inst.args}"
+    let tys := (List.range types.length).zip types |>.map fun (i, inst) =>
+      match c.decls.types[inst.decl]? with
+      | none => s!"type {i} ? - struct"
+      | some t =>
+        let names := if t.isEnum then t.variants else t.fields
+        s!"type {i} {path t.home}::{text t.name} {args inst.args} {if t.isEnum then "enum" else "struct"} {" ".intercalate (names.map text)}"
+    let shapes := (List.range types.length).zip types |>.map fun (i, inst) =>
+      shapeLine i (lowerNamed fuel c.decls types inst.decl inst.args)
+    return fns ++ tys ++ shapes
 
 /-! Types are named once (`def tyK : SrcType`), bottom up, and each function
 refers to them: a type written out in full at every use makes the dump of
@@ -163,11 +259,17 @@ def main (args : List String) : IO UInt32 := do
     match ← loadFile b with
     | none => IO.eprintln s!"{b} does not lex"; return 1
     | some f => files := files ++ [f]
-  let some names := instNames files | IO.eprintln "the front end rejects the files"; return 1
+  let some lines := describe files | IO.eprintln "the front end rejects the files"; return 1
+  let names := (lines.filter (fun (l : String) => l.startsWith "fn ")).map fun (l : String) =>
+    match l.splitOn " " with
+    | [_, _, name, self, args] =>
+      (if self == "-" then name else s!"{self}::{name}") ++ (if args == "-" then "" else s!"<{args}>")
+    | _ => l
   let some p := frontEndFiles grammar files | IO.eprintln "the front end rejects the files"; return 1
+  IO.FS.writeFile (out ++ ".meta") ("\n".intercalate (lines ++ ((List.range p.funcs.length).zip p.funcs).map (fun (i, f) => sigLine i f)) ++ "\n")
   let (funcs, table) := (p.funcs.mapM markFunc).run {}
   let h ← IO.FS.Handle.mk out .write
-  h.putStrLn s!"import Lanius.Mini.Compiler\n\n/-! Generated by formal/tools/faithful_dump.py: the front end's program of\n{line}\n{p.funcs.length} functions, {table.defs.size} named types. -/\n\nnamespace {ns}\n\nopen Lanius.Mini\n"
+  h.putStrLn s!"import Lanius.Mini.Compiler\n\n/-! Generated by formal/tools/faithful_dump.py: the front end's program of\n{line}\n{p.funcs.length} functions, {table.defs.size} named types. -/\n\nnamespace {ns}\n\nopen Lanius.Mini\n\nnoncomputable section\n"
   for d in table.defs do
     h.putStrLn d
   h.putStrLn ""
@@ -176,5 +278,5 @@ def main (args : List String) : IO UInt32 := do
     h.putStrLn s!"/-- {names.getD i "?"} -/"
     h.putStrLn s!"def src{i} : SrcFunc := {(repr f).pretty 1000000000}"
     i := i + 1
-  h.putStrLn s!"\ndef prog : SrcProgram := \{ funcs := [{", ".intercalate ((List.range p.funcs.length).map (s!"src{·}"))}] }\n\nend {ns}"
+  h.putStrLn s!"\ndef prog : SrcProgram := \{ funcs := [{", ".intercalate ((List.range p.funcs.length).map (s!"src{·}"))}] }\n\nend\n\nend {ns}"
   return 0
