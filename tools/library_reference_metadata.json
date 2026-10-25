@@ -666,6 +666,11 @@
         "docs/extended-log.md"
       ]
     },
+    "ext::p256": {
+      "guides": [
+        "docs/extended-p256.md"
+      ]
+    },
     "ext::parse": {
       "guides": [
         "docs/extended-parse.md"

@@ -1,0 +1,150 @@
+// P-256 (secp256r1), SEC1v2 2.3/3.2/3.3/4.1; NIST SP800-186 3.2.1.3.
+// Original fixed-width Montgomery/Jacobian implementation. No allocation.
+module ext::p256;
+import core::result;
+import core::sha256;
+import core::slice;
+import core::u64;
+
+pub enum Error { Bounds, InvalidScalarLength, InvalidScalar, InvalidPublicKeyLength, InvalidPointEncoding, InvalidPoint, InvalidDigestLength, InvalidSignatureLength, InvalidSignatureEncoding }
+pub struct PublicKey { bytes:[u8;65] }
+pub struct CompressedKey { bytes:[u8;33] }
+pub struct SharedSecret { bytes:[u8;32] }
+pub struct Signature { bytes:[u8;64] }
+// Each digit is <2^32. Residues are canonical; private call sites explicitly
+// distinguish raw integers from Montgomery residues x*2^256 mod modulus.
+struct Number { limbs:[u64;8] }
+struct Point { x:Number, y:Number, z:Number }
+const BASE:u64=4294967296;
+const MASK:u64=4294967295;
+fn valid(v:core::slice::View<u8>)->bool{return v.start>=0&&v.length>=0&&v.start<=2147483647-v.length;}
+fn byte(v:core::slice::View<u8>,i:i32)->u8{return v.values[v.start+i];}
+fn zero()->Number{let limbs:[u64;8]=[0;8];return Number{limbs:limbs};}
+fn raw_one()->Number{let n:Number=zero();n.limbs[0]=1;return n;}
+fn modulus(scalar:bool)->Number{
+    let limbs:[u64;8]=[4294967295,4294967295,4294967295,0,0,0,1,4294967295];
+    if(scalar){limbs=[4234356049,4089039554,2803342980,3169254061,4294967295,4294967295,0,4294967295];}return Number{limbs:limbs};
+}
+fn one(scalar:bool)->Number{
+    let limbs:[u64;8]=[1,0,0,4294967295,4294967295,4294967295,4294967294,0];
+    if(scalar){limbs=[60611247,205927741,1491624315,1125713234,0,0,4294967295,0];}return Number{limbs:limbs};
+}
+fn r2(scalar:bool)->Number{
+    let limbs:[u64;8]=[3,0,4294967295,4294967291,4294967294,4294967295,4294967293,4];
+    if(scalar){limbs=[3195661986,2200194197,1237151654,1184463260,728493145,675656249,4091106848,1726033300];}return Number{limbs:limbs};
+}
+fn select(a:Number,b:Number,bit:u64)->Number{let n:Number=a;let mask:u64=core::u64::wrapping_sub(0,bit);let i:i32=0;while(i<8){n.limbs[i]^=mask&(a.limbs[i]^b.limbs[i]);i+=1;}return n;}
+// Returns a bit, without a data-dependent branch. The aggregate fits u64.
+fn is_zero(n:Number)->u64{let x:u64=0;let i:i32=0;while(i<8){x|=n.limbs[i];i+=1;}return 1-((x|core::u64::wrapping_sub(0,x))>>63);}
+fn same(a:Number,b:Number)->u64{let n:Number=zero();let i:i32=0;while(i<8){n.limbs[i]=a.limbs[i]^b.limbs[i];i+=1;}return is_zero(n);}
+fn less(a:Number,b:Number)->u64{let borrow:u64=0;let i:i32=0;while(i<8){let v:u64=a.limbs[i]+BASE-b.limbs[i]-borrow;borrow=1-(v>>32);i+=1;}return borrow;}
+// Given 0<=low+top*R<2m, subtract m once in 9 digits. The ninth borrow
+// selects the canonical result. All subtraction temporaries are <2^33.
+fn normalize(low:Number,top:u64,scalar:bool)->Number{
+    let m:Number=modulus(scalar);let difference:Number=zero();let borrow:u64=0;let i:i32=0;
+    while(i<8){let v:u64=low.limbs[i]+BASE-m.limbs[i]-borrow;difference.limbs[i]=v&MASK;borrow=1-(v>>32);i+=1;}
+    let high:u64=top+BASE-borrow;let final_borrow:u64=1-(high>>32);return select(low,difference,1-final_borrow);
+}
+fn add(a:Number,b:Number,scalar:bool)->Number{let n:Number=zero();let carry:u64=0;let i:i32=0;while(i<8){let v:u64=a.limbs[i]+b.limbs[i]+carry;n.limbs[i]=v&MASK;carry=v>>32;i+=1;}return normalize(n,carry,scalar);}
+fn subtract(a:Number,b:Number,scalar:bool)->Number{
+    let n:Number=zero();let borrow:u64=0;let i:i32=0;while(i<8){let v:u64=a.limbs[i]+BASE-b.limbs[i]-borrow;n.limbs[i]=v&MASK;borrow=1-(v>>32);i+=1;}
+    let m:Number=modulus(scalar);let mask:u64=core::u64::wrapping_sub(0,borrow);let carry:u64=0;i=0;
+    while(i<8){let v:u64=n.limbs[i]+(m.limbs[i]&mask)+carry;n.limbs[i]=v&MASK;carry=v>>32;i+=1;}return n;
+}
+// Schoolbook product followed by radix-2^32 Montgomery REDC. Each inner
+// a*b+digit+carry <= (B-1)^2+2(B-1) = 2^64-1. Carries are <=B-1;
+// propagation-only sums are <=2B-2. Every loop bound/address is public.
+// T<m^2, R=2^256>m, so (T+q*m)/R<2m: one subtraction suffices.
+fn multiply(a:Number,b:Number,scalar:bool)->Number{
+    let t:[u64;17]=[0;17];let i:i32=0;
+    while(i<8){let carry:u64=0;let j:i32=0;while(j<8){let v:u64=a.limbs[i]*b.limbs[j]+t[i+j]+carry;t[i+j]=v&MASK;carry=v>>32;j+=1;}t[i+8]=carry;i+=1;}
+    let m:Number=modulus(scalar);let n0:u64=1;if(scalar){n0=3993025615;}i=0;
+    while(i<8){let q:u64=(t[i]*n0)&MASK;let carry:u64=0;let j:i32=0;
+        while(j<8){let v:u64=q*m.limbs[j]+t[i+j]+carry;t[i+j]=v&MASK;carry=v>>32;j+=1;}
+        let k:i32=i+8;while(k<17){let v:u64=t[k]+carry;t[k]=v&MASK;carry=v>>32;k+=1;}i+=1;
+    }
+    let n:Number=zero();i=0;while(i<8){n.limbs[i]=t[i+8];i+=1;}return normalize(n,t[16],scalar);
+}
+fn square(a:Number)->Number{return multiply(a,a,false);}
+fn twice(a:Number)->Number{return add(a,a,false);}
+fn four(a:Number)->Number{return twice(twice(a));}
+fn eight(a:Number)->Number{return twice(four(a));}
+fn to_mont(a:Number,scalar:bool)->Number{return multiply(a,r2(scalar),scalar);}
+fn from_mont(a:Number,scalar:bool)->Number{return multiply(a,raw_one(),scalar);}
+fn inverse(a:Number,scalar:bool)->Number{
+    let exponent:Number=modulus(scalar);exponent.limbs[0]-=2;let n:Number=one(scalar);let bit:i32=255;
+    while(bit>=0){n=multiply(n,n,scalar);if(((exponent.limbs[bit/32]>>(bit%32))&1)!=0){n=multiply(n,a,scalar);}bit-=1;}return n;
+}
+fn root(a:Number)->Number{
+    let exponent:[u64;8]=[0,0,1073741824,0,0,1073741824,3221225472,1073741823];let n:Number=one(false);let bit:i32=255;
+    while(bit>=0){n=square(n);if(((exponent[bit/32]>>(bit%32))&1)!=0){n=multiply(n,a,false);}bit-=1;}return n;
+}
+fn decode_number(input:core::slice::View<u8>,at:i32)->Number{let n:Number=zero();let i:i32=0;while(i<32){let k:i32=31-i;n.limbs[k/4]|=(byte(input,at+i) as u64)<<((k%4)*8);i+=1;}return n;}
+fn write_number(n:Number,bytes:[u8],at:i32){let i:i32=0;while(i<32){let k:i32=31-i;bytes[at+i]=(n.limbs[k/4]>>((k%4)*8)) as u8;i+=1;}}
+fn curve_b()->Number{let limbs:[u64;8]=[700759519,3634159458,2021929104,2901411277,4146147030,3852607659,75974708,3694134813];return Number{limbs:limbs};}
+fn identity()->Point{return Point{x:zero(),y:one(false),z:zero()};}
+fn base()->Point{let x:[u64;8]=[413733948,2045194452,1609414145,1975162364,2002920720,2046522155,2771867078,412114806];let y:[u64;8]=[3465893386,3723645783,3122259036,2336930020,3709989669,3538454152,629693829,2238840600];return Point{x:Number{limbs:x},y:Number{limbs:y},z:one(false)};}
+fn point_select(a:Point,b:Point,bit:u64)->Point{return Point{x:select(a.x,b.x,bit),y:select(a.y,b.y,bit),z:select(a.z,b.z,bit)};}
+// Jacobian a=-3 doubling (EFD dbl-2001-b), with a masked canonical infinity.
+fn point_double(p:Point)->Point{
+    let delta:Number=square(p.z);let gamma:Number=square(p.y);let beta:Number=multiply(p.x,gamma,false);let product:Number=multiply(subtract(p.x,delta,false),add(p.x,delta,false),false);let alpha:Number=add(twice(product),product,false);
+    let x:Number=subtract(square(alpha),eight(beta),false);let z:Number=subtract(subtract(square(add(p.y,p.z,false)),gamma,false),delta,false);let y:Number=subtract(multiply(alpha,subtract(four(beta),x,false),false),eight(square(gamma)),false);
+    let result:Point=Point{x:x,y:y,z:z};return point_select(result,identity(),is_zero(z));
+}
+// General Jacobian addition, plus fixed-schedule masked exceptional cases.
+// The ordinary formula is not called "complete": equal/inverse/infinity
+// inputs are explicitly resolved without branching on these predicates.
+fn point_add(p:Point,q:Point)->Point{
+    let zz1:Number=square(p.z);let zz2:Number=square(q.z);let u1:Number=multiply(p.x,zz2,false);let u2:Number=multiply(q.x,zz1,false);let s1:Number=multiply(p.y,multiply(q.z,zz2,false),false);let s2:Number=multiply(q.y,multiply(p.z,zz1,false),false);
+    let h:Number=subtract(u2,u1,false);let r:Number=subtract(s2,s1,false);let hh:Number=square(h);let hhh:Number=multiply(h,hh,false);let v:Number=multiply(u1,hh,false);
+    let x:Number=subtract(subtract(square(r),hhh,false),twice(v),false);let y:Number=subtract(multiply(r,subtract(v,x,false),false),multiply(s1,hhh,false),false);let z:Number=multiply(h,multiply(p.z,q.z,false),false);
+    let result:Point=Point{x:x,y:y,z:z};let hz:u64=is_zero(h);let rz:u64=is_zero(r);
+    result=point_select(result,point_double(p),hz&rz);result=point_select(result,identity(),hz&(1-rz));result=point_select(result,q,is_zero(p.z));result=point_select(result,p,is_zero(q.z));return result;
+}
+// Exactly 256 double/add/select steps. Scalar digits choose masks, never
+// branches, loop bounds, table lookups or memory addresses.
+fn point_multiply(p:Point,scalar:Number)->Point{let result:Point=identity();let bit:i32=255;while(bit>=0){let doubled:Point=point_double(result);let added:Point=point_add(doubled,p);let choice:u64=(scalar.limbs[bit/32]>>(bit%32))&1;result=point_select(doubled,added,choice);bit-=1;}return result;}
+fn decode_point(input:core::slice::View<u8>)->core::result::Result<Point,Error>{
+    if(input.length!=33&&input.length!=65){return core::result::Err(Error::InvalidPublicKeyLength);}let prefix:u8=byte(input,0);if((input.length==65&&prefix!=4)||(input.length==33&&prefix!=2&&prefix!=3)){return core::result::Err(Error::InvalidPointEncoding);}
+    let raw_x:Number=decode_number(input,1);if(less(raw_x,modulus(false))!=1){return core::result::Err(Error::InvalidPoint);}let x:Number=to_mont(raw_x,false);let rhs:Number=add(subtract(multiply(square(x),x,false),add(twice(x),x,false),false),curve_b(),false);let y:Number=zero();
+    if(input.length==65){let raw_y:Number=decode_number(input,33);if(less(raw_y,modulus(false))!=1){return core::result::Err(Error::InvalidPoint);}y=to_mont(raw_y,false);if(same(square(y),rhs)!=1){return core::result::Err(Error::InvalidPoint);}}
+    else{y=root(rhs);if(same(square(y),rhs)!=1){return core::result::Err(Error::InvalidPoint);}let parity:u64=from_mont(y,false).limbs[0]&1;let wanted:u64=(prefix&1) as u64;if(is_zero(y)==1&&wanted==1){return core::result::Err(Error::InvalidPoint);}y=select(y,subtract(zero(),y,false),parity^wanted);}
+    // Fixed P-256 parameters have prime group order and cofactor one. Thus
+    // a finite on-curve point is already in the prime subgroup (SEC1 3.2.2.1).
+    return core::result::Ok(Point{x:x,y:y,z:one(false)});
+}
+fn affine_x(p:Point)->Number{let reciprocal:Number=inverse(p.z,false);return from_mont(multiply(p.x,square(reciprocal),false),false);}
+fn encode(p:Point)->PublicKey{let reciprocal:Number=inverse(p.z,false);let zz:Number=square(reciprocal);let x:Number=from_mont(multiply(p.x,zz,false),false);let y:Number=from_mont(multiply(p.y,multiply(zz,reciprocal,false),false),false);let bytes:[u8;65]=[0;65];bytes[0]=4;write_number(x,bytes,1);write_number(y,bytes,33);return PublicKey{bytes:bytes};}
+fn scalar(input:core::slice::View<u8>)->core::result::Result<Number,Error>{if(input.length!=32){return core::result::Err(Error::InvalidScalarLength);}let n:Number=decode_number(input,0);if(is_zero(n)==1||less(n,modulus(true))!=1){return core::result::Err(Error::InvalidScalar);}return core::result::Ok(n);}
+pub fn validate_public_key(encoded:core::slice::View<u8>)->core::result::Result<PublicKey,Error>{if(!valid(encoded)){return core::result::Err(Error::Bounds);}let parsed:core::result::Result<Point,Error> = decode_point(encoded);if(parsed.is_err()){return core::result::Err(parsed.unwrap_err());}return core::result::Ok(encode(parsed.unwrap()));}
+pub fn compress_public_key(encoded:core::slice::View<u8>)->core::result::Result<CompressedKey,Error>{let checked:core::result::Result<PublicKey,Error> = validate_public_key(encoded);if(checked.is_err()){return core::result::Err(checked.unwrap_err());}let key:PublicKey=checked.unwrap();let bytes:[u8;33]=[0;33];bytes[0]=2|(key.bytes[64]&1);let i:i32=0;while(i<32){bytes[i+1]=key.bytes[i+1];i+=1;}return core::result::Ok(CompressedKey{bytes:bytes});}
+pub fn public_key(private_key:core::slice::View<u8>)->core::result::Result<PublicKey,Error>{if(!valid(private_key)){return core::result::Err(Error::Bounds);}let checked:core::result::Result<Number,Error> = scalar(private_key);if(checked.is_err()){return core::result::Err(checked.unwrap_err());}return core::result::Ok(encode(point_multiply(base(),checked.unwrap())));}
+pub fn shared_secret(private_key:core::slice::View<u8>,encoded:core::slice::View<u8>)->core::result::Result<SharedSecret,Error>{
+    if(!valid(private_key)||!valid(encoded)){return core::result::Err(Error::Bounds);}if(private_key.length!=32){return core::result::Err(Error::InvalidScalarLength);}if(encoded.length!=33&&encoded.length!=65){return core::result::Err(Error::InvalidPublicKeyLength);}
+    let checked:core::result::Result<Number,Error> = scalar(private_key);if(checked.is_err()){return core::result::Err(checked.unwrap_err());}let parsed:core::result::Result<Point,Error> = decode_point(encoded);if(parsed.is_err()){return core::result::Err(parsed.unwrap_err());}
+    let result:Point=point_multiply(parsed.unwrap(),checked.unwrap());if(is_zero(result.z)==1){return core::result::Err(Error::InvalidPoint);}let bytes:[u8;32]=[0;32];write_number(affine_x(result),bytes,0);return core::result::Ok(SharedSecret{bytes:bytes});
+}
+fn verify(public_key:core::slice::View<u8>,digest:core::slice::View<u8>,signature:core::slice::View<u8>)->bool{
+    let parsed:core::result::Result<Point,Error> = decode_point(public_key);if(parsed.is_err()){return false;}let r:Number=decode_number(signature,0);let s:Number=decode_number(signature,32);let n:Number=modulus(true);
+    if(is_zero(r)==1||is_zero(s)==1||less(r,n)!=1||less(s,n)!=1){return false;}
+    let e:Number=normalize(decode_number(digest,0),0,true);let reciprocal:Number=inverse(to_mont(s,true),true);let first:Number=from_mont(multiply(to_mont(e,true),reciprocal,true),true);let second:Number=from_mont(multiply(to_mont(r,true),reciprocal,true),true);
+    let result:Point=point_add(point_multiply(base(),first),point_multiply(parsed.unwrap(),second));if(is_zero(result.z)==1){return false;}let x:Number=normalize(affine_x(result),0,true);return same(x,r)==1;
+}
+pub fn verify_digest(public_key:core::slice::View<u8>,digest:core::slice::View<u8>,signature:core::slice::View<u8>)->core::result::Result<bool,Error>{
+    if(!valid(public_key)||!valid(digest)||!valid(signature)){return core::result::Err(Error::Bounds);}if(public_key.length!=33&&public_key.length!=65){return core::result::Err(Error::InvalidPublicKeyLength);}if(digest.length!=32){return core::result::Err(Error::InvalidDigestLength);}if(signature.length!=64){return core::result::Err(Error::InvalidSignatureLength);}return core::result::Ok(verify(public_key,digest,signature));
+}
+pub fn verify_sha256(public_key:core::slice::View<u8>,message:core::slice::View<u8>,signature:core::slice::View<u8>)->core::result::Result<bool,Error>{
+    if(!valid(public_key)||!valid(message)||!valid(signature)){return core::result::Err(Error::Bounds);}if(public_key.length!=33&&public_key.length!=65){return core::result::Err(Error::InvalidPublicKeyLength);}if(signature.length!=64){return core::result::Err(Error::InvalidSignatureLength);}
+    // A fresh SHA256 state accepts at most i32MAX input bytes here, far below
+    // its length-overflow limit. All input metadata has already been checked.
+    let hashed:core::sha256::Digest=core::sha256::digest(message).unwrap();let bytes:[u8]=hashed.bytes;let digest:core::slice::View<u8> = core::slice::View<u8>{values:bytes,start:0,length:32};return core::result::Ok(verify(public_key,digest,signature));
+}
+// Strict DER SEQUENCE(INTEGER r, INTEGER s), total <=72. Canonical positive
+// integers occupy <=32 magnitude octets, with one necessary sign octet only.
+// Range r,s<n is the verifier's cryptographic check, not DER syntax.
+pub fn parse_der_signature(input:core::slice::View<u8>)->core::result::Result<Signature,Error>{
+    if(!valid(input)){return core::result::Err(Error::Bounds);}if(input.length<8||input.length>72){return core::result::Err(Error::InvalidSignatureEncoding);}if(byte(input,0)!=48||byte(input,1) as i32!=input.length-2){return core::result::Err(Error::InvalidSignatureEncoding);}
+    let bytes:[u8;64]=[0;64];let at:i32=2;let part:i32=0;
+    while(part<2){if(input.length-at<2||byte(input,at)!=2){return core::result::Err(Error::InvalidSignatureEncoding);}let n:i32=byte(input,at+1) as i32;at+=2;if(n<1||n>33||n>input.length-at){return core::result::Err(Error::InvalidSignatureEncoding);}let first:u8=byte(input,at);if(first>=128){return core::result::Err(Error::InvalidSignatureEncoding);}if(n>1&&first==0&&byte(input,at+1)<128){return core::result::Err(Error::InvalidSignatureEncoding);}if(n==33&&first!=0){return core::result::Err(Error::InvalidSignatureEncoding);}if(first==0){at+=1;n-=1;}if(n==0){return core::result::Err(Error::InvalidSignatureEncoding);}let i:i32=0;while(i<n){bytes[part*32+32-n+i]=byte(input,at+i);i+=1;}at+=n;part+=1;
+    }if(at!=input.length){return core::result::Err(Error::InvalidSignatureEncoding);}return core::result::Ok(Signature{bytes:bytes});
+}

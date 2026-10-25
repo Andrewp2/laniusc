@@ -79,6 +79,9 @@ all six algorithms with explicit input and I/O limits.
 [ChaCha20](docs/stdlib-chacha20.md), [Poly1305](docs/stdlib-poly1305.md),
 [ChaCha20-Poly1305](docs/extended-chacha20-poly1305.md) and
 [X25519](docs/extended-x25519.md) have focused native Linux execution evidence.
+[P-256](docs/extended-p256.md) also passes 1,288 independent protocol cases
+for SEC1 public keys, ECDH and ECDSA/SHA-256 verification, plus an ordinary
+consumer, without allocation. Its TLS integration remains separate work.
 [AES-128/192/256](docs/core-aes.md) and
 [AES-GCM](docs/extended-aes-gcm.md) also execute without allocation, with
 independent block/AEAD models and authentication-before-output checks.
@@ -118,8 +121,8 @@ The [seal-bytes program](docs/extended-seal-bytes.md) passes 137 native cases,
 including allocation/I/O failures and the full 1 MiB boundary. The
 [pinned compiler comparison](docs/library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
 records the measured crypto and large-library workloads. These connections use
-the explicit X25519/Ed25519/SHA-256 profile; mandatory P-256/RSA/ECDSA algorithms
-and broader PKIX support remain part of the full TLS work.
+the explicit X25519/Ed25519/SHA-256 profile; P-256/ECDSA integration, RSA and
+broader PKIX support remain part of the full TLS work.
 
 Optional modules use the [`extended` source root](extended/README.md).
 [`ext::csv`](docs/extended-csv.md) and [`ext::json`](docs/extended-json.md)

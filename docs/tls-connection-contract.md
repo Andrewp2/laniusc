@@ -41,9 +41,12 @@ This profile covers a subset of general TLS interoperability.
 requires, absent a different application profile standard, AES-128-GCM/SHA-256,
 P-256 key exchange, RSA-PSS/RSAE/SHA-256 and ECDSA/P-256/SHA-256 signatures,
 and RSA-PKCS1/SHA-256 certificate verification. AES, AES-GCM and explicit
-AES-128-GCM/SHA-256 record integration now have native admission; P-256,
-RSA and ECDSA primitives and their certificate integrations are missing. The SHA-256 and
-SHA-384 hashes themselves already exist. AES-256-GCM/SHA-384 and X25519
+AES-128-GCM/SHA-256 record integration now have native admission.
+[P-256 public keys, ECDH and ECDSA/SHA-256 verification](extended-p256.md)
+also pass their independent native gates, but group negotiation and
+certificate/CertificateVerify integration remain. RSA verification is still
+missing. The SHA-256 and SHA-384 hashes themselves already exist.
+AES-256-GCM/SHA-384 and X25519
 also have the RFC's recommended status; supporting X25519/ChaCha/Ed25519 does
 not satisfy the mandatory set. The [section 9.2 extension requirements](https://www.rfc-editor.org/rfc/rfc8446.html#section-9.2)
 also require semantic implementations, beyond the existing generic codecs.

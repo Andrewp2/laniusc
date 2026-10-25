@@ -433,6 +433,14 @@ integration and the other remaining families still need their own evidence.
   payloads and authentication-before-output failures. All three AES key
   widths execute without allocation. No compiler source changed; these gates
   add no machine constant-time or throughput claim.
+- [P-256](extended-p256.md) passes 1,288 independent protocol commands and an
+  ordinary consumer across five strict ELFs and 82 native processes, all with
+  empty allocation traces. It validates compressed/uncompressed SEC1 points,
+  computes public keys and raw ECDH, verifies ECDSA/SHA-256 and parses strict
+  signature DER. Published NIST/RFC data, affine/OpenSSL comparisons, exceptional
+  group cases, mutations and metadata/range failures check exact bytes in both
+  buffer layouts. TLS/certificate integration, RSA and the remaining mandatory
+  algorithms are separate work; machine constant-time behavior remains unproven.
 - Explicit TLS record suites: the unchanged 308-command ChaCha regression and
   a new 220-command OpenSSL AES-GCM model pass, each with an ordinary consumer.
   AES uses a cached owned key and a conservative `2^24` record cap, with a
