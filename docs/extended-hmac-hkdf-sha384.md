@@ -63,6 +63,12 @@ PRK and info. The library validates logical start/length arithmetic; physical
 backing and alias separation remain manual contracts. Inputs remain immutable
 through each call. No host calls or allocation are needed.
 
+State fields are implementation storage. Construct States with `new`, copy
+valid States by value, and use the methods to update, finish or reset them.
+Methods trust the internal SHA mode, counters, keyed seeds and cached Digest;
+arbitrary field mutation does not create a valid State. The counter tests below
+deliberately cross this boundary to exercise arithmetic rejection.
+
 These APIs supply keyed primitives, not a protocol, entropy source or tag
 verification policy. They do not promise constant-time compiled code, secure
 secret erasure, thread safety or protected key storage. Reset deliberately keeps
@@ -71,8 +77,11 @@ budget or deadline API.
 
 ## Focused verification
 
-Admission is pending. The test author has prepared source/fixtures and performed
-only AST/brace checks, with no Cargo, GPU, native or oracle execution.
+All four focused gates pass on native x86_64 Linux. The GPU compiler produced
+four x86_64 executables; they ran in 32 native processes with empty allocation
+traces. The three protocol gates cover 930 commands across both byte layouts;
+the fourth runs the ordinary composition program. This does not establish
+user GPU-kernel execution, machine constant-time behavior or TLS integration.
 
 `tests/extended_hmac_hkdf_sha384_execution.rs` contains four independently
 selectable exact gates:
@@ -138,19 +147,37 @@ Accepted carries also check that keyed seeds and cached result storage remain
 unchanged. Reset and subsequent known-message MACs provide an independent
 continuation check after the seam.
 
-Root serializes admission. Expected exact command shape after building the
-focused driver:
+Admission used the shared GPU lock and this exact gate command shape:
 
 ```sh
 RUST_MIN_STACK=16777216 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000 \
   timeout --kill-after=2s 100s flock -E 75 -w 35 \
   target/stdlib-work/library-gpu.lock timeout --kill-after=2s 60s \
-  target/stdlib-build/debug/deps/extended_hmac_hkdf_sha384_execution-HASH \
+  target/stdlib-build/debug/deps/extended_hmac_hkdf_sha384_execution-9f70622193ce01e0 \
   --exact hmac_hkdf_sha384_ordinary_no_error_projection_consumer \
   --nocapture --test-threads=1
 ```
 
-Cargo uses `CARGO_TARGET_DIR=target/stdlib-build`, `CARGO_INCREMENTAL=0`,
-`CARGO_PROFILE_DEV_DEBUG=0` and `CARGO_PROFILE_TEST_DEBUG=0`. Actual binary,
-commands, logs and observed counts must be recorded before admission is claimed.
-GPU execution here runs the compiler; user GPU-kernel behavior remains unverified.
+Cargo used `CARGO_TARGET_DIR=target/stdlib-build`, `CARGO_INCREMENTAL=0`,
+`CARGO_PROFILE_DEV_DEBUG=0` and `CARGO_PROFILE_TEST_DEBUG=0`. Building only this
+test driver took 1.38 seconds. Runtime invocations also set
+`LANIUS_DEBUG_STAGE_ERRORS=1`. Each command had a 100-second outer bound,
+35-second lock wait and 60-second execution bound.
+
+| Exact gate | Commands / native processes | Result / elapsed |
+| --- | --- | --- |
+| `hmac_hkdf_sha384_ordinary_no_error_projection_consumer` | ordinary program / 1 | passed / 6.08 s |
+| `hmac_sha384_rfc4231_blocks_streams_resets_and_owned_copies` | 426 / 14 | passed / 6.82 s |
+| `hkdf_sha384_independent_openssl_full_counter255_and_guards` | 292 / 10 | passed / 7.44 s |
+| `hmac_hkdf_sha384_atomic_errors_and_private_counter_seams` | 212 / 7 | passed / 6.93 s |
+
+Logs are retained locally under `target/stdlib-work/hmac384-admission/`:
+`build-first.log`, `ordinary-first.log`, `hmac-first.log`, `hkdf-first.log` and
+`limits-first.log`. Times include compilation and orchestration; they are not
+cryptographic throughput measurements. No compiler source changed.
+
+The SHA-256 checksums of the admitted production source snapshots begin with
+`fb8d13aa` (HMAC) and `bd5590ce` (HKDF). The test snapshots are `7aa46ef6`
+(driver), `9db818cf` (ordinary program), `9501542a` (protocol) and `7b5933be`
+(independent model). Independent source and fixture review found no blocking
+issue; runtime evidence comes from the invocations above.

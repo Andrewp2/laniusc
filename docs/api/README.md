@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **244 modules**, **10937 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **247 modules**, **11013 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -214,7 +214,9 @@ Inventory: **244 modules**, **10937 declaration/member entries**. Counts include
 | [ext::geometry](ext/geometry.md) | [source](../../extended/ext/geometry.lani#L3) | 81 | Source inventory | [extended-geometry](../extended-geometry.md) |
 | [ext::glob](ext/glob.md) | [source](../../extended/ext/glob.lani#L3) | 42 | Source inventory | [extended-glob](../extended-glob.md) |
 | [ext::hkdf_sha256](ext/hkdf_sha256.md) | [source](../../extended/ext/hkdf_sha256.lani#L3) | 9 | Source inventory | [extended-hmac-hkdf](../extended-hmac-hkdf.md), [extended-derive-key](../extended-derive-key.md) |
+| [ext::hkdf_sha384](ext/hkdf_sha384.md) | [source](../../extended/ext/hkdf_sha384.lani#L3) | 9 | Source inventory | [extended-hmac-hkdf-sha384](../extended-hmac-hkdf-sha384.md) |
 | [ext::hmac_sha256](ext/hmac_sha256.md) | [source](../../extended/ext/hmac_sha256.lani#L3) | 17 | Source inventory | [extended-hmac-hkdf](../extended-hmac-hkdf.md), [extended-derive-key](../extended-derive-key.md) |
+| [ext::hmac_sha384](ext/hmac_sha384.md) | [source](../../extended/ext/hmac_sha384.lani#L3) | 17 | Source inventory | [extended-hmac-hkdf-sha384](../extended-hmac-hkdf-sha384.md) |
 | [ext::http](ext/http.md) | [source](../../extended/ext/http.lani#L2) | 108 | Source inventory | [extended-http](../extended-http.md), [extended-http-cursor](../extended-http-cursor.md) |
 | [ext::http_client](ext/http_client.md) | [source](../../extended/ext/http_client.lani#L2) | 74 | Source inventory | [extended-http-client](../extended-http-client.md) |
 | [ext::http_server](ext/http_server.md) | [source](../../extended/ext/http_server.lani#L2) | 128 | Source inventory | [extended-http-server](../extended-http-server.md) |
@@ -231,6 +233,7 @@ Inventory: **244 modules**, **10937 declaration/member entries**. Counts include
 | [ext::png](ext/png.md) | [source](../../extended/ext/png.lani#L2) | 30 | Source inventory | [extended-png](../extended-png.md) |
 | [ext::progress](ext/progress.md) | [source](../../extended/ext/progress.lani#L2) | 15 | Source inventory | [extended-progress](../extended-progress.md) |
 | [ext::regex](ext/regex.md) | [source](../../extended/ext/regex.lani#L2) | 67 | Source inventory | [extended-regex](../extended-regex.md) |
+| [ext::rsa](ext/rsa.md) | [source](../../extended/ext/rsa.lani#L4) | 50 | Source inventory | [extended-rsa](../extended-rsa.md) |
 | [ext::schema](ext/schema.md) | [source](../../extended/ext/schema.lani#L3) | 90 | Source inventory | [extended-schema](../extended-schema.md) |
 | [ext::service_identity](ext/service_identity.md) | [source](../../extended/ext/service_identity.lani#L3) | 20 | Source inventory | [extended-service-identity](../extended-service-identity.md) |
 | [ext::settings](ext/settings.md) | [source](../../extended/ext/settings.lani#L3) | 118 | Source inventory | [extended-settings](../extended-settings.md) |

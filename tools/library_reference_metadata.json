@@ -614,10 +614,20 @@
         "docs/extended-derive-key.md"
       ]
     },
+    "ext::hkdf_sha384": {
+      "guides": [
+        "docs/extended-hmac-hkdf-sha384.md"
+      ]
+    },
     "ext::hmac_sha256": {
       "guides": [
         "docs/extended-hmac-hkdf.md",
         "docs/extended-derive-key.md"
+      ]
+    },
+    "ext::hmac_sha384": {
+      "guides": [
+        "docs/extended-hmac-hkdf-sha384.md"
       ]
     },
     "ext::http": {
@@ -699,6 +709,11 @@
     "ext::regex": {
       "guides": [
         "docs/extended-regex.md"
+      ]
+    },
+    "ext::rsa": {
+      "guides": [
+        "docs/extended-rsa.md"
       ]
     },
     "ext::schema": {

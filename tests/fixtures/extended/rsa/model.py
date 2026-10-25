@@ -2,6 +2,7 @@
 import ctypes as C
 import ctypes.util
 import hashlib
+import math
 from pathlib import Path
 import struct
 import sys
@@ -26,6 +27,7 @@ lib.BN_new.restype=P;lib.BN_free.argtypes=[P]
 lib.BN_set_word.argtypes=[P,C.c_ulong];lib.BN_set_word.restype=I
 lib.BN_num_bits.argtypes=[P];lib.BN_num_bits.restype=I
 lib.BN_bn2binpad.argtypes=[P,P,I];lib.BN_bn2binpad.restype=I
+lib.BN_generate_prime_ex.argtypes=[P,I,I,P,P,P];lib.BN_generate_prime_ex.restype=I
 lib.RSA_generate_key_ex.argtypes=[P,I,P,P];lib.RSA_generate_key_ex.restype=I
 lib.RSA_get0_key.argtypes=[P,C.POINTER(P),C.POINTER(P),C.POINTER(P)]
 
@@ -71,17 +73,35 @@ def openssl(n,e,message,signature,scheme,digest=False):
         lib.EVP_PKEY_CTX_free(context);lib.EVP_PKEY_free(key)
 
 
+def bn_integer(number):
+    length=(lib.BN_num_bits(number)+7)//8;out=C.create_string_buffer(length)
+    assert lib.BN_bn2binpad(number,out,length)==length
+    return int.from_bytes(out.raw,'big')
+
 def generate(bits,e=65537):
+    if bits%2:
+        # OpenSSL's SP800-56B RSA generator splits both factors at bits//2:
+        # a2049-bit request can return2048. Author this test-only boundary key
+        # from independently generated1025/1024-bit primes instead. Python
+        # integer arithmetic derives n/d; every signature still needs actual
+        # EVP verification, and sign_em separately checks the public pow.
+        for attempt in range(16):
+            p=lib.BN_new();q=lib.BN_new();assert p and q
+            try:
+                assert lib.BN_generate_prime_ex(p,(bits+1)//2,0,None,None,None)==1
+                assert lib.BN_generate_prime_ex(q,bits//2,0,None,None,None)==1
+                a,b=bn_integer(p),bn_integer(q)
+            finally:lib.BN_free(p);lib.BN_free(q)
+            n=a*b;assert n.bit_length()==bits and a!=b
+            order=math.lcm(a-1,b-1)
+            if math.gcd(e,order)==1:return n,e,pow(e,-1,order)
+        raise AssertionError('bounded odd-size test-key generation exhausted')
     rsa=lib.RSA_new();exponent=lib.BN_new();assert rsa and exponent
     try:
         assert lib.BN_set_word(exponent,e)==1
         assert lib.RSA_generate_key_ex(rsa,bits,exponent,None)==1
         n=P();actual_e=P();d=P();lib.RSA_get0_key(rsa,C.byref(n),C.byref(actual_e),C.byref(d))
-        def value(number):
-            length=(lib.BN_num_bits(number)+7)//8;out=C.create_string_buffer(length)
-            assert lib.BN_bn2binpad(number,out,length)==length
-            return int.from_bytes(out.raw,'big')
-        result=(value(n),value(actual_e),value(d));assert result[0].bit_length()==bits and result[1]==e
+        result=(bn_integer(n),bn_integer(actual_e),bn_integer(d));assert result[0].bit_length()==bits and result[1]==e
         return result
     finally:lib.BN_free(exponent);lib.RSA_free(rsa)
 
@@ -165,14 +185,32 @@ def response(block,action):
 
 def published():
     groups={}
-    for line in (ROOT/'nist-sha256.tsv').read_text().splitlines():
+    # The original NIST SigVer15 response file has three SHA256 Result=F
+    # records with odd hex: Msg at source line784, S at1204/1211. Keep the
+    # TSV verbatim, reject these exact source-format cases, and never invent
+    # a leading/trailing nibble to turn them into native byte-vector anchors.
+    malformed={
+        6:('message',255,'afb7368778d9a330128e0000e12c9233bebafea4363ec000db9063148ecaa1b2'),
+        15:('signature',511,'7d6f2a5ae4b015a08506e530290c86b3e112acdcb5fc7cf850657286c5132186'),
+        16:('signature',511,'39ab0b5cb41637ebb55b50568d468f76b9351e8c4029f5ffba755f1f08f3bca4'),
+    }
+    rejected_source=set();anchors=0
+    for row,line in enumerate((ROOT/'nist-sha256.tsv').read_text().splitlines(),1):
         if line.startswith('#'):continue
         scheme,bits,n,e,message,signature,result,salt=line.split('\t')
+        odd=[(name,len(value)) for name,value in [('message',message),('signature',signature)] if len(value)%2]
+        if odd:
+            assert row in malformed and int(result)==0 and scheme=='0' and bits=='2048'
+            name,length,digest=malformed[row]
+            assert odd==[(name,length)] and hashlib.sha256(line.encode()).hexdigest()==digest
+            rejected_source.add(row)
+            continue
         n,e,scheme=int(n,16),int(e),int(scheme);message,signature=bytes.fromhex(message),bytes.fromhex(signature)
         expected=bool(int(result)) and (not scheme or int(salt)==32)
         actual=openssl(n,e,message,signature,scheme)
         assert actual==expected,('NIST anchor',scheme,bits,result,salt)
-        key=(n,e);groups.setdefault(key,[]).append(Action(message,signature,scheme))
+        key=(n,e);groups.setdefault(key,[]).append(Action(message,signature,scheme));anchors+=1
+    assert rejected_source==set(malformed) and anchors==69
     blocks=[]
     for i,((n,e),actions) in enumerate(groups.items()):
         blocks.append(Block(n,e,format=i%3,layout=i%2,copied=i%3==0,actions=actions))

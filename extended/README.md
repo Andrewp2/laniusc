@@ -20,10 +20,13 @@ Declaration inventory does not establish execution or complete semantic docs.
 | Module | Working surface | Execution evidence |
 | --- | --- | --- |
 | [`ext::hmac_sha256`](ext/hmac_sha256.lani), [`ext::hkdf_sha256`](ext/hkdf_sha256.lani) | Incremental keyed MACs, extract/expand key derivation, explicit lifecycle and output limits, caller storage | x86_64 Linux; [RFC vectors, state ownership and failure contracts](../docs/extended-hmac-hkdf.md), [streaming key-derivation program](../docs/extended-derive-key.md) |
+| [`ext::hmac_sha384`](ext/hmac_sha384.lani), [`ext::hkdf_sha384`](ext/hkdf_sha384.lani) | Full 48-byte MACs and PRKs, streaming/reset, extract/expand through counter 255, explicit limits and caller output | x86_64 Linux; [930 independent commands and an ordinary composition program](../docs/extended-hmac-hkdf-sha384.md), including full output bytes, copied state, zero digest tails and atomic rejection. SHA-384 TLS integration remains separate. |
 | [`ext::chacha20_poly1305`](ext/chacha20_poly1305.lani) | IETF authenticated encryption/decryption with full tags, checked views and authenticate-before-output behavior | x86_64 Linux; [RFC vectors, independent models, mutation rejection and ordinary consumer](../docs/extended-chacha20-poly1305.md) |
 | [`ext::aes_gcm`](ext/aes_gcm.lani) | AES-128/192/256 GCM with general byte IVs, full detached tags, copied keys and authentication before plaintext writes | x86_64 Linux; [1,022 independent protocol commands and an ordinary consumer](../docs/extended-aes-gcm.md), including NIST vectors, counter wrap, mutations and bounds. [TLS records](../docs/extended-tls-record.md) separately admit AES-128-GCM/SHA-256. |
 | [`ext::x25519`](ext/x25519.lani) | Fixed-storage scalar multiplication, canonical coordinates and all-zero shared-result rejection | x86_64 Linux; [RFC vectors, libsodium/field models, encodings and iteration evidence](../docs/extended-x25519.md) |
+| [`ext::p256`](ext/p256.lani) | Fixed-storage SEC1 validation/conversion, public keys, raw ECDH and ECDSA/SHA-256 verification | x86_64 Linux; [1,288 protocol commands and an ordinary consumer](../docs/extended-p256.md), including NIST/RFC anchors, affine/OpenSSL comparisons, exceptional group cases and rejection behavior. TLS integration remains pending. |
 | [`ext::ed25519`](ext/ed25519.lani) | Deterministic pure Ed25519 keys/signatures, canonical encodings and explicit subgroup verification policy | x86_64 Linux; [all five focused native groups](../docs/extended-ed25519.md), including RFC vectors, independent signing, adversarial points and byte mutations |
+| [`ext::rsa`](ext/rsa.lani) | Bounded 2048–4096-bit public verification, SHA-256 PKCS#1 v1.5 and PSS with salt 32, strict RSAE keys/identifiers and explicit work budgets | x86_64 Linux; [620 protocol commands and an ordinary consumer](../docs/extended-rsa.md), including NIST/OpenSSL comparisons, the 2049-bit PSS boundary, padding/DER/metadata rejection and copied keys. Certificate/TLS integration remains separate. |
 | [`ext::der`](ext/der.lani) | Borrowed canonical TLV framing, typed values, checked cursors and atomic caller-buffer writes | x86_64 Linux; [1,824 model/certificate commands and an ordinary consumer](../docs/extended-der.md). Certificate schema and trust policy remain separate. |
 | [`ext::x509`](ext/x509.lani) | Borrowed certificate structure, Names, algorithms, selected extensions and shared parse/work budgets | x86_64 Linux; [690 model/OpenSSL commands and an ordinary consumer](../docs/extended-x509.md). Signature, path, identity, time and trust validation remain separate. |
 | [`ext::service_identity`](ext/service_identity.lani) | Explicit DNS/IP references, ASCII DNS/wildcard matching and complete SAN traversal with shared work budgets | x86_64 Linux; [1,592 protocol commands and an ordinary consumer](../docs/extended-service-identity.md). No CN fallback, implicit lookup or trust decision. |
@@ -34,6 +37,8 @@ Declaration inventory does not establish execution or complete semantic docs.
 | [`ext::tls_authentication`](ext/tls_authentication.lani) | Ordered server-flight path, CertificateVerify and Finished checks; copied peer key/transcript only after authentication; terminal failure latching | x86_64 Linux; [110 protocol cases, 340 state observations and an ordinary consumer](../docs/extended-tls-authentication.md), including source-buffer retirement, copies, retry/budget boundaries and a long chain. Authentication is one connection checkpoint; negotiation, record state, client-Finished transmission and transport remain. |
 | [`ext::tls_schedule`](ext/tls_schedule.lani), [`ext::tls_transcript`](ext/tls_transcript.lani) | Typed SHA-256 key schedule, Finished/exporter/resumption derivation, complete-frame transcripts and HRR rewriting | x86_64 Linux; [114 protocol commands, 460 transcript actions, 12 RFC anchors and an ordinary consumer](../docs/extended-tls-schedule.md). Callers must enforce real connection checkpoints. |
 | [`ext::tls_record`](ext/tls_record.lani) | TLS 1.3 AES-128-GCM/SHA-256 and ChaCha20-Poly1305/SHA-256 records with explicit suites, directional state and key-use limits | x86_64 Linux; [308 ChaCha and 220 AES protocol commands, plus two ordinary consumers](../docs/extended-tls-record.md), with zero allocations. [Compile-time and output-size comparison](../docs/library-foundation-performance.md#explicit-record-suites-and-aes-gcm-integration) records the added cost. Full TLS connections remain separate work. |
+| [`ext::tls_connection`](ext/tls_connection.lani) | Portable client/server handshake and record engine with authenticated checkpoints, pending-output acknowledgments, KeyUpdate, half-close and hard quotas | x86_64 Linux; [paired handshakes, fragmentation/retry and control boundaries](../docs/extended-tls-connection.md). Accepted profile is X25519/Ed25519/SHA-256; the P-256 group migration is in progress. |
+| [`ext::tls_tcp`](ext/tls_tcp.lani) | Owned nonblocking TCP adapter with shared host budgets, observed deadlines, bounded entropy and explicit cleanup | x86_64 Linux; [63 native transport cases](../docs/extended-tls-tcp.md), including actual OpenSSL peers, 1 MiB pressure streams, owner/fault paths and resumption; [74 exchange-program cases](../docs/extended-tls-exchange.md). Broader algorithms and PKIX remain work. |
 | [`ext::csv`](ext/csv.lani) | Incremental UTF-8 decoding, reusable packed records, whole tables, borrowed/copied fields and canonical encoding | x86_64 Linux; [contracts and tests](../docs/extended-csv.md) |
 | [`ext::json`](ext/json.lani) | Parse/build owned documents, query nodes, encode compact JSON with exact number text | x86_64 Linux; [contracts and tests](../docs/extended-json.md) |
 | [`ext::cli`](ext/cli.lani) | Borrowed raw-byte argument parser, short groups, exact long names, required/optional values and structured errors | x86_64 Linux; [contracts and tests](../docs/extended-cli.md) |
@@ -90,17 +95,19 @@ The [seal-bytes application](../docs/extended-seal-bytes.md) passes 137 native
 cases, including allocation/I/O failures, full 1 MiB seal/open and shared
 call-budget checks. The
 [pinned compiler comparison](../docs/library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
-records measured crypto and large-library workloads and their limits. Full TLS
-connections still require handshake negotiation, certificates, peer
-authentication, trust policy and transport integration.
+records measured crypto and large-library workloads and their limits. The
+portable connection and TCP adapter now have separate evidence above; their
+restricted algorithm and trust profile does not establish general TLS/PKIX
+interoperability.
 
 The [signing application](../docs/extended-sign-bytes.md) passes 128 native
 cases, including full 1 MiB sign/verify and resource/I/O failures. The
 [composed authentication flight](../docs/extended-tls-auth-foundation.md) passes
 18 cases and 720 output fields across both layouts and eight tamper scenarios.
 It verifies a real certificate's self-signature and authentication checkpoints
-inside a fixed fixture; chain/identity/time/constraint trust and a reusable
-connection state machine remain separate work.
+inside a fixed fixture. The later [ordered-path](../docs/extended-x509-path.md)
+and [connection](../docs/extended-tls-connection.md) gates separately exercise
+their documented trust and reusable state-machine profiles.
 The [certificate inspector](../docs/extended-certificate-info.md) passes 50
 native cases for parsed metadata, complete reports, failures and resource caps.
 

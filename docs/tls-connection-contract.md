@@ -44,8 +44,11 @@ and RSA-PKCS1/SHA-256 certificate verification. AES, AES-GCM and explicit
 AES-128-GCM/SHA-256 record integration now have native admission.
 [P-256 public keys, ECDH and ECDSA/SHA-256 verification](extended-p256.md)
 also pass their independent native gates, but group negotiation and
-certificate/CertificateVerify integration remain. RSA verification is still
-missing. The SHA-256 and SHA-384 hashes themselves already exist.
+certificate/CertificateVerify integration remain.
+[Bounded RSA verification](extended-rsa.md) now passes independent native
+gates for RSAE keys and SHA-256 PKCS#1/PSS signatures; certificate and
+CertificateVerify integration remain. The SHA-256 and SHA-384 hashes and
+[SHA-384 HMAC/HKDF](extended-hmac-hkdf-sha384.md) also execute.
 AES-256-GCM/SHA-384 and X25519
 also have the RFC's recommended status; supporting X25519/ChaCha/Ed25519 does
 not satisfy the mandatory set. The [section 9.2 extension requirements](https://www.rfc-editor.org/rfc/rfc8446.html#section-9.2)

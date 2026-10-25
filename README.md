@@ -82,6 +82,13 @@ all six algorithms with explicit input and I/O limits.
 [P-256](docs/extended-p256.md) also passes 1,288 independent protocol cases
 for SEC1 public keys, ECDH and ECDSA/SHA-256 verification, plus an ordinary
 consumer, without allocation. Its TLS integration remains separate work.
+[HMAC/HKDF-SHA-384](docs/extended-hmac-hkdf-sha384.md) passes 930 protocol
+commands and an ordinary composition program, including streaming/reset,
+copied state and full output through HKDF counter 255.
+[RSA public verification](docs/extended-rsa.md) passes 620 protocol commands
+and an ordinary consumer for its explicit SHA-256 PKCS#1/PSS profile,
+including the 2049-bit PSS boundary. Both foundations execute without allocation;
+their TLS/certificate integrations remain separate work.
 [AES-128/192/256](docs/core-aes.md) and
 [AES-GCM](docs/extended-aes-gcm.md) also execute without allocation, with
 independent block/AEAD models and authentication-before-output checks.
@@ -121,7 +128,7 @@ The [seal-bytes program](docs/extended-seal-bytes.md) passes 137 native cases,
 including allocation/I/O failures and the full 1 MiB boundary. The
 [pinned compiler comparison](docs/library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
 records the measured crypto and large-library workloads. These connections use
-the explicit X25519/Ed25519/SHA-256 profile; P-256/ECDSA integration, RSA and
+the explicit X25519/Ed25519/SHA-256 profile; P-256/ECDSA and RSA integration and
 broader PKIX support remain part of the full TLS work.
 
 Optional modules use the [`extended` source root](extended/README.md).
