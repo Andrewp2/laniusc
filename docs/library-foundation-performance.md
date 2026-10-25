@@ -784,3 +784,77 @@ compiler/oracle time excluded. These case observations do not isolate cipher
 throughput. Supported execution remains x86_64 Linux output from GPU
 compilation; complete TLS handshake, authentication and trust support remain
 unfinished.
+
+## Explicit record suites and AES-GCM integration
+
+The record layer now selects AES-128-GCM/SHA-256 or ChaCha20-Poly1305/SHA-256
+explicitly. The existing authentication workload still selects ChaCha and
+produces exactly the same 448 output bytes. Its reachable record implementation
+now includes the AES branch and cached key state. The source entry changes only
+to pass the explicit ChaCha suite to the two factories.
+
+This comparison uses the existing `stdlib_gpu_perf` harness and one current
+GPU compiler binary for both source variants. The baseline is the minimal
+38-file import closure read from commit `71931920`, checked against the prior
+manifest, and materialized in ignored local storage. No compiler, shader,
+runtime, IR, ABI or proof source changes are part of this integration.
+
+Runs used baseline/current/current/baseline ordering. Each invocation warmed
+once and measured three private entry rebuilds with cached imports. Every
+emitted program executed outside the compiler timer and passed exit-zero,
+empty-stderr and exact-output checks: **16 ELFs total**, including warmups.
+
+| Source variant | Six measured samples (ms) | Median (ms) | Range (ms) | ELF bytes |
+| --- | --- | ---: | --- | ---: |
+| `71931920` records | 581.492, 540.956, 530.009, 562.197, 538.721, 525.779 | 539.839 | 525.779–581.492 | 1,730,688 |
+| Explicit suites with AES | 595.380, 530.895, 546.298, 593.875, 564.060, 559.897 | 561.979 | 530.895–595.380 | 2,363,822 |
+
+The warmed compilation median is **4.1% higher** in this run. Output grows
+by **633,134 bytes (36.6%)**. These observations include the cost of additional
+reachable implementation and state; they do not isolate a compiler regression.
+Desktop load, GPU clocks and temperature were uncontrolled, and the sample
+ranges overlap. This is no claim of unchanged cost, a causal speed difference,
+AES throughput, or a ratio against another compiler. The historical large
+workload comparison above has not been rerun: no compiler implementation
+changed in this milestone.
+
+| Input inventory | Baseline | Current |
+| --- | ---: | ---: |
+| Source files, including entry | 38 | 40 |
+| Source bytes | 462,661 | 482,860 |
+| Closure SHA-256 | `380a9347e1265dbec9127cbfd18a855ba95ac79f82d4d7b2a64fbe680679b209` | `51efb137bb1113982b8c8abe8c1dbb3893831c46f77339ab2c994834b1076fb4` |
+
+The added imports are `core::aes` and `ext::aes_gcm`; changed common files
+are `ext::tls_record` and the entry. The sorted manifest format remains
+`SHA256`, two spaces, decimal byte length, two spaces, repository-relative
+path and newline. The expected output SHA-256 remains
+`e833f50ab084aa24a19d34a2cdacff813e3bba7325947ac8c75b9de959a33223`.
+The harness binary SHA-256 remains
+`409ed38f75eb0df04abeec8488b6ae1a99d080ae0b92fd5903aafb09af58ea66`;
+its fresh build check took 0.19 s.
+
+The current-source command was run twice:
+
+```sh
+RUST_MIN_STACK=16777216 LANIUS_PERF_REBUILD_ENTRY=1 \
+  timeout --kill-after=2s 100s \
+  flock -E 75 -w 35 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 60s \
+  target/stdlib-build/debug/examples/stdlib_gpu_perf \
+  tests/fixtures/extended/tls_auth_perf/consumer.lani stdlib \
+  tests/fixtures/extended/tls_auth_perf/expected.bin 1 3 extended
+```
+
+Baseline invocations used the same command with entry, stdlib root, expected
+file and extended root prefixed by
+`target/stdlib-work/tls-connection-admission/baseline-71931920/`.
+Ignored evidence in `target/stdlib-work/tls-connection-admission/` includes
+`perf-{baseline,current}-{1,2}.log`, both input manifests and closure hashes,
+`perf-comparison.json`, and `build-perf.log`. The baseline materialization is
+under 0.5 MiB of source and contains no build output.
+
+Correctness evidence is separate: the unchanged 308-command ChaCha regression
+and 220-command AES oracle, each with an ordinary consumer, passed their
+[record admission](extended-tls-record.md#suiteaes-integration-admission).
+Supported execution remains x86_64 Linux native output from GPU compilation;
+user GPU kernels and other execution targets remain unverified.

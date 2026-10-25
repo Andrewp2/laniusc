@@ -15,14 +15,15 @@ in Lanius; OpenSSL is an independent test peer.
 | [tls_handshake](../extended/ext/tls_handshake.lani), [tls_framing](../extended/ext/tls_framing.lani) | Validate message/extension meaning, ordering, fragmentation and key-change boundaries. Framing returns borrowed storage and partial consumed counts. |
 | [x509_path](../extended/ext/x509_path.lani), [service_identity](../extended/ext/service_identity.lani), [x509](../extended/ext/x509.lani), [Ed25519](../extended/ext/ed25519.lani) | Use the admitted explicit-anchor ordered Ed25519/offline profile, then enforce proof of possession. Extend normalized names, path building, name constraints, certificate policies and revocation before claiming general PKIX support. Parsing alone establishes no trust decision. |
 | [tls_authentication](../extended/ext/tls_authentication.lani) | Reuse the admitted EE/Certificate/CV/Finished server-authentication checkpoint. The engine must validate CH/SH and EE negotiation, bind traffic secrets/epochs, and commit client Finished before releasing application data. |
-| [AES](../stdlib/core/aes.lani), [AES-GCM](../extended/ext/aes_gcm.lani) | Integrate admitted block/AEAD primitives into TLS cipher-suite record state and key derivation. Current record owners still use ChaCha20-Poly1305. |
+| [AES](../stdlib/core/aes.lani), [AES-GCM](../extended/ext/aes_gcm.lani) | The record layer now admits explicit AES-128-GCM/SHA-256 and ChaCha20-Poly1305/SHA-256 suites. The connection must negotiate one, preserve it through key updates, and honor directional key-use limits. |
 | [std::socket](../stdlib/std/socket.lani), [std::poll](../stdlib/std/poll.lani), [core::io](../stdlib/core/io.lani) | Own transport lifetime, retained partial records, bounded progress and deadlines. TCP lives in `std::socket`; `std::net` is legacy host-ABI surface. |
 | [std::entropy](../stdlib/std/entropy.lani), [std::random](../stdlib/std/random.lani), [std::clock](../stdlib/std/clock.lani), [calendar](../stdlib/core/calendar.lani) | Bound entropy attempts, separate monotonic deadlines from certificate wall time, and propagate every host failure. |
 
 ## First executable profile and the full TLS requirement
 
 The first connected profile is TLS 1.3, X25519, Ed25519 certificate signatures
-and CertificateVerify, `TLS_CHACHA20_POLY1305_SHA256`, server authentication,
+and CertificateVerify, `TLS_AES_128_GCM_SHA256` and
+`TLS_CHACHA20_POLY1305_SHA256`, server authentication,
 and explicit application-supplied trust anchors. Its client and server must
 exchange real application bytes with independently configured OpenSSL peers.
 No PSK resumption, 0-RTT, mutual/client certificate authentication or
@@ -34,9 +35,9 @@ The proposed profile covers a subset of general TLS interoperability.
 [RFC 8446 section 9.1](https://www.rfc-editor.org/rfc/rfc8446.html#section-9.1)
 requires, absent a different application profile standard, AES-128-GCM/SHA-256,
 P-256 key exchange, RSA-PSS/RSAE/SHA-256 and ECDSA/P-256/SHA-256 signatures,
-and RSA-PKCS1/SHA-256 certificate verification. AES and AES-GCM now have native
-admission, but TLS record integration is still missing; P-256, RSA and ECDSA
-primitives and their certificate integrations are missing. The SHA-256 and
+and RSA-PKCS1/SHA-256 certificate verification. AES, AES-GCM and explicit
+AES-128-GCM/SHA-256 record integration now have native admission; P-256,
+RSA and ECDSA primitives and their certificate integrations are missing. The SHA-256 and
 SHA-384 hashes themselves already exist. AES-256-GCM/SHA-384 and X25519
 also have the RFC's recommended status; supporting X25519/ChaCha/Ed25519 does
 not satisfy the mandatory set. The [section 9.2 extension requirements](https://www.rfc-editor.org/rfc/rfc8446.html#section-9.2)
@@ -91,7 +92,7 @@ SH, encrypted EE/Certificate/CV/Finished, then verify client Finished before
 publishing client data or accepting application writes. Its default peer is
 **anonymous client**, not an authenticated client identity. A future mutual-TLS
 mode must require and validate the client's Certificate and CV before Finished.
-Check version `0304`, group `001d` with a 32-byte X25519 share, suite `1303`
+Check version `0304`, group `001d` with a 32-byte X25519 share, suite `1301` or `1303`
 and offered Ed25519 scheme `0807`, including certificate-signature offers when
 present. ALPN must select one offered protocol; a required absent/mismatched
 selection fails. DNS SNI and the expected certificate identity remain distinct

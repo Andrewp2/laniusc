@@ -62,11 +62,11 @@ consumers [migrated to checked APIs](../docs/stdlib-legacy-collections.md).
 The optional [extended library](../extended/README.md) adds accepted
 [ChaCha20-Poly1305](../docs/extended-chacha20-poly1305.md) and
 [X25519](../docs/extended-x25519.md) primitives. The
-[TLS record layer](../docs/extended-tls-record.md) passes its ordinary consumer
-and 308 protocol commands after a
-[host capacity repair](../docs/tls-record-lowering-dependency.md). Full TLS
-handshake, certificates, peer authentication, trust policy and transport
-integration remain separate work. The
+[TLS record layer](../docs/extended-tls-record.md) supports explicit
+AES-128-GCM/SHA-256 and ChaCha20-Poly1305/SHA-256 suites. Its two ordinary
+consumers and 528 protocol commands execute without allocation. Certificate
+path and server-flight authentication have their own focused evidence;
+negotiated TLS connections and transport integration remain work. The
 [pinned compiler comparison](../docs/library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
 records measured crypto and large-library workloads and their limits.
 
