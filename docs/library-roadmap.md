@@ -382,27 +382,51 @@ other remaining families above still need their own executable evidence.
 ## Current work
 
 - Branch: `codex/stdlib`, based on `441e66f9`.
-- Authentication foundation checkpoint: the shared-label record regression
-  passes all 308 protocol commands. Schedule/transcript admission passes 114
-  unique protocol commands, 460 transcript actions and 12 RFC anchors; the
-  initial malformed RFC anchor in the test driver was corrected before its
-  focused rerun passed. Ed25519's ordinary consumer, all five pure RFC vectors
-  and deterministic libsodium model pass. Its subgroup/malleability and
-  mutation/bounds groups remain pending. DER, handshake codecs, `sign_bytes`
-  and the composed authentication flight are checked in with runtime admission
-  pending. The composed flight also needs final source review. This checkpoint
-  does not establish a usable TLS connection or complete the library goal.
-- Next TLS layer: executable SHA-256 transcript/key-schedule operations,
-  borrowed handshake message codecs, pure Ed25519 signatures and DER parsing
-  for certificate processing. These stay separate from record state and host
-  transport. Record keys and updates will share the checked label encoder with
-  the schedule. Admission requires independent byte/state models and a real
-  sign/verify program; these additions do not establish a TLS connection.
-  Connection work still requires handshake ordering and fragmentation,
-  certificate chain/identity/time/constraint policy, CertificateVerify and
-  Finished checkpoints, partial transport progress, alerts and closure. Other
-  cipher/signature suites, resumption and early-data policy remain part of the
-  broader TLS work.
+- Authentication foundation: all five [Ed25519](extended-ed25519.md) groups
+  pass, including pure RFC vectors, independent signing, subgroup/scalar
+  boundaries, valid identity nonces and component-byte mutations.
+  [DER](extended-der.md) passes an ordinary consumer and 1,824 model/certificate
+  commands; [handshake codecs](extended-tls-handshake.md) pass an ordinary
+  consumer and 1,396 commands. The [schedule/transcript](extended-tls-schedule.md)
+  passes 114 unique commands, 460 transcript actions and 12 RFC anchors across
+  its documented invocations; its corrected test-anchor history is retained.
+  Record keys and updates share the checked label encoder, with the unchanged
+  308-command record regression passing. The
+  [signing program](extended-sign-bytes.md) passes 128 native cases, including
+  full 1 MiB sign/verify, owner/I/O failures and call-budget limits. The
+  [composed TLS authentication flight](extended-tls-auth-foundation.md) passes
+  18 cases and 720 output fields, including eight tamper scenarios in both
+  layouts, after independent source/oracle review. All are x86_64 Linux native
+  execution through the GPU compiler; user GPU kernels remain unverified.
+- Certificate structure and incremental framing: [X.509](extended-x509.md)
+  passes its ordinary consumer and 690 model/OpenSSL commands across Ed25519,
+  RSA and ECDSA certificate structures. Its shared budget bounds TLV attempts,
+  successful items, comparisons and cursor/helper work; malformed headers spend
+  budget too. [Framing](extended-tls-framing.md) passes 7,760 state-model
+  actions, an ordinary consumer and the full 16,777,215-byte handshake body.
+  The full-size fixture owns one explicitly accounted allocation; the smaller
+  framing/model processes allocate nothing. The
+  [certificate inspector](extended-certificate-info.md) passes 50 native cases
+  for metadata/schema inspection, complete report publication, allocation/I/O
+  failures, EOF, byte/work/output caps and shared call-budget exhaustion. Its
+  guide preserves the corrected closed-pipe test-harness failure separately.
+- [Bounded nonblocking entropy](stdlib-entropy-bounded.md) passes all four
+  focused groups across its documented admission invocations. New operations
+  use one charged `getrandom(GRND_NONBLOCK)` attempt per read, preserve completed
+  prefixes and expose EAGAIN without spinning. The exact-fill helper retries
+  only EINTR within a shared attempt budget. Existing entropy entry points
+  retain their documented behavior; a connection still checks its own deadline
+  between individual attempts.
+- Next TLS layer: certificate path/identity/time/constraint policy, followed by
+  connection ordering and bounded transport integration, as specified in the
+  [connection contract](tls-connection-contract.md). The accepted
+  flight supplies receiver secrets directly and checks a real certificate's
+  self-signature as a primitive; it does not implement certificate
+  chain/identity/time/constraint trust policy. A connection must enforce
+  CertificateVerify and Finished at its own checkpoints, partial I/O progress,
+  alerts and closure. Other cipher/signature suites, resumption and early-data
+  policy remain part of the broader TLS work. The complete library goal still
+  includes threads, SQLite and the other families above.
 - Current crypto checkpoint: [IETF ChaCha20](stdlib-chacha20.md),
   [Poly1305](stdlib-poly1305.md), their
   [authenticated-encryption construction](extended-chacha20-poly1305.md) and

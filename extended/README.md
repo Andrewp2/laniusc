@@ -22,6 +22,12 @@ Declaration inventory does not establish execution or complete semantic docs.
 | [`ext::hmac_sha256`](ext/hmac_sha256.lani), [`ext::hkdf_sha256`](ext/hkdf_sha256.lani) | Incremental keyed MACs, extract/expand key derivation, explicit lifecycle and output limits, caller storage | x86_64 Linux; [RFC vectors, state ownership and failure contracts](../docs/extended-hmac-hkdf.md), [streaming key-derivation program](../docs/extended-derive-key.md) |
 | [`ext::chacha20_poly1305`](ext/chacha20_poly1305.lani) | IETF authenticated encryption/decryption with full tags, checked views and authenticate-before-output behavior | x86_64 Linux; [RFC vectors, independent models, mutation rejection and ordinary consumer](../docs/extended-chacha20-poly1305.md) |
 | [`ext::x25519`](ext/x25519.lani) | Fixed-storage scalar multiplication, canonical coordinates and all-zero shared-result rejection | x86_64 Linux; [RFC vectors, libsodium/field models, encodings and iteration evidence](../docs/extended-x25519.md) |
+| [`ext::ed25519`](ext/ed25519.lani) | Deterministic pure Ed25519 keys/signatures, canonical encodings and explicit subgroup verification policy | x86_64 Linux; [all five focused native groups](../docs/extended-ed25519.md), including RFC vectors, independent signing, adversarial points and byte mutations |
+| [`ext::der`](ext/der.lani) | Borrowed canonical TLV framing, typed values, checked cursors and atomic caller-buffer writes | x86_64 Linux; [1,824 model/certificate commands and an ordinary consumer](../docs/extended-der.md). Certificate schema and trust policy remain separate. |
+| [`ext::x509`](ext/x509.lani) | Borrowed certificate structure, Names, algorithms, selected extensions and shared parse/work budgets | x86_64 Linux; [690 model/OpenSSL commands and an ordinary consumer](../docs/extended-x509.md). Signature, path, identity, time and trust validation remain separate. |
+| [`ext::tls_framing`](ext/tls_framing.lani) | Caller-backed incremental record/handshake framing, exact consumed prefixes, backpressure and poisoned-state recovery | x86_64 Linux; [7,760 model actions, an ordinary consumer and the full 16,777,215-byte handshake body](../docs/extended-tls-framing.md). Framing retains opaque types/versions; connection policy owns their legality. |
+| [`ext::tls_handshake`](ext/tls_handshake.lani) | Borrowed TLS 1.3 frames, typed body codecs and shared iterator cursors | x86_64 Linux; [1,396 model commands and an ordinary consumer](../docs/extended-tls-handshake.md). Negotiation, connection ordering and authentication policy remain separate. |
+| [`ext::tls_schedule`](ext/tls_schedule.lani), [`ext::tls_transcript`](ext/tls_transcript.lani) | Typed SHA-256 key schedule, Finished/exporter/resumption derivation, complete-frame transcripts and HRR rewriting | x86_64 Linux; [114 protocol commands, 460 transcript actions, 12 RFC anchors and an ordinary consumer](../docs/extended-tls-schedule.md). Callers must enforce real connection checkpoints. |
 | [`ext::tls_record`](ext/tls_record.lani) | TLS 1.3 ChaCha20-Poly1305 record protection with directional state | x86_64 Linux; [ordinary consumer and 308 protocol commands](../docs/extended-tls-record.md), with zero allocations, after a [host capacity repair](../docs/tls-record-lowering-dependency.md). Full TLS connections remain separate work. |
 | [`ext::csv`](ext/csv.lani) | Incremental UTF-8 decoding, reusable packed records, whole tables, borrowed/copied fields and canonical encoding | x86_64 Linux; [contracts and tests](../docs/extended-csv.md) |
 | [`ext::json`](ext/json.lani) | Parse/build owned documents, query nodes, encode compact JSON with exact number text | x86_64 Linux; [contracts and tests](../docs/extended-json.md) |
@@ -82,6 +88,16 @@ call-budget checks. The
 records measured crypto and large-library workloads and their limits. Full TLS
 connections still require handshake negotiation, certificates, peer
 authentication, trust policy and transport integration.
+
+The [signing application](../docs/extended-sign-bytes.md) passes 128 native
+cases, including full 1 MiB sign/verify and resource/I/O failures. The
+[composed authentication flight](../docs/extended-tls-auth-foundation.md) passes
+18 cases and 720 output fields across both layouts and eight tamper scenarios.
+It verifies a real certificate's self-signature and authentication checkpoints
+inside a fixed fixture; chain/identity/time/constraint trust and a reusable
+connection state machine remain separate work.
+The [certificate inspector](../docs/extended-certificate-info.md) passes 50
+native cases for parsed metadata, complete reports, failures and resource caps.
 
 Generated Unicode table modules are implementation data rather than separate
 APIs. Their source versions and regeneration commands are recorded by the

@@ -722,6 +722,61 @@ Ignored local evidence in that directory includes `pinned-perf-inputs.json`,
 `perf-pinned-*.log` files. Earlier exploratory timing logs span a shader
 artifact refresh and are excluded from the paired comparison.
 
+## TLS authentication foundation workload
+
+The existing `stdlib_gpu_perf` harness measured the
+[authentication consumer](../tests/fixtures/extended/tls_auth_perf/consumer.lani)
+with one warmup and three measured private entry rebuilds. It executes
+Ed25519 key derivation/signing/verification over RFC 8032's 1,023-byte vector,
+long-form DER encoding/parsing, typed hello/Finished codecs, transcript and
+schedule/exporter/resumption operations, and record seal/open/key update.
+This is a composition workload; it supplies a known X25519 shared secret and
+does not establish certificate trust or implement a full TLS connection.
+
+Every emitted ELF, including the warmup, executed outside the compiler timer.
+All four passed exit-zero, empty-stderr and exact 448-byte stdout checks.
+The expected bytes combine RFC key/signature anchors with independently
+computed Python `hashlib`/`hmac` hashes and derivations.
+
+| Samples (ms) | Median (ms) | Range (ms) | ELF bytes |
+| --- | ---: | --- | ---: |
+| 518.766, 499.617, 492.971 | 499.617 | 492.971–518.766 | 1,730,688 |
+
+The explicit source import closure contains 38 files and 462,661 bytes,
+including the entry. Its SHA-256 is
+`380a9347e1265dbec9127cbfd18a855ba95ac79f82d4d7b2a64fbe680679b209`,
+using the sorted manifest format described above. Expected stdout SHA-256 is
+`e833f50ab084aa24a19d34a2cdacff813e3bba7325947ac8c75b9de959a33223`.
+The freshly built harness has SHA-256
+`409ed38f75eb0df04abeec8488b6ae1a99d080ae0b92fd5903aafb09af58ea66`;
+its build took 0.21 s. No compiler, shader, runtime, IR, ABI or proof source
+changed for this library milestone.
+
+```sh
+RUST_MIN_STACK=16777216 LANIUS_PERF_REBUILD_ENTRY=1 \
+  timeout --kill-after=2s 100s \
+  flock -E 75 -w 35 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 60s \
+  target/stdlib-build/debug/examples/stdlib_gpu_perf \
+  tests/fixtures/extended/tls_auth_perf/consumer.lani stdlib \
+  tests/fixtures/extended/tls_auth_perf/expected.bin 1 3 extended
+```
+
+These are current warmed compiler measurements with entry rebuilding and
+cached imports. Desktop load, clocks and temperature were uncontrolled.
+There is no paired baseline for this new workload, no isolated primitive
+throughput measurement, and no cross-compiler performance ratio claim.
+The signing application's required 1 MiB native cases separately took
+251.021 ms for signing and 222.686 ms for verification, including setup,
+`strace`, native startup and trace parsing, while excluding compilation and
+oracle time. Those are full case wall times, not isolated Ed25519 throughput.
+
+Ignored evidence is in `target/stdlib-work/tls-auth-admission/`:
+`build-perf-auth.log`, `perf-current-auth.log`,
+`perf-current-auth-inputs.json`, `perf-current-auth-closure.sha256` and
+`sign-scale.log`. Supported execution remains x86_64 Linux native output
+from the GPU compiler; user GPU kernels and other targets are unverified.
+
 Separately, the [authenticated-byte application](extended-seal-bytes.md) passed
 137 native cases. Its successful 1 MiB seal/open cases took 333.164/329.238 ms,
 including input-file setup, strace, native startup and trace parsing, with

@@ -11,6 +11,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [extended-tls-handshake](../../extended-tls-handshake.md)
+- [extended-tls-auth-foundation](../../extended-tls-auth-foundation.md)
 
 Declaration counts: constant: 11; enum: 1; field: 42; function: 30; impl: 9; method: 13; struct: 16; variant: 8.
 

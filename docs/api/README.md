@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **233 modules**, **10175 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **235 modules**, **10380 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -132,7 +132,7 @@ Inventory: **233 modules**, **10175 declaration/member entries**. Counts include
 | [std::command](std/command.md) | [source](../../stdlib/std/command.lani#L3) | 107 | Source inventory | [stdlib-command](../stdlib-command.md) |
 | [std::command_capture](std/command_capture.md) | [source](../../stdlib/std/command_capture.lani#L3) | 83 | Source inventory | [stdlib-command-capture](../stdlib-command-capture.md) |
 | [std::directory](std/directory.md) | [source](../../stdlib/std/directory.lani#L2) | 63 | Source inventory | [stdlib-directory](../stdlib-directory.md) |
-| [std::entropy](std/entropy.md) | [source](../../stdlib/std/entropy.lani#L2) | 9 | Source inventory | [stdlib-randomness](../stdlib-randomness.md) |
+| [std::entropy](std/entropy.md) | [source](../../stdlib/std/entropy.lani#L2) | 26 | Source inventory | [stdlib-randomness](../stdlib-randomness.md), [stdlib-entropy-bounded](../stdlib-entropy-bounded.md) |
 | [std::env](std/env.md) | [source](../../stdlib/std/env.lani#L3) | 78 | Source inventory | [stdlib-process-context](../stdlib-process-context.md) |
 | [std::env_checked](std/env_checked.md) | [source](../../stdlib/std/env_checked.lani#L2) | 3 | Source inventory | [stdlib-process-context](../stdlib-process-context.md) |
 | [std::file](std/file.md) | [source](../../stdlib/std/file.lani#L7) | 44 | Source inventory | [stdlib-files](../stdlib-files.md) |
@@ -237,7 +237,8 @@ Inventory: **233 modules**, **10175 declaration/member entries**. Counts include
 | [ext::tar](ext/tar.md) | [source](../../extended/ext/tar.lani#L3) | 81 | Source inventory | [extended-tar](../extended-tar.md) |
 | [ext::terminal](ext/terminal.md) | [source](../../extended/ext/terminal.lani#L3) | 15 | Source inventory | [extended-terminal](../extended-terminal.md) |
 | [ext::timezone](ext/timezone.md) | [source](../../extended/ext/timezone.lani#L3) | 80 | Source inventory | [extended-timezone](../extended-timezone.md) |
-| [ext::tls_handshake](ext/tls_handshake.md) | [source](../../extended/ext/tls_handshake.lani#L3) | 130 | Source inventory | [extended-tls-handshake](../extended-tls-handshake.md) |
+| [ext::tls_framing](ext/tls_framing.md) | [source](../../extended/ext/tls_framing.lani#L3) | 47 | Source inventory | [extended-tls-framing](../extended-tls-framing.md) |
+| [ext::tls_handshake](ext/tls_handshake.md) | [source](../../extended/ext/tls_handshake.lani#L3) | 130 | Source inventory | [extended-tls-handshake](../extended-tls-handshake.md), [extended-tls-auth-foundation](../extended-tls-auth-foundation.md) |
 | [ext::tls_record](ext/tls_record.md) | [source](../../extended/ext/tls_record.lani#L4) | 40 | Source inventory | [extended-tls-record](../extended-tls-record.md) |
 | [ext::tls_schedule](ext/tls_schedule.md) | [source](../../extended/ext/tls_schedule.lani#L2) | 57 | Source inventory | [extended-tls-schedule](../extended-tls-schedule.md) |
 | [ext::tls_transcript](ext/tls_transcript.md) | [source](../../extended/ext/tls_transcript.lani#L2) | 20 | Source inventory | [extended-tls-schedule](../extended-tls-schedule.md) |
@@ -254,6 +255,7 @@ Inventory: **233 modules**, **10175 declaration/member entries**. Counts include
 | [ext::wave](ext/wave.md) | [source](../../extended/ext/wave.lani#L2) | 38 | Source inventory | [extended-wave](../extended-wave.md) |
 | [ext::websocket](ext/websocket.md) | [source](../../extended/ext/websocket.lani#L3) | 82 | Source inventory | [extended-websocket](../extended-websocket.md) |
 | [ext::x25519](ext/x25519.md) | [source](../../extended/ext/x25519.lani#L3) | 9 | Source inventory | [extended-x25519](../extended-x25519.md) |
+| [ext::x509](ext/x509.md) | [source](../../extended/ext/x509.lani#L3) | 141 | Source inventory | [extended-x509](../extended-x509.md), [extended-certificate-info](../extended-certificate-info.md) |
 | [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 80 | Source inventory | [extended-zip](../extended-zip.md) |
 
 ## Support and implementation data

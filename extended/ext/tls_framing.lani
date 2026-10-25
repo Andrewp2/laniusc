@@ -1,0 +1,111 @@
+// Incremental wire framing only: RFC8446 sections4 and5.1/5.2.
+// Unknown kinds/types/versions remain opaque for higher layers to validate.
+module ext::tls_framing;
+import core::result;
+import core::slice;
+
+pub enum Error { Bounds, InvalidLimit, BufferTooSmall, Ready, NotReady, TooLarge, Poisoned }
+pub struct Progress { consumed: i32, ready: bool }
+pub struct FeedFailure { cause: Error, consumed: i32 }
+pub struct RecordFrame { wire: core::slice::View<u8>, payload: core::slice::View<u8>, content_type: u8, legacy_version: u16 }
+pub struct HandshakeFrame { wire: core::slice::View<u8>, body: core::slice::View<u8>, kind: u8 }
+// Use constructors/methods. State copies copy metadata and alias storage; they
+// do not provide independent writable streams. Fields are not a resume format.
+struct Core { storage: core::slice::View<u8>, max_body: i32, header: i32, length_bytes: i32, used: i32, total: i32, ready: bool, poisoned: bool }
+pub struct RecordDecoder { core: Core }
+pub struct HandshakeDecoder { core: Core }
+fn valid(value: core::slice::View<u8>) -> bool { return value.start >= 0 && value.length >= 0 && value.start <= 2147483647-value.length; }
+fn region(value: core::slice::View<u8>, at: i32, length: i32) -> core::slice::View<u8> { return core::slice::View { values: value.values, start: value.start+at, length: length }; }
+fn make(storage: core::slice::View<u8>, max_body: i32, header: i32, length_bytes: i32, domain: i32) -> core::result::Result<Core, Error> {
+    if (!valid(storage)) { return core::result::Err(Error::Bounds); }
+    if (max_body < 0 || max_body > domain) { return core::result::Err(Error::InvalidLimit); }
+    // Both wire domains fit i32 together with their fixed header. This check
+    // remains explicit before adding the caller's configured limit.
+    if (max_body > 2147483647-header) { return core::result::Err(Error::InvalidLimit); }
+    if (storage.length < header+max_body) { return core::result::Err(Error::BufferTooSmall); }
+    return core::result::Ok(Core { storage: storage, max_body: max_body, header: header, length_bytes: length_bytes, used: 0, total: 0, ready: false, poisoned: false });
+}
+pub fn record_decoder(storage: core::slice::View<u8>, max_body: i32) -> core::result::Result<RecordDecoder, Error> {
+    let made: core::result::Result<Core, Error> = make(storage,max_body,5,2,65535);
+    if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
+    return core::result::Ok(RecordDecoder { core: made.unwrap() });
+}
+pub fn handshake_decoder(storage: core::slice::View<u8>, max_body: i32) -> core::result::Result<HandshakeDecoder, Error> {
+    let made: core::result::Result<Core, Error> = make(storage,max_body,4,3,16777215);
+    if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
+    return core::result::Ok(HandshakeDecoder { core: made.unwrap() });
+}
+fn failure(cause: Error, consumed: i32) -> core::result::Result<Progress, FeedFailure> { return core::result::Err(FeedFailure { cause: cause, consumed: consumed }); }
+impl Core {
+    // Input/storage/self need physical backing and must be mutually disjoint.
+    // Bounds rejection precedes state checks and leaves metadata/storage intact.
+    fn feed(&self, input: core::slice::View<u8>) -> core::result::Result<Progress, FeedFailure> {
+        if (!valid(input)) { return failure(Error::Bounds,0); }
+        if (self.poisoned) { return failure(Error::Poisoned,0); }
+        if (self.ready) { return failure(Error::Ready,0); }
+        let consumed: i32 = 0;
+        while (self.used < self.header && consumed < input.length) {
+            self.storage.values[self.storage.start+self.used] = input.values[input.start+consumed];
+            self.used += 1; consumed += 1;
+        }
+        if (self.used < self.header) { return core::result::Ok(Progress { consumed: consumed, ready: false }); }
+        if (self.total == 0) {
+            let announced: i32 = 0; let index: i32 = self.header-self.length_bytes;
+            while (index < self.header) { announced = (announced<<8) | (self.storage.values[self.storage.start+index] as i32); index += 1; }
+            if (announced > self.max_body) {
+                self.poisoned = true;
+                return failure(Error::TooLarge,consumed);
+            }
+            self.total = self.header+announced;
+        }
+        while (self.used < self.total && consumed < input.length) {
+            self.storage.values[self.storage.start+self.used] = input.values[input.start+consumed];
+            self.used += 1; consumed += 1;
+        }
+        self.ready = self.used == self.total;
+        return core::result::Ok(Progress { consumed: consumed, ready: self.ready });
+    }
+    fn checked(&self) -> core::result::Result<i32, Error> {
+        if (self.poisoned) { return core::result::Err(Error::Poisoned); }
+        if (!self.ready) { return core::result::Err(Error::NotReady); }
+        return core::result::Ok(self.total);
+    }
+    // Reset never writes storage. Returned count is the discarded prefix.
+    fn reset(&self) -> i32 { let discarded: i32 = self.used; self.used=0; self.total=0; self.ready=false; self.poisoned=false; return discarded; }
+    fn consume(&self) -> core::result::Result<i32, Error> {
+        let checked: core::result::Result<i32, Error> = self.checked();
+        if (checked.is_err()) { return checked; }
+        return core::result::Ok(self.reset());
+    }
+}
+pub impl RecordDecoder {
+    pub fn borrow(&self) -> &RecordDecoder { return self; }
+    pub fn buffered(&self) -> i32 { return self.core.used; }
+    pub fn ready(&self) -> bool { return self.core.ready; }
+    pub fn is_poisoned(&self) -> bool { return self.core.poisoned; }
+    pub fn feed(&self, input: core::slice::View<u8>) -> core::result::Result<Progress, FeedFailure> { return self.core.feed(input); }
+    pub fn frame(&self) -> core::result::Result<RecordFrame, Error> {
+        let checked: core::result::Result<i32, Error> = self.core.checked();
+        if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        let storage: core::slice::View<u8> = self.core.storage;
+        let version: u16 = (((storage.values[storage.start+1] as u32)<<8) | (storage.values[storage.start+2] as u32)) as u16;
+        return core::result::Ok(RecordFrame { wire: region(storage,0,self.core.total), payload: region(storage,5,self.core.total-5), content_type: storage.values[storage.start], legacy_version: version });
+    }
+    pub fn consume(&self) -> core::result::Result<i32, Error> { return self.core.consume(); }
+    pub fn reset(&self) -> i32 { return self.core.reset(); }
+}
+pub impl HandshakeDecoder {
+    pub fn borrow(&self) -> &HandshakeDecoder { return self; }
+    pub fn buffered(&self) -> i32 { return self.core.used; }
+    pub fn ready(&self) -> bool { return self.core.ready; }
+    pub fn is_poisoned(&self) -> bool { return self.core.poisoned; }
+    pub fn feed(&self, input: core::slice::View<u8>) -> core::result::Result<Progress, FeedFailure> { return self.core.feed(input); }
+    pub fn frame(&self) -> core::result::Result<HandshakeFrame, Error> {
+        let checked: core::result::Result<i32, Error> = self.core.checked();
+        if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        let storage: core::slice::View<u8> = self.core.storage;
+        return core::result::Ok(HandshakeFrame { wire: region(storage,0,self.core.total), body: region(storage,4,self.core.total-4), kind: storage.values[storage.start] });
+    }
+    pub fn consume(&self) -> core::result::Result<i32, Error> { return self.core.consume(); }
+    pub fn reset(&self) -> i32 { return self.core.reset(); }
+}

@@ -213,8 +213,10 @@ LANIUS_DEBUG_STAGE_ERRORS=1 timeout --kill-after=2s 100s \
 
 The first command passed three tests and failed one in 8.01 seconds. The
 second command is the successful rerun of the affected group. These are
-correctness and allocation observations. Performance comparison for the new
-schedule/transcript import closure remains pending. Full TLS remains open.
+correctness and allocation observations. The
+[current authentication workload](library-foundation-performance.md#tls-authentication-foundation-workload)
+now measures the combined schedule/transcript/codec/signature/record closure.
+It has no paired baseline. Full TLS remains open.
 
 ### RFC anchor correction history
 

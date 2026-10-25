@@ -180,13 +180,23 @@ one physical allocation. Aliasing is a caller precondition, not a runtime
 overlap detector. No writer allocates temporary heap storage or retains its
 arguments.
 
-## Verification status
+## Verification
 
-Source and public signatures are frozen for admission. Native execution has
-not yet been accepted for this module. Root owns GPU compilation and runtime
-gates; this guide makes no current target-support or performance claim.
+The complete focused target passes on x86_64 Linux native output from the GPU
+compiler: all three tests passed in 7.56 seconds. The unchanged sources execute
+1,654 independent framing/value/writer/cursor model commands, 170 real OpenSSL
+certificate commands and the isolated ordinary consumer. One shared protocol
+ELF and the separate plain ELF run in three native processes. Every native
+`mmap`, `mremap`, `munmap` and `brk` trace is empty. This is native execution
+evidence, with no user GPU-kernel or compiler-throughput claim.
 
-[`extended_der_execution.rs`](../tests/extended_der_execution.rs) prepares
+The accepted log is `target/stdlib-work/tls-auth-admission/der-all.log`. The
+joint Rust target build took 0.20 seconds, recorded in
+`build-resume-foundations.log`; that is not an isolated DER build measurement.
+The accepted driver binary is
+`target/stdlib-build/debug/deps/extended_der_execution-714f44ef3da78dee`.
+
+[`extended_der_execution.rs`](../tests/extended_der_execution.rs) passes
 three focused tests:
 
 - An isolated ordinary consumer unwraps canonical integer writes and borrowed

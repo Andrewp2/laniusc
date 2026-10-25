@@ -20,6 +20,20 @@ passes 137 native cases, including full 1 MiB seal/open and failure cleanup;
 the [pinned compiler comparison](library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
 records measured workloads and limits.
 
+[Ed25519](extended-ed25519.md), [DER framing](extended-der.md),
+[TLS handshake codecs](extended-tls-handshake.md) and the
+[SHA-256 schedule/transcript](extended-tls-schedule.md) now pass focused native
+execution gates as well. These provide primitives and wire contracts; the
+connection still needs negotiated state, certificate path/identity/time
+policy, enforced authentication checkpoints and bounded transport progress.
+
+[X.509 structure parsing](extended-x509.md) and
+[incremental framing](extended-tls-framing.md) now have native admission too.
+[Nonblocking entropy](stdlib-entropy-bounded.md) supplies explicit shared
+attempt budgets over the existing Linux syscall boundary. The
+[connection contract](tls-connection-contract.md) identifies the remaining
+path/identity/time policy, authentication state and transport integration.
+
 This source path does not require foreign-call support. A foreign TLS backend
 and SQLite integration still need the native-library boundaries described
 here. Full TLS connections still need executable handshake, certificate, peer

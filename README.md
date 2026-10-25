@@ -82,6 +82,18 @@ all six algorithms with explicit input and I/O limits.
 The [TLS record layer](docs/extended-tls-record.md) passes its ordinary
 consumer and 308 protocol commands after a
 [host capacity repair](docs/tls-record-lowering-dependency.md).
+[Ed25519 signatures](docs/extended-ed25519.md),
+[borrowed DER](docs/extended-der.md),
+[TLS handshake codecs](docs/extended-tls-handshake.md) and the
+[key schedule/transcript](docs/extended-tls-schedule.md) also pass focused
+native gates. Connection state and certificate trust remain separate work.
+[X.509 structure parsing](docs/extended-x509.md) and
+[incremental framing](docs/extended-tls-framing.md) add bounded certificate
+inspection and record/handshake reassembly, including the full u24 body limit.
+[Nonblocking OS entropy](docs/stdlib-entropy-bounded.md) provides shared attempt
+budgets and explicit partial progress for connection initialization.
+The [certificate inspector](docs/extended-certificate-info.md) passes 50 native
+cases covering parsed metadata, report publication and resource/I/O failures.
 The [seal-bytes program](docs/extended-seal-bytes.md) passes 137 native cases,
 including allocation/I/O failures and the full 1 MiB boundary. The
 [pinned compiler comparison](docs/library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)

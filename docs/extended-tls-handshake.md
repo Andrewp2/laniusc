@@ -111,15 +111,39 @@ Frame/vector construction scans entry headers; extension construction also check
 
 ## Verification
 
-Native admission is pending. The driver is [extended_tls_handshake_execution.rs](../tests/extended_tls_handshake_execution.rs), with [fixtures and the independent Python struct oracle](../tests/fixtures/extended/tls_handshake/). Its scope is Linux x86-64; each gate compiles one strict native ELF and runs one process with an empty `mmap`/`munmap` trace.
+Both native gates passed together in **8.96 s**. The driver is [extended_tls_handshake_execution.rs](../tests/extended_tls_handshake_execution.rs), with [fixtures and the independent Python struct oracle](../tests/fixtures/extended/tls_handshake/). Its scope is Linux x86-64. The two gates compiled two strict native ELFs and ran two native processes. The model sent **1396 commands through one batched native process**. Each process had an empty `mmap`/`munmap` trace; those two syscall families are the trace scope.
 
 | Gate | Scope | Result |
 | --- | --- | --- |
-| `complete_borrowed_tls13_wire_codecs_execute_without_error_projection` | Typed client/server-HRR writers/parsers, borrowed offsets, generic Take and Frame/Extension cursor use without imported Error projection | Pending |
-| `tls13_handshake_frames_bodies_cursors_and_atomic_writers_match_struct_model` | All message bodies, RFC bytes, four layouts, targeted malformed lengths/values, atomic writers and all cursor forms | Pending |
+| `complete_borrowed_tls13_wire_codecs_execute_without_error_projection` | Typed client/server-HRR writers/parsers, borrowed offsets, generic Take and Frame/Extension cursor use without imported Error projection | Passed in the combined 8.96 s run |
+| `tls13_handshake_frames_bodies_cursors_and_atomic_writers_match_struct_model` | All message bodies, RFC bytes, four layouts, targeted malformed lengths/values, atomic writers and all cursor forms | Passed; 1396 commands in the combined run |
 
 The model uses 34 valid frames, including ten published RFC 8448 trace frames. The capture lists its source URL and retrieved RFC text SHA-256; it does not depend on downloading during tests. The host constructs independent big endian struct encodings and error expectations, then compares actual re-encoded output. It includes zero-length CV signatures, empty certificate lists, session ID boundaries 0/32, 255-byte contexts/nonces, both Finished lengths, and raw unknown extension bytes.
 
 Each valid message also gets a short-destination case. Truncations, trailing bytes, nested vector mistakes, invalid legacy/compression values, duplicate extension IDs, missing requirements, ticket lifetime overflow, invalid KeyUpdate, and unsupported/synthetic kinds receive separate expectations. Four layouts independently select packed/strided input and output, with nonzero starts. Native checks compare untouched source copies, full destination sentinels on failure, guards on success, copied cursor positions, and repeated EOF. The raw framing cases intentionally accept known-kind opaque bodies which typed parsers reject, preserving the documented boundary.
 
-Root runs the serialized gates. Reproduction commands and accepted timings will be recorded after admission; no execution claim follows from source review alone.
+The fresh shared foundation-driver build took **0.20 s**, recorded in `target/stdlib-work/tls-auth-admission/build-resume-foundations.log`. The accepted runtime log is `target/stdlib-work/tls-auth-admission/handshake-all.log`. These local logs are ignored artifacts and are not checked in. The accepted handshake executable was `target/stdlib-build/debug/deps/extended_tls_handshake_execution-e85e99e9b267b82c`.
+
+To reproduce the focused driver build, run this command separately from the runtime command below. The accepted shared build also included the DER, Ed25519, and signing drivers; this focused command builds only the handshake driver.
+
+```sh
+timeout --kill-after=2s 100s flock -E 75 -w 35 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 60s env \
+  CARGO_TARGET_DIR="$PWD/target/stdlib-build" CARGO_INCREMENTAL=0 \
+  CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 \
+  cargo test --test extended_tls_handshake_execution --no-run
+```
+
+The accepted combined runtime command runs both tests serially:
+
+```sh
+timeout --kill-after=2s 100s flock -E 75 -w 35 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 60s env \
+  RUST_MIN_STACK=16777216 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000 \
+  target/stdlib-build/debug/deps/extended_tls_handshake_execution-e85e99e9b267b82c \
+  --nocapture --test-threads=1
+```
+
+A fresh build may report a different executable basename; use its reported path. Each command has its own 100-second outer limit, 35-second lock wait, and 60-second inner limit. The codegen guard is 45 seconds and the native subprocess guard in the driver is 20 seconds. The Python struct-oracle subprocess has a 10-second guard.
+
+These gates establish the exercised complete-buffer codec behavior. TLS record reassembly, live client/server interoperability, transcript/connection sequencing, extension negotiation, PSK binders, certificate trust, signatures, and Finished verification remain separate.

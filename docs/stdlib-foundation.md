@@ -280,6 +280,31 @@ report records measurement conditions and limits. Full TLS connections still
 require handshake, certificates, peer authentication, trust policy and
 transport integration.
 
+[Pure Ed25519](extended-ed25519.md), [borrowed DER](extended-der.md),
+[TLS handshake codecs](extended-tls-handshake.md) and the
+[SHA-256 schedule/transcript](extended-tls-schedule.md) now pass their focused
+native gates. DER covers 1,824 independent model/certificate commands, and
+handshake codecs cover 1,396 model commands, each with an ordinary consumer.
+The [signing application](extended-sign-bytes.md) passes 128 native cases,
+including full 1 MiB sign/verify and allocation/I/O/call-budget failures.
+The [composed authentication flight](extended-tls-auth-foundation.md) checks
+18 cases and 720 byte fields, including both layouts and eight tamper
+scenarios. It uses real certificate bytes and enforced cryptographic
+checkpoints in a fixed fixture. Certificate trust and a connection/transport
+state machine remain required. No compiler, runtime, shader, IR, ABI or proof
+source changed for this authentication foundation.
+
+[X.509 structure parsing](extended-x509.md) passes 690 model/OpenSSL commands
+and an ordinary consumer. [Incremental framing](extended-tls-framing.md) passes
+7,760 state-model actions, ordinary composition and a full 16,777,215-byte
+handshake body using explicitly owned caller storage. The
+[certificate inspector](extended-certificate-info.md) passes 50 native cases;
+its output describes parsed schema and metadata. The
+[bounded entropy API](stdlib-entropy-bounded.md) adds nonblocking OS reads,
+shared attempt budgets and completed-prefix failures, with all four focused
+groups admitted across the documented invocations. Certificate trust and
+connection state remain governed by the [remaining contract](tls-connection-contract.md).
+
 [Checked file lengths](stdlib-file-resize.md) execute shrink, zero extension,
 sparse lengths above 4 GiB and unchanged duplicated offsets, with explicit
 one-attempt failures. [Bounded regular-file copying](stdlib-file-copy.md) checks
@@ -298,8 +323,8 @@ Compiler failures retain
 [reproductions and successful controls](library-dependencies.md).
 
 The [generated declaration reference](library-api-reference.md) inventories
-228 source modules with signatures, bounds, fields and exact source links.
-The declaration scanner independently confirms 161 stdlib and 67 extended
+235 source modules with signatures, bounds, fields and exact source links.
+The declaration scanner independently confirms 161 stdlib and 74 extended
 modules, including source still under admission. The original twenty focused
 CPU tests and earlier regenerated-output check passed without generator
 changes. This is

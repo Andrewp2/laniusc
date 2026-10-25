@@ -1,5 +1,5 @@
 // Bounded pure Ed25519 detached signatures over complete binary stdin.
-// Runtime admission is pending; see docs/extended-sign-bytes.md.
+// Execution evidence and target limits: docs/extended-sign-bytes.md.
 module app::main;
 import alloc::io;
 import core::io;

@@ -224,10 +224,11 @@ LANIUS_DEBUG_STAGE_ERRORS=1 timeout --kill-after=2s 100s \
 ```
 
 Local build evidence is `target/stdlib-work/tls-auth-admission/build-record-and-sign.log`.
-The earlier performance comparison above predates the new schedule dependency;
-performance comparison of this expanded import closure remains pending. Record
-correctness does not establish handshake sequencing, peer authentication or a
-complete TLS connection.
+The earlier paired performance comparison above predates the new schedule
+dependency. The [current authentication workload](library-foundation-performance.md#tls-authentication-foundation-workload)
+measures a combined consumer containing this expanded closure, without a
+paired baseline. Record correctness does not establish handshake sequencing,
+peer authentication or a complete TLS connection.
 
 ### Original compiler failure and repair
 

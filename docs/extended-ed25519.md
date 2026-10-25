@@ -130,26 +130,31 @@ hash and scalar copies may remain in stack storage after return.
 
 ## Focused verification
 
-Native admission is **pending**. Source inspection and test authoring are
-not execution evidence. Root runs the GPU compiler and native gates;
-this guide will record its accepted evidence after those runs.
+All five focused gates passed on **x86_64 Linux native executables generated
+by the GPU compiler**, with strict ELF checks and empty allocation traces.
+The driver is `tests/extended_ed25519_execution.rs`.
 
-The driver `tests/extended_ed25519_execution.rs` has five focused groups:
+| Exact test | Accepted evidence | Elapsed |
+| --- | --- | ---: |
+| `ordinary_consumer_without_error_variant_projection` | Fixed RFC key/signature answers and independent retained signatures without projecting the error enum | 4.80 s |
+| `rfc8032_all_pure_vectors_key_sign_verify_both_layouts` | 30 commands: all five section 7.1 vectors, complete keys/signatures and verification in both layouts | 6.60 s |
+| `deterministic_libsodium_messages_padding_layouts_and_independent_copies` | 74 commands: deterministic signing, SHA-512 boundaries, independent returned-value copies and input mutation | 8.52 s |
+| `canonical_subgroups_identity_nonce_and_scalar_malleability` | More than 150 policy cases: ordinary generated positives, all torsion cosets, canonical/off-curve boundaries, strict subgroups, identity nonce and scalar boundaries | 10.23 s |
+| `every_signed_component_byte_mutation_and_bounds_precedence` | 206 commands: 160 component-byte mutations and 46 logical-bounds/length-priority cases | 13.78 s |
 
-| Test | Contract explored |
-| --- | --- |
-| `rfc8032_all_pure_vectors_key_sign_verify_both_layouts` | All five section 7.1 vectors, complete keys/signatures, verification, both layouts |
-| `deterministic_libsodium_messages_padding_layouts_and_independent_copies` | Deterministic independent signing, SHA-512 boundaries, returned-value copies and input mutation |
-| `canonical_subgroups_identity_nonce_and_scalar_malleability` | Ordinary generated positives, all torsion cosets, canonical and off-curve boundaries, strict subgroups, identity nonce, scalar boundaries |
-| `every_signed_component_byte_mutation_and_bounds_precedence` | Every public-key/signature/message byte position in a 64-byte signed message, logical bounds and length priority |
-| `ordinary_consumer_without_error_variant_projection` | Fixed RFC answers and ordinary independent uses without projecting the error enum |
+These were **five separate exact test invocations**, each compiling its
+own ELF: one ordinary consumer and four protocol executables. They were
+not a single full-suite invocation. The fresh resume Rust driver build
+took 0.20 s; its log is `build-resume-foundations.log`. Earlier builds
+and the executed source snapshots were unchanged.
 
 The protocol checks native scalar-array and packed-byte physical layouts
 at nonzero offsets, preserves every input and guard cell, and emits
-complete results. It reuses one compiled ELF within a driver invocation
-and splits records into batches of 24 with bounded native execution.
+complete results. Each protocol invocation reuses its compiled ELF and
+splits records into batches of 24 with a 45-second native-process bound;
+each independent oracle process has a 35-second bound.
 Every native process is traced for `mmap`, `mremap`, `munmap` and `brk`;
-the expected trace is empty.
+all admitted traces were empty.
 
 Expected bytes come from the fixed
 [RFC 8032 section 7.1 vectors](https://www.rfc-editor.org/rfc/rfc8032.html#section-7.1),
@@ -162,3 +167,18 @@ exact-equation mixed-order forgery which subgroup admission must reject.
 Libsodium determines ordinary signing results; the documented group
 policy determines adversarial acceptance. Python and Rust are test
 orchestration only, and are not part of the Lanius production module.
+
+Local ignored logs are under `target/stdlib-work/tls-auth-admission/`:
+`ed25519-ordinary.log`, `ed25519-rfc.log`, `ed25519-model.log`,
+`ed25519-policy.log` and `ed25519-mutations.log`. The admitted driver
+basename was `extended_ed25519_execution-f98b2d64d2de34c8` in
+`target/stdlib-build/debug/deps/`; a fresh build can produce another name.
+
+This evidence covers the enumerated contracts and messages through 2048
+bytes in the protocol, rather than exhaustive keys, messages or signatures.
+It does not verify other target architectures or user GPU kernels; GPU
+execution here refers to the compiler. The API's manual physical-backing
+contract, documented subgroup-policy differences, and lack of generated
+constant-time or stack-erasure guarantees remain applicable. The recorded
+times include test orchestration and compilation and are not isolated
+cryptographic throughput measurements.

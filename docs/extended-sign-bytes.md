@@ -6,9 +6,11 @@ creates and verifies raw detached signatures using the real
 complete binary message supplied on stdin. All application behavior is
 Lanius; the independent test oracle is outside the executable.
 
-Runtime admission is **pending**. The focused driver is prepared for x86_64
-Linux ELF output from the GPU compiler, executed natively on the CPU. Source
-review and prepared tests do not establish runtime support or throughput.
+Runtime admission **passed on 2026-10-24** for x86_64 Linux ELF output from
+the GPU compiler, executed natively on the CPU. Four separately selected
+groups passed 128 native cases using four independently compiled strict
+ELFs. These gates establish the tested target scope, without claiming other
+targets or isolated signature throughput.
 
 ## CLI and byte formats
 
@@ -54,7 +56,7 @@ target/stdlib-work/sign-bytes/sign-bytes verify public.bin signature.bin \
   < message.bin
 ```
 
-These are usage commands; execution evidence remains pending below.
+These are usage commands; accepted execution evidence is recorded below.
 
 ## Fixed-file reads and ownership
 
@@ -81,6 +83,10 @@ are inline values with no allocation or destroy obligation. The signature
 value stays alive through output. The primitive allocates no memory, and the
 app allocates nothing during publication. Stdin and stdout remain borrowed
 and are never closed.
+
+Views retain their actual stack or owned-buffer backing throughout each
+call. The logical byte caps do not specify physical View width, exact RSS,
+or total stack usage.
 
 Main installs SIGPIPE Ignore before allocation, so a broken output pipe can
 return EPIPE and reach cleanup. This setup also runs for verify even though
@@ -130,25 +136,28 @@ own preflight. Verification follows the library's canonical subgroup policy;
 it is not a promise that every adversarial encoding has the same acceptance
 set as another implementation.
 
-## Focused driver and pending evidence
+## Focused driver
 
 [`tests/extended_sign_bytes_execution.rs`](../tests/extended_sign_bytes_execution.rs)
 compiles the real app with stdlib and extended roots and uses the unchanged
 shared strict ELF/jump checker. A `OnceLock` shares one emitted executable
 among groups selected within the same driver process. Separate invocations
 compile one executable each, allowing the root to serialize bounded gates.
+The accepted run used four separate exact invocations, rather than one
+whole-target invocation.
 
-| Exact test | Prepared native cases |
+| Exact test | Accepted native cases |
 | --- | ---: |
 | `sign_bytes_vectors_tamper_and_fixed_file_policy` | 80 |
-| `sign_bytes_owned_cleanup_and_io_faults` | 35 plus observed sign/verify allocation positions |
+| `sign_bytes_owned_cleanup_and_io_faults` | 41: 35 fixed plus three sign and three verify allocation denials |
 | `sign_bytes_message_boundaries_and_scale` | 4 |
 | `sign_bytes_shared_call_budget_and_close_precedence` | 3 |
 
-The prepared total is **122 plus both observed representative allocation
-counts**. No physical View width or allocation count is hardcoded. Ordinary
-cases have five-second native timeouts plus one-second termination grace;
-scale and budget cases have 20 seconds plus the same grace.
+The accepted total was **128 native cases**. Each representative mode
+discovered and reached all three allocation-denial positions. No physical
+View width or allocation count is hardcoded. Ordinary cases have five-second
+native timeouts plus one-second termination grace; scale and budget cases
+have 20 seconds plus the same grace.
 
 The independent oracle loads libsodium through Python ctypes and directly
 calls its seed-keypair, detached-sign, and detached-verify functions. It
@@ -200,9 +209,71 @@ successful native `run()` calls report observed case wall milliseconds,
 including setup, strace, process startup, and trace parsing. They exclude
 compiler/oracle time and do not measure isolated signature throughput.
 
-Build target: `cargo test --test extended_sign_bytes_execution --no-run`.
-Select an exact group with its positional name and
-`--exact --nocapture --test-threads=1` under the root's bounded GPU lock.
-Actual commands, source checkpoint, local logs, elapsed times, reached
-allocation counts, and native counts must be recorded after admission.
-Runtime verification remains pending.
+## Accepted execution evidence
+
+The accepted source checkpoint was
+`bad37f721a7fbcb6dac919d92c219b3924eceaf8`. The app body and driver were
+unchanged from that checkpoint through all four gates; this acceptance update
+changes only the guide. Independent source review was clean.
+
+The fresh joint resume driver build took **0.20 s**, recorded in the ignored
+local log `target/stdlib-work/tls-auth-admission/build-resume-foundations.log`.
+It included other foundation drivers and is not an isolated application
+compile measurement. The focused build target is
+`cargo test --test extended_sign_bytes_execution --no-run`.
+
+Each exact group passed with zero failures:
+
+| Group | Native cases | Gate elapsed | Ignored local log |
+| --- | ---: | ---: | --- |
+| Vectors/tamper/fixed-file policy | 80 | 10.31 s | `target/stdlib-work/tls-auth-admission/sign-ordinary.log` |
+| Ownership/allocation/I/O faults | 41 | 7.18 s | `target/stdlib-work/tls-auth-admission/sign-cleanup.log` |
+| 1 MiB scale and exact/excess bounds | 4 | 7.33 s | `target/stdlib-work/tls-auth-admission/sign-scale.log` |
+| Attempt budget and close precedence | 3 | 19.29 s | `target/stdlib-work/tls-auth-admission/sign-budget.log` |
+
+The last group reached the shared **131,072-attempt** cap for interrupted
+stdin, stdout, and fixed-file reads. It also confirmed that a failed close
+overrides an exhausted fixed-file budget. Allocation and descriptor cleanup
+passed under the exact ledgers and injected-close model described above.
+
+The successful 1 MiB sign and verify cases observed **251.021 ms** and
+**222.686 ms**, respectively. These are case wall measurements including
+setup, strace, native startup, and trace parsing, excluding compiler and
+oracle time. They are not isolated signature throughput.
+
+The exact accepted runtime commands, from the repository root, were:
+
+```sh
+RUST_MIN_STACK=16777216 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000 \
+  LANIUS_DEBUG_STAGE_ERRORS=1 timeout --kill-after=2s 100s \
+  flock -E75 -w35 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 60s \
+  target/stdlib-build/debug/deps/extended_sign_bytes_execution-41354c6f8b14ce4d \
+  --exact sign_bytes_vectors_tamper_and_fixed_file_policy \
+  --nocapture --test-threads=1 \
+  > target/stdlib-work/tls-auth-admission/sign-ordinary.log 2>&1
+RUST_MIN_STACK=16777216 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000 \
+  LANIUS_DEBUG_STAGE_ERRORS=1 timeout --kill-after=2s 100s \
+  flock -E75 -w35 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 60s \
+  target/stdlib-build/debug/deps/extended_sign_bytes_execution-41354c6f8b14ce4d \
+  --exact sign_bytes_owned_cleanup_and_io_faults \
+  --nocapture --test-threads=1 \
+  > target/stdlib-work/tls-auth-admission/sign-cleanup.log 2>&1
+RUST_MIN_STACK=16777216 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000 \
+  LANIUS_DEBUG_STAGE_ERRORS=1 timeout --kill-after=2s 100s \
+  flock -E75 -w35 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 60s \
+  target/stdlib-build/debug/deps/extended_sign_bytes_execution-41354c6f8b14ce4d \
+  --exact sign_bytes_message_boundaries_and_scale \
+  --nocapture --test-threads=1 \
+  > target/stdlib-work/tls-auth-admission/sign-scale.log 2>&1
+RUST_MIN_STACK=16777216 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000 \
+  LANIUS_DEBUG_STAGE_ERRORS=1 timeout --kill-after=2s 100s \
+  flock -E75 -w35 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 60s \
+  target/stdlib-build/debug/deps/extended_sign_bytes_execution-41354c6f8b14ce4d \
+  --exact sign_bytes_shared_call_budget_and_close_precedence \
+  --nocapture --test-threads=1 \
+  > target/stdlib-work/tls-auth-admission/sign-budget.log 2>&1
+```

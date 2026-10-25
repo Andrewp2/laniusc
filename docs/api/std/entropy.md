@@ -11,8 +11,9 @@ Layer: `std`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [stdlib-randomness](../../stdlib-randomness.md)
+- [stdlib-entropy-bounded](../../stdlib-entropy-bounded.md)
 
-Declaration counts: function: 4; impl: 2; method: 2; struct: 1.
+Declaration counts: enum: 1; field: 3; function: 7; impl: 3; method: 4; struct: 3; variant: 5.
 
 ## Declared imports
 
@@ -21,7 +22,9 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::mem](../core/mem.md) · [source](../../../stdlib/std/entropy.lani#L3)
 - [core::random](../core/random.md) · [source](../../../stdlib/std/entropy.lani#L4)
 - [core::result](../core/result.md) · [source](../../../stdlib/std/entropy.lani#L5)
-- [std::random](random.md) · [source](../../../stdlib/std/entropy.lani#L6)
+- [core::slice](../core/slice.md) · [source](../../../stdlib/std/entropy.lani#L6)
+- [std::linux](linux.md) · [source](../../../stdlib/std/entropy.lani#L7)
+- [std::random](random.md) · [source](../../../stdlib/std/entropy.lani#L8)
 
 ## Types, fields and variants
 
@@ -29,17 +32,105 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: OsRandom
 
-[Source line 8](../../../stdlib/std/entropy.lani#L8)
+[Source line 10](../../../stdlib/std/entropy.lani#L10)
 
 ```lanius
 pub struct OsRandom
+```
+
+### enum: Error
+
+[Source line 57](../../../stdlib/std/entropy.lani#L57)
+
+```lanius
+pub enum Error
+```
+
+#### variant: Bounds
+
+[Source line 57](../../../stdlib/std/entropy.lani#L57)
+
+```lanius
+Bounds
+```
+
+#### variant: Host
+
+[Source line 57](../../../stdlib/std/entropy.lani#L57)
+
+```lanius
+Host(i32)
+```
+
+#### variant: NoProgress
+
+[Source line 57](../../../stdlib/std/entropy.lani#L57)
+
+```lanius
+NoProgress
+```
+
+#### variant: InvalidCount
+
+[Source line 57](../../../stdlib/std/entropy.lani#L57)
+
+```lanius
+InvalidCount
+```
+
+#### variant: CallLimit
+
+[Source line 57](../../../stdlib/std/entropy.lani#L57)
+
+```lanius
+CallLimit
+```
+
+### struct: Failure
+
+[Source line 58](../../../stdlib/std/entropy.lani#L58)
+
+```lanius
+pub struct Failure
+```
+
+#### field: cause
+
+[Source line 58](../../../stdlib/std/entropy.lani#L58)
+
+```lanius
+cause: Error
+```
+
+#### field: completed
+
+[Source line 58](../../../stdlib/std/entropy.lani#L58)
+
+```lanius
+completed: i32
+```
+
+### struct: Budget
+
+[Source line 59](../../../stdlib/std/entropy.lani#L59)
+
+```lanius
+pub struct Budget
+```
+
+#### field: remaining_calls
+
+[Source line 59](../../../stdlib/std/entropy.lani#L59)
+
+```lanius
+remaining_calls: u64
 ```
 
 ## Free functions and extern declarations
 
 ### function: os_random
 
-[Source line 9](../../../stdlib/std/entropy.lani#L9)
+[Source line 11](../../../stdlib/std/entropy.lani#L11)
 
 ```lanius
 pub fn os_random() -> OsRandom
@@ -47,7 +138,7 @@ pub fn os_random() -> OsRandom
 
 ### function: fill
 
-[Source line 14](../../../stdlib/std/entropy.lani#L14)
+[Source line 16](../../../stdlib/std/entropy.lani#L16)
 
 ```lanius
 pub fn fill(bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::random::Failure>
@@ -55,7 +146,7 @@ pub fn fill(bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32, c
 
 ### function: secure_u64
 
-[Source line 37](../../../stdlib/std/entropy.lani#L37)
+[Source line 39](../../../stdlib/std/entropy.lani#L39)
 
 ```lanius
 pub fn secure_u64() -> core::result::Result<u64, core::random::Error>
@@ -63,17 +154,41 @@ pub fn secure_u64() -> core::result::Result<u64, core::random::Error>
 
 ### function: seeded
 
-[Source line 47](../../../stdlib/std/entropy.lani#L47)
+[Source line 49](../../../stdlib/std/entropy.lani#L49)
 
 ```lanius
 pub fn seeded() -> core::result::Result<core::random::Xoshiro256PlusPlus, core::random::Error>
 ```
 
+### function: budget
+
+[Source line 60](../../../stdlib/std/entropy.lani#L60)
+
+```lanius
+pub fn budget(calls: u64) -> Budget
+```
+
+### function: read_some
+
+[Source line 70](../../../stdlib/std/entropy.lani#L70)
+
+```lanius
+pub fn read_some(calls: &Budget, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32, Error>
+```
+
+### function: fill_bounded
+
+[Source line 96](../../../stdlib/std/entropy.lani#L96)
+
+```lanius
+pub fn fill_bounded(calls: &Budget, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32, Failure>
+```
+
 ## Implementation blocks and public methods
 
-### impl at line 10
+### impl at line 12
 
-[Source line 10](../../../stdlib/std/entropy.lani#L10)
+[Source line 12](../../../stdlib/std/entropy.lani#L12)
 
 ```lanius
 pub impl OsRandom
@@ -81,15 +196,15 @@ pub impl OsRandom
 
 #### method: borrow
 
-[Source line 10](../../../stdlib/std/entropy.lani#L10)
+[Source line 12](../../../stdlib/std/entropy.lani#L12)
 
 ```lanius
 pub fn borrow(&self) -> &OsRandom
 ```
 
-### impl at line 42
+### impl at line 44
 
-[Source line 42](../../../stdlib/std/entropy.lani#L42)
+[Source line 44](../../../stdlib/std/entropy.lani#L44)
 
 ```lanius
 pub impl core::random::Source64 for OsRandom
@@ -97,8 +212,32 @@ pub impl core::random::Source64 for OsRandom
 
 #### method: draw
 
-[Source line 43](../../../stdlib/std/entropy.lani#L43)
+[Source line 45](../../../stdlib/std/entropy.lani#L45)
 
 ```lanius
 pub fn draw(&self) -> core::result::Result<u64, core::random::Error>
+```
+
+### impl at line 61
+
+[Source line 61](../../../stdlib/std/entropy.lani#L61)
+
+```lanius
+pub impl Budget
+```
+
+#### method: borrow
+
+[Source line 62](../../../stdlib/std/entropy.lani#L62)
+
+```lanius
+pub fn borrow(&self) -> &Budget
+```
+
+#### method: remaining
+
+[Source line 63](../../../stdlib/std/entropy.lani#L63)
+
+```lanius
+pub fn remaining(&self) -> u64
 ```

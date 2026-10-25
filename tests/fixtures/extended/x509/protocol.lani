@@ -1,0 +1,88 @@
+// Count followed by layout/mode/max_input/items/work/length u64s and DER bytes.
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::der;
+import ext::x509;
+import std::stream;
+struct Output { bytes: [u8], used: i32 }
+fn code(kind: ext::x509::ErrorKind) -> u64 { return match (kind) { ext::x509::ErrorKind::Bounds -> 1, ext::x509::ErrorKind::InputLimit -> 2, ext::x509::ErrorKind::ItemLimit -> 3, ext::x509::ErrorKind::WorkLimit -> 4, ext::x509::ErrorKind::Der -> 5, ext::x509::ErrorKind::Schema -> 6, ext::x509::ErrorKind::Version -> 7, ext::x509::ErrorKind::Serial -> 8, ext::x509::ErrorKind::Algorithm -> 9, ext::x509::ErrorKind::Name -> 10, ext::x509::ErrorKind::Validity -> 11, ext::x509::ErrorKind::Spki -> 12, ext::x509::ErrorKind::Extension -> 13, ext::x509::ErrorKind::DuplicateExtension -> 14, ext::x509::ErrorKind::NonCanonical -> 15 }; }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { let sink: std::stream::Descriptor = std::stream::stdout(); assert(core::io::write_all(sink.borrow(), self.bytes, 0, self.used).is_ok()); self.used = 0; }
+    fn word(&self, n: u64) { if (self.used == 1024) { self.flush(); } let at: i32 = 0; while (at < 8) { self.bytes[self.used + at] = ((n >> (at * 8)) & 255) as u8; at += 1; } self.used += 8; }
+    fn data(&self, v: core::slice::View<u8>) { self.word(v.length as u64); let at: i32 = 0; while (at < v.length) { self.word(v.values[v.start + at] as u64); at += 1; } }
+    fn bits(&self, bits: ext::der::BitString) { self.word(bits.unused_bits as u64); self.data(bits.bytes); }
+    fn algorithm(&self, a: ext::x509::AlgorithmIdentifier) { self.data(a.oid.bytes); self.word(a.parameters.is_some() as u64); if (a.parameters.is_some()) { self.data(a.parameters.unwrap().encoded); } }
+    fn time(&self, t: ext::der::X509Time) { self.word(t.year as u64); self.word(t.month as u64); self.word(t.day as u64); self.word(t.hour as u64); self.word(t.minute as u64); self.word(t.second as u64); }
+    fn name(&self, name: ext::x509::Name, budget: &ext::x509::Budget) {
+        self.data(name.element.encoded); let rdns: ext::x509::Rdns = name.rdns(); let fork: ext::x509::Rdns = rdns;
+        while (true) { let next: core::option::Option<ext::x509::Rdn> = rdns.next(budget).unwrap(); if (next.is_none()) { self.word(0); assert(rdns.next(budget).unwrap().is_none()); break; } self.word(1); let attributes: ext::x509::Attributes = next.unwrap().attributes();
+            while (true) { let attr: core::option::Option<ext::x509::Attribute> = attributes.next(budget).unwrap(); if (attr.is_none()) { self.word(0); assert(attributes.next(budget).unwrap().is_none()); break; } self.word(1); self.data(attr.unwrap().oid.bytes); self.data(attr.unwrap().value.encoded); }
+        }
+        assert(fork.position() == 0);
+    }
+    fn certificate(&self, cert: ext::x509::Certificate) {
+        let budget: ext::x509::Budget = ext::x509::budget(ext::x509::Limits { max_input: 16384, max_items: 1000000, max_work: 134217728 }).unwrap();
+        self.word(cert.version as u64); self.data(cert.serial); self.data(cert.tbs); self.algorithm(cert.signature_algorithm); self.name(cert.issuer, budget.borrow()); self.name(cert.subject, budget.borrow()); self.time(cert.validity.not_before); self.time(cert.validity.not_after); self.algorithm(cert.spki.algorithm); self.bits(cert.spki.key); self.bits(cert.signature); self.word(cert.unknown_critical_count);
+        self.word(cert.issuer_unique_id.is_some() as u64); if (cert.issuer_unique_id.is_some()) { self.bits(cert.issuer_unique_id.unwrap()); } self.word(cert.subject_unique_id.is_some() as u64); if (cert.subject_unique_id.is_some()) { self.bits(cert.subject_unique_id.unwrap()); }
+        let extensions: ext::x509::Extensions = cert.extensions(); let fork: ext::x509::Extensions = extensions;
+        if (cert.extension_content.length > 0) {
+            let zero: ext::x509::Budget = ext::x509::budget(ext::x509::Limits { max_input: 16384, max_items: 0, max_work: 134217728 }).unwrap();
+            assert(code(extensions.next(zero.borrow()).unwrap_err().kind) == 3 && extensions.position() == 0);
+            let zero_work: ext::x509::Budget = ext::x509::budget(ext::x509::Limits { max_input: 16384, max_items: 100, max_work: 0 }).unwrap();
+            assert(code(extensions.next(zero_work.borrow()).unwrap_err().kind) == 4 && extensions.position() == 0);
+        }
+        while (true) {
+            let r: core::option::Option<ext::x509::Extension> = extensions.next(budget.borrow()).unwrap(); if (r.is_none()) { self.word(0); assert(extensions.next(budget.borrow()).unwrap().is_none()); break; }
+            let ext: ext::x509::Extension = r.unwrap(); self.word(1); let kind: u64 = match (ext.kind()) { ext::x509::ExtensionKind::Other -> 0, ext::x509::ExtensionKind::SubjectAltName -> 1, ext::x509::ExtensionKind::BasicConstraints -> 2, ext::x509::ExtensionKind::KeyUsage -> 3, ext::x509::ExtensionKind::ExtendedKeyUsage -> 4 };
+            self.word(kind); self.data(ext.oid.bytes); self.word(ext.critical as u64); self.data(ext.value);
+            if (kind == 1) { let names: ext::x509::GeneralNames = ext.subject_alt_names(budget.borrow()).unwrap(); self.word(names.opaque_count); let copied: ext::x509::GeneralNames = names;
+                while (true) { let n: core::option::Option<ext::x509::GeneralName> = names.next(budget.borrow()).unwrap(); if (n.is_none()) { self.word(0); assert(names.next(budget.borrow()).unwrap().is_none()); break; } let v: ext::x509::GeneralName = n.unwrap(); self.word(1); self.word(v.element.tag.number as u64); self.data(v.element.content); if (v.element.tag.number == 4) { self.name(v.directory_name(budget.borrow()).unwrap(), budget.borrow()); } if (v.element.tag.number == 8) { self.data(v.registered_id(budget.borrow()).unwrap().bytes); } }
+                assert(copied.position() == 0);
+            }
+            if (kind == 2) { let b: ext::x509::BasicConstraints = ext.basic_constraints(budget.borrow()).unwrap(); self.word(b.ca as u64); self.word(b.path_length.is_some() as u64); if (b.path_length.is_some()) { self.data(b.path_length.unwrap().content); } }
+            if (kind == 3) { self.word(ext.key_usage(budget.borrow()).unwrap().bits as u64); }
+            if (kind == 4) { let oids: ext::x509::Oids = ext.extended_key_usage(budget.borrow()).unwrap(); while (true) { let oid: core::option::Option<ext::der::Oid> = oids.next(budget.borrow()).unwrap(); if (oid.is_none()) { self.word(0); assert(oids.next(budget.borrow()).unwrap().is_none()); break; } self.word(1); self.data(oid.unwrap().bytes); } }
+        }
+        assert(fork.position() == 0);
+    }
+}
+fn decode(v: [u8], at: i32) -> u64 { let n: u64 = 0; let j: i32 = 0; while (j < 8) { n |= (v[at + j] as u64) << (j * 8); j += 1; } return n; }
+fn budget_contracts() {
+    let malformed: [u8; 1] = [4]; let v: core::slice::View<u8> = core::slice::View { values: malformed, start: 0, length: 1 };
+    let budget: ext::x509::Budget = ext::x509::budget(ext::x509::Limits { max_input: 128, max_items: 100, max_work: 22 }).unwrap();
+    assert(code(ext::x509::parse(v, budget.borrow()).unwrap_err().kind) == 5 && budget.work_left == 11 && budget.items_left == 100);
+    assert(code(ext::x509::parse(v, budget.borrow()).unwrap_err().kind) == 5 && budget.work_left == 0 && budget.items_left == 100);
+    assert(code(ext::x509::parse(v, budget.borrow()).unwrap_err().kind) == 4 && budget.work_left == 0);
+    let pointer: ptr = 0; let absent: [u8] = core::mem::typed_slice_from_raw_parts(pointer, 128);
+    let zero: ext::x509::Budget = ext::x509::budget(ext::x509::Limits { max_input: 128, max_items: 100, max_work: 0 }).unwrap();
+    assert(code(ext::x509::parse(core::slice::View { values: absent, start: 0, length: 128 }, zero.borrow()).unwrap_err().kind) == 4 && zero.items_left == 100);
+}
+fn run(layout: u64, mode: u64, max_input: i32, items: u64, work: u64, input: [u8], length: i32, output: &Output) {
+    let storage: [u8; 16416] = [0; 16416]; let packed: [i32; 4104] = [0; 4104]; let bytes: [u8] = storage; if (layout == 1) { bytes = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(packed), 16416); }
+    let at: i32 = 0; while (at < 16416) { bytes[at] = 165; at += 1; } at = 0; while (at < length) { bytes[3 + at] = input[at]; at += 1; }
+    let view: core::slice::View<u8> = core::slice::View { values: bytes, start: 3, length: length };
+    if (mode == 1) { view.start = -1; } if (mode == 2) { view.start = 2147483647; view.length = 1; } if (mode == 3) { view.length = -1; }
+    let created: core::result::Result<ext::x509::Budget, ext::x509::Error> = ext::x509::budget(ext::x509::Limits { max_input: max_input, max_items: items, max_work: work });
+    if (created.is_err()) { output.word(code(created.unwrap_err().kind)); output.word(created.unwrap_err().offset as u64); }
+    else { let budget: ext::x509::Budget = created.unwrap(); let result: core::result::Result<ext::x509::Certificate, ext::x509::Error> = ext::x509::parse(view, budget.borrow()); if (result.is_err()) { output.word(code(result.unwrap_err().kind)); output.word(result.unwrap_err().offset as u64); } else {
+        let cert: ext::x509::Certificate = result.unwrap(); assert(cert.encoded.start == 3 && cert.encoded.length == length && cert.serial.start >= 3 && cert.serial.start + cert.serial.length <= 3 + length);
+        assert(core::mem::slice_stride(cert.serial.values) == core::mem::slice_stride(bytes) && core::mem::slice_stride(cert.tbs.values) == core::mem::slice_stride(bytes));
+        // Probe the raw borrowed descriptor, restoring bytes before any checked
+        // certificate helper is used again. No validation claim during mutation.
+        let saved: u8 = bytes[cert.serial.start]; bytes[cert.serial.start] ^= 1; assert(cert.serial.values[cert.serial.start] == bytes[cert.serial.start]); bytes[cert.serial.start] = saved;
+        output.word(0); output.certificate(cert);
+    } }
+    at = 0; while (at < 16416) { if (at < 3 || at >= 3 + length) { assert(bytes[at] == 165); } else { assert(bytes[at] == input[at - 3]); } at += 1; }
+}
+fn main() -> i32 {
+    budget_contracts();
+    let bytes: [u8; 1024] = [0; 1024]; let output: Output = Output { bytes: bytes, used: 0 }; let source: std::stream::Descriptor = std::stream::stdin(); let header: [u8; 48] = [0; 48]; let input: [u8; 16384] = [0; 16384];
+    assert(core::io::read_exact(source.borrow(), header, 0, 8).is_ok()); let count: u64 = decode(header, 0); assert(count <= 4096); let at: u64 = 0;
+    while (at < count) { assert(core::io::read_exact(source.borrow(), header, 0, 48).is_ok()); let length: u64 = decode(header, 40); assert(length <= 16384 && decode(header, 0) <= 1 && decode(header, 8) <= 3); assert(core::io::read_exact(source.borrow(), input, 0, length as i32).is_ok()); run(decode(header, 0), decode(header, 8), decode(header, 16) as i32, decode(header, 24), decode(header, 32), input, length as i32, output.borrow()); at += 1; }
+    output.flush(); return 0;
+}

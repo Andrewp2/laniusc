@@ -103,6 +103,11 @@ their documented backing and lifetime preconditions.
 
 ## OS entropy
 
+The [bounded nonblocking entropy API](stdlib-entropy-bounded.md) adds shared
+attempt budgets, a single-attempt `read_some` operation and `fill_bounded` with
+completed-prefix errors. Its new calls use `GRND_NONBLOCK`; the APIs described
+below retain their flags-zero behavior.
+
 `std::entropy::fill(bytes, offset, count)` returns the number of bytes copied or
 `core::random::Failure { cause, completed }`. It uses packed stack staging to
 support both native strided arrays and packed byte buffers. Requests are at most

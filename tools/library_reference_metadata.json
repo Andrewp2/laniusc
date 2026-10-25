@@ -738,9 +738,15 @@
         "docs/extended-timezone.md"
       ]
     },
+    "ext::tls_framing": {
+      "guides": [
+        "docs/extended-tls-framing.md"
+      ]
+    },
     "ext::tls_handshake": {
       "guides": [
-        "docs/extended-tls-handshake.md"
+        "docs/extended-tls-handshake.md",
+        "docs/extended-tls-auth-foundation.md"
       ]
     },
     "ext::tls_record": {
@@ -865,6 +871,12 @@
         "docs/extended-x25519.md"
       ]
     },
+    "ext::x509": {
+      "guides": [
+        "docs/extended-x509.md",
+        "docs/extended-certificate-info.md"
+      ]
+    },
     "ext::zip": {
       "guides": [
         "docs/extended-zip.md"
@@ -909,7 +921,8 @@
     },
     "std::entropy": {
       "guides": [
-        "docs/stdlib-randomness.md"
+        "docs/stdlib-randomness.md",
+        "docs/stdlib-entropy-bounded.md"
       ]
     },
     "std::env": {
